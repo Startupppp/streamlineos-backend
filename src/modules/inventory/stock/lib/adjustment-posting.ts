@@ -3,6 +3,7 @@ import { and, eq, sql } from "drizzle-orm";
 import { invStockAdjustments } from "../../../../db/schema";
 import type { Db } from "../../../../db/drizzle.module";
 import { StockEngineService } from "../../stock-engine/stock-engine.service";
+import { StockMovementBridgeService } from "../../../accounting/adapters/stock-movement-bridge.service";
 import { OutboxWriter } from "../../../../common/outbox/outbox-writer";
 import { adjustmentMovementType, isWriteOffReason } from "./write-off";
 
@@ -24,8 +25,8 @@ export interface PostableAdjustment {
  * lifted out of `inv-stock-adjustments.service.ts` unchanged.
  *
  * Neither has ever had a caller outside that service. `applyAdjustmentLinesInTx`
- * used only the stock engine, which now arrives as its first argument;
- * `issuedValueOf` used nothing at all.
+ * uses the stock engine and the general-ledger bridge, which arrive as its first
+ * two arguments; `issuedValueOf` used nothing at all.
  */
   /**
    * The posting itself, on a transaction the caller owns.
@@ -36,6 +37,7 @@ export interface PostableAdjustment {
    */
 export async function applyAdjustmentLinesInTx(
     engine: StockEngineService,
+    glBridge: StockMovementBridgeService,
     tx: Tx,
     orgId: string,
     userId: string,
@@ -56,6 +58,25 @@ export async function applyAdjustmentLinesInTx(
         quantityDelta: line.quantityChange,
       })),
     });
+
+    // ACC-21. An adjustment changes what the business owns, so it belongs in
+    // the ledger — on this transaction, so a refusal takes the stock change
+    // with it rather than leaving the two disagreeing. The bridge reads the
+    // value from the rows just written; nothing here says what it is worth.
+    // A write-off's lines move as SCRAP (`adjustmentMovementType`), which the
+    // bridge books to inventory_write_off rather than inventory_adjustment.
+    await glBridge.post(
+      orgId,
+      userId,
+      {
+        kind: "adjustment",
+        documentId: String(adj.id),
+        transactionIds: result.transactionIds,
+        journalDate: new Date().toISOString().slice(0, 10),
+        memo: `Stock adjustment ${adj.referenceNumber}`,
+      },
+      tx,
+    );
 
     const writtenOffValue = await issuedValueOf(tx, orgId, result.transactionIds);
 

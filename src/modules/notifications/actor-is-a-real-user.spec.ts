@@ -69,7 +69,16 @@ describe("a notification actor is a real user or nobody", () => {
     const files = sourceFiles(SRC);
     expect(files.length).toBeGreaterThan(500);
     expect(files.some((f) => f.endsWith("notification-dispatch.service.ts"))).toBe(true);
-    expect(files.some((f) => f.endsWith("tax-compliance.service.ts"))).toBe(true);
+    // `tax-compliance.service.ts`, which carried the sentinel, went with the
+    // accounting rewrite. The witness is now a sweep of the same shape done
+    // right -- `forEachOrg`, no user behind it, `actorUserId: null` -- and it has
+    // to be walked AND pass the `includes("actorUserId")` gate `literalActors`
+    // applies, or the scan below could be skipping the very files it is for.
+    const witness = files.find((f) => f.endsWith("calendar-reminder-sweep.service.ts"));
+    expect(witness).toBeDefined();
+    const witnessSource = readFileSync(witness ?? "", "utf8");
+    expect(witnessSource.includes("actorUserId")).toBe(true);
+    expect(codeOnly(witnessSource)).toMatch(/\bactorUserId\s*:\s*null\b/);
   });
 
   it("can see a literal actor when one is there", () => {

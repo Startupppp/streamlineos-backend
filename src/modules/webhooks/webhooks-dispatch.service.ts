@@ -6,6 +6,12 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { checkWebhookUrl } from "../../common/security/ssrf-guard";
 import {
+  runInNewTenantTransaction,
+  runInTenantTransaction,
+} from "../../common/tenant/run-in-tenant-transaction";
+import { runOutsideTenantContext } from "../../common/tenant/tenant-context";
+import { logSideEffectFailure } from "../../common/logger/side-effect";
+import {
   decryptSecret,
   isEncryptedSecret,
 } from "../../common/security/secret-encryption.util";
@@ -98,14 +104,69 @@ export class WebhooksDispatchService {
 
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
+  /**
+   * Fire and forget, but not fail and forget.
+   *
+   * The work continues after the caller's request has returned, so a failure
+   * here has nowhere to be thrown to. It still has somewhere to be *seen*: the
+   * previous `.catch(() => undefined)` meant a completely dead outbound webhook
+   * system reported nothing to anybody, which is how it stayed dead. A seeded
+   * run found every dispatch writing zero rows and every caller being told
+   * nothing at all.
+   */
   dispatch(orgId: string, eventName: string, payload: Record<string, unknown>): void {
-    void this.run(orgId, eventName, payload).catch(() => undefined);
+    /**
+     * `runOutsideTenantContext` because this work outlives the transaction that
+     * started it, and the tenant context does not.
+     *
+     * The context is async-local, so the continuation inherits whatever
+     * transaction was open at the call — which, by the time it runs, has
+     * committed and closed. `record` below asks for `runInTenantTransaction`,
+     * that helper reuses the ambient it finds, and the insert is then issued
+     * against a dead handle: it does not fail, it never settles. A promise that
+     * neither resolves nor rejects logs nothing, so a dispatch called from an
+     * outbox consumer or a cron sweep silently wrote no delivery row at all.
+     *
+     * Detaching first means `record` finds no ambient and opens its own, which
+     * is what a detached side effect needed all along. `retryLog` does not come
+     * through here: it calls `deliver` from inside a live request transaction,
+     * and reusing that one is correct.
+     */
+    void runOutsideTenantContext(() => this.deliverNow(orgId, eventName, payload)).catch(
+      logSideEffectFailure("webhook dispatch", { orgId, eventName }),
+    );
   }
 
-  private async run(orgId: string, eventName: string, payload: Record<string, unknown>): Promise<void> {
-    const endpoints = await this.db.query.webhookEndpoints.findMany({
-      where: and(eq(webhookEndpoints.orgId, orgId), eq(webhookEndpoints.isActive, true)),
-    });
+  /**
+   * The same delivery, awaited.
+   *
+   * `dispatch` is the right shape for a request handler, which has already
+   * returned and has nowhere to throw to. It is the wrong shape for a caller
+   * that *can* handle a failure — an outbox consumer, for instance, whose whole
+   * job is to retry. Handing that caller the fire-and-forget version would mark
+   * the event DELIVERED whatever happened here, which is the failure mode the
+   * outbox exists to prevent.
+   *
+   * Identical work either way; only the error handling differs, and only the
+   * caller can decide which they need.
+   */
+  async deliverNow(orgId: string, eventName: string, payload: Record<string, unknown>): Promise<void> {
+    /**
+     * A tenant transaction of its own, because there is no longer one to
+     * borrow.
+     *
+     * `dispatch` returns immediately and this continues afterwards, so by now
+     * the request's transaction has committed and closed. `webhook_endpoints`
+     * is behind `tenant_isolation` and the read predicate raises with no tenant
+     * context — so this query did not come back empty, it threw, into a
+     * `.catch` that discarded it. Short and read-only on purpose: the HTTP
+     * calls below must not be made with a database transaction held open.
+     */
+    const endpoints = await runInNewTenantTransaction(this.db, orgId, (tx) =>
+      tx.query.webhookEndpoints.findMany({
+        where: and(eq(webhookEndpoints.orgId, orgId), eq(webhookEndpoints.isActive, true)),
+      }),
+    );
 
     const active = endpoints.filter((endpoint) => {
       const events = endpoint.events;
@@ -113,9 +174,20 @@ export class WebhooksDispatchService {
     });
     if (active.length === 0) return;
 
-    await Promise.allSettled(
+    /**
+     * `allSettled` so one endpoint's failure does not cancel the others — but
+     * the results are read, not discarded. Dropping them here reintroduced
+     * exactly the fail-and-forget this class was written to end, one level
+     * down: a delivery whose own log row could not be written vanished without
+     * a trace.
+     */
+    const settled = await Promise.allSettled(
       active.map((endpoint) => this.deliver(endpoint, orgId, eventName, payload)),
     );
+    for (const result of settled) {
+      if (result.status === "rejected")
+        logSideEffectFailure("webhook delivery", { orgId, eventName })(result.reason);
+    }
   }
 
   private async deliver(
@@ -131,7 +203,7 @@ export class WebhooksDispatchService {
 
     const urlCheck = await checkWebhookUrl(endpoint.url);
     if (!urlCheck.allowed) {
-      await this.db.insert(webhookLogs).values({
+      await this.record(orgId, {
         endpointId: endpoint.id,
         orgId,
         event: eventName,
@@ -177,7 +249,7 @@ export class WebhooksDispatchService {
 
     const { statusCode, responseBody, success } = logFromResult(result);
 
-    await this.db.insert(webhookLogs).values({
+    await this.record(orgId, {
       endpointId: endpoint.id,
       orgId,
       event: eventName,
@@ -186,6 +258,28 @@ export class WebhooksDispatchService {
       responseBody,
       attempt: result.attempts,
       success,
+    });
+  }
+
+  /**
+   * One log row, in its own short transaction.
+   *
+   * Deliberately not inside the transaction that read the endpoints: between
+   * the two sits an HTTP call with a ten-second timeout, and holding a database
+   * connection across it would tie a pool slot to somebody else's server for
+   * as long as they cared to be slow. One row per transaction also means a
+   * delivery whose log fails cannot take the other endpoints' logs with it.
+   *
+   * `runInTenantTransaction` rather than `runInNewTenantTransaction`: `retryLog`
+   * reaches `deliver` from inside a request that already has a tenant open, and
+   * demanding a new one there would refuse the nested transaction outright.
+   */
+  private async record(
+    orgId: string,
+    row: typeof webhookLogs.$inferInsert,
+  ): Promise<void> {
+    await runInTenantTransaction(this.db, (tx) => tx.insert(webhookLogs).values(row).then(() => undefined), {
+      orgId,
     });
   }
 

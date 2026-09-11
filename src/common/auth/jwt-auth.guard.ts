@@ -9,6 +9,11 @@ import * as bcrypt from "bcryptjs";
 import type { Redis } from "@upstash/redis";
 import { IS_PUBLIC } from "./public.decorator";
 import { ALLOW_NO_ORG_KEY } from "./allow-no-org.decorator";
+import { ALLOW_AGENT_TOKEN } from "./allow-agent-token.decorator";
+import {
+  isAgentTokenCredential,
+  resolveAgentToken,
+} from "./agent-token-resolution";
 import {
   INTERNAL_TOKEN_AUDIENCE,
   INTERNAL_TOKEN_ISSUER,
@@ -90,6 +95,34 @@ export class JwtAuthGuard implements CanActivate {
       throw new UnauthorizedException("Unauthorized");
     }
     const token = header.slice("Bearer ".length).trim();
+
+    /**
+     * An agent token, on a surface that has declared it accepts one.
+     *
+     * Handled before the JWT and PAT paths because it is neither: a `slos_`
+     * credential lives in `agent_tokens`, hashed by a different function from
+     * the `user_api_tokens` rows `tryPatAuth` reads, so both paths below would
+     * fail it and it would fall out of the bottom as a 401. That 401 was
+     * CRM-P1-16 — the CRM MCP settings page mints exactly this credential for a
+     * server that could not accept it.
+     *
+     * Nothing widens for a route that has not opted in: without
+     * `@AllowAgentToken()` the credential is refused here, which is the same
+     * answer it gets today, one step earlier.
+     */
+    if (isAgentTokenCredential(token)) {
+      const allowsAgentToken = this.reflector.getAllAndOverride<boolean>(
+        ALLOW_AGENT_TOKEN,
+        [context.getHandler(), context.getClass()],
+      );
+      if (!allowsAgentToken) throw new UnauthorizedException("Unauthorized");
+
+      const agentCtx = await resolveAgentToken(this.db, this.membership, token);
+      if (!agentCtx) throw new UnauthorizedException("Unauthorized");
+      req.user = agentCtx;
+      return true;
+    }
+
     if (!this.jwtSecretKey) throw new UnauthorizedException("Unauthorized");
 
     try {

@@ -3,6 +3,7 @@ import { and, eq } from "drizzle-orm";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
 import { commandFences } from "../../db/schema";
+import { runInTenantTransaction } from "../tenant/run-in-tenant-transaction";
 import { IDEMPOTENCY_LEASE_MS, IDEMPOTENCY_TTL_MS } from "./idempotency.constants";
 
 export interface ClaimParams {
@@ -20,10 +21,19 @@ export type ClaimResult =
   | { kind: "inflight" }
   | { kind: "mismatch" };
 
+/**
+ * Persistence for the command fence.
+ *
+ * `orgId` travels with every call, including `complete` and `fail`, because
+ * every fence write is tenant-scoped: `command_fences` is under row-level
+ * security and carries a foreign key to `organizations`, so a write that names
+ * no organisation is refused — and the refusal lands on the fence, not the
+ * command, so an idempotent route 500s before its handler ever runs.
+ */
 export interface CommandFenceStore {
   claim(params: ClaimParams): Promise<ClaimResult>;
-  complete(fenceId: number, responseStatus: number, data: unknown): Promise<void>;
-  fail(fenceId: number): Promise<void>;
+  complete(orgId: string, fenceId: number, responseStatus: number, data: unknown): Promise<void>;
+  fail(orgId: string, fenceId: number): Promise<void>;
 }
 
 export const COMMAND_FENCE_STORE = "COMMAND_FENCE_STORE";
@@ -32,12 +42,36 @@ export const COMMAND_FENCE_STORE = "COMMAND_FENCE_STORE";
 export class DrizzleCommandFenceStore implements CommandFenceStore {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
+  /**
+   * Every fence statement runs in the organisation's own tenant transaction.
+   *
+   * On an ordinary route that is the REQUEST transaction: `IdempotencyInterceptor`
+   * is registered after `TenantContextInterceptor`, so an ambient tenant context
+   * exists and `runInTenantTransaction` reuses it — the fence commits or rolls
+   * back together with the work it guards, and a failed claim fails the request
+   * (fail-closed) instead of being swallowed into a 25P02 later.
+   *
+   * A `@NoTenantTransaction()` route (`sign:bulk_send.create`) has no ambient
+   * context, and a bare `this.db` there is the pool with no tenant GUC, which
+   * RLS refuses. For that case the same call opens a transaction for the org,
+   * which is what the fence did before it moved into this store. An ambient
+   * context for a DIFFERENT org is refused by `runInTenantTransaction` rather
+   * than writing one tenant's fence inside another tenant's transaction.
+   */
+  private inTenant<T>(orgId: string, fn: (tx: Db) => Promise<T>): Promise<T> {
+    return runInTenantTransaction(this.db, (tx) => fn(tx as unknown as Db), { orgId });
+  }
+
   async claim(params: ClaimParams): Promise<ClaimResult> {
+    return this.inTenant(params.orgId, (tx) => this.claimIn(tx, params));
+  }
+
+  private async claimIn(db: Db, params: ClaimParams): Promise<ClaimResult> {
     const now = Date.now();
     const leaseExpiresAt = new Date(now + IDEMPOTENCY_LEASE_MS);
     const expiresAt = new Date(now + IDEMPOTENCY_TTL_MS);
 
-    const inserted = await this.db
+    const inserted = await db
       .insert(commandFences)
       .values({
         organizationId: params.orgId,
@@ -62,7 +96,7 @@ export class DrizzleCommandFenceStore implements CommandFenceStore {
     const [firstInserted] = inserted;
     if (firstInserted) return { kind: "proceed", fenceId: firstInserted.fenceId };
 
-    const [existing] = await this.db
+    const [existing] = await db
       .select()
       .from(commandFences)
       .where(
@@ -90,7 +124,7 @@ export class DrizzleCommandFenceStore implements CommandFenceStore {
       return { kind: "inflight" };
     }
 
-    const reclaimed = await this.db
+    const reclaimed = await db
       .update(commandFences)
       .set({
         status: "IN_FLIGHT",
@@ -114,23 +148,27 @@ export class DrizzleCommandFenceStore implements CommandFenceStore {
     return { kind: "inflight" };
   }
 
-  async complete(fenceId: number, responseStatus: number, data: unknown): Promise<void> {
+  async complete(orgId: string, fenceId: number, responseStatus: number, data: unknown): Promise<void> {
     try {
-      await this.db
-        .update(commandFences)
-        .set({ status: "COMPLETED", responseBody: data ?? null, responseStatus })
-        .where(eq(commandFences.commandFenceId, fenceId));
+      await this.inTenant(orgId, (tx) =>
+        tx
+          .update(commandFences)
+          .set({ status: "COMPLETED", responseBody: data ?? null, responseStatus })
+          .where(eq(commandFences.commandFenceId, fenceId)),
+      );
     } catch {
       // best-effort: a lost completion write just means the next retry re-executes after the lease.
     }
   }
 
-  async fail(fenceId: number): Promise<void> {
+  async fail(orgId: string, fenceId: number): Promise<void> {
     try {
-      await this.db
-        .update(commandFences)
-        .set({ status: "FAILED" })
-        .where(eq(commandFences.commandFenceId, fenceId));
+      await this.inTenant(orgId, (tx) =>
+        tx
+          .update(commandFences)
+          .set({ status: "FAILED" })
+          .where(eq(commandFences.commandFenceId, fenceId)),
+      );
     } catch {
       // best-effort
     }
@@ -200,18 +238,19 @@ export class InMemoryCommandFenceStore implements CommandFenceStore {
     return { kind: "proceed", fenceId };
   }
 
-  async complete(fenceId: number, responseStatus: number, data: unknown): Promise<void> {
+  /** Scoped to the org, as RLS scopes the real table: another tenant's fence is not found. */
+  async complete(orgId: string, fenceId: number, responseStatus: number, data: unknown): Promise<void> {
     for (const [k, fence] of this.fences.entries()) {
-      if (fence.fenceId === fenceId) {
+      if (fence.fenceId === fenceId && k.startsWith(`${orgId}|`)) {
         this.fences.set(k, { ...fence, status: "COMPLETED", responseBody: data, responseStatus });
         return;
       }
     }
   }
 
-  async fail(fenceId: number): Promise<void> {
+  async fail(orgId: string, fenceId: number): Promise<void> {
     for (const [k, fence] of this.fences.entries()) {
-      if (fence.fenceId === fenceId) {
+      if (fence.fenceId === fenceId && k.startsWith(`${orgId}|`)) {
         this.fences.set(k, { ...fence, status: "FAILED" });
         return;
       }

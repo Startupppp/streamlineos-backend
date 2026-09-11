@@ -8,6 +8,7 @@ import { runInNewTenantTransaction } from "src/common/tenant/run-in-tenant-trans
 import { DRIZZLE } from "src/db/drizzle.constants";
 import type { Db } from "src/db/drizzle.module";
 import type { CurrentUserContext } from "src/common/auth/backend-claims";
+import { ACCOUNT_ONLY_PRINCIPAL } from "src/common/auth/principal";
 import { createSeededE2eApp, type SeededE2eApp } from "test/helpers/seeded-e2e-app";
 import { seedOrg } from "test/helpers/seed-builder";
 
@@ -18,7 +19,7 @@ const asMember = (userId: string, orgId: string): CurrentUserContext => ({
   role: "MEMBER",
   sessionId: `seeded-${userId}`,
   tokenScopes: null,
-  principal: { kind: "human-session", membershipId: 1, isOrgOwner: false },
+  principal: ACCOUNT_ONLY_PRINCIPAL,
 });
 
 describe("[seeded-e2e] a page that belongs to a project", () => {

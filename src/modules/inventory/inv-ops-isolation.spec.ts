@@ -134,13 +134,20 @@ describe("WarehouseAssignmentsService — cross-tenant isolation", () => {
 describe("InventoryPeriodService — cross-tenant isolation", () => {
   it("scopes listPeriods to the caller's org (isolation — deny)", async () => {
     /**
-     * `listPeriods` returns early when the accounting bridge reports no periods
-     * table, so the shared stub's `false` would make this pass without a query
-     * ever being built — a green test measuring nothing. Forced to true so the
+     * `listPeriods` returns early when the accounting bridge reports no default
+     * book, so the shared stub's `null` would make this pass without a query
+     * ever being built — a green test measuring nothing. Given a book so the
      * scoping is actually exercised.
      */
     const { svc, selectWhere, findMany } = await build(InventoryPeriodService, [VICTIM_ROW], [
-      { provide: InventoryAccountingBridge, useValue: { hasPeriods: jest.fn().mockResolvedValue(true), hasJournals: jest.fn().mockResolvedValue(false) } },
+      {
+        provide: InventoryAccountingBridge,
+        useValue: {
+          defaultBookId: jest.fn().mockResolvedValue("book-attacker"),
+          hasPeriods: jest.fn().mockResolvedValue(true),
+          hasJournals: jest.fn().mockResolvedValue(true),
+        },
+      },
     ]);
     await svc.listPeriods(ATTACKER);
     const bound = boundValues(selectWhere, findMany);

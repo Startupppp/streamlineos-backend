@@ -448,7 +448,7 @@ export async function postInTx(
     purchaseOrderStatus: allReceived ? "RECEIVED" : "PARTIAL",
   });
 
-  await postReceiptJournal(deps.journalPosting, orgId, userId, grn, po, grn.lines);
+  await postReceiptJournal(deps.journalPosting, orgId, userId, grn, po, grn.lines, tx);
 
   // D3. Quality owns whether a receipt needs inspecting and what that does to
   // the stock. This module used to insert into a Quality table directly — a

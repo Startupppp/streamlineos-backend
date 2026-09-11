@@ -60,6 +60,7 @@ function serviceWith(harness: DbHarness, scope: WarehouseScopeService) {
     stub,
     scope,
     stub,
+    { post: jest.fn().mockResolvedValue(undefined) } as never,
   );
 }
 

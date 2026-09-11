@@ -14,7 +14,6 @@ import {
 import { relations, sql } from "drizzle-orm";
 import { organizations, users } from "../common/auth";
 import { orgUnits } from "../common/organization";
-import { leads } from "./leads";
 import { crmPeople } from "./analytics";
 import { crmSla } from "./sla";
 
@@ -123,9 +122,7 @@ export const crmSlaBreachLog = pgTable(
   {
     id: serial("id").primaryKey(),
     orgId: text("org_id").notNull(),
-    leadId: integer("lead_id")
-      .notNull()
-      .references(() => leads.id, { onDelete: "cascade" }),
+    leadId: integer("lead_id").notNull(),
     policyId: integer("policy_id").references(() => crmSla.id, {
       onDelete: "set null",
     }),

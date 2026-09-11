@@ -114,6 +114,22 @@ describe("MARKETING consent requirement", () => {
 });
 
 // Checked against the tree, not against itself: the criterion is that the list cannot drift.
+/**
+ * Comments name these services constantly; only code calls one.
+ *
+ * The scan matched raw text, so a docblock explaining which service a step goes
+ * through — `nurture-cadence.ts` has one — was indistinguishable from a call,
+ * and the inventory would have had to carry a file that reaches EmailService
+ * nowhere. An entry that names no caller is how a list like this stops meaning
+ * anything.
+ */
+const executable = (source: string): string =>
+  source
+    .replace(/\/\*[\s\S]*?\*\//g, " ")
+    .split("\n")
+    .map((line) => line.replace(/\/\/.*$/, ""))
+    .join("\n");
+
 function directEmailCallersOnDisk(): string[] {
   const srcRoot = join(__dirname, "..", "..");
   const moduleRoot = join(srcRoot, "modules");
@@ -130,7 +146,7 @@ function directEmailCallersOnDisk(): string[] {
       const rel = relative(srcRoot, p).split(sep).join("/");
       if (rel.includes("/dto/") || rel.startsWith("modules/email/")) continue;
       if (rel === "modules/notifications/notification-caller-inventory.ts") continue;
-      if (/\b[A-Za-z]*EmailService\b/.test(readFileSync(p, "utf8"))) found.push(rel);
+      if (/\b[A-Za-z]*EmailService\b/.test(executable(readFileSync(p, "utf8")))) found.push(rel);
     }
   };
 

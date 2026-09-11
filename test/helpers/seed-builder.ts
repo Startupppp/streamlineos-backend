@@ -1,5 +1,6 @@
 import { and, eq, inArray, sql } from "drizzle-orm";
 import {
+  auditLogs,
   organizationMembers,
   organizationPlacement,
   organizations,
@@ -183,6 +184,26 @@ export class SeedBuilder {
         status: "ACTIVE",
       });
 
+      /*
+        Placed, not merely created.
+
+        Reads resolve an organisation's region through its placement row now, and
+        an organisation without one raises "has no region. It must be placed
+        before its data can be reached" — which `MembershipStateService` catches
+        and reports as an inactive membership, so every seeded request 403s with
+        a message about membership rather than about placement.
+      */
+      await tx.insert(organizationPlacement).values({
+        organizationId: orgId,
+        region: DEFAULT_REGION,
+        cellId: LEGACY_CELL_ID,
+        databaseShard: DEFAULT_DATABASE_SHARD,
+        objectStorageRegion: DEFAULT_REGION,
+        searchCluster: DEFAULT_SEARCH_CLUSTER,
+        writeFenceToken: crypto.randomUUID(),
+        leaseExpiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+      });
+
       if (ownerAliasEntry) {
         const [alias, spec] = ownerAliasEntry;
         const userId = crypto.randomUUID();
@@ -299,6 +320,19 @@ export class SeedBuilder {
       label: () =>
         `org=${orgId} members=${JSON.stringify(Object.fromEntries(Object.entries(members).map(([k, v]) => [k, v.userId])))}`,
       teardown: async () => {
+        /**
+         * Audit rows first: `audit_logs.org_id` references `organizations`
+         * without a cascade, on purpose — an audit trail that a delete could
+         * quietly take with it is not one.
+         *
+         * The consequence for a fixture is that any test performing an audited
+         * action — a merge, a plan change, anything through `AuditService` —
+         * leaves a row that makes this delete fail, and the failure surfaces as
+         * the whole suite erroring in `afterAll` with every test having passed.
+         * Cleared here rather than in each spec, because which actions are
+         * audited is not something a spec should have to know.
+         */
+        await db.delete(auditLogs).where(eq(auditLogs.orgId, orgId));
         await db.delete(organizations).where(eq(organizations.id, orgId));
         await db.delete(users).where(inArray(users.id, allUserIds));
       },

@@ -95,6 +95,9 @@ export class LeadsBoardService {
             .from(leadPartyMap)
             .innerJoin(businessParties, LEAD_PARTY_JOIN)
             .where(and(...statusFilter))
+            // Newest first, and the lead id to break a tie: a column capped at
+            // `limitPerStatus` must cut the same place twice or the board
+            // shuffles between refreshes.
             .orderBy(desc(LEAD_PARTY_COLUMNS.createdAt), desc(LEAD_PARTY_COLUMNS.id))
             .limit(limitPerStatus);
           const total = raw.length > 0 ? Number(raw[0]._total) : 0;

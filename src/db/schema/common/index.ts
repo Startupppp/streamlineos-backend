@@ -33,6 +33,8 @@ export * from "./invitations-events";
 export * from "./resource-grants";
 export * from "./legal-entities";
 export * from "./record-layouts";
+export * from "./subprocessors";
+export * from "./subject-requests";
 export * from "./placement";
 export * from "./placement-decisions";
 export * from "./relocation";

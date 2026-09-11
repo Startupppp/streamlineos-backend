@@ -4,6 +4,7 @@ import { signDocuments, signEnvelopes, signFields } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { SignRecipientsService } from "./sign-recipients.service";
+import { SELF_SERVE_AUTH_METHODS, isSelfServeAuthMethod } from "./dto/e-sign.schemas";
 
 const SIGNING_RECIPIENT_TYPES = [
   "signer",
@@ -51,12 +52,39 @@ export class SignEnvelopeValidationService {
     if (signingRecipients.length === 0) errors.push("Envelope has no signer");
 
     for (const r of signingRecipients) {
-      if (r.recipientType !== "in_person_host" && !r.email) {
+      /**
+       * No exemption for `in_person_host` — see SIGN-P2-01 in
+       * SignRecipientsService. An emailless host is never invited and blocks
+       * completion forever, so this catches the envelopes created before the
+       * rule changed rather than letting them be sent into that state.
+       */
+      if (!r.email) {
         errors.push(`Recipient "${r.name}" is missing an email address`);
       }
       if (r.authMethod === "otp_sms" && !r.phone) {
         errors.push(
           `Recipient "${r.name}" is missing a phone number for SMS OTP authentication`,
+        );
+      }
+      /*
+       * Refused here, before the envelope goes out, rather than by the signing
+       * page after it has.
+       *
+       * Five of the eight methods in `signAuthMethodSchema` — otp_sms, sso,
+       * passkey, kba, id_verification — are accepted by the composer and refused
+       * by `SignPublicService.authenticate`. Nothing between the two said so, so
+       * an envelope configured with any of them validated cleanly, sent, and
+       * dead-ended at the recipient with "not yet supported for self-serve
+       * signing". The sender learned nothing; the signer learned it instead, at
+       * the one moment they can do nothing about it.
+       *
+       * The check above is the sharper illustration: it carefully insists on a
+       * phone number for `otp_sms`, which is a mandatory field for a delivery
+       * that never happens.
+       */
+      if (!isSelfServeAuthMethod(r.authMethod)) {
+        errors.push(
+          `Recipient "${r.name}" uses "${r.authMethod}" authentication, which self-serve signing cannot complete yet. Supported: ${SELF_SERVE_AUTH_METHODS.join(", ")}.`,
         );
       }
     }

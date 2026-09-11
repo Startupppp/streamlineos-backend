@@ -1,5 +1,7 @@
-import { Body, Controller, Get, HttpCode, Param, ParseIntPipe, Patch, Post, Query, UseGuards } from "@nestjs/common";
+import { Body, Controller, Get, HttpCode, Param, ParseIntPipe, Patch, Post, Query, Req, UseGuards } from "@nestjs/common";
+import type { Request } from "express";
 import { z } from "zod";
+import { readRequestScope } from "../organization/core/read-request-scope";
 import { Idempotent } from "../../common/idempotency/idempotent.decorator";
 import { Validate } from "../../common/validation/validate.decorator";
 import { BodylessAction } from "../../common/openapi/zod-operation-contracts";
@@ -41,8 +43,8 @@ export class SurveysController {
   @Get()
   @RequirePermission("surveys:view")
   @Validate({ query: listSurveysSchema })
-  list(@Query() query: ListSurveysInput, @CurrentUser() u: CurrentUserContext) {
-    return this.forms.list(u.orgId, query);
+  list(@Query() query: ListSurveysInput, @CurrentUser() u: CurrentUserContext, @Req() req: Request) {
+    return this.forms.list(u.orgId, u.userId, query, readRequestScope(req));
   }
 
   @Post()
@@ -56,8 +58,8 @@ export class SurveysController {
   @Get(":surveyId")
   @RequirePermission("surveys:view")
   @Validate({ params: surveyIdParams })
-  get(@Param("surveyId", ParseIntPipe) surveyId: number, @CurrentUser() u: CurrentUserContext) {
-    return this.forms.get(u.orgId, surveyId);
+  get(@Param("surveyId", ParseIntPipe) surveyId: number, @CurrentUser() u: CurrentUserContext, @Req() req: Request) {
+    return this.forms.get(u.orgId, u.userId, surveyId, readRequestScope(req));
   }
 
   @Patch(":surveyId")
@@ -66,9 +68,9 @@ export class SurveysController {
   patch(
     @Param("surveyId", ParseIntPipe) surveyId: number,
     @Body() body: PatchSurveyInput,
-    @CurrentUser() u: CurrentUserContext,
+    @CurrentUser() u: CurrentUserContext, @Req() req: Request
   ) {
-    return this.forms.patch(u.orgId, surveyId, body);
+    return this.forms.patch(u.orgId, u.userId, surveyId, body, readRequestScope(req));
   }
 
   @Post(":surveyId/publish")
@@ -76,39 +78,39 @@ export class SurveysController {
   @Idempotent("surveys.survey.publish")
   @RequirePermission("surveys:publish")
   @Validate({ params: surveyIdParams })
-  publish(@Param("surveyId", ParseIntPipe) surveyId: number, @CurrentUser() u: CurrentUserContext) {
-    return this.forms.publish(u.orgId, surveyId);
+  publish(@Param("surveyId", ParseIntPipe) surveyId: number, @CurrentUser() u: CurrentUserContext, @Req() req: Request) {
+    return this.forms.publish(u.orgId, u.userId, surveyId, readRequestScope(req));
   }
 
   @Post(":surveyId/pause")
   @BodylessAction()
   @RequirePermission("surveys:publish")
   @Validate({ params: surveyIdParams })
-  pause(@Param("surveyId", ParseIntPipe) surveyId: number, @CurrentUser() u: CurrentUserContext) {
-    return this.forms.pause(u.orgId, surveyId);
+  pause(@Param("surveyId", ParseIntPipe) surveyId: number, @CurrentUser() u: CurrentUserContext, @Req() req: Request) {
+    return this.forms.pause(u.orgId, u.userId, surveyId, readRequestScope(req));
   }
 
   @Post(":surveyId/close")
   @BodylessAction()
   @RequirePermission("surveys:publish")
   @Validate({ params: surveyIdParams })
-  close(@Param("surveyId", ParseIntPipe) surveyId: number, @CurrentUser() u: CurrentUserContext) {
-    return this.forms.close(u.orgId, surveyId);
+  close(@Param("surveyId", ParseIntPipe) surveyId: number, @CurrentUser() u: CurrentUserContext, @Req() req: Request) {
+    return this.forms.close(u.orgId, u.userId, surveyId, readRequestScope(req));
   }
 
   @Post(":surveyId/archive")
   @BodylessAction()
   @RequirePermission("surveys:delete")
   @Validate({ params: surveyIdParams })
-  archive(@Param("surveyId", ParseIntPipe) surveyId: number, @CurrentUser() u: CurrentUserContext) {
-    return this.forms.archive(u.orgId, surveyId);
+  archive(@Param("surveyId", ParseIntPipe) surveyId: number, @CurrentUser() u: CurrentUserContext, @Req() req: Request) {
+    return this.forms.archive(u.orgId, u.userId, surveyId, readRequestScope(req));
   }
 
   @Post(":surveyId/duplicate")
   @BodylessAction()
   @RequirePermission("surveys:create")
   @Validate({ params: surveyIdParams })
-  duplicate(@Param("surveyId", ParseIntPipe) surveyId: number, @CurrentUser() u: CurrentUserContext) {
-    return this.forms.duplicate(u.orgId, surveyId, u.userId);
+  duplicate(@Param("surveyId", ParseIntPipe) surveyId: number, @CurrentUser() u: CurrentUserContext, @Req() req: Request) {
+    return this.forms.duplicate(u.orgId, surveyId, u.userId, readRequestScope(req));
   }
 }

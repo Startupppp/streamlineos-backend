@@ -14,7 +14,8 @@ import { CacheService } from "../../common/cache/cache.service";
 import { InventoryAuditService } from "./stock-engine/inventory-audit.service";
 import { AccessService } from "../access/access.service";
 import { ValuationService } from "./stock-engine/valuation.service";
-import { PeriodsService } from "../accounting/gl/periods.service";
+import { PeriodsService } from "../accounting/kernel/periods.service";
+import { BooksService } from "../accounting/kernel/books.service";
 import { INVENTORY_ISOLATION_STUBS } from "./__tests__/isolation-stubs";
 
 function sqlValues(value: unknown, seen = new Set<object>()): unknown[] {
@@ -239,7 +240,9 @@ describe("StockEngineService — cross-tenant isolation", () => {
         { provide: CacheService, useValue: cache },
         { provide: ValuationService, useValue: { recordReceipt: jest.fn(), recordIssue: jest.fn() } },
         { provide: WarehouseScopeService, useValue: { resolve: jest.fn().mockResolvedValue(null), warehousePredicate: jest.fn().mockReturnValue({ queryChunks: [] }), locationPredicate: jest.fn().mockReturnValue({ queryChunks: [] }) } },
-        { provide: PeriodsService, useValue: { assertPeriodOpen: jest.fn() } },
+        // The kernel period guard: no book, so no period is ever asked for.
+        { provide: PeriodsService, useValue: { periodForDate: jest.fn().mockResolvedValue(null) } },
+        { provide: BooksService, useValue: { findDefault: jest.fn().mockResolvedValue(null) } },
       ],
     }).compile().then((m) => m.get(StockEngineService));
 
@@ -265,7 +268,9 @@ describe("StockEngineService — cross-tenant isolation", () => {
         { provide: CacheService, useValue: freshCache },
         { provide: ValuationService, useValue: { recordReceipt: jest.fn(), recordIssue: jest.fn() } },
         { provide: WarehouseScopeService, useValue: { resolve: jest.fn().mockResolvedValue(null), warehousePredicate: jest.fn().mockReturnValue({ queryChunks: [] }), locationPredicate: jest.fn().mockReturnValue({ queryChunks: [] }) } },
-        { provide: PeriodsService, useValue: { assertPeriodOpen: jest.fn() } },
+        // The kernel period guard: no book, so no period is ever asked for.
+        { provide: PeriodsService, useValue: { periodForDate: jest.fn().mockResolvedValue(null) } },
+        { provide: BooksService, useValue: { findDefault: jest.fn().mockResolvedValue(null) } },
       ],
     }).compile().then((m) => m.get(StockEngineService));
 

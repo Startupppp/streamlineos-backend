@@ -81,7 +81,15 @@ function serviceWith(db: unknown, scope: WarehouseScopeService): InvPhysicalAudi
   const cache = { invalidate: jest.fn(), invalidateNamespace: jest.fn() };
   // (db, cache, engine, numSeq, warehouseScope) — the scope is LAST here and
   // third in the cycle-counts service. The two constructors are not swappable.
-  return new InvPhysicalAuditsService(db as never, cache as never, {} as never, {} as never, scope);
+  return new InvPhysicalAuditsService(
+    db as never,
+    cache as never,
+    // `postAudit` invalidates the stock caches after its own transaction.
+    { executeInTx: jest.fn().mockResolvedValue({ transactionIds: [] }), invalidateCaches: jest.fn().mockResolvedValue(undefined) } as never,
+    {} as never,
+    scope,
+    { post: jest.fn().mockResolvedValue(undefined) } as never,
+  );
 }
 
 interface Reachable {

@@ -1,6 +1,5 @@
 import { and, eq, inArray, isNull } from "drizzle-orm";
-import { contactPartyMap } from "../../db/schema/party";
-import { contacts } from "../../db/schema/crm/contacts";
+import { businessParties, contactPartyMap } from "../../db/schema/party";
 import { CONTACT_MIRROR } from "./party-legacy-mirror";
 import type { PartyRow } from "./party-mirror-fields";
 import {
@@ -69,41 +68,6 @@ async function partyIdsForContacts(
       ),
     );
   return new Map(rows.map((row) => [row.contactId, row.partyId]));
-}
-
-async function adoptContact(
-  db: MirrorDb,
-  organizationId: string,
-  contactId: number,
-): Promise<string | null> {
-  const [row] = await db
-    .select()
-    .from(contacts)
-    .where(and(eq(contacts.id, contactId), eq(contacts.orgId, organizationId)))
-    .limit(1);
-  if (!row) return null;
-
-  const party = await insertBareParty(db, organizationId, row.name);
-  const { partyPatch } = CONTACT_MIRROR.split(row, party);
-  await applyPartyPatch(
-    db,
-    organizationId,
-    party.partyId,
-    withoutSelfLinks(
-      {
-        ...partyPatch,
-        ...(await absorbEmployerColumn(db, organizationId, row.organizationId)),
-        ...(await absorbLeadColumn(db, organizationId, row.leadId)),
-      },
-      party.partyId,
-    ),
-  );
-  await db
-    .insert(contactPartyMap)
-    .values({ organizationId, contactId, partyId: party.partyId, linkedBy: "mirror:adopt" })
-    .onConflictDoNothing();
-  await grantRole(db, organizationId, party.partyId, "CONTACT", "mirror:adopt");
-  return party.partyId;
 }
 
 /**
@@ -231,12 +195,17 @@ export async function updateMirroredContacts(
   if (ids.length === 0) return [];
 
   return db.transaction(async (tx) => {
+    /*
+     * An id with no map row is an id that names nothing.
+     *
+     * There used to be an adoption pass here, for a legacy row that existed
+     * without a party -- the state the dual-write window could produce. Ticket
+     * 08 removed the table it read, and with it the state: the map row IS the
+     * record now, so no party for an id means the record does not exist, and
+     * the caller gets one fewer row back exactly as it always did for an id
+     * that was never real.
+     */
     const partyByContact = await partyIdsForContacts(tx, organizationId, ids);
-    for (const contactId of ids) {
-      if (partyByContact.has(contactId)) continue;
-      const adopted = await adoptContact(tx, organizationId, contactId);
-      if (adopted) partyByContact.set(contactId, adopted);
-    }
 
     /*
      * Resolved once, outside the per-party derivation: which company the caller
@@ -298,11 +267,34 @@ export async function softDeleteMirroredContacts(
 ): Promise<ContactRow[]> {
   const ids = [...new Set(contactIds)].filter((id) => Number.isInteger(id));
   if (ids.length === 0) return [];
+  /**
+   * Liveness comes from the party. Ticket 08.
+   *
+   * This used to ask `contacts.deleted_at`, which was a mirror of
+   * `business_parties.deleted_at` -- the party has always been the one that
+   * decides. Asking it directly removes the last read of the table and changes
+   * no answer: the map is what says which party a contact id means.
+   *
+   * The filter is still here rather than dropped. Its purpose is unchanged: a
+   * contact already deleted must not have its timestamp moved by a second
+   * delete.
+   */
   const live = await db
-    .select({ id: contacts.id })
-    .from(contacts)
+    .select({ id: contactPartyMap.contactId })
+    .from(contactPartyMap)
+    .innerJoin(
+      businessParties,
+      and(
+        eq(businessParties.organizationId, contactPartyMap.organizationId),
+        eq(businessParties.partyId, contactPartyMap.partyId),
+      ),
+    )
     .where(
-      and(eq(contacts.orgId, organizationId), inArray(contacts.id, ids), isNull(contacts.deletedAt)),
+      and(
+        eq(contactPartyMap.organizationId, organizationId),
+        inArray(contactPartyMap.contactId, ids),
+        isNull(businessParties.deletedAt),
+      ),
     );
   return updateMirroredContacts(
     db,

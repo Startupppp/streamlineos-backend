@@ -1,6 +1,7 @@
 import { and, eq } from "drizzle-orm";
 import { BadRequestException, NotFoundException } from "@nestjs/common";
 import {
+  invStockTransactions,
   invStockTransferLines,
   invStockTransfers,
 } from "../../../../db/schema";
@@ -92,6 +93,47 @@ export async function completeTransfer(
         reason: `Complete transfer ${transfer.referenceNumber}`,
         movements,
       });
+
+      /*
+        ACC-21. A transfer reaches the ledger once, here, and over EVERY
+        movement the transfer wrote — not once per leg.
+
+        Nothing posts at dispatch on purpose. The general ledger has a single
+        inventory account with no location dimension, so goods in transit are
+        still inventory and the balance sheet is already right while they
+        move. Posting the outbound leg on its own would credit inventory
+        against the adjustment account and park in-transit goods on the P&L
+        until they arrived.
+
+        Here the dispatch pair (source to transit) and this completion pair
+        (transit to destination) are netted together by the bridge: an intact
+        transfer nets to zero and writes no journal, and any value the legs
+        disagree on posts against inventory_adjustment. A short receipt's
+        remainder stays on the transit location — still owned, so still
+        inventory — until the transit-exit path settles it. The status guard
+        above makes completion once per transfer, so this cannot post twice.
+      */
+      const documentRows = await tx
+        .select({ id: invStockTransactions.id })
+        .from(invStockTransactions)
+        .where(and(
+          eq(invStockTransactions.orgId, orgId),
+          eq(invStockTransactions.referenceType, "inv_transfer"),
+          eq(invStockTransactions.referenceId, transferId.toString()),
+        ));
+
+      await deps.glBridge.post(
+        orgId,
+        userId,
+        {
+          kind: "transfer",
+          documentId: String(transferId),
+          transactionIds: documentRows.map((row) => row.id),
+          journalDate: new Date().toISOString().slice(0, 10),
+          memo: `Transfer ${transfer.referenceNumber}`,
+        },
+        tx,
+      );
 
       let receivedLineCount = 0;
       for (const completion of data.lines) {

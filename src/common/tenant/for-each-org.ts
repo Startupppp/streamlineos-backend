@@ -1,4 +1,4 @@
-import { and, asc, eq, isNull } from "drizzle-orm";
+import { and, asc, eq, isNotNull, isNull } from "drizzle-orm";
 import type { Db } from "../../db/drizzle.module";
 import { organizations } from "../../db/schema";
 import { logger } from "../logger/logger.service";
@@ -54,6 +54,10 @@ function resolveEnumerationDb(fallback: Db): Db {
  * per-org loop. `organizations` itself carries no tenant column and therefore no
  * policy, which is what makes enumerating them possible without a bypass role.
  *
+ * Unplaced orgs (null `region`) are skipped: `withTenant` fails closed for them,
+ * and sweeping them every few seconds only burns the pool without ever reaching
+ * tenant data.
+ *
  * One organization failing must not abort the rest of the sweep, so each is
  * isolated: its transaction rolls back alone and the loop continues.
  *
@@ -73,7 +77,13 @@ export async function forEachOrg(
   const orgs = await enumerationDb
     .select({ id: organizations.id })
     .from(organizations)
-    .where(and(isNull(organizations.deletedAt), eq(organizations.status, "ACTIVE")))
+    .where(
+      and(
+        isNull(organizations.deletedAt),
+        eq(organizations.status, "ACTIVE"),
+        isNotNull(organizations.region),
+      ),
+    )
     .orderBy(asc(organizations.id));
 
   let succeeded = 0;

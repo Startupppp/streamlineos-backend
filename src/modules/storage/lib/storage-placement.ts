@@ -20,7 +20,7 @@ import type { RegionStorageConfig } from "../../../common/region/region.config";
  *
  * That last rule is the reason this is worth separating rather than merely
  * shorter. `publicUrlFor` is the only thing standing between an HR document and
- * a publicly fetchable link: `PRIVATE_HR_FOLDERS` is matched on the *first*
+ * a publicly fetchable link: `PRIVATE_FOLDERS` is matched on the *first*
  * path segment, so `hr-documents/2026/contract.pdf` is caught by its root. It
  * was previously seven lines in the middle of four hundred.
  *
@@ -64,18 +64,22 @@ export interface StoragePlacementDeps {
 }
 
 /**
- * Folders whose objects are never given out as a URL.
+ * Folder roots whose objects must never be handed out as a public URL.
  *
  * Matched on the first path segment, so everything nested under one of these is
- * covered too.
+ * covered too. `publicUrlFor` returns the bare key for these, so the only way to
+ * the bytes is a permission-gated endpoint that streams them. `accounting` is
+ * here for the same reason the HR folders are: a posted tax invoice and the
+ * vendor bills attached to it carry the customer's GSTIN, legal name and address.
  */
-const PRIVATE_HR_FOLDERS = new Set([
+const PRIVATE_FOLDERS = new Set([
   "documents",
   "hr-documents",
   "onboarding",
   "onboarding-docs",
   "resignations",
   "hr-exports",
+  "accounting",
 ]);
 
 export function clientFor(deps: StoragePlacementDeps, cfg: R2Config): S3Client {
@@ -190,7 +194,7 @@ export function publicUrlFor(
   override?: string,
 ): string {
   const folderRoot = folder.split("/", 1)[0] ?? folder;
-  if (PRIVATE_HR_FOLDERS.has(folderRoot)) return key;
+  if (PRIVATE_FOLDERS.has(folderRoot)) return key;
   const publicBase = override ?? regionPublicUrl;
   return publicBase ? `${publicBase}/${key}` : key;
 }

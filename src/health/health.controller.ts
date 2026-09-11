@@ -15,6 +15,14 @@ import type { ResolvedPoolConfig } from "../db/pool.config";
 import { Public } from "../common/auth/public.decorator";
 import { drainBacklog } from "../common/workflow/workflow-store";
 
+/**
+ * A run that has been due for longer than this means nothing is draining.
+ *
+ * The tick is expected roughly every minute, and a drain claims in batches, so a
+ * few minutes of backlog is a busy system. Five is past anything normal load
+ * explains and is comfortably short of the shortest hold window a person would
+ * notice, which is sixty seconds of quote hold plus the time they spend deciding.
+ */
 const DRAIN_STALL_SECONDS = 300;
 const SCHEDULE_STALL_SECONDS = 300;
 
@@ -29,6 +37,7 @@ interface WorkflowHealth {
   oldestDueSeconds: number | null;
   overdueSchedules: number;
   oldestOverdueScheduleSeconds: number | null;
+  /** Present only when stalled, because it is the one thing to do about it. */
   hint?: string;
 }
 
@@ -70,6 +79,19 @@ export class HealthController implements BeforeApplicationShutdown {
     }
   }
 
+  /**
+   * Whether durable workflows are actually being driven.
+   *
+   * The runtime does not schedule itself by design, so it depends on something
+   * calling `/cron/workflow-tick`. Nothing in this repository does — no
+   * in-process scheduler, no `vercel.json`, nothing under `.github/`. Until a
+   * deployment points a scheduler at that endpoint, autonomy holds never send,
+   * inbound ingress never files, and every surface reports work in progress.
+   *
+   * Reported rather than fixed here on purpose: adding a timer would contradict
+   * the runtime's stated design of having one place that decides how often
+   * background work runs.
+   */
   @Get("workflows")
   async workflows(
     @Headers("x-internal-secret") secret: string | undefined,

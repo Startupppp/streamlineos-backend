@@ -8,9 +8,8 @@ import { SignEnvelopesService } from "../sign-envelopes.service";
 import { SignFinalizationService } from "../sign-finalization.service";
 import { SignNotificationsService } from "../sign-notifications.service";
 import { SignIntegrationsService } from "../sign-integrations.service";
-import type { PublicRequestContext } from "../sign-public-form.service";
 import type { DeclineInput } from "../dto/e-sign.schemas";
-import { withRecipientSession } from "./recipient-session";
+import { withRecipientSession, type PublicRequestContext } from "./recipient-session";
 
 /**
  * The two ways a recipient leaves the envelope for good.

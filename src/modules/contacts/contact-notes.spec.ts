@@ -13,6 +13,7 @@ function render(condition: Parameters<PgDialect["sqlToQuery"]>[0]): { sql: strin
 const PARTY: PartyRow = {
   partyId: "party-contact-1",
   organizationId: "org-1",
+  timezone: null,
   partyType: "CUSTOMER",
   partyKind: "ORGANISATION",
   name: "Jane Doe",

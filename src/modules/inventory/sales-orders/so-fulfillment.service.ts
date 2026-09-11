@@ -10,7 +10,9 @@ import { ReservationService } from "../stock-engine/reservation.service";
 import { ChannelPoolService } from "../stock-engine/channel-pool.service";
 import { InventorySettingsService } from "../stock-engine/inventory-settings.service";
 import { NumberSequenceService } from "../stock-engine/number-sequence.service";
-import { InventoryAccountingBridge } from "../stock-engine/accounting-bridge";
+import { PostingCommandService } from "../../accounting/adapters/posting-command.service";
+import { AdapterRejection } from "../../accounting/adapters/posting-command.types";
+import type { DbOrTx } from "../../accounting/kernel/sequence.service";
 import { SoCoreService } from "./so-core.service";
 import { clientBehindSource, resolveShelfLifeFloor } from "../settings/min-shelf-life";
 import type { ReserveSoInput, PickSoInput, PackSoInput, ShipSoInput } from "./dto/inv-sales-orders.schemas";
@@ -45,7 +47,7 @@ export class SoFulfillmentService {
     private readonly channelPools: ChannelPoolService,
     private readonly settingsService: InventorySettingsService,
     private readonly numSeq: NumberSequenceService,
-    private readonly journalPosting: InventoryAccountingBridge,
+    private readonly posting: PostingCommandService,
     private readonly soCore: SoCoreService,
     private readonly projection: StockProjectionService,
     private readonly compliance: IndiaComplianceService,
@@ -228,8 +230,8 @@ export class SoFulfillmentService {
         orgId,
         idempotencyKey,
         { command: "inventory.sales-orders.ship", soId, data },
-        () =>
-          postShipment(
+        async () => {
+          const shipped = await postShipment(
             {
               engine: this.engine,
               reservations: this.reservationService,
@@ -239,44 +241,17 @@ export class SoFulfillmentService {
             },
             tx,
             { orgId, soId, userId, idempotencyKey, data, settings, cogs },
-          ),
+          );
+          // Inside `work()`, so a replay of the same key posts nothing, and on
+          // the shipment's own transaction, so a ledger refusal unwinds it.
+          await this.postCogs(tx, orgId, userId, shipped, cogs, data.shipDate);
+          return shipped;
+        },
         (stored) => reviveShipResult(stored),
       ),
     );
 
     await this.engine.invalidateCaches(orgId);
-
-    // Only reachable when `work()` ran, so a replay posts nothing; and after the
-    // commit, so a rolled-back shipment leaves no entry behind.
-    const cogsTotal = Number(cogs.total);
-    if (cogsTotal > 0) {
-      // INV-09 — through the bridge, not `JournalPostingService` directly.
-      //
-      // This call site was one of two that reached past the bridge, and both
-      // consequences were real. `persistJournalEntry` raises "Seed COA first"
-      // when the tenant has no account 5000, and it raises `42P01` when
-      // `journal_entries` is absent from the database entirely — which is the
-      // whole reason the bridge exists. Both throws land *after* `runIdempotent`
-      // has committed, so the shipment is already durable and the operator gets
-      // a 500 for a dispatch that happened, then retries into the same throw.
-      // The bridge warns and skips instead, which is what every docblock in this
-      // module already says shipping does, and what `gl-recon`'s MISSING_COA
-      // status already assumes.
-      await this.journalPosting.postJournalEntry({
-        orgId,
-        entryDate: data.shipDate,
-        description: `COGS: ${cogs.soNumber}`,
-        sourceType: "inv_sales_order",
-        sourceId: soId.toString(),
-        sourceEvent: "ship",
-        status: "POSTED",
-        createdBy: userId,
-        lines: [
-          { purpose: "INVENTORY_COGS", debit: cogsTotal, credit: 0, description: `COGS - SO ${cogs.soNumber}` },
-          { purpose: "INVENTORY_ASSET", debit: 0, credit: cogsTotal, description: `Inventory deducted - ${cogs.soNumber}` },
-        ],
-      });
-    }
 
     // E5 — the statutory documents this dispatch owes, if this organisation has
     // asked for any.
@@ -294,4 +269,72 @@ export class SoFulfillmentService {
     return result;
   }
 
+  /**
+   * COGS, on the SAME transaction as the shipment it values (ACC-05), so a
+   * ledger refusal unwinds the shipment instead of leaving it valued nowhere.
+   * Passing `tx` is what makes that this seam's guarantee rather than one
+   * borrowed from the request interceptor — see `docs/inventory-gl-contract.md`
+   * §3.3/§4.
+   *
+   * It used to run after the commit, through the inventory lane's accounting
+   * bridge, for two reasons that no longer hold: that bridge opened its own
+   * connection (so posting inside would have left an entry behind for a
+   * shipment that rolled back), and it had to survive a database without the
+   * accounting tables. The kernel posts on the caller's transaction, and "this
+   * org has no accounting" is `BOOK_NOT_ENABLED`, swallowed below. Called from
+   * inside the idempotent claim's `work()`, so a replay posts nothing, exactly
+   * as before. INV-09's per-organisation account mapping survives as the
+   * kernel's system tags, which resolve against the org's own chart.
+   *
+   * Keyed on the shipment, not the sales order: a partially shipped SO ships
+   * more than once, and keying on the SO would make every shipment after the
+   * first an idempotent replay that silently posted no COGS.
+   */
+  private async postCogs(
+    tx: DbOrTx,
+    orgId: string,
+    userId: string,
+    shipped: ShipSoResult,
+    cogs: DeferredCogs,
+    shipDate: string,
+  ): Promise<void> {
+    // `cogs.total` is the exact decimal `postShipment` summed; minor units are
+    // taken once, here, at the seam.
+    const cogsMinor = Math.round(Number(cogs.total) * 100);
+    if (!(cogsMinor > 0)) return;
+    try {
+      await this.posting.submit(
+        orgId,
+        userId,
+        {
+          sourceType: "stock_move",
+          sourceId: String(shipped.shipmentId),
+          purpose: "ship",
+          journalDate: shipDate,
+          memo: `COGS: ${cogs.soNumber} (${shipped.shipmentNumber})`,
+          lines: [
+            {
+              accountTag: "cogs",
+              debitMinor: cogsMinor,
+              description: `COGS - SO ${cogs.soNumber}`,
+            },
+            {
+              accountTag: "inventory",
+              creditMinor: cogsMinor,
+              description: `Inventory deducted - ${cogs.soNumber}`,
+            },
+          ],
+        },
+        tx,
+      );
+    } catch (error) {
+      // Accounting is opt-in; an org without a book has nowhere to post and
+      // must still be able to ship. Anything else is a real failure, and
+      // rethrowing it inside the transaction is what rolls the shipment back
+      // with it. Catching and logging here would commit the shipment and lose
+      // the journal, silently.
+      if (!(error instanceof AdapterRejection && error.code === "BOOK_NOT_ENABLED")) throw error;
+      this.logger.debug(`Accounting is not enabled for org ${orgId}; COGS for ${shipped.shipmentNumber} was not posted`);
+    }
+  }
 }

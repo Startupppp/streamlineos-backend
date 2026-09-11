@@ -1,4 +1,4 @@
-import { BadRequestException, Inject, Injectable } from "@nestjs/common";
+import { Inject, Injectable } from "@nestjs/common";
 import {
   eq,
   and,
@@ -11,7 +11,7 @@ import {
   sql,
   count,
 } from "drizzle-orm";
-import { expenses, expenseCategories, users, ledgerAccounts } from "../../db/schema";
+import { expenses, expenseCategories, users } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
@@ -154,17 +154,17 @@ export class ExpensesService {
     });
   }
 
+  /**
+   * A category no longer carries a GL account.
+   *
+   * `expense_categories.ledger_account_id` was a foreign key into the retired
+   * `ledger_accounts` table. Its integer ids cannot address the new kernel's
+   * `gl_accounts` (text uuids), and the kernel deliberately resolves accounts by
+   * system tag rather than by an id another module stores — so the column is
+   * kept for historical values and no longer written. Approved claims debit the
+   * chart's `opex` role; see `ExpenseLifecycleService.postApprovalAccrual`.
+   */
   async createCategory(orgId: string, input: CreateCategoryInput) {
-    if (input.ledgerAccountId !== undefined) {
-      const [acct] = await this.db
-        .select({ id: ledgerAccounts.id, accountType: ledgerAccounts.accountType })
-        .from(ledgerAccounts)
-        .where(and(eq(ledgerAccounts.id, input.ledgerAccountId), eq(ledgerAccounts.orgId, orgId)))
-        .limit(1);
-      if (!acct) throw new BadRequestException("Ledger account not found");
-      if (acct.accountType !== "EXPENSE") throw new BadRequestException("Ledger account must be of type EXPENSE");
-    }
-
     const [category] = await this.db
       .insert(expenseCategories)
       .values({
@@ -173,7 +173,6 @@ export class ExpensesService {
         description: input.description,
         budgetLimit: input.budgetLimit?.toString(),
         budgetPeriod: input.budgetPeriod,
-        ledgerAccountId: input.ledgerAccountId ?? null,
       })
       .returning();
 

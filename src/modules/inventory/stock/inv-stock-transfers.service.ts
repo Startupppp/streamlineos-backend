@@ -9,6 +9,7 @@ import { CacheService } from "../../../common/cache/cache.service";
 import { CACHE_KEYS } from "../../../common/cache/cache-keys";
 import { StockEngineService } from "../stock-engine/stock-engine.service";
 import { runIdempotent, revivedId } from "../stock-engine/idempotency";
+import { StockMovementBridgeService } from "../../accounting/adapters/stock-movement-bridge.service";
 import { ReservationService } from "../stock-engine/reservation.service";
 import { NumberSequenceService } from "../stock-engine/number-sequence.service";
 import {
@@ -43,6 +44,7 @@ export class InvStockTransfersService {
     private readonly numSeq: NumberSequenceService,
     private readonly warehouseScope: WarehouseScopeService,
     private readonly transitLocations: TransitLocationService,
+    private readonly glBridge: StockMovementBridgeService,
   ) {}
 
 
@@ -250,6 +252,7 @@ export class InvStockTransfersService {
       reservationService: this.reservationService,
       transitLocations: this.transitLocations,
       warehouseScope: this.warehouseScope,
+      glBridge: this.glBridge,
     };
   }
 

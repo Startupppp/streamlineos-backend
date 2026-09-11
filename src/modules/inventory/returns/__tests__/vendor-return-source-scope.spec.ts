@@ -65,6 +65,7 @@ function serviceWith(harness: DbHarness, scope: WarehouseScopeService) {
     {} as never,
     numSeq as never,
     scope,
+    { post: jest.fn().mockResolvedValue(undefined) } as never,
   );
   return { service, numSeq };
 }

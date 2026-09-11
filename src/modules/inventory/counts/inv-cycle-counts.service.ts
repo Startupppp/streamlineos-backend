@@ -6,6 +6,7 @@ import { type Db } from "../../../db/drizzle.module";
 import { CacheService } from "../../../common/cache/cache.service";
 import { CACHE_KEYS, CACHE_TTL } from "../../../common/cache/cache-keys";
 import { StockEngineService } from "../stock-engine/stock-engine.service";
+import { StockMovementBridgeService } from "../../accounting/adapters/stock-movement-bridge.service";
 import { NumberSequenceService } from "../stock-engine/number-sequence.service";
 import { buildCountVarianceMovements } from "./count-variance-movements";
 import {
@@ -23,6 +24,7 @@ export class InvCycleCountsService {
     private readonly warehouseScope: WarehouseScopeService,
     private readonly engine: StockEngineService,
     private readonly numSeq: NumberSequenceService,
+    private readonly glBridge: StockMovementBridgeService,
   ) {}
 
   async listCycleCounts(orgId: string, userId: string, filters: ListCountsInput) {
@@ -244,13 +246,29 @@ export class InvCycleCountsService {
 
     await this.db.transaction(async (tx) => {
       if (movements.length > 0) {
-        await this.engine.executeInTx(tx, orgId, userId, {
+        const moved = await this.engine.executeInTx(tx, orgId, userId, {
           idempotencyKey,
           sourceType: "inv_cycle_count",
           sourceId: countId.toString(),
           reason: `Cycle count ${cc.countNumber}`,
           movements,
         });
+
+        // ACC-21. A count variance is stock found or lost, which is a real
+        // gain or loss the period has to carry. Posted on this transaction so
+        // a locked period refuses the count rather than silently diverging.
+        await this.glBridge.post(
+          orgId,
+          userId,
+          {
+            kind: "cycle_count",
+            documentId: String(countId),
+            transactionIds: moved.transactionIds,
+            journalDate: new Date().toISOString().slice(0, 10),
+            memo: `Cycle count ${cc.countNumber}`,
+          },
+          tx,
+        );
       }
 
       const posted = await tx.update(invCycleCounts)

@@ -1,6 +1,7 @@
-import { Body, Controller, Get, Header, Param, ParseIntPipe, Post, Query, Res, UseGuards } from "@nestjs/common";
-import type { Response } from "express";
+import { Body, Controller, Get, Header, Param, ParseIntPipe, Post, Query, Req, Res, UseGuards } from "@nestjs/common";
+import type { Request, Response } from "express";
 import { z } from "zod";
+import { readRequestScope } from "../organization/core/read-request-scope";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { ModuleGuard } from "../../common/rbac/module.guard";
 import { RequireModule } from "../../common/rbac/require-module.decorator";
@@ -46,8 +47,8 @@ export class SurveyAnalyticsController {
   @Get("analytics/questions")
   @RequirePermission("surveys:analytics:view")
   @Validate({ params: surveyIdParams })
-  async questions(@Param("surveyId", ParseIntPipe) surveyId: number, @CurrentUser() u: CurrentUserContext) {
-    const survey = await this.forms.get(u.orgId, surveyId);
+  async questions(@Param("surveyId", ParseIntPipe) surveyId: number, @CurrentUser() u: CurrentUserContext, @Req() req: Request) {
+    const survey = await this.forms.get(u.orgId, u.userId, surveyId, readRequestScope(req));
     const versionId = survey.activeVersionId ?? (await this.versions.getDraftVersion(u.orgId, surveyId)).id;
     return this.analytics.questionAnalytics(u.orgId, surveyId, versionId);
   }

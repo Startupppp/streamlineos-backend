@@ -15,7 +15,6 @@ import { pgTable, text, serial, timestamp, decimal, integer, index, uniqueIndex,
 import { relations } from "drizzle-orm";
 import { invVendorReturnReasonEnum, invCustomerReturnDispositionEnum, invReturnStatusEnum } from "../common/enums";
 import { organizations, users } from "../common/auth";
-import { clients } from "../crm/contacts";
 import { businessParties } from "../party/business-parties";
 import { invProductVariants } from "./core";
 import { invLocations } from "./warehouses";
@@ -93,7 +92,15 @@ export const invCustomerReturns = pgTable("inv_customer_returns", {
   returnNumber: text("return_number").notNull(),
   soId: integer("so_id").references(() => invSalesOrders.id, { onDelete: "set null" }),
   shipmentId: integer("shipment_id").references(() => invShipments.id, { onDelete: "set null" }),
-  clientId: integer("client_id").references(() => clients.id, { onDelete: "set null" }),
+  clientId: integer("client_id"),
+  /**
+   * The party this return's customer is. Ticket 08's expand.
+   *
+   * Note what `client_id` above does NOT have: a foreign key in the database.
+   * Drizzle declares one and no migration ever created it, so this column was
+   * missing from the catalogue-derived list of blockers and was found by the
+   * schema invariant instead.
+   */
   clientPartyId: text("client_party_id"),
   status: invReturnStatusEnum("status").default("DRAFT").notNull(),
   notes: text("notes"),
@@ -196,8 +203,6 @@ export const invCustomerReturnsRelations = relations(invCustomerReturns, ({ one,
   organization: one(organizations, { fields: [invCustomerReturns.orgId], references: [organizations.id] }),
   creator: one(users, { fields: [invCustomerReturns.createdBy], references: [users.id], relationName: "cretCreator" }),
   approver: one(users, { fields: [invCustomerReturns.approvedBy], references: [users.id], relationName: "cretApprover" }),
-  /** B9. Same as the vendor side: the Customer column had nothing to read. */
-  client: one(clients, { fields: [invCustomerReturns.clientId], references: [clients.id] }),
   lines: many(invCustomerReturnLines),
 }));
 

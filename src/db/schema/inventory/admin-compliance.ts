@@ -14,7 +14,6 @@ import { pgTable, text, serial, timestamp, decimal, integer, bigint, date, boole
 import { desc, relations, sql } from "drizzle-orm";
 import { invJobStatusEnum } from "../common/enums";
 import { organizations, users } from "../common/auth";
-import { clients } from "../crm/contacts";
 import { invProductVariants } from "./core";
 import { invLots } from "./traceability";
 import { invStockReservations } from "./reservations";
@@ -167,8 +166,12 @@ export const invComplianceDocuments = pgTable("inv_compliance_documents", {
 export const invCustomerShelfLifeRules = pgTable("inv_customer_shelf_life_rules", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-  /** Null is the organisation's house floor, not "every customer". */
-  clientId: integer("client_id").references(() => clients.id, { onDelete: "cascade" }),
+  /**
+   * Null is the organisation's house floor, not "every customer". A plain
+   * integer since the legacy `clients` table left the Drizzle schema; the
+   * foreign key and relation went with it, as on `inv_customer_returns`.
+   */
+  clientId: integer("client_id"),
   minShelfLifeDays: integer("min_shelf_life_days").notNull(),
   notes: text("notes"),
   createdBy: text("created_by").references(() => users.id).notNull(),
@@ -176,11 +179,6 @@ export const invCustomerShelfLifeRules = pgTable("inv_customer_shelf_life_rules"
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
   unique("uniq_inv_cslr_org_id").on(table.orgId, table.id),
-  foreignKey({
-    columns: [table.orgId, table.clientId],
-    foreignColumns: [clients.orgId, clients.id],
-    name: "fk_inv_cslr_client_org",
-  }),
   // Partial, both of them: Postgres treats NULLs as distinct, so a plain unique
   // on (org_id, client_id) would let a tenant accumulate five house rules that
   // silently disagree about the same question.
@@ -238,7 +236,8 @@ export const invAllocationOverrides = pgTable("inv_allocation_overrides", {
   /** Where the stock went: the document, and the customer behind it. */
   sourceType: text("source_type").notNull(),
   sourceId: text("source_id").notNull(),
-  clientId: integer("client_id").references(() => clients.id, { onDelete: "set null" }),
+  /** A plain integer since the legacy `clients` table left the Drizzle schema. */
+  clientId: integer("client_id"),
   reservationId: integer("reservation_id").references(() => invStockReservations.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => [
@@ -252,11 +251,6 @@ export const invAllocationOverrides = pgTable("inv_allocation_overrides", {
     columns: [table.orgId, table.lotId],
     foreignColumns: [invLots.orgId, invLots.id],
     name: "fk_inv_alloc_ovr_lot_org",
-  }),
-  foreignKey({
-    columns: [table.orgId, table.clientId],
-    foreignColumns: [clients.orgId, clients.id],
-    name: "fk_inv_alloc_ovr_client_org",
   }),
   foreignKey({
     columns: [table.orgId, table.reservationId],
@@ -279,13 +273,11 @@ export const invAllocationOverrides = pgTable("inv_allocation_overrides", {
 
 export const invCustomerShelfLifeRulesRelations = relations(invCustomerShelfLifeRules, ({ one }) => ({
   organization: one(organizations, { fields: [invCustomerShelfLifeRules.orgId], references: [organizations.id] }),
-  client: one(clients, { fields: [invCustomerShelfLifeRules.clientId], references: [clients.id] }),
 }));
 
 export const invAllocationOverridesRelations = relations(invAllocationOverrides, ({ one }) => ({
   organization: one(organizations, { fields: [invAllocationOverrides.orgId], references: [organizations.id] }),
   lot: one(invLots, { fields: [invAllocationOverrides.lotId], references: [invLots.id] }),
-  client: one(clients, { fields: [invAllocationOverrides.clientId], references: [clients.id] }),
   productVariant: one(invProductVariants, {
     fields: [invAllocationOverrides.productVariantId],
     references: [invProductVariants.id],

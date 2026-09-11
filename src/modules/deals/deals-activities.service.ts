@@ -61,7 +61,7 @@ export class DealsActivitiesService {
    */
   async listActivities(orgId: string, dealId: number) {
     const [current, legacy] = await Promise.all([
-      this.activities.timeline(orgId, { dealId: String(dealId), limit: 50 }),
+      this.activities.timeline(orgId, { dealId, limit: 50 }),
       this.db
         .select()
         .from(dealActivities)
@@ -124,7 +124,7 @@ export class DealsActivitiesService {
       { kind: "human", userId },
       {
         kind,
-        dealId: String(dealId),
+        dealId,
         subject: subjectFor(input.type, input.subject) ?? undefined,
         body: input.notes ?? undefined,
         participants: [],

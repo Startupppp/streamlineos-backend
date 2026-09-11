@@ -387,15 +387,28 @@ describe("OutboxPublisherService.metrics", () => {
     const db = makeDb("ACTIVE");
     let transactionCalls = 0;
     mockRunInNewTenantTransaction.mockImplementation(
-      async (_db: unknown, _orgId: string, fn: (tx: unknown) => Promise<unknown>) => {
+      async (
+        _db: unknown,
+        _orgId: string,
+        fn: (tx: ReturnType<typeof makeTxMock>) => Promise<unknown>,
+      ) => {
         transactionCalls++;
         if (transactionCalls === 3) {
+          /*
+           * The finalizing UPDATE ... RETURNING comes back empty: a newer lease
+           * reclaimed the row while this worker held it. Built with the same
+           * three keys `makeTxMock` returns, so the callback is typed against
+           * the double every other transaction in this file uses rather than
+           * `any` — an `any` here would have accepted a tx missing the very
+           * `update` the fence is asserted through.
+           */
           const returning = jest.fn().mockResolvedValue([]);
           const where = jest.fn().mockReturnValue({ returning });
-          const tx = { update: jest.fn().mockReturnValue({ set: jest.fn().mockReturnValue({ where }) }) };
-          return fn(tx);
+          const set = jest.fn().mockReturnValue({ where });
+          const update = jest.fn().mockReturnValue({ set });
+          return fn({ update, set, where });
         }
-        return fn({ ...makeTxMock(), select: db.select });
+        return fn({ ...makeTxMock(), select: db.select } as ReturnType<typeof makeTxMock>);
       },
     );
     const service = makeService(db, makeConfig(true), makeRegistry("deal.closed"));

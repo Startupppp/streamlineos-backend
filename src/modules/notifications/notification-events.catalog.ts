@@ -305,6 +305,71 @@ const SYSTEM = [
   ),
 ];
 
+/**
+ * Timesheet reminders.
+ *
+ * `category` is PROJECTS, not a new TIMESHEETS value. The category is a
+ * Postgres enum shared with several modules, and `ALTER TYPE ... ADD VALUE`
+ * cannot run inside a transaction — which is how every migration here runs. A
+ * cosmetic grouping is not worth that operational edge, and attribution is not
+ * lost: `sourceModule` says "timesheets" and that is what the settings UI
+ * groups by.
+ *
+ * Both are user-configurable and neither is mandatory. A reminder is a
+ * courtesy; someone who has turned them off has said something and should be
+ * believed.
+ */
+const TIMESHEETS = [
+  e("timesheets.period.due_soon", "timesheets", "PROJECTS", "Timesheet due soon", {
+    description: "A timesheet period is approaching its submission deadline and has not been submitted.",
+    defaultChannels: IA_EMAIL,
+    /**
+     * A day. The sweep is idempotent per period per day by dedupe key, but the
+     * cron may be invoked more than once a day and the window is the second
+     * line of defence — 60 seconds would let an hourly cron send 24 times.
+     */
+    dedupeWindowSeconds: 86_400,
+  }),
+  e("timesheets.period.overdue", "timesheets", "PROJECTS", "Timesheet overdue", {
+    description: "A timesheet period has passed its submission deadline and has not been submitted.",
+    defaultPriority: "HIGH",
+    defaultType: "WARNING",
+    defaultChannels: IA_EMAIL,
+    dedupeWindowSeconds: 86_400,
+  }),
+  /**
+   * TS-24. The three transitions somebody is waiting on.
+   *
+   * All `IA_EMAIL`, because the point of the ticket is the email leg: an
+   * approver who is not in the product when a timesheet lands, and a worker
+   * whose week was rejected, both need to hear about it somewhere other than a
+   * bell icon they are not looking at. `EMAIL` routes through
+   * `NotificationDispatchService` to the existing SMTP provider and the
+   * existing `notification_outbox` — no new vendor and no second mailer, which
+   * is the other half of the ticket.
+   *
+   * `dedupeWindowSeconds` stays at the 60-second default rather than the
+   * reminders' day. A period really can be submitted, rejected, resubmitted and
+   * approved inside an afternoon, and swallowing the second decision because it
+   * resembled the first would be worse than a duplicate.
+   */
+  e("timesheets.period.submitted", "timesheets", "PROJECTS", "Timesheet submitted for approval", {
+    description: "A team member submitted a timesheet period and it is waiting for your approval.",
+    defaultChannels: IA_EMAIL,
+  }),
+  e("timesheets.period.approved", "timesheets", "PROJECTS", "Timesheet approved", {
+    description: "Your submitted timesheet period was approved.",
+    defaultType: "SUCCESS",
+    defaultChannels: IA_EMAIL,
+  }),
+  e("timesheets.period.rejected", "timesheets", "PROJECTS", "Timesheet rejected", {
+    description: "Your submitted timesheet period was rejected and needs changes.",
+    defaultPriority: "HIGH",
+    defaultType: "WARNING",
+    defaultChannels: IA_EMAIL,
+  }),
+] as const;
+
 export const NOTIFICATION_EVENT_CATALOG = [
   ...CHAT_NOTIFICATION_EVENTS,
   ...BUILD_NOTIFICATION_EVENTS,
@@ -318,6 +383,7 @@ export const NOTIFICATION_EVENT_CATALOG = [
   ...SURVEYS,
   ...CALENDAR,
   ...BILLING,
+  ...TIMESHEETS,
   ...SYSTEM,
   ...BROADCASTS,
 ];

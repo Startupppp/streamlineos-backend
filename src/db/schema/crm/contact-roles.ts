@@ -1,12 +1,19 @@
 import { pgTable, text, boolean, timestamp, integer, index, uniqueIndex, uuid, unique } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { organizations } from "../common/auth";
-import { contacts } from "./contacts";
 
 export const crmContactRoles = pgTable("crm_contact_roles", {
   id: uuid("id").primaryKey().defaultRandom(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-  contactId: integer("contact_id").references(() => contacts.id, { onDelete: "cascade" }).notNull(),
+  contactId: integer("contact_id").notNull(),
+  /**
+  * The party behind this row's legacy id. Ticket 08's expand.
+  *
+  * Beside the old column, not replacing it -- the contract migration removes
+  * the old one once nothing reads it. Kept in step by a trigger, so no writer
+  * has to remember.
+  */
+  contactPartyId: text("contact_party_id"),
   entityType: text("entity_type").notNull(),
   entityId: integer("entity_id").notNull(),
   roleKey: text("role_key").notNull(),
@@ -28,6 +35,5 @@ export const crmContactRoles = pgTable("crm_contact_roles", {
 ]);
 
 export const crmContactRolesRelations = relations(crmContactRoles, ({ one }) => ({
-  contact: one(contacts, { fields: [crmContactRoles.contactId], references: [contacts.id] }),
   organization: one(organizations, { fields: [crmContactRoles.orgId], references: [organizations.id] }),
 }));

@@ -24,7 +24,8 @@ import { InventorySettingsService } from "../stock-engine/inventory-settings.ser
 import { ReservationService } from "../stock-engine/reservation.service";
 import { StockProjectionService } from "../stock-engine/stock-projection.service";
 import { runIdempotent } from "../stock-engine/idempotency";
-import { InventoryAccountingBridge } from "../stock-engine/accounting-bridge";
+import { PostingCommandService } from "../../accounting/adapters/posting-command.service";
+import { AdapterRejection } from "../../accounting/adapters/posting-command.types";
 import { PlanLimitsService } from "../../billing/core/plan-limits.service";
 import { findAvailableLotForLine } from "./lib/lot-selection";
 
@@ -39,7 +40,7 @@ export class SoLifecycleService {
     private readonly settingsService: InventorySettingsService,
     private readonly reservationService: ReservationService,
     private readonly projection: StockProjectionService,
-    private readonly journalPosting: InventoryAccountingBridge,
+    private readonly posting: PostingCommandService,
     private readonly planLimits: PlanLimitsService,
   ) {}
 
@@ -274,72 +275,101 @@ export class SoLifecycleService {
       .toISOString()
       .slice(0, 10);
 
-    const [invoice] = await this.db
-      .insert(invoices)
-      .values({
-        orgId,
-        clientId: so.clientId,
-        invoiceNumber,
-        status: "ISSUED",
-        subtotal: so.subtotal,
-        taxRate: "0",
-        taxAmount: so.taxAmount,
-        discount: "0",
-        total: so.total,
-        currency: so.currency,
-        dueDate,
-        createdBy: userId,
-      })
-      .returning();
+    /*
+      One transaction over the invoice, its lines, the sales order's status and
+      the journal. Before this the four ran as four separate statements and were
+      atomic only because a request interceptor happened to wrap the handler —
+      see `docs/inventory-gl-contract.md` §3.3. An invoice row with no journal,
+      or a sales order marked INVOICED against an invoice that was rolled back,
+      are both states nothing here could recover from.
+    */
+    const invoice = await this.db.transaction(async (tx) => {
+      const [created] = await tx
+        .insert(invoices)
+        .values({
+          orgId,
+          clientId: so.clientId,
+          invoiceNumber,
+          status: "ISSUED",
+          subtotal: so.subtotal,
+          taxRate: "0",
+          taxAmount: so.taxAmount,
+          discount: "0",
+          total: so.total,
+          currency: so.currency,
+          dueDate,
+          createdBy: userId,
+        })
+        .returning();
 
-    if (lineItems.length > 0) {
-      await this.db.insert(invoiceItems).values(
-        lineItems.map((line, index) => ({
-          invoiceId: invoice.id,
-          description: line.description,
-          quantity: line.quantity.toFixed(4),
-          rate: line.rate.toFixed(4),
-          gstRate: "0",
-          amount: line.amount.toFixed(4),
-          lineOrder: index,
-        })),
-      );
-    }
+      if (lineItems.length > 0) {
+        await tx.insert(invoiceItems).values(
+          lineItems.map((line, index) => ({
+            invoiceId: created.id,
+            description: line.description,
+            quantity: line.quantity.toFixed(4),
+            rate: line.rate.toFixed(4),
+            gstRate: "0",
+            amount: line.amount.toFixed(4),
+            lineOrder: index,
+          })),
+        );
+      }
 
-    await this.db
-      .update(invSalesOrders)
-      .set({ status: "INVOICED", invoiceId: invoice.id, updatedAt: new Date() })
-      .where(and(eq(invSalesOrders.id, soId), eq(invSalesOrders.orgId, orgId)));
+      await tx
+        .update(invSalesOrders)
+        .set({ status: "INVOICED", invoiceId: created.id, updatedAt: new Date() })
+        .where(and(eq(invSalesOrders.id, soId), eq(invSalesOrders.orgId, orgId)));
 
-    await this.journalPosting.postJournalEntry({
-      orgId,
-      entryDate: today,
-      description: `Invoice: ${invoiceNumber}`,
-      sourceType: "inv_sales_order",
-      sourceId: soId.toString(),
-      sourceEvent: "invoice",
-      status: "POSTED",
-      createdBy: userId,
-      lines: [
-        // INV-09. Not inventory's own purposes — this entry books revenue off a
-        // sales order and touches no stock, which is also why `gl-posting-rules`
-        // deliberately does not reconcile it. But 1200 and 4000 are AR and sales
-        // income, both of which `acc_system_account_map` already carries, so
-        // there is no reason for this entry to be the one that ignores an
-        // organisation's chart.
-        {
-          purpose: "AR",
-          debit: Number(so.total),
-          credit: 0,
-          description: `AR - ${invoiceNumber}`,
-        },
-        {
-          purpose: "SALES_INCOME",
-          debit: 0,
-          credit: Number(so.total),
-          description: `Sales Revenue - ${so.soNumber}`,
-        },
-      ],
+      // Gross-to-revenue, exactly as before: the sales order carries no tax
+      // determination, so splitting the total here would be inventing one.
+      const totalMinor = Math.round(Number(so.total) * 100);
+      try {
+        await this.posting.submit(
+          orgId,
+          userId,
+          {
+            sourceType: "sales_invoice",
+            sourceId: String(created.id),
+            /*
+              `post`, matching `invoices-posting.service.ts`, and not `issue`.
+              Both write into the same `invoices` table and the same serial id
+              space, so two purposes meant two idempotency keys for one
+              document — and `invoices-update.service.ts` posts whenever a
+              status moves TO `ISSUED` from anything else. An invoice this path
+              created (already `ISSUED`) could be patched to `VOIDED` and back,
+              and the second journal would go through: AR control and sales
+              revenue counted twice, with no error anywhere. One purpose makes
+              the idempotency key do the deduplication it exists for. See
+              `docs/adr-legacy-invoices-vs-ar.md`.
+            */
+            purpose: "post",
+            journalDate: today,
+            memo: `Invoice: ${invoiceNumber}`,
+            lines: [
+              {
+                accountTag: "ar_control",
+                debitMinor: totalMinor,
+                description: `AR - ${invoiceNumber}`,
+              },
+              {
+                accountTag: "sales",
+                creditMinor: totalMinor,
+                description: `Sales Revenue - ${so.soNumber}`,
+              },
+            ],
+          },
+          tx,
+        );
+      } catch (error) {
+        // Accounting is opt-in; an org without a book has nowhere to post and
+        // must still be able to invoice a sales order. Anything else rolls the
+        // invoice back with it, which is the point of the transaction.
+        if (!(error instanceof AdapterRejection && error.code === "BOOK_NOT_ENABLED")) throw error;
+        this.logger.debug(`Accounting is not enabled for org ${orgId}; ${invoiceNumber} was not posted`);
+      }
+
+      return created;
     });
 
     await this.cache.del(CACHE_KEYS.invSoDetail(orgId, soId));

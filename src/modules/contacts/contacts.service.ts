@@ -14,7 +14,12 @@ import {
   updateMirroredContact,
 } from "../party/party-legacy-contacts";
 import type { ContactInsert } from "../party/party-legacy-writer";
-import { CONTACT_PARTY_COLUMNS, CONTACT_PARTY_JOIN, contactPartyScope } from "./contact-party-reader";
+import {
+  CONTACT_PARTY_COLUMNS,
+  CONTACT_PARTY_JOIN,
+  canonicalContactOnly,
+  contactPartyScope,
+} from "./contact-party-reader";
 import { queryContacts, searchContacts, getOneContact } from "./contacts-query";
 import type {
   BulkImportContactsInput,
@@ -178,6 +183,13 @@ export class ContactsService {
         .where(
           and(
             ...contactPartyScope(orgId),
+            // The export is a list, so it takes the same one-row-per-party rule
+            // the screen does; a CSV that re-imports a merged-away duplicate
+            // would undo the merge on the next round trip.
+            canonicalContactOnly(orgId),
+            // The keyset stays on the map's own id: it is the primary key of
+            // `(organization_id, contact_id)`, so it is unique per tenant and a
+            // page can neither repeat nor skip.
             gt(contactPartyMap.contactId, afterId),
           ),
         )

@@ -1,3 +1,4 @@
+import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import {
   Body,
   Controller,
@@ -19,9 +20,11 @@ import { RateLimitGuard } from "../../../common/ratelimit/rate-limit.guard";
 import { UseRateLimit } from "../../../common/ratelimit/use-rate-limit.decorator";
 import { verifyUnsubscribeToken } from "./unsubscribe-token.util";
 import {
+  consentEventsQuerySchema,
   contactParamSchema,
   missingConsentQuerySchema,
   recordConsentSchema,
+  type ConsentEventsQuery,
   type ContactParam,
   type MissingConsentQuery,
   type RecordConsentInput,
@@ -46,6 +49,26 @@ export class CrmConsentController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.consent.listForContact(u.orgId, params.contactId);
+  }
+
+  /**
+   * The evidence trail. `listForContact` above answers "what may we send them
+   * now"; this answers "when did that become true, on what basis, at whose
+   * hand" -- the question a DPDP or GDPR review actually asks, and the one the
+   * product had no route for even though it wrote the rows on every change.
+   *
+   * Gated on `view` rather than `manage`: reading a history is a read. It is
+   * the same key the current-position route carries, so anybody who can see
+   * the consent card can see how it got that way.
+   */
+  @Get("contacts/:contactId/events")
+  @RequirePermission("crm:contacts:view")
+  listEvents(
+    @Param(new ZodValidationPipe(contactParamSchema)) params: ContactParam,
+    @Query(new ZodValidationPipe(consentEventsQuerySchema)) query: ConsentEventsQuery,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.consent.listConsentEvents(u.orgId, params.contactId, query.limit);
   }
 
   @Post("contacts/:contactId")
@@ -100,7 +123,41 @@ export class CrmPublicConsentController {
   async unsubscribe(
     @Body() body: UnsubscribeInput,
   ) {
-    const payload = verifyUnsubscribeToken(body.token);
+    return this.honour(body.token);
+  }
+
+  /**
+   * The same withdrawal, addressed the way a MAIL CLIENT can reach it.
+   *
+   * The body form above cannot be the whole surface: RFC 8058 one-click sends
+   * `List-Unsubscribe=One-Click` as the body and nothing else, and a human who
+   * clicks the link issues a GET. Neither carries our JSON. So the token moves
+   * into the path and both verbs answer, which is the same shape the platform's
+   * own `notifications/unsubscribe/:token` settled on.
+   *
+   * The body form stays because it is a real public contract with its own
+   * coverage; all three share one handler so the withdrawal itself has exactly
+   * one implementation.
+   */
+  @Get("unsubscribe/:token")
+  @Public()
+  @UseGuards(RateLimitGuard)
+  @UseRateLimit("crm:public-unsubscribe")
+  async unsubscribeByLink(@Param("token") token: string) {
+    return this.honour(token);
+  }
+
+  @Post("unsubscribe/:token")
+  @Public()
+  @HttpCode(200)
+  @UseGuards(RateLimitGuard)
+  @UseRateLimit("crm:public-unsubscribe")
+  async unsubscribeOneClick(@Param("token") token: string) {
+    return this.honour(token);
+  }
+
+  private async honour(token: string) {
+    const payload = verifyUnsubscribeToken(token);
 
     // Always the same response, valid token or not. Distinguishing them would
     // turn this endpoint into an oracle for whether a contact exists.

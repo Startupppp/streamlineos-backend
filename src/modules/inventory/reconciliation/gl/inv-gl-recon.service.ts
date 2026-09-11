@@ -25,11 +25,20 @@ export interface GlReconRow {
   movementCount: number;
   hasCost: boolean;
   accountCodes: string[];
+  /**
+   * The roles (gl system tags) this entry names that no account in the
+   * organisation's book fills. A role with no account has no code to list, so
+   * the field keeps its name for the report's consumers and carries the tag,
+   * which is the thing the operator has to go and assign.
+   */
   missingAccountCodes: string[];
-  journalEntryId: number | null;
+  /** The kernel journal's id, a uuid since the accounting rewrite. */
+  journalEntryId: string | null;
   journalEntryNumber: string | null;
   journalEntryDate: string | null;
+  /** `POSTED` or `REVERSED`; the kernel has no draft journals. */
   journalStatus: string | null;
+  /** Debits across the matched journals, in major units at two decimals. */
   journalValue: string | null;
   status: GlReconStatus;
 }
@@ -50,14 +59,15 @@ export interface GlReconSummary extends Record<string, unknown> {
   unreconciledValue: string;
 }
 
-interface UnpostedRow extends Record<string, unknown> {
+interface UncoveredRow extends Record<string, unknown> {
   sourceType: string;
   movementCount: number;
   movementValue: string;
+  postedByStockBridge: boolean;
 }
 
 interface OrphanRow extends Record<string, unknown> {
-  journalEntryId: number;
+  journalEntryId: string;
   journalEntryNumber: string;
   journalEntryDate: string;
   sourceType: string;
@@ -70,20 +80,20 @@ interface OrphanRow extends Record<string, unknown> {
 const ORPHAN_LIMIT = 50;
 
 /**
- * D6 — inventory movements against the journals the accounting bridge posted
- * for them, for one period.
+ * D6 — inventory movements against the journals the accounting kernel holds for
+ * them, for one period.
  *
  * This report reads. It never posts: inventory reaches the general ledger only
- * through `JournalPostingService`, called from the three write paths, and a
- * reconciliation that repaired what it found would be marking its own homework.
- * What it can do is name the gap precisely enough to fix — a `MISSING_COA` row
- * carries the account codes the tenant has not created, which is the whole
- * remedy.
+ * through `PostingCommandService`, and a reconciliation that repaired what it
+ * found would be marking its own homework. What it can do is name the gap
+ * precisely enough to fix. A `MISSING_COA` row carries the roles the book has
+ * no account for, and that is the whole remedy.
  *
- * Every figure is `numeric` in Postgres and `text` on the wire. Comparing a
- * ledger against a journal is the one place a float would be indefensible: two
- * amounts that differ in the fifteenth decimal place are equal in every sense
- * that matters to an accountant and unequal to `===`.
+ * It covers the documents inventory posts itself: receipts, shipments and
+ * landed cost. The document kinds `StockMovementBridgeService` posts are
+ * reconciled by the accounting module's unposted-movements report. This report
+ * lists them as `postedByStockBridge` and does not run a second reconciliation
+ * of them.
  */
 @Injectable()
 export class InvGlReconService {
@@ -97,16 +107,13 @@ export class InvGlReconService {
   async report(orgId: string, userId: string, query: GlReconQueryInput) {
     const { page, limit, warehouseId, status } = query;
     const window = await this.periods.resolveWindow(orgId, query);
-    const journalsInstalled = await this.bridge.hasJournals();
+    const bookId = await this.bridge.defaultBookId(orgId);
+    const journalsInstalled = bookId !== null;
     /**
-     * INV-09 — resolved once, through the bridge, which is the same call the
-     * posting path makes.
-     *
-     * Not a convenience: if the report resolved independently of posting, or
-     * kept the literals it used to, then the first organisation to map
-     * INVENTORY_ASSET somewhere else would see every goods receipt reported as
-     * MISSING_COA against an account it never posted to. The report and the
-     * ledger have to be looking at the same chart.
+     * INV-09 — resolved once, through the bridge, from the same system tags the
+     * posting path resolves. If the report read the chart any other way, the
+     * first organisation to re-tag its inventory account would see every goods
+     * receipt reported against an account it never posted to.
      */
     const rules = resolveGlPostingRules(await this.bridge.resolveAccountCodes(orgId));
     const scope = await this.warehouseScope.resolve(orgId, userId);
@@ -119,30 +126,34 @@ export class InvGlReconService {
       toDate: window.toDate,
       locationScope,
       warehouseId,
-      journalsInstalled,
+      bookId,
       rules,
     };
 
-    const [rows, summaryRows, unposted, orphans] = await Promise.all([
+    const [rows, summaryRows, uncovered, orphans] = await Promise.all([
       this.db.execute<GlReconRowWithTotal>(
         glReconRowsSql({ ...base, status, limit, offset: (page - 1) * limit }),
       ),
       this.db.execute<GlReconSummary>(glReconSummarySql(base)),
-      this.db.execute<UnpostedRow>(glUnpostedByDesignSql(base)),
-      journalsInstalled
-        ? this.db.execute<OrphanRow>(
+      this.db.execute<UncoveredRow>(glUnpostedByDesignSql(base)),
+      bookId === null
+        ? Promise.resolve([] as OrphanRow[])
+        : this.db.execute<OrphanRow>(
             glOrphanJournalsSql({
               orgId,
+              bookId,
               fromDate: window.fromDate,
               toDate: window.toDate,
               limit: ORPHAN_LIMIT,
             }),
-          )
-        : Promise.resolve([] as OrphanRow[]),
+          ),
     ]);
 
     const total = rows[0]?.totalRows ?? 0;
     const summary = summaryRows[0] ?? emptySummary();
+    const withoutFlag = ({ postedByStockBridge: _flag, ...row }: UncoveredRow) => row;
+    const unpostedByDesign = uncovered.filter((row) => !row.postedByStockBridge).map(withoutFlag);
+    const postedByStockBridge = uncovered.filter((row) => row.postedByStockBridge).map(withoutFlag);
 
     return {
       generatedAt: new Date().toISOString(),
@@ -152,20 +163,24 @@ export class InvGlReconService {
         period: window.period,
       },
       accounting: {
+        /** Whether this organisation keeps books; the name predates the kernel. */
         journalsInstalled,
         /**
          * Said out loud rather than implied by a row of zeroes. A tenant that
-         * has not bought accounting has no gap to close, and a report that
+         * has not enabled accounting has no gap to close, and a report that
          * looked identical to one whose postings are all failing would be worse
          * than no report.
          */
-        note: journalsInstalled
-          ? null
-          : "The accounting module is not installed in this workspace, so no inventory movement has produced a journal entry.",
+        note: !journalsInstalled
+          ? "Accounting is not enabled for this organisation, so no inventory movement is expected to produce a journal entry."
+          : postedByStockBridge.length > 0
+            ? "Adjustments, transfers, counts, quality write-offs and returns are posted by the accounting module's stock bridge, not by a rule in this report. Reconcile them in Accounting, under Reconciliation, unposted movements."
+            : null,
       },
       rules,
       summary,
-      unpostedByDesign: unposted,
+      unpostedByDesign,
+      postedByStockBridge,
       orphanJournals: orphans,
       items: rows.map(({ totalRows: _t, ...row }) => row),
       total,

@@ -36,11 +36,6 @@ const baseSchema = z
     ),
     /** Release identifier stamped onto every error report and span. */
     APP_RELEASE: z.preprocess(emptyToUndefined, z.string().optional()),
-    /** Set to "false" to disable RouteClassifierGuard's boot-time and request-time enforcement. */
-    REQUIRE_ROUTE_CLASSIFICATION: z.preprocess(
-      emptyToUndefined,
-      z.enum(["true", "false"]).optional(),
-    ),
     /** Comma-separated regions this deployment serves; each secondary needs its own REGION_<KEY>_APP_DATABASE_URL. */
     REGION_KEYS: z.preprocess(emptyToUndefined, z.string().optional()),
     /** The cell this deployment is. Defaults to `legacy-1`, the pre-cell production deployment. */
@@ -72,6 +67,17 @@ const baseSchema = z
       ),
     CORS_ORIGINS: z.string().min(1, "CORS_ORIGINS is required"),
     APP_URL: z.string().url("APP_URL must be a valid URL"),
+    /**
+     * This API's own public origin, for links a MAIL CLIENT must call rather
+     * than a browser.
+     *
+     * `APP_URL` is the web app, and every other email link is a page there. RFC
+     * 8058 one-click unsubscribe is the exception: the mail client POSTs the
+     * URL itself, so it has to reach a route that exists on the API. Optional,
+     * and when it is unset the `List-Unsubscribe` headers are omitted entirely
+     * rather than pointed somewhere that cannot answer.
+     */
+    PUBLIC_API_URL: optionalUrl,
     CRON_SECRET: deploymentSecret,
     INTERNAL_API_SECRET: deploymentSecret,
     CONTACT_NOTIFICATION_EMAIL: optionalEmail,
@@ -177,6 +183,16 @@ const baseSchema = z
       emptyToUndefined,
       z.string().optional(),
     ),
+    /**
+     * Stripe, which serves everywhere Razorpay does not.
+     *
+     * Optional like Razorpay's: a deployment that only sells in India needs no
+     * Stripe account, and requiring one would make the whole application refuse
+     * to boot for want of a provider it never calls.
+     */
+    STRIPE_SECRET_KEY: z.preprocess(emptyToUndefined, z.string().optional()),
+    STRIPE_PUBLISHABLE_KEY: z.preprocess(emptyToUndefined, z.string().optional()),
+    STRIPE_WEBHOOK_SECRET: z.preprocess(emptyToUndefined, z.string().optional()),
     VAPID_PUBLIC_KEY: z.preprocess(emptyToUndefined, z.string().optional()),
     VAPID_PRIVATE_KEY: z.preprocess(emptyToUndefined, z.string().optional()),
     R2_REGION: z.preprocess(emptyToUndefined, z.string().optional()),
@@ -190,6 +206,20 @@ const baseSchema = z
     TWILIO_ACCOUNT_SID: z.preprocess(emptyToUndefined, z.string().optional()),
     TWILIO_AUTH_TOKEN: z.preprocess(emptyToUndefined, z.string().optional()),
     TWILIO_FROM_NUMBER: z.preprocess(emptyToUndefined, z.string().optional()),
+    /**
+     * SMS one-time codes for e-signature. `EnvSmsSender` reads both at
+     * construction and offers the `otp_sms` authentication method only when
+     * both are present, so a typo in either one silently removes a signing
+     * method a tenant configured — which is exactly the failure the schema
+     * exists to turn into a boot error. Optional because no provider ships
+     * bound; the URL is validated as a URL so a half-pasted value fails at
+     * boot rather than at the moment a signer is waiting for a code.
+     */
+    SIGN_SMS_PROVIDER_URL: optionalUrl,
+    SIGN_SMS_PROVIDER_TOKEN: z.preprocess(
+      emptyToUndefined,
+      z.string().trim().optional(),
+    ),
     APP_BRAND_NAME: z.preprocess(
       emptyToUndefined,
       z.string().trim().optional(),
@@ -214,6 +244,40 @@ const baseSchema = z
     NOTIFICATIONS_INPROCESS_WORKER: z.preprocess(
       emptyToUndefined,
       z.enum(["true", "false"]).optional(),
+    ),
+    /** In-process payroll job claim/reclaim loop. Defaults on; set false for local/dev. */
+    PAYROLL_INPROCESS_WORKER: z.preprocess(
+      emptyToUndefined,
+      z.enum(["true", "false"]).optional(),
+    ),
+    /**
+     * Turns an undeclared route from a boot-report line into a hard failure.
+     * `RouteClassifierGuard` takes it through `APP_CONFIG` rather than reading
+     * `process.env` itself, so this enum is the whole contract and not most of
+     * it: a misspelled value fails validation at boot instead of falling
+     * through the guard's `!== "false"` test to "enforce".
+     */
+    REQUIRE_ROUTE_CLASSIFICATION: z.preprocess(
+      emptyToUndefined,
+      z.enum(["true", "false"]).optional(),
+    ),
+    /**
+     * Which e-invoice transport is wired up.
+     *
+     * `none` is the default and the only honest value until a provider exists:
+     * a reportable document is recorded as `pending` and nobody sends it.
+     * `mock` exercises the whole submit path against an adapter that invents
+     * nothing — it stamps the row `mock_irp` and returns a visibly fake
+     * acknowledgement, so a mock filing can never be mistaken for a real one,
+     * in a database or in a screenshot.
+     *
+     * There is deliberately no `irp` member yet. Adding one is ACC-14 and needs
+     * real credentials; leaving the name unclaimed means nobody can set it and
+     * believe something is being filed.
+     */
+    COMPLIANCE_TRANSPORT: z.preprocess(
+      emptyToUndefined,
+      z.enum(["none", "mock"]).optional(),
     ),
     HR_EXPORT_WORKER_ENABLED: z.preprocess(
       emptyToUndefined,
@@ -252,6 +316,19 @@ const baseSchema = z
     OUTBOX_DISPATCH_ENABLED: z.preprocess(
       emptyToUndefined,
       z.enum(["true", "false"]).optional(),
+    ),
+    /**
+     * User ids permitted to run a data subject erasure or export.
+     *
+     * Comma-separated, and UNSET AUTHORISES NOBODY. The permission key alone
+     * cannot express this: `access.service.ts` returns scope "all" for any
+     * organisation owner before a grant is consulted, so every tenant owner on
+     * the platform holds `compliance:subject-requests:execute` the moment it is
+     * catalogued -- and a subject request is cross-tenant by design.
+     */
+    COMPLIANCE_SUBJECT_REQUEST_OPERATORS: z.preprocess(
+      emptyToUndefined,
+      z.string().trim().optional(),
     ),
     /** Override default STARTER trial length (days). Defaults to 14 when unset. */
     TRIAL_DAYS: z.preprocess(

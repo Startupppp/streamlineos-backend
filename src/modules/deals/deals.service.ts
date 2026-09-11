@@ -17,6 +17,7 @@ import { CrmAutomationBusService } from "../crm/automation-studio/crm-automation
 import { DealsCrudService } from "./deals-crud.service";
 import { DealsActivitiesService } from "./deals-activities.service";
 import { DealsImportExportService } from "./deals-import-export.service";
+import { LifecycleService } from "../lifecycle/lifecycle.service";
 import {
   announceDealUpdate,
   maybeCreateNegotiationChannel,
@@ -64,6 +65,7 @@ export class DealsService {
     private readonly crud: DealsCrudService,
     private readonly activities: DealsActivitiesService,
     private readonly importExport: DealsImportExportService,
+    private readonly lifecycle: LifecycleService,
   ) {}
 
   listDeals(orgId: string, userId: string, query: ListDealsInput, scope: DataScope) {
@@ -74,8 +76,8 @@ export class DealsService {
     return this.crud.createDeal(orgId, userId, input);
   }
 
-  getDeal(orgId: string, dealId: number) {
-    return this.crud.getDeal(orgId, dealId);
+  getDeal(orgId: string, userId: string, dealId: number, scope: DataScope) {
+    return this.crud.getDeal(orgId, userId, dealId, scope);
   }
 
   deleteDeal(orgId: string, userId: string, dealId: number) {
@@ -90,8 +92,8 @@ export class DealsService {
     return this.crud.bulkDelete(orgId, userId, input);
   }
 
-  cloneDeal(orgId: string, dealId: number) {
-    return this.crud.cloneDeal(orgId, dealId);
+  cloneDeal(orgId: string, userId: string, dealId: number, scope: DataScope) {
+    return this.crud.cloneDeal(orgId, userId, dealId, scope);
   }
 
   listActivities(orgId: string, dealId: number) {
@@ -261,6 +263,33 @@ export class DealsService {
       if (transitionRow) await (tx as Db).insert(dealStageTransitions).values(transitionRow);
 
       if (wonStageDetected && stageChanged) {
+        /**
+         * A won deal opens a customer lifecycle. P5-07.
+         *
+         * Here rather than on the `deal.closed` outbox event, and that is a
+         * deliberate choice against the tidier-looking one: the outbox registry
+         * is keyed one consumer per event type, and `offer-fulfillment` already
+         * holds `deal.closed`. Registering a second consumer for it would
+         * silently replace the sales-order creation with this.
+         *
+         * Inside the transaction, like the stage ledger three lines above and
+         * for the same reason: a renewal record that survives a rolled-back win
+         * puts revenue in the book for a sale that never closed. The service
+         * returns its refusals as values rather than throwing, so a deal with no
+         * resolvable customer still closes.
+         */
+        await this.lifecycle.recordClosedWon(tx as Db, {
+          organizationId: orgId,
+          dealId,
+          partyId: row.partyId,
+          leadPartyId: row.leadPartyId,
+          clientId: row.clientId,
+          leadId: row.leadId,
+          valueMinor: row.valueMinor,
+          actualCloseDate: row.actualCloseDate,
+          customData: row.customData,
+        });
+
         await OutboxWriter.emit(tx, {
           eventId: randomUUID(),
           organizationId: orgId,

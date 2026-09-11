@@ -2,7 +2,6 @@ import { pgTable, text, timestamp, date, decimal, integer, index, uniqueIndex, u
 import { relations, sql } from "drizzle-orm";
 import { invProjectStatusEnum, invRequirementStatusEnum } from "../common/enums";
 import { organizations, users } from "../common/auth";
-import { clients } from "../crm/contacts";
 import { invProductVariants } from "./core";
 import { invWarehouses } from "./warehouses";
 
@@ -28,8 +27,13 @@ export const invProjects = pgTable("inv_projects", {
   name: text("name").notNull(),
   /**
    * The customer this site belongs to, when there is one. Nullable because a
-   * builder's own site has no external client, and `set null` because losing the
-   * customer record must not take the material history with it.
+   * builder's own site has no external client.
+   *
+   * A legacy client id. The `clients` table left the Drizzle schema with the CRM
+   * Party migration, and new ids are minted in `client_party_map`, so the live
+   * key (0915) is (org_id, client_id) → client_party_map, declared in SQL only.
+   * Deleting a customer a project still names is refused. The old `set null`
+   * nulled org_id too and never worked.
    */
   clientId: integer("client_id"),
   siteAddress: text("site_address"),
@@ -59,11 +63,6 @@ export const invProjects = pgTable("inv_projects", {
   index("idx_inv_projects_org_zone").on(table.orgId, table.zone).where(sql`deleted_at IS NULL`),
   index("idx_inv_projects_client").on(table.orgId, table.clientId).where(sql`client_id IS NOT NULL`),
   index("idx_inv_projects_name_trgm").using("gin", table.name.op("gin_trgm_ops")),
-  foreignKey({
-    columns: [table.orgId, table.clientId],
-    foreignColumns: [clients.orgId, clients.id],
-    name: "fk_inv_projects_org_client",
-  }).onDelete("set null"),
 ]);
 
 /**
@@ -119,16 +118,20 @@ export const invProjectRequirements = pgTable("inv_project_requirements", {
     foreignColumns: [invProductVariants.orgId, invProductVariants.id],
     name: "fk_inv_project_reqs_org_variant",
   }),
+  // The live key carries Postgres 15's column-list form, `ON DELETE SET NULL
+  // (warehouse_id)`, which drizzle-orm 0.45 cannot express; the bare keyword it
+  // emits nulls org_id as well, which is NOT NULL, so the warehouse delete
+  // aborted. 0915 repaired that; regenerating this from Drizzle would reinstall
+  // it. `check:composite-fk-set-null` fails if it comes back.
   foreignKey({
     columns: [table.orgId, table.warehouseId],
     foreignColumns: [invWarehouses.orgId, invWarehouses.id],
     name: "fk_inv_project_reqs_org_warehouse",
-  }).onDelete("set null"),
+  }),
 ]);
 
 export const invProjectsRelations = relations(invProjects, ({ one, many }) => ({
   organization: one(organizations, { fields: [invProjects.orgId], references: [organizations.id] }),
-  client: one(clients, { fields: [invProjects.clientId], references: [clients.id] }),
   creator: one(users, { fields: [invProjects.createdBy], references: [users.id], relationName: "invProjectCreator" }),
   requirements: many(invProjectRequirements),
 }));

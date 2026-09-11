@@ -1,6 +1,5 @@
 import { and, eq, inArray } from "drizzle-orm";
 import { clientPartyMap, partyRoles } from "../../db/schema/party";
-import { clients } from "../../db/schema/crm/contacts";
 import { CLIENT_MIRROR } from "./party-legacy-mirror";
 import type { PartyRow } from "./party-mirror-fields";
 import {
@@ -62,37 +61,6 @@ async function partyIdsForClients(
       ),
     );
   return new Map(rows.map((row) => [row.clientId, row.partyId]));
-}
-
-async function adoptClient(
-  db: MirrorDb,
-  organizationId: string,
-  clientId: number,
-): Promise<string | null> {
-  const [row] = await db
-    .select()
-    .from(clients)
-    .where(and(eq(clients.id, clientId), eq(clients.orgId, organizationId)))
-    .limit(1);
-  if (!row) return null;
-
-  const party = await insertBareParty(db, organizationId, row.name);
-  const { partyPatch } = CLIENT_MIRROR.split(row, party);
-  await applyPartyPatch(
-    db,
-    organizationId,
-    party.partyId,
-    withoutSelfLinks(
-      { ...partyPatch, ...(await absorbLeadColumn(db, organizationId, row.leadId)) },
-      party.partyId,
-    ),
-  );
-  await db
-    .insert(clientPartyMap)
-    .values({ organizationId, clientId, partyId: party.partyId, linkedBy: "mirror:adopt" })
-    .onConflictDoNothing();
-  await grantRole(db, organizationId, party.partyId, "CLIENT", "mirror:adopt");
-  return party.partyId;
 }
 
 /**
@@ -215,12 +183,17 @@ export async function updateMirroredClients(
   if (ids.length === 0) return [];
 
   return db.transaction(async (tx) => {
+    /*
+     * An id with no map row is an id that names nothing.
+     *
+     * There used to be an adoption pass here, for a `clients` row that existed
+     * without a party -- the state the dual-write window could produce. Ticket
+     * 08 removed the table it read, and with it the state: the map row IS the
+     * client now, so `partyIdsForClients` returning nothing for an id means the
+     * client does not exist, and the caller gets one fewer row back exactly as
+     * it always did for an id that was never real.
+     */
     const partyByClient = await partyIdsForClients(tx, organizationId, ids);
-    for (const clientId of ids) {
-      if (partyByClient.has(clientId)) continue;
-      const adopted = await adoptClient(tx, organizationId, clientId);
-      if (adopted) partyByClient.set(clientId, adopted);
-    }
 
     /*
      * Resolved once, outside the per-party derivation: which lead the caller

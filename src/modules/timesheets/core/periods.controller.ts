@@ -16,7 +16,9 @@ import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { PeriodsService } from "./periods.service";
+import { TimesheetOverdueService } from "./overdue.service";
 import { periodsQuerySchema, type PeriodsQuery } from "./dto/periods.schemas";
+import { overdueQuerySchema, type OverdueQuery } from "./dto/overdue.schemas";
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
@@ -28,7 +30,10 @@ const periodIdParams = z.object({ periodId: z.coerce.number().int().positive() }
 @Controller("timesheets/periods")
 @UseGuards(JwtAuthGuard, ModuleGuard, PermissionGuard)
 export class TimesheetPeriodsController {
-  constructor(private readonly periods: PeriodsService) {}
+  constructor(
+    private readonly periods: PeriodsService,
+    private readonly overdue: TimesheetOverdueService,
+  ) {}
 
   @Get()
   @RequirePermission("timesheets:entries:view")
@@ -44,6 +49,26 @@ export class TimesheetPeriodsController {
   @RequirePermission("timesheets:entries:view")
   getCurrent(@CurrentUser() u: CurrentUserContext) {
     return this.periods.getCurrent(u);
+  }
+
+  /**
+   * TS-11. Declared before `:periodId` because Nest matches in declaration
+   * order: below it, `GET /timesheets/periods/overdue` would reach the handler
+   * with the `ParseIntPipe` and 400 on the word "overdue".
+   *
+   * `timesheets:approvals:view` rather than a new key. The queue lists other
+   * people's late timesheets, which is precisely the standing the approvals
+   * queue already grants, and the same `DataScope` narrows it — a `team`
+   * approver sees their team, not the organisation.
+   */
+  @Get("overdue")
+  @RequirePermission("timesheets:approvals:view")
+  @Validate({ query: overdueQuerySchema })
+  listOverdue(
+    @Query() query: OverdueQuery,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.overdue.listOverdue(u, query);
   }
 
   @Get(":periodId")

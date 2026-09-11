@@ -13,6 +13,7 @@ import { CrmValidationService } from "../crm/metadata/crm-validation.service";
 import { CrmAutomationBusService } from "../crm/automation-studio/crm-automation-bus.service";
 import { PlanLimitsService } from "../billing/core/plan-limits.service";
 import { toMinorUnits } from "./deal-stage-ledger";
+import { withPartyLabels } from "./deal-party-projection";
 import {
   bulkDelete,
   bulkUpdate,
@@ -41,7 +42,7 @@ export class DealsCrudService {
     return this.cache.cachedVersioned(
       `deals:list:${orgId}`,
       hash,
-      () => {
+      async () => {
         const conditions: SQL[] = [
           eq(deals.orgId, orgId), isNull(deals.deletedAt),
           applyScope(scope, orgId, userId, { ownerColumn: deals.assignedToId }),
@@ -49,17 +50,18 @@ export class DealsCrudService {
         if (query.stage) conditions.push(eq(deals.stage, query.stage));
         if (query.assignedToId) conditions.push(eq(deals.assignedToId, query.assignedToId));
 
-        return this.db.query.deals.findMany({
+        const rows = await this.db.query.deals.findMany({
           where: and(...conditions),
           with: {
             assignedTo: { columns: { id: true, name: true, image: true } },
-            lead: { columns: { id: true, name: true } },
-            client: { columns: { id: true, name: true } },
           },
           orderBy: [desc(deals.updatedAt)],
           limit: query.limit ?? 50,
           offset: query.offset ?? 0,
         });
+        // `lead` and `client` come from Party now; see `deal-party-projection.ts`.
+        // One extra statement for the page, not one per deal.
+        return withPartyLabels(this.db, orgId, rows);
       },
       CACHE_TTL.SHORT,
     );
@@ -133,15 +135,35 @@ export class DealsCrudService {
     return deal;
   }
 
-  getDeal(orgId: string, dealId: number) {
-    return this.db.query.deals.findFirst({
-      where: and(eq(deals.id, dealId), eq(deals.orgId, orgId), isNull(deals.deletedAt)),
+  /**
+   * One deal, behind the SAME scope `listDeals` applies.
+   *
+   * `crm:deals:read` is declared `scopable: true`, and ninety lines above this
+   * `listDeals` honours it — `applyScope(..., { ownerColumn: deals.assignedToId })`,
+   * so a rep granted `own` sees only the deals assigned to them. This applied
+   * nothing. Same file, same entity: the list narrowed and reading one by id did
+   * not, so an organisation that had granted `own` to restrict a rep had not
+   * restricted them at all, and believed it had.
+   *
+   * Returning `undefined` rather than throwing is deliberate and unchanged: the
+   * controller turns it into 404, which is the same answer a deal in another
+   * org gives, so this does not become an oracle for which deals exist.
+   */
+  async getDeal(orgId: string, userId: string, dealId: number, scope: DataScope) {
+    const deal = await this.db.query.deals.findFirst({
+      where: and(
+        eq(deals.id, dealId),
+        eq(deals.orgId, orgId),
+        isNull(deals.deletedAt),
+        applyScope(scope, orgId, userId, { ownerColumn: deals.assignedToId }),
+      ),
       with: {
         assignedTo: { columns: { id: true, name: true, image: true } },
-        lead: { columns: { id: true, name: true, email: true, phone: true } },
-        client: { columns: { id: true, name: true } },
       },
     });
+    if (!deal) return deal;
+    const [withLabels] = await withPartyLabels(this.db, orgId, [deal]);
+    return withLabels;
   }
 
   async deleteDeal(orgId: string, userId: string, dealId: number) {
@@ -182,11 +204,26 @@ export class DealsCrudService {
     return { db: this.db, cache: this.cache, audit: this.audit };
   }
 
-  async cloneDeal(orgId: string, dealId: number) {
+  /**
+   * Clone one, out of the deals the caller may read.
+   *
+   * The route is gated on `crm:deals:create`, but the SOURCE is a read and takes
+   * the read scope: you may copy a deal you could have opened. Unscoped, a rep
+   * at `own` could clone a colleague's deal — reading its value, contact email,
+   * phone and notes into a new record on the way, and spending one of the plan's
+   * deal slots. The copy keeps `assignedToId`, so it lands in that colleague's
+   * pipeline, which makes it quiet as well as wrong.
+   */
+  async cloneDeal(orgId: string, userId: string, dealId: number, scope: DataScope) {
     await this.planLimits.assertWithinLimit(orgId, "crmDeals");
 
     const existing = await this.db.query.deals.findFirst({
-      where: and(eq(deals.id, dealId), eq(deals.orgId, orgId), isNull(deals.deletedAt)),
+      where: and(
+        eq(deals.id, dealId),
+        eq(deals.orgId, orgId),
+        isNull(deals.deletedAt),
+        applyScope(scope, orgId, userId, { ownerColumn: deals.assignedToId }),
+      ),
     });
     if (!existing) throw new NotFoundException("Deal not found");
 

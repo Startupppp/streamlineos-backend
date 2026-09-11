@@ -14,7 +14,6 @@ import {
 import { organizations, organizationMembers } from "../common/auth";
 import { projects } from "../build/core";
 import { timesheetBillingTypeEnum } from "./enums";
-import { clients } from "../crm/contacts";
 
 export const timesheetRateCards = pgTable("timesheet_rate_cards", {
   id: serial("id").primaryKey(),
@@ -37,7 +36,16 @@ export const timesheetRates = pgTable("timesheet_rates", {
   rateCardId: integer("rate_card_id").references(() => timesheetRateCards.id, { onDelete: "set null" }),
   projectId: integer("project_id").references(() => projects.id, { onDelete: "set null" }),
   userMembershipId: integer("user_membership_id"),
-  clientId: integer("client_id").references(() => clients.id, { onDelete: "set null" }),
+  clientId: integer("client_id"),
+  /**
+  * The party this row belongs to. Ticket 08's expand.
+  *
+  * Beside `client_id` rather than replacing it: every existing reader keeps
+  * working while readers move over one at a time, and the old column goes in
+  * the contract migration once none is left. Nullable until then -- a null
+  * means "not yet backfilled", which is a state worth being able to see.
+  */
+  clientPartyId: text("client_party_id"),
   taskId: integer("task_id"),
   billingType: timesheetBillingTypeEnum("billing_type").notNull().default("BILLABLE"),
   billRate: decimal("bill_rate", { precision: 10, scale: 2 }).notNull(),

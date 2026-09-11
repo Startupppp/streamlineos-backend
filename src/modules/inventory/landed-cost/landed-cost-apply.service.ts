@@ -227,6 +227,7 @@ export class LandedCostApplyService {
       postingDate,
       chargeTotal,
       plan,
+      tx,
     );
 
     await this.audit.insert(tx, {

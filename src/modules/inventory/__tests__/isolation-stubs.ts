@@ -4,6 +4,8 @@ import { NumberSequenceService } from "../stock-engine/number-sequence.service";
 import { StockProjectionService } from "../stock-engine/stock-projection.service";
 import { ChannelPoolService } from "../stock-engine/channel-pool.service";
 import { InventoryAccountingBridge } from "../stock-engine/accounting-bridge";
+import { StockMovementBridgeService } from "../../accounting/adapters/stock-movement-bridge.service";
+import { PostingCommandService } from "../../accounting/adapters/posting-command.service";
 import { InventorySettingsService } from "../stock-engine/inventory-settings.service";
 import { InventoryPeriodService } from "../valuation/inventory-period.service";
 import { VendorScorecardService } from "../vendors/vendor-scorecard.service";
@@ -87,6 +89,18 @@ export const INVENTORY_ISOLATION_STUBS: Provider[] = [
       listForVariant: jest.fn().mockResolvedValue([]),
     },
   },
+  /*
+    The accounting kernel's two inventory seams. Counts, quality and returns
+    inject StockMovementBridgeService since the accounting rewrite, and the
+    receipt, shipment and invoice posts inject PostingCommandService.
+  */
+  { provide: StockMovementBridgeService, useValue: { post: jest.fn().mockResolvedValue(undefined) } },
+  {
+    provide: PostingCommandService,
+    useValue: {
+      submit: jest.fn().mockResolvedValue({ journalId: "j-1", journalNumber: "JV-1", replayed: false }),
+    },
+  },
   {
     provide: InventoryAccountingBridge,
     /**
@@ -99,6 +113,7 @@ export const INVENTORY_ISOLATION_STUBS: Provider[] = [
      * looking like a bug in the service.
      */
     useValue: {
+      defaultBookId: jest.fn().mockResolvedValue(null),
       hasJournals: jest.fn().mockResolvedValue(false),
       hasPeriods: jest.fn().mockResolvedValue(false),
       resolveAccountCodes: jest.fn().mockResolvedValue({}),

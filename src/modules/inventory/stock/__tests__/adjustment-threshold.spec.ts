@@ -75,6 +75,13 @@ function makeDb(adjRow?: Partial<{ id: number; status: string; referenceNumber: 
   // generic rather than one fixed shape. Only the joined query (the variant
   // gate) answers with rows; the others answer empty, which is what "this org
   // has no value threshold and no scrap bin" looks like.
+  //
+  // Before either, `createAdjustment` resolves every line's variant and location
+  // against the organisation, so a line naming something that is not there is a
+  // 404 rather than a raw foreign-key 500. Those two reads are the only bare
+  // `{ id }` selects with no join, order or limit, and they answer with ids 1
+  // and 2 — the ids these cases use. (The scrap-bin fallback also selects
+  // `{ id }`, but ordered and limited, so it still answers empty.)
   const variantRows = [1, 2].map((id) => ({
     id,
     productId: id,
@@ -85,16 +92,22 @@ function makeDb(adjRow?: Partial<{ id: number; status: string; referenceNumber: 
     productStatus: "ACTIVE",
     productDeletedAt: null,
   }));
-  const select = jest.fn().mockImplementation(() => {
+  const idRows = [{ id: 1 }, { id: 2 }];
+  const select = jest.fn().mockImplementation((fields?: Record<string, unknown>) => {
     let joined = false;
+    let bounded = false;
     const chain: Record<string, unknown> = {};
     const step = jest.fn(() => chain);
     chain.from = step;
     chain.where = step;
-    chain.orderBy = step;
-    chain.limit = step;
+    chain.orderBy = jest.fn(() => { bounded = true; return chain; });
+    chain.limit = jest.fn(() => { bounded = true; return chain; });
     chain.innerJoin = jest.fn(() => { joined = true; return chain; });
-    chain.then = (resolve: (rows: unknown[]) => unknown) => resolve(joined ? variantRows : []);
+    chain.then = (resolve: (rows: unknown[]) => unknown) => {
+      if (joined) return resolve(variantRows);
+      const idLookup = !bounded && fields !== undefined && Object.keys(fields).length === 1 && "id" in fields;
+      return resolve(idLookup ? idRows : []);
+    };
     return chain;
   });
 
@@ -135,6 +148,14 @@ function makeCache() {
   };
 }
 
+/*
+  ACC-21 posts an adjustment to the ledger on the same transaction. These cases
+  are about the approval threshold, not about accounting, so the bridge is a
+  spy — but a real one rather than a cast, so a call with the wrong shape still
+  shows up here instead of being erased by `as never`.
+*/
+const glBridge = { post: jest.fn().mockResolvedValue(undefined) };
+
 function buildService(threshold: string | null, adjRowOverride?: Partial<{ id: number; status: string; referenceNumber: string; reason: string; notes: string | null; lines: unknown[] }>) {
   const db = makeDb(adjRowOverride);
   const engine = makeEngine();
@@ -149,6 +170,7 @@ function buildService(threshold: string | null, adjRowOverride?: Partial<{ id: n
     settings as never,
     mockWarehouseScope as never,
     mockCostVisibility as never,
+    glBridge as never,
   );
   return { svc, db, engine, settings };
 }
@@ -172,6 +194,31 @@ describe("InvStockAdjustmentsService — threshold routing", () => {
       const { svc, engine } = buildService(null);
       await svc.createAdjustment("org1", "u1", { reason: "OTHER", lines: baseLines }, "idem-1");
       expect(engine.executeInTx).toHaveBeenCalledTimes(1);
+    });
+
+    it("posts the movement to the ledger on the posting transaction (ACC-21)", async () => {
+      const { svc, engine } = buildService(null);
+      await svc.createAdjustment("org1", "u1", { reason: "OTHER", lines: baseLines }, "idem-gl-1");
+      const postingTx = engine.executeInTx.mock.calls[0][0];
+      expect(glBridge.post).toHaveBeenCalledWith(
+        "org1",
+        "u1",
+        expect.objectContaining({ kind: "adjustment", documentId: "1", transactionIds: [1] }),
+        postingTx,
+      );
+    });
+
+    it("refuses a line naming a location this organisation does not have", async () => {
+      const { svc, engine } = buildService(null);
+      await expect(
+        svc.createAdjustment(
+          "org1",
+          "u1",
+          { reason: "OTHER", lines: [{ productVariantId: 1, locationId: 99, quantityChange: 1 }] },
+          "idem-foreign-1",
+        ),
+      ).rejects.toThrow(NotFoundException);
+      expect(engine.executeInTx).not.toHaveBeenCalled();
     });
   });
 
@@ -231,6 +278,7 @@ describe("InvStockAdjustmentsService — threshold routing", () => {
         makeSettings(null) as never,
         mockWarehouseScope as never,
         mockCostVisibility as never,
+        glBridge as never,
       );
       await expect(svc.getAdjustment("org1", 999, "user-1")).rejects.toThrow(NotFoundException);
     });

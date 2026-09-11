@@ -84,10 +84,10 @@ function scopeOf(warehouseIds: number[] | null) {
 
 function serviceWith(db: unknown, scope: WarehouseScopeService): InvCycleCountsService {
   const cache = { invalidate: jest.fn(), invalidateNamespace: jest.fn() };
-  // Constructor order here is (db, cache, warehouseScope, engine, numSeq) — the
-  // audits service takes the same five in a different order, so they are not
-  // interchangeable.
-  return new InvCycleCountsService(db as never, cache as never, scope, {} as never, {} as never);
+  // Constructor order here is (db, cache, warehouseScope, engine, numSeq,
+  // glBridge) — the audits service takes the same kind of arguments in a
+  // different order, so they are not interchangeable.
+  return new InvCycleCountsService(db as never, cache as never, scope, {} as never, {} as never, {} as never);
 }
 
 interface Reachable {

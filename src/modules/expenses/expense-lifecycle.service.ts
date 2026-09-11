@@ -6,7 +6,7 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { and, eq } from "drizzle-orm";
-import { expenses, finApprovalRequests } from "../../db/schema";
+import { expenses } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
@@ -19,7 +19,7 @@ import {
   expenseDecidedPayloadSchema,
   expenseSubmittedPayloadSchema,
 } from "./dto/expense-outbox.schemas";
-import { FinancePostingService } from "../accounting/posting/finance-posting.service";
+import { PostingCommandService } from "../accounting/adapters/posting-command.service";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import {
   assertOrganizationActor,
@@ -40,13 +40,22 @@ import {
   type ExpenseApprovalDeps,
 } from "./lib/expense-approval";
 
+/**
+ * The expense claim lifecycle: submit, approve, reject.
+ *
+ * Approval posts an accrual to the general ledger through
+ * `PostingCommandService`, the accounting module's anti-corruption layer (see
+ * lib/expense-approval.ts). Accounting is opt-in, and HR self-service is not:
+ * an organisation that never enabled accounting still approves expenses — the
+ * posting is skipped, not failed.
+ */
 @Injectable()
 export class ExpenseLifecycleService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly cache: CacheService,
     private readonly audit: AuditService,
-    private readonly posting: FinancePostingService,
+    private readonly posting: PostingCommandService,
   ) {}
 
   private get policyDeps(): ExpensePolicyDeps {
@@ -84,18 +93,21 @@ export class ExpenseLifecycleService {
   async evaluatePolicy(
     orgId: string,
     categoryId: number | null | undefined,
-    amount: number,
+    amount: number | string,
+    currency: string,
     hasReceipt: boolean,
   ): Promise<PolicyEvalResult> {
-    return evaluateExpensePolicy(this.policyDeps, orgId, categoryId, amount, hasReceipt);
+    return evaluateExpensePolicy(this.policyDeps, orgId, categoryId, amount, currency, hasReceipt);
   }
 
-  /** @see findApplicableApprovalPolicy — who, if anyone, must approve. */
+  /** @see findApplicableApprovalPolicy — whether this claim needs an approver. */
   async findApplicableApprovalPolicy(
     orgId: string,
-    amount: number,
+    categoryId: number | null | undefined,
+    amount: number | string,
+    currency: string,
   ): Promise<ApprovalCheckResult> {
-    return findExpenseApprovalPolicy(this.policyDeps, orgId, amount);
+    return findExpenseApprovalPolicy(this.policyDeps, orgId, categoryId, amount, currency);
   }
 
   async submitExpense(
@@ -113,7 +125,7 @@ export class ExpenseLifecycleService {
       throw new BadRequestException(`Expense in status ${expense.status} cannot be submitted`);
     }
 
-    const amount = Number(expense.amount);
+    const currency = expense.currency || "INR";
     const hasReceipt = !!expense.receiptUrl;
 
     const hash = buildReceiptHash(u.orgId, expense.amount, expense.expenseDate, expense.merchant);
@@ -122,7 +134,8 @@ export class ExpenseLifecycleService {
     const policyResult = await this.evaluatePolicy(
       u.orgId,
       expense.categoryId ?? null,
-      amount,
+      expense.amount,
+      currency,
       hasReceipt,
     );
 
@@ -130,7 +143,12 @@ export class ExpenseLifecycleService {
       throw new BadRequestException(policyResult.blockReason ?? "Expense blocked by policy");
     }
 
-    const approvalResult = await this.findApplicableApprovalPolicy(u.orgId, amount);
+    const approvalResult = await this.findApplicableApprovalPolicy(
+      u.orgId,
+      expense.categoryId ?? null,
+      expense.amount,
+      currency,
+    );
 
     await this.db.transaction(async (tx) => {
       const [updated] = await tx
@@ -148,17 +166,11 @@ export class ExpenseLifecycleService {
         throw new InternalServerErrorException("Expense was concurrently modified.");
       }
 
-      if (approvalResult.needsApproval) {
-        await tx.insert(finApprovalRequests).values({
-          orgId: u.orgId,
-          recordType: "EXPENSE",
-          recordId: expenseId,
-          status: "PENDING",
-          requestedBy: u.userId,
-        });
-      }
-
-      if (!approvalResult.approverUserId) return;
+      // No approver column survives on the policy and no request row is written:
+      // the pending state is the SUBMITTED status itself, and the claim goes to
+      // whoever holds `hr:expenses:approve` — which is what the consumer resolves
+      // EXPENSE_APPROVERS to.
+      if (!approvalResult.needsApproval) return;
 
       await emitExpenseOutboxEvent(tx, {
         orgId: u.orgId,
@@ -171,7 +183,7 @@ export class ExpenseLifecycleService {
           amount: expense.amount,
           category: expense.category,
           description: expense.description ?? null,
-          recipients: { mode: "EXPLICIT", userIds: [approvalResult.approverUserId] },
+          recipients: { mode: "EXPENSE_APPROVERS" },
           runAutomations: false,
         }),
       });
@@ -183,6 +195,7 @@ export class ExpenseLifecycleService {
       orgId: u.orgId,
       targetId: String(expenseId),
       targetType: "expense",
+      metadata: { approvalRequired: approvalResult.needsApproval, policyId: approvalResult.policyId },
     });
 
     await this.cache.invalidateNamespace(CACHE_KEYS.expensesListNamespace(u.orgId));
@@ -195,11 +208,11 @@ export class ExpenseLifecycleService {
     };
   }
 
-  /** @see approveExpense — posts the journal, then moves the status. */
+  /** @see approveExpense — posts the accrual, then moves the status. */
   async approveExpense(
     u: CurrentUserContext,
     expenseId: number,
-  ): Promise<{ success: boolean; entryId: number | null }> {
+  ): Promise<{ success: boolean; journalId: string | null }> {
     return approveExpenseAndPost(this.approvalDeps, u, expenseId);
   }
 
@@ -241,18 +254,6 @@ export class ExpenseLifecycleService {
       if (!updated) {
         throw new InternalServerErrorException("Expense was concurrently modified.");
       }
-
-      await tx
-        .update(finApprovalRequests)
-        .set({ status: "REJECTED", decidedBy: u.userId, decidedAt: new Date(), decisionComment: rejectionReason })
-        .where(
-          and(
-            eq(finApprovalRequests.orgId, u.orgId),
-            eq(finApprovalRequests.recordType, "EXPENSE"),
-            eq(finApprovalRequests.recordId, expenseId),
-            eq(finApprovalRequests.status, "PENDING"),
-          ),
-        );
 
       await emitExpenseOutboxEvent(tx, {
         orgId: u.orgId,

@@ -12,7 +12,13 @@
 
 import { readFileSync, readdirSync, existsSync } from "node:fs";
 import { join, resolve, relative } from "node:path";
+import { describeFrontendRoot, resolveFrontendRoot } from "./frontend-root.mjs";
 import { fileURLToPath } from "node:url";
+import {
+  BACKEND_ROOT,
+  WORKSPACE_ROOT,
+  resolveBackendModulesDir,
+} from "./lib/repo-roots.mjs";
 import {
   loadBackendCatalog,
   loadModuleManifest,
@@ -20,7 +26,6 @@ import {
   parsePermissionConstants,
   parseRouteRefs,
 } from "./permission-key-extractors.mjs";
-import { resolveFrontendRoot, resolveBackendModulesDir } from "./lib/repo-roots.mjs";
 
 const PILOT_MODULE = "timesheets";
 
@@ -69,22 +74,28 @@ export function checkNavRoutePilot(pilotEntry, navRoutes) {
 
 const args = process.argv.slice(2);
 
-const SCRIPT_DIR = fileURLToPath(new URL(".", import.meta.url));
-// scripts/ -> src/ -> backend/ -> repo root
-const REPO_ROOT = resolve(SCRIPT_DIR, "../../..");
+// Roots are RESOLVED, not assumed. This gate hardcoded a `<root>/backend` +
+// `<root>/frontend` monorepo layout the checkout does not use, so it exited 2
+// for a missing prerequisite on every run and never once compared a navigation
+// entry against a permission key. See src/scripts/lib/repo-roots.mjs.
+const REPO_ROOT = WORKSPACE_ROOT;
 /**
- * `<workspace>/backend` and `<workspace>/frontend` are a monorepo layout this
- * checkout has never used, so both resolved to nothing and the gate exited 2
- * for a missing prerequisite on every run. Resolved through the paired-worktree
- * helper: this backend is `inv-wt-backend`, so its frontend is
- * `inv-wt-frontend`, NOT `streamlineos-frontend` — comparing against the wrong
- * worktree would report another branch's navigation as drift.
+ * The frontend comes from the paired-worktree resolver in frontend-root.mjs:
+ * this backend is `inv-wt-backend`, so its frontend is `inv-wt-frontend`, NOT
+ * `streamlineos-frontend` — comparing against the wrong worktree would report
+ * another branch's navigation as drift. One resolver answers both "where" and
+ * "which checkout", so the line printed before the verdict names the checkout
+ * that was actually read.
  */
-const { root: FRONTEND_ROOT, candidates: FRONTEND_CANDIDATES } = resolveFrontendRoot();
-const { root: BACKEND_MODULES_DIR } = resolveBackendModulesDir();
-const NAV_DIR = FRONTEND_ROOT
-  ? join(FRONTEND_ROOT, "components", "layout", "sidebar")
-  : join(REPO_ROOT, "frontend", "components", "layout", "sidebar");
+const FRONTEND = resolveFrontendRoot(BACKEND_ROOT);
+const FRONTEND_ROOT = FRONTEND.root;
+const FRONTEND_CANDIDATES = FRONTEND.candidatesTried;
+const { root: RESOLVED_MODULES_DIR } = resolveBackendModulesDir();
+const BACKEND_MODULES_DIR = RESOLVED_MODULES_DIR ?? join(BACKEND_ROOT, "src", "modules");
+const NAV_DIR =
+  FRONTEND_ROOT === null
+    ? join(REPO_ROOT, "frontend", "components", "layout", "sidebar")
+    : join(FRONTEND_ROOT, "components", "layout", "sidebar");
 
 const SPEC_RE = /\.(spec|e2e-spec|test)\.ts$/;
 const NAV_FILE_RE = /^sidebar-(home-nav|nav-groups-.+|nav-routes-.+)\.ts$/;
@@ -274,6 +285,15 @@ try {
   process.exit(2);
 }
 
+/**
+ * Printed on every run, pass or fail. This gate compares two repositories, and
+ * a finding only means something if you know which two checkouts produced it —
+ * an unpaired frontend is on whatever branch it happens to be on, and a
+ * "missing" backend route may simply live on a branch this one has not merged.
+ * After the self-test on purpose, so the self-test's JSON stays parseable.
+ */
+process.stdout.write(`${describeFrontendRoot(FRONTEND)}\n`);
+
 if (!existsSync(NAV_DIR)) {
   process.stderr.write(`Cannot read frontend navigation manifest dir: ${NAV_DIR}\n`);
   process.stderr.write("Tried these frontend roots:\n");
@@ -312,7 +332,7 @@ for (const name of navFiles) {
 // -- report ------------------------------------------------------------------
 
 const where = (g) => {
-  const rel = relative(REPO_ROOT, g.file);
+  const rel = relative(BACKEND_ROOT, g.file);
   const dest = g.href ?? `group "${g.label}"`;
   return `${rel}:${g.line}  ${dest}`;
 };

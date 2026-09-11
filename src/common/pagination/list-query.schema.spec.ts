@@ -30,13 +30,6 @@ import {
   listTeamsQuerySchema,
   listTeamMembersQuerySchema,
 } from "../../modules/build/teams/dto/teams.schemas";
-import {
-  listAccountsQuerySchema,
-  listJournalQuerySchema,
-  listCustomersOutstandingQuerySchema,
-  listPurchaseBillsQuerySchema,
-} from "../../modules/accounting/core/dto/accounting.schemas";
-import { glQuerySchema } from "../../modules/accounting/gl/dto/general-ledger.schemas";
 import { listInvoicesSchema } from "../../modules/invoices/dto/invoice.schemas";
 import { listSchema as listQuotesSchema } from "../../modules/quotes/dto/quote.schemas";
 import { campaignListSchema } from "../../modules/crm/core/dto/campaigns.schemas";
@@ -242,9 +235,6 @@ const schemaCases: SchemaCaseConfig[] = [
   { name: "listPortfoliosQuerySchema", schema: listPortfoliosQuerySchema as ParseableSchema, sizeKey: "limit", defaultSize: 20 },
   { name: "listTeamsQuerySchema", schema: listTeamsQuerySchema as ParseableSchema, sizeKey: "pageSize", defaultSize: 50 },
   { name: "listTeamMembersQuerySchema", schema: listTeamMembersQuerySchema as ParseableSchema, sizeKey: "pageSize", defaultSize: 50 },
-  { name: "listAccountsQuerySchema", schema: listAccountsQuerySchema as ParseableSchema, sizeKey: "limit", defaultSize: 20 },
-  { name: "listCustomersOutstandingQuerySchema", schema: listCustomersOutstandingQuerySchema as ParseableSchema, sizeKey: "limit", defaultSize: 20 },
-  { name: "listPurchaseBillsQuerySchema", schema: listPurchaseBillsQuerySchema as ParseableSchema, sizeKey: "limit", defaultSize: 20 },
   { name: "listInvoicesSchema", schema: listInvoicesSchema as ParseableSchema, sizeKey: "limit", defaultSize: 50 },
   { name: "listQuotesSchema", schema: listQuotesSchema as ParseableSchema, sizeKey: "pageSize", defaultSize: 25 },
   { name: "campaignListSchema", schema: campaignListSchema as ParseableSchema, sizeKey: "limit", defaultSize: 20, ceiling: 50 },
@@ -288,48 +278,6 @@ describe("migrated schemas — clamp at their ceiling and preserve their own def
     });
   }
 
-  describe("glQuerySchema (requires from/to)", () => {
-    const base = { from: "2024-01-01", to: "2024-01-31" };
-
-    it("clamps limit above 100 to exactly 100", () => {
-      expect(glQuerySchema.parse({ ...base, limit: 999 }).limit).toBe(100);
-    });
-
-    it("defaults limit to 50 when absent", () => {
-      expect(glQuerySchema.parse(base).limit).toBe(50);
-    });
-
-    it("accepts an optional cursor string", () => {
-      const encoded = Buffer.from("2024-01-15\x0042", "utf8").toString("base64url");
-      expect(glQuerySchema.parse({ ...base, cursor: encoded }).cursor).toBe(encoded);
-    });
-  });
-
-  describe("listJournalQuerySchema", () => {
-    it("clamps limit above 100 to exactly 100", () => {
-      expect(listJournalQuerySchema.parse({ limit: 999 }).limit).toBe(100);
-    });
-
-    it("defaults limit to 20 when absent", () => {
-      expect(listJournalQuerySchema.parse({}).limit).toBe(20);
-    });
-
-    it("pages consistently with whichever style it exposes", () => {
-      const result = listJournalQuerySchema.parse({});
-      expect(result.limit).toBe(20);
-      expect("page" in result).toBe(false);
-      expect(result.cursor).toBeUndefined();
-    });
-
-    it("still enforces the from<=to refine", () => {
-      expect(() =>
-        listJournalQuerySchema.parse({
-          from: new Date("2024-12-01"),
-          to: new Date("2024-01-01"),
-        }),
-      ).toThrow();
-    });
-  });
 });
 
 interface SizeOnlyCaseConfig {

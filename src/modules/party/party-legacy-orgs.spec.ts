@@ -43,6 +43,7 @@ const PARTY: PartyRow = {
   website: "https://northwind.example",
   email: null,
   phone: null,
+  timezone: null,
   status: "active",
   customFields: null,
   notes: "Renews in March.",

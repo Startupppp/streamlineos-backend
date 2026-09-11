@@ -4,22 +4,21 @@ import {
   signDocuments,
   signEnvelopes,
   signFields,
-  signPublicForms,
   signRecipients,
   signTemplates,
 } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
-import { withPublicToken } from "../../common/tenant/with-public-token";
 import { runInTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
 import { SignAuditService } from "./sign-audit.service";
+import { SignSettingsService } from "./sign-settings.service";
+import { SignAuthMethodPolicy } from "./sign-auth-method.policy";
 import { SignTokensService } from "./sign-tokens.service";
 import { PlanLimitsService } from "../billing/core/plan-limits.service";
 import type {
   CreateTemplateInput,
   UpdateTemplateInput,
   CreateEnvelopeFromTemplateInput,
-  PublishPublicFormInput,
 } from "./dto/e-sign.schemas";
 import type { RequestActorContext } from "../../common/audit/actor-context";
 
@@ -69,9 +68,15 @@ export interface TemplateSnapshot {
   allowDecline: boolean;
   expirationDays: number;
   reminderEnabled: boolean;
-  reminderFirstAfterDays: number;
-  reminderRepeatDays: number;
-  reminderMaxCount: number;
+  /**
+   * Optional on purpose. The parser used to substitute 3/2/3 here — a third
+   * hardcoded cadence, agreeing with neither the column defaults (3/3/5) nor
+   * the DTO's, and unreachable by any org setting. Absence now means "use the
+   * organisation's default", resolved at instantiation.
+   */
+  reminderFirstAfterDays?: number;
+  reminderRepeatDays?: number;
+  reminderMaxCount?: number;
   watermarkPolicyId?: number | null;
   roles: TemplateRole[];
   documents: TemplateDocument[];
@@ -131,9 +136,9 @@ export function parseTemplateSnapshot(json: Record<string, unknown>): TemplateSn
     allowDecline: Boolean(json["allowDecline"]),
     expirationDays: typeof json["expirationDays"] === "number" ? json["expirationDays"] : 30,
     reminderEnabled: Boolean(json["reminderEnabled"]),
-    reminderFirstAfterDays: typeof json["reminderFirstAfterDays"] === "number" ? json["reminderFirstAfterDays"] : 3,
-    reminderRepeatDays: typeof json["reminderRepeatDays"] === "number" ? json["reminderRepeatDays"] : 2,
-    reminderMaxCount: typeof json["reminderMaxCount"] === "number" ? json["reminderMaxCount"] : 3,
+    reminderFirstAfterDays: typeof json["reminderFirstAfterDays"] === "number" ? json["reminderFirstAfterDays"] : undefined,
+    reminderRepeatDays: typeof json["reminderRepeatDays"] === "number" ? json["reminderRepeatDays"] : undefined,
+    reminderMaxCount: typeof json["reminderMaxCount"] === "number" ? json["reminderMaxCount"] : undefined,
     watermarkPolicyId: typeof json["watermarkPolicyId"] === "number" ? json["watermarkPolicyId"] : null,
     roles: Array.isArray(json["roles"]) ? json["roles"].map(parseRole) : [],
     documents: Array.isArray(json["documents"]) ? json["documents"].map(parseDocument) : [],
@@ -148,6 +153,8 @@ export class SignTemplatesService {
     private readonly audit: SignAuditService,
     private readonly tokens: SignTokensService,
     private readonly planLimits: PlanLimitsService,
+    private readonly settings: SignSettingsService,
+    private readonly authMethods: SignAuthMethodPolicy,
   ) {}
 
   async create(orgId: string, ownerMembershipId: number | null, input: CreateTemplateInput) {
@@ -301,7 +308,35 @@ export class SignTemplatesService {
       throw new BadRequestException(`Missing recipients for template role(s): ${missingRoles.map((r) => r.roleName).join(", ")}`);
     }
 
+    /**
+     * The snapshot's authentication methods go through the same gate a
+     * recipient does, and before the envelope row exists rather than after.
+     *
+     * `createTemplateSchema` declares `templateJson` as
+     * `z.record(z.string(), z.unknown())`, so a role's `authMethod` is not a
+     * legacy value that leaked in — it is arbitrary caller input, replayed
+     * verbatim into `signRecipients` on every instantiation. That let a holder
+     * of `sign:template:manage` mint recipients on `sso`, `passkey`, `kba`,
+     * `id_verification` or an undeliverable `otp_sms`, none of which
+     * `authenticate` can complete.
+     *
+     * Bulk send drives exactly this path, once per row, so the same bad role
+     * reaches as many customers as the org's row cap allows.
+     */
+    for (const role of snapshot.roles) {
+      const provided = input.recipients.find((r) => r.roleName === role.roleName);
+      await this.authMethods.assertUsable(
+        orgId,
+        role.authMethod as Parameters<SignAuthMethodPolicy["assertUsable"]>[1],
+        provided?.phone,
+        `template role "${role.roleName}"`,
+      );
+    }
+
     await this.planLimits.assertWithinLimit(orgId, "signEnvelopes");
+
+    /** A template that predates the cadence fields inherits the org's, not a constant. */
+    const orgSettings = await this.settings.getOrCreate(orgId);
 
     const [envelope] = await this.db
       .insert(signEnvelopes)
@@ -320,9 +355,10 @@ export class SignTemplatesService {
         sourceEntityType: input.sourceEntityType,
         sourceEntityId: input.sourceEntityId,
         reminderEnabled: snapshot.reminderEnabled,
-        reminderFirstAfterDays: snapshot.reminderFirstAfterDays,
-        reminderRepeatDays: snapshot.reminderRepeatDays,
-        reminderMaxCount: snapshot.reminderMaxCount,
+        reminderFirstAfterDays:
+          snapshot.reminderFirstAfterDays ?? orgSettings.defaultReminderFirstAfterDays,
+        reminderRepeatDays: snapshot.reminderRepeatDays ?? orgSettings.defaultReminderRepeatDays,
+        reminderMaxCount: snapshot.reminderMaxCount ?? orgSettings.defaultReminderMaxCount,
       })
       .returning();
 
@@ -407,58 +443,5 @@ export class SignTemplatesService {
     });
 
     return envelope;
-  }
-
-  async publishPublicForm(orgId: string, createdByMembershipId: number | null, templateId: number, input: PublishPublicFormInput) {
-    const template = await this.get(orgId, templateId);
-    if (template.status !== "published") throw new ForbiddenException("Only published templates can be turned into a public form");
-
-    const existingSlug = await this.db.query.signPublicForms.findFirst({ where: eq(signPublicForms.slug, input.slug) });
-    if (existingSlug) throw new BadRequestException("This slug is already in use");
-
-    const [form] = await this.db
-      .insert(signPublicForms)
-      .values({
-        orgId,
-        templateId,
-        slug: input.slug,
-        status: "published",
-        accessCodeHash: input.accessCode ? this.tokens.hash(input.accessCode) : null,
-        maxSubmissions: input.maxSubmissions,
-        expiresAt: input.expiresAt ? new Date(input.expiresAt) : undefined,
-        completionRedirectUrl: input.completionRedirectUrl,
-        webhookUrl: input.webhookUrl,
-        embedAllowed: input.embedAllowed,
-        createdByMembershipId,
-      })
-      .returning();
-
-    await this.audit.record({
-      orgId,
-      envelopeId: null,
-      actorType: "internal_user",
-      eventType: "public_form_published",
-      eventMessage: `Published public form at /${input.slug}`,
-    });
-
-    return form;
-  }
-
-  async getPublicForm(slug: string) {
-    const form = await withPublicToken(this.db, slug, (tx) =>
-      tx.query.signPublicForms.findFirst({ where: eq(signPublicForms.slug, slug) }),
-    );
-    if (!form || form.status !== "published") throw new NotFoundException("Form not found");
-    if (form.expiresAt && form.expiresAt.getTime() < Date.now()) throw new NotFoundException("Form not found");
-    if (form.maxSubmissions && form.submissionCount >= form.maxSubmissions) throw new NotFoundException("Form not found");
-
-    return runInTenantTransaction(
-      this.db,
-      async (tx) => {
-        const template = await tx.query.signTemplates.findFirst({ where: eq(signTemplates.id, form.templateId) });
-        return { form: { slug: form.slug, requiresAccessCode: Boolean(form.accessCodeHash), embedAllowed: form.embedAllowed }, template };
-      },
-      { orgId: form.orgId },
-    );
   }
 }

@@ -1,10 +1,11 @@
 import { ForbiddenException, Inject, Injectable } from "@nestjs/common";
-import { and, eq, inArray, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { createHash } from "node:crypto";
 import {
   crmContactChannelConsent,
   crmContactConsentEvents,
   crmSuppressionHashes,
+  users,
 } from "../../../db/schema";
 import { businessParties, contactPartyMap } from "../../../db/schema/party";
 import { PARTY_OF_CONTACT } from "../crm-party-reads";
@@ -206,6 +207,48 @@ export class CrmConsentService {
       .onConflictDoNothing();
   }
 
+  /**
+   * The address-only copy of an opt-out, for a contact we still have.
+   *
+   * Takes the transaction rather than opening one: the caller is recording the
+   * opt-out, and the two must commit together or not at all.
+   *
+   * Silently does nothing when the contact has no address — there is nothing to
+   * suppress, and a contact can legitimately have none. Not an error, because
+   * it must never be the reason an opt-out fails to record.
+   */
+  private async retainSuppressionForContact(
+    tx: Parameters<Parameters<typeof runInTenantTransaction>[1]>[0],
+    orgId: string,
+    contactId: number,
+    reason: string,
+  ): Promise<void> {
+    const [row] = await tx
+      .select({ email: businessParties.email })
+      .from(contactPartyMap)
+      .innerJoin(businessParties, PARTY_OF_CONTACT)
+      .where(
+        and(
+          eq(contactPartyMap.organizationId, orgId),
+          eq(contactPartyMap.contactId, contactId),
+        ),
+      )
+      .limit(1);
+
+    const normalised = row?.email?.trim().toLowerCase();
+    if (!normalised) return;
+
+    await tx
+      .insert(crmSuppressionHashes)
+      .values({
+        orgId,
+        channel: "EMAIL",
+        addressHash: hashAddress(normalised),
+        reason,
+      })
+      .onConflictDoNothing();
+  }
+
   async record(
     orgId: string,
     input: {
@@ -277,9 +320,47 @@ export class CrmConsentService {
           recordedByUserId: input.recordedByUserId ?? null,
         });
 
-        await this.audit.logCritical({
+        /**
+         * CRM-P1-11. An opt-out has to outlive the row it was captured on.
+         *
+         * `crm_contact_channel_consent` is keyed on `contact_id`, so a contact
+         * erased under a DPDP request takes its opt-out with it — and if the
+         * same address is imported again, both suppression readers find nothing
+         * and mail resumes to somebody who withdrew consent.
+         *
+         * `crm_suppression_hashes` exists precisely to survive that, and both
+         * readers already union it in: `suppressedEmails` here, and
+         * `OutboundService.isSuppressed` at send time. Nothing had ever written
+         * a row, so that half of both queries was permanently empty and the
+         * union added nothing at all.
+         *
+         * Written in the same transaction as the consent row, because an
+         * opt-out recorded without its durable copy is the exact state this is
+         * meant to prevent.
+         *
+         * EMAIL only, deliberately: both readers filter `channel = 'EMAIL'`,
+         * and writing phone hashes nothing reads would be storing a fact with
+         * no consumer — the shape of the bug being fixed here.
+         */
+        if (input.status === "OPTED_OUT" && input.channel === "EMAIL") {
+          await this.retainSuppressionForContact(
+            tx,
+            orgId,
+            input.contactId,
+            `consent:${input.source}`,
+          );
+        }
+
+        /**
+         * The public unsubscribe endpoint has no signed-in user, so this is the
+         * unattributed case: a null actor naming the capture path that acted.
+         * It used to write the string "system", which has no row in `users`, so
+         * this awaited `logCritical` raised a foreign-key violation and rolled
+         * back the opt-out and its suppression hash along with it — clicking
+         * the unsubscribe link recorded nothing at all.
+         */
+        const auditEntry = {
           action: "crm.consent.recorded",
-          userId: input.recordedByUserId ?? "system",
           orgId,
           targetId: String(input.contactId),
           targetType: "crm_contact_consent",
@@ -290,15 +371,99 @@ export class CrmConsentService {
             source: input.source,
             legalBasis: input.legalBasis ?? null,
           },
-        });
+        };
+
+        await this.audit.logCritical(
+          input.recordedByUserId
+            ? { ...auditEntry, userId: input.recordedByUserId }
+            : { ...auditEntry, systemActor: `crm.consent.${input.source}` },
+        );
       },
       { orgId },
     );
   }
 
+  /**
+   * The evidence trail, which was being written and read by nothing.
+   *
+   * `record()` appends a row here on every change, carrying `fromStatus` ->
+   * `toStatus`, the basis claimed and who claimed it. Nothing in the codebase
+   * read that table: no service method, no route. So the product recorded
+   * exactly what a DPDP or GDPR review asks for — what changed, when, on what
+   * basis, at whose hand — and had no way to produce it.
+   *
+   * Separate from `listForContact` because they answer different questions.
+   * That one returns the CURRENT position, at most one row per channel, because
+   * `uniq_crm_consent_org_contact_channel` allows only one and `record()`
+   * upserts. This one is the history, and only this one can answer "when did
+   * they opt out".
+   *
+   * Projected rather than `select()`, per §1: `orgId` and `contactPartyId` are
+   * ours and not the caller's, and a raw row hands back both.
+   */
+  async listConsentEvents(orgId: string, contactId: number, limit: number) {
+    return this.db
+      .select({
+        id: crmContactConsentEvents.id,
+        contactId: crmContactConsentEvents.contactId,
+        channel: crmContactConsentEvents.channel,
+        fromStatus: crmContactConsentEvents.fromStatus,
+        toStatus: crmContactConsentEvents.toStatus,
+        legalBasis: crmContactConsentEvents.legalBasis,
+        source: crmContactConsentEvents.source,
+        sourceDetail: crmContactConsentEvents.sourceDetail,
+        recordedByUserId: crmContactConsentEvents.recordedByUserId,
+        /**
+         * The actor as a name, not only as an id -- a screen may never render a
+         * raw user id, and this is the only place the trail names a person.
+         *
+         * One projected column off a LEFT JOIN, because `users` is the global
+         * identity table and still carries authentication secrets, so an
+         * unprojected relation to it is banned (§3). LEFT twice over: the
+         * column is nullable by design -- an unsubscribe-link event has no
+         * actor at all -- and somebody who has since left the organisation must
+         * not drop their own entries out of an audit trail.
+         */
+        recordedByName: users.name,
+        createdAt: crmContactConsentEvents.createdAt,
+      })
+      .from(crmContactConsentEvents)
+      .leftJoin(users, eq(crmContactConsentEvents.recordedByUserId, users.id))
+      .where(
+        and(
+          eq(crmContactConsentEvents.orgId, orgId),
+          eq(crmContactConsentEvents.contactId, contactId),
+        ),
+      )
+      /*
+        Newest first, and `id` breaks the tie. Two changes can land in the same
+        millisecond — an import touching several channels does exactly that —
+        and ordering on the timestamp alone would let them swap between requests,
+        which in an evidence trail reads as the record changing its story.
+      */
+      .orderBy(desc(crmContactConsentEvents.createdAt), desc(crmContactConsentEvents.id))
+      .limit(limit);
+  }
+
+  /**
+   * Current position per channel — at most one row each, because
+   * `uniq_crm_consent_org_contact_channel` allows only one and `record()`
+   * upserts. For the history, see `listConsentEvents`.
+   */
   async listForContact(orgId: string, contactId: number) {
     return this.db
-      .select()
+      .select({
+        id: crmContactChannelConsent.id,
+        contactId: crmContactChannelConsent.contactId,
+        channel: crmContactChannelConsent.channel,
+        status: crmContactChannelConsent.status,
+        legalBasis: crmContactChannelConsent.legalBasis,
+        source: crmContactChannelConsent.source,
+        sourceDetail: crmContactChannelConsent.sourceDetail,
+        capturedAt: crmContactChannelConsent.capturedAt,
+        expiresAt: crmContactChannelConsent.expiresAt,
+        recordedByUserId: crmContactChannelConsent.recordedByUserId,
+      })
       .from(crmContactChannelConsent)
       .where(
         and(
@@ -306,6 +471,33 @@ export class CrmConsentService {
           eq(crmContactChannelConsent.contactId, contactId),
         ),
       );
+  }
+
+  /**
+   * The address a contact is reachable at, so an unsubscribe link can be checked
+   * against the person it is about to be sent to.
+   *
+   * An unsubscribe token names a contact. Putting one in a message that went to
+   * somebody else would hand that somebody the power to opt this contact out, so
+   * the sender verifies rather than assuming its `to` is the enrolled contact's
+   * address. Returns null when there is no party, no address, or the contact
+   * belongs to another organisation -- every one of which means "do not attach
+   * a link", which is the safe answer for all three.
+   */
+  async contactEmail(orgId: string, contactId: number): Promise<string | null> {
+    const [row] = await this.db
+      .select({ email: businessParties.email })
+      .from(contactPartyMap)
+      .innerJoin(businessParties, PARTY_OF_CONTACT)
+      .where(
+        and(
+          eq(contactPartyMap.organizationId, orgId),
+          eq(contactPartyMap.contactId, contactId),
+        ),
+      )
+      .limit(1);
+    const email = row?.email?.trim();
+    return email && email.length > 0 ? email : null;
   }
 
   /** Contacts with no consent row at all for a channel, for data-quality surfacing. */

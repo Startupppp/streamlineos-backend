@@ -238,6 +238,10 @@ export class SearchService {
      * The predicate is unchanged in what it admits: the same lead, the same deal,
      * the same owner columns, the same `or`. `contacts.lead_id` and its party link
      * are one relation under two spellings, kept equal by the mirror.
+     *
+     * The *owner* is still read from the lead's Party rather than from
+     * `leads.assigned_to_id`: a mirror column deciding who may see a record is the
+     * one place a lagging copy would be a disclosure rather than a display glitch.
      */
     const contactAccess = access.contacts;
     const contactScope =
@@ -365,6 +369,8 @@ export class SearchService {
           id: clientPartyMap.clientId,
           name: businessParties.name,
           company: businessParties.companyName,
+          // `clients.status` mirrors the record's own status, not the pipeline
+          // stage, and Party declares it NOT NULL -- so no coalesce here.
           status: businessParties.status,
         })
         .from(clientPartyMap)

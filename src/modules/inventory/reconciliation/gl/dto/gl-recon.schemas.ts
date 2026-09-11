@@ -10,7 +10,8 @@ const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
  */
 export const glReconQuerySchema = z
   .object({
-    periodId: z.coerce.number().int().positive().optional(),
+    /** `gl_periods.id` of the organisation's default book — a uuid since the accounting rewrite. */
+    periodId: z.string().uuid().optional(),
     fromDate: isoDate.optional(),
     toDate: isoDate.optional(),
     warehouseId: z.coerce.number().int().positive().optional(),

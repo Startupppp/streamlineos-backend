@@ -2,7 +2,6 @@ import { pgTable, text, serial, timestamp, decimal, date, integer, index, unique
 import { relations, sql } from "drizzle-orm";
 import { invSoStatusEnum, invTaxTreatmentEnum, invGstModeEnum } from "../common/enums";
 import { organizations, users } from "../common/auth";
-import { clients } from "../crm/contacts";
 import { businessParties } from "../party/business-parties";
 import { invoices } from "../crm/invoicing";
 import { invProductVariants, invUom } from "./core";
@@ -12,7 +11,15 @@ import { invChannels } from "./channels";
 export const invSalesOrders = pgTable("inv_sales_orders", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-  clientId: integer("client_id").references(() => clients.id, { onDelete: "set null" }),
+  clientId: integer("client_id"),
+  /**
+  * The party this row belongs to. Ticket 08's expand.
+  *
+  * Beside `client_id` rather than replacing it: every existing reader keeps
+  * working while readers move over one at a time, and the old column goes in
+  * the contract migration once none is left. Nullable until then -- a null
+  * means "not yet backfilled", which is a state worth being able to see.
+  */
   clientPartyId: text("client_party_id"),
   soNumber: text("so_number").notNull(),
   status: invSoStatusEnum("status").default("DRAFT").notNull(),
@@ -136,7 +143,6 @@ export const invSoLines = pgTable("inv_so_lines", {
 
 export const invSalesOrdersRelations = relations(invSalesOrders, ({ one, many }) => ({
   organization: one(organizations, { fields: [invSalesOrders.orgId], references: [organizations.id] }),
-  client: one(clients, { fields: [invSalesOrders.clientId], references: [clients.id] }),
   warehouse: one(invWarehouses, { fields: [invSalesOrders.warehouseId], references: [invWarehouses.id] }),
   channel: one(invChannels, { fields: [invSalesOrders.channelId], references: [invChannels.id] }),
   invoice: one(invoices, { fields: [invSalesOrders.invoiceId], references: [invoices.id] }),

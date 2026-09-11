@@ -1,6 +1,7 @@
 import { ConflictException, NotFoundException } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
 import { PartyService } from "./party.service";
+import { PlanLimitsService } from "../billing/core/plan-limits.service";
 import { CacheService } from "../../common/cache/cache.service";
 import { AuditService } from "../../common/audit/audit.service";
 import { DRIZZLE } from "../../db/drizzle.constants";
@@ -65,6 +66,14 @@ describe("PartyService — party CRUD", () => {
         { provide: DRIZZLE, useValue: mockDb },
         { provide: AuditService, useValue: mockAudit },
         { provide: CacheService, useValue: mockCache },
+        // A plan with room. Ticket 07 made `createParty` assert one, and every
+        // test here predates that and is about something else; the limit's own
+        // behaviour is asserted next to the guard rather than smuggled in as a
+        // precondition of twenty-two unrelated cases.
+        {
+          provide: PlanLimitsService,
+          useValue: { assertWithinLimit: jest.fn(async () => undefined) },
+        },
       ],
     }).compile();
 

@@ -26,7 +26,7 @@ export interface TaskAnchorRef {
 /** A row as the query returns it: the timeline shape plus its anchor, unresolved. */
 export interface TaskRow extends TimelineEntry {
   readonly partyId: string | null;
-  readonly dealId: string | null;
+  readonly dealId: number | null;
   readonly subjectId: string | null;
   readonly partyName: string | null;
   readonly dealName: string | null;
@@ -103,35 +103,25 @@ export function decodeTaskCursor(cursor: string | null | undefined): TaskPositio
  */
 export function taskAnchor(row: TaskRow): TaskAnchorRef | null {
   if (row.partyId) return { kind: "party", id: row.partyId, name: row.partyName };
-  if (row.dealId) return { kind: "deal", id: row.dealId, name: row.dealName };
+  // `id` is the string a link is built from, across three anchor kinds whose
+  // own keys differ. The deal one is an integer now, so it is spelled here.
+  if (row.dealId) return { kind: "deal", id: String(row.dealId), name: row.dealName };
   if (row.subjectId) return { kind: "subject", id: row.subjectId, name: row.subjectTitle };
   return null;
 }
 
-/** Postgres `serial`. A value above it is not a deal id, whatever it parses to. */
-const MAX_SERIAL = 2_147_483_647;
-
 /**
- * The deal ids on a page, as `deals.id` can actually be compared to.
+ * `numericDealIds` stood here, and 0472 is why it no longer needs to.
  *
- * `activities.deal_id` is text and `deals.id` is a serial, so the two are joined
- * by coercion rather than by a foreign key. Doing that coercion in SQL means a
- * single activity anchored to a non-numeric string raises 22P02 and takes the
- * whole screen down with it — and `dealId` on the create schema is a free string,
- * so any caller who may log an activity can plant one. Coercing here instead,
- * where a value that is not a deal id is simply left out.
+ * It existed because `activities.deal_id` was text against a `serial` key, so
+ * the two could only be joined by coercion — and a coercion in SQL means one
+ * activity anchored to a non-numeric string raises 22P02 and takes the whole
+ * screen down with it. It filtered those out in TypeScript instead.
+ *
+ * The column is an integer with a foreign key now, so the database will not hold
+ * a value that is not a deal id, and the `serial` ceiling it enforced moved to
+ * `anchorFields.dealId` in the DTO, which is where untrusted input arrives.
  */
-export function numericDealIds(ids: readonly (string | null)[]): number[] {
-  const parsed = new Set<number>();
-
-  for (const id of ids) {
-    if (!id || !/^[1-9][0-9]{0,9}$/.test(id)) continue;
-    const value = Number(id);
-    if (value <= MAX_SERIAL) parsed.add(value);
-  }
-
-  return [...parsed];
-}
 
 export interface TaskPage {
   readonly data: TaskEntry[];

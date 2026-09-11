@@ -10,17 +10,15 @@ import { SignEnvelopesService } from "./sign-envelopes.service";
 import { SignFinalizationService } from "./sign-finalization.service";
 import { SignNotificationsService } from "./sign-notifications.service";
 import { SignIntegrationsService } from "./sign-integrations.service";
-import { SignPublicFormService } from "./sign-public-form.service";
-import type { PublicRequestContext } from "./sign-public-form.service";
+import { SMS_SENDER, type SmsSenderPort } from "./sms/sms-sender.port";
 import type {
   PublicAuthInput,
   PublicConsentInput,
   PublicFieldValueInput,
   AdoptSignatureInput,
   DeclineInput,
-  PublicFormESignSubmitInput,
 } from "./dto/e-sign.schemas";
-import { withRecipientSession } from "./lib/recipient-session";
+import { withRecipientSession, type PublicRequestContext } from "./lib/recipient-session";
 import {
   acceptConsent,
   authenticate,
@@ -37,6 +35,8 @@ import {
   setFieldValue,
   type RecipientInputDeps,
 } from "./lib/recipient-input";
+
+export type { PublicRequestContext };
 
 const SIGNED_URL_EXPIRY_SECONDS = 900;
 
@@ -65,16 +65,8 @@ export class SignPublicService {
     private readonly finalization: SignFinalizationService,
     private readonly notifications: SignNotificationsService,
     private readonly integrations: SignIntegrationsService,
-    private readonly forms: SignPublicFormService,
+    @Inject(SMS_SENDER) private readonly sms: SmsSenderPort,
   ) {}
-
-  async getPublicForm(slug: string) {
-    return this.forms.getPublicForm(slug);
-  }
-
-  async submitPublicForm(slug: string, input: PublicFormESignSubmitInput, ctx: PublicRequestContext) {
-    return this.forms.submitPublicForm(slug, input, ctx);
-  }
 
   private deriveState(recipient: typeof signRecipients.$inferSelect, envelope: typeof signEnvelopes.$inferSelect): SessionState {
     if (envelope.status === "voided") return "envelope_voided";
@@ -213,6 +205,7 @@ export class SignPublicService {
       tokens: this.tokens,
       audit: this.audit,
       notifications: this.notifications,
+      sms: this.sms,
       assertActive: (recipient, envelope) => this.assertActive(recipient, envelope),
     };
   }

@@ -17,7 +17,20 @@ if (!url) {
   process.exit(1);
 }
 
-const sql = postgres(url, { prepare: false, max: 1, ssl: "require", onnotice: () => {} });
+/**
+ * TLS follows the connection string instead of being forced on.
+ *
+ * `ssl: "require"` was hardcoded, so this runner could not talk to a database
+ * reached over `sslmode=disable` at all — it threw before it read anything.
+ * The same hardcoding in `verify-migration-chain.mjs`'s watermark reader is
+ * why check (f) silently skipped on every local run: the throw was swallowed
+ * and reported as "no watermark".
+ */
+function sslFor(connectionString) {
+  return /[?&]sslmode=disable\b/.test(connectionString) ? false : "require";
+}
+
+const sql = postgres(url, { prepare: false, max: 1, ssl: sslFor(url), onnotice: () => {} });
 
 function statementsOf(text) {
   if (text.includes("--> statement-breakpoint"))
@@ -63,8 +76,32 @@ try {
     queue = [[entry, entry.when ?? watermark + 1]];
     console.log(`Running explicit tag: ${tagArg}`);
   } else {
-    queue = journal.entries.filter((e) => e.when > watermark).map((e) => [e, e.when]);
-    console.log(`watermark=${watermark} | pending=${queue.length}`);
+    /**
+     * Every entry, in journal array order — NOT the ones whose `when` beats the
+     * watermark.
+     *
+     * The watermark filter was a silent data-loss bug, and a measured one. The
+     * journal has 32 entries whose `when` sits strictly below the running
+     * maximum and 6 more equal to it, all inherited from parallel branches
+     * merging. Under the old filter, applying `0557_relationship_states_deal_fk`
+     * made 15 later entries permanently unselectable — the whole 0520–0524
+     * billing block, 0540–0544 HR, 0565, 0575, 0580–0582 — and applying `0559`
+     * cost another 17, including organization placement, the employment
+     * sensitive-field envelope encryption, and the agent-token ceiling. Nothing
+     * failed. The run reported success and those migrations were simply never
+     * offered again.
+     *
+     * `applyOne` already refuses anything whose file hash is recorded, which is
+     * the guard that actually prevents double application — and it is what the
+     * other three appliers in this repository have always relied on. The
+     * watermark is now reported for context and decides nothing.
+     */
+    queue = journal.entries.map((e) => [e, e.when]);
+    const behind = journal.entries.filter((e) => e.when <= watermark).length;
+    console.log(
+      `watermark=${watermark} | queued=${queue.length} (${behind} at or below the watermark, ` +
+        `which the hash guard will skip if applied and apply if not)`,
+    );
   }
   for (const [entry, when] of queue) {
     try {

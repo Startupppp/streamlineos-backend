@@ -1,4 +1,7 @@
 import { and, asc, eq, sql } from "drizzle-orm";
+import { forEachOrg } from "../tenant/for-each-org";
+import { runInNewTenantTransaction } from "../tenant/run-in-tenant-transaction";
+import type { TenantTx } from "../tenant/with-tenant";
 import type { Db } from "../../db/drizzle.types";
 import { workflowRuns, workflowSteps } from "../../db/schema";
 import { leaseExpiry } from "./retry-policy";
@@ -20,10 +23,28 @@ const CLAIMABLE = sql`
   OR (status = 'RUNNING' AND lease_expires_at IS NOT NULL AND lease_expires_at < now())
 `;
 
-export function createStepStore(db: Db): WorkflowStepStore {
+/**
+ * Runs a store operation in the run's own tenant transaction.
+ *
+ * `workflow_runs` and `workflow_steps` are under row-level security, and a
+ * worker has no ambient request context to borrow — so a write that names no
+ * organisation matches nothing and the whole tick fails with "no tenant
+ * context". The runner already gives each *step* its own tenant transaction for
+ * exactly this reason; the run's own lifecycle writes and step records need the
+ * same, and the caller knows the organisation because the claim returned it.
+ *
+ * `orgId` is optional so the existing unit fixtures, which pass a fake `db` and
+ * no organisation, keep working unchanged.
+ */
+function inOrg<T>(db: Db, orgId: string | undefined, fn: (handle: Db) => Promise<T>): Promise<T> {
+  if (!orgId) return fn(db);
+  return runInNewTenantTransaction(db, orgId, (tx: TenantTx) => fn(tx as unknown as Db));
+}
+
+export function createStepStore(db: Db, orgId?: string): WorkflowStepStore {
   return {
     async loadSteps(runId: string): Promise<RecordedStep[]> {
-      const rows = await db
+      const rows = await inOrg(db, orgId, (handle) => handle
         .select({
           stepName: workflowSteps.stepName,
           status: workflowSteps.status,
@@ -31,7 +52,7 @@ export function createStepStore(db: Db): WorkflowStepStore {
         })
         .from(workflowSteps)
         .where(eq(workflowSteps.workflowRunId, runId))
-        .orderBy(asc(workflowSteps.startedAt));
+        .orderBy(asc(workflowSteps.startedAt)));
 
       return rows.map((row) => ({
         stepName: row.stepName,
@@ -43,7 +64,7 @@ export function createStepStore(db: Db): WorkflowStepStore {
     async recordStep(step): Promise<void> {
       // Upsert: a retried step replaces its earlier failure rather than
       // colliding with the unique name, and a completed one is never rewritten.
-      await db
+      await inOrg(db, orgId, (handle) => handle
         .insert(workflowSteps)
         .values({
           workflowRunId: step.runId,
@@ -68,15 +89,15 @@ export function createStepStore(db: Db): WorkflowStepStore {
             attempt: step.attempt,
             completedAt: step.status === "COMPLETED" ? new Date() : null,
           },
-        });
+        }));
     },
   };
 }
 
-export function createLifecycleStore(db: Db): RunLifecycleStore {
+export function createLifecycleStore(db: Db, orgId?: string): RunLifecycleStore {
   return {
     async complete(runId, output, at) {
-      await db
+      await inOrg(db, orgId, (handle) => handle
         .update(workflowRuns)
         .set({
           status: "COMPLETED",
@@ -85,26 +106,26 @@ export function createLifecycleStore(db: Db): RunLifecycleStore {
           leaseExpiresAt: null,
           lastError: null,
         })
-        .where(eq(workflowRuns.workflowRunId, runId));
+        .where(eq(workflowRuns.workflowRunId, runId)));
     },
 
     async suspend(runId, wakeAt) {
       // Released, not held: a multi-day wait costs no worker and survives a deploy.
-      await db
+      await inOrg(db, orgId, (handle) => handle
         .update(workflowRuns)
         .set({ status: "SLEEPING", runAfter: wakeAt, leaseExpiresAt: null })
-        .where(eq(workflowRuns.workflowRunId, runId));
+        .where(eq(workflowRuns.workflowRunId, runId)));
     },
 
     async retry(runId, attempt, runAfter, error) {
-      await db
+      await inOrg(db, orgId, (handle) => handle
         .update(workflowRuns)
         .set({ status: "PENDING", attempt, runAfter, leaseExpiresAt: null, lastError: error })
-        .where(eq(workflowRuns.workflowRunId, runId));
+        .where(eq(workflowRuns.workflowRunId, runId)));
     },
 
     async deadLetter(runId, attempt, error, at) {
-      await db
+      await inOrg(db, orgId, (handle) => handle
         .update(workflowRuns)
         .set({
           status: "DEAD_LETTERED",
@@ -113,7 +134,7 @@ export function createLifecycleStore(db: Db): RunLifecycleStore {
           deadLetteredAt: at,
           leaseExpiresAt: null,
         })
-        .where(eq(workflowRuns.workflowRunId, runId));
+        .where(eq(workflowRuns.workflowRunId, runId)));
     },
   };
 }
@@ -163,32 +184,43 @@ export async function claimDueRuns(db: Db, limit: number): Promise<RunRecord[]> 
   const lease = leaseExpiry(new Date());
 
   /**
-   * The lease is bound through its column, never interpolated bare.
+   * Claimed one tenant at a time, and the lease bound through its column.
    *
-   * A bare `Date` in a `sql` template hands postgres-js a value it cannot
-   * serialise: the driver throws ERR_INVALID_ARG_TYPE at runtime while the
-   * template typechecks perfectly. Every call to this function threw, so the
-   * durable runtime claimed nothing, ran nothing and reported nothing — the
-   * exact failure `drainBacklog` above was written to make visible, and the
-   * reason an accepted inbound delivery was never filed.
+   * `workflow_runs` is under row-level security, and a claim that names no
+   * organisation matches nothing as the application's own role — the tick then
+   * fails with "no tenant context: app.organization_id is not set for this
+   * transaction", and every durable workflow in the product stops, silently,
+   * because the tick is the only thing that advances them. `forEachOrg` is the
+   * pattern the platform already settled on for this: one tenant transaction per
+   * organisation, each seeing only its own rows. `limit` stays a budget for the
+   * whole sweep rather than per organisation, so one busy tenant cannot starve
+   * the rest of a tick.
    *
-   * `sql.param` with the column applies that column's type mapper, which is how
-   * `keysetAfter`/`keysetBefore` avoid the identical trap.
+   * The lease is bound through `sql.param` with its column, never interpolated
+   * bare: a bare `Date` hands postgres-js a value it cannot serialise, and the
+   * template typechecks perfectly while every call throws at runtime.
    */
-  const claimed = await db.execute(sql`
-    UPDATE workflow_runs SET
-      status = 'RUNNING',
-      lease_expires_at = ${sql.param(lease, workflowRuns.leaseExpiresAt)},
-      updated_at = now()
-    WHERE workflow_run_id IN (
-      SELECT workflow_run_id FROM workflow_runs
-      WHERE ${CLAIMABLE}
-      ORDER BY run_after ASC
-      LIMIT ${limit}
-      FOR UPDATE SKIP LOCKED
-    )
-    RETURNING workflow_run_id, organization_id, workflow_name, input, attempt, max_attempts
-  `);
+  const claimed: Record<string, unknown>[] = [];
+  await forEachOrg(db, "workflow-run-claim", async (tx) => {
+    const remaining = limit - claimed.length;
+    if (remaining <= 0) return;
+
+    const rows = await tx.execute(sql`
+      UPDATE workflow_runs SET
+        status = 'RUNNING',
+        lease_expires_at = ${sql.param(lease, workflowRuns.leaseExpiresAt)},
+        updated_at = now()
+      WHERE workflow_run_id IN (
+        SELECT workflow_run_id FROM workflow_runs
+        WHERE ${CLAIMABLE}
+        ORDER BY run_after ASC
+        LIMIT ${remaining}
+        FOR UPDATE SKIP LOCKED
+      )
+      RETURNING workflow_run_id, organization_id, workflow_name, input, attempt, max_attempts
+    `);
+    claimed.push(...([...rows] as Record<string, unknown>[]));
+  });
 
   return [...claimed].map((row) => {
     const record = row as Record<string, unknown>;

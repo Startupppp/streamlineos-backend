@@ -1,6 +1,5 @@
 import type { Db } from "../../db/drizzle.module";
 import { PartyRolesService } from "./party-roles.service";
-import { PartyDivergenceService } from "./party-divergence.service";
 import { PartyMergeService } from "./party-merge.service";
 import { SubjectService } from "./subject.service";
 import { SubjectTypeService } from "./subject-type.service";
@@ -59,24 +58,6 @@ describe("PartyRolesService — cross-tenant isolation", () => {
     const svc = buildSvc(db);
     const result = await svc.listRoles(OWNER, "p1");
     expect(result).toHaveLength(1);
-  });
-});
-
-describe("PartyDivergenceService — cross-tenant isolation", () => {
-  it("report: queries scoped to attacker org (deny)", async () => {
-    const { db, where } = makeDb([]);
-    const svc = new PartyDivergenceService(db);
-    await svc.report(ATTACKER);
-    expect(where).toHaveBeenCalled();
-    expect(sqlValues(where.mock.calls[0]?.[0])).toContain(ATTACKER);
-  });
-
-  it("report: queries scoped to owner org (control)", async () => {
-    const { db, where } = makeDb([]);
-    const svc = new PartyDivergenceService(db);
-    await svc.report(OWNER);
-    expect(where).toHaveBeenCalled();
-    expect(sqlValues(where.mock.calls[0]?.[0])).toContain(OWNER);
   });
 });
 

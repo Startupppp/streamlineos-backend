@@ -236,13 +236,17 @@ describe("PEND-DB — the two irreversible steps stay opt-in", () => {
     for (const b of dropBlocks) expect(b).toContain("app.allow_legacy_identity_drop");
   });
 
-  it("still refuses to run while any non-party module reads the legacy tables", () => {
-    // The condition that makes the opt-in the right shape rather than a
-    // formality. When this list empties, the drop becomes a decision somebody
-    // can actually take.
-    const readers = liveReadersOfLegacyTables();
-    expect(readers.length).toBeGreaterThan(0);
-    expect(read("0278_drop_legacy_identity_tables")).toContain("thirteen");
+  it("finds no non-party module reading the legacy tables, so the drop is an owner's decision", () => {
+    // This used to assert the opposite: thirteen accounting and finance
+    // services still read `clients`, which is what made the opt-in the right
+    // shape. The merge with the CRM lane deleted every one of them (the gl_*
+    // rewrite) and moved the rest onto parties, so the list is now empty and is
+    // held empty: a new reader of `leads`/`clients`/`contacts`/
+    // `crm_organizations` outside the party module fails here. The drop itself
+    // stays behind `app.allow_legacy_identity_drop` (above) until an owner
+    // decides to take it; 0278's header still says "thirteen", and is left
+    // byte-identical because its content hash is its identity.
+    expect(liveReadersOfLegacyTables()).toEqual([]);
   });
 });
 

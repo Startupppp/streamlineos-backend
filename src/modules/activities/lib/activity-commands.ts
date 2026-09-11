@@ -20,6 +20,12 @@ import type { UpdateActivityInput } from "../dto/activity.schemas";
 export interface ActivityCommandDeps {
   readonly db: Db;
   readonly audit: AuditService;
+  /**
+   * Moves the relationship state after a change, outside the write it derives
+   * from. Supplied by `ActivitiesService`, which owns the optional
+   * `RelationshipStateService`; absent, a change still lands.
+   */
+  readonly materialise?: (organizationId: string, activityId: string) => Promise<void>;
 }
 
 export async function updateActivity(
@@ -49,16 +55,18 @@ export async function updateActivity(
     )
     .returning();
 
-  const audited = auditActor(actor);
   deps.audit.log({
     action: "crm.activity.updated",
-    userId: audited.userId,
+    ...auditActor(actor),
     orgId: organizationId,
     resourceType: "activity",
     resourceId: activityId,
-    metadata: { ...audited.metadata, changed: Object.keys(input) },
+    metadata: { changed: Object.keys(input) },
   });
 
+  // `subject` is one of the fields the relationship fold reads, so an edit
+  // that is invisible to a timeline still moves the derived state.
+  await deps.materialise?.(organizationId, activityId);
   return row;
 }
 
@@ -84,14 +92,12 @@ export async function completeActivity(
     )
     .returning();
 
-  const audited = auditActor(actor);
   deps.audit.log({
     action: "crm.activity.completed",
-    userId: audited.userId,
+    ...auditActor(actor),
     orgId: organizationId,
     resourceType: "activity",
     resourceId: activityId,
-    metadata: audited.metadata,
   });
 
   return row ?? existing;
@@ -115,15 +121,15 @@ export async function removeActivity(
       ),
     );
 
-  const audited = auditActor(actor);
   deps.audit.log({
     action: "crm.activity.deleted",
-    userId: audited.userId,
+    ...auditActor(actor),
     orgId: organizationId,
     resourceType: "activity",
     resourceId: activityId,
-    metadata: audited.metadata,
   });
+
+  await deps.materialise?.(organizationId, activityId);
 }
 
 /**

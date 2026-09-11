@@ -1,15 +1,17 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, asc, eq, sql } from "drizzle-orm";
-import { accountingPeriods } from "../../../db/schema";
+import { and, asc, eq, gte, lte } from "drizzle-orm";
+import { glPeriods } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { InventoryAccountingBridge } from "../stock-engine/accounting-bridge";
 
 export interface InventoryPeriod {
-  periodId: number;
+  /** `gl_periods.id`, a uuid. Numeric before the accounting rewrite. */
+  periodId: string;
   name: string;
   startDate: string;
   endDate: string;
+  /** `OPEN` or `LOCKED`. The kernel has no CLOSED state. */
   status: string;
 }
 
@@ -30,16 +32,29 @@ export function todayIso(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
+/** Every column a period is read with, in one place, so the three reads cannot drift. */
+const PERIOD_COLUMNS = {
+  periodId: glPeriods.id,
+  name: glPeriods.name,
+  startDate: glPeriods.startsOn,
+  endDate: glPeriods.endsOn,
+  status: glPeriods.status,
+};
+
 /**
  * D5/D6 — the accounting period, borrowed by inventory without depending on it.
  *
- * Inventory is separately licensed from accounting and `accounting_periods` is
- * one of the declared tables that does not exist in every database — the same
- * fact `InventoryAccountingBridge` exists for. So every read here is gated on
- * that class's memoised `to_regclass` probe rather than on catching `42P01`,
- * which would poison the surrounding transaction, and a tenant with no
- * accounting module still gets a valuation: it just quotes a plain date instead
- * of a period name.
+ * Since the accounting rewrite a period is a `gl_periods` row of the
+ * organisation's DEFAULT BOOK. The legacy `accounting_periods` table is gone.
+ * Inventory is still separately licensed from accounting: an organisation that
+ * has not enabled accounting has no book, and it still gets a valuation, quoted
+ * at a plain date instead of a period name. `installed` in the list response
+ * now means "this organisation keeps books", which is the only thing it can
+ * mean when the tables always exist.
+ *
+ * Every read carries both the tenant and the book, so a period id from another
+ * organisation or another book is a 404 rather than a 403: a 403 would confirm
+ * the id exists (§4).
  */
 @Injectable()
 export class InventoryPeriodService {
@@ -49,43 +64,33 @@ export class InventoryPeriodService {
   ) {}
 
   async listPeriods(orgId: string): Promise<{ installed: boolean; items: InventoryPeriod[] }> {
-    if (!(await this.bridge.hasPeriods())) return { installed: false, items: [] };
+    const bookId = await this.bridge.defaultBookId(orgId);
+    if (bookId === null) return { installed: false, items: [] };
     const rows = await this.db
-      .select({
-        periodId: accountingPeriods.id,
-        name: accountingPeriods.name,
-        startDate: accountingPeriods.startDate,
-        endDate: accountingPeriods.endDate,
-        status: accountingPeriods.status,
-      })
-      .from(accountingPeriods)
-      .where(eq(accountingPeriods.orgId, orgId))
-      .orderBy(asc(accountingPeriods.startDate))
+      .select({ ...PERIOD_COLUMNS })
+      .from(glPeriods)
+      .where(and(eq(glPeriods.orgId, orgId), eq(glPeriods.bookId, bookId)))
+      .orderBy(asc(glPeriods.startsOn))
       .limit(100);
     return { installed: true, items: rows };
   }
 
-  /**
-   * A period the caller named, or `null` when they named none.
-   *
-   * A period id that belongs to another tenant, or to a database with no
-   * accounting module, is a 404 rather than a 403 — a 403 on an id the caller
-   * may not see confirms it exists (§4).
-   */
-  async findPeriod(orgId: string, periodId: number | undefined): Promise<InventoryPeriod | null> {
+  /** A period the caller named, or `null` when they named none. */
+  async findPeriod(orgId: string, periodId: string | undefined): Promise<InventoryPeriod | null> {
     if (periodId == null) return null;
-    if (!(await this.bridge.hasPeriods()))
+    const bookId = await this.bridge.defaultBookId(orgId);
+    if (bookId === null)
       throw new NotFoundException("Accounting periods are not available in this workspace");
     const [row] = await this.db
-      .select({
-        periodId: accountingPeriods.id,
-        name: accountingPeriods.name,
-        startDate: accountingPeriods.startDate,
-        endDate: accountingPeriods.endDate,
-        status: accountingPeriods.status,
-      })
-      .from(accountingPeriods)
-      .where(and(eq(accountingPeriods.orgId, orgId), eq(accountingPeriods.id, periodId)))
+      .select({ ...PERIOD_COLUMNS })
+      .from(glPeriods)
+      .where(
+        and(
+          eq(glPeriods.orgId, orgId),
+          eq(glPeriods.bookId, bookId),
+          eq(glPeriods.id, periodId),
+        ),
+      )
       .limit(1);
     if (!row) throw new NotFoundException("Accounting period not found");
     return row;
@@ -94,7 +99,7 @@ export class InventoryPeriodService {
   /** The date a valuation is quoted at: the period's last day, or the given day. */
   async resolveAsAt(
     orgId: string,
-    input: { asOfDate?: string; periodId?: number },
+    input: { asOfDate?: string; periodId?: string },
   ): Promise<AsAtGrain> {
     const period = await this.findPeriod(orgId, input.periodId);
     if (period) return { asOfDate: input.asOfDate ?? period.endDate, period };
@@ -108,7 +113,7 @@ export class InventoryPeriodService {
    */
   async resolveWindow(
     orgId: string,
-    input: { periodId?: number; fromDate?: string; toDate?: string },
+    input: { periodId?: string; fromDate?: string; toDate?: string },
   ): Promise<PeriodWindow> {
     const period = await this.findPeriod(orgId, input.periodId);
     if (period)
@@ -127,21 +132,17 @@ export class InventoryPeriodService {
 
   /** The period covering a date, for labelling a row the caller did not scope. */
   async periodCovering(orgId: string, date: string): Promise<InventoryPeriod | null> {
-    if (!(await this.bridge.hasPeriods())) return null;
+    const bookId = await this.bridge.defaultBookId(orgId);
+    if (bookId === null) return null;
     const [row] = await this.db
-      .select({
-        periodId: accountingPeriods.id,
-        name: accountingPeriods.name,
-        startDate: accountingPeriods.startDate,
-        endDate: accountingPeriods.endDate,
-        status: accountingPeriods.status,
-      })
-      .from(accountingPeriods)
+      .select({ ...PERIOD_COLUMNS })
+      .from(glPeriods)
       .where(
         and(
-          eq(accountingPeriods.orgId, orgId),
-          sql`${accountingPeriods.startDate} <= ${date}::date`,
-          sql`${accountingPeriods.endDate} >= ${date}::date`,
+          eq(glPeriods.orgId, orgId),
+          eq(glPeriods.bookId, bookId),
+          lte(glPeriods.startsOn, date),
+          gte(glPeriods.endsOn, date),
         ),
       )
       .limit(1);

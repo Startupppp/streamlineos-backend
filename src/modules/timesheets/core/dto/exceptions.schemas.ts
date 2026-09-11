@@ -1,9 +1,13 @@
 import { z } from "zod";
+import {
+  timesheetExceptionSeveritySchema,
+  timesheetExceptionStatusSchema,
+} from "./status.schemas";
 import { pageSizeField } from "../../../../common/pagination/list-query.schema";
 
 export const exceptionsQuerySchema = z.object({
-  status: z.enum(["OPEN", "RESOLVED", "DISMISSED"]).optional(),
-  severity: z.enum(["WARNING", "ERROR"]).optional(),
+  status: timesheetExceptionStatusSchema.optional(),
+  severity: timesheetExceptionSeveritySchema.optional(),
   rule: z.string().max(100).optional(),
   userId: z.string().optional(),
   cursor: z.string().optional(),

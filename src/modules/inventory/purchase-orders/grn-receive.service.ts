@@ -1,6 +1,7 @@
 import {
   Inject,
   Injectable,
+  Logger,
   BadRequestException,
   NotFoundException,
 } from "@nestjs/common";
@@ -23,19 +24,24 @@ import { StockEngineService } from "../stock-engine/stock-engine.service";
 import { InventorySettingsService } from "../stock-engine/inventory-settings.service";
 import { NumberSequenceService } from "../stock-engine/number-sequence.service";
 import { INV_ERRORS } from "../stock-engine/stock-engine.types";
-import { InventoryAccountingBridge } from "../stock-engine/accounting-bridge";
+import { addDec, mulDec, isPositive } from "../stock-engine/decimal";
+import { PostingCommandService } from "../../accounting/adapters/posting-command.service";
+import { AdapterRejection } from "../../accounting/adapters/posting-command.types";
+import type { DbOrTx } from "../../accounting/kernel/sequence.service";
 import type { CreateGrnInput } from "./dto/inv-purchase-orders.schemas";
 import { PoService } from "./po.service";
 
 @Injectable()
 export class GrnReceiveService {
+  private readonly logger = new Logger(GrnReceiveService.name);
+
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly cache: CacheService,
     private readonly engine: StockEngineService,
     private readonly settingsService: InventorySettingsService,
     private readonly numSeq: NumberSequenceService,
-    private readonly journalPosting: InventoryAccountingBridge,
+    private readonly posting: PostingCommandService,
     private readonly poService: PoService,
   ) {}
 
@@ -372,56 +378,46 @@ export class GrnReceiveService {
         });
       }
 
+      // Goods-received accrual, on the SAME transaction as the movement it
+      // values (ACC-05). Accounting resolves the accounts from the org's own
+      // chart via system tags — which is what INV-09's per-organisation mapping
+      // becomes on the kernel — and a redelivered receipt is idempotent on the
+      // GRN id (`stock_move:{grnId}:receive`).
+      //
+      // Inside, not after the commit. A refusal — a missing account role, a
+      // locked period — now rolls the receipt back with it instead of leaving
+      // a committed GRN the ledger never heard about, which is the 500-after-
+      // commit this path used to give. The one expected absence, an org that
+      // never enabled accounting, is `BOOK_NOT_ENABLED` and is skipped.
+      //
+      // Exact, not float: `quantity * parseFloat(unitCost)` is the arithmetic
+      // the PRD forbids for money, and this figure lands on both sides of the
+      // journal. It credits `ap_control`, as the kernel's receiving post does
+      // today. The inventory lane named this line GRNI (whose default account
+      // was AP's); moving it onto the kernel's `grni` role is the contract's
+      // §2.2 / ACC-03 decision, not this merge's.
+      let receivedValue = "0.0000";
+      for (const line of data.lines) {
+        if (line.qualityStatus !== "ACCEPTED") continue;
+        const poLine = po.lines.find((l) => l.id === line.poLineId);
+        if (!poLine) continue;
+        receivedValue = addDec(receivedValue, mulDec(String(line.quantityReceived), poLine.unitCost ?? "0"));
+      }
+      const totalMinor = isPositive(receivedValue) ? Math.round(Number(receivedValue) * 100) : 0;
+      if (totalMinor > 0) {
+        await this.postReceipt(orgId, userId, tx, {
+          grnId: grn.id,
+          grnNumber,
+          poNumber: po.poNumber,
+          receivedDate: data.receivedDate,
+          totalMinor,
+        });
+      }
+
       return grn.id;
     });
 
     await this.engine.invalidateCaches(orgId);
-
-    const acceptedLines = data.lines.filter(
-      (l) => l.qualityStatus === "ACCEPTED",
-    );
-
-    let totalValue = 0;
-    for (const line of acceptedLines) {
-      const poLine = po.lines.find((l) => l.id === line.poLineId)!;
-      totalValue += Number(line.quantityReceived) * parseFloat(poLine.unitCost);
-    }
-
-    if (totalValue > 0) {
-      // INV-09 — through the bridge, and naming purposes rather than codes.
-      //
-      // `POST /inventory/purchase-orders/:poId/receive` is a second, older
-      // receiving path beside `GrnPostingService`, and it reached past the
-      // bridge straight to `persistJournalEntry`. That meant a tenant with no
-      // account 1300 — or a database without the accounting module — got a 500
-      // for a delivery whose GRN and stock rows had already committed one
-      // statement earlier. `postReceiptJournal`, the other receiving path's
-      // version of this entry, has always skipped instead; both paths now do.
-      await this.journalPosting.postJournalEntry({
-        orgId,
-        entryDate: data.receivedDate,
-        description: `Goods received: ${grnNumber}`,
-        sourceType: "inv_grn",
-        sourceId: String(grnId),
-        sourceEvent: "receive",
-        status: "POSTED",
-        createdBy: userId,
-        lines: [
-          {
-            credit: 0,
-            debit: totalValue,
-            purpose: "INVENTORY_ASSET",
-            description: `Inventory received - ${grnNumber}`,
-          },
-          {
-            purpose: "INVENTORY_GRNI",
-            debit: 0,
-            credit: totalValue,
-            description: `GRNI - PO ${po.poNumber}`,
-          },
-        ],
-      });
-    }
 
     if (settings.inspectionOnReceipt) {
       const inspNumber = await this.numSeq.next(orgId, "INSPECTION");
@@ -445,5 +441,54 @@ export class GrnReceiveService {
       where: eq(invGrns.id, grnId),
       with: { lines: true, creator: { columns: { id: true, name: true } } },
     });
+  }
+
+  /**
+   * Accounting is opt-in. An org that never enabled it has no book to post
+   * into, and that must not fail a goods receipt — every other rejection (a
+   * missing account role, a locked period, an unbalanced total) still surfaces
+   * loudly, and on the receipt's own transaction it takes the receipt with it.
+   * See `docs/inventory-gl-contract.md` §3.3/§4.
+   */
+  private async postReceipt(
+    orgId: string,
+    userId: string,
+    tx: DbOrTx,
+    receipt: { grnId: number; grnNumber: string; poNumber: string; receivedDate: string; totalMinor: number },
+  ): Promise<void> {
+    try {
+      await this.posting.submit(
+        orgId,
+        userId,
+        {
+          sourceType: "stock_move",
+          sourceId: String(receipt.grnId),
+          purpose: "receive",
+          journalDate: receipt.receivedDate,
+          memo: `Goods received: ${receipt.grnNumber}`,
+          lines: [
+            {
+              accountTag: "inventory",
+              debitMinor: receipt.totalMinor,
+              description: `Inventory received - ${receipt.grnNumber}`,
+            },
+            {
+              accountTag: "ap_control",
+              creditMinor: receipt.totalMinor,
+              description: `AP - PO ${receipt.poNumber}`,
+            },
+          ],
+        },
+        tx,
+      );
+    } catch (error) {
+      if (error instanceof AdapterRejection && error.code === "BOOK_NOT_ENABLED") {
+        this.logger.debug(
+          `Accounting is not enabled for org ${orgId}; GRN ${receipt.grnNumber} was not posted`,
+        );
+        return;
+      }
+      throw error;
+    }
   }
 }

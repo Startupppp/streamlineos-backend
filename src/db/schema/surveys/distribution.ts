@@ -1,8 +1,7 @@
 import { pgTable, pgEnum, text, serial, integer, jsonb, timestamp, index, unique, foreignKey } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { organizations, users, organizationMembers } from "../common/auth";
-import { contacts, clientAccounts } from "../crm/contacts";
-import { leads } from "../crm/leads";
+import { clientAccounts } from "../crm/contacts";
 import { surveyForms, surveyVersions } from "./forms";
 
 export const surveyCollectorTypeEnum = pgEnum("survey_collector_type", [
@@ -64,8 +63,8 @@ export const surveyParticipants = pgTable("survey_participants", {
   collectorId: integer("collector_id").references(() => surveyCollectors.id, { onDelete: "set null" }),
   userId: text("user_id").references(() => users.id, { onDelete: "set null" }),
   userMembershipId: integer("user_membership_id"),
-  contactId: integer("contact_id").references(() => contacts.id, { onDelete: "set null" }),
-  leadId: integer("lead_id").references(() => leads.id, { onDelete: "set null" }),
+  contactId: integer("contact_id"),
+  leadId: integer("lead_id"),
   clientId: integer("client_id").references(() => clientAccounts.id, { onDelete: "set null" }),
   name: text("name"),
   email: text("email"),
@@ -99,7 +98,5 @@ export const surveyParticipantsRelations = relations(surveyParticipants, ({ one 
   survey: one(surveyForms, { fields: [surveyParticipants.surveyId], references: [surveyForms.id] }),
   collector: one(surveyCollectors, { fields: [surveyParticipants.collectorId], references: [surveyCollectors.id] }),
   user: one(users, { fields: [surveyParticipants.userId], references: [users.id] }),
-  contact: one(contacts, { fields: [surveyParticipants.contactId], references: [contacts.id] }),
-  lead: one(leads, { fields: [surveyParticipants.leadId], references: [leads.id] }),
   client: one(clientAccounts, { fields: [surveyParticipants.clientId], references: [clientAccounts.id] }),
 }));

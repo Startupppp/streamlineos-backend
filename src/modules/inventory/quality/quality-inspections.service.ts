@@ -10,10 +10,11 @@ import { type Db } from "../../../db/drizzle.module";
 import { CacheService } from "../../../common/cache/cache.service";
 import { CACHE_KEYS, CACHE_TTL } from "../../../common/cache/cache-keys";
 import { StockEngineService } from "../stock-engine/stock-engine.service";
+import { StockMovementBridgeService } from "../../accounting/adapters/stock-movement-bridge.service";
 import { NumberSequenceService } from "../stock-engine/number-sequence.service";
 import { InventoryAuditService } from "../stock-engine/inventory-audit.service";
 import { runIdempotent, revivedId } from "../stock-engine/idempotency";
-import type { StockMovement } from "../stock-engine/stock-engine.types";
+import type { StockEngineResult, StockMovement } from "../stock-engine/stock-engine.types";
 import {
   dispositionMovements,
   locateLines,
@@ -41,6 +42,7 @@ export class InspectionsService {
     private readonly engine: StockEngineService,
     private readonly numSeq: NumberSequenceService,
     private readonly audit: InventoryAuditService,
+    private readonly glBridge: StockMovementBridgeService,
   ) {}
 
   async list(orgId: string, query: ListInspectionsQueryInput) {
@@ -255,11 +257,40 @@ export class InspectionsService {
             overrides,
           );
 
-          await this.postMovements(
+          const moved = await this.postMovements(
             tx, orgId, userId, `${idempotencyKey}:stock`, "INSPECTION_DISPOSE", id,
             dispositionMovements(located, input),
             `Inspection disposed: ${inspection.inspectionNumber}`,
           );
+
+          /*
+            ACC-21. Scrap is the only disposition here that reaches the ledger.
+            Quarantining moves stock between buckets and releasing moves it
+            back, and in both cases the business still owns the goods at the
+            same cost — so the balance sheet must not move. Destroying them is
+            different, and it lands in inventory_write_off rather than in the
+            adjustment account, because a write-off is a decision somebody made.
+
+            Every disposition shares one engine command here, so the bridge is
+            handed all of it and sorts it by movement type: QUARANTINE_IN and
+            QUARANTINE_OUT carry the `none` treatment and post nothing; SCRAP
+            posts. On the command's own transaction, so a ledger refusal takes
+            the disposal back with it.
+          */
+          if (moved) {
+            await this.glBridge.post(
+              orgId,
+              userId,
+              {
+                kind: "quality_inspection",
+                documentId: String(id),
+                transactionIds: moved.transactionIds,
+                journalDate: new Date().toISOString().slice(0, 10),
+                memo: `Quality inspection ${inspection.inspectionNumber}: disposed`,
+              },
+              tx,
+            );
+          }
           await this.clearHeldQuantities(tx, orgId, located.map((line) => line.id));
           for (const dl of input.lines) {
             await tx.update(invQualityInspectionLines)
@@ -425,7 +456,7 @@ export class InspectionsService {
     inspectionId: number,
     movements: StockMovement[],
     reason: string,
-  ): Promise<unknown> {
+  ): Promise<StockEngineResult | undefined> {
     // A command with no movements is not a command. Every verdict reaches here,
     // including the ones with nothing to move — a manual inspection that never
     // held anything, or a delivery released line by line.

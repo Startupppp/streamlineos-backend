@@ -10,6 +10,7 @@ type Req = { headers: Record<string, string | undefined>; method: string; path: 
 
 type StampedReq = Req & { correlationId?: string; requestId?: string };
 
+/** The response double, which the span-ending tests drive directly. */
 type ResDouble = {
   statusCode: number;
   setHeader: (name: string, value: string) => void;

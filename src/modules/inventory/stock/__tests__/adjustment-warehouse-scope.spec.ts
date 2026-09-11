@@ -49,6 +49,7 @@ function serviceWith(harness: DbHarness, scope: WarehouseScopeService) {
     { get: () => Promise.resolve({ adjustmentApprovalThreshold: null }) } as never,
     scope,
     { canSeeCost: () => Promise.resolve(false) } as never,
+    { post: jest.fn().mockResolvedValue(undefined) } as never,
   );
 }
 
@@ -133,6 +134,14 @@ describe("the create-side claim", () => {
     const harness = dbWith({
       detail: undefined,
       reads: [
+        /*
+          The tenant check (`assertLinesResolve`, from the accounting merge) runs
+          first and 404s unless the variant and the location are this
+          organisation's. Location 99 IS the org's; it is only outside the
+          caller's warehouses, which is the refusal under test.
+        */
+        [{ id: 1 }],
+        [{ id: 99 }],
         [{ id: 1, productId: 1, sku: "SKU", costPrice: "1", sellingPrice: "2",
            measureMode: "EACH", variantActive: true, productStatus: "ACTIVE", productDeletedAt: null }],
         /* the threshold rule's own narrow projection, then the gate's location lookup */

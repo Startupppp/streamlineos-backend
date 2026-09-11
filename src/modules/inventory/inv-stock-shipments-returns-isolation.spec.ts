@@ -19,7 +19,6 @@ import { NumberSequenceService } from "./stock-engine/number-sequence.service";
 import { InventoryAuditService } from "./stock-engine/inventory-audit.service";
 import { CostVisibilityService } from "./stock-engine/cost-visibility";
 import { ReservationService } from "./stock-engine/reservation.service";
-import { JournalPostingService } from "../accounting/posting/journal-posting.service";
 import { INVENTORY_ISOLATION_STUBS } from "./__tests__/isolation-stubs";
 
 /**

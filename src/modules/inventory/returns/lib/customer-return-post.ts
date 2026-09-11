@@ -8,6 +8,7 @@ import {
 } from "../../../../db/schema";
 import { type Db } from "../../../../db/drizzle.module";
 import { StockEngineService } from "../../stock-engine/stock-engine.service";
+import { StockMovementBridgeService } from "../../../accounting/adapters/stock-movement-bridge.service";
 import type { StockMovement } from "../../stock-engine/stock-engine.types";
 import {
   INVENTORY_COMMAND_EVENTS,
@@ -33,6 +34,8 @@ type ReturnLineRow = typeof invCustomerReturnLines.$inferSelect;
  */
 export interface ReturnPostDeps {
   readonly engine: StockEngineService;
+  /** ACC-21. The restock posts to the general ledger on the return's own transaction. */
+  readonly glBridge: StockMovementBridgeService;
 }
 
 export /**
@@ -120,7 +123,7 @@ export async function postReturnInTx(
   }
 
   if (engineMovements.length > 0) {
-    await deps.engine.executeInTx(tx, orgId, userId, {
+    const moved = await deps.engine.executeInTx(tx, orgId, userId, {
       // Derived rather than shared: the command's own key is already claimed
       // by `runIdempotent` above, and handing the engine the same string
       // would make it collide with that live claim.
@@ -130,6 +133,27 @@ export async function postReturnInTx(
       reason: data.reason,
       movements: engineMovements,
     });
+
+    /*
+      ACC-21. Goods coming back into stock reverse the cost of the sale that
+      shipped them, so the counterpart is COGS rather than an adjustment —
+      that is what puts the margin back in the period the return lands in. A
+      line quarantined instead of restocked posts nothing, because the
+      business owned those goods either way; the bridge reads each movement's
+      type and value off the rows just written and decides that itself.
+    */
+    await deps.glBridge.post(
+      orgId,
+      userId,
+      {
+        kind: "customer_return",
+        documentId: String(returnId),
+        transactionIds: moved.transactionIds,
+        journalDate: new Date().toISOString().slice(0, 10),
+        memo: `Customer return ${ret.returnNumber}`,
+      },
+      tx,
+    );
   }
 
   for (const [serialStatus, ids] of byStatus) {

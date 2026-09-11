@@ -5,14 +5,23 @@ import {
 } from "../common/enums";
 import { organizations, users } from "../common/auth";
 import { projects } from "../build";
-import { clients, clientAccounts } from "./contacts";
+import { clientAccounts } from "./contacts";
 import { deals } from "./deals";
 import { crmPricebooks, crmQuoteTemplates } from "./pricebooks";
 
 export const invoices = pgTable("invoices", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-  clientId: integer("client_id").references(() => clients.id),
+  clientId: integer("client_id"),
+  /**
+  * The party this row belongs to. Ticket 08's expand.
+  *
+  * Beside `client_id` rather than replacing it: every existing reader keeps
+  * working while readers move over one at a time, and the old column goes in
+  * the contract migration once none is left. Nullable until then -- a null
+  * means "not yet backfilled", which is a state worth being able to see.
+  */
+  clientPartyId: text("client_party_id"),
   projectId: integer("project_id").references(() => projects.id),
   invoiceNumber: text("invoice_number").notNull(),
   status: invoiceStatusEnum("status").default("DRAFT").notNull(),
@@ -94,7 +103,16 @@ export const payments = pgTable("payments", {
 export const purchaseBills = pgTable("purchase_bills", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-  vendorId: integer("vendor_id").references(() => clients.id),
+  vendorId: integer("vendor_id"),
+  /**
+  * The party this row belongs to. Ticket 08's expand.
+  *
+  * Beside `vendor_id` rather than replacing it: every existing reader keeps
+  * working while readers move over one at a time, and the old column goes in
+  * the contract migration once none is left. Nullable until then -- a null
+  * means "not yet backfilled", which is a state worth being able to see.
+  */
+  vendorPartyId: text("vendor_party_id"),
   billNumber: text("bill_number").notNull(),
   vendorBillNumber: text("vendor_bill_number"),
   billDate: date("bill_date").notNull(),
@@ -238,7 +256,6 @@ export const quoteLineItems = pgTable("quote_line_items", {
 
 export const invoicesRelations = relations(invoices, ({ one, many }) => ({
   organization: one(organizations, { fields: [invoices.orgId], references: [organizations.id] }),
-  client: one(clients, { fields: [invoices.clientId], references: [clients.id] }),
   project: one(projects, { fields: [invoices.projectId], references: [projects.id] }),
   creator: one(users, { fields: [invoices.createdBy], references: [users.id], relationName: "invoiceCreatedBy" }),
   collectionOwner: one(users, { fields: [invoices.collectionOwnerId], references: [users.id], relationName: "invoiceCollectionOwner" }),
@@ -258,7 +275,6 @@ export const paymentsRelations = relations(payments, ({ one }) => ({
 
 export const purchaseBillsRelations = relations(purchaseBills, ({ one, many }) => ({
   organization: one(organizations, { fields: [purchaseBills.orgId], references: [organizations.id] }),
-  vendor: one(clients, { fields: [purchaseBills.vendorId], references: [clients.id] }),
   creator: one(users, { fields: [purchaseBills.createdBy], references: [users.id], relationName: "billCreatedBy" }),
   approver: one(users, { fields: [purchaseBills.approvedBy], references: [users.id], relationName: "billApprovedBy" }),
   items: many(purchaseBillItems),

@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, HttpCode, Param, ParseIntPipe, Patch, Post, UseGuards } from "@nestjs/common";
+import { Body, Controller, Delete, Get, HttpCode, Param, ParseIntPipe, Patch, Post, Query, UseGuards } from "@nestjs/common";
 import { z } from "zod";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { ModuleGuard } from "../../common/rbac/module.guard";
@@ -12,6 +12,7 @@ import { SignSettingsService } from "./sign-settings.service";
 import { SignWatermarkService } from "./sign-watermark.service";
 import { SignEnvelopesService } from "./sign-envelopes.service";
 import { BodylessAction } from "../../common/openapi/zod-operation-contracts";
+import { SignEnvelopeSweepsService } from "./sign-envelope-sweeps.service";
 import {
   updateSignSettingsSchema,
   watermarkPolicyInputSchema,
@@ -30,6 +31,7 @@ export class SignAdminController {
     private readonly settings: SignSettingsService,
     private readonly watermark: SignWatermarkService,
     private readonly envelopes: SignEnvelopesService,
+    private readonly sweeps: SignEnvelopeSweepsService,
   ) {}
 
   @Get("settings")
@@ -85,19 +87,57 @@ export class SignAdminController {
     return { success: true };
   }
 
+  /**
+   * When each sweep last ran for this organisation, and whether it worked.
+   *
+   * Reported for both sweeps whether or not a row exists: an absent row means
+   * "never run", and that is the answer worth showing. Returning only the
+   * sweeps that have run lets a screen render an empty list and look healthy —
+   * which is indistinguishable from the state SignOS was actually in, with the
+   * sweeps wired to nothing at all.
+   */
+  @Get("sweep-status")
+  @RequirePermission("sign:admin:manage")
+  async sweepStatus(@CurrentUser() u: CurrentUserContext) {
+    return { sweeps: await this.sweeps.lastRuns(u.orgId) };
+  }
+
+  /**
+   * What the next sweep would do to this organisation, without doing it.
+   *
+   * Runs the same selection the sweep runs, so an operator asking "what happens
+   * if I turn this on" gets the sweep's own answer rather than a second
+   * implementation's. Nothing is written and no mail is queued, which also
+   * means calling this does not reset the staleness clock `sweep-status` reads.
+   */
+  @Get("sweep-preview")
+  @RequirePermission("sign:admin:manage")
+  async sweepPreview(@CurrentUser() u: CurrentUserContext, @Query("sweep") sweep?: string) {
+    const which = sweep === "expiration" ? "expiration" : "reminder";
+    return this.sweeps.previewSweep(u.orgId, which);
+  }
+
+  /**
+   * Run now, for this organisation only.
+   *
+   * `u.orgId` is not a convenience — until it was passed, an admin here swept
+   * every tenant in the database. See `SignEnvelopeSweepsService.runReminderSweep`.
+   * These two remain manual triggers; the scheduled pass is
+   * `POST /cron/sign-envelope-sweeps`, which walks organisations itself.
+   */
   @Post("run-reminder-sweep")
   @BodylessAction()
   @RequirePermission("sign:admin:manage")
-  async runReminderSweep() {
-    const remindedCount = await this.envelopes.runReminderSweep();
+  async runReminderSweep(@CurrentUser() u: CurrentUserContext) {
+    const remindedCount = await this.envelopes.runReminderSweep(u.orgId);
     return { remindedCount };
   }
 
   @Post("run-expiration-sweep")
   @BodylessAction()
   @RequirePermission("sign:admin:manage")
-  async runExpirationSweep() {
-    const expiredCount = await this.envelopes.runExpirationSweep();
+  async runExpirationSweep(@CurrentUser() u: CurrentUserContext) {
+    const expiredCount = await this.envelopes.runExpirationSweep(u.orgId);
     return { expiredCount };
   }
 }

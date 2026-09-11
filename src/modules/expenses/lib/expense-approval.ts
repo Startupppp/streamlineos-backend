@@ -2,24 +2,30 @@
  * Approving an expense — the only transition in this module that reaches the
  * general ledger.
  *
- * Submit and reject move a status and tell somebody. This one builds a balanced
- * journal and posts it through `FinancePostingService` BEFORE it writes the
- * status, so an expense can never sit in REIMBURSEMENT_PENDING with no entry
- * behind it. That ordering, and the GL vocabulary it needs (system purposes,
- * `PostJournalLine`), is what earns it its own file.
+ * Submit and reject move a status and tell somebody. This one posts an accrual
+ * through `PostingCommandService` — the accounting module's anti-corruption
+ * layer — BEFORE it writes the status, so an expense can never sit in
+ * REIMBURSEMENT_PENDING with no journal behind it. That ordering, and the GL
+ * vocabulary it needs (system tags, integer minor units), is what earns it its
+ * own file.
  *
- * The money here is the expenses family's `decimal(x,2)` MAJOR-unit convention,
- * NOT the GL kernel's integer `*_minor` units. Every `toFixed(2)` below and the
- * `amount - taxAmount` split moved from the service character for character;
- * they are the shape `postJournal` expects from this caller.
+ * Nothing here names a GL account: lines carry a `GlSystemTag` and accounting
+ * resolves them against the organisation's own chart, so a tenant renumbering
+ * their accounts cannot break expense approval. Accounting is opt-in and HR
+ * self-service is not: an organisation that never enabled accounting still
+ * approves expenses — the posting is skipped, not failed (the same contract
+ * `payroll-posting.service.ts` keeps). A retried approval is safe on the ledger
+ * side too: `PostingCommandService` keys a journal on
+ * `{sourceType}:{sourceId}:{purpose}` and returns the original on a replay.
  */
 import {
   BadRequestException,
   InternalServerErrorException,
+  Logger,
   NotFoundException,
 } from "@nestjs/common";
 import { and, eq } from "drizzle-orm";
-import { expenses, finApprovalRequests, expenseCategories } from "../../../db/schema";
+import { expenses } from "../../../db/schema";
 import { type Db } from "../../../db/drizzle.module";
 import { CacheService } from "../../../common/cache/cache.service";
 import { CACHE_KEYS } from "../../../common/cache/cache-keys";
@@ -29,28 +35,30 @@ import {
   EXPENSE_DECIDED_EVENT,
   expenseDecidedPayloadSchema,
 } from "../dto/expense-outbox.schemas";
-import { FinancePostingService } from "../../accounting/posting/finance-posting.service";
-import type { PostJournalLine } from "../../accounting/core/finance-posting.types";
+import { PostingCommandService } from "../../accounting/adapters/posting-command.service";
+import { AdapterRejection } from "../../accounting/adapters/posting-command.types";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { holdsOwnerOnly } from "../../../common/rbac/owner-only-operations";
 import {
   assertOrganizationActor,
   OrganizationActorError,
   organizationActorHttpError,
 } from "../../../common/organization/organization-actor";
+import { amountToMinor } from "./expense-policy-rules";
+
+const logger = new Logger("ExpenseApproval");
 
 export interface ExpenseApprovalDeps {
   readonly db: Db;
   readonly cache: CacheService;
   readonly audit: AuditService;
-  readonly posting: FinancePostingService;
+  readonly posting: PostingCommandService;
 }
 
 export async function approveExpense(
   deps: ExpenseApprovalDeps,
   u: CurrentUserContext,
   expenseId: number,
-): Promise<{ success: boolean; entryId: number | null }> {
+): Promise<{ success: boolean; journalId: string | null }> {
   const approverActor = await assertOrganizationActor(deps.db, u.orgId, { kind: "user", userId: u.userId }).catch((e: unknown) => {
     if (e instanceof OrganizationActorError) throw organizationActorHttpError(e);
     throw e;
@@ -67,72 +75,18 @@ export async function approveExpense(
     throw new BadRequestException(`Expense in status ${expense.status} cannot be approved`);
   }
 
-  const openApprovalRequest = await deps.db.query.finApprovalRequests.findFirst({
-    where: and(
-      eq(finApprovalRequests.orgId, u.orgId),
-      eq(finApprovalRequests.recordType, "EXPENSE"),
-      eq(finApprovalRequests.recordId, expenseId),
-      eq(finApprovalRequests.status, "PENDING"),
-    ),
-  });
-
-  if (openApprovalRequest) {
-    if (!holdsOwnerOnly(u, "finance.expense.grant-without-approval")) {
-      throw new BadRequestException("This expense requires a pending approval to be granted first");
-    }
-    await deps.db
-      .update(finApprovalRequests)
-      .set({ status: "APPROVED", decidedBy: u.userId, decidedAt: new Date() })
-      .where(eq(finApprovalRequests.id, openApprovalRequest.id));
-  }
-
-  const categoryWithLedger = expense.categoryId
-    ? await deps.db.query.expenseCategories.findFirst({
-        where: eq(expenseCategories.id, expense.categoryId),
-        columns: { id: true, name: true, ledgerAccountId: true },
-      })
-    : null;
-
-  const amount = Number(expense.amount);
-  const amountStr = amount.toFixed(2);
-  const taxAmount = expense.taxAmount ? Number(expense.taxAmount) : 0;
-  const expenseAmount = amount - taxAmount;
-
-  const lines: PostJournalLine[] = [
-    categoryWithLedger?.ledgerAccountId
-      ? {
-          accountId: categoryWithLedger.ledgerAccountId,
-          debit: expenseAmount.toFixed(2),
-          description: `Expense: ${expense.category}`,
-        }
-      : {
-          systemPurpose: "EXPENSE_CLEARING" as const,
-          debit: expenseAmount.toFixed(2),
-          description: `Expense: ${expense.category}`,
-        },
-  ];
-
-  if (taxAmount > 0) {
-    lines.push({
-      systemPurpose: "TAX_RECEIVABLE",
-      debit: taxAmount.toFixed(2),
-      description: "Tax receivable on expense",
-    });
-  }
-
-  lines.push({
-    systemPurpose: "REIMBURSEMENT_PAYABLE",
-    credit: amountStr,
-    description: "Reimbursement payable to employee",
-  });
-
-  const postResult = await deps.posting.postJournal(u, {
-    entryDate: expense.expenseDate,
-    description: `Expense approved: ${expense.category} — ${expense.description ?? ""}`.trimEnd(),
-    sourceType: "EXPENSE",
-    sourceId: String(expenseId),
-    sourceEvent: "approved",
-    lines,
+  // The retired `fin_approval_requests` row, and the owner-only override that
+  // granted over it, went with the pre-rewrite accounting schema. The pending
+  // state is the expense's own SUBMITTED status now, and approving it is gated
+  // by `hr:expenses:approve` on the route.
+  const currency = (expense.currency || "INR").toUpperCase();
+  const journalId = await postApprovalAccrual(deps, u, {
+    expenseId,
+    expenseDate: expense.expenseDate,
+    currency,
+    totalMinor: amountToMinor(expense.amount, currency),
+    category: expense.category,
+    description: expense.description,
   });
 
   await deps.db.transaction(async (tx) => {
@@ -143,7 +97,6 @@ export async function approveExpense(
         approverId: u.userId,
         approverMembershipId: approverActor.membershipId,
         approvedAt: new Date(),
-        postedJournalEntryId: postResult.entryId,
         updatedAt: new Date(),
       })
       .where(and(eq(expenses.id, expenseId), eq(expenses.orgId, u.orgId)))
@@ -166,7 +119,10 @@ export async function approveExpense(
         amount: expense.amount,
         category: expense.category,
         rejectionReason: null,
-        journalEntryId: postResult.entryId,
+        // `journalEntryId` is the retired integer `journal_entries` id; a
+        // kernel journal id is text and does not fit it. The journal is recorded
+        // on the audit row below.
+        journalEntryId: null,
       }),
     });
   });
@@ -177,10 +133,82 @@ export async function approveExpense(
     orgId: u.orgId,
     targetId: String(expenseId),
     targetType: "expense",
-    metadata: { journalEntryId: postResult.entryId },
+    metadata: { journalId },
   });
 
   await deps.cache.invalidateNamespace(CACHE_KEYS.expensesListNamespace(u.orgId));
 
-  return { success: true, entryId: postResult.entryId };
+  return { success: true, journalId };
+}
+
+/**
+ * The accrual an approved claim creates:
+ *
+ *   operating expenses        gross   (debit)
+ *   employee payable          gross   (credit)
+ *
+ * Two deliberate differences from the retired posting service, both because
+ * the new kernel has no equivalent rather than for convenience:
+ *
+ * 1. The whole claim, tax included, debits `opex`. The old service split a
+ *    `TAX_RECEIVABLE` leg out, but a claim carries no tax code, no supplier
+ *    registration and no place of supply, so no input-tax credit can be
+ *    substantiated. Recoverable input tax is now determined by the tax engine
+ *    on AP documents; `expenses.tax_amount` is still recorded for reporting.
+ * 2. `expense_categories.ledger_account_id` is no longer honoured — it is a
+ *    legacy integer that cannot address a `gl_accounts` text id, and the
+ *    kernel resolves accounts by role, not by an id another module stores.
+ *
+ * The credit lands on `net_pay_clearing`: the kernel has no
+ * `reimbursement_payable` role, and that account is the employee-side
+ * liability a disbursement clears, which is exactly what a reimbursement is.
+ */
+async function postApprovalAccrual(
+  deps: ExpenseApprovalDeps,
+  u: CurrentUserContext,
+  claim: {
+    expenseId: number;
+    expenseDate: string;
+    currency: string;
+    totalMinor: number;
+    category: string;
+    description: string | null;
+  },
+): Promise<string | null> {
+  if (claim.totalMinor <= 0) return null;
+
+  const memo = `Expense approved: ${claim.category} — ${claim.description ?? ""}`.trimEnd();
+
+  try {
+    const result = await deps.posting.submit(u.orgId, u.userId, {
+      sourceType: "expense_claim",
+      sourceId: String(claim.expenseId),
+      purpose: "expense_approve",
+      journalDate: claim.expenseDate,
+      memo,
+      lines: [
+        {
+          accountTag: "opex",
+          debitMinor: claim.totalMinor,
+          currency: claim.currency,
+          description: `Expense: ${claim.category}`,
+        },
+        {
+          accountTag: "net_pay_clearing",
+          creditMinor: claim.totalMinor,
+          currency: claim.currency,
+          description: "Reimbursement payable to employee",
+        },
+      ],
+    });
+    return result.journalId;
+  } catch (error) {
+    if (error instanceof AdapterRejection && error.code === "BOOK_NOT_ENABLED") {
+      logger.debug(
+        `Accounting is not enabled for org ${u.orgId}; expense ${claim.expenseId} was approved without a ledger entry`,
+      );
+      return null;
+    }
+    throw error;
+  }
 }

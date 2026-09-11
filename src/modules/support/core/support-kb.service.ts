@@ -58,6 +58,25 @@ export class SupportKbService {
     });
     if (existing) throw new ConflictException("A category with this name already exists");
 
+    /**
+     * No conflict handler under the insert, deliberately.
+     *
+     * `uniq_kb_categories_org_space_slug` is (org_id, space_id, slug) and is
+     * NULLS DISTINCT — migration 0000 creates it with no `NULLS NOT DISTINCT`
+     * — while this path never sets `space_id`. Two rows with the same slug and
+     * a null space therefore do NOT collide, so the index cannot raise 23505
+     * here at all; the only other unique on the table is (org_id, id) over a
+     * serial nobody supplies. The handler that used to sit here was dead twice
+     * over: it read `e.code` off a value Drizzle keeps the SQLSTATE under, and
+     * there was no violation for it to read.
+     *
+     * The check above is therefore the whole guard, and it is a read followed
+     * by a write. Two concurrent creates of the same name both pass it and
+     * both land, which no index will refuse. Closing that needs a partial
+     * unique on (org_id, slug) WHERE space_id IS NULL, or NULLS NOT DISTINCT —
+     * a migration, not a catch block, and out of scope here. Recorded rather
+     * than papered over with a branch that cannot fire.
+     */
     const [category] = await this.db
       .insert(kbCategories)
       .values({
@@ -69,13 +88,7 @@ export class SupportKbService {
         sortOrder: input.sortOrder ?? 0,
         isPublished: input.isPublished ?? false,
       })
-      .returning()
-      .catch((e: { code?: string }) => {
-        if (e.code === "23505") {
-          throw new ConflictException("A category with this name already exists");
-        }
-        throw e;
-      });
+      .returning();
     return category;
   }
 

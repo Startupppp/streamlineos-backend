@@ -33,7 +33,23 @@ const TIERS: Record<string, Tier> = {
   // reconnects but stops a script inflating the in-process token map.
   "notifications:stream-token": { limit: 30, windowSecs: 60 },
   "public:contact": { limit: 5, windowSecs: 3600 },
+  // Read-only marketing reads. Generous: an evaluation reloads a pricing page.
+  "public:pricing": { limit: 120, windowSecs: 60 },
+  // The subprocessor register is @Public() because the people who read it are a
+  // prospect's counsel and a customer's compliance officer, who have no login.
+  // The read is generous; the subscribe is an unauthenticated write taking an
+  // email address, which is the shape of every mailing-list abuse there is.
+  "compliance:subprocessors": { limit: 60, windowSecs: 60 },
+  "compliance:subscribe": { limit: 5, windowSecs: 3600 },
   "public:waitlist": { limit: 5, windowSecs: 3600 },
+  /**
+   * Claiming an invitation, which is unauthenticated and creates an
+   * organisation. Tighter than joining the waitlist because the failure mode is
+   * worse: the endpoint is a token oracle, and a wrong guess is cheap for an
+   * attacker and free for us to refuse. Ten an hour is generous for somebody
+   * mistyping their own details and useless for enumeration.
+   */
+  "public:waitlist-claim": { limit: 10, windowSecs: 3600 },
   "public:kb": { limit: 60, windowSecs: 60 },
   "public:kb-article": { limit: 60, windowSecs: 60 },
   "public:roadmap": { limit: 60, windowSecs: 60 },
@@ -67,7 +83,6 @@ const TIERS: Record<string, Tier> = {
   "sign:public-auth": { limit: 10, windowSecs: 60 },
   "sign:public-otp-request": { limit: 5, windowSecs: 3600 },
   "sign:public-complete": { limit: 10, windowSecs: 60 },
-  "sign:public-form-submit": { limit: 10, windowSecs: 3600 },
   "sign:bulk-send-create": { limit: 5, windowSecs: 3600 },
   "mail:send": { limit: 30, windowSecs: 60 },
   "mail:reply": { limit: 30, windowSecs: 60 },

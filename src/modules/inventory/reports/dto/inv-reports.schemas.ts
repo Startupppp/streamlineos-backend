@@ -30,7 +30,9 @@ export const valuationReportSchema = z.object({
   categoryId: z.coerce.number().int().positive().optional(),
   /** D5. The date the figure is quoted at, directly or via an accounting period. */
   asOfDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
-  periodId: z.coerce.number().int().positive().optional(),
+  // A gl_periods id since valuation reads the kernel's periods (see
+  // valuation.schemas.ts); the integer inventory period is gone.
+  periodId: z.string().uuid().optional(),
   page: pageNumberField,
   limit: pageSizeField(50, 100),
 }).strict();

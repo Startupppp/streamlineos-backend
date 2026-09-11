@@ -4,6 +4,7 @@ import type { StockEngineService } from "../../stock-engine/stock-engine.service
 import type { ReservationService } from "../../stock-engine/reservation.service";
 import type { TransitLocationService } from "../../stock-engine/transit-location.service";
 import type { WarehouseScopeService } from "../../stock-engine/warehouse-scope.service";
+import type { StockMovementBridgeService } from "../../../accounting/adapters/stock-movement-bridge.service";
 
 /**
  * The dependency bag the two transfer movement commands take — `transfer-dispatch.ts`
@@ -23,6 +24,8 @@ export interface TransferDeps {
   readonly reservationService: ReservationService;
   readonly transitLocations: TransitLocationService;
   readonly warehouseScope: WarehouseScopeService;
+  /** ACC-21. Completion posts the transfer's net value change to the general ledger. */
+  readonly glBridge: StockMovementBridgeService;
 }
 
   // B1-06: engine.executeInTx + reservation consumption + status update in one transaction.

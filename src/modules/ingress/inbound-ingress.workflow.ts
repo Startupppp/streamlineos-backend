@@ -1,5 +1,5 @@
 import { Inject, Injectable, Logger, Optional, type OnModuleInit } from "@nestjs/common";
-import { and, eq } from "drizzle-orm";
+import { and, count, eq, isNull } from "drizzle-orm";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.types";
 import {
@@ -14,8 +14,14 @@ import type { StepContext, WorkflowRunContext } from "../../common/workflow";
 import { runInNewTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
 import { getRegionRegistry, hasRegionRegistry } from "../../common/region/region-registry";
 import { AutonomyService } from "../autonomy/autonomy.service";
+import { RelationshipStateService } from "../relationships/relationship-state.service";
 import { AutonomyScoringService } from "../autonomy/autonomy-scoring.service";
 import { buildDecision } from "../autonomy/decision-record";
+import {
+  evaluateAutonomousWrite,
+  upgradePrompt,
+} from "../autonomy/autonomous-write-guard";
+import { PlanLimitsService } from "../billing/core/plan-limits.service";
 import { INBOUND_WORKFLOW } from "./inbound-ingress.service";
 import {
   activityKindFor,
@@ -64,6 +70,25 @@ export class InboundIngressWorkflow implements OnModuleInit {
     @Optional() private readonly autonomy?: AutonomyService,
     /** Optional for the same reason as `autonomy`: measurement must not gate filing. */
     @Optional() private readonly scoring?: AutonomyScoringService,
+    /**
+     * Optional, but the absence is a decision rather than a default.
+     *
+     * Unwired, this workflow creates parties without consulting a plan, which is
+     * the gap ticket 07 exists to close. It is optional only so the seam's own
+     * tests can stand it up without a billing module behind them; every
+     * composition that serves a tenant provides it, and
+     * `party/party-creation-invariant.spec.ts` is what stops a future party
+     * insert going in without asking the same question.
+     */
+    @Optional() private readonly planLimits?: PlanLimitsService,
+    /**
+     * Optional for the same reason. Ticket 01's model of
+     * what normal looks like is derived from the activities, so a state that
+     * failed to update is repaired by the next message on the relationship or by
+     * an explicit rebuild — while a delivery rejected because a summary could not
+     * be written is a customer's message the CRM never filed.
+     */
+    @Optional() private readonly relationships?: RelationshipStateService,
   ) {}
 
   onModuleInit(): void {
@@ -150,6 +175,83 @@ export class InboundIngressWorkflow implements OnModuleInit {
       );
 
       if (existingPartyId) return { partyId: existingPartyId, created: false };
+
+      /**
+       * The plan, consulted before the system creates a record nobody asked for.
+       *
+       * Every limit in the platform was written for a request a person made, so
+       * every one of them is enforced by throwing: the handler unwinds and the
+       * person is told to upgrade. That is exactly wrong here. Throwing would
+       * unwind an ingest carrying a customer's message, and refusing to record
+       * that an email arrived — because a plan limit was reached — loses the
+       * message. So the limit is read rather than asserted, and the refusal is
+       * a decision the tenant can see.
+       *
+       * **The count is deliberately not `assertWithinLimit`'s.** That one counts
+       * parties joined to a `*_party_map` row, which was equivalent to "the
+       * tenant's contacts" while every contact was written through the legacy
+       * mirror. This path writes `business_parties` directly and creates no map
+       * row, so those parties are invisible to it — which is how autonomous
+       * creation was unbounded even though the tenant had a contact limit. The
+       * count here is what this path actually produces: live parties. The two
+       * numbers therefore differ for any tenant using ingress, and that
+       * divergence is recorded in ticket 07 rather than silently resolved by
+       * changing what every existing tenant is billed against.
+       */
+      const limit = this.planLimits
+        ? await this.planLimits.limitFor(context.organizationId, "crmContacts")
+        : null;
+
+      const [live] = await this.db
+        .select({ current: count() })
+        .from(businessParties)
+        .where(
+          and(
+            eq(businessParties.organizationId, context.organizationId),
+            isNull(businessParties.deletedAt),
+            // The type this path creates, and only that one. A tenant's vendors
+            // and partners are not customer records and counting them here
+            // would refuse an inbound message because the purchasing ledger is
+            // busy -- a connection no one could be expected to make from the
+            // refusal.
+            eq(businessParties.partyType, "CUSTOMER"),
+          ),
+        );
+
+      const verdict = evaluateAutonomousWrite({
+        kind: "party.created",
+        limitKey: "customer records",
+        limit,
+        current: live?.current ?? 0,
+      });
+
+      if (!verdict.allowed) {
+        /**
+         * The receipt survives; the derived record is what is refused.
+         *
+         * Returning no party leaves the activity unattributed rather than
+         * unrecorded — the message is filed, visible, and a person can attach it
+         * to somebody by hand. Nothing about the communication is lost, which is
+         * the property that makes refusing safe enough to do at all.
+         */
+        await this.db.insert(autonomousDecisions).values(
+          buildDecision({
+            organizationId: context.organizationId,
+            triggerType: "inbound-event",
+            triggerId: inboundEventId,
+            inputs: { address, identifierKind: kind, channel: event.channel },
+            ...verdict.decision,
+            summary: upgradePrompt(verdict),
+          }),
+        );
+
+        this.logger.warn(
+          `inbound: plan limit reached for ${context.organizationId}; ` +
+            `filed the message without creating a party`,
+        );
+
+        return { partyId: null, created: false };
+      }
 
       /**
        * The display column the kind belongs in, and only that one.
@@ -279,6 +381,25 @@ export class InboundIngressWorkflow implements OnModuleInit {
         })),
       );
 
+      return null;
+    });
+
+    /**
+     * What normal looks like for this relationship, brought up to date.
+     *
+     * Before extraction rather than after, because ticket 02's silence
+     * judgement and ticket 03's participant judgement both read this row, and a
+     * detector reasoning about a state that predates the message it was woken by
+     * would be answering last week's question.
+     *
+     * Its own step for the ordinary reason every step here has its own: a retry
+     * re-materialises without creating a second party and a second activity
+     * first. It cannot throw the run down — a relationship summary is not worth
+     * a dead-lettered delivery — but the failure is logged rather than swallowed.
+     */
+    await step.run("materialise-relationship", async () => {
+      if (!this.relationships) return null;
+      await this.relationships.tryOnActivity(context.organizationId, activity.activityId);
       return null;
     });
 

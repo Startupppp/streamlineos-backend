@@ -1,12 +1,23 @@
 import { ConflictException, ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, eq, inArray, isNull } from "drizzle-orm";
+import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { logger } from "../../../common/logger/logger.service";
 import { timesheetPeriods, timesheets } from "../../../db/schema";
 import { actingMembershipId } from "../../../common/auth/principal";
 import { TimesheetsAuditService } from "./timesheets-audit.service";
-import { ApprovalsService, isExpectedApprovalSkip } from "./approvals.service";
+import {
+  ApprovalsService,
+  LIFECYCLE_RETURNING,
+  isExpectedApprovalSkip,
+  lifecyclePayload,
+  membershipUserIds,
+  periodOwnerUserIdOrWarn,
+} from "./approvals.service";
+import {
+  TIMESHEET_LIFECYCLE_EVENTS,
+  emitPeriodLifecycleEvent,
+} from "./events/timesheet-lifecycle.events";
 import type {
   BulkApproveInput,
   BulkRejectInput,
@@ -43,14 +54,22 @@ export class ApprovalsBulkService {
       throw new ConflictException("Only submitted periods can be rejected");
     await this.approvals.assertCanActOnPeriod(u, period);
 
+    const owners = await membershipUserIds(this.db, u.orgId, [period.userMembershipId]);
+    const ownerUserId = periodOwnerUserIdOrWarn(owners, period.userMembershipId, {
+      orgId: u.orgId,
+      periodId,
+      operation: "reject",
+    });
+
     const now = new Date();
     await this.db.transaction(async (tx) => {
-      await tx
+      const [transition] = await tx
         .update(timesheetPeriods)
         .set({
           status: "REJECTED",
           rejectedAt: now,
           rejectionReason: input.reason,
+          eventSeq: sql`${timesheetPeriods.eventSeq} + 1`,
           updatedAt: now,
         })
         .where(
@@ -58,7 +77,8 @@ export class ApprovalsBulkService {
             eq(timesheetPeriods.id, periodId),
             eq(timesheetPeriods.orgId, u.orgId),
           ),
-        );
+        )
+        .returning(LIFECYCLE_RETURNING);
 
       await tx
         .update(timesheets)
@@ -83,7 +103,41 @@ export class ApprovalsBulkService {
         action: "period.rejected",
         reason: input.reason,
       });
+
+      if (transition && ownerUserId) {
+        await emitPeriodLifecycleEvent(tx, {
+          eventType: TIMESHEET_LIFECYCLE_EVENTS.rejected,
+          orgId: u.orgId,
+          periodId,
+          eventSeq: transition.eventSeq,
+          occurredAt: now,
+          payload: lifecyclePayload(
+            u.orgId,
+            periodId,
+            transition,
+            ownerUserId,
+            u.userId,
+            now,
+            input.reason,
+          ),
+        });
+      }
     });
+
+    if (ownerUserId) {
+      await this.approvals.notifyPeriodRejected(u, {
+        periodId,
+        ownerUserId,
+        title: `Timesheet rejected: ${period.periodStart} to ${period.periodEnd}`,
+        message: `Your timesheet for ${period.periodStart}–${period.periodEnd} was rejected: ${input.reason}`,
+        variables: {
+          periodId,
+          periodStart: period.periodStart,
+          periodEnd: period.periodEnd,
+          reason: input.reason,
+        },
+      });
+    }
 
     const [updated] = await this.db
       .select()
@@ -159,14 +213,20 @@ export class ApprovalsBulkService {
 
     const now = new Date();
     const ids = periods.map((p) => p.id);
+    const owners = await membershipUserIds(
+      this.db,
+      u.orgId,
+      periods.map((p) => p.userMembershipId),
+    );
 
     await this.db.transaction(async (tx) => {
-      await tx
+      const transitions = await tx
         .update(timesheetPeriods)
         .set({
           status: "REJECTED",
           rejectedAt: now,
           rejectionReason: input.reason,
+          eventSeq: sql`${timesheetPeriods.eventSeq} + 1`,
           updatedAt: now,
         })
         .where(
@@ -174,7 +234,8 @@ export class ApprovalsBulkService {
             eq(timesheetPeriods.orgId, u.orgId),
             inArray(timesheetPeriods.id, ids),
           ),
-        );
+        )
+        .returning({ ...LIFECYCLE_RETURNING, id: timesheetPeriods.id });
 
       await tx
         .update(timesheets)
@@ -202,7 +263,56 @@ export class ApprovalsBulkService {
           reason: input.reason,
         });
       }
+
+      /**
+       * One event per period, not one for the batch. A bulk rejection is a
+       * convenience for the approver; to everyone downstream it is N separate
+       * things that happened to N separate people, and an event whose
+       * `period_id` is a list is unroutable.
+       */
+      for (const transition of transitions) {
+        const ownerUserId = periodOwnerUserIdOrWarn(owners, transition.userMembershipId, {
+          orgId: u.orgId,
+          periodId: transition.id,
+          operation: "bulk-reject",
+        });
+        if (!ownerUserId) continue;
+        await emitPeriodLifecycleEvent(tx, {
+          eventType: TIMESHEET_LIFECYCLE_EVENTS.rejected,
+          orgId: u.orgId,
+          periodId: transition.id,
+          eventSeq: transition.eventSeq,
+          occurredAt: now,
+          payload: lifecyclePayload(
+            u.orgId,
+            transition.id,
+            transition,
+            ownerUserId,
+            u.userId,
+            now,
+            input.reason,
+          ),
+        });
+      }
     });
+
+    /**
+     * One notification per worker, after the batch commits. A bulk rejection is
+     * one action for the approver and N separate pieces of bad news for N
+     * people, each of whom needs the reason and their own period link.
+     */
+    for (const p of periods) {
+      const ownerUserId =
+        p.userMembershipId === null ? undefined : owners.get(p.userMembershipId);
+      if (!ownerUserId) continue;
+      await this.approvals.notifyPeriodRejected(u, {
+        periodId: p.id,
+        ownerUserId,
+        title: "Timesheet rejected",
+        message: `Your submitted timesheet was rejected: ${input.reason}`,
+        variables: { periodId: p.id, reason: input.reason },
+      });
+    }
 
     return { rejected: ids.length };
   }

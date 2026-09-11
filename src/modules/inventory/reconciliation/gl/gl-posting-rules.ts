@@ -1,84 +1,111 @@
-import type {
-  InventoryAccountCodes,
-  InventoryJournalPurpose,
+import type { GlSystemTag } from "../../../../db/schema";
+import {
+  INVENTORY_PURPOSE_TAG,
+  type InventoryAccountCodes,
+  type InventoryJournalPurpose,
 } from "../../stock-engine/accounting-bridge";
 
 /**
- * D6 — every journal inventory posts, written down once.
+ * D6 — every journal inventory posts off a stock document, written down once,
+ * in the accounting kernel's terms.
  *
- * `InventoryAccountingBridge.postJournalEntry` skips honestly: when the
- * accounting module is not migrated, or when the tenant has no chart-of-accounts
- * row for a code the entry needs, the goods still move and no journal is
- * written. That is deliberate — a receipt is a physical fact and refusing to
- * record it because nobody has set up account 1300 puts the warehouse's records
- * further from the truth. The cost of that decision is a gap between stock and
- * the general ledger, and this table is what makes the gap countable instead of
- * invisible.
+ * Each rule says which stock movements (`inv_stock_transactions.reference_type`)
+ * a journal values, and how to find that journal in the ledger. Every
+ * inventory journal is `source_type = 'stock_move'` with the idempotency key
+ * `stock_move:{sourceId}:{sourceEvent}`, so `sourceEvent` here IS the posting
+ * purpose. The report matches on the key, which is unique per book. It does not
+ * match on `source_id` alone, because receipts, shipments, landed-cost vouchers
+ * and the seven stock-bridge document kinds draw ids from different tables and
+ * collide on it.
  *
- * `sourceType` is both `inv_stock_transactions.reference_type` (the stock engine
- * copies the command's `sourceType` onto every ledger row it writes) and
- * `journal_entries.source_type`, which is why the two sides join at all.
+ * Kept in sync by hand with the call sites, because no third place knows both
+ * halves (`gl-posting-rules.spec.ts` holds the mirror):
  *
- * Kept in sync by hand with the call sites, because there is no third place
- * that knows both halves:
+ *   purchase-orders/lib/receipt-journal.ts   inv_grn / receive              inventory · ap_control  (via InventoryAccountingBridge)
+ *   purchase-orders/grn-receive.service.ts   inv_grn / receive              inventory · ap_control  (PostingCommandService)
+ *   sales-orders/so-fulfillment.service.ts   inv_sales_order / ship         cogs · inventory        (PostingCommandService, keyed on the SHIPMENT)
+ *   landed-cost/lib/landed-cost-journal.ts   inv_landed_cost / landed_cost  inventory · cogs · ap_control (via InventoryAccountingBridge)
  *
- *   purchase-orders/lib/receipt-journal.ts   inv_grn / receive         ASSET · GRNI
- *   purchase-orders/grn-receive.service.ts   inv_grn / receive         ASSET · GRNI
- *   sales-orders/so-fulfillment.service.ts   inv_sales_order / ship    COGS · ASSET
- *   sales-orders/so-lifecycle.service.ts     inv_sales_order / invoice AR · SALES_INCOME
- *   landed-cost/landed-cost-apply.service.ts inv_landed_cost / apply   ASSET · COGS · AP
+ * The sales-order invoice is deliberately not a rule. It books revenue off a
+ * sales order (`sales_invoice:{invoiceId}:post`) and no stock movement produces
+ * it. Adjustments, transfers, counts, quality scrap and returns are not rules
+ * either: `StockMovementBridgeService` posts them per document kind, and the
+ * accounting module's unposted-movements report reconciles them there. The
+ * report lists them separately and does not run a second copy of that
+ * reconciliation.
  *
- * The `invoice` entry is deliberately not a rule here: it books revenue off a
- * sales order and is not produced by a stock movement, so pairing it with one
- * would invent an expectation the engine never had.
- *
- * INV-09 — the expectation is stated in **purposes**, and resolved to codes per
- * organisation by `resolveGlPostingRules` at report time.
- *
- * This is the coupling that makes the rest of INV-09 safe. Posting resolves
- * `INVENTORY_ASSET` through `acc_system_account_map`; if this table kept the
- * literal 1300, then the first tenant to map INVENTORY_ASSET to anything else
- * would see every goods receipt reported MISSING_COA — the report claiming the
- * ledger is broken because the report, not the ledger, was reading the wrong
- * account. Both sides now resolve through the same call, so the report is right
- * for a mapped organisation for the same reason it was right for an unmapped one.
+ * INV-09: the expectation is stated in purposes, the same vocabulary posting
+ * uses. `INVENTORY_PURPOSE_TAG` turns a purpose into a role, and
+ * `resolveGlPostingRules` turns the roles into this organisation's account
+ * codes, read through the same tags posting resolves.
  */
 export interface GlPostingRule {
-  /** `inv_stock_transactions.reference_type` and `journal_entries.source_type`. */
+  /** `inv_stock_transactions.reference_type` of the movements this journal values. */
   sourceType: string;
-  /** `journal_entries.source_event`. */
+  /** The kernel posting purpose: the last segment of `stock_move:{id}:{purpose}`. */
   sourceEvent: string;
   label: string;
   /**
-   * Every system-account purpose the entry names. A code the tenant has not
-   * created is why the bridge skipped, and `resolveGlPostingRules` is what turns
-   * these into that tenant's codes.
+   * How the journal's source id relates to the movement's reference id.
+   * `reference`: they are the same id (a receipt journal is keyed on the GRN the
+   * movements reference). `shipment`: the journal is keyed on a shipment of the
+   * sales order the movements reference, and there can be several.
    */
+  keyedOn: "reference" | "shipment";
+  /** The purposes the entry names, in the vocabulary posting uses. */
   accountPurposes: readonly InventoryJournalPurpose[];
 }
 
-/** A rule against one organisation's chart of accounts. */
+/** A rule against one organisation's book. */
 export interface ResolvedGlPostingRule extends GlPostingRule {
-  /** Every code the entry names, for this organisation. */
+  /** The roles the entry's accounts resolve through. */
+  accountTags: readonly GlSystemTag[];
+  /** Codes of the accounts filling those roles in this organisation's book now. */
   accountCodes: readonly string[];
+  /**
+   * Roles the entry names that no active account in the book fills. A post that
+   * needs one is refused with `UNKNOWN_ACCOUNT_TAG`, so a movement with no
+   * journal and a missing role reads `MISSING_COA`: the remedy is to tag an
+   * account with the role.
+   */
+  missingAccountTags: readonly GlSystemTag[];
+}
+
+/** The roles a set of purposes resolves to, deduplicated, in purpose order. */
+export function accountTagsOf(purposes: readonly InventoryJournalPurpose[]): GlSystemTag[] {
+  return [...new Set(purposes.map((purpose) => INVENTORY_PURPOSE_TAG[purpose]))];
 }
 
 /**
- * The rules as this organisation's account codes.
+ * The rules against this organisation's chart.
  *
- * Takes the resolved map rather than the org id, so the caller resolves once and
- * both the SQL and the payload it returns are built from the same answer — a
- * second resolution could disagree with the first if an admin saved the settings
- * screen in between, and a report whose expectation table and whose query
- * disagree is worse than either.
+ * Takes the resolved codes rather than the org id, so the caller resolves once
+ * and both the SQL and the payload are built from the same answer. A second
+ * resolution could disagree with the first if an account were re-tagged in
+ * between, and a report whose expectation table and whose query disagree is
+ * worse than either.
  */
 export function resolveGlPostingRules(
   codes: InventoryAccountCodes,
 ): readonly ResolvedGlPostingRule[] {
-  return GL_POSTING_RULES.map((rule) => ({
-    ...rule,
-    accountCodes: [...new Set(rule.accountPurposes.map((purpose) => codes[purpose]))],
-  }));
+  return GL_POSTING_RULES.map((rule) => {
+    const accountCodes = [
+      ...new Set(
+        rule.accountPurposes
+          .map((purpose) => codes[purpose])
+          .filter((code): code is string => code !== null),
+      ),
+    ];
+    const missingAccountTags = accountTagsOf(
+      rule.accountPurposes.filter((purpose) => codes[purpose] === null),
+    );
+    return {
+      ...rule,
+      accountTags: accountTagsOf(rule.accountPurposes),
+      accountCodes,
+      missingAccountTags,
+    };
+  });
 }
 
 export const GL_POSTING_RULES: readonly GlPostingRule[] = [
@@ -86,26 +113,30 @@ export const GL_POSTING_RULES: readonly GlPostingRule[] = [
     sourceType: "inv_grn",
     sourceEvent: "receive",
     label: "Goods receipt",
+    keyedOn: "reference",
     accountPurposes: ["INVENTORY_ASSET", "INVENTORY_GRNI"],
   },
   {
+    // Keyed on the shipment, while the movements reference the sales order. A
+    // partially shipped order has several COGS journals, and the group is the
+    // whole order, so the report sums every one of them.
     sourceType: "inv_sales_order",
     sourceEvent: "ship",
     label: "Cost of goods sold",
+    keyedOn: "shipment",
     accountPurposes: ["INVENTORY_COGS", "INVENTORY_ASSET"],
   },
   {
-    // G5. Applying a landed-cost voucher restates what inventory is worth, so it
-    // posts like a receipt does — and the recon report must expect it, or a
-    // freight allocation of any size vanishes from the comparison and the report
-    // says everything reconciles. This mirror test is what caught its absence.
-    //
-    // Three codes rather than two: the voucher credits the payable, debits
-    // inventory for stock still on hand, and debits COGS for whatever has
-    // already shipped, because value cannot be added to units that have left.
+    // G5. Applying a landed-cost voucher restates what inventory is worth. It
+    // moves no stock, so it can never form a movement group; it reaches this
+    // report only through the orphan read, which is where the legacy report
+    // showed it too. Three roles: the voucher credits the payable, debits
+    // inventory for stock still on hand, and debits COGS for what has already
+    // shipped.
     sourceType: "inv_landed_cost",
-    sourceEvent: "apply",
+    sourceEvent: "landed_cost",
     label: "Landed cost applied",
+    keyedOn: "reference",
     accountPurposes: ["INVENTORY_ASSET", "INVENTORY_COGS", "AP"],
   },
 ];

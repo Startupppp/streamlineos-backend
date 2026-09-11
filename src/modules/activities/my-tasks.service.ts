@@ -7,7 +7,6 @@ import { activities, businessParties, deals, subjects, users } from "../../db/sc
 import {
   buildTaskPage,
   decodeTaskCursor,
-  numericDealIds,
   type TaskPage,
   type TaskPosition,
 } from "./task-list";
@@ -92,24 +91,24 @@ export class MyTasksService {
   /**
    * What each task is about, in one bounded pass per anchor kind.
    *
-   * Not three left joins on the page query: `activities.deal_id` is text and
-   * `deals.id` is a serial, so that join needs a coercion, and a coercion in the
-   * query means one activity anchored to a non-numeric string takes down every
-   * read of that person's list. Not a lookup per row either — a task list is a
+   * Not three left joins on the page query: three outer joins to widen a page of
+   * tasks costs more than three keyed reads of the handful of anchors actually
+   * on it, and the party and subject sides are text keys into different tables
+   * anyway. Not a lookup per row either — a task list is a
    * screen somebody opens every morning, and N+1 there never gets attributed to
    * the query that caused it. A kind with no anchors on the page asks nothing.
    */
   private async anchorNames(
     organizationId: string,
-    rows: ReadonlyArray<{ partyId: string | null; dealId: string | null; subjectId: string | null }>,
+    rows: ReadonlyArray<{ partyId: string | null; dealId: number | null; subjectId: string | null }>,
   ): Promise<{
     parties: Map<string, string>;
-    deals: Map<string, string>;
+    deals: Map<number, string>;
     subjects: Map<string, string>;
   }> {
     const partyIds = [...new Set(rows.map((row) => row.partyId).filter((id): id is string => !!id))];
     const subjectIds = [...new Set(rows.map((row) => row.subjectId).filter((id): id is string => !!id))];
-    const dealIds = numericDealIds(rows.map((row) => row.dealId));
+    const dealIds = [...new Set(rows.map((row) => row.dealId).filter((id): id is number => id !== null))];
 
     const [partyRows, dealRows, subjectRows] = await Promise.all([
       partyIds.length
@@ -141,7 +140,7 @@ export class MyTasksService {
 
     return {
       parties: new Map(partyRows.map((row) => [row.id, row.name])),
-      deals: new Map(dealRows.map((row) => [String(row.id), row.name])),
+      deals: new Map(dealRows.map((row) => [row.id, row.name])),
       subjects: new Map(subjectRows.map((row) => [row.id, row.name])),
     };
   }

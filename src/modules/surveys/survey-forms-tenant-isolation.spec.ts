@@ -37,7 +37,7 @@ describe("SurveyFormsService — cross-tenant isolation", () => {
       } as unknown as Db;
       const svc = new SurveyFormsService(db, mockVersions, mockTemplates, mockPlanLimits);
 
-      const result = await svc.list(ATTACKER_ORG, { page: 1, pageSize: 20 });
+      const result = await svc.list(ATTACKER_ORG, "user-1", { page: 1, pageSize: 20 }, "all");
 
       expect(result).toHaveLength(0);
       expect(findMany).toHaveBeenCalledTimes(1);
@@ -53,7 +53,7 @@ describe("SurveyFormsService — cross-tenant isolation", () => {
       } as unknown as Db;
       const svc = new SurveyFormsService(db, mockVersions, mockTemplates, mockPlanLimits);
 
-      const result = await svc.list(OWNER_ORG, { page: 1, pageSize: 20 });
+      const result = await svc.list(OWNER_ORG, "user-1", { page: 1, pageSize: 20 }, "all");
 
       expect(result).toHaveLength(1);
     });
@@ -67,7 +67,7 @@ describe("SurveyFormsService — cross-tenant isolation", () => {
       } as unknown as Db;
       const svc = new SurveyFormsService(db, mockVersions, mockTemplates, mockPlanLimits);
 
-      await expect(svc.get(ATTACKER_ORG, 10)).rejects.toThrow(NotFoundException);
+      await expect(svc.get(ATTACKER_ORG, "user-1", 10, "all")).rejects.toThrow(NotFoundException);
 
       expect(findFirst).toHaveBeenCalledTimes(1);
       const callArg = findFirst.mock.calls[0]?.[0] as { where?: unknown } | undefined;
@@ -82,7 +82,7 @@ describe("SurveyFormsService — cross-tenant isolation", () => {
       } as unknown as Db;
       const svc = new SurveyFormsService(db, mockVersions, mockTemplates, mockPlanLimits);
 
-      const result = await svc.get(OWNER_ORG, 10);
+      const result = await svc.get(OWNER_ORG, "user-1", 10, "all");
 
       expect(result).toMatchObject({ id: 10 });
     });

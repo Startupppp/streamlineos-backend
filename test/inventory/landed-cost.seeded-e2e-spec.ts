@@ -18,7 +18,7 @@ import { InvLabelsService } from "src/modules/inventory/labels/inv-labels.servic
 import { InvLabelsController } from "src/modules/inventory/labels/inv-labels.controller";
 import { InvBarcodeService } from "src/modules/inventory/barcode/inv-barcode.service";
 import { InventoryAccountingBridge } from "src/modules/inventory/stock-engine/accounting-bridge";
-import { JournalPostingService } from "src/modules/accounting/posting/journal-posting.service";
+import { BooksService } from "src/modules/accounting/kernel/books.service";
 import { REQUIRE_PERMISSION } from "src/modules/access/require-permission.decorator";
 import { createSeededE2eApp, type SeededE2eApp } from "test/helpers/seeded-e2e-app";
 import { seedOrg } from "test/helpers/seed-builder";
@@ -66,11 +66,14 @@ const OPERATOR = [
   "inventory:labels:print",
 ] as const;
 
-/** One posted journal line, named by the account code rather than its id. */
+/**
+ * One posted journal line, named by the account code rather than its id.
+ * Minor units, read back as text: the ledger's amounts are `bigint`.
+ */
 type JournalLineRow = {
   account_code: string;
-  debit: string;
-  credit: string;
+  debit_minor: string;
+  credit_minor: string;
   description: string | null;
 };
 
@@ -275,43 +278,44 @@ describe("[seeded-e2e] landing freight onto a receipt's cost layers", () => {
     );
 
   /**
-   * The journal `apply` posted for a voucher, read back out of the database.
+   * The journal `apply` posted for a voucher, read back out of the ledger by
+   * the key the kernel holds it under: `stock_move:{voucherId}:landed_cost`.
    *
-   * Joined to `ledger_accounts` so the assertion names the account *code* — that
-   * is what `postJournal` writes, what a reader of the ledger recognises, and
-   * what INV-38 is about. Asserting `account_id` instead would make the test
-   * pass or fail on the order `seedChartOfAccountsForOrg` happened to insert in,
-   * which is not a fact about landed cost.
+   * Lines are joined to the chart so the assertion names the account *code*
+   * the pack gave each role, which is what a reader of the ledger recognises.
+   * Asserting `account_id` instead would make the test pass or fail on the
+   * order the chart happened to be seeded in.
    */
   const journalFor = (voucherId: number) =>
     asTenant(async () => {
       const [entry] = await db().execute<{
-        id: number;
+        id: string;
         entry_date: string;
         description: string | null;
-        source_event: string | null;
-        status: string;
+        source_type: string;
       }>(sql`
-        SELECT id, entry_date::text AS entry_date, description, source_event, status
-        FROM journal_entries
+        SELECT id, journal_date::text AS entry_date, memo AS description,
+               source_type::text AS source_type
+        FROM gl_journals
         WHERE org_id = ${scene.orgId}
-          AND source_type = 'inv_landed_cost'
-          AND source_id = ${String(voucherId)}`);
+          AND idempotency_key = ${`stock_move:${voucherId}:landed_cost`}`);
       if (!entry) return { entry: null, lines: [] as JournalLineRow[] };
       const lines = await db().execute<JournalLineRow>(sql`
-        SELECT a.code AS account_code, l.debit::text AS debit,
-               l.credit::text AS credit, l.description
-        FROM journal_lines l
-        JOIN ledger_accounts a ON a.id = l.account_id
-        WHERE l.org_id = ${scene.orgId} AND l.entry_id = ${entry.id}
-        ORDER BY l.line_order, l.id`);
+        SELECT a.code AS account_code, l.debit_minor::text AS debit_minor,
+               l.credit_minor::text AS credit_minor, l.description
+        FROM gl_journal_lines l
+        JOIN gl_accounts a ON a.id = l.account_id
+        WHERE l.org_id = ${scene.orgId} AND l.journal_id = ${entry.id}
+        ORDER BY l.line_no`);
       return { entry, lines };
     });
 
-  const ledgerAccountCount = () =>
+  /** Whether the organisation keeps books at all: the kernel's accounting switch. */
+  const bookCount = () =>
     asTenant(async () => {
       const [row] = await db().execute<{ n: number }>(sql`
-        SELECT count(*)::int AS n FROM ledger_accounts WHERE org_id = ${scene.orgId}`);
+        SELECT count(*)::int AS n FROM gl_books
+        WHERE org_id = ${scene.orgId} AND deleted_at IS NULL`);
       return row!.n;
     });
 
@@ -782,49 +786,43 @@ describe("[seeded-e2e] landing freight onto a receipt's cost layers", () => {
   });
 
   /**
-   * INV-38 — the half of "apply + accounting contract" that nothing asserted.
+   * INV-38 — the half of "apply + accounting contract" that nothing asserted,
+   * on the accounting kernel.
    *
    * Everything above this point proves the costing: the apportionment, the
    * layers, the audit trail, the split when freight lands after the goods have
-   * moved. None of it looks at `journal_entries`, and until this block no test
-   * anywhere in `test/` did — `grep -rn "ledger_accounts\|journal_entries" test/`
-   * returned nothing, so the *posted* side of the accounting bridge was
-   * unmeasured across the whole module, not only for landed cost.
+   * moved. This block reads the ledger the apply posts to.
    *
-   * Two behaviours, and the second is the one a reader would assume was covered:
+   * Two behaviours:
    *
-   *   1. With no chart of accounts, `postJournalEntry` skips with a warning and
-   *      the freight still reaches the layers. That is a deliberate decision —
-   *      a receipt is a physical fact and a bookkeeping gap must not refuse it —
-   *      and a decision nobody had checked holds.
-   *   2. With one, the entry is actually written, names 1300 / 5000 / 2000, and
-   *      balances.
+   *   1. With no book (the organisation never enabled accounting) the apply
+   *      skips its journal (`BOOK_NOT_ENABLED`) and the freight still reaches
+   *      the layers. That is the kernel's one opt-out.
+   *   2. With a book, the journal is written under
+   *      `stock_move:{voucherId}:landed_cost`, names the accounts the pack tags
+   *      `inventory` (1300), `cogs` (5100) and `ap_control` (2100), and balances
+   *      in minor units. With a book and an UNTAGGED role the apply is refused
+   *      outright instead of skipped; the bridge's unit spec pins that.
    *
-   * **This block runs last on purpose.** The chart of accounts is per-tenant and
-   * the scene is one tenant, so seeding it is a one-way door for every `apply`
-   * after it. The blocks above are written against the no-accounts state and
-   * would start posting journals if this ran first.
+   * **This block runs last on purpose.** Enabling accounting is per-tenant and
+   * the scene is one tenant, so it is a one-way door for every stock command
+   * after it: receipts start posting too. The blocks above are written against
+   * the no-book state.
    *
-   * The credit is the payable, not a clearing account. INV-38's acceptance line
-   * says "clearing account correct" and this asserts 2000 instead: a clearing
-   * account sits between an accrual and the bill that settles it, and this
-   * voucher *is* the bill — its charges carry the carrier's own vendor and
-   * reference, and nothing in finance or accounting would ever debit the other
-   * side. See `PAYABLE_ACCOUNT` in `landed-cost-apply.service.ts`. The test
-   * therefore records what the code does and why, rather than asserting an
-   * account that does not exist.
+   * The credit is the payable, not a clearing account. See `PAYABLE_ACCOUNT`
+   * and the TODO(INV-38) in `landed-cost/lib/landed-cost-journal.ts`: the test
+   * records what the code does and why, and the choice is an open accounting
+   * decision.
    */
   describe("INV-38 — the journal the apply claims to post", () => {
-    describe("before the tenant has a chart of accounts", () => {
+    describe("before the tenant enables accounting", () => {
       it("lands the freight on the layers and writes no journal at all", async () => {
-        // The two preconditions, asserted rather than assumed. Without them a
-        // missing entry proves nothing: it would also be missing if accounting
-        // were not migrated into this database, and that is a different answer
-        // the bridge gives for a different reason.
-        expect(await ledgerAccountCount()).toBe(0);
+        // The precondition, asserted rather than assumed. Without it a missing
+        // journal proves nothing.
+        expect(await bookCount()).toBe(0);
         expect(
-          await asTenant(() => app.app.get(InventoryAccountingBridge).hasJournals()),
-        ).toBe(true);
+          await asTenant(() => app.app.get(InventoryAccountingBridge).hasJournals(scene.orgId)),
+        ).toBe(false);
 
         const order = await sentOrder([
           { variantId: scene.glSkipId, quantity: 20, unitCost: "5.0000" },
@@ -850,29 +848,43 @@ describe("[seeded-e2e] landing freight onto a receipt's cost layers", () => {
           remaining_value: "120.0000",
         });
 
-        // ...and the ledger side did not, which is the documented bargain.
+        // ...and the ledger side did not, which is the opt-out.
         expect((await journalFor(voucherId)).entry).toBeNull();
       }, 180_000);
     });
 
-    describe("once the tenant has one", () => {
+    describe("once the tenant has a book", () => {
       beforeAll(async () => {
+        // The India pack's fiscal year (April to March), opened from today,
+        // covers the receipts below, which are dated 2026-08-02.
         await asTenant(() =>
-          app.app.get(JournalPostingService).seedChartOfAccountsForOrg(scene.orgId),
+          app.app.get(BooksService).enable(scene.orgId, scene.userId, { countryCode: "IN" }),
         );
       }, 120_000);
 
-      it("seeds the codes the inventory posting rules name", async () => {
-        // The block below is only meaningful if these three exist; a journal
-        // missing because 1300 was never seeded looks exactly like a journal
-        // missing because the posting broke.
-        const codes = await asTenant(() =>
-          db().execute<{ code: string }>(sql`
-            SELECT code FROM ledger_accounts
-            WHERE org_id = ${scene.orgId} AND code IN ('1300', '2000', '5000')
-            ORDER BY code`),
+      it("tags the roles the inventory posting rules name", async () => {
+        // The block below is only meaningful if these three roles are filled; a
+        // journal missing because a role was never tagged looks exactly like a
+        // journal missing because the posting broke (and would be a refusal).
+        const roles = await asTenant(() =>
+          db().execute<{ tag: string; code: string }>(sql`
+            SELECT a.system_tag::text AS tag, a.code
+            FROM gl_accounts a
+            JOIN gl_books b ON b.id = a.book_id
+            WHERE a.org_id = ${scene.orgId}
+              AND b.org_id = ${scene.orgId}
+              AND b.is_default
+              AND b.deleted_at IS NULL
+              AND a.deleted_at IS NULL
+              AND a.is_active
+              AND a.system_tag IN ('inventory', 'cogs', 'ap_control')
+            ORDER BY a.code`),
         );
-        expect(codes.map((row) => row.code)).toEqual(["1300", "2000", "5000"]);
+        expect(roles.map((row) => [row.tag, row.code])).toEqual([
+          ["inventory", "1300"],
+          ["ap_control", "2100"],
+          ["cogs", "5100"],
+        ]);
       });
 
       it("debits inventory and credits the payable when nothing has shipped", async () => {
@@ -896,17 +908,13 @@ describe("[seeded-e2e] landing freight onto a receipt's cost layers", () => {
         });
 
         const { entry, lines } = await journalFor(voucherId);
-        expect(entry).toMatchObject({
-          source_event: "apply",
-          status: "POSTED",
-          entry_date: today(),
-        });
+        expect(entry).toMatchObject({ source_type: "stock_move", entry_date: today() });
 
         // Two lines, not three. A zero COGS line is omitted rather than posted,
         // so the common case reads as the two-line entry it is.
         expect(lines).toEqual([
-          expect.objectContaining({ account_code: "1300", debit: "50.0000", credit: "0.0000" }),
-          expect.objectContaining({ account_code: "2000", debit: "0.0000", credit: "50.0000" }),
+          expect.objectContaining({ account_code: "1300", debit_minor: "5000", credit_minor: "0" }),
+          expect.objectContaining({ account_code: "2100", debit_minor: "0", credit_minor: "5000" }),
         ]);
       }, 180_000);
 
@@ -920,7 +928,7 @@ describe("[seeded-e2e] landing freight onto a receipt's cost layers", () => {
         //
         // The 60.00 can never reach stock: those units are gone and their sale
         // is already on the books at 4.00 in an append-only ledger. It is a cost
-        // of the period the freight bill landed in, and 5000 is where it goes.
+        // of the period the freight bill landed in, on the account tagged cogs.
         const order = await sentOrder([
           { variantId: scene.glShippedId, quantity: 100, unitCost: "4.0000" },
         ]);
@@ -942,20 +950,18 @@ describe("[seeded-e2e] landing freight onto a receipt's cost layers", () => {
         const { entry, lines } = await journalFor(voucherId);
         expect(entry).not.toBeNull();
         expect(lines).toEqual([
-          expect.objectContaining({ account_code: "1300", debit: "40.0000", credit: "0.0000" }),
-          expect.objectContaining({ account_code: "5000", debit: "60.0000", credit: "0.0000" }),
-          expect.objectContaining({ account_code: "2000", debit: "0.0000", credit: "100.0000" }),
+          expect.objectContaining({ account_code: "1300", debit_minor: "4000", credit_minor: "0" }),
+          expect.objectContaining({ account_code: "5100", debit_minor: "6000", credit_minor: "0" }),
+          expect.objectContaining({ account_code: "2100", debit_minor: "0", credit_minor: "10000" }),
         ]);
 
         // The identity the whole feature rests on, asserted on the ledger rows
-        // themselves rather than on what `apply` said it did. Summed in integer
-        // ten-thousandths: these columns are numeric(18,4) and comparing them as
-        // floats is the arithmetic this module bans everywhere else.
-        const scaled = (v: string) => Math.round(Number(v) * 10_000);
-        const debits = lines.reduce((sum, line) => sum + scaled(line.debit), 0);
-        const credits = lines.reduce((sum, line) => sum + scaled(line.credit), 0);
+        // themselves rather than on what `apply` said it did, in integer minor
+        // units.
+        const debits = lines.reduce((sum, line) => sum + BigInt(line.debit_minor), 0n);
+        const credits = lines.reduce((sum, line) => sum + BigInt(line.credit_minor), 0n);
         expect(debits).toBe(credits);
-        expect(debits).toBe(1_000_000); // 100.0000, the voucher's charge total
+        expect(debits).toBe(10_000n); // 100.00, the voucher's charge total
 
         // And what the freight did reach is what the next issue draws at.
         const after = `gl-after-${randomUUID().slice(0, 8)}`;

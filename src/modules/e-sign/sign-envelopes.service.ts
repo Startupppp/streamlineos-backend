@@ -26,6 +26,7 @@ import {
 } from "./sign-envelope-validation.service";
 import { SignEnvelopeSweepsService } from "./sign-envelope-sweeps.service";
 import { SignEnvelopeDispatchService } from "./sign-envelope-dispatch.service";
+import { SignSettingsService } from "./sign-settings.service";
 import {
   canTransitionEnvelope,
   isEnvelopeEditable,
@@ -56,10 +57,20 @@ export class SignEnvelopesService {
     private readonly validation: SignEnvelopeValidationService,
     private readonly sweeps: SignEnvelopeSweepsService,
     private readonly dispatch: SignEnvelopeDispatchService,
+    private readonly settings: SignSettingsService,
   ) {}
 
   async create(orgId: string, senderMembershipId: number | null, input: CreateEnvelopeInput) {
     await this.planLimits.assertWithinLimit(orgId, "signEnvelopes");
+
+    /**
+     * SIGN-P2-03. The three reminder cadence settings were written by the
+     * settings API and read by nothing — an organisation that set "first
+     * reminder after 7 days, repeat weekly, at most twice" got 3/3/5 on every
+     * envelope. That was invisible while the sweep was wired to no scheduler;
+     * since SIGN-P0-01 the sweep actually fires, on the wrong cadence.
+     */
+    const orgSettings = await this.settings.getOrCreate(orgId);
 
     const [envelope] = await this.db
       .insert(signEnvelopes)
@@ -79,9 +90,10 @@ export class SignEnvelopesService {
         senderMembershipId,
         expiresAt: input.expiresAt ? new Date(input.expiresAt) : undefined,
         reminderEnabled: input.reminderEnabled,
-        reminderFirstAfterDays: input.reminderFirstAfterDays,
-        reminderRepeatDays: input.reminderRepeatDays,
-        reminderMaxCount: input.reminderMaxCount,
+        reminderFirstAfterDays:
+          input.reminderFirstAfterDays ?? orgSettings.defaultReminderFirstAfterDays,
+        reminderRepeatDays: input.reminderRepeatDays ?? orgSettings.defaultReminderRepeatDays,
+        reminderMaxCount: input.reminderMaxCount ?? orgSettings.defaultReminderMaxCount,
         metadataJson: input.metadataJson ?? {},
       })
       .returning();
@@ -408,11 +420,11 @@ export class SignEnvelopesService {
     return this.sweeps.sendManualReminder(orgId, envelopeId, actor);
   }
 
-  runReminderSweep() {
-    return this.sweeps.runReminderSweep();
+  runReminderSweep(orgId: string) {
+    return this.sweeps.runReminderSweep(orgId);
   }
 
-  runExpirationSweep() {
-    return this.sweeps.runExpirationSweep();
+  runExpirationSweep(orgId: string) {
+    return this.sweeps.runExpirationSweep(orgId);
   }
 }

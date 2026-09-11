@@ -24,30 +24,6 @@
     "esModuleInterop": true,
     "resolveJsonModule": true
   },
-  // `test/**/*` is here because it was the last blind spot. tsconfig.build.json
-  // excludes `test` and `**/*spec.ts`, and this file used to include only `src`
-  // and `evals` — so between them, no gate in the repo ever typechecked a spec,
-  // while ts-jest's `isolatedModules` compiles specs without checking them. A
-  // spec could therefore rot against a signature that moved underneath it and
-  // stay green in every gate: 32 such errors had accumulated, and a seeded e2e
-  // importing a class by a name nothing exports ran all the way to a runtime
-  // "provider does not exist" before anything noticed. Adding this cost zero
-  // errors to turn on, which is the argument for having done it sooner.
   "include": ["src/**/*", "evals/**/*", "test/**/*"],
-  "exclude": [
-    "node_modules",
-    "dist",
-    "drizzle.config.ts",
-    // Named, not silently dropped. This spec references a service shape that
-    // does not exist: it imports `toCsv` from crm-export.service, which exports
-    // no such symbol, and calls `.rowsFor()` and `.commit()`, which the service
-    // does not have. It has been referencing an API that is not there for as
-    // long as nothing typechecked tests, and repairing it means deciding what
-    // the CRM export API should be -- a CRM decision, not a config one.
-    //
-    // It is excluded so the typecheck gate can be switched on for everything
-    // else rather than held hostage by one file. Delete this line the day that
-    // spec is fixed; it is a debt marker, not a policy.
-    "test/crm/crm-import-roundtrip.seeded-e2e-spec.ts"
-  ]
+  "exclude": ["node_modules", "dist", "drizzle.config.ts"]
 }

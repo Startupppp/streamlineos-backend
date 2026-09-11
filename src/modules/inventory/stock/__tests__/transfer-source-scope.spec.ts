@@ -45,6 +45,7 @@ function serviceWith(assertLocationVisible: VisibilityMock): InvStockTransfersSe
     stub,
     { assertLocationVisible } as never,
     stub,
+    { post: jest.fn().mockResolvedValue(undefined) } as never,
   );
 }
 

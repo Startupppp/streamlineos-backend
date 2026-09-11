@@ -5,13 +5,8 @@ import { businessParties, contactPartyMap } from "../../db/schema/party";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { AuditService } from "../../common/audit/audit.service";
-import { CacheService } from "../../common/cache/cache.service";
-import { CONTACT_ROLE_DEFAULTS, type ContactRoleCreateInput, type DuplicatesQueryInput, type MergeContactsInput } from "./dto/contact-roles.schemas";
-import {
-  getDuplicateContacts,
-  mergeContacts,
-  type ContactDuplicateDeps,
-} from "./lib/contact-duplicates";
+import { getPostgresErrorCode } from "../../common/db/postgres-error";
+import { CONTACT_ROLE_DEFAULTS, type ContactRoleCreateInput } from "./dto/contact-roles.schemas";
 import {
   CONTACT_PARTY_COLUMNS,
   CONTACT_PARTY_JOIN,
@@ -19,13 +14,17 @@ import {
   contactPartyScope,
 } from "./contact-party-reader";
 
+/**
+ * A unique violation, read where the SQLSTATE actually is.
+ *
+ * This asked `"code" in err` of the value Drizzle threw. Drizzle throws a
+ * `DrizzleQueryError` and puts the driver error on `.cause`, so the test was
+ * always false and adding a contact role twice — same contact, same entity,
+ * same key, which `uniq_crm_contact_roles_combo` refuses — answered 500 where
+ * the code plainly means 409.
+ */
 function isDbConflict(err: unknown): boolean {
-  return (
-    typeof err === "object" &&
-    err !== null &&
-    "code" in err &&
-    (err as Record<string, unknown>).code === "23505"
-  );
+  return getPostgresErrorCode(err) === "23505";
 }
 
 @Injectable()
@@ -33,7 +32,6 @@ export class ContactRolesService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly audit: AuditService,
-    private readonly cache: CacheService,
   ) {}
 
   async listRoles(orgId: string, contactId: number, input: { entityType?: string; entityId?: number }) {
@@ -84,7 +82,11 @@ export class ContactRolesService {
       return role;
     } catch (err) {
       if (isDbConflict(err)) {
-        throw new ConflictException("This role already exists for this contact on this entity");
+        // `uniq_crm_contact_roles_combo` — (org_id, contact_id, entity_type,
+        // entity_id, role_key), every column caller-supplied.
+        throw new ConflictException(
+          `This contact already holds the role "${input.roleKey}" on that ${input.entityType}`,
+        );
       }
       throw err;
     }
@@ -116,20 +118,6 @@ export class ContactRolesService {
     });
 
     return { success: true };
-  }
-
-  /** @see lib/contact-duplicates.ts */
-  async getDuplicateContacts(orgId: string, query: DuplicatesQueryInput) {
-    return getDuplicateContacts(this.duplicateDeps, orgId, query);
-  }
-
-  /** @see lib/contact-duplicates.ts */
-  async mergeContacts(orgId: string, input: MergeContactsInput, actorId: string) {
-    return mergeContacts(this.duplicateDeps, orgId, input, actorId);
-  }
-
-  private get duplicateDeps(): ContactDuplicateDeps {
-    return { db: this.db, audit: this.audit, cache: this.cache };
   }
 
   private async assertContactAccess(orgId: string, contactId: number) {

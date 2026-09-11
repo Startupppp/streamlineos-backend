@@ -51,8 +51,14 @@
  */
 
 import { readFileSync, readdirSync } from "node:fs";
+import { describeFrontendRoot, resolveFrontendRoot } from "./frontend-root.mjs";
 import { join, resolve, relative } from "node:path";
 import { fileURLToPath } from "node:url";
+import {
+  BACKEND_ROOT,
+  WORKSPACE_ROOT,
+  resolveBackendModulesDir,
+} from "./lib/repo-roots.mjs";
 import {
   loadBackendCatalog,
   loadModuleManifest,
@@ -60,7 +66,6 @@ import {
   parseRouteRefs,
   parseUnionKeys,
 } from "./permission-key-extractors.mjs";
-import { resolveFrontendRoot, resolveBackendModulesDir } from "./lib/repo-roots.mjs";
 
 export { parsePermissionConstants, parseRouteRefs, parseUnionKeys };
 
@@ -89,31 +94,28 @@ export function checkNamespacePilot(pilotEntry, routeRefs, modulesDir) {
 
 const args = process.argv.slice(2);
 
-const SCRIPT_DIR = fileURLToPath(new URL(".", import.meta.url));
-// scripts/ → src/ → backend/ → repo root
-const REPO_ROOT = resolve(SCRIPT_DIR, "../../..");
+// Roots are RESOLVED, not assumed: this gate spent its whole life exiting 2
+// because it hardcoded a `<root>/backend` + `<root>/frontend` monorepo layout
+// that this checkout does not use. See src/scripts/lib/repo-roots.mjs.
+const REPO_ROOT = WORKSPACE_ROOT;
 /**
- * `<workspace>/backend` and `<workspace>/frontend` are a monorepo layout this
- * checkout has never used, so this gate exited 2 on every run. It is the gate
- * that proves a backend key is typeable in the frontend and that a
- * frontend-only ghost key cannot exist, and it has never once made that
- * comparison here.
- *
- * The paired-worktree helper matters more here than anywhere: this backend is
+ * The paired-worktree resolver matters more here than anywhere: this backend is
  * `inv-wt-backend`, so its frontend is `inv-wt-frontend`. Pointing it at
  * `streamlineos-frontend` would diff an inventory catalog against a CRM union
  * on a different branch and report every legitimate difference as a missing
- * key — confidently wrong instead of honestly unable to run.
+ * key — confidently wrong instead of honestly unable to run. `FRONTEND` is the
+ * same answer the run prints before its verdict, so the checkout named is the
+ * checkout read.
  */
-const { root: FRONTEND_ROOT, candidates: FRONTEND_CANDIDATES } = resolveFrontendRoot();
+const FRONTEND = resolveFrontendRoot(BACKEND_ROOT);
+const FRONTEND_ROOT = FRONTEND.root;
 const { root: RESOLVED_MODULES_DIR } = resolveBackendModulesDir();
-const BACKEND_MODULES_DIR = RESOLVED_MODULES_DIR ?? join(REPO_ROOT, "backend", "src", "modules");
-const FRONTEND_UNION_BASE = FRONTEND_ROOT ?? join(REPO_ROOT, "frontend");
-const FRONTEND_UNION_FILES = [
-  join(FRONTEND_UNION_BASE, "lib", "rbac", "permissions", "permission-key-foundation.ts"),
-  join(FRONTEND_UNION_BASE, "lib", "rbac", "permissions", "permission-key-extended.ts"),
-  join(FRONTEND_UNION_BASE, "lib", "rbac", "permissions", "permission-key-business.ts"),
-];
+const BACKEND_MODULES_DIR = RESOLVED_MODULES_DIR ?? join(BACKEND_ROOT, "src", "modules");
+const FRONTEND_UNION_FILES = (FRONTEND_ROOT === null ? [] : [
+  join(FRONTEND_ROOT, "lib", "rbac", "permissions", "permission-key-foundation.ts"),
+  join(FRONTEND_ROOT, "lib", "rbac", "permissions", "permission-key-extended.ts"),
+  join(FRONTEND_ROOT, "lib", "rbac", "permissions", "permission-key-business.ts"),
+]);
 
 // The extractors live in ./permission-key-extractors.mjs so this check and
 // check-navigation-permissions read keys through one implementation.
@@ -266,6 +268,15 @@ try {
   process.exit(2);
 }
 
+/**
+ * Which checkout the frontend half came from, printed before any verdict. A
+ * comparison between two repositories is only meaningful if you know which two,
+ * and a fallback to an unpaired checkout compares against whatever branch that
+ * one is on.
+ */
+process.stdout.write(`${describeFrontendRoot(FRONTEND)}\n`);
+if (!FRONTEND.root) process.exit(2);
+
 try {
   const unionSources = FRONTEND_UNION_FILES.map((f) => readFileSync(f, "utf8"));
   frontendCatalog = parseUnionKeys(unionSources);
@@ -298,7 +309,7 @@ const missingFrontend = new Map();
 const unresolved = new Map();
 
 for (const ref of routeRefs) {
-  const rel = relative(REPO_ROOT, ref.file);
+  const rel = relative(BACKEND_ROOT, ref.file);
   if (!ref.resolved) {
     if (!unresolved.has(ref.identifier)) unresolved.set(ref.identifier, []);
     unresolved.get(ref.identifier).push(`${rel}:${ref.line}`);

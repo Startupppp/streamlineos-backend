@@ -24,7 +24,10 @@ function inboundForeignKeys(target: string): string[] {
       for (const column of ref.columns) inbound.push(`${config.name}.${column.name}`);
     }
   }
-  return inbound.sort();
+  // Deduplicated: several children carry both the original single-column key and
+  // the composite `(org_id, id)` one that replaced it, so the same column shows
+  // up under two constraints. A cutover has to resolve the column once.
+  return [...new Set(inbound)].sort();
 }
 
 describe("c21-04 partition preconditions", () => {
@@ -32,23 +35,24 @@ describe("c21-04 partition preconditions", () => {
     for (const name of PARTITION_CANDIDATES) expect(tableByName(name)).toBeDefined();
   });
 
+  /**
+   * Twelve, not five: each child now references `(org_id, id)` rather than the
+   * bare id, so every one of them contributes an `org_id` column as well. That
+   * is the tenant-isolation work, and it makes a cutover harder rather than
+   * easier — a partitioned parent has to keep the composite key these point at.
+   */
   it("pins the inbound foreign keys a chat_messages cutover would have to resolve", () => {
     expect(inboundForeignKeys("chat_messages")).toEqual([
-      "chat_attachments.message_id",
       "chat_attachments.message_id",
       "chat_attachments.org_id",
       "chat_message_reactions.message_id",
       "chat_message_reactions.org_id",
       "chat_messages.org_id",
       "chat_messages.reply_to_id",
-      "chat_messages.reply_to_id",
-      "chat_pinned_messages.message_id",
       "chat_pinned_messages.message_id",
       "chat_pinned_messages.org_id",
       "chat_reply_reminders.message_id",
-      "chat_reply_reminders.message_id",
       "chat_reply_reminders.org_id",
-      "chat_saved_messages.message_id",
       "chat_saved_messages.message_id",
       "chat_saved_messages.org_id",
     ]);

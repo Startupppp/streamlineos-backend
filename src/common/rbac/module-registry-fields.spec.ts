@@ -6,14 +6,21 @@ const RBAC_DIR = join(__dirname);
 const MODULES_BASE = join(__dirname, "../../modules");
 const SCHEMA_BASE = join(__dirname, "../../db/schema");
 /**
- * The frontend checkout, wherever it is. A sibling `frontend/` is the flat
- * layout; `streamlineos-frontend/frontend/` is this workspace's. Hard-coding one
- * made the spec pass or ENOENT purely on how somebody had cloned the repos.
+ * The frontend checkout, wherever it sits beside this one.
+ *
+ * The path here was `<monorepo>/frontend/...`, which is not where the frontend
+ * is — it lives under `streamlineos-frontend/frontend/` — so this read threw
+ * ENOENT and took the whole suite with it rather than checking anything. Both
+ * layouts are tried; when neither is present the `beforeAll` below names the
+ * failure, and "readable and non-empty" fails with it rather than an ENOENT.
  */
-const FRONTEND_NAV_TYPES = [
-  join(__dirname, "../../../../frontend/components/layout/sidebar/sidebar-nav-types.ts"),
-  join(__dirname, "../../../../streamlineos-frontend/frontend/components/layout/sidebar/sidebar-nav-types.ts"),
-].find((candidate) => existsSync(candidate));
+const FRONTEND_NAV_TYPES =
+  [
+    "../../../../streamlineos-frontend/frontend/components/layout/sidebar/sidebar-nav-types.ts",
+    "../../../../frontend/components/layout/sidebar/sidebar-nav-types.ts",
+  ]
+    .map((candidate) => join(__dirname, candidate))
+    .find(existsSync) ?? "";
 
 function parseProductKeyUnion(source: string): Set<string> {
   const match = source.match(/type\s+ProductKey\s*=([^;]+)/s);

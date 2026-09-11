@@ -3,6 +3,7 @@ jest.mock("../../../common/tenant/run-in-tenant-transaction", () => ({
   runInNewTenantTransaction: <T>(_db: unknown, _orgId: string, fn: (tx: unknown) => Promise<T>) => fn(_db),
 }));
 
+import { DrizzleQueryError } from "drizzle-orm";
 import { ConflictException, NotFoundException } from "@nestjs/common";
 import { Test, type TestingModule } from "@nestjs/testing";
 import { DRIZZLE } from "../../../db/drizzle.constants";
@@ -157,15 +158,38 @@ describe("CrmPricebooksService.upsertEntry", () => {
     expect(result).toEqual(entry);
   });
 
-  it("converts DB 23505 error to ConflictException", async () => {
+  /**
+   * Replaces "converts DB 23505 error to ConflictException".
+   *
+   * That case rejected with a bare `{ code: "23505" }` and asserted a 409, and
+   * it was wrong twice. Drizzle throws a `DrizzleQueryError` with the SQLSTATE
+   * on `.cause`, so the handler it certified could never have fired against a
+   * real database — the mock supplied the shape the broken code was looking
+   * for. And the conflict it described cannot happen: `uniq_crm_pb_entry` is
+   * this statement's own ON CONFLICT arbiter, so the one unique a caller can
+   * collide is resolved into an update, and the only other unique on the table
+   * is (org_id, id) over a generated uuid. The handler is deleted; what is
+   * worth pinning is the arbiter that makes it unnecessary.
+   */
+  it("declares the entry uniqueness as its own conflict target, so a repeat re-prices", async () => {
     mockDb.query.crmPricebooks.findFirst.mockResolvedValue({ id: PB_ID });
     const insertChain = makeInsertChain();
-    insertChain.returning.mockRejectedValue({ code: "23505" });
+    insertChain.returning.mockResolvedValue([
+      { id: "entry-1", productId: PRODUCT_ID, unitPriceCents: 4000, minQuantity: 1 },
+    ]);
     mockDb.insert.mockReturnValue(insertChain);
 
-    await expect(
-      svc.upsertEntry(ORG, PB_ID, { productId: PRODUCT_ID, unitPriceCents: 2500, minQuantity: 1 }),
-    ).rejects.toThrow(ConflictException);
+    await svc.upsertEntry(ORG, PB_ID, {
+      productId: PRODUCT_ID,
+      unitPriceCents: 4000,
+      minQuantity: 1,
+    });
+
+    const config = insertChain.onConflictDoUpdate.mock.calls[0]?.[0] as
+      | { target?: unknown[]; set?: Record<string, unknown> }
+      | undefined;
+    expect(config?.target).toHaveLength(4);
+    expect(config?.set).toHaveProperty("unitPriceCents", 4000);
   });
 });
 
@@ -198,14 +222,38 @@ describe("CrmPricebooksService.createPricebook", () => {
     expect(mockDb.update).toHaveBeenCalled();
   });
 
-  it("converts DB 23505 error to ConflictException", async () => {
+  /**
+   * A real `DrizzleQueryError` wrapping a real postgres-js error, not a bare
+   * `{ code: "23505" }`.
+   *
+   * The bare object is the shape that hid this bug for as long as it existed:
+   * Drizzle throws a wrapper and keeps the SQLSTATE on `.cause`, so a service
+   * reading `e.code` never fired against a real database — while a mock that
+   * puts `code` on the top-level object passes either way. Rejecting with what
+   * the driver and the ORM actually produce is what makes this able to fail.
+   */
+  it("converts a wrapped 23505 into a ConflictException naming the pricebook", async () => {
     const insertChain = makeInsertChain();
-    insertChain.returning.mockRejectedValue({ code: "23505" });
+    insertChain.returning.mockRejectedValue(
+      new DrizzleQueryError(
+        "insert into crm_pricebooks ...",
+        [],
+        Object.assign(
+          new Error(
+            'duplicate key value violates unique constraint "uniq_crm_pricebooks_org_name"',
+          ),
+          { code: "23505", constraint_name: "uniq_crm_pricebooks_org_name" },
+        ),
+      ),
+    );
     mockDb.insert.mockReturnValue(insertChain);
 
     await expect(
       svc.createPricebook(ORG, { name: "Dup", currency: "USD", isDefault: false, isActive: true }),
     ).rejects.toThrow(ConflictException);
+    await expect(
+      svc.createPricebook(ORG, { name: "Dup", currency: "USD", isDefault: false, isActive: true }),
+    ).rejects.toThrow('A pricebook named "Dup" already exists');
   });
 });
 

@@ -7,6 +7,13 @@ export interface AutomationEmailOptions {
   subject: string;
   html: string;
   text?: string;
+  /**
+   * Passed straight to the provider. `EmailOptions.headers` already exists for
+   * RFC 8058 `List-Unsubscribe`, and this interface was the one link in the
+   * chain that dropped it, so a CRM marketing send could not offer an opt-out
+   * a mail client would show natively.
+   */
+  headers?: Record<string, string>;
 }
 
 @Injectable()

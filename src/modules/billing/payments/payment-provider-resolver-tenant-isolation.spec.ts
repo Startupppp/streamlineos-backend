@@ -1,5 +1,18 @@
 // Service under test: src/modules/billing/payments/payment-provider-resolver.service.ts
+/*
+  The resolver opens the organisation's own transaction (`runInNewTenantTransaction`),
+  which routes through the regional pool. The double below is a bare query surface,
+  so the helper is replaced with one that hands that surface to the callback as the
+  transaction — and records the org it was opened for, which is the tenant boundary
+  this spec exists to pin.
+*/
+jest.mock("../../../common/tenant/run-in-tenant-transaction", () => ({
+  runInTenantTransaction: jest.fn(<T>(db: unknown, fn: (tx: unknown) => Promise<T>) => fn(db)),
+  runInNewTenantTransaction: jest.fn(<T>(db: unknown, _orgId: string, fn: (tx: unknown) => Promise<T>) => fn(db)),
+}));
+
 import type { Db } from "../../../db/drizzle.module";
+import { runInNewTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
 import { PaymentProviderResolver } from "./payment-provider-resolver.service";
 
 describe("PaymentProviderResolver — cross-tenant isolation", () => {
@@ -18,6 +31,7 @@ describe("PaymentProviderResolver — cross-tenant isolation", () => {
     const svc = new PaymentProviderResolver(db, mockRegistry, mockSetup);
     const result = await svc.resolve(ATTACKER, "razorpay");
     expect(result).toBeUndefined();
+    expect(runInNewTenantTransaction).toHaveBeenCalledWith(db, ATTACKER, expect.any(Function));
   });
 
   it("returns provider for the owning org (control — same-tenant)", async () => {
@@ -37,5 +51,6 @@ describe("PaymentProviderResolver — cross-tenant isolation", () => {
     const svc = new PaymentProviderResolver(db, mockRegistry, mockSetup);
     const result = await svc.resolve(OWNER, "razorpay");
     expect(result).toBeDefined();
+    expect(runInNewTenantTransaction).toHaveBeenCalledWith(db, OWNER, expect.any(Function));
   });
 });

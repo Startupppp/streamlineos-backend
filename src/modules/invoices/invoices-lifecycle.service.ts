@@ -1,13 +1,11 @@
 import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, eq, inArray, lte, sql } from "drizzle-orm";
-import { invoices, payments, finPaymentAllocations, organizationMembers, journalEntries } from "../../db/schema";
+import { invoices, payments, organizationMembers } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
-import { FinancePostingService } from "../accounting/posting/finance-posting.service";
+import { InvoicesPostingService } from "./invoices-posting.service";
 import { NotificationDispatchService } from "../notifications/notification-dispatch.service";
 import { CrmAutomationBusService } from "../crm/automation-studio/crm-automation-bus.service";
-import type { CurrentUserContext } from "../../common/auth/backend-claims";
-import { systemActor } from "../../common/auth/system-actor";
 
 type DbOrTx = Parameters<Parameters<Db["transaction"]>[0]>[0] | Db;
 
@@ -15,7 +13,7 @@ type DbOrTx = Parameters<Parameters<Db["transaction"]>[0]>[0] | Db;
 export class InvoicesLifecycleService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
-    private readonly financePosting: FinancePostingService,
+    private readonly posting: InvoicesPostingService,
     private readonly dispatch: NotificationDispatchService,
     private readonly bus: CrmAutomationBusService,
   ) {}
@@ -64,6 +62,13 @@ export class InvoicesLifecycleService {
     }
   }
 
+  /**
+   * Voiding an issued invoice reverses its journal rather than deleting it.
+   *
+   * The retired `fin_payment_allocations` guard is gone with the table: an
+   * allocation only ever existed alongside a payment row, so the payment check
+   * below already covers every case it did.
+   */
   async voidInvoice(orgId: string, userId: string, invoiceId: number): Promise<{ success: true }> {
     const invoice = await this.db.query.invoices.findFirst({
       where: and(eq(invoices.id, invoiceId), eq(invoices.orgId, orgId)),
@@ -71,14 +76,6 @@ export class InvoicesLifecycleService {
     if (!invoice) throw new NotFoundException("Invoice not found");
     if (invoice.status === "VOIDED") {
       throw new BadRequestException("Invoice is already voided");
-    }
-
-    const [{ allocationCount }] = await this.db
-      .select({ allocationCount: sql<number>`count(*)::int` })
-      .from(finPaymentAllocations)
-      .where(and(eq(finPaymentAllocations.orgId, orgId), eq(finPaymentAllocations.invoiceId, invoiceId)));
-    if (allocationCount > 0) {
-      throw new BadRequestException("Cannot void an invoice with payment allocations");
     }
 
     const [{ paymentCount }] = await this.db
@@ -89,20 +86,14 @@ export class InvoicesLifecycleService {
       throw new BadRequestException("Cannot void an invoice that has payments recorded");
     }
 
-    const existingEntry = await this.db.query.journalEntries.findFirst({
-      where: and(
-        eq(journalEntries.orgId, orgId),
-        eq(journalEntries.sourceType, "invoice"),
-        eq(journalEntries.sourceId, String(invoiceId)),
-        eq(journalEntries.sourceEvent, "invoice_send"),
-      ),
-      columns: { id: true, status: true },
-    });
-
-    if (existingEntry && existingEntry.status === "POSTED") {
-      const ctx = systemActor("invoices.void-reversal", orgId, userId);
-      await this.financePosting.reverseJournal(ctx, existingEntry.id, `Void invoice ${invoice.invoiceNumber}`);
-    }
+    // No-op when the invoice was never posted (a draft, or an organisation
+    // without accounting enabled) — the kernel finds the original by source.
+    await this.posting.reverseInvoiceIssued(
+      orgId,
+      userId,
+      invoiceId,
+      new Date().toISOString().slice(0, 10),
+    );
 
     await this.db
       .update(invoices)

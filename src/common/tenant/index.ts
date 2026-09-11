@@ -5,7 +5,7 @@ export {
   runWithTenantContext,
   TenantContextService,
 } from "./tenant-context";
-export { withTenant } from "./with-tenant";
+export { withTenant, withNewOrgInRegion } from "./with-tenant";
 export type { TenantTx } from "./with-tenant";
 export { withIdentity } from "./with-identity";
 export { TenantContextInterceptor } from "./tenant-context.interceptor";

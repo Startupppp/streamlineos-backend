@@ -1,5 +1,6 @@
 import { Module } from "@nestjs/common";
 import { InvStockEngineModule } from "../stock-engine/inv-stock-engine.module";
+import { AccountingAdaptersModule } from "../../accounting/adapters/accounting-adapters.module";
 import { InspectionsController } from "./inspections.controller";
 import { InspectionPlansController } from "./inspection-plans.controller";
 import { HoldsController } from "./holds.controller";
@@ -20,7 +21,7 @@ import { RecallSimulationService } from "./recall-simulation.service";
  * table.
  */
 @Module({
-  imports: [InvStockEngineModule],
+  imports: [InvStockEngineModule, AccountingAdaptersModule],
   controllers: [
     InspectionsController,
     InspectionPlansController,

@@ -15,6 +15,7 @@ import { SignIntegrationsService } from "./sign-integrations.service";
 import { SignTokensService } from "./sign-tokens.service";
 import { SignPdfService } from "./sign-pdf.service";
 import { SignSettingsService } from "./sign-settings.service";
+import { SignAuthMethodPolicy } from "./sign-auth-method.policy";
 import { SignNotificationsService } from "./sign-notifications.service";
 import { SignDocumentsService } from "./sign-documents.service";
 import { SignDocumentsController } from "./sign-documents.controller";
@@ -26,10 +27,14 @@ import { SignEnvelopesService } from "./sign-envelopes.service";
 import { SignEnvelopeValidationService } from "./sign-envelope-validation.service";
 import { SignEnvelopeDispatchService } from "./sign-envelope-dispatch.service";
 import { SignEnvelopeSweepsService } from "./sign-envelope-sweeps.service";
+import { SMS_SENDER } from "./sms/sms-sender.port";
+import { EnvSmsSender } from "./sms/env-sms-sender";
+import { SIGN_GEO_IP } from "./geo/geo-ip.port";
+import { AddressGeoIp } from "./geo/address-geo-ip";
+import { SignBulkSendConsumer } from "./sign-bulk-send.consumer";
 import { SignEnvelopesController } from "./sign-envelopes.controller";
 import { SignFinalizationService } from "./sign-finalization.service";
 import { SignPublicService } from "./sign-public.service";
-import { SignPublicFormService } from "./sign-public-form.service";
 import { SignPublicController } from "./sign-public.controller";
 import { SignCertificatesController } from "./sign-certificates.controller";
 import { SignTemplatesService } from "./sign-templates.service";
@@ -43,7 +48,18 @@ import { SignReportsController } from "./sign-reports.controller";
 import { SignEnvelopeCompletedConsumerService } from "./sign-envelope-completed-consumer.service";
 
 @Module({
-  imports: [StorageModule, EmailModule, AccessModule, AutomationModule, WebhooksModule, NotificationsModule, BillingModule, AiModule, OutboxModule],
+  imports: [
+    StorageModule,
+    EmailModule,
+    AccessModule,
+    AutomationModule,
+    WebhooksModule,
+    NotificationsModule,
+    BillingModule,
+    AiModule,
+    /** For OutboxConsumerRegistry: bulk send is queued rather than run inline. */
+    OutboxModule,
+  ],
   controllers: [
     SignDocumentsController,
     SignRecipientsController,
@@ -58,6 +74,7 @@ import { SignEnvelopeCompletedConsumerService } from "./sign-envelope-completed-
     SignAiController,
   ],
   providers: [
+    SignAuthMethodPolicy,
     SignAuditService,
     SignAiService,
     SignIntegrationsService,
@@ -75,12 +92,31 @@ import { SignEnvelopeCompletedConsumerService } from "./sign-envelope-completed-
     SignFinalizationService,
     SignTemplatesService,
     SignPublicService,
-    SignPublicFormService,
     SignBulkSendService,
     SignWatermarkService,
     SignReportsService,
     SignEnvelopeCompletedConsumerService,
+    SignBulkSendConsumer,
+    /**
+     * SMS, behind a port. The shipped sender reports that nothing is
+     * configured, which is the truth in every environment this repository
+     * knows about; binding a provider is the whole change.
+     */
+    { provide: SMS_SENDER, useClass: EnvSmsSender },
+    /**
+     * Geolocation, behind a port. The shipped resolver uses no network and
+     * says so in every row it writes; binding a real provider is the change.
+     */
+    { provide: SIGN_GEO_IP, useClass: AddressGeoIp },
   ],
-  exports: [SignAuditService, SignSettingsService, SignEnvelopesService, SignFinalizationService, SignTemplatesService],
+  exports: [
+    SignAuditService,
+    SignSettingsService,
+    SignEnvelopesService,
+    SignFinalizationService,
+    SignTemplatesService,
+    /** For the platform cron controller, which drives the sweeps across orgs. */
+    SignEnvelopeSweepsService,
+  ],
 })
 export class ESignModule {}

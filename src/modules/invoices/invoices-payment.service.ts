@@ -1,23 +1,13 @@
 import { BadRequestException, Inject, Injectable, Logger, NotFoundException } from "@nestjs/common";
-import { and, eq, inArray, isNull, sql } from "drizzle-orm";
-import {
-  invoices,
-  payments,
-  organizationMembers,
-  accountingSettings,
-  finPaymentAllocations,
-  finReminderLog,
-} from "../../db/schema";
+import { and, eq, sql } from "drizzle-orm";
+import { invoices, payments, organizationMembers } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { AuditService } from "../../common/audit/audit.service";
-import { JournalPostingService, type DbOrTx } from "../accounting/posting/journal-posting.service";
+import type { DbOrTx } from "../accounting/kernel/sequence.service";
 import { NotificationDispatchService } from "../notifications/notification-dispatch.service";
 import { InvoicesLifecycleService } from "./invoices-lifecycle.service";
-import { RateResolverService } from "../finance/controls/rate-resolver.service";
-import { FxService } from "../finance/controls/fx.service";
-import type { CurrentUserContext } from "../../common/auth/backend-claims";
-import { systemActor } from "../../common/auth/system-actor";
+import { InvoicesPostingService } from "./invoices-posting.service";
 import type { RecordPaymentInput } from "./dto/invoice-write.schemas";
 import { registerAfterCommit } from "../../common/tenant/tenant-context";
 import { logSideEffectFailure } from "../../common/logger/side-effect";
@@ -28,12 +18,10 @@ export class InvoicesPaymentService {
 
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
-    private readonly posting: JournalPostingService,
+    private readonly posting: InvoicesPostingService,
     private readonly dispatch: NotificationDispatchService,
     private readonly lifecycle: InvoicesLifecycleService,
     private readonly audit: AuditService,
-    private readonly rateResolver: RateResolverService,
-    private readonly fx: FxService,
   ) {}
 
   private async createPayment(
@@ -88,30 +76,18 @@ export class InvoicesPaymentService {
       );
     }
 
-    const allocations = input.allocations ?? [];
-    const allocatedTotal = allocations.reduce((sum, a) => sum + a.amount, 0);
-    if (allocations.length > 0 && Math.abs(allocatedTotal - input.amount) > 0.01) {
+    // Spreading one receipt across several invoices lived in
+    // `fin_payment_allocations`, which was dropped with the pre-rewrite
+    // accounting schema. Its successor, `ar_allocations`, is keyed to
+    // `ar_receipts`/`ar_documents` and cannot address these integer-id rows, so
+    // the feature genuinely has no home here. Say so instead of accepting the
+    // input and silently recording a single-invoice payment.
+    if ((input.allocations ?? []).length > 0) {
       throw new BadRequestException(
-        "Allocations total must equal payment amount",
+        "Splitting one payment across several invoices moved to accounting receipts " +
+          "(POST /accounting/ar/receipts). Record this payment against a single invoice.",
       );
     }
-
-    const allocInvoiceIds = allocations.map((a) => a.invoiceId);
-    if (allocInvoiceIds.length > 0) {
-      const validInvoices = await this.db
-        .select({ id: invoices.id })
-        .from(invoices)
-        .where(
-          and(eq(invoices.orgId, orgId), inArray(invoices.id, allocInvoiceIds)),
-        );
-      if (validInvoices.length !== allocInvoiceIds.length) {
-        throw new BadRequestException(
-          "One or more allocation invoices not found in this organisation",
-        );
-      }
-    }
-
-    await this.posting.seedChartOfAccountsForOrg(orgId);
 
     const created = await this.db.transaction(async (tx) => {
       const payment = await this.createPayment(
@@ -121,46 +97,17 @@ export class InvoicesPaymentService {
         tx,
       );
 
-      const touchedIds = new Set([invoiceId]);
-      if (allocations.length > 0) {
-        await tx.insert(finPaymentAllocations).values(
-          allocations.map((a) => ({
-            orgId,
-            paymentId: payment.id,
-            invoiceId: a.invoiceId,
-            amount: a.amount.toFixed(4),
-          })),
-        );
-        for (const id of allocations.map((a) => a.invoiceId)) touchedIds.add(id);
-        for (const id of touchedIds) {
-          await this.lifecycle.recomputeInvoiceBalance(id, tx);
-        }
-      }
-
-      const paidNow = new Date();
-      for (const id of touchedIds) {
-        const [inv] = await tx.select({ status: invoices.status }).from(invoices)
-          .where(and(eq(invoices.id, id), eq(invoices.orgId, orgId))).limit(1);
-        if (inv?.status === "PAID") {
-          await tx.update(finReminderLog).set({ paidAt: paidNow })
-            .where(and(
-              eq(finReminderLog.orgId, orgId),
-              eq(finReminderLog.invoiceId, id),
-              eq(finReminderLog.status, "SENT"),
-              isNull(finReminderLog.paidAt),
-            ));
-        }
-      }
-
       await this.posting.postPaymentReceipt(
+        orgId,
+        userId,
         {
-          orgId,
           paymentId: payment.id,
+          invoiceId,
           invoiceNumber: invoice.invoiceNumber,
           paymentDate: input.paymentDate,
           paymentMethod: input.paymentMethod,
+          currency: invoice.currency,
           amount: input.amount,
-          createdBy: userId,
         },
         tx,
       );
@@ -204,45 +151,38 @@ export class InvoicesPaymentService {
     return created;
   }
 
+  /**
+   * Realised FX when a foreign-currency invoice settles.
+   *
+   * Fire-and-forget on purpose: the payment is already recorded and a missing
+   * rate must not undo it. The rewrite dropped the old
+   * `accounting_settings.base_currency` read and the invoice's stored
+   * `exchange_rate` — the first has no successor table, and the second was never
+   * written by the create path, so it was always 1. Both rates now come from the
+   * book's own `gl_fx_rates`.
+   */
   private async postArFxGainLoss(
     orgId: string,
     userId: string,
-    invoice: { id: number; currency: string; exchangeRate: string },
-    allocatedAmount: number,
+    invoice: { id: number; currency: string; createdAt: Date | null },
+    settledAmount: number,
     paymentDateIso: string,
   ): Promise<void> {
-    const settingsRows = await this.db
-      .select({ baseCurrency: accountingSettings.baseCurrency })
-      .from(accountingSettings)
-      .where(eq(accountingSettings.orgId, orgId))
-      .limit(1);
-    const baseCurrency = settingsRows[0]?.baseCurrency ?? "INR";
-
-    if (invoice.currency === baseCurrency) return;
-
-    const bookedRate = Number(invoice.exchangeRate ?? 1);
-    const baseAmountBooked = (allocatedAmount * bookedRate).toFixed(4);
-
     try {
-      const settledRate = await this.rateResolver.getRate(
+      await this.posting.postRealizedFx(
         orgId,
-        invoice.currency,
-        baseCurrency,
-        new Date(`${paymentDateIso}T00:00:00.000Z`),
+        userId,
+        {
+          id: invoice.id,
+          currency: invoice.currency,
+          issueDate: (invoice.createdAt ?? new Date()).toISOString().slice(0, 10),
+        },
+        settledAmount,
+        paymentDateIso,
       );
-      const baseAmountSettled = (allocatedAmount * settledRate).toFixed(4);
-      const user = systemActor("invoices.payment.fx-posting", orgId, userId);
-
-      await this.fx.postRealizedGainLoss(user, {
-        sourceType: "invoice",
-        sourceId: String(invoice.id),
-        baseAmountBooked,
-        baseAmountSettled,
-        counterPurpose: "AR",
-      });
     } catch (err) {
       this.classLogger.warn(
-        `No exchange rate for FX on invoice ${invoice.id}: ${err instanceof Error ? err.message : String(err)}`,
+        `Realised FX post failed for invoice ${invoice.id}: ${err instanceof Error ? err.message : String(err)}`,
       );
     }
   }

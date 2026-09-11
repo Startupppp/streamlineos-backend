@@ -18,7 +18,8 @@ export class AdmissionInterceptor implements NestInterceptor {
      * outcome including the ones this cannot see, but `finalize` runs the moment
      * the handler settles rather than when the bytes are out, so releasing here
      * returns capacity sooner on the common path. `releaseAdmissionOnce` is what
-     * makes having both safe.
+     * makes having both safe: the response may also have ended by another route,
+     * and a slot must be given back exactly once.
      */
     return next.handle().pipe(finalize(() => { releaseAdmissionOnce(req, this.admissionService); }));
   }

@@ -264,7 +264,11 @@ describe("SLO catalogue", () => {
     const jobSubjects = QUEUE_SUBJECTS.filter(
       (subject) => subject.channel === "job" && subject.drains.endsWith("_jobs"),
     );
-    expect(jobSubjects.length).toBeGreaterThanOrEqual(7);
+    // Six since the accounting rewrite deleted `finance/**`, and with it the
+    // finance report export worker and its `finance_report_export_jobs` queue.
+    // The rewrite brought no export queue of its own; lower this again only for
+    // a queue that was deliberately removed, never to hide one that went missing.
+    expect(jobSubjects.length).toBeGreaterThanOrEqual(6);
     const unwatched = jobSubjects.filter((subject) => !registered.has(subject.drains));
     expect(unwatched.map((s) => s.drains)).toEqual([]);
   });

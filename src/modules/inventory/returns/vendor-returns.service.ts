@@ -12,6 +12,7 @@ import {
   WarehouseScopeService,
 } from "../stock-engine/warehouse-scope.service";
 import { StockEngineService } from "../stock-engine/stock-engine.service";
+import { StockMovementBridgeService } from "../../accounting/adapters/stock-movement-bridge.service";
 import { NumberSequenceService } from "../stock-engine/number-sequence.service";
 import { runIdempotent, revivedId } from "../stock-engine/idempotency";
 import {
@@ -42,6 +43,7 @@ export class VendorReturnsService {
     private readonly engine: StockEngineService,
     private readonly numSeq: NumberSequenceService,
     private readonly warehouseScope: WarehouseScopeService,
+    private readonly glBridge: StockMovementBridgeService,
   ) {}
 
 
@@ -383,7 +385,7 @@ export class VendorReturnsService {
     );
 
     if (resolvedMovements.length > 0) {
-      await this.engine.executeInTx(tx, orgId, userId, {
+      const moved = await this.engine.executeInTx(tx, orgId, userId, {
         // Derived: the command's own key is already claimed above.
         idempotencyKey: `${idempotencyKey}:stock`,
         sourceType: "inv_vendor_return",
@@ -391,6 +393,27 @@ export class VendorReturnsService {
         reason: data.reason,
         movements: resolvedMovements,
       });
+
+      /*
+        ACC-21. Goods going back to a supplier reverse the receipt accrual, so
+        they land on GRNI — where the receipt did — and not on ap_control.
+        Debiting AP directly would leave GRNI still holding an accrual for
+        goods the business no longer has, which is §2.2's defect arrived at
+        from the other end. On the command's own transaction, so a ledger
+        refusal takes the stock movement back with it.
+      */
+      await this.glBridge.post(
+        orgId,
+        userId,
+        {
+          kind: "vendor_return",
+          documentId: String(returnId),
+          transactionIds: moved.transactionIds,
+          journalDate: new Date().toISOString().slice(0, 10),
+          memo: `Vendor return ${returnId}`,
+        },
+        tx,
+      );
     }
 
     if (serialLines.length > 0) {

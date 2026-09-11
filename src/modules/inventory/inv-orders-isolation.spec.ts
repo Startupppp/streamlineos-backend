@@ -13,7 +13,7 @@ import { InventorySettingsService } from "./stock-engine/inventory-settings.serv
 import { NumberSequenceService } from "./stock-engine/number-sequence.service";
 import { StockEngineService } from "./stock-engine/stock-engine.service";
 import { ReservationService } from "./stock-engine/reservation.service";
-import { JournalPostingService } from "../accounting/posting/journal-posting.service";
+import { PostingCommandService } from "../accounting/adapters/posting-command.service";
 import { PlanLimitsService } from "../billing/core/plan-limits.service";
 import { SoLifecycleService as _SoLifecycleImport } from "./sales-orders/so-lifecycle.service";
 import { INVENTORY_ISOLATION_STUBS } from "./__tests__/isolation-stubs";
@@ -240,7 +240,7 @@ describe("SoFulfillmentService — cross-tenant isolation", () => {
         { provide: ReservationService, useValue: { createReservationInTx: jest.fn() } },
         { provide: InventorySettingsService, useValue: { get: jest.fn().mockResolvedValue({}) } },
         { provide: NumberSequenceService, useValue: { next: jest.fn() } },
-        { provide: JournalPostingService, useValue: { persistJournalEntry: jest.fn() } },
+        { provide: PostingCommandService, useValue: { submit: jest.fn() } },
         { provide: SoCoreService, useValue: { getSo: jest.fn() } },
       ],
     }).compile().then((m) => m.get(SoFulfillmentService));
@@ -264,7 +264,7 @@ describe("SoFulfillmentService — cross-tenant isolation", () => {
         { provide: ReservationService, useValue: { createReservationInTx: jest.fn().mockResolvedValue({}) } },
         { provide: InventorySettingsService, useValue: { get: jest.fn().mockResolvedValue({ allowBackorders: false }) } },
         { provide: NumberSequenceService, useValue: { next: jest.fn() } },
-        { provide: JournalPostingService, useValue: { persistJournalEntry: jest.fn() } },
+        { provide: PostingCommandService, useValue: { submit: jest.fn() } },
         { provide: SoCoreService, useValue: { getSo: jest.fn() } },
       ],
     }).compile().then((m) => m.get(SoFulfillmentService));
@@ -289,7 +289,7 @@ describe("SoLifecycleService — cross-tenant isolation", () => {
         { provide: NumberSequenceService, useValue: { next: jest.fn() } },
         { provide: InventorySettingsService, useValue: { get: jest.fn().mockResolvedValue({}) } },
         { provide: ReservationService, useValue: { createReservationInTx: jest.fn() } },
-        { provide: JournalPostingService, useValue: { persistJournalEntry: jest.fn() } },
+        { provide: PostingCommandService, useValue: { submit: jest.fn() } },
         { provide: PlanLimitsService, useValue: { assertWithinLimit: jest.fn() } },
       ],
     }).compile().then((m) => m.get(SoLifecycleService));
@@ -311,7 +311,7 @@ describe("SoLifecycleService — cross-tenant isolation", () => {
         { provide: NumberSequenceService, useValue: { next: jest.fn() } },
         { provide: InventorySettingsService, useValue: { get: jest.fn().mockResolvedValue({}) } },
         { provide: ReservationService, useValue: { createReservationInTx: jest.fn() } },
-        { provide: JournalPostingService, useValue: { persistJournalEntry: jest.fn() } },
+        { provide: PostingCommandService, useValue: { submit: jest.fn() } },
         { provide: PlanLimitsService, useValue: { assertWithinLimit: jest.fn() } },
       ],
     }).compile();

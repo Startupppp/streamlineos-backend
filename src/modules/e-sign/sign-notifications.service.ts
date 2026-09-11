@@ -19,15 +19,35 @@ ${renderButton("View status", envelopeViewUrl)}`,
     await this.email.sendEmail({ to: email, subject: `Copied on: ${envelopeTitle}`, html });
   }
 
+  /**
+   * The code stays out of the subject and the preheader.
+   *
+   * Both were carrying it. A subject line is the most widely exposed part of an
+   * email: it renders on a locked phone, sits in every mail-client list view
+   * over the recipient's shoulder, and is recorded far more casually than a body
+   * by relays and archivers. The preheader is the same text one line down — it
+   * is what a client shows as the preview snippet, which is exactly the
+   * lock-screen surface.
+   *
+   * The code is a second factor for signing a document. Putting it where the
+   * envelope's own notification already appears defeats most of what it is for,
+   * and costs nothing to move: the body is behind the same click that opening
+   * the mail requires anyway.
+   */
   async sendOtpCode(email: string, name: string, code: string): Promise<void> {
     const html = getEmailTemplate({
       title: "Your one-time signing code",
-      preheader: `Your code is ${code}`,
+      preheader: "Open this message for the one-time code you were asked for.",
       content: `<p class="email-text">Hi ${escapeHtml(name)},</p>
 <p class="email-text">Use this one-time code to continue signing. It expires in 10 minutes.</p>
-<p style="font-size:28px;font-weight:700;letter-spacing:4px;margin:16px 0;">${escapeHtml(code)}</p>`,
+<p style="font-size:28px;font-weight:700;letter-spacing:4px;margin:16px 0;">${escapeHtml(code)}</p>
+<p class="email-text">If you did not ask to sign anything, ignore this message — the code is useless without the signing link.</p>`,
     });
-    await this.email.sendEmail({ to: email, subject: `Your signing code: ${code}`, html });
+    await this.email.sendEmail({
+      to: email,
+      subject: "Your one-time signing code",
+      html,
+    });
   }
 
   async sendInvitation(

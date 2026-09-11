@@ -12,7 +12,14 @@ export type RemovalAction =
   | "set-null"
   | "delete"
   | "revoke"
-  | "blocks-removal";
+  | "blocks-removal"
+  /**
+   * The column holds a membership id and carries no foreign key, so removing a
+   * membership does not touch it and nothing else does either. It is recorded
+   * rather than omitted because a countable gap is one somebody can close; an
+   * absent row reads as "handled".
+   */
+  | "unreferenced";
 
 export type SuspensionAction = "revoke" | "retain";
 
@@ -678,16 +685,6 @@ export const MEMBERSHIP_ARTIFACTS = [
       "The owner_membership_id column is a companion attribution field with no FK enforcement. On removal it must be explicitly set to NULL so the campaign record is preserved but the membership reference is cleared.",
   },
   {
-    id: "leads",
-    mechanism: "database-write",
-    table: "leads",
-    keyedBy: "assigned_to_membership_id",
-    onRemoval: "set-null",
-    onSuspension: "retain",
-    reason:
-      "Assignment companion columns (assigned_to_membership_id) carry no FK. On removal they must be explicitly set to NULL so lead records are preserved but stale membership references are cleared.",
-  },
-  {
     id: "lead_activities",
     mechanism: "database-write",
     table: "lead_activities",
@@ -726,16 +723,6 @@ export const MEMBERSHIP_ARTIFACTS = [
     onSuspension: "retain",
     reason:
       "The assign_to_membership_id column is a companion field with no FK enforcement. On removal it must be explicitly set to NULL so rule records are preserved but the membership reference is cleared.",
-  },
-  {
-    id: "clients",
-    mechanism: "database-write",
-    table: "clients",
-    keyedBy: "account_manager_membership_id / sales_rep_membership_id / assigned_crm_membership_id / user_membership_id / assigned_to_membership_id",
-    onRemoval: "set-null",
-    onSuspension: "retain",
-    reason:
-      "All membership companion columns are attribution fields with no FK enforcement. On removal they must be explicitly set to NULL so client records are preserved but stale membership references are cleared.",
   },
   {
     id: "client_accounts",
@@ -956,16 +943,6 @@ export const MEMBERSHIP_ARTIFACTS = [
     onSuspension: "retain",
     reason:
       "The composite foreign key fk_workflow_transitions_created_by_actor is ON DELETE SET NULL (migration 0832). The transition definition survives with the creator slot cleared automatically.",
-  },
-  {
-    id: "finance_report_export_jobs_requester",
-    mechanism: "database-cascade",
-    table: "finance_report_export_jobs",
-    keyedBy: "requested_by_membership_id",
-    onRemoval: "set-null",
-    onSuspension: "retain",
-    reason:
-      "The composite FK fin_report_export_jobs_org_requester_membership_fk is ON DELETE SET NULL (migration 0833). The export job record survives with the requester slot cleared automatically.",
   },
   {
     id: "payroll_run_export_jobs_requester",
@@ -1372,16 +1349,6 @@ export const MEMBERSHIP_ARTIFACTS = [
     mechanism: "database-cascade",
     table: "hr_cases",
     keyedBy: "assigned_to_membership_id",
-    onRemoval: "set-null",
-    onSuspension: "retain",
-    reason:
-      "Added by the actor contraction: the row carries a membership pointer beside its legacy user id. The composite tenant foreign key nulls the pointer on removal so historical display survives, and a suspension is reversible so nothing is written.",
-  },
-  {
-    id: "fin_approval_policies",
-    mechanism: "database-cascade",
-    table: "fin_approval_policies",
-    keyedBy: "approver_membership_id",
     onRemoval: "set-null",
     onSuspension: "retain",
     reason:

@@ -5,6 +5,7 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { buildCursorPage, decodeCursor } from "../../../common/pagination/cursor";
 import { keysetBeforeId } from "../../../common/pagination/keyset";
 import type { AuditLogQuery } from "../dto/module-access.schemas";
+import { systemActorLabel } from "../../../common/audit/audit.service";
 
 /**
  * A module's access-change history, as the module's own Access screen shows it.
@@ -32,7 +33,8 @@ import type { AuditLogQuery } from "../dto/module-access.schemas";
 export interface ModuleAuditLogEntry {
   id: number;
   action: string;
-  actorUserId: string;
+  /** Null when no user acted; `actorName` then carries the system's label. */
+  actorUserId: string | null;
   actorName: string;
   actorEmail: string;
   targetId: string | null;
@@ -149,7 +151,12 @@ export async function listModuleAuditLog(
     id: r.id,
     action: r.action,
     actorUserId: r.actorUserId,
-    actorName: r.actorName ?? r.actorEmail ?? r.actorUserId,
+    actorName:
+      r.actorName ??
+      r.actorEmail ??
+      r.actorUserId ??
+      systemActorLabel(r.metadata) ??
+      "The system",
     actorEmail: r.actorEmail ?? "",
     targetId: r.targetId,
     targetType: r.targetType,

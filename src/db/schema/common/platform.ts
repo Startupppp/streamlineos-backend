@@ -11,7 +11,7 @@ import {
   uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
-import { relations } from "drizzle-orm";
+import { relations, sql } from "drizzle-orm";
 import { organizations, users } from "./auth";
 
 export const platformMessages = pgTable(
@@ -56,6 +56,25 @@ export const platformWaitlist = pgTable(
     notes: text("notes"),
     status: text("status").default("PENDING").notNull(),
     invitedAt: timestamp("invited_at"),
+    /**
+     * The admission token, hashed.
+     *
+     * Ticket 13. A backup should not contain live credentials for creating
+     * organisations, so only the digest is stored and the raw value exists in
+     * the email that carried it. Same treatment as `invitations.token_hash`.
+     */
+    tokenHash: text("token_hash"),
+    tokenExpiresAt: timestamp("token_expires_at"),
+    admittedByUserId: text("admitted_by_user_id"),
+    /**
+     * Distinct from `invited_at`, which is what the notification used.
+     *
+     * Conflating "we told them" with "we let them in" makes the funnel
+     * unmeasurable the first time a send fails.
+     */
+    admittedAt: timestamp("admitted_at"),
+    claimedAt: timestamp("claimed_at"),
+    claimedOrgId: text("claimed_org_id"),
     ipAddress: text("ip_address"),
     userAgent: text("user_agent"),
     referrerUrl: text("referrer_url"),
@@ -67,6 +86,8 @@ export const platformWaitlist = pgTable(
     uniqueIndex("uniq_platform_waitlist_email").on(table.email),
     index("idx_platform_waitlist_status").on(table.status),
     index("idx_platform_waitlist_created").on(table.createdAt),
+    uniqueIndex("uniq_platform_waitlist_token").on(table.tokenHash),
+    index("idx_platform_waitlist_admitted").on(table.admittedAt),
   ],
 );
 
@@ -93,9 +114,20 @@ export const platformPayments = pgTable(
   "platform_payments",
   {
     id: serial("id").primaryKey(),
-    razorpayPaymentId: text("razorpay_payment_id").notNull(),
+    /**
+     * Nullable since `0531`. A Stripe payment has no Razorpay id, and this being
+     * NOT NULL is what actually blocked the second provider -- not the missing
+     * credentials ticket 02's status line blamed. Rows written by any provider
+     * carry `providerPaymentRef`; this one carries a value only for Razorpay.
+     */
+    razorpayPaymentId: text("razorpay_payment_id"),
     razorpayOrderId: text("razorpay_order_id"),
     razorpaySignature: text("razorpay_signature"),
+    /** Ticket 02's expand half; see subscriptions in common/shared.ts. */
+    provider: text("provider"),
+    providerPaymentRef: text("provider_payment_ref"),
+    providerOrderRef: text("provider_order_ref"),
+    providerSignature: text("provider_signature"),
     orgId: text("org_id").references(() => organizations.id, { onDelete: "set null" }),
     customerEmail: text("customer_email"),
     amount: integer("amount").notNull(),
@@ -110,7 +142,18 @@ export const platformPayments = pgTable(
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (table) => [
-    uniqueIndex("uniq_platform_payments_razorpay_payment").on(table.razorpayPaymentId),
+    // Partial, matching `0531`: it constrains the rows that carry a Razorpay id.
+    uniqueIndex("uniq_platform_payments_razorpay_payment")
+      .on(table.razorpayPaymentId)
+      .where(sql`razorpay_payment_id IS NOT NULL`),
+    /*
+      What makes a duplicate webhook idempotent for EVERY provider. Created by
+      `0269` but never declared here, so the schema and the database disagreed
+      about what uniqueness this table has.
+    */
+    uniqueIndex("uniq_platform_payments_provider_ref")
+      .on(table.provider, table.providerPaymentRef)
+      .where(sql`provider_payment_ref IS NOT NULL`),
     index("idx_platform_payments_status").on(table.status),
     index("idx_platform_payments_org").on(table.orgId),
     index("idx_platform_payments_created").on(table.createdAt),

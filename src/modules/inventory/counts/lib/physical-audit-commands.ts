@@ -5,6 +5,7 @@ import { type Db } from "../../../../db/drizzle.module";
 import { CacheService } from "../../../../common/cache/cache.service";
 import { WarehouseScopeService } from "../../stock-engine/warehouse-scope.service";
 import { StockEngineService } from "../../stock-engine/stock-engine.service";
+import { StockMovementBridgeService } from "../../../accounting/adapters/stock-movement-bridge.service";
 import { NumberSequenceService } from "../../stock-engine/number-sequence.service";
 import { buildCountVarianceMovements } from "../count-variance-movements";
 import {
@@ -46,6 +47,8 @@ export interface PhysicalAuditDeps {
   readonly engine: StockEngineService;
   readonly numSeq: NumberSequenceService;
   readonly warehouseScope: WarehouseScopeService;
+  /** ACC-21. The variance posts to the general ledger on the audit's own transaction. */
+  readonly glBridge: StockMovementBridgeService;
   readonly requireAudit: (orgId: string, userId: string, auditId: number) => Promise<GatedAudit>;
   readonly reloadUnscopedAudit: (orgId: string, auditId: number) => Promise<unknown>;
 }
@@ -173,20 +176,25 @@ export async function postAudit(
 
   const movements = buildCountVarianceMovements(lines);
 
-  if (movements.length > 0) {
-    await deps.engine.execute(orgId, userId, {
-      idempotencyKey,
-      sourceType: "inv_physical_audit",
-      sourceId: auditId.toString(),
-      reason: `Physical audit ${audit.auditNumber}`,
-      movements,
-    });
-  }
+  /*
+    One transaction for the status, the movements, the ledger and the event.
 
-  // A5. The status flip and its event share a transaction, so the event
-  // cannot survive a posting that rolled back. The movements above are the
-  // engine's own transaction, and carry the engine's own event; this one is
-  // about the document.
+    ACC-21. It was two: `engine.execute` opened its own transaction and the
+    status flip ran after it, so a crash in between left stock moved with the
+    audit still at REVIEW — the defect B1-05/B1-11 fixed for adjustments. The
+    general-ledger post has to ride the movement's transaction anyway
+    (`docs/inventory-gl-contract.md` §3.3/§4), so the movements join the
+    document's transaction rather than the other way round.
+
+    A5. The event still shares the transaction with the flip, so it cannot
+    survive a posting that rolled back.
+
+    The guarded flip goes FIRST. It is what makes a second, concurrent post of
+    the same audit under another key find nothing to do — and with the
+    movements now inside the same transaction, "nothing to do" also means
+    nothing moved, rather than stock moved twice and the status found already
+    changed afterwards.
+  */
   await deps.db.transaction(async (tx) => {
     const posted = await tx.update(invPhysicalAudits)
       .set({ status: "POSTED", postedAt: new Date(), approvedBy: userId })
@@ -198,6 +206,29 @@ export async function postAudit(
       .returning({ id: invPhysicalAudits.id });
 
     if (posted.length === 0) return;
+
+    if (movements.length > 0) {
+      const moved = await deps.engine.executeInTx(tx, orgId, userId, {
+        idempotencyKey,
+        sourceType: "inv_physical_audit",
+        sourceId: auditId.toString(),
+        reason: `Physical audit ${audit.auditNumber}`,
+        movements,
+      });
+
+      await deps.glBridge.post(
+        orgId,
+        userId,
+        {
+          kind: "physical_audit",
+          documentId: String(auditId),
+          transactionIds: moved.transactionIds,
+          journalDate: new Date().toISOString().slice(0, 10),
+          memo: `Physical audit ${audit.auditNumber}`,
+        },
+        tx,
+      );
+    }
 
     await emitInventoryCommandEvent(tx, {
       orgId,
@@ -217,6 +248,9 @@ export async function postAudit(
     });
   });
 
+  // `engine.execute` invalidated the stock caches after its own commit;
+  // `executeInTx` leaves that to whoever owns the transaction.
+  await deps.engine.invalidateCaches(orgId);
   await deps.cache.invalidate(PA_DETAIL_KEY(orgId, auditId));
   await deps.cache.invalidateNamespace(PA_LIST_NAMESPACE(orgId));
   return deps.reloadUnscopedAudit(orgId, auditId);

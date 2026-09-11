@@ -15,6 +15,7 @@ import { CacheService } from "../../../common/cache/cache.service";
 import { CACHE_KEYS } from "../../../common/cache/cache-keys";
 import { AuditService } from "../../../common/audit/audit.service";
 import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
+import { getPostgresErrorCode } from "../../../common/db/postgres-error";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 
 /**
@@ -123,12 +124,14 @@ export async function initiateModuleOwnershipTransfer(
       { orgId },
     );
   } catch (err: unknown) {
-    if (
-      typeof err === "object" &&
-      err !== null &&
-      "code" in err &&
-      err.code === "23505"
-    ) {
+    /**
+     * `uniq_ownership_xfers_org_pending_module` — (org_id, module_key) WHERE
+     * status = 'PENDING' AND scope = 'MODULE'. Nothing looks for an existing
+     * pending transfer before inserting, so this is the whole guard, and it
+     * was unreachable: Drizzle leaves the SQLSTATE on `.cause`, so a second
+     * hand-over of the same module answered 500 instead of 409.
+     */
+    if (getPostgresErrorCode(err) === "23505") {
       throw new ConflictException(
         `A pending transfer for module "${moduleKey}" already exists`,
       );

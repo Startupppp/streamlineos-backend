@@ -194,9 +194,11 @@ describe("send does not email from inside the enclosing transaction", () => {
     const { drain } = await underRequestContext(() => h.service.send(ORG, ENVELOPE, ACTOR));
 
     /*
-     * The load-bearing assertion, and the one bulk send depends on: that route
-     * carries no `@NoTenantTransaction` and opens no per-row boundary, so a
-     * whole job runs in this one transaction and used to mail from inside it.
+     * The load-bearing assertion. `this.db` is the tenant-aware proxy, so the
+     * service's own `db.transaction` is only a SAVEPOINT under a live request
+     * transaction — sending here held a pooled connection across SMTP, and a
+     * throw rolled the committed-looking "sent" flip back underneath mail that
+     * had already landed.
      */
     expect(h.sent).toEqual([]);
 
@@ -211,9 +213,12 @@ describe("send does not email from inside the enclosing transaction", () => {
 
   it("still sends, inline, when the ambient context carries no hook array", async () => {
     /*
-     * §4 says the fallback is to run inline rather than drop the work. If this
-     * ever regresses to a silent no-op, invitations disappear while the caller
-     * still reports a successful send.
+     * Bulk send's shape. The queued worker commits each row through
+     * `runInNewTenantTransaction`, which builds its context without an
+     * `afterCommit` array, so `registerAfterCommit` returns false there — and
+     * §4 says fall back to running inline rather than dropping the work. If this
+     * ever regresses to a silent no-op, every bulk-send invitation disappears
+     * while the job still reports success.
      */
     const h = makeHarness();
 
@@ -337,7 +342,7 @@ describe("the transaction seams decide whether a hook can be held at all", () =>
   it("runInNewTenantTransaction builds a context with no hook array", async () => {
     /*
      * Read straight off the real function rather than asserted from the source,
-     * because every inline fallback above hangs on it. `registerAfterCommit`
+     * because bulk send's inline fallback hangs on it. `registerAfterCommit`
      * keys on the array's presence, not the context's — a context is very much
      * present here.
      */

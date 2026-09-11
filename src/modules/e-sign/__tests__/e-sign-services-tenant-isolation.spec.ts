@@ -98,7 +98,7 @@ describe("SignTemplatesService — cross-tenant isolation", () => {
     const mockAudit = { record: jest.fn() } as any;
     const mockTokens = { createPublicToken: jest.fn() } as any;
     const mockPlanLimits = { assertWithinLimit: jest.fn() } as any;
-    const svc = new SignTemplatesService(db, mockAudit, mockTokens, mockPlanLimits);
+    const svc = new SignTemplatesService(db, mockAudit, mockTokens, mockPlanLimits, {} as any, {} as any);
     const result = await svc.list(ATTACKER_ORG);
     expect(result).toHaveLength(0);
     expect(findMany).toHaveBeenCalledTimes(1);
@@ -114,7 +114,7 @@ describe("SignTemplatesService — cross-tenant isolation", () => {
     const mockAudit = { record: jest.fn() } as any;
     const mockTokens = { createPublicToken: jest.fn() } as any;
     const mockPlanLimits = { assertWithinLimit: jest.fn() } as any;
-    const svc = new SignTemplatesService(db, mockAudit, mockTokens, mockPlanLimits);
+    const svc = new SignTemplatesService(db, mockAudit, mockTokens, mockPlanLimits, {} as any, {} as any);
     const result = await svc.list(OWNER_ORG);
     expect(result).toHaveLength(1);
   });

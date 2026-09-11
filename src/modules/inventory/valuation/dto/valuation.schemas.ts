@@ -14,7 +14,8 @@ const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
  */
 const valuationGrain = {
   asOfDate: isoDate.optional(),
-  periodId: z.coerce.number().int().positive().optional(),
+  /** `gl_periods.id` of the organisation's default book — a uuid since the accounting rewrite. */
+  periodId: z.string().uuid().optional(),
 };
 
 const pagination = {
@@ -54,7 +55,7 @@ export const valuationConsumptionsSchema = z
     stockTransactionId: z.coerce.number().int().positive().optional(),
     fromDate: isoDate.optional(),
     toDate: isoDate.optional(),
-    periodId: z.coerce.number().int().positive().optional(),
+    periodId: z.string().uuid().optional(),
     ...pagination,
   })
   .strict();

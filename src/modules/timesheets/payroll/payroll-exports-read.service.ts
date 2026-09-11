@@ -1,5 +1,6 @@
 import { Inject, Injectable, InternalServerErrorException, NotFoundException } from "@nestjs/common";
 import { and, desc, eq } from "drizzle-orm";
+import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
@@ -18,6 +19,8 @@ import {
 } from "../../../common/pagination/cursor";
 import { keysetBeforeId } from "../../../common/pagination/keyset";
 import { payrollSnapshotSchema } from "./dto/payroll.schemas";
+import { OutboxWriter } from "../../../common/outbox/outbox-writer";
+import { TIMESHEET_EVENTS } from "./handoff/handoff.schemas";
 import type {
   AckExportInput,
   ExportsListQuery,
@@ -180,11 +183,49 @@ export class PayrollExportsReadService {
       .where(and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.userId, userId)))
       .limit(1);
 
-    const [updated] = await this.db
-      .update(timesheetExports)
-      .set({ ackStatus: input.status, ackNote: input.note ?? null, ackAt: new Date(), ackByMembershipId: ackActorMember?.id ?? null })
-      .where(and(eq(timesheetExports.id, exportId), eq(timesheetExports.orgId, orgId)))
-      .returning();
+    const ackAt = new Date();
+    const updated = await this.db.transaction(async (tx) => {
+      const [row] = await tx
+        .update(timesheetExports)
+        .set({ ackStatus: input.status, ackNote: input.note ?? null, ackAt, ackByMembershipId: ackActorMember?.id ?? null })
+        .where(and(eq(timesheetExports.id, exportId), eq(timesheetExports.orgId, orgId)))
+        .returning();
+
+      if (!row) return null;
+
+      /**
+       * In the same transaction as the status it reports, so an
+       * acknowledgement cannot be recorded without its event or announced
+       * without being recorded.
+       */
+      await OutboxWriter.emit(tx, {
+        eventId: randomUUID(),
+        organizationId: orgId,
+        aggregateType: "timesheet_export",
+        aggregateId: String(exportId),
+        /**
+         * Not 1. `(org, aggregate_type, aggregate_id, aggregate_version)` is
+         * unique and version 1 is the export's own creation event, so a
+         * constant here would collide on the first ack. An export can also be
+         * acknowledged repeatedly as its status moves — RECEIVED then
+         * ACCEPTED, or later REJECTED — so the version has to grow with each
+         * one rather than identify the export.
+         */
+        aggregateVersion: ackAt.getTime(),
+        eventType: TIMESHEET_EVENTS.payrollExportAcked,
+        payload: {
+          organization_id: orgId,
+          export_id: exportId,
+          status: input.status,
+          note: input.note ?? null,
+          acked_at: ackAt.toISOString(),
+          actor_user_id: userId,
+        },
+        occurredAt: ackAt,
+      });
+
+      return row;
+    });
 
     if (!updated) throw new InternalServerErrorException("Failed to acknowledge the export");
 

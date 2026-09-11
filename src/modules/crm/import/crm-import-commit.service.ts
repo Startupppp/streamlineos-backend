@@ -10,6 +10,7 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db, TenantTx } from "../../../db/drizzle.types";
 import { crmImportRows, crmImports, dataQualityFindings } from "../../../db/schema";
 import { WorkflowRunnerService } from "../../../common/workflow";
+import { PlanLimitsService } from "../../billing/core/plan-limits.service";
 import { COMMIT_WORKFLOW } from "./import-workflow-names";
 import {
   inOwnTransaction,
@@ -31,6 +32,7 @@ export class CrmImportCommitService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly workflows: WorkflowRunnerService,
+    private readonly planLimits: PlanLimitsService,
   ) {}
 
   async startCommit(organizationId: string, crmImportId: string): Promise<string> {
@@ -54,6 +56,35 @@ export class CrmImportCommitService {
     if (!imported) throw new NotFoundException("Import not found");
     if (imported.status !== "previewing" && imported.status !== "committing")
       throw new ConflictException(`That import is already ${imported.status}.`);
+
+    /*
+      What the plan allows, asked once for the whole batch and before any row
+      lands.
+
+      An import is the easiest way to walk past a seat or record cap: it creates
+      in bulk, from a file, with nobody watching. Asking per row would refuse
+      halfway through and leave the tenant with a partial import, so the question
+      is asked here -- against the rows still uncommitted, which is what a resumed
+      commit would go on to create rather than what the file originally held.
+
+      This guard existed before the importer moved to `crm/import/`; the move
+      left it behind, and `party-creation-invariant.spec.ts` is what noticed.
+    */
+    const [creating] = await this.db
+      .select({ rows: sql<number>`count(*)::int` })
+      .from(crmImportRows)
+      .where(
+        and(
+          eq(crmImportRows.organizationId, organizationId),
+          eq(crmImportRows.crmImportId, crmImportId),
+          eq(crmImportRows.action, "create"),
+          isNull(crmImportRows.committedAt),
+        ),
+      );
+
+    if (creating && creating.rows > 0) {
+      await this.planLimits.assertWithinLimit(organizationId, "crmContacts", creating.rows);
+    }
 
     return startPhase(this.db, this.workflows, organizationId, crmImportId, {
       workflowName: COMMIT_WORKFLOW,
@@ -168,9 +199,42 @@ export class CrmImportCommitService {
     rowId: string,
     context: ImportContext,
   ): Promise<keyof BatchOutcome | null> {
+    /**
+     * Claim first, and in this savepoint — by locking the row, not by stamping it.
+     *
+     * `committed_at IS NULL` is the whole idempotence guarantee: a re-run step
+     * and a concurrent second run both find nothing to claim and do nothing.
+     * `FOR UPDATE` is what makes that safe rather than racy — Postgres takes the
+     * row lock, a second claimer blocks until this savepoint's transaction
+     * resolves, and then re-evaluates the predicate against the committed truth
+     * rather than its own stale snapshot.
+     *
+     * This used to be an `UPDATE ... SET committed_at = now() ... RETURNING`,
+     * which took the same lock and also marked the row done before it had done
+     * anything. `chk_crm_import_rows_outcome` exists to say a committed row
+     * records what it did, so it can be undone — and a `create` row stamped
+     * before `created_record_id` is written fails that check on the claim
+     * itself. A CHECK constraint cannot be deferred, so every `create`, `update`
+     * and `review` row failed on its first statement. So `committed_at` is now
+     * stamped by `stamp` below, in the same statement as the column that says
+     * what the row did.
+     */
     const [row] = await tx
-      .update(crmImportRows)
-      .set({ committedAt: new Date() })
+      // Named rather than `select()`: the eight below are what `commitRow` and
+      // `fileUncertainty` between them read. `values` and `custom_fields` are
+      // jsonb and can be the width of a spreadsheet row, so the columns this
+      // does not name are not free.
+      .select({
+        crmImportRowId: crmImportRows.crmImportRowId,
+        rowNumber: crmImportRows.rowNumber,
+        action: crmImportRows.action,
+        reason: crmImportRows.reason,
+        values: crmImportRows.values,
+        customFields: crmImportRows.customFields,
+        matchedRecordId: crmImportRows.matchedRecordId,
+        match: crmImportRows.match,
+      })
+      .from(crmImportRows)
       .where(
         and(
           eq(crmImportRows.organizationId, organizationId),
@@ -178,14 +242,42 @@ export class CrmImportCommitService {
           isNull(crmImportRows.committedAt),
         ),
       )
-      .returning();
+      .limit(1)
+      .for("update");
 
+    // Somebody else has this row. Not an error, and not counted twice.
     if (!row) return null;
-    if (row.action === "skip") return "skipped";
-    if (row.action === "merge") return "merged";
+
+    /** Done, and what it did, together — which is what the CHECK asks for. */
+    const stamp = async (outcome: Partial<typeof crmImportRows.$inferInsert> = {}) => {
+      await tx
+        .update(crmImportRows)
+        .set({ ...outcome, committedAt: new Date() })
+        .where(
+          and(
+            eq(crmImportRows.organizationId, organizationId),
+            eq(crmImportRows.crmImportRowId, rowId),
+          ),
+        );
+    };
+
+    if (row.action === "skip") {
+      await stamp();
+      return "skipped";
+    }
+
+    // Its values were folded into the row it repeats while the plan was made,
+    // so there is nothing left for it to write.
+    if (row.action === "merge") {
+      await stamp();
+      return "merged";
+    }
 
     if (row.action === "review") {
+      // Writes `data_quality_finding_id` itself, so the row satisfies the CHECK
+      // by the time it is stamped.
       await this.fileUncertainty(tx, organizationId, crmImportId, row, context.filename);
+      await stamp();
       return "review";
     }
 
@@ -194,17 +286,7 @@ export class CrmImportCommitService {
 
     if (row.action === "create") {
       const recordId = await writer.create(tx, context.write, planned);
-
-      await tx
-        .update(crmImportRows)
-        .set({ createdRecordId: recordId })
-        .where(
-          and(
-            eq(crmImportRows.organizationId, organizationId),
-            eq(crmImportRows.crmImportRowId, rowId),
-          ),
-        );
-
+      await stamp({ createdRecordId: recordId });
       return "created";
     }
 
@@ -218,16 +300,7 @@ export class CrmImportCommitService {
     if (!before) throw new Error("the matched record no longer exists");
 
     await updates.fillGaps(tx, context.write, row.matchedRecordId, before, planned);
-
-    await tx
-      .update(crmImportRows)
-      .set({ previous: before })
-      .where(
-        and(
-          eq(crmImportRows.organizationId, organizationId),
-          eq(crmImportRows.crmImportRowId, rowId),
-        ),
-      );
+    await stamp({ previous: before });
 
     return "updated";
   }
@@ -236,7 +309,11 @@ export class CrmImportCommitService {
     tx: TenantTx,
     organizationId: string,
     crmImportId: string,
-    row: typeof crmImportRows.$inferSelect,
+    /** The six columns this reads, so the claim in `commitRow` can name them. */
+    row: Pick<
+      typeof crmImportRows.$inferSelect,
+      "crmImportRowId" | "rowNumber" | "reason" | "values" | "matchedRecordId" | "match"
+    >,
     filename: string | null,
   ): Promise<void> {
     if (!row.matchedRecordId || !row.match)

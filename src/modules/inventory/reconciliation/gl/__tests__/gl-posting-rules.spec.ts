@@ -1,25 +1,28 @@
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
-import { GL_POSTING_RULES, resolveGlPostingRules } from "../gl-posting-rules";
-import { PURPOSE_DEFAULT_CODE } from "../../../../accounting/posting/finance-posting-accounts.service";
-import { INVENTORY_JOURNAL_PURPOSES, type InventoryAccountCodes } from "../../../stock-engine/accounting-bridge";
+import { GL_POSTING_RULES, accountTagsOf, resolveGlPostingRules } from "../gl-posting-rules";
+import {
+  INVENTORY_PURPOSE_TAG,
+  type InventoryAccountCodes,
+} from "../../../stock-engine/accounting-bridge";
+import { POSTING_PURPOSE_BY_REFERENCE } from "../../../../accounting/adapters/reconciliation/unposted-movements.service";
 
 /**
  * D6 — the reconciliation's expectations against the code that creates them.
  *
- * `GL_POSTING_RULES` is a hand-kept mirror of three call sites, because there is
- * no third place that knows both the stock reference type and the journal source
- * event. A mirror that drifts is worse than no mirror: a posting the rules do
- * not list simply vanishes from the report, and the report says everything
- * reconciles.
+ * `GL_POSTING_RULES` is a hand-kept mirror of the call sites, because no third
+ * place knows both the stock reference type and the journal's posting purpose.
+ * A mirror that drifts is worse than no mirror: a post the rules do not list
+ * vanishes from the report, and the report says everything reconciles.
  *
- * So the drift is caught here rather than in production. Every `sourceEvent`
- * inventory posts must be either a rule or a deliberate exclusion, and every
- * rule's account codes must be the codes its call site actually names.
+ * Since the accounting rewrite inventory posts in two vocabularies, and the
+ * mirror has to read both:
+ *
+ *   through InventoryAccountingBridge — a draft naming `sourceType`,
+ *     `sourceEvent` and purposes (receipt-journal, landed-cost-journal);
+ *   through PostingCommandService directly — a `stock_move` command naming a
+ *     `purpose` and account roles (grn-receive, so-fulfillment).
  */
-
-/** `invoice` books revenue off a sales order; no stock movement produces it. */
-const DELIBERATELY_NOT_RECONCILED = new Set(["invoice"]);
 
 function inventorySources(): string[] {
   const root = join(__dirname, "..", "..", "..");
@@ -28,133 +31,194 @@ function inventorySources(): string[] {
       const path = join(dir, entry);
       if (statSync(path).isDirectory()) return entry === "node_modules" ? [] : walk(path);
       if (!path.endsWith(".ts") || path.includes("spec.ts")) return [];
-      // The rules table itself literally contains `sourceEvent: "ship"`, so
-      // leaving it in the scan makes the mirror check find itself and pass by
-      // tautology. It is the thing being verified, not evidence for it.
+      // The rules table itself names every event, so leaving it in the scan
+      // makes the mirror check find itself and pass by tautology.
       if (path.endsWith("gl-posting-rules.ts")) return [];
+      // The bridge DECLARES the closed set of draft sources as a type; the
+      // call sites that post under them are what is being mirrored.
+      if (path.endsWith(join("stock-engine", "accounting-bridge.ts"))) return [];
       return [path];
     });
   return walk(root);
 }
 
+/** Every `this.posting.submit(` command object in a file, isolated by brace matching. */
+function submitCommands(source: string): string[] {
+  const commands: string[] = [];
+  let from = 0;
+  for (;;) {
+    const at = source.indexOf("this.posting.submit(", from);
+    if (at === -1) return commands;
+    const open = source.indexOf("{", at);
+    let depth = 0;
+    for (let i = open; i < source.length; i += 1) {
+      if (source[i] === "{") depth += 1;
+      else if (source[i] === "}") {
+        depth -= 1;
+        if (depth === 0) {
+          commands.push(source.slice(open, i + 1));
+          break;
+        }
+      }
+    }
+    from = at + 1;
+  }
+}
+
+/** Stock journals only. The sales invoice (`sales_invoice`) books revenue and no movement produces it. */
+function stockMoveCommands(source: string): string[] {
+  return submitCommands(source).filter((command) => command.includes('sourceType: "stock_move"'));
+}
+
+/**
+ * A call site may name its purposes through constants, which is better code
+ * than a literal. So `const NAME = "INVENTORY_ASSET";` is resolved in the same
+ * file before comparing (`landed-cost-journal.ts` does this).
+ */
+function withResolvedPurposes(source: string): string {
+  let resolved = source;
+  for (const decl of source.matchAll(/const (\w+) = "([A-Z][A-Z_]+)";/g)) {
+    const [, name, purpose] = decl;
+    if (!name || !purpose) continue;
+    resolved = resolved.replace(new RegExp(`purpose: ${name}\\b`, "g"), `purpose: "${purpose}"`);
+  }
+  return resolved;
+}
+
+const SOURCES = inventorySources().map((path) => ({
+  path,
+  source: withResolvedPurposes(readFileSync(path, "utf8")),
+}));
+
 function postedEvents(): Set<string> {
   const found = new Set<string>();
-  for (const path of inventorySources()) {
-    const source = readFileSync(path, "utf8");
-    for (const match of source.matchAll(/sourceEvent:\s*"([^"]+)"/g)) {
-      const event = match[1];
-      if (event) found.add(event);
+  for (const { source } of SOURCES) {
+    for (const match of source.matchAll(/sourceEvent:\s*"([^"]+)"/g)) found.add(match[1]!);
+    for (const command of stockMoveCommands(source)) {
+      const purpose = /purpose:\s*"([a-z_]+)"/.exec(command)?.[1];
+      if (purpose) found.add(purpose);
     }
   }
   return found;
 }
 
-describe("inventory GL posting rules", () => {
-  it("lists a rule for every journal inventory posts off a stock movement", () => {
-    const unaccounted = [...postedEvents()].filter(
-      (event) =>
-        !DELIBERATELY_NOT_RECONCILED.has(event) &&
-        !GL_POSTING_RULES.some((rule) => rule.sourceEvent === event),
-    );
+const CHART: InventoryAccountCodes = {
+  INVENTORY_ASSET: "1300",
+  INVENTORY_COGS: "5000",
+  INVENTORY_GRNI: "2000",
+  AP: "2000",
+  AR: "1200",
+  SALES_INCOME: "4000",
+};
 
+describe("inventory GL posting rules", () => {
+  it("lists a rule for every journal inventory posts off a stock document", () => {
+    const events = postedEvents();
+    // Anti-vacuity: both vocabularies were read.
+    expect(events).toContain("receive");
+    expect(events).toContain("ship");
+
+    const unaccounted = [...events].filter(
+      (event) => !GL_POSTING_RULES.some((rule) => rule.sourceEvent === event),
+    );
     expect(unaccounted).toEqual([]);
   });
 
-  /**
-   * A call site may name its purposes through constants, and that is better code
-   * than a literal — `purpose: INVENTORY_ACCOUNT` says what the line is for. So
-   * the mirror resolves `const NAME = "INVENTORY_ASSET";` in the same file
-   * before comparing, rather than demanding a literal and quietly punishing the
-   * clearer version. (`landed-cost-apply.service.ts` is the one that does this.)
-   */
-  function withResolvedPurposes(source: string): string {
-    let resolved = source;
-    for (const decl of source.matchAll(/const (\w+) = "([A-Z][A-Z_]+)";/g)) {
-      const [, name, purpose] = decl;
-      if (!name || !purpose) continue;
-      resolved = resolved.replace(
-        new RegExp(`purpose: ${name}\\b`, "g"),
-        `purpose: "${purpose}"`,
-      );
-    }
-    return resolved;
-  }
-
-  it("names the same system-account purposes its call site does", () => {
-    const sources = inventorySources().map((path) =>
-      withResolvedPurposes(readFileSync(path, "utf8")),
-    );
-
+  it("names the same roles its call sites do, in either vocabulary", () => {
     for (const rule of GL_POSTING_RULES) {
-      // Every file that posts this event, not the first one found: a second call
-      // site for the same event is exactly the drift this test exists to catch,
-      // and `find` would have stopped before reaching it. `receive` really does
-      // have two — `receipt-journal.ts` and `grn-receive.service.ts` — and this
-      // is what holds them to the same entry.
-      const callSites = sources.filter((source) =>
+      const drafts = SOURCES.filter(({ source }) =>
         source.includes(`sourceEvent: "${rule.sourceEvent}"`),
       );
-      expect(callSites.length).toBeGreaterThan(0);
-      for (const callSite of callSites) {
-        expect(callSite).toContain(`sourceType: "${rule.sourceType}"`);
+      for (const { path, source } of drafts) {
+        expect({ path, ok: source.includes(`sourceType: "${rule.sourceType}"`) }).toEqual({ path, ok: true });
         for (const purpose of rule.accountPurposes)
-          expect(callSite).toContain(`purpose: "${purpose}"`);
+          expect({ path, purpose, ok: source.includes(`purpose: "${purpose}"`) }).toEqual({ path, purpose, ok: true });
       }
+
+      const commands = SOURCES.flatMap(({ path, source }) =>
+        stockMoveCommands(source)
+          .filter((command) => command.includes(`purpose: "${rule.sourceEvent}"`))
+          .map((command) => ({ path, command })),
+      );
+      for (const { path, command } of commands) {
+        for (const tag of accountTagsOf(rule.accountPurposes))
+          expect({ path, tag, ok: command.includes(`accountTag: "${tag}"`) }).toEqual({ path, tag, ok: true });
+      }
+
+      expect(drafts.length + commands.length).toBeGreaterThan(0);
     }
   });
 
-  /**
-   * INV-09 — the mirror in the other direction: no call site may name a raw
-   * account code any more.
-   *
-   * The purpose check above passes just as happily on a file that names a
-   * purpose on one line and `accountCode: "2000"` on the next, and a single
-   * missed line is a journal half of which ignores the tenant's mapping. Only
-   * `gl-posting-rules.ts` and the accounting module are allowed to know a number.
-   */
-  it("leaves no literal account code anywhere in inventory", () => {
-    const offenders = inventorySources().filter((path) =>
-      /accountCode:\s*"/.test(readFileSync(path, "utf8")),
+  it("holds both receipt paths to the one receipt entry", () => {
+    // `receive` really has two call sites — the two-phase post through the
+    // bridge and the one-shot receive direct — and they share one key.
+    const draftSites = SOURCES.filter(({ source }) => source.includes('sourceEvent: "receive"'));
+    const commandSites = SOURCES.filter(({ source }) =>
+      stockMoveCommands(source).some((command) => command.includes('purpose: "receive"')),
     );
+    expect(draftSites.map(({ path }) => path.split("inventory/")[1])).toEqual([
+      "purchase-orders/lib/receipt-journal.ts",
+    ]);
+    expect(commandSites.map(({ path }) => path.split("inventory/")[1])).toEqual([
+      "purchase-orders/grn-receive.service.ts",
+    ]);
+  });
 
+  it("leaves no literal account code or account id anywhere in inventory", () => {
+    const offenders = SOURCES.filter(({ source }) => /account(Code|Id):\s*"/.test(source)).map(
+      ({ path }) => path,
+    );
     expect(offenders).toEqual([]);
   });
 
-  /**
-   * Resolution is what turns a purpose back into the codes the report compares
-   * against, and it must agree with what posting falls back to for an
-   * organisation that has mapped nothing — which is the state every existing
-   * tenant is in.
-   */
-  it("resolves an unmapped organisation to the codes inventory posted before", () => {
-    const defaults = Object.fromEntries(
-      INVENTORY_JOURNAL_PURPOSES.map((purpose) => [purpose, PURPOSE_DEFAULT_CODE[purpose]]),
-    ) as InventoryAccountCodes;
-
+  it("resolves an organisation's roles to the codes of the accounts carrying them", () => {
     const byEvent = new Map(
-      resolveGlPostingRules(defaults).map((rule) => [rule.sourceEvent, rule.accountCodes]),
+      resolveGlPostingRules(CHART).map((rule) => [rule.sourceEvent, rule]),
     );
 
-    expect(byEvent.get("receive")).toEqual(["1300", "2000"]);
-    expect(byEvent.get("ship")).toEqual(["5000", "1300"]);
-    // Three purposes, two codes: landed cost debits inventory and COGS and
-    // credits the payable, and AP defaults to the same 2000 the receipt's GRNI
-    // does. `resolveGlPostingRules` dedupes, because a code listed twice would
-    // be looked up twice in `missingCodesExpr` for no gain.
-    expect(byEvent.get("apply")).toEqual(["1300", "5000", "2000"]);
+    expect(byEvent.get("receive")?.accountCodes).toEqual(["1300", "2000"]);
+    expect(byEvent.get("ship")?.accountCodes).toEqual(["5000", "1300"]);
+    // Three purposes, two roles' worth of payable: AP and GRNI both resolve to
+    // ap_control, so the codes dedupe.
+    expect(byEvent.get("landed_cost")?.accountCodes).toEqual(["1300", "5000", "2000"]);
+    for (const rule of byEvent.values()) expect(rule.missingAccountTags).toEqual([]);
   });
 
-  it("keys every rule on a stock reference type, because that is the join", () => {
-    // `movement-apply.service.ts` copies the command's `sourceType` onto
-    // `inv_stock_transactions.reference_type`, and `postJournalEntry` puts the
-    // same string in `journal_entries.source_type`. A rule whose sourceType is
-    // not one of those two things reconciles nothing against nothing.
+  it("names a role no account fills as missing, rather than inventing a code", () => {
+    const receive = resolveGlPostingRules({ ...CHART, INVENTORY_ASSET: null }).find(
+      (rule) => rule.sourceEvent === "receive",
+    );
+    expect(receive?.accountCodes).toEqual(["2000"]);
+    expect(receive?.missingAccountTags).toEqual(["inventory"]);
+  });
+
+  it("states every rule in the roles the bridge resolves", () => {
+    for (const rule of resolveGlPostingRules(CHART)) {
+      expect(rule.accountTags).toEqual(accountTagsOf(rule.accountPurposes));
+      for (const purpose of rule.accountPurposes) expect(INVENTORY_PURPOSE_TAG[purpose]).toBeDefined();
+    }
+  });
+
+  it("keys every rule on a stock reference type, and every key is distinct", () => {
     for (const rule of GL_POSTING_RULES) {
       expect(rule.sourceType).toMatch(/^inv_/);
+      expect(["reference", "shipment"]).toContain(rule.keyedOn);
       expect(rule.accountPurposes.length).toBeGreaterThan(0);
     }
     expect(new Set(GL_POSTING_RULES.map((r) => `${r.sourceType}:${r.sourceEvent}`)).size).toBe(
       GL_POSTING_RULES.length,
     );
+    expect(new Set(GL_POSTING_RULES.map((r) => r.sourceEvent)).size).toBe(GL_POSTING_RULES.length);
+  });
+
+  it("agrees with the accounting module about the one reference type both reconcile", () => {
+    // The kernel's unposted-movements report owns the stock-bridge kinds. Where
+    // a reference type appears in both lists, the purpose must be the same or
+    // the two reports would look for different journals.
+    const shared = GL_POSTING_RULES.filter((rule) => rule.sourceType in POSTING_PURPOSE_BY_REFERENCE);
+    expect(shared.map((rule) => rule.sourceType)).toEqual(["inv_grn"]);
+    for (const rule of shared) {
+      expect(POSTING_PURPOSE_BY_REFERENCE[rule.sourceType]).toBe(rule.sourceEvent);
+    }
   });
 });

@@ -9,6 +9,7 @@ import type { PushPayload } from "./dto/realtime.schemas";
 import { APP_CONFIG } from "../../config/config.module";
 import type { AppConfig } from "../../config/env.validation";
 import { ExternalEffectLedger } from "../../common/outbox/external-effect-ledger";
+import { runInTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
 
 const EXPIRED_STATUS = new Set([404, 410]);
 
@@ -41,10 +42,25 @@ export class WebPushService {
     return eq(pushSubscriptions.userId, userId);
   }
 
+  /**
+   * `orgId` is a parameter rather than an implication.
+   *
+   * `push_subscriptions` is behind `tenant_isolation` and the lookup below
+   * filters on the recipient alone (its membership, or its user for a row
+   * written before memberships) — the organisation comes from the transaction's
+   * tenant GUC and from nothing else. Taking it on trust from an ambient that
+   * may not be there is what broke this: a caller that fires and forgets hands
+   * on whatever transaction was open at the call site, and by the time the
+   * lookup runs that transaction has committed. With no ambient at all the
+   * accessor raises 42501; against a *closed* handle the query does not fail,
+   * it never settles, so the `.catch` never runs and nothing is logged either
+   * way. Named here, the scope can be reopened rather than inherited.
+   */
   async sendToUser(
+    orgId: string,
     userId: string,
     payload: PushPayload,
-    effect?: { orgId: string; producerEventId: string; effectKey: string },
+    effect?: { producerEventId: string; effectKey: string },
     membershipId?: number | null,
   ): Promise<void> {
     if (!this.configured) {
@@ -52,14 +68,25 @@ export class WebPushService {
       return;
     }
 
-    const subs = await this.db
-      .select({
-        endpoint: pushSubscriptions.endpoint,
-        p256dh: pushSubscriptions.p256dh,
-        auth: pushSubscriptions.auth,
-      })
-      .from(pushSubscriptions)
-      .where(this.subscriptionPredicate(userId, membershipId));
+    /**
+     * Short and read-only on purpose: the sends below must not be made with a
+     * database transaction held open. `runInTenantTransaction` reuses a live
+     * ambient where there is one — the request and dispatch paths that await
+     * this — and opens its own only when there is not.
+     */
+    const subs = await runInTenantTransaction(
+      this.db,
+      (tx) =>
+        tx
+          .select({
+            endpoint: pushSubscriptions.endpoint,
+            p256dh: pushSubscriptions.p256dh,
+            auth: pushSubscriptions.auth,
+          })
+          .from(pushSubscriptions)
+          .where(this.subscriptionPredicate(userId, membershipId)),
+      { orgId },
+    );
 
     if (subs.length === 0) return;
 
@@ -74,7 +101,7 @@ export class WebPushService {
         if (!effect) return send();
         const endpointHash = createHash("sha256").update(sub.endpoint).digest("hex").slice(0, 24);
         return this.effects.execute({
-          organizationId: effect.orgId,
+          organizationId: orgId,
           producerEventId: effect.producerEventId,
           effectKey: `${effect.effectKey}:subscription:${endpointHash}`,
           effectType: "chat.push.subscription",
@@ -94,10 +121,20 @@ export class WebPushService {
       return [error];
     });
 
+    /**
+     * The reap is a write that happens *after* the sends, so it needs the
+     * tenant scope to still be there — the half a fix that only covered the
+     * lookup would leave silently broken.
+     */
     if (expiredEndpoints.length > 0)
-      await this.db
-        .delete(pushSubscriptions)
-        .where(inArray(pushSubscriptions.endpoint, expiredEndpoints));
+      await runInTenantTransaction(
+        this.db,
+        (tx) =>
+          tx
+            .delete(pushSubscriptions)
+            .where(inArray(pushSubscriptions.endpoint, expiredEndpoints)),
+        { orgId },
+      );
 
     if (failures.length > 0)
       throw new AggregateError(failures, `push delivery failed for ${failures.length} subscription(s)`);
@@ -131,9 +168,10 @@ export class WebPushService {
 
     const results = await Promise.allSettled(
       members.map((m) => this.sendToUser(
+        orgId,
         m.userId,
         idempotencyKey ? { ...payload, idempotencyKey: `${idempotencyKey}:${m.userId}` } : payload,
-        idempotencyKey ? { orgId, producerEventId: idempotencyKey, effectKey: `${idempotencyKey}:${m.userId}` } : undefined,
+        idempotencyKey ? { producerEventId: idempotencyKey, effectKey: `${idempotencyKey}:${m.userId}` } : undefined,
       )),
     );
     const failures = results

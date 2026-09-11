@@ -79,28 +79,76 @@ describe("ApprovalsBulkService — cross-tenant isolation", () => {
   });
 
   it("rejectPeriod: rejects a period for the owning org (control)", async () => {
-    const period = { id: 1, orgId: OWNER, status: "SUBMITTED", userId: ACTOR_ID, currentApproverId: null };
-    const { where } = makeSelectChain([period]);
-    const updateWhere = jest.fn().mockResolvedValue([]);
+    const OWNER_MEMBERSHIP = 10;
+    const period = {
+      id: 1,
+      orgId: OWNER,
+      status: "SUBMITTED",
+      userMembershipId: OWNER_MEMBERSHIP,
+      currentApproverMembershipId: null,
+      periodStart: "2025-01-01",
+      periodEnd: "2025-01-07",
+    };
+    /**
+     * The in-transaction period UPDATE hands back the row the lifecycle event
+     * is built from, so the mock answers `.returning` as well as `await`.
+     */
+    const transition = {
+      eventSeq: 3,
+      userMembershipId: OWNER_MEMBERSHIP,
+      periodStart: period.periodStart,
+      periodEnd: period.periodEnd,
+      status: "REJECTED",
+      totalHours: "8.00",
+      billableHours: "8.00",
+      nonBillableHours: "0.00",
+    };
+    const returning = jest.fn().mockResolvedValue([transition]);
+    const updateWhere = jest.fn().mockImplementation(() => Object.assign(Promise.resolve([]), { returning }));
+    const insertValues = jest.fn().mockResolvedValue(undefined);
     const tx = {
       update: jest.fn().mockReturnValue({ set: jest.fn().mockReturnValue({ where: updateWhere }) }),
+      insert: jest.fn().mockReturnValue({ values: insertValues }),
     };
-    const from = jest.fn().mockReturnValue({ where });
-    const updatedPeriod = { ...period, status: "REJECTED" };
-    const { where: where2 } = makeSelectChain([updatedPeriod]);
-    const from2 = jest.fn().mockReturnValue({ where: where2 });
+    /**
+     * Reads in the order the service makes them: the period, its worker's
+     * membership (the event and the notice name the worker by user id), and
+     * the period after the update.
+     */
+    const reads = [
+      makeSelectChain([period]),
+      makeSelectChain([{ id: OWNER_MEMBERSHIP, userId: ACTOR_ID }]),
+      makeSelectChain([{ ...period, status: "REJECTED" }]),
+    ];
     let callCount = 0;
     const db = {
-      select: jest.fn().mockImplementation(() => ({ from: callCount++ === 0 ? from : from2 })),
+      select: jest.fn().mockImplementation(() => {
+        const { where } = reads[Math.min(callCount++, reads.length - 1)]!;
+        return { from: jest.fn().mockReturnValue({ where }) };
+      }),
       transaction: jest.fn().mockImplementation((cb: (tx: unknown) => unknown) => cb(tx)),
     } as unknown as Db;
     const audit = { record: jest.fn().mockResolvedValue(undefined) } as never;
-    const approvals = { assertCanActOnPeriod: jest.fn().mockResolvedValue(undefined) } as never;
-    const svc = new ApprovalsBulkService(db, audit, approvals);
+    const approvals = {
+      assertCanActOnPeriod: jest.fn().mockResolvedValue(undefined),
+      notifyPeriodRejected: jest.fn().mockResolvedValue(undefined),
+    };
+    const svc = new ApprovalsBulkService(db, audit, approvals as never);
     const result = await svc.rejectPeriod(makeUser(OWNER), 1, { reason: "rejected" });
     expect(result).toBeDefined();
-    const vals = sqlValues(where.mock.calls[0]?.[0]);
+    const vals = sqlValues(reads[0]!.where.mock.calls[0]?.[0]);
     expect(vals).toContain(OWNER);
+    /** The worker's membership is resolved inside the owning org, never another. */
+    const ownerLookup = sqlValues(reads[1]!.where.mock.calls[0]?.[0]);
+    expect(ownerLookup).toContain(OWNER);
+    expect(ownerLookup).not.toContain(ATTACKER);
+    expect(insertValues).toHaveBeenCalledWith(
+      expect.objectContaining({ organizationId: OWNER, eventType: "timesheets.period.rejected" }),
+    );
+    expect(approvals.notifyPeriodRejected).toHaveBeenCalledWith(
+      expect.objectContaining({ orgId: OWNER }),
+      expect.objectContaining({ periodId: 1, ownerUserId: ACTOR_ID }),
+    );
   });
 });
 

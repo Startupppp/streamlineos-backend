@@ -16,12 +16,6 @@ import {
 } from "drizzle-orm/pg-core";
 import { relations, sql } from "drizzle-orm";
 import { organizations, users } from "../common/auth";
-import { leads } from "./leads";
-import {
-  clients,
-  contacts,
-  crmOrganizations,
-} from "./contacts";
 import { crmPipelines } from "./metadata";
 
 export const deals = pgTable(
@@ -31,12 +25,16 @@ export const deals = pgTable(
     orgId: text("org_id")
       .references(() => organizations.id, { onDelete: "cascade" })
       .notNull(),
-    leadId: integer("lead_id").references(() => leads.id, {
-      onDelete: "set null",
-    }),
-    clientId: integer("client_id").references(() => clients.id, {
-      onDelete: "set null",
-    }),
+    leadId: integer("lead_id"),
+    /**
+     * The party behind this row's legacy id. Ticket 08's expand.
+     *
+     * Beside the old column, not replacing it -- the contract migration removes
+     * the old one once nothing reads it. Kept in step by a trigger, so no writer
+     * has to remember.
+     */
+    leadPartyId: text("lead_party_id"),
+    clientId: integer("client_id"),
     name: text("name").notNull(),
     valueMinor: bigint("value_minor", { mode: "number" }).default(0).notNull(),
     value: decimal("value", { precision: 15, scale: 2 })
@@ -339,8 +337,16 @@ export const crmDealStakeholders = pgTable(
       .references(() => deals.id, { onDelete: "cascade" })
       .notNull(),
     contactId: integer("contact_id")
-      .references(() => contacts.id, { onDelete: "cascade" })
+      
       .notNull(),
+    /**
+     * The party behind this row's legacy id. Ticket 08's expand.
+     *
+     * Beside the old column, not replacing it -- the contract migration removes
+     * the old one once nothing reads it. Kept in step by a trigger, so no writer
+     * has to remember.
+     */
+    contactPartyId: text("contact_party_id"),
     roleKey: text("role_key"),
     influence: text("influence"),
     isPrimary: boolean("is_primary").default(false).notNull(),
@@ -363,26 +369,12 @@ export const crmDealStakeholders = pgTable(
   ],
 );
 
-export const contactsRelations = relations(contacts, ({ one }) => ({
-  organization: one(organizations, {
-    fields: [contacts.orgId],
-    references: [organizations.id],
-  }),
-  crmOrganization: one(crmOrganizations, {
-    fields: [contacts.organizationId],
-    references: [crmOrganizations.id],
-  }),
-  lead: one(leads, { fields: [contacts.leadId], references: [leads.id] }),
-  deal: one(deals, { fields: [contacts.dealId], references: [deals.id] }),
-}));
 
 export const dealsRelations = relations(deals, ({ one, many }) => ({
   organization: one(organizations, {
     fields: [deals.orgId],
     references: [organizations.id],
   }),
-  lead: one(leads, { fields: [deals.leadId], references: [leads.id] }),
-  client: one(clients, { fields: [deals.clientId], references: [clients.id] }),
   assignedTo: one(users, {
     fields: [deals.assignedToId],
     references: [users.id],
@@ -440,10 +432,6 @@ export const crmDealStakeholdersRelations = relations(
     deal: one(deals, {
       fields: [crmDealStakeholders.dealId],
       references: [deals.id],
-    }),
-    contact: one(contacts, {
-      fields: [crmDealStakeholders.contactId],
-      references: [contacts.id],
     }),
     organization: one(organizations, {
       fields: [crmDealStakeholders.orgId],

@@ -43,6 +43,22 @@ export const autonomySettings = pgTable("autonomy_settings", {
   /** Ticket 14: seconds an irreversible outbound waits before it leaves. */
   holdWindowSeconds: integer("hold_window_seconds").default(60).notNull(),
 
+  /**
+   * Whether a stage advance may draft a quote and put it in the hold window.
+   *
+   * The only opt-IN dial in this table, and the reason it is one rather than a
+   * kill switch: `resolveSwitch` is deliberately default-on — the switches exist
+   * to stop autonomy, not to opt into it — so routing the quote leg through
+   * `autonomy_switches` alone would have started drafting quotes for every
+   * existing tenant on deploy. Money leaving for a customer to read is the one
+   * action where "nobody turned it off" is not consent.
+   *
+   * Off by default, so this column changes no tenant's behaviour until somebody
+   * sets it. Both gates still apply once it is on: an operator's kill switch
+   * stops it platform-wide regardless of what a tenant chose.
+   */
+  autoQuoteEnabled: boolean("auto_quote_enabled").default(false).notNull(),
+
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at")
     .defaultNow()
@@ -55,6 +71,7 @@ export const AUTONOMY_SETTINGS_DEFAULTS = {
   shadowSampleRate: 0.1,
   shadowDailyCap: 500,
   holdWindowSeconds: 60,
+  autoQuoteEnabled: false,
 } as const;
 
 export const SHADOW_VERDICTS = ["agrees", "disagrees", "uncertain", "failed"] as const;

@@ -3,7 +3,7 @@ import { and, eq, gte, inArray, isNull, lte, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
-import { timesheets, timesheetPeriods, timesheetSettings, projects, users, organizationMembers } from "../../../db/schema";
+import { timesheets, timesheetPeriods, timesheetSettings, projects, users, organizationMembers, holidays } from "../../../db/schema";
 import { AccessService } from "../../access/access.service";
 import { actingMembershipId } from "../../../common/auth/principal";
 import { resolveReportsScope, applyMembershipScope } from "./timesheets-core-scope";
@@ -161,7 +161,28 @@ export class TimesheetAnalyticsService {
 
     const expectedWeeklyHours =
       settingsRows[0]?.expectedWeeklyHours != null ? Number(settingsRows[0].expectedWeeklyHours) : null;
-    const expectedHours = expectedHoursForRange(startDate, endDate, expectedWeeklyHours);
+
+    /**
+     * Read, not owned. `holidays` belongs to HR; this is the read-only seam the
+     * boundary doc describes, and the payroll export already uses it the same
+     * way. Nothing here writes to it.
+     */
+    const holidayRows = await this.db
+      .select({ date: holidays.date })
+      .from(holidays)
+      .where(
+        and(
+          eq(holidays.orgId, u.orgId),
+          gte(holidays.date, startDate),
+          lte(holidays.date, endDate),
+        ),
+      );
+    const expectedHours = expectedHoursForRange(
+      startDate,
+      endDate,
+      expectedWeeklyHours,
+      holidayRows.map((h) => h.date),
+    );
 
     const workedDates = new Map<string, Set<string>>();
     for (const r of dateRows) {

@@ -13,6 +13,8 @@ import { AuditService } from "../../../common/audit/audit.service";
 import { AccessService } from "../../access/access.service";
 import { ClientsEmailService } from "../clients-email.service";
 import type { UpdateClientStatusInput } from "../dto/clients.schemas";
+import type { DataScope } from "../../access/access.types";
+import { applyClientAccountsScope } from "../client-accounts-scope";
 
 /**
  * The status change that pays somebody.
@@ -53,9 +55,15 @@ export async function updateClientStatus(
   userId: string,
   accountId: number,
   input: UpdateClientStatusInput,
+  scope: DataScope,
 ) {
+  // The caller's READ scope, on the lookup AND the UPDATE below: see
+  // `ClientAccountsService.updateStatus` for why a write takes the read key.
+  const conditions = [eq(clientAccounts.id, accountId), eq(clientAccounts.orgId, orgId)];
+  if (scope !== "all") conditions.push(applyClientAccountsScope(scope, orgId, userId));
+
   const account = await deps.db.query.clientAccounts.findFirst({
-    where: and(eq(clientAccounts.id, accountId), eq(clientAccounts.orgId, orgId)),
+    where: and(...conditions),
   });
   if (!account) return null;
 
@@ -90,7 +98,7 @@ export async function updateClientStatus(
     const [row] = await tx
       .update(clientAccounts)
       .set(updateData)
-      .where(and(eq(clientAccounts.id, accountId), eq(clientAccounts.orgId, orgId)))
+      .where(and(...conditions))
       .returning();
 
     await tx.insert(clientAccountActivities).values({

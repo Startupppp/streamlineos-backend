@@ -1,4 +1,5 @@
 import { ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { partyNamesFor } from "../../party/party-names";
 import { SupportTicketStaleException } from "../../../common/http/api-exceptions";
 import { randomUUID } from "node:crypto";
 import { and, asc, desc, eq, isNull, or, sql, type SQL } from "drizzle-orm";
@@ -117,7 +118,6 @@ export class SupportTicketsService {
             limit,
             offset,
             with: {
-              client: { columns: { id: true, name: true } },
               assignee: { columns: { id: true, name: true, image: true } },
               creator: { columns: { id: true, name: true } },
             },
@@ -128,8 +128,23 @@ export class SupportTicketsService {
             .where(and(...conditions)),
         ]);
 
+        /**
+         * The client's name from Party, not from `clients`. Ticket 08.
+         *
+         * `client_id` is still what the ticket is filed under and is still
+         * returned as `client.id`, so nothing downstream changes shape; only the
+         * name moved. That is all this service read the legacy table for.
+         */
+        const names = await partyNamesFor(this.db, orgId, items.map((t) => t.clientPartyId));
+        const withClient = items.map((t) => ({
+          ...t,
+          client: t.clientId
+            ? { id: t.clientId, name: t.clientPartyId ? (names.get(t.clientPartyId) ?? null) : null }
+            : null,
+        }));
+
         const total = countResult?.count ?? 0;
-        return { items, total, page, totalPages: Math.ceil(total / limit) };
+        return { items: withClient, total, page, totalPages: Math.ceil(total / limit) };
       },
       CACHE_TTL.SHORT,
     );
@@ -248,7 +263,6 @@ export class SupportTicketsService {
     const ticket = await this.db.query.supportTickets.findFirst({
       where: and(eq(supportTickets.id, ticketId), eq(supportTickets.orgId, orgId)),
       with: {
-        client: { columns: { id: true, name: true } },
         assignee: { columns: { id: true, name: true, image: true } },
         creator: { columns: { id: true, name: true } },
         messages: {
@@ -262,7 +276,17 @@ export class SupportTicketsService {
     if (actor.scope !== "all" && ticket.assigneeId !== actor.userId)
       throw new ForbiddenException("Not authorized to view this ticket");
     const customFieldValues = await this.customFields.getFieldValues(orgId, ticketId);
-    return { ...ticket, customFieldValues };
+
+    // Same as the list path: the identifier stays, the name comes from Party.
+    const names = await partyNamesFor(this.db, orgId, [ticket.clientPartyId]);
+    const client = ticket.clientId
+      ? {
+          id: ticket.clientId,
+          name: ticket.clientPartyId ? (names.get(ticket.clientPartyId) ?? null) : null,
+        }
+      : null;
+
+    return { ...ticket, client, customFieldValues };
   }
 
   async updateTicket(orgId: string, ticketId: number, userId: string, input: UpdateTicketInput) {

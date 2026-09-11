@@ -63,12 +63,6 @@ export const CACHE_KEYS = {
   executiveDashboard: (orgId: string) => `dashboard:executive:${orgId}`,
   announcementsList: (orgId: string) => `dashboard:announcements:${orgId}`,
 
-  invoicesList: (orgId: string, hash: string) =>
-    `invoices:list:${orgId}:${hash}`,
-  invoiceDetail: (orgId: string, id: number) =>
-    `invoices:detail:${orgId}:${id}`,
-  invoiceStats: (orgId: string) => `invoices:stats:${orgId}`,
-
   tasksList: (orgId: string, hash: string) => `tasks:list:${orgId}:${hash}`,
   taskDetail: (orgId: string, id: number) => `tasks:detail:${orgId}:${id}`,
 
@@ -166,6 +160,9 @@ export const CACHE_KEYS = {
   hrHeadcountNamespace: (orgId: string) => `hr:headcount:${orgId}`,
   leaveAnalyticsNamespace: (orgId: string) => `hr:leave-analytics:${orgId}`,
 
+  /** Employee expense claims (`modules/expenses`), versioned per organisation. */
+  expensesListNamespace: (orgId: string) => `expenses:list:${orgId}`,
+
   supportReportsOverview: (orgId: string) =>
     `support:reports:overview:${orgId}`,
 
@@ -196,7 +193,6 @@ export const CACHE_KEYS = {
   finCategorizeSuggest: (orgId: string, merchant: string) =>
     `fin:cat-suggest:${orgId}:${merchant}`,
 
-  expensesListNamespace: (orgId: string) => `hr:expenses:${orgId}`,
   finAssetsListNamespace: (orgId: string) => `fin:assets:list:${orgId}`,
   finAssetCategoriesNamespace: (orgId: string) =>
     `fin:asset-categories:${orgId}`,

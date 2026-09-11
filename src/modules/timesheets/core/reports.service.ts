@@ -3,7 +3,7 @@ import { and, eq, gte, inArray, isNull, lte, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
-import { timesheets, timesheetPeriods, projects, users, organizationMembers } from "../../../db/schema";
+import { timesheets, timesheetPeriods, projects, users, organizationMembers, holidays } from "../../../db/schema";
 import { AccessService } from "../../access/access.service";
 import { actingMembershipId } from "../../../common/auth/principal";
 import { resolveReportsScope, applyMembershipScope } from "./timesheets-core-scope";
@@ -184,5 +184,32 @@ export class ReportsService {
       },
       users: perUser,
     };
+  }
+
+  /**
+   * The organisation's holidays in a range, for the week grid to mark.
+   *
+   * `holidays` is HR's table and this only reads it — the same seam the
+   * payroll export and the compliance report use. It lives on the reports
+   * service because that is where the other calendar-shaped reads already are.
+   *
+   * Not scoped by DataScope: a public holiday is the same for everyone in the
+   * organisation, and hiding it from someone whose scope is "own" would make
+   * their grid wrong rather than private.
+   */
+  async getHolidays(u: CurrentUserContext, startDate: string, endDate: string) {
+    const rows = await this.db
+      .select({ date: holidays.date, name: holidays.name, isPublic: holidays.isPublic })
+      .from(holidays)
+      .where(
+        and(
+          eq(holidays.orgId, u.orgId),
+          gte(holidays.date, startDate),
+          lte(holidays.date, endDate),
+        ),
+      )
+      .orderBy(holidays.date);
+
+    return { startDate, endDate, holidays: rows };
   }
 }

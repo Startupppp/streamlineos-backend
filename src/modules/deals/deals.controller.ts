@@ -137,11 +137,12 @@ export class DealsController {
   @RequirePermission("crm:deals:create")
   @HttpCode(200)
   @Validate({ params: dealIdParams })
-  cloneDeal(
+  async cloneDeal(
     @Param("dealId", ParseIntPipe) dealId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.deals.cloneDeal(u.orgId, dealId);
+    const scope = await resolveDealsReadScope(this.access, u);
+    return this.deals.cloneDeal(u.orgId, u.userId, dealId, scope);
   }
 
   @Get(":dealId/activities")
@@ -221,7 +222,8 @@ export class DealsController {
     @Param("dealId", ParseIntPipe) dealId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    const deal = await this.deals.getDeal(u.orgId, dealId);
+    const scope = await resolveDealsReadScope(this.access, u);
+    const deal = await this.deals.getDeal(u.orgId, u.userId, dealId, scope);
     if (!deal) throw new NotFoundException("Deal not found");
     return deal;
   }

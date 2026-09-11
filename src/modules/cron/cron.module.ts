@@ -1,3 +1,11 @@
+/*
+  The four finance modules and `CronFinanceService` are absent deliberately.
+
+  They belonged to `modules/finance`, which the accounting rewrite replaced with
+  the `gl_*` kernel; the scheduled work they registered has no counterpart there
+  yet. Everything else main schedules is registered exactly as before.
+*/
+
 import { Module } from "@nestjs/common";
 import { BillingModule } from "../billing/core/billing.module";
 import { AiModule } from "../ai/core/ai.module";
@@ -15,15 +23,11 @@ import { HrWorkflowsModule } from "../hr/workflows/hr-workflows.module";
 import { HrCoreModule } from "../hr/core/hr-core.module";
 import { HrLifecycleModule } from "../hr/lifecycle/hr-lifecycle.module";
 import { HrGlobalModule } from "../hr/global/hr-global.module";
-import { AccountingGlModule } from "../accounting/gl/accounting-gl.module";
 import { InvoicesModule } from "../invoices/invoices.module";
-import { FinanceArModule } from "../finance/ar/finance-ar.module";
-import { FinanceApModule } from "../finance/ap/finance-ap.module";
-import { FinanceTaxModule } from "../finance/tax/finance-tax.module";
-import { FinanceAssetsModule } from "../finance/assets/finance-assets.module";
 import { AiJobsModule } from "../ai/jobs/ai-jobs.module";
 import { SupportKbGapModule } from "../support/kb-gap";
 import { TimesheetsCoreModule } from "../timesheets/core/timesheets-core.module";
+import { ESignModule } from "../e-sign/e-sign.module";
 import { OrganizationModule } from "../organization/core/organization.module";
 import { HrGovernanceModule } from "../hr/governance/hr-governance.module";
 import { CronBillingController } from "./cron-billing.controller";
@@ -32,7 +36,11 @@ import { CronHrController } from "./cron-hr.controller";
 import { CronPlatformController } from "./cron-platform.controller";
 import { CronNotificationsController } from "./cron-notifications.controller";
 import { CronOutboxController } from "./cron-outbox.controller";
+import { CronSignController } from "./cron-sign.controller";
 import { CronSupportController } from "./cron-support.controller";
+import { ReportingModule } from "../reporting/reporting.module";
+import { DealsModule } from "../deals/deals.module";
+import { CronCrmForecastService } from "./cron-crm-forecast.service";
 import { CronBuildController } from "./cron-build.controller";
 import { CronNotificationDeliveryService } from "./cron-notification-delivery.service";
 import { CronNotificationRetentionService } from "./cron-notification-retention.service";
@@ -53,8 +61,14 @@ import { CronRecruitmentService } from "./cron-recruitment.service";
 import { CronWeeklyRecapService } from "./cron-weekly-recap.service";
 import { CronEmailOutboxService } from "./cron-email-outbox.service";
 import { CronSupportService } from "./cron-support.service";
-import { CronFinanceService } from "./cron-finance.service";
 import { CronCrmTasksService } from "./cron-crm-tasks.service";
+import { CronCrmLifecycleService } from "./cron-crm-lifecycle.service";
+import { CronSignService } from "./cron-sign.service";
+import { CronCrmAutonomyService } from "./cron-crm-autonomy.service";
+import { RelationshipsModule } from "../relationships/relationships.module";
+import { AutonomyModule } from "../autonomy/autonomy.module";
+import { AutonomySequencesModule } from "../autonomy/sequences/autonomy-sequences.module";
+import { LifecycleTriggersModule } from "../lifecycle/lifecycle-triggers.module";
 import { CronIdempotencyService } from "./cron-idempotency.service";
 import { CronBuildRetentionService } from "./cron-build-retention.service";
 import { CronHrRetentionService } from "./cron-hr-retention.service";
@@ -91,22 +105,26 @@ import { CalendarModule } from "../calendar/calendar.module";
     HrWorkflowsModule,
     HrCoreModule,
     HrLifecycleModule,
+    LifecycleTriggersModule,
+    RelationshipsModule,
+    AutonomyModule,
+    AutonomySequencesModule,
     HrGlobalModule,
-    AccountingGlModule,
     InvoicesModule,
-    FinanceArModule,
-    FinanceApModule,
-    FinanceTaxModule,
-    FinanceAssetsModule,
     CrmAutomationStudioModule,
     BillingModule,
     TimesheetsCoreModule,
+    ESignModule,
     OrganizationModule,
     HrGovernanceModule,
     ProjectsModule,
     CrmModule,
+    /** For the report-schedule sweep, which claims due rows and emits. */
+    ReportingModule,
+    DealsModule,
     OutboxModule,
     SessionsModule,
+    ESignModule,
   ],
   controllers: [
     CronBillingController,
@@ -114,6 +132,7 @@ import { CalendarModule } from "../calendar/calendar.module";
     CronPlatformController,
     CronNotificationsController,
     CronOutboxController,
+    CronSignController,
     CronSupportController,
     CronBuildController,
     CronInvitationExpiryController,
@@ -138,8 +157,11 @@ import { CalendarModule } from "../calendar/calendar.module";
     CronNotificationDeliveryService,
     CronNotificationRetentionService,
     NotificationRetentionService,
-    CronFinanceService,
     CronCrmTasksService,
+    CronCrmLifecycleService,
+    CronSignService,
+    CronCrmAutonomyService,
+    CronCrmForecastService,
     CronIdempotencyService,
     CronBuildRetentionService,
     CronHrRetentionService,

@@ -2,7 +2,6 @@ import { pgTable, text, serial, timestamp, boolean, decimal, date, integer, bigi
 import { relations, sql } from "drizzle-orm";
 import { invPoStatusEnum, invGrnQualityEnum, invGrnDiscrepancyEnum, invGrnStatusEnum, invTaxTreatmentEnum, invGstModeEnum, invOwnershipEnum } from "../common/enums";
 import { organizations, users } from "../common/auth";
-import { clients } from "../crm/contacts";
 import { businessParties } from "../party/business-parties";
 import { invProductVariants, invUom } from "./core";
 import { invLocations, invWarehouses } from "./warehouses";
@@ -10,7 +9,15 @@ import { invLocations, invWarehouses } from "./warehouses";
 export const invVendors = pgTable("inv_vendors", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-  clientId: integer("client_id").references(() => clients.id, { onDelete: "set null" }),
+  clientId: integer("client_id"),
+  /**
+  * The party this row belongs to. Ticket 08's expand.
+  *
+  * Beside `client_id` rather than replacing it: every existing reader keeps
+  * working while readers move over one at a time, and the old column goes in
+  * the contract migration once none is left. Nullable until then -- a null
+  * means "not yet backfilled", which is a state worth being able to see.
+  */
   clientPartyId: text("client_party_id"),
   name: text("name").notNull(),
   code: text("code").notNull(),
@@ -328,7 +335,6 @@ export const invGrnLineSerials = pgTable("inv_grn_line_serials", {
 
 export const invVendorsRelations = relations(invVendors, ({ one, many }) => ({
   organization: one(organizations, { fields: [invVendors.orgId], references: [organizations.id] }),
-  client: one(clients, { fields: [invVendors.clientId], references: [clients.id] }),
   creator: one(users, { fields: [invVendors.createdBy], references: [users.id] }),
   purchaseOrders: many(invPurchaseOrders),
 }));

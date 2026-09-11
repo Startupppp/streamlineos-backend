@@ -5,7 +5,7 @@ import { SoCoreService } from "./so-core.service";
 import { SoLifecycleService } from "./so-lifecycle.service";
 import { SoFulfillmentService } from "./so-fulfillment.service";
 import { InvStockEngineModule } from "../stock-engine/inv-stock-engine.module";
-import { AccountingModule } from "../../accounting/core/accounting.module";
+import { AccountingAdaptersModule } from "../../accounting/adapters/accounting-adapters.module";
 import { InvComplianceModule } from "../compliance/inv-compliance.module";
 
 /**
@@ -16,7 +16,7 @@ import { InvComplianceModule } from "../compliance/inv-compliance.module";
  * product ever asked for a document.
  */
 @Module({
-  imports: [BillingModule, InvStockEngineModule, AccountingModule, InvComplianceModule],
+  imports: [BillingModule, InvStockEngineModule, AccountingAdaptersModule, InvComplianceModule],
   controllers: [InvSalesOrdersController],
   providers: [SoCoreService, SoLifecycleService, SoFulfillmentService],
   exports: [SoCoreService, SoFulfillmentService],

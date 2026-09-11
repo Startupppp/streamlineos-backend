@@ -54,6 +54,10 @@ export const NO_TENANT_TRANSACTION_ALLOWLIST = new Map([
     "src/modules/inventory/channels/channel-webhook.controller.ts",
     "inbound marketplace webhook: the caller is a marketplace with no session, so there is no tenant to derive and the interceptor would open nothing anyway. ChannelSnapshotService resolves the organisation from the channel id through a SECURITY DEFINER resolver and opens its own tenant transaction, and refuses anything whose HMAC does not verify. The decorator makes that reason explicit rather than incidental",
   ],
+  [
+    "src/modules/e-sign/sign-bulk-send.controller.ts",
+    "bulk send dispatches up to 5000 invitation emails, and one request transaction around them held a pooled connection across every network call and made the whole job one rollback boundary — a failure at row 3000 discarded 3000 envelopes whose emails had already been delivered; createJob opens its own runInNewTenantTransaction per row, and writes each row's outcome in a second one so a rolled-back row still records that it failed",
+  ],
 ]);
 
 export const CONTEXT_EXIT_ALLOWLIST = new Map([
@@ -93,6 +97,33 @@ export const CONTEXT_EXIT_ALLOWLIST = new Map([
     "src/modules/organization/core/org-membership-status.service.ts",
     "planLastActiveOrganizationChange exits the tenant context to query the user's active memberships across all organizations when computing the new lastActiveOrgId after suspension or reactivation; a tenant-scoped GUC would restrict the query to only the current org",
   ],
+  // The three below are one class, and they are the CURE rather than the disease.
+  //
+  // Each is a side effect that outlives the request that raised it. The tenant
+  // context is async-local, so the continuation inherits whatever transaction
+  // was open at the call — which by then has committed and closed. A query
+  // issued against that dead handle does not throw: it never settles. The
+  // surrounding `.catch` therefore never runs, and the failure is invisible in
+  // a way no log, metric or test can see. Every one of these was found that
+  // way: zero rows written, nobody told.
+  //
+  // Detaching first is what lets the callee open a scope of its own from the
+  // orgId it is handed. Removing these calls does not restore tenant safety,
+  // it restores the hang — so if one of these files ever needs its entry
+  // removed, the fix is to make the effect durable (OutboxWriter) or deferred
+  // (registerAfterCommit), never to re-inherit the ambient.
+  [
+    "src/modules/notifications/notifications.service.ts",
+    "detached web-push fan-out: raised from outbox consumers and cron sweeps whose transaction has already committed, so the push_subscriptions read under tenant_isolation would hang on a closed handle instead of failing; runOutsideTenantContext lets sendToUser open its own scope from the orgId it is passed",
+  ],
+  [
+    "src/modules/chat/chat-huddles.service.ts",
+    "detached huddle-start push, same shape as the notifications fan-out one line up: the subscription lookup only won the race by microtask ordering and the 404/410 endpoint reap lost it outright, so expired endpoints were never reaped and real delivery failures were swallowed with them",
+  ],
+  [
+    "src/modules/webhooks/webhooks-dispatch.service.ts",
+    "detached outbound webhook dispatch: run() asks for runInNewTenantTransaction and that helper reuses any ambient it finds, so without exiting first the delivery insert was issued against the returned request's closed transaction and every dispatch silently wrote no delivery row",
+  ],
 ]);
 
 export const WITH_IDENTITY_ALLOWLIST = new Map([
@@ -113,16 +144,16 @@ export const WITH_IDENTITY_ALLOWLIST = new Map([
     "same pre-tenant identity resolution as auth-membership-resolver: resolvePreferredOrgId reads the cross-org accountOrganizationIndex, and the membership and suspended-membership lookups run at sign-in before an org is chosen, so a tenant-scoped GUC would return no rows",
   ],
   [
-    "src/modules/auth/auth.service.ts",
-    "register() writes and resolvePreferredOrg() reads the cross-org accountOrganizationIndex under user identity; the table is a global identity projection that cannot be read or written under a single org's tenant context",
-  ],
-  [
     "src/modules/organization/core/account-organization-index.service.ts",
     "the account-to-organization discovery projection answers which organizations an account may enter, so it necessarily runs before one is chosen; its RLS policy admits rows by app.user_id and a read on the pool would silently return none",
   ],
   [
     "src/modules/organization/setup/org-setup.service.ts",
     "creates the first org membership under user identity, before the new org's tenant context exists",
+  ],
+  [
+    "src/modules/organization/core/lib/invitation-join.ts",
+    "touchIndexLastActivated writes the joining account's row in account_organization_index, the global cross-org discovery index whose RLS admits rows by app.user_id; it runs best-effort after the join transaction commits, so there is no tenant transaction to ride and a tenant GUC would hide the row",
   ],
   [
     "src/modules/organization/core/org-lifecycle.service.ts",
@@ -144,9 +175,19 @@ export const WITH_IDENTITY_ALLOWLIST = new Map([
     "src/modules/organization/core/org-profile.service.ts",
     "lists all orgs a user belongs to, which is a cross-org identity read that cannot run under a single org's tenant context",
   ],
+  // Both below touch `account_organization_index`, the same cross-org discovery
+  // projection as the entry above. Its RLS policy admits rows by `app.user_id`,
+  // NOT by `app.current_org_id`, so a tenant transaction is not a stricter
+  // choice here — it is the wrong one: the policy would admit nothing and the
+  // read would come back empty rather than refused. `withIdentity` is the only
+  // helper that sets the GUC this table's policy actually reads.
+  [
+    "src/modules/auth/auth.service.ts",
+    "registration projects the new membership into account_organization_index before any org is current, so it necessarily precedes a tenant context, and the table is keyed and policed by user, not org",
+  ],
   [
     "src/modules/organization/core/invitation-acceptance.service.ts",
-    "updates the cross-org accountOrganizationIndex under user identity after invitation acceptance; the table is a global identity projection and must not be written under a single org's tenant context",
+    "an accepted invitation upserts the acceptor's row into the same user-policed discovery projection; the row may not exist yet, which is why this is an upsert rather than the service's touchLastActivated update",
   ],
   [
     "src/modules/organization/core/org-membership-access-revocation.ts",

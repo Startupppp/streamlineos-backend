@@ -47,7 +47,7 @@ function buildService(scopedMembers: Array<{ userId: string }> = [{ userId: "use
   };
 
   const db = {
-    transaction: jest.fn((callback) => callback(tx)),
+    transaction: jest.fn((callback: (handle: typeof tx) => unknown) => callback(tx)),
   };
 
   const service = new UserOpsService(

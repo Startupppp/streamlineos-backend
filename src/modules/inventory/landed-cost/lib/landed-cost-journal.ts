@@ -1,10 +1,45 @@
 import { UnprocessableEntityException } from "@nestjs/common";
+import type { DbOrTx } from "../../../accounting/kernel/sequence.service";
 import {
   InventoryAccountingBridge,
+  minorUnitsToDecimal,
+  toMinorUnits,
   type InventoryJournalLine,
 } from "../../stock-engine/accounting-bridge";
-import { cmpDec, isDecimalString, isPositive } from "../../stock-engine/decimal";
+import { isPositive } from "../../stock-engine/decimal";
 import { type RevaluationPlan } from "./layer-revaluation";
+
+/*
+  TODO(INV-38, accounting decision): landed cost has no kernel document kind.
+
+  `StockDocumentKind` has no landed-cost member, `gl_journal_source` has no
+  landed-cost source, and `gl_system_tag` has no `landed_cost_clearing` role
+  (0672 deliberately left it out until a landed-cost feature existed). Until
+  accounting decides, the voucher posts through the generic
+  `PostingCommandService.submit`, via `InventoryAccountingBridge`, as:
+
+    source   stock_move, purpose `landed_cost`, keyed stock_move:{voucherId}:landed_cost
+    Dr       inventory   the share that capitalised onto layers still on hand
+    Dr       cogs        the share on units already issued
+    Cr       ap_control  the whole charge
+
+  Why these and not others. `stock_move` because this is a stock valuation
+  event, and the `landed_cost` purpose keeps voucher ids out of every other
+  stock document's key space. `purchase_bill` would put an inventory voucher id
+  into AP's own source space. `ap_control` for the credit is the reasoning on
+  `PAYABLE_ACCOUNT` below: nothing would ever drain a clearing account. The
+  three roles are what the legacy entry named (INVENTORY_ASSET, INVENTORY_COGS
+  and AP), translated one for one.
+
+  What accounting has to settle:
+    1. a document kind and source for landed cost, or confirm `stock_move`;
+    2. `ap_control` versus a `landed_cost_clearing` role that AP drains;
+    3. the kernel's stock-to-GL reconciliation (`StockGlReconciliationService`)
+       counts every `stock_move` line on the inventory account, and a landed-cost
+       debit has no stock movement behind it, so an applied voucher shows as an
+       unexplained bridge difference of its capitalised share until (1) is
+       decided.
+*/
 
 /** Inventory. The receipt already debited it; landed cost adds to it. */
 const INVENTORY_ACCOUNT = "INVENTORY_ASSET";
@@ -16,7 +51,7 @@ const INVENTORY_ACCOUNT = "INVENTORY_ASSET";
  */
 const COGS_ACCOUNT = "INVENTORY_COGS";
 /**
- * Accounts payable, the same credit side the receipt itself used.
+ * Accounts payable, the same credit side the receipt itself uses.
  *
  * INV-38 asks for a landed-cost *clearing* account here and this is deliberately
  * not one, because there is nothing for it to clear. A clearing account earns
@@ -24,65 +59,67 @@ const COGS_ACCOUNT = "INVENTORY_COGS";
  * this voucher is a single event: `inv_landed_cost_charges` carries the
  * carrier's `vendor_id` and `reference`, the status enum runs only
  * `DRAFT → APPLIED`, and there is no estimated-freight posting before it or
- * actualisation after it. Nothing in `modules/finance` or `modules/accounting`
- * mentions landed cost, so no vendor bill would ever debit the other side.
+ * actualisation after it. Nothing in the accounting module's AP drains a
+ * landed-cost balance, so no vendor bill would ever debit the other side.
  *
  * Crediting a clearing account today would therefore book a balance that grows
  * forever and that no process can ever drain — further from the truth than
- * crediting the payable the money is actually owed on, not closer.
- *
- * INV-09 has since made inventory resolve its accounts through
- * `acc_system_account_map`, and `INVENTORY_LANDED_COST_CLEARING` is one of the
- * six purposes an admin can now map. This line still does not use it, for the
- * reason above: an admin pointing that purpose at a real clearing account would
- * get exactly the un-drainable balance the paragraph above refuses to create.
- * `AP` is the honest purpose for a credit that is a payable, and resolving
- * through it means an organisation's own AP account is honoured. The purpose
- * becomes usable here when INV-38's AP counterpart exists, and not before.
+ * crediting the payable the money is actually owed on, not closer. The kernel
+ * offers no clearing role anyway; `AP` resolves to the book's `ap_control`.
  */
 const PAYABLE_ACCOUNT = "AP";
-
-/**
- * The one place a landed-cost figure stops being a decimal string.
- *
- * `DraftLine.debit` and `.credit` are `number`, so something has to convert;
- * every caller of `persistJournalEntry` does, and widening a signature the whole
- * accounting module shares is not INV-38's to do. What is avoidable is
- * converting *silently* — the denylist bans `Number()` on money precisely
- * because it is the step where a figure can change with nothing saying so.
- *
- * So the conversion is checked rather than trusted. Four decimals are exact in a
- * double up to 2^53 ten-thousandths, a little over 900 billion, and every figure
- * here is bounded by one voucher's charge total, so the guard should never fire.
- * Above that ceiling the two sides of the entry round independently and the
- * ledger goes out by an amount `assertBalanced` may not catch, since it compares
- * at two decimals while these columns hold four. Refusing is the honest answer:
- * the entry cannot be written correctly, and an apply that fails loudly is worth
- * more than a month-end that will not explain itself.
- */
-export function toJournalAmount(value: string): number {
-  const asNumber = Number(value);
-  // `toFixed` rather than a magnitude check, and `isDecimalString` before
-  // `cmpDec`: above 1e21 `toFixed` returns exponent notation, which the decimal
-  // parser cannot read and would raise a `SyntaxError` from inside the voucher's
-  // transaction instead of this exception.
-  const roundTripped = Number.isFinite(asNumber) ? asNumber.toFixed(4) : "";
-  if (!isDecimalString(roundTripped) || cmpDec(roundTripped, value) !== 0) {
-    throw new UnprocessableEntityException(
-      `Landed-cost amount ${value} cannot be posted to the general ledger without loss of precision`,
-    );
-  }
-  return asNumber;
-}
 
 /** The accounting seam. The service hands over its own injected bridge. */
 export interface LandedCostJournalDeps {
   readonly accounting: InventoryAccountingBridge;
 }
 
+export interface LandedCostJournalMinor {
+  capitalisedMinor: number;
+  expensedMinor: number;
+  payableMinor: number;
+}
+
 /**
- * The accounting entry, posted inside the voucher's own transaction for the
- * same reason the receipt's is: stock and the general ledger can then never
+ * The voucher's three figures in whole minor units, balanced by construction.
+ *
+ * The plan splits the charge at four decimals, and `assertNothingLost` already
+ * proved that the two halves add back to it exactly. Rounding each half to
+ * minor units independently can still leave the entry one minor unit out: a
+ * split of 10.3350 and 5.6650 against 16.00 rounds to 10.34 + 5.67 = 16.01, and
+ * the ledger would refuse the journal as unbalanced with a 500. So the payable
+ * is the charge, the capitalised share is rounded, and the expensed share is
+ * what remains. That puts any sub-cent residual in COGS, the period's cost,
+ * rather than into a layer's carrying value.
+ *
+ * A remainder that differs from the plan's own expensed figure by more than
+ * one minor unit is not rounding. The split did not add up, and the voucher is
+ * refused rather than posted with a silent plug.
+ */
+export function landedCostJournalMinor(
+  chargeTotal: string,
+  plan: Pick<RevaluationPlan, "capitalisedTotal" | "expensedTotal">,
+): LandedCostJournalMinor {
+  const payableMinor = toMinorUnits(chargeTotal);
+  const capitalisedMinor = isPositive(plan.capitalisedTotal)
+    ? toMinorUnits(plan.capitalisedTotal)
+    : 0;
+  const expensedMinor = payableMinor - capitalisedMinor;
+  const plannedExpensedMinor = isPositive(plan.expensedTotal)
+    ? toMinorUnits(plan.expensedTotal)
+    : 0;
+  if (expensedMinor < 0 || Math.abs(expensedMinor - plannedExpensedMinor) > 1) {
+    throw new UnprocessableEntityException(
+      `Landed-cost split ${plan.capitalisedTotal} + ${plan.expensedTotal} does not reconcile ` +
+        `to the charge ${chargeTotal} in whole minor units`,
+    );
+  }
+  return { capitalisedMinor, expensedMinor, payableMinor };
+}
+
+/**
+ * The accounting entry, posted inside the voucher's own transaction (`tx`) for
+ * the same reason the receipt's is: stock and the general ledger can then never
  * disagree, and a deferred failure would have no idempotency claim of its own
  * once this one has committed.
  *
@@ -91,15 +128,12 @@ export interface LandedCostJournalDeps {
  * A zero line is omitted rather than posted, so the common case — the invoice
  * arriving before anything shipped — reads as the two-line entry it is.
  *
- * `postJournalEntry` skips with a warning when accounting is not migrated or
- * the tenant has no chart of accounts. That property is inherited deliberately:
- * a warehouse that has never configured account 1300 must still be able to land
- * a freight cost on its stock. Both paths — the entry and the skip — are held
- * by `landed-cost.seeded-e2e-spec`, which asserts the rows in `journal_entries`
- * rather than only what `apply` returned.
- *
- * The credit is the payable and not a clearing account; see `PAYABLE_ACCOUNT`
- * for why, and for what INV-09 would have to build before it could be one.
+ * Fails closed, as every kernel-era post does. An organisation that never
+ * enabled accounting is skipped (`BOOK_NOT_ENABLED`) and can still land a
+ * freight cost on its stock. One that did enable it and lacks a role this entry
+ * names, or whose current period is locked, has the whole apply refused and
+ * rolled back, including the layer revaluation. The legacy bridge warned and
+ * skipped instead.
  */
 export async function postLandedCostJournal(
   deps: LandedCostJournalDeps,
@@ -110,42 +144,47 @@ export async function postLandedCostJournal(
   postingDate: string,
   chargeTotal: string,
   plan: RevaluationPlan,
+  tx: DbOrTx,
 ): Promise<void> {
   if (!isPositive(chargeTotal)) return;
 
+  const { capitalisedMinor, expensedMinor, payableMinor } = landedCostJournalMinor(
+    chargeTotal,
+    plan,
+  );
+
   const lines: InventoryJournalLine[] = [];
-  if (isPositive(plan.capitalisedTotal)) {
+  if (capitalisedMinor > 0) {
     lines.push({
       purpose: INVENTORY_ACCOUNT,
-      debit: toJournalAmount(plan.capitalisedTotal),
-      credit: 0,
+      debit: minorUnitsToDecimal(capitalisedMinor),
       description: `Landed cost capitalised - ${grnNumber}`,
     });
   }
-  if (isPositive(plan.expensedTotal)) {
+  if (expensedMinor > 0) {
     lines.push({
       purpose: COGS_ACCOUNT,
-      debit: toJournalAmount(plan.expensedTotal),
-      credit: 0,
+      debit: minorUnitsToDecimal(expensedMinor),
       description: `Landed cost on goods already issued - ${grnNumber}`,
     });
   }
   lines.push({
     purpose: PAYABLE_ACCOUNT,
-    debit: 0,
-    credit: toJournalAmount(chargeTotal),
+    credit: minorUnitsToDecimal(payableMinor),
     description: `Landed cost payable - ${grnNumber}`,
   });
 
-  await deps.accounting.postJournalEntry({
-    orgId,
-    entryDate: postingDate,
-    description: `Landed cost applied: ${grnNumber}`,
-    sourceType: "inv_landed_cost",
-    sourceId: String(voucherId),
-    sourceEvent: "apply",
-    status: "POSTED",
-    createdBy: userId,
-    lines,
-  });
+  await deps.accounting.postJournalEntry(
+    {
+      orgId,
+      createdBy: userId,
+      entryDate: postingDate,
+      description: `Landed cost applied: ${grnNumber}`,
+      sourceType: "inv_landed_cost",
+      sourceId: String(voucherId),
+      sourceEvent: "landed_cost",
+      lines,
+    },
+    tx,
+  );
 }

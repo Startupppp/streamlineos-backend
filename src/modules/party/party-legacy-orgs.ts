@@ -1,6 +1,5 @@
 import { and, eq, inArray, isNull } from "drizzle-orm";
 import { businessParties, crmOrgPartyMap } from "../../db/schema/party";
-import { crmOrganizations } from "../../db/schema/crm/contacts";
 import { ORGANISATION_MIRROR } from "./party-legacy-mirror";
 import type { PartyRow } from "./party-mirror-fields";
 import {
@@ -56,14 +55,13 @@ import {
  * converging it was the follow-up; 0265 is that follow-up, and 08 is where the
  * row it lived on stops existing.
  *
- * `adoptOrganisation` below is the one thing here that still reads
- * `crm_organizations`, and it is the last one in this file. It cannot be
- * converted, because it exists precisely for a row the Party side has never
- * heard of: there is nothing on the Party side to read instead. It goes when the
- * table does — `legacy-reader-ratchet.spec.ts` is the register that tracks it
- * until then — and at that point an id absent from `crm_org_party_map` names
- * nothing and is skipped rather than conjured, which is what these functions
- * already do when adoption finds no row.
+ * `adoptOrganisation` is gone, and it went the way its own note said it would.
+ * It existed for a `crm_organizations` row the Party side had never heard of —
+ * a state only the dual-write window could produce — so it could not be
+ * converted to read Party instead; there was nothing there to read. Ticket 08
+ * removed the table and with it the state. An id absent from
+ * `crm_org_party_map` now names nothing and is skipped rather than conjured,
+ * which is what these functions already did when adoption found no row.
  */
 
 async function partyIdsForOrganisations(
@@ -99,47 +97,6 @@ async function partyIdsForOrganisations(
  * precisely because there is no Party to contradict it. Nothing on the Party side
  * can stand in for it, so it goes when the table goes, not before.
  */
-async function adoptOrganisation(
-  db: MirrorDb,
-  organizationId: string,
-  crmOrganizationId: number,
-): Promise<string | null> {
-  const [row] = await db
-    .select()
-    .from(crmOrganizations)
-    .where(
-      and(eq(crmOrganizations.id, crmOrganizationId), eq(crmOrganizations.orgId, organizationId)),
-    )
-    .limit(1);
-  if (!row) return null;
-
-  const party = await insertBareParty(db, organizationId, row.name);
-  const { partyPatch } = ORGANISATION_MIRROR.split(row, party);
-  await applyPartyPatch(
-    db,
-    organizationId,
-    party.partyId,
-    withoutSelfLinks(
-      {
-        ...partyPatch,
-        partyKind: "ORGANISATION",
-        ...(await absorbParentColumn(db, organizationId, row.parentId)),
-      },
-      party.partyId,
-    ),
-  );
-  await db
-    .insert(crmOrgPartyMap)
-    .values({
-      organizationId,
-      crmOrganizationId,
-      partyId: party.partyId,
-      linkedBy: "mirror:adopt",
-    })
-    .onConflictDoNothing();
-  await grantRole(db, organizationId, party.partyId, "ORGANISATION", "mirror:adopt");
-  return party.partyId;
-}
 
 /**
  * A company row, assembled from the Party it mirrors.
@@ -259,11 +216,6 @@ export async function updateMirroredOrganizations(
 
   return db.transaction(async (tx) => {
     const partyByOrg = await partyIdsForOrganisations(tx, organizationId, ids);
-    for (const crmOrganizationId of ids) {
-      if (partyByOrg.has(crmOrganizationId)) continue;
-      const adopted = await adoptOrganisation(tx, organizationId, crmOrganizationId);
-      if (adopted) partyByOrg.set(crmOrganizationId, adopted);
-    }
 
     /*
      * Resolved once, outside the per-party derivation: which parent the caller

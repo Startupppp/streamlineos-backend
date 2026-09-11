@@ -123,12 +123,13 @@ function grainKey(grain: OutgoingGrain): string {
 }
 
 /**
- * Everything the COGS entry needs, carried out of the transaction.
+ * Everything the COGS entry needs, carried out of `postShipment` to its caller.
  *
- * The journal is posted **after** the commit and only on the run that did the
- * work: `postJournalEntry` opens its own connection, so posting it inside would
- * leave an entry behind for a shipment that rolled back, and posting it
- * unconditionally would post it again on every replay of the same key.
+ * `postShipment` fills it in. `SoFulfillmentService.postCogs` then posts it
+ * through `PostingCommandService`, inside the idempotent claim's `work()` and
+ * on the shipment's own transaction. A ledger refusal therefore rolls the
+ * shipment back with it, and a replay of the same key returns the stored result
+ * without running `work()`, so it posts nothing.
  */
 export interface DeferredCogs {
   total: string;

@@ -56,7 +56,7 @@ describe("SignIntegrationsService — cross-tenant isolation", () => {
       },
     } as unknown as Db;
 
-    const automation = { runAutomationsForEvent: jest.fn().mockResolvedValue(undefined) };
+    const automation = { runAutomationsForEventDetached: jest.fn() };
     const webhooks = { dispatch: jest.fn() };
     const notifications = { create: jest.fn().mockResolvedValue(undefined) };
 

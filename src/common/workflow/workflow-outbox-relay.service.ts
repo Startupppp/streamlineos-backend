@@ -4,6 +4,7 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.types";
 import { outboxEvents } from "../../db/schema";
 import { reportError } from "../observability";
+import { forEachOrg } from "../tenant/for-each-org";
 import { WorkflowRegistry } from "./workflow-registry";
 import { WorkflowRunnerService } from "./workflow-runner.service";
 
@@ -67,25 +68,66 @@ export class WorkflowOutboxRelayService {
     private readonly runner: WorkflowRunnerService,
   ) {}
 
+  /**
+   * Discovery is per organisation, and has to be.
+   *
+   * `outbox_events` carries `tenant_isolation`, so the cross-tenant read this
+   * method used to open with — every ACTIVE event above the cursor, all tenants
+   * at once — is denied under RLS with 42501 "no tenant context". Not degraded:
+   * the whole cron tick 500s, no run is ever started, and every durable workflow
+   * in the product silently stops. It only worked at all because the databases
+   * it was exercised against connected as an owner, which bypasses RLS; the
+   * moment `APP_DATABASE_URL` points at the non-owner role it is supposed to,
+   * the autonomous half of the CRM does nothing.
+   *
+   * `forEachOrg` is the pattern the platform already settled on for exactly this
+   * — `organizations` carries no tenant column and therefore no policy, so it
+   * can be enumerated without a bypass role, and each organisation's discovery
+   * then runs inside its own tenant transaction.
+   *
+   * `limit` stays a whole-tick budget rather than becoming per organisation. A
+   * relay that read fifty events per tenant would scale its own batch size with
+   * the customer list, which is the opposite of what a batch size is for.
+   */
   async relay(limit: number = RELAY_BATCH_SIZE): Promise<RelayResult> {
-    const events = await this.db
-      .select({
-        outboxEventId: outboxEvents.outboxEventId,
-        eventId: outboxEvents.eventId,
-        organizationId: outboxEvents.organizationId,
-        eventType: outboxEvents.eventType,
-        payload: outboxEvents.payload,
-        correlationId: outboxEvents.correlationId,
-      })
-      .from(outboxEvents)
-      .where(
-        and(
-          gt(outboxEvents.outboxEventId, this.cursor),
-          eq(outboxEvents.lifecycleState, "ACTIVE"),
-        ),
-      )
-      .orderBy(asc(outboxEvents.outboxEventId))
-      .limit(limit);
+    const events: {
+      outboxEventId: number;
+      eventId: string;
+      organizationId: string;
+      eventType: string;
+      payload: unknown;
+      correlationId: string | null;
+    }[] = [];
+
+    await forEachOrg(this.db, "workflow-outbox-relay", async (tx) => {
+      const remaining = limit - events.length;
+      if (remaining <= 0) return;
+
+      const rows = await tx
+        .select({
+          outboxEventId: outboxEvents.outboxEventId,
+          eventId: outboxEvents.eventId,
+          organizationId: outboxEvents.organizationId,
+          eventType: outboxEvents.eventType,
+          payload: outboxEvents.payload,
+          correlationId: outboxEvents.correlationId,
+        })
+        .from(outboxEvents)
+        .where(
+          and(
+            gt(outboxEvents.outboxEventId, this.cursor),
+            eq(outboxEvents.lifecycleState, "ACTIVE"),
+          ),
+        )
+        .orderBy(asc(outboxEvents.outboxEventId))
+        .limit(remaining);
+
+      events.push(...rows);
+    });
+
+    // Globally ordered again: `outbox_event_id` is one identity sequence across
+    // every tenant, and `CURSOR_LAG` below reasons about that single stream.
+    events.sort((a, b) => a.outboxEventId - b.outboxEventId);
 
     let started = 0;
     let highest = 0;
@@ -120,7 +162,26 @@ export class WorkflowOutboxRelayService {
       highest = Math.max(highest, event.outboxEventId);
     }
 
-    if (highest > 0)
+    /**
+     * The cursor only moves on a pass that saw everything.
+     *
+     * `outbox_event_id` is one sequence across every tenant, but discovery is now
+     * per organisation and shares a single budget — so a pass that fills the
+     * budget has read the first tenants and not the later ones. Advancing on that
+     * pass would move a *global* cursor past ids belonging to organisations this
+     * pass never queried, and any of theirs more than `CURSOR_LAG` below the
+     * highest seen would never be read again. Not delayed: never, for the life of
+     * the process. That is the precise failure `CURSOR_LAG` exists to prevent,
+     * reintroduced from the other direction by the per-org loop.
+     *
+     * A full budget therefore leaves the cursor where it is and the next tick
+     * re-reads from the same place, which drains the backlog rather than skipping
+     * it — safe for the same reason the lag is: `startRun` keys on
+     * `causationEventId` and returns the existing run instead of starting a
+     * second.
+     */
+    const sawEverything = events.length < limit;
+    if (highest > 0 && sawEverything)
       this.cursor = Math.max(this.cursor, highest - WorkflowOutboxRelayService.CURSOR_LAG);
 
     if (started > 0) this.logger.log(`Relay started ${String(started)} workflow run(s)`);

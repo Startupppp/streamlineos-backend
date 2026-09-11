@@ -3,6 +3,7 @@ import { Test } from "@nestjs/testing";
 import { PartyService } from "./party.service";
 import { CacheService } from "../../common/cache/cache.service";
 import { AuditService } from "../../common/audit/audit.service";
+import { PlanLimitsService } from "../billing/core/plan-limits.service";
 import { DRIZZLE } from "../../db/drizzle.constants";
 
 const ORG_ID = "org-111";
@@ -84,6 +85,13 @@ describe("PartyService — contact CRUD", () => {
         { provide: DRIZZLE, useValue: mockDb },
         { provide: AuditService, useValue: mockAudit },
         { provide: CacheService, useValue: mockCache },
+        // A plan with room, as in the sibling party spec. Ticket 07 made
+        // `createParty` assert one; nothing in this file creates a party, and the
+        // limit's own behaviour is asserted beside the guard rather than here.
+        {
+          provide: PlanLimitsService,
+          useValue: { assertWithinLimit: jest.fn(async () => undefined) },
+        },
       ],
     }).compile();
 

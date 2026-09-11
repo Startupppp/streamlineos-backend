@@ -25,21 +25,30 @@ describe("InvoicesLifecycleService — cross-tenant isolation", () => {
 
   it("throws NotFoundException when invoice belongs to a different org (cross-tenant isolation)", async () => {
     const db = makeDb(null);
-    const mockPosting = {} as any;
+    const mockPosting = { reverseInvoiceIssued: jest.fn().mockResolvedValue(null) } as any;
     const mockDispatch = { emit: jest.fn() } as any;
     const mockBus = { trigger: jest.fn() } as any;
     const svc = new InvoicesLifecycleService(db, mockPosting, mockDispatch, mockBus);
     await expect(svc.voidInvoice(ATTACKER, USER_ID, INVOICE_ID)).rejects.toThrow(NotFoundException);
+    // Nothing of the other org's ledger is touched once the invoice read misses.
+    expect(mockPosting.reverseInvoiceIssued).not.toHaveBeenCalled();
   });
 
   it("voids an invoice for the owning org (control — same-tenant)", async () => {
     const invoiceRow = { id: INVOICE_ID, orgId: OWNER, status: "SENT", invoiceNumber: "INV-001" };
     const db = makeDb(invoiceRow);
-    const mockPosting = {} as any;
+    const mockPosting = { reverseInvoiceIssued: jest.fn().mockResolvedValue(null) } as any;
     const mockDispatch = { emit: jest.fn() } as any;
     const mockBus = { trigger: jest.fn() } as any;
     const svc = new InvoicesLifecycleService(db, mockPosting, mockDispatch, mockBus);
     const result = await svc.voidInvoice(OWNER, USER_ID, INVOICE_ID);
     expect(result).toEqual({ success: true });
+    // The reversal is booked against the owning org's own invoice, never another's.
+    expect(mockPosting.reverseInvoiceIssued).toHaveBeenCalledWith(
+      OWNER,
+      USER_ID,
+      INVOICE_ID,
+      expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
+    );
   });
 });

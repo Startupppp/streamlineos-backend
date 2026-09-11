@@ -4,13 +4,14 @@ import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { applyScope } from "../../access/apply-scope";
 import type { DataScope } from "../../access/access.types";
 import {
-  invStockAdjustments, invStockAdjustmentLines,
+  invStockAdjustments, invStockAdjustmentLines, invProductVariants, invLocations,
 } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { CacheService } from "../../../common/cache/cache.service";
 import { CACHE_KEYS } from "../../../common/cache/cache-keys";
 import { StockEngineService } from "../stock-engine/stock-engine.service";
+import { StockMovementBridgeService } from "../../accounting/adapters/stock-movement-bridge.service";
 import { NumberSequenceService } from "../stock-engine/number-sequence.service";
 import { InventorySettingsService } from "../stock-engine/inventory-settings.service";
 import { WarehouseScopeService } from "../stock-engine/warehouse-scope.service";
@@ -43,6 +44,7 @@ export class InvStockAdjustmentsService {
     private readonly settings: InventorySettingsService,
     private readonly warehouseScope: WarehouseScopeService,
     private readonly costVisibility: CostVisibilityService,
+    private readonly glBridge: StockMovementBridgeService,
   ) {}
 
   async listAdjustments(orgId: string, filters: ListAdjustmentsInput, scope: DataScope = "all", userId: string) {
@@ -168,6 +170,54 @@ export class InvStockAdjustmentsService {
   }
 
   /**
+   * Every variant and location a line names, checked against this organisation.
+   *
+   * The lines used to go straight in and let the foreign keys decide. A client
+   * naming a variant that does not exist got a raw 23503 through
+   * `AllExceptionsFilter` — a 500 for what is plainly a bad request, with the
+   * failed statement in the log and nothing useful in the response.
+   *
+   * Scoped to `orgId` as well as to existence, which the foreign keys cannot do:
+   * they are on the id alone, so another tenant's variant id would have
+   * satisfied them. That is the check that has to happen here or nowhere.
+   *
+   * Not redundant with the two gates below it. `loadCorrectableVariants` only
+   * refuses a variant it FOUND and whose product is deleted — an id it did not
+   * find is simply absent from its map — and `assertLocationsInScope` returns
+   * early for an unrestricted caller, so neither says "not this organisation's".
+   */
+  private async assertLinesResolve(
+    orgId: string,
+    lines: CreateAdjustmentInput["lines"],
+  ): Promise<void> {
+    const variantIds = [...new Set(lines.map((line) => line.productVariantId))];
+    const locationIds = [...new Set(lines.map((line) => line.locationId))];
+
+    const [variants, locations] = await Promise.all([
+      this.db
+        .select({ id: invProductVariants.id })
+        .from(invProductVariants)
+        .where(and(eq(invProductVariants.orgId, orgId), inArray(invProductVariants.id, variantIds))),
+      this.db
+        .select({ id: invLocations.id })
+        .from(invLocations)
+        .where(and(eq(invLocations.orgId, orgId), inArray(invLocations.id, locationIds))),
+    ]);
+
+    const missingVariant = variantIds.find(
+      (id) => !variants.some((row) => row.id === id),
+    );
+    if (missingVariant !== undefined)
+      throw new NotFoundException(`No product variant ${String(missingVariant)} in this organisation`);
+
+    const missingLocation = locationIds.find(
+      (id) => !locations.some((row) => row.id === id),
+    );
+    if (missingLocation !== undefined)
+      throw new NotFoundException(`No location ${String(missingLocation)} in this organisation`);
+  }
+
+  /**
    * A3. The key reached this method and only one of its two branches used it.
    *
    * Below the approval threshold the adjustment posts immediately and the key
@@ -182,6 +232,8 @@ export class InvStockAdjustmentsService {
    * one transaction is a duplicate, not a nesting.
    */
   async createAdjustment(orgId: string, userId: string, data: CreateAdjustmentInput, idempotencyKey: string) {
+    await this.assertLinesResolve(orgId, data.lines);
+
     // A4. The correction gate, not the demand gate: writing off or recounting a
     // discontinued SKU is exactly what an operator does with retired stock, so
     // only a product deleted from the catalogue is refused here.
@@ -256,7 +308,7 @@ export class InvStockAdjustmentsService {
               with: { lines: true },
             });
             if (stored) {
-              await applyAdjustmentLinesInTx(this.engine, tx, orgId, userId, stored, `${idempotencyKey}:post`);
+              await applyAdjustmentLinesInTx(this.engine, this.glBridge, tx, orgId, userId, stored, `${idempotencyKey}:post`);
             }
           } else {
             // G3. An adjustment that stops at PENDING_APPROVAL is waiting on a
@@ -417,7 +469,7 @@ export class InvStockAdjustmentsService {
     idempotencyKey: string,
   ) {
     await this.db.transaction((tx: Tx) =>
-      applyAdjustmentLinesInTx(this.engine, tx, orgId, userId, adj, idempotencyKey),
+      applyAdjustmentLinesInTx(this.engine, this.glBridge, tx, orgId, userId, adj, idempotencyKey),
     );
 
     await Promise.all([

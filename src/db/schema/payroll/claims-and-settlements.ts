@@ -22,7 +22,7 @@ import {
   fnfStatusEnum,
 } from "../common/enums";
 import { organizations, users, organizationMembers } from "../common/auth";
-import { journalEntries, ledgerAccounts } from "../accounting/accounting";
+import { glJournals, glAccounts } from "../accounting/gl-kernel";
 import { projects } from "../build";
 import { resignations } from "../hr/offboarding";
 import { assets } from "../hr/assets";
@@ -40,7 +40,7 @@ export const expenseCategories = pgTable(
     budgetPeriod: text("budget_period").default("MONTHLY").notNull(),
     isActive: boolean("is_active").default(true).notNull(),
     ledgerAccountId: integer("ledger_account_id").references(
-      () => ledgerAccounts.id,
+      () => glAccounts.id,
     ),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
@@ -89,7 +89,7 @@ export const expenses = pgTable(
     transactionRef: text("transaction_ref"),
     reimbursementBatchId: integer("reimbursement_batch_id"),
     postedJournalEntryId: integer("posted_journal_entry_id").references(
-      () => journalEntries.id,
+      () => glJournals.id,
     ),
     policyFlag: text("policy_flag"),
     expenseDate: date("expense_date").notNull(),
@@ -383,9 +383,9 @@ export const expensesRelations = relations(expenses, ({ one }) => ({
     fields: [expenses.projectId],
     references: [projects.id],
   }),
-  postedJournalEntry: one(journalEntries, {
+  postedJournalEntry: one(glJournals, {
     fields: [expenses.postedJournalEntryId],
-    references: [journalEntries.id],
+    references: [glJournals.id],
   }),
 }));
 

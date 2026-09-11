@@ -97,12 +97,20 @@ const IN_SERVICE_RE = /@AuthorizedInService\s*\(\s*["'`][^"'`]/;
 const HTTP_VERB_RE = /@(Get|Post|Put|Patch|Delete|Head|Options)\s*\(/;
 const CLASS_RE = /^(export\s+)?(abstract\s+)?class\s+\w+/;
 // A method/function name: optional async, identifier, then ( or < (generics).
-// Exclude keywords that also match: if, for, while, return, throw, catch, const, …
-const KEYWORDS = new Set([
-  "if", "for", "while", "return", "throw", "catch", "switch", "case",
-  "const", "let", "var", "new", "import", "export", "await", "try",
-  "else", "default", "typeof", "instanceof", "void", "delete",
-]);
+//
+// There is deliberately NO reserved-word exclusion list here. One used to sit at
+// this line — `if`, `for`, `return`, … plus `delete`, `export`, `import`, `void`
+// — to stop control flow inside a method body being read as a handler. It never
+// did that job (the pending-decorator buffer is reset by the method's own
+// declaration line, so a body line is never examined with `hasHttpVerb` set),
+// and it silently DROPPED 14 real handlers whose method names happen to be
+// reserved words: every `delete()`, `export()`, `import()` and `void()` in the
+// codebase. Those are the delete and export routes — the ones whose gate matters
+// most — and the report counted 3,553 of 3,567 handlers while exiting 0.
+//
+// The only line this regex is ever applied to is the first code line after an
+// HTTP-verb decorator block inside a class, where a control-flow keyword cannot
+// appear. `constructor` is still excluded at the call site.
 const METHOD_RE = /^(?:async\s+)?(\w+)\s*[(<]/;
 
 // ---------------------------------------------------------------------------
@@ -257,7 +265,7 @@ function parseControllerHandlers(rawContent) {
     // Handler declaration (pending has at least one HTTP verb decorator).
     if (inClass && pending.hasHttpVerb) {
       const m = trimmed.match(METHOD_RE);
-      if (m && !KEYWORDS.has(m[1]) && m[1] !== "constructor") {
+      if (m && m[1] !== "constructor") {
         // Handler-level classification takes priority (NestJS getAllAndOverride).
         const handlerHasAny =
           pending.isPublic || pending.isUniversal || pending.isPermissioned || pending.isInService;
@@ -370,6 +378,44 @@ class ThingController {
 `;
   const r5 = parseControllerHandlers(withKeywords);
   checks.keywordsInsideBodyDoNotCreateFakeHandlers = r5.length === 1;
+
+  // --- Fixture: handlers whose method NAME is a reserved word ---
+  // These are legal method names and there are 14 of them in this codebase.
+  // A reserved-word exclusion list used to drop every one, so the report
+  // certified 3,553 of 3,567 handlers and exited 0. `delete` and `export` are
+  // precisely the routes whose classification matters most, and an undeclared
+  // one has to be visible — hence the second half of this fixture.
+  const reservedWordMethodNames = `
+@Controller("things")
+class ThingController {
+  @Delete(":thingId")
+  @RequirePermission("things:delete")
+  delete() {}
+
+  @Get("export")
+  @RequirePermission("things:export")
+  export() {}
+
+  @Post("import")
+  @RequirePermission("things:import")
+  import() {}
+
+  @Post(":thingId/void")
+  @RequirePermission("things:void")
+  void() {}
+
+  @Delete(":thingId/purge")
+  new() {}
+}
+`;
+  const r5b = parseControllerHandlers(reservedWordMethodNames);
+  checks.reservedWordMethodNamesAreStillHandlers = r5b.length === 5;
+  checks.reservedWordHandlersAreClassified =
+    ["delete", "export", "import", "void"].every(
+      (n) => r5b.find((h) => h.method === n)?.classification === "permissioned",
+    );
+  checks.undeclaredReservedWordHandlerIsReported =
+    r5b.find((h) => h.method === "new")?.classification === "UNDECLARED";
 
   // --- Fixture: async handler ---
   const asyncHandler = `

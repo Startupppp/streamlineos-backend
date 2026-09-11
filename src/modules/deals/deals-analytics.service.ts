@@ -6,14 +6,54 @@ import { type Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_TTL } from "../../common/cache/cache-keys";
 import { CrmMetadataService } from "../crm/metadata/crm-metadata.service";
-import { DealsForecastService } from "./deals-forecast.service";
+import {
+  DealsForecastService,
+  visibleDeals,
+  type DealsViewScope,
+  type ForecastSummary,
+} from "./deals-forecast.service";
 import type {
   CreateForecastSnapshotInput,
   CompareForecastSnapshotsInput,
   ForecastSnapshotsQueryInput,
 } from "./dto/deals.schemas";
-export type { ForecastMonth, ForecastSummary } from "./deals-forecast.service";
+export type { DealsViewScope, ForecastMonth, ForecastSummary } from "./deals-forecast.service";
 
+/**
+ * The cache entry belongs to whoever may read it.
+ *
+ * A narrowed analytic reusing the org-wide key would serve one rep's pipeline to
+ * the next rep and to the manager who asked for the organisation's. `all` and
+ * `none` answer the same thing for everyone holding them and stay one shared
+ * entry, so an organisation that grants nobody a narrowed scope keeps exactly one
+ * entry per analytic; `own` and `team` fan out per caller.
+ */
+function scopeSuffix(view: DealsViewScope): string {
+  return view.scope === "all" || view.scope === "none"
+    ? view.scope
+    : `${view.scope}:${view.userId}`;
+}
+
+/**
+ * WHAT A NARROWED DEALS ANALYTIC MEANS.
+ *
+ * `crm:deals:read` is declared `scopable: true`, `listDeals` has always honoured
+ * it, and `getDeal` was made to honour it in 7b35e781e. Every read on this
+ * service behind that key answered for the whole organisation, so a rep granted
+ * `own` saw six deals on the board and the organisation's pipeline value in the
+ * tile above it.
+ *
+ * The decision: every figure here is over THE DEALS THE CALLER MAY SEE. Pipeline
+ * value, win rate, forecast and the aging list are "yours" for a rep at `own` and
+ * the organisation's for everyone at `all` — which is every manager, every org
+ * owner, and every organisation that has granted nobody a narrowed scope, where
+ * the predicate is `true` and each number is unchanged.
+ *
+ * The ONE figure that stays org-wide is `basis` on the forecast, and it is
+ * marked where it is computed: it says whether THIS ORGANISATION has enough
+ * closed history to train a model, which is the same fact for every caller and is
+ * a statement about the product rather than about anybody's deals.
+ */
 @Injectable()
 export class DealsAnalyticsService {
   constructor(
@@ -34,17 +74,26 @@ export class DealsAnalyticsService {
     return { wonKeys: wonKeys.length ? wonKeys : ["WON"], lostKeys: lostKeys.length ? lostKeys : ["LOST"] };
   }
 
-  async getStats(orgId: string) {
+  /**
+   * The three tiles above the deals board, over the deals the caller may see.
+   *
+   * The board beneath them narrows and these did not, so a rep granted `own`
+   * counted six deals on screen under a tile reading the organisation's whole
+   * pipeline value — both a number contradicting the list under it, and a
+   * disclosure of the exact total the grant was meant to withhold.
+   */
+  async getStats(orgId: string, view: DealsViewScope) {
     const { wonKeys, lostKeys } = await this.getTerminalStageKeys(orgId);
+    const visible = visibleDeals(view, orgId);
     const [activeRow, wonRow] = await Promise.all([
       this.db
         .select({ cnt: count(), total: sum(deals.value) })
         .from(deals)
-        .where(and(eq(deals.orgId, orgId), isNull(deals.deletedAt), notInArray(deals.stage, [...wonKeys, ...lostKeys]))),
+        .where(and(eq(deals.orgId, orgId), isNull(deals.deletedAt), notInArray(deals.stage, [...wonKeys, ...lostKeys]), visible)),
       this.db
         .select({ total: sum(deals.value) })
         .from(deals)
-        .where(and(eq(deals.orgId, orgId), isNull(deals.deletedAt), inArray(deals.stage, wonKeys))),
+        .where(and(eq(deals.orgId, orgId), isNull(deals.deletedAt), inArray(deals.stage, wonKeys), visible)),
     ]);
     return {
       active: activeRow[0]?.cnt ?? 0,
@@ -53,9 +102,17 @@ export class DealsAnalyticsService {
     };
   }
 
-  async getAging(orgId: string) {
+  /**
+   * The stale-deal list, out of the deals the caller may see.
+   *
+   * Not an aggregate: this returns up to a hundred deal ROWS with name, value,
+   * stage and assignee. Unscoped it was a second, unnarrowed deals list sitting
+   * behind the same key as the narrowed one — a rep at `own` could read a
+   * colleague's deal names and values off it without ever opening a deal.
+   */
+  async getAging(orgId: string, view: DealsViewScope) {
     return this.cache.cached(
-      `deals:aging:${orgId}`,
+      `deals:aging:${orgId}:${scopeSuffix(view)}`,
       async () => {
         const { wonKeys, lostKeys } = await this.getTerminalStageKeys(orgId);
         const allDeals = await this.db
@@ -71,7 +128,7 @@ export class DealsAnalyticsService {
           })
           .from(deals)
           .leftJoin(users, eq(deals.assignedToId, users.id))
-          .where(and(eq(deals.orgId, orgId), isNull(deals.deletedAt), notInArray(deals.stage, [...wonKeys, ...lostKeys])))
+          .where(and(eq(deals.orgId, orgId), isNull(deals.deletedAt), notInArray(deals.stage, [...wonKeys, ...lostKeys]), visibleDeals(view, orgId)))
           .orderBy(sql`${deals.updatedAt} asc`)
           .limit(100);
 
@@ -99,8 +156,14 @@ export class DealsAnalyticsService {
     );
   }
 
-  getForecast(orgId: string) {
-    return this.forecast.getForecast(orgId);
+  /**
+   * The forecast, over the deals the caller may see.
+   *
+   * Computed and cached by `DealsForecastService`, which is also where the
+   * reason only the org-wide answer is cached is written down.
+   */
+  getForecast(orgId: string, view: DealsViewScope): Promise<ForecastSummary> {
+    return this.forecast.getForecast(orgId, view);
   }
 
   createForecastSnapshot(orgId: string, userId: string, input: CreateForecastSnapshotInput) {
@@ -119,11 +182,20 @@ export class DealsAnalyticsService {
     return this.forecast.compareForecastSnapshots(orgId, input);
   }
 
-  async getWinLoss(orgId: string) {
+  /**
+   * Won against lost, over the deals the caller may see.
+   *
+   * A win rate narrowed to `own` is the rep's own win rate, which is what the
+   * board beneath it is already showing them. Left org-wide it also handed a
+   * restricted rep the organisation's won and lost VALUES and the free-text
+   * reasons every deal in the organisation was lost for.
+   */
+  async getWinLoss(orgId: string, view: DealsViewScope) {
     return this.cache.cached(
-      `deals:win-loss:${orgId}`,
+      `deals:win-loss:${orgId}:${scopeSuffix(view)}`,
       async () => {
         const { wonKeys, lostKeys } = await this.getTerminalStageKeys(orgId);
+        const visible = visibleDeals(view, orgId);
 
         const bucketTotals = (stageKeys: string[]) =>
           this.db
@@ -132,7 +204,7 @@ export class DealsAnalyticsService {
               totalValue: sql<number>`COALESCE(SUM(${deals.value}::numeric), 0)::float`,
             })
             .from(deals)
-            .where(and(eq(deals.orgId, orgId), isNull(deals.deletedAt), inArray(deals.stage, stageKeys)));
+            .where(and(eq(deals.orgId, orgId), isNull(deals.deletedAt), inArray(deals.stage, stageKeys), visible));
 
         const [wonRows, lostRows, lostByReason] = await Promise.all([
           bucketTotals(wonKeys),
@@ -144,7 +216,7 @@ export class DealsAnalyticsService {
               totalValue: sql<number>`COALESCE(SUM(${deals.value}::numeric), 0)::float`,
             })
             .from(deals)
-            .where(and(eq(deals.orgId, orgId), isNull(deals.deletedAt), inArray(deals.stage, lostKeys)))
+            .where(and(eq(deals.orgId, orgId), isNull(deals.deletedAt), inArray(deals.stage, lostKeys), visible))
             .groupBy(sql`1`)
             .orderBy(sql`2 desc`),
         ]);
@@ -174,9 +246,24 @@ export class DealsAnalyticsService {
     );
   }
 
-  async getDealHealth(orgId: string, dealId: number) {
+  /**
+   * One deal's health, behind the SAME scope `getDeal` and `listDeals` apply.
+   *
+   * A second detail read of a single deal by id, on a different controller from
+   * the one 7b35e781e repaired, gated on the same `crm:deals:read`. The factors
+   * it returns ARE the columns it selects, in words: "Past expected close date"
+   * is `expected_close_date`, "No updates in 30+ days" is `updated_at`, "No deal
+   * value set" is `value`. So a rep at `own` could read a colleague's deal by id
+   * — how stale it is, whether it is overdue, whether anyone has touched it —
+   * and see the same score their manager sees.
+   *
+   * The 404 is unchanged and stays a 404: it is what a deleted deal and another
+   * organisation's deal both answer, so this is not an oracle for which deals
+   * exist.
+   */
+  async getDealHealth(orgId: string, dealId: number, view: DealsViewScope) {
     const deal = await this.db.query.deals.findFirst({
-      where: and(eq(deals.id, dealId), eq(deals.orgId, orgId), isNull(deals.deletedAt)),
+      where: and(eq(deals.id, dealId), eq(deals.orgId, orgId), isNull(deals.deletedAt), visibleDeals(view, orgId)),
       columns: { stage: true, updatedAt: true, expectedCloseDate: true, value: true, lastContactDate: true, probability: true },
       with: { activities: { columns: { createdAt: true }, orderBy: [desc(dealActivities.createdAt)], limit: 1 } },
     });

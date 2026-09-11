@@ -110,8 +110,6 @@ export const taskStatusEnum = pgEnum("task_status", ["pending", "completed", "ca
 
 export const blogPostStatusEnum = pgEnum("blog_post_status", ["draft", "published", "archived"]);
 
-export const accountTypeEnum = pgEnum("account_type", ["ASSET", "LIABILITY", "EQUITY", "INCOME", "EXPENSE"]);
-export const journalEntryStatusEnum = pgEnum("journal_entry_status", ["DRAFT", "PENDING_APPROVAL", "POSTED", "VOID"]);
 
 export const appInstallStatusEnum = pgEnum("app_install_status", [
   "TRIALING",

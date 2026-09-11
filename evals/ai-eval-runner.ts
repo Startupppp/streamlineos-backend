@@ -103,6 +103,42 @@ export const EVAL_ACCEPTANCE = {
    */
   IMPORT_NO_FOREIGN_IDENTITY_RATE: 1.0,
   /**
+   * CRM-P2-11. The three unattended CRM deciders, gated the way their
+   * consequences are.
+   *
+   * These are not model outputs — the outbound judge, the risk score and the
+   * repair policy are deterministic functions — so a rate below 1.0 would mean
+   * the suite tolerates a decider being wrong, which none of these can afford.
+   * The asymmetry is in WHICH cases carry which gate, not in the numbers:
+   * `OUTBOUND_NO_HARMFUL_SEND_RATE` covers the cases where writing is
+   * unrecoverable (they replied, they are owed a reply, the deal closed, there
+   * is no address, the system already wrote this week), and
+   * `OUTBOUND_ACT_RECALL` covers the ones where missing a message costs a
+   * follow-up nobody sent.
+   *
+   * Recall is 1.0 today because the corpus is small and the judge scores all of
+   * it. That is a measurement, not a target: a genuinely hard case can be added
+   * and this number argued down, and the number above it cannot.
+   */
+  OUTBOUND_NO_HARMFUL_SEND_RATE: 1.0,
+  OUTBOUND_ACT_RECALL: 1.0,
+  OUTBOUND_CLASS_CORRECT_RATE: 1.0,
+  /**
+   * Calling a customer healthy when the evidence says otherwise is the
+   * dangerous error here: a renewal nobody prepared for, found in the month it
+   * expires. Reading a fine account as worried costs a rep one glance.
+   */
+  RISK_NO_FALSE_CALM_RATE: 1.0,
+  RISK_BAND_EXACT_RATE: 1.0,
+  /**
+   * A repair rewrites a customer's record without asking. Every refusal must
+   * carry a sentence, because a refusal that is only a `false` becomes a silence
+   * in the ledger, and "the system quietly did nothing" is the failure this loop
+   * must not have.
+   */
+  REPAIR_DECISION_CORRECT_RATE: 1.0,
+  REPAIR_REFUSAL_EXPLAINED_RATE: 1.0,
+  /**
    * Ticket 12, second half. Three channels, three sets of gates, and no blended
    * figure anywhere — because a blended one is how a channel gets quietly worse
    * while the dashboard stays green. Each set is measured on its own dataset by

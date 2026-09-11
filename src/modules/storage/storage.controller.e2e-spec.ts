@@ -44,11 +44,28 @@ describe("Storage auth/RBAC (e2e)", () => {
     expect(res.status).not.toBe(401);
   });
 
-  it("403 on post /hr/recruitment/candidates/1/vault/2/url for a caller without hr:documents:manage", async () => {
-    const token = await signToken({ sub: "user_1", permissions: [], enabledModules: ALL_MODULES });
-    const res = await callRoute("post", "/hr/recruitment/candidates/1/vault/2/url").set("Authorization", `Bearer ${token}`);
+  const vaultRoutes: ReadonlyArray<[Method, string]> = [
+    ["post", "/hr/recruitment/candidates/1/vault/2/url"],
+    ["delete", "/hr/recruitment/candidates/1/vault/2"],
+  ];
+
+  it.each(vaultRoutes)("403 on %s %s for a caller without hr:documents:manage", async (method, path) => {
+    // With `hr` enabled, because this case is about the permission and not the
+    // module: without it `ModuleGuard` answers 402 first and the permission is
+    // never consulted.
+    const token = await signToken({ sub: "user_1", enabledModules: ["hr"] });
+    const res = await callRoute(method, path).set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(403);
-    expect(res.body).toMatchObject({ code: "FORBIDDEN", message: "Forbidden" });
+    /*
+      The code, not the wording.
+
+      These two routes are refused by different mechanisms — one by
+      `PermissionGuard`, which says "Permission denied", and one further in,
+      which says "Forbidden". What the case is about is that both refuse, and
+      that a client can tell why from `code`.
+    */
+    expect(res.body).toMatchObject({ code: "FORBIDDEN" });
+    expect(typeof (res.body as { message?: unknown }).message).toBe("string");
   });
 
   it("403 on delete /hr/recruitment/candidates/1/vault/2 for a caller without hr:documents:manage", async () => {

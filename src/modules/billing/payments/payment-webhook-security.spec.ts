@@ -8,7 +8,6 @@ import { Test } from "@nestjs/testing";
 import { PaymentWebhookReceiverService } from "./payment-webhook-receiver.service";
 import { PaymentProviderResolver } from "./payment-provider-resolver.service";
 import { PaymentAnalyticsService } from "./payment-analytics.service";
-import { ProviderBridgeService } from "../../finance/controls/provider-bridge.service";
 import {
   FakeProviderAdapter,
   FAKE_VALID_WEBHOOK_SIG,
@@ -120,9 +119,6 @@ async function buildService(
     notifyOwner: jest.fn().mockResolvedValue(undefined),
     track: jest.fn(),
   };
-  const bridge = {
-    recordProviderPayment: jest.fn().mockResolvedValue(undefined),
-  };
 
   const module = await Test.createTestingModule({
     providers: [
@@ -130,7 +126,6 @@ async function buildService(
       { provide: DRIZZLE, useValue: db },
       { provide: PaymentProviderResolver, useValue: resolver },
       { provide: PaymentAnalyticsService, useValue: analytics },
-      { provide: ProviderBridgeService, useValue: bridge },
     ],
   }).compile();
 

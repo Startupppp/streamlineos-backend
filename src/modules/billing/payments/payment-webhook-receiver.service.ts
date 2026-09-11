@@ -13,7 +13,6 @@ import {
 } from "../../../db/schema";
 import { PaymentProviderResolver } from "./payment-provider-resolver.service";
 import { PaymentAnalyticsService } from "./payment-analytics.service";
-import { ProviderBridgeService } from "../../finance/controls/provider-bridge.service";
 import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
 import { normalizedPaymentWebhookEventSchema } from "./dto/webhook.schemas";
 
@@ -42,7 +41,6 @@ export class PaymentWebhookReceiverService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly providers: PaymentProviderResolver,
     private readonly paymentAnalytics: PaymentAnalyticsService,
-    private readonly providerBridge: ProviderBridgeService,
   ) {}
 
   async recordSignatureFailure(
@@ -267,38 +265,16 @@ export class PaymentWebhookReceiverService {
       return { status: 200, body: { ok: true, duplicate: true } };
     }
 
-    try {
-      const paymentEntity = this.extractPaymentEntity(neutral.data.payload);
-      if (
-        paymentEntity &&
-        normalized.eventType.includes("payment") &&
-        typeof paymentEntity.amount === "number"
-      ) {
-        await this.providerBridge.recordProviderPayment(
-          params.orgId,
-          "system",
-          {
-            provider: params.providerKey,
-            providerEventId: providerEventId,
-            grossAmount: String(paymentEntity.amount / 100),
-            feeAmount: String(
-              typeof paymentEntity.fee === "number"
-                ? paymentEntity.fee / 100
-                : 0,
-            ),
-            currency:
-              typeof paymentEntity.currency === "string"
-                ? paymentEntity.currency.toUpperCase()
-                : "INR",
-            occurredAt:
-              typeof paymentEntity.createdAt === "number"
-                ? new Date(paymentEntity.createdAt * 1000)
-                : new Date(),
-          },
-        );
-      }
-    } catch {
-    }
+    /*
+      Provider payments are not posted to the ledger here.
+
+      This called `ProviderBridgeService.recordProviderPayment`, which lived in
+      `modules/finance/controls` — a module the accounting rewrite replaced with
+      the `gl_*` kernel, and the kernel does not expose an equivalent seam yet.
+      Webhook health, signature checking and idempotency are unaffected; what is
+      missing is the journal entry, and inventing one against a posting API that
+      is not settled would be worse than the gap.
+    */
 
     return { status: 200, body: { ok: true } };
   }

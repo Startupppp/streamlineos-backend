@@ -6,12 +6,13 @@ import {
 } from "@nestjs/common";
 import { and, eq, sql } from "drizzle-orm";
 import {
-  accountingSettings,
   couponRedemptions,
   coupons,
+  glBooks,
   subscriptionPayments,
   subscriptions,
 } from "../../../db/schema";
+import { getPostgresErrorDetails } from "../../../common/db/postgres-error";
 import { type Db } from "../../../db/drizzle.module";
 import { type DbOrTx } from "../../../common/rbac/access-invalidate";
 import { AuditService } from "../../../common/audit/audit.service";
@@ -56,9 +57,9 @@ export class BillingPaymentActivation {
     if (typeof this.deps.db.select !== "function") return fallback ?? "INR";
 
     const [settings] = await this.deps.db
-      .select({ baseCurrency: accountingSettings.baseCurrency })
-      .from(accountingSettings)
-      .where(eq(accountingSettings.orgId, orgId));
+      .select({ baseCurrency: glBooks.baseCurrency })
+      .from(glBooks)
+      .where(eq(glBooks.orgId, orgId));
     return settings?.baseCurrency ?? fallback ?? "INR";
   }
 
@@ -175,8 +176,17 @@ export class BillingPaymentActivation {
         }
       });
     } catch (err: unknown) {
-      if (isUniqueViolation(err)) {
-        if (err.constraint === "uq_coupon_redemptions_coupon_org") {
+      /**
+       * Both halves came off the wrong object. Drizzle wraps the driver error
+       * and leaves the SQLSTATE on `.cause`, and postgres-js spells the
+       * constraint field `constraint_name`, so reading `.code` and
+       * `.constraint` off the thrown value found neither, and a second
+       * redemption of the same coupon by the same organisation surfaced as a
+       * 500. `uq_coupon_redemptions_coupon_org` — (coupon_id, org_id).
+       */
+      const pgErr = getPostgresErrorDetails(err);
+      if (pgErr.code === "23505") {
+        if (pgErr.constraint === "uq_coupon_redemptions_coupon_org") {
           throw new ConflictException("This coupon has already been used by your organization");
         }
         return { success: true, plan: input.plan, status: "ACTIVE" };
@@ -304,14 +314,4 @@ export class BillingPaymentActivation {
       );
     }
   }
-}
-
-function isUniqueViolation(error: unknown): error is { code: "23505"; constraint?: string } {
-  return (
-    typeof error === "object" &&
-    error !== null &&
-    "code" in error &&
-    error.code === "23505" &&
-    (!("constraint" in error) || typeof error.constraint === "string")
-  );
 }

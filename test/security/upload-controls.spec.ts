@@ -17,13 +17,24 @@
  *        called).  The gap would become a real bypass if ALLOWED_UPLOAD_TYPES were
  *        widened without adding the mime type to FILE_SIGNATURES.
  *   F3 — RESOLVED: Malware scan step added via AvScanner before storage upload.
+ *   F4 — FIXED 2026-09-10. Two copies of multer existed and the vulnerable one was
+ *        the one serving uploads. `multer` is a direct dependency, but
+ *        `FileInterceptor` comes from `@nestjs/platform-express`, which declares
+ *        `"multer": "2.2.0"` EXACTLY — so bumping the direct dependency moved a
+ *        copy nothing imports and left the request path on 2.2.0, which has a DoS
+ *        via crafted multipart field names (GHSA, patched >=2.3.0). That is
+ *        reachable unauthenticated: feedbucket-public.controller.ts is `@Public()`
+ *        with two upload routes, and its multer `limits` set only `fileSize`,
+ *        which does not bound field names. Closed with a pnpm override, and
+ *        pinned below — an override is invisible in package.json's dependency
+ *        list, so without a test it is one `pnpm update` from silently reverting.
  *
  * Suite: run with  node ./node_modules/jest/bin/jest.js test/security/upload-controls.spec.ts
  *   Requires WIRING: "roots" in jest config must include "<rootDir>/test".
  */
 
 import { readFileSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 
 const BACKEND_ROOT = join(__dirname, "../..");
 
@@ -139,5 +150,57 @@ describe("sensitive download controls", () => {
     expect(scanIdx).toBeGreaterThan(-1);
     expect(uploadIdx).toBeGreaterThan(-1);
     expect(scanIdx).toBeLessThan(uploadIdx);
+  });
+});
+
+/*
+ * F4's pin. This block is deliberately NOT static like the rest of the file:
+ * the claim is about which code actually runs, and the source text cannot say
+ * that — package.json shows `multer` at the patched range while the tree quietly
+ * resolves 2.2.0 underneath platform-express. So it asks the module resolver,
+ * from platform-express's own directory, which is the question that matters.
+ */
+describe("the multer that actually serves uploads is the patched one", () => {
+  const MINIMUM = [2, 3, 0]; // the advisory floor: DoS via crafted field names
+
+  function resolvedMulterVersion(from: string): number[] {
+    const dir = dirname(require.resolve(from));
+    const pkg = require.resolve("multer/package.json", { paths: [dir] });
+    const { version } = JSON.parse(readFileSync(pkg, "utf8")) as { version: string };
+    return version.split(".").map(Number);
+  }
+
+  function atLeast(actual: number[], floor: number[]): boolean {
+    for (let i = 0; i < floor.length; i++) {
+      if ((actual[i] ?? 0) > floor[i]) return true;
+      if ((actual[i] ?? 0) < floor[i]) return false;
+    }
+    return true;
+  }
+
+  it("resolves >= 2.3.0 from @nestjs/platform-express, not just at the top level", () => {
+    // The top-level copy was never the problem; this is the one FileInterceptor uses.
+    expect(atLeast(resolvedMulterVersion("@nestjs/platform-express"), MINIMUM)).toBe(true);
+  });
+
+  it("resolves >= 2.3.0 at the top level too, so both copies agree", () => {
+    expect(atLeast(resolvedMulterVersion("multer"), MINIMUM)).toBe(true);
+  });
+
+  it("keeps the override that makes the first case true", () => {
+    // platform-express pins "2.2.0" exactly, so nothing but an override reaches it.
+    const pkg = JSON.parse(src("package.json")) as {
+      pnpm?: { overrides?: Record<string, string> };
+    };
+    expect(pkg.pnpm?.overrides?.multer).toBeDefined();
+  });
+
+  it("proves the comparator can fail, so the three cases above mean something", () => {
+    // Without this, a comparator bug that returns true for everything would make
+    // the whole block vacuous and indistinguishable from a genuine pass.
+    expect(atLeast([2, 2, 0], MINIMUM)).toBe(false);
+    expect(atLeast([1, 9, 9], MINIMUM)).toBe(false);
+    expect(atLeast([2, 3, 0], MINIMUM)).toBe(true);
+    expect(atLeast([3, 0, 0], MINIMUM)).toBe(true);
   });
 });

@@ -158,12 +158,15 @@ describe("CRM Automations & Products (e2e)", () => {
       expect(res.body.rule.isActive).toBe(false);
     });
 
-    it("DELETE /crm/automations/:ruleId → 200 with success", async () => {
+    it("DELETE /crm/automations/:ruleId → 204, no body", async () => {
       const res = await request(app.getHttpServer())
         .delete(`/crm/automations/${createdRuleId}`)
         .set("Authorization", `Bearer ${managerToken}`);
-      expect(res.status).toBe(200);
-      expect(res.body).toEqual({ success: true });
+      // `@HttpCode(204)` on the route, and the handler returns nothing. A delete
+      // that answered 200 with `{ success: true }` was saying the same thing
+      // twice; this expectation simply never followed the route.
+      expect(res.status).toBe(204);
+      expect(res.body).toEqual({});
     });
 
     it("DELETE /crm/automations/:ruleId → 404 for already-deleted rule", async () => {
@@ -231,12 +234,15 @@ describe("CRM Automations & Products (e2e)", () => {
       expect(res.body.unitPrice).toBe(8999);
     });
 
-    it("DELETE /crm/products/:productId → 200 with success", async () => {
+    it("DELETE /crm/products/:productId → 204, no body", async () => {
       const res = await request(app.getHttpServer())
         .delete(`/crm/products/${createdProductId}`)
         .set("Authorization", `Bearer ${managerToken}`);
-      expect(res.status).toBe(200);
-      expect(res.body).toEqual({ success: true });
+      // `@HttpCode(204)` on the route, and the handler returns nothing. A delete
+      // that answered 200 with `{ success: true }` was saying the same thing
+      // twice; this expectation simply never followed the route.
+      expect(res.status).toBe(204);
+      expect(res.body).toEqual({});
     });
 
     it("DELETE /crm/products/:productId → 404 for already-deleted product", async () => {

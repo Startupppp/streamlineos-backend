@@ -12,7 +12,9 @@ import { ValuationService } from "./valuation.service";
 import { WarehouseScopeService } from "./warehouse-scope.service";
 import { claimIdempotencyKey, extractEngineResult } from "./idempotency";
 import { lockLevels, type LevelGrain } from "./stock-level-locks";
-import { InventoryAccountingBridge } from "./accounting-bridge";
+import { BooksService } from "../../accounting/kernel/books.service";
+import { PeriodsService } from "../../accounting/kernel/periods.service";
+import { assertStockPeriodOpen } from "./accounting-bridge";
 import { loadCostingContext } from "./costing-context";
 import { MovementApplyService, resolvePostingDate } from "./movement-apply.service";
 import {
@@ -45,7 +47,8 @@ export class StockEngineService {
     private readonly cache: CacheService,
     private readonly valuation: ValuationService,
     private readonly warehouseScope: WarehouseScopeService,
-    private readonly periods: InventoryAccountingBridge,
+    private readonly periods: PeriodsService,
+    private readonly books: BooksService,
     private readonly movementApply: MovementApplyService,
   ) {}
 
@@ -73,12 +76,9 @@ export class StockEngineService {
       tx, orgId, userId, cmd.movements.map((m) => m.locationId),
     );
 
-    // A movement may not be posted into a closed or locked accounting period.
-    // accounting_periods and this guard already existed; Inventory simply never
-    // called them, so backdated stock could silently restate a reported month.
     const settings = await this.settingsService.get(orgId);
     const postingDate = resolvePostingDate(cmd);
-    await this.periods.assertOpen(orgId, postingDate);
+    await this.assertPeriodOpen(orgId, postingDate);
     const costing = await loadCostingContext(
       tx,
       orgId,
@@ -221,5 +221,19 @@ export class StockEngineService {
       this.cache.invalidate(CACHE_KEYS.invLowStock(orgId)),
       this.cache.invalidate(CACHE_KEYS.invReorderReport(orgId)),
     ]);
+  }
+
+  /**
+   * A movement may not be posted into a locked accounting period — backdated
+   * stock would otherwise silently restate a reported month.
+   *
+   * Accounting is opt-in, so an org with no book (or a date no open fiscal year
+   * covers) is simply unguarded, exactly as before: the old guard also only
+   * refused when a period existed *and* was closed.
+   */
+  private async assertPeriodOpen(orgId: string, postingDate: string): Promise<void> {
+    // The same guard the batch path reaches through InventoryAccountingBridge,
+    // so a single command and a batch cannot disagree about a locked month.
+    await assertStockPeriodOpen(this.books, this.periods, orgId, postingDate);
   }
 }

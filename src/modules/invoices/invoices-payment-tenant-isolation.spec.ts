@@ -31,7 +31,7 @@ describe("InvoicesPaymentService — cross-tenant isolation", () => {
     const mockLifecycle = {} as any;
     const mockRate = {} as any;
     const mockFx = {} as any;
-    const svc = new InvoicesPaymentService(db, mockJournal, mockDispatch, mockLifecycle, mockAudit, mockRate, mockFx);
+    const svc = new InvoicesPaymentService(db, mockJournal, mockDispatch, mockLifecycle, mockAudit);
     await expect(svc.recordPayment(ATTACKER, USER_ID, INVOICE_ID, { amount: 100, paymentDate: "2024-01-15", paymentMethod: "bank_transfer" })).rejects.toThrow(NotFoundException);
   });
 
@@ -44,7 +44,7 @@ describe("InvoicesPaymentService — cross-tenant isolation", () => {
     const mockLifecycle = { recomputeInvoiceBalance: jest.fn() } as any;
     const mockRate = {} as any;
     const mockFx = {} as any;
-    const svc = new InvoicesPaymentService(db, mockJournal, mockDispatch, mockLifecycle, mockAudit, mockRate, mockFx);
+    const svc = new InvoicesPaymentService(db, mockJournal, mockDispatch, mockLifecycle, mockAudit);
     await expect(svc.recordPayment(OWNER, USER_ID, INVOICE_ID, { amount: 100, paymentDate: "2024-01-15", paymentMethod: "bank_transfer" })).rejects.toThrow();
   });
 });

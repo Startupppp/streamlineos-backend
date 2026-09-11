@@ -16,6 +16,16 @@ import {
 } from "../../../common/tenant/tenant-context";
 
 /**
+ * Where a public signing request came from, for the audit rows each step
+ * writes. Lives beside the session seam every step already imports, rather than
+ * on the public-form service it used to sit in: that surface is retired.
+ */
+export interface PublicRequestContext {
+  ipAddress?: string;
+  userAgent?: string;
+}
+
+/**
  * Resolving a public recipient token into the recipient and envelope behind it,
  * lifted out of `sign-public.service.ts` unchanged. Every public route in that
  * service runs inside it, which is what made it 70 lines in the middle of a file

@@ -59,11 +59,21 @@ export class BillingService {
         ratedAmount: sql<string>`COALESCE(SUM(CASE WHEN ${timesheets.billRate} IS NOT NULL THEN ${timesheets.hours}::numeric * ${timesheets.billRate}::numeric ELSE 0 END), 0)::text`,
         entryCount: sql<number>`COUNT(*)::int`,
         unratedCount: sql<number>`COUNT(CASE WHEN ${timesheets.billRate} IS NULL THEN 1 END)::int`,
-        currency: sql<string | null>`MAX(${timesheets.currency})`,
+        currency: timesheets.currency,
       })
       .from(timesheets)
       .where(and(...conditions))
-      .groupBy(timesheets.projectId);
+      /**
+       * By currency as well as project. It used to group by project alone and
+       * label the row `MAX(currency)`, which meant a project billed in two
+       * currencies had its `hours * rate` summed across both and stamped with
+       * whichever code sorted highest — a silent cross-currency sum, the exact
+       * thing PRD §7.8 forbids and which the organisation-level total three
+       * screens down already refuses to do ("null when mixed so callers can
+       * never display a cross-currency sum as one number"). The care was there;
+       * it just stopped one level too high.
+       */
+      .groupBy(timesheets.projectId, timesheets.currency);
 
     const unratedEntries = await this.db
       .select({
@@ -88,22 +98,43 @@ export class BillingService {
       })),
     );
 
-    const extraAmountByProject = new Map<number, number>();
-    const resolvedUnratedByProject = new Map<number, number>();
+    /**
+     * An unrated entry has no `currency` of its own — the column is filled from
+     * the rate at creation — so it arrives in the `currency IS NULL` bucket for
+     * its project. Its resolved rate does carry a currency, and that is the one
+     * the money belongs under. So resolution moves the entry out of the null
+     * bucket into the bucket it actually belongs to, rather than adding foreign
+     * money to a project total labelled with something else.
+     */
+    const bucketKey = (projectId: number, currency: string) => `${projectId}\u0000${currency}`;
+    const resolvedExtra = new Map<
+      string,
+      { projectId: number; currency: string; amount: number; hours: number; entryCount: number }
+    >();
+    const resolvedFromNull = new Map<number, { hours: number; entryCount: number }>();
+
     unratedEntries.forEach((entry, i) => {
       const resolved = resolvedRates[i];
-      if (resolved && resolved.billRate !== null) {
-        const pid = entry.projectId ?? 0;
-        extraAmountByProject.set(
-          pid,
-          (extraAmountByProject.get(pid) ?? 0) +
-            parseFloat(entry.hours) * resolved.billRate,
-        );
-        resolvedUnratedByProject.set(
-          pid,
-          (resolvedUnratedByProject.get(pid) ?? 0) + 1,
-        );
-      }
+      if (!resolved || resolved.billRate === null) return;
+      const pid = entry.projectId ?? 0;
+      const hours = parseFloat(entry.hours);
+      const key = bucketKey(pid, resolved.currency);
+      const bucket = resolvedExtra.get(key) ?? {
+        projectId: pid,
+        currency: resolved.currency,
+        amount: 0,
+        hours: 0,
+        entryCount: 0,
+      };
+      bucket.amount += hours * resolved.billRate;
+      bucket.hours += hours;
+      bucket.entryCount += 1;
+      resolvedExtra.set(key, bucket);
+
+      const drained = resolvedFromNull.get(pid) ?? { hours: 0, entryCount: 0 };
+      drained.hours += hours;
+      drained.entryCount += 1;
+      resolvedFromNull.set(pid, drained);
     });
 
     const projectIds = aggRows
@@ -118,21 +149,95 @@ export class BillingService {
         : [];
     const projectMap = new Map(projectRows.map((p) => [p.id, p.name]));
 
-    const groups = aggRows.map((r) => {
-      const pid = r.projectId ?? 0;
-      const extraAmount = extraAmountByProject.get(pid) ?? 0;
-      const stillUnrated =
-        r.unratedCount - (resolvedUnratedByProject.get(pid) ?? 0);
-      return {
-        projectId: pid,
-        projectName: projectMap.get(pid) ?? "Unknown Project",
-        totalHours: round2(parseFloat(r.totalHours)),
-        billableAmount: round2(parseFloat(r.ratedAmount) + extraAmount),
-        currency: r.currency ?? "USD",
-        entryCount: r.entryCount,
-        missingRate: stillUnrated > 0,
+    const defaultCurrency = await this.rateResolver.getDefaultCurrency(u.orgId);
+
+    /**
+     * One row per (project, currency). A project billed in two currencies now
+     * appears twice, each row carrying its own money and its own label, which
+     * is the only truthful way to render it — the table already prints a
+     * currency per row.
+     */
+    const buckets = new Map<
+      string,
+      {
+        projectId: number;
+        currency: string;
+        hours: number;
+        amount: number;
+        entryCount: number;
+        missingRate: boolean;
+      }
+    >();
+
+    const bucketFor = (projectId: number, currency: string) => {
+      const key = bucketKey(projectId, currency);
+      const existing = buckets.get(key);
+      if (existing) return existing;
+      const created = {
+        projectId,
+        currency,
+        hours: 0,
+        amount: 0,
+        entryCount: 0,
+        missingRate: false,
       };
-    });
+      buckets.set(key, created);
+      return created;
+    };
+
+    for (const r of aggRows) {
+      const pid = r.projectId ?? 0;
+      const hours = parseFloat(r.totalHours);
+
+      if (r.currency !== null) {
+        const bucket = bucketFor(pid, r.currency);
+        bucket.hours += hours;
+        bucket.amount += parseFloat(r.ratedAmount);
+        bucket.entryCount += r.entryCount;
+        if (r.unratedCount > 0) bucket.missingRate = true;
+        continue;
+      }
+
+      /**
+       * The currency-less remainder: entries whose rate could not be resolved
+       * at all. Whatever resolution rescued has already been counted under its
+       * own currency, so only the leftover stays here, and it is labelled with
+       * the organisation default rather than a hardcoded "USD" — which is what
+       * this line used to say, on a platform whose default is frequently INR.
+       */
+      const drained = resolvedFromNull.get(pid) ?? { hours: 0, entryCount: 0 };
+      const leftoverHours = hours - drained.hours;
+      const leftoverCount = r.entryCount - drained.entryCount;
+      if (leftoverHours <= 0 && leftoverCount <= 0) continue;
+
+      const bucket = bucketFor(pid, defaultCurrency);
+      bucket.hours += leftoverHours;
+      bucket.entryCount += leftoverCount;
+      bucket.missingRate = true;
+    }
+
+    for (const extra of resolvedExtra.values()) {
+      const bucket = bucketFor(extra.projectId, extra.currency);
+      bucket.hours += extra.hours;
+      bucket.amount += extra.amount;
+      bucket.entryCount += extra.entryCount;
+    }
+
+    const groups = [...buckets.values()]
+      .map((b) => ({
+        projectId: b.projectId,
+        projectName: projectMap.get(b.projectId) ?? "Unknown Project",
+        totalHours: round2(b.hours),
+        billableAmount: round2(b.amount),
+        currency: b.currency,
+        entryCount: b.entryCount,
+        missingRate: b.missingRate,
+      }))
+      .sort((a, b) =>
+        a.projectId === b.projectId
+          ? a.currency.localeCompare(b.currency)
+          : a.projectId - b.projectId,
+      );
 
     const byCurrency = new Map<string, { amount: number; hours: number }>();
     let totalHours = 0;
@@ -149,8 +254,6 @@ export class BillingService {
         });
       }
     }
-
-    const defaultCurrency = await this.rateResolver.getDefaultCurrency(u.orgId);
 
     const currencyTotals = [...byCurrency.entries()].map(([currency, v]) => ({
       currency,

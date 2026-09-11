@@ -157,7 +157,7 @@ describe("DealsCrudService — cross-tenant isolation", () => {
     const findFirst = jest.fn().mockResolvedValue(undefined);
     const db = { query: { deals: { findFirst } } } as unknown as Db;
     const svc = buildSvc(db);
-    const result = await svc.getDeal(ATTACKER, 999);
+    const result = await svc.getDeal(ATTACKER, "user-1", 999, "all");
     expect(result).toBeUndefined();
     expect(findFirst).toHaveBeenCalled();
     expect(sqlValues(findFirst.mock.calls[0]?.[0]?.where)).toContain(ATTACKER);
@@ -168,7 +168,7 @@ describe("DealsCrudService — cross-tenant isolation", () => {
     const findFirst = jest.fn().mockResolvedValue(row);
     const db = { query: { deals: { findFirst } } } as unknown as Db;
     const svc = buildSvc(db);
-    const result = await svc.getDeal(OWNER, 1);
+    const result = await svc.getDeal(OWNER, "user-1", 1, "all");
     expect(result).toMatchObject({ id: 1 });
   });
 });

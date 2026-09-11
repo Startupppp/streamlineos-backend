@@ -13,13 +13,28 @@ function sqlValues(value: unknown, seen = new Set<object>()): unknown[] {
   ];
 }
 
+/** The learned-probability model, as theirs' analytics-scope spec doubles it. */
+const forecastModel = {
+  basisFor: (_orgId: string, readiness: unknown) =>
+    Promise.resolve({ kind: "naive-weighted", reason: "not-trained-yet", readiness }),
+  probabilitiesForOpenDeals: (_orgId: string) => Promise.resolve(new Map<number, number>()),
+} as never;
+
+
 describe("DealsForecastService — cross-tenant isolation", () => {
   const OWNER_ORG = "org-owner";
   const ATTACKER_ORG = "org-attacker";
 
-  function makeService(dealsRows: unknown[], snapshotRows: unknown[] = []) {
+  /**
+   * `buildForecast` makes two reads side by side: the open pipeline, which is
+   * the caller's, and the closed history per terminal stage, which feeds only
+   * `basis` and is deliberately the organisation's. Different scopes, one
+   * tenant -- so the org predicate is asserted on both, and the second read
+   * ends in `.groupBy()` because it counts per stage.
+   */
+  function makeService(dealsRows: unknown[], closedRows: unknown[] = []) {
     let capturedForecastWhere: unknown;
-    let capturedSnapshotWhere: unknown;
+    let capturedClosedWhere: unknown;
 
     const dealsLimit = jest.fn().mockResolvedValue(dealsRows);
     const dealsWhere = jest.fn().mockImplementation((pred: unknown) => {
@@ -28,16 +43,16 @@ describe("DealsForecastService — cross-tenant isolation", () => {
     });
     const dealsFrom = jest.fn().mockReturnValue({ where: dealsWhere });
 
-    const snapshotLimit = jest.fn().mockResolvedValue(snapshotRows);
-    const snapshotOrderBy = jest.fn().mockReturnValue({ limit: snapshotLimit });
-    const snapshotWhere = jest.fn().mockImplementation((pred: unknown) => {
-      capturedSnapshotWhere = pred;
-      return { orderBy: snapshotOrderBy };
+    const closedLimit = jest.fn().mockResolvedValue(closedRows);
+    const closedGroupBy = jest.fn().mockReturnValue({ limit: closedLimit });
+    const closedWhere = jest.fn().mockImplementation((pred: unknown) => {
+      capturedClosedWhere = pred;
+      return { groupBy: closedGroupBy };
     });
-    const snapshotFrom = jest.fn().mockReturnValue({ where: snapshotWhere });
+    const closedFrom = jest.fn().mockReturnValue({ where: closedWhere });
 
     const db = {
-      select: jest.fn().mockImplementationOnce(() => ({ from: dealsFrom })).mockImplementationOnce(() => ({ from: snapshotFrom })),
+      select: jest.fn().mockImplementationOnce(() => ({ from: dealsFrom })).mockImplementationOnce(() => ({ from: closedFrom })),
     } as unknown as Db;
 
     const cache = {
@@ -49,31 +64,34 @@ describe("DealsForecastService — cross-tenant isolation", () => {
       getAggregate: jest.fn().mockResolvedValue({ stages: [] }),
     };
 
-    const svc = new DealsForecastService(db, cache as never, crmMetadata as never);
+    const svc = new DealsForecastService(db, cache as never, crmMetadata as never, forecastModel);
     return {
       svc,
       getForecastWhere: () => capturedForecastWhere,
-      getSnapshotWhere: () => capturedSnapshotWhere,
+      getClosedWhere: () => capturedClosedWhere,
     };
   }
 
   it("DENY: getForecast queries only the requesting org's deals (cross-tenant isolation)", async () => {
-    const { svc, getForecastWhere } = makeService([]);
+    const { svc, getForecastWhere, getClosedWhere } = makeService([]);
 
-    const result = await svc.getForecast(ATTACKER_ORG);
+    const result = await svc.getForecast(ATTACKER_ORG, { scope: "all", userId: "user-1" });
 
     expect(result.totalDeals).toBe(0);
-    const vals = sqlValues(getForecastWhere());
-    expect(vals).toContain(ATTACKER_ORG);
-    expect(vals).not.toContain(OWNER_ORG);
+    for (const where of [getForecastWhere(), getClosedWhere()]) {
+      const vals = sqlValues(where);
+      expect(vals).toContain(ATTACKER_ORG);
+      expect(vals).not.toContain(OWNER_ORG);
+    }
   });
 
   it("CONTROL: getForecast scopes the query to the owner org", async () => {
-    const { svc, getForecastWhere } = makeService([]);
+    const { svc, getForecastWhere, getClosedWhere } = makeService([]);
 
-    await svc.getForecast(OWNER_ORG);
+    await svc.getForecast(OWNER_ORG, { scope: "all", userId: "user-1" });
 
     expect(sqlValues(getForecastWhere())).toContain(OWNER_ORG);
+    expect(sqlValues(getClosedWhere())).toContain(OWNER_ORG);
   });
 
   it("DENY: getForecastSnapshots queries only the requesting org's snapshots (cross-tenant isolation)", async () => {
@@ -88,7 +106,7 @@ describe("DealsForecastService — cross-tenant isolation", () => {
     const db = { select: jest.fn().mockReturnValue({ from }) } as unknown as Db;
     const cache = { cachedVersioned: jest.fn().mockImplementation((_ns: string, _key: string, fn: () => unknown) => fn()) };
     const crmMetadata = { getAggregate: jest.fn().mockResolvedValue({ stages: [] }) };
-    const svc = new DealsForecastService(db, cache as never, crmMetadata as never);
+    const svc = new DealsForecastService(db, cache as never, crmMetadata as never, forecastModel);
 
     const result = await svc.getForecastSnapshots(ATTACKER_ORG, { limit: 20 });
 

@@ -42,11 +42,31 @@ export const OWNER_ONLY_OPERATIONS = {
     reason:
       "Whoever may schedule destruction must be the only one who may call it off, or the two decisions can be split between people.",
   },
-  "finance.expense.grant-without-approval": {
-    summary: "Grant an expense that still has a pending approval",
-    reason:
-      "It overrides the approval control itself, so the person who may skip it must not be the person the control exists to check.",
-  },
+  /*
+   * REMOVED 2026-09-10: "finance.expense.grant-without-approval" — "Grant an
+   * expense that still has a pending approval", whose reason was that it
+   * overrides the approval control itself, so the person who may skip it must
+   * not be the person the control exists to check. That reasoning still holds
+   * and this entry must come back WITH the feature.
+   *
+   * It went because the capability does not exist. `modules/expenses` has an
+   * approval flow (`POST :expenseId/approve`, `hr:expenses:approve`, plus the
+   * two travel rungs) and NO path that grants around it — no handler, no
+   * service method, nothing matching grantWithoutApproval / withoutApproval /
+   * skipApproval anywhere in expenses, finance or accounting. It was catalogued
+   * in 0adf5824a alongside the five organization operations, which are all
+   * enforced in organization.controller.ts; this one never had a call site
+   * because there was never anything to call it from.
+   *
+   * Removed rather than exempted, and that is the whole decision.
+   * `UNENFORCED_EXEMPT` would silence `check:owner-authority` permanently, so
+   * whoever eventually builds the override would get no signal that it must be
+   * owner-gated — the exemption would outlive the reason for it. With the entry
+   * gone they have to add it back, and the gate then demands enforcement the
+   * moment they do. Same argument 0672 made for not shipping a
+   * `landed_cost_clearing` tag ahead of the module that writes it: an offer
+   * nothing can apply is worse than no offer.
+   */
   "organization.legal-hold": {
     summary: "Place or release an organization-wide legal hold",
     reason:

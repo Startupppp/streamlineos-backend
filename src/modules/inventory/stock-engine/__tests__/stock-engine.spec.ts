@@ -125,12 +125,20 @@ function defaultMovementCosting() {
 }
 
 /**
- * The engine now talks to PostingPeriodGuard, not PeriodsService directly — the
- * guard skips the check entirely when accounting_periods is absent, which is why
- * every command against this database used to die on 42P01.
+ * The period guard is the accounting kernel's: the org's default book, then the
+ * period covering the posting date. The inventory lane's version skipped the
+ * check when `accounting_periods` was absent (every command used to die on
+ * 42P01); the kernel's equivalent is "no default book", which `defaultBooks`
+ * answers below.
  */
 function defaultPeriods() {
-  return { assertOpen: jest.fn(async () => undefined) };
+  return { periodForDate: jest.fn(async () => null) };
+}
+
+// No default book means accounting is not enabled, so the period guard is a
+// no-op — which is what the engine's own maths tests want to isolate.
+function defaultBooks() {
+  return { findDefault: jest.fn(async () => null) };
 }
 
 function defaultWarehouseScope() {
@@ -180,6 +188,7 @@ function makeEngine(tx: MockTx, settings = defaultSettings()) {
     defaultValuation() as never,
     defaultWarehouseScope() as never,
     defaultPeriods() as never,
+    defaultBooks() as never,
     apply,
   );
 }

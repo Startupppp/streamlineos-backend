@@ -53,12 +53,17 @@ export const exportSchema = z.object({
   endDate: z.string().optional(),
 });
 
+/**
+ * `ledgerAccountId` is deliberately absent: the retired `ledger_accounts` table
+ * it addressed is gone, and the accounting kernel resolves accounts by system
+ * tag rather than by an id another module stores. Zod strips the key if a
+ * client still sends it, so an old caller is not rejected.
+ */
 export const createCategorySchema = z.object({
   name: z.string().min(1).max(100),
   description: z.string().optional(),
   budgetLimit: z.number().positive().optional(),
   budgetPeriod: z.enum(["MONTHLY", "YEARLY"]).optional().default("MONTHLY"),
-  ledgerAccountId: z.number().int().positive().optional(),
 });
 
 const AMOUNT = z

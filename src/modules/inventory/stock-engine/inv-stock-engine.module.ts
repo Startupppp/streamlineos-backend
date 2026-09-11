@@ -1,6 +1,6 @@
 import { Module } from "@nestjs/common";
-import { AccountingGlModule } from "../../accounting/gl/accounting-gl.module";
-import { AccountingPostingModule } from "../../accounting/posting/accounting-posting.module";
+import { AccountingKernelModule } from "../../accounting/kernel/accounting-kernel.module";
+import { AccountingAdaptersModule } from "../../accounting/adapters/accounting-adapters.module";
 import { StockEngineService } from "./stock-engine.service";
 import { StockEngineBatchService } from "./stock-engine-batch.service";
 import { ReservationService } from "./reservation.service";
@@ -19,8 +19,11 @@ import { MovementApplyService } from "./movement-apply.service";
 import { ChannelPoolService } from "./channel-pool.service";
 
 @Module({
-  imports: [AccountingGlModule, AccountingPostingModule],
-  providers: [StockProjectionService, 
+  // The kernel for the period guard (BooksService, PeriodsService); the adapters
+  // for PostingCommandService, which InventoryAccountingBridge posts through.
+  imports: [AccountingKernelModule, AccountingAdaptersModule],
+  providers: [
+    StockProjectionService,
     StockEngineService,
     StockEngineBatchService,
     ReservationService,

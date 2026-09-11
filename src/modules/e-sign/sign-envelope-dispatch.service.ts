@@ -67,11 +67,10 @@ export class SignEnvelopeDispatchService {
    * transaction.
    *
    * `this.db` is the tenant-aware proxy, so anything issued under an ambient
-   * tenant transaction stays inside it — and every route that reaches this
-   * service runs under `TenantContextInterceptor`. Mailing there holds that
-   * transaction's pooled connection for the length of a provider outage, which
-   * §4 forbids, and a throw partway through the loop rolls the token writes
-   * back underneath mail already sitting in inboxes.
+   * tenant transaction stays inside it — an SMTP outage would hold that
+   * transaction's pooled connection for its whole duration, which §4 forbids,
+   * and a throw partway through the loop rolled the token writes back
+   * underneath mail already sitting in inboxes.
    *
    * `registerAfterCommit` is the right one of §4's three mechanisms rather than
    * the outbox: the recipient rows carry only the token *hash*, so an outbox
@@ -188,19 +187,13 @@ export class SignEnvelopeDispatchService {
     });
 
     /*
-     * Bulk send is the reason this matters most here. `SignBulkSendService`
-     * carries no `@NoTenantTransaction` and opens no per-row boundary, so a
-     * whole job — every row — runs inside the one request transaction and used
-     * to mail from inside it. The hook array `TenantContextInterceptor`
-     * installs is therefore present for every one of those rows, and a job's
-     * invitations now leave after that transaction commits rather than while it
-     * is held open.
-     *
-     * That moves where a delivery failure shows up: a row is marked `success`
-     * once its envelope is sent, not once a provider accepted the mail, and a
-     * failed hook is logged and reported by the interceptor instead of landing
-     * in the row's `errorMessage`. The row status was never a delivery receipt
-     * anyway — it was written in the same transaction as the send it describes.
+     * Bulk send is why the fallback inside `deliverInvitations` matters here:
+     * it reaches this method one row at a time inside
+     * `runInNewTenantTransaction`, which builds a context with no hook array,
+     * so `registerAfterCommit` returns false and the email goes out inline —
+     * inside that row's transaction, as it does today — rather than being
+     * dropped. The single-envelope route runs under
+     * `TenantContextInterceptor` and does defer.
      */
     await this.deliverInvitations(
       sendPlans.flatMap((plan) =>
@@ -288,15 +281,15 @@ export class SignEnvelopeDispatchService {
     const count = invitations.length;
 
     /*
-     * The rotations above are database writes and stay in the transaction; the
-     * mail does not. Rotating already invalidated the link the recipient held,
-     * so a hook that never runs leaves them no worse off than the throw did,
-     * and a second resend mints another token.
+     * Same rule as `send`: the token rotations above are in the request
+     * transaction, the emails are not. Rotating a token already invalidates the
+     * link the recipient was holding, so a hook that never runs leaves them no
+     * worse off than the throw did — and a second resend mints another token.
      *
      * `resentCount` therefore counts recipients whose token was rotated and who
-     * have an address, not deliveries confirmed by a provider. It never
-     * reported deliveries anyway: a mid-loop throw rolled the whole request
-     * back, so no caller ever saw a partial count.
+     * have an address, not deliveries confirmed by the provider. It never
+     * reported deliveries anyway: a mid-loop SMTP throw rolled the whole
+     * request back, so no caller ever saw a partial count.
      */
     await this.deliverInvitations(invitations, senderNameStr, envelope);
 

@@ -13,7 +13,7 @@ import { createHash } from "node:crypto";
 import { Observable, of } from "rxjs";
 import { tap } from "rxjs/operators";
 import type { CurrentUserContext } from "../auth/backend-claims";
-import { IDEMPOTENCY_COMMAND } from "./idempotency.constants";
+import { IDEMPOTENCY_COMMAND, IDEMPOTENCY_OPTIONAL } from "./idempotency.constants";
 import { COMMAND_FENCE_STORE, type CommandFenceStore } from "./command-fence-store";
 
 /**
@@ -27,7 +27,12 @@ import { COMMAND_FENCE_STORE, type CommandFenceStore } from "./command-fence-sto
  * tests: InMemoryCommandFenceStore). The interceptor owns all policy: header validation,
  * request hashing, and the four ClaimResult branches. A store failure propagates as-is —
  * the fence is fail-closed because these are sensitive commands where a double-execution
- * is worse than a client retry.
+ * is worse than a client retry. The store writes every fence row in the org's tenant
+ * transaction (the request's own, or a fresh one on a `@NoTenantTransaction()` route).
+ *
+ * The request hash covers the command name, the route params and the body — see
+ * {@link IdempotencyInterceptor.hashRequest}. `@Idempotent(name, { required: false })`
+ * lets a keyless request through unfenced instead of answering 400.
  */
 @Injectable()
 export class IdempotencyInterceptor implements NestInterceptor {
@@ -48,6 +53,7 @@ export class IdempotencyInterceptor implements NestInterceptor {
 
     const req = context.switchToHttp().getRequest<{
       headers: Record<string, unknown>;
+      params?: Record<string, unknown>;
       body?: unknown;
       user?: CurrentUserContext;
     }>();
@@ -55,6 +61,22 @@ export class IdempotencyInterceptor implements NestInterceptor {
     const rawKey = req.headers["idempotency-key"];
     const idempotencyKey = typeof rawKey === "string" ? rawKey.trim() : "";
     if (!idempotencyKey) {
+      /**
+       * An optional fence lets the request through rather than answering 400.
+       *
+       * The 400 is the right answer for a command that must not execute twice,
+       * but it reads at the call site like a body validation failure, so
+       * turning it on for a high-frequency existing endpoint breaks every
+       * caller that never sent the header in a way that is hard to diagnose.
+       * `@Idempotent(name, { required: false })` is how an endpoint offers
+       * replay safety to callers who want it without demanding it of callers
+       * who do not.
+       */
+      const optional = this.reflector.getAllAndOverride<boolean | undefined>(
+        IDEMPOTENCY_OPTIONAL,
+        [context.getHandler(), context.getClass()],
+      );
+      if (optional) return next.handle();
       throw new BadRequestException(
         "An Idempotency-Key header is required for this operation",
       );
@@ -70,9 +92,7 @@ export class IdempotencyInterceptor implements NestInterceptor {
     if (!user?.orgId || !user.userId) return next.handle();
 
     const audience = user.sessionId?.startsWith("pat:") ? "pat" : "internal";
-    const requestHash = createHash("sha256")
-      .update(JSON.stringify({ commandName, body: req.body ?? null }))
-      .digest("hex");
+    const requestHash = this.hashRequest(commandName, req.params, req.body);
 
     const claim = await this.store.claim({
       orgId: user.orgId,
@@ -108,12 +128,57 @@ export class IdempotencyInterceptor implements NestInterceptor {
           const res = context
             .switchToHttp()
             .getResponse<{ statusCode?: number }>();
-          void this.store.complete(fenceId, res?.statusCode ?? 200, data);
+          void this.store.complete(user.orgId, fenceId, res?.statusCode ?? 200, data);
         },
         error: () => {
-          void this.store.fail(fenceId);
+          void this.store.fail(user.orgId, fenceId);
         },
       }),
     );
+  }
+
+  /**
+   * The identity of a command: its name, the resource it addresses, and its body.
+   *
+   * The route params are in here because without them the hash cannot tell two
+   * resources apart. `POST /timesheets/timer/:timerId/stop` carries no body, so
+   * under `{ commandName, body }` alone every stop of every timer hashed
+   * identically — a caller that reuses one key stops timer 11, then calls stop
+   * on timer 22 and is replayed the first response. Timer 22 keeps running and
+   * the caller is told it stopped. Sixty-nine fenced routes across the platform
+   * are param-carrying with no body and shared exactly that defect; posting two
+   * different AR invoices under one key had the same shape.
+   *
+   * Params can only ever narrow the hash, never widen it: a retry is the same
+   * request to the same URL, so its params are identical to the original's by
+   * construction. Nothing here relies on them being excluded — no two fenced
+   * routes share a command name across differing param shapes, so no
+   * cross-route dedupe is disturbed.
+   *
+   * Two details are load-bearing:
+   *
+   *   - **Keys are sorted.** `JSON.stringify` follows insertion order, and
+   *     Express builds `req.params` in the order the segments appear in the
+   *     path. Sorting means the hash depends on the params themselves rather
+   *     than on how the route happens to be spelled.
+   *   - **An empty params object is omitted entirely**, so a route with no
+   *     params hashes byte-identically to what it hashed before params were
+   *     considered at all. That is what keeps this change from invalidating
+   *     the live fences of the 83 param-free routes — see the spec, which
+   *     pins the format so the property cannot regress silently.
+   */
+  private hashRequest(
+    commandName: string,
+    params: Record<string, unknown> | undefined,
+    body: unknown,
+  ): string {
+    const source = params ?? {};
+    const keys = Object.keys(source).sort();
+    const canonical: Record<string, unknown> = { commandName };
+    if (keys.length > 0) {
+      canonical.params = Object.fromEntries(keys.map((k) => [k, String(source[k])]));
+    }
+    canonical.body = body ?? null;
+    return createHash("sha256").update(JSON.stringify(canonical)).digest("hex");
   }
 }

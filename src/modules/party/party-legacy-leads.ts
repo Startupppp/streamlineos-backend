@@ -1,6 +1,5 @@
 import { and, eq, inArray, isNull } from "drizzle-orm";
 import { businessParties, leadPartyMap } from "../../db/schema/party";
-import { leads } from "../../db/schema/crm/leads";
 import { LEAD_MIRROR } from "./party-legacy-mirror";
 import type { PartyRow } from "./party-mirror-fields";
 import {
@@ -53,29 +52,6 @@ async function partyIdsForLeads(
  * truth exactly once, which is correct precisely because there is no Party to
  * contradict it. `linked_by` records which rows came in this way.
  */
-async function adoptLead(
-  db: MirrorDb,
-  organizationId: string,
-  leadId: number,
-): Promise<string | null> {
-  const [row] = await db
-    .select()
-    .from(leads)
-    .where(and(eq(leads.id, leadId), eq(leads.orgId, organizationId)))
-    .limit(1);
-  if (!row) return null;
-
-  const party = await insertBareParty(db, organizationId, row.name);
-  const { partyPatch } = LEAD_MIRROR.split(row, party);
-  await applyPartyPatch(db, organizationId, party.partyId, partyPatch);
-  await db
-    .insert(leadPartyMap)
-    .values({ organizationId, leadId, partyId: party.partyId, linkedBy: "mirror:adopt" })
-    .onConflictDoNothing();
-  await grantRole(db, organizationId, party.partyId, "LEAD", "mirror:adopt");
-  return party.partyId;
-}
-
 /**
  * A lead row, assembled from the Party it mirrors.
  *
@@ -178,12 +154,17 @@ export async function updateMirroredLeads(
   if (ids.length === 0) return [];
 
   return db.transaction(async (tx) => {
+    /*
+     * An id with no map row is an id that names nothing.
+     *
+     * There used to be an adoption pass here, for a legacy row that existed
+     * without a party -- the state the dual-write window could produce. Ticket
+     * 08 removed the table it read, and with it the state: the map row IS the
+     * record now, so no party for an id means the record does not exist, and
+     * the caller gets one fewer row back exactly as it always did for an id
+     * that was never real.
+     */
     const partyByLead = await partyIdsForLeads(tx, organizationId, ids);
-    for (const leadId of ids) {
-      if (partyByLead.has(leadId)) continue;
-      const adopted = await adoptLead(tx, organizationId, leadId);
-      if (adopted) partyByLead.set(leadId, adopted);
-    }
 
     const moved = await movePartiesFor(
       tx,
@@ -193,26 +174,20 @@ export async function updateMirroredLeads(
     );
 
     /**
-     * What the caller is handed is assembled from what the party *became*, the
-     * same way `createMirroredLead` assembles it — see `legacyLeadRow`.
+     * Assembled from the parties, not read back from an UPDATE. Ticket 08.
      *
-     * The `UPDATE leads` that used to produce these rows is gone, and with it
-     * the `groupByPayload` that kept a bulk write to a handful of statements:
-     * there is no second table left to write, so there is nothing to group. The
-     * party updates are still grouped, inside `movePartiesFor`. This is the
-     * shape `updateMirroredClients` and `updateMirroredContacts` already had —
-     * leads was the one kind ticket 08 converted on create and not on update,
-     * and the gap was invisible because it is not a crash. `.returning()` over a
-     * table the mirror no longer writes matches nothing, so every lead created
-     * through the mirror updated its party correctly and then reported no rows,
-     * which every caller reads as "not found".
+     * The payload this used to write was `derive(party)` plus the pass-through
+     * half — exactly what `legacyLeadRow` assembles — so the values are the same
+     * ones, and the UPDATE was only ever a way of storing a second copy of them.
+     *
+     * `groupByPayload` goes with it. It existed to collapse rows sharing a
+     * payload into one UPDATE, and there is no UPDATE to collapse; the party
+     * writes are still grouped, inside `movePartiesFor`.
      */
     const updated: LeadRow[] = [];
     for (const [leadId, partyId] of partyByLead) {
       const party = moved.get(partyId);
       if (!party) continue;
-      // The pass-through half does not depend on the party, so it is the same
-      // for every row; the derivation is not, and is computed per party.
       const { legacyOwnedPatch } = LEAD_MIRROR.split(patch, party);
       updated.push(legacyLeadRow(leadId, organizationId, party, legacyOwnedPatch));
     }
@@ -238,10 +213,7 @@ export async function updateMirroredLead(
  * Liveness is read from the Party, because that is where `deleted_at` now lives.
  * This asked `leads` directly, which for a lead created through the mirror is a
  * table with no row in it — so the probe returned nothing, the delete became a
- * silent no-op, and the caller got an empty array rather than an error. A lead
- * that arrived out of band still has no map row, and for those the legacy table
- * is the only account of whether it is live; `updateMirroredLeads` adopts them
- * on the way through, so they are included rather than skipped.
+ * silent no-op, and the caller got an empty array rather than an error.
  */
 export async function softDeleteMirroredLeads(
   db: MirrorDb,
@@ -250,29 +222,19 @@ export async function softDeleteMirroredLeads(
 ): Promise<LeadRow[]> {
   const ids = [...new Set(leadIds)].filter((id) => Number.isInteger(id));
   if (ids.length === 0) return [];
-  return updateMirroredLeads(
-    db,
-    organizationId,
-    await liveLegacyIds(db, organizationId, ids),
-    { deletedAt: new Date() },
-  );
-}
-
-/**
- * The ids among `ids` that are not already deleted, asked of whichever side of
- * the mirror actually holds the record.
- *
- * Mapped ids answer from `business_parties`; unmapped ones — a restore, an
- * out-of-band import, a module not yet converted — answer from `leads`, which is
- * the same row `adoptLead` will read as truth on the way through.
- */
-async function liveLegacyIds(
-  db: MirrorDb,
-  organizationId: string,
-  ids: readonly number[],
-): Promise<number[]> {
-  const mapped = await db
-    .select({ leadId: leadPartyMap.leadId, deletedAt: businessParties.deletedAt })
+  /**
+   * Liveness comes from the party. Ticket 08.
+   *
+   * This used to ask `leads.deleted_at`, which was a mirror of
+   * `business_parties.deleted_at` — the party has always been the one that
+   * decides. Asking it directly removes the last read of the table and changes
+   * no answer: the map is what says which party a lead id means.
+   *
+   * The filter is still here rather than dropped. Its purpose is unchanged: a
+   * lead already deleted must not have its timestamp moved by a second delete.
+   */
+  const live = await db
+    .select({ id: leadPartyMap.leadId })
     .from(leadPartyMap)
     .innerJoin(
       businessParties,
@@ -284,22 +246,14 @@ async function liveLegacyIds(
     .where(
       and(
         eq(leadPartyMap.organizationId, organizationId),
-        inArray(leadPartyMap.leadId, [...ids]),
+        inArray(leadPartyMap.leadId, ids),
+        isNull(businessParties.deletedAt),
       ),
     );
-
-  // Live is "carries no deletion timestamp", not "is exactly null" — the column
-  // is nullable and a projection that omits it must not read as deleted.
-  const live = mapped.filter((row) => !row.deletedAt).map((row) => row.leadId);
-  const seen = new Set(mapped.map((row) => row.leadId));
-  const unmapped = ids.filter((id) => !seen.has(id));
-  if (unmapped.length === 0) return live;
-
-  const orphans = await db
-    .select({ id: leads.id })
-    .from(leads)
-    .where(
-      and(eq(leads.orgId, organizationId), inArray(leads.id, unmapped), isNull(leads.deletedAt)),
-    );
-  return [...live, ...orphans.map((row) => row.id)];
+  return updateMirroredLeads(
+    db,
+    organizationId,
+    live.map((row) => row.id),
+    { deletedAt: new Date() },
+  );
 }

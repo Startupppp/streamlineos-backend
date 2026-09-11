@@ -7,7 +7,15 @@ describe("PaymentProviderResolver", () => {
     const adapter = new FakeProviderAdapter();
     const registry = new PaymentProviderAdapterRegistry();
     registry.register(adapter);
-    const db = {
+    const db: Record<string, unknown> = {
+    /*
+      `transaction` and `execute`, because the reads open the organisation's own
+      transaction now — the tables they touch are under row-level security, and a
+      bare read matches nothing. The double runs the body against itself, so what
+      each case observes is unchanged.
+    */
+      transaction: (body: (handle: unknown) => Promise<unknown>) => body(db),
+      execute: () => Promise.resolve([]),
       query: {
         paymentProviders: {
           findFirst: jest.fn().mockImplementation(async ({ where }: { where: unknown }) =>
@@ -44,7 +52,15 @@ describe("PaymentProviderResolver", () => {
   it("does not resolve a provider belonging to another organization", async () => {
     const registry = new PaymentProviderAdapterRegistry();
     registry.register(new FakeProviderAdapter());
-    const db = {
+    const db: Record<string, unknown> = {
+    /*
+      `transaction` and `execute`, because the reads open the organisation's own
+      transaction now — the tables they touch are under row-level security, and a
+      bare read matches nothing. The double runs the body against itself, so what
+      each case observes is unchanged.
+    */
+      transaction: (body: (handle: unknown) => Promise<unknown>) => body(db),
+      execute: () => Promise.resolve([]),
       query: {
         paymentProviders: { findFirst: jest.fn().mockResolvedValue(undefined) },
       },
@@ -70,7 +86,13 @@ describe("PaymentProviderResolver", () => {
       environment: "test",
       status: "test_mode_ready",
     });
-    const db = { query: { paymentProviders: { findMany, findFirst } } };
+    // Same as the doubles above: the reads run in the organisation's own
+    // transaction, so the double has to be able to open one.
+    const db: Record<string, unknown> = {
+      transaction: (body: (handle: unknown) => Promise<unknown>) => body(db),
+      execute: () => Promise.resolve([]),
+      query: { paymentProviders: { findMany, findFirst } },
+    };
     const setup = {
       getDecryptedSecret: jest.fn().mockResolvedValue({
         keyId: "stripe_public",

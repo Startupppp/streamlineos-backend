@@ -129,14 +129,26 @@ describe("authorize", () => {
    * two pin that, and the owner case is pinned below so the wrong assertion is
    * not reintroduced as a bug report.
    */
-  it("allows an org owner an unknown key, because owner bypass is the design", async () => {
+  /**
+   * The org owner is denied here too, and that is the point of the catalogue.
+   *
+   * Owner bypass is still the design for every key that means something: an
+   * owner's `scopeFor` returns "all" and nothing above overrides it. But a key
+   * in no catalogue is not a permission an owner holds, it is a permission that
+   * does not exist — a typo in a `@RequirePermission`, most likely — and
+   * allowing it is the one case where the bypass turns a mistake into an open
+   * door. The catalogue check runs before the bypass for exactly that reason,
+   * and `gated-keys-are-catalogued.spec.ts` guarantees every real key is in it,
+   * so nothing legitimate is caught by this.
+   */
+  it("denies an org owner a key that appears in no catalogue", async () => {
     const resolver = makeResolver(new Map(), ["hr"]);
     const result = await authorize(
       resolver,
       makeCtx({ isOrgOwner: true }),
       "nonexistent:ghost:action",
     );
-    expect(result).toEqual({ allow: true, scope: "all" });
+    expect(result).toEqual({ allow: false, scope: "none", reason: "FORBIDDEN" });
   });
 
   it("still denies an org owner a key their token scopes exclude", async () => {

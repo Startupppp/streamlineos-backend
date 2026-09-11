@@ -27,10 +27,24 @@ export const REQUIRED_CONSTRAINTS = [
   "fk_user_permission_grants_permission_module",
 ];
 
+/**
+ * A REJECT verdict means POSTGRES refused the write. It does not mean "something
+ * threw".
+ *
+ * This used to score any error as a rejection, so when the fixture could not be
+ * built and `role.id` threw a TypeError — no SQLSTATE, `error.code` undefined —
+ * the cross-tenant probe "passed" without a statement ever reaching the server.
+ * A negative probe that cannot tell a constraint from a crash is not a probe.
+ * `BROKEN` is neither ACCEPT nor REJECT and never equals an expectation, so it
+ * always fails and says why.
+ */
 export function classify(expected, rejectedCode) {
-  const got = rejectedCode === null ? "ACCEPT" : "REJECT";
-  return { got, pass: got === expected };
+  if (rejectedCode === null) return { got: "ACCEPT", pass: expected === "ACCEPT" };
+  if (rejectedCode === HARNESS_ERROR) return { got: "BROKEN", pass: false };
+  return { got: "REJECT", pass: expected === "REJECT" };
 }
+
+export const HARNESS_ERROR = "HARNESS_ERROR";
 
 function selfTest() {
   const checks = {
@@ -43,6 +57,11 @@ function selfTest() {
     acceptCountedAsAccept: classify("ACCEPT", null).pass === true,
     acceptWhenRejectExpectedFails: classify("REJECT", null).pass === false,
     rejectWhenAcceptExpectedFails: classify("ACCEPT", "23503").pass === false,
+    // the vacuity this file shipped with: a harness crash must never read as a
+    // database rejection, whichever verdict was expected
+    harnessErrorNeverPassesAsReject: classify("REJECT", HARNESS_ERROR).pass === false,
+    harnessErrorNeverPassesAsAccept: classify("ACCEPT", HARNESS_ERROR).pass === false,
+    harnessErrorIsItsOwnVerdict: classify("REJECT", HARNESS_ERROR).got === "BROKEN",
     everyConstraintNamed: REQUIRED_CONSTRAINTS.length === 9,
   };
   const failed = Object.entries(checks).filter(([, ok]) => !ok);
@@ -59,7 +78,14 @@ async function probe(sql, label, expected, run) {
       throw new Error("__ROLLBACK__");
     });
   } catch (error) {
-    if (error.message !== "__ROLLBACK__") rejectedCode = error.code ?? "ERROR";
+    // A Postgres rejection carries a five-character SQLSTATE. Anything without
+    // one came from this script, not from the database.
+    if (error.message !== "__ROLLBACK__") {
+      rejectedCode = /^[0-9A-Z]{5}$/.test(String(error.code ?? "")) ? error.code : HARNESS_ERROR;
+      if (rejectedCode === HARNESS_ERROR) {
+        console.log(`  BROKEN PROBE  ${label} — ${error.message}`);
+      }
+    }
   }
   const { got, pass } = classify(expected, rejectedCode);
   return { label, expected, got, pass, code: rejectedCode };
@@ -105,7 +131,34 @@ async function main() {
     if (orgs.length < 2) {
       console.log("SKIP — fewer than two organizations have BOTH a membership and a role; the role_assignments probes cannot run without one.");
     } else {
-      const [a, b] = orgs;
+      /**
+       * `a` must be an org that HAS a role, not merely the first org by id.
+       *
+       * The old selection took the two lowest org_ids and asked for a role in
+       * the first. On the shared branch that org has none — only 15 of 33 orgs
+       * with memberships have any roles at all — so `role` came back undefined
+       * and every role_assignments probe died on `role.id`. The two ACCEPT
+       * controls failed loudly, which is the only reason this was visible; the
+       * REJECT probe scored the TypeError as a rejection and passed.
+       *
+       * So pick `a` from orgs that can actually satisfy the fixture, and `b`
+       * from any OTHER org — b is only ever used as a foreign membership id.
+       */
+      const [a] = await sql`
+        SELECT DISTINCT ON (m.org_id) m.org_id, m.id
+        FROM organization_members m
+        WHERE EXISTS (SELECT 1 FROM roles r WHERE r.org_id = m.org_id)
+        ORDER BY m.org_id, m.id
+        LIMIT 1`;
+      const b = orgs.find((o) => a && o.org_id !== a.org_id)
+        ?? (await sql`
+          SELECT DISTINCT ON (org_id) org_id, id FROM organization_members
+          WHERE org_id <> ${a?.org_id ?? null} ORDER BY org_id, id LIMIT 1`)[0];
+      if (!a || !b) {
+        console.log("SKIP — need one organization holding a role plus a second organization; this database has no such pair.");
+        console.log(`FAIL — ${failures} problem(s).`);
+        process.exit(failures > 0 ? 1 : 2);
+      }
       const [role] = await sql`SELECT id FROM roles WHERE org_id = ${a.org_id} LIMIT 1`;
       if (!role) {
         console.error("ABORT — selected organization has no role despite the EXISTS filter; refusing to run probes that would pass on a crash.");

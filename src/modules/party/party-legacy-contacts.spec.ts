@@ -53,6 +53,7 @@ const PARTY: PartyRow = {
   website: "https://engines.test",
   email: null,
   phone: null,
+  timezone: null,
   status: "active",
   customFields: null,
   notes: null,
@@ -190,7 +191,7 @@ function world(overrides: Partial<Record<string, unknown[]>> = {}): Answer {
   return (statement, table) => {
     if (table === "business_parties") return overrides.parties ?? [PARTY];
     if (table === "contact_party_map" && statement.kind === "select")
-      return overrides.contactMap ?? [{ contactId: 42, partyId: "party-1" }];
+      return overrides.contactMap ?? [{ contactId: 42, partyId: "party-1", id: 42 }];
     /**
      * The map mints the identifier now.
      *
@@ -202,7 +203,6 @@ function world(overrides: Partial<Record<string, unknown[]>> = {}): Answer {
     if (table === "contact_party_map") return overrides.contactMapInsert ?? [{ id: 42 }];
     if (table === "crm_org_party_map") return overrides.crmOrgMap ?? [];
     if (table === "lead_party_map") return overrides.leadMap ?? [];
-    if (table === "contacts") return overrides.contacts ?? [{ id: 42 }];
     return [];
   };
 }
@@ -369,12 +369,15 @@ describe("party-legacy-contacts — the party is the record, the map is the name
   });
 
   it("checks a contact is live before deleting it, so a delete does not move the timestamp", async () => {
-    const fake = new FakeDb(world({ contacts: [] }));
+    // Liveness is the party's `deleted_at` now, read through the map — ticket 08
+    // removed the last read of `contacts`. The property is unchanged: a contact
+    // already deleted must not have its timestamp moved by a second delete.
+    const fake = new FakeDb(world({ contactMap: [] }));
 
     await softDeleteMirroredContacts(fake.db, "org-1", [42]);
 
-    // No live contact came back, so nothing was written at all.
-    expect(fake.trace()).toEqual(["select:contacts@0"]);
+    // Nothing live came back, so nothing was written at all.
+    expect(fake.trace()).toEqual(["select:contact_party_map@0"]);
   });
 
   it("soft-deletes the party and leaves the map row standing", async () => {
@@ -383,7 +386,9 @@ describe("party-legacy-contacts — the party is the record, the map is the name
     await softDeleteMirroredContacts(fake.db, "org-1", [42]);
 
     expect(fake.trace()).toEqual([
-      "select:contacts@0",
+      // Depth 0: the liveness check, exactly where the read of `contacts` used
+      // to sit — the map joined to the party that decides.
+      "select:contact_party_map@0",
       "select:contact_party_map@1",
       "select:business_parties@1",
       "update:business_parties@1",

@@ -13,6 +13,7 @@ import { isLegacyResolved, resolveLegacyParty } from "../../party/party-legacy-s
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { CacheService } from "../../../common/cache/cache.service";
+import { PlanLimitsService } from "../../billing/core/plan-limits.service";
 import { CACHE_KEYS, CACHE_TTL } from "../../../common/cache/cache-keys";
 import {
   findPotentialDuplicates,
@@ -68,6 +69,7 @@ export class CrmOrganizationsService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly cache: CacheService,
+    private readonly planLimits: PlanLimitsService,
   ) {}
 
   private get listingDeps(): CrmOrgListingDeps {
@@ -112,6 +114,19 @@ export class CrmOrganizationsService {
   }
 
   async create(orgId: string, input: OrganizationCreateInput) {
+    /**
+     * Ticket 07's human path, at the Companies screen's own door.
+     *
+     * A company made here is the record `PartyService.createParty` makes --
+     * since ticket 25 this list IS the party list filtered to ORGANISATION --
+     * and that route asks `crmContacts` before it inserts. Without the same
+     * question here, a plan limit bound one door to the record and not the
+     * other. The same key rather than one of its own because it is what the
+     * sibling route already charges; which population it counts is the
+     * divergence ticket 07 recorded and left as a pricing decision.
+     */
+    await this.planLimits.assertWithinLimit(orgId, "crmContacts");
+
     const possibleDuplicates = await findPotentialDuplicates(this.listingDeps, orgId, {
       name: input.name,
       domain: input.domain ?? null,

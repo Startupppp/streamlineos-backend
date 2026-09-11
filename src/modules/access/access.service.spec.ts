@@ -9,7 +9,8 @@ import {
 } from "./access.service";
 import type { DataScope } from "./access.types";
 import type { Db } from "../../db/drizzle.module";
-import type { CacheService } from "../../common/cache/cache.service";
+/* A value import, not `import type`: the assertion below reads the real prototype. */
+import { CacheService } from "../../common/cache/cache.service";
 import type { EntitlementsService } from "./entitlements.service";
 import { bumpPermissionsVersion, type DbOrTx } from "../../common/rbac/access-invalidate";
 import {
@@ -388,6 +389,20 @@ describe("AccessService.resolveUserPermissions — version bump invalidates loca
 
     expect(svc["membershipAccessCache"].has("org-bump:user-bump")).toBe(false);
     expect(cache.invalidateNamespace).not.toHaveBeenCalled();
+    /*
+     * The rule is that a version bump invalidates by exact key and never by
+     * wildcard scan (backend §6). This used to be written as
+     * `expect(cache.invalidatePattern).not.toHaveBeenCalled()` against a double
+     * that stubbed `invalidatePattern` — a method `CacheService` does not have
+     * and no production code calls. It could not fail, in either direction.
+     *
+     * Asserting the method is absent from the real class is the same rule stated
+     * so that it CAN fail: re-adding a wildcard invalidator breaks this line,
+     * which is the moment somebody should be made to argue for it.
+     */
+    expect(Object.getOwnPropertyNames(CacheService.prototype)).not.toContain(
+      "invalidatePattern",
+    );
     expect(cache.invalidate).toHaveBeenCalledWith("org-bump:rbac:members");
     expect(cache.invalidate).toHaveBeenCalledWith(
       "org-bump:module-access:candidates",
@@ -401,6 +416,12 @@ describe("AccessService.resolveUserPermissions — version bump invalidates loca
     currentVersion = 3;
     await bumpPermissionsVersion(db as unknown as DbOrTx, "org-bump");
     expect(cache.invalidateNamespace).not.toHaveBeenCalled();
+    /*
+     * The second bump still has to invalidate by exact key — that is what the
+     * inert `not.toHaveBeenCalled()` here was standing in for, and asserting the
+     * positive is what actually holds the behaviour down.
+     */
+    expect(cache.invalidate).toHaveBeenCalledWith("org-bump:rbac:members");
 
     svc.onModuleDestroy();
   });

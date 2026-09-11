@@ -98,6 +98,10 @@ describe("OwnershipService — access / business-rule logic", () => {
   const ACTOR_USER = "u-actor";
   const TARGET_USER = "u-target";
 
+  /**
+   * `cancelTransfer` takes the whole `CurrentUserContext`, not a bare `isOrgOwner`
+   * boolean; every case builds one here so the file typechecks under `tsc`.
+   */
   function makeActor(isOrgOwner: boolean): CurrentUserContext {
     return {
       orgId: ORG,

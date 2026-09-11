@@ -169,7 +169,23 @@ describe("AdmissionGuard + AdmissionInterceptor — in-flight counter lifecycle"
       user: { orgId: "org-lifecycle" },
       _admissionOrgId: undefined,
     };
-    const res = { set: jest.fn() };
+    /*
+      `on` and `end`, because the guard releases the slot when the response ends.
+
+      It used to rely on the interceptor's `finalize`, which never runs for a
+      request a later guard rejects — so every 402 leaked a slot. `end()` here is
+      what a real response ending does: it fires the listeners the guard attached.
+    */
+    const listeners: (() => void)[] = [];
+    const res = {
+      set: jest.fn(),
+      on: jest.fn((event: string, fn: () => void) => {
+        if (event === "finish" || event === "close") listeners.push(fn);
+      }),
+      end: () => {
+        for (const fn of [...listeners]) fn();
+      },
+    };
     const ctx = {
       getType: () => "http",
       getHandler: () => ({}),
@@ -195,7 +211,16 @@ describe("AdmissionGuard + AdmissionInterceptor — in-flight counter lifecycle"
       user: { orgId: "org-throw" },
       _admissionOrgId: undefined,
     };
-    const res = { set: jest.fn() };
+    const listeners: (() => void)[] = [];
+    const res = {
+      set: jest.fn(),
+      on: jest.fn((event: string, fn: () => void) => {
+        if (event === "finish" || event === "close") listeners.push(fn);
+      }),
+      end: () => {
+        for (const fn of [...listeners]) fn();
+      },
+    };
     const ctx = {
       getType: () => "http",
       getHandler: () => ({}),
@@ -221,7 +246,16 @@ describe("AdmissionGuard + AdmissionInterceptor — in-flight counter lifecycle"
       user: { orgId: "org-refused" },
       _admissionOrgId: undefined,
     };
-    const res = { set: jest.fn() };
+    const listeners: (() => void)[] = [];
+    const res = {
+      set: jest.fn(),
+      on: jest.fn((event: string, fn: () => void) => {
+        if (event === "finish" || event === "close") listeners.push(fn);
+      }),
+      end: () => {
+        for (const fn of [...listeners]) fn();
+      },
+    };
     const ctx = {
       getType: () => "http",
       getHandler: () => ({}),
@@ -242,7 +276,16 @@ describe("AdmissionGuard + AdmissionInterceptor — in-flight counter lifecycle"
       user: { orgId: "org-check" },
       _admissionOrgId: undefined,
     };
-    const res = { set: jest.fn() };
+    const listeners: (() => void)[] = [];
+    const res = {
+      set: jest.fn(),
+      on: jest.fn((event: string, fn: () => void) => {
+        if (event === "finish" || event === "close") listeners.push(fn);
+      }),
+      end: () => {
+        for (const fn of [...listeners]) fn();
+      },
+    };
     const ctx = {
       getType: () => "http",
       getHandler: () => ({}),
@@ -257,7 +300,16 @@ describe("AdmissionGuard + AdmissionInterceptor — in-flight counter lifecycle"
     const svc = new AdmissionService(BASE_CONFIG);
     const guard = new AdmissionGuard(makeReflector("ordinary-write"), svc);
     const req: Record<string, unknown> = { user: undefined, _admissionOrgId: undefined };
-    const res = { set: jest.fn() };
+    const listeners: (() => void)[] = [];
+    const res = {
+      set: jest.fn(),
+      on: jest.fn((event: string, fn: () => void) => {
+        if (event === "finish" || event === "close") listeners.push(fn);
+      }),
+      end: () => {
+        for (const fn of [...listeners]) fn();
+      },
+    };
     const ctx = {
       getType: () => "http",
       getHandler: () => ({}),

@@ -123,10 +123,25 @@ describe("SignOS signing flow integration (e2e)", () => {
     watermarkSvc = app.get(SignWatermarkService);
 
     await cleanup();
+
+    /**
+     * Seeded through the helper rather than by hand.
+     *
+     * `organizations.owner_membership_id` is NOT NULL with a composite key to
+     * `organization_members`, so an org needs a membership that needs the org.
+     * The constraint is `DEFERRABLE INITIALLY DEFERRED` for that reason — but
+     * only inside a transaction. `seedOrg` is the transaction that makes the
+     * cycle legal, and it sets the tenant context the membership insert needs.
+     */
     await seedOrg(db, ORG_ID, `${P}slug`);
     await seedOrg(db, ORG_B_ID, `${P}slug-b`);
     await db.insert(users).values({ id: USER_ID, email: `${P}sender@example.com`, name: "Sender" }).onConflictDoNothing();
     await db.insert(users).values({ id: USER_B_ID, email: `${P}sender-b@example.com`, name: "Sender B" }).onConflictDoNothing();
+    /**
+     * A paid plan, because the Free one allows three envelopes and this suite
+     * creates one per case in ORG_ID — from the fourth onwards
+     * `assertWithinLimit` would refuse with QUOTA_EXCEEDED. ORG_B creates one.
+     */
     await runInTenantTransaction(db, async () => {
       await db.insert(subscriptions).values({ orgId: ORG_ID, plan: "ENTERPRISE", status: "ACTIVE" }).onConflictDoNothing();
     }, { orgId: ORG_ID });

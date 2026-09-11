@@ -1,5 +1,6 @@
 import "dotenv/config";
 import postgres from "postgres";
+import { requiresTls } from "../db/pool.config";
 import { PgDialect } from "drizzle-orm/pg-core";
 import { applyScope } from "../modules/access/apply-scope";
 import { tickets, projects } from "../db/schema";
@@ -202,7 +203,11 @@ describeAgainstAppRole(
     let sql: ReturnType<typeof postgres>;
 
     beforeAll(() => {
-      sql = postgres(appDatabaseUrl ?? "", { prepare: false, ssl: "require", max: 1 });
+      sql = postgres(appDatabaseUrl ?? "", {
+        prepare: false,
+        ...(requiresTls(appDatabaseUrl ?? "") ? { ssl: "require" as const } : {}),
+        max: 1,
+      });
     });
 
     afterAll(async () => {
@@ -237,6 +242,18 @@ async function captureFallbackPlan(client: ReturnType<typeof postgres>): Promise
   try {
     await client.begin(async (tx) => {
       await tx`SELECT set_config('app.organization_id', ${"org-explain-probe"}, true)`;
+      /*
+        Seq scans are priced out for this probe, deliberately.
+
+        On an empty or nearly empty `build.tickets` a sequential scan is the
+        cheapest plan whatever indexes exist, so the assertion below would fail
+        on a fresh database and pass on a full one — a test that measures how
+        much data the environment happens to hold rather than anything about the
+        query. Penalising the seq scan asks the question actually worth asking:
+        is there an index the tenant predicate *can* use. If none applies, the
+        plan still comes back sequential and the case still fails.
+      */
+      await tx`SET LOCAL enable_seqscan = off`;
       const rows = await tx`
         EXPLAIN (FORMAT JSON)
         SELECT id, title FROM build.tickets

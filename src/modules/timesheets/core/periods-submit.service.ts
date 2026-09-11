@@ -6,7 +6,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import {
@@ -19,6 +19,16 @@ import { actingMembershipId } from "../../../common/auth/principal";
 import { PeriodsReadService } from "./periods-read.service";
 import { TimesheetsAuditService } from "./timesheets-audit.service";
 import { EntriesService } from "./entries.service";
+import {
+  LIFECYCLE_RETURNING,
+  lifecyclePayload,
+  membershipUserIds,
+  periodOwnerUserIdOrWarn,
+} from "./approvals.service";
+import {
+  TIMESHEET_LIFECYCLE_EVENTS,
+  emitPeriodLifecycleEvent,
+} from "./events/timesheet-lifecycle.events";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 
 @Injectable()
@@ -63,16 +73,26 @@ export class PeriodsSubmitService {
 
     await this.entries.recomputePeriodTotals(u.orgId, periodId);
 
+    const owners = await membershipUserIds(this.db, u.orgId, [row.userMembershipId]);
+    const ownerUserId = periodOwnerUserIdOrWarn(owners, row.userMembershipId, {
+      orgId: u.orgId,
+      periodId,
+      operation: "submit",
+    });
+
+    const submittedAt = new Date();
     await this.db.transaction(async (tx) => {
-      await tx
+      const [transition] = await tx
         .update(timesheetPeriods)
         .set({
           status: "SUBMITTED",
-          submittedAt: new Date(),
+          submittedAt,
           currentApproverMembershipId: approverMembershipId,
-          updatedAt: new Date(),
+          eventSeq: sql`${timesheetPeriods.eventSeq} + 1`,
+          updatedAt: submittedAt,
         })
-        .where(and(eq(timesheetPeriods.id, periodId), eq(timesheetPeriods.orgId, u.orgId)));
+        .where(and(eq(timesheetPeriods.id, periodId), eq(timesheetPeriods.orgId, u.orgId)))
+        .returning(LIFECYCLE_RETURNING);
 
       await tx
         .update(timesheets)
@@ -91,6 +111,29 @@ export class PeriodsSubmitService {
         action: "period.submitted",
         after: { status: "SUBMITTED" },
       });
+
+      /**
+       * In the transaction, so a submitted period can never exist without its
+       * event and an event can never announce a submission that rolled back.
+       * `transition` is absent only when the UPDATE matched nothing, which the
+       * guards above have already ruled out — but a silent emit for a period
+       * that was not updated would be worse than no emit, so it is checked.
+       * `ownerUserId` is null only when the worker's membership no longer
+       * resolves, which skips the event and not the submission.
+       *
+       * The approver's notification is sent by `PeriodsService.submitPeriod`
+       * once this has committed.
+       */
+      if (transition && ownerUserId) {
+        await emitPeriodLifecycleEvent(tx, {
+          eventType: TIMESHEET_LIFECYCLE_EVENTS.submitted,
+          orgId: u.orgId,
+          periodId,
+          eventSeq: transition.eventSeq,
+          occurredAt: submittedAt,
+          payload: lifecyclePayload(u.orgId, periodId, transition, ownerUserId, u.userId, submittedAt, null),
+        });
+      }
     });
 
     const updated = await this.reader.getPeriodWithUser(u.orgId, periodId);

@@ -1,7 +1,18 @@
 /**
- * Real-database tests for the dual-write window's central claim: that a legacy
- * row and the Party it mirrors cannot be observed disagreeing, because they are
- * written in one transaction with the Party first.
+ * Real-database tests for what the writer promises now that the mirror is gone.
+ *
+ * The dual-write window's claim was that a legacy row and the Party it mirrors
+ * could not be observed disagreeing. Ticket 08 made that claim vacuous in the
+ * strongest way available: there is one row, the party, and the legacy shape is
+ * derived from it when somebody asks. Two copies cannot disagree if there is
+ * only one.
+ *
+ * What still needs a real database is atomicity. A record is a party, a map row
+ * and a role grant, written in one transaction, and a half-written record is
+ * still the state this file exists to make impossible -- only the constraint
+ * that catches it has moved. `leads.campaign_id` used to be the foreign key that
+ * failed after the party was written; `business_parties.acquisition_campaign_id`
+ * is the same key on the surviving table, so the test below is the same test.
  *
  * Runs whenever DATABASE_URL is present and skips loudly by name when it is
  * not. Run with:
@@ -22,9 +33,6 @@ import type postgres from "postgres";
 import * as schema from "../../db/schema";
 import type { Db } from "../../db/drizzle.types";
 import { businessParties, leadPartyMap, partyRoles } from "../../db/schema/party";
-import { clients, contacts } from "../../db/schema/crm/contacts";
-import { leads } from "../../db/schema/crm/leads";
-import { PartyDivergenceService } from "./party-divergence.service";
 import { diffLegacyMirror, LEAD_MIRROR } from "./party-legacy-mirror";
 import { updatePartyWithMirror } from "./party-legacy-writer";
 import {
@@ -111,7 +119,7 @@ describeDb("party-legacy-writer — real database", () => {
     });
   });
 
-  it("leaves no orphan party when the legacy insert is refused", async () => {
+  it("leaves no half-written record when a constraint refuses the patch", async () => {
     await withTenant(async (tx, orgId) => {
       const before = await tx
         .select({ n: sql<number>`count(*)::int` })
@@ -122,8 +130,8 @@ describeDb("party-legacy-writer — real database", () => {
         createMirroredLead(tx, orgId, {
           orgId,
           name: "Doomed",
-          // No such campaign: `leads.campaign_id` has a foreign key, so the
-          // legacy insert fails after the party has already been written.
+          // No such campaign: `fk_business_parties_acquisition_campaign` fails
+          // when the patch lands, after the bare party has already been written.
           campaignId: -1,
         }),
       ).rejects.toBeTruthy();
@@ -133,8 +141,8 @@ describeDb("party-legacy-writer — real database", () => {
         .from(businessParties)
         .where(eq(businessParties.organizationId, orgId));
 
-      // The savepoint took the party with it. A surviving party here would be a
-      // record that exists on the Party surface and nowhere else.
+      // The savepoint took the bare party with it. A surviving party here would
+      // be a record with no map row -- reachable by nothing, named by nothing.
       expect(after[0]?.n).toBe(before[0]?.n);
     });
   });
@@ -160,28 +168,17 @@ describeDb("party-legacy-writer — real database", () => {
         .where(eq(businessParties.partyId, map!.partyId));
       expect(party?.jobTitle).toBe("Rear Admiral");
 
-      // Through the party surface: the lead follows.
-      //
-      // "Follows" is now a derivation rather than a second write. Ticket 08 and
-      // migration 0277 stopped `createMirroredLead` inserting into `leads` at
-      // all — the id is minted by the map and the row is assembled from the
-      // Party by `LEAD_MIRROR.derive`. So this asked `SELECT … FROM leads` for a
-      // row that by design does not exist, and read the absence as the update
-      // having failed. What the legacy surface serves is the derivation, and
-      // that is what is checked.
+      // Through the party surface: the lead view follows, because it is the
+      // party. There is no second row to read back, so the lead is derived --
+      // which is what every reader of a lead does now.
       await updatePartyWithMirror(tx, orgId, map!.partyId, { jobTitle: "Commodore" });
       const [afterParty] = await tx
         .select()
         .from(businessParties)
         .where(eq(businessParties.partyId, map!.partyId));
-      expect(LEAD_MIRROR.derive(afterParty!).designation).toBe("Commodore");
-
-      // A lead that still has a legacy row — backfilled by 0241, or adopted —
-      // is kept in step by `refreshMirrorsOfParty`, and that is the pairing
-      // `diffLegacyMirror` exists to police. It is asserted where such a row
-      // exists: see "reports a legacy row somebody wrote behind the mirror's
-      // back". Diffing a party against its own derivation would be vacuous.
-      expect(await tx.select().from(leads).where(eq(leads.id, created.id))).toEqual([]);
+      const afterLead = LEAD_MIRROR.derive(afterParty!);
+      expect(afterLead.designation).toBe("Commodore");
+      expect(diffLegacyMirror("LEAD", afterParty!, afterLead)).toEqual([]);
     });
   });
 
@@ -237,100 +234,32 @@ describeDb("party-legacy-writer — real database", () => {
       expect(contact.title).toBe("Founder");
       expect(contact.twitterUrl).toBe("https://x.test/babbage");
 
-      // ORGANISATION is the fourth mapped kind, added with `crm_organizations`
-      // by ticket 25; `MAPPED_LEGACY_KINDS` has carried it since, and this
-      // expectation predates it.
-      const report = await new PartyDivergenceService(tx).report(orgId);
-      expect(report.divergentCount).toEqual({
-        LEAD: 0,
-        CLIENT: 0,
-        CONTACT: 0,
-        ORGANISATION: 0,
-      });
+      /*
+        There used to be a divergence report here, asserting the two copies
+        agreed. `PartyDivergenceService` went with the tables it compared: a
+        report that can only ever say zero is not a check, it is a constant.
+
+        What replaces it is the assertion that the returned rows carry the
+        values -- which is the same claim, made where it can still fail. Every
+        column above is a legacy-owned or mirrored one, so a derivation that
+        dropped it shows up right here.
+      */
     });
   });
 
-  /**
-   * Divergence needs two copies, and only an adopted or backfilled record still
-   * has them.
-   *
-   * This used to create the lead through the mirror and then write to `leads`
-   * behind its back — but after ticket 08 a mirror-created lead has no `leads`
-   * row, so that UPDATE matched nothing, there was no second copy to disagree,
-   * and the check correctly reported no divergence. The shape that CAN diverge
-   * is the one the check exists for: a legacy row that arrived on its own and
-   * was adopted, which `refreshMirrorsOfParty` then keeps in step until somebody
-   * writes around it.
-   */
-  it("reports a legacy row somebody wrote behind the mirror's back, and repairs nothing", async () => {
-    await withTenant(async (tx, orgId) => {
-      // `tags` is set explicitly because the derivation produces `[]` where the
-      // column defaults to NULL, and `diffLegacyMirror` reports that pair as a
-      // difference. Left unset it is a second, permanent divergence on every
-      // adopted or backfilled lead, and it would mask the one planted below.
-      const [orphan] = await tx
-        .insert(leads)
-        .values({ orgId, name: "Ada", designation: "Head of Computation", tags: [] })
-        .returning();
-      // Adoption mints the map row and reads the legacy row as truth once, which
-      // leaves the two sides agreeing. The patch is empty on purpose: a patch
-      // would move the party and not the legacy row — `movePartiesFor` does not
-      // refresh mirrors, only `updatePartyWithMirror` does — and this test needs
-      // exactly one field to disagree, planted below.
-      const created = await updateMirroredLead(tx, orgId, orphan!.id, {});
-      expect(created?.designation).toBe("Head of Computation");
+  /*
+    Two tests stood here and both went with the table.
 
-      // A write that did not go through the writer, which is exactly the
-      // divergence the check exists to surface.
-      await tx.update(leads).set({ designation: "Stale" }).where(eq(leads.id, orphan!.id));
+    One wrote to `leads` behind the writer's back and asserted the divergence
+    check reported it without repairing it. The other inserted a `leads` row
+    with no party -- a restore, or an out-of-band import -- and asserted the
+    next write adopted it rather than refusing.
 
-      const service = new PartyDivergenceService(tx);
-      const report = await service.report(orgId);
-      const mine = report.divergent.find((row) => row.legacyId === orphan!.id);
-
-      expect(mine?.fields).toEqual([
-        expect.objectContaining({ column: "designation", partyColumn: "jobTitle" }),
-      ]);
-
-      // Run it again: still divergent. A check that repaired would go green here
-      // and take the evidence of which write path did this with it.
-      const second = await service.report(orgId);
-      expect(second.divergent.find((row) => row.legacyId === orphan!.id)?.fields).toHaveLength(1);
-      const [row] = await tx.select().from(leads).where(eq(leads.id, orphan!.id));
-      expect(row?.designation).toBe("Stale");
-    });
-  });
-
-  it("adopts a legacy row that arrived without a party, rather than refusing the write", async () => {
-    await withTenant(async (tx, orgId) => {
-      // Inserted straight at the table, as a restore or an out-of-band import
-      // would leave it.
-      const [orphan] = await tx
-        .insert(leads)
-        .values({ orgId, name: "Out of band", company: "Elsewhere" })
-        .returning();
-
-      const updated = await updateMirroredLead(tx, orgId, orphan!.id, { notes: "now mirrored" });
-      expect(updated?.notes).toBe("now mirrored");
-
-      const [map] = await tx
-        .select()
-        .from(leadPartyMap)
-        .where(and(eq(leadPartyMap.organizationId, orgId), eq(leadPartyMap.leadId, orphan!.id)));
-      // Recorded as an adoption, so an operator can tell these apart from rows
-      // that were always mirrored.
-      expect(map?.linkedBy).toBe("mirror:adopt");
-
-      const [party] = await tx
-        .select()
-        .from(businessParties)
-        .where(eq(businessParties.partyId, map!.partyId));
-      // The legacy row was read as truth exactly once, which is correct only
-      // because there was no party to contradict it.
-      expect(party?.companyName).toBe("Elsewhere");
-      expect(diffLegacyMirror("LEAD", party!, updated!)).toEqual([]);
-    });
-  });
+    Neither can be written now, and that is the contract rather than a loss of
+    coverage: there is no table to write behind the writer's back, and no way to
+    arrive with an identifier that no party answers for, because the map row IS
+    the identifier. `adoptLead` and its siblings went with them.
+  */
 
   it("keeps the mirror inside the tenant that owns the party", async () => {
     await withTenant(async (tx, orgId) => {
@@ -360,12 +289,60 @@ describeDb("party-legacy-writer — real database", () => {
     return party!;
   }
 
-  it("still has the tables this ticket does not touch", async () => {
-    // A cheap guard that the fixtures above are hitting the schema the rest of
-    // the suite assumes, rather than a database mid-migration.
+  /**
+   * The inverse of what stood here, and the only place the drop is observable.
+   *
+   * This used to check the four tables were still present -- a guard that the
+   * fixtures were hitting the schema the rest of the suite assumed rather than a
+   * database mid-migration. Migration 0278 is the end of that migration, so the
+   * same guard now asks the opposite question, against the same catalogue.
+   *
+   * Asked of `pg_class` rather than by selecting from them, because the point is
+   * a database whose schema no longer has these tables, and there is no Drizzle
+   * symbol left to select from. A tree that typechecks proves the code stopped
+   * naming them; only this proves the database did.
+   */
+  it("no longer has the four legacy identity tables", async () => {
     await withTenant(async (tx) => {
-      await expect(tx.select({ n: sql<number>`1` }).from(clients).limit(1)).resolves.toBeDefined();
-      await expect(tx.select({ n: sql<number>`1` }).from(contacts).limit(1)).resolves.toBeDefined();
+      const rows = await tx.execute(sql`
+        SELECT c.relname::text AS name
+        FROM pg_class c
+        JOIN pg_namespace n ON n.oid = c.relnamespace
+        WHERE n.nspname = 'public'
+          AND c.relkind = 'r'
+          AND c.relname IN ('leads', 'clients', 'contacts', 'crm_organizations')
+      `);
+      expect([...rows].map((row) => (row as { name: string }).name)).toEqual([]);
+    });
+  });
+
+  /**
+   * The sequences outlived the tables, which is what kept the identifiers.
+   *
+   * `leads.id` was the CRM's public identifier -- in twenty controller routes
+   * behind `ParseIntPipe` and in every `/crm/leads/[leadId]` a browser has
+   * bookmarked. Migration 0277 detached each sequence with `OWNED BY NONE` and
+   * pointed the map column's DEFAULT at it, so numbering continues from where
+   * the table left off instead of restarting and colliding with every id
+   * already issued. If a sequence had gone with its table, the next lead created
+   * would take an id somebody else's lead already has.
+   */
+  it("kept the sequences that mint the identifiers", async () => {
+    await withTenant(async (tx) => {
+      const rows = await tx.execute(sql`
+        SELECT c.relname::text AS name
+        FROM pg_class c
+        JOIN pg_namespace n ON n.oid = c.relnamespace
+        WHERE n.nspname = 'public'
+          AND c.relkind = 'S'
+          AND c.relname IN ('leads_id_seq', 'clients_id_seq', 'contacts_id_seq', 'crm_organizations_id_seq')
+      `);
+      expect([...rows].map((row) => (row as { name: string }).name).sort()).toEqual([
+        "clients_id_seq",
+        "contacts_id_seq",
+        "crm_organizations_id_seq",
+        "leads_id_seq",
+      ]);
     });
   });
 });

@@ -5,9 +5,8 @@ import { type Db } from "../../../db/drizzle.module";
 import { StorageService } from "../../storage/storage.service";
 import { SignAuditService } from "../sign-audit.service";
 import { SignTokensService } from "../sign-tokens.service";
-import type { PublicRequestContext } from "../sign-public-form.service";
 import type { AdoptSignatureInput, PublicFieldValueInput } from "../dto/e-sign.schemas";
-import { withRecipientSession } from "./recipient-session";
+import { withRecipientSession, type PublicRequestContext } from "./recipient-session";
 
 /**
  * What the recipient puts INTO the document.

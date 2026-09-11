@@ -40,6 +40,7 @@ function serviceWith(
     engine as never,
     {} as never,
     scope,
+    { post: jest.fn().mockResolvedValue(undefined) } as never,
   );
 }
 

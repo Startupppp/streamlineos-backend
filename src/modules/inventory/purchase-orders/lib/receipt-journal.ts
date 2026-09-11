@@ -1,3 +1,4 @@
+import type { DbOrTx } from "../../../accounting/kernel/sequence.service";
 import type { InventoryAccountingBridge } from "../../stock-engine/accounting-bridge";
 import { addDec, mulDec, isPositive } from "../../stock-engine/decimal";
 
@@ -20,7 +21,7 @@ interface JournalLine {
 
 /**
  * B1, item 5 — the accounting entry for a receipt, posted inside the receipt's
- * own transaction.
+ * own transaction, which is passed in as `tx`.
  *
  * The alternative was `registerAfterCommit`, and the argument for deferring is
  * that a ledger failure must not destroy the record of a delivery that
@@ -32,13 +33,18 @@ interface JournalLine {
  * which would have no idempotency claim of its own once the request's claim has
  * committed — cannot happen at all.
  *
- * The one *expected* failure is not handled here: `postJournalEntry` skips with
- * a warning when the accounting module is not migrated or the tenant has no
- * chart of accounts, so a warehouse that has never configured account 1300 still
- * receives goods. That property holds in or out of a transaction, and it is
- * written down at this call site because a reader of the receiving path would
- * otherwise have to go and find out whether posting stock can be blocked by an
- * unrelated module the tenant has not bought.
+ * What can refuse it, since the accounting rewrite. An organisation that never
+ * enabled accounting is skipped (`BOOK_NOT_ENABLED`), so a warehouse without
+ * the accounting module still receives goods. An organisation that DID enable
+ * it and has no account tagged for a role this entry names, or whose period for
+ * the receipt date is locked, has the post refused, and the receipt rolls back
+ * with it. That is the kernel's fail-closed contract
+ * (`docs/inventory-gl-contract.md` §4) and it replaces the legacy warn-and-skip,
+ * which let goods move with no journal behind them.
+ *
+ * Keyed `stock_move:{grnId}:receive`, the same key the one-shot receive in
+ * `grn-receive.service.ts` uses. Both mean "this GRN was posted", so one GRN
+ * yields one receipt journal whichever path posted it.
  */
 export async function postReceiptJournal(
   bridge: InventoryAccountingBridge,
@@ -47,10 +53,12 @@ export async function postReceiptJournal(
   grn: JournalReceipt,
   po: JournalOrder,
   lines: ReadonlyArray<JournalLine>,
+  tx: DbOrTx,
 ): Promise<void> {
   // Exact, not float. `quantity * parseFloat(unitCost)` is the arithmetic the
   // PRD forbids outright for money, and this figure is what lands on both sides
-  // of a journal entry — a rounding error here is an unbalanced ledger.
+  // of a journal entry — a rounding error here is an unbalanced ledger. The
+  // bridge takes it to minor units once, so both sides round identically.
   let totalValueDec = "0.0000";
   for (const line of lines) {
     if (line.qualityStatus !== "ACCEPTED") continue;
@@ -60,35 +68,31 @@ export async function postReceiptJournal(
   }
   if (!isPositive(totalValueDec)) return;
 
-  const totalValue = Number(totalValueDec);
-  await bridge.postJournalEntry({
-    orgId,
-    entryDate: grn.receivedDate,
-    description: `Goods received: ${grn.grnNumber}`,
-    sourceType: "inv_grn",
-    sourceId: String(grn.id),
-    sourceEvent: "receive",
-    status: "POSTED",
-    createdBy: userId,
-    lines: [
-      {
-        credit: 0,
-        debit: totalValue,
-        purpose: "INVENTORY_ASSET",
-        description: `Inventory received - ${grn.grnNumber}`,
-      },
-      {
-        // GRNI rather than AP. This has credited 2000 since the entry was
-        // written and still does by default — `PURPOSE_DEFAULT_CODE` for
-        // INVENTORY_GRNI is "2000" for exactly that reason — but what the credit
-        // *means* on a goods receipt is goods received not yet invoiced, and
-        // naming it lets a tenant that keeps a separate GRNI account point this
-        // line at it without touching code.
-        purpose: "INVENTORY_GRNI",
-        debit: 0,
-        credit: totalValue,
-        description: `GRNI - PO ${po.poNumber}`,
-      },
-    ],
-  });
+  await bridge.postJournalEntry(
+    {
+      orgId,
+      createdBy: userId,
+      entryDate: grn.receivedDate,
+      description: `Goods received: ${grn.grnNumber}`,
+      sourceType: "inv_grn",
+      sourceId: String(grn.id),
+      sourceEvent: "receive",
+      lines: [
+        {
+          purpose: "INVENTORY_ASSET",
+          debit: totalValueDec,
+          description: `Inventory received - ${grn.grnNumber}`,
+        },
+        {
+          // Named GRNI because that is what the credit means on a receipt. It
+          // resolves to `ap_control` for now; see `INVENTORY_PURPOSE_TAG` for
+          // why, and for what has to change together before it can be `grni`.
+          purpose: "INVENTORY_GRNI",
+          credit: totalValueDec,
+          description: `AP - PO ${po.poNumber}`,
+        },
+      ],
+    },
+    tx,
+  );
 }

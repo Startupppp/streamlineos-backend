@@ -7,6 +7,7 @@ import { CacheService } from "../../../common/cache/cache.service";
 import { CACHE_TTL } from "../../../common/cache/cache-keys";
 import { WarehouseScopeService } from "../stock-engine/warehouse-scope.service";
 import { StockEngineService } from "../stock-engine/stock-engine.service";
+import { StockMovementBridgeService } from "../../accounting/adapters/stock-movement-bridge.service";
 import { NumberSequenceService } from "../stock-engine/number-sequence.service";
 import {
   PA_LIST_NAMESPACE,
@@ -28,6 +29,7 @@ export class InvPhysicalAuditsService {
     private readonly engine: StockEngineService,
     private readonly numSeq: NumberSequenceService,
     private readonly warehouseScope: WarehouseScopeService,
+    private readonly glBridge: StockMovementBridgeService,
   ) {}
 
   async listAudits(orgId: string, userId: string, filters: ListCountsInput) {
@@ -164,6 +166,7 @@ export class InvPhysicalAuditsService {
       engine: this.engine,
       numSeq: this.numSeq,
       warehouseScope: this.warehouseScope,
+      glBridge: this.glBridge,
       requireAudit: (orgId, userId, auditId) => this.requireAudit(orgId, userId, auditId),
       reloadUnscopedAudit: (orgId, auditId) => this.loadAuditUnscoped(orgId, auditId),
     };

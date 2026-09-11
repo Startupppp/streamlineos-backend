@@ -1,13 +1,17 @@
-import { BadRequestException, ForbiddenException, Logger } from "@nestjs/common";
+import { BadRequestException, ForbiddenException, Logger, ServiceUnavailableException } from "@nestjs/common";
 import { eq } from "drizzle-orm";
 import { signEnvelopes, signRecipients } from "../../../db/schema";
 import { type Db } from "../../../db/drizzle.module";
 import { SignAuditService } from "../sign-audit.service";
 import { SignTokensService } from "../sign-tokens.service";
 import { SignNotificationsService } from "../sign-notifications.service";
-import type { PublicRequestContext } from "../sign-public-form.service";
-import type { PublicAuthInput, PublicConsentInput } from "../dto/e-sign.schemas";
-import { withRecipientSession } from "./recipient-session";
+import type { SmsSenderPort } from "../sms/sms-sender.port";
+import {
+  SELF_SERVE_AUTH_METHODS,
+  type PublicAuthInput,
+  type PublicConsentInput,
+} from "../dto/e-sign.schemas";
+import { withRecipientSession, type PublicRequestContext } from "./recipient-session";
 
 /**
  * Proving who is at the other end of a signing link, and that they agreed to
@@ -30,6 +34,8 @@ export interface RecipientIdentityDeps {
   readonly tokens: SignTokensService;
   readonly audit: SignAuditService;
   readonly notifications: SignNotificationsService;
+  /** The SMS channel for `otp_sms`; reports honestly when nothing is configured. */
+  readonly sms: SmsSenderPort;
   /**
    * The session-state gate, bound from the service rather than exported.
    *
@@ -49,8 +55,25 @@ const MAX_AUTH_ATTEMPTS = 5;
 export async function requestOtp(deps: RecipientIdentityDeps, token: string) {
   return withRecipientSession(deps.db, deps.tokens, deps.logger, token, async ({ recipient, envelope }) => {
     deps.assertActive(recipient, envelope);
-    if (recipient.authMethod !== "otp_email") throw new BadRequestException("OTP is not enabled for this recipient");
-    if (!recipient.email) throw new BadRequestException("No email on file for OTP delivery");
+    if (recipient.authMethod !== "otp_email" && recipient.authMethod !== "otp_sms") {
+      throw new BadRequestException("OTP is not enabled for this recipient");
+    }
+
+    const viaSms = recipient.authMethod === "otp_sms";
+    if (viaSms && !recipient.phone) throw new BadRequestException("No phone number on file for OTP delivery");
+    if (!viaSms && !recipient.email) throw new BadRequestException("No email on file for OTP delivery");
+
+    /**
+     * Checked before the code is minted, not after. Storing a hash and an
+     * expiry and then failing to deliver leaves the recipient staring at a
+     * code entry box for a message that was never sent — and the stored hash
+     * would make a later, working attempt look like a replay.
+     */
+    if (viaSms && !deps.sms.isConfigured()) {
+      throw new ServiceUnavailableException(
+        "SMS one-time codes are not available in this environment",
+      );
+    }
 
     const otp = deps.tokens.generateOtp();
     await deps.db
@@ -58,8 +81,15 @@ export async function requestOtp(deps: RecipientIdentityDeps, token: string) {
       .set({ otpCodeHash: deps.tokens.hash(otp), otpExpiresAt: new Date(Date.now() + 10 * 60 * 1000), otpAttempts: 0 })
       .where(eq(signRecipients.id, recipient.id));
 
-    await deps.notifications.sendOtpCode(recipient.email, recipient.name, otp);
-    return { sent: true };
+    if (viaSms) {
+      await deps.sms.send(
+        recipient.phone!,
+        `Your signing code is ${otp}. It expires in 10 minutes.`,
+      );
+    } else {
+      await deps.notifications.sendOtpCode(recipient.email!, recipient.name, otp);
+    }
+    return { sent: true, via: viaSms ? "sms" : "email" };
   });
 }
 
@@ -81,14 +111,27 @@ export async function authenticate(
       passed = true;
     } else if (recipient.authMethod === "access_code") {
       passed = Boolean(input.accessCode) && recipient.accessCodeHash === deps.tokens.hash(input.accessCode ?? "");
-    } else if (recipient.authMethod === "otp_email") {
+    } else if (recipient.authMethod === "otp_email" || recipient.authMethod === "otp_sms") {
+      /**
+       * One branch for both channels, deliberately. The code, the hash, the
+       * expiry, the attempt counter and the lockout are properties of the
+       * one-time code — not of how it travelled. A separate SMS branch is
+       * how the two drift until one of them forgets to check the expiry.
+       */
       passed =
         Boolean(input.otpCode) &&
         recipient.otpCodeHash === deps.tokens.hash(input.otpCode ?? "") &&
         Boolean(recipient.otpExpiresAt) &&
         recipient.otpExpiresAt!.getTime() > Date.now();
     } else {
-      throw new BadRequestException(`Authentication method "${recipient.authMethod}" is not yet supported for self-serve signing`);
+      /*
+       * Still the backstop, and still the only place that decides. The list it
+       * decides from is now `SELF_SERVE_AUTH_METHODS`, shared with the pre-send
+       * validator so an envelope can no longer pass validation and fail here.
+       */
+      throw new BadRequestException(
+        `Authentication method "${recipient.authMethod}" is not yet supported for self-serve signing. Supported: ${SELF_SERVE_AUTH_METHODS.join(", ")}.`,
+      );
     }
 
     if (!passed) {

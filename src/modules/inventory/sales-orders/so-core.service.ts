@@ -1,5 +1,6 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, desc, eq, sql } from "drizzle-orm";
+import { partyNamesFor } from "../../party/party-names";
 import { applyScope } from "../../access/apply-scope";
 import type { DataScope } from "../../access/access.types";
 import { invSalesOrders, businessParties } from "../../../db/schema";
@@ -81,7 +82,6 @@ export class SoCoreService {
             limit,
             offset,
             with: {
-              client: { columns: { id: true, name: true } },
               creator: { columns: { id: true, name: true } },
             },
           }),
@@ -91,8 +91,25 @@ export class SoCoreService {
             .where(where),
         ]);
 
+        /**
+         * The client's name from Party, not from `clients`. Ticket 08.
+         *
+         * `client_id` is still what the order is filed under and is still
+         * returned as `client.id`; only the name moved.
+         */
+        const names = await partyNamesFor(this.db, orgId, items.map((o) => o.clientPartyId));
+        const withClient = items.map((order) => ({
+          ...order,
+          client: order.clientId
+            ? {
+                id: order.clientId,
+                name: order.clientPartyId ? (names.get(order.clientPartyId) ?? null) : null,
+              }
+            : null,
+        }));
+
         return {
-          items,
+          items: withClient,
           total: countResult[0]?.count ?? 0,
           page,
           totalPages: Math.ceil((countResult[0]?.count ?? 0) / limit),
@@ -157,22 +174,54 @@ export class SoCoreService {
       },
     });
     if (!so) throw new NotFoundException("Sales order not found");
-    return { ...so, client: await this.resolveCustomer(orgId, so.clientPartyId) };
+    return { ...so, client: await this.resolveCustomer(orgId, so.clientId, so.clientPartyId) };
   }
 
-  /** Display identity only; anything sensitive stays behind its own gate. */
-  private async resolveCustomer(orgId: string, partyId: string | null) {
-    if (!partyId) return null;
-    const [party] = await this.db
-      .select({
-        partyId: businessParties.partyId,
-        displayName: businessParties.displayName,
-        companyName: businessParties.companyName,
-      })
-      .from(businessParties)
-      .where(and(eq(businessParties.organizationId, orgId), eq(businessParties.partyId, partyId)))
-      .limit(1);
-    return party ?? null;
+  /**
+   * The customer, from Party — never from `clients`, which is gone.
+   *
+   * Display identity only; anything sensitive stays behind its own gate.
+   *
+   * One shape for both readers of this field. Ticket 08 kept the shape
+   * `client: true` used to return — `client.id` is still the legacy id the
+   * order was filed under, and `client.name` is what the sales-order screen
+   * reads as the customer. The inventory lane's Party-era fields sit beside
+   * them: `partyId`, `displayName`, `companyName`.
+   *
+   * Null only when the order names no customer at all. An order with a legacy
+   * id and no party yet still says which client it was filed under; a
+   * Party-era order with no legacy id still names its customer.
+   *
+   * The organisation predicate is the part that must not drift: a name lookup
+   * that forgets it is a cross-tenant read that returns something plausible.
+   */
+  private async resolveCustomer(orgId: string, clientId: number | null, partyId: string | null) {
+    if (clientId === null && !partyId) return null;
+    const [party] = partyId
+      ? await this.db
+          .select({
+            partyId: businessParties.partyId,
+            name: businessParties.name,
+            displayName: businessParties.displayName,
+            companyName: businessParties.companyName,
+            status: businessParties.status,
+            email: businessParties.email,
+            phone: businessParties.phone,
+          })
+          .from(businessParties)
+          .where(and(eq(businessParties.organizationId, orgId), eq(businessParties.partyId, partyId)))
+          .limit(1)
+      : [];
+    return {
+      id: clientId,
+      partyId: party?.partyId ?? partyId,
+      name: party?.name ?? null,
+      displayName: party?.displayName ?? null,
+      companyName: party?.companyName ?? null,
+      status: party?.status ?? null,
+      email: party?.email ?? null,
+      phone: party?.phone ?? null,
+    };
   }
 
   /** @see lib/so-write.ts — the body moved, the service surface did not. */

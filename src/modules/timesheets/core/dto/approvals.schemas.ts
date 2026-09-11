@@ -1,10 +1,11 @@
 import { z } from "zod";
+import { timesheetApprovalQueueStatusSchema } from "./status.schemas";
 import { pageSizeField } from "../../../../common/pagination/list-query.schema";
 
 const dateString = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 
 export const approvalsQuerySchema = z.object({
-  status: z.enum(["SUBMITTED", "APPROVED", "REJECTED"]).default("SUBMITTED"),
+  status: timesheetApprovalQueueStatusSchema.default("SUBMITTED"),
   userId: z.string().optional(),
   startDate: dateString.optional(),
   endDate: dateString.optional(),

@@ -37,12 +37,18 @@ import { SlaResolverService } from "./sla-resolver.service";
 import { NotificationsModule } from "../../notifications/notifications.module";
 import { PartyModule } from "../../party/party.module";
 import { CrmFollowupSweepService } from "./crm-followup-sweep.service";
+import { AttributionModule } from "../../attribution/attribution.module";
 
 @Module({
   // PartyModule for `PartyMergeService`: merging two company records is the
   // same act as merging two parties, and ticket 25 retired the second
   // implementation rather than keeping one per surface.
-  imports: [forwardRef(() => CrmAutomationStudioModule), BillingModule, CrmConsentModule, NotificationsModule, PartyModule],
+  //
+  // AttributionModule for the multi-touch report, which `CrmCampaignsController`
+  // exposes beside the first/last-touch pair it replaces. The edge runs one way
+  // — attribution reaches back into CRM only for the shared "won" definition in
+  // `won-stage-keys.ts`, which is a function, not this module.
+  imports: [forwardRef(() => CrmAutomationStudioModule), BillingModule, CrmConsentModule, NotificationsModule, PartyModule, AttributionModule],
   controllers: [
     CrmCampaignsController,
     CrmOrganizationsController,

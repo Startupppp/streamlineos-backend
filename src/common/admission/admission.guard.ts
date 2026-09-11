@@ -44,8 +44,9 @@ export class AdmissionGuard implements CanActivate {
     const orgId = req.user?.orgId ?? "__public__";
     const decision = this.admissionService.tryAdmit(workClass, orgId);
 
+    const res = http.getResponse<Response>();
+
     if (!decision.admitted) {
-      const res = http.getResponse<Response>();
       res.set("Retry-After", String(decision.retryAfterSeconds));
       throw new ServiceUnavailableException({
         code: "SERVICE_UNAVAILABLE",
@@ -66,11 +67,16 @@ export class AdmissionGuard implements CanActivate {
      * never gave its slot back. `orgMaxConcurrent` defaults to 50, so roughly
      * fifty failed requests permanently exhausted an organisation's budget and
      * everything after that 503'd forever: a tenant-wide denial of service any
-     * signed-in user could inflict on themselves, or on their colleagues.
+     * signed-in user could inflict on themselves, or on their colleagues. The
+     * e-sign RBAC suite fires a hundred 402s in a row and started getting 503s
+     * halfway through, which is the same thing on a shorter fuse.
      *
      * The response ending is the one event common to every outcome there is.
+     * Release is idempotent (`releaseAdmissionOnce`) and the interceptor goes
+     * through it too, so the normal path still releases exactly once, as early
+     * as it did before.
      */
-    releaseWhenResponseEnds(req, http.getResponse<Response>(), this.admissionService);
+    releaseWhenResponseEnds(req, res, this.admissionService);
     return true;
   }
 }

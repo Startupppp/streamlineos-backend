@@ -153,7 +153,8 @@ export class ClientsController {
     @Body() body: UpdateRenewalInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    const updated = await this.accounts.updateRenewal(u.orgId, accountId, body);
+    const scope = await resolveClientsReadScope(this.access, u);
+    const updated = await this.accounts.updateRenewal(u.orgId, accountId, body, scope, u.userId);
     if (!updated) throw new NotFoundException("Client account not found");
     return updated;
   }
@@ -292,7 +293,8 @@ export class ClientsController {
     @Body() body: UpdateClientStatusInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    const updated = await this.accounts.updateStatus(u.orgId, u.userId, clientId, body);
+    const scope = await resolveClientsReadScope(this.access, u);
+    const updated = await this.accounts.updateStatus(u.orgId, u.userId, clientId, body, scope);
     if (!updated) throw new NotFoundException("Client account not found");
     return updated;
   }
@@ -301,11 +303,12 @@ export class ClientsController {
   @Get(":clientId/activities")
   @RequirePermission("crm:clients:read")
   @Validate({ params: clientIdParams })
-  getClientActivities(
+  async getClientActivities(
     @Param("clientId", ParseIntPipe) clientId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.accounts.getClientActivities(u.orgId, clientId);
+    const scope = await resolveClientsReadScope(this.access, u);
+    return this.accounts.getClientActivities(u.orgId, clientId, scope, u.userId);
   }
 
   @Post(":clientId/activities")
@@ -317,7 +320,8 @@ export class ClientsController {
     @Body() body: CreateActivityInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    const activity = await this.accounts.addActivity(u.orgId, clientId, u.userId, body);
+    const scope = await resolveClientsReadScope(this.access, u);
+    const activity = await this.accounts.addActivity(u.orgId, clientId, u.userId, body, scope);
     if (!activity) throw new NotFoundException("Client account not found");
     return activity;
   }

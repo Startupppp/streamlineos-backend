@@ -130,7 +130,8 @@ function makeService(settingsRow: InvSettingsRow): Harness {
     {} as never,
     { get: jest.fn().mockResolvedValue(settingsRow) } as never,
     {} as never,
-    { postJournalEntry: jest.fn() } as never,
+    // PostingCommandService: COGS posts through `submit` on the ship transaction.
+    { submit: jest.fn().mockResolvedValue({ journalId: "j-1", journalNumber: "JV-1", replayed: false }) } as never,
     {} as never,
     {} as never,
     { register } as never,

@@ -8,15 +8,17 @@
  * failure in here is "this expense is not allowed"; a failure over there is
  * "this expense half-moved".
  *
- * The decimal arithmetic is the expenses family's `decimal(x,2)` MAJOR-unit
- * convention, compared through `compareDecimals` rather than through JS number
- * comparison. It moved from the service character for character.
+ * Expense rows carry the expenses family's `decimal(x,2)` MAJOR-unit strings.
+ * Every comparison converts both sides to integer minor units first
+ * (`amountToMinor`), so no two amounts are ever compared as floats — the job
+ * `compareDecimals` did until the accounting rewrite retired
+ * `accounting/core/money.util`.
  */
 import { and, eq } from "drizzle-orm";
 import { createHash } from "crypto";
-import { expenses, finExpensePolicies, finApprovalPolicies } from "../../../db/schema";
+import { expenses, finExpensePolicies } from "../../../db/schema";
 import { type Db } from "../../../db/drizzle.module";
-import { compareDecimals, formatDecimal } from "../../accounting/core/money.util";
+import { fromDecimalString, money, toDecimalString } from "../../accounting/kernel/money";
 
 export interface ExpensePolicyDeps {
   readonly db: Db;
@@ -30,8 +32,26 @@ export interface PolicyEvalResult {
 
 export interface ApprovalCheckResult {
   needsApproval: boolean;
-  approverUserId: string | null;
   policyId: number | null;
+}
+
+/**
+ * Expense rows carry decimal strings; the ledger kernel works in integer minor
+ * units. Everything crossing into accounting — and every policy comparison —
+ * converts here, once, so no two amounts are ever compared as floats.
+ *
+ * `expenses.currency` is free text that predates the currency catalogue, so an
+ * unrecognised code falls back to a two-decimal reading rather than throwing:
+ * refusing to submit an expense over a currency code is a worse answer than
+ * assuming the near-universal scale.
+ */
+export function amountToMinor(amount: string | number, currency: string): number {
+  const text = typeof amount === "number" ? amount.toString() : amount.trim();
+  try {
+    return fromDecimalString(text, currency.toUpperCase()).minor;
+  } catch {
+    return fromDecimalString(Number(text).toFixed(2), "INR").minor;
+  }
 }
 
 function normalizeMerchant(merchant: string | null | undefined): string {
@@ -45,7 +65,10 @@ export function buildReceiptHash(
   expenseDate: string,
   merchant: string | null | undefined,
 ): string {
-  const raw = `${orgId}|${formatDecimal(amount, 2)}|${expenseDate}|${normalizeMerchant(merchant)}`;
+  // Two decimals, exactly as the retired `formatDecimal(amount, 2)` produced,
+  // so hashes computed before the rewrite still match.
+  const normalizedAmount = toDecimalString(money(amountToMinor(amount, "INR"), "INR"));
+  const raw = `${orgId}|${normalizedAmount}|${expenseDate}|${normalizeMerchant(merchant)}`;
   return createHash("sha256").update(raw).digest("hex");
 }
 
@@ -73,33 +96,42 @@ export async function evaluatePolicy(
   deps: ExpensePolicyDeps,
   orgId: string,
   categoryId: number | null | undefined,
-  amount: number,
+  amount: number | string,
+  currency: string,
   hasReceipt: boolean,
 ): Promise<PolicyEvalResult> {
-  const conditions = [
-    eq(finExpensePolicies.orgId, orgId),
-    eq(finExpensePolicies.isActive, true),
-  ];
-
   const policies = await deps.db
     .select()
     .from(finExpensePolicies)
-    .where(and(...conditions));
+    .where(
+      and(
+        eq(finExpensePolicies.orgId, orgId),
+        eq(finExpensePolicies.isActive, true),
+      ),
+    );
 
   const applicable = policies.filter(
     (p) => p.categoryId === null || p.categoryId === categoryId,
   );
 
+  const amountMinor = amountToMinor(amount, currency);
   let policyFlag: string | null = null;
 
   for (const policy of applicable) {
-    if (policy.maxAmount !== null && compareDecimals(amount.toString(), policy.maxAmount) > 0) {
-      return { policyFlag: "OVER_LIMIT", blocked: true, blockReason: `Amount exceeds policy limit of ${policy.maxAmount}` };
+    if (
+      policy.maxAmount !== null &&
+      amountMinor > amountToMinor(policy.maxAmount, currency)
+    ) {
+      return {
+        policyFlag: "OVER_LIMIT",
+        blocked: true,
+        blockReason: `Amount exceeds policy limit of ${policy.maxAmount}`,
+      };
     }
 
     if (
       policy.requiresReceiptAbove !== null &&
-      compareDecimals(amount.toString(), policy.requiresReceiptAbove) > 0 &&
+      amountMinor > amountToMinor(policy.requiresReceiptAbove, currency) &&
       !hasReceipt
     ) {
       policyFlag = "RECEIPT_REQUIRED";
@@ -109,34 +141,43 @@ export async function evaluatePolicy(
   return { policyFlag, blocked: false, blockReason: null };
 }
 
+/**
+ * Whether this claim needs a second pair of eyes.
+ *
+ * The retired `fin_approval_policies` / `fin_approval_requests` pair went with
+ * the pre-rewrite accounting schema and has no successor — there is no
+ * org-wide approval table on the new kernel. The threshold now comes from
+ * `fin_expense_policies.requires_approval_above`, which is the column that was
+ * always meant to carry it, and the pending state is the expense's own
+ * `SUBMITTED` status rather than a parallel request row.
+ */
 export async function findApplicableApprovalPolicy(
   deps: ExpensePolicyDeps,
   orgId: string,
-  amount: number,
+  categoryId: number | null | undefined,
+  amount: number | string,
+  currency: string,
 ): Promise<ApprovalCheckResult> {
   const policies = await deps.db
     .select()
-    .from(finApprovalPolicies)
+    .from(finExpensePolicies)
     .where(
       and(
-        eq(finApprovalPolicies.orgId, orgId),
-        eq(finApprovalPolicies.recordType, "EXPENSE"),
-        eq(finApprovalPolicies.isActive, true),
+        eq(finExpensePolicies.orgId, orgId),
+        eq(finExpensePolicies.isActive, true),
       ),
     );
 
-  const applicable = policies.find((p) => {
-    if (p.minAmount === null) return true;
-    return compareDecimals(amount.toString(), p.minAmount) >= 0;
-  });
+  const amountMinor = amountToMinor(amount, currency);
+  const triggered = policies
+    .filter((p) => p.categoryId === null || p.categoryId === categoryId)
+    .find(
+      (p) =>
+        p.requiresApprovalAbove !== null &&
+        amountMinor > amountToMinor(p.requiresApprovalAbove, currency),
+    );
 
-  if (!applicable) {
-    return { needsApproval: false, approverUserId: null, policyId: null };
-  }
-
-  return {
-    needsApproval: true,
-    approverUserId: applicable.approverUserId ?? null,
-    policyId: applicable.id,
-  };
+  return triggered
+    ? { needsApproval: true, policyId: triggered.id }
+    : { needsApproval: false, policyId: null };
 }

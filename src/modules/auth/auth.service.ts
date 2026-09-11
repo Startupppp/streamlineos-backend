@@ -13,7 +13,7 @@ import {
 } from "../../common/org/provision-org-modules";
 import { EntitlementsService } from "../access/entitlements.service";
 import { NotificationDispatchService } from "../notifications/notification-dispatch.service";
-import { and, desc, eq, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import {
   accountOrganizationIndex,
@@ -21,6 +21,7 @@ import {
   organizations,
   subscriptions,
   users,
+  roles,
 } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
@@ -30,8 +31,10 @@ import { withIdentity } from "../../common/tenant/with-identity";
 import { runInTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
 import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_KEYS } from "../../common/cache/cache-keys";
+import { seedDemoDataset } from "../onboarding-activation/seed-demo-dataset";
 import { SessionsService } from "../sessions/sessions.service";
 import { AuthTokensService } from "./auth-tokens.service";
+import { AccountOrganizationIndexService } from "../organization/core/account-organization-index.service";
 import { addDays } from "date-fns";
 import type { RegisterInput } from "./dto/auth.schemas";
 import {
@@ -41,6 +44,7 @@ import {
 import { placeOrganization } from "../../common/region/placement-lookup";
 import { LEGACY_CELL_ID } from "../../common/region/placement";
 import { chooseRegionForNewOrg } from "../../common/region/cell-admission";
+import { regionForNewOrg } from "../../common/region/region-registry";
 
 function slugify(name: string): string {
   return (
@@ -64,6 +68,7 @@ export class AuthService {
     private readonly entitlements: EntitlementsService,
     private readonly authTokens: AuthTokensService,
     private readonly dispatch: NotificationDispatchService,
+    private readonly accountOrgIndex: AccountOrganizationIndexService,
   ) {}
 
   async register(input: RegisterInput): Promise<{ success: true }> {
@@ -71,15 +76,21 @@ export class AuthService {
 
     const existing = await this.db.query.users.findFirst({
       where: sql`lower(${users.email}) = ${normalizedEmail}`,
-      columns: { id: true },
+      columns: { id: true, isActive: true, lastActiveOrgId: true },
     });
 
-    if (existing) return { success: true };
+    if (existing) {
+      await this.resumeProvisioning(existing);
+      return { success: true };
+    }
 
     const userId = randomUUID();
     const orgId = randomUUID();
 
-    const region = (await chooseRegionForNewOrg(this.db, { organizationId: orgId })).region;
+    const region = (await chooseRegionForNewOrg(this.db, {
+      organizationId: orgId,
+      region: regionForNewOrg(input.country),
+    })).region;
     await placeOrganization(this.db, { orgId, region });
 
     await withTenant(this.db, { orgId, audience: "INTERNAL" }, async (tx) => {
@@ -102,7 +113,14 @@ export class AuthService {
 
       await tx.insert(users).values({
         id: userId,
-        isActive: true,
+        /*
+          Closed until provisioning finishes, then opened at the end of
+          `register`. There is otherwise a window where the row exists and the
+          workspace has no roles in it, and a sign-in landing in that window
+          reaches a workspace that renders nothing. If provisioning throws the
+          door simply never opens, which is a state somebody can retry out of.
+        */
+        isActive: false,
         email: normalizedEmail,
         lastActiveOrgId: orgId,
         emailVerified: new Date(),
@@ -132,12 +150,7 @@ export class AuthService {
       });
     });
 
-    await withTenant(this.db, { orgId, audience: "INTERNAL" }, async (tx) =>
-      runWithTenantContext({ orgId, audience: "INTERNAL", tx }, async () => {
-        await seedSystemRolesForOrg(this.db, orgId);
-        await provisionOrgModules(tx, orgId, DEFAULT_SKIP_MODULES, userId);
-      }),
-    );
+    await this.provisionWorkspace(orgId, userId);
 
     await withIdentity(this.db, userId, (tx) =>
       tx
@@ -162,6 +175,8 @@ export class AuthService {
         }),
     );
 
+    await this.openAccount(userId);
+
     this.audit.log({
       action: "user.registered",
       userId,
@@ -170,6 +185,66 @@ export class AuthService {
     });
 
     return { success: true };
+  }
+
+  /**
+   * Everything a new workspace needs before anybody can look at it.
+   *
+   * Roles and modules make it usable; the demo dataset is what its first screen
+   * shows, and all three go in one tenant transaction so a signup gets the whole
+   * of provisioning or none of it.
+   */
+  private async provisionWorkspace(orgId: string, userId: string): Promise<void> {
+    await withTenant(this.db, { orgId, audience: "INTERNAL" }, async (tx) =>
+      runWithTenantContext({ orgId, audience: "INTERNAL", tx }, async () => {
+        await seedSystemRolesForOrg(this.db, orgId);
+        await provisionOrgModules(tx, orgId, DEFAULT_SKIP_MODULES, userId);
+        await seedDemoDataset(tx, orgId, userId);
+      }),
+    );
+  }
+
+  /**
+   * The last step, deliberately: the account is created closed and opens only
+   * once provisioning has finished, so no sign-in can land in a workspace that
+   * has no roles in it yet.
+   */
+  private async openAccount(userId: string): Promise<void> {
+    await this.db.update(users).set({ isActive: true }).where(eq(users.id, userId));
+    await this.cache.del(CACHE_KEYS.userSession(userId));
+  }
+
+  /**
+   * Finish a registration that did not finish, without starting a second one.
+   *
+   * Returning success for an existing email is right for somebody who already
+   * has a workspace and wrong for somebody whose provisioning threw halfway:
+   * they hold a closed account, an organisation with no roles in it, and no way
+   * to reach either. Retrying the signup is the obvious thing to do, and it did
+   * nothing. The system-role ladder is the marker for "provisioning finished",
+   * so its absence is what makes this resume rather than a flag somebody has to
+   * remember to clear.
+   */
+  private async resumeProvisioning(existing: {
+    id: string;
+    isActive: boolean;
+    lastActiveOrgId: string | null;
+  }): Promise<void> {
+    if (existing.isActive) return;
+
+    const orgId = existing.lastActiveOrgId;
+    if (!orgId) return;
+
+    const [ladder] = await this.db
+      .select({ id: roles.id })
+      .from(roles)
+      .where(and(eq(roles.orgId, orgId), eq(roles.isSystem, true)))
+      .limit(1);
+
+    if (ladder) return;
+
+    await this.provisionWorkspace(orgId, existing.id);
+    await this.openAccount(existing.id);
   }
 
   async logout(sessionId: string, userId: string): Promise<void> {
@@ -182,28 +257,6 @@ export class AuthService {
       ? this.sessions.revokeAllOthers(userId, exceptSessionId)
       : this.sessions.revokeAllForUser(userId));
     this.audit.log({ action: "auth.logout_all", userId });
-  }
-
-  private async resolvePreferredOrg(
-    userId: string,
-  ): Promise<{ orgId: string; cellId: string } | null> {
-    const rows = await withIdentity(this.db, userId, (tx) =>
-      tx
-        .select({
-          orgId: accountOrganizationIndex.orgId,
-          cellId: accountOrganizationIndex.cellId,
-        })
-        .from(accountOrganizationIndex)
-        .where(eq(accountOrganizationIndex.userId, userId))
-        .orderBy(
-          sql`${accountOrganizationIndex.lastActivatedAt} DESC NULLS LAST`,
-          desc(accountOrganizationIndex.joinedAt),
-        )
-        .limit(1),
-    );
-    const row = rows[0];
-    if (!row) return null;
-    return { orgId: row.orgId, cellId: row.cellId };
   }
 
   async getSessionData(userId: string): Promise<{
@@ -250,7 +303,7 @@ export class AuthService {
                 HttpStatus.SERVICE_UNAVAILABLE,
               );
             }),
-          this.resolvePreferredOrg(userId).catch(() => null),
+          this.accountOrgIndex.resolvePreferredOrg(userId).catch(() => null),
         ]);
 
         if (!user) throw new NotFoundException("User not found");

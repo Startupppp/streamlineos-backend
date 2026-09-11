@@ -2,12 +2,20 @@ import { pgTable, text, serial, timestamp, boolean, integer, index, unique, fore
 import { relations } from "drizzle-orm";
 import { supportTicketStatusEnum, supportTicketPriorityEnum } from "../common/enums";
 import { organizations, users, organizationMembers } from "../common/auth";
-import { clients } from "../crm/contacts";
 
 export const supportTickets = pgTable("support_tickets", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-  clientId: integer("client_id").references(() => clients.id),
+  clientId: integer("client_id"),
+  /**
+  * The party this row belongs to. Ticket 08's expand.
+  *
+  * Beside `client_id` rather than replacing it: every existing reader keeps
+  * working while readers move over one at a time, and the old column goes in
+  * the contract migration once none is left. Nullable until then -- a null
+  * means "not yet backfilled", which is a state worth being able to see.
+  */
+  clientPartyId: text("client_party_id"),
   assigneeId: text("assignee_id").references(() => users.id),
   assigneeMembershipId: integer("assignee_membership_id"),
   title: text("title").notNull(),
@@ -94,7 +102,6 @@ export const supportTicketAttachments = pgTable("support_ticket_attachments", {
 
 export const supportTicketsRelations = relations(supportTickets, ({ one, many }) => ({
   organization: one(organizations, { fields: [supportTickets.orgId], references: [organizations.id] }),
-  client: one(clients, { fields: [supportTickets.clientId], references: [clients.id] }),
   assignee: one(users, { fields: [supportTickets.assigneeId], references: [users.id] }),
   creator: one(users, { fields: [supportTickets.createdBy], references: [users.id] }),
   messages: many(supportTicketMessages),

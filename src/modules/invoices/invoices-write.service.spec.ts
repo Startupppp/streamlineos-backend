@@ -4,7 +4,7 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import { AuditService } from "../../common/audit/audit.service";
 import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_KEYS } from "../../common/cache/cache-keys";
-import { JournalPostingService } from "../accounting/posting/journal-posting.service";
+import { InvoicesPostingService } from "./invoices-posting.service";
 import { InvoicesLifecycleService } from "./invoices-lifecycle.service";
 import { InvoicesUpdateService } from "./invoices-update.service";
 import { InvoicesPaymentService } from "./invoices-payment.service";
@@ -80,8 +80,9 @@ describe("InvoicesWriteService — cache invalidation", () => {
           findFirst: jest.fn().mockResolvedValue(null),
           findMany: jest.fn().mockResolvedValue([]),
         },
+        // createInvoice resolves the supplier's state code for the GST split.
         organizations: {
-          findFirst: jest.fn().mockResolvedValue(undefined),
+          findFirst: jest.fn().mockResolvedValue({ address: null }),
         },
       },
       select: jest.fn().mockReturnValue({
@@ -104,16 +105,14 @@ describe("InvoicesWriteService — cache invalidation", () => {
     };
 
     const mockPosting = {
-      seedChartOfAccountsForOrg: jest.fn().mockResolvedValue(undefined),
-      gstSplit: jest.fn().mockReturnValue({ cgst: 0, sgst: 0, igst: 0 }),
-      postInvoiceSend: jest.fn().mockResolvedValue(undefined),
+      postInvoiceIssued: jest.fn().mockResolvedValue(null),
     };
 
     const module = await Test.createTestingModule({
       providers: [
         InvoicesWriteService,
         { provide: DRIZZLE, useValue: mockDb },
-        { provide: JournalPostingService, useValue: mockPosting },
+        { provide: InvoicesPostingService, useValue: mockPosting },
         { provide: InvoicesLifecycleService, useValue: mockLifecycle },
         { provide: AuditService, useValue: { log: jest.fn() } },
         { provide: PlanLimitsService, useValue: { assertWithinLimit: jest.fn().mockResolvedValue(undefined) } },

@@ -1,6 +1,6 @@
 import { Module } from "@nestjs/common";
 import { AutomationModule } from "../automation/automation.module";
-import { AccountingModule } from "../accounting/core/accounting.module";
+import { AccountingAdaptersModule } from "../accounting/adapters/accounting-adapters.module";
 import { NotificationsModule } from "../notifications/notifications.module";
 import { OutboxModule } from "../../common/outbox/outbox.module";
 import {
@@ -21,8 +21,16 @@ import { EmployeeExpensesController } from "./employee-expenses.controller";
 import { ExpenseExportService } from "./expense-export.service";
 import { ExpenseExportWorkerService } from "./expense-export-worker.service";
 
+/**
+ * Employee expense claims and travel requests — HR self-service, not accounting.
+ *
+ * The only accounting dependency is the anti-corruption layer: approving a claim
+ * posts an accrual through `PostingCommandService`. Importing
+ * `AccountingAdaptersModule` rather than the accounting root keeps that arrow
+ * pointing at the one seam accounting exposes to other modules.
+ */
 @Module({
-  imports: [AutomationModule, AccountingModule, NotificationsModule, OutboxModule],
+  imports: [AutomationModule, AccountingAdaptersModule, NotificationsModule, OutboxModule],
   controllers: [EmployeeExpensesController, ExpensesController, ExpenseCategoriesController, ExpensesImportController, TravelController],
   providers: [
     ExpensesService,

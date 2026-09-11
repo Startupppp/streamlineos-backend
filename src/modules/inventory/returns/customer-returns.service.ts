@@ -7,8 +7,10 @@ import { CacheService } from "../../../common/cache/cache.service";
 import { CACHE_KEYS, CACHE_TTL } from "../../../common/cache/cache-keys";
 import { WarehouseScopeService } from "../stock-engine/warehouse-scope.service";
 import { StockEngineService } from "../stock-engine/stock-engine.service";
+import { StockMovementBridgeService } from "../../accounting/adapters/stock-movement-bridge.service";
 import { NumberSequenceService } from "../stock-engine/number-sequence.service";
 import { runIdempotent, revivedId } from "../stock-engine/idempotency";
+import { partyNamesFor } from "../../party/party-names";
 import { returnInScope } from "./lib/customer-return-scope";
 import {
   createCustomerReturn,
@@ -30,6 +32,26 @@ import type {
 
 type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
 
+/**
+ * The customer on a return, from Party rather than the dropped `clients` table.
+ *
+ * Ticket 08's reader half, in the shape the `client` relation used to return:
+ * `client.id` is still the legacy id the return was filed under and
+ * `client.name` is what the Customer column reads — only where the name comes
+ * from moved. A Party-era return with no legacy id still shows its customer.
+ */
+function customerOf(
+  row: { clientId: number | null; clientPartyId: string | null },
+  names: ReadonlyMap<string, string>,
+) {
+  if (row.clientId === null && !row.clientPartyId) return null;
+  return {
+    id: row.clientId,
+    partyId: row.clientPartyId,
+    name: row.clientPartyId ? (names.get(row.clientPartyId) ?? null) : null,
+  };
+}
+
 @Injectable()
 export class CustomerReturnsService {
   constructor(
@@ -38,6 +60,7 @@ export class CustomerReturnsService {
     private readonly engine: StockEngineService,
     private readonly numSeq: NumberSequenceService,
     private readonly warehouseScope: WarehouseScopeService,
+    private readonly glBridge: StockMovementBridgeService,
   ) {}
 
   /**
@@ -84,15 +107,16 @@ export class CustomerReturnsService {
           offset,
           with: {
             creator: { columns: { id: true, name: true } },
-            client: { columns: { id: true, name: true } },
             lines: true,
           },
         }),
         this.db.select({ count: sql<number>`count(*)::int` }).from(invCustomerReturns).where(where),
       ]);
 
+      const names = await partyNamesFor(this.db, orgId, items.map((ret) => ret.clientPartyId));
+
       return {
-        items,
+        items: items.map((ret) => ({ ...ret, client: customerOf(ret, names) })),
         total: countResult[0]?.count ?? 0,
         page,
         totalPages: Math.ceil((countResult[0]?.count ?? 0) / limit),
@@ -146,12 +170,12 @@ export class CustomerReturnsService {
       with: {
         creator: { columns: { id: true, name: true } },
         approver: { columns: { id: true, name: true } },
-        client: { columns: { id: true, name: true } },
         lines: true,
       },
     });
     if (!ret) throw new NotFoundException("Customer return not found");
-    return ret;
+    const names = await partyNamesFor(this.db, orgId, [ret.clientPartyId]);
+    return { ...ret, client: customerOf(ret, names) };
   }
 
   /** @see lib/customer-return-create.ts */
@@ -375,6 +399,7 @@ export class CustomerReturnsService {
       engine: this.engine,
       numSeq: this.numSeq,
       warehouseScope: this.warehouseScope,
+      glBridge: this.glBridge,
       reloadUnscopedReturn: (orgId, returnId) => this.loadCustomerReturnUnscoped(orgId, returnId),
     };
   }

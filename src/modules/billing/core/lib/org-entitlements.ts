@@ -8,6 +8,7 @@ import {
 } from "../../../../db/schema";
 import { runInTenantTransaction } from "../../../../common/tenant/run-in-tenant-transaction";
 import { registerAfterCommit } from "../../../../common/tenant/tenant-context";
+import { getPostgresErrorCode } from "../../../../common/db/postgres-error";
 import type { DbOrTx } from "../../../../common/rbac/access-invalidate";
 
 export interface PlanEntitlementSnapshot {
@@ -141,8 +142,17 @@ export async function upsertOrgEntitlementOverride(
         setWhere: sql`${orgEntitlementOverrides.idempotencyKey} IS NOT NULL`,
       });
   } catch (err: unknown) {
-    const pgErr = err as { code?: string };
-    if (pgErr.code === "23505") throw new ConflictException("Entitlement override already exists for this window");
+    /**
+     * What is left for this to catch, once the arbiter is valid, is
+     * `uq_org_ent_overrides_org_key_from` — (org_id, feature_key,
+     * effective_from) — which two overrides of the same feature stamped with
+     * the same `now` collide on. Read through the helper: Drizzle leaves the
+     * SQLSTATE on `.cause`, so `err.code` was undefined here too.
+     */
+    if (getPostgresErrorCode(err) === "23505")
+      throw new ConflictException(
+        `An entitlement override for "${featureKey}" already exists for this window`,
+      );
     throw err;
   }
   const deferred = registerAfterCommit(() => bustOrgEntitlementCache(deps, orgId));

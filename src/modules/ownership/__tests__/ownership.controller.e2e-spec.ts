@@ -1,4 +1,7 @@
 import type { INestApplication } from "@nestjs/common";
+import { seedOrg } from "../../../../test/helpers/e2e-seed";
+import { DRIZZLE } from "../../../db/drizzle.constants";
+import type { Db } from "../../../db/drizzle.types";
 import {
   BadRequestException,
   ConflictException,
@@ -148,6 +151,20 @@ describe("OwnershipController auth / RBAC (e2e)", () => {
         { provide: RateLimitService, useValue: rateLimitAllowAll },
       ],
     });
+
+    /*
+      The organisations these cases name, as rows.
+
+      `command_fences` carries a foreign key to `organizations`, and the
+      idempotency interceptor writes a fence before the handler runs — so an
+      organisation that exists only inside a token turns an assertion about a 404
+      into a 500 from the fence. Overriding `IdempotencyInterceptor` does not
+      help: it is registered as `APP_INTERCEPTOR` with `useClass`, which builds
+      its own instance rather than resolving the overridden token.
+    */
+    const db = app.get<Db>(DRIZZLE);
+    for (const org of ["org-alpha", "org-alpha-isolation", "org-alpha-list", "org-alpha-mods"])
+      await seedOrg(db, org, org);
   });
 
   afterAll(async () => app.close());
@@ -275,7 +292,13 @@ describe("OwnershipController auth / RBAC (e2e)", () => {
         .set("Idempotency-Key", `e2e-own-3-${Date.now()}`)
         .send({ toMembershipId: 99 });
       expect(res.status).toBe(403);
-      expect(res.body).toMatchObject({ code: "OWNER_ONLY_OPERATION", message: expect.stringContaining("organization owner") });
+      // `OWNER_ONLY_OPERATIONS` answers these now, and says which operation was
+      // refused rather than only that something was. The older generic FORBIDDEN
+      // could not tell an owner-only refusal from a missing permission.
+      expect(res.body).toMatchObject({
+        code: "OWNER_ONLY_OPERATION",
+        message: expect.stringContaining("organization owner"),
+      });
     });
 
     it("PUT /ownership/modules/hr/owner → 403 when non-owner holds ownership:modules:manage permission", async () => {
@@ -288,7 +311,13 @@ describe("OwnershipController auth / RBAC (e2e)", () => {
         .set("Authorization", `Bearer ${token}`)
         .send({ ownerMembershipId: 5 });
       expect(res.status).toBe(403);
-      expect(res.body).toMatchObject({ code: "OWNER_ONLY_OPERATION", message: expect.stringContaining("organization owner") });
+      // `OWNER_ONLY_OPERATIONS` answers these now, and says which operation was
+      // refused rather than only that something was. The older generic FORBIDDEN
+      // could not tell an owner-only refusal from a missing permission.
+      expect(res.body).toMatchObject({
+        code: "OWNER_ONLY_OPERATION",
+        message: expect.stringContaining("organization owner"),
+      });
     });
 
     it("non-owner with ownership:org:transfer permission is still blocked by controller-level owner check", async () => {
@@ -302,7 +331,13 @@ describe("OwnershipController auth / RBAC (e2e)", () => {
         .set("Idempotency-Key", `e2e-own-4-${Date.now()}`)
         .send({ toMembershipId: 99 });
       expect(res.status).toBe(403);
-      expect(res.body).toMatchObject({ code: "OWNER_ONLY_OPERATION", message: expect.stringContaining("organization owner") });
+      // `OWNER_ONLY_OPERATIONS` answers these now, and says which operation was
+      // refused rather than only that something was. The older generic FORBIDDEN
+      // could not tell an owner-only refusal from a missing permission.
+      expect(res.body).toMatchObject({
+        code: "OWNER_ONLY_OPERATION",
+        message: expect.stringContaining("organization owner"),
+      });
     });
   });
 

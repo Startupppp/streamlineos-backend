@@ -63,6 +63,24 @@ export async function getLeadAnalytics(
   const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
   const sixtyDaysAgo = new Date(now.getTime() - 60 * 24 * 60 * 60 * 1000);
 
+  /*
+    The previous period is the SAME leads, one window earlier.
+
+    It was built from a bare `leadPartyScope(orgId)` while the current period
+    went through `f`, which carries the view scope. So a rep at `own` was shown
+    their own total against the organisation's total from a month ago: the
+    delta beside it was arithmetic between two different populations, and it
+    disclosed the organisation's lead count to the one caller this endpoint was
+    already careful not to disclose it to. A comparison figure has to narrow
+    with the figure it is compared against or it is not a comparison.
+  */
+  const prevPeriod = leadPartyScope(orgId);
+  pushLeadPartyViewScope(prevPeriod, orgId, viewScope?.scope, viewScope?.userId);
+  prevPeriod.push(
+    gte(LEAD_PARTY_COLUMNS.createdAt, sixtyDaysAgo),
+    lte(LEAD_PARTY_COLUMNS.createdAt, thirtyDaysAgo),
+  );
+
   const statusOptions = await deps.db
     .select()
     .from(crmOptions)
@@ -94,13 +112,7 @@ export async function getLeadAnalytics(
         })
         .from(leadPartyMap)
         .innerJoin(businessParties, LEAD_PARTY_JOIN)
-        .where(
-          and(
-            ...leadPartyScope(orgId),
-            gte(LEAD_PARTY_COLUMNS.createdAt, sixtyDaysAgo),
-            lte(LEAD_PARTY_COLUMNS.createdAt, thirtyDaysAgo),
-          ),
-        ),
+        .where(and(...prevPeriod)),
       deps.db
         .select({ key: crmPipelineStages.key })
         .from(crmPipelineStages)

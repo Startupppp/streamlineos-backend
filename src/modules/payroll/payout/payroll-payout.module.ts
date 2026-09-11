@@ -1,7 +1,8 @@
 import { Module } from "@nestjs/common";
 import { PayrollInsightsModule } from "../insights/payroll-insights.module";
 import { PayrollRunsModule } from "../runs/payroll-runs.module";
-import { AccountingModule } from "../../accounting/core/accounting.module";
+import { AccountingAdaptersModule } from "../../accounting/adapters/accounting-adapters.module";
+import { AccountingKernelModule } from "../../accounting/kernel/accounting-kernel.module";
 import { DirectoryModule } from "../../directory/directory.module";
 import { PayrollPayoutApprovalsController } from "./approvals.controller";
 import { ApprovalsService } from "./approvals.service";
@@ -28,7 +29,7 @@ import { PayrollPostingService } from "../payroll-posting.service";
 import { NotificationsModule } from "../../notifications/notifications.module";
 
 @Module({
-  imports: [NotificationsModule, PayrollInsightsModule, PayrollRunsModule, AccountingModule, DirectoryModule],
+  imports: [NotificationsModule, PayrollInsightsModule, PayrollRunsModule, DirectoryModule, AccountingAdaptersModule, AccountingKernelModule],
   controllers: [
     PayrollPayoutApprovalsController,
     LockingController,

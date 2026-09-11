@@ -4,7 +4,6 @@ import { organizations, organizationMembers } from "../common/auth";
 import { signEnvelopeStatusEnum, signRoutingModeEnum, signCcTimingEnum } from "./enums";
 import { signTemplates } from "./templates";
 import { signWatermarkPolicies } from "./watermark";
-import { signPublicForms } from "./public-forms";
 
 export const signEnvelopes = pgTable(
   "sign_envelopes",
@@ -46,8 +45,6 @@ export const signEnvelopes = pgTable(
     finalizedAt: timestamp("finalized_at"),
     finalPdfFileKey: text("final_pdf_file_key"),
     finalPdfHash: text("final_pdf_hash"),
-
-    publicFormId: integer("public_form_id").references(() => signPublicForms.id, { onDelete: "set null" }),
 
     metadataJson: jsonb("metadata_json").$type<Record<string, unknown>>().default({}).notNull(),
     createdAt: timestamp("created_at").defaultNow().notNull(),

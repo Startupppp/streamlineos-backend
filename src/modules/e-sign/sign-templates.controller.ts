@@ -16,12 +16,10 @@ import {
   updateTemplateSchema,
   saveAsTemplateSchema,
   createEnvelopeFromTemplateSchema,
-  publishPublicFormSchema,
   type CreateTemplateInput,
   type UpdateTemplateInput,
   type SaveAsTemplateInput,
   type CreateEnvelopeFromTemplateInput,
-  type PublishPublicFormInput,
 } from "./dto/e-sign.schemas";
 
 const envelopeIdParams = z.object({ envelopeId: z.coerce.number().int().positive() }).strict();
@@ -95,16 +93,5 @@ export class SignTemplatesController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.templates.instantiate(u.orgId, actingMembershipId(u.principal), templateId, body);
-  }
-
-  @Post("templates/:templateId/publish-public-form")
-  @RequirePermission("sign:template:manage")
-  @Validate({ params: templateIdParams, body: publishPublicFormSchema })
-  publishPublicForm(
-    @Param("templateId", ParseIntPipe) templateId: number,
-    @Body() body: PublishPublicFormInput,
-    @CurrentUser() u: CurrentUserContext,
-  ) {
-    return this.templates.publishPublicForm(u.orgId, actingMembershipId(u.principal), templateId, body);
   }
 }

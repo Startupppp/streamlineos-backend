@@ -1,5 +1,8 @@
 import type { Db } from "../../../../db/drizzle.module";
 import { FxService } from "../fx.service";
+import { BooksService } from "../../../accounting/kernel/books.service";
+import { FxService as AccountingFxService } from "../../../accounting/kernel/fx.service";
+import type { PackRegistry } from "../../../accounting/packs/pack.registry";
 import { EntriesPeriodService } from "../entries-period.service";
 import { ExceptionsDetectorService } from "../exceptions-detector.service";
 import { TimesheetsAuditService } from "../timesheets-audit.service";
@@ -120,20 +123,34 @@ const mockAccess = {
 };
 
 describe("FxService — cross-tenant isolation", () => {
+  // Rates live on the org's book (gl_fx_rates), so the tenant boundary is the
+  // book lookup: the real BooksService runs against the double, and the rate
+  // read only ever sees the id of the book that lookup returned.
+  function makeFx() {
+    return {
+      rateFor: jest.fn().mockResolvedValue({ id: "rate-1", rate: "1.2", rateDate: "2025-01-01" }),
+    } as unknown as AccountingFxService & { rateFor: jest.Mock };
+  }
+
   it("returns empty map for attacker org (deny — different org isolation)", async () => {
     const { db, where } = makeDb([]);
-    const svc = new FxService(db);
+    const fx = makeFx();
+    const svc = new FxService(new BooksService(db, {} as PackRegistry), fx);
     const result = await svc.getLatestRates(ATTACKER_ORG, ["USD"], "EUR");
     expect(result.size).toBe(0);
     expect(where).toHaveBeenCalledTimes(1);
     expect(sqlValues(where.mock.calls[0]?.[0])).toContain(ATTACKER_ORG);
+    expect(fx.rateFor).not.toHaveBeenCalled();
   });
 
   it("returns rates for the owning org (control — same-tenant)", async () => {
-    const row = { fromCurrency: "USD", rate: "1.2", asOfDate: "2025-01-01" };
-    const { db } = makeDb([row]);
-    const svc = new FxService(db);
+    const book = { id: "book-owner", orgId: OWNER_ORG, isDefault: true, baseCurrency: "EUR" };
+    const { db, where } = makeDb([book]);
+    const fx = makeFx();
+    const svc = new FxService(new BooksService(db, {} as PackRegistry), fx);
     const result = await svc.getLatestRates(OWNER_ORG, ["USD"], "EUR");
+    expect(sqlValues(where.mock.calls[0]?.[0])).toContain(OWNER_ORG);
+    expect(fx.rateFor).toHaveBeenCalledWith("book-owner", "USD", "EUR", expect.any(String));
     expect(result.size).toBe(1);
     expect(result.get("USD")?.rate).toBeCloseTo(1.2);
   });

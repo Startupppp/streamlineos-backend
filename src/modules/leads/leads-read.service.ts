@@ -135,6 +135,9 @@ export class LeadsReadService {
         .from(leadPartyMap)
         .innerJoin(businessParties, LEAD_PARTY_JOIN)
         .leftJoin(users, eq(LEAD_PARTY_COLUMNS.assignedToId, users.id))
+        // The campaign join carries the tenant, where the relation it replaces
+        // joined on the id alone: `acquisition_campaign_id` is a single-column
+        // foreign key with the same cross-tenant gap `leads.campaign_id` had.
         .leftJoin(
           crmCampaigns,
           and(
@@ -143,6 +146,9 @@ export class LeadsReadService {
           ),
         )
         .where(whereClause)
+        // Page boundaries need a unique tiebreaker: none of the sortable columns
+        // is unique, and a page over a non-unique order can show a row twice or
+        // not at all.
         .orderBy(orderFn, desc(idCol))
         .limit(limit + 1),
       filters?.cursor === undefined

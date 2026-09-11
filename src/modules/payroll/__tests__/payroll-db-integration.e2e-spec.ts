@@ -1,4 +1,5 @@
 import postgres from 'postgres';
+import { requiresTls } from '../../../db/pool.config';
 import type { MediaCompressionService } from "../../../common/media/media-compression.service";
 import { drizzle, type PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import { and, eq, inArray, count } from 'drizzle-orm';
@@ -120,7 +121,7 @@ d('Payroll DB Integration', () => {
 
     sql = postgres(normalizeDatabaseUrl(url), {
       prepare: false,
-      ssl: 'require' as const,
+      ...(requiresTls(url) ? { ssl: 'require' as const } : {}),
       max: 3,
     });
     db = drizzle(sql, { schema });
