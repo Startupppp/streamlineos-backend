@@ -54,6 +54,9 @@ import { makeMfaPolicyStub } from "../../../../test/helpers/mfa-policy-stub";
 import { CrmMcpSettingsService } from "./crm-mcp-settings.service";
 import { AccessVersionCache } from "../../access/access-version-cache";
 import { membershipStubFromDb } from "../../../../test/helpers/membership-state-stub";
+import { AuthContextFactory } from "../../../common/auth/auth-context.factory";
+import { JwtKeyringService } from "../../../common/auth/jwt-keyring.service";
+import { makeAuthContextFactory } from "../../../../test/helpers/module-guard-context";
 
 const DEAL_KEY = "crm:deals:read";
 const PARTY_KEY = "party:parties:view";
@@ -307,6 +310,17 @@ describe("CRM MCP agent token, issuer to guard", () => {
          * a test of the switch instead of a test of what it guards.
          */
         { provide: CrmMcpSettingsService, useValue: mcpSettings },
+        // main's JwtAuthGuard and authorize() build an AuthContext per request;
+        // the agent-token path is handled before any JWT, so the keyring is inert.
+        { provide: AuthContextFactory, useValue: makeAuthContextFactory() },
+        {
+          provide: JwtKeyringService,
+          useValue: {
+            isReady: () => true,
+            signToken: jest.fn(),
+            verifyToken: jest.fn().mockRejectedValue(new Error("not a JWT")),
+          },
+        },
       ],
     }).compile();
 

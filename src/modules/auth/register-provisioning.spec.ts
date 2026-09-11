@@ -50,6 +50,10 @@ jest.mock("../../common/region/region-registry", () => ({
 
 jest.mock("../../common/region/cell-admission", () => ({
   chooseRegionForNewOrg: jest.fn().mockResolvedValue({ region: "eu" }),
+  regionPlacementCoordinates: jest.fn((choice: { region: string }) => ({
+    region: choice.region,
+    cellId: `${choice.region}-1`,
+  })),
 }));
 
 jest.mock("../rbac/seed-system-roles", () => ({
@@ -161,7 +165,14 @@ function buildService(options: {
   const service = new AuthService(
     db as never,
     {} as never,
-    { del: jest.fn().mockResolvedValue(undefined) } as never,
+    {
+      del: jest.fn().mockResolvedValue(undefined),
+      // main's membership-status bust runs on activation.
+      invalidate: jest.fn().mockResolvedValue(undefined),
+      invalidateNamespace: jest.fn().mockResolvedValue(undefined),
+      invalidateForOrg: jest.fn().mockResolvedValue(undefined),
+      invalidateNamespaceForOrg: jest.fn().mockResolvedValue(undefined),
+    } as never,
     { log: jest.fn() } as never,
     {} as never,
     {} as never,

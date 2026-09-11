@@ -18,7 +18,12 @@ import { CrmMcpSettingsService } from "./crm-mcp-settings.service";
 import { queryDescriptionSchema } from "../../reporting/dto/reporting.schemas";
 import { REPORTING_REGISTRY, fieldsOf } from "../../reporting/compiler/registry";
 import { AuthContextFactory } from "../../../common/auth/auth-context.factory";
-import { makeAuthContextFactory } from "../../../../test/helpers/module-guard-context";
+import {
+  MODULE_AVAILABLE,
+  MODULE_DISABLED,
+  makeAuthContextFactory,
+} from "../../../../test/helpers/module-guard-context";
+import { ScopedRead } from "../../access/scoped-read";
 
 describe("CrmMcpService", () => {
   let service: CrmMcpService;
@@ -138,7 +143,22 @@ describe("CrmMcpService", () => {
          * a test of the switch instead of a test of what it guards.
          */
         { provide: CrmMcpSettingsService, useValue: mcpSettings },
-        { provide: AuthContextFactory, useValue: makeAuthContextFactory() },
+        /*
+         * main's authorize() asks the AuthContext whether a module is on,
+         * where it used to ask AccessService. The double answers from the same
+         * getModuleState switch the tests flip, and core namespaces such as
+         * `party` stay on, as the real resolver keeps them.
+         */
+        {
+          provide: AuthContextFactory,
+          useValue: makeAuthContextFactory({
+            moduleAvailability: async (user, moduleKey) =>
+              isCoreModuleKey(moduleKey) ||
+              (await accessService.getModuleState(user.orgId, moduleKey))
+                ? MODULE_AVAILABLE
+                : MODULE_DISABLED,
+          }),
+        },
       ],
     }).compile();
 
@@ -188,17 +208,17 @@ describe("CrmMcpService", () => {
       });
 
       /*
-       * Four arguments, and the scope is the third thing this asserts.
-       * `listDeals` has always taken `(orgId, userId, query, scope)`; the old
-       * call passed two, so neither the caller's identity nor their DataScope
-       * ever reached the query.
+       * The caller's identity and DataScope reach the query as one ScopedRead:
+       * the org, the actor and the resolved scope are all asserted, because the
+       * old call passed none of them and every agent read the whole org.
        */
-      expect(dealsService.listDeals).toHaveBeenCalledWith(
-        "org_crm_test",
-        "usr_agent_123",
-        { limit: 20, stage: "won" },
-        "all",
-      );
+      expect(dealsService.listDeals).toHaveBeenCalledTimes(1);
+      const [read, query] = dealsService.listDeals.mock.calls[0] as [ScopedRead, unknown];
+      expect(read).toBeInstanceOf(ScopedRead);
+      expect(read.orgId).toBe("org_crm_test");
+      expect(read.actorId).toBe("usr_agent_123");
+      expect(read.unrestricted).toBe(true);
+      expect(query).toEqual({ limit: 20, stage: "won" });
       expect(result.content[0].text).toContain("Big Enterprise Deal");
     });
 
@@ -372,6 +392,8 @@ describe("CrmMcpService", () => {
           }),
         }),
         "crm:deals:read",
+        // main's authorize() passes the request's AuthContext through.
+        expect.anything(),
       );
     });
 
