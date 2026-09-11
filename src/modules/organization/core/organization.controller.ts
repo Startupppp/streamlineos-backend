@@ -1,14 +1,11 @@
 import {
-  BadRequestException,
   Body,
   Controller,
-  Delete,
   Get,
   HttpCode,
   HttpException,
   HttpStatus,
   NotFoundException,
-  Param,
   Patch,
   Post,
   Query,
@@ -24,8 +21,6 @@ import { AllowNoOrg } from "../../../common/auth/allow-no-org.decorator";
 import { NoTenantTransaction } from "../../../common/tenant";
 import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
-import { assertOwnerOnly } from "../../../common/rbac/owner-only-operations";
-import { assertPathOrgIsCallerOrg } from "./assert-path-org";
 import { RateLimitGuard } from "../../../common/ratelimit/rate-limit.guard";
 import { UseRateLimit } from "../../../common/ratelimit/use-rate-limit.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
@@ -33,104 +28,50 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import { OrgProfileService } from "./org-profile.service";
-import { OrgMembershipService } from "./org-membership.service";
-import { OrgMembershipStatusService } from "./org-membership-status.service";
-import { OrgMemberDepartureService } from "./org-member-departure.service";
 import { OrgLifecycleService } from "./org-lifecycle.service";
-import { OrgPurgeService } from "./org-purge.service";
 import { OrganizationSettingsService } from "./organization-settings.service";
-import { OrgHolidaysService } from "./org-holidays.service";
-import { OrgCustomDomainsService } from "./org-custom-domains.service";
-import { OrganizationLegalHoldService } from "./lifecycle/organization-legal-hold.service";
 import { InvitationsReadService } from "./invitations-read.service";
 import { InvitationAcceptanceService } from "./invitation-acceptance.service";
 import {
   acceptInvitationSchema,
-  addCustomDomainSchema,
   declineInvitationSchema,
   createOrganizationSchema,
-  createHolidaySchema,
-  deleteOrgSchema,
-  listMembersSchema,
-  placeLegalHoldSchema,
-  restoreOrgSchema,
-  schedulePurgeSchema,
   securitySettingsSchema,
   switchOrgSchema,
-  updateMemberRoleSchema,
   updateOrgSettingsSchema,
   validateInvitationTokenQuerySchema,
   type AcceptInvitationInput,
-  type AddCustomDomainInput,
   type DeclineInvitationInput,
-  type CreateHolidayInput,
   type CreateOrganizationInput,
-  type DeleteOrgInput,
-  type ListMembersInput,
-  type PlaceLegalHoldInput,
-  type RestoreOrgInput,
-  type SchedulePurgeInput,
   type SecuritySettingsInput,
   type SwitchOrgInput,
-  type UpdateMemberRoleInput,
   type UpdateOrgSettingsInput,
   type ValidateInvitationTokenQuery,
 } from "./dto/organization.schemas";
-import { BodylessAction, NoContentResponse, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
 import {
   invitationValidateResponseSchema,
   orgListResponseSchema,
   archivedOrgListResponseSchema,
   createOrgResponseSchema,
   switchOrgResponseSchema,
-  orgMembersListResponseSchema,
-  updateMemberRoleResponseSchema,
-  memberStatusMutationResponseSchema,
   orgSettingsResponseSchema,
   updateOrgSettingsResponseSchema,
   acceptInvitationResponseSchema,
   declineInvitationResponseSchema,
-  customDomainListResponseSchema,
-  addCustomDomainResponseSchema,
-  verifyCustomDomainResponseSchema,
-  holidayListResponseSchema,
-  createHolidayResponseSchema,
-  archiveOrgResponseSchema,
-  restoreOrgResponseSchema,
-  leaveOrgResponseSchema,
-  deleteOrgResponseSchema,
-  schedulePurgeResponseSchema,
-  cancelPurgeResponseSchema,
-  placeLegalHoldResponseSchema,
-  legalHoldListResponseSchema,
-  releaseLegalHoldResponseSchema,
 } from "./dto/organization-core-response.schemas";
-import { z } from "zod";
 import { resolveClientIpOr } from "../../../common/http/client-ip";
-
-const memberIdParams = z.object({ memberId: z.string().min(1) }).strict();
-const domainIdParams = z.object({ domainId: z.string().min(1) }).strict();
-const holidayIdParams = z.object({ holidayId: z.string().min(1) }).strict();
-const orgIdParams = z.object({ orgId: z.string().min(1) }).strict();
-const holdIdParams = z.object({ holdId: z.string().min(1) }).strict();
 
 @Controller("organization")
 @UseGuards(JwtAuthGuard)
 export class OrganizationController {
   constructor(
     private readonly orgProfile: OrgProfileService,
-    private readonly orgMembership: OrgMembershipService,
-    private readonly orgMembershipStatus: OrgMembershipStatusService,
-    private readonly orgMemberDeparture: OrgMemberDepartureService,
     private readonly orgLifecycle: OrgLifecycleService,
-    private readonly orgPurge: OrgPurgeService,
     private readonly settings: OrganizationSettingsService,
-    private readonly holidays: OrgHolidaysService,
-    private readonly customDomains: OrgCustomDomainsService,
     private readonly invitationsRead: InvitationsReadService,
     private readonly invitationAcceptance: InvitationAcceptanceService,
     private readonly rateLimit: RateLimitService,
-    private readonly legalHold: OrganizationLegalHoldService,
   ) {}
 
   private getIp(req: { ip?: string; headers: Record<string, string> }): string {
@@ -188,6 +129,7 @@ export class OrganizationController {
   @AuthorizedInService("any authenticated user may create a new organisation; an organisation is a tenant, not a metered resource, so there is deliberately NO count cap — @UseRateLimit(\"organization:create\") is the abuse control")
   @UseRateLimit("organization:create")
   @Idempotent("organization.create")
+  @NoTenantTransaction()
   @Validate({ body: createOrganizationSchema })
   createOrganization(
     @Body() body: CreateOrganizationInput,
@@ -208,74 +150,6 @@ export class OrganizationController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.orgProfile.switchOrg(u.userId, body.orgId);
-  }
-
-  @UseGuards(PermissionGuard)
-  @RequirePermission("settings:view")
-  @Get("members")
-  @ResponseSchema(orgMembersListResponseSchema)
-  @Validate({ query: listMembersSchema })
-  listMembers(
-    @Query() query: ListMembersInput,
-    @CurrentUser() u: CurrentUserContext,
-  ) {
-    return this.orgMembership.listMembers(u.orgId, query);
-  }
-
-  @UseGuards(PermissionGuard)
-  @RequirePermission("settings:organization:manage")
-  @Patch("members/:memberId")
-  @ResponseSchema(updateMemberRoleResponseSchema)
-  @Validate({ params: memberIdParams, body: updateMemberRoleSchema })
-  updateMemberRole(
-    @Param("memberId") memberId: string,
-    @Body() body: UpdateMemberRoleInput,
-    @CurrentUser() u: CurrentUserContext,
-  ) {
-    return this.orgMembership.updateMemberRole(
-      u.orgId,
-      { userId: u.userId, isOrgOwner: u.isOrgOwner },
-      memberId,
-      body.role,
-    );
-  }
-
-  @Delete("members/:memberId")
-  @NoContentResponse()
-  @HttpCode(204)
-  @UseGuards(PermissionGuard)
-  @RequirePermission("settings:organization:manage")
-  @Validate({ params: memberIdParams })
-  async removeMember(@Param("memberId") memberId: string, @CurrentUser() u: CurrentUserContext): Promise<void> {
-    if (memberId === u.userId) {
-      throw new BadRequestException("You cannot remove yourself from the organization");
-    }
-    await this.orgMemberDeparture.removeMember(u.orgId, u.userId, memberId);
-  }
-
-  @Patch("members/:memberId/suspend")
-  @BodylessAction()
-  @ResponseSchema(memberStatusMutationResponseSchema)
-  @HttpCode(200)
-  @UseGuards(PermissionGuard)
-  @RequirePermission("settings:organization:manage")
-  @Validate({ params: memberIdParams })
-  suspendMember(@Param("memberId") memberId: string, @CurrentUser() u: CurrentUserContext) {
-    if (memberId === u.userId) {
-      throw new BadRequestException("You cannot suspend yourself");
-    }
-    return this.orgMembershipStatus.suspendMember(u.orgId, u.userId, memberId);
-  }
-
-  @Patch("members/:memberId/reactivate")
-  @BodylessAction()
-  @ResponseSchema(memberStatusMutationResponseSchema)
-  @HttpCode(200)
-  @UseGuards(PermissionGuard)
-  @RequirePermission("settings:organization:manage")
-  @Validate({ params: memberIdParams })
-  reactivateMember(@Param("memberId") memberId: string, @CurrentUser() u: CurrentUserContext) {
-    return this.orgMembershipStatus.reactivateMember(u.orgId, u.userId, memberId);
   }
 
   @UseGuards(PermissionGuard)
@@ -336,201 +210,5 @@ export class OrganizationController {
   ) {
     await this.enforceRateLimit("invite:accept", this.getIp(req));
     return this.invitationAcceptance.decline(body);
-  }
-
-  @UseGuards(PermissionGuard)
-  @RequirePermission("settings:view")
-  @Get("custom-domains")
-  @ResponseSchema(customDomainListResponseSchema)
-  listCustomDomains(@CurrentUser() u: CurrentUserContext) {
-    return this.customDomains.listCustomDomains(u.orgId);
-  }
-
-  @Post("custom-domains")
-  @ResponseSchema(addCustomDomainResponseSchema)
-  @UseGuards(PermissionGuard)
-  @RequirePermission("settings:manage")
-  @Validate({ body: addCustomDomainSchema })
-  addCustomDomain(
-    @Body() body: AddCustomDomainInput,
-    @CurrentUser() u: CurrentUserContext,
-  ) {
-    return this.customDomains.addCustomDomain(u.orgId, u.userId, body);
-  }
-
-  @Post("custom-domains/:domainId/verify")
-  @BodylessAction()
-  @ResponseSchema(verifyCustomDomainResponseSchema)
-  @UseGuards(PermissionGuard)
-  @RequirePermission("settings:manage")
-  @Validate({ params: domainIdParams })
-  verifyCustomDomain(
-    @Param("domainId") domainId: string,
-    @CurrentUser() u: CurrentUserContext,
-  ) {
-    return this.customDomains.verifyCustomDomain(u.orgId, u.userId, domainId);
-  }
-
-  @Delete("custom-domains/:domainId")
-  @NoContentResponse()
-  @HttpCode(204)
-  @UseGuards(PermissionGuard)
-  @RequirePermission("settings:manage")
-  @Validate({ params: domainIdParams })
-  async removeCustomDomain(
-    @Param("domainId") domainId: string,
-    @CurrentUser() u: CurrentUserContext,
-  ): Promise<void> {
-    await this.customDomains.removeCustomDomain(u.orgId, u.userId, domainId);
-  }
-
-  @UseGuards(PermissionGuard)
-  @RequirePermission("settings:view")
-  @Get("holidays")
-  @ResponseSchema(holidayListResponseSchema)
-  listHolidays(@CurrentUser() u: CurrentUserContext) {
-    return this.holidays.listHolidays(u.orgId);
-  }
-
-  @Post("holidays")
-  @ResponseSchema(createHolidayResponseSchema)
-  @UseGuards(PermissionGuard)
-  @RequirePermission("settings:manage")
-  @Validate({ body: createHolidaySchema })
-  createHoliday(
-    @Body() body: CreateHolidayInput,
-    @CurrentUser() u: CurrentUserContext,
-  ) {
-    return this.holidays.createHoliday(u.orgId, u.userId, body);
-  }
-
-  @Delete("holidays/:holidayId")
-  @NoContentResponse()
-  @HttpCode(204)
-  @UseGuards(PermissionGuard)
-  @RequirePermission("settings:manage")
-  @Validate({ params: holidayIdParams })
-  async deleteHoliday(@Param("holidayId") holidayId: string, @CurrentUser() u: CurrentUserContext): Promise<void> {
-    await this.holidays.deleteHoliday(u.orgId, u.userId, holidayId);
-  }
-
-  @Post("archive")
-  @BodylessAction()
-  @ResponseSchema(archiveOrgResponseSchema)
-  @UseGuards(PermissionGuard)
-  @RequirePermission("settings:manage")
-  archiveOrg(@CurrentUser() u: CurrentUserContext) {
-    assertOwnerOnly(u, "organization.archive");
-    return this.orgLifecycle.archiveOrg(u.orgId, u.userId);
-  }
-
-  @Post("restore")
-  @ResponseSchema(restoreOrgResponseSchema)
-  @HttpCode(200)
-  @AuthorizedInService("OrgLifecycleService.restoreOrg — an ACTIVE isOwner membership of the target org, 404 on a miss")
-  @AllowNoOrg()
-  @NoTenantTransaction()
-  @Validate({ body: restoreOrgSchema })
-  restoreOrg(
-    @Body() body: RestoreOrgInput,
-    @CurrentUser() u: CurrentUserContext,
-  ) {
-    return this.orgLifecycle.restoreOrg(body.orgId, u.userId);
-  }
-
-  @Post("leave")
-  @BodylessAction()
-  @ResponseSchema(leaveOrgResponseSchema)
-  @Universal()
-  @HttpCode(200)
-  leaveOrg(@CurrentUser() u: CurrentUserContext) {
-    return this.orgMemberDeparture.leaveOrg(u.orgId, u.userId);
-  }
-
-  @Delete()
-  @ResponseSchema(deleteOrgResponseSchema)
-  @HttpCode(200)
-  @UseGuards(PermissionGuard)
-  @RequirePermission("settings:manage")
-  @Validate({ body: deleteOrgSchema })
-  deleteOrg(
-    @Body() body: DeleteOrgInput,
-    @CurrentUser() u: CurrentUserContext,
-  ) {
-    assertOwnerOnly(u, "organization.delete");
-    return this.orgPurge.deleteOrg(u.orgId, u.userId, body.confirmation);
-  }
-
-  @Post(":orgId/purge/schedule")
-  @ResponseSchema(schedulePurgeResponseSchema)
-  @HttpCode(200)
-  @UseGuards(PermissionGuard)
-  @RequirePermission("settings:manage")
-  @Validate({ params: orgIdParams, body: schedulePurgeSchema })
-  schedulePurge(
-    @Param("orgId") orgId: string,
-    @Body() body: SchedulePurgeInput,
-    @CurrentUser() u: CurrentUserContext,
-  ) {
-    assertOwnerOnly(u, "organization.purge.schedule");
-    assertPathOrgIsCallerOrg(orgId, u.orgId);
-    const targetOrgId = u.orgId;
-    return this.orgPurge.schedulePurge(
-      targetOrgId,
-      u.userId,
-      body.scheduledForDays,
-      body.reason,
-    );
-  }
-
-  @Delete(":orgId/purge")
-  @ResponseSchema(cancelPurgeResponseSchema)
-  @HttpCode(200)
-  @UseGuards(PermissionGuard)
-  @RequirePermission("settings:manage")
-  @Validate({ params: orgIdParams })
-  cancelPurge(
-    @Param("orgId") orgId: string,
-    @CurrentUser() u: CurrentUserContext,
-  ) {
-    assertOwnerOnly(u, "organization.purge.cancel");
-    assertPathOrgIsCallerOrg(orgId, u.orgId);
-    const targetOrgId = u.orgId;
-    return this.orgPurge.cancelPurge(targetOrgId, u.userId);
-  }
-
-  @Post("legal-holds")
-  @ResponseSchema(placeLegalHoldResponseSchema)
-  @UseGuards(PermissionGuard)
-  @RequirePermission("settings:organization:manage")
-  @Validate({ body: placeLegalHoldSchema })
-  placeLegalHold(
-    @Body() body: PlaceLegalHoldInput,
-    @CurrentUser() u: CurrentUserContext,
-  ) {
-    assertOwnerOnly(u, "organization.legal-hold");
-    return this.legalHold.place(u.orgId, u.userId, body.reason);
-  }
-
-  @Get("legal-holds")
-  @ResponseSchema(legalHoldListResponseSchema)
-  @UseGuards(PermissionGuard)
-  @RequirePermission("settings:organization:manage")
-  listLegalHolds(@CurrentUser() u: CurrentUserContext) {
-    return this.legalHold.listActive(u.orgId);
-  }
-
-  @Delete("legal-holds/:holdId")
-  @ResponseSchema(releaseLegalHoldResponseSchema)
-  @HttpCode(200)
-  @UseGuards(PermissionGuard)
-  @RequirePermission("settings:organization:manage")
-  @Validate({ params: holdIdParams })
-  releaseLegalHold(
-    @Param("holdId") holdId: string,
-    @CurrentUser() u: CurrentUserContext,
-  ) {
-    assertOwnerOnly(u, "organization.legal-hold");
-    return this.legalHold.release(holdId, u.orgId, u.userId);
   }
 }

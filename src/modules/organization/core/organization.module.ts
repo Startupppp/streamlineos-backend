@@ -5,6 +5,10 @@ import { NotificationsModule } from "../../notifications/notifications.module";
 import { OutboxModule } from "../../../common/outbox/outbox.module";
 import { IntegrationsModule } from "../../integrations/core/integrations.module";
 import { OrganizationController } from "./organization.controller";
+import { OrganizationMembersController } from "./organization-members.controller";
+import { OrganizationCustomDomainsController } from "./organization-custom-domains.controller";
+import { OrganizationHolidaysController } from "./organization-holidays.controller";
+import { OrganizationLifecycleController } from "./organization-lifecycle.controller";
 import { OrgProfileService } from "./org-profile.service";
 import { OrgMembershipService } from "./org-membership.service";
 import { OrgLifecycleService } from "./org-lifecycle.service";
@@ -38,7 +42,13 @@ import { OrganizationCreationService } from "./organization-creation.service";
     IntegrationsModule,
     MembershipAdmissionModule,
   ],
-  controllers: [OrganizationController],
+  controllers: [
+    OrganizationController,
+    OrganizationMembersController,
+    OrganizationCustomDomainsController,
+    OrganizationHolidaysController,
+    OrganizationLifecycleController,
+  ],
   providers: [
     OrgProfileService,
     OrgMembershipService,
