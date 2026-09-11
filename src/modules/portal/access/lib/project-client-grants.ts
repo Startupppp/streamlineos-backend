@@ -5,6 +5,7 @@ import { portalMemberships } from "../../../../db/schema/portal-access/portal-me
 import { partyContacts, projects } from "../../../../db/schema";
 import { type Db } from "../../../../db/drizzle.module";
 import { AuditService } from "../../../../common/audit/audit.service";
+import { isUniqueViolation } from "../../../../common/db/postgres-error";
 import type {
   ListGrantsQuery,
   CreateGrantInput,
@@ -31,8 +32,6 @@ import type {
  * drives `db.select` off a positional counter — membership first, project second
  * — and would pass or fail on a reordering.
  */
-
-const PG_UNIQUE_VIOLATION = "23505";
 
 type GrantRow = typeof projectClientGrants.$inferSelect;
 type GrantPatch = Partial<typeof projectClientGrants.$inferInsert>;
@@ -187,12 +186,7 @@ export async function createGrant(
     })
     .returning()
     .catch((err: unknown) => {
-      if (
-        typeof err === "object" &&
-        err !== null &&
-        "code" in err &&
-        (err as { code: string }).code === PG_UNIQUE_VIOLATION
-      ) {
+      if (isUniqueViolation(err)) {
         throw new ConflictException("A grant already exists for this membership and project.");
       }
       throw err;

@@ -6,6 +6,7 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { type PgUpdateSetSource } from "drizzle-orm/pg-core";
 import { AuditService } from "../../../common/audit/audit.service";
+import { isUniqueViolation } from "../../../common/db/postgres-error";
 import type {
   ListMembershipsQuery,
   CreateMembershipInput,
@@ -40,8 +41,6 @@ import {
  * trusting the caller's id — `portal-access-tenant-isolation.spec.ts` is what
  * holds that.
  */
-
-const PG_UNIQUE_VIOLATION = "23505";
 
 type MembershipRow = typeof portalMemberships.$inferSelect;
 
@@ -161,12 +160,7 @@ export class PortalAccessService {
       })
       .returning()
       .catch((err: unknown) => {
-        if (
-          typeof err === "object" &&
-          err !== null &&
-          "code" in err &&
-          (err as { code: string }).code === PG_UNIQUE_VIOLATION
-        ) {
+        if (isUniqueViolation(err)) {
           throw new ConflictException("Contact already has portal access in this organization.");
         }
         throw err;
