@@ -4,7 +4,8 @@
  * Single-pass CI guard for the migration chain. Exits non-zero if any of:
  *   a) An .sql file under migrations/ is absent from the journal and not on the allowlist.
  *   b) Two or more .sql files share the same numeric prefix (first segment before '_').
- *   c) A journal entry's `when` timestamp is not strictly greater than the one before it.
+ *   c) A journal entry's `when` timestamp is not strictly greater than the one before it,
+ *      unless that exact adjacent pair is listed in HISTORICAL_TIMESTAMP_REGRESSIONS.
  *   d) A journal entry names a file that does not exist on disk.
  *   e) The last reported chain_gaps count (read from the chain-gaps marker file) is > 0.
  *   f) The applied watermark in drizzle.__drizzle_migrations is ahead of every journal
@@ -90,6 +91,43 @@ const HISTORICAL_DUPLICATE_PREFIXES = new Set([
   "0701",
 ]);
 
+/**
+ * Adjacent journal pairs whose `when` regresses and that are already applied.
+ *
+ * Keyed on the exact pair "prev -> cur", not on the entry alone, so an entry that
+ * gains a different predecessor is checked again. The set is CLOSED like the one
+ * above: a new regression on an unapplied entry is fixed by restamping it into the
+ * gap between its neighbours, never by adding a line here.
+ *
+ * Every pair below comes from the 2026-09-11 merge of integration/crm-ts into the
+ * inventory branch. Array order is the cold-build order (each crm/ts entry follows
+ * its own-lane predecessor, and the 0591b/0649b/0676b/0677b/0678b chain repairs carry
+ * a deliberately far-future `when`), while `when` comes from each lane's own clock.
+ * In every pair the later entry is applied (hash or `when` present on Neon or the
+ * local inventory/CRM ledgers), and check:migration-ledger joins on `when`, so
+ * restamping it would orphan ledger rows. The one pair with an unapplied side
+ * (0674a -> 0659b) has no gap to move into. check:migration-discipline carries
+ * the same 16 as `journal-order:` baseline entries, each with where it is applied.
+ */
+const HISTORICAL_TIMESTAMP_REGRESSIONS = new Set([
+  "0465_accounting_documents -> 0232_repair_crm_activity_grants",
+  "0470_ar_document_pdf_cache -> 0471_platform_waitlist",
+  "0472a_activities_deal_fk -> 0270_activities_thread_window",
+  "0473a_accounting_attachments_permissions -> 0261_crm_connectors",
+  "0271a_waitlist_admission -> 0269_mailbox_push_secret",
+  "0520a_relationship_state -> 0278_drop_legacy_identity_tables",
+  "0557_relationship_states_deal_fk -> 0472_outbox_inbox_aggregate_fence",
+  "0559_data_quality_autonomous_decision -> 0478_invoice_line_items_column_drop",
+  "0591b_gl_ap_ar_bank_tax_chain_repair -> 0527_po_batching_policy",
+  "0649b_inv_carton_shipment_chain_repair -> 0589_inventory_drop_reason_codes",
+  "0676b_inv_compliance_documents_chain_repair -> 0610_agent_tokens_membership_and_ceiling",
+  "0677b_feedback_cycle_responses_policy_repair -> 0611_delegations_and_overrides_expand_membership",
+  "0678b_feedback_cycle_responses_rls_complete -> 0613_delegations_and_overrides_drop_user_columns",
+  "0674a_subprocessor_subscribers_tenant_index -> 0659b_timesheets_lifecycle_seq_and_attendance_draft",
+  "0659b_timesheets_lifecycle_seq_and_attendance_draft -> 0656_communication_tenant_rls",
+  "0915_inventory_client_keys_follow_the_party_map -> 0466_drop_legacy_accounting",
+]);
+
 const CHAIN_GAPS_FILE = resolve(process.cwd(), ".chain-gaps");
 
 function numericPrefix(tag) {
@@ -134,7 +172,12 @@ function isPendingPath(tag, dir) {
   return tag.includes("/") || existsSync(join(dir, "pending", tag + ".sql"));
 }
 
-function runChecks(dir, gapsFile = CHAIN_GAPS_FILE, appliedWatermark = null) {
+function runChecks(
+  dir,
+  gapsFile = CHAIN_GAPS_FILE,
+  appliedWatermark = null,
+  timestampBaseline = HISTORICAL_TIMESTAMP_REGRESSIONS,
+) {
   const journal = readJournal(dir);
   const entries = journal.entries ?? [];
   const journalled = new Set(entries.map((e) => e.tag));
@@ -165,7 +208,7 @@ function runChecks(dir, gapsFile = CHAIN_GAPS_FILE, appliedWatermark = null) {
   for (let i = 1; i < entries.length; i++) {
     const prev = entries[i - 1];
     const cur = entries[i];
-    if (cur.when <= prev.when) {
+    if (cur.when <= prev.when && !timestampBaseline.has(`${prev.tag} -> ${cur.tag}`)) {
       failures.push(
         `(c) TIMESTAMP REGRESSION  ${cur.tag} (when=${cur.when}) <= ${prev.tag} (when=${prev.when})`,
       );
@@ -287,6 +330,27 @@ function selfTest() {
     writeSql("0002_gamma");
     const failures = check(tmp);
     assert("timestamp regression caught", failures, "(c)");
+    rmSync(join(tmp, "0002_gamma.sql"));
+    writeJournal([{ idx: 0, version: "7", when: 1000, tag: "0001_alpha", breakpoints: false }]);
+  }
+
+  console.log("Self-test: (c) a baselined pair is exempt, and only that pair");
+  {
+    writeJournal([
+      { idx: 0, version: "7", when: 2000, tag: "0001_alpha", breakpoints: false },
+      { idx: 1, version: "7", when: 1000, tag: "0002_gamma", breakpoints: false },
+    ]);
+    writeSql("0002_gamma");
+    const exempt = runChecks(tmp, undefined, null, new Set(["0001_alpha -> 0002_gamma"]));
+    if (exempt.some((f) => f.includes("(c)"))) {
+      console.error("  FAIL  a regression listed as its exact pair must not be reported");
+      failed++;
+    } else {
+      console.log("  PASS  a regression listed as its exact pair is not reported");
+      passed++;
+    }
+    const otherPair = runChecks(tmp, undefined, null, new Set(["0009_other -> 0002_gamma"]));
+    assert("the same entry after a different predecessor is still caught", otherPair, "(c)");
     rmSync(join(tmp, "0002_gamma.sql"));
     writeJournal([{ idx: 0, version: "7", when: 1000, tag: "0001_alpha", breakpoints: false }]);
   }
