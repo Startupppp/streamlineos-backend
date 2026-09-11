@@ -679,6 +679,11 @@
       "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
       "justification": "scoring reads bounded by autonomy entity ID; per-entity scoring context 2026-09-01"
     },
+    "/autonomy/lib/autonomy-erasure.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
+      "justification": "Classified 2026-09-11 when erasePartyData moved out of /autonomy/autonomy-scoring.service.ts unchanged \u2014 this gate keys on path, so a move forces a restatement, and the origin file's \"per-entity scoring context\" wording did not describe this read. The actual bound is one data subject: SELECT of autonomous_decision_id WHERE organization_id = $org AND party_id = $party, i.e. every decision recorded about ONE party in ONE org, never the org's whole decision log. The ids are consumed immediately by two inArray DELETEs and one UPDATE that blanks the free text. A LIMIT here would be a correctness bug, not a bound \u2014 a capped erasure leaves rows un-erased while reporting success; if the per-party volume ever justifies it the fix is batching the id scan, not truncating it."
+    },
     "/billing/core/affiliate.service.ts": {
       "verdict": "FALSE-POSITIVE",
       "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
