@@ -159,6 +159,10 @@ export class ComplianceService {
    * Nothing here decides anything. It cannot report a filing that an adapter
    * did not return, and it cannot invent an acknowledgement, because both come
    * out of the `TransportResult` and neither is written from a literal.
+   *
+   * It also will not offer a document that is already registered — see
+   * `acknowledgementOnFile`, which is why a second submit cannot produce a
+   * second IRN.
    */
   async submitToTransport(
     orgId: string,
@@ -169,6 +173,16 @@ export class ComplianceService {
     payload: CompliancePayload,
     tx: DbOrTx = this.db,
   ): Promise<TransportResult> {
+    const filed = await this.acknowledgementOnFile(
+      orgId,
+      bookId,
+      documentType,
+      documentId,
+      adapter.transport,
+      tx,
+    );
+    if (filed) return filed;
+
     const result = await adapter.submit(payload);
     const now = new Date();
 
@@ -204,6 +218,71 @@ export class ComplianceService {
       });
 
     return result;
+  }
+
+  /**
+   * The acknowledgement this document already holds from this transport, if any
+   * — the fence that stops one invoice being registered twice.
+   *
+   * A second `POST .../submit` must never produce a second IRN. Three things
+   * stand between it and one, and this is the durable one:
+   *
+   *  1. `@Idempotent` on the route replays the first response for a caller who
+   *     retries with the same `Idempotency-Key` — but it fences a *request*, and
+   *     a second deliberate submit is a different request.
+   *  2. This: a row that already carries an authority's identifier is evidence
+   *     that the document is registered, so no adapter is called at all. It
+   *     survives a restart and a redeploy, which an in-memory fence would not.
+   *  3. Failing both, the IRP derives an IRN from the seller's GSTIN, the
+   *     document number and the financial year, and answers a resubmission with
+   *     the registration it already made.
+   *
+   * Only an `accepted` row with an identifier counts. A `pending` row is an
+   * obligation nobody has discharged, and a `rejected` one is a document the
+   * authority refused — both must stay submittable, or a corrected invoice could
+   * never be filed.
+   */
+  private async acknowledgementOnFile(
+    orgId: string,
+    bookId: string,
+    documentType: string,
+    documentId: string,
+    transport: ComplianceTransport,
+    tx: DbOrTx,
+  ): Promise<TransportResult | null> {
+    const [row] = await tx
+      .select({
+        status: documentCompliance.status,
+        authorityId: documentCompliance.authorityId,
+        ackNo: documentCompliance.ackNo,
+        ackAt: documentCompliance.ackAt,
+      })
+      .from(documentCompliance)
+      .where(
+        and(
+          eq(documentCompliance.orgId, orgId),
+          eq(documentCompliance.bookId, bookId),
+          eq(documentCompliance.documentType, documentType),
+          eq(documentCompliance.documentId, documentId),
+          eq(documentCompliance.transport, transport),
+        ),
+      )
+      .limit(1);
+
+    if (!row || row.status !== "accepted") return null;
+    if (!row.authorityId || !row.ackNo || !row.ackAt) return null;
+
+    /*
+      Echoed from the row, not minted here. Every field came out of a
+      `TransportResult` an adapter returned on the first submission, so this
+      says exactly what was said then and nothing more.
+    */
+    return {
+      outcome: "accepted",
+      authorityId: row.authorityId,
+      ackNo: row.ackNo,
+      ackAt: row.ackAt,
+    };
   }
 
   /**

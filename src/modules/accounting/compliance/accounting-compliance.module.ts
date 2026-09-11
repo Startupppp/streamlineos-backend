@@ -3,6 +3,7 @@ import { AccountingKernelModule } from "../kernel/accounting-kernel.module";
 import { ComplianceController } from "./compliance.controller";
 import { ComplianceService } from "./compliance.service";
 import { ComplianceTransportRegistry } from "./transport/compliance-transport.registry";
+import { LiveIrpAdapter } from "./transport/live-irp.adapter";
 import { MockIrpAdapter } from "./transport/mock-irp.adapter";
 
 /**
@@ -15,7 +16,14 @@ import { MockIrpAdapter } from "./transport/mock-irp.adapter";
 @Module({
   imports: [AccountingKernelModule],
   controllers: [ComplianceController],
-  providers: [ComplianceService, ComplianceTransportRegistry, MockIrpAdapter],
+  /*
+    Both adapters are constructed in every deployment; which one — if either —
+    is reachable is `ComplianceTransportRegistry`'s decision, and it is made
+    from configuration rather than from what happens to be in the container.
+    `LiveIrpAdapter` with no credentials is inert: it answers `isConfigured()`
+    false and the registry never hands it out.
+  */
+  providers: [ComplianceService, ComplianceTransportRegistry, MockIrpAdapter, LiveIrpAdapter],
   exports: [ComplianceService, ComplianceTransportRegistry],
 })
 export class AccountingComplianceModule {}
