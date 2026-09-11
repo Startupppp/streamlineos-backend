@@ -58,6 +58,16 @@ export class SupportKbService {
     });
     if (existing) throw new ConflictException("A category with this name already exists");
 
+    /**
+     * No conflict handler under the insert, deliberately. The only unique a
+     * caller could collide on, `uniq_kb_categories_org_space_slug` (org_id,
+     * space_id, slug), is NULLS DISTINCT and this path never sets `space_id`,
+     * so it cannot raise 23505 here — and the old handler read `e.code` off
+     * Drizzle's wrapper besides. The check above is therefore the whole guard,
+     * and it is a read followed by a write: two concurrent creates of the same
+     * name both land. Closing that needs a partial unique on (org_id, slug)
+     * WHERE space_id IS NULL, or NULLS NOT DISTINCT — a migration, not a catch.
+     */
     const [category] = await this.db
       .insert(kbCategories)
       .values({
@@ -69,13 +79,7 @@ export class SupportKbService {
         sortOrder: input.sortOrder ?? 0,
         isPublished: input.isPublished ?? false,
       })
-      .returning()
-      .catch((e: { code?: string }) => {
-        if (e.code === "23505") {
-          throw new ConflictException("A category with this name already exists");
-        }
-        throw e;
-      });
+      .returning();
     return category;
   }
 
