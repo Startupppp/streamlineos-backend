@@ -1,17 +1,18 @@
-import {
-  Inject,
-  Injectable,
-  InternalServerErrorException,
-} from "@nestjs/common";
+import { Inject, Injectable } from "@nestjs/common";
 import { and, eq, gte, inArray, isNull, lte, sql } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
-import { timesheets, timesheetExports, projects, organizationMembers } from "../../../db/schema";
-import { actingMembershipId } from "../../../common/auth/principal";
+import { timesheets, projects, organizationMembers } from "../../../db/schema";
 import { TimesheetsAuditService } from "./timesheets-audit.service";
 import { RateResolverService } from "./rate-resolver.service";
 import { FxService } from "./fx.service";
 import { convertAmounts, type ConvertedTotals } from "./lib/fx-convert";
+import {
+  createInvoiceDraft,
+  exportBilling,
+  type BillingExportDeps,
+} from "./lib/billing-export";
+import { round2 } from "./lib/billing-money";
 import type {
   UninvoicedQuery,
   ExportBillingInput,
@@ -26,10 +27,6 @@ export interface BillingNarrativeWorkItem {
   date: string;
   hours: string;
   description: string | null;
-}
-
-function round2(n: number): number {
-  return Math.round(n * 100) / 100;
 }
 
 @Injectable()
@@ -200,239 +197,16 @@ export class BillingService {
     return { groups, totals };
   }
 
-  async exportBilling(u: CurrentUserContext, input: ExportBillingInput) {
-    if (input.idempotencyKey) {
-      const existing = await this.findExportByIdempotencyKey(
-        u.orgId,
-        input.idempotencyKey,
-      );
-      if (existing) return existing;
-    }
-
-    const conditions = [
-      eq(timesheets.orgId, u.orgId),
-      eq(timesheets.status, "APPROVED"),
-      eq(timesheets.isBillable, true),
-      isNull(timesheets.voidedAt),
-      gte(timesheets.date, input.startDate),
-      lte(timesheets.date, input.endDate),
-    ];
-
-    if (input.projectId)
-      conditions.push(eq(timesheets.projectId, input.projectId));
-
-    const entries = await this.db
-      .select({
-        id: timesheets.id,
-        orgId: timesheets.orgId,
-        projectId: timesheets.projectId,
-        ticketId: timesheets.ticketId,
-        date: timesheets.date,
-        hours: timesheets.hours,
-        description: timesheets.description,
-        isBillable: timesheets.isBillable,
-        billRate: timesheets.billRate,
-        currency: timesheets.currency,
-        invoicingStatus: timesheets.invoicingStatus,
-        status: timesheets.status,
-      })
-      .from(timesheets)
-      .where(and(...conditions));
-
-    let totalHours = 0;
-    let totalAmount = 0;
-
-    const snapshot = entries.map((e) => {
-      const hours = parseFloat(e.hours);
-      const rate = e.billRate ? parseFloat(e.billRate) : 0;
-      const amount = round2(hours * rate);
-      totalHours += hours;
-      totalAmount += amount;
-      return { ...e, computedAmount: amount };
-    });
-
-    const exportId = await this.db.transaction(async (tx) => {
-      const actorMembId = actingMembershipId(u.principal);
-
-      const [exported] = await tx
-        .insert(timesheetExports)
-        .values({
-          orgId: u.orgId,
-          exportType: "BILLING",
-          status: "COMPLETED",
-          dateRangeStart: input.startDate,
-          dateRangeEnd: input.endDate,
-          format: input.format,
-          filters: { projectId: input.projectId ?? null },
-          snapshot: snapshot,
-          entryCount: entries.length,
-          totalHours: round2(totalHours).toString(),
-          createdByMembershipId: actorMembId,
-        })
-        .returning({ id: timesheetExports.id });
-
-      if (!exported)
-        throw new InternalServerErrorException(
-          "Failed to create billing export",
-        );
-
-      await this.audit.record(tx, {
-        orgId: u.orgId,
-        actorMembershipId: actorMembId,
-        entityType: "billing",
-        entityId: exported.id.toString(),
-        action: "billing.exported",
-        after: { entryCount: entries.length, totalHours: round2(totalHours) },
-      });
-
-      return exported.id;
-    });
-
-    return {
-      exportId,
-      entryCount: entries.length,
-      totalHours: round2(totalHours),
-      totalAmount: round2(totalAmount),
-    };
+  exportBilling(u: CurrentUserContext, input: ExportBillingInput) {
+    return exportBilling(this.exportDeps, u, input);
   }
 
-  private async findExportByIdempotencyKey(
-    orgId: string,
-    idempotencyKey: string,
-  ) {
-    const [row] = await this.db
-      .select({
-        id: timesheetExports.id,
-        entryCount: timesheetExports.entryCount,
-        totalHours: timesheetExports.totalHours,
-        snapshot: timesheetExports.snapshot,
-      })
-      .from(timesheetExports)
-      .where(
-        and(
-          eq(timesheetExports.orgId, orgId),
-          eq(timesheetExports.idempotencyKey, idempotencyKey),
-        ),
-      )
-      .limit(1);
-
-    if (!row) return null;
-
-    const snapshotRows =
-      (row.snapshot as { computedAmount?: number }[] | null) ?? [];
-    const totalAmount = round2(
-      snapshotRows.reduce((sum, r) => sum + (r.computedAmount ?? 0), 0),
-    );
-
-    return {
-      exportId: row.id,
-      entryCount: row.entryCount,
-      totalHours: parseFloat(row.totalHours),
-      totalAmount,
-      duplicate: true,
-    };
+  createInvoiceDraft(u: CurrentUserContext, input: CreateInvoiceDraftInput) {
+    return createInvoiceDraft(this.exportDeps, u, input);
   }
 
-  async createInvoiceDraft(
-    u: CurrentUserContext,
-    input: CreateInvoiceDraftInput,
-  ) {
-    const conditions = [
-      eq(timesheets.orgId, u.orgId),
-      eq(timesheets.status, "APPROVED"),
-      eq(timesheets.isBillable, true),
-      isNull(timesheets.voidedAt),
-      eq(timesheets.invoicingStatus, "UNINVOICED"),
-      gte(timesheets.date, input.startDate),
-      lte(timesheets.date, input.endDate),
-    ];
-
-    if (input.projectId)
-      conditions.push(eq(timesheets.projectId, input.projectId));
-
-    const entries = await this.db
-      .select({
-        id: timesheets.id,
-        orgId: timesheets.orgId,
-        projectId: timesheets.projectId,
-        ticketId: timesheets.ticketId,
-        date: timesheets.date,
-        hours: timesheets.hours,
-        description: timesheets.description,
-        isBillable: timesheets.isBillable,
-        billRate: timesheets.billRate,
-        currency: timesheets.currency,
-        invoicingStatus: timesheets.invoicingStatus,
-        status: timesheets.status,
-      })
-      .from(timesheets)
-      .where(and(...conditions));
-
-    let totalAmount = 0;
-    const snapshot = entries.map((e) => {
-      const hours = parseFloat(e.hours);
-      const rate = e.billRate ? parseFloat(e.billRate) : 0;
-      const amount = round2(hours * rate);
-      totalAmount += amount;
-      return { ...e, computedAmount: amount };
-    });
-
-    const entryIds = entries.map((e) => e.id);
-
-    const exportId = await this.db.transaction(async (tx) => {
-      const actorMembId = actingMembershipId(u.principal);
-
-      const [exported] = await tx
-        .insert(timesheetExports)
-        .values({
-          orgId: u.orgId,
-          exportType: "INVOICE_DRAFT",
-          status: "COMPLETED",
-          dateRangeStart: input.startDate,
-          dateRangeEnd: input.endDate,
-          format: "JSON",
-          filters: { projectId: input.projectId ?? null },
-          snapshot: snapshot,
-          entryCount: entries.length,
-          totalHours: "0",
-          createdByMembershipId: actorMembId,
-        })
-        .returning({ id: timesheetExports.id });
-
-      if (!exported)
-        throw new InternalServerErrorException(
-          "Failed to create invoice draft",
-        );
-
-      if (entryIds.length > 0) {
-        await tx
-          .update(timesheets)
-          .set({ invoicingStatus: "INVOICE_DRAFTED", updatedAt: new Date() })
-          .where(
-            and(
-              inArray(timesheets.id, entryIds),
-              eq(timesheets.orgId, u.orgId),
-            ),
-          );
-      }
-
-      await this.audit.record(tx, {
-        orgId: u.orgId,
-        actorMembershipId: actorMembId,
-        entityType: "billing",
-        entityId: exported.id.toString(),
-        action: "billing.invoice_drafted",
-        after: { entryCount: entries.length, amount: round2(totalAmount) },
-      });
-
-      return exported.id;
-    });
-
-    return {
-      exportId,
-      entryCount: entries.length,
-      amount: round2(totalAmount),
-    };
+  private get exportDeps(): BillingExportDeps {
+    return { db: this.db, audit: this.audit };
   }
 
   async getRatePreview(u: CurrentUserContext, query: RatePreviewQuery) {

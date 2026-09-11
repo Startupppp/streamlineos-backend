@@ -1329,6 +1329,16 @@
       "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
       "justification": "finalization reads bounded by envelopeId; single-envelope scope for signing completion 2026-09-01"
     },
+    "/e-sign/lib/recipient-input.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
+      "justification": "signFields.findMany bounded by (recipientId, fieldType): the fields ONE recipient has on ONE envelope, which is document structure placed by the sender, not tenant data volume. Restates the verdict on /e-sign/sign-public.service.ts, from which the read moved 2026-09-11"
+    },
+    "/e-sign/lib/recipient-outcome.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
+      "justification": "Both reads are signFields.findMany bounded by recipientId — the fields one recipient must complete on one envelope. The second is a deliberate re-read after the date_signed fields are stamped, so the required-field check sees the writes. Restates the verdict on /e-sign/sign-public.service.ts 2026-09-11"
+    },
     "/e-sign/sign-public.service.ts": {
       "verdict": "FALSE-POSITIVE",
       "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
@@ -3013,6 +3023,11 @@
     "/timesheets/core/approvals.service.ts": {
       "verdict": "FALSE-POSITIVE",
       "note": "listApprovals already keyset-migrated on (submittedAt, id); billableEntries is bounded by timesheetPeriodId eq-predicate; no unbounded org-wide read"
+    },
+    "/timesheets/core/lib/billing-export.ts": {
+      "verdict": "ACTIONABLE",
+      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
+      "justification": "NOT a false positive, and NOT what the origin entry described. /timesheets/core/billing.service.ts carried 'inArray(projects.id, projectIds) — bounded by the aggregate result of a prior query', which is true of the PROJECTS lookup and not of these two. exportBilling and createInvoiceDraft each select every APPROVED billable timesheet in [startDate, endDate] into one array. Both dates are required but the SPAN IS NOT CAPPED (exportBillingSchema/createInvoiceDraftSchema: dateString, no range rule), so one request can materialise every billable entry an org has ever recorded and then write a row per entry. A LIMIT would be wrong here — it would silently invoice a subset — so the fix is chunking by period or keyset over timesheets.id, not a cap. Raised from the inherited FALSE-POSITIVE on 2026-09-11 rather than carried across the split."
     },
     "/timesheets/core/billing.service.ts": {
       "verdict": "FALSE-POSITIVE",
