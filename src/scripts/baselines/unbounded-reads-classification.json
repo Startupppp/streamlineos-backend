@@ -2433,6 +2433,16 @@
       "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
       "justification": "notification template reads bounded by orgId+templateKey (small config set per org); single-template lookups 2026-09-01"
     },
+    "/notifications/lib/notification-queries.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
+      "justification": "Classified 2026-09-11 by reading the call site, when the inbox queries moved out of /notifications/notifications-read.service.ts unchanged \u2014 this gate keys on path, so a move forces a restatement. The one match is `fetchLastReadId`, a single-row read of ONE user's read watermark by (org_id, user_id), destructured as `const [wm]`. The inbox list beside it is keyset-paginated and already limited. FALSE-POSITIVE rather than BOUNDED because BOUNDED is a FIXED verdict here \u2014 it asserts the scanner no longer matches, and a continued match is reported as a regression."
+    },
+    "/notifications/lib/notification-ticket-context.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
+      "justification": "Classified 2026-09-11 by reading the call site, when attachTicketContext moved out of /notifications/notifications-read.service.ts unchanged \u2014 this gate keys on path, so a move forces a restatement. The one match is filtered `inArray` on the ticket ids extracted from the notification rows already in hand, behind an empty-set early return, so the bound is the page of notifications the caller is rendering. FALSE-POSITIVE rather than BOUNDED because BOUNDED is a FIXED verdict here \u2014 it asserts the scanner no longer matches, and a continued match is reported as a regression."
+    },
     "/notifications/notifications-read.service.ts": {
       "verdict": "FALSE-POSITIVE",
       "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
