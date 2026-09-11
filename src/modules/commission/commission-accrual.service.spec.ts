@@ -52,7 +52,7 @@ const USER = "user-1";
 const PLAN = "plan-1";
 const VERSION = "ver-1";
 
-/** The page sizes the service uses. Mirrored, not imported: they are private. */
+/** The page sizes the service uses (`lib/accrual-parts.ts`). Mirrored, not imported. */
 const PERIOD_PART_PAGE = 5_000;
 const DEAL_PART_PAGE = 500;
 
