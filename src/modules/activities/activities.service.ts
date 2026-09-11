@@ -1,4 +1,4 @@
-import { Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { Inject, Injectable } from "@nestjs/common";
 import { and, desc, eq, isNull, type SQL } from "drizzle-orm";
 import { keysetBefore } from "../../common/pagination/keyset";
 import { DRIZZLE } from "../../db/drizzle.constants";
@@ -11,36 +11,20 @@ import {
   type TimelineEntry,
   type TimelinePage,
 } from "./activity-timeline";
+import { type ActivityActor } from "./lib/activity-actor";
+export type { ActivityActor } from "./lib/activity-actor";
+import {
+  completeActivity,
+  removeActivity,
+  requireActivity,
+  updateActivity,
+  type ActivityCommandDeps,
+} from "./lib/activity-commands";
 import type {
   CreateActivityInput,
   TimelineQuery,
   UpdateActivityInput,
 } from "./dto/activity.schemas";
-
-/**
- * Who or what recorded an activity.
- *
- * The same union the deal ledger uses, for the same reason: ticket 10's ingress
- * and ticket 12's extraction both write activities nobody typed, and a reader
- * has to be able to tell.
- */
-export type ActivityActor =
-  | { readonly kind: "human"; readonly userId: string }
-  | { readonly kind: "system"; readonly label: string };
-
-/**
- * `audit_logs.user_id` is NOT NULL, and the repo already writes this sentinel
- * for machine actions (recurring journals, KB page tree, the git integration).
- * The label that says WHICH system did it rides in the entry's metadata, and the
- * activity row itself keeps `actor_label` — this is only the audit column.
- */
-const SYSTEM_AUDIT_USER = "system";
-
-function auditActor(actor: ActivityActor): { userId: string; metadata: Record<string, unknown> } {
-  return actor.kind === "human"
-    ? { userId: actor.userId, metadata: {} }
-    : { userId: SYSTEM_AUDIT_USER, metadata: { actorLabel: actor.label } };
-}
 
 @Injectable()
 export class ActivitiesService {
@@ -160,102 +144,33 @@ export class ActivitiesService {
     });
   }
 
+  /** Everyone who was on it, resolved so no caller renders an identifier. */
+  /** @see lib/activity-commands.ts */
   async update(
     organizationId: string,
     activityId: string,
     actor: ActivityActor,
     input: UpdateActivityInput,
   ) {
-    await this.require(organizationId, activityId);
-
-    const [row] = await this.db
-      .update(activities)
-      .set({
-        ...(input.subject === undefined ? {} : { subject: input.subject ?? null }),
-        ...(input.body === undefined ? {} : { body: input.body ?? null }),
-        ...(input.dueAt === undefined ? {} : { dueAt: input.dueAt ? new Date(input.dueAt) : null }),
-        ...(input.assigneeUserId === undefined
-          ? {}
-          : { assigneeUserId: input.assigneeUserId ?? null }),
-      })
-      .where(
-        and(
-          eq(activities.organizationId, organizationId),
-          eq(activities.activityId, activityId),
-        ),
-      )
-      .returning();
-
-    const audited = auditActor(actor);
-    this.audit.log({
-      action: "crm.activity.updated",
-      userId: audited.userId,
-      orgId: organizationId,
-      resourceType: "activity",
-      resourceId: activityId,
-      metadata: { ...audited.metadata, changed: Object.keys(input) },
-    });
-
-    return row;
+    return updateActivity(this.commandDeps, organizationId, activityId, actor, input);
   }
 
-  /** Completion is a timestamp, not a boolean — when it happened is the fact. */
+  /** @see lib/activity-commands.ts */
   async complete(organizationId: string, activityId: string, actor: ActivityActor) {
-    const existing = await this.require(organizationId, activityId);
-    if (existing.kind !== "task") throw new NotFoundException("Task not found");
-
-    const [row] = await this.db
-      .update(activities)
-      .set({ completedAt: new Date() })
-      .where(
-        and(
-          eq(activities.organizationId, organizationId),
-          eq(activities.activityId, activityId),
-          isNull(activities.completedAt),
-        ),
-      )
-      .returning();
-
-    const audited = auditActor(actor);
-    this.audit.log({
-      action: "crm.activity.completed",
-      userId: audited.userId,
-      orgId: organizationId,
-      resourceType: "activity",
-      resourceId: activityId,
-      metadata: audited.metadata,
-    });
-
-    return row ?? existing;
+    return completeActivity(this.commandDeps, organizationId, activityId, actor);
   }
 
+  /** @see lib/activity-commands.ts */
   async remove(organizationId: string, activityId: string, actor: ActivityActor) {
-    await this.require(organizationId, activityId);
-
-    await this.db
-      .update(activities)
-      .set({ deletedAt: new Date() })
-      .where(
-        and(
-          eq(activities.organizationId, organizationId),
-          eq(activities.activityId, activityId),
-        ),
-      );
-
-    const audited = auditActor(actor);
-    this.audit.log({
-      action: "crm.activity.deleted",
-      userId: audited.userId,
-      orgId: organizationId,
-      resourceType: "activity",
-      resourceId: activityId,
-      metadata: audited.metadata,
-    });
+    return removeActivity(this.commandDeps, organizationId, activityId, actor);
   }
 
-  /** Everyone who was on it, resolved so no caller renders an identifier. */
+  private get commandDeps(): ActivityCommandDeps {
+    return { db: this.db, audit: this.audit };
+  }
+
   async participants(organizationId: string, activityId: string) {
-    await this.require(organizationId, activityId);
+    await requireActivity(this.commandDeps, organizationId, activityId);
 
     return this.db
       .select({
@@ -277,26 +192,4 @@ export class ActivitiesService {
       .limit(100);
   }
 
-  /**
-   * Re-asserts the organisation rather than leaning on row-level security.
-   *
-   * A cross-tenant identifier resolves to not-found, never forbidden — a 403 on
-   * another organisation's id confirms the record exists.
-   */
-  private async require(organizationId: string, activityId: string) {
-    const [row] = await this.db
-      .select()
-      .from(activities)
-      .where(
-        and(
-          eq(activities.organizationId, organizationId),
-          eq(activities.activityId, activityId),
-          isNull(activities.deletedAt),
-        ),
-      )
-      .limit(1);
-
-    if (!row) throw new NotFoundException("Activity not found");
-    return row;
-  }
 }
