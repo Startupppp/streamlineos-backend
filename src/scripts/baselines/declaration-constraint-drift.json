@@ -45,6 +45,8 @@
     "foreign-key:public.crm_sla_breach_log:crm_sla_breach_log_policy_id_crm_sla_policies_id_fk",
     "foreign-key:public.crm_validation_rules:crm_validation_rules_pipeline_id_crm_pipelines_id_fk",
     "foreign-key:public.employee_shift_assignments:fk_shift_assignments_user_actor",
+    "foreign-key:public.expense_categories:fk_expense_categories_ledger_account_id_org",
+    "foreign-key:public.expenses:fk_expenses_posted_journal_entry_id_org",
     "foreign-key:public.feedback_requests:fk_feedback_requests_reviewer_actor",
     "foreign-key:public.feedback_requests:fk_feedback_requests_subject_actor",
     "foreign-key:public.health_score_config:health_score_config_updated_by_users_id_fk",

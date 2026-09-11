@@ -39,7 +39,16 @@ export const notificationPolicyDefaults = pgTable("notification_policy_defaults"
 export const notificationSuppressionRules = pgTable("notification_suppression_rules", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-  userId: text("user_id").references(() => users.id, { onDelete: "cascade" }),
+  /*
+    0918 dropped this column's authority key on purpose — "the columns are
+    retained for immutable display and delivery history, while membership
+    composite FKs provide tenant safety" — and added `membership_id` with the
+    composite below. The declaration never learned either half, so it asked the
+    catalogue for a foreign key the cutover removed and for a lookup index on a
+    column the cutover re-keyed away from.
+  */
+  userId: text("user_id"),
+  membershipId: integer("membership_id"),
   scopeType: text("scope_type").notNull(),
   scopeKey: text("scope_key").notNull(),
   channel: notificationChannelEnum("channel"),
@@ -49,7 +58,12 @@ export const notificationSuppressionRules = pgTable("notification_suppression_ru
   metadata: jsonb("metadata").$type<Record<string, unknown>>(),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 }, (table) => [
-  index("idx_notification_suppression_lookup").on(table.orgId, table.userId, table.scopeType, table.scopeKey),
+  foreignKey({
+    columns: [table.orgId, table.membershipId],
+    foreignColumns: [organizationMembers.orgId, organizationMembers.id],
+    name: "fk_notification_suppression_rules_membership",
+  }).onDelete("cascade"),
+  index("idx_notification_suppression_lookup").on(table.orgId, table.membershipId, table.scopeType, table.scopeKey),
   index("idx_notification_suppression_expiry").on(table.orgId, table.expiresAt),
   unique("uniq_notif_suppression_rules_org_id").on(table.orgId, table.id),
 ]);
