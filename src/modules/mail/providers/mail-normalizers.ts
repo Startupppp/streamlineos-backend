@@ -1,4 +1,3 @@
-import { createHmac, timingSafeEqual } from "node:crypto";
 import { z } from "zod";
 import type {
   MailAddress,
@@ -7,6 +6,34 @@ import type {
   MailMessageSummary,
   MailProvider,
 } from "../dto/mail-schemas";
+import {
+  extractGmailAttachments,
+  extractGmailBody,
+  getGmailHeader,
+  gmailHeaderSchema,
+  gmailMessageSchema,
+  gmailPartSchema,
+  parseGmailAddress,
+  parseGmailAddresses,
+  parseGmailAttachmentList,
+  resolveGmailDate,
+} from "./lib/gmail-payload";
+
+/**
+ * Paging cursors are re-exported so every existing importer of this file is
+ * unchanged; the rules that make one trustworthy live in `lib/mail-cursor.ts`.
+ */
+export {
+  decodeCursor,
+  encodeCursor,
+  isPartialGmailCursor,
+} from "./lib/mail-cursor";
+export type {
+  AccountCursorValue,
+  OpaqueCursor,
+  PartialGmailCursor,
+} from "./lib/mail-cursor";
+
 
 const SNIPPET_MAX = 160;
 
@@ -29,78 +56,6 @@ function parseAddress(raw: unknown): MailAddress {
 function parseAddresses(raw: unknown): MailAddress[] {
   if (!Array.isArray(raw)) return [];
   return raw.map((item) => parseAddress(item));
-}
-
-const gmailHeaderSchema = z.array(z.object({ name: z.string(), value: z.string() }));
-
-const gmailPartSchema = z.object({
-  mimeType: z.string().optional(),
-  filename: z.string().optional(),
-  body: z
-    .object({
-      data: z.string().optional(),
-      size: z.number().optional(),
-      attachmentId: z.string().optional(),
-    })
-    .optional(),
-});
-
-const gmailPayloadSchema = z.object({
-  headers: z.array(z.object({ name: z.string(), value: z.string() })).optional(),
-  mimeType: z.string().optional(),
-  body: z.object({ data: z.string().optional(), size: z.number().optional() }).optional(),
-  parts: z.array(z.unknown()).optional(),
-});
-
-const gmailMessageSchema = z.object({
-  messageId: z.string().optional(),
-  id: z.string().optional(),
-  threadId: z.string().optional(),
-  labelIds: z.array(z.string()).optional(),
-  preview: z.unknown().optional(),
-  snippet: z.string().optional(),
-  sender: z.string().optional(),
-  to: z.unknown().optional(),
-  subject: z.string().nullable().optional(),
-  messageTimestamp: z.string().optional(),
-  internalDate: z.string().optional(),
-  messageText: z.string().optional(),
-  attachmentList: z.array(z.unknown()).optional(),
-  payload: gmailPayloadSchema.optional(),
-});
-
-const gmailAttachmentListItemSchema = z.object({
-  attachmentId: z.string(),
-  filename: z.string().optional(),
-  mimeType: z.string().optional(),
-});
-
-function parseGmailAttachmentList(items: unknown[] | undefined): MailAttachment[] {
-  if (!items) return [];
-  const attachments: MailAttachment[] = [];
-  for (const item of items) {
-    const parsed = gmailAttachmentListItemSchema.safeParse(item);
-    if (!parsed.success) continue;
-    attachments.push({
-      id: parsed.data.attachmentId,
-      fileName: parsed.data.filename ?? "attachment",
-      mimeType: parsed.data.mimeType ?? "application/octet-stream",
-      sizeBytes: null,
-    });
-  }
-  return attachments;
-}
-
-function resolveGmailDate(messageTimestamp?: string, internalDate?: string): string {
-  if (messageTimestamp) {
-    const d = new Date(messageTimestamp);
-    if (!Number.isNaN(d.getTime())) return d.toISOString();
-  }
-  if (internalDate) {
-    const d = new Date(Number(internalDate));
-    if (!Number.isNaN(d.getTime())) return d.toISOString();
-  }
-  return new Date().toISOString();
 }
 
 const outlookMessageSchema = z.object({
@@ -130,65 +85,6 @@ const outlookAttachmentSchema = z.object({
   contentType: z.string().optional(),
   size: z.number().optional(),
 });
-
-function getGmailHeader(headers: z.infer<typeof gmailHeaderSchema>, name: string): string {
-  return headers.find((h) => h.name.toLowerCase() === name.toLowerCase())?.value ?? "";
-}
-
-function parseGmailAddress(raw: string): MailAddress {
-  const match = /^(.+?)\s*<([^>]+)>$/.exec(raw.trim());
-  if (match) return { name: match[1]?.trim() ?? null, email: match[2]?.trim() ?? "" };
-  return { name: null, email: raw.trim() };
-}
-
-function parseGmailAddresses(raw: string): MailAddress[] {
-  if (!raw) return [];
-  return raw.split(",").map((s) => parseGmailAddress(s.trim())).filter((a) => a.email);
-}
-
-function extractGmailBody(payload: z.infer<typeof gmailPayloadSchema> | undefined): { html: string | null; text: string | null } {
-  if (!payload) return { html: null, text: null };
-  if (payload.mimeType === "text/html") {
-    const data = payload.body?.data;
-    return { html: data ? Buffer.from(data, "base64url").toString("utf-8") : null, text: null };
-  }
-  if (payload.mimeType === "text/plain") {
-    const data = payload.body?.data;
-    return { html: null, text: data ? Buffer.from(data, "base64url").toString("utf-8") : null };
-  }
-  let html: string | null = null;
-  let text: string | null = null;
-  for (const rawPart of payload.parts ?? []) {
-    const parsed = gmailPartSchema.safeParse(rawPart);
-    if (!parsed.success) continue;
-    const bodyData = parsed.data.body?.data;
-    if (typeof bodyData !== "string") continue;
-    if (parsed.data.mimeType === "text/html") {
-      html = Buffer.from(bodyData, "base64url").toString("utf-8");
-    } else if (parsed.data.mimeType === "text/plain" && !text) {
-      text = Buffer.from(bodyData, "base64url").toString("utf-8");
-    }
-  }
-  return { html, text };
-}
-
-function extractGmailAttachments(payload: z.infer<typeof gmailPayloadSchema> | undefined): MailAttachment[] {
-  if (!payload?.parts) return [];
-  const attachments: MailAttachment[] = [];
-  for (const rawPart of payload.parts) {
-    const parsed = gmailPartSchema.safeParse(rawPart);
-    if (!parsed.success) continue;
-    const { filename, body, mimeType } = parsed.data;
-    if (!filename || !body?.attachmentId) continue;
-    attachments.push({
-      id: body.attachmentId,
-      fileName: filename,
-      mimeType: mimeType ?? "application/octet-stream",
-      sizeBytes: body.size ?? null,
-    });
-  }
-  return attachments;
-}
 
 export function unwrapComposioData(data: unknown): unknown {
   if (data !== null && typeof data === "object" && "response_data" in data) {
@@ -332,97 +228,6 @@ export function normalizeOutlookMessage(
   }).filter((a): a is MailAttachment => a !== null);
 
   return { ...summary, cc, bodyHtml, bodyText, attachments };
-}
-
-export interface PartialGmailCursor {
-  readonly token: string;
-  readonly skip: number;
-}
-
-/**
- * `null` means this account is exhausted; `undefined` means it has no position
- * yet and should start from the beginning. Collapsing the two loses a whole
- * mailbox: `JSON.stringify` drops an `undefined` value, so an account marked
- * done came back from the wire as absent and the next page re-read it from row
- * zero, re-delivering every message it had already returned.
- */
-export type AccountCursorValue = string | number | PartialGmailCursor | null | undefined;
-
-export interface OpaqueCursor {
-  [accountId: number]: AccountCursorValue;
-}
-
-export function isPartialGmailCursor(v: unknown): v is PartialGmailCursor {
-  return typeof v === "object" && v !== null && typeof (v as Record<string, unknown>).token === "string" && typeof (v as Record<string, unknown>).skip === "number";
-}
-
-/**
- * The inbox cursor is a map of account id to that account's provider position,
- * and it goes to the client. Base64 alone made it editable: a caller could swap
- * one account's page token for another's, or carry a cursor minted for a
- * different user, and the value would reach a provider API unchecked.
- *
- * So it is signed, in the shape `unsubscribe-token.util.ts` already uses — HMAC
- * over the payload with a key namespaced off `ENCRYPTION_KEY`, so a mail cursor
- * signature can never be replayed against another feature derived from the same
- * secret. The reader's id is inside the signed body, which is what makes
- * substitution detectable rather than merely inconvenient.
- *
- * A cursor that is unreadable — wrong shape, bad signature, another reader's,
- * unparseable body — returns `{}`, the first page, which is the rule
- * `common/pagination/cursor.ts` states for every other cursor here. A missing
- * `ENCRYPTION_KEY` is deliberately *not* in that set: it is a server
- * misconfiguration, not a client problem, and degrading to page one would hide
- * it. `validateEnv()` requires the key at `main.ts:45`, so a booted server
- * cannot reach the throw; a test or script that calls these directly must set it.
- */
-const CURSOR_VERSION = "m1";
-
-interface SignedCursorBody {
-  readonly u: string;
-  readonly c: OpaqueCursor;
-}
-
-function cursorKey(): Buffer {
-  const raw = process.env.ENCRYPTION_KEY;
-  if (!raw) throw new Error("ENCRYPTION_KEY is not configured — cannot sign mail cursors");
-  return createHmac("sha256", raw).update("mail:cursor").digest();
-}
-
-function signCursor(bodyB64: string): string {
-  return createHmac("sha256", cursorKey()).update(bodyB64).digest("base64url");
-}
-
-export function encodeCursor(cursor: OpaqueCursor, userId: string): string {
-  const body: SignedCursorBody = { u: userId, c: cursor };
-  const encoded = Buffer.from(JSON.stringify(body), "utf-8").toString("base64url");
-  return `${CURSOR_VERSION}.${encoded}.${signCursor(encoded)}`;
-}
-
-export function decodeCursor(encoded: string, userId: string): OpaqueCursor {
-  const parts = encoded.split(".");
-  if (parts.length !== 3) return {};
-
-  const [version, body, signature] = parts;
-  if (version !== CURSOR_VERSION || !body || !signature) return {};
-
-  const expected = Buffer.from(signCursor(body), "utf-8");
-  const actual = Buffer.from(signature, "utf-8");
-  if (expected.length !== actual.length) return {};
-  if (!timingSafeEqual(expected, actual)) return {};
-
-  try {
-    const parsed: unknown = JSON.parse(Buffer.from(body, "base64url").toString("utf-8"));
-    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return {};
-
-    const { u, c } = parsed as Record<string, unknown>;
-    if (typeof u !== "string" || u !== userId) return {};
-    if (typeof c !== "object" || c === null || Array.isArray(c)) return {};
-
-    return c as OpaqueCursor;
-  } catch {
-    return {};
-  }
 }
 
 export function mergeMessagesByDate(messages: MailMessageSummary[]): MailMessageSummary[] {
