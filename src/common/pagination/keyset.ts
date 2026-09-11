@@ -51,11 +51,8 @@ function numericId(position: KeysetPosition): number {
 }
 
 function uuidId(position: KeysetPosition): string {
-  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
-    position.id,
-  )
-    ? position.id
-    : invalidCursor();
+  const id = String(position.id);
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id) ? id : invalidCursor();
 }
 
 function integerSortValue(position: KeysetPosition): number {

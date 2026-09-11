@@ -13,7 +13,7 @@ import {
   uuid,
 } from "drizzle-orm/pg-core";
 import { relations, sql } from "drizzle-orm";
-import { organizations, organizationMembers } from "../common/auth";
+import { organizations, organizationMembers, users } from "../common/auth";
 import { kbAudienceEnum, kbSpaceRoleEnum } from "../common/enums";
 
 export const kbSpaces = pgTable(

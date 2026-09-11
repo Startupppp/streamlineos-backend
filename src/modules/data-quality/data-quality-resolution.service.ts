@@ -22,6 +22,7 @@ import {
 } from "./data-quality-finding-claim";
 import { applyAll, type ExecutionFailure } from "./data-quality-remediation";
 import { type ResolveFindingsInput, type ReverseResolutionInput } from "./dto/data-quality.schemas";
+import { planResolutionReversal } from "./resolution-reversal";
 
 /**
  * Deciding about many findings at once, and taking that decision back.
