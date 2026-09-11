@@ -2063,6 +2063,11 @@
       "verdict": "EXCLUDED-MODULE",
       "note": "CRM/Inventory excluded product domain \u00e2\u20ac\u201d do not fix in this lane"
     },
+    "/inventory/traceability/lib/genealogy-receipts.ts": {
+      "verdict": "EXCLUDED-MODULE",
+      "note": "CRM/Inventory excluded product domain \u00e2\u20ac\u201d do not fix in this lane",
+      "justification": "Carried over 2026-09-11 from /inventory/traceability/traceability-chain.service.ts, which this code moved out of unchanged \u2014 this gate keys on path, so a move forces a restatement. Same verdict as the entry it came from, deliberately: changing the verdict CLASS as a side effect of a file split would be a policy change made silently. Read while moving it, for the record: the GRN join is filtered to the grn ids already collected from a RECEIPT_LIMIT-capped transaction read and returns early on an empty set, and `reversedTransactionIds` is `inArray` on the transaction ids the caller already holds, behind the same early return."
+    },
     "/inventory/traceability/traceability-chain.service.ts": {
       "verdict": "EXCLUDED-MODULE",
       "note": "CRM/Inventory excluded product domain \u00e2\u20ac\u201d do not fix in this lane"
