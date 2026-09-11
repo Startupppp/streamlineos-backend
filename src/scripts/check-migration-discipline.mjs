@@ -235,6 +235,10 @@ const BASELINE_NO_LOCK_TIMEOUT = new Set([
   "0734_operator_access_grants.sql",
   "0747_operator_access_two_person_approval.sql",
   "0756_fin_reminder_log_measurement.sql",
+  // Lane merge 2026-09-11: applied bodies (content is hash-pinned), so the SQL cannot be fixed in place.
+  "0529_ledger_corrections_and_immutability.sql", // inv: streamline_inv, inv_cold_head
+  "0659a_sign_sweep_runs.sql", // crm: Neon (hash), streamline_crm_merge, crm_cold_0908
+  "0660a_sign_bulk_row_attempts.sql", // crm: Neon (hash), streamline_crm_merge, crm_cold_0908
 ]);
 
 const BASELINE_FK_NOT_VALID = new Set([
@@ -278,6 +282,11 @@ const BASELINE_FK_NOT_VALID = new Set([
   "0621_candidate_resumes_tenant_column.sql",
   "0623_workflow_variables_tenant_constraints.sql",
   "0655_chain_creates_remaining_catalog_objects.sql",
+  // Lane merge 2026-09-11: applied bodies (content is hash-pinned), so the SQL cannot be fixed in place.
+  "0465_accounting_documents.sql", // crm: streamline_crm_merge, streamline_crm_e2e, crm_cold_0908
+  "0519_inventory_resumable_import.sql", // inv: streamline_inv, inv_cold_head
+  "0529_ledger_corrections_and_immutability.sql", // inv: streamline_inv, inv_cold_head
+  "0558_crm_nurture_sequences.sql", // crm: Neon (hash), streamline_crm_merge, streamline_crm_e2e
 ]);
 
 const BASELINE_SET_NOT_NULL = new Set([
@@ -301,6 +310,8 @@ const BASELINE_SET_NOT_NULL = new Set([
   "0628_communication_actor_normalization.sql",
   "0657_kb_article_tags_tenant_integrity.sql",
   "0658_calendar_membership_actors.sql",
+  // Lane merge 2026-09-11: applied bodies (content is hash-pinned), so the SQL cannot be fixed in place.
+  "0520b_rbac_membership_keys.sql", // inv: streamline_inv, inv_cold_head
 ]);
 
 const BASELINE_VALIDATE_BEFORE_BACKFILL = new Set([
