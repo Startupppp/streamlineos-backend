@@ -16,11 +16,11 @@
 | tag | journal `when` |
 |---|---|
 | 0519_inventory_resumable_import | 1700000315000 |
-| 0520_rbac_membership_keys | 1700000316000 |
-| 0521_drop_resurrected_sku_uniques | 1700000317000 |
-| 0522_grn_discrepancy | 1700000318000 |
-| 0523_pick_line_exceptions | 1700000319000 |
-| 0524_cartonization | 1700000320000 |
+| 0520b_rbac_membership_keys | 1700000316000 |
+| 0521a_drop_resurrected_sku_uniques | 1700000317000 |
+| 0522a_grn_discrepancy | 1700000318000 |
+| 0523a_pick_line_exceptions | 1700000319000 |
+| 0524a_cartonization | 1700000320000 |
 | 0527_po_batching_policy | 1700000323000 |
 | 0529_ledger_corrections_and_immutability | 1700000325000 |
 | 0540_package_sales_order_link | 1700000336000 |
@@ -52,7 +52,7 @@ database side.
 ## What is in the fifteen
 
 Not cosmetic. `0529_ledger_corrections_and_immutability` is the GL correction and
-immutability pass; `0520_rbac_membership_keys` and
+immutability pass; `0520b_rbac_membership_keys` and
 `0611_delegations_and_overrides_expand_membership` are membership-actor
 contractions the application code already assumes; `0582` partitions
 `notifications` by `created_at`.

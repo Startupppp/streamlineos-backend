@@ -370,6 +370,13 @@ const BASELINE_JOURNAL_INTEGRITY = new Set([
   // 0472a/0473a: crm lane (0464a_gl_kernel already sits inside its window).
   "insert-order:0472a_activities_deal_fk.sql", // Neon(hash), streamline_crm_merge, streamline_crm_e2e, crm_cold_0908 +1 scratch
   "insert-order:0473a_accounting_attachments_permissions.sql", // Neon(hash), streamline_crm_merge, streamline_crm_e2e, crm_cold_0908 +1 scratch
+  // 0520a (crm) and 0520b-0524a (inv): origin/main holds 0520-0524 for billing.
+  "insert-order:0520a_relationship_state.sql", // Neon(when), streamline_crm_merge, streamline_crm_e2e, crm_cold_0908 +66 scratch
+  "insert-order:0520b_rbac_membership_keys.sql", // streamline_inv, inv_cold_head +11 scratch
+  "insert-order:0521a_drop_resurrected_sku_uniques.sql", // streamline_inv, inv_cold_head +11 scratch
+  "insert-order:0522a_grn_discrepancy.sql", // streamline_inv, inv_cold_head +11 scratch
+  "insert-order:0523a_pick_line_exceptions.sql", // streamline_inv, inv_cold_head +11 scratch
+  "insert-order:0524a_cartonization.sql", // streamline_inv, inv_cold_head +11 scratch
 ]);
 
 // ─── check functions ──────────────────────────────────────────────────────────
