@@ -34,6 +34,7 @@
     "foreign-key:build.project_whiteboard_shares:project_whiteboard_shares_created_by_users_id_fk",
     "foreign-key:build.project_whiteboards:project_whiteboards_created_by_users_id_fk",
     "foreign-key:build.roadmap_items:roadmap_items_created_by_users_id_fk",
+    "foreign-key:build.tickets:tickets_customer_id_clients_id_fk",
     "foreign-key:public.attendance:fk_attendance_user_actor",
     "foreign-key:public.booking_link_interviewers:fk_booking_link_interviewers_user_actor",
     "foreign-key:public.calibration_participants:fk_calibration_participants_user_actor",
