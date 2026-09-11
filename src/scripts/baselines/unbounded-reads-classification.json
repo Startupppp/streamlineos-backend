@@ -649,6 +649,11 @@
       "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
       "justification": "L79 reads org members with roles for automation audience selection; bounded by org membership count within single org context; required for automation fan-out 2026-09-01"
     },
+    "/automation/lib/automation-actions.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
+      "justification": "Split out of /automation/automation.service.ts 2026-09-11, restating that file's FALSE-POSITIVE for the one read that moved. L74 is the former L79: notifyMembers reads organization_members for a single orgId to fan a notify_roles/notify_all action out to its audience. Bounded by the org's own seat count, which is itself capped by PlanLimitsService (\u0027members\u0027 quota, serialized on the per-org advisory lock), and the fan-out has to see every member or the action would silently notify a subset. Every other read in this file is .limit(1) or a write."
+    },
     "/autonomy/autonomy-actions.service.ts": {
       "verdict": "FALSE-POSITIVE",
       "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
