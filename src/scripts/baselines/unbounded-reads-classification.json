@@ -361,6 +361,11 @@
       "verdict": "ACTIONABLE",
       "note": "export-cancellation lane \u00e2\u20ac\u201d paired service+frontend migration required"
     },
+    "/portal/access/lib/project-client-grants.ts": {
+      "verdict": "ACTIONABLE",
+      "note": "Offset pagination; needs keyset migration or proven depth bound",
+      "justification": "listGrants, moved verbatim out of /portal/access/portal-access.service.ts on 2026-09-11. Same read, new path; the origin's verdict is ACTIONABLE and it stays ACTIONABLE. Naming the bound, which the origin's note did not: page SIZE is bounded at 100 by pageSizeField(20, 100) in dto/portal-access.schemas.ts, but page DEPTH is not bounded at all, so offset = (page - 1) * limit grows without a cap and a deep page scans and discards every row before it. The origin's inherited note read only 'portal/actor-cutover lane - blocked', which names a lane rather than the read it is justifying."
+    },
     "/portal/access/portal-access.service.ts": {
       "verdict": "ACTIONABLE",
       "note": "portal/actor-cutover lane \u00e2\u20ac\u201d blocked"
@@ -558,6 +563,16 @@
       "verdict": "FALSE-POSITIVE",
       "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
       "justification": "seed account lookups inArray bounded by purpose count; entry lines bounded by single entry"
+    },
+    "/accounting/posting/lib/journal-post.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
+      "justification": "Classified 2026-09-11 when postJournal moved out of /accounting/posting/finance-posting.service.ts unchanged \u2014 this gate keys on path, so a move forces a restatement. This is the \"approval policies per recordType bounded at 5\" half of the origin entry and the wording holds: L130 reads fin_approval_policies (id, approver_user_id, min_amount) WHERE org_id = $org AND record_type = 'MANUAL_JOURNAL' AND is_active, inside the posting transaction. A per-org, per-record-type policy catalog an administrator maintains by hand. No LIMIT is possible: the applicable policy is chosen in memory by comparing the entry total against each min_amount with compareDecimals, which is an amount-banding decision the query is not expressing. The idempotency probe above it already carries .limit(1)."
+    },
+    "/accounting/posting/lib/journal-reverse.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
+      "justification": "Classified 2026-09-11 when reverseJournal moved out of /accounting/posting/finance-posting.service.ts unchanged \u2014 restated on the move. This is the \"entry lines for single reversal bounded by entry\" half of the origin entry: L95 reads journal_lines WHERE entry_id = $entry, to mirror them into the reversing entry. Bounded by the line count of ONE journal entry (two in the common case), and it must be complete \u2014 a truncated read would write an unbalanced reversal that does not net the original to zero. SEPARATE DEFECT, not measured by this gate: this read carries NO org_id predicate, unlike its sibling in /accounting/core/lib/journal-entry-transitions.ts. It is safe by derivation \u2014 the same transaction has already re-asserted (id, org_id) on the parent entry two statements earlier \u2014 but the lines read itself is tenant-blind and should carry eq(journalLines.orgId, orgId) as defence in depth."
     },
     "/accounting/settings/accounting-settings.service.ts": {
       "verdict": "FALSE-POSITIVE",
