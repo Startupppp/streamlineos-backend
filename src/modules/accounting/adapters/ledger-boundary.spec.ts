@@ -162,6 +162,22 @@ describe("ledger boundary", () => {
     expect(referencing).toEqual([]);
   });
 
+  it("keeps the kernel's posting-precondition reads inside the kernel", () => {
+    /*
+      `kernel/lib/posting-preconditions.ts` was split out of LedgerService, and
+      the reads it exports (resolvePeriod, loadFiscalYear, the currency and
+      account checks) filter by book or id, not by org. Inside postWithin they
+      run only after loadBook has matched the book to the caller's org. Imported
+      from anywhere else, they read another tenant's periods and accounts. They
+      were private methods before the split, and this keeps that boundary.
+    */
+    const importers = grep('from "[^"]*kernel/lib/posting-preconditions"').filter(
+      (f) => !f.startsWith("modules/accounting/kernel/"),
+    );
+    expect(importers).toEqual([]);
+    expect(grep('from "[^"]*/lib/posting-preconditions"')).toContain("modules/accounting/kernel/ledger.service.ts");
+  });
+
   it("fails loudly if the grep itself stops working", () => {
     /*
       `grep()` swallows its own failure and returns `[]`, so a broken pattern,

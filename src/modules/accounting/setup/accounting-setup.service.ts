@@ -321,7 +321,7 @@ export class AccountingSetupService {
   /**
    * The last fiscal year is about to end and no later one is open.
    *
-   * `LedgerService.resolvePeriod` refuses a journal whose date no period covers
+   * The kernel's `resolvePeriod` (kernel/lib/posting-preconditions.ts) refuses a journal whose date no period covers
    * — "No accounting period covers {date}. Open the fiscal year first." — and
    * nothing opens the next year on a schedule. So on the first day of a new
    * fiscal year (1 April, for the India pack) every posting on an organisation

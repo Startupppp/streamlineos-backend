@@ -157,7 +157,7 @@ describe("accounting provisioning", () => {
 
   it("warns a month before the last fiscal year runs out", async () => {
     /*
-      ACC-17. `LedgerService.resolvePeriod` refuses a journal whose date no
+      ACC-17. The kernel's `resolvePeriod` (kernel/lib/posting-preconditions.ts) refuses a journal whose date no
       period covers, and nothing opens the next fiscal year on a schedule. So on
       1 April — the India pack's year start — every posting on an organisation
       whose next year was never opened is refused, and the only warning today is
