@@ -993,6 +993,11 @@
       "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
       "justification": "client email reads bounded by clientId or emailId (per-client email context) 2026-09-01"
     },
+    "/clients/lib/client-timeline.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
+      "justification": "Classified 2026-09-11 by reading the call sites, when getTimeline moved out of /clients/clients.service.ts unchanged \u2014 this gate keys on path, so a move forces a restatement. Both matches are bounded by ONE client: `const [client]` is a single-row lookup joining the party map by client id, and the deals read is filtered on (org_id, client_id, deleted_at IS NULL), so the bound is that account's own deal count. FALSE-POSITIVE rather than BOUNDED because BOUNDED is a FIXED verdict here \u2014 it asserts the scanner no longer matches, and a continued match is reported as a regression."
+    },
     "/clients/clients.service.ts": {
       "verdict": "FALSE-POSITIVE",
       "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
