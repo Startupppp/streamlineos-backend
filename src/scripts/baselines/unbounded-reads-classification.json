@@ -1579,6 +1579,16 @@
       "note": "finance/reports lane (excluded territory)",
       "justification": "bank balance aggregate lookup for cash-position insight summary"
     },
+    "/finance/reports/lib/liquidity-reports.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
+      "justification": "Classified 2026-09-11 when computeWorkingCapital/computeBurnRate/computeCashRunway moved out of /finance/reports/analytics-reports.service.ts unchanged \u2014 this gate keys on path, so a move forces a restatement, and the origin file's \"aggregate financial analytics compute over all org data in date range\" wording does NOT describe this read, which is not an aggregate. L160 reads fin_bank_accounts.current_balance WHERE org_id = $org AND is_active, i.e. the organisation's own active bank accounts, and sums them in memory to get a cash position. Bank accounts are opened by hand by a finance administrator \u2014 single digits to low tens per org \u2014 not a growth table, and the sum must cover all of them or the runway is understated. The three GL reads in this file ARE aggregates and are not flagged."
+    },
+    "/finance/reports/lib/profitability-reports.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
+      "justification": "Classified 2026-09-11 when computeProjectProfitability/computeDeptProfitability moved out of /finance/reports/analytics-reports.service.ts unchanged \u2014 restated because the origin's \"aggregate ... over all org data in date range\" wording covers the four GROUP BY queries above these two but not these two, which are plain row reads. Both are id-to-name hydration AFTER the aggregate: L108 reads projects.id/name and L195 reads org_units.id/name, each WHERE id IN (the ids the GROUP BY actually returned). So the row count is exactly the number of distinct projects / departments that carried a posted journal line or an approved expense in the requested window \u2014 bounded by the aggregate, never by table size, and both short-circuit with an empty return when that set is empty. SEPARATE DEFECT, not measured by this gate: neither hydration read re-asserts org_id. The ids are safe by derivation (they come from journal lines already filtered to the caller's org) but the lookups themselves are tenant-blind and should carry the org predicate as defence in depth."
+    },
     "/finance/reports/overview.service.ts": {
       "verdict": "FALSE-POSITIVE",
       "note": "finance/reports lane (excluded territory)",
