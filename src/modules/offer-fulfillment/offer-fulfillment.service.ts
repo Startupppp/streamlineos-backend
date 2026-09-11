@@ -13,25 +13,15 @@ import {
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { AuditService } from "../../common/audit/audit.service";
+import { isUniqueViolation } from "../../common/db/postgres-error";
 import type {
   CreateOfferFulfillmentInput,
   ListOfferFulfillmentQuery,
   UpdateOfferFulfillmentInput,
 } from "./dto/offer-fulfillment.schemas";
 
-const PG_UNIQUE_VIOLATION = "23505";
-
 type ComponentRow = typeof offerFulfillmentComponents.$inferSelect;
 type ComponentPatch = Partial<typeof offerFulfillmentComponents.$inferInsert>;
-
-function isUniqueViolation(err: unknown): boolean {
-  return (
-    typeof err === "object" &&
-    err !== null &&
-    "code" in err &&
-    (err as { code: string }).code === PG_UNIQUE_VIOLATION
-  );
-}
 
 @Injectable()
 export class OfferFulfillmentService {

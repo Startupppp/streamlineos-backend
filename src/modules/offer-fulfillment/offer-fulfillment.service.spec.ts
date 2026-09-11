@@ -3,6 +3,7 @@ import { Test } from "@nestjs/testing";
 import { OfferFulfillmentService } from "./offer-fulfillment.service";
 import { AuditService } from "../../common/audit/audit.service";
 import { DRIZZLE } from "../../db/drizzle.constants";
+import { drizzlePostgresError, drizzleUniqueViolation } from "../../test/postgres-error-fixture";
 
 const ORG_ID = "org-1";
 const OTHER_ORG = "org-9";
@@ -105,15 +106,34 @@ describe("OfferFulfillmentService", () => {
     it("maps a duplicate mapping unique violation to ConflictException", async () => {
       mockSelectOnce([{ id: 10 }]);
       mockSelectOnce([{ id: 20 }]);
+      // uniq_offer_fulfillment_components_org_offer_sku, as drizzle surfaces it.
       (mockDb as { insert: jest.Mock }).insert.mockReturnValue({
         values: jest.fn().mockReturnValue({
-          returning: jest.fn().mockRejectedValue({ code: "23505" }),
+          returning: jest
+            .fn()
+            .mockRejectedValue(
+              drizzleUniqueViolation("uniq_offer_fulfillment_components_org_offer_sku"),
+            ),
         }),
       });
       await expect(
         svc.createComponent(ORG_ID, USER_ID, { crmOfferId: 10, invSkuId: 20, quantityPerUnit: 1, status: "active" }),
       ).rejects.toBeInstanceOf(ConflictException);
       expect(mockAudit.log).not.toHaveBeenCalled();
+    });
+
+    it("rethrows any other database error untouched", async () => {
+      mockSelectOnce([{ id: 10 }]);
+      mockSelectOnce([{ id: 20 }]);
+      const fkViolation = drizzlePostgresError("23503", "fk_offer_fulfillment_components_sku");
+      (mockDb as { insert: jest.Mock }).insert.mockReturnValue({
+        values: jest.fn().mockReturnValue({
+          returning: jest.fn().mockRejectedValue(fkViolation),
+        }),
+      });
+      await expect(
+        svc.createComponent(ORG_ID, USER_ID, { crmOfferId: 10, invSkuId: 20, quantityPerUnit: 1, status: "active" }),
+      ).rejects.toBe(fkViolation);
     });
 
     it("inserts (stamping both org ids) and audit-logs on success", async () => {
