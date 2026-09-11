@@ -157,7 +157,9 @@ describe("role mutation authorization gates", () => {
     await expect(deleteRole(mutationDeps, actor(false), 7)).rejects.toThrow(
       /Only org admins may delete roles/i,
     );
-    expect(mutationDeps.db.query.roles.findFirst).not.toHaveBeenCalled();
+    expect(
+      mutationDeps.db.query.roles.findFirst as unknown as jest.Mock,
+    ).not.toHaveBeenCalled();
   });
 
   it("materializeTemplate refuses a caller without structural org-admin standing", async () => {
@@ -167,6 +169,8 @@ describe("role mutation authorization gates", () => {
     await expect(
       materializeTemplate(seedingDeps, actor(false), "engineering"),
     ).rejects.toThrow(/organization owner or administrator/i);
-    expect(seedingDeps.db.query.roles.findFirst).not.toHaveBeenCalled();
+    expect(
+      seedingDeps.db.query.roles.findFirst as unknown as jest.Mock,
+    ).not.toHaveBeenCalled();
   });
 });
