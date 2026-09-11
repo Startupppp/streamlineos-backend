@@ -17,6 +17,10 @@ const persistedPlacements = new Map<
 
 jest.mock("../../../common/region/cell-admission", () => ({
   chooseRegionForNewOrg: (...args: unknown[]) => chooseRegionForNewOrg(...args),
+  regionPlacementCoordinates: (choice: { region: string; cellId: string }) => ({
+    region: choice.region,
+    cellId: choice.cellId,
+  }),
 }));
 jest.mock("../../../common/region/placement-lookup", () => ({
   placeOrganization: (...args: unknown[]) => placeOrganization(...args),
@@ -48,7 +52,6 @@ function selectOwner(rows: unknown[]) {
 
 async function build(options: {
   steps?: Array<{ stepName: string; state: string }>;
-  compensate?: jest.Mock;
 } = {}) {
   const db = {
     select: selectOwner([{ id: 1 }]),
@@ -81,7 +84,10 @@ async function build(options: {
       saga: { sagaId: "saga-1", organizationId: "org-fixed" },
       steps: options.steps ?? [],
     }),
-    claimExecution: jest.fn().mockResolvedValue(true),
+    claimExecution: jest.fn().mockResolvedValue("exec-token"),
+    ownsExecution: jest.fn().mockResolvedValue(true),
+    markCompensated: jest.fn().mockResolvedValue(undefined),
+    wasTerminallyDeleted: jest.fn().mockResolvedValue(false),
     markFailed: jest.fn().mockResolvedValue(undefined),
     findByRequestKey: jest.fn().mockResolvedValue(null),
     findReservationValue: jest.fn().mockResolvedValue(null),
@@ -90,8 +96,7 @@ async function build(options: {
     release,
     complete: jest.fn().mockResolvedValue(undefined),
     claim: jest.fn().mockResolvedValue(undefined),
-    compensate:
-      options.compensate ?? jest.fn().mockResolvedValue(undefined),
+    compensate: jest.fn().mockResolvedValue(undefined),
   };
 
   const moduleRef = await Test.createTestingModule({
@@ -197,9 +202,9 @@ describe("OrganizationCreationService", () => {
         moduleKeys: [],
       },
     );
-    expect(saga.complete).toHaveBeenCalledWith("saga-1");
-    expect(saga.claim).toHaveBeenCalledWith("ORGANIZATION_ID", "org-fixed");
-    expect(saga.claim).toHaveBeenCalledWith("SLUG", "acme-orgfixed");
+    expect(saga.complete).toHaveBeenCalledWith("saga-1", "exec-token");
+    expect(saga.claim).toHaveBeenCalledWith("ORGANIZATION_ID", "org-fixed", "saga-1");
+    expect(saga.claim).toHaveBeenCalledWith("SLUG", "acme-orgfixed", "saga-1");
     expect(invalidate).toHaveBeenCalledWith("user:session:user-1");
   });
 
@@ -288,32 +293,18 @@ describe("OrganizationCreationService", () => {
   it("compensates reservations and placement when setup bootstrap fails", async () => {
     const bootstrapError = new Error("bootstrap failed");
     bootstrapCellOrganization.mockRejectedValueOnce(bootstrapError);
-    const compensate = jest.fn().mockImplementation(
-      async (
-        _sagaId: string,
-        compensators: Record<string, () => Promise<void>>,
-      ) => {
-        await compensators["reserve-placement"]();
-        await compensators["reserve-identity"]();
-      },
-    );
-    const { service, saga, release, db } = await build({ compensate });
+    const { service, saga, release, db } = await build();
     db.query.organizations.findFirst.mockResolvedValue(undefined);
 
     await expect(
       service.createFromSetup({ userId: "user-1", name: "Acme" }),
     ).rejects.toBe(bootstrapError);
 
-    expect(saga.compensate).toHaveBeenCalledWith(
-      "saga-1",
-      expect.objectContaining({
-        "reserve-identity": expect.any(Function),
-        "reserve-placement": expect.any(Function),
-      }),
-    );
     expect(unplaceOrganization).toHaveBeenCalledWith(expect.anything(), "org-fixed");
-    expect(release).toHaveBeenCalledWith("SLUG", "acme-orgfixed");
-    expect(release).toHaveBeenCalledWith("ORGANIZATION_ID", "org-fixed");
+    expect(release).toHaveBeenCalledWith("SLUG", "acme-orgfixed", "saga-1");
+    expect(release).toHaveBeenCalledWith("ORGANIZATION_ID", "org-fixed", "saga-1");
+    expect(saga.markCompensated).toHaveBeenCalledWith("saga-1", "exec-token");
+    expect(saga.markFailed).not.toHaveBeenCalled();
     expect(saga.complete).not.toHaveBeenCalled();
   });
 

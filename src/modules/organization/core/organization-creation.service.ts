@@ -124,9 +124,8 @@ export class OrganizationCreationService {
     const done = new Set(
       steps.filter((step) => step.state === "DONE").map((step) => step.stepName),
     );
-    let slug =
-      input.slug ??
-      generateOrgSlug("organization", orgId.replaceAll("-", ""));
+    const slugSource = input.name.replace(/[^a-zA-Z0-9]+/g, "") ? input.name : "organization";
+    let slug = input.slug ?? generateOrgSlug(slugSource, orgId.replaceAll("-", ""));
     let region: string | null = null;
     let createdOrganization: CreatedOrganization | null = null;
     let bootstrapAttempted = steps.some(

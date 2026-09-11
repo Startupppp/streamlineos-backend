@@ -1,8 +1,24 @@
 import { ForbiddenException, NotFoundException } from "@nestjs/common";
 import { assertPathOrgIsCallerOrg } from "src/modules/organization/core/assert-path-org";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { BACKEND_ROOT } from "./route-surface";
+
+const CORE_DIR = join(BACKEND_ROOT, "src/modules/organization/core");
+const ROUTE_DECORATOR = /@(?:Get|Post|Patch|Put|Delete)\(/g;
+
+// Locates the handler in whichever core controller declares it, so splitting a controller cannot blind this gate.
+function handlerBody(decorator: string): string | null {
+  for (const file of readdirSync(CORE_DIR).filter((f) => f.endsWith(".controller.ts"))) {
+    const source = readFileSync(join(CORE_DIR, file), "utf8");
+    const start = source.indexOf(decorator);
+    if (start === -1) continue;
+    ROUTE_DECORATOR.lastIndex = start + decorator.length;
+    const next = ROUTE_DECORATOR.exec(source);
+    return source.slice(start, next ? next.index : source.length);
+  }
+  return null;
+}
 
 /**
  * `POST /organization/:orgId/purge/schedule` and `DELETE /organization/:orgId/purge` — found by the
@@ -45,15 +61,14 @@ describe("BOLA probe — the organisation purge routes' path parameter", () => {
    * lets a fix land inert, which this release has already seen more than once.
    */
   it("WIRED: both purge handlers call the guard", () => {
-    const source = readFileSync(
-      join(BACKEND_ROOT, "src/modules/organization/core/organization.controller.ts"),
-      "utf8",
-    );
-    const schedule = source.slice(source.indexOf('@Post(":orgId/purge/schedule")'));
-    const scheduleBody = schedule.slice(0, schedule.indexOf('@Delete(":orgId/purge")'));
-    const cancel = source.slice(source.indexOf('@Delete(":orgId/purge")'));
-    const cancelBody = cancel.slice(0, cancel.indexOf("@Post(\"legal-holds\")"));
-    expect(scheduleBody).toContain("assertPathOrgIsCallerOrg(orgId, u.orgId)");
-    expect(cancelBody).toContain("assertPathOrgIsCallerOrg(orgId, u.orgId)");
+    for (const decorator of ['@Post(":orgId/purge/schedule")', '@Delete(":orgId/purge")']) {
+      const body = handlerBody(decorator);
+      expect(body).not.toBeNull();
+      expect(body).toContain("assertPathOrgIsCallerOrg(orgId, u.orgId)");
+    }
+  });
+
+  it("ANTI-VACUITY: a route that no longer exists is reported, not silently skipped", () => {
+    expect(handlerBody('@Post(":orgId/purge/no-such-route")')).toBeNull();
   });
 });

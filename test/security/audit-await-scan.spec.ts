@@ -114,12 +114,19 @@ export class S { f() { return getOrgUnitRowFilter("o", "BRANCH", "i"); } }`;
     expect([report.helpers, totalAuditWrites(report)]).toEqual([[], 0]);
   });
 
-  it("ANTI-VACUITY — the hop is what carries the real org-hierarchy services", () => {
-    const report = scanServiceAuditAwaits(
-      join(BACKEND_ROOT, "src/modules/organization/hierarchy/org-hierarchy-branches.service.ts"),
+  it("ANTI-VACUITY — the hop is what carries real production audit writes", () => {
+    const workLogs = scanServiceAuditAwaits(
+      join(BACKEND_ROOT, "src/modules/hr/time/work-logs.service.ts"),
     );
-    expect(report.direct).toBe(0);
-    expect(report.delegated).toBe(2);
-    expect(report.delegatedAwaited).toBe(2);
+    expect(workLogs.direct).toBe(2);
+    expect(workLogs.delegated).toBe(1);
+    expect(workLogs.delegatedAwaited).toBe(1);
+
+    const attendance = scanServiceAuditAwaits(
+      join(BACKEND_ROOT, "src/modules/hr/time/attendance.service.ts"),
+    );
+    expect(attendance.direct).toBe(0);
+    expect(attendance.delegated).toBe(1);
+    expect(attendance.delegatedAwaited).toBe(1);
   });
 });

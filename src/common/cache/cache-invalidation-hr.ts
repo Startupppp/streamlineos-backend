@@ -3,7 +3,7 @@ import type { CacheNamespaceEntry } from "./cache-invalidation-types";
 export const HR_CACHE_ENTRIES: readonly CacheNamespaceEntry[] = [
   {
     namespace: "org:hierarchy:<orgId>",
-    description: "Organisation hierarchy tree (all shapes)",
+    description: "Every organisation hierarchy read, version-keyed via cachedVersionedForOrg. Sub-keys: overview and tree:<strategy> carry the caller's ScopedRead discriminator because those reads are actor-scoped; units:list:<kind>:<filters> and units:get:<kind>:<id> carry none, because the per-kind handlers pass only (orgId, query) and no rbacScope reaches OrgUnitCrudService. Giving those reads a DataScope means adding the discriminator to their keys in the same change.",
     invalidation: {
       kind: "write",
       events: ["OrgHierarchyCacheService.invalidateAfterMutation (any hierarchy mutation)"],

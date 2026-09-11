@@ -19,7 +19,12 @@ function buildSelectChain(rows: unknown[]) {
 }
 
 function buildUpdateChain() {
-  const where = jest.fn().mockResolvedValue(undefined);
+  // Drizzle's .where() is awaitable AND chainable into .returning(); the double has to be both.
+  const where = jest.fn().mockImplementation(() =>
+    Object.assign(Promise.resolve(undefined), {
+      returning: jest.fn().mockResolvedValue([{ sagaId: "saga-1" }]),
+    }),
+  );
   return { set: jest.fn().mockReturnValue({ where }) };
 }
 
@@ -187,7 +192,13 @@ describe("OrganizationSagaService.runStep", () => {
       update: jest.fn().mockImplementation(() => ({
         set: jest.fn().mockImplementation((s: unknown) => {
           setCalls.push(s);
-          return { where: jest.fn().mockResolvedValue(undefined) };
+          return {
+            where: jest.fn().mockImplementation(() =>
+              Object.assign(Promise.resolve(undefined), {
+                returning: jest.fn().mockResolvedValue([{ sagaId: "saga-1" }]),
+              }),
+            ),
+          };
         }),
       })),
       delete: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue(undefined) }),
@@ -208,7 +219,13 @@ describe("OrganizationSagaService.runStep", () => {
       update: jest.fn().mockImplementation(() => ({
         set: jest.fn().mockImplementation((s: unknown) => {
           setCalls.push(s);
-          return { where: jest.fn().mockResolvedValue(undefined) };
+          return {
+            where: jest.fn().mockImplementation(() =>
+              Object.assign(Promise.resolve(undefined), {
+                returning: jest.fn().mockResolvedValue([{ sagaId: "saga-1" }]),
+              }),
+            ),
+          };
         }),
       })),
       delete: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue(undefined) }),
@@ -296,7 +313,13 @@ describe("OrganizationSagaService.compensate — reverse position order", () => 
       update: jest.fn().mockImplementation(() => ({
         set: jest.fn().mockImplementation((s: unknown) => {
           setCalls.push(s);
-          return { where: jest.fn().mockResolvedValue(undefined) };
+          return {
+            where: jest.fn().mockImplementation(() =>
+              Object.assign(Promise.resolve(undefined), {
+                returning: jest.fn().mockResolvedValue([{ sagaId: "saga-1" }]),
+              }),
+            ),
+          };
         }),
       })),
       delete: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue(undefined) }),

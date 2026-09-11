@@ -47,7 +47,7 @@ export class OrganizationSagaService {
             notInArray(organizationLifecycleSagas.state, ["RUNNING"]),
             lt(
               organizationLifecycleSagas.updatedAt,
-              sql`now() - interval '${sql.raw(String(SAGA_EXECUTION_LEASE_MS))} milliseconds'`,
+              sql`now() - make_interval(secs => ${SAGA_EXECUTION_LEASE_MS / 1000})`,
             ),
           ),
         ),
