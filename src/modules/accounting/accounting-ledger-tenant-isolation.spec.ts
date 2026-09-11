@@ -350,7 +350,7 @@ describe("ArDocumentPdfService — cross-tenant isolation", () => {
     expect(p.t.orgBound(p.t.on(arDocuments, "update")[0], arDocuments.orgId)).toEqual([ATTACKER_ORG]);
     expect(p.t.orgBound(p.t.on(glBooks, "select")[0], glBooks.orgId)).toEqual([ATTACKER_ORG]);
     expect(p.t.orgBound(p.t.on(organizations, "select")[0], organizations.id)).toEqual([ATTACKER_ORG]);
-    expect(p.storage.uploadFile.mock.calls[0]![0]).toBe(ATTACKER_ORG);
+    expect((p.storage.uploadFile.mock.calls[0] as unknown[])[0]).toBe(ATTACKER_ORG);
     expect(p.parties.get).toHaveBeenCalledWith(ATTACKER_ORG, "party-x");
     expect(p.documents.frozenTaxLines).toHaveBeenCalledWith(ATTACKER_ORG, DOC);
   });
