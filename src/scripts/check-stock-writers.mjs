@@ -121,7 +121,9 @@ const ACKNOWLEDGED = [
       "INV-40, OPEN. Reservations increment and decrement `committed` directly and write no ledger row. A reservation is a promise rather than a movement, so it is not obviously the kernel's work — but it is the one exception here that the pack has already decided should be removed.",
   },
   {
-    file: "reconciliation/inv-reconciliation.service.ts",
+    // The drift-repair UPDATE and its ledger GROUP BY moved out of the service
+    // into the SQL catalog in 3be4b8229; the service only runs them.
+    file: "reconciliation/lib/reconciliation-queries.ts",
     tables: ["levels"],
     buckets: "all derived buckets",
     grain: "full",
