@@ -34,9 +34,12 @@ function inventorySources(): string[] {
       // The rules table itself names every event, so leaving it in the scan
       // makes the mirror check find itself and pass by tautology.
       if (path.endsWith("gl-posting-rules.ts")) return [];
-      // The bridge DECLARES the closed set of draft sources as a type; the
-      // call sites that post under them are what is being mirrored.
+      // The bridge posts every draft generically, and `lib/journal-vocabulary.ts`
+      // DECLARES the closed set of draft sources as a type (it moved there when
+      // the bridge split). The call sites that post under them are what is being
+      // mirrored.
       if (path.endsWith(join("stock-engine", "accounting-bridge.ts"))) return [];
+      if (path.endsWith(join("stock-engine", "lib", "journal-vocabulary.ts"))) return [];
       return [path];
     });
   return walk(root);
