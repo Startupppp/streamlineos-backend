@@ -148,9 +148,6 @@ export async function updatePreferences(
   data: UpdatePreferencesInput,
 ) {
   await deps.assertMember(orgId, userId);
-  const existing = await deps.db.query.userPreferences.findFirst({
-    where: eq(userPreferences.userId, userId),
-  });
 
   const updateData: Record<string, unknown> = {};
   if (data.theme !== undefined) updateData.theme = data.theme;
@@ -166,6 +163,15 @@ export async function updatePreferences(
     updateData.notificationPreferences = data.notificationPreferences;
   if (data.dashboardPreferences !== undefined)
     updateData.dashboardPreferences = data.dashboardPreferences;
+
+  // An empty patch is a no-op, not an INSERT of defaults or an `UPDATE … SET` with
+  // nothing to set — drizzle throws on the latter, which turned a blank save into a 500.
+  if (Object.keys(updateData).length === 0) return { success: true };
+
+  const existing = await deps.db.query.userPreferences.findFirst({
+    columns: { userId: true },
+    where: eq(userPreferences.userId, userId),
+  });
 
   if (existing) {
     await deps.db
