@@ -49,6 +49,12 @@ const GLOBAL_SERVICE_PATTERNS = [
   /mailer\.service/,
   /platform-admin/,
   /platform-analytics\.service/,
+  // The platform waitlist. `platform_waitlist` has no org_id: an entry exists
+  // BEFORE any tenant, is admitted by an operator holding
+  // `platform:waitlist:admit`, and is claimed unauthenticated to create one. It
+  // read as tenant-owned only because `claimedOrgId`/`org_id` is a string in the
+  // file — the id of the org the claim produced, written back as a pointer.
+  /modules\/public\/waitlist-admission\.service\.ts$/,
   /health\./,
   /metrics\./,
   /redis\.service/,
