@@ -5,7 +5,7 @@ import {
   reviveTransitExit,
   type ExitGrain,
   type StrandedDocumentLine,
-} from "../transit-exit.service";
+} from "../lib/transit-exit-lines";
 
 /**
  * R3, item 2 — how much may leave transit, decided from the document *and* the ledger.
