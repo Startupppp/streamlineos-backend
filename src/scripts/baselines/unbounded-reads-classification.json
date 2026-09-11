@@ -2514,6 +2514,11 @@
       "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
       "justification": "L121 reads ALL parties for org; L262/L280/L298/L315 read all leads/clients/contacts/crmOrganizations with party joins for org; seam does org-wide entity reconciliation; needs cursor-based batching for large orgs 2026-09-01"
     },
+    "/party/party-write-primitives.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
+      "justification": "Classified 2026-09-11 by reading the call site, when the Party-write primitives moved out of /party/party-legacy-writer.ts unchanged \u2014 this gate keys on path, so a move forces a restatement. The one match is `loadParties`: `.select().from(business_parties)` filtered `inArray` on the party ids the caller already holds, and guarded by an early return when that list is empty, so the bound is the caller's own set. FALSE-POSITIVE rather than BOUNDED because BOUNDED is a FIXED verdict here \u2014 it asserts the scanner no longer matches, and a continued match is reported as a regression."
+    },
     "/party/party-legacy-writer.ts": {
       "verdict": "FALSE-POSITIVE",
       "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
