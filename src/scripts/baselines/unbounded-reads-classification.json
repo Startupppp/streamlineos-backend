@@ -1096,6 +1096,11 @@
       "verdict": "EXCLUDED-MODULE",
       "note": "CRM/Inventory excluded product domain \u00e2\u20ac\u201d do not fix in this lane"
     },
+    "/crm/core/lib/crm-org-listing.ts": {
+      "verdict": "EXCLUDED-MODULE",
+      "note": "CRM/Inventory excluded product domain \u00e2\u20ac\u201d do not fix in this lane",
+      "justification": "Restates the verdict on /crm/core/crm-organizations.service.ts, which these functions were split out of unchanged. The flagged line is companyQuery(), a shared builder with no terminal: its only caller, findPotentialDuplicates, applies .limit(DUPLICATE_CANDIDATE_LIMIT) = 5, so the read returns at most five rows within one tenant. The scanner cannot see a limit the caller supplies. 2026-09-11"
+    },
     "/crm/core/crm-sales-dashboard.service.ts": {
       "verdict": "EXCLUDED-MODULE",
       "note": "CRM/Inventory excluded product domain \u00e2\u20ac\u201d do not fix in this lane"
