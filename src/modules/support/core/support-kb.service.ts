@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, Inject, Injectable, Logger, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, asc, desc, eq, ne } from "drizzle-orm";
 import {
   kbCategories,
@@ -10,7 +10,6 @@ import {
 } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
-import { KbIndexingService } from "../../kb/retrieval/kb-indexing.service";
 import {
   createArticle,
   deleteArticle,
@@ -37,11 +36,8 @@ import type {
  */
 @Injectable()
 export class SupportKbService {
-  private readonly logger = new Logger(SupportKbService.name);
-
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
-    private readonly indexing: KbIndexingService,
   ) {}
 
   listCategories(orgId: string) {
