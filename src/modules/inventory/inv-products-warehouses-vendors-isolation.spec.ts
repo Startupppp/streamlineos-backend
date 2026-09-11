@@ -10,6 +10,7 @@ import { InventoryAuditService } from "./stock-engine/inventory-audit.service";
 import { CostVisibilityService } from "./stock-engine/cost-visibility";
 import { WarehouseScopeService } from "./stock-engine/warehouse-scope.service";
 import { INVENTORY_ISOLATION_STUBS } from "./__tests__/isolation-stubs";
+import { ScopedRead } from "../access/scoped-read";
 
 const USER = "user-1";
 
@@ -86,7 +87,7 @@ describe("InvProductCrudService — cross-tenant isolation", () => {
       ],
     }).compile().then((m) => m.get(InvProductCrudService));
 
-    const result = await svc.listProducts(ATTACKER, { page: 1, limit: 20 });
+    const result = await svc.listProducts(ScopedRead.of(ATTACKER, "user-1", "all"), { page: 1, limit: 20 });
     expect(result.items).toHaveLength(0);
     const firstArg = findMany.mock.calls[0]?.[0] as { where?: unknown } | undefined;
     expect(sqlValues(firstArg?.where)).toContain(ATTACKER);
@@ -105,7 +106,7 @@ describe("InvProductCrudService — cross-tenant isolation", () => {
       ],
     }).compile().then((m) => m.get(InvProductCrudService));
 
-    const result = await svc.listProducts(OWNER, { page: 1, limit: 20 });
+    const result = await svc.listProducts(ScopedRead.of(OWNER, "user-1", "all"), { page: 1, limit: 20 });
     expect(result.items).toHaveLength(1);
   });
 });

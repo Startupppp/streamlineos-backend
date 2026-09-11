@@ -1,5 +1,6 @@
 import type { Db } from "../../db/drizzle.module";
 import { DealsAnalyticsService } from "./deals-analytics.service";
+import { ScopedRead } from "../access/scoped-read";
 
 function sqlValues(value: unknown, seen = new Set<object>()): unknown[] {
   if (value === null || value === undefined || typeof value === "string" || typeof value === "number" || typeof value === "boolean") return [value];
@@ -41,14 +42,14 @@ describe("DealsAnalyticsService — cross-tenant isolation", () => {
 
   it("scopes stats query to the requesting org (cross-tenant isolation)", async () => {
     const { svc, where } = makeService([{ cnt: 0, total: null }]);
-    await svc.getStats(ATTACKER, { scope: "all", userId: "user-1" });
+    await svc.getStats(ATTACKER, ScopedRead.of(ATTACKER, "user-1", "all"));
     const allVals = where.mock.calls.flat().flatMap((c: unknown) => sqlValues(c));
     expect(allVals).toContain(ATTACKER);
   });
 
   it("returns stats for the owning org (control)", async () => {
     const { svc, where } = makeService([{ cnt: 5, total: 10000 }]);
-    const result = await svc.getStats(OWNER, { scope: "all", userId: "user-1" });
+    const result = await svc.getStats(OWNER, ScopedRead.of(OWNER, "user-1", "all"));
     expect(result).toBeDefined();
     const allVals = where.mock.calls.flat().flatMap((c: unknown) => sqlValues(c));
     expect(allVals).toContain(OWNER);

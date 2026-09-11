@@ -1,5 +1,6 @@
 import type { Db } from "../../db/drizzle.module";
 import { DealsForecastService } from "./deals-forecast.service";
+import { ScopedRead } from "../access/scoped-read";
 
 function sqlValues(value: unknown, seen = new Set<object>()): unknown[] {
   if (value === null || value === undefined || typeof value === "string" || typeof value === "number" || typeof value === "boolean") return [value];
@@ -75,7 +76,7 @@ describe("DealsForecastService — cross-tenant isolation", () => {
   it("DENY: getForecast queries only the requesting org's deals (cross-tenant isolation)", async () => {
     const { svc, getForecastWhere, getClosedWhere } = makeService([]);
 
-    const result = await svc.getForecast(ATTACKER_ORG, { scope: "all", userId: "user-1" });
+    const result = await svc.getForecast(ATTACKER_ORG, ScopedRead.of(ATTACKER_ORG, "user-1", "all"));
 
     expect(result.totalDeals).toBe(0);
     for (const where of [getForecastWhere(), getClosedWhere()]) {
@@ -88,7 +89,7 @@ describe("DealsForecastService — cross-tenant isolation", () => {
   it("CONTROL: getForecast scopes the query to the owner org", async () => {
     const { svc, getForecastWhere, getClosedWhere } = makeService([]);
 
-    await svc.getForecast(OWNER_ORG, { scope: "all", userId: "user-1" });
+    await svc.getForecast(OWNER_ORG, ScopedRead.of(OWNER_ORG, "user-1", "all"));
 
     expect(sqlValues(getForecastWhere())).toContain(OWNER_ORG);
     expect(sqlValues(getClosedWhere())).toContain(OWNER_ORG);

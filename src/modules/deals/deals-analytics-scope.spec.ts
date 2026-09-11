@@ -185,7 +185,7 @@ describe("deals analytics narrow to the deals the caller may see", () => {
       await serviceWith(rep).getAging("org-1", REP);
 
       const other = recording();
-      await serviceWith(other).getAging("org-1", { scope: "own", userId: "rep-2" });
+      await serviceWith(other).getAging("org-1", ScopedRead.of("org-1", "rep-2", "own"));
 
       const manager = recording();
       await serviceWith(manager).getAging("org-1", MANAGER);
