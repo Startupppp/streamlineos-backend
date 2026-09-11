@@ -8,106 +8,52 @@
  *    4 March under MM/DD; an importer that guesses moves money between months.
  * 2. **The same file cannot land twice.** The SHA-256 of the raw bytes is
  *    stored, and `uniq_bank_statements_profile_hash` is what actually enforces
- *    it — the pre-check below is only there to give a decent message.
+ *    it — the pre-check in lib/statement-import-write.ts is only there to give
+ *    a decent message.
  * 3. **`opening + movements = closing`, or nothing is written.** A file that
  *    does not tie is a file somebody edited in a spreadsheet, and importing it
  *    would poison every reconciliation built on top.
  */
-import {
-  BadRequestException,
-  ConflictException,
-  Inject,
-  Injectable,
-  NotFoundException,
-} from "@nestjs/common";
+import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { createHash } from "node:crypto";
 import { and, asc, desc, eq, sql } from "drizzle-orm";
 import { bankStatementLines, bankStatements } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import type { DbOrTx } from "../kernel/sequence.service";
-import { assertIsoDate, compareDates } from "../kernel/fiscal-calendar";
-import { money, sum, toDecimalString } from "../kernel/money";
+import { compareDates } from "../kernel/fiscal-calendar";
+import { money, sum } from "../kernel/money";
 import { BankAccountsService } from "./bank-accounts.service";
-import { findMappingPreset, STATEMENT_MAPPING_PRESETS, type StatementMappingPreset } from "./csv-presets";
+import { STATEMENT_MAPPING_PRESETS, type StatementMappingPreset } from "./csv-presets";
 import {
-  assertMappingIsUsable,
-  findDuplicateLines,
-  parseAmountToMinor,
-  parseStatementCsv,
-  StatementCsvError,
-  type LooseColumnMapping,
-  type StatementColumnMapping,
-} from "./statement-csv";
-import { isUniqueViolation } from "./pg-errors";
+  assertTies,
+  collectWarnings,
+  isoOrReject,
+  parseStatementOrReject,
+  requireAmount,
+  resolveMapping,
+} from "./lib/statement-import-rules";
+import { assertNotAlreadyImported, insertStatementWithLines } from "./lib/statement-import-write";
+import type {
+  ImportedStatementLine,
+  ImportStatementInput,
+  StatementImportResult,
+  StatementSummary,
+} from "./statement-import.types";
 
-export type ImportWarningCode =
-  | "DUPLICATE_LINE"
-  | "ROW_SKIPPED"
-  | "LINE_OUTSIDE_PERIOD";
-
-export interface ImportWarning {
-  code: ImportWarningCode;
-  message: string;
-  details?: Record<string, unknown>;
-}
-
-export interface ImportStatementInput {
-  bankProfileId: string;
-  /** The raw file, as a string. No multipart, no upload dependency. */
-  content: string;
-  fileName?: string;
-  /** A named layout, an explicit mapping, or neither (falls back to the saved one). */
-  presetCode?: string;
-  mapping?: Partial<StatementColumnMapping>;
-  periodStart: string;
-  periodEnd: string;
-  /** Decimal strings in the bank account's currency, e.g. `"10000.00"`. */
-  opening: string;
-  closing: string;
-}
-
-export interface ImportedStatementLine {
-  id: string;
-  lineNo: number;
-  valueDate: string;
-  amountMinor: number;
-  description: string | null;
-  bankReference: string | null;
-}
-
-export interface StatementImportResult {
-  statementId: string;
-  bankProfileId: string;
-  currency: string;
-  periodStart: string;
-  periodEnd: string;
-  openingMinor: number;
-  closingMinor: number;
-  movementMinor: number;
-  lineCount: number;
-  fileHash: string;
-  warnings: ImportWarning[];
-  lines: ImportedStatementLine[];
-}
-
-export interface StatementSummary {
-  id: string;
-  bankProfileId: string;
-  bookId: string;
-  currency: string;
-  periodStart: string;
-  periodEnd: string;
-  openingMinor: number;
-  closingMinor: number;
-  source: "csv" | "manual" | "feed";
-  fileName: string | null;
-  fileHash: string | null;
-  lineCount: number;
-  reconciledAt: Date | null;
-  reconciledBy: string | null;
-  importedAt: Date;
-}
+/*
+  The import flow and the read paths stay here. The checks that turn a bad file
+  into a 400 are in lib/statement-import-rules.ts; the duplicate-file check and
+  the two inserts are in lib/statement-import-write.ts.
+*/
+export type {
+  ImportedStatementLine,
+  ImportStatementInput,
+  ImportWarning,
+  ImportWarningCode,
+  StatementImportResult,
+  StatementSummary,
+} from "./statement-import.types";
 
 @Injectable()
 export class StatementImportService {
@@ -131,8 +77,8 @@ export class StatementImportService {
     const profile = await this.bankAccounts.get(orgId, input.bankProfileId);
     const currency = profile.currency;
 
-    const periodStart = this.isoOrReject(input.periodStart, "periodStart");
-    const periodEnd = this.isoOrReject(input.periodEnd, "periodEnd");
+    const periodStart = isoOrReject(input.periodStart, "periodStart");
+    const periodEnd = isoOrReject(input.periodEnd, "periodEnd");
     if (compareDates(periodEnd, periodStart) < 0) {
       throw new BadRequestException("The statement period ends before it starts");
     }
@@ -144,20 +90,13 @@ export class StatementImportService {
     // Hash the bytes as supplied, before any normalisation — the point is that
     // the *same export* cannot be imported twice.
     const fileHash = createHash("sha256").update(input.content, "utf8").digest("hex");
-    await this.assertNotAlreadyImported(orgId, profile.id, fileHash);
+    await assertNotAlreadyImported(this.db, orgId, profile.id, fileHash);
 
-    const mapping = this.resolveMapping(profile.csvMapping, input.presetCode, input.mapping);
-    const openingMinor = this.requireAmount(input.opening, currency, "opening");
-    const closingMinor = this.requireAmount(input.closing, currency, "closing");
+    const mapping = resolveMapping(profile.csvMapping, input.presetCode, input.mapping);
+    const openingMinor = requireAmount(input.opening, currency, "opening");
+    const closingMinor = requireAmount(input.closing, currency, "closing");
 
-    const parsed = (() => {
-      try {
-        return parseStatementCsv(input.content, mapping, currency);
-      } catch (error) {
-        if (error instanceof StatementCsvError) throw new BadRequestException(error.message);
-        throw error;
-      }
-    })();
+    const parsed = parseStatementOrReject(input.content, mapping, currency);
 
     if (parsed.rows.length === 0) {
       throw new BadRequestException(
@@ -170,64 +109,25 @@ export class StatementImportService {
       currency,
     ).minor;
 
-    this.assertTies(openingMinor, movementMinor, closingMinor, currency, parsed.rows.length);
+    assertTies(openingMinor, movementMinor, closingMinor, currency, parsed.rows.length);
 
-    const warnings = this.collectWarnings(parsed, periodStart, periodEnd, currency);
+    const warnings = collectWarnings(parsed, periodStart, periodEnd, currency);
 
-    const inserted = await this.db.transaction(async (tx) => {
-      let statementId: string;
-      try {
-        const [statement] = await tx
-          .insert(bankStatements)
-          .values({
-            orgId,
-            bookId: profile.bookId,
-            bankProfileId: profile.id,
-            source: "csv",
-            periodStart,
-            periodEnd,
-            openingMinor,
-            closingMinor,
-            currency,
-            fileHash,
-            fileName: input.fileName?.trim() || null,
-            importedBy: userId,
-          })
-          .returning({ id: bankStatements.id });
-        if (!statement) throw new ConflictException("Could not create the statement");
-        statementId = statement.id;
-      } catch (error) {
-        if (isUniqueViolation(error)) {
-          throw this.duplicateFileConflict(input.fileName);
-        }
-        throw error;
-      }
-
-      const rows = await tx
-        .insert(bankStatementLines)
-        .values(
-          parsed.rows.map((row) => ({
-            orgId,
-            statementId,
-            lineNo: row.lineNo,
-            valueDate: row.valueDate,
-            amountMinor: row.amountMinor,
-            description: row.description,
-            bankReference: row.bankReference,
-            rawRow: row.rawRow,
-          })),
-        )
-        .returning({
-          id: bankStatementLines.id,
-          lineNo: bankStatementLines.lineNo,
-          valueDate: bankStatementLines.valueDate,
-          amountMinor: bankStatementLines.amountMinor,
-          description: bankStatementLines.description,
-          bankReference: bankStatementLines.bankReference,
-        });
-
-      return { statementId, rows };
-    });
+    const inserted = await this.db.transaction(async (tx) =>
+      insertStatementWithLines(tx, {
+        orgId,
+        userId,
+        profile,
+        periodStart,
+        periodEnd,
+        openingMinor,
+        closingMinor,
+        currency,
+        fileHash,
+        fileName: input.fileName,
+        lines: parsed.rows,
+      }),
+    );
 
     return {
       statementId: inserted.statementId,
@@ -374,174 +274,5 @@ export class StatementImportService {
       pageSize,
       lines: lines.map((l) => ({ ...l, amountMinor: Number(l.amountMinor) })),
     };
-  }
-
-  /* ------------------------------------------------------------- internals */
-
-  private async assertNotAlreadyImported(
-    orgId: string,
-    bankProfileId: string,
-    fileHash: string,
-  ): Promise<void> {
-    const [existing] = await this.db
-      .select({ id: bankStatements.id, fileName: bankStatements.fileName, importedAt: bankStatements.importedAt })
-      .from(bankStatements)
-      .where(
-        and(
-          eq(bankStatements.orgId, orgId),
-          eq(bankStatements.bankProfileId, bankProfileId),
-          eq(bankStatements.fileHash, fileHash),
-        ),
-      )
-      .limit(1);
-
-    if (existing) {
-      throw new ConflictException(
-        `This exact file was already imported on ${existing.importedAt.toISOString().slice(0, 10)} ` +
-          `as statement ${existing.id}${existing.fileName ? ` (${existing.fileName})` : ""}. ` +
-          "Importing it again would double every line.",
-      );
-    }
-  }
-
-  private duplicateFileConflict(fileName: string | undefined): ConflictException {
-    return new ConflictException(
-      `This exact file${fileName ? ` (${fileName})` : ""} has already been imported for this bank ` +
-        "account. Importing it again would double every line.",
-    );
-  }
-
-  /**
-   * Mapping precedence: what the request says, over the named preset, over what
-   * the account has saved. A missing `dateFormat` at the end of that chain is a
-   * rejection, not a default.
-   */
-  private resolveMapping(
-    saved: LooseColumnMapping | null,
-    presetCode: string | undefined,
-    explicit: LooseColumnMapping | undefined,
-  ): StatementColumnMapping {
-    let base: LooseColumnMapping = saved ?? {};
-    if (presetCode) {
-      const preset = findMappingPreset(presetCode);
-      if (!preset) {
-        throw new BadRequestException(
-          `Unknown CSV mapping preset ${JSON.stringify(presetCode)}. ` +
-            `Known presets: ${STATEMENT_MAPPING_PRESETS.map((p) => p.code).join(", ")}.`,
-        );
-      }
-      base = preset.mapping;
-    }
-
-    const merged: LooseColumnMapping = { ...base, ...(explicit ?? {}) };
-    if (!presetCode && !explicit && !saved) {
-      throw new BadRequestException(
-        "This bank account has no saved CSV mapping. Send a mapping, or name a preset, or save one " +
-          "against the account first.",
-      );
-    }
-
-    try {
-      return assertMappingIsUsable(merged);
-    } catch (error) {
-      if (error instanceof StatementCsvError) throw new BadRequestException(error.message);
-      throw error;
-    }
-  }
-
-  private requireAmount(raw: string, currency: string, field: string): number {
-    let parsed: number | null;
-    try {
-      parsed = parseAmountToMinor(String(raw ?? ""), currency);
-    } catch (error) {
-      if (error instanceof StatementCsvError) {
-        throw new BadRequestException(`${field}: ${error.message}`);
-      }
-      throw error;
-    }
-    if (parsed === null) {
-      throw new BadRequestException(
-        `${field} is required — a statement without a stated ${field} balance cannot be tied out`,
-      );
-    }
-    return parsed;
-  }
-
-  /** `opening + sum(lines) == closing`, loudly. */
-  private assertTies(
-    openingMinor: number,
-    movementMinor: number,
-    closingMinor: number,
-    currency: string,
-    lineCount: number,
-  ): void {
-    const expected = openingMinor + movementMinor;
-    if (expected === closingMinor) return;
-
-    const difference = closingMinor - expected;
-    throw new BadRequestException(
-      `The statement does not tie: opening ${toDecimalString(money(openingMinor, currency))} ` +
-        `+ ${lineCount} lines totalling ${toDecimalString(money(movementMinor, currency))} ` +
-        `= ${toDecimalString(money(expected, currency))}, but the closing balance says ` +
-        `${toDecimalString(money(closingMinor, currency))} — a difference of ` +
-        `${toDecimalString(money(difference, currency))} ${currency}. Nothing was imported.`,
-    );
-  }
-
-  private collectWarnings(
-    parsed: ReturnType<typeof parseStatementCsv>,
-    periodStart: string,
-    periodEnd: string,
-    currency: string,
-  ): ImportWarning[] {
-    const warnings: ImportWarning[] = [];
-
-    for (const group of findDuplicateLines(parsed.rows)) {
-      warnings.push({
-        code: "DUPLICATE_LINE",
-        message:
-          `Lines ${group.lineNos.join(", ")} are identical — ${group.valueDate}, ` +
-          `${toDecimalString(money(group.amountMinor, currency))} ${currency}` +
-          `${group.bankReference ? `, reference ${group.bankReference}` : ", no reference"}. ` +
-          "Both were imported; confirm they are two real movements and not a double export.",
-        details: {
-          valueDate: group.valueDate,
-          amountMinor: group.amountMinor,
-          bankReference: group.bankReference,
-          lineNos: group.lineNos,
-        },
-      });
-    }
-
-    for (const skipped of parsed.skipped) {
-      warnings.push({
-        code: "ROW_SKIPPED",
-        message: `Row ${skipped.sourceRowNumber} was skipped: ${skipped.reason}`,
-        details: { sourceRowNumber: skipped.sourceRowNumber, rawRow: skipped.rawRow },
-      });
-    }
-
-    const outside = parsed.rows.filter(
-      (r) => compareDates(r.valueDate, periodStart) < 0 || compareDates(r.valueDate, periodEnd) > 0,
-    );
-    for (const row of outside) {
-      warnings.push({
-        code: "LINE_OUTSIDE_PERIOD",
-        message:
-          `Line ${row.lineNo} is dated ${row.valueDate}, outside the declared period ` +
-          `${periodStart} → ${periodEnd}. Check the declared date format before trusting it.`,
-        details: { lineNo: row.lineNo, valueDate: row.valueDate },
-      });
-    }
-
-    return warnings;
-  }
-
-  private isoOrReject(value: string, field: string): string {
-    try {
-      return assertIsoDate(value);
-    } catch {
-      throw new BadRequestException(`${field} must be an ISO date (YYYY-MM-DD), got ${JSON.stringify(value)}`);
-    }
   }
 }
