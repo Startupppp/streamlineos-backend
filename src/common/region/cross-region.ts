@@ -72,6 +72,16 @@ export const CROSS_REGION_OPERATIONS: readonly CrossRegionOperation[] = [
     why: "Barrel. Re-exports the primitive; performs no operation itself.",
   },
   {
+    file: "src/modules/organization/core/cell-organization-state.ts",
+    why:
+      "The signup path's own region naming, which is where the organisation " +
+      "row is read back from the region admission just placed it in — there " +
+      "is nothing to resolve a region from, because the org row is the thing " +
+      "being created. The compensation path needs it most: `register` has to " +
+      "ask whether the row landed before it unplaces the organisation, and " +
+      "asking the wrong region answers 'no' and strands a real tenant.",
+  },
+  {
     file: "src/modules/organization/core/org-profile.service.ts",
     why: "The second organisation-creation path. Same argument as signup.",
   },
@@ -93,11 +103,12 @@ export const CROSS_REGION_OPERATIONS: readonly CrossRegionOperation[] = [
       "instead of quietly leaving that region's copy behind.",
   },
   {
-    file: "src/modules/storage/lib/storage-placement.ts",
+    file: "src/modules/storage/storage-placement.ts",
     why:
-      "The public asset base URL belongs to the deployment, not to a tenant — " +
-      "it is the same host for everyone, so there is no org to resolve it " +
-      "from. Every tenant-owned object still resolves through `storageForOrg`.",
+      "`getConfig` reads the PRIMARY region's own storage binding — the " +
+      "fallback for a deployment that has a registry but is asked for " +
+      "placement with no organisation in hand (`isConfigured`, boot checks). " +
+      "Every tenant-owned object still resolves through `storageForOrg`.",
   },
 ];
 
