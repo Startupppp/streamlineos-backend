@@ -18,6 +18,16 @@ import {
   type ListApDocumentsQuery,
   type UpdateApDocumentInput,
 } from "./dto/ap-documents.schemas";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  apTaxPreviewResponseSchema,
+  createApDocumentResponseSchema,
+  getApDocumentResponseSchema,
+  listApDocumentsResponseSchema,
+  postApDocumentResponseSchema,
+  removeApDocumentResponseSchema,
+  updateApDocumentResponseSchema,
+} from "./dto/ap-response.schemas";
 
 /**
  * Bills and debit notes. One resource, because they are one table — the
@@ -31,6 +41,7 @@ export class ApDocumentsController {
   constructor(private readonly documents: ApDocumentsService) {}
 
   @Get()
+  @ResponseSchema(listApDocumentsResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:payables:read")
   list(
@@ -41,6 +52,7 @@ export class ApDocumentsController {
   }
 
   @Get(":apDocumentId")
+  @ResponseSchema(getApDocumentResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:payables:read")
   get(@Param("apDocumentId") apDocumentId: string, @CurrentUser() user: CurrentUserContext) {
@@ -49,6 +61,7 @@ export class ApDocumentsController {
 
   /** What the tax engine would say, with nothing written. */
   @Get(":apDocumentId/tax-preview")
+  @ResponseSchema(apTaxPreviewResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:payables:read")
   previewTax(
@@ -59,6 +72,7 @@ export class ApDocumentsController {
   }
 
   @Post()
+  @ResponseSchema(createApDocumentResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:payables:manage")
   @HttpCode(201)
@@ -70,6 +84,7 @@ export class ApDocumentsController {
   }
 
   @Patch(":apDocumentId")
+  @ResponseSchema(updateApDocumentResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:payables:manage")
   update(
@@ -81,6 +96,7 @@ export class ApDocumentsController {
   }
 
   @Delete(":apDocumentId")
+  @ResponseSchema(removeApDocumentResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:payables:manage")
   remove(@Param("apDocumentId") apDocumentId: string, @CurrentUser() user: CurrentUserContext) {
@@ -88,6 +104,7 @@ export class ApDocumentsController {
   }
 
   @Post(":apDocumentId/post")
+  @ResponseSchema(postApDocumentResponseSchema)
   @BodylessAction()
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:payables:manage")

@@ -36,6 +36,18 @@ import {
   allocateCreditNoteSchema,
   type AllocateCreditNoteInput,
 } from "./dto/ar-receipts.schemas";
+import { ApiOkResponse } from "@nestjs/swagger";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  allocateCreditNoteResponseSchema,
+  arTaxPreviewResponseSchema,
+  createArDocumentResponseSchema,
+  getArDocumentResponseSchema,
+  listArDocumentsResponseSchema,
+  postArDocumentResponseSchema,
+  removeArDocumentResponseSchema,
+  updateArDocumentResponseSchema,
+} from "./dto/ar-response.schemas";
 
 /**
  * Credit notes share `ar_documents` with invoices, so they share the service —
@@ -52,6 +64,7 @@ export class ArCreditNotesController {
   ) {}
 
   @Get()
+  @ResponseSchema(listArDocumentsResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:credit-notes:read")
   list(
@@ -62,6 +75,7 @@ export class ArCreditNotesController {
   }
 
   @Post()
+  @ResponseSchema(createArDocumentResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:credit-notes:create")
   @HttpCode(201)
@@ -73,6 +87,7 @@ export class ArCreditNotesController {
   }
 
   @Get(":creditNoteId")
+  @ResponseSchema(getArDocumentResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:credit-notes:read")
   get(@Param("creditNoteId") creditNoteId: string, @CurrentUser() u: CurrentUserContext) {
@@ -80,6 +95,7 @@ export class ArCreditNotesController {
   }
 
   @Get(":creditNoteId/tax-preview")
+  @ResponseSchema(arTaxPreviewResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:credit-notes:read")
   previewTax(@Param("creditNoteId") creditNoteId: string, @CurrentUser() u: CurrentUserContext) {
@@ -88,6 +104,10 @@ export class ArCreditNotesController {
 
   /** Same layout as the invoice; the words and the signs differ. */
   @Get(":creditNoteId/pdf")
+  @ApiOkResponse({
+    description: "The rendered tax document as a PDF attachment.",
+    content: { "application/pdf": { schema: { type: "string", format: "binary" } } },
+  })
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:credit-notes:read")
   async pdfDocument(
@@ -103,6 +123,7 @@ export class ArCreditNotesController {
   }
 
   @Patch(":creditNoteId")
+  @ResponseSchema(updateArDocumentResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:credit-notes:manage")
   update(
@@ -114,6 +135,7 @@ export class ArCreditNotesController {
   }
 
   @Delete(":creditNoteId")
+  @ResponseSchema(removeArDocumentResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:credit-notes:manage")
   remove(@Param("creditNoteId") creditNoteId: string, @CurrentUser() u: CurrentUserContext) {
@@ -121,6 +143,7 @@ export class ArCreditNotesController {
   }
 
   @Post(":creditNoteId/post")
+  @ResponseSchema(postArDocumentResponseSchema)
   @BodylessAction()
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:credit-notes:manage")
@@ -132,6 +155,7 @@ export class ArCreditNotesController {
 
   /** Offset the note against open invoices. No journal — both legs already hit AR. */
   @Post(":creditNoteId/allocations")
+  @ResponseSchema(allocateCreditNoteResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:credit-notes:manage")
   @HttpCode(200)

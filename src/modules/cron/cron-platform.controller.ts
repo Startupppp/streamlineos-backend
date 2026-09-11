@@ -40,6 +40,8 @@ import {
   aiUsageRetentionSweepResponseSchema,
   mailMetadataRetentionSweepResponseSchema,
   announcementsRetentionSweepResponseSchema,
+  timesheetsRemindersResponseSchema,
+  signEnvelopeSweepsResponseSchema,
 } from "./dto/cron-platform-response.schemas";
 
 @Public()
@@ -177,6 +179,7 @@ export class CronPlatformController {
   }
 
   @Get("timesheets-reminders")
+  @ResponseSchema(timesheetsRemindersResponseSchema)
   getTimesheetsReminders(@Headers("authorization") authorization?: string) {
     return this.runTimesheetsReminders(authorization);
   }
@@ -184,6 +187,7 @@ export class CronPlatformController {
   @Post("timesheets-reminders")
   @BodylessAction()
   @HttpCode(200)
+  @ResponseSchema(timesheetsRemindersResponseSchema)
   postTimesheetsReminders(@Headers("authorization") authorization?: string) {
     return this.runTimesheetsReminders(authorization);
   }
@@ -203,6 +207,7 @@ export class CronPlatformController {
   }
 
   @Get("sign-envelope-sweeps")
+  @ResponseSchema(signEnvelopeSweepsResponseSchema)
   getSignEnvelopeSweeps(@Headers("authorization") authorization?: string) {
     return this.runSignEnvelopeSweeps(authorization);
   }
@@ -210,6 +215,7 @@ export class CronPlatformController {
   @Post("sign-envelope-sweeps")
   @BodylessAction()
   @HttpCode(200)
+  @ResponseSchema(signEnvelopeSweepsResponseSchema)
   postSignEnvelopeSweeps(@Headers("authorization") authorization?: string) {
     return this.runSignEnvelopeSweeps(authorization);
   }

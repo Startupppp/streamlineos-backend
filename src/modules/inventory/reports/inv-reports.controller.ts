@@ -40,6 +40,8 @@ import {
   valuationReportResponseSchema,
   slowMovingReportResponseSchema,
   expiryReportResponseSchema,
+  throughputResponseSchema,
+  workAgingResponseSchema,
 } from "./dto/reports-response.schemas";
 
 @RequireModule("inventory")
@@ -58,6 +60,7 @@ export class InvReportsController {
    * the rest of the phase records rather than from a counter that would drift.
    */
   @Get("throughput")
+  @ResponseSchema(throughputResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:reports:read")
   @Validate({ query: throughputQuerySchema })
@@ -76,6 +79,7 @@ export class InvReportsController {
    * dashboard behind a permission that exists only in this file.
    */
   @Get("work-aging")
+  @ResponseSchema(workAgingResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:reports:read")
   @Validate({ query: workAgingQuerySchema })

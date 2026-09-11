@@ -30,6 +30,16 @@ import {
   type RunDefinitionInput,
   type UpdateDefinitionInput,
 } from "./dto/reporting.schemas";
+import { ResponseSchema } from "../../common/openapi/zod-operation-contracts";
+import {
+  reportSourcesResponseSchema,
+  listReportDefinitionsResponseSchema,
+  reportDefinitionResponseSchema,
+  deleteReportDefinitionResponseSchema,
+  explainReportResponseSchema,
+  runReportResponseSchema,
+  listReportRunsResponseSchema,
+} from "./dto/reporting-response.schemas";
 
 /**
  * The reporting surface.
@@ -93,12 +103,14 @@ export class ReportingController {
    */
   @Get("sources")
   @RequirePermission("crm:reporting:run")
+  @ResponseSchema(reportSourcesResponseSchema)
   sources(@CurrentUser() u: CurrentUserContext) {
     return this.reporting.describeSources(u.orgId, u.userId);
   }
 
   @Get("definitions")
   @RequirePermission("crm:reporting:view")
+  @ResponseSchema(listReportDefinitionsResponseSchema)
   listDefinitions(
     @Query(new ZodValidationPipe(listQuerySchema)) query: ListQuery,
     @CurrentUser() u: CurrentUserContext,
@@ -108,6 +120,7 @@ export class ReportingController {
 
   @Get("definitions/:reportDefinitionId")
   @RequirePermission("crm:reporting:view")
+  @ResponseSchema(reportDefinitionResponseSchema)
   getDefinition(
     @Param("reportDefinitionId") reportDefinitionId: string,
     @CurrentUser() u: CurrentUserContext,
@@ -117,6 +130,7 @@ export class ReportingController {
 
   @Post("definitions")
   @RequirePermission("crm:reporting:manage")
+  @ResponseSchema(reportDefinitionResponseSchema)
   createDefinition(
     @Body(new ZodValidationPipe(createDefinitionSchema)) body: CreateDefinitionInput,
     @CurrentUser() u: CurrentUserContext,
@@ -126,6 +140,7 @@ export class ReportingController {
 
   @Patch("definitions/:reportDefinitionId")
   @RequirePermission("crm:reporting:manage")
+  @ResponseSchema(reportDefinitionResponseSchema)
   updateDefinition(
     @Param("reportDefinitionId") reportDefinitionId: string,
     @Body(new ZodValidationPipe(updateDefinitionSchema)) body: UpdateDefinitionInput,
@@ -136,6 +151,7 @@ export class ReportingController {
 
   @Delete("definitions/:reportDefinitionId")
   @RequirePermission("crm:reporting:manage")
+  @ResponseSchema(deleteReportDefinitionResponseSchema)
   deleteDefinition(
     @Param("reportDefinitionId") reportDefinitionId: string,
     @CurrentUser() u: CurrentUserContext,
@@ -153,6 +169,7 @@ export class ReportingController {
    */
   @Post("explain")
   @RequirePermission("crm:reporting:manage")
+  @ResponseSchema(explainReportResponseSchema)
   explain(
     @Body(new ZodValidationPipe(runAdHocSchema)) body: RunAdHocInput,
     @CurrentUser() u: CurrentUserContext,
@@ -162,6 +179,7 @@ export class ReportingController {
 
   @Post("run")
   @RequirePermission("crm:reporting:run")
+  @ResponseSchema(runReportResponseSchema)
   runAdHoc(
     @Body(new ZodValidationPipe(runAdHocSchema)) body: RunAdHocInput,
     @CurrentUser() u: CurrentUserContext,
@@ -171,6 +189,7 @@ export class ReportingController {
 
   @Post("definitions/:reportDefinitionId/run")
   @RequirePermission("crm:reporting:run")
+  @ResponseSchema(runReportResponseSchema)
   runDefinition(
     @Param("reportDefinitionId") reportDefinitionId: string,
     @Body(new ZodValidationPipe(runDefinitionSchema)) body: RunDefinitionInput,
@@ -189,6 +208,7 @@ export class ReportingController {
    */
   @Get("runs")
   @RequirePermission("crm:reporting:view")
+  @ResponseSchema(listReportRunsResponseSchema)
   listRuns(
     @Query(new ZodValidationPipe(listQuerySchema)) query: ListQuery,
     @CurrentUser() u: CurrentUserContext,

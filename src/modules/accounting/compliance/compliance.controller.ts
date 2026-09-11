@@ -1,4 +1,4 @@
-import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
+import { BodylessAction, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
 import {
   ConflictException,
   Controller,
@@ -18,6 +18,10 @@ import { BooksService } from "../kernel/books.service";
 import { ComplianceService } from "./compliance.service";
 import { ComplianceTransportRegistry } from "./transport/compliance-transport.registry";
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
+import {
+  documentComplianceResponseSchema,
+  submitDocumentResponseSchema,
+} from "./dto/compliance-response.schemas";
 
 /**
  * What the product has and has not done about a document's e-reporting duty.
@@ -47,6 +51,7 @@ export class ComplianceController {
   ) {}
 
   @Get("documents/:documentType/:documentId")
+  @ResponseSchema(documentComplianceResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:receivables:read")
   async getForDocument(
@@ -94,6 +99,7 @@ export class ComplianceController {
    * evidence against the tenant.
    */
   @Post("documents/:documentType/:documentId/submit")
+  @ResponseSchema(submitDocumentResponseSchema)
   @BodylessAction()
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:receivables:manage")

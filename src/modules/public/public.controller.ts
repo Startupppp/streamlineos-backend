@@ -98,6 +98,8 @@ import {
   kbListSchema,
   kbArticleSchema,
   kbFeedbackSchema as kbFeedbackResponseSchema,
+  publicPricingSchema,
+  dataResidencySchema,
 } from "./dto/public-response.schemas";
 
 const tokenParams = z.object({ token: z.string().min(1) }).strict();
@@ -477,6 +479,7 @@ export class PublicController {
   @Get("pricing")
   @UseGuards(RateLimitGuard)
   @UseRateLimit("public:pricing")
+  @ResponseSchema(publicPricingSchema)
   getPricing(@Query("currency") currency?: string) {
     return this.pricing.pricing(currency);
   }
@@ -490,6 +493,7 @@ export class PublicController {
   @Get("data-residency")
   @UseGuards(RateLimitGuard)
   @UseRateLimit("public:pricing")
+  @ResponseSchema(dataResidencySchema)
   getResidency(@Query("country") country?: string) {
     return this.pricing.residency(country);
   }

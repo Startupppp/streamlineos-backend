@@ -17,6 +17,12 @@ import {
   type CreatePoBatchInput,
   type PreviewPoBatchInput,
 } from "./dto/po-batch.schemas";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  batchableProposalsResponseSchema,
+  createPoBatchResponseSchema,
+  previewPoBatchResponseSchema,
+} from "./dto/forecast-response.schemas";
 
 /**
  * C6 — batching persisted proposals into purchase orders.
@@ -33,6 +39,7 @@ export class InvPoBatchesController {
 
   /** The persisted proposals a buyer could order against, newest per site. */
   @Get("proposals")
+  @ResponseSchema(batchableProposalsResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:replenishment:read")
   proposals(
@@ -45,6 +52,7 @@ export class InvPoBatchesController {
 
   /** What would be created, grouped by supplier, site and currency. */
   @Post("preview")
+  @ResponseSchema(previewPoBatchResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:replenishment:read")
   preview(
@@ -64,6 +72,7 @@ export class InvPoBatchesController {
    * quantity smuggled onto a line.
    */
   @Post()
+  @ResponseSchema(createPoBatchResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:purchase-orders:create")
   create(

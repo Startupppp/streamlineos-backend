@@ -33,6 +33,8 @@ import {
   reorderProposalResponseSchema,
   confirmReorderProposalResponseSchema,
   supplierDelayBriefingResponseSchema,
+  opsBriefResponseSchema,
+  narrateOpsBriefResponseSchema,
 } from "./dto/ai-response.schemas";
 
 const insightIdParams = z.object({ insightId: z.coerce.number().int().positive() }).strict();
@@ -70,6 +72,7 @@ export class InvAiExplainController {
    * it is a GET and why it does not carry the ai:invoke rate limit.
    */
   @Get("ops-brief")
+  @ResponseSchema(opsBriefResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:ai:read")
   getOpsBrief(@CurrentUser() u: CurrentUserContext) {
@@ -82,6 +85,7 @@ export class InvAiExplainController {
    */
   @Post("ops-brief/narrate")
   @BodylessAction()
+  @ResponseSchema(narrateOpsBriefResponseSchema)
   @UseGuards(PermissionGuard, RateLimitGuard)
   @UseRateLimit("ai:invoke")
   @RequirePermission("inventory:ai:read")

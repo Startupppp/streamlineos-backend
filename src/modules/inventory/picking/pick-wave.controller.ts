@@ -35,7 +35,19 @@ import {
   type SubstitutePickLineInput,
 } from "./dto/picking.schemas";
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
-import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
+import { BodylessAction, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  abandonWaveResponseSchema,
+  claimWaveResponseSchema,
+  confirmPickResponseSchema,
+  createWaveResponseSchema,
+  getWaveResponseSchema,
+  joinWaveResponseSchema,
+  listWavesResponseSchema,
+  proposeWaveJoinResponseSchema,
+  reassignWaveResponseSchema,
+  reportPickExceptionResponseSchema,
+} from "./dto/picking-response.schemas";
 
 @RequireModule("inventory")
 @Controller("inventory/picking")
@@ -48,6 +60,7 @@ export class PickWaveController {
   ) {}
 
   @Post("waves")
+  @ResponseSchema(createWaveResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:sales-orders:ship")
   @Idempotent("inventory.picking.wave.create")
@@ -67,6 +80,7 @@ export class PickWaveController {
    * this setting is hedged about, so the two acts stay separate at the API too.
    */
   @Post("waves/propose-join")
+  @ResponseSchema(proposeWaveJoinResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:sales-orders:ship")
   proposeJoin(
@@ -86,6 +100,7 @@ export class PickWaveController {
    * `waveless.ts` refuses.
    */
   @Post("waves/:pickListId/join")
+  @ResponseSchema(joinWaveResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:sales-orders:ship")
   @Idempotent("inventory.picking.wave.join")
@@ -99,6 +114,7 @@ export class PickWaveController {
 
   /** B4, item 5. The workbench queue: waves waiting, and waves this picker holds. */
   @Get("waves")
+  @ResponseSchema(listWavesResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:sales-orders:read")
   listWaves(
@@ -109,6 +125,7 @@ export class PickWaveController {
   }
 
   @Get("waves/:pickListId")
+  @ResponseSchema(getWaveResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:sales-orders:read")
   getWave(
@@ -127,6 +144,7 @@ export class PickWaveController {
    */
   @Post("waves/:pickListId/claim")
   @BodylessAction()
+  @ResponseSchema(claimWaveResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:sales-orders:ship")
   @Idempotent("inventory.picking.wave.claim")
@@ -139,6 +157,7 @@ export class PickWaveController {
 
   @Post("waves/:pickListId/abandon")
   @BodylessAction()
+  @ResponseSchema(abandonWaveResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:sales-orders:ship")
   abandonWave(
@@ -149,6 +168,7 @@ export class PickWaveController {
   }
 
   @Post("waves/:pickListId/reassign")
+  @ResponseSchema(reassignWaveResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:sales-orders:ship")
   @Idempotent("inventory.picking.wave.reassign")
@@ -161,6 +181,7 @@ export class PickWaveController {
   }
 
   @Post("waves/:pickListId/confirm")
+  @ResponseSchema(confirmPickResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:sales-orders:ship")
   confirmPick(
@@ -184,6 +205,7 @@ export class PickWaveController {
    * change what the customer is owed.
    */
   @Post("waves/:pickListId/exception")
+  @ResponseSchema(reportPickExceptionResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:sales-orders:ship")
   reportException(
@@ -205,6 +227,7 @@ export class PickWaveController {
    * shelf held.
    */
   @Post("waves/:pickListId/substitute")
+  @ResponseSchema(reportPickExceptionResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:picking:substitute")
   substitutePickLine(

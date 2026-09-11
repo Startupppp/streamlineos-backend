@@ -30,6 +30,14 @@ import {
   type AttachDocumentFileInput,
   type ListAttachmentsQuery,
 } from "./dto/attachments.schemas";
+import { ApiOkResponse } from "@nestjs/swagger";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  attachDocumentFileResponseSchema,
+  getAttachmentResponseSchema,
+  listAttachmentsResponseSchema,
+  removeAttachmentResponseSchema,
+} from "./dto/attachments-response.schemas";
 
 /**
  * Files hanging off an accounting document (`09-feature-backlog.md` §N, v1).
@@ -51,6 +59,7 @@ export class AttachmentsController {
   constructor(private readonly attachments: AttachmentsService) {}
 
   @Get(":documentType/:documentId/attachments")
+  @ResponseSchema(listAttachmentsResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:attachments:read")
   @Validate({ params: attachmentDocumentParamsSchema })
@@ -65,6 +74,7 @@ export class AttachmentsController {
   }
 
   @Post(":documentType/:documentId/attachments")
+  @ResponseSchema(attachDocumentFileResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:attachments:manage")
   @Validate({ params: attachmentDocumentParamsSchema })
@@ -80,6 +90,7 @@ export class AttachmentsController {
   }
 
   @Get("attachments/:attachmentId")
+  @ResponseSchema(getAttachmentResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:attachments:read")
   get(@Param("attachmentId") attachmentId: string, @CurrentUser() u: CurrentUserContext) {
@@ -88,6 +99,10 @@ export class AttachmentsController {
 
   /** The bytes, streamed back through the API so the permission gate still applies. */
   @Get("attachments/:attachmentId/content")
+  @ApiOkResponse({
+    description: "The stored file, streamed back through the permission gate.",
+    content: { "application/octet-stream": { schema: { type: "string", format: "binary" } } },
+  })
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:attachments:read")
   async download(
@@ -107,6 +122,7 @@ export class AttachmentsController {
 
   /** Soft delete: the file leaves the list, the document is untouched. */
   @Delete("attachments/:attachmentId")
+  @ResponseSchema(removeAttachmentResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:attachments:manage")
   remove(@Param("attachmentId") attachmentId: string, @CurrentUser() u: CurrentUserContext) {

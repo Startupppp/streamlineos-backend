@@ -7,7 +7,8 @@ import { ModuleGuard } from "../../../common/rbac/module.guard";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { InvExpirySweepService } from "./inv-expiry-sweep.service";
-import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
+import { BodylessAction, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { expirySweepResponseSchema } from "./dto/inv-expiry-sweep-response.schemas";
 
 /**
  * G3 — the trigger the sweep was missing.
@@ -50,6 +51,7 @@ export class InvExpirySweepController {
    */
   @Post("expiry-sweep")
   @BodylessAction()
+  @ResponseSchema(expirySweepResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:settings:manage")
   run(@CurrentUser() u: CurrentUserContext) {

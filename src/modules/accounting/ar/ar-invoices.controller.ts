@@ -33,6 +33,19 @@ import {
   type ListArDocumentsQuery,
   type UpdateDraftInput,
 } from "./dto/ar-documents.schemas";
+import { ApiOkResponse } from "@nestjs/swagger";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  arFrozenTaxLinesResponseSchema,
+  arTaxPreviewResponseSchema,
+  createArDocumentResponseSchema,
+  creditNoteFromInvoiceResponseSchema,
+  getArDocumentResponseSchema,
+  listArDocumentsResponseSchema,
+  postArDocumentResponseSchema,
+  removeArDocumentResponseSchema,
+  updateArDocumentResponseSchema,
+} from "./dto/ar-response.schemas";
 
 @RequireModule("accounting")
 @Controller("accounting/ar/invoices")
@@ -44,6 +57,7 @@ export class ArInvoicesController {
   ) {}
 
   @Get()
+  @ResponseSchema(listArDocumentsResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:receivables:read")
   list(
@@ -54,6 +68,7 @@ export class ArInvoicesController {
   }
 
   @Post()
+  @ResponseSchema(createArDocumentResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:receivables:manage")
   @HttpCode(201)
@@ -65,6 +80,7 @@ export class ArInvoicesController {
   }
 
   @Get(":invoiceId")
+  @ResponseSchema(getArDocumentResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:receivables:read")
   get(@Param("invoiceId") invoiceId: string, @CurrentUser() u: CurrentUserContext) {
@@ -73,6 +89,7 @@ export class ArInvoicesController {
 
   /** Determination without persistence — no journal, no number, no frozen rows. */
   @Get(":invoiceId/tax-preview")
+  @ResponseSchema(arTaxPreviewResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:receivables:read")
   previewTax(@Param("invoiceId") invoiceId: string, @CurrentUser() u: CurrentUserContext) {
@@ -81,6 +98,7 @@ export class ArInvoicesController {
 
   /** The engine's frozen verdict on a posted invoice, as the return will read it. */
   @Get(":invoiceId/tax-lines")
+  @ResponseSchema(arFrozenTaxLinesResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:taxes:read")
   taxLines(@Param("invoiceId") invoiceId: string, @CurrentUser() u: CurrentUserContext) {
@@ -96,6 +114,10 @@ export class ArInvoicesController {
    * absent the bytes still come back.
    */
   @Get(":invoiceId/pdf")
+  @ApiOkResponse({
+    description: "The rendered tax document as a PDF attachment.",
+    content: { "application/pdf": { schema: { type: "string", format: "binary" } } },
+  })
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:receivables:read")
   async pdfDocument(
@@ -111,6 +133,7 @@ export class ArInvoicesController {
   }
 
   @Patch(":invoiceId")
+  @ResponseSchema(updateArDocumentResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:receivables:manage")
   update(
@@ -122,6 +145,7 @@ export class ArInvoicesController {
   }
 
   @Delete(":invoiceId")
+  @ResponseSchema(removeArDocumentResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:receivables:manage")
   remove(@Param("invoiceId") invoiceId: string, @CurrentUser() u: CurrentUserContext) {
@@ -133,6 +157,7 @@ export class ArInvoicesController {
    * call's journal rather than posting a second one.
    */
   @Post(":invoiceId/post")
+  @ResponseSchema(postArDocumentResponseSchema)
   @BodylessAction()
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:receivables:manage")
@@ -144,6 +169,7 @@ export class ArInvoicesController {
 
   /** A posted invoice is corrected by a credit note, never by an edit. */
   @Post(":invoiceId/credit-note")
+  @ResponseSchema(creditNoteFromInvoiceResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:credit-notes:create")
   @HttpCode(201)

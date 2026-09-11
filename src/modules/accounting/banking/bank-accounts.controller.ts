@@ -19,6 +19,15 @@ import {
   type SaveCsvMappingBody,
   type UpdateBankAccountBody,
 } from "./dto/banking.schemas";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  bankAccountBalanceResponseSchema,
+  createBankAccountResponseSchema,
+  getBankAccountResponseSchema,
+  listBankAccountsResponseSchema,
+  saveCsvMappingResponseSchema,
+  updateBankAccountResponseSchema,
+} from "./dto/banking-response.schemas";
 
 /**
  * Bank accounts. There is no create-a-GL-account here on purpose — a bank
@@ -31,6 +40,7 @@ export class BankAccountsController {
   constructor(private readonly bankAccounts: BankAccountsService) {}
 
   @Post()
+  @ResponseSchema(createBankAccountResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:banking:manage")
   create(
@@ -41,6 +51,7 @@ export class BankAccountsController {
   }
 
   @Get()
+  @ResponseSchema(listBankAccountsResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:banking:read")
   list(
@@ -51,6 +62,7 @@ export class BankAccountsController {
   }
 
   @Get(":bankAccountId")
+  @ResponseSchema(getBankAccountResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:banking:read")
   get(@Param("bankAccountId") bankAccountId: string, @CurrentUser() u: CurrentUserContext) {
@@ -59,6 +71,7 @@ export class BankAccountsController {
 
   /** The balance is derived from `gl_journal_lines`; nothing is stored. */
   @Get(":bankAccountId/balance")
+  @ResponseSchema(bankAccountBalanceResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:banking:read")
   balance(
@@ -70,6 +83,7 @@ export class BankAccountsController {
   }
 
   @Patch(":bankAccountId")
+  @ResponseSchema(updateBankAccountResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:banking:manage")
   update(
@@ -81,6 +95,7 @@ export class BankAccountsController {
   }
 
   @Put(":bankAccountId/csv-mapping")
+  @ResponseSchema(saveCsvMappingResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:banking:manage")
   saveCsvMapping(

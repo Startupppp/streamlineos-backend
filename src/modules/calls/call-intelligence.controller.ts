@@ -19,6 +19,11 @@ import {
   type CallExemplarsQueryDto,
   type RepCallAggregatesQueryDto,
 } from "./dto/call-intelligence.schemas";
+import { ResponseSchema } from "../../common/openapi/zod-operation-contracts";
+import {
+  repCallAggregatesResponseSchema,
+  callExemplarsResponseSchema,
+} from "./dto/call-intelligence-response.schemas";
 
 /**
  * The two rep-facing reads over a window of analysed calls: my numbers, and a
@@ -78,6 +83,7 @@ export class CallIntelligenceController {
   // reads these decorators with a regex and counts the ones it cannot resolve.
   // A gate expressed as an identifier is a gate that scan stops covering.
   @RequirePermission("crm:call-analysis:view")
+  @ResponseSchema(repCallAggregatesResponseSchema)
   @Validate({ query: repCallAggregatesQuerySchema })
   async reps(
     @CurrentUser() user: CurrentUserContext,
@@ -123,6 +129,7 @@ export class CallIntelligenceController {
   @Get("exemplars")
   @UseGuards(PermissionGuard)
   @RequirePermission("crm:call-analysis:view")
+  @ResponseSchema(callExemplarsResponseSchema)
   @Validate({ query: callExemplarsQuerySchema })
   async exemplarsFor(
     @CurrentUser() user: CurrentUserContext,

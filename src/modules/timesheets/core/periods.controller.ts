@@ -27,6 +27,7 @@ import {
   periodsListResponseSchema,
   timesheetPeriodSchema,
   periodDetailResponseSchema,
+  overdueQueueResponseSchema,
 } from "./dto/timesheets-response.schemas";
 
 const periodIdParams = z.object({ periodId: z.coerce.number().int().positive() }).strict();
@@ -71,6 +72,7 @@ export class TimesheetPeriodsController {
   @Get("overdue")
   @RequirePermission("timesheets:approvals:view")
   @Validate({ query: overdueQuerySchema })
+  @ResponseSchema(overdueQueueResponseSchema)
   listOverdue(
     @Query() query: OverdueQuery,
     @CurrentUser() u: CurrentUserContext,

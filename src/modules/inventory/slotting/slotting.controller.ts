@@ -36,7 +36,15 @@ import type {
   ApproveRecommendationInput, CreateSlottingRuleInput, DismissRecommendationInput, ListRecommendationsQuery, ListSlottingRulesQuery, SetSlottingRuleActiveInput } from "./dto/slotting.schemas";
 import { IdempotencyKey } from "../../../common/idempotency/idempotency-key.decorator";
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
-import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
+import { BodylessAction, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  approveSlottingRecommendationResponseSchema,
+  dismissSlottingRecommendationResponseSchema,
+  listSlottingRecommendationsResponseSchema,
+  listSlottingRulesResponseSchema,
+  reslotSweepResponseSchema,
+  slottingRuleResponseSchema,
+} from "./dto/slotting-response.schemas";
 
 /**
  * NEO-6 - slotting.
@@ -60,6 +68,7 @@ export class SlottingController {
   ) {}
 
   @Get("rules")
+  @ResponseSchema(listSlottingRulesResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:warehouses:read")
   listRules(
@@ -70,6 +79,7 @@ export class SlottingController {
   }
 
   @Post("rules")
+  @ResponseSchema(slottingRuleResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:warehouses:manage")
   @Idempotent("inventory.slotting.rule.create")
@@ -81,6 +91,7 @@ export class SlottingController {
   }
 
   @Patch("rules/:ruleId")
+  @ResponseSchema(slottingRuleResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:warehouses:manage")
   setRuleActive(
@@ -92,6 +103,7 @@ export class SlottingController {
   }
 
   @Get("recommendations")
+  @ResponseSchema(listSlottingRecommendationsResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:read")
   listRecommendations(
@@ -102,6 +114,7 @@ export class SlottingController {
   }
 
   @Post("recommendations/:recommendationId/dismiss")
+  @ResponseSchema(dismissSlottingRecommendationResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:warehouses:manage")
   @Idempotent("inventory.slotting.recommendation.dismiss")
@@ -119,6 +132,7 @@ export class SlottingController {
    * with its own posting path is how a second stock engine starts.
    */
   @Post("recommendations/:recommendationId/approve")
+  @ResponseSchema(approveSlottingRecommendationResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:transfer")
   async approve(
@@ -166,11 +180,13 @@ export class SlottingCronController {
   constructor(private readonly svc: SlottingService) {}
 
   @Get("inventory-reslot")
+  @ResponseSchema(reslotSweepResponseSchema)
   runGet(@Headers("authorization") authorization?: string): Promise<ReslotSweepResult> {
     return this.run(authorization);
   }
 
   @Post("inventory-reslot")
+  @ResponseSchema(reslotSweepResponseSchema)
   @BodylessAction()
   @HttpCode(HttpStatus.OK)
   runPost(@Headers("authorization") authorization?: string): Promise<ReslotSweepResult> {

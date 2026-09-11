@@ -15,6 +15,11 @@ import {
   type InvAiFeedbackSummaryQuery,
 } from "./dto/inv-ai-feedback.schemas";
 import { Idempotent } from "../../../../common/idempotency/idempotent.decorator";
+import { ResponseSchema } from "../../../../common/openapi/zod-operation-contracts";
+import {
+  aiFeedbackSummaryResponseSchema,
+  submitAiFeedbackResponseSchema,
+} from "./dto/inv-ai-feedback-response.schemas";
 
 /**
  * F6 — filing a verdict, and reading the aggregate.
@@ -39,6 +44,7 @@ export class InvAiFeedbackController {
   constructor(private readonly feedback: InvAiFeedbackService) {}
 
   @Post()
+  @ResponseSchema(submitAiFeedbackResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:ai:read")
   @Idempotent("inventory.ai.feedback.submit")
@@ -51,6 +57,7 @@ export class InvAiFeedbackController {
   }
 
   @Get("summary")
+  @ResponseSchema(aiFeedbackSummaryResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:ai:manage")
   summary(

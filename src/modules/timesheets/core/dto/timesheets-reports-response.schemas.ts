@@ -107,3 +107,18 @@ export const billingLeakageResponseSchema = z.object({
   missingRateHours: z.number(),
   voidedHours: z.number(),
 });
+
+/**
+ * `GET /timesheets/calendar/holidays`. `holidays.date` is a `date` column, so it
+ * arrives as a `YYYY-MM-DD` string rather than a `Date`; the window echoes the
+ * caller's own range back.
+ */
+export const holidaysResponseSchema = z.object({
+  startDate: z.string(),
+  endDate: z.string(),
+  holidays: z.array(z.object({
+    date: z.string(),
+    name: z.string(),
+    isPublic: z.boolean(),
+  })),
+});

@@ -14,6 +14,11 @@ import {
   type DriftDetailQuery,
   type DriftWatchlistQuery,
 } from "./dto/forecast-drift.schemas";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  driftDetailResponseSchema,
+  driftWatchlistResponseSchema,
+} from "./dto/forecast-response.schemas";
 
 /**
  * C7 — the drift watchlist.
@@ -30,6 +35,7 @@ export class InvForecastDriftController {
 
   /** Every tracked SKU, worst error first, with coverage and the two rates. */
   @Get()
+  @ResponseSchema(driftWatchlistResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:replenishment:read")
   watchlist(
@@ -41,6 +47,7 @@ export class InvForecastDriftController {
 
   /** The split-half drift report for one SKU, beside the stored versions behind it. */
   @Get(":productVariantId")
+  @ResponseSchema(driftDetailResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:replenishment:read")
   detail(

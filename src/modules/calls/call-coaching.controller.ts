@@ -9,7 +9,9 @@ import { RequirePermission } from "../access/require-permission.decorator";
 import { CALL_ANALYSIS_PRIVATE_WINDOW_HOURS } from "./call-analysis-visibility";
 import { COACHING_MIN_COHORT } from "./call-coaching";
 import { CallCoachingService } from "./call-coaching.service";
+import { ResponseSchema } from "../../common/openapi/zod-operation-contracts";
 import { coachingDigestQuerySchema, type CoachingDigestQuery } from "./dto/call-analysis.schemas";
+import { coachingDigestResponseSchema } from "./dto/call-analysis-response.schemas";
 
 /**
  * The manager surface: what a team's calls look like in aggregate.
@@ -45,6 +47,7 @@ export class CallCoachingController {
   // counts the ones it cannot resolve. A gate expressed as an identifier is a
   // gate that scan stops covering.
   @RequirePermission("crm:call-analysis:view-team")
+  @ResponseSchema(coachingDigestResponseSchema)
   @Validate({ query: coachingDigestQuerySchema })
   async digest(
     @CurrentUser() user: CurrentUserContext,

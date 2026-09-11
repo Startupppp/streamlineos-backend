@@ -141,3 +141,29 @@ export const supplierDelayBriefingResponseSchema = z.object({
   narration: z.string(),
   generatedAt: wireDate(),
 });
+
+/**
+ * `InventoryOpsBrief` (`inv-ai.service.ts`): one row per detector, each with the
+ * deterministic route that recomputes it. `severity` is the worst thing present
+ * rather than an average, and it reaches the wire through a cast over a database
+ * value, so it is declared as the string it is.
+ */
+const opsBriefSchema = z.object({
+  generatedAt: z.string(),
+  totalSignals: z.number().int(),
+  signals: z.array(z.object({
+    key: z.string(),
+    label: z.string(),
+    href: z.string(),
+    count: z.number().int(),
+    severity: z.string(),
+  })),
+});
+
+export const opsBriefResponseSchema = opsBriefSchema;
+
+/** The paid half: the same brief, plus the narration built over it. */
+export const narrateOpsBriefResponseSchema = z.object({
+  brief: opsBriefSchema,
+  narration: insightNarrationSchema,
+});

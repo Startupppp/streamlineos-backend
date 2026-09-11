@@ -16,6 +16,11 @@ import {
   type ApproveTransferRecommendationInput,
   type TransferPlanQuery,
 } from "./dto/transfer-recommendation.schemas";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  approveTransferRecommendationResponseSchema,
+  transferPlanResponseSchema,
+} from "./dto/forecast-response.schemas";
 
 /**
  * C5 — the transfer plan, and approving one move from it.
@@ -44,6 +49,7 @@ export class InvTransferRecommendationsController {
    * on and a disclosure of a site's stock at the same time.
    */
   @Get(":productVariantId")
+  @ResponseSchema(transferPlanResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:replenishment:read")
   plan(
@@ -64,6 +70,7 @@ export class InvTransferRecommendationsController {
    * first transfer and creates nothing.
    */
   @Post("approve")
+  @ResponseSchema(approveTransferRecommendationResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:transfer")
   approve(

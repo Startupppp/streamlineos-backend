@@ -30,6 +30,14 @@ import {
   type AccrualQuery,
   type RebuildAccrualInput,
 } from "./dto/commission-accrual.schemas";
+import { ResponseSchema } from "../../common/openapi/zod-operation-contracts";
+import {
+  periodAccrualResponseSchema,
+  accrualCurveResponseSchema,
+  dealAccrualResponseSchema,
+  earningDecompositionResponseSchema,
+  rebuildAccrualResponseSchema,
+} from "./dto/commission-accrual-response.schemas";
 
 /**
  * Reading an accrual, at four granularities that are the same number.
@@ -67,6 +75,7 @@ export class CommissionAccrualController {
    */
   @Get()
   @RequirePermission("crm:commission-earnings:view")
+  @ResponseSchema(periodAccrualResponseSchema)
   periodAccrual(
     @Query(new ZodValidationPipe(accrualQuerySchema)) query: AccrualQuery,
     @CurrentUser() u: CurrentUserContext,
@@ -78,6 +87,7 @@ export class CommissionAccrualController {
   /** What the figure stood at on each day of the period. */
   @Get("curve")
   @RequirePermission("crm:commission-earnings:view")
+  @ResponseSchema(accrualCurveResponseSchema)
   curve(
     @Query(new ZodValidationPipe(accrualCurveQuerySchema)) query: AccrualCurveQuery,
     @CurrentUser() u: CurrentUserContext,
@@ -89,6 +99,7 @@ export class CommissionAccrualController {
   /** What one deal paid, to whom, under which band of which version. */
   @Get("by-deal")
   @RequirePermission("crm:commission-earnings:view")
+  @ResponseSchema(dealAccrualResponseSchema)
   byDeal(
     @Query(new ZodValidationPipe(accrualByDealQuerySchema)) query: AccrualByDealQuery,
     @CurrentUser() u: CurrentUserContext,
@@ -100,6 +111,7 @@ export class CommissionAccrualController {
   /** One earning taken apart, band by band. 404s for somebody else's. */
   @Get("earnings/:earningId")
   @RequirePermission("crm:commission-earnings:view")
+  @ResponseSchema(earningDecompositionResponseSchema)
   decomposeEarning(
     @Param("earningId") earningId: string,
     @CurrentUser() u: CurrentUserContext,
@@ -124,6 +136,7 @@ export class CommissionAccrualController {
   @HttpCode(200)
   @RequirePermission("crm:commission-accruals:rebuild")
   @Idempotent("crm.commission.accrual.rebuild")
+  @ResponseSchema(rebuildAccrualResponseSchema)
   rebuild(
     @Body(new ZodValidationPipe(rebuildAccrualSchema)) body: RebuildAccrualInput,
     @CurrentUser() u: CurrentUserContext,

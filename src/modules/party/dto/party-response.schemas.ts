@@ -94,8 +94,50 @@ export const detectResultSchema = z.object({
   ),
 });
 
+/** One side of a candidate pair, projected from `business_parties` by the join. */
+const duplicateSideSchema = z.object({
+  partyId: z.string(),
+  name: z.string(),
+  email: z.string().nullable(),
+  phone: z.string().nullable(),
+  partyKind: z.string().nullable(),
+  createdAt: wireDate(),
+});
+
+/**
+ * `GET /party/duplicates`. The rows AND the page they came from.
+ *
+ * This was `{ data: z.array(z.record(z.string(), z.unknown())) }` — a contract
+ * that described neither the row nor the envelope. The handler has always
+ * returned `pagination` beside `data` (`PartyRolesService.listCandidates` runs
+ * the page and a `count()` together), and the route takes `page`/`limit`, so
+ * the omission left a paginated endpoint advertising no way to know when to
+ * stop: `check:envelope-consistency` reported it as "no recognizable pagination
+ * signal". Declaring what the handler already sends is the whole fix — the wire
+ * does not move.
+ *
+ * `score` is `double precision`, not a numeric string. `signals`/`blockers` are
+ * jsonb `string[]` columns the service defaults to `[]` when null, so neither is
+ * nullable here.
+ */
 export const duplicateCandidatesSchema = z.object({
-  data: z.array(z.record(z.string(), z.unknown())),
+  data: z.array(
+    z.object({
+      candidateId: z.string(),
+      score: z.number(),
+      signals: z.array(z.string()),
+      blockers: z.array(z.string()),
+      status: z.string(),
+      detectedAt: wireDate(),
+      left: duplicateSideSchema,
+      right: duplicateSideSchema,
+    }),
+  ),
+  pagination: z.object({
+    page: z.number().int(),
+    limit: z.number().int(),
+    total: z.number().int(),
+  }),
 });
 
 export const dismissedSchema = z.object({ dismissed: z.literal(true) });
@@ -113,6 +155,35 @@ export const mergeOutcomeSchema = z.object({
 export const revertResultSchema = z.object({
   survivorPartyId: z.string(),
   restoredPartyId: z.string(),
+});
+
+/**
+ * The merge log, which exists to be acted on: every row is a revert control.
+ *
+ * `conflictFields` is the keys only — the discarded values stay in the snapshot
+ * as evidence for an audit reader rather than going on a list. `mergedName` is
+ * read out of that snapshot, so it is `""` for a merge filed before the
+ * snapshot carried one rather than absent.
+ */
+export const partyMergeListSchema = z.object({
+  data: z.array(z.object({
+    partyMergeId: z.string(),
+    survivorPartyId: z.string(),
+    survivorName: z.string(),
+    mergedPartyId: z.string(),
+    mergedName: z.string(),
+    decidedBy: z.string(),
+    decidedByUserId: z.string().nullable(),
+    confidence: z.number().nullable(),
+    conflictFields: z.array(z.string()),
+    mergedAt: wireDate(),
+    revertedAt: nullableWireDate(),
+  })),
+  pagination: z.object({
+    page: z.number().int(),
+    limit: z.number().int(),
+    total: z.number().int(),
+  }),
 });
 
 const subjectFieldDefinitionSchema = z.object({

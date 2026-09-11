@@ -21,6 +21,8 @@ import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts"
 import {
   valuationSummaryResponseSchema,
   valuationLayersResponseSchema,
+  valuationConsumptionsResponseSchema,
+  listValuationPeriodsResponseSchema,
 } from "./dto/valuation-response.schemas";
 
 @RequireModule("inventory")
@@ -43,6 +45,7 @@ export class InvValuationController {
 
   /** The accounting periods a valuation may be quoted at, where any exist. */
   @Get("periods")
+  @ResponseSchema(listValuationPeriodsResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:valuation:read")
   listPeriods(@CurrentUser() u: CurrentUserContext) {
@@ -63,6 +66,7 @@ export class InvValuationController {
 
   /** Which layers each issue drew from, and what the draw cost. */
   @Get("consumptions")
+  @ResponseSchema(valuationConsumptionsResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:valuation:read")
   getValuationConsumptions(

@@ -9,6 +9,8 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { ApAgingService } from "./ap-aging.service";
 import { apAgingQuerySchema, type ApAgingQuery } from "./dto/ap-aging.schemas";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { apAgingResponseSchema } from "./dto/ap-response.schemas";
 
 @RequireModule("accounting")
 @Controller("accounting/payables/aging")
@@ -17,6 +19,7 @@ export class ApAgingController {
   constructor(private readonly aging: ApAgingService) {}
 
   @Get()
+  @ResponseSchema(apAgingResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:reports:read")
   agedPayables(

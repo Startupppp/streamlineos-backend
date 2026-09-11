@@ -31,6 +31,14 @@ import type {
   SetAppointmentStatusInput,
 } from "./dto/dock.schemas";
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  bookDockAppointmentResponseSchema,
+  createDockDoorResponseSchema,
+  listDockAppointmentsResponseSchema,
+  listDockDoorsResponseSchema,
+  setDockAppointmentStatusResponseSchema,
+} from "./dto/dock-response.schemas";
 
 /**
  * NEO-12 - the dock calendar.
@@ -48,6 +56,7 @@ export class DockController {
   constructor(private readonly svc: DockService) {}
 
   @Get("doors")
+  @ResponseSchema(listDockDoorsResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:warehouses:read")
   listDoors(
@@ -58,6 +67,7 @@ export class DockController {
   }
 
   @Post("doors")
+  @ResponseSchema(createDockDoorResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:warehouses:manage")
   @Idempotent("inventory.dock.door.create")
@@ -69,6 +79,7 @@ export class DockController {
   }
 
   @Get("appointments")
+  @ResponseSchema(listDockAppointmentsResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:dock:manage")
   list(
@@ -79,6 +90,7 @@ export class DockController {
   }
 
   @Post("appointments")
+  @ResponseSchema(bookDockAppointmentResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:dock:manage")
   @Idempotent("inventory.dock.appointment.book")
@@ -90,6 +102,7 @@ export class DockController {
   }
 
   @Patch("appointments/:appointmentId")
+  @ResponseSchema(setDockAppointmentStatusResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:dock:manage")
   setStatus(

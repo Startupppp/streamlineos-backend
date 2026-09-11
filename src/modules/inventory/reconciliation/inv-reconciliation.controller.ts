@@ -15,6 +15,11 @@ import {
   type ReconciliationQueryInput,
   type RepairInput,
 } from "./dto/reconciliation.schemas";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  reconciliationReportResponseSchema,
+  reconciliationRepairResponseSchema,
+} from "./dto/reconciliation-response.schemas";
 
 @RequireModule("inventory")
 @Controller("inventory/stock/reconciliation")
@@ -23,6 +28,7 @@ export class InvReconciliationController {
   constructor(private readonly reconciliation: InvReconciliationService) {}
 
   @Get()
+  @ResponseSchema(reconciliationReportResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:reconcile")
   report(
@@ -38,6 +44,7 @@ export class InvReconciliationController {
    * set of changed rows to whoever is watching.
    */
   @Post("repair")
+  @ResponseSchema(reconciliationRepairResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:reconcile")
   @HttpCode(HttpStatus.OK)

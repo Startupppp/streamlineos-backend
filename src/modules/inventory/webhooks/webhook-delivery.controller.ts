@@ -5,7 +5,8 @@ import {
   InventoryWebhookDeliveryWorker,
   type WebhookDeliverySweepResult,
 } from "./webhook-delivery.worker";
-import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
+import { BodylessAction, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { webhookDeliverySweepResponseSchema } from "./dto/webhook-delivery-response.schemas";
 
 /**
  * E7 — the scheduler entry point for outbound webhook delivery.
@@ -26,11 +27,13 @@ export class InventoryWebhookDeliveryController {
   constructor(private readonly worker: InventoryWebhookDeliveryWorker) {}
 
   @Get("inventory-webhook-delivery")
+  @ResponseSchema(webhookDeliverySweepResponseSchema)
   runGet(@Headers("authorization") authorization?: string): Promise<WebhookDeliverySweepResult> {
     return this.run(authorization);
   }
 
   @Post("inventory-webhook-delivery")
+  @ResponseSchema(webhookDeliverySweepResponseSchema)
   @BodylessAction()
   @HttpCode(200)
   runPost(@Headers("authorization") authorization?: string): Promise<WebhookDeliverySweepResult> {

@@ -15,6 +15,12 @@ import {
   type WaitlistAdmitInput,
   type WaitlistClaimInput,
 } from "./dto/public.schemas";
+import { ResponseSchema } from "../../common/openapi/zod-operation-contracts";
+import {
+  waitlistEntryListSchema,
+  waitlistAdmitSchema as waitlistAdmitResponseSchema,
+  waitlistClaimSchema as waitlistClaimResponseSchema,
+} from "./dto/public-response.schemas";
 
 /**
  * The two ends of admission, which have opposite authorisation and therefore
@@ -39,6 +45,7 @@ export class WaitlistAdmissionController {
   @AuthorizedInService("PlatformOperatorGuard")
   @Get("entries")
   @UseGuards(JwtAuthGuard, PlatformOperatorGuard)
+  @ResponseSchema(waitlistEntryListSchema)
   list(@Query("status") status?: string) {
     return this.admission.list(status);
   }
@@ -46,6 +53,7 @@ export class WaitlistAdmissionController {
   @AuthorizedInService("PlatformOperatorGuard")
   @Post("admit")
   @UseGuards(JwtAuthGuard, PlatformOperatorGuard)
+  @ResponseSchema(waitlistAdmitResponseSchema)
   async admit(
     @CurrentUser() user: CurrentUserContext,
     @Body(new ZodValidationPipe(waitlistAdmitSchema)) body: WaitlistAdmitInput,
@@ -72,6 +80,7 @@ export class WaitlistAdmissionController {
   @Public()
   @UseGuards(RateLimitGuard)
   @UseRateLimit("public:waitlist-claim")
+  @ResponseSchema(waitlistClaimResponseSchema)
   claim(@Body(new ZodValidationPipe(waitlistClaimSchema)) body: WaitlistClaimInput) {
     return this.admission.claim(body);
   }

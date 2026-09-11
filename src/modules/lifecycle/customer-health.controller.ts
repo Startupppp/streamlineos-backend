@@ -1,4 +1,4 @@
-import { BodylessAction } from "../../common/openapi/zod-operation-contracts";
+import { BodylessAction, ResponseSchema } from "../../common/openapi/zod-operation-contracts";
 import { Controller, Get, Param, Post, Query, UseGuards } from "@nestjs/common";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../access/permission.guard";
@@ -12,6 +12,11 @@ import {
   customerHealthRosterQuerySchema,
   type CustomerHealthRosterQuery,
 } from "./dto/health.schemas";
+import {
+  customerHealthRosterResponseSchema,
+  customerHealthResponseSchema,
+  recomputeCustomerHealthResponseSchema,
+} from "./dto/health-response.schemas";
 
 /**
  * Customer health, as a surface.
@@ -44,6 +49,7 @@ export class CustomerHealthController {
    */
   @Get()
   @RequirePermission("crm:customer-health:view")
+  @ResponseSchema(customerHealthRosterResponseSchema)
   roster(
     @Query(new ZodValidationPipe(customerHealthRosterQuerySchema))
     query: CustomerHealthRosterQuery,
@@ -60,6 +66,7 @@ export class CustomerHealthController {
    */
   @Get(":partyId")
   @RequirePermission("crm:customer-health:view")
+  @ResponseSchema(customerHealthResponseSchema)
   get(@Param("partyId") partyId: string, @CurrentUser() u: CurrentUserContext) {
     return this.health.get(u.orgId, partyId);
   }
@@ -76,6 +83,7 @@ export class CustomerHealthController {
   @Post(":partyId/recompute")
   @BodylessAction()
   @RequirePermission("crm:customer-health:manage")
+  @ResponseSchema(recomputeCustomerHealthResponseSchema)
   recompute(@Param("partyId") partyId: string, @CurrentUser() u: CurrentUserContext) {
     return this.health.assess(u.orgId, partyId);
   }

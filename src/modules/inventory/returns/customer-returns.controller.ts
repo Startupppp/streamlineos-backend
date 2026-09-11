@@ -34,6 +34,7 @@ import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import {
   listCustomerReturnsResponseSchema,
   getCustomerReturnResponseSchema,
+  inspectCustomerReturnLineResponseSchema,
 } from "./dto/returns-response.schemas";
 
 const returnIdParams = z.object({ returnId: z.coerce.number().int().positive() }).strict();
@@ -86,6 +87,7 @@ export class CustomerReturnsController {
    * decided it and when. Posting refuses until every line has one.
    */
   @Post(":returnId/inspect")
+  @ResponseSchema(inspectCustomerReturnLineResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:customer-returns:manage")
   @Validate({ params: returnIdParams, body: inspectReturnLineSchema })
@@ -103,6 +105,7 @@ export class CustomerReturnsController {
    * makes a retry a no-op on its own.
    */
   @Post(":returnId/approve")
+  @ResponseSchema(getCustomerReturnResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:customer-returns:manage")
   @Idempotent("inventory.customer-return.approve")

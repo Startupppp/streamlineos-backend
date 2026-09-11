@@ -145,3 +145,35 @@ export const announcementsRetentionSweepResponseSchema = z.union([
     truncated: z.boolean(),
   }),
 ]);
+
+/**
+ * `orgsTruncated` is the number that says the sweep stopped early rather than
+ * finished, and `orgsMalformed` the one that says a tenant's stored reminder
+ * rules did not parse. Both are folded into the message only conditionally, so
+ * they have to be on the contract or an operator cannot see them at all.
+ */
+export const timesheetsRemindersResponseSchema = z.union([
+  cronSkippedSchema,
+  z.object({
+    success: z.literal(true),
+    message: z.string(),
+    orgsScanned: z.number().int().nonnegative(),
+    orgsMalformed: z.number().int().nonnegative(),
+    periodsConsidered: z.number().int().nonnegative(),
+    remindersSent: z.number().int().nonnegative(),
+    orgsTruncated: z.number().int().nonnegative(),
+  }),
+]);
+
+/** Expiration runs before reminders, so `expired` counts envelopes this tick closed. */
+export const signEnvelopeSweepsResponseSchema = z.union([
+  cronSkippedSchema,
+  z.object({
+    success: z.literal(true),
+    message: z.string(),
+    organizations: z.number().int().nonnegative(),
+    failed: z.number().int().nonnegative(),
+    reminded: z.number().int().nonnegative(),
+    expired: z.number().int().nonnegative(),
+  }),
+]);

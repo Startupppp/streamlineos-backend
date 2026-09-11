@@ -7,6 +7,12 @@ import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { InvOpsService } from "./inv-ops.service";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  opsAttentionResponseSchema,
+  opsSummaryResponseSchema,
+  opsZoneBoardResponseSchema,
+} from "./dto/inv-ops-response.schemas";
 
 /**
  * B2 — the operations board: the numbers a warehouse manager opens the morning
@@ -26,6 +32,7 @@ export class InvOpsController {
   constructor(private readonly svc: InvOpsService) {}
 
   @Get("summary")
+  @ResponseSchema(opsSummaryResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:read")
   summary(@CurrentUser() u: CurrentUserContext) {
@@ -33,6 +40,7 @@ export class InvOpsController {
   }
 
   @Get("attention")
+  @ResponseSchema(opsAttentionResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:read")
   attention(@CurrentUser() u: CurrentUserContext) {
@@ -40,6 +48,7 @@ export class InvOpsController {
   }
 
   @Get("zones")
+  @ResponseSchema(opsZoneBoardResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:read")
   zones(@CurrentUser() u: CurrentUserContext) {

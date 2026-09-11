@@ -35,7 +35,11 @@ import {
 import { Validate } from "../../../common/validation/validate.decorator";
 import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
 import { successSchema } from "../../../common/openapi/response-envelopes";
-import { entriesListResponseSchema, entrySchema } from "./dto/timesheets-response.schemas";
+import {
+  attendanceDraftResponseSchema,
+  entriesListResponseSchema,
+  entrySchema,
+} from "./dto/timesheets-response.schemas";
 import { z } from "zod";
 
 const entryIdParams = z.object({ entryId: z.coerce.number().int().positive() }).strict();
@@ -124,6 +128,7 @@ export class EntriesController {
   @RequirePermission("timesheets:entries:create")
   @Validate({ body: draftFromAttendanceSchema })
   @Idempotent("timesheets.entries.from_attendance", { required: false })
+  @ResponseSchema(attendanceDraftResponseSchema)
   draftFromAttendance(
     @Body() body: DraftFromAttendanceInput,
     @CurrentUser() u: CurrentUserContext,

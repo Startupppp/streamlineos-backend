@@ -31,6 +31,12 @@ import type {
   DisassembleKitInput,
   SetKitBomInput,
 } from "./dto/kitting.schemas";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  buildableKitsResponseSchema,
+  kitAssemblyResponseSchema,
+  kitBomResponseSchema,
+} from "./dto/kitting-response.schemas";
 
 /**
  * NEO-9 - kits.
@@ -50,6 +56,7 @@ export class KitController {
   constructor(private readonly svc: KitService) {}
 
   @Get(":kitVariantId/bom")
+  @ResponseSchema(kitBomResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:products:read")
   bom(
@@ -60,6 +67,7 @@ export class KitController {
   }
 
   @Put(":kitVariantId/bom")
+  @ResponseSchema(kitBomResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:products:update")
   setBom(
@@ -71,6 +79,7 @@ export class KitController {
   }
 
   @Get("buildable")
+  @ResponseSchema(buildableKitsResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:read")
   async buildable(
@@ -85,6 +94,7 @@ export class KitController {
   }
 
   @Post("assemble")
+  @ResponseSchema(kitAssemblyResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:kits:assemble")
   assemble(
@@ -96,6 +106,7 @@ export class KitController {
   }
 
   @Post("disassemble")
+  @ResponseSchema(kitAssemblyResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:kits:assemble")
   disassemble(

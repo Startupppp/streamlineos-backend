@@ -31,7 +31,15 @@ import {
   type ListLandedCostVouchersInput,
 } from "./dto/landed-cost.schemas";
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
-import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
+import { BodylessAction, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  addLandedCostChargeResponseSchema,
+  applyLandedCostVoucherResponseSchema,
+  createLandedCostVoucherResponseSchema,
+  deleteLandedCostVoucherResponseSchema,
+  getLandedCostVoucherResponseSchema,
+  listLandedCostVouchersResponseSchema,
+} from "./dto/landed-cost-response.schemas";
 
 /**
  * G5 — landed cost as a document with a life.
@@ -59,6 +67,7 @@ export class LandedCostController {
   ) {}
 
   @Get()
+  @ResponseSchema(listLandedCostVouchersResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:valuation:read")
   list(
@@ -69,6 +78,7 @@ export class LandedCostController {
   }
 
   @Get(":voucherId")
+  @ResponseSchema(getLandedCostVoucherResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:valuation:read")
   get(
@@ -79,6 +89,7 @@ export class LandedCostController {
   }
 
   @Post()
+  @ResponseSchema(createLandedCostVoucherResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:landed-cost:manage")
   create(
@@ -90,6 +101,7 @@ export class LandedCostController {
   }
 
   @Post(":voucherId/charges")
+  @ResponseSchema(addLandedCostChargeResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:landed-cost:manage")
   @Idempotent("inventory.landed-cost.charge.add")
@@ -109,6 +121,7 @@ export class LandedCostController {
   @Post(":voucherId/apply")
   @BodylessAction()
   @HttpCode(HttpStatus.OK)
+  @ResponseSchema(applyLandedCostVoucherResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:landed-cost:manage")
   applyVoucher(
@@ -120,6 +133,7 @@ export class LandedCostController {
   }
 
   @Delete(":voucherId")
+  @ResponseSchema(deleteLandedCostVoucherResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:landed-cost:manage")
   remove(

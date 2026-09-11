@@ -31,6 +31,11 @@ import type {
   MoveHandlingUnitInput,
   NestHandlingUnitInput,
 } from "./dto/handling-units.schemas";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  handlingUnitDetailResponseSchema,
+  listHandlingUnitsResponseSchema,
+} from "./dto/handling-units-response.schemas";
 
 /**
  * NEO-4 - handling units.
@@ -49,6 +54,7 @@ export class HandlingUnitsController {
   constructor(private readonly svc: HandlingUnitService) {}
 
   @Get()
+  @ResponseSchema(listHandlingUnitsResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:read")
   list(
@@ -59,6 +65,7 @@ export class HandlingUnitsController {
   }
 
   @Get(":handlingUnitId")
+  @ResponseSchema(handlingUnitDetailResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:read")
   detail(
@@ -69,6 +76,7 @@ export class HandlingUnitsController {
   }
 
   @Post()
+  @ResponseSchema(handlingUnitDetailResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:transfer")
   create(
@@ -80,6 +88,7 @@ export class HandlingUnitsController {
   }
 
   @Post(":handlingUnitId/move")
+  @ResponseSchema(handlingUnitDetailResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:transfer")
   move(
@@ -92,6 +101,7 @@ export class HandlingUnitsController {
   }
 
   @Patch(":handlingUnitId/nesting")
+  @ResponseSchema(handlingUnitDetailResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:transfer")
   nest(

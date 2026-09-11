@@ -9,6 +9,8 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { ReportsService } from "./reports.service";
 import { holidayRangeQuerySchema, type HolidayRangeQuery } from "./dto/reports.schemas";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { holidaysResponseSchema } from "./dto/timesheets-response.schemas";
 
 /**
  * Calendar context for the week grid.
@@ -27,6 +29,7 @@ export class TimesheetCalendarController {
 
   @Get("holidays")
   @RequirePermission("timesheets:entries:view")
+  @ResponseSchema(holidaysResponseSchema)
   holidays(
     @Query(new ZodValidationPipe(holidayRangeQuerySchema)) query: HolidayRangeQuery,
     @CurrentUser() u: CurrentUserContext,

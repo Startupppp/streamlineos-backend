@@ -20,6 +20,14 @@ import {
   type ListReceiptsQuery,
   type ReverseReceiptInput,
 } from "./dto/ar-receipts.schemas";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  allocateArReceiptResponseSchema,
+  createArReceiptResponseSchema,
+  getArReceiptResponseSchema,
+  listArReceiptsResponseSchema,
+  reverseArReceiptResponseSchema,
+} from "./dto/ar-response.schemas";
 
 @RequireModule("accounting")
 @Controller("accounting/ar/receipts")
@@ -28,6 +36,7 @@ export class ArReceiptsController {
   constructor(private readonly receipts: ArReceiptsService) {}
 
   @Get()
+  @ResponseSchema(listArReceiptsResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:receivables:read")
   list(
@@ -39,6 +48,7 @@ export class ArReceiptsController {
 
   /** Recording a receipt posts it — cash either arrived or it did not. */
   @Post()
+  @ResponseSchema(createArReceiptResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:receivables:manage")
   @HttpCode(201)
@@ -51,6 +61,7 @@ export class ArReceiptsController {
   }
 
   @Get(":receiptId")
+  @ResponseSchema(getArReceiptResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:receivables:read")
   get(@Param("receiptId") receiptId: string, @CurrentUser() u: CurrentUserContext) {
@@ -58,6 +69,7 @@ export class ArReceiptsController {
   }
 
   @Post(":receiptId/allocations")
+  @ResponseSchema(allocateArReceiptResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:receivables:manage")
   @HttpCode(200)
@@ -71,6 +83,7 @@ export class ArReceiptsController {
   }
 
   @Post(":receiptId/allocations/fifo")
+  @ResponseSchema(allocateArReceiptResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:receivables:manage")
   @HttpCode(200)
@@ -87,6 +100,7 @@ export class ArReceiptsController {
    * only destructive operation in AR, so it sits on the approval rung.
    */
   @Post(":receiptId/reverse")
+  @ResponseSchema(reverseArReceiptResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:receivables:approve")
   @HttpCode(200)

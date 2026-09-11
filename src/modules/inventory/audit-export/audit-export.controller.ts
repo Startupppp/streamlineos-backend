@@ -16,6 +16,14 @@ import {
   type ListAuditExportJobsQueryInput,
 } from "./dto/audit-export.schemas";
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
+import { ApiOkResponse } from "@nestjs/swagger";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  auditExportJobResponseSchema,
+  createAuditExportJobResponseSchema,
+  listAuditExportJobsResponseSchema,
+  verifyAuditExportResponseSchema,
+} from "./dto/audit-export-response.schemas";
 
 @RequireModule("inventory")
 @Controller("inventory/audit-export")
@@ -24,6 +32,7 @@ export class AuditExportController {
   constructor(private readonly svc: AuditExportService) {}
 
   @Post("jobs")
+  @ResponseSchema(createAuditExportJobResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:audit:export")
   @Idempotent("inventory.audit-export.job.create")
@@ -35,6 +44,7 @@ export class AuditExportController {
   }
 
   @Get("jobs")
+  @ResponseSchema(listAuditExportJobsResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:audit:export")
   listJobs(
@@ -45,6 +55,7 @@ export class AuditExportController {
   }
 
   @Get("jobs/:jobId")
+  @ResponseSchema(auditExportJobResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:audit:export")
   findJob(@Param("jobId", ParseIntPipe) jobId: number, @CurrentUser() u: CurrentUserContext) {
@@ -52,6 +63,10 @@ export class AuditExportController {
   }
 
   @Get("jobs/:jobId/download")
+  @ApiOkResponse({
+    description: "NDJSON audit export document, streamed",
+    content: { "application/x-ndjson": { schema: { type: "string" } } },
+  })
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:audit:export")
   download(
@@ -63,6 +78,7 @@ export class AuditExportController {
   }
 
   @Get("jobs/:jobId/verify")
+  @ResponseSchema(verifyAuditExportResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:audit:export")
   verify(@Param("jobId", ParseIntPipe) jobId: number, @CurrentUser() u: CurrentUserContext) {

@@ -61,3 +61,32 @@ export const vendorScorecardSchema = z.object({
 });
 
 export const vendorPerformanceResponseSchema = vendorScorecardSchema;
+
+/**
+ * C4 — the rows every rate on the scorecard was computed from.
+ *
+ * `onTime` is genuinely three-valued: null when the order carried no promise
+ * date or has not been received, and collapsing it to false would report an
+ * un-promised delivery as a late one.
+ */
+export const vendorDeliveriesResponseSchema = itemsPagedSchema(
+  z.object({
+    poId: z.number().int(),
+    poNumber: z.string(),
+    status: z.string(),
+    orderDate: z.string(),
+    expectedDeliveryDate: z.string().nullable(),
+    firstReceiptDate: z.string().nullable(),
+    daysToReceive: z.number().nullable(),
+    onTime: z.boolean().nullable(),
+    orderedQty: z.string(),
+    receivedQty: z.string(),
+    lines: z.number().int(),
+    linesInFull: z.number().int(),
+    receiptCount: z.number().int(),
+    /** The GRNs behind the row, so a rate can be walked back to its documents. */
+    receiptIds: z.array(z.number().int()),
+    total: z.string(),
+    currency: z.string(),
+  }),
+);

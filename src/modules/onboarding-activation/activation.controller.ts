@@ -4,6 +4,8 @@ import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ActivationService, type ActivationReport } from "./activation.service";
+import { ResponseSchema } from "../../common/openapi/zod-operation-contracts";
+import { activationReportSchema } from "./dto/activation-response.schemas";
 
 /**
  * How far this workspace is from first value.
@@ -27,6 +29,7 @@ export class ActivationController {
    */
   @Universal()
   @Get()
+  @ResponseSchema(activationReportSchema)
   report(@CurrentUser() user: CurrentUserContext): Promise<ActivationReport> {
     return this.activation.report(user.orgId);
   }

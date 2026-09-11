@@ -9,6 +9,11 @@ import type { CurrentUserContext } from "../../../../common/auth/backend-claims"
 import { ZodValidationPipe } from "../../../../common/pipes/zod-validation.pipe";
 import { InvGlReconService } from "./inv-gl-recon.service";
 import { glReconQuerySchema, type GlReconQueryInput } from "./dto/gl-recon.schemas";
+import { ResponseSchema } from "../../../../common/openapi/zod-operation-contracts";
+import {
+  glReconReportResponseSchema,
+  listGlReconPeriodsResponseSchema,
+} from "./dto/gl-recon-response.schemas";
 
 /**
  * Read-only. There is no mutating route here on purpose: the fix for a
@@ -28,6 +33,7 @@ export class InvGlReconController {
   constructor(private readonly recon: InvGlReconService) {}
 
   @Get()
+  @ResponseSchema(glReconReportResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:reports:read")
   report(
@@ -38,6 +44,7 @@ export class InvGlReconController {
   }
 
   @Get("periods")
+  @ResponseSchema(listGlReconPeriodsResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:reports:read")
   listPeriods(@CurrentUser() u: CurrentUserContext) {

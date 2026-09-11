@@ -155,6 +155,7 @@ export class InspectionsController {
    * fresh inspection that names what it supersedes.
    */
   @Post(":inspectionId/correct")
+  @ResponseSchema(createInspectionResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:quality:inspect")
   @Idempotent("inventory.quality.inspection.correct")

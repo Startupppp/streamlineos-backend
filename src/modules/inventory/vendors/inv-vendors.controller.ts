@@ -22,6 +22,7 @@ import {
   listVendorsResponseSchema,
   invVendorSchema,
   vendorPerformanceResponseSchema,
+  vendorDeliveriesResponseSchema,
 } from "./dto/vendors-response.schemas";
 
 const vendorIdParams = z.object({ vendorId: z.coerce.number().int().positive() }).strict();
@@ -78,6 +79,7 @@ export class InvVendorsController {
 
   /** C4. The purchase orders and receipts every rate above was computed from. */
   @Get(":vendorId/deliveries")
+  @ResponseSchema(vendorDeliveriesResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:vendors:read")
   getDeliveries(

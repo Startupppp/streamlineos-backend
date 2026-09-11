@@ -9,6 +9,11 @@ import { PermissionGuard } from "../../../access/permission.guard";
 import { RequirePermission } from "../../../access/require-permission.decorator";
 import { StockGlReconciliationService } from "./stock-gl-reconciliation.service";
 import { UnpostedMovementsService } from "./unposted-movements.service";
+import { ResponseSchema } from "../../../../common/openapi/zod-operation-contracts";
+import {
+  stockGlReconciliationResponseSchema,
+  unpostedMovementsResponseSchema,
+} from "./dto/reconciliation-response.schemas";
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -52,6 +57,7 @@ export class ReconciliationController {
    * a finance question about finance's own numbers.
    */
   @Get("unposted-movements")
+  @ResponseSchema(unpostedMovementsResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:reports:read")
   getUnpostedMovements(
@@ -70,6 +76,7 @@ export class ReconciliationController {
    * finance's own numbers.
    */
   @Get("stock-gl")
+  @ResponseSchema(stockGlReconciliationResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:reports:read")
   getStockGlReconciliation(

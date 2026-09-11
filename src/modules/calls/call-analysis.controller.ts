@@ -1,4 +1,4 @@
-import { BodylessAction } from "../../common/openapi/zod-operation-contracts";
+import { BodylessAction, ResponseSchema } from "../../common/openapi/zod-operation-contracts";
 import {
   Body,
   Controller,
@@ -36,6 +36,10 @@ import {
   callAnalysisReleaseBodySchema,
   type CallAnalysisReleaseBody,
 } from "./dto/call-analysis.schemas";
+import {
+  callAnalysisResponseSchema,
+  callAnalysisReleaseResponseSchema,
+} from "./dto/call-analysis-response.schemas";
 
 /**
  * The analysis of one call, read and produced.
@@ -82,6 +86,7 @@ export class CallAnalysisController {
   @Get(":activityId/analysis")
   @UseGuards(PermissionGuard)
   @RequirePermission("crm:call-analysis:view")
+  @ResponseSchema(callAnalysisResponseSchema)
   @Validate({ params: callAnalysisParamsSchema })
   async read(
     @CurrentUser() user: CurrentUserContext,
@@ -112,6 +117,7 @@ export class CallAnalysisController {
   @UseGuards(PermissionGuard)
   @RequirePermission("crm:call-analysis:run")
   @HttpCode(200)
+  @ResponseSchema(callAnalysisResponseSchema)
   @Validate({ params: callAnalysisParamsSchema })
   async run(
     @CurrentUser() user: CurrentUserContext,
@@ -138,6 +144,7 @@ export class CallAnalysisController {
   @UseGuards(PermissionGuard)
   @RequirePermission("crm:call-analysis:view")
   @HttpCode(200)
+  @ResponseSchema(callAnalysisReleaseResponseSchema)
   @Validate({ params: callAnalysisParamsSchema, body: callAnalysisReleaseBodySchema })
   async release(
     @CurrentUser() user: CurrentUserContext,

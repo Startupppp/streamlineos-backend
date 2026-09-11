@@ -26,6 +26,12 @@ import {
   type ResolvePickExceptionInput,
 } from "./dto/picking.schemas";
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  assignPickExceptionResponseSchema,
+  listPickExceptionsResponseSchema,
+  resolvePickExceptionResponseSchema,
+} from "./dto/picking-response.schemas";
 
 /**
  * B5, items 2, 4 and 5 — the supervisor's side of picking.
@@ -47,6 +53,7 @@ export class PickExceptionController {
   constructor(private readonly exceptions: PickExceptionService) {}
 
   @Get()
+  @ResponseSchema(listPickExceptionsResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:picking:review")
   list(
@@ -57,6 +64,7 @@ export class PickExceptionController {
   }
 
   @Post(":pickLineId/assign")
+  @ResponseSchema(assignPickExceptionResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:picking:review")
   @Idempotent("inventory.pick-exception.assign")
@@ -69,6 +77,7 @@ export class PickExceptionController {
   }
 
   @Post(":pickLineId/resolve")
+  @ResponseSchema(resolvePickExceptionResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:picking:review")
   @Idempotent("inventory.pick-exception.resolve")

@@ -75,3 +75,40 @@ export const campaignAttributionSchema = z.object({
   dealRevenueCents: z.number().int(),
   roi: z.number(),
 });
+
+/**
+ * The multi-touch report — `AttributionReport` from `AttributionReportService`.
+ *
+ * Every money field is an integer minor-unit total accumulated in the process,
+ * not a `numeric` column, so it is a number here rather than the string the
+ * shipped first/last-touch report returns.
+ */
+export const campaignAttributionByModelSchema = z.object({
+  model: z.string(),
+  modelDescription: z.string(),
+  halfLifeDays: z.number(),
+  dealsConsidered: z.number().int(),
+  dealsAttributed: z.number().int(),
+  dealsWithoutTouches: z.number().int(),
+  truncated: z.boolean(),
+  totalRevenueMinor: z.number().int(),
+  attributedRevenueMinor: z.number().int(),
+  unattributableRevenueMinor: z.number().int(),
+  campaigns: z.array(
+    z.object({
+      campaignId: z.number().int().nullable(),
+      campaignName: z.string(),
+      campaignArchived: z.boolean(),
+      touchCount: z.number().int(),
+      dealCount: z.number().int(),
+      attributedRevenueMinor: z.number().int(),
+    }),
+  ),
+  channels: z.array(
+    z.object({
+      channel: z.string(),
+      touchCount: z.number().int(),
+      attributedRevenueMinor: z.number().int(),
+    }),
+  ),
+});

@@ -1,4 +1,4 @@
-import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
+import { BodylessAction, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
 import {
   Controller,
   Get,
@@ -14,11 +14,13 @@ import {
   UnauthorizedException,
   ServiceUnavailableException,
 } from "@nestjs/common";
+import { ApiOkResponse } from "@nestjs/swagger";
 import type { Request, Response } from "express";
 import { timingSafeEqual } from "node:crypto";
 import { Public } from "../../../common/auth/public.decorator";
 import { WhatsAppChannelsService, type ResolvedWhatsAppChannel } from "./whatsapp-channels.service";
 import { WhatsAppIngressService } from "./whatsapp-ingress.service";
+import { whatsappDeliveryResponseSchema } from "../dto/ingress-response.schemas";
 
 /**
  * WhatsApp, as an endpoint.
@@ -80,6 +82,10 @@ export class WhatsAppIngressController {
    * who asks.
    */
   @Get(":channelId")
+  @ApiOkResponse({
+    description: "The `hub.challenge` value, echoed verbatim.",
+    content: { "text/plain": { schema: { type: "string" } } },
+  })
   async verify(
     @Param("channelId") channelId: string,
     @Query("hub.mode") mode: string | undefined,
@@ -117,6 +123,7 @@ export class WhatsAppIngressController {
   @Post(":channelId")
   @BodylessAction()
   @HttpCode(200)
+  @ResponseSchema(whatsappDeliveryResponseSchema)
   async deliverToChannel(
     @Param("channelId") channelId: string,
     @Req() req: RawBodyRequest<Request>,
@@ -137,6 +144,7 @@ export class WhatsAppIngressController {
   @Post()
   @BodylessAction()
   @HttpCode(200)
+  @ResponseSchema(whatsappDeliveryResponseSchema)
   async deliver(
     @Req() req: RawBodyRequest<Request>,
     @Headers("x-hub-signature-256") signature: string | undefined,

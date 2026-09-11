@@ -9,6 +9,11 @@ import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { BooksService } from "../kernel/books.service";
 import { ArAgingService } from "./ar-aging.service";
 import { agingQuerySchema, type AgingQuery } from "./dto/ar-aging.schemas";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  arAgingResponseSchema,
+  arOpenItemsResponseSchema,
+} from "./dto/ar-response.schemas";
 
 @RequireModule("accounting")
 @Controller("accounting/ar/aging")
@@ -21,6 +26,7 @@ export class ArAgingController {
 
   /** Buckets by party, plus the AR-control reconciliation the PRD asks for. */
   @Get()
+  @ResponseSchema(arAgingResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:receivables:read")
   report(
@@ -32,6 +38,7 @@ export class ArAgingController {
 
   /** The same data one document per row, for a statement or a CSV export. */
   @Get("open-items")
+  @ResponseSchema(arOpenItemsResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:receivables:read")
   async openItems(

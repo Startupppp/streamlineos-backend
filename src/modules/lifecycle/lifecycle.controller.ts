@@ -17,6 +17,14 @@ import {
   type RecordSignalInput,
   type RenewLifecycleInput,
 } from "./dto/lifecycle.schemas";
+import { ResponseSchema } from "../../common/openapi/zod-operation-contracts";
+import {
+  listLifecyclesResponseSchema,
+  getLifecycleResponseSchema,
+  recordLifecycleSignalResponseSchema,
+  renewLifecycleResponseSchema,
+  closeLifecycleResponseSchema,
+} from "./dto/lifecycle-response.schemas";
 
 /**
  * The renewal book, as a surface.
@@ -52,6 +60,7 @@ export class LifecycleController {
    */
   @Get()
   @RequirePermission("crm:lifecycle:view")
+  @ResponseSchema(listLifecyclesResponseSchema)
   list(
     @Query(new ZodValidationPipe(listLifecyclesQuerySchema)) query: ListLifecyclesQuery,
     @CurrentUser() u: CurrentUserContext,
@@ -62,6 +71,7 @@ export class LifecycleController {
   /** One contract with the evidence behind its score, so the number is arguable. */
   @Get(":customerLifecycleId")
   @RequirePermission("crm:lifecycle:view")
+  @ResponseSchema(getLifecycleResponseSchema)
   get(
     @Param("customerLifecycleId") customerLifecycleId: string,
     @CurrentUser() u: CurrentUserContext,
@@ -76,6 +86,7 @@ export class LifecycleController {
    */
   @Post(":customerLifecycleId/signals")
   @RequirePermission("crm:lifecycle:manage")
+  @ResponseSchema(recordLifecycleSignalResponseSchema)
   recordSignal(
     @Param("customerLifecycleId") customerLifecycleId: string,
     @Body(new ZodValidationPipe(recordSignalSchema)) body: RecordSignalInput,
@@ -92,6 +103,7 @@ export class LifecycleController {
    */
   @Post(":customerLifecycleId/renew")
   @RequirePermission("crm:lifecycle:manage")
+  @ResponseSchema(renewLifecycleResponseSchema)
   renew(
     @Param("customerLifecycleId") customerLifecycleId: string,
     @Body(new ZodValidationPipe(renewLifecycleSchema)) body: RenewLifecycleInput,
@@ -103,6 +115,7 @@ export class LifecycleController {
   /** Ends it, with a stated reason. There is deliberately no route back to active. */
   @Post(":customerLifecycleId/close")
   @RequirePermission("crm:lifecycle:manage")
+  @ResponseSchema(closeLifecycleResponseSchema)
   close(
     @Param("customerLifecycleId") customerLifecycleId: string,
     @Body(new ZodValidationPipe(closeLifecycleSchema)) body: CloseLifecycleInput,

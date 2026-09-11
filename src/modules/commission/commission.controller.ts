@@ -1,4 +1,4 @@
-import { BodylessAction } from "../../common/openapi/zod-operation-contracts";
+import { BodylessAction, ResponseSchema } from "../../common/openapi/zod-operation-contracts";
 import {
   Body,
   Controller,
@@ -42,6 +42,17 @@ import {
   type UpdatePlanInput,
   type UpdateVersionInput,
 } from "./dto/commission.schemas";
+import {
+  listCommissionPlansResponseSchema,
+  createCommissionPlanResponseSchema,
+  getCommissionPlanResponseSchema,
+  commissionPlanResponseSchema,
+  commissionPlanVersionResponseSchema,
+  commissionAssignmentResponseSchema,
+  calculateEarningResponseSchema,
+  listCommissionEarningsResponseSchema,
+  approveCommissionEarningResponseSchema,
+} from "./dto/commission-response.schemas";
 
 /**
  * The commission surface, split along the only line that matters here: who may
@@ -68,6 +79,7 @@ export class CommissionController {
 
   @Get("plans")
   @RequirePermission("crm:commission-plans:view")
+  @ResponseSchema(listCommissionPlansResponseSchema)
   listPlans(@CurrentUser() u: CurrentUserContext) {
     return this.service.listPlans(u.orgId);
   }
@@ -76,6 +88,7 @@ export class CommissionController {
   @HttpCode(201)
   @RequirePermission("crm:commission-plans:manage")
   @Idempotent("crm.commission.plan.create")
+  @ResponseSchema(createCommissionPlanResponseSchema)
   createPlan(
     @Body(new ZodValidationPipe(createPlanSchema)) body: CreatePlanInput,
     @CurrentUser() u: CurrentUserContext,
@@ -85,12 +98,14 @@ export class CommissionController {
 
   @Get("plans/:planId")
   @RequirePermission("crm:commission-plans:view")
+  @ResponseSchema(getCommissionPlanResponseSchema)
   getPlan(@Param("planId") planId: string, @CurrentUser() u: CurrentUserContext) {
     return this.service.getPlan(u.orgId, planId);
   }
 
   @Patch("plans/:planId")
   @RequirePermission("crm:commission-plans:manage")
+  @ResponseSchema(commissionPlanResponseSchema)
   updatePlan(
     @Param("planId") planId: string,
     @Body(new ZodValidationPipe(updatePlanSchema)) body: UpdatePlanInput,
@@ -111,6 +126,7 @@ export class CommissionController {
    */
   @Get("plans/:planId/version-in-force")
   @RequirePermission("crm:commission-plans:view")
+  @ResponseSchema(commissionPlanVersionResponseSchema)
   versionInForce(
     @Param("planId") planId: string,
     @Query(new ZodValidationPipe(resolveVersionQuerySchema)) query: ResolveVersionQuery,
@@ -123,6 +139,7 @@ export class CommissionController {
   @HttpCode(201)
   @RequirePermission("crm:commission-plans:manage")
   @Idempotent("crm.commission.version.create")
+  @ResponseSchema(commissionPlanVersionResponseSchema)
   createVersion(
     @Param("planId") planId: string,
     @Body(new ZodValidationPipe(createVersionSchema)) body: CreateVersionInput,
@@ -134,6 +151,7 @@ export class CommissionController {
   /** 409s once the version has been earned against. That is the feature. */
   @Patch("plans/:planId/versions/:planVersionId")
   @RequirePermission("crm:commission-plans:manage")
+  @ResponseSchema(commissionPlanVersionResponseSchema)
   updateVersion(
     @Param("planId") planId: string,
     @Param("planVersionId") planVersionId: string,
@@ -148,6 +166,7 @@ export class CommissionController {
   @Post("plans/:planId/assignments")
   @HttpCode(201)
   @RequirePermission("crm:commission-plans:manage")
+  @ResponseSchema(commissionAssignmentResponseSchema)
   assign(
     @Param("planId") planId: string,
     @Body(new ZodValidationPipe(assignSchema)) body: AssignInput,
@@ -158,6 +177,7 @@ export class CommissionController {
 
   @Patch("assignments/:assignmentId/end")
   @RequirePermission("crm:commission-plans:manage")
+  @ResponseSchema(commissionAssignmentResponseSchema)
   endAssignment(
     @Param("assignmentId") assignmentId: string,
     @Body(new ZodValidationPipe(endAssignmentSchema)) body: EndAssignmentInput,
@@ -180,6 +200,7 @@ export class CommissionController {
   @HttpCode(201)
   @RequirePermission("crm:commission-earnings:calculate")
   @Idempotent("crm.commission.earning.calculate")
+  @ResponseSchema(calculateEarningResponseSchema)
   calculate(
     @Body(new ZodValidationPipe(calculateForDealSchema)) body: CalculateForDealInput,
     @CurrentUser() u: CurrentUserContext,
@@ -189,6 +210,7 @@ export class CommissionController {
 
   @Get("earnings")
   @RequirePermission("crm:commission-earnings:view")
+  @ResponseSchema(listCommissionEarningsResponseSchema)
   listEarnings(
     @Query(new ZodValidationPipe(listEarningsQuerySchema)) query: ListEarningsQuery,
     @CurrentUser() u: CurrentUserContext,
@@ -214,6 +236,7 @@ export class CommissionController {
    * watching closely enough to notice.
    */
   @Idempotent("crm.commission.earning_approve")
+  @ResponseSchema(approveCommissionEarningResponseSchema)
   approve(
     @Param("earningId") earningId: string,
     @CurrentUser() u: CurrentUserContext,

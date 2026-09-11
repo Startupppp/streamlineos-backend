@@ -52,6 +52,13 @@ import {
   liveHoldsResponseSchema,
   cancelHoldResponseSchema,
   autonomySettingsResponseSchema,
+  liveClassStopsResponseSchema,
+  releaseClassStopResponseSchema,
+  repairPoliciesResponseSchema,
+  runRepairsResponseSchema,
+  listRepairsResponseSchema,
+  revertRepairResponseSchema,
+  repairMeasureResponseSchema,
 } from "./dto/autonomy-response.schemas";
 
 const decisionIdParams = z.object({ decisionId: z.string().min(1) }).strict();
@@ -218,6 +225,7 @@ export class AutonomyReviewController {
    */
   @Get("class-stops")
   @RequirePermission("crm:autonomy:view")
+  @ResponseSchema(liveClassStopsResponseSchema)
   liveClassStops(@CurrentUser() u: CurrentUserContext) {
     return this.holds.liveClassStops(u.orgId);
   }
@@ -227,6 +235,7 @@ export class AutonomyReviewController {
   @BodylessAction()
   @Idempotent("crm.autonomy.release-class-stop")
   @RequirePermission("crm:autonomy:manage")
+  @ResponseSchema(releaseClassStopResponseSchema)
   releaseClassStop(
     @Param("outboundClassStopId") outboundClassStopId: string,
     @CurrentUser() u: CurrentUserContext,
@@ -266,6 +275,7 @@ export class AutonomyReviewController {
    */
   @Get("repair-policies")
   @RequirePermission(REVIEW_PERMISSION)
+  @ResponseSchema(repairPoliciesResponseSchema)
   repairPolicies(@CurrentUser() u: CurrentUserContext) {
     return this.repairs.policiesFor(u.orgId);
   }
@@ -282,6 +292,7 @@ export class AutonomyReviewController {
   @Patch("repair-policies")
   @Idempotent("crm.autonomy.repair-policy")
   @RequirePermission("crm:autonomy:repair")
+  @ResponseSchema(repairPoliciesResponseSchema)
   setRepairPolicy(
     @Body(new ZodValidationPipe(setRepairPolicySchema)) body: SetRepairPolicyInput,
     @CurrentUser() u: CurrentUserContext,
@@ -293,6 +304,7 @@ export class AutonomyReviewController {
   @Post("repairs/run")
   @Idempotent("crm.autonomy.repair-run")
   @RequirePermission("crm:autonomy:repair")
+  @ResponseSchema(runRepairsResponseSchema)
   runRepairs(
     @Body(new ZodValidationPipe(runRepairsSchema)) body: RunRepairsInput,
     @CurrentUser() u: CurrentUserContext,
@@ -303,6 +315,7 @@ export class AutonomyReviewController {
   /** Every value the system rewrote, newest first. */
   @Get("repairs")
   @RequirePermission(REVIEW_PERMISSION)
+  @ResponseSchema(listRepairsResponseSchema)
   listRepairs(
     @Query(new ZodValidationPipe(listRepairsQuerySchema)) query: ListRepairsQuery,
     @CurrentUser() u: CurrentUserContext,
@@ -320,6 +333,7 @@ export class AutonomyReviewController {
   @Post("repairs/:repairId/revert")
   @Idempotent("crm.autonomy.repair-revert")
   @RequirePermission("crm:autonomy:reverse")
+  @ResponseSchema(revertRepairResponseSchema)
   revertRepair(
     @Param("repairId") repairId: string,
     @Body(new ZodValidationPipe(revertRepairSchema)) body: RevertRepairInput,
@@ -334,6 +348,7 @@ export class AutonomyReviewController {
    */
   @Get("repair-measure")
   @RequirePermission(REVIEW_PERMISSION)
+  @ResponseSchema(repairMeasureResponseSchema)
   repairMeasure(
     @Query(new ZodValidationPipe(repairMeasureQuerySchema)) query: RepairMeasureQuery,
     @CurrentUser() u: CurrentUserContext,

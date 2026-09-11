@@ -14,6 +14,8 @@ import {
   SYNC_OPERATION_PERMISSIONS,
   type SyncBatchInput,
 } from "./dto/sync.schemas";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { syncBatchResponseSchema } from "./dto/sync-response.schemas";
 
 @RequireModule("inventory")
 @Controller("inventory/sync")
@@ -41,6 +43,7 @@ export class SyncBatchController {
    * of rules for exactly the operations that got the least supervision.
    */
   @Post("batch")
+  @ResponseSchema(syncBatchResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:adjust")
   async applyBatch(

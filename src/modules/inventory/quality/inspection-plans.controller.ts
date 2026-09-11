@@ -32,7 +32,14 @@ import type {
   UpdateInspectionPlanInput,
 } from "./dto/inspection-plans.schemas";
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
-import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
+import { BodylessAction, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  addInspectionPlanVersionResponseSchema,
+  getInspectionPlanResponseSchema,
+  listInspectionPlanVersionsResponseSchema,
+  listInspectionPlansResponseSchema,
+  removeInspectionPlanResponseSchema,
+} from "./dto/quality-response.schemas";
 
 @RequireModule("inventory")
 @Controller("inventory/quality/inspection-plans")
@@ -41,6 +48,7 @@ export class InspectionPlansController {
   constructor(private readonly svc: InspectionPlansService) {}
 
   @Get()
+  @ResponseSchema(listInspectionPlansResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:quality:read")
   list(
@@ -51,6 +59,7 @@ export class InspectionPlansController {
   }
 
   @Get(":planId")
+  @ResponseSchema(getInspectionPlanResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:quality:read")
   findOne(
@@ -61,6 +70,7 @@ export class InspectionPlansController {
   }
 
   @Get(":planId/versions")
+  @ResponseSchema(listInspectionPlanVersionsResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:quality:read")
   listVersions(
@@ -71,6 +81,7 @@ export class InspectionPlansController {
   }
 
   @Post()
+  @ResponseSchema(getInspectionPlanResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:quality:plans:manage")
   @Idempotent("inventory.quality.inspection-plan.create")
@@ -82,6 +93,7 @@ export class InspectionPlansController {
   }
 
   @Patch(":planId")
+  @ResponseSchema(getInspectionPlanResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:quality:plans:manage")
   update(
@@ -93,6 +105,7 @@ export class InspectionPlansController {
   }
 
   @Delete(":planId")
+  @ResponseSchema(removeInspectionPlanResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:quality:plans:manage")
   remove(
@@ -103,6 +116,7 @@ export class InspectionPlansController {
   }
 
   @Post(":planId/versions")
+  @ResponseSchema(addInspectionPlanVersionResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:quality:plans:manage")
   @Idempotent("inventory.quality.inspection-plan.version.add")
@@ -115,6 +129,7 @@ export class InspectionPlansController {
   }
 
   @Post(":planId/versions/:versionId/activate")
+  @ResponseSchema(getInspectionPlanResponseSchema)
   @BodylessAction()
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:quality:plans:manage")

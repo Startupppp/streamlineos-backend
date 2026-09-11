@@ -20,6 +20,15 @@ import {
   type ListStatementsQuery,
   type StatementLinesQuery,
 } from "./dto/banking.schemas";
+import { ApiOkResponse } from "@nestjs/swagger";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  getStatementResponseSchema,
+  importStatementResponseSchema,
+  listMappingPresetsResponseSchema,
+  listStatementsResponseSchema,
+  reconciliationProofResponseSchema,
+} from "./dto/banking-response.schemas";
 
 @RequireModule("accounting")
 @Controller("accounting/banking/statements")
@@ -32,6 +41,7 @@ export class BankStatementsController {
 
   /** The shipped CSV layouts. Data, so a UI can render the picker from it. */
   @Get("mapping-presets")
+  @ResponseSchema(listMappingPresetsResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:banking:read")
   listPresets() {
@@ -44,6 +54,7 @@ export class BankStatementsController {
    * duplicated month.
    */
   @Post("imports")
+  @ResponseSchema(importStatementResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:banking:import")
   @HttpCode(201)
@@ -55,6 +66,7 @@ export class BankStatementsController {
   }
 
   @Get()
+  @ResponseSchema(listStatementsResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:banking:read")
   list(
@@ -65,6 +77,7 @@ export class BankStatementsController {
   }
 
   @Get(":statementId")
+  @ResponseSchema(getStatementResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:banking:read")
   get(
@@ -77,6 +90,7 @@ export class BankStatementsController {
 
   /** Every term of the proof, so a UI can show *why* cash and bank differ. */
   @Get(":statementId/reconciliation")
+  @ResponseSchema(reconciliationProofResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:banking:read")
   proof(@Param("statementId") statementId: string, @CurrentUser() u: CurrentUserContext) {
@@ -85,6 +99,10 @@ export class BankStatementsController {
 
   /** The same proof as CSV, for a file an accountant can keep (PRD 04 S3). */
   @Get(":statementId/reconciliation/export")
+  @ApiOkResponse({
+    description: "The reconciliation proof as CSV.",
+    content: { "text/csv": { schema: { type: "string" } } },
+  })
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:reports:export")
   async exportProof(
@@ -100,6 +118,7 @@ export class BankStatementsController {
   }
 
   @Post(":statementId/reconcile")
+  @ResponseSchema(reconciliationProofResponseSchema)
   @BodylessAction()
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:banking:reconcile")

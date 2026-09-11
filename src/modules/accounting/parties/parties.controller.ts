@@ -31,6 +31,18 @@ import {
   type ResolvePartyInput,
   type UpdatePartyInput,
 } from "./dto/parties.schemas";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  addPartyRegistrationResponseSchema,
+  createPartyResponseSchema,
+  getPartyResponseSchema,
+  listPartiesResponseSchema,
+  listPartyRegistrationsResponseSchema,
+  removePartyRegistrationResponseSchema,
+  removePartyResponseSchema,
+  resolvePartyResponseSchema,
+  updatePartyResponseSchema,
+} from "./dto/parties-response.schemas";
 
 /**
  * The party master is shared, so it is gated by the generic accounting keys
@@ -49,6 +61,7 @@ export class PartiesController {
   ) {}
 
   @Get()
+  @ResponseSchema(listPartiesResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:read")
   list(
@@ -59,6 +72,7 @@ export class PartiesController {
   }
 
   @Post()
+  @ResponseSchema(createPartyResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:create")
   @HttpCode(201)
@@ -74,6 +88,7 @@ export class PartiesController {
    * twice for the same company returns the same party — no duplicate customer.
    */
   @Post("resolve")
+  @ResponseSchema(resolvePartyResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:create")
   @HttpCode(200)
@@ -92,6 +107,7 @@ export class PartiesController {
   }
 
   @Get(":partyId")
+  @ResponseSchema(getPartyResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:read")
   get(@Param("partyId") partyId: string, @CurrentUser() u: CurrentUserContext) {
@@ -99,6 +115,7 @@ export class PartiesController {
   }
 
   @Patch(":partyId")
+  @ResponseSchema(updatePartyResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:update")
   update(
@@ -110,6 +127,7 @@ export class PartiesController {
   }
 
   @Delete(":partyId")
+  @ResponseSchema(removePartyResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:update")
   remove(@Param("partyId") partyId: string, @CurrentUser() u: CurrentUserContext) {
@@ -117,6 +135,7 @@ export class PartiesController {
   }
 
   @Get(":partyId/tax-registrations")
+  @ResponseSchema(listPartyRegistrationsResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:read")
   listRegistrations(@Param("partyId") partyId: string, @CurrentUser() u: CurrentUserContext) {
@@ -124,6 +143,7 @@ export class PartiesController {
   }
 
   @Post(":partyId/tax-registrations")
+  @ResponseSchema(addPartyRegistrationResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:taxes:manage")
   @HttpCode(201)
@@ -136,6 +156,7 @@ export class PartiesController {
   }
 
   @Delete(":partyId/tax-registrations/:registrationId")
+  @ResponseSchema(removePartyRegistrationResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:taxes:manage")
   removeRegistration(

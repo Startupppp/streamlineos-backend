@@ -1,9 +1,10 @@
-import { BodylessAction } from "../../common/openapi/zod-operation-contracts";
+import { BodylessAction, ResponseSchema } from "../../common/openapi/zod-operation-contracts";
 import { Controller, Get, Headers, HttpCode, Post, Query } from "@nestjs/common";
 import { Public } from "../../common/auth/public.decorator";
 import { SignEnvelopeSweepsService } from "../e-sign/sign-envelope-sweeps.service";
 import { assertCronSecret } from "./cron-secret";
 import { CronLeaseService } from "./cron-lease.service";
+import { signSweepTickResponseSchema } from "./dto/cron-sign-response.schemas";
 
 /**
  * The scheduler entry point SignOS never had.
@@ -27,6 +28,7 @@ export class CronSignController {
   ) {}
 
   @Get("sign-reminder-sweep")
+  @ResponseSchema(signSweepTickResponseSchema)
   reminderGet(
     @Headers("authorization") authorization?: string,
     @Query("dryRun") dryRun?: string,
@@ -37,6 +39,7 @@ export class CronSignController {
   @Post("sign-reminder-sweep")
   @BodylessAction()
   @HttpCode(200)
+  @ResponseSchema(signSweepTickResponseSchema)
   reminderPost(
     @Headers("authorization") authorization?: string,
     @Query("dryRun") dryRun?: string,
@@ -45,6 +48,7 @@ export class CronSignController {
   }
 
   @Get("sign-expiration-sweep")
+  @ResponseSchema(signSweepTickResponseSchema)
   expirationGet(
     @Headers("authorization") authorization?: string,
     @Query("dryRun") dryRun?: string,
@@ -55,6 +59,7 @@ export class CronSignController {
   @Post("sign-expiration-sweep")
   @BodylessAction()
   @HttpCode(200)
+  @ResponseSchema(signSweepTickResponseSchema)
   expirationPost(
     @Headers("authorization") authorization?: string,
     @Query("dryRun") dryRun?: string,

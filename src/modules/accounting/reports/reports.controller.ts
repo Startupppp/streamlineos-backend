@@ -30,6 +30,16 @@ import {
   type TaxSummaryQueryDto,
   type TrialBalanceQueryDto,
 } from "./dto/reports.schemas";
+import { ApiOkResponse } from "@nestjs/swagger";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  agingReportResponseSchema,
+  balanceSheetReportResponseSchema,
+  cashFlowReportResponseSchema,
+  profitLossReportResponseSchema,
+  taxSummaryReportResponseSchema,
+  trialBalanceReportResponseSchema,
+} from "./dto/reports-response.schemas";
 
 /**
  * Financial statements. Read-only by construction — there is no POST here and
@@ -53,6 +63,7 @@ export class ReportsController {
   ) {}
 
   @Get("trial-balance")
+  @ResponseSchema(trialBalanceReportResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:reports:read")
   getTrialBalance(
@@ -63,6 +74,7 @@ export class ReportsController {
   }
 
   @Get("pnl")
+  @ResponseSchema(profitLossReportResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:reports:read")
   getProfitLoss(
@@ -73,6 +85,7 @@ export class ReportsController {
   }
 
   @Get("balance-sheet")
+  @ResponseSchema(balanceSheetReportResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:reports:read")
   getBalanceSheet(
@@ -83,6 +96,7 @@ export class ReportsController {
   }
 
   @Get("cash-flow")
+  @ResponseSchema(cashFlowReportResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:reports:read")
   getCashFlow(
@@ -93,6 +107,7 @@ export class ReportsController {
   }
 
   @Get("aging")
+  @ResponseSchema(agingReportResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:reports:read")
   getAging(
@@ -103,6 +118,7 @@ export class ReportsController {
   }
 
   @Get("tax-summary")
+  @ResponseSchema(taxSummaryReportResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:reports:read")
   getTaxSummary(
@@ -114,6 +130,10 @@ export class ReportsController {
 
   /** `GET /accounting/reports/export?report=trial-balance&asOf=…` → text/csv. */
   @Get("export")
+  @ApiOkResponse({
+    description: "The requested report as CSV.",
+    content: { "text/csv": { schema: { type: "string" } } },
+  })
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:reports:export")
   async export(

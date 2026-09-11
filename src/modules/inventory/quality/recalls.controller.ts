@@ -30,6 +30,7 @@ import {
   listRecallsResponseSchema,
   getRecallResponseSchema,
   createRecallResponseSchema,
+  simulateRecallResponseSchema,
 } from "./dto/quality-response.schemas";
 
 const recallIdParams = z.object({ recallId: z.coerce.number().int().positive() }).strict();
@@ -81,6 +82,7 @@ export class RecallsController {
    * instead.
    */
   @Post("simulate")
+  @ResponseSchema(simulateRecallResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:quality:read")
   @Validate({ body: simulateRecallSchema })

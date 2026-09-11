@@ -1,4 +1,4 @@
-import { BodylessAction } from "../../common/openapi/zod-operation-contracts";
+import { BodylessAction, ResponseSchema } from "../../common/openapi/zod-operation-contracts";
 import { Body, Controller, Get, Param, Post, Query, UseGuards } from "@nestjs/common";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../access/permission.guard";
@@ -15,6 +15,11 @@ import {
   type ListTriggersQuery,
   type SweepTriggersQuery,
 } from "./dto/triggers.schemas";
+import {
+  listLifecycleTriggersResponseSchema,
+  sweepLifecycleTriggersResponseSchema,
+  considerLifecycleTriggerResponseSchema,
+} from "./dto/triggers-response.schemas";
 
 /**
  * The door that starts a renewal sweep, and the log of what it did.
@@ -55,6 +60,7 @@ export class LifecycleTriggersController {
    */
   @Get()
   @RequirePermission("crm:lifecycle-triggers:view")
+  @ResponseSchema(listLifecycleTriggersResponseSchema)
   list(
     @Query(new ZodValidationPipe(listTriggersQuerySchema)) query: ListTriggersQuery,
     @CurrentUser() u: CurrentUserContext,
@@ -74,6 +80,7 @@ export class LifecycleTriggersController {
   @Post("sweep")
   @Idempotent("crm.lifecycle.trigger-sweep")
   @RequirePermission("crm:lifecycle-triggers:run")
+  @ResponseSchema(sweepLifecycleTriggersResponseSchema)
   sweep(
     @Body(new ZodValidationPipe(sweepTriggersSchema)) body: SweepTriggersQuery,
     @CurrentUser() u: CurrentUserContext,
@@ -93,6 +100,7 @@ export class LifecycleTriggersController {
   @BodylessAction()
   @Idempotent("crm.lifecycle.trigger-consider")
   @RequirePermission("crm:lifecycle-triggers:run")
+  @ResponseSchema(considerLifecycleTriggerResponseSchema)
   consider(
     @Param("customerLifecycleId") customerLifecycleId: string,
     @CurrentUser() u: CurrentUserContext,

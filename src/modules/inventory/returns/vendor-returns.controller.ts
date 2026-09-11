@@ -80,6 +80,7 @@ export class VendorReturnsController {
 
   /** B9, item 1. The sign-off before the goods leave. See the customer half. */
   @Post(":returnId/approve")
+  @ResponseSchema(getVendorReturnResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:vendor-returns:manage")
   @Idempotent("inventory.vendor-return.approve")

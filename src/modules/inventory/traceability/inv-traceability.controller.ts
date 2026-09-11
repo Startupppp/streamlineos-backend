@@ -1,5 +1,6 @@
 import { Controller, Get, Patch, Param, ParseIntPipe, Query, Body, Res, UseGuards } from "@nestjs/common";
 import type { Response } from "express";
+import { ApiOkResponse } from "@nestjs/swagger";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
@@ -40,6 +41,8 @@ import {
   getSerialDetailResponseSchema,
   expiryReportResponseSchema,
   traceabilityChainResponseSchema,
+  genealogyGraphResponseSchema,
+  listAllocationOverridesResponseSchema,
 } from "./dto/traceability-response.schemas";
 import { z } from "zod";
 
@@ -147,6 +150,7 @@ export class InvTraceabilityController {
    * carries the caps it was walked under and says whether they cut it short.
    */
   @Get("traceability/genealogy")
+  @ResponseSchema(genealogyGraphResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:read")
   async getGenealogy(
@@ -166,6 +170,7 @@ export class InvTraceabilityController {
    * Gated on the audit key all the same — it is the trail, not stock data.
    */
   @Get("traceability/allocation-overrides")
+  @ResponseSchema(listAllocationOverridesResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:audit:read")
   async listAllocationOverrides(
@@ -176,6 +181,10 @@ export class InvTraceabilityController {
   }
 
   @Get("traceability/genealogy/export")
+  @ApiOkResponse({
+    description: "CSV export of the genealogy graph",
+    content: { "text/csv": { schema: { type: "string" } } },
+  })
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:export")
   async exportGenealogy(

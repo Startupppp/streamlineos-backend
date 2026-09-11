@@ -22,6 +22,12 @@ import {
   type CreateScheduleInput,
   type UpdateScheduleInput,
 } from "./dto/reporting.schemas";
+import { ResponseSchema } from "../../common/openapi/zod-operation-contracts";
+import {
+  listReportSchedulesResponseSchema,
+  reportScheduleResponseSchema,
+  deleteReportScheduleResponseSchema,
+} from "./dto/reporting-response.schemas";
 
 /**
  * Reports that arrive without anybody asking.
@@ -53,12 +59,14 @@ export class ReportSchedulesController {
 
   @Get()
   @RequirePermission("crm:reporting:view")
+  @ResponseSchema(listReportSchedulesResponseSchema)
   list(@CurrentUser() u: CurrentUserContext) {
     return this.schedules.list(u.orgId);
   }
 
   @Get(":reportScheduleId")
   @RequirePermission("crm:reporting:view")
+  @ResponseSchema(reportScheduleResponseSchema)
   get(
     @Param("reportScheduleId") reportScheduleId: string,
     @CurrentUser() u: CurrentUserContext,
@@ -68,6 +76,7 @@ export class ReportSchedulesController {
 
   @Post()
   @RequirePermission("crm:reporting:manage")
+  @ResponseSchema(reportScheduleResponseSchema)
   create(
     @Body(new ZodValidationPipe(createScheduleSchema)) body: CreateScheduleInput,
     @CurrentUser() u: CurrentUserContext,
@@ -77,6 +86,7 @@ export class ReportSchedulesController {
 
   @Patch(":reportScheduleId")
   @RequirePermission("crm:reporting:manage")
+  @ResponseSchema(reportScheduleResponseSchema)
   update(
     @Param("reportScheduleId") reportScheduleId: string,
     @Body(new ZodValidationPipe(updateScheduleSchema)) body: UpdateScheduleInput,
@@ -87,6 +97,7 @@ export class ReportSchedulesController {
 
   @Delete(":reportScheduleId")
   @RequirePermission("crm:reporting:manage")
+  @ResponseSchema(deleteReportScheduleResponseSchema)
   remove(
     @Param("reportScheduleId") reportScheduleId: string,
     @CurrentUser() u: CurrentUserContext,

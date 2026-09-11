@@ -9,6 +9,8 @@ import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { InvAuditEventsService } from "./inv-audit-events.service";
 import { listAuditEventsSchema, type ListAuditEventsInput } from "./dto/inv-audit-events.schemas";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { listAuditEventsResponseSchema } from "./dto/inv-audit-events-response.schemas";
 
 @RequireModule("inventory")
 @Controller("inventory/audit-events")
@@ -17,6 +19,7 @@ export class InvAuditEventsController {
   constructor(private readonly auditEvents: InvAuditEventsService) {}
 
   @Get()
+  @ResponseSchema(listAuditEventsResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:audit:read")
   list(

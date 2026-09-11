@@ -43,6 +43,7 @@ import {
   campaignRoiSchema,
   campaignLeadsSchema,
   campaignAttributionSchema,
+  campaignAttributionByModelSchema,
 } from "./dto/crm-campaigns-response.schemas";
 
 const campaignIdParams = z.object({ campaignId: z.coerce.number().int().positive() }).strict();
@@ -105,6 +106,7 @@ export class CrmCampaignsController {
    */
   @Get("attribution/by-model")
   @RequirePermission("crm:reports:view")
+  @ResponseSchema(campaignAttributionByModelSchema)
   byModel(
     @Query(new ZodValidationPipe(attributionReportQuerySchema))
     query: AttributionReportQuery,

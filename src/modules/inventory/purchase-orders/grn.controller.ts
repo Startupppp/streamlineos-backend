@@ -60,6 +60,7 @@ export class GrnController {
   }
 
   @Post()
+  @ResponseSchema(getGrnResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:purchase-orders:receive")
   @HttpCode(HttpStatus.CREATED)
@@ -73,6 +74,7 @@ export class GrnController {
   }
 
   @Patch(":grnId")
+  @ResponseSchema(getGrnResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:purchase-orders:receive")
   @Validate({ params: grnIdParams, body: updateGrnDraftSchema })
@@ -85,6 +87,7 @@ export class GrnController {
   }
 
   @Post(":grnId/count")
+  @ResponseSchema(getGrnResponseSchema)
   @BodylessAction()
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:purchase-orders:receive")
@@ -99,6 +102,7 @@ export class GrnController {
   }
 
   @Post(":grnId/quality-review")
+  @ResponseSchema(getGrnResponseSchema)
   @BodylessAction()
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:purchase-orders:receive")
@@ -113,6 +117,7 @@ export class GrnController {
   }
 
   @Post(":grnId/post")
+  @ResponseSchema(getGrnResponseSchema)
   @BodylessAction()
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:purchase-orders:receive")
@@ -127,6 +132,7 @@ export class GrnController {
   }
 
   @Post(":grnId/cancel")
+  @ResponseSchema(getGrnResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:purchase-orders:receive")
   @Idempotent("inventory.grn.cancel")

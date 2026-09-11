@@ -18,6 +18,14 @@ import {
   type UnreconciledQuery,
   type ExplainLineBody,
 } from "./dto/banking.schemas";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  explainStatementLineResponseSchema,
+  matchStatementLineResponseSchema,
+  matchSuggestionsResponseSchema,
+  unmatchStatementLineResponseSchema,
+  unreconciledResponseSchema,
+} from "./dto/banking-response.schemas";
 
 @RequireModule("accounting")
 @Controller("accounting/banking")
@@ -27,6 +35,7 @@ export class BankMatchingController {
 
   /** Rules-only candidates, each carrying the reasons it scored what it did. */
   @Get("statement-lines/:statementLineId/suggestions")
+  @ResponseSchema(matchSuggestionsResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:banking:reconcile")
   suggest(
@@ -38,6 +47,7 @@ export class BankMatchingController {
   }
 
   @Post("statement-lines/:statementLineId/match")
+  @ResponseSchema(matchStatementLineResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:banking:reconcile")
   @HttpCode(201)
@@ -55,6 +65,7 @@ export class BankMatchingController {
    * payment to match against, and the second step is the one people skip.
    */
   @Post("statement-lines/:statementLineId/explain")
+  @ResponseSchema(explainStatementLineResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:banking:reconcile")
   @HttpCode(201)
@@ -67,6 +78,7 @@ export class BankMatchingController {
   }
 
   @Delete("statement-lines/:statementLineId/match")
+  @ResponseSchema(unmatchStatementLineResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:banking:reconcile")
   @HttpCode(200)
@@ -76,6 +88,7 @@ export class BankMatchingController {
 
   /** Both halves of the difference: the bank's unexplained, and the books'. */
   @Get("unreconciled")
+  @ResponseSchema(unreconciledResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:banking:read")
   unreconciled(

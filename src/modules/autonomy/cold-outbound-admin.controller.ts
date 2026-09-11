@@ -1,4 +1,4 @@
-import { BodylessAction } from "../../common/openapi/zod-operation-contracts";
+import { BodylessAction, ResponseSchema } from "../../common/openapi/zod-operation-contracts";
 import { Body, Controller, Get, Param, Post, UseGuards } from "@nestjs/common";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../access/permission.guard";
@@ -14,6 +14,14 @@ import {
   type RegisterSendingDomainInput,
   type SetColdTrackInput,
 } from "./dto/cold-outbound.schemas";
+import {
+  coldOutboundOverviewResponseSchema,
+  registerSendingDomainResponseSchema,
+  verifySendingDomainResponseSchema,
+  startWarmupResponseSchema,
+  setColdTrackResponseSchema,
+  resumeColdTrackResponseSchema,
+} from "./dto/cold-outbound-response.schemas";
 
 /**
  * The switches `evaluateColdGate` reads, which until now nothing could reach.
@@ -42,6 +50,7 @@ export class ColdOutboundAdminController {
 
   @Get()
   @RequirePermission("crm:autonomy:manage")
+  @ResponseSchema(coldOutboundOverviewResponseSchema)
   overview(@CurrentUser() u: CurrentUserContext) {
     return this.cold.overview(u.orgId);
   }
@@ -53,6 +62,7 @@ export class ColdOutboundAdminController {
   @Post("domains")
   @Idempotent("crm.autonomy.cold-domain-register")
   @RequirePermission("crm:autonomy:manage")
+  @ResponseSchema(registerSendingDomainResponseSchema)
   registerDomain(
     @Body(new ZodValidationPipe(registerSendingDomainSchema)) body: RegisterSendingDomainInput,
     @CurrentUser() u: CurrentUserContext,
@@ -69,6 +79,7 @@ export class ColdOutboundAdminController {
   @Post("domains/:sendingDomainId/verify")
   @BodylessAction()
   @RequirePermission("crm:autonomy:manage")
+  @ResponseSchema(verifySendingDomainResponseSchema)
   verifyDomain(
     @Param("sendingDomainId") sendingDomainId: string,
     @CurrentUser() u: CurrentUserContext,
@@ -80,6 +91,7 @@ export class ColdOutboundAdminController {
   @BodylessAction()
   @Idempotent("crm.autonomy.cold-domain-warmup")
   @RequirePermission("crm:autonomy:manage")
+  @ResponseSchema(startWarmupResponseSchema)
   startWarmup(
     @Param("sendingDomainId") sendingDomainId: string,
     @CurrentUser() u: CurrentUserContext,
@@ -91,6 +103,7 @@ export class ColdOutboundAdminController {
   @Post("track")
   @Idempotent("crm.autonomy.cold-track-set")
   @RequirePermission("crm:autonomy:manage")
+  @ResponseSchema(setColdTrackResponseSchema)
   setTrack(
     @Body(new ZodValidationPipe(setColdTrackSchema)) body: SetColdTrackInput,
     @CurrentUser() u: CurrentUserContext,
@@ -109,6 +122,7 @@ export class ColdOutboundAdminController {
   @BodylessAction()
   @Idempotent("crm.autonomy.cold-track-resume")
   @RequirePermission("crm:autonomy:manage")
+  @ResponseSchema(resumeColdTrackResponseSchema)
   resume(@CurrentUser() u: CurrentUserContext) {
     return this.cold.resume(u.orgId, u.userId);
   }

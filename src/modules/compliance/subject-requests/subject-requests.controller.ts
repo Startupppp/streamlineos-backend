@@ -11,6 +11,11 @@ import {
   type ExecuteSubjectRequestInput,
   type ListSubjectRequestsQuery,
 } from "../dto/subject-request.schemas";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  listSubjectRequestsResponseSchema,
+  executeSubjectRequestResponseSchema,
+} from "../dto/compliance-response.schemas";
 
 /**
  * Running a data subject's request, and reading the record of one.
@@ -38,6 +43,7 @@ export class SubjectRequestsController {
   @UseGuards(PermissionGuard)
   @RequirePermission("compliance:subject-requests:view")
   @Validate({ query: listSubjectRequestsQuerySchema })
+  @ResponseSchema(listSubjectRequestsResponseSchema)
   async list(@Query() query: ListSubjectRequestsQuery) {
     return { data: await this.subjectRequests.list(query.subjectEmail) };
   }
@@ -53,6 +59,7 @@ export class SubjectRequestsController {
   @UseGuards(PermissionGuard)
   @RequirePermission("compliance:subject-requests:execute")
   @Validate({ body: executeSubjectRequestSchema })
+  @ResponseSchema(executeSubjectRequestResponseSchema)
   async execute(
     @CurrentUser() user: CurrentUserContext,
     @Body() body: ExecuteSubjectRequestInput,

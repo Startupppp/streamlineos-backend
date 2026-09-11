@@ -11,6 +11,15 @@ import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { enableAccountingSchema, type EnableAccountingInputDto } from "../kernel/dto/kernel.schemas";
 import { AccountingSetupService } from "./accounting-setup.service";
 import { OpeningBalancesService } from "./opening-balances.service";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { postedJournalResponseSchema } from "../kernel/dto/kernel-response.schemas";
+import {
+  addTaxRegistrationResponseSchema,
+  listTaxRegistrationsResponseSchema,
+  openingBalancesPreviewResponseSchema,
+  setupEnableResponseSchema,
+  setupStatusResponseSchema,
+} from "./dto/accounting-setup-response.schemas";
 
 const taxRegistrationSchema = z
   .object({
@@ -59,6 +68,7 @@ export class AccountingSetupController {
   ) {}
 
   @Get("status")
+  @ResponseSchema(setupStatusResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:settings:read")
   status(@CurrentUser() u: CurrentUserContext) {
@@ -66,6 +76,7 @@ export class AccountingSetupController {
   }
 
   @Post("enable")
+  @ResponseSchema(setupEnableResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:settings:manage")
   enable(
@@ -76,6 +87,7 @@ export class AccountingSetupController {
   }
 
   @Get("tax-registrations")
+  @ResponseSchema(listTaxRegistrationsResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:settings:read")
   listTaxRegistrations(@CurrentUser() u: CurrentUserContext) {
@@ -83,6 +95,7 @@ export class AccountingSetupController {
   }
 
   @Post("tax-registrations")
+  @ResponseSchema(addTaxRegistrationResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:settings:manage")
   addTaxRegistration(
@@ -94,6 +107,7 @@ export class AccountingSetupController {
 
   /** Shows what the equity plug will absorb before anything is written. */
   @Post("opening-balances/preview")
+  @ResponseSchema(openingBalancesPreviewResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:settings:read")
   previewOpeningBalances(
@@ -104,6 +118,7 @@ export class AccountingSetupController {
   }
 
   @Post("opening-balances")
+  @ResponseSchema(postedJournalResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:journal:post")
   postOpeningBalances(

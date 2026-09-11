@@ -33,6 +33,16 @@ import {
   type ReplaceNurtureStepsInput,
   type UpdateNurtureSequenceInput,
 } from "./dto/nurture.schemas";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  listNurtureSequencesResponseSchema,
+  nurtureSequenceResponseSchema,
+  getNurtureSequenceResponseSchema,
+  removeNurtureSequenceResponseSchema,
+  replaceNurtureStepsResponseSchema,
+  listNurtureEnrollmentsResponseSchema,
+  nurtureEnrollmentResponseSchema,
+} from "./dto/nurture-response.schemas";
 
 /**
  * Authoring a cadence, and putting a customer into one.
@@ -65,6 +75,7 @@ export class NurtureSequencesController {
 
   @Get("sequences")
   @RequirePermission("crm:autonomy:view")
+  @ResponseSchema(listNurtureSequencesResponseSchema)
   list(
     @Query(new ZodValidationPipe(listNurtureSequencesQuerySchema)) query: ListNurtureSequencesQuery,
     @CurrentUser() u: CurrentUserContext,
@@ -76,6 +87,7 @@ export class NurtureSequencesController {
   @HttpCode(201)
   @Idempotent("crm.autonomy.nurture-sequence-create")
   @RequirePermission("crm:autonomy:manage")
+  @ResponseSchema(nurtureSequenceResponseSchema)
   create(
     @Body(new ZodValidationPipe(createNurtureSequenceSchema)) body: CreateNurtureSequenceInput,
     @CurrentUser() u: CurrentUserContext,
@@ -85,6 +97,7 @@ export class NurtureSequencesController {
 
   @Get("sequences/:nurtureSequenceId")
   @RequirePermission("crm:autonomy:view")
+  @ResponseSchema(getNurtureSequenceResponseSchema)
   getOne(
     @Param("nurtureSequenceId") nurtureSequenceId: string,
     @CurrentUser() u: CurrentUserContext,
@@ -95,6 +108,7 @@ export class NurtureSequencesController {
   @Patch("sequences/:nurtureSequenceId")
   @Idempotent("crm.autonomy.nurture-sequence-update")
   @RequirePermission("crm:autonomy:manage")
+  @ResponseSchema(nurtureSequenceResponseSchema)
   update(
     @Param("nurtureSequenceId") nurtureSequenceId: string,
     @Body(new ZodValidationPipe(updateNurtureSequenceSchema)) body: UpdateNurtureSequenceInput,
@@ -105,6 +119,7 @@ export class NurtureSequencesController {
 
   @Delete("sequences/:nurtureSequenceId")
   @RequirePermission("crm:autonomy:manage")
+  @ResponseSchema(removeNurtureSequenceResponseSchema)
   remove(
     @Param("nurtureSequenceId") nurtureSequenceId: string,
     @CurrentUser() u: CurrentUserContext,
@@ -120,6 +135,7 @@ export class NurtureSequencesController {
   @Put("sequences/:nurtureSequenceId/steps")
   @Idempotent("crm.autonomy.nurture-steps-replace")
   @RequirePermission("crm:autonomy:manage")
+  @ResponseSchema(replaceNurtureStepsResponseSchema)
   replaceSteps(
     @Param("nurtureSequenceId") nurtureSequenceId: string,
     @Body(new ZodValidationPipe(replaceNurtureStepsSchema)) body: ReplaceNurtureStepsInput,
@@ -130,6 +146,7 @@ export class NurtureSequencesController {
 
   @Get("sequences/:nurtureSequenceId/enrollments")
   @RequirePermission("crm:autonomy:view")
+  @ResponseSchema(listNurtureEnrollmentsResponseSchema)
   listEnrollments(
     @Param("nurtureSequenceId") nurtureSequenceId: string,
     @Query(new ZodValidationPipe(listNurtureEnrollmentsQuerySchema))
@@ -151,6 +168,7 @@ export class NurtureSequencesController {
   @HttpCode(201)
   @Idempotent("crm.autonomy.nurture-enrol")
   @RequirePermission("crm:autonomy:manage")
+  @ResponseSchema(nurtureEnrollmentResponseSchema)
   enrol(
     @Param("nurtureSequenceId") nurtureSequenceId: string,
     @Body(new ZodValidationPipe(enrolInNurtureSequenceSchema)) body: EnrolInNurtureSequenceInput,
@@ -161,6 +179,7 @@ export class NurtureSequencesController {
 
   @Delete("sequences/:nurtureSequenceId/enrollments/:nurtureEnrollmentId")
   @RequirePermission("crm:autonomy:manage")
+  @ResponseSchema(nurtureEnrollmentResponseSchema)
   unenrol(
     @Param("nurtureSequenceId") nurtureSequenceId: string,
     @Param("nurtureEnrollmentId") nurtureEnrollmentId: string,

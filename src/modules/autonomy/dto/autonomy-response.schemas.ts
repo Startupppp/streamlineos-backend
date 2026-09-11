@@ -173,3 +173,127 @@ export const autonomySettingsResponseSchema = z.object({
   holdWindowSeconds: z.number().int(),
   autoQuoteEnabled: z.boolean(),
 });
+
+/** `lib/hold-class-stops.ts` `liveOutboundClassStops` — the live stops, projected. */
+export const liveClassStopsResponseSchema = z.array(
+  z.object({
+    outboundClassStopId: z.string(),
+    partyId: z.string(),
+    outboundClass: z.string(),
+    outboundMessageId: z.string().nullable(),
+    reason: z.string().nullable(),
+    stoppedByUserId: z.string().nullable(),
+    stoppedAt: wireDate(),
+  }),
+);
+
+/** `lib/hold-class-stops.ts` `releaseOutboundClassStop`; anything else throws. */
+export const releaseClassStopResponseSchema = z.object({ released: z.literal(true) });
+
+/**
+ * `autonomy-repair.service.ts` `policiesFor`, which `setPolicy` also returns.
+ *
+ * `classes` is `effectiveRepairPolicy` spread over `REPAIR_CLASS_DEFINITIONS`,
+ * so each entry carries the whole definition as well as the tenant's answer.
+ */
+export const repairPoliciesResponseSchema = z.object({
+  autonomy: z.object({
+    allowed: z.boolean(),
+    decidedBy: z.enum(["platform-all", "platform-kind", "org-all", "org-kind", "default"]),
+    reason: z.string().nullable(),
+  }),
+  classes: z.array(
+    z.object({
+      repairClass: z.string(),
+      findingKind: z.string(),
+      field: z.enum(["email", "phone"]),
+      conservative: z.boolean(),
+      reversibility: z.string(),
+      description: z.string(),
+      enabled: z.boolean(),
+      source: z.enum(["tenant", "default"]),
+      reason: z.string().nullable(),
+      effective: z.boolean(),
+    }),
+  ),
+});
+
+/** `autonomy-repair.service.ts` `runRepairs` — one `ClassOutcome` per class asked for. */
+export const runRepairsResponseSchema = z.object({
+  classes: z.array(
+    z.object({
+      repairClass: z.string(),
+      considered: z.number().int(),
+      repaired: z.number().int(),
+      refused: z.number().int(),
+      failed: z.number().int(),
+      autonomousDecisionId: z.string().nullable(),
+      outcome: z.enum(["applied", "skipped"]),
+      explanation: z.string().nullable(),
+    }),
+  ),
+  repaired: z.number().int(),
+  leftForAPerson: z.number().int(),
+});
+
+/** `lib/repair-reads.ts` `listRepairsPage` — a cursor page of joined repair rows. */
+export const listRepairsResponseSchema = cursorPageSchema(
+  z.object({
+    autonomyRepairId: z.string(),
+    autonomousDecisionId: z.string(),
+    repairClass: z.string(),
+    findingId: z.string().nullable(),
+    partyId: z.string(),
+    field: z.string(),
+    previousValue: z.string().nullable(),
+    repairedValue: z.string().nullable(),
+    appliedAt: wireDate(),
+    revertedAt: nullableWireDate(),
+    revertedByUserId: z.string().nullable(),
+    revertedReason: z.string().nullable(),
+    /** Left-joined from `business_parties`, so null when the party is gone. */
+    partyName: z.string().nullable(),
+  }),
+);
+
+/** `lib/repair-revert.ts` `revertOneRepair`; a refusal throws rather than returns. */
+export const revertRepairResponseSchema = z.object({
+  reverted: z.literal(true),
+  partyId: z.string(),
+  field: z.string(),
+});
+
+/** `lib/repair-reads.ts` `measureRepairLoop` — the loop against the human queue. */
+export const repairMeasureResponseSchema = z.object({
+  windowDays: z.number().int(),
+  resolution: z.object({
+    automated: z.number().int(),
+    manual: z.number().int(),
+    unattributed: z.number().int(),
+    /** Null over an empty window: no evidence, not "no automation". */
+    automatedShare: z.number().nullable(),
+  }),
+  repairs: z.object({
+    byClass: z.array(
+      z.object({
+        repairClass: z.string(),
+        applied: z.number().int(),
+        reverted: z.number().int(),
+      }),
+    ),
+    applied: z.number().int(),
+    reverted: z.number().int(),
+  }),
+  remaining: z.object({
+    total: z.number().int(),
+    weighted: z.number(),
+    byProducer: z.array(
+      z.object({
+        producer: z.string(),
+        count: z.number().int(),
+        weight: z.number(),
+      }),
+    ),
+    oldestOpenAgeDays: z.number().int().nullable(),
+  }),
+});

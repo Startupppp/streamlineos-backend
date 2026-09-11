@@ -24,6 +24,12 @@ import {
   type ListAnomaliesInput,
   type ReviewAnomalyInput,
 } from "./dto/inv-anomaly.schemas";
+import { ResponseSchema } from "../../../../common/openapi/zod-operation-contracts";
+import {
+  listAnomaliesResponseSchema,
+  listAnomalyDetectorsResponseSchema,
+  reviewAnomalyResponseSchema,
+} from "./dto/inv-anomaly-response.schemas";
 
 /**
  * F3 — the anomaly queue's routes.
@@ -50,6 +56,7 @@ export class InvAnomalyController {
    * because the vocabulary of an organisation's alerting is not public.
    */
   @Get("detectors")
+  @ResponseSchema(listAnomalyDetectorsResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:ai:read")
   listDetectors() {
@@ -59,6 +66,7 @@ export class InvAnomalyController {
   }
 
   @Get()
+  @ResponseSchema(listAnomaliesResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:ai:read")
   list(
@@ -69,6 +77,7 @@ export class InvAnomalyController {
   }
 
   @Patch(":insightId/review")
+  @ResponseSchema(reviewAnomalyResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:ai:manage")
   review(

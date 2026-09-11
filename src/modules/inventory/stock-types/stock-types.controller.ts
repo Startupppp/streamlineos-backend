@@ -11,6 +11,11 @@ import { IdempotencyKey } from "../../../common/idempotency/idempotency-key.deco
 import { OwnershipService } from "./ownership.service";
 import { convertOwnershipSchema, listConsignedQuerySchema } from "./dto/stock-types.schemas";
 import type { ConvertOwnershipInput, ListConsignedQuery } from "./dto/stock-types.schemas";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  listConsignedResponseSchema,
+  convertOwnershipResponseSchema,
+} from "./dto/stock-types-response.schemas";
 
 /**
  * NEO-11 - consignment.
@@ -29,6 +34,7 @@ export class OwnershipController {
   @Get("consigned")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:read")
+  @ResponseSchema(listConsignedResponseSchema)
   listConsigned(
     @Query(new ZodValidationPipe(listConsignedQuerySchema)) query: ListConsignedQuery,
     @CurrentUser() u: CurrentUserContext,
@@ -39,6 +45,7 @@ export class OwnershipController {
   @Post("convert")
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:adjust")
+  @ResponseSchema(convertOwnershipResponseSchema)
   convert(
     @Body(new ZodValidationPipe(convertOwnershipSchema)) body: ConvertOwnershipInput,
     @IdempotencyKey() idempotencyKey: string,

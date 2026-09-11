@@ -7,6 +7,8 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { ModuleGuard } from "../../../common/rbac/module.guard";
 import { InventoryMetricsService } from "./inventory-metrics.service";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { inventoryMetricsResponseSchema } from "./dto/inv-metrics-response.schemas";
 
 /**
  * G6 — one operator surface for PRD §9.
@@ -26,6 +28,7 @@ export class InvMetricsController {
   constructor(private readonly svc: InventoryMetricsService) {}
 
   @Get()
+  @ResponseSchema(inventoryMetricsResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:settings:manage")
   snapshot(@CurrentUser() u: CurrentUserContext) {

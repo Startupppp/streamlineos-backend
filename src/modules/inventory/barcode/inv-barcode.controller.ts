@@ -16,7 +16,11 @@ import {
 } from "./dto/inv-barcode.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
-import { barcodeLookupResponseSchema } from "./dto/barcode-response.schemas";
+import {
+  barcodeCaptureScanResponseSchema,
+  barcodeLookupResponseSchema,
+  barcodeScanResponseSchema,
+} from "./dto/barcode-response.schemas";
 
 @RequireModule("inventory")
 @Controller("inventory/barcode")
@@ -45,6 +49,7 @@ export class InvBarcodeController {
    * Read-only: it resolves and reports, and posts no stock.
    */
   @Post("scan")
+  @ResponseSchema(barcodeScanResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:read")
   @Validate({ body: barcodeScanSchema })
@@ -62,6 +67,7 @@ export class InvBarcodeController {
    * as surely as none would.
    */
   @Post("scan/capture")
+  @ResponseSchema(barcodeCaptureScanResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:read")
   @Validate({ body: barcodeScanSchema })

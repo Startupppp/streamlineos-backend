@@ -26,6 +26,12 @@ import {
   crmTasksOverdueFlushResponseSchema,
   buildRetentionPruneResponseSchema,
   buildDailySnapshotsResponseSchema,
+  crmLifecycleTriggersSweepResponseSchema,
+  crmSilenceSweepResponseSchema,
+  crmNurtureStepsResponseSchema,
+  crmReportSchedulesResponseSchema,
+  crmDealForecastResponseSchema,
+  crmFieldRepairsResponseSchema,
 } from "./dto/cron-build-response.schemas";
 import { BodylessAction, ResponseSchema } from "../../common/openapi/zod-operation-contracts";
 
@@ -75,6 +81,7 @@ export class CronBuildController {
   }
 
   @Get("crm-lifecycle-triggers-sweep")
+  @ResponseSchema(crmLifecycleTriggersSweepResponseSchema)
   getCrmLifecycleTriggersSweep(@Headers("authorization") authorization?: string) {
     return this.runCrmLifecycleTriggersSweep(authorization);
   }
@@ -82,11 +89,13 @@ export class CronBuildController {
   @Post("crm-lifecycle-triggers-sweep")
   @BodylessAction()
   @HttpCode(200)
+  @ResponseSchema(crmLifecycleTriggersSweepResponseSchema)
   postCrmLifecycleTriggersSweep(@Headers("authorization") authorization?: string) {
     return this.runCrmLifecycleTriggersSweep(authorization);
   }
 
   @Get("crm-silence-sweep")
+  @ResponseSchema(crmSilenceSweepResponseSchema)
   getCrmSilenceSweep(@Headers("authorization") authorization?: string) {
     return this.runCrmSilenceSweep(authorization);
   }
@@ -94,11 +103,13 @@ export class CronBuildController {
   @Post("crm-silence-sweep")
   @BodylessAction()
   @HttpCode(200)
+  @ResponseSchema(crmSilenceSweepResponseSchema)
   postCrmSilenceSweep(@Headers("authorization") authorization?: string) {
     return this.runCrmSilenceSweep(authorization);
   }
 
   @Get("crm-nurture-steps")
+  @ResponseSchema(crmNurtureStepsResponseSchema)
   getCrmNurtureSteps(@Headers("authorization") authorization?: string) {
     return this.runCrmNurtureSteps(authorization);
   }
@@ -106,11 +117,13 @@ export class CronBuildController {
   @Post("crm-nurture-steps")
   @BodylessAction()
   @HttpCode(200)
+  @ResponseSchema(crmNurtureStepsResponseSchema)
   postCrmNurtureSteps(@Headers("authorization") authorization?: string) {
     return this.runCrmNurtureSteps(authorization);
   }
 
   @Get("crm-report-schedules")
+  @ResponseSchema(crmReportSchedulesResponseSchema)
   getCrmReportSchedules(@Headers("authorization") authorization?: string) {
     return this.runCrmReportSchedules(authorization);
   }
@@ -118,11 +131,13 @@ export class CronBuildController {
   @Post("crm-report-schedules")
   @BodylessAction()
   @HttpCode(200)
+  @ResponseSchema(crmReportSchedulesResponseSchema)
   postCrmReportSchedules(@Headers("authorization") authorization?: string) {
     return this.runCrmReportSchedules(authorization);
   }
 
   @Get("crm-deal-forecast")
+  @ResponseSchema(crmDealForecastResponseSchema)
   getCrmDealForecast(@Headers("authorization") authorization?: string) {
     return this.runCrmDealForecast(authorization);
   }
@@ -130,11 +145,13 @@ export class CronBuildController {
   @Post("crm-deal-forecast")
   @BodylessAction()
   @HttpCode(200)
+  @ResponseSchema(crmDealForecastResponseSchema)
   postCrmDealForecast(@Headers("authorization") authorization?: string) {
     return this.runCrmDealForecast(authorization);
   }
 
   @Get("crm-field-repairs")
+  @ResponseSchema(crmFieldRepairsResponseSchema)
   getCrmFieldRepairs(@Headers("authorization") authorization?: string) {
     return this.runCrmFieldRepairs(authorization);
   }
@@ -142,6 +159,7 @@ export class CronBuildController {
   @Post("crm-field-repairs")
   @BodylessAction()
   @HttpCode(200)
+  @ResponseSchema(crmFieldRepairsResponseSchema)
   postCrmFieldRepairs(@Headers("authorization") authorization?: string) {
     return this.runCrmFieldRepairs(authorization);
   }

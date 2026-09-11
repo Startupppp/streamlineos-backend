@@ -29,6 +29,11 @@ import {
   listLocationsResponseSchema,
   invLocationSchema,
   getWarehouseStockResponseSchema,
+  suggestPutawayResponseSchema,
+  listWarehouseUsersResponseSchema,
+  listAssignableUsersResponseSchema,
+  grantWarehouseUserResponseSchema,
+  revokeWarehouseUserResponseSchema,
 } from "./dto/warehouses-response.schemas";
 
 const warehouseIdParams = z.object({ warehouseId: z.coerce.number().int().positive() }).strict();
@@ -49,6 +54,7 @@ export class InvWarehousesController {
    * refuses a putaway that does not. A suggestion is not an authorisation.
    */
   @Get("putaway/suggestions")
+  @ResponseSchema(suggestPutawayResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:read")
   suggestPutaway(
@@ -84,6 +90,7 @@ export class InvWarehousesController {
    * administrative act, so it sits on the same key as changing it.
    */
   @Get(":warehouseId/users")
+  @ResponseSchema(listWarehouseUsersResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:warehouses:manage")
   listAssignedUsers(
@@ -95,6 +102,7 @@ export class InvWarehousesController {
   }
 
   @Get(":warehouseId/assignable-users")
+  @ResponseSchema(listAssignableUsersResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:warehouses:manage")
   listAssignableUsers(
@@ -106,6 +114,7 @@ export class InvWarehousesController {
   }
 
   @Post(":warehouseId/users")
+  @ResponseSchema(grantWarehouseUserResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:warehouses:manage")
   grantWarehouseUser(
@@ -117,6 +126,7 @@ export class InvWarehousesController {
   }
 
   @Delete(":warehouseId/users/:assigneeUserId")
+  @ResponseSchema(revokeWarehouseUserResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:warehouses:manage")
   revokeWarehouseUser(

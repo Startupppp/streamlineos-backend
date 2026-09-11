@@ -13,6 +13,9 @@ import {
   variantLabelQuerySchema,
   type VariantLabelQueryInput,
 } from "./dto/inv-labels.schemas";
+import { ApiOkResponse } from "@nestjs/swagger";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { variantLabelResponseSchema } from "./dto/inv-labels-response.schemas";
 
 /**
  * G4 — labels and printable warehouse documents.
@@ -45,6 +48,7 @@ export class InvLabelsController {
    * the symbology and the label stock are decisions made at the printer.
    */
   @Get("variants/:productVariantId")
+  @ResponseSchema(variantLabelResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:labels:print")
   variantLabel(
@@ -56,6 +60,10 @@ export class InvLabelsController {
   }
 
   @Get("goods-receipts/:grnId/pdf")
+  @ApiOkResponse({
+    description: "Goods received note, as a PDF download",
+    content: { "application/pdf": { schema: { type: "string", format: "binary" } } },
+  })
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:labels:print")
   async grnNote(
@@ -70,6 +78,10 @@ export class InvLabelsController {
   }
 
   @Get("pick-lists/:pickListId/pdf")
+  @ApiOkResponse({
+    description: "Pick list, as a PDF download",
+    content: { "application/pdf": { schema: { type: "string", format: "binary" } } },
+  })
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:labels:print")
   async pickList(

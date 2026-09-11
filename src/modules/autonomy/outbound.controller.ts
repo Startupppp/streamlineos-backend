@@ -6,7 +6,9 @@ import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { Idempotent } from "../../common/idempotency/idempotent.decorator";
+import { ResponseSchema } from "../../common/openapi/zod-operation-contracts";
 import { composeOutboundSchema, type ComposeOutboundInput } from "./dto/outbound.schemas";
+import { composeOutboundResponseSchema } from "./dto/outbound-response.schemas";
 import { OutboundService } from "./outbound.service";
 
 /**
@@ -47,6 +49,7 @@ export class OutboundController {
   @Post()
   @Idempotent("crm.autonomy.outbound-compose")
   @RequirePermission("crm:autonomy:manage")
+  @ResponseSchema(composeOutboundResponseSchema)
   compose(
     @Body(new ZodValidationPipe(composeOutboundSchema)) body: ComposeOutboundInput,
     @CurrentUser() u: CurrentUserContext,

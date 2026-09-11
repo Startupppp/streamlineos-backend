@@ -25,6 +25,14 @@ import {
   type RotateWhatsappChannelInput,
   type UpdateWhatsappChannelInput,
 } from "../dto/whatsapp-channel.schemas";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  whatsappChannelListResponseSchema,
+  whatsappChannelCreateResponseSchema,
+  whatsappChannelRotateResponseSchema,
+  whatsappChannelEnabledResponseSchema,
+  whatsappChannelRemovedResponseSchema,
+} from "../dto/ingress-response.schemas";
 
 /**
  * Binding a WhatsApp business line to the CRM, and letting go of one.
@@ -49,6 +57,7 @@ export class WhatsAppChannelsController {
   /** Every line this organisation has bound, and what the last delivery came to. */
   @Get()
   @RequirePermission("crm:ingress:submit")
+  @ResponseSchema(whatsappChannelListResponseSchema)
   list(@CurrentUser() u: CurrentUserContext) {
     return this.channels.list(u.orgId);
   }
@@ -65,6 +74,7 @@ export class WhatsAppChannelsController {
   @Idempotent("crm.whatsapp-channel.create")
   @RequirePermission("crm:ingress:submit")
   @Validate({ body: createWhatsappChannelSchema })
+  @ResponseSchema(whatsappChannelCreateResponseSchema)
   create(@Body() body: CreateWhatsappChannelInput, @CurrentUser() u: CurrentUserContext) {
     return this.channels.create(u.orgId, body);
   }
@@ -80,6 +90,7 @@ export class WhatsAppChannelsController {
   @HttpCode(200)
   @RequirePermission("crm:ingress:submit")
   @Validate({ body: rotateWhatsappChannelSchema })
+  @ResponseSchema(whatsappChannelRotateResponseSchema)
   rotate(
     @Param("crmWhatsappChannelId") crmWhatsappChannelId: string,
     @Body() body: RotateWhatsappChannelInput,
@@ -92,6 +103,7 @@ export class WhatsAppChannelsController {
   @Patch(":crmWhatsappChannelId")
   @RequirePermission("crm:ingress:submit")
   @Validate({ body: updateWhatsappChannelSchema })
+  @ResponseSchema(whatsappChannelEnabledResponseSchema)
   setEnabled(
     @Param("crmWhatsappChannelId") crmWhatsappChannelId: string,
     @Body() body: UpdateWhatsappChannelInput,
@@ -103,6 +115,7 @@ export class WhatsAppChannelsController {
   /** Give the line up. Everything it filed stays — those are real records. */
   @Delete(":crmWhatsappChannelId")
   @RequirePermission("crm:ingress:submit")
+  @ResponseSchema(whatsappChannelRemovedResponseSchema)
   remove(
     @Param("crmWhatsappChannelId") crmWhatsappChannelId: string,
     @CurrentUser() u: CurrentUserContext,

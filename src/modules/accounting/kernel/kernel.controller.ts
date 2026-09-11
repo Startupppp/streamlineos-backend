@@ -1,4 +1,4 @@
-import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
+import { BodylessAction, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
 import {
   Body,
   Controller,
@@ -59,6 +59,34 @@ import {
   type UpdateAccountInputDto,
   type UpsertFxRateInputDto,
 } from "./dto/kernel.schemas";
+import {
+  accountLedgerResponseSchema,
+  archiveAccountResponseSchema,
+  createAccountResponseSchema,
+  enableAccountingResponseSchema,
+  enableCurrencyResponseSchema,
+  getAccountResponseSchema,
+  getBookResponseSchema,
+  listAccountMappingsResponseSchema,
+  listAccountsResponseSchema,
+  listBookCurrenciesResponseSchema,
+  listBooksResponseSchema,
+  listCurrenciesResponseSchema,
+  listFiscalYearsResponseSchema,
+  listFxRatesResponseSchema,
+  listPacksResponseSchema,
+  listPeriodsResponseSchema,
+  listPostableResponseSchema,
+  lockPeriodResponseSchema,
+  openNextFiscalYearResponseSchema,
+  postedJournalResponseSchema,
+  previewFxResponseSchema,
+  setSystemTagResponseSchema,
+  trialBalanceResponseSchema,
+  unlockPeriodResponseSchema,
+  updateAccountResponseSchema,
+  upsertFxRateResponseSchema,
+} from "./dto/kernel-response.schemas";
 
 /**
  * HTTP surface for the ledger kernel: books, chart of accounts, periods,
@@ -85,6 +113,7 @@ export class AccountingKernelController {
   /* ----------------------------------------------------------- books */
 
   @Get("packs")
+  @ResponseSchema(listPacksResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:settings:read")
   listPacks() {
@@ -100,6 +129,7 @@ export class AccountingKernelController {
   }
 
   @Post("enable")
+  @ResponseSchema(enableAccountingResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:settings:manage")
   enable(
@@ -110,6 +140,7 @@ export class AccountingKernelController {
   }
 
   @Get("book")
+  @ResponseSchema(getBookResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:read")
   getBook(@CurrentUser() u: CurrentUserContext) {
@@ -117,6 +148,7 @@ export class AccountingKernelController {
   }
 
   @Get("books")
+  @ResponseSchema(listBooksResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:read")
   listBooks(@CurrentUser() u: CurrentUserContext) {
@@ -126,6 +158,7 @@ export class AccountingKernelController {
   /* ------------------------------------------------ chart of accounts */
 
   @Get("accounts")
+  @ResponseSchema(listAccountsResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:accounts:read")
   async listAccounts(
@@ -137,6 +170,7 @@ export class AccountingKernelController {
   }
 
   @Get("accounts/postable")
+  @ResponseSchema(listPostableResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:accounts:read")
   async listPostable(@CurrentUser() u: CurrentUserContext) {
@@ -150,6 +184,7 @@ export class AccountingKernelController {
    * would otherwise read "mappings" as an account id.
    */
   @Get("accounts/mappings")
+  @ResponseSchema(listAccountMappingsResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:accounts:read")
   async listAccountMappings(@CurrentUser() u: CurrentUserContext) {
@@ -158,6 +193,7 @@ export class AccountingKernelController {
   }
 
   @Get("accounts/:accountId")
+  @ResponseSchema(getAccountResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:accounts:read")
   async getAccount(
@@ -169,6 +205,7 @@ export class AccountingKernelController {
   }
 
   @Post("accounts")
+  @ResponseSchema(createAccountResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:accounts:create")
   async createAccount(
@@ -180,6 +217,7 @@ export class AccountingKernelController {
   }
 
   @Patch("accounts/:accountId")
+  @ResponseSchema(updateAccountResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:accounts:update")
   async updateAccount(
@@ -192,6 +230,7 @@ export class AccountingKernelController {
   }
 
   @Patch("accounts/:accountId/system-tag")
+  @ResponseSchema(setSystemTagResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:accounts:manage")
   async setSystemTag(
@@ -204,6 +243,7 @@ export class AccountingKernelController {
   }
 
   @Delete("accounts/:accountId")
+  @ResponseSchema(archiveAccountResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:accounts:manage")
   async archiveAccount(
@@ -217,6 +257,7 @@ export class AccountingKernelController {
   /* --------------------------------------------------------- periods */
 
   @Get("fiscal-years")
+  @ResponseSchema(listFiscalYearsResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:periods:read")
   async listFiscalYears(@CurrentUser() u: CurrentUserContext) {
@@ -225,6 +266,7 @@ export class AccountingKernelController {
   }
 
   @Post("fiscal-years/open-next")
+  @ResponseSchema(openNextFiscalYearResponseSchema)
   @BodylessAction()
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:periods:manage")
@@ -234,6 +276,7 @@ export class AccountingKernelController {
   }
 
   @Get("periods")
+  @ResponseSchema(listPeriodsResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:periods:read")
   async listPeriods(
@@ -245,6 +288,7 @@ export class AccountingKernelController {
   }
 
   @Post("periods/:periodId/lock")
+  @ResponseSchema(lockPeriodResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:periods:manage")
   async lockPeriod(
@@ -258,6 +302,7 @@ export class AccountingKernelController {
 
   /** Reopening is its own permission — it is the privileged half of the pair. */
   @Post("periods/:periodId/unlock")
+  @ResponseSchema(unlockPeriodResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:periods:reopen")
   async unlockPeriod(
@@ -272,6 +317,7 @@ export class AccountingKernelController {
   /* -------------------------------------------------------- journals */
 
   @Post("journals/post")
+  @ResponseSchema(postedJournalResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:journal:post")
   async postJournal(
@@ -283,6 +329,7 @@ export class AccountingKernelController {
   }
 
   @Post("journals/:journalId/reverse")
+  @ResponseSchema(postedJournalResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:journal:post")
   async reverseJournal(
@@ -295,6 +342,7 @@ export class AccountingKernelController {
   }
 
   @Get("journals/:journalId")
+  @ResponseSchema(postedJournalResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:journal:read")
   async getJournal(
@@ -309,6 +357,7 @@ export class AccountingKernelController {
   }
 
   @Get("trial-balance")
+  @ResponseSchema(trialBalanceResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:reports:read")
   async trialBalance(
@@ -330,6 +379,7 @@ export class AccountingKernelController {
   }
 
   @Get("accounts/:accountId/ledger")
+  @ResponseSchema(accountLedgerResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:general-ledger:read")
   async accountLedger(
@@ -345,6 +395,7 @@ export class AccountingKernelController {
   /* -------------------------------------------------------------- FX */
 
   @Get("currencies")
+  @ResponseSchema(listCurrenciesResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:read")
   listCurrencies() {
@@ -352,6 +403,7 @@ export class AccountingKernelController {
   }
 
   @Get("book-currencies")
+  @ResponseSchema(listBookCurrenciesResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:read")
   async listBookCurrencies(@CurrentUser() u: CurrentUserContext) {
@@ -360,6 +412,7 @@ export class AccountingKernelController {
   }
 
   @Post("book-currencies")
+  @ResponseSchema(enableCurrencyResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:settings:manage")
   async enableCurrency(
@@ -371,6 +424,7 @@ export class AccountingKernelController {
   }
 
   @Get("fx-rates")
+  @ResponseSchema(listFxRatesResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:read")
   async listFxRates(
@@ -382,6 +436,7 @@ export class AccountingKernelController {
   }
 
   @Post("fx-rates")
+  @ResponseSchema(upsertFxRateResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:settings:manage")
   async upsertFxRate(
@@ -393,6 +448,7 @@ export class AccountingKernelController {
   }
 
   @Post("fx/preview")
+  @ResponseSchema(previewFxResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:read")
   async previewFx(

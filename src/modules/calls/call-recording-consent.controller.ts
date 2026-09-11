@@ -33,6 +33,11 @@ import {
   type CallRecordingConsentBody,
   type ConsentRefusalQuery,
 } from "./dto/call-recording-consent.schemas";
+import { ResponseSchema } from "../../common/openapi/zod-operation-contracts";
+import {
+  callRecordingConsentResponseSchema,
+  consentRefusalsResponseSchema,
+} from "./dto/call-recording-consent-response.schemas";
 
 /**
  * Recording the evidence a two-party jurisdiction requires, and reading the
@@ -83,6 +88,7 @@ export class CallRecordingConsentController {
   // reads these decorators with a regex, and a gate expressed as an identifier
   // is a gate that scan stops covering.
   @RequirePermission("crm:call-recording-consent:attest")
+  @ResponseSchema(consentRefusalsResponseSchema)
   @Validate({ query: consentRefusalQuerySchema })
   async refusals(
     @CurrentUser() user: CurrentUserContext,
@@ -119,6 +125,7 @@ export class CallRecordingConsentController {
   @Get(":activityId/recording-consent")
   @UseGuards(PermissionGuard)
   @RequirePermission("crm:call-analysis:view")
+  @ResponseSchema(callRecordingConsentResponseSchema)
   @Validate({ params: callAnalysisParamsSchema })
   async read(
     @CurrentUser() user: CurrentUserContext,
@@ -144,6 +151,7 @@ export class CallRecordingConsentController {
   @UseGuards(PermissionGuard)
   @RequirePermission("crm:call-recording-consent:attest")
   @HttpCode(200)
+  @ResponseSchema(callRecordingConsentResponseSchema)
   @Validate({ params: callAnalysisParamsSchema, body: callRecordingConsentBodySchema })
   async attest(
     @CurrentUser() user: CurrentUserContext,

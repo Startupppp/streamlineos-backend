@@ -38,6 +38,11 @@ import {
   invUomSchema,
   invProductVariantSchema,
   getProductResponseSchema,
+  resolveLineTaxResponseSchema,
+  pharmacyProfileResponseSchema,
+  receiptRequirementsResponseSchema,
+  quantityCaptureResponseSchema,
+  h1RegisterResponseSchema,
 } from "./dto/products-response.schemas";
 
 const categoryIdParams = z.object({ categoryId: z.coerce.number().int().positive() }).strict();
@@ -164,6 +169,7 @@ export class InvProductsController {
    * A read — it computes and returns, and writes nothing.
    */
   @Get("variants/:variantId/tax-treatment")
+  @ResponseSchema(resolveLineTaxResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:products:read")
   resolveLineTax(
@@ -189,6 +195,7 @@ export class InvProductsController {
    * codebase is `POST /inventory/barcode/scan`.
    */
   @Get("variants/:variantId/pharmacy")
+  @ResponseSchema(pharmacyProfileResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:products:read")
   pharmacyProfile(
@@ -206,6 +213,7 @@ export class InvProductsController {
    * cannot disagree about what is required.
    */
   @Get("variants/:variantId/receipt-requirements")
+  @ResponseSchema(receiptRequirementsResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:products:read")
   receiptRequirements(
@@ -223,6 +231,7 @@ export class InvProductsController {
    * stored conversion factor and writes nothing.
    */
   @Get("variants/:variantId/quantity-capture")
+  @ResponseSchema(quantityCaptureResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:products:read")
   quantityCapture(
@@ -239,6 +248,7 @@ export class InvProductsController {
    * dispensing rows are not held here. It makes no compliance claim.
    */
   @Get("pharmacy/h1-register")
+  @ResponseSchema(h1RegisterResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:products:read")
   h1Register(

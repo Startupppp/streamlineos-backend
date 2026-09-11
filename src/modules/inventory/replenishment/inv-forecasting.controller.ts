@@ -31,6 +31,17 @@ import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
 import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
 import { listForecastingResponseSchema } from "./dto/replenishment-response.schemas";
+import {
+  baselineResponseSchema,
+  generateForecastVersionResponseSchema,
+  latestForecastVersionResponseSchema,
+  listForecastVersionsResponseSchema,
+  refreshForecastVersionsResponseSchema,
+  reorderProposalResponseSchema,
+  safetyStockPolicyResponseSchema,
+  simulateReplenishmentResponseSchema,
+  vendorLeadTimeResponseSchema,
+} from "./dto/forecast-response.schemas";
 
 const productVariantIdParams = z.object({ productVariantId: z.coerce.number().int().positive() }).strict();
 const vendorIdParams = z.object({ vendorId: z.coerce.number().int().positive() }).strict();
@@ -70,6 +81,7 @@ export class InvForecastingController {
    * so a double-clicked refresh is a no-op rather than a duplicate history.
    */
   @Post("versions/refresh")
+  @ResponseSchema(refreshForecastVersionsResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:replenishment:manage")
   @Validate({ body: refreshForecastsSchema })
@@ -95,6 +107,7 @@ export class InvForecastingController {
    * "recorded now" rather than guessing.
    */
   @Post("versions/:productVariantId")
+  @ResponseSchema(generateForecastVersionResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:replenishment:manage")
   @Validate({ params: productVariantIdParams, body: generateForecastSchema })
@@ -115,6 +128,7 @@ export class InvForecastingController {
 
   /** C1. Every forecast this SKU has had at this site, newest first. */
   @Get("versions/:productVariantId")
+  @ResponseSchema(listForecastVersionsResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:replenishment:manage")
   @Validate({ params: productVariantIdParams, query: forecastVersionsQuerySchema })
@@ -132,6 +146,7 @@ export class InvForecastingController {
 
   /** C1. The forecast currently on record, without recomputing one. */
   @Get("versions/:productVariantId/latest")
+  @ResponseSchema(latestForecastVersionResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:replenishment:manage")
   @Validate({ params: productVariantIdParams, query: forecastScopeSchema })
@@ -149,6 +164,7 @@ export class InvForecastingController {
    * there is no path from this service to the stock engine.
    */
   @Post("simulate/:productVariantId")
+  @ResponseSchema(simulateReplenishmentResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:replenishment:manage")
   @Validate({ params: productVariantIdParams, body: simulateSchema })
@@ -171,6 +187,7 @@ export class InvForecastingController {
    * with.
    */
   @Get("reorder-proposal/:productVariantId")
+  @ResponseSchema(reorderProposalResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:replenishment:manage")
   @Validate({ params: productVariantIdParams, query: forecastPolicyScopeSchema })
@@ -189,6 +206,7 @@ export class InvForecastingController {
 
   /** INV-304. What this vendor actually takes, from receipts rather than a promise. */
   @Get("lead-time/vendor/:vendorId")
+  @ResponseSchema(vendorLeadTimeResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:replenishment:manage")
   @Validate({ params: vendorIdParams })
@@ -204,6 +222,7 @@ export class InvForecastingController {
    * lead times, or an explanation of why the model does not apply.
    */
   @Get("safety-stock/:productVariantId")
+  @ResponseSchema(safetyStockPolicyResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:replenishment:manage")
   @Validate({ params: productVariantIdParams, query: forecastPolicyScopeSchema })
@@ -226,6 +245,7 @@ export class InvForecastingController {
    * model has to beat before it is allowed to replace the arithmetic.
    */
   @Get("baseline/:productVariantId")
+  @ResponseSchema(baselineResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:replenishment:manage")
   @Validate({ params: productVariantIdParams, query: forecastScopeSchema })

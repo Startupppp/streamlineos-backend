@@ -28,7 +28,16 @@ import {
   type ListPutawayTasksInput,
 } from "./dto/putaway.schemas";
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
-import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
+import { BodylessAction, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  abandonPutawayTaskResponseSchema,
+  cancelPutawayTaskResponseSchema,
+  claimPutawayTaskResponseSchema,
+  completePutawayResponseSchema,
+  createPutawayTaskResponseSchema,
+  getPutawayTaskResponseSchema,
+  listPutawayTasksResponseSchema,
+} from "./dto/putaway-response.schemas";
 
 /**
  * B3 — the putaway workbench.
@@ -50,6 +59,7 @@ export class PutawayTaskController {
   ) {}
 
   @Post("tasks")
+  @ResponseSchema(createPutawayTaskResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:transfer")
   @Idempotent("inventory.putaway.task.create")
@@ -61,6 +71,7 @@ export class PutawayTaskController {
   }
 
   @Get("tasks")
+  @ResponseSchema(listPutawayTasksResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:read")
   listTasks(
@@ -71,6 +82,7 @@ export class PutawayTaskController {
   }
 
   @Get("tasks/:taskId")
+  @ResponseSchema(getPutawayTaskResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:read")
   getTask(
@@ -88,6 +100,7 @@ export class PutawayTaskController {
    * protected.
    */
   @Post("tasks/:taskId/claim")
+  @ResponseSchema(claimPutawayTaskResponseSchema)
   @BodylessAction()
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:transfer")
@@ -100,6 +113,7 @@ export class PutawayTaskController {
   }
 
   @Post("tasks/:taskId/abandon")
+  @ResponseSchema(abandonPutawayTaskResponseSchema)
   @BodylessAction()
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:transfer")
@@ -111,6 +125,7 @@ export class PutawayTaskController {
   }
 
   @Post("tasks/:taskId/cancel")
+  @ResponseSchema(cancelPutawayTaskResponseSchema)
   @BodylessAction()
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:transfer")
@@ -124,6 +139,7 @@ export class PutawayTaskController {
 
   /** The one command here that moves stock, and the only one that takes a key. */
   @Post("tasks/:taskId/complete")
+  @ResponseSchema(completePutawayResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:transfer")
   completeTask(

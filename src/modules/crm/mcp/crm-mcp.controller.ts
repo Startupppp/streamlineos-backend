@@ -6,8 +6,13 @@ import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { Validate } from "../../../common/validation/validate.decorator";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
 import { CrmMcpService, type McpToolCall } from "./crm-mcp.service";
-import { mcpToolCallSchema } from "./dto/crm-mcp.schemas";
+import {
+  mcpToolCallResponseSchema,
+  mcpToolCallSchema,
+  mcpToolsResponseSchema,
+} from "./dto/crm-mcp.schemas";
 
 /**
  * CRM-P1-16.
@@ -47,6 +52,7 @@ export class CrmMcpController {
    */
   @AuthorizedInService("CrmMcpService")
   @Get("tools")
+  @ResponseSchema(mcpToolsResponseSchema)
   async listTools(@CurrentUser() user: CurrentUserContext) {
     const tools = await this.crmMcpService.getAvailableTools(user);
     return { tools };
@@ -54,6 +60,7 @@ export class CrmMcpController {
 
   @AuthorizedInService("CrmMcpService")
   @Post("call")
+  @ResponseSchema(mcpToolCallResponseSchema)
   @Validate({ body: mcpToolCallSchema })
   async callTool(
     @CurrentUser() user: CurrentUserContext,

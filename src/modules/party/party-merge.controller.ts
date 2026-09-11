@@ -17,6 +17,7 @@ import {
   dismissedSchema,
   mergeOutcomeSchema,
   revertResultSchema,
+  partyMergeListSchema,
 } from "./dto/party-response.schemas";
 import {
   partyDuplicateQuerySchema,
@@ -157,6 +158,7 @@ export class PartyMergeController {
   @UseGuards(PermissionGuard)
   @RequirePermission("party:merges:manage")
   @Validate({ query: partyMergeListQuerySchema })
+  @ResponseSchema(partyMergeListSchema)
   async listMerges(
     @CurrentUser() user: CurrentUserContext,
     @Query() query: PartyMergeListQuery,

@@ -18,6 +18,8 @@ import {
   watermarkPolicyMutationResponseSchema,
   reminderSweepResponseSchema,
   expirationSweepResponseSchema,
+  sweepStatusResponseSchema,
+  sweepPreviewResponseSchema,
 } from "./dto/e-sign-response.schemas";
 import { successSchema } from "../../common/openapi/response-envelopes";
 import { SignEnvelopeSweepsService } from "./sign-envelope-sweeps.service";
@@ -113,6 +115,7 @@ export class SignAdminController {
    */
   @Get("sweep-status")
   @RequirePermission("sign:admin:manage")
+  @ResponseSchema(sweepStatusResponseSchema)
   async sweepStatus(@CurrentUser() u: CurrentUserContext) {
     return { sweeps: await this.sweeps.lastRuns(u.orgId) };
   }
@@ -127,6 +130,7 @@ export class SignAdminController {
    */
   @Get("sweep-preview")
   @RequirePermission("sign:admin:manage")
+  @ResponseSchema(sweepPreviewResponseSchema)
   async sweepPreview(@CurrentUser() u: CurrentUserContext, @Query("sweep") sweep?: string) {
     const which = sweep === "expiration" ? "expiration" : "reminder";
     return this.sweeps.previewSweep(u.orgId, which);

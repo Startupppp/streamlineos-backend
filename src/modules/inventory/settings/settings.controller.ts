@@ -26,6 +26,9 @@ import {
   updateNumberSequenceResponseSchema,
   healthResponseSchema,
   expireReservationsResponseSchema,
+  getPacksResponseSchema,
+  listShelfLifeRulesResponseSchema,
+  putShelfLifeRuleResponseSchema,
 } from "./dto/settings-response.schemas";
 
 const sequenceIdParams = z.object({ sequenceId: z.coerce.number().int().positive() }).strict();
@@ -53,6 +56,7 @@ export class InvSettingsController {
    * renders for the person filling it in.
    */
   @Get("packs")
+  @ResponseSchema(getPacksResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:products:read")
   getPacks(@CurrentUser() u: CurrentUserContext) {
@@ -108,6 +112,7 @@ export class InvSettingsController {
    * lots an allocation may take, so it is policy, not a display preference.
    */
   @Get("shelf-life-rules")
+  @ResponseSchema(listShelfLifeRulesResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:settings:manage")
   listShelfLifeRules(@CurrentUser() u: CurrentUserContext) {
@@ -115,6 +120,7 @@ export class InvSettingsController {
   }
 
   @Put("shelf-life-rules")
+  @ResponseSchema(putShelfLifeRuleResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:settings:manage")
   putShelfLifeRule(

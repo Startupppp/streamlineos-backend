@@ -11,6 +11,8 @@ import { UseRateLimit } from "../../../../common/ratelimit/use-rate-limit.decora
 import { ZodValidationPipe } from "../../../../common/pipes/zod-validation.pipe";
 import { InvCopilotService } from "./inv-copilot.service";
 import { invCopilotAskSchema, type InvCopilotAskInput } from "./dto/inv-copilot.schemas";
+import { ResponseSchema } from "../../../../common/openapi/zod-operation-contracts";
+import { copilotAskResponseSchema } from "./dto/inv-copilot-response.schemas";
 
 /**
  * F2 — the copilot's one route.
@@ -33,6 +35,7 @@ export class InvCopilotController {
   constructor(private readonly copilot: InvCopilotService) {}
 
   @Post("ask")
+  @ResponseSchema(copilotAskResponseSchema)
   @UseGuards(PermissionGuard, RateLimitGuard)
   @UseRateLimit("ai:invoke")
   @RequirePermission("inventory:ai:read")

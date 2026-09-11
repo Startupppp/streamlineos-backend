@@ -7,7 +7,12 @@ import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
 import { CrmMcpSettingsService } from "./crm-mcp-settings.service";
+import {
+  mcpSettingsResponseSchema,
+  mcpSettingsWriteResponseSchema,
+} from "./dto/crm-mcp.schemas";
 
 const setMcpEnabledSchema = z.object({ enabled: z.boolean() }).strict();
 type SetMcpEnabledInput = z.infer<typeof setMcpEnabledSchema>;
@@ -34,12 +39,14 @@ export class CrmMcpSettingsController {
 
   @Get()
   @RequirePermission("settings:api-tokens:read")
+  @ResponseSchema(mcpSettingsResponseSchema)
   read(@CurrentUser() u: CurrentUserContext) {
     return this.settings.read(u.orgId);
   }
 
   @Put()
   @RequirePermission("settings:api-tokens:write")
+  @ResponseSchema(mcpSettingsWriteResponseSchema)
   setEnabled(
     @Body(new ZodValidationPipe(setMcpEnabledSchema)) body: SetMcpEnabledInput,
     @CurrentUser() u: CurrentUserContext,

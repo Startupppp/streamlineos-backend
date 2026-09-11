@@ -11,6 +11,8 @@ import { UseRateLimit } from "../../../../common/ratelimit/use-rate-limit.decora
 import { ZodValidationPipe } from "../../../../common/pipes/zod-validation.pipe";
 import { InvDemandRiskService } from "./inv-demand-risk.service";
 import { demandRiskSchema, type DemandRiskInput } from "./dto/inv-demand-risk.schemas";
+import { ResponseSchema } from "../../../../common/openapi/zod-operation-contracts";
+import { demandRiskResponseSchema } from "./dto/inv-demand-risk-response.schemas";
 
 /**
  * F3 — the demand-risk narrative's one route.
@@ -27,6 +29,7 @@ export class InvDemandRiskController {
   constructor(private readonly demandRisk: InvDemandRiskService) {}
 
   @Post()
+  @ResponseSchema(demandRiskResponseSchema)
   @UseGuards(PermissionGuard, RateLimitGuard)
   @UseRateLimit("ai:invoke")
   @RequirePermission("inventory:ai:read")

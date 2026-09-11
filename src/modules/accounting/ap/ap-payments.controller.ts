@@ -21,6 +21,15 @@ import {
   type PostApPaymentInput,
   type ReversePaymentInput,
 } from "./dto/ap-payments.schemas";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  allocateApPaymentResponseSchema,
+  allocateDebitNoteResponseSchema,
+  getApPaymentResponseSchema,
+  listApPaymentsResponseSchema,
+  postApPaymentResponseSchema,
+  reverseApPaymentResponseSchema,
+} from "./dto/ap-response.schemas";
 
 @RequireModule("accounting")
 @Controller("accounting/payables")
@@ -29,6 +38,7 @@ export class ApPaymentsController {
   constructor(private readonly payments: ApPaymentsService) {}
 
   @Get("payments")
+  @ResponseSchema(listApPaymentsResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:payables:read")
   list(
@@ -39,6 +49,7 @@ export class ApPaymentsController {
   }
 
   @Get("payments/:paymentId")
+  @ResponseSchema(getApPaymentResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:payables:read")
   get(@Param("paymentId") paymentId: string, @CurrentUser() user: CurrentUserContext) {
@@ -46,6 +57,7 @@ export class ApPaymentsController {
   }
 
   @Post("payments")
+  @ResponseSchema(postApPaymentResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:payables:manage")
   @HttpCode(201)
@@ -58,6 +70,7 @@ export class ApPaymentsController {
   }
 
   @Post("payments/:paymentId/allocations")
+  @ResponseSchema(allocateApPaymentResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:payables:manage")
   @HttpCode(200)
@@ -72,6 +85,7 @@ export class ApPaymentsController {
 
   /** Apply a posted debit note against open bills. No journal — see the service. */
   @Post("debit-notes/:debitNoteId/allocations")
+  @ResponseSchema(allocateDebitNoteResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:vendor-credits:manage")
   @HttpCode(200)
@@ -84,6 +98,7 @@ export class ApPaymentsController {
   }
 
   @Post("payments/:paymentId/reverse")
+  @ResponseSchema(reverseApPaymentResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:payables:approve")
   @HttpCode(200)

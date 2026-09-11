@@ -10,6 +10,11 @@ import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { LaborService } from "./labor.service";
 import { laborBoardQuerySchema, laborRecentQuerySchema } from "./dto/labor.schemas";
 import type { LaborBoardQuery, LaborRecentQuery } from "./dto/labor.schemas";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  laborBoardResponseSchema,
+  laborRecordsResponseSchema,
+} from "./dto/labor-response.schemas";
 
 /**
  * NEO-7 - the supervisor board.
@@ -30,6 +35,7 @@ export class LaborController {
   constructor(private readonly svc: LaborService) {}
 
   @Get("board")
+  @ResponseSchema(laborBoardResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:labor:read")
   board(
@@ -40,6 +46,7 @@ export class LaborController {
   }
 
   @Get("records")
+  @ResponseSchema(laborRecordsResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:labor:read")
   records(

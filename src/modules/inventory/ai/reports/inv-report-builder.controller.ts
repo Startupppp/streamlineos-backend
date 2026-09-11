@@ -19,6 +19,12 @@ import {
   type InvReportAskInput,
   type InvReportRunInput,
 } from "./dto/inv-report-spec.schemas";
+import { ApiOkResponse } from "@nestjs/swagger";
+import { ResponseSchema } from "../../../../common/openapi/zod-operation-contracts";
+import {
+  invReportAskResponseSchema,
+  invReportCatalogResponseSchema,
+} from "./dto/inv-report-builder-response.schemas";
 
 /**
  * F5 — the natural-language report builder's routes.
@@ -49,6 +55,7 @@ export class InvReportBuilderController {
    * caller, and deterministic — no provider, no credits, safe on page load.
    */
   @Get("catalog")
+  @ResponseSchema(invReportCatalogResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:ai:read")
   catalog() {
@@ -75,6 +82,7 @@ export class InvReportBuilderController {
   }
 
   @Post("ask")
+  @ResponseSchema(invReportAskResponseSchema)
   @UseGuards(PermissionGuard, RateLimitGuard)
   @UseRateLimit("ai:invoke")
   @RequirePermission("inventory:ai:read")
@@ -87,6 +95,10 @@ export class InvReportBuilderController {
   }
 
   @Post("export")
+  @ApiOkResponse({
+    description: "CSV file download",
+    content: { "text/csv": { schema: { type: "string" } } },
+  })
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:export")
   @Header("Cache-Control", "no-store")
