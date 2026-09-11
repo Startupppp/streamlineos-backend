@@ -1,6 +1,5 @@
 import { Inject, Injectable, Logger, Optional, ServiceUnavailableException } from "@nestjs/common";
-import { sql, type Column, type SQL } from "drizzle-orm";
-import { businessParties, contactPartyMap, leadPartyMap } from "../../../db/schema/party";
+import { sql } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
 import type { Db } from "../../../db/drizzle.module";
@@ -18,9 +17,14 @@ import {
 import { canUseFeature, minPlanFor, type Feature } from "../../ai/core/billing/feature-gates";
 import { PaymentRequiredException } from "../../../common/http/api-exceptions";
 import { NotificationsService } from "../../notifications/notifications.service";
+import {
+  fetchAllCounts,
+  fetchCount,
+  LIMIT_KEY_LABELS,
+  type PlanLimitCountDeps,
+} from "./lib/plan-limit-counts";
+import { maybeAlertQuota, type QuotaAlertDeps } from "./lib/plan-quota-alerts";
 import type { DbOrTx } from "../../../common/rbac/access-invalidate";
-import { readCount } from "./quota-counts";
-import { seatCount } from "./seat-definition";
 
 export interface EntitlementsDto {
   tier: PlanTier;
@@ -40,48 +44,6 @@ const TIER_CACHE_TTL_MS = 30_000;
 
 const ENTITLEMENTS_CACHE_TTL = 60;
 
-const QUOTA_ALERT_TTL_SECONDS = 30 * 24 * 60 * 60;
-
-/**
- * How many live customers a `*_party_map` accounts for, as a scalar subquery.
- *
- * `COUNT(*) FROM leads WHERE deleted_at IS NULL` counted the mirror, which is
- * wrong twice over now that Party is the record. A merge re-points the losing
- * legacy row's map row onto the survivor and refreshes it from there, so the
- * duplicate `leads` row is left alive holding the survivor's values — one
- * customer, charged against the plan twice. And `leads.deleted_at` is a derived
- * column: it is the Party's deletion that decides.
- *
- * Written as SQL rather than a query builder because it is interpolated into the
- * one statement that fetches all fourteen counts together; the alternative is
- * fourteen round trips or two shapes of the same count.
- */
-function liveCustomerCount(partyIdColumn: Column, orgColumn: Column, orgId: string): SQL {
-  return sql`SELECT count(distinct ${businessParties.partyId})::int
-    FROM ${businessParties}
-    JOIN ${partyIdColumn.table} ON ${partyIdColumn} = ${businessParties.partyId}
-      AND ${orgColumn} = ${businessParties.organizationId}
-    WHERE ${businessParties.organizationId} = ${orgId}
-      AND ${businessParties.deletedAt} IS NULL`;
-}
-
-const LIMIT_KEY_LABELS: Record<LimitKey, string> = {
-  members: "team members",
-  projects: "projects",
-  kbPages: "knowledge base pages",
-  chatChannels: "chat channels",
-  crmLeads: "CRM leads",
-  crmContacts: "CRM contacts",
-  crmDeals: "CRM deals",
-  supportTickets: "support tickets",
-  automations: "automations",
-  signEnvelopes: "sign envelopes",
-  surveys: "surveys",
-  acctInvoices: "accounting invoices",
-  hrCandidates: "HR candidates",
-  hrJobPostings: "HR job postings",
-};
-
 @Injectable()
 export class PlanLimitsService {
   private readonly tierCache = new Map<string, TierCache>();
@@ -92,6 +54,14 @@ export class PlanLimitsService {
     private readonly cache: CacheService,
     @Optional() private readonly notifications: NotificationsService | null,
   ) {}
+
+  private get countDeps(): PlanLimitCountDeps {
+    return { db: this.db, logger: this.logger };
+  }
+
+  private get alertDeps(): QuotaAlertDeps {
+    return { db: this.db, cache: this.cache, notifications: this.notifications };
+  }
 
   async resolveTier(orgId: string): Promise<{ tier: PlanTier; plan: EffectivePlan }> {
     const cached = this.tierCache.get(orgId);
@@ -170,7 +140,7 @@ export class PlanLimitsService {
     const catalog = PLAN_LIMITS;
 
     const [usageRow, negotiatedSeats] = await Promise.all([
-      this.fetchAllCounts(orgId),
+      fetchAllCounts(this.countDeps, orgId),
       tier === "ENTERPRISE" ? this.fetchNegotiatedSeats(orgId) : Promise.resolve(null),
     ]);
 
@@ -195,34 +165,6 @@ export class PlanLimitsService {
     };
   }
 
-  private async fetchAllCounts(orgId: string): Promise<Record<LimitKey, number>> {
-    try {
-      const rows = await this.db.execute(sql`
-        SELECT
-          ${seatCount(orgId)}                                                                                                              AS members,
-          (SELECT COUNT(*)::int FROM build.projects WHERE org_id = ${orgId})                                                              AS projects,
-          (SELECT COUNT(*)::int FROM kb_pages WHERE org_id = ${orgId} AND deleted_at IS NULL)                                             AS "kbPages",
-          (SELECT COUNT(*)::int FROM chat_channels WHERE org_id = ${orgId})                                                               AS "chatChannels",
-          (${liveCustomerCount(leadPartyMap.partyId, leadPartyMap.organizationId, orgId)})                                                AS "crmLeads",
-          (${liveCustomerCount(contactPartyMap.partyId, contactPartyMap.organizationId, orgId)})                                          AS "crmContacts",
-          (SELECT COUNT(*)::int FROM deals WHERE org_id = ${orgId})                                                                    AS "crmDeals",
-          (SELECT COUNT(*)::int FROM support_tickets WHERE org_id = ${orgId})                                                             AS "supportTickets",
-          (SELECT COUNT(*)::int FROM automation_rules WHERE org_id = ${orgId})                                                              AS automations,
-          (SELECT COUNT(*)::int FROM sign_envelopes WHERE org_id = ${orgId})                                                              AS "signEnvelopes",
-          (SELECT COUNT(*)::int FROM survey_forms WHERE org_id = ${orgId})                                                                AS surveys,
-          (SELECT COUNT(*)::int FROM invoices WHERE org_id = ${orgId})                                                                  AS "acctInvoices",
-          (SELECT COUNT(*)::int FROM candidates WHERE org_id = ${orgId})                                                                  AS "hrCandidates",
-          (SELECT COUNT(*)::int FROM job_postings WHERE org_id = ${orgId})                                                                AS "hrJobPostings"
-      `);
-      const counts = {} as Record<LimitKey, number>;
-      for (const key of Object.keys(LIMIT_KEY_LABELS) as LimitKey[]) counts[key] = readCount(rows, key);
-      return counts;
-    } catch (err: unknown) {
-      this.logger.error(`Usage count query failed`, { orgId, cause: err instanceof Error ? err.message : String(err) });
-      throw new ServiceUnavailableException("Plan usage could not be determined. The write is refused until usage is verifiable.");
-    }
-  }
-
   async assertWithinLimit(
     orgId: string,
     key: LimitKey,
@@ -239,7 +181,7 @@ export class PlanLimitsService {
 
     let used: number;
     try {
-      used = await this.fetchCount(orgId, key, executor);
+      used = await fetchCount(this.countDeps, orgId, key, executor);
     } catch (err: unknown) {
       this.logger.error(`Limit count query failed`, { orgId, key, cause: err instanceof Error ? err.message : String(err) });
       throw new ServiceUnavailableException(`The ${LIMIT_KEY_LABELS[key]} count could not be determined. Try again shortly.`);
@@ -253,7 +195,7 @@ export class PlanLimitsService {
       });
     }
 
-    void this.maybeAlertQuota(orgId, key, used + increment, limit).catch((err: unknown) =>
+    void maybeAlertQuota(this.alertDeps, orgId, key, used + increment, limit).catch((err: unknown) =>
       this.logger.warn(`quota alert failed [${orgId}/${key}]`, { err }),
     );
   }
@@ -293,161 +235,4 @@ export class PlanLimitsService {
     }
   }
 
-  private async fetchCount(
-    orgId: string,
-    key: LimitKey,
-    executor?: DbOrTx,
-  ): Promise<number> {
-    switch (key) {
-      case "members": {
-        const rows = await (executor ?? this.db).execute(sql`SELECT ${seatCount(orgId)} AS count`);
-        return readCount(rows, "count");
-      }
-      case "projects": {
-        const rows = await this.db.execute(
-          sql`SELECT COUNT(*)::int AS count FROM build.projects WHERE org_id = ${orgId}`,
-        );
-        return readCount(rows, "count");
-      }
-      case "kbPages": {
-        const rows = await this.db.execute(
-          sql`SELECT COUNT(*)::int AS count FROM kb_pages WHERE org_id = ${orgId} AND deleted_at IS NULL`,
-        );
-        return readCount(rows, "count");
-      }
-      case "chatChannels": {
-        const rows = await this.db.execute(
-          sql`SELECT COUNT(*)::int AS count FROM chat_channels WHERE org_id = ${orgId}`,
-        );
-        return readCount(rows, "count");
-      }
-      case "crmLeads": {
-        const rows = await this.db.execute(
-          sql`SELECT (${liveCustomerCount(leadPartyMap.partyId, leadPartyMap.organizationId, orgId)}) AS count`,
-        );
-        return readCount(rows, "count");
-      }
-      case "crmContacts": {
-        const rows = await this.db.execute(
-          sql`SELECT (${liveCustomerCount(contactPartyMap.partyId, contactPartyMap.organizationId, orgId)}) AS count`,
-        );
-        return readCount(rows, "count");
-      }
-      case "crmDeals": {
-        const rows = await this.db.execute(
-          sql`SELECT COUNT(*)::int AS count FROM deals WHERE org_id = ${orgId}`,
-        );
-        return readCount(rows, "count");
-      }
-      case "supportTickets": {
-        const rows = await this.db.execute(
-          sql`SELECT COUNT(*)::int AS count FROM support_tickets WHERE org_id = ${orgId}`,
-        );
-        return readCount(rows, "count");
-      }
-      case "automations": {
-        const rows = await this.db.execute(
-          sql`SELECT COUNT(*)::int AS count FROM automation_rules WHERE org_id = ${orgId}`,
-        );
-        return readCount(rows, "count");
-      }
-      case "signEnvelopes": {
-        const rows = await this.db.execute(
-          sql`SELECT COUNT(*)::int AS count FROM sign_envelopes WHERE org_id = ${orgId}`,
-        );
-        return readCount(rows, "count");
-      }
-      case "surveys": {
-        const rows = await this.db.execute(
-          sql`SELECT COUNT(*)::int AS count FROM survey_forms WHERE org_id = ${orgId}`,
-        );
-        return readCount(rows, "count");
-      }
-      case "acctInvoices": {
-        const rows = await this.db.execute(
-          sql`SELECT COUNT(*)::int AS count FROM invoices WHERE org_id = ${orgId}`,
-        );
-        return readCount(rows, "count");
-      }
-      case "hrCandidates": {
-        const rows = await this.db.execute(
-          sql`SELECT COUNT(*)::int AS count FROM candidates WHERE org_id = ${orgId}`,
-        );
-        return readCount(rows, "count");
-      }
-      case "hrJobPostings": {
-        const rows = await this.db.execute(
-          sql`SELECT COUNT(*)::int AS count FROM job_postings WHERE org_id = ${orgId}`,
-        );
-        return readCount(rows, "count");
-      }
-    }
-  }
-
-  private crossedThresholds(afterCount: number, limit: number): number[] {
-    const result: number[] = [];
-    if (afterCount >= limit) result.push(100);
-    if (afterCount >= limit * 0.8) result.push(80);
-    return result;
-  }
-
-  private async findOrgOwnerForAlert(orgId: string): Promise<{ userId: string } | null> {
-    try {
-      const rows = await this.db.execute(
-        sql`SELECT om.user_id FROM organization_members om
-            INNER JOIN users u ON u.id = om.user_id
-            WHERE om.org_id = ${orgId} AND om.is_owner = true AND u.is_active = true
-            LIMIT 1`,
-      );
-      const row = rows[0];
-      if (!row) return null;
-      const userId = String(row["user_id"] ?? "");
-      return userId ? { userId } : null;
-    } catch {
-      return null;
-    }
-  }
-
-  private async maybeAlertQuota(
-    orgId: string,
-    key: LimitKey,
-    afterCount: number,
-    limit: number,
-  ): Promise<void> {
-    if (!this.notifications) return;
-
-    const thresholds = this.crossedThresholds(afterCount, limit);
-    if (thresholds.length === 0) return;
-
-    const owner = await this.findOrgOwnerForAlert(orgId);
-    if (!owner) return;
-
-    const label = LIMIT_KEY_LABELS[key];
-
-    for (const pct of thresholds) {
-      const dedupKey = `billing:quota-alert:${orgId}:${key}:${pct}`;
-      const alreadySent = await this.cache.get<boolean>(dedupKey);
-      if (alreadySent) continue;
-
-      const is100 = pct === 100;
-      await this.notifications.create({
-        orgId,
-        userId: owner.userId,
-        type: is100 ? "WARNING" : "INFO",
-        priority: is100 ? "HIGH" : "NORMAL",
-        category: "BILLING",
-        sourceModule: "billing",
-        eventKey: is100 ? "billing.quota.exceeded" : "billing.quota.warning",
-        title: is100
-          ? `${label} limit reached (${afterCount}/${limit})`
-          : `${label} at 80% of limit (${afterCount}/${limit})`,
-        message: is100
-          ? `Your workspace has used all ${limit} ${label}. New additions are now blocked. Upgrade your plan to continue.`
-          : `Your workspace has used ${afterCount} of ${limit} ${label} (${Math.round((afterCount / limit) * 100)}%). Consider upgrading before you hit the limit.`,
-        link: "/settings/billing",
-      });
-
-      await this.cache.set(dedupKey, true, QUOTA_ALERT_TTL_SECONDS);
-    }
-  }
 }
