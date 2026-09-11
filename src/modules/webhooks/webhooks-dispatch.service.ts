@@ -11,92 +11,18 @@ import {
 } from "../../common/tenant/run-in-tenant-transaction";
 import { runOutsideTenantContext } from "../../common/tenant/tenant-context";
 import { logSideEffectFailure } from "../../common/logger/side-effect";
-import {
-  decryptSecret,
-  isEncryptedSecret,
-} from "../../common/security/secret-encryption.util";
-import { WEBHOOK_RESPONSE_BODY_LIMIT } from "./dto/webhook.schemas";
-import {
-  callProvider,
-  type ProviderDescriptor,
-  type ProviderCallResult,
-} from "../../common/outbound/call-provider";
+import { callProvider } from "../../common/outbound/call-provider";
 import { ProviderCircuitBreaker } from "../../common/outbound/provider-circuit-breaker";
+import {
+  WEBHOOK_TIMEOUT_MS,
+  WebhookTerminalStatusError,
+  logFromResult,
+  readSigningSecret,
+  webhookDescriptor,
+  type DeliveryTarget,
+} from "./lib/webhook-delivery";
 
-const WEBHOOK_TIMEOUT_MS = 10_000;
-const WEBHOOK_MAX_ATTEMPTS = 5;
-const WEBHOOK_BASE_DELAY_MS = 1_000;
-const WEBHOOK_MAX_DELAY_MS = 30_000;
-
-export class WebhookTerminalStatusError extends Error {
-  readonly statusCode: number;
-  constructor(status: number, body: string) {
-    super(`Endpoint responded with ${status}: ${body.slice(0, 200)}`);
-    this.statusCode = status;
-    this.name = "WebhookTerminalStatusError";
-  }
-}
-
-export function classifyWebhookError(err: unknown): "terminal" | "retryable" {
-  if (err instanceof WebhookTerminalStatusError) return "terminal";
-  return "retryable";
-}
-
-/**
- * Secrets are encrypted at rest from 2026-08-11. Rows created before that are
- * still plaintext, so read through this rather than assuming either form —
- * signing with the wrong value silently breaks every consumer's verification.
- */
-function readSigningSecret(stored: string): string {
-  return isEncryptedSecret(stored) ? decryptSecret(stored) : stored;
-}
-
-interface DeliveryTarget {
-  id: number;
-  url: string;
-  secret: string;
-}
-
-interface FetchedResponse {
-  status: number;
-  body: string;
-}
-
-function logFromResult(
-  result: ProviderCallResult<FetchedResponse>,
-): { statusCode: number | null; responseBody: string | null; success: boolean } {
-  if (result.ok)
-    return {
-      statusCode: result.value.status,
-      responseBody: result.value.body.slice(0, WEBHOOK_RESPONSE_BODY_LIMIT),
-      success: true,
-    };
-
-  if (result.kind === "terminal") {
-    const err = result.error;
-    return {
-      statusCode: err instanceof WebhookTerminalStatusError ? err.statusCode : null,
-      responseBody: err.message.slice(0, WEBHOOK_RESPONSE_BODY_LIMIT),
-      success: false,
-    };
-  }
-
-  if (result.kind === "dead-lettered")
-    return {
-      statusCode: null,
-      responseBody: `Dead after ${result.attempts} attempts: ${result.error.message}`.slice(
-        0,
-        WEBHOOK_RESPONSE_BODY_LIMIT,
-      ),
-      success: false,
-    };
-
-  return {
-    statusCode: null,
-    responseBody: `Circuit open for endpoint; retry after ${result.retryAfterMs}ms`,
-    success: false,
-  };
-}
+export { WebhookTerminalStatusError, classifyWebhookError } from "./lib/webhook-delivery";
 
 @Injectable()
 export class WebhooksDispatchService {
@@ -215,17 +141,8 @@ export class WebhooksDispatchService {
       return;
     }
 
-    const descriptor: ProviderDescriptor = {
-      provider: `webhook:${endpoint.id}`,
-      timeoutMs: WEBHOOK_TIMEOUT_MS,
-      maxAttempts: WEBHOOK_MAX_ATTEMPTS,
-      baseDelayMs: WEBHOOK_BASE_DELAY_MS,
-      maxDelayMs: WEBHOOK_MAX_DELAY_MS,
-      classify: classifyWebhookError,
-    };
-
     const result = await callProvider(
-      descriptor,
+      webhookDescriptor(endpoint.id),
       async () => {
         const response = await fetch(endpoint.url, {
           method: "POST",
