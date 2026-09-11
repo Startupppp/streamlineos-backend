@@ -1,13 +1,21 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, asc, count, desc, eq, gte, inArray, isNull, lt, sql, type SQL } from "drizzle-orm";
+import { and, asc, count, desc, eq, isNull, lt, sql, type SQL } from "drizzle-orm";
 import { keysetAfter, keysetBefore } from "../../common/pagination/keyset";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.types";
 import { businessParties, dataQualityFindings, dataQualityResolutions } from "../../db/schema";
-import type { FindingSeverity, FindingStatus } from "../../db/schema/crm/data-quality";
+import type { FindingStatus } from "../../db/schema/crm/data-quality";
 import { buildCursorPage, decodeCursor } from "../../common/pagination/cursor";
-import { SEVERITY_WEIGHTS, weightedOpenCount } from "./finding-vocabulary";
+import { SEVERITY_WEIGHTS } from "./finding-vocabulary";
 import { MAX_BULK, type FindingSelection } from "./dto/data-quality.schemas";
+import {
+  assign,
+  countOpenInGroup,
+  selectCandidateIds,
+  selectCandidates,
+  type FindingSelectionDeps,
+} from "./lib/finding-selection";
+import { queueHealth } from "./lib/queue-health-window";
 import type {
   AssignFindingsInput,
   HealthQuery,
@@ -22,16 +30,27 @@ const ageInDays = (from: Date, now: number): number =>
   Math.max(0, Math.floor((now - from.getTime()) / DAY_MS));
 
 /**
- * Reading the queue, and handing an item to somebody.
+ * Reading the queue: a page of it at a time.
  *
  * Separate from resolution because the two have different shapes: this is all
  * reads and one narrow write, while resolving is a transaction with an executor
  * behind it. Keeping them apart is also what stops the read path acquiring the
  * resolution path's dependencies.
+ *
+ * What is left here is the paged half — a keyset window over the findings, the
+ * `GROUP BY` behind the bulk-decision screen, and the decision ledger. The two
+ * things that are not paged moved out: `lib/queue-health-window.ts` aggregates
+ * over every row a tenant has and cannot be paged at all, and
+ * `lib/finding-selection.ts` collapses a selection into a bounded list of
+ * identifiers, which is the only part of this service another service calls.
  */
 @Injectable()
 export class DataQualityQueueService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
+
+  private get deps(): FindingSelectionDeps {
+    return { db: this.db };
+  }
 
   // ── The queue ─────────────────────────────────────────────────────────────
 
@@ -221,228 +240,34 @@ export class DataQualityQueueService {
 
   // ── Is it getting better or worse ─────────────────────────────────────────
 
-  /**
-   * The dataset's health, and its direction.
-   *
-   * A standing number alone cannot answer the question the ticket asks — a
-   * tenant with 400 open findings that were 900 last month is winning, and one
-   * with 40 that were 4 is not. So the window's opened and closed counts sit
-   * beside the total, and their difference is the only figure that says which.
-   */
-  async health(organizationId: string, query: HealthQuery) {
-    const since = new Date(Date.now() - query.days * DAY_MS);
-
-    const [bySeverity, byProducer, opened, closed, oldest] = await Promise.all([
-      this.db
-        .select({ severity: dataQualityFindings.severity, n: count() })
-        .from(dataQualityFindings)
-        .where(
-          and(
-            eq(dataQualityFindings.organizationId, organizationId),
-            eq(dataQualityFindings.status, "open"),
-          ),
-        )
-        .groupBy(dataQualityFindings.severity),
-
-      this.db
-        .select({
-          producer: dataQualityFindings.producer,
-          severity: dataQualityFindings.severity,
-          n: count(),
-        })
-        .from(dataQualityFindings)
-        .where(
-          and(
-            eq(dataQualityFindings.organizationId, organizationId),
-            eq(dataQualityFindings.status, "open"),
-          ),
-        )
-        .groupBy(dataQualityFindings.producer, dataQualityFindings.severity),
-
-      this.db
-        .select({ n: count() })
-        .from(dataQualityFindings)
-        .where(
-          and(
-            eq(dataQualityFindings.organizationId, organizationId),
-            gte(dataQualityFindings.firstDetectedAt, since),
-          ),
-        ),
-
-      this.db
-        .select({ status: dataQualityFindings.status, n: count() })
-        .from(dataQualityFindings)
-        .where(
-          and(
-            eq(dataQualityFindings.organizationId, organizationId),
-            gte(dataQualityFindings.resolvedAt, since),
-          ),
-        )
-        .groupBy(dataQualityFindings.status),
-
-      this.db
-        .select({ firstDetectedAt: dataQualityFindings.firstDetectedAt })
-        .from(dataQualityFindings)
-        .where(
-          and(
-            eq(dataQualityFindings.organizationId, organizationId),
-            eq(dataQualityFindings.status, "open"),
-          ),
-        )
-        .orderBy(asc(dataQualityFindings.firstDetectedAt))
-        .limit(1),
-    ]);
-
-    const severityCounts = bySeverity.map((row) => ({
-      severity: row.severity,
-      count: Number(row.n),
-    }));
-
-    const openTotal = severityCounts.reduce((total, row) => total + row.count, 0);
-    const openedInWindow = Number(opened[0]?.n ?? 0);
-    const closedInWindow = closed.reduce((total, row) => total + Number(row.n), 0);
-    const oldestOpenAt = oldest[0]?.firstDetectedAt ?? null;
-
-    const producers = new Map<string, { producer: string; count: number; weight: number }>();
-    for (const row of byProducer) {
-      const entry = producers.get(row.producer) ?? {
-        producer: row.producer,
-        count: 0,
-        weight: 0,
-      };
-      entry.count += Number(row.n);
-      entry.weight += SEVERITY_WEIGHTS[row.severity] * Number(row.n);
-      producers.set(row.producer, entry);
-    }
-
-    return {
-      windowDays: query.days,
-      open: {
-        total: openTotal,
-        weighted: weightedOpenCount(severityCounts),
-        bySeverity: this.severityMap(severityCounts),
-        byProducer: [...producers.values()].sort((a, b) => b.weight - a.weight),
-      },
-      trend: {
-        openedInWindow,
-        closedInWindow,
-        resolvedInWindow: Number(closed.find((row) => row.status === "resolved")?.n ?? 0),
-        dismissedInWindow: Number(closed.find((row) => row.status === "dismissed")?.n ?? 0),
-        /** Positive means the backlog grew. The only number worth a graph. */
-        net: openedInWindow - closedInWindow,
-      },
-      oldestOpenAt,
-      oldestOpenAgeDays: oldestOpenAt ? ageInDays(oldestOpenAt, Date.now()) : null,
-    };
-  }
-
-  /** Every severity present, so a caller never has to decide what a gap means. */
-  private severityMap(
-    counts: readonly { severity: FindingSeverity; count: number }[],
-  ): Record<FindingSeverity, number> {
-    const map: Record<FindingSeverity, number> = { high: 0, medium: 0, low: 0 };
-    for (const row of counts) map[row.severity] = row.count;
-    return map;
+  /** The whole-queue aggregate; see `lib/queue-health-window.ts`. */
+  health(organizationId: string, query: HealthQuery) {
+    return queueHealth(this.deps, organizationId, query);
   }
 
   // ── Making it somebody's work ─────────────────────────────────────────────
 
-  /**
-   * Hand a selection to a person, or hand it back to the queue.
-   *
-   * One statement whatever the size of the selection. Assignment is the cheapest
-   * bulk action there is and it would be perverse to make it the one that loops.
-   */
-  async assign(organizationId: string, actorUserId: string, input: AssignFindingsInput) {
-    const candidates = await this.selectCandidateIds(organizationId, input.selection, "open");
-    if (candidates.length === 0) return { assigned: 0, findingIds: [] as string[] };
-
-    const assigning = input.assigneeUserId !== null;
-
-    const updated = await this.db
-      .update(dataQualityFindings)
-      .set({
-        assignedToUserId: input.assigneeUserId,
-        // Cleared together with the assignee: "assigned to nobody, by Dave, last
-        // Tuesday" is a state that reads as a bug every time somebody sees it.
-        assignedByUserId: assigning ? actorUserId : null,
-        assignedAt: assigning ? new Date() : null,
-      })
-      .where(
-        and(
-          eq(dataQualityFindings.organizationId, organizationId),
-          eq(dataQualityFindings.status, "open"),
-          inArray(dataQualityFindings.findingId, candidates),
-        ),
-      )
-      .returning({ findingId: dataQualityFindings.findingId });
-
-    return { assigned: updated.length, findingIds: updated.map((row) => row.findingId) };
+  /** One statement whatever the size of the selection. */
+  assign(organizationId: string, actorUserId: string, input: AssignFindingsInput) {
+    return assign(this.deps, organizationId, actorUserId, input);
   }
 
-  /**
-   * The identifiers a selection names, bounded, oldest first.
-   *
-   * A group selection never becomes a list of identifiers on the client, and it
-   * is resolved to one exactly once here — which is what makes "one decision"
-   * true no matter how the caller expressed it. Oldest first so a group larger
-   * than one decision is worked down from its oldest end rather than churning
-   * the same arbitrary slice.
-   */
-  async selectCandidateIds(
+  /** See `lib/finding-selection.ts`: the one place a selection becomes rows. */
+  selectCandidateIds(
     organizationId: string,
     selection: FindingSelection,
     status: FindingStatus,
   ): Promise<string[]> {
-    const rows = await this.selectCandidates(organizationId, selection, status);
-    return rows.map((row) => row.findingId);
+    return selectCandidateIds(this.deps, organizationId, selection, status);
   }
 
-  async selectCandidates(
-    organizationId: string,
-    selection: FindingSelection,
-    status: FindingStatus,
-  ) {
-    const scope =
-      selection.kind === "ids"
-        ? inArray(dataQualityFindings.findingId, selection.findingIds)
-        : eq(dataQualityFindings.groupKey, selection.groupKey);
-
-    return this.db
-      .select({
-        findingId: dataQualityFindings.findingId,
-        proposedAction: dataQualityFindings.proposedAction,
-        reversibility: dataQualityFindings.reversibility,
-        partyId: dataQualityFindings.partyId,
-        relatedPartyId: dataQualityFindings.relatedPartyId,
-        groupKey: dataQualityFindings.groupKey,
-      })
-      .from(dataQualityFindings)
-      .where(
-        and(
-          eq(dataQualityFindings.organizationId, organizationId),
-          eq(dataQualityFindings.status, status),
-          scope,
-        ),
-      )
-      .orderBy(asc(dataQualityFindings.firstDetectedAt), asc(dataQualityFindings.findingId))
-      .limit(MAX_BULK);
+  selectCandidates(organizationId: string, selection: FindingSelection, status: FindingStatus) {
+    return selectCandidates(this.deps, organizationId, selection, status);
   }
 
   /** How much of a group one decision left behind. */
-  async countOpenInGroup(organizationId: string, groupKey: string): Promise<number> {
-    const [row] = await this.db
-      .select({ n: count() })
-      .from(dataQualityFindings)
-      .where(
-        and(
-          eq(dataQualityFindings.organizationId, organizationId),
-          eq(dataQualityFindings.status, "open"),
-          eq(dataQualityFindings.groupKey, groupKey),
-        ),
-      );
-
-    return Number(row?.n ?? 0);
+  countOpenInGroup(organizationId: string, groupKey: string): Promise<number> {
+    return countOpenInGroup(this.deps, organizationId, groupKey);
   }
 
   // ── The decision ledger ───────────────────────────────────────────────────
