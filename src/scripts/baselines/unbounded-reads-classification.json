@@ -476,6 +476,96 @@
       "verdict": "ACTIONABLE",
       "note": "Offset pagination; needs keyset migration or proven depth bound",
       "justification": "Classified 2026-09-10. Same code, new path: listProjects moved verbatim out of inv-projects.service.ts when that 912-line file was decomposed for check:file-sizes. Inherits the parent's verdict - the offset paging it was classified ACTIONABLE for is the same paging, at a new path."
+    },
+    "/accounting/ap/ap-documents.service.ts": {
+      "verdict": "ACTIONABLE",
+      "note": "Offset pagination; needs keyset migration or proven depth bound",
+      "justification": "Classified 2026-09-11. New with merge 5af62b67a from the CRM/Timesheets/accounting-kernel lane, which never ran this gate. The AP document list pages with .limit(query.pageSize).offset((query.page - 1) * query.pageSize), ordered (issueDate DESC, createdAt DESC). Each page is bounded; the offset depth is not, and the order has no id tiebreaker. Needs a keyset cursor on (issueDate, createdAt, id)."
+    },
+    "/accounting/ap/ap-payments.service.ts": {
+      "verdict": "ACTIONABLE",
+      "note": "Offset pagination; needs keyset migration or proven depth bound",
+      "justification": "Classified 2026-09-11. New with merge 5af62b67a from the CRM/Timesheets/accounting-kernel lane, which never ran this gate. The AP payment list pages with .limit(query.pageSize).offset((query.page - 1) * query.pageSize), ordered (paymentDate DESC, createdAt DESC). Each page is bounded; the offset depth is not. Needs a keyset cursor on (paymentDate, createdAt, id)."
+    },
+    "/accounting/ar/ar-documents.service.ts": {
+      "verdict": "ACTIONABLE",
+      "note": "Offset pagination; needs keyset migration or proven depth bound",
+      "justification": "Classified 2026-09-11. New with merge 5af62b67a from the CRM/Timesheets/accounting-kernel lane, which never ran this gate. The AR document list pages with .limit(pageSize).offset((page - 1) * pageSize) beside a count(*), ordered (issueDate DESC, createdAt DESC) with no id tiebreaker. Needs a keyset cursor."
+    },
+    "/accounting/ar/ar-receipts.service.ts": {
+      "verdict": "ACTIONABLE",
+      "note": "Offset pagination; needs keyset migration or proven depth bound",
+      "justification": "Classified 2026-09-11. New with merge 5af62b67a from the CRM/Timesheets/accounting-kernel lane, which never ran this gate. The receipt list pages with .limit(pageSize).offset((page - 1) * pageSize) beside a count(*), ordered (receiptDate DESC, createdAt DESC) with no id tiebreaker. Needs a keyset cursor."
+    },
+    "/accounting/attachments/attachments.service.ts": {
+      "verdict": "ACTIONABLE",
+      "note": "Offset pagination; needs keyset migration or proven depth bound",
+      "justification": "Classified 2026-09-11. New with merge 5af62b67a from the CRM/Timesheets/accounting-kernel lane, which never ran this gate. list() pages ONE document's attachments with .limit(pageSize).offset((page - 1) * pageSize), ordered by createdAt DESC alone. The depth is that document's attachment count, but nothing caps attachments per document, so it is still offset paging, and the order has no tiebreaker. Needs a keyset cursor or a per-document attachment cap."
+    },
+    "/accounting/banking/bank-accounts.service.ts": {
+      "verdict": "ACTIONABLE",
+      "note": "Offset pagination; needs keyset migration or proven depth bound",
+      "justification": "Classified 2026-09-11. New with merge 5af62b67a from the CRM/Timesheets/accounting-kernel lane, which never ran this gate. The bank-profile list pages with .limit(pageSize).offset((page - 1) * pageSize) and a count(*) over () window, ordered by displayName alone. Needs a keyset cursor on (displayName, id)."
+    },
+    "/accounting/banking/statement-import.service.ts": {
+      "verdict": "ACTIONABLE",
+      "note": "Offset pagination; needs keyset migration or proven depth bound",
+      "justification": "Classified 2026-09-11. New with merge 5af62b67a from the CRM/Timesheets/accounting-kernel lane, which never ran this gate. Two offset pages: the statement list (ordered periodEnd DESC, importedAt DESC) and getStatement's lines of one statement (ordered lineNo), both .limit(pageSize).offset((page - 1) * pageSize). A statement holds as many lines as the imported file did. Both need keyset cursors."
+    },
+    "/accounting/kernel/account-ledger.ts": {
+      "verdict": "ACTIONABLE",
+      "note": "Offset pagination; needs keyset migration or proven depth bound",
+      "justification": "Classified 2026-09-11. New with merge 5af62b67a from the CRM/Timesheets/accounting-kernel lane, which never ran this gate. The account ledger pages journal lines with .limit(pageSize).offset(offset), ordered (journalDate, journalNumber, lineNo), with the running balance computed by a window over the whole filtered set. The offset depth grows with the account's activity; a keyset cursor would have to carry the running balance forward."
+    },
+    "/accounting/parties/parties.service.ts": {
+      "verdict": "ACTIONABLE",
+      "note": "Offset pagination; needs keyset migration or proven depth bound",
+      "justification": "Classified 2026-09-11. New with merge 5af62b67a from the CRM/Timesheets/accounting-kernel lane, which never ran this gate. The party list pages with .limit(pageSize).offset((page - 1) * pageSize) beside a count(*), ordered (displayName, id). Needs a keyset cursor on (displayName, id)."
+    },
+    "/commission/commission.service.ts": {
+      "verdict": "ACTIONABLE",
+      "note": "Offset pagination; needs keyset migration or proven depth bound",
+      "justification": "Classified 2026-09-11. New with merge 5af62b67a from the CRM/Timesheets/accounting-kernel lane, which never ran this gate. The earnings list returns .limit(query.limit).offset(query.offset), ordered (earnedOn DESC, createdAt DESC). limit is capped at 200 by dto/commission.schemas.ts; offset is not. Needs a keyset cursor."
+    },
+    "/crm/segments/crm-segments.service.ts": {
+      "verdict": "EXCLUDED-MODULE",
+      "note": "CRM/Inventory excluded product domain - do not fix in this lane",
+      "justification": "Classified 2026-09-11. New with merge 5af62b67a from the CRM/Timesheets/accounting-kernel lane, which never ran this gate. /crm/ is one of the script's EXCLUDED_MODULE_PREFIXES, which is the only reason this is EXCLUDED-MODULE. The match was read, and it is a real offset page, not a misread: listSegments orders by updatedAt DESC with .limit(query.limit).offset(query.offset). Outside the excluded prefix it would be ACTIONABLE."
+    },
+    "/lifecycle/customer-health.service.ts": {
+      "verdict": "ACTIONABLE",
+      "note": "Offset pagination; needs keyset migration or proven depth bound",
+      "justification": "Classified 2026-09-11. New with merge 5af62b67a from the CRM/Timesheets/accounting-kernel lane, which never ran this gate. The health-assessment list returns .limit(query.limit).offset(query.offset), ordered (score ASC, partyId). Needs a keyset cursor on (score, partyId)."
+    },
+    "/lifecycle/lifecycle-triggers.service.ts": {
+      "verdict": "ACTIONABLE",
+      "note": "Offset pagination; needs keyset migration or proven depth bound",
+      "justification": "Classified 2026-09-11. New with merge 5af62b67a from the CRM/Timesheets/accounting-kernel lane, which never ran this gate. The trigger list returns .limit(query.limit).offset(query.offset), ordered by firedAt DESC alone with no tiebreaker. Needs a keyset cursor on (firedAt, id)."
+    },
+    "/lifecycle/lifecycle.service.ts": {
+      "verdict": "ACTIONABLE",
+      "note": "Offset pagination; needs keyset migration or proven depth bound",
+      "justification": "Classified 2026-09-11. New with merge 5af62b67a from the CRM/Timesheets/accounting-kernel lane, which never ran this gate. The lifecycle list returns .limit(query.limit).offset(query.offset), ordered by riskScore DESC or renewalOn ASC, then customerLifecycleId. Needs a keyset cursor."
+    },
+    "/party/party-merge.service.ts": {
+      "verdict": "ACTIONABLE",
+      "note": "Offset pagination; needs keyset migration or proven depth bound",
+      "justification": "Classified 2026-09-11. The file is on the inventory parent without this match; the match arrived with merge 5af62b67a from the CRM/Timesheets/accounting-kernel lane, which never ran this gate. listMerges pages with .limit(query.limit).offset((query.page - 1) * query.limit) beside a count(*), ordered (mergedAt DESC, partyMergeId DESC). Needs a keyset cursor."
+    },
+    "/party/party-roles.service.ts": {
+      "verdict": "ACTIONABLE",
+      "note": "Offset pagination; needs keyset migration or proven depth bound",
+      "justification": "Classified 2026-09-11. The file is on the inventory parent without this match; the match arrived with merge 5af62b67a from the CRM/Timesheets/accounting-kernel lane, which never ran this gate. listCandidates pages the duplicate-candidate queue with .limit(query.limit).offset((query.page - 1) * query.limit), ordered (score DESC, candidateId). Needs a keyset cursor."
+    },
+    "/reporting/reporting.service.ts": {
+      "verdict": "ACTIONABLE",
+      "note": "Offset pagination; needs keyset migration or proven depth bound",
+      "justification": "Classified 2026-09-11. New with merge 5af62b67a from the CRM/Timesheets/accounting-kernel lane, which never ran this gate. Two offset lists: listDefinitions (ordered updatedAt DESC) and listRuns (ordered createdAt DESC), each .limit(query.limit).offset(query.offset) with no tiebreaker. Runs accrue with every execution. Both need keyset cursors."
+    },
+    "/timesheets/core/overdue.service.ts": {
+      "verdict": "ACTIONABLE",
+      "note": "Offset pagination; needs keyset migration or proven depth bound",
+      "justification": "Classified 2026-09-11. New with merge 5af62b67a from the CRM/Timesheets/accounting-kernel lane, which never ran this gate. The overdue-period list returns .limit(limit).offset(offset), ordered (periodEnd ASC, id). Needs a keyset cursor on (periodEnd, id)."
     }
   },
   "unbounded": {
