@@ -5,14 +5,11 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, count, eq, gte, lte, or } from "drizzle-orm";
+import { and, eq, gte, lte, or } from "drizzle-orm";
 import {
   accountingPeriods,
   accountingSettings,
-  journalEntries,
   organizationMembers,
-  purchaseBills,
-  finBankTransactions,
   finApprovalRequests,
 } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
@@ -20,6 +17,7 @@ import { type Db } from "../../../db/drizzle.module";
 import { CacheService } from "../../../common/cache/cache.service";
 import { AuditService } from "../../../common/audit/audit.service";
 import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
+import { getCloseChecklist } from "./lib/period-close-checklist";
 import type { GeneratePeriodsInput } from "./dto/periods.schemas";
 
 const PERIODS_CACHE_TTL = 60;
@@ -91,92 +89,9 @@ export class PeriodsService {
     return { created, total: toInsert.length };
   }
 
+  /** @see lib/period-close-checklist.ts */
   async getCloseChecklist(orgId: string, periodId: number) {
-    const period = await this.db
-      .select()
-      .from(accountingPeriods)
-      .where(and(eq(accountingPeriods.id, periodId), eq(accountingPeriods.orgId, orgId)))
-      .limit(1);
-    if (!period[0]) throw new NotFoundException("Period not found");
-
-    const { startDate, endDate } = period[0];
-
-    const [draftJournalRows, draftBillRows, unreconciledRows, pendingRows] =
-      await Promise.all([
-        this.db
-          .select({ c: count() })
-          .from(journalEntries)
-          .where(
-            and(
-              eq(journalEntries.orgId, orgId),
-              gte(journalEntries.entryDate, startDate),
-              lte(journalEntries.entryDate, endDate),
-              or(
-                eq(journalEntries.status, "DRAFT"),
-                eq(journalEntries.status, "PENDING_APPROVAL"),
-              ),
-            ),
-          ),
-        this.db
-          .select({ c: count() })
-          .from(purchaseBills)
-          .where(
-            and(
-              eq(purchaseBills.orgId, orgId),
-              gte(purchaseBills.billDate, startDate),
-              lte(purchaseBills.billDate, endDate),
-              eq(purchaseBills.status, "DRAFT"),
-            ),
-          ),
-        this.db
-          .select({ c: count() })
-          .from(finBankTransactions)
-          .where(
-            and(
-              eq(finBankTransactions.orgId, orgId),
-              gte(finBankTransactions.txnDate, startDate),
-              lte(finBankTransactions.txnDate, endDate),
-              or(
-                eq(finBankTransactions.status, "UNMATCHED"),
-                eq(finBankTransactions.status, "SUGGESTED"),
-              ),
-            ),
-          ),
-        this.db
-          .select({ c: count() })
-          .from(finApprovalRequests)
-          .where(
-            and(
-              eq(finApprovalRequests.orgId, orgId),
-              eq(finApprovalRequests.status, "PENDING"),
-            ),
-          ),
-      ]);
-
-    const [draftJournals] = draftJournalRows;
-    const [draftBills] = draftBillRows;
-    const [unreconciledTxns] = unreconciledRows;
-    const [pendingApprovals] = pendingRows;
-
-    const draftJournalCount = Number(draftJournals?.c ?? 0);
-    const draftBillCount = Number(draftBills?.c ?? 0);
-    const unreconciledCount = Number(unreconciledTxns?.c ?? 0);
-    const pendingApprovalCount = Number(pendingApprovals?.c ?? 0);
-
-    return {
-      period: period[0],
-      checklist: {
-        noDraftJournals: { passed: draftJournalCount === 0, count: draftJournalCount },
-        noDraftBills: { passed: draftBillCount === 0, count: draftBillCount },
-        noUnreconciledTransactions: { passed: unreconciledCount === 0, count: unreconciledCount },
-        noPendingApprovals: { passed: pendingApprovalCount === 0, count: pendingApprovalCount },
-      },
-      canClose:
-        draftJournalCount === 0 &&
-        draftBillCount === 0 &&
-        unreconciledCount === 0 &&
-        pendingApprovalCount === 0,
-    };
+    return getCloseChecklist(this.db, orgId, periodId);
   }
 
   async closePeriod(orgId: string, userId: string, periodId: number) {
