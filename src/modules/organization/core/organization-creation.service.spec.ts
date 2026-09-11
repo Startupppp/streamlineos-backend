@@ -7,17 +7,21 @@ import { OrganizationCreationService } from "./organization-creation.service";
 
 const chooseRegionForNewOrg = jest.fn();
 const placeOrganization = jest.fn();
-const placedOrganizationRegion = jest.fn();
+const placedOrganizationCoordinates = jest.fn();
 const unplaceOrganization = jest.fn();
 const bootstrapCellOrganization = jest.fn();
+const persistedPlacements = new Map<
+  string,
+  { region: string; cellId: string }
+>();
 
 jest.mock("../../../common/region/cell-admission", () => ({
   chooseRegionForNewOrg: (...args: unknown[]) => chooseRegionForNewOrg(...args),
 }));
 jest.mock("../../../common/region/placement-lookup", () => ({
   placeOrganization: (...args: unknown[]) => placeOrganization(...args),
-  placedOrganizationRegion: (...args: unknown[]) =>
-    placedOrganizationRegion(...args),
+  placedOrganizationCoordinates: (...args: unknown[]) =>
+    placedOrganizationCoordinates(...args),
   unplaceOrganization: (...args: unknown[]) => unplaceOrganization(...args),
 }));
 jest.mock("./bootstrap-cell-organization", () => ({
@@ -46,7 +50,21 @@ async function build(options: {
   steps?: Array<{ stepName: string; state: string }>;
   compensate?: jest.Mock;
 } = {}) {
-  const db = { select: selectOwner([{ id: 1 }]) };
+  const db = {
+    select: selectOwner([{ id: 1 }]),
+    query: {
+      organizations: {
+        findFirst: jest.fn().mockResolvedValue({
+          id: "org-fixed",
+          name: "Acme",
+          slug: "acme-orgfixed",
+        }),
+      },
+      organizationMembers: {
+        findFirst: jest.fn().mockResolvedValue({ id: 1 }),
+      },
+    },
+  };
   const invalidate = jest.fn().mockResolvedValue(undefined);
   const refreshForUser = jest.fn().mockResolvedValue(undefined);
   const touchLastActivated = jest.fn().mockResolvedValue(undefined);
@@ -63,7 +81,10 @@ async function build(options: {
       saga: { sagaId: "saga-1", organizationId: "org-fixed" },
       steps: options.steps ?? [],
     }),
+    claimExecution: jest.fn().mockResolvedValue(true),
+    markFailed: jest.fn().mockResolvedValue(undefined),
     findByRequestKey: jest.fn().mockResolvedValue(null),
+    findReservationValue: jest.fn().mockResolvedValue(null),
     runStep,
     reserve,
     release,
@@ -102,10 +123,32 @@ async function build(options: {
 describe("OrganizationCreationService", () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    chooseRegionForNewOrg.mockResolvedValue({ region: "in" });
-    placeOrganization.mockResolvedValue(undefined);
-    placedOrganizationRegion.mockResolvedValue(null);
-    unplaceOrganization.mockResolvedValue(undefined);
+    persistedPlacements.clear();
+    chooseRegionForNewOrg.mockResolvedValue({
+      kind: "selected",
+      region: "in",
+      cellId: "in-1",
+      rejections: [],
+    });
+    placeOrganization.mockImplementation(
+      async (
+        _db: unknown,
+        input: { orgId: string; region: string; cellId?: string },
+      ) => {
+        if (!persistedPlacements.has(input.orgId))
+          persistedPlacements.set(input.orgId, {
+            region: input.region,
+            cellId: input.cellId ?? "legacy-1",
+          });
+      },
+    );
+    placedOrganizationCoordinates.mockImplementation(
+      async (_db: unknown, orgId: string) =>
+        persistedPlacements.get(orgId) ?? null,
+    );
+    unplaceOrganization.mockImplementation(async (_db: unknown, orgId: string) => {
+      persistedPlacements.delete(orgId);
+    });
     bootstrapCellOrganization.mockResolvedValue(undefined);
   });
 
@@ -134,6 +177,11 @@ describe("OrganizationCreationService", () => {
       "bootstrap-owner-membership",
       "activate-directory-projection",
     ]);
+    expect(placeOrganization).toHaveBeenCalledWith(expect.anything(), {
+      orgId: "org-fixed",
+      region: "in",
+      cellId: "in-1",
+    });
     expect(bootstrapCellOrganization).toHaveBeenCalledWith(
       expect.anything(),
       expect.anything(),
@@ -167,7 +215,7 @@ describe("OrganizationCreationService", () => {
       organizationId: "org-fixed",
       state: "RUNNING",
     });
-    placedOrganizationRegion.mockResolvedValueOnce("eu");
+    persistedPlacements.set("org-fixed", { region: "eu", cellId: "eu-1" });
 
     await service.createFromSetup({ userId: "user-1", name: "Acme" });
 
@@ -180,8 +228,34 @@ describe("OrganizationCreationService", () => {
     );
   });
 
+  it("uses an existing placement when its saga step was not marked done before a crash", async () => {
+    const { service, saga } = await build({
+      steps: [{ stepName: "reserve-identity", state: "DONE" }],
+    });
+    saga.findByRequestKey.mockResolvedValue({
+      sagaId: "saga-1",
+      organizationId: "org-fixed",
+      state: "RUNNING",
+    });
+    persistedPlacements.set("org-fixed", { region: "ap", cellId: "ap-1" });
+
+    await service.createFromSetup({ userId: "user-1", name: "Acme" });
+
+    expect(chooseRegionForNewOrg).not.toHaveBeenCalled();
+    expect(placeOrganization).toHaveBeenCalledWith(expect.anything(), {
+      orgId: "org-fixed",
+      region: "ap",
+      cellId: "ap-1",
+    });
+    expect(bootstrapCellOrganization).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.anything(),
+      expect.objectContaining({ region: "ap" }),
+    );
+  });
+
   it("starts a stable successor saga when the prior completed setup org is gone", async () => {
-    const { service, saga } = await build();
+    const { service, saga, db } = await build();
     saga.findByRequestKey
       .mockResolvedValueOnce({
         sagaId: "saga-old",
@@ -189,7 +263,8 @@ describe("OrganizationCreationService", () => {
         state: "COMPLETED",
       })
       .mockResolvedValueOnce(null);
-    placedOrganizationRegion.mockResolvedValueOnce(null);
+    persistedPlacements.set("org-old", { region: "in", cellId: "in-1" });
+    db.query.organizations.findFirst.mockResolvedValueOnce(undefined);
 
     await service.createFromSetup({ userId: "user-1", name: "Acme" });
 
@@ -222,7 +297,8 @@ describe("OrganizationCreationService", () => {
         await compensators["reserve-identity"]();
       },
     );
-    const { service, saga, release } = await build({ compensate });
+    const { service, saga, release, db } = await build({ compensate });
+    db.query.organizations.findFirst.mockResolvedValue(undefined);
 
     await expect(
       service.createFromSetup({ userId: "user-1", name: "Acme" }),

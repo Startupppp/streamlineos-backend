@@ -26,7 +26,6 @@ function randomEmployeeCode(length: number): string {
   return out;
 }
 
-/** Who already holds each requested employee number, as one org-scoped query for the whole upload. */
 export async function preloadEmployeeNumbers(
   db: DbOrTx,
   orgId: string,
@@ -77,7 +76,6 @@ function resolveDepartment(
   return { departmentId: resolved };
 }
 
-// Decides every row from the preloaded maps alone, so a rejected row costs no query and still reports why.
 export function planBulkOnboarding(
   rows: readonly BulkOnboardEmployeeRow[],
   catalog: DepartmentCatalog,
@@ -86,7 +84,13 @@ export function planBulkOnboarding(
   roleErrors: Map<string, string>,
 ): BulkOnboardPlan {
   const plan: BulkOnboardPlan = { accepted: [], rejected: [] };
-  const claimedNumbers = new Set(employeeNumberOwner.keys());
+  const claimedNumbers = new Map(
+    [...employeeNumberOwner].map(([employeeNumber, owner]) => [
+      employeeNumber,
+      owner ?? `persisted:${employeeNumber}`,
+    ]),
+  );
+  const plannedEmails = new Set<string>();
 
   for (let index = 0; index < rows.length; index += 1) {
     const source = rows[index];
@@ -123,9 +127,11 @@ export function planBulkOnboarding(
 
     const existingUserId = screen.userId ?? undefined;
     const requestedNumber = source.employeeId?.trim();
-    if (requestedNumber) {
-      const owner = employeeNumberOwner.get(requestedNumber);
-      if (owner !== undefined && owner !== existingUserId) {
+    const numberClaimant = existingUserId ?? `email:${email}`;
+    const repeatedPlannedEmail = plannedEmails.has(email);
+    if (requestedNumber && !repeatedPlannedEmail) {
+      const claimant = claimedNumbers.get(requestedNumber);
+      if (claimant !== undefined && claimant !== numberClaimant) {
         plan.rejected.push({
           row,
           email,
@@ -137,9 +143,14 @@ export function planBulkOnboarding(
     }
 
     let employeeNumber = requestedNumber || `EMP-${randomEmployeeCode(6)}`;
-    while (!requestedNumber && claimedNumbers.has(employeeNumber))
+    while (
+      !requestedNumber &&
+      !repeatedPlannedEmail &&
+      claimedNumbers.has(employeeNumber)
+    )
       employeeNumber = `EMP-${randomEmployeeCode(6)}`;
-    claimedNumbers.add(employeeNumber);
+    if (!repeatedPlannedEmail)
+      claimedNumbers.set(employeeNumber, numberClaimant);
 
     plan.accepted.push({
       row,
@@ -155,6 +166,7 @@ export function planBulkOnboarding(
       joiningDate: source.joiningDate ? formatDateOnly(source.joiningDate) : null,
       dateOfBirth: source.dateOfBirth ? formatDateOnly(source.dateOfBirth) : null,
     });
+    plannedEmails.add(email);
   }
 
   return plan;

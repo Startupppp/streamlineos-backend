@@ -36,7 +36,6 @@ export interface BulkOnboardWriteDeps {
   membership: MembershipMutations;
 }
 
-/** Accounts that already existed are re-activated here; brand-new accounts are written by admission. */
 async function refreshRelinkedUsers(
   tx: DbOrTx,
   admitted: readonly AdmittedEmployee[],
@@ -106,7 +105,6 @@ async function writeSensitiveFields(
     });
 }
 
-// Admission locks the quota and asserts it once for the whole batch, keeping the seat ceiling a serialized write invariant.
 export async function writeBulkOnboarding(
   tx: DbOrTx,
   actor: CurrentUserContext,

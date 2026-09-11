@@ -1,3 +1,9 @@
+import { Test } from "@nestjs/testing";
+import { DRIZZLE } from "../../../../db/drizzle.constants";
+import { AuditService } from "../../../../common/audit/audit.service";
+import { CacheService } from "../../../../common/cache/cache.service";
+import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
+import { OrganizationCreationService } from "../../core/organization-creation.service";
 import { OrgSetupResolverService } from "../org-setup-resolver.service";
 
 describe("OrgSetupResolverService organization creation", () => {
@@ -10,17 +16,30 @@ describe("OrgSetupResolverService organization creation", () => {
       }),
     };
     const audit = { log: jest.fn() };
-    const resolver = new OrgSetupResolverService(
-      {},
-      {},
-      audit,
-      creation,
-    );
+    const moduleRef = await Test.createTestingModule({
+      providers: [
+        OrgSetupResolverService,
+        { provide: DRIZZLE, useValue: {} },
+        { provide: CacheService, useValue: {} },
+        { provide: AuditService, useValue: audit },
+        { provide: OrganizationCreationService, useValue: creation },
+      ],
+    }).compile();
+    const resolver = moduleRef.get(OrgSetupResolverService);
     jest.spyOn(resolver, "listSetupMemberships").mockResolvedValue([]);
+    const actor: CurrentUserContext = {
+      userId: "user-1",
+      orgId: "",
+      role: "MEMBER",
+      isOrgOwner: false,
+      sessionId: "session-1",
+      tokenScopes: null,
+      principal: { kind: "account-only" },
+    };
 
     await expect(
       resolver.resolveOrCreateOrg(
-        { userId: "user-1", orgId: null },
+        actor,
         { companyName: "  Acme  " },
       ),
     ).resolves.toEqual({ orgId: "org-created", isOwner: true });

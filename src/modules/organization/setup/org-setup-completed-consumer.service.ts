@@ -24,34 +24,6 @@ import type { SetupInvitee } from "./dto/org.schemas";
 
 export const ORG_SETUP_COMPLETED_CONSUMER = "organization:setup-completed";
 
-/**
- * Finishes provisioning an organisation after its setup row has committed.
- *
- * This work used to run in a bare `setImmediate` inside `OrgSetupService`, with every failure
- * caught and written to a log line. Four things happened there — RBAC role seeding, module
- * checklist provisioning, closing the setup session and the welcome notification — and none of
- * them were retried. A process restart in the window between the commit and the callback, or any
- * one task throwing, left a brand-new organisation permanently half-provisioned: no roles, so its
- * owner could not open the screens they owned, and nothing anywhere recorded that it had happened.
- *
- * Two more steps have since moved in from an even weaker place. The industry workspace structure
- * and the wizard's invitations were sequenced by the BROWSER after the setup response returned, so
- * closing the tab — or a failed fetch the user never saw — dropped them with no record and no
- * retry. They are the same class of work as the other four and now run in the same place.
- *
- * backend/CLAUDE.md §4 names three mechanisms for a side effect and picks between them by what a
- * crash costs. `registerAfterCommit` is the one for work that is recoverable from state already
- * stored; that is not this. Losing the role seed is a correctness bug with no other record, and
- * the welcome notification leaves the process, so this is mechanism (2): the event commits inside
- * the same transaction that stamps `onboarding_completed_at`, and the outbox relay retries it
- * until it succeeds or dead-letters where an operator can see it.
- *
- * The steps run in sequence rather than through `Promise.allSettled`, so the first failure names
- * itself, aborts the handler and is retried by the publisher. Every step is idempotent under
- * redelivery: `seedSystemRolesForOrg` never rewrites an existing role's grants, the checklist,
- * session and workspace-generation calls are ensure-shaped, invitations converge on one pending
- * row per email, and the welcome notification carries the outbox effect key.
- */
 @Injectable()
 export class OrgSetupCompletedConsumerService
   implements OutboxEventConsumer, OnModuleInit
@@ -100,12 +72,6 @@ export class OrgSetupCompletedConsumerService
     });
   }
 
-  /**
-   * The industry template is a fixed catalogue, so an industry with no template is a permanent
-   * precondition miss, not a transient failure: retrying it would dead-letter an event whose other
-   * five steps all succeeded. Skipped and logged rather than thrown; every other failure inside
-   * `generateWorkspace` still propagates.
-   */
   private async generateStructure(
     orgId: string,
     industry: string | null,
@@ -121,11 +87,6 @@ export class OrgSetupCompletedConsumerService
     await this.workspace.generateWorkspace(orgId, industry, [...moduleKeys]);
   }
 
-  /**
-   * Standing is re-derived from the membership row rather than trusted from the payload: an event
-   * is data, and `bulkInvite` grants a role. A payload that named a non-owner would otherwise
-   * invite on their behalf with an authority the event asserted about itself.
-   */
   private async sendInvitations(
     orgId: string,
     actorUserId: string,
@@ -150,8 +111,15 @@ export class OrgSetupCompletedConsumerService
         `Organization ${orgId} has no active membership for the setup invitation actor`,
       );
 
+    const uniqueInvitees = new Map<string, SetupInvitee>();
+    for (const invitee of invitees) {
+      const email = invitee.email.trim().toLowerCase();
+      if (!uniqueInvitees.has(email))
+        uniqueInvitees.set(email, { ...invitee, email });
+    }
+
     const emailsByRole = new Map<string, string[]>();
-    for (const invitee of invitees)
+    for (const invitee of uniqueInvitees.values())
       emailsByRole.set(invitee.role, [
         ...(emailsByRole.get(invitee.role) ?? []),
         invitee.email,
@@ -163,6 +131,7 @@ export class OrgSetupCompletedConsumerService
         { userId: actorUserId, isOrgOwner: actor.isOwner },
         emails,
         role,
+        "enqueue",
       );
       const failed = results.filter((result) => !result.success);
       if (failed.length > 0)
@@ -214,12 +183,6 @@ export class OrgSetupCompletedConsumerService
       invitees,
     } = parseResult.data;
 
-    // Every step below writes into `orgId` taken from the payload, while the inbox fence, the
-    // relay's lease and the audit trail are all bound to `event.organizationId`. The producer
-    // sets both from the same value, so a disagreement is never legitimate — and unchecked it
-    // would seed roles, provision checklists, close a session and send a welcome inside an
-    // organisation the event was never recorded against. FAILED then throw: the inbox row says
-    // why, and the publisher's retry ladder ends at the dead-letter the dead-outbox alert reads.
     if (orgId !== event.organizationId) {
       const message = `payload orgId does not match the event's organization (${event.organizationId})`;
       this.logger.error(
@@ -236,9 +199,6 @@ export class OrgSetupCompletedConsumerService
       );
     }
 
-    // A throw here is deliberate: it leaves the inbox row reclaimable, propagates to
-    // OutboxPublisherService, and the event is retried and finally dead-lettered where the
-    // dead-outbox alert reports it. The failure is never swallowed.
     try {
       await seedSystemRolesForOrg(this.db, orgId);
       await this.checklists.ensureChecklistsForModules(orgId, moduleKeys);

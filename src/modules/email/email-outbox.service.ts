@@ -115,6 +115,12 @@ export class EmailOutboxService {
     return inserted.length;
   }
 
+  async enqueueOnly(options: EmailOptions): Promise<void> {
+    const filtered = await this.applySuppression(options);
+    if (!filtered) return;
+    await this.enqueueForDelivery([filtered]);
+  }
+
   async enqueueAndTry(options: EmailOptions): Promise<void> {
     // SEC-002/SEC-003: the suppression gate. Every named sender on EmailService
     // routes through here, so this one check covers all 75 direct-send call sites.

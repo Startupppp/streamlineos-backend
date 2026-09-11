@@ -17,6 +17,7 @@ import { RequirePermission } from "../../access/require-permission.decorator";
 import { z } from "zod";
 import { optionalPageSizeField } from "../../../common/pagination/list-query.schema";
 import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { NoTenantTransaction } from "../../../common/tenant";
 import {
   orgMemberListResponseSchema,
   orgSetupSessionResponseSchema,
@@ -87,6 +88,7 @@ export class OrgController {
   @ResponseSchema(orgSetupCompleteResponseSchema)
   @Universal()
   @AllowNoOrg()
+  @NoTenantTransaction()
   @Validate({ body: setupSchema })
   complete(
     @Body() body: SetupInput,
@@ -99,6 +101,7 @@ export class OrgController {
   @ResponseSchema(orgSetupSkipResponseSchema)
   @Universal()
   @AllowNoOrg()
+  @NoTenantTransaction()
   @Validate({ body: orgSetupSkipSchema })
   skip(
     @Body() body: OrgSetupSkipInput,

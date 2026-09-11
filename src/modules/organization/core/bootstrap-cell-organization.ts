@@ -1,16 +1,12 @@
-import { eq } from "drizzle-orm";
-import { addDays } from "date-fns";
-import { organizations, subscriptions, users } from "../../../db/schema";
+import { eq, sql } from "drizzle-orm";
+import { organizations, users } from "../../../db/schema";
 import { type Db } from "../../../db/drizzle.module";
 import type { CacheService } from "../../../common/cache/cache.service";
 import { ORG_MEMBER_ROLES } from "../../../common/rbac/org-roles";
 import { runInNewTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
 import { withMembershipMutations } from "../../../common/org/membership-mutations";
 import { bumpPermissionsVersion } from "../../../common/rbac/access-invalidate";
-import {
-  getTrialDays,
-  TRIAL_PLAN,
-} from "../../billing/core/plan-entitlements.constants";
+import { insertTrialSubscription } from "../../billing/core/trial-subscription";
 import {
   DEFAULT_SKIP_MODULES,
   provisionOrgModules,
@@ -55,6 +51,9 @@ export async function bootstrapCellOrganization(
 
   await withMembershipMutations(cache, (membership) =>
     runInNewTenantTransaction(db, orgId, async (tx) => {
+      await tx.execute(
+        sql`SELECT pg_advisory_xact_lock(hashtextextended(${`organization-bootstrap:${orgId}`}, 0))`,
+      );
       const [already] = await tx
         .select({ id: organizations.id })
         .from(organizations)
@@ -79,15 +78,7 @@ export async function bootstrapCellOrganization(
         role: ORG_MEMBER_ROLES.OWNER,
         ...(input.ownerActivatedAt ? { activatedAt: input.ownerActivatedAt } : {}),
       });
-      const trialDays = getTrialDays();
-      await tx.insert(subscriptions).values({
-        orgId,
-        plan: TRIAL_PLAN,
-        status: "TRIAL",
-        trialEndsAt: addDays(new Date(), trialDays),
-        currentPeriodStart: new Date(),
-        currentPeriodEnd: addDays(new Date(), trialDays),
-      });
+      await insertTrialSubscription(tx, orgId);
       await provisionEmployeeSelfService(tx, orgId);
       await bumpPermissionsVersion(tx, orgId);
       await seedSystemRolesForOrg(db, orgId);

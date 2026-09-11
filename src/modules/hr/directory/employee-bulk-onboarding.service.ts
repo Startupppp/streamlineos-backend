@@ -54,7 +54,6 @@ export class EmployeeBulkOnboardingService {
     private readonly personEmploymentSync: PersonEmploymentSyncService,
   ) {}
 
-  // Per-row rejections come from the preloaded maps, so every row still names its reason; the accepted set then commits or rolls back as a unit.
   async onboardEmployeesBulk(actor: CurrentUserContext, rows: BulkOnboardEmployeeRow[]) {
     const catalog = await loadDepartmentCatalog(this.db, actor.orgId);
 

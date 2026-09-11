@@ -10,6 +10,7 @@ import { EmployeeBulkOnboardingService } from "./employee-bulk-onboarding.servic
 import type { BulkOnboardEmployeeRow } from "./dto/hr-directory.schemas";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { ACCOUNT_ONLY_PRINCIPAL } from "../../../common/auth/principal";
+import { planBulkOnboarding } from "./bulk-onboarding/bulk-onboarding-plan";
 
 /**
  * The proof that the import stopped running one complete onboarding workflow per
@@ -241,5 +242,72 @@ describe("EmployeeBulkOnboardingService.onboardEmployeesBulk — statement count
       success: false,
       error: "Duplicate email in this upload",
     });
+  });
+
+  it("rejects a later row that claims the same new employee ID", () => {
+    const rows = uploadRows(2).map((row) => ({
+      ...row,
+      employeeId: "EMP-SHARED",
+    }));
+    const screens = new Map([
+      ["ada.lovelace1@example.com", { kind: "clear" as const, userId: "user-1" }],
+      ["ada.lovelace2@example.com", { kind: "clear" as const, userId: "user-2" }],
+    ]);
+
+    const plan = planBulkOnboarding(
+      rows,
+      {
+        byKey: new Map([["engineering", DEPARTMENT_ID]]),
+        activeIds: new Set([DEPARTMENT_ID]),
+        usedCodes: new Set(),
+        created: false,
+      },
+      screens,
+      new Map(),
+      new Map(),
+    );
+
+    expect(plan.accepted).toHaveLength(1);
+    expect(plan.rejected).toEqual([
+      {
+        row: 2,
+        email: "ada.lovelace2@example.com",
+        success: false,
+        error: 'Employee ID "EMP-SHARED" is already in use in your organization.',
+      },
+    ]);
+  });
+
+  it("does not let a later duplicate email reserve an employee ID", () => {
+    const [first, second, third] = uploadRows(3);
+    const rows = [
+      { ...first, employeeId: "EMP-X" },
+      { ...first, employeeId: "EMP-Y" },
+      { ...third, employeeId: "EMP-Y" },
+    ];
+    const screens = new Map([
+      ["ada.lovelace1@example.com", { kind: "clear" as const, userId: "user-1" }],
+      ["ada.lovelace3@example.com", { kind: "clear" as const, userId: "user-3" }],
+    ]);
+
+    const plan = planBulkOnboarding(
+      rows,
+      {
+        byKey: new Map([["engineering", DEPARTMENT_ID]]),
+        activeIds: new Set([DEPARTMENT_ID]),
+        usedCodes: new Set(),
+        created: false,
+      },
+      screens,
+      new Map(),
+      new Map(),
+    );
+
+    expect(plan.rejected).toEqual([]);
+    expect(plan.accepted.map((row) => [row.email, row.employeeNumber])).toEqual([
+      ["ada.lovelace1@example.com", "EMP-X"],
+      ["ada.lovelace1@example.com", "EMP-Y"],
+      ["ada.lovelace3@example.com", "EMP-Y"],
+    ]);
   });
 });

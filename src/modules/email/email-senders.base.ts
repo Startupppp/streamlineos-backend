@@ -58,11 +58,9 @@ export abstract class EmailSendersBase {
     organizationName: string,
     inviterName?: string,
   ): Promise<void> {
-    return this.sendEmail({
-      to: email,
-      subject: `You've been invited to join ${organizationName}`,
-      html: getInvitationEmailTemplate(`${appUrl()}/invitation/${token}`, organizationName, inviterName),
-    });
+    return this.sendEmail(
+      invitationEmailOptions(email, token, organizationName, inviterName),
+    );
   }
 
   sendInvitationRevokedEmail(email: string, organizationName: string): Promise<void> {
@@ -350,4 +348,21 @@ export abstract class EmailSendersBase {
       html: getOnboardingTaskEmailTemplate(recipientName, employeeName, taskRole, taskCount),
     });
   }
+}
+
+export function invitationEmailOptions(
+  email: string,
+  token: string,
+  organizationName: string,
+  inviterName?: string,
+): EmailOptions {
+  return {
+    to: email,
+    subject: `You've been invited to join ${organizationName}`,
+    html: getInvitationEmailTemplate(
+      `${appUrl()}/invitation/${token}`,
+      organizationName,
+      inviterName,
+    ),
+  };
 }

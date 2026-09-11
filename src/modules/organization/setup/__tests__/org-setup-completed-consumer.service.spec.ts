@@ -167,6 +167,7 @@ describe("OrgSetupCompletedConsumerService", () => {
       { userId: "user-1", isOrgOwner: true },
       ["new@acme.test"],
       "MEMBER",
+      "enqueue",
     );
   });
 
@@ -190,12 +191,37 @@ describe("OrgSetupCompletedConsumerService", () => {
       expect.anything(),
       ["a@acme.test", "c@acme.test"],
       "MEMBER",
+      "enqueue",
     );
     expect(bulkInvite).toHaveBeenCalledWith(
       "org-1",
       expect.anything(),
       ["b@acme.test"],
       "ORG_ADMIN",
+      "enqueue",
+    );
+  });
+
+  it("deduplicates setup invitees before enqueuing delivery", async () => {
+    const { svc, bulkInvite } = await build();
+
+    await svc.handle(
+      event({
+        ...COMPLETE_PAYLOAD,
+        invitees: [
+          { email: "duplicate@acme.test", role: "MEMBER" },
+          { email: "DUPLICATE@ACME.TEST", role: "ORG_ADMIN" },
+        ],
+      }),
+    );
+
+    expect(bulkInvite).toHaveBeenCalledTimes(1);
+    expect(bulkInvite).toHaveBeenCalledWith(
+      "org-1",
+      expect.anything(),
+      ["duplicate@acme.test"],
+      "MEMBER",
+      "enqueue",
     );
   });
 

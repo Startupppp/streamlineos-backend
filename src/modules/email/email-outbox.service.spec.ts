@@ -73,3 +73,37 @@ describe("EmailOutboxService.enqueueForDelivery", () => {
     ).rejects.toThrow("Failed to enqueue all emails");
   });
 });
+
+describe("EmailOutboxService.enqueueOnly", () => {
+  it("records a suppressed recipient without queuing a pending delivery", async () => {
+    const values = jest.fn().mockResolvedValue(undefined);
+    const suppression = {
+      findSuppressed: jest
+        .fn()
+        .mockResolvedValue(new Set(["blocked@example.com"])),
+    };
+    const service = new EmailOutboxService(
+      { insert: jest.fn().mockReturnValue({ values }) } as never,
+      suppression as never,
+      emailProviderStub(),
+    );
+
+    await service.enqueueOnly({
+      to: "blocked@example.com",
+      subject: "Invitation",
+      html: "invite",
+    });
+
+    expect(suppression.findSuppressed).toHaveBeenCalledWith(
+      ["blocked@example.com"],
+      null,
+    );
+    expect(values).toHaveBeenCalledTimes(1);
+    expect(values).toHaveBeenCalledWith(
+      expect.objectContaining({
+        toEmail: "blocked@example.com",
+        status: "SUPPRESSED",
+      }),
+    );
+  });
+});

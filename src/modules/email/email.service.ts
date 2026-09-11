@@ -1,6 +1,9 @@
 import { Injectable } from "@nestjs/common";
 import { appUrl } from "./app-url";
-import { EmailSendersBase } from "./email-senders.base";
+import {
+  EmailSendersBase,
+  invitationEmailOptions,
+} from "./email-senders.base";
 import { EmailProviderService } from "./email.provider";
 import { getTrialReminderEmail } from "./templates/platform";
 import { EmailOutboxService } from "./email-outbox.service";
@@ -49,6 +52,16 @@ export class EmailService extends EmailSendersBase {
 
   override sendEmail(options: EmailOptions): Promise<void> {
     return this.outbox.enqueueAndTry(options);
+  }
+
+  async queueInvitationEmail(
+    email: string,
+    token: string,
+    organizationName: string,
+  ): Promise<void> {
+    await this.outbox.enqueueOnly(
+      invitationEmailOptions(email, token, organizationName),
+    );
   }
 
   sendExpenseSubmittedEmail(

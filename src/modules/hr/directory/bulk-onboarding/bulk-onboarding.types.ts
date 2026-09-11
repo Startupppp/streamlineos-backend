@@ -9,7 +9,6 @@ export interface BulkOnboardRowResult {
   error?: string;
 }
 
-/** A row that passed every in-memory check and is written by the batch transaction. */
 export interface PlannedEmployee {
   row: number;
   email: string;
@@ -25,7 +24,6 @@ export interface PlannedEmployee {
   dateOfBirth: string | null;
 }
 
-/** A planned row after admission has resolved its account and membership. */
 export interface AdmittedEmployee extends PlannedEmployee {
   userId: string;
   membershipId: number | null;

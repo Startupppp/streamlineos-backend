@@ -39,6 +39,8 @@ interface InvitationMutationResult {
   resent: boolean;
 }
 
+type InvitationDelivery = "background" | "enqueue";
+
 @Injectable()
 export class InvitationCreateService {
   constructor(
@@ -69,6 +71,7 @@ export class InvitationCreateService {
     actor: InviteActor,
     emails: string[],
     role: string,
+    delivery: InvitationDelivery = "background",
   ): Promise<{
     results: Array<{
       email: string;
@@ -94,6 +97,7 @@ export class InvitationCreateService {
           actor.userId,
           canonicalEmail,
           role,
+          delivery,
         );
         results.push({
           email: canonicalEmail,
@@ -117,6 +121,7 @@ export class InvitationCreateService {
     actorUserId: string,
     email: string,
     role: string,
+    delivery: InvitationDelivery = "background",
   ): Promise<InvitationMutationResult> {
     const org = await requireActiveOrg(this.db, orgId);
 
@@ -177,11 +182,14 @@ export class InvitationCreateService {
 
     if (pendingResult) {
       const { pendingInvitation, rawToken } = pendingResult;
-      void this.email
-        .sendInvitationEmail(email, rawToken, org.name)
-        .catch((err: unknown) =>
-          recordDeliveryFailure(this.db, this.logger, orgId, pendingInvitation.id, err),
-        );
+      await this.deliverInvitation(
+        delivery,
+        orgId,
+        pendingInvitation.id,
+        email,
+        rawToken,
+        org.name,
+      );
 
       this.audit.log({
         action: "user.invitation.resent",
@@ -264,11 +272,14 @@ export class InvitationCreateService {
       throw err;
     }
 
-    void this.email
-      .sendInvitationEmail(email, rawToken, org.name)
-      .catch((err: unknown) =>
-        recordDeliveryFailure(this.db, this.logger, orgId, invitationId, err),
-      );
+    await this.deliverInvitation(
+      delivery,
+      orgId,
+      invitationId,
+      email,
+      rawToken,
+      org.name,
+    );
 
     this.audit.log({
       action: "user.invited",
@@ -286,5 +297,25 @@ export class InvitationCreateService {
       organizationName: org.name,
       resent: false,
     };
+  }
+
+  private async deliverInvitation(
+    delivery: InvitationDelivery,
+    orgId: string,
+    invitationId: string,
+    email: string,
+    rawToken: string,
+    organizationName: string,
+  ): Promise<void> {
+    if (delivery === "enqueue") {
+      await this.email.queueInvitationEmail(email, rawToken, organizationName);
+      return;
+    }
+
+    void this.email
+      .sendInvitationEmail(email, rawToken, organizationName)
+      .catch((err: unknown) =>
+        recordDeliveryFailure(this.db, this.logger, orgId, invitationId, err),
+      );
   }
 }

@@ -334,6 +334,28 @@ describe("OrganizationSagaService.reserve — 23505 returns false", () => {
     expect(result).toBe(false);
   });
 
+  it("returns true when a retry finds its own reservation after a 23505", async () => {
+    const db = {
+      insert: jest.fn().mockReturnValue(buildInsertChain({ throwCode: "23505" })),
+      select: jest.fn().mockReturnValue(
+        buildSelectChain([
+          {
+            organizationId: "org-1",
+            sagaId: "saga-1",
+            state: "RESERVED",
+          },
+        ]),
+      ),
+      update: jest.fn().mockReturnValue(buildUpdateChain()),
+      delete: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue(undefined) }),
+    };
+
+    const service = await buildService(db as never);
+    await expect(
+      service.reserve("SLUG", "my-org", "org-1", "saga-1"),
+    ).resolves.toBe(true);
+  });
+
   it("rethrows errors with SQLSTATE other than 23505", async () => {
     const db = {
       insert: jest.fn().mockReturnValue(buildInsertChain({ throwCode: "08006" })),
