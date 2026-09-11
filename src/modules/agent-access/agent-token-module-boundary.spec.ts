@@ -58,6 +58,8 @@ import type { CacheService } from "../../common/cache/cache.service";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
 import { makeMfaPolicyStub } from "../../../test/helpers/mfa-policy-stub";
+import { AccessVersionCache } from "../access/access-version-cache";
+import { membershipStubFromDb } from "../../../test/helpers/membership-state-stub";
 
 const CRM_KEY = "crm:deals:read";
 const PAYROLL_KEY = "payroll:runs:view";
@@ -206,6 +208,8 @@ describe("agent token cross-module boundary (AgentTokenGuard + PermissionGuard)"
       cache,
       entitlements,
       makeMfaPolicyStub(),
+      new AccessVersionCache(mockDb as unknown as Db, cache),
+      membershipStubFromDb(mockDb),
     );
     jest
       .spyOn(access, "resolveUserPermissions")

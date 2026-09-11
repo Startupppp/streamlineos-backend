@@ -17,6 +17,8 @@ import { ReportingService } from "../../reporting/reporting.service";
 import { CrmMcpSettingsService } from "./crm-mcp-settings.service";
 import { queryDescriptionSchema } from "../../reporting/dto/reporting.schemas";
 import { REPORTING_REGISTRY, fieldsOf } from "../../reporting/compiler/registry";
+import { AuthContextFactory } from "../../../common/auth/auth-context.factory";
+import { makeAuthContextFactory } from "../../../../test/helpers/module-guard-context";
 
 describe("CrmMcpService", () => {
   let service: CrmMcpService;
@@ -136,6 +138,7 @@ describe("CrmMcpService", () => {
          * a test of the switch instead of a test of what it guards.
          */
         { provide: CrmMcpSettingsService, useValue: mcpSettings },
+        { provide: AuthContextFactory, useValue: makeAuthContextFactory() },
       ],
     }).compile();
 

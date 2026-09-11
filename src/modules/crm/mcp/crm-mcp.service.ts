@@ -4,7 +4,8 @@ import {
   NotFoundException,
   Logger,
 } from "@nestjs/common";
-import { AccessService, moduleOf } from "../../access/access.service";
+import { AccessService } from "../../access/access.service";
+import { namespaceOf } from "../../../common/rbac/module-vocabulary";
 import { authorize } from "../../access/authorize";
 import type { AuthResult } from "../../access/access.types";
 import { ModuleDisabledException } from "../../../common/http/api-exceptions";
@@ -22,6 +23,7 @@ import {
 } from "./lib/crm-mcp-tool-catalogue";
 import { runCrmMcpTool } from "./lib/crm-mcp-tool-handlers";
 import { auditableArguments, countResults } from "./lib/crm-mcp-audit-arguments";
+import { AuthContextFactory } from "../../../common/auth/auth-context.factory";
 
 export type { McpContext, McpToolCall, McpToolDefinition } from "./lib/crm-mcp-tool-catalogue";
 export { auditableArguments, countResults } from "./lib/crm-mcp-audit-arguments";
@@ -50,6 +52,7 @@ export class CrmMcpService {
     private readonly activitiesService: ActivitiesService,
     private readonly reportingService: ReportingService,
     private readonly mcpSettings: CrmMcpSettingsService,
+    private readonly authContexts: AuthContextFactory,
   ) {}
 
   /** The complete catalogue of CRM MCP tools. */
@@ -76,7 +79,7 @@ export class CrmMcpService {
     user: McpContext,
     tool: McpToolDefinition,
   ): Promise<AuthResult> {
-    return authorize(this.accessService, user, tool.requiredPermission);
+    return authorize(this.accessService, this.authContexts.create(user), tool.requiredPermission);
   }
 
   /**
@@ -157,7 +160,7 @@ export class CrmMcpService {
        * must stay distinguishable.
        */
       if (decision.reason === "NO_MODULE") {
-        throw new ModuleDisabledException(moduleOf(tool.requiredPermission));
+        throw new ModuleDisabledException(namespaceOf(tool.requiredPermission));
       }
       throw new ForbiddenException(
         `Agent lacks required permission '${tool.requiredPermission}' for tool '${tool.name}'`,

@@ -52,6 +52,8 @@ import { ActivitiesService } from "../../activities/activities.service";
 import { ReportingService } from "../../reporting/reporting.service";
 import { makeMfaPolicyStub } from "../../../../test/helpers/mfa-policy-stub";
 import { CrmMcpSettingsService } from "./crm-mcp-settings.service";
+import { AccessVersionCache } from "../../access/access-version-cache";
+import { membershipStubFromDb } from "../../../../test/helpers/membership-state-stub";
 
 const DEAL_KEY = "crm:deals:read";
 const PARTY_KEY = "party:parties:view";
@@ -261,6 +263,8 @@ describe("CRM MCP agent token, issuer to guard", () => {
       cache,
       entitlements,
       makeMfaPolicyStub(),
+      new AccessVersionCache(mockDb as unknown as Db, cache),
+      membershipStubFromDb(mockDb),
     );
     jest
       .spyOn(access, "resolveUserPermissions")
