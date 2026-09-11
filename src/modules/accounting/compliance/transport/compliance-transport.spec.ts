@@ -219,10 +219,26 @@ describe("the submit path is reachable", () => {
       authority inside the posting transaction would hold a pooled connection
       for the length of that outage. Filing is a separate act with its own
       request, and the AR posting path must not acquire a call to it.
+
+      The posting transaction's body is `ar/lib/ar-document-posting.ts` now,
+      one of the document's `ar-document-*` pieces; the service still opens
+      the transaction and hands it over. So the path is the service plus every
+      one of those pieces, and none of them may reach the transport.
     */
-    const ar = readFileSync(join(__dirname, "../../ar/ar-documents.service.ts"), "utf8");
-    expect(ar).toContain("recordForDocument");
-    expect(ar).not.toContain("submitToTransport");
+    const AR = join(__dirname, "../../ar");
+    const service = readFileSync(join(AR, "ar-documents.service.ts"), "utf8");
+    const posting = readFileSync(join(AR, "lib/ar-document-posting.ts"), "utf8");
+    const pieces = readdirSync(join(AR, "lib")).filter(
+      (f) => f.startsWith("ar-document-") && f.endsWith(".ts") && !f.endsWith(".spec.ts"),
+    );
+
+    expect(service).toContain("postDocumentInTx(");
+    expect(posting).toContain("recordForDocument");
+    expect(pieces).toContain("ar-document-posting.ts");
+    expect(service).not.toContain("submitToTransport");
+    for (const piece of pieces) {
+      expect(readFileSync(join(AR, "lib", piece), "utf8")).not.toContain("submitToTransport");
+    }
   });
 });
 

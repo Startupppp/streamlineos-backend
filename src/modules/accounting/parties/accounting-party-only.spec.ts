@@ -159,11 +159,25 @@ describe("accounting knows a counterparty only as a Party", () => {
   */
   it("resolves an AR document's counterparty through the Party service", () => {
     const ar = readFileSync(join(__dirname, "../ar/ar-documents.service.ts"), "utf8");
+    /*
+      Posting and the draft writes moved out of the service into
+      `ar/lib/ar-document-posting.ts` and `ar/lib/ar-document-drafts.ts`, and
+      the journal lines that carry the party's name into
+      `ar/lib/ar-document-journal.ts`. The service still resolves one for the
+      tax preview. Every one of them is read.
+    */
+    const posting = readFileSync(join(__dirname, "../ar/lib/ar-document-posting.ts"), "utf8");
+    const drafts = readFileSync(join(__dirname, "../ar/lib/ar-document-drafts.ts"), "utf8");
+    const journal = readFileSync(join(__dirname, "../ar/lib/ar-document-journal.ts"), "utf8");
 
     expect(ar).toContain("this.parties.requireForBook(");
+    expect(posting).toContain("deps.parties.requireForBook(");
+    expect(drafts).toContain("parties.requireForBook(");
     /* Display comes off the resolved Party, never off a CRM row carried along. */
-    expect(ar).toContain("party.displayName");
-    expect(ar).not.toContain("clientName");
+    expect(journal).toContain("party.displayName");
+    for (const source of [ar, posting, drafts, journal]) {
+      expect(source).not.toContain("clientName");
+    }
   });
 
   it("resolves an AP document's vendor the same way", () => {
@@ -197,8 +211,11 @@ describe("accounting knows a counterparty only as a Party", () => {
       Enumerated, so a second caller has to come here and argue for itself.
     */
     /* `ap/lib/ap-document-post.ts` is AP's posting path since the service was split. */
+    /* AR's posting and draft writes moved to `ar/lib/` the same way; both resolve a party. */
     const callers = [
       "ar/ar-documents.service.ts",
+      "ar/lib/ar-document-posting.ts",
+      "ar/lib/ar-document-drafts.ts",
       "ap/ap-documents.service.ts",
       "ap/lib/ap-document-post.ts",
       "adapters/posting-command.service.ts",
