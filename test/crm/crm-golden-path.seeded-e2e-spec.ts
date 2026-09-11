@@ -610,7 +610,7 @@ describe(`${SEEDED_HARNESS} CRM golden path — stranger to held send`, () => {
    * DROP". The last is also P2-08b's own Done-when.
    */
   it(
-    "still resolves a legacy contact id to a party, with the table long gone",
+    "still resolves a legacy contact id to a party through the map alone",
     async () => {
       const [party] = await seeded.seedDb
         .select({ partyId: businessParties.partyId })
@@ -618,8 +618,8 @@ describe(`${SEEDED_HARNESS} CRM golden path — stranger to held send`, () => {
         .where(eq(businessParties.organizationId, fixture.orgId));
       if (!party) throw new Error("no party to map");
 
-      // The id a customer bookmarked. `contacts` was dropped by 0278; the map
-      // row IS the record now, and `contacts_id_seq` still mints the number.
+      // The id a customer bookmarked. The map row IS the record now, and
+      // `contacts_id_seq` still mints the number.
       const [mapped] = await seeded.seedDb
         .insert(contactPartyMap)
         .values({ organizationId: fixture.orgId, partyId: party.partyId })
@@ -634,11 +634,29 @@ describe(`${SEEDED_HARNESS} CRM golden path — stranger to held send`, () => {
       expect(resolved.status).toBe("resolved");
       expect(resolved.status === "resolved" && resolved.party.partyId).toBe(party.partyId);
 
-      // And the table it used to name is genuinely not there.
+      /*
+        And nothing it resolved came from the table the id used to name. 0278
+        drops `contacts` only under `app.allow_legacy_identity_drop`, so a
+        database built without that setting (every cold build, and Neon) still
+        carries the table. Where it is gone there is nothing to read; where it
+        is present, no row carries this id, because the sequence minted it for
+        the map. Either way the resolution above came from the map alone.
+      */
       const [survivor] = await seeded.seedDb.execute(
         sql`SELECT to_regclass('public.contacts') AS present`,
       );
-      expect((survivor as { present: string | null }).present).toBeNull();
+      const present = (survivor as { present: string | null }).present;
+      const legacyRows =
+        present === null
+          ? 0
+          : Number(
+              (
+                (await seeded.seedDb.execute(
+                  sql`SELECT count(*)::int AS n FROM contacts WHERE id = ${mapped.contactId}`,
+                ))[0] as { n: number }
+              ).n,
+            );
+      expect(legacyRows).toBe(0);
     },
     180_000,
   );
