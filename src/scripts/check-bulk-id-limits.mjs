@@ -71,10 +71,10 @@ const ALLOWLIST = [
       "outbox event payload, not an HTTP body. A cap here would silently drop mention recipients from a fan-out that was already accepted and committed.",
   },
   {
-    file: "mail-normalizers.ts",
+    file: "modules/mail/providers/lib/gmail-payload.ts",
     prop: "labelIds",
     reason:
-      "shape of a Gmail provider response, not a client request. Truncating a provider's label list would corrupt message metadata rather than limit attacker-controlled work.",
+      "shape of a Gmail provider response, not a client request. Truncating a provider's label list would corrupt message metadata rather than limit attacker-controlled work. `gmailMessageSchema` moved here from mail-normalizers.ts in 12e8130c5, which split Gmail's wire dialect out of the 430-line normaliser; the entry is path-qualified now so the next split reports rather than silently re-allowlisting.",
   },
 
   // ── response contracts ────────────────────────────────────────────────────
@@ -191,6 +191,12 @@ const ALLOWLIST = [
     prop: "sampleTicketIds",
     reason:
       "`supportKnowledgeGapRowSchema`, reached through `gapListResponseSchema` and `dismissGapResponseSchema`, declared at modules/support/kb-gap/support-kb-gap.controller.ts:52 and :95. The stored column is already bounded at write time by `cluster.ticketIds.slice(0, 10)` in support-kb-gap-detection.service.ts; nothing on the wire sets it.",
+  },
+  {
+    file: "modules/timesheets/core/dto/timesheets-entries-response.schemas.ts",
+    prop: "periodIds",
+    reason:
+      "`attendanceDraftResponseSchema`, declared at modules/timesheets/core/entries.controller.ts:131. It reports which timesheet periods the attendance drafting pass touched — one id per period the swept days fell into, a server-side artefact of the date range the caller asked for. The caller sends no id list here at all, so there is nothing on the request side a cap would bound; capping the echo would only make a legitimate multi-period draft fail its own response contract.",
   },
   {
     file: "modules/surveys/dto/survey-analytics-response.schemas.ts",
@@ -481,13 +487,24 @@ export const otherSchema = z.object({
       ),
   );
   assert(
-    "a bare-basename allowlist entry still matches (the two original entries)",
-    isAllowlisted("D:/x/src/modules/chat/chat-fanout-outbox.ts", "mentionedUserIds") &&
-      isAllowlisted("D:/x/src/modules/mail/mail-normalizers.ts", "labelIds"),
+    "a bare-basename allowlist entry still matches (chat-fanout-outbox.ts)",
+    isAllowlisted("D:/x/src/modules/chat/chat-fanout-outbox.ts", "mentionedUserIds"),
   );
   assert(
     "a bare-basename entry is anchored on a path separator, not a substring",
-    !isAllowlisted("D:/x/src/modules/mail/gmail-mail-normalizers.ts", "labelIds"),
+    !isAllowlisted("D:/x/src/modules/chat/legacy-chat-fanout-outbox.ts", "mentionedUserIds"),
+  );
+  // The Gmail entry was bare-basename until `gmailMessageSchema` moved from
+  // mail-normalizers.ts to lib/gmail-payload.ts and the entry stopped matching
+  // anything. A relocation SHOULD report; what must not happen is the entry
+  // following the property to a same-named file in another module.
+  assert(
+    "the relocated Gmail entry matches its own path",
+    isAllowlisted("D:/x/src/modules/mail/providers/lib/gmail-payload.ts", "labelIds"),
+  );
+  assert(
+    "the relocated Gmail entry does NOT match a same-named file elsewhere",
+    !isAllowlisted("D:/x/src/modules/integrations/gmail-payload.ts", "labelIds"),
   );
   assert(
     "the allowlist is keyed on the property too — a different property in an allowlisted file is still flagged",
