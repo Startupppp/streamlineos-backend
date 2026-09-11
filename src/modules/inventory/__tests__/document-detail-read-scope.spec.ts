@@ -351,6 +351,17 @@ describe("the reorder report", () => {
         keys.push(key);
         return fetcher();
       },
+      /*
+       * The report moved from an exact key to a generation namespace so that a
+       * stock movement can actually retire it, but the discriminator question
+       * this case asks is unchanged: the scope has to be in the part of the key
+       * that varies per caller. Recording namespace + sub-key together keeps the
+       * assertions below looking at the full address the reader stores under.
+       */
+      cachedVersioned: (ns: string, subKey: string, fetcher: () => Promise<unknown>) => {
+        keys.push(`${ns}:${subKey}`);
+        return fetcher();
+      },
     } as never;
     const extended = { getReorderReportUpgraded: () => Promise.resolve({ items: [], total: 0 }) } as never;
 

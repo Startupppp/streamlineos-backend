@@ -139,6 +139,9 @@ export async function authenticate(
             eq(signRecipients.signingTokenHash, deps.tokens.hash(token)),
           ),
         )
+        // One recipient, addressed by primary key and by its token hash — only
+        // `[0]` is ever read, so the row lock should cover one row, not a set.
+        .limit(1)
         .for("update");
       if (!recipient) throw new NotFoundException("This signing link is invalid.");
 

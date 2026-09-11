@@ -5,7 +5,7 @@ import type { Db } from "src/db/drizzle.module";
 import { runInNewTenantTransaction } from "src/common/tenant/run-in-tenant-transaction";
 import { StockEngineService } from "src/modules/inventory/stock-engine/stock-engine.service";
 import { StockEngineBatchService } from "src/modules/inventory/stock-engine/stock-engine-batch.service";
-import type { StockEngineCommand } from "src/modules/inventory/stock-engine/stock-engine.types";
+import type { StockEngineCommand, StockEngineResult } from "src/modules/inventory/stock-engine/stock-engine.types";
 import { inventoryCounters } from "src/modules/inventory/observability/inventory-counters";
 import { createSeededE2eApp, type SeededE2eApp } from "test/helpers/seeded-e2e-app";
 import { seedOrg } from "test/helpers/seed-builder";
@@ -320,14 +320,30 @@ describe("[seeded-e2e] INV-02 — the batch door and the single door reach the s
       const engine = seededApp.app.get(StockEngineService);
       const batchEngine = seededApp.app.get(StockEngineBatchService);
 
-      await runInNewTenantTransaction(db, single.orgId, async (tx) => {
+      const singleResults = await runInNewTenantTransaction(db, single.orgId, async (tx) => {
+        const out: StockEngineResult[] = [];
         for (const cmd of commandsFor(single))
-          await engine.executeInTx(tx, single.orgId, single.userId, cmd);
+          out.push(await engine.executeInTx(tx, single.orgId, single.userId, cmd));
+        return out;
       });
 
-      await runInNewTenantTransaction(db, batch.orgId, async (tx) => {
-        await batchEngine.executeManyInTx(tx, batch.orgId, batch.userId, commandsFor(batch));
-      });
+      const batchResults = await runInNewTenantTransaction(db, batch.orgId, (tx) =>
+        batchEngine.executeManyInTx(tx, batch.orgId, batch.userId, commandsFor(batch)),
+      );
+
+      /*
+       * This case asserted nothing at all until 2026-09-12 — it posted and
+       * returned, and every comparison below it reads the database rather than
+       * what the engines returned. So the one claim nobody was checking is the
+       * one the batch door is most able to break: that `executeManyInTx` answers
+       * once per command. Returning fewer results while writing every row leaves
+       * the whole ledger/levels/outbox comparison below green.
+       */
+      // Three commands carrying five movements between them — the floor is on
+      // commands, because that is what each door answers one result for.
+      expect(singleResults).toHaveLength(commandsFor(single).length);
+      expect(singleResults.length).toBeGreaterThanOrEqual(3);
+      expect(batchResults).toHaveLength(singleResults.length);
     },
     600_000,
   );

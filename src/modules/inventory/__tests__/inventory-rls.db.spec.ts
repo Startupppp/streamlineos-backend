@@ -216,7 +216,15 @@ describeDb("inventory row-level security", () => {
   });
 
   it("refuses a write that claims a different tenant than the context", async () => {
-    if (orgA === orgB) return;
+    // `return` here until 2026-09-12, which made the one case that proves
+    // WITH CHECK stops a cross-tenant INSERT pass without executing a line of it
+    // — and pass most loudly on exactly the broken fixture that would hide a
+    // real leak. `ensureFixtureOrgs(owner, 2)` guarantees the pair, so reaching
+    // this is a broken setUp, not a smaller database. Same throw as the probe
+    // above, for the same reason.
+    if (orgA === orgB) {
+      throw new Error("this database has fewer than two organisations; the cross-tenant probe cannot run");
+    }
     const code = `RLS-${randomUUID().slice(0, 8)}`;
     const result = await asRestrictedRole(orgA, (tx) =>
       tx`INSERT INTO inv_uom (org_id, name, abbreviation)

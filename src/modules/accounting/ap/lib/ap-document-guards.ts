@@ -84,7 +84,11 @@ export async function assertAccountsBelongToBook(
         eq(glAccounts.isHeader, false),
         isNull(glAccounts.deletedAt),
       ),
-    );
+    )
+    // `id` is the primary key and `wanted` is de-duplicated, so this many rows
+    // is the most that can exist. The limit states the bound rather than
+    // leaving it to be re-derived by the next reader.
+    .limit(wanted.length);
   if (rows.length !== wanted.length) {
     throw new NotFoundException("One of the expense accounts does not exist in this book");
   }

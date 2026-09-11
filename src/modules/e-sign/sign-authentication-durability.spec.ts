@@ -54,6 +54,9 @@ async function build() {
       select: () => ({
         from: () => ({
           where: () => ({
+            // The real chain is .where().limit(1).for("update") — one recipient,
+            // addressed by primary key, so the lock covers one row.
+            limit: () => ({
             for: async (mode: string) => {
               expect(mode).toBe("update");
               const previous = pendingRowLock;
@@ -62,6 +65,7 @@ async function build() {
               draftRecipient = { ...recipient };
               return [draftRecipient];
             },
+            }),
           }),
         }),
       }),

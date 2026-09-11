@@ -221,6 +221,13 @@ export function cacheWith() {
     invalidateNamespace: jest.fn(() => Promise.resolve()),
     /* The adjustments service busts single keys as well as namespaces. */
     invalidate: jest.fn(() => Promise.resolve()),
+    /*
+     * The *ForOrg family is a separate counter, not an alias, and the stock
+     * report invalidation bumps `inv:ops:*` through it. Omitting it here threw
+     * "not a function" out of a cancel that had already updated the row — which
+     * a scope test reads as a refusal, the exact inverse of what it asserts.
+     */
+    invalidateNamespaceForOrg: jest.fn(() => Promise.resolve()),
     del: jest.fn(() => Promise.resolve()),
   };
   return { cache: cache as never, keys };

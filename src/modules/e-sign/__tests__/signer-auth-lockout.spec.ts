@@ -55,7 +55,9 @@ function serviceWith(recipient: Partial<Record<string, unknown>>) {
     transaction: jest.fn(async (fn: (t: typeof tx) => Promise<unknown>) => fn(tx)),
     query: tx.query,
     /** `authenticate` re-reads the row under `FOR UPDATE` before judging the code. */
-    select: jest.fn(() => ({ from: () => ({ where: () => ({ for: async () => [row] }) }) })),
+    // `.limit(1)` sits between `.where()` and `.for('update')` in the real
+    // chain — the locked re-read addresses one recipient by primary key.
+    select: jest.fn(() => ({ from: () => ({ where: () => ({ limit: () => ({ for: async () => [row] }) }) }) })),
     update: jest.fn(() => ({
       set: (payload: SetPayload) => {
         sets.push(payload);

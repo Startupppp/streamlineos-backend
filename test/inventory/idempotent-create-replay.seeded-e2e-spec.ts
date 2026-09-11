@@ -133,6 +133,13 @@ describe(`${SEEDED_HARNESS} a create a client may retry`, () => {
    * The whole contract for one route, in one place. `mutate` produces a body that
    * differs from `body` in a way the route's own validation accepts, so the 422
    * comes from the fence rather than from Zod.
+   *
+   * It RETURNS its outcome as well as asserting on the way through, because a
+   * helper that only asserts internally leaves each caller's `it` body with no
+   * assertion of its own — which is both what `check:vacuous-assertions` reports
+   * and a real hole: edit this helper into a no-op and all three cases below go
+   * green without one of them naming the thing it claims to prove. Each caller
+   * now asserts its own headline claim from the returned counts.
    */
   const provesTheFence = async (opts: {
     path: string;
@@ -180,12 +187,22 @@ describe(`${SEEDED_HARNESS} a create a client may retry`, () => {
       .set("Idempotency-Key", randomUUID())
       .send(opts.freshBody);
     expectAccepted(fresh);
-    expect(await countWhere(opts.table, opts.column, opts.value)).toBe(1);
+    const rowsUnderKeyedValue = await countWhere(opts.table, opts.column, opts.value);
+    expect(rowsUnderKeyedValue).toBe(1);
+
+    return {
+      /** Rows carrying the keyed business value after all four requests. */
+      rowsUnderKeyedValue,
+      /** True when the retry was answered from the store rather than re-executed. */
+      replayWasAnswered: JSON.stringify(replay.body) === JSON.stringify(first.body),
+      /** The status a same-key/different-body request was refused with. */
+      mismatchStatus: mismatch.status,
+    };
   };
 
   it("replays a product create instead of raising a second product", async () => {
     const tag = randomUUID().slice(0, 8).toUpperCase();
-    await provesTheFence({
+    const outcome = await provesTheFence({
       path: "/inventory/products",
       body: { name: `Retryable ${tag}`, sku: `RC-${tag}` },
       otherBody: { name: `Different ${tag}`, sku: `RC-${tag}-X` },
@@ -194,11 +211,17 @@ describe(`${SEEDED_HARNESS} a create a client may retry`, () => {
       column: "sku",
       value: `RC-${tag}`,
     });
+
+    // Asserted here, not only inside the helper: this case's own claim is that
+    // the retry raised no second product and was answered from the store.
+    expect(outcome.rowsUnderKeyedValue).toBe(1);
+    expect(outcome.replayWasAnswered).toBe(true);
+    expect(outcome.mismatchStatus).toBe(422);
   }, 120_000);
 
   it("replays a warehouse create instead of raising a second warehouse", async () => {
     const tag = randomUUID().slice(0, 6).toUpperCase().replace(/[^A-Z0-9]/g, "");
-    await provesTheFence({
+    const outcome = await provesTheFence({
       path: "/inventory/warehouses",
       body: { name: `Retryable ${tag}`, code: `W-${tag}` },
       otherBody: { name: `Different ${tag}`, code: `W-${tag}-X` },
@@ -207,11 +230,17 @@ describe(`${SEEDED_HARNESS} a create a client may retry`, () => {
       column: "code",
       value: `W-${tag}`,
     });
+
+    // Asserted here, not only inside the helper: this case's own claim is that
+    // the retry raised no second warehouse and was answered from the store.
+    expect(outcome.rowsUnderKeyedValue).toBe(1);
+    expect(outcome.replayWasAnswered).toBe(true);
+    expect(outcome.mismatchStatus).toBe(422);
   }, 120_000);
 
   it("replays a vendor create instead of raising a second vendor", async () => {
     const tag = randomUUID().slice(0, 8).toUpperCase();
-    await provesTheFence({
+    const outcome = await provesTheFence({
       path: "/inventory/vendors",
       body: { name: `Retryable vendor ${tag}`, code: `V-${tag}` },
       otherBody: { name: `Different vendor ${tag}`, code: `V-${tag}-X` },
@@ -220,6 +249,12 @@ describe(`${SEEDED_HARNESS} a create a client may retry`, () => {
       column: "code",
       value: `V-${tag}`,
     });
+
+    // Asserted here, not only inside the helper: this case's own claim is that
+    // the retry raised no second vendor and was answered from the store.
+    expect(outcome.rowsUnderKeyedValue).toBe(1);
+    expect(outcome.replayWasAnswered).toBe(true);
+    expect(outcome.mismatchStatus).toBe(422);
   }, 120_000);
 
   it("refuses a fenced create that arrives with no key at all", async () => {

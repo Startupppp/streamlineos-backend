@@ -334,7 +334,8 @@ describe("the invoice PDF a posted document produces", () => {
     const [row] = await db
       .select({ key: arDocuments.pdfStorageKey, url: arDocuments.pdfStorageUrl })
       .from(arDocuments)
-      .where(eq(arDocuments.id, document.id));
+      .where(eq(arDocuments.id, document.id))
+      .limit(1);
     expect(row.key).toBeTruthy();
     // The object is served by signed URL from its key; no public URL is stored.
     expect(row.url).toBeNull();
@@ -368,7 +369,8 @@ describe("the invoice PDF a posted document produces", () => {
     const [row] = await db
       .select({ key: arDocuments.pdfStorageKey })
       .from(arDocuments)
-      .where(eq(arDocuments.id, document.id));
+      .where(eq(arDocuments.id, document.id))
+      .limit(1);
     expect(row.key).toBeNull();
   });
 });

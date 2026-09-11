@@ -240,7 +240,10 @@ export async function buildSupportDashboard(
           eq(organizationMembers.orgId, orgId),
         ),
       )
-      .where(inArray(users.id, assigneeIds));
+      .where(inArray(users.id, assigneeIds))
+      // `users.id` is the primary key and the membership join is 1:1 within one
+      // org, so the assignee set is itself the bound.
+      .limit(assigneeIds.length);
   }
   const assigneeMap = new Map(assigneeUsers.map((u) => [u.id, u]));
 
