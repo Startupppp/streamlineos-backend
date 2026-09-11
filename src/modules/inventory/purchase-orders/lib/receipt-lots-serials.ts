@@ -105,6 +105,9 @@ export async function assertSerialsAcceptable(
       inArray(invSerialNumbers.serialNumber, serials),
     ),
     columns: { serialNumber: true, status: true },
+    // A serial number is unique per (org, variant), so at most one row can come
+    // back per serial the caller sent.
+    limit: serials.length,
   });
   const duplicates = existing.filter((s) => s.status !== "RETURNED");
   if (duplicates.length > 0) {
@@ -175,6 +178,9 @@ export async function resolveSerialIds(
       inArray(invSerialNumbers.serialNumber, [...serials]),
     ),
     columns: { id: true, serialNumber: true },
+    // Unique per (org, variant, serialNumber): one row per serial asked for, at
+    // most. Same bound as the duplicate probe above.
+    limit: serials.length,
   });
   if (existing.length > 0) {
     await tx

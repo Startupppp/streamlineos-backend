@@ -3,6 +3,7 @@ import { and, eq, sql } from "drizzle-orm";
 import { invPhysicalAudits, invPhysicalAuditLines } from "../../../../db/schema";
 import { type Db } from "../../../../db/drizzle.module";
 import { CacheService } from "../../../../common/cache/cache.service";
+import { CACHE_KEYS } from "../../../../common/cache/cache-keys";
 import { WarehouseScopeService } from "../../stock-engine/warehouse-scope.service";
 import { StockEngineService } from "../../stock-engine/stock-engine.service";
 import { StockMovementBridgeService } from "../../../accounting/adapters/stock-movement-bridge.service";
@@ -53,8 +54,6 @@ export interface PhysicalAuditDeps {
   readonly reloadUnscopedAudit: (orgId: string, auditId: number) => Promise<unknown>;
 }
 
-export const PA_LIST_NAMESPACE = (orgId: string) => `inv:physical-audits:list:${orgId}`;
-export const PA_DETAIL_KEY = (orgId: string, id: number) => `inv:physical-audits:detail:${orgId}:${id}`;
 
 export async function createAudit(
   deps: PhysicalAuditDeps,orgId: string, userId: string, data: CreateAuditInput) {
@@ -96,7 +95,7 @@ export async function createAudit(
     );
   }
 
-  await deps.cache.invalidateNamespace(PA_LIST_NAMESPACE(orgId));
+  await deps.cache.invalidateNamespace(CACHE_KEYS.invPhysicalAuditsNamespace(orgId));
   return deps.reloadUnscopedAudit(orgId, audit.id);
 }
 
@@ -109,7 +108,7 @@ export async function startAudit(
     .set({ status: "COUNTING" })
     .where(and(eq(invPhysicalAudits.orgId, orgId), eq(invPhysicalAudits.id, auditId)));
 
-  await deps.cache.invalidate(PA_DETAIL_KEY(orgId, auditId));
+  await deps.cache.invalidate(CACHE_KEYS.invPhysicalAuditDetail(orgId, auditId));
   return deps.reloadUnscopedAudit(orgId, auditId);
 }
 
@@ -137,7 +136,7 @@ export async function updateLines(
     `);
   }
 
-  await deps.cache.invalidate(PA_DETAIL_KEY(orgId, auditId));
+  await deps.cache.invalidate(CACHE_KEYS.invPhysicalAuditDetail(orgId, auditId));
   return deps.reloadUnscopedAudit(orgId, auditId);
 }
 
@@ -157,7 +156,7 @@ export async function reviewAudit(
     .set({ status: "REVIEW" })
     .where(and(eq(invPhysicalAudits.orgId, orgId), eq(invPhysicalAudits.id, auditId)));
 
-  await deps.cache.invalidate(PA_DETAIL_KEY(orgId, auditId));
+  await deps.cache.invalidate(CACHE_KEYS.invPhysicalAuditDetail(orgId, auditId));
   return deps.reloadUnscopedAudit(orgId, auditId);
 }
 
@@ -251,8 +250,8 @@ export async function postAudit(
   // `engine.execute` invalidated the stock caches after its own commit;
   // `executeInTx` leaves that to whoever owns the transaction.
   await deps.engine.invalidateCaches(orgId);
-  await deps.cache.invalidate(PA_DETAIL_KEY(orgId, auditId));
-  await deps.cache.invalidateNamespace(PA_LIST_NAMESPACE(orgId));
+  await deps.cache.invalidate(CACHE_KEYS.invPhysicalAuditDetail(orgId, auditId));
+  await deps.cache.invalidateNamespace(CACHE_KEYS.invPhysicalAuditsNamespace(orgId));
   return deps.reloadUnscopedAudit(orgId, auditId);
 }
 
@@ -265,5 +264,5 @@ export async function cancelAudit(
     .set({ status: "CANCELLED", cancelledAt: new Date() })
     .where(and(eq(invPhysicalAudits.orgId, orgId), eq(invPhysicalAudits.id, auditId)));
 
-  await deps.cache.invalidate(PA_DETAIL_KEY(orgId, auditId));
+  await deps.cache.invalidate(CACHE_KEYS.invPhysicalAuditDetail(orgId, auditId));
 }

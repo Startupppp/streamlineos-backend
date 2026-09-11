@@ -4,13 +4,12 @@ import { invPhysicalAudits } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { CacheService } from "../../../common/cache/cache.service";
-import { CACHE_TTL } from "../../../common/cache/cache-keys";
+import { CACHE_KEYS, CACHE_TTL } from "../../../common/cache/cache-keys";
 import { WarehouseScopeService } from "../stock-engine/warehouse-scope.service";
 import { StockEngineService } from "../stock-engine/stock-engine.service";
 import { StockMovementBridgeService } from "../../accounting/adapters/stock-movement-bridge.service";
 import { NumberSequenceService } from "../stock-engine/number-sequence.service";
 import {
-  PA_LIST_NAMESPACE,
   cancelAudit,
   createAudit,
   postAudit,
@@ -38,7 +37,7 @@ export class InvPhysicalAuditsService {
     const scope = await this.warehouseScope.forUser(orgId, userId);
     const hash = `${scope.key}:${status ?? ""}:${warehouseId ?? ""}:${limit}:${offset}`;
 
-    return this.cache.cachedVersioned(PA_LIST_NAMESPACE(orgId), hash, async () => {
+    return this.cache.cachedVersioned(CACHE_KEYS.invPhysicalAuditsNamespace(orgId), hash, async () => {
       const conditions = [eq(invPhysicalAudits.orgId, orgId), scope.warehouse(sql`${invPhysicalAudits.warehouseId}`)];
       if (status) conditions.push(eq(invPhysicalAudits.status, status));
       if (warehouseId) conditions.push(eq(invPhysicalAudits.warehouseId, warehouseId));

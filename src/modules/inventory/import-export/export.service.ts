@@ -3,7 +3,7 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { CacheService } from "../../../common/cache/cache.service";
 import { CACHE_KEYS, CACHE_TTL } from "../../../common/cache/cache-keys";
-import { eq, and, desc, sql } from "drizzle-orm";
+import { eq, and, desc, isNull, sql } from "drizzle-orm";
 import { invExportJobs, invStockLevels, invStockTransactions, invProducts, invProductVariants, invLots } from "../../../db/schema";
 import { toCsv } from "./csv.util";
 import type { ExportType, CreateExportJobInput, ListJobsQueryInput } from "./dto/import-export.schemas";
@@ -115,7 +115,16 @@ export class ExportService {
         })
         .from(invProductVariants)
         .innerJoin(invProducts, eq(invProductVariants.productId, invProducts.id))
-        .where(eq(invProducts.orgId, orgId))
+        // Both tables are soft-deleted and both carry a partial index predicated
+        // on `deleted_at IS NULL`, so without this the export both re-published
+        // products the organisation had deleted and could not use either index.
+        .where(
+          and(
+            eq(invProducts.orgId, orgId),
+            isNull(invProducts.deletedAt),
+            isNull(invProductVariants.deletedAt),
+          ),
+        )
         .limit(10000);
     }
 

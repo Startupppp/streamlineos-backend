@@ -135,7 +135,13 @@ export class InvQuantityCaptureService {
    */
   async assertProductUnitsConvertible(orgId: string, productId: number): Promise<void> {
     const product = await this.db.query.invProducts.findFirst({
-      where: and(eq(invProducts.id, productId), eq(invProducts.orgId, orgId)),
+      // A deleted product has no units left to keep convertible, and the
+      // early return below already treats "not found" as nothing to assert.
+      where: and(
+        eq(invProducts.id, productId),
+        eq(invProducts.orgId, orgId),
+        isNull(invProducts.deletedAt),
+      ),
       columns: { uomId: true, purchaseUomId: true, salesUomId: true },
     });
     if (!product) return;

@@ -36,7 +36,19 @@ import type {
   UpdateProjectInput,
   UpdateRequirementInput,
 } from "./dto/inv-projects.schemas";
-import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
+import { BodylessAction, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  archiveProjectResponseSchema,
+  atRiskRequirementsResponseSchema,
+  createProjectResponseSchema,
+  createRequirementResponseSchema,
+  getProjectResponseSchema,
+  listProjectsResponseSchema,
+  releaseRequirementResponseSchema,
+  reserveRequirementResponseSchema,
+  updateProjectResponseSchema,
+  updateRequirementResponseSchema,
+} from "./dto/inv-projects-response.schemas";
 
 /**
  * B1 — construction projects and the material each site still needs.
@@ -55,6 +67,7 @@ export class InvProjectsController {
   constructor(private readonly svc: InvProjectsService) {}
 
   @Get()
+  @ResponseSchema(listProjectsResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:projects:read")
   list(
@@ -69,6 +82,7 @@ export class InvProjectsController {
    * declaration order and `at-risk` would otherwise be parsed as an id.
    */
   @Get("at-risk")
+  @ResponseSchema(atRiskRequirementsResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:projects:read")
   atRisk(@Query("limit") limit: string | undefined, @CurrentUser() u: CurrentUserContext) {
@@ -78,6 +92,7 @@ export class InvProjectsController {
   }
 
   @Get(":projectId")
+  @ResponseSchema(getProjectResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:projects:read")
   get(@Param("projectId", ParseIntPipe) projectId: number, @CurrentUser() u: CurrentUserContext) {
@@ -85,6 +100,7 @@ export class InvProjectsController {
   }
 
   @Post()
+  @ResponseSchema(createProjectResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:projects:manage")
   @Idempotent("inventory.project.create")
@@ -96,6 +112,7 @@ export class InvProjectsController {
   }
 
   @Patch(":projectId")
+  @ResponseSchema(updateProjectResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:projects:manage")
   update(
@@ -107,6 +124,7 @@ export class InvProjectsController {
   }
 
   @Delete(":projectId")
+  @ResponseSchema(archiveProjectResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:projects:manage")
   archive(@Param("projectId", ParseIntPipe) projectId: number, @CurrentUser() u: CurrentUserContext) {
@@ -114,6 +132,7 @@ export class InvProjectsController {
   }
 
   @Post(":projectId/requirements")
+  @ResponseSchema(createRequirementResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:projects:manage")
   @Idempotent("inventory.project.requirement.create")
@@ -126,6 +145,7 @@ export class InvProjectsController {
   }
 
   @Patch(":projectId/requirements/:requirementId")
+  @ResponseSchema(updateRequirementResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:projects:manage")
   updateRequirement(
@@ -143,6 +163,7 @@ export class InvProjectsController {
    * twice.
    */
   @Post(":projectId/requirements/:requirementId/reserve")
+  @ResponseSchema(reserveRequirementResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:reserve")
   @Idempotent("inventory.project.requirement.reserve")
@@ -156,6 +177,7 @@ export class InvProjectsController {
   }
 
   @Post(":projectId/requirements/:requirementId/release")
+  @ResponseSchema(releaseRequirementResponseSchema)
   @BodylessAction()
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:reserve")

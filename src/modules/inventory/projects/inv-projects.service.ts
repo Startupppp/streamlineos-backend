@@ -163,8 +163,7 @@ export class InvProjectsService {
         resourceId: String(row!.id),
         after: row,
       });
-      await this.cache.invalidateNamespaceForOrg(orgId, "inv:projects");
-      return row!;
+        return row!;
     } catch (err) {
       if (isUniqueViolation(err)) {
         throw new ConflictException(`A project with code ${data.code} already exists`);
@@ -204,8 +203,7 @@ export class InvProjectsService {
         before,
         after: row,
       });
-      await this.cache.invalidateNamespaceForOrg(orgId, "inv:projects");
-      return row!;
+        return row!;
     } catch (err) {
       if (isUniqueViolation(err)) {
         throw new ConflictException("A project with that code already exists");
@@ -267,7 +265,6 @@ export class InvProjectsService {
       before,
       after: row,
     });
-    await this.cache.invalidateNamespaceForOrg(orgId, "inv:projects");
     return row!;
   }
 
@@ -325,7 +322,6 @@ export class InvProjectsService {
       after: row,
       metadata: { projectId },
     });
-    await this.cache.invalidateNamespaceForOrg(orgId, "inv:projects");
     return row!;
   }
 
@@ -375,7 +371,6 @@ export class InvProjectsService {
       after: row,
       metadata: { projectId },
     });
-    await this.cache.invalidateNamespaceForOrg(orgId, "inv:projects");
     return row!;
   }
 

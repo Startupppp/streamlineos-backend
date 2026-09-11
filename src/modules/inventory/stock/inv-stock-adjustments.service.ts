@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { ScopedRead } from "../../access/scoped-read";
 import {
   invStockAdjustments, invStockAdjustmentLines, invProductVariants, invLocations,
@@ -8,7 +8,7 @@ import {
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { CacheService } from "../../../common/cache/cache.service";
-import { CACHE_KEYS } from "../../../common/cache/cache-keys";
+import { invalidateStockDerivedReads } from "../stock-engine/lib/stock-read-invalidation";
 import { StockEngineService } from "../stock-engine/stock-engine.service";
 import { StockMovementBridgeService } from "../../accounting/adapters/stock-movement-bridge.service";
 import { NumberSequenceService } from "../stock-engine/number-sequence.service";
@@ -204,7 +204,16 @@ export class InvStockAdjustmentsService {
       this.db
         .select({ id: invProductVariants.id })
         .from(invProductVariants)
-        .where(and(eq(invProductVariants.orgId, orgId), inArray(invProductVariants.id, variantIds))),
+        // This is the gate that decides whether an adjustment line names a real
+        // variant. A soft-deleted variant resolved here, so stock could be
+        // adjusted on a product the organisation had already deleted.
+        .where(
+          and(
+            eq(invProductVariants.orgId, orgId),
+            inArray(invProductVariants.id, variantIds),
+            isNull(invProductVariants.deletedAt),
+          ),
+        ),
       this.db
         .select({ id: invLocations.id })
         .from(invLocations)
@@ -461,9 +470,11 @@ export class InvStockAdjustmentsService {
       .set({ status: "CANCELLED" })
       .where(and(eq(invStockAdjustments.orgId, orgId), eq(invStockAdjustments.id, adjustmentId)));
 
-    await Promise.all([
-      this.cache.invalidate(CACHE_KEYS.invStockSummary(orgId)),
-    ]);
+    // `invalidate(invStockSummary(orgId))` stood here and deleted
+    // `inv:stock:summary:<org>`, a key no reader has ever written — so a
+    // cancelled adjustment left the dashboard and the stock summary report
+    // showing it as still pending. See lib/stock-read-invalidation.ts.
+    await invalidateStockDerivedReads(this.cache, orgId);
   }
 
   // B1-05/B1-11: engine.executeInTx + status transition to POSTED in one transaction.

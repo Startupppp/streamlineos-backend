@@ -210,7 +210,6 @@ export async function reserveRequirement(
       return created;
     });
 
-    await deps.cache.invalidateNamespaceForOrg(orgId, "inv:projects");
     return reservation;
   }
 
@@ -276,6 +275,5 @@ export async function releaseRequirement(
       return count;
     });
 
-    await deps.cache.invalidateNamespaceForOrg(orgId, "inv:projects");
     return { released };
   }

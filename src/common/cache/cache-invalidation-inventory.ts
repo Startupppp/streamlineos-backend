@@ -42,19 +42,14 @@ export const INVENTORY_CACHE_ENTRIES: readonly CacheNamespaceEntry[] = [
     },
   },
   {
-    namespace: "inv:stock:summary:<orgId>",
-    description: "Inventory stock summary",
+    // Documented "ttl-only ... a deliberate decision" while four `invalidate()`
+    // calls were in fact aimed at it — and missing, because the reader
+    // discriminates on the caller's warehouse scope. Now a real namespace bump.
+    namespace: "inv:dashboard:<orgId>",
+    description: "Inventory dashboard (scope sub-keyed)",
     invalidation: {
       kind: "write",
-      events: ["StockService (any write)"],
-    },
-  },
-  {
-    namespace: "inv:dashboard:<orgId>",
-    description: "Inventory dashboard",
-    invalidation: {
-      kind: "ttl-only",
-      reason: "Aggregate; TTL-only is a deliberate decision — staleness < 5 min is acceptable",
+      events: ["invalidateStockDerivedReads (both stock engines, adjustment and transfer cancels)"],
     },
   },
   {
@@ -68,14 +63,6 @@ export const INVENTORY_CACHE_ENTRIES: readonly CacheNamespaceEntry[] = [
     invalidation: {
       kind: "write",
       events: ["InvProductCrudService.update/delete/updateVariant (del+invalidateNamespace(invProductsNamespace))"],
-    },
-  },
-  {
-    namespace: "inv:low-stock:<orgId>",
-    description: "Low-stock alert list",
-    invalidation: {
-      kind: "write",
-      events: ["StockEngineService.invalidateCaches", "StockEngineBatchService.invalidateCaches"],
     },
   },
   {
@@ -135,27 +122,22 @@ export const INVENTORY_CACHE_ENTRIES: readonly CacheNamespaceEntry[] = [
     },
   },
   {
+    // Was two entries, a parent and a "paged" child said to be reached
+    // "implicitly via the inv:reorder parent". Redis has no prefix delete, so
+    // the parent reached nothing: one namespace, scope/page/limit beneath it.
     namespace: "inv:reorder:<orgId>",
-    description: "Inventory reorder report",
+    description: "Inventory reorder report (scope, page and limit sub-keyed)",
     invalidation: {
       kind: "write",
-      events: ["StockEngineService.invalidateCaches", "StockEngineBatchService.invalidateCaches"],
-    },
-  },
-  {
-    namespace: "inv:reorder:paged:<orgId>",
-    description: "Paged inventory reorder report (hash sub-keyed)",
-    invalidation: {
-      kind: "write",
-      events: ["StockEngineService.invalidateCaches (implicitly via inv:reorder parent)"],
+      events: ["invalidateStockDerivedReads (both stock engines, adjustment and transfer cancels)"],
     },
   },
   {
     namespace: "inv:stock:summary-report:<orgId>",
-    description: "Stock summary report (paged, hash sub-keyed)",
+    description: "Stock summary report (scope, page and limit sub-keyed)",
     invalidation: {
       kind: "write",
-      events: ["StockEngineService.invalidateCaches (stock movement events)"],
+      events: ["invalidateStockDerivedReads (both stock engines, adjustment and transfer cancels)"],
     },
   },
   {
@@ -180,6 +162,42 @@ export const INVENTORY_CACHE_ENTRIES: readonly CacheNamespaceEntry[] = [
     invalidation: {
       kind: "ttl-only",
       reason: "Time-bounded aggregate; TTL is the natural invalidation mechanism as expiry is date-driven",
+    },
+  },
+  {
+    // Read through the *ForOrg family, so the counter is region-scoped and a
+    // plain `invalidateNamespace` with the same literal would bump a different
+    // key. Undocumented and unbumped until 2026-09-12: the board showed
+    // pre-movement quantities for its whole TTL after every stock write.
+    namespace: "inv:ops:zones:<orgId>",
+    description: "Dark-store zone board (warehouse-scope sub-keyed)",
+    invalidation: {
+      kind: "write",
+      events: ["invalidateStockDerivedReads (both stock engines, adjustment and transfer cancels)"],
+    },
+  },
+  {
+    namespace: "inv:ops:summary:<orgId>",
+    description: "Inventory operations headline figures (warehouse-scope sub-keyed)",
+    invalidation: {
+      kind: "write",
+      events: ["invalidateStockDerivedReads (both stock engines, adjustment and transfer cancels)"],
+    },
+  },
+  {
+    namespace: "inv:physical-audits:list:<orgId>",
+    description: "Physical audit list (warehouse-scope, status, page sub-keyed)",
+    invalidation: {
+      kind: "write",
+      events: ["createAudit", "postAudit (physical-audit-commands.ts)"],
+    },
+  },
+  {
+    namespace: "inv:physical-audits:detail:<orgId>:<id>",
+    description: "Physical audit detail",
+    invalidation: {
+      kind: "write",
+      events: ["start/updateLines/review/post/cancel (physical-audit-commands.ts)"],
     },
   },
 ];

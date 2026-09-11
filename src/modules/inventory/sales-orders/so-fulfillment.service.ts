@@ -82,6 +82,8 @@ export class SoFulfillmentService {
 
     await this.db.transaction(async (tx) => {
       for (const line of so.lines) {
+        // Once per line, inside the transaction: the whole reservation row was
+        // being read to decide only whether to skip the line.
         const existingReservation = await tx.query.invStockReservations.findFirst({
           where: and(
             eq(invStockReservations.orgId, orgId),
@@ -90,6 +92,7 @@ export class SoFulfillmentService {
             eq(invStockReservations.sourceLineId, String(line.id)),
             eq(invStockReservations.status, "ACTIVE"),
           ),
+          columns: { id: true },
         });
         if (existingReservation) continue;
 

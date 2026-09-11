@@ -32,8 +32,9 @@ export class InvReportsService {
     const scope = await this.warehouseScope.resolve(orgId, userId);
     const scopeKey = scope === null ? "all" : ([...scope].sort((a, b) => a - b).join(".") || "none");
     const stockScope = this.warehouseScope.locationPredicate(scope, sql`${invStockLevels.locationId}`);
-    return this.cache.cached(
-      `${CACHE_KEYS.invDashboard(orgId)}:${scopeKey}`,
+    return this.cache.cachedVersioned(
+      CACHE_KEYS.invDashboardNamespace(orgId),
+      scopeKey,
       async () => {
         const [stockSummary, lowStockRows, draftPoRows, openSoRows] = await Promise.all([
           this.db
@@ -102,10 +103,9 @@ export class InvReportsService {
     const scope = await this.warehouseScope.resolve(orgId, userId);
     const scopeKey = scope === null ? "all" : ([...scope].sort((a, b) => a - b).join(".") || "none");
     const stockScope = this.warehouseScope.locationPredicate(scope, sql`${invStockLevels.locationId}`);
-    const cacheKey = CACHE_KEYS.invStockSummaryReport(orgId, `${scopeKey}:${page}:${limit}`);
-
-    return this.cache.cached(
-      cacheKey,
+    return this.cache.cachedVersioned(
+      CACHE_KEYS.invStockSummaryReportNamespace(orgId),
+      `${scopeKey}:${page}:${limit}`,
       async () => {
         const [items, countResult] = await Promise.all([
           this.db.query.invStockLevels.findMany({
@@ -209,11 +209,9 @@ export class InvReportsService {
    */
   getReorderReport(orgId: string, userId: string, filters: ReorderQueryInput) {
     return this.warehouseScope.resolve(orgId, userId).then((scope) =>
-      this.cache.cached(
-        CACHE_KEYS.invReorderReportPaged(
-          orgId,
-          `${this.warehouseScope.scopeKey(scope)}:${filters.page}:${filters.limit}`,
-        ),
+      this.cache.cachedVersioned(
+        CACHE_KEYS.invReorderNamespace(orgId),
+        `${this.warehouseScope.scopeKey(scope)}:${filters.page}:${filters.limit}`,
         () => this.extended.getReorderReportUpgraded(orgId, userId, filters),
         CACHE_TTL.MEDIUM,
       ),

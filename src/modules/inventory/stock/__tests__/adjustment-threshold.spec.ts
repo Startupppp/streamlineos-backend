@@ -145,6 +145,9 @@ function makeCache() {
   return {
     invalidate: jest.fn().mockResolvedValue(undefined),
     invalidateNamespace: jest.fn().mockResolvedValue(undefined),
+    // A separate counter from invalidateNamespace, and the one the ops boards
+    // are read through — see lib/stock-read-invalidation.ts.
+    invalidateNamespaceForOrg: jest.fn().mockResolvedValue(undefined),
   };
 }
 

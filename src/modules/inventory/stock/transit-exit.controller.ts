@@ -15,6 +15,11 @@ import {
   type ListStrandedTransitInput,
   type TransitExitInput,
 } from "./dto/transit-exit.schemas";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  listStrandedTransitResponseSchema,
+  transitExitResponseSchema,
+} from "./dto/stock-response.schemas";
 
 /**
  * R3 — the two routes that make transit a place goods can leave.
@@ -39,6 +44,7 @@ export class TransitExitController {
    * queue cannot decide anything about it.
    */
   @Get("stranded")
+  @ResponseSchema(listStrandedTransitResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:read")
   listStranded(
@@ -56,6 +62,7 @@ export class TransitExitController {
    * standing on the same warehouse bin.
    */
   @Post("exit")
+  @ResponseSchema(transitExitResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:transit:abandon")
   exitTransit(

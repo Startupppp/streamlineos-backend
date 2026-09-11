@@ -32,6 +32,10 @@ import {
   importPreviewResponseSchema,
   createImportJobResponseSchema,
   listImportJobsResponseSchema,
+  openStagedImportJobResponseSchema,
+  stageImportRowsResponseSchema,
+  stagedImportErrorsResponseSchema,
+  stagedImportProgressResponseSchema,
 } from "./dto/import-export-response.schemas";
 import { z } from "zod";
 
@@ -52,6 +56,7 @@ export class ImportController {
    * Each call is small enough to retry and the job survives every one of them.
    */
   @Post("staged")
+  @ResponseSchema(openStagedImportJobResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:import")
   @Idempotent("inventory.import.open")
@@ -64,6 +69,7 @@ export class ImportController {
   }
 
   @Post("staged/:jobId/rows")
+  @ResponseSchema(stageImportRowsResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:import")
   @Idempotent("inventory.import.rows.stage")
@@ -78,6 +84,7 @@ export class ImportController {
   /** Applies the next chunk. Call until `finished` — that is the resume loop. */
   @Post("staged/:jobId/process")
   @BodylessAction()
+  @ResponseSchema(stagedImportProgressResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:import")
   processChunk(
@@ -89,6 +96,7 @@ export class ImportController {
 
   @Post("staged/:jobId/cancel")
   @BodylessAction()
+  @ResponseSchema(stagedImportProgressResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:import")
   @Idempotent("inventory.import.staged.cancel")
@@ -100,6 +108,7 @@ export class ImportController {
   }
 
   @Get("staged/:jobId")
+  @ResponseSchema(stagedImportProgressResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:import")
   stagedProgress(
@@ -110,6 +119,7 @@ export class ImportController {
   }
 
   @Get("staged/:jobId/errors")
+  @ResponseSchema(stagedImportErrorsResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:import")
   stagedErrors(

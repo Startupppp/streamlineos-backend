@@ -4,7 +4,7 @@ import { type Db } from "../../../db/drizzle.module";
 import { CacheService } from "../../../common/cache/cache.service";
 import { CACHE_KEYS, CACHE_TTL } from "../../../common/cache/cache-keys";
 import { StockEngineService } from "../stock-engine/stock-engine.service";
-import { eq, and, desc, sql } from "drizzle-orm";
+import { eq, and, desc, isNull, sql } from "drizzle-orm";
 import { invImportJobs, invProducts, invProductVariants, invLocations } from "../../../db/schema";
 import { parseCsv } from "./csv.util";
 import type { ImportType, CreateImportJobInput, ListJobsQueryInput } from "./dto/import-export.schemas";
@@ -190,7 +190,18 @@ export class ImportService {
         .select({ id: invProductVariants.id })
         .from(invProductVariants)
         .innerJoin(invProducts, eq(invProductVariants.productId, invProducts.id))
-        .where(and(eq(invProducts.orgId, orgId), eq(invProducts.sku, line.sku)))
+        // A deleted product keeps its SKU, and only the LIVE uniqueness index is
+        // partial on `deleted_at IS NULL` — so without this an opening-stock row
+        // could resolve to a deleted product and post stock onto it, and a SKU
+        // reused after a deletion would match the wrong one of the two.
+        .where(
+          and(
+            eq(invProducts.orgId, orgId),
+            eq(invProducts.sku, line.sku),
+            isNull(invProducts.deletedAt),
+            isNull(invProductVariants.deletedAt),
+          ),
+        )
         .limit(1);
 
       if (variant.length === 0 || !variant[0]) {

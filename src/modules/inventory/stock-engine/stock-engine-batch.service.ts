@@ -3,7 +3,7 @@ import { Inject, Injectable } from "@nestjs/common";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { CacheService } from "../../../common/cache/cache.service";
-import { CACHE_KEYS } from "../../../common/cache/cache-keys";
+import { invalidateStockDerivedReads } from "./lib/stock-read-invalidation";
 import { InventorySettingsService } from "./inventory-settings.service";
 import { WarehouseScopeService } from "./warehouse-scope.service";
 import { claimIdempotencyKey, extractEngineResult } from "./idempotency";
@@ -164,10 +164,7 @@ export class StockEngineBatchService {
     await Promise.allSettled([
       this.cache.invalidateNamespace(`inv:stock:levels:${orgId}`),
       this.cache.invalidateNamespace(`inv:traceability:${orgId}`),
-      this.cache.invalidate(CACHE_KEYS.invDashboard(orgId)),
-      this.cache.invalidate(CACHE_KEYS.invStockSummary(orgId)),
-      this.cache.invalidate(CACHE_KEYS.invLowStock(orgId)),
-      this.cache.invalidate(CACHE_KEYS.invReorderReport(orgId)),
+      invalidateStockDerivedReads(this.cache, orgId),
     ]);
   }
 }

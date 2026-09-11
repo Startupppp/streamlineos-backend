@@ -71,6 +71,7 @@ export class InvReplenishmentService {
   }
 
   async createRule(orgId: string, body: CreateRuleInput) {
+    // A duplicate probe: nothing but its existence decides the 409.
     const existing = await this.db.query.invReorderRules.findFirst({
       where: and(
         eq(invReorderRules.orgId, orgId),
@@ -79,6 +80,7 @@ export class InvReplenishmentService {
           ? eq(invReorderRules.warehouseId, body.warehouseId)
           : sql`${invReorderRules.warehouseId} IS NULL`,
       ),
+      columns: { id: true },
     });
     if (existing) throw new ConflictException("A reorder rule already exists for this variant/warehouse combination");
 
@@ -103,8 +105,11 @@ export class InvReplenishmentService {
   }
 
   async updateRule(orgId: string, ruleId: number, body: UpdateRuleInput) {
+    // A 404 gate, nothing more: the UPDATE below re-states the same predicate
+    // and returns the row the caller actually gets.
     const rule = await this.db.query.invReorderRules.findFirst({
       where: and(eq(invReorderRules.id, ruleId), eq(invReorderRules.orgId, orgId)),
+      columns: { id: true },
     });
     if (!rule) throw new NotFoundException("Reorder rule not found");
 
@@ -128,8 +133,11 @@ export class InvReplenishmentService {
   }
 
   async deleteRule(orgId: string, ruleId: number) {
+    // A 404 gate, nothing more: the UPDATE below re-states the same predicate
+    // and returns the row the caller actually gets.
     const rule = await this.db.query.invReorderRules.findFirst({
       where: and(eq(invReorderRules.id, ruleId), eq(invReorderRules.orgId, orgId)),
+      columns: { id: true },
     });
     if (!rule) throw new NotFoundException("Reorder rule not found");
 

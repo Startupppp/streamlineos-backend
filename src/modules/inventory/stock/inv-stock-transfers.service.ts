@@ -5,7 +5,7 @@ import { invStockTransfers } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { CacheService } from "../../../common/cache/cache.service";
-import { CACHE_KEYS } from "../../../common/cache/cache-keys";
+import { invalidateStockDerivedReads } from "../stock-engine/lib/stock-read-invalidation";
 import { StockEngineService } from "../stock-engine/stock-engine.service";
 import { runIdempotent, revivedId } from "../stock-engine/idempotency";
 import { StockMovementBridgeService } from "../../accounting/adapters/stock-movement-bridge.service";
@@ -336,7 +336,10 @@ export class InvStockTransfersService {
     );
 
     await Promise.all([
-      this.cache.invalidate(CACHE_KEYS.invStockSummary(orgId)),
+      // Was `invalidate(invStockSummary(orgId))`, an exact del of a key nothing
+      // writes. Cancelling a RESERVED transfer releases the reservation, so the
+      // dashboard, the reorder report and the zone boards all move with it.
+      invalidateStockDerivedReads(this.cache, orgId),
       this.cache.invalidateNamespace(`inv:stock:levels:${orgId}`),
       this.cache.invalidateNamespace(`inv:reservations:list:${orgId}`),
     ]);
