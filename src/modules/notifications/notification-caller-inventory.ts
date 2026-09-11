@@ -59,6 +59,11 @@ export const DIRECT_EMAIL_CALLER_INVENTORY: DirectEmailCallerInventoryEntry[] =
       "external client workflow adapter",
     ),
     EXEMPT(
+      "modules/clients/lib/client-investment.ts",
+      DeliveryClass.WORKFLOW_EXTERNAL,
+      "the investment write, split out of client-accounts.service.ts in 40568c0b9; same external-client recipients as its origin",
+    ),
+    EXEMPT(
       "modules/crm/automation-studio/crm-automation-runner.service.ts",
       DeliveryClass.MARKETING,
       "sends through the consent-enforcing CRM outbound seam",
