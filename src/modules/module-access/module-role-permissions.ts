@@ -60,6 +60,17 @@ export async function invalidateRoleAssigneePages(
 
 const VIEW_ACTIONS = ["view", "read"] as const;
 
+/**
+ * The sibling read key for a write grant, at any arity. The catalog is not
+ * uniformly `module:resource:action` — 53 keys are two-segment (`surveys:create`)
+ * and some are four (`build:workspaces:members:manage`) — and it uses both `view`
+ * and `read` as the read verb. Deriving from the last segment rather than a fixed
+ * position covers every shape.
+ *
+ * This is the only definition. `module-access.service.ts` re-exports it; it used
+ * to carry an identical copy of its own, which is the one the spec imported, so
+ * the spec was green over code that no write path ever called.
+ */
 export function impliedViewKey(
   catalog: ReadonlySet<string>,
   permissionKey: string,

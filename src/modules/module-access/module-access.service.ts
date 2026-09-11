@@ -36,32 +36,10 @@ import { buildCursorPage, decodeCursor, encodeCursor } from "../../common/pagina
 import { keysetBeforeId } from "../../common/pagination/keyset";
 import { setModuleRolePermissions } from "./module-role-permissions";
 
-export { invalidateRoleAssigneePages } from "./module-role-permissions";
-
-const VIEW_ACTIONS = ["view", "read"] as const;
-
-/**
- * The sibling read key for a write grant, at any arity. The catalog is not
- * uniformly `module:resource:action` — 53 keys are two-segment (`surveys:create`)
- * and some are four (`build:workspaces:members:manage`) — and it uses both `view`
- * and `read` as the read verb. Deriving from the last segment rather than a fixed
- * position covers every shape.
- */
-export function impliedViewKey(
-  catalog: ReadonlySet<string>,
-  permissionKey: string,
-): string | null {
-  const parts = permissionKey.split(":");
-  if (parts.length < 2) return null;
-  const action = parts[parts.length - 1];
-  if (!action || VIEW_ACTIONS.some((verb) => verb === action)) return null;
-  const prefix = parts.slice(0, -1);
-  for (const verb of VIEW_ACTIONS) {
-    const candidate = [...prefix, verb].join(":");
-    if (catalog.has(candidate)) return candidate;
-  }
-  return null;
-}
+// `impliedViewKey` is re-exported rather than defined here: the copy that runs
+// is the one `normalizeModulePermissionItems` calls, and a second definition in
+// this file was what `implied-view-key.spec.ts` was actually testing.
+export { impliedViewKey, invalidateRoleAssigneePages } from "./module-role-permissions";
 
 export interface ModuleRoleView {
   roleId: number;
