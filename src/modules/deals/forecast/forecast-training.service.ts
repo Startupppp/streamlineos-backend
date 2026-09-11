@@ -1,9 +1,8 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, desc, eq, sql } from "drizzle-orm";
-import { crmDealForecastModels, crmDealForecastScores } from "../../../db/schema";
+import { and, eq } from "drizzle-orm";
+import { crmDealForecastScores } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
-import { logger } from "../../../common/logger/logger.service";
 import { CacheService } from "../../../common/cache/cache.service";
 import { CACHE_KEYS } from "../../../common/cache/cache-keys";
 import {
@@ -15,37 +14,27 @@ import {
   DEFAULT_RIDGE,
   fitLogisticModel,
   scoreWithModel,
-  type DealScore,
-  type FittedModel,
   type TrainingExample,
 } from "./logistic-regression";
-import {
-  chronologicalSplit,
-  evaluate,
-  type ForecastMetrics,
-  type Prediction,
-} from "./forecast-metrics";
+import { chronologicalSplit, evaluate, type Prediction } from "./forecast-metrics";
 import {
   HOLDOUT_FRACTION,
   acceptModel,
   assessForecastHistory,
-  reportableProbability,
   type ForecastBasis,
   type ForecastReadiness,
-  type NaiveReason,
 } from "./forecast-cold-start";
-import {
-  featureValuesToRecord,
-  fromStoredMetrics,
-  rehydrateModel,
-  toStoredMetrics,
-} from "./forecast-model-store";
-import {
-  ForecastCorpusService,
-  type ClosedCorpus,
-  type OpenDealCorpusRow,
-  type StageVocabulary,
-} from "./forecast-corpus.service";
+import { ForecastCorpusService, type ClosedCorpus } from "./forecast-corpus.service";
+import type { DealForecastScore, TrainingAttempt } from "./forecast-training.types";
+import { loadActiveModel, storeForecastModel } from "./lib/forecast-model-records";
+import { scoreRow, toDealForecastScore, writeScoreRows } from "./lib/forecast-scoring";
+
+export type {
+  DealForecastScore,
+  TrainingAccepted,
+  TrainingAttempt,
+  TrainingRejected,
+} from "./forecast-training.types";
 
 /**
  * The thing that was missing.
@@ -70,55 +59,10 @@ import {
  * holdout is `chronologicalSplit`, and the vector is `assembleDealFeatures`.
  * This service decides only *when* to ask and *what to do with the answer*.
  */
-
-export interface TrainingRejected {
-  readonly trained: false;
-  readonly reason: NaiveReason;
-  readonly readiness: ForecastReadiness;
-  /** Present whenever a fit actually ran, so a rejection can be argued with. */
-  readonly learned: ForecastMetrics | null;
-  readonly naive: ForecastMetrics | null;
-}
-
-export interface TrainingAccepted {
-  readonly trained: true;
-  readonly modelId: string;
-  readonly readiness: ForecastReadiness;
-  readonly trainingDeals: number;
-  readonly holdoutDeals: number;
-  readonly learned: ForecastMetrics;
-  readonly naive: ForecastMetrics;
-  readonly scored: number;
-}
-
-export type TrainingAttempt = TrainingAccepted | TrainingRejected;
-
-export interface DealForecastScore {
-  readonly dealId: number;
-  readonly probability: number;
-  readonly intervalLower: number;
-  readonly intervalUpper: number;
-  readonly expectedValueMinor: number;
-  readonly asOf: string;
-  readonly scoredAt: string;
-  readonly factors: readonly {
-    readonly feature: string;
-    readonly value: number;
-    readonly contribution: number;
-    readonly direction: "increases" | "decreases";
-  }[];
-}
-
-interface ActiveModel {
-  readonly modelId: string;
-  readonly model: FittedModel;
-  readonly trainedAt: Date;
-  readonly becameAvailableAt: Date;
-  readonly trainingDeals: number;
-  readonly holdoutDeals: number;
-  readonly learned: ForecastMetrics;
-  readonly naive: ForecastMetrics;
-}
+//
+// The model row's write and read live in `lib/forecast-model-records.ts`;
+// scoring one deal, writing the scores and mapping a stored score in
+// `lib/forecast-scoring.ts`.
 
 @Injectable()
 export class ForecastTrainingService {
@@ -198,7 +142,7 @@ export class ForecastTrainingService {
     if (!verdict.accepted)
       return { trained: false, reason: verdict.reason, readiness, learned, naive };
 
-    const modelId = await this.storeModel(orgId, model, learned, naive, split.holdout.length, now);
+    const modelId = await storeForecastModel(this.db, orgId, model, learned, naive, split.holdout.length, now);
     const scored = await this.scoreOpenDeals(orgId, now, closed);
     /**
      * The pipeline read is cached, and it now weights by these scores. Leaving
@@ -216,129 +160,6 @@ export class ForecastTrainingService {
       learned,
       naive,
       scored,
-    };
-  }
-
-  /**
-   * One active row per organisation, and the moment they first had one at all.
-   *
-   * `became_available_at` is carried forward from whatever it superseded rather
-   * than reset on every retrain: crossing the threshold is a thing that happened
-   * at a time, and a surface that says "learned since Tuesday" must not mean
-   * "retrained on Tuesday".
-   */
-  private async storeModel(
-    orgId: string,
-    model: FittedModel,
-    learned: ForecastMetrics,
-    naive: ForecastMetrics,
-    holdoutDeals: number,
-    now: Date,
-  ): Promise<string> {
-    return this.db.transaction(async (tx) => {
-      const [existing] = await tx
-        .select({
-          modelId: crmDealForecastModels.crmDealForecastModelId,
-          becameAvailableAt: crmDealForecastModels.becameAvailableAt,
-        })
-        .from(crmDealForecastModels)
-        .where(
-          and(
-            eq(crmDealForecastModels.organizationId, orgId),
-            eq(crmDealForecastModels.status, "active"),
-          ),
-        )
-        .limit(1);
-
-      if (existing !== undefined)
-        await tx
-          .update(crmDealForecastModels)
-          .set({ status: "superseded" })
-          .where(
-            and(
-              eq(crmDealForecastModels.organizationId, orgId),
-              eq(crmDealForecastModels.crmDealForecastModelId, existing.modelId),
-            ),
-          );
-
-      const [row] = await tx
-        .insert(crmDealForecastModels)
-        .values({
-          organizationId: orgId,
-          featureSpecVersion: model.specVersion,
-          status: "active",
-          trainedAt: now,
-          becameAvailableAt: existing?.becameAvailableAt ?? now,
-          trainingDeals: model.exampleCount,
-          holdoutDeals,
-          wonDeals: model.wonCount,
-          lostDeals: model.exampleCount - model.wonCount,
-          coefficients: {
-            intercept: model.intercept,
-            weights: featureValuesToRecord(model.weights),
-            means: featureValuesToRecord(model.means),
-            deviations: featureValuesToRecord(model.deviations),
-            covariance: model.covariance.map((line) => [...line]),
-          },
-          evaluation: { learned: toStoredMetrics(learned), naive: toStoredMetrics(naive) },
-          ridge: model.ridge,
-          iterations: model.iterations,
-          converged: model.converged,
-        })
-        .returning({ modelId: crmDealForecastModels.crmDealForecastModelId });
-
-      if (row === undefined) throw new Error("forecast model insert returned no row");
-      return row.modelId;
-    });
-  }
-
-  /**
-   * This organisation's model, or nothing.
-   *
-   * A row whose `feature_spec_version` differs from the running one is treated
-   * as absent, not adapted. Coefficients fitted against one vocabulary applied
-   * to another are numbers with no meaning that still look like a probability,
-   * and the version exists precisely so nobody has to decide case by case.
-   */
-  private async activeModel(orgId: string): Promise<ActiveModel | null> {
-    const [row] = await this.db
-      .select()
-      .from(crmDealForecastModels)
-      .where(
-        and(
-          eq(crmDealForecastModels.organizationId, orgId),
-          eq(crmDealForecastModels.status, "active"),
-        ),
-      )
-      .orderBy(desc(crmDealForecastModels.trainedAt))
-      .limit(1);
-
-    if (row === undefined) return null;
-    if (row.featureSpecVersion !== FORECAST_FEATURE_SPEC_VERSION) return null;
-
-    const model = rehydrateModel(
-      row.featureSpecVersion,
-      row.coefficients,
-      row.ridge,
-      row.iterations,
-      row.converged,
-      row.trainingDeals,
-      row.wonDeals,
-    );
-    if (model === null) {
-      logger.error("stored forecast model could not be read", { orgId, modelId: row.crmDealForecastModelId });
-      return null;
-    }
-
-    return {
-      modelId: row.crmDealForecastModelId,
-      model,
-      trainedAt: row.trainedAt,
-      becameAvailableAt: row.becameAvailableAt,
-      trainingDeals: row.trainingDeals,
-      holdoutDeals: row.holdoutDeals,
-      learned: fromStoredMetrics(row.evaluation?.learned),
-      naive: fromStoredMetrics(row.evaluation?.naive),
     };
   }
 
@@ -363,7 +184,7 @@ export class ForecastTrainingService {
     /** Passed by `train`, which has just read it; re-reading would double the work. */
     alreadyLoaded?: ClosedCorpus,
   ): Promise<number> {
-    const active = await this.activeModel(orgId);
+    const active = await loadActiveModel(this.db, orgId);
     if (active === null) return 0;
 
     const closed = alreadyLoaded ?? (await this.corpus.loadClosedCorpus(orgId, now));
@@ -371,99 +192,8 @@ export class ForecastTrainingService {
     const open = await this.corpus.loadOpenDeals(orgId, stages);
     if (open.length === 0) return 0;
 
-    const rows = open.map((deal) => this.scoreRow(orgId, active, deal, closed, stages, now));
-
-    /**
-     * One row per deal, replaced rather than appended: the history that matters
-     * for accuracy is the closed deals themselves, and a score trail nobody
-     * reads is a table that only grows.
-     */
-    const CHUNK = 200;
-    let written = 0;
-    for (let index = 0; index < rows.length; index += CHUNK) {
-      const slice = rows.slice(index, index + CHUNK);
-      await this.db
-        .insert(crmDealForecastScores)
-        .values(slice)
-        .onConflictDoUpdate({
-          target: [crmDealForecastScores.organizationId, crmDealForecastScores.dealId],
-          /**
-           * `excluded`, not the column. Naming the column on the right-hand side
-           * of an upsert sets the value to itself — the statement succeeds, the
-           * row is untouched, and every score silently stays at whatever the
-           * first pass wrote.
-           */
-          set: {
-            crmDealForecastModelId: sql`excluded.crm_deal_forecast_model_id`,
-            asOf: sql`excluded.as_of`,
-            scoredAt: sql`excluded.scored_at`,
-            probability: sql`excluded.probability`,
-            intervalLower: sql`excluded.interval_lower`,
-            intervalUpper: sql`excluded.interval_upper`,
-            expectedValueMinor: sql`excluded.expected_value_minor`,
-            features: sql`excluded.features`,
-            factors: sql`excluded.factors`,
-          },
-        });
-      written += slice.length;
-    }
-    return written;
-  }
-
-  private scoreRow(
-    orgId: string,
-    active: ActiveModel,
-    deal: OpenDealCorpusRow,
-    closed: ClosedCorpus,
-    stages: StageVocabulary,
-    now: Date,
-  ) {
-    const vector = assembleDealFeatures({
-      asOf: now,
-      deal: deal.snapshot,
-      timeline: {
-        moves: movesBefore(deal.timeline.moves, now),
-        activityCount: deal.timeline.activityCount,
-        lastActivityAt: deal.timeline.lastActivityAt,
-      },
-      stageProbabilities: stages.stageProbabilities,
-      rates: closed.rates,
-      /** An open deal has no outcome to remove; leaving one out here would be a bug. */
-      ownOutcome: null,
-    });
-
-    const score: DealScore = scoreWithModel(active.model, vector.values);
-
-    /**
-     * Stored inside the band the product is willing to assert, not raw.
-     *
-     * `scoreWithModel` is left alone on purpose — the acceptance gate reads its
-     * output directly, and a model whose worst predictions were pulled towards
-     * the middle before being scored would look better calibrated than it is.
-     * The band belongs here, where a number stops being arithmetic and becomes
-     * a claim on a screen.
-     */
-    const probability = reportableProbability(score.probability);
-
-    return {
-      organizationId: orgId,
-      dealId: deal.snapshot.dealId,
-      crmDealForecastModelId: active.modelId,
-      asOf: now,
-      scoredAt: now,
-      probability,
-      intervalLower: reportableProbability(score.interval.lower),
-      intervalUpper: reportableProbability(score.interval.upper),
-      expectedValueMinor: Math.round(probability * deal.snapshot.valueMinor),
-      features: featureValuesToRecord(vector.values),
-      factors: score.factors.map((factor) => ({
-        feature: factor.feature,
-        value: factor.value,
-        standardised: factor.standardised,
-        contribution: factor.contribution,
-        direction: factor.direction,
-      })),
-    };
+    const rows = open.map((deal) => scoreRow(orgId, active, deal, closed, stages, now));
+    return writeScoreRows(this.db, rows);
   }
 
   /**
@@ -475,7 +205,7 @@ export class ForecastTrainingService {
    * both as "not enough data" is lying to the first tenant.
    */
   async basisFor(orgId: string, readiness: ForecastReadiness): Promise<ForecastBasis> {
-    const active = await this.activeModel(orgId);
+    const active = await loadActiveModel(this.db, orgId);
     if (active === null)
       return {
         kind: "naive-weighted",
@@ -519,7 +249,7 @@ export class ForecastTrainingService {
    * probabilities summed into one total is a number produced by nothing.
    */
   async probabilitiesForOpenDeals(orgId: string): Promise<Map<number, number>> {
-    const active = await this.activeModel(orgId);
+    const active = await loadActiveModel(this.db, orgId);
     const byDeal = new Map<number, number>();
     if (active === null) return byDeal;
 
@@ -542,7 +272,7 @@ export class ForecastTrainingService {
 
   /** One deal's stored score, with the factors that produced it. */
   async scoreForDeal(orgId: string, dealId: number): Promise<DealForecastScore | null> {
-    const active = await this.activeModel(orgId);
+    const active = await loadActiveModel(this.db, orgId);
     if (active === null) return null;
 
     const [row] = await this.db
@@ -559,20 +289,6 @@ export class ForecastTrainingService {
 
     if (row === undefined) return null;
 
-    return {
-      dealId: row.dealId,
-      probability: Number(row.probability),
-      intervalLower: Number(row.intervalLower),
-      intervalUpper: Number(row.intervalUpper),
-      expectedValueMinor: Number(row.expectedValueMinor),
-      asOf: row.asOf.toISOString(),
-      scoredAt: row.scoredAt.toISOString(),
-      factors: (row.factors ?? []).map((factor) => ({
-        feature: factor.feature,
-        value: factor.value,
-        contribution: factor.contribution,
-        direction: factor.direction,
-      })),
-    };
+    return toDealForecastScore(row);
   }
 }
