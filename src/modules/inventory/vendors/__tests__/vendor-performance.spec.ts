@@ -280,4 +280,48 @@ describe("VendorScorecardService", () => {
     expect(cards.size).toBe(0);
     expect(execute).not.toHaveBeenCalled();
   });
+
+  /*
+   * The tenant predicate, which nothing checked.
+   *
+   * `VendorScorecardService` is in no tenant-isolation sweep — `inv-ops-isolation-4`
+   * covers nine inventory services and not this one — and the method this
+   * replaced, `InvVendorsService.getVendorPerformance`, had a per-PO receipt
+   * lookup carrying no `org_id` predicate at all. That is the defect the
+   * service's own header names, and the only thing standing between it and a
+   * repeat was that the six queries happened to be written correctly.
+   *
+   * Asserted over every captured query rather than one, because the failure
+   * mode is one read out of six losing its predicate in an edit, and five
+   * correct queries do not make the sixth safe.
+   */
+  it("scopes every aggregate to the asking tenant", async () => {
+    const { service, execute } = buildService(busyVendor);
+    await service.scorecardsFor(ORG, [VENDOR]);
+
+    expect(execute.mock.calls).toHaveLength(6);
+    for (const [query] of execute.mock.calls) {
+      const text = sqlText(query);
+      expect(text).toContain("org_id");
+      // The bound value, not just the column name: a query naming `org_id` in a
+      // JOIN condition while filtering on none would otherwise pass.
+      expect(text).toContain(ORG);
+    }
+  });
+
+  it("scopes the evidence list and its count to the asking tenant too", async () => {
+    // `deliveries` is the drill-down behind the rates and is reached by its own
+    // route, so it needs the predicate in its own right.
+    const execute = jest.fn(() => Promise.resolve([]));
+    const service = new VendorScorecardService({ execute } as never, {
+      vendorLeadTimes: jest.fn(() => Promise.resolve(new Map())),
+    } as never);
+
+    await service.deliveries(ORG, VENDOR, { page: 1, limit: 20 } as never);
+
+    expect(execute.mock.calls).toHaveLength(2);
+    for (const [query] of execute.mock.calls) {
+      expect(sqlText(query)).toContain(ORG);
+    }
+  });
 });
