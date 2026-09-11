@@ -1,22 +1,10 @@
-import {
-  Inject,
-  Injectable,
-  BadRequestException,
-  ConflictException,
-  NotFoundException,
-} from "@nestjs/common";
-import { and, desc, eq, gte, inArray, lte, sql } from "drizzle-orm";
-import {
-  invPurchaseOrders,
-  invGrns,
-  invGrnLines,
-  invGrnLineSerials,
-  invLocations,
-} from "../../../db/schema";
+import { Inject, Injectable, ConflictException } from "@nestjs/common";
+import { and, eq, inArray } from "drizzle-orm";
+import { invGrns, invGrnLines } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { CacheService } from "../../../common/cache/cache.service";
-import { CACHE_KEYS, CACHE_TTL } from "../../../common/cache/cache-keys";
+import { CACHE_KEYS } from "../../../common/cache/cache-keys";
 import { StockEngineService } from "../stock-engine/stock-engine.service";
 import { WarehouseScopeService } from "../stock-engine/warehouse-scope.service";
 import { InventoryAuditService } from "../stock-engine/inventory-audit.service";
@@ -25,7 +13,6 @@ import { UomConversionService } from "../stock-engine/uom-conversion.service";
 import { InvQuantityCaptureService } from "../products/inv-quantity-capture.service";
 import { runIdempotent, revivedId } from "../stock-engine/idempotency";
 import type {
-  ListGrnInput,
   CancelGrnInput,
   CreateGrnDraftInput,
   CreateGrnInput,
@@ -37,37 +24,22 @@ import { GrnPostingService } from "./grn-post.service";
 import { GrnReadService } from "./grn-read.service";
 import { QuickCommerceInboundService } from "../channels/quick-commerce/quick-commerce-inbound.service";
 import { HandlingUnitService } from "../handling-units/handling-unit.service";
-import { assertCatchWeightLine } from "../stock-types/catch-weight";
-
-type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
-
-type GrnStatus = "DRAFT" | "COUNTING" | "QUALITY_REVIEW" | "POSTED" | "CANCELLED";
-
-type GrnDraftLine = CreateGrnDraftInput["lines"][number];
-
-interface ReceivablePo {
-  id: number;
-  warehouseId: number | null;
-  lines: ReadonlyArray<{
-    id: number;
-    productVariant: {
-      id: number;
-      productId: number;
-      product?: { measureMode?: "PIECES" | "CATCH_WEIGHT" | null } | null;
-    };
-  }>;
-}
+import {
+  createDraftInTx,
+  insertGrnLines,
+  loadReceivablePo,
+  resolveLocation,
+  type GrnDraftDeps,
+} from "./lib/grn-draft";
+import {
+  EDITABLE,
+  loadEditableGrn,
+  transitionGrn,
+  type GrnTransitionDeps,
+} from "./lib/grn-transitions";
 
 @Injectable()
 export class GrnService {
-  private static readonly TRANSITIONS: Readonly<Record<"COUNTING" | "QUALITY_REVIEW" | "CANCELLED", readonly GrnStatus[]>> = {
-    COUNTING: ["DRAFT", "QUALITY_REVIEW"],
-    QUALITY_REVIEW: ["DRAFT", "COUNTING"],
-    CANCELLED: ["DRAFT", "COUNTING", "QUALITY_REVIEW"],
-  };
-
-  private static readonly EDITABLE: readonly GrnStatus[] = ["DRAFT", "COUNTING"];
-
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly cache: CacheService,
@@ -84,6 +56,37 @@ export class GrnService {
     private readonly engine: StockEngineService,
   ) {}
 
+  /**
+   * Opening and editing a draft receipt. @see lib/grn-draft.ts
+   *
+   * `resolveDefaultLocationId` is bound rather than the whole `PoService` being
+   * handed over: the draft path needs exactly one thing from the purchase-order
+   * side and nothing else.
+   */
+  private get draftDeps(): GrnDraftDeps {
+    return {
+      db: this.db,
+      numSeq: this.numSeq,
+      uom: this.uom,
+      quantityCapture: this.quantityCapture,
+      audit: this.audit,
+      warehouseScope: this.warehouseScope,
+      handlingUnits: this.handlingUnits,
+      resolveDefaultLocationId: (orgId, warehouseId) =>
+        this.poService.resolveLocationId(orgId, warehouseId),
+    };
+  }
+
+  /** The status machine. @see lib/grn-transitions.ts */
+  private get transitionDeps(): GrnTransitionDeps {
+    return {
+      db: this.db,
+      cache: this.cache,
+      audit: this.audit,
+      warehouseScope: this.warehouseScope,
+      reads: this.reads,
+    };
+  }
 
   async getGrn(orgId: string, grnId: number, userId: string) {
     return this.reads.getGrn(orgId, grnId, userId);
@@ -95,8 +98,10 @@ export class GrnService {
     idempotencyKey: string,
     data: CreateGrnDraftInput,
   ) {
-    const po = await this.loadReceivablePo(orgId, data.poId);
-    const locationId = await this.resolveLocation(orgId, userId, po.warehouseId, data.locationId);
+    const po = await loadReceivablePo(this.draftDeps, orgId, data.poId);
+    const locationId = await resolveLocation(
+      this.draftDeps, orgId, userId, po.warehouseId, data.locationId,
+    );
 
     const grnId = await this.db.transaction((tx) =>
       runIdempotent(
@@ -106,7 +111,8 @@ export class GrnService {
         { command: "inventory.receiving.draft", ...data, locationId },
         async () => {
           await this.quickCommerce.assertReceivable(tx, orgId, { poId: po.id, asnId: data.asnId ?? null });
-          return this.createDraftInTx(
+          return createDraftInTx(
+            this.draftDeps,
             tx, orgId, userId, po, locationId, data.receivedDate, data.notes, data.lines, data.asnId ?? null,
           );
         },
@@ -124,12 +130,12 @@ export class GrnService {
     userId: string,
     data: UpdateGrnDraftInput,
   ) {
-    const grn = await this.loadEditableGrn(orgId, grnId, userId);
-    const po = await this.loadReceivablePo(orgId, grn.poId);
+    const grn = await loadEditableGrn(this.transitionDeps, orgId, grnId, userId);
+    const po = await loadReceivablePo(this.draftDeps, orgId, grn.poId);
     const locationId =
       data.locationId === undefined
         ? grn.locationId
-        : await this.resolveLocation(orgId, userId, po.warehouseId, data.locationId);
+        : await resolveLocation(this.draftDeps, orgId, userId, po.warehouseId, data.locationId);
 
     await this.db.transaction(async (tx) => {
       const updated = await tx
@@ -144,7 +150,7 @@ export class GrnService {
           and(
             eq(invGrns.id, grnId),
             eq(invGrns.orgId, orgId),
-            inArray(invGrns.status, [...GrnService.EDITABLE]),
+            inArray(invGrns.status, [...EDITABLE]),
           ),
         )
         .returning({ id: invGrns.id });
@@ -153,7 +159,7 @@ export class GrnService {
 
       if (data.lines) {
         await tx.delete(invGrnLines).where(and(eq(invGrnLines.grnId, grnId), eq(invGrnLines.orgId, orgId)));
-        await this.insertLines(tx, orgId, grnId, po, data.lines);
+        await insertGrnLines(this.draftDeps, tx, orgId, grnId, po, data.lines);
       }
 
       await this.audit.insert(tx, {
@@ -171,15 +177,19 @@ export class GrnService {
   }
 
   startCounting(orgId: string, grnId: number, userId: string) {
-    return this.transition(orgId, grnId, userId, "COUNTING", "receiving.count");
+    return transitionGrn(this.transitionDeps, orgId, grnId, userId, "COUNTING", "receiving.count");
   }
 
   submitForQualityReview(orgId: string, grnId: number, userId: string) {
-    return this.transition(orgId, grnId, userId, "QUALITY_REVIEW", "receiving.quality-review");
+    return transitionGrn(
+      this.transitionDeps, orgId, grnId, userId, "QUALITY_REVIEW", "receiving.quality-review",
+    );
   }
 
   cancelGrn(orgId: string, grnId: number, userId: string, data: CancelGrnInput) {
-    return this.transition(orgId, grnId, userId, "CANCELLED", "receiving.cancel", data.reason);
+    return transitionGrn(
+      this.transitionDeps, orgId, grnId, userId, "CANCELLED", "receiving.cancel", data.reason,
+    );
   }
 
   postGrn(orgId: string, grnId: number, userId: string, idempotencyKey: string) {
@@ -205,8 +215,10 @@ export class GrnService {
     idempotencyKey: string,
     data: CreateGrnInput,
   ) {
-    const po = await this.loadReceivablePo(orgId, poId);
-    const locationId = await this.resolveLocation(orgId, userId, po.warehouseId, data.locationId);
+    const po = await loadReceivablePo(this.draftDeps, orgId, poId);
+    const locationId = await resolveLocation(
+      this.draftDeps, orgId, userId, po.warehouseId, data.locationId,
+    );
 
     const grnId = await this.db.transaction((tx) =>
       runIdempotent(
@@ -216,7 +228,8 @@ export class GrnService {
         { poId, locationId, receivedDate: data.receivedDate, notes: data.notes, lines: data.lines },
         async () => {
           await this.quickCommerce.assertReceivable(tx, orgId, { poId: po.id, asnId: data.asnId ?? null });
-          const created = await this.createDraftInTx(
+          const created = await createDraftInTx(
+            this.draftDeps,
             tx, orgId, userId, po, locationId, data.receivedDate, data.notes, data.lines, data.asnId ?? null,
           );
           return this.posting.postInTx(tx, orgId, created, userId, idempotencyKey);
@@ -227,258 +240,6 @@ export class GrnService {
 
     await this.posting.invalidateAfterPost(orgId, poId);
     return this.getGrn(orgId, grnId, userId);
-  }
-
-  private async transition(
-    orgId: string,
-    grnId: number,
-    userId: string,
-    to: "COUNTING" | "QUALITY_REVIEW" | "CANCELLED",
-    action: string,
-    reason?: string,
-  ) {
-    const from = GrnService.TRANSITIONS[to];
-    const grn = await this.db.query.invGrns.findFirst({
-      where: and(eq(invGrns.id, grnId), eq(invGrns.orgId, orgId)),
-      columns: { id: true, status: true, locationId: true },
-    });
-    if (!grn) throw new NotFoundException("GRN not found");
-    await this.warehouseScope.assertLocationVisible(orgId, userId, grn.locationId);
-
-    await this.db.transaction(async (tx) => {
-      const moved = await tx
-        .update(invGrns)
-        .set({ status: to, updatedAt: new Date() })
-        .where(
-          and(
-            eq(invGrns.id, grnId),
-            eq(invGrns.orgId, orgId),
-            inArray(invGrns.status, [...from]),
-          ),
-        )
-        .returning({ id: invGrns.id });
-      if (moved.length === 0) {
-        throw new ConflictException(
-          `A ${grn.status} goods receipt cannot move to ${to}`,
-        );
-      }
-
-      await this.audit.insert(tx, {
-        orgId,
-        actorUserId: userId,
-        action,
-        resourceType: "inv_grn",
-        resourceId: String(grnId),
-        before: { status: grn.status },
-        after: { status: to },
-        metadata: reason ? { reason } : undefined,
-      });
-    });
-
-    await this.cache.invalidateNamespace(CACHE_KEYS.invGrnNamespace(orgId));
-    return this.getGrn(orgId, grnId, userId);
-  }
-
-  private async createDraftInTx(
-    tx: Tx,
-    orgId: string,
-    userId: string,
-    po: ReceivablePo,
-    locationId: number,
-    receivedDate: string,
-    notes: string | undefined,
-    lines: readonly GrnDraftLine[],
-    asnId: number | null,
-  ): Promise<number> {
-    const grnNumber = await this.numSeq.next(orgId, "GRN", tx);
-
-    const [grn] = await tx
-      .insert(invGrns)
-      .values({
-        orgId,
-        poId: po.id,
-        grnNumber,
-        locationId,
-        notes,
-        status: "DRAFT",
-        asnId,
-        createdBy: userId,
-        receivedDate,
-      })
-      .returning({ id: invGrns.id });
-    if (!grn) throw new ConflictException("Could not open the goods receipt");
-
-    await this.insertLines(tx, orgId, grn.id, po, lines);
-
-    await this.audit.insert(tx, {
-      orgId,
-      actorUserId: userId,
-      action: "receiving.draft",
-      resourceType: "inv_grn",
-      resourceId: String(grn.id),
-      after: { status: "DRAFT" },
-      metadata: { poId: po.id, grnNumber, lineCount: lines.length },
-    });
-
-    return grn.id;
-  }
-
-  private async insertLines(
-    tx: Tx,
-    orgId: string,
-    grnId: number,
-    po: ReceivablePo,
-    lines: readonly GrnDraftLine[],
-  ): Promise<void> {
-    const seen = new Set<number>();
-    for (const line of lines) {
-      if (seen.has(line.poLineId))
-        throw new BadRequestException(`PO line ${line.poLineId} appears twice on this receipt`);
-      seen.add(line.poLineId);
-
-      const poLine = po.lines.find((l) => l.id === line.poLineId);
-      if (!poLine) throw new BadRequestException(`PO line ${line.poLineId} not found`);
-      if (line.qualityStatus === "REJECTED" && !line.rejectionReason)
-        throw new BadRequestException(`Line ${line.poLineId}: a rejected line needs a reason`);
-
-      await this.quantityCapture.assertEnteredQuantity(
-        orgId,
-        poLine.productVariant.id,
-        line.quantityReceived,
-      );
-
-      if (line.handlingUnitId !== undefined) {
-        await this.handlingUnits.assertCanHoldStockInTx(tx, orgId, line.handlingUnitId);
-      }
-
-      assertCatchWeightLine(poLine.productVariant.product?.measureMode ?? "PIECES", {
-        quantity: line.quantityReceived,
-        quantityPieces: line.quantityPieces ?? null,
-      });
-
-      const converted = await this.uom.convert(
-        orgId,
-        poLine.productVariant.productId,
-        line.uomId ?? null,
-        line.quantityReceived,
-      );
-
-      const [inserted] = await tx
-        .insert(invGrnLines)
-        .values({
-          orgId,
-          grnId,
-          poLineId: line.poLineId,
-          quantityReceived: converted.quantity,
-          quantityEntered: converted.quantityEntered,
-          uomId: converted.uomId,
-          uomFactor: converted.uomFactor,
-          qualityStatus: line.qualityStatus,
-          rejectionReason: line.rejectionReason,
-          discrepancyReason: line.discrepancyReason,
-          handlingUnitId: line.handlingUnitId ?? null,
-          crossDockSoId: line.crossDockSoId ?? null,
-          quantityPieces: line.quantityPieces ?? null,
-          ownership: line.ownership ?? "OWNED",
-          lotNumber: line.lotNumber,
-          expiryDate: line.expiryDate,
-          manufactureDate: line.manufactureDate,
-          mrpPaise: line.mrpPaise ?? null,
-          purchaseRatePaise: line.purchaseRatePaise ?? null,
-        })
-        .returning({ id: invGrnLines.id });
-      if (!inserted) throw new ConflictException("Could not write the receipt line");
-
-      const serials = line.serialNumbers ?? [];
-      if (serials.length === 0) continue;
-      const unique = [...new Set(serials)];
-      if (unique.length !== serials.length)
-        throw new BadRequestException(`Line ${line.poLineId}: the same serial was scanned twice`);
-      await tx.insert(invGrnLineSerials).values(
-        unique.map((serialNumber) => ({ orgId, grnLineId: inserted.id, serialNumber })),
-      );
-    }
-  }
-
-  private async loadReceivablePo(orgId: string, poId: number) {
-    const po = await this.db.query.invPurchaseOrders.findFirst({
-      where: and(eq(invPurchaseOrders.id, poId), eq(invPurchaseOrders.orgId, orgId)),
-      with: {
-        lines: {
-          with: {
-            productVariant: {
-              columns: { id: true, productId: true },
-              with: { product: { columns: { id: true, trackingMethod: true, measureMode: true } } },
-            },
-          },
-        },
-      },
-    });
-    if (!po) throw new NotFoundException("Purchase order not found");
-    if (po.status !== "SENT" && po.status !== "PARTIAL") {
-      throw new BadRequestException(
-        "Purchase order must be SENT or PARTIAL to receive goods",
-      );
-    }
-    return po;
-  }
-
-  private async loadEditableGrn(orgId: string, grnId: number, userId: string) {
-    const grn = await this.db.query.invGrns.findFirst({
-      where: and(eq(invGrns.id, grnId), eq(invGrns.orgId, orgId)),
-      columns: {
-        id: true, poId: true, status: true, locationId: true,
-        receivedDate: true, notes: true,
-      },
-    });
-    if (!grn) throw new NotFoundException("GRN not found");
-    await this.warehouseScope.assertLocationVisible(orgId, userId, grn.locationId);
-    if (!GrnService.EDITABLE.includes(grn.status))
-      throw new BadRequestException(`A ${grn.status} goods receipt can no longer be edited`);
-    return grn;
-  }
-
-  private async resolveLocation(
-    orgId: string,
-    userId: string,
-    warehouseId: number | null,
-    requested: number | undefined,
-  ): Promise<number> {
-    if (requested === undefined) {
-      /*
-       * The named location below has been asserted since it was written. The
-       * DEFAULT was not, and it is the same receipt into the same building: with
-       * no `locationId` in the body this falls back to the first active location
-       * of the *purchase order's* warehouse, which `loadReceivablePo` looks up on
-       * `org_id` alone. So a body naming somebody else's purchase order received
-       * goods into somebody else's building, and a draft — which posts no
-       * movements — never reached the engine's `assertLocationsInScope` to be
-       * refused there.
-       *
-       * The warehouse rather than the resolved location, because they are the
-       * same question here (the default is by construction inside that
-       * warehouse) and `assertWarehouseVisible` answers it without a second
-       * query. 404, not 403.
-       *
-       * This refuses no flow that completes today: a receipt that actually posts
-       * movements into a warehouse the caller does not hold is already refused
-       * by the engine, and an unrestricted caller passes both.
-       */
-      await this.warehouseScope.assertWarehouseVisible(orgId, userId, warehouseId);
-      return this.poService.resolveLocationId(orgId, warehouseId);
-    }
-
-    const loc = await this.db.query.invLocations.findFirst({
-      where: and(
-        eq(invLocations.id, requested),
-        eq(invLocations.orgId, orgId),
-        eq(invLocations.isActive, true),
-      ),
-      columns: { id: true },
-    });
-    if (!loc) throw new NotFoundException("Location not found or inactive");
-    await this.warehouseScope.assertLocationVisible(orgId, userId, loc.id);
-    return loc.id;
   }
 
   private readonly revivedGrnId = (stored: unknown): number => {
