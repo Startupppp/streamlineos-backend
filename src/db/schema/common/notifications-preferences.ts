@@ -69,8 +69,7 @@ export const notificationPreferenceRules = pgTable(
   {
     id: bigint("id", { mode: "number" }).primaryKey().generatedAlwaysAsIdentity(),
     orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-    userId: text("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
-    membershipId: integer("membership_id"),
+    membershipId: integer("membership_id").notNull(),
     scopeType: text("scope_type").$type<"EVENT" | "MODULE" | "CATEGORY">().notNull(),
     scopeKey: text("scope_key").notNull(),
     channel: notificationChannelEnum("channel").notNull(),
@@ -78,9 +77,7 @@ export const notificationPreferenceRules = pgTable(
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
   },
   (t) => [
-    uniqueIndex("uniq_notification_pref_rule").on(t.orgId, t.userId, t.scopeType, t.scopeKey, t.channel),
-    index("idx_notification_pref_rule_lookup").on(t.orgId, t.userId, t.scopeType, t.scopeKey),
-    index("idx_notification_pref_rules_org_membership").on(t.orgId, t.membershipId),
+    uniqueIndex("uniq_notification_pref_rule").on(t.orgId, t.membershipId, t.scopeType, t.scopeKey, t.channel),
     uniqueIndex("uniq_notification_preference_rules_org_id").on(t.orgId, t.id),
     foreignKey({
       name: "fk_notification_pref_rules_actor",
@@ -106,8 +103,7 @@ export const notificationConsents = pgTable(
   {
     id: bigint("id", { mode: "number" }).primaryKey().generatedAlwaysAsIdentity(),
     orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-    userId: text("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
-    membershipId: integer("membership_id"),
+    membershipId: integer("membership_id").notNull(),
     channel: notificationChannelEnum("channel").notNull(),
     destination: text("destination").notNull(),
     state: notificationConsentStateEnum("state").notNull(),
@@ -121,8 +117,7 @@ export const notificationConsents = pgTable(
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
   },
   (t) => [
-    uniqueIndex("uniq_notification_consents_current").on(t.orgId, t.userId, t.channel, t.destination),
-    index("idx_notification_consents_org_membership").on(t.orgId, t.membershipId),
+    uniqueIndex("uniq_notification_consents_current").on(t.orgId, t.membershipId, t.channel, t.destination),
     uniqueIndex("uniq_notification_consents_org_id").on(t.orgId, t.id),
     foreignKey({
       name: "fk_notification_consents_actor",

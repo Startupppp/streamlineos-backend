@@ -31,8 +31,7 @@ export const notificationDigestItems = pgTable(
   {
     id: bigint("id", { mode: "number" }).primaryKey().generatedAlwaysAsIdentity(),
     orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-    userId: text("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
-    membershipId: integer("membership_id"),
+    membershipId: integer("membership_id").notNull(),
     channel: notificationChannelEnum("channel").notNull(),
     eventKey: text("event_key").notNull(),
     entityType: text("entity_type"),
@@ -50,7 +49,7 @@ export const notificationDigestItems = pgTable(
   (t) => [
     // Partial: a flushed row must not block the next window opening its own.
     uniqueIndex("uniq_notification_digest_open")
-      .on(t.orgId, t.userId, t.channel, t.coalesceKey)
+      .on(t.orgId, t.membershipId, t.channel, t.coalesceKey)
       .where(sql`flushed_at is null`),
     index("idx_notification_digest_due").on(t.orgId, t.deliverAfter).where(sql`flushed_at is null`),
     index("idx_notification_digest_items_org_membership").on(t.orgId, t.membershipId),
@@ -118,15 +117,13 @@ export const broadcastReadReceipts = pgTable(
   {
     id: bigint("id", { mode: "number" }).primaryKey().generatedAlwaysAsIdentity(),
     orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-    broadcastId: integer("broadcast_id").references(() => broadcasts.id, { onDelete: "cascade" }).notNull(),
-    userId: text("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
-    membershipId: integer("membership_id"),
+    broadcastId: integer("broadcast_id").notNull(),
+    membershipId: integer("membership_id").notNull(),
     dismissedAt: timestamp("dismissed_at", { withTimezone: true }).defaultNow().notNull(),
   },
   (t) => [
-    uniqueIndex("uniq_broadcast_read_receipts_org_user_broadcast").on(t.orgId, t.broadcastId, t.userId),
-    index("idx_broadcast_read_receipts_admin").on(t.orgId, t.broadcastId),
-    index("idx_broadcast_read_receipts_user").on(t.orgId, t.userId),
+  foreignKey({ columns: [t.orgId, t.broadcastId], foreignColumns: [broadcasts.orgId, broadcasts.id], name: "fk_broadcast_read_receipts_broadcast_id_org" }).onDelete("cascade"),
+    uniqueIndex("uniq_broadcast_read_receipts_org_membership_broadcast").on(t.orgId, t.broadcastId, t.membershipId),
     index("idx_broadcast_read_receipts_org_membership").on(t.orgId, t.membershipId),
     foreignKey({
       name: "fk_broadcast_read_receipts_actor",
