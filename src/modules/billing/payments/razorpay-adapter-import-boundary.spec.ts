@@ -34,6 +34,15 @@ const BILLING_SERVICE = join(__dirname, "../core/billing.service.ts");
  */
 const DI_REGISTRATION = "src/modules/billing/payments/payments.module.ts";
 
+/**
+ * The one operator script that must name the concrete provider: it is the live
+ * half of the Razorpay failure proof, so it constructs `RazorpayAdapter` against
+ * the real sandbox on purpose. It is named by path rather than by admitting
+ * `src/scripts/` wholesale, so a second script reaching for the provider still
+ * fails this suite.
+ */
+const SANDBOX_VERIFIER = "src/scripts/verify-razorpay-sandbox.ts";
+
 const SKIP_DIRS = new Set(["node_modules", ".git", "dist", "coverage", ".next"]);
 
 function walkTs(dir: string): string[] {
@@ -75,9 +84,9 @@ describe("payment provider import boundary", () => {
     expect(allFiles.some((f) => f.endsWith(join("adapters", "razorpay.adapter.ts")))).toBe(true);
   });
 
-  it("keeps the concrete provider out of everything but its own directory and the module that wires it", () => {
+  it("keeps the concrete provider out of everything but its own directory, the module that wires it and the sandbox verifier", () => {
     const production = relativeImporters.filter((f) => !f.endsWith(".spec.ts") && !f.endsWith("-spec.ts"));
-    expect(production).toEqual([DI_REGISTRATION]);
+    expect(production).toEqual([DI_REGISTRATION, SANDBOX_VERIFIER]);
   });
 
   it("billing.service.ts does not reach for the provider directly", () => {
