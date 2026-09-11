@@ -1,4 +1,4 @@
-import { and, eq, gte, inArray, isNotNull, isNull, lte, sql } from "drizzle-orm";
+import { and, eq, gte, inArray, isNotNull, isNull, lte, sql, type SQL } from "drizzle-orm";
 import {
   deals,
   users,
@@ -9,13 +9,13 @@ import { businessParties, leadPartyMap } from "../../../db/schema/party";
 import {
   LEAD_PARTY_COLUMNS,
   LEAD_PARTY_JOIN,
+  LEAD_PARTY_SCOPE,
   leadPartyScope,
-  pushLeadPartyViewScope,
 } from "../lead-party-reader";
 import { resolveLeadStatusSemantics } from "../lead-status-semantics";
 import type { AnalyticsQuery } from "../dto/lead-reports.schemas";
 import { type Db } from "../../../db/drizzle.module";
-import type { DataScope } from "../../access/access.types";
+import type { ScopedRead } from "../../access/scoped-read";
 import { AccessService } from "../../access/access.service";
 
 /**
@@ -41,6 +41,36 @@ import { AccessService } from "../../access/access.service";
  * still exists as the entry point the controller and the tenant-isolation spec
  * both drive.
  */
+/**
+ * The leads a caller may see, as one predicate. The tenant, the caller's read
+ * scope and the live-lead filter arrive together through the `ScopedRead`, and a
+ * denied scope matches nothing; extra clauses are ANDed in. Every report in
+ * `LeadsReportsService` narrows through this, so none can be handed a scope it
+ * did not resolve.
+ */
+export function visibleLeadsWhere(read: ScopedRead, ...extra: (SQL | undefined)[]): SQL {
+  return read.compose(
+    {
+      tenant: businessParties.organizationId,
+      scope: LEAD_PARTY_SCOPE,
+      and: [...leadPartyScope(read.orgId), ...extra],
+    },
+    (where) => where.sql,
+    () => sql`false`,
+  );
+}
+
+const EMPTY_LEAD_ANALYTICS = {
+  totalLeads: 0,
+  totalLeadsPrevPeriod: 0,
+  conversionRate: 0,
+  conversionRatePrevPeriod: 0,
+  totalRevenue: 0,
+  conversionBySource: [] as { source: string; total: number; converted: number; rate: number }[],
+  monthlyRevenue: [] as { month: string; revenue: number }[],
+  assignmentDistribution: [] as { userId: string; name: string; count: number }[],
+};
+
 export interface LeadAnalyticsDeps {
   readonly db: Db;
   readonly access: AccessService;
@@ -48,16 +78,18 @@ export interface LeadAnalyticsDeps {
 
 export async function getLeadAnalytics(
   deps: LeadAnalyticsDeps,
-  orgId: string,
+  read: ScopedRead,
   filters: AnalyticsQuery,
-  viewScope?: { scope: DataScope; userId: string },
 ) {
-  const f = leadPartyScope(orgId);
-  pushLeadPartyViewScope(f, orgId, viewScope?.scope, viewScope?.userId);
-  if (filters.dateFrom)
-    f.push(gte(LEAD_PARTY_COLUMNS.createdAt, new Date(filters.dateFrom)));
-  if (filters.dateTo)
-    f.push(lte(LEAD_PARTY_COLUMNS.createdAt, new Date(filters.dateTo + "T23:59:59")));
+  if (read.denied) return EMPTY_LEAD_ANALYTICS;
+  const orgId = read.orgId;
+  const where = visibleLeadsWhere(
+    read,
+    filters.dateFrom ? gte(LEAD_PARTY_COLUMNS.createdAt, new Date(filters.dateFrom)) : undefined,
+    filters.dateTo
+      ? lte(LEAD_PARTY_COLUMNS.createdAt, new Date(filters.dateTo + "T23:59:59"))
+      : undefined,
+  );
 
   const now = new Date();
   const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
@@ -67,16 +99,15 @@ export async function getLeadAnalytics(
     The previous period is the SAME leads, one window earlier.
 
     It was built from a bare `leadPartyScope(orgId)` while the current period
-    went through `f`, which carries the view scope. So a rep at `own` was shown
+    carried the view scope. So a rep at `own` was shown
     their own total against the organisation's total from a month ago: the
     delta beside it was arithmetic between two different populations, and it
     disclosed the organisation's lead count to the one caller this endpoint was
     already careful not to disclose it to. A comparison figure has to narrow
     with the figure it is compared against or it is not a comparison.
   */
-  const prevPeriod = leadPartyScope(orgId);
-  pushLeadPartyViewScope(prevPeriod, orgId, viewScope?.scope, viewScope?.userId);
-  prevPeriod.push(
+  const prevPeriod = visibleLeadsWhere(
+    read,
     gte(LEAD_PARTY_COLUMNS.createdAt, sixtyDaysAgo),
     lte(LEAD_PARTY_COLUMNS.createdAt, thirtyDaysAgo),
   );
@@ -104,7 +135,7 @@ export async function getLeadAnalytics(
         })
         .from(leadPartyMap)
         .innerJoin(businessParties, LEAD_PARTY_JOIN)
-        .where(and(...f)),
+        .where(where),
       deps.db
         .select({
           total: sql<number>`COUNT(*)::int`,
@@ -112,7 +143,7 @@ export async function getLeadAnalytics(
         })
         .from(leadPartyMap)
         .innerJoin(businessParties, LEAD_PARTY_JOIN)
-        .where(and(...prevPeriod)),
+        .where(prevPeriod),
       deps.db
         .select({ key: crmPipelineStages.key })
         .from(crmPipelineStages)
@@ -130,7 +161,7 @@ export async function getLeadAnalytics(
         })
         .from(leadPartyMap)
         .innerJoin(businessParties, LEAD_PARTY_JOIN)
-        .where(and(...f))
+        .where(where)
         .groupBy(LEAD_PARTY_COLUMNS.source),
       deps.db
         .select({
@@ -139,7 +170,7 @@ export async function getLeadAnalytics(
         })
         .from(leadPartyMap)
         .innerJoin(businessParties, LEAD_PARTY_JOIN)
-        .where(and(...f, isNotNull(LEAD_PARTY_COLUMNS.assignedToId)))
+        .where(and(where, isNotNull(LEAD_PARTY_COLUMNS.assignedToId)))
         .groupBy(LEAD_PARTY_COLUMNS.assignedToId),
       deps.access.membersWithPermission(orgId, "crm:leads:view"),
     ]);

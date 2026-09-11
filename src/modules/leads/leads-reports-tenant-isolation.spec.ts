@@ -73,7 +73,7 @@ describe("LeadsReportsService — cross-tenant isolation", () => {
     const teamReports = { getSalesLeaderboard: jest.fn().mockResolvedValue({}) };
     const access = { getDataScopeForUser: jest.fn(), membersWithPermission: jest.fn().mockResolvedValue([]) };
     const svc = new LeadsReportsService(db, cache as never, teamReports as never, access as never);
-    await svc.getLeadAnalytics(ATTACKER, {});
+    await svc.getLeadAnalytics(ScopedRead.of(ATTACKER, "user-1", "all"), {});
 
     expect(where.mock.calls.length).toBeGreaterThanOrEqual(8);
     const unscoped = where.mock.calls

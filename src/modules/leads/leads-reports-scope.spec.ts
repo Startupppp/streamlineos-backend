@@ -1,6 +1,7 @@
 import { PgDialect } from "drizzle-orm/pg-core";
 import type { SQL } from "drizzle-orm";
 import { LeadsReportsService } from "./leads-reports.service";
+import { ScopedRead } from "../access/scoped-read";
 
 /**
  * Four lead reports read the whole organisation while the lead list narrowed.
@@ -84,7 +85,7 @@ describe("lead reports narrow to the leads the caller may see", () => {
     it("narrows the status counts and the follow-up count to the caller's own leads", async () => {
       const rec = recording();
 
-      await serviceWith(rec).getDashboardMetrics("org-1", { scope: "own", userId: "rep-1" });
+      await serviceWith(rec).getDashboardMetrics(ScopedRead.of("org-1", "rep-1", "own"));
 
       // Three lead-side reads: the status roll-up and the follow-up count both
       // carry the owner predicate. Counting occurrences rather than asserting
@@ -97,7 +98,7 @@ describe("lead reports narrow to the leads the caller may see", () => {
     it("narrows the call and meeting tiles to the activities the caller logged", async () => {
       const rec = recording();
 
-      await serviceWith(rec).getDashboardMetrics("org-1", { scope: "own", userId: "rep-1" });
+      await serviceWith(rec).getDashboardMetrics(ScopedRead.of("org-1", "rep-1", "own"));
 
       // `lead_activities` has no owner column, so this one narrows on who did
       // the work. Asserted separately from the lead-side predicate because the
@@ -109,7 +110,7 @@ describe("lead reports narrow to the leads the caller may see", () => {
     it("leaves a manager at scope all exactly as wide as they were", async () => {
       const rec = recording();
 
-      await serviceWith(rec).getDashboardMetrics("org-1", { scope: "all", userId: "manager-1" });
+      await serviceWith(rec).getDashboardMetrics(ScopedRead.of("org-1", "manager-1", "all"));
 
       expect(allSql(rec)).not.toContain(OWNER_PREDICATE);
       expect(allSql(rec)).not.toContain(LOGGED_BY_PREDICATE);
@@ -118,7 +119,7 @@ describe("lead reports narrow to the leads the caller may see", () => {
     it("makes every tile unreachable at scope none", async () => {
       const rec = recording();
 
-      await serviceWith(rec).getDashboardMetrics("org-1", { scope: "none", userId: "rep-1" });
+      await serviceWith(rec).getDashboardMetrics(ScopedRead.of("org-1", "rep-1", "none"));
 
       expect(allSql(rec)).toContain("false");
     });
@@ -131,13 +132,13 @@ describe("lead reports narrow to the leads the caller may see", () => {
        * this fixes, and a wrong number besides.
        */
       const own = recording();
-      await serviceWith(own).getDashboardMetrics("org-1", { scope: "own", userId: "rep-1" });
+      await serviceWith(own).getDashboardMetrics(ScopedRead.of("org-1", "rep-1", "own"));
 
       const other = recording();
-      await serviceWith(other).getDashboardMetrics("org-1", { scope: "own", userId: "rep-2" });
+      await serviceWith(other).getDashboardMetrics(ScopedRead.of("org-1", "rep-2", "own"));
 
       const wide = recording();
-      await serviceWith(wide).getDashboardMetrics("org-1", { scope: "all", userId: "manager-1" });
+      await serviceWith(wide).getDashboardMetrics(ScopedRead.of("org-1", "manager-1", "all"));
 
       expect(own.cacheKeys[0]).not.toEqual(other.cacheKeys[0]);
       expect(own.cacheKeys[0]).not.toEqual(wide.cacheKeys[0]);
@@ -149,8 +150,8 @@ describe("lead reports narrow to the leads the caller may see", () => {
       const first = recording();
       const second = recording();
       return Promise.all([
-        serviceWith(first).getDashboardMetrics("org-1", { scope: "all", userId: "manager-1" }),
-        serviceWith(second).getDashboardMetrics("org-1", { scope: "all", userId: "owner-1" }),
+        serviceWith(first).getDashboardMetrics(ScopedRead.of("org-1", "manager-1", "all")),
+        serviceWith(second).getDashboardMetrics(ScopedRead.of("org-1", "owner-1", "all")),
       ]).then(() => {
         expect(first.cacheKeys[0]).toEqual(second.cacheKeys[0]);
       });
@@ -161,7 +162,7 @@ describe("lead reports narrow to the leads the caller may see", () => {
     it("narrows the source breakdown to the caller's own leads", async () => {
       const rec = recording();
 
-      await serviceWith(rec).getSourceReport("org-1", { scope: "own", userId: "rep-1" });
+      await serviceWith(rec).getSourceReport(ScopedRead.of("org-1", "rep-1", "own"));
 
       expect(allSql(rec)).toContain(OWNER_PREDICATE);
     });
@@ -169,17 +170,17 @@ describe("lead reports narrow to the leads the caller may see", () => {
     it("leaves a manager at scope all exactly as wide as they were", async () => {
       const rec = recording();
 
-      await serviceWith(rec).getSourceReport("org-1", { scope: "all", userId: "manager-1" });
+      await serviceWith(rec).getSourceReport(ScopedRead.of("org-1", "manager-1", "all"));
 
       expect(allSql(rec)).not.toContain(OWNER_PREDICATE);
     });
 
     it("gives the narrowed breakdown its own cache entry", async () => {
       const own = recording();
-      await serviceWith(own).getSourceReport("org-1", { scope: "own", userId: "rep-1" });
+      await serviceWith(own).getSourceReport(ScopedRead.of("org-1", "rep-1", "own"));
 
       const wide = recording();
-      await serviceWith(wide).getSourceReport("org-1", { scope: "all", userId: "manager-1" });
+      await serviceWith(wide).getSourceReport(ScopedRead.of("org-1", "manager-1", "all"));
 
       expect(own.cacheKeys[0]).not.toEqual(wide.cacheKeys[0]);
     });
@@ -191,7 +192,7 @@ describe("lead reports narrow to the leads the caller may see", () => {
       // free-text notes somebody typed about a person.
       const rec = recording();
 
-      await serviceWith(rec).getFollowUps("org-1", {}, { scope: "own", userId: "rep-1" });
+      await serviceWith(rec).getFollowUps(ScopedRead.of("org-1", "rep-1", "own"), {});
 
       expect(allSql(rec)).toContain(OWNER_PREDICATE);
     });
@@ -199,7 +200,7 @@ describe("lead reports narrow to the leads the caller may see", () => {
     it("makes every follow-up unreachable at scope none", async () => {
       const rec = recording();
 
-      await serviceWith(rec).getFollowUps("org-1", {}, { scope: "none", userId: "rep-1" });
+      await serviceWith(rec).getFollowUps(ScopedRead.of("org-1", "rep-1", "none"), {});
 
       expect(allSql(rec)).toContain("false");
     });
@@ -207,7 +208,7 @@ describe("lead reports narrow to the leads the caller may see", () => {
     it("leaves a manager at scope all exactly as wide as they were", async () => {
       const rec = recording();
 
-      await serviceWith(rec).getFollowUps("org-1", {}, { scope: "all", userId: "manager-1" });
+      await serviceWith(rec).getFollowUps(ScopedRead.of("org-1", "manager-1", "all"), {});
 
       expect(allSql(rec)).not.toContain(OWNER_PREDICATE);
     });
@@ -218,7 +219,7 @@ describe("lead reports narrow to the leads the caller may see", () => {
       // The projection is the WHOLE lead, up to a hundred of them.
       const rec = recording();
 
-      await serviceWith(rec).getUnverifiedLeads("org-1", { scope: "own", userId: "rep-1" });
+      await serviceWith(rec).getUnverifiedLeads(ScopedRead.of("org-1", "rep-1", "own"));
 
       expect(allSql(rec)).toContain(OWNER_PREDICATE);
     });
@@ -226,7 +227,7 @@ describe("lead reports narrow to the leads the caller may see", () => {
     it("leaves a manager at scope all exactly as wide as they were", async () => {
       const rec = recording();
 
-      await serviceWith(rec).getUnverifiedLeads("org-1", { scope: "all", userId: "manager-1" });
+      await serviceWith(rec).getUnverifiedLeads(ScopedRead.of("org-1", "manager-1", "all"));
 
       expect(allSql(rec)).not.toContain(OWNER_PREDICATE);
     });
@@ -248,7 +249,7 @@ describe("lead reports narrow to the leads the caller may see", () => {
        */
       const rec = recording();
 
-      await serviceWith(rec).getLeadAnalytics("org-1", {}, { scope: "own", userId: "rep-1" });
+      await serviceWith(rec).getLeadAnalytics(ScopedRead.of("org-1", "rep-1", "own"), {});
 
       const owned = allSql(rec).split(OWNER_PREDICATE).length - 1;
       expect(owned).toBe(4);
