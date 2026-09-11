@@ -1093,6 +1093,16 @@
       "verdict": "EXCLUDED-MODULE",
       "note": "CRM/Inventory excluded product domain \u00e2\u20ac\u201d do not fix in this lane"
     },
+    "/crm/core/lib/crm-org-hierarchy.ts": {
+      "verdict": "EXCLUDED-MODULE",
+      "note": "CRM/Inventory excluded product domain \u00e2\u20ac\u201d do not fix in this lane",
+      "justification": "Restates the verdict on /crm/core/crm-organizations-insights.service.ts, which companies() was split out of unchanged. Stated rather than implied, because EXCLUDED-MODULE is a lane statement and not a claim that the read is small: the id list is one account's DESCENDANT SUBTREE from getAllDescendantIds, capped at HIERARCHY_MAX_DEPTH = 100 levels deep but NOT capped in breadth, so a tenant with a very wide account hierarchy reads the whole subtree. Two of its three callers pass a single id. 2026-09-11"
+    },
+    "/crm/core/lib/crm-org-records.ts": {
+      "verdict": "EXCLUDED-MODULE",
+      "note": "CRM/Inventory excluded product domain \u00e2\u20ac\u201d do not fix in this lane",
+      "justification": "Restates the verdict on /crm/core/crm-organizations-insights.service.ts, which getRelatedLeads was split out of unchanged. Stated rather than implied: this read is genuinely unbounded in breadth \u2014 it selects converted_from_party_id for EVERY employee of the company (employer_party_id = the company party, no limit) to build the inArray the related-leads query then filters on, so a company with thousands of contacts materialises all of them. The related-leads query it feeds is itself capped at 50. Not marked ACTIONABLE because the CRM domain is excluded from this migration lane, not because the read is bounded. 2026-09-11"
+    },
     "/crm/core/crm-organizations-merge.service.ts": {
       "verdict": "EXCLUDED-MODULE",
       "note": "CRM/Inventory excluded product domain \u00e2\u20ac\u201d do not fix in this lane"
