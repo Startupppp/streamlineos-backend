@@ -2353,6 +2353,11 @@
       "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
       "justification": "0 violations in current scan; all reads bounded by userId or orgId single-row lookups 2026-09-01"
     },
+    "/module-access/lib/flat-member-writes.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "module-access lane (excluded territory)",
+      "justification": "Both reads select roles WHERE orgId AND moduleKey: listModuleRoleIds returns one module's group list, which is per-module configuration and does not grow with tenant data, and assertGroupsBelongToModule additionally constrains inArray(id, groupIds) against a request the schema caps at 50. Restates the verdict carried by /module-access/module-access-flat-members.service.ts, from which both reads moved 2026-09-11"
+    },
     "/module-access/module-access-flat-members.service.ts": {
       "verdict": "FALSE-POSITIVE",
       "note": "module-access lane (excluded territory)",
