@@ -32,6 +32,22 @@ function sslFor(connectionString) {
 
 const sql = postgres(url, { prepare: false, max: 1, ssl: sslFor(url), onnotice: () => {} });
 
+/**
+ * The same search path `db-bootstrap.mjs`, `replay-chain-cold.mjs` and
+ * `migration-proof.mjs` set. This runner set none, and it is the only one that
+ * runs every migration down one session.
+ *
+ * Two failures came out of that, both measured replaying the merged chain onto
+ * a database at main's head. `0579_tenant_fks_build_schemas` references
+ * `ticket_comments` unqualified, which lives in `build_events`, so it died with
+ * "relation does not exist" — the same file applies cleanly through psql once
+ * the path is set. And a migration issuing its own top-level `SET search_path`
+ * (0619, 0653, 0655 do) left it set for every migration after it, because a
+ * plain SET outlives the transaction that ran it. Setting the path at the start
+ * of each migration fixes the first and contains the second.
+ */
+const MIGRATION_SEARCH_PATH = '"$user", public, build_events, app';
+
 function statementsOf(text) {
   if (text.includes("--> statement-breakpoint"))
     return text.split("--> statement-breakpoint").map((s) => s.trim()).filter(Boolean);
@@ -54,10 +70,12 @@ async function applyOne(entry, when) {
     return "dry";
   }
   if (concurrent) {
+    await sql.unsafe(`SET search_path = ${MIGRATION_SEARCH_PATH}`);
     for (const stmt of statementsOf(text)) await sql.unsafe(stmt);
     await sql`insert into drizzle.__drizzle_migrations (hash, created_at) values (${hash}, ${when})`;
   } else {
     await sql.begin(async (tx) => {
+      await tx.unsafe(`SET search_path = ${MIGRATION_SEARCH_PATH}`);
       await tx.unsafe(text);
       await tx`insert into drizzle.__drizzle_migrations (hash, created_at) values (${hash}, ${when})`;
     });
