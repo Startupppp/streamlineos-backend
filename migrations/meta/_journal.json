@@ -6007,6 +6007,20 @@
       "when": 1803000019162,
       "tag": "1098_expense_policy_category_tenant_key",
       "breakpoints": true
+    },
+    {
+      "idx": 858,
+      "version": "7",
+      "when": 1803000019163,
+      "tag": "1099_inv_carrier_transport",
+      "breakpoints": true
+    },
+    {
+      "idx": 859,
+      "version": "7",
+      "when": 1803000019164,
+      "tag": "1100_inventory_channel_sync_jobs",
+      "breakpoints": true
     }
   ]
 }
