@@ -599,6 +599,11 @@
       "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
       "justification": "CRM scoring reads bounded by entity IDs; single-entity context for AI scoring 2026-09-01"
     },
+    "/ai/core/services/lib/crm-lead-scoring.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
+      "justification": "split out of /ai/core/services/crm-scoring.service.ts, which carries the same FALSE-POSITIVE verdict; the read is scoreLead's lead projection bounded by leadIdIs(leadId) + leadPartyScope(orgId) — one lead by primary key within one tenant, so it returns at most one row 2026-09-11"
+    },
     "/ai/core/services/hr-helpdesk-ai.service.ts": {
       "verdict": "FALSE-POSITIVE",
       "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
@@ -3243,6 +3248,11 @@
       "verdict": "FALSE-POSITIVE",
       "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
       "justification": "Classified 2026-09-10 by reading the call site. FALSE-POSITIVE rather than BOUNDED because BOUNDED is a FIXED verdict here \u2014 it asserts the scanner no longer matches, and a continued match is reported as a regression. The pattern is still present and always will be; it is simply not a violation: the lines of one purchase order."
+    },
+    "/inventory/purchase-orders/lib/po-lifecycle.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
+      "justification": "Classified 2026-09-11 by reading the moved call sites. This restates the verdict on /inventory/purchase-orders/po.service.ts \u2014 sendPo, closePo and cancelPo moved into lib/po-lifecycle.ts unchanged, and this gate keys on path, so the verdict has to be restated rather than inherited. Both matches are the same select: inv_po_lines WHERE org_id = $1 AND po_id = $2, no limit. The bound is ONE purchase order's own line count, fixed when the buyer raised it and never growing afterwards. A LIMIT here would be a correctness bug rather than a cap \u2014 sendPo books every outstanding line into on_order and releaseOnOrder (closePo, cancelPo) takes the remainder back out, so a partial read would leave the projection permanently drifted. FALSE-POSITIVE rather than BOUNDED because BOUNDED is a FIXED verdict here: it asserts the scanner no longer matches, and a continued match is reported as a regression."
     },
     "/inventory/quality/inspection-plans.service.ts": {
       "verdict": "FALSE-POSITIVE",

@@ -1,12 +1,8 @@
 import { Inject, Injectable, BadRequestException, NotFoundException } from "@nestjs/common";
-import { and, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, desc, eq, sql } from "drizzle-orm";
 import { applyScope } from "../../access/apply-scope";
 import type { DataScope } from "../../access/access.types";
-import {
-  invPurchaseOrders,
-  invPoLines,
-  invGrns,
-} from "../../../db/schema";
+import { invPurchaseOrders, invPoLines } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { CacheService } from "../../../common/cache/cache.service";
@@ -18,8 +14,14 @@ import { WarehouseScopeService } from "../stock-engine/warehouse-scope.service";
 import { addDec, mulDec } from "../stock-engine/stock-engine.service";
 import type { ListPoInput, CreatePoInput, UpdatePoInput } from "./dto/inv-purchase-orders.schemas";
 import { StockProjectionService } from "../stock-engine/stock-projection.service";
-import { isPositive, subDec } from "../stock-engine/decimal";
 import { resolveLines, resolveLocationId } from "./lib/po-lines";
+import {
+  approvePo,
+  cancelPo,
+  closePo,
+  sendPo,
+  type PoLifecycleDeps,
+} from "./lib/po-lifecycle";
 
 function computePoTotals(lines: Array<{ quantity: number; unitCost: string; taxRate: string }>) {
   let subtotal = "0.0000";
@@ -37,8 +39,6 @@ function computePoTotals(lines: Array<{ quantity: number; unitCost: string; taxR
   };
 }
 
-type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
-
 @Injectable()
 export class PoService {
   constructor(
@@ -50,6 +50,21 @@ export class PoService {
     private readonly uom: UomConversionService,
     private readonly projection: StockProjectionService,
   ) {}
+
+  /**
+   * The transitions read through the same collaborators this service is
+   * injected with. No second provider, and the constructor is untouched —
+   * `po-warehouse-scope.spec.ts` builds this service positionally.
+   */
+  private get lifecycleDeps(): PoLifecycleDeps {
+    return {
+      db: this.db,
+      cache: this.cache,
+      settingsService: this.settingsService,
+      warehouseScope: this.warehouseScope,
+      projection: this.projection,
+    };
+  }
 
   /** @see lib/po-lines.ts — grn-receive and grn call this through the service. */
   async resolveLocationId(orgId: string, warehouseId: number | null | undefined): Promise<number> {
@@ -256,234 +271,25 @@ export class PoService {
     return this.getPo(orgId, poId);
   }
 
-  async approvePo(orgId: string, poId: number, userId: string) {
-    const settings = await this.settingsService.get(orgId);
-    const po = await this.db.query.invPurchaseOrders.findFirst({
-      where: and(eq(invPurchaseOrders.id, poId), eq(invPurchaseOrders.orgId, orgId)),
-    });
-    if (!po) throw new NotFoundException("Purchase order not found");
-    await this.warehouseScope.assertWarehouseVisible(orgId, userId, po.warehouseId);
-    if (po.status !== "DRAFT") throw new BadRequestException("Only DRAFT purchase orders can be approved");
-
-    if (!settings.requirePoApproval) {
-      throw new BadRequestException(
-        "Purchase order approval is not required for this organisation; send the PO directly",
-      );
-    }
-
-    const [updated] = await this.db.update(invPurchaseOrders)
-      .set({
-        status: "SENT",
-        approvedBy: userId,
-        approvedAt: new Date(),
-        sentAt: new Date(),
-        updatedAt: new Date(),
-      })
-      .where(and(eq(invPurchaseOrders.id, poId), eq(invPurchaseOrders.orgId, orgId)))
-      .returning();
-
-    await this.cache.del(CACHE_KEYS.invPoDetail(orgId, poId));
-    await this.cache.invalidateNamespace(CACHE_KEYS.invPoNamespace(orgId));
-    return updated;
-  }
-
-  async sendPo(orgId: string, poId: number, userId: string) {
-    const settings = await this.settingsService.get(orgId);
-    const po = await this.db.query.invPurchaseOrders.findFirst({
-      where: and(eq(invPurchaseOrders.id, poId), eq(invPurchaseOrders.orgId, orgId)),
-    });
-    if (!po) throw new NotFoundException("Purchase order not found");
-    await this.warehouseScope.assertWarehouseVisible(orgId, userId, po.warehouseId);
-    if (po.status !== "DRAFT") throw new BadRequestException("Only DRAFT purchase orders can be sent");
-
-    if (settings.requirePoApproval && !po.approvedBy) {
-      throw new BadRequestException("This purchase order requires approval before sending");
-    }
-
-    // A1. `on_order` had no writer at all: it sat at its "0" default while
-    // replenishment read it, so a warehouse that had already ordered the
-    // shortfall ordered it again the following week. Sending is the moment the
-    // goods become expected.
-    const [sent] = await this.db.transaction(async (tx) => {
-      // The status predicate belongs in the UPDATE, not only in the read above.
-      // Two concurrent sends — a double click, or a client retry after a
-      // timeout — both read DRAFT, both passed the guard, and both ran
-      // `addOnOrder`, so a 500-unit order booked 1000 as inbound. `addOnOrder`
-      // clamps at zero only downward, so the over-booking was unbounded, and
-      // replenishment then under-ordered that variant every cycle.
-      const updated = await tx
-        .update(invPurchaseOrders)
-        .set({ status: "SENT", sentAt: new Date(), updatedAt: new Date() })
-        .where(and(
-          eq(invPurchaseOrders.id, poId),
-          eq(invPurchaseOrders.orgId, orgId),
-          eq(invPurchaseOrders.status, "DRAFT"),
-        ))
-        .returning();
-
-      // Lost the race: another request already sent this order and booked its
-      // inbound quantity. Returning what is there is the honest answer to "send
-      // this", and it must not book a second time.
-      if (updated.length === 0) {
-        return this.db.query.invPurchaseOrders.findFirst({
-          where: and(eq(invPurchaseOrders.id, poId), eq(invPurchaseOrders.orgId, orgId)),
-        }).then((row) => (row ? [row] : []));
-      }
-
-      if (po.warehouseId !== null) {
-        const lines = await tx
-          .select({
-            productVariantId: invPoLines.productVariantId,
-            quantity: invPoLines.quantity,
-            quantityReceived: invPoLines.quantityReceived,
-          })
-          .from(invPoLines)
-          .where(and(eq(invPoLines.orgId, orgId), eq(invPoLines.poId, poId)));
-
-        for (const line of lines) {
-          // Outstanding, not ordered: a partially received order re-sent must
-          // not book the already-arrived units as still on their way.
-          const outstanding = subDec(
-            String(line.quantity),
-            String(line.quantityReceived),
-          );
-          if (isPositive(outstanding)) {
-            await this.projection.addOnOrder(
-              tx,
-              orgId,
-              line.productVariantId,
-              po.warehouseId,
-              outstanding,
-            );
-          }
-        }
-      }
-      return updated;
-    });
-
-    await this.cache.del(CACHE_KEYS.invPoDetail(orgId, poId));
-    await this.cache.invalidateNamespace(CACHE_KEYS.invPoNamespace(orgId));
-    return sent;
-  }
-
   /**
-   * A1/A2. Take the still-outstanding quantity of a purchase order back out of
-   * `on_order`.
+   * Moving a purchase order through its statuses.
    *
-   * `sendPo` books the outstanding quantity as expected and a receipt takes the
-   * arrived part back out, but the two terminal states did not: a cancelled or
-   * closed order left its unreceived remainder booked as inbound forever, and
-   * replenishment reading a permanent phantom arrival under-orders that variant
-   * every cycle. The reconciliation report names this as `on_order_vs_purchase_orders`
-   * drift, which is how it surfaced.
-   *
-   * Idempotent in effect: `addOnOrder` clamps at zero, and both callers move the
-   * order into a terminal status in the same transaction, so it cannot run twice.
+   * @see lib/po-lifecycle.ts — every transition, and why each one is a
+   * conditional UPDATE rather than a read-then-write.
    */
-  private async releaseOnOrder(
-    tx: Tx,
-    orgId: string,
-    poId: number,
-    warehouseId: number | null,
-  ): Promise<void> {
-    if (warehouseId === null) return;
-    const lines = await tx
-      .select({
-        productVariantId: invPoLines.productVariantId,
-        quantity: invPoLines.quantity,
-        quantityReceived: invPoLines.quantityReceived,
-      })
-      .from(invPoLines)
-      .where(and(eq(invPoLines.orgId, orgId), eq(invPoLines.poId, poId)));
-
-    for (const line of lines) {
-      const outstanding = subDec(
-        String(line.quantity),
-        String(line.quantityReceived),
-      );
-      if (!isPositive(outstanding)) continue;
-      await this.projection.addOnOrder(
-        tx,
-        orgId,
-        line.productVariantId,
-        warehouseId,
-        `-${outstanding}`,
-      );
-    }
+  approvePo(orgId: string, poId: number, userId: string) {
+    return approvePo(this.lifecycleDeps, orgId, poId, userId);
   }
 
-  async closePo(orgId: string, poId: number, userId: string) {
-    const po = await this.db.query.invPurchaseOrders.findFirst({
-      where: and(eq(invPurchaseOrders.id, poId), eq(invPurchaseOrders.orgId, orgId)),
-    });
-    if (!po) throw new NotFoundException("Purchase order not found");
-    await this.warehouseScope.assertWarehouseVisible(orgId, userId, po.warehouseId);
-    if (po.status !== "RECEIVED" && po.status !== "PARTIAL") {
-      throw new BadRequestException("Only RECEIVED or PARTIAL purchase orders can be closed");
-    }
-
-    const [closed] = await this.db.transaction(async (tx) => {
-      // A PARTIAL order closes with a remainder nobody will ever deliver.
-      // Conditional, for the same reason as `sendPo`: two concurrent closes
-      // would each release the outstanding quantity, taking it out of `on_order`
-      // twice.
-      const rows = await tx
-        .update(invPurchaseOrders)
-        .set({ status: "CLOSED", updatedAt: new Date() })
-        .where(and(
-          eq(invPurchaseOrders.id, poId),
-          eq(invPurchaseOrders.orgId, orgId),
-          inArray(invPurchaseOrders.status, ["RECEIVED", "PARTIAL"]),
-        ))
-        .returning();
-      if (rows.length === 0) return rows;
-      await this.releaseOnOrder(tx, orgId, poId, po.warehouseId);
-      return rows;
-    });
-
-    await this.cache.del(CACHE_KEYS.invPoDetail(orgId, poId));
-    await this.cache.invalidateNamespace(CACHE_KEYS.invPoNamespace(orgId));
-    return closed;
+  sendPo(orgId: string, poId: number, userId: string) {
+    return sendPo(this.lifecycleDeps, orgId, poId, userId);
   }
 
-  async cancelPo(orgId: string, poId: number, userId: string) {
-    const po = await this.db.query.invPurchaseOrders.findFirst({
-      where: and(eq(invPurchaseOrders.id, poId), eq(invPurchaseOrders.orgId, orgId)),
-    });
-    if (!po) throw new NotFoundException("Purchase order not found");
-    await this.warehouseScope.assertWarehouseVisible(orgId, userId, po.warehouseId);
-    if (po.status !== "DRAFT" && po.status !== "SENT") {
-      throw new BadRequestException("Only DRAFT or SENT purchase orders can be cancelled");
-    }
+  closePo(orgId: string, poId: number, userId: string) {
+    return closePo(this.lifecycleDeps, orgId, poId, userId);
+  }
 
-    const grnCount = await this.db.select({ cnt: sql<number>`count(*)::int` })
-      .from(invGrns)
-      .where(and(eq(invGrns.poId, poId), eq(invGrns.orgId, orgId)));
-
-    if ((grnCount[0]?.cnt ?? 0) > 0) {
-      throw new BadRequestException("Cannot cancel a purchase order that has already received goods");
-    }
-
-    const [cancelled] = await this.db.transaction(async (tx) => {
-      // Only a SENT order ever booked anything; a DRAFT was never expected.
-      const rows = await tx
-        .update(invPurchaseOrders)
-        .set({ status: "CANCELLED", updatedAt: new Date() })
-        .where(and(
-          eq(invPurchaseOrders.id, poId),
-          eq(invPurchaseOrders.orgId, orgId),
-          inArray(invPurchaseOrders.status, ["DRAFT", "SENT"]),
-        ))
-        .returning();
-      if (rows.length === 0) return rows;
-      // Only a SENT order ever booked anything; a DRAFT was never expected.
-      if (po.status === "SENT")
-        await this.releaseOnOrder(tx, orgId, poId, po.warehouseId);
-      return rows;
-    });
-
-    await this.cache.del(CACHE_KEYS.invPoDetail(orgId, poId));
-    await this.cache.invalidateNamespace(CACHE_KEYS.invPoNamespace(orgId));
-    return cancelled;
+  cancelPo(orgId: string, poId: number, userId: string) {
+    return cancelPo(this.lifecycleDeps, orgId, poId, userId);
   }
 }

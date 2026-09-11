@@ -213,3 +213,96 @@ describe("drafting a goods receipt with no location named", () => {
     expect(resolveLocationId).toHaveBeenCalledWith("org-1", 9);
   });
 });
+
+/**
+ * The four status transitions, which this file's own header has claimed assert
+ * the purchase order's warehouse since it was written — and which nothing here
+ * actually exercised.
+ *
+ * `approvePo`, `sendPo`, `closePo` and `cancelPo` each loaded the order and
+ * called `assertWarehouseVisible` on it, four copies of the same three lines.
+ * Extracting them into one `loadMovable` in `lib/po-lifecycle.ts` is what made
+ * the gap visible: deleting that single call left all 62 tests across
+ * `purchase-orders`, `inv-orders-isolation` and `inv-ops-isolation-4` green, so
+ * a scoped operator could have approved, sent, closed or cancelled an order
+ * into a building they hold nothing in and no suite would have said so.
+ *
+ * Every case asserts the write is never REACHED rather than that an exception
+ * came back, for the same reason the cases above do: a transition that updated
+ * the row and then refused would still have moved the order.
+ */
+describe("moving a purchase order through its statuses", () => {
+  interface PoRow {
+    id: number;
+    status: string;
+    warehouseId: number | null;
+    approvedBy: string | null;
+  }
+
+  function lifecycleServiceWith(assertWarehouseVisible: VisibilityMock, po: PoRow) {
+    const stub = {} as never;
+    const reject = (what: string) =>
+      jest.fn((): never => {
+        throw new Error(`the ${what} must not be reached`);
+      });
+    const update = reject("status update");
+    const transaction = reject("transaction");
+    const select = reject("receipt count");
+    const findFirst = jest.fn(async (_args: unknown) => po);
+    const db = {
+      update,
+      transaction,
+      select,
+      query: { invPurchaseOrders: { findFirst } },
+    } as never;
+    const settings = { get: jest.fn(async (_orgId: string) => ({ requirePoApproval: true })) };
+    const service = new PoService(
+      db,
+      stub,
+      settings as never,
+      stub,
+      { assertWarehouseVisible } as never,
+      stub,
+      stub,
+    );
+    return { service, update, transaction, select, findFirst };
+  }
+
+  const DRAFT: PoRow = { id: 42, status: "DRAFT", warehouseId: 9, approvedBy: "approver-1" };
+  const RECEIVED: PoRow = { id: 42, status: "RECEIVED", warehouseId: 9, approvedBy: null };
+
+  const CASES: ReadonlyArray<
+    readonly [string, PoRow, (s: PoService) => Promise<unknown>, "update" | "transaction" | "select"]
+  > = [
+    ["approvePo", DRAFT, (s) => s.approvePo("org-1", 42, "keeper-1"), "update"],
+    ["sendPo", DRAFT, (s) => s.sendPo("org-1", 42, "keeper-1"), "transaction"],
+    ["closePo", RECEIVED, (s) => s.closePo("org-1", 42, "keeper-1"), "transaction"],
+    ["cancelPo", DRAFT, (s) => s.cancelPo("org-1", 42, "keeper-1"), "select"],
+  ];
+
+  for (const [name, row, call, write] of CASES) {
+    it(`${name} refuses an order in a warehouse the caller cannot see`, async () => {
+      const assertWarehouseVisible = refusing();
+      const fixture = lifecycleServiceWith(assertWarehouseVisible, row);
+
+      await expect(call(fixture.service)).rejects.toBeInstanceOf(NotFoundException);
+
+      // The order's own warehouse, read off the row — not anything the caller sent.
+      expect(assertWarehouseVisible).toHaveBeenCalledWith("org-1", "keeper-1", 9);
+      expect(fixture[write]).not.toHaveBeenCalled();
+    });
+
+    it(`${name} still moves the order when the caller holds its warehouse`, async () => {
+      // The anti-vacuity floor. Without it a service that threw NotFound
+      // unconditionally — or one whose status guard refused first — would
+      // satisfy the case above while asserting nothing about the gate.
+      const assertWarehouseVisible = permitting();
+      const fixture = lifecycleServiceWith(assertWarehouseVisible, row);
+
+      await expect(call(fixture.service)).rejects.toThrow(/must not be reached/);
+
+      expect(assertWarehouseVisible).toHaveBeenCalledWith("org-1", "keeper-1", 9);
+      expect(fixture.findFirst).toHaveBeenCalled();
+    });
+  }
+});
