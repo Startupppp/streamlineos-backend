@@ -3328,6 +3328,66 @@
       "verdict": "FALSE-POSITIVE",
       "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
       "justification": "Classified 2026-09-10. Same code, new path: planWaveLines moved verbatim out of pick-wave.service.ts when that file was decomposed for check:file-sizes. The parent's justification was re-read against the two queries that moved rather than copied, and it holds exactly - the orders are `inArray(invSalesOrders.id, input.soIds)` and the lines are those orders' SO lines, so both are bounded by the request's own input. FALSE-POSITIVE and not BOUNDED because BOUNDED is a FIXED verdict asserting the scanner no longer matches, and it still does."
+    },
+    "/accounting/adapters/posting-command.e2e-spec.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
+      "justification": "Classified 2026-09-11. New with merge 5af62b67a from the CRM/Timesheets/accounting-kernel lane, which never ran this gate. Not a service: an e2e suite (18 describe/it blocks on seedOrg fixtures). collectServiceFiles drops names ending in .spec.ts, and a name ending in .e2e-spec.ts does not end in .spec.ts, so e2e suites are scanned as if they were services. The 14 matches are assertion reads against the org and book this suite seeds for itself; none is reachable from a request."
+    },
+    "/accounting/ap/ap.e2e-spec.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
+      "justification": "Classified 2026-09-11. New with merge 5af62b67a from the CRM/Timesheets/accounting-kernel lane, which never ran this gate. Not a service: an e2e suite (39 describe/it blocks on seedOrg fixtures). collectServiceFiles drops names ending in .spec.ts, and a name ending in .e2e-spec.ts does not end in .spec.ts, so e2e suites are scanned as if they were services. The 6 matches are assertion reads against the org and book this suite seeds for itself; none is reachable from a request."
+    },
+    "/accounting/ar/ar-document-pdf.e2e-spec.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
+      "justification": "Classified 2026-09-11. New with merge 5af62b67a from the CRM/Timesheets/accounting-kernel lane, which never ran this gate. Not a service: an e2e suite (11 describe/it blocks on seedOrg fixtures). collectServiceFiles drops names ending in .spec.ts, and a name ending in .e2e-spec.ts does not end in .spec.ts, so e2e suites are scanned as if they were services. The 2 matches are assertion reads against the org and book this suite seeds for itself; none is reachable from a request."
+    },
+    "/accounting/ar/ar-invoice-post-idempotency.e2e-spec.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
+      "justification": "Classified 2026-09-11. New with merge 5af62b67a from the CRM/Timesheets/accounting-kernel lane, which never ran this gate. Not a service: an e2e suite (5 describe/it blocks on seedOrg fixtures). collectServiceFiles drops names ending in .spec.ts, and a name ending in .e2e-spec.ts does not end in .spec.ts, so e2e suites are scanned as if they were services. The 1 match is an assertion read against the org and book this suite seeds for itself; none is reachable from a request."
+    },
+    "/accounting/ar/ar.e2e-spec.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
+      "justification": "Classified 2026-09-11. New with merge 5af62b67a from the CRM/Timesheets/accounting-kernel lane, which never ran this gate. Not a service: an e2e suite (50 describe/it blocks on seedOrg fixtures). collectServiceFiles drops names ending in .spec.ts, and a name ending in .e2e-spec.ts does not end in .spec.ts, so e2e suites are scanned as if they were services. The 5 matches are assertion reads against the org and book this suite seeds for itself; none is reachable from a request."
+    },
+    "/accounting/attachments/attachments.e2e-spec.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
+      "justification": "Classified 2026-09-11. New with merge 5af62b67a from the CRM/Timesheets/accounting-kernel lane, which never ran this gate. Not a service: an e2e suite (18 describe/it blocks on seedOrg fixtures). collectServiceFiles drops names ending in .spec.ts, and a name ending in .e2e-spec.ts does not end in .spec.ts, so e2e suites are scanned as if they were services. The 2 matches are assertion reads against the org and book this suite seeds for itself; none is reachable from a request."
+    },
+    "/accounting/banking/banking.e2e-spec.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
+      "justification": "Classified 2026-09-11. New with merge 5af62b67a from the CRM/Timesheets/accounting-kernel lane, which never ran this gate. Not a service: an e2e suite (34 describe/it blocks on seedOrg fixtures). collectServiceFiles drops names ending in .spec.ts, and a name ending in .e2e-spec.ts does not end in .spec.ts, so e2e suites are scanned as if they were services. The 4 matches are assertion reads against the org and book this suite seeds for itself; none is reachable from a request."
+    },
+    "/accounting/banking/explain-line.e2e-spec.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
+      "justification": "Classified 2026-09-11. New with merge 5af62b67a from the CRM/Timesheets/accounting-kernel lane, which never ran this gate. Not a service: an e2e suite (8 describe/it blocks on seedOrg fixtures). collectServiceFiles drops names ending in .spec.ts, and a name ending in .e2e-spec.ts does not end in .spec.ts, so e2e suites are scanned as if they were services. The 3 matches are assertion reads against the org and book this suite seeds for itself; none is reachable from a request."
+    },
+    "/accounting/compliance/compliance.e2e-spec.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
+      "justification": "Classified 2026-09-11. New with merge 5af62b67a from the CRM/Timesheets/accounting-kernel lane, which never ran this gate. Not a service: an e2e suite (12 describe/it blocks on seedOrg fixtures). collectServiceFiles drops names ending in .spec.ts, and a name ending in .e2e-spec.ts does not end in .spec.ts, so e2e suites are scanned as if they were services. The 2 matches are assertion reads against the org and book this suite seeds for itself; none is reachable from a request."
+    },
+    "/accounting/kernel/ledger.e2e-spec.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
+      "justification": "Classified 2026-09-11. New with merge 5af62b67a from the CRM/Timesheets/accounting-kernel lane, which never ran this gate. Not a service: an e2e suite (53 describe/it blocks on seedOrg fixtures). collectServiceFiles drops names ending in .spec.ts, and a name ending in .e2e-spec.ts does not end in .spec.ts, so e2e suites are scanned as if they were services. The 10 matches are assertion reads against the org and book this suite seeds for itself; none is reachable from a request."
+    },
+    "/accounting/reports/reports.e2e-spec.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
+      "justification": "Classified 2026-09-11. New with merge 5af62b67a from the CRM/Timesheets/accounting-kernel lane, which never ran this gate. Not a service: an e2e suite (39 describe/it blocks on seedOrg fixtures). collectServiceFiles drops names ending in .spec.ts, and a name ending in .e2e-spec.ts does not end in .spec.ts, so e2e suites are scanned as if they were services. The 1 match is an assertion read against the org and book this suite seeds for itself; none is reachable from a request."
+    },
+    "/accounting/setup/opening-balances.e2e-spec.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
+      "justification": "Classified 2026-09-11. New with merge 5af62b67a from the CRM/Timesheets/accounting-kernel lane, which never ran this gate. Not a service: an e2e suite (10 describe/it blocks on seedOrg fixtures). collectServiceFiles drops names ending in .spec.ts, and a name ending in .e2e-spec.ts does not end in .spec.ts, so e2e suites are scanned as if they were services. The 1 match is an assertion read against the org and book this suite seeds for itself; none is reachable from a request."
     }
   }
 }
