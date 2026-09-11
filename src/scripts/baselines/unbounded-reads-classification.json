@@ -1074,6 +1074,11 @@
       "verdict": "EXCLUDED-MODULE",
       "note": "CRM/Inventory excluded product domain \u00e2\u20ac\u201d do not fix in this lane"
     },
+    "/crm/core/lib/support-dashboard.ts": {
+      "verdict": "EXCLUDED-MODULE",
+      "note": "CRM/Inventory excluded product domain \u00e2\u20ac\u201d do not fix in this lane",
+      "justification": "Carried over 2026-09-11 from /crm/core/crm-support-dashboard.service.ts, which this code moved out of unchanged \u2014 this gate keys on path, so a move forces a restatement. Same verdict as the entry it came from, deliberately: changing the verdict CLASS as a side effect of a file split would be a policy change made silently. Read while moving it, for the record: the one match reads the assignee users for the leaderboard, guarded by `assigneeIds.length > 0` and joined to organization_members for this org, so the bound is the set of agents who actually hold a ticket."
+    },
     "/crm/core/crm-support-dashboard.service.ts": {
       "verdict": "EXCLUDED-MODULE",
       "note": "CRM/Inventory excluded product domain \u00e2\u20ac\u201d do not fix in this lane"
