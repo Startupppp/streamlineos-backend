@@ -96,8 +96,9 @@ describe("reading one deal", () => {
      * return nothing the moment the HTTP path started honouring the scope.
      */
     // The deal reads moved out of crm-mcp.service.ts into the tool handlers
-    // when the service was split, and the service hands them its `decision`.
-    // Both files are read, so neither can pass the literal.
+    // when the service was split, and the service hands them a `ScopedRead`
+    // built from its `decision`. Both files are read, so neither can pass the
+    // literal.
     const source = readFileSync(
       join(__dirname, "..", "crm", "mcp", "lib", "crm-mcp-tool-handlers.ts"),
       "utf8",
@@ -111,6 +112,16 @@ describe("reading one deal", () => {
     // documentation. The same self-reference broke a census earlier today.
     expect(source).not.toMatch(/,\s*"global"\s*\)/);
     expect(service).not.toMatch(/,\s*"global"\s*\)/);
-    expect((source.match(/decision\.scope/g) ?? []).length).toBeGreaterThanOrEqual(2);
+    /*
+     * Both deal reads are handed the one `ScopedRead` the surface's resolver
+     * built from that decision, and the handler file never reaches for the
+     * DataScope behind it — a scope it cannot name is a scope it cannot
+     * mistype, which is the point of ADR 0005 and what
+     * `check-scope-boundary.mjs` enforces on this file.
+     */
+    expect(service).toMatch(/mcpToolScopedRead\(context, decision\)/);
+    expect(source).not.toMatch(/decision\.scope/);
+    expect(source).toMatch(/dealsService\.listDeals\(read,/);
+    expect(source).toMatch(/dealsService\.getDeal\([^)]*\bread\)/);
   });
 });

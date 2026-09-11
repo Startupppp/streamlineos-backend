@@ -2,7 +2,6 @@ import type { ParamValue } from "./emit";
 import type { FieldType, Projection } from "./query-description";
 import type { JoinSpec, QueryRegistry } from "./registry";
 import type { RequesterScope } from "./scope";
-import type { DataScope } from "../../access/access.types";
 
 /**
  * The compiler's shapes: what goes in besides the description, and what comes
@@ -26,16 +25,23 @@ export interface CompiledQuery {
   readonly columns: readonly CompiledColumn[];
   /** Which registry source this reads, for the audit trail and the permission check. */
   readonly source: string;
-  /**
-   * The scope this statement was compiled under.
+  /*
+   * There is deliberately no `scope: DataScope` field here.
    *
-   * Reported back rather than left for the caller to remember, so the audit row
-   * records the scope that is *in the statement* rather than a variable that was
-   * in scope at the call site. Those are the same value today; they stop being
-   * the same value the first time somebody adds a branch, and an audit trail
-   * that disagrees with the statement beside it is worse than no column.
+   * It carried the scope this statement was compiled under, so that an audit
+   * row could record the scope that is *in the statement* rather than a variable
+   * that was in scope at the call site — and `text` already is that record. The
+   * scope term is a conjunct of every `WHERE` this compiler emits, never
+   * optional and never empty (`compileScopePredicate`), and `text` is what
+   * `crm_report_runs.compiled_sql` stores; the two cannot disagree because they
+   * are one string.
+   *
+   * It went because of who receives it: `CompiledQuery` is handed to
+   * `ReportingService` and `CrmSegmentsService`, and a `DataScope` reaching
+   * either of those is a resolved scope outside the resolver layer, free to be
+   * branched on without a `ScopedRead` — ADR 0005, and
+   * `check-scope-boundary.mjs` is what says so out loud.
    */
-  readonly scope: DataScope;
 }
 
 /** A field, resolved to something emittable. */

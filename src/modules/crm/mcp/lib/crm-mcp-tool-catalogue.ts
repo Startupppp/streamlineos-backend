@@ -17,10 +17,13 @@ export interface McpToolDefinition {
   requiredPermission: string;
 }
 
-export interface McpToolCall {
-  name: string;
-  arguments: Record<string, unknown>;
-}
+/**
+ * Re-exported, not redeclared: the call's shape is owned by the schema that
+ * validates it (`dto/crm-mcp.schemas.ts`). The declaration lives there rather
+ * than being imported back into it, so this file stays the vocabulary and the
+ * dto stays free of any dependency on it.
+ */
+export type { McpToolCall } from "../dto/crm-mcp.schemas";
 
 /**
  * The caller, whole.

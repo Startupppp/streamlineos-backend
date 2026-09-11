@@ -22,6 +22,7 @@ import {
   type McpToolDefinition,
 } from "./lib/crm-mcp-tool-catalogue";
 import { runCrmMcpTool } from "./lib/crm-mcp-tool-handlers";
+import { mcpToolScopedRead } from "./lib/crm-mcp-scope";
 import { auditableArguments, countResults } from "./lib/crm-mcp-audit-arguments";
 import { AuthContextFactory } from "../../../common/auth/auth-context.factory";
 
@@ -168,23 +169,26 @@ export class CrmMcpService {
     }
 
     /**
-     * The caller's own DataScope, not the string `"global"` this used to pass.
+     * The caller's own scope, not the string `"global"` this used to pass.
      *
      * `"global"` is not a member of `DataScope`, so `applyScope` fell through to
      * its exhaustive default and emitted a `false` predicate: `crm_list_deals`
      * answered every agent with an EMPTY LIST, silently, because an empty deals
      * result is indistinguishable from an organisation that has no deals. The
      * check above has already established this is not `"none"`.
+     *
+     * Built here, by this surface's resolver, so the scope reaches a handler as
+     * a `ScopedRead` and never as the string behind it — ADR 0005.
      */
-    const scope = decision.scope;
+    const read = mcpToolScopedRead(context, decision);
 
     const args = call.arguments || {};
 
     /*
      * Each tool's handler, and the record of what every one of them used to get
      * wrong, is `runCrmMcpTool` in `lib/crm-mcp-tool-handlers.ts`. It is handed
-     * `decision` itself, so the DataScope a deal read receives is the one
-     * `authorize` resolved above.
+     * that read, so the scope a deal query is narrowed by is the one `authorize`
+     * resolved above.
      */
     const result = await runCrmMcpTool(
       {
@@ -195,7 +199,7 @@ export class CrmMcpService {
       },
       context,
       tool,
-      decision,
+      read,
       args,
     );
 

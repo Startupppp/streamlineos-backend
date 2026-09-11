@@ -1,5 +1,4 @@
 import { BadRequestException } from "@nestjs/common";
-import type { AuthResult } from "../../../access/access.types";
 import type { PartyService } from "../../../party/party.service";
 import type { DealsService } from "../../../deals/deals.service";
 import type { ActivitiesService } from "../../../activities/activities.service";
@@ -9,7 +8,7 @@ import { listDealsSchema } from "../../../deals/dto/deals.schemas";
 import { timelineQuerySchema } from "../../../activities/dto/activity.schemas";
 import { asQueryDescription, queryDescriptionSchema } from "../../../reporting/dto/reporting.schemas";
 import type { McpContext, McpToolDefinition } from "./crm-mcp-tool-catalogue";
-import { ScopedRead } from "../../../access/scoped-read";
+import type { ScopedRead } from "../../../access/scoped-read";
 
 /**
  * What each report source returns to an agent.
@@ -69,15 +68,16 @@ export interface CrmMcpToolServices {
  * Run one tool's handler and return what its service answered.
  *
  * Called by `CrmMcpService.executeTool` only after the tenant switch, the tool
- * lookup and `authorize` have all let the call through. `decision` is that
- * allow, carrying the caller's DataScope already clamped to a token's ceiling,
- * and it is the only scope a handler here passes on.
+ * lookup and `authorize` have all let the call through. `read` is that allow,
+ * built by `mcpToolScopedRead` from the DataScope `authorize` resolved and
+ * already clamped to a token's ceiling, and it is the only scope a handler here
+ * passes on.
  */
 export async function runCrmMcpTool(
   services: CrmMcpToolServices,
   context: McpContext,
   tool: McpToolDefinition,
-  decision: AuthResult,
+  read: ScopedRead,
   args: Record<string, unknown>,
 ): Promise<unknown> {
   let result: unknown;
@@ -142,7 +142,8 @@ export async function runCrmMcpTool(
 
     case "crm_list_deals": {
       /*
-       * `decision.scope`, not the literal string "global" this passed before.
+       * The caller's own read, not the literal string "global" this passed
+       * before.
        *
        * "global" is not a member of `DataScope`, so `applyScope` fell through
        * to its exhaustive default and returned sql`false`: this tool answered
@@ -155,10 +156,7 @@ export async function runCrmMcpTool(
         ...(args.stage === undefined ? {} : { stage: args.stage }),
         ...(args.assignedToId === undefined ? {} : { assignedToId: args.assignedToId }),
       });
-      result = await services.dealsService.listDeals(
-        ScopedRead.of(context.orgId, context.userId, decision.scope),
-        query,
-      );
+      result = await services.dealsService.listDeals(read, query);
       break;
     }
 
@@ -172,12 +170,7 @@ export async function runCrmMcpTool(
       const dealId = Number(args.dealId);
       if (!Number.isInteger(dealId) || dealId < 1)
         throw new BadRequestException("Valid dealId is required");
-      result = await services.dealsService.getDeal(
-        context.orgId,
-        context.userId,
-        dealId,
-        ScopedRead.of(context.orgId, context.userId, decision.scope),
-      );
+      result = await services.dealsService.getDeal(context.orgId, context.userId, dealId, read);
       break;
     }
 

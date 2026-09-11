@@ -1,4 +1,4 @@
-import { BodylessAction } from "../../common/openapi/zod-operation-contracts";
+import { BodylessAction, ResponseSchema } from "../../common/openapi/zod-operation-contracts";
 import {
   Body,
   Controller,
@@ -27,6 +27,12 @@ import {
   type DismissCompetitorSuggestionInput,
   type ListCompetitorSuggestionsInput,
 } from "./dto/competitor-suggestions.schemas";
+import {
+  listCompetitorSuggestionsResponseSchema,
+  scanCompetitorSuggestionsResponseSchema,
+  acceptCompetitorSuggestionResponseSchema,
+  dismissCompetitorSuggestionResponseSchema,
+} from "./dto/competitor-suggestions-response.schemas";
 
 /**
  * The suggestion half of deal competitors.
@@ -54,6 +60,7 @@ export class DealsCompetitorSuggestionsController {
 
   @Get(":dealId/competitor-suggestions")
   @RequirePermission("crm:deals:read")
+  @ResponseSchema(listCompetitorSuggestionsResponseSchema)
   list(
     @Param("dealId", ParseIntPipe) dealId: number,
     @Query(new ZodValidationPipe(listCompetitorSuggestionsSchema))
@@ -75,6 +82,7 @@ export class DealsCompetitorSuggestionsController {
   @BodylessAction()
   @HttpCode(200)
   @RequirePermission("crm:deals:update")
+  @ResponseSchema(scanCompetitorSuggestionsResponseSchema)
   scan(
     @Param("dealId", ParseIntPipe) dealId: number,
     @CurrentUser() user: CurrentUserContext,
@@ -100,6 +108,7 @@ export class DealsCompetitorSuggestionsController {
    * indistinguishable from a person who really did agree twice.
    */
   @Idempotent("crm.deals.competitor_suggestion_accept")
+  @ResponseSchema(acceptCompetitorSuggestionResponseSchema)
   accept(
     @Param("dealId", ParseIntPipe) dealId: number,
     @Param("suggestionId") suggestionId: string,
@@ -113,6 +122,7 @@ export class DealsCompetitorSuggestionsController {
   @Post(":dealId/competitor-suggestions/:suggestionId/dismiss")
   @HttpCode(200)
   @RequirePermission("crm:deals:update")
+  @ResponseSchema(dismissCompetitorSuggestionResponseSchema)
   dismiss(
     @Param("dealId", ParseIntPipe) dealId: number,
     @Param("suggestionId") suggestionId: string,

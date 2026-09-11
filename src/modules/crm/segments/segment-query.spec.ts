@@ -1,6 +1,7 @@
 import { compileQuery } from "../../reporting/compiler/compile";
 import { QueryCompilationError } from "../../reporting/compiler/errors";
 import type { FilterNode } from "../../reporting/compiler/query-description";
+import { SCOPE_TEAMMATE_ALIAS } from "../../reporting/compiler/scope";
 import { CRM_PERMISSIONS } from "../../rbac/permissions/crm";
 import { PARTY_PERMISSIONS } from "../../rbac/permissions/party";
 import {
@@ -244,8 +245,16 @@ describe("what the compiler does with them", () => {
      * returns the rep's rows.
      */
     expect(narrowed.text).toContain('"owner_user_id" = ');
-    expect(narrowed.scope).toBe("own");
     expect(narrowed.params).toContain("user_one");
+    /**
+     * `own` and not `team`, asserted on the statement rather than on a field
+     * beside it. `CompiledQuery` no longer reports the DataScope it compiled
+     * under — a resolved scope outside the resolver layer is what ADR 0005
+     * removed — and the emitted text is the better witness anyway: a `team`
+     * requester would widen this predicate with the teammate subquery, which is
+     * the only place that alias ever appears.
+     */
+    expect(narrowed.text).not.toContain(SCOPE_TEAMMATE_ALIAS);
   });
 
   it("re-validates a stored criterion against today's registry", () => {

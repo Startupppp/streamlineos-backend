@@ -157,6 +157,5 @@ export function compileQuery(
     params: params.snapshot(),
     columns,
     source: description.source,
-    scope: requester.scope,
   };
 }

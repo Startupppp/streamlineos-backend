@@ -29,6 +29,15 @@ import {
   type SegmentMembersQuery,
   type UpdateSegmentInput,
 } from "./dto/crm-segments.schemas";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  segmentResponseSchema,
+  listSegmentsResponseSchema,
+  segmentSourcesResponseSchema,
+  segmentMembersResponseSchema,
+  previewSegmentResponseSchema,
+  deleteSegmentResponseSchema,
+} from "./dto/crm-segments-response.schemas";
 
 /**
  * The segments surface.
@@ -77,12 +86,14 @@ export class CrmSegmentsController {
    */
   @Get("sources")
   @RequirePermission("crm:segments:view")
+  @ResponseSchema(segmentSourcesResponseSchema)
   sources(@CurrentUser() u: CurrentUserContext) {
     return this.segments.describeSources(u.orgId, u.userId);
   }
 
   @Get()
   @RequirePermission("crm:segments:view")
+  @ResponseSchema(listSegmentsResponseSchema)
   list(
     @Query(new ZodValidationPipe(listSegmentsQuerySchema)) query: ListSegmentsQuery,
     @CurrentUser() u: CurrentUserContext,
@@ -101,6 +112,7 @@ export class CrmSegmentsController {
    */
   @Post("preview")
   @RequirePermission("crm:segments:view")
+  @ResponseSchema(previewSegmentResponseSchema)
   preview(
     @Body(new ZodValidationPipe(previewSegmentSchema)) body: PreviewSegmentInput,
     @CurrentUser() u: CurrentUserContext,
@@ -110,6 +122,7 @@ export class CrmSegmentsController {
 
   @Get(":segmentId")
   @RequirePermission("crm:segments:view")
+  @ResponseSchema(segmentResponseSchema)
   get(@Param("segmentId") segmentId: string, @CurrentUser() u: CurrentUserContext) {
     return this.segments.getSegment(u.orgId, segmentId);
   }
@@ -124,6 +137,7 @@ export class CrmSegmentsController {
    */
   @Get(":segmentId/members")
   @RequirePermission("crm:segments:view")
+  @ResponseSchema(segmentMembersResponseSchema)
   members(
     @Param("segmentId") segmentId: string,
     @Query(new ZodValidationPipe(segmentMembersQuerySchema)) query: SegmentMembersQuery,
@@ -134,6 +148,7 @@ export class CrmSegmentsController {
 
   @Post()
   @RequirePermission("crm:segments:manage")
+  @ResponseSchema(segmentResponseSchema)
   create(
     @Body(new ZodValidationPipe(createSegmentSchema)) body: CreateSegmentInput,
     @CurrentUser() u: CurrentUserContext,
@@ -143,6 +158,7 @@ export class CrmSegmentsController {
 
   @Patch(":segmentId")
   @RequirePermission("crm:segments:manage")
+  @ResponseSchema(segmentResponseSchema)
   update(
     @Param("segmentId") segmentId: string,
     @Body(new ZodValidationPipe(updateSegmentSchema)) body: UpdateSegmentInput,
@@ -153,6 +169,7 @@ export class CrmSegmentsController {
 
   @Delete(":segmentId")
   @RequirePermission("crm:segments:manage")
+  @ResponseSchema(deleteSegmentResponseSchema)
   remove(@Param("segmentId") segmentId: string, @CurrentUser() u: CurrentUserContext) {
     return this.segments.deleteSegment(u.orgId, segmentId);
   }

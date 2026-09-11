@@ -1,4 +1,4 @@
-import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
+import { BodylessAction, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
 import { Controller, Get, HttpCode, Param, ParseIntPipe, Post, UseGuards } from "@nestjs/common";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../../access/permission.guard";
@@ -7,6 +7,11 @@ import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { ForecastTrainingService } from "./forecast-training.service";
+import {
+  forecastBasisResponseSchema,
+  trainForecastResponseSchema,
+  dealForecastScoreResponseSchema,
+} from "./dto/forecast-model-response.schemas";
 
 /**
  * The three questions a tenant can ask about their own forecast model.
@@ -30,6 +35,7 @@ export class DealsForecastModelController {
 
   @Get("model")
   @RequirePermission("crm:deals:forecast")
+  @ResponseSchema(forecastBasisResponseSchema)
   getModel(@CurrentUser() u: CurrentUserContext) {
     return this.forecast.describeBasis(u.orgId);
   }
@@ -38,6 +44,7 @@ export class DealsForecastModelController {
   @BodylessAction()
   @HttpCode(200)
   @RequirePermission("crm:deals:manage")
+  @ResponseSchema(trainForecastResponseSchema)
   train(@CurrentUser() u: CurrentUserContext) {
     return this.forecast.train(u.orgId);
   }
@@ -53,6 +60,7 @@ export class DealsForecastModelController {
    */
   @Get("deals/:dealId")
   @RequirePermission("crm:deals:read")
+  @ResponseSchema(dealForecastScoreResponseSchema)
   async getDealScore(
     @Param("dealId", ParseIntPipe) dealId: number,
     @CurrentUser() u: CurrentUserContext,
