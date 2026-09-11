@@ -27,6 +27,20 @@ export const QUEUE_SUBJECTS: readonly QueueSubject[] = [
     channel: "outbox",
   },
   {
+    /*
+      The in-process half of the same drain. `workflow-outbox-relay` is what an
+      external scheduler drives through /cron; this ticks every 15s inside the
+      application under a lease, and when it is disabled the relay above is the
+      only thing draining `outbox_events`. Both carry the objective, because a
+      backlog is a backlog whichever one was meant to clear it.
+    */
+    id: "cron-outbox-worker",
+    sourceFile: "src/modules/cron/cron-outbox-worker.service.ts",
+    drains: "outbox_events",
+    owner: "delivery-team",
+    channel: "outbox",
+  },
+  {
     id: "notification-outbox-relay",
     sourceFile: "src/modules/notifications/notification-outbox-relay.service.ts",
     drains: "notification_outbox",
