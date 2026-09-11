@@ -13,10 +13,10 @@ import { stableHash } from "../../common/cache/cache-hash";
 import { NotificationDispatchService } from "../notifications/notification-dispatch.service";
 import { OwnershipTransferExpiryService } from "./ownership-transfer-expiry.service";
 import {
-  initiateModuleTransfer,
   initiateOrgTransfer,
   type TransferInitiationDeps,
 } from "./lib/ownership-transfer-initiation";
+import { initiateModuleTransfer } from "./lib/ownership-module-transfer-initiation";
 import type {
   InitiateModuleTransferInput,
   InitiateOrgTransferInput,

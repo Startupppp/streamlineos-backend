@@ -4,8 +4,7 @@ import {
   ForbiddenException,
   NotFoundException,
 } from "@nestjs/common";
-import { and, eq } from "drizzle-orm";
-import { moduleOwnerships, ownershipTransfers } from "../../../db/schema";
+import { ownershipTransfers } from "../../../db/schema";
 import { type Db } from "../../../db/drizzle.module";
 import type { AuditService } from "../../../common/audit/audit.service";
 import type { CacheService } from "../../../common/cache/cache.service";
@@ -14,12 +13,7 @@ import { logger } from "../../../common/logger/logger.service";
 import { getPostgresErrorCode } from "../../../common/db/postgres-error";
 import type { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
 import { fetchMembershipById, fetchMembershipByUser } from "../ownership-members.helper";
-import type {
-  InitiateModuleTransferInput,
-  InitiateOrgTransferInput,
-} from "../dto/ownership.schemas";
-import { canTransferModuleOwnership } from "../../module-access/module-standing";
-import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import type { InitiateOrgTransferInput } from "../dto/ownership.schemas";
 
 /**
  * Opening a transfer: the half that decides who may nominate whom.
@@ -33,6 +27,10 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
  * makes, which is why both translate 23505 into 409. The listing half left on
  * OwnershipTransfersService asks none of that: it is a cached, paginated read
  * over rows this file has already vouched for.
+ *
+ * The module half is initiateModuleTransfer in
+ * ownership-module-transfer-initiation.ts, which shares these deps and
+ * notifyRequested.
  */
 export interface TransferInitiationDeps {
   readonly db: Db;
@@ -155,142 +153,7 @@ export async function initiateOrgTransfer(
   }
 }
 
-export async function initiateModuleTransfer(
-  deps: TransferInitiationDeps,
-  orgId: string,
-  actorUserId: string,
-  moduleKey: string,
-  input: InitiateModuleTransferInput,
-  actor: CurrentUserContext,
-) {
-  const actorMembership = await fetchMembershipByUser(
-    deps.db,
-    orgId,
-    actorUserId,
-  );
-  if (!actorMembership)
-    throw new ForbiddenException("Not a member of this organization");
-
-  const [currentOwnership] = await deps.db
-    .select({ ownerMembershipId: moduleOwnerships.ownerMembershipId })
-    .from(moduleOwnerships)
-    .where(
-      and(
-        eq(moduleOwnerships.orgId, orgId),
-        eq(moduleOwnerships.moduleKey, moduleKey),
-      ),
-    )
-    .limit(1);
-
-  if (!currentOwnership) {
-    throw new NotFoundException("Module ownership record not found");
-  }
-
-  const canTransfer = await canTransferModuleOwnership(deps.db, actor, moduleKey);
-  if (!canTransfer) {
-    throw new ForbiddenException(
-      "Only the module owner, an org admin, or the org owner may initiate a module ownership transfer",
-    );
-  }
-
-  if (currentOwnership.ownerMembershipId === input.toMembershipId) {
-    throw new BadRequestException(
-      "Cannot transfer module ownership to the current owner; they already hold it",
-    );
-  }
-
-  const target = await fetchMembershipById(
-    deps.db,
-    orgId,
-    input.toMembershipId,
-  );
-  if (!target)
-    throw new NotFoundException(
-      "Target membership not found in this organization",
-    );
-  if (target.status !== "ACTIVE") {
-    throw new BadRequestException(
-      "Target membership must be ACTIVE to receive module ownership",
-    );
-  }
-
-  const expiresAt = new Date(Date.now() + input.expiresInHours * 3_600_000);
-
-  try {
-    const [transfer] = await deps.db
-      .insert(ownershipTransfers)
-      .values({
-        orgId,
-        scope: "MODULE",
-        moduleKey,
-        fromMembershipId: currentOwnership.ownerMembershipId,
-        initiatedByMembershipId: actorMembership.id,
-        toMembershipId: input.toMembershipId,
-        status: "PENDING",
-        expiresAt,
-        reason: input.reason ?? null,
-      })
-      .returning({
-        id: ownershipTransfers.id,
-        expiresAt: ownershipTransfers.expiresAt,
-      });
-
-    if (!transfer) throw new Error("Insert returned no rows");
-
-    deps.audit.log({
-      action: "ownership.module_transfer_initiated",
-      userId: actorUserId,
-      orgId,
-      targetId: String(input.toMembershipId),
-      targetType: "membership",
-      metadata: {
-        transferId: transfer.id,
-        moduleKey,
-        initiatedByMembershipId: actorMembership.id,
-        fromMembershipId: currentOwnership.ownerMembershipId,
-        toMembershipId: input.toMembershipId,
-        expiresAt,
-      },
-    });
-
-    await Promise.all([
-      deps.cache.invalidateForOrg(orgId, `module-access:ownership:${moduleKey}`),
-      deps.cache.invalidateNamespaceForOrg(orgId, "ownership:transfers"),
-    ]);
-
-    const notifyModule = () =>
-      notifyRequested(
-        deps,
-        orgId,
-        actorUserId,
-        transfer.id,
-        target.userId,
-        `the ${moduleKey} module`,
-      ).catch((error: unknown) => {
-        logger.error("ownership transfer notification failed", {
-          error,
-          transferId: transfer.id,
-          scope: moduleKey,
-        });
-      });
-    if (!registerAfterCommit(notifyModule)) void notifyModule();
-
-    return { transferId: transfer.id, expiresAt: transfer.expiresAt };
-  } catch (err: unknown) {
-    /**
-     * `uniq_ownership_xfers_org_pending_module` — (org_id, module_key) WHERE
-     * status = 'PENDING' AND scope = 'MODULE'. Same shape, same silence.
-     */
-    if (getPostgresErrorCode(err) === "23505") {
-      throw new ConflictException(
-        `A pending transfer for module "${moduleKey}" already exists`,
-      );
-    }
-    throw err;
-  }
-}
-
-function notifyRequested(
+export function notifyRequested(
   deps: TransferInitiationDeps,
   orgId: string,
   actorUserId: string,
