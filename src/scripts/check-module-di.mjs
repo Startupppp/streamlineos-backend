@@ -213,16 +213,57 @@ export function tokenOf(entry) {
   return null;
 }
 
+/**
+ * Replaces each `...IDENT` entry with the entries of the same-file constant
+ * array it spreads. The accounting kernel registers its providers as
+ * `providers: [...KERNEL_PROVIDERS]`, and reading only literal entries left
+ * every class it provides looking unregistered to Check A.
+ */
+export function expandSpreadEntries(src, entries) {
+  return entries.flatMap((entry) => {
+    const spread = /^\.\.\.\s*([A-Za-z_$][\w$]*)$/.exec(entry.trim());
+    if (!spread) return [entry];
+    const m = new RegExp(`\\b(?:const|let)\\s+${spread[1]}\\s*(?::[^=]+)?=\\s*\\[`).exec(src);
+    if (!m) return [];
+    const body = extractBalanced(src, m.index + m[0].length);
+    return body === null ? [] : splitTopLevel(body);
+  });
+}
+
 export function analyseModuleSource(src) {
   const start = findModuleObjectStart(src);
   if (start === -1) return null;
   const object = extractBalanced(src, start);
   if (object === null) return null;
 
+  /*
+    A module may list its providers through a same-file constant, as the
+    accounting kernel does: `providers: [...KERNEL_PROVIDERS], exports:
+    KERNEL_PROVIDERS`. Reading only literal entries made every class that
+    injects one of those look unprovided (six false Check-A errors on a module
+    that boots). Resolve a `...IDENT` entry, or a bare `key: IDENT`, to that
+    constant's array when it is declared in this file.
+  */
+  const constArray = (ident) => {
+    const m = new RegExp(`\\b(?:const|let)\\s+${ident}\\s*(?::[^=]+)?=\\s*\\[`).exec(src);
+    if (!m) return null;
+    return extractBalanced(src, m.index + m[0].length);
+  };
+  const entriesOf = (body) =>
+    splitTopLevel(body).flatMap((entry) => {
+      const spread = /^\.\.\.\s*([A-Za-z_$][\w$]*)$/.exec(entry.trim());
+      if (!spread) return [entry];
+      const inner = constArray(spread[1]);
+      return inner === null ? [] : splitTopLevel(inner);
+    });
   const read = (key) => {
-    const body = extractArray(object, key);
+    let body = extractArray(object, key);
+    if (body === null) {
+      const bare = new RegExp(`(^|[\\s,{])${key}\\s*:\\s*([A-Za-z_$][\\w$]*)\\s*[,}\\n]`, "m").exec(object);
+      body = bare ? constArray(bare[2]) : null;
+    }
     if (body === null) return [];
-    return splitTopLevel(body).map(tokenOf).filter((t) => t !== null);
+    return entriesOf(body).map(tokenOf).filter((t) => t !== null);
   };
 
   const imports = read("imports");
@@ -329,7 +370,7 @@ function buildModuleGraph(moduleFiles) {
     const readTokens = (key) => {
       const body = extractArray(object, key);
       const rawList = body !== null
-        ? splitTopLevel(body).map(tokenOf).filter(Boolean)
+        ? expandSpreadEntries(src, splitTopLevel(body)).map(tokenOf).filter(Boolean)
         : (() => {
             const re = new RegExp(`(?:^|[\\s,{])${key}\\s*:\\s*([A-Za-z_$][\\w$]*)\\s*(?:[,}]|$)`, "m");
             const mm = re.exec(object);
@@ -349,7 +390,7 @@ function buildModuleGraph(moduleFiles) {
     const readRaw = (key) => {
       const body = extractArray(object, key);
       if (!body) return [];
-      return splitTopLevel(body);
+      return expandSpreadEntries(src, splitTopLevel(body));
     };
 
     const providerEntries = readRaw("providers");
@@ -421,6 +462,8 @@ function computeVisibleTokens(moduleClassName, registry, globalExports) {
 function parseImportTypes(src) {
   const typeOnly = new Set();
   const regular = new Set();
+  /** Local name -> imported name, for `import { FxService as AccountingFxService }`. */
+  const aliases = new Map();
 
   for (const m of src.matchAll(/\bimport\s+type\s*\{([^}]+)\}/g)) {
     for (const part of m[1].split(",")) {
@@ -436,13 +479,14 @@ function parseImportTypes(src) {
         const name = trimmed.slice(5).replace(/\bas\s+\w+/, "").trim();
         if (/^[A-Za-z_$][\w$]*$/.test(name)) typeOnly.add(name);
       } else {
-        const name = trimmed.split(/\s+as\s+/)[0].trim();
+        const [name, local] = trimmed.split(/\s+as\s+/).map((x) => x.trim());
         if (/^[A-Za-z_$][\w$]*$/.test(name)) regular.add(name);
+        if (local && /^[A-Za-z_$][\w$]*$/.test(local) && local !== name) aliases.set(local, name);
       }
     }
   }
 
-  return { typeOnly, regular };
+  return { typeOnly, regular, aliases };
 }
 
 /**
@@ -659,11 +703,12 @@ function getTypeIdent(typeStr) {
 }
 
 /** Check A — returns a finding or null. */
-function checkUndeclaredToken(param, visibleTokens, className, moduleName) {
+function checkUndeclaredToken(param, visibleTokens, className, moduleName, aliases = new Map()) {
   if (param.injectToken !== null) return null;
   const ident = getTypeIdent(param.type);
   if (!ident) return null;
-  if (visibleTokens.has(ident)) return null;
+  // Nest resolves the class, not the local alias it was imported under.
+  if (visibleTokens.has(ident) || visibleTokens.has(aliases.get(ident))) return null;
   return {
     kind: "A",
     severity: param.optional ? "warn" : "error",
@@ -679,6 +724,9 @@ function checkUndeclaredToken(param, visibleTokens, className, moduleName) {
 /** Check B — returns a finding or null. */
 function checkNonInjectableType(param, className, moduleName) {
   if (param.injectToken !== null) return null;
+  // @Optional() with nothing to resolve is injected as undefined, and the
+  // constructor's own default applies (TaxEngineRegistry, WithholdingEngineRegistry).
+  if (param.optional) return null;
   if (!isNonInjectableType(param.type)) return null;
   return {
     kind: "B",
@@ -815,7 +863,7 @@ function runDiConstructorChecks(registry, classIndex) {
       checkedCount++;
 
       for (const param of params) {
-        const fa = checkUndeclaredToken(param, visible, className, moduleName);
+        const fa = checkUndeclaredToken(param, visible, className, moduleName, importTypes.aliases);
         if (fa) findings.push({ ...fa, file: relative(BACKEND_ROOT, filePath).replace(/\\/g, "/") });
 
         const fb = checkNonInjectableType(param, className, moduleName);
@@ -883,6 +931,16 @@ export class CacheModule {}`,
   exports: [AvScanner],
 })
 export class AvScannerModule {}`,
+      expectInvalid: [],
+    },
+    {
+      name: "providers spread from a same-file constant count as provided",
+      src: `const KERNEL = [BooksService, LedgerService];
+@Module({
+  providers: [...KERNEL],
+  exports: [LedgerService],
+})
+export class KernelModule {}`,
       expectInvalid: [],
     },
     {
@@ -1095,7 +1153,29 @@ export class M {}`,
     }
   }
 
-  const totalCases = exportCases.length + 8;
+  {
+    const name = "Check A must NOT flag: a class injected under an import alias";
+    const reg = makeRegistry([{ className: "KernelModule", providers: ["FxService"], exports: ["FxService"] }, { className: "TsModule", imports: ["KernelModule"], providers: ["TsFx"] }]);
+    const visible = computeVisibleTokens("TsModule", reg, new Set());
+    const aliases = parseImportTypes('import { FxService as AccountingFxService } from "./fx";').aliases;
+    const param = { index: 1, name: "fx", type: "AccountingFxService", injectToken: null, optional: false };
+    const f = checkUndeclaredToken(param, visible, "TsFx", "TsModule", aliases);
+    if (f) { console.error(`SELF-TEST FAIL [A]: ${name} — unexpected finding: ${JSON.stringify(f)}`); failures++; }
+  }
+  {
+    const name = "Check B must NOT flag: an @Optional() array parameter";
+    const param = { index: 0, name: "engines", type: "readonly TaxEngine[]", injectToken: null, optional: true };
+    const f = checkNonInjectableType(param, "TaxEngineRegistry", "AccountingTaxModule");
+    if (f) { console.error(`SELF-TEST FAIL [B]: ${name} — unexpected finding`); failures++; }
+  }
+  {
+    const name = "Check B MUST still flag: the same array parameter without @Optional()";
+    const param = { index: 0, name: "engines", type: "readonly TaxEngine[]", injectToken: null, optional: false };
+    const f = checkNonInjectableType(param, "TaxEngineRegistry", "AccountingTaxModule");
+    if (!f) { console.error(`SELF-TEST FAIL [B]: ${name} — expected a finding, got null`); failures++; }
+  }
+
+  const totalCases = exportCases.length + 11;
   if (failures > 0) {
     console.error(`\n${String(failures)} of ${String(totalCases)} self-test assertions failed`);
     process.exit(1);
