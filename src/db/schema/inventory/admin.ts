@@ -186,9 +186,9 @@ export const invSettings = pgTable("inv_settings", {
  * no service, no controller, no route, no foreign key. The only writer that ever
  * existed was 0407's own one-shot seed, so no organisation created since has had
  * a single row and none ever could; adjustments still record their reason as an
- * enum and a note. `inv_reason_category` is left in `enums.ts` deliberately:
- * dropping a type is a separate hazard for one line of catalogue, and 0545's
- * comment still names it.
+ * enum and a note. `inv_reason_category` is left in `common/enums-inventory.ts`
+ * (re-exported from `enums.ts`) deliberately: dropping a type is a separate
+ * hazard for one line of catalogue, and 0545's comment still names it.
  */
 
 export const invNumberSequences = pgTable("inv_number_sequences", {
