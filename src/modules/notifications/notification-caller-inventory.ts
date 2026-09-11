@@ -54,11 +54,6 @@ export const DIRECT_EMAIL_CALLER_INVENTORY: DirectEmailCallerInventoryEntry[] =
       "automation email adapter for automation-supplied recipients",
     ),
     EXEMPT(
-      "modules/automation/lib/automation-actions.ts",
-      DeliveryClass.WORKFLOW_EXTERNAL,
-      "the `email` action arm, split out of automation.service.ts; same automation-supplied recipient and workflow-owned provider semantics as its origin",
-    ),
-    EXEMPT(
       "modules/clients/client-accounts.service.ts",
       DeliveryClass.WORKFLOW_EXTERNAL,
       "external client workflow; recipients are not org members",

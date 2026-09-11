@@ -913,11 +913,7 @@
       "note": "The existing rule fan-out remains after action execution was extracted in ARCH-003.",
       "justification": "runAutomationsForEvent selects enabled rules for one org and one trigger; every matching rule must execute, and createRule enforces the organization's automations plan limit before insertion. This is the remaining original read, not a newly suppressed query; notifyMembers and its classification moved to automation-action-executor.service.ts on 2026-09-11."
     },
-    "/automation/lib/automation-actions.ts": {
-      "verdict": "FALSE-POSITIVE",
-      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
-      "justification": "Split out of /automation/automation.service.ts 2026-09-11, restating that file's FALSE-POSITIVE for the one read that moved. L74 is the former L79: notifyMembers reads organization_members for a single orgId to fan a notify_roles/notify_all action out to its audience. Bounded by the org's own seat count, which is itself capped by PlanLimitsService ('members' quota, serialized on the per-org advisory lock), and the fan-out has to see every member or the action would silently notify a subset. Every other read in this file is .limit(1) or a write."
-    },
+
     "/autonomy/autonomy-actions.service.ts": {
       "verdict": "FALSE-POSITIVE",
       "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
