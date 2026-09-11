@@ -5,6 +5,7 @@ import {
   Controller,
   Get,
   HttpCode,
+  NotFoundException,
   Param,
   Post,
   Query,
@@ -164,14 +165,20 @@ export class CrmPublicConsentController {
     // Always the same response, valid token or not. Distinguishing them would
     // turn this endpoint into an oracle for whether a contact exists.
     if (payload) {
-      await this.consent.record(payload.orgId, {
-        contactId: payload.contactId,
-        channel: payload.channel,
-        status: "OPTED_OUT",
-        source: "UNSUBSCRIBE_LINK",
-        legalBasis: "CONSENT",
-        recordedByUserId: null,
-      });
+      try {
+        await this.consent.record(payload.orgId, {
+          contactId: payload.contactId,
+          channel: payload.channel,
+          status: "OPTED_OUT",
+          source: "UNSUBSCRIBE_LINK",
+          legalBasis: "CONSENT",
+          recordedByUserId: null,
+        });
+      } catch (error) {
+        // A token naming a contact outside its own organisation writes nothing,
+        // and gets the answer every other token gets.
+        if (!(error instanceof NotFoundException)) throw error;
+      }
     }
 
     return { success: true };

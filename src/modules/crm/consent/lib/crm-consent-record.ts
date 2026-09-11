@@ -1,3 +1,4 @@
+import { NotFoundException } from "@nestjs/common";
 import { and, eq } from "drizzle-orm";
 import {
   crmContactChannelConsent,
@@ -68,6 +69,27 @@ export async function recordConsentChange(
   await runInTenantTransaction(
     db,
     async (tx) => {
+      /**
+       * The contact has to be this organisation's. The id arrives from a
+       * signed unsubscribe token or a route parameter, and neither proves
+       * which tenant owns it: a token minted for one organisation can name
+       * another's contact id. The tenant key on the consent row refuses that
+       * write, but as a 500 from the database. Checked here instead, before
+       * anything is written, so a contact outside the organisation is a 404
+       * on the signed-in route and a silent no-op behind the public link.
+       */
+      const [known] = await tx
+        .select({ contactId: contactPartyMap.contactId })
+        .from(contactPartyMap)
+        .where(
+          and(
+            eq(contactPartyMap.organizationId, orgId),
+            eq(contactPartyMap.contactId, input.contactId),
+          ),
+        )
+        .limit(1);
+      if (!known) throw new NotFoundException("Contact not found");
+
       const [existing] = await tx
         .select({ status: crmContactChannelConsent.status })
         .from(crmContactChannelConsent)
