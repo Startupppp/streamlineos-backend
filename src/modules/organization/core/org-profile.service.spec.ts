@@ -48,6 +48,9 @@ function buildService(input: {
   const indexService = {
     listForUser: jest.fn().mockResolvedValue([]),
     refreshForUser: jest.fn().mockResolvedValue(undefined),
+    // `switchOrg` stamps the landing org through `activate`, which projects the row when the
+    // stamp finds none. It never throws, so the double resolves.
+    activate: jest.fn().mockResolvedValue(undefined),
     rebuild: jest.fn(),
   };
   const saga = {

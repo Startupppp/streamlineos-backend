@@ -212,8 +212,12 @@ describe("MembershipStateService is the one definition of a live membership", ()
     });
   });
 
-  it("denies, rather than throws, when the read fails", async () => {
-    const { cache } = buildCache();
+  // Was "denies, rather than throws". Swallowing the read into UNKNOWN cached "not a member" for
+  // the whole TTL, so one transient database error 403'd every route for the owner until it expired.
+  // Propagating is the fail-closed answer that does not outlive the failure: the request errors and
+  // nothing is written, so the next one asks again.
+  it("propagates a failed read instead of caching a denial", async () => {
+    const { cache, store } = buildCache();
     const db = {
       transaction: async () => {
         throw new Error("connection reset");
@@ -223,6 +227,16 @@ describe("MembershipStateService is the one definition of a live membership", ()
 
     await expect(
       new MembershipStateService(db, cache).resolve(USER, ORG_A),
+    ).rejects.toThrow("connection reset");
+
+    expect(store.size).toBe(0);
+  });
+
+  it("still denies, without throwing, when the read succeeds and finds nothing", async () => {
+    const { cache } = buildCache();
+
+    await expect(
+      new MembershipStateService(buildDbReturning([]), cache).resolve(USER, ORG_A),
     ).resolves.toEqual({
       active: false,
       isOwner: false,

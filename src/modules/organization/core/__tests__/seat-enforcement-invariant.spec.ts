@@ -6,46 +6,71 @@ import path from "node:path";
  *
  * The audit behind this found enforcement already in place at every path that
  * adds a member to an existing organisation. That is the good outcome, and it is
- * also the fragile one: it holds because six separate call sites each remembered
- * to do it, and nothing would notice a seventh that did not.
+ * also the fragile one: it holds because separate call sites each remembered
+ * to do it, and nothing would notice one more that did not.
  *
  * A seat limit that is not enforced is a marketing claim rather than a limit, and
  * the failure is silent -- a tenant on ten seats quietly runs fifty, and the
  * first anyone knows is the invoice conversation.
  *
- * So this reads the source. Every `insert(organizationMembers)` in a module must
+ * So this reads the source. Every module path that creates a membership must
  * either reserve a seat in the same transaction, or be named below with a reason.
+ *
+ * The scan follows the writer. `organization_members` writes moved behind one
+ * owner, `common/org/membership-mutations.ts`, so a grep for
+ * `insert(organizationMembers)` under `src/modules` now finds a single file and
+ * reports every other path as clean -- a scan that has stopped looking. A path
+ * creates a membership if it still inserts the table directly, or if it imports
+ * that owner and calls one of its creation methods. There is no third way to get
+ * a membership row, because the owner is the only holder of those statements.
+ *
+ * The owner itself is scanned and exempt: it is the mechanical writer, and the
+ * seat policy is the caller's -- `createMembership` has no idea whether it is
+ * admitting the founder or the fifty-first member.
  */
 
-const MODULES = path.join(__dirname, "..", "..", "..");
+const SRC = path.join(__dirname, "..", "..", "..", "..");
+const ROOTS = [path.join(SRC, "modules"), path.join(SRC, "common")];
+const MEMBERSHIP_MUTATIONS = path.join(SRC, "common", "org", "membership-mutations.ts");
+
+/** The owner's creation surface. Named so the bite proof fails if one is renamed away. */
+const CREATION_METHODS = [
+  "createOwnerMembership",
+  "createMembership",
+  "createMemberships",
+] as const;
 
 /**
- * Paths that create the organisation's *first* member.
+ * Paths that create the organisation's *first* member, plus the one mechanical writer.
  *
- * Exempt because there is no organisation to be over the limit of: the seat count
- * is zero and the plan is being chosen in the same breath. Each is listed
- * individually rather than matched by pattern, so adding one is a deliberate act.
+ * The first-member paths are exempt because there is no organisation to be over the
+ * limit of: the seat count is zero and the plan is being chosen in the same breath.
+ * Each is listed individually rather than matched by pattern, so adding one is a
+ * deliberate act.
  */
 const FIRST_MEMBER_PATHS: ReadonlyMap<string, string> = new Map([
   [
-    // bootstrapCellOrganization, split out of org-profile.service.ts unchanged.
-    "organization/core/lib/organization-creation.ts",
+    "common/org/membership-mutations.ts",
+    "the one owner of organization_members writes — it holds the statements, its callers hold the seat policy",
+  ],
+  [
+    // bootstrapCellOrganization, the successor to organization/core/lib/organization-creation.ts.
+    "modules/organization/core/bootstrap-cell-organization.ts",
     "createOrganization — the founder, before a plan exists",
   ],
   [
-    // resolveOrCreateOrg, split out of org-setup.service.ts unchanged.
-    "organization/setup/org-setup-resolver.service.ts",
-    "org setup — the founder again, on the setup path",
-  ],
-  [
-    "auth/auth.service.ts",
+    "modules/auth/auth.service.ts",
     "registration — creates the organisation and its first member together",
   ],
 ]);
 
 /** Reserving a seat is the advisory lock and the assertion, or a helper doing both. */
-const RESERVES_SEAT = /reserveMemberSeat|assertWithinLimit\(\s*\w+\s*,\s*["']members["']/;
-const TAKES_THE_LOCK = /pg_advisory_xact_lock|reserveMemberSeat/;
+const RESERVES_SEAT = /reserveMemberSeat|assertWithinLimit\(\s*[\w.]+\s*,\s*["']members["']/;
+const TAKES_THE_LOCK = /pg_advisory_xact_lock|reserveMemberSeat|lockMembersQuota/;
+
+const DIRECT_INSERT = /insert\(organizationMembers\)/;
+const OWNS_THE_WRITER = /membership-mutations/;
+const CALLS_CREATION = new RegExp(`\\.(?:${CREATION_METHODS.join("|")})\\(`);
 
 function walk(dir: string, found: string[] = []): string[] {
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
@@ -56,13 +81,27 @@ function walk(dir: string, found: string[] = []): string[] {
   return found;
 }
 
-const inserters = walk(MODULES)
-  .filter((file) => fs.readFileSync(file, "utf8").includes("insert(organizationMembers)"))
-  .map((file) => ({ file, rel: path.relative(MODULES, file).split(path.sep).join("/") }));
+const inserters = ROOTS.flatMap((root) => walk(root))
+  .filter((file) => {
+    const text = fs.readFileSync(file, "utf8");
+    if (DIRECT_INSERT.test(text)) return true;
+    return OWNS_THE_WRITER.test(text) && CALLS_CREATION.test(text);
+  })
+  .map((file) => ({ file, rel: path.relative(SRC, file).split(path.sep).join("/") }));
 
 describe("seat enforcement", () => {
-  it("finds the membership insert paths at all, so a silent zero is not a pass", () => {
-    // A scan that matches nothing reports every invariant as held.
+  it("finds the membership creation paths at all, so a silent zero is not a pass", () => {
+    // A scan that matches nothing reports every invariant as held, so prove both halves are live:
+    // the owner still declares the methods the scan follows, and both shapes were actually found.
+    const owner = fs.readFileSync(MEMBERSHIP_MUTATIONS, "utf8");
+    for (const method of CREATION_METHODS) expect(owner).toContain(`async ${method}(`);
+
+    expect(
+      inserters.some((entry) => DIRECT_INSERT.test(fs.readFileSync(entry.file, "utf8"))),
+    ).toBe(true);
+    expect(
+      inserters.some((entry) => CALLS_CREATION.test(fs.readFileSync(entry.file, "utf8"))),
+    ).toBe(true);
     expect(inserters.length).toBeGreaterThanOrEqual(4);
   });
 

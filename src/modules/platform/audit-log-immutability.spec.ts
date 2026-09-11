@@ -1,4 +1,4 @@
-import { readFileSync, readdirSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join, resolve } from "node:path";
 
 const BACKEND_SRC = resolve(__dirname, "../..");
@@ -134,11 +134,19 @@ describe("audit_logs immutability — repository contract (not deployed evidence
     const journal = JSON.parse(
       readFileSync(join(resolve(BACKEND_SRC, ".."), "migrations", "meta", "_journal.json"), "utf8"),
     ) as { entries: Array<{ idx: number; when: number; tag: string }> };
-    expect(journal.entries.some((e) => e.tag === "1070_audit_logs_no_truncate")).toBe(true);
+    const entries = journal.entries.filter((e) => e.tag === "1070_audit_logs_no_truncate");
+    expect(entries).toHaveLength(1);
     const idxs = journal.entries.map((e) => e.idx);
     expect(new Set(idxs).size).toBe(idxs.length);
-    const whens = journal.entries.map((e) => e.when);
-    expect([...whens].sort((a, b) => a - b)).toEqual(whens);
+
+    // Registration is array position plus a file on disk, not a `when` ordering. `when` is a ledger
+    // stamp: `run-pending-migrations.mjs` queues every entry in journal array order and lets the
+    // file-hash guard decide what applies — the comment there records that filtering on `when` is
+    // what silently skipped 32 entries. Merging two lineages interleaves their stamps, and
+    // renumbering them is precisely what check-migration-immutability.mjs reports as a broken seal.
+    expect(
+      existsSync(join(resolve(BACKEND_SRC, ".."), "migrations", "1070_audit_logs_no_truncate.sql")),
+    ).toBe(true);
   });
 
   it("keeps 1070's rollback explicit that it reopens the hole", () => {

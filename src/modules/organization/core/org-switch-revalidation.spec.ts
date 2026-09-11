@@ -111,7 +111,7 @@ function makeService(
   primaryDb: Db,
   opts?: {
     indexRefresh?: jest.Mock;
-    indexTouch?: jest.Mock;
+    indexActivate?: jest.Mock;
     indexList?: jest.Mock;
     cacheInvalidate?: jest.Mock;
   },
@@ -124,10 +124,13 @@ function makeService(
     log: jest.fn(),
   } as unknown as AuditService;
 
+  // `switchOrg` no longer sequences the projection and the stamp itself: it asks the index service
+  // to `activate`, which owns "stamp, and project first if there is nothing to stamp". That
+  // sequencing is asserted against the real service in account-organization-index.spec.ts.
   const indexService = {
     refreshForUser: opts?.indexRefresh ?? jest.fn().mockResolvedValue(undefined),
-    touchLastActivated:
-      opts?.indexTouch ?? jest.fn().mockResolvedValue(undefined),
+    activate: opts?.indexActivate ?? jest.fn().mockResolvedValue(undefined),
+    touchLastActivated: jest.fn().mockResolvedValue(true),
     listForUser: opts?.indexList ?? jest.fn().mockResolvedValue([]),
     rebuild: jest.fn(),
   } as unknown as AccountOrganizationIndexService;
@@ -391,7 +394,11 @@ describe("OrgProfileService.switchOrg — placement-aware revalidation", () => {
   });
 
   describe("landing index activation", () => {
-    function arrangeSwitch(indexRefresh: jest.Mock, indexTouch: jest.Mock) {
+    function arrangeSwitch(opts: {
+      indexActivate?: jest.Mock;
+      indexRefresh?: jest.Mock;
+      cacheInvalidate?: jest.Mock;
+    }) {
       const { db: targetDb } = makeSwitchableDb("us", {
         membershipResult: ACTIVE_MEMBERSHIP,
         userRows: [{ lastActiveOrgId: null }],
@@ -402,36 +409,45 @@ describe("OrgProfileService.switchOrg — placement-aware revalidation", () => {
         bindingFor: jest.fn().mockReturnValue({ db: targetDb }),
       } as unknown as RegionRegistry);
 
-      return makeService(makeMinimalPrimaryDb(), { indexRefresh, indexTouch });
+      return makeService(makeMinimalPrimaryDb(), opts);
     }
 
-    it("projects the index row before stamping it activated, so a first switch is not lost", async () => {
-      const order: string[] = [];
-      const indexRefresh = jest.fn(async () => {
-        order.push("refresh");
-      });
-      const indexTouch = jest.fn(async () => {
-        order.push("touch");
-      });
+    it("stamps the landing org on the index for the switching user", async () => {
+      const indexActivate = jest.fn().mockResolvedValue(undefined);
 
-      const service = arrangeSwitch(indexRefresh, indexTouch);
+      const service = arrangeSwitch({ indexActivate });
       await service.switchOrg("user-1", "org-target");
-      await new Promise((resolve) => setImmediate(resolve));
 
-      expect(order).toEqual(["refresh", "touch"]);
-      expect(indexTouch).toHaveBeenCalledWith("user-1", "org-target");
+      expect(indexActivate).toHaveBeenCalledWith("user-1", "org-target");
     });
 
-    it("does not stamp activation when the projection failed, and still completes the switch", async () => {
-      const indexRefresh = jest.fn().mockRejectedValue(new Error("projection down"));
-      const indexTouch = jest.fn().mockResolvedValue(undefined);
+    it("stamps before dropping the session cache, so a concurrent read cannot re-cache the outgoing org", async () => {
+      const order: string[] = [];
+      const indexActivate = jest.fn(async () => {
+        order.push("activate");
+      });
+      const cacheInvalidate = jest.fn(async () => {
+        order.push("invalidate");
+      });
 
-      const service = arrangeSwitch(indexRefresh, indexTouch);
+      const service = arrangeSwitch({ indexActivate, cacheInvalidate });
+      await service.switchOrg("user-1", "org-target");
+
+      expect(order[0]).toBe("activate");
+      expect(order).toContain("invalidate");
+    });
+
+    // The opportunistic refresh that follows the audit entry is fire-and-forget; a failure there
+    // must not reach the caller, who has already switched.
+    it("completes the switch when the opportunistic index refresh fails", async () => {
+      const indexRefresh = jest.fn().mockRejectedValue(new Error("projection down"));
+
+      const service = arrangeSwitch({ indexRefresh });
       const result = await service.switchOrg("user-1", "org-target");
       await new Promise((resolve) => setImmediate(resolve));
 
+      expect(indexRefresh).toHaveBeenCalledWith("user-1");
       expect(result.orgId).toBe("org-target");
-      expect(indexTouch).not.toHaveBeenCalled();
     });
   });
 });

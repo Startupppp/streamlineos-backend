@@ -1,4 +1,4 @@
-import { readFileSync, readdirSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join, resolve } from "node:path";
 
 const BACKEND_SRC = resolve(__dirname, "../..");
@@ -83,14 +83,17 @@ describe("operator_access_log immutability — database boundary", () => {
     const journal = JSON.parse(readFileSync(join(REPO_ROOT, "migrations", "meta", "_journal.json"), "utf8")) as {
       entries: Array<{ idx: number; when: number; tag: string }>;
     };
-    const entry = journal.entries.find((e) => e.tag === MIGRATION_TAG);
-    expect(entry).toBeDefined();
+    expect(journal.entries.filter((e) => e.tag === MIGRATION_TAG)).toHaveLength(1);
 
     const idxs = journal.entries.map((e) => e.idx);
     expect(new Set(idxs).size).toBe(idxs.length);
 
-    const whens = journal.entries.map((e) => e.when);
-    expect([...whens].sort((a, b) => a - b)).toEqual(whens);
+    // Registration is array position plus a file on disk, not a `when` ordering. `when` is a ledger
+    // stamp: `run-pending-migrations.mjs` queues every entry in journal array order and lets the
+    // file-hash guard decide what applies — the comment there records that filtering on `when` is
+    // what silently skipped 32 entries. Merging two lineages interleaves their stamps, and
+    // renumbering them is precisely what check-migration-immutability.mjs reports as a broken seal.
+    expect(existsSync(join(REPO_ROOT, "migrations", `${MIGRATION_TAG}.sql`))).toBe(true);
   });
 
   it("ships a rollback that names the risk it reintroduces", () => {

@@ -8,11 +8,29 @@ import { TenantContextService, type TenantContext } from "../tenant-context";
 import { resolveAdmissionConfig } from "../../admission/admission.config";
 import { createStreamAbortSignal } from "../../http/stream-abort";
 
-jest.mock("../run-in-tenant-transaction", () => ({
-  runInNewTenantTransaction: jest.fn(async (_db: unknown, _orgId: string, fn: () => Promise<void>) =>
-    fn(),
-  ),
-}));
+jest.mock("../run-in-tenant-transaction", () => {
+  const runInNewTenantTransaction = jest.fn(
+    async (_db: unknown, _orgId: string, fn: () => Promise<void>) => fn(),
+  );
+  // The interceptor hands its hook list to `drainAfterCommitHooks`; nothing here registers one, so
+  // the double only has to exist and keep opening a transaction per hook.
+  return {
+    runInNewTenantTransaction,
+    drainAfterCommitHooks: (
+      db: unknown,
+      orgId: string,
+      hooks: readonly (() => Promise<void>)[],
+    ): void => {
+      for (const hook of hooks) {
+        void Promise.resolve(
+          runInNewTenantTransaction(db, orgId, async () => {
+            await hook();
+          }),
+        ).catch(() => undefined);
+      }
+    },
+  };
+});
 
 /**
  * PRD-C091 — the request deadline is propagated, not merely declared.

@@ -16,9 +16,10 @@ jest.mock("../../../../common/rbac/access-invalidate", () => ({
   bumpPermissionsVersion: jest.fn().mockResolvedValue(undefined),
 }));
 
-jest.mock("../../../../common/tenant/with-identity", () => ({
-  withIdentity: jest.fn().mockResolvedValue(undefined),
-}));
+// `with-identity` used to be stubbed out to `undefined` here. `resolveCurrentSetupTarget` now reads
+// the membership and the org through it and destructures the pair, so the stub answered with
+// something no caller can unpack. The real helper runs against `db.transaction`, which the double
+// implements, and that also keeps `app.user_id` on the tx where the members policy needs it.
 
 const SETUP_DIR = join(__dirname, "..");
 const SERVICE_SOURCE = readFileSync(join(SETUP_DIR, "org-setup.service.ts"), "utf8");
@@ -82,22 +83,25 @@ function buildDb() {
   });
   const select = jest.fn().mockReturnValue({ from });
 
+  const query = {
+    organizations: {
+      findFirst: jest.fn().mockResolvedValue({ id: "org-1", name: "Acme" }),
+    },
+    organizationMembers: {
+      findFirst: jest.fn().mockResolvedValue({ status: "ACTIVE", isOwner: true }),
+    },
+  };
+
   const tx = {
     execute: jest.fn().mockResolvedValue(undefined),
     insert: makeInsert(),
     update,
     select,
+    query,
   };
 
   const db = {
-    query: {
-      organizations: {
-        findFirst: jest.fn().mockResolvedValue({ id: "org-1", name: "Acme" }),
-      },
-      organizationMembers: {
-        findFirst: jest.fn().mockResolvedValue({ status: "ACTIVE", isOwner: true }),
-      },
-    },
+    query,
     insert: makeInsert(),
     transaction: jest
       .fn()
@@ -118,7 +122,7 @@ async function buildService(db: unknown) {
       },
       {
         provide: AccountOrganizationIndexService,
-        useValue: { refreshForUser: jest.fn() },
+        useValue: { refreshForUser: jest.fn(), activate: jest.fn() },
       },
       { provide: DRIZZLE, useValue: db },
       { provide: AuditService, useValue: { log: jest.fn() } },

@@ -15,19 +15,28 @@ function ctxWith(headers: Record<string, string>): { ctx: ExecutionContext; req:
   return { ctx, req };
 }
 
+/**
+ * The lookup runs inside `withPublicToken`, which opens a transaction and sets
+ * `app.public_token` before reading — the presented hash is the only credential the guard has, so
+ * it is what the `api_keys` policy admits on. The double therefore hangs the read off the `tx` and
+ * not off the pool, and `transaction` runs its callback.
+ */
 function makeDb(
   row: Record<string, unknown> | undefined,
   captureWhere?: (where: SQL | undefined) => void,
 ): Db {
-  return {
-    query: {
-      apiKeys: {
-        findFirst: jest.fn((args: { where?: SQL }) => {
-          captureWhere?.(args?.where);
-          return Promise.resolve(row);
-        }),
-      },
+  const query = {
+    apiKeys: {
+      findFirst: jest.fn((args: { where?: SQL }) => {
+        captureWhere?.(args?.where);
+        return Promise.resolve(row);
+      }),
     },
+  };
+  const tx = { execute: jest.fn().mockResolvedValue([]), query };
+  return {
+    query,
+    transaction: jest.fn((fn: (t: typeof tx) => Promise<unknown>) => fn(tx)),
     update: () => ({ set: () => ({ where: () => Promise.resolve() }) }),
   } as unknown as Db;
 }
