@@ -51,6 +51,7 @@ import {
   conversationRenameSchema,
   conversationsListQuerySchema,
   mailSendPayloadSchema,
+  ticketStatusUpdatePayloadSchema,
 } from "../dto/request.schemas";
 import { ToolAccessService } from "../tool-access.service";
 import { AI_EVENT_TIMEZONE } from "../ai-event-timezone";
@@ -136,18 +137,6 @@ const CONFIRM_ACTION_PERMISSION: Record<ConfirmableAction, string> = {
   "mail.send": "mail:messages:send",
 };
 
-/**
- * The stored proposal payload, re-read at confirm time. `propose` validated it
- * when the tool ran, but the token is redeemed on a separate request, so the
- * branch parses rather than coerces with `Number(...)`/`String(...)` — a
- * `ticketId` of `NaN` used to reach the database as a comparison against NULL.
- * Not `.strict()`: the payload also carries the ticket title and an optional
- * reason for the confirmation card.
- */
-const ticketStatusUpdatePayload = z.object({
-  ticketId: z.coerce.number().int().positive(),
-  status: z.string().trim().min(1),
-});
 
 function isConfirmableAction(s: string): s is ConfirmableAction {
   return CONFIRMABLE_ACTIONS.some((action) => action === s);
@@ -357,7 +346,7 @@ export class ChatAssistantController {
        * panel served the pre-change status until the key expired.
        */
       case "ticket.updateStatus": {
-        const parsedStatusUpdate = ticketStatusUpdatePayload.safeParse(payload);
+        const parsedStatusUpdate = ticketStatusUpdatePayloadSchema.safeParse(payload);
         if (!parsedStatusUpdate.success)
           throw new BadRequestException("Invalid ticket status update payload");
         const { ticketId, status } = parsedStatusUpdate.data;

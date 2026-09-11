@@ -266,3 +266,10 @@ export type BlogSuggestTitleInput = z.infer<typeof blogSuggestTitleSchema>;
 
 export const blogSummarizeSchema = z.object({ content: z.string().max(10000).optional() });
 export type BlogSummarizeInput = z.infer<typeof blogSummarizeSchema>;
+
+// Redeemed on a later request than the one that proposed it: parse, never coerce, and stay non-strict for the card's title and reason.
+export const ticketStatusUpdatePayloadSchema = z.object({
+  ticketId: z.coerce.number().int().positive(),
+  status: z.string().trim().min(1),
+});
+export type TicketStatusUpdatePayload = z.infer<typeof ticketStatusUpdatePayloadSchema>;

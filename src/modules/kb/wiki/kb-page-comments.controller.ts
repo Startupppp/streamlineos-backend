@@ -30,13 +30,10 @@ import {
   kbPageCommentWithAuthorSchema,
 } from "./dto/kb-wiki-response.schemas";
 import { z } from "zod";
+import { kbCommentCursorQuerySchema } from "../core/dto/kb.schemas";
 
 const pageIdParams = z.object({ pageId: z.coerce.number().int().positive() }).strict();
 const commentIdParams = z.object({ commentId: z.coerce.number().int().positive() }).strict();
-const cursorQuery = z.object({
-  afterCreatedAt: z.string().optional(),
-  afterId: z.coerce.number().int().positive().optional(),
-}).strict();
 
 @Controller("kb")
 @UseGuards(JwtAuthGuard)
@@ -46,7 +43,7 @@ export class KbPageCommentsController {
   @Get("pages/:pageId/comments")
   @UseGuards(PermissionGuard)
   @RequirePermission("kb:pages:view")
-  @Validate({ params: pageIdParams, query: cursorQuery })
+  @Validate({ params: pageIdParams, query: kbCommentCursorQuerySchema })
   @ResponseSchema(kbPageCommentListSchema)
   async list(
     @Param("pageId", ParseIntPipe) pageId: number,

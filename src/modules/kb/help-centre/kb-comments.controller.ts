@@ -31,13 +31,10 @@ import {
   kbArticleCommentWithAuthorSchema,
 } from "./dto/kb-helpcenter-response.schemas";
 import { z } from "zod";
+import { kbCommentCursorQuerySchema } from "../core/dto/kb.schemas";
 
 const articleIdParams = z.object({ articleId: z.coerce.number().int().positive() }).strict();
 const commentIdParams = z.object({ commentId: z.coerce.number().int().positive() }).strict();
-const cursorQuery = z.object({
-  afterCreatedAt: z.string().optional(),
-  afterId: z.coerce.number().int().positive().optional(),
-}).strict();
 
 @Controller("kb")
 @UseGuards(JwtAuthGuard, PermissionGuard)
@@ -46,7 +43,7 @@ export class KbCommentsController {
 
   @Get("articles/:articleId/comments")
   @RequirePermission("kb:articles:view")
-  @Validate({ params: articleIdParams, query: cursorQuery })
+  @Validate({ params: articleIdParams, query: kbCommentCursorQuerySchema })
   @ResponseSchema(kbArticleCommentListSchema)
   async list(
     @Param("articleId", ParseIntPipe) articleId: number,

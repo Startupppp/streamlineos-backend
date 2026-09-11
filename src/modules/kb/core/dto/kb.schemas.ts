@@ -93,3 +93,9 @@ export const updateKbSettingsSchema = z.object({
   trashRetentionDays: z.number().int().min(1).max(365),
 });
 export type UpdateKbSettingsInput = z.infer<typeof updateKbSettingsSchema>;
+
+export const kbCommentCursorQuerySchema = z.object({
+  afterCreatedAt: z.string().optional(),
+  afterId: z.coerce.number().int().positive().optional(),
+}).strict();
+export type KbCommentCursorQuery = z.infer<typeof kbCommentCursorQuerySchema>;
