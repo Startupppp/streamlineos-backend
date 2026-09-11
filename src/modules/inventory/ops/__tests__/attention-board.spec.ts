@@ -88,7 +88,9 @@ describe("B2 - the Needs Attention board", () => {
 
   it("never renders a negative count, whichever probe failed", () => {
     for (const [field] of MAPPING) {
-      const items = buildAttentionItems({ ...quiet(), [field]: -1 });
+      const counts = quiet();
+      counts[field] = -1;
+      const items = buildAttentionItems(counts);
       expect(items).toEqual([]);
     }
   });
@@ -103,7 +105,9 @@ describe("B2 - the Needs Attention board", () => {
     // different files now, and a swapped pair would put the stockout number on
     // the quarantine card with nothing complaining.
     for (const [field, key] of MAPPING) {
-      const items = buildAttentionItems({ ...quiet(), [field]: 7 });
+      const counts = quiet();
+      counts[field] = 7;
+      const items = buildAttentionItems(counts);
       expect(keysOf(items)).toEqual([key]);
       expect(items[0]?.count).toBe(7);
     }
