@@ -22,6 +22,8 @@ const ORG = "org-caller";
 const OTHER_ORG = "org-attacker";
 const ENGAGEMENT_ID = "eng-1";
 const WORKER_ID = "wrk-1";
+const DEPARTMENT_ID = "dept-1";
+const TEAM_ID = "team-1";
 
 /** Pull every bound literal out of a drizzle SQL tree, however nested. */
 function sqlValues(value: unknown, seen = new Set<object>()): unknown[] {
@@ -85,7 +87,7 @@ describe("assertUpdateReferences", () => {
       ORG,
       ENGAGEMENT_ID,
       WORKER_ID,
-      patch({ departmentId: 11, teamId: 12 }),
+      patch({ departmentId: DEPARTMENT_ID, teamId: TEAM_ID }),
     );
 
     expect(mockAssertActiveOrgUnit).toHaveBeenCalledTimes(2);
