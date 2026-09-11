@@ -4,6 +4,7 @@ import { kbArticles, kbArticleFeedback } from "../../../db/schema";
 import { actingMembershipId } from "../../../common/auth/principal";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
+import { getPostgresErrorCode } from "../../../common/db/postgres-error";
 import { KbAccessService } from "../core/kb-access.service";
 import { KbEventsService } from "../core/kb-events.service";
 import {
@@ -99,8 +100,18 @@ export class KbArticlesService {
     }
   }
 
+  /**
+   * The retry condition for a slug that lost a race.
+   *
+   * `create` computes a slug, inserts, and retries on a unique violation
+   * because `uniq_kb_articles_org_slug` — (org_id, slug) — is what decides
+   * between two authors who titled an article the same thing in the same
+   * moment. This asked `"code" in err` of the value Drizzle threw, which keeps
+   * the SQLSTATE on `.cause`: the answer was always false, so the retry loop
+   * never retried and the loser got a 500 instead of a second slug.
+   */
   private isUniqueViolation(err: unknown): boolean {
-    return typeof err === "object" && err !== null && "code" in err && err.code === "23505";
+    return getPostgresErrorCode(err) === "23505";
   }
 
   async update(user: CurrentUserContext, articleId: number, input: UpdateArticleInput): Promise<ArticleWithTags> {
