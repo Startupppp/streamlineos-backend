@@ -4,8 +4,8 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { ROLE_RANK, isDelegablePermission } from "../../../common/rbac/grantability";
 import { deleteRole, updateRole } from "../lib/role-mutation";
 import type { RoleMutationDeps } from "../lib/role-mutation";
-import { materializeTemplate } from "../lib/role-template-seeding";
-import type { RoleTemplateSeedingDeps } from "../lib/role-template-seeding";
+import type { Db } from "../../../db/drizzle.module";
+import { RoleSeedService } from "../role-seed.service";
 import { PERMISSIONS } from "../permissions";
 
 jest.mock("../../../common/tenant/run-in-tenant-transaction", () => ({
@@ -83,7 +83,8 @@ function makeDeps(existingRole: Record<string, unknown> | undefined) {
 
   return {
     mutationDeps,
-    seedingDeps: { db } as unknown as RoleTemplateSeedingDeps,
+    db,
+    seedService: new RoleSeedService(db as unknown as Db),
   };
 }
 
@@ -91,7 +92,7 @@ function makeDeps(existingRole: Record<string, unknown> | undefined) {
  * These four refusals are the whole authorization surface of role mutation, and
  * every one of them was uncovered: neutering any of them left all 533 rbac
  * tests green on 2026-09-11, which is how they came to be written when the code
- * moved into lib/role-mutation.ts and lib/role-template-seeding.ts.
+ * moved into lib/role-mutation.ts and role-seed.service.ts.
  */
 describe("role mutation authorization gates", () => {
   beforeEach(() => {
@@ -164,13 +165,11 @@ describe("role mutation authorization gates", () => {
 
   it("materializeTemplate refuses a caller without structural org-admin standing", async () => {
     orgAdminCheck.mockResolvedValue(false);
-    const { seedingDeps } = makeDeps(undefined);
+    const { db, seedService } = makeDeps(undefined);
 
     await expect(
-      materializeTemplate(seedingDeps, actor(false), "engineering"),
+      seedService.materializeTemplate(actor(false), "engineering"),
     ).rejects.toThrow(/organization owner or administrator/i);
-    expect(
-      seedingDeps.db.query.roles.findFirst as unknown as jest.Mock,
-    ).not.toHaveBeenCalled();
+    expect(db.query.roles.findFirst).not.toHaveBeenCalled();
   });
 });
