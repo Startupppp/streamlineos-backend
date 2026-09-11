@@ -3493,6 +3493,131 @@
       "verdict": "ACTIONABLE",
       "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
       "justification": "Classified 2026-09-11. New with merge 5af62b67a from the CRM/Timesheets/accounting-kernel lane, which never ran this gate. seedGlMap reads every account in the book to look up system tags (CoA-sized). The others are config-shaped: the rate table for one book and date, one owner's registrations, and the book's tax GL map (unique on (book_id, gl_role, component))."
+    },
+    "/attribution/attribution-report.service.ts": {
+      "verdict": "ACTIONABLE",
+      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
+      "justification": "Classified 2026-09-11. New with merge 5af62b67a from the CRM/Timesheets/accounting-kernel lane, which never ran this gate. loadMarketingTouches and loadSalesTouches read touchpoints and activities by FOREIGN key inArray over the report's won leads and deals, so each lead or deal contributes all of its touchpoints or activities, which accrue without cap. nameCampaigns reads campaigns by primary key and is bounded."
+    },
+    "/autonomy/autonomy-hold.service.ts": {
+      "verdict": "ACTIONABLE",
+      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
+      "justification": "Classified 2026-09-11. The file is on the inventory parent without this match; the match arrived with merge 5af62b67a from the CRM/Timesheets/accounting-kernel lane, which never ran this gate. liveClassStops returns every unreleased outbound class stop in the org. uniq_crm_outbound_class_stops_live is (organization_id, party_id, outbound_class), so the set grows with the number of parties stopped."
+    },
+    "/autonomy/autonomy-repair.service.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
+      "justification": "Classified 2026-09-11. New with merge 5af62b67a from the CRM/Timesheets/accounting-kernel lane, which never ran this gate. storedPolicies is unique on (organization_id, repair_class) and repair_class is limited to REPAIR_CLASSES (isRepairClass), so at most one row per class. repairSwitch reads the org's row and the global row per switch kind, unique on (organization_id, kind) with NULLS NOT DISTINCT in the migration, and kinds are '*' plus DECISION_KINDS: at most two rows per kind."
+    },
+    "/autonomy/cold-outbound-admin.service.ts": {
+      "verdict": "ACTIONABLE",
+      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
+      "justification": "Classified 2026-09-11. New with merge 5af62b67a from the CRM/Timesheets/accounting-kernel lane, which never ran this gate. overview() lists every sending domain of the org. uniq_crm_sending_domains_org_domain only stops duplicates and nothing caps how many domains an org registers, so it is config-sized by convention only. A cap or a .limit() would make it BOUNDED."
+    },
+    "/autonomy/outbound.service.ts": {
+      "verdict": "ACTIONABLE",
+      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
+      "justification": "Classified 2026-09-11. New with merge 5af62b67a from the CRM/Timesheets/accounting-kernel lane, which never ran this gate. coldTrackFacts reads every sending domain of the org, which is uncapped (see cold-outbound-admin.service.ts). switchAllows reads the org's and the global autonomy switches, unique per (organization_id, kind), which is bounded."
+    },
+    "/autonomy/sequences/nurture-sequences.service.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
+      "justification": "Classified 2026-09-11. New with merge 5af62b67a from the CRM/Timesheets/accounting-kernel lane, which never ran this gate. listSteps reads one sequence's steps, unique on (nurture_sequence_id, step_number) and capped at MAX_SEQUENCE_STEPS = 12 by replaceNurtureStepsSchema. dealNamesFor reads deals by primary key over one page of enrolments (buildCursorPage with query.limit)."
+    },
+    "/autonomy/sequences/nurture-step-sender.service.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
+      "justification": "Classified 2026-09-11. New with merge 5af62b67a from the CRM/Timesheets/accounting-kernel lane, which never ran this gate. loadSteps reads the steps of the sequences behind one batch of candidates (loadCandidates reads .limit(PER_ORG_CANDIDATES)), at most 12 per sequence. loadLastInbound reads relationship_states for those candidates' parties, unique on (organization_id, party_id), so at most one row per candidate."
+    },
+    "/autonomy/sequences/sequence-reply-exit.service.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
+      "justification": "Classified 2026-09-11. New with merge 5af62b67a from the CRM/Timesheets/accounting-kernel lane, which never ran this gate. Reads the step attempts of the enrolments this reply just exited. Those are the live enrolments of one party, and uniq_crm_nurture_enrollments_live_party allows one live enrolment per party; attempts are unique on (nurture_enrollment_id, step_number) with at most 12 steps."
+    },
+    "/calls/call-analysis-visibility.service.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
+      "justification": "Classified 2026-09-11. New with merge 5af62b67a from the CRM/Timesheets/accounting-kernel lane, which never ran this gate. subjectsFor is handed one page of call ids (CallAnalysisCohortService reads .limit(maxRows + 1)). It reads activities by primary key inArray over those ids, and releases unique on (organization_id, activity_id, analyzer_version) for one analyzer version, so each returns at most one row per id."
+    },
+    "/calls/call-recording-consent.service.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
+      "justification": "Classified 2026-09-11. New with merge 5af62b67a from the CRM/Timesheets/accounting-kernel lane, which never ran this gate. decideMany is handed one page of call ids (the cohort page) or a single id. It reads those activities by primary key, their attestations (uniq_crm_call_recording_consent on (organization_id, activity_id)), and PHONE channel consent for those calls' parties (unique per contact and channel), so every read is keyed to the page."
+    },
+    "/calls/call-rep-names.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
+      "justification": "Classified 2026-09-11. New with merge 5af62b67a from the CRM/Timesheets/accounting-kernel lane, which never ran this gate. resolveRepNames reads users by primary key inArray over the de-duplicated rep ids it is handed, inner-joined to that org's membership (unique on (org_id, user_id)), so at most one row per id."
+    },
+    "/commission/commission-accrual.service.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
+      "justification": "Classified 2026-09-11. New with merge 5af62b67a from the CRM/Timesheets/accounting-kernel lane, which never ran this gate. rebuild reads plan versions by primary key inArray over the version ids of the earnings it just read with .limit(input.limit), and input.limit is capped by the rebuild schema, so at most one row per earning."
+    },
+    "/commission/commission.service.ts": {
+      "verdict": "ACTIONABLE",
+      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
+      "justification": "Classified 2026-09-11. New with merge 5af62b67a from the CRM/Timesheets/accounting-kernel lane, which never ran this gate. wonStageKeys reads every won-type pipeline stage in the org. Stages are admin-created per pipeline and nothing caps stages or pipelines, so it is config-sized only by convention. The offset list is classified separately."
+    },
+    "/compliance/subprocessors.service.ts": {
+      "verdict": "ACTIONABLE",
+      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
+      "justification": "Classified 2026-09-11. New with merge 5af62b67a from the CRM/Timesheets/accounting-kernel lane, which never ran this gate. activeSubscribers returns every subscribed address on the public subprocessor-change list, with no LIMIT; it grows with sign-ups. list and changesSince read the subprocessor catalog itself, which is small."
+    },
+    "/crm/core/won-stage-keys.ts": {
+      "verdict": "EXCLUDED-MODULE",
+      "note": "CRM/Inventory excluded product domain - do not fix in this lane",
+      "justification": "Classified 2026-09-11. New with merge 5af62b67a from the CRM/Timesheets/accounting-kernel lane, which never ran this gate. /crm/ is one of the script's EXCLUDED_MODULE_PREFIXES. The match was read: resolveWonStageKeys reads every won-type pipeline stage in the org, the same uncapped config read as CommissionService.wonStageKeys, which is ACTIONABLE outside the prefix."
+    },
+    "/deals/deal-party-projection.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
+      "justification": "Classified 2026-09-11. New with merge 5af62b67a from the CRM/Timesheets/accounting-kernel lane, which never ran this gate. withPartyLabels reads business_parties by primary key (party_id) inArray over the party ids of the deal rows it is handed: one page from DealsCrudService.list (limit query.limit ?? 50), or one deal. At most one row per id."
+    },
+    "/deals/forecast/forecast-corpus.service.ts": {
+      "verdict": "ACTIONABLE",
+      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
+      "justification": "Classified 2026-09-11. New with merge 5af62b67a from the CRM/Timesheets/accounting-kernel lane, which never ran this gate. movesFor reads every stage transition of each corpus deal by foreign key. The deal list is capped (maxTrainingExamples / maxOpenDealsScored); transitions per deal are not. activitiesFor beside it aggregates with GROUP BY and clamps to maxActivities; this read does neither."
+    },
+    "/deals/forecast/forecast-training.service.ts": {
+      "verdict": "ACTIONABLE",
+      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
+      "justification": "Classified 2026-09-11. New with merge 5af62b67a from the CRM/Timesheets/accounting-kernel lane, which never ran this gate. Reads every forecast score of the active model in the org: one row per scored deal, no LIMIT. Grows with deals."
+    },
+    "/inventory/stock/inv-stock-adjustments.service.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
+      "justification": "Classified 2026-09-11. The file is on the inventory parent without this match; the match arrived with merge 5af62b67a from the CRM/Timesheets/accounting-kernel lane, which never ran this gate. assertLinesResolve reads variants and locations by primary key inArray over the de-duplicated ids on the request's own lines, then compares the counts, so each returns at most the request's distinct ids. FALSE-POSITIVE rather than EXCLUDED-MODULE because the read was checked and is bounded, as the inventory lane did for wave-planning.ts."
+    },
+    "/inventory/stock/lib/transfer-complete.ts": {
+      "verdict": "ACTIONABLE",
+      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
+      "justification": "Classified 2026-09-11. The file is on the inventory parent without this match; the match arrived with merge 5af62b67a from the CRM/Timesheets/accounting-kernel lane, which never ran this gate. completeTransfer reads the stock transactions this one transfer wrote (reference_type inv_transfer, reference_id = transferId) to hand to the GL bridge. That is bounded by the transfer's line count, and transferLineSchema's lines array (dto/inv-stock.schemas.ts) has .min(1) and no .max(). ACTIONABLE rather than EXCLUDED-MODULE because it is a posting-path read the accounting integration added; a .max() on transfer lines would make it FALSE-POSITIVE."
+    },
+    "/lifecycle/customer-health.service.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
+      "justification": "Classified 2026-09-11. New with merge 5af62b67a from the CRM/Timesheets/accounting-kernel lane, which never ran this gate. Reads the factors of ONE assessment. uniq_customer_health_factors_key is (organization_id, customer_health_assessment_id, factor_key) and factor keys are HEALTH_FACTOR_KEYS (db/schema/crm/lifecycle.ts), so at most one row per key. The offset list is classified separately."
+    },
+    "/party/party-names.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
+      "justification": "Classified 2026-09-11. New with merge 5af62b67a from the CRM/Timesheets/accounting-kernel lane, which never ran this gate. partyNamesFor and clientShapedParties read business_parties by primary key (party_id) inArray over the de-duplicated ids they are handed; callers pass one page of invoices, tickets or enrolments, or a single id. At most one row per id."
+    },
+    "/relationships/relationship-state.service.ts": {
+      "verdict": "ACTIONABLE",
+      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
+      "justification": "Classified 2026-09-11. New with merge 5af62b67a from the CRM/Timesheets/accounting-kernel lane, which never ran this gate. The detail read loads every participant and every thread of one relationship state; both accrue with each new correspondent and thread, with no cap and no LIMIT. The activity-participant read is keyed to a window capped by RELATIONSHIP_WINDOW_MAX_ACTIVITIES."
+    },
+    "/reporting/report-schedules.service.ts": {
+      "verdict": "ACTIONABLE",
+      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
+      "justification": "Classified 2026-09-11. New with merge 5af62b67a from the CRM/Timesheets/accounting-kernel lane, which never ran this gate. list() returns every report schedule of the org with no pagination or cap, then reads each schedule's recipients (capped at 50 per schedule by the DTO) once per row, which is an N+1."
+    },
+    "/timesheets/core/attendance/schema-attendance.adapter.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
+      "justification": "Classified 2026-09-11. New with merge 5af62b67a from the CRM/Timesheets/accounting-kernel lane, which never ran this gate. getClockSegments reads one user's closed clock sessions between two dates. Its caller, AttendanceDraftService.draftForUser, refuses a span over MAX_RANGE_DAYS = 62, and HR's clock-in refuses a new session until the last one is closed and the re-clock cooldown has passed, so the rows are one user's sessions over at most 62 days."
     }
   }
 }
