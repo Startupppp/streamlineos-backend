@@ -415,7 +415,10 @@ describe(`${SEEDED_HARNESS} autonomy holds — decide, show, and stop before it 
   it(
     "a hold in another organisation is absent, never forbidden",
     async () => {
-      const dealId = await seedDeal(neighbour, null);
+      const neighbourRep = neighbour.members["rep"];
+      if (!neighbourRep) throw new Error("fixture members missing");
+      // Owned: a deal nobody owns is skipped, because there is nobody to quote as.
+      const dealId = await seedDeal(neighbour, neighbourRep.userId);
       const theirs = await decideToSendAQuote(neighbour, dealId);
       if (!theirs.held) throw new Error(`the decision refused to draft: ${theirs.reason}`);
 
@@ -455,7 +458,7 @@ describe(`${SEEDED_HARNESS} autonomy holds — decide, show, and stop before it 
        * showing an access-denied dead end. The security property — a CRM token
        * reads nothing outside CRM — holds either way, and is asserted first.
        */
-      for (const path of ["/payroll/components", "/accounting/coa/tree"]) {
+      for (const path of ["/payroll/components", "/accounting/accounts"]) {
         const res = await get(path, crmToken);
         expect(res.status).not.toBe(200);
         expect([402, 403]).toContain(res.status);

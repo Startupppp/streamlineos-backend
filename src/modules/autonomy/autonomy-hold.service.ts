@@ -174,34 +174,20 @@ export class AutonomyHoldService {
       currency: "INR",
     });
 
-    if (!drafted.ok) {
-      // Recorded as skipped, not thrown away. A decision not to act that nobody
-      // recorded is indistinguishable from one that never ran.
-      await this.db.insert(autonomousDecisions).values(
-        buildDecision({
-          organizationId: input.organizationId,
-          kind: "quote.sent",
-          outcome: "skipped",
-          triggerType: "deal",
-          triggerId: String(input.dealId),
-          dealId: String(input.dealId),
-          partyId: deal.partyId,
-          confidence: input.confidence,
-          summary: drafted.reason,
-        }),
-      );
-      return { held: false as const, reason: drafted.reason };
-    }
+    if (!drafted.ok) return this.recordQuoteSkip(input, deal.partyId, drafted.reason);
 
     /**
-     * Created in the name of whoever owns the deal.
-     *
-     * `quotes.created_by_id` is NOT NULL and references `users`, so a system
-     * actor is not representable there — the same gap ticket 08 found in
-     * `deal_activities`. Attributing it to the deal's owner is honest enough at
-     * the quote level, and the ledger records that the system decided it.
+     * Created in the name of whoever owns the deal, and skipped when nobody
+     * does. `quotes.created_by_id` is NOT NULL and references `users`, so a
+     * system actor is not representable there — the same gap ticket 08 found
+     * in `deal_activities`. The literal `"system"` this used to fall back to
+     * failed that key, and the whole decision with it. The deal's owner is
+     * honest enough at the quote level; the ledger records that the system decided.
      */
-    const created = await this.quotes.create(input.organizationId, deal.assignedToId ?? "system", {
+    if (!deal.assignedToId)
+      return this.recordQuoteSkip(input, deal.partyId, "Nobody owns this deal, so there is nobody to quote as.");
+
+    const created = await this.quotes.create(input.organizationId, deal.assignedToId, {
       dealId: input.dealId,
       subject: drafted.draft.subject,
       validUntil: drafted.draft.validUntil,
@@ -282,5 +268,30 @@ export class AutonomyHoldService {
    */
   async cancelInFlight(organizationId: string, userId: string, kind: string): Promise<number> {
     return cancelHoldsInFlight(this.db, organizationId, userId, kind);
+  }
+
+  /**
+   * A decision not to quote, recorded rather than thrown away. A decision not
+   * to act that nobody recorded is indistinguishable from one that never ran.
+   */
+  private async recordQuoteSkip(
+    input: { organizationId: string; dealId: number; confidence: number },
+    partyId: string | null,
+    summary: string,
+  ) {
+    await this.db.insert(autonomousDecisions).values(
+      buildDecision({
+        organizationId: input.organizationId,
+        kind: "quote.sent",
+        outcome: "skipped",
+        triggerType: "deal",
+        triggerId: String(input.dealId),
+        dealId: String(input.dealId),
+        partyId,
+        confidence: input.confidence,
+        summary,
+      }),
+    );
+    return { held: false as const, reason: summary };
   }
 }
