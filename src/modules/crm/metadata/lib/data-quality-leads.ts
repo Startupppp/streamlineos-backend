@@ -1,10 +1,30 @@
-import { and, count, desc, eq, isNull, sql } from "drizzle-orm";
+import { and, count, desc, eq, isNotNull, isNull, ne, sql } from "drizzle-orm";
 import type { Db } from "../../../../db/drizzle.module";
 import { businessParties, leadPartyMap } from "../../../../db/schema/party";
 import { PARTY_OF_LEAD } from "../../crm-party-reads";
 import { OFFENDER_LIMIT, type DataQualityAggregate } from "./data-quality-shapes";
 
-const PHONE_BASIC_RE = /^[+\d\s\-().]{7,20}$/;
+/** JavaScript's `\s`, by code point: tab through carriage return, space, and the Unicode spaces. */
+const JS_WHITESPACE = [
+  0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x20, 0xa0, 0x1680,
+  0x2000, 0x2001, 0x2002, 0x2003, 0x2004, 0x2005, 0x2006, 0x2007, 0x2008, 0x2009, 0x200a,
+  0x2028, 0x2029, 0x202f, 0x205f, 0x3000, 0xfeff,
+];
+
+/**
+ * A plausible phone number, as a Postgres regular expression: seven to twenty
+ * characters, each a `+`, a digit, whitespace, `-`, `(`, `)` or `.`.
+ *
+ * This replaced `/^[+\d\s\-().]{7,20}$/`, which ran in JavaScript over every lead
+ * in the organisation, and it cannot be the same text: Postgres resolves `\d` and
+ * `\s` through the collation, where JavaScript's are fixed. Measured over every
+ * code point, the verbatim pattern disagreed with JavaScript under each collation
+ * tried — `C` rejects a no-break space, ICU and libc `en_US.UTF-8` accept
+ * Arabic-Indic digits, `pg_c_utf8` accepts NEL. Spelling both classes out makes
+ * the answer independent of the database's locale and identical to the old
+ * regex; `data-quality-leads.db.spec.ts` holds it there.
+ */
+export const PHONE_BASIC_PATTERN = `^[-+0-9().${String.fromCodePoint(...JS_WHITESPACE)}]{7,20}$`;
 
 /**
  * The four checks that are about LEADS.
@@ -46,18 +66,28 @@ export async function leadsWithInvalidPhone(
   db: Db,
   orgId: string,
 ): Promise<DataQualityAggregate> {
-  const rows = await db
+  const where = and(
+    eq(leadPartyMap.organizationId, orgId),
+    isNull(businessParties.deletedAt),
+    isNotNull(businessParties.phone),
+    ne(businessParties.phone, ""),
+    sql`${businessParties.phone} !~ ${PHONE_BASIC_PATTERN}`,
+  );
+  const [countRow] = await db
+    .select({ n: count() })
+    .from(leadPartyMap)
+    .innerJoin(businessParties, PARTY_OF_LEAD)
+    .where(where);
+  const offenderRows = await db
     .select({ id: leadPartyMap.leadId, name: businessParties.name, phone: businessParties.phone })
     .from(leadPartyMap)
     .innerJoin(businessParties, PARTY_OF_LEAD)
-    .where(and(eq(leadPartyMap.organizationId, orgId), isNull(businessParties.deletedAt)))
-    .orderBy(desc(businessParties.createdAt));
-  const invalid = rows.filter(
-    (r) => r.phone !== null && r.phone !== undefined && r.phone !== "" && !PHONE_BASIC_RE.test(r.phone),
-  );
+    .where(where)
+    .orderBy(desc(businessParties.createdAt))
+    .limit(OFFENDER_LIMIT);
   return {
-    count: invalid.length,
-    offenders: invalid.slice(0, OFFENDER_LIMIT).map((r) => ({ id: r.id, name: r.name, detail: r.phone ?? undefined })),
+    count: Number(countRow?.n ?? 0),
+    offenders: offenderRows.map((r) => ({ id: r.id, name: r.name, detail: r.phone ?? undefined })),
   };
 }
 

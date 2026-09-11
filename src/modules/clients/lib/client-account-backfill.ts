@@ -38,10 +38,13 @@ export async function getCrmAssignmentStats(deps: ClientAccountBackfillDeps, org
     return { members: [], unassignedCount: 0 };
   }
 
+  // At most one row per id, since `users.id` is the primary key; the limit
+  // states that bound where check:unbounded-reads can see it.
   const csMembers = await deps.db
     .select({ userId: users.id, name: users.name, image: users.image })
     .from(users)
-    .where(inArray(users.id, csMemberIds));
+    .where(inArray(users.id, csMemberIds))
+    .limit(csMemberIds.length);
 
   const memberIds = csMembers.map((m) => m.userId);
 
@@ -75,6 +78,7 @@ export async function getCrmAssignmentStats(deps: ClientAccountBackfillDeps, org
   };
 }
 
+/** Forces one batch, not the whole backlog; the stats it returns count what is left. */
 export async function runCrmAssignments(deps: ClientAccountBackfillDeps, orgId: string) {
   await backfillCrmAssignments(deps, orgId);
   return getCrmAssignmentStats(deps, orgId);
@@ -161,6 +165,31 @@ async function backfillConvertedLeadsToClientAccounts(
   `);
 }
 
+/** The most unowned accounts one run reads and hands out; the rest wait for the next run. */
+export const CRM_ASSIGNMENT_BATCH_SIZE = 500;
+
+/**
+ * Deals the newest unowned accounts to the least-loaded CS member, one batch
+ * per run.
+ *
+ * This used to read every unowned account in the org into memory, on a call
+ * the account list fires. The batch is not a cap that strands the rest: a run
+ * assigns every row it reads, so none of them match `assigned_crm_id IS NULL`
+ * next time, and the next run's batch starts where this one stopped. The
+ * filter is the cursor. `id` orders the ties, and there are many — one
+ * conversion backfill stamps every account it opens with the same `NOW()`.
+ *
+ * A stored `(created_at, id)` cursor would be worse, not safer: it would skip
+ * every account converted after the sweep began until the sweep came round
+ * again. Load needs no carrying between runs either, because each run counts
+ * it from the table. `unassignedCount` in `getCrmAssignmentStats` is what is
+ * left.
+ *
+ * The write claims only rows that are still unowned. `runCrmAssignments` takes
+ * no lock, so a forced run can deal the same batch as a background one, and
+ * without the guard the later write would move accounts the earlier one had
+ * already handed out.
+ */
 async function backfillCrmAssignments(
   deps: ClientAccountBackfillDeps,
   orgId: string,
@@ -187,7 +216,8 @@ async function backfillCrmAssignments(
       .select({ id: clientAccounts.id })
       .from(clientAccounts)
       .where(and(eq(clientAccounts.orgId, orgId), isNull(clientAccounts.assignedCrmId)))
-      .orderBy(desc(clientAccounts.createdAt)),
+      .orderBy(desc(clientAccounts.createdAt), desc(clientAccounts.id))
+      .limit(CRM_ASSIGNMENT_BATCH_SIZE),
   ]);
 
   if (unassigned.length === 0) return;
@@ -219,7 +249,13 @@ async function backfillCrmAssignments(
       deps.db
         .update(clientAccounts)
         .set({ assignedCrmId: assigneeId, updatedAt: now })
-        .where(and(eq(clientAccounts.orgId, orgId), inArray(clientAccounts.id, ids))),
+        .where(
+          and(
+            eq(clientAccounts.orgId, orgId),
+            inArray(clientAccounts.id, ids),
+            isNull(clientAccounts.assignedCrmId),
+          ),
+        ),
     ),
   );
 }
