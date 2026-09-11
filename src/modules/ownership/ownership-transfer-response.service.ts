@@ -12,7 +12,9 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { AuditService } from "../../common/audit/audit.service";
 import { CacheService } from "../../common/cache/cache.service";
+import { CACHE_KEYS } from "../../common/cache/cache-keys";
 import { logger } from "../../common/logger/logger.service";
+import { bustMembershipStatusCache } from "../../common/auth/membership-state.service";
 import { NotificationDispatchService } from "../notifications/notification-dispatch.service";
 import {
   fetchMembershipByUser,
@@ -39,6 +41,11 @@ export class OwnershipTransferResponseService {
     private readonly saga: OrganizationSagaService,
   ) {}
 
+  private async invalidateUserAccess(orgId: string, userId: string): Promise<void> {
+    await this.cache.invalidate(CACHE_KEYS.userSession(userId));
+    await bustMembershipStatusCache(this.cache, userId, orgId);
+  }
+
   private invalidateTransferCaches(orgId: string, moduleKey: string | null): Promise<unknown[]> {
     return Promise.all([
       ...(moduleKey
@@ -55,6 +62,7 @@ export class OwnershipTransferResponseService {
       cache: this.cache,
       dispatch: this.dispatch,
       saga: this.saga,
+      invalidateUserAccess: (orgId, userId) => this.invalidateUserAccess(orgId, userId),
       invalidateTransferCaches: (orgId, moduleKey) =>
         this.invalidateTransferCaches(orgId, moduleKey),
     };
