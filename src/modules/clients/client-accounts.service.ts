@@ -1,17 +1,9 @@
-import { BadRequestException, Inject, Injectable, Logger } from "@nestjs/common";
-import { logSideEffectFailure } from "../../common/logger/side-effect";
-import { eq, and, desc, sql, count, or, inArray, isNull } from "drizzle-orm";
+import { Inject, Injectable, Logger } from "@nestjs/common";
+import { eq, and, desc, sql, count, or } from "drizzle-orm";
 import type { DataScope } from "../access/access.types";
 import { applyClientAccountsScope } from "./client-accounts-scope";
 import { Redis } from "@upstash/redis";
-import {
-  clientAccounts,
-  clientAccountActivities,
-  incentives,
-  incentiveConfig,
-  notifications,
-  users,
-} from "../../db/schema";
+import { clientAccounts, clientAccountActivities } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { REDIS } from "../../common/cache/cache.service";
@@ -24,7 +16,29 @@ import type {
   UpdateRenewalInput,
 } from "./dto/clients.schemas";
 import { AccessService } from "../access/access.service";
+import {
+  getCrmAssignmentStats,
+  runCrmAssignments,
+  tryBackfill,
+  type ClientAccountBackfillDeps,
+} from "./lib/client-account-backfill";
+import { updateClientStatus, type ClientInvestmentDeps } from "./lib/client-investment";
 
+/**
+ * Client accounts: reading them, and the small writes that change one row.
+ *
+ * Two things that used to live here do not any more, and both left for the same
+ * reason — they behave differently from everything else on this class.
+ *
+ * `lib/client-account-backfill.ts` holds the work that runs BESIDE a request:
+ * opening accounts for converted leads and sharing unowned ones out round-robin,
+ * fired off the list read with `void` behind a Redis lock, catching and logging
+ * every failure so the list still renders. Everything below throws at the caller.
+ *
+ * `lib/client-investment.ts` holds the status change that pays somebody — the
+ * only write here that fans out into incentives, notifications, an audit entry
+ * and email, with a deliberate boundary about which of those may roll back.
+ */
 @Injectable()
 export class ClientAccountsService {
   private readonly logger = new Logger(ClientAccountsService.name);
@@ -36,13 +50,26 @@ export class ClientAccountsService {
     private readonly access: AccessService,
   ) {}
 
+  private get backfillDeps(): ClientAccountBackfillDeps {
+    return { db: this.db, redis: this.redis, access: this.access, logger: this.logger };
+  }
+
+  private get investmentDeps(): ClientInvestmentDeps {
+    return {
+      db: this.db,
+      audit: this.audit,
+      clientsEmail: this.clientsEmail,
+      access: this.access,
+    };
+  }
+
   async getClientAccounts(
     orgId: string,
     scope: DataScope,
     userId: string,
     filters: ListAccountsInput,
   ) {
-    void this.tryBackfill(orgId, userId);
+    void tryBackfill(this.backfillDeps, orgId, userId);
 
     const f = [eq(clientAccounts.orgId, orgId)];
     if (scope !== "all") f.push(applyClientAccountsScope(scope, orgId, userId));
@@ -189,307 +216,16 @@ export class ClientAccountsService {
     return updated;
   }
 
-  async updateStatus(orgId: string, userId: string, accountId: number, input: UpdateClientStatusInput) {
-    const account = await this.db.query.clientAccounts.findFirst({
-      where: and(eq(clientAccounts.id, accountId), eq(clientAccounts.orgId, orgId)),
-    });
-    if (!account) return null;
-
-    const investmentAmount = input.investmentAmount;
-    const isInvested = input.status === "INVESTED";
-    if (isInvested && !investmentAmount) {
-      throw new BadRequestException("Investment amount is required for INVESTED status");
-    }
-
-    const updateData: Partial<typeof clientAccounts.$inferInsert> = {
-      status: input.status,
-      updatedAt: new Date(),
-    };
-    if (isInvested && investmentAmount) {
-      updateData.investmentAmount = investmentAmount;
-      updateData.planName = input.planName ?? null;
-      updateData.investmentDate = input.investmentDate ? new Date(input.investmentDate) : new Date();
-      updateData.transactionRef = input.transactionRef ?? null;
-      updateData.investedAt = new Date();
-    }
-
-    const recordInvestment = isInvested && !!investmentAmount;
-    const formattedAmount = investmentAmount
-      ? Number.parseFloat(investmentAmount).toLocaleString("en-IN")
-      : "";
-
-    const hrMemberRows = recordInvestment
-      ? await this.access.membersWithPermission(orgId, "hr:employees:manage")
-      : [];
-
-    const updated = await this.db.transaction(async (tx) => {
-      const [row] = await tx
-        .update(clientAccounts)
-        .set(updateData)
-        .where(and(eq(clientAccounts.id, accountId), eq(clientAccounts.orgId, orgId)))
-        .returning();
-
-      await tx.insert(clientAccountActivities).values({
-        clientAccountId: accountId,
-        userId,
-        activityType: "status_change",
-        title: `Status changed to ${input.status}`,
-        description: recordInvestment ? `Investment: ${investmentAmount}, Plan: ${input.planName || "N/A"}` : null,
-      });
-
-      if (recordInvestment && investmentAmount) {
-        const [config] = await tx
-          .select({ incentiveRate: incentiveConfig.incentiveRate })
-          .from(incentiveConfig)
-          .where(and(eq(incentiveConfig.orgId, orgId), eq(incentiveConfig.isActive, true)))
-          .orderBy(desc(incentiveConfig.effectiveFrom))
-          .limit(1);
-
-        if (config) {
-          const amount = Number.parseFloat(investmentAmount);
-          const rate = Number.parseFloat(config.incentiveRate);
-          const calculated = (amount * rate) / 100;
-          await tx.insert(incentives).values({
-            orgId,
-            clientAccountId: accountId,
-            salesRepId: account.salesRepId,
-            investmentAmount,
-            incentiveRate: config.incentiveRate,
-            calculatedAmount: String(calculated),
-            branchId: account.branchId,
-          });
-        }
-
-        await tx.insert(notifications).values({
-          orgId,
-          userId: account.salesRepId,
-          type: "SUCCESS",
-          title: "Client Invested!",
-          message: `${account.clientName} has invested ₹${formattedAmount}. Your incentive is being processed.`,
-          link: `/crm/clients/${account.id}`,
-        });
-
-        if (hrMemberRows.length > 0) {
-          const investmentMsg = `${account.clientName} has invested ₹${formattedAmount}. Sales rep: ${account.salesRepId ? "assigned" : "N/A"}.`;
-          await tx.insert(notifications).values(
-            hrMemberRows.map((hr) => ({
-              orgId,
-              userId: hr.userId,
-              type: "SUCCESS" as const,
-              title: "Client Invested!",
-              message: investmentMsg,
-              link: `/crm/clients/${account.id}`,
-            })),
-          );
-        }
-      }
-
-      return row;
-    });
-
-    this.audit.log({
-      action: "client.status_changed",
-      userId,
-      orgId,
-      targetId: String(accountId),
-      targetType: "client",
-      metadata: { status: input.status, investmentAmount: input.investmentAmount },
-    });
-
-    if (recordInvestment) {
-      void this.clientsEmail
-        .sendInvestmentEmails(
-          account.id,
-          account.salesRepId,
-          account.clientName,
-          formattedAmount,
-          hrMemberRows.map((m) => m.userId),
-        )
-        .catch(logSideEffectFailure("investment notification emails", { orgId, accountId }));
-    }
-
-    return updated;
+  /** See `lib/client-investment.ts`: the one status change that books money. */
+  updateStatus(orgId: string, userId: string, accountId: number, input: UpdateClientStatusInput) {
+    return updateClientStatus(this.investmentDeps, orgId, userId, accountId, input);
   }
 
-  async getCrmAssignmentStats(orgId: string) {
-    const csMemberIds = (await this.access.membersWithPermission(orgId, "support:tickets:manage", { limit: 500 })).map((m) => m.userId);
-
-    if (csMemberIds.length === 0) {
-      return { members: [], unassignedCount: 0 };
-    }
-
-    const csMembers = await this.db
-      .select({ userId: users.id, name: users.name, image: users.image })
-      .from(users)
-      .where(inArray(users.id, csMemberIds));
-
-    const memberIds = csMembers.map((m) => m.userId);
-
-    const [countRows, [unassignedResult]] = await Promise.all([
-      this.db
-        .select({
-          userId: clientAccounts.assignedCrmId,
-          totalCount: count(),
-          activeCount: sql<number>`count(*) FILTER (WHERE ${clientAccounts.status} != 'INVESTED')`,
-        })
-        .from(clientAccounts)
-        .where(and(eq(clientAccounts.orgId, orgId), inArray(clientAccounts.assignedCrmId, memberIds)))
-        .groupBy(clientAccounts.assignedCrmId),
-      this.db
-        .select({ count: count() })
-        .from(clientAccounts)
-        .where(and(eq(clientAccounts.orgId, orgId), isNull(clientAccounts.assignedCrmId))),
-    ]);
-
-    const countMap = new Map(countRows.map((r) => [r.userId, r]));
-
-    return {
-      members: csMembers.map((m) => ({
-        userId: m.userId,
-        name: m.name,
-        image: m.image,
-        activeCount: Number(countMap.get(m.userId)?.activeCount ?? 0),
-        totalCount: countMap.get(m.userId)?.totalCount ?? 0,
-      })),
-      unassignedCount: unassignedResult?.count ?? 0,
-    };
+  getCrmAssignmentStats(orgId: string) {
+    return getCrmAssignmentStats(this.backfillDeps, orgId);
   }
 
-  async runCrmAssignments(orgId: string) {
-    await this.backfillCrmAssignments(orgId);
-    return this.getCrmAssignmentStats(orgId);
-  }
-
-  private async tryBackfill(orgId: string, userId: string): Promise<void> {
-    const lockKey = `clients:backfill:${orgId}`;
-    if (this.redis) {
-      try {
-        const acquired = await this.redis.set(lockKey, "1", { ex: 60, nx: true });
-        if (!acquired) return;
-      } catch (err) {
-        this.logger.warn(`Redis lock acquire failed for client backfill ${orgId}: ${err instanceof Error ? err.message : String(err)}`);
-      }
-    }
-    try {
-      await this.backfillConvertedLeadsToClientAccounts(orgId, userId);
-      await this.backfillCrmAssignments(orgId);
-    } catch (err) {
-      this.logger.warn(`Client account backfill failed for org ${orgId}: ${err instanceof Error ? err.message : String(err)}`);
-    }
-  }
-
-  /**
-   * Opens a client account for every lead that has converted and has none.
-   *
-   * Reads Party, not `leads`. This was raw SQL against the legacy table, which
-   * neither the reader ratchet nor the lint rule could see -- both match Drizzle
-   * symbol imports, and a string never imports anything. So it survived every
-   * migrate batch, and ticket 08's drop would have taken it out at runtime with
-   * nothing having warned.
-   *
-   * The read is not merely relocated. `leads` is a mirror, and a merge leaves the
-   * losing row alive holding the survivor's values while marking only the Party
-   * deleted -- so `FROM leads WHERE deleted_at IS NULL` counted one converted
-   * customer twice and opened two accounts for them. Joining through
-   * `lead_party_map` and filtering on the Party's own `deleted_at` counts the
-   * customer.
-   *
-   * The map is keyed by legacy id and its `party_id` side is deliberately not
-   * unique -- after a merge several ids answer to one Party. That is correct
-   * here rather than a hazard: `client_accounts.lead_id` is the legacy id, the
-   * anti-join is on that id, so each surviving id still gets exactly one account.
-   */
-  private async backfillConvertedLeadsToClientAccounts(orgId: string, fallbackSalesRepId: string): Promise<void> {
-    await this.db.execute(sql`
-      INSERT INTO client_accounts (
-        org_id, lead_id, sales_rep_id,
-        client_name, client_email, client_phone, client_whatsapp,
-        estimated_investment, status, converted_at, created_at, updated_at
-      )
-      SELECT
-        m.organization_id,
-        m.lead_id,
-        COALESCE(p.owner_user_id, ${fallbackSalesRepId}),
-        p.name,
-        p.email,
-        p.phone,
-        p.whatsapp_phone,
-        COALESCE(p.expected_value, p.stated_budget)::numeric(15,2),
-        'ACCOUNT_OPENING'::text,
-        COALESCE(p.converted_at, NOW()),
-        NOW(),
-        NOW()
-      FROM lead_party_map m
-      JOIN business_parties p
-        ON p.party_id = m.party_id
-       AND p.organization_id = m.organization_id
-      WHERE m.organization_id = ${orgId}
-        AND p.lifecycle_stage = 'CONVERTED'
-        AND p.deleted_at IS NULL
-        AND NOT EXISTS (
-          SELECT 1 FROM client_accounts ca
-          WHERE ca.org_id = m.organization_id AND ca.lead_id = m.lead_id
-        )
-    `);
-  }
-
-  private async backfillCrmAssignments(orgId: string): Promise<void> {
-    const csMembers = await this.access.membersWithPermission(orgId, "support:tickets:manage", { limit: 500 });
-
-    if (csMembers.length === 0) return;
-
-    const memberIds = csMembers.map((m) => m.userId);
-
-    const [countRows, unassigned] = await Promise.all([
-      this.db
-        .select({ userId: clientAccounts.assignedCrmId, activeCount: count() })
-        .from(clientAccounts)
-        .where(
-          and(
-            eq(clientAccounts.orgId, orgId),
-            inArray(clientAccounts.assignedCrmId, memberIds),
-            sql`${clientAccounts.status} != 'INVESTED'`,
-          ),
-        )
-        .groupBy(clientAccounts.assignedCrmId),
-      this.db
-        .select({ id: clientAccounts.id })
-        .from(clientAccounts)
-        .where(and(eq(clientAccounts.orgId, orgId), isNull(clientAccounts.assignedCrmId)))
-        .orderBy(desc(clientAccounts.createdAt)),
-    ]);
-
-    if (unassigned.length === 0) return;
-
-    const counts: Record<string, number> = Object.fromEntries(memberIds.map((id) => [id, 0]));
-    for (const row of countRows) {
-      if (row.userId) counts[row.userId] = row.activeCount;
-    }
-
-    const assignments: Record<string, number[]> = {};
-    for (const account of unassigned) {
-      let minCount = Infinity;
-      let assignee: string | null = null;
-      for (const id of memberIds) {
-        if ((counts[id] ?? 0) < minCount) {
-          minCount = counts[id] ?? 0;
-          assignee = id;
-        }
-      }
-      if (assignee) {
-        (assignments[assignee] ??= []).push(account.id);
-        counts[assignee] = (counts[assignee] ?? 0) + 1;
-      }
-    }
-
-    const now = new Date();
-    await Promise.all(
-      Object.entries(assignments).map(([assigneeId, ids]) =>
-        this.db
-          .update(clientAccounts)
-          .set({ assignedCrmId: assigneeId, updatedAt: now })
-          .where(and(eq(clientAccounts.orgId, orgId), inArray(clientAccounts.id, ids))),
-      ),
-    );
+  runCrmAssignments(orgId: string) {
+    return runCrmAssignments(this.backfillDeps, orgId);
   }
 }
