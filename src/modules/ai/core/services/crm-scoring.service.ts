@@ -1,20 +1,12 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, count, desc, eq, isNull, max } from "drizzle-orm";
-import { dealActivities, deals, leadActivities } from "../../../../db/schema";
-import { businessParties, clientPartyMap, leadPartyMap } from "../../../../db/schema/party";
+import { and, count, eq, isNull, max } from "drizzle-orm";
+import { dealActivities, deals } from "../../../../db/schema";
+import { businessParties, clientPartyMap } from "../../../../db/schema/party";
 import { DRIZZLE } from "../../../../db/drizzle.constants";
 import { type Db } from "../../../../db/drizzle.module";
-import { logger } from "../../../../common/logger/logger.service";
 import { runInTenantTransaction } from "../../../../common/tenant/run-in-tenant-transaction";
 import { registerAfterCommit } from "../../../../common/tenant/tenant-context";
 import { CacheService } from "../../../../common/cache/cache.service";
-import {
-  INCLUDE_DELETED,
-  LEAD_PARTY_COLUMNS,
-  LEAD_PARTY_JOIN,
-  leadIdIs,
-  leadPartyScope,
-} from "../../../leads/lead-party-reader";
 import {
   CLIENT_PARTY_COLUMNS,
   CLIENT_PARTY_JOIN,
@@ -23,28 +15,25 @@ import {
 } from "../../../clients/client-party-reader";
 import { AiGatewayService } from "../gateway/ai-gateway.service";
 
-import {
-  churnRiskPrompt,
-  dealPredictionPrompt,
-  leadScoringPrompt,
-  nextActionPrompt,
-} from "../prompts/crm.prompts";
+import { churnRiskPrompt, dealPredictionPrompt } from "../prompts/crm.prompts";
 import {
   ChurnRiskSchema,
   DealPredictionSchema,
-  LeadScoreSchema,
-  NextActionSchema,
-  NextActionWithEvidenceSchema,
   type ChurnRiskResult,
   type DealPredictionResult,
   type LeadScoreResult,
   type NextActionResult,
   type NextActionWithEvidenceResult,
-  type EvidenceItem,
 } from "../dto/output.schemas";
 import { throwOnAiFailure } from "./gateway-result.util";
-import { updateMirroredLeads } from "../../../party/party-legacy-leads";
 import { updateMirroredClients } from "../../../party/party-legacy-clients";
+import {
+  batchScoreLeads,
+  scoreLead,
+  trunc,
+  type LeadScoringDeps,
+} from "./lib/crm-lead-scoring";
+import { nextBestAction, nextBestActionWithEvidence } from "./lib/crm-next-action";
 
 interface ChurnContext {
   openTickets?: number;
@@ -52,13 +41,21 @@ interface ChurnContext {
   daysSinceLastActivity?: number | null;
 }
 
-const MAX_NOTES = 2000;
-
-function trunc(s: string | null | undefined): string {
-  if (!s) return "";
-  return s.length > MAX_NOTES ? s.slice(0, MAX_NOTES) + "…" : s;
-}
-
+/**
+ * The CRM's AI scoring, over three subjects that share nothing but a gateway.
+ *
+ * A lead, a deal and a client each arrive through a different reader and leave
+ * through a different writer: the lead projection in `lead-party-reader.ts`
+ * writing back through the lead mirror, `deals` read and updated in place, and
+ * the client projection writing the client mirror and invalidating two health
+ * caches. The lead half is out in `lib/`, split again by what it leaves behind —
+ * `crm-lead-scoring.ts` persists a score, `crm-next-action.ts` returns advice and
+ * writes nothing. Nothing left in this file mentions the lead projection.
+ *
+ * Every method keeps a delegate here because the DI graph is the public
+ * surface: `crm-ai.controller.ts` and `crm-copilot-lead.service.ts` both inject
+ * this class.
+ */
 @Injectable()
 export class CrmScoringService {
   constructor(
@@ -67,98 +64,24 @@ export class CrmScoringService {
     private readonly cache: CacheService,
   ) {}
 
-  async scoreLead(orgId: string, leadId: number, userId?: string): Promise<LeadScoreResult | null> {
-    const ctx = await runInTenantTransaction(this.db, async (tx) => {
-      const [[lead], [activityResult]] = await Promise.all([
-        // Scoring is an after-effect of a write and has always run against the
-        // record as it stands, deletion included; the party answers the same way.
-        tx
-          .select({
-            id: LEAD_PARTY_COLUMNS.id,
-            name: LEAD_PARTY_COLUMNS.name,
-            email: LEAD_PARTY_COLUMNS.email,
-            phone: LEAD_PARTY_COLUMNS.phone,
-            company: LEAD_PARTY_COLUMNS.company,
-            designation: LEAD_PARTY_COLUMNS.designation,
-            city: LEAD_PARTY_COLUMNS.city,
-            source: LEAD_PARTY_COLUMNS.source,
-            priority: LEAD_PARTY_COLUMNS.priority,
-            potentialValue: LEAD_PARTY_COLUMNS.potentialValue,
-            investmentInterest: LEAD_PARTY_COLUMNS.investmentInterest,
-            notes: LEAD_PARTY_COLUMNS.notes,
-            tags: LEAD_PARTY_COLUMNS.tags,
-            createdAt: LEAD_PARTY_COLUMNS.createdAt,
-            assignedToId: LEAD_PARTY_COLUMNS.assignedToId,
-          })
-          .from(leadPartyMap)
-          .innerJoin(businessParties, LEAD_PARTY_JOIN)
-          .where(and(...leadPartyScope(orgId, INCLUDE_DELETED), leadIdIs(leadId))),
-        tx
-          .select({ count: count() })
-          .from(leadActivities)
-          .where(eq(leadActivities.leadId, leadId)),
-      ]);
-      return { lead: lead ?? null, activityCount: activityResult?.count ?? 0 };
-    }, { orgId });
-
-    if (!ctx.lead) return null;
-    const { lead, activityCount } = ctx;
-
-    const daysSinceCreated = lead.createdAt
-      ? Math.floor((Date.now() - new Date(lead.createdAt).getTime()) / (1000 * 60 * 60 * 24))
-      : 0;
-
-    const prompt = leadScoringPrompt({
-      name: lead.name,
-      email: lead.email,
-      phone: lead.phone,
-      company: lead.company,
-      designation: lead.designation,
-      city: lead.city,
-      source: lead.source,
-      priority: lead.priority,
-      potentialValue: lead.potentialValue,
-      investmentInterest: lead.investmentInterest,
-      notes: trunc(lead.notes),
-      tags: lead.tags,
-      daysSinceCreated,
-      activityCount,
-      hasAssignee: Boolean(lead.assignedToId),
-    });
-
-    const result = await this.gateway.invokeStructured({
-      actor: { orgId, userId: userId ?? null },
-      feature: "crm.score-lead",
-      prompt: { system: prompt.system, user: prompt.user, promptKey: "crm.lead_scoring", promptVersion: 1 },
-      schema: LeadScoreSchema,
-      tier: "fast",
-      maxTokens: 512,
-      charge: true,
-    });
-
-    if (!result.ok) throwOnAiFailure(result);
-    const data = result.data;
-    data.score = Math.max(0, Math.min(100, Math.round(data.score)));
-
-    await runInTenantTransaction(this.db, async (tx) => {
-      await updateMirroredLeads(tx, orgId, [leadId], { score: data.score, updatedAt: new Date() });
-    }, { orgId });
-
-    return data;
+  private get leadDeps(): LeadScoringDeps {
+    return { db: this.db, gateway: this.gateway };
   }
 
-  async batchScoreLeads(orgId: string, leadIds: number[], userId?: string): Promise<Map<number, LeadScoreResult>> {
-    const capped = leadIds.slice(0, 50);
-    const results = new Map<number, LeadScoreResult>();
-    for (const leadId of capped) {
-      try {
-        const result = await this.scoreLead(orgId, leadId, userId);
-        if (result) results.set(leadId, result);
-      } catch (error) {
-        logger.error(`[ai-score] Failed to score lead ${leadId}`, { error });
-      }
-    }
-    return results;
+  scoreLead(orgId: string, leadId: number, userId?: string): Promise<LeadScoreResult | null> {
+    return scoreLead(this.leadDeps, orgId, leadId, userId);
+  }
+
+  batchScoreLeads(orgId: string, leadIds: number[], userId?: string): Promise<Map<number, LeadScoreResult>> {
+    return batchScoreLeads(this.leadDeps, orgId, leadIds, userId);
+  }
+
+  nextBestAction(orgId: string, leadId: number, userId?: string): Promise<NextActionResult | null> {
+    return nextBestAction(this.leadDeps, orgId, leadId, userId);
+  }
+
+  nextBestActionWithEvidence(orgId: string, leadId: number, userId?: string): Promise<NextActionWithEvidenceResult | null> {
+    return nextBestActionWithEvidence(this.leadDeps, orgId, leadId, userId);
   }
 
   async predictDeal(orgId: string, dealId: number, userId?: string): Promise<DealPredictionResult | null> {
@@ -220,6 +143,8 @@ export class CrmScoringService {
       assignedTo: deal.assignedToId,
       hasExpectedCloseDate: Boolean(expectedClose),
       daysUntilExpectedClose,
+      // The same prompt budget the lead paths spend, imported from where its
+      // other three call sites live rather than re-picked here.
       notes: trunc(deal.notes),
     });
 
@@ -330,175 +255,5 @@ export class CrmScoringService {
     if (!registerAfterCommit(invalidate)) await invalidate();
 
     return data;
-  }
-
-  async nextBestAction(orgId: string, leadId: number, userId?: string): Promise<NextActionResult | null> {
-    const ctx = await runInTenantTransaction(this.db, async (tx) => {
-      const [[lead], [lastActivity]] = await Promise.all([
-        tx
-          .select({
-            id: LEAD_PARTY_COLUMNS.id,
-            name: LEAD_PARTY_COLUMNS.name,
-            status: LEAD_PARTY_COLUMNS.status,
-            priority: LEAD_PARTY_COLUMNS.priority,
-            potentialValue: LEAD_PARTY_COLUMNS.potentialValue,
-            assignedToId: LEAD_PARTY_COLUMNS.assignedToId,
-            followUpDate: LEAD_PARTY_COLUMNS.followUpDate,
-            notes: LEAD_PARTY_COLUMNS.notes,
-          })
-          .from(leadPartyMap)
-          .innerJoin(businessParties, LEAD_PARTY_JOIN)
-          .where(and(...leadPartyScope(orgId, INCLUDE_DELETED), leadIdIs(leadId))),
-        tx
-          .select({ type: leadActivities.type, date: leadActivities.date })
-          .from(leadActivities)
-          .where(eq(leadActivities.leadId, leadId))
-          .orderBy(desc(leadActivities.date))
-          .limit(1),
-      ]);
-      return { lead: lead ?? null, lastActivity: lastActivity ?? null };
-    }, { orgId });
-
-    if (!ctx.lead) return null;
-    const { lead, lastActivity } = ctx;
-
-    const now = new Date();
-    const lastActivityDate = lastActivity?.date ? new Date(lastActivity.date) : null;
-    const daysSinceLastActivity = lastActivityDate
-      ? Math.floor((now.getTime() - lastActivityDate.getTime()) / (1000 * 60 * 60 * 24))
-      : null;
-
-    const followUpDate = lead.followUpDate ? new Date(lead.followUpDate) : null;
-    const isOverdue = followUpDate ? followUpDate < now : false;
-
-    const prompt = nextActionPrompt({
-      entityType: "lead",
-      name: lead.name,
-      status: lead.status,
-      priority: lead.priority,
-      lastActivityType: lastActivity?.type ?? null,
-      lastActivityDate: lastActivity?.date ? new Date(lastActivity.date).toISOString().split("T")[0] : null,
-      daysSinceLastActivity,
-      value: lead.potentialValue ? Number(lead.potentialValue) : null,
-      assignedTo: lead.assignedToId,
-      followUpDate: followUpDate?.toISOString().split("T")[0] ?? null,
-      isOverdueFollowUp: isOverdue,
-      notes: trunc(lead.notes),
-    });
-
-    const result = await this.gateway.invokeStructured({
-      actor: { orgId, userId: userId ?? null },
-      feature: "crm.next-action",
-      prompt: { system: prompt.system, user: prompt.user, promptKey: "crm.next_action", promptVersion: 1 },
-      schema: NextActionSchema,
-      tier: "fast",
-      maxTokens: 512,
-      charge: true,
-    });
-
-    if (!result.ok) throwOnAiFailure(result);
-    return result.data;
-  }
-
-  async nextBestActionWithEvidence(orgId: string, leadId: number, userId?: string): Promise<NextActionWithEvidenceResult | null> {
-    const ctx = await runInTenantTransaction(this.db, async (tx) => {
-      const [[lead], [lastActivity], recentActivities] = await Promise.all([
-        tx
-          .select({
-            id: LEAD_PARTY_COLUMNS.id,
-            name: LEAD_PARTY_COLUMNS.name,
-            status: LEAD_PARTY_COLUMNS.status,
-            priority: LEAD_PARTY_COLUMNS.priority,
-            potentialValue: LEAD_PARTY_COLUMNS.potentialValue,
-            assignedToId: LEAD_PARTY_COLUMNS.assignedToId,
-            followUpDate: LEAD_PARTY_COLUMNS.followUpDate,
-            notes: LEAD_PARTY_COLUMNS.notes,
-            source: LEAD_PARTY_COLUMNS.source,
-            company: LEAD_PARTY_COLUMNS.company,
-            email: LEAD_PARTY_COLUMNS.email,
-            score: LEAD_PARTY_COLUMNS.score,
-          })
-          .from(leadPartyMap)
-          .innerJoin(businessParties, LEAD_PARTY_JOIN)
-          .where(and(...leadPartyScope(orgId, INCLUDE_DELETED), leadIdIs(leadId))),
-        tx
-          .select({ type: leadActivities.type, date: leadActivities.date, outcome: leadActivities.outcome })
-          .from(leadActivities)
-          .where(eq(leadActivities.leadId, leadId))
-          .orderBy(desc(leadActivities.date))
-          .limit(1),
-        tx
-          .select({ type: leadActivities.type, date: leadActivities.date, outcome: leadActivities.outcome })
-          .from(leadActivities)
-          .where(eq(leadActivities.leadId, leadId))
-          .orderBy(desc(leadActivities.date))
-          .limit(3),
-      ]);
-      return { lead: lead ?? null, lastActivity: lastActivity ?? null, recentActivities };
-    }, { orgId });
-
-    if (!ctx.lead) return null;
-    const { lead, lastActivity, recentActivities } = ctx;
-
-    const now = new Date();
-    const lastActivityDate = lastActivity?.date ? new Date(lastActivity.date) : null;
-    const daysSinceLastActivity = lastActivityDate
-      ? Math.floor((now.getTime() - lastActivityDate.getTime()) / (1000 * 60 * 60 * 24))
-      : null;
-
-    const followUpDate = lead.followUpDate ? new Date(lead.followUpDate) : null;
-    const isOverdueFollowUp = followUpDate ? followUpDate < now : false;
-
-    const evidence: EvidenceItem[] = [];
-    if (daysSinceLastActivity !== null) {
-      evidence.push({ kind: "activity", label: "Days since last contact", value: String(daysSinceLastActivity) });
-    }
-    if (lead.score !== null && lead.score !== undefined) {
-      evidence.push({ kind: "signal", label: "AI lead score", value: String(lead.score) });
-    }
-    if (isOverdueFollowUp) {
-      evidence.push({ kind: "signal", label: "Follow-up overdue", value: "Yes" });
-    }
-    if (lead.status) {
-      evidence.push({ kind: "field", label: "Status", value: lead.status });
-    }
-
-    const recentActivityText = recentActivities.length === 0
-      ? "No recent activities."
-      : recentActivities.map((a) => {
-          const d = a.date ? new Date(a.date).toLocaleDateString("en-IN") : "?";
-          return `[${d}] ${a.type}${a.outcome ? ` | ${a.outcome}` : ""}`;
-        }).join("\n");
-
-    const prompt = nextActionPrompt({
-      entityType: "lead",
-      name: lead.name,
-      status: lead.status,
-      priority: lead.priority,
-      lastActivityType: lastActivity?.type ?? null,
-      lastActivityDate: lastActivity?.date ? new Date(lastActivity.date).toISOString().split("T")[0] : null,
-      daysSinceLastActivity,
-      value: lead.potentialValue ? Number(lead.potentialValue) : null,
-      assignedTo: lead.assignedToId,
-      followUpDate: followUpDate?.toISOString().split("T")[0] ?? null,
-      isOverdueFollowUp,
-      notes: trunc(lead.notes),
-    });
-
-    const evidenceSummary = evidence.map((e) => `${e.label}: ${e.value}`).join("; ");
-    const enhancedUser = `${prompt.user}\n\nDetected signals: ${evidenceSummary}\nRecent activities:\n${recentActivityText}\nSource: ${lead.source ?? "N/A"}, Company: ${lead.company ?? "N/A"}`;
-
-    const result = await this.gateway.invokeStructured({
-      actor: { orgId, userId: userId ?? null },
-      feature: "crm.next-action",
-      prompt: { system: prompt.system, user: enhancedUser, promptKey: "crm.next_action_evidence", promptVersion: 1 },
-      schema: NextActionWithEvidenceSchema,
-      tier: "fast",
-      maxTokens: 600,
-      charge: true,
-    });
-
-    if (!result.ok) throwOnAiFailure(result);
-    return result.data;
   }
 }
