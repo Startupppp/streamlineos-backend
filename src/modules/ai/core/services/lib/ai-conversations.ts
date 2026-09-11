@@ -37,12 +37,23 @@ export async function listConversations(
 ): Promise<AiConversationListPage> {
   const limit = Math.min(Math.max(opts.limit, 1), 50);
 
+  // The cursor is a row id off the request, so it is bound to the same
+  // `(org, membership)` as the page it pages. Keyed on the bare id it answered
+  // another tenant's `updated_at` — enough to tell a caller a conversation
+  // exists and when it last moved. A cursor that resolves to nothing is an
+  // ordinary stale cursor and falls back to the first page.
   let cursorRow: { updatedAt: Date; id: number } | undefined;
   if (opts.cursor) {
     const [found] = await db
       .select({ updatedAt: aiChatConversations.updatedAt, id: aiChatConversations.id })
       .from(aiChatConversations)
-      .where(eq(aiChatConversations.id, opts.cursor))
+      .where(
+        and(
+          eq(aiChatConversations.id, opts.cursor),
+          eq(aiChatConversations.orgId, orgId),
+          eq(aiChatConversations.userMembershipId, membershipId),
+        ),
+      )
       .limit(1);
     cursorRow = found;
   }
@@ -135,11 +146,20 @@ export async function renameConversation(
 
   if (!existing) throw new NotFoundException("Conversation not found");
 
+  // The write repeats the predicate the SELECT above proved rather than trusting
+  // it: between the two, the only thing keeping a bare-id UPDATE inside the
+  // tenant would be RLS, which is the backstop and not the authorization.
   const now = new Date();
   await db
     .update(aiChatConversations)
     .set({ title, updatedAt: now })
-    .where(eq(aiChatConversations.id, id));
+    .where(
+      and(
+        eq(aiChatConversations.id, id),
+        eq(aiChatConversations.orgId, orgId),
+        eq(aiChatConversations.userMembershipId, membershipId),
+      ),
+    );
 
   return {
     id: existing.id,
@@ -170,5 +190,13 @@ export async function deleteConversation(
 
   if (!existing) throw new NotFoundException("Conversation not found");
 
-  await db.delete(aiChatConversations).where(eq(aiChatConversations.id, id));
+  await db
+    .delete(aiChatConversations)
+    .where(
+      and(
+        eq(aiChatConversations.id, id),
+        eq(aiChatConversations.orgId, orgId),
+        eq(aiChatConversations.userMembershipId, membershipId),
+      ),
+    );
 }

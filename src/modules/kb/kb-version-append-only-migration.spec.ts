@@ -27,11 +27,24 @@ describe("1078 — kb version tables are append-only at the database boundary", 
     expect(journal.entries.find((e) => e.tag === TAG)).toBeDefined();
   });
 
-  it("keeps idx unique and when strictly increasing across the whole journal", () => {
+  // Global `when` monotonicity belongs to `verify-migration-chain.mjs` check (c),
+  // which carries the baseline of adjacent pairs two merged lineages left behind —
+  // this journal has fifteen of them, every one listed there. Repeating that check
+  // here without the baseline asserted a shape the journal has not had since the
+  // lineages were interleaved. What is 1078's own to prove is the condition that
+  // strands a migration: a `when` at or below one already in the ledger is skipped
+  // forever while `db:migrate` still prints success.
+  it("keeps idx and when unique, and puts 1078's when above every entry before it", () => {
     const idxs = journal.entries.map((e) => e.idx);
     expect(new Set(idxs).size).toBe(idxs.length);
     const whens = journal.entries.map((e) => e.when);
-    for (let i = 1; i < whens.length; i += 1) expect(whens[i]).toBeGreaterThan(whens[i - 1]);
+    expect(new Set(whens).size).toBe(whens.length);
+
+    const position = journal.entries.findIndex((e) => e.tag === TAG);
+    expect(position).toBeGreaterThan(0);
+    const mine = journal.entries[position]?.when ?? 0;
+    for (const earlier of journal.entries.slice(0, position))
+      expect(earlier.when).toBeLessThan(mine);
   });
 
   it("installs a row-level BEFORE UPDATE OR DELETE trigger on both version tables", () => {

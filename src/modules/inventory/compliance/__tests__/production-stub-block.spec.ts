@@ -31,12 +31,13 @@ import { ChannelAdapterRegistry } from "../../channels/channel-adapter";
  * Everything `validateEnv` demands of a production deployment, so the only
  * variable under test is the one this file is about. Mirrors the fixture in
  * `src/config/env.validation.spec.ts` plus the five the production
- * `superRefine` adds.
+ * `superRefine` adds — including its app username, which the role check
+ * compares against `APP_DB_ROLE` and its `streamline_app` default.
  */
 const PRODUCTION_BASE = {
   NODE_ENV: "production",
   DATABASE_URL: "postgres://owner:p@localhost:5432/db",
-  APP_DATABASE_URL: "postgres://app:p@localhost:5432/db",
+  APP_DATABASE_URL: "postgres://streamline_app:p@localhost:5432/db",
   BACKEND_JWT_SECRET: "x".repeat(44),
   PORTAL_JWT_SECRET: "y".repeat(44),
   CORS_ORIGINS: "https://app.example.com",

@@ -96,6 +96,17 @@ export const PERSONAL_DATA_TABLES: readonly PersonalDataTable[] = [
   { table: "candidate_reference_checks", columns: ["reference_email", "reference_phone"], scope: "org_id" },
   { table: "candidates", columns: ["email", "first_name", "last_name", "phone"], scope: "org_id" },
   { table: "client_accounts", columns: ["client_email", "client_phone", "client_whatsapp"], scope: "org_id" },
+  /*
+    The one of the four legacy CRM identity tables that is still declared.
+
+    CRM no longer writes it — a client is a Party now — but `build/ticket-core.ts`
+    and `support/agent-routing.ts` hold foreign keys to it, so the declaration and
+    the table both survive until the opt-in 0278 drop runs. "Nothing writes it" is
+    not "nothing is in it": the rows written before the Party cutover are still
+    there, still hold an address and a phone number, and an erasure that skipped
+    the table because CRM stopped writing it would leave every one of them.
+  */
+  { table: "clients", columns: ["email", "gstin", "phone"], scope: "org_id" },
   { table: "crm_mailbox_sync", columns: ["mailbox_address"], scope: "organization_id" },
   { table: "crm_outbound_messages", columns: ["recipient_email"], scope: "organization_id" },
   { table: "crm_people", columns: ["email", "phone"], scope: "org_id" },

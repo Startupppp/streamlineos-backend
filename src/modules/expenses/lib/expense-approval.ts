@@ -20,6 +20,7 @@
  */
 import {
   BadRequestException,
+  ForbiddenException,
   InternalServerErrorException,
   Logger,
   NotFoundException,
@@ -69,6 +70,15 @@ export async function approveExpense(
   });
 
   if (!expense) throw new NotFoundException("Expense not found");
+
+  // Separation of duties, and the one rung the route's permission cannot supply:
+  // `hr:expenses:approve` says this person may approve expenses, never that they
+  // may approve their own. `ExpensesWriteService.updateStatus` refuses the same
+  // thing on the status-change path; both doors have to, or the rule is a
+  // suggestion.
+  if (expense.userId === u.userId) {
+    throw new ForbiddenException("You cannot approve your own expense");
+  }
 
   const approvableStatuses: string[] = ["PENDING", "SUBMITTED"];
   if (!approvableStatuses.includes(expense.status ?? "")) {

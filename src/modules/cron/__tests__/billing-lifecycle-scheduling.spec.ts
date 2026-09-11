@@ -76,7 +76,9 @@ describe("the two billing jobs are scheduled, daily, and watched", () => {
 
 describe("what makes scheduling them safe — the database guards, not the lease", () => {
   it("monthly-plan-grants: a partial unique index refuses a second grant for the same month", () => {
-    const billing = schema("billing/billing.ts");
+    // The AI credit ledger is its own schema file; `billing.ts` was over 300 lines
+    // with it in.
+    const billing = schema("billing/ai-credits.ts");
     expect(billing).toContain("uq_ai_credit_txns_plan_grant_ref");
     // (org_id, reference_id) WHERE type = 'PLAN_GRANT' — the reference is
     // `${plan}-monthly-YYYY-MM`, so a second run in the same month raises 23505 and

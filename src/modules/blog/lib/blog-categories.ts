@@ -72,7 +72,10 @@ export async function createCategory(
 ) {
   const slug = slugify(input.name);
 
+  // Existence only — the row is never read past the null check, so it is a
+  // projection rather than a hydration.
   const existing = await deps.db.query.blogCategories.findFirst({
+    columns: { id: true },
     where: eq(blogCategories.slug, slug),
   });
   if (existing) return { error: "duplicate" as const };

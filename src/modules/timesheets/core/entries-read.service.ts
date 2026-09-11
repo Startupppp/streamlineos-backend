@@ -146,9 +146,10 @@ export class EntriesReadService {
    * One entry, WITHOUT a scope check — for handing back a row the caller has
    * just written.
    *
-   * `listEntries` above applies `applyScope(..., { ownerColumn: timesheets.userId })`,
-   * so a person with `own` scope sees only their own entries. This applies
-   * nothing, and what it returns includes `billRate`, `currency`, `description`
+   * `listEntries` above reads through a `ScopedRead` over
+   * `membershipScope(..., timesheets.userMembershipId)`, so a person with `own`
+   * scope sees only their own entries. This applies nothing, and what it
+   * returns includes `billRate`, `currency`, `description`
    * and `workLink` — a colleague's commercial rate among them.
    *
    * That is safe today only because nothing routes to it: its two callers are

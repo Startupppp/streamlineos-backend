@@ -100,7 +100,9 @@ function harness(options: HarnessOptions = {}) {
     db: { select, insert, update, query: { organizationMembers: { findFirst } } } as unknown as Db,
     cache: {
       invalidate: jest.fn().mockResolvedValue(undefined),
-      invalidateNamespace: jest.fn().mockResolvedValue(undefined),
+      // The transfer namespace is busted per tenant, so the org is an argument
+      // rather than a segment the caller pastes into the key itself.
+      invalidateNamespaceForOrg: jest.fn().mockResolvedValue(undefined),
     } as unknown as CacheService,
     audit: { log: jest.fn() } as unknown as AuditService,
     assertOwnershipRights: gate,

@@ -1,5 +1,6 @@
 import { NotFoundException } from "@nestjs/common";
 import type { Db } from "../../db/drizzle.module";
+import { ScopedRead } from "../access/scoped-read";
 import { SurveyFormsService } from "./survey-forms.service";
 
 function sqlValues(value: unknown, seen = new Set<object>()): unknown[] {
@@ -40,6 +41,9 @@ function countSelect(total: number) {
   return { select: jest.fn().mockReturnValue(chain), countWhere };
 }
 
+// The controller resolves the caller's scope; the service is handed the ScopedRead.
+const readAll = (orgId: string) => ScopedRead.of(orgId, "user-1", "all");
+
 const mockVersions = {} as never;
 const mockTemplates = { get: jest.fn().mockReturnValue(undefined) } as never;
 const mockPlanLimits = { assertWithinLimit: jest.fn().mockResolvedValue(undefined) } as never;
@@ -55,7 +59,7 @@ describe("SurveyFormsService — cross-tenant isolation", () => {
       } as unknown as Db;
       const svc = new SurveyFormsService(db, mockVersions, mockTemplates, mockPlanLimits);
 
-      const result = await svc.list(ATTACKER_ORG, "user-1", { page: 1, pageSize: 20 }, "all");
+      const result = await svc.list({ page: 1, pageSize: 20 }, readAll(ATTACKER_ORG));
 
       expect(result.items).toHaveLength(0);
       expect(result.total).toBe(0);
@@ -75,7 +79,7 @@ describe("SurveyFormsService — cross-tenant isolation", () => {
       } as unknown as Db;
       const svc = new SurveyFormsService(db, mockVersions, mockTemplates, mockPlanLimits);
 
-      const result = await svc.list(OWNER_ORG, "user-1", { page: 1, pageSize: 20 }, "all");
+      const result = await svc.list({ page: 1, pageSize: 20 }, readAll(OWNER_ORG));
 
       expect(result.items).toHaveLength(1);
       expect(result.total).toBe(1);
@@ -91,7 +95,7 @@ describe("SurveyFormsService — cross-tenant isolation", () => {
       } as unknown as Db;
       const svc = new SurveyFormsService(db, mockVersions, mockTemplates, mockPlanLimits);
 
-      await expect(svc.get(ATTACKER_ORG, "user-1", 10, "all")).rejects.toThrow(NotFoundException);
+      await expect(svc.get(10, readAll(ATTACKER_ORG))).rejects.toThrow(NotFoundException);
 
       expect(findFirst).toHaveBeenCalledTimes(1);
       const callArg = findFirst.mock.calls[0]?.[0] as { where?: unknown } | undefined;
@@ -106,7 +110,7 @@ describe("SurveyFormsService — cross-tenant isolation", () => {
       } as unknown as Db;
       const svc = new SurveyFormsService(db, mockVersions, mockTemplates, mockPlanLimits);
 
-      const result = await svc.get(OWNER_ORG, "user-1", 10, "all");
+      const result = await svc.get(10, readAll(OWNER_ORG));
 
       expect(result).toMatchObject({ id: 10 });
     });

@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 /**
@@ -6,24 +6,39 @@ import { resolve } from "node:path";
  *
  * `ci.yml` used to run everything in one job called `verify`, in this order:
  * Typecheck, **Lint**, **Test**, Build, then thirty `check:*` gates. Lint is red
- * with 244 errors inherited from `main` and out of scope for the inventory
+ * with errors inherited from `main` and out of scope for the inventory
  * programme. In run 33489746534 it failed at step 7 and steps 8-37 — Test and
  * every gate below it — reported `skipped`. So every inventory ratchet this
  * programme built was silenced by somebody else's lint error, and none of them
  * had ever executed in CI even once.
  *
- * Lint, Test and the named inventory ratchets are separate jobs now, each with
- * no `needs:`. This asserts that shape, because the failure it prevents is
- * invisible: re-merging them would go green on the day it landed and only cost
- * something the next time lint broke.
+ * T20 answered that with a `lint` job, a `test` job and an `inventory-ratchets`
+ * job that named five suites through `--testPathPattern`. `main` answered the
+ * same defect with a different split — `verify` (build health only), `tests`
+ * (the whole unfiltered suite), `gates` (every static gate) — and that split
+ * wins here, because it is strictly wider on both halves:
+ *
+ *   - `tests` runs `pnpm test` with NO filter. A `--testPathPattern` job reports
+ *     green for every suite outside its own pattern, so naming five ratchets
+ *     protected five suites and left the rest where they were. Unfiltered
+ *     protects all of them, the five included.
+ *   - every step in `gates` carries `if: ${{ !cancelled() }}`, which is the
+ *     within-job half of the same masking defect: without it one red gate skips
+ *     all of its successors and the job reports on a prefix.
+ *
+ * So this spec asserts the property rather than T20's job names: Lint cannot
+ * fail Test, no job waits on another, the test run is unfiltered, no gate hides
+ * its successors, and the five ratchet files are still on disk under a root the
+ * unfiltered run reaches.
  *
  * Deliberately parsed as TEXT, not YAML. There is no YAML parser in this
- * repository's dependencies, and adding one to assert five properties of one
+ * repository's dependencies, and adding one to assert six properties of one
  * file is a worse trade than a small indentation walk — `ci.yml` is
  * two-space-indented GitHub Actions, not arbitrary YAML.
  */
 
-const CI = resolve(process.cwd(), ".github", "workflows", "ci.yml");
+const ROOT = resolve(process.cwd());
+const CI = resolve(ROOT, ".github", "workflows", "ci.yml");
 const src = readFileSync(CI, "utf8");
 
 /** Everything from a top-level `jobs:` key down to the next one, keyed by job id. */
@@ -50,97 +65,84 @@ const jobs = ((): ReadonlyMap<string, string> => {
 const stepNames = (job: string): string[] =>
   [...(jobs.get(job) ?? "").matchAll(/^ {6}- name: (.+)$/gm)].map((m) => (m[1] ?? "").trim());
 
+/** Steps of a job, each as its whole block, so a step's own `if:` travels with it. */
+const stepBlocks = (job: string): string[] => (jobs.get(job) ?? "").split(/^ {6}- name: /m).slice(1);
+
+/** The unfiltered test run, and the job that must own it on its own. */
+const TEST_JOB = "tests";
+const LINT_JOB = "verify";
+
 describe("T20 — CI jobs that must not be able to silence each other", () => {
   it("finds the workflow and its jobs, so a rewritten file cannot pass vacuously", () => {
     expect(src.length).toBeGreaterThan(5000);
     // The walk itself has to have worked. A broken parser returning nothing is
     // exactly the shape of failure every assertion below would read as a pass.
     expect(jobs.size).toBeGreaterThanOrEqual(6);
-    for (const id of ["lint", "test", "inventory-ratchets", "verify"])
-      expect([...jobs.keys()]).toContain(id);
+    for (const id of [LINT_JOB, TEST_JOB, "gates"]) expect([...jobs.keys()]).toContain(id);
   });
 
   it("keeps Lint and Test in different jobs", () => {
     // The defect, stated directly: Lint above Test in one job means a red Lint
     // reports Test as `skipped`.
-    expect(stepNames("lint")).toContain("Lint");
-    expect(stepNames("test")).toContain("Test");
-    expect(stepNames("verify")).not.toContain("Lint");
-    expect(stepNames("verify")).not.toContain("Test");
+    expect(stepNames(LINT_JOB)).toContain("Lint");
+    expect(stepNames(TEST_JOB)).toContain("Test");
+    expect(stepNames(LINT_JOB)).not.toContain("Test");
+    expect(stepNames(TEST_JOB)).not.toContain("Lint");
+    // And the gates are a third job, so Lint cannot skip them either.
+    expect(stepNames("gates")).not.toContain("Lint");
+    expect(stepNames("gates")).not.toContain("Test");
   });
 
-  it("gives the independent jobs no `needs:`, or the dependency restores the mask", () => {
-    for (const id of ["lint", "test", "inventory-ratchets", "verify"])
-      expect(jobs.get(id) ?? "").not.toMatch(/^\s{4}needs:/m);
+  it("gives no job a `needs:`, or the dependency restores the mask", () => {
+    // Every job, not a named few: a `needs:` added to a job this spec did not
+    // think to list reinstates exactly the failure T20 removed.
+    for (const [id, body] of jobs) expect(`${id}: ${body}`).not.toMatch(/^\s{4}needs:/m);
   });
 
-  it("runs the inventory ratchets by name, and asserts every one of their files exists", () => {
-    const body = jobs.get("inventory-ratchets") ?? "";
-    const ratchets = stepNames("inventory-ratchets").filter((n) => n.startsWith("Ratchet - "));
-    // A floor, not an exact count: other lanes add ratchets to this job and should
-    // not have to edit this spec to do it. Five is the set T20 put there, and each
-    // is named below, so the floor cannot be met by five of something else.
-    expect(ratchets.length).toBeGreaterThanOrEqual(5);
-    for (const name of [
-      "inventory-reachability",
-      "inventory-schema-reachability",
-      "available-formula",
-      "idempotent-guard-placement",
-      "cold-build-integrity",
-    ])
-      expect(ratchets).toContain(`Ratchet - ${name}`);
-
-    // `--passWithNoTests` would turn a renamed spec into a silent green. Without
-    // it, `jest --ci --testPathPattern=<gone>` exits 1. Checked on the commands
-    // only — the job's own comment names the flag it must not use.
+  it("runs the suite unfiltered, so no ratchet can be outside the pattern", () => {
+    const body = jobs.get(TEST_JOB) ?? "";
     const commands = body
       .split("\n")
-      .filter((l) => !/^\s*#/.test(l))
+      .filter((line) => !/^\s*#/.test(line))
       .join("\n");
-    expect(commands).toContain("--ci --testPathPattern");
+
+    expect(commands).toContain("pnpm test");
+    // A filter is what made five named ratchets the only protected suites. Both
+    // of these turn a renamed or moved spec into a silent green.
+    expect(commands).not.toContain("--testPathPattern");
     expect(commands).not.toContain("--passWithNoTests");
+  });
 
-    /*
-     * Every ratchet has a file the job asserts is present, and every asserted
-     * file is actually run by something — the two directions of "a rename
-     * becomes invisible".
-     *
-     * This was `asserted.size === ratchets.length` and had been RED. Not because
-     * a ratchet lost its existence check, but because the list legitimately
-     * guards a NINTH file — `inventory-schema-parity.db.spec.ts` — which runs in
-     * the sibling `inventory-live-schema` job, deliberately separate so this
-     * job's pure source scans never see a `DATABASE_URL`. Equality punished the
-     * workflow for asserting more than the minimum, and asserting that file here
-     * is right: it costs nothing and it is free of the credential this job must
-     * not hold.
-     *
-     * So the pairing is made explicit through each step's own
-     * `--testPathPattern`, which is the only real link between a step name and
-     * the file it runs, and the second direction searches the WHOLE workflow
-     * rather than this one job.
-     */
-    expect(body).toContain("MISSING RATCHET");
-    const existenceCheck = body.slice(body.indexOf("ratchets exist"));
-    const asserted = [...existenceCheck.matchAll(/src\/[^\s"';]+\.spec\.ts/g)].map((m) => m[0]);
-    expect(new Set(asserted).size).toBe(asserted.length);
-
-    const patternsIn = (text: string): string[] =>
-      [...text.matchAll(/--testPathPattern=([^\s"'\\]+)/g)].map((m) => m[1] ?? "");
-
-    // (1) No ratchet without an existence check.
-    for (const step of body.split(/^ {6}- name: /m).slice(1)) {
-      const name = (step.split("\n")[0] ?? "").trim();
-      if (!name.startsWith("Ratchet - ")) continue;
-      const patterns = patternsIn(step);
-      expect(patterns.length).toBeGreaterThan(0);
-      for (const pattern of patterns)
-        expect(asserted.some((file) => file.includes(pattern))).toBe(true);
+  it("keeps the inventory ratchets on disk, under a root the unfiltered run reaches", () => {
+    // The workflow no longer names them, so this is where a rename stops being
+    // invisible. `.db.spec.ts` is excluded from the default jest project on
+    // purpose and runs in `db-gates.yml`, so no ratchet here may carry it.
+    const ratchets = [
+      "src/modules/inventory/__tests__/inventory-reachability.spec.ts",
+      "src/modules/inventory/__tests__/inventory-schema-reachability.spec.ts",
+      "src/modules/inventory/stock-engine/__tests__/available-formula-single-definition.spec.ts",
+      "src/modules/inventory/__tests__/idempotent-guard-placement.spec.ts",
+      "src/db/cold-build-integrity.spec.ts",
+    ];
+    expect(ratchets.length).toBeGreaterThanOrEqual(5);
+    for (const file of ratchets) {
+      expect(existsSync(resolve(ROOT, file))).toBe(true);
+      expect(file.startsWith("src/")).toBe(true);
+      expect(file.endsWith(".db.spec.ts")).toBe(false);
     }
+  });
 
-    // (2) No existence check for a file nothing runs, anywhere in the workflow.
-    const everyPattern = patternsIn(src);
-    for (const file of asserted)
-      expect(everyPattern.some((pattern) => file.includes(pattern))).toBe(true);
+  it("lets no gate step skip the gates below it", () => {
+    // The within-job half of the same defect: measured on run 33622305895, one
+    // red step turned 30 gates into "-". `if: ${{ !cancelled() }}` does not
+    // weaken anything — a failed step without `continue-on-error` still fails
+    // the job, it simply stops hiding its successors.
+    const steps = stepBlocks("gates");
+    expect(steps.length).toBeGreaterThanOrEqual(30);
+    const unguarded = steps
+      .filter((step) => !step.includes("!cancelled()"))
+      .map((step) => (step.split("\n")[0] ?? "").trim());
+    expect(unguarded).toEqual([]);
   });
 
   it("triggers on a push to a feature branch, not only on a mergeable PR", () => {
