@@ -10,7 +10,6 @@ import { runInTenantTransaction } from "../../../../common/tenant/run-in-tenant-
 import { registerAfterCommit } from "../../../../common/tenant/tenant-context";
 import { getPostgresErrorCode } from "../../../../common/db/postgres-error";
 import type { DbOrTx } from "../../../../common/rbac/access-invalidate";
-import { getPostgresErrorCode } from "../../../../common/db/postgres-error";
 
 export interface PlanEntitlementSnapshot {
   featureKey: string;
