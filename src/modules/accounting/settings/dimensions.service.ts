@@ -11,6 +11,7 @@ import { type Db } from "../../../db/drizzle.module";
 import { accountingDimensions, accountingDimensionValues } from "../../../db/schema";
 import { AuditService } from "../../../common/audit/audit.service";
 import { CacheService } from "../../../common/cache/cache.service";
+import { isUniqueViolation } from "../../../common/db/postgres-error";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import type {
   CreateDimensionInput,
@@ -95,12 +96,7 @@ export class DimensionsService {
 
       return dim;
     } catch (err: unknown) {
-      if (
-        typeof err === "object" &&
-        err !== null &&
-        "code" in err &&
-        (err as { code: string }).code === "23505"
-      ) {
+      if (isUniqueViolation(err)) {
         throw new ConflictException(
           `A dimension with key "${input.key}" already exists in this organisation.`,
         );
@@ -202,12 +198,7 @@ export class DimensionsService {
 
       return val;
     } catch (err: unknown) {
-      if (
-        typeof err === "object" &&
-        err !== null &&
-        "code" in err &&
-        (err as { code: string }).code === "23505"
-      ) {
+      if (isUniqueViolation(err)) {
         throw new ConflictException(
           `A value with code "${input.code}" already exists for this dimension.`,
         );
