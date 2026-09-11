@@ -3189,6 +3189,11 @@
       "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
       "justification": "Classified 2026-09-10 by reading the call site. FALSE-POSITIVE rather than BOUNDED because BOUNDED is a FIXED verdict here \u2014 it asserts the scanner no longer matches, and a continued match is reported as a regression. The pattern is still present and always will be; it is simply not a violation: `getBom` is the components of one kit variant; `costOf` filters `inArray` on the transaction ids it was handed and returns early on an empty set."
     },
+    "/inventory/kitting/lib/kit-stock-reads.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
+      "justification": "Classified 2026-09-11. `costOf` moved here verbatim from `/inventory/kitting/kit.service.ts`, which carries the same FALSE-POSITIVE verdict for this exact read; the verdict is restated rather than re-argued. The bound is the argument list: `costOf(tx, orgId, transactionIds)` returns \"0.0000\" on an empty array and otherwise filters `inArray(invStockTransactions.id, [...transactionIds])` on ids the caller was just handed by `StockEngineService.executeInTx` \u2014 one row per movement of the command in flight, at most the number of BOM components plus one. FALSE-POSITIVE rather than BOUNDED because BOUNDED is a FIXED verdict here and asserts the scanner no longer matches; the pattern is still present and always will be."
+    },
     "/inventory/labels/inv-labels.service.ts": {
       "verdict": "FALSE-POSITIVE",
       "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
