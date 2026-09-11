@@ -1,24 +1,20 @@
 import { ConflictException, Inject, Injectable, Logger, NotFoundException } from "@nestjs/common";
-import { and, eq, isNull, sql } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.types";
-import {
-  autonomousDecisions,
-  autonomyHolds,
-  crmOutboundClassStops,
-  crmOutboundMessages,
-  deals,
-  quotes,
-} from "../../db/schema";
+import { autonomousDecisions, autonomyHolds, deals } from "../../db/schema";
 import { isUniqueViolation } from "../../common/db/postgres-error";
-import { getOrgAdminUserIds } from "../../common/tenant/org-admin-recipients";
 import { startRun } from "../../common/workflow/workflow-store";
 import { NotificationsService } from "../notifications/notifications.service";
 import { buildDecision } from "./decision-record";
-import { clampHoldWindow, secondsRemaining } from "./hold-window";
+import { clampHoldWindow } from "./hold-window";
 import { draftQuoteFromDeal } from "./quote-draft";
 import { QuotesService } from "../quotes/quotes.service";
 import { AutonomyScoringService } from "./autonomy-scoring.service";
+import type { HoldDeps } from "./autonomy-hold.types";
+import { liveOutboundClassStops, releaseOutboundClassStop } from "./lib/hold-class-stops";
+import { cancelHoldsInFlight, cancelOneHold, liveHoldsFor } from "./lib/hold-in-flight";
+import { notifyHoldPending } from "./lib/hold-notify";
 
 export const HOLD_WORKFLOW = "crm.autonomy-hold";
 
@@ -29,6 +25,11 @@ export const HOLD_WORKFLOW = "crm.autonomy-hold";
  * run and re-claims it later, so a hold survives a deploy and costs nothing
  * while it waits. A polling job would add latency to every send and would have
  * no memory of what it had already done when it crashed mid-batch.
+ *
+ * Placing a hold stays here, unique-violation handling and all; the
+ * notification it sends is `lib/hold-notify.ts`, cancelling and listing what is
+ * waiting is `lib/hold-in-flight.ts`, and the class stops, read and written, are
+ * `lib/hold-class-stops.ts`.
  */
 @Injectable()
 export class AutonomyHoldService {
@@ -40,6 +41,11 @@ export class AutonomyHoldService {
     private readonly notifications: NotificationsService,
     private readonly quotes: QuotesService,
   ) {}
+
+  /** The request transaction, the notifier and this class's logger, as the libs take them. */
+  private get deps(): HoldDeps {
+    return { db: this.db, notifications: this.notifications, logger: this.logger };
+  }
 
   /**
    * Decide to send a quote, and start the interval in which that can be stopped.
@@ -125,76 +131,9 @@ export class AutonomyHoldService {
         ),
       );
 
-    await this.notifyPending(input.organizationId, hold.id, input.quoteId, windowSeconds);
+    await notifyHoldPending(this.deps, input.organizationId, hold.id, input.quoteId, windowSeconds);
 
     return { autonomyHoldId: hold.id, decisionId: decision.id, holdUntil, windowSeconds };
-  }
-
-  /**
-   * Tell the people who could stop it, while there is still time.
-   *
-   * A hold nobody hears about is a delay, not a safeguard. The notification goes
-   * to whoever owns the deal — the person most likely to know the send is wrong
-   * and the one whose customer it is — and to the organisation's administrators
-   * when nobody owns it, because the hold sends either way.
-   */
-  private async notifyPending(
-    organizationId: string,
-    holdId: string,
-    quoteId: number,
-    windowSeconds: number,
-  ): Promise<void> {
-    const [row] = await this.db
-      .select({ assignedToId: deals.assignedToId, quoteSubject: quotes.subject })
-      .from(quotes)
-      .leftJoin(deals, and(eq(deals.orgId, quotes.orgId), eq(deals.id, quotes.dealId)))
-      .where(and(eq(quotes.orgId, organizationId), eq(quotes.id, quoteId)))
-      .limit(1);
-
-    /**
-     * Nobody owns the deal, so the org's administrators are told instead.
-     *
-     * Returning here was silent, and the hold sent sixty seconds later anyway —
-     * which is the failure this notification exists to prevent, arriving
-     * precisely on the quotes least likely to have been checked by a person. An
-     * unassigned deal is not a reason to send a customer a quote unannounced.
-     */
-    const recipients = row?.assignedToId
-      ? [row.assignedToId]
-      : await getOrgAdminUserIds(this.db, organizationId);
-
-    if (recipients.length === 0) {
-      this.logger.warn(
-        `hold ${holdId} has no assignee and the organisation has no active admin to tell; it will send unannounced`,
-      );
-      return;
-    }
-
-    for (const userId of recipients) {
-      try {
-        await this.notifications.create({
-          orgId: organizationId,
-          userId,
-          type: "WARNING",
-          // High, because the whole value is that it is read before the window ends.
-          priority: "HIGH",
-          category: "SYSTEM",
-          sourceModule: "crm",
-          eventKey: "crm.autonomy.quote-holding",
-          entityType: "autonomy_hold",
-          entityId: holdId,
-          title: "A quote is about to send",
-          message: `"${row?.quoteSubject ?? "A quote"}" sends in ${windowSeconds} seconds unless you stop it.`,
-          link: `/crm/autonomy?holdId=${holdId}`,
-        });
-      } catch (error) {
-        // A failed notification must not stop the hold from existing. The feed
-        // still shows it, and swallowing this silently is what §4 forbids.
-        this.logger.error(
-          `could not notify ${userId} about hold ${holdId}: ${error instanceof Error ? error.message : String(error)}`,
-        );
-      }
-    }
   }
 
   /**
@@ -291,23 +230,7 @@ export class AutonomyHoldService {
    * quietly thinned out.
    */
   async liveClassStops(organizationId: string) {
-    return this.db
-      .select({
-        outboundClassStopId: crmOutboundClassStops.outboundClassStopId,
-        partyId: crmOutboundClassStops.partyId,
-        outboundClass: crmOutboundClassStops.outboundClass,
-        outboundMessageId: crmOutboundClassStops.outboundMessageId,
-        reason: crmOutboundClassStops.reason,
-        stoppedByUserId: crmOutboundClassStops.stoppedByUserId,
-        stoppedAt: crmOutboundClassStops.stoppedAt,
-      })
-      .from(crmOutboundClassStops)
-      .where(
-        and(
-          eq(crmOutboundClassStops.organizationId, organizationId),
-          isNull(crmOutboundClassStops.releasedAt),
-        ),
-      );
+    return liveOutboundClassStops(this.db, organizationId);
   }
 
   /**
@@ -325,68 +248,12 @@ export class AutonomyHoldService {
    * work out why a customer stopped hearing from them.
    */
   async releaseClassStop(organizationId: string, userId: string, outboundClassStopId: string) {
-    const released = await this.db
-      .update(crmOutboundClassStops)
-      .set({ releasedAt: new Date(), releasedByUserId: userId })
-      .where(
-        and(
-          eq(crmOutboundClassStops.organizationId, organizationId),
-          eq(crmOutboundClassStops.outboundClassStopId, outboundClassStopId),
-          isNull(crmOutboundClassStops.releasedAt),
-        ),
-      )
-      .returning({ id: crmOutboundClassStops.outboundClassStopId });
-
-    if (released.length === 0) {
-      const [existing] = await this.db
-        .select({ releasedAt: crmOutboundClassStops.releasedAt })
-        .from(crmOutboundClassStops)
-        .where(
-          and(
-            eq(crmOutboundClassStops.organizationId, organizationId),
-            eq(crmOutboundClassStops.outboundClassStopId, outboundClassStopId),
-          ),
-        )
-        .limit(1);
-
-      if (!existing) throw new NotFoundException("Stop not found");
-      throw new ConflictException("That stop was already released.");
-    }
-
-    return { released: true };
+    return releaseOutboundClassStop(this.db, organizationId, userId, outboundClassStopId);
   }
 
   /** Everything still waiting, with the time each has left. */
   async liveHolds(organizationId: string) {
-    const rows = await this.db
-      .select({
-        autonomyHoldId: autonomyHolds.autonomyHoldId,
-        autonomousDecisionId: autonomyHolds.autonomousDecisionId,
-        quoteId: autonomyHolds.quoteId,
-        holdUntil: autonomyHolds.holdUntil,
-        createdAt: autonomyHolds.createdAt,
-        quoteSubject: quotes.subject,
-        summary: autonomousDecisions.summary,
-      })
-      .from(autonomyHolds)
-      .leftJoin(quotes, and(eq(quotes.orgId, autonomyHolds.organizationId), eq(quotes.id, autonomyHolds.quoteId)))
-      .leftJoin(
-        autonomousDecisions,
-        and(
-          eq(autonomousDecisions.organizationId, autonomyHolds.organizationId),
-          eq(autonomousDecisions.autonomousDecisionId, autonomyHolds.autonomousDecisionId),
-        ),
-      )
-      .where(
-        and(eq(autonomyHolds.organizationId, organizationId), eq(autonomyHolds.status, "held")),
-      )
-      .orderBy(autonomyHolds.holdUntil)
-      .limit(100);
-
-    return rows.map((row) => ({
-      ...row,
-      secondsRemaining: secondsRemaining(row.holdUntil),
-    }));
+    return liveHoldsFor(this.db, organizationId);
   }
 
   /**
@@ -402,157 +269,7 @@ export class AutonomyHoldService {
     holdId: string,
     reason?: string,
   ) {
-    const cancelled = await this.db
-      .update(autonomyHolds)
-      .set({
-        status: "cancelled",
-        cancelledAt: new Date(),
-        cancelledByUserId: userId,
-        cancelReason: reason ?? null,
-      })
-      .where(
-        and(
-          eq(autonomyHolds.organizationId, organizationId),
-          eq(autonomyHolds.autonomyHoldId, holdId),
-          eq(autonomyHolds.status, "held"),
-        ),
-      )
-      .returning({
-        id: autonomyHolds.autonomyHoldId,
-        decisionId: autonomyHolds.autonomousDecisionId,
-        outboundMessageId: autonomyHolds.outboundMessageId,
-      });
-
-    if (cancelled.length === 0) {
-      const [existing] = await this.db
-        .select({ status: autonomyHolds.status })
-        .from(autonomyHolds)
-        .where(
-          and(
-            eq(autonomyHolds.organizationId, organizationId),
-            eq(autonomyHolds.autonomyHoldId, holdId),
-          ),
-        )
-        .limit(1);
-
-      if (!existing) throw new NotFoundException("Hold not found");
-      throw new ConflictException(
-        existing.status === "sent"
-          ? "That already sent — the window had closed."
-          : `That is already ${existing.status}.`,
-      );
-    }
-
-    // The cancellation is itself audited: the decision stops claiming it will
-    // happen, and the feed shows who stopped it.
-    await this.db
-      .update(autonomousDecisions)
-      .set({
-        outcome: "reversed",
-        reversedAt: new Date(),
-        reversedByUserId: userId,
-        reversedReason: reason ?? "Cancelled inside the hold window",
-      })
-      .where(
-        and(
-          eq(autonomousDecisions.organizationId, organizationId),
-          eq(autonomousDecisions.autonomousDecisionId, cancelled[0]!.decisionId),
-        ),
-      );
-
-    await this.stopClassForParty(
-      organizationId,
-      userId,
-      cancelled[0]!.outboundMessageId,
-      reason,
-    );
-
-    return { cancelled: true };
-  }
-
-  /**
-   * Stopping a message stops its class for that party, not just that message.
-   *
-   * Ticket 07's US8, and until now only half-built: `outbound.service.ts` reads
-   * `crm_outbound_class_stops` at send time as a guardrail, and nothing anywhere
-   * inserted a row — so the table was always empty and the check always passed.
-   * A person who stopped a nudge got the next nudge anyway, which is the reading
-   * of "stop" nobody means.
-   *
-   * The stop is per class rather than per party: someone who does not want
-   * chasing may still want the renewal conversation, and one cancellation is not
-   * consent to go silent everywhere. It is also open-ended — `releasedAt` is
-   * cleared only by a person, per the column's own contract — because a stop
-   * that quietly expires is a stop the customer did not agree to.
-   *
-   * Quote holds carry no `outboundMessageId` and no class, so there is nothing
-   * to stop and this does nothing for them.
-   *
-   * Never throws outward. The cancellation is the thing the caller asked for and
-   * it has already committed; failing here must not turn a successful stop into
-   * a 500 that invites the person to press the button again. The send-time
-   * guardrail is a read of this table, so a lost row costs one message, and the
-   * failure is loud in the log.
-   */
-  private async stopClassForParty(
-    organizationId: string,
-    userId: string,
-    outboundMessageId: string | null,
-    reason?: string,
-  ): Promise<void> {
-    if (!outboundMessageId) return;
-
-    try {
-      const [message] = await this.db
-        .select({
-          partyId: crmOutboundMessages.partyId,
-          outboundClass: crmOutboundMessages.outboundClass,
-        })
-        .from(crmOutboundMessages)
-        .where(
-          and(
-            eq(crmOutboundMessages.organizationId, organizationId),
-            eq(crmOutboundMessages.outboundMessageId, outboundMessageId),
-          ),
-        )
-        .limit(1);
-
-      if (!message) return;
-
-      /**
-       * A second stop on a live one would be a duplicate row saying the same
-       * thing, and the guardrail reads the first it finds either way.
-       */
-      const [existing] = await this.db
-        .select({ id: crmOutboundClassStops.outboundClassStopId })
-        .from(crmOutboundClassStops)
-        .where(
-          and(
-            eq(crmOutboundClassStops.organizationId, organizationId),
-            eq(crmOutboundClassStops.partyId, message.partyId),
-            eq(crmOutboundClassStops.outboundClass, message.outboundClass),
-            isNull(crmOutboundClassStops.releasedAt),
-          ),
-        )
-        .limit(1);
-
-      if (existing) return;
-
-      await this.db.insert(crmOutboundClassStops).values({
-        organizationId,
-        partyId: message.partyId,
-        outboundClass: message.outboundClass,
-        outboundMessageId,
-        reason: reason ?? "Stopped inside the hold window",
-        stoppedByUserId: userId,
-      });
-    } catch (error) {
-      this.logger.error(
-        `could not stop ${outboundMessageId}'s class for its party: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-      );
-    }
+    return cancelOneHold(this.deps, organizationId, userId, holdId, reason);
   }
 
   /**
@@ -564,40 +281,6 @@ export class AutonomyHoldService {
    * committed to yet.
    */
   async cancelInFlight(organizationId: string, userId: string, kind: string): Promise<number> {
-    const cancelled = await this.db
-      .update(autonomyHolds)
-      .set({
-        status: "cancelled",
-        cancelledAt: new Date(),
-        cancelledByUserId: userId,
-        cancelReason: "Autonomous sending was switched off",
-      })
-      .where(
-        and(
-          eq(autonomyHolds.organizationId, organizationId),
-          eq(autonomyHolds.status, "held"),
-          kind === "*" ? sql`true` : eq(autonomyHolds.kind, kind as "quote.sent"),
-        ),
-      )
-      .returning({ decisionId: autonomyHolds.autonomousDecisionId });
-
-    for (const row of cancelled) {
-      await this.db
-        .update(autonomousDecisions)
-        .set({
-          outcome: "reversed",
-          reversedAt: new Date(),
-          reversedByUserId: userId,
-          reversedReason: "Autonomous sending was switched off",
-        })
-        .where(
-          and(
-            eq(autonomousDecisions.organizationId, organizationId),
-            eq(autonomousDecisions.autonomousDecisionId, row.decisionId),
-          ),
-        );
-    }
-
-    return cancelled.length;
+    return cancelHoldsInFlight(this.db, organizationId, userId, kind);
   }
 }
