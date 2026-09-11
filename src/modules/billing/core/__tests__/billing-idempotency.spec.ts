@@ -11,12 +11,14 @@ import { VersionedCatalogService } from "../versioned-catalog.service";
 import { APP_CONFIG } from "../../../../config/config.module";
 import { PaymentProviderAdapterRegistry } from "../../payments/payment-provider-adapter.interface";
 import { PaymentProviderResolver, type OrganizationPaymentProvider } from "../../payments/payment-provider-resolver.service";
+import { PlatformPaymentRegistry } from "../platform-payment-registry";
+import { fakePlatformRegistry, FAKE_PLATFORM_PAYMENT_SIG } from "../testing/fake-platform-provider";
 import { PaymentWebhookReceiverService } from "../../payments/payment-webhook-receiver.service";
 import { PaymentAnalyticsService } from "../../payments/payment-analytics.service";
 import { BillingProfileService } from "../billing-profile.service";
 import { RevenueAnalyticsService } from "../revenue-analytics.service";
 import { ExternalEffectLedger } from "../../../../common/outbox/external-effect-ledger";
-import { FakeProviderAdapter, FAKE_VALID_PAYMENT_SIG } from "../../payments/testing/fake-provider-adapter";
+import { FakeProviderAdapter } from "../../payments/testing/fake-provider-adapter";
 import { creditsToMilli, milliToCredits } from "../../../ai/core/billing/ai-model-pricing.constants";
 import { planGrantMilli } from "../ai-credit-units";
 import { drizzleUniqueViolation } from "../../../../test/postgres-error-fixture";
@@ -60,7 +62,9 @@ describe("creditsToMilli / milliToCredits — round-trip invariants", () => {
 const VERIFY_INPUT = {
   orderId: "order_idp_001",
   paymentId: "pay_idp_abc",
-  signature: FAKE_VALID_PAYMENT_SIG,
+  // The PLATFORM gateway signs a subscription charge; the tenant-facing adapter
+  // signs the other direction of travel and its constant no longer applies here.
+  signature: FAKE_PLATFORM_PAYMENT_SIG,
   plan: "STARTER" as const,
 };
 
@@ -121,6 +125,7 @@ describe("BillingService.verifyAndActivate — idempotency", () => {
         { provide: VersionedCatalogService, useValue: { getActivePriceForPlanTier: jest.fn().mockResolvedValue(null) } },
         { provide: RevenueAnalyticsService, useValue: { emit: jest.fn().mockResolvedValue(undefined) } },
         { provide: PaymentProviderResolver, useValue: makeResolver() },
+        { provide: PlatformPaymentRegistry, useValue: fakePlatformRegistry().registry },
         { provide: PaymentProviderAdapterRegistry, useValue: registry },
         { provide: ExternalEffectLedger, useValue: makeEffectLedger() },
         { provide: PaymentWebhookReceiverService, useValue: { recordSignatureFailure: jest.fn() } },

@@ -1,24 +1,20 @@
-import {
-  BadRequestException,
-  ConflictException,
-  Logger,
-  ServiceUnavailableException,
-} from "@nestjs/common";
+import { BadRequestException, ConflictException, Logger } from "@nestjs/common";
 import { eq } from "drizzle-orm";
 import { subscriptionPayments, subscriptions } from "../../../db/schema";
 import { type Db } from "../../../db/drizzle.module";
 import { AuditService } from "../../../common/audit/audit.service";
 import { ExternalEffectLedger } from "../../../common/outbox/external-effect-ledger";
-import { PaymentProviderResolver } from "../payments/payment-provider-resolver.service";
 import { AiCreditsService } from "./ai-credits.service";
 import { BillingCoupons } from "./billing-coupons";
 import { type BillingCycle, type ConfirmCheckoutInput, type Plan } from "./dto/billing.schemas";
 import { PlanLimitsService } from "./plan-limits.service";
+import { PLAN_PRICES_PAISE, PLATFORM_PRICE_CURRENCY } from "./plan-entitlements.constants";
+import { PlatformPaymentRegistry } from "./platform-payment-registry";
 import {
-  ANNUAL_DISCOUNT_PCT,
-  PLAN_PRICES_PAISE,
-  PLATFORM_PRICE_CURRENCY,
-} from "./plan-entitlements.constants";
+  billablePrice,
+  taxFor,
+  type PlatformBuyer,
+} from "./billing-platform-pricing";
 import { ProrationLedgerService } from "./proration-ledger.service";
 import { RevenueAnalyticsService } from "./revenue-analytics.service";
 import { classifyPlanChange } from "./revenue-events";
@@ -39,9 +35,21 @@ export interface BillingPaymentActivationDeps {
   prorationLedger: ProrationLedgerService;
   catalog: VersionedCatalogService;
   revenueAnalytics: RevenueAnalyticsService;
-  providers: PaymentProviderResolver;
+  /**
+   * The PLATFORM's own gateways, not the tenant's.
+   *
+   * `PaymentProviderResolver` reads `payment_providers`, which is an organisation's
+   * own Razorpay/Stripe account for charging ITS customers — the opposite direction
+   * of travel, with different credentials (see the header of
+   * `db/schema/billing/payment-providers.ts`). Resolving a subscription charge
+   * through it creates the platform's order inside the buyer's own gateway, so the
+   * platform is never paid and `StripePlatformWebhookService` — which verifies
+   * against `STRIPE_WEBHOOK_SECRET` — never sees a matching intent.
+   */
+  registry: PlatformPaymentRegistry;
   externalEffectLedger: ExternalEffectLedger;
 }
+
 
 export class BillingPaymentActivation {
   private readonly couponAdmin: BillingCoupons;
@@ -57,14 +65,20 @@ export class BillingPaymentActivation {
     plan: Plan,
     billingCycle: BillingCycle = "monthly",
     couponId?: number,
+    buyer: PlatformBuyer = {},
   ) {
-    const adapter = await this.deps.providers.resolveConfigured(orgId);
-    if (adapter === undefined || !adapter.isReady()) {
-      throw new ServiceUnavailableException("Payment gateway not configured. Contact support.");
-    }
+    /*
+      No provider precondition ahead of the price.
+
+      A flat "is a gateway configured" gate here is what made the registry
+      unreachable on a Stripe-only deployment: nothing could be sold and the
+      refusal blamed a gateway the buyer was never going to be charged through.
+      `forCurrency` below already refuses — naming the currency nothing can take —
+      so a second, cruder gate in front of it could only ever be wrong.
+    */
     if (!PLAN_PRICES_PAISE[plan]) throw new BadRequestException("Invalid plan");
 
-    const price = await this.billablePrice(plan, billingCycle);
+    const price = await billablePrice(this.deps.catalog, plan, billingCycle, buyer.country);
     const baseAmount = price.amount;
     let amount = baseAmount;
     let couponDiscountAmount = 0;
@@ -75,38 +89,75 @@ export class BillingPaymentActivation {
       amount = applyDiscount(baseAmount, couponDiscountAmount);
     }
 
-    const { providerOrderId } = await adapter.createOrder({
-      amount: String(amount),
+    const tax = taxFor(amount, buyer);
+
+    /*
+      The provider is chosen by the currency, not assumed, and the choice says
+      whether it was the preferred one — an INR sale settled through Stripe is
+      still a sale worth taking, but the customer's statement will show a
+      conversion and somebody has to be able to warn them.
+    */
+    const { provider, isPreferred } = this.deps.registry.forCurrency(price.currency);
+
+    const order = await provider.createOrder({
+      amount: tax.grossMinor,
       currency: price.currency,
       receipt: `sub_${orgId.slice(-8)}_${Date.now().toString().slice(-8)}`,
-      notes: { orgId, plan, userId, billingCycle },
+      // Echoed back verbatim by both providers, and the only place the terms of
+      // the sale survive the round trip through the browser.
+      notes: {
+        orgId,
+        plan,
+        userId,
+        billingCycle,
+        netMinor: String(tax.netMinor),
+        taxMinor: String(tax.taxMinor),
+        taxTreatment: tax.treatment,
+        ratesVersion: tax.inputs.ratesVersion,
+      },
     });
     return {
-      orderId: providerOrderId,
-      amount,
-      currency: price.currency,
-      keyId: adapter.publicKeyId(),
+      orderId: order.id,
+      amount: order.amount,
+      currency: order.currency,
+      keyId: provider.getPublishableKey(),
+      provider: provider.providerKey,
+      /** False means their statement will show a conversion; the UI must say so. */
+      isPreferredProvider: isPreferred,
       plan,
       billingCycle,
       discountAmount: couponDiscountAmount,
+      netMinor: tax.netMinor,
+      taxMinor: tax.taxMinor,
     };
   }
 
-  async verifyAndActivate(orgId: string, userId: string, input: ConfirmCheckoutInput) {
-    const adapter = await this.deps.providers.resolveConfigured(orgId);
-    if (adapter === undefined || !adapter.isReady()) {
-      throw new ServiceUnavailableException("Payment gateway not configured. Contact support.");
-    }
-    const valid = adapter.verifyPaymentSignature({
-      orderId: input.orderId,
-      paymentId: input.paymentId,
-      signature: input.signature,
-    });
+  async verifyAndActivate(
+    orgId: string,
+    userId: string,
+    input: ConfirmCheckoutInput,
+    buyer: PlatformBuyer = {},
+  ) {
+    const billingCycle = input.billingCycle ?? "monthly";
+    const price = await billablePrice(this.deps.catalog, input.plan, billingCycle, buyer.country);
+
+    /*
+      Verified by the provider that took the money, selected by the same rule
+      `createOrder` used. Verifying a platform charge against a tenant-held
+      secret would let an organisation that has connected its own gateway sign
+      its own subscription payments — the argument `StripePlatformWebhookService`
+      makes for the webhook half applies identically here.
+    */
+    const { provider } = this.deps.registry.forCurrency(price.currency);
+    const valid = provider.verifyPaymentSignature(input.orderId, input.paymentId, input.signature);
     if (!valid) throw new BadRequestException("Payment verification failed: invalid signature");
 
-    const billingCycle = input.billingCycle ?? "monthly";
-    const price = await this.billablePrice(input.plan, billingCycle);
-    const amount = price.amount;
+    // What was actually charged, tax included, on the same determination the
+    // order was created with — a row that records the net is a row that does not
+    // reconcile against the gateway. The coupon is a discount on the PRICE, so it
+    // is still struck against the net, exactly as `createOrder` struck it.
+    const netAmount = price.amount;
+    const amount = taxFor(netAmount, buyer).grossMinor;
     const now = new Date();
     const periodEnd = new Date(now);
     periodEnd.setMonth(periodEnd.getMonth() + (billingCycle === "annual" ? 12 : 1));
@@ -150,7 +201,7 @@ export class BillingPaymentActivation {
           status: "captured",
           paidAt: now,
         });
-        await recordCouponRedemption(tx, orgId, userId, input.couponId, amount);
+        await recordCouponRedemption(tx, orgId, userId, input.couponId, netAmount);
         if (revenue) {
           await this.deps.revenueAnalytics.emit(tx, {
             type: revenue.type,
@@ -198,29 +249,4 @@ export class BillingPaymentActivation {
     return { success: true, plan: input.plan, status: "ACTIVE" };
   }
 
-  /**
-   * What this organisation is charged, as an amount AND the currency denominating it.
-   *
-   * Both halves come from ONE source and are never mixed: the platform catalog row if the
-   * plan has one, otherwise the built-in list. They used to disagree — the amount from the
-   * INR-paise list, the currency from `accounting_settings.base_currency` — which charged a
-   * USD-books tenant $999.00 for a ₹999.00 plan and then recorded 99900 "paise" as USD.
-   *
-   * The tenant's base currency is deliberately absent: it is what the tenant keeps its own
-   * books in and has no bearing on what this vendor bills. Refusing checkout on a mismatch
-   * would be wrong for the same reason — a US company may legitimately pay an INR invoice.
-   */
-  private async billablePrice(plan: Plan, billingCycle: BillingCycle) {
-    const catalogPrice = await this.deps.catalog.getActivePriceForPlanTier(plan);
-    // MINOR UNITS of `currency` on both branches: amountMinor as the catalog declares it,
-    // PLAN_PRICES_PAISE as paise of PLATFORM_PRICE_CURRENCY.
-    const monthlyAmountMinor = catalogPrice?.amountMinor ?? PLAN_PRICES_PAISE[plan];
-    const currency = catalogPrice?.currency ?? PLATFORM_PRICE_CURRENCY;
-    return {
-      amount: billingCycle === "annual"
-        ? Math.round(monthlyAmountMinor * 12 * (1 - ANNUAL_DISCOUNT_PCT))
-        : monthlyAmountMinor,
-      currency,
-    };
-  }
 }

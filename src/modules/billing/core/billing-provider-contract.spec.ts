@@ -14,11 +14,13 @@ import { PaymentAnalyticsService } from "../payments/payment-analytics.service";
 import { BillingProfileService } from "./billing-profile.service";
 import { AiCreditsService } from "./ai-credits.service";
 import { BillingService } from "./billing.service";
+import { FakeProviderAdapter } from "../payments/testing/fake-provider-adapter";
+import { PlatformPaymentRegistry } from "./platform-payment-registry";
 import {
-  FakeProviderAdapter,
-  FAKE_VALID_PAYMENT_SIG,
-  FAKE_PROVIDER_ORDER_ID,
-} from "../payments/testing/fake-provider-adapter";
+  fakePlatformRegistry,
+  FAKE_PLATFORM_ORDER_ID,
+  FAKE_PLATFORM_PAYMENT_SIG,
+} from "./testing/fake-platform-provider";
 import { confirmCheckoutSchema } from "./dto/billing.schemas";
 
 function makeStripeProvider(): OrganizationPaymentProvider {
@@ -82,7 +84,22 @@ function makeDb() {
   };
 }
 
-async function buildService(providers: PaymentProviderResolver): Promise<BillingService> {
+/**
+ * A deployment whose only PLATFORM gateway is Stripe.
+ *
+ * The tenant-facing resolver is still supplied — the webhook direction goes
+ * through it — but a subscription sale must not, so it is deliberately left
+ * answering the Razorpay-shaped fake it always did. What the assertions below
+ * exercise is the platform side being keyed to something that is not Razorpay.
+ */
+function stripeOnlyPlatform(): PlatformPaymentRegistry {
+  return fakePlatformRegistry({ razorpay: false, stripe: true }).registry;
+}
+
+async function buildService(
+  providers: PaymentProviderResolver,
+  platform: PlatformPaymentRegistry = stripeOnlyPlatform(),
+): Promise<BillingService> {
   const module = await Test.createTestingModule({
     providers: [
       BillingService,
@@ -98,6 +115,7 @@ async function buildService(providers: PaymentProviderResolver): Promise<Billing
       { provide: ProrationLedgerService, useValue: { recordPlanChange: jest.fn().mockResolvedValue(undefined) } },
       { provide: VersionedCatalogService, useValue: { getActivePriceForPlanTier: jest.fn().mockResolvedValue(null) } },
       { provide: PaymentProviderResolver, useValue: providers },
+      { provide: PlatformPaymentRegistry, useValue: platform },
       {
         provide: ExternalEffectLedger,
         useValue: {
@@ -149,29 +167,32 @@ describe("confirmCheckoutSchema — provider-neutral contract (PRD 10.10-A)", ()
 });
 
 describe("BillingService — Stripe-ready contract (PRD 10.10-A)", () => {
-  it("a stripe-keyed adapter activates through the same verifyAndActivate without any Razorpay field in the call path", async () => {
+  it("a stripe-keyed provider activates through the same verifyAndActivate without any Razorpay field in the call path", async () => {
     const svc = await buildService(makeStripeResolver());
     const result = await svc.verifyAndActivate("org_stripe_1", "user_1", {
-      orderId: FAKE_PROVIDER_ORDER_ID,
+      orderId: FAKE_PLATFORM_ORDER_ID,
       paymentId: "pi_stripe_abc",
-      signature: FAKE_VALID_PAYMENT_SIG,
+      signature: FAKE_PLATFORM_PAYMENT_SIG,
       plan: "STARTER",
     });
     expect(result).toEqual({ success: true, plan: "STARTER", status: "ACTIVE" });
   });
 
-  it("createOrder via stripe adapter returns neutral orderId without Razorpay naming", async () => {
+  it("createOrder via a stripe-only deployment returns a neutral orderId without Razorpay naming", async () => {
     const svc = await buildService(makeStripeResolver());
     const result = await svc.createOrder("org_stripe_1", "user_1", "STARTER");
-    expect(result.orderId).toBe(FAKE_PROVIDER_ORDER_ID);
+    expect(result.orderId).toBe(FAKE_PLATFORM_ORDER_ID);
+    expect(result.provider).toBe("stripe");
+    // An INR sale settled through Stripe is a fallback, and says so.
+    expect(result.isPreferredProvider).toBe(false);
     expect(result).not.toHaveProperty("razorpay_order_id");
     expect(result).not.toHaveProperty("razorpayOrderId");
   });
 
-  it("wrong signature from a stripe adapter throws BadRequestException without any Razorpay-specific path", async () => {
+  it("wrong signature from a stripe-keyed provider throws BadRequestException without any Razorpay-specific path", async () => {
     const svc = await buildService(makeStripeResolver());
     await expect(svc.verifyAndActivate("org_stripe_1", "user_1", {
-      orderId: FAKE_PROVIDER_ORDER_ID,
+      orderId: FAKE_PLATFORM_ORDER_ID,
       paymentId: "pi_stripe_abc",
       signature: "invalid-stripe-signature",
       plan: "STARTER",

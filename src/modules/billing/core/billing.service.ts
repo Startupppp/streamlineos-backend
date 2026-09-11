@@ -12,6 +12,7 @@ import { PlanLimitsService } from "./plan-limits.service";
 import { ProrationLedgerService } from "./proration-ledger.service";
 import { VersionedCatalogService } from "./versioned-catalog.service";
 import { RevenueAnalyticsService } from "./revenue-analytics.service";
+import { PlatformPaymentRegistry } from "./platform-payment-registry";
 import { PaymentProviderResolver } from "../payments/payment-provider-resolver.service";
 import { PaymentWebhookReceiverService } from "../payments/payment-webhook-receiver.service";
 import { PaymentAnalyticsService } from "../payments/payment-analytics.service";
@@ -34,6 +35,7 @@ import { BillingProfileService } from "./billing-profile.service";
 import { BillingMarketplace } from "./billing-marketplace";
 import { BillingAccountOverview } from "./billing-account-overview";
 import { BillingPaymentActivation } from "./billing-payment-activation";
+import { type PlatformBuyer } from "./billing-platform-pricing";
 
 @Injectable()
 export class BillingService {
@@ -46,6 +48,12 @@ export class BillingService {
     private readonly catalog: VersionedCatalogService,
     private readonly revenueAnalytics: RevenueAnalyticsService,
     private readonly providers: PaymentProviderResolver,
+    /**
+     * The platform's own gateways — us charging a tenant for their subscription,
+     * as opposed to `providers`, which is a tenant charging its own customers.
+     * The two directions share no credential.
+     */
+    private readonly platformProviders: PlatformPaymentRegistry,
     private readonly externalEffectLedger: ExternalEffectLedger,
     private readonly paymentWebhooks: PaymentWebhookReceiverService,
     private readonly paymentNotices: PaymentAnalyticsService,
@@ -59,7 +67,7 @@ export class BillingService {
       prorationLedger: this.prorationLedger,
       catalog: this.catalog,
       revenueAnalytics: this.revenueAnalytics,
-      providers: this.providers,
+      registry: this.platformProviders,
       externalEffectLedger: this.externalEffectLedger,
     });
     this.couponAdmin = new BillingCoupons(this.db);
@@ -103,7 +111,29 @@ export class BillingService {
     return {
       subscription: subscription ?? null,
       publicKeyId: adapter?.publicKeyId() ?? null,
-      isConfigured: adapter?.isReady() ?? false,
+      /*
+        "Can this deployment take money at all", not "has this tenant connected a
+        gateway of their own". The frontend disables every upgrade button on this
+        flag, and answering it from the tenant's own `payment_providers` row left a
+        deployment that can perfectly well sell unable to — the same unreachability
+        `createOrder` had, one screen earlier.
+      */
+      isConfigured: Object.values(this.platformProviders.available()).some(Boolean),
+    };
+  }
+
+  /**
+   * Where the organisation bills from, for the currency it is quoted and the tax
+   * applied to it. Read once per sale and handed to both halves, so the charge and
+   * the record of the charge cannot disagree.
+   */
+  private async platformBuyer(orgId: string): Promise<PlatformBuyer> {
+    const profile = await this.billingProfile.get(orgId);
+    return {
+      country: profile?.country,
+      state: profile?.state,
+      taxId: profile?.gstin,
+      isExempt: profile?.isTaxExempt ?? false,
     };
   }
 
@@ -114,7 +144,14 @@ export class BillingService {
     billingCycle: BillingCycle = "monthly",
     couponId?: number,
   ) {
-    return this.paymentActivation.createOrder(orgId, userId, plan, billingCycle, couponId);
+    return this.paymentActivation.createOrder(
+      orgId,
+      userId,
+      plan,
+      billingCycle,
+      couponId,
+      await this.platformBuyer(orgId),
+    );
   }
 
   async verifyAndActivate(
@@ -122,7 +159,12 @@ export class BillingService {
     userId: string,
     input: ConfirmCheckoutInput,
   ) {
-    return this.paymentActivation.verifyAndActivate(orgId, userId, input);
+    return this.paymentActivation.verifyAndActivate(
+      orgId,
+      userId,
+      input,
+      await this.platformBuyer(orgId),
+    );
   }
 
   validateCoupon(code: string, orgId: string, plan: Plan) {

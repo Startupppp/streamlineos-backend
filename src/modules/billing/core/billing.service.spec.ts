@@ -1,4 +1,5 @@
 import { BadRequestException, ConflictException, ServiceUnavailableException } from "@nestjs/common";
+import { PaymentRequiredException } from "../../../common/http/api-exceptions";
 import { Test } from "@nestjs/testing";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { outboxEvents, subscriptionPayments, subscriptions, couponRedemptions } from "../../../db/schema";
@@ -18,18 +19,28 @@ import { PaymentAnalyticsService } from "../payments/payment-analytics.service";
 import { BillingProfileService } from "./billing-profile.service";
 import { PLAN_PRICES_PAISE } from "./plan-entitlements.constants";
 import { COUPON_EXHAUSTED, COUPON_EXPIRED, COUPON_WRONG_PLAN } from "./coupon-pricing";
+import { determineTax } from "./tax/tax-determination";
 import {
   FakeProviderAdapter,
-  FAKE_VALID_PAYMENT_SIG,
-  FAKE_PROVIDER_ORDER_ID,
   FAKE_PUBLIC_KEY_ID,
 } from "../payments/testing/fake-provider-adapter";
+import { PlatformPaymentRegistry } from "./platform-payment-registry";
+import {
+  fakePlatformRegistry,
+  FAKE_PLATFORM_ORDER_ID,
+  FAKE_PLATFORM_PAYMENT_SIG,
+  FAKE_PLATFORM_PUBLIC_KEY,
+  type FakePlatformRegistry,
+} from "./testing/fake-platform-provider";
 import { drizzlePostgresError, drizzleUniqueViolation } from "../../../test/postgres-error-fixture";
 
 const VALID_INPUT = {
   orderId: "order_test_1",
   paymentId: "pay_test_abc123",
-  signature: FAKE_VALID_PAYMENT_SIG,
+  // The PLATFORM gateway signs a subscription charge. `PaymentProviderResolver`
+  // is the tenant's own gateway charging the tenant's customers, and its
+  // signature constant no longer applies to this direction of travel.
+  signature: FAKE_PLATFORM_PAYMENT_SIG,
   plan: "STARTER" as const,
 };
 
@@ -48,6 +59,20 @@ function makeProvider(withAdapter = true, providerKey = "razorpay"): Organizatio
     verifyWebhookSignature: (params) => adapter.verifyWebhookSignature({ ...params, webhookSecret: "fake-webhook-secret-at-least-32chars" }),
     normalizeWebhook: (rawBody) => adapter.normalizeWebhook(rawBody),
   };
+}
+
+/**
+ * What a buyer who has told us nothing about themselves is charged: the ₹ price
+ * plus domestic GST. `subscription_payments.amount_paise` records the gross,
+ * because that is what the gateway took.
+ */
+function grossInr(netMinor: number): number {
+  return determineTax(netMinor, { country: "IN" }).grossMinor;
+}
+
+/** A deployment where the platform itself holds no gateway credentials at all. */
+function noPlatformGateway(): FakePlatformRegistry {
+  return fakePlatformRegistry({ razorpay: false, stripe: false });
 }
 
 function makeResolver(withAdapter = true, providerKey = "razorpay") {
@@ -162,6 +187,7 @@ async function buildService(
   db: unknown,
   providers: PaymentProviderResolver,
   aiCredits?: Record<string, jest.Mock>,
+  platform: PlatformPaymentRegistry = fakePlatformRegistry().registry,
 ): Promise<BillingService> {
   const module = await Test.createTestingModule({
     providers: [
@@ -183,6 +209,7 @@ async function buildService(
 
       { provide: VersionedCatalogService, useValue: { getActivePriceForPlanTier: jest.fn().mockResolvedValue(null) } },
       { provide: PaymentProviderResolver, useValue: providers },
+      { provide: PlatformPaymentRegistry, useValue: platform },
       {
         provide: ExternalEffectLedger,
         useValue: {
@@ -241,15 +268,15 @@ describe("BillingService.verifyAndActivate — goes through the registry", () =>
     expect(db.transaction).not.toHaveBeenCalled();
   });
 
-  it("no configured provider — throws ServiceUnavailableException before any DB write", async () => {
+  it("no platform gateway — refuses by currency before any DB write", async () => {
     const db = makeDb();
-    const svc = await buildService(db, makeResolver(false));
-    await expect(svc.verifyAndActivate("org1", "user1", VALID_INPUT)).rejects.toBeInstanceOf(ServiceUnavailableException);
+    const svc = await buildService(db, makeResolver(false), undefined, noPlatformGateway().registry);
+    await expect(svc.verifyAndActivate("org1", "user1", VALID_INPUT)).rejects.toBeInstanceOf(PaymentRequiredException);
     expect(db.transaction).not.toHaveBeenCalled();
   });
 
-  it("no configured provider — error message does not leak key or secret", async () => {
-    const svc = await buildService(makeDb(), makeResolver(false));
+  it("no platform gateway — error message does not leak key or secret", async () => {
+    const svc = await buildService(makeDb(), makeResolver(false), undefined, noPlatformGateway().registry);
     const error = await svc.verifyAndActivate("org1", "user1", VALID_INPUT).catch((e: unknown) => e);
     const message = (error as { message?: string }).message ?? "";
     expect(message).not.toContain("fake-private");
@@ -258,22 +285,10 @@ describe("BillingService.verifyAndActivate — goes through the registry", () =>
 
   it("provider network failure on createOrder propagates without writing to the DB", async () => {
     const networkError = new Error("ECONNRESET");
-    const failingProvider: OrganizationPaymentProvider = {
-      providerKey: "razorpay",
-      environment: "test",
-      isReady: () => true,
-      publicKeyId: () => FAKE_PUBLIC_KEY_ID,
-      createOrder: jest.fn().mockRejectedValue(networkError),
-      verifyPaymentSignature: () => false,
-      verifyWebhookSignature: () => false,
-      normalizeWebhook: () => ({ ok: false, error: "invalid_json" as const }),
-    };
-    const resolver = {
-      resolve: jest.fn().mockResolvedValue(failingProvider),
-      resolveConfigured: jest.fn().mockResolvedValue(failingProvider),
-    } as unknown as PaymentProviderResolver;
+    const platform = fakePlatformRegistry();
+    jest.spyOn(platform.razorpay, "createOrder").mockRejectedValue(networkError);
     const db = makeDb();
-    const svc = await buildService(db, resolver);
+    const svc = await buildService(db, makeResolver(), undefined, platform.registry);
 
     await expect(svc.createOrder("org1", "user1", "STARTER")).rejects.toThrow("ECONNRESET");
     expect(db.transaction).not.toHaveBeenCalled();
@@ -397,8 +412,8 @@ describe("BillingService.createOrder — goes through the registry", () => {
   it("configured adapter — creates an order and returns providerOrderId and publicKeyId", async () => {
     const svc = await buildService(makeDb(), makeResolver());
     const result = await svc.createOrder("org1", "user1", "STARTER");
-    expect(result.orderId).toBe(FAKE_PROVIDER_ORDER_ID);
-    expect(result.keyId).toBe(FAKE_PUBLIC_KEY_ID);
+    expect(result.orderId).toBe(FAKE_PLATFORM_ORDER_ID);
+    expect(result.keyId).toBe(FAKE_PLATFORM_PUBLIC_KEY);
     expect(result.plan).toBe("STARTER");
     expect(result.billingCycle).toBe("monthly");
     expect(result.currency).toBe("INR");
@@ -408,16 +423,20 @@ describe("BillingService.createOrder — goes through the registry", () => {
     const svc = await buildService(makeDb(), makeResolver());
     const result = await svc.createOrder("org1", "user1", "STARTER", "annual");
     expect(result.billingCycle).toBe("annual");
-    expect(result.amount).toBe(Math.round(PLAN_PRICES_PAISE.STARTER * 12 * 0.8));
+    // `amount` is the gross the gateway is asked for; `netMinor` is the price the
+    // discount was applied to, which is what this test is about.
+    expect(result.netMinor).toBe(Math.round(PLAN_PRICES_PAISE.STARTER * 12 * 0.8));
   });
 
-  it("no configured provider — throws ServiceUnavailableException", async () => {
-    const svc = await buildService(makeDb(), makeResolver(false));
-    await expect(svc.createOrder("org1", "user1", "STARTER")).rejects.toBeInstanceOf(ServiceUnavailableException);
+  it("no platform gateway — refuses with the currency nothing can charge", async () => {
+    const svc = await buildService(makeDb(), makeResolver(false), undefined, noPlatformGateway().registry);
+    const error = await svc.createOrder("org1", "user1", "STARTER").catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(PaymentRequiredException);
+    expect((error as { message?: string }).message).toContain("INR");
   });
 
-  it("no configured provider — error message does not contain key or secret", async () => {
-    const svc = await buildService(makeDb(), makeResolver(false));
+  it("no platform gateway — error message does not contain key or secret", async () => {
+    const svc = await buildService(makeDb(), makeResolver(false), undefined, noPlatformGateway().registry);
     const error = await svc.createOrder("org1", "user1", "STARTER").catch((e: unknown) => e);
     const message = (error as { message?: string }).message ?? "";
     expect(message).not.toContain("fake-private");
@@ -433,7 +452,7 @@ describe("c17-03 — the checkout prices a coupon under the rules redemption enf
     const result = await svc.createOrder("org1", "user1", "STARTER", "monthly", 42);
 
     expect(result.discountAmount).toBe(10_000);
-    expect(result.amount).toBe(PLAN_PRICES_PAISE.STARTER - 10_000);
+    expect(result.netMinor).toBe(PLAN_PRICES_PAISE.STARTER - 10_000);
   });
 
   it("refuses an exhausted coupon instead of discounting an order redemption will reject", async () => {
@@ -580,9 +599,9 @@ describe("BillingService.getSubscription — reads through the adapter", () => {
     expect(result.publicKeyId).toBe(FAKE_PUBLIC_KEY_ID);
   });
 
-  it("no adapter — returns isConfigured false and null key id", async () => {
+  it("no platform gateway — returns isConfigured false and null key id", async () => {
     const db = { query: { subscriptions: { findFirst: jest.fn().mockResolvedValue(null) } } };
-    const svc = await buildService(db, makeResolver(false));
+    const svc = await buildService(db, makeResolver(false), undefined, noPlatformGateway().registry);
     const result = await svc.getSubscription("org1");
     expect(result.isConfigured).toBe(false);
     expect(result.publicKeyId).toBeNull();
@@ -612,7 +631,7 @@ describe("billing-cycle — annual and monthly purchases are recorded correctly"
 
     const paymentInsert = db._store.allInserts.find((i) => i.table === subscriptionPayments);
     const annualPaise = Math.round(PLAN_PRICES_PAISE.STARTER * 12 * (1 - ANNUAL_DISCOUNT_PCT));
-    expect(paymentInsert?.values.amountPaise).toBe(annualPaise);
+    expect(paymentInsert?.values.amountPaise).toBe(grossInr(annualPaise));
   });
 
   it("annual purchase sets currentPeriodEnd twelve months out", async () => {
@@ -637,7 +656,7 @@ describe("billing-cycle — annual and monthly purchases are recorded correctly"
     await svc.verifyAndActivate("org1", "user1", { ...VALID_INPUT, billingCycle: "monthly" });
 
     const paymentInsert = db._store.allInserts.find((i) => i.table === subscriptionPayments);
-    expect(paymentInsert?.values.amountPaise).toBe(PLAN_PRICES_PAISE.STARTER);
+    expect(paymentInsert?.values.amountPaise).toBe(grossInr(PLAN_PRICES_PAISE.STARTER));
 
     const subInsert = db._store.allInserts.find((i) => i.table === subscriptions);
     const periodEnd = subInsert?.values.currentPeriodEnd as Date;
@@ -653,7 +672,7 @@ describe("billing-cycle — annual and monthly purchases are recorded correctly"
     await svc.verifyAndActivate("org1", "user1", VALID_INPUT);
 
     const paymentInsert = db._store.allInserts.find((i) => i.table === subscriptionPayments);
-    expect(paymentInsert?.values.amountPaise).toBe(PLAN_PRICES_PAISE.STARTER);
+    expect(paymentInsert?.values.amountPaise).toBe(grossInr(PLAN_PRICES_PAISE.STARTER));
   });
 
   it("coupon on annual purchase records the discount actually applied, not null", async () => {
@@ -691,19 +710,19 @@ describe("billing-cycle — annual and monthly purchases are recorded correctly"
 });
 
 describe("BillingService — provider-substitution seam proof", () => {
-  it("'razorpay' fake produces a successful order with its provider identifier", async () => {
-    const adapter = new FakeProviderAdapter();
-    const svc = await buildService(makeDb(), makeResolver(true, adapter.providerKey));
+  it("'razorpay' platform gateway produces a successful order with its provider identifier", async () => {
+    const svc = await buildService(makeDb(), makeResolver(), undefined, fakePlatformRegistry().registry);
     const result = await svc.createOrder("org1", "user1", "STARTER");
-    expect(result.orderId).toBe(FAKE_PROVIDER_ORDER_ID);
-    expect(adapter.providerKey).toBe("razorpay");
+    expect(result.orderId).toBe(FAKE_PLATFORM_ORDER_ID);
+    expect(result.provider).toBe("razorpay");
+    expect(result.isPreferredProvider).toBe(true);
   });
 
-  it("'stripe' fake produces the same domain outcome with a different provider identifier", async () => {
-    const adapter = new FakeProviderAdapter("stripe");
-    const svc = await buildService(makeDb(), makeResolver(true, adapter.providerKey));
+  it("'stripe' platform gateway produces the same domain outcome with a different provider identifier", async () => {
+    const platform = fakePlatformRegistry({ razorpay: false, stripe: true }).registry;
+    const svc = await buildService(makeDb(), makeResolver(), undefined, platform);
     const result = await svc.createOrder("org1", "user1", "STARTER");
-    expect(result.orderId).toBe(FAKE_PROVIDER_ORDER_ID);
-    expect(adapter.providerKey).toBe("stripe");
+    expect(result.orderId).toBe(FAKE_PLATFORM_ORDER_ID);
+    expect(result.provider).toBe("stripe");
   });
 });

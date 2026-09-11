@@ -65,12 +65,24 @@ export const marketplaceOverviewResponseSchema = z.object({
 
 export const checkoutResponseSchema = z.object({
   orderId: z.string(),
+  /** Minor units of `currency`, tax included — what the gateway is asked to take. */
   amount: z.number().int(),
   currency: z.string(),
   keyId: z.string(),
+  /** Which platform gateway holds the order, so a refund years later goes back to it. */
+  provider: z.string(),
+  /**
+   * False when the currency's preferred gateway was unavailable. The buyer's
+   * statement will show a conversion and the screen has to say so, which it can
+   * only do if the flag survives the wire.
+   */
+  isPreferredProvider: z.boolean(),
   plan: z.string(),
   billingCycle: z.string(),
   discountAmount: z.number().int(),
+  /** `amount` split into the price and the tax determined on it. */
+  netMinor: z.number().int(),
+  taxMinor: z.number().int(),
 });
 
 export const verifyActivateResponseSchema = z.object({

@@ -19,6 +19,8 @@ import { VersionedCatalogService } from "./versioned-catalog.service";
 import { RevenueAnalyticsService } from "./revenue-analytics.service";
 import { OutboxConsumerRegistry } from "../../../common/outbox/outbox-consumer.registry";
 import { PaymentProviderResolver, type OrganizationPaymentProvider } from "../payments/payment-provider-resolver.service";
+import { PlatformPaymentRegistry } from "./platform-payment-registry";
+import { fakePlatformRegistry } from "./testing/fake-platform-provider";
 import { PaymentWebhookReceiverService } from "../payments/payment-webhook-receiver.service";
 import { PaymentAnalyticsService } from "../payments/payment-analytics.service";
 import { ExternalEffectLedger, ExternalEffectLeaseBusyError } from "../../../common/outbox/external-effect-ledger";
@@ -307,6 +309,7 @@ async function buildHarness(options: {
 
       { provide: VersionedCatalogService, useValue: { getActivePriceForPlanTier: jest.fn().mockResolvedValue(null) } },
       { provide: PaymentProviderResolver, useValue: options.providers ?? makeResolver(new FakeProviderAdapter()) },
+      { provide: PlatformPaymentRegistry, useValue: fakePlatformRegistry().registry },
       { provide: ExternalEffectLedger, useValue: ledger },
       { provide: PaymentWebhookReceiverService, useValue: webhookHealth },
       { provide: PaymentAnalyticsService, useValue: notices },

@@ -1,4 +1,4 @@
-import { Injectable } from "@nestjs/common";
+import { Inject, Injectable } from "@nestjs/common";
 import { PaymentRequiredException } from "../../../common/http/api-exceptions";
 import type { PlatformPaymentProvider } from "./platform-payment-provider";
 import { RazorpayService } from "./razorpay.service";
@@ -34,7 +34,18 @@ export interface ResolvedProvider {
 export class PlatformPaymentRegistry {
   private readonly byKey: Readonly<Record<ProviderKey, PlatformPaymentProvider>>;
 
-  constructor(razorpay: RazorpayService, stripe: StripeService) {
+  /*
+    Typed to the interface, bound to the implementations.
+
+    The tokens have to name the concrete services -- that is what a composition
+    root is for -- but nothing in here uses anything beyond
+    `PlatformPaymentProvider`, and saying so is what lets the selection rule be
+    exercised over a stand-in provider instead of re-implemented beside it.
+  */
+  constructor(
+    @Inject(RazorpayService) razorpay: PlatformPaymentProvider,
+    @Inject(StripeService) stripe: PlatformPaymentProvider,
+  ) {
     this.byKey = { razorpay, stripe };
   }
 

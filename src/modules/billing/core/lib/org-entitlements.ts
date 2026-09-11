@@ -1,5 +1,5 @@
 import { ConflictException } from "@nestjs/common";
-import { and, eq, isNull, lte, or, sql } from "drizzle-orm";
+import { and, eq, gt, isNull, lte, or, sql } from "drizzle-orm";
 import type { Db } from "../../../../db/drizzle.module";
 import { CacheService } from "../../../../common/cache/cache.service";
 import {
@@ -69,7 +69,7 @@ async function fetchOrgEntitlements(
             lte(orgEntitlementOverrides.effectiveFrom, now),
             or(
               isNull(orgEntitlementOverrides.effectiveUntil),
-              sql`${orgEntitlementOverrides.effectiveUntil} > ${now}`,
+              gt(orgEntitlementOverrides.effectiveUntil, now),
             ),
           ),
         )
@@ -176,7 +176,7 @@ export async function listPlanEntitlements(
         lte(billingPlanEntitlements.effectiveFrom, now),
         or(
           isNull(billingPlanEntitlements.effectiveUntil),
-          sql`${billingPlanEntitlements.effectiveUntil} > ${now}`,
+          gt(billingPlanEntitlements.effectiveUntil, now),
         ),
       ),
     )

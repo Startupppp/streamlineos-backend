@@ -8,12 +8,11 @@ import {
   PaymentProviderResolver,
   type OrganizationPaymentProvider,
 } from "../payments/payment-provider-resolver.service";
+import { PlatformPaymentRegistry } from "./platform-payment-registry";
+import { fakePlatformRegistry, FAKE_PLATFORM_PAYMENT_SIG } from "./testing/fake-platform-provider";
 import { PaymentAnalyticsService } from "../payments/payment-analytics.service";
 import { PaymentWebhookReceiverService } from "../payments/payment-webhook-receiver.service";
-import {
-  FakeProviderAdapter,
-  FAKE_VALID_PAYMENT_SIG,
-} from "../payments/testing/fake-provider-adapter";
+import { FakeProviderAdapter } from "../payments/testing/fake-provider-adapter";
 import { AiCreditsService } from "./ai-credits.service";
 import { BillingProfileService } from "./billing-profile.service";
 import { BillingService } from "./billing.service";
@@ -29,7 +28,9 @@ const PERIOD_END = new Date(NOW.getTime() + 20 * 24 * 60 * 60 * 1000);
 const UPGRADE_INPUT = {
   orderId: "order_test_1",
   paymentId: "pay_test_abc123",
-  signature: FAKE_VALID_PAYMENT_SIG,
+  // The PLATFORM gateway signs a subscription charge; the tenant-facing adapter
+  // signs the other direction of travel and its constant no longer applies here.
+  signature: FAKE_PLATFORM_PAYMENT_SIG,
   plan: "PROFESSIONAL" as const,
 };
 
@@ -148,6 +149,7 @@ async function buildService(options: {
         },
       },
       { provide: PaymentProviderResolver, useValue: makeResolver() },
+      { provide: PlatformPaymentRegistry, useValue: fakePlatformRegistry().registry },
       {
         provide: ExternalEffectLedger,
         useValue: {

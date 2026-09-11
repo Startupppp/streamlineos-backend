@@ -26,26 +26,38 @@
  * Hermetic on purpose — the defect is which JS expression supplies which field, and a real
  * Postgres would add nothing.
  */
-import { ConflictException, ServiceUnavailableException } from "@nestjs/common";
+import { ConflictException } from "@nestjs/common";
+import { PaymentRequiredException } from "../../../common/http/api-exceptions";
 import type { Db } from "../../../db/drizzle.module";
 import { BillingPaymentActivation, type BillingPaymentActivationDeps } from "./billing-payment-activation";
 import { BillingMarketplace } from "./billing-marketplace";
 import { planSchema } from "./dto/billing.schemas";
 import { AiCreditsService } from "./ai-credits.service";
 import { PaymentProviderResolver, type OrganizationPaymentProvider } from "../payments/payment-provider-resolver.service";
+import {
+  FAKE_PLATFORM_PAYMENT_SIG,
+  fakePlatformRegistry,
+  type FakePlatformProvider,
+} from "./testing/fake-platform-provider";
 import { VersionedCatalogService } from "./versioned-catalog.service";
 import { ANNUAL_DISCOUNT_PCT, PLAN_PRICES_PAISE, PLATFORM_PRICE_CURRENCY } from "./plan-entitlements.constants";
 import { FAKE_PROVIDER_ORDER_ID, FAKE_PUBLIC_KEY_ID } from "../payments/testing/fake-provider-adapter";
+import { determineTax } from "./tax/tax-determination";
 
-interface GatewayOrder {
-  amount: string;
-  currency: string;
-  receipt: string;
-  notes?: Record<string, string>;
+/**
+ * Captures exactly what would reach the PLATFORM's gateway — the money that
+ * actually moves when we bill a tenant for their subscription.
+ *
+ * The registry is real; only the HTTP call behind it is not. `created` is the
+ * list of orders the provider was asked for, in order.
+ */
+function makeRegistry(): { registry: ReturnType<typeof fakePlatformRegistry>["registry"]; sent: FakePlatformProvider["created"] } {
+  const fake = fakePlatformRegistry();
+  return { registry: fake.registry, sent: fake.razorpay.created };
 }
 
-/** Captures exactly what would reach the payment gateway — the money that actually moves. */
-function makeProvider(sent: GatewayOrder[]): PaymentProviderResolver {
+/** The tenant-facing resolver, which the addon path still goes through. */
+function makeProvider(sent: Array<{ amount: string; currency: string; receipt: string; notes?: Record<string, string> }>): PaymentProviderResolver {
   const provider: OrganizationPaymentProvider = {
     providerKey: "razorpay",
     environment: "test",
@@ -85,9 +97,9 @@ function makeCatalog(price: { amountMinor: number; currency: string } | null): V
 
 function makeActivation(
   overrides: { baseCurrency?: string; catalogPrice?: { amountMinor: number; currency: string } | null },
-  sent: GatewayOrder[],
 ) {
   const { db, select } = makeAccountingDb(overrides.baseCurrency ?? "INR");
+  const { registry, sent } = makeRegistry();
   const deps = {
     db,
     audit: { log: jest.fn() },
@@ -96,29 +108,40 @@ function makeActivation(
     prorationLedger: { recordPlanChange: jest.fn() },
     catalog: makeCatalog(overrides.catalogPrice ?? null),
     revenueAnalytics: { emit: jest.fn() },
-    providers: makeProvider(sent),
+    registry,
     externalEffectLedger: { execute: jest.fn() },
   } as unknown as BillingPaymentActivationDeps;
-  return { activation: new BillingPaymentActivation(deps), accountingSelect: select };
+  return { activation: new BillingPaymentActivation(deps), accountingSelect: select, sent };
+}
+
+/** ₹ net plus the domestic GST a buyer who has told us nothing is charged. */
+function grossInr(netMinor: number): number {
+  return determineTax(netMinor, { country: "IN" }).grossMinor;
 }
 
 describe("billing checkout — the amount and its currency come from one source", () => {
+  /*
+    The charge is the gross, so `netMinor` is the half these assertions are about:
+    it is the priced amount, and `amount` is that amount plus the tax determined
+    on it. Reading the pair off `netMinor`/`currency` keeps the question the same
+    one — which expression supplied which field — now that a second, correct
+    expression contributes to what is sent.
+  */
   it("a USD-books tenant is still charged the platform's INR price, not $999", async () => {
-    const sent: GatewayOrder[] = [];
-    const { activation } = makeActivation({ baseCurrency: "USD" }, sent);
+    const { activation, sent } = makeActivation({ baseCurrency: "USD" });
 
     const order = await activation.createOrder("org1", "user1", "STARTER");
 
     // 99900 is MINOR UNITS of INR (paise) — ₹999.00. Labelling it USD charges $999.00.
     expect(sent).toHaveLength(1);
-    expect(sent[0].amount).toBe(String(PLAN_PRICES_PAISE.STARTER));
+    expect(order.netMinor).toBe(PLAN_PRICES_PAISE.STARTER);
+    expect(sent[0].amount).toBe(order.netMinor + order.taxMinor);
     expect(sent[0].currency).toBe("INR");
     expect(order.currency).toBe("INR");
   });
 
   it("the org's accounting base currency is never read on the checkout path at all", async () => {
-    const sent: GatewayOrder[] = [];
-    const { activation, accountingSelect } = makeActivation({ baseCurrency: "KWD" }, sent);
+    const { activation, accountingSelect } = makeActivation({ baseCurrency: "KWD" });
 
     await activation.createOrder("org1", "user1", "PROFESSIONAL");
 
@@ -126,32 +149,30 @@ describe("billing checkout — the amount and its currency come from one source"
   });
 
   it("when the platform catalog prices a plan, BOTH halves come from that row", async () => {
-    const sent: GatewayOrder[] = [];
     // A USD-denominated catalog price; the tenant keeps INR books. The pair must stay USD.
-    const { activation } = makeActivation(
-      { baseCurrency: "INR", catalogPrice: { amountMinor: 4999, currency: "USD" } },
-      sent,
-    );
+    const { activation, sent } = makeActivation({
+      baseCurrency: "INR",
+      catalogPrice: { amountMinor: 4999, currency: "USD" },
+    });
 
     const order = await activation.createOrder("org1", "user1", "STARTER");
 
     // 4999 is MINOR UNITS of USD (cents) — $49.99. Labelling it INR charges ₹49.99.
-    expect(sent[0]).toMatchObject({ amount: "4999", currency: "USD" });
-    expect(order.amount).toBe(4999);
+    expect(sent[0]).toMatchObject({ currency: "USD" });
+    expect(order.netMinor).toBe(4999);
     expect(order.currency).toBe("USD");
   });
 
   it("the annual discount scales the catalog amount and keeps the catalog currency", async () => {
-    const sent: GatewayOrder[] = [];
-    const { activation } = makeActivation(
-      { baseCurrency: "JPY", catalogPrice: { amountMinor: 4999, currency: "USD" } },
-      sent,
-    );
+    const { activation } = makeActivation({
+      baseCurrency: "JPY",
+      catalogPrice: { amountMinor: 4999, currency: "USD" },
+    });
 
     const order = await activation.createOrder("org1", "user1", "STARTER", "annual");
 
     // minor units of USD, discounted across 12 months
-    expect(order.amount).toBe(Math.round(4999 * 12 * (1 - ANNUAL_DISCOUNT_PCT)));
+    expect(order.netMinor).toBe(Math.round(4999 * 12 * (1 - ANNUAL_DISCOUNT_PCT)));
     expect(order.currency).toBe("USD");
   });
 
@@ -161,7 +182,7 @@ describe("billing checkout — the amount and its currency come from one source"
 });
 
 describe("addon purchase — priceInPaise is paired with INR", () => {
-  function makeMarketplace(sent: GatewayOrder[]) {
+  function makeMarketplace(sent: Array<{ amount: string; currency: string; receipt: string }>) {
     const aiCredits = {
       listPacks: jest.fn().mockResolvedValue([{ id: 7, name: "Pack", credits: 1000, priceInPaise: 49900 }]),
     } as unknown as AiCreditsService;
@@ -169,7 +190,7 @@ describe("addon purchase — priceInPaise is paired with INR", () => {
   }
 
   it("labels priceInPaise INR whatever the buyer's books say", async () => {
-    const sent: GatewayOrder[] = [];
+    const sent: Array<{ amount: string; currency: string; receipt: string }> = [];
     const result = await makeMarketplace(sent).purchaseAddon("org1", "ai_pack_7", 2);
 
     // 49900 paise x 2 = ₹998.00. There is no non-INR reading of a column named price_in_paise.
@@ -185,7 +206,6 @@ describe("addon purchase — priceInPaise is paired with INR", () => {
 
 describe("activation — the payment row records the currency that was charged", () => {
   it("stamps subscription_payments with the price currency, not the tenant's base currency", async () => {
-    const sent: GatewayOrder[] = [];
     const inserted: Array<Record<string, unknown>> = [];
     const tx = {
       query: { subscriptions: { findFirst: jest.fn().mockResolvedValue(null) } },
@@ -217,7 +237,7 @@ describe("activation — the payment row records the currency that was charged",
       prorationLedger: { recordPlanChange: jest.fn() },
       catalog: makeCatalog(null),
       revenueAnalytics: { emit: jest.fn() },
-      providers: makeProvider(sent),
+      registry: makeRegistry().registry,
       externalEffectLedger: { execute: jest.fn() },
     } as unknown as BillingPaymentActivationDeps;
 
@@ -225,13 +245,14 @@ describe("activation — the payment row records the currency that was charged",
       plan: "STARTER",
       orderId: "order_1",
       paymentId: "pay_1",
-      signature: "sig",
+      signature: FAKE_PLATFORM_PAYMENT_SIG,
     });
 
     const payment = inserted.find((row) => "amountPaise" in row);
     expect(payment).toBeDefined();
-    // amountPaise is MINOR UNITS; the currency stamped beside it must denominate those units.
-    expect(payment?.amountPaise).toBe(PLAN_PRICES_PAISE.STARTER);
+    // amountPaise is MINOR UNITS; the currency stamped beside it must denominate those
+    // units. It records the gross, which is what the gateway actually took.
+    expect(payment?.amountPaise).toBe(grossInr(PLAN_PRICES_PAISE.STARTER));
     expect(payment?.currency).toBe("INR");
   });
 });
@@ -239,27 +260,36 @@ describe("activation — the payment row records the currency that was charged",
 describe("checkout guards that must survive the change", () => {
   it("every purchasable plan is denominated in the platform's currency", async () => {
     for (const plan of planSchema.options) {
-      const sent: GatewayOrder[] = [];
-      const { activation } = makeActivation({ baseCurrency: "USD" }, sent);
+      const { activation, sent } = makeActivation({ baseCurrency: "USD" });
       const order = await activation.createOrder("org1", "user1", plan);
 
       expect(order.currency).toBe(PLATFORM_PRICE_CURRENCY);
-      expect(order.amount).toBe(PLAN_PRICES_PAISE[plan]);
+      expect(order.netMinor).toBe(PLAN_PRICES_PAISE[plan]);
       expect(sent[0].currency).toBe(PLATFORM_PRICE_CURRENCY);
     }
   });
 
-  it("an unconfigured gateway is still refused before any price is computed", async () => {
-    const sent: GatewayOrder[] = [];
+  /*
+    The refusal names the currency, not a gateway.
+
+    This used to assert a `ServiceUnavailableException` thrown ahead of the price
+    — which is exactly the precondition that made the registry unreachable on a
+    deployment configured for the other provider. The refusal has to know the
+    currency to be able to say nothing can charge it, so it necessarily comes
+    after the price; what matters is that nothing reaches a gateway.
+  */
+  it("a deployment with no platform gateway is refused, by currency", async () => {
+    const fake = fakePlatformRegistry({ razorpay: false, stripe: false });
     const deps = {
       catalog: makeCatalog(null),
-      providers: { resolveConfigured: jest.fn().mockResolvedValue(undefined) },
+      registry: fake.registry,
     } as unknown as BillingPaymentActivationDeps;
 
     await expect(
       new BillingPaymentActivation(deps).createOrder("org1", "user1", "STARTER"),
-    ).rejects.toBeInstanceOf(ServiceUnavailableException);
-    expect(sent).toHaveLength(0);
+    ).rejects.toBeInstanceOf(PaymentRequiredException);
+    expect(fake.razorpay.created).toHaveLength(0);
+    expect(fake.stripe.created).toHaveLength(0);
   });
 
   it("the coupon-collision path still maps to a 409, not a 500", async () => {
@@ -278,7 +308,7 @@ describe("checkout guards that must survive the change", () => {
       prorationLedger: { recordPlanChange: jest.fn() },
       catalog: makeCatalog(null),
       revenueAnalytics: { emit: jest.fn() },
-      providers: makeProvider([]),
+      registry: makeRegistry().registry,
       externalEffectLedger: { execute: jest.fn() },
     } as unknown as BillingPaymentActivationDeps;
 
@@ -287,7 +317,7 @@ describe("checkout guards that must survive the change", () => {
         plan: "STARTER",
         orderId: "order_1",
         paymentId: "pay_1",
-        signature: "sig",
+        signature: FAKE_PLATFORM_PAYMENT_SIG,
       }),
     ).rejects.toBeInstanceOf(ConflictException);
   });
