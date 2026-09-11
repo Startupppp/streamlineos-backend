@@ -69,6 +69,11 @@ export const DIRECT_EMAIL_CALLER_INVENTORY: DirectEmailCallerInventoryEntry[] =
       "sends through the consent-enforcing CRM outbound seam",
     ),
     EXEMPT(
+      "modules/crm/automation-studio/lib/automation-actions.ts",
+      DeliveryClass.MARKETING,
+      "the send_email action itself, moved here from crm-automation-runner.service.ts; same consent-enforcing CRM outbound seam",
+    ),
+    EXEMPT(
       "modules/crm/automation-studio/crm-sequences-runner.service.ts",
       DeliveryClass.MARKETING,
       "sends through the consent-enforcing CRM outbound seam",
