@@ -23,7 +23,6 @@ import { OrgHierarchyCostCentersService } from "./org-hierarchy-cost-centers.ser
 import { OrgHierarchyDepartmentsService } from "./org-hierarchy-departments.service";
 import {
   OrgHierarchyDependenciesService,
-  type DependencyMode,
   type OrgUnitKind,
 } from "./org-hierarchy-dependencies.service";
 import { OrgHierarchyLocationsService } from "./org-hierarchy-locations.service";
@@ -52,7 +51,7 @@ export class OrgHierarchyService {
     mutation: () => Promise<T>,
   ): Promise<T> {
     return status === "ARCHIVED"
-      ? this.commands.run(orgId, unitId, kind, "archive", mutation)
+      ? this.commands.run(orgId, unitId, kind, mutation)
       : mutation();
   }
 
@@ -236,7 +235,6 @@ export class OrgHierarchyService {
     orgId: string,
     unitId: string,
     kind: OrgUnitKind,
-    mode: DependencyMode,
   ) {
     const unit = await this.getUnitByKind(orgId, unitId, kind);
     if (!unit) throw new NotFoundException("Organization unit not found");
@@ -244,12 +242,10 @@ export class OrgHierarchyService {
       orgId,
       unitId,
       kind,
-      mode,
     );
     return {
       unitId,
       unitKind: kind,
-      mode,
       dependencies,
       totalDependencies: dependencies.reduce(
         (total, dependency) => total + dependency.count,

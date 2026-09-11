@@ -34,7 +34,6 @@ import {
   listQuerySchema,
   branchOptionsQuerySchema,
   dependencyPreviewParamsSchema,
-  dependencyPreviewQuerySchema,
   type CreateBusinessUnitInput,
   type UpdateBusinessUnitInput,
   type CreateOrgBranchInput,
@@ -50,7 +49,6 @@ import {
   type ListQueryInput,
   type BranchOptionsQueryInput,
   type DependencyPreviewParamsInput,
-  type DependencyPreviewQueryInput,
 } from "./dto/org-hierarchy.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
@@ -112,17 +110,15 @@ export class OrgHierarchyController {
   @RequirePermission("settings:view")
   @Get("dependencies/:unitKind/:unitId")
   @ResponseSchema(dependencyPreviewResponseSchema)
-  @Validate({ params: dependencyPreviewParamsSchema, query: dependencyPreviewQuerySchema })
+  @Validate({ params: dependencyPreviewParamsSchema })
   getDependencyPreview(
     @Param() params: DependencyPreviewParamsInput,
-    @Query() query: DependencyPreviewQueryInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.service.getDependencyPreview(
       u.orgId,
       params.unitId,
       params.unitKind,
-      query.mode,
     );
   }
 

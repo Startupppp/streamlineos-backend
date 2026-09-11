@@ -6,7 +6,6 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import {
   OrgHierarchyDependenciesService,
-  type DependencyMode,
   type OrgUnitKind,
 } from "./org-hierarchy-dependencies.service";
 
@@ -21,7 +20,6 @@ export class OrgHierarchyCommandService {
     orgId: string,
     unitId: string,
     kind: OrgUnitKind,
-    mode: DependencyMode,
     mutation: () => Promise<T>,
   ): Promise<T> {
     const execute = async () => {
@@ -47,11 +45,7 @@ export class OrgHierarchyCommandService {
 
       if (!unit) throw new NotFoundException("Organization unit not found");
 
-      if (mode === "archive") {
-        await this.dependencies.assertCanArchive(orgId, unitId, kind);
-      } else {
-        await this.dependencies.assertCanRetire(orgId, unitId, kind);
-      }
+      await this.dependencies.assertCanArchive(orgId, unitId, kind);
 
       return mutation();
     };

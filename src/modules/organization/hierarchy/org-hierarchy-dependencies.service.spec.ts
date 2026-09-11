@@ -80,25 +80,6 @@ describe("OrgHierarchyDependenciesService", () => {
     });
   });
 
-  it("uses the stricter remove action for legacy DELETE endpoints", async () => {
-    mockDependencyRows([
-      { key: "documents", label: "Documents filed under this department", count: 1 },
-    ]);
-
-    let thrown: unknown;
-    try {
-      await service.assertCanRetire(orgId, unitId, "DEPARTMENT");
-    } catch (error) {
-      thrown = error;
-    }
-    expect(thrown).toBeInstanceOf(ConflictException);
-    expect((thrown as ConflictException).getStatus()).toBe(409);
-    const response = (thrown as ConflictException).getResponse() as {
-      details: { action: string };
-    };
-    expect(response.details.action).toBe("remove");
-  });
-
   it.each(["DEPARTMENT", "LOCATION"] as const)(
     "excludes completed employment lifecycle values from %s archive checks",
     async (kind) => {
@@ -123,14 +104,6 @@ describe("OrgHierarchyDependenciesService", () => {
     expect(archiveQuery).toEqual(expect.stringContaining("REJECTED"));
     expect(archiveQuery).toEqual(expect.stringContaining("JOB_CREATED"));
     expect(archiveQuery).toEqual(expect.stringContaining("closed"));
-
-    execute.mockClear();
-    mockDependencyRows([]);
-    await service.assertCanRetire(orgId, unitId, "DEPARTMENT");
-    const retireQuery = sqlText(execute.mock.calls[1]?.[0]);
-
-    expect(retireQuery).not.toEqual(expect.stringContaining("JOB_CREATED"));
-    expect(retireQuery).not.toEqual(expect.stringContaining("'closed'"));
   });
 
   it("omits staged legal-entity checks when that relation is unavailable", async () => {

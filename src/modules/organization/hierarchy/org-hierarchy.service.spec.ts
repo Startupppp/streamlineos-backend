@@ -82,7 +82,6 @@ describe("OrgHierarchyService integrity boundaries", () => {
             _orgId: string,
             _unitId: string,
             _kind: string,
-            _mode: string,
             mutation: () => Promise<unknown>,
           ) => mutation(),
         ),
@@ -138,11 +137,10 @@ describe("OrgHierarchyService integrity boundaries", () => {
     ]);
 
     await expect(
-      service.getDependencyPreview(orgId, unitId, "BRANCH", "archive"),
+      service.getDependencyPreview(orgId, unitId, "BRANCH"),
     ).resolves.toEqual({
       unitId,
       unitKind: "BRANCH",
-      mode: "archive",
       dependencies: [
         { key: "workers", label: "Current worker assignments", count: 3 },
       ],
@@ -153,7 +151,6 @@ describe("OrgHierarchyService integrity boundaries", () => {
       orgId,
       unitId,
       "BRANCH",
-      "archive",
     );
     expect(branches.updateOrgBranch).not.toHaveBeenCalled();
   });
@@ -176,7 +173,6 @@ describe("OrgHierarchyService integrity boundaries", () => {
       orgId,
       unitId,
       "BRANCH",
-      "archive",
       expect.any(Function),
     );
     expect(branches.updateOrgBranch).not.toHaveBeenCalled();

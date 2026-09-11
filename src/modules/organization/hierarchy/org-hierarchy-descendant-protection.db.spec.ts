@@ -206,7 +206,7 @@ describe("OrgHierarchyDependenciesService — descendant protection (real SQL)",
     const mutation = jest.fn().mockResolvedValue({ success: true });
 
     await expect(
-      cmdService.run(ORG_B, unitId, "BUSINESS_UNIT", "archive", mutation),
+      cmdService.run(ORG_B, unitId, "BUSINESS_UNIT", mutation),
     ).rejects.toThrow(NotFoundException);
 
     expect(mutation).not.toHaveBeenCalled();
@@ -247,23 +247,6 @@ describe("OrgHierarchyDependenciesService — descendant protection (real SQL)",
     await expect(
       depService.assertCanArchive(ORG_A, parentId, "BUSINESS_UNIT"),
     ).resolves.toBeUndefined();
-
-    let retireThrown: unknown;
-    try {
-      await depService.assertCanRetire(ORG_A, parentId, "BUSINESS_UNIT");
-    } catch (e) {
-      retireThrown = e;
-    }
-
-    expect(retireThrown).toBeInstanceOf(ConflictException);
-    const body = (retireThrown as ConflictException).getResponse() as {
-      details: { dependencies: Array<{ key: string; count: number }> };
-    };
-    expect(body.details.dependencies).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ key: "child_units", count: 1 }),
-      ]),
-    );
   });
 
   it("case 5: ACTIVE grandchild under ARCHIVED child does not block ancestor archive; state is unreachable through the product", async () => {

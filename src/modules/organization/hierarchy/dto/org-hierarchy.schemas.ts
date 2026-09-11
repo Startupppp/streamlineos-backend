@@ -213,12 +213,3 @@ export type DependencyPreviewParamsInput = z.infer<
   typeof dependencyPreviewParamsSchema
 >;
 
-export const dependencyPreviewQuerySchema = z
-  .object({
-    mode: z.enum(["archive", "retire"]).default("archive"),
-  })
-  .strict();
-
-export type DependencyPreviewQueryInput = z.infer<
-  typeof dependencyPreviewQuerySchema
->;

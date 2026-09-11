@@ -13,7 +13,6 @@ describe("OrgHierarchyCommandService", () => {
   let transaction: jest.Mock;
   let dependencies: {
     assertCanArchive: jest.Mock;
-    assertCanRetire: jest.Mock;
   };
   let service: OrgHierarchyCommandService;
 
@@ -47,9 +46,6 @@ describe("OrgHierarchyCommandService", () => {
       assertCanArchive: jest.fn().mockImplementation(async () => {
         events.push("dependency-check");
       }),
-      assertCanRetire: jest.fn().mockImplementation(async () => {
-        events.push("dependency-check");
-      }),
     };
     service = new OrgHierarchyCommandService(
       db,
@@ -70,7 +66,7 @@ describe("OrgHierarchyCommandService", () => {
         tx: {} as TenantTx,
         afterCommit: [],
       },
-      () => service.run(orgId, unitId, "DEPARTMENT", "archive", mutation),
+      () => service.run(orgId, unitId, "DEPARTMENT", mutation),
     );
 
     expect(result).toEqual({ id: unitId });
@@ -90,10 +86,10 @@ describe("OrgHierarchyCommandService", () => {
   });
 
   it("opens a tenant transaction for non-request callers", async () => {
-    await service.run(orgId, unitId, "LOCATION", "retire", async () => true);
+    await service.run(orgId, unitId, "LOCATION", async () => true);
 
     expect(transaction).toHaveBeenCalledTimes(1);
-    expect(dependencies.assertCanRetire).toHaveBeenCalledWith(
+    expect(dependencies.assertCanArchive).toHaveBeenCalledWith(
       orgId,
       unitId,
       "LOCATION",
@@ -112,7 +108,7 @@ describe("OrgHierarchyCommandService", () => {
           tx: {} as TenantTx,
           afterCommit: [],
         },
-        () => service.run(orgId, unitId, "TEAM", "archive", mutation),
+        () => service.run(orgId, unitId, "TEAM", mutation),
       ),
     ).rejects.toMatchObject({ status: 404 });
 
@@ -134,7 +130,6 @@ describe("OrgHierarchyCommandService", () => {
             "org-2",
             unitId,
             "BUSINESS_UNIT",
-            "archive",
             async () => true,
           ),
       ),
