@@ -171,7 +171,7 @@ database from `scratch_07b_probe` produced three golden-path failures
 which migration 0277 installs). Templating from `crm_dbspec_0905` produced a
 CHECK violation on `autonomous_decisions.kind` — that database's constraint
 allowed 5 kinds where `DECISION_KINDS` has 8, because it never received
-`0535_crm_outbound`. Both databases carry 634 applied rows against a 417-entry
+`0535a_crm_outbound`. Both databases carry 634 applied rows against a 417-entry
 journal and a watermark stamped 2027; neither is a valid basis for judging this
 branch. **Build cold or do not conclude.**
 

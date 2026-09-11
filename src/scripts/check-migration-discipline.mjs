@@ -377,6 +377,14 @@ const BASELINE_JOURNAL_INTEGRITY = new Set([
   "insert-order:0522a_grn_discrepancy.sql", // streamline_inv, inv_cold_head +11 scratch
   "insert-order:0523a_pick_line_exceptions.sql", // streamline_inv, inv_cold_head +11 scratch
   "insert-order:0524a_cartonization.sql", // streamline_inv, inv_cold_head +11 scratch
+  // 0530a-0536a: neither side is on origin/main. The inv file was renamed where the crm
+  // twin is applied on Neon or quoted inside an applied body (0533 in 0559). 0535a is
+  // the crm twin instead: neither side is on Neon and its when already fits its window.
+  "insert-order:0530a_transit_locations.sql", // streamline_inv, inv_cold_head +11 scratch
+  "insert-order:0531a_drop_resurrected_sku_uniques_again.sql", // streamline_inv, inv_cold_head +11 scratch
+  "insert-order:0533a_ledger_correction_objects_relocked.sql", // streamline_inv, inv_cold_head +11 scratch
+  "insert-order:0534a_grn_receiving_lifecycle.sql", // streamline_inv, inv_cold_head +11 scratch
+  "insert-order:0536a_putaway_tasks.sql", // streamline_inv, inv_cold_head +11 scratch
 ]);
 
 // ─── check functions ──────────────────────────────────────────────────────────

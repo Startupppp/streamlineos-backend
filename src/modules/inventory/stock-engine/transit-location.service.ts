@@ -42,7 +42,7 @@ export class TransitLocationService {
    *
    * Three statements, of which only the first runs in the normal case:
    *
-   *  1. a plain read — after `0530_transit_locations` every existing warehouse
+   *  1. a plain read — after `0530a_transit_locations` every existing warehouse
    *     already has one, so this is the whole cost of a dispatch;
    *  2. `INSERT … ON CONFLICT DO NOTHING`, which is what makes two concurrent
    *     first dispatches out of the same warehouse produce one location rather
