@@ -2,6 +2,8 @@ export * from "./enums";
 export * from "./auth";
 export * from "./organization";
 export * from "./access";
+export * from "./access-groups";
+export * from "./access-modules";
 export * from "./notifications";
 export * from "./broadcasts";
 export * from "./push-subscriptions";
