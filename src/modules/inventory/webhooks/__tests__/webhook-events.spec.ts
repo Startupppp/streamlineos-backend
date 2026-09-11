@@ -68,10 +68,17 @@ function makeDb(results: unknown[][]): {
       // `.limit()` is terminal on the single-row lookups and takes a further
       // `.offset()` on the paged one, so it awaits AND chains.
       const limited = () => Object.assign(Promise.resolve(rows), { offset: () => Promise.resolve(rows) });
-      const terminal = {
+      // Typed because `orderBy` returns `terminal` itself; left to inference the
+      // initializer refers to its own binding and TS falls back to `any` (TS7022).
+      type Terminal = {
+        limit: jest.Mock;
+        offset: jest.Mock;
+        orderBy: jest.Mock<Terminal, []>;
+      };
+      const terminal: Terminal = {
         limit: jest.fn(limited),
         offset: jest.fn(() => Promise.resolve(rows)),
-        orderBy: jest.fn(() => terminal),
+        orderBy: jest.fn((): Terminal => terminal),
       };
       return { from: jest.fn(() => ({ where: jest.fn(() => terminal) })) };
     }),
