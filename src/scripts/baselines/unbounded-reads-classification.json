@@ -2468,6 +2468,11 @@
       "note": "module-access lane (excluded territory)",
       "justification": "Both reads select roles WHERE orgId AND moduleKey: listModuleRoleIds returns one module's group list, which is per-module configuration and does not grow with tenant data, and assertGroupsBelongToModule additionally constrains inArray(id, groupIds) against a request the schema caps at 50. Restates the verdict carried by /module-access/module-access-flat-members.service.ts, from which both reads moved 2026-09-11"
     },
+    "/module-access/lib/module-audit-log.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
+      "justification": "The two target-name lookups in listModuleAuditLog, moved verbatim out of /module-access/module-access.service.ts on 2026-09-11. The origin's FALSE-POSITIVE is restated, but NOT on the origin's wording, which read 'module access reads bounded by moduleKey+orgId; single-module scope' and names a scope rather than a bound: one module in one org can accumulate any amount of history. The actual bound: both reads are inArray over ids taken from ONE page of history rows (L121 users via organization_members.user_id, L133 roles via roles.id), and that page is at most limit = Math.min(rawLimit, 100) rows once buildCursorPage trims the limit + 1 sentinel. So each read receives at most 100 ids and returns at most one row per id. The history read itself carries .limit(limit + 1)."
+    },
     "/module-access/module-access-flat-members.service.ts": {
       "verdict": "FALSE-POSITIVE",
       "note": "module-access lane (excluded territory)",
