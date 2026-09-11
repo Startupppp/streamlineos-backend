@@ -52,3 +52,91 @@ describe("UserProfileService — cross-tenant isolation", () => {
     await expect(svc.getUserSessions(OWNER_ORG, USER_ID)).resolves.toEqual([]);
   });
 });
+
+/**
+ * The account records a person has regardless of org — sessions, sign-in
+ * history, preferences — live in tables keyed by `user_id` alone, with no
+ * `org_id` column. The membership probe run first in each path is therefore the
+ * ONLY thing keeping one tenant's admin out of another tenant's member's
+ * account. Until these cases, only `getUserSessions` above exercised it:
+ * deleting the probe from any of the five paths below left the users and
+ * sessions suites green — including `revokeAllSessions`, which would then force
+ * a sign-out on a user in an org the caller does not belong to.
+ *
+ * Each case asserts the table was never touched, not just that the call threw,
+ * because the mock would throw on the unscoped path too, only later.
+ */
+describe("UserProfileService — account records never leave the tenant", () => {
+  const ATTACKER_ORG = "org-attacker";
+  const TARGET = "user-in-another-org";
+
+  function nonMemberHarness() {
+    const select = jest.fn();
+    const update = jest.fn();
+    const insert = jest.fn();
+    const prefsFindFirst = jest.fn().mockResolvedValue(null);
+    const db = {
+      query: {
+        organizationMembers: { findFirst: jest.fn().mockResolvedValue(null) },
+        userPreferences: { findFirst: prefsFindFirst },
+      },
+      select,
+      update,
+      insert,
+    } as unknown as Db;
+    const publishRevocations = jest.fn().mockResolvedValue(undefined);
+    const svc = new UserProfileService(
+      db,
+      { log: jest.fn() } as unknown as AuditService,
+      { publishRevocations } as unknown as SessionsService,
+      {} as unknown as EmploymentFactsService,
+      {} as unknown as UserActivityService,
+    );
+    return { svc, select, update, insert, prefsFindFirst, publishRevocations };
+  }
+
+  it("will not revoke one session of a user outside the caller's org", async () => {
+    const h = nonMemberHarness();
+    await expect(
+      h.svc.revokeSession(ATTACKER_ORG, TARGET, "sess-1", "admin-1"),
+    ).rejects.toThrow(NotFoundException);
+    expect(h.update).not.toHaveBeenCalled();
+    expect(h.publishRevocations).not.toHaveBeenCalled();
+  });
+
+  it("will not revoke every session of a user outside the caller's org", async () => {
+    const h = nonMemberHarness();
+    await expect(
+      h.svc.revokeAllSessions(ATTACKER_ORG, TARGET, "admin-1"),
+    ).rejects.toThrow(NotFoundException);
+    expect(h.select).not.toHaveBeenCalled();
+    expect(h.update).not.toHaveBeenCalled();
+    expect(h.publishRevocations).not.toHaveBeenCalled();
+  });
+
+  it("will not read the preferences of a user outside the caller's org", async () => {
+    const h = nonMemberHarness();
+    await expect(h.svc.getPreferences(ATTACKER_ORG, TARGET)).rejects.toThrow(
+      NotFoundException,
+    );
+    expect(h.prefsFindFirst).not.toHaveBeenCalled();
+  });
+
+  it("will not write the preferences of a user outside the caller's org", async () => {
+    const h = nonMemberHarness();
+    await expect(
+      h.svc.updatePreferences(ATTACKER_ORG, TARGET, { theme: "dark" }),
+    ).rejects.toThrow(NotFoundException);
+    expect(h.prefsFindFirst).not.toHaveBeenCalled();
+    expect(h.insert).not.toHaveBeenCalled();
+    expect(h.update).not.toHaveBeenCalled();
+  });
+
+  it("will not read the sign-in history of a user outside the caller's org", async () => {
+    const h = nonMemberHarness();
+    await expect(
+      h.svc.getLoginHistory(ATTACKER_ORG, TARGET, { page: 1, limit: 20, success: undefined }),
+    ).rejects.toThrow(NotFoundException);
+    expect(h.select).not.toHaveBeenCalled();
+  });
+});

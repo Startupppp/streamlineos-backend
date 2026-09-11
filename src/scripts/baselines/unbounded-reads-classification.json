@@ -390,6 +390,11 @@
       "verdict": "ACTIONABLE",
       "note": "Offset pagination; needs keyset migration or proven depth bound"
     },
+    "/users/lib/user-account-records.ts": {
+      "verdict": "ACTIONABLE",
+      "note": "Offset pagination; needs keyset migration or proven depth bound",
+      "justification": "getLoginHistory, moved verbatim out of /users/user-profile.service.ts on 2026-09-11. Same read, new path; the origin's offset verdict is ACTIONABLE and it stays ACTIONABLE. The bound, named: page SIZE is capped at 100 by pageSizeField(20, 100) in listLoginHistorySchema (dto/users.schemas.ts), but page DEPTH is not capped, so offset = (page - 1) * limit grows without bound over one user's login_history rows. The one internal caller, exportUserData, always asks for page 1 (offset 0) with limit 500, so the subject-access export is bounded at 500 rows; the HTTP route is not."
+    },
     "/users/organization-users.reader.ts": {
       "verdict": "ACTIONABLE",
       "note": "Offset pagination; needs keyset migration or proven depth bound"
@@ -3198,6 +3203,11 @@
     "/timesheets/payroll/payroll-summary.service.ts": {
       "verdict": "FALSE-POSITIVE",
       "note": "date-range bounded payroll summary report; inArray bounded by run membership; no unbounded pagination"
+    },
+    "/users/lib/user-account-records.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
+      "justification": "revokeAllSessions, moved verbatim out of /users/user-profile.service.ts on 2026-09-11. The origin's FALSE-POSITIVE is restated because its justification describes exactly this read. L98 selects the ids of every non-revoked user_sessions row for ONE user_id, so its size is one person's live session count, and it must be complete: those ids are what publishRevocations tombstones in Redis, JwtAuthGuard reads only the tombstone, and a truncated read would leave the unlisted sessions signed in after an admin's revoke-all (sessions-admin-revoke.spec.ts guards that). The other read that moved, getUserSessions, carries .limit(50) and is not flagged."
     },
     "/users/organization-users.reader.ts": {
       "verdict": "FALSE-POSITIVE",
