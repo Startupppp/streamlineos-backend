@@ -26,6 +26,17 @@ export interface EarningsViewer {
  * asked for — the request cannot widen its own scope, which is the whole point.
  * A reader with it may name somebody, and naming nobody means everybody.
  */
+/**
+ * Which earner's rows a caller may read: their own, one they asked for, or all.
+ *
+ * Pure and exported so the rule is asserted directly rather than inferred from
+ * a mocked WHERE clause. The failure it prevents is specific: a rep holding
+ * `crm:commission-earnings:view` at scope `own` passing `?userId=` for a
+ * colleague and receiving that colleague's entire compensation, in a request
+ * that is authorised at every layer above this one.
+ *
+ * Returns null only when the caller may see everybody and asked for everybody.
+ */
 export function earningsUserFilter(
   query: { userId?: string },
   viewer: EarningsViewer,

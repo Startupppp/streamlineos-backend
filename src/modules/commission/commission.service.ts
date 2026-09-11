@@ -57,18 +57,6 @@ export { clampToInt4 } from "./lib/earning-calculation";
  * `lib/earning-calculation.ts`, with the reads it is priced from in
  * `lib/earning-inputs.ts`; the ledger's list and approval stay here.
  */
-
-/**
- * Which earner's rows a caller may read: their own, one they asked for, or all.
- *
- * Pure and exported so the rule is asserted directly rather than inferred from
- * a mocked WHERE clause. The failure it prevents is specific: a rep holding
- * `crm:commission-earnings:view` at scope `own` passing `?userId=` for a
- * colleague and receiving that colleague's entire compensation, in a request
- * that is authorised at every layer above this one.
- *
- * Returns null only when the caller may see everybody and asked for everybody.
- */
 @Injectable()
 export class CommissionService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
