@@ -15,6 +15,8 @@ import type { NotificationsService } from "../notifications/notifications.servic
 import type { AutonomyScoringService } from "./autonomy-scoring.service";
 import { updateAutonomySettingsSchema } from "./dto/autonomy-review.schemas";
 import { OutboundService } from "./outbound.service";
+import * as coldTrackReads from "./lib/outbound-cold-track";
+import * as sendTimeReads from "./lib/outbound-send-facts";
 
 /**
  * Compose time: what the loop does before anything is held.
@@ -429,11 +431,52 @@ describe("compose time does not look at the send-time world", () => {
     const h = harness();
     const facts = jest.spyOn(h.service, "sendTimeFacts");
     const cold = jest.spyOn(h.service, "coldTrackFacts");
+    /**
+     * The same two reads one level down. They live in `lib/` since the service
+     * was split, and a compose that imported them directly would never pass
+     * through the two methods above — so the functions are watched as well.
+     */
+    const factsRead = jest.spyOn(sendTimeReads, "readSendTimeFacts");
+    const coldRead = jest.spyOn(coldTrackReads, "readColdTrackFacts");
 
     await h.service.composeAndHold({ organizationId: ORG, partyId: PARTY, dealId: DEAL });
 
     expect(facts).not.toHaveBeenCalled();
     expect(cold).not.toHaveBeenCalled();
+    expect(factsRead).not.toHaveBeenCalled();
+    expect(coldRead).not.toHaveBeenCalled();
+
+    factsRead.mockRestore();
+    coldRead.mockRestore();
+  });
+
+  /**
+   * The control that keeps the two lib spies above honest: a spy that could not
+   * see a call would pass `not.toHaveBeenCalled` forever. Driven through the
+   * service's own send-time methods, both must record exactly one read.
+   */
+  it("would see the lib reads if anything reached them", async () => {
+    const h = harness();
+    const factsRead = jest.spyOn(sendTimeReads, "readSendTimeFacts");
+    const coldRead = jest.spyOn(coldTrackReads, "readColdTrackFacts");
+
+    await h.service.sendTimeFacts(ORG, {
+      outboundMessageId: "msg-1",
+      partyId: PARTY,
+      contactId: null,
+      dealId: DEAL,
+      outboundClass: "follow_up",
+      draftedAt: new Date(),
+      workingHourDeferrals: 0,
+      recipientEmail: null,
+    });
+    await h.service.coldTrackFacts(ORG);
+
+    expect(factsRead).toHaveBeenCalledTimes(1);
+    expect(coldRead).toHaveBeenCalledTimes(1);
+
+    factsRead.mockRestore();
+    coldRead.mockRestore();
   });
 });
 
