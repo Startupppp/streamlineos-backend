@@ -18,9 +18,11 @@ import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
+import { Validate } from "../../../common/validation/validate.decorator";
 import type { AttachableDocumentType } from "../../../db/schema";
 import { AttachmentsService } from "./attachments.service";
 import {
+  attachmentDocumentParamsSchema,
   attachDocumentFileSchema,
   attachableDocumentTypeSchema,
   documentIdParamSchema,
@@ -51,6 +53,7 @@ export class AttachmentsController {
   @Get(":documentType/:documentId/attachments")
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:attachments:read")
+  @Validate({ params: attachmentDocumentParamsSchema })
   list(
     @Param("documentType", new ZodValidationPipe(attachableDocumentTypeSchema))
     documentType: AttachableDocumentType,
@@ -64,6 +67,7 @@ export class AttachmentsController {
   @Post(":documentType/:documentId/attachments")
   @UseGuards(PermissionGuard)
   @RequirePermission("accounting:attachments:manage")
+  @Validate({ params: attachmentDocumentParamsSchema })
   @HttpCode(201)
   attach(
     @Param("documentType", new ZodValidationPipe(attachableDocumentTypeSchema))

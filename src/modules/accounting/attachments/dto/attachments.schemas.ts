@@ -31,6 +31,12 @@ export const attachableDocumentTypeSchema = z.enum(ATTACHABLE_DOCUMENT_TYPES);
 
 export const documentIdParamSchema = z.string().trim().min(1).max(128);
 
+/** Both path segments of a document's attachment routes, for `@Validate({ params })`. */
+export const attachmentDocumentParamsSchema = z.object({
+  documentType: attachableDocumentTypeSchema,
+  documentId: documentIdParamSchema,
+});
+
 /**
  * Base64 rather than multipart on purpose: adding a multipart parser for one
  * endpoint would put a second body-parsing path in front of every accounting
