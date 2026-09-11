@@ -7,12 +7,13 @@ import { DealsAnalyticsService, type DealsViewScope } from "./deals-analytics.se
  * where `applyScope` returns `sql`true`` and every number is what it always was.
  * The narrowing itself is asserted in `deals-analytics-scope.spec.ts`.
  */
-const MANAGER: DealsViewScope = { scope: "all", userId: "manager-1" };
+const MANAGER: DealsViewScope = ScopedRead.of("org1", "manager-1", "all");
 import type { Db } from "../../db/drizzle.module";
 import { CrmMetadataService } from "../crm/metadata/crm-metadata.service";
 import { CacheService } from "../../common/cache/cache.service";
 import { FORECAST_HISTORY_REQUIREMENT } from "./forecast/forecast-cold-start";
 import type { ForecastTrainingService } from "./forecast/forecast-training.service";
+import { ScopedRead } from "../access/scoped-read";
 
 function makeChain(result: unknown[] = []): Record<string, unknown> {
   const chain: Record<string, unknown> = {};

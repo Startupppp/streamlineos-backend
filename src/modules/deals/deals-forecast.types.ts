@@ -1,5 +1,5 @@
-import type { DataScope } from "../access/access.types";
 import type { ForecastBasis } from "./forecast/forecast-cold-start";
+import type { ScopedRead } from "../access/scoped-read";
 
 /*
   The shapes the deals forecast answers in.
@@ -48,7 +48,4 @@ export interface ForecastSummary {
  * `lib/forecast-summary.ts`, which narrows by it. Declaring it in either
  * service would close a cycle.
  */
-export interface DealsViewScope {
-  scope: DataScope;
-  userId: string;
-}
+export type DealsViewScope = ScopedRead;

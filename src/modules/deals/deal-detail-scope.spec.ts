@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { PgDialect } from "drizzle-orm/pg-core";
 import type { SQL } from "drizzle-orm";
 import { DealsCrudService } from "./deals-crud.service";
+import { ScopedRead } from "../access/scoped-read";
 
 /**
  * The deals list honoured `own` scope and reading one deal by id did not.
@@ -51,7 +52,7 @@ describe("reading one deal", () => {
     const { db, wheres } = dbWith(undefined);
     const service = serviceWith(db);
 
-    await service.getDeal("org-1", "rep-1", 5, "own");
+    await service.getDeal("org-1", "rep-1", 5, ScopedRead.of("org-1", "rep-1", "own"));
 
     expect(sqlText(wheres[0] as SQL)).toContain('"assigned_to_id" =');
   });
@@ -60,7 +61,7 @@ describe("reading one deal", () => {
     const { db, wheres } = dbWith(undefined);
     const service = serviceWith(db);
 
-    await service.getDeal("org-1", "rep-1", 5, "none");
+    await service.getDeal("org-1", "rep-1", 5, ScopedRead.of("org-1", "rep-1", "none"));
 
     expect(sqlText(wheres[0] as SQL)).toContain("false");
   });
@@ -69,7 +70,7 @@ describe("reading one deal", () => {
     const { db, wheres } = dbWith(undefined);
     const service = serviceWith(db);
 
-    await service.getDeal("org-1", "manager-1", 5, "all");
+    await service.getDeal("org-1", "manager-1", 5, ScopedRead.of("org-1", "manager-1", "all"));
 
     expect(sqlText(wheres[0] as SQL)).not.toContain('"assigned_to_id" =');
   });
@@ -81,7 +82,7 @@ describe("reading one deal", () => {
     const { db, wheres } = dbWith(undefined);
     const service = serviceWith(db);
 
-    await expect(service.cloneDeal("org-1", "rep-1", 5, "own")).rejects.toThrow(/not found/i);
+    await expect(service.cloneDeal("org-1", "rep-1", 5, ScopedRead.of("org-1", "rep-1", "own"))).rejects.toThrow(/not found/i);
     expect(sqlText(wheres[0] as SQL)).toContain('"assigned_to_id" =');
   });
 

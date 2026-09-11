@@ -4,6 +4,7 @@ import { DealsCompetitorsService } from "./deals-competitors.service";
 import { DealsMeetingsService } from "./deals-meetings.service";
 import { DealsStakeholdersService } from "./deals-stakeholders.service";
 import { DealsCrudService } from "./deals-crud.service";
+import { ScopedRead } from "../access/scoped-read";
 
 function sqlValues(value: unknown, seen = new Set<object>()): unknown[] {
   if (value === null || value === undefined || typeof value === "string" || typeof value === "number" || typeof value === "boolean") return [value];
@@ -157,7 +158,7 @@ describe("DealsCrudService — cross-tenant isolation", () => {
     const findFirst = jest.fn().mockResolvedValue(undefined);
     const db = { query: { deals: { findFirst } } } as unknown as Db;
     const svc = buildSvc(db);
-    const result = await svc.getDeal(ATTACKER, "user-1", 999, "all");
+    const result = await svc.getDeal(ATTACKER, "user-1", 999, ScopedRead.of(ATTACKER, "user-1", "all"));
     expect(result).toBeUndefined();
     expect(findFirst).toHaveBeenCalled();
     expect(sqlValues(findFirst.mock.calls[0]?.[0]?.where)).toContain(ATTACKER);
@@ -168,7 +169,7 @@ describe("DealsCrudService — cross-tenant isolation", () => {
     const findFirst = jest.fn().mockResolvedValue(row);
     const db = { query: { deals: { findFirst } } } as unknown as Db;
     const svc = buildSvc(db);
-    const result = await svc.getDeal(OWNER, "user-1", 1, "all");
+    const result = await svc.getDeal(OWNER, "user-1", 1, ScopedRead.of(OWNER, "user-1", "all"));
     expect(result).toMatchObject({ id: 1 });
   });
 });

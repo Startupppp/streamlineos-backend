@@ -1,8 +1,7 @@
-import { and, count, eq, inArray, isNull, notInArray } from "drizzle-orm";
+import { and, count, eq, inArray, isNull, notInArray, sql } from "drizzle-orm";
 import { deals } from "../../../db/schema";
 import { type Db } from "../../../db/drizzle.module";
 import type { CrmMetadataService } from "../../crm/metadata/crm-metadata.service";
-import { applyScope } from "../../access/apply-scope";
 import { assessForecastHistory, type ForecastReadiness } from "../forecast/forecast-cold-start";
 import type { ForecastTrainingService } from "../forecast/forecast-training.service";
 import type { DealsViewScope, ForecastMonth, ForecastSummary } from "../deals-forecast.types";
@@ -32,7 +31,15 @@ export interface ForecastSummaryDeps {
  * `deals-forecast.service.ts`, which re-exports it.
  */
 export function visibleDeals(view: DealsViewScope, orgId: string) {
-  return applyScope(view.scope, orgId, view.userId, { ownerColumn: deals.assignedToId });
+  return view.compose(
+    {
+      tenant: deals.orgId,
+      scope: { columns: { ownerColumn: deals.assignedToId } },
+      and: [eq(deals.orgId, orgId)],
+    },
+    (where) => where.sql,
+    () => sql`false`,
+  );
 }
 
 async function getTerminalStageKeys(

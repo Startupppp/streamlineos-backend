@@ -17,6 +17,7 @@ import type {
 } from "./dto/deals.schemas";
 import type { DealsViewScope, ForecastSummary } from "./deals-forecast.types";
 import * as forecastSummary from "./lib/forecast-summary";
+import { ScopedRead } from "../access/scoped-read";
 
 export type { DealsViewScope, ForecastMonth, ForecastSummary } from "./deals-forecast.types";
 export { visibleDeals } from "./lib/forecast-summary";
@@ -32,10 +33,12 @@ export { visibleDeals } from "./lib/forecast-summary";
  * `crm:deals:manage`, neither of which the catalog declares scopable, which is
  * the same statement in the permission catalog.
  *
- * `applyScope("all", …)` returns `sql`true`` and never reads `userId`, so the
- * empty string here is unreachable rather than a placeholder that might leak.
+ * A `ScopedRead` at `all` compiles to `true` and never reads its actor, so the
+ * empty actor here is unreachable rather than a placeholder that might leak.
  */
-const ORG_WIDE: DealsViewScope = { scope: "all", userId: "" };
+function orgWide(orgId: string): DealsViewScope {
+  return ScopedRead.of(orgId, "", "all");
+}
 
 @Injectable()
 export class DealsForecastService {
@@ -61,10 +64,10 @@ export class DealsForecastService {
    * same key, same invalidation, same value.
    */
   getForecast(orgId: string, view: DealsViewScope): Promise<ForecastSummary> {
-    if (view.scope !== "all") return this.buildForecast(orgId, view);
+    if (!view.unrestricted) return this.buildForecast(orgId, view);
     return this.cache.cached(
       CACHE_KEYS.dealsForecast(orgId),
-      () => this.buildForecast(orgId, ORG_WIDE),
+      () => this.buildForecast(orgId, orgWide(orgId)),
       CACHE_TTL.MEDIUM,
     );
   }
@@ -81,14 +84,14 @@ export class DealsForecastService {
   /**
    * A snapshot is the ORGANISATION's forecast, whoever pressed the button.
    *
-   * `ORG_WIDE` rather than the caller's scope: a snapshot is captured for a
+   * `orgWide` rather than the caller's scope: a snapshot is captured for a
    * period and compared against later, so two captures of one period taken by
    * two different people have to be the same number. The route is gated on
    * `crm:deals:forecast`, which the catalog does not declare scopable — the same
    * statement, in the permission catalog.
    */
   async createForecastSnapshot(orgId: string, userId: string, input: CreateForecastSnapshotInput) {
-    const forecast = await this.getForecast(orgId, ORG_WIDE);
+    const forecast = await this.getForecast(orgId, orgWide(orgId));
     const data: ForecastSnapshotData = {
       byCategory: [],
       byRep: [],
@@ -158,7 +161,7 @@ export class DealsForecastService {
     // Org-wide, because the baseline it is subtracted from is org-wide. A
     // narrowed `current` against a stored organisation snapshot would report a
     // delta between two different populations.
-    const current = await this.buildForecast(orgId, ORG_WIDE);
+    const current = await this.buildForecast(orgId, orgWide(orgId));
     const currentData: ForecastSnapshotData = {
       byCategory: [],
       byRep: [],

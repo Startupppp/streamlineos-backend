@@ -2,6 +2,7 @@ import { PgDialect } from "drizzle-orm/pg-core";
 import type { SQL } from "drizzle-orm";
 import { DealsAnalyticsService, type DealsViewScope } from "./deals-analytics.service";
 import { DealsForecastService } from "./deals-forecast.service";
+import { ScopedRead } from "../access/scoped-read";
 
 /**
  * Every analytic behind `crm:deals:read` answered for the whole organisation.
@@ -26,9 +27,9 @@ const sqlText = (statement: SQL): string => new PgDialect().sqlToQuery(statement
 /** `applyScope` at `own` over `deals.assigned_to_id` — the column the list uses. */
 const OWNER_PREDICATE = '"assigned_to_id" =';
 
-const REP: DealsViewScope = { scope: "own", userId: "rep-1" };
-const MANAGER: DealsViewScope = { scope: "all", userId: "manager-1" };
-const DENIED: DealsViewScope = { scope: "none", userId: "rep-1" };
+const REP: DealsViewScope = ScopedRead.of("org-1", "rep-1", "own");
+const MANAGER: DealsViewScope = ScopedRead.of("org-1", "manager-1", "all");
+const DENIED: DealsViewScope = ScopedRead.of("org-1", "rep-1", "none");
 
 interface Recorder {
   db: never;

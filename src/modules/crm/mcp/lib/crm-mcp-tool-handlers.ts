@@ -9,6 +9,7 @@ import { listDealsSchema } from "../../../deals/dto/deals.schemas";
 import { timelineQuerySchema } from "../../../activities/dto/activity.schemas";
 import { asQueryDescription, queryDescriptionSchema } from "../../../reporting/dto/reporting.schemas";
 import type { McpContext, McpToolDefinition } from "./crm-mcp-tool-catalogue";
+import { ScopedRead } from "../../../access/scoped-read";
 
 /**
  * What each report source returns to an agent.
@@ -155,10 +156,8 @@ export async function runCrmMcpTool(
         ...(args.assignedToId === undefined ? {} : { assignedToId: args.assignedToId }),
       });
       result = await services.dealsService.listDeals(
-        context.orgId,
-        context.userId,
+        ScopedRead.of(context.orgId, context.userId, decision.scope),
         query,
-        decision.scope,
       );
       break;
     }
@@ -177,7 +176,7 @@ export async function runCrmMcpTool(
         context.orgId,
         context.userId,
         dealId,
-        decision.scope,
+        ScopedRead.of(context.orgId, context.userId, decision.scope),
       );
       break;
     }
