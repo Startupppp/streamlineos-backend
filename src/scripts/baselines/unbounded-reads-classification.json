@@ -1111,6 +1111,16 @@
       "verdict": "EXCLUDED-MODULE",
       "note": "CRM/Inventory excluded product domain \u00e2\u20ac\u201d do not fix in this lane"
     },
+    "/crm/metadata/lib/data-quality-deals.ts": {
+      "verdict": "EXCLUDED-MODULE",
+      "note": "CRM/Inventory excluded product domain \u00e2\u20ac\u201d do not fix in this lane",
+      "justification": "Carried over 2026-09-11 from /crm/metadata/crm-data-quality.service.ts, which the three deal checks moved out of unchanged \u2014 this gate keys on path, so a move forces a restatement. Read while moving it: the repeated match is the org's terminal pipeline stages, a small configuration table read to build a NOT IN list, and every deal list beside it carries `.limit(OFFENDER_LIMIT)`."
+    },
+    "/crm/metadata/lib/data-quality-leads.ts": {
+      "verdict": "ACTIONABLE",
+      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
+      "justification": "Classified 2026-09-11 by reading the call site, when the four lead checks moved out of /crm/metadata/crm-data-quality.service.ts. NOT carried over as EXCLUDED-MODULE, deliberately: three of the four checks are limited, and `leadsWithInvalidPhone` is not. It selects EVERY non-deleted lead in the organisation \u2014 no limit, ordered by created_at \u2014 and then filters them in JavaScript with a regex before slicing to OFFENDER_LIMIT, so the whole lead table is materialised to find at most ten examples. The bound belongs in SQL. Left ACTIONABLE so it stays on the backlog rather than being dismissed by a verdict inherited from a file it no longer lives in."
+    },
     "/crm/metadata/crm-data-quality.service.ts": {
       "verdict": "EXCLUDED-MODULE",
       "note": "CRM/Inventory excluded product domain \u00e2\u20ac\u201d do not fix in this lane"
