@@ -13,6 +13,7 @@ import { AiCreditsReservationService } from "./ai-credits-reservation.service";
 import { AiCreditsPacksService } from "./ai-credits-packs.service";
 import type { AiCreditReserveInput, AiCreditSettleInput } from "../../ai/core/gateway/credit-ledger.interface";
 import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
+import { getPostgresErrorCode } from "../../../common/db/postgres-error";
 
 @Injectable()
 export class AiCreditsService {
@@ -46,7 +47,11 @@ export class AiCreditsService {
           return [created];
         });
       } catch (err: unknown) {
-        if ((err as { code?: string }).code === "23505") {
+        // `org_ai_credits.org_id` is unique, so two requests that both find no
+        // wallet race to create one and the loser must read the winner's row
+        // rather than fail. Through `getPostgresErrorCode` because Drizzle
+        // leaves the SQLSTATE on `.cause`.
+        if (getPostgresErrorCode(err) === "23505") {
           const [existing] = await this.db
             .select()
             .from(orgAiCredits)
@@ -159,7 +164,17 @@ export class AiCreditsService {
         });
       });
     } catch (err: unknown) {
-      if ((err as { code?: string }).code === "23505") {
+      /**
+       * `uq_ai_credit_txns_plan_grant_ref` — (org_id, reference_id) WHERE
+       * type = 'PLAN_GRANT' AND reference_id IS NOT NULL — is what actually
+       * makes a plan grant idempotent. The `if (referenceId)` pre-check above
+       * only runs when the caller supplied one; the insert writes
+       * `referenceId ?? plan` either way, so a caller passing no reference
+       * (billing.service does exactly that) reaches the index with the plan
+       * name as its key and a repeat grant lands here, not on the pre-check.
+       * A grant already recorded is not an error — return, do not re-credit.
+       */
+      if (getPostgresErrorCode(err) === "23505") {
         return;
       }
       throw err;
@@ -249,7 +264,20 @@ export class AiCreditsService {
 
       return { balance: milliToCredits(wallet?.balance ?? 0), creditsAdded, pack };
     } catch (err: unknown) {
-      if ((err as { code?: string }).code === "23505") {
+      /**
+       * `uq_ai_credit_txns_purchase_ref` — (org_id, reference_id) WHERE
+       * type = 'PURCHASE' AND reference_id IS NOT NULL. The pre-check above
+       * runs only for `automatic`, so a manual purchase reaches the index and
+       * a repeat of the same payment reference is a replay: report the wallet
+       * as it stands rather than crediting a second time.
+       *
+       * NOT FIXED HERE, and worth knowing: when no `paymentReferenceId` is
+       * given the reference falls back to `String(packId)`, so a manual repeat
+       * purchase of the same pack is treated as a replay of the first rather
+       * than a second purchase. That is a product decision in the fallback key,
+       * not in this handler — before this change the same call produced a 500.
+       */
+      if (getPostgresErrorCode(err) === "23505") {
         const [currentWallet] = await this.db
           .select()
           .from(orgAiCredits)
@@ -337,43 +365,68 @@ export class AiCreditsService {
     const creditsAddedMilli = creditsToMilli(creditsAdded);
 
     try {
-      await runInTenantTransaction(this.db, async (tx) => {
-        const [wallet] = await tx
-          .select()
-          .from(orgAiCredits)
-          .where(eq(orgAiCredits.orgId, orgId))
-          .for("update");
+      await runInTenantTransaction(
+        this.db,
+        async (tx) =>
+          /**
+           * A savepoint, and it is load-bearing rather than tidy.
+           *
+           * `runInTenantTransaction` reuses an ambient transaction when there
+           * is one — a webhook arriving over HTTP always has the request's —
+           * so a unique violation raised directly against `tx` aborts THAT
+           * transaction. Swallowing it below would then return normally onto a
+           * dead handle: every later statement dies 25P02 and the commit rolls
+           * back work the caller believes succeeded. Rolling back to a
+           * savepoint instead confines the failed insert to itself, which is
+           * what makes "already credited, do nothing" actually mean it.
+           *
+           * Measured on crm/phase-2-3-consolidated (e18a4d534) against a real
+           * database: without this, a redelivered webhook still rejects with
+           * the PostgresError even though the handler below swallowed it. That
+           * seeded spec is not on this branch; the unit case in
+           * `ai-credits-balance-after-invariant.spec.ts` pins the savepoint.
+           */
+          tx.transaction(async (write) => {
+            const [wallet] = await write
+              .select()
+              .from(orgAiCredits)
+              .where(eq(orgAiCredits.orgId, orgId))
+              .for("update");
 
-        let currentBalance = 0;
-        if (wallet) {
-          currentBalance = wallet.balance;
-        } else {
-          await tx.insert(orgAiCredits).values({ orgId });
-        }
+            let currentBalance = 0;
+            if (wallet) {
+              currentBalance = wallet.balance;
+            } else {
+              await write.insert(orgAiCredits).values({ orgId });
+            }
 
-        const newBalance = currentBalance + creditsAddedMilli;
-        await tx
-          .update(orgAiCredits)
-          .set({
-            balance: newBalance,
-            lifetimeGranted: sql`${orgAiCredits.lifetimeGranted} + ${creditsAddedMilli}`,
-            updatedAt: new Date(),
-          })
-          .where(eq(orgAiCredits.orgId, orgId));
+            const newBalance = currentBalance + creditsAddedMilli;
+            await write
+              .update(orgAiCredits)
+              .set({
+                balance: newBalance,
+                lifetimeGranted: sql`${orgAiCredits.lifetimeGranted} + ${creditsAddedMilli}`,
+                updatedAt: new Date(),
+              })
+              .where(eq(orgAiCredits.orgId, orgId));
 
-        await tx.insert(aiCreditTransactions).values({
-          orgId,
-          userId: null,
-          type: "PURCHASE",
-          amount: creditsAddedMilli,
-          balanceAfter: newBalance,
-          feature: "credit_purchase",
-          referenceId: paymentId,
-          metadata: { source: "webhook" },
-        });
-      }, { orgId });
+            await write.insert(aiCreditTransactions).values({
+              orgId,
+              userId: null,
+              type: "PURCHASE",
+              amount: creditsAddedMilli,
+              balanceAfter: newBalance,
+              feature: "credit_purchase",
+              referenceId: paymentId,
+              metadata: { source: "webhook" },
+            });
+          }),
+        { orgId },
+      );
     } catch (err: unknown) {
-      if ((err as { code?: string }).code === "23505") {
+      // Same PURCHASE reference index. A webhook redelivering the same payment
+      // id must be a no-op, not a 500 the provider will retry forever.
+      if (getPostgresErrorCode(err) === "23505") {
         return;
       }
       throw err;

@@ -2,6 +2,7 @@ import { ConflictException, NotFoundException } from "@nestjs/common";
 import { and, eq } from "drizzle-orm";
 import { coupons, couponRedemptions } from "../../../db/schema";
 import { type Db } from "../../../db/drizzle.module";
+import { getPostgresErrorCode } from "../../../common/db/postgres-error";
 import {
   evaluateCoupon,
   COUPON_NOT_FOUND,
@@ -129,12 +130,13 @@ export class BillingCoupons {
         .returning();
       return created;
     } catch (err: unknown) {
-      if (
-        typeof err === "object" &&
-        err !== null &&
-        (err as { code?: string }).code === "23505"
-      ) {
-        throw new ConflictException("A coupon with this code already exists");
+      // `coupons.code` is unique platform-wide, and the caller supplies it.
+      // Read through the helper: Drizzle leaves the SQLSTATE on `.cause`, so
+      // `err.code` was undefined and a duplicate code was a 500.
+      if (getPostgresErrorCode(err) === "23505") {
+        throw new ConflictException(
+          `A coupon with the code ${data.code.toUpperCase()} already exists`,
+        );
       }
       throw err;
     }
