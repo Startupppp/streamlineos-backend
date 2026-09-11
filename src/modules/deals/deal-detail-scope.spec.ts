@@ -94,7 +94,14 @@ describe("reading one deal", () => {
      * closed on an unknown value, so leaving it there would have made the tool
      * return nothing the moment the HTTP path started honouring the scope.
      */
+    // The deal reads moved out of crm-mcp.service.ts into the tool handlers
+    // when the service was split, and the service hands them its `decision`.
+    // Both files are read, so neither can pass the literal.
     const source = readFileSync(
+      join(__dirname, "..", "crm", "mcp", "lib", "crm-mcp-tool-handlers.ts"),
+      "utf8",
+    );
+    const service = readFileSync(
       join(__dirname, "..", "crm", "mcp", "crm-mcp.service.ts"),
       "utf8",
     );
@@ -102,6 +109,7 @@ describe("reading one deal", () => {
     // "global" too, and an assertion that matched prose would fail on its own
     // documentation. The same self-reference broke a census earlier today.
     expect(source).not.toMatch(/,\s*"global"\s*\)/);
+    expect(service).not.toMatch(/,\s*"global"\s*\)/);
     expect((source.match(/decision\.scope/g) ?? []).length).toBeGreaterThanOrEqual(2);
   });
 });

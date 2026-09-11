@@ -669,7 +669,14 @@ describe("CrmMcpService", () => {
    * property cannot be made to reveal that by any argument you pass it.
    */
   describe("every advertised input is read by its handler", () => {
-    const source = readFileSync(join(__dirname, "crm-mcp.service.ts"), "utf8");
+    /*
+     * The handlers moved out of `crm-mcp.service.ts` into
+     * `lib/crm-mcp-tool-handlers.ts` when the service was split, so that is the
+     * file read. Their `case` labels sit at four spaces there, because the
+     * switch is in a function rather than a method, and `handlerBody` below
+     * cuts on that indentation.
+     */
+    const source = readFileSync(join(__dirname, "lib", "crm-mcp-tool-handlers.ts"), "utf8");
 
     /*
      * Comments are stripped first, and that is not fastidiousness. The handlers
@@ -684,7 +691,7 @@ describe("CrmMcpService", () => {
       const start = code.indexOf(`case "${tool}":`);
       expect(start).toBeGreaterThan(-1);
       const rest = code.slice(start + tool.length + 8);
-      const next = rest.search(/\n {6}(?:case "|default:)/);
+      const next = rest.search(/\n {4}(?:case "|default:)/);
       return next === -1 ? rest : rest.slice(0, next);
     }
 
