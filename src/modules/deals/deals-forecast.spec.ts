@@ -1,5 +1,6 @@
 import { DealsForecastService } from "./deals-forecast.service";
 import { DealsAnalyticsService, type DealsViewScope } from "./deals-analytics.service";
+import { ScopedRead } from "../access/scoped-read";
 
 /**
  * A manager, whose scope is `all`. These tests are about the forecast's cold-start
@@ -13,7 +14,6 @@ import { CrmMetadataService } from "../crm/metadata/crm-metadata.service";
 import { CacheService } from "../../common/cache/cache.service";
 import { FORECAST_HISTORY_REQUIREMENT } from "./forecast/forecast-cold-start";
 import type { ForecastTrainingService } from "./forecast/forecast-training.service";
-import { ScopedRead } from "../access/scoped-read";
 
 function makeChain(result: unknown[] = []): Record<string, unknown> {
   const chain: Record<string, unknown> = {};

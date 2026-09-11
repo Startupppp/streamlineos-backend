@@ -135,11 +135,15 @@ export class OrgHierarchyDependenciesService {
     return queries;
   }
 
+  /**
+   * `mode` defaults to "archive", the non-strict count: the dependency preview
+   * shows what blocks archiving, and only a retire counts history.
+   */
   async listDependencies(
     orgId: string,
     unitId: string,
     kind: OrgUnitKind,
-    mode: DependencyMode,
+    mode: DependencyMode = "archive",
   ): Promise<OrgUnitDependency[]> {
     const [capability] = await this.db.execute<{ available: boolean }>(sql`
       SELECT to_regclass('public.legal_entities') IS NOT NULL AS available
