@@ -262,6 +262,11 @@
       "verdict": "EXCLUDED-MODULE",
       "note": "CRM/Inventory excluded product domain \u00e2\u20ac\u201d do not fix in this lane"
     },
+    "/inventory/webhooks/lib/webhook-events.ts": {
+      "verdict": "EXCLUDED-MODULE",
+      "note": "CRM/Inventory excluded product domain - do not fix in this lane",
+      "justification": "Classified 2026-09-11. Same code, new path: pageEvents/listEvents/listDeadLetters moved verbatim out of webhooks.service.ts when that file was split for check:over-300. The parent's EXCLUDED-MODULE verdict is a lane exclusion rather than a bound claim, so it follows the code unchanged and launders nothing - but the read was re-read rather than waved through, and it is genuinely offset-paginated with unbounded DEPTH. `offset = (page - 1) * limit` over inv_webhook_events ordered by created_at DESC; `limit` is pageSizeField(20, 100) so the PAGE is capped at 100 rows, but `page` is pageNumberField, which is `z.coerce.number().int().min(1)` with NO ceiling, so a caller can ask for page 50000 and Postgres will walk and discard 5M rows. The table is the delivery log, which grows with traffic and is the one inventory table with no natural per-org cap, so depth here is not bounded in practice either. The eventual fix is a keyset cursor on (created_at DESC, id DESC), which the count(*) OVER () window total would have to be dropped or re-expressed for; it is not a limit-placement false positive."
+    },
     "/inventory/webhooks/webhooks.service.ts": {
       "verdict": "EXCLUDED-MODULE",
       "note": "CRM/Inventory excluded product domain \u00e2\u20ac\u201d do not fix in this lane"
@@ -518,6 +523,16 @@
       "verdict": "FALSE-POSITIVE",
       "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
       "justification": "aggregate-only financial statements (SUM per account); must compute over full period; cached"
+    },
+    "/accounting/core/lib/journal-entry-create.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
+      "justification": "Classified 2026-09-11 when createJournalEntry moved out of /accounting/core/accounting-ledger.service.ts unchanged \u2014 this gate keys on path, so a move forces a restatement. This is the \"approval-policy catalog\" half of the origin entry's justification and the wording holds: L69 reads fin_approval_policies (id, approver_user_id, min_amount) WHERE org_id = $org AND record_type = 'MANUAL_JOURNAL' AND is_active. A per-org, per-record-type policy catalog maintained by hand by a finance administrator, single digits in practice. It cannot take a LIMIT because the caller selects the applicable policy in memory by comparing the entry total against each min_amount with compareDecimals \u2014 a banding decision SQL is not expressing here."
+    },
+    "/accounting/core/lib/journal-entry-transitions.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
+      "justification": "Classified 2026-09-11 when postJournalEntry/reverseJournalEntry moved out of /accounting/core/accounting-ledger.service.ts unchanged \u2014 restated on the move. This is the \"single-entry line fetches bounded by entry\" half of the origin entry's justification and it holds exactly: L136 reads journal_lines WHERE entry_id = $entry AND org_id = $org, i.e. the lines of ONE journal entry, to build the mirrored reversing entry. Bounded by the line count of a single entry (two in the common case, tens at the extreme), and it must be complete \u2014 a truncated read would produce an unbalanced reversal, which the posting service would then refuse. Every other read in this file is a single-row lookup with .limit(1)."
     },
     "/accounting/gl/periods.service.ts": {
       "verdict": "FALSE-POSITIVE",
