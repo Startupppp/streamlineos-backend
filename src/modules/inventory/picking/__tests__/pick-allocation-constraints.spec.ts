@@ -40,7 +40,11 @@ describe("D2 — picking allocates under the same constraints as reserving", () 
       // below exists precisely so a relocated caller cannot drop out silently.
       "lib/wave-planning.ts",
       "pick-confirm.service.ts",
-      "pick-exception-report.service.ts",
+      // Was "pick-exception-report.service.ts": the `SUBSTITUTED` branch's gates
+      // moved to lib/pick-exception-branches.ts when that service was decomposed
+      // for check:over-300, and the allocator call went with them. Same story as
+      // the wave above, and the same reason it is re-pointed rather than dropped.
+      "lib/pick-exception-branches.ts",
     ];
 
     const bare: string[] = [];
