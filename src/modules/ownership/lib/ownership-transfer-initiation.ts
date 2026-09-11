@@ -10,6 +10,7 @@ import { type Db } from "../../../db/drizzle.module";
 import type { AuditService } from "../../../common/audit/audit.service";
 import type { CacheService } from "../../../common/cache/cache.service";
 import { registerAfterCommit } from "../../../common/tenant";
+import { isUniqueViolation } from "../../../common/db/postgres-error";
 import { logger } from "../../../common/logger/logger.service";
 import type { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
 import { fetchMembershipById, fetchMembershipByUser } from "../ownership-members.helper";
@@ -136,8 +137,7 @@ export async function initiateOrgTransfer(
 
     return { transferId: transfer.id, expiresAt: transfer.expiresAt };
   } catch (err: unknown) {
-    const pgErr = err as { code?: string };
-    if (pgErr.code === "23505") {
+    if (isUniqueViolation(err)) {
       throw new ConflictException(
         "A pending org ownership transfer already exists",
       );
@@ -268,8 +268,7 @@ export async function initiateModuleTransfer(
 
     return { transferId: transfer.id, expiresAt: transfer.expiresAt };
   } catch (err: unknown) {
-    const pgErr = err as { code?: string };
-    if (pgErr.code === "23505") {
+    if (isUniqueViolation(err)) {
       throw new ConflictException(
         `A pending transfer for module "${moduleKey}" already exists`,
       );
