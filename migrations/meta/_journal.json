@@ -4877,19 +4877,26 @@
     {
       "idx": 696,
       "version": "7",
+      "when": 1803000019160,
+      "tag": "0916_crm_legacy_keys_follow_the_party_map",
+      "breakpoints": true
+    },
+    {
+      "idx": 697,
+      "version": "7",
       "when": 1787679153441,
       "tag": "0466_drop_legacy_accounting",
       "breakpoints": true
     },
     {
-      "idx": 697,
+      "idx": 698,
       "version": "7",
       "when": 1787682753441,
       "tag": "0467_restore_expense_tables",
       "breakpoints": true
     },
     {
-      "idx": 698,
+      "idx": 699,
       "version": "7",
       "when": 1787693553441,
       "tag": "0468_journal_source_expense_claim",

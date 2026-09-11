@@ -125,7 +125,7 @@ const HISTORICAL_TIMESTAMP_REGRESSIONS = new Set([
   "0678b_feedback_cycle_responses_rls_complete -> 0613_delegations_and_overrides_drop_user_columns",
   "0674a_subprocessor_subscribers_tenant_index -> 0659b_timesheets_lifecycle_seq_and_attendance_draft",
   "0659b_timesheets_lifecycle_seq_and_attendance_draft -> 0656_communication_tenant_rls",
-  "0915_inventory_client_keys_follow_the_party_map -> 0466_drop_legacy_accounting",
+  "0916_crm_legacy_keys_follow_the_party_map -> 0466_drop_legacy_accounting",
 ]);
 
 const CHAIN_GAPS_FILE = resolve(process.cwd(), ".chain-gaps");
