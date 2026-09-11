@@ -71,7 +71,9 @@ describe("INV-07 — inventory posting with an unmapped or missing account", () 
         ["modules", "inventory", "purchase-orders", "grn-receive.service.ts"],
         ["modules", "inventory", "sales-orders", "so-fulfillment.service.ts"],
         ["modules", "inventory", "sales-orders", "so-lifecycle.service.ts"],
-        ["modules", "inventory", "landed-cost", "landed-cost-apply.service.ts"],
+        // Moved out of `landed-cost-apply.service.ts` by cf85d67fa; the list
+        // follows the CALL, which is the thing this test is about.
+        ["modules", "inventory", "landed-cost", "lib", "landed-cost-journal.ts"],
       ];
 
       for (const parts of callSites) {
