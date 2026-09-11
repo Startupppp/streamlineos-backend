@@ -1,13 +1,9 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { eq, and, asc, desc } from "drizzle-orm";
 import {
-  commissionRules,
-  commissions,
   salesQuotas,
   playbookEntries,
-  deals,
   users,
-  notifications,
 } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { AccessService } from "../access/access.service";
@@ -15,6 +11,13 @@ import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { type Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_TTL } from "../../common/cache/cache-keys";
+import {
+  createCommissionRule,
+  listCommissionRules,
+  listCommissions,
+  updateCommission,
+  type CommissionDeps,
+} from "./lib/sales-commissions";
 import type {
   CommissionRuleCreateInput,
   CommissionListInput,
@@ -63,135 +66,28 @@ export class SalesService {
     private readonly access: AccessService,
   ) {}
 
+  /** @see lib/sales-commissions.ts */
   listCommissionRules(orgId: string) {
-    return this.cache.cachedVersioned(
-      `sales:commission-rules:${orgId}`,
-      "list",
-      () =>
-        this.db
-          .select({
-            id: commissionRules.id,
-            name: commissionRules.name,
-            type: commissionRules.type,
-            flatRate: commissionRules.flatRate,
-            tiers: commissionRules.tiers,
-            appliesTo: commissionRules.appliesTo,
-            createdAt: commissionRules.createdAt,
-          })
-          .from(commissionRules)
-          .where(eq(commissionRules.orgId, orgId))
-          .orderBy(desc(commissionRules.createdAt)),
-      CACHE_TTL.LONG,
-    );
+    return listCommissionRules(this.commissionDeps, orgId);
   }
 
+  /** @see lib/sales-commissions.ts */
   async createCommissionRule(orgId: string, input: CommissionRuleCreateInput) {
-    const [rule] = await this.db
-      .insert(commissionRules)
-      .values({
-        orgId,
-        name: input.name,
-        type: input.type,
-        flatRate: input.flatRate ?? null,
-        tiers: input.tiers ?? null,
-        appliesTo: input.appliesTo,
-      })
-      .returning();
-
-    await this.cache.invalidateNamespace(`sales:commission-rules:${orgId}`);
-
-    return rule;
+    return createCommissionRule(this.commissionDeps, orgId, input);
   }
 
+  /** @see lib/sales-commissions.ts */
   listCommissions(orgId: string, filters: CommissionListInput) {
-    return this.cache.cachedVersioned(
-      `sales:commissions:${orgId}`,
-      `${filters.userId ?? "*"}:${filters.status ?? "*"}:${filters.limit ?? 25}`,
-      async () => {
-        const conditions = [eq(commissions.orgId, orgId)];
-        if (filters.userId) conditions.push(eq(commissions.userId, filters.userId));
-        if (filters.status) conditions.push(eq(commissions.status, filters.status));
-
-        const results = await this.db
-          .select({
-            id: commissions.id,
-            userId: commissions.userId,
-            userName: users.name,
-            dealId: commissions.dealId,
-            dealName: deals.name,
-            dealValue: commissions.dealValue,
-            commissionRate: commissions.commissionRate,
-            commissionAmount: commissions.commissionAmount,
-            status: commissions.status,
-            paidAt: commissions.paidAt,
-            createdAt: commissions.createdAt,
-          })
-          .from(commissions)
-          .leftJoin(users, eq(commissions.userId, users.id))
-          .leftJoin(deals, eq(commissions.dealId, deals.id))
-          .where(and(...conditions))
-          .orderBy(desc(commissions.createdAt))
-          .limit(filters.limit ?? 25);
-
-        const totalPending = results
-          .filter((c) => c.status === "pending")
-          .reduce((s, c) => s + Number(c.commissionAmount), 0);
-        const totalPaid = results
-          .filter((c) => c.status === "paid")
-          .reduce((s, c) => s + Number(c.commissionAmount), 0);
-        return { items: results, totalPending, totalPaid };
-      },
-      CACHE_TTL.MEDIUM,
-    );
+    return listCommissions(this.commissionDeps, orgId, filters);
   }
 
+  /** @see lib/sales-commissions.ts */
   async updateCommission(orgId: string, commissionId: number, status: "approved" | "paid") {
-    const [existing] = await this.db
-      .select({
-        id: commissions.id,
-        status: commissions.status,
-        userId: commissions.userId,
-        dealId: commissions.dealId,
-        commissionAmount: commissions.commissionAmount,
-      })
-      .from(commissions)
-      .where(and(eq(commissions.id, commissionId), eq(commissions.orgId, orgId)))
-      .limit(1);
+    return updateCommission(this.commissionDeps, orgId, commissionId, status);
+  }
 
-    if (!existing) return { error: "not_found" } as CommissionNotFound;
-    if (existing.status !== "pending") {
-      return { error: "conflict", message: "Only pending commissions can be updated" } as CommissionConflict;
-    }
-
-    const [updated] = await this.db
-      .update(commissions)
-      .set({
-        status,
-        paidAt: status === "paid" ? new Date() : null,
-      })
-      .where(and(eq(commissions.id, commissionId), eq(commissions.orgId, orgId)))
-      .returning();
-
-    if (!updated) return { error: "not_found" } as CommissionNotFound;
-
-    await this.cache.invalidateNamespace(`sales:commissions:${orgId}`);
-
-    const [deal] = await this.db
-      .select({ name: deals.name })
-      .from(deals)
-      .where(eq(deals.id, existing.dealId))
-      .limit(1);
-
-    await this.db.insert(notifications).values({
-      orgId,
-      userId: existing.userId,
-      type: "SUCCESS",
-      title: status === "paid" ? "Commission paid" : "Commission approved",
-      message: `Your commission${deal?.name ? ` for ${deal.name}` : ""} of ₹${Number(existing.commissionAmount).toLocaleString("en-IN")} was ${status}.`,
-      link: "/sales/commissions",
-    });
-
-    return updated;
+  private get commissionDeps(): CommissionDeps {
+    return { db: this.db, cache: this.cache };
   }
 
   listQuotas(orgId: string, filters: QuotaListInput) {

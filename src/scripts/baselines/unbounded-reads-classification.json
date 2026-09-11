@@ -2811,6 +2811,11 @@
       "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
       "justification": "sales dashboard reads are aggregate-only or bounded by userId+orgId scope; dashboard aggregates exempt 2026-09-01"
     },
+    "/sales/lib/sales-commissions.ts": {
+      "verdict": "ACTIONABLE",
+      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
+      "justification": "Classified 2026-09-11 by reading the call site, when the commission functions moved out of /sales/sales.service.ts. NOT carried over as FALSE-POSITIVE, and that is a deliberate CORRECTION rather than a regression: the entry it came from says the sales reads are \u0022bounded by orgId + filter conditions\u0022 (a one-line bulk classification from 2026-09-01), and that is not true of this one. `listCommissionRules` selects EVERY commission rule for an organisation with no limit and no filter beyond the tenant \u2014 the same shape as the org-wide configuration lists already held ACTIONABLE elsewhere (dock doors, shelf-life rules, slotting rules, channel pools). Small in practice, unbounded in principle, and the LONG cache in front of it hides the growth rather than capping it. Left ACTIONABLE so it stays on the backlog; this raises the unbounded ACTIONABLE count by one, which is the honest direction."
+    },
     "/sales/sales.service.ts": {
       "verdict": "FALSE-POSITIVE",
       "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
