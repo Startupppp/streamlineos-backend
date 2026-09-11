@@ -149,13 +149,22 @@ export const listLoadsQuerySchema = z.object({
 }).strict();
 export type ListLoadsQueryInput = z.infer<typeof listLoadsQuerySchema>;
 
+/**
+ * A load's manifest reaches Postgres as `inArray(...)` — once in
+ * `assertLinesInScope` and again when the stops are written — so its
+ * length is a bind-parameter count the caller sets, and postgres-js refuses a
+ * statement past 65,534 of them. 500 is the gate's own reference bulk cap
+ * (`check:bounded-contracts`, MAX_IDS_CAP) and far above what one vehicle carries.
+ */
+const LOAD_MANIFEST_MAX = 500;
+
 export const createLoadSchema = z.object({
   sourceWarehouseId: z.number().int().optional(),
   destination: z.string().optional(),
   carrierId: z.number().int().optional(),
   vehicleRef: z.string().optional(),
-  shipmentIds: z.array(z.number().int()).optional().default([]),
-  transferIds: z.array(z.number().int()).optional().default([]),
+  shipmentIds: z.array(z.number().int()).max(LOAD_MANIFEST_MAX).optional().default([]),
+  transferIds: z.array(z.number().int()).max(LOAD_MANIFEST_MAX).optional().default([]),
 }).strict();
 export type CreateLoadInput = z.infer<typeof createLoadSchema>;
 

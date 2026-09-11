@@ -42,6 +42,8 @@ import {
   listPackagesResponseSchema,
   getPackageResponseSchema,
   invPackageSchema,
+  packageReconciliationResponseSchema,
+  packingQueueResponseSchema,
 } from "./dto/shipments-response.schemas";
 
 const packageIdParams = z.object({ packageId: z.coerce.number().int().positive() }).strict();
@@ -70,6 +72,7 @@ export class PackagesController {
    * comes back a 400 nobody can read.
    */
   @Get("queue")
+  @ResponseSchema(packingQueueResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:packages:manage")
   @Validate({ query: packingQueueQuerySchema })
@@ -119,6 +122,7 @@ export class PackagesController {
   }
 
   @Get(":packageId/reconciliation")
+  @ResponseSchema(packageReconciliationResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:packages:manage")
   reconciliation(
@@ -129,6 +133,7 @@ export class PackagesController {
   }
 
   @Post(":packageId/scan")
+  @ResponseSchema(packageReconciliationResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:packages:manage")
   @HttpCode(HttpStatus.OK)

@@ -37,6 +37,17 @@ export interface CarrierEventDeps {
 }
 
 /**
+ * What `applyEvent` alone needs.
+ *
+ * Narrower than `CarrierEventDeps` because INV-26's webhook receiver and its
+ * booking service both apply events and neither polls, so requiring the polling
+ * registry would have meant injecting a dependency solely to satisfy a type —
+ * and an unused dependency is how a reader loses track of which code actually
+ * polls. `refreshTracking` still passes the full bag, which satisfies this.
+ */
+export type CarrierApplyDeps = Pick<CarrierEventDeps, "db" | "audit">;
+
+/**
  * How far along a shipment is. A carrier may move a shipment forward through
  * this order; it may never move one back.
  *
@@ -181,9 +192,16 @@ export async function refreshTracking(
  * the properties `carrier-status.seeded-e2e-spec.ts` pins hold for both.
  */
 export async function applyEvent(
-  deps: CarrierEventDeps,
+  deps: CarrierApplyDeps,
   orgId: string,
-  userId: string,
+  /**
+   * Null when nobody did this. INV-26's inbound webhook is a courier's
+   * callback, not a person's action, and `inv_audit_events.actor_user_id` is a
+   * nullable FK to `users` — so an empty string here would violate that key,
+   * and inventing an actor would put a person's name on something they did not
+   * do.
+   */
+  userId: string | null,
   shipment: { id: number; status: string; carrierId: number | null },
   input: CarrierStatusInput,
 ) {
@@ -233,7 +251,7 @@ export async function applyEvent(
 
     await deps.audit.insert(deps.db, {
       orgId,
-      actorUserId: userId,
+      actorUserId: userId ?? undefined,
       action: "shipment.carrier-status",
       resourceType: "shipment",
       resourceId: String(shipment.id),

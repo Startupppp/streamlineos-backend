@@ -9,6 +9,8 @@ import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { CartonizationService } from "./cartonization.service";
+import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { suggestCartonResponseSchema } from "./dto/shipments-response.schemas";
 
 const suggestCartonSchema = z
   .object({
@@ -38,6 +40,7 @@ export class CartonizationController {
    * not; it does not claim to have solved three-dimensional packing.
    */
   @Post("suggest")
+  @ResponseSchema(suggestCartonResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:shipments:manage")
   suggest(

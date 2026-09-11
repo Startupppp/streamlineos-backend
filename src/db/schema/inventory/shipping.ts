@@ -8,6 +8,22 @@ import { invSalesOrders, invSoLines } from "./sales-orders";
 import { invLots, invSerialNumbers } from "./traceability";
 import { invStockTransfers } from "./stock";
 
+/**
+ * INV-26 — a courier, and this tenant's account with it.
+ *
+ * The credential columns are on this row rather than in an environment
+ * variable, and the distinction is structural rather than stylistic: the table
+ * is org-scoped (`uniqueIndex(org_id, code)`), so every tenant defines its own
+ * couriers and holds its own courier account. One deployment-wide variable
+ * would hand every tenant the same login.
+ *
+ * `transport` is the deliberate half of adapter resolution. `code` is whatever
+ * the tenant typed and is never a route — an organisation naming its courier
+ * "FEDEX" does not thereby acquire a FedEx integration. `transport` is written
+ * by an administrator from the set the registry actually knows, and null (the
+ * default, and what every existing row has) means no adapter: manual tracking,
+ * which is a real way to run a warehouse.
+ */
 export const invCarriers = pgTable("inv_carriers", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
@@ -15,6 +31,29 @@ export const invCarriers = pgTable("inv_carriers", {
   code: text("code").notNull(),
   trackingUrlTemplate: text("tracking_url_template"),
   isActive: boolean("is_active").default(true).notNull(),
+  /** Which registered adapter speaks for this carrier. Null = nobody. */
+  transport: text("transport"),
+  /** Where that adapter posts. A tenant value, so every use runs the SSRF guard. */
+  apiBaseUrl: text("api_base_url"),
+  /**
+   * The courier account key, AES-256-GCM at rest (`secret-encryption.util`).
+   * Never selected by any list or detail read — `CARRIER_COLUMNS` in
+   * `carriers.service.ts` is the projection every read goes through, and this
+   * column is deliberately absent from it.
+   */
+  apiCredentialEncrypted: text("api_credential_encrypted"),
+  /** "****3f9a". Enough for an operator to tell which key is installed. */
+  apiCredentialHint: text("api_credential_hint"),
+  /** The shared secret the carrier's callbacks are signed with. Same rules. */
+  webhookSecretEncrypted: text("webhook_secret_encrypted"),
+  /**
+   * The last callback that failed verification, on the carrier row rather than
+   * in a delivery table. A forged signature must not be able to open a row:
+   * that would make the ingest an unbounded write for anyone who can reach a
+   * public URL. Two columns on an existing row are bounded and still visible.
+   */
+  webhookLastFailureAt: timestamp("webhook_last_failure_at"),
+  webhookFailureReason: text("webhook_failure_reason"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [

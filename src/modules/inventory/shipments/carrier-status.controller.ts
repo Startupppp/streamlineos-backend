@@ -9,7 +9,12 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { CarrierStatusService } from "./carrier-status.service";
 import { carrierStatusSchema, type CarrierStatusInput } from "./dto/carrier-status.schemas";
-import { BodylessAction } from "../../../common/openapi/zod-operation-contracts";
+import { BodylessAction, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  recordCarrierStatusResponseSchema,
+  refreshTrackingResponseSchema,
+  shipmentTimelineResponseSchema,
+} from "./dto/shipments-response.schemas";
 
 @RequireModule("inventory")
 @Controller("inventory/shipments")
@@ -25,6 +30,7 @@ export class CarrierStatusController {
    * parcel is back on a van.
    */
   @Post("carrier-status")
+  @ResponseSchema(recordCarrierStatusResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:shipments:manage")
   recordStatus(
@@ -35,6 +41,7 @@ export class CarrierStatusController {
   }
 
   @Get(":shipmentId/timeline")
+  @ResponseSchema(shipmentTimelineResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:shipments:manage")
   timeline(
@@ -55,6 +62,7 @@ export class CarrierStatusController {
    * used to state as "coming soon".
    */
   @Post(":shipmentId/refresh-tracking")
+  @ResponseSchema(refreshTrackingResponseSchema)
   @BodylessAction()
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:shipments:manage")
