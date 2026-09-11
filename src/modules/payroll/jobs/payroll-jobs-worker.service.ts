@@ -14,7 +14,7 @@ import { asRecord } from "../../../common/openapi/zod-operation-contracts";
 
 type ClaimedPayrollJob = typeof payrollJobs.$inferSelect;
 
-const POLL_MS = 5_000;
+const POLL_MS = 30_000;
 const BATCH_SIZE = 5;
 const STALE_LOCK_MS = 15 * 60 * 1_000;
 const RECLAIM_INTERVAL_MS = 60_000;
@@ -37,10 +37,12 @@ export class PayrollJobsWorkerService implements OnModuleInit, OnModuleDestroy {
   ) {}
 
   onModuleInit(): void {
+    if (process.env.PAYROLL_JOBS_WORKER_ENABLED === "false") return;
     this.timer = setInterval(() => {
       void this.tick();
     }, POLL_MS);
-    setTimeout(() => void this.tick(), 2_000);
+    this.timer.unref();
+    setTimeout(() => void this.tick(), 2_000).unref();
   }
 
   onModuleDestroy(): void {

@@ -197,6 +197,10 @@ export class OrgLifecycleService {
                 .update(organizations)
                 .set({ status: "ARCHIVED", deletedAt: new Date() })
                 .where(eq(organizations.id, orgId));
+              await tx
+                .update(accountOrganizationIndex)
+                .set({ organizationStatus: "ARCHIVED" })
+                .where(eq(accountOrganizationIndex.orgId, orgId));
             },
             { orgId },
           ),

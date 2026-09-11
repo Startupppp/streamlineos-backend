@@ -119,7 +119,7 @@ function publicWriteHandlers(): Handler[] {
 const EVER_RECORDED_AS_UNLIMITED: readonly string[] = [
   "common/audit/internal-audit.controller.ts:Post audit",
   "modules/careers/careers.controller.ts:Post apply",
-  "modules/csat/csat.controller.ts:Post :surveyId/responses",
+  "modules/csat/csat.controller.ts:Post public/:publicToken/responses",
   "modules/ingress/adapters/crm-mailbox.controller.ts:Post push",
 ];
 

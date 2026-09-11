@@ -112,6 +112,7 @@ export class OnboardingViewsService {
         then 'IN_PROGRESS'
       else 'PENDING'
     end`;
+    const unfilteredConditions = [...conditions];
     if (query.status) conditions.push(sql`${derivedStatus} = ${query.status}`);
     const rowConditions = [...conditions];
     const cursorPosition = decodeOnboardingSummaryCursor(query.cursor);
@@ -166,6 +167,23 @@ export class OnboardingViewsService {
         .where(and(...conditions)),
     ]);
 
+    const statusRows = await this.db
+      .select({ status: derivedStatus, total: count() })
+      .from(users)
+      .innerJoin(
+        organizationMembers,
+        and(eq(organizationMembers.userId, users.id), eq(organizationMembers.orgId, orgId)),
+      )
+      .leftJoin(hrPeople, livePersonOfUser(orgId, users.id))
+      .leftJoin(hrEmployments, primaryEmploymentOfPerson(orgId))
+      .leftJoin(documentStats, eq(documentStats.userId, users.id))
+      .innerJoin(mandatoryTotals, sql`true`)
+      .where(and(...unfilteredConditions))
+      .groupBy(derivedStatus);
+
+    const statusCounts = { PENDING: 0, IN_PROGRESS: 0, APPROVED: 0 };
+    for (const row of statusRows) statusCounts[row.status] = row.total;
+
     const total = countRow?.total ?? 0;
     const page = buildCursorPage(rows, query.limit, (row) => ({
       sortValue: JSON.stringify(row.userName),
@@ -178,6 +196,7 @@ export class OnboardingViewsService {
         ...page.pagination,
         total,
       },
+      statusCounts,
     };
   }
 

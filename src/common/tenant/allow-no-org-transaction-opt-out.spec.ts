@@ -1,12 +1,8 @@
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
 
-// `@AllowNoOrg()` does not stop the interceptor opening a transaction for a caller who HAS an org,
-// and an org-less handler routinely acts on a different one — which `runInTenantTransaction` throws on.
-
 const CONTROLLER_ROOT = resolve(__dirname, "..", "..", "modules");
 
-/** Handlers that touch no database at all, where an ambient transaction is inert. */
 const NO_DATABASE_ACCESS: Record<string, string> = {
   "billing/core/billing.controller.ts:getPlans":
     "Returns the static plan catalogue from `buildPlanCatalog()`; opens no connection.",
@@ -36,7 +32,6 @@ interface OrgLessHandler {
   optedOut: boolean;
 }
 
-// Decorators precede their method, so a handler's block runs to the first signature beneath it.
 function orgLessHandlers(file: string): OrgLessHandler[] {
   const lines = readFileSync(file, "utf8").split(/\r?\n/);
   const relativePath = relative(CONTROLLER_ROOT, file).replaceAll("\\", "/");

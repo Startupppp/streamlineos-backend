@@ -21,14 +21,6 @@ export class EpicsService {
         eq(tickets.type, "EPIC"),
         isNull(tickets.deletedAt),
       ),
-      columns: {
-        completionPercentage: false,
-        clientVisible: false,
-        isRecurring: false,
-        recurrenceRule: false,
-        recurrenceParentId: false,
-        recurrenceNextRunAt: false,
-      },
       with: {
         assignee: { with: { user: { columns: { id: true, name: true, firstName: true, lastName: true, email: true, image: true } } } },
       },

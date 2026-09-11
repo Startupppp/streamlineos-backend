@@ -92,6 +92,7 @@ export const organizationMembers = pgTable("organization_members", {
   suspendedAt: timestamp("suspended_at"),
   leftAt: timestamp("left_at"),
   joinedAt: timestamp("joined_at").defaultNow().notNull(),
+  onboardingCompletedAt: timestamp("onboarding_completed_at"),
 }, (table) => [
   uniqueIndex("uniq_org_members_user_org").on(table.userId, table.orgId),
   unique("uniq_org_members_org_user").on(table.orgId, table.userId),

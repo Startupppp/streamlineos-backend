@@ -46,9 +46,14 @@ export class OnboardingSubmissionService {
       await this.completeFinalReview(tx, orgId, userId);
       await this.initializeLeaveBalances(tx, orgId, userId);
       await this.completeFlowSession(tx, orgId, userId);
+      const completedAt = new Date();
+      await tx
+        .update(organizationMembers)
+        .set({ onboardingCompletedAt: completedAt })
+        .where(eq(organizationMembers.id, membership.id));
       await tx
         .update(users)
-        .set({ onboardingCompletedAt: new Date() })
+        .set({ onboardingCompletedAt: completedAt })
         .where(eq(users.id, userId));
       await tx.insert(onboardingAnalyticsEvents).values({
         orgId,

@@ -2,6 +2,7 @@ import { Inject, Injectable } from "@nestjs/common";
 import { and, desc, eq, isNull } from "drizzle-orm";
 import {
   inboxRecords,
+  outboxEvents,
   users,
   organizations,
   magicLinkTokens,
@@ -321,11 +322,30 @@ export class OrgSetupService {
           .orderBy(desc(inboxRecords.aggregateVersion))
           .limit(1);
 
+        const [event] = await tx
+          .select({
+            deliveryState: outboxEvents.deliveryState,
+            lastError: outboxEvents.lastError,
+          })
+          .from(outboxEvents)
+          .where(
+            and(
+              eq(outboxEvents.organizationId, orgId),
+              eq(outboxEvents.eventType, "organization.setup.completed"),
+            ),
+          )
+          .orderBy(desc(outboxEvents.occurredAt))
+          .limit(1);
+
+        const provisioning = resolveProvisioningState(record?.status ?? null);
+        if (provisioning === "pending" && event?.deliveryState === "DEAD")
+          return { orgId, onboardingCompletedAt, provisioning: "failed", lastError: event.lastError };
+
         return {
           orgId,
           onboardingCompletedAt,
-          provisioning: resolveProvisioningState(record?.status ?? null),
-          lastError: record?.lastError ?? null,
+          provisioning,
+          lastError: record?.lastError ?? event?.lastError ?? null,
         };
       },
       { orgId },

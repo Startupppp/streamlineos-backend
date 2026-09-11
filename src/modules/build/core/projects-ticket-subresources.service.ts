@@ -191,14 +191,6 @@ export class ProjectsTicketSubresourcesService {
     await assertTicketInOrg(this.db, orgId, ticketId);
     return this.db.query.tickets.findMany({
       where: and(eq(tickets.parentTicketId, ticketId), eq(tickets.orgId, orgId), isNull(tickets.deletedAt)),
-      columns: {
-        completionPercentage: false,
-        clientVisible: false,
-        isRecurring: false,
-        recurrenceRule: false,
-        recurrenceParentId: false,
-        recurrenceNextRunAt: false,
-      },
       with: {
         assignee: {
           with: { user: { columns: { id: true, name: true, firstName: true, lastName: true, image: true, email: true } } },

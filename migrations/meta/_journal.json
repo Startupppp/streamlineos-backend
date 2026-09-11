@@ -4999,6 +4999,20 @@
       "when": 1803000010165,
       "tag": "1087_cell_control_plane_policies",
       "breakpoints": true
+    },
+    {
+      "idx": 847,
+      "version": "7",
+      "when": 1803000010166,
+      "tag": "1088_organization_members_onboarding_completed_at",
+      "breakpoints": true
+    },
+    {
+      "idx": 848,
+      "version": "7",
+      "when": 1803000010167,
+      "tag": "1089_csat_surveys_public_token_read",
+      "breakpoints": true
     }
   ]
 }

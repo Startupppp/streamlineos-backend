@@ -97,18 +97,22 @@ export class ProjectsTicketRelationsService {
         priority: true,
         type: true,
         points: true,
-        assigneeId: true,
+        assigneeMembershipId: true,
         projectId: true,
       },
       with: {
         assignee: {
-          columns: {
-            id: true,
-            name: true,
-            firstName: true,
-            lastName: true,
-            email: true,
-            image: true,
+          with: {
+            user: {
+              columns: {
+                id: true,
+                name: true,
+                firstName: true,
+                lastName: true,
+                email: true,
+                image: true,
+              },
+            },
           },
         },
         project: {
@@ -134,10 +138,12 @@ export class ProjectsTicketRelationsService {
 
     return relations.map((r) => {
       const isSource = r.workItemId === ticketId;
+      const related = isSource ? r.relatedWorkItem : r.workItem;
+      const { assignee, ...rest } = related;
       return {
         id: r.id,
         relationType: r.relationType,
-        relatedTicket: isSource ? r.relatedWorkItem : r.workItem,
+        relatedTicket: { ...rest, assignee: assignee?.user ?? null },
         direction: isSource ? "outgoing" : "incoming",
       };
     });

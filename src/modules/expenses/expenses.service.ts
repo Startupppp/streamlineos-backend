@@ -330,7 +330,8 @@ export class ExpensesService {
         approvedCount: Number(s?.approvedCount) || 0,
         rejectedCount: Number(s?.rejectedCount) || 0,
         paidCount: Number(s?.paidCount) || 0,
-        avgExpenseAmount: s?.totalCount ? Number(s.totalAmount) / Number(s.totalCount) : 0,
+        avgExpenseAmount:
+          Number(s?.totalCount) > 0 ? Number(s?.totalAmount) / Number(s?.totalCount) : 0,
       },
       categories: categoryList,
       pagination: {
@@ -428,7 +429,8 @@ export class ExpensesService {
         approvedAmount: Number(summary?.approvedAmount) || 0,
         rejectedAmount: Number(summary?.rejectedAmount) || 0,
         pendingAmount: Number(summary?.pendingAmount) || 0,
-        avgExpenseAmount: summary?.totalExpenses ? totalAmount / Number(summary.totalExpenses) : 0,
+        avgExpenseAmount:
+          Number(summary?.totalExpenses) > 0 ? totalAmount / Number(summary?.totalExpenses) : 0,
       },
       byCategory: byCategory.map((c) => ({
         category: c.category,

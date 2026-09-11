@@ -130,11 +130,9 @@ export class AuthService {
     } catch (error) {
       const organizationExists =
         placementAttempted && placement
-          ? await organizationRowExists(
-              this.db,
-              orgId,
-              placement.region,
-            ).catch(() => true)
+          ? await organizationRowExists(this.db, orgId, placement.region).catch(
+              () => true,
+            )
           : false;
       if (placementAttempted && !organizationExists)
         await unplaceOrganization(this.db, orgId).catch(
@@ -171,7 +169,10 @@ export class AuthService {
           projectedAt: new Date(),
         })
         .onConflictDoUpdate({
-          target: [accountOrganizationIndex.userId, accountOrganizationIndex.orgId],
+          target: [
+            accountOrganizationIndex.userId,
+            accountOrganizationIndex.orgId,
+          ],
           set: { lastActivatedAt: new Date() },
         }),
     );
@@ -217,8 +218,19 @@ export class AuthService {
         where: eq(users.id, existingAccount.userId),
         columns: { isActive: true, deletedAt: true },
       });
-      if (!accountUser || !accountUser.isActive || accountUser.deletedAt !== null) {
-        void this.analytics.logLoginEvent(existingAccount.userId, null, "google_oauth.login", false, "account_inactive", context);
+      if (
+        !accountUser ||
+        !accountUser.isActive ||
+        accountUser.deletedAt !== null
+      ) {
+        void this.analytics.logLoginEvent(
+          existingAccount.userId,
+          null,
+          "google_oauth.login",
+          false,
+          "account_inactive",
+          context,
+        );
         throw new UnauthorizedException("Authentication failed");
       }
       const sessionId = await this.membershipResolver.createLoginSession(
@@ -238,12 +250,24 @@ export class AuthService {
 
     const existingUser = await this.db.query.users.findFirst({
       where: sql`lower(${users.email}) = ${normalizedEmail}`,
-      columns: { id: true, emailVerified: true, isActive: true, deletedAt: true },
+      columns: {
+        id: true,
+        emailVerified: true,
+        isActive: true,
+        deletedAt: true,
+      },
     });
 
     if (existingUser) {
       if (!existingUser.isActive || existingUser.deletedAt !== null) {
-        void this.analytics.logLoginEvent(existingUser.id, null, "google_oauth.login", false, "account_inactive", context);
+        void this.analytics.logLoginEvent(
+          existingUser.id,
+          null,
+          "google_oauth.login",
+          false,
+          "account_inactive",
+          context,
+        );
         throw new UnauthorizedException("Authentication failed");
       }
       await this.db
@@ -380,11 +404,12 @@ export class AuthService {
 
         const preferredOrgId = preferred?.orgId ?? user.lastActiveOrgId ?? null;
 
-        const membership = await this.membershipResolver.resolveActiveMembership(
-          userId,
-          preferredOrgId,
-          { honorSuspendedPreference: true },
-        );
+        const membership =
+          await this.membershipResolver.resolveActiveMembership(
+            userId,
+            preferredOrgId,
+            { honorSuspendedPreference: true },
+          );
         const suspendedMembership = membership
           ? null
           : await this.membershipResolver.resolveSuspendedMembership(
@@ -443,7 +468,7 @@ export class AuthService {
           enabledModules,
           orgOnboardingCompletedAt,
           userOnboardingCompletedAt:
-            user.onboardingCompletedAt?.toISOString() ?? null,
+            membership?.memberOnboardingCompletedAt?.toISOString() ?? null,
           plan,
           organizationAccess: membership
             ? "active"

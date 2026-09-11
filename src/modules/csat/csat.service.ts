@@ -4,6 +4,8 @@ import { and, desc, eq } from "drizzle-orm";
 import { csatResponses, csatSurveys } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
+import { withPublicToken } from "../../common/tenant/with-public-token";
+import { runInNewTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
 import type {
   CreateInput,
   PatchInput,
@@ -99,7 +101,9 @@ export class CsatService {
     });
     if (!existing) return null;
 
-    await this.db.delete(csatSurveys).where(and(eq(csatSurveys.id, surveyId), eq(csatSurveys.orgId, orgId)));
+    await this.db
+      .delete(csatSurveys)
+      .where(and(eq(csatSurveys.id, surveyId), eq(csatSurveys.orgId, orgId)));
 
     return { success: true };
   }
@@ -118,11 +122,16 @@ export class CsatService {
     });
   }
 
-  async submitResponse(surveyId: number, input: SubmitResponseInput) {
-    const survey = await this.db.query.csatSurveys.findFirst({
-      where: and(eq(csatSurveys.id, surveyId), eq(csatSurveys.status, "sent")),
-      columns: { id: true, orgId: true, scaleMax: true },
-    });
+  async submitResponse(publicToken: string, input: SubmitResponseInput) {
+    const survey = await withPublicToken(this.db, publicToken, (tx) =>
+      tx.query.csatSurveys.findFirst({
+        where: and(
+          eq(csatSurveys.publicToken, publicToken),
+          eq(csatSurveys.status, "sent"),
+        ),
+        columns: { id: true, orgId: true, scaleMax: true },
+      }),
+    );
 
     if (!survey) return { error: "not_found" as const };
 
@@ -130,14 +139,16 @@ export class CsatService {
       return { error: "out_of_range" as const, scaleMax: survey.scaleMax };
     }
 
-    await this.db.insert(csatResponses).values({
-      surveyId: survey.id,
-      orgId: survey.orgId,
-      rating: input.rating,
-      comment: input.comment ?? null,
-      respondentName: input.respondentName ?? null,
-      respondentEmail: input.respondentEmail ?? null,
-    });
+    await runInNewTenantTransaction(this.db, survey.orgId, (tx) =>
+      tx.insert(csatResponses).values({
+        surveyId: survey.id,
+        orgId: survey.orgId,
+        rating: input.rating,
+        comment: input.comment ?? null,
+        respondentName: input.respondentName ?? null,
+        respondentEmail: input.respondentEmail ?? null,
+      }),
+    );
 
     return { submitted: true as const };
   }

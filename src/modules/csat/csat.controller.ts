@@ -49,7 +49,10 @@ import {
   successSchema,
 } from "./dto/csat-response.schemas";
 
-const surveyIdParams = z.object({ surveyId: z.coerce.number().int().positive() }).strict();
+const surveyIdParams = z
+  .object({ surveyId: z.coerce.number().int().positive() })
+  .strict();
+const publicTokenParams = z.object({ publicToken: z.uuid() }).strict();
 
 @RequireModule("support")
 @Controller("csat")
@@ -69,10 +72,7 @@ export class CsatController {
   @RequirePermission("support:csat:manage")
   @Validate({ body: createSchema })
   @ResponseSchema(csatSurveyRowSchema)
-  create(
-    @Body() body: CreateInput,
-    @CurrentUser() u: CurrentUserContext,
-  ) {
+  create(@Body() body: CreateInput, @CurrentUser() u: CurrentUserContext) {
     return this.csat.createSurvey(u.orgId, u.userId, body);
   }
 
@@ -125,23 +125,27 @@ export class CsatController {
     @Query() query: ListResponsesInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    const responses = await this.csat.listResponses(u.orgId, surveyId, query.limit);
+    const responses = await this.csat.listResponses(
+      u.orgId,
+      surveyId,
+      query.limit,
+    );
     if (!responses) throw new NotFoundException("Survey not found");
     return responses;
   }
 
   @Public()
-  @Post(":surveyId/responses")
+  @Post("public/:publicToken/responses")
   @HttpCode(201)
   @UseGuards(RateLimitGuard)
   @UseRateLimit("csat:submit")
-  @Validate({ params: surveyIdParams, body: submitResponseSchema })
+  @Validate({ params: publicTokenParams, body: submitResponseSchema })
   @ResponseSchema(csatSubmittedSchema)
   async submitResponse(
-    @Param("surveyId", ParseIntPipe) surveyId: number,
+    @Param("publicToken") publicToken: string,
     @Body() body: SubmitResponseInput,
   ) {
-    const result = await this.csat.submitResponse(surveyId, body);
+    const result = await this.csat.submitResponse(publicToken, body);
     if (isSubmitNotFound(result)) {
       throw new NotFoundException("Survey not found or not active");
     }

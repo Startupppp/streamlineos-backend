@@ -43,6 +43,7 @@ export class AuthMembershipResolverService {
     role: string;
     maxConcurrentSessions: number | null;
     orgOnboardingCompletedAt: Date | null;
+    memberOnboardingCompletedAt: Date | null;
   } | null> {
     const rows = await withIdentity(this.db, userId, async (tx) =>
       tx
@@ -53,6 +54,7 @@ export class AuthMembershipResolverService {
           status: organizationMembers.status,
           maxConcurrentSessions: organizations.maxConcurrentSessions,
           orgOnboardingCompletedAt: organizations.onboardingCompletedAt,
+          memberOnboardingCompletedAt: organizationMembers.onboardingCompletedAt,
         })
         .from(organizationMembers)
         .innerJoin(

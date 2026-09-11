@@ -5,13 +5,9 @@ import { CronLeaseService } from "./cron-lease.service";
 
 const INTERVAL_MS = 15_000;
 const KICKOFF_DELAY_MS = 2_000;
-// Same key as `POST /cron/outbox-events-worker`, so an external scheduler and this one never overlap.
 const JOB_KEY = "outbox-events-worker";
 const LEASE_SECONDS = 120;
 
-// `OutboxPublisherService.flush()` had no in-process caller: the cron endpoint was its only driver,
-// so anywhere nothing POSTs it every emitted event stayed PENDING and the org-setup wizard waited
-// on `provisioning: "pending"` forever.
 @Injectable()
 export class CronOutboxWorkerService implements OnModuleInit, OnModuleDestroy {
   private timer: ReturnType<typeof setInterval> | undefined;

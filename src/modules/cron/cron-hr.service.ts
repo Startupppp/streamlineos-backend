@@ -1,7 +1,13 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { and, eq, gte, inArray, isNotNull, isNull, lte, sql } from "drizzle-orm";
 import { addDays, format } from "date-fns";
-import { certifications, documents, onboardingTasks, users } from "../../db/schema";
+import {
+  certifications,
+  documents,
+  onboardingTasks,
+  organizationMembers,
+  users,
+} from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { AutomationService } from "../automation/automation.service";
@@ -148,6 +154,16 @@ export class CronHrService {
           totalTasks: stats.total,
           completedAt: now.toISOString(),
         });
+
+        await tx
+          .update(organizationMembers)
+          .set({ onboardingCompletedAt: now })
+          .where(
+            and(
+              eq(organizationMembers.userId, employee.id),
+              eq(organizationMembers.orgId, stats.orgId),
+            ),
+          );
 
         onboardedUserIds.push(employee.id);
         fired++;

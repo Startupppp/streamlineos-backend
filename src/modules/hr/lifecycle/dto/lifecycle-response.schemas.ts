@@ -321,6 +321,11 @@ export const onboardingDocsSummarySchema = z.object({
     nextCursor: z.string().nullable(),
     total: z.number().int(),
   }),
+  statusCounts: z.object({
+    PENDING: z.number().int(),
+    IN_PROGRESS: z.number().int(),
+    APPROVED: z.number().int(),
+  }),
 });
 
 // ── Dashboard ──────────────────────────────────────────────────────────────────

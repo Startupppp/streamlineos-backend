@@ -40,8 +40,11 @@ describe("Csat auth (e2e)", () => {
     expect(res.body).toMatchObject({ code: "UNAUTHORIZED", message: "Unauthorized" });
   });
 
-  it("does NOT require auth on POST /csat/:surveyId/responses (public endpoint)", async () => {
-    const res = await callRoute("post", "/csat/1/responses").send({ rating: 5 });
+  it("does NOT require auth on POST /csat/public/:publicToken/responses (public endpoint)", async () => {
+    const res = await callRoute(
+      "post",
+      "/csat/public/00000000-0000-4000-8000-000000000000/responses",
+    ).send({ rating: 5 });
     expect(res.status).not.toBe(401);
     expect(res.status).not.toBe(403);
   });
