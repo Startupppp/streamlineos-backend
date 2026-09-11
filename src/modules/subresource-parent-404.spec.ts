@@ -7,6 +7,7 @@ import { HrTravelVisitsService } from "./hr/benefits/hr-travel-visits.service";
 import { CompPlanningService } from "./hr/enterprise-comp/comp-planning.service";
 import { HrAutomationEngineService } from "./hr/automations/hr-automation-engine.service";
 import type { Db } from "../db/drizzle.module";
+import { ScopedRead } from "./access/scoped-read";
 
 const stub = <T,>() => ({}) as T;
 const ATTACKER_ORG = "org-attacker";
@@ -49,7 +50,7 @@ describe("a sub-resource list whose parent id is outside the caller's org answer
           stub<ConstructorParameters<typeof ClientAccountsService>[2]>(),
           stub<ConstructorParameters<typeof ClientAccountsService>[3]>(),
           stub<ConstructorParameters<typeof ClientAccountsService>[4]>(),
-        ).getClientActivities(org, 1),
+        ).getClientActivities(ScopedRead.of(org, "caller", "all"), 1),
     ],
     [
       "GET /invoices/:invoiceId/payments",

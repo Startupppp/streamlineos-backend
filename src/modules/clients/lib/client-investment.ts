@@ -13,8 +13,8 @@ import { AuditService } from "../../../common/audit/audit.service";
 import { AccessService } from "../../access/access.service";
 import { ClientsEmailService } from "../clients-email.service";
 import type { UpdateClientStatusInput } from "../dto/clients.schemas";
-import type { DataScope } from "../../access/access.types";
-import { applyClientAccountsScope } from "../client-accounts-scope";
+import type { ScopedRead } from "../../access/scoped-read";
+import { clientAccountWhere } from "../client-accounts-scope";
 
 /**
  * The status change that pays somebody.
@@ -51,20 +51,17 @@ export interface ClientInvestmentDeps {
 
 export async function updateClientStatus(
   deps: ClientInvestmentDeps,
-  orgId: string,
-  userId: string,
+  read: ScopedRead,
   accountId: number,
   input: UpdateClientStatusInput,
-  scope: DataScope,
 ) {
+  const orgId = read.orgId;
+  const userId = read.actorId;
   // The caller's READ scope, on the lookup AND the UPDATE below: see
   // `ClientAccountsService.updateStatus` for why a write takes the read key.
-  const conditions = [eq(clientAccounts.id, accountId), eq(clientAccounts.orgId, orgId)];
-  if (scope !== "all") conditions.push(applyClientAccountsScope(scope, orgId, userId));
+  const where = clientAccountWhere(read, accountId);
 
-  const account = await deps.db.query.clientAccounts.findFirst({
-    where: and(...conditions),
-  });
+  const account = await deps.db.query.clientAccounts.findFirst({ where });
   if (!account) return null;
 
   const investmentAmount = input.investmentAmount;
@@ -98,7 +95,7 @@ export async function updateClientStatus(
     const [row] = await tx
       .update(clientAccounts)
       .set(updateData)
-      .where(and(...conditions))
+      .where(where)
       .returning();
 
     await tx.insert(clientAccountActivities).values({

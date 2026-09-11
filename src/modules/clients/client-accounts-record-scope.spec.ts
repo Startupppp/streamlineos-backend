@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { PgDialect } from "drizzle-orm/pg-core";
 import type { SQL } from "drizzle-orm";
 import { ClientAccountsService } from "./client-accounts.service";
+import { ScopedRead } from "../access/scoped-read";
 
 /**
  * The client list narrowed by `DataScope`; four routes reached by id did not.
@@ -102,7 +103,7 @@ describe("client account routes reached by id honour the read scope", () => {
     it("narrows the parent lookup to the accounts the caller may read", async () => {
       const rec = recording();
 
-      await serviceWith(rec).getClientActivities("org-1", 7, "own", "rep-1");
+      await serviceWith(rec).getClientActivities(ScopedRead.of("org-1", "rep-1", "own"), 7);
 
       expect(allSql(rec)).toContain(OWNER_PREDICATE);
     });
@@ -110,7 +111,7 @@ describe("client account routes reached by id honour the read scope", () => {
     it("leaves a manager at scope all exactly as wide as they were", async () => {
       const rec = recording();
 
-      await serviceWith(rec).getClientActivities("org-1", 7, "all", "manager-1");
+      await serviceWith(rec).getClientActivities(ScopedRead.of("org-1", "manager-1", "all"), 7);
 
       expect(allSql(rec)).not.toContain(OWNER_PREDICATE);
     });
@@ -118,7 +119,7 @@ describe("client account routes reached by id honour the read scope", () => {
     it("reaches no account at scope none", async () => {
       const rec = recording();
 
-      await serviceWith(rec).getClientActivities("org-1", 7, "none", "rep-1");
+      await serviceWith(rec).getClientActivities(ScopedRead.of("org-1", "rep-1", "none"), 7);
 
       expect(allSql(rec)).toContain("false");
     });
@@ -133,7 +134,7 @@ describe("client account routes reached by id honour the read scope", () => {
        */
       const rec = recording();
 
-      await serviceWith(rec).updateRenewal("org-1", 7, {}, "own", "rep-1");
+      await serviceWith(rec).updateRenewal(ScopedRead.of("org-1", "rep-1", "own"), 7, {});
 
       const owned = allSql(rec).split(OWNER_PREDICATE).length - 1;
       expect(owned).toBe(2);
@@ -142,7 +143,7 @@ describe("client account routes reached by id honour the read scope", () => {
     it("leaves a manager at scope all exactly as wide as they were", async () => {
       const rec = recording();
 
-      await serviceWith(rec).updateRenewal("org-1", 7, {}, "all", "manager-1");
+      await serviceWith(rec).updateRenewal(ScopedRead.of("org-1", "manager-1", "all"), 7, {});
 
       expect(allSql(rec)).not.toContain(OWNER_PREDICATE);
     });
@@ -152,7 +153,7 @@ describe("client account routes reached by id honour the read scope", () => {
       // nothing was a working detail-read of any account by id.
       const rec = recording();
 
-      await serviceWith(rec).updateRenewal("org-1", 7, {}, "none", "rep-1");
+      await serviceWith(rec).updateRenewal(ScopedRead.of("org-1", "rep-1", "none"), 7, {});
 
       expect(allSql(rec)).toContain("false");
     });
@@ -162,13 +163,7 @@ describe("client account routes reached by id honour the read scope", () => {
     it("narrows the account it appends to", async () => {
       const rec = recording();
 
-      await serviceWith(rec).addActivity(
-        "org-1",
-        7,
-        "rep-1",
-        { activityType: "note", title: "Called" },
-        "own",
-      );
+      await serviceWith(rec).addActivity(ScopedRead.of("org-1", "rep-1", "own"), 7, { activityType: "note", title: "Called" });
 
       expect(allSql(rec)).toContain(OWNER_PREDICATE);
     });
@@ -176,13 +171,7 @@ describe("client account routes reached by id honour the read scope", () => {
     it("leaves a manager at scope all exactly as wide as they were", async () => {
       const rec = recording();
 
-      await serviceWith(rec).addActivity(
-        "org-1",
-        7,
-        "manager-1",
-        { activityType: "note", title: "Called" },
-        "all",
-      );
+      await serviceWith(rec).addActivity(ScopedRead.of("org-1", "manager-1", "all"), 7, { activityType: "note", title: "Called" });
 
       expect(allSql(rec)).not.toContain(OWNER_PREDICATE);
     });
@@ -197,7 +186,7 @@ describe("client account routes reached by id honour the read scope", () => {
        */
       const rec = recording();
 
-      await serviceWith(rec).updateStatus("org-1", "rep-1", 7, { status: "QUERIES" }, "own");
+      await serviceWith(rec).updateStatus(ScopedRead.of("org-1", "rep-1", "own"), 7, { status: "QUERIES" });
 
       const owned = allSql(rec).split(OWNER_PREDICATE).length - 1;
       expect(owned).toBe(2);
@@ -206,13 +195,7 @@ describe("client account routes reached by id honour the read scope", () => {
     it("leaves a manager at scope all exactly as wide as they were", async () => {
       const rec = recording();
 
-      await serviceWith(rec).updateStatus(
-        "org-1",
-        "manager-1",
-        7,
-        { status: "QUERIES" },
-        "all",
-      );
+      await serviceWith(rec).updateStatus(ScopedRead.of("org-1", "manager-1", "all"), 7, { status: "QUERIES" });
 
       expect(allSql(rec)).not.toContain(OWNER_PREDICATE);
     });
@@ -220,7 +203,7 @@ describe("client account routes reached by id honour the read scope", () => {
     it("reaches no account at scope none", async () => {
       const rec = recording();
 
-      await serviceWith(rec).updateStatus("org-1", "rep-1", 7, { status: "QUERIES" }, "none");
+      await serviceWith(rec).updateStatus(ScopedRead.of("org-1", "rep-1", "none"), 7, { status: "QUERIES" });
 
       expect(allSql(rec)).toContain("false");
     });

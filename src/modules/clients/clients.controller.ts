@@ -186,8 +186,8 @@ export class ClientsController {
     @Body() body: UpdateRenewalInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    const scope = await resolveClientsReadScope(this.access, u);
-    const updated = await this.accounts.updateRenewal(u.orgId, accountId, body, scope, u.userId);
+    const read = await resolveClientsReadScope(this.access, u);
+    const updated = await this.accounts.updateRenewal(read, accountId, body);
     if (!updated) throw new NotFoundException("Client account not found");
     return updated;
   }
@@ -338,8 +338,8 @@ export class ClientsController {
     @Body() body: UpdateClientStatusInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    const scope = await resolveClientsReadScope(this.access, u);
-    const updated = await this.accounts.updateStatus(u.orgId, u.userId, clientId, body, scope);
+    const read = await resolveClientsReadScope(this.access, u);
+    const updated = await this.accounts.updateStatus(read, clientId, body);
     if (!updated) throw new NotFoundException("Client account not found");
     return updated;
   }
@@ -353,8 +353,8 @@ export class ClientsController {
     @Param("clientId", ParseIntPipe) clientId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    const scope = await resolveClientsReadScope(this.access, u);
-    return this.accounts.getClientActivities(u.orgId, clientId, scope, u.userId);
+    const read = await resolveClientsReadScope(this.access, u);
+    return this.accounts.getClientActivities(read, clientId);
   }
 
   @Post(":clientId/activities")
@@ -367,8 +367,8 @@ export class ClientsController {
     @Body() body: CreateActivityInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    const scope = await resolveClientsReadScope(this.access, u);
-    const activity = await this.accounts.addActivity(u.orgId, clientId, u.userId, body, scope);
+    const read = await resolveClientsReadScope(this.access, u);
+    const activity = await this.accounts.addActivity(read, clientId, body);
     if (!activity) throw new NotFoundException("Client account not found");
     return activity;
   }
