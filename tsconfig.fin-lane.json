@@ -1,4 +1,0 @@
-{ "extends": "./tsconfig.json", "include": [], "files": [
-  "src/@types/express.d.ts",
-  "src/modules/inventory/channels/channels.service.ts"
-] }
