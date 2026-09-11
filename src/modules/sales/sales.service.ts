@@ -26,10 +26,11 @@ import type {
   PlaybookCreateInput,
   PlaybookUpdateInput,
 } from "./dto/sales.schemas";
+import type { CommissionConflict, CommissionNotFound } from "./lib/sales-commissions";
+
+export type { CommissionConflict, CommissionNotFound };
 
 export type SalesForbidden = { error: "forbidden"; message: string };
-export type CommissionNotFound = { error: "not_found" };
-export type CommissionConflict = { error: "conflict"; message: string };
 
 export function isForbidden(value: unknown): value is SalesForbidden {
   return (

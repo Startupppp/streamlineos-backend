@@ -1,6 +1,32 @@
 import type { sql } from "drizzle-orm";
+import type { Db } from "../../../../../db/drizzle.module";
+import type { ResolvedWarehouseScope } from "../../../stock-engine/warehouse-scope.service";
 import type { InvEvidenceReference } from "../../dto/inv-ai-contract";
-import type { InvCopilotToolContext } from "../inv-copilot-tools";
+
+export type InvCopilotCell = string | number | null;
+
+export interface InvCopilotToolContext {
+  db: Db;
+  orgId: string;
+  scope: ResolvedWarehouseScope;
+  focus: {
+    variantId?: number | undefined;
+    warehouseId?: number | undefined;
+    vendorId?: number | undefined;
+  };
+}
+
+export interface ToolDefinition {
+  label: string;
+  /** Shown to the model when it chooses. Static text from this file only. */
+  description: string;
+  columns: readonly string[];
+  run: (ctx: InvCopilotToolContext) => Promise<{
+    rows: Array<Record<string, InvCopilotCell>>;
+    evidence: InvEvidenceReference[];
+    truncated: boolean;
+  }>;
+}
 
 export const COPILOT_ROW_CAP = 20;
 export const COPILOT_TEXT_CAP = 120;

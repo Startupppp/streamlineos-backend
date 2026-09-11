@@ -16,13 +16,12 @@ import {
 } from "../../../../db/schema";
 import { availableQtySumSql } from "../../stock-engine/available-sql";
 import { addDec } from "../../stock-engine/decimal";
-import { assessCoverage } from "./coverage";
-import { PROJECT_REQUIREMENT_SOURCE } from "../inv-projects.constants";
+import { assessCoverage, type RequirementCoverage } from "./coverage";
 import {
   OPEN_PROJECT_STATUSES,
   OPEN_REQUIREMENT_STATUSES,
-  type RequirementCoverage,
-} from "../inv-projects.service";
+  PROJECT_REQUIREMENT_SOURCE,
+} from "../inv-projects.constants";
 import type { InventorySettingsService } from "../../stock-engine/inventory-settings.service";
 
 /**

@@ -9,9 +9,7 @@ import {
   invVendors,
   invWarehouses,
 } from "../../../../db/schema";
-import type { Db } from "../../../../db/drizzle.module";
 import { availableQtySumSql } from "../../stock-engine/available-sql";
-import type { ResolvedWarehouseScope } from "../../stock-engine/warehouse-scope.service";
 import type { InvEvidenceReference } from "../dto/inv-ai-contract";
 import type { InvCopilotToolName } from "./dto/inv-copilot.schemas";
 import {
@@ -24,6 +22,9 @@ import {
   text,
 } from "./lib/copilot-tool-helpers";
 import { INV_COPILOT_SUPPLY_TOOLS } from "./lib/copilot-tools-supply";
+import type { InvCopilotCell, InvCopilotToolContext, ToolDefinition } from "./lib/copilot-tool-helpers";
+
+export type { InvCopilotCell, InvCopilotToolContext, ToolDefinition };
 
 export { COPILOT_ROW_CAP, COPILOT_TEXT_CAP };
 
@@ -71,8 +72,6 @@ export { COPILOT_ROW_CAP, COPILOT_TEXT_CAP };
 /** How far back a movements question looks, and how far forward an expiry one does. */
 const MOVEMENT_WINDOW_DAYS = 30;
 
-export type InvCopilotCell = string | number | null;
-
 export interface InvCopilotToolResult {
   tool: InvCopilotToolName;
   /** Human label for the section heading. Server-authored, never model text. */
@@ -85,30 +84,6 @@ export interface InvCopilotToolResult {
   truncated: boolean;
   evidence: InvEvidenceReference[];
 }
-
-export interface InvCopilotToolContext {
-  db: Db;
-  orgId: string;
-  scope: ResolvedWarehouseScope;
-  focus: {
-    variantId?: number | undefined;
-    warehouseId?: number | undefined;
-    vendorId?: number | undefined;
-  };
-}
-
-export interface ToolDefinition {
-  label: string;
-  /** Shown to the model when it chooses. Static text from this file only. */
-  description: string;
-  columns: readonly string[];
-  run: (ctx: InvCopilotToolContext) => Promise<{
-    rows: Array<Record<string, InvCopilotCell>>;
-    evidence: InvEvidenceReference[];
-    truncated: boolean;
-  }>;
-}
-
 
 export const INV_COPILOT_TOOL_TABLE: Readonly<
   Record<InvCopilotToolName, ToolDefinition>

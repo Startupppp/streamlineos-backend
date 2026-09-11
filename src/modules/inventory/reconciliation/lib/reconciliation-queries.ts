@@ -4,7 +4,18 @@ import {
   EXPECTED_COMMITTED,
   EXPECTED_OUTGOING,
 } from "../../stock-engine/projection-definitions";
-import type { DriftQueryRow } from "../inv-reconciliation.service";
+
+export interface DriftQueryRow extends Record<string, unknown> {
+  stock_level_id: number | null;
+  product_variant_id: number;
+  location_id: number | null;
+  lot_id: number | null;
+  serial_id: number | null;
+  field: string;
+  projected: string;
+  expected: string;
+  difference: string;
+}
 
 type Executor = Pick<Db, "execute">;
 

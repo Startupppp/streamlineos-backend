@@ -1,13 +1,13 @@
 import { and, eq, lte, sql } from "drizzle-orm";
 import { invLots, invProductVariants, invPurchaseOrders, invVendors } from "../../../../../db/schema";
 import type { InvCopilotToolName } from "../dto/inv-copilot.schemas";
-import type { ToolDefinition } from "../inv-copilot-tools";
 import {
   COPILOT_ROW_CAP,
   EMPTY,
   evidenceFrom,
   takeCapped,
   text,
+  type ToolDefinition,
 } from "./copilot-tool-helpers";
 
 /** Moved with `expiring_lots`, its only reader. */

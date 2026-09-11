@@ -69,3 +69,24 @@ export function assessCoverage(input: CoverageInput, now: Date): CoverageAssessm
 
   return { shortfallQty, atRisk: false, riskReason: null };
 }
+
+export interface RequirementCoverage {
+  requirementId: number;
+  requiredQty: string;
+  reservedQty: string;
+  fulfilledQty: string;
+  /** required − reserved − fulfilled, floored at zero. What is still unmet. */
+  shortfallQty: string;
+  /** Availability at the named store, or org-wide when the line names none. */
+  availableQty: string;
+  /**
+   * Whether this line is heading for a miss.
+   *
+   * Derived on every read rather than stored: it is a function of today's date,
+   * today's availability and today's reservations, and all three move without
+   * anybody touching the requirement. A stored flag would be wrong within a day
+   * and nobody would know which day.
+   */
+  atRisk: boolean;
+  riskReason: RiskReason;
+}

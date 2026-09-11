@@ -36,30 +36,6 @@ import { attachTicketContext } from "./notification-ticket-context";
  * which is the layer that knows the key.
  */
 
-export type NotificationListRow = {
-  id: number;
-  orgId: string;
-  userId: string | null;
-  type: string;
-  priority: string;
-  category: string;
-  sourceModule: string | null;
-  eventKey: string | null;
-  entityType: string | null;
-  entityId: string | null;
-  reason: string | null;
-  title: string;
-  message: string;
-  link: string | null;
-  isRead: boolean;
-  pinned: boolean;
-  channel: string;
-  metadata: Record<string, unknown> | null;
-  archivedAt: Date | null;
-  snoozedUntil: Date | null;
-  createdAt: Date;
-};
-
 const LIST_COLUMNS = {
   id: notifications.id,
   orgId: notifications.orgId,

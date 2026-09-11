@@ -144,6 +144,11 @@ export const DIRECT_EMAIL_CALLER_INVENTORY: DirectEmailCallerInventoryEntry[] =
       "resend and cancel notices go to a non-member external recipient",
     ),
     EXEMPT(
+      "modules/organization/core/lib/invitation-mail-ops.ts",
+      DeliveryClass.WORKFLOW_EXTERNAL,
+      "the resend notice itself, moved here from invitation-lifecycle.service.ts; same non-member external recipient",
+    ),
+    EXEMPT(
       "modules/organization/core/org-membership.service.ts",
       DeliveryClass.OPERATOR_ALERT,
       "retains backward-compatible delegators for external callers; access-loss notice targets suspended or removed members",

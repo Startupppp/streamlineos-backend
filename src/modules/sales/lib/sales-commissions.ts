@@ -13,7 +13,10 @@ import type {
   CommissionRuleCreateInput,
   CommissionListInput,
 } from "../dto/sales.schemas";
-import type { CommissionConflict, CommissionNotFound } from "../sales.service";
+
+export type CommissionConflict = { error: "conflict"; message: string };
+
+export type CommissionNotFound = { error: "not_found" };
 
 /**
  * Commission rules, and the commissions they produce.

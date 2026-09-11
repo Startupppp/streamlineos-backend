@@ -9,7 +9,12 @@ import {
 import { runInTenantTransaction } from "../../../../common/tenant/run-in-tenant-transaction";
 import { registerAfterCommit } from "../../../../common/tenant/tenant-context";
 import type { DbOrTx } from "../../../../common/rbac/access-invalidate";
-import type { PlanEntitlementSnapshot } from "../versioned-catalog.service";
+
+export interface PlanEntitlementSnapshot {
+  featureKey: string;
+  limitValue: number | null;
+  source: "plan" | "org_override";
+}
 
 const ENTITLEMENT_CACHE_TTL = 60;
 

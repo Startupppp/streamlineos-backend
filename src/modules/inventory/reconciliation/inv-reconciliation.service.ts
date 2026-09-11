@@ -6,6 +6,9 @@ import { WarehouseScopeService } from "../stock-engine/warehouse-scope.service";
 import { InventoryAuditService } from "../stock-engine/inventory-audit.service";
 import type { ReconciliationQueryInput, RepairInput } from "./dto/reconciliation.schemas";
 import { reconciliationQueries } from "./lib/reconciliation-queries";
+import type { DriftQueryRow } from "./lib/reconciliation-queries";
+
+export type { DriftQueryRow };
 
 export { reconciliationQueries };
 
@@ -98,20 +101,6 @@ export interface ReconciliationReport {
   driftCount: number;
   truncated: boolean;
 }
-
-export interface DriftQueryRow extends Record<string, unknown> {
-  stock_level_id: number | null;
-  product_variant_id: number;
-  location_id: number | null;
-  lot_id: number | null;
-  serial_id: number | null;
-  field: string;
-  projected: string;
-  expected: string;
-  difference: string;
-}
-
-
 
 /**
  * The tenant/warehouse/product predicate the checks share. `sl` is the

@@ -18,6 +18,9 @@ import {
   upsertOrgEntitlementOverride,
   type EntitlementDeps,
 } from "./lib/org-entitlements";
+import type { PlanEntitlementSnapshot } from "./lib/org-entitlements";
+
+export type { PlanEntitlementSnapshot };
 
 export interface ActivePriceVersion {
   id: number;
@@ -28,12 +31,6 @@ export interface ActivePriceVersion {
   taxBehavior: string;
   effectiveFrom: Date;
   effectiveUntil: Date | null;
-}
-
-export interface PlanEntitlementSnapshot {
-  featureKey: string;
-  limitValue: number | null;
-  source: "plan" | "org_override";
 }
 
 @Injectable()

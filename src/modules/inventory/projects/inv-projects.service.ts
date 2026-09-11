@@ -22,9 +22,16 @@ import { InventorySettingsService } from "../stock-engine/inventory-settings.ser
 import { ReservationService } from "../stock-engine/reservation.service";
 import { WarehouseScopeService } from "../stock-engine/warehouse-scope.service";
 import { addDec, cmpDec } from "../stock-engine/decimal";
-import { PROJECT_REQUIREMENT_SOURCE } from "./inv-projects.constants";
+import {
+  OPEN_PROJECT_STATUSES,
+  OPEN_REQUIREMENT_STATUSES,
+  PROJECT_REQUIREMENT_SOURCE,
+} from "./inv-projects.constants";
+
+export { OPEN_PROJECT_STATUSES, OPEN_REQUIREMENT_STATUSES };
+export type { RequirementCoverage };
 export { PROJECT_REQUIREMENT_SOURCE } from "./inv-projects.constants";
-import { type RiskReason } from "./lib/coverage";
+import { type RequirementCoverage } from "./lib/coverage";
 import type {
   CreateProjectInput,
   CreateRequirementInput,
@@ -46,35 +53,6 @@ import {
   reserveRequirement,
   type ProjectDeps,
 } from "./lib/project-reservation";
-
-
-
-/** Statuses that mean the project is still consuming material. */
-export const OPEN_PROJECT_STATUSES = ["PLANNING", "ACTIVE", "ON_HOLD"] as const;
-/** Statuses that mean the line still wants stock. */
-export const OPEN_REQUIREMENT_STATUSES = ["DRAFT", "REQUESTED", "RESERVED", "PARTIALLY_FULFILLED"] as const;
-
-
-export interface RequirementCoverage {
-  requirementId: number;
-  requiredQty: string;
-  reservedQty: string;
-  fulfilledQty: string;
-  /** required − reserved − fulfilled, floored at zero. What is still unmet. */
-  shortfallQty: string;
-  /** Availability at the named store, or org-wide when the line names none. */
-  availableQty: string;
-  /**
-   * Whether this line is heading for a miss.
-   *
-   * Derived on every read rather than stored: it is a function of today's date,
-   * today's availability and today's reservations, and all three move without
-   * anybody touching the requirement. A stored flag would be wrong within a day
-   * and nobody would know which day.
-   */
-  atRisk: boolean;
-  riskReason: RiskReason;
-}
 
 /**
  * B1 — construction projects, and the deliberate answer to "why is this not
@@ -138,7 +116,6 @@ export class InvProjectsService {
     private readonly warehouseScope: WarehouseScopeService,
   ) {}
 
-
   /** @see lib/project-reads.ts */
   async listProjects(orgId: string, filters: ListProjectsInput) {
     return listProjects(this.db, this.settings, orgId, filters);
@@ -170,7 +147,6 @@ export class InvProjectsService {
       requirements: requirements.map((r) => ({ ...r, coverage: byId.get(r.id) ?? null })),
     };
   }
-
 
   async createProject(orgId: string, userId: string, data: CreateProjectInput) {
     await assertPack(this.settings, orgId);
@@ -403,7 +379,6 @@ export class InvProjectsService {
     return row!;
   }
 
-
   /** @see lib/project-reads.ts — public, and a spec reaches it on the service. */
   async coverageFor(
     orgId: string,
@@ -445,5 +420,4 @@ export class InvProjectsService {
     return atRiskRequirements(this.db, this.settings, orgId, limit);
   }
 }
-
 

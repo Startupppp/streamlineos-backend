@@ -1,8 +1,10 @@
 import { and, eq, inArray, isNull } from "drizzle-orm";
 import { tickets, projects, users } from "../../../db/schema";
 import { type Db } from "../../../db/drizzle.module";
-import type { NotificationTicketContext } from "../notifications.types";
-import type { NotificationListRow } from "./notification-queries";
+import type {
+  NotificationListRow,
+  NotificationTicketContext,
+} from "../notifications.types";
 
 /**
  * The ticket a notification is about, for the rows that are about one.

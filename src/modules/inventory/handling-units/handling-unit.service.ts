@@ -25,37 +25,11 @@ import {
   node,
   subtreeIds,
 } from "./lib/handling-unit-tree";
+import type { HandlingUnitContentRow, HandlingUnitDetail } from "./lib/handling-unit-tree";
+
+export type { HandlingUnitContentRow, HandlingUnitDetail };
 
 type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
-
-export interface HandlingUnitContentRow {
-  productVariantId: number;
-  lotId: number | null;
-  serialId: number | null;
-  handlingUnitId: number;
-  /**
-   * INV-18 - whose stock this is. Part of `inv_stock_levels`' natural key, and
-   * the component this read used to drop: a pallet holding a supplier's cartons
-   * looked identical to one holding our own, and `move` then posted both as
-   * `OWNED`.
-   */
-  ownership: "OWNED" | "VENDOR" | "CUSTOMER";
-  onHand: string;
-}
-
-export interface HandlingUnitDetail {
-  id: number;
-  huCode: string;
-  kind: string;
-  status: string;
-  locationId: number | null;
-  parentHuId: number | null;
-  childIds: number[];
-  /** Held on this unit only. A parent's own contents are always empty. */
-  contents: HandlingUnitContentRow[];
-  /** This unit's contents plus every descendant's, which is what a label means. */
-  rolledUpContents: HandlingUnitContentRow[];
-}
 
 /**
  * NEO-4 - the pallet, and what may be done to it.

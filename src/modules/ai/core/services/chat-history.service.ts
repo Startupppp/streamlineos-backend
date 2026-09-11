@@ -9,6 +9,9 @@ import {
   listConversations,
   renameConversation,
 } from "./lib/ai-conversations";
+import type { AiConversation, AiConversationListPage } from "./lib/ai-conversations";
+
+export type { AiConversation, AiConversationListPage };
 
 const MAX_PAGE = 100;
 
@@ -21,18 +24,6 @@ export interface ChatHistoryMessage {
 
 export interface ChatHistoryPage {
   messages: ChatHistoryMessage[];
-  nextCursor: number | null;
-}
-
-export interface AiConversation {
-  id: number;
-  title: string | null;
-  createdAt: string;
-  updatedAt: string;
-}
-
-export interface AiConversationListPage {
-  conversations: AiConversation[];
   nextCursor: number | null;
 }
 

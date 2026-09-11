@@ -3,7 +3,7 @@ import { invProjects } from "../../../../db/schema";
 import type { Db } from "../../../../db/drizzle.module";
 import type { InventorySettingsService } from "../../stock-engine/inventory-settings.service";
 import type { ListProjectsInput } from "../dto/inv-projects.schemas";
-import { OPEN_PROJECT_STATUSES } from "../inv-projects.service";
+import { OPEN_PROJECT_STATUSES } from "../inv-projects.constants";
 import { assertPack } from "./project-reads";
 
 /**

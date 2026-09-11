@@ -4,8 +4,20 @@ import { invCarriers, invShipments, invShipmentStatusEvents } from "../../../../
 import type { Db } from "../../../../db/drizzle.module";
 import { InventoryAuditService } from "../../stock-engine/inventory-audit.service";
 import { CarrierAdapterRegistry, runCarrierCall } from "../carrier-adapter";
-import type { CarrierRefreshResult } from "../carrier-status.service";
 import type { CarrierStatusInput } from "../dto/carrier-status.schemas";
+
+export interface CarrierRefreshResult {
+  shipmentId: number;
+  carrier: string;
+  /** False when there is nobody to ask — the manual adapter's normal answer. */
+  polled: boolean;
+  /** Events the carrier returned that we had not already recorded. */
+  recorded: number;
+  status: string;
+  deadLettered: boolean;
+  /** Present only on a dead letter, for an operator reading a log. */
+  error?: string;
+}
 
 /**
  * Folding a carrier event into a shipment, and the poll that fetches them.

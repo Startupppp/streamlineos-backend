@@ -1,7 +1,7 @@
 import { BadRequestException, ForbiddenException } from "@nestjs/common";
 import { and, eq } from "drizzle-orm";
 import type { Db } from "../../../db/drizzle.module";
-import { userPermissionGrants } from "../../../db/schema";
+import { organizationMembers, userPermissionGrants } from "../../../db/schema";
 import { CacheService } from "../../../common/cache/cache.service";
 import { CACHE_KEYS } from "../../../common/cache/cache-keys";
 import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
@@ -18,7 +18,12 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { ModuleAccessService } from "../module-access.service";
 import { resolveActorRankContext } from "../module-access.helpers";
 import type { SetUserPermissionGrantsInput } from "../dto/user-permission-grants.schemas";
-import type { TargetMembership } from "../user-permission-grants.service";
+
+export interface TargetMembership {
+  id: number;
+  userId: string;
+  status: (typeof organizationMembers.$inferSelect)["status"];
+}
 
 /**
  * Writing a user's permission grants, and refusing the ones the actor may not

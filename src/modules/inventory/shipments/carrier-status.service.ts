@@ -11,20 +11,11 @@ import {
   type CarrierEventDeps,
 } from "./lib/carrier-events";
 import type { CarrierStatusInput } from "./dto/carrier-status.schemas";
+import type { CarrierRefreshResult } from "./lib/carrier-events";
+
+export type { CarrierRefreshResult };
 
 /** What a shipment refresh did, as a value the UI can render verbatim. */
-export interface CarrierRefreshResult {
-  shipmentId: number;
-  carrier: string;
-  /** False when there is nobody to ask — the manual adapter's normal answer. */
-  polled: boolean;
-  /** Events the carrier returned that we had not already recorded. */
-  recorded: number;
-  status: string;
-  deadLettered: boolean;
-  /** Present only on a dead letter, for an operator reading a log. */
-  error?: string;
-}
 
 @Injectable()
 export class CarrierStatusService {

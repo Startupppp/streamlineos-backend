@@ -20,18 +20,15 @@ import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ModuleAccessService } from "./module-access.service";
 import { setGrants, type GrantWriteDeps } from "./lib/grant-writes";
 import type { SetUserPermissionGrantsInput } from "./dto/user-permission-grants.schemas";
+import type { TargetMembership } from "./lib/grant-writes";
+
+export type { TargetMembership };
 
 export interface UserPermissionGrant {
   permissionKey: string;
   scope: DataScope;
   reason: string | null;
   createdAt: Date;
-}
-
-export interface TargetMembership {
-  id: number;
-  userId: string;
-  status: (typeof organizationMembers.$inferSelect)["status"];
 }
 
 @Injectable()

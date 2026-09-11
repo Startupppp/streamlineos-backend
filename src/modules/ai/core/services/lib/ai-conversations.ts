@@ -2,7 +2,18 @@ import { NotFoundException } from "@nestjs/common";
 import { and, desc, eq, lt, or } from "drizzle-orm";
 import { type Db } from "../../../../../db/drizzle.module";
 import { aiChatConversations } from "../../../../../db/schema";
-import type { AiConversation, AiConversationListPage } from "../chat-history.service";
+
+export interface AiConversation {
+  id: number;
+  title: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AiConversationListPage {
+  conversations: AiConversation[];
+  nextCursor: number | null;
+}
 
 /**
  * The conversations themselves: list, open, rename, delete.
