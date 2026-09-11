@@ -3139,6 +3139,11 @@
       "verdict": "FALSE-POSITIVE",
       "note": "listApprovals already keyset-migrated on (submittedAt, id); billableEntries is bounded by timesheetPeriodId eq-predicate; no unbounded org-wide read"
     },
+    "/timesheets/core/lib/approval-transition.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "Carried from /timesheets/core/approvals.service.ts by the file-size split on 2026-09-11, together with the read it names: billableEntries is bounded by timesheetPeriodId eq-predicate (plus org, is_billable, bill_rate IS NULL, voided_at IS NULL). It is the only select in this file",
+      "justification": "Every unpriced billable entry of the one period being approved needs a rate, so a LIMIT would leave entries unpriced rather than bound the read; it is one period's entries, not an org-wide read. The keyset half of the origin note (listApprovals) moved to lib/approval-period-reads.ts, where both selects carry .limit( and are not flagged 2026-09-11"
+    },
     "/timesheets/core/lib/billing-export.ts": {
       "verdict": "KEYSET-MIGRATED",
       "note": "exportBilling and createInvoiceDraft read the period through billableEntryChunks: keyset over timesheets.id (id > cursor, ORDER BY id, LIMIT BILLING_EXPORT_CHUNK = 1000) inside the one transaction that inserts the single timesheet_exports row; the draft flips each chunk by id as it goes, so no statement binds more than 1000 ids",
