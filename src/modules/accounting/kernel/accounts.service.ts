@@ -1,73 +1,29 @@
-import {
-  BadRequestException,
-  ConflictException,
-  Inject,
-  Injectable,
-  NotFoundException,
-} from "@nestjs/common";
-import { and, asc, count, eq, isNull, lte, ne, sql } from "drizzle-orm";
-import {
-  glAccounts,
-  glJournalLines,
-  glJournals,
-  type GlAccountType,
-  type GlSystemTag,
-} from "../../../db/schema";
+import { BadRequestException, Inject, Injectable } from "@nestjs/common";
+import { and, eq, ne } from "drizzle-orm";
+import { glAccounts, type GlSystemTag } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
-import { getPostgresErrorDetails } from "../../../common/db/postgres-error";
 import { AuditService } from "../../../common/audit/audit.service";
 import { addDays, assertIsoDate, compareDates } from "./fiscal-calendar";
-import {
-  ALL_SYSTEM_TAGS,
-  INVENTORY_SEAM_ROLES,
-  INVENTORY_SEAM_ROLES_PENDING,
-  SYSTEM_TAG_ACCOUNT_TYPES,
-  accountTypeFitsRole,
-} from "./system-tag-roles";
 import {
   readAccountLedger,
   type AccountBalance,
   type AccountLedgerPage,
   type AccountLedgerQuery,
 } from "./account-ledger";
-import type { DbOrTx } from "./sequence.service";
+import type { AccountNode, CreateAccountInput, UpdateAccountInput } from "./lib/account-types";
+import { assertRoleFitsType, toTree, translateUniqueViolation } from "./lib/account-rules";
+import {
+  assertParentUsable,
+  getAccount,
+  listPostableAccounts,
+  readAccountBalance,
+  readAccountRows,
+  readSystemTagMappings,
+} from "./lib/account-reads";
+import { archiveAccount } from "./lib/account-archive";
 
-export interface CreateAccountInput {
-  code: string;
-  name: string;
-  accountType: GlAccountType;
-  parentAccountId?: string | null;
-  isHeader?: boolean;
-  isCash?: boolean;
-  systemTag?: GlSystemTag | null;
-  currencyRestriction?: string | null;
-  description?: string | null;
-}
-
-export interface UpdateAccountInput {
-  name?: string;
-  parentAccountId?: string | null;
-  isActive?: boolean;
-  isCash?: boolean;
-  currencyRestriction?: string | null;
-  description?: string | null;
-}
-
-export interface AccountNode {
-  id: string;
-  code: string;
-  name: string;
-  accountType: GlAccountType;
-  parentAccountId: string | null;
-  isHeader: boolean;
-  isActive: boolean;
-  isCash: boolean;
-  systemTag: GlSystemTag | null;
-  currencyRestriction: string | null;
-  description: string | null;
-  children: AccountNode[];
-}
+export type { AccountNode, CreateAccountInput, UpdateAccountInput } from "./lib/account-types";
 
 /**
  * The chart of accounts.
@@ -75,6 +31,9 @@ export interface AccountNode {
  * The rules here exist to protect the ledger from its own configuration: an
  * account that has postings cannot become a header, cannot change type, and
  * cannot be deleted. Those are the edits that silently break a trial balance.
+ *
+ * The reads and the archive policy are in `lib/account-reads.ts` and
+ * `lib/account-archive.ts`, the pure rules in `lib/account-rules.ts`.
  */
 @Injectable()
 export class AccountsService {
@@ -88,74 +47,17 @@ export class AccountsService {
     bookId: string,
     options: { includeInactive?: boolean } = {},
   ): Promise<AccountNode[]> {
-    const rows = await this.db
-      .select({
-        id: glAccounts.id,
-        code: glAccounts.code,
-        name: glAccounts.name,
-        accountType: glAccounts.accountType,
-        parentAccountId: glAccounts.parentAccountId,
-        isHeader: glAccounts.isHeader,
-        isActive: glAccounts.isActive,
-        isCash: glAccounts.isCash,
-        systemTag: glAccounts.systemTag,
-        currencyRestriction: glAccounts.currencyRestriction,
-        description: glAccounts.description,
-      })
-      .from(glAccounts)
-      .where(
-        and(
-          eq(glAccounts.orgId, orgId),
-          eq(glAccounts.bookId, bookId),
-          isNull(glAccounts.deletedAt),
-          options.includeInactive ? undefined : eq(glAccounts.isActive, true),
-        ),
-      )
-      .orderBy(asc(glAccounts.code));
-
-    return this.toTree(rows);
+    const rows = await readAccountRows(this.db, orgId, bookId, options);
+    return toTree(rows);
   }
 
   /** Flat listing — what a posting dropdown wants (no headers). */
   async listPostable(orgId: string, bookId: string) {
-    return this.db
-      .select({
-        id: glAccounts.id,
-        code: glAccounts.code,
-        name: glAccounts.name,
-        accountType: glAccounts.accountType,
-        isCash: glAccounts.isCash,
-        systemTag: glAccounts.systemTag,
-        currencyRestriction: glAccounts.currencyRestriction,
-      })
-      .from(glAccounts)
-      .where(
-        and(
-          eq(glAccounts.orgId, orgId),
-          eq(glAccounts.bookId, bookId),
-          eq(glAccounts.isHeader, false),
-          eq(glAccounts.isActive, true),
-          isNull(glAccounts.deletedAt),
-        ),
-      )
-      .orderBy(asc(glAccounts.code));
+    return listPostableAccounts(this.db, orgId, bookId);
   }
 
   async get(orgId: string, bookId: string, accountId: string) {
-    const [row] = await this.db
-      .select()
-      .from(glAccounts)
-      .where(
-        and(
-          eq(glAccounts.orgId, orgId),
-          eq(glAccounts.bookId, bookId),
-          eq(glAccounts.id, accountId),
-          isNull(glAccounts.deletedAt),
-        ),
-      )
-      .limit(1);
-    if (!row) throw new NotFoundException("Account not found");
-    return row;
+    return getAccount(this.db, orgId, bookId, accountId);
   }
 
   async create(orgId: string, userId: string, bookId: string, input: CreateAccountInput) {
@@ -163,13 +65,13 @@ export class AccountsService {
       throw new BadRequestException("A header account cannot also be a cash account");
     }
     if (input.systemTag) {
-      this.assertRoleFitsType(input.systemTag, input.accountType);
+      assertRoleFitsType(input.systemTag, input.accountType);
       if (input.isHeader) {
         throw new BadRequestException("A header account cannot fill a posting role");
       }
     }
     if (input.parentAccountId) {
-      await this.assertParentUsable(orgId, bookId, input.parentAccountId);
+      await assertParentUsable(this.db, orgId, bookId, input.parentAccountId);
     }
 
     try {
@@ -200,7 +102,7 @@ export class AccountsService {
       });
       return created;
     } catch (error) {
-      throw this.translateUniqueViolation(error, input.code, input.systemTag ?? null);
+      throw translateUniqueViolation(error, input.code, input.systemTag ?? null);
     }
   }
 
@@ -217,7 +119,7 @@ export class AccountsService {
     // history. Turning a posted-to account into a header is not — the trial
     // balance would carry a total nobody can drill into.
     if (input.parentAccountId !== undefined && input.parentAccountId !== null) {
-      await this.assertParentUsable(orgId, bookId, input.parentAccountId, accountId);
+      await assertParentUsable(this.db, orgId, bookId, input.parentAccountId, accountId);
     }
     if (input.isCash === true && before.isHeader) {
       throw new BadRequestException("A header account cannot be a cash account");
@@ -256,55 +158,7 @@ export class AccountsService {
    * history. Deactivating stops new postings and keeps the audit trail whole.
    */
   async archive(orgId: string, userId: string, bookId: string, accountId: string) {
-    const account = await this.get(orgId, bookId, accountId);
-    const postings = await this.postingCount(accountId);
-
-    if (postings > 0) {
-      const [updated] = await this.db
-        .update(glAccounts)
-        .set({ isActive: false })
-        .where(and(eq(glAccounts.orgId, orgId), eq(glAccounts.id, accountId)))
-        .returning();
-      this.audit.log({
-        action: "accounting.account.deactivated",
-        userId,
-        orgId,
-        resourceType: "gl_accounts",
-        resourceId: accountId,
-        after: { reason: "has postings", postings },
-      });
-      return { ...updated, deactivatedInsteadOfDeleted: true, postings };
-    }
-
-    const children = await this.db
-      .select({ n: count() })
-      .from(glAccounts)
-      .where(and(eq(glAccounts.parentAccountId, accountId), isNull(glAccounts.deletedAt)));
-    if (Number(children[0]?.n ?? 0) > 0) {
-      throw new ConflictException("Move or archive the child accounts first");
-    }
-    if (account.systemTag) {
-      throw new ConflictException(
-        `${account.code} is the book's "${account.systemTag}" account and documents resolve to it. ` +
-          "Point that role at another account before archiving this one.",
-      );
-    }
-
-    const [deleted] = await this.db
-      .update(glAccounts)
-      .set({ deletedAt: new Date(), isActive: false })
-      .where(and(eq(glAccounts.orgId, orgId), eq(glAccounts.id, accountId)))
-      .returning();
-
-    this.audit.log({
-      action: "accounting.account.archived",
-      userId,
-      orgId,
-      resourceType: "gl_accounts",
-      resourceId: accountId,
-      before: { code: account.code, name: account.name },
-    });
-    return { ...deleted, deactivatedInsteadOfDeleted: false, postings: 0 };
+    return archiveAccount(this.db, this.audit, orgId, userId, bookId, accountId);
   }
 
   /** Reassign which account fills a system role (`ar_control`, `bank`, …). */
@@ -319,7 +173,7 @@ export class AccountsService {
     if (tag && account.isHeader) {
       throw new BadRequestException("A header account cannot fill a posting role");
     }
-    if (tag) this.assertRoleFitsType(tag, account.accountType);
+    if (tag) assertRoleFitsType(tag, account.accountType);
 
     return this.db.transaction(async (tx) => {
       if (tag) {
@@ -355,153 +209,9 @@ export class AccountsService {
     });
   }
 
-  /**
-   * A role has a shape. `cogs` on an equity account balances perfectly well and
-   * is still wrong — the journal is fine and the P&L is quietly missing its
-   * cost of sales, which is the kind of error that survives until an auditor
-   * finds it. See `system-tag-roles.ts` for why this is checked when a tag is
-   * assigned and never when a journal is posted.
-   */
-  private assertRoleFitsType(tag: GlSystemTag, accountType: GlAccountType): void {
-    if (accountTypeFitsRole(tag, accountType)) return;
-    const allowed = SYSTEM_TAG_ACCOUNT_TYPES[tag];
-    throw new BadRequestException(
-      `The "${tag}" role belongs on ${allowed.join(" or ")} account, not ${accountType}. ` +
-        "Documents resolve accounts by role, so this mapping would classify every posting " +
-        "that uses it onto the wrong side of the statements.",
-    );
-  }
-
-  /**
-   * Every system role and the account filling it, for the mapping screen.
-   *
-   * Returns all roles rather than only the mapped ones: the screen's job is to
-   * show what is *not* mapped, and a list that omits the unmapped shows an
-   * operator nothing to do.
-   */
+  /** Every system role and the account filling it, for the mapping screen. */
   async listSystemTagMappings(orgId: string, bookId: string) {
-    const rows = await this.db
-      .select({
-        id: glAccounts.id,
-        code: glAccounts.code,
-        name: glAccounts.name,
-        accountType: glAccounts.accountType,
-        systemTag: glAccounts.systemTag,
-      })
-      .from(glAccounts)
-      .where(
-        and(
-          eq(glAccounts.orgId, orgId),
-          eq(glAccounts.bookId, bookId),
-          eq(glAccounts.isActive, true),
-          isNull(glAccounts.deletedAt),
-        ),
-      );
-
-    const byTag = new Map(rows.filter((r) => r.systemTag).map((r) => [r.systemTag, r]));
-    const required = new Set<string>(INVENTORY_SEAM_ROLES);
-    const pending = new Set<string>(INVENTORY_SEAM_ROLES_PENDING);
-
-    return ALL_SYSTEM_TAGS.map((tag) => {
-      const account = byTag.get(tag);
-      return {
-        tag,
-        allowedAccountTypes: SYSTEM_TAG_ACCOUNT_TYPES[tag],
-        account: account
-          ? { id: account.id, code: account.code, name: account.name, accountType: account.accountType }
-          : null,
-        /* Inventory refuses a movement without this one, today. */
-        requiredByInventory: required.has(tag),
-        /*
-          Seeded by the chart and resolved by nothing yet. Shown so the screen
-          can say so, rather than presenting it as a gap the operator caused.
-        */
-        awaitingInventorySupport: pending.has(tag),
-      };
-    });
-  }
-
-  private async postingCount(accountId: string, tx: DbOrTx = this.db): Promise<number> {
-    const [row] = await tx
-      .select({ n: count() })
-      .from(glJournalLines)
-      .where(eq(glJournalLines.accountId, accountId));
-    return Number(row?.n ?? 0);
-  }
-
-  private async assertParentUsable(
-    orgId: string,
-    bookId: string,
-    parentId: string,
-    childId?: string,
-  ): Promise<void> {
-    if (childId && parentId === childId) {
-      throw new BadRequestException("An account cannot be its own parent");
-    }
-    const parent = await this.get(orgId, bookId, parentId);
-    if (!parent.isHeader) {
-      throw new BadRequestException(
-        `${parent.code} is a posting account, so it cannot have children. Use a header account.`,
-      );
-    }
-    if (childId) {
-      // Walk up to the root; a cycle here would make the tree query never end.
-      let cursor: string | null = parent.parentAccountId;
-      const seen = new Set<string>([childId, parentId]);
-      while (cursor) {
-        if (seen.has(cursor)) throw new BadRequestException("That would create a cycle");
-        seen.add(cursor);
-        const [row] = await this.db
-          .select({ parentAccountId: glAccounts.parentAccountId })
-          .from(glAccounts)
-          .where(eq(glAccounts.id, cursor))
-          .limit(1);
-        cursor = row?.parentAccountId ?? null;
-      }
-    }
-  }
-
-  /**
-   * Both halves of this read were looking in the wrong place.
-   *
-   * The SQLSTATE was taken off the value Drizzle threw, and Drizzle throws a
-   * `DrizzleQueryError` that keeps the driver error on `.cause` — so the
-   * comparison was always false and creating an account with a code the book
-   * already uses answered 500 rather than 409. And the constraint was matched
-   * against `error.message`, which on that wrapper is the SQL text
-   * ("Failed query: insert into …"), never the constraint name; even a correct
-   * SQLSTATE read would have fallen through to the generic message.
-   *
-   * `getPostgresErrorDetails` answers both from the cause chain.
-   * `uniq_gl_accounts_book_code` is (book_id, code) WHERE deleted_at IS NULL
-   * and `uniq_gl_accounts_book_system_tag` is (book_id, system_tag) WHERE the
-   * tag is set — both reachable from `create` with caller-supplied values.
-   */
-  private translateUniqueViolation(error: unknown, code: string, tag: GlSystemTag | null): Error {
-    const { code: sqlstate, constraint } = getPostgresErrorDetails(error);
-    if (sqlstate === "23505") {
-      if (constraint === "uniq_gl_accounts_book_code") {
-        return new ConflictException(`Account code ${code} is already used in this book`);
-      }
-      if (constraint === "uniq_gl_accounts_book_system_tag" && tag) {
-        return new ConflictException(`Another account already fills the "${tag}" role`);
-      }
-      return new ConflictException("That account already exists");
-    }
-    return error instanceof Error ? error : new Error(String(error));
-  }
-
-  private toTree(rows: Omit<AccountNode, "children">[]): AccountNode[] {
-    const byId = new Map<string, AccountNode>();
-    for (const row of rows) byId.set(row.id, { ...row, children: [] });
-
-    const roots: AccountNode[] = [];
-    for (const node of byId.values()) {
-      const parent = node.parentAccountId ? byId.get(node.parentAccountId) : undefined;
-      if (parent) parent.children.push(node);
-      else roots.push(node);
-    }
-    return roots;
+    return readSystemTagMappings(this.db, orgId, bookId);
   }
 
   /** Balance of one account from the lines, for a drill-down. */
@@ -511,25 +221,7 @@ export class AccountsService {
     accountId: string,
     asOf: string,
   ): Promise<AccountBalance> {
-    const [row] = await this.db
-      .select({
-        debitMinor: sql<string>`coalesce(sum(${glJournalLines.debitMinor}), 0)`,
-        creditMinor: sql<string>`coalesce(sum(${glJournalLines.creditMinor}), 0)`,
-      })
-      .from(glJournalLines)
-      .innerJoin(glJournals, eq(glJournalLines.journalId, glJournals.id))
-      .where(
-        and(
-          eq(glJournalLines.orgId, orgId),
-          eq(glJournalLines.bookId, bookId),
-          eq(glJournalLines.accountId, accountId),
-          lte(glJournals.journalDate, assertIsoDate(asOf)),
-        ),
-      );
-
-    const debitMinor = Number(row?.debitMinor ?? 0);
-    const creditMinor = Number(row?.creditMinor ?? 0);
-    return { debitMinor, creditMinor, balanceMinor: debitMinor - creditMinor };
+    return readAccountBalance(this.db, orgId, bookId, accountId, asOf);
   }
 
   /**
