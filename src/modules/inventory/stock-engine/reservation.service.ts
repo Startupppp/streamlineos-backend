@@ -1,5 +1,5 @@
 import { BadRequestException, Inject, Injectable } from "@nestjs/common";
-import { and, eq, inArray, sql, type SQL } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { invStockReservations, invStockLevels } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { CacheService } from "../../../common/cache/cache.service";
@@ -9,96 +9,27 @@ import { InventorySettingsService } from "./inventory-settings.service";
 import { ChannelPoolService } from "./channel-pool.service";
 import { availableQty, cmpDec } from "./decimal";
 import { INV_ERRORS, type ReservationInput } from "./stock-engine.types";
+import { committedGrainPredicate } from "./lib/committed-grain";
 import {
-  INVENTORY_COMMAND_EVENTS,
-  emitInventoryCommandEvent,
-} from "./command-events";
+  consumeReservation,
+  consumeReservationsBatch,
+  expireStale,
+  releaseReservationInTx,
+  type ReleasedReservation,
+  type ReservationUnwindDeps,
+} from "./lib/reservation-unwind";
 
 type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
 
 /**
- * The reservation a release actually flipped, or `null` if there was nothing to
- * flip.
- *
- * A5. Releasing is deliberately a no-op on a row that is not ACTIVE, so the
- * caller could not tell a release that happened from one that had already
- * happened — and an event emitted on the second is a duplicate notification for
- * work nobody did. Returned rather than re-read: the row was already selected
- * `FOR UPDATE` here, and reading it again after the update would report the
- * post-release state as if it were the reason for the release.
+ * Re-exported so every existing importer is unchanged. Both declarations moved
+ * into `lib/` rather than being imported back the other way, because
+ * `check:cycles` counts a type-only import from `lib/` into the service as an
+ * edge — and `committedGrainPredicate` in particular has to be reachable from
+ * the unwind half without one.
  */
-export interface ReleasedReservation {
-  id: number;
-  sourceType: string;
-  sourceId: string;
-  productVariantId: number;
-  locationId: number | null;
-  lotId: number | null;
-  serialId: number | null;
-  handlingUnitId: number | null;
-  reservedQty: string;
-}
-
-interface CommittedKey {
-  productVariantId: number;
-  locationId: number;
-  lotId: number | null;
-  serialId: number | null;
-  /** NEO-4. The pallet, or null for loose. Part of the key for the same reason. */
-  handlingUnitId: number | null;
-  reservedQty: string;
-}
-
-/**
- * The grain a reservation is against, as one predicate both halves share.
- *
- * It is exported and shared because the asymmetry WAS the bug. The increment
- * found its row with one predicate and the release matched with another, and
- * the two drifted apart twice: first on `lot_id`, where releasing decremented
- * every lot at the location, and then on `ownership`, where it decremented the
- * consigned row standing at the same bin as the owned one. `GREATEST(0, ...)`
- * absorbed the over-subtraction both times, so reserved stock read as available
- * and could be promised twice, silently.
- *
- * `ownership = 'OWNED'` is a gate rather than a term, which is the kind this
- * module keeps forgetting — `availableQty` and `availableQtySql` both carry the
- * same one, with the same note: consigned stock is on hand and is not ours, and
- * forgetting it offers a supplier's goods for sale. `stock-projection.service`
- * added it (NEO-11); this path did not.
- *
- * @param alias the table's alias at the call site, or "" when it has none.
- */
-export function committedGrainPredicate(
-  orgId: string,
-  grain: {
-    productVariantId: number;
-    locationId: number;
-    lotId: number | null;
-    serialId: number | null;
-    handlingUnitId: number | null;
-  },
-  alias = "",
-): SQL {
-  const col = (name: string) => sql.raw(alias ? `${alias}.${name}` : name);
-  return sql`
-    ${col("org_id")} = ${orgId}
-      AND ${col("product_variant_id")} = ${grain.productVariantId}
-      AND ${col("location_id")} = ${grain.locationId}
-      AND (${col("lot_id")} IS NOT DISTINCT FROM ${grain.lotId})
-      AND (${col("serial_id")} IS NOT DISTINCT FROM ${grain.serialId})
-      AND (${col("handling_unit_id")} IS NOT DISTINCT FROM ${grain.handlingUnitId})
-      AND ${col("ownership")} = 'OWNED'
-  `;
-}
-
-/** Releases committed on the SAME grain the reservation incremented. */
-async function releaseCommitted(tx: Tx, orgId: string, key: CommittedKey): Promise<void> {
-  await tx.execute(sql`
-    UPDATE inv_stock_levels
-    SET committed = GREATEST(0, committed - ${key.reservedQty}::numeric)
-    WHERE ${committedGrainPredicate(orgId, key)}
-  `);
-}
+export { committedGrainPredicate } from "./lib/committed-grain";
+export type { ReleasedReservation } from "./lib/reservation-unwind";
 
 @Injectable()
 export class ReservationService {
@@ -138,6 +69,18 @@ export class ReservationService {
     const namespace = `inv:reservations:list:${orgId}`;
     const deferred = registerAfterCommit(() => this.cache.invalidateNamespace(namespace));
     if (!deferred) void this.cache.invalidateNamespace(namespace);
+  }
+
+  /**
+   * The invalidation above, handed to `lib/reservation-unwind.ts` bound rather
+   * than exported: the decision to defer it through `registerAfterCommit`
+   * belongs to the class that holds the `CacheService`.
+   */
+  private get unwindDeps(): ReservationUnwindDeps {
+    return {
+      db: this.db,
+      bumpReservationList: (orgId) => this.invalidateReservationList(orgId),
+    };
   }
 
   async createReservation(orgId: string, userId: string, input: ReservationInput): Promise<typeof invStockReservations.$inferSelect> {
@@ -273,137 +216,17 @@ export class ReservationService {
     return reservation!;
   }
 
-  /**
-   * Releases one hold. Deliberately NOT warehouse-gated — its callers are.
-   *
-   * It takes a `userId` and spends it on nothing, which reads like the defect it
-   * used to enable and is not one: every caller here releases the reservations
-   * belonging to its OWN aggregate, found by `source_type` and `source_id` —
-   * cancelling a transfer, cancelling a sales order, a project standing down a
-   * requirement, a pick substitution. A sales order legitimately spans two
-   * buildings, so a gate on this helper would refuse the operator cancelling it.
-   * Those commands owe a gate on themselves, not here; `cancelTransfer` in
-   * particular does not have one yet.
-   *
-   * The one path where a CLIENT names a reservation id is
-   * `InvStockReservationsService.releaseReservation`, and that is where the gate
-   * went — the same split as `createTransfer` / `createTransferInTx`. The public
-   * `releaseReservation` that used to sit beside this method was deleted rather
-   * than left ungated next to it: it wrapped this in a transaction, had no
-   * caller anywhere, and was the obvious wrong thing for a new route to reach
-   * for. Reconstruct it as `db.transaction((tx) => releaseReservationInTx(…))`
-   * if one is ever needed, with the gate in front.
-   */
+  /** @see lib/reservation-unwind.ts — the bodies moved, the service surface did not. */
   async releaseReservationInTx(
     tx: Tx, orgId: string, userId: string, reservationId: number,
   ): Promise<ReleasedReservation | null> {
-    const [reservation] = await tx.execute<{
-      id: number; source_type: string; source_id: string;
-      location_id: number | null; product_variant_id: number;
-      lot_id: number | null; serial_id: number | null; handling_unit_id: number | null;
-      reserved_qty: string; status: string;
-    }>(sql`
-      SELECT id, source_type, source_id, location_id, product_variant_id,
-             lot_id, serial_id, handling_unit_id, reserved_qty, status
-      FROM inv_stock_reservations
-      WHERE id = ${reservationId} AND org_id = ${orgId}
-      FOR UPDATE
-    `);
-
-    if (!reservation || reservation.status !== "ACTIVE") return null;
-
-    await tx.update(invStockReservations)
-      .set({ status: "RELEASED" })
-      .where(eq(invStockReservations.id, reservationId));
-
-    this.invalidateReservationList(orgId);
-
-    if (reservation.location_id) {
-      await releaseCommitted(tx, orgId, {
-        productVariantId: reservation.product_variant_id,
-        locationId: reservation.location_id,
-        lotId: reservation.lot_id,
-        serialId: reservation.serial_id,
-        handlingUnitId: reservation.handling_unit_id,
-        reservedQty: reservation.reserved_qty,
-      });
-    }
-
-    return {
-      id: Number(reservation.id),
-      sourceType: reservation.source_type,
-      sourceId: reservation.source_id,
-      productVariantId: Number(reservation.product_variant_id),
-      locationId: reservation.location_id === null ? null : Number(reservation.location_id),
-      lotId: reservation.lot_id === null ? null : Number(reservation.lot_id),
-      serialId: reservation.serial_id === null ? null : Number(reservation.serial_id),
-      handlingUnitId: reservation.handling_unit_id === null ? null : Number(reservation.handling_unit_id),
-      reservedQty: reservation.reserved_qty,
-    };
+    return releaseReservationInTx(this.unwindDeps, tx, orgId, userId, reservationId);
   }
 
   async consumeReservation(orgId: string, userId: string, reservationId: number): Promise<void> {
-    return this.db.transaction(async (tx) => {
-      const [reservation] = await tx.execute<{
-        id: number; source_type: string; source_id: string;
-        location_id: number | null; product_variant_id: number;
-        lot_id: number | null; serial_id: number | null; handling_unit_id: number | null;
-        reserved_qty: string; status: string;
-      }>(sql`
-        SELECT id, source_type, source_id, location_id, product_variant_id,
-               lot_id, serial_id, handling_unit_id, reserved_qty, status
-        FROM inv_stock_reservations WHERE id = ${reservationId} AND org_id = ${orgId}
-        FOR UPDATE
-      `);
-
-      if (!reservation || reservation.status !== "ACTIVE") return;
-
-      await tx.update(invStockReservations).set({ status: "CONSUMED" }).where(eq(invStockReservations.id, reservationId));
-
-      this.invalidateReservationList(orgId);
-
-      if (reservation.location_id) {
-        await releaseCommitted(tx, orgId, {
-          productVariantId: reservation.product_variant_id,
-          locationId: reservation.location_id,
-          lotId: reservation.lot_id,
-          serialId: reservation.serial_id,
-          handlingUnitId: reservation.handling_unit_id,
-          reservedQty: reservation.reserved_qty,
-        });
-      }
-
-      // A5. Emitted here rather than left to the caller, because this entry
-      // point owns its own transaction: a caller emitting after it returns
-      // would be publishing outside the transaction that committed the change.
-      await emitInventoryCommandEvent(tx, {
-        orgId,
-        eventType: INVENTORY_COMMAND_EVENTS.RESERVATION_CONSUMED,
-        aggregateType: "inv_stock_reservation",
-        aggregateId: String(reservationId),
-        actorUserId: userId,
-        payload: {
-          reservationIds: [Number(reservation.id)],
-          sourceType: reservation.source_type,
-          sourceId: reservation.source_id,
-          // Same shape as the batch paths, so a consumer reads one payload
-          // rather than two that happen to overlap.
-          consumedBy: "reservation.consume",
-        },
-      });
-    });
+    return consumeReservation(this.unwindDeps, orgId, userId, reservationId);
   }
 
-  /**
-   * Consumes a set of reservations, and reports which ones it actually flipped.
-   *
-   * A5. The `status = 'ACTIVE'` predicate means the caller's list is a request,
-   * not a result: a reservation already consumed by an earlier attempt is
-   * silently skipped. The returned ids are the ones this call is responsible
-   * for, and they are what the consuming command puts on its
-   * `inventory.reservation.consumed` event — an event naming reservations that
-   * were consumed by somebody else is evidence of nothing.
-   */
   async consumeReservationsBatch(
     tx: Tx,
     orgId: string,
@@ -418,76 +241,10 @@ export class ReservationService {
       reservedQty: string;
     }>,
   ): Promise<number[]> {
-    if (reservations.length === 0) return [];
-
-    const activeIds = reservations.map((r) => r.id);
-
-    const consumed = await tx.execute<{ id: number }>(sql`
-      UPDATE inv_stock_reservations
-      SET status = 'CONSUMED', updated_at = NOW()
-      WHERE id = ANY(ARRAY[${sql.join(activeIds.map((id) => sql`${id}`), sql`, `)}]::int[])
-        AND org_id = ${orgId}
-        AND status = 'ACTIVE'
-      RETURNING id
-    `);
-
-    this.invalidateReservationList(orgId);
-
-    const withLocation = reservations.filter((r) => r.locationId !== null);
-    for (const r of withLocation) {
-      await releaseCommitted(tx, orgId, {
-        productVariantId: r.productVariantId,
-        locationId: r.locationId!,
-        lotId: r.lotId ?? null,
-        serialId: r.serialId ?? null,
-        handlingUnitId: r.handlingUnitId ?? null,
-        reservedQty: r.reservedQty,
-      });
-    }
-
-    return consumed.map((row) => Number(row.id));
+    return consumeReservationsBatch(this.unwindDeps, tx, orgId, userId, reservations);
   }
 
   async expireStale(orgId: string): Promise<number> {
-    return this.db.transaction(async (tx) => {
-      const stale = await tx.execute<{
-        id: number; location_id: number | null; product_variant_id: number;
-        lot_id: number | null; serial_id: number | null; handling_unit_id: number | null;
-        reserved_qty: string;
-      }>(sql`
-        SELECT id, location_id, product_variant_id, lot_id, serial_id, handling_unit_id, reserved_qty
-        FROM inv_stock_reservations
-        WHERE org_id = ${orgId}
-          AND status = 'ACTIVE'
-          AND expires_at IS NOT NULL
-          AND expires_at < NOW()
-        ORDER BY id
-        FOR UPDATE
-        LIMIT 500
-      `);
-
-      if (stale.length === 0) return 0;
-
-      const ids = stale.map((r) => Number(r.id));
-      await tx.update(invStockReservations)
-        .set({ status: "EXPIRED" })
-        .where(and(eq(invStockReservations.orgId, orgId), inArray(invStockReservations.id, ids)));
-
-      this.invalidateReservationList(orgId);
-
-      for (const r of stale) {
-        if (r.location_id === null) continue;
-        await releaseCommitted(tx, orgId, {
-          productVariantId: Number(r.product_variant_id),
-          locationId: r.location_id,
-          lotId: r.lot_id,
-          serialId: r.serial_id,
-          handlingUnitId: r.handling_unit_id,
-          reservedQty: r.reserved_qty,
-        });
-      }
-
-      return stale.length;
-    });
+    return expireStale(this.unwindDeps, orgId);
   }
 }
