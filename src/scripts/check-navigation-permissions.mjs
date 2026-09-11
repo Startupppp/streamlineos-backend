@@ -340,7 +340,7 @@ if (gates.length < MIN_NAV_GATES) {
 // -- report ------------------------------------------------------------------
 
 const where = (g) => {
-  const rel = relative(BACKEND_ROOT, g.file);
+  const rel = relative(REPO_ROOT, g.file);
   const dest = g.href ?? `group "${g.label}"`;
   return `${rel}:${g.line}  ${dest}`;
 };
