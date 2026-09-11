@@ -3388,6 +3388,111 @@
       "verdict": "FALSE-POSITIVE",
       "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
       "justification": "Classified 2026-09-11. New with merge 5af62b67a from the CRM/Timesheets/accounting-kernel lane, which never ran this gate. Not a service: an e2e suite (10 describe/it blocks on seedOrg fixtures). collectServiceFiles drops names ending in .spec.ts, and a name ending in .e2e-spec.ts does not end in .spec.ts, so e2e suites are scanned as if they were services. The 1 match is an assertion read against the org and book this suite seeds for itself; none is reachable from a request."
+    },
+    "/accounting/ap/ap-aging.service.ts": {
+      "verdict": "ACTIONABLE",
+      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
+      "justification": "Classified 2026-09-11. New with merge 5af62b67a from the CRM/Timesheets/accounting-kernel lane, which never ran this gate. Both matches are book-wide reads with no LIMIT: the aging report loads every AP document in the book (optionally one party) and every debit-note allocation in the book up to asOf, then buckets them in JS. Both grow with the ledger. Aging needs to move into SQL (GROUP BY bucket) or page by party."
+    },
+    "/accounting/ap/ap-documents.service.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
+      "justification": "Classified 2026-09-11. New with merge 5af62b67a from the CRM/Timesheets/accounting-kernel lane, which never ran this gate. Every match is bounded by something the regex cannot see. The expense-account check reads glAccounts by primary key inArray over the account ids on the request's own lines and compares the counts. loadLineRows and loadLines read ONE document's lines (eq documentId); lines are replaced wholesale on update (delete, then insert) and apDocumentLineSchema's array is .max(200) in dto/ap-documents.schemas.ts. The offset list is classified separately."
+    },
+    "/accounting/ap/ap-payments.service.ts": {
+      "verdict": "ACTIONABLE",
+      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
+      "justification": "Classified 2026-09-11. New with merge 5af62b67a from the CRM/Timesheets/accounting-kernel lane, which never ran this gate. Most matches are bounded: the bill check reads apDocuments by primary key inArray over the request's own allocation ids (at most 200), and loadWithholding reads one payment's withholding rows. But loadAllocations (run for every row of the payment list page, and for get) and the reversal read return ALL allocations of a payment, and allocations accumulate: allocatePaymentSchema admits 200 per call and a payment can be allocated again, so nothing caps a payment's allocation count. A per-payment cap would make this FALSE-POSITIVE. The offset list is classified separately."
+    },
+    "/accounting/ap/ap.vendor-lookup.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
+      "justification": "Classified 2026-09-11. New with merge 5af62b67a from the CRM/Timesheets/accounting-kernel lane, which never ran this gate. loadPartyNames reads glParties by primary key inArray over the de-duplicated partyIds it is handed, so it returns at most one row per id. It has no caller today; requireVendor beside it reads with .limit(1)."
+    },
+    "/accounting/ar/ar-aging.service.ts": {
+      "verdict": "ACTIONABLE",
+      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
+      "justification": "Classified 2026-09-11. New with merge 5af62b67a from the CRM/Timesheets/accounting-kernel lane, which never ran this gate. The aging reads return every open AR document and every receipt in the book that match the filters, with no LIMIT, and bucket them in JS. Book-wide; grows with the ledger."
+    },
+    "/accounting/ar/ar-documents.service.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
+      "justification": "Classified 2026-09-11. New with merge 5af62b67a from the CRM/Timesheets/accounting-kernel lane, which never ran this gate. get() and loadComputedLines read ONE document's lines (eq documentId). Lines are replaced wholesale on update (delete, then insert) and capped at 500 by the create and update schemas in dto/ar-documents.schemas.ts. frozenTaxLines reads one document's frozen tax lines, derived from those lines and the pack's tax components. The offset list is classified separately."
+    },
+    "/accounting/ar/ar-receipts.service.ts": {
+      "verdict": "ACTIONABLE",
+      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
+      "justification": "Classified 2026-09-11. New with merge 5af62b67a from the CRM/Timesheets/accounting-kernel lane, which never ran this gate. Auto-allocation reads EVERY open invoice of the receipt's party in its currency, oldest first, with no LIMIT, and stops consuming once the receipt is used up. That read grows with the party's open invoices; a limited batch loop would do the same work. The other two matches read one receipt's allocations. The offset list is classified separately."
+    },
+    "/accounting/banking/bank-accounts.service.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
+      "justification": "Classified 2026-09-11. New with merge 5af62b67a from the CRM/Timesheets/accounting-kernel lane, which never ran this gate. glBalanceMinor selects { amount } into const [row], where amount is a coalesce(sum(...))::bigint built a few lines above. projectsOnlyAggregates only sees the identifier amount inside .select(), so it cannot tell this is a single-row SUM. The offset list is classified separately."
+    },
+    "/accounting/banking/matching.service.ts": {
+      "verdict": "ACTIONABLE",
+      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
+      "justification": "Classified 2026-09-11. New with merge 5af62b67a from the CRM/Timesheets/accounting-kernel lane, which never ran this gate. Four matches are EXISTS (select 1 ...) subqueries inside cashJournalLines and unmatchedStatementLines, which the scanner reads as reads. The two real reads are unbounded: cashJournalLines returns every cash-account journal line in [from, to] (from is optional, so potentially all history), and unmatchedStatementLines every unmatched statement line in the org up to a date (optionally one statement or profile). Both grow with bank activity and carry no LIMIT."
+    },
+    "/accounting/compliance/compliance.service.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
+      "justification": "Classified 2026-09-11. New with merge 5af62b67a from the CRM/Timesheets/accounting-kernel lane, which never ran this gate. get() reads the compliance rows of ONE document. uniq_gl_document_compliance_document is (book_id, document_type, document_id, transport) and transport is the compliance_transport pgEnum, so it returns at most one row per enum member."
+    },
+    "/accounting/kernel/accounts.service.ts": {
+      "verdict": "ACTIONABLE",
+      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
+      "justification": "Classified 2026-09-11. New with merge 5af62b67a from the CRM/Timesheets/accounting-kernel lane, which never ran this gate. list, listPostable and listSystemTagMappings each return every account of a book with no LIMIT. Accounts are user-created and nothing caps a book's chart of accounts, so these are bounded only by CoA size. They need a hard cap, or an explicit exemption for a tree that has to be returned whole."
+    },
+    "/accounting/kernel/books.service.ts": {
+      "verdict": "ACTIONABLE",
+      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
+      "justification": "Classified 2026-09-11. New with merge 5af62b67a from the CRM/Timesheets/accounting-kernel lane, which never ran this gate. list() returns every book of an org (nothing caps books per org). accountIdsByCode maps every account of a book by code, and the system-tag lookup reads every active account of the book to find a handful of tags, filtering in JS where inArray(system_tag, tags) would bound it by the tag list."
+    },
+    "/accounting/kernel/fx.service.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
+      "justification": "Classified 2026-09-11. New with merge 5af62b67a from the CRM/Timesheets/accounting-kernel lane, which never ran this gate. listCurrencies reads gl_currencies, a global ISO-4217 reference catalog (code primary key, CHECK ^[A-Z]{3}$) that no code path inserts into. listBookCurrencies reads one book's currencies: unique on (book_id, currency_code) and inner-joined to that catalog, so it is catalog-bounded."
+    },
+    "/accounting/kernel/ledger.service.ts": {
+      "verdict": "ACTIONABLE",
+      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
+      "justification": "Classified 2026-09-11. New with merge 5af62b67a from the CRM/Timesheets/accounting-kernel lane, which never ran this gate. Two matches are bounded: one book's currencies (unique per book and code), and accounts by primary key inArray over the journal's own account ids. The third is not: getting a journal reads every line of it, and postJournalLineSchema's lines array (dto/kernel.schemas.ts) has .min(1) and no .max(), so a journal's line count is bounded only by the request body. Adding a .max() there would make this file FALSE-POSITIVE."
+    },
+    "/accounting/kernel/periods.service.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
+      "justification": "Classified 2026-09-11. New with merge 5af62b67a from the CRM/Timesheets/accounting-kernel lane, which never ran this gate. listFiscalYears and listPeriods read one book's fiscal years and periods. Both are generated only by BooksService (books.service.ts): one fiscal year per start date (uniq_gl_fiscal_years_book_start) and that year's monthly periods (uniq_gl_periods_fy_sequence). They grow by one year and its periods per year the book is used, which is a calendar bound, not an activity bound."
+    },
+    "/accounting/parties/parties.service.ts": {
+      "verdict": "ACTIONABLE",
+      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
+      "justification": "Classified 2026-09-11. New with merge 5af62b67a from the CRM/Timesheets/accounting-kernel lane, which never ran this gate. listRegistrations reads every tax registration of one party. tax_registrations has no per-party cap and no uniqueness beyond one primary per (book, regime), so the read is bounded only by how many registrations a party is given. The offset list is classified separately."
+    },
+    "/accounting/reports/aging.service.ts": {
+      "verdict": "ACTIONABLE",
+      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
+      "justification": "Classified 2026-09-11. New with merge 5af62b67a from the CRM/Timesheets/accounting-kernel lane, which never ran this gate. Both matches return every open AR or AP document in the book as of a date, with no LIMIT, to be bucketed in JS. Book-wide; grows with the ledger."
+    },
+    "/accounting/reports/report-queries.ts": {
+      "verdict": "ACTIONABLE",
+      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
+      "justification": "Classified 2026-09-11. New with merge 5af62b67a from the CRM/Timesheets/accounting-kernel lane, which never ran this gate. readPostingAccounts returns every postable account of a book, bounded only by chart-of-accounts size (the same read as AccountsService.list). Needs a cap or an explicit exemption."
+    },
+    "/accounting/setup/accounting-setup.service.ts": {
+      "verdict": "ACTIONABLE",
+      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
+      "justification": "Classified 2026-09-11. New with merge 5af62b67a from the CRM/Timesheets/accounting-kernel lane, which never ran this gate. listTaxRegistrations returns every book-level tax registration (no cap). missingSeamRoles reads every active account of the book to find which inventory seam tags are missing, where inArray(system_tag, INVENTORY_SEAM_ROLES) would bound it by the role list."
+    },
+    "/accounting/setup/opening-balances.service.ts": {
+      "verdict": "ACTIONABLE",
+      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
+      "justification": "Classified 2026-09-11. New with merge 5af62b67a from the CRM/Timesheets/accounting-kernel lane, which never ran this gate. Posting opening balances reads every account in the book to validate the lines, although wanted (the lines' own account ids) is computed just above and never used in the WHERE. inArray(glAccounts.id, wanted) would bound it by the request."
+    },
+    "/accounting/tax/tax.service.ts": {
+      "verdict": "ACTIONABLE",
+      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
+      "justification": "Classified 2026-09-11. New with merge 5af62b67a from the CRM/Timesheets/accounting-kernel lane, which never ran this gate. seedGlMap reads every account in the book to look up system tags (CoA-sized). The others are config-shaped: the rate table for one book and date, one owner's registrations, and the book's tax GL map (unique on (book_id, gl_role, component))."
     }
   }
 }
