@@ -5,6 +5,7 @@ import { CacheService } from "../../common/cache/cache.service";
 import { AuditService } from "../../common/audit/audit.service";
 import { PlanLimitsService } from "../billing/core/plan-limits.service";
 import { DRIZZLE } from "../../db/drizzle.constants";
+import { drizzlePostgresError, drizzleUniqueViolation } from "../../test/postgres-error-fixture";
 
 const ORG_ID = "org-111";
 const OTHER_ORG = "org-999";
@@ -151,9 +152,10 @@ describe("PartyService — contact CRUD", () => {
       const { selectChain } = makeSelectChain([party]);
       (mockDb as { select: jest.Mock }).select.mockReturnValue(selectChain);
 
+      // As drizzle surfaces it: a DrizzleQueryError with the SQLSTATE on `.cause`.
       (mockDb as { insert: jest.Mock }).insert.mockReturnValue({
         values: jest.fn().mockReturnValue({
-          returning: jest.fn().mockRejectedValue({ code: "23505" }),
+          returning: jest.fn().mockRejectedValue(drizzleUniqueViolation()),
         }),
       });
 
@@ -164,6 +166,21 @@ describe("PartyService — contact CRUD", () => {
         }),
       ).rejects.toBeInstanceOf(ConflictException);
       expect(mockAudit.log).not.toHaveBeenCalled();
+    });
+
+    it("rethrows any other database error untouched", async () => {
+      const { selectChain } = makeSelectChain([makeParty()]);
+      (mockDb as { select: jest.Mock }).select.mockReturnValue(selectChain);
+      const fkViolation = drizzlePostgresError("23503", "fk_party_contacts_party");
+      (mockDb as { insert: jest.Mock }).insert.mockReturnValue({
+        values: jest.fn().mockReturnValue({
+          returning: jest.fn().mockRejectedValue(fkViolation),
+        }),
+      });
+
+      await expect(
+        svc.createContact(ORG_ID, USER_ID, { partyId: PARTY_ID, firstName: "Jane" }),
+      ).rejects.toBe(fkViolation);
     });
 
     it("inserts and audit-logs on success", async () => {

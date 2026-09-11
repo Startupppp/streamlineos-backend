@@ -7,6 +7,8 @@ import { DrizzleQueryError } from "drizzle-orm";
 import { ConflictException, NotFoundException } from "@nestjs/common";
 import { Test, type TestingModule } from "@nestjs/testing";
 import { DRIZZLE } from "../../../db/drizzle.constants";
+import { crmPricebookEntries } from "../../../db/schema";
+import { drizzlePostgresError, drizzleUniqueViolation } from "../../../test/postgres-error-fixture";
 import { CrmPricebooksService } from "./crm-pricebooks.service";
 
 const makeSelectChain = () => {
@@ -254,6 +256,69 @@ describe("CrmPricebooksService.createPricebook", () => {
     await expect(
       svc.createPricebook(ORG, { name: "Dup", currency: "USD", isDefault: false, isActive: true }),
     ).rejects.toThrow('A pricebook named "Dup" already exists');
+  });
+
+  it("rethrows any other database error untouched", async () => {
+    const fkViolation = drizzlePostgresError("23503", "fk_crm_pricebooks_org");
+    const insertChain = makeInsertChain();
+    insertChain.returning.mockRejectedValue(fkViolation);
+    mockDb.insert.mockReturnValue(insertChain);
+
+    await expect(
+      svc.createPricebook(ORG, { name: "Dup", currency: "USD", isDefault: false, isActive: true }),
+    ).rejects.toBe(fkViolation);
+  });
+});
+
+describe("CrmPricebooksService.updatePricebook", () => {
+  let svc: CrmPricebooksService;
+
+  beforeEach(async () => {
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [CrmPricebooksService, { provide: DRIZZLE, useValue: mockDb }],
+    }).compile();
+    svc = module.get(CrmPricebooksService);
+  });
+
+  it("converts a unique violation on the new name to ConflictException", async () => {
+    mockDb.query.crmPricebooks.findFirst.mockResolvedValue({ id: PB_ID });
+    const updateChain = makeUpdateChain();
+    updateChain.returning.mockRejectedValue(drizzleUniqueViolation("uniq_crm_pricebooks_org_name"));
+    mockDb.update.mockReturnValue(updateChain);
+
+    await expect(svc.updatePricebook(ORG, PB_ID, { name: "Dup" })).rejects.toThrow(ConflictException);
+  });
+});
+
+describe("CrmPricebooksService quote templates", () => {
+  let svc: CrmPricebooksService;
+
+  beforeEach(async () => {
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [CrmPricebooksService, { provide: DRIZZLE, useValue: mockDb }],
+    }).compile();
+    svc = module.get(CrmPricebooksService);
+  });
+
+  it("createTemplate converts a unique violation on the name to ConflictException", async () => {
+    const insertChain = makeInsertChain();
+    insertChain.returning.mockRejectedValue(drizzleUniqueViolation("uniq_crm_quote_templates_org_name"));
+    mockDb.insert.mockReturnValue(insertChain);
+
+    await expect(svc.createTemplate(ORG, { name: "Dup", isDefault: false })).rejects.toThrow(
+      ConflictException,
+    );
+  });
+
+  it("updateTemplate converts a unique violation on the new name to ConflictException", async () => {
+    mockDb.query.crmQuoteTemplates.findFirst.mockResolvedValue({ id: "tmpl-1" });
+    const updateChain = makeUpdateChain();
+    updateChain.returning.mockRejectedValue(drizzleUniqueViolation("uniq_crm_quote_templates_org_name"));
+    mockDb.update.mockReturnValue(updateChain);
+
+    await expect(svc.updateTemplate(ORG, "tmpl-1", { name: "Dup" })).rejects.toThrow(
+      ConflictException,
+    );
   });
 });
 

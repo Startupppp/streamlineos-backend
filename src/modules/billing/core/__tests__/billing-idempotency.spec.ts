@@ -19,6 +19,7 @@ import { ExternalEffectLedger } from "../../../../common/outbox/external-effect-
 import { FakeProviderAdapter, FAKE_VALID_PAYMENT_SIG } from "../../payments/testing/fake-provider-adapter";
 import { creditsToMilli, milliToCredits } from "../../../ai/core/billing/ai-model-pricing.constants";
 import { planGrantMilli } from "../ai-credit-units";
+import { drizzleUniqueViolation } from "../../../../test/postgres-error-fixture";
 
 describe("planGrantMilli — exact milli-credit values (1 credit = 1,000 milli)", () => {
   it("STARTER grants 500,000 milli (500 credits)", () => {
@@ -132,7 +133,9 @@ describe("BillingService.verifyAndActivate — idempotency", () => {
   }
 
   it("23505 on subscription_payments insert → returns success, not 500 (idempotent retry)", async () => {
-    const db = { transaction: jest.fn().mockRejectedValue({ code: "23505" }) };
+    const db = {
+      transaction: jest.fn().mockRejectedValue(drizzleUniqueViolation("uniq_subscription_payments_razorpay_payment")),
+    };
     const svc = await buildBilling(db);
 
     const result = await svc.verifyAndActivate("org-idp", "user-1", VERIFY_INPUT);
@@ -467,7 +470,7 @@ describe("AiCreditsService.purchaseCreditsDirectly — reserve-before-spend orde
           }),
         };
       }),
-      transaction: jest.fn().mockRejectedValue({ code: "23505" }),
+      transaction: jest.fn().mockRejectedValue(drizzleUniqueViolation("uq_ai_credit_txns_purchase_ref")),
     };
 
     const svc = await buildCreditsService(db);

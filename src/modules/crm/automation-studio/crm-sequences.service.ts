@@ -3,6 +3,7 @@ import { and, asc, desc, eq, isNull } from "drizzle-orm";
 import { crmSequences, crmSequenceSteps, crmSequenceEnrollments } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
+import { isUniqueViolation } from "../../../common/db/postgres-error";
 import { buildCursorPage, decodeCursor } from "../../../common/pagination/cursor";
 import { keysetAfter } from "../../../common/pagination/keyset";
 import type {
@@ -34,8 +35,7 @@ export class CrmSequencesService {
         .returning();
       return { sequence };
     } catch (err) {
-      const code = (err as { code?: string }).code;
-      if (code === "23505") throw new ConflictException("A sequence with this name already exists");
+      if (isUniqueViolation(err)) throw new ConflictException("A sequence with this name already exists");
       throw err;
     }
   }
@@ -58,8 +58,7 @@ export class CrmSequencesService {
         .returning();
       return sequence ? { sequence } : null;
     } catch (err) {
-      const code = (err as { code?: string }).code;
-      if (code === "23505") throw new ConflictException("A sequence with this name already exists");
+      if (isUniqueViolation(err)) throw new ConflictException("A sequence with this name already exists");
       throw err;
     }
   }

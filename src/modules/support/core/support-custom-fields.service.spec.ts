@@ -2,6 +2,7 @@ import { Test, type TestingModule } from "@nestjs/testing";
 import { ConflictException, NotFoundException } from "@nestjs/common";
 import { SupportCustomFieldsService } from "./support-custom-fields.service";
 import { DRIZZLE } from "../../../db/drizzle.constants";
+import { drizzlePostgresError, drizzleUniqueViolation } from "../../../test/postgres-error-fixture";
 
 const mockDb = {
   insert: jest.fn().mockReturnThis(),
@@ -66,6 +67,43 @@ describe("SupportCustomFieldsService", () => {
       } as never);
 
       expect(mockDb.insert).toHaveBeenCalled();
+    });
+
+    it("throws ConflictException when a concurrent create takes the key between the check and the insert", async () => {
+      // uniq_cfd_org_entity_project_key refuses the loser of that race, and it
+      // arrives wrapped in Drizzle's DrizzleQueryError.
+      mockDb.limit.mockResolvedValueOnce([]);
+      mockDb.returning.mockRejectedValueOnce(
+        drizzleUniqueViolation("uniq_cfd_org_entity_project_key"),
+      );
+
+      await expect(
+        service.createField("org1", {
+          key: "order_number",
+          label: "Order #",
+          fieldType: "text",
+          required: false,
+          sortOrder: 0,
+          isActive: true,
+        } as never),
+      ).rejects.toThrow(ConflictException);
+    });
+
+    it("rethrows any other database error from the insert untouched", async () => {
+      const fkViolation = drizzlePostgresError("23503", "fk_cfd_org");
+      mockDb.limit.mockResolvedValueOnce([]);
+      mockDb.returning.mockRejectedValueOnce(fkViolation);
+
+      await expect(
+        service.createField("org1", {
+          key: "order_number",
+          label: "Order #",
+          fieldType: "text",
+          required: false,
+          sortOrder: 0,
+          isActive: true,
+        } as never),
+      ).rejects.toBe(fkViolation);
     });
   });
 

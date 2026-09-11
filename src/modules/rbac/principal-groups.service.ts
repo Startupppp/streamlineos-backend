@@ -16,6 +16,7 @@ import {
 } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
+import { isUniqueViolation } from "../../common/db/postgres-error";
 import { bumpPermissionsVersion } from "../../common/rbac/access-invalidate";
 import { runInTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
@@ -32,12 +33,6 @@ import type {
   ListGroupsQuery,
   RenameGroupInput,
 } from "./dto/principal-groups.schemas";
-
-function isDuplicateKeyError(err: unknown): boolean {
-  if (typeof err !== "object" || err === null) return false;
-  const e = err as Record<string, unknown>;
-  return e["code"] === "23505";
-}
 
 @Injectable()
 export class PrincipalGroupsService {
@@ -123,7 +118,7 @@ export class PrincipalGroupsService {
       );
       return row;
     } catch (err) {
-      if (isDuplicateKeyError(err))
+      if (isUniqueViolation(err))
         throw new ConflictException(`A group named "${input.name}" already exists`);
       throw err;
     }
@@ -152,7 +147,7 @@ export class PrincipalGroupsService {
         { orgId: actor.orgId },
       );
     } catch (err) {
-      if (isDuplicateKeyError(err))
+      if (isUniqueViolation(err))
         throw new ConflictException(`A group named "${input.name}" already exists`);
       throw err;
     }

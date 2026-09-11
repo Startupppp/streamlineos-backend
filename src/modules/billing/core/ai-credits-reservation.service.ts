@@ -21,6 +21,7 @@ import {
   type ReservationCloseDeps,
 } from "./lib/credit-reservation-close";
 import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
+import { isUniqueViolation } from "../../../common/db/postgres-error";
 import type {
   AiCreditReserveInput,
   AiCreditSettleInput,
@@ -106,6 +107,11 @@ export class AiCreditsReservationService {
         { orgId },
       );
     } catch (err: unknown) {
+      // A concurrent reserve with the same key won `uq_ai_credit_res_org_idem_key`.
+      // Shared helper: Drizzle leaves the SQLSTATE on `.cause`, which the
+      // private `Reflect.get(err, "code")` this replaced never read. The failed
+      // writes ran inside `outer.transaction` — a savepoint — so the handle the
+      // lookup below reuses is still live.
       if (isUniqueViolation(err) && idempotencyKey) {
         const existingId = await this.findByIdempotencyKey(
           orgId,
@@ -159,10 +165,4 @@ export class AiCreditsReservationService {
     );
   }
 
-}
-
-function isUniqueViolation(err: unknown): boolean {
-  if (err === null || typeof err !== "object") return false;
-  const code: unknown = Reflect.get(err, "code");
-  return code === "23505";
 }

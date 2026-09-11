@@ -16,6 +16,7 @@ import { AuditService } from "../../../common/audit/audit.service";
 import { CacheService } from "../../../common/cache/cache.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
+import { drizzlePostgresError, drizzleUniqueViolation } from "../../../test/postgres-error-fixture";
 
 type SelectChain = {
   from: jest.Mock;
@@ -212,6 +213,48 @@ describe("OwnershipService — access / business-rule logic", () => {
       await expect(
         transfers.initiateOrgTransfer(ORG, ACTOR_USER, { toMembershipId: 2, expiresInHours: 48 }),
       ).rejects.toBeInstanceOf(BadRequestException);
+    });
+  });
+
+  describe("initiating a transfer when the insert fails", () => {
+    const owner = { id: 1, userId: ACTOR_USER, isOwner: true, status: "ACTIVE" };
+    const target = { id: 2, userId: TARGET_USER, isOwner: false, status: "ACTIVE" };
+    const input = { toMembershipId: 2, expiresInHours: 48 };
+    const orgSelects = [[owner], [target]];
+    const moduleSelects = [[owner], [{ ownerMembershipId: 3 }], [target]];
+
+    function rejectInsert(error: Error, selects: unknown[][]): void {
+      for (const rows of selects) mockDb.select.mockReturnValueOnce(makeSelectChain(rows));
+      const chain = makeInsertChain([]);
+      chain.returning.mockRejectedValue(error);
+      mockDb.insert.mockReturnValue(chain);
+    }
+
+    const orgTransfer = () => transfers.initiateOrgTransfer(ORG, ACTOR_USER, input);
+    // An org owner's standing is read off the principal, so the module gate reads nothing.
+    const moduleTransfer = () =>
+      transfers.initiateModuleTransfer(ORG, ACTOR_USER, "hr", input, makeActor(true));
+
+    it("answers 409 when a pending org transfer already exists", async () => {
+      rejectInsert(drizzleUniqueViolation("uniq_ownership_xfers_org_pending_org"), orgSelects);
+      await expect(orgTransfer()).rejects.toBeInstanceOf(ConflictException);
+    });
+
+    it("answers 409 when a pending transfer for the module already exists", async () => {
+      rejectInsert(drizzleUniqueViolation("uniq_ownership_xfers_org_pending_module"), moduleSelects);
+      await expect(moduleTransfer()).rejects.toBeInstanceOf(ConflictException);
+    });
+
+    it("rethrows any other database error from the org transfer insert untouched", async () => {
+      const fkViolation = drizzlePostgresError("23503", "some_fk");
+      rejectInsert(fkViolation, orgSelects);
+      await expect(orgTransfer()).rejects.toBe(fkViolation);
+    });
+
+    it("rethrows any other database error from the module transfer insert untouched", async () => {
+      const fkViolation = drizzlePostgresError("23503", "some_fk");
+      rejectInsert(fkViolation, moduleSelects);
+      await expect(moduleTransfer()).rejects.toBe(fkViolation);
     });
   });
 
