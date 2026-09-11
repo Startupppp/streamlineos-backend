@@ -1,10 +1,11 @@
 import { Test, TestingModule } from "@nestjs/testing";
-import { ForbiddenException, NotFoundException } from "@nestjs/common";
+import { ConflictException, ForbiddenException, NotFoundException } from "@nestjs/common";
 import { ContactRolesService } from "./contact-roles.service";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { AuditService } from "../../common/audit/audit.service";
 import { CacheService } from "../../common/cache/cache.service";
 import { updateMirroredContacts } from "../party/party-legacy-contacts";
+import { drizzlePostgresError, drizzleUniqueViolation } from "../../test/postgres-error-fixture";
 
 /**
  * The mirror writer is stubbed, not exercised.
@@ -147,5 +148,43 @@ describe("ContactRolesService – cross-org denial", () => {
     await expect(
       svc.mergeContacts(ORG_A, { primaryId: 1, duplicateId: 2 }, "user-1"),
     ).rejects.toBeInstanceOf(ForbiddenException);
+  });
+});
+
+describe("ContactRolesService – addRole", () => {
+  let svc: ContactRolesService;
+  let db: ReturnType<typeof makeDb>;
+
+  const input = { entityType: "deal" as const, entityId: 5, roleKey: "champion", isPrimary: false };
+
+  beforeEach(async () => {
+    db = makeDb();
+
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        ContactRolesService,
+        { provide: DRIZZLE, useValue: db },
+        { provide: AuditService, useValue: { log: jest.fn() } },
+        { provide: CacheService, useValue: { invalidateNamespace: jest.fn().mockResolvedValue(undefined) } },
+      ],
+    }).compile();
+
+    svc = module.get(ContactRolesService);
+    // The contact-access check finds the contact in the org.
+    db.where.mockResolvedValueOnce([{ id: 1 }]);
+  });
+
+  it("throws ConflictException when the contact already holds the role on that entity", async () => {
+    // uniq_crm_contact_roles_combo, as drizzle surfaces it.
+    db.returning.mockRejectedValueOnce(drizzleUniqueViolation("uniq_crm_contact_roles_combo"));
+
+    await expect(svc.addRole(ORG_A, 1, input, "user-1")).rejects.toBeInstanceOf(ConflictException);
+  });
+
+  it("rethrows any other database error untouched", async () => {
+    const fkViolation = drizzlePostgresError("23503", "fk_crm_contact_roles_contact");
+    db.returning.mockRejectedValueOnce(fkViolation);
+
+    await expect(svc.addRole(ORG_A, 1, input, "user-1")).rejects.toBe(fkViolation);
   });
 });
