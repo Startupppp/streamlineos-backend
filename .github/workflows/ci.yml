@@ -217,6 +217,31 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
+      # Five gates compare this backend against the frontend — the PermissionKey
+      # union, the sidebar's nav gates, the file-size registry — and exit 2
+      # without one beside this checkout, which is why their steps have carried
+      # "CANNOT RUN IN CI" for months. A second checkout needs a token with read
+      # access to the other repository; `GITHUB_TOKEN` is scoped to this one.
+      #
+      # Guarded on the secret so nothing changes until somebody adds it: with no
+      # FRONTEND_REPO_TOKEN both steps skip, no environment variable is set, and
+      # those gates keep exiting 2 exactly as they do today. With it, they run
+      # against the frontend's default branch. A fork PR cannot read the secret
+      # and therefore keeps the current behaviour too.
+      - name: Check out the frontend repository
+        if: ${{ !cancelled() && secrets.FRONTEND_REPO_TOKEN != '' }}
+        uses: actions/checkout@v4
+        with:
+          repository: Startupppp/streamlineos-frontend
+          path: streamlineos-frontend
+          token: ${{ secrets.FRONTEND_REPO_TOKEN }}
+
+      - name: Point the cross-repo gates at it
+        if: ${{ !cancelled() && secrets.FRONTEND_REPO_TOKEN != '' }}
+        run: |
+          echo "STREAMLINE_FRONTEND_ROOT=$GITHUB_WORKSPACE/streamlineos-frontend/frontend" >> "$GITHUB_ENV"
+          echo "STREAMLINE_WORKSPACE_ROOT=$GITHUB_WORKSPACE/streamlineos-frontend" >> "$GITHUB_ENV"
+
       - name: Import cycles
         if: ${{ !cancelled() }}
         run: pnpm check:cycles
@@ -820,6 +845,39 @@ jobs:
       - name: Cross-tenant isolation coverage
         if: ${{ !cancelled() }}
         run: pnpm check:tenant-isolation:self-test && pnpm check:tenant-isolation
+
+      # Seven gates below this line existed as scripts that no reachable job ever
+      # invoked, so each could only ever have been run by hand. `check:gate-wiring`
+      # named all seven; wiring them is the fix it asks for, and the alternative —
+      # an UNWIRED_BY_DESIGN entry — would have had to state a reason that is not
+      # true of any of them. Two have no self-test of their own.
+      - name: Timesheets emits payroll ports only
+        if: ${{ !cancelled() }}
+        run: pnpm check:timesheets-payroll-boundary
+
+      - name: Only the stock engine writes stock
+        if: ${{ !cancelled() }}
+        run: pnpm check:stock-writers:self-test && pnpm check:stock-writers
+
+      - name: No customer or third-party name stands in for a tenant
+        if: ${{ !cancelled() }}
+        run: pnpm check:tenant-neutral:self-test && pnpm check:tenant-neutral
+
+      - name: An upsert onto a partial index repeats its predicate
+        if: ${{ !cancelled() }}
+        run: pnpm check:partial-index-upserts
+
+      - name: The inventory-to-ledger seam holds
+        if: ${{ !cancelled() }}
+        run: pnpm check:accounting-seam:self-test && pnpm check:accounting-seam
+
+      - name: A composite SET NULL names its columns
+        if: ${{ !cancelled() }}
+        run: pnpm check:composite-fk-set-null:self-test && pnpm check:composite-fk-set-null
+
+      - name: Real-database specs take the shared suite
+        if: ${{ !cancelled() }}
+        run: pnpm check:db-spec-gates:self-test && pnpm check:db-spec-gates
   # The golden path, on every pull request.
   #
   # It proves the one thing no unit test can: that buy -> receive -> put away ->
