@@ -2,8 +2,10 @@ jest.mock("../../common/workflow/workflow-store", () => ({
   startRun: jest.fn().mockResolvedValue("run-1"),
 }));
 
+import { ConflictException } from "@nestjs/common";
 import type { Db } from "../../db/drizzle.types";
 import { autonomousDecisions, autonomyHolds, organizationMembers, quotes } from "../../db/schema";
+import { drizzlePostgresError, drizzleUniqueViolation } from "../../test/postgres-error-fixture";
 import type { NotificationsService } from "../notifications/notifications.service";
 import type { QuotesService } from "../quotes/quotes.service";
 import { AutonomyHoldService } from "./autonomy-hold.service";
@@ -33,6 +35,7 @@ function makeService(options: {
   assignedToId: string | null;
   admins: string[];
   create: jest.Mock;
+  holdInsertError?: Error;
 }): AutonomyHoldService {
   const db = {
     select: () => ({
@@ -53,9 +56,10 @@ function makeService(options: {
     }),
     insert: (table: unknown) => ({
       values: () => ({
-        returning: async () => [
-          { id: table === autonomousDecisions ? "decision-1" : "hold-1" },
-        ],
+        returning: async () => {
+          if (table === autonomyHolds && options.holdInsertError) throw options.holdInsertError;
+          return [{ id: table === autonomousDecisions ? "decision-1" : "hold-1" }];
+        },
       }),
     }),
     update: (table: unknown) => ({
@@ -142,5 +146,43 @@ describe("AutonomyHoldService.holdQuoteSend", () => {
     ).resolves.toMatchObject({ autonomyHoldId: "hold-1" });
 
     expect(create).toHaveBeenCalledTimes(2);
+  });
+
+  it("answers 409 when the quote already has a live hold", async () => {
+    // uniq_autonomy_holds_live_quote (one live hold per quote), as drizzle surfaces it.
+    const service = makeService({
+      assignedToId: "user-owner",
+      admins: [],
+      create: jest.fn(),
+      holdInsertError: drizzleUniqueViolation("uniq_autonomy_holds_live_quote"),
+    });
+
+    await expect(
+      service.holdQuoteSend({
+        organizationId: ORG,
+        quoteId: 42,
+        summary: "Drafted it and decided to send it.",
+        confidence: 0.95,
+      }),
+    ).rejects.toBeInstanceOf(ConflictException);
+  });
+
+  it("rethrows any other database error from the hold insert untouched", async () => {
+    const fkViolation = drizzlePostgresError("23503", "some_fk");
+    const service = makeService({
+      assignedToId: "user-owner",
+      admins: [],
+      create: jest.fn(),
+      holdInsertError: fkViolation,
+    });
+
+    await expect(
+      service.holdQuoteSend({
+        organizationId: ORG,
+        quoteId: 42,
+        summary: "Drafted it and decided to send it.",
+        confidence: 0.95,
+      }),
+    ).rejects.toBe(fkViolation);
   });
 });

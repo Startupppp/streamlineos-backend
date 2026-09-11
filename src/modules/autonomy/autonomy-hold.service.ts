@@ -8,6 +8,7 @@ import {
   deals,
   quotes,
 } from "../../db/schema";
+import { isUniqueViolation } from "../../common/db/postgres-error";
 import { getOrgAdminUserIds } from "../../common/tenant/org-admin-recipients";
 import { startRun } from "../../common/workflow/workflow-store";
 import { NotificationsService } from "../notifications/notifications.service";
@@ -431,15 +432,4 @@ export class AutonomyHoldService {
 
     return cancelled.length;
   }
-}
-
-const PG_UNIQUE_VIOLATION = "23505";
-
-function isUniqueViolation(error: unknown): boolean {
-  return (
-    typeof error === "object" &&
-    error !== null &&
-    "code" in error &&
-    (error as { code?: string }).code === PG_UNIQUE_VIOLATION
-  );
 }
