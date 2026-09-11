@@ -2,6 +2,7 @@ import { z } from "zod";
 import type postgres from "postgres";
 import { SEAM_BUDGETS } from "../common/observability/seam-budgets";
 import { DEFAULT_ACQUIRE_TIMEOUT_MS, DEFAULT_QUEUE_DEPTH_FACTOR } from "./pool-admission";
+import { createRdsIamPasswordProvider, isRdsIamAuthEnabled, rdsRegionFor } from "./rds-iam-auth";
 
 export type PoolOptions = NonNullable<Parameters<typeof postgres>[1]>;
 
@@ -144,6 +145,38 @@ function hostOf(url: string): string {
 }
 
 /**
+ * Builds the per-connection password provider for RDS/Aurora IAM authentication.
+ *
+ * The connection string carries the user, host and database but no password; the
+ * "password" is a short-lived IAM auth token minted from the AWS credential chain on
+ * every new connection, so it never expires mid-pool. Fails fast at boot when the URL
+ * has no username or the region cannot be resolved, rather than at first connect.
+ */
+function buildRdsIamPassword(
+  connectionString: string,
+  host: string,
+  env: NodeJS.ProcessEnv,
+): () => Promise<string> {
+  let username = "";
+  let port = 5432;
+  try {
+    const url = new URL(connectionString);
+    username = decodeURIComponent(url.username);
+    if (url.port) port = Number(url.port);
+  } catch {
+    throw new Error("[db-pool] DB_IAM_AUTH is set but the connection string is not a valid URL");
+  }
+  if (!username)
+    throw new Error("[db-pool] DB_IAM_AUTH is set but the connection string has no username");
+  const region = rdsRegionFor(host, env);
+  if (!region)
+    throw new Error(
+      "[db-pool] DB_IAM_AUTH is set but no AWS region resolved from the host or AWS_REGION",
+    );
+  return createRdsIamPasswordProvider({ host, port, username, region });
+}
+
+/**
  * Neon's pooler silently drops these as startup parameters and hard-fails
  * `options=-c …` with 08P01, so they are applied per transaction with
  * `set_config(…, is_local => true)` instead — verified against the live endpoint.
@@ -225,6 +258,11 @@ export function resolvePoolConfig(
     TimeZone: PINNED_TIME_ZONE,
   };
 
+  const iamPassword =
+    isRdsIamAuthEnabled(env) && isAwsRds
+      ? buildRdsIamPassword(connectionString, host, env)
+      : undefined;
+
   const options: PoolOptions = {
     max,
     prepare: false,
@@ -233,6 +271,7 @@ export function resolvePoolConfig(
     max_lifetime: maxLifetime,
     connection,
     ...(requiresTls(connectionString) ? { ssl: "require" as const } : {}),
+    ...(iamPassword ? { password: iamPassword } : {}),
   };
 
   const replicaRaw = tuning.DB_REPLICA_URL;
