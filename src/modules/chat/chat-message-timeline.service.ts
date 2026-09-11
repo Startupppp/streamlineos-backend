@@ -6,7 +6,6 @@ import {
 } from "@nestjs/common";
 import { and, desc, eq, gt, lt } from "drizzle-orm";
 import {
-  chatChannelMembers,
   chatChannels,
   chatMessages,
 } from "../../db/schema";
@@ -16,28 +15,11 @@ import { buildIdCursorPage } from "../../common/pagination/cursor";
 import { EntityReferenceService } from "../entity-reference/entity-reference.service";
 import type { EntityActor } from "../entity-reference/entity-reference.types";
 import {
-  resolvePeopleIdentities,
-  subjectKey,
-  type PersonIdentity,
-} from "../directory/person-seam";
-
-type ChatSender = {
-  id: string | null;
-  name: string | null;
-  image: string | null;
-};
-
-function senderFromIdentity(identity: PersonIdentity | undefined): ChatSender {
-  const parts = [identity?.firstName, identity?.lastName]
-    .filter(Boolean)
-    .join(" ");
-  const name = identity?.displayName ?? (parts || null);
-  return {
-    id: identity?.userId ?? null,
-    name: name ?? null,
-    image: identity?.avatarUrl ?? null,
-  };
-}
+  enrich,
+  isMember,
+  resolveIdentities,
+  withResolvedReferences,
+} from "./lib/chat-timeline-enrich";
 
 @Injectable()
 export class ChatMessageTimelineService {
@@ -45,79 +27,6 @@ export class ChatMessageTimelineService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly entities: EntityReferenceService,
   ) {}
-
-  private async isMember(
-    channelId: number,
-    orgId: string,
-    membershipId?: number | null,
-  ): Promise<boolean> {
-    if (!membershipId) return false;
-    const m = await this.db.query.chatChannelMembers.findFirst({
-      where: and(
-        eq(chatChannelMembers.orgId, orgId),
-        eq(chatChannelMembers.channelId, channelId),
-        eq(chatChannelMembers.membershipId, membershipId),
-      ),
-      columns: { id: true },
-    });
-    return Boolean(m);
-  }
-
-  private withResolvedReferences<
-    T extends { metadata: Record<string, unknown> | null },
-  >(actor: EntityActor, messages: T[]): Promise<T[]> {
-    return this.entities.withResolvedReferences(actor, messages);
-  }
-
-  private async resolveIdentities(
-    orgId: string,
-    senderIds: Set<string>,
-  ): Promise<Map<string, PersonIdentity>> {
-    if (senderIds.size === 0) return new Map();
-    const subjects = [...senderIds].map((userId) => ({
-      kind: "user" as const,
-      userId,
-    }));
-    return resolvePeopleIdentities(this.db, orgId, subjects);
-  }
-
-  private enrich<
-    M extends {
-      senderMembership: { userId: string } | null;
-      replyTo:
-        | ({ senderMembership: { userId: string } | null } & Record<
-            string,
-            unknown
-          >)
-        | null;
-    },
-  >(msg: M, identities: Map<string, PersonIdentity>) {
-    return {
-      ...msg,
-      sender: senderFromIdentity(
-        msg.senderMembership
-          ? identities.get(
-              subjectKey({ kind: "user", userId: msg.senderMembership.userId }),
-            )
-          : undefined,
-      ),
-      replyTo: msg.replyTo
-        ? {
-            ...msg.replyTo,
-            sender: senderFromIdentity(
-              msg.replyTo.senderMembership
-                ? identities.get(
-                    subjectKey({
-                      kind: "user",
-                      userId: msg.replyTo.senderMembership.userId,
-                    }),
-                  )
-                : undefined,
-            ),
-          }
-        : null,
-    };
-  }
 
   async list(
     channelId: number,
@@ -134,7 +43,7 @@ export class ChatMessageTimelineService {
     });
     if (!channel) throw new NotFoundException("Channel not found");
 
-    if (!(await this.isMember(channelId, actor.orgId, actor.membershipId))) {
+    if (!(await isMember(this.db, channelId, actor.orgId, actor.membershipId))) {
       if (channel.type !== "PUBLIC")
         throw new NotFoundException("Channel not found");
       throw new ForbiddenException("You are not a member of this channel");
@@ -171,11 +80,11 @@ export class ChatMessageTimelineService {
       if (m.replyTo?.senderMembership?.userId)
         senderIds.add(m.replyTo.senderMembership.userId);
     }
-    const identities = await this.resolveIdentities(actor.orgId, senderIds);
-    const enriched = page.data.reverse().map((m) => this.enrich(m, identities));
+    const identities = await resolveIdentities(this.db, actor.orgId, senderIds);
+    const enriched = page.data.reverse().map((m) => enrich(m, identities));
 
     return {
-      messages: await this.withResolvedReferences(actor, enriched),
+      messages: await withResolvedReferences(this.entities, actor, enriched),
       nextCursor: page.nextCursor,
     };
   }
@@ -190,7 +99,7 @@ export class ChatMessageTimelineService {
     });
     if (!channel) throw new NotFoundException("Channel not found");
 
-    if (!(await this.isMember(channelId, actor.orgId, actor.membershipId))) {
+    if (!(await isMember(this.db, channelId, actor.orgId, actor.membershipId))) {
       if (channel.type !== "PUBLIC")
         throw new NotFoundException("Channel not found");
       throw new ForbiddenException("You are not a member of this channel");
@@ -219,12 +128,12 @@ export class ChatMessageTimelineService {
       if (m.replyTo?.senderMembership?.userId)
         senderIds.add(m.replyTo.senderMembership.userId);
     }
-    const identities = await this.resolveIdentities(actor.orgId, senderIds);
+    const identities = await resolveIdentities(this.db, actor.orgId, senderIds);
     const enriched = rawMessages
       .reverse()
-      .map((m) => this.enrich(m, identities));
+      .map((m) => enrich(m, identities));
 
-    return this.withResolvedReferences(actor, enriched);
+    return withResolvedReferences(this.entities, actor, enriched);
   }
 
   async listThreadReplies(
@@ -250,7 +159,7 @@ export class ChatMessageTimelineService {
     if (!rawParent) throw new NotFoundException("Message not found");
 
     if (
-      !(await this.isMember(
+      !(await isMember(this.db, 
         rawParent.channelId,
         actor.orgId,
         actor.membershipId,
@@ -304,18 +213,18 @@ export class ChatMessageTimelineService {
         senderIds.add(r.replyTo.senderMembership.userId);
     }
 
-    const identities = await this.resolveIdentities(actor.orgId, senderIds);
-    const parentMessage = this.enrich(rawParent, identities);
+    const identities = await resolveIdentities(this.db, actor.orgId, senderIds);
+    const parentMessage = enrich(rawParent, identities);
     const enrichedReplies = page.data
       .reverse()
-      .map((r) => this.enrich(r, identities));
+      .map((r) => enrich(r, identities));
 
-    const [resolvedParent] = await this.withResolvedReferences(actor, [
+    const [resolvedParent] = await withResolvedReferences(this.entities, actor, [
       parentMessage,
     ]);
     return {
       parentMessage: resolvedParent ?? parentMessage,
-      replies: await this.withResolvedReferences(actor, enrichedReplies),
+      replies: await withResolvedReferences(this.entities, actor, enrichedReplies),
       nextCursor: page.nextCursor,
     };
   }
