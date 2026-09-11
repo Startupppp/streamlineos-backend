@@ -6,19 +6,33 @@ import {
   invAverageCostHistory,
 } from "../../../db/schema";
 import { type Db } from "../../../db/drizzle.module";
-import { addDec, subDec, mulDec, divDec, cmpDec } from "./decimal";
+import { addDec, mulDec, divDec, cmpDec } from "./decimal";
 import { INV_ERRORS } from "./stock-engine.types";
+import {
+  planIssue,
+  type CostingMethod,
+  type IssueInput,
+  type IssuePlan,
+  type IssueResult,
+  type LayerKey,
+  type PlannedIssueInput,
+} from "./lib/issue-plan";
 
 type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
 
-export type CostingMethod = "STANDARD" | "WEIGHTED_AVERAGE" | "FIFO";
-
-export interface LayerKey {
-  orgId: string;
-  productVariantId: number;
-  locationId: number;
-  lotId: number | null;
-}
+/**
+ * The decision half of an issue lives in `lib/issue-plan.ts`; these are its
+ * types, re-exported so `movement-costing.service.ts`, `costing-context.ts` and
+ * every existing importer keep resolving them from here.
+ */
+export type {
+  CostingMethod,
+  IssueInput,
+  IssuePlan,
+  IssueResult,
+  LayerKey,
+  PlannedIssueInput,
+};
 
 export interface ReceiptInput extends LayerKey {
   stockTransactionId: number;
@@ -31,57 +45,6 @@ export interface ReceiptInput extends LayerKey {
   sourceId: string;
 }
 
-export interface IssueInput extends LayerKey {
-  stockTransactionId: number;
-  /** Positive magnitude of the quantity leaving stock. */
-  quantity: string;
-  costingMethod: CostingMethod;
-  averageCost: string | null;
-  standardCost: string | null;
-  allowUncovered: boolean;
-  sourceType: string | null;
-  sourceId: string;
-}
-
-export interface IssueResult {
-  /** Total cost of goods issued, from the layers actually consumed. */
-  totalCost: string;
-  unitCost: string;
-  uncoveredQuantity: string;
-}
-
-/** One layer an issue will draw from, and what it will cost to draw from it. */
-interface PlannedDraw {
-  layerId: number;
-  layerUnitCost: string;
-  take: string;
-  unitCost: string;
-  lineCost: string;
-  remainingAfter: string;
-}
-
-/**
- * A2 — the decision an issue makes, separated from the writes that record it.
- *
- * Costing used to run *after* the stock transaction was inserted, then UPDATE
- * that row with the cost it had worked out. So a posted movement was editable
- * by design, and the ledger could not be made append-only while that was true.
- *
- * Splitting the issue in two removes the need: `planIssue` locks the layers and
- * works out the cost, the caller inserts the fact row already carrying it, and
- * `commitIssue` writes the layer consumption against the row's id. The layer
- * locks are taken in `planIssue` and held by the surrounding transaction until
- * commit, so nothing can consume them in between.
- */
-export interface IssuePlan extends IssueResult {
-  draws: PlannedDraw[];
-  /** Quantity no layer covered, and the cost it will be backfilled at. */
-  uncovered: { quantity: string; unitCost: string } | null;
-}
-
-/** An issue's inputs, before the fact row it will be recorded against exists. */
-export type PlannedIssueInput = Omit<IssueInput, "stockTransactionId">;
-
 /**
  * Owns cost layers, layer consumption and COGS.
  *
@@ -91,6 +54,10 @@ export type PlannedIssueInput = Omit<IssueInput, "stockTransactionId">;
  *  - each issue records WHICH layers it consumed, in what quantity, at what
  *    cost, so COGS is reproducible instead of being an in-place decrement of
  *    remaining_quantity that leaves no trace.
+ *
+ * Every write in the valuation path is here. The one thing that is not is the
+ * costing DECISION, which writes nothing and reads its own file — see
+ * `lib/issue-plan.ts` for why that line is where it is.
  */
 @Injectable()
 export class ValuationService {
@@ -139,69 +106,11 @@ export class ValuationService {
 
   /**
    * Works out what an issue will cost, taking the layer locks it will need.
-   * Writes nothing: the caller has not inserted the fact row yet.
+   * Writes nothing; see `lib/issue-plan.ts`. The locks it takes are held by
+   * `tx` until `commitIssue` below runs against them.
    */
-  async planIssue(tx: Tx, input: PlannedIssueInput): Promise<IssuePlan> {
-    const empty: IssuePlan = {
-      totalCost: "0.0000",
-      unitCost: "0.0000",
-      uncoveredQuantity: "0.0000",
-      draws: [],
-      uncovered: null,
-    };
-    if (cmpDec(input.quantity, "0") <= 0) return empty;
-
-    const layers = await this.lockConsumableLayers(tx, input);
-
-    const draws: PlannedDraw[] = [];
-    let outstanding = input.quantity;
-    let totalCost = "0.0000";
-
-    for (const layer of layers) {
-      if (cmpDec(outstanding, "0") <= 0) break;
-      const available = layer.remaining_quantity;
-      const take = cmpDec(available, outstanding) < 0 ? available : outstanding;
-
-      const unitCost = this.issueUnitCost(input, layer.unit_cost);
-      const lineCost = mulDec(take, unitCost);
-
-      draws.push({
-        layerId: layer.id,
-        layerUnitCost: layer.unit_cost,
-        take,
-        unitCost,
-        lineCost,
-        remainingAfter: subDec(available, take),
-      });
-
-      outstanding = subDec(outstanding, take);
-      totalCost = addDec(totalCost, lineCost);
-    }
-
-    let uncovered: IssuePlan["uncovered"] = null;
-    if (cmpDec(outstanding, "0") > 0) {
-      // The layers do not cover the issue. With negative stock blocked this can
-      // only mean the layer ledger has drifted from the snapshot, which must be
-      // loud rather than silently under-valuing the issue.
-      if (!input.allowUncovered) {
-        throw new UnprocessableEntityException({
-          code: INV_ERRORS.INSUFFICIENT_STOCK,
-          message:
-            "Cost layers do not cover this issue — valuation has drifted from stock on hand",
-        });
-      }
-      const fallback = this.fallbackUnitCost(input);
-      uncovered = { quantity: outstanding, unitCost: fallback };
-      totalCost = addDec(totalCost, mulDec(outstanding, fallback));
-    }
-
-    return {
-      totalCost,
-      unitCost: divDec(totalCost, input.quantity),
-      uncoveredQuantity: outstanding,
-      draws,
-      uncovered,
-    };
+  planIssue(tx: Tx, input: PlannedIssueInput): Promise<IssuePlan> {
+    return planIssue(tx, input);
   }
 
   /**
@@ -292,54 +201,6 @@ export class ValuationService {
       .set({ remainingQuantity: "0", remainingValue: "0" })
       .where(eq(invValuationLayers.id, layer.id));
     return true;
-  }
-
-  private async lockConsumableLayers(tx: Tx, input: PlannedIssueInput) {
-    // Bounded: a variant with a long tail of open layers previously locked every
-    // one of them on every issue. 500 layers is far more than any single issue
-    // needs, and a shortfall past that surfaces as an uncovered quantity.
-    const lotFilter =
-      input.lotId === null
-        ? sql`TRUE`
-        : sql`lot_id IS NOT DISTINCT FROM ${input.lotId}`;
-
-    return tx.execute<{
-      id: number;
-      remaining_quantity: string;
-      unit_cost: string;
-    }>(sql`
-      SELECT id, remaining_quantity, unit_cost
-      FROM inv_valuation_layers
-      WHERE org_id = ${input.orgId}
-        AND product_variant_id = ${input.productVariantId}
-        AND location_id IS NOT DISTINCT FROM ${input.locationId}
-        AND ${lotFilter}
-        AND remaining_quantity > 0
-      ORDER BY created_at ASC, id ASC
-      LIMIT 500
-      FOR UPDATE
-    `);
-  }
-
-  private issueUnitCost(input: PlannedIssueInput, layerUnitCost: string): string {
-    switch (input.costingMethod) {
-      case "FIFO":
-        return layerUnitCost;
-      case "WEIGHTED_AVERAGE":
-        return input.averageCost ?? layerUnitCost;
-      case "STANDARD":
-        return input.standardCost ?? layerUnitCost;
-      default: {
-        const exhaustive: never = input.costingMethod;
-        return exhaustive;
-      }
-    }
-  }
-
-  private fallbackUnitCost(input: PlannedIssueInput): string {
-    if (input.costingMethod === "STANDARD" && input.standardCost)
-      return input.standardCost;
-    return input.averageCost ?? "0.0000";
   }
 
   /**
