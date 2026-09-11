@@ -100,7 +100,7 @@ describe(`${SEEDED_HARNESS} INV-42 — lot genealogy after a recall`, () => {
   const graph = async (query: string): Promise<{ status: number; body: GenealogyResult }> => {
     const response = await request(app.app.getHttpServer())
       .get(`/inventory/traceability/genealogy?${query}`)
-      .set("Authorization", `Bearer ${await signSeededToken(scene.userId, scene.orgId)}`);
+      .set("Authorization", `Bearer ${await signSeededToken(app, scene.userId, scene.orgId)}`);
     return { status: response.status, body: response.body as GenealogyResult };
   };
 

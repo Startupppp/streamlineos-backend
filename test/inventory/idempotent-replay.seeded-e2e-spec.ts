@@ -144,8 +144,8 @@ describe(`${SEEDED_HARNESS} a command a client may retry`, () => {
       };
     });
 
-    keeperToken = `Bearer ${await signSeededToken(scene.keeperId, scene.orgId)}`;
-    approverToken = `Bearer ${await signSeededToken(scene.approverId, scene.orgId)}`;
+    keeperToken = `Bearer ${await signSeededToken(app, scene.keeperId, scene.orgId)}`;
+    approverToken = `Bearer ${await signSeededToken(app, scene.approverId, scene.orgId)}`;
 
     await asTenant(() =>
       app.app.get(StockEngineService).execute(scene.orgId, scene.keeperId, {
@@ -349,7 +349,7 @@ describe(`${SEEDED_HARNESS} a command a client may retry`, () => {
       permissionKeys: ["inventory:warehouses:scope-all", "inventory:loads:manage"],
     }).build();
     try {
-      const strangerToken = `Bearer ${await signSeededToken(
+      const strangerToken = `Bearer ${await signSeededToken(app, 
         other.members["stranger"]!.userId,
         other.orgId,
       )}`;

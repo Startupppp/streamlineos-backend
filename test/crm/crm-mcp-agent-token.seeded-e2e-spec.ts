@@ -74,7 +74,7 @@ describe(`${SEEDED_HARNESS} CRM MCP agent tokens`, () => {
     const rep = fixture.members.rep;
     if (!rep) throw new Error("seed: member 'rep' missing");
 
-    sessionToken = await signSeededToken(rep.userId, fixture.orgId);
+    sessionToken = await signSeededToken(seeded, rep.userId, fixture.orgId);
 
     /**
      * The token row as `AgentTokensService.create` writes one: sha256 of the

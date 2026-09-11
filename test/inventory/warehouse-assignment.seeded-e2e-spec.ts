@@ -29,7 +29,7 @@ describe(`${SEEDED_HARNESS} warehouse assignment`, () => {
   const teardowns: Array<() => Promise<void>> = [];
 
   const server = () => app.app.getHttpServer();
-  const auth = async (userId: string) => `Bearer ${await signSeededToken(userId, orgId)}`;
+  const auth = async (userId: string) => `Bearer ${await signSeededToken(app, userId, orgId)}`;
 
   beforeAll(async () => {
     app = await createSeededE2eApp();

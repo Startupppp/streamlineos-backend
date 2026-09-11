@@ -229,9 +229,9 @@ describe(`${SEEDED_HARNESS} audited allocation override and customer shelf life`
       });
     });
 
-    keeperToken = `Bearer ${await signSeededToken(scene.keeperId, scene.orgId)}`;
-    supervisorToken = `Bearer ${await signSeededToken(scene.supervisorId, scene.orgId)}`;
-    nosyToken = `Bearer ${await signSeededToken(seeded.members["nosy"]!.userId, scene.orgId)}`;
+    keeperToken = `Bearer ${await signSeededToken(app, scene.keeperId, scene.orgId)}`;
+    supervisorToken = `Bearer ${await signSeededToken(app, scene.supervisorId, scene.orgId)}`;
+    nosyToken = `Bearer ${await signSeededToken(app, seeded.members["nosy"]!.userId, scene.orgId)}`;
   }, 300_000);
 
   afterAll(async () => {

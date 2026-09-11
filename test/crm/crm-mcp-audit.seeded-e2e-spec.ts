@@ -61,7 +61,7 @@ describe(`${SEEDED_HARNESS} CRM MCP audit rows`, () => {
     const rep = fixture.members.rep;
     if (!rep) throw new Error("seed: member 'rep' missing");
     repUserId = rep.userId;
-    sessionToken = await signSeededToken(rep.userId, fixture.orgId);
+    sessionToken = await signSeededToken(seeded, rep.userId, fixture.orgId);
 
     /** Scoped to deals alone, so the party tools are refused on the ceiling. */
     await seeded.seedDb.insert(agentTokens).values({

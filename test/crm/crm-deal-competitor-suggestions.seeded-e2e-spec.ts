@@ -127,8 +127,8 @@ describe(`${SEEDED_HARNESS} a noticed competitor is a question, never an answer`
       .onConflictDoNothing();
 
     repUserId = fixture.members["rep"]!.userId;
-    repToken = await signSeededToken(repUserId, fixture.orgId);
-    readerToken = await signSeededToken(
+    repToken = await signSeededToken(seeded, repUserId, fixture.orgId);
+    readerToken = await signSeededToken(seeded, 
       fixture.members["reader"]!.userId,
       fixture.orgId,
     );

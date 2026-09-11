@@ -132,8 +132,8 @@ describe(`${SEEDED_HARNESS} the party role and duplicate routes nothing calls`, 
       .addMember("steward", { permissionKeys: [...STEWARD_KEYS] })
       .build();
 
-    stewardToken = await signSeededToken(fixture.members["steward"]!.userId, fixture.orgId);
-    onlookerToken = await signSeededToken(fixture.members["onlooker"]!.userId, fixture.orgId);
+    stewardToken = await signSeededToken(seeded, fixture.members["steward"]!.userId, fixture.orgId);
+    onlookerToken = await signSeededToken(seeded, fixture.members["onlooker"]!.userId, fixture.orgId);
 
     /**
      * One business, recorded twice, with the same name and one telephone line
@@ -424,7 +424,7 @@ describe(`${SEEDED_HARNESS} the party role and duplicate routes nothing calls`, 
       .get("/party/duplicates")
       .set(
         "Authorization",
-        `Bearer ${await signSeededToken(
+        `Bearer ${await signSeededToken(seeded, 
           neighbour.members["steward"]!.userId,
           neighbour.orgId,
         )}`,

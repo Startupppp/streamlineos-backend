@@ -134,8 +134,8 @@ describe(`${SEEDED_HARNESS} forecast drift monitoring`, () => {
       };
     });
 
-    analystToken = `Bearer ${await signSeededToken(seeded.members["analyst"]!.userId, seeded.orgId)}`;
-    strangerToken = `Bearer ${await signSeededToken(seeded.members["stranger"]!.userId, seeded.orgId)}`;
+    analystToken = `Bearer ${await signSeededToken(app, seeded.members["analyst"]!.userId, seeded.orgId)}`;
+    strangerToken = `Bearer ${await signSeededToken(app, seeded.members["stranger"]!.userId, seeded.orgId)}`;
   }, 300_000);
 
   afterAll(async () => {

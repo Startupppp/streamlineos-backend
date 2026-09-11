@@ -111,7 +111,7 @@ describe(`${SEEDED_HARNESS} timesheet approval authority`, () => {
     for (const alias of ["worker", "second", "approver", "outsider"]) {
       const member = fixture.members[alias];
       if (!member) throw new Error(`fixture member '${alias}' missing`);
-      tokens[alias] = await signSeededToken(member.userId, fixture.orgId);
+      tokens[alias] = await signSeededToken(seeded, member.userId, fixture.orgId);
     }
 
     periods["worker"] = await openPeriodFor("worker");

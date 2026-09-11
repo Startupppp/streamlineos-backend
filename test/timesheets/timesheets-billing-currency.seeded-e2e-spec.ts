@@ -67,7 +67,7 @@ describe(`${SEEDED_HARNESS} timesheet billing never sums two currencies`, () => 
     const biller = fixture.members["biller"];
     const project = fixture.projects["alpha"];
     if (!biller || !project) throw new Error("fixture members/projects missing");
-    token = await signSeededToken(biller.userId, fixture.orgId);
+    token = await signSeededToken(seeded, biller.userId, fixture.orgId);
     projectId = project.projectId;
 
     /**

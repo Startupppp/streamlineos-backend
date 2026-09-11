@@ -105,8 +105,8 @@ describe(`${SEEDED_HARNESS} a segment is re-evaluated, never remembered`, () => 
       .values({ orgId: fixture.orgId, moduleKey: "crm", enabled: true })
       .onConflictDoNothing();
 
-    marketerToken = await signSeededToken(marketer.userId, fixture.orgId);
-    strangerToken = await signSeededToken(
+    marketerToken = await signSeededToken(seeded, marketer.userId, fixture.orgId);
+    strangerToken = await signSeededToken(seeded, 
       fixture.members["stranger"]!.userId,
       fixture.orgId,
     );

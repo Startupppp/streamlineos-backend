@@ -42,7 +42,7 @@ describe("[seeded-e2e] creating a lead records its first touch", () => {
       .insert(orgModules)
       .values({ orgId: fixture.orgId, moduleKey: "crm", enabled: true });
 
-    token = await signSeededToken(fixture.members.rep!.userId, fixture.orgId);
+    token = await signSeededToken(seeded, fixture.members.rep!.userId, fixture.orgId);
   }, 180_000);
 
   afterAll(async () => {

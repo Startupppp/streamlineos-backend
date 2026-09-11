@@ -68,7 +68,7 @@ describe(`${SEEDED_HARNESS} a duplicate business record is a 409, not a 500`, ()
       .build();
     orgId = fixture.orgId;
     repUserId = fixture.members["rep"]!.userId;
-    token = await signSeededToken(repUserId, orgId);
+    token = await signSeededToken(seeded, repUserId, orgId);
 
     for (const moduleKey of ["crm", "support", "accounting"]) {
       await seeded.seedDb

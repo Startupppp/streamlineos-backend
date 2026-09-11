@@ -79,9 +79,9 @@ describe(`${SEEDED_HARNESS} class stops can be seen and released`, () => {
         .onConflictDoNothing();
     }
 
-    operatorToken = await signSeededToken(fixture.members["operator"]!.userId, fixture.orgId);
-    reviewerToken = await signSeededToken(fixture.members["reviewer"]!.userId, fixture.orgId);
-    strangerToken = await signSeededToken(other.members["stranger"]!.userId, other.orgId);
+    operatorToken = await signSeededToken(seeded, fixture.members["operator"]!.userId, fixture.orgId);
+    reviewerToken = await signSeededToken(seeded, fixture.members["reviewer"]!.userId, fixture.orgId);
+    strangerToken = await signSeededToken(seeded, other.members["stranger"]!.userId, other.orgId);
 
     stopId = await seedStop(fixture.orgId, "nudge");
     otherOrgStopId = await seedStop(other.orgId, "nudge");

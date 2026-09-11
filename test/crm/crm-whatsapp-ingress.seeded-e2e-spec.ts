@@ -122,7 +122,7 @@ describe(`${SEEDED_HARNESS} WhatsApp ingress — an unauthenticated delivery fin
   ): Promise<string> {
     const member = org.members["rep"];
     if (!member) throw new Error("fixture member 'rep' missing");
-    const token = await signSeededToken(member.userId, org.orgId);
+    const token = await signSeededToken(seeded, member.userId, org.orgId);
 
     const res = await request(seeded.app.getHttpServer())
       .post("/crm/ingress/whatsapp-channels")
@@ -356,7 +356,7 @@ describe(`${SEEDED_HARNESS} WhatsApp ingress — an unauthenticated delivery fin
     async () => {
       const member = fixture.members["rep"];
       if (!member) throw new Error("fixture member 'rep' missing");
-      const token = await signSeededToken(member.userId, fixture.orgId);
+      const token = await signSeededToken(seeded, member.userId, fixture.orgId);
 
       const patched = await request(seeded.app.getHttpServer())
         .patch(`/crm/ingress/whatsapp-channels/${channelId}`)

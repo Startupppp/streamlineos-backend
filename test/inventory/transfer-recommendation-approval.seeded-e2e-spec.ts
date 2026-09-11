@@ -122,8 +122,8 @@ describe(`${SEEDED_HARNESS} approving a transfer recommendation`, () => {
       };
     });
 
-    plannerToken = `Bearer ${await signSeededToken(seeded.members["planner"]!.userId, seeded.orgId)}`;
-    readerToken = `Bearer ${await signSeededToken(seeded.members["reader"]!.userId, seeded.orgId)}`;
+    plannerToken = `Bearer ${await signSeededToken(app, seeded.members["planner"]!.userId, seeded.orgId)}`;
+    readerToken = `Bearer ${await signSeededToken(app, seeded.members["reader"]!.userId, seeded.orgId)}`;
   }, 300_000);
 
   afterAll(async () => {
@@ -156,7 +156,7 @@ describe(`${SEEDED_HARNESS} approving a transfer recommendation`, () => {
   it("refuses the plan to somebody without the read key", async () => {
     const response = await request(server())
       .get(`/inventory/replenishment/transfer-recommendations/${scene.variantId}`)
-      .set("Authorization", `Bearer ${await signSeededToken(randomUUID(), scene.orgId)}`);
+      .set("Authorization", `Bearer ${await signSeededToken(app, randomUUID(), scene.orgId)}`);
     expect([401, 403]).toContain(response.status);
   });
 

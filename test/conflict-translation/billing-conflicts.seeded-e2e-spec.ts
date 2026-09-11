@@ -104,7 +104,7 @@ describe(`${SEEDED_HARNESS} a replayed credit grant is a no-op, not a 500`, () =
       .addMember("admin", { standing: "OWNER" })
       .build();
     orgId = fixture.orgId;
-    token = await signSeededToken(fixture.members["admin"]!.userId, orgId);
+    token = await signSeededToken(seeded, fixture.members["admin"]!.userId, orgId);
     credits = seeded.app.get(AiCreditsService);
     catalog = seeded.app.get(VersionedCatalogService);
 

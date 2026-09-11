@@ -105,9 +105,9 @@ describe(`${SEEDED_HARNESS} the party contact routes nothing calls`, () => {
       .addMember("steward", { permissionKeys: [...STEWARD_KEYS] })
       .build();
 
-    stewardToken = await signSeededToken(fixture.members["steward"]!.userId, fixture.orgId);
-    readerToken = await signSeededToken(fixture.members["reader"]!.userId, fixture.orgId);
-    neighbourToken = await signSeededToken(
+    stewardToken = await signSeededToken(seeded, fixture.members["steward"]!.userId, fixture.orgId);
+    readerToken = await signSeededToken(seeded, fixture.members["reader"]!.userId, fixture.orgId);
+    neighbourToken = await signSeededToken(seeded, 
       neighbour.members["steward"]!.userId,
       neighbour.orgId,
     );

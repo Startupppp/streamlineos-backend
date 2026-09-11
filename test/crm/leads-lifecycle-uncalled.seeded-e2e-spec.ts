@@ -107,9 +107,9 @@ describe(`${SEEDED_HARNESS} the lead qualification routes nothing calls`, () => 
         .values({ orgId, moduleKey: "crm", enabled: true })
         .onConflictDoNothing();
 
-    repToken = await signSeededToken(fixture.members["rep"]!.userId, fixture.orgId);
-    viewerToken = await signSeededToken(fixture.members["viewer"]!.userId, fixture.orgId);
-    neighbourRepToken = await signSeededToken(
+    repToken = await signSeededToken(seeded, fixture.members["rep"]!.userId, fixture.orgId);
+    viewerToken = await signSeededToken(seeded, fixture.members["viewer"]!.userId, fixture.orgId);
+    neighbourRepToken = await signSeededToken(seeded, 
       neighbour.members["rep"]!.userId,
       neighbour.orgId,
     );

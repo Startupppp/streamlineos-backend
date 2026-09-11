@@ -59,7 +59,7 @@ describe(`${SEEDED_HARNESS} a second pending ownership transfer is a 409, not a 
     heirMembershipId = fixture.members["heir"]!.membershipId;
     heirUserId = fixture.members["heir"]!.userId;
     spareMembershipId = fixture.members["spare"]!.membershipId;
-    ownerToken = await signSeededToken(fixture.members["owner"]!.userId, orgId);
+    ownerToken = await signSeededToken(seeded, fixture.members["owner"]!.userId, orgId);
 
     await seeded.seedDb
       .insert(orgModules)

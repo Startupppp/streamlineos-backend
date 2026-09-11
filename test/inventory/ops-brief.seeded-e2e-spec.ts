@@ -63,7 +63,7 @@ describe(`${SEEDED_HARNESS} inventory operations brief`, () => {
           .get("/inventory/ai/ops-brief")
           .set(
             "Authorization",
-            `Bearer ${await signSeededToken(outsider.userId, fixture.orgId)}`,
+            `Bearer ${await signSeededToken(app, outsider.userId, fixture.orgId)}`,
           );
         expect({ status: denied.status, fixture: fixture.label() }).toMatchObject({
           status: 403,
@@ -73,7 +73,7 @@ describe(`${SEEDED_HARNESS} inventory operations brief`, () => {
           .get("/inventory/ai/ops-brief")
           .set(
             "Authorization",
-            `Bearer ${await signSeededToken(reader.userId, fixture.orgId)}`,
+            `Bearer ${await signSeededToken(app, reader.userId, fixture.orgId)}`,
           );
         expect({ status: allowed.status, fixture: fixture.label() }).toMatchObject({
           status: 200,

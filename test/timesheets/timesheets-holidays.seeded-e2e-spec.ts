@@ -62,8 +62,8 @@ describe(`${SEEDED_HARNESS} timesheet holidays`, () => {
       ])
       .onConflictDoNothing();
 
-    workerToken = await signSeededToken(fixture.members["worker"]!.userId, fixture.orgId);
-    analystToken = await signSeededToken(fixture.members["analyst"]!.userId, fixture.orgId);
+    workerToken = await signSeededToken(seeded, fixture.members["worker"]!.userId, fixture.orgId);
+    analystToken = await signSeededToken(seeded, fixture.members["analyst"]!.userId, fixture.orgId);
 
     await seeded.seedDb.insert(timesheetSettings).values({
       orgId: fixture.orgId,

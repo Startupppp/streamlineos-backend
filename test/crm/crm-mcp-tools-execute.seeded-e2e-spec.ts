@@ -66,7 +66,7 @@ describe(`${SEEDED_HARNESS} CRM MCP tools actually execute`, () => {
 
     const analyst = fixture.members.analyst;
     if (!analyst) throw new Error("seed: member 'analyst' missing");
-    sessionToken = await signSeededToken(analyst.userId, fixture.orgId);
+    sessionToken = await signSeededToken(seeded, analyst.userId, fixture.orgId);
   }, 180_000);
 
   afterAll(async () => {

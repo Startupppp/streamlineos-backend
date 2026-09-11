@@ -103,8 +103,8 @@ describe(`${SEEDED_HARNESS} saved reports survive the page they were built on`, 
       .values({ orgId: fixture.orgId, moduleKey: "crm", enabled: true })
       .onConflictDoNothing();
 
-    analystToken = await signSeededToken(analyst.userId, fixture.orgId);
-    strangerToken = await signSeededToken(
+    analystToken = await signSeededToken(seeded, analyst.userId, fixture.orgId);
+    strangerToken = await signSeededToken(seeded, 
       fixture.members["stranger"]!.userId,
       fixture.orgId,
     );

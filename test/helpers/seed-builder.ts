@@ -12,6 +12,7 @@ import {
   roles,
   subscriptions,
   users,
+  auditLogs,
 } from "src/db/schema";
 import type { Db } from "src/db/drizzle.module";
 import { bumpPermissionsVersion } from "src/common/rbac/access-invalidate";

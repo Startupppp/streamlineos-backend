@@ -76,7 +76,7 @@ describe(`${SEEDED_HARNESS} sign events still fire once bulk send is asynchronou
       .values({ orgId: fixture.orgId, moduleKey: "sign", enabled: true })
       .onConflictDoNothing();
 
-    token = await signSeededToken(fixture.members["sender"]!.userId, fixture.orgId);
+    token = await signSeededToken(seeded, fixture.members["sender"]!.userId, fixture.orgId);
 
     const [template] = await seeded.seedDb
       .insert(signTemplates)

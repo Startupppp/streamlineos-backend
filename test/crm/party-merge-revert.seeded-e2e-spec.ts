@@ -198,8 +198,8 @@ describe(`${SEEDED_HARNESS} merging two customer records, and reverting it`, () 
       .insert(orgModules)
       .values({ orgId: fixture.orgId, moduleKey: "crm", enabled: true });
 
-    stewardToken = await signSeededToken(fixture.members["steward"]!.userId, fixture.orgId);
-    onlookerToken = await signSeededToken(fixture.members["onlooker"]!.userId, fixture.orgId);
+    stewardToken = await signSeededToken(seeded, fixture.members["steward"]!.userId, fixture.orgId);
+    onlookerToken = await signSeededToken(seeded, fixture.members["onlooker"]!.userId, fixture.orgId);
 
     /*
      * The loser is deliberately the OLDER record and the one holding the shared

@@ -62,7 +62,7 @@ describe(`${SEEDED_HARNESS} inventory permission and warehouse scope matrix`, ()
 
   const server = () => app.app.getHttpServer();
   const auth = async (alias: string, org = orgId) =>
-    `Bearer ${await signSeededToken(members[alias]!, org)}`;
+    `Bearer ${await signSeededToken(app, members[alias]!, org)}`;
 
   async function enableInventory(target: string) {
     const db = app.app.get<Db>(DRIZZLE);

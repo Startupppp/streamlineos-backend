@@ -72,8 +72,8 @@ describe(`${SEEDED_HARNESS} the bulk error report reports every error`, () => {
         .onConflictDoNothing();
     }
 
-    token = await signSeededToken(fixture.members["sender"]!.userId, fixture.orgId);
-    otherToken = await signSeededToken(
+    token = await signSeededToken(seeded, fixture.members["sender"]!.userId, fixture.orgId);
+    otherToken = await signSeededToken(seeded, 
       otherFixture.members["stranger"]!.userId,
       otherFixture.orgId,
     );

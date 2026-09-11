@@ -53,7 +53,7 @@ describe(`${SEEDED_HARNESS} sign sweeps reach the scheduler`, () => {
       .values({ orgId: fixture.orgId, moduleKey: "sign", enabled: true })
       .onConflictDoNothing();
 
-    adminToken = await signSeededToken(fixture.members["admin"]!.userId, fixture.orgId);
+    adminToken = await signSeededToken(seeded, fixture.members["admin"]!.userId, fixture.orgId);
   }, 240_000);
 
   afterAll(async () => {

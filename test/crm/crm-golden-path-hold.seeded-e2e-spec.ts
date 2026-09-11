@@ -137,8 +137,8 @@ describe(`${SEEDED_HARNESS} autonomy holds — decide, show, and stop before it 
     const plain = org.members["plain"];
     if (!rep || !plain) throw new Error("fixture members missing");
     crmUserId = rep.userId;
-    crmToken = await signSeededToken(rep.userId, org.orgId);
-    plainToken = await signSeededToken(plain.userId, org.orgId);
+    crmToken = await signSeededToken(seeded, rep.userId, org.orgId);
+    plainToken = await signSeededToken(seeded, plain.userId, org.orgId);
   }, 180_000);
 
   afterAll(async () => {

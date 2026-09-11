@@ -103,7 +103,7 @@ describe(`${SEEDED_HARNESS} timesheets tenant isolation — the second tenant se
 
     return {
       fixture,
-      token: await signSeededToken(member.userId, fixture.orgId),
+      token: await signSeededToken(seeded, member.userId, fixture.orgId),
       userId: member.userId,
       exceptionId: exception.id,
     };

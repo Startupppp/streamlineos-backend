@@ -121,10 +121,10 @@ describe(`${SEEDED_HARNESS} per-rep call metrics and best-call exemplars`, () =>
       .values({ orgId: fixture.orgId, moduleKey: "crm", enabled: true })
       .onConflictDoNothing();
 
-    repAToken = await signSeededToken(repAId, fixture.orgId);
-    repBToken = await signSeededToken(repBId, fixture.orgId);
-    managerToken = await signSeededToken(managerId, fixture.orgId);
-    strangerToken = await signSeededToken(
+    repAToken = await signSeededToken(seeded, repAId, fixture.orgId);
+    repBToken = await signSeededToken(seeded, repBId, fixture.orgId);
+    managerToken = await signSeededToken(seeded, managerId, fixture.orgId);
+    strangerToken = await signSeededToken(seeded, 
       fixture.members["stranger"]!.userId,
       fixture.orgId,
     );

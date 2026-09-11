@@ -74,7 +74,7 @@ describe(`${SEEDED_HARNESS} a duplicate pricebook name is a 409, not a 500`, () 
       .values({ orgId, moduleKey: "crm", enabled: true })
       .onConflictDoNothing();
 
-    token = await signSeededToken(fixture.members["admin"]!.userId, orgId);
+    token = await signSeededToken(seeded, fixture.members["admin"]!.userId, orgId);
 
     const [product] = await seeded.seedDb
       .insert(crmProducts)

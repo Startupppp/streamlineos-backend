@@ -286,8 +286,8 @@ describe(`${SEEDED_HARNESS} supplier scorecard`, () => {
       stranger.members["neighbour"]!.userId,
     );
 
-    buyerToken = `Bearer ${await signSeededToken(seeded.members["buyer"]!.userId, seeded.orgId)}`;
-    outsiderToken = `Bearer ${await signSeededToken(seeded.members["outsider"]!.userId, seeded.orgId)}`;
+    buyerToken = `Bearer ${await signSeededToken(app, seeded.members["buyer"]!.userId, seeded.orgId)}`;
+    outsiderToken = `Bearer ${await signSeededToken(app, seeded.members["outsider"]!.userId, seeded.orgId)}`;
   }, 300_000);
 
   afterAll(async () => {

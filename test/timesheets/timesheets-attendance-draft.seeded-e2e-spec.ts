@@ -105,7 +105,7 @@ describe(`${SEEDED_HARNESS} attendance to timesheet`, () => {
     const clocker = fixture.members["clocker"];
     if (!clocker) throw new Error("fixture member missing");
     userId = clocker.userId;
-    workerToken = await signSeededToken(userId, fixture.orgId);
+    workerToken = await signSeededToken(seeded, userId, fixture.orgId);
 
     await seeded.seedDb.insert(attendance).values([
       {

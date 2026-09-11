@@ -101,7 +101,7 @@ describe(`${SEEDED_HARNESS} a create a client may retry`, () => {
         INSERT INTO org_modules (org_id, module_key, enabled)
         VALUES (${seeded.orgId}, 'inventory', true) ON CONFLICT DO NOTHING`);
     });
-    keeperToken = `Bearer ${await signSeededToken(scene.keeperId, scene.orgId)}`;
+    keeperToken = `Bearer ${await signSeededToken(app, scene.keeperId, scene.orgId)}`;
   }, 300_000);
 
   afterAll(async () => {

@@ -35,6 +35,8 @@
  *   F3 — RESOLVED. An AV scan runs, and it runs before the key is planned.
  */
 
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { Readable } from "node:stream";
 import { BadRequestException, PayloadTooLargeException } from "@nestjs/common";
 import { INTERCEPTORS_METADATA } from "@nestjs/common/constants";
@@ -52,6 +54,12 @@ import { validateMagicBytes } from "../../src/modules/storage/file-signatures";
 import { MediaTransformRunner } from "../../src/modules/storage/media-transform.runner";
 import { StorageController } from "../../src/modules/storage/storage.controller";
 import { StorageService } from "../../src/modules/storage/storage.service";
+
+const BACKEND_ROOT = join(__dirname, "../..");
+
+function src(rel: string): string {
+  return readFileSync(join(BACKEND_ROOT, rel), "utf8");
+}
 
 const ORG = "org-A";
 

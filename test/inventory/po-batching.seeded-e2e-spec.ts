@@ -153,8 +153,8 @@ describe(`${SEEDED_HARNESS} purchase-order batching`, () => {
       };
     });
 
-    buyerToken = `Bearer ${await signSeededToken(seeded.members["buyer"]!.userId, seeded.orgId)}`;
-    readerToken = `Bearer ${await signSeededToken(seeded.members["reader"]!.userId, seeded.orgId)}`;
+    buyerToken = `Bearer ${await signSeededToken(app, seeded.members["buyer"]!.userId, seeded.orgId)}`;
+    readerToken = `Bearer ${await signSeededToken(app, seeded.members["reader"]!.userId, seeded.orgId)}`;
   }, 300_000);
 
   afterAll(async () => {

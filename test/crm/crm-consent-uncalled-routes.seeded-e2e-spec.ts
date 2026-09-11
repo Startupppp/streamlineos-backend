@@ -156,9 +156,9 @@ describe(`${SEEDED_HARNESS} the consent routes nothing in the product calls`, ()
         .values({ orgId, moduleKey: "crm", enabled: true })
         .onConflictDoNothing();
 
-    operatorToken = await signSeededToken(fixture.members["operator"]!.userId, fixture.orgId);
-    readerToken = await signSeededToken(fixture.members["reader"]!.userId, fixture.orgId);
-    neighbourToken = await signSeededToken(
+    operatorToken = await signSeededToken(seeded, fixture.members["operator"]!.userId, fixture.orgId);
+    readerToken = await signSeededToken(seeded, fixture.members["reader"]!.userId, fixture.orgId);
+    neighbourToken = await signSeededToken(seeded, 
       neighbour.members["operator"]!.userId,
       neighbour.orgId,
     );

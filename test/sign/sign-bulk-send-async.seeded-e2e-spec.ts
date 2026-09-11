@@ -58,7 +58,7 @@ describe(`${SEEDED_HARNESS} bulk send is queued, not run in the request`, () => 
       .values({ orgId: fixture.orgId, moduleKey: "sign", enabled: true })
       .onConflictDoNothing();
 
-    token = await signSeededToken(fixture.members["sender"]!.userId, fixture.orgId);
+    token = await signSeededToken(seeded, fixture.members["sender"]!.userId, fixture.orgId);
 
     /**
      * Seeded directly: a published template with exactly one signer role is

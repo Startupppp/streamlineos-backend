@@ -156,7 +156,7 @@ describe(`${SEEDED_HARNESS} web push raised from a background worker`, () => {
       .onConflictDoNothing();
 
     const senderUserId = subscribed.members["sender"]!.userId;
-    token = await signSeededToken(senderUserId, subscribed.orgId);
+    token = await signSeededToken(seeded, senderUserId, subscribed.orgId);
 
     /**
      * Two subscriptions for the *same user*, in two organisations.

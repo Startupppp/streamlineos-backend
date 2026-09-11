@@ -90,7 +90,7 @@ describe(`${SEEDED_HARNESS} payroll handoff — an export reaches the port, not 
 
     const admin = fixture.members["payroll-admin"];
     if (!admin) throw new Error("fixture member 'payroll-admin' missing");
-    token = await signSeededToken(admin.userId, fixture.orgId);
+    token = await signSeededToken(seeded, admin.userId, fixture.orgId);
 
     /**
      * Approved, unprocessed hours — the only rows `runExport` considers.

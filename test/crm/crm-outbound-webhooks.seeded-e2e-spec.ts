@@ -78,7 +78,7 @@ describe(`${SEEDED_HARNESS} outbound webhooks — a dispatch after the request s
 
     const admin = fixture.members["admin"];
     if (!admin) throw new Error("fixture member 'admin' missing");
-    token = await signSeededToken(admin.userId, fixture.orgId);
+    token = await signSeededToken(seeded, admin.userId, fixture.orgId);
 
     /**
      * Only this suite's own targets are intercepted.

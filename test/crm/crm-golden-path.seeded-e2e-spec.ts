@@ -183,11 +183,11 @@ describe(`${SEEDED_HARNESS} CRM golden path — stranger to held send`, () => {
       .set({ name: "Riya Sharma" })
       .where(eq(users.id, rep.userId));
 
-    token = await signSeededToken(rep.userId, fixture.orgId);
+    token = await signSeededToken(seeded, rep.userId, fixture.orgId);
 
     const outsider = fixture.members["outsider"];
     if (!outsider) throw new Error("fixture member 'outsider' missing");
-    outsiderToken = await signSeededToken(outsider.userId, fixture.orgId);
+    outsiderToken = await signSeededToken(seeded, outsider.userId, fixture.orgId);
   }, 180_000);
 
   afterAll(async () => {

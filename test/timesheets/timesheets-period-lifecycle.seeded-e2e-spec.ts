@@ -68,8 +68,8 @@ describe(`${SEEDED_HARNESS} timesheet period lifecycle`, () => {
     const worker = fixture.members["worker"];
     const boss = fixture.members["boss"];
     if (!worker || !boss) throw new Error("fixture members missing");
-    workerToken = await signSeededToken(worker.userId, fixture.orgId);
-    bossToken = await signSeededToken(boss.userId, fixture.orgId);
+    workerToken = await signSeededToken(seeded, worker.userId, fixture.orgId);
+    bossToken = await signSeededToken(seeded, boss.userId, fixture.orgId);
 
     /** `GET current` is the only way a period comes into existence. */
     const current = await request(seeded.app.getHttpServer())

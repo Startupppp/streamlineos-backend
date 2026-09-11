@@ -127,7 +127,7 @@ describe(`${SEEDED_HARNESS} a saved report that arrives on a timetable`, () => {
     consumer = seeded.app.get(ReportScheduleConsumer);
 
     analystUserId = fixture.members["analyst"]!.userId;
-    analystToken = await signSeededToken(analystUserId, fixture.orgId);
+    analystToken = await signSeededToken(seeded, analystUserId, fixture.orgId);
 
     await seeded.seedDb
       .insert(orgModules)

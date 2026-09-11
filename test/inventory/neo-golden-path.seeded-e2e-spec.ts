@@ -255,8 +255,8 @@ describe("[seeded-e2e] NEO-16 the world-class path", () => {
     // NEO-7. Two people, and the tokens that make the board a real HTTP read
     // rather than a service call with the guard skipped.
     secondUserId = seeded.members.picker!.userId;
-    keeperToken = await signSeededToken(seeded.members.keeper!.userId, seeded.orgId);
-    pickerToken = await signSeededToken(secondUserId, seeded.orgId);
+    keeperToken = await signSeededToken(app, seeded.members.keeper!.userId, seeded.orgId);
+    pickerToken = await signSeededToken(app, secondUserId, seeded.orgId);
 
     const tag = randomUUID().slice(0, 6);
     scene = await runInNewTenantTransaction(db(), seeded.orgId, async () => {

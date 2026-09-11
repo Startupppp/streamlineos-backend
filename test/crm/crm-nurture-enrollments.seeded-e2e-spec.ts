@@ -131,10 +131,10 @@ describe(`${SEEDED_HARNESS} nurture enrol and list`, () => {
         .onConflictDoNothing();
     }
 
-    operatorToken = await signSeededToken(fixture.members["operator"]!.userId, fixture.orgId);
-    reviewerToken = await signSeededToken(fixture.members["reviewer"]!.userId, fixture.orgId);
-    bystanderToken = await signSeededToken(fixture.members["bystander"]!.userId, fixture.orgId);
-    strangerToken = await signSeededToken(other.members["stranger"]!.userId, other.orgId);
+    operatorToken = await signSeededToken(seeded, fixture.members["operator"]!.userId, fixture.orgId);
+    reviewerToken = await signSeededToken(seeded, fixture.members["reviewer"]!.userId, fixture.orgId);
+    bystanderToken = await signSeededToken(seeded, fixture.members["bystander"]!.userId, fixture.orgId);
+    strangerToken = await signSeededToken(seeded, other.members["stranger"]!.userId, other.orgId);
 
     partyId = randomUUID();
     await seeded.seedDb

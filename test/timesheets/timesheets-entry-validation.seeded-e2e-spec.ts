@@ -64,7 +64,7 @@ describe(`${SEEDED_HARNESS} timesheet entry validation`, () => {
 
     const worker = fixture.members["worker"];
     if (!worker) throw new Error("fixture member 'worker' missing");
-    token = await signSeededToken(worker.userId, fixture.orgId);
+    token = await signSeededToken(seeded, worker.userId, fixture.orgId);
   }, 240_000);
 
   afterAll(async () => {

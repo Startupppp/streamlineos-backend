@@ -64,7 +64,7 @@ describe(`${SEEDED_HARNESS} lot genealogy graph`, () => {
   const asTenant = <T>(orgId: string, work: () => Promise<T>): Promise<T> =>
     runInNewTenantTransaction(db(), orgId, work);
   const auth = async (userId: string, orgId: string) =>
-    `Bearer ${await signSeededToken(userId, orgId)}`;
+    `Bearer ${await signSeededToken(app, userId, orgId)}`;
 
   const graph = async (
     query: string,
