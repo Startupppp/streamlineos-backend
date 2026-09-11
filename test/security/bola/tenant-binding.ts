@@ -248,6 +248,17 @@ export function analyzeRoute(route: HandlerRoute, index: SourceIndex): RouteBind
     const verdict = classifyMethod(route.controllerClass, call[1] as string, index);
     if (verdict.verdict !== "unbound") return { route, ...verdict, tenantThreaded };
   }
+
+  // A handler that hands its work to a module-level function — the shape a controller split by
+  // responsibility produces (`submitPublicFeedback(this.submitDeps, widget, …)`) — is followed
+  // into it exactly as `classifyMethod` already follows one out of a service method. Without
+  // this, moving a handler's body into a lib reads as removing its tenant binding.
+  for (const call of route.body.matchAll(/(?<![\w.])([a-z][\w$]*)\s*\(/g)) {
+    const fnName = call[1] as string;
+    if (!index.functions.has(fnName)) continue;
+    const verdict = classifyMethod(fnName, fnName, index);
+    if (verdict.verdict !== "unbound") return { route, ...verdict, tenantThreaded };
+  }
   if (inline) return { route, ...inline, resolved: `${route.controllerClass}.${route.handler}`, tenantThreaded };
   return {
     route,

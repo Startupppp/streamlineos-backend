@@ -29,6 +29,17 @@ const LENGTH_GUARD_RE = /\.length\s*(?:!==|!=|===|==|<|>)\s*[\w.]+\.length\b/;
 const DIFFERENCE_GUARD_RE =
   /\b(?:const|let)\s+([A-Za-z_$][\w$]*)\s*(?::[^=;]*)?=\s*[^;]*\.filter\([\s\S]*?;[\s\S]{0,400}?\bif\s*\(\s*\1\.length\s*(?:>\s*0|!==\s*0)\s*\)[\s\S]{0,200}?\bthrow\b/;
 
+/**
+ * `const allowed = new Set(await filterOrgMemberIds(db, orgId, unique));
+ *  if (unique.some((id) => !allowed.has(id))) throw new NotFoundException(…)`
+ * — the same refusal again, expressed as set membership instead of a count. `assertUsersInOrg`
+ * (`common/tenant/org-membership.ts`) is the shape, and it refuses the WHOLE request with a 404,
+ * which is exactly what this gate asks for; counting only the two arithmetic forms reported every
+ * caller of it as unguarded.
+ */
+const SET_MEMBERSHIP_GUARD_RE =
+  /\b(?:const|let)\s+([A-Za-z_$][\w$]*)\s*=\s*new Set\([\s\S]{0,400}?\bif\s*\(\s*[\w.]+\.some\([\s\S]{0,120}?!\s*\1\.has\([\s\S]{0,200}?\bthrow\b/;
+
 /** `const someIds = <expr>` / `let someIds = <expr>` — an id list rebound to a local. */
 const ID_LOCAL_RE = /\b(?:const|let)\s+([A-Za-z_$][\w$]*[Ii]ds)\s*(?::[^=;]*)?=\s*([^;]*);/g;
 
@@ -134,13 +145,50 @@ export interface BulkSite {
  * within the owning class so extracting the guard does not read as removing it.
  */
 function guardsInPlace(body: string): boolean {
-  return LENGTH_GUARD_RE.test(body) || DIFFERENCE_GUARD_RE.test(body);
+  return (
+    LENGTH_GUARD_RE.test(body) ||
+    DIFFERENCE_GUARD_RE.test(body) ||
+    SET_MEMBERSHIP_GUARD_RE.test(body)
+  );
+}
+
+/**
+ * A signature's parameters by position — `""` for a destructured slot, which has no single name
+ * a carrier could arrive under. `parameterNames` answers "which names", this answers "which slot".
+ */
+function positionalParameters(signature: string): string[] {
+  const open = signature.indexOf("(");
+  const close = signature.lastIndexOf(")");
+  if (open === -1 || close <= open) return [];
+  const inner = signature.slice(open + 1, close);
+  const slots: string[] = [];
+  let depth = 0;
+  let start = 0;
+  for (let i = 0; i <= inner.length; i++) {
+    const ch = inner[i];
+    if (ch === "(" || ch === "{" || ch === "[" || ch === "<") depth += 1;
+    else if (ch === ")" || ch === "}" || ch === "]" || (ch === ">" && inner[i - 1] !== "=")) depth -= 1;
+    else if (i === inner.length || (ch === "," && depth === 0)) {
+      const part = inner.slice(start, i).trim();
+      if (part.length > 0)
+        slots.push(/^(?:(?:public|private|protected|readonly)\s+)*([A-Za-z_$][\w$]*)/.exec(part)?.[1] ?? "");
+      start = i + 1;
+    }
+  }
+  return slots;
 }
 
 /**
  * The module-level functions this method hands one of its own id lists to.
  * Only those: a helper called with ids the method derived itself cannot receive a
  * mixed-tenant list, so following it would add noise, not coverage.
+ *
+ * "Its own id list" includes the two shapes a split by responsibility produces, both of which
+ * used to drop a site from the scan entirely: a field of a parameter passed on
+ * (`assertGroupsBelongToModule(deps, orgId, key, input.groupIds)`), and a whole parameter
+ * forwarded as a carrier whose `<param>.<…Ids>` the callee then pushes into `inArray`
+ * (`return bulkDelete(this.bulkDeps, orgId, userId, input)`). The carrier is followed only into
+ * the callee slot it lands in, so a forwarded `orgId` never makes an unrelated list count.
  */
 function delegatedHelpers(
   method: { readonly signature: string; readonly body: string },
@@ -148,12 +196,26 @@ function delegatedHelpers(
   idCandidates: ReadonlySet<string>,
 ): SourceMethod[] {
   if (!helpers) return [];
+  const params = parameterNames(method.signature);
   const called: SourceMethod[] = [];
   for (const m of method.body.matchAll(FUNCTION_CALL_RE)) {
     const callee = helpers.get(m[1] as string);
     if (!callee) continue;
     const args = (m[2] ?? "").split(",").map((arg) => arg.trim());
-    if (args.some((arg) => idCandidates.has(arg))) called.push(callee);
+    if (args.some((arg) => idCandidates.has(arg) || isParameterSupplied(arg, params))) {
+      called.push(callee);
+      continue;
+    }
+    const slots = positionalParameters(callee.signature);
+    const calleeLists = [...callee.body.matchAll(IN_ARRAY_RE)].map((x) => x[1] as string);
+    const carried = args.some((arg, slot) => {
+      const landing = slots[slot];
+      if (!params.has(arg) || !landing) return false;
+      return calleeLists.some(
+        (list) => list.startsWith(`${landing}.`) && ID_LEAF_RE.test(list.split(".").at(-1) ?? ""),
+      );
+    });
+    if (carried) called.push(callee);
   }
   return called;
 }

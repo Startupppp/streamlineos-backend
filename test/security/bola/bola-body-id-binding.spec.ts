@@ -213,12 +213,14 @@ describe("the surface, enumerated from the committed contract", () => {
        * Three of the six named here were resolved by `057adf02`, which regenerated `openapi.json`
        * after it had gone 31 operations stale. The set is TIGHTENED rather than left wide: a
        * blind spot that closed must shrink the allowance, or the next one to open is absorbed.
+       *
+       * EMPTIED on the merge. `SurveyParticipantsController_import` and
+       * `TimesheetBillingController_export` resolve now: both are handlers NAMED after a reserved
+       * word, which the walk in `route-surface.ts` dropped until its keyword list went the way of
+       * the gate's (053db5f39). `FinanceAuditController_export` went with main's `finance/` module
+       * when the gl_* rewrite replaced it — there is no such handler to resolve.
        */
-      new Set([
-        "FinanceAuditController_export",
-        "SurveyParticipantsController_import",
-        "TimesheetBillingController_export",
-      ]),
+      new Set([]),
     );
   });
 });
@@ -273,10 +275,14 @@ const UNRESOLVED_BASELINE = 179;
  * Checked by querying the analyser directly rather than inferring it from the absence.
  * The pin did its job — the site could not vanish quietly.
  */
+/**
+ * One, not four. The three `AssetCategoriesController_update` sites left with main's
+ * `finance/` fixed-asset surface when the gl_* accounting rewrite replaced it: there is no
+ * such controller on this branch, so the pin could only ever fail. Removed because the code
+ * is gone, not because the analyser stopped seeing it — `SignFieldsController_update` is
+ * still held below, which is what proves the spread-before-fallback trace still works.
+ */
 const NEWLY_VISIBLE_BY_SPREAD_ORDERING: readonly string[] = [
-  "AssetCategoriesController_update|assetAccountId",
-  "AssetCategoriesController_update|depreciationExpenseAccountId",
-  "AssetCategoriesController_update|accumulatedDepreciationAccountId",
   "SignFieldsController_update|groupId",
 ];
 

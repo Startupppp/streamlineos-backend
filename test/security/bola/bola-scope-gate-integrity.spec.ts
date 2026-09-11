@@ -82,7 +82,11 @@ describe("BOLA sweep — a scope gate must be able to bite", () => {
   const sites = findFailOpenResolvers();
 
   it("ANTI-VACUITY: the scan finds the fail-open fallback in real resolvers", () => {
-    expect(sites.length).toBeGreaterThan(8);
+    // 8 -> 7. `accounting/core/accounting-scope.ts` was the ninth; the gl_* rewrite that replaced
+    // main's accounting module retired it, and 0d29ec558 dropped `scopable` from the accounting
+    // keys because no ledger query could apply a scope. One resolver fewer to find, not one fewer
+    // enforced: the FIXED and NO-NEW assertions below still run against the remaining eight.
+    expect(sites.length).toBeGreaterThan(7);
     expect(sites.some((s) => s.scopable)).toBe(true);
   });
 

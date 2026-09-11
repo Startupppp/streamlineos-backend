@@ -287,7 +287,10 @@ describe("path translation and query assembly", () => {
   });
 
   it("finds a real operation through that translation", () => {
-    expect(findOperation("GET", "/accounting/reports/customer-statement/:clientId")).not.toBeNull();
+    // Was /accounting/reports/customer-statement/:clientId, which left with main's finance/
+    // reports when the gl_* rewrite replaced them. The kernel's account ledger is the same
+    // shape and still the point: a path parameter plus required query parameters.
+    expect(findOperation("GET", "/accounting/accounts/:accountId/ledger")).not.toBeNull();
   });
 
   /**
@@ -295,10 +298,10 @@ describe("path translation and query assembly", () => {
    * on a body. "The probe sends no request body" is two thirds of the story.
    */
   it("synthesises the required query parameters a GET control was failing on", () => {
-    const result = synthesizeRequest("GET", "/accounting/reports/customer-statement/:clientId");
+    const result = synthesizeRequest("GET", "/accounting/accounts/:accountId/ledger");
     expect(Object.keys(result.query).sort()).toEqual(["from", "to"]);
     expect(result.query.from).toMatch(/^\d{4}-\d{2}-\d{2}$/);
-    expect(withQuery("/accounting/reports/customer-statement/1", result.query)).toContain("?from=");
+    expect(withQuery("/accounting/accounts/1/ledger", result.query)).toContain("?from=");
     expect(withQuery("/x?a=1", { b: "2" })).toBe("/x?a=1&b=2");
   });
 });

@@ -21,7 +21,28 @@ import { buildSourceIndex } from "./tenant-binding";
  * grow. `sites.length` only guards against the scan quietly finding less.
  */
 const BULK_SITE_FLOOR = 60;
-const NO_COUNT_CHECK_BASELINE = 45;
+/**
+ * 45 -> 46 on the inventory/CRM merge, and the whole move is accounted for site by site.
+ *
+ * Two blind spots in the scan closed first, so the number is measured against a detector that
+ * sees what it always claimed to: a bulk list forwarded WHOLE into a module-level function
+ * (`return bulkDelete(this.bulkDeps, orgId, userId, input)`) is followed into the slot it lands
+ * in, and `assertUsersInOrg`'s set-membership refusal counts as the guard it is. Against main's
+ * own tree that detector measures 41, not 42 — `CalendarService.createEvent` was never unguarded.
+ *
+ *   41  main, re-measured
+ *   -2  `MatchingService.suggestMatches` and `PaymentRunsService.createRun` left with main's
+ *       `finance/` module when the gl_* accounting rewrite replaced it.
+ *   +7  the derived-id helpers named in GUARDED_BY_CALLER below, brought in by this branch.
+ *   = 46
+ *
+ * This branch measures 49. The three above the baseline are open defects in `modules/inventory`,
+ * reported rather than absorbed: `RecallSimulationService.resolveLots` and
+ * `PickWaveService.proposeWaveJoin` take request-supplied id lists, and
+ * `ChannelPoolService.reservedByVariant` has no caller at all. Fixing or deleting those three is
+ * what brings this green; raising the number to cover them is the move CLOSURE-DEFINITION forbids.
+ */
+const NO_COUNT_CHECK_BASELINE = 46;
 const FAIL_WHOLE_FLOOR = 21;
 
 /**
@@ -81,8 +102,30 @@ const REPAIRED_FAIL_WHOLE: readonly string[] = [
  * status filter is applied, so a foreign id is no longer indistinguishable from
  * a skip. Neither name appears in the scan's inventory any more. An entry may
  * only return here with the same kind of evidence.
+ *
+ * REOPENED on the inventory/CRM merge with exactly that evidence, for seven PRIVATE helpers whose
+ * only caller derives the id list from a query already bound to the caller's organisation. Each
+ * was read at the call site, not inferred from the name:
+ *
+ *   `AttributionReportService.load{Marketing,Sales}Touches` — `getReport` derives `leadIds` and
+ *     `dealIds` from `loadWonDeals`, whose query is `eq(deals.orgId, orgId)`.
+ *   `InvReportsService.availabilityByLevelId` — the ids are the primary keys of the page the
+ *     caller just read under `eq(invStockLevels.orgId, orgId)`.
+ *   `RecallSimulationService.read{OnHand,InTransit,Shipped,Returned}` — every one is handed
+ *     `lots.map(l => l.lotId)` from `resolveLots`, whose conditions start `eq(invLots.orgId, orgId)`.
+ *
+ * A mixed-tenant list cannot reach any of them, so a count check would compare a number with
+ * itself. `resolveLots` itself is NOT here: it takes the request's own `selection.lotIds`.
  */
-const GUARDED_BY_CALLER: readonly string[] = [];
+const GUARDED_BY_CALLER: readonly string[] = [
+  "AttributionReportService.loadMarketingTouches",
+  "AttributionReportService.loadSalesTouches",
+  "InvReportsService.availabilityByLevelId",
+  "RecallSimulationService.readOnHand",
+  "RecallSimulationService.readInTransit",
+  "RecallSimulationService.readShipped",
+  "RecallSimulationService.readReturned",
+];
 
 const source = (rel: string): string => readFileSync(join(BACKEND_ROOT, rel), "utf8");
 

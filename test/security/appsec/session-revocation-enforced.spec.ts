@@ -354,7 +354,9 @@ describe("Every revocation entry point writes the tombstone the guard reads", ()
   const REVOCATION_WRITER = "src/modules/sessions/sessions.service.ts";
   const KNOWN_WRITERS = [
     "src/modules/sessions/sessions.service.ts",
-    "src/modules/users/user-profile.service.ts",
+    // The profile service's revokeSession/revokeAllSessions moved here unchanged (a5edd7228,
+    // "move the per-user account records into a lib"); user-profile.service.ts no longer writes.
+    "src/modules/users/lib/user-account-records.ts",
   ];
 
   function walk(dir: string, out: string[] = []): string[] {
@@ -384,7 +386,11 @@ describe("Every revocation entry point writes the tombstone the guard reads", ()
   it("every one of them also publishes the Redis tombstone in the same method", () => {
     for (const file of revocationWriters()) {
       const source = readFileSync(resolve(BACKEND_ROOT, file), "utf8");
-      const bodies = source.split(/\n {2}(?:async |private async )/).slice(1);
+      // A writer is a class method or, once split into a lib, a module-level function — both
+      // count as "the same method" for the tombstone.
+      const bodies = source
+        .split(/\n {2}(?:async |private async )|\n(?:export )?async function /)
+        .slice(1);
       const revoking = bodies.filter((body) => /isRevoked:\s*true/.test(body));
 
       expect({ file, revokingMethods: revoking.length > 0 }).toEqual({

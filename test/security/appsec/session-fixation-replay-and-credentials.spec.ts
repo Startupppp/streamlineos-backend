@@ -494,7 +494,18 @@ describe("Generic authentication failures are indistinguishable", () => {
       resolve(BACKEND_ROOT, "src/modules/auth/auth.service.ts"),
       "utf8",
     );
-    expect(source).toMatch(/if \(existing\) return \{ success: true \};/);
+    // The existing-address branch may finish a registration whose provisioning threw halfway
+    // (resumeProvisioning), but it still answers `{ success: true }` and nothing else, the resume
+    // is a no-op for an open account, and it has no refusal of its own that could become the oracle.
+    expect(source).toMatch(
+      /if \(existing\) \{\s*await this\.resumeProvisioning\(existing\);\s*return \{ success: true \};\s*\}/,
+    );
+    const resume = source.slice(
+      source.indexOf("private async resumeProvisioning("),
+      source.indexOf("async logout("),
+    );
+    expect(resume).toContain("if (existing.isActive) return;");
+    expect(resume).not.toMatch(/\bthrow\b/);
     expect(source).not.toMatch(/ConflictException\(["'`][^"'`]*already/i);
   });
 
@@ -563,13 +574,14 @@ describe("Invitations — one-time, hashed, and never revived by id alone", () =
   });
 
   it("the claim is a conditional update whose affected-row count is checked", () => {
-    const service = readFileSync(
-      resolve(BACKEND_ROOT, "src/modules/organization/core/invitation-acceptance.service.ts"),
+    // The acceptance write half moved to lib/invitation-join.ts (cf0043c2e); the claim lives there.
+    const join = readFileSync(
+      resolve(BACKEND_ROOT, "src/modules/organization/core/lib/invitation-join.ts"),
       "utf8",
     );
-    const claim = service.slice(
-      service.indexOf("private async claimInvitation"),
-      service.indexOf("private issueMagicLink"),
+    const claim = join.slice(
+      join.indexOf("async function claimInvitation("),
+      join.indexOf("function issueMagicLink("),
     );
     expect(claim).toContain('eq(invitations.status, "PENDING")');
     expect(claim).toContain("isNull(invitations.acceptedAt)");

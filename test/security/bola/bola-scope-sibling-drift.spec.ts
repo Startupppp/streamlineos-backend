@@ -59,6 +59,10 @@ const DRIFTING_KEYS: readonly string[] = [
   "self:payroll",
   "settings:rbac:manage",
   "settings:view",
+  // The catalog does not mark `sign:admin:manage` scopable, so every holder resolves `all` and the
+  // three unscoped admin-config reads (settings, sweep-status, watermark-policies) cannot disclose
+  // anything their scoped sibling would have withheld. Listed so a scopable sibling would fail here.
+  "sign:admin:manage",
   "sign:audit:view",
   "support:reports:view",
   "support:tickets:view",

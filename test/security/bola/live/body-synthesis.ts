@@ -194,6 +194,10 @@ function stringCandidates(schema: JsonSchema, nonce: string): string[] {
   push("bola");
   push("1");
   push("a");
+  // ISO 4217 / ISO 3166 codes and a bare domain name — what the accounting and CRM bodies pattern on.
+  push("USD");
+  push("US");
+  push("example.com");
   return out;
 }
 
