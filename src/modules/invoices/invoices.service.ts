@@ -123,7 +123,8 @@ export class InvoicesService {
         },
       },
     });
-    if (!invoice) return invoice ?? null;
+    // A miss — including another tenant's id — is `undefined`, which the controller turns into a 404.
+    if (!invoice) return undefined;
 
     /**
      * The customer from Party. Ticket 08.
