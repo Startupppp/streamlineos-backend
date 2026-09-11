@@ -195,7 +195,8 @@ export class AttachmentsService {
         mimeType: input.mimeType,
         sizeBytes: buffer.length,
         storageKey: uploaded.key,
-        storageUrl: uploaded.url,
+        // Served by signed URL from `storageKey`; stored objects have no public URL.
+        storageUrl: null,
         uploadedBy: userId,
       })
       .returning(VIEW_COLUMNS);

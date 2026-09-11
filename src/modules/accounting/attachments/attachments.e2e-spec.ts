@@ -268,7 +268,8 @@ describe("attaching a file to a document", () => {
     expect(created.bookId).toBe(fixture.bookId);
     expect(created.sizeBytes).toBe(VENDOR_BILL.length);
     expect(created.uploadedBy).toBe(fixture.userId);
-    expect(created.storageUrl).toMatch(/^https:\/\/files\.test\//);
+    // Served by signed URL from `storageKey`; no public URL is stored.
+    expect(created.storageUrl).toBeNull();
 
     const page = await attachments.list(fixture.orgId, "sales_invoice", document.id);
     expect(page.total).toBe(1);

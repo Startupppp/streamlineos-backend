@@ -336,7 +336,8 @@ describe("the invoice PDF a posted document produces", () => {
       .from(arDocuments)
       .where(eq(arDocuments.id, document.id));
     expect(row.key).toBeTruthy();
-    expect(row.url).toMatch(/^https:\/\/files\.test\//);
+    // The object is served by signed URL from its key; no public URL is stored.
+    expect(row.url).toBeNull();
 
     const second = await pdf.render(fixture.orgId, document.id, "INVOICE");
     expect(second.fromStore).toBe(true);

@@ -161,7 +161,8 @@ export class ArDocumentPdfService {
       const uploaded = await this.storage.uploadFile(orgId, buffer, folder, fileName, "application/pdf");
       await this.db
         .update(arDocuments)
-        .set({ pdfStorageKey: uploaded.key, pdfStorageUrl: uploaded.url })
+        // Stored objects are served by signed URL from the key; there is no public URL to keep.
+        .set({ pdfStorageKey: uploaded.key, pdfStorageUrl: null })
         .where(and(eq(arDocuments.orgId, orgId), eq(arDocuments.id, documentId)));
     } catch (error) {
       this.logger.warn(
