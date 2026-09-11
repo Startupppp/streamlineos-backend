@@ -433,6 +433,30 @@ const BASELINE_JOURNAL_INTEGRITY = new Set([
   // 0819a/0820a: inv lane; origin/main holds 0819/0820.
   "insert-order:0819a_drop_resurrected_sku_uniques_third_time.sql", // streamline_inv, inv_cold_head +8 scratch
   "insert-order:0820a_materials_pack.sql", // streamline_inv, inv_cold_head +9 scratch
+  // Journal-order regressions left by the 2026-09-11 lane merge. Array order is the
+  // cold-build order (each crm/ts entry follows its own-lane predecessor, and the
+  // 0591b/0649b/0676b/0677b/0678b repairs carry a deliberately far-future when). But
+  // `when` comes from each lane own clock, so the two disagree at lane boundaries. Every
+  // entry flagged below is applied (hash or when in the ledgers named), so its when cannot
+  // move without orphaning ledger rows. The one pair with an unapplied side, 0674a -> 0659b,
+  // has no gap to move into: 0659b (1787941868254) already sits below the applied 0671a/0672a.
+  // inv ledgers = streamline_inv/inv_cold_head; crm ledgers = streamline_crm_merge/_e2e/crm_cold_0908.
+  "journal-order:0232_repair_crm_activity_grants.sql", // after 0465_: applied on Neon+inv ledgers+crm ledgers; 0465_ on crm ledgers
+  "journal-order:0471_platform_waitlist.sql", // after 0470_: applied on Neon+inv ledgers+crm ledgers; 0470_ on Neon+crm ledgers
+  "journal-order:0270_activities_thread_window.sql", // after 0472a: applied on Neon+inv ledgers+crm ledgers; 0472a on Neon+crm ledgers
+  "journal-order:0261_crm_connectors.sql", // after 0473a: applied on inv ledgers+crm ledgers; 0473a on Neon+crm ledgers
+  "journal-order:0269_mailbox_push_secret.sql", // after 0271a: applied on Neon+inv ledgers+crm ledgers; 0271a on crm ledgers
+  "journal-order:0278_drop_legacy_identity_tables.sql", // after 0520a: applied on inv ledgers; 0520a on Neon+crm ledgers
+  "journal-order:0472_outbox_inbox_aggregate_fence.sql", // after 0557_: applied on Neon+inv ledgers+crm ledgers; 0557_ on Neon+crm ledgers
+  "journal-order:0478_invoice_line_items_column_drop.sql", // after 0559_: applied on inv ledgers; 0559_ on Neon+crm ledgers
+  "journal-order:0527_po_batching_policy.sql", // after 0591b: applied on inv ledgers; 0591b on Neon+inv ledgers
+  "journal-order:0589_inventory_drop_reason_codes.sql", // after 0649b: applied on inv ledgers; 0649b on Neon+inv ledgers
+  "journal-order:0610_agent_tokens_membership_and_ceiling.sql", // after 0676b: applied on Neon+inv ledgers+crm ledgers; 0676b on Neon+inv ledgers
+  "journal-order:0611_delegations_and_overrides_expand_membership.sql", // after 0677b: applied on inv ledgers; 0677b on Neon+inv ledgers
+  "journal-order:0613_delegations_and_overrides_drop_user_columns.sql", // after 0678b: applied on Neon+inv ledgers+crm ledgers; 0678b on inv ledgers
+  "journal-order:0659b_timesheets_lifecycle_seq_and_attendance_draft.sql", // after 0674a: applied on crm ledgers; 0674a on nowhere
+  "journal-order:0656_communication_tenant_rls.sql", // after 0659b: applied on Neon+inv ledgers; 0659b on crm ledgers
+  "journal-order:0466_drop_legacy_accounting.sql", // after 0915_: applied on crm ledgers; 0915_ on Neon
 ]);
 
 // ─── check functions ──────────────────────────────────────────────────────────
