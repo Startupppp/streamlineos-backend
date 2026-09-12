@@ -242,6 +242,13 @@ jobs:
           echo "STREAMLINE_FRONTEND_ROOT=$GITHUB_WORKSPACE/streamlineos-frontend/frontend" >> "$GITHUB_ENV"
           echo "STREAMLINE_WORKSPACE_ROOT=$GITHUB_WORKSPACE/streamlineos-frontend" >> "$GITHUB_ENV"
 
+      - name: Inventory contract shape-drift gate (INV-22)
+        if: ${{ !cancelled() }}
+        run: pnpm test src/modules/inventory/__tests__/inventory-response-shape-drift.spec.ts
+        env:
+          TZ: UTC
+          NODE_OPTIONS: --max-old-space-size=8192
+
       - name: Import cycles
         if: ${{ !cancelled() }}
         run: pnpm check:cycles

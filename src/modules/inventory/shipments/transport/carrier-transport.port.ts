@@ -75,6 +75,13 @@ export interface CarrierBookingRequest {
   readonly shipmentNumber: string;
   /** Free text, because that is what a sales order stores. */
   readonly destinationAddress: string | null;
+  readonly destinationPin?: string | null;
+  readonly destinationPhone?: string | null;
+  readonly destinationName?: string | null;
+  readonly originName?: string | null;
+  readonly originAddress?: string | null;
+  readonly originPin?: string | null;
+  readonly originPhone?: string | null;
   readonly parcels: readonly CarrierParcel[];
 }
 

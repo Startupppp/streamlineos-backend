@@ -389,4 +389,27 @@ describe("INV-27 — what the adapter does when the store misbehaves", () => {
     // building nobody chose.
     expect(result.message).toContain("shopifyLocationId");
   });
+
+  it("uses org credential from target settings when present", async () => {
+    const adapter = makeAdapter({ token: undefined });
+    const targetWithCredential: ChannelTarget = {
+      channelType: "SHOPIFY",
+      storeUrl: stub.url,
+      settings: {
+        storeUrl: stub.url,
+        shopifyLocationId: LOCATION,
+        apiCredential: "shpat_org_decrypted_token",
+      },
+    };
+
+    stub.route(
+      { match: "GET products.json", body: PRODUCTS },
+      { match: "POST inventory_levels/set.json", body: { inventory_level: { inventory_item_id: 111, location_id: LOCATION, available: 4 } } },
+    );
+
+    const result = await adapter.pushStock(targetWithCredential, [{ sku: "SKU-A", quantity: "4.0000" }]);
+    expect(result.ok).toBe(true);
+    const lastReq = stub.requests[stub.requests.length - 1];
+    expect(lastReq?.token).toBe("shpat_org_decrypted_token");
+  });
 });

@@ -236,7 +236,9 @@ async function fetchSnapshot(deps: SnapshotWorkerDeps, context: ChannelContext):
           channelType: context.channelType,
           storeUrl: context.storeUrl,
           skus: [...context.skuToVariant.keys()],
+          settings: context.settings,
         }),
+
       CHANNEL_CALL_TIMEOUT_MS,
     );
   } catch (error: unknown) {
