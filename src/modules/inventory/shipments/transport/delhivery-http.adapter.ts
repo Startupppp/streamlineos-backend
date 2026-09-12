@@ -318,7 +318,7 @@ export class DelhiveryHttpCarrierAdapter implements CarrierTransportAdapter {
         value: [
           {
             trackingNumber,
-            status: "IN_TRANSIT",
+            status: "SHIPPED",
             occurredAt: new Date().toISOString(),
             description: "Tracking data retrieved",
           },

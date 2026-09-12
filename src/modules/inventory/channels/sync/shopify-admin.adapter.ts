@@ -1,5 +1,6 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { z } from "zod";
+import { decryptSecret } from "../../../../common/security/secret-encryption.util";
 import { APP_CONFIG } from "../../../../config/config.module";
 import type { AppConfig } from "../../../../config/env.validation";
 import type { ChannelSnapshotRequest, ChannelSnapshotResult } from "../channel-adapter";
@@ -137,13 +138,7 @@ export class ShopifyAdminAdapter implements ChannelCommerceAdapter {
     this.timeoutMs = config.INV_CHANNEL_SHOPIFY_TIMEOUT_MS ?? DEFAULT_SHOPIFY_TIMEOUT_MS;
   }
 
-  isConfigured(): boolean {
-    return this.token !== null;
-  }
 
-  configurationProblem(): string | null {
-    return this.token === null ? "INV_CHANNEL_SHOPIFY_ACCESS_TOKEN is not set" : null;
-  }
 
   /* ---------------------------------------------------------------- *
    * E6's port: what does the channel think it has
