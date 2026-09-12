@@ -16,7 +16,6 @@ import { BillingCoupons } from "./billing-coupons";
 import { type BillingCycle, type ConfirmCheckoutInput, type Plan } from "./dto/billing.schemas";
 import { PlanLimitsService } from "./plan-limits.service";
 import {
-  ANNUAL_DISCOUNT_PCT,
   PLAN_PRICES_PAISE,
   PLATFORM_PRICE_CURRENCY,
 } from "./plan-entitlements.constants";
@@ -24,7 +23,7 @@ import { ProrationLedgerService } from "./proration-ledger.service";
 import { RevenueAnalyticsService } from "./revenue-analytics.service";
 import { classifyPlanChange } from "./revenue-events";
 import { VersionedCatalogService } from "./versioned-catalog.service";
-import { applyDiscount } from "./coupon-pricing";
+import { applyDiscount, resolveQuotePrice } from "./coupon-pricing";
 import {
   grantPlanCredits,
   recordProrationForPlanChange,
@@ -266,7 +265,7 @@ export class BillingPaymentActivation {
     capturedCurrency?: string,
   ) {
     const now = new Date();
-    const billingCycle = purchase.billingCycle as BillingCycle;
+    const billingCycle = purchase.billingCycle;
     const periodEnd = new Date(now);
     periodEnd.setMonth(periodEnd.getMonth() + (billingCycle === "annual" ? 12 : 1));
 
@@ -409,7 +408,7 @@ export class BillingPaymentActivation {
   }
 
   private buildStoredOutcome(purchase: SubscriptionPurchase, alreadyActivated: boolean) {
-    const billingCycle = purchase.billingCycle as BillingCycle;
+    const billingCycle = purchase.billingCycle;
     const activatedAt = purchase.activatedAt ?? new Date();
     const periodEnd = new Date(activatedAt);
     periodEnd.setMonth(periodEnd.getMonth() + (billingCycle === "annual" ? 12 : 1));
@@ -426,14 +425,7 @@ export class BillingPaymentActivation {
 
   private async billablePrice(plan: Plan, billingCycle: BillingCycle) {
     const catalogPrice = await this.deps.catalog.getActivePriceForPlanTier(plan);
-    const monthlyAmountMinor = catalogPrice?.amountMinor ?? PLAN_PRICES_PAISE[plan];
-    const currency = catalogPrice?.currency ?? PLATFORM_PRICE_CURRENCY;
-    return {
-      amount: billingCycle === "annual"
-        ? Math.round(monthlyAmountMinor * 12 * (1 - ANNUAL_DISCOUNT_PCT))
-        : monthlyAmountMinor,
-      currency,
-    };
+    return resolveQuotePrice(plan, billingCycle, catalogPrice ?? null);
   }
 }
 

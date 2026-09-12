@@ -18,6 +18,8 @@ import { coupons } from "../common/subscriptions";
 
 export const SUBSCRIPTION_PURCHASE_EXPIRY_MINUTES = 30;
 
+export type SubscriptionPurchaseBillingCycle = "monthly" | "annual";
+
 export type SubscriptionPurchaseStatus =
   | "PENDING"
   | "CAPTURED"
@@ -37,7 +39,9 @@ export const subscriptionPurchases = pgTable(
     merchantKeyId: varchar("merchant_key_id", { length: 120 }).notNull(),
     providerOrderId: text("provider_order_id").notNull(),
     plan: subscriptionPlanEnum("plan").notNull(),
-    billingCycle: varchar("billing_cycle", { length: 10 }).notNull(),
+    billingCycle: varchar("billing_cycle", { length: 10 })
+      .$type<SubscriptionPurchaseBillingCycle>()
+      .notNull(),
     catalogVersion: integer("catalog_version"),
     baseAmountMinor: integer("base_amount_minor").notNull(),
     discountAmountMinor: integer("discount_amount_minor").notNull().default(0),
