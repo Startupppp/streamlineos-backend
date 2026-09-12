@@ -9,6 +9,11 @@ import { inv3plConnections } from "../../../db/schema";
 import { encryptSecret, maskSecretHint } from "../../../common/security/secret-encryption.util";
 import type { Create3plConnectionInput, Update3plConnectionInput } from "./dto/channels.schemas";
 
+function sanitizeConnectionRow<T extends Record<string, any>>(row: T) {
+  const { apiCredentialEncrypted, webhookSecretEncrypted, ...safe } = row;
+  return safe;
+}
+
 @Injectable()
 export class TplService {
   constructor(
@@ -17,10 +22,10 @@ export class TplService {
     private readonly audit: InventoryAuditService,
   ) {}
 
-  listConnections(orgId: string, page = 1, limit = 100) {
+  async listConnections(orgId: string, page = 1, limit = 100) {
     const safeLimit = Math.min(limit, 100);
     const offset = (page - 1) * safeLimit;
-    return this.cache.cached(
+    const rows = await this.cache.cached(
       CACHE_KEYS.inv3plList(orgId),
       () =>
         this.db.query.inv3plConnections.findMany({
@@ -31,6 +36,7 @@ export class TplService {
         }),
       CACHE_TTL.MEDIUM,
     );
+    return rows.map(sanitizeConnectionRow);
   }
 
   async createConnection(orgId: string, userId: string, input: Create3plConnectionInput) {
@@ -61,7 +67,7 @@ export class TplService {
     });
 
     await this.cache.invalidate(CACHE_KEYS.inv3plList(orgId));
-    return connection;
+    return sanitizeConnectionRow(connection);
   }
 
   async updateConnection(
@@ -103,7 +109,7 @@ export class TplService {
     });
 
     await this.cache.invalidate(CACHE_KEYS.inv3plList(orgId));
-    return updated;
+    return sanitizeConnectionRow(updated);
   }
 
   async syncConnection(orgId: string, userId: string, connectionId: number) {
