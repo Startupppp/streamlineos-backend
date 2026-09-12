@@ -13,7 +13,7 @@
 | Starting local `feat/timesheets-signos-finish` (pre-existing, fast-forwarded) | `2df0136ae` | `36eae611d` |
 | `origin/main` merged in (backend only; frontend already contained `510205f4b`) | `ed6c7bef2` → merge `f22657368` | — |
 | Final commit before this document | `c722c01af` | `a018752df` |
-| Final pushed | the commit that adds this file (`git log -1 -- docs/timesheets-signos-final-handoff.md`) | `a018752df` |
+| Final pushed | `20bff85bb` + the commit that updates §3 of this file | `a018752df` |
 
 Backend: 27 commits after the merge, 128 files, +3,287 / −1,082. Frontend: 9 commits, 33 files (77k of the insertions are the vendored `contracts/openapi.json`).
 
@@ -58,7 +58,7 @@ All hand-authored, journaled, with rollbacks in `migrations/rollback/`. Journal:
 
 Cold build: `node scripts/db-bootstrap.mjs` against a fresh `tsign_cold` → `RESULT: REACHED_HEAD 865/865` (scratchpad `cold-build-4.log`). `membership-artifacts.ts` records the 1104 pointer as `mechanism: "database-write", onRemoval: "unreferenced"`.
 
-**Not run against Neon.** Neon was only read, inside `BEGIN READ ONLY`. Applying 1102–1105 there is a deliberate step for whoever merges (§9).
+**Applied to Neon on 2026-09-12** (`neondb` on `ep-orange-mode-azxn5hbr`), on Tarun's instruction, one at a time through `src/scripts/apply-journalled-migration.mjs` with `APPLY_ONE_ALLOW_REMOTE=1`, after a `BEGIN READ ONLY` probe showed all four pending in `drizzle.__drizzle_migrations` (858 rows), the preconditions holding, and no data at risk (0 OPEN exceptions, 0 audit events, 0 exports). All four exit 0 and are recorded (ledger 862 rows); a second read-only probe confirms the column drop, the partial unique index, the FK removal and `event_seq`. Only these four were applied — `pnpm db:migrate` was not run there (memory: the Neon ledger matches no branch).
 
 ## 4. Contract regeneration
 
@@ -121,7 +121,7 @@ Not run: `next build` (not attempted this session — the build recipe is in mem
 ## 9. Limitations and externally blocked
 
 - **CI has no runner.** Every gate above ran locally; nothing has been verified by a machine other than this laptop.
-- **Neon migrations 1102–1105 are not applied.** Run `pnpm db:migrate` against Neon only after reconciling the ledger (memory: `neon-ledger-matches-no-branch`); never `db:bootstrap` there.
+- **Neon migrations 1102–1105 are applied** (§3). Nothing else on the branch's journal was applied there; the wider ledger reconciliation (memory: `neon-ledger-matches-no-branch`) is still open and is not this branch's work.
 - **Scheduler.** Point it at `POST /cron/sign-reminder-sweep` and `POST /cron/sign-expiration-sweep` (both need `CRON_SECRET`); the combined route is gone. The lease case needs Upstash REST configured.
 - **SignOS certificate honesty.** Stubs only: no Aadhaar eSign, no licensed-CA DSC; the certificate statement is unchanged.
 - **Timesheets P2s left open:** timer overlap detection; settings-history version race and cache invalidation inside the transaction; payroll-settings PATCH writes outside versioned history and the hash chain; rate-match never receives `clientId` and the preview omits `date`; overdue list offset pagination; report default span cap; keyset indexes undeclared in Drizzle; run-detection lacks `@Idempotent`.
@@ -130,6 +130,6 @@ Not run: `next build` (not attempted this session — the build recipe is in mem
 
 ## 10. Merge and rollback
 
-Merge: fast-forward or merge `feat/timesheets-signos-finish` in **both** repos together — the frontend's vendored contract matches this backend's `openapi.json` and `check:contract-vendor` fails against any other. Apply migrations 1102–1105 to Neon in journal order after the ledger is reconciled; boot once so `RoleGrantReconcilerService` converges (no permission keys changed, so no grants are expected to move). Update the scheduler entries before deploying the cron module.
+Merge: fast-forward or merge `feat/timesheets-signos-finish` in **both** repos together — the frontend's vendored contract matches this backend's `openapi.json` and `check:contract-vendor` fails against any other. Migrations 1102–1105 are already on Neon; boot once so `RoleGrantReconcilerService` converges (no permission keys changed, so no grants are expected to move). Update the scheduler entries before deploying the cron module.
 
 Rollback: revert the merge in both repos; run `migrations/rollback/1105…`, `1104…`, `1103…`, `1102…` in that order (1104's rollback re-adds the FK `NOT VALID` — run `VALIDATE CONSTRAINT` separately if wanted). Rows written with `event_seq > 1` lose nothing on rollback; audit events attributed to departed members keep their pointer until the FK is validated, at which point validation fails if any such row exists — delete the FK re-add from the rollback in that case rather than nulling history.
