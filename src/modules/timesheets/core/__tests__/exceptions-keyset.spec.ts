@@ -6,7 +6,7 @@ jest.mock("../timesheets-core-scope", () => ({
 }));
 
 import { PgDialect } from "drizzle-orm/pg-core";
-import { ExceptionsService } from "../exceptions.service";
+import { TimesheetExceptionsService } from "../exceptions.service";
 import type { Db } from "../../../../db/drizzle.module";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
 
@@ -49,12 +49,12 @@ const CURSOR = Buffer.from("2024-01-15T10:00:00.000Z\x001").toString("base64url"
 
 async function capture(cursor: string | undefined): Promise<Captured> {
   const captured: Captured = { where: undefined, orderBy: [] };
-  const svc = new ExceptionsService(buildDb(captured), {} as never, {} as never);
+  const svc = new TimesheetExceptionsService(buildDb(captured), {} as never, {} as never);
   await svc.listExceptions(USER, { limit: 50, cursor });
   return captured;
 }
 
-describe("ExceptionsService.listExceptions — keyset matches the sort", () => {
+describe("TimesheetExceptionsService.listExceptions — keyset matches the sort", () => {
   it("orders by created_at desc, then id desc", async () => {
     const { orderBy } = await capture(undefined);
     const rendered = orderBy.map(render);

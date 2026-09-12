@@ -23,7 +23,7 @@ import type {
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 
 @Injectable()
-export class ExceptionsService {
+export class TimesheetExceptionsService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly access: AccessService,

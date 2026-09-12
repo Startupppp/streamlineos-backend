@@ -16,7 +16,7 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ExceptionsService } from "./exceptions.service";
+import { TimesheetExceptionsService } from "./exceptions.service";
 import { ExceptionsDetectorService } from "./exceptions-detector.service";
 import {
   exceptionsQuerySchema,
@@ -43,7 +43,7 @@ const exceptionIdParams = z.object({ exceptionId: z.coerce.number().int().positi
 @UseGuards(JwtAuthGuard, ModuleGuard, PermissionGuard)
 export class TimesheetExceptionsController {
   constructor(
-    private readonly exceptions: ExceptionsService,
+    private readonly exceptions: TimesheetExceptionsService,
     private readonly detector: ExceptionsDetectorService,
   ) {}
 

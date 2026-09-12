@@ -5,7 +5,7 @@ import { PermissionGuard } from "../../../access/permission.guard";
 import { REQUIRE_PERMISSION } from "../../../access/require-permission.decorator";
 import { organizationMembers, timerSessions, timesheetExceptions, timesheetPeriods, timesheetSettings, timesheets } from "../../../../db/schema";
 import { ExceptionsDetectorService } from "../exceptions-detector.service";
-import { ExceptionsService } from "../exceptions.service";
+import { TimesheetExceptionsService } from "../exceptions.service";
 import { TimesheetExceptionsController } from "../exceptions.controller";
 import type { AccessService } from "../../../access/access.service";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
@@ -138,7 +138,7 @@ describe("TS-21 exception transitions", () => {
         existing: [OPEN_ROW],
         updated: [{ ...OPEN_ROW, status: "RESOLVED" }],
       });
-      const service = new ExceptionsService(d.db, access, d.audit);
+      const service = new TimesheetExceptionsService(d.db, access, d.audit);
 
       const result = await service.resolveException(ACTOR, 7, {
         reason: "Worker was on approved leave",
@@ -161,7 +161,7 @@ describe("TS-21 exception transitions", () => {
         existing: [OPEN_ROW],
         updated: [{ ...OPEN_ROW, status: "RESOLVED" }],
       });
-      const service = new ExceptionsService(d.db, access, d.audit);
+      const service = new TimesheetExceptionsService(d.db, access, d.audit);
 
       await service.resolveException(ACTOR, 7, { reason: "Corrected upstream" });
 
@@ -185,7 +185,7 @@ describe("TS-21 exception transitions", () => {
         existing: [OPEN_ROW],
         updated: [{ ...OPEN_ROW, status: "DISMISSED" }],
       });
-      const service = new ExceptionsService(d.db, access, d.audit);
+      const service = new TimesheetExceptionsService(d.db, access, d.audit);
 
       await service.dismissException(ACTOR, 7, { reason: "Not a real gap" });
 
@@ -208,7 +208,7 @@ describe("TS-21 exception transitions", () => {
       const d = transitionDouble({
         existing: [{ ...OPEN_ROW, status: "RESOLVED" }],
       });
-      const service = new ExceptionsService(d.db, access, d.audit);
+      const service = new TimesheetExceptionsService(d.db, access, d.audit);
 
       const attempt = service.resolveException(ACTOR, 7, { reason: "again" });
 
@@ -222,7 +222,7 @@ describe("TS-21 exception transitions", () => {
       const d = transitionDouble({
         existing: [{ ...OPEN_ROW, status: "DISMISSED" }],
       });
-      const service = new ExceptionsService(d.db, access, d.audit);
+      const service = new TimesheetExceptionsService(d.db, access, d.audit);
 
       await expect(
         service.dismissException(ACTOR, 7, { reason: "again" }),
@@ -237,7 +237,7 @@ describe("TS-21 exception transitions", () => {
      */
     it("409s when the row is resolved between the read and the update", async () => {
       const d = transitionDouble({ existing: [OPEN_ROW], updated: [] });
-      const service = new ExceptionsService(d.db, access, d.audit);
+      const service = new TimesheetExceptionsService(d.db, access, d.audit);
 
       await expect(
         service.resolveException(ACTOR, 7, { reason: "lost the race" }),
@@ -256,7 +256,7 @@ describe("TS-21 exception transitions", () => {
      */
     it("404s rather than 403s when the id belongs to another organisation", async () => {
       const d = transitionDouble({ existing: [] });
-      const service = new ExceptionsService(d.db, access, d.audit);
+      const service = new TimesheetExceptionsService(d.db, access, d.audit);
 
       await expect(
         service.resolveException(ACTOR, 999, { reason: "probe" }),
@@ -270,7 +270,7 @@ describe("TS-21 exception transitions", () => {
         existing: [OPEN_ROW],
         updated: [{ ...OPEN_ROW, status: "RESOLVED" }],
       });
-      const service = new ExceptionsService(d.db, access, d.audit);
+      const service = new TimesheetExceptionsService(d.db, access, d.audit);
 
       await service.resolveException(ACTOR, 7, { reason: "fine" });
 
@@ -326,7 +326,7 @@ describe("TS-21 exception transitions", () => {
         },
       } as unknown as ExceptionsDetectorService;
       const controller = new TimesheetExceptionsController(
-        {} as unknown as ExceptionsService,
+        {} as unknown as TimesheetExceptionsService,
         detector,
       );
 

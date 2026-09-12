@@ -12,7 +12,7 @@ import { RateResolverService } from "../rate-resolver.service";
 import { EntriesReadService } from "../entries-read.service";
 import { TeamService } from "../team.service";
 import { EntriesService } from "../entries.service";
-import { ExceptionsService } from "../exceptions.service";
+import { TimesheetExceptionsService } from "../exceptions.service";
 import { TimerService } from "../timer.service";
 import { PayrollExportService } from "../../payroll/payroll-export.service";
 import { PayrollSettingsService } from "../../payroll/payroll-settings.service";
@@ -320,10 +320,10 @@ describe("EntriesService — cross-tenant isolation", () => {
   });
 });
 
-describe("ExceptionsService — cross-tenant isolation", () => {
+describe("TimesheetExceptionsService — cross-tenant isolation", () => {
   it("listExceptions: a scope that resolves to none denies before the database is ever queried", async () => {
     const { db, where } = makeDb([]);
-    const svc = new ExceptionsService(db, mockAccess as never, mockAudit as never);
+    const svc = new TimesheetExceptionsService(db, mockAccess as never, mockAudit as never);
     const u = { orgId: ATTACKER_ORG, userId: "attacker", isOrgOwner: false, permissions: [], principal: { kind: "human-session", membershipId: 1 } } as never;
     const result = await svc.listExceptions(u, {} as never);
     expect(result.data).toHaveLength(0);
@@ -332,7 +332,7 @@ describe("ExceptionsService — cross-tenant isolation", () => {
 
   it("listExceptions: returns empty for own org with no exceptions (control)", async () => {
     const { db } = makeDb([]);
-    const svc = new ExceptionsService(db, mockAccess as never, mockAudit as never);
+    const svc = new TimesheetExceptionsService(db, mockAccess as never, mockAudit as never);
     const u = { orgId: OWNER_ORG, userId: "u", isOrgOwner: false, permissions: [], principal: { kind: "human-session", membershipId: 1 } } as never;
     const result = await svc.listExceptions(u, {} as never);
     expect(result.data).toHaveLength(0);

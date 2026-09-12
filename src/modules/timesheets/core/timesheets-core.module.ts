@@ -31,7 +31,7 @@ import { TimesheetBudgetsController } from "./budgets.controller";
 import { TimesheetAuditController } from "./audit.controller";
 import { TeamController } from "./team.controller";
 import { TeamService } from "./team.service";
-import { ExceptionsService } from "./exceptions.service";
+import { TimesheetExceptionsService } from "./exceptions.service";
 import { TimesheetExceptionsController } from "./exceptions.controller";
 import { ExceptionsDetectorService } from "./exceptions-detector.service";
 import { TimesheetsAiController } from "./timesheets-ai.controller";
@@ -88,7 +88,7 @@ import { AttendanceDraftService } from "./attendance/attendance-draft.service";
     RatesService,
     BudgetsService,
     TeamService,
-    ExceptionsService,
+    TimesheetExceptionsService,
     ExceptionsDetectorService,
     TimesheetsAiService,
     TimesheetsBillingAiService,
