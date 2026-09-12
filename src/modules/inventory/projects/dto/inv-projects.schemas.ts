@@ -135,3 +135,8 @@ export const reserveRequirementSchema = z.object({
   expiresAt: z.string().datetime({ offset: true }).optional(),
 }).strict();
 export type ReserveRequirementInput = z.infer<typeof reserveRequirementSchema>;
+
+export const atRiskRequirementsQuerySchema = z
+  .object({ limit: pageSizeField(25) })
+  .strict();
+export type AtRiskRequirementsQuery = z.infer<typeof atRiskRequirementsQuerySchema>;

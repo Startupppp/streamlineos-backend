@@ -21,6 +21,7 @@ import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import { InvProjectsService } from "./inv-projects.service";
 import {
+  atRiskRequirementsQuerySchema,
   createProjectSchema,
   createRequirementSchema,
   listProjectsSchema,
@@ -29,6 +30,7 @@ import {
   updateRequirementSchema,
 } from "./dto/inv-projects.schemas";
 import type {
+  AtRiskRequirementsQuery,
   CreateProjectInput,
   CreateRequirementInput,
   ListProjectsInput,
@@ -85,10 +87,11 @@ export class InvProjectsController {
   @ResponseSchema(atRiskRequirementsResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:projects:read")
-  atRisk(@Query("limit") limit: string | undefined, @CurrentUser() u: CurrentUserContext) {
-    const parsed = Number(limit);
-    const bounded = Number.isFinite(parsed) ? Math.min(Math.max(Math.trunc(parsed), 1), 100) : 25;
-    return this.svc.atRiskRequirements(u.orgId, bounded);
+  atRisk(
+    @Query(new ZodValidationPipe(atRiskRequirementsQuerySchema)) query: AtRiskRequirementsQuery,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.svc.atRiskRequirements(u.orgId, query.limit);
   }
 
   @Get(":projectId")
