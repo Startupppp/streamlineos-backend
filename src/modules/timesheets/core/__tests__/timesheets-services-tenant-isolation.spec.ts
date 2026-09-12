@@ -287,8 +287,9 @@ describe("EntriesReadService — cross-tenant isolation", () => {
 describe("TeamService — cross-tenant isolation", () => {
   it("getWeekSummary: WHERE contains attacker orgId (deny — different org isolation)", async () => {
     const { db, where } = makeDb([]);
-    const svc = new TeamService(db, mockAccess as never);
-    const u = { orgId: ATTACKER_ORG, userId: "attacker", isOrgOwner: false, permissions: [], principal: { kind: "human-session", membershipId: 1 } } as never;
+    const access = { ...mockAccess, scopeFor: jest.fn().mockResolvedValue("all") };
+    const svc = new TeamService(db, access as never);
+    const u = { orgId: ATTACKER_ORG, userId: "attacker", isOrgOwner: true, permissions: [], principal: { kind: "human-session", membershipId: 1 } } as never;
     await svc.getWeekSummary(u, { startDate: "2025-01-06", endDate: "2025-01-12", userIds: ["user-1"] } as never);
     const allVals = where.mock.calls.flatMap((c) => sqlValues(c[0]));
     expect(allVals).toContain(ATTACKER_ORG);

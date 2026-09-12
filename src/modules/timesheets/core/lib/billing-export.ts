@@ -23,6 +23,35 @@ import {
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
 import { round2 } from "./billing-money";
 
+function csvCell(value: string | number): string {
+  const str = String(value);
+  if (str.includes(",") || str.includes('"') || str.includes("\n")) {
+    return `"${str.replace(/"/g, '""')}"`;
+  }
+  return str;
+}
+
+function billingSnapshotCsv(snapshot: PricedEntry[]): string {
+  const header = ["Date", "ProjectId", "Hours", "BillRate", "Amount", "Currency", "Description"];
+  const lines = [header.map(csvCell).join(",")];
+  for (const row of snapshot) {
+    lines.push(
+      [
+        row.date,
+        row.projectId ?? "",
+        row.hours,
+        row.billRate ?? "",
+        round2(row.computedAmount),
+        row.currency ?? "",
+        row.description ?? "",
+      ]
+        .map(csvCell)
+        .join(","),
+    );
+  }
+  return lines.join("\r\n");
+}
+
 /**
  * Marking billable time as invoiced.
  *
@@ -150,6 +179,8 @@ export async function exportBilling(
       entryCount: snapshot.length,
       totalHours: round2(totalHours),
       totalAmount: round2(totalAmount),
+      fileName: `billing-export_${input.startDate}_${input.endDate}.${input.format.toLowerCase()}`,
+      csv: billingSnapshotCsv(snapshot),
     };
   });
 }
@@ -189,6 +220,7 @@ async function findExportByIdempotencyKey(
     totalHours: parseFloat(row.totalHours),
     totalAmount,
     duplicate: true,
+    csv: billingSnapshotCsv(snapshotRows as PricedEntry[]),
   };
 }
 

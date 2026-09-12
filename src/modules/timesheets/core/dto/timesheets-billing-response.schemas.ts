@@ -33,6 +33,8 @@ export const billingExportResponseSchema = z.object({
   totalHours: z.number(),
   totalAmount: z.number(),
   duplicate: z.boolean().optional(),
+  fileName: z.string().optional(),
+  csv: z.string().optional(),
 });
 
 export const billingInvoiceDraftResponseSchema = z.object({

@@ -281,6 +281,8 @@ describe("exportBilling over a period longer than one chunk", () => {
         entryCount: n,
         totalHours: n * 1.5,
         totalAmount: n * 150,
+        fileName: `billing-export_${PERIOD.startDate}_${PERIOD.endDate}.csv`,
+        csv: expect.any(String),
       });
     },
   );
@@ -305,6 +307,7 @@ describe("exportBilling over a period longer than one chunk", () => {
       totalHours: 3,
       totalAmount: 300.5,
       duplicate: true,
+      csv: expect.any(String),
     });
     expect(fake.transaction).not.toHaveBeenCalled();
     expect(fake.reads).toEqual([]);

@@ -331,6 +331,8 @@ export class BillingService {
       projectId: query.projectId,
       userMembershipId,
       ticketId: query.ticketId,
+      clientId: query.clientId,
+      date: query.date,
     });
     return resolved;
   }
