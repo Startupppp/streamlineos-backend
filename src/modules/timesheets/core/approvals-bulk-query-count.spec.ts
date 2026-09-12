@@ -31,7 +31,7 @@ import { TimesheetsAuditService } from "./timesheets-audit.service";
 const ORG = "org-approvals-bulk";
 const ACTOR_MEMBERSHIP = 7;
 const BATCH_SIZES = [1, 50] as const;
-const BULK_APPROVE_STATEMENTS = 16;
+const BULK_APPROVE_STATEMENTS = 17;
 
 function repeat<T>(count: number, make: (index: number) => T): T[] {
   return Array.from({ length: count }, (_unused, index) => make(index));
@@ -165,8 +165,9 @@ describe("ApprovalsBulkService.bulkApprove — statement count", () => {
       expect(statements()).toBe(BULK_APPROVE_STATEMENTS);
       // Two set-based UPDATEs — the periods and their entries — never one per period.
       expect(countOf("update")).toBe(2);
-      // One UPDATE … FROM (VALUES …) carries every resolved rate.
-      expect(countOf("execute")).toBe(1);
+      // One UPDATE … FROM (VALUES …) carries every resolved rate, and the audit
+      // chain takes its per-organisation advisory lock once for the whole batch.
+      expect(countOf("execute")).toBe(2);
       // One multi-row audit INSERT, and one outbox INSERT carrying every period's events.
       expect(countOf("insert")).toBe(2);
       totals.push(statements());

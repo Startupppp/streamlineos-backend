@@ -99,6 +99,67 @@ describe("TimesheetsAuditService.verifyChain", () => {
     expect(result.checked).toBe(3);
   });
 
+  it("does not forgive an altered row because nobody signed it", async () => {
+    /*
+     * Rows the system writes — detection sweeps, cron locks — have no actor.
+     * A mismatch on such a row used to be counted as legacy and the chain
+     * re-anchored on whatever hash it now carried, so editing `after` on a
+     * system row and leaving its hash alone verified clean.
+     */
+    const rows = chainOf(3);
+    const middle = rows[1] as Record<string, unknown>;
+    middle.actorMembershipId = null;
+    const svc = new TimesheetsAuditService(makeDb(rows, 3));
+
+    const result = await svc.verifyChain(ORG, 10_000);
+
+    expect(result).toMatchObject({ valid: false, brokenAtId: 2 });
+    expect(result.legacyRows).toBe(0);
+  });
+
+  it("verifies a system-written row like any other when it is intact", async () => {
+    const rows: Record<string, unknown>[] = [];
+    let prevHash: string | null = null;
+    for (let i = 1; i <= 3; i += 1) {
+      const params = {
+        orgId: ORG,
+        actorMembershipId: i === 2 ? null : 1,
+        entityType: "period",
+        entityId: String(i),
+        action: "approve",
+        before: null,
+        after: null,
+        reason: undefined,
+      };
+      const rowHash = computeAuditRowHash(prevHash, params);
+      rows.push({ ...params, id: i, reason: null, prevHash, rowHash });
+      prevHash = rowHash;
+    }
+    const svc = new TimesheetsAuditService(makeDb(rows, 3));
+
+    const result = await svc.verifyChain(ORG, 10_000);
+
+    expect(result.valid).toBe(true);
+    expect(result.verified).toBe(3);
+    expect(result.legacyRows).toBe(0);
+  });
+
+  it("treats a hash erased after hashing began as a break, not a legacy row", async () => {
+    /*
+     * Hashless rows can only predate the chain, so they form a prefix. One
+     * appearing after a hashed row is a hash that was removed — the cheapest
+     * way to hide an edit — and is reported at that row rather than skipped.
+     */
+    const rows = chainOf(3);
+    (rows[2] as Record<string, unknown>).rowHash = null;
+    const svc = new TimesheetsAuditService(makeDb(rows, 3));
+
+    const result = await svc.verifyChain(ORG, 10_000);
+
+    expect(result).toMatchObject({ valid: false, brokenAtId: 3 });
+    expect(result.verified).toBe(2);
+  });
+
   it("still reports total and truncation when it finds a break", async () => {
     const rows = chainOf(3);
     (rows[1] as Record<string, unknown>).rowHash = "tampered";
@@ -106,8 +167,7 @@ describe("TimesheetsAuditService.verifyChain", () => {
 
     const result = await svc.verifyChain(ORG, 3);
 
-    expect(result.valid).toBe(false);
-    expect(result.brokenAtId).toBe(2);
+    expect(result).toMatchObject({ valid: false, brokenAtId: 2 });
     /* A break found early says nothing about what lies past the cut. */
     expect(result.truncated).toBe(true);
     expect(result.total).toBe(500);

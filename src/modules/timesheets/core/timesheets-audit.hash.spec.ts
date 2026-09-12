@@ -71,17 +71,67 @@ describe("TimesheetsAuditService.recordMany", () => {
     selectChain.from.mockReturnValue(selectChain);
     selectChain.where.mockReturnValue(selectChain);
     selectChain.orderBy.mockReturnValue(selectChain);
+    const statements: string[] = [];
     const dbLike = {
-      select: jest.fn().mockReturnValue(selectChain),
+      execute: jest.fn().mockImplementation((query: unknown) => {
+        statements.push(`execute:${sqlText(query)}`);
+        return Promise.resolve([]);
+      }),
+      select: jest.fn().mockImplementation(() => {
+        statements.push("select");
+        return selectChain;
+      }),
       insert: jest.fn().mockReturnValue({
         values: jest.fn().mockImplementation((rows: Record<string, unknown>[]) => {
           captured.push(rows);
+          statements.push("insert");
           return Promise.resolve();
         }),
       }),
     };
-    return { dbLike, captured };
+    return { dbLike, captured, statements };
   }
+
+  /** The SQL text of a drizzle `sql` template with its bound values inlined. */
+  function sqlText(query: unknown): string {
+    const chunks = Reflect.get(Object(query), "queryChunks");
+    if (!Array.isArray(chunks)) return String(query);
+    return chunks
+      .map((chunk: unknown) => {
+        if (typeof chunk === "string") return chunk;
+        if (chunk && typeof chunk === "object" && "value" in chunk) return String(Reflect.get(chunk, "value"));
+        return "";
+      })
+      .join("");
+  }
+
+  it("takes the organisation's chain lock before it reads the tail", async () => {
+    /*
+     * Two writers that both read tail T write two rows with prev_hash = T, and
+     * the chain forks at the second — a legitimate approval that the verifier
+     * then reports as a break. The lock has to come BEFORE the read; taken
+     * after, both have already seen the same tail.
+     */
+    const { dbLike, statements } = makeDbLike("tail-hash");
+    const service = new TimesheetsAuditService(dbLike as never);
+
+    await service.recordMany(dbLike as never, events);
+
+    expect(statements[0]).toMatch(/^execute:SELECT pg_advisory_xact_lock\(/);
+    expect(statements[0]).toContain("timesheets-audit:org-1");
+    expect(statements.slice(1)).toEqual(["select", "insert"]);
+  });
+
+  it("record takes the same lock before its tail read", async () => {
+    const { dbLike, statements } = makeDbLike("tail-hash");
+    const service = new TimesheetsAuditService(dbLike as never);
+
+    await service.record(dbLike as never, events[0]);
+
+    expect(statements[0]).toMatch(/^execute:SELECT pg_advisory_xact_lock\(/);
+    expect(statements[0]).toContain("timesheets-audit:org-1");
+    expect(statements.slice(1)).toEqual(["select", "insert"]);
+  });
 
   it("reads the chain tail once and writes one INSERT for the whole batch", async () => {
     const { dbLike, captured } = makeDbLike("tail-hash");
@@ -125,6 +175,7 @@ describe("TimesheetsAuditService.recordMany", () => {
 
     await service.recordMany(dbLike as never, []);
 
+    expect(dbLike.execute).not.toHaveBeenCalled();
     expect(dbLike.select).not.toHaveBeenCalled();
     expect(dbLike.insert).not.toHaveBeenCalled();
   });
