@@ -6,6 +6,7 @@ import { CacheService } from "../../../common/cache/cache.service";
 import { CACHE_KEYS, CACHE_TTL } from "../../../common/cache/cache-keys";
 import { InventoryAuditService } from "../stock-engine/inventory-audit.service";
 import { inv3plConnections } from "../../../db/schema";
+import { encryptSecret, maskSecretHint } from "../../../common/security/secret-encryption.util";
 import type { Create3plConnectionInput, Update3plConnectionInput } from "./dto/channels.schemas";
 
 @Injectable()
@@ -33,9 +34,21 @@ export class TplService {
   }
 
   async createConnection(orgId: string, userId: string, input: Create3plConnectionInput) {
+    const { apiCredential, webhookSecret, ...rest } = input;
+    const apiCredentialEncrypted = apiCredential ? encryptSecret(apiCredential) : null;
+    const apiCredentialHint = apiCredential ? maskSecretHint(apiCredential) : null;
+    const webhookSecretEncrypted = webhookSecret ? encryptSecret(webhookSecret) : null;
+
     const [connection] = await this.db
       .insert(inv3plConnections)
-      .values({ orgId, status: "DISCONNECTED", ...input })
+      .values({
+        orgId,
+        status: "DISCONNECTED",
+        ...rest,
+        apiCredentialEncrypted,
+        apiCredentialHint,
+        webhookSecretEncrypted,
+      })
       .returning();
 
     await this.audit.insert(this.db, {
@@ -62,9 +75,20 @@ export class TplService {
     });
     if (!existing) throw new NotFoundException("3PL connection not found");
 
+    const { apiCredential, webhookSecret, ...rest } = input;
+    const patch: Record<string, unknown> = { ...rest, updatedAt: new Date() };
+
+    if (apiCredential !== undefined) {
+      patch.apiCredentialEncrypted = apiCredential ? encryptSecret(apiCredential) : null;
+      patch.apiCredentialHint = apiCredential ? maskSecretHint(apiCredential) : null;
+    }
+    if (webhookSecret !== undefined) {
+      patch.webhookSecretEncrypted = webhookSecret ? encryptSecret(webhookSecret) : null;
+    }
+
     const [updated] = await this.db
       .update(inv3plConnections)
-      .set({ ...input, updatedAt: new Date() })
+      .set(patch)
       .where(and(eq(inv3plConnections.id, connectionId), eq(inv3plConnections.orgId, orgId)))
       .returning();
 

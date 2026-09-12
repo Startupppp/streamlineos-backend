@@ -95,6 +95,9 @@ export const inv3plConnections = pgTable("inv_3pl_connections", {
   lastSyncAt: timestamp("last_sync_at"),
   lastSyncStatus: text("last_sync_status"),
   settings: jsonb("settings").$type<Record<string, unknown>>(),
+  apiCredentialEncrypted: text("api_credential_encrypted"),
+  apiCredentialHint: text("api_credential_hint"),
+  webhookSecretEncrypted: text("webhook_secret_encrypted"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [

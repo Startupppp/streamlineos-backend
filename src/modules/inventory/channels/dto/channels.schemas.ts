@@ -49,6 +49,8 @@ export const create3plConnectionSchema = z.object({
   externalWarehouseRef: z.string().optional(),
   skuMapping: z.record(z.string(), z.string()).optional(),
   settings: z.record(z.string(), z.unknown()).optional(),
+  apiCredential: z.string().min(1).max(2000).optional(),
+  webhookSecret: z.string().min(1).max(2000).optional(),
 }).strict();
 export type Create3plConnectionInput = z.infer<typeof create3plConnectionSchema>;
 
@@ -59,5 +61,7 @@ export const update3plConnectionSchema = z.object({
   skuMapping: z.record(z.string(), z.string()).optional(),
   status: z.enum(["DISCONNECTED", "CONNECTED", "ERROR"]).optional(),
   settings: z.record(z.string(), z.unknown()).optional(),
+  apiCredential: z.string().min(1).max(2000).optional(),
+  webhookSecret: z.string().min(1).max(2000).optional(),
 }).strict();
 export type Update3plConnectionInput = z.infer<typeof update3plConnectionSchema>;

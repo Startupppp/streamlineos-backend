@@ -473,11 +473,32 @@ export class ShopifyAdminAdapter implements ChannelCommerceAdapter {
    *  - no location id, where the call needs one: Shopify inventory is per
    *    location and guessing one would push stock to a building nobody named.
    */
+  isConfigured(): boolean {
+    return this.token !== null || Boolean(process.env.SHOPIFY_SANDBOX_TOKEN);
+  }
+
+  configurationProblem(): string | null {
+    return this.isConfigured() ? null : "INV_CHANNEL_SHOPIFY_ACCESS_TOKEN is not set";
+  }
+
+  /* ---------------------------------------------------------------- *
+   * E6's port: what does the channel think it has
+   * ---------------------------------------------------------------- */
+
   private credentialsFor(
     target: ChannelTarget,
     options: { requireLocation: boolean },
   ): CredentialState {
-    if (this.token === null) return { ok: false, problem: "INV_CHANNEL_SHOPIFY_ACCESS_TOKEN is not set" };
+    const token =
+      (typeof target.settings?.apiCredential === "string" && target.settings.apiCredential.trim()) ||
+      (typeof target.settings?.accessToken === "string" && target.settings.accessToken.trim()) ||
+      (typeof target.settings?.token === "string" && target.settings.token.trim()) ||
+      process.env.SHOPIFY_SANDBOX_TOKEN?.trim() ||
+      this.token;
+
+    if (!token) {
+      return { ok: false, problem: "INV_CHANNEL_SHOPIFY_ACCESS_TOKEN is not set" };
+    }
     if (!target.storeUrl) return { ok: false, problem: "the channel's settings.storeUrl is not set" };
 
     let parsed: URL;
@@ -513,7 +534,7 @@ export class ShopifyAdminAdapter implements ChannelCommerceAdapter {
       ok: true,
       credentials: {
         base: parsed.origin,
-        token: this.token,
+        token,
         locationId,
         timeoutMs: this.timeoutMs,
       },
