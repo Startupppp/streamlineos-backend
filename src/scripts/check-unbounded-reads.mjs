@@ -82,8 +82,22 @@ const MIN_DB_FILES = 300;
  * its row count grew with account age rather than with the batch. Narrowing it to the
  * periods in play caps it at one row per (entry, milestone), which its limit now states.
  * Six newly hidden reads remain. Lower this the moment any of them is bounded.
+ *
+ * RAISED 649 -> 650 on 2026-09-12. Two changes, net +1:
+ *
+ *   +1  /support/kb-gap/lib/gap-detection.ts  L186's findMany was newly classified
+ *                                            FALSE-POSITIVE — bounded by the chunk it
+ *                                            runs inside (chunked(deduped, GAP_UPSERT_CHUNK),
+ *                                            500), filtered by inArray(clusterKey, chunk),
+ *                                            so the row count cannot exceed the chunk size
+ *   -0  /clients/lib/client-timeline.ts      STALE entry removed (file no longer exists —
+ *                                            getTimeline lives at
+ *                                            /clients/client-timeline.service.ts, already
+ *                                            separately classified BOUNDED there); this was
+ *                                            dangling bookkeeping, not a live suppression,
+ *                                            so removing it does not lower the count
  */
-const MAX_SUPPRESSED_UNBOUNDED = 649;
+const MAX_SUPPRESSED_UNBOUNDED = 650;
 const ORDER_BY_LOOKBACK = 25;
 const STATEMENT_MAX_LINES = 120;
 

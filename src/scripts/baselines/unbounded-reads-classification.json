@@ -1353,11 +1353,6 @@
       "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
       "justification": "Fixed 2026-09-11; filed ACTIONABLE the same day. Read B, backfillCrmAssignments, used to select EVERY client_accounts row in the org with assigned_crm_id IS NULL and deal them all in memory, on a call getClientAccounts fires with void. It now reads at most CRM_ASSIGNMENT_BATCH_SIZE (500) per run, ordered (created_at DESC, id DESC). That is batching, not a cap that strands the remainder: a run assigns every row it reads, so assigned_crm_id IS NULL is itself the cursor and the next run's batch starts where this one stopped. A stored keyset cursor was rejected because it would skip accounts converted after the sweep began until the sweep wrapped. The remaining backlog is visible as getCrmAssignmentStats().unassignedCount, and client-account-backfill.spec.ts drains a 2.5-batch backlog over three runs with the load levelled. The UPDATE is now also guarded by assigned_crm_id IS NULL, because runCrmAssignments takes no lock and could otherwise reassign a batch a background run already dealt. Read A, users by id in getCrmAssignmentStats, was always bounded (at most one row per id, ids capped at 500 by membersWithPermission) and now states it with .limit(csMemberIds.length). No select in this file is flagged any more, so BOUNDED makes the gate fail if an unbounded one comes back."
     },
-    "/clients/lib/client-timeline.ts": {
-      "verdict": "FALSE-POSITIVE",
-      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
-      "justification": "Classified 2026-09-11 by reading the call sites, when getTimeline moved out of /clients/clients.service.ts unchanged — this gate keys on path, so a move forces a restatement. Both matches are bounded by ONE client: `const [client]` is a single-row lookup joining the party map by client id, and the deals read is filtered on (org_id, client_id, deleted_at IS NULL), so the bound is that account's own deal count. FALSE-POSITIVE rather than BOUNDED because BOUNDED is a FIXED verdict here — it asserts the scanner no longer matches, and a continued match is reported as a regression."
-    },
     "/commission/commission-accrual.service.ts": {
       "verdict": "FALSE-POSITIVE",
       "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
@@ -3568,6 +3563,11 @@
       "verdict": "FALSE-POSITIVE",
       "note": "Has explicit .limit() and 6 aggregate references; workspace config reads are bounded per org",
       "justification": "workspace reads bounded by orgId (small workspace config set per org) 2026-09-01"
+    },
+    "/support/kb-gap/lib/gap-detection.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
+      "justification": "Classified 2026-09-12. L186's findMany has no .limit(), but it runs inside `for (const chunk of chunked(deduped, GAP_UPSERT_CHUNK))` (GAP_UPSERT_CHUNK=500, gap-detection.ts:129) filtered by inArray(clusterKey, chunk.map(...)) — the row count is bounded by the chunk's own size (at most 500, one row per distinct clusterKey since it's the table's dedup key), not by an explicit .limit()."
     },
     "/surveys/survey-analytics.service.ts": {
       "verdict": "FALSE-POSITIVE",
