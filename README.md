@@ -135,6 +135,7 @@ specific thing that would have to change first.
 | AI credit reservation compensator (expired reservations refunded) | `POST /cron/ai-reservations-sweep` | every 15 minutes | 120s |
 | Monthly plan credit grants | `POST /cron/monthly-plan-grants` | daily | 300s |
 | Trial expiry and expiry reminders | `POST /cron/trial-expiry` | daily | 300s |
+| Paid subscription period expiry | `POST /cron/period-expiry` | daily | 300s |
 
 The two mechanisms compose rather than compete. Due-ness is read from the same
 `cron:heartbeat:<jobKey>` key the lease writes on every successful run, so an external

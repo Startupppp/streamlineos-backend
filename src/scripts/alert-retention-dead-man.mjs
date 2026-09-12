@@ -113,6 +113,13 @@ export const MONITORED_SWEEPS = [
     maxAgeMs: 26 * 3_600_000,
   },
   {
+    // Not retention. A silent death here means a lapsed paid period keeps selling paid
+    // features, so the organisation is entitled to what it stopped paying for.
+    jobKey: "period-expiry",
+    label: "Paid subscription period expiry (ACTIVE -> EXPIRED when current_period_end has passed)",
+    maxAgeMs: 26 * 3_600_000,
+  },
+  {
     // Not retention. A silent death here means organisations stay charged the reservation
     // ceiling for calls that never settled, so the window is an hour, not a day.
     jobKey: "ai-reservations-sweep",

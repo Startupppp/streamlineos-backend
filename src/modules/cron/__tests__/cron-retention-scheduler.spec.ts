@@ -27,6 +27,7 @@ function stub(): Stub & Record<string, jest.Mock> {
     sweepAiReservations: fn,
     processMonthlyPlanGrants: fn,
     processTrialExpiry: fn,
+    processPeriodExpiry: fn,
   };
 }
 
@@ -100,9 +101,10 @@ describe("CronRetentionSchedulerService — every declared sweep actually runs",
      * An anti-vacuity floor, not a budget: it exists so this test cannot pass over an
      * empty declaration list. It moves UP as jobs are added and must never move down —
      * 16 to 18 when kb-telemetry-retention-sweep was written and kb-trash-purge stopped
-     * being deliberately unscheduled (ticket 16, PRD-C134).
+     * being deliberately unscheduled (ticket 16, PRD-C134); 18 to 19 when period-expiry
+     * was added, because an ACTIVE subscription past current_period_end kept its paid tier.
      */
-    expect(RETENTION_JOBS.length).toBe(18);
+    expect(RETENTION_JOBS.length).toBe(19);
     expect(outcome.considered).toBe(RETENTION_JOBS.length);
     expect(outcome.ran).toHaveLength(RETENTION_JOBS.length);
     expect(outcome.failed).toEqual([]);

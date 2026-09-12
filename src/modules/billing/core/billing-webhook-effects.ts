@@ -30,7 +30,7 @@ export interface BillingWebhookEffectDeps {
   aiCredits: AiCreditsService;
   externalEffectLedger: ExternalEffectLedger;
   paymentNotices: PaymentAnalyticsService;
-  activation?: BillingPaymentActivation;
+  activation: BillingPaymentActivation;
 }
 
 export function packIdFor(
@@ -102,8 +102,7 @@ export class BillingWebhookEffects {
       event.event === "payment.captured" &&
       payment.status === "captured" &&
       packId === null &&
-      purchase !== null &&
-      this.deps.activation
+      purchase != null
     ) {
       const activation = this.deps.activation;
       try {

@@ -11,7 +11,6 @@ import { ModuleGuard } from "../../../common/rbac/module.guard";
 import { AllowNoOrg } from "../../../common/auth/allow-no-org.decorator";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { ModuleDisabledException } from "../../../common/http/api-exceptions";
-import type { JwtKeyringService } from "../../../common/auth/jwt-keyring.service";
 import type { MembershipStateService } from "../../../common/auth/membership-state.service";
 import type { IMfaPolicy } from "../../../common/auth/mfa-policy.token";
 import type { AuthContext } from "../../../common/auth/auth-context";

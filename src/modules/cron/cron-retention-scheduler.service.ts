@@ -102,6 +102,7 @@ export class CronRetentionSchedulerService implements OnModuleInit, OnModuleDest
       ["ai-reservations-sweep", () => billing.sweepAiReservations()],
       ["monthly-plan-grants", () => billing.processMonthlyPlanGrants()],
       ["trial-expiry", () => billing.processTrialExpiry()],
+      ["period-expiry", () => billing.processPeriodExpiry()],
     ]);
   }
 

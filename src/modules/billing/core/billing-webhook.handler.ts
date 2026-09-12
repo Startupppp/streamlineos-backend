@@ -29,7 +29,7 @@ export interface BillingWebhookDeps {
   paymentWebhooks: PaymentWebhookReceiverService;
   paymentNotices: PaymentAnalyticsService;
   platformMerchant: PlatformMerchantService;
-  activation?: BillingPaymentActivation;
+  activation: BillingPaymentActivation;
 }
 
 export class BillingWebhookHandler {

@@ -92,6 +92,7 @@ describe("AI credit reservation compensator — it is scheduled", () => {
         sweepAiReservations,
         processMonthlyPlanGrants: jest.fn().mockResolvedValue({ granted: 0, skipped: 0 }),
         processTrialExpiry: jest.fn().mockResolvedValue({ expired: 0, reminded: 0 }),
+        processPeriodExpiry: jest.fn().mockResolvedValue({ expired: 0, notified: 0 }),
       } as unknown as CronBillingService,
       { withLease } as unknown as CronLeaseService,
     );
@@ -120,6 +121,7 @@ describe("AI credit reservation compensator — it is scheduled", () => {
         sweepAiReservations,
         processMonthlyPlanGrants: jest.fn().mockResolvedValue({ granted: 0, skipped: 0 }),
         processTrialExpiry: jest.fn().mockResolvedValue({ expired: 0, reminded: 0 }),
+        processPeriodExpiry: jest.fn().mockResolvedValue({ expired: 0, notified: 0 }),
       } as unknown as CronBillingService,
       { withLease } as unknown as CronLeaseService,
     );

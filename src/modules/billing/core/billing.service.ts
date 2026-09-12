@@ -74,6 +74,7 @@ export class BillingService {
       paymentWebhooks: this.paymentWebhooks,
       paymentNotices: this.paymentNotices,
       platformMerchant: this.platformMerchant,
+      activation: this.paymentActivation,
     });
     this.marketplace = new BillingMarketplace(this.aiCredits, this.platformMerchant);
     this.accountOverview = new BillingAccountOverview(
