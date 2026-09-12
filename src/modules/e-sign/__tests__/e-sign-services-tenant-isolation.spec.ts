@@ -213,7 +213,7 @@ describe("SignEnvelopeValidationService — cross-tenant isolation", () => {
   it("validate: envelope query scoped to attacker orgId (deny — different org isolation)", async () => {
     const { db, findFirst } = makeDb([]);
     const mockRecipients = stubService<SignRecipientsService>({ listForEnvelope: jest.fn().mockResolvedValue([]) });
-    const svc = new SignEnvelopeValidationService(db, mockRecipients);
+    const svc = new SignEnvelopeValidationService(db, mockRecipients, { isConfigured: () => false, send: async () => undefined });
     await expect(svc.validate(ATTACKER_ORG, 999)).rejects.toBeDefined();
     expect(findFirst).toHaveBeenCalled();
     const callArg = findFirst.mock.calls[0]?.[0];
@@ -224,7 +224,7 @@ describe("SignEnvelopeValidationService — cross-tenant isolation", () => {
   it("validate: rejects for own org when envelope not found (control — org is scoped correctly)", async () => {
     const { db, findFirst } = makeDb([]);
     const mockRecipients = stubService<SignRecipientsService>({ listForEnvelope: jest.fn().mockResolvedValue([]) });
-    const svc = new SignEnvelopeValidationService(db, mockRecipients);
+    const svc = new SignEnvelopeValidationService(db, mockRecipients, { isConfigured: () => false, send: async () => undefined });
     await expect(svc.validate(OWNER_ORG, 999)).rejects.toBeDefined();
     expect(findFirst).toHaveBeenCalled();
     const callArg = findFirst.mock.calls[0]?.[0];

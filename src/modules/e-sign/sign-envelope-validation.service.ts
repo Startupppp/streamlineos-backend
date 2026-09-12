@@ -6,6 +6,7 @@ import { type Db } from "../../db/drizzle.module";
 import { SignRecipientsService } from "./sign-recipients.service";
 import { SELF_SERVE_AUTH_METHODS, isSelfServeAuthMethod } from "./dto/e-sign.schemas";
 import { systemEnvelopeScope } from "./sign-envelope-scope";
+import { SMS_SENDER, type SmsSenderPort } from "./sms/sms-sender.port";
 
 const SIGNING_RECIPIENT_TYPES = [
   "signer",
@@ -30,6 +31,7 @@ export class SignEnvelopeValidationService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly recipients: SignRecipientsService,
+    @Inject(SMS_SENDER) private readonly sms: SmsSenderPort,
   ) {}
 
   async validate(orgId: string, envelopeId: number): Promise<EnvelopeValidationResult> {
@@ -74,21 +76,29 @@ export class SignEnvelopeValidationService {
        * Refused here, before the envelope goes out, rather than by the signing
        * page after it has.
        *
-       * Five of the eight methods in `signAuthMethodSchema` — otp_sms, sso,
-       * passkey, kba, id_verification — are accepted by the composer and refused
+       * Four of the eight methods in `signAuthMethodSchema` — sso, passkey,
+       * kba, id_verification — are accepted by the composer and refused
        * by `SignPublicService.authenticate`. Nothing between the two said so, so
        * an envelope configured with any of them validated cleanly, sent, and
        * dead-ended at the recipient with "not yet supported for self-serve
        * signing". The sender learned nothing; the signer learned it instead, at
        * the one moment they can do nothing about it.
-       *
-       * The check above is the sharper illustration: it carefully insists on a
-       * phone number for `otp_sms`, which is a mandatory field for a delivery
-       * that never happens.
        */
       if (!isSelfServeAuthMethod(r.authMethod)) {
         errors.push(
           `Recipient "${r.name}" uses "${r.authMethod}" authentication, which self-serve signing cannot complete yet. Supported: ${SELF_SERVE_AUTH_METHODS.join(", ")}.`,
+        );
+      }
+      /**
+       * Enabled is not the same as deliverable. `SignAuthMethodPolicy` refused
+       * SMS codes at configuration time when no provider was present, but a
+       * provider can be removed after a recipient was configured, and the
+       * signer would learn it from `requestOtp` at the end of a link. This is
+       * the last moment the sender still holds the envelope.
+       */
+      if (r.authMethod === "otp_sms" && !this.sms.isConfigured()) {
+        errors.push(
+          `Recipient "${r.name}" uses SMS one-time codes, but no SMS provider is configured in this environment, so the code could not be delivered.`,
         );
       }
     }

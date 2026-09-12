@@ -9,10 +9,10 @@ import {
  * An envelope may not pass validation and then be unsignable.
  *
  * `signAuthMethodSchema` offers eight authentication methods. `authenticate`
- * can complete three. The other five — otp_sms, sso, passkey, kba,
- * id_verification — were accepted by the composer, validated (otp_sms was even
- * required to carry a phone number), sent, and refused by the signing page with
- * "not yet supported for self-serve signing".
+ * can complete four — the fourth, otp_sms, only where the deployment has an
+ * SMS provider. The other four — sso, passkey, kba, id_verification — were
+ * accepted by the composer, validated, sent, and refused by the signing page
+ * with "not yet supported for self-serve signing".
  *
  * That refusal was honest and in the wrong place. The sender chose the method
  * and could have chosen another; the signer receives a link that cannot work and
@@ -20,7 +20,10 @@ import {
  * can fix it is still holding the envelope.
  */
 describe("an auth method the signing flow cannot complete", () => {
-  function validatorWith(recipients: { name: string; authMethod: string; phone?: string | null }[]) {
+  function validatorWith(
+    recipients: { name: string; authMethod: string; phone?: string | null }[],
+    smsConfigured = false,
+  ) {
     const rows = recipients.map((r, i) => ({
       id: i + 1,
       name: r.name,
@@ -41,6 +44,7 @@ describe("an auth method the signing flow cannot complete", () => {
     return new SignEnvelopeValidationService(
       db as never,
       recipientsService as never,
+      { isConfigured: () => smsConfigured, send: async () => undefined },
     );
   }
 
@@ -61,10 +65,41 @@ describe("an auth method the signing flow cannot complete", () => {
     const unsupported = all.filter((m) => !isSelfServeAuthMethod(m));
 
     expect(supported).toEqual([...SELF_SERVE_AUTH_METHODS]);
-    expect(unsupported).toEqual(["otp_sms", "sso", "passkey", "kba", "id_verification"]);
+    expect(unsupported).toEqual(["sso", "passkey", "kba", "id_verification"]);
   });
 
-  it.each(["otp_sms", "sso", "passkey", "kba", "id_verification"])(
+  /**
+   * `requestOtp` and `authenticate` carry the SMS channel, so an SMS code is a
+   * method the signing flow completes — where there is a provider to send it.
+   * The validator asks the same port the policy and the OTP request ask.
+   */
+  it("admits otp_sms when the deployment can send and the recipient can receive", async () => {
+    const service = validatorWith([{ name: "priya", authMethod: "otp_sms", phone: "+919999999999" }], true);
+
+    const result = await service.validate("org-1", 1);
+
+    expect(result.errors.filter((e) => e.includes("priya"))).toEqual([]);
+  });
+
+  it("refuses otp_sms when no SMS provider is configured, naming the reason", async () => {
+    const service = validatorWith([{ name: "priya", authMethod: "otp_sms", phone: "+919999999999" }], false);
+
+    const result = await service.validate("org-1", 1);
+
+    expect(result.valid).toBe(false);
+    expect(result.errors.find((e) => e.includes("no SMS provider"))).toBeDefined();
+  });
+
+  it("refuses otp_sms for a recipient with no phone number, even with a provider", async () => {
+    const service = validatorWith([{ name: "priya", authMethod: "otp_sms", phone: null }], true);
+
+    const result = await service.validate("org-1", 1);
+
+    expect(result.valid).toBe(false);
+    expect(result.errors.find((e) => e.includes("phone number"))).toBeDefined();
+  });
+
+  it.each(["sso", "passkey", "kba", "id_verification"])(
     "refuses %s before the envelope is sent",
     async (method) => {
       const service = validatorWith([{ name: "priya", authMethod: method, phone: "+919999999999" }]);
