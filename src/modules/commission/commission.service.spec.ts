@@ -10,6 +10,7 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import type { CommissionRuleSet } from "../../db/schema/crm/commission";
 import { CommissionService, clampToInt4 } from "./commission.service";
 import { earningsUserFilter } from "./commission-scope";
+import { NotificationsService } from "../notifications/notifications.service";
 
 /**
  * The properties that make a payout reproducible, checked where they live.
@@ -114,7 +115,13 @@ async function harness(): Promise<Harness> {
   };
 
   const moduleRef: TestingModule = await Test.createTestingModule({
-    providers: [CommissionService, { provide: DRIZZLE, useValue: db }],
+    providers: [
+      CommissionService,
+      { provide: DRIZZLE, useValue: db },
+      // Phase 5 ticket 06's clawback path notifies the rep; unused by every
+      // test in this file that never calls clawbackForDeal.
+      { provide: NotificationsService, useValue: { create: jest.fn() } },
+    ],
   }).compile();
 
   return {

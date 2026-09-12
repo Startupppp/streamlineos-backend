@@ -1,4 +1,5 @@
 import { Module } from "@nestjs/common";
+import { NotificationsModule } from "../notifications/notifications.module";
 import { CommissionController } from "./commission.controller";
 import { CommissionService } from "./commission.service";
 import { CommissionAccrualController } from "./commission-accrual.controller";
@@ -28,6 +29,7 @@ import { CommissionAccrualService } from "./commission-accrual.service";
  * and the decomposition behind them — without going through HTTP.
  */
 @Module({
+  imports: [NotificationsModule],
   controllers: [CommissionController, CommissionAccrualController],
   providers: [CommissionService, CommissionAccrualService],
   exports: [CommissionService, CommissionAccrualService],

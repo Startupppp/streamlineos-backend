@@ -4,8 +4,10 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { runInTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
 import { crmCommissionEarnings, crmCommissionPlans } from "../../db/schema/crm/commission";
+import { NotificationsService } from "../notifications/notifications.service";
 import { earningsUserFilter } from "./commission-scope";
 import { calculateEarningForDeal } from "./lib/earning-calculation";
+import { clawbackEarningForDeal, type ClawbackInput } from "./lib/clawback";
 import {
   assignToPlan,
   createCommissionPlan,
@@ -59,7 +61,10 @@ export { clampToInt4 } from "./lib/earning-calculation";
  */
 @Injectable()
 export class CommissionService {
-  constructor(@Inject(DRIZZLE) private readonly db: Db) {}
+  constructor(
+    @Inject(DRIZZLE) private readonly db: Db,
+    private readonly notifications: NotificationsService,
+  ) {}
 
   // ── Plans ────────────────────────────────────────────────────────────────
 
@@ -169,6 +174,53 @@ export class CommissionService {
    */
   async calculateForDeal(orgId: string, input: CalculateForDealInput) {
     return calculateEarningForDeal(this.db, orgId, input);
+  }
+
+  /**
+   * Phase 5 ticket 06. A reversed or reclassified deal claws its commission
+   * back through the same ledger that paid it — see `lib/clawback.ts` for
+   * the mechanism. This method adds the fourth thing the ledger itself
+   * cannot: telling the person it happened to, with the reason and the deal.
+   *
+   * The notification fires after the transaction commits, not inside it —
+   * the same reason every other post-commit side effect in this product
+   * does: a notification that failed to send must not roll back a clawback
+   * that genuinely happened, and a `void ... .catch(...)` here would let a
+   * failure vanish with nothing to say the rep was never told.
+   */
+  async clawbackForDeal(orgId: string, input: ClawbackInput) {
+    const result = await clawbackEarningForDeal(this.db, orgId, input);
+
+    if (result.created) {
+      try {
+        await this.notifications.create({
+          orgId,
+          userId: result.userId,
+          type: result.drivesNegative ? "WARNING" : "INFO",
+          priority: result.drivesNegative ? "HIGH" : "NORMAL",
+          category: "SYSTEM",
+          sourceModule: "commission",
+          eventKey: "commission.clawback",
+          entityType: "deal",
+          entityId: String(input.dealId),
+          actorUserId: input.actorUserId,
+          reason: input.reason,
+          title: "A commission was clawed back",
+          message: result.drivesNegative
+            ? `Deal #${input.dealId} reversed — ${input.reason}. This takes your accrual for the period negative; payroll will follow up on how it is recovered.`
+            : `Deal #${input.dealId} reversed — ${input.reason}. The commission it earned has been clawed back.`,
+          link: `/crm/deals/${input.dealId}`,
+        });
+      } catch (error) {
+        throw new Error(
+          `Clawback for deal ${input.dealId} was recorded but the rep was not notified: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+      }
+    }
+
+    return result;
   }
 
   /**
