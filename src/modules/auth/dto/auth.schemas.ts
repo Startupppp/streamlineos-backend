@@ -24,7 +24,18 @@ export const googleOAuthSchema = z.object({
   email: z.string().email().max(254),
   googleId: z.string().min(1).max(255),
   name: z.string().max(200).optional(),
-  image: z.string().url().max(2048).optional().or(z.literal("")),
+  // `.url()` alone admits `javascript:alert(1)` — that is a well-formed URL, and
+  // this value is persisted to `users.image` and rendered as an avatar source.
+  // The only thing an identity provider ever sends here is http(s).
+  image: z
+    .string()
+    .url()
+    .max(2048)
+    .refine((value) => /^https?:\/\//i.test(value), {
+      message: "image must be an http or https URL",
+    })
+    .optional()
+    .or(z.literal("")),
 }).strict();
 
 export type GoogleOAuthInput = z.infer<typeof googleOAuthSchema>;

@@ -249,6 +249,7 @@ export class NotificationsLifecycleService {
       .returning({ id: notifications.id });
     if (rows.length === 0) throw new NotFoundException();
     await this.invalidateCache(userId, orgId);
+    this.notifEvents.emit({ userId, orgId, type: "count_changed" });
     return { success: true };
   }
 

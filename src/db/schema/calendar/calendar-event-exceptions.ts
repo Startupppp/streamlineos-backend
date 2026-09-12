@@ -1,4 +1,5 @@
-import { pgTable, bigint, text, integer, boolean, timestamp, uniqueIndex, foreignKey } from "drizzle-orm/pg-core";
+import { pgTable, bigint, text, integer, boolean, timestamp, uniqueIndex, index, foreignKey } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 import { organizations } from "../common/auth";
 import { calendarEvents } from "../common/calendar-events";
 
@@ -30,6 +31,9 @@ export const calendarEventExceptions = pgTable(
       table.eventId,
       table.occurrenceStart,
     ),
+    index("idx_cal_exc_org_event_modified")
+      .on(table.orgId, table.eventId, table.modifiedStart)
+      .where(sql`modified_start is not null`),
     foreignKey({
       columns: [table.orgId, table.eventId],
       foreignColumns: [calendarEvents.orgId, calendarEvents.id],

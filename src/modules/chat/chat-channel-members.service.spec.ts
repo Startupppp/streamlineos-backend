@@ -6,10 +6,12 @@ import { CacheService } from "../../common/cache/cache.service";
 import { EntityReferenceService } from "../entity-reference/entity-reference.service";
 import { AblyService } from "../realtime/ably.service";
 import { PAGE_SIZE_CAP } from "../../common/pagination/list-query.schema";
+import type { EntityActor } from "../entity-reference/entity-reference.types";
 
 const ORG = "org1";
 const CH = 1;
 const ADMIN_ID = "admin1";
+const adminActor: EntityActor = { orgId: ORG, userId: ADMIN_ID, membershipId: 1, isOrgOwner: false };
 const MEMBER_ID = "member1";
 const TARGET_ID = "target1";
 
@@ -256,11 +258,11 @@ describe("ChatChannelMembersService", () => {
       const db = makeAlwaysAdminDb(findMany);
       const service = await build(db);
 
-      const p1 = await service.listMembers(CH, ADMIN_ID, ORG, undefined, 2);
+      const p1 = await service.listMembers(CH, adminActor, undefined, 2);
       expect(p1.members).toHaveLength(2);
       expect(p1.nextCursor).toBe(2);
 
-      const p2 = await service.listMembers(CH, ADMIN_ID, ORG, p1.nextCursor ?? undefined, 2);
+      const p2 = await service.listMembers(CH, adminActor, p1.nextCursor ?? undefined, 2);
       expect(p2.members).toHaveLength(1);
       expect(p2.nextCursor).toBeNull();
 
@@ -274,7 +276,7 @@ describe("ChatChannelMembersService", () => {
       const db = makeAlwaysAdminDb(findMany);
       const service = await build(db);
 
-      await service.listMembers(CH, ADMIN_ID, ORG, undefined, 2);
+      await service.listMembers(CH, adminActor, undefined, 2);
 
       expect(findMany).toHaveBeenCalledWith(
         expect.objectContaining({ limit: 3 }),
@@ -286,7 +288,7 @@ describe("ChatChannelMembersService", () => {
       const db = makeAlwaysAdminDb(findMany);
       const service = await build(db);
 
-      await service.listMembers(CH, ADMIN_ID, ORG, undefined, PAGE_SIZE_CAP + 999);
+      await service.listMembers(CH, adminActor, undefined, PAGE_SIZE_CAP + 999);
 
       expect(findMany).toHaveBeenCalledWith(
         expect.objectContaining({ limit: PAGE_SIZE_CAP + 1 }),
@@ -298,7 +300,7 @@ describe("ChatChannelMembersService", () => {
       const db = makeAlwaysAdminDb(findMany);
       const service = await build(db);
 
-      const result = await service.listMembers(CH, ADMIN_ID, ORG);
+      const result = await service.listMembers(CH, adminActor);
 
       expect(findMany).toHaveBeenCalledTimes(1);
       expect(result.members).toHaveLength(1);
@@ -309,7 +311,7 @@ describe("ChatChannelMembersService", () => {
       const db = makeAlwaysAdminDb(findMany);
       const service = await build(db);
 
-      await service.listMembers(CH, ADMIN_ID, ORG, 42);
+      await service.listMembers(CH, adminActor, 42);
 
       const [opts] = findMany.mock.calls[0] as [{ where?: unknown }];
       expect(extractSqlValues(opts?.where)).toContain(42);

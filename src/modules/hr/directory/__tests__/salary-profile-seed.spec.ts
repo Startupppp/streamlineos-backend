@@ -55,6 +55,7 @@ describe("seedEmployeeSalaryProfile", () => {
       userId: "user-1",
       actorId: "actor-1",
       monthlySalary: 100000,
+      currency: "INR",
       effectiveFrom: "2026-07-01",
     });
 

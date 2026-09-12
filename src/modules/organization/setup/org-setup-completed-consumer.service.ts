@@ -1,9 +1,11 @@
 import { Inject, Injectable, Logger, type OnModuleInit } from "@nestjs/common";
+import { withSpan } from "../../../common/observability";
 import { and, eq } from "drizzle-orm";
 import { organizationMembers, users } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { InboxConsumer } from "../../../common/outbox/inbox-consumer";
+import { runInConsumerSavepoint } from "../../../common/outbox/consumer-savepoint";
 import {
   OutboxConsumerRegistry,
   type OutboxEventConsumer,
@@ -91,8 +93,8 @@ export class OrgSetupCompletedConsumerService
     orgId: string,
     actorUserId: string,
     invitees: readonly SetupInvitee[],
-  ): Promise<void> {
-    if (invitees.length === 0) return;
+  ): Promise<string[]> {
+    if (invitees.length === 0) return [];
 
     const [actor] = await this.db
       .select({ isOwner: organizationMembers.isOwner })
@@ -125,20 +127,32 @@ export class OrgSetupCompletedConsumerService
         invitee.email,
       ]);
 
+    const failures: string[] = [];
     for (const [role, emails] of emailsByRole) {
-      const { results } = await this.invitations.bulkInvite(
-        orgId,
-        { userId: actorUserId, isOrgOwner: actor.isOwner },
-        emails,
-        role,
-        "enqueue",
-      );
-      const failed = results.filter((result) => !result.success);
-      if (failed.length > 0)
-        throw new Error(
-          `Failed to create ${failed.length} of ${emails.length} ${role} setup invitation(s)`,
+      try {
+        const { results } = await runInConsumerSavepoint(() =>
+          this.invitations.bulkInvite(
+            orgId,
+            { userId: actorUserId, isOrgOwner: actor.isOwner },
+            emails,
+            role,
+            "enqueue",
+          ),
         );
+        const failed = results.filter((result) => !result.success);
+        if (failed.length > 0)
+          failures.push(
+            `${role}: ${failed.length} of ${emails.length} invitation(s) failed ` +
+              `(${failed.map((result) => result.email).join(", ")})`,
+          );
+      } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : String(error);
+        failures.push(
+          `${role}: all ${emails.length} invitation(s) failed — ${message}`,
+        );
+      }
     }
+    return failures;
   }
 
   async handle(event: OutboxEventRow): Promise<void> {
@@ -200,25 +214,23 @@ export class OrgSetupCompletedConsumerService
     }
 
     try {
-      await seedSystemRolesForOrg(this.db, orgId);
-      await this.checklists.ensureChecklistsForModules(orgId, moduleKeys);
-      await this.generateStructure(orgId, industry, moduleKeys);
-      await this.sendInvitations(orgId, userId, invitees);
-      if (sessionAction === "complete")
-        await this.sessions.completeSession(orgId, userId, "org_setup");
-      else
-        await this.sessions.skipSession(
-          orgId,
-          userId,
-          "org_setup",
-          skipReason ?? undefined,
+      await runInConsumerSavepoint(async () => {
+        await withSpan("org-setup.seedRoles", () =>
+          seedSystemRolesForOrg(this.db, orgId),
         );
-      if (sendWelcome)
-        await this.sendWelcome(
-          orgId,
-          userId,
-          outboxEffectIdempotencyKey(event, ORG_SETUP_COMPLETED_CONSUMER),
+        await withSpan("org-setup.ensureChecklists", () =>
+          this.checklists.ensureChecklistsForModules(orgId, moduleKeys),
         );
+        if (sessionAction === "complete") {
+          await withSpan("org-setup.completeSession", () =>
+            this.sessions.completeSession(orgId, userId, "org_setup"),
+          );
+        } else {
+          await withSpan("org-setup.skipSession", () =>
+            this.sessions.skipSession(orgId, userId, "org_setup", skipReason ?? undefined),
+          );
+        }
+      });
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error);
       await inbox.markProcessed(
@@ -230,15 +242,64 @@ export class OrgSetupCompletedConsumerService
       throw error;
     }
 
+    const optionalFailures: string[] = [];
+
+    const runOptional = async (
+      phase: string,
+      fn: () => Promise<readonly string[] | void>,
+    ): Promise<void> => {
+      const phaseStart = Date.now();
+      try {
+        const reported = await runInConsumerSavepoint(() =>
+          withSpan(`org-setup.${phase}`, fn),
+        );
+        if (reported && reported.length > 0) {
+          this.logger.warn(
+            `[org-setup] ${event.eventId}: ${phase} partially failed for org ${orgId} ` +
+              `(${Date.now() - phaseStart}ms): ${reported.join("; ")}`,
+          );
+          optionalFailures.push(`${phase}: ${reported.join("; ")}`);
+          return;
+        }
+        this.logger.log(
+          `[org-setup] ${event.eventId}: ${phase} completed in ${Date.now() - phaseStart}ms`,
+        );
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        this.logger.warn(
+          `[org-setup] ${event.eventId}: ${phase} failed for org ${orgId} (${Date.now() - phaseStart}ms): ${msg}`,
+        );
+        optionalFailures.push(`${phase}: ${msg}`);
+      }
+    };
+
+    await runOptional("generateStructure", () =>
+      this.generateStructure(orgId, industry, moduleKeys),
+    );
+    await runOptional("sendInvitations", () =>
+      this.sendInvitations(orgId, userId, invitees),
+    );
+    if (sendWelcome) {
+      await runOptional("sendWelcome", () =>
+        this.sendWelcome(
+          orgId,
+          userId,
+          outboxEffectIdempotencyKey(event, ORG_SETUP_COMPLETED_CONSUMER),
+        ),
+      );
+    }
+
+    const lastError = optionalFailures.length > 0 ? optionalFailures.join("; ") : null;
     await inbox.markProcessed(
       ORG_SETUP_COMPLETED_CONSUMER,
       event.eventId,
       "COMPLETED",
-      null,
+      lastError,
     );
     this.logger.log(
       `organization.setup.completed ${event.eventId}: provisioned org ${orgId} ` +
-        `(${moduleKeys.length} module(s), ${invitees.length} invitation(s), session ${sessionAction})`,
+        `(${moduleKeys.length} module(s), ${invitees.length} invitation(s), session ${sessionAction})` +
+        (lastError ? `; optional failures recorded: ${lastError}` : ""),
     );
   }
 }

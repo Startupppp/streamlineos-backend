@@ -115,7 +115,8 @@ describe("CalendarExportService — cross-tenant isolation (BOLA)", () => {
     const from = new Date("2026-01-01");
     const to = new Date("2026-12-31");
     const result = await svc.exportEvents(readAs(ATTACKER_ORG, ATTACKER_USER), from, to);
-    expect(result).toHaveLength(0);
+    expect(result.events).toHaveLength(0);
+    expect(result.truncated).toBe(false);
   });
 
   it("exportEvents scopes the WHERE predicate to the requesting orgId — cross-org isolation", async () => {

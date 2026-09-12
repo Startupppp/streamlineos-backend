@@ -24,7 +24,7 @@ function quotaLockKey(orgId: string, limitKey: string): string {
  * `assertWithinLimit` so the count reads through it — the check and the write
  * become one serialized invariant.
  */
-function lockQuota(orgId: string, limitKey: string): SQL {
+export function lockQuota(orgId: string, limitKey: string): SQL {
   return sql`SELECT pg_advisory_xact_lock(hashtextextended(${quotaLockKey(orgId, limitKey)}, 0))`;
 }
 

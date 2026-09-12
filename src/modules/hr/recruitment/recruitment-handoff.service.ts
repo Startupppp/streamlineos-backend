@@ -14,6 +14,7 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { AuditService } from "../../../common/audit/audit.service";
 import { getPostgresErrorDetails } from "../../../common/db/postgres-error";
+import { resolveOrgSalaryCurrency } from "../directory/employment-salary-currency";
 
 /**
  * Offer accepted → single Person + Employment path.
@@ -256,13 +257,14 @@ export class RecruitmentHandoffService {
       if (offer.offeredSalary) {
         const salaryAmountCents = Math.round(parseFloat(offer.offeredSalary) * 100);
         if (Number.isFinite(salaryAmountCents)) {
+          const salaryCurrency = await resolveOrgSalaryCurrency(tx, orgId);
           await tx
             .insert(hrEmployeeSensitiveFields)
             .values({
               orgId,
               employmentId,
               salaryAmountCents,
-              salaryCurrency: "INR",
+              salaryCurrency,
               salaryFrequency: "MONTHLY",
             })
             .onConflictDoUpdate({

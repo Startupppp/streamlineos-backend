@@ -17,6 +17,7 @@ import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
 import { Validate } from "../../common/validation/validate.decorator";
 import { BlogService } from "./blog.service";
+import { BlogCategoriesService } from "./blog-categories.service";
 import { ResponseSchema } from "../../common/openapi/zod-operation-contracts";
 import { itemsPagedSchema } from "../../common/openapi/response-envelopes";
 import {
@@ -45,7 +46,10 @@ const categoryIdParams = z.object({ categoryId: z.string().uuid() }).strict();
 @Controller("blog/admin")
 @UseGuards(JwtAuthGuard, PermissionGuard)
 export class BlogAdminController {
-  constructor(private readonly blog: BlogService) {}
+  constructor(
+    private readonly blog: BlogService,
+    private readonly categories: BlogCategoriesService,
+  ) {}
 
   @Get("posts")
   @RequirePermission("blog:posts:manage")
@@ -97,7 +101,7 @@ export class BlogAdminController {
   @RequirePermission("blog:categories:manage")
   @ResponseSchema(blogAdminCategoryListSchema)
   listCategories() {
-    return this.blog.getAdminCategories();
+    return this.categories.getAdminCategories();
   }
 
   @Post("categories")
@@ -105,7 +109,7 @@ export class BlogAdminController {
   @Validate({ body: categoryCreateSchema })
   @ResponseSchema(blogCategorySchema)
   async createCategory(@Body() body: CategoryCreateInput) {
-    const result = await this.blog.createCategory(body);
+    const result = await this.categories.createCategory(body);
     if ("error" in result && result.error === "duplicate")
       throw new ConflictException("A category with that name already exists");
     return result;
@@ -119,7 +123,7 @@ export class BlogAdminController {
     @Param("categoryId") categoryId: string,
     @Body() body: CategoryUpdateInput,
   ) {
-    const updated = await this.blog.updateCategory(categoryId, body);
+    const updated = await this.categories.updateCategory(categoryId, body);
     if (!updated) throw new NotFoundException("Category not found");
     return updated;
   }
@@ -129,7 +133,7 @@ export class BlogAdminController {
   @Validate({ params: categoryIdParams })
   @ResponseSchema(blogDeleteSchema)
   async deleteCategory(@Param("categoryId") categoryId: string) {
-    const result = await this.blog.deleteCategory(categoryId);
+    const result = await this.categories.deleteCategory(categoryId);
     if (!result) throw new NotFoundException("Category not found");
     return result;
   }

@@ -312,7 +312,7 @@ describe("negative control — proves canGrantToRank is load-bearing for rank eq
       expect(canGrantToRank(actorRank, modules, targetRank, targetModule)).toBe(false);
   });
 
-  it("demonstrates the security hole if canGrantToRank returned true for module_admin → module_owner: no ForbiddenException from assertPermissionsGrantable (org-owner bypass simulates the neutered check)", () => {
+  it("an org owner bypasses the rank ladder entirely, which is why every non-owner deny above must come from canGrantToRank rather than from this path", () => {
     const bypassedActor: GrantabilityActor = {
       isOrgOwner: true,
       grantable: new Set([PERM_KEY]),

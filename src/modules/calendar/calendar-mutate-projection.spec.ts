@@ -69,6 +69,7 @@ const WITHHELD_COLUMNS = [
   "visibility",
   "linkedDealId",
   "linkedLeadId",
+  "linkedLeadPartyId",
 ];
 
 function makeService(db: unknown): CalendarService {

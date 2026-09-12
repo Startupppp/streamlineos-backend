@@ -10,7 +10,11 @@
  * that requirement checkable in one place.
  */
 import { notifications, users } from "../../db/schema";
-import type { InboxKind, UnifiedInboxItem } from "./dto/unified-inbox.schemas";
+import type {
+  InboxKind,
+  InboxSourcePosition,
+  UnifiedInboxItem,
+} from "./dto/unified-inbox.schemas";
 
 export const KIND_ORDER: Record<InboxKind, number> = {
   notification: 0,
@@ -25,8 +29,22 @@ export function stableSortItems(items: UnifiedInboxItem[]): UnifiedInboxItem[] {
     if (tDiff !== 0) return tDiff;
     const kDiff = (KIND_ORDER[a.kind] ?? 99) - (KIND_ORDER[b.kind] ?? 99);
     if (kDiff !== 0) return kDiff;
+    if (typeof a.id === "number" && typeof b.id === "number") return b.id - a.id;
     return String(b.id).localeCompare(String(a.id));
   });
+}
+
+export function lastDeliveredPosition(
+  items: UnifiedInboxItem[],
+  kind: InboxKind,
+): InboxSourcePosition | null {
+  for (let index = items.length - 1; index >= 0; index--) {
+    const item = items[index];
+    if (item.kind !== kind) continue;
+    if (typeof item.id !== "number") return null;
+    return { id: item.id, t: item.timestamp };
+  }
+  return null;
 }
 
 export function deduplicate(items: UnifiedInboxItem[]): UnifiedInboxItem[] {

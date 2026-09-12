@@ -1,15 +1,16 @@
 import {
+  ForbiddenException,
   Inject,
   Injectable,
   Logger,
   NotFoundException,
-  ServiceUnavailableException,
 } from "@nestjs/common";
 import { randomBytes } from "node:crypto";
 import { and, eq, isNull } from "drizzle-orm";
 import { addDays } from "date-fns";
 import { hashToken } from "../../../common/security/token.util";
 import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
+import { registerAfterCommit } from "../../../common/tenant";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { AccessService } from "../../access/access.service";
 import {
@@ -20,7 +21,9 @@ import { type Db } from "../../../db/drizzle.module";
 import { AuditService } from "../../../common/audit/audit.service";
 import { CacheService } from "../../../common/cache/cache.service";
 import { EmailService } from "../../email/email.service";
+import { PlanLimitsService } from "../../billing/core/plan-limits.service";
 import { SeatLedgerService } from "../../billing/core/seat-ledger.service";
+import { lockMembersQuota } from "../../billing/core/seat-definition";
 import {
   invitationEvents,
   invitations,
@@ -42,6 +45,7 @@ export class InvitationLifecycleService {
     private readonly audit: AuditService,
     private readonly cache: CacheService,
     private readonly email: EmailService,
+    private readonly planLimits: PlanLimitsService,
     private readonly seatLedger: SeatLedgerService,
     private readonly access: AccessService,
   ) {}
@@ -77,6 +81,44 @@ export class InvitationLifecycleService {
     await runInTenantTransaction(
       this.db,
       async (tx) => {
+        await tx.execute(lockMembersQuota(orgId));
+
+        const [current] = await tx
+          .select({
+            id: invitations.id,
+            status: invitations.status,
+            expiresAt: invitations.expiresAt,
+          })
+          .from(invitations)
+          .where(
+            and(
+              eq(invitations.id, invitationId),
+              eq(invitations.orgId, orgId),
+              eq(invitations.status, "PENDING"),
+              isNull(invitations.acceptedAt),
+            ),
+          )
+          .for("update")
+          .limit(1);
+
+        if (!current) {
+          throw new NotFoundException("Invitation not found or already accepted");
+        }
+
+        const wasTimeExpired = current.expiresAt <= new Date();
+        if (wasTimeExpired) {
+          try {
+            await this.planLimits.assertWithinLimit(orgId, "members", 1, tx);
+          } catch (err) {
+            if (err instanceof ForbiddenException) {
+              throw new ForbiddenException(
+                "This organization is at its member limit. Free a seat before resending to a time-expired invitation.",
+              );
+            }
+            throw err;
+          }
+        }
+
         const updated = await tx
           .update(invitations)
           .set({
@@ -91,7 +133,8 @@ export class InvitationLifecycleService {
             and(
               eq(invitations.id, invitationId),
               eq(invitations.orgId, orgId),
-              eq(invitations.status, invitation.status),
+              eq(invitations.status, current.status),
+              eq(invitations.expiresAt, invitation.expiresAt),
               isNull(invitations.acceptedAt),
             ),
           )
@@ -99,6 +142,21 @@ export class InvitationLifecycleService {
         if (updated.length === 0) {
           throw new NotFoundException("Invitation not found or already accepted");
         }
+
+        if (wasTimeExpired) {
+          await this.seatLedger.recordSeatEvent(
+            {
+              orgId,
+              eventType: "INVITE_SENT",
+              subjectId: invitationId,
+              actorId: actorUserId,
+              reason: "invitation resent after expiry",
+              idempotencyKey: `invite-resent-seat:${invitationId}:${newExpiresAt.getTime()}`,
+            },
+            tx,
+          );
+        }
+
         await tx.insert(invitationEvents).values({
           orgId,
           invitationId,
@@ -119,19 +177,21 @@ export class InvitationLifecycleService {
         ? `${inviter.firstName} ${inviter.lastName}`
         : (inviter?.name ?? undefined);
 
-    try {
-      await this.email.sendInvitationEmail(
-        invitation.email,
-        rawToken,
-        org.name,
-        inviterName,
-      );
-    } catch (error: unknown) {
-      await recordDeliveryFailure(this.db, this.logger, orgId, invitationId, error);
-      throw new ServiceUnavailableException(
-        "Invitation email could not be sent. Please try again.",
-      );
-    }
+    const sendRenewedInvitation = async (): Promise<void> => {
+      try {
+        await this.email.sendInvitationEmail(
+          invitation.email,
+          rawToken,
+          org.name,
+          inviterName,
+        );
+      } catch (error: unknown) {
+        await recordDeliveryFailure(this.db, this.logger, orgId, invitationId, error);
+      }
+    };
+
+    const registered = registerAfterCommit(sendRenewedInvitation);
+    if (!registered) await sendRenewedInvitation();
 
     this.audit.log({
       action: "user.invitation.resent",
@@ -301,6 +361,16 @@ export class InvitationLifecycleService {
             invitationId: r.id,
             event: "REVOKED" as const,
             actorMembershipId: null,
+          })),
+        );
+        await this.seatLedger.recordSeatEvents(
+          tx,
+          orgId,
+          rows.map((r) => ({
+            eventType: "INVITE_CANCELLED" as const,
+            subjectId: r.id,
+            reason: "pending invitations revoked in bulk",
+            idempotencyKey: `invite-cancelled:${r.id}`,
           })),
         );
       }

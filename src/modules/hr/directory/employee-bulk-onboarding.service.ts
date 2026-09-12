@@ -1,4 +1,6 @@
 import { Inject, Injectable } from "@nestjs/common";
+import { and, eq, inArray } from "drizzle-orm";
+import { users } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { AuditService } from "../../../common/audit/audit.service";
@@ -88,7 +90,22 @@ export class EmployeeBulkOnboardingService {
       emails: [...new Set(rows.map((row) => canonicalAdmissionEmail(row.email)))],
     });
 
-    const plan = planBulkOnboarding(rows, catalog, screens, employeeNumberOwner, roleErrors);
+    const existingUserIds: string[] = [];
+    for (const screen of screens.values()) {
+      if (screen.kind === "clear" && screen.userId !== null)
+        existingUserIds.push(screen.userId);
+    }
+
+    const globallyInactiveUserIds = new Set<string>();
+    if (existingUserIds.length > 0) {
+      const inactive = await this.db
+        .select({ id: users.id })
+        .from(users)
+        .where(and(inArray(users.id, existingUserIds), eq(users.isActive, false)));
+      for (const row of inactive) globallyInactiveUserIds.add(row.id);
+    }
+
+    const plan = planBulkOnboarding(rows, catalog, screens, employeeNumberOwner, roleErrors, globallyInactiveUserIds);
 
     let outcome: BulkOnboardWriteOutcome = { admitted: [], rejected: [], welcomeEmails: [] };
     const results: BulkOnboardRowResult[] = [...plan.rejected];

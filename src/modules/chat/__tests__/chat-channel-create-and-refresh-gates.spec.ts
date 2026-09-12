@@ -61,9 +61,16 @@ async function buildCreateHarness(assertWithinLimit: jest.Mock): Promise<CreateH
     },
   };
 
+  const execute = jest.fn(() => Promise.resolve([]));
+
   const transaction = jest.fn(
-    (run: (tx: { insert: typeof insert; query: typeof query }) => Promise<unknown>) =>
-      run({ insert, query }),
+    (
+      run: (tx: {
+        insert: typeof insert;
+        query: typeof query;
+        execute: typeof execute;
+      }) => Promise<unknown>,
+    ) => run({ insert, query, execute }),
   );
 
   const db = {
@@ -133,7 +140,11 @@ describe("POST /chat/channels — a client-supplied record binding cannot reach 
 
     await harness.service.createChannel(ORG, ACTOR_USER, bodyNamingARecord);
 
-    expect(assertWithinLimit).toHaveBeenCalledWith(ORG, "chatChannels");
+    expect(assertWithinLimit).toHaveBeenCalledTimes(1);
+    expect(assertWithinLimit.mock.calls[0]?.[0]).toBe(ORG);
+    expect(assertWithinLimit.mock.calls[0]?.[1]).toBe("chatChannels");
+    expect(assertWithinLimit.mock.calls[0]?.[2]).toBe(1);
+    expect(assertWithinLimit.mock.calls[0]?.[3]).toBeDefined();
   });
 
   it("does not insert when the quota is exhausted", async () => {
@@ -149,7 +160,6 @@ describe("POST /chat/channels — a client-supplied record binding cannot reach 
     await expect(harness.service.createChannel(ORG, ACTOR_USER, CLEAN_GROUP_BODY)).rejects.toThrow(
       PaymentRequiredException,
     );
-    expect(harness.transaction).not.toHaveBeenCalled();
     expect(harness.inserts).toHaveLength(0);
   });
 });

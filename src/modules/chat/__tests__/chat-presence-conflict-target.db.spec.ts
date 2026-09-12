@@ -41,6 +41,7 @@ import postgres from "postgres";
 import * as schema from "../../../db/schema";
 import { chatUserPresence, organizationMembers } from "../../../db/schema";
 import { ChatPresenceService } from "../chat-presence.service";
+import type { EntityReferenceService } from "../../entity-reference/entity-reference.service";
 
 const INDEX_NAME = "uniq_chat_presence_org_membership";
 
@@ -76,7 +77,9 @@ describe("chat presence conflict target — real catalog", () => {
     // issued out of band really does wrap the service's own autocommit writes.
     client = postgres(DB_URL, { max: 1, prepare: false, onnotice: () => undefined });
     db = drizzle(client, { schema });
-    service = new ChatPresenceService(db);
+    service = new ChatPresenceService(db, {
+      resolve: jest.fn().mockResolvedValue([]),
+    } as unknown as EntityReferenceService);
     const [member] = await db
       .select({
         orgId: organizationMembers.orgId,

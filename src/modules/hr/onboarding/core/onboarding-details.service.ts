@@ -1,4 +1,4 @@
-import { Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, eq, isNull, sql } from "drizzle-orm";
 import {
   documents,
@@ -28,6 +28,9 @@ import {
   livePersonOfEmployment,
   primaryEmploymentOfPerson,
 } from "../../../directory/employment-query";
+
+export const BANK_DETAILS_NEED_EMPLOYMENT_MESSAGE =
+  "Your employment record is not set up yet, so bank and tax details cannot be saved. Ask your HR administrator to complete your employment record, then finish this step.";
 
 @Injectable()
 export class OnboardingDetailsService {
@@ -212,37 +215,37 @@ export class OnboardingDetailsService {
         .where(and(primaryEmploymentOfPerson(orgId, hrPeople, hrEmployments), eq(hrPeople.userId, userId)))
         .limit(1);
 
-      if (employment) {
-        const sensitiveBankDetails = {
-          accountNumber: bankDetails.accountNumber,
-          bankName: bankDetails.bankName,
-          branch: bankDetails.branch,
-          ifsc: bankDetails.ifsc,
-          swift: bankDetails.swift,
-          accountHolder: bankDetails.accountHolder,
-          pfUanNumber: bankDetails.pfUanNumber,
-          esiIpNumber: bankDetails.esiIpNumber,
-          iban: bankDetails.iban,
-          routingNumber: bankDetails.routingCode,
-        };
-        const sealedBankDetails = sealSensitiveJson(sensitiveBankDetails);
-        await tx
-          .insert(hrEmployeeSensitiveFields)
-          .values({
-            orgId,
-            employmentId: employment.id,
+      if (!employment) throw new ConflictException(BANK_DETAILS_NEED_EMPLOYMENT_MESSAGE);
+
+      const sensitiveBankDetails = {
+        accountNumber: bankDetails.accountNumber,
+        bankName: bankDetails.bankName,
+        branch: bankDetails.branch,
+        ifsc: bankDetails.ifsc,
+        swift: bankDetails.swift,
+        accountHolder: bankDetails.accountHolder,
+        pfUanNumber: bankDetails.pfUanNumber,
+        esiIpNumber: bankDetails.esiIpNumber,
+        iban: bankDetails.iban,
+        routingNumber: bankDetails.routingCode,
+      };
+      const sealedBankDetails = sealSensitiveJson(sensitiveBankDetails);
+      await tx
+        .insert(hrEmployeeSensitiveFields)
+        .values({
+          orgId,
+          employmentId: employment.id,
+          bankDetails: sealedBankDetails,
+          taxId: encryptedTaxId ?? null,
+        })
+        .onConflictDoUpdate({
+          target: hrEmployeeSensitiveFields.employmentId,
+          set: {
             bankDetails: sealedBankDetails,
-            taxId: encryptedTaxId ?? null,
-          })
-          .onConflictDoUpdate({
-            target: hrEmployeeSensitiveFields.employmentId,
-            set: {
-              bankDetails: sealedBankDetails,
-              ...(encryptedTaxId ? { taxId: encryptedTaxId } : {}),
-              updatedAt: new Date(),
-            },
-          });
-      }
+            ...(encryptedTaxId ? { taxId: encryptedTaxId } : {}),
+            updatedAt: new Date(),
+          },
+        });
     }, { orgId });
 
     await this.upsertOnboardingStep(userId, orgId, "Bank Details");

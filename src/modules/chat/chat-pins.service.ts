@@ -19,6 +19,7 @@ import {
   SENDER_MEMBERSHIP_WITH_USER,
   flattenMessageSender,
 } from "./chat-message-sender-shape";
+import { assertEntityAccess } from "./chat-channel-authorization";
 
 @Injectable()
 export class ChatPinsService {
@@ -30,7 +31,7 @@ export class ChatPinsService {
   private async assertMember(channelId: number, actor: EntityActor) {
     const channel = await this.db.query.chatChannels.findFirst({
       where: and(eq(chatChannels.id, channelId), eq(chatChannels.orgId, actor.orgId)),
-      columns: { id: true, isPrivate: true },
+      columns: { id: true, isPrivate: true, entityType: true, entityId: true },
     });
     if (!channel) throw new NotFoundException("Channel not found");
     // A private channel must not confirm its own existence to a non-member.
@@ -47,6 +48,7 @@ export class ChatPinsService {
       ),
     });
     if (!member) throw deny();
+    await assertEntityAccess(this.entities, channel, actor, "Channel not found");
     return member;
   }
 

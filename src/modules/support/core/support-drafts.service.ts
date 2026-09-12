@@ -1,24 +1,18 @@
-import { ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { ForbiddenException, Inject, Injectable } from "@nestjs/common";
 import { and, eq } from "drizzle-orm";
-import { supportTickets, supportTicketDrafts } from "../../../db/schema";
+import { supportTicketDrafts } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import type { UpsertDraftInput } from "./dto/support.schemas";
+import type { ScopedRead } from "../../access/scoped-read";
+import { assertTicketInScope } from "./support-tickets-scope";
 
 @Injectable()
 export class SupportDraftsService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
-  private async assertTicketExists(orgId: string, ticketId: number) {
-    const ticket = await this.db.query.supportTickets.findFirst({
-      where: and(eq(supportTickets.id, ticketId), eq(supportTickets.orgId, orgId)),
-      columns: { id: true },
-    });
-    if (!ticket) throw new NotFoundException("Ticket not found");
-  }
-
-  async getDraft(orgId: string, ticketId: number, _userId: string, membershipId: number | null) {
-    await this.assertTicketExists(orgId, ticketId);
+  async getDraft(orgId: string, ticketId: number, _userId: string, membershipId: number | null, read: ScopedRead) {
+    await assertTicketInScope(this.db, read, ticketId);
     if (membershipId === null) throw new ForbiddenException("Organization membership required");
     const draft = await this.db.query.supportTicketDrafts.findFirst({
       where: and(
@@ -30,8 +24,8 @@ export class SupportDraftsService {
     return draft ?? null;
   }
 
-  async upsertDraft(orgId: string, ticketId: number, _userId: string, membershipId: number | null, input: UpsertDraftInput) {
-    await this.assertTicketExists(orgId, ticketId);
+  async upsertDraft(orgId: string, ticketId: number, _userId: string, membershipId: number | null, input: UpsertDraftInput, read: ScopedRead) {
+    await assertTicketInScope(this.db, read, ticketId);
     if (membershipId === null) throw new ForbiddenException("Organization membership required");
     const [draft] = await this.db
       .insert(supportTicketDrafts)
@@ -44,8 +38,8 @@ export class SupportDraftsService {
     return draft;
   }
 
-  async deleteDraft(orgId: string, ticketId: number, _userId: string, membershipId: number | null) {
-    await this.assertTicketExists(orgId, ticketId);
+  async deleteDraft(orgId: string, ticketId: number, _userId: string, membershipId: number | null, read: ScopedRead) {
+    await assertTicketInScope(this.db, read, ticketId);
     if (membershipId === null) throw new ForbiddenException("Organization membership required");
     await this.db
       .delete(supportTicketDrafts)

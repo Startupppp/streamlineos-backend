@@ -225,20 +225,25 @@ describe("OrgSetupCompletedConsumerService", () => {
     );
   });
 
-  it("fails the event when the invitation actor has no active membership", async () => {
-    const { svc, bulkInvite, completeSession } = await build({ actorRows: [] });
+  it("catches a missing-actor failure in sendInvitations as optional and still closes the session", async () => {
+    const { svc, bulkInvite, completeSession, emit } = await build({ actorRows: [] });
 
-    await expect(svc.handle(event(COMPLETE_PAYLOAD))).rejects.toThrow(
-      "Organization org-1 has no active membership for the setup invitation actor",
-    );
+    await svc.handle(event(COMPLETE_PAYLOAD));
 
     expect(bulkInvite).not.toHaveBeenCalled();
-    expect(completeSession).not.toHaveBeenCalled();
+    expect(completeSession).toHaveBeenCalledWith("org-1", "user-1", "org_setup");
+    expect(emit).toHaveBeenCalled();
     expect(markProcessed).toHaveBeenCalledWith(
       "organization:setup-completed",
       expect.any(String),
+      "COMPLETED",
+      expect.stringContaining("no active membership"),
+    );
+    expect(markProcessed).not.toHaveBeenCalledWith(
+      "organization:setup-completed",
+      expect.any(String),
       "FAILED",
-      "Organization org-1 has no active membership for the setup invitation actor",
+      expect.anything(),
     );
   });
 
@@ -307,17 +312,30 @@ describe("OrgSetupCompletedConsumerService", () => {
     );
   });
 
-  it("rethrows when a later step fails, after the earlier ones ran", async () => {
-    const { svc, ensureChecklistsForModules } = await build({
+  it("required phase failure (ensureChecklistsForModules) marks FAILED, rethrows, and does not close the session", async () => {
+    const { svc, ensureChecklistsForModules, completeSession } = await build({
       ensureChecklistsForModules: jest.fn().mockRejectedValue(new Error("checklist failed")),
     });
 
     await expect(svc.handle(event(COMPLETE_PAYLOAD))).rejects.toThrow("checklist failed");
     expect(seedSystemRolesForOrg).toHaveBeenCalled();
     expect(ensureChecklistsForModules).toHaveBeenCalled();
+    expect(completeSession).not.toHaveBeenCalled();
+    expect(markProcessed).toHaveBeenCalledWith(
+      "organization:setup-completed",
+      expect.any(String),
+      "FAILED",
+      "checklist failed",
+    );
+    expect(markProcessed).not.toHaveBeenCalledWith(
+      "organization:setup-completed",
+      expect.any(String),
+      "COMPLETED",
+      expect.anything(),
+    );
   });
 
-  it("rethrows a partial bulk-invite failure and does not complete the event", async () => {
+  it("catches a partial bulk-invite failure as optional, records it in lastError, and still completes the session", async () => {
     const { svc, bulkInvite, completeSession, emit } = await build();
     bulkInvite.mockResolvedValueOnce({
       results: [
@@ -325,23 +343,22 @@ describe("OrgSetupCompletedConsumerService", () => {
       ],
     });
 
-    await expect(svc.handle(event(COMPLETE_PAYLOAD))).rejects.toThrow(
-      "Failed to create 1 of 1 MEMBER setup invitation(s)",
-    );
+    await svc.handle(event(COMPLETE_PAYLOAD));
+
+    expect(completeSession).toHaveBeenCalledWith("org-1", "user-1", "org_setup");
+    expect(emit).toHaveBeenCalled();
     expect(markProcessed).toHaveBeenCalledWith(
       "organization:setup-completed",
       expect.any(String),
-      "FAILED",
-      "Failed to create 1 of 1 MEMBER setup invitation(s)",
+      "COMPLETED",
+      expect.stringContaining("sendInvitations"),
     );
     expect(markProcessed).not.toHaveBeenCalledWith(
       "organization:setup-completed",
       expect.any(String),
-      "COMPLETED",
-      null,
+      "FAILED",
+      expect.anything(),
     );
-    expect(completeSession).not.toHaveBeenCalled();
-    expect(emit).not.toHaveBeenCalled();
   });
 
   it("does no work when the inbox fence says the event was already processed", async () => {
@@ -366,5 +383,57 @@ describe("OrgSetupCompletedConsumerService", () => {
       "FAILED",
       expect.any(String),
     );
+  });
+
+  it("optional phase failure: generateStructure throws — session closes, sendWelcome runs, COMPLETED recorded", async () => {
+    const { svc, generateWorkspace, completeSession, emit } = await build();
+    generateWorkspace.mockRejectedValueOnce(new Error("workspace generation failed"));
+
+    await svc.handle(event(COMPLETE_PAYLOAD));
+
+    expect(completeSession).toHaveBeenCalledWith("org-1", "user-1", "org_setup");
+    expect(emit).toHaveBeenCalled();
+    expect(markProcessed).toHaveBeenCalledWith(
+      "organization:setup-completed",
+      expect.any(String),
+      "COMPLETED",
+      expect.stringContaining("generateStructure"),
+    );
+    expect(markProcessed).not.toHaveBeenCalledWith(
+      "organization:setup-completed",
+      expect.any(String),
+      "FAILED",
+      expect.anything(),
+    );
+  });
+
+  it("optional phase failure: sendWelcome throws — COMPLETED recorded, no rethrow", async () => {
+    const { svc, completeSession, emit } = await build();
+    emit.mockRejectedValueOnce(new Error("notification dispatch failed"));
+
+    await svc.handle(event(COMPLETE_PAYLOAD));
+
+    expect(completeSession).toHaveBeenCalledWith("org-1", "user-1", "org_setup");
+    expect(markProcessed).toHaveBeenCalledWith(
+      "organization:setup-completed",
+      expect.any(String),
+      "COMPLETED",
+      expect.stringContaining("sendWelcome"),
+    );
+    expect(markProcessed).not.toHaveBeenCalledWith(
+      "organization:setup-completed",
+      expect.any(String),
+      "FAILED",
+      expect.anything(),
+    );
+  });
+
+  it("OS6 regression lock: ensureChecklistsForModules is called exactly once per provisioning pass", async () => {
+    const { svc, ensureChecklistsForModules } = await build();
+
+    await svc.handle(event(COMPLETE_PAYLOAD));
+
+    expect(ensureChecklistsForModules).toHaveBeenCalledTimes(1);
+    expect(ensureChecklistsForModules).toHaveBeenCalledWith("org-1", ["hr", "crm"]);
   });
 });

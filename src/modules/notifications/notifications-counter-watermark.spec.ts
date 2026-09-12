@@ -129,8 +129,11 @@ describe("NotificationsReadService — unread counter watermark", () => {
 
     // Both ends must be present: a lower bound alone still plans every future
     // partition, and an upper bound alone still plans the whole history.
-    expect(bounds).toHaveLength(2);
-    const [start, end] = bounds;
+    expect(bounds).toHaveLength(3);
+    const [start, snoozeCutoff, end] = bounds;
+
+    expect(snoozeCutoff.getTime()).toBeGreaterThanOrEqual(before.getTime());
+    expect(snoozeCutoff.getTime()).toBeLessThanOrEqual(after.getTime());
 
     // The lower bound is the retention horizon (a month boundary less a day of
     // slack), so it is stable across the microseconds this test spans.

@@ -75,19 +75,20 @@ describe("resolveActorRankContext", () => {
   });
 });
 
-describe("resolveActorRankContext query determinism: LIMIT must have ORDER BY", () => {
-  it("the rank resolution query has orderBy before limit in source code", async () => {
+describe("resolveActorRankContext query determinism: drain has ORDER BY and uses shared page size", () => {
+  it("the rank resolution drain has orderBy and uses GRANT_PAGE_SIZE in source code", async () => {
     const fs = await import("fs").then((m) => m.promises);
     const path = await import("path");
 
     const resolveActorRankPath = path.join(__dirname, "resolve-actor-rank.ts");
     const content = await fs.readFile(resolveActorRankPath, "utf-8");
 
+    expect(content).toContain("drainByKeyset");
     expect(content).toContain(".orderBy(asc(roleAssignments.id))");
-    expect(content).toContain(".limit(100)");
+    expect(content).toContain(".limit(GRANT_PAGE_SIZE)");
 
     const orderByIndex = content.indexOf(".orderBy(asc(roleAssignments.id))");
-    const limitIndex = content.indexOf(".limit(100)");
+    const limitIndex = content.indexOf(".limit(GRANT_PAGE_SIZE)");
 
     expect(orderByIndex).toBeGreaterThan(0);
     expect(limitIndex).toBeGreaterThan(0);

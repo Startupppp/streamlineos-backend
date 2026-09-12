@@ -144,11 +144,14 @@ export const inviteUserResponseSchema = z.object({
 
 /** `InvitationCreateService.bulkInvite` */
 export const bulkInviteResponseSchema = z.object({
+  deliveryMode: z.enum(["background", "enqueue"]),
   results: z.array(
     z.object({
       email: z.string(),
+      originalEmail: z.string(),
       success: z.boolean(),
       invitationId: z.string().optional(),
+      isDuplicate: z.boolean().optional(),
       error: z.string().optional(),
     }),
   ),

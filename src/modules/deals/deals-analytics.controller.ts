@@ -47,8 +47,9 @@ export class DealsAnalyticsController {
   @Get("stats")
   @RequirePermission("crm:deals:read")
   @ResponseSchema(dealStatsSchema)
-  getStats(@CurrentUser() u: CurrentUserContext) {
-    return this.analytics.getStats(u.orgId);
+  async getStats(@CurrentUser() u: CurrentUserContext) {
+    const read = await resolveDealsReadScope(this.access, u);
+    return this.analytics.getStats(read);
   }
 
   @Get("aging")
@@ -111,11 +112,12 @@ export class DealsAnalyticsController {
   @RequirePermission("crm:deals:read")
   @ResponseSchema(dealHealthSchema)
   @Validate({ params: dealIdParams })
-  getDealHealth(
+  async getDealHealth(
     @Param("dealId", ParseIntPipe) dealId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.analytics.getDealHealth(u.orgId, dealId);
+    const read = await resolveDealsReadScope(this.access, u);
+    return this.analytics.getDealHealth(read, dealId);
   }
 
   @Patch("forecast/:snapshotId/override")

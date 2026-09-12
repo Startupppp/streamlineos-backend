@@ -169,11 +169,12 @@ export class DealsController {
   @RequirePermission("crm:deals:read")
   @ResponseSchema(z.array(dealActivitySchema))
   @Validate({ params: dealIdParams })
-  listActivities(
+  async listActivities(
     @Param("dealId", ParseIntPipe) dealId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.deals.listActivities(u.orgId, dealId);
+    const read = await resolveDealsReadScope(this.access, u);
+    return this.deals.listActivities(read, dealId);
   }
 
   @Get(":dealId/transitions")
@@ -185,7 +186,8 @@ export class DealsController {
     @Param("dealId", ParseIntPipe) dealId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return { data: await this.deals.listStageTransitions(u.orgId, dealId) };
+    const read = await resolveDealsReadScope(this.access, u);
+    return { data: await this.deals.listStageTransitions(read, dealId) };
   }
 
   @Post(":dealId/activities")
@@ -247,7 +249,8 @@ export class DealsController {
     @Param("dealId", ParseIntPipe) dealId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    const deal = await this.deals.getDeal(u.orgId, dealId);
+    const read = await resolveDealsReadScope(this.access, u);
+    const deal = await this.deals.getDeal(read, dealId);
     if (!deal) throw new NotFoundException("Deal not found");
     return deal;
   }

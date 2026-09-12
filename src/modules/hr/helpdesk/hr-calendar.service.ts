@@ -13,30 +13,10 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import { listCompatibleHolidays } from "../../../db/compat/organization-holidays";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import type { HrCalendarInput } from "./dto/hr-calendar.schemas";
+import { MAX_WINDOW_DAYS, type CalendarEventType, type CalendarEvent, type HrCalendarInput } from "./dto/hr-calendar.schemas";
 import { CelebrationsService } from "../directory/celebrations.service";
 import { AccessService } from "../../access/access.service";
 import { HR_SCAN_MAX_PAGES, HR_SCAN_PAGE } from "../hr-read-limits";
-
-export type CalendarEventType =
-  | "HOLIDAY"
-  | "LEAVE"
-  | "BIRTHDAY"
-  | "ANNIVERSARY"
-  | "REVIEW_CYCLE"
-  | "TRAVEL"
-  | "INTERVIEW";
-
-export interface CalendarEvent {
-  id: string;
-  type: CalendarEventType;
-  title: string;
-  date: string;
-  endDate?: string;
-  meta?: Record<string, unknown>;
-}
-
-const MAX_WINDOW_DAYS = 62;
 
 @Injectable()
 export class HrCalendarService {

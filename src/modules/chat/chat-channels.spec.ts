@@ -136,7 +136,7 @@ describe("ChatChannelsService — read path", () => {
     expect(result.channels[0]!.name).toBe("TICKET-1: Fix the bug");
   });
 
-  it("falls back to the stored name when the adapter fails without aborting the list", async () => {
+  it("withholds record channels but does not abort the list when the adapter fails", async () => {
     resolveSpy.mockRejectedValue(new Error("adapter offline"));
     selectResults[0] = [{ id: 1, lastMessageAt: null }, { id: 2, lastMessageAt: null }];
     findManyMock.mockResolvedValue([
@@ -177,8 +177,8 @@ describe("ChatChannelsService — read path", () => {
     const result = await service.getMyChannels(actor);
 
     expect(updateSpy).not.toHaveBeenCalled();
-    expect(result.channels).toHaveLength(2);
-    expect(result.channels[0]!.name).toBe(FALLBACK);
-    expect(result.channels[1]!.name).toBe("General");
+    expect(result.channels).toHaveLength(1);
+    expect(result.channels[0]!.name).toBe("General");
+    expect(result.channels.some((channel) => channel.name === FALLBACK)).toBe(false);
   });
 });

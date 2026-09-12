@@ -82,6 +82,7 @@ export function planBulkOnboarding(
   screens: ReadonlyMap<string, AdmissionScreen>,
   employeeNumberOwner: ReadonlyMap<string, string | null>,
   roleErrors: Map<string, string>,
+  globallyInactiveUserIds: ReadonlySet<string>,
 ): BulkOnboardPlan {
   const plan: BulkOnboardPlan = { accepted: [], rejected: [] };
   const claimedNumbers = new Map(
@@ -122,6 +123,16 @@ export function planBulkOnboarding(
     }
     if (screen.kind !== "clear") {
       plan.rejected.push({ row, email, success: false, error: admissionRefusalMessage(screen) });
+      continue;
+    }
+
+    if (screen.userId !== null && globallyInactiveUserIds.has(screen.userId)) {
+      plan.rejected.push({
+        row,
+        email,
+        success: false,
+        error: "This account is globally suspended. Contact platform support to restore it before adding to an organization.",
+      });
       continue;
     }
 

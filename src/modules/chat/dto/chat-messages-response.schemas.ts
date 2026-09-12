@@ -62,6 +62,7 @@ export const chatMessagePollPageSchema = z.object({
   messages: z.array(chatMessageSchema),
   nextCursor: z.number().int().nullable(),
   hasMore: z.boolean(),
+  latestPosition: z.number().int().nullable(),
 });
 
 export const chatThreadPageSchema = z.object({

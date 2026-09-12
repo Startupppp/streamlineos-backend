@@ -15,6 +15,8 @@ import { type Db } from "../../../db/drizzle.module";
 import { CacheService } from "../../../common/cache/cache.service";
 import { CACHE_KEYS } from "../../../common/cache/cache-keys";
 import { SupportTicketActivityService } from "./support-ticket-activity.service";
+import type { ScopedRead } from "../../access/scoped-read";
+import { assertTicketInScope } from "./support-tickets-scope";
 import type {
   CreateTicketLinkInput,
   MergeTicketInput,
@@ -29,37 +31,19 @@ export class SupportTicketOperationsService {
     private readonly activity: SupportTicketActivityService,
   ) {}
 
-  private async assertTicketExists(orgId: string, ticketId: number) {
-    const ticket = await this.db.query.supportTickets.findFirst({
-      where: and(eq(supportTickets.id, ticketId), eq(supportTickets.orgId, orgId)),
-      columns: { id: true },
-    });
-    if (!ticket) throw new NotFoundException("Ticket not found");
-  }
-
   private async invalidateTicketCaches(orgId: string) {
     await this.cache.invalidateNamespace(`support:tickets:${orgId}`);
     await this.cache.invalidate(CACHE_KEYS.supportDashboard(orgId));
     await this.cache.invalidate(CACHE_KEYS.ceDashboard(orgId));
   }
 
-  async addTicketLink(orgId: string, ticketId: number, userId: string, input: CreateTicketLinkInput) {
+  async addTicketLink(orgId: string, ticketId: number, userId: string, input: CreateTicketLinkInput, read: ScopedRead) {
     if (input.linkedTicketId === ticketId) {
       throw new BadRequestException("A ticket cannot be linked to itself");
     }
 
-    const [ticket, linkedTicket] = await Promise.all([
-      this.db.query.supportTickets.findFirst({
-        where: and(eq(supportTickets.id, ticketId), eq(supportTickets.orgId, orgId)),
-        columns: { id: true },
-      }),
-      this.db.query.supportTickets.findFirst({
-        where: and(eq(supportTickets.id, input.linkedTicketId), eq(supportTickets.orgId, orgId)),
-        columns: { id: true },
-      }),
-    ]);
-    if (!ticket) throw new NotFoundException("Ticket not found");
-    if (!linkedTicket) throw new NotFoundException("Linked ticket not found");
+    await assertTicketInScope(this.db, read, ticketId);
+    await assertTicketInScope(this.db, read, input.linkedTicketId, "Linked ticket");
 
     const [link] = await this.db
       .insert(supportTicketLinks)
@@ -78,31 +62,27 @@ export class SupportTicketOperationsService {
     return link ?? { success: true };
   }
 
-  async listTicketLinks(orgId: string, ticketId: number) {
-    await this.assertTicketExists(orgId, ticketId);
+  async listTicketLinks(orgId: string, ticketId: number, read: ScopedRead) {
+    await assertTicketInScope(this.db, read, ticketId);
     return this.db.query.supportTicketLinks.findMany({
       where: and(eq(supportTicketLinks.orgId, orgId), eq(supportTicketLinks.ticketId, ticketId)),
       with: { linkedTicket: { columns: { id: true, title: true, status: true } } },
     });
   }
 
-  async mergeTicket(orgId: string, ticketId: number, userId: string, input: MergeTicketInput) {
+  async mergeTicket(orgId: string, ticketId: number, userId: string, input: MergeTicketInput, read: ScopedRead) {
     if (input.intoTicketId === ticketId) {
       throw new BadRequestException("A ticket cannot be merged into itself");
     }
 
-    const [ticket, targetTicket] = await Promise.all([
-      this.db.query.supportTickets.findFirst({
-        where: and(eq(supportTickets.id, ticketId), eq(supportTickets.orgId, orgId)),
-        columns: { id: true, status: true, mergedIntoTicketId: true },
-      }),
-      this.db.query.supportTickets.findFirst({
-        where: and(eq(supportTickets.id, input.intoTicketId), eq(supportTickets.orgId, orgId)),
-        columns: { id: true },
-      }),
-    ]);
+    await assertTicketInScope(this.db, read, ticketId);
+    await assertTicketInScope(this.db, read, input.intoTicketId, "Target ticket");
+
+    const ticket = await this.db.query.supportTickets.findFirst({
+      where: and(eq(supportTickets.id, ticketId), eq(supportTickets.orgId, orgId)),
+      columns: { id: true, status: true, mergedIntoTicketId: true },
+    });
     if (!ticket) throw new NotFoundException("Ticket not found");
-    if (!targetTicket) throw new NotFoundException("Target ticket not found");
     if (ticket.mergedIntoTicketId) {
       throw new ConflictException("This ticket has already been merged into another ticket");
     }
@@ -118,8 +98,8 @@ export class SupportTicketOperationsService {
     return { success: true, mergedIntoTicketId: input.intoTicketId };
   }
 
-  async snoozeTicket(orgId: string, ticketId: number, userId: string, input: SnoozeTicketInput) {
-    await this.assertTicketExists(orgId, ticketId);
+  async snoozeTicket(orgId: string, ticketId: number, userId: string, input: SnoozeTicketInput, read: ScopedRead) {
+    await assertTicketInScope(this.db, read, ticketId);
 
     await this.db
       .update(supportTickets)
@@ -132,8 +112,8 @@ export class SupportTicketOperationsService {
     return { success: true, snoozedUntil: input.snoozedUntil };
   }
 
-  async unsnoozeTicket(orgId: string, ticketId: number, userId: string) {
-    await this.assertTicketExists(orgId, ticketId);
+  async unsnoozeTicket(orgId: string, ticketId: number, userId: string, read: ScopedRead) {
+    await assertTicketInScope(this.db, read, ticketId);
 
     await this.db
       .update(supportTickets)

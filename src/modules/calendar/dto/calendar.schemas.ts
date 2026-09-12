@@ -121,7 +121,20 @@ export const updateEventSchema = z.object({
   linkedLeadId: z.number().int().nullable().optional(),
   rrule: z.string().refine(isValidRrule, "Must be a valid RFC 5545 RRULE string").nullable().optional(),
   recurrenceEnd: z.string().datetime().nullable().optional(),
-}).strict();
+}).strict()
+  .refine(
+    (v) => {
+      if (v.startDate === undefined || v.endDate === undefined) return true;
+      const start = new Date(v.startDate);
+      const end = new Date(v.endDate);
+      return (
+        !Number.isNaN(start.getTime()) &&
+        !Number.isNaN(end.getTime()) &&
+        end > start
+      );
+    },
+    { message: "End date must be after start date", path: ["endDate"] },
+  );
 
 export const rsvpSchema = z.object({
   status: z.enum(["accepted", "declined", "tentative"]),

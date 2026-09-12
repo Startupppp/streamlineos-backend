@@ -20,8 +20,10 @@ import type { EntityActor } from "../entity-reference/entity-reference.types";
 import { randomUUID } from "node:crypto";
 import { runInTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
 import {
+  assertChannelAccess,
   assertChannelAdmin,
   assertChannelMember,
+  assertEntityAccess,
   resolveOrgMembership,
 } from "./chat-channel-authorization";
 import { OutboxWriter } from "../../common/outbox/outbox-writer";
@@ -38,12 +40,13 @@ export class ChatChannelMembersImplementation {
     private readonly entities: EntityReferenceService,
   ) {}
 
-  async assertChannelMembership(channelId: number, userId: string, orgId: string): Promise<void> {
-    await assertChannelMember(this.db, channelId, userId, orgId);
+  async assertChannelMembership(channelId: number, actor: EntityActor): Promise<void> {
+    await assertChannelAccess(this.db, this.entities, channelId, actor);
   }
 
-  async getChannel(channelId: number, userId: string, orgId: string) {
-    await assertChannelMember(this.db, channelId, userId, orgId);
+  async getChannel(channelId: number, actor: EntityActor) {
+    const orgId = actor.orgId;
+    await assertChannelAccess(this.db, this.entities, channelId, actor);
 
     const channel = await this.db.query.chatChannels.findFirst({
       where: and(eq(chatChannels.id, channelId), eq(chatChannels.orgId, orgId)),
@@ -59,8 +62,9 @@ export class ChatChannelMembersImplementation {
     return { ...channel, members: channel.members.map(flattenChannelMember) };
   }
 
-  async listMembers(channelId: number, userId: string, orgId: string, cursor?: number, limit?: number) {
-    await assertChannelMember(this.db, channelId, userId, orgId);
+  async listMembers(channelId: number, actor: EntityActor, cursor?: number, limit?: number) {
+    const orgId = actor.orgId;
+    await assertChannelAccess(this.db, this.entities, channelId, actor);
 
     const PAGE_SIZE = Math.min(limit ?? 50, PAGE_SIZE_CAP);
 
@@ -178,11 +182,7 @@ export class ChatChannelMembersImplementation {
     if (channel.type !== "PUBLIC") {
       if (!channel.entityType || !channel.entityId)
         throw new NotFoundException("Channel not found");
-      const [resolution] = await this.entities.resolve(actor, [
-        { type: channel.entityType, id: channel.entityId },
-      ]);
-      if (resolution?.status !== "resolved")
-        throw new NotFoundException("Channel not found");
+      await assertEntityAccess(this.entities, channel, actor, "Channel not found");
     }
 
     const existing = await this.db.query.chatChannelMembers.findFirst({
@@ -237,8 +237,9 @@ export class ChatChannelMembersImplementation {
     return { ok: true };
   }
 
-  async listChannelFiles(channelId: number, userId: string, orgId: string, cursor?: number, limit = 20) {
-    await assertChannelMember(this.db, channelId, userId, orgId);
+  async listChannelFiles(channelId: number, actor: EntityActor, cursor?: number, limit = 20) {
+    const orgId = actor.orgId;
+    await assertChannelAccess(this.db, this.entities, channelId, actor);
     const safeLimit = Math.min(Math.max(1, limit), 100);
 
     const rows = await this.db

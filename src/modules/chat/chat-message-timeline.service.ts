@@ -18,6 +18,7 @@ import type { EntityActor } from "../entity-reference/entity-reference.types";
 import { SENDER_MEMBERSHIP_ID_ONLY } from "./chat-message-sender-shape";
 import { MESSAGE_REACTIONS_WITH } from "./chat-message-reaction-shape";
 import { hydrateTimelineMessages } from "./chat-timeline-hydration";
+import { assertEntityAccess } from "./chat-channel-authorization";
 
 const REPLY_PREVIEW_WITH = {
   columns: { id: true, content: true },
@@ -48,18 +49,13 @@ export class ChatMessageTimelineService {
     return Boolean(m);
   }
 
-  async list(
-    channelId: number,
-    actor: EntityActor,
-    cursor: number | undefined,
-    limit: number,
-  ) {
+  private async authorizeChannelRead(channelId: number, actor: EntityActor) {
     const channel = await this.db.query.chatChannels.findFirst({
       where: and(
         eq(chatChannels.id, channelId),
         eq(chatChannels.orgId, actor.orgId),
       ),
-      columns: { id: true, type: true },
+      columns: { id: true, type: true, entityType: true, entityId: true },
     });
     if (!channel) throw new NotFoundException("Channel not found");
 
@@ -68,6 +64,18 @@ export class ChatMessageTimelineService {
         throw new NotFoundException("Channel not found");
       throw new ForbiddenException("You are not a member of this channel");
     }
+
+    await assertEntityAccess(this.entities, channel, actor, "Channel not found");
+    return channel;
+  }
+
+  async list(
+    channelId: number,
+    actor: EntityActor,
+    cursor: number | undefined,
+    limit: number,
+  ) {
+    await this.authorizeChannelRead(channelId, actor);
 
     const safeLimit = Math.min(Math.max(1, limit), 100);
     const conditions = [
@@ -110,20 +118,7 @@ export class ChatMessageTimelineService {
     cursor: number | undefined,
     limit: number,
   ) {
-    const channel = await this.db.query.chatChannels.findFirst({
-      where: and(
-        eq(chatChannels.id, channelId),
-        eq(chatChannels.orgId, actor.orgId),
-      ),
-      columns: { id: true, type: true },
-    });
-    if (!channel) throw new NotFoundException("Channel not found");
-
-    if (!(await this.isMember(channelId, actor.orgId, actor.membershipId))) {
-      if (channel.type !== "PUBLIC")
-        throw new NotFoundException("Channel not found");
-      throw new ForbiddenException("You are not a member of this channel");
-    }
+    await this.authorizeChannelRead(channelId, actor);
 
     const safeLimit = Math.min(Math.max(1, limit), 100);
     // `is_deleted = false` STAYS, against the audit's recommendation to drop it so a
@@ -180,6 +175,7 @@ export class ChatMessageTimelineService {
       messages,
       nextCursor: page.nextCursor,
       hasMore: page.hasMore,
+      latestPosition: page.data.at(-1)?.channelPosition ?? null,
     };
   }
 
@@ -204,24 +200,26 @@ export class ChatMessageTimelineService {
 
     if (!rawParent) throw new NotFoundException("Message not found");
 
-    if (
-      !(await this.isMember(
-        rawParent.channelId,
-        actor.orgId,
-        actor.membershipId,
-      ))
-    ) {
-      const parentChannel = await this.db.query.chatChannels.findFirst({
-        where: and(
-          eq(chatChannels.id, rawParent.channelId),
-          eq(chatChannels.orgId, actor.orgId),
-        ),
-        columns: { type: true },
-      });
+    const isParentChannelMember = await this.isMember(
+      rawParent.channelId,
+      actor.orgId,
+      actor.membershipId,
+    );
+    const parentChannel = await this.db.query.chatChannels.findFirst({
+      where: and(
+        eq(chatChannels.id, rawParent.channelId),
+        eq(chatChannels.orgId, actor.orgId),
+      ),
+      columns: { type: true, entityType: true, entityId: true },
+    });
+
+    if (!isParentChannelMember) {
       if (parentChannel?.type !== "PUBLIC")
         throw new NotFoundException("Message not found");
       throw new ForbiddenException("You are not a member of this channel");
     }
+
+    await assertEntityAccess(this.entities, parentChannel, actor, "Message not found");
 
     const safeLimit = Math.min(Math.max(1, limit), 100);
     const conditions = [

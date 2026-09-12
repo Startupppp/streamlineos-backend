@@ -73,29 +73,11 @@ import {
   syncStatusResponseSchema,
 } from "./dto/sync-status.schemas";
 import { z } from "zod";
+import { csvEscape, formatDate, formatDatetime } from "./calendar-export-format";
 
 const eventIdParams = z.object({ eventId: z.coerce.number().int().positive() }).strict();
 const eventIdoccurrenceStartParams = z.object({ eventId: z.coerce.number().int().positive(), occurrenceStart: z.string().min(1) }).strict();
 const sourceKeyParams = z.object({ sourceKey: z.string().min(1) }).strict();
-
-function pad(value: number): string {
-  return value < 10 ? `0${value}` : String(value);
-}
-
-function formatDate(date: Date): string {
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
-}
-
-function formatDatetime(date: Date): string {
-  return `${formatDate(date)} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
-}
-
-function csvEscape(value: string): string {
-  if (value.includes('"') || value.includes(",") || value.includes("\n")) {
-    return `"${value.replace(/"/g, '""')}"`;
-  }
-  return value;
-}
 
 @Controller("calendar")
 @UseGuards(JwtAuthGuard)
@@ -312,7 +294,10 @@ export class CalendarController {
   }
 
   @Get("export")
-  @ApiOkResponse({ description: "CSV file download of calendar events", content: { "text/csv": { schema: { type: "string" } } } })
+  @ApiOkResponse({ description: "CSV file download of calendar events", content: { "text/csv": { schema: { type: "string" } } }, headers: {
+    "X-Export-Truncated": { description: "Present and \"true\" when the row cap dropped events the range contains", schema: { type: "string" } },
+    "X-Export-Row-Count": { description: "Number of event rows in the returned CSV", schema: { type: "string" } },
+  } })
   @UseGuards(PermissionGuard)
   @RequirePermission("calendar:events:export")
   @Validate({ query: exportSchema })
@@ -326,7 +311,7 @@ export class CalendarController {
     const toDate = new Date(query.to);
     const read = readRequestScopedRead(req, u);
 
-    const events = await this.calendar.exportEvents(read, fromDate, toDate);
+    const { events, truncated, rowCount } = await this.calendar.exportEvents(read, fromDate, toDate);
 
     const headers = [
       "Title",
@@ -338,26 +323,34 @@ export class CalendarController {
       "Description",
       "Color",
     ];
-    const rows = events.map((event) => [
-      csvEscape(event.title),
-      csvEscape(formatDatetime(event.startDate)),
-      csvEscape(formatDatetime(event.endDate)),
-      event.allDay ? "Yes" : "No",
-      csvEscape(event.category ?? ""),
-      csvEscape(event.location ?? ""),
-      csvEscape(event.description ?? ""),
-      csvEscape(event.color ?? ""),
-    ]);
+    const rows = events.map((event) => {
+      const tz = event.timezone;
+      const startFormatted = event.allDay ? formatDate(event.startDate, tz) : formatDatetime(event.startDate, tz);
+      const endFormatted = event.allDay ? formatDate(event.endDate, tz) : formatDatetime(event.endDate, tz);
+      return [
+        csvEscape(event.title),
+        csvEscape(startFormatted),
+        csvEscape(endFormatted),
+        event.allDay ? "Yes" : "No",
+        csvEscape(event.category ?? ""),
+        csvEscape(event.location ?? ""),
+        csvEscape(event.description ?? ""),
+        csvEscape(event.color ?? ""),
+      ];
+    });
 
     const csvContent = [
       headers.join(","),
       ...rows.map((r) => r.join(",")),
     ].join("\r\n");
-    const filename = `calendar-${formatDate(fromDate)}-to-${formatDate(toDate)}.csv`;
+    const filename = `calendar-${formatDate(fromDate, null)}-to-${formatDate(toDate, null)}.csv`;
 
     res.setHeader("Content-Type", "text/csv; charset=utf-8");
     res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
     res.setHeader("Cache-Control", "no-store");
+    res.setHeader("Access-Control-Expose-Headers", "X-Export-Truncated, X-Export-Row-Count");
+    if (truncated) res.setHeader("X-Export-Truncated", "true");
+    res.setHeader("X-Export-Row-Count", String(rowCount));
     res.send(csvContent);
   }
 

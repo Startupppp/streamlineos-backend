@@ -18,10 +18,12 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import { ChatChannelListService } from "./chat-channel-list.service";
 import { EntityReferenceService } from "../entity-reference/entity-reference.service";
 import { MAX_CAPABILITY_CHANNELS } from "../realtime/ably.service";
+import type { EntityActor } from "../entity-reference/entity-reference.types";
 
 const ORG = "org-token";
 const USER = "user-token";
 const MEMBERSHIP = 4242;
+const boundedActor: EntityActor = { orgId: ORG, userId: USER, membershipId: MEMBERSHIP, isOrgOwner: false };
 
 function makeDb(channelRows: Array<{ channelId: number }>) {
   const limits: unknown[] = [];
@@ -63,7 +65,7 @@ describe("PRD-C145 — the Ably token channel lookup is bounded at the database"
     const { db, limits } = makeDb(rows(3));
     const service = await buildService(db);
 
-    await service.listMemberChannelIds(ORG, USER);
+    await service.listMemberChannelIds(boundedActor);
 
     expect(limits).toEqual([MAX_CAPABILITY_CHANNELS + 1]);
   });
@@ -72,7 +74,7 @@ describe("PRD-C145 — the Ably token channel lookup is bounded at the database"
     const { db } = makeDb(rows(MAX_CAPABILITY_CHANNELS + 1));
     const service = await buildService(db);
 
-    const result = await service.listMemberChannelIds(ORG, USER);
+    const result = await service.listMemberChannelIds(boundedActor);
 
     expect(result).toHaveLength(MAX_CAPABILITY_CHANNELS + 1);
   });
@@ -81,7 +83,7 @@ describe("PRD-C145 — the Ably token channel lookup is bounded at the database"
     const { db } = makeDb(rows(7));
     const service = await buildService(db);
 
-    const result = await service.listMemberChannelIds(ORG, USER);
+    const result = await service.listMemberChannelIds(boundedActor);
 
     expect(result).toEqual([1, 2, 3, 4, 5, 6, 7]);
   });
@@ -91,7 +93,7 @@ describe("PRD-C145 — the Ably token channel lookup is bounded at the database"
     db.query.organizationMembers.findFirst.mockResolvedValue(null);
     const service = await buildService(db);
 
-    const result = await service.listMemberChannelIds(ORG, USER);
+    const result = await service.listMemberChannelIds(boundedActor);
 
     expect(result).toEqual([]);
     expect(limits).toEqual([]);

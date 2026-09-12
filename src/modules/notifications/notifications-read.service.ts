@@ -25,7 +25,11 @@ import { NotificationVisibilityRegistry } from "./notification-visibility.regist
 import type { Principal } from "../../common/auth/principal";
 import type { NotificationTicketContext } from "./notifications.types";
 import { ASSIGNED_EVENT_KEYS, MENTION_EVENT_KEYS } from "./inbox-section-keys";
-import { notificationWindowEnd, notificationWindowStart } from "./notification-read-window";
+import {
+  notificationNotSnoozed,
+  notificationWindowEnd,
+  notificationWindowStart,
+} from "./notification-read-window";
 
 type NotificationListRow = {
   id: number;
@@ -163,8 +167,7 @@ export class NotificationsReadService {
     return { membershipId: recipient.membershipId, lastReadId: recipient.lastReadId ?? 0 };
   }
 
-  private retentionWindow(): { start: Date; end: Date } {
-    const now = new Date();
+  private retentionWindow(now: Date): { start: Date; end: Date } {
     return { start: notificationWindowStart(now), end: notificationWindowEnd(now) };
   }
 
@@ -174,7 +177,8 @@ export class NotificationsReadService {
     filters: ListInput & { section: string },
   ) {
     const { membershipId, lastReadId } = await this.resolveRecipient(orgId, userId);
-    const window = this.retentionWindow();
+    const now = new Date();
+    const window = this.retentionWindow(now);
 
     const conditions = [
       eq(notifications.orgId, orgId),
@@ -183,6 +187,8 @@ export class NotificationsReadService {
       lt(notifications.createdAt, window.end),
       isNull(notifications.deletedAt),
     ];
+
+    let suppressSnoozed = true;
 
     switch (filters.section) {
       case "UNREAD":
@@ -204,6 +210,7 @@ export class NotificationsReadService {
         break;
       case "ARCHIVED":
         conditions.push(isNotNull(notifications.archivedAt));
+        suppressSnoozed = false;
         break;
       case "SYSTEM":
         conditions.push(isNull(notifications.archivedAt));
@@ -231,6 +238,11 @@ export class NotificationsReadService {
       default:
         conditions.push(isNull(notifications.archivedAt));
         break;
+    }
+
+    if (suppressSnoozed) {
+      const notSnoozed = notificationNotSnoozed(now);
+      if (notSnoozed) conditions.push(notSnoozed);
     }
 
     if (
@@ -313,7 +325,8 @@ export class NotificationsReadService {
 
   private async queryUnreadCount(orgId: string, userId: string) {
     const { membershipId, lastReadId } = await this.resolveRecipient(orgId, userId);
-    const window = this.retentionWindow();
+    const now = new Date();
+    const window = this.retentionWindow(now);
     const conditions = [
       eq(notifications.orgId, orgId),
       eq(notifications.membershipId, membershipId),
@@ -323,6 +336,8 @@ export class NotificationsReadService {
       isNull(notifications.deletedAt),
       isNull(notifications.archivedAt),
     ];
+    const notSnoozed = notificationNotSnoozed(now);
+    if (notSnoozed) conditions.push(notSnoozed);
     if (lastReadId > 0) conditions.push(gt(notifications.id, lastReadId));
     const [result] = await this.db
       .select({ count: sql<number>`count(*)::int` })

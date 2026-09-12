@@ -144,15 +144,23 @@ export class DealsCrudService {
     return deal;
   }
 
-  getDeal(orgId: string, dealId: number) {
-    return this.db.query.deals.findFirst({
-      where: and(eq(deals.id, dealId), eq(deals.orgId, orgId), isNull(deals.deletedAt)),
-      with: {
-        assignedTo: { columns: { id: true, name: true, image: true } },
-        lead: { columns: { id: true, name: true, email: true, phone: true } },
-        client: { columns: { id: true, name: true } },
+  getDeal(read: ScopedRead, dealId: number) {
+    return read.read(
+      {
+        tenant: deals.orgId,
+        scope: { columns: { ownerColumn: deals.assignedToId } },
+        and: [eq(deals.id, dealId), isNull(deals.deletedAt)],
       },
-    });
+      ({ sql: where }) => this.db.query.deals.findFirst({
+        where,
+        with: {
+          assignedTo: { columns: { id: true, name: true, image: true } },
+          lead: { columns: { id: true, name: true, email: true, phone: true } },
+          client: { columns: { id: true, name: true } },
+        },
+      }),
+      () => undefined,
+    );
   }
 
   async deleteDeal(orgId: string, userId: string, dealId: number) {

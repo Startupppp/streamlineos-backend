@@ -4,29 +4,7 @@ import { calendarEvents, eventAttendees, organizationMembers, projects, tickets,
 import { CALENDAR_PER_SOURCE_CAP } from "./calendar-source.registry";
 import { loadExceptionsByEvent } from "./calendar-exception-loader";
 import type { CalendarEventException } from "./calendar-occurrence.service";
-import type { LinkedTicket } from "./calendar.types";
-
-export interface VisibleEventRow {
-  id: number;
-  title: string;
-  description: string | null;
-  location: string | null;
-  meetingUrl: string | null;
-  startDate: Date;
-  endDate: Date;
-  allDay: boolean;
-  timezone: string;
-  color: string | null;
-  category: string;
-  entityType: string | null;
-  entityId: string | null;
-  visibility: string;
-  rrule: string | null;
-  recurrenceEnd: Date | null;
-  createdByMembershipId: number;
-  creatorName: string | null;
-  rsvpStatus: string | null;
-}
+import type { LinkedTicket, VisibleEventRow } from "./calendar.types";
 
 /**
  * The caller's attendance, asked as a scalar subquery rather than as `EXISTS`.
@@ -59,6 +37,7 @@ export class CalendarEventSourceLoader {
     eventsData: VisibleEventRow[];
     linkedTicketMap: Map<number, LinkedTicket>;
     exceptionsByEvent: Map<number, CalendarEventException[]>;
+    exceptionsComplete: boolean;
   }> {
     const membership = await this.database.query.organizationMembers.findFirst({
       columns: { id: true },
@@ -73,7 +52,12 @@ export class CalendarEventSourceLoader {
 
     const candidates = await this.candidatePage(orgId, callerMembershipId, start, end);
     if (candidates.length === 0)
-      return { eventsData: [], linkedTicketMap: new Map(), exceptionsByEvent: new Map() };
+      return {
+        eventsData: [],
+        linkedTicketMap: new Map(),
+        exceptionsByEvent: new Map(),
+        exceptionsComplete: true,
+      };
 
     const ids = candidates.map((c) => c.id);
     const rsvpByEvent = await this.callerRsvp(orgId, callerMembershipId, ids);
@@ -89,7 +73,7 @@ export class CalendarEventSourceLoader {
       }
     }
 
-    const [creatorNames, rawTicketRows, exceptionsByEvent] = await Promise.all([
+    const [creatorNames, rawTicketRows, exceptions] = await Promise.all([
       this.creatorNames(orgId, creatorMembershipIds),
       this.fetchLinkedTickets(orgId, ticketEntityIds),
       loadExceptionsByEvent(this.database, orgId, recurringIds, start, end),
@@ -111,7 +95,12 @@ export class CalendarEventSourceLoader {
       creatorName: creatorNames.get(row.createdByMembershipId) ?? null,
     }));
 
-    return { eventsData, linkedTicketMap, exceptionsByEvent };
+    return {
+      eventsData,
+      linkedTicketMap,
+      exceptionsByEvent: exceptions.byEvent,
+      exceptionsComplete: exceptions.complete,
+    };
   }
 
   /**

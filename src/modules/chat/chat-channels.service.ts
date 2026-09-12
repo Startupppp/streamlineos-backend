@@ -5,6 +5,7 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import type { TenantTx } from "../../db/drizzle.types";
 import { PlanLimitsService } from "../billing/core/plan-limits.service";
+import { lockQuota } from "../billing/core/seat-definition";
 import { CacheService } from "../../common/cache/cache.service";
 import type { CreateChannelInput } from "./dto/chat.schemas";
 import { assertUsersInOrg } from "../../common/tenant/org-membership";
@@ -20,6 +21,8 @@ import { CHAT_ENTITY_CHANNEL_CONFLICT } from "./chat-entity-channel-conflict-tar
 import { assertChannelMember } from "./chat-channel-authorization";
 
 export { entityChannelFallbackName } from "./chat-channel-list.service";
+
+const CHAT_CHANNEL_LIMIT_KEY = "chatChannels" as const;
 
 @Injectable()
 export class ChatChannelsService {
@@ -43,8 +46,8 @@ export class ChatChannelsService {
     return this.listService.listPublicChannels(orgId, userId, cursor, limit);
   }
 
-  async listMemberChannelIds(orgId: string, userId: string): Promise<number[]> {
-    return this.listService.listMemberChannelIds(orgId, userId);
+  async listMemberChannelIds(actor: EntityActor): Promise<number[]> {
+    return this.listService.listMemberChannelIds(actor);
   }
 
   private async ensureEntityChannelDisplayName<
@@ -180,9 +183,9 @@ export class ChatChannelsService {
     // this column to answer 404 rather than 403.
     const isPrivate = channelType !== "PUBLIC";
 
-    await this.planLimits.assertWithinLimit(orgId, "chatChannels");
-
     const channel = await this.db.transaction(async (tx) => {
+      await tx.execute(lockQuota(orgId, CHAT_CHANNEL_LIMIT_KEY));
+      await this.planLimits.assertWithinLimit(orgId, CHAT_CHANNEL_LIMIT_KEY, 1, tx);
       const [created] = await tx
         .insert(chatChannels)
         .values({
@@ -221,7 +224,7 @@ export class ChatChannelsService {
    * tenant's, or one the caller may not read — is indistinguishable, and none of
    * them reach the channel tables.
    */
-  async getOrCreateEntityChannel(
+  private async assertEntityReadable(
     entityType: string,
     entityId: string,
     actor: EntityActor,
@@ -230,9 +233,23 @@ export class ChatChannelsService {
     const [resolution] = await this.entities.resolve(actor, [reference]);
     if (resolution?.status !== "resolved")
       throw new NotFoundException("Record not found");
+    return resolution;
+  }
+
+  async getEntityChannel(entityType: string, entityId: string, actor: EntityActor) {
+    await this.assertEntityReadable(entityType, entityId, actor);
+    return this.loadEntityChannel(entityType, entityId, actor);
+  }
+
+  async createEntityChannel(
+    entityType: string,
+    entityId: string,
+    actor: EntityActor,
+  ) {
+    const resolution = await this.assertEntityReadable(entityType, entityId, actor);
 
     const existing = await this.loadEntityChannel(entityType, entityId, actor);
-    if (existing) return existing;
+    if (existing) return { channel: existing, created: false };
 
     const actorMembershipId = actor.membershipId;
     if (!actorMembershipId) throw new ForbiddenException("Membership required to create a channel");
@@ -248,7 +265,9 @@ export class ChatChannelsService {
     // `uniq_chat_channels_org_entity` (migration 1058) is now the arbiter and the loser of
     // the race gets no row back; both callers then read the one committed channel through
     // `loadEntityChannel`, so they see the same channel in the same shape and neither 500s.
-    await this.db.transaction(async (tx) => {
+    const won = await this.db.transaction(async (tx) => {
+      await tx.execute(lockQuota(actor.orgId, CHAT_CHANNEL_LIMIT_KEY));
+      await this.planLimits.assertWithinLimit(actor.orgId, CHAT_CHANNEL_LIMIT_KEY, 1, tx);
       const [created] = await tx
         .insert(chatChannels)
         .values({
@@ -263,7 +282,7 @@ export class ChatChannelsService {
         .onConflictDoNothing(CHAT_ENTITY_CHANNEL_CONFLICT)
         .returning();
 
-      if (!created) return;
+      if (!created) return false;
 
       await tx.insert(chatChannelMembers).values({
         orgId: actor.orgId,
@@ -271,10 +290,20 @@ export class ChatChannelsService {
         membershipId: actorMembershipId,
         role: "ADMIN",
       });
+      return true;
     });
 
     const channel = await this.loadEntityChannel(entityType, entityId, actor);
     if (!channel) throw new NotFoundException("Record not found");
+    return { channel, created: won };
+  }
+
+  async getOrCreateEntityChannel(
+    entityType: string,
+    entityId: string,
+    actor: EntityActor,
+  ) {
+    const { channel } = await this.createEntityChannel(entityType, entityId, actor);
     return channel;
   }
 

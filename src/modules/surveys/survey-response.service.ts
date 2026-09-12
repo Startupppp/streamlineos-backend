@@ -18,6 +18,7 @@ import { SurveyAutomationService } from "./survey-automation.service";
 import { SurveyAssessmentService } from "./survey-assessment.service";
 import { SurveyLeadAutomationService } from "./survey-lead-automation.service";
 import type { SaveAnswerInput, StartSessionInput } from "./dto/survey-public.schemas";
+import { buildSurveyAnswerRows } from "./survey-answer-builder";
 import type { ListResponsesInput } from "./dto/survey-analytics.schemas";
 import { buildListResponse, paginateOffset } from "../../common/pagination/pagination";
 
@@ -130,7 +131,7 @@ export class SurveyResponseService {
         if (answers.length === 0) return { success: true };
 
         const choicesByQuestion = await this.prefetchChoices(answers);
-        const rows = this.buildAnswerRows(session, answers, choicesByQuestion);
+        const rows = buildSurveyAnswerRows(session, answers, choicesByQuestion);
         const questionIds = answers.map((a) => a.questionId);
 
         await tx
@@ -163,33 +164,6 @@ export class SurveyResponseService {
     return map;
   }
 
-  private buildAnswerRows(
-    session: typeof surveyResponseSessions.$inferSelect,
-    answers: SaveAnswerInput[],
-    choicesByQuestion: Map<number, (typeof surveyQuestionChoices.$inferSelect)[]>,
-  ): (typeof surveyAnswers.$inferInsert)[] {
-    return answers.map((answer) => {
-      let score: number | null = null;
-      const choiceIds = answer.choiceIds;
-      if (choiceIds?.length) {
-        const choices = choicesByQuestion.get(answer.questionId) ?? [];
-        const selected = choices.filter((c) => choiceIds.includes(c.id));
-        if (selected.length) score = selected.reduce((sum, c) => sum + (c.score ?? 0), 0);
-      }
-      return {
-        orgId: session.orgId,
-        sessionId: session.id,
-        surveyId: session.surveyId,
-        versionId: session.versionId,
-        questionId: answer.questionId,
-        answerValue: answer.answerValue ?? null,
-        answerText: answer.answerText ?? null,
-        choiceIds: answer.choiceIds ?? null,
-        score,
-      };
-    });
-  }
-
   async submit(sessionId: number, answers?: SaveAnswerInput[]) {
     const orgId = await this.resolveSessionOrgId(sessionId);
 
@@ -201,7 +175,7 @@ export class SurveyResponseService {
 
         if (answers?.length) {
           const choicesByQuestion = await this.prefetchChoices(answers);
-          const rows = this.buildAnswerRows(session, answers, choicesByQuestion);
+          const rows = buildSurveyAnswerRows(session, answers, choicesByQuestion);
           const questionIds = answers.map((a) => a.questionId);
           await tx
             .delete(surveyAnswers)

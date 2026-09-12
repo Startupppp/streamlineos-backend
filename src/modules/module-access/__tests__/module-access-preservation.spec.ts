@@ -16,30 +16,42 @@ import { bumpPermissionsVersion } from "../../../common/rbac/access-invalidate";
 const txDeletes: number[] = [];
 const txInserted: Record<string, unknown>[] = [];
 let txVersionBumped = 0;
+const txHandles: { write: unknown; bump: unknown } = { write: null, bump: null };
 
 jest.mock("../../../common/rbac/access-invalidate", () => ({
-  bumpPermissionsVersion: jest.fn().mockImplementation(() => {
+  bumpPermissionsVersion: jest.fn().mockImplementation((tx: unknown) => {
     txVersionBumped += 1;
+    txHandles.bump = tx;
     return Promise.resolve();
   }),
 }));
 
 jest.mock("../../../common/tenant/run-in-tenant-transaction", () => ({
-  runInTenantTransaction: (_db: unknown, fn: (tx: unknown) => Promise<void>) =>
-    fn({
+  runInTenantTransaction: (_db: unknown, fn: (tx: unknown) => Promise<void>) => {
+    const tx = {
       delete: () => ({
         where: () => {
           txDeletes.push(1);
+          txHandles.write = tx;
           return Promise.resolve();
         },
       }),
       insert: () => ({
-        values: (rows: Record<string, unknown>[]) => {
-          txInserted.push(...rows);
-          return Promise.resolve();
+        values: (rows: Record<string, unknown> | Record<string, unknown>[]) => {
+          txInserted.push(...(Array.isArray(rows) ? rows : [rows]));
+          txHandles.write = tx;
+          const done = Promise.resolve();
+          return {
+            onConflictDoNothing: () => done,
+            then: done.then.bind(done),
+            catch: done.catch.bind(done),
+            finally: done.finally.bind(done),
+          };
         },
       }),
-    }),
+    };
+    return fn(tx);
+  },
 }));
 
 jest.mock("../../ownership/module-owner-role.helper", () => ({
@@ -101,6 +113,8 @@ beforeEach(() => {
   txDeletes.length = 0;
   txInserted.length = 0;
   txVersionBumped = 0;
+  txHandles.write = null;
+  txHandles.bump = null;
   (bumpPermissionsVersion as jest.Mock).mockClear();
 });
 
@@ -266,6 +280,44 @@ describe("Condition 3 — principal group membership drives permission via trans
 
     expect(txDeletes.length).toBeGreaterThan(deletesBefore);
     expect(txVersionBumped).toBeGreaterThan(bumpBefore);
+    expect(txHandles.write).not.toBeNull();
+    expect(txHandles.bump).toBe(txHandles.write);
+  });
+
+  it("addGroupMember writes the assignment and bumps the version on that same transaction handle", async () => {
+    const mockDb = {
+      query: {
+        organizationMembers: {
+          findFirst: jest.fn().mockResolvedValue({ id: 55, status: "ACTIVE" }),
+        },
+      },
+    };
+
+    const m = await Test.createTestingModule({
+      providers: [
+        ModuleAccessGroupMembersService,
+        { provide: DRIZZLE, useValue: mockDb },
+        { provide: CacheService, useValue: { invalidate: jest.fn().mockResolvedValue(undefined) } },
+        { provide: AuditService, useValue: { log: jest.fn() } },
+        {
+          provide: ModuleAccessGroupPolicyService,
+          useValue: { resolveOwnerUserId: jest.fn().mockResolvedValue(null) },
+        },
+      ],
+    }).compile();
+
+    await m
+      .get(ModuleAccessGroupMembersService)
+      .addGroupMember(ownerActor(), MODULE, 9, { userId: "u-target" });
+
+    expect(txInserted).toHaveLength(1);
+    expect(txInserted[0]).toMatchObject({
+      orgId: ORG,
+      organizationMembershipId: 55,
+      roleId: 9,
+    });
+    expect(txHandles.write).not.toBeNull();
+    expect(txHandles.bump).toBe(txHandles.write);
   });
 
   it("removing a non-existent member is a no-op and opens no transaction", async () => {

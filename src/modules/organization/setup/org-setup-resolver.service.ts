@@ -11,6 +11,7 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
 import { withIdentity } from "../../../common/tenant/with-identity";
 import { logger } from "../../../common/logger/logger.service";
+import { placedOrganizationCoordinates } from "../../../common/region/placement-lookup";
 import { OrganizationCreationService } from "../core/organization-creation.service";
 
 export type SetupMembership = {
@@ -28,6 +29,11 @@ export type SetupTarget = {
   orgId: string;
   isOwner: boolean;
 };
+
+export type OrganizationAbsenceVerdict =
+  | { status: "absent" }
+  | { status: "placed"; region: string; cellId: string }
+  | { status: "unverified"; reason: string };
 
 @Injectable()
 export class OrgSetupResolverService {
@@ -152,6 +158,74 @@ export class OrgSetupResolverService {
     return null;
   }
 
+  async verifyOrganizationAbsence(
+    orgId: string,
+  ): Promise<OrganizationAbsenceVerdict> {
+    try {
+      const placement = await placedOrganizationCoordinates(this.db, orgId);
+      if (placement)
+        return {
+          status: "placed",
+          region: placement.region,
+          cellId: placement.cellId,
+        };
+      return { status: "absent" };
+    } catch (error) {
+      return {
+        status: "unverified",
+        reason: error instanceof Error ? error.message : String(error),
+      };
+    }
+  }
+
+  private async cleanUpProvablyAbsentMemberships(
+    userId: string,
+    memberships: readonly SetupMembership[],
+  ): Promise<void> {
+    const unresolvedByOrg = new Map<string, number[]>();
+    for (const m of memberships) {
+      if (m.existingOrgId !== null) continue;
+      unresolvedByOrg.set(m.orgId, [...(unresolvedByOrg.get(m.orgId) ?? []), m.id]);
+    }
+
+    for (const [candidateOrgId, membershipIds] of unresolvedByOrg) {
+      const verdict = await this.verifyOrganizationAbsence(candidateOrgId);
+      if (verdict.status !== "absent") {
+        logger.warn("Retaining membership rows: organization absence is not proven", {
+          userId,
+          candidateOrgId,
+          verdict: verdict.status,
+          ...(verdict.status === "placed"
+            ? { region: verdict.region, cellId: verdict.cellId }
+            : { reason: verdict.reason }),
+        });
+        continue;
+      }
+
+      try {
+        await withMembershipMutations(this.cache, (membership) =>
+          runInTenantTransaction(
+            this.db,
+            async (tx) => {
+              await membership.deleteMembershipsById(tx, {
+                orgId: candidateOrgId,
+                userId,
+                membershipIds,
+              });
+            },
+            { orgId: candidateOrgId },
+          ),
+        );
+      } catch (error) {
+        logger.warn("Absent-organization membership cleanup failed", {
+          userId,
+          candidateOrgId,
+          error,
+        });
+      }
+    }
+  }
+
   async resolveOrCreateOrg(
     u: CurrentUserContext,
     input: Pick<SetupInput, "companyName">,
@@ -163,30 +237,7 @@ export class OrgSetupResolverService {
     const existingTarget = this.resolveExistingSetupTarget(u, memberships);
     if (existingTarget) return existingTarget;
 
-    const orphansByOrg = new Map<string, number[]>();
-    for (const m of memberships) {
-      if (m.existingOrgId !== null) continue;
-      orphansByOrg.set(m.orgId, [...(orphansByOrg.get(m.orgId) ?? []), m.id]);
-    }
-    for (const [orphanOrgId, ids] of orphansByOrg) {
-      try {
-        await withMembershipMutations(this.cache, (membership) =>
-          runInTenantTransaction(
-            this.db,
-            async (tx) => {
-              await membership.deleteMembershipsById(tx, { orgId: orphanOrgId, userId: u.userId, membershipIds: ids });
-            },
-            { orgId: orphanOrgId },
-          ),
-        );
-      } catch (error) {
-        logger.warn("Orphan membership cleanup failed", {
-          userId: u.userId,
-          orphanOrgId,
-          error,
-        });
-      }
-    }
+    await this.cleanUpProvablyAbsentMemberships(u.userId, memberships);
 
     const orgName = input.companyName?.trim() || "My Organization";
     const organization = await this.creation.createFromSetup({

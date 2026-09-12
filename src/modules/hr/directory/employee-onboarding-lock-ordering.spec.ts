@@ -44,6 +44,14 @@ const ACTOR = {
 };
 const INPUT = { email: "jane@example.com", firstName: "Jane", lastName: "Doe", designation: "Engineer" };
 
+function buildUpdateResult(returningRows: Array<{ id: string }> = []) {
+  return {
+    returning: jest.fn().mockResolvedValue(returningRows),
+    then: <T,>(resolve: (rows: Array<{ id: string }>) => T) =>
+      Promise.resolve(returningRows).then(resolve),
+  };
+}
+
 function buildTx() {
   return {
     execute: jest.fn().mockResolvedValue([{}]),
@@ -64,7 +72,7 @@ function buildTx() {
         }),
       })),
     update: jest.fn().mockReturnValue({
-      set: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue([]) }),
+      set: jest.fn().mockReturnValue({ where: jest.fn().mockReturnValue(buildUpdateResult()) }),
     }),
     select: jest.fn().mockReturnValue({
       from: jest.fn().mockReturnValue({
@@ -152,15 +160,23 @@ describe("EmployeeOnboardingService.onboardEmployee — seat-limit ordering", ()
     admission = module.get(MembershipAdmissionService);
   });
 
-  it("enters the single-person admission policy through admitOne on the write transaction", async () => {
-    const admitOne = jest.spyOn(admission, "admitOne");
+  it("screens and admits the single person on the write transaction", async () => {
+    const screen = jest.spyOn(admission, "screen");
+    const admitMany = jest.spyOn(admission, "admitMany");
 
     await svc.onboardEmployee(ACTOR, INPUT);
 
-    expect(admitOne).toHaveBeenCalledTimes(1);
-    expect(admitOne).toHaveBeenCalledWith(
+    expect(screen).toHaveBeenCalledWith(
       tx,
       expect.objectContaining({ orgId: ORG_ID, email: INPUT.email }),
+    );
+    expect(admitMany).toHaveBeenCalledTimes(1);
+    expect(admitMany).toHaveBeenCalledWith(
+      tx,
+      expect.objectContaining({
+        orgId: ORG_ID,
+        candidates: [expect.objectContaining({ email: INPUT.email })],
+      }),
     );
   });
 

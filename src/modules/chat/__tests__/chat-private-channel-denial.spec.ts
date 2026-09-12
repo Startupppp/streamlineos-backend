@@ -73,13 +73,17 @@ function reactions(db: ReturnType<typeof dbWithChannel>) {
 }
 
 function summarize(db: ReturnType<typeof dbWithChannel>) {
-  return new ChatSummarizeService(db as unknown as Db, { get: jest.fn() } as unknown as ModuleRef);
+  return new ChatSummarizeService(
+    db as unknown as Db,
+    { get: jest.fn() } as unknown as ModuleRef,
+    { resolve: jest.fn().mockResolvedValue([]) } as unknown as EntityReferenceService,
+  );
 }
 
 function messages(db: { query: { chatMessages: { findFirst: jest.Mock } } }) {
   return new ChatMessagesService(
     db as unknown as Db,
-    ...(Array(6).fill({}) as [never, never, never, never, never, never]),
+    ...(Array(7).fill({}) as [never, never, never, never, never, never, never]),
   );
 }
 

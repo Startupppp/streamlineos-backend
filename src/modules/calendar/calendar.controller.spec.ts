@@ -2,6 +2,7 @@ jest.mock("@composio/core", () => ({ Composio: jest.fn() }));
 
 import "reflect-metadata";
 import { CalendarController } from "./calendar.controller";
+import { CalendarAdminSettingsController } from "./calendar-admin-settings.controller";
 import { REQUIRE_PERMISSION } from "../access/require-permission.decorator";
 import { humanSessionPrincipal } from "../../common/auth/principal";
 
@@ -35,16 +36,32 @@ describe("CalendarController — a member's own calendar cannot be taken away", 
   const ownCalendarMethods: ReadonlyArray<keyof CalendarController> = [
     "getEvents",
     "getExternalEvents",
+    "getEvent",
     "createEvent",
     "updateEvent",
     "removeEvent",
     "rsvp",
+    "upsertOccurrenceException",
+    "cancelOccurrence",
+    "getSyncStatus",
+    "retrySync",
+    "cancelSync",
     "getSources",
     "setSourcePreference",
   ];
 
   it.each(ownCalendarMethods)("%s carries no permission gate at all", (method) => {
     expect(gateOf(method)).toBeUndefined();
+  });
+});
+
+describe("CalendarAdminSettingsController — administrative settings stay privileged", () => {
+  function adminGateOf(method: keyof CalendarAdminSettingsController): string | undefined {
+    return Reflect.getMetadata(REQUIRE_PERMISSION, CalendarAdminSettingsController.prototype[method]);
+  }
+
+  it("getSettings requires calendar:admin:manage", () => {
+    expect(adminGateOf("getSettings")).toBe("calendar:admin:manage");
   });
 });
 

@@ -1,5 +1,17 @@
 import { MembershipAdmissionService } from "./membership-admission.service";
 
+function buildTx(cancelledRows: Array<{ id: string }> = []) {
+  const updateReturning = jest.fn().mockResolvedValue(cancelledRows);
+  const updateWhere = jest.fn().mockReturnValue({ returning: updateReturning });
+  const updateSet = jest.fn().mockReturnValue({ where: updateWhere });
+  const update = jest.fn().mockReturnValue({ set: updateSet });
+  const insert = jest.fn().mockReturnValue({
+    values: jest.fn().mockResolvedValue([]),
+  });
+  const execute = jest.fn().mockResolvedValue([]);
+  return { update, insert, execute, updateReturning, updateSet, updateWhere };
+}
+
 /**
  * Ported from `hr/directory/employee-onboarding-seat-limit.spec.ts`, which pinned the
  * same invariant on the hand-built advisory lock HR used to own. The lock now lives
@@ -8,7 +20,7 @@ import { MembershipAdmissionService } from "./membership-admission.service";
  */
 describe("MembershipAdmissionService member-seat reservation", () => {
   it("locks the organization quota before checking the limit in the same transaction", async () => {
-    const tx = { execute: jest.fn().mockResolvedValue([]) };
+    const tx = buildTx();
     const planLimits = { assertWithinLimit: jest.fn().mockResolvedValue(undefined) };
     const seatLedger = { recordSeatEvents: jest.fn().mockResolvedValue(undefined) };
     const membership = {
@@ -41,7 +53,7 @@ describe("MembershipAdmissionService member-seat reservation", () => {
   });
 
   it("reserves the whole batch once rather than once per candidate", async () => {
-    const tx = { execute: jest.fn().mockResolvedValue([]) };
+    const tx = buildTx();
     const planLimits = { assertWithinLimit: jest.fn().mockResolvedValue(undefined) };
     const seatLedger = { recordSeatEvents: jest.fn().mockResolvedValue(undefined) };
     const membership = {
@@ -80,7 +92,7 @@ describe("MembershipAdmissionService member-seat reservation", () => {
   });
 
   it("rejects later canonical-email duplicates while admitting the other rows", async () => {
-    const tx = { execute: jest.fn().mockResolvedValue([]) };
+    const tx = buildTx();
     const planLimits = { assertWithinLimit: jest.fn().mockResolvedValue(undefined) };
     const seatLedger = { recordSeatEvents: jest.fn().mockResolvedValue(undefined) };
     const membership = {
@@ -125,7 +137,7 @@ describe("MembershipAdmissionService member-seat reservation", () => {
   });
 
   it("never touches the quota when every candidate is refused", async () => {
-    const tx = { execute: jest.fn().mockResolvedValue([]) };
+    const tx = buildTx();
     const planLimits = { assertWithinLimit: jest.fn().mockResolvedValue(undefined) };
     const seatLedger = { recordSeatEvents: jest.fn().mockResolvedValue(undefined) };
     const membership = { createMemberships: jest.fn() };
@@ -153,5 +165,127 @@ describe("MembershipAdmissionService member-seat reservation", () => {
     expect(tx.execute).not.toHaveBeenCalled();
     expect(planLimits.assertWithinLimit).not.toHaveBeenCalled();
     expect(membership.createMemberships).not.toHaveBeenCalled();
+  });
+});
+
+describe("MembershipAdmissionService.admitMany — pending-invitation cancellation (P7)", () => {
+  it("cancels live pending invitations before asserting the seat limit", async () => {
+    const cancelledRows = [{ id: "inv-pending-1" }];
+    const tx = buildTx(cancelledRows);
+
+    const planLimits = { assertWithinLimit: jest.fn().mockResolvedValue(undefined) };
+    const seatLedger = { recordSeatEvents: jest.fn().mockResolvedValue(undefined) };
+    const membership = {
+      createMemberships: jest.fn().mockResolvedValue(new Map([["user-1", 9]])),
+    };
+    const service = new MembershipAdmissionService(planLimits as never, seatLedger as never);
+
+    await service.admitMany(tx as never, {
+      orgId: "org-1",
+      actor: { userId: "actor-1" },
+      membership: membership as never,
+      candidates: [
+        {
+          email: "joiner@example.com",
+          role: "MEMBER",
+          screen: { kind: "clear", userId: "user-1" },
+          createUserIfMissing: null,
+        },
+      ],
+    });
+
+    expect(tx.update).toHaveBeenCalledTimes(1);
+    expect(seatLedger.recordSeatEvents).toHaveBeenCalledWith(
+      tx,
+      "org-1",
+      expect.arrayContaining([
+        expect.objectContaining({
+          eventType: "INVITE_CANCELLED",
+          subjectId: "inv-pending-1",
+          idempotencyKey: "invite-cancelled:inv-pending-1",
+        }),
+      ]),
+    );
+
+    expect(tx.update.mock.invocationCallOrder[0]).toBeLessThan(
+      planLimits.assertWithinLimit.mock.invocationCallOrder[0] ?? 0,
+    );
+  });
+
+  it("emits no INVITE_CANCELLED event when no pending invitations exist for the email", async () => {
+    const tx = buildTx([]);
+
+    const planLimits = { assertWithinLimit: jest.fn().mockResolvedValue(undefined) };
+    const seatLedger = { recordSeatEvents: jest.fn().mockResolvedValue(undefined) };
+    const membership = {
+      createMemberships: jest.fn().mockResolvedValue(new Map([["user-2", 10]])),
+    };
+    const service = new MembershipAdmissionService(planLimits as never, seatLedger as never);
+
+    await service.admitMany(tx as never, {
+      orgId: "org-1",
+      actor: { userId: "actor-1" },
+      membership: membership as never,
+      candidates: [
+        {
+          email: "new@example.com",
+          role: "MEMBER",
+          screen: { kind: "clear", userId: "user-2" },
+          createUserIfMissing: null,
+        },
+      ],
+    });
+
+    const cancelCalls = seatLedger.recordSeatEvents.mock.calls.filter((args) => {
+      const events: Array<{ eventType: string }> = args[2] as never;
+      return events.some((e) => e.eventType === "INVITE_CANCELLED");
+    });
+    expect(cancelCalls).toHaveLength(0);
+  });
+
+  it("cancels invitations for all cleared candidates in one update", async () => {
+    const cancelledRows = [{ id: "inv-a" }, { id: "inv-b" }];
+    const tx = buildTx(cancelledRows);
+
+    const planLimits = { assertWithinLimit: jest.fn().mockResolvedValue(undefined) };
+    const seatLedger = { recordSeatEvents: jest.fn().mockResolvedValue(undefined) };
+    const membership = {
+      createMemberships: jest.fn().mockResolvedValue(
+        new Map([
+          ["user-a", 11],
+          ["user-b", 12],
+        ]),
+      ),
+    };
+    const service = new MembershipAdmissionService(planLimits as never, seatLedger as never);
+
+    await service.admitMany(tx as never, {
+      orgId: "org-1",
+      actor: { userId: "actor-1" },
+      membership: membership as never,
+      candidates: [
+        {
+          email: "alice@example.com",
+          role: "MEMBER",
+          screen: { kind: "clear", userId: "user-a" },
+          createUserIfMissing: null,
+        },
+        {
+          email: "bob@example.com",
+          role: "MEMBER",
+          screen: { kind: "clear", userId: "user-b" },
+          createUserIfMissing: null,
+        },
+      ],
+    });
+
+    expect(tx.update).toHaveBeenCalledTimes(1);
+    const cancelEvents = (
+      seatLedger.recordSeatEvents.mock.calls.find((args) => {
+        const events: Array<{ eventType: string }> = args[2] as never;
+        return events.some((e) => e.eventType === "INVITE_CANCELLED");
+      }) ?? []
+    )[2] as Array<{ eventType: string; subjectId: string }>;
+    expect(cancelEvents.map((e) => e.subjectId).sort()).toEqual(["inv-a", "inv-b"]);
   });
 });

@@ -1,3 +1,4 @@
+import { ScopedRead } from "../../access/scoped-read";
 import { NotFoundException } from "@nestjs/common";
 import { SupportDraftsService } from "./support-drafts.service";
 import type { Db } from "../../../db/drizzle.module";
@@ -21,13 +22,13 @@ describe("SupportDraftsService — cross-tenant isolation", () => {
   it("throws NotFoundException when ticket belongs to a different org (cross-tenant isolation)", async () => {
     const db = makeDb(null);
     const svc = new SupportDraftsService(db);
-    await expect(svc.getDraft(ATTACKER_ORG, 99, USER_ID, null)).rejects.toThrow(NotFoundException);
+    await expect(svc.getDraft(ATTACKER_ORG, 99, USER_ID, null, ScopedRead.of(ATTACKER_ORG, USER_ID, "all"))).rejects.toThrow(NotFoundException);
   });
 
   it("returns null draft when ticket belongs to the owning org (control — same-tenant access works)", async () => {
     const db = makeDb({ id: 99 });
     const svc = new SupportDraftsService(db);
-    const result = await svc.getDraft(OWNER_ORG, 99, USER_ID, 7);
+    const result = await svc.getDraft(OWNER_ORG, 99, USER_ID, 7, ScopedRead.of(OWNER_ORG, USER_ID, "all"));
     expect(result).toBeNull();
   });
 });

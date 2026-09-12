@@ -3,6 +3,7 @@ import { BadRequestException, ForbiddenException, InternalServerErrorException }
 import { ChatSummarizeService } from "./chat-summarize.service";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { ModuleRef } from "@nestjs/core";
+import { EntityReferenceService } from "../entity-reference/entity-reference.service";
 
 const ACTOR = { orgId: "org-1", userId: "user-1" };
 const CHANNEL_ID = 42;
@@ -18,7 +19,13 @@ const makeMessages = (count: number) =>
     senderEmail: "alice@example.com",
   }));
 
-function buildDb(memberResult: unknown, messagesResult: unknown[]) {
+let resolve: jest.Mock;
+
+function buildDb(
+  memberResult: unknown,
+  messagesResult: unknown[],
+  channel: Record<string, unknown> = { id: 5, isPrivate: false },
+) {
   const chain: {
     leftJoin: jest.Mock;
     where: jest.Mock;
@@ -36,7 +43,7 @@ function buildDb(memberResult: unknown, messagesResult: unknown[]) {
         findFirst: jest.fn().mockResolvedValue({ id: 1 }),
       },
       chatChannels: {
-        findFirst: jest.fn().mockResolvedValue({ id: 5, isPrivate: false }),
+        findFirst: jest.fn().mockResolvedValue(channel),
       },
       chatChannelMembers: {
         findFirst: jest.fn().mockResolvedValue(memberResult),
@@ -53,9 +60,14 @@ describe("ChatSummarizeService", () => {
   let db: ReturnType<typeof buildDb>;
   let aiGateway: { invokeText: jest.Mock };
 
-  async function init(memberResult: unknown, messagesResult: unknown[]) {
-    db = buildDb(memberResult, messagesResult);
+  async function init(
+    memberResult: unknown,
+    messagesResult: unknown[],
+    channel?: Record<string, unknown>,
+  ) {
+    db = buildDb(memberResult, messagesResult, channel);
     aiGateway = { invokeText: jest.fn() };
+    resolve = jest.fn().mockResolvedValue([{ status: "resolved", card: {} }]);
 
     const moduleRef = { get: jest.fn().mockReturnValue(aiGateway) };
 
@@ -64,6 +76,7 @@ describe("ChatSummarizeService", () => {
         ChatSummarizeService,
         { provide: DRIZZLE, useValue: db },
         { provide: ModuleRef, useValue: moduleRef },
+        { provide: EntityReferenceService, useValue: { resolve } },
       ],
     }).compile();
 

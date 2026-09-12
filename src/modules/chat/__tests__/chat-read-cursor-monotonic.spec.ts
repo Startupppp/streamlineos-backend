@@ -215,7 +215,9 @@ describe("the unread count compares positions, not timestamps", () => {
       query: { organizationMembers: { findFirst: jest.fn().mockResolvedValue({ id: MEMBERSHIP }) } },
       select,
     };
-    const service = new ChatPresenceService(db as unknown as Db);
+    const service = new ChatPresenceService(db as unknown as Db, {
+      resolve: jest.fn().mockResolvedValue([]),
+    } as unknown as EntityReferenceService);
 
     await service.getUnreadTotal(USER, ORG);
 

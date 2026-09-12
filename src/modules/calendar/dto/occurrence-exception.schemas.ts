@@ -10,10 +10,6 @@ export function isValidRrule(value: string): boolean {
   }
 }
 
-const rruleField = z
-  .string()
-  .refine(isValidRrule, "Must be a valid RFC 5545 RRULE string");
-
 export const upsertOccurrenceExceptionSchema = z.object({
   modifiedTitle: z.string().min(2).max(100).optional(),
   modifiedStart: z.string().datetime().optional(),

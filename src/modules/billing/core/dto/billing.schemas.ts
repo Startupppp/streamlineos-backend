@@ -38,7 +38,6 @@ export const updateBillingProfileSchema = z.object({
   pincode: z.string().max(10).nullable().optional(),
   // The column is `varchar(2)`, so anything longer is a silent truncation, not a value.
   country: z.string().trim().toUpperCase().length(2).nullable().optional(),
-  isTaxExempt: z.boolean().optional(),
 }).partial().strict();
 export type UpdateBillingProfileInput = z.infer<typeof updateBillingProfileSchema>;
 

@@ -2,6 +2,7 @@ import { memberRowReader } from "../../../../test/helpers/membership-state-stub"
 import { AccessPermissionResolver } from "../access-permission.resolver";
 import type { MembershipAccessState } from "../access-permission.resolver";
 import type { Db } from "../../../db/drizzle.module";
+import { logger } from "../../../common/logger/logger.service";
 import {
   ALL_PERMISSION_NAMES,
   ROLE_DEFAULT_PERMISSIONS,
@@ -72,11 +73,33 @@ interface RoleRecord {
   slug: string;
 }
 
+/** Ids sort as text, so zero-padding keeps the keyset order the row order. */
+function padded(index: number): string {
+  return String(index).padStart(6, "0");
+}
+
+const ASSIGNMENT_ROWS = DIRECT_ROLE_IDS.map((roleId) => ({
+  id: `ra-${padded(roleId)}`,
+  roleId,
+  expiresAt: null,
+}));
+
+const GROUP_ROLE_ROWS = GROUP_ROLE_IDS.map((roleId, index) => ({
+  id: `gr-${padded(index + 1)}`,
+  roleId,
+}));
+
 /**
  * Routes on the projection, which is unique per read, and — unlike the other
  * chain mocks in this folder — HONOURS the `limit` argument on the role-slug
  * read. That is the whole point: a mock that ignores `.limit()` cannot see this
  * defect, because the truncation happens in Postgres, not in the resolver.
+ *
+ * The two standing reads project `id` and serve a real page SEQUENCE for the
+ * same reason. They used to answer every page with the same 500 rows and no `id`
+ * at all, so the keyset cursor could not advance: the drain logged
+ * "cursor did not advance" and stopped, and the spec still passed only because
+ * the duplicated role ids collapsed into a `Set`.
  */
 function makeDb(): {
   db: Db;
@@ -85,6 +108,14 @@ function makeDb(): {
 } {
   let slugReadLimit: number | undefined;
   let slugRowsServed = 0;
+  const served = new Map<string, number>();
+
+  const pageFrom = (site: string, rows: readonly unknown[], count: number) => {
+    const from = served.get(site) ?? 0;
+    const page = rows.slice(from, from + count);
+    served.set(site, from + page.length);
+    return Promise.resolve(page);
+  };
 
   const db = {
     query: {
@@ -97,12 +128,11 @@ function makeDb(): {
         innerJoin: () => chain,
         orderBy: () => chain,
         limit: (count?: number) => {
+          const size = count ?? OLD_CONSTANT_CAP;
           if (columns.has("roleId") && columns.has("expiresAt"))
-            return Promise.resolve(
-              DIRECT_ROLE_IDS.map((roleId) => ({ roleId, expiresAt: null })),
-            );
+            return pageFrom("assignments", ASSIGNMENT_ROWS, size);
           if (columns.has("principalGroupId"))
-            return Promise.resolve([{ principalGroupId: 1 }]);
+            return Promise.resolve([{ id: "pgm-000001", principalGroupId: 1 }]);
           if (columns.has("moduleKey")) return Promise.resolve([]);
           if (columns.has("id") && columns.has("slug")) {
             slugReadLimit = count;
@@ -118,9 +148,7 @@ function makeDb(): {
           if (columns.has("delegationId")) return Promise.resolve([]);
           if (columns.has("permissionKey")) return Promise.resolve([]);
           if (columns.has("roleId"))
-            return Promise.resolve(
-              GROUP_ROLE_IDS.map((roleId) => ({ roleId })),
-            );
+            return pageFrom("group-roles", GROUP_ROLE_ROWS, size);
           return Promise.resolve([]);
         },
       };
@@ -166,6 +194,23 @@ describe("computeUserPermissions — the role-slug read is bounded by the id lis
 
     expect(slugReadLimit()).toBe(ALL_ROLE_IDS.length);
     expect(slugRowsServed()).toBe(ALL_ROLE_IDS.length);
+  });
+
+  it("advances the keyset cursor on every drained page, so the drain never stops early", async () => {
+    const warn = jest.spyOn(logger, "warn").mockImplementation(() => undefined);
+    try {
+      const { db } = makeDb();
+
+      await makeResolver(db).computeUserPermissions(ORG, USER, 1);
+
+      const stalled = warn.mock.calls.filter(
+        (call) =>
+          typeof call[0] === "string" && call[0].includes("did not advance"),
+      );
+      expect(stalled).toEqual([]);
+    } finally {
+      warn.mockRestore();
+    }
   });
 
   it("keeps the defaults of a role sitting past the old cap in the id list", async () => {

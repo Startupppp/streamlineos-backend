@@ -1,7 +1,9 @@
 import {
+  BadRequestException,
   ConflictException,
   Inject,
   Injectable,
+  InternalServerErrorException,
 } from "@nestjs/common";
 import { and, eq } from "drizzle-orm";
 import { randomBytes, randomUUID } from "node:crypto";
@@ -42,11 +44,23 @@ import {
   liveEmployment,
   livePersonOfEmployment,
 } from "../../directory/employment-query";
-import { withMembershipMutations } from "../../../common/org/membership-mutations";
+import {
+  withMembershipMutations,
+  type MembershipMutations,
+} from "../../../common/org/membership-mutations";
 import {
   MembershipAdmissionService,
   admissionFailure,
+  canonicalAdmissionEmail,
+  type AdmissionUserDraft,
 } from "../../organization/core/membership-admission.service";
+import {
+  ALREADY_EMPLOYEE_MESSAGE,
+  ATTACH_CONFIRMATION_REQUIRED_MESSAGE,
+  findLivePrimaryEmploymentId,
+} from "./employee-admission-status";
+import { resolveOrgSalaryCurrency } from "./employment-salary-currency";
+import { registerAfterCommit } from "../../../common/tenant/tenant-context";
 import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
 
 const EMP_CODE_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
@@ -81,17 +95,22 @@ export class EmployeeOnboardingService {
     const joiningDate = body.joiningDate ? formatDateOnly(body.joiningDate) : null;
     const fullName = `${body.firstName} ${body.lastName}`;
 
+    const salaryCurrency =
+      body.monthlySalary === undefined
+        ? null
+        : await resolveOrgSalaryCurrency(this.db, actor.orgId);
+
     const admitted = await withMembershipMutations(this.cache, (membership) =>
       runInTenantTransaction(
         this.db,
         async (tx) => {
-          const outcome = await this.admission.admitOne(tx, {
+          const outcome = await this.resolveSubject(tx, {
             orgId: actor.orgId,
             email: body.email,
             role,
             actor,
             membership,
-            seatReason: "employee onboarded",
+            attachToExistingMember: body.attachToExistingMember === true,
             createUserIfMissing: {
               name: fullName,
               firstName: body.firstName,
@@ -105,7 +124,18 @@ export class EmployeeOnboardingService {
               isActive: true,
             },
           });
-          if (outcome.kind !== "admitted") throw admissionFailure(outcome);
+
+          if (!outcome.createdUser) {
+            const [account] = await tx
+              .select({ isActive: users.isActive })
+              .from(users)
+              .where(eq(users.id, outcome.userId))
+              .limit(1);
+            if (account?.isActive === false)
+              throw new BadRequestException(
+                "This account is globally suspended. Contact platform support to restore it before adding to an organization.",
+              );
+          }
 
           if (body.employeeId?.trim()) {
             const [duplicate] = await tx
@@ -126,22 +156,17 @@ export class EmployeeOnboardingService {
               );
           }
 
-          if (!outcome.createdUser)
-            await tx
-              .update(users)
-              .set({ dateOfBirth, isActive: true })
-              .where(eq(users.id, outcome.userId));
-
           await syncOrgUnitPlacement(tx, actor.orgId, outcome.userId, {
             DEPARTMENT: body.departmentId,
           });
 
-          if (body.monthlySalary && body.monthlySalary > 0)
+          if (body.monthlySalary && body.monthlySalary > 0 && salaryCurrency)
             await seedEmployeeSalaryProfile(tx, {
               orgId: actor.orgId,
               userId: outcome.userId,
               actorId: actor.userId,
               monthlySalary: body.monthlySalary,
+              currency: salaryCurrency,
               effectiveFrom: joiningDate ?? formatDateOnly(new Date()),
               salaryStructureTemplateId: body.salaryStructureTemplateId,
             });
@@ -151,8 +176,6 @@ export class EmployeeOnboardingService {
         { orgId: actor.orgId },
       ),
     );
-
-    await this.invalidateHrDashboardCache(actor.orgId);
 
     void this.automation
       .runAutomationsForEvent(actor.orgId, "onboarding.started", {
@@ -186,6 +209,7 @@ export class EmployeeOnboardingService {
         role: body.role,
         designation: body.designation,
         ...(admitted.createdUser ? {} : { linked: true }),
+        ...(admitted.attached ? { attachedToExistingMember: true } : {}),
       },
     });
 
@@ -209,9 +233,9 @@ export class EmployeeOnboardingService {
 
     if (body.taxId || body.bankDetails?.accountNumber || body.monthlySalary !== undefined) {
       const sensitiveSet: Partial<typeof hrEmployeeSensitiveFields.$inferInsert> = {};
-      if (body.monthlySalary !== undefined) {
+      if (body.monthlySalary !== undefined && salaryCurrency) {
         sensitiveSet.salaryAmountCents = monthlyAmountToCents(body.monthlySalary);
-        sensitiveSet.salaryCurrency = "INR";
+        sensitiveSet.salaryCurrency = salaryCurrency;
         sensitiveSet.salaryFrequency = "MONTHLY";
       }
       if (body.taxId) sensitiveSet.taxId = sealSensitive(body.taxId);
@@ -227,6 +251,7 @@ export class EmployeeOnboardingService {
         });
     }
 
+    let welcomeDelivery: { email: string; name: string; signInUrl: string } | null = null;
     if (admitted.createdUser) {
       try {
         const rawToken = randomBytes(32).toString("hex");
@@ -236,14 +261,71 @@ export class EmployeeOnboardingService {
           tokenHash: hashToken(rawToken),
           expiresAt: addDays(new Date(), 7),
         });
-        const signInUrl = `${appUrl()}/magic-link?token=${rawToken}`;
-        await this.email.sendWelcomeEmail(body.email, fullName, signInUrl);
-      } catch (emailErr) {
-        logger.error("Failed to send welcome email", { email: body.email, error: emailErr });
+        welcomeDelivery = { email: body.email, name: fullName.trim(), signInUrl: `${appUrl()}/magic-link?token=${rawToken}` };
+      } catch (tokenErr) {
+        logger.error("Failed to create magic link token", { email: body.email, error: tokenErr });
       }
     }
 
+    const orgId = actor.orgId;
+    const captured = welcomeDelivery;
+    const afterCommitWork = async (): Promise<void> => {
+      await this.invalidateHrDashboardCache(orgId);
+      if (captured) {
+        try {
+          await this.email.sendWelcomeEmail(captured.email, captured.name, captured.signInUrl);
+        } catch (emailErr) {
+          logger.error("Failed to send welcome email", { email: captured.email, error: emailErr });
+        }
+      }
+    };
+    if (!registerAfterCommit(afterCommitWork)) void afterCommitWork();
+
     return { success: true, userId: admitted.userId };
+  }
+
+  private async resolveSubject(
+    tx: Db,
+    input: {
+      orgId: string;
+      email: string;
+      role: string;
+      actor: CurrentUserContext;
+      membership: MembershipMutations;
+      attachToExistingMember: boolean;
+      createUserIfMissing: AdmissionUserDraft;
+    },
+  ): Promise<{ userId: string; createdUser: boolean; attached: boolean }> {
+    const email = canonicalAdmissionEmail(input.email);
+    const screen = await this.admission.screen(tx, { orgId: input.orgId, email });
+
+    if (screen.kind === "conflict" && screen.reason === "already-member") {
+      const existingUserId = screen.userId;
+      if (existingUserId === undefined) throw admissionFailure(screen);
+      if (!input.attachToExistingMember)
+        throw new ConflictException(ATTACH_CONFIRMATION_REQUIRED_MESSAGE);
+      const employmentId = await findLivePrimaryEmploymentId(tx, input.orgId, existingUserId);
+      if (employmentId !== null) throw new ConflictException(ALREADY_EMPLOYEE_MESSAGE);
+      return { userId: existingUserId, createdUser: false, attached: true };
+    }
+
+    const [outcome] = await this.admission.admitMany(tx, {
+      orgId: input.orgId,
+      actor: input.actor,
+      membership: input.membership,
+      seatReason: "employee onboarded",
+      candidates: [
+        {
+          email,
+          role: input.role,
+          screen,
+          createUserIfMissing: input.createUserIfMissing,
+        },
+      ],
+    });
+    if (!outcome) throw new InternalServerErrorException(`Admission did not complete for ${email}.`);
+    if (outcome.kind !== "admitted") throw admissionFailure(outcome);
+    return { userId: outcome.userId, createdUser: outcome.createdUser, attached: false };
   }
 
   private async invalidateHrDashboardCache(orgId: string): Promise<void> {

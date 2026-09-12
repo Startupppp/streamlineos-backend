@@ -139,6 +139,34 @@ describe("ModuleStandingMutationsService.grantAdminStanding", () => {
     );
   });
 
+  it("hands the version bump the same transaction handle the role assignment was written on", async () => {
+    const txMock = {
+      execute: jest.fn().mockResolvedValue(undefined),
+      insert: jest.fn().mockReturnValue({
+        values: jest.fn().mockReturnValue({ onConflictDoNothing: jest.fn().mockResolvedValue(undefined) }),
+      }),
+    };
+    const mockDb = {
+      query: {
+        organizationMembers: {
+          findFirst: jest.fn().mockResolvedValue({ id: TARGET_MEMBERSHIP_ID, userId: TARGET_USER }),
+        },
+      },
+      select: jest.fn()
+        .mockReturnValueOnce(makeSelectChain([]))
+        .mockReturnValueOnce(makeSelectChain([{ id: ADMIN_ROLE_ID }])),
+      transaction: jest.fn().mockImplementation(
+        async (fn: (tx: typeof txMock) => Promise<unknown>) => fn(txMock),
+      ),
+    };
+
+    const svc = await buildSvc(mockDb);
+    await svc.grantAdminStanding(makeActor(), MODULE, TARGET_MEMBERSHIP_ID);
+
+    expect(txMock.insert).toHaveBeenCalledTimes(1);
+    expect(bumpPermissionsVersion).toHaveBeenCalledWith(txMock, ORG);
+  });
+
   it("refuses if actor's rank does not permit granting MODULE_ADMIN", async () => {
     const moduleAdminRows = [{ rank: ROLE_RANK.MODULE_ADMIN, moduleKey: "crm" }];
     const mockDb = {
@@ -234,6 +262,32 @@ describe("ModuleStandingMutationsService.revokeStanding", () => {
         metadata: expect.objectContaining({ moduleKey: MODULE }),
       }),
     );
+  });
+
+  it("hands the version bump the same transaction handle the assignments were deleted on", async () => {
+    const txMock = {
+      execute: jest.fn().mockResolvedValue(undefined),
+      delete: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue(undefined) }),
+    };
+    const mockDb = {
+      query: {
+        organizationMembers: {
+          findFirst: jest.fn().mockResolvedValue({ id: TARGET_MEMBERSHIP_ID, userId: TARGET_USER }),
+        },
+      },
+      select: jest.fn()
+        .mockReturnValueOnce(makeSelectChain([]))
+        .mockReturnValueOnce(makeSelectChain([{ id: 5 }, { id: 6 }])),
+      transaction: jest.fn().mockImplementation(
+        async (fn: (tx: typeof txMock) => Promise<unknown>) => fn(txMock),
+      ),
+    };
+
+    const svc = await buildSvc(mockDb);
+    await svc.revokeStanding(makeActor(), MODULE, TARGET_MEMBERSHIP_ID);
+
+    expect(txMock.delete).toHaveBeenCalledTimes(1);
+    expect(bumpPermissionsVersion).toHaveBeenCalledWith(txMock, ORG);
   });
 
   it("refuses to revoke the module owner's standing", async () => {
@@ -343,6 +397,24 @@ describe("ModuleStandingMutationsService.directTransferOwnership", () => {
       TARGET_MEMBERSHIP_ID,
     );
     expect(bumpPermissionsVersion).toHaveBeenCalled();
+  });
+
+  it("the outgoing owner's revoke, the incoming owner's grant and the version bump all run on one transaction handle", async () => {
+    const PREV_OWNER_ID = 99;
+    const { mockDb, txMock } = makeTransferDb(PREV_OWNER_ID);
+
+    const svc = await buildSvc(mockDb);
+    await svc.directTransferOwnership(makeActor(), MODULE, TARGET_MEMBERSHIP_ID);
+
+    expect(txMock.insert).toHaveBeenCalledTimes(1);
+    expect(revokeModuleOwnerRole).toHaveBeenCalledWith(txMock, ORG, MODULE, PREV_OWNER_ID);
+    expect(assertModuleOwnerRoleAssigned).toHaveBeenCalledWith(
+      txMock,
+      ORG,
+      MODULE,
+      TARGET_MEMBERSHIP_ID,
+    );
+    expect(bumpPermissionsVersion).toHaveBeenCalledWith(txMock, ORG);
   });
 
   it("the transaction mock must invoke its callback — all assertions inside run", async () => {

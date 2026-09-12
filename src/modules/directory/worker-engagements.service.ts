@@ -8,7 +8,6 @@ import {
 import { and, asc, eq, gt, ilike, inArray, isNull, or, sql, type SQL } from "drizzle-orm";
 import { assertActiveOrgUnit } from "../../common/org/sync-org-unit-placement";
 import { AuditService } from "../../common/audit/audit.service";
-import { isUniqueViolation } from "../../common/db/postgres-error";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
 import {
@@ -29,6 +28,7 @@ import {
   assertValidEngagementPeriod,
   ENGAGEMENT_ERROR,
   throwEngagementWriteError,
+  throwWorkerCreateError,
 } from "./worker-engagement-errors";
 
 const WORKER_SEARCH_CAP = 500;
@@ -188,12 +188,7 @@ export class WorkerEngagementsService {
         isPayee: input.isPayee ?? false,
       })
       .returning()
-      .catch((error: unknown) => {
-        if (isUniqueViolation(error)) {
-          throw new ConflictException("This person is already a worker in this organization.");
-        }
-        throw error;
-      });
+      .catch((error: unknown) => throwWorkerCreateError(error, input.workerNumber));
     if (!row) throw new NotFoundException("Failed to create worker");
     await this.audit.logCritical({
       action: "directory.worker.created",

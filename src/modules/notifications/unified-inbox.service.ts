@@ -7,14 +7,31 @@ import { AccessService } from "../access/access.service";
 import { actingMembershipId } from "../../common/auth/principal";
 import { assertNever } from "../../common/types/assert-never";
 import { MailService } from "../mail/mail.service";
-import { KIND_ORDER, deduplicate, stableSortItems } from "./unified-inbox-projections";
+import {
+  deduplicate,
+  lastDeliveredPosition,
+  stableSortItems,
+} from "./unified-inbox-projections";
+import { notificationNotSnoozed } from "./notification-read-window";
 import { BroadcastsService } from "./broadcasts.service";
-import { fetchBroadcastItems, fetchNotificationItems } from "./unified-inbox-sources";
+import {
+  SOURCE_TIMEOUT_MS,
+  fetchBroadcastItems,
+  fetchBuildApprovalItems,
+  fetchMailItems,
+  fetchNotificationItems,
+  nextMailPosition,
+  readSourceWithin,
+  type MailSourceBatch,
+  type SourceRead,
+} from "./unified-inbox-sources";
 import { BuildApprovalsInboxService } from "../build/approvals/build-approvals-inbox.service";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import {
   decodeInboxCursor,
   encodeInboxCursor,
+  inboxSourcePosition,
+  sameInboxCursorState,
   type BroadcastInboxItem,
   type BuildApprovalInboxItem,
   type InboxCursorState,
@@ -25,17 +42,59 @@ import {
   type UnifiedInboxItem,
   type UnifiedInboxQuery,
   type UnifiedInboxResponse,
+  type UnifiedUnreadCount,
 } from "./dto/unified-inbox.schemas";
 
-export type UnifiedUnreadCount = {
-  notification: number;
-  mail: number;
-  approval: number;
-  total: number;
-  mailExact: boolean;
+const MAIL_COUNT_SCAN_LIMIT = 100;
+
+const EMPTY_MAIL_BATCH: MailSourceBatch = {
+  items: [],
+  nextMailCursor: null,
+  accountsUnavailable: 0,
+  accountsQueried: 0,
 };
 
-const MAIL_COUNT_SCAN_LIMIT = 100;
+function skippedSource(kind: InboxKind, reason: string | null): SourceStatus {
+  return { kind, included: false, reason, available: true, error: null };
+}
+
+function readSource<T>(read: () => Promise<T>): Promise<SourceRead<T>> {
+  return readSourceWithin(SOURCE_TIMEOUT_MS, read);
+}
+
+function itemsOf<T>(outcome: SourceRead<T[]> | null, fallback: T[]): T[] {
+  return outcome !== null && outcome.ok ? outcome.value : fallback;
+}
+
+function includedSource(
+  kind: InboxKind,
+  outcome: SourceRead<unknown> | null,
+): SourceStatus {
+  if (outcome === null || outcome.ok)
+    return { kind, included: true, reason: null, available: true, error: null };
+  return { kind, included: true, reason: null, available: false, error: outcome.error };
+}
+
+function mailSourceStatus(outcome: SourceRead<MailSourceBatch>): SourceStatus {
+  if (!outcome.ok)
+    return {
+      kind: "mail",
+      included: true,
+      reason: null,
+      available: false,
+      error: outcome.error,
+    };
+  const { accountsUnavailable, accountsQueried, items } = outcome.value;
+  if (accountsUnavailable === 0)
+    return { kind: "mail", included: true, reason: null, available: true, error: null };
+  return {
+    kind: "mail",
+    included: true,
+    reason: null,
+    available: items.length > 0,
+    error: `${String(accountsUnavailable)} of ${String(accountsQueried)} mail accounts unavailable`,
+  };
+}
 
 @Injectable()
 export class UnifiedInboxService {
@@ -55,6 +114,7 @@ export class UnifiedInboxService {
   ): Promise<UnifiedInboxResponse> {
     const limit = Math.min(query.limit ?? 25, 100);
     const cursorState = decodeInboxCursor(query.cursor);
+    const unreadOnly = query.unreadOnly ?? false;
     const kindsFilter: InboxKind[] =
       query.kinds && query.kinds.length > 0
         ? query.kinds
@@ -65,7 +125,9 @@ export class UnifiedInboxService {
     const wantsMail = kindsFilter.includes("mail");
     const wantsBuildApprovals = kindsFilter.includes("build_approval");
 
-    const canViewMail = wantsMail
+    const mailRequested = wantsMail && !unreadOnly;
+
+    const canViewMail = mailRequested
       ? await this.access.holds(user, "mail:inbox:view")
       : false;
 
@@ -73,79 +135,106 @@ export class UnifiedInboxService {
       ? await this.access.holds(user, "build:approvals:view")
       : false;
 
-    const sources: SourceStatus[] = [
-      { kind: "notification", included: wantsNotifications, reason: null },
-      { kind: "broadcast", included: wantsBroadcasts, reason: null },
-      {
-        kind: "mail",
-        included: wantsMail && canViewMail,
-        reason:
-          wantsMail && !canViewMail ? "no permission: mail:inbox:view" : null,
-      },
-      {
-        kind: "build_approval",
-        included: wantsBuildApprovals && canViewBuildApprovals,
-        reason:
-          wantsBuildApprovals && !canViewBuildApprovals
-            ? "no permission: build:approvals:view"
-            : null,
-      },
-    ];
+    const membershipId = actingMembershipId(user.principal);
+    const notifPosition = inboxSourcePosition(cursorState.n, cursorState.nt);
+    const broadcastPosition = inboxSourcePosition(cursorState.b, cursorState.bt);
+    const approvalPosition = inboxSourcePosition(cursorState.a, cursorState.at);
+
+    const [notifOutcome, broadcastOutcome, mailOutcome, approvalOutcome] =
+      await Promise.all([
+        wantsNotifications
+          ? readSource(() =>
+              fetchNotificationItems(
+                this.db,
+                orgId,
+                membershipId,
+                limit + 1,
+                notifPosition,
+                unreadOnly,
+              ),
+            )
+          : null,
+        wantsBroadcasts
+          ? readSource(() =>
+              fetchBroadcastItems(
+                this.broadcasts,
+                orgId,
+                userId,
+                limit + 1,
+                broadcastPosition,
+                membershipId,
+              ),
+            )
+          : null,
+        mailRequested && canViewMail
+          ? readSource(() =>
+              fetchMailItems(
+                this.mail,
+                orgId,
+                userId,
+                membershipId,
+                limit + 1,
+                cursorState.m,
+              ),
+            )
+          : null,
+        wantsBuildApprovals && canViewBuildApprovals
+          ? readSource(() =>
+              fetchBuildApprovalItems(
+                this.buildApprovals,
+                orgId,
+                userId,
+                membershipId,
+                limit + 1,
+                approvalPosition,
+              ),
+            )
+          : null,
+      ]);
 
     const emptyNotifications: NotificationInboxItem[] = [];
     const emptyBroadcasts: BroadcastInboxItem[] = [];
-    const emptyMailResult: { items: MailInboxItem[]; nextMailCursor: string | null } = {
-      items: [],
-      nextMailCursor: null,
-    };
     const emptyApprovals: BuildApprovalInboxItem[] = [];
 
-    const [notifItems, broadcastItems, mailResult, approvalItems] =
-      await Promise.all([
-        wantsNotifications
-          ? fetchNotificationItems(
-              this.db,
-              orgId,
-              actingMembershipId(user.principal),
-              limit + 1,
-              cursorState.n,
-              query.unreadOnly ?? false,
-            )
-          : emptyNotifications,
-        wantsBroadcasts
-          ? fetchBroadcastItems(this.broadcasts, orgId, userId, limit + 1, cursorState.b, actingMembershipId(user.principal))
-          : emptyBroadcasts,
-        wantsMail && canViewMail
-          ? this.fetchMail(orgId, userId, actingMembershipId(user.principal), limit + 1, cursorState.m)
-          : emptyMailResult,
-        wantsBuildApprovals && canViewBuildApprovals
-          ? this.fetchBuildApprovals(orgId, userId, actingMembershipId(user.principal), limit + 1, cursorState.a)
-          : emptyApprovals,
-      ]);
+    const notifItems = itemsOf(notifOutcome, emptyNotifications);
+    const broadcastItems = itemsOf(broadcastOutcome, emptyBroadcasts);
+    const approvalItems = itemsOf(approvalOutcome, emptyApprovals);
+    const mailBatch =
+      mailOutcome !== null && mailOutcome.ok ? mailOutcome.value : EMPTY_MAIL_BATCH;
+
+    const sources: SourceStatus[] = [
+      wantsNotifications
+        ? includedSource("notification", notifOutcome)
+        : skippedSource("notification", null),
+      wantsBroadcasts
+        ? includedSource("broadcast", broadcastOutcome)
+        : skippedSource("broadcast", null),
+      this.mailStatus(wantsMail, unreadOnly, canViewMail, mailOutcome),
+      wantsBuildApprovals && canViewBuildApprovals && approvalOutcome !== null
+        ? includedSource("build_approval", approvalOutcome)
+        : skippedSource(
+            "build_approval",
+            wantsBuildApprovals && !canViewBuildApprovals
+              ? "no permission: build:approvals:view"
+              : null,
+          ),
+    ];
 
     const merged = stableSortItems([
       ...notifItems,
       ...broadcastItems,
-      ...mailResult.items,
+      ...mailBatch.items,
       ...approvalItems,
     ]);
 
     const deduped = deduplicate(merged);
-    const hasMore = deduped.length > limit;
-    const page = hasMore ? deduped.slice(0, limit) : deduped;
+    const trimmed = deduped.length > limit;
+    const page = trimmed ? deduped.slice(0, limit) : deduped;
 
-    const lastNotif = [...page]
-      .reverse()
-      .find((i): i is NotificationInboxItem => i.kind === "notification");
-    const lastBroadcast = [...page]
-      .reverse()
-      .find((i): i is BroadcastInboxItem => i.kind === "broadcast");
-    const lastMail = [...page]
-      .reverse()
-      .find((i): i is MailInboxItem => i.kind === "mail");
-    const lastApproval = [...page]
-      .reverse()
-      .find((i): i is BuildApprovalInboxItem => i.kind === "build_approval");
+    const degraded = sources.some(
+      (s) => s.included && (!s.available || s.error !== null),
+    );
+    const hasMore = trimmed || degraded;
 
     // Mail resumes from the last message actually DELIVERED, the way n/b/a do.
     //
@@ -175,28 +264,50 @@ export class UnifiedInboxService {
     );
     let deliveredMail = 0;
     while (
-      deliveredMail < mailResult.items.length &&
-      deliveredMailKeys.has(mailResult.items[deliveredMail].dedupKey)
+      deliveredMail < mailBatch.items.length &&
+      deliveredMailKeys.has(mailBatch.items[deliveredMail].dedupKey)
     )
       deliveredMail++;
 
+    const notifNext = lastDeliveredPosition(page, "notification");
+    const broadcastNext = lastDeliveredPosition(page, "broadcast");
+    const approvalNext = lastDeliveredPosition(page, "build_approval");
+
     const nextState: InboxCursorState = {
-      n: lastNotif ? lastNotif.id : cursorState.n,
-      b: lastBroadcast ? lastBroadcast.id : cursorState.b,
-      m: await this.nextMailPosition(
+      n: notifNext?.id ?? cursorState.n,
+      nt: notifNext?.t ?? cursorState.nt,
+      b: broadcastNext?.id ?? cursorState.b,
+      bt: broadcastNext?.t ?? cursorState.bt,
+      m: await nextMailPosition(
+        this.mail,
         orgId,
         userId,
-        actingMembershipId(user.principal),
+        membershipId,
         cursorState.m,
-        mailResult,
+        mailBatch,
         deliveredMail,
       ),
-      a: lastApproval ? lastApproval.id : cursorState.a,
+      a: approvalNext?.id ?? cursorState.a,
+      at: approvalNext?.t ?? cursorState.at,
     };
 
-    const nextCursor = hasMore ? encodeInboxCursor(nextState) : null;
+    const advanced = !sameInboxCursorState(nextState, cursorState);
+    const nextCursor = hasMore && advanced ? encodeInboxCursor(nextState) : null;
 
-    return { items: page, hasMore, nextCursor, sources };
+    return { items: page, hasMore, nextCursor, sources, degraded };
+  }
+
+  private mailStatus(
+    wantsMail: boolean,
+    unreadOnly: boolean,
+    canViewMail: boolean,
+    outcome: SourceRead<MailSourceBatch> | null,
+  ): SourceStatus {
+    if (!wantsMail) return skippedSource("mail", null);
+    if (unreadOnly) return skippedSource("mail", "unsupported: unreadOnly");
+    if (!canViewMail || outcome === null)
+      return skippedSource("mail", "no permission: mail:inbox:view");
+    return mailSourceStatus(outcome);
   }
 
   inboxItemKind(item: UnifiedInboxItem): string {
@@ -212,81 +323,6 @@ export class UnifiedInboxService {
       default:
         return assertNever(item);
     }
-  }
-
-  /**
-   * Where the mail source should resume, given how much of the batch it fetched
-   * was actually delivered.
-   *
-   * Fully delivered — or nothing fetched at all — and the batch's own
-   * `nextMailCursor` is the answer. Partly delivered, and the boundary is
-   * re-read: `limit`-bounded, one read, and never on a page that trimmed no
-   * mail. Nothing delivered leaves the position untouched, so the same batch is
-   * offered again on the next page rather than being skipped.
-   */
-  private async nextMailPosition(
-    orgId: string,
-    userId: string,
-    membershipId: number | null,
-    current: string | null,
-    fetched: { items: MailInboxItem[]; nextMailCursor: string | null },
-    delivered: number,
-  ): Promise<string | null> {
-    if (fetched.items.length === 0) return current;
-    if (delivered === fetched.items.length) return fetched.nextMailCursor ?? current;
-    if (delivered === 0) return current;
-    const boundary = await this.mail.listMessages(
-      orgId,
-      userId,
-      membershipId,
-      "inbox",
-      "all",
-      delivered,
-      current ?? undefined,
-    );
-    return boundary.nextCursor ?? current;
-  }
-
-  private async fetchMail(
-    orgId: string,
-    userId: string,
-    membershipId: number | null,
-    fetchLimit: number,
-    cursor: string | null,
-  ): Promise<{ items: MailInboxItem[]; nextMailCursor: string | null }> {
-    const result = await this.mail.listMessages(
-      orgId,
-      userId,
-      membershipId,
-      "inbox",
-      "all",
-      fetchLimit,
-      cursor ?? undefined,
-    );
-
-    const items: MailInboxItem[] = result.messages.map(
-      (msg): MailInboxItem => ({
-        kind: "mail",
-        id: msg.id,
-        threadId: msg.threadId ?? null,
-        accountId: msg.accountId,
-        sourceModule: "mail",
-        subject: msg.subject,
-        snippet: msg.snippet,
-        hasAttachments: msg.hasAttachments,
-        deepLink: null,
-        isRead: msg.isRead,
-        dedupKey: `mail:${msg.accountId}:${msg.id}`,
-        timestamp: msg.date,
-        actor: {
-          id: msg.from.email,
-          name: msg.from.name ?? null,
-          image: null,
-        },
-      }),
-    );
-
-    return { items, nextMailCursor: result.nextCursor };
   }
 
   async unifiedUnreadCount(
@@ -353,6 +389,7 @@ export class UnifiedInboxService {
           eq(notifications.isRead, false),
           isNull(notifications.deletedAt),
           isNull(notifications.archivedAt),
+          notificationNotSnoozed(new Date()),
         ),
       );
     return Number(rows[0]?.cnt ?? 0);
@@ -394,39 +431,5 @@ export class UnifiedInboxService {
         ),
       );
     return Number(rows[0]?.cnt ?? 0);
-  }
-
-  private async fetchBuildApprovals(
-    orgId: string,
-    userId: string,
-    membershipId: number | null,
-    fetchLimit: number,
-    cursor: number | null,
-  ): Promise<BuildApprovalInboxItem[]> {
-    const rows = await this.buildApprovals.getInboxPage(
-      orgId,
-      userId,
-      membershipId,
-      fetchLimit,
-      cursor,
-    );
-
-    return rows.map(
-      (row): BuildApprovalInboxItem => ({
-        kind: "build_approval",
-        id: row.id,
-        projectId: row.projectId,
-        ticketId: row.entityType === "task" ? row.entityId : null,
-        status: row.status,
-        subject: row.title,
-        sourceModule: "build",
-        actor: null,
-        deepLink: null,
-        isRead: false,
-        dedupKey: `approval:${String(row.id)}`,
-        timestamp: row.createdAt.toISOString(),
-        dueAt: row.dueAt ? row.dueAt.toISOString() : null,
-      }),
-    );
   }
 }

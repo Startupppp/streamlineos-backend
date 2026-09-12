@@ -43,7 +43,11 @@ export interface CalendarEventException {
   modifiedEnd?: Date | null;
 }
 
-const MAX_OCCURRENCES_PER_WINDOW = 500;
+export const MAX_OCCURRENCES_PER_WINDOW = 500;
+
+export function occurrencesWereTruncated(occurrences: readonly CalendarOccurrence[]): boolean {
+  return occurrences.length >= MAX_OCCURRENCES_PER_WINDOW;
+}
 
 /**
  * `rrule` reads a `dtstart`'s UTC getters as the wall clock, so an expansion in

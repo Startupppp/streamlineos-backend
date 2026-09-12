@@ -1,9 +1,44 @@
 import { Column, SQL, getTableColumns, getTableName, type Table } from "drizzle-orm";
+import { PgDialect } from "drizzle-orm/pg-core";
 import { matchesPredicate, type FakeRow, type RowSets } from "./sql-predicate";
 
 export type TableRows = Record<string, FakeRow[]>;
 
 type Join = { name: string; on: SQL | undefined; inner: boolean };
+
+type Order = { table: string; column: string; descending: boolean };
+
+const orderDialect = new PgDialect();
+
+function findOrderColumn(value: unknown): Column | undefined {
+  if (value instanceof Column) return value;
+  if (value instanceof SQL) {
+    for (const chunk of value.queryChunks) {
+      const found = findOrderColumn(chunk);
+      if (found !== undefined) return found;
+    }
+  }
+  return undefined;
+}
+
+function compareOrderValues(left: unknown, right: unknown): number {
+  if (left instanceof Date && right instanceof Date) return left.getTime() - right.getTime();
+  if (typeof left === "number" && typeof right === "number") return left - right;
+  return String(left).localeCompare(String(right));
+}
+
+function compareScopes(left: RowSets, right: RowSets, orders: Order[]): number {
+  for (const order of orders) {
+    const leftValue = left[order.table]?.[0]?.[order.column] ?? null;
+    const rightValue = right[order.table]?.[0]?.[order.column] ?? null;
+    if (leftValue === null && rightValue === null) continue;
+    if (leftValue === null) return order.descending ? -1 : 1;
+    if (rightValue === null) return order.descending ? 1 : -1;
+    const delta = compareOrderValues(leftValue, rightValue);
+    if (delta !== 0) return order.descending ? -delta : delta;
+  }
+  return 0;
+}
 
 type Projection = Record<string, unknown>;
 
@@ -34,6 +69,7 @@ class SelectBuilder implements PromiseLike<FakeRow[]> {
   private readonly joins: Join[] = [];
   private predicate: SQL | undefined;
   private rowLimit = Number.POSITIVE_INFINITY;
+  private readonly orders: Order[] = [];
 
   constructor(
     private readonly tables: TableRows,
@@ -61,7 +97,18 @@ class SelectBuilder implements PromiseLike<FakeRow[]> {
     return this;
   }
 
-  orderBy(): this {
+  orderBy(...entries: unknown[]): this {
+    for (const entry of entries) {
+      const column = findOrderColumn(entry);
+      if (column === undefined) continue;
+      const rendered =
+        entry instanceof SQL ? orderDialect.sqlToQuery(entry).sql.trim().toLowerCase() : "";
+      this.orders.push({
+        table: getTableName(column.table),
+        column: column.name,
+        descending: rendered.endsWith(" desc"),
+      });
+    }
     return this;
   }
 
@@ -102,8 +149,10 @@ class SelectBuilder implements PromiseLike<FakeRow[]> {
       }
       scopes = next;
     }
-    return scopes
-      .filter((scope) => matchesPredicate(this.predicate, scope))
+    const matched = scopes.filter((scope) => matchesPredicate(this.predicate, scope));
+    if (this.orders.length > 0)
+      matched.sort((left, right) => compareScopes(left, right, this.orders));
+    return matched
       .slice(0, this.rowLimit)
       .map((scope) => project(this.projection, scope, this.baseName, this.baseTable));
   }

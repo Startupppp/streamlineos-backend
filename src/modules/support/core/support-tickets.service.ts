@@ -25,7 +25,7 @@ import {
   ticketListCacheKey,
   type ListTicketsQuery,
 } from "./support-ticket-list-query";
-import { supportTicketScope } from "./support-tickets-scope";
+import { assertTicketInScope, supportTicketScope } from "./support-tickets-scope";
 import { resolveTicketRouting } from "./support-ticket-routing";
 import {
   insertTicketWithOpeningMessage,
@@ -205,15 +205,37 @@ export class SupportTicketsService {
     return { ...ticket, customFieldValues };
   }
 
-  async updateTicket(orgId: string, ticketId: number, userId: string, input: UpdateTicketInput) {
-    const ticket = await this.db.query.supportTickets.findFirst({
-      where: and(eq(supportTickets.id, ticketId), eq(supportTickets.orgId, orgId)),
-      with: {
-        assigneeMembership: { columns: { id: true }, with: { user: { columns: { id: true } } } },
-        creatorMembership: { columns: { id: true }, with: { user: { columns: { id: true } } } },
+  async updateTicket(
+    orgId: string,
+    ticketId: number,
+    userId: string,
+    input: UpdateTicketInput,
+    read: ScopedRead,
+  ) {
+    if (read.denied) throw new ForbiddenException("Not authorized to update this ticket");
+    const ticket = await read.read(
+      {
+        tenant: supportTickets.orgId,
+        scope: supportTicketScope(orgId, read.actorId),
+        and: [eq(supportTickets.id, ticketId)],
       },
-    });
-    if (!ticket) throw new NotFoundException("Ticket not found");
+      ({ sql: where }) => this.db.query.supportTickets.findFirst({
+        where,
+        with: {
+          assigneeMembership: { columns: { id: true }, with: { user: { columns: { id: true } } } },
+          creatorMembership: { columns: { id: true }, with: { user: { columns: { id: true } } } },
+        },
+      }),
+      () => undefined,
+    );
+    if (!ticket) {
+      const exists = await this.db.query.supportTickets.findFirst({
+        where: and(eq(supportTickets.id, ticketId), eq(supportTickets.orgId, orgId)),
+        columns: { id: true },
+      });
+      if (exists) throw new ForbiddenException("Not authorized to update this ticket");
+      throw new NotFoundException("Ticket not found");
+    }
 
     if (input.expectedUpdatedAt && input.expectedUpdatedAt.getTime() !== ticket.updatedAt.getTime()) {
       throw new SupportTicketStaleException();
@@ -282,7 +304,8 @@ export class SupportTicketsService {
     return { success: true, updatedAt: updateData.updatedAt };
   }
 
-  async splitTicket(orgId: string, ticketId: number, userId: string, input: SplitTicketInput, membershipId?: number | null) {
+  async splitTicket(orgId: string, ticketId: number, userId: string, input: SplitTicketInput, read: ScopedRead, membershipId?: number | null) {
+    await assertTicketInScope(this.db, read, ticketId);
     const original = await this.db.query.supportTickets.findFirst({
       where: and(eq(supportTickets.id, ticketId), eq(supportTickets.orgId, orgId)),
       columns: { id: true, category: true, clientId: true, priority: true, requesterEmail: true, requesterName: true },
@@ -308,8 +331,8 @@ export class SupportTicketsService {
     return newTicket;
   }
 
-  listMessages(orgId: string, ticketId: number) {
-    return this.messages.listMessages(orgId, ticketId);
+  listMessages(orgId: string, ticketId: number, read: ScopedRead) {
+    return this.messages.listMessages(orgId, ticketId, read);
   }
 
   listPublicMessages(orgId: string, ticketId: number) {
@@ -326,32 +349,37 @@ export class SupportTicketsService {
     return this.messages.addMessage(orgId, ticketId, userId, input, source);
   }
 
-  listActivity(orgId: string, ticketId: number) {
-    return this.activity.listActivity(orgId, ticketId);
+  async replyAsAgent(orgId: string, ticketId: number, userId: string, input: ReplyMessageInput, read: ScopedRead) {
+    await assertTicketInScope(this.db, read, ticketId);
+    return this.messages.addMessage(orgId, ticketId, userId, input);
   }
 
-  stats(orgId: string) {
-    return this.activity.stats(orgId);
+  listActivity(orgId: string, ticketId: number, read: ScopedRead) {
+    return this.activity.listActivity(orgId, ticketId, read);
   }
 
-  addTicketLink(orgId: string, ticketId: number, userId: string, input: CreateTicketLinkInput) {
-    return this.operations.addTicketLink(orgId, ticketId, userId, input);
+  stats(read: ScopedRead) {
+    return this.activity.stats(read);
   }
 
-  listTicketLinks(orgId: string, ticketId: number) {
-    return this.operations.listTicketLinks(orgId, ticketId);
+  addTicketLink(orgId: string, ticketId: number, userId: string, input: CreateTicketLinkInput, read: ScopedRead) {
+    return this.operations.addTicketLink(orgId, ticketId, userId, input, read);
   }
 
-  mergeTicket(orgId: string, ticketId: number, userId: string, input: MergeTicketInput) {
-    return this.operations.mergeTicket(orgId, ticketId, userId, input);
+  listTicketLinks(orgId: string, ticketId: number, read: ScopedRead) {
+    return this.operations.listTicketLinks(orgId, ticketId, read);
   }
 
-  snoozeTicket(orgId: string, ticketId: number, userId: string, input: SnoozeTicketInput) {
-    return this.operations.snoozeTicket(orgId, ticketId, userId, input);
+  mergeTicket(orgId: string, ticketId: number, userId: string, input: MergeTicketInput, read: ScopedRead) {
+    return this.operations.mergeTicket(orgId, ticketId, userId, input, read);
   }
 
-  unsnoozeTicket(orgId: string, ticketId: number, userId: string) {
-    return this.operations.unsnoozeTicket(orgId, ticketId, userId);
+  snoozeTicket(orgId: string, ticketId: number, userId: string, input: SnoozeTicketInput, read: ScopedRead) {
+    return this.operations.snoozeTicket(orgId, ticketId, userId, input, read);
+  }
+
+  unsnoozeTicket(orgId: string, ticketId: number, userId: string, read: ScopedRead) {
+    return this.operations.unsnoozeTicket(orgId, ticketId, userId, read);
   }
 
   unsnoozeExpiredTickets() {

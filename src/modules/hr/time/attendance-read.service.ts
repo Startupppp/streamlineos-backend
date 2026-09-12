@@ -6,7 +6,7 @@ import { type Db } from "../../../db/drizzle.module";
 import { AccessService } from "../../access/access.service";
 import { formatDateOnly, getTodayString } from "../../../common/date";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { resolveAttendanceScope } from "./attendance-scope";
+import { resolveAttendanceScope, type AttendanceStatus } from "./attendance-scope";
 import { AttendancePolicyService } from "./attendance-policy.service";
 import { requireOrganizationMembershipId } from "./organization-membership";
 import { buildTupleCursorPage, decodeTupleCursor } from "../../../common/pagination/cursor";
@@ -16,8 +16,6 @@ import {
   keysetTextValue,
   keysetTimestamp,
 } from "../../../common/pagination/keyset";
-
-type AttendanceStatus = "OFFLINE" | "PRESENT" | "ON_BREAK" | "CHECKED_OUT";
 
 @Injectable()
 export class AttendanceReadService {

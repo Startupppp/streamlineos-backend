@@ -1,5 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, desc, eq, inArray, isNull, lt } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, lt, or, type SQL } from "drizzle-orm";
 import { projectApprovals } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
@@ -15,6 +15,19 @@ export type ApprovalInboxRow = {
   createdAt: Date;
 };
 
+export function approvalInboxKeyset(
+  cursorId: number | null,
+  cursorAt: string | null,
+): SQL | undefined {
+  if (cursorId === null) return undefined;
+  if (cursorAt === null) return lt(projectApprovals.id, cursorId);
+  const at = new Date(cursorAt);
+  return or(
+    lt(projectApprovals.createdAt, at),
+    and(eq(projectApprovals.createdAt, at), lt(projectApprovals.id, cursorId)),
+  );
+}
+
 @Injectable()
 export class BuildApprovalsInboxService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
@@ -25,6 +38,7 @@ export class BuildApprovalsInboxService {
     membershipId: number | null,
     limit: number,
     cursor: number | null,
+    cursorAt: string | null = null,
   ): Promise<ApprovalInboxRow[]> {
     if (membershipId === null) return [];
     const actorPredicate = eq(projectApprovals.approverMembershipId, membershipId);
@@ -46,10 +60,10 @@ export class BuildApprovalsInboxService {
           actorPredicate,
           inArray(projectApprovals.status, ["pending", "escalated"]),
           isNull(projectApprovals.deletedAt),
-          cursor !== null ? lt(projectApprovals.id, cursor) : undefined,
+          approvalInboxKeyset(cursor, cursorAt),
         ),
       )
-      .orderBy(desc(projectApprovals.id))
+      .orderBy(desc(projectApprovals.createdAt), desc(projectApprovals.id))
       .limit(limit);
 
     return rows;

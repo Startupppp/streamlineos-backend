@@ -16,28 +16,13 @@ import { CacheService } from "../../../common/cache/cache.service";
 import { InMemoryRedis } from "../../../common/cache/in-memory-redis.test-double";
 import type { Db } from "../../../db/drizzle.module";
 import { PlanLimitsService } from "./plan-limits.service";
+import { makeTierDb, TIER_CANCELLED, TIER_PAID } from "./plan-tier-db.test-double";
 
 const ORG = "org-multi-instance";
 
-/**
- * A database whose single `subscriptions` row can be changed between reads, counting every tenant
- * transaction that actually reached it. `queryTier` opens exactly one per miss (`withTenant` then
- * issues the GUC statement and the SELECT inside it), so the transaction count is the miss count.
- */
-function makeDb(initial: Record<string, unknown>) {
-  const state = { row: initial, reads: 0 };
-  const db = {
-    execute: jest.fn().mockImplementation(() => Promise.resolve([state.row])),
-    transaction: jest.fn().mockImplementation((fn: (tx: unknown) => Promise<unknown>) => {
-      state.reads += 1;
-      return fn(db);
-    }),
-  };
-  return { db: db as unknown as Db, state };
-}
-
-const PAID = { plan: "PROFESSIONAL", status: "ACTIVE", trial_ends_at: null, created_at: new Date() };
-const CANCELLED = { plan: "PROFESSIONAL", status: "CANCELLED", trial_ends_at: null, created_at: new Date() };
+const makeDb = makeTierDb;
+const PAID = TIER_PAID;
+const CANCELLED = TIER_CANCELLED;
 
 function instance(db: Db, redis: InMemoryRedis): PlanLimitsService {
   return new PlanLimitsService(db, new CacheService(redis as unknown as Redis), null);

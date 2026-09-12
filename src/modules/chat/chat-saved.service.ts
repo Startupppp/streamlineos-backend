@@ -11,6 +11,7 @@ import {
   flattenMessageSender,
 } from "./chat-message-sender-shape";
 import { MESSAGE_REACTIONS_WITH, foldReactions } from "./chat-message-reaction-shape";
+import { filterByEntityAccess } from "./chat-channel-authorization";
 
 @Injectable()
 export class ChatSavedService {
@@ -44,7 +45,9 @@ export class ChatSavedService {
         message: {
           with: {
             senderMembership: SENDER_MEMBERSHIP_WITH_USER,
-            channel: { columns: { id: true, name: true, type: true } },
+            channel: {
+              columns: { id: true, name: true, type: true, entityType: true, entityId: true },
+            },
             attachments: true,
             reactions: MESSAGE_REACTIONS_WITH,
           },
@@ -53,15 +56,21 @@ export class ChatSavedService {
     });
 
     const page = buildIdCursorPage(rows, safeLimit, (row) => row.id);
+    const visible = await filterByEntityAccess(
+      this.entities,
+      page.data,
+      actor,
+      (row) => row.message.channel,
+    );
     const resolved = await this.entities.withResolvedReferences(
       actor,
-      page.data.map((row) => {
+      visible.map((row) => {
         const { reactions, ...message } = row.message;
         return { ...flattenMessageSender(message), reactions: foldReactions(reactions) };
       }),
     );
     return {
-      items: page.data.map((row, index) => ({ ...row, message: resolved[index] })),
+      items: visible.map((row, index) => ({ ...row, message: resolved[index] })),
       nextCursor: page.nextCursor,
     };
   }

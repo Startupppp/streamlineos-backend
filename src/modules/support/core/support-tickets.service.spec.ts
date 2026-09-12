@@ -1,6 +1,8 @@
 import { ScopedRead } from "../../access/scoped-read";
 import { Test, type TestingModule } from "@nestjs/testing";
-import { BadRequestException, ConflictException, NotFoundException } from "@nestjs/common";
+import { SQL } from "drizzle-orm";
+import { PgDialect } from "drizzle-orm/pg-core";
+import { BadRequestException, ConflictException, ForbiddenException, NotFoundException } from "@nestjs/common";
 import { SupportTicketsService } from "./support-tickets.service";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { CacheService } from "../../../common/cache/cache.service";
@@ -16,6 +18,14 @@ import { SupportMentionsService } from "./support-mentions.service";
 import { SupportTicketActivityService } from "./support-ticket-activity.service";
 import { SupportTicketMessagesService } from "./support-ticket-messages.service";
 import { SupportTicketOperationsService } from "./support-ticket-operations.service";
+
+const dialect = new PgDialect();
+
+function renderWhere(value: unknown): { sql: string; params: unknown[] } {
+  if (!(value instanceof SQL)) throw new Error("expected a SQL WHERE clause");
+  const query = dialect.sqlToQuery(value);
+  return { sql: query.sql, params: query.params };
+}
 
 const mockDb = {
   query: {
@@ -283,7 +293,7 @@ describe("SupportTicketsService", () => {
         slaDeadline: null,
       });
 
-      await service.updateTicket("org1", 1, "user1", { status: "WAITING" } as never);
+      await service.updateTicket("org1", 1, "user1", { status: "WAITING" } as never, ScopedRead.of("org1", "user1", "all"));
 
       expect(mockSla.resolvePolicy).toHaveBeenCalledWith("org1", "MEDIUM", null);
       expect(mockSla.computePauseTransition).toHaveBeenCalledWith(
@@ -317,7 +327,7 @@ describe("SupportTicketsService", () => {
         slaDeadline,
       });
 
-      await service.updateTicket("org1", 1, "user1", { status: "IN_PROGRESS" } as never);
+      await service.updateTicket("org1", 1, "user1", { status: "IN_PROGRESS" } as never, ScopedRead.of("org1", "user1", "all"));
 
       const extendedPayload = mockDb.set.mock.calls
         .map((call) => call[0])
@@ -361,7 +371,7 @@ describe("SupportTicketsService", () => {
     it("listMessages throws NotFoundException for a ticket belonging to a different org", async () => {
       mockDb.query.supportTickets.findFirst.mockResolvedValueOnce(undefined);
 
-      await expect(service.listMessages("org1", 123)).rejects.toThrow(NotFoundException);
+      await expect(service.listMessages("org1", 123, ScopedRead.of("org1", "user1", "all"))).rejects.toThrow(NotFoundException);
     });
   });
 
@@ -384,7 +394,7 @@ describe("SupportTicketsService", () => {
         await service.updateTicket("org1", 1, "user1", {
           status: "IN_PROGRESS",
           expectedUpdatedAt: new Date("2024-01-02T00:00:00.000Z"),
-        } as never);
+        } as never, ScopedRead.of("org1", "user1", "all"));
       } catch (error) {
         caught = error as typeof caught;
       }
@@ -401,7 +411,7 @@ describe("SupportTicketsService", () => {
         service.updateTicket("org1", 1, "user1", {
           status: "IN_PROGRESS",
           expectedUpdatedAt: baseTicket.updatedAt,
-        } as never),
+        } as never, ScopedRead.of("org1", "user1", "all")),
       ).resolves.toMatchObject({ success: true });
     });
 
@@ -409,44 +419,136 @@ describe("SupportTicketsService", () => {
       mockDb.query.supportTickets.findFirst.mockResolvedValueOnce(baseTicket);
 
       await expect(
-        service.updateTicket("org1", 1, "user1", { status: "IN_PROGRESS" } as never),
+        service.updateTicket("org1", 1, "user1", { status: "IN_PROGRESS" } as never, ScopedRead.of("org1", "user1", "all")),
       ).resolves.toMatchObject({ success: true });
+    });
+  });
+
+  describe("updateTicket — the DataScope reaches the row fetch (BOLA)", () => {
+    const ORG = "org1";
+    const ME = "user1";
+    const baseTicket = {
+      id: 1,
+      status: "OPEN",
+      priority: "MEDIUM",
+      category: null,
+      assigneeId: null,
+      createdBy: "creator1",
+      title: "t",
+      updatedAt: new Date("2024-01-01T00:00:00.000Z"),
+      slaPausedAt: null,
+      slaPausedMinutes: 0,
+      firstResponseDueAt: null,
+      firstRespondedAt: null,
+      slaDeadline: null,
+    };
+
+    it("all scope: the emitted WHERE carries the tenant predicate and the ticket id", async () => {
+      mockDb.query.supportTickets.findFirst.mockResolvedValueOnce(baseTicket);
+
+      await service.updateTicket(ORG, 1, ME, { status: "IN_PROGRESS" } as never, ScopedRead.of(ORG, ME, "all"));
+
+      const { sql, params } = renderWhere(mockDb.query.supportTickets.findFirst.mock.calls[0]?.[0]?.where);
+      expect(sql).toContain("org_id");
+      expect(params).toContain(ORG);
+      expect(params).toContain(1);
+    });
+
+    it("own scope: the WHERE narrows on the assignee membership and binds the caller", async () => {
+      mockDb.query.supportTickets.findFirst.mockResolvedValueOnce(baseTicket);
+
+      await service.updateTicket(ORG, 1, ME, { status: "IN_PROGRESS" } as never, ScopedRead.of(ORG, ME, "own"));
+
+      const { sql, params } = renderWhere(mockDb.query.supportTickets.findFirst.mock.calls[0]?.[0]?.where);
+      expect(sql).toContain("assignee_membership_id");
+      expect(sql).toContain("organization_members");
+      expect(params).toContain(ME);
+      expect(params).toContain(ORG);
+    });
+
+    it("own scope renders a different WHERE from all scope — the scope is spent, not dropped", async () => {
+      mockDb.query.supportTickets.findFirst.mockResolvedValueOnce(baseTicket);
+      await service.updateTicket(ORG, 1, ME, { status: "IN_PROGRESS" } as never, ScopedRead.of(ORG, ME, "all"));
+      const allSql = renderWhere(mockDb.query.supportTickets.findFirst.mock.calls[0]?.[0]?.where).sql;
+
+      mockDb.query.supportTickets.findFirst.mockClear();
+      mockDb.query.supportTickets.findFirst.mockResolvedValueOnce(baseTicket);
+      await service.updateTicket(ORG, 1, ME, { status: "IN_PROGRESS" } as never, ScopedRead.of(ORG, ME, "own"));
+      const ownSql = renderWhere(mockDb.query.supportTickets.findFirst.mock.calls[0]?.[0]?.where).sql;
+
+      expect(ownSql).not.toBe(allSql);
+    });
+
+    it("own scope: another agent's ticket in the same org is refused and never written", async () => {
+      mockDb.query.supportTickets.findFirst
+        .mockResolvedValueOnce(undefined)
+        .mockResolvedValueOnce({ id: 1 });
+
+      await expect(
+        service.updateTicket(ORG, 1, ME, { status: "IN_PROGRESS" } as never, ScopedRead.of(ORG, ME, "own")),
+      ).rejects.toThrow(ForbiddenException);
+      expect(mockDb.transaction).not.toHaveBeenCalled();
+    });
+
+    it("a ticket id from another tenant is a 404, never a 403 — no existence oracle", async () => {
+      mockDb.query.supportTickets.findFirst
+        .mockResolvedValueOnce(undefined)
+        .mockResolvedValueOnce(undefined);
+
+      await expect(
+        service.updateTicket(ORG, 999, ME, { status: "IN_PROGRESS" } as never, ScopedRead.of(ORG, ME, "own")),
+      ).rejects.toThrow(NotFoundException);
+      expect(mockDb.transaction).not.toHaveBeenCalled();
+    });
+
+    it("none scope: no query is issued at all and nothing is written", async () => {
+      mockDb.query.supportTickets.findFirst.mockResolvedValueOnce(baseTicket);
+
+      await expect(
+        service.updateTicket(ORG, 1, ME, { status: "IN_PROGRESS" } as never, ScopedRead.of(ORG, ME, "none")),
+      ).rejects.toThrow(ForbiddenException);
+      expect(mockDb.query.supportTickets.findFirst).not.toHaveBeenCalled();
+      expect(mockDb.transaction).not.toHaveBeenCalled();
+      mockDb.query.supportTickets.findFirst.mockReset();
     });
   });
 
   describe("mergeTicket", () => {
     it("rejects merging a ticket into itself", async () => {
       await expect(
-        service.mergeTicket("org1", 1, "user1", { intoTicketId: 1 } as never),
+        service.mergeTicket("org1", 1, "user1", { intoTicketId: 1 } as never, ScopedRead.of("org1", "user1", "all")),
       ).rejects.toThrow(BadRequestException);
     });
 
     it("throws NotFoundException when the target ticket does not exist in the org", async () => {
       mockDb.query.supportTickets.findFirst
         .mockResolvedValueOnce({ id: 1, status: "OPEN", mergedIntoTicketId: null })
-        .mockResolvedValueOnce(undefined);
+        .mockResolvedValueOnce(undefined)
+        .mockResolvedValue(undefined);
 
       await expect(
-        service.mergeTicket("org1", 1, "user1", { intoTicketId: 2 } as never),
+        service.mergeTicket("org1", 1, "user1", { intoTicketId: 2 } as never, ScopedRead.of("org1", "user1", "all")),
       ).rejects.toThrow(NotFoundException);
     });
 
     it("throws ConflictException when the ticket has already been merged", async () => {
       mockDb.query.supportTickets.findFirst
         .mockResolvedValueOnce({ id: 1, status: "OPEN", mergedIntoTicketId: 99 })
-        .mockResolvedValueOnce({ id: 2 });
+        .mockResolvedValueOnce({ id: 2 })
+        .mockResolvedValueOnce({ id: 1, status: "OPEN", mergedIntoTicketId: 99 });
 
       await expect(
-        service.mergeTicket("org1", 1, "user1", { intoTicketId: 2 } as never),
+        service.mergeTicket("org1", 1, "user1", { intoTicketId: 2 } as never, ScopedRead.of("org1", "user1", "all")),
       ).rejects.toThrow(ConflictException);
     });
 
     it("closes the source ticket and records a 'merged' activity entry on success", async () => {
       mockDb.query.supportTickets.findFirst
         .mockResolvedValueOnce({ id: 1, status: "OPEN", mergedIntoTicketId: null })
-        .mockResolvedValueOnce({ id: 2 });
+        .mockResolvedValueOnce({ id: 2 })
+        .mockResolvedValueOnce({ id: 1, status: "OPEN", mergedIntoTicketId: null });
 
-      const result = await service.mergeTicket("org1", 1, "user1", { intoTicketId: 2 } as never);
+      const result = await service.mergeTicket("org1", 1, "user1", { intoTicketId: 2 } as never, ScopedRead.of("org1", "user1", "all"));
 
       expect(result).toMatchObject({ success: true, mergedIntoTicketId: 2 });
       const mergedPayload = mockDb.values.mock.calls.map((c) => c[0]).find((p) => p && p.action === "merged");
@@ -459,7 +561,7 @@ describe("SupportTicketsService", () => {
       mockDb.query.supportTickets.findFirst.mockResolvedValueOnce(undefined);
 
       await expect(
-        service.snoozeTicket("org1", 1, "user1", { snoozedUntil: new Date(Date.now() + 86_400_000) } as never),
+        service.snoozeTicket("org1", 1, "user1", { snoozedUntil: new Date(Date.now() + 86_400_000) } as never, ScopedRead.of("org1", "user1", "all")),
       ).rejects.toThrow(NotFoundException);
     });
 
@@ -467,7 +569,7 @@ describe("SupportTicketsService", () => {
       mockDb.query.supportTickets.findFirst.mockResolvedValueOnce({ id: 1 });
       const until = new Date(Date.now() + 86_400_000);
 
-      const result = await service.snoozeTicket("org1", 1, "user1", { snoozedUntil: until } as never);
+      const result = await service.snoozeTicket("org1", 1, "user1", { snoozedUntil: until } as never, ScopedRead.of("org1", "user1", "all"));
 
       expect(result).toMatchObject({ success: true, snoozedUntil: until });
       const setPayload = mockDb.set.mock.calls.map((c) => c[0]).find((p) => p && "snoozedUntil" in p);
@@ -479,7 +581,7 @@ describe("SupportTicketsService", () => {
     it("clears snoozedUntil/snoozedBy and records an 'unsnoozed' activity entry", async () => {
       mockDb.query.supportTickets.findFirst.mockResolvedValueOnce({ id: 1 });
 
-      const result = await service.unsnoozeTicket("org1", 1, "user1");
+      const result = await service.unsnoozeTicket("org1", 1, "user1", ScopedRead.of("org1", "user1", "all"));
 
       expect(result).toMatchObject({ success: true });
       const setPayload = mockDb.set.mock.calls
@@ -512,12 +614,13 @@ describe("SupportTicketsService", () => {
       mockDb.query.supportTickets.findFirst.mockResolvedValueOnce(undefined);
 
       await expect(
-        service.splitTicket("org1", 1, "user1", { title: "New split ticket issue" } as never),
+        service.splitTicket("org1", 1, "user1", { title: "New split ticket issue" } as never, ScopedRead.of("org1", "user1", "all")),
       ).rejects.toThrow(NotFoundException);
     });
 
     it("creates a new ticket, links it back to the original, and records split activity on both", async () => {
       mockDb.query.supportTickets.findFirst
+        .mockResolvedValueOnce({ id: 1 })
         .mockResolvedValueOnce({
           id: 1,
           category: "billing",
@@ -534,6 +637,7 @@ describe("SupportTicketsService", () => {
         1,
         "user1",
         { title: "New split ticket issue" } as never,
+        ScopedRead.of("org1", "user1", "all"),
         123,
       );
 
@@ -552,15 +656,15 @@ describe("SupportTicketsService", () => {
 
     it("rejects linking a ticket to itself", async () => {
       await expect(
-        service.addTicketLink("org1", 1, "user1", { linkedTicketId: 1, relation: "related" } as never),
+        service.addTicketLink("org1", 1, "user1", { linkedTicketId: 1, relation: "related" } as never, ScopedRead.of("org1", "user1", "all")),
       ).rejects.toThrow(BadRequestException);
     });
 
     it("throws NotFoundException when the linked ticket does not exist in the org", async () => {
-      mockDb.query.supportTickets.findFirst.mockResolvedValueOnce({ id: 1 }).mockResolvedValueOnce(undefined);
+      mockDb.query.supportTickets.findFirst.mockResolvedValueOnce({ id: 1 }).mockResolvedValue(undefined);
 
       await expect(
-        service.addTicketLink("org1", 1, "user1", { linkedTicketId: 2, relation: "related" } as never),
+        service.addTicketLink("org1", 1, "user1", { linkedTicketId: 2, relation: "related" } as never, ScopedRead.of("org1", "user1", "all")),
       ).rejects.toThrow(NotFoundException);
     });
 
@@ -568,7 +672,7 @@ describe("SupportTicketsService", () => {
       mockDb.query.supportTickets.findFirst.mockResolvedValueOnce({ id: 1 }).mockResolvedValueOnce({ id: 2 });
       mockDb.returning.mockResolvedValueOnce([{ id: 5, ticketId: 1, linkedTicketId: 2, relation: "related" }]);
 
-      await service.addTicketLink("org1", 1, "user1", { linkedTicketId: 2, relation: "related" } as never);
+      await service.addTicketLink("org1", 1, "user1", { linkedTicketId: 2, relation: "related" } as never, ScopedRead.of("org1", "user1", "all"));
 
       const linkedPayload = mockDb.values.mock.calls.map((c) => c[0]).find((p) => p && p.action === "linked");
       expect(linkedPayload).toBeDefined();

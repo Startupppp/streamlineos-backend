@@ -14,6 +14,7 @@ import { ChatChannelMembersService } from "./chat-channel-members.service";
 import { ChatNotificationsService } from "./chat-notifications.service";
 import { ChatReplyRemindersService } from "./chat-reply-reminders.service";
 import type { EntityReferenceService } from "../entity-reference/entity-reference.service";
+import type { EntityActor } from "../entity-reference/entity-reference.types";
 import type { CacheService } from "../../common/cache/cache.service";
 import type { AblyService } from "../realtime/ably.service";
 import { ChatOrgSettingsService } from "./chat-org-settings.service";
@@ -22,6 +23,9 @@ import type { NotificationDispatchService } from "../notifications/notification-
 
 const ATTACKER_ORG = "org-attacker";
 const OWNER_ORG = "org-owner";
+
+const noRecords = () =>
+  ({ resolve: jest.fn().mockResolvedValue([]) }) as unknown as EntityReferenceService;
 
 function sqlValues(value: unknown, seen = new Set<object>()): unknown[] {
   if (value === null || value === undefined || typeof value === "string" || typeof value === "number" || typeof value === "boolean") return [value];
@@ -59,7 +63,7 @@ describe("ChatPresenceService — tenant isolation", () => {
 
   it("DENY: getOnlineUsers binds the where predicate to ATTACKER_ORG and returns no rows", async () => {
     const { db, where } = makeDb([]);
-    const service = new ChatPresenceService(db as unknown as Db);
+    const service = new ChatPresenceService(db as unknown as Db, noRecords());
 
     const result = await service.getOnlineUsers(ATTACKER_ORG);
 
@@ -72,7 +76,7 @@ describe("ChatPresenceService — tenant isolation", () => {
     const now = new Date();
     const mockRow = { userId: "u1", status: "ONLINE", lastSeenAt: now, userName: "Alice", userImage: null };
     const { db, where } = makeDb([mockRow]);
-    const service = new ChatPresenceService(db as unknown as Db);
+    const service = new ChatPresenceService(db as unknown as Db, noRecords());
 
     const result = await service.getOnlineUsers(OWNER_ORG);
 
@@ -176,7 +180,7 @@ describe("ChatSummarizeService — tenant isolation", () => {
       },
     } as unknown as Db;
     const moduleRef = { get: jest.fn() } as unknown as ModuleRef;
-    const service = new ChatSummarizeService(db, moduleRef);
+    const service = new ChatSummarizeService(db, moduleRef, noRecords());
 
     await expect(service.summarize(5, { orgId: ATTACKER_ORG, userId: "user-x" })).rejects.toThrow(ForbiddenException);
     expect(db.query.chatChannelMembers.findFirst).toHaveBeenCalledTimes(1);
@@ -210,7 +214,7 @@ describe("ChatSummarizeService — tenant isolation", () => {
     const invokeText = jest.fn().mockResolvedValue({ ok: true, data: "meeting summary" });
     const moduleRef = { get: jest.fn().mockReturnValue({ invokeText }) } as unknown as ModuleRef;
 
-    const service = new ChatSummarizeService(db, moduleRef);
+    const service = new ChatSummarizeService(db, moduleRef, noRecords());
 
     const result = await service.summarize(5, { orgId: OWNER_ORG, userId: "u1" });
 
@@ -224,6 +228,19 @@ describe("ChatSummarizeService — tenant isolation", () => {
 // ---------------------------------------------------------------------------
 
 describe("ChatChannelMembersService — tenant isolation", () => {
+  const attackerActor: EntityActor = {
+    orgId: ATTACKER_ORG,
+    userId: "user-attacker",
+    membershipId: 99,
+    isOrgOwner: false,
+  };
+  const ownerActor: EntityActor = {
+    orgId: OWNER_ORG,
+    userId: "u1",
+    membershipId: 99,
+    isOrgOwner: false,
+  };
+
   function makeService(channelRow: unknown, memberRow: unknown, findManyResult: unknown[] = []) {
     const db = {
       query: {
@@ -236,7 +253,7 @@ describe("ChatChannelMembersService — tenant isolation", () => {
       },
     } as unknown as Db;
     const cache = { invalidateNamespace: jest.fn() } as unknown as CacheService;
-    const entities = {} as unknown as EntityReferenceService;
+    const entities = noRecords();
     const ably = {} as unknown as AblyService;
     const service = new ChatChannelMembersService(db, cache, entities, ably);
     return { service, db };
@@ -245,13 +262,13 @@ describe("ChatChannelMembersService — tenant isolation", () => {
   it("DENY: listMembers throws NotFoundException when channel not found in this org", async () => {
     const { service } = makeService(null, null);
 
-    await expect(service.listMembers(7, "user-attacker", ATTACKER_ORG)).rejects.toThrow(NotFoundException);
+    await expect(service.listMembers(7, attackerActor)).rejects.toThrow(NotFoundException);
   });
 
   it("DENY: listMembers throws ForbiddenException when caller is not a channel member", async () => {
     const { service } = makeService({ id: 7 }, null);
 
-    await expect(service.listMembers(7, "user-attacker", ATTACKER_ORG)).rejects.toThrow(ForbiddenException);
+    await expect(service.listMembers(7, attackerActor)).rejects.toThrow(ForbiddenException);
   });
 
   it("CONTROL: listMembers returns members when the caller is a valid channel member", async () => {
@@ -266,7 +283,7 @@ describe("ChatChannelMembersService — tenant isolation", () => {
     };
     const { service } = makeService({ id: 7 }, { role: "MEMBER" }, [row]);
 
-    const { members } = await service.listMembers(7, "u1", OWNER_ORG);
+    const { members } = await service.listMembers(7, ownerActor);
 
     expect(members).toHaveLength(1);
     expect(members[0]).toMatchObject({ userId: "u1", user: { id: "u1", name: "Alice" } });

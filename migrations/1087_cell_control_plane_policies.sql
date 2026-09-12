@@ -31,10 +31,26 @@ DROP POLICY IF EXISTS "tenant_isolation" ON "organization_relocation_checksums";
 --> statement-breakpoint
 DROP POLICY IF EXISTS "control_plane_access" ON "organization_relocation_checksums";
 --> statement-breakpoint
+-- This child carries no tenant column of its own in any journalled migration or table definition;
+-- its tenancy is the parent relocation's, reached through relocation_id.
 CREATE POLICY "control_plane_access" ON "organization_relocation_checksums"
   FOR ALL TO PUBLIC
-  USING (app.current_org_id_or_null() IS NULL OR "org_id" = app.current_org_id_or_null())
-  WITH CHECK (app.current_org_id_or_null() IS NULL OR "org_id" = app.current_org_id_or_null());
+  USING (
+    app.current_org_id_or_null() IS NULL
+    OR EXISTS (
+      SELECT 1 FROM "organization_relocations" r
+      WHERE r."relocation_id" = "organization_relocation_checksums"."relocation_id"
+        AND r."organization_id" = app.current_org_id_or_null()
+    )
+  )
+  WITH CHECK (
+    app.current_org_id_or_null() IS NULL
+    OR EXISTS (
+      SELECT 1 FROM "organization_relocations" r
+      WHERE r."relocation_id" = "organization_relocation_checksums"."relocation_id"
+        AND r."organization_id" = app.current_org_id_or_null()
+    )
+  );
 --> statement-breakpoint
 DROP POLICY IF EXISTS "tenant_isolation" ON "organization_cell_traffic";
 --> statement-breakpoint

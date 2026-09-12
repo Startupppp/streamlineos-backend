@@ -73,7 +73,13 @@ function makeDb(grantKeys: readonly string[], probe: ReadProbe): Db {
     limit: jest.fn().mockImplementation(take),
   };
 
-  const rankWhere = { limit: jest.fn().mockResolvedValue([{ rank: ROLE_RANK.ORG_ADMIN, moduleKey: null }]) };
+  const rankRows = [{ rank: ROLE_RANK.ORG_ADMIN, moduleKey: null }];
+  const rankWhere = {
+    orderBy: jest.fn().mockImplementation(() => ({
+      limit: jest.fn().mockResolvedValue(rankRows),
+    })),
+    limit: jest.fn().mockResolvedValue(rankRows),
+  };
 
   return {
     query: {

@@ -1,4 +1,5 @@
 import { Inject, Injectable, InternalServerErrorException, NotFoundException } from "@nestjs/common";
+import { z } from "zod";
 import {
   SQL,
   and,
@@ -37,6 +38,11 @@ import {
   livePersonOfUser,
   primaryEmploymentOfPerson,
 } from "../../directory/employment-query";
+import { canonicalAdmissionEmail } from "../../organization/core/membership-admission.service";
+import { findLivePrimaryEmploymentId } from "./employee-admission-status";
+import type { checkEmailSchema } from "./dto/directory-response.schemas";
+
+type EmployeeAdmissionCheck = z.infer<typeof checkEmailSchema>;
 
 @Injectable()
 export class EmployeesService {
@@ -213,21 +219,38 @@ export class EmployeesService {
     };
   }
 
-  async checkEmail(orgId: string, email: string) {
-    const normalised = email.toLowerCase().trim();
+  async checkEmail(orgId: string, email: string): Promise<EmployeeAdmissionCheck> {
+    const normalised = canonicalAdmissionEmail(email);
+    const available: EmployeeAdmissionCheck = {
+      exists: false,
+      status: "available",
+      memberStatus: null,
+    };
+
     const existing = await this.db.query.users.findFirst({
       where: eq(users.email, normalised),
       columns: { id: true },
     });
-    if (!existing) return { exists: false };
+    if (!existing) return available;
+
     const member = await this.db.query.organizationMembers.findFirst({
       where: and(
         eq(organizationMembers.orgId, orgId),
         eq(organizationMembers.userId, existing.id),
       ),
-      columns: { userId: true },
+      columns: { status: true },
     });
-    return { exists: !!member };
+    if (!member) return available;
+
+    if (member.status === "SUSPENDED" || member.status === "LEFT")
+      return { exists: true, status: "archived-member", memberStatus: member.status };
+
+    const employmentId = await findLivePrimaryEmploymentId(this.db, orgId, existing.id);
+    return {
+      exists: true,
+      status: employmentId === null ? "member-without-employment" : "employee",
+      memberStatus: null,
+    };
   }
 
   getProjects(orgId: string, userId: string) {

@@ -34,17 +34,35 @@ export class DealsAnalyticsService {
     return { wonKeys: wonKeys.length ? wonKeys : ["WON"], lostKeys: lostKeys.length ? lostKeys : ["LOST"] };
   }
 
-  async getStats(orgId: string) {
+  async getStats(read: ScopedRead) {
+    const orgId = read.orgId;
+    if (read.denied) return { active: 0, pipelineValue: 0, wonValue: 0 };
     const { wonKeys, lostKeys } = await this.getTerminalStageKeys(orgId);
     const [activeRow, wonRow] = await Promise.all([
-      this.db
-        .select({ cnt: count(), total: sum(deals.value) })
-        .from(deals)
-        .where(and(eq(deals.orgId, orgId), isNull(deals.deletedAt), notInArray(deals.stage, [...wonKeys, ...lostKeys]))),
-      this.db
-        .select({ total: sum(deals.value) })
-        .from(deals)
-        .where(and(eq(deals.orgId, orgId), isNull(deals.deletedAt), inArray(deals.stage, wonKeys))),
+      read.read(
+        {
+          tenant: deals.orgId,
+          scope: { columns: { ownerColumn: deals.assignedToId } },
+          and: [isNull(deals.deletedAt), notInArray(deals.stage, [...wonKeys, ...lostKeys])],
+        },
+        ({ sql: where }) => this.db
+          .select({ cnt: count(), total: sum(deals.value) })
+          .from(deals)
+          .where(where),
+        () => [],
+      ),
+      read.read(
+        {
+          tenant: deals.orgId,
+          scope: { columns: { ownerColumn: deals.assignedToId } },
+          and: [isNull(deals.deletedAt), inArray(deals.stage, wonKeys)],
+        },
+        ({ sql: where }) => this.db
+          .select({ total: sum(deals.value) })
+          .from(deals)
+          .where(where),
+        () => [],
+      ),
     ]);
     return {
       active: activeRow[0]?.cnt ?? 0,
@@ -184,12 +202,20 @@ export class DealsAnalyticsService {
     );
   }
 
-  async getDealHealth(orgId: string, dealId: number) {
-    const deal = await this.db.query.deals.findFirst({
-      where: and(eq(deals.id, dealId), eq(deals.orgId, orgId), isNull(deals.deletedAt)),
-      columns: { stage: true, updatedAt: true, expectedCloseDate: true, value: true, lastContactDate: true, probability: true },
-      with: { activities: { columns: { createdAt: true }, orderBy: [desc(dealActivities.createdAt)], limit: 1 } },
-    });
+  async getDealHealth(read: ScopedRead, dealId: number) {
+    const deal = await read.read(
+      {
+        tenant: deals.orgId,
+        scope: { columns: { ownerColumn: deals.assignedToId } },
+        and: [eq(deals.id, dealId), isNull(deals.deletedAt)],
+      },
+      ({ sql: where }) => this.db.query.deals.findFirst({
+        where,
+        columns: { stage: true, updatedAt: true, expectedCloseDate: true, value: true, lastContactDate: true, probability: true },
+        with: { activities: { columns: { createdAt: true }, orderBy: [desc(dealActivities.createdAt)], limit: 1 } },
+      }),
+      () => undefined,
+    );
     if (!deal) throw new NotFoundException("Deal not found");
 
     const factors: Array<{ key: string; label: string; impact: "positive" | "negative" | "neutral"; weight: number }> = [];

@@ -11,6 +11,7 @@ import { Public } from "../../common/auth/public.decorator";
 import { RateLimitGuard } from "../../common/ratelimit/rate-limit.guard";
 import { UseRateLimit } from "../../common/ratelimit/use-rate-limit.decorator";
 import { BlogService } from "./blog.service";
+import { BlogCategoriesService } from "./blog-categories.service";
 import {
   feedSchema,
   type FeedInput,
@@ -30,7 +31,10 @@ const slugParams = z.object({ slug: z.string().min(1) }).strict();
 @Controller("blog")
 @UseGuards(JwtAuthGuard)
 export class BlogController {
-  constructor(private readonly blog: BlogService) {}
+  constructor(
+    private readonly blog: BlogService,
+    private readonly categories: BlogCategoriesService,
+  ) {}
 
   @Public()
   @Get("by-slug/:slug")
@@ -60,7 +64,7 @@ export class BlogController {
   @UseRateLimit("blog:public-read")
   @ResponseSchema(blogPublicCategoryListSchema)
   listCategories() {
-    return this.blog.getCategories();
+    return this.categories.getCategories();
   }
 
   @Public()

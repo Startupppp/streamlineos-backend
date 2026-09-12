@@ -20,6 +20,8 @@ import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
 import { AccessService } from "../access/access.service";
+import { AccessExplainResolver } from "../access/access-explain.resolver";
+import { restrictExplanationTo } from "../access/access-explain-provenance";
 import type { DataScope } from "../access/access.types";
 import { RolesService } from "./roles.service";
 import { RoleSeedService } from "./role-seed.service";
@@ -50,6 +52,7 @@ import {
   permissionsMatrixResponseSchema,
   simulationCandidatesResponseSchema,
   simulateAccessResponseSchema,
+  type SimulateAccessResponse,
   materializeTemplateResponseSchema,
   assignableDepartmentsResponseSchema,
   roleMutationResponseSchema,
@@ -63,13 +66,6 @@ import { z } from "zod";
 const targetUserIdParams = z.object({ targetUserId: z.string().min(1) }).strict();
 const roleIdParams = z.object({ roleId: z.string().min(1) }).strict();
 
-interface SimulateAccessResponse {
-  userId: string;
-  permissions: string[];
-  scopes: Record<string, DataScope>;
-  isOrgOwner: boolean;
-}
-
 @Controller("roles")
 @UseGuards(JwtAuthGuard)
 export class RolesController {
@@ -78,6 +74,7 @@ export class RolesController {
     private readonly seed: RoleSeedService,
     private readonly query: RolesQueryService,
     private readonly access: AccessService,
+    private readonly explain: AccessExplainResolver,
   ) {}
 
   @ResponseSchema(roleListResponseSchema)
@@ -131,10 +128,10 @@ export class RolesController {
   ): Promise<SimulateAccessResponse> {
     if (!targetUserId) throw new NotFoundException("targetUserId is required");
     const target = await this.query.getSimulationTarget(u.orgId, targetUserId);
-    const resolved = await this.access.resolveUserPermissions(
-      u.orgId,
-      targetUserId,
-    );
+    const [resolved, explanation] = await Promise.all([
+      this.access.resolveUserPermissions(u.orgId, targetUserId),
+      this.explain.explain(u.orgId, targetUserId),
+    ]);
     const permissions: string[] = [];
     const scopes: Record<string, DataScope> = {};
     for (const [key, scope] of resolved) {
@@ -142,11 +139,15 @@ export class RolesController {
       permissions.push(key);
       scopes[key] = scope;
     }
+    const restricted = restrictExplanationTo(explanation, scopes);
     return {
       userId: targetUserId,
       permissions,
       scopes,
       isOrgOwner: target.isOwner,
+      standing: explanation.standing,
+      provenance: restricted.permissions,
+      moduleStandings: restricted.moduleStandings,
     };
   }
 

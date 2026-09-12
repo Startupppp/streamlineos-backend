@@ -21,34 +21,61 @@ export async function resolveOrganizationPeople(
       organizationPersonId: organizationPeople.organizationPersonId,
       userId: organizationPeople.userId,
       workEmail: organizationPeople.workEmail,
+      deletedAt: organizationPeople.deletedAt,
     })
     .from(organizationPeople)
     .where(
       and(
         eq(organizationPeople.organizationId, orgId),
-        isNull(organizationPeople.deletedAt),
         or(
           inArray(organizationPeople.userId, userIds),
           inArray(sql`lower(trim(${organizationPeople.workEmail}))`, emails),
         ),
       ),
     )
-    .limit(userIds.length + emails.length);
+    .limit((userIds.length + emails.length) * 2);
 
   const byUserId = new Map<string, string>();
   const byEmail = new Map<string, string>();
+  const deletedByUserId = new Map<string, string>();
+  const deletedByEmail = new Map<string, string>();
   for (const row of existing) {
-    if (row.userId) byUserId.set(row.userId, row.organizationPersonId);
-    if (row.workEmail) byEmail.set(canonicalEmail(row.workEmail), row.organizationPersonId);
+    const targetByUserId = row.deletedAt === null ? byUserId : deletedByUserId;
+    const targetByEmail = row.deletedAt === null ? byEmail : deletedByEmail;
+    if (row.userId) targetByUserId.set(row.userId, row.organizationPersonId);
+    if (row.workEmail)
+      targetByEmail.set(canonicalEmail(row.workEmail), row.organizationPersonId);
   }
 
   const resolved = new Map<string, string>();
+  const restore: Array<{ organizationPersonId: string; userId: string }> = [];
   const missing: EnsureManyInput[] = [];
   for (const input of inputs) {
     const found =
       byUserId.get(input.userId) ?? byEmail.get(canonicalEmail(input.workEmail));
-    if (found) resolved.set(input.userId, found);
-    else missing.push(input);
+    if (found) {
+      resolved.set(input.userId, found);
+      continue;
+    }
+    const deleted =
+      deletedByUserId.get(input.userId) ??
+      deletedByEmail.get(canonicalEmail(input.workEmail));
+    if (deleted !== undefined) {
+      resolved.set(input.userId, deleted);
+      restore.push({ organizationPersonId: deleted, userId: input.userId });
+      continue;
+    }
+    missing.push(input);
+  }
+
+  if (restore.length > 0) {
+    const pairs = sql.join(
+      restore.map((entry) => sql`(${entry.organizationPersonId}::text, ${entry.userId}::text)`),
+      sql`, `,
+    );
+    await tx.execute(
+      sql`UPDATE organization_people AS p SET deleted_at = NULL, user_id = v.user_id FROM (VALUES ${pairs}) AS v(id, user_id) WHERE p.organization_person_id = v.id AND p.organization_id = ${orgId} AND p.deleted_at IS NOT NULL`,
+    );
   }
 
   if (missing.length > 0) {

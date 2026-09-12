@@ -1,6 +1,12 @@
 import { z } from "zod";
+import { genderEnum } from "../../../../db/schema";
 import { pageSizeField } from "../../../../common/pagination/list-query.schema";
 import { canonicalEmailSchema } from "../../../users/dto/users.schemas";
+
+function isSuppliedOrParseableDate(value: string | undefined): boolean {
+  if (!value) return true;
+  return !Number.isNaN(new Date(value).getTime());
+}
 
 export const listEmployeesSchema = z.object({
   cursor: z.string().min(1).max(2048).optional(),
@@ -213,31 +219,50 @@ export const updateEmployeeSchema = z
     phone: z.string().optional(),
     image: z.string().optional(),
     isActive: z.boolean().optional(),
-    gender: z.enum(["MALE", "FEMALE", "OTHER"]).optional(),
+    gender: z.enum(genderEnum.enumValues).optional(),
     skills: z.array(z.string()).optional(),
     bio: z.string().max(500).optional(),
     linkedinUrl: z.string().url().optional().or(z.literal("")),
     twitterUrl: z.string().url().optional().or(z.literal("")),
     githubUrl: z.string().url().optional().or(z.literal("")),
     websiteUrl: z.string().url().optional().or(z.literal("")),
-    joiningDate: z.string().optional(),
+    joiningDate: z
+      .string()
+      .optional()
+      .refine(isSuppliedOrParseableDate, "Joining date must be a valid date"),
     reportingTo: z.string().nullable().optional(),
   })
   .strict();
 
 export const onboardEmployeeSchema = z.object({
-  firstName: z.string(),
-  lastName: z.string(),
+  firstName: z
+    .string()
+    .trim()
+    .min(1, "First name is required")
+    .max(100, "First name must be at most 100 characters"),
+  lastName: z
+    .string()
+    .trim()
+    .min(1, "Last name is required")
+    .max(100, "Last name must be at most 100 characters"),
   email: canonicalEmailSchema,
   phone: z.string().optional(),
   whatsappSameAsPhone: z.boolean().optional(),
   whatsappNumber: z.string().optional(),
-  gender: z.enum(["MALE", "FEMALE", "OTHER"]).optional(),
-  designation: z.string(),
+  gender: z.enum(genderEnum.enumValues).optional(),
+  designation: z
+    .string()
+    .trim()
+    .min(1, "Designation is required")
+    .max(200, "Designation must be at most 200 characters"),
   departmentId: z.string().optional(),
   role: z.string().optional(),
   employeeId: z.string().optional(),
-  joiningDate: z.string().optional(),
+  attachToExistingMember: z.boolean().optional(),
+  joiningDate: z
+    .string()
+    .optional()
+    .refine(isSuppliedOrParseableDate, "Joining date must be a valid date"),
   dateOfBirth: z
     .string()
     .optional()
@@ -288,6 +313,7 @@ export const patchAccessRequestSchema = z.object({
 
 /** Row shape for spreadsheet bulk onboard — department can be an org department id or a name. */
 export const bulkOnboardEmployeeRowSchema = onboardEmployeeSchema
+  .omit({ attachToExistingMember: true })
   .extend({
     department: z.string().trim().min(1).optional(),
   })

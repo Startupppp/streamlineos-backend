@@ -9,6 +9,7 @@ import { and, eq, gt, isNull, lte } from "drizzle-orm";
 import { addDays } from "date-fns";
 import { hashToken } from "../../../common/security/token.util";
 import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
+import { registerAfterCommit } from "../../../common/tenant";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { AccessService } from "../../access/access.service";
 import { assertMayGrantRole } from "../../../common/rbac/assert-may-grant-role";
@@ -30,6 +31,7 @@ import { isUniqueViolation } from "../../../common/db/postgres-error";
 import {
   MembershipAdmissionService,
   admissionFailure,
+  canonicalAdmissionEmail,
 } from "./membership-admission.service";
 
 interface InvitationMutationResult {
@@ -40,6 +42,15 @@ interface InvitationMutationResult {
 }
 
 type InvitationDelivery = "background" | "enqueue";
+
+interface BulkInviteRowResult {
+  email: string;
+  originalEmail: string;
+  success: boolean;
+  invitationId?: string;
+  isDuplicate?: boolean;
+  error?: string;
+}
 
 @Injectable()
 export class InvitationCreateService {
@@ -73,24 +84,31 @@ export class InvitationCreateService {
     role: string,
     delivery: InvitationDelivery = "background",
   ): Promise<{
-    results: Array<{
-      email: string;
-      success: boolean;
-      invitationId?: string;
-      error?: string;
-    }>;
+    deliveryMode: InvitationDelivery;
+    results: BulkInviteRowResult[];
   }> {
     await assertMayGrantRole(this.access, orgId, actor, role);
 
-    const results: Array<{
-      email: string;
-      success: boolean;
-      invitationId?: string;
-      error?: string;
-    }> = [];
+    const results: BulkInviteRowResult[] = [];
+    const seenCanonical = new Map<string, number>();
 
-    for (const email of emails) {
-      const canonicalEmail = email.trim().toLowerCase();
+    for (let i = 0; i < emails.length; i++) {
+      const originalEmail = emails[i] ?? "";
+      const canonicalEmail = canonicalAdmissionEmail(originalEmail);
+
+      if (seenCanonical.has(canonicalEmail)) {
+        results.push({
+          email: canonicalEmail,
+          originalEmail,
+          success: false,
+          isDuplicate: true,
+          error: "Duplicate email in batch",
+        });
+        continue;
+      }
+
+      seenCanonical.set(canonicalEmail, i);
+
       try {
         const result = await this.inviteAuthorized(
           orgId,
@@ -101,19 +119,21 @@ export class InvitationCreateService {
         );
         results.push({
           email: canonicalEmail,
+          originalEmail,
           success: true,
           invitationId: result.invitationId,
         });
       } catch (err) {
         results.push({
           email: canonicalEmail,
+          originalEmail,
           success: false,
           error: err instanceof Error ? err.message : "Unknown error",
         });
       }
     }
 
-    return { results };
+    return { deliveryMode: delivery, results };
   }
 
   private async inviteAuthorized(
@@ -219,7 +239,7 @@ export class InvitationCreateService {
         async (tx) => {
           await tx.execute(lockMembersQuota(orgId));
           await this.planLimits.assertWithinLimit(orgId, "members", 1, tx);
-          await tx
+          const expiredRows = await tx
             .update(invitations)
             .set({ status: "EXPIRED" })
             .where(
@@ -230,7 +250,22 @@ export class InvitationCreateService {
                 lte(invitations.expiresAt, now),
                 isNull(invitations.acceptedAt),
               ),
+            )
+            .returning({ id: invitations.id });
+
+          for (const expired of expiredRows) {
+            await this.seatLedger.recordSeatEvent(
+              {
+                orgId,
+                eventType: "INVITE_EXPIRED",
+                subjectId: expired.id,
+                actorId: actorUserId,
+                reason: "invitation expired before re-invite",
+                idempotencyKey: `invite-expired:${expired.id}`,
+              },
+              tx,
             );
+          }
 
           await tx.insert(invitations).values({
             id: invitationId,
@@ -312,10 +347,15 @@ export class InvitationCreateService {
       return;
     }
 
-    void this.email
-      .sendInvitationEmail(email, rawToken, organizationName)
-      .catch((err: unknown) =>
-        recordDeliveryFailure(this.db, this.logger, orgId, invitationId, err),
-      );
+    const sendBackground = async (): Promise<void> => {
+      try {
+        await this.email.sendInvitationEmail(email, rawToken, organizationName);
+      } catch (err: unknown) {
+        await recordDeliveryFailure(this.db, this.logger, orgId, invitationId, err);
+      }
+    };
+
+    const registered = registerAfterCommit(sendBackground);
+    if (!registered) await sendBackground();
   }
 }

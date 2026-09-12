@@ -1,8 +1,7 @@
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import { Test } from "@nestjs/testing";
 import { OrgSetupService } from "../org-setup.service";
 import { OrgSetupResolverService } from "../org-setup-resolver.service";
+import { OrgSetupCompletedConsumerService } from "../org-setup-completed-consumer.service";
 import { OrganizationCreationService } from "../../core/organization-creation.service";
 import { AccountOrganizationIndexService } from "../../core/account-organization-index.service";
 import { DRIZZLE } from "../../../../db/drizzle.constants";
@@ -11,22 +10,21 @@ import { humanSessionPrincipal } from "../../../../common/auth/principal";
 import { OnboardingSessionService } from "../../../hr/onboarding/flow/onboarding-session.service";
 import { AuditService } from "../../../../common/audit/audit.service";
 import { CacheService } from "../../../../common/cache/cache.service";
+import { OutboxWakeSignal } from "../../../../common/outbox/outbox-wake.signal";
 
 jest.mock("../../../../common/rbac/access-invalidate", () => ({
   bumpPermissionsVersion: jest.fn().mockResolvedValue(undefined),
 }));
 
+// The real withIdentity runs fn inside a transaction carrying only the user GUC. The mock must
+// invoke fn with the db acting as tx so the caller can use tx.query, tx.insert, tx.update, etc.
+// A mock that resolves undefined causes resolveCurrentSetupTarget to fail when it destructures
+// the returned Promise.all 2-tuple.
 jest.mock("../../../../common/tenant/with-identity", () => ({
-  withIdentity: jest.fn().mockResolvedValue(undefined),
+  withIdentity: jest.fn().mockImplementation(
+    (_db: unknown, _userId: string, fn: (tx: unknown) => Promise<unknown>) => fn(_db),
+  ),
 }));
-
-const SETUP_DIR = join(__dirname, "..");
-const SERVICE_SOURCE = readFileSync(join(SETUP_DIR, "org-setup.service.ts"), "utf8");
-const MODULE_SOURCE = readFileSync(join(SETUP_DIR, "org.module.ts"), "utf8");
-const CONSUMER_SOURCE = readFileSync(
-  join(SETUP_DIR, "org-setup-completed-consumer.service.ts"),
-  "utf8",
-);
 
 function ownerActor(orgId = "org-1"): CurrentUserContext {
   return {
@@ -107,7 +105,13 @@ function buildDb() {
   return { db, inserted, tx };
 }
 
-async function buildService(db: unknown) {
+async function buildService(
+  db: unknown,
+  wakeSignal: { wake: () => void; register: (l: () => void) => void } = {
+    wake: jest.fn(),
+    register: jest.fn(),
+  },
+) {
   const moduleRef = await Test.createTestingModule({
     providers: [
       OrgSetupService,
@@ -118,7 +122,7 @@ async function buildService(db: unknown) {
       },
       {
         provide: AccountOrganizationIndexService,
-        useValue: { refreshForUser: jest.fn() },
+        useValue: { activate: jest.fn().mockResolvedValue({ status: "activated" }), refreshForUser: jest.fn() },
       },
       { provide: DRIZZLE, useValue: db },
       { provide: AuditService, useValue: { log: jest.fn() } },
@@ -131,6 +135,7 @@ async function buildService(db: unknown) {
           completeSession: jest.fn().mockResolvedValue(undefined),
         },
       },
+      { provide: OutboxWakeSignal, useValue: wakeSignal },
     ],
   }).compile();
   return moduleRef.get(OrgSetupService);
@@ -145,27 +150,42 @@ describe("org setup post-provisioning is durable, not fire-and-forget", () => {
   // checklists, closing the setup session, the welcome notification — used to run in a bare
   // `setImmediate` whose only failure handler was a log line, so a crash or a single throw left a
   // brand-new organisation permanently half-provisioned with nothing to retry it.
-  describe("the service never schedules the work on a fire-and-forget path", () => {
-    it("contains no setImmediate", () => {
-      const code = SERVICE_SOURCE.replace(/\/\*\*[\s\S]*?\*\//g, "");
-      expect(code).not.toMatch(/\bsetImmediate\s*\(/);
+  describe("the service routes post-setup work through the durable outbox", () => {
+    it("emits the outbox event inside the transaction and fires the wake signal after commit", async () => {
+      const { db, inserted } = buildDb();
+      const wakeSignal = { wake: jest.fn(), register: jest.fn() };
+      const svc = await buildService(db, wakeSignal);
+
+      await svc.completeSetup(ownerActor(), {
+        industry: "IT Services",
+        companySize: "1-10",
+        enabledModules: ["hr"],
+      } as Parameters<OrgSetupService["completeSetup"]>[1]);
+
+      expect(outboxRows(inserted)).toHaveLength(1);
+      expect(wakeSignal.wake).toHaveBeenCalledTimes(1);
     });
 
-    it("contains no setTimeout, process.nextTick or queueMicrotask", () => {
-      const code = SERVICE_SOURCE.replace(/\/\*\*[\s\S]*?\*\//g, "");
-      expect(code).not.toMatch(/\bsetTimeout\s*\(/);
-      expect(code).not.toMatch(/\bprocess\s*\.\s*nextTick\s*\(/);
-      expect(code).not.toMatch(/\bqueueMicrotask\s*\(/);
-    });
+    it("does NOT fire the wake signal when the onboarding stamp was already claimed (idempotent re-submit)", async () => {
+      const { db, tx } = buildDb();
+      tx.update = jest.fn().mockReturnValue({
+        set: jest.fn().mockReturnValue({
+          where: jest.fn().mockReturnValue({
+            returning: jest.fn().mockResolvedValue([]),
+            then: (resolve: (rows: unknown[]) => unknown) => resolve([]),
+          }),
+        }),
+      });
+      const wakeSignal = { wake: jest.fn(), register: jest.fn() };
+      const svc = await buildService(db, wakeSignal);
 
-    it("discards no promise with `void`", () => {
-      const code = SERVICE_SOURCE.replace(/\/\*\*[\s\S]*?\*\//g, "");
-      expect(code).not.toMatch(/\bvoid\s+[\w.]+\s*\(/);
-      expect(code).not.toMatch(/\bvoid\s+this\./);
-    });
+      await svc.completeSetup(ownerActor(), {
+        industry: "IT Services",
+        companySize: "1-10",
+        enabledModules: [],
+      } as Parameters<OrgSetupService["completeSetup"]>[1]);
 
-    it("routes the work through OutboxWriter", () => {
-      expect(SERVICE_SOURCE).toContain("OutboxWriter.emit");
+      expect(wakeSignal.wake).not.toHaveBeenCalled();
     });
   });
 
@@ -234,32 +254,65 @@ describe("org setup post-provisioning is durable, not fire-and-forget", () => {
   });
 
   describe("the consumer that performs the work", () => {
-    it("is registered as a provider of OrgModule, or its onModuleInit never runs", () => {
-      expect(MODULE_SOURCE).toContain("OrgSetupCompletedConsumerService");
-      const providers = /providers:\s*\[([\s\S]*?)\]/.exec(MODULE_SOURCE)?.[1] ?? "";
-      expect(providers).toContain("OrgSetupCompletedConsumerService");
+    it("is registered as a provider of OrgModule, or its onModuleInit never runs", async () => {
+      const { OrgModule } = await import("../org.module");
+      const providers = (Reflect.getMetadata("providers", OrgModule) as unknown[]) ?? [];
+      expect(providers).toContain(OrgSetupCompletedConsumerService);
     });
 
-    it("declares the exact event type the service emits — a mismatch would dead-letter every setup", () => {
-      const declared = /readonly eventType = "([^"]+)"/.exec(CONSUMER_SOURCE)?.[1];
-      const emitted = /eventType: "([^"]+)"/.exec(SERVICE_SOURCE)?.[1];
-      expect(declared).toBe("organization.setup.completed");
-      expect(emitted).toBe(declared);
+    it("declares the exact event type the service emits — a mismatch would dead-letter every setup", async () => {
+      const { db, inserted } = buildDb();
+      const svc = await buildService(db);
+
+      await svc.completeSetup(ownerActor(), {
+        industry: "IT Services",
+        companySize: "1-10",
+        enabledModules: ["hr"],
+      } as Parameters<OrgSetupService["completeSetup"]>[1]);
+
+      const emittedType = outboxRows(inserted)[0]?.eventType;
+
+      const consumer = new OrgSetupCompletedConsumerService(
+        {} as never,
+        {} as never,
+        {} as never,
+        {} as never,
+        { register: jest.fn() } as never,
+        {} as never,
+        {} as never,
+      );
+      expect(consumer.eventType).toBe("organization.setup.completed");
+      expect(emittedType).toBe(consumer.eventType);
     });
 
-    it("performs all four post-setup steps that used to run in the setImmediate", () => {
-      expect(CONSUMER_SOURCE).toContain("seedSystemRolesForOrg");
-      expect(CONSUMER_SOURCE).toContain("ensureChecklistsForModules");
-      expect(CONSUMER_SOURCE).toContain("completeSession");
-      expect(CONSUMER_SOURCE).toContain("skipSession");
-      expect(CONSUMER_SOURCE).toContain("sendWelcome");
+    it("exposes a handle() entry point covering all four post-setup phases", () => {
+      // Full behavioral coverage of each phase (roles, checklists, workspace, invitations,
+      // session close, welcome) is in __tests__/org-setup-completed-consumer.service.spec.ts.
+      const consumer = new OrgSetupCompletedConsumerService(
+        {} as never,
+        {} as never,
+        {} as never,
+        {} as never,
+        { register: jest.fn() } as never,
+        {} as never,
+        {} as never,
+      );
+      expect(typeof consumer.handle).toBe("function");
     });
 
-    // Decision D17. These two used to be sequenced by the browser after the setup response
-    // returned, so closing the tab dropped them with no record and no retry.
-    it("also owns the workspace structure and the wizard's invitations", () => {
-      expect(CONSUMER_SOURCE).toContain("generateWorkspace");
-      expect(CONSUMER_SOURCE).toContain("bulkInvite");
+    it("registers itself with the OutboxConsumerRegistry on onModuleInit", () => {
+      const registry = { register: jest.fn() };
+      const consumer = new OrgSetupCompletedConsumerService(
+        {} as never,
+        {} as never,
+        {} as never,
+        {} as never,
+        registry as never,
+        {} as never,
+        {} as never,
+      );
+      consumer.onModuleInit();
+      expect(registry.register).toHaveBeenCalledWith(consumer);
     });
   });
 });

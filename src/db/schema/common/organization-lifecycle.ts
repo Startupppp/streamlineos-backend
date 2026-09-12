@@ -122,6 +122,7 @@ export const organizationSagaSteps = pgTable(
         onDelete: "cascade",
       })
       .notNull(),
+    orgId: text("org_id").notNull(),
     stepName: text("step_name").notNull(),
     position: integer("position").notNull(),
     state: organizationSagaStepStateEnum("state").default("PENDING").notNull(),
@@ -137,6 +138,7 @@ export const organizationSagaSteps = pgTable(
   (table) => [
     uniqueIndex("uniq_org_saga_steps_saga_step").on(table.sagaId, table.stepName),
     index("idx_org_saga_steps_saga").on(table.sagaId, table.position),
+    index("idx_org_saga_steps_org").on(table.orgId),
   ],
 );
 

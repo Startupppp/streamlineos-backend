@@ -1,17 +1,31 @@
-import { and, asc, eq, gte, inArray, isNotNull, lt, or } from "drizzle-orm";
+import { and, asc, eq, gte, inArray, isNotNull, lt, or, sql, type SQL } from "drizzle-orm";
 import type { Db } from "../../db/drizzle.module";
 import { calendarEventExceptions } from "../../db/schema";
-import type { CalendarEventException } from "./calendar-occurrence.service";
-import { CALENDAR_EVENTS_CAP } from "./dto/calendar.schemas";
+import { MAX_OCCURRENCES_PER_WINDOW, type CalendarEventException } from "./calendar-occurrence.service";
+import { drainByKeysetBounded } from "./calendar-keyset-drain";
 
-/**
- * Upper bound on exceptions fetched in one pass.
- *
- * Each recurring event can produce O(1) user-authored exceptions per window.
- * With at most CALENDAR_EVENTS_CAP recurring events and a 2-month window,
- * 5 × CALENDAR_EVENTS_CAP gives generous headroom without a data-scaling loop.
- */
-const EXCEPTION_SINGLE_PASS_CAP = CALENDAR_EVENTS_CAP * 5;
+const EXCEPTION_PAGE_SIZE = 20_000;
+const EXCEPTION_PER_EVENT_CEILING = MAX_OCCURRENCES_PER_WINDOW;
+
+export interface LoadedExceptions {
+  byEvent: Map<number, CalendarEventException[]>;
+  complete: boolean;
+}
+
+interface ExceptionPageRow {
+  id: number;
+  eventId: number;
+  occurrenceStart: Date;
+  isCancelled: boolean;
+  modifiedTitle: string | null;
+  modifiedStart: Date | null;
+  modifiedEnd: Date | null;
+}
+
+function afterEventCursor(after: ExceptionPageRow | undefined): SQL | undefined {
+  if (!after) return undefined;
+  return sql`(${calendarEventExceptions.eventId}, ${calendarEventExceptions.id}) > (${after.eventId}, ${after.id})`;
+}
 
 export interface RescheduledOccurrence {
   title: string;
@@ -73,44 +87,42 @@ export function exceptionsInWindow(windowStart: Date, windowEnd: Date) {
   );
 }
 
-/**
- * Single-pass exception fetch for the given recurring event IDs and window.
- *
- * The previous implementation looped in pages of 500. Since recurring events
- * are capped at CALENDAR_EVENTS_CAP and each produces O(1) user-authored
- * exceptions per window, EXCEPTION_SINGLE_PASS_CAP covers any realistic
- * workload without a data-scaling loop, reducing the statement count from
- * O(exceptions / 500) to exactly 1.
- */
 export async function loadExceptionsByEvent(
   db: Db,
   orgId: string,
   recurringEventIds: number[],
   windowStart: Date,
   windowEnd: Date,
-): Promise<Map<number, CalendarEventException[]>> {
+): Promise<LoadedExceptions> {
   const byEvent = new Map<number, CalendarEventException[]>();
-  if (recurringEventIds.length === 0) return byEvent;
+  if (recurringEventIds.length === 0) return { byEvent, complete: true };
 
-  const rows = await db
-    .select({
-      eventId: calendarEventExceptions.eventId,
-      occurrenceStart: calendarEventExceptions.occurrenceStart,
-      isCancelled: calendarEventExceptions.isCancelled,
-      modifiedTitle: calendarEventExceptions.modifiedTitle,
-      modifiedStart: calendarEventExceptions.modifiedStart,
-      modifiedEnd: calendarEventExceptions.modifiedEnd,
-    })
-    .from(calendarEventExceptions)
-    .where(
-      and(
-        eq(calendarEventExceptions.orgId, orgId),
-        inArray(calendarEventExceptions.eventId, recurringEventIds),
-        exceptionsInWindow(windowStart, windowEnd),
-      ),
-    )
-    .orderBy(asc(calendarEventExceptions.eventId))
-    .limit(EXCEPTION_SINGLE_PASS_CAP);
+  const { rows, complete } = await drainByKeysetBounded<ExceptionPageRow>(
+    EXCEPTION_PAGE_SIZE,
+    recurringEventIds.length * EXCEPTION_PER_EVENT_CEILING,
+    (take, after) =>
+      db
+        .select({
+          id: calendarEventExceptions.id,
+          eventId: calendarEventExceptions.eventId,
+          occurrenceStart: calendarEventExceptions.occurrenceStart,
+          isCancelled: calendarEventExceptions.isCancelled,
+          modifiedTitle: calendarEventExceptions.modifiedTitle,
+          modifiedStart: calendarEventExceptions.modifiedStart,
+          modifiedEnd: calendarEventExceptions.modifiedEnd,
+        })
+        .from(calendarEventExceptions)
+        .where(
+          and(
+            eq(calendarEventExceptions.orgId, orgId),
+            inArray(calendarEventExceptions.eventId, recurringEventIds),
+            exceptionsInWindow(windowStart, windowEnd),
+            afterEventCursor(after),
+          ),
+        )
+        .orderBy(asc(calendarEventExceptions.eventId), asc(calendarEventExceptions.id))
+        .limit(take),
+  );
 
   for (const ex of rows) {
     const list = byEvent.get(ex.eventId) ?? [];
@@ -124,5 +136,5 @@ export async function loadExceptionsByEvent(
     byEvent.set(ex.eventId, list);
   }
 
-  return byEvent;
+  return { byEvent, complete };
 }

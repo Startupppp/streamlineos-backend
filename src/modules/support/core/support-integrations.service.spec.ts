@@ -1,3 +1,4 @@
+import { ScopedRead } from "../../access/scoped-read";
 import { Test, type TestingModule } from "@nestjs/testing";
 import { NotFoundException } from "@nestjs/common";
 import { SupportIntegrationsService } from "./support-integrations.service";
@@ -35,10 +36,10 @@ describe("SupportIntegrationsService", () => {
 
   describe("addLink", () => {
     it("throws NotFoundException when the ticket doesn't exist in the org", async () => {
-      mockDb.query.supportTickets.findFirst.mockResolvedValueOnce(undefined);
+      mockDb.query.supportTickets.findFirst.mockResolvedValue(undefined);
 
       await expect(
-        service.addLink("org1", 1, "user1", { entityType: "project", entityId: 5 } as never),
+        service.addLink("org1", 1, "user1", { entityType: "project", entityId: 5 } as never, ScopedRead.of("org1", "user1", "all")),
       ).rejects.toThrow(NotFoundException);
     });
 
@@ -46,7 +47,7 @@ describe("SupportIntegrationsService", () => {
       mockDb.query.projects.findFirst.mockResolvedValueOnce(undefined);
 
       await expect(
-        service.addLink("org1", 1, "user1", { entityType: "project", entityId: 5 } as never),
+        service.addLink("org1", 1, "user1", { entityType: "project", entityId: 5 } as never, ScopedRead.of("org1", "user1", "all")),
       ).rejects.toThrow(NotFoundException);
     });
 
@@ -56,7 +57,7 @@ describe("SupportIntegrationsService", () => {
         { id: 1, ticketId: 1, entityType: "project", entityId: 5, label: "Website Redesign" },
       ]);
 
-      const result = await service.addLink("org1", 1, "user1", { entityType: "project", entityId: 5 } as never);
+      const result = await service.addLink("org1", 1, "user1", { entityType: "project", entityId: 5 } as never, ScopedRead.of("org1", "user1", "all"));
 
       expect(result).toMatchObject({ label: "Website Redesign" });
       expect(mockDb.values).toHaveBeenCalledWith(
@@ -68,7 +69,7 @@ describe("SupportIntegrationsService", () => {
       mockDb.query.invoices.findFirst.mockResolvedValueOnce({ invoiceNumber: "INV-1042" });
       mockDb.returning.mockResolvedValueOnce([{ id: 2, label: "INV-1042" }]);
 
-      const result = await service.addLink("org1", 1, "user1", { entityType: "invoice", entityId: 10 } as never);
+      const result = await service.addLink("org1", 1, "user1", { entityType: "invoice", entityId: 10 } as never, ScopedRead.of("org1", "user1", "all"));
 
       expect(result).toMatchObject({ label: "INV-1042" });
     });
@@ -80,7 +81,7 @@ describe("SupportIntegrationsService", () => {
       const result = await service.addLink("org1", 1, "user1", {
         entityType: "calendar_event",
         entityId: 20,
-      } as never);
+      } as never, ScopedRead.of("org1", "user1", "all"));
 
       expect(result).toMatchObject({ label: "Customer escalation call" });
     });
@@ -92,7 +93,7 @@ describe("SupportIntegrationsService", () => {
       const result = await service.addLink("org1", 1, "user1", {
         entityType: "chat_channel",
         entityId: 30,
-      } as never);
+      } as never, ScopedRead.of("org1", "user1", "all"));
 
       expect(result).toMatchObject({ label: "#customer-a-escalations" });
     });
@@ -100,32 +101,32 @@ describe("SupportIntegrationsService", () => {
 
   describe("listLinks", () => {
     it("throws NotFoundException when the ticket doesn't exist in the org", async () => {
-      mockDb.query.supportTickets.findFirst.mockResolvedValueOnce(undefined);
-      await expect(service.listLinks("org1", 1)).rejects.toThrow(NotFoundException);
+      mockDb.query.supportTickets.findFirst.mockResolvedValue(undefined);
+      await expect(service.listLinks("org1", 1, ScopedRead.of("org1", "user1", "all"))).rejects.toThrow(NotFoundException);
     });
 
     it("returns the ticket's external links", async () => {
       mockDb.query.supportTicketExternalLinks.findMany.mockResolvedValueOnce([
         { id: 1, entityType: "project", entityId: 5, label: "Website Redesign" },
       ]);
-      await expect(service.listLinks("org1", 1)).resolves.toHaveLength(1);
+      await expect(service.listLinks("org1", 1, ScopedRead.of("org1", "user1", "all"))).resolves.toHaveLength(1);
     });
   });
 
   describe("removeLink", () => {
     it("throws NotFoundException when the ticket doesn't exist in the org", async () => {
-      mockDb.query.supportTickets.findFirst.mockResolvedValueOnce(undefined);
-      await expect(service.removeLink("org1", 1, 5)).rejects.toThrow(NotFoundException);
+      mockDb.query.supportTickets.findFirst.mockResolvedValue(undefined);
+      await expect(service.removeLink("org1", 1, 5, ScopedRead.of("org1", "user1", "all"))).rejects.toThrow(NotFoundException);
     });
 
     it("throws NotFoundException when the link doesn't exist", async () => {
       mockDb.returning.mockResolvedValueOnce([]);
-      await expect(service.removeLink("org1", 1, 999)).rejects.toThrow(NotFoundException);
+      await expect(service.removeLink("org1", 1, 999, ScopedRead.of("org1", "user1", "all"))).rejects.toThrow(NotFoundException);
     });
 
     it("deletes the link", async () => {
       mockDb.returning.mockResolvedValueOnce([{ id: 5 }]);
-      await expect(service.removeLink("org1", 1, 5)).resolves.toEqual({ success: true });
+      await expect(service.removeLink("org1", 1, 5, ScopedRead.of("org1", "user1", "all"))).resolves.toEqual({ success: true });
     });
   });
 });

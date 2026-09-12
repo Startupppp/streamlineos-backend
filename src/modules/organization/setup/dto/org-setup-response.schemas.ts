@@ -52,9 +52,22 @@ export const orgSetupSkipResponseSchema = z.union([
   z.object({ success: z.literal(true), orgId: z.string() }),
 ]);
 
+export const ORG_SETUP_STATUS_ERROR_CODES = [
+  "SETUP_BACKGROUND_PARTIAL",
+  "SETUP_BACKGROUND_RETRYING",
+  "SETUP_BACKGROUND_DEAD",
+  "SETUP_BACKGROUND_INVALID",
+  "SETUP_BACKGROUND_SUPPRESSED",
+] as const;
+
+export const orgSetupStatusErrorCodeSchema = z.enum(
+  ORG_SETUP_STATUS_ERROR_CODES,
+);
+
 export const orgSetupStatusResponseSchema = z.object({
   orgId: z.string().nullable(),
   onboardingCompletedAt: nullableWireDate(),
+  ready: z.boolean(),
   provisioning: z.enum([
     "not-started",
     "pending",
@@ -62,5 +75,6 @@ export const orgSetupStatusResponseSchema = z.object({
     "completed",
     "failed",
   ]),
-  lastError: z.string().nullable(),
+  errorCode: orgSetupStatusErrorCodeSchema.nullable(),
+  correlationId: z.string().nullable(),
 });

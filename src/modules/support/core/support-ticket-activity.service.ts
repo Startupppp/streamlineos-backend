@@ -1,4 +1,4 @@
-import { Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { Inject, Injectable } from "@nestjs/common";
 import { and, count, desc, eq, lt, sql } from "drizzle-orm";
 import {
   supportTicketActivity,
@@ -8,6 +8,8 @@ import {
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { logger } from "../../../common/logger/logger.service";
+import type { ScopedRead } from "../../access/scoped-read";
+import { assertTicketInScope, supportTicketScope } from "./support-tickets-scope";
 import type {
   TicketPriority,
   TicketStatus,
@@ -120,12 +122,8 @@ export class SupportTicketActivityService {
     }
   }
 
-  async listActivity(orgId: string, ticketId: number) {
-    const ticket = await this.db.query.supportTickets.findFirst({
-      where: and(eq(supportTickets.id, ticketId), eq(supportTickets.orgId, orgId)),
-      columns: { id: true },
-    });
-    if (!ticket) throw new NotFoundException("Ticket not found");
+  async listActivity(orgId: string, ticketId: number, read: ScopedRead) {
+    await assertTicketInScope(this.db, read, ticketId);
 
     const rows = await this.db
       .select({
@@ -161,25 +159,35 @@ export class SupportTicketActivityService {
     }));
   }
 
-  async stats(orgId: string) {
+  async stats(read: ScopedRead) {
     const now = new Date();
+    const scope = supportTicketScope(read.orgId, read.actorId);
     const [statusAggs, slaBreached] = await Promise.all([
-      this.db
-        .select({ status: supportTickets.status, cnt: count() })
-        .from(supportTickets)
-        .where(eq(supportTickets.orgId, orgId))
-        .groupBy(supportTickets.status),
-      this.db
-        .select({ cnt: count() })
-        .from(supportTickets)
-        .where(
-          and(
-            eq(supportTickets.orgId, orgId),
+      read.read(
+        { tenant: supportTickets.orgId, scope },
+        ({ sql: where }) => this.db
+          .select({ status: supportTickets.status, cnt: count() })
+          .from(supportTickets)
+          .where(where)
+          .groupBy(supportTickets.status),
+        () => [],
+      ),
+      read.read(
+        {
+          tenant: supportTickets.orgId,
+          scope,
+          and: [
             sql`${supportTickets.slaDeadline} IS NOT NULL`,
             lt(supportTickets.slaDeadline, now),
             sql`${supportTickets.status} NOT IN ('RESOLVED', 'CLOSED')`,
-          ),
-        ),
+          ],
+        },
+        ({ sql: where }) => this.db
+          .select({ cnt: count() })
+          .from(supportTickets)
+          .where(where),
+        () => [],
+      ),
     ]);
 
     const statusMap = new Map(statusAggs.map((r) => [r.status, Number(r.cnt)]));

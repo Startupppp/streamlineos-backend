@@ -266,6 +266,96 @@ describe("OwnershipTransferResponseService — OWNERSHIP_TRANSFER lifecycle gate
     });
   });
 
+  describe("ORGANIZATION transfer moves both parties' rights on one transaction handle", () => {
+    it("demotes the outgoing owner, promotes the incoming one and bumps the version on the same handle", async () => {
+      setupCommonDbMocks();
+      jest.mocked(runInTenantTransaction).mockImplementation(
+        async (_db, fn) => fn(stubService<TenantTx>(makeTenantTx("ACTIVE", false))),
+      );
+      const txMock = setupOrgTransferTx();
+
+      await service.acceptTransfer(ORG, ACTOR_USER, TRANSFER_ID);
+
+      expect(mockDb.transaction).toHaveBeenCalledTimes(1);
+      expect(syncStructuralRoleAssignment).toHaveBeenCalledTimes(2);
+      expect(syncStructuralRoleAssignment).toHaveBeenCalledWith(txMock, ORG, 1, "ORG_ADMIN");
+      expect(syncStructuralRoleAssignment).toHaveBeenCalledWith(txMock, ORG, 2, "OWNER");
+      expect(bumpPermissionsVersion).toHaveBeenCalledWith(txMock, ORG);
+    });
+
+    it("writes the owner_membership_id repoint and the transfer's ACCEPTED stamp on that same handle", async () => {
+      setupCommonDbMocks();
+      jest.mocked(runInTenantTransaction).mockImplementation(
+        async (_db, fn) => fn(stubService<TenantTx>(makeTenantTx("ACTIVE", false))),
+      );
+      const txMock = setupOrgTransferTx();
+
+      await service.acceptTransfer(ORG, ACTOR_USER, TRANSFER_ID);
+
+      expect(txMock.update).toHaveBeenCalledTimes(4);
+      expect(mockDb.update).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("MODULE transfer moves the ownership expansion on one transaction handle", () => {
+    const pendingModuleTransfer = {
+      id: TRANSFER_ID,
+      scope: "MODULE" as const,
+      moduleKey: "hr",
+      fromMembershipId: 1,
+      initiatedByMembershipId: 1,
+      toMembershipId: 2,
+      status: "PENDING",
+      expiresAt: new Date(Date.now() + 3_600_000),
+    };
+
+    it("revokes the outgoing owner's role and grants the incoming one's beside the bump, all on the same handle", async () => {
+      mockDb.select
+        .mockReturnValueOnce(makeSelectChain([pendingModuleTransfer]))
+        .mockReturnValueOnce(makeSelectChain([recipientMembership]));
+
+      const txMock = {
+        select: jest.fn()
+          .mockReturnValueOnce(makeSelectChain([{ ownerMembershipId: 1 }]))
+          .mockReturnValueOnce(makeSelectChain([fromMember, toMember])),
+        insert: jest.fn().mockReturnValue(makeInsertChain()),
+        update: jest.fn().mockReturnValue(makeUpdateChain([{ id: TRANSFER_ID }])),
+      };
+      mockDb.transaction.mockImplementation(
+        async (fn: (tx: typeof txMock) => Promise<unknown>) => fn(txMock),
+      );
+
+      await service.acceptTransfer(ORG, ACTOR_USER, TRANSFER_ID);
+
+      expect(txMock.insert).toHaveBeenCalledTimes(1);
+      expect(revokeModuleOwnerRole).toHaveBeenCalledWith(txMock, ORG, "hr", 1);
+      expect(assertModuleOwnerRoleAssigned).toHaveBeenCalledWith(txMock, ORG, "hr", 2);
+      expect(bumpPermissionsVersion).toHaveBeenCalledWith(txMock, ORG);
+    });
+
+    it("leaves the org's structural roles untouched — a module handover is not an org handover", async () => {
+      mockDb.select
+        .mockReturnValueOnce(makeSelectChain([pendingModuleTransfer]))
+        .mockReturnValueOnce(makeSelectChain([recipientMembership]));
+
+      const txMock = {
+        select: jest.fn()
+          .mockReturnValueOnce(makeSelectChain([{ ownerMembershipId: 1 }]))
+          .mockReturnValueOnce(makeSelectChain([fromMember, toMember])),
+        insert: jest.fn().mockReturnValue(makeInsertChain()),
+        update: jest.fn().mockReturnValue(makeUpdateChain([{ id: TRANSFER_ID }])),
+      };
+      mockDb.transaction.mockImplementation(
+        async (fn: (tx: typeof txMock) => Promise<unknown>) => fn(txMock),
+      );
+
+      await service.acceptTransfer(ORG, ACTOR_USER, TRANSFER_ID);
+
+      expect(syncStructuralRoleAssignment).not.toHaveBeenCalled();
+      expect(assertModuleOwnerRoleAssigned).toHaveBeenCalledTimes(1);
+    });
+  });
+
   describe("MODULE-scoped acceptance is NOT gated by the org lifecycle table", () => {
     const pendingModuleTransfer = {
       id: TRANSFER_ID,

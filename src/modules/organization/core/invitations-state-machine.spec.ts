@@ -27,8 +27,22 @@ describe("Invitation sub-services state transitions", () => {
   const updateReturning = jest.fn().mockResolvedValue([{ id: "invite-1" }]);
   const updateWhere = jest.fn().mockReturnValue({ returning: updateReturning });
   const eventValues = jest.fn().mockResolvedValue(undefined);
+  const lockedSelectLimit = jest.fn().mockResolvedValue([
+    {
+      id: "invite-1",
+      status: "PENDING",
+      expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+    },
+  ]);
   const tx = {
     execute: jest.fn().mockResolvedValue([]),
+    select: jest.fn().mockReturnValue({
+      from: jest.fn().mockReturnValue({
+        where: jest.fn().mockReturnValue({
+          for: jest.fn().mockReturnValue({ limit: lockedSelectLimit }),
+        }),
+      }),
+    }),
     update: jest.fn().mockReturnValue({
       set: jest.fn().mockReturnValue({ where: updateWhere }),
     }),

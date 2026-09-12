@@ -1,12 +1,12 @@
 import { Injectable } from "@nestjs/common";
-import { EmailService } from "../email/email.service";
+import { EmailSignService } from "../email/email-sign.service";
 import { appUrl } from "../email/app-url";
 import { getEmailTemplate, escapeHtml } from "../email/templates/base";
 import { renderButton } from "../email/templates/components";
 
 @Injectable()
 export class SignNotificationsService {
-  constructor(private readonly email: EmailService) {}
+  constructor(private readonly email: EmailSignService) {}
 
   async sendCcNotice(email: string, name: string, envelopeTitle: string, envelopeViewUrl: string): Promise<void> {
     const html = getEmailTemplate({

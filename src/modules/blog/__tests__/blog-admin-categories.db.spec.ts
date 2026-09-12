@@ -34,8 +34,7 @@ import postgres from "postgres";
 // eslint-disable-next-line no-restricted-imports -- namespace needed for the Db type; no CRM identity table is referenced here
 import * as schema from "../../../db/schema";
 import { blogCategories, blogPosts } from "../../../db/schema";
-import { CacheService } from "../../../common/cache/cache.service";
-import { BlogService } from "../blog.service";
+import { BlogCategoriesService } from "../blog-categories.service";
 
 const DB_URL = process.env.BLOG_PROBE_DATABASE_URL ?? process.env.APP_DATABASE_URL;
 
@@ -43,7 +42,7 @@ jest.setTimeout(120_000);
 
 describe("blog admin categories — counts every post, not just published ones", () => {
   let client: postgres.Sql;
-  let service: BlogService;
+  let service: BlogCategoriesService;
   let db: ReturnType<typeof drizzle<typeof schema>>;
   const createdCategoryIds: string[] = [];
 
@@ -51,9 +50,7 @@ describe("blog admin categories — counts every post, not just published ones",
     if (!DB_URL) throw new Error("blog-admin-categories.db.spec.ts requires BLOG_PROBE_DATABASE_URL or APP_DATABASE_URL");
     client = postgres(DB_URL, { max: 1, prepare: false, onnotice: () => undefined });
     db = drizzle(client, { schema });
-    // Redis null: reads degrade to the database, which is what these two
-    // projections do anyway — neither consults the cache.
-    service = new BlogService(db, new CacheService(null));
+    service = new BlogCategoriesService(db);
   });
 
   afterEach(async () => {

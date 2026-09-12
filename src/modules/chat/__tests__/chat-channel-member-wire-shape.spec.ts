@@ -6,6 +6,7 @@ import {
   flattenChannelMember,
 } from "../chat-channel-member-shape";
 import { type Db } from "../../../db/drizzle.module";
+import type { EntityActor } from "../../entity-reference/entity-reference.types";
 
 /**
  * The payload shape, asserted on what the read paths RETURN — not on what a caller declares.
@@ -31,6 +32,8 @@ const ME = "user-me";
 const OTHER = "user-other";
 
 const WIRE_KEYS = [...CHANNEL_MEMBER_WIRE_KEYS];
+
+const meActor: EntityActor = { orgId: ORG, userId: ME, membershipId: 1, isOrgOwner: false };
 
 function nestedMemberRow(userId: string, over: Record<string, unknown> = {}) {
   return {
@@ -128,7 +131,7 @@ function build(db: Db) {
 describe("chat channel member — one wire shape across every read path", () => {
   it("GET /chat/channels/:id puts the user at the top level, not under membership", async () => {
     const db = makeDb([nestedMemberRow(ME), nestedMemberRow(OTHER)]);
-    const channel = await build(db).getChannel(CHANNEL, ME, ORG);
+    const channel = await build(db).getChannel(CHANNEL, meActor);
 
     const member = channel?.members[0];
     expect(member).toBeDefined();
@@ -140,7 +143,7 @@ describe("chat channel member — one wire shape across every read path", () => 
 
   it("GET /chat/channels/:id/members emits the identical key set", async () => {
     const db = makeDb([nestedMemberRow(ME), nestedMemberRow(OTHER)]);
-    const { members } = await build(db).listMembers(CHANNEL, ME, ORG);
+    const { members } = await build(db).listMembers(CHANNEL, meActor);
 
     expect(members).toHaveLength(2);
     for (const member of members) {
@@ -167,7 +170,7 @@ describe("chat channel member — one wire shape across every read path", () => 
   it("the list preview still withholds the address the detail route carries", async () => {
     const db = makePreviewDb([previewRow(OTHER, 2)]);
     const previewMember = (await loadChannelMemberPreview(db, ORG, [CHANNEL], 1)).get(CHANNEL)?.members[0];
-    const detailMember = (await build(makeDb([nestedMemberRow(OTHER)])).getChannel(CHANNEL, ME, ORG))?.members[0];
+    const detailMember = (await build(makeDb([nestedMemberRow(OTHER)])).getChannel(CHANNEL, meActor))?.members[0];
 
     expect(Object.keys(previewMember?.user ?? {})).not.toContain("email");
     expect(detailMember?.user?.email).toBe(`${OTHER}@test.com`);
@@ -175,7 +178,7 @@ describe("chat channel member — one wire shape across every read path", () => 
 
   it("keeps the tenant key and the internal join id off the wire entirely", async () => {
     const db = makeDb([nestedMemberRow(ME)]);
-    const member = (await build(db).getChannel(CHANNEL, ME, ORG))?.members[0];
+    const member = (await build(db).getChannel(CHANNEL, meActor))?.members[0];
 
     expect(member).not.toHaveProperty("orgId");
     expect(member).not.toHaveProperty("membershipId");
@@ -208,7 +211,7 @@ describe("chat channel member — the DIRECT header predicate against the real p
 
   it("the detail route's payload resolves the header to the other party's real name", async () => {
     const db = makeDb([nestedMemberRow(ME), nestedMemberRow(OTHER)]);
-    const channel = await build(db).getChannel(CHANNEL, ME, ORG);
+    const channel = await build(db).getChannel(CHANNEL, meActor);
 
     expect(resolveOther(channel?.members ?? [])?.name ?? "Unknown").toBe("Ada Lovelace");
   });
@@ -222,7 +225,7 @@ describe("chat channel member — the DIRECT header predicate against the real p
 
   it("the caller's own row is findable, so favourites and admin controls resolve", async () => {
     const db = makeDb([nestedMemberRow(ME, { isFavorite: true, role: "ADMIN" }), nestedMemberRow(OTHER)]);
-    const channel = await build(db).getChannel(CHANNEL, ME, ORG);
+    const channel = await build(db).getChannel(CHANNEL, meActor);
     const mine = channel?.members.find((m) => m.user?.id === ME);
 
     expect(mine?.isFavorite).toBe(true);

@@ -93,6 +93,26 @@ export function parseSchema(sources) {
   return tables;
 }
 
+/**
+ * ADR 0005: a ScopedRead spends its predicates in the runner spec, not in the
+ * findFirst call — `read.read({ tenant, scope, and: [...] }, ({ sql: where }) =>
+ * db.query.x.findFirst({ where }))`. The tenant and soft-delete clauses are then
+ * outside the findFirst parens, so inspecting those parens alone reports a
+ * correctly-filtered read as unguarded. Only widen when the call actually
+ * consumes a runner-supplied `where`, so an ordinary read is still judged on its
+ * own body.
+ */
+export function scopedReadSpecFor(src, index, body) {
+  if (!/\bwhere\b/.test(body)) return "";
+  const start = Math.max(0, index - 900);
+  const preceding = src.slice(start, index);
+  const opener = preceding.lastIndexOf(".read(");
+  const composer = preceding.lastIndexOf(".compose(");
+  const at = Math.max(opener, composer);
+  if (at === -1) return "";
+  return preceding.slice(at);
+}
+
 // Classify each findFirst by what the code does with the result
 export function parseFindFirst(src, tables) {
   const found = [];
@@ -110,12 +130,13 @@ export function parseFindFirst(src, tables) {
       : /if\s*\(\s*[\w.]+\s*\)[\s\S]{0,90}Conflict/.test(after)
         ? "conflict"
         : "other";
+    const predicates = body + scopedReadSpecFor(src, m.index, body);
     found.push({
       table: m[1],
       line: src.slice(0, m.index).split("\n").length,
       shape,
-      hasTenant: /\.orgId|\.organizationId/.test(body),
-      hasSoftDelete: /deletedAt/.test(body),
+      hasTenant: /\.orgId|\.organizationId/.test(predicates),
+      hasSoftDelete: /deletedAt/.test(predicates),
     });
   }
   return found;
@@ -179,6 +200,32 @@ if (args.includes("--self-test")) {
     `    });`,
     `    if (!row) throw new NotFoundException("Not found");`,
     `  }`,
+    ``,
+    `  async f(read: ScopedRead, spaceId: number) {`,
+    `    const space = await read.read(`,
+    `      {`,
+    `        tenant: kbSpaces.orgId,`,
+    `        scope: { columns: { ownerColumn: kbSpaces.ownerId } },`,
+    `        and: [eq(kbSpaces.id, spaceId), isNull(kbSpaces.deletedAt)],`,
+    `      },`,
+    `      ({ sql: where }) => this.db.query.kbSpaces.findFirst({ where, columns: { id: true } }),`,
+    `      () => undefined,`,
+    `    );`,
+    `    if (!space) throw new NotFoundException("Space not found");`,
+    `  }`,
+    ``,
+    `  async g(read: ScopedRead, spaceId: number) {`,
+    `    const space = await read.read(`,
+    `      {`,
+    `        tenant: kbSpaces.orgId,`,
+    `        scope: { columns: { ownerColumn: kbSpaces.ownerId } },`,
+    `        and: [eq(kbSpaces.id, spaceId)],`,
+    `      },`,
+    `      ({ sql: where }) => this.db.query.kbSpaces.findFirst({ where, columns: { id: true } }),`,
+    `      () => undefined,`,
+    `    );`,
+    `    if (!space) throw new NotFoundException("Space not found");`,
+    `  }`,
   ].join("\n");
 
   const found = parseFindFirst(source, schema);
@@ -195,14 +242,22 @@ if (args.includes("--self-test")) {
     schemaSeesSoftDelete: schema["kbSpaces"].softDelete === true,
     schemaSeesTenant: schema["kbSpaces"].tenant === true,
     schemaSeesGlobalTableHasNoTenant: schema["users"].tenant === false,
-    findsAllFiveCalls: found.length === 5,
+    findsAllSevenCalls: found.length === 7,
     unguardedReadIsAread: at(2)?.shape === "read" && at(2)?.hasSoftDelete === false,
     guardedReadPasses: at(9)?.shape === "read" && at(9)?.hasSoftDelete === true,
+    scopedReadSpecIsInspected:
+      found[5]?.hasSoftDelete === true && found[5]?.hasTenant === true,
+    scopedReadMissingSoftDeleteStillFails: found[6]?.hasSoftDelete === false,
+    scopedReadWideningIsNotUnconditional:
+      scopedReadSpecFor("const x = 1;", 12, "{ where: eq(a.id, 1) }") === "",
     // The distinction that kept seven correct sites off the list
     conflictCheckIsNotARead: at(20)?.shape === "conflict",
     globalTableReadIsSeenButExempt: at(27)?.shape === "read" && GLOBAL_TABLES.has("users"),
     tableWithoutSoftDeleteIsNotAnOffender: !offenders.some((f) => f.table === "auditLogs"),
-    exactlyOneOffender: offenders.length === 1 && offenders[0].line === 2,
+    exactlyTwoOffenders:
+      offenders.length === 2 &&
+      offenders[0].line === 2 &&
+      offenders[1] === found[6],
     purgeRegistryIsExplicit: PURGE_READS.size > 0,
   };
 

@@ -11,19 +11,30 @@ const txCalls = {
   deletes: 0,
   inserted: [] as Record<string, unknown>[],
   versionBumped: 0,
+  writeTx: null as unknown,
+  bumpTx: null as unknown,
 };
 
 jest.mock("../../../common/tenant/run-in-tenant-transaction", () => ({
-  runInTenantTransaction: (_db: unknown, fn: (tx: unknown) => Promise<void>) =>
-    fn({
-      delete: () => ({ where: () => { txCalls.deletes += 1; return Promise.resolve(); } }),
-      insert: () => ({
-        values: (rows: Record<string, unknown>[]) => {
-          txCalls.inserted.push(...rows);
+  runInTenantTransaction: (_db: unknown, fn: (tx: unknown) => Promise<void>) => {
+    const tx = {
+      delete: () => ({
+        where: () => {
+          txCalls.deletes += 1;
+          txCalls.writeTx = tx;
           return Promise.resolve();
         },
       }),
-    }),
+      insert: () => ({
+        values: (rows: Record<string, unknown>[]) => {
+          txCalls.inserted.push(...rows);
+          txCalls.writeTx = tx;
+          return Promise.resolve();
+        },
+      }),
+    };
+    return fn(tx);
+  },
 }));
 
 const rankContextHolder = {
@@ -35,8 +46,9 @@ jest.mock("../module-access.helpers", () => ({
 }));
 
 jest.mock("../../../common/rbac/access-invalidate", () => ({
-  bumpPermissionsVersion: () => {
+  bumpPermissionsVersion: (tx: unknown) => {
     txCalls.versionBumped += 1;
+    txCalls.bumpTx = tx;
     return Promise.resolve();
   },
 }));
@@ -104,6 +116,8 @@ beforeEach(() => {
   txCalls.deletes = 0;
   txCalls.inserted = [];
   txCalls.versionBumped = 0;
+  txCalls.writeTx = null;
+  txCalls.bumpTx = null;
 });
 
 describe("attaching capability to one person", () => {
@@ -312,6 +326,26 @@ describe("revocation takes effect without re-authenticating", () => {
     txCalls.versionBumped = 0;
     await service.removeGrant(ACTOR, "hr", 7, "hr:employees:view");
     expect(txCalls.versionBumped).toBe(1);
+  });
+
+  it("hands the bump the same transaction handle the grant rows were written on", async () => {
+    const { service } = build({});
+    await service.setGrants(ACTOR, "hr", 7, {
+      items: [{ permissionKey: "hr:employees:view", scope: "all" }],
+    });
+
+    expect(txCalls.inserted).toHaveLength(1);
+    expect(txCalls.writeTx).not.toBeNull();
+    expect(txCalls.bumpTx).toBe(txCalls.writeTx);
+  });
+
+  it("hands the bump the same transaction handle the revoked rows were deleted on", async () => {
+    const { service } = build({});
+    await service.removeGrant(ACTOR, "hr", 7, "hr:employees:view");
+
+    expect(txCalls.deletes).toBe(1);
+    expect(txCalls.writeTx).not.toBeNull();
+    expect(txCalls.bumpTx).toBe(txCalls.writeTx);
   });
 });
 

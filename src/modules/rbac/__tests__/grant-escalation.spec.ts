@@ -147,6 +147,9 @@ function makeDb(options: DbOptions, tx: ReturnType<typeof makeTx>): Db {
       innerJoin: jest.fn().mockReturnValue({
         innerJoin: jest.fn().mockReturnValue({
           where: jest.fn().mockReturnValue({
+            orderBy: jest.fn().mockReturnValue({
+              limit: jest.fn().mockResolvedValue(rankRows),
+            }),
             limit: jest.fn().mockResolvedValue(rankRows),
           }),
         }),

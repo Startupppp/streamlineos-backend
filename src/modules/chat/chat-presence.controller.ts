@@ -13,6 +13,7 @@ import { ApiTags, ApiOperation, ApiBearerAuth, ApiResponse } from "@nestjs/swagg
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
+import { actorOf } from "../entity-reference/entity-actor";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ChatPresenceService } from "./chat-presence.service";
@@ -95,7 +96,7 @@ export class ChatPresenceController {
     if (query.query.length < 2) {
       throw new BadRequestException("Query must be at least 2 characters");
     }
-    return this.presence.searchMessages(u.userId, u.orgId, query.query, query.channelId, query.limit);
+    return this.presence.searchMessages(actorOf(u), query.query, query.channelId, query.limit);
   }
 
   @ApiOperation({ summary: "List all users in the organisation for mentions and invites" })

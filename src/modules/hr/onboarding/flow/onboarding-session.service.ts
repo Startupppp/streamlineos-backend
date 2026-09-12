@@ -4,6 +4,7 @@ import { DRIZZLE } from "../../../../db/drizzle.constants";
 import type { Db } from "../../../../db/drizzle.module";
 import { onboardingFlowSessions } from "../../../../db/schema";
 import { OnboardingAnalyticsService } from "./onboarding-analytics.service";
+import { stripOnboardingDraftSecrets } from "./onboarding-session-privacy";
 
 type OnboardingFlowType =
   | "org_setup"
@@ -47,7 +48,7 @@ export class OnboardingSessionService {
       orderBy: desc(onboardingFlowSessions.createdAt),
     });
     if (existing && existing.status !== "abandoned") {
-      return existing;
+      return { ...existing, data: stripOnboardingDraftSecrets(existing.data) };
     }
 
     const [created] = await this.db
@@ -67,7 +68,14 @@ export class OnboardingSessionService {
       .set({
         status: session.status === "not_started" ? "in_progress" : session.status,
         ...(patch.currentStep !== undefined ? { currentStep: patch.currentStep } : {}),
-        ...(patch.data !== undefined ? { data: { ...session.data, ...patch.data } } : {}),
+        ...(patch.data !== undefined
+          ? {
+              data: {
+                ...stripOnboardingDraftSecrets(session.data),
+                ...stripOnboardingDraftSecrets(patch.data),
+              },
+            }
+          : {}),
         ...(patch.completedSteps !== undefined ? { completedSteps: patch.completedSteps } : {}),
         ...(patch.skippedSteps !== undefined ? { skippedSteps: patch.skippedSteps } : {}),
         ...(patch.source !== undefined ? { source: patch.source } : {}),
@@ -99,7 +107,7 @@ export class OnboardingSessionService {
         status: "skipped",
         completedAt: new Date(),
         lastSeenAt: new Date(),
-        data: { ...session.data, skipReason: reason },
+        data: { ...stripOnboardingDraftSecrets(session.data), skipReason: reason },
       })
       .where(eq(onboardingFlowSessions.id, session.id))
       .returning();

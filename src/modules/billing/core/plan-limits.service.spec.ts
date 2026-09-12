@@ -336,7 +336,7 @@ describe("PlanLimitsService", () => {
     });
   });
 
-  describe("assertWithinLimit — chatChannels excludes entity-linked rows", () => {
+  describe("assertWithinLimit — chatChannels counts every channel it charges for", () => {
     const FREE_TIER = [{ plan: "FREE", status: "ACTIVE", trial_ends_at: null }];
 
     function renderedSql(execute: jest.Mock, callIndex: number): string {
@@ -346,7 +346,7 @@ describe("PlanLimitsService", () => {
       return new PgDialect().sqlToQuery(arg).sql;
     }
 
-    it("counts only channels with no entity_id, so a project channel does not consume the quota", async () => {
+    it("BITE: counts entity-linked channels too, so what is charged is what is counted", async () => {
       const execute = jest
         .fn()
         .mockResolvedValueOnce(FREE_TIER)
@@ -356,10 +356,10 @@ describe("PlanLimitsService", () => {
       await expect(service.assertWithinLimit("org1", "chatChannels", 1)).resolves.toBeUndefined();
       const counted = renderedSql(execute, 1);
       expect(counted).toContain("chat_channels");
-      expect(counted).toContain("entity_id IS NULL");
+      expect(counted).not.toContain("entity_id IS NULL");
     });
 
-    it("still refuses a non-entity channel once the counted rows reach the FREE limit", async () => {
+    it("still refuses a channel once the counted rows reach the FREE limit", async () => {
       const execute = jest
         .fn()
         .mockResolvedValueOnce(FREE_TIER)
@@ -371,7 +371,7 @@ describe("PlanLimitsService", () => {
       );
     });
 
-    it("excludes entity-linked rows from the bulk usage projection too", async () => {
+    it("BITE: the bulk usage projection counts entity-linked rows on the same basis", async () => {
       const USAGE_ROW = {
         members: 1, projects: 0, kbPages: 0, chatChannels: 0, crmLeads: 0, crmContacts: 0,
         crmDeals: 0, supportTickets: 0, automations: 0, signEnvelopes: 0, surveys: 0,
@@ -386,7 +386,7 @@ describe("PlanLimitsService", () => {
       await service.getEntitlements("org1");
       const usageSql = renderedSql(execute, 1);
       expect(usageSql).toContain("chat_channels");
-      expect(usageSql).toContain("entity_id IS NULL");
+      expect(usageSql).not.toContain("entity_id IS NULL");
     });
   });
 

@@ -1,5 +1,8 @@
 import { NotFoundException } from "@nestjs/common";
+import { SQL } from "drizzle-orm";
+import { PgDialect } from "drizzle-orm/pg-core";
 import type { Db } from "../../db/drizzle.module";
+import { ScopedRead } from "../access/scoped-read";
 import { DealsCompetitorsService } from "./deals-competitors.service";
 import { DealsMeetingsService } from "./deals-meetings.service";
 import { DealsStakeholdersService } from "./deals-stakeholders.service";
@@ -157,7 +160,7 @@ describe("DealsCrudService — cross-tenant isolation", () => {
     const findFirst = jest.fn().mockResolvedValue(undefined);
     const db = { query: { deals: { findFirst } } } as unknown as Db;
     const svc = buildSvc(db);
-    const result = await svc.getDeal(ATTACKER, 999);
+    const result = await svc.getDeal(ScopedRead.of(ATTACKER, "user-attacker", "all"), 999);
     expect(result).toBeUndefined();
     expect(findFirst).toHaveBeenCalled();
     expect(sqlValues(findFirst.mock.calls[0]?.[0]?.where)).toContain(ATTACKER);
@@ -168,7 +171,106 @@ describe("DealsCrudService — cross-tenant isolation", () => {
     const findFirst = jest.fn().mockResolvedValue(row);
     const db = { query: { deals: { findFirst } } } as unknown as Db;
     const svc = buildSvc(db);
-    const result = await svc.getDeal(OWNER, 1);
+    const result = await svc.getDeal(ScopedRead.of(OWNER, "user-owner", "all"), 1);
     expect(result).toMatchObject({ id: 1 });
+  });
+});
+
+const dialect = new PgDialect();
+
+function renderWhere(value: unknown): { sql: string; params: unknown[] } {
+  if (!(value instanceof SQL)) throw new Error("expected a SQL WHERE clause");
+  const query = dialect.sqlToQuery(value);
+  return { sql: query.sql, params: query.params };
+}
+
+describe("DealsCrudService.getDeal — the DataScope reaches the detail query (BOLA)", () => {
+  const ORG = "org-scope";
+  const ME = "user-me";
+  const SOMEONE_ELSE = "user-other";
+
+  function buildSvc(db: Db) {
+    const cache = {
+      cached: jest.fn(),
+      cachedVersioned: jest.fn(),
+      invalidateNamespace: jest.fn().mockResolvedValue(undefined),
+      invalidate: jest.fn().mockResolvedValue(undefined),
+    };
+    return new DealsCrudService(
+      db,
+      cache as never,
+      { log: jest.fn() } as never,
+      {} as never,
+      {} as never,
+      {} as never,
+    );
+  }
+
+  function captureWhere(row: unknown) {
+    const findFirst = jest.fn().mockResolvedValue(row);
+    const db = { query: { deals: { findFirst } } } as unknown as Db;
+    return { svc: buildSvc(db), findFirst };
+  }
+
+  it("all scope: the emitted WHERE carries the tenant predicate and binds the caller's org", async () => {
+    const { svc, findFirst } = captureWhere({ id: 7 });
+    await svc.getDeal(ScopedRead.of(ORG, ME, "all"), 7);
+    const { sql, params } = renderWhere(findFirst.mock.calls[0]?.[0]?.where);
+    expect(sql).toContain("org_id");
+    expect(params).toContain(ORG);
+  });
+
+  it("all scope: the WHERE does NOT bind the actor id — an unrestricted reader is not narrowed to their own deals", async () => {
+    const { svc, findFirst } = captureWhere({ id: 7 });
+    await svc.getDeal(ScopedRead.of(ORG, ME, "all"), 7);
+    const { params } = renderWhere(findFirst.mock.calls[0]?.[0]?.where);
+    expect(params).not.toContain(ME);
+  });
+
+  it("own scope: the WHERE narrows on assigned_to_id and binds the caller's user id", async () => {
+    const { svc, findFirst } = captureWhere(undefined);
+    await svc.getDeal(ScopedRead.of(ORG, ME, "own"), 7);
+    const { sql, params } = renderWhere(findFirst.mock.calls[0]?.[0]?.where);
+    expect(sql).toContain("assigned_to_id");
+    expect(params).toContain(ME);
+    expect(params).toContain(ORG);
+  });
+
+  it("own scope: the predicate binds the caller, never the other person — the id in the URL cannot widen it", async () => {
+    const { svc, findFirst } = captureWhere(undefined);
+    await svc.getDeal(ScopedRead.of(ORG, ME, "own"), 7);
+    const { params } = renderWhere(findFirst.mock.calls[0]?.[0]?.where);
+    expect(params).not.toContain(SOMEONE_ELSE);
+  });
+
+  it("own scope renders a strictly different WHERE from all scope — proving the scope is spent, not dropped", async () => {
+    const a = captureWhere({ id: 7 });
+    await a.svc.getDeal(ScopedRead.of(ORG, ME, "all"), 7);
+    const b = captureWhere(undefined);
+    await b.svc.getDeal(ScopedRead.of(ORG, ME, "own"), 7);
+    expect(renderWhere(a.findFirst.mock.calls[0]?.[0]?.where).sql).not.toBe(
+      renderWhere(b.findFirst.mock.calls[0]?.[0]?.where).sql,
+    );
+  });
+
+  it("own scope: a row the predicate excludes comes back undefined, which the controller turns into 404", async () => {
+    const { svc } = captureWhere(undefined);
+    await expect(svc.getDeal(ScopedRead.of(ORG, ME, "own"), 7)).resolves.toBeUndefined();
+  });
+
+  it("none scope: no query is issued at all", async () => {
+    const findFirst = jest.fn().mockResolvedValue({ id: 7 });
+    const db = { query: { deals: { findFirst } } } as unknown as Db;
+    const svc = buildSvc(db);
+    const result = await svc.getDeal(ScopedRead.of(ORG, ME, "none"), 7);
+    expect(result).toBeUndefined();
+    expect(findFirst).not.toHaveBeenCalled();
+  });
+
+  it("the deal id is still bound — the scope predicate did not replace the domain filter", async () => {
+    const { svc, findFirst } = captureWhere({ id: 4242 });
+    await svc.getDeal(ScopedRead.of(ORG, ME, "all"), 4242);
+    const { params } = renderWhere(findFirst.mock.calls[0]?.[0]?.where);
+    expect(params).toContain(4242);
   });
 });

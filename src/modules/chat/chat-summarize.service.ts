@@ -1,17 +1,21 @@
 import {
   BadRequestException,
-  ForbiddenException,
   Inject,
   Injectable,
   InternalServerErrorException,
-  NotFoundException,
 } from "@nestjs/common";
 import { ModuleRef } from "@nestjs/core";
 import { and, desc, eq } from "drizzle-orm";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
-import { chatChannelMembers, chatChannels, chatMessages, organizationMembers, users } from "../../db/schema";
+import { chatMessages, organizationMembers, users } from "../../db/schema";
 import { AiGatewayService } from "../ai/core/gateway/ai-gateway.service";
+import { EntityReferenceService } from "../entity-reference/entity-reference.service";
+import {
+  actorFromStanding,
+  assertChannelMember,
+  assertEntityAccess,
+} from "./chat-channel-authorization";
 
 const SUMMARIZE_LIMIT = 50;
 
@@ -20,38 +24,20 @@ export class ChatSummarizeService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly moduleRef: ModuleRef,
+    private readonly entities: EntityReferenceService,
   ) {}
 
   async summarize(
     channelId: number,
     actor: { orgId: string; userId: string },
   ): Promise<{ summary: string }> {
-    const channel = await this.db.query.chatChannels.findFirst({
-      where: and(eq(chatChannels.id, channelId), eq(chatChannels.orgId, actor.orgId)),
-      columns: { id: true, isPrivate: true },
-    });
-    if (!channel) throw new NotFoundException("Channel not found");
-
-    const orgMember = await this.db.query.organizationMembers.findFirst({
-      where: and(eq(organizationMembers.orgId, actor.orgId), eq(organizationMembers.userId, actor.userId)),
-      columns: { id: true },
-    });
-    const member = orgMember
-      ? await this.db.query.chatChannelMembers.findFirst({
-          where: and(
-            eq(chatChannelMembers.orgId, actor.orgId),
-            eq(chatChannelMembers.channelId, channelId),
-            eq(chatChannelMembers.membershipId, orgMember.id),
-          ),
-          columns: { id: true },
-        })
-      : null;
-
-    // A private channel must not confirm its own existence to a non-member.
-    if (!member) {
-      if (channel.isPrivate) throw new NotFoundException("Channel not found");
-      throw new ForbiddenException("Not a member of this channel");
-    }
+    const standing = await assertChannelMember(this.db, channelId, actor.userId, actor.orgId);
+    await assertEntityAccess(
+      this.entities,
+      standing,
+      actorFromStanding(actor.orgId, actor.userId, standing),
+      "Channel not found",
+    );
 
     const rows = await this.db
       .select({

@@ -30,7 +30,12 @@ import { OutboxWriter } from "../../common/outbox/outbox-writer";
 import { CHAT_MESSAGE_FANOUT_EVENT } from "./chat-fanout-outbox";
 import { MESSAGE_FANOUT_PROVIDER, type MessageFanoutProvider } from "./message-fanout.interface";
 import { resolveMembershipId } from "./chat-membership-lookup";
-import { assertChannelMember } from "./chat-channel-authorization";
+import {
+  actorFromStanding,
+  assertChannelMember,
+  assertEntityAccess,
+} from "./chat-channel-authorization";
+import { EntityReferenceService } from "../entity-reference/entity-reference.service";
 import { CHAT_MESSAGE_CLIENT_KEY_CONFLICT } from "./chat-message-conflict-target";
 import { StorageService } from "../storage/storage.service";
 
@@ -58,6 +63,7 @@ export class ChatMessagesService {
     private readonly replyReminders: ChatReplyRemindersService,
     private readonly orgSettings: ChatOrgSettingsService,
     private readonly storage: StorageService,
+    private readonly entities: EntityReferenceService,
     @Inject(MESSAGE_FANOUT_PROVIDER) private readonly fanout: MessageFanoutProvider,
   ) {}
 
@@ -91,11 +97,13 @@ export class ChatMessagesService {
   }
 
   async send(channelId: number, userId: string, orgId: string, body: SendMessageInput) {
-    const { membershipId: senderMembershipId } = await assertChannelMember(
-      this.db,
-      channelId,
-      userId,
-      orgId,
+    const standing = await assertChannelMember(this.db, channelId, userId, orgId);
+    const senderMembershipId = standing.membershipId;
+    await assertEntityAccess(
+      this.entities,
+      standing,
+      actorFromStanding(orgId, userId, standing),
+      "Channel not found",
     );
 
     // A retry of a send whose response was lost must return the original message, not

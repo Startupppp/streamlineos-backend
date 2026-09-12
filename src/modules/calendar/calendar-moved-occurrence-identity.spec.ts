@@ -245,7 +245,7 @@ describe("occurrence exceptions are keyed on the nominal instant, whatever the c
 
 /* -------------------------------------------- the read side: the identity */
 
-function projectionsFor(window: { start: Date; end: Date }, exceptions: CalendarEventException[]) {
+async function projectionsFor(window: { start: Date; end: Date }, exceptions: CalendarEventException[]) {
   const event = {
     ...weeklyEvent(),
     color: "blue",
@@ -264,6 +264,7 @@ function projectionsFor(window: { start: Date; end: Date }, exceptions: Calendar
       eventsData: [event],
       linkedTicketMap: new Map(),
       exceptionsByEvent: new Map([[EVENT_ID, exceptions]]),
+      exceptionsComplete: true,
     }),
   };
 
@@ -277,7 +278,8 @@ function projectionsFor(window: { start: Date; end: Date }, exceptions: Calendar
     start: window.start,
     end: window.end,
   };
-  return source.load(ctx);
+  const { events } = await source.load(ctx);
+  return events;
 }
 
 describe("a recurring occurrence keeps one id, whatever window asks for it and wherever it moved", () => {

@@ -12,6 +12,9 @@ import { type Db } from "../../db/drizzle.module";
 import { logger } from "../../common/logger/logger.service";
 import type { StatusInput } from "./dto/chat.schemas";
 import { chatMessageContentMatch } from "./chat-message-content-match";
+import { EntityReferenceService } from "../entity-reference/entity-reference.service";
+import type { EntityActor } from "../entity-reference/entity-reference.types";
+import { filterByEntityAccess } from "./chat-channel-authorization";
 
 const PRESENCE_WINDOW_MS = 90 * 1000;
 
@@ -24,7 +27,10 @@ const UNREAD_TOTAL_CAP = 100;
 
 @Injectable()
 export class ChatPresenceService {
-  constructor(@Inject(DRIZZLE) private readonly db: Db) {}
+  constructor(
+    @Inject(DRIZZLE) private readonly db: Db,
+    private readonly entities: EntityReferenceService,
+  ) {}
 
   private async resolveMembershipId(orgId: string, userId: string): Promise<number | null> {
     const row = await this.db.query.organizationMembers.findFirst({
@@ -143,7 +149,8 @@ export class ChatPresenceService {
     }
   }
 
-  async searchMessages(userId: string, orgId: string, query: string, channelId: number | undefined, limit: number) {
+  async searchMessages(actor: EntityActor, query: string, channelId: number | undefined, limit: number) {
+    const { orgId, userId } = actor;
     const membershipId = await this.resolveMembershipId(orgId, userId);
     if (!membershipId) return [];
     const memberExistsCondition = sql`EXISTS (SELECT 1 FROM ${chatChannelMembers} m
@@ -165,15 +172,24 @@ export class ChatPresenceService {
 
     if (channelId) conditions.push(eq(chatMessages.channelId, channelId));
 
-    return this.db.query.chatMessages.findMany({
+    const rows = await this.db.query.chatMessages.findMany({
       where: and(...conditions),
       orderBy: [desc(chatMessages.createdAt)],
       limit: Math.min(limit, 50),
       with: {
         senderMembership: { columns: { id: true }, with: { user: { columns: { id: true, name: true, image: true } } } },
-        channel: { columns: { id: true, name: true, type: true } },
+        channel: {
+          columns: { id: true, name: true, type: true, entityType: true, entityId: true },
+        },
       },
     });
+    const visible = await filterByEntityAccess(this.entities, rows, actor, (row) => row.channel);
+    return visible.map((row) => ({
+      ...row,
+      channel: row.channel
+        ? { id: row.channel.id, name: row.channel.name, type: row.channel.type }
+        : row.channel,
+    }));
   }
 
   getOrgUsers(orgId: string) {

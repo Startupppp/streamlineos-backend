@@ -129,6 +129,7 @@ export async function seedEmployeeSalaryProfile(
     userId: string;
     actorId: string;
     monthlySalary: number;
+    currency: string;
     effectiveFrom: string;
     salaryStructureTemplateId?: number | null;
   },
@@ -146,7 +147,7 @@ export async function seedEmployeeSalaryProfile(
       orgId: input.orgId,
       userId: input.userId,
       workerType: "EMPLOYEE",
-      currency: "INR",
+      currency: input.currency,
       annualCtc,
       status: "ACTIVE",
       effectiveFrom: input.effectiveFrom,

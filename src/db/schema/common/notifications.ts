@@ -46,6 +46,11 @@ export const notifications = pgTable("notifications", {
   index("idx_notifications_list_cursor")
     .on(table.orgId, table.membershipId, table.id.desc())
     .where(sql`deleted_at IS NULL AND archived_at IS NULL`),
+  // 1093 — idx_notifications_list_created_cursor: the unified inbox orders by
+  // (created_at DESC, id DESC), which idx_notifications_list_cursor cannot serve.
+  index("idx_notifications_list_created_cursor")
+    .on(table.orgId, table.membershipId, table.createdAt.desc(), table.id.desc())
+    .where(sql`deleted_at IS NULL AND archived_at IS NULL`),
   // idx_notifications_unread_count: partial on is_read=false so the count seeks
   // past the watermark and counts only newly-arrived unread rows.
   index("idx_notifications_unread_count")

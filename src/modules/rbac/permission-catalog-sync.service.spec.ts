@@ -1,4 +1,5 @@
 import { classifyRetiredPermissions } from "./permission-catalog-sync.service";
+import { modulesCatalog, permissions } from "../../db/schema";
 
 describe("classifyRetiredPermissions", () => {
   it("deletes only stale keys without persisted role or delegation grants", () => {
@@ -51,14 +52,16 @@ describe("PermissionCatalogSyncService.sync — administering module column", ()
 
     const db = {
       select: () => ({
-        from: () => ({
+        from: (table: unknown) => ({
           limit: () =>
-            Promise.resolve(catalogModules.map((moduleKey) => ({ moduleKey }))),
+            table === modulesCatalog
+              ? Promise.resolve(catalogModules.map((moduleKey) => ({ moduleKey })))
+              : Promise.resolve([]),
         }),
       }),
-      insert: () => ({
+      insert: (table: unknown) => ({
         values: (rows: Array<Record<string, unknown>>) => {
-          if (inserted.length === 0) inserted = rows;
+          if (table === permissions) inserted = rows;
           return {
             onConflictDoUpdate: (args: { set: Record<string, unknown> }) => {
               if (Object.keys(conflictSet).length === 0) conflictSet = args.set;

@@ -24,11 +24,11 @@ export class ChatChannelMembersService {
     this.memberState = new ChatChannelMemberState(db, cache);
   }
 
-  async assertChannelMembership(channelId: number, userId: string, orgId: string): Promise<void> {
-    return this.implementation.assertChannelMembership(channelId, userId, orgId);
+  async assertChannelMembership(channelId: number, actor: EntityActor): Promise<void> {
+    return this.implementation.assertChannelMembership(channelId, actor);
   }
-  async getChannel(channelId: number, userId: string, orgId: string) { return this.implementation.getChannel(channelId, userId, orgId); }
-  async listMembers(channelId: number, userId: string, orgId: string, cursor?: number, limit?: number) { return this.implementation.listMembers(channelId, userId, orgId, cursor, limit); }
+  async getChannel(channelId: number, actor: EntityActor) { return this.implementation.getChannel(channelId, actor); }
+  async listMembers(channelId: number, actor: EntityActor, cursor?: number, limit?: number) { return this.implementation.listMembers(channelId, actor, cursor, limit); }
   async addMember(channelId: number, targetUserId: string, requesterId: string, orgId: string) { return this.implementation.addMember(channelId, targetUserId, requesterId, orgId); }
   async removeMember(channelId: number, targetUserId: string, requesterId: string, orgId: string) { return this.implementation.removeMember(channelId, targetUserId, requesterId, orgId); }
   async updateChannel(channelId: number, userId: string, body: UpdateChannelInput, orgId: string) { return this.implementation.updateChannel(channelId, userId, body, orgId); }
@@ -43,6 +43,6 @@ export class ChatChannelMembersService {
   async favoriteChannel(channelId: number, userId: string, orgId: string) { return this.memberState.favoriteChannel(channelId, userId, orgId); }
   async unfavoriteChannel(channelId: number, userId: string, orgId: string) { return this.memberState.unfavoriteChannel(channelId, userId, orgId); }
   async setNotificationPreference(channelId: number, userId: string, preference: string, orgId: string) { return this.memberState.setNotificationPreference(channelId, userId, preference, orgId); }
-  async listChannelFiles(channelId: number, userId: string, orgId: string, cursor?: number, limit = 20) { return this.implementation.listChannelFiles(channelId, userId, orgId, cursor, limit); }
+  async listChannelFiles(channelId: number, actor: EntityActor, cursor?: number, limit = 20) { return this.implementation.listChannelFiles(channelId, actor, cursor, limit); }
   async updateMemberRole(channelId: number, targetUserId: string, requesterId: string, orgId: string, role: string) { return this.implementation.updateMemberRole(channelId, targetUserId, requesterId, orgId, role); }
 }

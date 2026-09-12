@@ -70,7 +70,8 @@ async function build(options: {
   };
   const invalidate = jest.fn().mockResolvedValue(undefined);
   const refreshForUser = jest.fn().mockResolvedValue(undefined);
-  const touchLastActivated = jest.fn().mockResolvedValue(undefined);
+  const touchLastActivated = jest.fn().mockResolvedValue(true);
+  const activate = jest.fn().mockResolvedValue({ status: "activated" });
   const reserve = jest.fn().mockResolvedValue(true);
   const release = jest.fn().mockResolvedValue(undefined);
   const runStep = jest
@@ -106,7 +107,7 @@ async function build(options: {
       { provide: CacheService, useValue: { invalidate } },
       {
         provide: AccountOrganizationIndexService,
-        useValue: { refreshForUser, touchLastActivated },
+        useValue: { refreshForUser, touchLastActivated, activate },
       },
       { provide: OrganizationSagaService, useValue: saga },
     ],
@@ -118,6 +119,7 @@ async function build(options: {
     invalidate,
     refreshForUser,
     touchLastActivated,
+    activate,
     saga,
     reserve,
     release,
@@ -306,6 +308,65 @@ describe("OrganizationCreationService", () => {
     expect(saga.markCompensated).toHaveBeenCalledWith("saga-1", "exec-token");
     expect(saga.markFailed).not.toHaveBeenCalled();
     expect(saga.complete).not.toHaveBeenCalled();
+  });
+
+  it("an unprojected directory activation fails the step instead of completing the saga", async () => {
+    const { service, saga, activate, release } = await build();
+    activate.mockResolvedValue({ status: "unprojected" });
+
+    await expect(
+      service.createFromSetup({ userId: "user-1", name: "Acme" }),
+    ).rejects.toThrow(/not selected in the account directory \(unprojected\)/);
+
+    expect(saga.complete).not.toHaveBeenCalled();
+    expect(saga.markFailed).toHaveBeenCalledWith(
+      "saga-1",
+      expect.any(Error),
+      "exec-token",
+    );
+    expect(saga.markCompensated).not.toHaveBeenCalled();
+    expect(release).not.toHaveBeenCalled();
+    expect(unplaceOrganization).not.toHaveBeenCalled();
+  });
+
+  it("a failed directory activation carries its reason into the step error", async () => {
+    const { service, activate } = await build();
+    activate.mockResolvedValue({ status: "failed", reason: "42501" });
+
+    await expect(
+      service.createFromSetup({ userId: "user-1", name: "Acme" }),
+    ).rejects.toThrow(/\(failed: 42501\)/);
+  });
+
+  it("a resumed saga re-runs only the projection step and creates no second organization", async () => {
+    const { service, saga, activate, runStep } = await build({
+      steps: [
+        { stepName: "reserve-identity", state: "DONE" },
+        { stepName: "reserve-placement", state: "DONE" },
+        { stepName: "bootstrap-cell-organization", state: "DONE" },
+        { stepName: "bootstrap-owner-membership", state: "DONE" },
+        { stepName: "activate-directory-projection", state: "FAILED" },
+      ],
+    });
+    saga.findByRequestKey.mockResolvedValue({
+      sagaId: "saga-1",
+      organizationId: "org-fixed",
+      state: "FAILED",
+    });
+    saga.findReservationValue.mockImplementation(async (kind: string) =>
+      kind === "ORGANIZATION_ID" ? "org-fixed" : "acme-orgfixed",
+    );
+    persistedPlacements.set("org-fixed", { region: "in", cellId: "in-1" });
+
+    await service.createFromSetup({ userId: "user-1", name: "Acme" });
+
+    expect(runStep.mock.calls.map((call: unknown[]) => call[1])).toEqual([
+      "activate-directory-projection",
+    ]);
+    expect(bootstrapCellOrganization).not.toHaveBeenCalled();
+    expect(placeOrganization).not.toHaveBeenCalled();
+    expect(activate).toHaveBeenCalledWith("user-1", "org-fixed");
+    expect(saga.complete).toHaveBeenCalledWith("saga-1", "exec-token");
   });
 
   it("keeps profile creation defaults behind the same saga owner", async () => {

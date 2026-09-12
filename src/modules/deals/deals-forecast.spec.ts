@@ -1,3 +1,4 @@
+import { ScopedRead } from "../access/scoped-read";
 import { DealsForecastService } from "./deals-forecast.service";
 import { DealsAnalyticsService } from "./deals-analytics.service";
 import type { Db } from "../../db/drizzle.module";
@@ -129,7 +130,7 @@ describe("DealsAnalyticsService – deal health", () => {
   });
 
   it("returns a health object with score and level", async () => {
-    const health = await service.getDealHealth("org1", 42);
+    const health = await service.getDealHealth(ScopedRead.of("org1", "user1", "all"), 42);
 
     expect(health).toMatchObject({
       dealId: 42,

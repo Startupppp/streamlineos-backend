@@ -205,7 +205,7 @@ export class PlanLimitsService {
           ${seatCount(orgId)}                                                                                                              AS members,
           (SELECT COUNT(*)::int FROM build.projects WHERE org_id = ${orgId})                                                              AS projects,
           (SELECT COUNT(*)::int FROM kb_pages WHERE org_id = ${orgId} AND deleted_at IS NULL)                                             AS "kbPages",
-          (SELECT COUNT(*)::int FROM chat_channels WHERE org_id = ${orgId} AND entity_id IS NULL)                                         AS "chatChannels",
+          (SELECT COUNT(*)::int FROM chat_channels WHERE org_id = ${orgId})                                                              AS "chatChannels",
           (${liveCustomerCount(leadPartyMap.partyId, leadPartyMap.organizationId, orgId)})                                                AS "crmLeads",
           (${liveCustomerCount(contactPartyMap.partyId, contactPartyMap.organizationId, orgId)})                                          AS "crmContacts",
           (SELECT COUNT(*)::int FROM deals WHERE org_id = ${orgId})                                                                    AS "crmDeals",
@@ -321,7 +321,7 @@ export class PlanLimitsService {
       }
       case "chatChannels": {
         const rows = await countExecutor.execute(
-          sql`SELECT COUNT(*)::int AS count FROM chat_channels WHERE org_id = ${orgId} AND entity_id IS NULL`,
+          sql`SELECT COUNT(*)::int AS count FROM chat_channels WHERE org_id = ${orgId}`,
         );
         return readCount(rows, "count");
       }

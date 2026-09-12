@@ -16,6 +16,7 @@ import { ROLE_DEFAULT_PERMISSIONS } from "../rbac/permissions";
 import { isPlanGatedModule } from "./access-policy";
 import { namespaceOf } from "../../common/rbac/module-vocabulary";
 import type { ReadAccessTable } from "./access-permission.resolver";
+import { drainByKeyset, GRANT_PAGE_SIZE } from "./access-grant-drains";
 
 const MEMBERS_WITH_PERMISSION_PAGE_SIZE = 100;
 
@@ -120,44 +121,67 @@ export class AccessPermissionMembersResolver {
             .limit(limit),
       ),
 
-      this.readAccessTable(
-        () =>
-          this.db
-            .selectDistinct({ roleId: rolePermissionGrants.roleId })
-            .from(rolePermissionGrants)
-            .where(
-              and(
-                eq(rolePermissionGrants.orgId, orgId),
-                eq(rolePermissionGrants.permissionKey, permissionKey),
-              ),
-            )
-            .orderBy(asc(rolePermissionGrants.roleId))
-            .limit(500),
+      drainByKeyset(
+        0,
+        (afterRoleId) =>
+          this.readAccessTable(
+            () =>
+              this.db
+                .selectDistinct({ roleId: rolePermissionGrants.roleId })
+                .from(rolePermissionGrants)
+                .where(
+                  and(
+                    eq(rolePermissionGrants.orgId, orgId),
+                    eq(rolePermissionGrants.permissionKey, permissionKey),
+                    gt(rolePermissionGrants.roleId, afterRoleId),
+                  ),
+                )
+                .orderBy(asc(rolePermissionGrants.roleId))
+                .limit(GRANT_PAGE_SIZE),
+          ),
+        (row) => row.roleId,
       ),
 
-      this.readAccessTable(
-        () =>
-          this.db
-            .selectDistinct({ roleId: rolePermissionGrants.roleId })
-            .from(rolePermissionGrants)
-            .where(eq(rolePermissionGrants.orgId, orgId))
-            .orderBy(asc(rolePermissionGrants.roleId))
-            .limit(500),
+      drainByKeyset(
+        0,
+        (afterRoleId) =>
+          this.readAccessTable(
+            () =>
+              this.db
+                .selectDistinct({ roleId: rolePermissionGrants.roleId })
+                .from(rolePermissionGrants)
+                .where(
+                  and(
+                    eq(rolePermissionGrants.orgId, orgId),
+                    gt(rolePermissionGrants.roleId, afterRoleId),
+                  ),
+                )
+                .orderBy(asc(rolePermissionGrants.roleId))
+                .limit(GRANT_PAGE_SIZE),
+          ),
+        (row) => row.roleId,
       ),
 
       slugsWithPermInDefaults.length > 0
-        ? this.readAccessTable(
-            () =>
-              this.db
-                .select({ roleId: roles.id })
-                .from(roles)
-                .where(
-                  and(
-                    eq(roles.orgId, orgId),
-                    inArray(roles.slug, slugsWithPermInDefaults),
-                  ),
-                )
-                .limit(500),
+        ? drainByKeyset(
+            0,
+            (afterId) =>
+              this.readAccessTable(
+                () =>
+                  this.db
+                    .select({ roleId: roles.id })
+                    .from(roles)
+                    .where(
+                      and(
+                        eq(roles.orgId, orgId),
+                        inArray(roles.slug, slugsWithPermInDefaults),
+                        gt(roles.id, afterId),
+                      ),
+                    )
+                    .orderBy(asc(roles.id))
+                    .limit(GRANT_PAGE_SIZE),
+              ),
+            (row) => row.roleId,
           )
         : Promise.resolve([] as { roleId: number }[]),
 

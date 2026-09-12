@@ -56,7 +56,7 @@ export class ChatSearchController {
   @RequirePermission("chat:channels:read")
   @Validate({ query: searchQuerySchema })
   searchChannels(@Query() query: SearchQueryInput, @CurrentUser() u: CurrentUserContext) {
-    return this.search.searchChannels(u.orgId, u.userId, query.q);
+    return this.search.searchChannels(actorOf(u), query.q);
   }
 
   @ApiOperation({ summary: "Search users in the organisation by name or email" })

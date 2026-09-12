@@ -8,6 +8,7 @@ import { ChatReplyRemindersService } from "./chat-reply-reminders.service";
 import { ChatOrgSettingsService } from "./chat-org-settings.service";
 import { CacheService } from "../../common/cache/cache.service";
 import { MESSAGE_FANOUT_PROVIDER } from "./message-fanout.interface";
+import { EntityReferenceService } from "../entity-reference/entity-reference.service";
 import { StorageService } from "../storage/storage.service";
 
 const mockDb = {
@@ -61,11 +62,17 @@ const mockStorage = {
   isValidFileKey: jest.fn().mockReturnValue(true),
 };
 
+const mockEntities = {
+  resolve: jest.fn().mockResolvedValue([{ status: "resolved", card: {} }]),
+  withResolvedReferences: jest.fn((_actor: unknown, rows: unknown[]) => Promise.resolve(rows)),
+};
+
 describe("ChatMessagesService", () => {
   let service: ChatMessagesService;
 
   beforeEach(async () => {
     jest.clearAllMocks();
+    mockEntities.resolve.mockResolvedValue([{ status: "resolved", card: {} }]);
     mockOrgSettings.getSettings.mockResolvedValue({ maxAttachmentSizeMb: 25 });
     mockStorage.isValidFileKey.mockReturnValue(true);
     mockDb.query.chatChannels.findFirst.mockResolvedValue({ id: 1, isPrivate: false });
@@ -80,6 +87,7 @@ describe("ChatMessagesService", () => {
         { provide: ChatReplyRemindersService, useValue: mockReplyReminders },
         { provide: ChatOrgSettingsService, useValue: mockOrgSettings },
         { provide: StorageService, useValue: mockStorage },
+        { provide: EntityReferenceService, useValue: mockEntities },
         { provide: MESSAGE_FANOUT_PROVIDER, useValue: mockFanout },
       ],
     }).compile();
@@ -87,6 +95,36 @@ describe("ChatMessagesService", () => {
   });
 
   describe("send", () => {
+    it("DENY: a member of a record channel who has lost the record cannot post into it", async () => {
+      mockDb.query.chatChannels.findFirst.mockResolvedValue({
+        id: 1,
+        isPrivate: true,
+        entityType: "project",
+        entityId: "42",
+      });
+      mockDb.query.chatChannelMembers.findFirst.mockResolvedValue({ role: "MEMBER" });
+      mockEntities.resolve.mockResolvedValue([{ status: "unresolved", reference: { type: "project", id: "42" } }]);
+
+      await expect(
+        service.send(1, "user1", "org1", { content: "hello", attachments: [] }),
+      ).rejects.toThrow(NotFoundException);
+      expect(mockDb.transaction).not.toHaveBeenCalled();
+    });
+
+    it("CONTROL: the same member posts once the record resolves again", async () => {
+      mockDb.query.chatChannels.findFirst.mockResolvedValue({
+        id: 1,
+        isPrivate: true,
+        entityType: "project",
+        entityId: "42",
+      });
+      mockDb.query.chatChannelMembers.findFirst.mockResolvedValue({ role: "MEMBER" });
+      mockEntities.resolve.mockResolvedValue([{ status: "resolved", card: {} }]);
+
+      await service.send(1, "user1", "org1", { content: "hello", attachments: [] });
+      expect(mockDb.transaction).toHaveBeenCalled();
+    });
+
     it("throws NotFoundException for a non-member of a PRIVATE channel, never confirming it exists", async () => {
       mockDb.query.chatChannels.findFirst.mockResolvedValue({ id: 1, isPrivate: true });
       mockDb.query.chatChannelMembers.findFirst.mockResolvedValue(null);

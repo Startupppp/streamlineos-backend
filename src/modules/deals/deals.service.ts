@@ -70,8 +70,8 @@ export class DealsService {
     return this.crud.createDeal(orgId, userId, input);
   }
 
-  getDeal(orgId: string, dealId: number) {
-    return this.crud.getDeal(orgId, dealId);
+  getDeal(read: ScopedRead, dealId: number) {
+    return this.crud.getDeal(read, dealId);
   }
 
   deleteDeal(orgId: string, userId: string, dealId: number) {
@@ -90,12 +90,12 @@ export class DealsService {
     return this.crud.cloneDeal(orgId, dealId);
   }
 
-  listActivities(orgId: string, dealId: number) {
-    return this.activities.listActivities(orgId, dealId);
+  listActivities(read: ScopedRead, dealId: number) {
+    return this.activities.listActivities(read, dealId);
   }
 
-  listStageTransitions(orgId: string, dealId: number) {
-    return this.activities.listStageTransitions(orgId, dealId);
+  listStageTransitions(read: ScopedRead, dealId: number) {
+    return this.activities.listStageTransitions(read, dealId);
   }
 
   addActivity(orgId: string, userId: string, dealId: number, input: LogActivityInput) {

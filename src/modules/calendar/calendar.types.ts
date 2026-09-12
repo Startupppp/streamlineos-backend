@@ -1,3 +1,25 @@
+export interface VisibleEventRow {
+  id: number;
+  title: string;
+  description: string | null;
+  location: string | null;
+  meetingUrl: string | null;
+  startDate: Date;
+  endDate: Date;
+  allDay: boolean;
+  timezone: string;
+  color: string | null;
+  category: string;
+  entityType: string | null;
+  entityId: string | null;
+  visibility: string;
+  rrule: string | null;
+  recurrenceEnd: Date | null;
+  createdByMembershipId: number;
+  creatorName: string | null;
+  rsvpStatus: string | null;
+}
+
 export interface LinkedTicket {
   id: number;
   key: string;

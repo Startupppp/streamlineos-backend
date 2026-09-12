@@ -1,11 +1,16 @@
-import { and, asc, eq, gt, inArray, or } from "drizzle-orm";
+import { and, asc, eq, gt, inArray, isNull, or } from "drizzle-orm";
 import type { Db } from "../../db/drizzle.module";
 import {
+  groupRoleAssignments,
+  moduleOwnerships,
+  principalGroupMembers,
+  roleAssignments,
   rolePermissionGrants,
   userDelegationPermissions,
   userDelegations,
   userPermissionGrants,
 } from "../../db/schema";
+import { logger } from "../../common/logger/logger.service";
 import type { DataScope } from "./access.types";
 
 /**
@@ -18,10 +23,10 @@ export type ReadAccessTable = <Result>(
 ) => Promise<Result>;
 
 /** One page of a grant drain. Pages, never a cap: see the two functions below. */
-const GRANT_PAGE_SIZE = 500;
+export const GRANT_PAGE_SIZE = 500;
 
 /** Sorts below every generated uuid, so the first page needs no special case. */
-const UUID_ZERO = "00000000-0000-0000-0000-000000000000";
+export const UUID_ZERO = "00000000-0000-0000-0000-000000000000";
 
 /**
  * The empty string is the minimum of `text` under every collation, so it is the
@@ -29,6 +34,233 @@ const UUID_ZERO = "00000000-0000-0000-0000-000000000000";
  * itself. `user_delegations.id` is plain `text`, not `uuid`.
  */
 const TEXT_MIN = "";
+
+/**
+ * The one paging loop in this file. Every drain below reads `GRANT_PAGE_SIZE`
+ * rows at a time and advances a keyset cursor until a page comes back short, so
+ * a tenant whose rows fit inside one page still costs exactly one query, and a
+ * tenant past the boundary loses nothing instead of losing the remainder.
+ *
+ * Termination is a property of the read, not of a counter: `readPage` filters on
+ * `cursor > after` and orders by that same column, so every row of the next page
+ * sorts strictly after the last row of this one. The non-advance check exists for
+ * the case that invariant is broken — a projection that forgot to select the
+ * cursor column, a fake that ignores the predicate — and it stops and says so
+ * rather than spinning. Nothing here truncates in silence.
+ */
+export async function drainByKeyset<Row, Cursor>(
+  firstCursor: Cursor,
+  readPage: (after: Cursor) => PromiseLike<Row[]>,
+  cursorOf: (row: Row) => Cursor,
+): Promise<Row[]> {
+  const drained: Row[] = [];
+  let after = firstCursor;
+  for (;;) {
+    const page = await readPage(after);
+    for (const row of page) drained.push(row);
+    const last = page[page.length - 1];
+    if (page.length < GRANT_PAGE_SIZE || last === undefined) return drained;
+    const next = cursorOf(last);
+    if (next === after) {
+      logger.warn(
+        "access: keyset drain cursor did not advance - stopping the drain",
+        { rows: drained.length },
+      );
+      return drained;
+    }
+    after = next;
+  }
+}
+
+export interface DrainedRoleAssignment {
+  roleId: number;
+  expiresAt: Date | null;
+}
+
+export interface DrainedGroupMembership {
+  principalGroupId: string;
+}
+
+export interface DrainedModuleOwnership {
+  moduleKey: string;
+}
+
+export interface DrainedGroupRoleAssignment {
+  roleId: number;
+}
+
+/**
+ * Every unexpired role the membership is directly assigned, drained by keyset.
+ *
+ * This was `.limit(500)`. The unique index is `(org_id, membership_id, role_id)`,
+ * so the row count is bounded by the number of roles the organisation has — and
+ * roles are created through the module-access group API, not only seeded from the
+ * 13 templates. Past the cap the member simply resolved without those roles: no
+ * error, no log, no flag, and truncation is always privilege LOSS, so the answer
+ * was an intermittent denial of standing the member actually held.
+ *
+ * The `expiresAt` guard stays inside the page predicate rather than being applied
+ * after the read: filtering afterwards would spend the page on rows that were
+ * already expired and push live ones past the boundary.
+ */
+export async function drainRoleAssignments(
+  db: Db,
+  readAccessTable: ReadAccessTable,
+  orgId: string,
+  membershipId: number,
+  now: Date,
+): Promise<DrainedRoleAssignment[]> {
+  const rows = await drainByKeyset(
+    UUID_ZERO,
+    (after) =>
+      readAccessTable(
+        () =>
+          db
+            .select({
+              id: roleAssignments.id,
+              roleId: roleAssignments.roleId,
+              expiresAt: roleAssignments.expiresAt,
+            })
+            .from(roleAssignments)
+            .where(
+              and(
+                eq(roleAssignments.orgId, orgId),
+                eq(roleAssignments.organizationMembershipId, membershipId),
+                or(
+                  isNull(roleAssignments.expiresAt),
+                  gt(roleAssignments.expiresAt, now),
+                ),
+                gt(roleAssignments.id, after),
+              ),
+            )
+            .orderBy(asc(roleAssignments.id))
+            .limit(GRANT_PAGE_SIZE),
+      ),
+    (row) => row.id,
+  );
+  return rows.map((row) => ({ roleId: row.roleId, expiresAt: row.expiresAt }));
+}
+
+/**
+ * Every principal group the membership belongs to, drained by keyset.
+ *
+ * This was `.limit(500)`, and it is the worst of the four to truncate: the group
+ * ids it returns are the input to the group-role read, so one dropped group takes
+ * every role that group carries with it, and every permission those roles grant.
+ */
+export async function drainPrincipalGroupMemberships(
+  db: Db,
+  readAccessTable: ReadAccessTable,
+  orgId: string,
+  membershipId: number,
+): Promise<DrainedGroupMembership[]> {
+  const rows = await drainByKeyset(
+    UUID_ZERO,
+    (after) =>
+      readAccessTable(
+        () =>
+          db
+            .select({
+              id: principalGroupMembers.id,
+              principalGroupId: principalGroupMembers.principalGroupId,
+            })
+            .from(principalGroupMembers)
+            .where(
+              and(
+                eq(principalGroupMembers.orgId, orgId),
+                eq(
+                  principalGroupMembers.organizationMembershipId,
+                  membershipId,
+                ),
+                gt(principalGroupMembers.id, after),
+              ),
+            )
+            .orderBy(asc(principalGroupMembers.id))
+            .limit(GRANT_PAGE_SIZE),
+      ),
+    (row) => row.id,
+  );
+  return rows.map((row) => ({ principalGroupId: row.principalGroupId }));
+}
+
+/**
+ * Every module the membership owns, drained by keyset.
+ *
+ * This was `.limit(100)` — the lowest of the four caps and the only one that was
+ * not 500. Ownership expands at resolution into every delegable permission the
+ * module scopes, so a truncated ownership row is not one missing key but a whole
+ * module's worth of them.
+ */
+export async function drainModuleOwnerships(
+  db: Db,
+  readAccessTable: ReadAccessTable,
+  orgId: string,
+  membershipId: number,
+): Promise<DrainedModuleOwnership[]> {
+  const rows = await drainByKeyset(
+    UUID_ZERO,
+    (after) =>
+      readAccessTable(
+        () =>
+          db
+            .select({
+              id: moduleOwnerships.id,
+              moduleKey: moduleOwnerships.moduleKey,
+            })
+            .from(moduleOwnerships)
+            .where(
+              and(
+                eq(moduleOwnerships.orgId, orgId),
+                eq(moduleOwnerships.ownerMembershipId, membershipId),
+                gt(moduleOwnerships.id, after),
+              ),
+            )
+            .orderBy(asc(moduleOwnerships.id))
+            .limit(GRANT_PAGE_SIZE),
+      ),
+    (row) => row.id,
+  );
+  return rows.map((row) => ({ moduleKey: row.moduleKey }));
+}
+
+/**
+ * Every role reached through the membership's principal groups, drained by keyset.
+ *
+ * This was `.limit(500)` over a fan-out: one row per `(group, role)` across every
+ * group drained above, so the cap was crossed by group count times roles per
+ * group, not by either alone.
+ */
+export async function drainGroupRoleAssignments(
+  db: Db,
+  readAccessTable: ReadAccessTable,
+  orgId: string,
+  groupIds: readonly string[],
+): Promise<DrainedGroupRoleAssignment[]> {
+  const rows = await drainByKeyset(
+    UUID_ZERO,
+    (after) =>
+      readAccessTable(
+        () =>
+          db
+            .select({
+              id: groupRoleAssignments.id,
+              roleId: groupRoleAssignments.roleId,
+            })
+            .from(groupRoleAssignments)
+            .where(
+              and(
+                eq(groupRoleAssignments.orgId, orgId),
+                inArray(groupRoleAssignments.principalGroupId, [...groupIds]),
+                gt(groupRoleAssignments.id, after),
+              ),
+            )
+            .orderBy(asc(groupRoleAssignments.id))
+            .limit(GRANT_PAGE_SIZE),
+      ),
+    (row) => row.id,
+  );
+  return rows.map((row) => ({ roleId: row.roleId }));
+}
 
 export interface DrainedRoleGrant {
   roleId: number;
@@ -63,39 +295,36 @@ export async function drainRolePermissionGrants(
   orgId: string,
   roleIdList: readonly number[],
 ): Promise<DrainedRoleGrant[]> {
-  const drained: DrainedRoleGrant[] = [];
-  let afterId = 0;
-  for (;;) {
-    const page = await readAccessTable(
-      () =>
-        db
-          .select({
-            id: rolePermissionGrants.id,
-            roleId: rolePermissionGrants.roleId,
-            permissionKey: rolePermissionGrants.permissionKey,
-            scope: rolePermissionGrants.scope,
-          })
-          .from(rolePermissionGrants)
-          .where(
-            and(
-              eq(rolePermissionGrants.orgId, orgId),
-              inArray(rolePermissionGrants.roleId, [...roleIdList]),
-              gt(rolePermissionGrants.id, afterId),
-            ),
-          )
-          .orderBy(asc(rolePermissionGrants.id))
-          .limit(GRANT_PAGE_SIZE),
-    );
-    for (const row of page)
-      drained.push({
-        roleId: row.roleId,
-        permissionKey: row.permissionKey,
-        scope: row.scope,
-      });
-    const last = page[page.length - 1];
-    if (page.length < GRANT_PAGE_SIZE || last === undefined) return drained;
-    afterId = last.id;
-  }
+  const rows = await drainByKeyset(
+    0,
+    (afterId) =>
+      readAccessTable(
+        () =>
+          db
+            .select({
+              id: rolePermissionGrants.id,
+              roleId: rolePermissionGrants.roleId,
+              permissionKey: rolePermissionGrants.permissionKey,
+              scope: rolePermissionGrants.scope,
+            })
+            .from(rolePermissionGrants)
+            .where(
+              and(
+                eq(rolePermissionGrants.orgId, orgId),
+                inArray(rolePermissionGrants.roleId, [...roleIdList]),
+                gt(rolePermissionGrants.id, afterId),
+              ),
+            )
+            .orderBy(asc(rolePermissionGrants.id))
+            .limit(GRANT_PAGE_SIZE),
+      ),
+    (row) => row.id,
+  );
+  return rows.map((row) => ({
+    roleId: row.roleId,
+    permissionKey: row.permissionKey,
+    scope: row.scope,
+  }));
 }
 
 /**
@@ -113,34 +342,34 @@ export async function drainUserPermissionGrants(
   orgId: string,
   membershipId: number,
 ): Promise<DrainedUserGrant[]> {
-  const drained: DrainedUserGrant[] = [];
-  let afterId = UUID_ZERO;
-  for (;;) {
-    const page = await readAccessTable(
-      () =>
-        db
-          .select({
-            id: userPermissionGrants.id,
-            permissionKey: userPermissionGrants.permissionKey,
-            scope: userPermissionGrants.scope,
-          })
-          .from(userPermissionGrants)
-          .where(
-            and(
-              eq(userPermissionGrants.orgId, orgId),
-              eq(userPermissionGrants.organizationMembershipId, membershipId),
-              gt(userPermissionGrants.id, afterId),
-            ),
-          )
-          .orderBy(asc(userPermissionGrants.id))
-          .limit(GRANT_PAGE_SIZE),
-    );
-    for (const row of page)
-      drained.push({ permissionKey: row.permissionKey, scope: row.scope });
-    const last = page[page.length - 1];
-    if (page.length < GRANT_PAGE_SIZE || last === undefined) return drained;
-    afterId = last.id;
-  }
+  const rows = await drainByKeyset(
+    UUID_ZERO,
+    (afterId) =>
+      readAccessTable(
+        () =>
+          db
+            .select({
+              id: userPermissionGrants.id,
+              permissionKey: userPermissionGrants.permissionKey,
+              scope: userPermissionGrants.scope,
+            })
+            .from(userPermissionGrants)
+            .where(
+              and(
+                eq(userPermissionGrants.orgId, orgId),
+                eq(userPermissionGrants.organizationMembershipId, membershipId),
+                gt(userPermissionGrants.id, afterId),
+              ),
+            )
+            .orderBy(asc(userPermissionGrants.id))
+            .limit(GRANT_PAGE_SIZE),
+      ),
+    (row) => row.id,
+  );
+  return rows.map((row) => ({
+    permissionKey: row.permissionKey,
+    scope: row.scope,
+  }));
 }
 
 /**
@@ -167,60 +396,64 @@ export async function drainDelegatedPermissionGrants(
   membershipId: number,
   now: Date,
 ): Promise<DrainedDelegatedGrant[]> {
-  const drained: DrainedDelegatedGrant[] = [];
-  let afterDelegationId = TEXT_MIN;
-  let afterPermissionKey = TEXT_MIN;
-  for (;;) {
-    const page = await readAccessTable(
-      () =>
-        db
-          .select({
-            delegationId: userDelegationPermissions.delegationId,
-            permissionKey: userDelegationPermissions.permissionKey,
-            startsAt: userDelegations.startsAt,
-            endsAt: userDelegations.endsAt,
-          })
-          .from(userDelegationPermissions)
-          .innerJoin(
-            userDelegations,
-            and(
-              eq(userDelegations.orgId, userDelegationPermissions.orgId),
-              eq(userDelegations.id, userDelegationPermissions.delegationId),
-            ),
-          )
-          .where(
-            and(
-              eq(userDelegations.orgId, orgId),
-              eq(userDelegations.delegateeMembershipId, membershipId),
-              eq(userDelegations.status, "ACTIVE"),
-              gt(userDelegations.endsAt, now),
-              or(
-                gt(userDelegationPermissions.delegationId, afterDelegationId),
-                and(
-                  eq(userDelegationPermissions.delegationId, afterDelegationId),
+  const rows = await drainByKeyset(
+    { delegationId: TEXT_MIN, permissionKey: TEXT_MIN },
+    (after) =>
+      readAccessTable(
+        () =>
+          db
+            .select({
+              delegationId: userDelegationPermissions.delegationId,
+              permissionKey: userDelegationPermissions.permissionKey,
+              startsAt: userDelegations.startsAt,
+              endsAt: userDelegations.endsAt,
+            })
+            .from(userDelegationPermissions)
+            .innerJoin(
+              userDelegations,
+              and(
+                eq(userDelegations.orgId, userDelegationPermissions.orgId),
+                eq(userDelegations.id, userDelegationPermissions.delegationId),
+              ),
+            )
+            .where(
+              and(
+                eq(userDelegations.orgId, orgId),
+                eq(userDelegations.delegateeMembershipId, membershipId),
+                eq(userDelegations.status, "ACTIVE"),
+                gt(userDelegations.endsAt, now),
+                or(
                   gt(
-                    userDelegationPermissions.permissionKey,
-                    afterPermissionKey,
+                    userDelegationPermissions.delegationId,
+                    after.delegationId,
+                  ),
+                  and(
+                    eq(
+                      userDelegationPermissions.delegationId,
+                      after.delegationId,
+                    ),
+                    gt(
+                      userDelegationPermissions.permissionKey,
+                      after.permissionKey,
+                    ),
                   ),
                 ),
               ),
-            ),
-          )
-          .orderBy(
-            asc(userDelegationPermissions.delegationId),
-            asc(userDelegationPermissions.permissionKey),
-          )
-          .limit(GRANT_PAGE_SIZE),
-    );
-    for (const row of page)
-      drained.push({
-        permissionKey: row.permissionKey,
-        startsAt: row.startsAt,
-        endsAt: row.endsAt,
-      });
-    const last = page[page.length - 1];
-    if (page.length < GRANT_PAGE_SIZE || last === undefined) return drained;
-    afterDelegationId = last.delegationId;
-    afterPermissionKey = last.permissionKey;
-  }
+            )
+            .orderBy(
+              asc(userDelegationPermissions.delegationId),
+              asc(userDelegationPermissions.permissionKey),
+            )
+            .limit(GRANT_PAGE_SIZE),
+      ),
+    (row) => ({
+      delegationId: row.delegationId,
+      permissionKey: row.permissionKey,
+    }),
+  );
+  return rows.map((row) => ({
+    permissionKey: row.permissionKey,
+    startsAt: row.startsAt,
+    endsAt: row.endsAt,
+  }));
 }

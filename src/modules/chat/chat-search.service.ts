@@ -10,6 +10,7 @@ import {
   flattenMessageSender,
 } from "./chat-message-sender-shape";
 import { chatMessageContentMatch } from "./chat-message-content-match";
+import { filterByEntityAccess } from "./chat-channel-authorization";
 
 @Injectable()
 export class ChatSearchService {
@@ -52,18 +53,37 @@ export class ChatSearchService {
       limit: limit + 1,
       with: {
         senderMembership: SENDER_MEMBERSHIP_WITH_USER,
-        channel: { columns: { id: true, name: true, type: true } },
+        channel: {
+          columns: { id: true, name: true, type: true, entityType: true, entityId: true },
+        },
       },
     });
 
     const hasMore = rows.length > limit;
     if (hasMore) rows.pop();
-    const resolved = await this.entities.withResolvedReferences(actor, rows);
-    const results = resolved.map(flattenMessageSender);
-    return { results, nextCursor: hasMore ? rows[rows.length - 1]?.id : undefined };
+    const nextCursor = hasMore ? rows[rows.length - 1]?.id : undefined;
+    const visible = await filterByEntityAccess(
+      this.entities,
+      rows,
+      actor,
+      (row) => row.channel,
+    );
+    const resolved = await this.entities.withResolvedReferences(actor, visible);
+    const results = resolved.map((row) => {
+      const flattened = flattenMessageSender(row);
+      const { channel } = flattened;
+      return {
+        ...flattened,
+        channel: channel
+          ? { id: channel.id, name: channel.name, type: channel.type }
+          : channel,
+      };
+    });
+    return { results, nextCursor };
   }
 
-  async searchChannels(orgId: string, userId: string, query: string) {
+  async searchChannels(actor: EntityActor, query: string) {
+    const { orgId, userId } = actor;
     if (!query.trim()) return [];
     const q = `%${query.trim()}%`;
 
@@ -102,11 +122,32 @@ export class ChatSearchService {
           inArray(chatChannels.id, [...memberChannelIds]),
         ),
       ),
-      columns: { id: true, name: true, type: true, description: true, avatarUrl: true },
+      columns: {
+        id: true,
+        name: true,
+        type: true,
+        description: true,
+        avatarUrl: true,
+        entityType: true,
+        entityId: true,
+      },
       limit: 10,
     });
 
-    return channels.map(c => ({ ...c, isMember: memberChannelIds.has(c.id) }));
+    const visible = await filterByEntityAccess(
+      this.entities,
+      channels,
+      actor,
+      (channel) => channel,
+    );
+    return visible.map((channel) => ({
+      id: channel.id,
+      name: channel.name,
+      type: channel.type,
+      description: channel.description,
+      avatarUrl: channel.avatarUrl,
+      isMember: memberChannelIds.has(channel.id),
+    }));
   }
 
   async searchUsers(orgId: string, query: string) {

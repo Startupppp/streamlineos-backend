@@ -1,8 +1,13 @@
 import { z } from "zod";
 import { dataScopeSchema } from "./rbac.schemas";
 import { moduleKeySchema, permissionKeySchema } from "./rbac-response.schemas";
-import { wireDate } from "../../../common/openapi/wire-types";
+import { nullableWireDate, wireDate } from "../../../common/openapi/wire-types";
 import { cursorPageSchema } from "../../../common/openapi/response-envelopes";
+import { ORG_MEMBER_ROLE_VALUES } from "../../../common/rbac/org-roles";
+import {
+  GRANT_SOURCE_KINDS,
+  MODULE_STANDINGS,
+} from "../../access/access-explain-provenance";
 
 const successResponseSchema = z.object({ success: z.literal(true) });
 
@@ -101,13 +106,50 @@ const simulationCandidateItemSchema = z.object({
 /** `RolesQueryService.listSimulationCandidates` */
 export const simulationCandidatesResponseSchema = cursorPageSchema(simulationCandidateItemSchema);
 
-/** `AccessService.resolveUserPermissions` — simulate access for target user. */
+const grantSourceSchema = z.object({
+  kind: z.enum(GRANT_SOURCE_KINDS),
+  label: z.string(),
+  scope: dataScopeSchema,
+  moduleKey: z.string().nullable(),
+  expiresAt: nullableWireDate(),
+});
+
+const explainedPermissionSchema = z.object({
+  permissionKey: z.string(),
+  moduleKey: z.string(),
+  scope: dataScopeSchema,
+  expiresAt: nullableWireDate(),
+  sources: z.array(grantSourceSchema),
+});
+
+const explainedModuleStandingSchema = z.object({
+  moduleKey: z.string(),
+  standing: z.enum(MODULE_STANDINGS),
+  available: z.boolean(),
+  permissionCount: z.number().int(),
+});
+
+/**
+ * `AccessService.resolveUserPermissions` + `AccessExplainResolver.explain` —
+ * simulate access for target user.
+ *
+ * `scopes` stays the authority: it is what the request-path resolver returns and
+ * what every guard will actually enforce. `provenance` is attribution laid over
+ * those same keys, and it is carried HERE rather than on `GET /me/access`
+ * because this route is fetched once by an RBAC administrator while that one is
+ * fetched on every page load.
+ */
 export const simulateAccessResponseSchema = z.object({
   userId: z.string(),
   permissions: z.array(z.string()),
   scopes: z.record(z.string(), dataScopeSchema),
   isOrgOwner: z.boolean(),
+  standing: z.enum(ORG_MEMBER_ROLE_VALUES),
+  provenance: z.array(explainedPermissionSchema),
+  moduleStandings: z.array(explainedModuleStandingSchema),
 });
+
+export type SimulateAccessResponse = z.infer<typeof simulateAccessResponseSchema>;
 
 /** `RoleSeedService.materializeTemplate` — returns created role row. */
 export const materializeTemplateResponseSchema = z.object({

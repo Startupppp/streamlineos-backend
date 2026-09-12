@@ -4,12 +4,13 @@ import type { Db } from "../../db/drizzle.module";
 import { CalendarSourceRegistry } from "./calendar-source.registry";
 import { CalendarEventSourceLoader } from "./calendar-event-source.loader";
 import { collectRescheduledOccurrences } from "./calendar-exception-loader";
-import { expandToOccurrences } from "./calendar-occurrence.service";
+import { expandToOccurrences, occurrencesWereTruncated } from "./calendar-occurrence.service";
 import { CALENDAR_EVENTS_CAP } from "./dto/calendar.schemas";
 import type {
   CalendarEventProjection,
   CalendarEventSource,
   CalendarSourceContext,
+  CalendarSourceLoadResult,
 } from "./calendar-event-source";
 
 @Injectable()
@@ -31,8 +32,8 @@ export class CalendarNativeEventSource implements CalendarEventSource, OnModuleI
     this.registry.register(this);
   }
 
-  async load(ctx: CalendarSourceContext): Promise<CalendarEventProjection[]> {
-    const { eventsData, exceptionsByEvent } = await this.loader.load(
+  async load(ctx: CalendarSourceContext): Promise<CalendarSourceLoadResult> {
+    const { eventsData, exceptionsByEvent, exceptionsComplete } = await this.loader.load(
       ctx.orgId,
       ctx.userId,
       ctx.start,
@@ -40,9 +41,13 @@ export class CalendarNativeEventSource implements CalendarEventSource, OnModuleI
     );
 
     const projections: CalendarEventProjection[] = [];
+    let truncated = !exceptionsComplete;
 
     for (const event of eventsData) {
-      if (projections.length >= CALENDAR_EVENTS_CAP) break;
+      if (projections.length >= CALENDAR_EVENTS_CAP) {
+        truncated = true;
+        break;
+      }
 
       const exceptions = exceptionsByEvent.get(event.id) ?? [];
       const occurrences = expandToOccurrences(
@@ -63,9 +68,13 @@ export class CalendarNativeEventSource implements CalendarEventSource, OnModuleI
       );
 
       const isRecurring = event.rrule !== null;
+      if (occurrencesWereTruncated(occurrences)) truncated = true;
 
       for (const occ of occurrences) {
-        if (projections.length >= CALENDAR_EVENTS_CAP) break;
+        if (projections.length >= CALENDAR_EVENTS_CAP) {
+          truncated = true;
+          break;
+        }
         projections.push({
           // The NOMINAL instant, which is also the exception key — never `occ.startDate`.
           // The rescheduled path below already names occurrences that way (:102), so
@@ -95,7 +104,10 @@ export class CalendarNativeEventSource implements CalendarEventSource, OnModuleI
       if (isRecurring) {
         const rescheduled = collectRescheduledOccurrences(event, exceptions, ctx.start, ctx.end);
         for (const rs of rescheduled) {
-          if (projections.length >= CALENDAR_EVENTS_CAP) break;
+          if (projections.length >= CALENDAR_EVENTS_CAP) {
+            truncated = true;
+            break;
+          }
           projections.push({
             id: `event-${event.id}-${new Date(rs.nominalStartMs).toISOString()}`,
             title: rs.title,
@@ -117,6 +129,6 @@ export class CalendarNativeEventSource implements CalendarEventSource, OnModuleI
       }
     }
 
-    return projections;
+    return { events: projections, truncated };
   }
 }

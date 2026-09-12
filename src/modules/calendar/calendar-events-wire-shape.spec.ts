@@ -3,7 +3,8 @@ import { CalendarEventsAggregateService } from "./calendar-events-aggregate.serv
 import { CalendarNativeEventSource } from "./calendar-native-event-source";
 import type { CalendarSourceRegistry } from "./calendar-source.registry";
 import type { CalendarEventProjection } from "./calendar-event-source";
-import { CalendarEventSourceLoader, type VisibleEventRow } from "./calendar-event-source.loader";
+import { CalendarEventSourceLoader } from "./calendar-event-source.loader";
+import type { VisibleEventRow } from "./calendar.types";
 import { calendarEventsResponseSchema } from "./dto/calendar-response.schemas";
 
 const ORG = "org-1";
@@ -63,7 +64,7 @@ function aggregateOver(projections: CalendarEventProjection[]): CalendarEventsAg
 }
 
 async function readEvents(rows: VisibleEventRow[]) {
-  const projections = await nativeSourceOver(rows).load({
+  const { events: projections } = await nativeSourceOver(rows).load({
     orgId: ORG,
     userId: USER,
     start: START,

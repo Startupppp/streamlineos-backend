@@ -7,8 +7,16 @@ import { ChatChannelMembersService } from "../chat-channel-members.service";
 import type { StorageService } from "../../storage/storage.service";
 import { validateMagicBytes } from "../../storage/file-signatures";
 import { StorageMultipartService } from "../../storage/storage-multipart.service";
+import type { EntityActor } from "../../entity-reference/entity-reference.types";
 
 const dialect = new PgDialect();
+
+const actorIn = (orgId: string): EntityActor => ({
+  orgId,
+  userId: USER,
+  membershipId: MEMBERSHIP_ID,
+  isOrgOwner: false,
+});
 
 const ORG = "org-a";
 const OTHER_ORG = "org-b";
@@ -153,7 +161,7 @@ describe("ChatAttachmentsService.getSignedUrl — the predicate is the authoriza
   it("CONTROL: a current member of the channel gets a 1-hour signed URL", async () => {
     const harness = makeHarness();
 
-    const result = await harness.service.getSignedUrl(CHANNEL_ID, ATTACHMENT_ID, USER, ORG);
+    const result = await harness.service.getSignedUrl(CHANNEL_ID, ATTACHMENT_ID, actorIn(ORG));
 
     expect(result).toEqual({ url: SIGNED_URL });
     expect(harness.storage.getFileUrl).toHaveBeenCalledWith(ORG, FILE_KEY, 3600);
@@ -162,7 +170,7 @@ describe("ChatAttachmentsService.getSignedUrl — the predicate is the authoriza
   it("CONTROL: the compiled WHERE constrains every column the denials depend on", async () => {
     const harness = makeHarness();
 
-    await harness.service.getSignedUrl(CHANNEL_ID, ATTACHMENT_ID, USER, ORG);
+    await harness.service.getSignedUrl(CHANNEL_ID, ATTACHMENT_ID, actorIn(ORG));
 
     const bindings = equalityBindings(harness.predicate());
     for (const column of REQUIRED_BINDINGS) expect(bindings.has(column)).toBe(true);
@@ -179,7 +187,7 @@ describe("cross-organization isolation — org_id is bound, not merely present",
     const harness = makeHarness();
 
     await expect(
-      harness.service.getSignedUrl(CHANNEL_ID, ATTACHMENT_ID, USER, OTHER_ORG),
+      harness.service.getSignedUrl(CHANNEL_ID, ATTACHMENT_ID, actorIn(OTHER_ORG)),
     ).rejects.toBeInstanceOf(NotFoundException);
 
     const bindings = equalityBindings(harness.predicate());
@@ -192,7 +200,7 @@ describe("cross-organization isolation — org_id is bound, not merely present",
     const harness = makeHarness();
 
     await expect(
-      harness.service.getSignedUrl(OTHER_CHANNEL_ID, ATTACHMENT_ID, USER, ORG),
+      harness.service.getSignedUrl(OTHER_CHANNEL_ID, ATTACHMENT_ID, actorIn(ORG)),
     ).rejects.toBeInstanceOf(NotFoundException);
     expect(harness.storage.getFileUrl).not.toHaveBeenCalled();
   });
@@ -201,7 +209,7 @@ describe("cross-organization isolation — org_id is bound, not merely present",
     const harness = makeHarness();
 
     await expect(
-      harness.service.getSignedUrl(CHANNEL_ID, ATTACHMENT_ID + 1, USER, ORG),
+      harness.service.getSignedUrl(CHANNEL_ID, ATTACHMENT_ID + 1, actorIn(ORG)),
     ).rejects.toBeInstanceOf(NotFoundException);
     expect(harness.storage.getFileUrl).not.toHaveBeenCalled();
   });
@@ -215,7 +223,7 @@ describe("channel membership — denial comes from a missing row, not a stubbed 
     });
 
     await expect(
-      harness.service.getSignedUrl(CHANNEL_ID, ATTACHMENT_ID, USER, ORG),
+      harness.service.getSignedUrl(CHANNEL_ID, ATTACHMENT_ID, actorIn(ORG)),
     ).rejects.toBeInstanceOf(NotFoundException);
     expect(harness.queried()).toBe(false);
     expect(harness.storage.getFileUrl).not.toHaveBeenCalled();
@@ -228,7 +236,7 @@ describe("channel membership — denial comes from a missing row, not a stubbed 
     });
 
     await expect(
-      harness.service.getSignedUrl(CHANNEL_ID, ATTACHMENT_ID, USER, ORG),
+      harness.service.getSignedUrl(CHANNEL_ID, ATTACHMENT_ID, actorIn(ORG)),
     ).rejects.toBeInstanceOf(ForbiddenException);
     expect(harness.queried()).toBe(false);
     expect(harness.storage.getFileUrl).not.toHaveBeenCalled();
@@ -238,7 +246,7 @@ describe("channel membership — denial comes from a missing row, not a stubbed 
     const harness = makeHarness({ orgMembership: null });
 
     await expect(
-      harness.service.getSignedUrl(CHANNEL_ID, ATTACHMENT_ID, USER, ORG),
+      harness.service.getSignedUrl(CHANNEL_ID, ATTACHMENT_ID, actorIn(ORG)),
     ).rejects.toBeInstanceOf(ForbiddenException);
     expect(harness.queried()).toBe(false);
   });
@@ -247,7 +255,7 @@ describe("channel membership — denial comes from a missing row, not a stubbed 
     const harness = makeHarness({ channel: null });
 
     await expect(
-      harness.service.getSignedUrl(CHANNEL_ID, ATTACHMENT_ID, USER, ORG),
+      harness.service.getSignedUrl(CHANNEL_ID, ATTACHMENT_ID, actorIn(ORG)),
     ).rejects.toBeInstanceOf(NotFoundException);
     expect(harness.queried()).toBe(false);
   });
@@ -258,7 +266,7 @@ describe("channel membership — denial comes from a missing row, not a stubbed 
       channelMember: { role: "MEMBER" },
     });
 
-    const result = await harness.service.getSignedUrl(CHANNEL_ID, ATTACHMENT_ID, USER, ORG);
+    const result = await harness.service.getSignedUrl(CHANNEL_ID, ATTACHMENT_ID, actorIn(ORG));
 
     expect(result.url).toBe(SIGNED_URL);
   });
@@ -271,7 +279,7 @@ describe("a deleted message's attachment is no longer signable", () => {
     });
 
     await expect(
-      harness.service.getSignedUrl(CHANNEL_ID, ATTACHMENT_ID, USER, ORG),
+      harness.service.getSignedUrl(CHANNEL_ID, ATTACHMENT_ID, actorIn(ORG)),
     ).rejects.toBeInstanceOf(NotFoundException);
     expect(harness.storage.getFileUrl).not.toHaveBeenCalled();
   });
@@ -282,7 +290,7 @@ describe("a deleted message's attachment is no longer signable", () => {
     });
 
     await expect(
-      harness.service.getSignedUrl(CHANNEL_ID, ATTACHMENT_ID, USER, ORG),
+      harness.service.getSignedUrl(CHANNEL_ID, ATTACHMENT_ID, actorIn(ORG)),
     ).rejects.toBeInstanceOf(NotFoundException);
 
     const rendered = dialect.sqlToQuery(harness.predicate()).sql;
@@ -293,7 +301,7 @@ describe("a deleted message's attachment is no longer signable", () => {
   it("CONTROL: the same attachment on a live message still signs, so the guard is not denying everything", async () => {
     const harness = makeHarness({ row: liveAttachment() });
 
-    const result = await harness.service.getSignedUrl(CHANNEL_ID, ATTACHMENT_ID, USER, ORG);
+    const result = await harness.service.getSignedUrl(CHANNEL_ID, ATTACHMENT_ID, actorIn(ORG));
 
     expect(result.url).toBe(SIGNED_URL);
   });
@@ -303,7 +311,7 @@ describe("signed URL lifetime", () => {
   it("possession outlives no more than one hour", async () => {
     const harness = makeHarness();
 
-    await harness.service.getSignedUrl(CHANNEL_ID, ATTACHMENT_ID, USER, ORG);
+    await harness.service.getSignedUrl(CHANNEL_ID, ATTACHMENT_ID, actorIn(ORG));
 
     const call = (harness.storage.getFileUrl as jest.Mock).mock.calls[0] as [string, string, number];
     expect(call[2]).toBe(3600);
@@ -312,7 +320,7 @@ describe("signed URL lifetime", () => {
   it("the storage tenant is the caller's org, not a guess parsed from the key", async () => {
     const harness = makeHarness();
 
-    await harness.service.getSignedUrl(CHANNEL_ID, ATTACHMENT_ID, USER, ORG);
+    await harness.service.getSignedUrl(CHANNEL_ID, ATTACHMENT_ID, actorIn(ORG));
 
     const [calledOrgId] = (harness.storage.getFileUrl as jest.Mock).mock.calls[0] as [string, string, number];
     expect(calledOrgId).toBe(ORG);

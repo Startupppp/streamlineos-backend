@@ -1,5 +1,6 @@
 import { Test } from "@nestjs/testing";
 import { OrgSetupService } from "../org-setup.service";
+import { OrgSetupQueryService } from "../org-setup-query.service";
 import { OrgSetupResolverService } from "../org-setup-resolver.service";
 import { OrganizationCreationService } from "../../core/organization-creation.service";
 import { AccountOrganizationIndexService } from "../../core/account-organization-index.service";
@@ -13,6 +14,7 @@ import { CacheService } from "../../../../common/cache/cache.service";
 import { ModuleChecklistService } from "../../../hr/onboarding/flow/module-checklist.service";
 import { ACCESS_MANAGED_MODULES } from "../../../rbac/permissions";
 import { ForbiddenException } from "@nestjs/common";
+import { OutboxWakeSignal } from "../../../../common/outbox/outbox-wake.signal";
 
 jest.mock("../../../../common/rbac/access-invalidate", () => ({
   bumpPermissionsVersion: jest.fn().mockResolvedValue(undefined),
@@ -43,11 +45,17 @@ function noOrgActor(): CurrentUserContext {
   };
 }
 
+type TxQueryMock = {
+  organizations: { findFirst: jest.Mock };
+  organizationMembers: { findFirst: jest.Mock };
+};
+
 type TxMock = {
   execute: jest.Mock;
   insert: jest.Mock;
   update: jest.Mock;
   select: jest.Mock;
+  query?: TxQueryMock;
 };
 
 const CATALOG_ROWS = [
@@ -112,11 +120,14 @@ function buildDb(ownerMembershipId: number | null) {
     isOwner: true,
   });
 
+  const query: TxQueryMock = {
+    organizations: { findFirst: orgFindFirst },
+    organizationMembers: { findFirst: memberFindFirst },
+  };
+  tx.query = query;
+
   const db = {
-    query: {
-      organizations: { findFirst: orgFindFirst },
-      organizationMembers: { findFirst: memberFindFirst },
-    },
+    query,
     insert: outerInsert,
     transaction,
   };
@@ -127,6 +138,11 @@ function buildDb(ownerMembershipId: number | null) {
 async function buildService(
   db: unknown,
   cache: { invalidate: jest.Mock } = { invalidate: jest.fn() },
+  wakeSignal: { wake: () => void; register: (l: () => void) => void } = { wake: jest.fn(), register: jest.fn() },
+  indexService: { activate: jest.Mock; refreshForUser: jest.Mock } = {
+    activate: jest.fn().mockResolvedValue({ status: "activated" }),
+    refreshForUser: jest.fn(),
+  },
 ) {
   const moduleRef = await Test.createTestingModule({
     providers: [
@@ -136,10 +152,7 @@ async function buildService(
         provide: OrganizationCreationService,
         useValue: { createFromSetup: jest.fn() },
       },
-      {
-        provide: AccountOrganizationIndexService,
-        useValue: { refreshForUser: jest.fn() },
-      },
+      { provide: AccountOrganizationIndexService, useValue: indexService },
       { provide: DRIZZLE, useValue: db },
       { provide: AuditService, useValue: { log: jest.fn() } },
       { provide: CacheService, useValue: cache },
@@ -153,9 +166,35 @@ async function buildService(
       },
       { provide: ModuleChecklistService, useValue: { ensureChecklistsForModules: jest.fn().mockResolvedValue(undefined) } },
       { provide: NotificationDispatchService, useValue: { emit: jest.fn().mockResolvedValue(undefined) } },
+      { provide: OutboxWakeSignal, useValue: wakeSignal },
     ],
   }).compile();
   return moduleRef.get(OrgSetupService);
+}
+
+async function buildQueryService(db: unknown) {
+  const moduleRef = await Test.createTestingModule({
+    providers: [
+      OrgSetupQueryService,
+      OrgSetupResolverService,
+      {
+        provide: OrganizationCreationService,
+        useValue: { createFromSetup: jest.fn() },
+      },
+      { provide: DRIZZLE, useValue: db },
+      { provide: CacheService, useValue: { invalidate: jest.fn() } },
+      { provide: AuditService, useValue: { log: jest.fn() } },
+      {
+        provide: OnboardingSessionService,
+        useValue: {
+          getOrCreateSession: jest.fn().mockResolvedValue({ id: 42 }),
+          skipSession: jest.fn().mockResolvedValue(undefined),
+          completeSession: jest.fn().mockResolvedValue(undefined),
+        },
+      },
+    ],
+  }).compile();
+  return moduleRef.get(OrgSetupQueryService);
 }
 
 describe("OrgSetupService — provisionOrgModules ownership seeding", () => {
@@ -423,10 +462,163 @@ describe("OrgSetupService stale-session membership guards", () => {
         isOwner: false,
       },
     ]);
-    const svc = await buildService(db);
+    const querySvc = await buildQueryService(db);
 
-    await expect(svc.getSetupSession(noOrgActor())).resolves.toEqual({ id: 42 });
+    await expect(querySvc.getSetupSession(noOrgActor())).resolves.toEqual({ id: 42 });
     expect(db.transaction).toHaveBeenCalledTimes(2);
     expect(db.identityTx.execute).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("OrgSetupService — OutboxWakeSignal post-commit acceleration", () => {
+  it("calls wake() after a successful claim in skipSetup", async () => {
+    const { db } = buildDb(99);
+    const wakeSignal = { wake: jest.fn(), register: jest.fn() };
+    const svc = await buildService(db, { invalidate: jest.fn() }, wakeSignal);
+
+    await svc.skipSetup(ownerActor());
+
+    expect(wakeSignal.wake).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not call wake() when the stamp was already claimed (replay) in skipSetup", async () => {
+    const { db, txMocks } = buildDb(99);
+    txMocks.returningUpdate.mockResolvedValue([]);
+    const wakeSignal = { wake: jest.fn(), register: jest.fn() };
+    const svc = await buildService(db, { invalidate: jest.fn() }, wakeSignal);
+
+    await svc.skipSetup(ownerActor());
+
+    expect(wakeSignal.wake).not.toHaveBeenCalled();
+  });
+
+  it("calls wake() after a successful claim in completeSetup", async () => {
+    const { db } = buildDb(99);
+    const wakeSignal = { wake: jest.fn(), register: jest.fn() };
+    const svc = await buildService(db, { invalidate: jest.fn() }, wakeSignal);
+
+    await svc.completeSetup(ownerActor(), {
+      industry: "IT Services",
+      companySize: "1-10",
+      enabledModules: ["hr"],
+    } as Parameters<OrgSetupService["completeSetup"]>[1]);
+
+    expect(wakeSignal.wake).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not call wake() when the stamp was already claimed (replay) in completeSetup", async () => {
+    const { db, txMocks } = buildDb(99);
+    txMocks.returningUpdate.mockResolvedValue([]);
+    const wakeSignal = { wake: jest.fn(), register: jest.fn() };
+    const svc = await buildService(db, { invalidate: jest.fn() }, wakeSignal);
+
+    await svc.completeSetup(ownerActor(), {
+      industry: "IT Services",
+      companySize: "1-10",
+      enabledModules: ["hr"],
+    } as Parameters<OrgSetupService["completeSetup"]>[1]);
+
+    expect(wakeSignal.wake).not.toHaveBeenCalled();
+  });
+
+  it("swallowing a throwing wake listener does not fail completeSetup", async () => {
+    const { db } = buildDb(99);
+    const realSignal = new OutboxWakeSignal();
+    realSignal.register(() => {
+      throw new Error("boom");
+    });
+    const svc = await buildService(db, { invalidate: jest.fn() }, realSignal);
+
+    await expect(
+      svc.completeSetup(ownerActor(), {
+        industry: "IT Services",
+        companySize: "1-10",
+        enabledModules: ["hr"],
+      } as Parameters<OrgSetupService["completeSetup"]>[1]),
+    ).resolves.toMatchObject({ success: true });
+  });
+});
+
+describe("OrgSetupService — a failed directory projection is never announced (OS-R2)", () => {
+  const SETUP_INPUT = {
+    industry: "IT Services",
+    companySize: "1-10",
+    enabledModules: ["hr"],
+  } as Parameters<OrgSetupService["completeSetup"]>[1];
+
+  function indexServiceReturning(outcome: unknown) {
+    return {
+      activate: jest.fn().mockResolvedValue(outcome),
+      refreshForUser: jest.fn(),
+    };
+  }
+
+  it("completeSetup returns the auto-login token when activation selected the org", async () => {
+    const { db } = buildDb(99);
+    const index = indexServiceReturning({ status: "activated" });
+    const svc = await buildService(db, { invalidate: jest.fn() }, undefined, index);
+
+    const result = await svc.completeSetup(ownerActor(), SETUP_INPUT);
+
+    expect(result).toMatchObject({ success: true, orgId: "org-1" });
+    expect(result).toHaveProperty("autoLoginToken");
+    expect(index.activate).toHaveBeenCalledWith("user-1", "org-1");
+  });
+
+  it.each(["unprojected", "failed"])(
+    "completeSetup withholds the auto-login token when activation is %s",
+    async (status) => {
+      const { db } = buildDb(99);
+      const index = indexServiceReturning(
+        status === "failed" ? { status, reason: "42501" } : { status },
+      );
+      const svc = await buildService(db, { invalidate: jest.fn() }, undefined, index);
+
+      const result = await svc.completeSetup(ownerActor(), SETUP_INPUT);
+
+      expect(result).toEqual({ success: true, orgId: "org-1" });
+      expect(result).not.toHaveProperty("autoLoginToken");
+    },
+  );
+
+  it.each(["unprojected", "failed"])(
+    "skipSetup withholds the auto-login token when activation is %s",
+    async (status) => {
+      const { db } = buildDb(99);
+      const index = indexServiceReturning(
+        status === "failed" ? { status, reason: "42501" } : { status },
+      );
+      const svc = await buildService(db, { invalidate: jest.fn() }, undefined, index);
+
+      const result = await svc.skipSetup(ownerActor());
+
+      expect(result).toEqual({ success: true, orgId: "org-1" });
+      expect(result).not.toHaveProperty("autoLoginToken");
+    },
+  );
+
+  it("the session cache is still invalidated when activation did not select the org", async () => {
+    const { db } = buildDb(99);
+    const invalidate = jest.fn();
+    const index = indexServiceReturning({ status: "unprojected" });
+    const svc = await buildService(db, { invalidate }, undefined, index);
+
+    await svc.completeSetup(ownerActor(), SETUP_INPUT);
+
+    expect(invalidate).toHaveBeenCalledWith("user:session:user-1");
+  });
+
+  it("a non-owner target never mints a token regardless of the activation outcome", async () => {
+    const { db } = buildDb(99);
+    db.query.organizationMembers.findFirst.mockResolvedValue({
+      status: "ACTIVE",
+      isOwner: false,
+    });
+    const index = indexServiceReturning({ status: "activated" });
+    const svc = await buildService(db, { invalidate: jest.fn() }, undefined, index);
+
+    const result = await svc.completeSetup(ownerActor(), SETUP_INPUT);
+
+    expect(result).toEqual({ success: true, orgId: "org-1" });
   });
 });

@@ -82,11 +82,19 @@ export class BillingPaymentState {
     return org ?? null;
   }
 
-  async transitionToPastDue(orgId: string, paymentId: string): Promise<void> {
+  async transitionToPastDue(
+    orgId: string,
+    paymentId: string,
+    guard?: { purchaseCreatedAt: Date },
+  ): Promise<void> {
     const now = new Date();
     await runInTenantTransaction(this.db, async (tx) => {
       const [existing] = await tx
-        .select({ id: subscriptions.id, metadata: subscriptions.metadata })
+        .select({
+          id: subscriptions.id,
+          metadata: subscriptions.metadata,
+          currentPeriodStart: subscriptions.currentPeriodStart,
+        })
         .from(subscriptions)
         .where(
           and(
@@ -97,6 +105,15 @@ export class BillingPaymentState {
         .for("update")
         .limit(1);
       if (!existing) return;
+      if (guard && existing.currentPeriodStart !== null && guard.purchaseCreatedAt < existing.currentPeriodStart) {
+        logger.info("[billing] stale payment failure — skipping PAST_DUE transition, current period started after this purchase", {
+          orgId,
+          paymentId,
+          purchaseCreatedAt: guard.purchaseCreatedAt,
+          currentPeriodStart: existing.currentPeriodStart,
+        });
+        return;
+      }
       const meta = existing.metadata ?? {};
       await tx
         .update(subscriptions)

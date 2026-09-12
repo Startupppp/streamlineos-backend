@@ -3,6 +3,7 @@ import {
   ForbiddenException,
   Inject,
   Injectable,
+  Logger,
   NotFoundException,
 } from "@nestjs/common";
 import { randomUUID, randomBytes, createHash } from "node:crypto";
@@ -41,10 +42,39 @@ import type {
   DeclineInvitationInput,
 } from "./dto/organization.schemas";
 import { lockPendingInvitation, requireActiveOrg } from "./invitations.helpers";
-import { isUniqueViolation } from "../../../common/db/postgres-error";
+import {
+  admissionFailure,
+  canonicalAdmissionEmail,
+  loadAllowedDomains,
+  refuseDomain,
+} from "./membership-admission.service";
+import { isUniqueViolationOn } from "../../../common/db/postgres-error";
+import {
+  notifyInvitationAccepted,
+  notifyInvitationDeclined,
+} from "./invitation-outcome-notifications";
+import { projectAcceptedMembership } from "./invitation-acceptance-projection";
+
+/**
+ * Both shapes Postgres can report for a racing account insert on the same
+ * address: the declared constraint on `users.email` and the case-insensitive
+ * unique index migration 0455 added over `lower(email)`.
+ */
+const USERS_EMAIL_UNIQUE_CONSTRAINTS = [
+  "users_email_unique",
+  "uniq_users_email_ci",
+];
+
+const SUSPENDED_ACCOUNT_MESSAGE =
+  "This account is suspended. It must be restored before it can join another organization.";
+
+const CONCURRENT_SIGNUP_MESSAGE =
+  "Another sign-up for this email address was in progress. Please open the invitation link again.";
 
 @Injectable()
 export class InvitationAcceptanceService {
+  private readonly logger = new Logger(InvitationAcceptanceService.name);
+
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly cache: CacheService,
@@ -53,53 +83,20 @@ export class InvitationAcceptanceService {
     private readonly dispatch: NotificationDispatchService,
   ) {}
 
-  private async touchIndexLastActivated(orgId: string, userId: string): Promise<void> {
-    // Public accept route: no ambient GUC, so only `withIdentity` lets the members policy match.
-    const [org, membership] = await withIdentity(this.db, userId, (tx) =>
-      Promise.all([
-        tx.query.organizations.findFirst({
-          where: eq(organizations.id, orgId),
-          columns: { name: true, slug: true, region: true, status: true },
-        }),
-        tx.query.organizationMembers.findFirst({
-          where: and(
-            eq(organizationMembers.userId, userId),
-            eq(organizationMembers.orgId, orgId),
-          ),
-          columns: { role: true, status: true, joinedAt: true },
-        }),
-      ]),
-    );
-    if (!org || !membership) return;
-    await withIdentity(this.db, userId, (tx) =>
-      tx
-        .insert(accountOrganizationIndex)
-        .values({
-          userId,
-          orgId,
-          cellId: LEGACY_CELL_ID,
-          region: org.region ?? "primary",
-          organizationName: org.name,
-          organizationSlug: org.slug,
-          membershipRole: membership.role,
-          membershipStatus: membership.status,
-          organizationStatus: org.status,
-          joinedAt: membership.joinedAt,
-          lastActivatedAt: new Date(),
-          projectedAt: new Date(),
-        })
-        .onConflictDoUpdate({
-          target: [accountOrganizationIndex.userId, accountOrganizationIndex.orgId],
-          set: {
-            membershipRole: sql`excluded.membership_role`,
-            membershipStatus: sql`excluded.membership_status`,
-            organizationStatus: sql`excluded.organization_status`,
-            joinedAt: sql`excluded.joined_at`,
-            lastActivatedAt: sql`excluded.last_activated_at`,
-            projectedAt: sql`excluded.projected_at`,
-          },
-        }),
-    );
+  /**
+   * Admission policy is evaluated where the membership is granted, not where the
+   * invitation was issued, so an allowed-domain list tightened after issuance
+   * still bites. Runs under the invitation row lock so it cannot straddle a
+   * concurrent policy edit.
+   */
+  private async assertAdmissionPolicy(
+    tx: DbOrTx,
+    orgId: string,
+    email: string,
+  ): Promise<void> {
+    const domains = await loadAllowedDomains(tx, orgId);
+    const refusal = refuseDomain(canonicalAdmissionEmail(email), domains);
+    if (refusal) throw admissionFailure(refusal);
   }
 
   private async assertSeatAvailable(tx: DbOrTx, orgId: string): Promise<void> {
@@ -211,7 +208,7 @@ export class InvitationAcceptanceService {
         await requireActiveOrg(tx, invitation.orgId);
         const existingUser = await tx.query.users.findFirst({
           where: eq(users.email, invitation.email),
-          columns: { id: true },
+          columns: { id: true, isActive: true, deletedAt: true },
         });
         const existingMembership = existingUser
           ? await tx.query.organizationMembers.findFirst({
@@ -226,6 +223,10 @@ export class InvitationAcceptanceService {
       },
       { orgId: invitedOrgId },
     );
+
+    // Tenant admission never reactivates a globally suspended account (root §8).
+    if (existingUser && (!existingUser.isActive || existingUser.deletedAt !== null))
+      throw new ForbiddenException(SUSPENDED_ACCOUNT_MESSAGE);
 
     if (existingMembership) {
       if (
@@ -259,10 +260,12 @@ export class InvitationAcceptanceService {
         );
 
     // Index first, then invalidate: the session resolves its org from this projection.
-    await this.touchIndexLastActivated(invitedOrgId, joinedUserId).catch(() => undefined);
+    await projectAcceptedMembership(this.db, this.logger, invitedOrgId, joinedUserId);
     await this.invalidateJoinCaches(invitedOrgId, joinedUserId);
 
-    await this.notifyAccepted(
+    await notifyInvitationAccepted(
+      this.db,
+      this.dispatch,
       invitedOrgId,
       invitation.id,
       invitation.email,
@@ -289,6 +292,7 @@ export class InvitationAcceptanceService {
             invitationId,
             tokenHash,
           );
+          await this.assertAdmissionPolicy(tx, orgId, lockedInvitation.email);
           await this.assertSeatAvailable(tx, orgId);
 
           const membershipId = await membership.createMembership(tx, {
@@ -338,6 +342,7 @@ export class InvitationAcceptanceService {
               invitationId,
               tokenHash,
             );
+            await this.assertAdmissionPolicy(tx, orgId, lockedInvitation.email);
             await this.assertSeatAvailable(tx, orgId);
 
             const fromNames =
@@ -373,10 +378,32 @@ export class InvitationAcceptanceService {
         ),
       );
     } catch (err) {
-      if (isUniqueViolation(err)) {
-        throw new ConflictException("Invitation has already been accepted");
-      }
-      throw err;
+      // Only the address collision is recoverable. Every other unique violation
+      // used to be reported as "already accepted", which turned an unrelated
+      // concurrent account creation into a dead second invitation; the accepted
+      // and revoked cases are already answered by the row predicates above.
+      if (!isUniqueViolationOn(err, ...USERS_EMAIL_UNIQUE_CONSTRAINTS)) throw err;
+      const recovery = await runInNewTenantTransaction(this.db, orgId, async (tx) => {
+        const inv = await tx.query.invitations.findFirst({
+          where: eq(invitations.id, invitationId),
+          columns: { email: true },
+        });
+        if (!inv) return null;
+        return tx.query.users.findFirst({
+          where: eq(users.email, inv.email),
+          columns: { id: true, isActive: true, deletedAt: true },
+        });
+      });
+      if (!recovery) throw new ConflictException(CONCURRENT_SIGNUP_MESSAGE);
+      if (!recovery.isActive || recovery.deletedAt !== null)
+        throw new ForbiddenException(SUSPENDED_ACCOUNT_MESSAGE);
+      return this.acceptAsExistingUser(
+        invitationId,
+        orgId,
+        tokenHash,
+        recovery.id,
+        autoLoginToken,
+      );
     }
     return userId;
   }
@@ -415,13 +442,25 @@ export class InvitationAcceptanceService {
           event: "DECLINED",
           actorMembershipId: null,
         });
+        await this.seatLedger.recordSeatEvent(
+          {
+            orgId,
+            eventType: "INVITE_CANCELLED",
+            subjectId: invitation.id,
+            reason: "invitation declined by recipient",
+            idempotencyKey: `invite-declined:${invitation.id}`,
+          },
+          tx,
+        );
       },
       { orgId },
     );
 
     await this.cache.invalidateForOrg(orgId, "users:stats");
 
-    await this.notifyDeclined(
+    await notifyInvitationDeclined(
+      this.db,
+      this.dispatch,
       orgId,
       invitation.id,
       invitation.email,
@@ -429,75 +468,5 @@ export class InvitationAcceptanceService {
     ).catch(() => undefined);
 
     return { ok: true };
-  }
-
-  private async resolveInviterUserId(
-    orgId: string,
-    inviterMembershipId: number | null,
-  ): Promise<string | null> {
-    if (inviterMembershipId === null) return null;
-    const row = await runInNewTenantTransaction(this.db, orgId, (tx) =>
-      tx.query.organizationMembers.findFirst({
-        where: and(
-          eq(organizationMembers.id, inviterMembershipId),
-          eq(organizationMembers.orgId, orgId),
-        ),
-        columns: { userId: true },
-      }),
-    );
-    return row?.userId ?? null;
-  }
-
-  private async notifyAccepted(
-    orgId: string,
-    invitationId: string,
-    email: string,
-    inviterMembershipId: number | null,
-    joinedUserId: string,
-  ): Promise<void> {
-    const inviterUserId = await this.resolveInviterUserId(orgId, inviterMembershipId);
-    // Public route, so no ambient GUC; inside the callback the DRIZZLE proxy routes `this.db` to `tx`.
-    const targetUserIds = (
-      await runInNewTenantTransaction(this.db, orgId, () =>
-        getOrgAdminRecipients(this.db, orgId, [inviterUserId]),
-      )
-    ).filter((id) => id !== joinedUserId);
-    if (targetUserIds.length === 0) return;
-
-    await this.dispatch.emit({
-      eventKey: "organization.invitation.accepted",
-      orgId,
-      actorUserId: joinedUserId,
-      targetUserIds,
-      entityType: "invitation",
-      entityId: invitationId,
-      title: "Invitation accepted",
-      message: `${email} accepted their invitation and joined the organization.`,
-      link: "/users",
-    });
-  }
-
-  private async notifyDeclined(
-    orgId: string,
-    invitationId: string,
-    email: string,
-    inviterMembershipId: number | null,
-  ): Promise<void> {
-    const inviterUserId = await this.resolveInviterUserId(orgId, inviterMembershipId);
-    const targetUserIds = await runInNewTenantTransaction(this.db, orgId, () =>
-      getOrgAdminRecipients(this.db, orgId, [inviterUserId]),
-    );
-    if (targetUserIds.length === 0) return;
-
-    await this.dispatch.emit({
-      eventKey: "organization.invitation.declined",
-      orgId,
-      targetUserIds,
-      entityType: "invitation",
-      entityId: invitationId,
-      title: "Invitation declined",
-      message: `${email} declined the invitation to join the organization.`,
-      link: "/users",
-    });
   }
 }

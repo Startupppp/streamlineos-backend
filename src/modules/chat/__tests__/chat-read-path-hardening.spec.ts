@@ -41,6 +41,7 @@ import { foldReactions } from "../chat-message-reaction-shape";
 
 const dialect = new PgDialect();
 const ORG_ID = "org-hardening";
+const searchActor: EntityActor = { orgId: ORG_ID, userId: "u", membershipId: 1, isOrgOwner: false };
 const ACTOR = {
   userId: "user-hardening",
   orgId: ORG_ID,
@@ -86,7 +87,7 @@ describe("chat search channels — private and DIRECT names are not enumerable",
       query: { chatChannels: { findMany: capture } },
     } as unknown as Db;
 
-    await new ChatSearchService(db, passThroughEntities).searchChannels(ORG_ID, "u", "alice");
+    await new ChatSearchService(db, passThroughEntities).searchChannels(searchActor, "alice");
     const [call] = calls;
     if (!call) throw new Error("searchChannels never queried chat_channels");
     return renderWhere(call["where"] as SQL);
@@ -218,7 +219,7 @@ describe("unread badge — bounded and org-scoped", () => {
       }),
     } as unknown as Db;
 
-    const total = await new ChatPresenceService(db).getUnreadTotal("u", ORG_ID);
+    const total = await new ChatPresenceService(db, passThroughEntities).getUnreadTotal("u", ORG_ID);
     const all = rendered.join(" | ");
 
     // `getUnreadTotal` swallows its own errors and answers 0, so a broken harness would

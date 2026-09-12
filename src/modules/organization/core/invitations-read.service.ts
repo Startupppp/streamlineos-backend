@@ -1,5 +1,5 @@
 import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, desc, eq, gt, ilike, isNull, lt, sql } from "drizzle-orm";
+import { and, desc, eq, gte, gt, ilike, isNull, lt, sql } from "drizzle-orm";
 import { buildCursorPage, decodeCursor } from "../../../common/pagination/cursor";
 import { keysetBefore } from "../../../common/pagination/keyset";
 import { hashToken } from "../../../common/security/token.util";
@@ -16,14 +16,14 @@ export interface ListInvitationsParams {
   cursor?: string;
   limit?: number;
   includeAccepted?: boolean;
-  status?: "pending" | "accepted" | "expired" | "revoked";
+  status?: "pending" | "accepted" | "expired" | "revoked" | "declined";
   q?: string;
 }
 
 type InvitationCursorScope = {
   orgId: string;
   includeAccepted: boolean;
-  status: ListInvitationsParams["status"] | null;
+  status: "pending" | "accepted" | "expired" | "revoked" | "declined" | null;
   q: string | null;
 };
 
@@ -82,11 +82,13 @@ export class InvitationsReadService {
     if (params?.status === "pending") {
       conditions.push(eq(invitations.status, "PENDING"));
       conditions.push(isNull(invitations.acceptedAt));
-      conditions.push(gt(invitations.expiresAt, now));
+      conditions.push(gte(invitations.expiresAt, now));
     } else if (params?.status === "accepted") {
       conditions.push(eq(invitations.status, "ACCEPTED"));
     } else if (params?.status === "revoked") {
       conditions.push(eq(invitations.status, "REVOKED"));
+    } else if (params?.status === "declined") {
+      conditions.push(eq(invitations.status, "DECLINED"));
     } else if (params?.status === "expired") {
       const expiredFilter = expiredByTimePredicate(now);
       if (expiredFilter) conditions.push(expiredFilter);

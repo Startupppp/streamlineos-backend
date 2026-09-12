@@ -5020,6 +5020,34 @@
       "when": 1803000010168,
       "tag": "1090_subscription_purchases",
       "breakpoints": true
+    },
+    {
+      "idx": 850,
+      "version": "7",
+      "when": 1803000010169,
+      "tag": "1091_directory_facet_declared_uniques",
+      "breakpoints": true
+    },
+    {
+      "idx": 851,
+      "version": "7",
+      "when": 1803000010170,
+      "tag": "1092_calendar_exception_modified_start_index",
+      "breakpoints": true
+    },
+    {
+      "idx": 852,
+      "version": "7",
+      "when": 1803000010171,
+      "tag": "1093_notifications_created_at_list_cursor_index",
+      "breakpoints": true
+    },
+    {
+      "idx": 853,
+      "version": "7",
+      "when": 1803000010172,
+      "tag": "1094_hr_module_roles_drop_org_membership_admin",
+      "breakpoints": true
     }
   ]
 }

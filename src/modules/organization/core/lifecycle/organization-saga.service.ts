@@ -170,6 +170,7 @@ export class OrganizationSagaService {
     const stepDefs = SAGA_STEPS[kind];
     const stepValues = stepDefs.map((stepName, idx) => ({
       sagaId: saga.sagaId,
+      orgId: saga.organizationId,
       stepName,
       position: idx,
       state: "PENDING" as const,

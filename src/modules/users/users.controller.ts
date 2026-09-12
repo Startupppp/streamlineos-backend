@@ -135,7 +135,7 @@ export class UsersController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.invitationsRead.listPaginated(u.orgId, {
-      page: query.page,
+      cursor: query.cursor,
       limit: query.limit,
       includeAccepted: query.includeAccepted,
       status: query.status,

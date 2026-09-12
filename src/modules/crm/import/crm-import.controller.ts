@@ -15,6 +15,7 @@ import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
 import { AccessService } from "../../access/access.service";
 import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
+import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
@@ -50,6 +51,7 @@ const crmImportIdParams = z.object({ crmImportId: z.string().min(1) }).strict();
 const crmConnectorSyncIdParams = z.object({ crmConnectorSyncId: z.string().min(1) }).strict();
 
 @Controller("crm")
+@RequireModule("crm")
 @UseGuards(JwtAuthGuard, PermissionGuard)
 export class CrmImportController {
   constructor(

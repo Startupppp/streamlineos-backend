@@ -1,12 +1,6 @@
-import { and, asc, eq, gt, inArray, isNull, or } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import type { Db } from "../../db/drizzle.module";
-import {
-  groupRoleAssignments,
-  moduleOwnerships,
-  principalGroupMembers,
-  roleAssignments,
-  roles,
-} from "../../db/schema";
+import { roles } from "../../db/schema";
 import { logger } from "../../common/logger/logger.service";
 import { isDelegablePermission } from "../../common/rbac/grantability";
 import { ORG_MEMBER_ROLES } from "../../common/rbac/org-roles";
@@ -33,6 +27,10 @@ import {
 } from "./snapshot-validity";
 import {
   drainDelegatedPermissionGrants,
+  drainGroupRoleAssignments,
+  drainModuleOwnerships,
+  drainPrincipalGroupMemberships,
+  drainRoleAssignments,
   drainRolePermissionGrants,
   drainUserPermissionGrants,
   type ReadAccessTable,
@@ -129,59 +127,24 @@ export class AccessPermissionResolver {
 
     const [assignmentRows, groupMemberRows, ownershipRows, personalGrantRows] =
       await Promise.all([
-      this.readAccessTable(
-        () =>
-          this.db
-            .select({
-              roleId: roleAssignments.roleId,
-              expiresAt: roleAssignments.expiresAt,
-            })
-            .from(roleAssignments)
-            .where(
-              and(
-                eq(roleAssignments.orgId, orgId),
-                eq(roleAssignments.organizationMembershipId, membershipId),
-                or(
-                  isNull(roleAssignments.expiresAt),
-                  gt(roleAssignments.expiresAt, now),
-                ),
-              ),
-            )
-            .orderBy(asc(roleAssignments.id))
-            .limit(500),
+      drainRoleAssignments(
+        this.db,
+        this.readAccessTable,
+        orgId,
+        membershipId,
+        now,
       ),
-      this.readAccessTable(
-        () =>
-          this.db
-            .select({
-              principalGroupId: principalGroupMembers.principalGroupId,
-            })
-            .from(principalGroupMembers)
-            .where(
-              and(
-                eq(principalGroupMembers.orgId, orgId),
-                eq(
-                  principalGroupMembers.organizationMembershipId,
-                  membershipId,
-                ),
-              ),
-            )
-            .orderBy(asc(principalGroupMembers.id))
-            .limit(500),
+      drainPrincipalGroupMemberships(
+        this.db,
+        this.readAccessTable,
+        orgId,
+        membershipId,
       ),
-      this.readAccessTable(
-        () =>
-          this.db
-            .select({ moduleKey: moduleOwnerships.moduleKey })
-            .from(moduleOwnerships)
-            .where(
-              and(
-                eq(moduleOwnerships.orgId, orgId),
-                eq(moduleOwnerships.ownerMembershipId, membershipId),
-              ),
-            )
-            .orderBy(asc(moduleOwnerships.id))
-            .limit(100),
+      drainModuleOwnerships(
+        this.db,
+        this.readAccessTable,
+        orgId,
+        membershipId,
       ),
       drainUserPermissionGrants(
         this.db,
@@ -196,19 +159,11 @@ export class AccessPermissionResolver {
     const groupIds = groupMemberRows.map((row) => row.principalGroupId);
 
     if (groupIds.length > 0) {
-      const groupRoleRows = await this.readAccessTable(
-        () =>
-          this.db
-            .select({ roleId: groupRoleAssignments.roleId })
-            .from(groupRoleAssignments)
-            .where(
-              and(
-                eq(groupRoleAssignments.orgId, orgId),
-                inArray(groupRoleAssignments.principalGroupId, groupIds),
-              ),
-            )
-            .orderBy(asc(groupRoleAssignments.id))
-            .limit(500),
+      const groupRoleRows = await drainGroupRoleAssignments(
+        this.db,
+        this.readAccessTable,
+        orgId,
+        groupIds,
       );
       for (const row of groupRoleRows) roleIds.add(row.roleId);
     }

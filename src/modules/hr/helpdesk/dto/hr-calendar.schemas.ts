@@ -10,7 +10,18 @@ export const CALENDAR_EVENT_TYPES = [
   "INTERVIEW",
 ] as const;
 
-type CalendarEventType = (typeof CALENDAR_EVENT_TYPES)[number];
+export type CalendarEventType = (typeof CALENDAR_EVENT_TYPES)[number];
+
+export interface CalendarEvent {
+  id: string;
+  type: CalendarEventType;
+  title: string;
+  date: string;
+  endDate?: string;
+  meta?: Record<string, unknown>;
+}
+
+export const MAX_WINDOW_DAYS = 62;
 
 function isCalendarEventType(value: string): value is CalendarEventType {
   return CALENDAR_EVENT_TYPES.some((type) => type === value);

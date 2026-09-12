@@ -23,6 +23,23 @@ import {
   primaryEmploymentOfPerson,
 } from "../directory/employment-query";
 import { pageBroadcastRecipients, replaceBroadcastAudienceTargets } from "./broadcasts-audience.queries";
+import type { InboxSourcePosition } from "./dto/unified-inbox.schemas";
+
+function broadcastOrderTime() {
+  return sql`coalesce(${broadcasts.sentAt}, ${broadcasts.createdAt})`;
+}
+
+function broadcastInboxKeyset(cursor: InboxSourcePosition | null) {
+  if (cursor === null) return undefined;
+  if (cursor.t === null) return lt(broadcasts.id, cursor.id);
+  return or(
+    sql`${broadcastOrderTime()} < ${cursor.t}::timestamptz`,
+    and(
+      sql`${broadcastOrderTime()} = ${cursor.t}::timestamptz`,
+      lt(broadcasts.id, cursor.id),
+    ),
+  );
+}
 
 @Injectable()
 export class BroadcastsService {
@@ -357,7 +374,7 @@ export class BroadcastsService {
     orgId: string,
     userId: string,
     limit: number,
-    cursor: number | null,
+    cursor: InboxSourcePosition | null,
     membershipId?: number | null,
   ) {
     const audienceFilter = await this.resolveAudienceFilter(orgId, userId);
@@ -388,10 +405,10 @@ export class BroadcastsService {
           eq(broadcasts.status, "SENT"),
           isNull(broadcastReadReceipts.id),
           audienceFilter,
-          cursor !== null ? lt(broadcasts.id, cursor) : undefined,
+          broadcastInboxKeyset(cursor),
         ),
       )
-      .orderBy(desc(broadcasts.id))
+      .orderBy(desc(broadcastOrderTime()), desc(broadcasts.id))
       .limit(limit);
 
     return rows;

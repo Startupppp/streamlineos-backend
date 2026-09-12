@@ -97,6 +97,7 @@ function harness(count: number): Harness {
       [],
       existingUsers,
       [],
+      [],
       [{ id: 7, slug: "MEMBER" }],
       [],
       [],
@@ -172,7 +173,7 @@ describe("EmployeeBulkOnboardingService.onboardEmployeesBulk — statement count
     const fiftyRows = fifty.statements();
 
     expect(fiftyRows).toBe(oneRow);
-    expect([oneRow, fiftyRows]).toEqual([24, 24]);
+    expect([oneRow, fiftyRows]).toEqual([25, 25]);
     expect(fifty.countOf("select")).toBe(one.countOf("select"));
     expect(fifty.countOf("insert")).toBe(one.countOf("insert"));
     expect(fifty.countOf("update")).toBe(one.countOf("update"));
@@ -265,6 +266,7 @@ describe("EmployeeBulkOnboardingService.onboardEmployeesBulk — statement count
       screens,
       new Map(),
       new Map(),
+      new Set<string>(),
     );
 
     expect(plan.accepted).toHaveLength(1);
@@ -301,6 +303,7 @@ describe("EmployeeBulkOnboardingService.onboardEmployeesBulk — statement count
       screens,
       new Map(),
       new Map(),
+      new Set<string>(),
     );
 
     expect(plan.rejected).toEqual([]);

@@ -463,9 +463,13 @@ describe("UnifiedInboxService — four-property contract", () => {
 
       expect(result.nextCursor).not.toBeNull();
       const state = decodeInboxCursor(result.nextCursor ?? undefined);
-      expect(Object.keys(state)).toEqual(expect.arrayContaining(["n", "b", "m", "a"]));
+      expect(Object.keys(state)).toEqual(
+        expect.arrayContaining(["n", "nt", "b", "bt", "m", "a"]),
+      );
       expect(typeof state.n === "number" || state.n === null).toBe(true);
+      expect(typeof state.nt === "string" || state.nt === null).toBe(true);
       expect(typeof state.b === "number" || state.b === null).toBe(true);
+      expect(typeof state.bt === "string" || state.bt === null).toBe(true);
       expect(typeof state.m === "string" || state.m === null).toBe(true);
       expect(typeof state.a === "number" || state.a === null).toBe(true);
     });
@@ -494,7 +498,15 @@ describe("UnifiedInboxService — four-property contract", () => {
       await svc.list(ORG, UID, { limit: 10, kinds: undefined, unreadOnly: false }, user);
 
       const decoded = decodeInboxCursor(undefined);
-      expect(decoded).toEqual({ n: null, b: null, m: null, a: null });
+      expect(decoded).toEqual({
+        n: null,
+        nt: null,
+        b: null,
+        bt: null,
+        m: null,
+        a: null,
+        at: null,
+      });
     });
 
     it("cursor cap — limit is hard-capped at 100 items per page", async () => {

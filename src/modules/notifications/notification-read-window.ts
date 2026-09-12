@@ -1,3 +1,5 @@
+import { isNull, lte, or, type SQL } from "drizzle-orm";
+import { notifications } from "../../db/schema";
 import { NOTIFICATION_RETENTION_POLICY } from "./notification-retention-policy";
 
 const DAY_MS = 86_400_000;
@@ -21,4 +23,8 @@ export function notificationWindowStart(now: Date): Date {
 
 export function notificationWindowEnd(now: Date): Date {
   return new Date(now.getTime() + DAY_MS);
+}
+
+export function notificationNotSnoozed(now: Date): SQL | undefined {
+  return or(isNull(notifications.snoozedUntil), lte(notifications.snoozedUntil, now));
 }

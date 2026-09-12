@@ -3,8 +3,16 @@ import { PgDialect } from "drizzle-orm/pg-core";
 import type { SQL } from "drizzle-orm";
 import type { Db } from "../../../db/drizzle.module";
 import { ChatAttachmentsService } from "../chat-attachments.service";
+import type { EntityActor } from "../../entity-reference/entity-reference.types";
 
 const dialect = new PgDialect();
+
+const actorIn = (orgId: string): EntityActor => ({
+  orgId,
+  userId: USER_ID,
+  membershipId: 77,
+  isOrgOwner: false,
+});
 
 const ORG = "org-aaaa-bbbb-4ccc-dddd-eeeeeeeeeeee";
 const OTHER_ORG = "org-zzzz-yyyy-4xxx-wwww-vvvvvvvvvvvv";
@@ -69,7 +77,7 @@ function makeService(rows: Array<{ fileKey: string }>, opts: MakeServiceOpts = {
 describe("ChatAttachmentsService.getSignedUrl — WHERE predicate structure", () => {
   it("binds chatMessages.isDeleted = false so a soft-deleted message's attachment is excluded", async () => {
     const { service, getWhere } = makeService([{ fileKey: FILE_KEY }]);
-    await service.getSignedUrl(CHANNEL_ID, ATTACHMENT_ID, USER_ID, ORG);
+    await service.getSignedUrl(CHANNEL_ID, ATTACHMENT_ID, actorIn(ORG));
 
     const { sql, params } = dialect.sqlToQuery(getWhere());
 
@@ -79,7 +87,7 @@ describe("ChatAttachmentsService.getSignedUrl — WHERE predicate structure", ()
 
   it("binds chatAttachments.orgId to the caller's org so a cross-tenant attachment id returns nothing", async () => {
     const { service, getWhere } = makeService([{ fileKey: FILE_KEY }]);
-    await service.getSignedUrl(CHANNEL_ID, ATTACHMENT_ID, USER_ID, ORG);
+    await service.getSignedUrl(CHANNEL_ID, ATTACHMENT_ID, actorIn(ORG));
 
     const { sql, params } = dialect.sqlToQuery(getWhere());
 
@@ -90,7 +98,7 @@ describe("ChatAttachmentsService.getSignedUrl — WHERE predicate structure", ()
 
   it("binds chatMessages.channelId so a member of another channel cannot read this attachment via its id", async () => {
     const { service, getWhere } = makeService([{ fileKey: FILE_KEY }]);
-    await service.getSignedUrl(CHANNEL_ID, ATTACHMENT_ID, USER_ID, ORG);
+    await service.getSignedUrl(CHANNEL_ID, ATTACHMENT_ID, actorIn(ORG));
 
     const { sql, params } = dialect.sqlToQuery(getWhere());
 
@@ -100,7 +108,7 @@ describe("ChatAttachmentsService.getSignedUrl — WHERE predicate structure", ()
 
   it("binds chatMessages.orgId independently of chatAttachments.orgId for defence in depth", async () => {
     const { service, getWhere } = makeService([{ fileKey: FILE_KEY }]);
-    await service.getSignedUrl(CHANNEL_ID, ATTACHMENT_ID, USER_ID, ORG);
+    await service.getSignedUrl(CHANNEL_ID, ATTACHMENT_ID, actorIn(ORG));
 
     const { sql, params } = dialect.sqlToQuery(getWhere());
 
@@ -115,7 +123,7 @@ describe("ChatAttachmentsService.getSignedUrl — access gates", () => {
     const membershipError = new NotFoundException("membership-gate-sentinel");
     const { service, storage } = makeService([], { membershipError });
 
-    const thrown = await service.getSignedUrl(CHANNEL_ID, ATTACHMENT_ID, USER_ID, ORG).catch((e: unknown) => e);
+    const thrown = await service.getSignedUrl(CHANNEL_ID, ATTACHMENT_ID, actorIn(ORG)).catch((e: unknown) => e);
 
     expect(thrown).toBeInstanceOf(NotFoundException);
     expect((thrown as NotFoundException).message).toBe("membership-gate-sentinel");
@@ -126,14 +134,14 @@ describe("ChatAttachmentsService.getSignedUrl — access gates", () => {
     const { service } = makeService([]);
 
     await expect(
-      service.getSignedUrl(CHANNEL_ID, ATTACHMENT_ID, USER_ID, ORG),
+      service.getSignedUrl(CHANNEL_ID, ATTACHMENT_ID, actorIn(ORG)),
     ).rejects.toBeInstanceOf(NotFoundException);
   });
 
   it("routes the file key and the 3600s TTL to StorageService.getFileUrl so the quarantine gate inside it runs on the correct key", async () => {
     const { service, storage } = makeService([{ fileKey: FILE_KEY }]);
 
-    await service.getSignedUrl(CHANNEL_ID, ATTACHMENT_ID, USER_ID, ORG);
+    await service.getSignedUrl(CHANNEL_ID, ATTACHMENT_ID, actorIn(ORG));
 
     expect(storage.getFileUrl).toHaveBeenCalledWith(ORG, FILE_KEY, 3600);
   });
@@ -144,14 +152,14 @@ describe("ChatAttachmentsService.getSignedUrl — access gates", () => {
     });
 
     await expect(
-      service.getSignedUrl(CHANNEL_ID, ATTACHMENT_ID, USER_ID, ORG),
+      service.getSignedUrl(CHANNEL_ID, ATTACHMENT_ID, actorIn(ORG)),
     ).rejects.toBeInstanceOf(NotFoundException);
   });
 
   it("ALLOW — a member with a clean key receives the signed URL object", async () => {
     const { service } = makeService([{ fileKey: FILE_KEY }]);
 
-    const result = await service.getSignedUrl(CHANNEL_ID, ATTACHMENT_ID, USER_ID, ORG);
+    const result = await service.getSignedUrl(CHANNEL_ID, ATTACHMENT_ID, actorIn(ORG));
 
     expect(result).toEqual({ url: "https://signed.example.com/file" });
   });

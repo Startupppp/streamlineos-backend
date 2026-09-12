@@ -33,7 +33,10 @@ describe("InvitationAcceptanceService.decline", () => {
       }),
     }),
     insert: jest.fn().mockReturnValue({ values: eventValues }),
-    query: { invitations: { findFirst: invitationFindFirst } },
+    query: {
+      invitations: { findFirst: invitationFindFirst },
+      organizationMembers: { findFirst: memberFindFirst },
+    },
   };
 
   const db = {

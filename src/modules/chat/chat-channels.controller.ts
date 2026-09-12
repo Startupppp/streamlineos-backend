@@ -100,7 +100,7 @@ export class ChatChannelsController {
     return this.channels.listPublicChannels(u.orgId, u.userId, query.cursor, query.limit);
   }
 
-  @ApiOperation({ summary: "Get or create the entity-linked channel for a given entity" })
+  @ApiOperation({ summary: "Get the entity-linked channel for a given entity, if one exists" })
   @ApiResponse({ status: 200, description: "OK" })
   @Get("entity/:entityType/:entityId")
   @ResponseSchema(channelDetailSchema.nullable())
@@ -111,7 +111,30 @@ export class ChatChannelsController {
     @Param("entityId") entityId: string,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.channels.getOrCreateEntityChannel(entityType, entityId, actorOf(u));
+    return this.channels.getEntityChannel(entityType, entityId, actorOf(u));
+  }
+
+  @ApiOperation({ summary: "Create the entity-linked channel for a record, or return the existing one" })
+  @ApiResponse({ status: 201, description: "Channel created" })
+  @ApiOkResponse({ description: "Existing channel returned" })
+  @Post("entity/:entityType/:entityId")
+  @ResponseSchema(channelDetailSchema)
+  @BodylessAction()
+  @RequirePermission("chat:channels:write")
+  @Validate({ params: entityTypeentityIdParams })
+  async createByEntity(
+    @Param("entityType") entityType: string,
+    @Param("entityId") entityId: string,
+    @CurrentUser() u: CurrentUserContext,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const { channel, created } = await this.channels.createEntityChannel(
+      entityType,
+      entityId,
+      actorOf(u),
+    );
+    res.status(created ? 201 : 200);
+    return channel;
   }
 
   @ApiOperation({ summary: "Create a new channel or return existing DM/entity channel" })
@@ -142,7 +165,7 @@ export class ChatChannelsController {
     @Param("channelId", ParseIntPipe) channelId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    const channel = await this.members.getChannel(channelId, u.userId, u.orgId);
+    const channel = await this.members.getChannel(channelId, actorOf(u));
     if (!channel) throw new NotFoundException("Channel not found");
     return channel;
   }
@@ -174,7 +197,7 @@ export class ChatChannelsController {
   ) {
     const raw = query.cursor !== undefined ? parseInt(query.cursor, 10) : undefined;
     const cursor = typeof raw === "number" && !Number.isNaN(raw) ? raw : undefined;
-    return this.members.listMembers(channelId, u.userId, u.orgId, cursor, query.limit);
+    return this.members.listMembers(channelId, actorOf(u), cursor, query.limit);
   }
 
   @ApiOperation({ summary: "Add a member to a channel" })
@@ -388,8 +411,7 @@ export class ChatChannelsController {
   ) {
     return this.members.listChannelFiles(
       channelId,
-      u.userId,
-      u.orgId,
+      actorOf(u),
       cursor !== undefined ? parseInt(cursor, 10) : undefined,
     );
   }

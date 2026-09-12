@@ -19,6 +19,7 @@ describe("Phase 2.1 lifecycle journey (contracts)", () => {
             }),
           }),
           where: jest.fn().mockReturnValue({
+            limit: jest.fn().mockResolvedValue([{ currency: "INR" }]),
             orderBy: jest.fn().mockResolvedValue([
               {
                 id: 1,
@@ -144,6 +145,7 @@ describe("Phase 2.1 lifecycle journey (contracts)", () => {
       userId: "user-ada",
       actorId: "hr-1",
       monthlySalary: 100000,
+      currency: "INR",
       effectiveFrom: "2026-08-01",
     });
 

@@ -33,6 +33,7 @@ export async function seedSalaryProfiles(
   orgId: string,
   actorId: string,
   entries: readonly SalarySeedEntry[],
+  currency: string,
 ): Promise<void> {
   if (entries.length === 0) return;
 
@@ -93,7 +94,7 @@ export async function seedSalaryProfiles(
         orgId,
         userId: entry.userId,
         workerType: "EMPLOYEE" as const,
-        currency: "INR",
+        currency,
         annualCtc: (entry.monthlySalary * 12).toFixed(2),
         status: "ACTIVE" as const,
         effectiveFrom: entry.effectiveFrom,

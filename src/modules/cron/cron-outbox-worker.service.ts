@@ -1,6 +1,7 @@
 import { Injectable, OnModuleDestroy, OnModuleInit } from "@nestjs/common";
 import { logger } from "../../common/logger/logger.service";
 import { OutboxPublisherService } from "../../common/outbox/outbox-publisher.service";
+import { OutboxWakeSignal } from "../../common/outbox/outbox-wake.signal";
 import { CronLeaseService } from "./cron-lease.service";
 
 const INTERVAL_MS = 15_000;
@@ -17,6 +18,7 @@ export class CronOutboxWorkerService implements OnModuleInit, OnModuleDestroy {
   constructor(
     private readonly publisher: OutboxPublisherService,
     private readonly lease: CronLeaseService,
+    private readonly wakeSignal: OutboxWakeSignal,
   ) {}
 
   onModuleInit(): void {
@@ -26,6 +28,7 @@ export class CronOutboxWorkerService implements OnModuleInit, OnModuleDestroy {
       );
       return;
     }
+    this.wakeSignal.register(() => this.wake());
     this.timer = setInterval(() => void this.tick(), INTERVAL_MS);
     this.timer.unref();
     this.kickoff = setTimeout(() => void this.tick(), KICKOFF_DELAY_MS);

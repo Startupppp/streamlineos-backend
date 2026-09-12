@@ -5,6 +5,7 @@ import {
   validateSchemeCode,
 } from "../../../../payroll/payout/lib/bank-validation";
 import { resolveCountryRequirements } from "../onboarding-requirements.catalog";
+import { genderEnum } from "../../../../../db/schema/common/enums";
 
 const PHONE_REGEX = /^\+?[1-9]\d{7,14}$/;
 const PERSON_NAME_REGEX = /^[A-Za-z][A-Za-z\s'.-]{1,79}$/;
@@ -61,7 +62,7 @@ const dateOfBirthSchema = z
 export const personalDetailsSchema = z
   .object({
     phone: z.string().regex(PHONE_REGEX, "Enter a valid phone number"),
-    gender: z.enum(["MALE", "FEMALE", "OTHER"]).optional(),
+    gender: z.enum(genderEnum.enumValues).optional(),
     dateOfBirth: dateOfBirthSchema,
     emergencyName: z
       .string()

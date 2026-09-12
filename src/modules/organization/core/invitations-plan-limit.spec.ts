@@ -15,6 +15,7 @@ import { CacheService } from "../../../common/cache/cache.service";
 import { EmailService } from "../../email/email.service";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { hashToken } from "../../../common/security/token.util";
+import { invitations as invitationsTable } from "../../../db/schema";
 
 const ORG_ID = "org-abc";
 const ACTOR_ID = "user-xyz";
@@ -29,7 +30,12 @@ const BASE_INVITATION = {
   acceptedAt: null,
   status: "PENDING",
 };
-const EXISTING_USER = { id: "user-existing", email: "invitee@example.com" };
+const EXISTING_USER = {
+  id: "user-existing",
+  email: "invitee@example.com",
+  isActive: true,
+  deletedAt: null,
+};
 
 type MockQuery = {
   users: { findFirst: jest.Mock };
@@ -203,7 +209,14 @@ describe("InvitationAcceptanceService.accept — plan limit enforcement", () => 
   beforeEach(async () => {
     jest.resetAllMocks();
     mockDb = buildMockDb();
-    mockDb.universalTx.limit.mockResolvedValue([BASE_INVITATION]);
+    // Acceptance runs two `select`s in its transaction: the invitation row lock
+    // and the allowed-domain read. Answering both with an invitation row hands
+    // the domain screen a row with no `domain` column.
+    mockDb.universalTx.limit.mockImplementation(() => {
+      const fromCalls: unknown[][] = mockDb.universalTx.from.mock.calls;
+      const lastTable = fromCalls.at(-1)?.[0];
+      return Promise.resolve(lastTable === invitationsTable ? [BASE_INVITATION] : []);
+    });
     mockPlanLimits = { assertWithinLimit: jest.fn().mockResolvedValue(undefined) };
 
     const module = await Test.createTestingModule({

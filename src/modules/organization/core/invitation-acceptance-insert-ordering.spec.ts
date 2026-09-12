@@ -8,6 +8,7 @@ import { SeatLedgerService } from "../../billing/core/seat-ledger.service";
 import { CacheService } from "../../../common/cache/cache.service";
 import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
 import { hashToken } from "../../../common/security/token.util";
+import { invitations } from "../../../db/schema";
 
 const ORG_ID = "org-order-test";
 const RAW_TOKEN = "d".repeat(64);
@@ -21,7 +22,12 @@ const BASE_INVITATION = {
   acceptedAt: null,
   status: "PENDING",
 };
-const EXISTING_USER = { id: "user-existing", email: "invitee@example.com" };
+const EXISTING_USER = {
+  id: "user-existing",
+  email: "invitee@example.com",
+  isActive: true,
+  deletedAt: null,
+};
 
 function buildQuery() {
   return {
@@ -46,16 +52,25 @@ function buildUniversalTx(query: ReturnType<typeof buildQuery>) {
     then: (resolve: (value: undefined) => unknown) =>
       Promise.resolve(undefined).then(resolve),
   };
+  // The acceptance transaction now issues two `select`s: the invitation row lock
+  // and the allowed-domain read. A single answer for both hands a domain row the
+  // shape of an invitation, so the source table decides what comes back.
+  let selectedTable: unknown = null;
   return {
     execute: jest.fn().mockResolvedValue([]),
     query,
     select: jest.fn().mockReturnThis(),
-    from: jest.fn().mockReturnThis(),
+    from: jest.fn().mockImplementation(function (this: unknown, table: unknown) {
+      selectedTable = table;
+      return this;
+    }),
     where: jest.fn().mockImplementation(function (this: unknown) {
       return this;
     }),
     for: jest.fn().mockReturnThis(),
-    limit: jest.fn().mockResolvedValue([BASE_INVITATION]),
+    limit: jest.fn().mockImplementation(() =>
+      Promise.resolve(selectedTable === invitations ? [BASE_INVITATION] : []),
+    ),
     update: jest.fn().mockReturnThis(),
     set: jest.fn().mockReturnValue({ where: jest.fn().mockReturnValue(updateResult) }),
     delete: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue(undefined) }),
@@ -99,7 +114,6 @@ describe("InvitationAcceptanceService.accept — assert-before-insert ordering",
   beforeEach(async () => {
     jest.resetAllMocks();
     mockDb = buildMockDb();
-    mockDb.universalTx.limit.mockResolvedValue([BASE_INVITATION]);
     mockPlanLimits = { assertWithinLimit: jest.fn().mockResolvedValue(undefined) };
 
     const module = await Test.createTestingModule({

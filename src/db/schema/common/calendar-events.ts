@@ -12,6 +12,7 @@ import {
 } from "drizzle-orm/pg-core";
 import { relations, sql } from "drizzle-orm";
 import { organizations, organizationMembers } from "./auth";
+import { businessParties } from "../party/business-parties";
 
 export const calendarEvents = pgTable(
   "calendar_events",
@@ -38,6 +39,7 @@ export const calendarEvents = pgTable(
     postMeetingNotes: text("post_meeting_notes"),
     linkedDealId: integer("linked_deal_id"),
     linkedLeadId: integer("linked_lead_id"),
+    linkedLeadPartyId: text("linked_lead_party_id"),
     rrule: text("rrule"),
     recurrenceEnd: timestamp("recurrence_end", { withTimezone: true }),
     reminder15MinSent: boolean("reminder_15min_sent").default(false).notNull(),
@@ -52,10 +54,19 @@ export const calendarEvents = pgTable(
   },
   (table) => [
     index("idx_calendar_events_org_date").on(table.orgId, table.startDate),
+    index("idx_calendar_events_org_end_date").on(table.orgId, table.endDate),
+    index("idx_calendar_events_org_recurring_start")
+      .on(table.orgId, table.startDate)
+      .where(sql`rrule is not null`),
     index("idx_calendar_events_category").on(table.category),
-    index("idx_calendar_events_org_created_by_membership").on(
+    index("idx_calendar_events_org_creator_membership").on(
       table.orgId,
       table.createdByMembershipId,
+      table.startDate,
+    ),
+    index("idx_calendar_events_linked_lead_party_id").on(
+      table.orgId,
+      table.linkedLeadPartyId,
     ),
     index("idx_calendar_events_external").on(
       table.integrationConnectionId,
@@ -67,6 +78,11 @@ export const calendarEvents = pgTable(
       foreignColumns: [organizationMembers.orgId, organizationMembers.id],
       name: "fk_calendar_events_org_creator_membership",
     }),
+    foreignKey({
+      columns: [table.orgId, table.linkedLeadPartyId],
+      foreignColumns: [businessParties.organizationId, businessParties.partyId],
+      name: "fk_calendar_events_linked_lead_party_id",
+    }).onDelete("set null"),
   ],
 );
 

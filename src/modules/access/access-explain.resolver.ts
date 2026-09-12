@@ -1,22 +1,11 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, asc, eq, gt, inArray, isNull, or } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
-import {
-  groupRoleAssignments,
-  moduleOwnerships,
-  principalGroupMembers,
-  roleAssignments,
-  roles,
-} from "../../db/schema";
+import { roles } from "../../db/schema";
 import { MembershipStateService } from "../../common/auth/membership-state.service";
-import type { MembershipState } from "../../common/auth/membership-state.service";
 import { isDelegablePermission } from "../../common/rbac/grantability";
-import {
-  ORG_MEMBER_ROLES,
-  isOrgMemberRole,
-  type OrgMemberRole,
-} from "../../common/rbac/org-roles";
+import { ORG_MEMBER_ROLES, type OrgMemberRole } from "../../common/rbac/org-roles";
 import { administeringModuleOf } from "../../common/rbac/module-vocabulary";
 import {
   ROLE_DEFAULT_PERMISSIONS,
@@ -25,152 +14,43 @@ import {
 } from "../rbac/permissions";
 import type { DataScope } from "./access.types";
 import {
-  CATALOG_KEY_SET,
   EMPLOYEE_SELF_SERVICE_GRANTS,
   allCatalogScopes,
-  broadest,
-  deriveAccessViewImplication,
   platformCapabilityScopes,
 } from "./access-policy";
 import {
   drainDelegatedPermissionGrants,
+  drainGroupRoleAssignments,
+  drainModuleOwnerships,
+  drainPrincipalGroupMemberships,
+  drainRoleAssignments,
   drainRolePermissionGrants,
   drainUserPermissionGrants,
   type ReadAccessTable,
 } from "./access-grant-drains";
+import {
+  ProvenanceWalk,
+  moduleStandingOf,
+  orgStandingOf,
+  ownsOrAdministers,
+  type AccessExplanation,
+  type ExplainedModuleStanding,
+  type ExplainedPermission,
+} from "./access-explain-provenance";
 import { EntitlementsService } from "./entitlements.service";
 import { type Clock, SYSTEM_CLOCK } from "./snapshot-validity";
 
-export const GRANT_SOURCE_KINDS = [
-  "org-standing",
-  "universal-member",
-  "employee-self-service",
-  "role-grant",
-  "role-default",
-  "delegation",
-  "user-grant",
-  "module-ownership",
-  "platform-capability",
-  "access-view-implication",
-] as const;
-
-export type GrantSourceKind = (typeof GRANT_SOURCE_KINDS)[number];
-
-export const MODULE_STANDINGS = ["owner", "admin", "member", "none"] as const;
-
-export type ModuleStanding = (typeof MODULE_STANDINGS)[number];
-
-export interface GrantSource {
-  kind: GrantSourceKind;
-  label: string;
-  scope: DataScope;
-  moduleKey: string | null;
-  expiresAt: Date | null;
-}
-
-export interface ExplainedPermission {
-  permissionKey: string;
-  moduleKey: string;
-  scope: DataScope;
-  expiresAt: Date | null;
-  sources: GrantSource[];
-}
-
-export interface ExplainedModuleStanding {
-  moduleKey: string;
-  standing: ModuleStanding;
-  available: boolean;
-  permissionCount: number;
-}
-
-export interface AccessExplanation {
-  standing: OrgMemberRole;
-  active: boolean;
-  permissions: ExplainedPermission[];
-  moduleStandings: ExplainedModuleStanding[];
-}
-
 /**
- * The effective scope map implied by a provenance walk.
+ * Why the target person's rights resolve the way they do.
  *
- * This exists so `access-explain.resolver.spec.ts` can put the walk and
- * `AccessPermissionResolver.computeUserPermissions` over one fixture and assert
- * the two maps are identical. A provenance view that drifts from the resolver
- * shows rights the API does not grant, so the derivation has to be checkable
- * from outside the class.
+ * `computeUserPermissions` folds every grant path into one
+ * `Record<string, DataScope>` and discards attribution, and it is the hot cached
+ * path on every request — so it is left alone. This walks the SAME tables with
+ * the SAME imported drains and the SAME merge rule to recover the attribution,
+ * and `access-explain.resolver.spec.ts` asserts the two produce an identical
+ * effective map over one fixture. Without that assertion the screen would
+ * eventually explain rights the API does not grant.
  */
-export function effectiveScopesOf(
-  permissions: readonly ExplainedPermission[],
-): Record<string, DataScope> {
-  const scopes: Record<string, DataScope> = {};
-  for (const entry of permissions) scopes[entry.permissionKey] = entry.scope;
-  return scopes;
-}
-
-/**
- * Attribution laid over an authoritative scope map, never the other way round.
- *
- * `AccessService.resolveUserPermissions` is what every guard enforces, and it
- * also strips the person's denied modules — something the provenance walk does
- * not model, because a denial removes a key rather than granting one. Anything
- * the authority dropped is dropped here too, and the surviving keys take the
- * authority's scope, so a displayed right cannot outrun the API.
- */
-export function restrictExplanationTo(
-  explanation: AccessExplanation,
-  effective: Readonly<Record<string, DataScope>>,
-): Pick<AccessExplanation, "permissions" | "moduleStandings"> {
-  const permissions = explanation.permissions
-    .filter((entry) => effective[entry.permissionKey] !== undefined)
-    .map((entry) => ({
-      ...entry,
-      scope: effective[entry.permissionKey] ?? entry.scope,
-    }));
-  const counts = new Map<string, number>();
-  for (const entry of permissions)
-    counts.set(entry.moduleKey, (counts.get(entry.moduleKey) ?? 0) + 1);
-  const moduleStandings = explanation.moduleStandings
-    .filter(
-      (standing) =>
-        counts.has(standing.moduleKey) || standing.standing === "owner",
-    )
-    .map((standing) => ({
-      ...standing,
-      permissionCount: counts.get(standing.moduleKey) ?? 0,
-    }));
-  return { permissions, moduleStandings };
-}
-
-export function orgStandingOf(member: MembershipState): OrgMemberRole {
-  if (member.isOwner) return ORG_MEMBER_ROLES.OWNER;
-  if (isOrgMemberRole(member.role)) return member.role;
-  return ORG_MEMBER_ROLES.MEMBER;
-}
-
-function ownsOrAdministers(member: MembershipState): boolean {
-  return (
-    member.active &&
-    (member.isOwner || member.role === ORG_MEMBER_ROLES.ORG_ADMIN)
-  );
-}
-
-function canonicalKeyOf(permissionKey: string): string {
-  return permissionKey === "hr:employees:read"
-    ? "hr:employees:view"
-    : permissionKey;
-}
-
-function earliestExpiry(sources: readonly GrantSource[]): Date | null {
-  if (sources.length === 0) return null;
-  let earliest: Date | null = null;
-  for (const source of sources) {
-    if (source.expiresAt === null) return null;
-    if (earliest === null || source.expiresAt < earliest)
-      earliest = source.expiresAt;
-  }
-  return earliest;
-}
-
 @Injectable()
 export class AccessExplainResolver {
   private readonly readAccessTable: ReadAccessTable = (read) =>
@@ -193,12 +73,7 @@ export class AccessExplainResolver {
     const ownedModules = await this.readOwnedModules(orgId, membershipId);
     const permissions = ownsOrAdministers(member)
       ? this.explainOrgStanding(standing, userId)
-      : await this.explainGrantPaths(
-          orgId,
-          userId,
-          membershipId,
-          ownedModules,
-        );
+      : await this.explainGrantPaths(orgId, userId, membershipId, ownedModules);
     const moduleStandings = await this.describeModuleStandings(
       orgId,
       standing,
@@ -234,16 +109,7 @@ export class AccessExplainResolver {
         moduleKey: administeringModuleOf(permissionKey),
         expiresAt: null,
       });
-    for (const [permissionKey, scope] of Object.entries(
-      platformCapabilityScopes(userId),
-    ))
-      walk.merge(permissionKey, scope, {
-        kind: "platform-capability",
-        label: "Platform operator",
-        scope,
-        moduleKey: administeringModuleOf(permissionKey),
-        expiresAt: null,
-      });
+    this.mergePlatformCapabilities(walk, userId);
     return walk.collect();
   }
 
@@ -281,38 +147,18 @@ export class AccessExplainResolver {
 
     const [assignmentRows, groupMemberRows, personalGrantRows] =
       await Promise.all([
-        this.readAccessTable(() =>
-          this.db
-            .select({
-              roleId: roleAssignments.roleId,
-              expiresAt: roleAssignments.expiresAt,
-            })
-            .from(roleAssignments)
-            .where(
-              and(
-                eq(roleAssignments.orgId, orgId),
-                eq(roleAssignments.organizationMembershipId, membershipId),
-                or(
-                  isNull(roleAssignments.expiresAt),
-                  gt(roleAssignments.expiresAt, now),
-                ),
-              ),
-            )
-            .orderBy(asc(roleAssignments.id))
-            .limit(500),
+        drainRoleAssignments(
+          this.db,
+          this.readAccessTable,
+          orgId,
+          membershipId,
+          now,
         ),
-        this.readAccessTable(() =>
-          this.db
-            .select({ principalGroupId: principalGroupMembers.principalGroupId })
-            .from(principalGroupMembers)
-            .where(
-              and(
-                eq(principalGroupMembers.orgId, orgId),
-                eq(principalGroupMembers.organizationMembershipId, membershipId),
-              ),
-            )
-            .orderBy(asc(principalGroupMembers.id))
-            .limit(500),
+        drainPrincipalGroupMemberships(
+          this.db,
+          this.readAccessTable,
+          orgId,
+          membershipId,
         ),
         drainUserPermissionGrants(
           this.db,
@@ -329,18 +175,11 @@ export class AccessExplainResolver {
     const roleIds = new Set<number>(assignmentRows.map((row) => row.roleId));
     const groupIds = groupMemberRows.map((row) => row.principalGroupId);
     if (groupIds.length > 0) {
-      const groupRoleRows = await this.readAccessTable(() =>
-        this.db
-          .select({ roleId: groupRoleAssignments.roleId })
-          .from(groupRoleAssignments)
-          .where(
-            and(
-              eq(groupRoleAssignments.orgId, orgId),
-              inArray(groupRoleAssignments.principalGroupId, groupIds),
-            ),
-          )
-          .orderBy(asc(groupRoleAssignments.id))
-          .limit(500),
+      const groupRoleRows = await drainGroupRoleAssignments(
+        this.db,
+        this.readAccessTable,
+        orgId,
+        groupIds,
       );
       for (const row of groupRoleRows) roleIds.add(row.roleId);
     }
@@ -388,6 +227,12 @@ export class AccessExplainResolver {
         });
       }
 
+    this.mergePlatformCapabilities(walk, userId);
+    walk.applyAccessViewImplication();
+    return walk.collect();
+  }
+
+  private mergePlatformCapabilities(walk: ProvenanceWalk, userId: string): void {
     for (const [permissionKey, scope] of Object.entries(
       platformCapabilityScopes(userId),
     ))
@@ -398,9 +243,6 @@ export class AccessExplainResolver {
         moduleKey: administeringModuleOf(permissionKey),
         expiresAt: null,
       });
-
-    walk.applyAccessViewImplication();
-    return walk.collect();
   }
 
   private async mergeRoleGrants(
@@ -464,18 +306,11 @@ export class AccessExplainResolver {
     orgId: string,
     membershipId: number,
   ): Promise<ReadonlySet<string>> {
-    const rows = await this.readAccessTable(() =>
-      this.db
-        .select({ moduleKey: moduleOwnerships.moduleKey })
-        .from(moduleOwnerships)
-        .where(
-          and(
-            eq(moduleOwnerships.orgId, orgId),
-            eq(moduleOwnerships.ownerMembershipId, membershipId),
-          ),
-        )
-        .orderBy(asc(moduleOwnerships.id))
-        .limit(100),
+    const rows = await drainModuleOwnerships(
+      this.db,
+      this.readAccessTable,
+      orgId,
+      membershipId,
     );
     return new Set(rows.map((row) => row.moduleKey));
   }
@@ -518,82 +353,5 @@ export class AccessExplainResolver {
         ),
       }))
       .sort((left, right) => left.moduleKey.localeCompare(right.moduleKey));
-  }
-}
-
-function moduleStandingOf(
-  moduleKey: string,
-  ownedModules: ReadonlySet<string>,
-  administersOrg: boolean,
-  held: ReadonlySet<string>,
-  permissionCount: number,
-): ModuleStanding {
-  if (ownedModules.has(moduleKey)) return "owner";
-  if (administersOrg || held.has(`${moduleKey}:access:manage`)) return "admin";
-  return permissionCount > 0 ? "member" : "none";
-}
-
-/**
- * The merge rule, kept in one place so the two entry points above cannot answer
- * a key differently. `merge` and `mergeIfKnown` mirror the two folds in
- * `AccessPermissionResolver.computeUserPermissions` exactly, including the
- * `hr:employees:read` canonicalisation and the org-only bar: a key that never
- * reaches the effective map must never appear as displayed provenance either.
- */
-class ProvenanceWalk {
-  private readonly scopes: Record<string, DataScope> = {};
-  private readonly sources = new Map<string, GrantSource[]>();
-
-  merge(permissionKey: string, scope: DataScope, source: GrantSource): void {
-    const existing = this.scopes[permissionKey];
-    this.scopes[permissionKey] = existing ? broadest(existing, scope) : scope;
-    const list = this.sources.get(permissionKey) ?? [];
-    list.push(source);
-    this.sources.set(permissionKey, list);
-  }
-
-  mergeIfKnown(
-    permissionKey: string,
-    scope: DataScope,
-    source: GrantSource,
-  ): void {
-    const canonicalKey = canonicalKeyOf(permissionKey);
-    if (!isDelegablePermission(canonicalKey)) return;
-    if (!CATALOG_KEY_SET.has(canonicalKey)) return;
-    this.merge(canonicalKey, scope, source);
-  }
-
-  applyAccessViewImplication(): void {
-    const before: Record<string, DataScope> = { ...this.scopes };
-    deriveAccessViewImplication(this.scopes);
-    for (const [permissionKey, scope] of Object.entries(this.scopes)) {
-      if (before[permissionKey] === scope) continue;
-      const list = this.sources.get(permissionKey) ?? [];
-      list.push({
-        kind: "access-view-implication",
-        label: "Implied by the module's manage permission",
-        scope,
-        moduleKey: administeringModuleOf(permissionKey),
-        expiresAt: null,
-      });
-      this.sources.set(permissionKey, list);
-    }
-  }
-
-  collect(): ExplainedPermission[] {
-    return Object.entries(this.scopes)
-      .map(([permissionKey, scope]) => {
-        const sources = this.sources.get(permissionKey) ?? [];
-        return {
-          permissionKey,
-          moduleKey: administeringModuleOf(permissionKey),
-          scope,
-          expiresAt: earliestExpiry(sources),
-          sources,
-        };
-      })
-      .sort((left, right) =>
-        left.permissionKey.localeCompare(right.permissionKey),
-      );
   }
 }

@@ -1,12 +1,11 @@
 import { InternalServerErrorException } from "@nestjs/common";
-import { inArray, sql } from "drizzle-orm";
+import { sql } from "drizzle-orm";
 import { randomBytes, randomUUID } from "node:crypto";
 import { addDays } from "date-fns";
 import {
   hrEmployeeSensitiveFields,
   magicLinkTokens,
   orgUnitMembers,
-  users,
 } from "../../../../db/schema";
 import type { DbOrTx } from "../../../../common/rbac/access-invalidate";
 import { hashToken } from "../../../../common/security/token.util";
@@ -23,6 +22,7 @@ import {
   type MembershipAdmissionService,
 } from "../../../organization/core/membership-admission.service";
 import { toBankDetails } from "./bulk-onboarding-bank-details";
+import { resolveOrgSalaryCurrency } from "../employment-salary-currency";
 import { seedSalaryProfiles, type SalarySeedEntry } from "./bulk-onboarding-salary";
 import type {
   AdmittedEmployee,
@@ -36,34 +36,12 @@ export interface BulkOnboardWriteDeps {
   membership: MembershipMutations;
 }
 
-async function refreshRelinkedUsers(
-  tx: DbOrTx,
-  admitted: readonly AdmittedEmployee[],
-): Promise<void> {
-  const relinked = admitted.filter((employee) => !employee.createdUser);
-  if (relinked.length === 0) return;
-
-  await tx
-    .update(users)
-    .set({ isActive: true })
-    .where(inArray(users.id, relinked.map((employee) => employee.userId)));
-
-  const withBirthday = relinked.filter((employee) => employee.dateOfBirth !== null);
-  if (withBirthday.length === 0) return;
-  const pairs = sql.join(
-    withBirthday.map((employee) => sql`(${employee.userId}::text, ${employee.dateOfBirth}::date)`),
-    sql`, `,
-  );
-  await tx.execute(
-    sql`UPDATE users AS u SET date_of_birth = v.date_of_birth FROM (VALUES ${pairs}) AS v(id, date_of_birth) WHERE u.id = v.id`,
-  );
-}
-
 async function writeSensitiveFields(
   tx: DbOrTx,
   orgId: string,
   admitted: readonly AdmittedEmployee[],
   employmentIdByUserId: Map<string, number>,
+  salaryCurrency: string | null,
 ): Promise<void> {
   const rows: Array<typeof hrEmployeeSensitiveFields.$inferInsert> = [];
   for (const employee of admitted) {
@@ -74,11 +52,11 @@ async function writeSensitiveFields(
     rows.push({
       orgId,
       employmentId,
-      ...(monthlySalary === undefined
+      ...(monthlySalary === undefined || salaryCurrency === null
         ? {}
         : {
             salaryAmountCents: monthlyAmountToCents(monthlySalary),
-            salaryCurrency: "INR",
+            salaryCurrency,
             salaryFrequency: "MONTHLY",
           }),
       ...(taxId ? { taxId: sealSensitive(taxId) } : {}),
@@ -162,8 +140,6 @@ export async function writeBulkOnboarding(
     });
   });
 
-  await refreshRelinkedUsers(tx, admitted);
-
   const placements = admitted
     .filter((employee) => employee.departmentId !== null && employee.membershipId !== null)
     .map((employee) => ({
@@ -197,7 +173,13 @@ export async function writeBulkOnboarding(
     employments.map((employment) => [employment.userId, employment.employmentId]),
   );
 
-  await writeSensitiveFields(tx, orgId, admitted, employmentIdByUserId);
+  const salaryCurrency = admitted.some(
+    (employee) => employee.source.monthlySalary !== undefined,
+  )
+    ? await resolveOrgSalaryCurrency(tx, orgId)
+    : null;
+
+  await writeSensitiveFields(tx, orgId, admitted, employmentIdByUserId, salaryCurrency);
 
   const salarySeeds: SalarySeedEntry[] = admitted
     .filter((employee) => (employee.source.monthlySalary ?? 0) > 0)
@@ -207,7 +189,8 @@ export async function writeBulkOnboarding(
       effectiveFrom: employee.joiningDate ?? formatDateOnly(new Date()),
       salaryStructureTemplateId: employee.source.salaryStructureTemplateId,
     }));
-  await seedSalaryProfiles(tx, orgId, actor.userId, salarySeeds);
+  if (salaryCurrency !== null)
+    await seedSalaryProfiles(tx, orgId, actor.userId, salarySeeds, salaryCurrency);
 
   const invitees = admitted.filter((employee) => employee.createdUser);
   const welcomeEmails: BulkOnboardWriteOutcome["welcomeEmails"] = [];

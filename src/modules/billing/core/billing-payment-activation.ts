@@ -28,6 +28,7 @@ import {
   grantPlanCredits,
   recordProrationForPlanChange,
 } from "./billing-activation-recorders";
+import { addClampedMonths } from "./trial-subscription";
 import { isUniqueViolation, isUniqueViolationOn } from "../../../common/db/postgres-error";
 import { SubscriptionPurchaseService } from "./subscription-purchase.service";
 import type { SubscriptionPurchase } from "../../../db/schema/billing/subscription-purchases";
@@ -220,19 +221,10 @@ export class BillingPaymentActivation {
         `Payment is not captured (current status: ${snapshot.status})`,
       );
     }
-    if (snapshot.amountMinor !== purchase.amountMinor || snapshot.currency !== purchase.currency) {
-      await this.purchaseService.markFailed(this.deps.db, purchase.id, orgId, {
-        amountMismatch: {
-          expected: { amountMinor: purchase.amountMinor, currency: purchase.currency },
-          actual: { amountMinor: snapshot.amountMinor, currency: snapshot.currency },
-        },
-      });
-      throw new BadRequestException(
-        "Payment amount does not match the order amount; activation refused",
-      );
-    }
+    await this.checkCaptureIntegrity(orgId, purchase, snapshot.amountMinor, snapshot.currency);
 
     if (purchase.status === "ACTIVATED") {
+      await this.recoverGrantIfNeeded(orgId, userId, purchase);
       return this.buildStoredOutcome(purchase, true);
     }
 
@@ -248,11 +240,52 @@ export class BillingPaymentActivation {
     capturedCurrency: string,
     purchase: SubscriptionPurchase,
   ) {
+    await this.checkCaptureIntegrity(orgId, purchase, capturedAmountMinor, capturedCurrency);
     if (purchase.status === "ACTIVATED") {
+      await this.recoverGrantIfNeeded(orgId, null, purchase);
       return this.buildStoredOutcome(purchase, true);
     }
     const isLate = purchase.status === "EXPIRED" || purchase.status === "CANCELLED";
     return this.runActivationTransaction(orgId, null, paymentId, purchase, isLate, capturedAmountMinor, capturedCurrency);
+  }
+
+  private async checkCaptureIntegrity(
+    orgId: string,
+    purchase: SubscriptionPurchase,
+    capturedAmountMinor: number,
+    capturedCurrency: string,
+  ): Promise<void> {
+    const readiness = this.deps.platformMerchant.readiness();
+    const currentEnv = this.deps.platformMerchant.environment();
+    if (
+      readiness.publicKeyId === null ||
+      purchase.merchantKeyId !== readiness.publicKeyId ||
+      purchase.environment !== currentEnv
+    ) {
+      throw new BadRequestException(
+        "Payment cannot be confirmed: merchant configuration has changed since this order was created",
+      );
+    }
+    if (capturedAmountMinor !== purchase.amountMinor || capturedCurrency !== purchase.currency) {
+      await this.purchaseService.markFailed(this.deps.db, purchase.id, orgId, {
+        amountMismatch: {
+          expected: { amountMinor: purchase.amountMinor, currency: purchase.currency },
+          actual: { amountMinor: capturedAmountMinor, currency: capturedCurrency },
+        },
+      });
+      throw new BadRequestException(
+        "Payment amount does not match the order amount; activation refused",
+      );
+    }
+  }
+
+  private async recoverGrantIfNeeded(
+    orgId: string,
+    userId: string | null,
+    purchase: SubscriptionPurchase,
+  ): Promise<void> {
+    if (!purchase.providerPaymentId) return;
+    await grantPlanCredits(this.deps, orgId, userId ?? "", purchase.providerPaymentId, purchase.plan);
   }
 
   private async runActivationTransaction(
@@ -266,8 +299,7 @@ export class BillingPaymentActivation {
   ) {
     const now = new Date();
     const billingCycle = purchase.billingCycle;
-    const periodEnd = new Date(now);
-    periodEnd.setMonth(periodEnd.getMonth() + (billingCycle === "annual" ? 12 : 1));
+    const periodEnd = addClampedMonths(now, billingCycle === "annual" ? 12 : 1);
 
     const finalAmountMinor = capturedAmountMinor ?? purchase.amountMinor;
     const finalCurrency = capturedCurrency ?? purchase.currency;
@@ -410,8 +442,7 @@ export class BillingPaymentActivation {
   private buildStoredOutcome(purchase: SubscriptionPurchase, alreadyActivated: boolean) {
     const billingCycle = purchase.billingCycle;
     const activatedAt = purchase.activatedAt ?? new Date();
-    const periodEnd = new Date(activatedAt);
-    periodEnd.setMonth(periodEnd.getMonth() + (billingCycle === "annual" ? 12 : 1));
+    const periodEnd = addClampedMonths(activatedAt, billingCycle === "annual" ? 12 : 1);
 
     return {
       success: true as const,

@@ -19,6 +19,7 @@ import {
 } from "./external-calendar-sync.service";
 import { ProviderCapabilityError } from "./external-event-normalizers";
 import { connectionOwnerPredicate } from "../integrations/core/connection-owner.predicate";
+import { ComposioToolError } from "../integrations/core/composio.gateway";
 import { providerSyncPayloadSchema } from "./dto/provider-sync.schemas";
 
 /**
@@ -96,16 +97,24 @@ export class CalendarProviderSyncSweepService {
       } catch (err: unknown) {
         const message = err instanceof Error ? err.message : String(err);
         const attempts = row.attemptCount + 1;
+        const isAuthRevocation = err instanceof ComposioToolError && err.isAuthError;
         // A capability refusal cannot succeed on a later attempt, so it is dead on the
-        // first one. What matters is that it is dead RATHER than processed: the row used
-        // to fall through to the PROCESSED mark below, which mapState projects to
-        // `synced` over a provider copy that was never written.
-        const dead = err instanceof ProviderCapabilityError || attempts >= MAX_ATTEMPTS;
+        // first one. A provider auth revocation (token expired, OAuth revoked) is also
+        // permanent until the user reconnects — retrying it burns the backoff ladder for
+        // no benefit, and the user never sees a prompt to reconnect. Both are dead immediately.
+        const dead = err instanceof ProviderCapabilityError || isAuthRevocation || attempts >= MAX_ATTEMPTS;
         const backoffMs = RETRY_BACKOFF_MS[Math.min(attempts, RETRY_BACKOFF_MS.length - 1)] ?? 1_800_000;
         const nextAttemptAt = dead ? null : new Date(now.getTime() + backoffMs);
         this.logger.error(
           `calendar-provider-sync row ${row.id} (op=${row.operation}, org=${row.orgId}) failed attempt ${attempts}: ${message}`,
         );
+        if (isAuthRevocation) {
+          await this.markConnectionNeedsReauth(row.orgId, row.connectionId).catch((e: unknown) => {
+            this.logger.error(
+              `calendar-provider-sync row ${row.id}: failed to mark connection ${row.connectionId} needs_reauth: ${e instanceof Error ? e.message : String(e)}`,
+            );
+          });
+        }
         await this.mark(row, {
           state: dead ? "FAILED" : "PENDING",
           attemptCount: attempts,
@@ -402,6 +411,20 @@ export class CalendarProviderSyncSweepService {
         .limit(1),
     );
     return rows.length > 0;
+  }
+
+  private async markConnectionNeedsReauth(orgId: string, connectionId: number): Promise<void> {
+    await runInNewTenantTransaction(this.db, orgId, async (tx) => {
+      await tx
+        .update(userIntegrationConnections)
+        .set({ status: "needs_reauth" })
+        .where(
+          and(
+            eq(userIntegrationConnections.id, connectionId),
+            eq(userIntegrationConnections.orgId, orgId),
+          ),
+        );
+    });
   }
 
   private mark(

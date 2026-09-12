@@ -153,7 +153,7 @@ export class BillingWebhookEffects {
     if (event.event === "payment.failed" && payment.status === "failed") {
       if (purchase !== null) {
         try {
-          await this.state.transitionToPastDue(orgId, payment.id);
+          await this.state.transitionToPastDue(orgId, payment.id, { purchaseCreatedAt: purchase.createdAt });
         } catch (err: unknown) {
           logger.error(`[billing:${providerKey}] PAST_DUE transition failed`, {
             orgId,

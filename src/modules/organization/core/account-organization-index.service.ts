@@ -29,6 +29,11 @@ function resolveCellId(region: string | null): string {
   }
 }
 
+export type DirectoryActivationOutcome =
+  | { status: "activated" }
+  | { status: "unprojected" }
+  | { status: "failed"; reason: string };
+
 @Injectable()
 export class AccountOrganizationIndexService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
@@ -97,18 +102,26 @@ export class AccountOrganizationIndexService {
 
   // `resolvePreferredOrg` orders by `last_activated_at`, so a missed stamp resolves the session to
   // another org; the projection is written by a refresh pass, so a just-joined org may have no row.
-  async activate(userId: string, orgId: string): Promise<void> {
+  async activate(
+    userId: string,
+    orgId: string,
+  ): Promise<DirectoryActivationOutcome> {
     try {
-      if (await this.touchLastActivated(userId, orgId)) return;
+      if (await this.touchLastActivated(userId, orgId))
+        return { status: "activated" };
       await this.refreshForUser(userId);
-      if (await this.touchLastActivated(userId, orgId)) return;
+      if (await this.touchLastActivated(userId, orgId))
+        return { status: "activated" };
       logger.error("[account-org-index] projection absent after refresh", { userId, orgId });
+      return { status: "unprojected" };
     } catch (error: unknown) {
+      const reason = error instanceof Error ? error.message : String(error);
       logger.error("[account-org-index] last-activated write failed", {
         userId,
         orgId,
-        error: error instanceof Error ? error.message : String(error),
+        error: reason,
       });
+      return { status: "failed", reason };
     }
   }
 

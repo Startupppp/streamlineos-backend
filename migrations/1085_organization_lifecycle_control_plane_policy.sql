@@ -19,6 +19,35 @@ CREATE POLICY "control_plane_access" ON "organization_lifecycle_sagas"
   USING (app.current_org_id_or_null() IS NULL OR "organization_id" = app.current_org_id_or_null())
   WITH CHECK (app.current_org_id_or_null() IS NULL OR "organization_id" = app.current_org_id_or_null());
 --> statement-breakpoint
+-- org_id existed only on the push-built database this policy was authored against, so a journal-built
+-- database stopped here with 42703. Created before the policy that predicates on it; idempotent.
+ALTER TABLE "organization_saga_steps" ADD COLUMN IF NOT EXISTS "org_id" text;
+--> statement-breakpoint
+UPDATE "organization_saga_steps" AS s
+SET "org_id" = g."organization_id"
+FROM "organization_lifecycle_sagas" AS g
+WHERE g."saga_id" = s."saga_id" AND s."org_id" IS NULL;
+--> statement-breakpoint
+ALTER TABLE "organization_saga_steps" ALTER COLUMN "org_id" SET NOT NULL;
+--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "idx_org_saga_steps_org" ON "organization_saga_steps" ("org_id");
+--> statement-breakpoint
+CREATE OR REPLACE FUNCTION public.set_saga_step_org_id() RETURNS trigger AS $$
+BEGIN
+  IF NEW."org_id" IS NULL THEN
+    SELECT g."organization_id" INTO NEW."org_id"
+    FROM public."organization_lifecycle_sagas" AS g
+    WHERE g."saga_id" = NEW."saga_id";
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+--> statement-breakpoint
+DROP TRIGGER IF EXISTS "trg_set_org_id" ON "organization_saga_steps";
+--> statement-breakpoint
+CREATE TRIGGER "trg_set_org_id" BEFORE INSERT ON "organization_saga_steps"
+  FOR EACH ROW EXECUTE FUNCTION public.set_saga_step_org_id();
+--> statement-breakpoint
 DROP POLICY IF EXISTS "tenant_isolation" ON "organization_saga_steps";
 --> statement-breakpoint
 DROP POLICY IF EXISTS "control_plane_access" ON "organization_saga_steps";

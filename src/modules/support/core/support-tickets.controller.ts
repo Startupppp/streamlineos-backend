@@ -26,7 +26,11 @@ import { authorize } from "../../access/authorize";
 import { SupportTicketsService } from "./support-tickets.service";
 import { SupportDraftsService } from "./support-drafts.service";
 import { SupportIntegrationsService } from "./support-integrations.service";
-import { resolveSupportTicketsViewScope } from "./support-tickets-scope";
+import {
+  resolveSupportTicketsManageScope,
+  resolveSupportTicketsReplyScope,
+  resolveSupportTicketsViewScope,
+} from "./support-tickets-scope";
 import {
   createExternalLinkSchema,
   createTicketLinkSchema,
@@ -116,8 +120,9 @@ export class SupportTicketsController {
   @Get("stats")
   @RequirePermission("support:tickets:view")
   @ResponseSchema(ticketStatsSchema)
-  stats(@CurrentUser() u: CurrentUserContext) {
-    return this.tickets.stats(u.orgId);
+  async stats(@CurrentUser() u: CurrentUserContext) {
+    const read = await resolveSupportTicketsViewScope(this.access, u);
+    return this.tickets.stats(read);
   }
 
   @Get(":supportTicketId")
@@ -136,23 +141,25 @@ export class SupportTicketsController {
   @RequirePermission("support:tickets:manage")
   @Validate({ params: supportTicketIdParams, body: updateTicketSchema })
   @ResponseSchema(updateTicketResultSchema)
-  updateTicket(
+  async updateTicket(
     @Param("supportTicketId", ParseIntPipe) supportTicketId: number,
     @Body() body: UpdateTicketInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.tickets.updateTicket(u.orgId, supportTicketId, u.userId, body);
+    const read = await resolveSupportTicketsManageScope(this.access, u);
+    return this.tickets.updateTicket(u.orgId, supportTicketId, u.userId, body, read);
   }
 
   @Get(":supportTicketId/messages")
   @RequirePermission("support:tickets:view")
   @Validate({ params: supportTicketIdParams })
   @ResponseSchema(supportTicketMessageListSchema)
-  listMessages(
+  async listMessages(
     @Param("supportTicketId", ParseIntPipe) supportTicketId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.tickets.listMessages(u.orgId, supportTicketId);
+    const read = await resolveSupportTicketsViewScope(this.access, u);
+    return this.tickets.listMessages(u.orgId, supportTicketId, read);
   }
 
   @Post(":supportTicketId/messages")
@@ -171,29 +178,32 @@ export class SupportTicketsController {
       const result = await authorize(this.access, authCtx, "support:tickets:internal_note");
       if (!result.allow) throw new ForbiddenException("Permission denied");
     }
-    return this.tickets.addMessage(u.orgId, supportTicketId, u.userId, body);
+    const read = await resolveSupportTicketsReplyScope(this.access, u);
+    return this.tickets.replyAsAgent(u.orgId, supportTicketId, u.userId, body, read);
   }
 
   @Get(":supportTicketId/activity")
   @RequirePermission("support:tickets:view")
   @Validate({ params: supportTicketIdParams })
   @ResponseSchema(supportTicketActivityListSchema)
-  listActivity(
+  async listActivity(
     @Param("supportTicketId", ParseIntPipe) supportTicketId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.tickets.listActivity(u.orgId, supportTicketId);
+    const read = await resolveSupportTicketsViewScope(this.access, u);
+    return this.tickets.listActivity(u.orgId, supportTicketId, read);
   }
 
   @Get(":supportTicketId/links")
   @RequirePermission("support:tickets:view")
   @Validate({ params: supportTicketIdParams })
   @ResponseSchema(supportTicketLinkListSchema)
-  listTicketLinks(
+  async listTicketLinks(
     @Param("supportTicketId", ParseIntPipe) supportTicketId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.tickets.listTicketLinks(u.orgId, supportTicketId);
+    const read = await resolveSupportTicketsViewScope(this.access, u);
+    return this.tickets.listTicketLinks(u.orgId, supportTicketId, read);
   }
 
   @Post(":supportTicketId/links")
@@ -201,12 +211,13 @@ export class SupportTicketsController {
   @HttpCode(201)
   @Validate({ params: supportTicketIdParams, body: createTicketLinkSchema })
   @ResponseSchema(addTicketLinkResultSchema)
-  addTicketLink(
+  async addTicketLink(
     @Param("supportTicketId", ParseIntPipe) supportTicketId: number,
     @Body() body: CreateTicketLinkInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.tickets.addTicketLink(u.orgId, supportTicketId, u.userId, body);
+    const read = await resolveSupportTicketsManageScope(this.access, u);
+    return this.tickets.addTicketLink(u.orgId, supportTicketId, u.userId, body, read);
   }
 
   @Post(":supportTicketId/merge")
@@ -215,12 +226,13 @@ export class SupportTicketsController {
   @HttpCode(200)
   @Validate({ params: supportTicketIdParams, body: mergeTicketSchema })
   @ResponseSchema(mergeTicketResultSchema)
-  mergeTicket(
+  async mergeTicket(
     @Param("supportTicketId", ParseIntPipe) supportTicketId: number,
     @Body() body: MergeTicketInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.tickets.mergeTicket(u.orgId, supportTicketId, u.userId, body);
+    const read = await resolveSupportTicketsManageScope(this.access, u);
+    return this.tickets.mergeTicket(u.orgId, supportTicketId, u.userId, body, read);
   }
 
   @Post(":supportTicketId/snooze")
@@ -228,23 +240,25 @@ export class SupportTicketsController {
   @HttpCode(200)
   @Validate({ params: supportTicketIdParams, body: snoozeTicketSchema })
   @ResponseSchema(snoozeTicketResultSchema)
-  snoozeTicket(
+  async snoozeTicket(
     @Param("supportTicketId", ParseIntPipe) supportTicketId: number,
     @Body() body: SnoozeTicketInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.tickets.snoozeTicket(u.orgId, supportTicketId, u.userId, body);
+    const read = await resolveSupportTicketsManageScope(this.access, u);
+    return this.tickets.snoozeTicket(u.orgId, supportTicketId, u.userId, body, read);
   }
 
   @Delete(":supportTicketId/snooze")
   @RequirePermission("support:tickets:manage")
   @Validate({ params: supportTicketIdParams })
   @ResponseSchema(successSchema)
-  unsnoozeTicket(
+  async unsnoozeTicket(
     @Param("supportTicketId", ParseIntPipe) supportTicketId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.tickets.unsnoozeTicket(u.orgId, supportTicketId, u.userId);
+    const read = await resolveSupportTicketsManageScope(this.access, u);
+    return this.tickets.unsnoozeTicket(u.orgId, supportTicketId, u.userId, read);
   }
 
   @Post(":supportTicketId/split")
@@ -252,16 +266,18 @@ export class SupportTicketsController {
   @HttpCode(201)
   @Validate({ params: supportTicketIdParams, body: splitTicketSchema })
   @ResponseSchema(createTicketResultSchema)
-  splitTicket(
+  async splitTicket(
     @Param("supportTicketId", ParseIntPipe) supportTicketId: number,
     @Body() body: SplitTicketInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
+    const read = await resolveSupportTicketsManageScope(this.access, u);
     return this.tickets.splitTicket(
       u.orgId,
       supportTicketId,
       u.userId,
       body,
+      read,
       actingMembershipId(u.principal),
     );
   }
@@ -270,45 +286,49 @@ export class SupportTicketsController {
   @RequirePermission("support:tickets:view")
   @Validate({ params: supportTicketIdParams })
   @ResponseSchema(supportTicketDraftSchema.nullable())
-  getDraft(
+  async getDraft(
     @Param("supportTicketId", ParseIntPipe) supportTicketId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.drafts.getDraft(u.orgId, supportTicketId, u.userId, actingMembershipId(u.principal));
+    const read = await resolveSupportTicketsViewScope(this.access, u);
+    return this.drafts.getDraft(u.orgId, supportTicketId, u.userId, actingMembershipId(u.principal), read);
   }
 
   @Put(":supportTicketId/draft")
   @RequirePermission("support:tickets:reply")
   @Validate({ params: supportTicketIdParams, body: upsertDraftSchema })
   @ResponseSchema(supportTicketDraftSchema)
-  upsertDraft(
+  async upsertDraft(
     @Param("supportTicketId", ParseIntPipe) supportTicketId: number,
     @Body() body: UpsertDraftInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.drafts.upsertDraft(u.orgId, supportTicketId, u.userId, actingMembershipId(u.principal), body);
+    const read = await resolveSupportTicketsReplyScope(this.access, u);
+    return this.drafts.upsertDraft(u.orgId, supportTicketId, u.userId, actingMembershipId(u.principal), body, read);
   }
 
   @Delete(":supportTicketId/draft")
   @RequirePermission("support:tickets:reply")
   @Validate({ params: supportTicketIdParams })
   @ResponseSchema(successSchema)
-  deleteDraft(
+  async deleteDraft(
     @Param("supportTicketId", ParseIntPipe) supportTicketId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.drafts.deleteDraft(u.orgId, supportTicketId, u.userId, actingMembershipId(u.principal));
+    const read = await resolveSupportTicketsReplyScope(this.access, u);
+    return this.drafts.deleteDraft(u.orgId, supportTicketId, u.userId, actingMembershipId(u.principal), read);
   }
 
   @Get(":supportTicketId/external-links")
   @RequirePermission("support:tickets:view")
   @Validate({ params: supportTicketIdParams })
   @ResponseSchema(supportTicketExternalLinkListSchema)
-  listExternalLinks(
+  async listExternalLinks(
     @Param("supportTicketId", ParseIntPipe) supportTicketId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.integrations.listLinks(u.orgId, supportTicketId);
+    const read = await resolveSupportTicketsViewScope(this.access, u);
+    return this.integrations.listLinks(u.orgId, supportTicketId, read);
   }
 
   @Post(":supportTicketId/external-links")
@@ -316,23 +336,25 @@ export class SupportTicketsController {
   @HttpCode(201)
   @Validate({ params: supportTicketIdParams, body: createExternalLinkSchema })
   @ResponseSchema(addExternalLinkResultSchema)
-  addExternalLink(
+  async addExternalLink(
     @Param("supportTicketId", ParseIntPipe) supportTicketId: number,
     @Body() body: CreateExternalLinkInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.integrations.addLink(u.orgId, supportTicketId, u.userId, body);
+    const read = await resolveSupportTicketsManageScope(this.access, u);
+    return this.integrations.addLink(u.orgId, supportTicketId, u.userId, body, read);
   }
 
   @Delete(":supportTicketId/external-links/:linkId")
   @RequirePermission("support:tickets:manage")
   @Validate({ params: supportTicketIdlinkIdParams })
   @ResponseSchema(successSchema)
-  removeExternalLink(
+  async removeExternalLink(
     @Param("supportTicketId", ParseIntPipe) supportTicketId: number,
     @Param("linkId", ParseIntPipe) linkId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.integrations.removeLink(u.orgId, supportTicketId, linkId);
+    const read = await resolveSupportTicketsManageScope(this.access, u);
+    return this.integrations.removeLink(u.orgId, supportTicketId, linkId, read);
   }
 }

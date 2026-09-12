@@ -1,5 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, eq, isNull, or } from "drizzle-orm";
+import { and, eq, isNull, or, sql } from "drizzle-orm";
 import {
   calendarEvents,
   eventAttendees,
@@ -58,6 +58,11 @@ export class CalendarEventDetailService {
           or(
             eq(calendarEvents.visibility, "org"),
             eq(calendarEvents.createdByMembershipId, callerMembershipId),
+            sql`(SELECT ${eventAttendees.id} FROM ${eventAttendees}
+                 WHERE ${eventAttendees.orgId} = ${calendarEvents.orgId}
+                   AND ${eventAttendees.eventId} = ${calendarEvents.id}
+                   AND ${eventAttendees.membershipId} = ${callerMembershipId}
+                 LIMIT 1) IS NOT NULL`,
           ),
         ),
       )
@@ -143,6 +148,7 @@ export class CalendarEventDetailService {
       linkedTicket,
       rrule: row.rrule,
       isRecurring: row.rrule !== null,
+      canManage: callerMembershipId > 0 && row.createdByMembershipId === callerMembershipId,
     };
   }
 }

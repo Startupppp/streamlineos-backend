@@ -333,12 +333,19 @@ async function buildCapabilityHarness(world: CapabilityWorld): Promise<Capabilit
       { provide: DRIZZLE, useValue: db },
       { provide: PlanLimitsService, useValue: { assertWithinLimit: jest.fn() } },
       { provide: CacheService, useValue: { cachedVersioned: jest.fn(), invalidateNamespace: jest.fn() } },
-      { provide: EntityReferenceService, useValue: { withResolvedReferences: jest.fn() } },
+      { provide: EntityReferenceService, useValue: { withResolvedReferences: jest.fn(), resolve: jest.fn().mockResolvedValue([]) } },
     ],
   }).compile();
 
   return { service: moduleRef.get(ChatChannelsService), select };
 }
+
+const capabilityActor: EntityActor = {
+  orgId: ORG_A,
+  userId: USER_A,
+  membershipId: MEMBERSHIP_A,
+  isOrgOwner: false,
+};
 
 function activeMembership(): MembershipRow {
   return { id: MEMBERSHIP_A, orgId: ORG_A, userId: USER_A, status: "ACTIVE" };
@@ -355,7 +362,7 @@ describe("chat realtime capability — the token's channels follow from the memb
       ],
     });
 
-    expect(await service.listMemberChannelIds(ORG_A, USER_A)).toEqual([CHANNEL_ID]);
+    expect(await service.listMemberChannelIds(capabilityActor)).toEqual([CHANNEL_ID]);
   });
 
   it("drops the channel from the next mint once the caller's own channel row is deleted", async () => {
@@ -367,11 +374,11 @@ describe("chat realtime capability — the token's channels follow from the memb
       ],
     };
     const { service } = await buildCapabilityHarness(world);
-    expect(await service.listMemberChannelIds(ORG_A, USER_A)).toEqual([CHANNEL_ID]);
+    expect(await service.listMemberChannelIds(capabilityActor)).toEqual([CHANNEL_ID]);
 
     world.channelMembers = world.channelMembers.filter((row) => row.membershipId !== MEMBERSHIP_A);
 
-    expect(await service.listMemberChannelIds(ORG_A, USER_A)).toEqual([]);
+    expect(await service.listMemberChannelIds(capabilityActor)).toEqual([]);
   });
 
   it("grants nothing to a membership that is no longer ACTIVE, and never reads a channel row", async () => {
@@ -382,7 +389,7 @@ describe("chat realtime capability — the token's channels follow from the memb
       ],
     });
 
-    expect(await service.listMemberChannelIds(ORG_A, USER_A)).toEqual([]);
+    expect(await service.listMemberChannelIds(capabilityActor)).toEqual([]);
     expect(select).not.toHaveBeenCalled();
   });
 
@@ -395,6 +402,6 @@ describe("chat realtime capability — the token's channels follow from the memb
       ],
     });
 
-    expect(await service.listMemberChannelIds(ORG_A, USER_A)).toEqual([OTHER_CHANNEL_ID]);
+    expect(await service.listMemberChannelIds(capabilityActor)).toEqual([OTHER_CHANNEL_ID]);
   });
 });

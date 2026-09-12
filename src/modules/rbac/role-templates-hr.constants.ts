@@ -8,7 +8,6 @@ export const HR_ROLE_TEMPLATES: readonly RoleTemplate[] = [
     moduleKey: "hr",
     permissions: [
       "settings:view",
-      "settings:organization:manage",
       "hr:employees:view",
       "hr:employees:manage",
       "hr:leaves:read",

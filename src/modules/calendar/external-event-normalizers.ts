@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { fromWallClockUtc } from "../../common/date/zoned-wall-clock";
 
 export const TOOL_SLUGS = {
   googleList: "GOOGLECALENDAR_EVENTS_LIST",
@@ -82,10 +83,17 @@ export interface ExternalCalendarEventItem {
   start: string;
   end: string;
   allDay: boolean;
+  timezone: string | null;
   location: string | null;
   meetingUrl: string | null;
   webLink: string | null;
 }
+
+const googleDateSchema = z.object({
+  dateTime: z.string().optional(),
+  date: z.string().optional(),
+  timeZone: z.string().optional(),
+});
 
 const googleEventSchema = z.object({
   id: z.string(),
@@ -94,8 +102,8 @@ const googleEventSchema = z.object({
   location: z.string().optional(),
   hangoutLink: z.string().optional(),
   htmlLink: z.string().optional(),
-  start: z.object({ dateTime: z.string().optional(), date: z.string().optional() }),
-  end: z.object({ dateTime: z.string().optional(), date: z.string().optional() }),
+  start: googleDateSchema,
+  end: googleDateSchema,
 });
 
 const googleListSchema = z.object({ items: z.array(z.unknown()).optional() });
@@ -110,6 +118,7 @@ const outlookEventSchema = z.object({
   webLink: z.string().optional(),
   onlineMeeting: z.object({ joinUrl: z.string().optional() }).nullable().optional(),
   location: z.object({ displayName: z.string().optional() }).nullable().optional(),
+  originalStartTimeZone: z.string().nullable().optional(),
   start: graphDateSchema,
   end: graphDateSchema,
 });
@@ -123,10 +132,23 @@ export function unwrapComposioData(data: unknown): unknown {
   return data;
 }
 
+export function resolveProviderTimeZone(zone: string | null | undefined): string | null {
+  if (!zone) return null;
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone: zone });
+    return zone;
+  } catch {
+    return null;
+  }
+}
+
 function graphToIso(value: z.infer<typeof graphDateSchema>): string {
   if (/[zZ]$|[+-]\d{2}:\d{2}$/.test(value.dateTime)) return new Date(value.dateTime).toISOString();
   const raw = value.dateTime.replace(/\.\d+$/, "");
-  return new Date(`${raw}Z`).toISOString();
+  const wallClock = new Date(`${raw}Z`);
+  const stated = resolveProviderTimeZone(value.timeZone);
+  if (!stated) return wallClock.toISOString();
+  return fromWallClockUtc(wallClock, stated).toISOString();
 }
 
 interface ConnectionMeta {
@@ -156,6 +178,7 @@ export function normalizeGoogleEvents(data: unknown, conn: ConnectionMeta): Exte
       start: new Date(start).toISOString(),
       end: new Date(end).toISOString(),
       allDay,
+      timezone: allDay ? null : resolveProviderTimeZone(ev.start.timeZone),
       location: ev.location ?? null,
       meetingUrl: ev.hangoutLink ?? null,
       webLink: ev.htmlLink ?? null,
@@ -172,6 +195,9 @@ export function normalizeOutlookEvents(data: unknown, conn: ConnectionMeta): Ext
     if (!parsed.success) continue;
     const ev = parsed.data;
     if (ev.isCancelled) continue;
+    const allDay = ev.isAllDay ?? false;
+    const authoredZone =
+      resolveProviderTimeZone(ev.originalStartTimeZone) ?? resolveProviderTimeZone(ev.start.timeZone);
     items.push({
       id: `ext-${conn.id}-${ev.id}`,
       connectionId: conn.id,
@@ -181,7 +207,8 @@ export function normalizeOutlookEvents(data: unknown, conn: ConnectionMeta): Ext
       title: ev.subject ?? "(no title)",
       start: graphToIso(ev.start),
       end: graphToIso(ev.end),
-      allDay: ev.isAllDay ?? false,
+      allDay,
+      timezone: allDay ? null : authoredZone,
       location: ev.location?.displayName ?? null,
       meetingUrl: ev.onlineMeeting?.joinUrl ?? null,
       webLink: ev.webLink ?? null,

@@ -17,6 +17,8 @@ import { SupportTicketActivityService } from "./support-ticket-activity.service"
 import type { ReplyMessageInput } from "./dto/support.schemas";
 import { logSideEffectFailure } from "../../../common/logger/side-effect";
 import { registerAfterCommit } from "../../../common/tenant/tenant-context";
+import type { ScopedRead } from "../../access/scoped-read";
+import { assertTicketInScope } from "./support-tickets-scope";
 
 @Injectable()
 export class SupportTicketMessagesService {
@@ -29,12 +31,8 @@ export class SupportTicketMessagesService {
     private readonly activity: SupportTicketActivityService,
   ) {}
 
-  async listMessages(orgId: string, ticketId: number) {
-    const ticket = await this.db.query.supportTickets.findFirst({
-      where: and(eq(supportTickets.id, ticketId), eq(supportTickets.orgId, orgId)),
-      columns: { id: true },
-    });
-    if (!ticket) throw new NotFoundException("Ticket not found");
+  async listMessages(orgId: string, ticketId: number, read: ScopedRead) {
+    await assertTicketInScope(this.db, read, ticketId);
 
     return this.db.query.supportTicketMessages.findMany({
       where: eq(supportTicketMessages.ticketId, ticketId),

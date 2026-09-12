@@ -6,6 +6,8 @@ import { eq, sql } from "drizzle-orm";
 import type { PgColumn } from "drizzle-orm/pg-core";
 import { ScopedRead, type OwnershipScope } from "../../access/scoped-read";
 
+export type AttendanceStatus = "OFFLINE" | "PRESENT" | "ON_BREAK" | "CHECKED_OUT";
+
 export const ATTENDANCE_PERMISSION = "hr:attendance:manage";
 
 export async function resolveAttendanceScope(

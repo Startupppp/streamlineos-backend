@@ -23,7 +23,3 @@ export const orgSetupCompletedPayloadSchema = z
     invitees: z.array(setupInviteeSchema).default([]),
   })
   .strict();
-
-export type OrgSetupCompletedPayload = z.infer<
-  typeof orgSetupCompletedPayloadSchema
->;

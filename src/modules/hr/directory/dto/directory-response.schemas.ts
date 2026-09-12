@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { wireDate, nullableWireDate } from "../../../../common/openapi/wire-types";
 import { successSchema } from "../../../../common/openapi/response-envelopes";
+import { EMPLOYEE_ADMISSION_STATUSES } from "../employee-admission-status";
 
 export { successSchema };
 
@@ -250,7 +251,11 @@ export const bulkOnboardResultSchema = z.object({
   results: z.array(z.record(z.string(), z.unknown())),
 });
 
-export const checkEmailSchema = z.object({ exists: z.boolean() });
+export const checkEmailSchema = z.object({
+  exists: z.boolean(),
+  status: z.enum(EMPLOYEE_ADMISSION_STATUSES),
+  memberStatus: z.enum(["SUSPENDED", "LEFT"]).nullable(),
+});
 
 export const employeeStatsSchema = z.object({
   leaves: z.object({

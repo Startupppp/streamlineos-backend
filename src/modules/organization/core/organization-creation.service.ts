@@ -249,7 +249,17 @@ export class OrganizationCreationService {
           "activate-directory-projection",
           async () => {
             await this.indexService.refreshForUser(input.userId);
-            await this.indexService.touchLastActivated(input.userId, orgId);
+            const activation = await this.indexService.activate(
+              input.userId,
+              orgId,
+            );
+            if (activation.status !== "activated")
+              throw new Error(
+                `Organization ${orgId} was not selected in the account directory ` +
+                  `(${activation.status}${
+                    activation.status === "failed" ? `: ${activation.reason}` : ""
+                  })`,
+              );
           },
           executionToken,
         );

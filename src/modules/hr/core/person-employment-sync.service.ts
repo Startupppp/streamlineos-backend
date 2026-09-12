@@ -1,5 +1,6 @@
-import { Inject, Injectable } from "@nestjs/common";
-import { and, eq, isNull, sql } from "drizzle-orm";
+import { ConflictException, Inject, Injectable } from "@nestjs/common";
+import { and, eq, isNotNull, isNull, sql } from "drizzle-orm";
+import { isUniqueViolation } from "../../../common/db/postgres-error";
 import { organizationPeople } from "../../../db/schema/directory/organization-people";
 import {
   hrEmployments,
@@ -57,12 +58,64 @@ export class PersonEmploymentSyncService {
     });
     if (byEmail) return byEmail.organizationPersonId;
 
-    const [created] = await db
-      .insert(organizationPeople)
-      .values({ organizationId: orgId, userId, firstName, lastName, workEmail })
+    const restored = await this.restoreDeletedOrgPerson(db, orgId, userId, workEmail);
+    if (restored) return restored;
+
+    try {
+      const [created] = await db
+        .insert(organizationPeople)
+        .values({ organizationId: orgId, userId, firstName, lastName, workEmail })
+        .returning({ organizationPersonId: organizationPeople.organizationPersonId });
+      if (!created) throw new Error("Failed to create canonical person record");
+      return created.organizationPersonId;
+    } catch (error) {
+      if (!isUniqueViolation(error)) throw error;
+      throw new ConflictException({
+        code: "DIRECTORY_PERSON_ALREADY_LINKED",
+        message:
+          "This person already exists in the organization directory. Refresh and select that person instead.",
+      });
+    }
+  }
+
+  private async restoreDeletedOrgPerson(
+    db: Db,
+    orgId: string,
+    userId: string,
+    workEmail: string,
+  ): Promise<string | null> {
+    const deletedByUser = await db.query.organizationPeople.findFirst({
+      where: and(
+        eq(organizationPeople.organizationId, orgId),
+        eq(organizationPeople.userId, userId),
+        isNotNull(organizationPeople.deletedAt),
+      ),
+      columns: { organizationPersonId: true },
+    });
+    const deleted =
+      deletedByUser ??
+      (await db.query.organizationPeople.findFirst({
+        where: and(
+          eq(organizationPeople.organizationId, orgId),
+          sql`lower(trim(${organizationPeople.workEmail})) = ${workEmail}`,
+          isNotNull(organizationPeople.deletedAt),
+        ),
+        columns: { organizationPersonId: true },
+      }));
+    if (!deleted) return null;
+
+    const [row] = await db
+      .update(organizationPeople)
+      .set({ deletedAt: null, userId })
+      .where(
+        and(
+          eq(organizationPeople.organizationPersonId, deleted.organizationPersonId),
+          eq(organizationPeople.organizationId, orgId),
+          isNotNull(organizationPeople.deletedAt),
+        ),
+      )
       .returning({ organizationPersonId: organizationPeople.organizationPersonId });
-    if (!created) throw new Error("Failed to create canonical person record");
-    return created.organizationPersonId;
+    return row?.organizationPersonId ?? null;
   }
 
   /**

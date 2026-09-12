@@ -18,6 +18,7 @@ import {
   loadChannelMemberPreview,
   withMemberPreview,
 } from "./chat-channel-member-preview";
+import { filterByEntityAccess } from "./chat-channel-authorization";
 
 export const CHAT_CHANNEL_PAGE_SIZE = 50;
 
@@ -113,11 +114,16 @@ export class ChatChannelListService {
    * token mint to have 49,500 of them thrown away in memory. One row beyond the
    * grant is read so the truncation the consumer performs is observable here.
    */
-  async listMemberChannelIds(orgId: string, userId: string): Promise<number[]> {
+  async listMemberChannelIds(actor: EntityActor): Promise<number[]> {
+    const { orgId, userId } = actor;
     const membershipId = await this.getMembershipId(orgId, userId);
     if (membershipId === null) return [];
     const rows = await this.db
-      .select({ channelId: chatChannels.id })
+      .select({
+        channelId: chatChannels.id,
+        entityType: chatChannels.entityType,
+        entityId: chatChannels.entityId,
+      })
       .from(chatChannelMembers)
       .innerJoin(chatChannels, eq(chatChannels.id, chatChannelMembers.channelId))
       .where(
@@ -134,7 +140,8 @@ export class ChatChannelListService {
         userId,
         granted: MAX_CAPABILITY_CHANNELS,
       });
-    return rows.map((row) => row.channelId);
+    const visible = await filterByEntityAccess(this.entities, rows, actor, (row) => row);
+    return visible.map((row) => row.channelId);
   }
 
   async listPublicChannels(orgId: string, userId: string, cursor?: string | null, limit?: number) {
@@ -259,12 +266,25 @@ export class ChatChannelListService {
         ? this.encodeChannelCursor(lastRow.lastMessageAt, lastRow.id)
         : null;
 
-      const channelIds = pageSlice.map((r) => r.id);
+      const pageChannelIds = pageSlice.map((r) => r.id);
 
-      const channels = await this.db.query.chatChannels.findMany({
-        where: and(eq(chatChannels.orgId, orgId), inArray(chatChannels.id, channelIds)),
+      const pageChannels = await this.db.query.chatChannels.findMany({
+        where: and(eq(chatChannels.orgId, orgId), inArray(chatChannels.id, pageChannelIds)),
         columns: CHANNEL_LIST_COLUMNS,
       });
+
+      const channels = await filterByEntityAccess(
+        this.entities,
+        pageChannels,
+        actor,
+        (channel) => channel,
+      ).catch(() =>
+        pageChannels.filter((channel) => !channel.entityType || !channel.entityId),
+      );
+      const visibleIds = new Set(channels.map((channel) => channel.id));
+      const channelIds = pageChannelIds.filter((id) => visibleIds.has(id));
+
+      if (channelIds.length === 0) return { channels: [], nextCursor };
 
       const memberPreview = await loadChannelMemberPreview(this.db, orgId, channelIds, actorMembershipId);
 

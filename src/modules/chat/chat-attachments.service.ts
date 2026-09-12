@@ -5,6 +5,7 @@ import type { Db } from "../../db/drizzle.module";
 import { chatAttachments, chatMessages } from "../../db/schema";
 import { StorageService } from "../storage/storage.service";
 import { ChatChannelMembersService } from "./chat-channel-members.service";
+import type { EntityActor } from "../entity-reference/entity-reference.types";
 
 @Injectable()
 export class ChatAttachmentsService {
@@ -17,10 +18,10 @@ export class ChatAttachmentsService {
   async getSignedUrl(
     channelId: number,
     attachmentId: number,
-    userId: string,
-    orgId: string,
+    actor: EntityActor,
   ): Promise<{ url: string }> {
-    await this.members.assertChannelMembership(channelId, userId, orgId);
+    const orgId = actor.orgId;
+    await this.members.assertChannelMembership(channelId, actor);
 
     const rows = await this.db
       .select({ fileKey: chatAttachments.fileKey })

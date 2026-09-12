@@ -10,6 +10,7 @@ import { chatAttachmentParamsSchema } from "./dto/chat-attachment.schemas";
 import { ChatAttachmentsService } from "./chat-attachments.service";
 import { ResponseSchema } from "../../common/openapi/zod-operation-contracts";
 import { chatSignedUrlSchema } from "./dto/chat-misc-response.schemas";
+import { actorOf } from "../entity-reference/entity-actor";
 
 @ApiTags("Chat Attachments")
 @ApiBearerAuth()
@@ -31,6 +32,6 @@ export class ChatAttachmentsController {
     @Param("attachmentId", ParseIntPipe) attachmentId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.attachments.getSignedUrl(channelId, attachmentId, u.userId, u.orgId);
+    return this.attachments.getSignedUrl(channelId, attachmentId, actorOf(u));
   }
 }

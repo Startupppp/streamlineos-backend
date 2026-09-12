@@ -6,6 +6,7 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { OrgMembersService } from "./org-members.service";
 import { OrgSetupService } from "./org-setup.service";
+import { OrgSetupQueryService } from "./org-setup-query.service";
 import { setupSchema, type SetupInput } from "./dto/org.schemas";
 import { AllowNoOrg } from "../../../common/auth/allow-no-org.decorator";
 import {
@@ -51,6 +52,7 @@ export class OrgController {
   constructor(
     private readonly members: OrgMembersService,
     private readonly setup: OrgSetupService,
+    private readonly setupQuery: OrgSetupQueryService,
   ) {}
 
   @Get("members")
@@ -75,7 +77,7 @@ export class OrgController {
   @AllowNoOrg()
   @NoTenantTransaction()
   getSetupSession(@CurrentUser() u: CurrentUserContext) {
-    return this.setup.getSetupSession(u);
+    return this.setupQuery.getSetupSession(u);
   }
 
   @Get("setup/status")
@@ -84,7 +86,7 @@ export class OrgController {
   @AllowNoOrg()
   @NoTenantTransaction()
   getSetupStatus(@CurrentUser() u: CurrentUserContext) {
-    return this.setup.getSetupStatus(u);
+    return this.setupQuery.getSetupStatus(u);
   }
 
   @Post("setup/complete")

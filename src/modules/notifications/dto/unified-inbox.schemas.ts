@@ -35,94 +35,162 @@ export const unifiedInboxQuerySchema = z
 
 export type UnifiedInboxQuery = z.infer<typeof unifiedInboxQuerySchema>;
 
-export type InboxActor = {
-  id: string;
-  name: string | null;
-  image: string | null;
+export const inboxActorSchema = z.object({
+  id: z.string(),
+  name: z.string().nullable(),
+  image: z.string().nullable(),
+});
+
+export type InboxActor = z.infer<typeof inboxActorSchema>;
+
+const inboxItemBaseFields = {
+  sourceModule: z.string(),
+  actor: inboxActorSchema.nullable(),
+  subject: z.string(),
+  timestamp: z.string(),
+  isRead: z.boolean(),
+  deepLink: z.string().nullable(),
+  dedupKey: z.string(),
 };
 
-type InboxItemBase = {
-  sourceModule: string;
-  actor: InboxActor | null;
-  subject: string;
-  timestamp: string;
-  isRead: boolean;
-  deepLink: string | null;
-  dedupKey: string;
-};
+export const notificationInboxItemSchema = z.object({
+  kind: z.literal("notification"),
+  id: z.number().int(),
+  notifType: z.string(),
+  priority: z.string(),
+  category: z.string(),
+  eventKey: z.string().nullable(),
+  body: z.string(),
+  pinned: z.boolean(),
+  ...inboxItemBaseFields,
+});
 
-export type NotificationInboxItem = InboxItemBase & {
-  kind: "notification";
-  id: number;
-  notifType: string;
-  priority: string;
-  category: string;
-  eventKey: string | null;
-  body: string;
-  pinned: boolean;
-};
+export const broadcastInboxItemSchema = z.object({
+  kind: z.literal("broadcast"),
+  id: z.number().int(),
+  notifType: z.string(),
+  priority: z.string(),
+  category: z.string(),
+  body: z.string(),
+  ...inboxItemBaseFields,
+});
 
-export type BroadcastInboxItem = InboxItemBase & {
-  kind: "broadcast";
-  id: number;
-  notifType: string;
-  priority: string;
-  category: string;
-  body: string;
-};
+export const mailInboxItemSchema = z.object({
+  kind: z.literal("mail"),
+  id: z.string(),
+  threadId: z.string().nullable(),
+  accountId: z.number().int(),
+  snippet: z.string(),
+  hasAttachments: z.boolean(),
+  ...inboxItemBaseFields,
+});
 
-export type MailInboxItem = InboxItemBase & {
-  kind: "mail";
-  id: string;
-  threadId: string | null;
-  accountId: number;
-  snippet: string;
-  hasAttachments: boolean;
-};
+export const buildApprovalInboxItemSchema = z.object({
+  kind: z.literal("build_approval"),
+  id: z.number().int(),
+  status: z.string(),
+  projectId: z.number().int(),
+  ticketId: z.number().int().nullable(),
+  dueAt: z.string().nullable(),
+  ...inboxItemBaseFields,
+});
 
-export type BuildApprovalInboxItem = InboxItemBase & {
-  kind: "build_approval";
-  id: number;
-  status: string;
-  projectId: number;
-  ticketId: number | null;
-  dueAt: string | null;
-};
+export const unifiedInboxItemSchema = z.discriminatedUnion("kind", [
+  notificationInboxItemSchema,
+  broadcastInboxItemSchema,
+  mailInboxItemSchema,
+  buildApprovalInboxItemSchema,
+]);
 
-export type UnifiedInboxItem =
-  | NotificationInboxItem
-  | BroadcastInboxItem
-  | MailInboxItem
-  | BuildApprovalInboxItem;
+export type NotificationInboxItem = z.infer<typeof notificationInboxItemSchema>;
+export type BroadcastInboxItem = z.infer<typeof broadcastInboxItemSchema>;
+export type MailInboxItem = z.infer<typeof mailInboxItemSchema>;
+export type BuildApprovalInboxItem = z.infer<typeof buildApprovalInboxItemSchema>;
+export type UnifiedInboxItem = z.infer<typeof unifiedInboxItemSchema>;
 
-export type SourceStatus = {
-  kind: InboxKind;
-  included: boolean;
-  reason: string | null;
-};
+export const sourceStatusSchema = z.object({
+  kind: z.enum(INBOX_KINDS),
+  included: z.boolean(),
+  reason: z.string().nullable(),
+  available: z.boolean(),
+  error: z.string().nullable(),
+});
 
-export type UnifiedInboxResponse = {
-  items: UnifiedInboxItem[];
-  hasMore: boolean;
-  nextCursor: string | null;
-  sources: SourceStatus[];
-};
+export type SourceStatus = z.infer<typeof sourceStatusSchema>;
+
+export const unifiedInboxResponseSchema = z.object({
+  items: z.array(unifiedInboxItemSchema),
+  hasMore: z.boolean(),
+  nextCursor: z.string().nullable(),
+  sources: z.array(sourceStatusSchema),
+  degraded: z.boolean(),
+});
+
+export type UnifiedInboxResponse = z.infer<typeof unifiedInboxResponseSchema>;
+
+export const unifiedCountResponseSchema = z.object({
+  notification: z.number().int(),
+  mail: z.number().int(),
+  approval: z.number().int(),
+  total: z.number().int(),
+  mailExact: z.boolean(),
+});
+
+export type UnifiedUnreadCount = z.infer<typeof unifiedCountResponseSchema>;
+
+export type InboxSourcePosition = { id: number; t: string | null };
 
 export type InboxCursorState = {
   n: number | null;
+  nt: string | null;
   b: number | null;
+  bt: string | null;
   m: string | null;
   a: number | null;
+  at: string | null;
 };
 
-const EMPTY_CURSOR: InboxCursorState = { n: null, b: null, m: null, a: null };
+const EMPTY_CURSOR: InboxCursorState = {
+  n: null,
+  nt: null,
+  b: null,
+  bt: null,
+  m: null,
+  a: null,
+  at: null,
+};
+
+export function inboxSourcePosition(
+  id: number | null,
+  t: string | null,
+): InboxSourcePosition | null {
+  return id === null ? null : { id, t };
+}
+
+export function sameInboxCursorState(
+  left: InboxCursorState,
+  right: InboxCursorState,
+): boolean {
+  return (
+    left.n === right.n &&
+    left.nt === right.nt &&
+    left.b === right.b &&
+    left.bt === right.bt &&
+    left.m === right.m &&
+    left.a === right.a &&
+    left.at === right.at
+  );
+}
 
 export function encodeInboxCursor(state: InboxCursorState): string {
   const payload: InboxCursorState = {
     n: typeof state.n === "number" ? state.n : null,
+    nt: typeof state.nt === "string" ? state.nt : null,
     b: typeof state.b === "number" ? state.b : null,
+    bt: typeof state.bt === "string" ? state.bt : null,
     m: typeof state.m === "string" ? state.m : null,
     a: typeof state.a === "number" ? state.a : null,
+    at: typeof state.at === "string" ? state.at : null,
   };
   return Buffer.from(JSON.stringify(payload), "utf8").toString("base64url");
 }
@@ -141,9 +209,12 @@ export function decodeInboxCursor(
     if (!isPlainRecord(parsed)) return EMPTY_CURSOR;
     return {
       n: typeof parsed["n"] === "number" ? parsed["n"] : null,
+      nt: typeof parsed["nt"] === "string" ? parsed["nt"] : null,
       b: typeof parsed["b"] === "number" ? parsed["b"] : null,
+      bt: typeof parsed["bt"] === "string" ? parsed["bt"] : null,
       m: typeof parsed["m"] === "string" ? parsed["m"] : null,
       a: typeof parsed["a"] === "number" ? parsed["a"] : null,
+      at: typeof parsed["at"] === "string" ? parsed["at"] : null,
     };
   } catch {
     return EMPTY_CURSOR;

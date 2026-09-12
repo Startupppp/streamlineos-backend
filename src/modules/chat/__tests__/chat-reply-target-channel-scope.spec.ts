@@ -172,6 +172,7 @@ function sendHarness(): SendHarness {
     replyReminders as never,
     orgSettings as never,
     storage as never,
+    { resolve: jest.fn(() => Promise.resolve([])) } as never,
     fanout as never,
   );
 

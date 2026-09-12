@@ -4,10 +4,10 @@ import { calendarEvents, eventAttendees, organizationMembers } from "../../db/sc
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { collectRescheduledOccurrences, loadExceptionsByEvent } from "./calendar-exception-loader";
-import { expandToOccurrences } from "./calendar-occurrence.service";
+import { expandToOccurrences, occurrencesWereTruncated } from "./calendar-occurrence.service";
 import type { ScopedRead } from "../access/scoped-read";
 
-const EXPORT_ROW_CAP = 500;
+export const EXPORT_ROW_CAP = 500;
 const EXPORT_RANGE_CAP_MS = 366 * 24 * 60 * 60 * 1000;
 
 /**
@@ -33,18 +33,25 @@ interface ExportedEvent {
   startDate: Date;
   endDate: Date;
   allDay: boolean;
+  timezone: string | null;
   category: string;
   location: string | null;
   description: string | null;
   color: string | null;
 }
 
+export interface CalendarExportResult {
+  events: ExportedEvent[];
+  truncated: boolean;
+  rowCount: number;
+}
+
 @Injectable()
 export class CalendarExportService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
-  async exportEvents(read: ScopedRead, from: Date, to: Date): Promise<ExportedEvent[]> {
-    if (read.denied) return [];
+  async exportEvents(read: ScopedRead, from: Date, to: Date): Promise<CalendarExportResult> {
+    if (read.denied) return { events: [], truncated: false, rowCount: 0 };
     if (!Number.isFinite(from.getTime()) || !Number.isFinite(to.getTime()) || from > to) throw new BadRequestException("Invalid calendar export range");
     if (to.getTime() - from.getTime() > EXPORT_RANGE_CAP_MS) throw new BadRequestException("Calendar export range cannot exceed 366 days");
 
@@ -108,17 +115,22 @@ export class CalendarExportService {
           .from(calendarEvents)
           .where(where)
           .orderBy(asc(calendarEvents.startDate))
-          .limit(EXPORT_ROW_CAP),
+          .limit(EXPORT_ROW_CAP + 1),
       () => [],
     );
 
-    if (rows.length === 0) return [];
+    let truncated = rows.length > EXPORT_ROW_CAP;
+    const cappedRows = truncated ? rows.slice(0, EXPORT_ROW_CAP) : rows;
 
-    const recurringIds = rows.filter((r) => r.rrule != null).map((r) => r.id);
-    const exceptionsByEvent = await loadExceptionsByEvent(this.db, orgId, recurringIds, from, to);
+    if (cappedRows.length === 0) return { events: [], truncated, rowCount: 0 };
+
+    const recurringIds = cappedRows.filter((r) => r.rrule != null).map((r) => r.id);
+    const { byEvent: exceptionsByEvent, complete: exceptionsComplete } =
+      await loadExceptionsByEvent(this.db, orgId, recurringIds, from, to);
+    if (!exceptionsComplete) truncated = true;
 
     const expanded: ExportedEvent[] = [];
-    for (const row of rows) {
+    for (const row of cappedRows) {
       if (expanded.length >= EXPORT_ROW_CAP) break;
       const exceptions = exceptionsByEvent.get(row.id) ?? [];
       const occurrences = expandToOccurrences(
@@ -137,6 +149,7 @@ export class CalendarExportService {
         to,
         exceptions,
       );
+      if (occurrencesWereTruncated(occurrences)) truncated = true;
       for (const occ of occurrences) {
         if (expanded.length >= EXPORT_ROW_CAP) break;
         expanded.push({
@@ -144,6 +157,7 @@ export class CalendarExportService {
           startDate: occ.startDate,
           endDate: occ.endDate,
           allDay: row.allDay,
+          timezone: row.timezone ?? null,
           category: row.category,
           location: row.location,
           description: row.description,
@@ -159,6 +173,7 @@ export class CalendarExportService {
             startDate: rs.startDate,
             endDate: rs.endDate,
             allDay: row.allDay,
+            timezone: row.timezone ?? null,
             category: row.category,
             location: row.location,
             description: row.description,
@@ -167,6 +182,7 @@ export class CalendarExportService {
         }
       }
     }
-    return expanded;
+    if (expanded.length >= EXPORT_ROW_CAP) truncated = true;
+    return { events: expanded, truncated, rowCount: expanded.length };
   }
 }

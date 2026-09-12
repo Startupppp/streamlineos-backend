@@ -1,5 +1,11 @@
 import { Injectable } from "@nestjs/common";
-import type { CalendarEventProjection, CalendarEventSource, CalendarSourceContext } from "./calendar-event-source";
+import {
+  sourceLoadEvents,
+  sourceLoadTruncated,
+  type CalendarEventProjection,
+  type CalendarEventSource,
+  type CalendarSourceContext,
+} from "./calendar-event-source";
 import { AccessService } from "../access/access.service";
 import { CalendarSourcePreferencesService } from "./calendar-source-preferences.service";
 import { moduleDefinition, moduleIdFromStored } from "../../common/rbac/module-registry";
@@ -121,11 +127,10 @@ export class CalendarSourceRegistry {
       const key = keys[i];
       if (!key) continue;
       if (result.status === "fulfilled") {
-        const sourceEvents = result.value;
-        if (sourceEvents.length > CALENDAR_PER_SOURCE_CAP) {
-          truncatedKeys.push(key);
-          events.push(...sourceEvents.slice(0, CALENDAR_PER_SOURCE_CAP));
-        } else events.push(...sourceEvents);
+        const sourceEvents = sourceLoadEvents(result.value);
+        const overCap = sourceEvents.length > CALENDAR_PER_SOURCE_CAP;
+        if (overCap || sourceLoadTruncated(result.value)) truncatedKeys.push(key);
+        events.push(...(overCap ? sourceEvents.slice(0, CALENDAR_PER_SOURCE_CAP) : sourceEvents));
       } else
         failures.push({ key, error: result.reason });
     }

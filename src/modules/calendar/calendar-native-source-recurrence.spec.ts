@@ -110,7 +110,7 @@ beforeEach(() => jest.resetAllMocks());
 describe("CalendarNativeEventSource — recurring event window fix (P0)", () => {
   it("weekly series created 6 months before the window returns multiple occurrences (old predicate: zero)", async () => {
     const db = makeNativeSourceDb([makeEventRow({ rrule: WEEKLY_MONDAY_RRULE })]);
-    const result = await makeSource(db).load(ctx);
+    const { events: result } = await makeSource(db).load(ctx);
     expect(result.length).toBeGreaterThanOrEqual(1);
     const ids = result.map((p) => p.id);
     expect(ids.every((id) => id.startsWith(`event-1-`))).toBe(true);
@@ -126,7 +126,7 @@ describe("CalendarNativeEventSource — recurring event window fix (P0)", () => 
       modifiedEnd: null,
     }];
     const db = makeNativeSourceDb([makeEventRow({ rrule: WEEKLY_MONDAY_RRULE })], exceptions);
-    const result = await makeSource(db).load(ctx);
+    const { events: result } = await makeSource(db).load(ctx);
     const starts = result.map((p) => p.start.toISOString());
     expect(starts).not.toContain(FIRST_SEP_MONDAY.toISOString());
     expect(result.length).toBeGreaterThanOrEqual(1);
@@ -144,7 +144,7 @@ describe("CalendarNativeEventSource — recurring event window fix (P0)", () => 
       modifiedEnd: modEnd,
     }];
     const db = makeNativeSourceDb([makeEventRow({ rrule: WEEKLY_MONDAY_RRULE })], exceptions);
-    const result = await makeSource(db).load(ctx);
+    const { events: result } = await makeSource(db).load(ctx);
     const modified = result.find((p) => p.start.toISOString() === modStart.toISOString());
     expect(modified).toBeDefined();
     expect(modified?.title).toBe("Revised standup");
@@ -155,7 +155,7 @@ describe("CalendarNativeEventSource — recurring event window fix (P0)", () => 
     const start = new Date("2026-09-10T14:00:00Z");
     const end = new Date("2026-09-10T15:00:00Z");
     const db = makeNativeSourceDb([makeEventRow({ id: 42, rrule: null, startDate: start, endDate: end })]);
-    const result = await makeSource(db).load(ctx);
+    const { events: result } = await makeSource(db).load(ctx);
     expect(result).toHaveLength(1);
     expect(result[0]?.id).toBe("event-42");
     expect(result[0]?.start.toISOString()).toBe(start.toISOString());
@@ -167,7 +167,7 @@ describe("CalendarNativeEventSource — recurring event window fix (P0)", () => 
       makeEventRow({ id: i + 1, rrule: "FREQ=DAILY", startDate: new Date("2024-01-01T09:00:00Z"), endDate: new Date("2024-01-01T09:30:00Z") }),
     );
     const db = makeNativeSourceDb(events);
-    const result = await makeSource(db).load(bigWindow);
+    const { events: result } = await makeSource(db).load(bigWindow);
     expect(result.length).toBeLessThanOrEqual(CALENDAR_EVENTS_CAP);
   });
 
@@ -234,10 +234,10 @@ describe("CalendarExportService — recurring series starting before from (P1)",
     const db = makeExportDb([makeEventRow({ rrule: WEEKLY_MONDAY_RRULE })]);
     const svc = new CalendarExportService(db);
     const result = await svc.exportEvents(ScopedRead.of(ORG, USER, "all"), exportFrom, exportTo);
-    expect(result.length).toBeGreaterThanOrEqual(1);
-    expect(result[0]).toHaveProperty("title");
-    expect(result[0]).toHaveProperty("startDate");
-    expect(result[0]).toHaveProperty("allDay");
+    expect(result.events.length).toBeGreaterThanOrEqual(1);
+    expect(result.events[0]).toHaveProperty("title");
+    expect(result.events[0]).toHaveProperty("startDate");
+    expect(result.events[0]).toHaveProperty("allDay");
   });
 
   it("export tenant isolation: orgId is present in the events WHERE predicate", async () => {
@@ -282,7 +282,7 @@ describe("Second-pass rescheduled occurrences — nominal outside window, modifi
       modifiedEnd: SEPT5_END,
     }];
     const db = makeNativeSourceDb([makeEventRow({ rrule: WEEKLY_MONDAY_RRULE })], exceptions);
-    const result = await makeSource(db).load(ctx);
+    const { events: result } = await makeSource(db).load(ctx);
     const rescheduled = result.find((p) => p.start.toISOString() === SEPT5_SATURDAY.toISOString());
     expect(rescheduled).toBeDefined();
     expect(rescheduled?.title).toBe("Rescheduled standup");
@@ -316,7 +316,7 @@ describe("Second-pass rescheduled occurrences — nominal outside window, modifi
     const db = makeExportDb2([makeEventRow({ rrule: WEEKLY_MONDAY_RRULE })], exceptions);
     const svc = new CalendarExportService(db);
     const result = await svc.exportEvents(ScopedRead.of(ORG, USER, "all"), WIN_START, WIN_END);
-    const rescheduled = result.find((r) => r.startDate.toISOString() === SEPT5_SATURDAY.toISOString());
+    const rescheduled = result.events.find((r) => r.startDate.toISOString() === SEPT5_SATURDAY.toISOString());
     expect(rescheduled).toBeDefined();
     expect(rescheduled?.title).toBe("Export rescheduled");
     expect(rescheduled?.endDate.toISOString()).toBe(SEPT5_END.toISOString());
@@ -332,7 +332,7 @@ describe("Second-pass rescheduled occurrences — nominal outside window, modifi
       modifiedEnd: SEPT5_END,
     }];
     const db = makeNativeSourceDb([makeEventRow({ rrule: WEEKLY_MONDAY_RRULE })], exceptions);
-    const result = await makeSource(db).load(ctx);
+    const { events: result } = await makeSource(db).load(ctx);
     const atSept5 = result.find((p) => p.start.toISOString() === SEPT5_SATURDAY.toISOString());
     expect(atSept5).toBeUndefined();
   });
@@ -347,7 +347,7 @@ describe("Second-pass rescheduled occurrences — nominal outside window, modifi
       modifiedEnd: SEPT8_END,
     }];
     const db = makeNativeSourceDb([makeEventRow({ rrule: WEEKLY_MONDAY_RRULE })], exceptions);
-    const result = await makeSource(db).load(ctx);
+    const { events: result } = await makeSource(db).load(ctx);
     const atSept8 = result.filter((p) => p.start.toISOString() === SEPT8_TUESDAY.toISOString());
     expect(atSept8).toHaveLength(1);
     expect(atSept8[0]?.title).toBe("Moved to Tuesday");
@@ -363,7 +363,7 @@ describe("Second-pass rescheduled occurrences — nominal outside window, modifi
       modifiedEnd: OCT5_END,
     }];
     const db = makeNativeSourceDb([makeEventRow({ rrule: WEEKLY_MONDAY_RRULE })], exceptions);
-    const result = await makeSource(db).load(ctx);
+    const { events: result } = await makeSource(db).load(ctx);
     const atNominal = result.find((p) => p.start.toISOString() === FIRST_SEP_MONDAY.toISOString());
     expect(atNominal).toBeUndefined();
     // Both projection paths now name an occurrence by its NOMINAL instant, so "did the
@@ -418,7 +418,7 @@ describe("Second-pass rescheduled occurrences — nominal outside window, modifi
       modifiedEnd: null,
     }];
     const db = makeNativeSourceDb([makeEventRow({ rrule: WEEKLY_MONDAY_RRULE })], exceptions);
-    const result = await makeSource(db).load(ctx);
+    const { events: result } = await makeSource(db).load(ctx);
     const rescheduled = result.find((p) => p.start.toISOString() === SEPT5_SATURDAY.toISOString());
     expect(rescheduled).toBeDefined();
     expect(rescheduled!.end.getTime()).toBeGreaterThan(rescheduled!.start.getTime());
@@ -436,7 +436,7 @@ describe("Second-pass rescheduled occurrences — nominal outside window, modifi
       modifiedEnd: new Date("2026-09-05T11:00:00Z"),
     }];
     const db = makeNativeSourceDb([makeEventRow({ rrule: WEEKLY_MONDAY_RRULE })], exceptions);
-    const result = await makeSource(db).load(ctx);
+    const { events: result } = await makeSource(db).load(ctx);
     const rescheduled = result.find((p) => p.start.toISOString() === SEPT5_SATURDAY.toISOString());
     expect(rescheduled).toBeDefined();
     expect(rescheduled!.end.toISOString()).toBe("2026-09-05T11:00:00.000Z");

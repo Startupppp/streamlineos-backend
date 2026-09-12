@@ -44,7 +44,7 @@ const MODULE_MEMBER_KEY_SCOPE_OVERRIDE: Record<string, "own" | "team" | "all"> =
   };
 
 const MODULE_ADMIN_EXTRA_KEYS: Readonly<Record<string, readonly string[]>> = {
-  hr: ["settings:view", "settings:organization:manage"],
+  hr: ["settings:view"],
   crm: ["settings:record-layouts:manage"],
   build: ["integrations:git:view", "integrations:git:manage"],
 };

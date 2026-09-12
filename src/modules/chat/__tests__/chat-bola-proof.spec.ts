@@ -34,6 +34,19 @@ const ORG_OWNER = "org-owner";
 const ORG_ATTACKER = "org-attacker";
 const USER_OWNER = "user-owner";
 const USER_ATTACKER = "user-attacker";
+
+const attackerActor: EntityActor = {
+  orgId: ORG_ATTACKER,
+  userId: USER_ATTACKER,
+  membershipId: 1,
+  isOrgOwner: false,
+};
+const ownerActor: EntityActor = {
+  orgId: ORG_OWNER,
+  userId: USER_OWNER,
+  membershipId: 2,
+  isOrgOwner: false,
+};
 const CHANNEL_ID = 7;
 const MESSAGE_ID = 101;
 
@@ -84,7 +97,7 @@ describe("ChatChannelMembersService — channel BOLA", () => {
     const db = makeDb({ channelRow: null, memberRow: null });
     const service = new ChatChannelMembersService(db as never, stubCache as never, stubEntities, stubAbly);
 
-    await expect(service.getChannel(CHANNEL_ID, USER_ATTACKER, ORG_ATTACKER)).rejects.toThrow(NotFoundException);
+    await expect(service.getChannel(CHANNEL_ID, attackerActor)).rejects.toThrow(NotFoundException);
 
     const channelCall = db.query.chatChannels.findFirst.mock.calls[0]?.[0];
     expect(flatValues(channelCall?.where)).toContain(ORG_ATTACKER);
@@ -94,7 +107,7 @@ describe("ChatChannelMembersService — channel BOLA", () => {
     const db = makeDb({ channelRow: null, memberRow: null });
     const service = new ChatChannelMembersService(db as never, stubCache as never, stubEntities, stubAbly);
 
-    await expect(service.listMembers(CHANNEL_ID, USER_ATTACKER, ORG_ATTACKER)).rejects.toThrow(NotFoundException);
+    await expect(service.listMembers(CHANNEL_ID, attackerActor)).rejects.toThrow(NotFoundException);
 
     const channelCall = db.query.chatChannels.findFirst.mock.calls[0]?.[0];
     expect(flatValues(channelCall?.where)).toContain(ORG_ATTACKER);
@@ -130,7 +143,7 @@ describe("ChatChannelMembersService — channel BOLA", () => {
     const db = makeDb({ channelRow: null, memberRow: null });
     const service = new ChatChannelMembersService(db as never, stubCache as never, stubEntities, stubAbly);
 
-    const error = await service.getChannel(CHANNEL_ID, USER_ATTACKER, ORG_ATTACKER).catch((e: unknown) => e);
+    const error = await service.getChannel(CHANNEL_ID, attackerActor).catch((e: unknown) => e);
     expect(error).toBeInstanceOf(NotFoundException);
   });
 });
@@ -246,8 +259,8 @@ describe("Chat channel existence oracle prevention", () => {
   }
 
   const cases = [
-    ["getChannel", (s: ChatChannelMembersService) => s.getChannel(CHANNEL_ID, USER_ATTACKER, ORG_ATTACKER)],
-    ["listMembers", (s: ChatChannelMembersService) => s.listMembers(CHANNEL_ID, USER_ATTACKER, ORG_ATTACKER)],
+    ["getChannel", (s: ChatChannelMembersService) => s.getChannel(CHANNEL_ID, attackerActor)],
+    ["listMembers", (s: ChatChannelMembersService) => s.listMembers(CHANNEL_ID, attackerActor)],
   ] as const;
 
   it.each(cases)("%s returns 404 (not 403) for a cross-org channel id", async (_name, call) => {
@@ -286,7 +299,7 @@ describe("Private channel non-member BOLA", () => {
   it("DENY: private channel non-member → 404 (not 403)", async () => {
     const db = makeDb(true, false);
     const service = new ChatChannelMembersService(db as never, stubCache as never, stubEntities, stubAbly);
-    const err = await service.getChannel(CHANNEL_ID, USER_ATTACKER, ORG_ATTACKER).catch((e: unknown) => e);
+    const err = await service.getChannel(CHANNEL_ID, attackerActor).catch((e: unknown) => e);
     expect(err).toBeInstanceOf(NotFoundException);
     expect(err).not.toBeInstanceOf(ForbiddenException);
   });
@@ -294,7 +307,7 @@ describe("Private channel non-member BOLA", () => {
   it("DENY: public channel non-member → 403 (membership enforced, channel existence ok to reveal)", async () => {
     const db = makeDb(false, false);
     const service = new ChatChannelMembersService(db as never, stubCache as never, stubEntities, stubAbly);
-    const err = await service.getChannel(CHANNEL_ID, USER_ATTACKER, ORG_ATTACKER).catch((e: unknown) => e);
+    const err = await service.getChannel(CHANNEL_ID, attackerActor).catch((e: unknown) => e);
     expect(err).toBeInstanceOf(ForbiddenException);
   });
 
@@ -304,7 +317,7 @@ describe("Private channel non-member BOLA", () => {
       .mockResolvedValueOnce({ id: CHANNEL_ID, isPrivate: true })
       .mockResolvedValueOnce({ id: CHANNEL_ID, isPrivate: true, name: "secret", type: "GROUP", members: [] });
     const service = new ChatChannelMembersService(db as never, stubCache as never, stubEntities, stubAbly);
-    const result = await service.getChannel(CHANNEL_ID, USER_OWNER, ORG_OWNER);
+    const result = await service.getChannel(CHANNEL_ID, ownerActor);
     expect(result).toBeDefined();
   });
 });

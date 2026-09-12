@@ -4,9 +4,11 @@ import {
   Injectable,
   type HttpException,
 } from "@nestjs/common";
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, eq, gt, inArray, isNull, sql } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import {
+  invitationEvents,
+  invitations,
   organizationAllowedEmailDomains,
   organizationMembers,
   users,
@@ -46,6 +48,7 @@ export interface AdmissionConflict {
   kind: "conflict";
   reason: "already-member" | "duplicate-in-batch" | "email-domain-not-allowed";
   message: string;
+  userId?: string;
 }
 
 export interface AdmissionAdmitted {
@@ -111,7 +114,7 @@ export function canonicalAdmissionEmail(value: string): string {
   return value.trim().toLowerCase();
 }
 
-function refuseDomain(email: string, domains: AllowedEmailDomains): AdmissionConflict | null {
+export function refuseDomain(email: string, domains: AllowedEmailDomains): AdmissionConflict | null {
   if (domains.permitted.size === 0) return null;
   const domain = email.split("@")[1]?.trim().toLowerCase();
   if (domain && domains.permitted.has(domain)) return null;
@@ -143,7 +146,7 @@ export class MembershipAdmissionService {
     input: { orgId: string; email: string },
   ): Promise<AdmissionScreen> {
     const email = canonicalAdmissionEmail(input.email);
-    const domains = await this.loadAllowedDomains(executor, input.orgId);
+    const domains = await loadAllowedDomains(executor, input.orgId);
     const refusal = refuseDomain(email, domains);
     if (refusal) return refusal;
 
@@ -163,7 +166,12 @@ export class MembershipAdmissionService {
     if (!member) return { kind: "clear", userId: account.id };
     if (member.status === "SUSPENDED" || member.status === "LEFT")
       return { kind: "needs-restore", userId: account.id, status: member.status };
-    return { kind: "conflict", reason: "already-member", message: ALREADY_MEMBER_MESSAGE };
+    return {
+      kind: "conflict",
+      reason: "already-member",
+      message: ALREADY_MEMBER_MESSAGE,
+      userId: account.id,
+    };
   }
 
   /** The batch form: three org-scoped statements for the whole upload instead of three per row. */
@@ -175,7 +183,7 @@ export class MembershipAdmissionService {
     const screens = new Map<string, AdmissionScreen>();
     if (emails.length === 0) return screens;
 
-    const domains = await this.loadAllowedDomains(executor, input.orgId);
+    const domains = await loadAllowedDomains(executor, input.orgId);
     const permitted: string[] = [];
     for (const email of emails) {
       const refusal = refuseDomain(email, domains);
@@ -231,6 +239,7 @@ export class MembershipAdmissionService {
         kind: "conflict",
         reason: "already-member",
         message: ALREADY_MEMBER_MESSAGE,
+        userId,
       });
     }
 
@@ -289,6 +298,25 @@ export class MembershipAdmissionService {
     if (cleared.length === 0) return outcomes;
 
     await tx.execute(lockMembersQuota(input.orgId));
+
+    const cancelledIds = await this.cancelPendingInvitations(
+      tx,
+      input.orgId,
+      cleared.map((c) => c.email),
+    );
+    if (cancelledIds.length > 0)
+      await this.seatLedger.recordSeatEvents(
+        tx,
+        input.orgId,
+        cancelledIds.map((invitationId) => ({
+          eventType: "INVITE_CANCELLED" as const,
+          subjectId: invitationId,
+          actorId: input.actor.userId,
+          reason: "invitation superseded by direct admission",
+          idempotencyKey: `invite-cancelled:${invitationId}`,
+        })),
+      );
+
     await this.planLimits.assertWithinLimit(input.orgId, "members", cleared.length, tx);
 
     const drafted = cleared.filter(
@@ -343,19 +371,52 @@ export class MembershipAdmissionService {
     }
   }
 
-  private async loadAllowedDomains(
-    executor: DbOrTx,
+  private async cancelPendingInvitations(
+    tx: DbOrTx,
     orgId: string,
-  ): Promise<AllowedEmailDomains> {
-    const rows = await executor
-      .select({ domain: organizationAllowedEmailDomains.domain })
-      .from(organizationAllowedEmailDomains)
-      .where(eq(organizationAllowedEmailDomains.orgId, orgId))
-      .limit(100);
-    const listed = rows.map((row) => row.domain.trim()).filter((domain) => domain.length > 0);
-    return {
-      listed,
-      permitted: new Set(listed.map((domain) => domain.toLowerCase())),
-    };
+    emails: readonly string[],
+  ): Promise<string[]> {
+    if (emails.length === 0) return [];
+    const now = new Date();
+    const cancelled = await tx
+      .update(invitations)
+      .set({ status: "REVOKED", revokedAt: now })
+      .where(
+        and(
+          eq(invitations.orgId, orgId),
+          inArray(invitations.email, [...emails]),
+          eq(invitations.status, "PENDING"),
+          gt(invitations.expiresAt, now),
+          isNull(invitations.acceptedAt),
+        ),
+      )
+      .returning({ id: invitations.id });
+    if (cancelled.length > 0)
+      await tx.insert(invitationEvents).values(
+        cancelled.map((r) => ({
+          orgId,
+          invitationId: r.id,
+          event: "REVOKED" as const,
+          actorMembershipId: null,
+        })),
+      );
+    return cancelled.map((r) => r.id);
   }
+
+}
+
+export async function loadAllowedDomains(
+  executor: DbOrTx,
+  orgId: string,
+): Promise<AllowedEmailDomains> {
+  const rows = await executor
+    .select({ domain: organizationAllowedEmailDomains.domain })
+    .from(organizationAllowedEmailDomains)
+    .where(eq(organizationAllowedEmailDomains.orgId, orgId))
+    .limit(100);
+  const listed = rows.map((row) => row.domain.trim()).filter((domain) => domain.length > 0);
+  return {
+    listed,
+    permitted: new Set(listed.map((domain) => domain.toLowerCase())),
+  };
 }

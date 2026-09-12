@@ -76,6 +76,7 @@ export const calendarEventDetailSchema = z.object({
     .nullable(),
   rrule: z.string().nullable(),
   isRecurring: z.boolean(),
+  canManage: z.boolean(),
 });
 
 /** `CalendarEventsResult` — `CalendarEventsAggregateService.getEvents`. */
@@ -104,6 +105,7 @@ export const externalCalendarEventsResponseSchema = z.object({
       start: z.string(),
       end: z.string(),
       allDay: z.boolean(),
+      timezone: z.string().nullable().optional(),
       location: z.string().nullable(),
       meetingUrl: z.string().nullable(),
       webLink: z.string().nullable(),

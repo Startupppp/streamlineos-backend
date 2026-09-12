@@ -14,6 +14,7 @@ import { AblyService } from "../realtime/ably.service";
 import { ChatChannelsService } from "./chat-channels.service";
 import { ResponseSchema } from "../../common/openapi/zod-operation-contracts";
 import { chatAblyTokenSchema } from "./dto/chat-misc-response.schemas";
+import { actorOf } from "../entity-reference/entity-actor";
 
 @Controller("chat")
 @UseGuards(JwtAuthGuard, PermissionGuard)
@@ -30,7 +31,7 @@ export class ChatRealtimeController {
     if (!this.ably.configured) {
       throw new ServiceUnavailableException("Ably is not configured");
     }
-    const channelIds = await this.channels.listMemberChannelIds(u.orgId, u.userId);
+    const channelIds = await this.channels.listMemberChannelIds(actorOf(u));
     try {
       return await this.ably.createChatTokenRequest(u.userId, u.orgId, channelIds);
     } catch {
