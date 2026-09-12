@@ -84,7 +84,20 @@ const DB_CALL_PATTERNS = [
   // loop was invisible. build/core/build-due-sweep.service.ts:123 was one.
   /\b(?:this\.)?db\s*\.\s*(?:select(?:Distinct)?|insert|update|delete|execute|transaction|query|unsafe)\s*\(/,
   /\b(?:this\.)?tx\s*\.\s*(?:select|insert|update|delete|execute|unsafe)\s*\(/,
-  /\bsql\s*`/,
+  // A `sql` template is a FRAGMENT BUILDER, not a round trip — drizzle's tag returns an `SQL`
+  // object and issues nothing. `scanOpenerLine` already knew this for one-line callbacks; the
+  // same argument holds for a callback spread over several lines, and that is the shape a
+  // multi-row VALUES list takes here:
+  //
+  //     sql.join(rows.map((r) => sql`(${r.a}, ${r.b})`), sql`,`)
+  //
+  // which is ONE statement — the opposite of an N+1, and reported as one in nine files across
+  // accounting, inventory and compliance. So the pattern now requires the fragment to be HANDED
+  // TO something that executes it. The two forms below are the ones the `db.`/`tx.` patterns
+  // above cannot see: a non-`db`/`tx` executor handle, and `tx.execute<T>(…)` whose generic sits
+  // between the method name and the paren.
+  /\bawait\s+sql\s*`/,
+  /\.\s*(?:execute|unsafe)\s*(?:<[\s\S]*?>)?\s*\(\s*sql\s*`/,
   /\.query\s*\.\s*\w+\s*\.\s*(?:findFirst|findMany)\s*\(/,
   /\bawait\s+\w*[Cc]ache[Ss]ervice\s*\.\s*(?:get|set|del|hget|hset)\s*\(/,
   // THE WHOLE CACHE HALF OF THE CLAUSE WAS UNENFORCED. §5.1 says "no database *or
@@ -393,21 +406,15 @@ function openerLineBody(line) {
 }
 
 /**
- * A bare `sql\`` is a FRAGMENT, not a round trip, and on a one-line callback it is
- * essentially always a fragment: `ids.map((id) => sql\`${id}\`)` builds an IN-list
- * that one statement below executes ONCE. Real one-line execution still matches,
- * because it is written `db.execute(sql\`…\`)` and the handle pattern catches it.
- * Kept out of the same-line scan only; multi-line bodies still test it.
+ * The same-line exception a bare `sql\`` pattern used to need lives in the pattern list itself
+ * now: `sql\`` only counts when something executes it, on any line. So this scan runs the whole
+ * pattern set with no exclusion — a `db.execute(sql\`…\`)` written on the opener line is a real
+ * round trip and is meant to be caught here.
  */
-const SQL_FRAGMENT_PATTERN_SOURCE = /\bsql\s*`/.source;
-
 function scanOpenerLine(lines, i) {
   const body = openerLineBody(lines[i]);
   if (body === "") return null;
-  const hit = DB_CALL_PATTERNS.some(
-    (re) => re.source !== SQL_FRAGMENT_PATTERN_SOURCE && re.test(body),
-  );
-  if (!hit) return null;
+  if (!DB_CALL_PATTERNS.some((re) => re.test(body))) return null;
   return { loopLine: i + 1, callLine: i + 1, text: lines[i].trim() };
 }
 
@@ -737,6 +744,59 @@ function runSelfTests() {
     if (v.length === 0) {
       console.error("SELF-TEST FAIL: a genuine N+1 loop was missed after the brace fix");
       process.exit(1);
+    }
+  }
+
+  {
+    // A multi-line fragment builder: one VALUES list, one statement. It is how the batched
+    // write is SPELLED, so reporting it is reporting the fix as the defect.
+    const knownGoodMultiLineFragment = `
+      async post(rows: Row[]) {
+        const values = sql.join(
+          rows.map(
+            (row) => sql\`(\${row.a}::int, \${row.b}::text)\`,
+          ),
+          sql\`, \`,
+        );
+        return this.db.execute(sql\`INSERT INTO t (a, b) SELECT * FROM (VALUES \${values}) v\`);
+      }
+    `;
+    const v = detectLoopDbCalls(knownGoodMultiLineFragment);
+    if (v.length > 0) {
+      console.error(
+        `SELF-TEST FAIL: a multi-line sql fragment builder was flagged as an N+1 (${v.length} violations)`,
+      );
+      process.exit(1);
+    }
+  }
+  {
+    // The two executed shapes the narrowing must keep: an executor that is not called `db` or
+    // `tx`, and `tx.execute<T>(…)` whose generic sits between the method name and the paren.
+    const knownBadForeignExecutor = `
+      async each(ids: number[]) {
+        for (const id of ids) {
+          await executor.execute(sql\`UPDATE t SET x = 1 WHERE id = \${id}\`);
+        }
+      }
+    `;
+    const knownBadGenericExecute = `
+      async each(ids: number[]) {
+        for (const id of ids) {
+          const rows = await tx.execute<{
+            id: number;
+          }>(sql\`SELECT id FROM t WHERE id = \${id}\`);
+          use(rows);
+        }
+      }
+    `;
+    for (const [label, src] of [
+      ["a non-db executor handed a sql fragment", knownBadForeignExecutor],
+      ["tx.execute<T>(sql`…`) with a generic", knownBadGenericExecute],
+    ]) {
+      if (detectLoopDbCalls(src).length === 0) {
+        console.error(`SELF-TEST FAIL: ${label} was missed after the sql narrowing`);
+        process.exit(1);
+      }
     }
   }
 
