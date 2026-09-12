@@ -1,5 +1,5 @@
-import { Inject, Injectable, InternalServerErrorException, NotFoundException } from "@nestjs/common";
-import { and, desc, eq } from "drizzle-orm";
+import { ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { and, desc, eq, isNull, sql } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { DRIZZLE } from "../../../db/drizzle.constants";
@@ -13,6 +13,7 @@ import { CacheService } from "../../../common/cache/cache.service";
 import { AuditService } from "../../../common/audit/audit.service";
 import { CACHE_KEYS, CACHE_TTL } from "../../../common/cache/cache-keys";
 import { resolveMapping } from "./lib/payroll-calc";
+import { ackTransitionRefusal } from "./lib/ack-transition";
 import {
   buildCursorPage,
   decodeCursor,
@@ -166,7 +167,11 @@ export class PayrollExportsReadService {
 
   async ackExport(orgId: string, userId: string, exportId: number, input: AckExportInput) {
     const [existing] = await this.db
-      .select({ id: timesheetExports.id, creatorName: organizationPeople.displayName })
+      .select({
+        id: timesheetExports.id,
+        ackStatus: timesheetExports.ackStatus,
+        creatorName: organizationPeople.displayName,
+      })
       .from(timesheetExports)
       .leftJoin(organizationPeople, and(
         eq(organizationPeople.organizationId, timesheetExports.orgId),
@@ -177,6 +182,9 @@ export class PayrollExportsReadService {
 
     if (!existing) throw new NotFoundException("Export not found");
 
+    const refusal = ackTransitionRefusal(existing.ackStatus, input.status);
+    if (refusal) throw new ConflictException(refusal);
+
     const [ackActorMember] = await this.db
       .select({ id: organizationMembers.id })
       .from(organizationMembers)
@@ -185,10 +193,30 @@ export class PayrollExportsReadService {
 
     const ackAt = new Date();
     const updated = await this.db.transaction(async (tx) => {
+      /**
+       * Conditional on the status that was checked above, so two operators
+       * acknowledging at once cannot both pass the transition rule against
+       * the same stale reading: the second UPDATE matches nothing and is told
+       * so, rather than overwriting the first and emitting a second event.
+       */
       const [row] = await tx
         .update(timesheetExports)
-        .set({ ackStatus: input.status, ackNote: input.note ?? null, ackAt, ackByMembershipId: ackActorMember?.id ?? null })
-        .where(and(eq(timesheetExports.id, exportId), eq(timesheetExports.orgId, orgId)))
+        .set({
+          ackStatus: input.status,
+          ackNote: input.note ?? null,
+          ackAt,
+          ackByMembershipId: ackActorMember?.id ?? null,
+          eventSeq: sql`${timesheetExports.eventSeq} + 1`,
+        })
+        .where(
+          and(
+            eq(timesheetExports.id, exportId),
+            eq(timesheetExports.orgId, orgId),
+            existing.ackStatus === null
+              ? isNull(timesheetExports.ackStatus)
+              : eq(timesheetExports.ackStatus, existing.ackStatus),
+          ),
+        )
         .returning();
 
       if (!row) return null;
@@ -204,14 +232,12 @@ export class PayrollExportsReadService {
         aggregateType: "timesheet_export",
         aggregateId: String(exportId),
         /**
-         * Not 1. `(org, aggregate_type, aggregate_id, aggregate_version)` is
-         * unique and version 1 is the export's own creation event, so a
-         * constant here would collide on the first ack. An export can also be
-         * acknowledged repeatedly as its status moves — RECEIVED then
-         * ACCEPTED, or later REJECTED — so the version has to grow with each
-         * one rather than identify the export.
+         * The counter the UPDATE just claimed. Version 1 is the export's own
+         * creation event, and an export is acknowledged repeatedly as its
+         * status moves, so each one takes the next number — see
+         * `timesheetExports.eventSeq`.
          */
-        aggregateVersion: ackAt.getTime(),
+        aggregateVersion: row.eventSeq,
         eventType: TIMESHEET_EVENTS.payrollExportAcked,
         payload: {
           organization_id: orgId,
@@ -227,7 +253,7 @@ export class PayrollExportsReadService {
       return row;
     });
 
-    if (!updated) throw new InternalServerErrorException("Failed to acknowledge the export");
+    if (!updated) throw new ConflictException("Export was acknowledged by someone else; reload and try again");
 
     this.audit.log({ action: "timesheets.payroll.export_acknowledged", userId, orgId, metadata: { exportId, status: input.status, note: input.note ?? null } });
 

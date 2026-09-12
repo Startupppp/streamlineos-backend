@@ -98,6 +98,7 @@ export class PayrollController {
 
   @Patch("exports/:exportId/ack")
   @RequirePermission("timesheets:payroll:export")
+  @Idempotent("timesheets.payroll.ack")
   @Validate({ params: exportIdParams, body: ackExportSchema })
   @ResponseSchema(payrollAckExportResponseSchema)
   ackExport(
