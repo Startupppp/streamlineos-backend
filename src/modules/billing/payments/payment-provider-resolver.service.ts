@@ -3,7 +3,7 @@ import { and, asc, desc, eq } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import { paymentProviders } from "../../../db/schema";
-import { PaymentProviderAdapterRegistry, type PaymentProviderAdapter, type PaymentProviderRuntime, type PaymentWebhookNormalization } from "./payment-provider-adapter.interface";
+import { PaymentProviderAdapterRegistry, type PaymentProviderAdapter, type PaymentProviderRuntime, type PaymentWebhookNormalization, type ProviderPaymentSnapshot } from "./payment-provider-adapter.interface";
 import { PaymentProviderSetupService } from "./payment-provider-setup.service";
 
 export type PaymentEnvironment = "test" | "live";
@@ -26,6 +26,7 @@ export interface OrganizationPaymentProvider {
   }): boolean;
   verifyWebhookSignature(params: { rawBody: string; signature: string }): boolean;
   normalizeWebhook(rawBody: string): PaymentWebhookNormalization;
+  fetchPayment(paymentId: string): Promise<ProviderPaymentSnapshot | null>;
 }
 
 /**
@@ -49,12 +50,8 @@ export class PaymentProviderResolver {
     const provider = await this.db.query.paymentProviders.findFirst({
       where: and(eq(paymentProviders.orgId, orgId), eq(paymentProviders.providerKey, providerKey)),
     });
-    const adapter = this.registry.get(providerKey);
-    if (!provider || provider.status === "disabled" || !adapter) return undefined;
-
-    const environment = requestedEnvironment ?? provider.environment;
-    const credentials = await this.setup.getDecryptedSecret(orgId, provider.id, environment);
-    return createOrganizationProvider(adapter, providerKey, environment, credentials);
+    if (!provider || provider.status === "disabled") return undefined;
+    return this.buildFromRow(provider, requestedEnvironment);
   }
 
   /** Resolve the organisation's enabled primary provider without making callers choose a key. */
@@ -69,14 +66,25 @@ export class PaymentProviderResolver {
 
     for (const provider of providers) {
       if (provider.status === "disabled") continue;
-      const resolved = await this.resolve(orgId, provider.providerKey, requestedEnvironment);
-      if (resolved) return resolved;
+      const built = await this.buildFromRow(provider, requestedEnvironment);
+      if (built && built.isReady()) return built;
     }
     return undefined;
   }
+
+  private async buildFromRow(
+    row: { id: number; orgId: string; providerKey: string; environment: PaymentEnvironment },
+    requestedEnvironment?: PaymentEnvironment,
+  ): Promise<OrganizationPaymentProvider | undefined> {
+    const adapter = this.registry.get(row.providerKey);
+    if (!adapter) return undefined;
+    const environment = requestedEnvironment ?? row.environment;
+    const credentials = await this.setup.getDecryptedSecret(row.orgId, row.id, environment);
+    return createOrganizationProvider(adapter, row.providerKey, environment, credentials);
+  }
 }
 
-function createOrganizationProvider(
+export function createOrganizationProvider(
   adapter: PaymentProviderAdapter,
   providerKey: string,
   environment: PaymentEnvironment,
@@ -93,5 +101,6 @@ function createOrganizationProvider(
     verifyPaymentSignature: runtime.verifyPaymentSignature,
     verifyWebhookSignature: runtime.verifyWebhookSignature,
     normalizeWebhook: runtime.normalizeWebhook,
+    fetchPayment: runtime.fetchPayment,
   };
 }

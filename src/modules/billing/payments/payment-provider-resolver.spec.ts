@@ -86,4 +86,96 @@ describe("PaymentProviderResolver", () => {
     expect(findMany).toHaveBeenCalled();
     expect(setup.getDecryptedSecret).toHaveBeenCalledWith("org-a", 8, "test");
   });
+
+  it("resolveConfigured skips the primary provider when its runtime isReady() is false and returns the first ready provider instead (regression: old code returned any truthy resolved provider regardless of isReady)", async () => {
+    const razorpayAdapter = new FakeProviderAdapter("razorpay");
+    const stripeAdapter = new FakeProviderAdapter("stripe");
+    const registry = new PaymentProviderAdapterRegistry();
+    registry.register(razorpayAdapter);
+    registry.register(stripeAdapter);
+
+    const findMany = jest.fn().mockResolvedValue([
+      { id: 10, orgId: "org-a", providerKey: "razorpay", environment: "test", status: "active", isPrimary: true },
+      { id: 11, orgId: "org-a", providerKey: "stripe", environment: "test", status: "active", isPrimary: false },
+    ]);
+    const findFirst = jest.fn();
+    const db = { query: { paymentProviders: { findMany, findFirst } } };
+
+    const setup = {
+      getDecryptedSecret: jest.fn().mockImplementation(async (_orgId: string, providerId: number) => {
+        if (providerId === 10) return {};
+        if (providerId === 11) return { keyId: "stripe_pub", secret: "stripe_priv", webhookSecret: "stripe_wh" };
+        return {};
+      }),
+    };
+
+    const resolver = new PaymentProviderResolver(db as never, registry, setup as never);
+    const provider = await resolver.resolveConfigured("org-a");
+
+    expect(provider?.providerKey).toBe("stripe");
+    expect(provider?.isReady()).toBe(true);
+    expect(findFirst).not.toHaveBeenCalled();
+  });
+
+  it("resolveConfigured returns undefined when all providers are non-ready", async () => {
+    const adapter = new FakeProviderAdapter("razorpay");
+    const registry = new PaymentProviderAdapterRegistry();
+    registry.register(adapter);
+
+    const findMany = jest.fn().mockResolvedValue([
+      { id: 20, orgId: "org-b", providerKey: "razorpay", environment: "test", status: "active", isPrimary: true },
+    ]);
+    const db = { query: { paymentProviders: { findMany } } };
+
+    const setup = {
+      getDecryptedSecret: jest.fn().mockResolvedValue({}),
+    };
+
+    const resolver = new PaymentProviderResolver(db as never, registry, setup as never);
+    const provider = await resolver.resolveConfigured("org-b");
+
+    expect(provider).toBeUndefined();
+  });
+
+  it("resolveConfigured skips disabled rows without resolving their credentials", async () => {
+    const adapter = new FakeProviderAdapter("razorpay");
+    const registry = new PaymentProviderAdapterRegistry();
+    registry.register(adapter);
+
+    const findMany = jest.fn().mockResolvedValue([
+      { id: 30, orgId: "org-c", providerKey: "razorpay", environment: "test", status: "disabled", isPrimary: true },
+    ]);
+    const db = { query: { paymentProviders: { findMany } } };
+
+    const setup = { getDecryptedSecret: jest.fn() };
+
+    const resolver = new PaymentProviderResolver(db as never, registry, setup as never);
+    const provider = await resolver.resolveConfigured("org-c");
+
+    expect(provider).toBeUndefined();
+    expect(setup.getDecryptedSecret).not.toHaveBeenCalled();
+  });
+
+  it("resolveConfigured issues exactly one findMany query regardless of how many candidates exist (no per-candidate findFirst)", async () => {
+    const adapter = new FakeProviderAdapter("razorpay");
+    const registry = new PaymentProviderAdapterRegistry();
+    registry.register(adapter);
+
+    const findMany = jest.fn().mockResolvedValue([
+      { id: 40, orgId: "org-d", providerKey: "razorpay", environment: "test", status: "active", isPrimary: true },
+      { id: 41, orgId: "org-d", providerKey: "razorpay", environment: "live", status: "active", isPrimary: false },
+    ]);
+    const findFirst = jest.fn();
+    const db = { query: { paymentProviders: { findMany, findFirst } } };
+
+    const setup = {
+      getDecryptedSecret: jest.fn().mockResolvedValue({ keyId: "rzp_test_k", secret: "s", webhookSecret: "wh" }),
+    };
+
+    const resolver = new PaymentProviderResolver(db as never, registry, setup as never);
+    await resolver.resolveConfigured("org-d");
+
+    expect(findMany).toHaveBeenCalledTimes(1);
+    expect(findFirst).not.toHaveBeenCalled();
+  });
 });

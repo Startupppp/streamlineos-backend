@@ -17,6 +17,14 @@ export type PaymentWebhookNormalization =
       error: "invalid_json" | "invalid_payload";
     };
 
+export interface ProviderPaymentSnapshot {
+  readonly paymentId: string;
+  readonly orderId: string | null;
+  readonly status: "created" | "authorized" | "captured" | "refunded" | "failed";
+  readonly amountMinor: number;
+  readonly currency: string;
+}
+
 /** The configured provider runtime. Credential values are intentionally absent. */
 export interface PaymentProviderRuntime {
   isReady(): boolean;
@@ -30,6 +38,7 @@ export interface PaymentProviderRuntime {
   verifyPaymentSignature(params: { orderId: string; paymentId: string; signature: string }): boolean;
   verifyWebhookSignature(params: { rawBody: string; signature: string }): boolean;
   normalizeWebhook(rawBody: string): PaymentWebhookNormalization;
+  fetchPayment(paymentId: string): Promise<ProviderPaymentSnapshot | null>;
 }
 
 /**

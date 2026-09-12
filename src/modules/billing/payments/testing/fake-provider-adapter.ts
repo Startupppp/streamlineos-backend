@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { PaymentProviderAdapter, PaymentProviderRuntime, PaymentWebhookNormalization } from "../payment-provider-adapter.interface";
+import type { PaymentProviderAdapter, PaymentProviderRuntime, PaymentWebhookNormalization, ProviderPaymentSnapshot } from "../payment-provider-adapter.interface";
 import { rawWebhookIdSchema, rawPaymentEntitySchema, tenantCredentialFieldsSchema } from "../dto/webhook.schemas";
 
 const fakeEnvelopeSchema = z.object({
@@ -14,6 +14,8 @@ export const FAKE_PROVIDER_ORDER_ID = "fake_order_001";
 export const FAKE_PUBLIC_KEY_ID = "fake_pub_key_001";
 
 export class FakeProviderAdapter implements PaymentProviderAdapter {
+  readonly fakePayments = new Map<string, ProviderPaymentSnapshot>();
+
   constructor(readonly providerKey: string = "razorpay") {}
 
   configure(_credentials: unknown): PaymentProviderRuntime {
@@ -47,6 +49,10 @@ export class FakeProviderAdapter implements PaymentProviderAdapter {
       params.signature === FAKE_VALID_WEBHOOK_SIG &&
       credentials.webhookSecret === FAKE_WEBHOOK_SECRET
     );
+      },
+
+      fetchPayment: async (paymentId: string): Promise<ProviderPaymentSnapshot | null> => {
+    return this.fakePayments.get(paymentId) ?? null;
       },
 
       normalizeWebhook: (rawBody): PaymentWebhookNormalization => {

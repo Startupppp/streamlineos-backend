@@ -12,6 +12,7 @@ import { PaymentWebhookReceiverService } from "./payment-webhook-receiver.servic
 import { PaymentReadinessService } from "./payment-readiness.service";
 import { PaymentManualMethodsService } from "./payment-manual-methods.service";
 import { PaymentAnalyticsService } from "./payment-analytics.service";
+import { PlatformMerchantService } from "./platform-merchant.service";
 import { NotificationsModule } from "../../notifications/notifications.module";
 import { OnboardingFlowModule } from "../../hr/onboarding/flow/onboarding-flow.module";
 import { FinanceControlsModule } from "../../finance/controls/finance-controls.module";
@@ -31,6 +32,7 @@ import { FinanceControlsModule } from "../../finance/controls/finance-controls.m
     PaymentReadinessService,
     PaymentManualMethodsService,
     PaymentAnalyticsService,
+    PlatformMerchantService,
   ],
   exports: [
     PaymentProviderSetupService,
@@ -40,6 +42,7 @@ import { FinanceControlsModule } from "../../finance/controls/finance-controls.m
     PaymentWebhookHealthService,
     PaymentWebhookReceiverService,
     PaymentAnalyticsService,
+    PlatformMerchantService,
   ],
 })
 export class PaymentsModule {}

@@ -4,7 +4,7 @@ import { z } from "zod";
 import { outboundRequest, OutboundRequestError, type OutboundRequestInit } from "../../../../common/http/outbound-request";
 import { callProvider, type FailureClass } from "../../../../common/outbound/call-provider";
 import { ProviderCircuitBreaker } from "../../../../common/outbound/provider-circuit-breaker";
-import { PaymentProviderAdapterRegistry, type PaymentCredentialWarning, type PaymentProviderAdapter, type PaymentProviderRuntime, type PaymentWebhookNormalization } from "../payment-provider-adapter.interface";
+import { PaymentProviderAdapterRegistry, type PaymentCredentialWarning, type PaymentProviderAdapter, type PaymentProviderRuntime, type PaymentWebhookNormalization, type ProviderPaymentSnapshot } from "../payment-provider-adapter.interface";
 import {
   webhookEnvelopeSchema,
   rawWebhookIdSchema,
@@ -35,6 +35,14 @@ const razorpayOrderResponseSchema = z.object({
 
 const razorpayOrderErrorSchema = z.object({
   error: z.object({ description: z.string().optional() }).optional(),
+});
+
+const razorpayPaymentResponseSchema = z.object({
+  id: z.string(),
+  order_id: z.string().nullable(),
+  status: z.enum(["created", "authorized", "captured", "refunded", "failed"]),
+  amount: z.number(),
+  currency: z.string(),
 });
 
 
@@ -249,6 +257,60 @@ export class RazorpayAdapter implements PaymentProviderAdapter, OnModuleInit {
       eventType: parsed.data.event,
       payload: normalizedPayload,
       ...(providerEventId ? { providerEventId } : {}),
+    };
+      },
+
+      fetchPayment: async (paymentId: string): Promise<ProviderPaymentSnapshot | null> => {
+    if (!keyId || !keySecret) throw new Error("Payment provider credentials are not configured");
+    const auth = Buffer.from(`${keyId}:${keySecret}`).toString("base64");
+
+    const result = await callProvider(
+      {
+        provider: "razorpay-payment-fetch",
+        timeoutMs: this._orderTimeoutMs,
+        maxAttempts: 3,
+        baseDelayMs: this._baseDelayMs,
+        maxDelayMs: this._maxDelayMs,
+        classify: classifyRazorpayError,
+      },
+      async () => {
+        const response = await this._transport(`https://api.razorpay.com/v1/payments/${paymentId}`, {
+          provider: "razorpay-payment-fetch",
+          timeoutMs: this._orderTimeoutMs,
+          method: "GET",
+          headers: {
+            Authorization: `Basic ${auth}`,
+          },
+        });
+        if (response.status === 404) return null;
+        if (!response.ok) {
+          const raw: unknown = await response.json().catch(() => ({}));
+          const errorParsed = razorpayOrderErrorSchema.safeParse(raw);
+          const description = errorParsed.success ? errorParsed.data.error?.description ?? "Unknown error" : "Unknown error";
+          if (response.status >= 500) throw new RazorpayServerError(description);
+          throw new RazorpayClientError(description);
+        }
+        const data: unknown = await response.json();
+        const parsed = razorpayPaymentResponseSchema.safeParse(data);
+        if (!parsed.success) throw new RazorpayClientError("Unexpected payment response schema from provider");
+        return parsed.data;
+      },
+      this._breaker,
+    );
+
+    if (!result.ok) {
+      const msg = result.kind === "circuit-open"
+        ? `Razorpay circuit breaker open, retry after ${result.retryAfterMs}ms`
+        : `Razorpay payment fetch failed after ${result.attempts} attempt(s): ${result.error.message}`;
+      throw new BadGatewayException(msg);
+    }
+    if (result.value === null) return null;
+    return {
+      paymentId: result.value.id,
+      orderId: result.value.order_id,
+      status: result.value.status,
+      amountMinor: result.value.amount,
+      currency: result.value.currency,
     };
       },
     };
