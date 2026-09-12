@@ -43,3 +43,10 @@ export interface TimesheetPayrollHandoffPort {
 }
 
 export const TIMESHEET_PAYROLL_HANDOFF_PORT = Symbol("TimesheetPayrollHandoffPort");
+
+/**
+ * Optional binding payroll registers globally. Timesheets falls back to the
+ * recording adapter when this token is absent, so the module still boots in
+ * isolation and the dependency still points payroll → timesheets.
+ */
+export const PAYROLL_TIMESHEET_HANDOFF_ADAPTER = Symbol("PayrollTimesheetHandoffAdapter");

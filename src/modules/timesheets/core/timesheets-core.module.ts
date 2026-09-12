@@ -110,6 +110,7 @@ import { AttendanceDraftService } from "./attendance/attendance-draft.service";
   ],
   exports: [
     SettingsService,
+    TimesheetsAuditService,
     ExceptionsDetectorService,
     EntriesPeriodService,
     TimesheetRemindersSweepService,

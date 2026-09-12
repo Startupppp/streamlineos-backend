@@ -3,7 +3,11 @@ import { OutboxModule } from "../../../../common/outbox/outbox.module";
 import { PayrollHandoffConsumer } from "./payroll-handoff.consumer";
 import { PayrollAckConsumer } from "./payroll-ack.consumer";
 import { RecordingPayrollHandoffAdapter } from "./recording-handoff.adapter";
-import { TIMESHEET_PAYROLL_HANDOFF_PORT } from "./handoff.port";
+import {
+  PAYROLL_TIMESHEET_HANDOFF_ADAPTER,
+  TIMESHEET_PAYROLL_HANDOFF_PORT,
+  type TimesheetPayrollHandoffPort,
+} from "./handoff.port";
 
 /**
  * The handoff seam, bound to the adapter that ships when payroll has not
@@ -20,7 +24,18 @@ import { TIMESHEET_PAYROLL_HANDOFF_PORT } from "./handoff.port";
   providers: [
     PayrollHandoffConsumer,
     PayrollAckConsumer,
-    { provide: TIMESHEET_PAYROLL_HANDOFF_PORT, useClass: RecordingPayrollHandoffAdapter },
+    RecordingPayrollHandoffAdapter,
+    {
+      provide: TIMESHEET_PAYROLL_HANDOFF_PORT,
+      useFactory: (
+        payroll: TimesheetPayrollHandoffPort | undefined,
+        recording: RecordingPayrollHandoffAdapter,
+      ) => payroll ?? recording,
+      inject: [
+        { token: PAYROLL_TIMESHEET_HANDOFF_ADAPTER, optional: true },
+        RecordingPayrollHandoffAdapter,
+      ],
+    },
   ],
   exports: [TIMESHEET_PAYROLL_HANDOFF_PORT],
 })
