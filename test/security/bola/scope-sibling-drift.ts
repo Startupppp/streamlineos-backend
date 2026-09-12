@@ -1,5 +1,5 @@
 import { loadRouteSurface, type HandlerRoute } from "./route-surface";
-import { buildSourceIndex, resolveInjectedType, type SourceIndex } from "./tenant-binding";
+import { buildSourceIndex, resolveImportedClassMethods, resolveInjectedType, type SourceIndex } from "./tenant-binding";
 
 /**
  * The `/deals/export` shape: two handlers gated by the SAME permission key, one
@@ -44,13 +44,13 @@ export function handlerScopeEvidence(route: HandlerRoute, index: SourceIndex): b
   for (const call of route.serviceCalls) {
     const className = route.injected.get(call.property);
     if (!className) continue;
-    const method = index.methodsByClass.get(className)?.get(call.method);
+    const method = resolveImportedClassMethods(index, route.file, className)?.get(call.method);
     if (method && resolvesScope(method.body)) return true;
     if (!method) continue;
     for (const nested of method.body.matchAll(/this\.(\w+)\.(\w+)\s*\(/g)) {
       const nextClass = resolveInjectedType(method.file, nested[1] as string);
       if (!nextClass) continue;
-      const nestedMethod = index.methodsByClass.get(nextClass)?.get(nested[2] as string);
+      const nestedMethod = resolveImportedClassMethods(index, method.file, nextClass)?.get(nested[2] as string);
       if (nestedMethod && resolvesScope(nestedMethod.body)) return true;
     }
   }

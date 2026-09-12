@@ -109,7 +109,19 @@ const DRIFTING_KEYS: readonly string[] = [
  * the two survey content reads were read end-to-end and repaired. The rest are recorded as
  * inventory — which is what this ratchet has always been — not as a judgement that they are safe.
  */
-const UNSCOPED_ROUTE_BASELINE = 339;
+/**
+ * 339 -> 336, 2026-09-12. Two repairs and one correction to the detector itself:
+ *
+ *   -2  `GET /timesheets/payroll/exports` and `GET /timesheets/payroll/exports/:exportId/rows`,
+ *       REPAIRED — see `FIXED: a payroll export is read only at the scope that covers it` below.
+ *   -1  `GET /timesheets/periods`, which was always scoped. The source index merged every class
+ *       of one name into one bucket, first file winning per method, so the timesheets
+ *       controller's `PeriodsService.listPeriods` was read as accounting's fiscal-period list and
+ *       `ExceptionsService.listExceptions` as payroll's. The detector now follows the caller's
+ *       own import (`resolveImportedClassMethods`), and the timesheets exceptions service is
+ *       named for its entity, as its controller already was.
+ */
+const UNSCOPED_ROUTE_BASELINE = 336;
 
 /**
  * The 31 unscoped collection reads the merge brought, pinned by name so raising the baseline
@@ -294,6 +306,23 @@ describe("BOLA sweep — export and search apply their sibling list's DataScope"
    * the finding set — asserted here so its removal from DRIFTING_KEYS is a
    * measured fact rather than an unexplained deletion.
    */
+  /**
+   * REPAIRED. `timesheets:payroll:view` is `scopable: true` and a timesheets module member holds
+   * it at `own`. `GET /timesheets/payroll/period-summary` narrowed to that member's own rows;
+   * the export history and the rows behind an export — every payee's hours, name and email in
+   * one snapshot — read the whole organisation under the same key. An export belongs to nobody
+   * in particular, so below `all` there is none to read: the list is empty and the rows are 404.
+   */
+  it("FIXED: a payroll export is read only at the scope that covers it", () => {
+    const unscoped = new Set(findings.flatMap((f) => f.unscoped));
+    expect(unscoped.has("GET /timesheets/payroll/exports")).toBe(false);
+    expect(unscoped.has("GET /timesheets/payroll/exports/:exportId/rows")).toBe(false);
+    const payroll = findings.find((f) => f.permissionKey === "timesheets:payroll:view");
+    expect(payroll?.scoped).toEqual(
+      expect.arrayContaining(["GET /timesheets/payroll/exports", "GET /timesheets/payroll/exports/:exportId/rows"]),
+    );
+  });
+
   it("FIXED: sign:envelope:view has no unscoped read left at all", () => {
     expect(findings.map((f) => f.permissionKey)).not.toContain("sign:envelope:view");
     const index = buildSourceIndex();
