@@ -4,7 +4,7 @@ import {
   Injectable,
   ServiceUnavailableException,
 } from "@nestjs/common";
-import { eq, sql } from "drizzle-orm";
+import { and, eq, gt, sql } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import { addHours, addMinutes } from "date-fns";
 import { magicLinkTokens, users, verificationTokens } from "../../db/schema";
@@ -22,22 +22,20 @@ export class AuthEmailVerificationService {
     private readonly email: EmailService,
   ) {}
 
-  async verifyEmail(input: VerifyEmailInput): Promise<{ autoLoginToken: string }> {
+  async verifyEmail(
+    input: VerifyEmailInput,
+  ): Promise<{ autoLoginToken: string }> {
     const record = await this.db.query.verificationTokens.findFirst({
-      where: eq(verificationTokens.token, hashToken(input.token)),
+      where: and(
+        eq(verificationTokens.token, hashToken(input.token)),
+        gt(verificationTokens.expires, sql`now()`),
+      ),
     });
-    if (!record) {
+    if (!record)
       throw new BadRequestException({
         code: "AUTH_TOKEN_INVALID",
-        message: "Invalid verification token",
+        message: "Invalid or expired verification token",
       });
-    }
-    if (new Date(record.expires) <= new Date()) {
-      throw new BadRequestException({
-        code: "AUTH_TOKEN_EXPIRED",
-        message: "Verification token has expired",
-      });
-    }
 
     const [updatedUsers] = await Promise.all([
       this.db

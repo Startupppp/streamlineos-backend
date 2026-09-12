@@ -4,7 +4,7 @@ import {
   ServiceUnavailableException,
   UnauthorizedException,
 } from "@nestjs/common";
-import { and, eq, isNull, lt } from "drizzle-orm";
+import { and, eq, gt, isNull, lt, sql } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import { addHours, subDays } from "date-fns";
 import { magicLinkTokens, users } from "../../db/schema";
@@ -87,36 +87,26 @@ export class AuthMagicLinkService {
         message: "Invalid magic link",
       });
     }
-    if (new Date(row.expiresAt) <= new Date()) {
-      await this.analytics.logLoginEvent(
-        row.userId,
-        null,
-        "magic_link.verify",
-        false,
-        "token_expired",
-        context,
-      );
-      throw new UnauthorizedException({
-        code: "AUTH_TOKEN_EXPIRED",
-        message: "Magic link has expired or has already been used",
-      });
-    }
-
     const [claimed] = await this.db
       .update(magicLinkTokens)
       .set({ usedAt: new Date() })
       .where(
-        and(eq(magicLinkTokens.id, row.id), isNull(magicLinkTokens.usedAt)),
+        and(
+          eq(magicLinkTokens.id, row.id),
+          isNull(magicLinkTokens.usedAt),
+          gt(magicLinkTokens.expiresAt, sql`now()`),
+        ),
       )
       .returning({ id: magicLinkTokens.id });
 
     if (!claimed) {
+      const reason = row.usedAt !== null ? "token_already_used" : "token_expired";
       await this.analytics.logLoginEvent(
         row.userId,
         null,
         "magic_link.verify",
         false,
-        "token_already_used",
+        reason,
         context,
       );
       throw new UnauthorizedException({
