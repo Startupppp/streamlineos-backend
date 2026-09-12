@@ -14,6 +14,7 @@ import type { EmailSuppressionService } from "../email/email-suppression.service
 import type { NotificationsService } from "../notifications/notifications.service";
 import type { AutonomyScoringService } from "./autonomy-scoring.service";
 import { updateAutonomySettingsSchema } from "./dto/autonomy-review.schemas";
+import { evaluateGuardrails } from "./send-guardrails";
 import { OutboundService } from "./outbound.service";
 
 /**
@@ -79,6 +80,8 @@ interface Fixture {
   lastAutonomousSentAt?: Date | null;
   /** Null means the deal has no owner, so there is nobody to write as. */
   senderName?: string | null;
+  /** Set to mark the party row itself soft-deleted. */
+  partyDeletedAt?: Date | null;
 }
 
 /**
@@ -103,6 +106,7 @@ function makeDb(rec: Recorder, fixture: Fixture = {}): Db {
               ...party,
               email:
                 fixture.contactEmail === undefined ? "buyer@acme.example" : fixture.contactEmail,
+              deletedAt: fixture.partyDeletedAt ?? null,
             },
           ]
         : [],
@@ -434,6 +438,73 @@ describe("compose time does not look at the send-time world", () => {
 
     expect(facts).not.toHaveBeenCalled();
     expect(cold).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * A party can be soft-deleted while a message sits in its hold window, and
+ * `sendTimeFacts` is the read that has to notice — `evaluateGuardrails` only
+ * knows what this function tells it. Exercised through `sendTimeFacts` itself
+ * rather than only through the pure guardrail, so a regression that stops
+ * populating `partyDeleted` from `business_parties.deleted_at` fails here even
+ * though `send-guardrails.spec.ts`'s pure-function tests would stay green.
+ */
+describe("sendTimeFacts and a deleted party", () => {
+  /**
+   * A Wednesday, 11:30 in `FALLBACK_TIMEZONE` (Asia/Kolkata) — inside
+   * `OUTBOUND_WORKING_HOURS` — pinned so the "live party" case below asserts
+   * `allow: true` on the fact that matters (`partyDeleted`) rather than on
+   * whatever hour it happens to be wherever this suite runs. `sendTimeFacts`
+   * reads `now` with `new Date()` internally and takes no clock argument, so
+   * fake timers are the only way to hold it still.
+   */
+  const IN_HOURS = new Date("2026-08-26T06:00:00.000Z");
+
+  beforeEach(() => jest.useFakeTimers({ now: IN_HOURS }));
+  afterEach(() => jest.useRealTimers());
+
+  function message(over: Partial<Parameters<OutboundService["sendTimeFacts"]>[1]> = {}) {
+    return {
+      outboundMessageId: "msg-1",
+      partyId: PARTY,
+      contactId: null,
+      dealId: null,
+      outboundClass: "follow_up" as const,
+      draftedAt: new Date(IN_HOURS.getTime() - 3_600_000),
+      workingHourDeferrals: 0,
+      recipientEmail: null,
+      ...over,
+    };
+  }
+
+  it("marks the party deleted, and blocks the send, once business_parties.deleted_at is set", async () => {
+    const h = harness({ partyDeletedAt: new Date("2026-08-20T00:00:00.000Z") });
+
+    const facts = await h.service.sendTimeFacts(ORG, message());
+
+    expect(facts.partyDeleted).toBe(true);
+    expect(evaluateGuardrails(facts)).toEqual({
+      allow: false,
+      action: "block",
+      reason: "party-deleted",
+    });
+  });
+
+  it("does not mark a live party deleted", async () => {
+    const h = harness({ partyDeletedAt: null });
+
+    const facts = await h.service.sendTimeFacts(ORG, message());
+
+    expect(facts.partyDeleted).toBe(false);
+    expect(evaluateGuardrails(facts).allow).toBe(true);
+  });
+
+  it("treats a party missing from business_parties entirely as deleted", async () => {
+    const h = harness({ party: null });
+
+    const facts = await h.service.sendTimeFacts(ORG, message());
+
+    expect(facts.partyDeleted).toBe(true);
   });
 });
 

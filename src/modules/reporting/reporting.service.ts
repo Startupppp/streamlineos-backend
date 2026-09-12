@@ -10,7 +10,9 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.types";
 import { crmReportDefinitions, crmReportRuns, users } from "../../db/schema";
 import { runInTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
+import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { AccessService } from "../access/access.service";
+import { authorize } from "../access/authorize";
 import { compileQuery, type CompiledQuery } from "./compiler/compile";
 import type { RequesterScope } from "./compiler/scope";
 import { QueryCompilationError } from "./compiler/errors";
@@ -156,23 +158,22 @@ export class ReportingService {
    * stored is the description; this is a validation, not a cache.
    */
   async createDefinition(
-    orgId: string,
-    userId: string,
+    user: CurrentUserContext,
     input: CreateDefinitionInput,
   ) {
     const query = input.query as QueryDescription;
-    await this.assertMayRunSource(orgId, userId, query.source);
-    this.compileOrThrow(query, orgId, await this.requesterScope(orgId, userId));
+    await this.assertMayRunSource(user, query.source);
+    this.compileOrThrow(query, user.orgId, await this.requesterScope(user));
 
     const [row] = await this.db
       .insert(crmReportDefinitions)
       .values({
-        organizationId: orgId,
+        organizationId: user.orgId,
         name: input.name,
         description: input.description ?? null,
         sourceKey: query.source,
         queryDescription: query,
-        createdByUserId: userId,
+        createdByUserId: user.userId,
       })
       .returning();
 
@@ -180,17 +181,16 @@ export class ReportingService {
   }
 
   async updateDefinition(
-    orgId: string,
-    userId: string,
+    user: CurrentUserContext,
     reportDefinitionId: string,
     input: UpdateDefinitionInput,
   ) {
-    const existing = await this.getDefinition(orgId, reportDefinitionId);
+    const existing = await this.getDefinition(user.orgId, reportDefinitionId);
 
     const query = (input.query ?? existing.queryDescription) as QueryDescription;
     if (input.query) {
-      await this.assertMayRunSource(orgId, userId, query.source);
-      this.compileOrThrow(query, orgId, await this.requesterScope(orgId, userId));
+      await this.assertMayRunSource(user, query.source);
+      this.compileOrThrow(query, user.orgId, await this.requesterScope(user));
     }
 
     const [row] = await this.db
@@ -204,7 +204,7 @@ export class ReportingService {
       })
       .where(
         and(
-          eq(crmReportDefinitions.organizationId, orgId),
+          eq(crmReportDefinitions.organizationId, user.orgId),
           eq(crmReportDefinitions.reportDefinitionId, reportDefinitionId),
         ),
       )
@@ -243,9 +243,9 @@ export class ReportingService {
    * statement names physical tables and columns, which is more than a report
    * reader needs to know.
    */
-  async explain(orgId: string, userId: string, query: QueryDescription) {
-    await this.assertMayRunSource(orgId, userId, query.source);
-    const compiled = this.compileOrThrow(query, orgId, await this.requesterScope(orgId, userId));
+  async explain(user: CurrentUserContext, query: QueryDescription) {
+    await this.assertMayRunSource(user, query.source);
+    const compiled = this.compileOrThrow(query, user.orgId, await this.requesterScope(user));
 
     return {
       source: compiled.source,
@@ -261,17 +261,16 @@ export class ReportingService {
     };
   }
 
-  async runAdHoc(orgId: string, userId: string, query: QueryDescription) {
-    return this.run(orgId, userId, query, null);
+  async runAdHoc(user: CurrentUserContext, query: QueryDescription) {
+    return this.run(user, query, null);
   }
 
   async runDefinition(
-    orgId: string,
-    userId: string,
+    user: CurrentUserContext,
     reportDefinitionId: string,
     overrides: RunDefinitionInput,
   ) {
-    const definition = await this.getDefinition(orgId, reportDefinitionId);
+    const definition = await this.getDefinition(user.orgId, reportDefinitionId);
 
     /**
      * The overrides are merged into the stored description and the result goes
@@ -285,7 +284,7 @@ export class ReportingService {
       ...(overrides.offset === undefined ? {} : { offset: overrides.offset }),
     };
 
-    return this.run(orgId, userId, query, reportDefinitionId);
+    return this.run(user, query, reportDefinitionId);
   }
 
   async listRuns(orgId: string, query: ListQuery) {
@@ -322,13 +321,12 @@ export class ReportingService {
   // ── Internals ─────────────────────────────────────────────────────────────
 
   private async run(
-    orgId: string,
-    userId: string,
+    user: CurrentUserContext,
     query: QueryDescription,
     reportDefinitionId: string | null,
   ): Promise<ReportResult> {
-    await this.assertMayRunSource(orgId, userId, query.source);
-    const compiled = this.compileOrThrow(query, orgId, await this.requesterScope(orgId, userId));
+    await this.assertMayRunSource(user, query.source);
+    const compiled = this.compileOrThrow(query, user.orgId, await this.requesterScope(user));
 
     const startedAt = Date.now();
     const rows = await runInTenantTransaction(
@@ -337,11 +335,11 @@ export class ReportingService {
         const result = await tx.execute(toDrizzleSql(compiled));
         return [...(result as unknown as Record<string, unknown>[])];
       },
-      { orgId },
+      { orgId: user.orgId },
     );
     const durationMs = Date.now() - startedAt;
 
-    await this.recordRun(orgId, userId, compiled, reportDefinitionId, rows.length, durationMs);
+    await this.recordRun(user.orgId, user.userId, compiled, reportDefinitionId, rows.length, durationMs);
 
     return {
       columns: compiled.columns,
@@ -410,23 +408,49 @@ export class ReportingService {
     }
   }
 
+  /**
+   * May this caller run this source — checked the same way `PermissionGuard`
+   * and every CRM MCP tool check anything: through `authorize`, against the
+   * caller's own `CurrentUserContext`.
+   *
+   * This used to call `heldPermissions` — a bare `resolveUserPermissions(orgId,
+   * userId)` lookup with no principal, so no ceiling. For a `human-session`
+   * caller that is invisible: a JWT principal's ceiling is unbounded, so
+   * `authorize` resolves to exactly what `resolveUserPermissions` already
+   * returned and this is a no-op change for the HTTP controller. For an
+   * `agent-token` principal it is the whole bug: `context.userId` on an agent
+   * token is the *issuing human's* id, so the bare lookup returned that human's
+   * full permission set regardless of what the token itself was scoped to. An
+   * MCP token minted with only `crm:reports:view` could run `crm_run_report`
+   * against `parties`/`deals`/`activities` with its issuer's full
+   * `crm:reporting:run` authority, because nothing here ever asked what the
+   * token itself was allowed to do. `authorize` is where a ceiling is applied
+   * (`AccessService.scopeFor`'s `agent-token` branch), so routing both checks
+   * through it closes that gap without opening a new one for the human path.
+   *
+   * Two keys, checked in the same order `decideSourceAccess` checked them, so
+   * the exceptions this throws are unchanged: `REPORTING_RUN` first — a caller
+   * who may not run reports at all learns that before anything about the
+   * source — then the source's own governing key, once the source is known to
+   * exist. An unregistered source is still a 400: no permission would grant it,
+   * so calling it forbidden would send the caller to an administrator who
+   * cannot help.
+   */
   private async assertMayRunSource(
-    orgId: string,
-    userId: string,
+    user: CurrentUserContext,
     sourceKey: string,
   ): Promise<void> {
-    const held = await this.heldPermissions(orgId, userId);
-    const decision = decideSourceAccess(sourceKey, held);
-    if (decision.allowed) return;
+    const runDecision = await authorize(this.access, user, REPORTING_RUN);
+    if (!runDecision.allow)
+      throw new ForbiddenException(`this report requires ${REPORTING_RUN}`);
 
-    if (decision.missing)
-      throw new ForbiddenException(`this report requires ${decision.missing}`);
-    /**
-     * No missing key means the source is not in the registry. Answered as a 400
-     * rather than a 403: there is no permission that would grant it, so calling
-     * it forbidden would send the caller to an administrator who cannot help.
-     */
-    throw new BadRequestException(`no queryable source named ${JSON.stringify(sourceKey)}`);
+    const source = REPORTING_REGISTRY.get(sourceKey);
+    if (!source)
+      throw new BadRequestException(`no queryable source named ${JSON.stringify(sourceKey)}`);
+
+    const sourceDecision = await authorize(this.access, user, source.requiredPermission);
+    if (!sourceDecision.allow)
+      throw new ForbiddenException(`this report requires ${source.requiredPermission}`);
   }
 
   private async heldPermissions(orgId: string, userId: string): Promise<HeldPermissions> {
@@ -452,10 +476,13 @@ export class ReportingService {
    *
    * Absent means `none`, not `all`. A user whose grant has gone while their
    * session lives sees nothing rather than everything, which is the direction a
-   * scope resolution has to fail in.
+   * scope resolution has to fail in. Resolved through `authorize` for the same
+   * reason `assertMayRunSource` is: an agent token's ceiling must narrow this
+   * scope too, or a token scoped to `own` deals could still total the whole
+   * pipeline once the admission check above passed.
    */
-  private async requesterScope(orgId: string, userId: string): Promise<RequesterScope> {
-    const resolved = await this.access.resolveUserPermissions(orgId, userId);
-    return { userId, scope: resolved.get(REPORTING_RUN) ?? "none" };
+  private async requesterScope(user: CurrentUserContext): Promise<RequesterScope> {
+    const decision = await authorize(this.access, user, REPORTING_RUN);
+    return { userId: user.userId, scope: decision.allow ? decision.scope : "none" };
   }
 }

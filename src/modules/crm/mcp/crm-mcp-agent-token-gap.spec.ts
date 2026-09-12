@@ -55,6 +55,8 @@ import { CrmMcpSettingsService } from "./crm-mcp-settings.service";
 
 const DEAL_KEY = "crm:deals:read";
 const PARTY_KEY = "party:parties:view";
+const REPORTS_VIEW_KEY = "crm:reports:view";
+const REPORTING_RUN_KEY = "crm:reporting:run";
 
 const USER_ID = "user-mcp-1";
 const ORG_ID = "org-mcp-1";
@@ -114,17 +116,23 @@ class NotOptedInController {
 describe("CRM MCP agent token, issuer to guard", () => {
   let app: INestApplication;
   let issuedToken: string;
+  let issuer: AgentTokensService;
 
   /**
    * What the *person* behind the token holds, at the broadest scope.
    *
-   * Deliberately includes the party key. When the party tool is refused below,
-   * the reason cannot be "the user cannot read parties" — the user can. The
-   * only thing standing between the token and that tool is its own ceiling.
+   * Deliberately includes the party key, and the two reporting keys. When the
+   * party tool is refused below, the reason cannot be "the user cannot read
+   * parties" — the user can. Same argument for `crm_run_report` further down:
+   * the user holds both `crm:reports:view` and `crm:reporting:run` at `all`,
+   * so a token scoped to only the first must be refused the second by its own
+   * ceiling, not by the issuer lacking authority to delegate it.
    */
   const heldByUser = new Map<string, DataScope>([
     [DEAL_KEY, "all"],
     [PARTY_KEY, "all"],
+    [REPORTS_VIEW_KEY, "all"],
+    [REPORTING_RUN_KEY, "all"],
   ]);
 
   /** Populated by the real issuer, read by the real guard. Never hand-written. */
@@ -294,7 +302,21 @@ describe("CRM MCP agent token, issuer to guard", () => {
         { provide: PartyService, useValue: parties },
         { provide: DealsService, useValue: deals },
         { provide: ActivitiesService, useValue: { timeline: jest.fn() } },
-        { provide: ReportingService, useValue: { runAdHoc: jest.fn() } },
+        /**
+         * Real, not a double.
+         *
+         * This is the class under test for `crm_run_report`'s ceiling check: it
+         * calls `authorize` against the same real `access` above rather than
+         * `resolveUserPermissions(orgId, userId)` directly, so a token's
+         * ceiling reaches its `crm:reporting:run` gate too. A stub here — the
+         * shape this file used before — would hide exactly the bug this test
+         * exists to catch, the same way `crm-mcp.service.spec.ts`'s
+         * hand-rolled `runAdHoc: jest.fn()` did. It never touches `mockDb`
+         * before throwing: `assertMayRunSource` runs before any compile or
+         * query, so no further database wiring is needed for the denial path
+         * exercised below.
+         */
+        ReportingService,
         /**
          * Agent access is on unless a test says otherwise.
          *
@@ -307,7 +329,7 @@ describe("CRM MCP agent token, issuer to guard", () => {
     }).compile();
 
     // The credential under test, minted by the code the settings page calls.
-    const issuer = moduleRef.get(AgentTokensService);
+    issuer = moduleRef.get(AgentTokensService);
     const created = await issuer.create(USER_ID, ORG_ID, {
       name: "Sales desk agent",
       scopes: [DEAL_KEY],
@@ -398,5 +420,41 @@ describe("CRM MCP agent token, issuer to guard", () => {
       .get("/crm/mcp/tools")
       .set("Authorization", `Bearer slos_${"f".repeat(48)}`)
       .expect(401);
+  });
+
+  /**
+   * `crm_run_report`'s own sibling bug to the one this file's title names.
+   *
+   * `authorizeTool` — proven above for deals and parties — only ever checked
+   * the tool's own key, `crm:reports:view`. `crm_run_report` hands the call on
+   * to `ReportingService.runAdHoc`, which is a second, independent gate:
+   * `crm:reporting:run`, plus whichever key governs the chosen source. That
+   * gate used to resolve permissions with a bare `resolveUserPermissions(orgId,
+   * userId)` call — no principal, so no ceiling — which is invisible to every
+   * test that stubs `ReportingService` away, including the ones in
+   * `crm-mcp.service.spec.ts`. `ReportingService` is wired for real above
+   * precisely so this test cannot pass by accident.
+   *
+   * Minted last and used once: minting overwrites this file's single
+   * `storedRow` slot, so this credential must not be needed by any test after
+   * it. It is issued fresh here rather than in `beforeAll` for exactly that
+   * reason — every earlier test in this file depends on `storedRow` still
+   * describing `issuedToken`.
+   */
+  it("refuses crm_run_report for a token scoped only to crm:reports:view, though the user holds crm:reporting:run at all", async () => {
+    expect(heldByUser.get(REPORTS_VIEW_KEY)).toBe("all");
+    expect(heldByUser.get(REPORTING_RUN_KEY)).toBe("all");
+
+    const reportOnly = await issuer.create(USER_ID, ORG_ID, {
+      name: "Reports-view-only agent",
+      scopes: [REPORTS_VIEW_KEY],
+    });
+
+    const res = await request(app.getHttpServer())
+      .post("/crm/mcp/call")
+      .set("Authorization", `Bearer ${reportOnly.token}`)
+      .send({ name: "crm_run_report", arguments: { source: "deals" } });
+
+    expect(res.status).toBe(403);
   });
 });

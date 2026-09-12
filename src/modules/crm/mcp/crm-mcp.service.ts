@@ -430,8 +430,7 @@ export class CrmMcpService {
           limit: args.limit ?? 50,
         });
         result = await this.reportingService.runAdHoc(
-          context.orgId,
-          context.userId,
+          context,
           asQueryDescription(query),
         );
         break;
