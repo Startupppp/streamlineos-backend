@@ -140,24 +140,58 @@ export class DelhiveryHttpCarrierAdapter implements CarrierTransportAdapter {
       };
     }
 
+    const destinationPin =
+      request.destinationPin?.trim() ||
+      (request.destinationAddress ? request.destinationAddress.match(/\b([1-9][0-9]{5})\b/)?.[1] : null);
+
+    const destinationPhone =
+      request.destinationPhone?.trim() ||
+      (request.destinationAddress ? request.destinationAddress.match(/\b([6-9]\d{9})\b/)?.[1] : null);
+
+    if (!destinationPin) {
+      return {
+        outcome: "rejected",
+        errors: [
+          {
+            code: "MISSING_DESTINATION_PIN",
+            message: "Destination PIN code is required for Delhivery booking.",
+          },
+        ],
+      };
+    }
+
+    if (!destinationPhone) {
+      return {
+        outcome: "rejected",
+        errors: [
+          {
+            code: "MISSING_DESTINATION_PHONE",
+            message: "Destination phone number is required for Delhivery booking.",
+          },
+        ],
+      };
+    }
+
     const baseUrl = this.resolveBaseUrl(account);
     const parcel = request.parcels[0];
+    const pickupName = request.originName?.trim() || request.originAddress?.trim() || "Main Warehouse";
+
     const payload = {
       format: "json",
       data: {
         shipments: [
           {
-            name: request.destinationAddress || "Customer",
+            name: request.destinationName?.trim() || request.destinationAddress || "Customer",
             add: request.destinationAddress || "Destination Address",
-            pin: "110001",
-            phone: "9999999999",
+            pin: destinationPin,
+            phone: destinationPhone,
             order: request.shipmentNumber,
             payment_mode: "Prepaid",
             weight: parcel?.declaredWeight || "1.0",
           },
         ],
         pickup_location: {
-          name: "Warehouse",
+          name: pickupName,
         },
       },
     };

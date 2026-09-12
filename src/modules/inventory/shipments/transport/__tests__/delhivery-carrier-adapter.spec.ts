@@ -12,6 +12,9 @@ describe("DelhiveryHttpCarrierAdapter (INV-26)", () => {
   const bookingRequest: CarrierBookingRequest = {
     shipmentNumber: "SHP-10001",
     destinationAddress: "123 MG Road, Bengaluru, KA 560001",
+    destinationPin: "560001",
+    destinationPhone: "9876543210",
+    originName: "Bengaluru Hub",
     parcels: [
       {
         reference: "PKG-1",
@@ -36,7 +39,22 @@ describe("DelhiveryHttpCarrierAdapter (INV-26)", () => {
     }
   });
 
-  it("books a shipment successfully against mocked HTTP transport", async () => {
+  it("refuses booking with MISSING_DESTINATION_PIN when pin is missing", async () => {
+    const adapter = new DelhiveryHttpCarrierAdapter();
+    const invalidRequest: CarrierBookingRequest = {
+      shipmentNumber: "SHP-10002",
+      destinationAddress: "No Pin Address",
+      parcels: [],
+    };
+    const result = await adapter.book(dummyAccount, invalidRequest);
+
+    expect(result.outcome).toBe("rejected");
+    if (result.outcome === "rejected") {
+      expect(result.errors[0]?.code).toBe("MISSING_DESTINATION_PIN");
+    }
+  });
+
+  it("books a shipment successfully with real PIN, phone, and pickup location", async () => {
     const mockHttp: CarrierHttp = {
       request: jest.fn().mockResolvedValue({
         ok: true,
@@ -57,6 +75,23 @@ describe("DelhiveryHttpCarrierAdapter (INV-26)", () => {
       expect(result.value.label?.url).toContain("123456789012");
       expect(result.value.label?.format).toBe("PDF");
     }
+
+    expect(mockHttp.request).toHaveBeenCalledWith(
+      expect.objectContaining({
+        body: expect.objectContaining({
+          data: expect.objectContaining({
+            shipments: [
+              expect.objectContaining({
+                pin: "560001",
+                phone: "9876543210",
+                order: "SHP-10001",
+              }),
+            ],
+            pickup_location: { name: "Bengaluru Hub" },
+          }),
+        }),
+      }),
+    );
   });
 
   it("returns rejected when Delhivery returns a 4xx error", async () => {
