@@ -465,6 +465,19 @@ describe("the signer token is bound to one envelope, one recipient, and an expir
     pageCount: 1,
   };
 
+  it("a recipient who has not proved their identity cannot decline on the link alone", async () => {
+    /*
+     * An access-code recipient who never entered the code: the link was
+     * forwarded, or guessed at from a mailbox. The decline ends the envelope
+     * for every signer, so it needs the same proof signing does.
+     */
+    const unproven = { ...activeRecipient, status: "invited", authMethod: "access_code", authenticatedAt: null };
+    const h = makePublic(unproven, [myDocument], []);
+
+    await expect(h.service.decline(TOKEN, { reason: "no" }, {})).rejects.toThrow("Please complete authentication first");
+    expect(h.fieldUpdateWheres).toHaveLength(0);
+  });
+
   it("an unknown token is a 404, so a signing link cannot be enumerated into a session", async () => {
     const h = makePublic(undefined, [], []);
     await expect(h.service.getSession(TOKEN, {})).rejects.toThrow(NotFoundException);

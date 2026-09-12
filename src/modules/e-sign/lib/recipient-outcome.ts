@@ -115,6 +115,14 @@ export async function decline(
   return withRecipientSession(deps.db, deps.tokens, deps.logger, token, async ({ recipient, envelope }) => {
     deps.assertActive(recipient, envelope);
     if (!envelope.allowDecline) throw new ForbiddenException("Declining is not permitted for this envelope");
+    /*
+     * The same proof of identity signing needs. A decline is the recipient's
+     * final word on the envelope and ends it for every other signer; holding
+     * the link alone — a forwarded email — was enough to give it for a
+     * recipient whose access code or one-time code had never been entered.
+     * An email-link recipient is authenticated by opening the session.
+     */
+    if (!recipient.authenticatedAt) throw new ForbiddenException("Please complete authentication first");
 
     const claimed = await deps.db
       .update(signRecipients)
