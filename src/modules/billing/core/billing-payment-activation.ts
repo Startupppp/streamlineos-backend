@@ -272,19 +272,16 @@ export class BillingPaymentActivation {
 
     const finalAmountMinor = capturedAmountMinor ?? purchase.amountMinor;
     const finalCurrency = capturedCurrency ?? purchase.currency;
-    const plan = purchase.plan as Plan;
+    const plan = purchase.plan;
 
     let activatedPurchase: SubscriptionPurchase | null = null;
 
     try {
-      await this.deps.db.transaction(async (tx) => {
+      activatedPurchase = await this.deps.db.transaction(async (tx): Promise<SubscriptionPurchase | null> => {
         const locked = await this.purchaseService.lockForActivation(tx, purchase.id, orgId);
-        if (!locked) return;
+        if (!locked) return null;
 
-        if (locked.status === "ACTIVATED") {
-          activatedPurchase = locked;
-          return;
-        }
+        if (locked.status === "ACTIVATED") return locked;
 
         const existing = await tx.query.subscriptions.findFirst({
           where: eq(subscriptions.orgId, orgId),
@@ -358,7 +355,7 @@ export class BillingPaymentActivation {
           throw new ConcurrentActivationError();
         }
 
-        activatedPurchase = activated;
+        return activated;
       });
     } catch (err: unknown) {
       if (err instanceof ConflictException) throw err;
@@ -419,7 +416,7 @@ export class BillingPaymentActivation {
 
     return {
       success: true as const,
-      plan: purchase.plan as Plan,
+      plan: purchase.plan,
       billingCycle: purchase.billingCycle,
       status: "ACTIVE",
       currentPeriodEnd: periodEnd.toISOString(),

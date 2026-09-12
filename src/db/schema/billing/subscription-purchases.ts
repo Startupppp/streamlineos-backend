@@ -44,7 +44,10 @@ export const subscriptionPurchases = pgTable(
     amountMinor: integer("amount_minor").notNull(),
     currency: varchar("currency", { length: 3 }).notNull(),
     couponId: integer("coupon_id"),
-    status: varchar("status", { length: 20 }).notNull().default("PENDING"),
+    status: varchar("status", { length: 20 })
+      .$type<SubscriptionPurchaseStatus>()
+      .notNull()
+      .default("PENDING"),
     providerPaymentId: text("provider_payment_id"),
     capturedAmountMinor: integer("captured_amount_minor"),
     capturedCurrency: varchar("captured_currency", { length: 3 }),
