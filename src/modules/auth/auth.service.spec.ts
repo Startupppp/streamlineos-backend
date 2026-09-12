@@ -69,4 +69,48 @@ describe("AuthService organization access session state", () => {
       { honorSuspendedPreference: true },
     );
   });
+
+  describe("platform operator standing reaches the session payload", () => {
+    const previous = process.env.PLATFORM_ADMIN_USER_IDS;
+
+    afterEach(() => {
+      if (previous === undefined) delete process.env.PLATFORM_ADMIN_USER_IDS;
+      else process.env.PLATFORM_ADMIN_USER_IDS = previous;
+    });
+
+    it("is false for an account outside the deployment allowlist", async () => {
+      process.env.PLATFORM_ADMIN_USER_IDS = "someone-else";
+      const { service } = buildService();
+      await expect(service.getSessionData("user-1")).resolves.toMatchObject({
+        isPlatformAdmin: false,
+      });
+    });
+
+    it("is false when the allowlist is unset, which is the correct default", async () => {
+      delete process.env.PLATFORM_ADMIN_USER_IDS;
+      const { service } = buildService();
+      await expect(service.getSessionData("user-1")).resolves.toMatchObject({
+        isPlatformAdmin: false,
+      });
+    });
+
+    it("is true for an allowlisted account, so the gate can route it to /owner", async () => {
+      process.env.PLATFORM_ADMIN_USER_IDS = "other-operator, user-1";
+      const { service } = buildService();
+      await expect(service.getSessionData("user-1")).resolves.toMatchObject({
+        isPlatformAdmin: true,
+      });
+    });
+
+    it("does not confer organization access — standing and membership stay separate", async () => {
+      process.env.PLATFORM_ADMIN_USER_IDS = "user-1";
+      const { service } = buildService();
+      await expect(service.getSessionData("user-1")).resolves.toMatchObject({
+        isPlatformAdmin: true,
+        orgId: null,
+        isOrgOwner: false,
+        organizationAccess: "none",
+      });
+    });
+  });
 });

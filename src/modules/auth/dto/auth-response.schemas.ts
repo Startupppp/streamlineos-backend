@@ -54,6 +54,7 @@ export const authSessionDataResponseSchema = z.object({
   plan: z.enum(EFFECTIVE_PLANS).nullable(),
   organizationAccess: z.enum(["active", "suspended", "none"]),
   suspendedOrganizationName: z.string().nullable(),
+  isPlatformAdmin: z.boolean(),
 });
 
 export type AuthSessionData = z.infer<typeof authSessionDataResponseSchema>;

@@ -30,6 +30,7 @@ import { AuthAnalyticsService } from "./auth-analytics.service";
 import type { GoogleOAuthInput } from "./dto/auth.schemas";
 import type { AuthSessionData } from "./dto/auth-response.schemas";
 import { type EffectivePlan } from "../billing/core/plan-entitlements.constants";
+import { isPlatformAdmin } from "../../common/rbac/platform-operators";
 
 @Injectable()
 export class AuthService {
@@ -355,6 +356,7 @@ export class AuthService {
               ? "suspended"
               : "none",
           suspendedOrganizationName: suspendedMembership?.orgName ?? null,
+          isPlatformAdmin: isPlatformAdmin(userId),
         };
       },
       60,
