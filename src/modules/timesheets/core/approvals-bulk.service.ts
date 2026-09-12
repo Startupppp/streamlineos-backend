@@ -180,7 +180,19 @@ export class ApprovalsBulkService {
     }
 
     const skipped = requestedIds.length - approvable.length;
-    if (approvable.length === 0) return { approved: 0, skipped };
+    /**
+     * TS-15. A caller who may approve none of a SUBMITTED batch used to get
+     * 200 `{ approved: 0, skipped: N }`, indistinguishable from "already
+     * approved". The single-period route answers 403 for the same standing;
+     * bulk must not launder that into success. Periods that are simply not
+     * SUBMITTED stay a skip — those are not an authority miss.
+     */
+    if (approvable.length === 0) {
+      if (candidates.length > 0) {
+        throw new ForbiddenException("You are not allowed to approve any of the selected periods");
+      }
+      return { approved: 0, skipped };
+    }
 
     const ids = approvable.map((p) => p.id);
 
