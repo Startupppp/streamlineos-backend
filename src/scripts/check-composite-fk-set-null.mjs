@@ -44,13 +44,24 @@ dotenv.config({ path: resolve(BACKEND_ROOT, ".env") });
  * the map silently re-authorises the next occurrence on that name.
  */
 export const KNOWN_UNFIXED = new Map([
-  // build module — reported to its owner; src/modules/build/** is out of scope here.
-  ["fk_tickets_customer_party_id", "build.tickets → business_parties; owner: build"],
-  ["fk_tickets_customer_org_party_id", "build.tickets → business_parties; owner: build"],
-  ["fk_feedback_posts_crm_contact_party_id", "build.feedback_posts → business_parties; owner: build"],
-  ["fk_feedback_posts_crm_organization_party_id", "build.feedback_posts → business_parties; owner: build"],
-  ["fk_feedbucket_submissions_crm_contact_party_id", "build.feedbucket_submissions → business_parties; owner: build"],
-  ["fk_feedbucket_submissions_crm_organization_party_id", "build.feedbucket_submissions → business_parties; owner: build"],
+  // The six build-module keys that used to sit here — two on `build.tickets`, two on
+  // `build.feedback_posts`, two on `build.feedbucket_submissions`, all composite
+  // (org_id, <party column>) into `business_parties` — are GONE as of 2026-09-12, and
+  // verified against pg_constraint rather than taken from the migration's word. All six
+  // still exist and are still `confdeltype = 'n'`; what changed is that each now carries
+  // an explicit `confdelsetcols` naming ONLY its nullable party column, e.g.
+  //
+  //   FOREIGN KEY (org_id, customer_party_id) REFERENCES business_parties(organization_id,
+  //     party_id) ON DELETE SET NULL (customer_party_id)
+  //
+  // so deleting a party nulls the party column and leaves the NOT NULL tenant column
+  // alone, instead of aborting the delete with 23502. Migration 1097 installed it while
+  // re-pointing Build's CRM keys at the party maps; `src/db/schema/build/` was not
+  // touched, which is why the repair is SQL-only.
+  //
+  // Removed rather than left, because the docblock above means it: a stale entry is a
+  // FAILURE, and it re-authorises the next occurrence on that name.
+  //
   // The seven arity-1 keys to global `users` that used to sit here — five hr_*,
   // two sign_* — are GONE as of 2026-09-10, verified against pg_catalog rather
   // than taken from this gate's own word: six of the constraints no longer

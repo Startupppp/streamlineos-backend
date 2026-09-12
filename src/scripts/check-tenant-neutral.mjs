@@ -85,6 +85,21 @@ const ALLOWED = [
     file: "src/scripts/check-tenant-neutral.mjs",
     why: "this gate; the banned list is the list",
   },
+  {
+    file: "test/payroll/payroll-run-authorization.seeded-e2e-spec.ts",
+    why:
+      "a camelCase collision, not a name. `homeRun` / `homeRunId` / `homeApprovalId` is " +
+      "`home` + `Run`: the HOME organisation's payroll run, paired throughout with " +
+      "`neighbourRun` / `neighbourRunId`, which is how every cross-tenant spec in this " +
+      "repository names its two fixtures. The banned token only exists here because it " +
+      "STRADDLES the case boundary, and the matcher is deliberately boundary-blind so it " +
+      "can still see `packBuildmart` and `buildmart_dev`. Allowlisted rather than renamed " +
+      "because test/payroll/ is owned elsewhere and the variable is already correct; " +
+      "allowlisted rather than made boundary-aware because `HomeRun` written as the " +
+      "product would be indistinguishable from `homeRun` written as this, and losing the " +
+      "real one to spare a false one is the worse trade. If the spec is ever renamed, this " +
+      "entry goes stale and the gate says so.",
+  },
 ];
 
 /** A banned token in one line of source. */

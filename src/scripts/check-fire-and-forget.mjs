@@ -30,6 +30,12 @@
  * names it one of the three sanctioned mechanisms for a side effect, so its call count is a
  * measure of adoption, not of debt.
  *
+ * TIER 1 SCANS CODE ONLY — comments and string bodies are blanked first (see
+ * `blankCommentsAndStrings`), because a ban whose only finding is prose cannot be cleared by
+ * writing correct code. TIER 2 still counts the raw source: it is a ratchet, and its constant was
+ * measured on that basis against `git archive HEAD`, so re-basing the measurement is a separate
+ * change that has to re-measure the pin rather than inherit it.
+ *
  * Usage:
  *   node src/scripts/check-fire-and-forget.mjs
  *   node src/scripts/check-fire-and-forget.mjs --self-test
@@ -106,23 +112,106 @@ export function afterCommitCalls(source) {
   return [...source.matchAll(AFTER_COMMIT_RE)].length;
 }
 
+/**
+ * Blanks comment bodies, keeping every newline so line numbers still line up with the file.
+ *
+ * Tier 1 is a BAN, so a false positive there is not a nuisance, it is a gate that cannot be made
+ * green by writing correct code. `crm/automation-studio/crm-automation-bus.service.ts:37` is the
+ * worked example: the doc comment on `emit` explains the outage it was written to fix and QUOTES
+ * the shape — "Callers fire this detached — `void this.bus.emit(...)`" — which the line scanner
+ * then read as a call, with `eventKey` appearing 20 lines below in a real `where` clause to
+ * satisfy the dispatch-signal window. The prose describing the fix was the only violation.
+ *
+ * String bodies are blanked with it: a quote is what makes `//` inside `"http://x"` not a comment,
+ * so the two cannot be separated, and tier 1 looks for a call expression which never lives inside
+ * a string literal anyway.
+ */
+export function blankCommentsAndStrings(src) {
+  const out = [];
+  let i = 0;
+  let inBlock = false;
+  let inString = null;
+
+  while (i < src.length) {
+    const ch = src[i];
+
+    if (inBlock) {
+      if (ch === "*" && src[i + 1] === "/") {
+        out.push("  ");
+        i += 2;
+        inBlock = false;
+      } else {
+        out.push(ch === "\n" ? "\n" : " ");
+        i++;
+      }
+      continue;
+    }
+
+    if (inString !== null) {
+      if (ch === "\\") {
+        out.push("  ");
+        i += 2;
+        continue;
+      }
+      if (ch === inString) {
+        out.push(" ");
+        inString = null;
+        i++;
+        continue;
+      }
+      out.push(ch === "\n" ? "\n" : " ");
+      i++;
+      continue;
+    }
+
+    if (ch === "/" && src[i + 1] === "*") {
+      out.push("  ");
+      i += 2;
+      inBlock = true;
+      continue;
+    }
+    if (ch === "/" && src[i + 1] === "/") {
+      while (i < src.length && src[i] !== "\n") {
+        out.push(" ");
+        i++;
+      }
+      continue;
+    }
+    if (ch === '"' || ch === "'" || ch === "`") {
+      inString = ch;
+      out.push(" ");
+      i++;
+      continue;
+    }
+
+    out.push(ch);
+    i++;
+  }
+
+  return out.join("");
+}
+
 /** Tier 1 only: the shapes that are banned outright. */
 export function scanFile(filePath) {
-  let src;
+  let raw;
   try {
-    src = readFileSync(filePath, "utf8");
+    raw = readFileSync(filePath, "utf8");
   } catch {
     return [];
   }
+  const src = blankCommentsAndStrings(raw);
   const lines = src.split("\n");
+  const rawLines = raw.split("\n");
   const violations = [];
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i] ?? "";
     if (VOID_EMIT_RE.test(line)) {
       const window = lines.slice(i, Math.min(i + 20, lines.length)).join("\n");
-      if (DISPATCH_SIGNAL_RE.test(window)) violations.push({ line: i + 1, text: line.trim() });
+      if (DISPATCH_SIGNAL_RE.test(window))
+        violations.push({ line: i + 1, text: (rawLines[i] ?? "").trim() });
     }
-    if (VOID_SAVE_POSITION_RE.test(line)) violations.push({ line: i + 1, text: line.trim() });
+    if (VOID_SAVE_POSITION_RE.test(line))
+      violations.push({ line: i + 1, text: (rawLines[i] ?? "").trim() });
   }
   return violations;
 }
@@ -226,10 +315,36 @@ function runSelfTest() {
     "}",
   ]);
 
+  // The shape of the false positive this gate carried: a doc comment that quotes the banned call
+  // while explaining the outage it caused, with a real `eventKey` reference inside the window.
+  const documentedFile = write("documented.service.ts", [
+    "export class DocumentedService {",
+    "  /**",
+    "   * Callers fire this detached — `void this.bus.emit(...)` in deals.service — so it opens",
+    "   * a transaction of its own rather than inheriting the request's committed one.",
+    "   */",
+    "  async emit(orgId: string, eventKey: string) {",
+    "    await this.tx.run(orgId, eventKey);",
+    "    // void this.checkpoints.savePosition(orgId, 1, 'INBOX', null);  <- what we replaced",
+    "  }",
+    "}",
+  ]);
+  const stringFile = write("string.service.ts", [
+    "export class StringService {",
+    "  readonly hint = 'void this.dispatch.emit({ eventKey: 1 })';",
+    "}",
+  ]);
+
   assert("tier 1 detects a fire-and-forget notification dispatch", scanFile(badFile).length > 0);
   assert("tier 1 passes an awaited notification dispatch", scanFile(goodFile).length === 0);
   assert("tier 1 detects a fire-and-forget savePosition", scanFile(badCheckpointFile).length > 0);
   assert("tier 1 passes an awaited savePosition", scanFile(goodCheckpointFile).length === 0);
+  assert("tier 1 ignores the banned shape quoted in a comment", scanFile(documentedFile).length === 0);
+  assert("tier 1 ignores the banned shape inside a string literal", scanFile(stringFile).length === 0);
+  assert(
+    "blanking comments preserves line numbering",
+    blankCommentsAndStrings("a\n/* x\n y */\nb").split("\n").length === 4,
+  );
 
   // --- Tier 2: the shapes the old gate printed and ignored ---
   const floating = floatingPromises(

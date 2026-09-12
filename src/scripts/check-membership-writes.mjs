@@ -57,6 +57,10 @@ export const WRITE_EXEMPT = new Map([
     "src/scripts/verify-membership-revocation.ts",
     "the live-database probe for revocation; it must write the row the app would write and then observe the cache itself",
   ],
+  [
+    "src/test/db-spec-fixture.ts",
+    "the .db.spec tier's own floor: two fixed organisations planted idempotently in a scratch database before any suite runs. There is no cache to invalidate and no request to serve, and the file deliberately holds no Drizzle schema import — pulling the barrel in would drag the Nest module graph into a fixture whose whole job is to be cheap to load, which is the reason it is raw SQL and the reason the owner is unreachable from it",
+  ],
 ]);
 
 /** file -> why it may import an invalidation primitive. */

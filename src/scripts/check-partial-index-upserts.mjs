@@ -151,20 +151,24 @@ export function upsertTargets(source) {
  * leaving a stale note behind.
  */
 const ACKNOWLEDGED = [
-  {
-    file: "src/modules/payroll/payout/locking.service.ts",
-    index: "uniq_payroll_tds_ytd_user_period",
-    reason:
-      "payroll is owned by another developer and is on this effort's denylist. " +
-      "Needs more than the predicate: the live index is on five columns " +
-      "(org_id, user_id, fiscal_year, period_key, run_id) while the schema and " +
-      "the target name four, so per-run versus per-period YTD is a product call.",
-  },
-  {
-    file: "src/modules/payroll/payout/locking.service.ts",
-    index: "uniq_payroll_tds_ytd_worker_period",
-    reason: "same statement, worker branch; same owner and same open question.",
-  },
+  // The two `payroll/payout/locking.service.ts` entries that used to sit here — the
+  // user and worker branches of the TDS YTD upsert — were RETIRED on 2026-09-12
+  // because the payroll owner answered the open question they recorded. The list is
+  // empty on purpose; an empty list is a state this gate reports, not a state that
+  // needs a placeholder.
+  //
+  // What they said was open: the live index was five columns
+  // (org_id, <subject>, fiscal_year, period_key, run_id) while the schema and the
+  // upsert target named four, so per-run versus per-period YTD was a product call
+  // nobody outside payroll could make. All three now agree on five — verified in
+  // src/db/schema/payroll/entities-periods.ts:253-258, in the two `target:` arrays at
+  // locking.service.ts:292 and :312, and against pg_indexes on a database built from
+  // this branch — and each upsert now repeats the index predicate as
+  // `targetWhere: sql\`…userId/workerId is not null\``, which is what makes Postgres
+  // pick the partial index instead of raising 42P10.
+  //
+  // Deleted rather than left: the docblock above means it, and an acknowledgement that
+  // has stopped being true is how a list like this turns into a rubber stamp.
 ];
 
 function main() {

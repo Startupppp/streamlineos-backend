@@ -125,6 +125,10 @@ export const NO_TENANT_TRANSACTION_ALLOWLIST = new Map([
     "SSE notification stream that consumes a short-lived token and never touches the database; no tenant context is needed",
   ],
   [
+    "src/modules/inventory/channels/channel-webhook.controller.ts",
+    "FILE-SCOPED because the decorator is: `@NoTenantTransaction()` sits on the CLASS, above `@Controller(\"inventory/channels\")`, so the finding carries no handler name and a `#inbound` pattern cannot match it. The class has exactly one route. Audited 2026-09-12 by reading the path rather than the docblock. The route is @Public(), so there IS no session to derive a tenant from, and `inv_channels` is behind RLS — the handler cannot read the row that would tell it which tenant to open a transaction for. `receiveDelivery` (channels/lib/channel-snapshot-delivery.ts) resolves it with one `SELECT app.resolve_inv_channel_org_id($1)`, a SECURITY DEFINER function that returns an org id and nothing else, then opens its own `runInTenantTransaction` for the channel read, the signature verification and the delivery insert — so no database access on this path reaches the pool without a tenant GUC, and the decorator is what makes the interceptor stop trying to open a transaction it has no tenant for. The handler does no work beyond that: the durable PENDING row IS the queue and `ChannelSnapshotWorker` drains it, because a marketplace bounds how long it waits (Shopify: five seconds) and an inline refetch would both miss that deadline and hold a pooled connection for the length of somebody else's outage",
+  ],
+  [
     "src/modules/organization/core/organization.controller.ts#listOrganizations,listArchivedOrganizations,switchOrg,restoreOrg",
     "identity-scoped organization discovery and switching; each handler opens its own withIdentity or runInTenantTransaction before touching the database",
   ],

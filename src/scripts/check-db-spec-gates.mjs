@@ -16,16 +16,43 @@
  * found four defects, one of which — a projection rebuild that could not parse —
  * threw on every call for every organisation.
  *
- * So this asserts three things:
+ * So this asserts four things:
  *
- *   1. Every `src/**\/*.db.spec.ts` takes its suite from `src/test/db-spec-gate`
- *      (`dbSpecSuite`), which runs on the presence of a connection string and
- *      skips loudly by name when it is absent — or is a NAMED exemption with a
- *      reason, which this prints on every run rather than hiding in source.
+ *   1. Every `src/**\/*.db.spec.ts` takes its enablement from ONE OF THE TIER'S
+ *      SHARED MECHANISMS, all of which are loud when the database is absent —
+ *      or is a NAMED exemption with a reason, which this prints on every run
+ *      rather than hiding in source.
  *   2. No spec is gated on an environment variable that nothing in the
  *      repository sets. That is the original defect, stated directly.
  *   3. `pnpm test:db` exists and at least one workflow runs it, so the tier has
  *      somewhere to run that is not a developer's laptop.
+ *   4. The tier is selected by SUITE: `jest-db.json` matches `.db.spec.ts` and
+ *      the default `jest` run excludes it. This is what makes an unconditional
+ *      throwing suite correct rather than a broken default test run, and it is
+ *      the property assertion 1 used to stand in for.
+ *
+ * ## CORRECTED 2026-09-12 — assertion 1 named one mechanism and there are three
+ *
+ * It used to require `src/test/db-spec-gate` (`dbSpecSuite`) by import, and
+ * reported 45 of 65 specs as violations on the merged tree. Every one of those
+ * 45 came from `origin/main`, which converged on a DIFFERENT and STRICTER
+ * mechanism, deliberately and in writing: `.github/workflows/db-gates.yml` says
+ * "Each one now runs UNCONDITIONALLY here and THROWS, naming the environment
+ * variable it needs, when its database is absent. A missing prerequisite is a
+ * red step, never a silent skip." Seventeen of them reach that through
+ * `src/test/db-spec-guard`'s `requireApprovedDatabaseUrl`, which also refuses a
+ * target that is not an approved disposable database, and whose
+ * `assertDbSpecEnvironmentApproved` is a `setupFiles` entry that refuses the
+ * whole run when no `*DATABASE_URL` is set at all.
+ *
+ * Converting them to `dbSpecSuite` would have turned 45 red-when-unconfigured
+ * suites into skipped ones — a regression against the change that took
+ * `check:test-suppressions` from 76 to 20, and against the one property this
+ * file exists to defend. So the rule now checks the PROPERTY (loud when the
+ * database is absent, through a shared mechanism) rather than one spelling of
+ * it. `dbSpecSuite` stays the preferred form for a NEW spec: it is the only one
+ * that leaves the rest of the tier runnable when one suite's database is
+ * missing.
  *
  * Usage:
  *   node src/scripts/check-db-spec-gates.mjs [--self-test]
@@ -54,6 +81,34 @@ const MIN_DB_SPECS = 12;
 
 const GATE_MODULE = "db-spec-gate";
 const GATE_CALL = "dbSpecSuite";
+
+/**
+ * The tier's enablement mechanisms, all three of which are loud when the
+ * database is absent. A spec must use one; which one is a matter of when it was
+ * written, not of how strong it is.
+ */
+const ENABLEMENT = [
+  {
+    name: "dbSpecSuite",
+    re: /db-spec-gate/,
+    how: "src/test/db-spec-gate — describe when the connection string is present, a describe.skip naming the missing variable when it is not",
+  },
+  {
+    name: "requireApprovedDatabaseUrl",
+    re: /db-spec-guard|requireApprovedDatabaseUrl|loadTenantFkProbeConfig/,
+    how: "src/test/db-spec-guard — throws, naming every variable it would accept, and refuses a target that is not an approved disposable database",
+  },
+  {
+    name: "throws by name",
+    re: /throw\s+new\s+Error\([\s\S]{0,500}?DATABASE_URL/,
+    how: "throws by hand, naming the *DATABASE_URL it needs",
+  },
+];
+
+/** Which mechanism a spec uses, or null. */
+export function enablementOf(source) {
+  return ENABLEMENT.find((m) => m.re.test(source)) ?? null;
+}
 
 /**
  * Specs that still gate on their own variable, why, and what it would take.
@@ -159,17 +214,42 @@ function runChecks(root, { skipVacuity = false } = {}) {
       });
     }
 
-    if (gatedOn.length === 0 && !source.includes(GATE_MODULE))
+    if (gatedOn.length === 0 && enablementOf(source) === null)
       violations.push({
         file: rel,
         msg:
-          `does not take its suite from src/test/${GATE_MODULE} (${GATE_CALL}) — a real-database ` +
-          `spec must run on the presence of a connection string and skip loudly by name without one`,
+          `takes its enablement from none of the tier's shared mechanisms — a real-database spec ` +
+          `must be LOUD when its database is absent, either by taking its suite from ` +
+          `src/test/${GATE_MODULE} (${GATE_CALL}), or by throwing and naming the *DATABASE_URL ` +
+          `it needs (src/test/db-spec-guard's requireApprovedDatabaseUrl does both). ` +
+          `${GATE_CALL} is preferred for a new spec: it is the only one that leaves the rest of ` +
+          `the tier runnable when one suite's database is missing`,
       });
   }
 
   const pkgPath = join(root, "package.json");
   const pkg = existsSync(pkgPath) ? JSON.parse(readFileSync(pkgPath, "utf8")) : { scripts: {} };
+
+  // Assertion 4. An unconditional throwing suite is only correct because the tier is
+  // selected by SUITE: `jest-db.json` matches these files and the default `jest` run
+  // excludes them. Lose either half and every throwing spec reds the ordinary test run,
+  // which is how the convention would get reverted to silent skips.
+  const dbConfigPath = join(root, "jest-db.json");
+  const dbConfig = existsSync(dbConfigPath) ? JSON.parse(readFileSync(dbConfigPath, "utf8")) : null;
+  if (!dbConfig || !String(dbConfig.testRegex ?? "").includes("db"))
+    violations.push({
+      file: "jest-db.json",
+      msg: "does not select *.db.spec.ts by testRegex — the tier has no suite of its own",
+    });
+  const ignore = pkg.jest?.testPathIgnorePatterns ?? [];
+  if (!ignore.some((p) => String(p).includes("db") && String(p).includes("spec")))
+    violations.push({
+      file: "package.json",
+      msg:
+        "the default jest run does not exclude *.db.spec.ts (testPathIgnorePatterns) — a spec that " +
+        "throws when its database is absent would red every ordinary test run",
+    });
+
   if (!pkg.scripts?.["test:db"])
     violations.push({
       file: "package.json",
