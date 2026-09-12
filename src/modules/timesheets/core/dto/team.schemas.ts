@@ -6,7 +6,8 @@ export const teamWeekSummaryQuerySchema = z.object({
   userIds: z
     .string()
     .transform((s) => s.split(",").map((x) => x.trim()).filter(Boolean))
-    .pipe(z.array(z.string().min(1)).min(1).max(100)),
+    .pipe(z.array(z.string().min(1)).max(100))
+    .optional(),
   startDate: dateString,
   endDate: dateString,
 }).strict();

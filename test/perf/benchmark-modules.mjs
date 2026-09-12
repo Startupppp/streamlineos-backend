@@ -289,7 +289,9 @@ export const MODULES = [
   {
     id: "inventory",
     title: "Inventory",
-    surface: "product, stock-level, stock-transaction, PO and vendor reads",
+    surface:
+      "product, stock-level, stock-transaction, PO and vendor reads, the two keyset" +
+      " cursors and the two genealogy hops",
     tables: [
       "inv_products",
       "inv_product_variants",
@@ -297,11 +299,31 @@ export const MODULES = [
       "inv_stock_transactions",
       "inv_purchase_orders",
       "inv_vendors",
+      "inv_audit_events",
     ],
+    /*
+      The four below were added to `read-cost-budgets.mjs` by the genealogy and
+      cursor-pagination work and claimed by nothing, which is the exact hole the
+      header's five unified-inbox budgets fell through: measured by the read-cost
+      instrument, absent from the manifest, carrying no class and no ceiling.
+      `validateModules` refuses an unclaimed budget, but it only runs at capture
+      time, so nothing said so until the next capture was attempted.
+
+      All four are ORDINARY. Neither cursor aggregates, searches or leaves its one
+      table. Both genealogy hops read `inv_stock_transactions` and nothing else —
+      the LATERAL walk and its correction-EXISTS are the same base table again, not
+      a third one — and each hop is capped at 26 rows anchored on fixed ids. They
+      are the slowest of the four and stay ordinary anyway, per the rule above that
+      a slow statement is not reclassified to make it pass.
+    */
     readCostBudgets: {
       "inv-products-list": O,
       "inv-stock-levels": O,
       "inv-stock-transactions": O,
+      "inv-stock-transactions-cursor": O,
+      "inv-audit-events-cursor": O,
+      "inv-genealogy-item-hop": O,
+      "inv-genealogy-document-hop": O,
       "inv-purchase-orders": O,
       "inv-vendors-list": O,
     },

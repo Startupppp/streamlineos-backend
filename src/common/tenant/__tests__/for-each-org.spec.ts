@@ -1,6 +1,7 @@
 import type { SQL } from "drizzle-orm";
 import { forEachOrg } from "../for-each-org";
-import { getTenantContext } from "../tenant-context";
+import { getTenantContext, registerAfterCommit } from "../tenant-context";
+import { observeAfterCommitWork } from "../../observability/after-commit-work";
 import {
   getObservabilityContext,
   runWithObservabilityContext,
@@ -65,7 +66,7 @@ function makeMockDb(orgIds: string[]): { db: Db; capture: ChainCapture; execute:
 }
 
 describe("forEachOrg", () => {
-  it("only enumerates organizations that are ACTIVE and not soft-deleted", async () => {
+  it("only enumerates organizations that are ACTIVE, placed, and not soft-deleted", async () => {
     const { db, capture } = makeMockDb([]);
 
     await forEachOrg(db, "test-sweep", jest.fn());
@@ -74,6 +75,7 @@ describe("forEachOrg", () => {
     collectColumnNames(capture.where, columns);
     expect(columns).toContain("status");
     expect(columns).toContain("deleted_at");
+    expect(columns).toContain("region");
   });
 
   it("runs the callback once per organization with that organization's id", async () => {
@@ -116,6 +118,35 @@ describe("forEachOrg", () => {
     });
 
     expect(observed).toBe("org-a");
+  });
+
+  it("carries an after-commit queue, so deferred work runs after the organisation's transaction and not inside it", async () => {
+    /*
+     * Without the queue `registerAfterCommit` answers false inside a sweep and
+     * a service falls back to running the work inline — an email sent before
+     * the token it links to is durable. With it, the hook is accepted and
+     * drained once the organisation's transaction has returned.
+     */
+    const { db } = makeMockDb(["org-a"]);
+    const completions: Promise<unknown>[] = [];
+    const stop = observeAfterCommitWork((completion) => completions.push(completion));
+    const order: string[] = [];
+    let accepted: boolean | undefined;
+
+    try {
+      await forEachOrg(db, "test-sweep", async () => {
+        accepted = registerAfterCommit(async () => {
+          order.push("hook");
+        });
+        order.push("body");
+      });
+      await Promise.all(completions);
+    } finally {
+      stop();
+    }
+
+    expect(accepted).toBe(true);
+    expect(order).toEqual(["body", "hook"]);
   });
 
   it("isolates a failing organization and continues the sweep", async () => {

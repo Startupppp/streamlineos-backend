@@ -17,7 +17,12 @@ const STRICT_FENCE =
  * comparison, an explicit null escape arm, a default, or an inequality that lets a
  * trailing revision through.
  */
-const NULL_ESCAPES = [/IS NOT DISTINCT FROM/i, /\bis null\b/i, /coalesce/i, />=|<=|<>|!=/i];
+const NULL_ESCAPES: ReadonlyArray<readonly [string, RegExp]> = [
+  ["IS NOT DISTINCT FROM", /IS NOT DISTINCT FROM/i],
+  ["IS NULL", /\bis null\b/i],
+  ["COALESCE", /coalesce/i],
+  ["an inequality", />=|<=|<>|!=/i],
+];
 
 function makeUser(): CurrentUserContext {
   return {
@@ -35,9 +40,19 @@ function renderSql(cond: SQL): string {
   return dialect.sqlToQuery(cond).sql;
 }
 
+/**
+ * Throws its own named errors rather than leaning on jest matchers, so the BITE
+ * test below can assert WHICH half refused. Under `expect(...).toMatch`, both
+ * halves raise the same JestAssertionError, and a bare `.toThrow()` there stays
+ * green even if the fence pattern stopped matching and the escape loop never ran
+ * — the exact failure this helper exists to catch.
+ */
 function expectStrictFence(rendered: string): void {
-  expect(rendered).toMatch(STRICT_FENCE);
-  for (const escape of NULL_ESCAPES) expect(rendered).not.toMatch(escape);
+  if (!STRICT_FENCE.test(rendered))
+    throw new Error(`acl_revision fence missing — no plain equality in: ${rendered}`);
+  for (const [name, escape] of NULL_ESCAPES)
+    if (escape.test(rendered))
+      throw new Error(`acl_revision fence escaped by ${name} in: ${rendered}`);
 }
 
 const makeAccess = (spaceIds = [1]) => ({
@@ -126,6 +141,6 @@ describe("KB ACL revision gate — stale chunks cannot surface in vector search"
   it("BITE: the assertion rejects the null-escape arm it exists to forbid", () => {
     const nullEscape =
       '("kb_articles"."id" = "kb_article_chunks"."article_id" and ("kb_article_chunks"."acl_revision" = "kb_articles"."acl_revision" or "kb_article_chunks"."acl_revision" is null))';
-    expect(() => expectStrictFence(nullEscape)).toThrow();
+    expect(() => expectStrictFence(nullEscape)).toThrow(/fence escaped by IS NULL/);
   });
 });

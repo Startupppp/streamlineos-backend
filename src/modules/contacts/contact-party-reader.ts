@@ -101,10 +101,48 @@ export function contactIdIs(contactId: number): SQL {
 }
 
 /**
+ * One row per party, for the reads that would otherwise show a person twice.
+ *
+ * `party_id` is deliberately not unique on this map: `PartyMergeService`
+ * re-points the loser's row onto the survivor so an old id in a bookmark or a
+ * foreign key still resolves. A party therefore answers to several contact ids
+ * after a merge, and every read starting `FROM contact_party_map` returns one
+ * row per alias — which is the merged-away duplicate reappearing on the list
+ * that merge was called to clean up.
+ *
+ * Lowest id wins, the same rule `crmOrgIdsOfParties` resolves a party's
+ * `crm_organizations` id by, and for the same reason: any alias is a correct
+ * answer to "which contact is this", and picking deterministically is what stops
+ * the answer flapping between two of them.
+ *
+ * **List reads only.** A point read (`getContact`, `assertContactAccess`,
+ * anything reached by `contactIdIs`) must still resolve a non-canonical alias,
+ * or the bookmark the merge was careful to keep working 404s instead. So this is
+ * a predicate the collection reads opt into rather than part of
+ * `contactPartyScope`, which they all share.
+ */
+export function canonicalContactOnly(orgId: string): SQL {
+  /*
+   * The alias is declared in the fragment rather than built with `alias()`.
+   * Interpolating an aliased table into a `sql` template emits the alias NAME
+   * where a relation belongs — `from "lower_contact_map"` — which typechecks,
+   * builds, and then 500s at runtime on a relation that does not exist. The
+   * outer references stay Drizzle columns so the table this correlates against
+   * is still the schema's.
+   */
+  return sql`not exists (
+    select 1 from ${contactPartyMap} as lower_contact_map
+    where lower_contact_map.organization_id = ${orgId}
+      and lower_contact_map.party_id = ${contactPartyMap.partyId}
+      and lower_contact_map.contact_id < ${contactPartyMap.contactId}
+  )`;
+}
+
+/**
  * The caller's DataScope for a contact read.
  *
- * `own` is the party's owner, the same column `pushLeadPartyViewScope` and
- * `clientPartyViewScope` bind, so a rep narrowed to their own book sees the
+ * `own` is the party's owner, the same column `LEAD_PARTY_SCOPE` and
+ * `CLIENT_PARTY_SCOPE` bind, so a rep narrowed to their own book sees the
  * same set through the list, the search and the export. Applied on all three,
  * because a scope one read honours and its export ignores is not a scope.
  */

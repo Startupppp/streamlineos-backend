@@ -72,7 +72,9 @@ function buildTxMock(ownerMembershipId: number | null) {
   const onConflictDoUpdate = jest.fn().mockResolvedValue(undefined);
   const returning = jest.fn().mockResolvedValue([]);
   const onConflictDoNothing = jest.fn().mockReturnValue({ returning });
-  const values = jest.fn().mockReturnValue({ onConflictDoUpdate, onConflictDoNothing });
+  const values = jest
+    .fn()
+    .mockReturnValue({ onConflictDoUpdate, onConflictDoNothing });
   const insert = jest.fn().mockReturnValue({ values });
 
   // `claimOnboardingStamp` reads `.returning()` off the same `update(...).set(...).where(...)`
@@ -85,22 +87,57 @@ function buildTxMock(ownerMembershipId: number | null) {
   const set = jest.fn().mockReturnValue({ where: whereUpdate });
   const update = jest.fn().mockReturnValue({ set });
 
-  const limit = jest.fn().mockResolvedValue(
-    ownerMembershipId !== null ? [{ ownerMembershipId }] : [],
-  );
+  const limit = jest
+    .fn()
+    .mockResolvedValue(
+      ownerMembershipId !== null ? [{ ownerMembershipId }] : [],
+    );
   const where = jest.fn().mockReturnValue({ limit });
   // `.from(modulesCatalog)` is awaited directly (no `.where`), so the builder has
   // to be thenable as well as chainable.
   const from = jest.fn().mockReturnValue({
     where,
-    then: (resolve: (rows: { moduleKey: string; isCore: boolean }[]) => unknown) =>
-      resolve(CATALOG_ROWS),
+    then: (
+      resolve: (rows: { moduleKey: string; isCore: boolean }[]) => unknown,
+    ) => resolve(CATALOG_ROWS),
   });
   const select = jest.fn().mockReturnValue({ from });
 
+  // `resolveCurrentSetupTarget` reads the membership and the org through `withIdentity`, which sets
+  // `app.user_id` inside its own transaction — the only GUC the `organization_members` policy admits
+  // on for a `@NoTenantTransaction()` setup route. So both `findFirst`s hang off the tx, not the pool.
+  const orgFindFirst = jest
+    .fn()
+    .mockResolvedValue({ id: "org-1", name: "Acme" });
+  const memberFindFirst = jest
+    .fn()
+    .mockResolvedValue({ status: "ACTIVE", isOwner: true });
+
   const execute = jest.fn().mockResolvedValue(undefined);
-  const tx: TxMock = { execute, insert, update, select };
-  return { tx, mocks: { insert, values, onConflictDoUpdate, onConflictDoNothing, returning, returningUpdate, update, select, limit } };
+  const tx: TxMock = {
+    execute,
+    insert,
+    update,
+    select,
+    query: {
+      organizations: { findFirst: orgFindFirst },
+      organizationMembers: { findFirst: memberFindFirst },
+    },
+  };
+  return {
+    tx,
+    mocks: {
+      insert,
+      values,
+      onConflictDoUpdate,
+      onConflictDoNothing,
+      returning,
+      returningUpdate,
+      update,
+      select,
+      limit,
+    },
+  };
 }
 
 function buildDb(ownerMembershipId: number | null) {
@@ -110,11 +147,13 @@ function buildDb(ownerMembershipId: number | null) {
   const outerValues = jest.fn().mockReturnValue({ onConflictDoNothing });
   const outerInsert = jest.fn().mockReturnValue({ values: outerValues });
 
-  const transaction = jest.fn().mockImplementation(
-    async (fn: (t: TxMock) => Promise<unknown>) => fn(tx),
-  );
+  const transaction = jest
+    .fn()
+    .mockImplementation(async (fn: (t: TxMock) => Promise<unknown>) => fn(tx));
 
-  const orgFindFirst = jest.fn().mockResolvedValue({ id: "org-1", name: "Acme" });
+  const orgFindFirst = jest
+    .fn()
+    .mockResolvedValue({ id: "org-1", name: "Acme" });
   const memberFindFirst = jest.fn().mockResolvedValue({
     status: "ACTIVE",
     isOwner: true,
@@ -132,13 +171,24 @@ function buildDb(ownerMembershipId: number | null) {
     transaction,
   };
 
-  return { db, txMocks, outerMocks: { insert: outerInsert, values: outerValues, onConflictDoNothing } };
+  return {
+    db,
+    txMocks,
+    outerMocks: {
+      insert: outerInsert,
+      values: outerValues,
+      onConflictDoNothing,
+    },
+  };
 }
 
 async function buildService(
   db: unknown,
   cache: { invalidate: jest.Mock } = { invalidate: jest.fn() },
-  wakeSignal: { wake: () => void; register: (l: () => void) => void } = { wake: jest.fn(), register: jest.fn() },
+  wakeSignal: { wake: () => void; register: (l: () => void) => void } = {
+    wake: jest.fn(),
+    register: jest.fn(),
+  },
   indexService: { activate: jest.Mock; refreshForUser: jest.Mock } = {
     activate: jest.fn().mockResolvedValue({ status: "activated" }),
     refreshForUser: jest.fn(),
@@ -164,8 +214,16 @@ async function buildService(
           completeSession: jest.fn().mockResolvedValue(undefined),
         },
       },
-      { provide: ModuleChecklistService, useValue: { ensureChecklistsForModules: jest.fn().mockResolvedValue(undefined) } },
-      { provide: NotificationDispatchService, useValue: { emit: jest.fn().mockResolvedValue(undefined) } },
+      {
+        provide: ModuleChecklistService,
+        useValue: {
+          ensureChecklistsForModules: jest.fn().mockResolvedValue(undefined),
+        },
+      },
+      {
+        provide: NotificationDispatchService,
+        useValue: { emit: jest.fn().mockResolvedValue(undefined) },
+      },
       { provide: OutboxWakeSignal, useValue: wakeSignal },
     ],
   }).compile();
@@ -209,11 +267,16 @@ describe("OrgSetupService — provisionOrgModules ownership seeding", () => {
     const ownershipCall = txMocks.values.mock.calls.find(
       (args: unknown[]) =>
         Array.isArray(args[0]) &&
-        (args[0] as Record<string, unknown>[])[0]?.ownerMembershipId !== undefined,
+        (args[0] as Record<string, unknown>[])[0]?.ownerMembershipId !==
+          undefined,
     );
     expect(ownershipCall).toBeDefined();
 
-    const insertedRows = ownershipCall?.[0] as { orgId: string; moduleKey: string; ownerMembershipId: number }[];
+    const insertedRows = ownershipCall?.[0] as {
+      orgId: string;
+      moduleKey: string;
+      ownerMembershipId: number;
+    }[];
     expect(insertedRows.every((r) => r.orgId === "org-1")).toBe(true);
     expect(insertedRows.every((r) => r.ownerMembershipId === 99)).toBe(true);
 
@@ -234,10 +297,15 @@ describe("OrgSetupService — provisionOrgModules ownership seeding", () => {
     const ownershipCall = txMocks.values.mock.calls.find(
       (args: unknown[]) =>
         Array.isArray(args[0]) &&
-        (args[0] as Record<string, unknown>[])[0]?.ownerMembershipId !== undefined,
+        (args[0] as Record<string, unknown>[])[0]?.ownerMembershipId !==
+          undefined,
     );
-    const insertedRows = ownershipCall?.[0] as { moduleKey: string }[] | undefined;
-    const insertedKeys = insertedRows ? insertedRows.map((r) => r.moduleKey) : [];
+    const insertedRows = ownershipCall?.[0] as
+      | { moduleKey: string }[]
+      | undefined;
+    const insertedKeys = insertedRows
+      ? insertedRows.map((r) => r.moduleKey)
+      : [];
 
     for (const key of insertedKeys) {
       expect(ACCESS_MANAGED_MODULES).toContain(key);
@@ -377,7 +445,9 @@ describe("OrgSetupService stale-session membership guards", () => {
     chain.from = jest.fn().mockReturnValue(chain);
     chain.leftJoin = jest.fn().mockReturnValue(chain);
     chain.where = jest.fn().mockReturnValue(chain);
-    chain.orderBy = jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue(rows) });
+    chain.orderBy = jest
+      .fn()
+      .mockReturnValue({ limit: jest.fn().mockResolvedValue(rows) });
 
     const tx = {
       execute: jest.fn().mockResolvedValue([]),
@@ -464,7 +534,9 @@ describe("OrgSetupService stale-session membership guards", () => {
     ]);
     const querySvc = await buildQueryService(db);
 
-    await expect(querySvc.getSetupSession(noOrgActor())).resolves.toEqual({ id: 42 });
+    await expect(querySvc.getSetupSession(noOrgActor())).resolves.toEqual({
+      id: 42,
+    });
     expect(db.transaction).toHaveBeenCalledTimes(2);
     expect(db.identityTx.execute).toHaveBeenCalledTimes(2);
   });
@@ -556,7 +628,12 @@ describe("OrgSetupService — a failed directory projection is never announced (
   it("completeSetup returns the auto-login token when activation selected the org", async () => {
     const { db } = buildDb(99);
     const index = indexServiceReturning({ status: "activated" });
-    const svc = await buildService(db, { invalidate: jest.fn() }, undefined, index);
+    const svc = await buildService(
+      db,
+      { invalidate: jest.fn() },
+      undefined,
+      index,
+    );
 
     const result = await svc.completeSetup(ownerActor(), SETUP_INPUT);
 
@@ -572,7 +649,12 @@ describe("OrgSetupService — a failed directory projection is never announced (
       const index = indexServiceReturning(
         status === "failed" ? { status, reason: "42501" } : { status },
       );
-      const svc = await buildService(db, { invalidate: jest.fn() }, undefined, index);
+      const svc = await buildService(
+        db,
+        { invalidate: jest.fn() },
+        undefined,
+        index,
+      );
 
       const result = await svc.completeSetup(ownerActor(), SETUP_INPUT);
 
@@ -588,7 +670,12 @@ describe("OrgSetupService — a failed directory projection is never announced (
       const index = indexServiceReturning(
         status === "failed" ? { status, reason: "42501" } : { status },
       );
-      const svc = await buildService(db, { invalidate: jest.fn() }, undefined, index);
+      const svc = await buildService(
+        db,
+        { invalidate: jest.fn() },
+        undefined,
+        index,
+      );
 
       const result = await svc.skipSetup(ownerActor());
 
@@ -615,7 +702,12 @@ describe("OrgSetupService — a failed directory projection is never announced (
       isOwner: false,
     });
     const index = indexServiceReturning({ status: "activated" });
-    const svc = await buildService(db, { invalidate: jest.fn() }, undefined, index);
+    const svc = await buildService(
+      db,
+      { invalidate: jest.fn() },
+      undefined,
+      index,
+    );
 
     const result = await svc.completeSetup(ownerActor(), SETUP_INPUT);
 

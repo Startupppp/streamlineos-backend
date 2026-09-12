@@ -105,8 +105,12 @@ describe("DelegationsService normalized permission grants", () => {
         permissionKey: "hr:employees:manage",
       },
     ]);
+    // `create` projects the two actor user ids beside the membership ids -- both
+    // are on `DelegationRecord`, and API consumers still read the user form.
     expect(result).toEqual({
       ...created,
+      delegatorId: actor.userId,
+      delegateeId: "delegatee-1",
       permissions: ["hr:employees:view", "hr:employees:manage"],
     });
     expect(bumpPermissionsVersion).toHaveBeenCalledWith(db, actor.orgId);
@@ -122,8 +126,7 @@ describe("DelegationsService normalized permission grants", () => {
       id: "delegation-1",
       orgId: actor.orgId,
       delegatorMembershipId: 1,
-      delegateeMembershipId: 2,
-      startsAt: new Date("2026-08-01T00:00:00.000Z"),
+      delegateeMembershipId: 2,      startsAt: new Date("2026-08-01T00:00:00.000Z"),
       endsAt: new Date("2026-08-08T00:00:00.000Z"),
       reason: null,
       status: "ACTIVE",
@@ -136,16 +139,20 @@ describe("DelegationsService normalized permission grants", () => {
     const orderBy = jest.fn().mockReturnValue({ limit });
     const pageWhere = jest.fn().mockReturnValue({ orderBy });
     const countWhere = jest.fn().mockResolvedValue([{ total: 21 }]);
+    // A delegation is stored against the two memberships and read back through
+    // them, so both page and count queries now join organization_members twice.
+    const joinedTo = (where: jest.Mock) => ({
+      innerJoin: () => ({ innerJoin: () => ({ where }) }),
+    });
     const select = jest.fn((selection?: Record<string, unknown>) => {
-      if (!selection) {
-        return {
-          from: () => ({ where: pageWhere }),
-        };
+      if (selection && "total" in selection) {
+        return { from: () => joinedTo(countWhere) };
       }
-      if ("total" in selection) {
-        return {
-          from: () => ({ where: countWhere }),
-        };
+      if (selection && "delegatorMembershipId" in selection) {
+        return { from: () => joinedTo(pageWhere) };
+      }
+      if (!selection) {
+        return { from: () => ({ where: pageWhere }) };
       }
       if ("delegationId" in selection) {
         return {

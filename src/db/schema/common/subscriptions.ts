@@ -14,6 +14,18 @@ export const subscriptions = pgTable("subscriptions", {
   razorpaySubscriptionId: text("razorpay_subscription_id"),
   razorpayCustomerId: text("razorpay_customer_id"),
   razorpayPlanId: text("razorpay_plan_id"),
+  /**
+   * The same references, without a provider's name on them.
+   *
+   * Expand half of ticket 02: written alongside the razorpay-named columns so a
+   * second provider has somewhere to store while every existing reader keeps
+   * working. Migration 0269 adds all three; the named columns are dropped once
+   * no reader remains.
+   */
+  provider: text("provider"),
+  providerSubscriptionRef: text("provider_subscription_ref"),
+  providerCustomerRef: text("provider_customer_ref"),
+  providerPlanRef: text("provider_plan_ref"),
   currentPeriodStart: timestamp("current_period_start"),
   currentPeriodEnd: timestamp("current_period_end"),
   trialEndsAt: timestamp("trial_ends_at"),
@@ -33,6 +45,17 @@ export const subscriptionPayments = pgTable("subscription_payments", {
   subscriptionId: integer("subscription_id").notNull(),
   razorpayPaymentId: text("razorpay_payment_id"),
   razorpayOrderId: text("razorpay_order_id"),
+  /**
+   * The same references, without a provider's name on them.
+   *
+   * Expand half of ticket 02: written alongside the razorpay-named columns so a
+   * second provider has somewhere to store while every existing reader keeps
+   * working. Migration 0269 adds all three; the named columns are dropped once
+   * no reader remains.
+   */
+  provider: text("provider"),
+  providerPaymentRef: text("provider_payment_ref"),
+  providerOrderRef: text("provider_order_ref"),
   amount: numeric("amount", { precision: 15, scale: 2 }),
   amountPaise: integer("amount_paise").notNull(),
   currency: text("currency").default("INR").notNull(),

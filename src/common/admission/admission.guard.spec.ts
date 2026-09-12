@@ -1,5 +1,5 @@
 import { ExecutionContext, ServiceUnavailableException } from "@nestjs/common";
-import { ModuleRef, Reflector } from "@nestjs/core";
+import { Reflector } from "@nestjs/core";
 import type { CallHandler } from "@nestjs/common";
 import { lastValueFrom, of, throwError } from "rxjs";
 import type { AdmissionConfig } from "./admission.config";
@@ -7,6 +7,7 @@ import { AdmissionGuard } from "./admission.guard";
 import { AdmissionInterceptor } from "./admission.interceptor";
 import { AdmissionService } from "./admission.service";
 import { WORK_CLASS_KEY } from "./work-class.decorator";
+import type { ModuleRef } from "@nestjs/core";
 
 const BASE_CONFIG: AdmissionConfig = {
   maxConcurrent: 5,
@@ -18,19 +19,50 @@ const BASE_CONFIG: AdmissionConfig = {
   enabled: true,
 };
 
+/** The half of `express.Response` admission touches, plus a way to fire it. */
+interface ResponseDouble {
+  set: jest.Mock;
+  on: jest.Mock;
+  finish: () => void;
+  close: () => void;
+}
+
 function makeContext(opts: {
   workClass?: string;
   orgId?: string;
 }): {
   ctx: ExecutionContext;
   req: Record<string, unknown>;
-  res: { set: jest.Mock };
+  res: ResponseDouble;
 } {
   const req: Record<string, unknown> = {
     user: opts.orgId ? { orgId: opts.orgId } : undefined,
     _admissionOrgId: undefined,
   };
-  const res = { set: jest.fn() };
+  /**
+   * A response that can actually END, because that is the whole question.
+   *
+   * The old double had `set` and nothing else, so a guard could not register a
+   * completion listener on it and no test could observe one being called. A
+   * double shaped like the half of the interface the code used to touch is how
+   * the leak below stayed invisible.
+   */
+  const listeners = new Map<string, (() => void)[]>();
+  const res: ResponseDouble = {
+    set: jest.fn(),
+    on: jest.fn((event: string, fn: () => void) => {
+      listeners.set(event, [...(listeners.get(event) ?? []), fn]);
+      return res;
+    }),
+    /** Fire what express would fire when the response is sent. */
+    finish: () => {
+      for (const fn of listeners.get("finish") ?? []) fn();
+    },
+    /** Fire what express would fire if the connection dropped first. */
+    close: () => {
+      for (const fn of listeners.get("close") ?? []) fn();
+    },
+  };
   const ctx = {
     getType: () => "http",
     getHandler: () => ({}),
@@ -149,7 +181,23 @@ describe("AdmissionGuard + AdmissionInterceptor — in-flight counter lifecycle"
       user: { orgId: "org-lifecycle" },
       _admissionOrgId: undefined,
     };
-    const res = { set: jest.fn() };
+    /*
+      `on` and `end`, because the guard releases the slot when the response ends.
+
+      It used to rely on the interceptor's `finalize`, which never runs for a
+      request a later guard rejects — so every 402 leaked a slot. `end()` here is
+      what a real response ending does: it fires the listeners the guard attached.
+    */
+    const listeners: (() => void)[] = [];
+    const res = {
+      set: jest.fn(),
+      on: jest.fn((event: string, fn: () => void) => {
+        if (event === "finish" || event === "close") listeners.push(fn);
+      }),
+      end: () => {
+        for (const fn of [...listeners]) fn();
+      },
+    };
     const ctx = {
       getType: () => "http",
       getHandler: () => ({}),
@@ -175,7 +223,16 @@ describe("AdmissionGuard + AdmissionInterceptor — in-flight counter lifecycle"
       user: { orgId: "org-throw" },
       _admissionOrgId: undefined,
     };
-    const res = { set: jest.fn() };
+    const listeners: (() => void)[] = [];
+    const res = {
+      set: jest.fn(),
+      on: jest.fn((event: string, fn: () => void) => {
+        if (event === "finish" || event === "close") listeners.push(fn);
+      }),
+      end: () => {
+        for (const fn of [...listeners]) fn();
+      },
+    };
     const ctx = {
       getType: () => "http",
       getHandler: () => ({}),
@@ -201,7 +258,16 @@ describe("AdmissionGuard + AdmissionInterceptor — in-flight counter lifecycle"
       user: { orgId: "org-refused" },
       _admissionOrgId: undefined,
     };
-    const res = { set: jest.fn() };
+    const listeners: (() => void)[] = [];
+    const res = {
+      set: jest.fn(),
+      on: jest.fn((event: string, fn: () => void) => {
+        if (event === "finish" || event === "close") listeners.push(fn);
+      }),
+      end: () => {
+        for (const fn of [...listeners]) fn();
+      },
+    };
     const ctx = {
       getType: () => "http",
       getHandler: () => ({}),
@@ -222,7 +288,16 @@ describe("AdmissionGuard + AdmissionInterceptor — in-flight counter lifecycle"
       user: { orgId: "org-check" },
       _admissionOrgId: undefined,
     };
-    const res = { set: jest.fn() };
+    const listeners: (() => void)[] = [];
+    const res = {
+      set: jest.fn(),
+      on: jest.fn((event: string, fn: () => void) => {
+        if (event === "finish" || event === "close") listeners.push(fn);
+      }),
+      end: () => {
+        for (const fn of [...listeners]) fn();
+      },
+    };
     const ctx = {
       getType: () => "http",
       getHandler: () => ({}),
@@ -237,7 +312,16 @@ describe("AdmissionGuard + AdmissionInterceptor — in-flight counter lifecycle"
     const svc = new AdmissionService(BASE_CONFIG);
     const guard = new AdmissionGuard(makeReflector("ordinary-write"), svc, makeModuleRef());
     const req: Record<string, unknown> = { user: undefined, _admissionOrgId: undefined };
-    const res = { set: jest.fn() };
+    const listeners: (() => void)[] = [];
+    const res = {
+      set: jest.fn(),
+      on: jest.fn((event: string, fn: () => void) => {
+        if (event === "finish" || event === "close") listeners.push(fn);
+      }),
+      end: () => {
+        for (const fn of [...listeners]) fn();
+      },
+    };
     const ctx = {
       getType: () => "http",
       getHandler: () => ({}),
@@ -246,5 +330,77 @@ describe("AdmissionGuard + AdmissionInterceptor — in-flight counter lifecycle"
     } as unknown as ExecutionContext;
     guard.canActivate(ctx);
     expect(req._admissionOrgId).toBe("__public__");
+  });
+});
+
+/**
+ * The leak that made a tenant-level denial of service reachable by any signed-in
+ * user, and the property that closes it.
+ *
+ * `AdmissionGuard` is the THIRD global `APP_GUARD`; `MfaGuard` and `ModuleGuard`
+ * run after it, and Nest runs interceptors only once every guard has passed. So
+ * a request admitted here and then refused by a later guard — a 402 for a module
+ * the org has not bought, a 403 for MFA — never reached `AdmissionInterceptor`,
+ * and its slot was never given back. Not a slow leak either: `orgMaxConcurrent`
+ * is 50 by default, so about fifty failed requests permanently exhaust an
+ * organisation's budget and every subsequent request 503s forever.
+ *
+ * What makes it unmistakably a LEAK rather than a busy server is that
+ * SEQUENTIAL requests do it. Concurrency cannot be exhausted by requests that do
+ * not overlap; only an unreturned slot can.
+ *
+ * The fix does not make the interceptor smarter, because no interceptor can see
+ * a request that never reached it. The slot is returned when the RESPONSE ends,
+ * which happens for every outcome there is — success, a later guard throwing,
+ * the exception filter answering, a client hanging up.
+ */
+describe("an admitted request always gives its slot back", () => {
+  const config = { ...BASE_CONFIG, orgMaxConcurrent: 2 };
+
+  function admit(svc: AdmissionService, orgId: string) {
+    const { ctx, res } = makeContext({ orgId });
+    new AdmissionGuard(new Reflector(), svc, {} as ModuleRef).canActivate(ctx);
+    return res;
+  }
+
+  it("returns the slot when a LATER guard rejects, which no interceptor can see", () => {
+    const svc = new AdmissionService(config);
+
+    /* Three sequential requests. Each is admitted, then refused downstream. */
+    for (let i = 0; i < 3; i++) {
+      const res = admit(svc, "org-a");
+      /* MfaGuard or ModuleGuard throws here. The interceptor never runs. */
+      res.finish();
+    }
+
+    expect(svc.snapshot().inFlight).toBe(0);
+    /* And the org can still be served — the point of the whole thing. */
+    const { ctx } = makeContext({ orgId: "org-a" });
+    expect(new AdmissionGuard(new Reflector(), svc, {} as ModuleRef).canActivate(ctx)).toBe(true);
+  });
+
+  it("does not double-release when the interceptor runs too", async () => {
+    const svc = new AdmissionService(config);
+    const { ctx, req, res } = makeContext({ orgId: "org-b" });
+
+    new AdmissionGuard(new Reflector(), svc, {} as ModuleRef).canActivate(ctx);
+    expect(svc.snapshot().inFlight).toBe(1);
+
+    const handler = { handle: () => of("ok") } as unknown as CallHandler;
+    await lastValueFrom(new AdmissionInterceptor(svc).intercept(ctx, handler));
+    res.finish();
+
+    expect(svc.snapshot().inFlight).toBe(0);
+    /* A second org's slot must not have been eaten by an over-release. */
+    expect(req._admissionOrgId).toBe("org-b");
+  });
+
+  it("returns the slot when the client hangs up before the response is sent", () => {
+    const svc = new AdmissionService(config);
+    const res = admit(svc, "org-c");
+    expect(svc.snapshot().inFlight).toBe(1);
+
+    res.close();
+    expect(svc.snapshot().inFlight).toBe(0);
   });
 });

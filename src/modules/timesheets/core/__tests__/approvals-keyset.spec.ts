@@ -49,8 +49,10 @@ const CURSOR = Buffer.from("2024-01-15T10:00:00.000Z\x001").toString("base64url"
 
 async function capture(cursor: string | undefined): Promise<Captured> {
   const captured: Captured = { where: undefined, orderBy: [] };
+  /* (db, access, audit, rateResolver, notifications) */
   const svc = new ApprovalsService(
     buildDb(captured),
+    {} as never,
     {} as never,
     {} as never,
     {} as never,

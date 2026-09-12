@@ -6,6 +6,29 @@ import type { AppConfig } from "../../config/env.validation";
 import { ExternalEffectLedger } from "../../common/outbox/external-effect-ledger";
 import { WebPushService } from "./web-push.service";
 
+/*
+ * `sendToUser` reads and reaps inside `runInTenantTransaction`, because the push
+ * path is also reached from background workers with no ambient tenant scope. The
+ * scope it names is recorded here and the body runs against the harness db, so
+ * the predicate under test is still exactly the one the service builds.
+ */
+const mockTenantScopes: Array<string | undefined> = [];
+jest.mock("../../common/tenant/run-in-tenant-transaction", () => ({
+  ...jest.requireActual<Record<string, unknown>>("../../common/tenant/run-in-tenant-transaction"),
+  runInTenantTransaction: (
+    db: unknown,
+    fn: (tx: unknown) => Promise<unknown>,
+    explicit?: { orgId: string },
+  ) => {
+    mockTenantScopes.push(explicit?.orgId);
+    return fn(db);
+  },
+}));
+
+beforeEach(() => {
+  mockTenantScopes.length = 0;
+});
+
 /**
  * A person in two organizations holds one push subscription row per organization.
  * Selecting them by user alone hands Org A's notification to the registration the
@@ -63,6 +86,8 @@ describe("WebPushService — cross-tenant isolation", () => {
     expect(rendered.params).toContain(OWNER_ORG);
     // Reading by user alone would match the same person's rows in every org.
     expect(rendered.params).not.toContain(ATTACKER_ORG);
+    // The tenant scope the read runs under is named for the caller, not inherited.
+    expect(mockTenantScopes).toEqual([OWNER_ORG]);
   });
 
   it("DENY: a different organization produces a different predicate", async () => {

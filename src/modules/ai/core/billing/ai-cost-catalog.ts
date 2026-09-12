@@ -69,6 +69,19 @@ export const AI_FEATURE_COSTS: Readonly<Record<string, number>> = {
   "inv.insight-explain": 1,
   "inv.reorder-explain": 3,
   "inv.supplier-delay-briefing": 2,
+  // F1/F2/F3/F5. These five reached the gateway with no catalog entry, so each
+  // reserved the `?? 1` default regardless of what it actually costs — a quiet
+  // under-reserve rather than an error, which is exactly the shape §4's
+  // reserve-before-the-call rule exists to prevent. The ops brief and the
+  // copilot's plan call are one small structured response each. The copilot's
+  // answer reads up to three capped tables, and the demand-risk narrative reads
+  // a stored forecast plus its backtest metrics, so both are larger prompts. The
+  // report builder emits one small config and nothing else.
+  "inv.ops-brief": 1,
+  "inv.copilot-plan": 1,
+  "inv.copilot-answer": 2,
+  "inv.demand-risk": 2,
+  "inv.report-builder": 1,
   "accounting.variance-explain": 2,
   "accounting.reconciliation-explain": 1,
   "accounting.extract-document": 5,

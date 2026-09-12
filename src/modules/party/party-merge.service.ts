@@ -1,5 +1,5 @@
 import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, eq, inArray, isNull } from "drizzle-orm";
+import { aliasedTable, and, count, desc, eq, inArray, isNull } from "drizzle-orm";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.types";
 import {
@@ -241,9 +241,13 @@ export class PartyMergeService {
 
     await this.closeCandidate(organizationId, survivorId, mergedId, "MERGED", input.userId);
 
-    await this.audit.logCritical({
+    // logCritical, not log: a merge is destructive and performed unattended, so
+    // an audit write that fails must stop it rather than leave it unrecorded.
+    // Which is exactly why the unattended case needs a null actor: it used to
+    // write the string "system", which has no row in `users`, so the merges
+    // this line is protecting were the ones it aborted.
+    const mergeAudit = {
       action: "party.merge",
-      userId: input.userId ?? "system",
       orgId: organizationId,
       resourceType: "business_party",
       resourceId: survivorId,
@@ -255,13 +259,97 @@ export class PartyMergeService {
         signals: assessment.signals,
         conflicts: Object.keys(plan.conflicts),
       },
-    });
+    };
+
+    await this.audit.logCritical(
+      input.userId
+        ? { ...mergeAudit, userId: input.userId }
+        : { ...mergeAudit, systemActor: "party.merge.unattended" },
+    );
 
     return {
       partyMergeId: record?.partyMergeId ?? "",
       survivorPartyId: survivorId,
       mergedPartyId: mergedId,
       conflicts: plan.conflicts,
+    };
+  }
+
+  /**
+   * The merges this organisation has performed, most recent first.
+   *
+   * `party_merges` already held everything a revert needs, and nothing read it —
+   * so the only moment a merge could be undone was the moment it happened, from
+   * whatever the caller still had in hand. A destructive operation whose reversal
+   * expires with the toast that announced it is not reversible in any sense the
+   * user experiences, which is the whole reason the snapshot is taken.
+   *
+   * The survivor is joined in for its name; the loser is not, because it is
+   * soft-deleted and every party read in this module filters that out. Its name
+   * comes from the snapshot instead, which is the record of what it was called
+   * at the moment it stopped existing — the right answer here even if a later
+   * revert-and-rename made the live row disagree.
+   */
+  async listMerges(
+    organizationId: string,
+    query: { page: number; limit: number; includeReverted: boolean },
+  ) {
+    const survivor = aliasedTable(businessParties, "survivor_party");
+
+    const where = and(
+      eq(partyMerges.organizationId, organizationId),
+      query.includeReverted ? undefined : isNull(partyMerges.revertedAt),
+      eq(survivor.organizationId, organizationId),
+    );
+
+    const [rows, totals] = await Promise.all([
+      this.db
+        .select({
+          partyMergeId: partyMerges.partyMergeId,
+          survivorPartyId: partyMerges.survivorPartyId,
+          survivorName: survivor.name,
+          mergedPartyId: partyMerges.mergedPartyId,
+          snapshot: partyMerges.snapshot,
+          decidedBy: partyMerges.decidedBy,
+          decidedByUserId: partyMerges.decidedByUserId,
+          confidence: partyMerges.confidence,
+          conflicts: partyMerges.conflicts,
+          mergedAt: partyMerges.mergedAt,
+          revertedAt: partyMerges.revertedAt,
+        })
+        .from(partyMerges)
+        .innerJoin(survivor, eq(survivor.partyId, partyMerges.survivorPartyId))
+        .where(where)
+        .orderBy(desc(partyMerges.mergedAt), desc(partyMerges.partyMergeId))
+        .limit(query.limit)
+        .offset((query.page - 1) * query.limit),
+      this.db
+        .select({ total: count() })
+        .from(partyMerges)
+        .innerJoin(survivor, eq(survivor.partyId, partyMerges.survivorPartyId))
+        .where(where),
+    ]);
+
+    return {
+      data: rows.map((row) => {
+        const snapshot = row.snapshot as unknown as MergeSnapshot | null;
+        return {
+          partyMergeId: row.partyMergeId,
+          survivorPartyId: row.survivorPartyId,
+          survivorName: row.survivorName,
+          mergedPartyId: row.mergedPartyId,
+          mergedName: String(snapshot?.mergedBefore?.name ?? ""),
+          decidedBy: row.decidedBy,
+          decidedByUserId: row.decidedByUserId,
+          confidence: row.confidence,
+          // The keys only: the discarded values are evidence for an audit
+          // reader, not something a list should put on screen.
+          conflictFields: Object.keys(row.conflicts ?? {}),
+          mergedAt: row.mergedAt,
+          revertedAt: row.revertedAt,
+        };
+      }),
+      pagination: { page: query.page, limit: query.limit, total: totals[0]?.total ?? 0 },
     };
   }
 }

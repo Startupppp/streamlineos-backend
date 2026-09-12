@@ -1,4 +1,5 @@
 import { Test } from "@nestjs/testing";
+import { sql } from "drizzle-orm";
 import { NotFoundException } from "@nestjs/common";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
@@ -13,6 +14,7 @@ import { AiGatewayService } from "../ai/core/gateway/ai-gateway.service";
 import { AiConfirmationService } from "../ai/confirmation/ai-confirmation.service";
 import { InvReplenishmentService } from "./replenishment/inv-replenishment.service";
 import { InvVendorsService } from "./vendors/inv-vendors.service";
+import { INVENTORY_ISOLATION_STUBS } from "./__tests__/isolation-stubs";
 
 function sqlValues(value: unknown, seen = new Set<object>()): unknown[] {
   if (value === null || value === undefined || typeof value === "string" || typeof value === "number" || typeof value === "boolean") return [value];
@@ -79,13 +81,14 @@ describe("InvAiService — cross-tenant isolation", () => {
     const { db, findMany } = makeDb([]);
     const svc = await Test.createTestingModule({
       providers: [
+        ...INVENTORY_ISOLATION_STUBS,
         InvAiService,
         { provide: DRIZZLE, useValue: db },
         { provide: CacheService, useValue: cache },
       ],
     }).compile().then((m) => m.get(InvAiService));
 
-    const result = await svc.listInsights(ATTACKER, { page: 1, limit: 20 });
+    const result = await svc.listInsights({ orgId: ATTACKER, userId: "user-1" } as never, { page: 1, limit: 20 });
     expect(result.items).toHaveLength(0);
     const arg = findMany.mock.calls[0]?.[0] as { where?: unknown } | undefined;
     expect(sqlValues(arg?.where)).toContain(ATTACKER);
@@ -96,13 +99,14 @@ describe("InvAiService — cross-tenant isolation", () => {
     const { db } = makeDb([INSIGHT]);
     const svc = await Test.createTestingModule({
       providers: [
+        ...INVENTORY_ISOLATION_STUBS,
         InvAiService,
         { provide: DRIZZLE, useValue: db },
         { provide: CacheService, useValue: cache },
       ],
     }).compile().then((m) => m.get(InvAiService));
 
-    const result = await svc.listInsights(OWNER, { page: 1, limit: 20 });
+    const result = await svc.listInsights({ orgId: OWNER, userId: "user-1" } as never, { page: 1, limit: 20 });
     expect(result.items).toHaveLength(1);
   });
 });
@@ -115,6 +119,7 @@ describe("InvAiExplainService — cross-tenant isolation", () => {
     const { db, findFirst } = makeDb([]);
     const svc = await Test.createTestingModule({
       providers: [
+        ...INVENTORY_ISOLATION_STUBS,
         InvAiExplainService,
         { provide: DRIZZLE, useValue: db },
         { provide: AiGatewayService, useValue: { invokeText: jest.fn(), invokeTextWithUsage: jest.fn() } },
@@ -136,6 +141,7 @@ describe("InvAiExplainService — cross-tenant isolation", () => {
     const gateway = { invokeText: jest.fn().mockResolvedValue({ ok: true, data: "low stock" }), invokeTextWithUsage: jest.fn() };
     const svc = await Test.createTestingModule({
       providers: [
+        ...INVENTORY_ISOLATION_STUBS,
         InvAiExplainService,
         { provide: DRIZZLE, useValue: db },
         { provide: AiGatewayService, useValue: gateway },
@@ -149,15 +155,25 @@ describe("InvAiExplainService — cross-tenant isolation", () => {
   });
 });
 
+/**
+ * Unrestricted: these pin the *tenant* boundary, and a warehouse scope that
+ * filtered as well would let a lookup return nothing for the right reason and
+ * still pass.
+ */
+const UNRESTRICTED_WAREHOUSE_SCOPE = {
+  resolve: async () => null,
+  warehousePredicate: () => sql`TRUE`,
+};
+
 describe("InvBarcodeService — cross-tenant isolation", () => {
   const OWNER = "org-owner";
   const ATTACKER = "org-attacker";
 
   it("returns empty lookup for a foreign org (isolation — deny)", async () => {
     const { db, findFirst } = makeDb([]);
-    const svc = new InvBarcodeService(db);
+    const svc = new InvBarcodeService(db, { assertDispensable: jest.fn() } as never, UNRESTRICTED_WAREHOUSE_SCOPE as never);
 
-    const result = await svc.lookup(ATTACKER, "BARCODE-123");
+    const result = await svc.lookup(ATTACKER, "user-attacker", "BARCODE-123");
     expect(result.type).toBe("not_found");
     expect(findFirst).toHaveBeenCalled();
     const arg = findFirst.mock.calls[0]?.[0] as { where?: unknown } | undefined;
@@ -167,9 +183,9 @@ describe("InvBarcodeService — cross-tenant isolation", () => {
   it("finds product for the owning org (isolation — control)", async () => {
     const PROD = { id: 1, orgId: OWNER, name: "Widget", sku: "W-001", status: "ACTIVE" };
     const { db } = makeDb([PROD]);
-    const svc = new InvBarcodeService(db);
+    const svc = new InvBarcodeService(db, { assertDispensable: jest.fn() } as never, UNRESTRICTED_WAREHOUSE_SCOPE as never);
 
-    const result = await svc.lookup(OWNER, "BARCODE-123");
+    const result = await svc.lookup(OWNER, "user-owner", "BARCODE-123");
     expect(result.type).toBe("product");
   });
 });
@@ -182,6 +198,7 @@ describe("ExportService — cross-tenant isolation", () => {
     const { db, selectWhere } = makeDb([]);
     const svc = await Test.createTestingModule({
       providers: [
+        ...INVENTORY_ISOLATION_STUBS,
         ExportService,
         { provide: DRIZZLE, useValue: db },
         { provide: CacheService, useValue: cache },
@@ -200,6 +217,7 @@ describe("ExportService — cross-tenant isolation", () => {
     const { db } = makeDb([JOB]);
     const svc = await Test.createTestingModule({
       providers: [
+        ...INVENTORY_ISOLATION_STUBS,
         ExportService,
         { provide: DRIZZLE, useValue: db },
         { provide: CacheService, useValue: cache },
@@ -219,6 +237,7 @@ describe("ImportService — cross-tenant isolation", () => {
     const { db, selectWhere } = makeDb([]);
     const svc = await Test.createTestingModule({
       providers: [
+        ...INVENTORY_ISOLATION_STUBS,
         ImportService,
         { provide: DRIZZLE, useValue: db },
         { provide: CacheService, useValue: cache },
@@ -238,6 +257,7 @@ describe("ImportService — cross-tenant isolation", () => {
     const { db } = makeDb([JOB]);
     const svc = await Test.createTestingModule({
       providers: [
+        ...INVENTORY_ISOLATION_STUBS,
         ImportService,
         { provide: DRIZZLE, useValue: db },
         { provide: CacheService, useValue: cache },

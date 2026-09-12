@@ -1,4 +1,15 @@
-import { Controller, Get, Post, Param, Body, Query, ParseIntPipe, UseGuards, HttpCode, HttpStatus } from "@nestjs/common";
+import {
+  Controller,
+  Get,
+  Post,
+  Param,
+  Body,
+  Query,
+  ParseIntPipe,
+  UseGuards,
+  HttpCode,
+  HttpStatus,
+} from "@nestjs/common";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
@@ -20,6 +31,8 @@ import {
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
 import { BodylessAction, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { IdempotencyKey } from "../../../common/idempotency/idempotency-key.decorator";
+import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import {
   listLoadsResponseSchema,
   getLoadResponseSchema,
@@ -43,7 +56,7 @@ export class LoadsController {
     @Query() query: ListLoadsQueryInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.list(u.orgId, query);
+    return this.svc.list(u.orgId, u.userId, query);
   }
 
   @Get(":loadId")
@@ -55,13 +68,14 @@ export class LoadsController {
     @Param("loadId", ParseIntPipe) loadId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.findOne(u.orgId, loadId);
+    return this.svc.findOne(u.orgId, u.userId, loadId);
   }
 
   @Post()
   @ResponseSchema(invLoadSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:loads:manage")
+  @Idempotent("inventory.load.create")
   @Validate({ body: createLoadSchema })
   create(
     @Body() body: CreateLoadInput,
@@ -77,17 +91,19 @@ export class LoadsController {
   @HttpCode(HttpStatus.OK)
   @Validate({ params: loadIdParams, body: dispatchLoadSchema })
   dispatch(
+    @IdempotencyKey() idempotencyKey: string,
     @Param("loadId", ParseIntPipe) loadId: number,
     @Body() body: DispatchLoadInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.dispatch(u.orgId, u.userId, loadId, body);
+    return this.svc.dispatch(u.orgId, u.userId, loadId, body, idempotencyKey);
   }
 
   @Post(":loadId/close")
   @ResponseSchema(invLoadSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:loads:manage")
+  @Idempotent("inventory.load.close")
   @HttpCode(HttpStatus.OK)
   @Validate({ params: loadIdParams, body: closeLoadSchema })
   close(
@@ -103,6 +119,7 @@ export class LoadsController {
   @ResponseSchema(invLoadSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:loads:manage")
+  @Idempotent("inventory.load.cancel")
   @HttpCode(HttpStatus.OK)
   @Validate({ params: loadIdParams })
   cancel(

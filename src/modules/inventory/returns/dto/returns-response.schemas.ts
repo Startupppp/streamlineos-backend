@@ -76,3 +76,13 @@ const customerReturnSchema = z.object({
 export const listCustomerReturnsResponseSchema = itemsPagedSchema(customerReturnSchema);
 
 export const getCustomerReturnResponseSchema = customerReturnSchema;
+
+/**
+ * INV-209 — the inspection records one line's disposition and answers with the
+ * line it decided about, not the whole return: the screen that calls it is
+ * walking a box line by line.
+ */
+export const inspectCustomerReturnLineResponseSchema = z.object({
+  lineId: z.number().int(),
+  disposition: z.string(),
+});

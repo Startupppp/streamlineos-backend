@@ -105,13 +105,6 @@ const RELATION_BASELINE = new Map([
     },
   ],
   [
-    "currentLocation",
-    {
-      files: ["modules/inventory/traceability/inv-traceability.service.ts"],
-      reason: "Inventory is out of the 10/10 release scope. Untriaged, deliberately.",
-    },
-  ],
-  [
     "panelMembers",
     {
       files: ["modules/hr/interviews/hr-interviews.service.ts"],
@@ -188,13 +181,34 @@ const RELATION_BASELINE = new Map([
 ]);
 
 /**
- * `columns: {}` selects nothing and emits `{}` — the relation is joined, paid
- * for, and arrives empty. It is how the huddle roster lost `userId`.
+ * `columns: {}` selects nothing of the relation's OWN row. With no sibling
+ * `with:` it emits a literal `{}`; with one it emits only the nested relation.
+ * Either way every scalar of the joined row is dropped, which is how the huddle
+ * roster lost `userId` — `membership.columns` was `{}` beside a `with: { user }`,
+ * so `flattenChannelMember` read `membership.userId` as undefined and every tile
+ * rendered "Unknown". The sibling `with:` is therefore NOT an acquittal, and this
+ * gate does not treat it as one.
+ *
+ * `sites` pins how many `columns: {}` the file was triaged for. A file is not a
+ * blanket exemption: add another empty projection to an already-triaged file and
+ * the count no longer matches, so it fails and has to be looked at.
  */
 const EMPTY_COLUMNS_BASELINE = new Map([
   [
     "modules/chat/chat-reply-reminders.service.ts",
-    "internal email composition — the row is used for its existence only and never reaches the wire.",
+    {
+      sites: 1,
+      reason:
+        "internal email composition — the membership is joined only for `user.name`, which the sibling `with:` selects. No membership scalar is read.",
+    },
+  ],
+  [
+    "modules/build/core/projects-tickets-read.query.ts",
+    {
+      sites: 2,
+      reason:
+        "both are membership rows joined solely to reach the user beneath them, and the flattener re-derives every scalar it needs from that user rather than from the membership: `assignee` is replaced wholesale by `row.assignee.user` with `assigneeId` taken from `user.id`, and each `assignees[]` entry is rebuilt as `{ ...assignment, userId: user.id, user }`. The membership id itself is already on the ticket as `assigneeMembershipId`. This is the huddle bug's mirror image — there the flattener read `membership.userId` that `columns: {}` had dropped; here it reads the user's own id, so dropping the membership scalars costs nothing. Verified 2026-09-12.",
+    },
   ],
 ]);
 
@@ -482,11 +496,40 @@ export function evaluate(
       if (!live.has(file)) staleKeys.push(`${key} no longer appears in ${file} — delete that path`);
   }
 
-  const emptyFiles = new Set(emptyColumns.map((e) => e.file));
-  const newEmpty = emptyColumns
-    .filter((e) => !emptyBaseline.has(e.file))
-    .map((e) => `${e.file}:${e.line}`);
-  const staleEmpty = [...emptyBaseline.keys()].filter((f) => !emptyFiles.has(f));
+  const emptyByFile = new Map();
+  for (const site of emptyColumns) {
+    if (!emptyByFile.has(site.file)) emptyByFile.set(site.file, []);
+    emptyByFile.get(site.file).push(site);
+  }
+  const pinnedSites = (entry) => (typeof entry === "string" ? 1 : entry.sites);
+
+  const newEmpty = [];
+  for (const [file, sites] of emptyByFile) {
+    const entry = emptyBaseline.get(file);
+    if (entry === undefined) {
+      newEmpty.push(...sites.map((s) => `${file}:${s.line}`));
+      continue;
+    }
+    // A triaged file is triaged for a COUNT, not forever. One more empty
+    // projection than the verdict covered is an untriaged one.
+    if (sites.length > pinnedSites(entry))
+      newEmpty.push(
+        `${file} — ${sites.length} empty projections, the verdict covered ${pinnedSites(entry)} (lines ${sites.map((s) => s.line).join(", ")})`,
+      );
+  }
+
+  const staleEmpty = [];
+  for (const [file, entry] of emptyBaseline) {
+    const live = emptyByFile.get(file);
+    if (live === undefined) {
+      staleEmpty.push(`${file} no longer holds a columns: {}`);
+      continue;
+    }
+    if (live.length < pinnedSites(entry))
+      staleEmpty.push(
+        `${file} now holds ${live.length} empty projections, the verdict covered ${pinnedSites(entry)} — lower the count`,
+      );
+  }
 
   return {
     distinctKeys: byKey.size,
@@ -714,6 +757,50 @@ function selfTest() {
       new Map([["modules/x/y.service.ts", "internal only"]]),
     ).failures.length,
     0,
+  );
+  // BITE — a triaged file is triaged for a COUNT. A second empty projection in
+  // an already-triaged file is untriaged, and must not ride the first one's pass.
+  assert(
+    "a SECOND empty projection in a triaged file still fails",
+    evaluate(
+      padKeys([]),
+      [
+        { file: "modules/x/y.service.ts", line: 5 },
+        { file: "modules/x/y.service.ts", line: 9 },
+      ],
+      padCorpus,
+      counts,
+      new Map(),
+      new Map([["modules/x/y.service.ts", { sites: 1, reason: "one of them is fine" }]]),
+    ).failures.some((f) => f.startsWith("columns: {} selects NOTHING")),
+    true,
+  );
+  assert(
+    "a count-pinned file passes at exactly its pinned count",
+    evaluate(
+      padKeys([]),
+      [
+        { file: "modules/x/y.service.ts", line: 5 },
+        { file: "modules/x/y.service.ts", line: 9 },
+      ],
+      padCorpus,
+      counts,
+      new Map(),
+      new Map([["modules/x/y.service.ts", { sites: 2, reason: "both looked at" }]]),
+    ).failures.length,
+    0,
+  );
+  assert(
+    "a pin that over-covers reads as stale rather than passing",
+    evaluate(
+      padKeys([]),
+      [{ file: "modules/x/y.service.ts", line: 5 }],
+      padCorpus,
+      counts,
+      new Map(),
+      new Map([["modules/x/y.service.ts", { sites: 2, reason: "one has since gone" }]]),
+    ).failures.some((f) => f.startsWith("stale EMPTY_COLUMNS_BASELINE")),
+    true,
   );
 
   // (j) a broken scan reads as broken, not as green — in all three directions.

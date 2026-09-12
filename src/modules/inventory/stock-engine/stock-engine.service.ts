@@ -1,26 +1,22 @@
 import { createHash } from "node:crypto";
-import {
-  BadRequestException,
-  ConflictException,
-  Inject,
-  Injectable,
-  UnprocessableEntityException,
-} from "@nestjs/common";
-import { and, eq, sql } from "drizzle-orm";
-import { invStockLevels, invStockTransactions, invIdempotencyKeys } from "../../../db/schema";
+import { BadRequestException, Inject, Injectable } from "@nestjs/common";
+import { and, eq } from "drizzle-orm";
+import { invStockTransactions } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { CacheService } from "../../../common/cache/cache.service";
-import { CACHE_KEYS } from "../../../common/cache/cache-keys";
+import { invalidateStockDerivedReads } from "./lib/stock-read-invalidation";
 import { InventorySettingsService } from "./inventory-settings.service";
-import { InventoryAuditService } from "./inventory-audit.service";
-import { addDec, mulDec, isPositive, isNegative } from "./decimal";
+import { mulDec, isPositive } from "./decimal";
 import { ValuationService } from "./valuation.service";
 import { WarehouseScopeService } from "./warehouse-scope.service";
 import { claimIdempotencyKey, extractEngineResult } from "./idempotency";
-import { MovementCostingService } from "./movement-costing.service";
-import { PeriodsService } from "../../accounting/gl/periods.service";
+import { lockLevels, type LevelGrain } from "./stock-level-locks";
+import { BooksService } from "../../accounting/kernel/books.service";
+import { PeriodsService } from "../../accounting/kernel/periods.service";
+import { assertStockPeriodOpen } from "./accounting-bridge";
 import { loadCostingContext } from "./costing-context";
+import { MovementApplyService, resolvePostingDate } from "./movement-apply.service";
 import {
   INV_ERRORS,
   type StockEngineCommand,
@@ -32,8 +28,15 @@ type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
 
 export { addDec, mulDec, divDec } from "./decimal";
 
-function resolvePostingDate(cmd: StockEngineCommand): string {
-  return cmd.postingDate ?? new Date().toISOString().slice(0, 10);
+function grainsOf(cmd: StockEngineCommand): LevelGrain[] {
+  return cmd.movements.map((m) => ({
+    productVariantId: m.productVariantId,
+    locationId: m.locationId,
+    lotId: m.lotId ?? null,
+    serialId: m.serialId ?? null,
+    handlingUnitId: m.handlingUnitId ?? null,
+    ownership: m.ownership ?? "OWNED",
+  }));
 }
 
 @Injectable()
@@ -41,12 +44,12 @@ export class StockEngineService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly settingsService: InventorySettingsService,
-    private readonly auditService: InventoryAuditService,
     private readonly cache: CacheService,
     private readonly valuation: ValuationService,
     private readonly warehouseScope: WarehouseScopeService,
     private readonly periods: PeriodsService,
-    private readonly movementCosting: MovementCostingService,
+    private readonly books: BooksService,
+    private readonly movementApply: MovementApplyService,
   ) {}
 
   async executeInTx(
@@ -73,175 +76,27 @@ export class StockEngineService {
       tx, orgId, userId, cmd.movements.map((m) => m.locationId),
     );
 
-    // A movement may not be posted into a closed or locked accounting period.
-    // accounting_periods and this guard already existed; Inventory simply never
-    // called them, so backdated stock could silently restate a reported month.
     const settings = await this.settingsService.get(orgId);
     const postingDate = resolvePostingDate(cmd);
-    await this.periods.assertPeriodOpen(orgId, new Date(postingDate));
+    await this.assertPeriodOpen(orgId, postingDate);
     const costing = await loadCostingContext(
       tx,
       orgId,
       cmd.movements.map((m) => m.productVariantId),
       postingDate,
     );
-    const txnIds: number[] = [];
-    const levels: StockEngineResult["levels"] = [];
-    const decreasedVariantIds = new Set<number>();
 
-    for (const movement of cmd.movements) {
-      await tx
-        .insert(invStockLevels)
-        .values({
-          orgId,
-          productVariantId: movement.productVariantId,
-          locationId: movement.locationId,
-          lotId: movement.lotId ?? null,
-          serialId: movement.serialId ?? null,
-          onHand: "0",
-          committed: "0",
-          onOrder: "0",
-          blockedQty: "0",
-          qualityHoldQty: "0",
-          outgoingQty: "0",
-        })
-        .onConflictDoNothing();
+    // Every grain this command touches is locked in one ordered statement before
+    // any of it is read, so two concurrent commands cannot take the same rows in
+    // opposite order.
+    const levels = await lockLevels(tx, orgId, grainsOf(cmd));
 
-      const [level] = await tx.execute<{
-        id: number;
-        on_hand: string;
-        committed: string;
-        blocked_qty: string;
-        quality_hold_qty: string;
-        average_cost: string | null;
-      }>(sql`
-        SELECT id, on_hand, committed, blocked_qty, quality_hold_qty, average_cost
-        FROM inv_stock_levels
-        WHERE org_id = ${orgId}
-          AND product_variant_id = ${movement.productVariantId}
-          AND location_id = ${movement.locationId}
-          AND (lot_id IS NOT DISTINCT FROM ${movement.lotId ?? null})
-          AND (serial_id IS NOT DISTINCT FROM ${movement.serialId ?? null})
-        FOR UPDATE
-      `);
-
-      if (!level)
-        throw new BadRequestException({ code: INV_ERRORS.LOCATION_NOT_FOUND });
-
-      const bucket = movement.qualityBucket ?? "ON_HAND";
-      const delta = movement.quantityDelta;
-      const positive = isPositive(delta);
-
-      const newOnHand =
-        bucket === "ON_HAND" ? addDec(level.on_hand, delta) : level.on_hand;
-      const newBlocked =
-        bucket === "BLOCKED"
-          ? addDec(level.blocked_qty ?? "0", delta)
-          : (level.blocked_qty ?? "0");
-      const newQualityHold =
-        bucket === "QUALITY_HOLD"
-          ? addDec(level.quality_hold_qty ?? "0", delta)
-          : (level.quality_hold_qty ?? "0");
-
-      if (!settings.allowNegativeStock && isNegative(newOnHand)) {
-        throw new BadRequestException({ code: INV_ERRORS.INSUFFICIENT_STOCK });
-      }
-
-      const unitCost = movement.unitCost ?? null;
-      const totalCost = unitCost && positive ? mulDec(unitCost, delta) : null;
-
-      const [txnRow] = await tx
-        .insert(invStockTransactions)
-        .values({
-          orgId,
-          productVariantId: movement.productVariantId,
-          locationId: movement.locationId,
-          lotId: movement.lotId ?? null,
-          serialId: movement.serialId ?? null,
-          transactionType:
-            movement.transactionType as (typeof invStockTransactions.$inferInsert)["transactionType"],
-          quantityChange: delta,
-          quantityBefore: level.on_hand,
-          quantityAfter: newOnHand,
-          unitCost,
-          totalCost,
-          idempotencyKey: cmd.idempotencyKey,
-          postingDate,
-          reason: cmd.reason ?? null,
-          referenceType: cmd.sourceType,
-          referenceId: cmd.sourceId,
-          metadata: null,
-          notes: null,
-          createdBy: userId,
-        })
-        .returning({ id: invStockTransactions.id });
-
-      if (!txnRow) throw new Error("Failed to insert stock transaction");
-      txnIds.push(txnRow.id);
-
-      let newAvgCost = level.average_cost;
-      if (bucket === "ON_HAND") {
-        newAvgCost = await this.movementCosting.applyCosting(
-          tx,
-          orgId,
-          costing,
-          movement,
-          txnRow.id,
-          delta,
-          unitCost,
-          level.on_hand,
-          level.average_cost,
-          settings.allowNegativeStock,
-          cmd.sourceType ?? null,
-          cmd.sourceId,
-        );
-      }
-
-      await tx
-        .update(invStockLevels)
-        .set({
-          onHand: newOnHand,
-          blockedQty: newBlocked,
-          qualityHoldQty: newQualityHold,
-          averageCost: newAvgCost,
-        })
-        .where(eq(invStockLevels.id, level.id));
-
-      if (!positive && bucket === "ON_HAND") {
-        decreasedVariantIds.add(movement.productVariantId);
-      }
-
-      levels.push({
-        productVariantId: movement.productVariantId,
-        locationId: movement.locationId,
-        onHand: newOnHand,
-      });
-    }
-
-    await this.auditService.insert(tx, {
-      orgId,
-      actorUserId: userId,
-      action: "stock.movement",
-      resourceType: cmd.sourceType,
-      resourceId: cmd.sourceId,
-      after: { transactionIds: txnIds },
+    return this.movementApply.apply(tx, orgId, userId, cmd, {
+      settings,
+      costing,
+      levels,
+      postingDate,
     });
-
-    await this.movementCosting.emitLowStock(tx, orgId, decreasedVariantIds, levels, cmd.sourceType, cmd.sourceId);
-
-    const engineResult: StockEngineResult = { transactionIds: txnIds, levels };
-    const responsePayload: Record<string, unknown> = { ...engineResult };
-    await tx
-      .update(invIdempotencyKeys)
-      .set({ status: "COMPLETED", response: responsePayload })
-      .where(
-        and(
-          eq(invIdempotencyKeys.orgId, orgId),
-          eq(invIdempotencyKeys.idempotencyKey, cmd.idempotencyKey),
-        ),
-      );
-
-    return engineResult;
   }
 
   async execute(
@@ -273,11 +128,52 @@ export class StockEngineService {
         code: INV_ERRORS.INVALID_DOCUMENT_STATE,
       });
 
+    // A2. A posted movement may be corrected once. Reversing it twice unwinds it
+    // twice, and the second unwind is stock that never existed — the idempotency
+    // key stops a retry of the *same* request, not a second request to reverse
+    // the same movement. This check is for a legible error; the partial unique
+    // index on (org_id, correction_of_transaction_id) is what makes it true when
+    // two reversals race, where a check on its own always loses.
+    const existing = await tx
+      .select({ id: invStockTransactions.id })
+      .from(invStockTransactions)
+      .where(
+        and(
+          eq(invStockTransactions.orgId, orgId),
+          eq(invStockTransactions.correctionOfTransactionId, original.id),
+        ),
+      )
+      .limit(1);
+    if (existing.length > 0)
+      throw new BadRequestException({
+        code: INV_ERRORS.INVALID_DOCUMENT_STATE,
+        message: `Movement ${original.id} has already been reversed by movement ${existing[0]!.id}`,
+      });
+
     // Unwind the layer this receipt created before posting the counter-movement.
     // Left to the ordinary issue path, the reversal would consume unrelated
     // older layers and leave the erroneous layer sitting in stock.
+    //
+    // A2. Unwinding it is only half the job, and the missing half was a live
+    // defect: the compensating movement then went down the ordinary issue path
+    // and tried to consume layers *again*. Where the reversed receipt was the
+    // only coverage that raised "cost layers do not cover this issue" and the
+    // reversal was impossible; where older layers existed it succeeded and took
+    // the same value out of inventory twice. `settledCost` says the cost side is
+    // already accounted for.
+    let settledCost: { unitCost: string | null; totalCost: string | null } | undefined;
     if (isPositive(original.quantityChange)) {
-      await this.valuation.reverseReceiptLayer(tx, orgId, original.id);
+      const unwound = await this.valuation.reverseReceiptLayer(tx, orgId, original.id);
+      if (unwound) {
+        settledCost = {
+          unitCost: original.unitCost,
+          totalCost:
+            original.totalCost ??
+            (original.unitCost
+              ? mulDec(original.unitCost, original.quantityChange)
+              : null),
+        };
+      }
     }
 
     const reversalKey = `reversal:${cmd.idempotencyKey}`;
@@ -296,6 +192,9 @@ export class StockEngineService {
           serialId: original.serialId ?? undefined,
           quantityDelta: mulDec(original.quantityChange, "-1"),
           unitCost: original.unitCost ?? undefined,
+          qualityBucket: original.quantityBucket,
+          correctionOfTransactionId: original.id,
+          ...(settledCost ? { settledCost } : {}),
         },
       ],
     });
@@ -317,10 +216,21 @@ export class StockEngineService {
     await Promise.allSettled([
       this.cache.invalidateNamespace(`inv:stock:levels:${orgId}`),
       this.cache.invalidateNamespace(`inv:traceability:${orgId}`),
-      this.cache.invalidate(CACHE_KEYS.invDashboard(orgId)),
-      this.cache.invalidate(CACHE_KEYS.invStockSummary(orgId)),
-      this.cache.invalidate(CACHE_KEYS.invLowStock(orgId)),
-      this.cache.invalidate(CACHE_KEYS.invReorderReport(orgId)),
+      invalidateStockDerivedReads(this.cache, orgId),
     ]);
+  }
+
+  /**
+   * A movement may not be posted into a locked accounting period — backdated
+   * stock would otherwise silently restate a reported month.
+   *
+   * Accounting is opt-in, so an org with no book (or a date no open fiscal year
+   * covers) is simply unguarded, exactly as before: the old guard also only
+   * refused when a period existed *and* was closed.
+   */
+  private async assertPeriodOpen(orgId: string, postingDate: string): Promise<void> {
+    // The same guard the batch path reaches through InventoryAccountingBridge,
+    // so a single command and a batch cannot disagree about a locked month.
+    await assertStockPeriodOpen(this.books, this.periods, orgId, postingDate);
   }
 }

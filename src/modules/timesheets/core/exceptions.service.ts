@@ -23,7 +23,7 @@ import type {
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 
 @Injectable()
-export class ExceptionsService {
+export class TimesheetExceptionsService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly access: AccessService,
@@ -169,16 +169,28 @@ export class ExceptionsService {
     return this.transition(u, exceptionId, input.reason, "DISMISSED", "exception.dismissed");
   }
 
+  /** The counts an own-scoped caller sees are the counts of the rows they may list. */
   async summary(u: CurrentUserContext) {
-    const rows = await this.db
-      .select({
-        status: timesheetExceptions.status,
-        severity: timesheetExceptions.severity,
-        count: sql<number>`COUNT(*)::int`,
-      })
-      .from(timesheetExceptions)
-      .where(eq(timesheetExceptions.orgId, u.orgId))
-      .groupBy(timesheetExceptions.status, timesheetExceptions.severity);
+    const read = await resolveEntriesScope(this.access, u);
+    const membershipId = actingMembershipId(u.principal);
+    const rows = await read.read(
+      {
+        tenant: timesheetExceptions.orgId,
+        scope: membershipScope(membershipId, timesheetExceptions.userMembershipId),
+        and: [],
+      },
+      ({ sql: where }) =>
+        this.db
+          .select({
+            status: timesheetExceptions.status,
+            severity: timesheetExceptions.severity,
+            count: sql<number>`COUNT(*)::int`,
+          })
+          .from(timesheetExceptions)
+          .where(where)
+          .groupBy(timesheetExceptions.status, timesheetExceptions.severity),
+      () => [],
+    );
 
     const byStatus: Record<string, number> = {};
     const bySeverity: Record<string, number> = {};

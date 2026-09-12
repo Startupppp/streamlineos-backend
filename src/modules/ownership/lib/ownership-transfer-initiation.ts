@@ -1,0 +1,175 @@
+import {
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
+  NotFoundException,
+} from "@nestjs/common";
+import { ownershipTransfers } from "../../../db/schema";
+import { type Db } from "../../../db/drizzle.module";
+import type { AuditService } from "../../../common/audit/audit.service";
+import type { CacheService } from "../../../common/cache/cache.service";
+import { registerAfterCommit } from "../../../common/tenant";
+import { logger } from "../../../common/logger/logger.service";
+import { getPostgresErrorCode } from "../../../common/db/postgres-error";
+import type { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
+import { fetchMembershipById, fetchMembershipByUser } from "../ownership-members.helper";
+import type { InitiateOrgTransferInput } from "../dto/ownership.schemas";
+
+/**
+ * Opening a transfer: the half that decides who may nominate whom.
+ *
+ * Everything here runs before any transfer exists, so it can assume nothing and
+ * has to establish everything — that the actor is a member, that they hold the
+ * authority being handed over (org owner for the organisation, module-transfer
+ * standing for a module), that they are not nominating themselves, and that the
+ * nominee is an ACTIVE membership in the same org. The partial unique index on
+ * pending transfers is the last of those checks and the only one the database
+ * makes, which is why both translate 23505 into 409. The listing half left on
+ * OwnershipTransfersService asks none of that: it is a cached, paginated read
+ * over rows this file has already vouched for.
+ *
+ * The module half is initiateModuleTransfer in
+ * ownership-module-transfer-initiation.ts, which shares these deps and
+ * notifyRequested.
+ */
+export interface TransferInitiationDeps {
+  readonly db: Db;
+  readonly audit: AuditService;
+  readonly cache: CacheService;
+  readonly dispatch: NotificationDispatchService;
+}
+
+export async function initiateOrgTransfer(
+  deps: TransferInitiationDeps,
+  orgId: string,
+  actorUserId: string,
+  input: InitiateOrgTransferInput,
+) {
+  const actorMembership = await fetchMembershipByUser(
+    deps.db,
+    orgId,
+    actorUserId,
+  );
+  if (!actorMembership)
+    throw new ForbiddenException("Not a member of this organization");
+  if (!actorMembership.isOwner)
+    throw new ForbiddenException(
+      "Only the org owner can initiate an org ownership transfer",
+    );
+
+  if (actorMembership.id === input.toMembershipId) {
+    throw new BadRequestException("Cannot transfer ownership to yourself");
+  }
+
+  const target = await fetchMembershipById(
+    deps.db,
+    orgId,
+    input.toMembershipId,
+  );
+  if (!target)
+    throw new NotFoundException(
+      "Target membership not found in this organization",
+    );
+  if (target.status !== "ACTIVE") {
+    throw new BadRequestException(
+      "Target membership must be ACTIVE to receive ownership",
+    );
+  }
+
+  const expiresAt = new Date(Date.now() + input.expiresInHours * 3_600_000);
+
+  try {
+    const [transfer] = await deps.db
+      .insert(ownershipTransfers)
+      .values({
+        orgId,
+        scope: "ORGANIZATION",
+        moduleKey: null,
+        fromMembershipId: actorMembership.id,
+        initiatedByMembershipId: actorMembership.id,
+        toMembershipId: input.toMembershipId,
+        status: "PENDING",
+        expiresAt,
+        reason: input.reason ?? null,
+      })
+      .returning({
+        id: ownershipTransfers.id,
+        expiresAt: ownershipTransfers.expiresAt,
+      });
+
+    if (!transfer) throw new Error("Insert returned no rows");
+
+    deps.audit.log({
+      action: "ownership.org_transfer_initiated",
+      userId: actorUserId,
+      orgId,
+      targetId: String(input.toMembershipId),
+      targetType: "membership",
+      metadata: {
+        transferId: transfer.id,
+        initiatedByMembershipId: actorMembership.id,
+        fromMembershipId: actorMembership.id,
+        toMembershipId: input.toMembershipId,
+        expiresAt,
+      },
+    });
+
+    await deps.cache.invalidateNamespaceForOrg(orgId, "ownership:transfers");
+
+    const notifyOrg = () =>
+      notifyRequested(
+        deps,
+        orgId,
+        actorUserId,
+        transfer.id,
+        target.userId,
+        "the entire organization",
+      ).catch((error: unknown) => {
+        logger.error("ownership transfer notification failed", {
+          error,
+          transferId: transfer.id,
+          scope: "organization",
+        });
+      });
+    if (!registerAfterCommit(notifyOrg)) void notifyOrg();
+
+    return { transferId: transfer.id, expiresAt: transfer.expiresAt };
+  } catch (err: unknown) {
+    /**
+     * `uniq_ownership_xfers_org_pending_org` — a partial unique on (org_id)
+     * WHERE status = 'PENDING' AND scope = 'ORGANIZATION', so one pending
+     * hand-over of the whole organisation at a time. Nothing checks for one
+     * before inserting, which makes this the only guard there is — and it
+     * never fired, because Drizzle leaves the SQLSTATE on `.cause` and
+     * `pgErr.code` off the wrapper was always undefined. A second initiation
+     * answered 500.
+     */
+    if (getPostgresErrorCode(err) === "23505") {
+      throw new ConflictException(
+        "A pending org ownership transfer already exists",
+      );
+    }
+    throw err;
+  }
+}
+
+export function notifyRequested(
+  deps: TransferInitiationDeps,
+  orgId: string,
+  actorUserId: string,
+  transferId: string,
+  recipientUserId: string,
+  subject: string,
+): Promise<unknown> {
+  return deps.dispatch.emit({
+    eventKey: "ownership.transfer.requested",
+    orgId,
+    actorUserId,
+    targetUserIds: [recipientUserId],
+    entityType: "ownership_transfer",
+    entityId: transferId,
+    title: "You have been nominated as owner",
+    message: `You have been nominated to take over ownership of ${subject}. Review and respond before the request expires.`,
+    link: "/settings/incoming-transfer",
+  });
+}

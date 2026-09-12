@@ -1,3 +1,5 @@
+import type { ReorderProposalService } from "./forecast/reorder-proposal.service";
+import type { AccessService } from "../../access/access.service";
 import { InvReplenishmentService } from "./inv-replenishment.service";
 
 const mockDb = {
@@ -31,8 +33,27 @@ const mockCache = {
 
 const mockNumSeq = { next: jest.fn() };
 
+// These two arrived when the replenishment screen was wired to the forecast
+// engine. Nothing in this file's suggestion-math tests reaches them, so they
+// exist to satisfy the constructor rather than to be asserted on -- but they
+// are typed against the real services rather than invented, because a mock
+// whose method names are fiction fails with "is not a function" the first time
+// somebody writes a test that does reach it, and says nothing about why.
+const mockReorderProposals: jest.Mocked<Pick<ReorderProposalService, "propose">> = {
+  propose: jest.fn(),
+};
+const mockAccess: jest.Mocked<Pick<AccessService, "resolveUserPermissions">> = {
+  resolveUserPermissions: jest.fn(),
+};
+
 function buildService() {
-  return new InvReplenishmentService(mockDb as never, mockCache as never, mockNumSeq as never);
+  return new InvReplenishmentService(
+    mockDb as never,
+    mockCache as never,
+    mockNumSeq as never,
+    mockReorderProposals as never,
+    mockAccess as never,
+  );
 }
 
 const DEFAULT_FILTERS = { page: 1, limit: 50 };

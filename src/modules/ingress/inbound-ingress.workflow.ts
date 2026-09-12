@@ -2,41 +2,25 @@ import { Inject, Injectable, Logger, Optional, type OnModuleInit } from "@nestjs
 import { and, eq } from "drizzle-orm";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.types";
-import {
-  activities,
-  activityParticipants,
-  autonomousDecisions,
-  businessParties,
-  inboundEvents,
-} from "../../db/schema";
+import { inboundEvents } from "../../db/schema";
 import { WorkflowRegistry } from "../../common/workflow";
 import type { StepContext, WorkflowRunContext } from "../../common/workflow";
 import { runInNewTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
 import { getRegionRegistry, hasRegionRegistry } from "../../common/region/region-registry";
 import { AutonomyService } from "../autonomy/autonomy.service";
+import { RelationshipStateService } from "../relationships/relationship-state.service";
 import { AutonomyScoringService } from "../autonomy/autonomy-scoring.service";
-import { buildDecision } from "../autonomy/decision-record";
+import { PlanLimitsService } from "../billing/core/plan-limits.service";
 import { INBOUND_WORKFLOW } from "./inbound-ingress.service";
+import type { InboundCommunicationEvent } from "./inbound-event";
+import { resolveInboundParty, type IngressStepDeps } from "./lib/ingress-resolve-party";
 import {
-  activityKindFor,
-  externalParticipants,
-  identifierKindOf,
-  identifierOf,
-  normaliseIdentifier,
-  partyNameFor,
-  senderOf,
-  threadIdentity,
-  type InboundCommunicationEvent,
-} from "./inbound-event";
+  logInboundActivity,
+  markInboundProcessed,
+  recordInboundParticipants,
+  shadowScoreInbound,
+} from "./lib/ingress-filing";
 import { inboundEventSchema } from "./dto/inbound-event.schemas";
-import {
-  COLUMN_FOR_KIND,
-  claimIdentifiers,
-  resolvePartyByIdentifier,
-} from "../party/party-identifiers";
-
-/** One activity produces at most a task and a stage move; the cap is a backstop. */
-const MAX_SCORED_PER_RUN = 10;
 
 /**
  * What happens after a communication arrives.
@@ -65,6 +49,25 @@ export class InboundIngressWorkflow implements OnModuleInit {
     @Optional() private readonly autonomy?: AutonomyService,
     /** Optional for the same reason as `autonomy`: measurement must not gate filing. */
     @Optional() private readonly scoring?: AutonomyScoringService,
+    /**
+     * Optional, but the absence is a decision rather than a default.
+     *
+     * Unwired, this workflow creates parties without consulting a plan, which is
+     * the gap ticket 07 exists to close. It is optional only so the seam's own
+     * tests can stand it up without a billing module behind them; every
+     * composition that serves a tenant provides it, and
+     * `party/party-creation-invariant.spec.ts` is what stops a future party
+     * insert going in without asking the same question.
+     */
+    @Optional() private readonly planLimits?: PlanLimitsService,
+    /**
+     * Optional for the same reason. Ticket 01's model of
+     * what normal looks like is derived from the activities, so a state that
+     * failed to update is repaired by the next message on the relationship or by
+     * an explicit rebuild — while a delivery rejected because a summary could not
+     * be written is a customer's message the CRM never filed.
+     */
+    @Optional() private readonly relationships?: RelationshipStateService,
   ) {}
 
   onModuleInit(): void {
@@ -73,6 +76,15 @@ export class InboundIngressWorkflow implements OnModuleInit {
       maxAttempts: 5,
       handler: (step, context) => this.handle(step, context),
     });
+  }
+
+  /**
+   * What the step bodies in `lib/` act through. The step names, their order and
+   * the reasons for each stay here in `handle`; see `lib/ingress-resolve-party.ts`
+   * and `lib/ingress-filing.ts` for the bodies.
+   */
+  private stepDeps(): IngressStepDeps {
+    return { db: this.db, logger: this.logger, planLimits: this.planLimits, scoring: this.scoring };
   }
 
   private async handle(step: StepContext, context: WorkflowRunContext): Promise<void> {
@@ -114,172 +126,34 @@ export class InboundIngressWorkflow implements OnModuleInit {
       return { region: region ?? "primary" };
     });
 
-    const party = await step.run("resolve-party", async () => {
-      const sender = senderOf(event);
-      if (!sender) throw new Error("inbound: event has no sender");
+    const party = await step.run("resolve-party", () =>
+      resolveInboundParty(this.stepDeps(), context, inboundEventId, event),
+    );
 
-      /**
-       * The sender as an identity, not as a string.
-       *
-       * `identifierOf` pairs the address with the kind the ADAPTER stated —
-       * never with one inferred from the characters. This step used to compare
-       * the address against `business_parties.email` and, on a miss, insert it
-       * into that column, so a telephone number arrived as an email address:
-       * the row looked right, the caller's next email did not match it, and the
-       * record they were actually filed under was unreachable by the only
-       * channel that was wired.
-       */
-      const identifier = identifierOf(event, sender);
-      if (!identifier) throw new Error("inbound: the sender's address carries no identifier");
+    const activity = await step.run("log-activity", () =>
+      logInboundActivity(this.stepDeps(), context, inboundEventId, event, party),
+    );
 
-      const { kind, normalisedValue: address } = identifier;
+    await step.run("record-participants", () =>
+      recordInboundParticipants(this.stepDeps(), context, event, party, activity),
+    );
 
-      /**
-       * A known sender matches; an unknown one becomes a party.
-       *
-       * Matched through `party_identifiers` on the normalised value, which is
-       * why every kind has a normaliser — `Priya@Example.com` and
-       * `priya@example.com` are one person, and so are `+44 20 7123 4567` and
-       * `+442071234567`. Matching raw strings is how the same customer becomes
-       * three records.
-       */
-      const existingPartyId = await resolvePartyByIdentifier(
-        this.db,
-        context.organizationId,
-        kind,
-        sender.address,
-      );
-
-      if (existingPartyId) return { partyId: existingPartyId, created: false };
-
-      /**
-       * The display column the kind belongs in, and only that one.
-       *
-       * A handle has none, and a party created from one carries no contact
-       * column at all — which is correct, and is the case the old code could
-       * not express without lying about what the value was.
-       */
-      const contact: { email?: string; phone?: string; whatsappPhone?: string } = {};
-      const column = COLUMN_FOR_KIND[kind];
-      if (column) contact[column] = address;
-
-      const [created] = await this.db
-        .insert(businessParties)
-        .values({
-          organizationId: context.organizationId,
-          name: partyNameFor(sender),
-          partyType: "CUSTOMER",
-          ...contact,
-        })
-        .returning({ partyId: businessParties.partyId });
-
-      if (!created) throw new Error("inbound: could not create a party for the sender");
-
-      /**
-       * The claim, in the same statement stream as the party.
-       *
-       * A party with no identifier is a party the next message from the same
-       * person will not match, so it would silently become two records — the
-       * exact failure this table exists to end. Both writes are inside the
-       * step, so they commit with the tenant transaction or not at all.
-       */
-      await claimIdentifiers(this.db, context.organizationId, created.partyId, [
-        { kind, value: sender.address },
-      ]);
-
-      /**
-       * Recorded here rather than by the extractor, because this is an
-       * autonomous write in its own right — nobody filled in a form. Writing it
-       * inside the step means it commits in the same tenant transaction as the
-       * party and as the memo that the step ran, so a crash cannot leave a party
-       * that the review feed has no entry for.
-       *
-       * No model, no confidence: this decision was deterministic, and recording
-       * a score for it would invent one.
-       */
-      await this.db.insert(autonomousDecisions).values(
-        buildDecision({
-          organizationId: context.organizationId,
-          kind: "party.created",
-          outcome: "applied",
-          triggerType: "inbound-event",
-          triggerId: inboundEventId,
-          partyId: created.partyId,
-          inputs: { address, identifierKind: kind, channel: event.channel },
-          decision: { partyId: created.partyId, name: partyNameFor(sender) },
-          summary: `Created a record for ${address}, who was not on file, after they made contact by ${event.channel}.`,
-        }),
-      );
-
-      return { partyId: created.partyId, created: true };
-    });
-
-    const activity = await step.run("log-activity", async () => {
-      const [row] = await this.db
-        .insert(activities)
-        .values({
-          organizationId: context.organizationId,
-          kind: activityKindFor(event.channel),
-          occurredAt: new Date(event.occurredAt),
-          subject: event.subject ?? null,
-          body: event.body ?? null,
-          threadId: threadIdentity(event),
-          partyId: party.partyId,
-          // Nobody typed this. Recording it as the system is what lets a reader
-          // tell, and what ticket 13's review feed reads.
-          actorKind: "system",
-          actorLabel: `ingress:${event.channel}`,
-          source: event.provider,
-        })
-        .returning({ activityId: activities.activityId });
-
-      if (!row) throw new Error("inbound: could not log the activity");
-
-      /**
-       * Filing a communication is deterministic and effectively always right,
-       * so the feed hides this kind by default — but it is still recorded, for
-       * two reasons. The audit trail is meant to be complete rather than
-       * interesting, and the correction rate needs a denominator that includes
-       * the actions nobody ever had to correct.
-       */
-      await this.db.insert(autonomousDecisions).values(
-        buildDecision({
-          organizationId: context.organizationId,
-          kind: "activity.logged",
-          outcome: "applied",
-          triggerType: "inbound-event",
-          triggerId: inboundEventId,
-          partyId: party.partyId,
-          activityId: row.activityId,
-          inputs: { channel: event.channel, provider: event.provider },
-          decision: { activityId: row.activityId, threadId: threadIdentity(event) },
-          summary: `Filed a ${event.channel} message${event.subject ? ` — "${event.subject}"` : ""} against the party's timeline.`,
-        }),
-      );
-
-      return { activityId: row.activityId };
-    });
-
-    await step.run("record-participants", async () => {
-      const external = externalParticipants(event, []);
-      if (external.length === 0) return null;
-
-      await this.db.insert(activityParticipants).values(
-        external.map((participant) => ({
-          organizationId: context.organizationId,
-          activityId: activity.activityId,
-          // Only the sender is resolved to a party in this ticket; the rest keep
-          // their address, which is exactly what the nullable columns are for.
-          partyId: participant.role === "from" ? party.partyId : null,
-          // Normalised by kind rather than as an address, so a call's `from`
-          // row holds the number in the one shape everything else matches on.
-          address:
-            normaliseIdentifier(identifierKindOf(event, participant), participant.address) ||
-            participant.address.trim(),
-          role: participant.role,
-        })),
-      );
-
+    /**
+     * What normal looks like for this relationship, brought up to date.
+     *
+     * Before extraction rather than after, because ticket 02's silence
+     * judgement and ticket 03's participant judgement both read this row, and a
+     * detector reasoning about a state that predates the message it was woken by
+     * would be answering last week's question.
+     *
+     * Its own step for the ordinary reason every step here has its own: a retry
+     * re-materialises without creating a second party and a second activity
+     * first. It cannot throw the run down — a relationship summary is not worth
+     * a dead-lettered delivery — but the failure is logged rather than swallowed.
+     */
+    await step.run("materialise-relationship", async () => {
+      if (!this.relationships) return null;
+      await this.relationships.tryOnActivity(context.organizationId, activity.activityId);
       return null;
     });
 
@@ -310,56 +184,11 @@ export class InboundIngressWorkflow implements OnModuleInit {
      * measurement; a workflow that fails because the measurement failed would
      * be a gap in the product.
      */
-    await step.run("shadow-score", async () => {
-      if (!this.scoring) return null;
+    await step.run("shadow-score", () => shadowScoreInbound(this.stepDeps(), context, activity));
 
-      const decisions = await this.db
-        .select({ id: autonomousDecisions.autonomousDecisionId })
-        .from(autonomousDecisions)
-        .where(
-          and(
-            eq(autonomousDecisions.organizationId, context.organizationId),
-            eq(autonomousDecisions.triggerType, "activity"),
-            eq(autonomousDecisions.triggerId, activity.activityId),
-          ),
-        )
-        .limit(MAX_SCORED_PER_RUN);
-
-      for (const decision of decisions) {
-        try {
-          await this.scoring.scoreDecision(context.organizationId, decision.id);
-        } catch (error) {
-          this.logger.warn(
-            `shadow score failed for ${decision.id}: ${error instanceof Error ? error.message : String(error)}`,
-          );
-        }
-      }
-
-      return { scored: decisions.length };
-    });
-
-    await step.run("mark-processed", async () => {
-      await this.db
-        .update(inboundEvents)
-        .set({
-          status: "PROCESSED",
-          processedAt: new Date(),
-          partyId: party.partyId,
-          activityId: activity.activityId,
-        })
-        // Scoped by tenant as well as by id. RLS would refuse another
-        // organisation's receipt anyway, but a write that relies on the policy
-        // to be correct is a write that stops being correct the day the policy
-        // is relaxed — and every other statement in this workflow says so too.
-        .where(
-          and(
-            eq(inboundEvents.organizationId, context.organizationId),
-            eq(inboundEvents.inboundEventId, inboundEventId),
-          ),
-        );
-
-      return null;
-    });
+    await step.run("mark-processed", () =>
+      markInboundProcessed(this.stepDeps(), context, inboundEventId, party, activity),
+    );
 
     this.logger.log(
       `inbound ${event.channel} processed — party ${party.created ? "created" : "matched"}`,

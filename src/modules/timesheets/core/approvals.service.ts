@@ -1,42 +1,43 @@
-import {
-  BadRequestException,
-  ConflictException,
-  ForbiddenException,
-  Inject,
-  Injectable,
-  NotFoundException,
-} from "@nestjs/common";
+import { ConflictException, ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import {
   assertOrganizationActor,
   OrganizationActorError,
   organizationActorHttpError,
 } from "../../../common/organization/organization-actor";
-import { and, desc, gt, eq, gte, inArray, isNull, lte } from "drizzle-orm";
+import { and, gt, eq, gte, inArray, lte } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
-import { logger } from "../../../common/logger/logger.service";
 import { type Db } from "../../../db/drizzle.module";
-import { alias } from "drizzle-orm/pg-core";
 import {
   organizationMembers,
   timesheetPeriods,
-  timesheets,
   timesheetSettings,
+  userDelegationPermissions,
   userDelegations,
-  users,
 } from "../../../db/schema";
 import { AccessService } from "../../access/access.service";
 import { actingMembershipId } from "../../../common/auth/principal";
-import { resolveApprovalScope, membershipScope } from "./timesheets-core-scope";
-import {
-  buildCursorPage,
-  decodeCursor,
-} from "../../../common/pagination/cursor";
+import { resolveApprovalScope, membershipScope, TS_APPROVALS_MANAGE_PERMISSION } from "./timesheets-core-scope";
+import { buildCursorPage, decodeCursor } from "../../../common/pagination/cursor";
 import { keysetBeforeId } from "../../../common/pagination/keyset";
+import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
 import { TimesheetsAuditService } from "./timesheets-audit.service";
 import { RateResolverService } from "./rate-resolver.service";
 import { canActOnPeriod } from "./lib/approval-guard";
+import { membershipUserIds, periodOwnerUserIdOrWarn } from "./lib/approval-lifecycle";
+import { listApprovalRows, readApprovedPeriod } from "./lib/approval-period-reads";
+import { applyApproval } from "./lib/approval-transition";
 import type { ApprovalsQuery } from "./dto/approvals.schemas";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+
+// The lifecycle-event and period-owner helpers live in `lib/approval-lifecycle.ts`;
+// ApprovalsBulkService, PeriodsService and PeriodsSubmitService import them from here.
+export {
+  LIFECYCLE_RETURNING,
+  lifecyclePayload,
+  membershipUserIds,
+  periodOwnerUserIdOrWarn,
+} from "./lib/approval-lifecycle";
+export type { LifecycleRow } from "./lib/approval-lifecycle";
 
 @Injectable()
 export class ApprovalsService {
@@ -45,6 +46,7 @@ export class ApprovalsService {
     private readonly access: AccessService,
     private readonly audit: TimesheetsAuditService,
     private readonly rateResolver: RateResolverService,
+    private readonly notifications: NotificationDispatchService,
   ) {}
 
   private async getSettings(orgId: string) {
@@ -57,9 +59,16 @@ export class ApprovalsService {
   }
 
   /**
-   * The delegators who have an active delegation to this actor, out of a bounded
-   * set of approvers. A bulk endpoint resolves the whole page in one indexed
-   * multi-key read instead of one probe per period.
+   * The delegators who have an active delegation to this actor that carries
+   * the approval authority, out of a bounded set of approvers. A bulk endpoint
+   * resolves the whole page in one indexed multi-key read instead of one probe
+   * per period.
+   *
+   * A delegation stores one child row per permission it hands over (§5), so
+   * "acting for the approver" means holding a delegation that names
+   * `timesheets:approvals:manage`. Reading only the header, as this did, let a
+   * delegation of any key at all — a knowledge-base read, say — confer
+   * standing over the delegator's approval queue.
    */
   async activeDelegationsToActor(
     orgId: string,
@@ -70,8 +79,16 @@ export class ApprovalsService {
     if (wanted.length === 0) return new Set<number>();
     const now = new Date();
     const rows = await this.db
-      .select({ delegatorMembershipId: userDelegations.delegatorMembershipId })
+      .selectDistinct({ delegatorMembershipId: userDelegations.delegatorMembershipId })
       .from(userDelegations)
+      .innerJoin(
+        userDelegationPermissions,
+        and(
+          eq(userDelegationPermissions.orgId, userDelegations.orgId),
+          eq(userDelegationPermissions.delegationId, userDelegations.id),
+          eq(userDelegationPermissions.permissionKey, TS_APPROVALS_MANAGE_PERMISSION),
+        ),
+      )
       .where(
         and(
           eq(userDelegations.orgId, orgId),
@@ -141,9 +158,6 @@ export class ApprovalsService {
       if (qMember) requestedMembershipId = qMember.id;
     }
 
-    const approverMember = alias(organizationMembers, "approver_member");
-    const ownerMember = alias(organizationMembers, "owner_member");
-
     return read.read(
       {
         tenant: timesheetPeriods.orgId,
@@ -157,45 +171,7 @@ export class ApprovalsService {
         ],
       },
       async ({ sql: where }) => {
-        const rows = await this.db
-          .select({
-            id: timesheetPeriods.id,
-            orgId: timesheetPeriods.orgId,
-            userMembershipId: timesheetPeriods.userMembershipId,
-            periodStart: timesheetPeriods.periodStart,
-            periodEnd: timesheetPeriods.periodEnd,
-            status: timesheetPeriods.status,
-            totalHours: timesheetPeriods.totalHours,
-            billableHours: timesheetPeriods.billableHours,
-            nonBillableHours: timesheetPeriods.nonBillableHours,
-            submittedAt: timesheetPeriods.submittedAt,
-            approvedAt: timesheetPeriods.approvedAt,
-            rejectedAt: timesheetPeriods.rejectedAt,
-            lockedAt: timesheetPeriods.lockedAt,
-            currentApproverMembershipId: timesheetPeriods.currentApproverMembershipId,
-            approvedBy: approverMember.userId,
-            rejectionReason: timesheetPeriods.rejectionReason,
-            createdAt: timesheetPeriods.createdAt,
-            updatedAt: timesheetPeriods.updatedAt,
-            userEmail: users.email,
-            userName: users.name,
-          })
-          .from(timesheetPeriods)
-          .leftJoin(ownerMember, and(
-            eq(timesheetPeriods.orgId, ownerMember.orgId),
-            eq(timesheetPeriods.userMembershipId, ownerMember.id),
-          ))
-          .leftJoin(users, eq(ownerMember.userId, users.id))
-          .leftJoin(
-            approverMember,
-            and(
-              eq(timesheetPeriods.orgId, approverMember.orgId),
-              eq(timesheetPeriods.approvedByMembershipId, approverMember.id),
-            ),
-          )
-          .where(where)
-          .orderBy(desc(timesheetPeriods.submittedAt), desc(timesheetPeriods.id))
-          .limit(limit + 1);
+        const rows = await listApprovalRows(this.db, [where], limit);
 
         const page = buildCursorPage(rows, limit, (r) => ({
           sortValue: (r.submittedAt ?? r.createdAt).toISOString(),
@@ -251,169 +227,121 @@ export class ApprovalsService {
     const lockAfterApproval = settings?.lockAfterApproval ?? true;
     const now = new Date();
 
-    await this.db.transaction(async (tx) => {
-      await tx
-        .update(timesheetPeriods)
-        .set({
-          status: "APPROVED",
-          approvedAt: now,
-          approvedByMembershipId: approverActor.membershipId,
-          lockedAt: lockAfterApproval ? now : null,
-          updatedAt: now,
-        })
-        .where(
-          and(
-            eq(timesheetPeriods.id, periodId),
-            eq(timesheetPeriods.orgId, u.orgId),
-          ),
-        );
-
-      await tx
-        .update(timesheets)
-        .set({
-          status: "APPROVED",
-          approvedByMembershipId: approverActor.membershipId,
-          approvedAt: now,
-          lockedAt: lockAfterApproval ? now : null,
-          lockedByMembershipId: lockAfterApproval
-            ? approverActor.membershipId
-            : null,
-          updatedAt: now,
-        })
-        .where(
-          and(
-            eq(timesheets.timesheetPeriodId, periodId),
-            eq(timesheets.orgId, u.orgId),
-            isNull(timesheets.voidedAt),
-          ),
-        );
-
-      const billableEntries = await tx
-        .select()
-        .from(timesheets)
-        .where(
-          and(
-            eq(timesheets.timesheetPeriodId, periodId),
-            eq(timesheets.orgId, u.orgId),
-            eq(timesheets.isBillable, true),
-            isNull(timesheets.billRate),
-            isNull(timesheets.voidedAt),
-          ),
-        );
-
-      const resolvedRates = await this.rateResolver.resolveMany(
-        u.orgId,
-        billableEntries.map((entry) => ({
-          projectId: entry.projectId,
-          userMembershipId: entry.userMembershipId,
-          ticketId: entry.ticketId,
-          date: entry.date,
-        })),
-      );
-
-      type RateGroup = {
-        billRate: string;
-        costRate: string | null;
-        currency: string;
-        rateSource: (typeof resolvedRates)[number]["source"];
-        ids: number[];
-      };
-      const rateGroups = new Map<string, RateGroup>();
-      for (const [i, entry] of billableEntries.entries()) {
-        const resolved = resolvedRates[i];
-        if (!resolved || resolved.billRate === null) continue;
-        const groupKey = `${resolved.billRate}:${resolved.costRate ?? ""}:${resolved.currency}:${resolved.source ?? ""}`;
-        const group = rateGroups.get(groupKey) ?? {
-          billRate: resolved.billRate.toString(),
-          costRate:
-            resolved.costRate !== null ? resolved.costRate.toString() : null,
-          currency: resolved.currency,
-          rateSource: resolved.source,
-          ids: [],
-        };
-        group.ids.push(entry.id);
-        rateGroups.set(groupKey, group);
-      }
-
-      for (const group of rateGroups.values()) {
-        await tx
-          .update(timesheets)
-          .set({
-            billRate: group.billRate,
-            costRate: group.costRate,
-            currency: group.currency,
-            rateSource: group.rateSource,
-            updatedAt: now,
-          })
-          .where(
-            and(
-              eq(timesheets.orgId, u.orgId),
-              inArray(timesheets.id, group.ids),
-            ),
-          );
-      }
-
-      await this.audit.record(tx, {
-        orgId: u.orgId,
-        actorMembershipId: actingMembershipId(u.principal),
-        entityType: "period",
-        entityId: periodId.toString(),
-        action: "period.approved",
-        after: { status: "APPROVED" },
-      });
+    const owners = await membershipUserIds(this.db, u.orgId, [period.userMembershipId]);
+    const ownerUserId = periodOwnerUserIdOrWarn(owners, period.userMembershipId, {
+      orgId: u.orgId,
+      periodId,
+      operation: "approve",
     });
+
+    /**
+     * One transition, but up to two events: approving with
+     * `lock_after_approval` on also locks, and the pack's payroll handoff waits
+     * on `timesheets.period.locked` specifically. Both events therefore need
+     * their own `aggregate_version`, and they share a single `now` — which is
+     * exactly why the version is a row counter and not a timestamp. The UPDATE
+     * claims both numbers at once so nothing can be interleaved between them.
+     */
+    const emitCount = lockAfterApproval ? 2 : 1;
+
+    await this.db.transaction((tx) =>
+      applyApproval(
+        tx,
+        { rateResolver: this.rateResolver, audit: this.audit },
+        u,
+        periodId,
+        { approverActor, lockAfterApproval, emitCount, ownerUserId, now },
+      ),
+    );
+
+    /**
+     * TS-24. The worker hears that their week was signed off, through the
+     * existing notification pipeline and therefore the existing email outbox.
+     *
+     * `notifySelf` is left at its default, so an approver approving their own
+     * period — which `canActOnPeriod` allows an org owner to do — is not
+     * emailed about their own click. Nobody is told when the worker's
+     * membership no longer resolves.
+     */
+    if (ownerUserId) {
+      await this.notifyPeriodApproved(u, {
+        periodId,
+        ownerUserId,
+        title: `Timesheet approved: ${period.periodStart} to ${period.periodEnd}`,
+        message: `Your timesheet for ${period.periodStart}–${period.periodEnd} (${period.totalHours}h) was approved.`,
+        variables: {
+          periodId,
+          periodStart: period.periodStart,
+          periodEnd: period.periodEnd,
+          totalHours: period.totalHours,
+        },
+      });
+    }
   }
 
   async approvePeriod(u: CurrentUserContext, periodId: number) {
     await this.approveSinglePeriod(u, periodId);
+    return readApprovedPeriod(this.db, u.orgId, periodId);
+  }
 
-    const approverMember = alias(organizationMembers, "approver_member");
-    const ownerMember = alias(organizationMembers, "owner_member");
+  /**
+   * TS-24. The worker hears that their week was signed off. Sent after the
+   * approving transaction commits, by the single approval above and once per
+   * worker by `ApprovalsBulkService.bulkApprove`.
+   */
+  async notifyPeriodApproved(
+    u: CurrentUserContext,
+    notice: {
+      periodId: number;
+      ownerUserId: string;
+      title: string;
+      message: string;
+      variables: Record<string, unknown>;
+    },
+  ): Promise<void> {
+    await this.notifications.emit({
+      orgId: u.orgId,
+      eventKey: "timesheets.period.approved",
+      actorUserId: u.userId,
+      targetUserIds: [notice.ownerUserId],
+      entityType: "timesheet_period",
+      entityId: String(notice.periodId),
+      title: notice.title,
+      message: notice.message,
+      link: `/timesheets/my-time?period=${notice.periodId}`,
+      variables: notice.variables,
+    });
+  }
 
-    const [updated] = await this.db
-      .select({
-        id: timesheetPeriods.id,
-        orgId: timesheetPeriods.orgId,
-        userMembershipId: timesheetPeriods.userMembershipId,
-        periodStart: timesheetPeriods.periodStart,
-        periodEnd: timesheetPeriods.periodEnd,
-        status: timesheetPeriods.status,
-        totalHours: timesheetPeriods.totalHours,
-        billableHours: timesheetPeriods.billableHours,
-        nonBillableHours: timesheetPeriods.nonBillableHours,
-        submittedAt: timesheetPeriods.submittedAt,
-        approvedAt: timesheetPeriods.approvedAt,
-        rejectedAt: timesheetPeriods.rejectedAt,
-        lockedAt: timesheetPeriods.lockedAt,
-        currentApproverMembershipId: timesheetPeriods.currentApproverMembershipId,
-        approvedBy: approverMember.userId,
-        rejectionReason: timesheetPeriods.rejectionReason,
-        createdAt: timesheetPeriods.createdAt,
-        updatedAt: timesheetPeriods.updatedAt,
-        userEmail: users.email,
-        userName: users.name,
-      })
-      .from(timesheetPeriods)
-      .leftJoin(ownerMember, and(
-        eq(timesheetPeriods.orgId, ownerMember.orgId),
-        eq(timesheetPeriods.userMembershipId, ownerMember.id),
-      ))
-      .leftJoin(users, eq(ownerMember.userId, users.id))
-      .leftJoin(
-        approverMember,
-        and(
-          eq(timesheetPeriods.orgId, approverMember.orgId),
-          eq(timesheetPeriods.approvedByMembershipId, approverMember.id),
-        ),
-      )
-      .where(
-        and(
-          eq(timesheetPeriods.id, periodId),
-          eq(timesheetPeriods.orgId, u.orgId),
-        ),
-      )
-      .limit(1);
-
-    return updated;
+  /**
+   * TS-24. The worker hears that their week was sent back, through the same
+   * pipeline as the approval notice above, after the caller's transaction.
+   *
+   * Rejection lives in `ApprovalsBulkService`. It reaches the dispatcher through
+   * this service, which it already depends on for the approval guard, rather
+   * than through a second injection of it.
+   */
+  async notifyPeriodRejected(
+    u: CurrentUserContext,
+    notice: {
+      periodId: number;
+      ownerUserId: string;
+      title: string;
+      message: string;
+      variables: Record<string, unknown>;
+    },
+  ): Promise<void> {
+    await this.notifications.emit({
+      orgId: u.orgId,
+      eventKey: "timesheets.period.rejected",
+      actorUserId: u.userId,
+      targetUserIds: [notice.ownerUserId],
+      entityType: "timesheet_period",
+      entityId: String(notice.periodId),
+      title: notice.title,
+      message: notice.message,
+      link: `/timesheets/my-time?period=${notice.periodId}`,
+      variables: notice.variables,
+    });
   }
 }

@@ -35,6 +35,8 @@
  *   F3 — RESOLVED. An AV scan runs, and it runs before the key is planned.
  */
 
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { Readable } from "node:stream";
 import { BadRequestException, PayloadTooLargeException } from "@nestjs/common";
 import { INTERCEPTORS_METADATA } from "@nestjs/common/constants";
@@ -52,6 +54,12 @@ import { validateMagicBytes } from "../../src/modules/storage/file-signatures";
 import { MediaTransformRunner } from "../../src/modules/storage/media-transform.runner";
 import { StorageController } from "../../src/modules/storage/storage.controller";
 import { StorageService } from "../../src/modules/storage/storage.service";
+
+const BACKEND_ROOT = join(__dirname, "../..");
+
+function src(rel: string): string {
+  return readFileSync(join(BACKEND_ROOT, rel), "utf8");
+}
 
 const ORG = "org-A";
 
@@ -432,5 +440,57 @@ describe("StorageController upload and download controls", () => {
       });
       expect(res.json).toHaveBeenCalledWith({ url: "https://signed.example/x" });
     });
+  });
+});
+
+/*
+ * F4's pin. This block is deliberately NOT static like the rest of the file:
+ * the claim is about which code actually runs, and the source text cannot say
+ * that — package.json shows `multer` at the patched range while the tree quietly
+ * resolves 2.2.0 underneath platform-express. So it asks the module resolver,
+ * from platform-express's own directory, which is the question that matters.
+ */
+describe("the multer that actually serves uploads is the patched one", () => {
+  const MINIMUM = [2, 3, 0]; // the advisory floor: DoS via crafted field names
+
+  function resolvedMulterVersion(from: string): number[] {
+    const dir = dirname(require.resolve(from));
+    const pkg = require.resolve("multer/package.json", { paths: [dir] });
+    const { version } = JSON.parse(readFileSync(pkg, "utf8")) as { version: string };
+    return version.split(".").map(Number);
+  }
+
+  function atLeast(actual: number[], floor: number[]): boolean {
+    for (let i = 0; i < floor.length; i++) {
+      if ((actual[i] ?? 0) > floor[i]) return true;
+      if ((actual[i] ?? 0) < floor[i]) return false;
+    }
+    return true;
+  }
+
+  it("resolves >= 2.3.0 from @nestjs/platform-express, not just at the top level", () => {
+    // The top-level copy was never the problem; this is the one FileInterceptor uses.
+    expect(atLeast(resolvedMulterVersion("@nestjs/platform-express"), MINIMUM)).toBe(true);
+  });
+
+  it("resolves >= 2.3.0 at the top level too, so both copies agree", () => {
+    expect(atLeast(resolvedMulterVersion("multer"), MINIMUM)).toBe(true);
+  });
+
+  it("keeps the override that makes the first case true", () => {
+    // platform-express pins "2.2.0" exactly, so nothing but an override reaches it.
+    const pkg = JSON.parse(src("package.json")) as {
+      pnpm?: { overrides?: Record<string, string> };
+    };
+    expect(pkg.pnpm?.overrides?.multer).toBeDefined();
+  });
+
+  it("proves the comparator can fail, so the three cases above mean something", () => {
+    // Without this, a comparator bug that returns true for everything would make
+    // the whole block vacuous and indistinguishable from a genuine pass.
+    expect(atLeast([2, 2, 0], MINIMUM)).toBe(false);
+    expect(atLeast([1, 9, 9], MINIMUM)).toBe(false);
+    expect(atLeast([2, 3, 0], MINIMUM)).toBe(true);
+    expect(atLeast([3, 0, 0], MINIMUM)).toBe(true);
   });
 });

@@ -21,7 +21,6 @@ const SRC_ROOT = resolve(SCRIPTS_DIR, "..");
 
 /** The sites rewritten for C073, and the shape each must keep. */
 const REWRITTEN = [
-  "modules/accounting/settings/accounting-settings.service.ts",
   "modules/module-access/module-access-group-crud.service.ts",
   "modules/payroll/setup/components.service.ts",
   "modules/payroll/runs/exceptions.service.ts",

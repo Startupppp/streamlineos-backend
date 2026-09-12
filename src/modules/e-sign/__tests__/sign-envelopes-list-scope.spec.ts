@@ -4,6 +4,7 @@ import type { ListEnvelopesInput } from "../dto/e-sign.schemas";
 import { ScopedRead } from "../../access/scoped-read";
 import { SignEnvelopesController } from "../sign-envelopes.controller";
 import type { SignEnvelopesService } from "../sign-envelopes.service";
+import type { SignEnvelopeAccessService } from "../sign-envelope-access.service";
 
 const ORG = "org-scope-test";
 const MEMBER_ID = 5;
@@ -29,10 +30,13 @@ function forwardedRead(svc: jest.Mocked<Pick<SignEnvelopesService, "list">>): Sc
   return read;
 }
 
+/** List never consults it; the mutation gate is proved in bola-esign-envelope-children-404. */
+const envelopeAccessStub = { mustGetActionable: jest.fn() } as unknown as SignEnvelopeAccessService;
+
 describe("SignEnvelopesController list — request scope becomes a ScopedRead", () => {
   it("forwards an unrestricted ScopedRead when req.rbacScope is 'all'", () => {
     const svc = makeService();
-    const ctrl = new SignEnvelopesController(svc as unknown as SignEnvelopesService);
+    const ctrl = new SignEnvelopesController(svc as unknown as SignEnvelopesService, envelopeAccessStub);
     const req = { rbacScope: "all" } as Request;
 
     ctrl.list(makeQuery(), makeUser(), req);
@@ -45,7 +49,7 @@ describe("SignEnvelopesController list — request scope becomes a ScopedRead", 
 
   it("forwards an own-scoped ScopedRead when req.rbacScope is 'own'", () => {
     const svc = makeService();
-    const ctrl = new SignEnvelopesController(svc as unknown as SignEnvelopesService);
+    const ctrl = new SignEnvelopesController(svc as unknown as SignEnvelopesService, envelopeAccessStub);
     const req = { rbacScope: "own" } as Request;
 
     ctrl.list(makeQuery(), makeUser(), req);
@@ -57,7 +61,7 @@ describe("SignEnvelopesController list — request scope becomes a ScopedRead", 
 
   it("forwards a team-scoped ScopedRead when req.rbacScope is 'team'", () => {
     const svc = makeService();
-    const ctrl = new SignEnvelopesController(svc as unknown as SignEnvelopesService);
+    const ctrl = new SignEnvelopesController(svc as unknown as SignEnvelopesService, envelopeAccessStub);
     const req = { rbacScope: "team" } as Request;
 
     ctrl.list(makeQuery(), makeUser(), req);
@@ -69,7 +73,7 @@ describe("SignEnvelopesController list — request scope becomes a ScopedRead", 
 
   it("fails closed to a denied ScopedRead when req.rbacScope is absent (guard not run)", () => {
     const svc = makeService();
-    const ctrl = new SignEnvelopesController(svc as unknown as SignEnvelopesService);
+    const ctrl = new SignEnvelopesController(svc as unknown as SignEnvelopesService, envelopeAccessStub);
     const req = {} as Request;
 
     ctrl.list(makeQuery(), makeUser(), req);
@@ -80,7 +84,7 @@ describe("SignEnvelopesController list — request scope becomes a ScopedRead", 
 
   it("always passes membershipId from the authenticated context", () => {
     const svc = makeService();
-    const ctrl = new SignEnvelopesController(svc as unknown as SignEnvelopesService);
+    const ctrl = new SignEnvelopesController(svc as unknown as SignEnvelopesService, envelopeAccessStub);
     const req = { rbacScope: "all" } as Request;
 
     ctrl.list(makeQuery(), makeUser(), req);

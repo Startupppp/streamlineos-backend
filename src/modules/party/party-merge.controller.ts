@@ -17,8 +17,18 @@ import {
   dismissedSchema,
   mergeOutcomeSchema,
   revertResultSchema,
+  partyMergeListSchema,
 } from "./dto/party-response.schemas";
-import { partyMergeBodySchema, partyRoleBodySchema } from "./dto/party-merge.schemas";
+import {
+  partyDuplicateQuerySchema,
+  partyMergeListQuerySchema,
+  partyMergeSchema,
+  partyRoleSchema,
+  type PartyDuplicateQuery,
+  type PartyMergeInput,
+  type PartyMergeListQuery,
+  type PartyRoleInput,
+} from "./dto/party.schemas";
 import { z } from "zod";
 
 const partyIdParams = z.object({ partyId: z.string().min(1) }).strict();
@@ -56,11 +66,11 @@ export class PartyMergeController {
   @RequirePermission("party:roles:manage")
   @Idempotent("party.role.add")
   @ResponseSchema(partyRolesSchema)
-  @Validate({ params: partyIdParams, body: partyRoleBodySchema })
+  @Validate({ params: partyIdParams, body: partyRoleSchema })
   async addRole(
     @CurrentUser() user: CurrentUserContext,
     @Param("partyId") partyId: string,
-    @Body() body: z.infer<typeof partyRoleBodySchema>,
+    @Body() body: PartyRoleInput,
   ) {
     return { roles: await this.roles.addRole(user.orgId, partyId, body.role, user.userId) };
   }
@@ -93,11 +103,12 @@ export class PartyMergeController {
   @UseGuards(PermissionGuard)
   @RequirePermission("party:duplicates:view")
   @ResponseSchema(duplicateCandidatesSchema)
+  @Validate({ query: partyDuplicateQuerySchema })
   async listCandidates(
     @CurrentUser() user: CurrentUserContext,
-    @Query("status") status?: string,
+    @Query() query: PartyDuplicateQuery,
   ) {
-    return { data: await this.roles.listCandidates(user.orgId, status ?? "PENDING") };
+    return this.roles.listCandidates(user.orgId, query);
   }
 
   @Delete("duplicates/:candidateId")
@@ -118,17 +129,41 @@ export class PartyMergeController {
   @RequirePermission("party:merges:manage")
   @Idempotent("party.merge")
   @ResponseSchema(mergeOutcomeSchema)
-  @Validate({ body: partyMergeBodySchema })
+  @Validate({ body: partyMergeSchema })
   async merge(
     @CurrentUser() user: CurrentUserContext,
-    @Body() body: z.infer<typeof partyMergeBodySchema>,
+    @Body() body: PartyMergeInput,
   ) {
     return this.merges.merge(user.orgId, {
       leftPartyId: body.leftPartyId,
       rightPartyId: body.rightPartyId,
       decidedBy: "USER",
       userId: user.userId,
+      // A merge reached through this route is one a person confirmed, so the
+      // record they picked survives. Without this the service fell back to
+      // `chooseSurvivor` and kept whichever was older, discarding the answer to
+      // the only question the dialog asks.
+      preferSurvivorPartyId: body.preferSurvivorPartyId,
     });
+  }
+
+  /**
+   * What has been merged, so a merge can be undone after the fact.
+   *
+   * `party:merges:manage` rather than a view key: this list exists to be acted
+   * on, every row is a revert control, and a second key naming the same set for
+   * reading would only be a weaker way in.
+   */
+  @Get("merges")
+  @UseGuards(PermissionGuard)
+  @RequirePermission("party:merges:manage")
+  @Validate({ query: partyMergeListQuerySchema })
+  @ResponseSchema(partyMergeListSchema)
+  async listMerges(
+    @CurrentUser() user: CurrentUserContext,
+    @Query() query: PartyMergeListQuery,
+  ) {
+    return this.merges.listMerges(user.orgId, query);
   }
 
   @Post("merges/:partyMergeId/revert")

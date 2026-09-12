@@ -6,9 +6,10 @@ import {
 } from "./providers/mail-normalizers";
 
 const READER = "user-roundtrip";
+const SECRET = "mail-cursor-roundtrip-secret";
 
 function roundTrip(cursor: OpaqueCursor): OpaqueCursor {
-  return decodeCursor(encodeCursor(cursor, READER), READER);
+  return decodeCursor(encodeCursor(cursor, READER, SECRET), READER, SECRET);
 }
 
 describe("mail cursor — every position survives the JSON round trip", () => {

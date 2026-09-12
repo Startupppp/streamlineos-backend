@@ -1,5 +1,5 @@
-import { pgTable, text, serial, timestamp, decimal, integer, boolean, date, index, uniqueIndex, unique } from "drizzle-orm/pg-core";
-import { relations } from "drizzle-orm";
+import { pgTable, text, serial, timestamp, decimal, integer, boolean, date, jsonb, index, uniqueIndex, unique, foreignKey } from "drizzle-orm/pg-core";
+import { relations, sql } from "drizzle-orm";
 import { invShipmentStatusEnum, invPackageStatusEnum, invLoadStatusEnum } from "../common/enums";
 import { organizations, users } from "../common/auth";
 import { invProductVariants } from "./core";
@@ -8,6 +8,22 @@ import { invSalesOrders, invSoLines } from "./sales-orders";
 import { invLots, invSerialNumbers } from "./traceability";
 import { invStockTransfers } from "./stock";
 
+/**
+ * INV-26 — a courier, and this tenant's account with it.
+ *
+ * The credential columns are on this row rather than in an environment
+ * variable, and the distinction is structural rather than stylistic: the table
+ * is org-scoped (`uniqueIndex(org_id, code)`), so every tenant defines its own
+ * couriers and holds its own courier account. One deployment-wide variable
+ * would hand every tenant the same login.
+ *
+ * `transport` is the deliberate half of adapter resolution. `code` is whatever
+ * the tenant typed and is never a route — an organisation naming its courier
+ * "FEDEX" does not thereby acquire a FedEx integration. `transport` is written
+ * by an administrator from the set the registry actually knows, and null (the
+ * default, and what every existing row has) means no adapter: manual tracking,
+ * which is a real way to run a warehouse.
+ */
 export const invCarriers = pgTable("inv_carriers", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
@@ -15,6 +31,29 @@ export const invCarriers = pgTable("inv_carriers", {
   code: text("code").notNull(),
   trackingUrlTemplate: text("tracking_url_template"),
   isActive: boolean("is_active").default(true).notNull(),
+  /** Which registered adapter speaks for this carrier. Null = nobody. */
+  transport: text("transport"),
+  /** Where that adapter posts. A tenant value, so every use runs the SSRF guard. */
+  apiBaseUrl: text("api_base_url"),
+  /**
+   * The courier account key, AES-256-GCM at rest (`secret-encryption.util`).
+   * Never selected by any list or detail read — `CARRIER_COLUMNS` in
+   * `carriers.service.ts` is the projection every read goes through, and this
+   * column is deliberately absent from it.
+   */
+  apiCredentialEncrypted: text("api_credential_encrypted"),
+  /** "****3f9a". Enough for an operator to tell which key is installed. */
+  apiCredentialHint: text("api_credential_hint"),
+  /** The shared secret the carrier's callbacks are signed with. Same rules. */
+  webhookSecretEncrypted: text("webhook_secret_encrypted"),
+  /**
+   * The last callback that failed verification, on the carrier row rather than
+   * in a delivery table. A forged signature must not be able to open a row:
+   * that would make the ingest an unbounded write for anyone who can reach a
+   * public URL. Two columns on an existing row are bounded and still visible.
+   */
+  webhookLastFailureAt: timestamp("webhook_last_failure_at"),
+  webhookFailureReason: text("webhook_failure_reason"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
@@ -47,6 +86,7 @@ export const invShipments = pgTable("inv_shipments", {
 
 export const invShipmentLines = pgTable("inv_shipment_lines", {
   id: serial("id").primaryKey(),
+  orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   shipmentId: integer("shipment_id").references(() => invShipments.id, { onDelete: "cascade" }).notNull(),
   soLineId: integer("so_line_id").references(() => invSoLines.id, { onDelete: "set null" }),
   productVariantId: integer("product_variant_id").references(() => invProductVariants.id).notNull(),
@@ -54,8 +94,95 @@ export const invShipmentLines = pgTable("inv_shipment_lines", {
   lotId: integer("lot_id").references(() => invLots.id, { onDelete: "set null" }),
   serialId: integer("serial_id").references(() => invSerialNumbers.id, { onDelete: "set null" }),
 }, (table) => [
+  unique("uniq_inv_shipment_lines_org_id").on(table.orgId, table.id),
+  foreignKey({
+    columns: [table.orgId, table.shipmentId],
+    foreignColumns: [invShipments.orgId, invShipments.id],
+    name: "fk_inv_shipment_lines_shipment_id_org",
+  }),
+  foreignKey({
+    columns: [table.orgId, table.productVariantId],
+    foreignColumns: [invProductVariants.orgId, invProductVariants.id],
+    name: "fk_inv_shipment_lines_product_variant_id_org",
+  }),
   index("idx_inv_ship_lines_ship").on(table.shipmentId),
   index("idx_inv_shipment_lines_variant").on(table.productVariantId),
+]);
+
+/**
+ * INV-206 — the cartons this warehouse actually stocks.
+ *
+ * Inner dimensions, because what matters is what fits inside. Integers in
+ * millimetres and grams for the same reason the variant measures are.
+ */
+export const invCartonTypes = pgTable("inv_carton_types", {
+  id: serial("id").primaryKey(),
+  orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
+  code: text("code").notNull(),
+  name: text("name").notNull(),
+  innerLengthMm: integer("inner_length_mm").notNull(),
+  innerWidthMm: integer("inner_width_mm").notNull(),
+  innerHeightMm: integer("inner_height_mm").notNull(),
+  maxWeightGrams: integer("max_weight_grams").notNull(),
+  isActive: boolean("is_active").default(true).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
+}, (table) => [
+  unique("uniq_inv_carton_types_org_code").on(table.orgId, table.code),
+  unique("uniq_inv_carton_types_org_id").on(table.orgId, table.id),
+  index("idx_inv_carton_types_org_active").on(table.orgId, table.isActive),
+]);
+
+/**
+ * INV-207 — the journey between "shipped" and "delivered".
+ *
+ * Carrier webhooks are duplicated and out of order as a matter of course. The
+ * partial unique index on the carrier's own event id makes replay a no-op by
+ * construction rather than by a check that races another delivery of the same
+ * event; `occurredAt` and `receivedAt` are kept apart because a three-hour gap
+ * between them is the difference between a late parcel and a late webhook, and
+ * only both columns can tell those apart.
+ */
+export const invShipmentStatusEvents = pgTable("inv_shipment_status_events", {
+  id: serial("id").primaryKey(),
+  orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
+  shipmentId: integer("shipment_id").notNull(),
+  carrierId: integer("carrier_id"),
+  status: invShipmentStatusEnum("status").notNull(),
+  occurredAt: timestamp("occurred_at").notNull(),
+  receivedAt: timestamp("received_at").defaultNow().notNull(),
+  carrierEventId: text("carrier_event_id"),
+  description: text("description"),
+  /** Exactly what the carrier sent. Our reading of it is an interpretation. */
+  rawPayload: jsonb("raw_payload").$type<Record<string, unknown>>(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => [
+  index("idx_inv_shipment_status_events_shipment").on(
+    table.orgId,
+    table.shipmentId,
+    table.occurredAt,
+  ),
+  /**
+   * The dedup index, declared rather than left only in migration 0525.
+   *
+   * `recordEvent` relies on it entirely via `onConflictDoNothing()`, and an
+   * index that exists in the database but not in the declaration is one
+   * `db:generate` away from being proposed for deletion -- at which point every
+   * replayed webhook inserts a new row and re-advances the shipment, silently.
+   * The parity spec compares columns only, so nothing else would catch it.
+   *
+   * NULLS NOT DISTINCT is load-bearing: a shipment with no carrier on record
+   * leaves `carrierId` null, and under the default rule two nulls never
+   * conflict.
+   */
+  uniqueIndex("uniq_inv_shipment_status_events_carrier_event")
+    .on(table.orgId, table.carrierId, table.carrierEventId)
+    .where(sql`${table.carrierEventId} IS NOT NULL`),
+  foreignKey({
+    name: "fk_inv_shipment_status_events_shipment",
+    columns: [table.orgId, table.shipmentId],
+    foreignColumns: [invShipments.orgId, invShipments.id],
+  }).onDelete("cascade"),
 ]);
 
 export const invPackages = pgTable("inv_packages", {
@@ -63,11 +190,23 @@ export const invPackages = pgTable("inv_packages", {
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   packageNumber: text("package_number").notNull(),
   shipmentId: integer("shipment_id").references(() => invShipments.id, { onDelete: "set null" }),
+  /**
+   * B6. Which order's goods are in the carton.
+   *
+   * A shipment does not exist until the order ships, so `shipmentId` is null for
+   * every package that is still being packed — which is the only moment the
+   * contents can be reconciled against what was picked. Attributed to the order
+   * directly, the bench can check a scan, and the queue can be read off the
+   * cartons rather than off the sales order's status.
+   */
+  soId: integer("so_id"),
   weight: decimal("weight", { precision: 18, scale: 4 }),
   dimensionsL: decimal("dimensions_l", { precision: 10, scale: 2 }),
   dimensionsW: decimal("dimensions_w", { precision: 10, scale: 2 }),
   dimensionsH: decimal("dimensions_h", { precision: 10, scale: 2 }),
   status: invPackageStatusEnum("status").default("OPEN").notNull(),
+  /** INV-206. Which carton was chosen, so a closed package can be re-checked. */
+  cartonTypeId: integer("carton_type_id"),
   createdBy: text("created_by").references(() => users.id).notNull(),
   createdByMembershipId: integer("created_by_membership_id"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -76,16 +215,29 @@ export const invPackages = pgTable("inv_packages", {
   uniqueIndex("uniq_inv_packages_org_number").on(table.orgId, table.packageNumber),
   unique("uniq_inv_packages_org_id").on(table.orgId, table.id),
   index("idx_inv_packages_org_status").on(table.orgId, table.status),
+  index("idx_inv_packages_org_so").on(table.orgId, table.soId).where(sql`${table.soId} IS NOT NULL`),
 ]);
 
 export const invPackageLines = pgTable("inv_package_lines", {
   id: serial("id").primaryKey(),
+  orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   packageId: integer("package_id").references(() => invPackages.id, { onDelete: "cascade" }).notNull(),
   productVariantId: integer("product_variant_id").references(() => invProductVariants.id).notNull(),
   lotId: integer("lot_id").references(() => invLots.id, { onDelete: "set null" }),
   serialId: integer("serial_id").references(() => invSerialNumbers.id, { onDelete: "set null" }),
   quantity: decimal("quantity", { precision: 18, scale: 4 }).notNull(),
 }, (table) => [
+  unique("uniq_inv_package_lines_org_id").on(table.orgId, table.id),
+  foreignKey({
+    columns: [table.orgId, table.packageId],
+    foreignColumns: [invPackages.orgId, invPackages.id],
+    name: "fk_inv_package_lines_package_id_org",
+  }),
+  foreignKey({
+    columns: [table.orgId, table.productVariantId],
+    foreignColumns: [invProductVariants.orgId, invProductVariants.id],
+    name: "fk_inv_package_lines_product_variant_id_org",
+  }),
   index("idx_inv_pkg_lines_pkg").on(table.packageId),
   index("idx_inv_package_lines_variant").on(table.productVariantId),
 ]);
@@ -114,10 +266,22 @@ export const invLoads = pgTable("inv_loads", {
 
 export const invLoadLines = pgTable("inv_load_lines", {
   id: serial("id").primaryKey(),
+  orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   loadId: integer("load_id").references(() => invLoads.id, { onDelete: "cascade" }).notNull(),
   shipmentId: integer("shipment_id").references(() => invShipments.id, { onDelete: "set null" }),
   transferId: integer("transfer_id").references(() => invStockTransfers.id, { onDelete: "set null" }),
 }, (table) => [
+  unique("uniq_inv_load_lines_org_id").on(table.orgId, table.id),
+  foreignKey({
+    columns: [table.orgId, table.loadId],
+    foreignColumns: [invLoads.orgId, invLoads.id],
+    name: "fk_inv_load_lines_load_id_org",
+  }),
+  foreignKey({
+    columns: [table.orgId, table.shipmentId],
+    foreignColumns: [invShipments.orgId, invShipments.id],
+    name: "fk_inv_load_lines_shipment_id_org",
+  }),
   index("idx_inv_load_lines_load").on(table.loadId),
 ]);
 

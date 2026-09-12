@@ -1,10 +1,11 @@
 import { z } from "zod";
+import { invTxnTypeEnum } from "../../../../db/schema/common/enums";
 import { pageNumberField, pageSizeField } from "../../../../common/pagination/list-query.schema";
 
 const paginationSchema = z.object({
   page: pageNumberField,
   limit: pageSizeField(50, 100),
-});
+}).strict();
 
 export const stockSummaryQuerySchema = paginationSchema.strict();
 export type StockSummaryQueryInput = z.infer<typeof stockSummaryQuerySchema>;
@@ -15,14 +16,23 @@ export type ReorderQueryInput = z.infer<typeof reorderQuerySchema>;
 export const movementsQuerySchema = z.object({
   fromDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   toDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  warehouseId: z.coerce.number().int().positive().optional(),
+  transactionType: z.enum(invTxnTypeEnum.enumValues).optional(),
   page: pageNumberField,
   limit: pageSizeField(50, 100),
+  /** G1. See `listTransactionsSchema.cursor` — same key, same reason. */
+  cursor: z.string().min(1).max(512).optional(),
 }).strict();
 export type MovementsQueryInput = z.infer<typeof movementsQuerySchema>;
 
 export const valuationReportSchema = z.object({
   warehouseId: z.coerce.number().int().positive().optional(),
   categoryId: z.coerce.number().int().positive().optional(),
+  /** D5. The date the figure is quoted at, directly or via an accounting period. */
+  asOfDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  // A gl_periods id since valuation reads the kernel's periods (see
+  // valuation.schemas.ts); the integer inventory period is gone.
+  periodId: z.string().uuid().optional(),
   page: pageNumberField,
   limit: pageSizeField(50, 100),
 }).strict();

@@ -158,11 +158,14 @@ export class LeadConversionService {
         clientId = client.id;
       }
 
+      // Only its absence is read, and a client account carries the customer's
+      // name, email and phone — no reason to hydrate them to answer "any?".
       const existingClientAccount = await tx.query.clientAccounts.findFirst({
         where: and(
           eq(clientAccounts.leadId, lead.id),
           eq(clientAccounts.orgId, orgId),
         ),
+        columns: { id: true },
       });
       if (!existingClientAccount) {
         await tx.insert(clientAccounts).values({

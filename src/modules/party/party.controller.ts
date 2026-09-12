@@ -16,7 +16,6 @@ import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { PartyService } from "./party.service";
-import { PartyDivergenceService } from "./party-divergence.service";
 import { Idempotent } from "../../common/idempotency/idempotent.decorator";
 import {
   listPartiesQuerySchema,
@@ -24,8 +23,6 @@ import {
   updatePartySchema,
   createContactSchema,
   updateContactSchema,
-  mirrorDivergenceQuerySchema,
-  type MirrorDivergenceQuery,
   type ListPartiesQuery,
   type CreatePartyInput,
   type UpdatePartyInput,
@@ -36,7 +33,6 @@ import { Validate } from "../../common/validation/validate.decorator";
 import { z } from "zod";
 import { ResponseSchema, NoContentResponse } from "../../common/openapi/zod-operation-contracts";
 import {
-  mirrorDivergenceSchema,
   partyListSchema,
   partyDetailSchema,
   partyContactListSchema,
@@ -49,33 +45,7 @@ const partyContactIdParams = z.object({ partyContactId: z.string().min(1) }).str
 @Controller("party")
 @UseGuards(JwtAuthGuard, PermissionGuard)
 export class PartyController {
-  constructor(
-    private readonly svc: PartyService,
-    private readonly divergence: PartyDivergenceService,
-  ) {}
-
-  /**
-   * What the legacy mirror looks like right now.
-   *
-   * A GET because it changes nothing: it reports every `leads`, `clients` or
-   * `contacts` row that disagrees with the Party it mirrors, and repairs none of
-   * them. Silently rewriting a side would destroy the evidence of how the two
-   * came apart, which is the only thing worth having once they have.
-   */
-  @Get("mirror/divergence")
-  @RequirePermission("party:divergence:view")
-  @ResponseSchema(mirrorDivergenceSchema)
-  @Validate({ query: mirrorDivergenceQuerySchema })
-  mirrorDivergence(
-    @Query() query: MirrorDivergenceQuery,
-    @CurrentUser() u: CurrentUserContext,
-  ) {
-    return this.divergence.report(u.orgId, {
-      kinds: query.kind ? [query.kind] : undefined,
-      limit: query.limit,
-      after: query.kind ? { [query.kind]: query.after } : undefined,
-    });
-  }
+  constructor(private readonly svc: PartyService) {}
 
   @Get("parties")
   @RequirePermission("party:parties:view")

@@ -1,4 +1,5 @@
 import { resolve } from "node:path";
+import { sslForConnectionString } from "./lib/repo-roots.mjs";
 import { mkdirSync, writeFileSync } from "node:fs";
 import postgres from "postgres";
 import * as dotenv from "dotenv";

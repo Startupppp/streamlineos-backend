@@ -1,5 +1,4 @@
 import { Injectable, UnprocessableEntityException } from "@nestjs/common";
-import { assertNever } from "../../../common/types/assert-never";
 import { eq, sql } from "drizzle-orm";
 import {
   invValuationLayers,
@@ -7,19 +6,33 @@ import {
   invAverageCostHistory,
 } from "../../../db/schema";
 import { type Db } from "../../../db/drizzle.module";
-import { addDec, subDec, mulDec, divDec, cmpDec } from "./decimal";
+import { addDec, mulDec, divDec, cmpDec } from "./decimal";
 import { INV_ERRORS } from "./stock-engine.types";
+import {
+  planIssue,
+  type CostingMethod,
+  type IssueInput,
+  type IssuePlan,
+  type IssueResult,
+  type LayerKey,
+  type PlannedIssueInput,
+} from "./lib/issue-plan";
 
 type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
 
-export type CostingMethod = "STANDARD" | "WEIGHTED_AVERAGE" | "FIFO";
-
-export interface LayerKey {
-  orgId: string;
-  productVariantId: number;
-  locationId: number;
-  lotId: number | null;
-}
+/**
+ * The decision half of an issue lives in `lib/issue-plan.ts`; these are its
+ * types, re-exported so `movement-costing.service.ts`, `costing-context.ts` and
+ * every existing importer keep resolving them from here.
+ */
+export type {
+  CostingMethod,
+  IssueInput,
+  IssuePlan,
+  IssueResult,
+  LayerKey,
+  PlannedIssueInput,
+};
 
 export interface ReceiptInput extends LayerKey {
   stockTransactionId: number;
@@ -32,25 +45,6 @@ export interface ReceiptInput extends LayerKey {
   sourceId: string;
 }
 
-export interface IssueInput extends LayerKey {
-  stockTransactionId: number;
-  /** Positive magnitude of the quantity leaving stock. */
-  quantity: string;
-  costingMethod: CostingMethod;
-  averageCost: string | null;
-  standardCost: string | null;
-  allowUncovered: boolean;
-  sourceType: string | null;
-  sourceId: string;
-}
-
-export interface IssueResult {
-  /** Total cost of goods issued, from the layers actually consumed. */
-  totalCost: string;
-  unitCost: string;
-  uncoveredQuantity: string;
-}
-
 /**
  * Owns cost layers, layer consumption and COGS.
  *
@@ -60,6 +54,10 @@ export interface IssueResult {
  *  - each issue records WHICH layers it consumed, in what quantity, at what
  *    cost, so COGS is reproducible instead of being an in-place decrement of
  *    remaining_quantity that leaves no trace.
+ *
+ * Every write in the valuation path is here. The one thing that is not is the
+ * costing DECISION, which writes nothing and reads its own file — see
+ * `lib/issue-plan.ts` for why that line is where it is.
  */
 @Injectable()
 export class ValuationService {
@@ -106,72 +104,67 @@ export class ValuationService {
     return averageAfter;
   }
 
-  async recordIssue(tx: Tx, input: IssueInput): Promise<IssueResult> {
-    if (cmpDec(input.quantity, "0") <= 0) {
-      return {
-        totalCost: "0.0000",
-        unitCost: "0.0000",
-        uncoveredQuantity: "0.0000",
-      };
-    }
+  /**
+   * Works out what an issue will cost, taking the layer locks it will need.
+   * Writes nothing; see `lib/issue-plan.ts`. The locks it takes are held by
+   * `tx` until `commitIssue` below runs against them.
+   */
+  planIssue(tx: Tx, input: PlannedIssueInput): Promise<IssuePlan> {
+    return planIssue(tx, input);
+  }
 
-    const layers = await this.lockConsumableLayers(tx, input);
-
-    let outstanding = input.quantity;
-    let totalCost = "0.0000";
-
-    for (const layer of layers) {
-      if (cmpDec(outstanding, "0") <= 0) break;
-      const available = layer.remaining_quantity;
-      const take = cmpDec(available, outstanding) < 0 ? available : outstanding;
-
-      const unitCost = this.issueUnitCost(input, layer.unit_cost);
-      const lineCost = mulDec(take, unitCost);
-
-      const newRemaining = subDec(available, take);
+  /**
+   * Records a planned issue against the fact row it belongs to. Every write the
+   * old `recordIssue` performed happens here, in the same order, against layers
+   * this transaction already holds locks on.
+   */
+  async commitIssue(
+    tx: Tx,
+    input: PlannedIssueInput,
+    plan: IssuePlan,
+    stockTransactionId: number,
+  ): Promise<void> {
+    for (const draw of plan.draws) {
       await tx
         .update(invValuationLayers)
         .set({
-          remainingQuantity: newRemaining,
-          remainingValue: mulDec(newRemaining, layer.unit_cost),
+          remainingQuantity: draw.remainingAfter,
+          remainingValue: mulDec(draw.remainingAfter, draw.layerUnitCost),
         })
-        .where(eq(invValuationLayers.id, layer.id));
+        .where(eq(invValuationLayers.id, draw.layerId));
 
       await tx.insert(invValuationConsumptions).values({
         orgId: input.orgId,
-        stockTransactionId: input.stockTransactionId,
-        valuationLayerId: layer.id,
-        quantity: take,
-        unitCost,
-        totalCost: lineCost,
+        stockTransactionId,
+        valuationLayerId: draw.layerId,
+        quantity: draw.take,
+        unitCost: draw.unitCost,
+        totalCost: draw.lineCost,
       });
-
-      outstanding = subDec(outstanding, take);
-      totalCost = addDec(totalCost, lineCost);
     }
 
-    if (cmpDec(outstanding, "0") > 0) {
-      // The layers do not cover the issue. With negative stock blocked this can
-      // only mean the layer ledger has drifted from the snapshot, which must be
-      // loud rather than silently under-valuing the issue.
-      if (!input.allowUncovered) {
-        throw new UnprocessableEntityException({
-          code: INV_ERRORS.INSUFFICIENT_STOCK,
-          message:
-            "Cost layers do not cover this issue — valuation has drifted from stock on hand",
-        });
-      }
-      const fallback = this.fallbackUnitCost(input);
-      const backfillCost = mulDec(outstanding, fallback);
-      await this.recordUncovered(tx, input, outstanding, fallback);
-      totalCost = addDec(totalCost, backfillCost);
+    if (plan.uncovered) {
+      await this.recordUncovered(
+        tx,
+        { ...input, stockTransactionId },
+        plan.uncovered.quantity,
+        plan.uncovered.unitCost,
+      );
     }
+  }
 
-    const uncovered = outstanding;
+  /**
+   * Plan and commit in one call, for callers that already hold the fact row's
+   * id. The engine no longer takes this path — it needs the cost before the row
+   * exists — but the behaviour is identical and the unit tests exercise it.
+   */
+  async recordIssue(tx: Tx, input: IssueInput): Promise<IssueResult> {
+    const plan = await this.planIssue(tx, input);
+    await this.commitIssue(tx, input, plan, input.stockTransactionId);
     return {
-      totalCost,
-      unitCost: divDec(totalCost, input.quantity),
-      uncoveredQuantity: uncovered,
+      totalCost: plan.totalCost,
+      unitCost: plan.unitCost,
+      uncoveredQuantity: plan.uncoveredQuantity,
     };
   }
 
@@ -208,53 +201,6 @@ export class ValuationService {
       .set({ remainingQuantity: "0", remainingValue: "0" })
       .where(eq(invValuationLayers.id, layer.id));
     return true;
-  }
-
-  private async lockConsumableLayers(tx: Tx, input: IssueInput) {
-    // Bounded: a variant with a long tail of open layers previously locked every
-    // one of them on every issue. 500 layers is far more than any single issue
-    // needs, and a shortfall past that surfaces as an uncovered quantity.
-    const lotFilter =
-      input.lotId === null
-        ? sql`TRUE`
-        : sql`lot_id IS NOT DISTINCT FROM ${input.lotId}`;
-
-    return tx.execute<{
-      id: number;
-      remaining_quantity: string;
-      unit_cost: string;
-    }>(sql`
-      SELECT id, remaining_quantity, unit_cost
-      FROM inv_valuation_layers
-      WHERE org_id = ${input.orgId}
-        AND product_variant_id = ${input.productVariantId}
-        AND location_id IS NOT DISTINCT FROM ${input.locationId}
-        AND ${lotFilter}
-        AND remaining_quantity > 0
-      ORDER BY created_at ASC, id ASC
-      LIMIT 500
-      FOR UPDATE
-    `);
-  }
-
-  private issueUnitCost(input: IssueInput, layerUnitCost: string): string {
-    switch (input.costingMethod) {
-      case "FIFO":
-        return layerUnitCost;
-      case "WEIGHTED_AVERAGE":
-        return input.averageCost ?? layerUnitCost;
-      case "STANDARD":
-        return input.standardCost ?? layerUnitCost;
-      default: {
-        return assertNever(input.costingMethod);
-      }
-    }
-  }
-
-  private fallbackUnitCost(input: IssueInput): string {
-    if (input.costingMethod === "STANDARD" && input.standardCost)
-      return input.standardCost;
-    return input.averageCost ?? "0.0000";
   }
 
   /**

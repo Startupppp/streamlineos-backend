@@ -3,6 +3,7 @@ import { and, desc, eq } from "drizzle-orm";
 import { signAuditEvents } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
+import { SIGN_GEO_IP, type SignGeoIpPort } from "./geo/geo-ip.port";
 import { mustGetVisibleEnvelope } from "./sign-envelope-scope";
 import type { ScopedRead } from "../access/scoped-read";
 
@@ -108,7 +109,10 @@ export const SIGN_AUDIT_INSERT_CHUNK = 500;
  */
 @Injectable()
 export class SignAuditService {
-  constructor(@Inject(DRIZZLE) private readonly db: Db) {}
+  constructor(
+    @Inject(DRIZZLE) private readonly db: Db,
+    @Inject(SIGN_GEO_IP) private readonly geo: SignGeoIpPort,
+  ) {}
 
   /**
    * Records one event or a batch of them.
@@ -123,9 +127,30 @@ export class SignAuditService {
     const inputs = Array.isArray(input) ? input : [input];
     if (inputs.length === 0) return;
     const db = tx ?? this.db;
-    for (let offset = 0; offset < inputs.length; offset += SIGN_AUDIT_INSERT_CHUNK) {
-      const chunk = inputs.slice(offset, offset + SIGN_AUDIT_INSERT_CHUNK);
-      await db.insert(signAuditEvents).values(chunk.map(toRow));
+    const rows = await Promise.all(
+      inputs.map(async (one) => ({ ...toRow(one), geolocationJson: await this.locate(one.ipAddress) })),
+    );
+    for (let offset = 0; offset < rows.length; offset += SIGN_AUDIT_INSERT_CHUNK) {
+      await db.insert(signAuditEvents).values(rows.slice(offset, offset + SIGN_AUDIT_INSERT_CHUNK));
+    }
+  }
+
+  /**
+   * SIGN-P0-08. `geolocation_json` has existed since SignOS shipped and
+   * nothing has ever written to it.
+   *
+   * Best effort, and the catch is the important half: this runs on the path
+   * that records a signature, and a geo lookup failing must never be the
+   * reason a signature goes unrecorded. `AddressGeoIp` already promises not
+   * to throw; the guard here is because the binding can be replaced with
+   * something that talks to a network, and that implementation will not have
+   * been written by anyone thinking about this line.
+   */
+  private async locate(ipAddress: string | null | undefined): Promise<Record<string, unknown> | null> {
+    try {
+      return ((await this.geo.locate(ipAddress)) as Record<string, unknown> | null) ?? null;
+    } catch {
+      return null;
     }
   }
 

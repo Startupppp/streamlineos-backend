@@ -158,6 +158,7 @@ export class DealClosedConsumerService implements OutboxEventConsumer, OnModuleI
 
         await (tx as Db).insert(invSoLines).values(
           lines.map((l) => ({
+            orgId,
             soId: header.id,
             productVariantId: l.productVariantId,
             quantity: parseFloat(l.quantity).toFixed(4),

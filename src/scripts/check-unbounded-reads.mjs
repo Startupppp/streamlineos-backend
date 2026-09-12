@@ -241,8 +241,50 @@ function hasOffsetUsage(src) {
   return violations;
 }
 
+/**
+ * Is this line inside a comment, or is it code?
+ *
+ * Line-based so it composes with the caller's line numbering: a block comment is
+ * tracked across lines, and a `//` line is a comment on its own. It does not
+ * attempt string literals — a `.offset(` inside a quoted string is not a thing
+ * this codebase writes, and guessing at quotes costs more accuracy than it buys.
+ *
+ * Comments are BLANKED rather than removed so `lineNo` still points at the real
+ * file line.
+ */
+function codeLines(src) {
+  const out = [];
+  let inBlock = false;
+  for (const line of src.split("\n")) {
+    const trimmed = line.trim();
+    if (inBlock) {
+      out.push("");
+      if (trimmed.includes("*/")) inBlock = false;
+      continue;
+    }
+    if (trimmed.startsWith("//")) { out.push(""); continue; }
+    if (trimmed.startsWith("/*")) {
+      out.push("");
+      if (!trimmed.includes("*/")) inBlock = true;
+      continue;
+    }
+    out.push(line);
+  }
+  return out;
+}
+
+/**
+ * `.offset()` with no `ORDER BY` in the same chain.
+ *
+ * The report calls this "always a correctness bug", so it had better not fire on
+ * prose. It did: the only hit in the entire tree was `inv-ai-eval-harness.ts:53`,
+ * a docblock sentence reading "a chain ending in `.offset()`" — a comment
+ * describing a drizzle test double. A gate that calls a comment an always-bug
+ * teaches its readers to skip the line it prints, which costs more than the
+ * check is worth.
+ */
 function hasUnorderedPagination(src) {
-  const lines = src.split("\n");
+  const lines = codeLines(src);
   const violations = [];
   for (let i = 0; i < lines.length; i++) {
     if (!/\.offset\s*\(/.test(lines[i])) continue;
@@ -467,6 +509,32 @@ function runSelfTests() {
   }
   if (hasUnorderedPagination(unorderedGood).length > 0) {
     console.error("SELF-TEST FAIL: an ordered offset page was incorrectly flagged");
+    process.exit(1);
+  }
+
+  const unorderedInComment = [
+    "    /**",
+    "     * The chain object is thenable, so a chain ending in .offset() and one",
+    "     * ending in .limit() both resolve.",
+    "     */",
+    "    async fine() {",
+    "      return this.db.select().from(t).where(conditions).limit(20);",
+    "    }",
+    "    // a trailing note about .offset() usage",
+  ].join("\n");
+  if (hasUnorderedPagination(unorderedInComment).length > 0) {
+    console.error("SELF-TEST FAIL: .offset() inside a comment was flagged as unordered pagination");
+    process.exit(1);
+  }
+
+  const unorderedAfterComment = [
+    "    /** mentions .offset() in prose */",
+    "    async badPage() {",
+    "      return this.db.select().from(t).where(conditions).limit(20).offset(offset);",
+    "    }",
+  ].join("\n");
+  if (hasUnorderedPagination(unorderedAfterComment).length === 0) {
+    console.error("SELF-TEST FAIL: a real unordered .offset() below a comment was missed");
     process.exit(1);
   }
 

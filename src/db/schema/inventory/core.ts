@@ -1,6 +1,6 @@
-import { pgTable, text, serial, timestamp, boolean, jsonb, decimal, integer, index, uniqueIndex, unique, foreignKey, check } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, timestamp, boolean, jsonb, decimal, integer, bigint, index, uniqueIndex, unique, foreignKey, check } from "drizzle-orm/pg-core";
 import { relations, sql } from "drizzle-orm";
-import { invProductStatusEnum, invProductTypeEnum, invTrackingMethodEnum, invCostingMethodEnum, invBarcodeTypeEnum } from "../common/enums";
+import { invProductStatusEnum, invProductTypeEnum, invTrackingMethodEnum, invCostingMethodEnum, invBarcodeTypeEnum, invTaxTreatmentEnum, invDrugScheduleEnum, invSaleModeEnum, invQtyInputModeEnum, invMeasureModeEnum, invMaterialFamilyEnum } from "../common/enums";
 import { organizations, users } from "../common/auth";
 
 export const invUom = pgTable("inv_uom", {
@@ -48,11 +48,28 @@ export const invProducts = pgTable("inv_products", {
   status: invProductStatusEnum("status").default("ACTIVE").notNull(),
   productType: invProductTypeEnum("product_type").default("STOCKABLE"),
   trackingMethod: invTrackingMethodEnum("tracking_method").default("NONE"),
+  /**
+   * NEO-10 - whether this SKU's quantity is a count or a weight.
+   *
+   * `PIECES` for everything that was here before, so the column is inert until an
+   * organisation deliberately marks a SKU as catch-weight. A catch-weight SKU
+   * holds its ledger quantity in **weight**: that is the number that has to add
+   * up across receipts and issues, and the piece count rides alongside on the
+   * document for the person counting the bags.
+   */
+  measureMode: invMeasureModeEnum("measure_mode").default("PIECES").notNull(),
   costingMethod: invCostingMethodEnum("costing_method").default("WEIGHTED_AVERAGE"),
   standardCost: decimal("standard_cost", { precision: 18, scale: 4 }),
   purchaseUomId: integer("purchase_uom_id").references(() => invUom.id, { onDelete: "set null" }),
   salesUomId: integer("sales_uom_id").references(() => invUom.id, { onDelete: "set null" }),
   defaultVendorId: integer("default_vendor_id"),
+  /**
+   * INV-309. Supplier order policy. Null means unconstrained, which is the
+   * common case; a zero would divide into the rounding as a false answer, so
+   * the CHECK forbids it.
+   */
+  minOrderQty: decimal("min_order_qty", { precision: 18, scale: 4 }),
+  orderMultiple: decimal("order_multiple", { precision: 18, scale: 4 }),
   reorderEnabled: boolean("reorder_enabled").default(false),
   allowNegativeStock: boolean("allow_negative_stock"),
   costPrice: decimal("cost_price", { precision: 18, scale: 4 }).default("0").notNull(),
@@ -61,20 +78,190 @@ export const invProducts = pgTable("inv_products", {
   minStockLevel: decimal("min_stock_level", { precision: 18, scale: 4 }).default("0").notNull(),
   maxStockLevel: decimal("max_stock_level", { precision: 18, scale: 4 }).default("0").notNull(),
   hasVariants: boolean("has_variants").default(false).notNull(),
+  /**
+   * E2 — the tax inputs, behind the `gst` pack.
+   *
+   * Inventory holds them and does not compute a return from them: what a supply
+   * is classified as, and what rate that classification carries, is decided in
+   * the catalogue by the person who knows the goods, and is consumed by
+   * accounting. Nullable throughout, because an organisation that does not run
+   * the pack never sees these fields and must not be forced to invent values for
+   * them — and because "not classified yet" is a real state that a default of
+   * `0%` would silently launder into "nil rated".
+   *
+   * `hsnCode` is 4, 6 or 8 digits for goods and 6 for services (SAC); the length
+   * is a returns-filing choice, not a data-quality one, so all three are stored
+   * as given rather than padded.
+   *
+   * `gstRate` is the SKU's default rate in percent, scale 2 — 18.00, not 0.18.
+   * It is a *default* for a document line, never the line's authority: the line
+   * snapshots what it was told at the moment it was written.
+   */
+  hsnCode: text("hsn_code"),
+  taxTreatment: invTaxTreatmentEnum("tax_treatment"),
+  gstRate: decimal("gst_rate", { precision: 5, scale: 2 }),
+  /**
+   * E3 — the pharmacy inputs, behind the `pharmacy` pack.
+   *
+   * `mrpPaise` is the maximum retail price currently printed on this SKU's
+   * packs, in integer paise. Integer minor units and never a float: an MRP is a
+   * legal ceiling, a pack sold one paisa above it is an offence, and a value
+   * that arrives as 12550 and leaves as 125.49999999999999 is exactly the class
+   * of error that cannot be argued with afterwards.
+   *
+   * It is a **default, not a snapshot**. It moves whenever the manufacturer
+   * reprints, which is why it must never be what a dispense reads: the ceiling
+   * that binds a counter is the one printed on the pack in their hand, and that
+   * is a fact about the batch. The snapshots live on `inv_grn_lines.mrp_paise`
+   * (what the pack said on the day it was received) and `inv_lots.mrp_paise`
+   * (what every pack in that batch says, for as long as it is on the shelf) —
+   * both written once at receipt and never updated, so revising this column
+   * cannot retroactively change what unsold stock may be sold for.
+   *
+   * `mrpRequired` is the flag E3's receipt rule keys on: a SKU carrying it may
+   * not be received without a batch MRP, because once the carton is broken and
+   * the pack is on the shelf, the printed price is no longer recoverable from
+   * anywhere.
+   *
+   * `drugSchedule` is what the counter is allowed to do. `isHighAlert` and
+   * `lasaGroup` are the two safety flags: high-alert is a drug that causes
+   * disproportionate harm when given wrongly, and a LASA group names the set of
+   * products that look or sound like each other. A group rather than a boolean,
+   * because "this one is confusable" is useless at the shelf and "this one is
+   * confusable with those three, in those bins" is the whole warning.
+   */
+  mrpPaise: bigint("mrp_paise", { mode: "number" }),
+  mrpRequired: boolean("mrp_required").default(false).notNull(),
+  drugSchedule: invDrugScheduleEnum("drug_schedule"),
+  isHighAlert: boolean("is_high_alert").default(false).notNull(),
+  lasaGroup: text("lasa_group"),
+  /**
+   * E4 — the kirana inputs, behind the `kirana` pack.
+   *
+   * `saleMode` decides whether a sale may name a unit other than the one stock
+   * is held in: a LOOSE SKU is measured out of bulk and needs a conversion to do
+   * it, a PACKED one leaves in the unit it arrived in.
+   *
+   * `quantityInputMode` and `quantityPrecision` decide what an entered quantity
+   * may look like, and they are a pair — WHOLE means precision 0 and nothing
+   * else, and a measured mode means between one and four places, the ledger's
+   * own scale. The CHECK below holds the pair together, because either one alone
+   * is a setting that reads as configured while doing nothing: precision 3 on a
+   * WHOLE SKU accepts 1.005 tins, and SCALE at precision 0 rejects every reading
+   * a scale will ever send.
+   */
+  saleMode: invSaleModeEnum("sale_mode").default("PACKED").notNull(),
+  quantityInputMode: invQtyInputModeEnum("quantity_input_mode").default("WHOLE").notNull(),
+  quantityPrecision: integer("quantity_precision").default(0).notNull(),
+  /**
+   * B1 — the construction and interior-materials inputs, behind the `materials`
+   * pack.
+   *
+   * These are the eight things a materials buyer actually selects on, and none
+   * of them is a variant axis. Two grades of cement are two products with two
+   * reorder points, not two sizes of one product; two finishes of the same tile
+   * are two SKUs a picker must not confuse. Putting them on the product rather
+   * than in `attributeValues` is what lets the catalogue be filtered and indexed
+   * by them instead of scanned.
+   *
+   * `dimensionLabel` is the nominal size as the trade writes it — "600x600 mm",
+   * "12 mm", "8 ft x 4 ft" — and is deliberately a label rather than three
+   * numbers. `inv_product_variants` already holds real millimetres for the
+   * packer; the two answer different questions, and a picker matching a printed
+   * carton needs the trade's own string.
+   *
+   * All nullable: an organisation that never turns the pack on must not be made
+   * to invent a finish for a bag of cement.
+   */
+  brand: text("brand"),
+  materialGrade: text("material_grade"),
+  finish: text("finish"),
+  colour: text("colour"),
+  dimensionLabel: text("dimension_label"),
+  materialFamily: invMaterialFamilyEnum("material_family"),
+  /**
+   * B1 — how many stock units are in one selling pack: 12 tiles per box, 20 kg
+   * per bag. A count, so it multiplies against the ledger quantity without a
+   * unit conversion; the unit itself is the product's own `uomId`.
+   */
+  packSize: decimal("pack_size", { precision: 18, scale: 4 }),
+  /**
+   * B1 — the supplier's own code for this item, which is what appears on their
+   * invoice and is therefore what a receiving clerk has in front of them.
+   */
+  supplierCode: text("supplier_code"),
+  /**
+   * B1 — days from placing an order to the goods arriving.
+   * `inv_reorder_rules` holds a per-warehouse override; this is the catalogue
+   * default for a SKU with no rule yet, which is most of them on day one.
+   */
+  leadTimeDays: integer("lead_time_days"),
+  /**
+   * B1 — how much to buy when the reorder point is crossed. `reorderPoint` has
+   * been here since the beginning and answers *when*; nothing answered *how
+   * much*, so every suggestion had to invent a quantity.
+   */
+  reorderQuantity: decimal("reorder_quantity", { precision: 18, scale: 4 }),
   imageUrl: text("image_url"),
   customFields: jsonb("custom_fields").$type<Record<string, unknown>>(),
   createdBy: text("created_by").references(() => users.id).notNull(),
   createdByMembershipId: integer("created_by_membership_id"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
+  deletedAt: timestamp("deleted_at"),
 }, (table) => [
-  uniqueIndex("uniq_inv_products_org_sku").on(table.orgId, table.sku),
+  // Partial: a deleted product must not hold its SKU hostage, and the scope is
+  // the tenant — a bare unique index lets one organisation's code block another's.
+  uniqueIndex("uniq_inv_products_org_sku_live").on(table.orgId, table.sku).where(sql`${table.deletedAt} IS NULL`),
+  index("idx_inv_products_org_live").on(table.orgId, table.id).where(sql`${table.deletedAt} IS NULL`),
   unique("uniq_inv_products_org_id").on(table.orgId, table.id),
   index("idx_inv_products_org_status").on(table.orgId, table.status),
   index("idx_inv_products_category").on(table.categoryId),
   index("idx_inv_products_barcode").on(table.barcode),
   index("idx_inv_products_name_trgm").using("gin", table.name.op("gin_trgm_ops")),
   index("idx_inv_products_sku_trgm").using("gin", table.sku.op("gin_trgm_ops")),
+  // E2. The HSN summary of a return groups the catalogue by code, so the code
+  // leads after the tenant. Partial, because most rows have no code until the
+  // organisation runs the gst pack.
+  index("idx_inv_products_org_hsn").on(table.orgId, table.hsnCode).where(sql`${table.hsnCode} IS NOT NULL`),
+  // E2. A treatment that is not TAXABLE cannot carry a rate. Written as a
+  // constraint rather than a service check because the pair is only ever
+  // meaningful together, and a row that says "exempt at 18%" is not a validation
+  // failure somebody can explain — it is two answers to one question.
+  check(
+    "chk_inv_products_tax_treatment_rate",
+    sql`${table.taxTreatment} IS NULL OR ${table.taxTreatment} = 'TAXABLE' OR ${table.gstRate} IS NULL OR ${table.gstRate} = 0`,
+  ),
+  // E3. The confusable-set lookup: given this SKU's LASA group, which other SKUs
+  // share it. Partial, because outside a pharmacy nothing carries a group at all.
+  index("idx_inv_products_org_lasa_group").on(table.orgId, table.lasaGroup).where(sql`${table.lasaGroup} IS NOT NULL`),
+  // E3. The register scope query walks the catalogue by schedule. Partial for the
+  // same reason.
+  index("idx_inv_products_org_drug_schedule").on(table.orgId, table.drugSchedule).where(sql`${table.drugSchedule} IS NOT NULL`),
+  // E3. A negative ceiling is not a price. Zero is refused too: "free" and "we
+  // have not recorded one" are different, and NULL already says the second.
+  check("chk_inv_products_mrp_paise_positive", sql`${table.mrpPaise} IS NULL OR ${table.mrpPaise} > 0`),
+  // E4. The pair, held together. See the column comment: either half alone is a
+  // setting that reads as configured and does nothing.
+  check(
+    "chk_inv_products_qty_input_precision",
+    sql`(${table.quantityInputMode} = 'WHOLE' AND ${table.quantityPrecision} = 0)
+        OR (${table.quantityInputMode} <> 'WHOLE' AND ${table.quantityPrecision} BETWEEN 1 AND 4)`,
+  ),
+  // B1. Brand and family are the two filters a materials catalogue is browsed
+  // by. Partial, because outside the materials pack no row carries either.
+  index("idx_inv_products_org_brand").on(table.orgId, table.brand).where(sql`brand IS NOT NULL`),
+  index("idx_inv_products_org_material_family").on(table.orgId, table.materialFamily).where(sql`material_family IS NOT NULL`),
+  // B1. Receiving clerks search by the code on the supplier's invoice, and
+  // buyers by brand. Trigram rather than a leading-wildcard ILIKE, per §3.
+  index("idx_inv_products_supplier_code_trgm").using("gin", table.supplierCode.op("gin_trgm_ops")),
+  index("idx_inv_products_brand_trgm").using("gin", table.brand.op("gin_trgm_ops")),
+  // B1. A pack of zero divides by zero in the conversion; a negative lead time
+  // is a delivery before the order. Neither is a value anyone can explain
+  // afterwards, so both are constraints rather than service checks.
+  check("chk_inv_products_pack_size_positive", sql`${table.packSize} IS NULL OR ${table.packSize} > 0`),
+  check("chk_inv_products_lead_time_nonneg", sql`${table.leadTimeDays} IS NULL OR ${table.leadTimeDays} >= 0`),
+  check("chk_inv_products_reorder_quantity_positive", sql`${table.reorderQuantity} IS NULL OR ${table.reorderQuantity} > 0`),
 ]);
 
 export const invProductVariants = pgTable("inv_product_variants", {
@@ -88,10 +275,25 @@ export const invProductVariants = pgTable("inv_product_variants", {
   sellingPrice: decimal("selling_price", { precision: 18, scale: 4 }).default("0").notNull(),
   attributeValues: jsonb("attribute_values").$type<Record<string, string>>().default({}).notNull(),
   isActive: boolean("is_active").default(true).notNull(),
+  /**
+   * INV-206. Base units as integers -- grams and millimetres. A physical
+   * measure has no fractional gram worth modelling, and integers cannot drift
+   * the way this schema's decimal quantities repeatedly have.
+   *
+   * Nullable because most catalogues do not measure everything, and a missing
+   * dimension has to read as "unknown" rather than as zero: zero fits in
+   * anything, which is the wrong answer to give a packer.
+   */
+  weightGrams: integer("weight_grams"),
+  lengthMm: integer("length_mm"),
+  widthMm: integer("width_mm"),
+  heightMm: integer("height_mm"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
+  deletedAt: timestamp("deleted_at"),
 }, (table) => [
-  uniqueIndex("uniq_inv_variants_org_sku").on(table.orgId, table.sku),
+  uniqueIndex("uniq_inv_product_variants_org_sku_live").on(table.orgId, table.sku).where(sql`${table.deletedAt} IS NULL`),
+  index("idx_inv_product_variants_org_live").on(table.orgId, table.id).where(sql`${table.deletedAt} IS NULL`),
   unique("uniq_inv_product_variants_org_id").on(table.orgId, table.id),
   index("idx_inv_variants_product").on(table.productId),
   index("idx_inv_variants_barcode").on(table.barcode),

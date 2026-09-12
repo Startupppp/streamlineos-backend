@@ -17,6 +17,7 @@ import { bumpPermissionsVersion } from "../../common/rbac/access-invalidate";
 import { assertPermissionsGrantable, ROLE_RANK, toGrantableSet } from "../../common/rbac/grantability";
 import { isStructuralOrgAdmin } from "../../common/rbac/is-structural-org-admin";
 import { runInTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
+import { getPostgresErrorCode } from "../../common/db/postgres-error";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { AccessService } from "../access/access.service";
 import type { DataScope } from "../access/access.types";
@@ -28,7 +29,6 @@ import { resolveActorRankContext } from "./module-access.helpers";
 import { buildCursorPage, decodeCursor } from "../../common/pagination/cursor";
 import type { CursorPage } from "../../common/pagination/cursor";
 import { keysetAfterValue } from "../../common/pagination/keyset";
-import { isUniqueViolation } from "../../common/db/postgres-error";
 
 @Injectable()
 export class ModuleAccessGroupCrudService {
@@ -149,7 +149,13 @@ export class ModuleAccessGroupCrudService {
       await bumpPermissionsVersion(tx, actor.orgId);
       return created;
     }, { orgId: actor.orgId }).catch((error: unknown) => {
-      if (isUniqueViolation(error)) throw new ConflictException(`A group named "${input.name}" already exists in this module`);
+      /*
+       * `uniq_roles_org_module_name_ci` — (org_id, COALESCE(module_key, ''), LOWER(name)).
+       * The name check above is a read followed by a write, so this is what answers when two
+       * requests pass that check together. Drizzle leaves the SQLSTATE on `.cause`; a
+       * `"code" in error` test against the wrapper never fired and the race answered 500.
+       */
+      if (getPostgresErrorCode(error) === "23505") throw new ConflictException(`A group named "${input.name}" already exists in this module`);
       throw error;
     });
     await this.cache.invalidate(CACHE_KEYS.rolesList(actor.orgId));
@@ -168,7 +174,13 @@ export class ModuleAccessGroupCrudService {
       await bumpPermissionsVersion(tx, actor.orgId);
       return updated;
     }, { orgId: actor.orgId }).catch((error: unknown) => {
-      if (isUniqueViolation(error)) throw new ConflictException(`A group named "${input.name}" already exists in this module`);
+      /*
+       * `uniq_roles_org_module_name_ci` — (org_id, COALESCE(module_key, ''), LOWER(name)).
+       * The name check above is a read followed by a write, so this is what answers when two
+       * requests pass that check together. Drizzle leaves the SQLSTATE on `.cause`; a
+       * `"code" in error` test against the wrapper never fired and the race answered 500.
+       */
+      if (getPostgresErrorCode(error) === "23505") throw new ConflictException(`A group named "${input.name}" already exists in this module`);
       throw error;
     });
     if (!row) throw new BadRequestException("Failed to rename group");

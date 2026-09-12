@@ -5,8 +5,8 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { AuditService } from "../../common/audit/audit.service";
 import { PG_CHECK_VIOLATION, isCheckViolation } from "../../common/db/postgres-error";
-import { JournalPostingService } from "../accounting/posting/journal-posting.service";
-import { resolveSupplierStateCode } from "./lib/invoice-helpers";
+import { InvoicesPostingService } from "./invoices-posting.service";
+import { gstSplit, resolveSupplierStateCode } from "./lib/invoice-helpers";
 import { computeInvoiceTotals, resolveLineItems } from "./lib/invoice-line-tax";
 import { canPatchInvoiceStatus } from "./lib/invoice-transitions";
 import type { UpdateInvoiceInput } from "./dto/invoice-write.schemas";
@@ -15,7 +15,7 @@ import type { UpdateInvoiceInput } from "./dto/invoice-write.schemas";
 export class InvoicesUpdateService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
-    private readonly posting: JournalPostingService,
+    private readonly posting: InvoicesPostingService,
     private readonly audit: AuditService,
   ) {}
 
@@ -36,8 +36,10 @@ export class InvoicesUpdateService {
           `Invoice in status ${existing.status} cannot move to ${input.status}`,
         );
       }
+      // The transition table admits ISSUED only from DRAFT, so this is always
+      // the first issue. Nothing is seeded here: the chart is seeded once, by
+      // accounting setup, when the organisation enables accounting.
       const willPost = input.status === "ISSUED";
-      if (willPost) await this.posting.seedChartOfAccountsForOrg(orgId);
 
       await this.db.transaction(async (tx) => {
         await tx
@@ -56,32 +58,29 @@ export class InvoicesUpdateService {
           const cgst = Number(existing.cgstAmount ?? 0);
           const sgst = Number(existing.sgstAmount ?? 0);
           const igst = Number(existing.igstAmount ?? 0);
-          const taxPool = Math.round((cgst + sgst + igst) * 100) / 100;
           const total = Number(existing.total ?? 0);
-          const supplierStateCode = await resolveSupplierStateCode(
-            this.db,
-            orgId,
-          );
-          const placeOfSupplyStateCode =
-            existing.placeOfSupply ?? supplierStateCode;
           const invoiceDate = (
             existing.createdAt ?? new Date()
           )
             .toISOString()
             .slice(0, 10);
-          await this.posting.postInvoiceSend(
+          // The GST split was frozen onto the row when the invoice was built;
+          // re-deriving it here would let a later change of org address rewrite
+          // history, so the stored components are posted as they stand.
+          await this.posting.postInvoiceIssued(
+            orgId,
+            userId,
             {
-              orgId,
               invoiceId: existing.id,
               invoiceNumber: existing.invoiceNumber,
               invoiceDate,
-              supplierStateCode,
-              placeOfSupplyStateCode,
+              currency: existing.currency,
               subtotal,
               discount,
-              taxPool,
+              cgst,
+              sgst,
+              igst,
               total,
-              createdBy: userId,
             },
             tx,
           );
@@ -136,7 +135,7 @@ export class InvoicesUpdateService {
         const lines = resolveLineItems(requested, stored);
         // Rupees throughout; gstRate/taxRate are percentages.
         const totals = computeInvoiceTotals(lines, blendedRate, discountInput);
-        const split = this.posting.gstSplit(
+        const split = gstSplit(
           totals.taxPool,
           supplierStateCode,
           placeOfSupplyStateCode,

@@ -6,8 +6,8 @@ dotenv.config({ path: resolve(process.cwd(), ".env") });
 
 const url = process.env.APP_DATABASE_URL;
 if (!url) {
-  console.error("APP_DATABASE_URL is required (the non-BYPASSRLS app role).");
-  process.exit(1);
+  console.error("PREREQUISITE MISSING: APP_DATABASE_URL is required (the non-BYPASSRLS app role).");
+  process.exit(2);
 }
 
 const ssl = process.env.PGSSLMODE === "disable" ? false : "require";
@@ -23,7 +23,7 @@ async function resolveFixtureOrg() {
         "to do — so it runs as the owner. Every measurement below still runs as the app\n" +
         "role with the tenant GUC set, which is the only role whose plans mean anything.",
     );
-    process.exit(1);
+    process.exit(2);
   }
   const owner = postgres(ownerUrl, { max: 1, prepare: false, ssl, onnotice: () => {} });
   try {
@@ -36,7 +36,7 @@ async function resolveFixtureOrg() {
           "An empty table plans differently, so any number taken here would be meaningless.\n" +
           "Seed first: pnpm seed:build-load, or set SEED_ORG_ID to a populated org.",
       );
-      process.exit(1);
+      process.exit(2);
     }
     console.log(`fixture org ${busiest.org_id} resolved by ticket volume (${busiest.n} tickets)`);
     return busiest.org_id;

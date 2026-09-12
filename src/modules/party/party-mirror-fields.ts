@@ -1,6 +1,5 @@
 import { businessParties } from "../../db/schema/party";
-import { clients, contacts, crmOrganizations } from "../../db/schema/crm/contacts";
-import { leads } from "../../db/schema/crm/leads";
+import type { LegacyClientInsert, LegacyContactInsert, LegacyCrmOrgInsert, LegacyLeadInsert } from "./legacy-shapes";
 import type { MappedLegacyKind } from "./party-legacy-seam";
 
 /**
@@ -34,10 +33,18 @@ import type { MappedLegacyKind } from "./party-legacy-seam";
 export type PartyRow = typeof businessParties.$inferSelect;
 export type PartyPatch = Partial<typeof businessParties.$inferInsert>;
 
-export type LeadInsert = typeof leads.$inferInsert;
-export type ClientInsert = typeof clients.$inferInsert;
-export type ContactInsert = typeof contacts.$inferInsert;
-export type CrmOrgInsert = typeof crmOrganizations.$inferInsert;
+/*
+  Pointed at the written shapes, not at the tables. Ticket 08's contract.
+
+  `legacy-shapes.spec.ts` proved these are structurally identical to what
+  `$inferSelect` produced, while the tables still existed. That proof is why this
+  swap changes nothing for any of the two dozen files that speak this
+  vocabulary — and why it could only be made in this order.
+*/
+export type LeadInsert = LegacyLeadInsert;
+export type ClientInsert = LegacyClientInsert;
+export type ContactInsert = LegacyContactInsert;
+export type CrmOrgInsert = LegacyCrmOrgInsert;
 
 /**
  * One Party column's contribution to one legacy table.
@@ -156,6 +163,9 @@ export const PARTY_FIELD_MIRROR: Record<keyof PartyRow, PartyFieldMirror> = {
       absorb: (l) => ({ customFields: l.customData }),
     },
   },
+  timezone: noLegacyColumn(
+    "CRM-P1-09 added it to the Party after the legacy shapes were frozen, and no legacy table ever had a zone. It is read at send time from the Party row, so there is nothing for a mirror to carry.",
+  ),
   notes: {
     LEAD: { derive: (p) => ({ notes: p.notes }), absorb: (l) => ({ notes: l.notes }) },
     CLIENT: { derive: (p) => ({ notes: p.notes }), absorb: (l) => ({ notes: l.notes }) },
@@ -507,25 +517,24 @@ function withKey(
   return Object.keys(next).length === 0 ? null : next;
 }
 
+/**
+ * Only columns a legacy shape actually has. The `*_membership_id` companions
+ * 0817 declared on `leads` and `clients` are not here: 0278 dropped those tables,
+ * c464007c7 took them out of the code, and the shapes in `legacy-shapes.ts` --
+ * the contract that outlived them -- do not carry the companions. An entry for a
+ * column no legacy row has would excuse a field nothing derives, reads or writes.
+ */
 export const LEGACY_OWNED_COLUMNS: Record<MappedLegacyKind, Readonly<Record<string, string>>> = {
   LEAD: {
     id: "The legacy identity itself; `lead_party_map` is how it reaches a Party.",
     dmLeadId: "An id in the upstream DM system. Party has no home for another system's key.",
     mergedIntoId:
       "The legacy merge pointer. `party_merges` is the Party mechanism, and re-pointing the map row is how a merge reaches this table.",
-    assignedToMembershipId:
-      "The `organization_members` id for the same person Party tracks as `ownerUserId`. Party uses only user IDs; the membership id cannot be derived without a DB join and is maintained by the legacy writer for its own join paths.",
-    assignedByMembershipId:
-      "The `organization_members` id for the same person Party tracks as `assignedByUserId`. Same situation as `assignedToMembershipId` — unreachable from a Party row without a DB join.",
-    verifiedByMembershipId:
-      "The `organization_members` id for the same person Party tracks as `verifiedByUserId`. Same situation as `assignedToMembershipId` — unreachable from a Party row without a DB join.",
     createdAt: "Stamped by the table.",
     updatedAt: "Stamped by the table.",
   },
   CLIENT: {
     id: "The legacy identity itself.",
-    accountManagerMembershipId:
-      "The `organization_members` id for the same person Party tracks as `ownerUserId` (mirrored to `accountManagerId`). Party uses only user IDs; the membership id cannot be derived without a DB join.",
     leadId:
       "Which lead this client converted from, which Party now owns as `converted_from_party_id`. Listed here because the two speak different id spaces -- an integer `leads` id against a party id -- so the column is maintained by `party-legacy-associations.ts` through `lead_party_map` rather than by a pure cell above. Legacy-owned in shape only; nothing outside the writer sets it.",
     createdAt: "Stamped by the table.",

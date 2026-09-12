@@ -11,7 +11,7 @@ import {
 import type { EmailDispatcher } from "./email-provider-selection";
 import { EmailSuppressionService, canonicalEmail } from "./email-suppression.service";
 import { getTenantContext } from "../../common/tenant/tenant-context";
-import { drainEmailOutboxRetries } from "./email-outbox-retry";
+import { processRetries } from "./lib/outbox-retries";
 
 /**
  * SCH-014. Callers almost never passed `organizationId`, so every one of the 34 rows in
@@ -214,7 +214,12 @@ export class EmailOutboxService {
     }
   }
 
+  /** @see lib/outbox-retries.ts */
   async processRetries(): Promise<{ processed: number; sent: number; dead: number }> {
-    return drainEmailOutboxRetries(this.db, this.emailProvider, this.logger);
+    return processRetries({
+      db: this.db,
+      logger: this.logger,
+      emailProvider: this.emailProvider,
+    });
   }
 }

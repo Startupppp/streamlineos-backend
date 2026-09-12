@@ -23,6 +23,33 @@ export const DECISION_KINDS = [
   "party.created",
   "activity.logged",
   "quote.sent",
+  /**
+   * Ticket 07. A follow-up, nudge, check-in or meeting request the system wrote
+   * and decided to send, under the same hold window as a quote.
+   */
+  "outbound.sent",
+  /**
+   * Ticket 09. Cold outreach, as its own kind rather than a class of the one
+   * above — so an operator can stop every cold campaign on the platform without
+   * stopping the follow-ups, which are a different risk and a different
+   * argument. One kill switch per kind is what makes that possible.
+   */
+  "cold_outbound.sent",
+  /**
+   * Phase 4 ticket 10. A batch of deterministic field repairs, applied with
+   * nobody watching.
+   *
+   * One row per batch rather than per value: four hundred identically malformed
+   * numbers are one decision, and four hundred entries here would bury every
+   * judgement in the feed under clerical work. The individual values live in
+   * `autonomy_repairs`, which is what makes the batch undoable item by item as
+   * well as whole.
+   *
+   * It is a decision kind rather than a private ledger so that the existing kill
+   * switch, review feed, reversal path and scoreboard all reach it with no
+   * second mechanism for an operator to remember.
+   */
+  "field.repaired",
 ] as const;
 export type DecisionKind = (typeof DECISION_KINDS)[number];
 

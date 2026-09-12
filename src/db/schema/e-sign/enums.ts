@@ -144,4 +144,3 @@ export const signBulkRowStatusEnum = pgEnum("sign_bulk_row_status", ["pending", 
 
 export const signWatermarkScopeEnum = pgEnum("sign_watermark_scope", ["tenant", "template", "envelope"]);
 
-export const signPublicFormStatusEnum = pgEnum("sign_public_form_status", ["draft", "published", "unpublished"]);

@@ -1,5 +1,7 @@
 import { NotFoundException } from "@nestjs/common";
 import type { Db } from "../../db/drizzle.module";
+import { stubService } from "../../test/service-stub.spec-fixtures";
+import type { InvoicesPostingService } from "./invoices-posting.service";
 import { InvoicesPaymentService } from "./invoices-payment.service";
 
 /**
@@ -78,7 +80,6 @@ describe("InvoicesPaymentService — cross-tenant isolation", () => {
         [
           [{ total: "500", status: "SENT" }],
           [{ totalPaid: "0" }],
-          [{ id: INVOICE_ID, status: "SENT" }],
         ],
         txWhereArgs,
       ),
@@ -90,31 +91,26 @@ describe("InvoicesPaymentService — cross-tenant isolation", () => {
     const db = {
       query: {
         invoices: { findFirst: jest.fn().mockResolvedValue(invoiceRow) },
-        accountingSettings: { findFirst: jest.fn().mockResolvedValue(null) },
         organizationMembers: { findFirst: jest.fn().mockResolvedValue(null) },
       },
-      select: makeSelect([[{ totalPaid: "0" }], [], [{ userId: USER_ID }]], whereArgs),
+      select: makeSelect([[{ totalPaid: "0" }], [{ userId: USER_ID }]], whereArgs),
       transaction,
     } as unknown as Db;
 
-    const posting = {
-      seedChartOfAccountsForOrg: jest.fn().mockResolvedValue(undefined),
-      postPaymentReceipt: jest.fn().mockResolvedValue(undefined),
-    };
+    const posting = stubService<InvoicesPostingService>({
+      postPaymentReceipt: jest.fn().mockResolvedValue(null),
+      postRealizedFx: jest.fn().mockResolvedValue(null),
+    });
     const dispatch = { emit: jest.fn().mockResolvedValue(undefined) };
     const lifecycle = { recomputeInvoiceBalance: jest.fn().mockResolvedValue(undefined) };
     const audit = { log: jest.fn() };
-    const rateResolver = { getRate: jest.fn() };
-    const fx = { postRealizedGainLoss: jest.fn() };
 
     const svc = new InvoicesPaymentService(
       db,
-      posting as never,
+      posting,
       dispatch as never,
       lifecycle as never,
       audit as never,
-      rateResolver as never,
-      fx as never,
     );
     return { svc, db, tx, transaction, insertValues, posting, whereArgs, txWhereArgs };
   }

@@ -26,7 +26,8 @@ import { logger } from "../../common/logger/logger.service";
 export const API_KEY_LIST_CAP = 100;
 
 type SectionProvenance = {
-  actorId: string;
+  /** Null when no user acted — see `audit_logs.user_id` and migration 0663. */
+  actorId: string | null;
   actorName: string | null;
   action: string;
   at: string;

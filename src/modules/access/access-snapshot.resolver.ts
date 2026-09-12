@@ -1,4 +1,5 @@
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
+import { actingMembershipId } from "../../common/auth/principal";
 import type { AuthContext } from "../../common/auth/auth-context";
 import { isPersonalTokenPermissionDelegable } from "../../common/rbac/personal-token-policy";
 import { moduleAvailability } from "../../common/rbac/module-availability";
@@ -66,6 +67,7 @@ export class AccessSnapshotResolver {
         scopes[key] = scope;
       }
       return {
+        membershipId: actingMembershipId(currentUserContext.principal),
         scopes,
         modules: await this.resolveModuleFlags(
           orgId,
@@ -98,6 +100,7 @@ export class AccessSnapshotResolver {
     const modules = await this.resolveModuleFlags(orgId, userId, denied);
 
     return {
+      membershipId: actingMembershipId(currentUserContext.principal),
       scopes,
       modules,
       isOrgOwner: currentUserContext.isOrgOwner,

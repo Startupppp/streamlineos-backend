@@ -64,9 +64,19 @@ export const DIRECT_EMAIL_CALLER_INVENTORY: DirectEmailCallerInventoryEntry[] =
       "external client workflow adapter",
     ),
     EXEMPT(
+      "modules/clients/lib/client-investment.ts",
+      DeliveryClass.WORKFLOW_EXTERNAL,
+      "the investment write, split out of client-accounts.service.ts in 40568c0b9; same external-client recipients as its origin",
+    ),
+    EXEMPT(
       "modules/crm/automation-studio/crm-automation-runner.service.ts",
       DeliveryClass.MARKETING,
       "sends through the consent-enforcing CRM outbound seam",
+    ),
+    EXEMPT(
+      "modules/crm/automation-studio/lib/automation-actions.ts",
+      DeliveryClass.MARKETING,
+      "the send_email action itself, moved here from crm-automation-runner.service.ts; same consent-enforcing CRM outbound seam",
     ),
     EXEMPT(
       "modules/crm/automation-studio/crm-sequences-runner.service.ts",
@@ -162,6 +172,11 @@ export const DIRECT_EMAIL_CALLER_INVENTORY: DirectEmailCallerInventoryEntry[] =
       "modules/organization/core/invitation-lifecycle.service.ts",
       DeliveryClass.WORKFLOW_EXTERNAL,
       "resend and cancel notices go to a non-member external recipient",
+    ),
+    EXEMPT(
+      "modules/organization/core/lib/invitation-mail-ops.ts",
+      DeliveryClass.WORKFLOW_EXTERNAL,
+      "the resend notice itself, moved here from invitation-lifecycle.service.ts; same non-member external recipient",
     ),
     EXEMPT(
       "modules/organization/core/org-membership.service.ts",

@@ -1,4 +1,5 @@
 import { ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { partyNamesFor } from "../../party/party-names";
 import { SupportTicketStaleException } from "../../../common/http/api-exceptions";
 import { randomUUID } from "node:crypto";
 import { and, asc, desc, eq, sql } from "drizzle-orm";
@@ -87,7 +88,6 @@ export class SupportTicketsService {
                 limit,
                 offset,
                 with: {
-                  client: { columns: { id: true, name: true } },
                   assigneeMembership: { columns: { id: true }, with: { user: { columns: { id: true, name: true, image: true } } } },
                   creatorMembership: { columns: { id: true }, with: { user: { columns: { id: true, name: true } } } },
                 },
@@ -97,8 +97,24 @@ export class SupportTicketsService {
                 .from(supportTickets)
                 .where(where),
             ]);
+
+            /**
+             * The client's name from Party, not from `clients`. Ticket 08.
+             *
+             * `client_id` is still what the ticket is filed under and is still
+             * returned as `client.id`, so nothing downstream changes shape; only the
+             * name moved. That is all this service read the legacy table for.
+             */
+            const names = await partyNamesFor(this.db, orgId, items.map((t) => t.clientPartyId));
+            const withClient = items.map((t) => ({
+              ...t,
+              client: t.clientId
+                ? { id: t.clientId, name: t.clientPartyId ? (names.get(t.clientPartyId) ?? null) : null }
+                : null,
+            }));
+
             const total = countResult?.count ?? 0;
-            return { items, total, page, totalPages: Math.ceil(total / limit) };
+            return { items: withClient, total, page, totalPages: Math.ceil(total / limit) };
           },
           () => ({ items: [], total: 0, page, totalPages: 0 }),
         );
@@ -181,7 +197,6 @@ export class SupportTicketsService {
       ({ sql: where }) => this.db.query.supportTickets.findFirst({
         where,
         with: {
-          client: { columns: { id: true, name: true } },
           assigneeMembership: { columns: { id: true }, with: { user: { columns: { id: true, name: true, image: true } } } },
           creatorMembership: { columns: { id: true }, with: { user: { columns: { id: true, name: true } } } },
           messages: {
@@ -202,7 +217,17 @@ export class SupportTicketsService {
       throw new NotFoundException("Ticket not found");
     }
     const customFieldValues = await this.customFields.getFieldValues(orgId, ticketId);
-    return { ...ticket, customFieldValues };
+
+    // Same as the list path: the identifier stays, the name comes from Party.
+    const names = await partyNamesFor(this.db, orgId, [ticket.clientPartyId]);
+    const client = ticket.clientId
+      ? {
+          id: ticket.clientId,
+          name: ticket.clientPartyId ? (names.get(ticket.clientPartyId) ?? null) : null,
+        }
+      : null;
+
+    return { ...ticket, client, customFieldValues };
   }
 
   async updateTicket(

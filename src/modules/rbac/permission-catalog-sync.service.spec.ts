@@ -28,10 +28,7 @@ describe("classifyRetiredPermissions", () => {
 
   it("keeps cleanup deterministic for audit output", () => {
     expect(
-      classifyRetiredPermissions(
-        ["z:resource:view", "a:resource:view"],
-        [],
-      ),
+      classifyRetiredPermissions(["z:resource:view", "a:resource:view"], []),
     ).toEqual({
       deletableKeys: ["a:resource:view", "z:resource:view"],
       retainedKeys: [],
@@ -41,12 +38,10 @@ describe("classifyRetiredPermissions", () => {
 
 describe("PermissionCatalogSyncService.sync — administering module column", () => {
   async function runSync(catalogModules: string[]) {
-    const { PermissionCatalogSyncService } = await import(
-      "./permission-catalog-sync.service"
-    );
-    const { RoleGrantReconcilerService } = await import(
-      "./role-grant-reconciler.service"
-    );
+    const { PermissionCatalogSyncService } =
+      await import("./permission-catalog-sync.service");
+    const { RoleGrantReconcilerService } =
+      await import("./role-grant-reconciler.service");
     let inserted: Array<Record<string, unknown>> = [];
     let conflictSet: Record<string, unknown> = {};
 
@@ -55,7 +50,9 @@ describe("PermissionCatalogSyncService.sync — administering module column", ()
         from: (table: unknown) => ({
           limit: () =>
             table === modulesCatalog
-              ? Promise.resolve(catalogModules.map((moduleKey) => ({ moduleKey })))
+              ? Promise.resolve(
+                  catalogModules.map((moduleKey) => ({ moduleKey })),
+                )
               : Promise.resolve([]),
         }),
       }),

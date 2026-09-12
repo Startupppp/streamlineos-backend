@@ -1,9 +1,10 @@
 import { randomUUID } from "node:crypto";
-import { and, asc, eq, gt, isNull } from "drizzle-orm";
+import { and, asc, eq, gt, isNotNull, isNull } from "drizzle-orm";
 import type { Db } from "../../db/drizzle.module";
 import { organizations } from "../../db/schema";
 import { logger } from "../logger/logger.service";
-import { runWithTenantContext } from "./tenant-context";
+import { runWithTenantContext, type AfterCommitHook } from "./tenant-context";
+import { drainAfterCommitHooks } from "./run-in-tenant-transaction";
 import { withTenant, type TenantTx } from "./with-tenant";
 import type { PlacementIntent } from "../region/placement";
 import { getRegionRegistry, hasRegionRegistry } from "../region/region-registry";
@@ -185,6 +186,10 @@ function sweepContext(
  * per-org loop. `organizations` itself carries no tenant column and therefore no
  * policy, which is what makes enumerating them possible without a bypass role.
  *
+ * Unplaced orgs (null `region`) are skipped: `withTenant` fails closed for them,
+ * and sweeping them every few seconds only burns the pool without ever reaching
+ * tenant data.
+ *
  * One organization failing must not abort the rest of the sweep, so each is
  * isolated: its transaction rolls back alone and the loop continues.
  *
@@ -201,6 +206,8 @@ export async function forEachOrg(
   options: ForEachOrgOptions = {},
 ): Promise<ForEachOrgResult> {
   const enumerationDb = resolveEnumerationDb(db);
+  // status, not just deletedAt: the purge worker parks an org in PURGE_SCHEDULED/PURGED without soft-deleting it.
+  // region too: an unplaced org cannot be reached by `withTenant`, so sweeping it only burns the pool.
   const ORG_ENUM_PAGE = 500;
   const allEnumerated: Array<{ id: string }> = [];
   let enumAfter: string | undefined;
@@ -212,6 +219,7 @@ export async function forEachOrg(
         and(
           isNull(organizations.deletedAt),
           eq(organizations.status, "ACTIVE"),
+          isNotNull(organizations.region),
           enumAfter ? gt(organizations.id, enumAfter) : undefined,
         ),
       )
@@ -244,9 +252,18 @@ export async function forEachOrg(
           // `withTenant` resolves the correct cell db per org from the registry, so the callback
           // always operates against the cell that owns the organization — regardless of which db
           // was used for enumeration above.
+          // An `afterCommit` array, as every other fresh context carries one. Without it
+          // `registerAfterCommit` answers false inside a sweep, and a service that defers
+          // its emails or webhooks to the commit falls back to sending them inside this
+          // transaction — before the token rotation or status change they describe is
+          // durable, and with a rollback leaving the message sent and the state gone.
+          const afterCommit: AfterCommitHook[] = [];
           await withTenant(db, { orgId: org.id, audience: "INTERNAL", intent }, (tx) =>
-            runWithTenantContext({ orgId: org.id, audience: "INTERNAL", tx }, () => fn(tx, org.id)),
+            runWithTenantContext({ orgId: org.id, audience: "INTERNAL", tx, afterCommit }, () =>
+              fn(tx, org.id),
+            ),
           );
+          drainAfterCommitHooks(db, org.id, afterCommit);
           return true;
         } catch (err) {
           // Drizzle's message is only "Failed query: <sql> params: <...>" — the reason the

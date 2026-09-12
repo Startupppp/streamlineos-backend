@@ -4,9 +4,10 @@ import { CustomerReturnsController } from "./customer-returns.controller";
 import { VendorReturnsService } from "./vendor-returns.service";
 import { CustomerReturnsService } from "./customer-returns.service";
 import { InvStockEngineModule } from "../stock-engine/inv-stock-engine.module";
+import { AccountingAdaptersModule } from "../../accounting/adapters/accounting-adapters.module";
 
 @Module({
-  imports: [InvStockEngineModule],
+  imports: [InvStockEngineModule, AccountingAdaptersModule],
   controllers: [VendorReturnsController, CustomerReturnsController],
   providers: [VendorReturnsService, CustomerReturnsService],
   exports: [VendorReturnsService, CustomerReturnsService],

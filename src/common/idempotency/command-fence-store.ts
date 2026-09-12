@@ -35,6 +35,12 @@ export type ClaimResult =
  * it; `complete` and `fail` did not, and had no way to open a transaction of their
  * own, so all three depended on an ambient tenant transaction being open around them.
  * That is what made `@Idempotent` unusable on a `@NoTenantTransaction()` route.
+ *
+ * The row also carries a foreign key to `organizations`, so a write that names no
+ * organisation is refused — and the refusal lands on the fence, not the command, so
+ * an idempotent route 500s before its handler ever runs.
+ *
+ * The in-memory double lives in `command-fence-store-memory.ts`.
  */
 export interface CommandFenceStore {
   claim(params: ClaimParams): Promise<ClaimResult>;

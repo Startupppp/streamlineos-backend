@@ -96,7 +96,7 @@ describe("[seeded-e2e] KB ACL revocation, source purge and page reindex", () => 
       const embeddingOff = jest.spyOn(gateway, "isEmbeddingConfigured").mockReturnValue(false);
       const invoke = jest
         .spyOn(gateway, "invokeTextWithUsage")
-        .mockResolvedValue({ ok: true, data: "Seeded answer.", aiUsage: okUsage });
+        .mockResolvedValue({ ok: true, data: "Seeded answer.", aiUsage: okUsage, correlationId: "kb-acl-spec" });
 
       try {
         const [space] = await db
@@ -212,7 +212,7 @@ describe("[seeded-e2e] KB ACL revocation, source purge and page reindex", () => 
         .mockResolvedValue({ ok: true, vector, vectorLiteral: JSON.stringify(vector) });
       const invoke = jest
         .spyOn(gateway, "invokeTextWithUsage")
-        .mockResolvedValue({ ok: true, data: "Seeded answer.", aiUsage: okUsage });
+        .mockResolvedValue({ ok: true, data: "Seeded answer.", aiUsage: okUsage, correlationId: "kb-acl-spec" });
 
       try {
         const [source] = await db

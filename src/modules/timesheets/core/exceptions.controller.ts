@@ -16,7 +16,7 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { ExceptionsService } from "./exceptions.service";
+import { TimesheetExceptionsService } from "./exceptions.service";
 import { ExceptionsDetectorService } from "./exceptions-detector.service";
 import {
   exceptionsQuerySchema,
@@ -26,6 +26,7 @@ import {
   type ResolveExceptionInput,
   type DismissExceptionInput,
 } from "./dto/exceptions.schemas";
+import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { BodylessAction, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
 import { z } from "zod";
@@ -43,7 +44,7 @@ const exceptionIdParams = z.object({ exceptionId: z.coerce.number().int().positi
 @UseGuards(JwtAuthGuard, ModuleGuard, PermissionGuard)
 export class TimesheetExceptionsController {
   constructor(
-    private readonly exceptions: ExceptionsService,
+    private readonly exceptions: TimesheetExceptionsService,
     private readonly detector: ExceptionsDetectorService,
   ) {}
 
@@ -95,6 +96,7 @@ export class TimesheetExceptionsController {
   @BodylessAction()
   @HttpCode(200)
   @RequirePermission("timesheets:exceptions:manage")
+  @Idempotent("timesheets.exceptions.run_detection", { required: false })
   @ResponseSchema(detectorResponseSchema)
   runDetection(@CurrentUser() u: CurrentUserContext) {
     return this.detector.detectForOrg(u.orgId);

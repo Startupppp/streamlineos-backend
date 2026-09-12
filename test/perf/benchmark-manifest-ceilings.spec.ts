@@ -1,4 +1,5 @@
 import { execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -15,6 +16,23 @@ import { pathToFileURL } from "node:url";
  * every remaining statement pass, so the manifest is required to carry an entry for every read-cost
  * budget the catalog declares — a budget added to `read-cost-budgets.mjs` and left unclaimed by any
  * module used to disappear from here silently.
+ *
+ * ⚠ That assertion read manifest membership as a proxy for the property it cares about, and the two
+ * come apart the moment the catalog moves ahead of the capture. Merging the inventory lane added
+ * four budgets — the two keyset cursors and the two genealogy hops — and the committed capture, taken
+ * at release 980b8101 over a 75-budget catalog, could not contain them. Manifest membership alone
+ * therefore failed on a widening, which is the opposite of the narrowing it exists to catch.
+ *
+ * So the property is asserted where it actually lives. `validateModules` already refuses an
+ * unclaimed budget, but only at capture time, so a budget can sit unclaimed for as long as nobody
+ * re-captures — which is exactly what happened. `every read-cost budget is claimed by exactly one
+ * benchmark module` is now checked here, from the live declaration, with no tolerance at all; the
+ * capture is then required to cover everything claimed EXCEPT the ids in `AWAITING_NEXT_CAPTURE`.
+ *
+ * That list cannot be used to narrow the corpus, because it is only admissible while the capture's
+ * own recorded content digest of `read-cost-budgets.mjs` disagrees with the file on disk. Deleting
+ * an entry from the manifest moves no digest, so the list must be empty and the deletion fails; and
+ * the next capture stamps a matching digest, which forces the list back to empty.
  */
 
 const BACKEND_ROOT = join(__dirname, "..", "..");
@@ -53,6 +71,7 @@ interface Manifest {
     container?: unknown;
     database?: { name?: string };
     role?: { bypassrls?: boolean };
+    subject?: { digests?: Record<string, string> };
   };
   method?: {
     command?: string;
@@ -66,6 +85,65 @@ interface Manifest {
 }
 
 const manifest: Manifest = JSON.parse(readFileSync(MANIFEST_PATH, "utf8"));
+
+const CATALOG_PATH = join(BACKEND_ROOT, "src", "scripts", "read-cost-budgets.mjs");
+
+/**
+ * Budgets the catalog declares that the COMMITTED capture predates. Admissible only while the
+ * capture's recorded digest of the catalog disagrees with the catalog on disk, and required to be
+ * empty once it agrees — see the header. Every entry empties itself at the next `--write` capture.
+ */
+const AWAITING_NEXT_CAPTURE: readonly string[] = [
+  "inv-stock-transactions-cursor",
+  "inv-audit-events-cursor",
+  "inv-genealogy-item-hop",
+  "inv-genealogy-document-hop",
+];
+
+/** The ids the read-cost catalog declares, read out of the module itself rather than re-parsed. */
+function catalogBudgetIds(): string[] {
+  const catalogUrl = pathToFileURL(CATALOG_PATH).href;
+  return JSON.parse(
+    execFileSync(
+      process.execPath,
+      [
+        "--input-type=module",
+        "-e",
+        `import { BUDGETS } from ${JSON.stringify(catalogUrl)};` +
+          ` process.stdout.write(JSON.stringify(BUDGETS.map((b) => b.id)));`,
+      ],
+      { cwd: BACKEND_ROOT, encoding: "utf8" },
+    ),
+  ) as string[];
+}
+
+/** `{ "<budget id>": "<module id>" }` from the live benchmark declaration. */
+function claimedBudgets(): Record<string, string> {
+  const modulesUrl = pathToFileURL(join(BACKEND_ROOT, "test", "perf", "benchmark-modules.mjs")).href;
+  return JSON.parse(
+    execFileSync(
+      process.execPath,
+      [
+        "--input-type=module",
+        "-e",
+        `import { MODULES } from ${JSON.stringify(modulesUrl)};` +
+          ` const out = {};` +
+          ` for (const m of MODULES)` +
+          `   for (const id of Object.keys(m.readCostBudgets ?? {})) out[id] = m.id;` +
+          ` process.stdout.write(JSON.stringify(out));`,
+      ],
+      { cwd: BACKEND_ROOT, encoding: "utf8" },
+    ),
+  ) as Record<string, string>;
+}
+
+/** True while the capture's recorded catalog digest still describes the catalog on disk. */
+function catalogDigestMatchesCapture(): boolean {
+  const recorded = manifest.environment.subject?.digests?.["src/scripts/read-cost-budgets.mjs"];
+  if (typeof recorded !== "string") return false;
+  const onDisk = createHash("sha256").update(readFileSync(CATALOG_PATH)).digest("hex").slice(0, 16);
+  return recorded === onDisk;
+}
 
 function slots(): { id: string; tenant: string; cls: string; ceiling: number; obs: Observation }[] {
   const out: { id: string; tenant: string; cls: string; ceiling: number; obs: Observation }[] = [];
@@ -171,21 +249,9 @@ describe("PRD-C142 — statement ceilings on the production-shaped seed", () => 
       gaps.map((s) => `${s.id}@${s.tenant}: ${String(s.obs.reason)}`),
     ).toEqual([]);
 
-    const catalogUrl = pathToFileURL(
-      join(BACKEND_ROOT, "src", "scripts", "read-cost-budgets.mjs"),
-    ).href;
-    const catalogIds: string[] = JSON.parse(
-      execFileSync(
-        process.execPath,
-        [
-          "--input-type=module",
-          "-e",
-          `import { BUDGETS } from ${JSON.stringify(catalogUrl)};` +
-            ` process.stdout.write(JSON.stringify(BUDGETS.map((b) => b.id)));`,
-        ],
-        { cwd: BACKEND_ROOT, encoding: "utf8" },
-      ),
-    );
+    // A budget the capture predates has no slot at any tenant, so it can be neither measured nor
+    // skipped. Counting it as an expected slot would demand a measurement the capture cannot hold.
+    const catalogIds = catalogBudgetIds().filter((id) => !AWAITING_NEXT_CAPTURE.includes(id));
     const largeSkipped = new Set(
       slots()
         .filter(
@@ -247,24 +313,36 @@ describe("PRD-C142 — statement ceilings on the production-shaped seed", () => 
     expect(unretained).toEqual([]);
   });
 
-  it("covers every read-cost budget the catalog declares, so the corpus cannot be narrowed", () => {
-    const catalogUrl = pathToFileURL(
-      join(BACKEND_ROOT, "src", "scripts", "read-cost-budgets.mjs"),
-    ).href;
-    const ids: string[] = JSON.parse(
-      execFileSync(
-        process.execPath,
-        [
-          "--input-type=module",
-          "-e",
-          `import { BUDGETS } from ${JSON.stringify(catalogUrl)};` +
-            ` process.stdout.write(JSON.stringify(BUDGETS.map((b) => b.id)));`,
-        ],
-        { cwd: BACKEND_ROOT, encoding: "utf8" },
-      ),
-    );
+  it("has every read-cost budget claimed by exactly one benchmark module", () => {
+    const ids = catalogBudgetIds();
     expect(ids.length).toBeGreaterThanOrEqual(70);
+
+    // The property itself, checked against the live declaration rather than against a capture that
+    // can be older than the catalog. An unclaimed budget carries no class and no ceiling, so it is
+    // measured by the read-cost instrument and enforced by nothing.
+    const claimed = claimedBudgets();
+    expect(ids.filter((id) => !(id in claimed))).toEqual([]);
+    expect(Object.keys(claimed).filter((id) => !ids.includes(id))).toEqual([]);
+  });
+
+  it("covers every claimed budget the capture could hold, so the corpus cannot be narrowed", () => {
+    const ids = catalogBudgetIds();
     const inManifest = new Set(manifest.modules.flatMap((m) => m.benchmarks.map((b) => b.id)));
-    expect(ids.filter((id) => !inManifest.has(id))).toEqual([]);
+    expect(ids.filter((id) => !inManifest.has(id) && !AWAITING_NEXT_CAPTURE.includes(id))).toEqual(
+      [],
+    );
+  });
+
+  it("admits an awaiting-capture entry only while the capture's own catalog digest has moved", () => {
+    // Deleting a benchmark from the manifest changes no digest, so the exemption is unavailable to
+    // a narrowing; re-capturing stamps a matching digest, which forces the list back to empty.
+    if (catalogDigestMatchesCapture()) expect(AWAITING_NEXT_CAPTURE).toEqual([]);
+
+    const ids = catalogBudgetIds();
+    const inManifest = new Set(manifest.modules.flatMap((m) => m.benchmarks.map((b) => b.id)));
+    // Both directions: an entry naming a budget the catalog dropped, or one the capture already
+    // holds, is a stale exemption and the next narrowing hides behind it.
+    expect(AWAITING_NEXT_CAPTURE.filter((id) => !ids.includes(id))).toEqual([]);
+    expect(AWAITING_NEXT_CAPTURE.filter((id) => inManifest.has(id))).toEqual([]);
   });
 });

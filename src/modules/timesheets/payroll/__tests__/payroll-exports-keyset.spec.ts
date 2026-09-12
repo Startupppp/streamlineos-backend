@@ -1,5 +1,6 @@
 import { PgDialect } from "drizzle-orm/pg-core";
 import { PayrollExportsReadService } from "../payroll-exports-read.service";
+import { ScopedRead } from "../../../access/scoped-read";
 import type { Db } from "../../../../db/drizzle.module";
 
 const dialect = new PgDialect();
@@ -46,7 +47,7 @@ async function capture(cursor: string | undefined): Promise<Captured> {
     mockCache as never,
     {} as never,
   );
-  await svc.listExports("org-1", { limit: 20, cursor });
+  await svc.listExports(ScopedRead.of("org-1", "user-1", "all"), { limit: 20, cursor });
   return captured;
 }
 

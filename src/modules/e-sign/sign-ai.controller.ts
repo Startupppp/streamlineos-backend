@@ -21,6 +21,15 @@ import { signAiSummarizeResponseSchema } from "./dto/e-sign-response.schemas";
 
 const envelopeIdParams = z.object({ envelopeId: z.coerce.number().int().positive() }).strict();
 
+/**
+ * The one sign controller that carried no module gate.
+ *
+ * Every other controller in this module pairs `@RequireModule("sign")` with
+ * `ModuleGuard`; this one had neither, so an organisation without SignOS
+ * enabled reached it on the strength of `sign:envelope:view` alone and got 403
+ * only if it lacked that key. It is also the module's only AI route, so the
+ * surface left open is the one that spends credits.
+ */
 @RequireModule("sign")
 @Controller("sign/envelopes/:envelopeId/ai")
 @UseGuards(JwtAuthGuard, ModuleGuard, PermissionGuard, RateLimitGuard)

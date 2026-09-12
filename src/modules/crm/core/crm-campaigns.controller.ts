@@ -1,3 +1,4 @@
+import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import {
   Body,
   Controller,
@@ -20,6 +21,11 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import { CrmCampaignsService } from "./crm-campaigns.service";
 import { CrmAttributionReportService } from "./crm-attribution-report.service";
+import { AttributionReportService } from "../../attribution/attribution-report.service";
+import {
+  attributionReportQuerySchema,
+  type AttributionReportQuery,
+} from "../../attribution/dto/attribution-report.schemas";
 import {
   campaignListSchema,
   campaignCreateSchema,
@@ -37,6 +43,7 @@ import {
   campaignRoiSchema,
   campaignLeadsSchema,
   campaignAttributionSchema,
+  campaignAttributionByModelSchema,
 } from "./dto/crm-campaigns-response.schemas";
 
 const campaignIdParams = z.object({ campaignId: z.coerce.number().int().positive() }).strict();
@@ -48,6 +55,7 @@ export class CrmCampaignsController {
   constructor(
     private readonly campaigns: CrmCampaignsService,
     private readonly attribution: CrmAttributionReportService,
+    private readonly multiTouch: AttributionReportService,
   ) {}
 
   @Get()
@@ -86,6 +94,25 @@ export class CrmCampaignsController {
   @ResponseSchema(z.array(campaignAttributionSchema))
   lastTouch(@CurrentUser() u: CurrentUserContext) {
     return this.attribution.getLastTouchAttribution(u.orgId);
+  }
+
+  /**
+   * The same question as the two above, asked under any of the five models.
+   *
+   * It sits beside them on the same permission rather than behind a new key:
+   * multi-touch is a different arithmetic over the touches `crm:reports:view`
+   * already discloses, not a wider disclosure. Declared before `:campaignId`
+   * so the literal segment is matched first.
+   */
+  @Get("attribution/by-model")
+  @RequirePermission("crm:reports:view")
+  @ResponseSchema(campaignAttributionByModelSchema)
+  byModel(
+    @Query(new ZodValidationPipe(attributionReportQuerySchema))
+    query: AttributionReportQuery,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.multiTouch.getReport(u.orgId, query.model, query.halfLifeDays);
   }
 
   @Get(":campaignId/roi")

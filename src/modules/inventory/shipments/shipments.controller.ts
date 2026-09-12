@@ -1,4 +1,16 @@
-import { Controller, Get, Post, Patch, Param, Body, Query, Headers, ParseIntPipe, UseGuards, HttpCode, HttpStatus, BadRequestException } from "@nestjs/common";
+import {
+  Controller,
+  Get,
+  Post,
+  Patch,
+  Param,
+  Body,
+  Query,
+  ParseIntPipe,
+  UseGuards,
+  HttpCode,
+  HttpStatus,
+} from "@nestjs/common";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
@@ -20,6 +32,8 @@ import {
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
 import { BodylessAction, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { IdempotencyKey } from "../../../common/idempotency/idempotency-key.decorator";
+import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import {
   listShipmentsResponseSchema,
   getShipmentResponseSchema,
@@ -43,7 +57,7 @@ export class ShipmentsController {
     @Query() query: ListShipmentsQueryInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.list(u.orgId, query);
+    return this.svc.list(u.orgId, u.userId, query);
   }
 
   @Get(":shipmentId")
@@ -55,13 +69,14 @@ export class ShipmentsController {
     @Param("shipmentId", ParseIntPipe) shipmentId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.findOne(u.orgId, shipmentId);
+    return this.svc.findOne(u.orgId, u.userId, shipmentId);
   }
 
   @Post()
   @ResponseSchema(invShipmentSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:shipments:manage")
+  @Idempotent("inventory.shipment.create")
   @Validate({ body: createShipmentSchema })
   create(
     @Body() body: CreateShipmentInput,
@@ -92,10 +107,9 @@ export class ShipmentsController {
   ship(
     @Param("shipmentId", ParseIntPipe) shipmentId: number,
     @Body() body: ShipActionInput,
-    @Headers("idempotency-key") idempotencyKey: string | undefined,
+    @IdempotencyKey() idempotencyKey: string,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!idempotencyKey) throw new BadRequestException("Idempotency-Key header is required");
     return this.svc.ship(u.orgId, u.userId, shipmentId, body, idempotencyKey);
   }
 
@@ -104,6 +118,7 @@ export class ShipmentsController {
   @ResponseSchema(invShipmentSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:shipments:manage")
+  @Idempotent("inventory.shipment.cancel")
   @HttpCode(HttpStatus.OK)
   @Validate({ params: shipmentIdParams })
   cancel(

@@ -1,4 +1,5 @@
 import postgres from "postgres";
+import { requiresTls } from "./pool.config";
 import { is } from "drizzle-orm";
 import { getTableConfig, PgTable } from "drizzle-orm/pg-core";
 import * as schema from "./schema";
@@ -33,7 +34,20 @@ d("schema ↔ catalog parity", () => {
   beforeAll(async () => {
     const url = process.env.DATABASE_URL;
     if (!url) throw new Error("DATABASE_URL required");
-    sql = postgres(normalizeUrl(url), { prepare: false, max: 2, ssl: "require" });
+    /**
+     * TLS follows the host, rather than being demanded of every one.
+     *
+     * `ssl: "require"` is right for the managed database this was written
+     * against and impossible for a local one, which does not speak it — the
+     * connection fails while the query is still being built, so the suite does
+     * not fail, it fails to run. `requiresTls` is the rule the application's own
+     * pool applies, so this connects on the same terms the code under test does.
+     */
+    sql = postgres(normalizeUrl(url), {
+      prepare: false,
+      max: 2,
+      ...(requiresTls(url) ? { ssl: "require" as const } : {}),
+    });
 
     const rows = await sql<{ table_schema: string; table_name: string; column_name: string }[]>`
       SELECT table_schema, table_name, column_name

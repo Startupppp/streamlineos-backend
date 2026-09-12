@@ -1,8 +1,6 @@
-import {
-  Controller, Get, Post, Param, Body, Query, ParseIntPipe, UseGuards,
-  BadRequestException, UseInterceptors, UploadedFile,
-} from "@nestjs/common";
+import { Controller, Get, Post, Param, Body, Query, ParseIntPipe, UseGuards, BadRequestException, UseInterceptors, UploadedFile } from "@nestjs/common";
 import { FileInterceptor } from "@nestjs/platform-express";
+import { IdempotencyKey } from "../../../common/idempotency/idempotency-key.decorator";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
@@ -10,7 +8,10 @@ import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { ModuleGuard } from "../../../common/rbac/module.guard";
+import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { ImportService } from "./import.service";
+import { StagedImportService } from "./staged-import.service";
+import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import {
   previewImportSchema,
   createImportJobSchema,
@@ -18,13 +19,23 @@ import {
   type PreviewImportInput,
   type CreateImportJobInput,
   type ListJobsQueryInput,
+  openImportJobSchema,
+  stageImportRowsSchema,
+  importErrorsQuerySchema,
+  type OpenImportJobInput,
+  type StageImportRowsInput,
+  type ImportErrorsQueryInput,
 } from "./dto/import-export.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
-import { MultipartAction, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { BodylessAction, MultipartAction, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
 import {
   importPreviewResponseSchema,
   createImportJobResponseSchema,
   listImportJobsResponseSchema,
+  openStagedImportJobResponseSchema,
+  stageImportRowsResponseSchema,
+  stagedImportErrorsResponseSchema,
+  stagedImportProgressResponseSchema,
 } from "./dto/import-export-response.schemas";
 import { z } from "zod";
 
@@ -34,7 +45,90 @@ const jobIdParams = z.object({ jobId: z.coerce.number().int().positive() }).stri
 @Controller("inventory/import")
 @UseGuards(JwtAuthGuard, ModuleGuard)
 export class ImportController {
-  constructor(private readonly svc: ImportService) {}
+  constructor(
+    private readonly svc: ImportService,
+    private readonly staged: StagedImportService,
+  ) {}
+
+  /**
+   * INV-108. A hundred thousand rows do not fit in a request body, so the file
+   * is uploaded as a job, staged in chunks, then processed against a cursor.
+   * Each call is small enough to retry and the job survives every one of them.
+   */
+  @Post("staged")
+  @ResponseSchema(openStagedImportJobResponseSchema)
+  @UseGuards(PermissionGuard)
+  @RequirePermission("inventory:import")
+  @Idempotent("inventory.import.open")
+  openStaged(
+    @Body(new ZodValidationPipe(openImportJobSchema)) body: OpenImportJobInput,
+    @CurrentUser() u: CurrentUserContext,
+    @IdempotencyKey() idempotencyKey: string,
+  ) {
+    return this.staged.createJob(u.orgId, u.userId, { ...body, idempotencyKey });
+  }
+
+  @Post("staged/:jobId/rows")
+  @ResponseSchema(stageImportRowsResponseSchema)
+  @UseGuards(PermissionGuard)
+  @RequirePermission("inventory:import")
+  @Idempotent("inventory.import.rows.stage")
+  stageRows(
+    @Param("jobId", ParseIntPipe) jobId: number,
+    @Body(new ZodValidationPipe(stageImportRowsSchema)) body: StageImportRowsInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.staged.stageRows(u.orgId, jobId, body.rows);
+  }
+
+  /** Applies the next chunk. Call until `finished` — that is the resume loop. */
+  @Post("staged/:jobId/process")
+  @BodylessAction()
+  @ResponseSchema(stagedImportProgressResponseSchema)
+  @UseGuards(PermissionGuard)
+  @RequirePermission("inventory:import")
+  processChunk(
+    @Param("jobId", ParseIntPipe) jobId: number,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.svc.processStagedChunk(u.orgId, u.userId, jobId);
+  }
+
+  @Post("staged/:jobId/cancel")
+  @BodylessAction()
+  @ResponseSchema(stagedImportProgressResponseSchema)
+  @UseGuards(PermissionGuard)
+  @RequirePermission("inventory:import")
+  @Idempotent("inventory.import.staged.cancel")
+  cancelStaged(
+    @Param("jobId", ParseIntPipe) jobId: number,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.staged.cancel(u.orgId, u.userId, jobId);
+  }
+
+  @Get("staged/:jobId")
+  @ResponseSchema(stagedImportProgressResponseSchema)
+  @UseGuards(PermissionGuard)
+  @RequirePermission("inventory:import")
+  stagedProgress(
+    @Param("jobId", ParseIntPipe) jobId: number,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.staged.progress(u.orgId, jobId);
+  }
+
+  @Get("staged/:jobId/errors")
+  @ResponseSchema(stagedImportErrorsResponseSchema)
+  @UseGuards(PermissionGuard)
+  @RequirePermission("inventory:import")
+  stagedErrors(
+    @Param("jobId", ParseIntPipe) jobId: number,
+    @Query(new ZodValidationPipe(importErrorsQuerySchema)) query: ImportErrorsQueryInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.staged.errors(u.orgId, jobId, query.page, query.limit);
+  }
 
   @Post("preview")
   @ResponseSchema(importPreviewResponseSchema)
@@ -56,6 +150,7 @@ export class ImportController {
   @ResponseSchema(createImportJobResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:import")
+  @Idempotent("inventory.import.job.create")
   @Validate({ body: createImportJobSchema })
   createJob(
     @Body() body: CreateImportJobInput,

@@ -520,6 +520,15 @@ function main() {
   console.log(`Full-row reads of a vector/tsvector/bytea table: ${heavyReads.length} (allowed ${baseline.heavyColumnReadsAllowed ?? 0}) over ${heavyTables.size} such tables.`);
   console.log(`Unbounded COUNT existence probes (count() vs 0/1, no LIMIT): ${countProbesInScope.length} in scope (allowed 0) · ${countProbesDeferred.length} deferred to crm/inventory (reported, not enforced).`);
 
+  // The deferred buckets were said to be "printed so it cannot hide", but only
+  // printed on a ratchet BREACH — so a sitting population was invisible to
+  // anyone trying to work it down, which is the opposite of a ratchet's point.
+  // `--list` names them without waiting for the count to grow.
+  if (process.argv.includes("--list")) {
+    for (const e of existenceDeferred) console.log(`  DEFERRED-EXISTENCE     ${e}`);
+    for (const c of countProbesDeferred) console.log(`  DEFERRED-COUNT-PROBE   ${c}`);
+  }
+
   let failed = false;
 
   /**

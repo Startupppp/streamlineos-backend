@@ -7,9 +7,23 @@ describe("PeriodsSubmitService — cross-tenant isolation", () => {
   const ATTACKER_ORG = "org-attacker";
 
   function makeTx() {
-    const updateChain = { set: jest.fn().mockReturnThis(), where: jest.fn().mockResolvedValue([]) };
-    return { update: jest.fn().mockReturnValue(updateChain) };
+    const returning = jest.fn().mockResolvedValue([{
+      id: 1, orgId: OWNER_ORG, userMembershipId: 10, status: "SUBMITTED", eventSeq: 1,
+      periodStart: "2026-01-01", periodEnd: "2026-01-07",
+      totalHours: "8", billableHours: "8", nonBillableHours: "0",
+      submittedAt: new Date(), approvedAt: null, rejectedAt: null, lockedAt: null,
+      currentApproverMembershipId: null, rejectionReason: null,
+    }]);
+    const where = jest.fn().mockImplementation(() => Object.assign(Promise.resolve([]), { returning }));
+    const updateChain = { set: jest.fn().mockReturnThis(), where };
+    const insert = jest.fn().mockReturnValue({ values: jest.fn().mockResolvedValue(undefined) });
+    return { update: jest.fn().mockReturnValue(updateChain), insert, select: ownerLookup };
   }
+
+  /** The owner's membership -> user id, answered for any org-scoped lookup. */
+  const ownerLookup = jest.fn().mockReturnValue({
+    from: () => ({ where: () => Object.assign(Promise.resolve([{ id: 10, userId: "owner-user" }]), { limit: async () => [{ id: 10, userId: "owner-user" }] }) }),
+  });
 
   function makeSvc(periodRow: unknown) {
     let calledWithOrg: string | undefined;
@@ -23,6 +37,7 @@ describe("PeriodsSubmitService — cross-tenant isolation", () => {
     };
     const db = {
       query: { timesheets: { findMany: jest.fn().mockResolvedValue([]) } },
+      select: ownerLookup,
       transaction: jest.fn().mockImplementation(async (fn: (tx: unknown) => unknown) => fn(makeTx())),
     } as unknown as Db;
     const entries = { recomputePeriodTotals: jest.fn().mockResolvedValue(undefined) };

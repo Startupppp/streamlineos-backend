@@ -127,10 +127,17 @@ const EVER_RECORDED_AS_UNLIMITED: readonly string[] = [
  * The three closed here, with the tier each was wired to. Named rather than
  * deleted outright, so the shrink is auditable and so the "every gap is closed
  * for the reason it was recorded" case can re-derive it from the source.
+ *
+ * Identity is route verb + path, so the one edit that DOES move an identity is
+ * a route rename. `2183bace9` renamed the CSAT submit route from
+ * `:surveyId/responses` to `public/:publicToken/responses` and re-keyed it in
+ * `EVER_RECORDED_AS_UNLIMITED` but not here, which left this map naming a
+ * handler that no longer exists while the tier was still wired. Both lists must
+ * move together on a rename.
  */
 const CLOSED_PUBLIC_WRITE_GAPS: Readonly<Record<string, string>> = {
   "modules/careers/careers.controller.ts:Post apply": "public:job-apply",
-  "modules/csat/csat.controller.ts:Post :surveyId/responses": "csat:submit",
+  "modules/csat/csat.controller.ts:Post public/:publicToken/responses": "csat:submit",
   "common/audit/internal-audit.controller.ts:Post audit": "internal:audit",
 };
 

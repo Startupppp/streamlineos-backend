@@ -7,6 +7,8 @@ import type { MembershipState } from "../../common/auth/membership-state.service
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { Test } from "@nestjs/testing";
 import { createHash } from "node:crypto";
+import { AuthContextFactory } from "../../common/auth/auth-context.factory";
+import { makeAuthContextFactory } from "../../../test/helpers/module-guard-context";
 
 const VALID_TOKEN = "slos_" + "a".repeat(48);
 const TOKEN_ID = 42;
@@ -90,6 +92,7 @@ describe("AgentTokenGuard", () => {
         { provide: DRIZZLE, useValue: mockDb },
         { provide: EntitlementsService, useValue: { listModules: jest.fn().mockResolvedValue([]) } },
         { provide: MembershipStateService, useValue: { resolve: resolveMembership } },
+        { provide: AuthContextFactory, useValue: makeAuthContextFactory() },
       ],
     }).compile();
     guard = module.get(AgentTokenGuard);

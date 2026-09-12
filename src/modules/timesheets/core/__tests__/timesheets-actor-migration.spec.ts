@@ -50,10 +50,19 @@ const APPROVED_PERIOD = {
 
 const DEFAULT_SETTINGS = { lockAfterApproval: false };
 
-function makeDb(period: unknown, settings: unknown, postApprovalPeriod: unknown) {
+const EMPLOYEE_MEMBER = { id: EMPLOYEE_MEMBERSHIP_ID, userId: "employee-user" };
+
+/**
+ * `owner` is the membership row the lifecycle event and the worker's
+ * notification resolve the period owner's user id from; since the actor
+ * cutover the period itself only carries `user_membership_id`. It is read
+ * after the settings and before the transaction.
+ */
+function makeDb(period: unknown, settings: unknown, postApprovalPeriod: unknown, owner: unknown = null) {
   const dbSelectSequence: unknown[][] = [
     period !== null ? [period] : [],
     settings !== null ? [settings] : [],
+    owner !== null ? [owner] : [],
     postApprovalPeriod !== null ? [postApprovalPeriod] : [],
   ];
   let dbSelectIdx = 0;
@@ -71,7 +80,24 @@ function makeDb(period: unknown, settings: unknown, postApprovalPeriod: unknown)
   const dbSelect = jest.fn().mockReturnValue({ from: dbFrom });
 
   const setCaptures: Record<string, unknown>[] = [];
-  const txReturning = jest.fn().mockResolvedValue([]);
+  /*
+   * The period UPDATE carries `status = 'SUBMITTED'` and returns the row it
+   * flipped; an empty RETURNING now means another decision won the race and
+   * the transition refuses with 409, so the double answers as Postgres would
+   * for a period that was still submitted.
+   */
+  const txReturning = jest.fn().mockResolvedValue([
+    {
+      eventSeq: 1,
+      userMembershipId: 12,
+      periodStart: "2026-09-01",
+      periodEnd: "2026-09-07",
+      status: "APPROVED",
+      totalHours: "0",
+      billableHours: "0",
+      nonBillableHours: "0",
+    },
+  ]);
   const txWhere = jest.fn().mockReturnValue({ returning: txReturning });
   const txSet = jest.fn().mockImplementation((arg: Record<string, unknown>) => {
     setCaptures.push(arg);
@@ -86,8 +112,12 @@ function makeDb(period: unknown, settings: unknown, postApprovalPeriod: unknown)
   const txSelectFrom = jest.fn().mockReturnValue({ where: txSelectWhere });
   const txSelect = jest.fn().mockReturnValue({ from: txSelectFrom });
 
-  type TxMock = { update: typeof txUpdate; select: typeof txSelect };
-  const tx: TxMock = { update: txUpdate, select: txSelect };
+  /* The transition emits its lifecycle event through the outbox inside the same transaction. */
+  const txInsertValues = jest.fn().mockResolvedValue(undefined);
+  const txInsert = jest.fn().mockReturnValue({ values: txInsertValues });
+
+  type TxMock = { update: typeof txUpdate; select: typeof txSelect; insert: typeof txInsert };
+  const tx: TxMock = { update: txUpdate, select: txSelect, insert: txInsert };
   const transaction = jest.fn().mockImplementation(async (fn: (tx: TxMock) => Promise<void>) => fn(tx));
 
   return {
@@ -112,10 +142,20 @@ const USER_CTX = {
 const AUDIT_MOCK = { record: jest.fn().mockResolvedValue(undefined) };
 const RATE_RESOLVER_MOCK = { resolveMany: jest.fn().mockResolvedValue([]) };
 
+/**
+ * TS-24. Approval now tells the worker, through the existing notification
+ * pipeline. This spec is about actor resolution and does not assert on the
+ * notification — it only has to exist, because a service that cannot notify
+ * would fail here for a reason that has nothing to do with what is being
+ * tested.
+ */
+const NOTIFICATIONS_MOCK = { emit: jest.fn().mockResolvedValue(undefined) };
+
 beforeEach(() => {
   jest.resetAllMocks();
   AUDIT_MOCK.record.mockResolvedValue(undefined);
   RATE_RESOLVER_MOCK.resolveMany.mockResolvedValue([]);
+  NOTIFICATIONS_MOCK.emit.mockResolvedValue(undefined);
 });
 
 describe("TimesheetsApprovalsService — actor resolution on period approval", () => {
@@ -124,7 +164,13 @@ describe("TimesheetsApprovalsService — actor resolution on period approval", (
     mockAssertActor.mockRejectedValue(
       new OrganizationActorError(ORG_ID, { kind: "user", userId: "approver-user" }, "no-membership"),
     );
-    const svc = new ApprovalsService(db as never, {} as never, AUDIT_MOCK as never, RATE_RESOLVER_MOCK as never);
+    const svc = new ApprovalsService(
+      db as never,
+      {} as never,
+      AUDIT_MOCK as never,
+      RATE_RESOLVER_MOCK as never,
+      NOTIFICATIONS_MOCK as never,
+    );
 
     await expect(svc.approvePeriod(USER_CTX, PERIOD_ID)).rejects.toThrow(NotFoundException);
     expect(db._transaction).not.toHaveBeenCalled();
@@ -135,7 +181,13 @@ describe("TimesheetsApprovalsService — actor resolution on period approval", (
     mockAssertActor.mockRejectedValue(
       new OrganizationActorError(ORG_ID, { kind: "user", userId: "approver-user" }, "membership-inactive"),
     );
-    const svc = new ApprovalsService(db as never, {} as never, AUDIT_MOCK as never, RATE_RESOLVER_MOCK as never);
+    const svc = new ApprovalsService(
+      db as never,
+      {} as never,
+      AUDIT_MOCK as never,
+      RATE_RESOLVER_MOCK as never,
+      NOTIFICATIONS_MOCK as never,
+    );
 
     await expect(svc.approvePeriod(USER_CTX, PERIOD_ID)).rejects.toThrow(ForbiddenException);
     expect(db._transaction).not.toHaveBeenCalled();
@@ -149,7 +201,13 @@ describe("TimesheetsApprovalsService — actor resolution on period approval", (
       "membership-in-another-organization",
     );
     mockAssertActor.mockRejectedValue(err);
-    const svc = new ApprovalsService(db as never, {} as never, AUDIT_MOCK as never, RATE_RESOLVER_MOCK as never);
+    const svc = new ApprovalsService(
+      db as never,
+      {} as never,
+      AUDIT_MOCK as never,
+      RATE_RESOLVER_MOCK as never,
+      NOTIFICATIONS_MOCK as never,
+    );
 
     let caught: Error | null = null;
     try {
@@ -162,7 +220,7 @@ describe("TimesheetsApprovalsService — actor resolution on period approval", (
   });
 
   it("writes approved_by_membership_id for a valid org member", async () => {
-    const db = makeDb(SUBMITTED_PERIOD, DEFAULT_SETTINGS, APPROVED_PERIOD);
+    const db = makeDb(SUBMITTED_PERIOD, DEFAULT_SETTINGS, APPROVED_PERIOD, EMPLOYEE_MEMBER);
     mockAssertActor.mockResolvedValue({
       orgId: ORG_ID,
       membershipId: APPROVER_MEMBERSHIP_ID,
@@ -172,7 +230,13 @@ describe("TimesheetsApprovalsService — actor resolution on period approval", (
       isOwner: true,
       resolvedVia: "user" as const,
     });
-    const svc = new ApprovalsService(db as never, {} as never, AUDIT_MOCK as never, RATE_RESOLVER_MOCK as never);
+    const svc = new ApprovalsService(
+      db as never,
+      {} as never,
+      AUDIT_MOCK as never,
+      RATE_RESOLVER_MOCK as never,
+      NOTIFICATIONS_MOCK as never,
+    );
 
     await svc.approvePeriod(USER_CTX, PERIOD_ID);
 

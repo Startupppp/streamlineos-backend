@@ -9,6 +9,7 @@ import { leadIdsOfParties } from "../party/party-legacy-associations";
 import {
   CONTACT_PARTY_COLUMNS,
   CONTACT_PARTY_JOIN,
+  canonicalContactOnly,
   contactIdIs,
   contactPartyScope,
   CONTACT_PARTY_SCOPE,
@@ -50,6 +51,15 @@ export function contactBase(db: Db, orgId: string) {
   return db
     .select({
       id: CONTACT_PARTY_COLUMNS.id,
+      /*
+       * The record this contact id is an alias for.
+       *
+       * Carried because merging two customer records is a party-grain
+       * operation — `POST /party/merges` — and the screens that offer it speak
+       * contact ids. Translating in the client would mean a second round trip
+       * per row through a map the projection is already standing on.
+       */
+      partyId: CONTACT_PARTY_COLUMNS.partyId,
       orgId: CONTACT_PARTY_COLUMNS.orgId,
       name: CONTACT_PARTY_COLUMNS.name,
       email: CONTACT_PARTY_COLUMNS.email,
@@ -120,7 +130,10 @@ export async function withAssociationIds<
 }
 
 export function listConditions(orgId: string, filters: ListInput, employerPartyId: string | null): SQL[] {
-  const conditions: SQL[] = [...contactPartyScope(orgId)];
+  // Canonical rows only: a party that answers to several contact ids after a
+  // merge is one person, and the list is where showing it twice would read as
+  // the merge having failed. See `canonicalContactOnly`.
+  const conditions: SQL[] = [...contactPartyScope(orgId), canonicalContactOnly(orgId)];
   if (employerPartyId) {
     conditions.push(eq(businessParties.employerPartyId, employerPartyId));
   }
@@ -215,6 +228,8 @@ export function searchContacts(db: Db, read: ScopedRead, query: string) {
       scope: CONTACT_PARTY_SCOPE,
       and: [
         eq(contactPartyMap.organizationId, read.orgId),
+        // One row per party, the same rule the list applies.
+        canonicalContactOnly(read.orgId),
         or(
           ilike(CONTACT_PARTY_COLUMNS.name, q),
           ilike(CONTACT_PARTY_COLUMNS.email, q),

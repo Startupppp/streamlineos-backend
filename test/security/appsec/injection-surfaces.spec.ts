@@ -257,10 +257,31 @@ describe("SQL injection — every value reaches Postgres as a bind parameter", (
       [
         "src/common/db/bulk-update.ts",
         "src/common/tenant/with-tenant.ts",
+        // LATERAL alias: alias() refuses anything but /^[a-z][a-z0-9_]*$/, and the only caller
+        // (inventory gl-recon-sql journalLateral) passes the literal "j".
+        "src/modules/accounting/adapters/reconciliation/stock-journal-sql.ts",
         "src/modules/billing/core/payment-status-order.ts",
         "src/modules/build/core/build-due-sweep.service.ts",
         "src/modules/build/core/projects-reports.service.ts",
+        // Projection text built from the encoder's compile-time LEDGER_COLUMNS /
+        // AUDIT_EVENT_COLUMNS / AUDIT_EVENT_EXPRESSIONS constants; no request value on the path.
+        "src/modules/inventory/audit-export/audit-export-rows.ts",
+        // warehouseFilter's column: the literal "t.location_id" at both call sites.
+        "src/modules/inventory/reconciliation/gl/lib/gl-recon-sql.ts",
+        // warehouseFilter's table alias: the literals "t" and "sl" at its two call sites.
+        "src/modules/inventory/replenishment/forecast/lib/demand-history.ts",
+        // availableQtySql(alias): every caller passes a literal ("sl", "inv_stock_levels") or
+        // getTableName(invStockLevels); availableQtySumSql forwards the same literals.
+        "src/modules/inventory/stock-engine/available-sql.ts",
+        // committedGrainPredicate: alias "" or the literal "sl", column names are literals.
+        "src/modules/inventory/stock-engine/lib/committed-grain.ts",
         "src/modules/inventory/stock-engine/warehouse-scope.service.ts",
+        // Table and column come only from the DOCUMENT_SOURCES constant map; an unknown
+        // reference type is skipped before any SQL is built, and the ids are bound.
+        "src/modules/inventory/traceability/lib/genealogy-labels.ts",
+        // warehouseFilter's column: a literal ("sl.location_id", "vl.location_id",
+        // "t.location_id") at every call site.
+        "src/modules/inventory/valuation/lib/valuation-sql.ts",
         // SET LOCAL hnsw.ef_search — Postgres does not accept a bind parameter in
         // SET, and the value is kbAnnEfSearch(cap), a bounded integer derived from
         // named constants with no caller-supplied input on the path. Extracted out

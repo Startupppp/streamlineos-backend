@@ -3,6 +3,8 @@ import {
   buildIdCursorPage,
   buildTupleCursorPage,
   decodeCursor,
+  decodeIntegerCursor,
+  decodeTimestampCursor,
   decodeTupleCursor,
   encodeCursor,
   encodeTupleCursor,
@@ -41,6 +43,46 @@ describe("cursor encoding", () => {
   it("rejects a cursor missing either half", () => {
     expect(decodeCursor(Buffer.from(" p-1", "utf8").toString("base64url"))).toBeNull();
     expect(decodeCursor(Buffer.from("2026 ", "utf8").toString("base64url"))).toBeNull();
+  });
+});
+
+/**
+ * The two narrowing decoders exist because their output is bound into SQL — the
+ * id as an integer, the timestamp cast in the statement — so anything that is
+ * not one has to be turned away here rather than by Postgres. A rejected cursor
+ * reads as no cursor at all, which is page one: the same answer a stale one
+ * gets, and never a 500.
+ */
+describe("narrowing a cursor for a serial-keyed table", () => {
+  const ts = "2026-08-28T08:51:46.541218";
+
+  it("accepts a positive integer id and hands it back as a number", () => {
+    expect(decodeIntegerCursor(encodeCursor({ sortValue: ts, id: "49253" }))).toEqual({
+      sortValue: ts,
+      id: 49253,
+    });
+  });
+
+  it("rejects an id that is not a plain positive integer", () => {
+    for (const id of ["0", "-1", "1.5", "9e9", "1 OR 1=1", "01", "3000000000", ""]) {
+      expect(decodeIntegerCursor(encodeCursor({ sortValue: ts, id }))).toBeNull();
+    }
+  });
+
+  it("requires the sort half to be a microsecond timestamp", () => {
+    expect(decodeTimestampCursor(encodeCursor({ sortValue: ts, id: "49253" }))).toEqual({
+      sortValue: ts,
+      id: 49253,
+    });
+    for (const sortValue of [
+      "2026-08-28T08:51:46.541Z",
+      "2026-08-28T08:51:46.541",
+      "2026-08-28 08:51:46.541218",
+      "now()",
+      "2026-08-28T08:51:46.5412189",
+    ]) {
+      expect(decodeTimestampCursor(encodeCursor({ sortValue, id: "49253" }))).toBeNull();
+    }
   });
 });
 

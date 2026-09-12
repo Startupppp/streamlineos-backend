@@ -236,7 +236,28 @@ export function parseCronControllerRoutes(sources) {
   for (const { file, text } of sources) {
     if (!/@Controller\(\s*["'`]cron["'`]\s*\)/.test(text)) continue;
     const lines = text.split("\n");
+    // Scoped to the CLASS, not the file. A file that holds a cron controller
+    // beside a domain controller — the shape `slotting.controller.ts` and
+    // `channel-snapshot.controller.ts` use, each keeping its sweep next to the
+    // service it sweeps — used to have EVERY handler in it read as a cron batch,
+    // because the only test was whether the file mentioned @Controller("cron")
+    // anywhere. That invented 8 batches (`/cron/rules`, `/cron/recommendations`,
+    // `/cron/snapshot-differences/{diffId}/accept` …) which are really
+    // `/inventory/slotting/rules` and friends, pushed the undeclared count 8 over,
+    // and could never be cleared: the gate's own NOT IN OPENAPI line said so, since
+    // no budget key can name an operation the document does not contain.
+    let active = null;
     lines.forEach((line, i) => {
+      const controller = /@Controller\(\s*(?:\{[^}]*path\s*:\s*)?["'`]([^"'`]*)["'`]/.exec(line);
+      if (controller !== null) {
+        active = controller[1].replace(/^\/+/, "").replace(/\/+$/, "");
+        return;
+      }
+      if (/@Controller\(\s*\)/.test(line)) {
+        active = "";
+        return;
+      }
+      if (active !== "cron") return;
       const m = /@(Get|Post|Put|Patch|Delete)\(\s*["'`]([^"'`]*)["'`]\s*\)/.exec(line);
       if (m === null) return;
       const segment = m[2].replace(/^\/+/, "").replace(/:([A-Za-z0-9_]+)/g, "{$1}");
@@ -737,6 +758,22 @@ if (SELF_TEST) {
   if (JSON.stringify(parsedKeys) !== JSON.stringify(expectedKeys))
     fail("cron-parse", `expected ${JSON.stringify(expectedKeys)}, got ${JSON.stringify(parsedKeys)}`);
   else pass("cron-parse — cron operations are read from @Controller(\"cron\") only, and :param becomes {param}");
+
+  // One file, two controllers — the real shape of slotting.controller.ts and
+  // channel-snapshot.controller.ts, where the sweep lives beside the service it
+  // sweeps rather than in modules/cron/.
+  const MIXED_SRC = [
+    {
+      file: "src/modules/inventory/slotting/slotting.controller.ts",
+      text:
+        '@Controller("inventory/slotting")\nclass SlottingController {\n  @Get("rules")\n  r() {}\n  @Post("recommendations/:recommendationId/approve")\n  a() {}\n}\n' +
+        '@Public()\n@Controller("cron")\nclass SlottingCronController {\n  @Get("inventory-reslot")\n  s() {}\n}\n',
+    },
+  ];
+  const mixedKeys = parseCronControllerRoutes(MIXED_SRC).map((r) => r.key).sort();
+  if (JSON.stringify(mixedKeys) !== JSON.stringify(["GET /cron/inventory-reslot"]))
+    fail("cron-parse-class-scoped", `a sibling controller's routes must not become cron batches; got ${JSON.stringify(mixedKeys)}`);
+  else pass("cron-parse-class-scoped — only the @Controller(\"cron\") class's own handlers are batches, not the whole file's");
 
   const cronLive = new Set(expectedKeys);
   const scopeManifest = (scope, budgets) => ({ surface: { workerBatchScope: scope }, budgets });

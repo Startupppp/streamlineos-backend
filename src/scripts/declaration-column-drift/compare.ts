@@ -4,7 +4,11 @@
  * script under CLAUDE.md §7; the entry file carries the defect narrative.
  *
  *   writeBlocking     live, required on INSERT, undeclared, and no BEFORE
- *                     INSERT row trigger names it — Drizzle raises 23502.
+ *                     INSERT row trigger supplies it — Drizzle raises 23502.
+ *                     "Supplies" means the trigger's args name the column OR its
+ *                     function body assigns it; a shared function names its target
+ *                     only in the body, and reading the args alone reported a false
+ *                     23502 on organization_saga_steps.
  *   readBlocking      declared with no live column — an unprojected read
  *                     raises 42703.
  *   triggerSupplied   required on INSERT but filled by a trigger, so it is
@@ -14,7 +18,7 @@
  */
 
 import type { LiveColumn, LiveTrigger } from "./catalog";
-import { requiresValueOnInsert, triggerNamesColumn } from "./catalog";
+import { requiresValueOnInsert, triggerSuppliesColumn } from "./catalog";
 import type { DeclaredTable } from "./declared";
 
 export interface DriftFinding {
@@ -77,7 +81,7 @@ export function compare(
       if (table.columns.has(column.column)) continue;
       if (requiresValueOnInsert(column)) {
         const supplier = (triggersByTable.get(key) ?? []).find((trigger) =>
-          triggerNamesColumn(trigger.definition, column.column),
+          triggerSuppliesColumn(trigger, column.column),
         );
         if (supplier === undefined)
           writeBlocking.push({

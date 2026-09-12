@@ -101,8 +101,6 @@ const baseSchema = z
     ),
     /** Release identifier stamped onto every error report and span. */
     APP_RELEASE: z.preprocess(emptyToUndefined, z.string().optional()),
-    /** Set to "false" to disable RouteClassifierGuard's boot-time and request-time enforcement. */
-    REQUIRE_ROUTE_CLASSIFICATION: z.preprocess(emptyToUndefined, z.string().optional()),
     /** Comma-separated user ids holding the vendor's platform-only capabilities (global blog administration). Unset means nobody. */
     PLATFORM_ADMIN_USER_IDS: z.preprocess(emptyToUndefined, z.string().optional()),
     /** Comma-separated regions this deployment serves; each secondary needs its own REGION_<KEY>_APP_DATABASE_URL. */
@@ -137,6 +135,17 @@ const baseSchema = z
       ),
     CORS_ORIGINS: z.string().min(1, "CORS_ORIGINS is required"),
     APP_URL: z.string().url("APP_URL must be a valid URL"),
+    /**
+     * This API's own public origin, for links a MAIL CLIENT must call rather
+     * than a browser.
+     *
+     * `APP_URL` is the web app, and every other email link is a page there. RFC
+     * 8058 one-click unsubscribe is the exception: the mail client POSTs the
+     * URL itself, so it has to reach a route that exists on the API. Optional,
+     * and when it is unset the `List-Unsubscribe` headers are omitted entirely
+     * rather than pointed somewhere that cannot answer.
+     */
+    PUBLIC_API_URL: optionalUrl,
     CRON_SECRET: deploymentSecret,
     INTERNAL_API_SECRET: deploymentSecret,
     CONTACT_NOTIFICATION_EMAIL: optionalEmail,
@@ -173,6 +182,54 @@ const baseSchema = z
     COMPOSIO_AUTH_CONFIG_GOOGLE_CALENDAR: z.string().optional(),
     COMPOSIO_AUTH_CONFIG_OUTLOOK: z.string().optional(),
     COMPOSIO_AUTH_CONFIG_GMAIL: z.string().optional(),
+    /**
+     * E6 — which sales-channel adapter this deployment runs.
+     *
+     * Absent or `none` means no adapter is registered and nothing outbound
+     * happens: every channel resolves to the manual adapter and a refetch
+     * reports `NO_ADAPTER` without opening a socket. `fake` registers the
+     * deterministic development adapter, which contacts no marketplace.
+     *
+     * A real marketplace adapter does not belong here — third-party
+     * connectivity goes through Composio in the `integrations` module, and its
+     * credentials live on the connected account, never in this file or our
+     * database (root CLAUDE.md §5).
+     */
+    INV_CHANNEL_ADAPTER: z.preprocess(
+      emptyToUndefined,
+      z.enum(["none", "fake", "shopify"]).optional(),
+    ),
+    /**
+     * INV-27 — the Shopify Admin API access token, when `INV_CHANNEL_ADAPTER=shopify`.
+     *
+     * Deployment configuration for the same reason the webhook secret above is:
+     * a store's credential is a provider credential and §5 keeps those out of
+     * our database. It is also this integration's clearest limit — one token is
+     * one store, so a multi-tenant deployment needs the token to arrive from a
+     * Composio connected account instead, and `ComposioGateway` has no Shopify
+     * toolkit yet. Unset means the adapter is inert: it refuses every call with
+     * `NO_CREDENTIAL` rather than sending a request with a blank header and
+     * reading the 401 as something about the order.
+     */
+    INV_CHANNEL_SHOPIFY_ACCESS_TOKEN: z.preprocess(emptyToUndefined, z.string().trim().optional()),
+    /** Pinned, never floating — Shopify removes an API version after a year. */
+    INV_CHANNEL_SHOPIFY_API_VERSION: z.preprocess(emptyToUndefined, z.string().trim().optional()),
+    /** How long to wait for the store. Unset uses the adapter's 15s default. */
+    INV_CHANNEL_SHOPIFY_TIMEOUT_MS: z.preprocess(
+      emptyToUndefined,
+      z.coerce.number().int().positive().optional(),
+    ),
+    /**
+     * E6 — the HMAC secret an inbound channel webhook is verified against.
+     *
+     * Deployment configuration rather than a tenant column, because a store's
+     * shared secret is a provider credential and §5 keeps those out of our
+     * database. Absent means the corresponding channel type refuses every
+     * delivery — an unconfigured secret is never "skip verification".
+     */
+    INV_CHANNEL_WEBHOOK_SECRET_SHOPIFY: z.preprocess(emptyToUndefined, z.string().optional()),
+    INV_CHANNEL_WEBHOOK_SECRET_WOOCOMMERCE: z.preprocess(emptyToUndefined, z.string().optional()),
+    INV_CHANNEL_WEBHOOK_SECRET_DEFAULT: z.preprocess(emptyToUndefined, z.string().optional()),
     /** Guards POST /webhooks/calendar/provider (@Public). Unset = receiver not deployed (it 503s deliveries). Min 32 chars — the only gate on that public endpoint. */
     CALENDAR_PROVIDER_WEBHOOK_SECRET: z.preprocess(emptyToUndefined, z.string().min(32, "CALENDAR_PROVIDER_WEBHOOK_SECRET must be at least 32 characters — it is the only check on the public calendar webhook endpoint.").optional()),
     /** "1" re-arms live email under NODE_ENV=test, which is off by default so a suite cannot send real mail. Anything else, including unset, keeps the provider clients null. */
@@ -214,6 +271,16 @@ const baseSchema = z
       emptyToUndefined,
       z.string().optional(),
     ),
+    /**
+     * Stripe, which serves everywhere Razorpay does not.
+     *
+     * Optional like Razorpay's: a deployment that only sells in India needs no
+     * Stripe account, and requiring one would make the whole application refuse
+     * to boot for want of a provider it never calls.
+     */
+    STRIPE_SECRET_KEY: z.preprocess(emptyToUndefined, z.string().optional()),
+    STRIPE_PUBLISHABLE_KEY: z.preprocess(emptyToUndefined, z.string().optional()),
+    STRIPE_WEBHOOK_SECRET: z.preprocess(emptyToUndefined, z.string().optional()),
     VAPID_PUBLIC_KEY: z.preprocess(emptyToUndefined, z.string().optional()),
     VAPID_PRIVATE_KEY: z.preprocess(emptyToUndefined, z.string().optional()),
     R2_REGION: z.preprocess(emptyToUndefined, z.string().optional()),
@@ -227,6 +294,20 @@ const baseSchema = z
     TWILIO_ACCOUNT_SID: z.preprocess(emptyToUndefined, z.string().optional()),
     TWILIO_AUTH_TOKEN: z.preprocess(emptyToUndefined, z.string().optional()),
     TWILIO_FROM_NUMBER: z.preprocess(emptyToUndefined, z.string().optional()),
+    /**
+     * SMS one-time codes for e-signature. `EnvSmsSender` reads both at
+     * construction and offers the `otp_sms` authentication method only when
+     * both are present, so a typo in either one silently removes a signing
+     * method a tenant configured — which is exactly the failure the schema
+     * exists to turn into a boot error. Optional because no provider ships
+     * bound; the URL is validated as a URL so a half-pasted value fails at
+     * boot rather than at the moment a signer is waiting for a code.
+     */
+    SIGN_SMS_PROVIDER_URL: optionalUrl,
+    SIGN_SMS_PROVIDER_TOKEN: z.preprocess(
+      emptyToUndefined,
+      z.string().trim().optional(),
+    ),
     APP_BRAND_NAME: z.preprocess(
       emptyToUndefined,
       z.string().trim().optional(),
@@ -248,6 +329,68 @@ const baseSchema = z
     NOTIFICATIONS_INPROCESS_WORKER: z.preprocess(
       emptyToUndefined,
       z.enum(["true", "false"]).optional(),
+    ),
+    /** In-process payroll job claim/reclaim loop. Defaults on; set false for local/dev. */
+    PAYROLL_INPROCESS_WORKER: z.preprocess(
+      emptyToUndefined,
+      z.enum(["true", "false"]).optional(),
+    ),
+    /**
+     * Turns an undeclared route from a boot-report line into a hard failure.
+     * `RouteClassifierGuard` takes it through `APP_CONFIG` rather than reading
+     * `process.env` itself, so this enum is the whole contract and not most of
+     * it: a misspelled value fails validation at boot instead of falling
+     * through the guard's `!== "false"` test to "enforce".
+     */
+    REQUIRE_ROUTE_CLASSIFICATION: z.preprocess(
+      emptyToUndefined,
+      z.enum(["true", "false"]).optional(),
+    ),
+    /**
+     * Which e-invoice transport is wired up.
+     *
+     * `none` is the default and the only honest value until a provider exists:
+     * a reportable document is recorded as `pending` and nobody sends it.
+     * `mock` exercises the whole submit path against an adapter that invents
+     * nothing — it stamps the row `mock_irp` and returns a visibly fake
+     * acknowledgement, so a mock filing can never be mistaken for a real one,
+     * in a database or in a screenshot.
+     *
+     * `irp` is ACC-14's live provider and files for real. It is refused at boot
+     * unless all five `COMPLIANCE_IRP_*` credentials are set — see the
+     * superRefine below — because the failure mode of a half-configured live
+     * transport is a deployment that believes its invoices are being filed while
+     * every one of them stays `pending`.
+     */
+    COMPLIANCE_TRANSPORT: z.preprocess(
+      emptyToUndefined,
+      z.enum(["none", "mock", "irp"]).optional(),
+    ),
+    /**
+     * The live Invoice Registration Portal connection — ACC-14.
+     *
+     * All optional, and all five needed together. Absent, `LiveIrpAdapter` is
+     * not configured, the registry will not resolve it, and the product keeps
+     * today's behaviour exactly: a reportable document is recorded `pending` and
+     * the submit route answers an honest 409. That default must never change by
+     * accident, which is why nothing here has one.
+     *
+     * `COMPLIANCE_IRP_URL` is the FULL endpoint the GSP documents for
+     * registering a document — no path is appended to it, because every GSP
+     * mounts it somewhere different and a guessed suffix is a 404 that reads
+     * like an outage. The adapter refuses a non-HTTPS URL (except loopback, for
+     * its own tests): these credentials would otherwise cross the network in
+     * clear text.
+     */
+    COMPLIANCE_IRP_URL: optionalUrl,
+    COMPLIANCE_IRP_CLIENT_ID: z.preprocess(emptyToUndefined, z.string().trim().optional()),
+    COMPLIANCE_IRP_CLIENT_SECRET: z.preprocess(emptyToUndefined, z.string().trim().optional()),
+    COMPLIANCE_IRP_USERNAME: z.preprocess(emptyToUndefined, z.string().trim().optional()),
+    COMPLIANCE_IRP_PASSWORD: z.preprocess(emptyToUndefined, z.string().trim().optional()),
+    /** How long to wait for the portal. Unset uses the adapter's 15s default. */
+    COMPLIANCE_IRP_TIMEOUT_MS: z.preprocess(
+      emptyToUndefined,
+      z.coerce.number().int().positive().optional(),
     ),
     HR_EXPORT_WORKER_ENABLED: z.preprocess(
       emptyToUndefined,
@@ -294,6 +437,19 @@ const baseSchema = z
     OUTBOX_DISPATCH_ENABLED: z.preprocess(
       emptyToUndefined,
       z.enum(["true", "false"]).optional(),
+    ),
+    /**
+     * User ids permitted to run a data subject erasure or export.
+     *
+     * Comma-separated, and UNSET AUTHORISES NOBODY. The permission key alone
+     * cannot express this: `access.service.ts` returns scope "all" for any
+     * organisation owner before a grant is consulted, so every tenant owner on
+     * the platform holds `compliance:subject-requests:execute` the moment it is
+     * catalogued -- and a subject request is cross-tenant by design.
+     */
+    COMPLIANCE_SUBJECT_REQUEST_OPERATORS: z.preprocess(
+      emptyToUndefined,
+      z.string().trim().optional(),
     ),
     OUTBOX_INPROCESS_WORKER: z.preprocess(
       emptyToUndefined,
@@ -368,6 +524,58 @@ const schema = baseSchema
       }
     }
 
+    /*
+      ACC-14. `COMPLIANCE_TRANSPORT=irp` is a claim that this deployment files
+      invoices with the GST authority, and it is only true with all five
+      credentials. A partial set fails here, in every environment, rather than at
+      the first filing: the alternative is a node that starts, advertises a live
+      transport on the compliance screen, and leaves every reportable document
+      `pending` — the silent half of the failure `compliance-honesty.spec.ts`
+      exists to prevent. Checked before the production-only block below on
+      purpose, because a developer who sets this wants to know now.
+    */
+    if (config.COMPLIANCE_TRANSPORT === "irp") {
+      const missing = (
+        [
+          "COMPLIANCE_IRP_URL",
+          "COMPLIANCE_IRP_CLIENT_ID",
+          "COMPLIANCE_IRP_CLIENT_SECRET",
+          "COMPLIANCE_IRP_USERNAME",
+          "COMPLIANCE_IRP_PASSWORD",
+        ] as const
+      ).filter((variableName) => !config[variableName]);
+
+      if (missing.length > 0) {
+        context.addIssue({
+          code: "custom",
+          path: ["COMPLIANCE_TRANSPORT"],
+          message:
+            `COMPLIANCE_TRANSPORT=irp files documents with a tax authority and needs every ` +
+            `credential. Missing: ${missing.join(", ")}. Use COMPLIANCE_TRANSPORT=none until the ` +
+            `whole set is in place — a partial one files nothing and says nothing.`,
+        });
+      }
+    }
+
+    /*
+      INV-27. `INV_CHANNEL_ADAPTER=shopify` is a claim that this deployment talks
+      to a real store, and it is only true with a token. Checked in every
+      environment rather than only in production, and for the mirror of the
+      reason `fake` is refused there: a deployment that says it is connected and
+      is not leaves every stock push, order import and ship confirm failing into
+      the dead-letter box with `NO_CREDENTIAL`, which looks like a marketplace
+      outage rather than a missing line in a deploy config.
+    */
+    if (config.INV_CHANNEL_ADAPTER === "shopify" && !config.INV_CHANNEL_SHOPIFY_ACCESS_TOKEN) {
+      context.addIssue({
+        code: "custom",
+        path: ["INV_CHANNEL_ADAPTER"],
+        message:
+          "INV_CHANNEL_ADAPTER=shopify needs INV_CHANNEL_SHOPIFY_ACCESS_TOKEN. Without it the adapter " +
+          "refuses every call and every channel job dead-letters. Use `none` until the token is in place.",
+      });
+    }
+
     if (config.NODE_ENV !== "production") return;
     for (const variableName of [
       "CRON_SECRET",
@@ -406,6 +614,25 @@ const schema = baseSchema
         path: ["APP_DATABASE_URL"],
         message: "APP_DATABASE_URL must include the application-role password; set DB_IAM_AUTH=true to use IAM database authentication instead",
       });
+
+    // INV-27. `fake` answers every marketplace snapshot with a quantity derived
+    // from a hash of the SKU. Those numbers are not discarded: they are written
+    // to `inv_channel_snapshot_diffs`, served to an operator at
+    // `GET /inventory/channels/:id/snapshot-differences`, and — where the
+    // channel's policy is ALLOW_ADJUSTMENT — acceptable straight into
+    // `inv_stock_transactions`. A boot-time `logger.warn` was the entire
+    // safeguard, and a warning in a log nobody is reading is not one. Refusing
+    // to start is, and the failure is at boot rather than at the first
+    // reconciliation, which is the difference between a deployment that never
+    // happens and stock corrected against a number nobody sent.
+    if (config.INV_CHANNEL_ADAPTER === "fake") {
+      context.addIssue({
+        code: "custom",
+        path: ["INV_CHANNEL_ADAPTER"],
+        message:
+          "INV_CHANNEL_ADAPTER=fake is forbidden in production. The fake adapter invents stock quantities from a hash of the SKU, and those quantities are presentable as a marketplace's own count and acceptable into the stock ledger. Use `none` until a real channel integration exists.",
+      });
+    }
   });
 
 export type AppConfig = z.infer<typeof schema> & { corsOrigins: string[] };

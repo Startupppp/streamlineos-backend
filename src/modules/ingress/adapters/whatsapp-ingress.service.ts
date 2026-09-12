@@ -24,21 +24,21 @@ import {
  * the other one: a delivery that verifies, parses, files nothing and reports
  * itself healthy. Every count below exists so that cannot happen quietly.
  *
- * Deliberately not registered in `IngressModule`: the ingress module is shared
- * with two other channel adapters landing in the same tree, and the wiring —
- * this provider, its controller, and where the channel binding is stored — is
- * one decision that should be made once rather than three times. See the
- * ticket report.
+ * Registered in `IngressModule` since CRM-P0-01, behind
+ * `WhatsAppIngressController`. That ticket also settled the question this
+ * comment used to defer — where the binding lives — with the
+ * `crm_whatsapp_channels` table (migration 0657) and the SECURITY DEFINER
+ * resolver that finds a tenant for a delivery carrying no session.
  */
 
 /**
  * The organisation's end of a WhatsApp conversation.
  *
- * Passed in rather than looked up, because where it is stored is the open
- * question. `user_integration_connections` is where the platform rule says a
- * Composio connection is mirrored, but its `toolkit` union is closed over
- * `gmail`, `outlook` and `googlecalendar`, so widening it is a schema change
- * this ticket is not permitted to make.
+ * Still passed in rather than looked up here, so this file stays testable from
+ * a fixture with no database. `WhatsAppChannelsService` is what builds one, out
+ * of `crm_whatsapp_channels` — not out of `user_integration_connections`, whose
+ * `toolkit` union is closed over `gmail`, `outlook` and `googlecalendar` and is
+ * read by three other adapters that should not have to care about this one.
  */
 export interface WhatsAppChannelBinding {
   readonly organizationId: string;
@@ -57,6 +57,16 @@ export interface WhatsAppChannelBinding {
    */
   readonly appSecret: string;
 }
+
+/**
+ * How this adapter enters the tenant it has resolved.
+ *
+ * Passed in rather than reached for, so the adapter keeps no database of its
+ * own and stays testable from a fixture. `WhatsAppChannelsService.runInTenant`
+ * is the production implementation; a unit test passes a function that simply
+ * calls its argument.
+ */
+export type TenantRunner = <T>(organizationId: string, fn: () => Promise<T>) => Promise<T>;
 
 /** The label this adapter is known by in the deduplication key. */
 export const WHATSAPP_PROVIDER = "whatsapp";
@@ -121,12 +131,23 @@ export class WhatsAppIngressService {
    * zero is the one case worth a non-2xx: the messages that did land are
    * deduplicated by the seam, so a retry costs nothing and the ones that did
    * not get another chance.
+   *
+   * `runInTenant` is required rather than optional, and that is the whole of
+   * the reason it exists. A WhatsApp delivery carries no session, so nothing
+   * upstream has opened a tenant transaction — and the seam's writes are
+   * against tables behind `tenant_isolation`, which under the application role
+   * fail rather than land. An optional parameter would make that a caller's
+   * oversight and a silent one: every delivery would verify, every count would
+   * read `failed`, and the endpoint would look like a provider problem. Making
+   * it required means a caller that has not thought about tenancy does not
+   * compile.
    */
   async accept(
     binding: WhatsAppChannelBinding,
     rawBody: string,
     signature: string | undefined,
     parsed: unknown,
+    runInTenant: TenantRunner,
   ): Promise<WhatsAppAcceptOutcome> {
     const verdict = readWhatsAppWebhook(rawBody, signature, binding.appSecret, parsed);
     if (!verdict.ok) return { accepted: false, reason: verdict.reason };
@@ -187,7 +208,21 @@ export class WhatsAppIngressService {
          * the overlap a retry produces costs nothing.
          */
         try {
-          const outcome = await this.ingress.accept(result.event, binding.organizationId);
+          /**
+           * One transaction per message, not one for the delivery.
+           *
+           * Wrapping the loop instead would undo the isolation the loop is
+           * for: a single message the seam rejects would roll back every
+           * message filed before it, and the provider would be told the whole
+           * delivery failed.
+           *
+           * The binding's organisation is also the caller's tenant for the
+           * seam: a delivery carries no session, and the binding is what the
+           * signature was verified against.
+           */
+          const outcome = await runInTenant(binding.organizationId, () =>
+            this.ingress.accept(result.event, binding.organizationId),
+          );
           if (outcome.status === "duplicate") duplicate += 1;
           else delivered += 1;
         } catch (error) {

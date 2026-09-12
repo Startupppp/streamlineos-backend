@@ -13,6 +13,7 @@ import {
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { AuditService } from "../../common/audit/audit.service";
+import { isUniqueViolation } from "../../common/db/postgres-error";
 import type {
   CreateOfferFulfillmentInput,
   ListOfferFulfillmentQuery,
@@ -20,7 +21,6 @@ import type {
 } from "./dto/offer-fulfillment.schemas";
 import { buildCursorPage, decodeCursor } from "../../common/pagination/cursor";
 import { keysetBeforeValue } from "../../common/pagination/keyset";
-import { isUniqueViolation } from "../../common/db/postgres-error";
 
 type ComponentRow = typeof offerFulfillmentComponents.$inferSelect;
 type ComponentPatch = Partial<typeof offerFulfillmentComponents.$inferInsert>;

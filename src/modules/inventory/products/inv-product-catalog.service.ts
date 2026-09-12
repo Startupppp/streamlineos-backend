@@ -4,7 +4,7 @@ import {
   ConflictException,
   NotFoundException,
 } from "@nestjs/common";
-import { and, asc, count, eq, ne } from "drizzle-orm";
+import { and, asc, count, eq, isNull, ne } from "drizzle-orm";
 import { assertNoBarcodeConflict } from "./lib/barcode-conflict";
 import {
   invProducts,
@@ -16,6 +16,7 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { CacheService } from "../../../common/cache/cache.service";
 import { CACHE_KEYS, CACHE_TTL } from "../../../common/cache/cache-keys";
+import { isUniqueViolation } from "../../../common/db/postgres-error";
 import { buildListResponse } from "../../../common/pagination/pagination";
 import type {
   CreateVariantInput,
@@ -25,15 +26,6 @@ import type {
   UpdateCategoryInput,
   UpdateUomInput,
 } from "./dto/inv-products.schemas";
-
-function isUniqueViolation(err: unknown): boolean {
-  return (
-    typeof err === "object" &&
-    err !== null &&
-    "code" in err &&
-    err.code === "23505"
-  );
-}
 
 @Injectable()
 export class InvProductCatalogService {
@@ -48,7 +40,11 @@ export class InvProductCatalogService {
     data: CreateVariantInput,
   ) {
     const product = await this.db.query.invProducts.findFirst({
-      where: and(eq(invProducts.id, productId), eq(invProducts.orgId, orgId)),
+      where: and(
+        eq(invProducts.id, productId),
+        eq(invProducts.orgId, orgId),
+        isNull(invProducts.deletedAt),
+      ),
       columns: { id: true },
     });
     if (!product) throw new NotFoundException("Product not found");
@@ -91,6 +87,7 @@ export class InvProductCatalogService {
         and(
           eq(invProductVariants.id, variantId),
           eq(invProductVariants.orgId, orgId),
+          isNull(invProductVariants.deletedAt),
         ),
       )
       .returning();
@@ -104,7 +101,7 @@ export class InvProductCatalogService {
   ) {
     const { activeOnly, page, limit } = filters;
     const offset = (page - 1) * limit;
-    const conditions = [eq(invProductVariants.orgId, orgId)];
+    const conditions = [eq(invProductVariants.orgId, orgId), isNull(invProductVariants.deletedAt)];
     if (activeOnly) conditions.push(eq(invProductVariants.isActive, true));
     const where = and(...conditions);
 

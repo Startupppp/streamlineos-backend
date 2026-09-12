@@ -21,7 +21,7 @@ export const updateCountLinesSchema = z.object({
   lines: z.array(z.object({
     lineId: z.number().int().positive(),
     countedQty: z.number().min(0),
-  })).min(1),
+  }).strict()).min(1),
 }).strict();
 export type UpdateCountLinesInput = z.infer<typeof updateCountLinesSchema>;
 

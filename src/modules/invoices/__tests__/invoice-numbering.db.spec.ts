@@ -1,7 +1,11 @@
 /**
  * Real-database test for invoice number race-safety.
  *
- * Run with: pnpm test:db-specs (filter with --testPathPattern="invoice-numbering.db").
+ * Runs when DATABASE_URL is set, like every other `*.db.spec.ts`, and refuses
+ * any URL `requireApprovedDatabaseUrl` does not approve (an approved host and
+ * ALLOW_DESTRUCTIVE_DB_TESTS=1).
+ * Run with: DATABASE_URL=... ALLOW_DESTRUCTIVE_DB_TESTS=1 pnpm test:db --testPathPattern="invoice-numbering.db"
+ * or: pnpm test:db-specs (filter with --testPathPattern="invoice-numbering.db").
  *
  * The service uses pg_advisory_xact_lock(hashtext(orgId || 'invoice')) inside
  * the transaction, then counts ALL org invoices (unfiltered — no status or
@@ -14,28 +18,22 @@
  * here with genuine concurrent Postgres transactions.
  */
 import { randomUUID } from "node:crypto";
+import { dbSpecClient, dbSpecSuite } from "../../../test/db-spec-gate";
 import { requireApprovedDatabaseUrl } from "../../../test/db-spec-guard";
-import postgres from "postgres";
 
+const describeDb = dbSpecSuite();
+
+// `dbSpecClient` requires TLS only for a Neon host, so the same spec runs
+// against a local verification database without a PGSSLMODE switch.
 function connect() {
   const raw = requireApprovedDatabaseUrl({
     spec: "invoice-numbering.db.spec.ts",
     vars: ["DATABASE_URL", "APP_DATABASE_URL"],
   });
-  const url = new URL(raw);
-  url.searchParams.delete("channel_binding");
-  // TLS is hardcoded nowhere else in this repo's DB tooling; honouring PGSSLMODE
-  // is what lets this spec run against a local verification database as well as
-  // against Neon. Without it the handshake fails before the first statement.
-  return postgres(url.toString(), {
-    prepare: false,
-    max: 10,
-    ssl: process.env.PGSSLMODE === "disable" ? false : "require",
-    connect_timeout: 30,
-  });
+  return dbSpecClient(raw, { max: 10 });
 }
 
-describe("invoice numbering — real database", () => {
+describeDb("invoice numbering — real database", () => {
   let sql: ReturnType<typeof connect>;
 
   beforeAll(() => {

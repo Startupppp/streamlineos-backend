@@ -227,7 +227,31 @@ export class SignPdfService {
       cursorY -= (opts?.gap ?? lineHeight);
     };
 
-    drawLine("Certificate of Completion", { bold: true, size: 20, gap: 28 });
+    drawLine("Certificate of Completion", { bold: true, size: 20, gap: 22 });
+    /**
+     * SIGN-P0-07. What this document is, said before anything else on it.
+     *
+     * Nothing here ever claimed PKI, and that is not the same as being clear.
+     * A page headed "Certificate of Completion", issued by an e-signature
+     * product and covered in cryptographic hashes, reads as a signing
+     * certificate to anyone who is not looking for the distinction — and the
+     * people who read these are lawyers and auditors deciding what it proves.
+     *
+     * The hashes are real and worth having: they show the documents have not
+     * changed since completion. They are not a licensed digital signature and
+     * they carry no certificate authority's assertion about who anybody is.
+     * Saying so costs two lines and is the difference between evidence and a
+     * claim.
+     */
+    drawLine(
+      "SHA-256 tamper-evidence record. Not a licensed digital signature (DSC/PKI)",
+      { size: 9, gap: 12 },
+    );
+    drawLine(
+      "and not an Aadhaar eSign. Identity is evidenced by the authentication and",
+      { size: 9, gap: 12 },
+    );
+    drawLine("audit trail below, not by a certificate authority.", { size: 9, gap: 24 });
     drawLine(`Certificate Number: ${data.certificateNumber}`);
     drawLine(`Organization: ${data.tenantName}`);
     drawLine(`Envelope: ${data.envelopeTitle}`);
@@ -254,6 +278,26 @@ export class SignPdfService {
       const ip = event.ipAddress ? ` from ${event.ipAddress}` : "";
       drawLine(`${event.createdAt} — ${event.eventType}${actor}${ip}`, { size: 9 });
     }
+
+    /** The same statement again at the foot, where a reader who skipped the header lands. */
+    cursorY -= 12;
+    drawLine("What this certificate does and does not establish", { bold: true, size: 10, gap: 14 });
+    drawLine(
+      "The SHA-256 values above are computed over the stored documents. Recomputing them",
+      { size: 8, gap: 11 },
+    );
+    drawLine(
+      "and finding a match shows the files have not been altered since completion. This is",
+      { size: 8, gap: 11 },
+    );
+    drawLine(
+      "tamper evidence, not a digital signature: no certificate authority has attested to any",
+      { size: 8, gap: 11 },
+    );
+    drawLine(
+      "signer's identity, and this record is not a DSC, a PAdES signature, or an Aadhaar eSign.",
+      { size: 8, gap: 11 },
+    );
 
     return Buffer.from(await pdfDoc.save());
   }

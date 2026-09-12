@@ -37,6 +37,7 @@ import type {
   UpdateSurveyInput,
 } from "./dto/engagement.schemas";
 import { EngagementBadgesService } from "./engagement-badges.service";
+import { assertOrganizationActor } from "../../../common/organization/organization-actor";
 
 @Injectable()
 export class EngagementService {

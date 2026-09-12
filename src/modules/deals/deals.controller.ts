@@ -157,11 +157,12 @@ export class DealsController {
   @HttpCode(200)
   @ResponseSchema(dealSchema)
   @Validate({ params: dealIdParams })
-  cloneDeal(
+  async cloneDeal(
     @Param("dealId", ParseIntPipe) dealId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.deals.cloneDeal(u.orgId, dealId);
+    const scope = await resolveDealsReadScope(this.access, u);
+    return this.deals.cloneDeal(u.orgId, u.userId, dealId, scope);
   }
 
   @Get(":dealId/activities")
@@ -169,12 +170,11 @@ export class DealsController {
   @RequirePermission("crm:deals:read")
   @ResponseSchema(z.array(dealActivitySchema))
   @Validate({ params: dealIdParams })
-  async listActivities(
+  listActivities(
     @Param("dealId", ParseIntPipe) dealId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    const read = await resolveDealsReadScope(this.access, u);
-    return this.deals.listActivities(read, dealId);
+    return this.deals.listActivities(u.orgId, dealId);
   }
 
   @Get(":dealId/transitions")
@@ -186,8 +186,7 @@ export class DealsController {
     @Param("dealId", ParseIntPipe) dealId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    const read = await resolveDealsReadScope(this.access, u);
-    return { data: await this.deals.listStageTransitions(read, dealId) };
+    return { data: await this.deals.listStageTransitions(u.orgId, dealId) };
   }
 
   @Post(":dealId/activities")
@@ -249,8 +248,8 @@ export class DealsController {
     @Param("dealId", ParseIntPipe) dealId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    const read = await resolveDealsReadScope(this.access, u);
-    const deal = await this.deals.getDeal(read, dealId);
+    const scope = await resolveDealsReadScope(this.access, u);
+    const deal = await this.deals.getDeal(u.orgId, u.userId, dealId, scope);
     if (!deal) throw new NotFoundException("Deal not found");
     return deal;
   }

@@ -2,6 +2,7 @@ import { Test } from "@nestjs/testing";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { OutboxConsumerRegistry, type OutboxEventRow } from "../../common/outbox/outbox-consumer.registry";
 import { NotificationDispatchService } from "../notifications/notification-dispatch.service";
+import { SignFinalizationService } from "./sign-finalization.service";
 import { SignEnvelopeCompletedConsumerService } from "./sign-envelope-completed-consumer.service";
 
 const ORG_ID = "org-sign-1";
@@ -85,12 +86,15 @@ async function buildService(options: {
   claimed?: boolean;
   envelope?: { senderMembershipId: number | null; orgId: string; title: string } | null;
   emitImpl?: () => Promise<void>;
+  finalizeImpl?: () => Promise<unknown>;
 }) {
-  const { emitImpl = async () => undefined } = options;
+  const { emitImpl = async () => undefined, finalizeImpl = async () => ({ certificateNumber: "SGN-77-ABCD" }) } = options;
   const db = buildDbMock(options);
   const dispatch = {
     emit: jest.fn().mockImplementation(emitImpl),
   } as unknown as NotificationDispatchService;
+  const finalize = jest.fn().mockImplementation(finalizeImpl);
+  const finalization = { finalize } as unknown as SignFinalizationService;
   const registry = new OutboxConsumerRegistry();
 
   const module = await Test.createTestingModule({
@@ -98,12 +102,13 @@ async function buildService(options: {
       SignEnvelopeCompletedConsumerService,
       { provide: DRIZZLE, useValue: db },
       { provide: NotificationDispatchService, useValue: dispatch },
+      { provide: SignFinalizationService, useValue: finalization },
       { provide: OutboxConsumerRegistry, useValue: registry },
     ],
   }).compile();
 
   const svc = module.get(SignEnvelopeCompletedConsumerService);
-  return { svc, db, dispatch, registry };
+  return { svc, db, dispatch, finalize, registry };
 }
 
 describe("SignEnvelopeCompletedConsumerService", () => {
@@ -160,6 +165,52 @@ describe("SignEnvelopeCompletedConsumerService", () => {
       expect(setCall?.set).toHaveBeenCalledWith(
         expect.objectContaining({ status: "SKIPPED" }),
       );
+    });
+  });
+
+  describe("B1b — finalisation rides the event, not the signer's request", () => {
+    it("finalises the envelope before the sender is told it is complete", async () => {
+      const order: string[] = [];
+      const { svc } = await buildService({
+        finalizeImpl: async () => {
+          order.push("finalize");
+          return { certificateNumber: "SGN-77-ABCD" };
+        },
+        emitImpl: async () => {
+          order.push("notify");
+        },
+      });
+
+      await svc.handle(makeEvent());
+
+      expect(order).toEqual(["finalize", "notify"]);
+    });
+
+    it("finalises with the event's organisation and envelope", async () => {
+      const { svc, finalize } = await buildService({});
+
+      await svc.handle(makeEvent());
+
+      expect(finalize).toHaveBeenCalledWith(ORG_ID, ENVELOPE_ID);
+    });
+
+    it("propagates a finalisation failure so the relay retries, and tells nobody meanwhile", async () => {
+      const { svc, dispatch } = await buildService({
+        finalizeImpl: async () => {
+          throw new Error("storage unavailable");
+        },
+      });
+
+      await expect(svc.handle(makeEvent())).rejects.toThrow("storage unavailable");
+      expect(dispatch.emit).not.toHaveBeenCalled();
+    });
+
+    it("does not finalise on a duplicate redelivery", async () => {
+      const { svc, finalize } = await buildService({ claimed: false });
+
+      await svc.handle(makeEvent());
+
+      expect(finalize).not.toHaveBeenCalled();
     });
   });
 

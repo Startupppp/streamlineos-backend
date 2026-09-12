@@ -2,12 +2,20 @@ import { pgTable, text, serial, timestamp, boolean, integer, index, unique, fore
 import { relations } from "drizzle-orm";
 import { supportTicketStatusEnum, supportTicketPriorityEnum } from "../common/enums";
 import { organizations, users, organizationMembers } from "../common/auth";
-import { clients } from "../crm/contacts";
 
 export const supportTickets = pgTable("support_tickets", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   clientId: integer("client_id"),
+  /**
+  * The party this row belongs to. Ticket 08's expand.
+  *
+  * Beside `client_id` rather than replacing it: every existing reader keeps
+  * working while readers move over one at a time, and the old column goes in
+  * the contract migration once none is left. Nullable until then -- a null
+  * means "not yet backfilled", which is a state worth being able to see.
+  */
+  clientPartyId: text("client_party_id"),
   assigneeMembershipId: integer("assignee_membership_id"),
   title: text("title").notNull(),
   category: text("category"),
@@ -49,11 +57,9 @@ export const supportTickets = pgTable("support_tickets", {
     foreignColumns: [organizationMembers.orgId, organizationMembers.id],
     name: "fk_support_tickets_created_actor",
   }),
-  foreignKey({
-    columns: [table.orgId, table.clientId],
-    foreignColumns: [clients.orgId, clients.id],
-    name: "fk_support_tickets_client_id_org",
-  }),
+  // `fk_support_tickets_client_id_org` is not declared here: this schema has no
+  // `clients` table (CRM rows derive from the Party), and migration 1096 re-points
+  // that constraint at the party map rather than at `clients`.
   // A merged ticket points at its survivor. Child and parent are the same tenant table, so
   // the pointer is composite: a single-column pointer would let one organisation merge a
   // ticket into another's. `org_id` is NOT NULL, so the SET NULL carries an explicit column
@@ -111,7 +117,6 @@ export const supportTicketAttachments = pgTable("support_ticket_attachments", {
 
 export const supportTicketsRelations = relations(supportTickets, ({ one, many }) => ({
   organization: one(organizations, { fields: [supportTickets.orgId], references: [organizations.id] }),
-  client: one(clients, { fields: [supportTickets.clientId], references: [clients.id] }),
   assigneeMembership: one(organizationMembers, {
     fields: [supportTickets.assigneeMembershipId],
     references: [organizationMembers.id],

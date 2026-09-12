@@ -1,5 +1,5 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, count, eq, inArray, isNull } from "drizzle-orm";
+import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { crmBlueprints, crmBlueprintTransitions, crmPipelines, crmPipelineStages, auditLogs, dealActivities, leadActivities, quotes } from "../../../db/schema";
@@ -105,11 +105,15 @@ export class CrmBlueprintsService {
     if (transition.requiresQuote) {
       const dealId = typeof record["id"] === "number" ? record["id"] : undefined;
       if (dealId !== undefined) {
-        const [quoteCount] = await this.db
-          .select({ n: count() })
+        // "Has this deal any quote at all?" — the number was never used for
+        // anything but the `=== 0` below, and an unbounded count() scans every
+        // quote the deal has to answer it. One row is the whole answer.
+        const anyQuote = await this.db
+          .select({ one: sql`1` })
           .from(quotes)
-          .where(and(eq(quotes.orgId, orgId), isNull(quotes.deletedAt), eq(quotes.dealId, dealId)));
-        if (Number(quoteCount?.n ?? 0) === 0) {
+          .where(and(eq(quotes.orgId, orgId), isNull(quotes.deletedAt), eq(quotes.dealId, dealId)))
+          .limit(1);
+        if (anyQuote.length === 0) {
           return {
             allowed: false,
             requiresApproval: Boolean(transition.requiresApproval),

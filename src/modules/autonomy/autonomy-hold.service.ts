@@ -1,22 +1,20 @@
 import { ConflictException, Inject, Injectable, Logger, NotFoundException } from "@nestjs/common";
-import { and, eq, inArray, isNull, sql } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.types";
-import {
-  autonomousDecisions,
-  autonomyHolds,
-  deals,
-  quotes,
-} from "../../db/schema";
-import { getOrgAdminUserIds } from "../../common/tenant/org-admin-recipients";
+import { autonomousDecisions, autonomyHolds, deals } from "../../db/schema";
+import { isUniqueViolation } from "../../common/db/postgres-error";
 import { startRun } from "../../common/workflow/workflow-store";
 import { NotificationsService } from "../notifications/notifications.service";
 import { buildDecision } from "./decision-record";
-import { clampHoldWindow, secondsRemaining } from "./hold-window";
+import { clampHoldWindow } from "./hold-window";
 import { draftQuoteFromDeal } from "./quote-draft";
 import { QuotesService } from "../quotes/quotes.service";
 import { AutonomyScoringService } from "./autonomy-scoring.service";
-import { isUniqueViolation } from "../../common/db/postgres-error";
+import type { HoldDeps } from "./autonomy-hold.types";
+import { liveOutboundClassStops, releaseOutboundClassStop } from "./lib/hold-class-stops";
+import { cancelHoldsInFlight, cancelOneHold, liveHoldsFor } from "./lib/hold-in-flight";
+import { notifyHoldPending } from "./lib/hold-notify";
 
 export const HOLD_WORKFLOW = "crm.autonomy-hold";
 
@@ -27,6 +25,11 @@ export const HOLD_WORKFLOW = "crm.autonomy-hold";
  * run and re-claims it later, so a hold survives a deploy and costs nothing
  * while it waits. A polling job would add latency to every send and would have
  * no memory of what it had already done when it crashed mid-batch.
+ *
+ * Placing a hold stays here, unique-violation handling and all; the
+ * notification it sends is `lib/hold-notify.ts`, cancelling and listing what is
+ * waiting is `lib/hold-in-flight.ts`, and the class stops, read and written, are
+ * `lib/hold-class-stops.ts`.
  */
 @Injectable()
 export class AutonomyHoldService {
@@ -38,6 +41,11 @@ export class AutonomyHoldService {
     private readonly notifications: NotificationsService,
     private readonly quotes: QuotesService,
   ) {}
+
+  /** The request transaction, the notifier and this class's logger, as the libs take them. */
+  private get deps(): HoldDeps {
+    return { db: this.db, notifications: this.notifications, logger: this.logger };
+  }
 
   /**
    * Decide to send a quote, and start the interval in which that can be stopped.
@@ -123,76 +131,9 @@ export class AutonomyHoldService {
         ),
       );
 
-    await this.notifyPending(input.organizationId, hold.id, input.quoteId, windowSeconds);
+    await notifyHoldPending(this.deps, input.organizationId, hold.id, input.quoteId, windowSeconds);
 
     return { autonomyHoldId: hold.id, decisionId: decision.id, holdUntil, windowSeconds };
-  }
-
-  /**
-   * Tell the people who could stop it, while there is still time.
-   *
-   * A hold nobody hears about is a delay, not a safeguard. The notification goes
-   * to whoever owns the deal — the person most likely to know the send is wrong
-   * and the one whose customer it is — and to the organisation's administrators
-   * when nobody owns it, because the hold sends either way.
-   */
-  private async notifyPending(
-    organizationId: string,
-    holdId: string,
-    quoteId: number,
-    windowSeconds: number,
-  ): Promise<void> {
-    const [row] = await this.db
-      .select({ assignedToId: deals.assignedToId, quoteSubject: quotes.subject })
-      .from(quotes)
-      .leftJoin(deals, and(eq(deals.orgId, quotes.orgId), eq(deals.id, quotes.dealId)))
-      .where(and(eq(quotes.orgId, organizationId), eq(quotes.id, quoteId)))
-      .limit(1);
-
-    /**
-     * Nobody owns the deal, so the org's administrators are told instead.
-     *
-     * Returning here was silent, and the hold sent sixty seconds later anyway —
-     * which is the failure this notification exists to prevent, arriving
-     * precisely on the quotes least likely to have been checked by a person. An
-     * unassigned deal is not a reason to send a customer a quote unannounced.
-     */
-    const recipients = row?.assignedToId
-      ? [row.assignedToId]
-      : await getOrgAdminUserIds(this.db, organizationId);
-
-    if (recipients.length === 0) {
-      this.logger.warn(
-        `hold ${holdId} has no assignee and the organisation has no active admin to tell; it will send unannounced`,
-      );
-      return;
-    }
-
-    for (const userId of recipients) {
-      try {
-        await this.notifications.create({
-          orgId: organizationId,
-          userId,
-          type: "WARNING",
-          // High, because the whole value is that it is read before the window ends.
-          priority: "HIGH",
-          category: "SYSTEM",
-          sourceModule: "crm",
-          eventKey: "crm.autonomy.quote-holding",
-          entityType: "autonomy_hold",
-          entityId: holdId,
-          title: "A quote is about to send",
-          message: `"${row?.quoteSubject ?? "A quote"}" sends in ${windowSeconds} seconds unless you stop it.`,
-          link: `/crm/autonomy?holdId=${holdId}`,
-        });
-      } catch (error) {
-        // A failed notification must not stop the hold from existing. The feed
-        // still shows it, and swallowing this silently is what §4 forbids.
-        this.logger.error(
-          `could not notify ${userId} about hold ${holdId}: ${error instanceof Error ? error.message : String(error)}`,
-        );
-      }
-    }
   }
 
   /**
@@ -233,34 +174,20 @@ export class AutonomyHoldService {
       currency: "INR",
     });
 
-    if (!drafted.ok) {
-      // Recorded as skipped, not thrown away. A decision not to act that nobody
-      // recorded is indistinguishable from one that never ran.
-      await this.db.insert(autonomousDecisions).values(
-        buildDecision({
-          organizationId: input.organizationId,
-          kind: "quote.sent",
-          outcome: "skipped",
-          triggerType: "deal",
-          triggerId: String(input.dealId),
-          dealId: String(input.dealId),
-          partyId: deal.partyId,
-          confidence: input.confidence,
-          summary: drafted.reason,
-        }),
-      );
-      return { held: false as const, reason: drafted.reason };
-    }
+    if (!drafted.ok) return this.recordQuoteSkip(input, deal.partyId, drafted.reason);
 
     /**
-     * Created in the name of whoever owns the deal.
-     *
-     * `quotes.created_by_id` is NOT NULL and references `users`, so a system
-     * actor is not representable there — the same gap ticket 08 found in
-     * `deal_activities`. Attributing it to the deal's owner is honest enough at
-     * the quote level, and the ledger records that the system decided it.
+     * Created in the name of whoever owns the deal, and skipped when nobody
+     * does. `quotes.created_by_id` is NOT NULL and references `users`, so a
+     * system actor is not representable there — the same gap ticket 08 found
+     * in `deal_activities`. The literal `"system"` this used to fall back to
+     * failed that key, and the whole decision with it. The deal's owner is
+     * honest enough at the quote level; the ledger records that the system decided.
      */
-    const created = await this.quotes.create(input.organizationId, deal.assignedToId ?? "system", {
+    if (!deal.assignedToId)
+      return this.recordQuoteSkip(input, deal.partyId, "Nobody owns this deal, so there is nobody to quote as.");
+
+    const created = await this.quotes.create(input.organizationId, deal.assignedToId, {
       dealId: input.dealId,
       subject: drafted.draft.subject,
       validUntil: drafted.draft.validUntil,
@@ -281,37 +208,38 @@ export class AutonomyHoldService {
     return { held: true as const, quoteId, ...held };
   }
 
+  /**
+   * The classes currently stopped, and who stopped each.
+   *
+   * A stop is open-ended, so without a way to see them a tenant would gradually
+   * stop reaching people and have nowhere to find out why the follow-ups had
+   * quietly thinned out.
+   */
+  async liveClassStops(organizationId: string) {
+    return liveOutboundClassStops(this.db, organizationId);
+  }
+
+  /**
+   * Let this class reach this party again.
+   *
+   * The other half of the stop, and the half without which it is a one-way door:
+   * `released_at` is documented as cleared only by a person, and until this
+   * existed there was no person-shaped way to clear it — a single cancellation
+   * silenced a class for that party permanently, recoverable only by hand in the
+   * database.
+   *
+   * Scoped to the organisation and to a live stop. Releasing an already-released
+   * one is a conflict rather than a silent success, because "it is released" and
+   * "you released it" are different things to tell somebody who is trying to
+   * work out why a customer stopped hearing from them.
+   */
+  async releaseClassStop(organizationId: string, userId: string, outboundClassStopId: string) {
+    return releaseOutboundClassStop(this.db, organizationId, userId, outboundClassStopId);
+  }
+
   /** Everything still waiting, with the time each has left. */
   async liveHolds(organizationId: string) {
-    const rows = await this.db
-      .select({
-        autonomyHoldId: autonomyHolds.autonomyHoldId,
-        autonomousDecisionId: autonomyHolds.autonomousDecisionId,
-        quoteId: autonomyHolds.quoteId,
-        holdUntil: autonomyHolds.holdUntil,
-        createdAt: autonomyHolds.createdAt,
-        quoteSubject: quotes.subject,
-        summary: autonomousDecisions.summary,
-      })
-      .from(autonomyHolds)
-      .leftJoin(quotes, and(eq(quotes.orgId, autonomyHolds.organizationId), eq(quotes.id, autonomyHolds.quoteId)))
-      .leftJoin(
-        autonomousDecisions,
-        and(
-          eq(autonomousDecisions.organizationId, autonomyHolds.organizationId),
-          eq(autonomousDecisions.autonomousDecisionId, autonomyHolds.autonomousDecisionId),
-        ),
-      )
-      .where(
-        and(eq(autonomyHolds.organizationId, organizationId), eq(autonomyHolds.status, "held")),
-      )
-      .orderBy(autonomyHolds.holdUntil)
-      .limit(100);
-
-    return rows.map((row) => ({
-      ...row,
-      secondsRemaining: secondsRemaining(row.holdUntil),
-    }));
+    return liveHoldsFor(this.db, organizationId);
   }
 
   /**
@@ -327,64 +255,7 @@ export class AutonomyHoldService {
     holdId: string,
     reason?: string,
   ) {
-    const cancelled = await this.db
-      .update(autonomyHolds)
-      .set({
-        status: "cancelled",
-        cancelledAt: new Date(),
-        cancelledByUserId: userId,
-        cancelReason: reason ?? null,
-      })
-      .where(
-        and(
-          eq(autonomyHolds.organizationId, organizationId),
-          eq(autonomyHolds.autonomyHoldId, holdId),
-          eq(autonomyHolds.status, "held"),
-        ),
-      )
-      .returning({
-        id: autonomyHolds.autonomyHoldId,
-        decisionId: autonomyHolds.autonomousDecisionId,
-      });
-
-    if (cancelled.length === 0) {
-      const [existing] = await this.db
-        .select({ status: autonomyHolds.status })
-        .from(autonomyHolds)
-        .where(
-          and(
-            eq(autonomyHolds.organizationId, organizationId),
-            eq(autonomyHolds.autonomyHoldId, holdId),
-          ),
-        )
-        .limit(1);
-
-      if (!existing) throw new NotFoundException("Hold not found");
-      throw new ConflictException(
-        existing.status === "sent"
-          ? "That already sent — the window had closed."
-          : `That is already ${existing.status}.`,
-      );
-    }
-
-    // The cancellation is itself audited: the decision stops claiming it will
-    // happen, and the feed shows who stopped it.
-    await this.db
-      .update(autonomousDecisions)
-      .set({
-        outcome: "reversed",
-        reversedAt: new Date(),
-        reversedByUserId: userId,
-        reversedReason: reason ?? "Cancelled inside the hold window",
-      })
-      .where(
-        and(
-          eq(autonomousDecisions.organizationId, organizationId),
-          eq(autonomousDecisions.autonomousDecisionId, cancelled[0]!.decisionId),
-        ),
-      );
-
-    return { cancelled: true };
+    return cancelOneHold(this.deps, organizationId, userId, holdId, reason);
   }
 
   /**
@@ -396,46 +267,31 @@ export class AutonomyHoldService {
    * committed to yet.
    */
   async cancelInFlight(organizationId: string, userId: string, kind: string): Promise<number> {
-    const cancelled = await this.db
-      .update(autonomyHolds)
-      .set({
-        status: "cancelled",
-        cancelledAt: new Date(),
-        cancelledByUserId: userId,
-        cancelReason: "Autonomous sending was switched off",
-      })
-      .where(
-        and(
-          eq(autonomyHolds.organizationId, organizationId),
-          eq(autonomyHolds.status, "held"),
-          kind === "*" ? sql`true` : eq(autonomyHolds.kind, kind as "quote.sent"),
-        ),
-      )
-      .returning({ decisionId: autonomyHolds.autonomousDecisionId });
+    return cancelHoldsInFlight(this.db, organizationId, userId, kind);
+  }
 
-    const decisionIds = cancelled.map((row) => row.decisionId);
-    for (let i = 0; i < decisionIds.length; i += DECISION_REVERSAL_CHUNK)
-      await this.db
-        .update(autonomousDecisions)
-        .set({
-          outcome: "reversed",
-          reversedAt: new Date(),
-          reversedByUserId: userId,
-          reversedReason: "Autonomous sending was switched off",
-        })
-        .where(
-          and(
-            eq(autonomousDecisions.organizationId, organizationId),
-            inArray(
-              autonomousDecisions.autonomousDecisionId,
-              decisionIds.slice(i, i + DECISION_REVERSAL_CHUNK),
-            ),
-          ),
-        );
-
-    return cancelled.length;
+  /**
+   * A decision not to quote, recorded rather than thrown away. A decision not
+   * to act that nobody recorded is indistinguishable from one that never ran.
+   */
+  private async recordQuoteSkip(
+    input: { organizationId: string; dealId: number; confidence: number },
+    partyId: string | null,
+    summary: string,
+  ) {
+    await this.db.insert(autonomousDecisions).values(
+      buildDecision({
+        organizationId: input.organizationId,
+        kind: "quote.sent",
+        outcome: "skipped",
+        triggerType: "deal",
+        triggerId: String(input.dealId),
+        dealId: String(input.dealId),
+        partyId,
+        confidence: input.confidence,
+        summary,
+      }),
+    );
+    return { held: false as const, reason: summary };
   }
 }
-
-const DECISION_REVERSAL_CHUNK = 500;
-

@@ -5,16 +5,31 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { DRIZZLE } from "../../../../db/drizzle.constants";
+import type { TenantTx } from "../../../../db/drizzle.types";
 import { OrganizationLegalHoldService } from "./organization-legal-hold.service";
 import { AuditService } from "../../../../common/audit/audit.service";
 import { OrganizationSagaService } from "./organization-saga.service";
 import { runInTenantTransaction } from "../../../../common/tenant/run-in-tenant-transaction";
-import type { TenantTx } from "../../../../common/tenant/with-tenant";
-import { stubService } from "../../../../test/service-stub.spec-fixtures";
 
 jest.mock("../../../../common/tenant/run-in-tenant-transaction");
 
 const mockRunInTenantTransaction = jest.mocked(runInTenantTransaction);
+
+/**
+ * The transaction handle these tests hand the service.
+ *
+ * `runInTenantTransaction`'s callback takes a full Drizzle `TenantTx`, a
+ * structural type with dozens of methods, so a double can only ever supply the
+ * two or three the service actually calls and can never be assignable to it —
+ * the widening below is unavoidable. What is avoidable is `as any`, which was
+ * here and checked nothing: it would have accepted a double whose method was
+ * spelled `slect`, and the service's real `tx.select` call would then have gone
+ * to `undefined` at runtime instead of failing to compile. Naming the slice
+ * keeps the method names honest and puts the widening in one place.
+ */
+type TxDouble = Partial<Pick<TenantTx, "select" | "insert" | "update">>;
+
+const asTx = (double: TxDouble): TenantTx => double as unknown as TenantTx;
 
 function buildSelectChain(rows: unknown[]) {
   const resolved = Promise.resolve(rows);
@@ -85,7 +100,7 @@ describe("OrganizationLegalHoldService", () => {
         insert: jest.fn().mockReturnValue({ values: valuesInsert }),
       };
       mockRunInTenantTransaction.mockImplementation((_db, fn) =>
-        fn(stubService<TenantTx>(tx)),
+        fn(asTx(tx)),
       );
 
       const { service, audit } = await buildService();
@@ -117,7 +132,7 @@ describe("OrganizationLegalHoldService", () => {
           .mockReturnValueOnce(buildSelectChain([{ holdId: "existing-hold" }])),
       };
       mockRunInTenantTransaction.mockImplementation((_db, fn) =>
-        fn(stubService<TenantTx>(tx)),
+        fn(asTx(tx)),
       );
 
       const { service } = await buildService();
@@ -134,7 +149,7 @@ describe("OrganizationLegalHoldService", () => {
           .mockReturnValueOnce(buildSelectChain([])),
       };
       mockRunInTenantTransaction.mockImplementation((_db, fn) =>
-        fn(stubService<TenantTx>(tx)),
+        fn(asTx(tx)),
       );
 
       const { service } = await buildService();
@@ -153,7 +168,7 @@ describe("OrganizationLegalHoldService", () => {
         update: jest.fn().mockReturnValue(buildUpdateChain([])),
       };
       mockRunInTenantTransaction.mockImplementation((_db, fn) =>
-        fn(stubService<TenantTx>(tx)),
+        fn(asTx(tx)),
       );
 
       const { service } = await buildService();
@@ -176,7 +191,7 @@ describe("OrganizationLegalHoldService", () => {
         select: jest.fn().mockReturnValue(buildSelectChain([holdRow])),
       };
       mockRunInTenantTransaction.mockImplementation((_db, fn) =>
-        fn(stubService<TenantTx>(tx)),
+        fn(asTx(tx)),
       );
 
       const { service } = await buildService();

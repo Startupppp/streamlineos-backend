@@ -31,6 +31,16 @@ export type TargetState =
   | { readonly kind: "deal"; readonly stage: string | null }
   | { readonly kind: "activity"; readonly deletedAt: Date | null; readonly completedAt: Date | null }
   | { readonly kind: "party"; readonly deletedAt: Date | null }
+  /**
+   * A batch of field repairs, counted rather than enumerated.
+   *
+   * The planner only has to know whether there is anything left to put back;
+   * *which* values, and whether each one is still what the system wrote, is a
+   * per-row question the executor answers one repair at a time. Loading four
+   * hundred values here to decide one boolean would be the planner doing the
+   * executor's work.
+   */
+  | { readonly kind: "repairs"; readonly unreverted: number }
   | null;
 
 export type ReversalRefusalReason =
@@ -51,7 +61,8 @@ export interface ReversalRefusal {
 export type ReversalPlan =
   | { readonly ok: true; readonly action: "restore-stage"; readonly dealId: string; readonly toStage: string; readonly fromStage: string }
   | { readonly ok: true; readonly action: "delete-activity"; readonly activityId: string }
-  | { readonly ok: true; readonly action: "delete-party"; readonly partyId: string };
+  | { readonly ok: true; readonly action: "delete-party"; readonly partyId: string }
+  | { readonly ok: true; readonly action: "restore-fields"; readonly unreverted: number };
 
 export type ReversalDecision = ReversalPlan | ReversalRefusal;
 
@@ -168,10 +179,42 @@ export function planReversal(
       return { ok: true, action: "delete-party", partyId: decision.partyId };
     }
 
+    case "field.repaired": {
+      /**
+       * Nothing is read from `decision` here.
+       *
+       * A repair batch's before-values live in `autonomy_repairs`, one row per
+       * value, because that is what makes the batch undoable item by item as
+       * well as whole. Copying them into the decision's JSON as well would be a
+       * second copy of the truth, and the two would disagree the first time
+       * somebody reverted one repair on its own.
+       */
+      if (!target || target.kind !== "repairs")
+        return refuse("target-missing", "The record of what this changed is incomplete.");
+
+      if (target.unreverted === 0)
+        return refuse(
+          "already-reversed",
+          "Every value in this batch has already been put back, one at a time.",
+        );
+
+      return { ok: true, action: "restore-fields", unreverted: target.unreverted };
+    }
+
     case "quote.sent":
       // Unreachable while quote.sent is classified `hold`, and kept as a real
       // branch so the exhaustiveness check below stays honest if that changes.
       return refuse("not-reversible", "A sent quote cannot be taken back.");
+
+    case "outbound.sent":
+    case "cold_outbound.sent":
+      /**
+       * The same shape and the same reason. While it is held, the hold's own
+       * cancel path stops it and this is never reached; once it has been
+       * delivered there is no reversing write, and offering one would tell a
+       * manager they can unsend a customer's mail.
+       */
+      return refuse("not-reversible", "A message that has already gone cannot be taken back.");
 
     default: {
       return refuse("unsupported-kind", `Unknown action type: ${String(decision.kind satisfies never)}`);

@@ -708,6 +708,6 @@ export function summarize(bindings: readonly FieldBinding[]): Record<FieldVerdic
 export function classifyFieldInSource(source: string, object: string | null, field: string): FieldVerdict {
   const signature = source.slice(0, source.indexOf("{") + 1);
   const method: SourceMethod = { owner: "Fixture", file: "fixture.ts", name: "fixture", signature, body: source };
-  const empty: SourceIndex = { methodsByClass: new Map(), functions: new Map() };
+  const empty: SourceIndex = { methodsByClass: new Map(), functions: new Map(), methodsByFile: new Map() };
   return traceSymbol("Fixture", method, { object, field }, empty, 0, new Set()).verdict;
 }

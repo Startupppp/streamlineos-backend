@@ -74,13 +74,44 @@ export function completeWeeksInRange(startDate: string, endDate: string): number
  * Expected hours for the range = completeWeeksInRange * expectedWeeklyHours.
  * Null when expectedWeeklyHours is not configured.
  */
+/**
+ * Expected hours over a range, less the organisation's holidays.
+ *
+ * Without the deduction a week containing a public holiday still expected a
+ * full week of work, so the compliance report marked everybody short for
+ * Diwali and Christmas — a report that flags the whole company teaches people
+ * to ignore it.
+ *
+ * The base stays `completeWeeks * weeklyHours`; holidays are subtracted at the
+ * daily equivalent, `weeklyHours / 5`. Only holidays falling Monday to Friday
+ * count, since a Saturday holiday costs nobody any expected hours, and the
+ * dates are de-duplicated because two holiday rows can share a date (a public
+ * holiday and a company one, say) and the day is only lost once. The result is
+ * clamped at zero: a short range full of holidays owes no negative work.
+ */
+export const MAX_REPORT_SPAN_DAYS = 366;
+
 export function expectedHoursForRange(
   startDate: string,
   endDate: string,
   expectedWeeklyHours: number | null,
+  holidayDates: readonly string[] = [],
+  expectedDailyHours: number | null = null,
 ): number | null {
-  if (expectedWeeklyHours === null || !Number.isFinite(expectedWeeklyHours)) return null;
-  return round2(completeWeeksInRange(startDate, endDate) * expectedWeeklyHours);
+  const weekly =
+    expectedWeeklyHours !== null && Number.isFinite(expectedWeeklyHours)
+      ? expectedWeeklyHours
+      : expectedDailyHours !== null && Number.isFinite(expectedDailyHours)
+        ? expectedDailyHours * 5
+        : null;
+  if (weekly === null) return null;
+
+  const base = completeWeeksInRange(startDate, endDate) * weekly;
+  const workdays = new Set(weekdayDatesInRange(startDate, endDate));
+  const lost = new Set(holidayDates.filter((date) => workdays.has(date)));
+  const perDay = weekly / 5;
+
+  return round2(Math.max(0, base - lost.size * perDay));
 }
 
 /** All Monday-Friday dates in the inclusive range, as YYYY-MM-DD strings (UTC). */
@@ -115,6 +146,12 @@ export function resolveDateRange(
 ): { startDate: string; endDate: string } {
   const end = endDate ?? toDateString(now);
   const start = startDate ?? toDateString(new Date(parseDateOnly(end).getTime() - 29 * MS_PER_DAY));
+  const days = Math.floor((parseDateOnly(end).getTime() - parseDateOnly(start).getTime()) / MS_PER_DAY) + 1;
+  if (days > MAX_REPORT_SPAN_DAYS) {
+    throw new RangeError(
+      `Report range cannot exceed ${MAX_REPORT_SPAN_DAYS} days (got ${days})`,
+    );
+  }
   return { startDate: start, endDate: end };
 }
 

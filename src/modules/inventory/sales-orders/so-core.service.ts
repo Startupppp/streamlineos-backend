@@ -1,49 +1,28 @@
-import {
-  BadRequestException,
-  Inject,
-  Injectable,
-  NotFoundException,
-} from "@nestjs/common";
-import { and, desc, eq, inArray, sql } from "drizzle-orm";
+import { Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { and, desc, eq, sql } from "drizzle-orm";
+import { partyNamesFor } from "../../party/party-names";
 import { ScopedRead } from "../../access/scoped-read";
-import {
-  invProductVariants,
-  invSalesOrders,
-  invSoLines,
-  invStockLevels,
-} from "../../../db/schema";
+import { invSalesOrders, businessParties } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
+import type { InvNearExpiryPolicy } from "../stock-engine/stock-engine.types";
 import { type Db } from "../../../db/drizzle.module";
 import { CacheService } from "../../../common/cache/cache.service";
 import { CACHE_KEYS, CACHE_TTL } from "../../../common/cache/cache-keys";
+import { WarehouseScopeService } from "../stock-engine/warehouse-scope.service";
 import { NumberSequenceService } from "../stock-engine/number-sequence.service";
 import { SoLifecycleService } from "./so-lifecycle.service";
-import { addDec, mulDec } from "../stock-engine/stock-engine.service";
 import type {
   CreateSoInput,
   ListSoInput,
   UpdateSoInput,
 } from "./dto/inv-sales-orders.schemas";
-
-function computeSoTotals(
-  lines: Array<{ quantity: number; unitPrice: string; taxRate: string }>,
-) {
-  let subtotal = "0";
-  let taxAmount = "0";
-  for (const l of lines) {
-    const lineAmt = mulDec(l.quantity.toFixed(4), l.unitPrice);
-    subtotal = addDec(subtotal, lineAmt);
-    taxAmount = addDec(
-      taxAmount,
-      mulDec(lineAmt, (parseFloat(l.taxRate) / 100).toFixed(10)),
-    );
-  }
-  return {
-    subtotal,
-    taxAmount,
-    total: addDec(subtotal, taxAmount),
-  };
-}
+import { getAtp } from "./lib/atp";
+import { soInScope } from "./lib/so-scope";
+import {
+  createSalesOrder,
+  updateSalesOrder,
+  type SoWriteDeps,
+} from "./lib/so-write";
 
 @Injectable()
 export class SoCoreService {
@@ -52,13 +31,24 @@ export class SoCoreService {
     private readonly cache: CacheService,
     private readonly numSeq: NumberSequenceService,
     private readonly lifecycle: SoLifecycleService,
+    private readonly warehouseScope: WarehouseScopeService,
   ) {}
+
+  private get soWriteDeps(): SoWriteDeps {
+    return {
+      db: this.db,
+      cache: this.cache,
+      numSeq: this.numSeq,
+      warehouseScope: this.warehouseScope,
+    };
+  }
 
   async listSos(read: ScopedRead, filters: ListSoInput) {
     const orgId = read.orgId;
     const { status, clientId, page, limit } = filters;
     const offset = (page - 1) * limit;
-    const hash = `${status ?? ""}:${clientId ?? ""}:${limit}:${offset}:${read.discriminator}`;
+    const warehouses = await this.warehouseScope.forUser(orgId, read.actorId);
+    const hash = `${warehouses?.key ?? "all"}:${status ?? ""}:${clientId ?? ""}:${limit}:${offset}:${read.discriminator}`;
 
     return this.cache.cachedVersioned(
       CACHE_KEYS.invSoNamespace(orgId),
@@ -69,6 +59,7 @@ export class SoCoreService {
             tenant: invSalesOrders.orgId,
             scope: { columns: { ownerColumn: invSalesOrders.createdBy } },
             and: [
+              warehouses ? soInScope(warehouses) : undefined,
               status ? eq(invSalesOrders.status, status) : undefined,
               clientId ? eq(invSalesOrders.clientId, clientId) : undefined,
             ],
@@ -81,7 +72,6 @@ export class SoCoreService {
                 limit,
                 offset,
                 with: {
-                  client: { columns: { id: true, name: true } },
                   creator: { columns: { id: true, name: true } },
                 },
               }),
@@ -91,8 +81,25 @@ export class SoCoreService {
                 .where(where),
             ]);
 
+            /**
+             * The client's name from Party, not from `clients`. Ticket 08.
+             *
+             * `client_id` is still what the order is filed under and is still
+             * returned as `client.id`; only the name moved.
+             */
+            const names = await partyNamesFor(this.db, orgId, items.map((o) => o.clientPartyId));
+            const withClient = items.map((order) => ({
+              ...order,
+              client: order.clientId
+                ? {
+                    id: order.clientId,
+                    name: order.clientPartyId ? (names.get(order.clientPartyId) ?? null) : null,
+                  }
+                : null,
+            }));
+
             return {
-              items,
+              items: withClient,
               total: countResult[0]?.count ?? 0,
               page,
               totalPages: Math.ceil((countResult[0]?.count ?? 0) / limit),
@@ -104,11 +111,48 @@ export class SoCoreService {
     );
   }
 
-  async getSo(orgId: string, soId: number) {
+  /**
+   * A sales order with everything the detail screen shows.
+   *
+   * The customer is resolved through Party, not by joining `clients`. That table
+   * was dropped by the identity migration during this work, so the eager join
+   * here failed outright with `42P01 relation "clients" does not exist` — every
+   * read of a sales order, including the one the fulfilment flow makes after
+   * shipping. `inv_sales_orders.client_party_id` is the Party-era column and
+   * carries the same customer.
+   */
+  async getSo(orgId: string, userId: string, soId: number) {
+    /*
+     * `listSos` beside this has narrowed on the caller's warehouses since the
+     * warehouse work landed; this took no `userId` at all, because the
+     * controller had `@CurrentUser()` in hand and passed only `orgId`. So an
+     * order an operator could not see in their list was theirs to read whole:
+     * the customer, the shipping address, every line with its price, and the
+     * invoice hanging off it.
+     *
+     * Nothing downstream would have caught it — a read posts no movements, so
+     * the engine's `assertLocationsInScope` never runs on this path.
+     *
+     * The `/:soId/atp` route reads through here first and spends the lines it
+     * gets on `getAtp`, so gating this gates that too: availability stays the
+     * org-wide number a promise is actually made against, but you can only ask
+     * it about an order you may see.
+     *
+     * Not cached. `CACHE_KEYS.invSoDetail` exists and five services bust it, but
+     * nothing has ever read it — so there is no key here to carry a scope
+     * discriminator. If one is ever added it must carry `scope.key`, or a
+     * correct predicate under a scope-free key would store one caller's narrowed
+     * answer and serve it to the next, which is worse than the unscoped read
+     * this replaces (§6).
+     */
+    const scope = await this.warehouseScope.forUser(orgId, userId);
     const so = await this.db.query.invSalesOrders.findFirst({
-      where: and(eq(invSalesOrders.id, soId), eq(invSalesOrders.orgId, orgId)),
+      where: and(
+        eq(invSalesOrders.id, soId),
+        eq(invSalesOrders.orgId, orgId),
+        soInScope(scope),
+      ),
       with: {
-        client: true,
         warehouse: true,
         invoice: true,
         creator: { columns: { id: true, name: true } },
@@ -122,204 +166,79 @@ export class SoCoreService {
       },
     });
     if (!so) throw new NotFoundException("Sales order not found");
-    return so;
+    return { ...so, client: await this.resolveCustomer(orgId, so.clientId, so.clientPartyId) };
   }
 
+  /**
+   * The customer, from Party — never from `clients`, which is gone.
+   *
+   * Display identity only; anything sensitive stays behind its own gate.
+   *
+   * One shape for both readers of this field. Ticket 08 kept the shape
+   * `client: true` used to return — `client.id` is still the legacy id the
+   * order was filed under, and `client.name` is what the sales-order screen
+   * reads as the customer. The inventory lane's Party-era fields sit beside
+   * them: `partyId`, `displayName`, `companyName`.
+   *
+   * Null only when the order names no customer at all. An order with a legacy
+   * id and no party yet still says which client it was filed under; a
+   * Party-era order with no legacy id still names its customer.
+   *
+   * The organisation predicate is the part that must not drift: a name lookup
+   * that forgets it is a cross-tenant read that returns something plausible.
+   */
+  private async resolveCustomer(orgId: string, clientId: number | null, partyId: string | null) {
+    if (clientId === null && !partyId) return null;
+    const [party] = partyId
+      ? await this.db
+          .select({
+            partyId: businessParties.partyId,
+            name: businessParties.name,
+            displayName: businessParties.displayName,
+            companyName: businessParties.companyName,
+            status: businessParties.status,
+            email: businessParties.email,
+            phone: businessParties.phone,
+          })
+          .from(businessParties)
+          .where(and(eq(businessParties.organizationId, orgId), eq(businessParties.partyId, partyId)))
+          .limit(1)
+      : [];
+    return {
+      id: clientId,
+      partyId: party?.partyId ?? partyId,
+      name: party?.name ?? null,
+      displayName: party?.displayName ?? null,
+      companyName: party?.companyName ?? null,
+      status: party?.status ?? null,
+      email: party?.email ?? null,
+      phone: party?.phone ?? null,
+    };
+  }
+
+  /** @see lib/so-write.ts — the body moved, the service surface did not. */
   async createSo(orgId: string, userId: string, data: CreateSoInput) {
-    const soNumber = await this.numSeq.next(orgId, "SO");
-    const { subtotal, taxAmount, total } = computeSoTotals(data.lines);
-
-    const variantIds = data.lines.map((l) => l.productVariantId);
-    const variants = await this.db.query.invProductVariants.findMany({
-      where: inArray(invProductVariants.id, variantIds),
-      columns: { id: true, costPrice: true },
-    });
-    const variantCostMap = new Map(variants.map((v) => [v.id, v.costPrice]));
-
-    const so = await this.db.transaction(async (tx) => {
-      const [header] = await tx
-        .insert(invSalesOrders)
-        .values({
-          orgId,
-          clientId: data.clientId,
-          soNumber,
-          orderDate: data.orderDate,
-          requiredDate: data.requiredDate,
-          shippingAddress: data.shippingAddress,
-          warehouseId: data.warehouseId,
-          subtotal,
-          taxAmount,
-          discount: "0",
-          total,
-          currency: data.currency,
-          notes: data.notes,
-          createdBy: userId,
-        })
-        .returning();
-
-      await tx.insert(invSoLines).values(
-        data.lines.map((line) => ({
-          soId: header.id,
-          productVariantId: line.productVariantId,
-          quantity: line.quantity.toString(),
-          unitPrice: line.unitPrice,
-          taxRate: line.taxRate,
-          amount: mulDec(line.quantity.toFixed(4), line.unitPrice),
-          costAtTime: variantCostMap.get(line.productVariantId) ?? "0",
-          lineOrder: line.lineOrder,
-        })),
-      );
-
-      return header;
-    });
-
-    await this.cache.invalidateNamespace(CACHE_KEYS.invSoNamespace(orgId));
-    return so;
+    return createSalesOrder(this.soWriteDeps, orgId, userId, data);
   }
 
-  async updateSo(orgId: string, soId: number, data: UpdateSoInput) {
-    const so = await this.db.query.invSalesOrders.findFirst({
-      where: and(eq(invSalesOrders.id, soId), eq(invSalesOrders.orgId, orgId)),
-    });
-    if (!so) throw new NotFoundException("Sales order not found");
-    if (so.status !== "DRAFT")
-      throw new BadRequestException("Only DRAFT sales orders can be updated");
-
-    const patch: Partial<typeof invSalesOrders.$inferInsert> = {};
-    if (data.clientId !== undefined) patch.clientId = data.clientId;
-    if (data.orderDate !== undefined) patch.orderDate = data.orderDate;
-    if (data.requiredDate !== undefined) patch.requiredDate = data.requiredDate;
-    if (data.shippingAddress !== undefined)
-      patch.shippingAddress = data.shippingAddress;
-    if (data.warehouseId !== undefined) patch.warehouseId = data.warehouseId;
-    if (data.currency !== undefined) patch.currency = data.currency;
-    if (data.notes !== undefined) patch.notes = data.notes;
-
-    let variantCostMap = new Map<number, string>();
-    if (data.lines) {
-      const { subtotal, taxAmount, total } = computeSoTotals(data.lines);
-      patch.subtotal = subtotal;
-      patch.taxAmount = taxAmount;
-      patch.total = total;
-
-      const variantIds = data.lines.map((l) => l.productVariantId);
-      const variants = await this.db.query.invProductVariants.findMany({
-        where: inArray(invProductVariants.id, variantIds),
-        columns: { id: true, costPrice: true },
-      });
-      variantCostMap = new Map(variants.map((v) => [v.id, v.costPrice]));
-    }
-
-    await this.db.transaction(async (tx) => {
-      if (data.lines) {
-        await tx.delete(invSoLines).where(eq(invSoLines.soId, soId));
-
-        await tx.insert(invSoLines).values(
-          (data.lines ?? []).map((line) => ({
-            soId,
-            productVariantId: line.productVariantId,
-            quantity: line.quantity.toString(),
-            unitPrice: line.unitPrice,
-            taxRate: line.taxRate,
-            amount: mulDec(line.quantity.toFixed(4), line.unitPrice),
-            costAtTime: variantCostMap.get(line.productVariantId) ?? "0",
-            lineOrder: line.lineOrder,
-          })),
-        );
-      }
-
-      if (Object.keys(patch).length > 0) {
-        await tx
-          .update(invSalesOrders)
-          .set({ ...patch, updatedAt: new Date() })
-          .where(
-            and(eq(invSalesOrders.id, soId), eq(invSalesOrders.orgId, orgId)),
-          );
-      }
-    });
-
-    await this.cache.del(CACHE_KEYS.invSoDetail(orgId, soId));
-    await this.cache.invalidateNamespace(CACHE_KEYS.invSoNamespace(orgId));
-    return this.getSo(orgId, soId);
+  /**
+   * @see lib/so-write.ts — the write moved; the re-read deliberately did not.
+   *
+   * `getSo` is the module's one scoped detail read, and an edit answering with a
+   * row assembled anywhere else is how the two drift apart.
+   */
+  async updateSo(orgId: string, soId: number, userId: string, data: UpdateSoInput) {
+    await updateSalesOrder(this.soWriteDeps, orgId, soId, userId, data);
+    return this.getSo(orgId, userId, soId);
   }
 
+  /** @see lib/atp.ts — the body moved, the service surface did not. */
   async getAtp(orgId: string, productVariantIds: number[]) {
-    if (productVariantIds.length === 0) return [];
-
-    const levels = await this.db.query.invStockLevels.findMany({
-      where: and(
-        eq(invStockLevels.orgId, orgId),
-        inArray(invStockLevels.productVariantId, productVariantIds),
-      ),
-      columns: {
-        productVariantId: true,
-        onHand: true,
-        committed: true,
-        onOrder: true,
-        blockedQty: true,
-        qualityHoldQty: true,
-      },
-    });
-
-    const grouped = new Map<
-      number,
-      {
-        onHand: number;
-        committed: number;
-        onOrder: number;
-        blocked: number;
-        qualityHold: number;
-      }
-    >();
-
-    for (const l of levels) {
-      const existing = grouped.get(l.productVariantId);
-      const onHand = parseFloat(l.onHand);
-      const committed = parseFloat(l.committed);
-      const onOrder = parseFloat(l.onOrder);
-      const blocked = parseFloat(l.blockedQty ?? "0");
-      const qualityHold = parseFloat(l.qualityHoldQty ?? "0");
-
-      if (existing) {
-        existing.onHand += onHand;
-        existing.committed += committed;
-        existing.onOrder += onOrder;
-        existing.blocked += blocked;
-        existing.qualityHold += qualityHold;
-      } else {
-        grouped.set(l.productVariantId, {
-          onHand,
-          committed,
-          onOrder,
-          blocked,
-          qualityHold,
-        });
-      }
-    }
-
-    return productVariantIds.map((id) => {
-      const agg = grouped.get(id);
-      const onHand = agg?.onHand ?? 0;
-      const committed = agg?.committed ?? 0;
-      const blocked = agg?.blocked ?? 0;
-      const qualityHold = agg?.qualityHold ?? 0;
-      const onOrder = agg?.onOrder ?? 0;
-      return {
-        productVariantId: id,
-        onHand,
-        committed,
-        blocked,
-        qualityHold,
-        onOrder,
-        available: onHand - committed - blocked - qualityHold,
-        incomingQty: onOrder,
-        outgoingQty: committed,
-      };
-    });
+    return getAtp(this.db, orgId, productVariantIds);
   }
 
-  confirmSo(orgId: string, soId: number, userId: string) {
-    return this.lifecycle.confirmSo(orgId, soId, userId);
+  confirmSo(orgId: string, soId: number, userId: string, idempotencyKey: string) {
+    return this.lifecycle.confirmSo(orgId, soId, userId, idempotencyKey);
   }
 
   cancelSo(orgId: string, soId: number, userId: string) {
@@ -334,9 +253,23 @@ export class SoCoreService {
     orgId: string,
     variantId: number,
     warehouseId: number | null | undefined,
-    qty: number,
+    /** Base UOM, as a decimal string — never a float. */
+    qty: string,
     strategy: string,
     expiryPolicy: string,
+    /**
+     * D2. Forwarded rather than dropped. This delegation used to stop at
+     * `expiryPolicy`, so every caller reaching the allocator through here — the
+     * reserve button, pick waves, pick substitution — allocated with no
+     * near-expiry tier and no customer shelf-life floor, whatever the
+     * organisation and the contract said. A parameter silently not forwarded is
+     * the same defect as a rule not written.
+     */
+    constraints?: {
+      nearExpiryPolicy: InvNearExpiryPolicy;
+      nearExpiryWindowDays: number;
+      minShelfLifeDays: number;
+    },
   ) {
     return this.lifecycle.findAvailableLotForLine(
       orgId,
@@ -345,6 +278,7 @@ export class SoCoreService {
       qty,
       strategy,
       expiryPolicy,
+      constraints,
     );
   }
 }

@@ -1,4 +1,5 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { clientShapedParties, partyNamesFor } from "../party/party-names";
 import { and, asc, desc, eq, sql } from "drizzle-orm";
 import { invoiceItems, invoices, payments } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
@@ -50,7 +51,6 @@ export class InvoicesService {
             limit,
             offset,
             with: {
-              client: { columns: { id: true, name: true } },
               project: { columns: { id: true, name: true } },
               creator: { columns: { id: true, name: true } },
             },
@@ -61,9 +61,28 @@ export class InvoicesService {
             .where(where),
         ]);
 
+        /**
+         * The client's name from Party, not from `clients`. Ticket 08.
+         *
+         * `client_id` is still what the invoice is filed under and is still
+         * returned as `client.id`, so nothing downstream changes shape; only the
+         * name moved. `invoices.client_id` is one of the twelve foreign keys
+         * standing between the CRM and dropping the legacy tables.
+         */
+        const names = await partyNamesFor(this.db, orgId, items.map((i) => i.clientPartyId));
+        const withClient = items.map((invoice) => ({
+          ...invoice,
+          client: invoice.clientId
+            ? {
+                id: invoice.clientId,
+                name: invoice.clientPartyId ? (names.get(invoice.clientPartyId) ?? null) : null,
+              }
+            : null,
+        }));
+
         const total = countResult[0]?.count ?? 0;
         return {
-          items,
+          items: withClient,
           total,
           page,
           totalPages: Math.ceil(total / limit),
@@ -83,7 +102,6 @@ export class InvoicesService {
     const invoice = await this.db.query.invoices.findFirst({
       where: and(eq(invoices.id, invoiceId), eq(invoices.orgId, orgId)),
       with: {
-        client: true,
         project: { columns: { id: true, name: true } },
         creator: { columns: { id: true, name: true } },
         payments: {
@@ -105,10 +123,34 @@ export class InvoicesService {
         },
       },
     });
+    // A miss — including another tenant's id — is `undefined`, which the controller turns into a 404.
     if (!invoice) return undefined;
 
+    /**
+     * The customer from Party. Ticket 08.
+     *
+     * This read used to be `client: true` -- the whole legacy row. Measured
+     * against what callers consume, that is the name, the status and the
+     * contact details, all of which Party holds. `client.id` is still the
+     * legacy identifier, so nothing downstream has to change.
+     */
+    const parties = await clientShapedParties(this.db, orgId, [invoice.clientPartyId]);
+    const party = invoice.clientPartyId ? parties.get(invoice.clientPartyId) : undefined;
+
     const { items, ...rest } = invoice;
-    return { ...rest, lineItems: items };
+    return {
+      ...rest,
+      lineItems: items,
+      client: invoice.clientId
+        ? {
+            id: invoice.clientId,
+            name: party?.name ?? null,
+            status: party?.status ?? null,
+            email: party?.email ?? null,
+            phone: party?.phone ?? null,
+          }
+        : null,
+    };
   }
 
   async getInvoicePayments(orgId: string, invoiceId: number) {
@@ -166,17 +208,18 @@ export class InvoicesService {
         status: true,
         recurringInterval: true,
         nextRecurringDate: true,
-      },
-      with: {
-        client: { columns: { id: true, name: true } },
+        clientPartyId: true,
       },
     });
+
+    // Ticket 08: the name comes from Party; `clientId` is unchanged.
+    const names = await partyNamesFor(this.db, orgId, rows.map((r) => r.clientPartyId));
 
     return rows.map((row) => ({
       id: row.id,
       invoiceNumber: row.invoiceNumber,
       clientId: row.clientId,
-      clientName: row.client?.name ?? null,
+      clientName: row.clientPartyId ? (names.get(row.clientPartyId) ?? null) : null,
       total: row.total,
       currency: row.currency,
       status: row.status,

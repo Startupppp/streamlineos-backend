@@ -6,6 +6,8 @@ coverage
 !.env.example
 *.log
 
+# agent scratch space
+.scratch/
 # Cell operations artifacts. cell:backup writes real table data (base64 COPY output of
 # users, organizations and members), so it must never be committed; the history and
 # load-driver files are per-machine measurement state, not source.
@@ -13,6 +15,17 @@ backups/
 .cell-capacity-history.json
 .cell-cost-history.json
 .load-driver-results.json
+.inventory-load-results.json
+
+# Merge-tool scratch files. A previous merge left four of these in the tree and
+# `git add -A` committed them; they are not source and nothing imports them.
+*.orig
+*.rej
+*.HEAD
+*.MAIN
+*.BASE
+*.LOCAL
+*.REMOTE
 .artifacts/
 
 # Agent-harness daemon state. 12 files were committed here, including a daemon.pid

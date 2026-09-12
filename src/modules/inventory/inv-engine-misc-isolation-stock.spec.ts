@@ -14,8 +14,9 @@ import { CacheService } from "../../common/cache/cache.service";
 import { InventoryAuditService } from "./stock-engine/inventory-audit.service";
 import { AccessService } from "../access/access.service";
 import { ValuationService } from "./stock-engine/valuation.service";
-import { MovementCostingService } from "./stock-engine/movement-costing.service";
-import { PeriodsService } from "../accounting/gl/periods.service";
+import { PeriodsService } from "../accounting/kernel/periods.service";
+import { BooksService } from "../accounting/kernel/books.service";
+import { INVENTORY_ISOLATION_STUBS } from "./__tests__/isolation-stubs";
 
 function sqlValues(value: unknown, seen = new Set<object>()): unknown[] {
   if (value === null || value === undefined || typeof value === "string" || typeof value === "number" || typeof value === "boolean") return [value];
@@ -82,6 +83,7 @@ describe("InventorySettingsService — cross-tenant isolation", () => {
     const { db, findFirst } = makeDb([]);
     const svc = await Test.createTestingModule({
       providers: [
+        ...INVENTORY_ISOLATION_STUBS,
         InventorySettingsService,
         { provide: DRIZZLE, useValue: db },
         { provide: CacheService, useValue: cache },
@@ -99,6 +101,7 @@ describe("InventorySettingsService — cross-tenant isolation", () => {
     const { db } = makeDb([ROW]);
     const svc = await Test.createTestingModule({
       providers: [
+        ...INVENTORY_ISOLATION_STUBS,
         InventorySettingsService,
         { provide: DRIZZLE, useValue: db },
         { provide: CacheService, useValue: cache },
@@ -139,6 +142,7 @@ describe("WarehouseScopeService — cross-tenant isolation", () => {
     const { db, selectWhere } = makeDb([]);
     const svc = await Test.createTestingModule({
       providers: [
+        ...INVENTORY_ISOLATION_STUBS,
         WarehouseScopeService,
         { provide: DRIZZLE, useValue: db },
         { provide: AccessService, useValue: { resolveUserPermissions: jest.fn().mockResolvedValue(new Set()) } },
@@ -157,6 +161,7 @@ describe("WarehouseScopeService — cross-tenant isolation", () => {
     const { db } = makeDb([ROW]);
     const svc = await Test.createTestingModule({
       providers: [
+        ...INVENTORY_ISOLATION_STUBS,
         WarehouseScopeService,
         { provide: DRIZZLE, useValue: db },
         { provide: AccessService, useValue: { resolveUserPermissions: jest.fn().mockResolvedValue(new Set()) } },
@@ -177,16 +182,20 @@ describe("ReservationService — cross-tenant isolation", () => {
     const settingsMock = { get: jest.fn().mockResolvedValue({ requireLocationForReservation: true }) };
     const svc = await Test.createTestingModule({
       providers: [
+        ...INVENTORY_ISOLATION_STUBS,
         ReservationService,
         { provide: DRIZZLE, useValue: db },
         { provide: InventorySettingsService, useValue: settingsMock },
+        // ReservationService now bumps the reservations list namespace on every
+        // write; the file's shared `cache` double already serves its siblings.
+        { provide: CacheService, useValue: cache },
       ],
     }).compile().then((m) => m.get(ReservationService));
 
     await expect(
       svc.createReservationInTx({} as never, ATTACKER, "user-1", {
-        sourceType: "manual",
-        sourceId: "test-1",
+        sourceType: "inv_sales_order",
+        sourceId: "1",
         productVariantId: 99,
         locationId: 1,
         qty: "10",
@@ -200,13 +209,17 @@ describe("ReservationService — cross-tenant isolation", () => {
     const { db } = makeDb([]);
     const svc = await Test.createTestingModule({
       providers: [
+        ...INVENTORY_ISOLATION_STUBS,
         ReservationService,
         { provide: DRIZZLE, useValue: db },
         { provide: InventorySettingsService, useValue: settingsMock },
+        // ReservationService now bumps the reservations list namespace on every
+        // write; the file's shared `cache` double already serves its siblings.
+        { provide: CacheService, useValue: cache },
       ],
     }).compile().then((m) => m.get(ReservationService));
 
-    await svc.createReservation(OWNER, "user-1", { sourceType: "manual", sourceId: "test-1", productVariantId: 99, locationId: 1, qty: "10" }).catch(() => undefined);
+    await svc.createReservation(OWNER, "user-1", { sourceType: "inv_sales_order", sourceId: "1", productVariantId: 99, locationId: 1, qty: "10" }).catch(() => undefined);
     expect(settingsMock.get).toHaveBeenCalledWith(OWNER);
   });
 });
@@ -219,6 +232,7 @@ describe("StockEngineService — cross-tenant isolation", () => {
     const { db } = makeDb([]);
     const svc = await Test.createTestingModule({
       providers: [
+        ...INVENTORY_ISOLATION_STUBS,
         StockEngineService,
         { provide: DRIZZLE, useValue: db },
         { provide: InventorySettingsService, useValue: { get: jest.fn().mockResolvedValue({}) } },
@@ -226,8 +240,9 @@ describe("StockEngineService — cross-tenant isolation", () => {
         { provide: CacheService, useValue: cache },
         { provide: ValuationService, useValue: { recordReceipt: jest.fn(), recordIssue: jest.fn() } },
         { provide: WarehouseScopeService, useValue: { resolve: jest.fn().mockResolvedValue(null), warehousePredicate: jest.fn().mockReturnValue({ queryChunks: [] }), locationPredicate: jest.fn().mockReturnValue({ queryChunks: [] }) } },
-        { provide: PeriodsService, useValue: { assertPeriodOpen: jest.fn() } },
-        { provide: MovementCostingService, useValue: { applyCosting: jest.fn() } },
+        // The kernel period guard: no book, so no period is ever asked for.
+        { provide: PeriodsService, useValue: { periodForDate: jest.fn().mockResolvedValue(null) } },
+        { provide: BooksService, useValue: { findDefault: jest.fn().mockResolvedValue(null) } },
       ],
     }).compile().then((m) => m.get(StockEngineService));
 
@@ -245,6 +260,7 @@ describe("StockEngineService — cross-tenant isolation", () => {
     };
     const svc = await Test.createTestingModule({
       providers: [
+        ...INVENTORY_ISOLATION_STUBS,
         StockEngineService,
         { provide: DRIZZLE, useValue: db },
         { provide: InventorySettingsService, useValue: { get: jest.fn().mockResolvedValue({}) } },
@@ -252,8 +268,9 @@ describe("StockEngineService — cross-tenant isolation", () => {
         { provide: CacheService, useValue: freshCache },
         { provide: ValuationService, useValue: { recordReceipt: jest.fn(), recordIssue: jest.fn() } },
         { provide: WarehouseScopeService, useValue: { resolve: jest.fn().mockResolvedValue(null), warehousePredicate: jest.fn().mockReturnValue({ queryChunks: [] }), locationPredicate: jest.fn().mockReturnValue({ queryChunks: [] }) } },
-        { provide: PeriodsService, useValue: { assertPeriodOpen: jest.fn() } },
-        { provide: MovementCostingService, useValue: { applyCosting: jest.fn() } },
+        // The kernel period guard: no book, so no period is ever asked for.
+        { provide: PeriodsService, useValue: { periodForDate: jest.fn().mockResolvedValue(null) } },
+        { provide: BooksService, useValue: { findDefault: jest.fn().mockResolvedValue(null) } },
       ],
     }).compile().then((m) => m.get(StockEngineService));
 
@@ -272,6 +289,7 @@ describe("SettingsService — cross-tenant isolation", () => {
     const numSeq = { next: jest.fn(), getDocTypes: jest.fn().mockReturnValue([]) };
     const svc = await Test.createTestingModule({
       providers: [
+        ...INVENTORY_ISOLATION_STUBS,
         SettingsService,
         { provide: DRIZZLE, useValue: db },
         { provide: InventorySettingsService, useValue: invSettings },
@@ -293,6 +311,7 @@ describe("SettingsService — cross-tenant isolation", () => {
     const numSeq = { next: jest.fn(), getDocTypes: jest.fn().mockReturnValue(["PO", "SO"]) };
     const svc = await Test.createTestingModule({
       providers: [
+        ...INVENTORY_ISOLATION_STUBS,
         SettingsService,
         { provide: DRIZZLE, useValue: db },
         { provide: InventorySettingsService, useValue: invSettings },
@@ -316,6 +335,7 @@ describe("ChannelsService — cross-tenant isolation", () => {
     const { db, findMany } = makeDb([]);
     const svc = await Test.createTestingModule({
       providers: [
+        ...INVENTORY_ISOLATION_STUBS,
         ChannelsService,
         { provide: DRIZZLE, useValue: db },
         { provide: CacheService, useValue: cache },
@@ -334,6 +354,7 @@ describe("ChannelsService — cross-tenant isolation", () => {
     const { db } = makeDb([CH]);
     const svc = await Test.createTestingModule({
       providers: [
+        ...INVENTORY_ISOLATION_STUBS,
         ChannelsService,
         { provide: DRIZZLE, useValue: db },
         { provide: CacheService, useValue: cache },
@@ -354,6 +375,7 @@ describe("TplService — cross-tenant isolation", () => {
     const { db, findMany } = makeDb([]);
     const svc = await Test.createTestingModule({
       providers: [
+        ...INVENTORY_ISOLATION_STUBS,
         TplService,
         { provide: DRIZZLE, useValue: db },
         { provide: CacheService, useValue: cache },
@@ -372,6 +394,7 @@ describe("TplService — cross-tenant isolation", () => {
     const { db } = makeDb([CONN]);
     const svc = await Test.createTestingModule({
       providers: [
+        ...INVENTORY_ISOLATION_STUBS,
         TplService,
         { provide: DRIZZLE, useValue: db },
         { provide: CacheService, useValue: cache },
@@ -392,6 +415,7 @@ describe("InvReplenishmentService — cross-tenant isolation", () => {
     const { db, findMany } = makeDb([]);
     const svc = await Test.createTestingModule({
       providers: [
+        ...INVENTORY_ISOLATION_STUBS,
         InvReplenishmentService,
         { provide: DRIZZLE, useValue: db },
         { provide: CacheService, useValue: cache },
@@ -410,6 +434,7 @@ describe("InvReplenishmentService — cross-tenant isolation", () => {
     const { db } = makeDb([RULE]);
     const svc = await Test.createTestingModule({
       providers: [
+        ...INVENTORY_ISOLATION_STUBS,
         InvReplenishmentService,
         { provide: DRIZZLE, useValue: db },
         { provide: CacheService, useValue: cache },

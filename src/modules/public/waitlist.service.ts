@@ -102,7 +102,6 @@ export class WaitlistService {
     };
   }
 
-
   private getNotificationEmails(): string[] {
     const configured = this.config.WAITLIST_NOTIFICATION_EMAILS?.split(",")
       .map((value) => value.trim())

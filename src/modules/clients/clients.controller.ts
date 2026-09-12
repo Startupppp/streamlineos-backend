@@ -186,7 +186,8 @@ export class ClientsController {
     @Body() body: UpdateRenewalInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    const updated = await this.accounts.updateRenewal(u.orgId, accountId, body);
+    const read = await resolveClientsReadScope(this.access, u);
+    const updated = await this.accounts.updateRenewal(read, accountId, body);
     if (!updated) throw new NotFoundException("Client account not found");
     return updated;
   }
@@ -337,7 +338,8 @@ export class ClientsController {
     @Body() body: UpdateClientStatusInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    const updated = await this.accounts.updateStatus(u.orgId, u.userId, clientId, body);
+    const read = await resolveClientsReadScope(this.access, u);
+    const updated = await this.accounts.updateStatus(read, clientId, body);
     if (!updated) throw new NotFoundException("Client account not found");
     return updated;
   }
@@ -347,11 +349,12 @@ export class ClientsController {
   @RequirePermission("crm:clients:read")
   @ResponseSchema(clientActivitiesSchema)
   @Validate({ params: clientIdParams })
-  getClientActivities(
+  async getClientActivities(
     @Param("clientId", ParseIntPipe) clientId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.accounts.getClientActivities(u.orgId, clientId);
+    const read = await resolveClientsReadScope(this.access, u);
+    return this.accounts.getClientActivities(read, clientId);
   }
 
   @Post(":clientId/activities")
@@ -364,7 +367,8 @@ export class ClientsController {
     @Body() body: CreateActivityInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    const activity = await this.accounts.addActivity(u.orgId, clientId, u.userId, body);
+    const read = await resolveClientsReadScope(this.access, u);
+    const activity = await this.accounts.addActivity(read, clientId, body);
     if (!activity) throw new NotFoundException("Client account not found");
     return activity;
   }

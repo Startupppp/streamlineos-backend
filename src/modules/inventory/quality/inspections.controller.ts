@@ -1,4 +1,4 @@
-import { BadRequestException, Body, Controller, Get, Headers, Param, ParseIntPipe, Post, Query, UseGuards } from "@nestjs/common";
+import { Body, Controller, Get, Param, ParseIntPipe, Post, Query, UseGuards } from "@nestjs/common";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
@@ -13,6 +13,8 @@ import {
   failInspectionSchema,
   disposeInspectionSchema,
 } from "./dto/quality.schemas";
+import { correctInspectionSchema } from "./dto/inspection-plans.schemas";
+import type { CorrectInspectionInput } from "./dto/inspection-plans.schemas";
 import type {
   ListInspectionsQueryInput,
   CreateInspectionInput,
@@ -22,6 +24,8 @@ import type {
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
 import { BodylessAction, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { IdempotencyKey } from "../../../common/idempotency/idempotency-key.decorator";
+import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import {
   listInspectionsResponseSchema,
   createInspectionResponseSchema,
@@ -63,6 +67,7 @@ export class InspectionsController {
   @ResponseSchema(createInspectionResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:quality:inspect")
+  @Idempotent("inventory.quality.inspection.create")
   @Validate({ body: createInspectionSchema })
   create(
     @Body() body: CreateInspectionInput,
@@ -76,6 +81,7 @@ export class InspectionsController {
   @ResponseSchema(createInspectionResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:quality:inspect")
+  @Idempotent("inventory.quality.inspection.start")
   @Validate({ params: inspectionIdParams })
   start(
     @Param("inspectionId", ParseIntPipe) id: number,
@@ -92,10 +98,9 @@ export class InspectionsController {
   @Validate({ params: inspectionIdParams })
   pass(
     @Param("inspectionId", ParseIntPipe) id: number,
-    @Headers("idempotency-key") idempotencyKey: string | undefined,
+    @IdempotencyKey() idempotencyKey: string,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!idempotencyKey) throw new BadRequestException("Idempotency-Key header required");
     return this.svc.pass(u.orgId, u.userId, id, idempotencyKey);
   }
 
@@ -103,6 +108,7 @@ export class InspectionsController {
   @ResponseSchema(createInspectionResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:quality:inspect")
+  @Idempotent("inventory.quality.inspection.fail")
   @Validate({ params: inspectionIdParams, body: failInspectionSchema })
   fail(
     @Param("inspectionId", ParseIntPipe) id: number,
@@ -119,14 +125,17 @@ export class InspectionsController {
   @Validate({ params: inspectionIdParams, body: disposeInspectionSchema })
   dispose(
     @Param("inspectionId", ParseIntPipe) id: number,
-    @Headers("idempotency-key") idempotencyKey: string | undefined,
+    @IdempotencyKey() idempotencyKey: string,
     @Body() body: DisposeInspectionInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!idempotencyKey) throw new BadRequestException("Idempotency-Key header required");
     return this.svc.dispose(u.orgId, u.userId, id, body, idempotencyKey);
   }
 
+  /**
+   * Cancelling gives back whatever the inspection was holding, so it moves
+   * stock and takes a key like every other command that does.
+   */
   @Post(":inspectionId/cancel")
   @BodylessAction()
   @ResponseSchema(createInspectionResponseSchema)
@@ -135,8 +144,27 @@ export class InspectionsController {
   @Validate({ params: inspectionIdParams })
   cancel(
     @Param("inspectionId", ParseIntPipe) id: number,
+    @IdempotencyKey() idempotencyKey: string,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.cancel(u.orgId, u.userId, id);
+    return this.svc.cancel(u.orgId, u.userId, id, idempotencyKey);
+  }
+
+  /**
+   * A completed result is evidence and is never edited; correcting one raises a
+   * fresh inspection that names what it supersedes.
+   */
+  @Post(":inspectionId/correct")
+  @ResponseSchema(createInspectionResponseSchema)
+  @UseGuards(PermissionGuard)
+  @RequirePermission("inventory:quality:inspect")
+  @Idempotent("inventory.quality.inspection.correct")
+  @Validate({ params: inspectionIdParams, body: correctInspectionSchema })
+  correct(
+    @Param("inspectionId", ParseIntPipe) id: number,
+    @Body() body: CorrectInspectionInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.svc.correct(u.orgId, u.userId, id, body);
   }
 }

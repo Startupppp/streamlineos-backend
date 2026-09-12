@@ -22,11 +22,20 @@ const configSchema = z.object({
   fallbackUserId: z.string().optional(),
 }).optional().default({});
 
+/**
+ * The round-robin pool is a list of users inside one organisation, and every
+ * evaluation walks it (`crm-rules.service.ts` reads `roundRobinUserIds` on each
+ * assignment), so an uncapped list is work a caller can set. 200 is the same
+ * bound `memberIds` and `attendeeIds` carry for the same reason — comfortably
+ * above any real sales roster, comfortably below "every row in the table".
+ */
+const ROUND_ROBIN_POOL_MAX = 200;
+
 export const assignmentRuleCreateSchema = z.object({
   name: z.string().min(1, "Name is required"),
   assignmentType: z.enum(["assign_user", "round_robin"]),
   assignToUserId: z.string().optional(),
-  roundRobinUserIds: z.array(z.string()).optional(),
+  roundRobinUserIds: z.array(z.string()).max(ROUND_ROBIN_POOL_MAX).optional(),
   conditions: z.array(conditionSchema).optional(),
   priority: z.number().int().min(0).default(0),
   isActive: z.boolean().default(true),
@@ -38,7 +47,7 @@ export const assignmentRuleUpdateSchema = z.object({
   name: z.string().min(1).optional(),
   assignmentType: z.enum(["assign_user", "round_robin"]).optional(),
   assignToUserId: z.string().nullable().optional(),
-  roundRobinUserIds: z.array(z.string()).optional(),
+  roundRobinUserIds: z.array(z.string()).max(ROUND_ROBIN_POOL_MAX).optional(),
   conditions: z.array(conditionSchema).optional(),
   priority: z.number().int().min(0).optional(),
   isActive: z.boolean().optional(),
@@ -50,8 +59,16 @@ export const assignmentRuleUpdateSchema = z.object({
   assignmentTypeText: extendedAssignmentTypeEnum.optional(),
 }).strict();
 
+/**
+ * `reorderAssignmentRules` issues ONE `UPDATE` per id inside a `Promise.all`, so
+ * the list length is a concurrent-statement count a caller sets. 200 sits above
+ * any rule set the product can evaluate — `preview` reads the active rules with
+ * `.limit(100)` — and turns an unbounded fan-out into a bounded one.
+ */
+const ASSIGNMENT_REORDER_MAX = 200;
+
 export const assignmentReorderSchema = z.object({
-  ruleIds: z.array(z.number().int().positive()),
+  ruleIds: z.array(z.number().int().positive()).max(ASSIGNMENT_REORDER_MAX),
 }).strict();
 
 export const scoringRuleCreateSchema = z.object({

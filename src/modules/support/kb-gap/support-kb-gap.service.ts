@@ -11,8 +11,6 @@ import {
   kbEvents,
   kbSpaces,
   organizationMembers,
-  roleAssignments,
-  rolePermissionGrants,
   supportKnowledgeGaps,
 } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
@@ -26,11 +24,16 @@ import { SupportKnowledgeGapStatus } from "../../../db/schema/support/support-kb
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { ACCOUNT_ONLY_PRINCIPAL } from "../../../common/auth/principal";
 import type { AiUsageMeta } from "../../ai/core/gateway/ai-gateway.types";
+import { assertOrganizationActor } from "../../../common/organization/organization-actor";
+import { buildEvidenceText, findKbOwners, type GapRow } from "./lib/gap-detection";
 import { gapDraftSchema } from "./support-kb-gap.schemas";
 
-type GapRow = typeof supportKnowledgeGaps.$inferSelect;
+/*
+  Detection (clustering, search gaps, the all-orgs sweep) is
+  `SupportKbGapDetectionService`; this service drafts, lists and dismisses the
+  gaps it finds.
+*/
 
-const KB_OWNER_PERMISSION = "kb:articles:manage";
 const GAP_DRAFT_FEATURE = "support.kb-gap-draft";
 
 interface GapWithDeflection extends GapRow {
@@ -73,9 +76,9 @@ export class SupportKbGapService {
     });
     if (!space) throw new BadRequestException("No KB space found for this organisation");
 
-    const kbOwnerIds = await this.findKbOwners(orgId);
+    const kbOwnerIds = await findKbOwners(this.db, orgId);
 
-    const evidenceText = this.buildEvidenceText(gap);
+    const evidenceText = buildEvidenceText(gap);
     const gatewayResult = await this.aiGateway.invokeStructuredWithUsage({
       actor: { orgId, userId: actorUserId },
       feature: GAP_DRAFT_FEATURE,
@@ -120,6 +123,11 @@ export class SupportKbGapService {
       status: "draft" as const,
       visibility: "internal" as const,
     });
+
+    const eventActor = await assertOrganizationActor(this.db, orgId, {
+      kind: "user",
+      userId: actorUserId,
+    }).catch(() => null);
 
     await this.kbEvents.record(orgId, "ticket_deflected", {
       actorMembershipId,
@@ -258,43 +266,5 @@ export class SupportKbGapService {
 
     if (!updated) throw new NotFoundException("Knowledge gap not found");
     return updated;
-  }
-
-  private async findKbOwners(orgId: string): Promise<string[]> {
-    const rows = await this.db
-      .selectDistinct({ userId: organizationMembers.userId })
-      .from(roleAssignments)
-      .innerJoin(
-        rolePermissionGrants,
-        and(
-          eq(rolePermissionGrants.roleId, roleAssignments.roleId),
-          eq(rolePermissionGrants.orgId, orgId),
-          eq(rolePermissionGrants.permissionKey, KB_OWNER_PERMISSION),
-        ),
-      )
-      .innerJoin(
-        organizationMembers,
-        and(
-          eq(organizationMembers.orgId, roleAssignments.orgId),
-          eq(organizationMembers.id, roleAssignments.organizationMembershipId),
-        ),
-      )
-      .where(eq(roleAssignments.orgId, orgId))
-      .limit(3);
-
-    return rows.map((r) => r.userId);
-  }
-
-  private buildEvidenceText(gap: GapRow): string {
-    const evidence = gap.evidence as {
-      searchQueries: Array<{ query: string; count: number }>;
-      relatedTicketIds: number[];
-    } | null;
-    const parts: string[] = [];
-    if (evidence?.searchQueries?.length)
-      parts.push(`Search queries with no results:\n${evidence.searchQueries.map((q) => `- "${q.query}" (${q.count}x)`).join("\n")}`);
-    if (evidence?.relatedTicketIds?.length)
-      parts.push(`Related ticket count: ${evidence.relatedTicketIds.length}`);
-    return parts.join("\n\n") || "No additional evidence";
   }
 }

@@ -14,9 +14,23 @@ name: Backend CI
 # after a red step is not a gate. `gates` deliberately carries no `needs:`, so a
 # lint regression can no longer mask the whole enforcement surface.
 
+# 2026-09-05 (ticket 20) — WHY `feat/**` IS HERE.
+#
+# `push` used to be `[main]` only, so the sole trigger for a feature branch was
+# `pull_request`. GitHub raises that event from the PR's MERGE commit, and it
+# stops raising it the moment the PR conflicts with its base: `refs/pull/16/merge`
+# was last written 2026-09-01T08:57:59Z, and the last `pull_request` run on this
+# branch started 2026-09-01T08:58:01Z. Two seconds apart, then silence — through
+# a dozen pushes. Verified directly: a push at 2026-09-05T08:52Z produced
+# `total_count: 0` runs while a push to main four minutes earlier produced three.
+#
+# So every ratchet this programme built had never once executed in CI, and the
+# reason was not the gates, the config or Actions being off (they are on, and main
+# builds daily) — it was that a conflict with main silently switches CI off for a
+# whole branch. A gate that a merge conflict can disable is not a gate.
 on:
   push:
-    branches: [main]
+    branches: [main, "feat/**"]
   pull_request:
   # The live evals cost provider credits, so they are not on every push. Once a
   # day is enough to catch a model the provider changed underneath us.
@@ -25,7 +39,9 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  # head_ref on a PR, ref_name on a push — both resolve to the branch name, so the
+  # `push` and `pull_request` runs of one branch share a group instead of doubling.
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref_name }}
   cancel-in-progress: true
 
 jobs:
@@ -200,6 +216,31 @@ jobs:
           cache: pnpm
 
       - run: pnpm install --frozen-lockfile
+
+      # Five gates compare this backend against the frontend — the PermissionKey
+      # union, the sidebar's nav gates, the file-size registry — and exit 2
+      # without one beside this checkout, which is why their steps have carried
+      # "CANNOT RUN IN CI" for months. A second checkout needs a token with read
+      # access to the other repository; `GITHUB_TOKEN` is scoped to this one.
+      #
+      # Guarded on the secret so nothing changes until somebody adds it: with no
+      # FRONTEND_REPO_TOKEN both steps skip, no environment variable is set, and
+      # those gates keep exiting 2 exactly as they do today. With it, they run
+      # against the frontend's default branch. A fork PR cannot read the secret
+      # and therefore keeps the current behaviour too.
+      - name: Check out the frontend repository
+        if: ${{ !cancelled() && secrets.FRONTEND_REPO_TOKEN != '' }}
+        uses: actions/checkout@v4
+        with:
+          repository: Startupppp/streamlineos-frontend
+          path: streamlineos-frontend
+          token: ${{ secrets.FRONTEND_REPO_TOKEN }}
+
+      - name: Point the cross-repo gates at it
+        if: ${{ !cancelled() && secrets.FRONTEND_REPO_TOKEN != '' }}
+        run: |
+          echo "STREAMLINE_FRONTEND_ROOT=$GITHUB_WORKSPACE/streamlineos-frontend/frontend" >> "$GITHUB_ENV"
+          echo "STREAMLINE_WORKSPACE_ROOT=$GITHUB_WORKSPACE/streamlineos-frontend" >> "$GITHUB_ENV"
 
       - name: Import cycles
         if: ${{ !cancelled() }}
@@ -804,6 +845,106 @@ jobs:
       - name: Cross-tenant isolation coverage
         if: ${{ !cancelled() }}
         run: pnpm check:tenant-isolation:self-test && pnpm check:tenant-isolation
+
+      # Seven gates below this line existed as scripts that no reachable job ever
+      # invoked, so each could only ever have been run by hand. `check:gate-wiring`
+      # named all seven; wiring them is the fix it asks for, and the alternative —
+      # an UNWIRED_BY_DESIGN entry — would have had to state a reason that is not
+      # true of any of them. Two have no self-test of their own.
+      - name: Timesheets emits payroll ports only
+        if: ${{ !cancelled() }}
+        run: pnpm check:timesheets-payroll-boundary
+
+      - name: Only the stock engine writes stock
+        if: ${{ !cancelled() }}
+        run: pnpm check:stock-writers:self-test && pnpm check:stock-writers
+
+      - name: No customer or third-party name stands in for a tenant
+        if: ${{ !cancelled() }}
+        run: pnpm check:tenant-neutral:self-test && pnpm check:tenant-neutral
+
+      - name: An upsert onto a partial index repeats its predicate
+        if: ${{ !cancelled() }}
+        run: pnpm check:partial-index-upserts
+
+      - name: The inventory-to-ledger seam holds
+        if: ${{ !cancelled() }}
+        run: pnpm check:accounting-seam:self-test && pnpm check:accounting-seam
+
+      - name: A composite SET NULL names its columns
+        if: ${{ !cancelled() }}
+        run: pnpm check:composite-fk-set-null:self-test && pnpm check:composite-fk-set-null
+
+      - name: Real-database specs take the shared suite
+        if: ${{ !cancelled() }}
+        run: pnpm check:db-spec-gates:self-test && pnpm check:db-spec-gates
+  # The golden path, on every pull request.
+  #
+  # It proves the one thing no unit test can: that buy -> receive -> put away ->
+  # promise -> pick -> pack -> ship -> return -> recall agrees end to end across
+  # the ledger, the documents, the reservations and the events. Every step
+  # asserts ATP through the shared availability formula and an empty
+  # reconciliation drift, so a step that silently does nothing shows up as stock
+  # that did not move.
+  #
+  # It was running only on `schedule` and `workflow_dispatch`, folded into the
+  # tenant-isolation job, while the PR gate ran `pnpm test` — whose jest config
+  # carries `testPathIgnorePatterns: ["e2e-spec", ...]`. So a change that broke
+  # the whole chain merged green. A suite that proves the chain and cannot block
+  # a merge is a suite that rots.
+  #
+  # Its own job, and the three golden-path specs rather than the whole seeded
+  # suite: the seeded suites share one database and contend when run together,
+  # which shows up as timeouts rather than failures. `--runInBand` is what keeps
+  # that true — the three run one after another, never concurrently. The pattern
+  # resolves to test/inventory/golden-path, test/inventory/neo-golden-path and
+  # test/crm/crm-golden-path-hold; counted here rather than guessed, because the
+  # line above used to say "only this spec" while selecting none at all.
+  #
+  # Without the secrets the step is skipped rather than run — `createSeededE2eApp`
+  # throws on an absent DATABASE_URL, it does not skip itself, so the condition
+  # has to live here. A fork PR therefore reports "skipped", not "green" and not
+  # a red build it cannot fix.
+  golden-path:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    # Job-level so the step's own `if` can read it; a step cannot see the env it
+    # declares itself.
+    env:
+      DATABASE_URL: ${{ secrets.CI_DATABASE_URL }}
+      BACKEND_JWT_SECRET: ${{ secrets.CI_BACKEND_JWT_SECRET }}
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+
+      # No `--` before the flag: pnpm forwards it verbatim, so the separator
+      # reaches jest and demotes --testPathPattern to a positional. Jest then
+      # matched nothing and exited 1 without touching a database. The spec's own
+      # header documents this exact command.
+      - name: Golden path (buy -> receive -> ship -> return -> recall)
+        if: env.DATABASE_URL != ''
+        run: pnpm test:e2e:seeded --testPathPattern="golden-path"
+        env:
+          NODE_OPTIONS: --max-old-space-size=8192
+
+      # The *.db.spec.ts tier: RLS as a non-bypassing role, projection rebuild,
+      # live-catalogue parity, audit-export regeneration, the ledger cursor, the
+      # stock engine and product soft delete. Same condition as the step above —
+      # without a database the suites skip loudly by name rather than lying, so
+      # the step reports skipped rather than a green that proved nothing.
+      - name: Real-database specs
+        if: env.DATABASE_URL != ''
+        run: pnpm test:db
+        env:
+          NODE_OPTIONS: --max-old-space-size=8192
+          APP_DATABASE_URL: ${{ secrets.CI_APP_DATABASE_URL }}
 
       - name: Source file and folder names are kebab-case
         if: ${{ !cancelled() }}

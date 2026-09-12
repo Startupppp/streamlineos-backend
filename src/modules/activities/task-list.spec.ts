@@ -1,6 +1,5 @@
 import {
   buildTaskPage,
-  numericDealIds,
   decodeTaskCursor,
   encodeTaskCursor,
   taskAnchor,
@@ -150,9 +149,9 @@ describe("taskAnchor", () => {
   });
 
   it("names the deal a task belongs to", () => {
-    expect(taskAnchor(row({ activityId: "a", dealId: "d1", dealName: "Q3 renewal" }))).toEqual({
+    expect(taskAnchor(row({ activityId: "a", dealId: 1, dealName: "Q3 renewal" }))).toEqual({
       kind: "deal",
-      id: "d1",
+      id: "1",
       name: "Q3 renewal",
     });
   });
@@ -179,38 +178,8 @@ describe("taskAnchor", () => {
   });
 
   it("puts every entry's anchor on the page it builds", () => {
-    const page = buildTaskPage([row({ activityId: "a", dealId: "d1", dealName: "Q3 renewal" })], 25);
+    const page = buildTaskPage([row({ activityId: "a", dealId: 1, dealName: "Q3 renewal" })], 25);
 
-    expect(page.data[0]?.anchor).toEqual({ kind: "deal", id: "d1", name: "Q3 renewal" });
-  });
-});
-
-describe("numericDealIds", () => {
-  it("takes the ids that are deal ids", () => {
-    expect(numericDealIds(["1", "42", "1000000"])).toEqual([1, 42, 1000000]);
-  });
-
-  it("asks for each one once", () => {
-    expect(numericDealIds(["7", "7", "7"])).toEqual([7]);
-  });
-
-  /**
-   * `dealId` on the create schema is a free string, so a caller who may log an
-   * activity can anchor one to `'abc'`. Coerced in SQL that is a 22P02 and a 500
-   * on every subsequent read of that person's task list.
-   */
-  it.each([["abc"], ["12x"], ["1.5"], ["-3"], ["0"], [""], ["  "], [null]])(
-    "leaves out %s rather than letting the database try to parse it",
-    (id) => {
-      expect(numericDealIds([id])).toEqual([]);
-    },
-  );
-
-  it("leaves out a number too large to be a serial", () => {
-    expect(numericDealIds(["2147483647", "2147483648", "9999999999"])).toEqual([2147483647]);
-  });
-
-  it("returns nothing for a page with no deal anchors", () => {
-    expect(numericDealIds([null, null])).toEqual([]);
+    expect(page.data[0]?.anchor).toEqual({ kind: "deal", id: "1", name: "Q3 renewal" });
   });
 });

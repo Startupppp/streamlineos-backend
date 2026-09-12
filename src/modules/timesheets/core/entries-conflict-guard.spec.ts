@@ -28,6 +28,22 @@ function makeUniqueViolation(constraintName: string): Error {
   return Object.assign(new Error("Failed query: insert into timesheets (...)"), { cause });
 }
 
+/**
+ * The guard catches around the INSERT, inside the transaction (TS-13), so the
+ * transaction double runs its callback against a handle whose insert raises. A
+ * double that rejected from `transaction()` itself never reaches that catch and
+ * would only pass against a guard wrapped around the whole transaction.
+ */
+function txWhoseInsertRejects(error: Error) {
+  return {
+    insert: () => ({ values: () => ({ returning: () => Promise.reject(error) }) }),
+  };
+}
+
+function runsCallbackAgainst(tx: unknown) {
+  return jest.fn((body: (handle: unknown) => Promise<unknown>) => body(tx));
+}
+
 describe("EntriesService.createEntry – 23505 guard", () => {
   it(
     "maps a unique-index violation on uniq_timesheets_work_log to ConflictException (409) " +
@@ -41,7 +57,7 @@ describe("EntriesService.createEntry – 23505 guard", () => {
             where: () => Promise.resolve([{ total: "0" }]),
           }),
         }),
-        transaction: jest.fn().mockRejectedValue(dbError),
+        transaction: runsCallbackAgainst(txWhoseInsertRejects(dbError)),
       };
 
       const mockPeriod = {
@@ -85,7 +101,7 @@ describe("EntriesService.createEntry – 23505 guard", () => {
           where: () => Promise.resolve([{ total: "0" }]),
         }),
       }),
-      transaction: jest.fn().mockRejectedValue(unrelated),
+      transaction: runsCallbackAgainst(txWhoseInsertRejects(unrelated)),
     };
 
     const mockPeriod = {

@@ -1,13 +1,14 @@
-import { Inject, Injectable, ConflictException, NotFoundException } from "@nestjs/common";
-import { and, asc, count, eq, gt, ilike, inArray, or, sql } from "drizzle-orm";
-import { invWarehouses, invLocations, invStockLevels } from "../../../db/schema";
+import { Inject, Injectable, BadRequestException, ConflictException, NotFoundException } from "@nestjs/common";
+import { and, asc, eq, gt, ilike, inArray, or, sql } from "drizzle-orm";
+import { invWarehouses, invLocations, invStockLevels, invProductVariants, invProducts } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { CacheService } from "../../../common/cache/cache.service";
 import { CACHE_KEYS, CACHE_TTL } from "../../../common/cache/cache-keys";
 import { WarehouseScopeService, type WarehouseScope } from "../stock-engine/warehouse-scope.service";
-import { buildListResponse } from "../../../common/pagination/pagination";
-import type { CreateWarehouseInput, UpdateWarehouseInput, ListWarehousesInput } from "./dto/inv-warehouses.schemas";
+import { InventorySettingsService } from "../stock-engine/inventory-settings.service";
+import { WAREHOUSE_MATERIALS_FIELD_KEYS } from "./dto/inv-warehouses.schemas";
+import type { CreateWarehouseInput, UpdateWarehouseInput, CreateLocationInput, UpdateLocationInput, ListWarehousesInput } from "./dto/inv-warehouses.schemas";
 
 function escapeLike(value: string): string {
   return value.replace(/[%_\\]/g, (c) => `\\${c}`);
@@ -15,20 +16,49 @@ function escapeLike(value: string): string {
 
 const MAX_PAGE_LIMIT = 100;
 
+/**
+ * B1. The dark-store columns, as a set, so the gate and the projection agree.
+ * A gate that only hides the field leaves the column writable by anyone who has
+ * read the network tab — the same reasoning as the product packs.
+ */
+const WAREHOUSE_MATERIALS_KEYS: ReadonlySet<string> = new Set(WAREHOUSE_MATERIALS_FIELD_KEYS);
+
 @Injectable()
 export class InvWarehousesService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly cache: CacheService,
     private readonly warehouseScope: WarehouseScopeService,
+    private readonly settings: InventorySettingsService,
   ) {}
+
+  /**
+   * B1 — the dark-store fields are refused while the `materials` pack is off.
+   *
+   * Same shape as `InvProductCrudService.assertPacksForFields`, and for the same
+   * reason: hiding a field in the UI is not a gate, and an organisation that
+   * cannot see a column must not end up holding data in it.
+   */
+  private async assertMaterialsPackForFields(
+    orgId: string,
+    data: CreateWarehouseInput | UpdateWarehouseInput,
+  ): Promise<void> {
+    const supplied = [...WAREHOUSE_MATERIALS_KEYS].filter((key) => key in data);
+    if (supplied.length === 0) return;
+    const settings = await this.settings.get(orgId);
+    if (settings.packs.materials) return;
+    throw new BadRequestException({
+      code: "MATERIALS_PACK_DISABLED",
+      message: `The materials pack is not enabled for this organisation, so ${supplied.join(", ")} cannot be set. Enable it in inventory settings first.`,
+    });
+  }
 
   async listWarehouses(orgId: string, userId: string, filters?: ListWarehousesInput) {
     const scope = await this.warehouseScope.resolve(orgId, userId);
     // The unfiltered list is cached per org, so the caller's scope has to be part
     // of the key or one operator's warehouses would be served to the next.
     const scopeKey = scope === null ? "all" : ([...scope].sort((a, b) => a - b).join(".") || "none");
-    const hasFilters = filters && (filters.q || filters.status || filters.isDefault !== undefined || filters.country || filters.city);
+    const hasFilters = filters && (filters.q || filters.status || filters.isDefault !== undefined || filters.country || filters.city || filters.zone || filters.facilityType);
     if (!hasFilters) {
       return this.cache.cachedVersionedForOrg(orgId, "inv:warehouses", scopeKey, () =>
         this.queryWarehouses(orgId, {}, scope),
@@ -60,52 +90,56 @@ export class InvWarehousesService {
     if (filters.isDefault !== undefined) conds.push(eq(invWarehouses.isDefault, filters.isDefault));
     if (filters.country) conds.push(ilike(invWarehouses.country, filters.country));
     if (filters.city) conds.push(ilike(invWarehouses.city, filters.city));
+    if (filters.zone) conds.push(eq(invWarehouses.zone, filters.zone));
+    if (filters.facilityType) conds.push(eq(invWarehouses.facilityType, filters.facilityType));
 
     const page = filters.page ?? 1;
     const limit = Math.min(filters.limit ?? MAX_PAGE_LIMIT, MAX_PAGE_LIMIT);
     const offset = (page - 1) * limit;
 
-    const where = and(...conds);
-    const [warehouses, [totalRow]] = await Promise.all([
-      this.db
-        .select({
-          id: invWarehouses.id,
-          orgId: invWarehouses.orgId,
-          name: invWarehouses.name,
-          code: invWarehouses.code,
-          address: invWarehouses.address,
-          city: invWarehouses.city,
-          state: invWarehouses.state,
-          country: invWarehouses.country,
-          isDefault: invWarehouses.isDefault,
-          isActive: invWarehouses.isActive,
-          branchId: invWarehouses.branchId,
-          managerUserId: invWarehouses.managerUserId,
-          createdBy: invWarehouses.createdBy,
-          createdAt: invWarehouses.createdAt,
-          updatedAt: invWarehouses.updatedAt,
-          locationCount: sql<number>`(SELECT COUNT(*) FROM inv_locations l WHERE l.warehouse_id = ${invWarehouses.id} AND l.org_id = ${invWarehouses.orgId})`,
-        })
-        .from(invWarehouses)
-        .where(where)
-        .orderBy(asc(invWarehouses.name))
-        .limit(limit)
-        .offset(offset),
-      this.db.select({ total: count() }).from(invWarehouses).where(where),
-    ]);
+    const warehouses = await this.db
+      .select({
+        id: invWarehouses.id,
+        orgId: invWarehouses.orgId,
+        name: invWarehouses.name,
+        code: invWarehouses.code,
+        address: invWarehouses.address,
+        city: invWarehouses.city,
+        state: invWarehouses.state,
+        country: invWarehouses.country,
+        isDefault: invWarehouses.isDefault,
+        isActive: invWarehouses.isActive,
+        branchId: invWarehouses.branchId,
+        managerUserId: invWarehouses.managerUserId,
+        facilityType: invWarehouses.facilityType,
+        zone: invWarehouses.zone,
+        zoneLabel: invWarehouses.zoneLabel,
+        deliveryPromiseMinutes: invWarehouses.deliveryPromiseMinutes,
+        serviceRadiusKm: invWarehouses.serviceRadiusKm,
+        latitude: invWarehouses.latitude,
+        longitude: invWarehouses.longitude,
+        createdBy: invWarehouses.createdBy,
+        createdAt: invWarehouses.createdAt,
+        updatedAt: invWarehouses.updatedAt,
+        locationCount: sql<number>`(SELECT COUNT(*) FROM inv_locations l WHERE l.warehouse_id = ${invWarehouses.id} AND l.org_id = ${invWarehouses.orgId})`,
+      })
+      .from(invWarehouses)
+      .where(and(...conds))
+      .orderBy(asc(invWarehouses.name))
+      .limit(limit)
+      .offset(offset);
 
-    return buildListResponse(
-      warehouses.map((wh) => ({
-        ...wh,
-        _count: { locations: Number(wh.locationCount) },
-        locationCount: undefined,
-      })),
-      Number(totalRow?.total ?? 0),
-      { page, pageSize: limit },
-    );
+    return warehouses.map((wh) => ({
+      ...wh,
+      _count: { locations: Number(wh.locationCount) },
+      locationCount: undefined,
+    }));
   }
 
-  async getWarehouse(orgId: string, warehouseId: number) {
+  // A7: a warehouse the caller holds no scope on is not theirs to read. 404, not
+  // 403 -- a 403 on an id they may not see confirms it exists.
+  async getWarehouse(orgId: string, userId: string, warehouseId: number) {
+    await this.warehouseScope.assertWarehouseVisible(orgId, userId, warehouseId);
     const wh = await this.db.query.invWarehouses.findFirst({
       where: and(eq(invWarehouses.id, warehouseId), eq(invWarehouses.orgId, orgId)),
       with: { locations: { with: { children: true } } },
@@ -115,6 +149,7 @@ export class InvWarehousesService {
   }
 
   async createWarehouse(orgId: string, userId: string, data: CreateWarehouseInput) {
+    await this.assertMaterialsPackForFields(orgId, data);
     const [existingCode, existingName] = await Promise.all([
       this.db.query.invWarehouses.findFirst({
         where: and(eq(invWarehouses.orgId, orgId), eq(invWarehouses.code, data.code)),
@@ -151,7 +186,21 @@ export class InvWarehousesService {
 
   // B1-01 BOLA: pre-deactivation stock check now includes eq(invLocations.orgId, orgId).
   // B1-12: stock check + isDefault reset + update wrapped in one transaction.
-  async updateWarehouse(orgId: string, warehouseId: number, data: UpdateWarehouseInput) {
+  /**
+   * `getWarehouse` scopes and this did not, which is incoherent on its face: an
+   * operator could EDIT a building they are not allowed to LOOK at.
+   *
+   * `inventory:warehouses:manage` is not org-wide authority --
+   * `inventory:warehouses:scope-all` is a separate key, so a regional manager
+   * holding `:manage` and assigned one building held the permission and none of
+   * the reach. Two of the three edits here are worse than a rename: `isActive:
+   * false` deactivates somebody else's warehouse, and `isDefault` clears the
+   * flag on EVERY warehouse in the organisation before setting it here, which
+   * quietly redirects every default-destination decision to your building.
+   */
+  async updateWarehouse(orgId: string, userId: string, warehouseId: number, data: UpdateWarehouseInput) {
+    await this.warehouseScope.assertWarehouseVisible(orgId, userId, warehouseId);
+    await this.assertMaterialsPackForFields(orgId, data);
     const updated = await this.db.transaction(async (tx) => {
       if (data.isActive === false) {
         const locations = await tx
@@ -196,5 +245,118 @@ export class InvWarehousesService {
       this.cache.del(CACHE_KEYS.invWarehouseDetail(orgId, warehouseId)),
     ]);
     return updated;
+  }
+
+  // B1-13: Bounded to MAX_PAGE_LIMIT. Accepts optional {page, limit}.
+  // Return shape preserved (array) — full {data, pagination} envelope is a follow-up.
+  async listLocations(orgId: string, userId: string, warehouseId: number, page = 1, limit = MAX_PAGE_LIMIT) {
+    await this.warehouseScope.assertWarehouseVisible(orgId, userId, warehouseId);
+    const boundedLimit = Math.min(limit, MAX_PAGE_LIMIT);
+    const offset = (page - 1) * boundedLimit;
+    return this.db.query.invLocations.findMany({
+      where: and(eq(invLocations.warehouseId, warehouseId), eq(invLocations.orgId, orgId)),
+      orderBy: (t, { asc: a }) => [a(t.code)],
+      limit: boundedLimit,
+      offset,
+    });
+  }
+
+  /** A bin belongs to a building, so the gate is the building's -- same one `listLocations` uses. */
+  async createLocation(orgId: string, userId: string, warehouseId: number, data: CreateLocationInput) {
+    await this.warehouseScope.assertWarehouseVisible(orgId, userId, warehouseId);
+    const wh = await this.db.query.invWarehouses.findFirst({
+      where: and(eq(invWarehouses.id, warehouseId), eq(invWarehouses.orgId, orgId)),
+      columns: { id: true },
+    });
+    if (!wh) throw new NotFoundException("Warehouse not found");
+
+    const existing = await this.db.query.invLocations.findFirst({
+      where: and(eq(invLocations.warehouseId, warehouseId), eq(invLocations.code, data.code)),
+      columns: { id: true },
+    });
+    if (existing) throw new ConflictException("A location with this code already exists in this warehouse");
+
+    const [loc] = await this.db.insert(invLocations).values({ orgId, warehouseId, ...data }).returning();
+    if (!loc) throw new Error("location insert did not return a row");
+    return loc;
+  }
+
+  /**
+   * Scoped by the LOCATION rather than by a warehouse in the path: the route
+   * carries both, and trusting the path's warehouse id would let a caller name
+   * their own building while editing a bin in another.
+   */
+  async updateLocation(orgId: string, userId: string, locationId: number, data: UpdateLocationInput) {
+    await this.warehouseScope.assertLocationVisible(orgId, userId, locationId);
+    if (data.isActive === false) {
+      const [stockRow] = await this.db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(invStockLevels)
+        .where(and(
+          eq(invStockLevels.locationId, locationId),
+          gt(invStockLevels.onHand, "0")
+        ));
+      if ((stockRow?.count ?? 0) > 0) {
+        throw new ConflictException("Cannot deactivate location with existing stock");
+      }
+    }
+
+    const [updated] = await this.db.update(invLocations)
+      .set({ ...data, updatedAt: new Date() })
+      .where(and(eq(invLocations.id, locationId), eq(invLocations.orgId, orgId)))
+      .returning();
+    if (!updated) throw new NotFoundException("Location not found");
+    return updated;
+  }
+
+  async getWarehouseStock(orgId: string, userId: string, warehouseId: number, page: number, limit: number) {
+    await this.warehouseScope.assertWarehouseVisible(orgId, userId, warehouseId);
+    const wh = await this.db.query.invWarehouses.findFirst({
+      where: and(eq(invWarehouses.id, warehouseId), eq(invWarehouses.orgId, orgId)),
+      columns: { id: true },
+    });
+    if (!wh) throw new NotFoundException("Warehouse not found");
+
+    return this.cache.cachedVersioned(`inv:stock:levels:${orgId}`, `wh:${warehouseId}:${page}:${limit}`, async () => {
+      const offset = (page - 1) * limit;
+      const stockWhere = and(
+        eq(invLocations.warehouseId, warehouseId),
+        eq(invLocations.orgId, orgId),
+        gt(invStockLevels.onHand, "0")
+      );
+
+      const [items, countResult] = await Promise.all([
+        this.db
+          .select({
+            locationId: invLocations.id,
+            locationCode: invLocations.code,
+            locationName: invLocations.name,
+            productVariantId: invStockLevels.productVariantId,
+            variantSku: invProductVariants.sku,
+            variantName: invProductVariants.name,
+            productId: invProducts.id,
+            productName: invProducts.name,
+            onHand: invStockLevels.onHand,
+            committed: invStockLevels.committed,
+            onOrder: invStockLevels.onOrder,
+          })
+          .from(invStockLevels)
+          .innerJoin(invLocations, eq(invStockLevels.locationId, invLocations.id))
+          .innerJoin(invProductVariants, eq(invStockLevels.productVariantId, invProductVariants.id))
+          .innerJoin(invProducts, eq(invProductVariants.productId, invProducts.id))
+          .where(stockWhere)
+          .orderBy(asc(invLocations.code), asc(invProductVariants.sku))
+          .limit(limit)
+          .offset(offset),
+        this.db
+          .select({ count: sql<number>`count(*)::int` })
+          .from(invStockLevels)
+          .innerJoin(invLocations, eq(invStockLevels.locationId, invLocations.id))
+          .where(stockWhere),
+      ]);
+
+      const total = countResult[0]?.count ?? 0;
+      return { items, total, page, totalPages: Math.ceil(total / limit) };
+    }, CACHE_TTL.SHORT);
   }
 }

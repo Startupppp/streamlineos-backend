@@ -1,16 +1,24 @@
-import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, desc, eq, sql } from "drizzle-orm";
-import { invPhysicalAudits, invPhysicalAuditLines } from "../../../db/schema";
+import { Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { and, desc, eq, sql, type SQL } from "drizzle-orm";
+import { invPhysicalAudits } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { CacheService } from "../../../common/cache/cache.service";
-import { CACHE_TTL } from "../../../common/cache/cache-keys";
+import { CACHE_KEYS, CACHE_TTL } from "../../../common/cache/cache-keys";
+import { WarehouseScopeService } from "../stock-engine/warehouse-scope.service";
 import { StockEngineService } from "../stock-engine/stock-engine.service";
+import { StockMovementBridgeService } from "../../accounting/adapters/stock-movement-bridge.service";
 import { NumberSequenceService } from "../stock-engine/number-sequence.service";
+import {
+  cancelAudit,
+  createAudit,
+  postAudit,
+  reviewAudit,
+  startAudit,
+  updateLines,
+  type PhysicalAuditDeps,
+} from "./lib/physical-audit-commands";
 import type { ListCountsInput, CreateAuditInput, UpdateCountLinesInput } from "./dto/inv-counts.schemas";
-
-const PA_LIST_NAMESPACE = (orgId: string) => `inv:physical-audits:list:${orgId}`;
-const PA_DETAIL_KEY = (orgId: string, id: number) => `inv:physical-audits:detail:${orgId}:${id}`;
 
 @Injectable()
 export class InvPhysicalAuditsService {
@@ -19,15 +27,18 @@ export class InvPhysicalAuditsService {
     private readonly cache: CacheService,
     private readonly engine: StockEngineService,
     private readonly numSeq: NumberSequenceService,
+    private readonly warehouseScope: WarehouseScopeService,
+    private readonly glBridge: StockMovementBridgeService,
   ) {}
 
-  async listAudits(orgId: string, filters: ListCountsInput) {
+  async listAudits(orgId: string, userId: string, filters: ListCountsInput) {
     const { status, warehouseId, page, limit } = filters;
     const offset = (page - 1) * limit;
-    const hash = `${status ?? ""}:${warehouseId ?? ""}:${limit}:${offset}`;
+    const scope = await this.warehouseScope.forUser(orgId, userId);
+    const hash = `${scope.key}:${status ?? ""}:${warehouseId ?? ""}:${limit}:${offset}`;
 
-    return this.cache.cachedVersioned(PA_LIST_NAMESPACE(orgId), hash, async () => {
-      const conditions = [eq(invPhysicalAudits.orgId, orgId)];
+    return this.cache.cachedVersioned(CACHE_KEYS.invPhysicalAuditsNamespace(orgId), hash, async () => {
+      const conditions = [eq(invPhysicalAudits.orgId, orgId), scope.warehouse(sql`${invPhysicalAudits.warehouseId}`)];
       if (status) conditions.push(eq(invPhysicalAudits.status, status));
       if (warehouseId) conditions.push(eq(invPhysicalAudits.warehouseId, warehouseId));
       const where = and(...conditions);
@@ -48,9 +59,46 @@ export class InvPhysicalAuditsService {
     }, CACHE_TTL.SHORT);
   }
 
-  async getAudit(orgId: string, auditId: number) {
+  /**
+   * One audit, behind the SAME warehouse scope `listAudits` applies.
+   *
+   * Same shape as the cycle-count detail beside it: no caller id in the
+   * signature at all, so it answered on `org_id` and the row id while the list
+   * above resolves the caller's warehouses. A wall-to-wall audit is the whole
+   * stock position of a building at a moment in time, line by line — the thing
+   * a warehouse scope exists to keep from leaking sideways.
+   *
+   * NULL WAREHOUSE — EXCLUDED, following this table's own aggregate. `listAudits`
+   * gates through `scope.warehouse(...)`, which is `warehousePredicate` and
+   * renders `warehouse_id IN (...)` with no `IS NULL` arm, so an unattributed
+   * audit is invisible in the list and invisible here. Deliberately NOT the ASN
+   * rule, where the list keeps unattributed rows and the detail had to keep them
+   * too. `inv_physical_audits.warehouse_id` is `NOT NULL` today, so this is a
+   * rule for the next person rather than a live branch.
+   *
+   * Out of scope answers 404, never 403 (§4). An empty scope compiles to `FALSE`
+   * in the WHERE, which is what the list does with it.
+   */
+  async getAudit(orgId: string, userId: string, auditId: number) {
+    const scope = await this.warehouseScope.forUser(orgId, userId);
+    return this.loadAudit(orgId, auditId, [scope.warehouse(sql`${invPhysicalAudits.warehouseId}`)]);
+  }
+
+  /**
+   * The unscoped read, named so nobody routes to it by accident.
+   *
+   * `createAudit` returns the audit it has just written and the writer is
+   * entitled to see what they wrote; everybody else has already passed
+   * `requireAudit` for this id. A named private method rather than a flag on the
+   * public one, so a future route cannot be pointed at it.
+   */
+  private async loadAuditUnscoped(orgId: string, auditId: number) {
+    return this.loadAudit(orgId, auditId, []);
+  }
+
+  private async loadAudit(orgId: string, auditId: number, scoped: SQL[]) {
     const audit = await this.db.query.invPhysicalAudits.findFirst({
-      where: and(eq(invPhysicalAudits.orgId, orgId), eq(invPhysicalAudits.id, auditId)),
+      where: and(eq(invPhysicalAudits.orgId, orgId), eq(invPhysicalAudits.id, auditId), ...scoped),
       with: {
         creator: { columns: { id: true, name: true } },
         lines: {
@@ -65,152 +113,73 @@ export class InvPhysicalAuditsService {
     return audit;
   }
 
+  /**
+   * The gate every mutation funnels through, now carrying the caller.
+   *
+   * `start`, `updateLines`, `review`, `post` and `cancel` all reach the row
+   * through here and none took a caller id, so an auditor scoped to one building
+   * could start, rewrite every variance on, post or cancel the wall-to-wall
+   * audit of another — and posting one writes stock movements against the real
+   * books. Same predicate as `listAudits` (see `getAudit` for the NULL-warehouse
+   * rule), same 404 for out of scope.
+   */
+  /** @see lib/physical-audit-commands.ts */
   async createAudit(orgId: string, userId: string, data: CreateAuditInput) {
-    const auditNumber = await this.numSeq.next(orgId, "PHYSICAL_AUDIT");
-
-    const [audit] = await this.db.insert(invPhysicalAudits).values({
-      orgId,
-      auditNumber,
-      warehouseId: data.warehouseId,
-      status: "PLANNED",
-      createdBy: userId,
-    }).returning();
-
-    const stockLevels = await this.db.execute<{
-      product_variant_id: number; location_id: number; lot_id: number | null; on_hand: string;
-    }>(sql`
-      SELECT sl.product_variant_id, sl.location_id, sl.lot_id, sl.on_hand
-      FROM inv_stock_levels sl
-      JOIN inv_locations loc ON loc.id = sl.location_id
-      WHERE sl.org_id = ${orgId} AND loc.warehouse_id = ${data.warehouseId}
-    `);
-
-    if (stockLevels.length > 0) {
-      await this.db.insert(invPhysicalAuditLines).values(
-        stockLevels.map((row) => ({
-          auditId: audit.id,
-          productVariantId: row.product_variant_id,
-          locationId: row.location_id,
-          lotId: row.lot_id ?? null,
-          systemQty: row.on_hand,
-        }))
-      );
-    }
-
-    await this.cache.invalidateNamespace(PA_LIST_NAMESPACE(orgId));
-    return this.getAudit(orgId, audit.id);
+    return createAudit(this.auditDeps, orgId, userId, data);
   }
 
-  async startAudit(orgId: string, auditId: number) {
-    const audit = await this.requireAudit(orgId, auditId);
-    if (audit.status !== "PLANNED") throw new BadRequestException("Only PLANNED audits can be started");
-
-    await this.db.update(invPhysicalAudits)
-      .set({ status: "COUNTING" })
-      .where(and(eq(invPhysicalAudits.orgId, orgId), eq(invPhysicalAudits.id, auditId)));
-
-    await this.cache.invalidate(PA_DETAIL_KEY(orgId, auditId));
-    return this.getAudit(orgId, auditId);
+  /** @see lib/physical-audit-commands.ts */
+  async startAudit(orgId: string, userId: string, auditId: number) {
+    return startAudit(this.auditDeps, orgId, userId, auditId);
   }
 
-  async updateLines(orgId: string, auditId: number, data: UpdateCountLinesInput) {
-    const audit = await this.requireAudit(orgId, auditId);
-    if (audit.status !== "COUNTING") throw new BadRequestException("Lines can only be updated while status is COUNTING");
-
-    if (data.lines.length > 0) {
-      const values = sql.join(
-        data.lines.map(
-          (update) => sql`(${update.lineId}, ${update.countedQty.toFixed(4)}::numeric)`,
-        ),
-        sql`, `,
-      );
-      await this.db.execute(sql`
-        UPDATE ${invPhysicalAuditLines}
-        SET counted_qty = updates.counted_qty
-        FROM (VALUES ${values}) AS updates(id, counted_qty)
-        WHERE ${invPhysicalAuditLines.id} = updates.id
-          AND ${invPhysicalAuditLines.auditId} = ${auditId}
-      `);
-    }
-
-    await this.cache.invalidate(PA_DETAIL_KEY(orgId, auditId));
-    return this.getAudit(orgId, auditId);
+  /** @see lib/physical-audit-commands.ts */
+  async updateLines(orgId: string, userId: string, auditId: number, data: UpdateCountLinesInput) {
+    return updateLines(this.auditDeps, orgId, userId, auditId, data);
   }
 
-  async reviewAudit(orgId: string, auditId: number) {
-    const audit = await this.requireAudit(orgId, auditId);
-    if (audit.status !== "COUNTING") throw new BadRequestException("Only COUNTING audits can move to REVIEW");
-
-    await this.db
-      .update(invPhysicalAuditLines)
-      .set({
-        varianceQty: sql`coalesce(${invPhysicalAuditLines.countedQty}, 0) - ${invPhysicalAuditLines.systemQty}`,
-      })
-      .where(eq(invPhysicalAuditLines.auditId, auditId));
-
-    await this.db.update(invPhysicalAudits)
-      .set({ status: "REVIEW" })
-      .where(and(eq(invPhysicalAudits.orgId, orgId), eq(invPhysicalAudits.id, auditId)));
-
-    await this.cache.invalidate(PA_DETAIL_KEY(orgId, auditId));
-    return this.getAudit(orgId, auditId);
+  /** @see lib/physical-audit-commands.ts */
+  async reviewAudit(orgId: string, userId: string, auditId: number) {
+    return reviewAudit(this.auditDeps, orgId, userId, auditId);
   }
 
+  /** @see lib/physical-audit-commands.ts */
   async postAudit(orgId: string, userId: string, auditId: number, idempotencyKey: string) {
-    const audit = await this.requireAudit(orgId, auditId);
-    if (audit.status !== "REVIEW") throw new BadRequestException("Only REVIEW audits can be posted");
-
-    const lines = await this.db.query.invPhysicalAuditLines.findMany({
-      where: eq(invPhysicalAuditLines.auditId, auditId),
-      columns: { productVariantId: true, locationId: true, varianceQty: true },
-    });
-
-    const movements = lines
-      .filter((l) => l.varianceQty !== null && parseFloat(l.varianceQty) !== 0)
-      .map((l) => {
-        const v = parseFloat(l.varianceQty!);
-        return {
-          transactionType: v > 0 ? "CYCLE_COUNT_GAIN" as const : "CYCLE_COUNT_LOSS" as const,
-          productVariantId: l.productVariantId,
-          locationId: l.locationId,
-          quantityDelta: v.toFixed(4),
-        };
-      });
-
-    if (movements.length > 0) {
-      await this.engine.execute(orgId, userId, {
-        idempotencyKey,
-        sourceType: "inv_physical_audit",
-        sourceId: auditId.toString(),
-        reason: `Physical audit ${audit.auditNumber}`,
-        movements,
-      });
-    }
-
-    await this.db.update(invPhysicalAudits)
-      .set({ status: "POSTED", postedAt: new Date(), approvedBy: userId })
-      .where(and(eq(invPhysicalAudits.orgId, orgId), eq(invPhysicalAudits.id, auditId)));
-
-    await this.cache.invalidate(PA_DETAIL_KEY(orgId, auditId));
-    await this.cache.invalidateNamespace(PA_LIST_NAMESPACE(orgId));
-    return this.getAudit(orgId, auditId);
+    return postAudit(this.auditDeps, orgId, userId, auditId, idempotencyKey);
   }
 
-  async cancelAudit(orgId: string, auditId: number) {
-    const audit = await this.requireAudit(orgId, auditId);
-    if (audit.status === "POSTED") throw new BadRequestException("Posted audits cannot be cancelled");
-
-    await this.db.update(invPhysicalAudits)
-      .set({ status: "CANCELLED", cancelledAt: new Date() })
-      .where(and(eq(invPhysicalAudits.orgId, orgId), eq(invPhysicalAudits.id, auditId)));
-
-    await this.cache.invalidate(PA_DETAIL_KEY(orgId, auditId));
+  /** @see lib/physical-audit-commands.ts */
+  async cancelAudit(orgId: string, userId: string, auditId: number) {
+    return cancelAudit(this.auditDeps, orgId, userId, auditId);
   }
 
-  private async requireAudit(orgId: string, auditId: number) {
+  /**
+   * Built explicitly rather than passing `this`: TypeScript will not
+   * structurally match a class carrying `private` members to an interface.
+   * `reloadUnscopedAudit` is what keeps the ungated read on the service.
+   */
+  private get auditDeps(): PhysicalAuditDeps {
+    return {
+      db: this.db,
+      cache: this.cache,
+      engine: this.engine,
+      numSeq: this.numSeq,
+      warehouseScope: this.warehouseScope,
+      glBridge: this.glBridge,
+      requireAudit: (orgId, userId, auditId) => this.requireAudit(orgId, userId, auditId),
+      reloadUnscopedAudit: (orgId, auditId) => this.loadAuditUnscoped(orgId, auditId),
+    };
+  }
+
+  private async requireAudit(orgId: string, userId: string, auditId: number) {
+    const scope = await this.warehouseScope.forUser(orgId, userId);
     const audit = await this.db.query.invPhysicalAudits.findFirst({
-      where: and(eq(invPhysicalAudits.orgId, orgId), eq(invPhysicalAudits.id, auditId)),
-      columns: { id: true, status: true, auditNumber: true },
+      where: and(
+        eq(invPhysicalAudits.orgId, orgId),
+        eq(invPhysicalAudits.id, auditId),
+        scope.warehouse(sql`${invPhysicalAudits.warehouseId}`),
+      ),
+      columns: { id: true, status: true, auditNumber: true, warehouseId: true },
     });
     if (!audit) throw new NotFoundException("Physical audit not found");
     return audit;

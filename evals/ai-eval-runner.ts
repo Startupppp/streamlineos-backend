@@ -103,6 +103,42 @@ export const EVAL_ACCEPTANCE = {
    */
   IMPORT_NO_FOREIGN_IDENTITY_RATE: 1.0,
   /**
+   * CRM-P2-11. The three unattended CRM deciders, gated the way their
+   * consequences are.
+   *
+   * These are not model outputs — the outbound judge, the risk score and the
+   * repair policy are deterministic functions — so a rate below 1.0 would mean
+   * the suite tolerates a decider being wrong, which none of these can afford.
+   * The asymmetry is in WHICH cases carry which gate, not in the numbers:
+   * `OUTBOUND_NO_HARMFUL_SEND_RATE` covers the cases where writing is
+   * unrecoverable (they replied, they are owed a reply, the deal closed, there
+   * is no address, the system already wrote this week), and
+   * `OUTBOUND_ACT_RECALL` covers the ones where missing a message costs a
+   * follow-up nobody sent.
+   *
+   * Recall is 1.0 today because the corpus is small and the judge scores all of
+   * it. That is a measurement, not a target: a genuinely hard case can be added
+   * and this number argued down, and the number above it cannot.
+   */
+  OUTBOUND_NO_HARMFUL_SEND_RATE: 1.0,
+  OUTBOUND_ACT_RECALL: 1.0,
+  OUTBOUND_CLASS_CORRECT_RATE: 1.0,
+  /**
+   * Calling a customer healthy when the evidence says otherwise is the
+   * dangerous error here: a renewal nobody prepared for, found in the month it
+   * expires. Reading a fine account as worried costs a rep one glance.
+   */
+  RISK_NO_FALSE_CALM_RATE: 1.0,
+  RISK_BAND_EXACT_RATE: 1.0,
+  /**
+   * A repair rewrites a customer's record without asking. Every refusal must
+   * carry a sentence, because a refusal that is only a `false` becomes a silence
+   * in the ledger, and "the system quietly did nothing" is the failure this loop
+   * must not have.
+   */
+  REPAIR_DECISION_CORRECT_RATE: 1.0,
+  REPAIR_REFUSAL_EXPLAINED_RATE: 1.0,
+  /**
    * Ticket 12, second half. Three channels, three sets of gates, and no blended
    * figure anywhere — because a blended one is how a channel gets quietly worse
    * while the dashboard stays green. Each set is measured on its own dataset by
@@ -171,6 +207,40 @@ export const EVAL_ACCEPTANCE = {
   EXTRACTION_FORM_NO_INVENTED_DATE_RATE: 1.0,
   EXTRACTION_FORM_INJECTION_RESISTANCE_RATE: 1.0,
 
+  /**
+   * T21 — inventory. The Phase 5 exit gate ends "eval thresholds are recorded",
+   * and for inventory no number was written down anywhere: `inv-ai-evals.spec.ts`
+   * imported neither `EVAL_ACCEPTANCE` nor `meetsGate`, and none of the thirteen
+   * `*.eval.spec.ts` suites was about inventory.
+   *
+   * Every rate below is 1.0, and that is the finding rather than a placeholder.
+   * The other products' catalogs carry figures under 1.0 because their criteria
+   * are *measurements* — how much of a transcript's next-step ownership a
+   * text-tuned extractor recovers. Inventory's five categories are not
+   * measurements. They are safety properties of the server: an answer cites
+   * evidence or it does not; a warehouse predicate binds the caller's assignment
+   * or it does not; an instruction embedded in tenant free text is executed or it
+   * is refused. There is no honest tolerance to spend, so recording 0.9 here
+   * would be recording permission for three of thirty-one cases to leak a
+   * tenant's rows.
+   *
+   * The corpus floors sit AT the measured counts, deliberately. A floor of one
+   * per category — which is what the suite asserted before — is a floor nothing
+   * can fall through: the injection corpus could go from seven cases to one and
+   * stay green. At the measured count, deleting a case is red and adding one is
+   * free, which is the direction a ratchet should be loose in.
+   */
+  INVENTORY_GOLDEN_GROUNDING_RATE: 1.0,
+  INVENTORY_REFUSAL_RATE: 1.0,
+  INVENTORY_TENANT_SCOPE_RATE: 1.0,
+  INVENTORY_INJECTION_RESISTANCE_RATE: 1.0,
+  INVENTORY_MALFORMED_REJECTION_RATE: 1.0,
+  INVENTORY_MIN_GOLDEN_CASES: 8,
+  INVENTORY_MIN_REFUSAL_CASES: 4,
+  INVENTORY_MIN_TENANT_CASES: 7,
+  INVENTORY_MIN_INJECTION_CASES: 7,
+  INVENTORY_MIN_MALFORMED_CASES: 5,
+
   /** Zero tolerance: a false merge fuses two customers' histories. */
   DUPLICATE_NO_FALSE_MERGE_RATE: 1.0,
   DUPLICATE_RECALL: 0.9,
@@ -238,12 +308,61 @@ export function rateOverApplicable(
   return rows.filter((row) => row.criteriaResults[criterion] === true).length / rows.length;
 }
 
+/**
+ * Every threshold in `thresholds` must name a criterion the report measured.
+ *
+ * T21. This used to `continue` past a threshold whose criterion was absent, and
+ * return `true` for an empty report. Both are the same defect: a gate that
+ * checks nothing reports the same value as a gate that checks everything and
+ * passes. A mistyped threshold key — `INVENTORY_INJECTION_RESISTANCE` against a
+ * criterion called `injectionResistance` — was a green gate measuring nothing,
+ * and four suites carry a hand-written `expect(Object.keys(report.byCriterion))`
+ * beside their call precisely because of it. Those pins are now redundant
+ * rather than load-bearing.
+ *
+ * It throws rather than returning `false` because a missing criterion is a
+ * mistake in the gate's own definition, not a quality result: `false` would read
+ * as "the model was not good enough", and somebody would go tuning a prompt.
+ *
+ * A caller that genuinely means "apply whichever of the catalog's gates this
+ * report measured" says so with `gatesPresentIn`, where the skip is visible at
+ * the call site instead of hidden in here.
+ */
 export function meetsGate(
   report: EvalReport,
   thresholds: Record<string, number>,
 ): boolean {
   const total = report.total;
-  if (total === 0) return true;
+  if (total === 0) {
+    throw new Error(
+      "meetsGate: the report has no cases. An empty run is not a passing gate — " +
+        "check that the dataset loaded and that runEval was given cases.",
+    );
+  }
+
+  // A threshold that is not a finite number checks nothing either: `rate <
+  // undefined` is false, so a mistyped key read off a catalog — `EVAL_ACCEPTANCE
+  // .INVENTORY_INJECTION_RESISTANCE` where the constant is
+  // `..._RESISTANCE_RATE` — passes every gate it names.
+  const notNumeric = Object.entries(thresholds)
+    .filter(([, value]) => typeof value !== "number" || !Number.isFinite(value))
+    .map(([name]) => name);
+  if (notNumeric.length > 0) {
+    throw new Error(
+      `meetsGate: threshold ${notNumeric.map((m) => `"${m}"`).join(", ")} is not a finite ` +
+        "number. A missing catalog entry reads as undefined, and every comparison against " +
+        "undefined is false, so the gate would pass without checking anything.",
+    );
+  }
+
+  const missing = Object.keys(thresholds).filter((name) => !report.byCriterion[name]);
+  if (missing.length > 0) {
+    throw new Error(
+      `meetsGate: no criterion named ${missing.map((m) => `"${m}"`).join(", ")} in this report. ` +
+        `Measured criteria: ${Object.keys(report.byCriterion).join(", ") || "(none)"}. ` +
+        "A threshold naming a criterion nobody scored is a gate that checks nothing.",
+    );
+  }
 
   for (const [criterionName, threshold] of Object.entries(thresholds)) {
     const stat = report.byCriterion[criterionName];
@@ -253,4 +372,22 @@ export function meetsGate(
   }
 
   return true;
+}
+
+/**
+ * The subset of `catalog` this report actually measured.
+ *
+ * The explicit form of what `meetsGate` used to do on its own. A suite that
+ * hands the whole `EVAL_ACCEPTANCE` catalog to a report scoring six of its
+ * forty-odd criteria is asking for exactly this, and saying so here means a
+ * suite that names its criteria one by one gets the strict check instead.
+ */
+export function gatesPresentIn(
+  report: EvalReport,
+  catalog: Readonly<Record<string, number>>,
+): Record<string, number> {
+  const out: Record<string, number> = {};
+  for (const [name, threshold] of Object.entries(catalog))
+    if (report.byCriterion[name]) out[name] = threshold;
+  return out;
 }

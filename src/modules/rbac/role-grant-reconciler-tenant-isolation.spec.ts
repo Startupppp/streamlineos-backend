@@ -31,9 +31,10 @@ describe("RoleGrantReconcilerService — cross-tenant isolation", () => {
 
   function tables(overrides: Partial<TableRows> = {}): TableRows {
     return {
+      // Placed: `forEachOrg` skips an org with no `region`, since `withTenant` cannot reach it.
       organizations: [
-        { id: ORG_A, status: "ACTIVE", deleted_at: null },
-        { id: ORG_B, status: "ACTIVE", deleted_at: null },
+        { id: ORG_A, status: "ACTIVE", deleted_at: null, region: "eu" },
+        { id: ORG_B, status: "ACTIVE", deleted_at: null, region: "eu" },
       ],
       permissions: [{ name: VIEW }, { name: REPLY }],
       roles: [

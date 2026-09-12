@@ -1,30 +1,32 @@
 import { createHash } from "node:crypto";
-import { BadRequestException, Inject, Injectable } from "@nestjs/common";
-import { and, eq, sql } from "drizzle-orm";
-import { invStockLevels, invStockTransactions, invIdempotencyKeys } from "../../../db/schema";
+import { Inject, Injectable } from "@nestjs/common";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { CacheService } from "../../../common/cache/cache.service";
-import { CACHE_KEYS } from "../../../common/cache/cache-keys";
+import { invalidateStockDerivedReads } from "./lib/stock-read-invalidation";
 import { InventorySettingsService } from "./inventory-settings.service";
-import { InventoryAuditService } from "./inventory-audit.service";
-import { addDec, mulDec, isPositive, isNegative } from "./decimal";
-import { ValuationService } from "./valuation.service";
 import { WarehouseScopeService } from "./warehouse-scope.service";
 import { claimIdempotencyKey, extractEngineResult } from "./idempotency";
-import { MovementCostingService } from "./movement-costing.service";
-import { PeriodsService } from "../../accounting/gl/periods.service";
 import { loadCostingContext } from "./costing-context";
+import { InventoryAccountingBridge } from "./accounting-bridge";
+import { lockLevels, lockCapacityLocations, type LevelGrain } from "./stock-level-locks";
+import { MovementApplyService, resolvePostingDate } from "./movement-apply.service";
 import {
-  INV_ERRORS,
   type StockEngineCommand,
   type StockEngineResult,
 } from "./stock-engine.types";
 
 type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
 
-function resolvePostingDate(cmd: StockEngineCommand): string {
-  return cmd.postingDate ?? new Date().toISOString().slice(0, 10);
+function grainsOf(cmd: StockEngineCommand): LevelGrain[] {
+  return cmd.movements.map((m) => ({
+    productVariantId: m.productVariantId,
+    locationId: m.locationId,
+    lotId: m.lotId ?? null,
+    serialId: m.serialId ?? null,
+    handlingUnitId: m.handlingUnitId ?? null,
+    ownership: m.ownership ?? "OWNED",
+  }));
 }
 
 @Injectable()
@@ -32,12 +34,10 @@ export class StockEngineBatchService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly settingsService: InventorySettingsService,
-    private readonly auditService: InventoryAuditService,
     private readonly cache: CacheService,
-    private readonly valuation: ValuationService,
     private readonly warehouseScope: WarehouseScopeService,
-    private readonly periods: PeriodsService,
-    private readonly movementCosting: MovementCostingService,
+    private readonly periods: InventoryAccountingBridge,
+    private readonly movementApply: MovementApplyService,
   ) {}
 
   async executeMany(
@@ -47,308 +47,124 @@ export class StockEngineBatchService {
   ): Promise<StockEngineResult[]> {
     if (commands.length === 0) return [];
 
-    const batchResults = await this.db.transaction(async (tx) => {
-      const requestHashes = commands.map((cmd) =>
-        createHash("sha256").update(JSON.stringify(cmd)).digest("hex"),
-      );
-
-      const claims: Array<
-        { kind: "proceed" } | { kind: "replay"; stored: unknown }
-      > = [];
-      for (let i = 0; i < commands.length; i++) {
-        claims.push(
-          await claimIdempotencyKey(
-            tx,
-            orgId,
-            commands[i].idempotencyKey,
-            requestHashes[i],
-          ),
-        );
-      }
-
-      await this.warehouseScope.assertLocationsInScope(
-        tx, orgId, userId,
-        commands.flatMap((c) => c.movements.map((m) => m.locationId)),
-      );
-
-      const settings = await this.settingsService.get(orgId);
-      await this.periods.assertPeriodOpen(orgId, new Date(resolvePostingDate(commands[0])));
-      const costing = await loadCostingContext(
-        tx,
-        orgId,
-        commands.flatMap((c) => c.movements.map((m) => m.productVariantId)),
-        resolvePostingDate(commands[0]),
-      );
-
-      type LevelKey = {
-        productVariantId: number;
-        locationId: number;
-        lotId: number | null;
-        serialId: number | null;
-      };
-      const uniqueLevelKeys = new Map<string, LevelKey>();
-
-      for (let i = 0; i < commands.length; i++) {
-        if (claims[i].kind === "replay") continue;
-        for (const m of commands[i].movements) {
-          const k = `${m.productVariantId}:${m.locationId}:${m.lotId ?? null}:${m.serialId ?? null}`;
-          if (!uniqueLevelKeys.has(k)) {
-            uniqueLevelKeys.set(k, {
-              productVariantId: m.productVariantId,
-              locationId: m.locationId,
-              lotId: m.lotId ?? null,
-              serialId: m.serialId ?? null,
-            });
-          }
-        }
-      }
-
-      for (const lk of uniqueLevelKeys.values()) {
-        await tx
-          .insert(invStockLevels)
-          .values({
-            orgId,
-            productVariantId: lk.productVariantId,
-            locationId: lk.locationId,
-            lotId: lk.lotId,
-            serialId: lk.serialId,
-            onHand: "0",
-            committed: "0",
-            onOrder: "0",
-            blockedQty: "0",
-            qualityHoldQty: "0",
-            outgoingQty: "0",
-          })
-          .onConflictDoNothing();
-      }
-
-      type LockedRow = {
-        id: number;
-        product_variant_id: number;
-        location_id: number;
-        lot_id: number | null;
-        serial_id: number | null;
-        on_hand: string;
-        committed: string;
-        blocked_qty: string;
-        quality_hold_qty: string;
-        average_cost: string | null;
-      };
-
-      let lockedRows: LockedRow[] = [];
-
-      if (uniqueLevelKeys.size > 0) {
-        const keyList = Array.from(uniqueLevelKeys.values());
-        const orParts = keyList.map(
-          (lk) =>
-            sql`(product_variant_id = ${lk.productVariantId} AND location_id = ${lk.locationId} AND (lot_id IS NOT DISTINCT FROM ${lk.lotId}) AND (serial_id IS NOT DISTINCT FROM ${lk.serialId}))`,
-        );
-        const whereOr = sql.join(orParts, sql` OR `);
-
-        lockedRows = await tx.execute<LockedRow>(sql`
-          SELECT id, product_variant_id, location_id, lot_id, serial_id,
-                 on_hand, committed, blocked_qty, quality_hold_qty, average_cost
-          FROM inv_stock_levels
-          WHERE org_id = ${orgId}
-            AND (${whereOr})
-          ORDER BY id
-          FOR UPDATE
-        `);
-      }
-
-      type LevelState = {
-        id: number;
-        onHand: string;
-        committed: string;
-        blockedQty: string;
-        qualityHoldQty: string;
-        averageCost: string | null;
-      };
-
-      const levelMap = new Map<string, LevelState>();
-      for (const row of lockedRows) {
-        const k = `${row.product_variant_id}:${row.location_id}:${row.lot_id ?? null}:${row.serial_id ?? null}`;
-        levelMap.set(k, {
-          id: row.id,
-          onHand: row.on_hand,
-          committed: row.committed,
-          blockedQty: row.blocked_qty,
-          qualityHoldQty: row.quality_hold_qty,
-          averageCost: row.average_cost,
-        });
-      }
-
-      const results: StockEngineResult[] = [];
-
-      for (let i = 0; i < commands.length; i++) {
-        const claim = claims[i];
-        const cmd = commands[i];
-
-        if (claim.kind === "replay") {
-          results.push(extractEngineResult(claim.stored));
-          continue;
-        }
-
-        const txnIds: number[] = [];
-        const cmdLevels: StockEngineResult["levels"] = [];
-        const decreasedVariantIds = new Set<number>();
-
-        for (const movement of cmd.movements) {
-          const levelKey = `${movement.productVariantId}:${movement.locationId}:${movement.lotId ?? null}:${movement.serialId ?? null}`;
-          const state = levelMap.get(levelKey);
-          if (!state)
-            throw new BadRequestException({
-              code: INV_ERRORS.LOCATION_NOT_FOUND,
-            });
-
-          const bucket = movement.qualityBucket ?? "ON_HAND";
-          const delta = movement.quantityDelta;
-          const positive = isPositive(delta);
-          const postingDate = resolvePostingDate(cmd);
-
-          const newOnHand =
-            bucket === "ON_HAND" ? addDec(state.onHand, delta) : state.onHand;
-          const newBlocked =
-            bucket === "BLOCKED"
-              ? addDec(state.blockedQty, delta)
-              : state.blockedQty;
-          const newQualityHold =
-            bucket === "QUALITY_HOLD"
-              ? addDec(state.qualityHoldQty, delta)
-              : state.qualityHoldQty;
-
-          if (!settings.allowNegativeStock && isNegative(newOnHand)) {
-            throw new BadRequestException({
-              code: INV_ERRORS.INSUFFICIENT_STOCK,
-            });
-          }
-
-          const unitCost = movement.unitCost ?? null;
-          const totalCost =
-            unitCost && positive ? mulDec(unitCost, delta) : null;
-
-          const [txnRow] = await tx
-            .insert(invStockTransactions)
-            .values({
-              orgId,
-              productVariantId: movement.productVariantId,
-              locationId: movement.locationId,
-              lotId: movement.lotId ?? null,
-              serialId: movement.serialId ?? null,
-              transactionType:
-                movement.transactionType as (typeof invStockTransactions.$inferInsert)["transactionType"],
-              quantityChange: delta,
-              quantityBefore: state.onHand,
-              quantityAfter: newOnHand,
-              unitCost,
-              totalCost,
-              idempotencyKey: cmd.idempotencyKey,
-              postingDate,
-              reason: cmd.reason ?? null,
-              referenceType: cmd.sourceType,
-              referenceId: cmd.sourceId,
-              metadata: null,
-              notes: null,
-              createdBy: userId,
-            })
-            .returning({ id: invStockTransactions.id });
-
-          if (!txnRow) throw new Error("Failed to insert stock transaction");
-          txnIds.push(txnRow.id);
-
-          let newAvgCost = state.averageCost;
-          if (bucket === "ON_HAND") {
-            newAvgCost = await this.movementCosting.applyCosting(
-              tx,
-              orgId,
-              costing,
-              movement,
-              txnRow.id,
-              delta,
-              unitCost,
-              state.onHand,
-              state.averageCost,
-              settings.allowNegativeStock,
-              cmd.sourceType ?? null,
-              cmd.sourceId,
-            );
-          }
-
-          await tx
-            .update(invStockLevels)
-            .set({
-              onHand: newOnHand,
-              blockedQty: newBlocked,
-              qualityHoldQty: newQualityHold,
-              averageCost: newAvgCost,
-            })
-            .where(eq(invStockLevels.id, state.id));
-
-          levelMap.set(levelKey, {
-            ...state,
-            onHand: newOnHand,
-            blockedQty: newBlocked,
-            qualityHoldQty: newQualityHold,
-            averageCost: newAvgCost,
-          });
-
-          if (!positive && bucket === "ON_HAND") {
-            decreasedVariantIds.add(movement.productVariantId);
-          }
-
-          cmdLevels.push({
-            productVariantId: movement.productVariantId,
-            locationId: movement.locationId,
-            onHand: newOnHand,
-          });
-        }
-
-        await this.auditService.insert(tx, {
-          orgId,
-          actorUserId: userId,
-          action: "stock.movement",
-          resourceType: cmd.sourceType,
-          resourceId: cmd.sourceId,
-          after: { transactionIds: txnIds },
-        });
-
-        await this.movementCosting.emitLowStock(tx, orgId, decreasedVariantIds, cmdLevels, cmd.sourceType, cmd.sourceId);
-
-        const engineResult: StockEngineResult = {
-          transactionIds: txnIds,
-          levels: cmdLevels,
-        };
-        await tx
-          .update(invIdempotencyKeys)
-          .set({
-            status: "COMPLETED",
-            response: { ...engineResult } as Record<string, unknown>,
-          })
-          .where(
-            and(
-              eq(invIdempotencyKeys.orgId, orgId),
-              eq(invIdempotencyKeys.idempotencyKey, cmd.idempotencyKey),
-            ),
-          );
-
-        results.push(engineResult);
-      }
-
-      return results;
-    });
+    const batchResults = await this.db.transaction((tx) =>
+      this.executeManyInTx(tx, orgId, userId, commands),
+    );
 
     void this.invalidateCaches(orgId);
     return batchResults;
+  }
+
+  async executeManyInTx(
+    tx: Tx,
+    orgId: string,
+    userId: string,
+    commands: StockEngineCommand[],
+  ): Promise<StockEngineResult[]> {
+    if (commands.length === 0) return [];
+
+    const requestHashes = commands.map((cmd) =>
+      createHash("sha256").update(JSON.stringify(cmd)).digest("hex"),
+    );
+
+    const claims: Array<
+      { kind: "proceed" } | { kind: "replay"; stored: unknown }
+    > = [];
+    for (let i = 0; i < commands.length; i++) {
+      claims.push(
+        await claimIdempotencyKey(
+          tx,
+          orgId,
+          commands[i].idempotencyKey,
+          requestHashes[i],
+        ),
+      );
+    }
+
+    const results: Array<StockEngineResult | undefined> = new Array(commands.length);
+    const active: Array<{ index: number; cmd: StockEngineCommand; postingDate: string }> = [];
+    for (let i = 0; i < commands.length; i++) {
+      const claim = claims[i];
+      const cmd = commands[i];
+      if (claim.kind === "replay") {
+        results[i] = extractEngineResult(claim.stored);
+      } else {
+        active.push({ index: i, cmd, postingDate: resolvePostingDate(cmd) });
+      }
+    }
+
+    if (active.length === 0) {
+      return results.map((result) => {
+        if (!result) throw new Error("Missing batch stock engine result");
+        return result;
+      });
+    }
+
+    await this.warehouseScope.assertLocationsInScope(
+      tx, orgId, userId,
+      active.flatMap(({ cmd }) => cmd.movements.map((m) => m.locationId)),
+    );
+
+    const settings = await this.settingsService.get(orgId);
+    const costingByDate = new Map<string, Awaited<ReturnType<typeof loadCostingContext>>>();
+    for (const postingDate of new Set(active.map((entry) => entry.postingDate))) {
+      await this.periods.assertOpen(orgId, postingDate);
+      costingByDate.set(
+        postingDate,
+        await loadCostingContext(
+          tx,
+          orgId,
+          active
+            .filter((entry) => entry.postingDate === postingDate)
+            .flatMap(({ cmd }) => cmd.movements.map((m) => m.productVariantId)),
+          postingDate,
+        ),
+      );
+    }
+
+    const levels = await lockLevels(
+      tx,
+      orgId,
+      active.flatMap(({ cmd }) => grainsOf(cmd)),
+    );
+
+    // INV-10. `apply` locks the capped bins its own command raises, which is
+    // enough for a single command but not for a batch: command 1 would take bin
+    // X and command 2 bin Y, while a concurrent batch took them in the other
+    // order, and the pair deadlocks instead of queueing. Taking every capped bin
+    // the whole batch raises in one id-ordered statement — the same discipline
+    // `lockLevels` applies to grains — makes each command's own lock a re-take
+    // of something already held.
+    await lockCapacityLocations(
+      tx,
+      orgId,
+      active.flatMap(({ cmd }) =>
+        MovementApplyService.raisedLocations(cmd.movements),
+      ),
+    );
+
+    for (const { index, cmd, postingDate } of active) {
+      const costing = costingByDate.get(postingDate);
+      if (!costing) throw new Error(`Missing costing context for posting date ${postingDate}`);
+      results[index] = await this.movementApply.apply(tx, orgId, userId, cmd, {
+        settings,
+        costing,
+        levels,
+        postingDate,
+      });
+    }
+
+    return results.map((result) => {
+      if (!result) throw new Error("Missing batch stock engine result");
+      return result;
+    });
   }
 
   async invalidateCaches(orgId: string): Promise<void> {
     await Promise.allSettled([
       this.cache.invalidateNamespace(`inv:stock:levels:${orgId}`),
       this.cache.invalidateNamespace(`inv:traceability:${orgId}`),
-      this.cache.invalidate(CACHE_KEYS.invDashboard(orgId)),
-      this.cache.invalidate(CACHE_KEYS.invStockSummary(orgId)),
-      this.cache.invalidate(CACHE_KEYS.invLowStock(orgId)),
-      this.cache.invalidate(CACHE_KEYS.invReorderReport(orgId)),
+      invalidateStockDerivedReads(this.cache, orgId),
     ]);
   }
 }

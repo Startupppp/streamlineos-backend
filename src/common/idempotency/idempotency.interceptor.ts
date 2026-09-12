@@ -16,7 +16,7 @@ import { concatMap, tap } from "rxjs/operators";
 import type { CurrentUserContext } from "../auth/backend-claims";
 import { logger } from "../logger/logger.service";
 import { getTenantContext } from "../tenant/tenant-context";
-import { IDEMPOTENCY_COMMAND } from "./idempotency.constants";
+import { IDEMPOTENCY_COMMAND, IDEMPOTENCY_OPTIONAL } from "./idempotency.constants";
 import { COMMAND_FENCE_STORE, type CommandFenceStore } from "./command-fence-store";
 
 /** Attempts at the completion write when there is no transaction to be atomic with. */
@@ -63,7 +63,15 @@ function sha256(value: unknown): string {
  * tests: InMemoryCommandFenceStore). The interceptor owns all policy: header validation,
  * request hashing, the four ClaimResult branches, and what a failed completion write
  * costs. A store failure propagates as-is — the fence is fail-closed because these are
- * sensitive commands where a double-execution is worse than a client retry.
+ * sensitive commands where a double-execution is worse than a client retry. The store
+ * writes every fence row in the org's tenant transaction (the request's own, or a fresh
+ * one on a `@NoTenantTransaction()` route).
+ *
+ * The request hash covers the command name, the method, the route params, the query and
+ * the body; the pre-widening `{ commandName, body }` hash still travels as
+ * `legacyRequestHash` so a fence written before the widening replays across the deploy.
+ * `@Idempotent(name, { required: false })` lets a keyless request through unfenced
+ * instead of answering 400.
  */
 @Injectable()
 export class IdempotencyInterceptor implements NestInterceptor {
@@ -87,6 +95,22 @@ export class IdempotencyInterceptor implements NestInterceptor {
     const rawKey = req.headers["idempotency-key"];
     const idempotencyKey = typeof rawKey === "string" ? rawKey.trim() : "";
     if (!idempotencyKey) {
+      /**
+       * An optional fence lets the request through rather than answering 400.
+       *
+       * The 400 is the right answer for a command that must not execute twice,
+       * but it reads at the call site like a body validation failure, so
+       * turning it on for a high-frequency existing endpoint breaks every
+       * caller that never sent the header in a way that is hard to diagnose.
+       * `@Idempotent(name, { required: false })` is how an endpoint offers
+       * replay safety to callers who want it without demanding it of callers
+       * who do not.
+       */
+      const optional = this.reflector.getAllAndOverride<boolean | undefined>(
+        IDEMPOTENCY_OPTIONAL,
+        [context.getHandler(), context.getClass()],
+      );
+      if (optional) return next.handle();
       throw new BadRequestException(
         "An Idempotency-Key header is required for this operation",
       );

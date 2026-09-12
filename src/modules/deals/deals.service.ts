@@ -1,14 +1,12 @@
 import { BadRequestException, Inject, Injectable } from "@nestjs/common";
-import { logSideEffectFailure } from "../../common/logger/side-effect";
 import { randomUUID } from "node:crypto";
-import { and, eq, inArray, isNull } from "drizzle-orm";
-import { deals, dealActivities, dealApprovals, dealStageTransitions, chatChannels, chatChannelMembers, organizationMembers } from "../../db/schema";
+import { and, eq, isNull } from "drizzle-orm";
+import { deals, dealActivities, dealApprovals, dealStageTransitions } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { OutboxWriter } from "../../common/outbox/outbox-writer";
 import { CacheService } from "../../common/cache/cache.service";
 import { AuditService } from "../../common/audit/audit.service";
-import { CACHE_KEYS } from "../../common/cache/cache-keys";
 import { NotificationDispatchService } from "../notifications/notification-dispatch.service";
 import { AutomationService } from "../automation/automation.service";
 import { WebhooksDispatchService } from "../webhooks/webhooks-dispatch.service";
@@ -19,6 +17,15 @@ import { CrmAutomationBusService } from "../crm/automation-studio/crm-automation
 import { DealsCrudService } from "./deals-crud.service";
 import { DealsActivitiesService } from "./deals-activities.service";
 import { DealsImportExportService } from "./deals-import-export.service";
+import { LifecycleService } from "../lifecycle/lifecycle.service";
+import {
+  announceDealUpdate,
+  maybeCreateNegotiationChannel,
+  resolveDefaultDealPipelineId,
+  resolvePipelineStageMap,
+  type DealRow,
+  type DealUpdateEffectsDeps,
+} from "./lib/deal-update-effects";
 import {
   toMinorUnits,
   toTransitionRow,
@@ -36,8 +43,6 @@ import type {
   PatchCustomDataInput,
   UpdateDealInput,
 } from "./dto/deals.schemas";
-
-type DealRow = typeof deals.$inferSelect;
 
 export type UpdateDealOutcome =
   | { ok: true; deal: DealRow; stageChanged: boolean; previousStage: string | null; approvalPending?: false; approvalId?: undefined }
@@ -60,6 +65,7 @@ export class DealsService {
     private readonly crud: DealsCrudService,
     private readonly activities: DealsActivitiesService,
     private readonly importExport: DealsImportExportService,
+    private readonly lifecycle: LifecycleService,
   ) {}
 
   listDeals(read: ScopedRead, query: ListDealsInput) {
@@ -70,8 +76,8 @@ export class DealsService {
     return this.crud.createDeal(orgId, userId, input);
   }
 
-  getDeal(read: ScopedRead, dealId: number) {
-    return this.crud.getDeal(read, dealId);
+  getDeal(orgId: string, userId: string, dealId: number, read: ScopedRead) {
+    return this.crud.getDeal(orgId, userId, dealId, read);
   }
 
   deleteDeal(orgId: string, userId: string, dealId: number) {
@@ -86,16 +92,16 @@ export class DealsService {
     return this.crud.bulkDelete(orgId, userId, input);
   }
 
-  cloneDeal(orgId: string, dealId: number) {
-    return this.crud.cloneDeal(orgId, dealId);
+  cloneDeal(orgId: string, userId: string, dealId: number, read: ScopedRead) {
+    return this.crud.cloneDeal(orgId, userId, dealId, read);
   }
 
-  listActivities(read: ScopedRead, dealId: number) {
-    return this.activities.listActivities(read, dealId);
+  listActivities(orgId: string, dealId: number) {
+    return this.activities.listActivities(orgId, dealId);
   }
 
-  listStageTransitions(read: ScopedRead, dealId: number) {
-    return this.activities.listStageTransitions(read, dealId);
+  listStageTransitions(orgId: string, dealId: number) {
+    return this.activities.listStageTransitions(orgId, dealId);
   }
 
   addActivity(orgId: string, userId: string, dealId: number, input: LogActivityInput) {
@@ -114,96 +120,18 @@ export class DealsService {
     return this.importExport.exportCsv(read);
   }
 
-  private async resolvePipelineStageMap(orgId: string, pipelineId: string | null): Promise<Map<string, { stageType: string; isTerminal: boolean; probability: number }>> {
-    const metadata = await this.crmMetadata.getAggregate(orgId);
-    const stages = metadata.stages.filter((s: { pipelineId: string; isActive: boolean }) => {
-      if (pipelineId) return s.pipelineId === pipelineId && s.isActive;
-      const defaultPipeline = metadata.pipelines.find((p: { type: string | null; isDefault: boolean }) => p.type === "deal" && p.isDefault);
-      return defaultPipeline ? s.pipelineId === defaultPipeline.id && s.isActive : false;
-    });
-    return new Map(stages.map((s: { key: string; stageType: string; isTerminal: boolean; probability: number }) => [s.key, { stageType: s.stageType, isTerminal: s.isTerminal, probability: s.probability }]));
-  }
-
-  private async resolveDefaultDealPipelineId(orgId: string): Promise<string | null> {
-    const metadata = await this.crmMetadata.getAggregate(orgId);
-    return metadata.pipelines.find((p: { type: string | null; isDefault: boolean }) => p.type === "deal" && p.isDefault)?.id ?? null;
-  }
-
-  private async maybeCreateNegotiationChannel(orgId: string, userId: string, dealId: number): Promise<void> {
-    const alreadyLinked = await this.db.query.chatChannels.findFirst({
-      where: and(
-        eq(chatChannels.orgId, orgId),
-        eq(chatChannels.entityType, "deal"),
-        eq(chatChannels.entityId, String(dealId)),
-      ),
-      columns: { id: true },
-    });
-    if (alreadyLinked) return;
-
-    const dealRow = await this.db.query.deals.findFirst({
-      where: and(eq(deals.id, dealId), eq(deals.orgId, orgId), isNull(deals.deletedAt)),
-      columns: { name: true, assignedToId: true },
-    });
-
-    const channelName = dealRow ? `Deal: ${dealRow.name}` : `Deal #${dealId}`;
-
-    const [newChannel] = await this.db
-      .insert(chatChannels)
-      .values({
-        orgId,
-        name: channelName,
-        type: "GROUP",
-        description: `Auto-created deal channel for deal #${dealId}`,
-        entityType: "deal",
-        entityId: String(dealId),
-      })
-      .returning({ id: chatChannels.id });
-
-    if (!newChannel) return;
-
-    const memberUserIds = [userId];
-    if (dealRow?.assignedToId && dealRow.assignedToId !== userId)
-      memberUserIds.push(dealRow.assignedToId);
-
-    const membershipRows = await this.db
-      .select({ userId: organizationMembers.userId, id: organizationMembers.id })
-      .from(organizationMembers)
-      .where(and(eq(organizationMembers.orgId, orgId), inArray(organizationMembers.userId, memberUserIds)))
-      .limit(memberUserIds.length);
-
-    const membershipByUserId = new Map(membershipRows.map((m) => [m.userId, m.id]));
-
-    const memberValues = memberUserIds
-      .map((uid) => {
-        const membershipId = membershipByUserId.get(uid);
-        if (!membershipId) return null;
-        return { orgId, channelId: newChannel.id, membershipId, role: uid === userId ? "ADMIN" : "MEMBER" };
-      })
-      .filter((v) => v !== null);
-
-    if (memberValues.length > 0)
-      await this.db.insert(chatChannelMembers).values(memberValues);
-  }
-
-  private async sendStageChangeNotification(
-    actorId: string,
-    deal: DealRow,
-    previousStage: string,
-    newStage: string,
-  ): Promise<void> {
-    if (!deal.assignedToId) return;
-    await this.dispatch.emit({
-      eventKey: "crm.deal.stage_changed",
-      orgId: deal.orgId,
-      actorUserId: actorId,
-      notifySelf: true,
-      targetUserIds: [deal.assignedToId],
-      entityType: "deal",
-      entityId: String(deal.id),
-      title: `Deal stage changed: ${deal.name}`,
-      message: `${deal.name} moved from ${previousStage} to ${newStage}.`,
-      variables: { dealName: deal.name, previousStage, newStage, value: deal.value, actorUserId: actorId },
-    });
+  /** Bound once so every extracted effect sees the same injected instances. */
+  private get effectsDeps(): DealUpdateEffectsDeps {
+    return {
+      db: this.db,
+      cache: this.cache,
+      audit: this.audit,
+      dispatch: this.dispatch,
+      automation: this.automation,
+      webhooksDispatch: this.webhooksDispatch,
+      crmMetadata: this.crmMetadata,
+      bus: this.bus,
+    };
   }
 
   async updateDeal(
@@ -232,7 +160,7 @@ export class DealsService {
         if (clientVersion < serverVersion) return { ok: false, reason: "version_conflict" };
       }
 
-      const pipelineId = existing.pipelineId ?? await this.resolveDefaultDealPipelineId(orgId);
+      const pipelineId = existing.pipelineId ?? await resolveDefaultDealPipelineId(this.effectsDeps, orgId);
 
       if (pipelineId && existing.stage !== input.stage) {
         const transitionCheck = await this.blueprints.assertTransitionAllowed(
@@ -258,7 +186,7 @@ export class DealsService {
         }
       }
 
-      const stageMap = pipelineId ? await this.resolvePipelineStageMap(orgId, pipelineId) : new Map<string, { stageType: string; isTerminal: boolean; probability: number }>();
+      const stageMap = pipelineId ? await resolvePipelineStageMap(this.effectsDeps, orgId, pipelineId) : new Map<string, { stageType: string; isTerminal: boolean; probability: number }>();
       const stageInfo = stageMap.get(input.stage);
 
       if (stageInfo?.stageType === "won") {
@@ -289,7 +217,7 @@ export class DealsService {
           subject: `Stage changed from ${existing.stage} to ${input.stage}`, userId,
         });
         if (stageInfo && stageInfo.probability >= 75 && stageInfo.stageType === "open") {
-          await this.maybeCreateNegotiationChannel(orgId, userId, dealId);
+          await maybeCreateNegotiationChannel(this.effectsDeps, orgId, userId, dealId);
         }
       }
     }
@@ -325,16 +253,48 @@ export class DealsService {
     if (input.subjectId !== undefined) updateData.subjectId = input.subjectId;
 
     const updated = await this.db.transaction(async (tx) => {
-      const [row] = await (tx as Db)
+      // One widening for the whole callback. Drizzle's transaction handle is not
+      // structurally a `Db`, and every writer in here wants one; repeating the
+      // assertion per statement multiplies the licence without adding a check.
+      const txDb = tx as Db;
+
+      const [row] = await txDb
         .update(deals)
         .set(updateData)
         .where(and(eq(deals.id, dealId), eq(deals.orgId, orgId), isNull(deals.deletedAt)))
         .returning();
       if (!row) return undefined;
 
-      if (transitionRow) await (tx as Db).insert(dealStageTransitions).values(transitionRow);
+      if (transitionRow) await txDb.insert(dealStageTransitions).values(transitionRow);
 
       if (wonStageDetected && stageChanged) {
+        /**
+         * A won deal opens a customer lifecycle. P5-07.
+         *
+         * Here rather than on the `deal.closed` outbox event, and that is a
+         * deliberate choice against the tidier-looking one: the outbox registry
+         * is keyed one consumer per event type, and `offer-fulfillment` already
+         * holds `deal.closed`. Registering a second consumer for it would
+         * silently replace the sales-order creation with this.
+         *
+         * Inside the transaction, like the stage ledger three lines above and
+         * for the same reason: a renewal record that survives a rolled-back win
+         * puts revenue in the book for a sale that never closed. The service
+         * returns its refusals as values rather than throwing, so a deal with no
+         * resolvable customer still closes.
+         */
+        await this.lifecycle.recordClosedWon(txDb, {
+          organizationId: orgId,
+          dealId,
+          partyId: row.partyId,
+          leadPartyId: row.leadPartyId,
+          clientId: row.clientId,
+          leadId: row.leadId,
+          valueMinor: row.valueMinor,
+          actualCloseDate: row.actualCloseDate,
+          customData: row.customData,
+        });
+
         await OutboxWriter.emit(tx, {
           eventId: randomUUID(),
           organizationId: orgId,
@@ -359,55 +319,15 @@ export class DealsService {
 
     if (!updated) return { ok: false, reason: "not_found" };
 
-    const invalidations: Array<Promise<void>> = [
-      this.cache.invalidateNamespace(`deals:list:${orgId}`),
-      this.cache.invalidate(CACHE_KEYS.salesDashboard(orgId)),
-    ];
-    if (stageChanged) {
-      invalidations.push(this.cache.invalidateNamespace(CACHE_KEYS.salesKpisNamespace(orgId)));
-    }
-    await Promise.all(invalidations);
-
-    this.audit.log({
-      action: stageChanged ? "deal.stage_changed" : "deal.updated",
-      userId,
+    await announceDealUpdate(this.effectsDeps, {
       orgId,
-      targetId: String(dealId),
-      targetType: "deal",
-      metadata: { changedFields: Object.keys(input), newStage: input.stage },
+      userId,
+      dealId,
+      input,
+      updated,
+      stageChanged,
+      previousStage,
     });
-
-    if (stageChanged && input.stage) {
-      const stageMapFinal = await this.resolvePipelineStageMap(orgId, null);
-      const newStageInfo = stageMapFinal.get(input.stage);
-      if (newStageInfo?.stageType === "won") {
-        this.webhooksDispatch.dispatch(orgId, "deal.won", { id: updated.id, name: updated.name, value: updated.value, assignedToId: updated.assignedToId });
-      } else if (newStageInfo?.stageType === "lost") {
-        this.webhooksDispatch.dispatch(orgId, "deal.lost", { id: updated.id, name: updated.name, value: updated.value, lostReason: updated.lostReason });
-      }
-
-      void this.bus.emit(orgId, "deal.stage_changed", { entityType: "deal", entityId: String(updated.id), data: { stage: updated.stage, previousStage: previousStage ?? undefined }, actorId: userId }).catch(logSideEffectFailure("deal.stage_changed bus emit", { orgId, dealId: updated.id }));
-      if (newStageInfo?.stageType === "won") {
-        void this.bus.emit(orgId, "deal.won", { entityType: "deal", entityId: String(updated.id), data: { value: updated.value }, actorId: userId }).catch(logSideEffectFailure("deal.won bus emit", { orgId, dealId: updated.id }));
-      } else if (newStageInfo?.stageType === "lost") {
-        void this.bus.emit(orgId, "deal.lost", { entityType: "deal", entityId: String(updated.id), data: { lostReason: updated.lostReason ?? undefined }, actorId: userId }).catch(logSideEffectFailure("deal.lost bus emit", { orgId, dealId: updated.id }));
-      }
-    }
-
-    if (stageChanged && previousStage && input.stage) {
-      const newStage = input.stage;
-      void this.sendStageChangeNotification(userId, updated, previousStage, newStage).catch(logSideEffectFailure("deal stage-change email notification", { orgId, dealId: updated.id }));
-      void this.automation
-        .runAutomationsForEvent(orgId, "deal.stage_changed", {
-          id: updated.id,
-          name: updated.name,
-          value: updated.value,
-          stage: updated.stage,
-          previousStage,
-          assignedToId: updated.assignedToId,
-        })
-        .catch(logSideEffectFailure("deal.stage_changed automations", { orgId, dealId: updated.id }));
-    }
 
     return { ok: true, deal: updated, stageChanged, previousStage };
   }

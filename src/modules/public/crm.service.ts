@@ -109,7 +109,27 @@ export class CrmService {
       throw new NotFoundException("Form not found or inactive");
     }
 
-    await this.planLimits.assertWithinLimit(form.orgId, "crmLeads");
+    /**
+     * The quota check needs a tenant, and a public request does not have one.
+     *
+     * `fetchCount("crmLeads")` counts `business_parties` joined to
+     * `lead_party_map`, both of which carry `tenant_isolation`. That policy
+     * fails closed: with no `app.organization_id` on the connection it raises
+     * "no tenant context" rather than returning zero rows, `assertWithinLimit`
+     * catches the failure and turns it into a 503 — so every submission through
+     * a public lead form was refused, on every plan, whatever the quota.
+     * Nothing upstream noticed, because a 503 from a limit check reads as a
+     * transient database wobble rather than a permanently closed door.
+     *
+     * Its own transaction rather than the write's, so the check keeps happening
+     * before the required-field validation exactly as it did: a request that is
+     * over quota is told so whether or not it is also malformed.
+     */
+    await runInTenantTransaction(
+      this.db,
+      () => this.planLimits.assertWithinLimit(form.orgId, "crmLeads"),
+      { orgId: form.orgId },
+    );
 
     for (const field of form.fields) {
       const val = body[field.name];

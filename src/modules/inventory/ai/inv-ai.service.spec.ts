@@ -1,28 +1,35 @@
 import { InvAiService } from "./inv-ai.service";
-import { InvValuationService } from "../valuation/inv-valuation.service";
-import { InvReplenishmentService } from "../replenishment/inv-replenishment.service";
 
 const mockCache = { cached: jest.fn((_, fn) => fn()), invalidate: jest.fn(), invalidateNamespace: jest.fn() };
 const mockNumSeq = { next: jest.fn() };
-
-function buildAiService(db: object) {
-  return new InvAiService(db as never, mockCache as never);
-}
-
+// `resolve: null` is the unrestricted caller: every anomaly is visible, which is
+// the control these deduplication tests want -- they are about `sourceKey`, not
+// about who may see a finding.
 const mockWarehouseScope = {
-  resolve: jest.fn(async () => null),
-  locationPredicate: jest.fn(() => ({}) as never),
-  warehousePredicate: jest.fn(() => ({}) as never),
-  warehouseIdList: jest.fn(() => null),
+  resolve: jest.fn().mockResolvedValue(null),
+  scopeKey: jest.fn().mockReturnValue("all"),
+  forUser: jest.fn().mockResolvedValue({
+    key: "all",
+    isEmpty: false,
+    unrestricted: true,
+    warehouse: () => ({ queryChunks: [] }),
+    location: () => ({ queryChunks: [] }),
+    anyOf: () => ({ queryChunks: [] }),
+  }),
+  locationPredicate: jest.fn().mockReturnValue({ queryChunks: [] }),
+  warehousePredicate: jest.fn().mockReturnValue({ queryChunks: [] }),
 };
 
-function _buildValuationService(db: object) {
-  return new InvValuationService(db as never, mockCache as never, mockWarehouseScope as never);
+function buildAiService(db: object) {
+  return new InvAiService(db as never, mockCache as never, mockWarehouseScope as never);
 }
 
-function _buildReplenishmentService(db: object) {
-  return new InvReplenishmentService(db as never, mockCache as never, mockNumSeq as never);
-}
+// F3. The `_buildValuationService` and `_buildReplenishmentService` helpers that
+// used to sit here constructed two services from other modules and were never
+// called — the `InvValuationService` and `InvReplenishmentService` describes
+// below re-implement the arithmetic inline rather than exercising either class.
+// They were dead weight that broke this file's typecheck every time one of those
+// constructors changed, which is a build failure with no test behind it.
 
 describe("InvAiService - insight deduplication", () => {
   beforeEach(() => jest.clearAllMocks());

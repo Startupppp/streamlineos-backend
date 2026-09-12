@@ -119,14 +119,16 @@ async function main(): Promise<void> {
 
   if (!controlAppUrl || !controlOwnerBase) {
     console.error(
-      "APP_DATABASE_URL and DATABASE_URL (owner role) are required.",
+      "PREREQUISITE MISSING: APP_DATABASE_URL and DATABASE_URL (owner role) are required.",
     );
-    process.exit(1);
+    process.exit(2);
   }
 
   if (!ablyKey) {
-    console.error("ABLY_API_KEY is required — the relay publishes over Ably.");
-    process.exit(1);
+    console.error(
+      "PREREQUISITE MISSING: ABLY_API_KEY is required — the relay publishes over Ably.",
+    );
+    process.exit(2);
   }
 
   const database = REGION_KEY.replace(/-/g, "");

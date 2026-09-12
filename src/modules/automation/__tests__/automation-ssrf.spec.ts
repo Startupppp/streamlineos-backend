@@ -1,6 +1,7 @@
 import { AutomationActionExecutor } from "../automation-action-executor.service";
 import { AutomationWebhookService } from "../automation-webhook.service";
 import type { AutomationAction } from "../../../db/schema";
+import type { Db } from "../../../db/drizzle.module";
 
 jest.mock("../../../common/security/ssrf-guard", () => ({
   checkWebhookUrl: jest.fn(),

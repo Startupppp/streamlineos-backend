@@ -1,9 +1,11 @@
-import { requireApprovedDatabaseUrl } from "../../../test/db-spec-guard";
-import postgres from "postgres";
+import type postgres from "postgres";
 import {
   IMPORT_ENTITY_PERMISSIONS,
   IMPORT_PERMISSION,
 } from "../../crm/import/import-permissions";
+import { dbSpecClient, dbSpecSuite } from "../../../test/db-spec-gate";
+import { requireApprovedDatabaseUrl } from "../../../test/db-spec-guard";
+import { ensureSeededCrmOrg } from "../../../test/db-spec-crm-fixture";
 
 /**
  * The invariant that this programme has broken twice, checked where the truth is.
@@ -29,19 +31,37 @@ import {
  * reaches a role in a real database. That is what this file is for, and it is
  * why it needs a database rather than a fixture.
  *
- * Run via `pnpm test:db-specs` (jest-db.json).
+ * Runs whenever DATABASE_URL is present and skips loudly by name when it is
+ * not:
+ *
+ *   DATABASE_URL=... pnpm test:db --testPathPattern="crm-permissions-reach"
+ *
+ * It seeds the tenant it reads. On a migrated-but-empty database — the only
+ * kind CI can create — `roles` and `role_permission_grants` are both empty, and
+ * an empty database answers this file's question wrongly in both directions:
+ * three assertions pass over zero rows, and the orphan check reports every
+ * catalogued key as held by nobody. So `ensureSeededCrmOrg` runs the real
+ * catalogue sync and the real `seedSystemRolesForOrg` first, and what is
+ * measured afterwards is the seeder's own output rather than the fixture's.
+ *
+ * Because it writes, the URL it is given must also pass
+ * `requireApprovedDatabaseUrl` (test/db-spec-guard.ts), like every other spec
+ * `pnpm test:db-specs` (jest-db.json) runs.
  */
 
-describe("every CRM permission reaches somebody", () => {
+const describeDb = dbSpecSuite();
+
+describeDb("every CRM permission reaches somebody", () => {
   let sql: ReturnType<typeof postgres>;
 
-  beforeAll(() => {
+  beforeAll(async () => {
     const url = requireApprovedDatabaseUrl({
       spec: "crm-permissions-reach-somebody.db.spec.ts",
       vars: ["DATABASE_URL"],
     });
-    sql = postgres(url, { max: 1, prepare: false });
-  });
+    sql = dbSpecClient(url, { max: 1 });
+    await ensureSeededCrmOrg(sql);
+  }, 120_000);
 
   afterAll(async () => {
     await sql?.end({ timeout: 5 });

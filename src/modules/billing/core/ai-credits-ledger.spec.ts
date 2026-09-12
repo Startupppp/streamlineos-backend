@@ -7,6 +7,7 @@ jest.mock("../../../common/tenant/run-in-tenant-transaction", () => ({
 import { forEachOrg } from "../../../common/tenant";
 import { ConflictException } from "@nestjs/common";
 import { AiCreditsReservationService } from "./ai-credits-reservation.service";
+import { drizzlePostgresError, drizzleUniqueViolation } from "../../../test/postgres-error-fixture";
 
 const mockForEachOrg = forEachOrg as jest.Mock;
 
@@ -165,6 +166,48 @@ describe("AiCreditsReservationService — reserve/settle/release ledger", () => 
       await expect(
         svc.reserve({ orgId: "org1", userId: "u1", feature: "kb.ask", credits: 10000 }),
       ).rejects.toThrow("Insufficient AI credits");
+    });
+
+    /** A tenant transaction whose only query is the idempotency-key lookup. */
+    function idempotencyLookupTx(rows: Array<{ id: number }>) {
+      return tenantTx({
+        select: jest.fn().mockReturnValue({
+          from: jest.fn().mockReturnValue({
+            where: jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue(rows) }),
+          }),
+        }),
+      });
+    }
+
+    /** A tenant transaction whose nested savepoint — the reservation's writes — fails with `err`. */
+    function savepointRejectsTx(err: unknown) {
+      return { ...tenantTx({}), transaction: jest.fn().mockRejectedValue(err) };
+    }
+
+    it("a request that loses the idempotency-key race returns the winner's reservation", async () => {
+      db.transaction = jest.fn()
+        .mockImplementationOnce(async (fn: (tx: unknown) => Promise<unknown>) => fn(idempotencyLookupTx([])))
+        .mockImplementationOnce(async (fn: (tx: unknown) => Promise<unknown>) =>
+          fn(savepointRejectsTx(drizzleUniqueViolation("uq_ai_credit_res_org_idem_key"))),
+        )
+        .mockImplementationOnce(async (fn: (tx: unknown) => Promise<unknown>) => fn(idempotencyLookupTx([{ id: 77 }])));
+
+      await expect(
+        svc.reserve({ orgId: "org1", userId: "user1", feature: "crm.score-lead", credits: 5000, idempotencyKey: "idem-race" }),
+      ).resolves.toEqual({ reservationId: 77 });
+      expect(db.transaction).toHaveBeenCalledTimes(3);
+    });
+
+    it("a different database error propagates untouched", async () => {
+      const err = drizzlePostgresError("23503", "some_fk");
+      db.transaction = jest.fn()
+        .mockImplementationOnce(async (fn: (tx: unknown) => Promise<unknown>) => fn(idempotencyLookupTx([])))
+        .mockImplementationOnce(async (fn: (tx: unknown) => Promise<unknown>) => fn(savepointRejectsTx(err)));
+
+      await expect(
+        svc.reserve({ orgId: "org1", userId: "user1", feature: "crm.score-lead", credits: 5000, idempotencyKey: "idem-fk" }),
+      ).rejects.toBe(err);
+      expect(db.transaction).toHaveBeenCalledTimes(2);
     });
   });
 

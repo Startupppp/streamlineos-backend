@@ -5,19 +5,24 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { ZodValidationPipe } from "../../../common/pipes/zod-validation.pipe";
 import { InvVendorsService } from "./inv-vendors.service";
+import { VendorScorecardService } from "./vendor-scorecard.service";
 import {
-  listVendorsSchema, createVendorSchema, updateVendorSchema,
+  listVendorsSchema, createVendorSchema, updateVendorSchema, vendorDeliveriesSchema,
   type ListVendorsInput, type CreateVendorInput, type UpdateVendorInput,
+  type VendorDeliveriesInput,
 } from "./dto/inv-vendors.schemas";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
+import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
 import {
   listVendorsResponseSchema,
   invVendorSchema,
   vendorPerformanceResponseSchema,
+  vendorDeliveriesResponseSchema,
 } from "./dto/vendors-response.schemas";
 
 const vendorIdParams = z.object({ vendorId: z.coerce.number().int().positive() }).strict();
@@ -26,7 +31,10 @@ const vendorIdParams = z.object({ vendorId: z.coerce.number().int().positive() }
 @Controller("inventory/vendors")
 @UseGuards(JwtAuthGuard, ModuleGuard)
 export class InvVendorsController {
-  constructor(private readonly vendors: InvVendorsService) {}
+  constructor(
+    private readonly vendors: InvVendorsService,
+    private readonly scorecard: VendorScorecardService,
+  ) {}
 
   @Get()
   @ResponseSchema(listVendorsResponseSchema)
@@ -52,6 +60,11 @@ export class InvVendorsController {
     return this.vendors.getVendor(u.orgId, vendorId);
   }
 
+  /**
+   * C4. Lead time, fill rate, on-time and returns, every one of them beside the
+   * sample it rests on, from the scorecard service rather than arithmetic done
+   * here. Nothing in this controller computes anything.
+   */
   @Get(":vendorId/performance")
   @ResponseSchema(vendorPerformanceResponseSchema)
   @UseGuards(PermissionGuard)
@@ -61,13 +74,27 @@ export class InvVendorsController {
     @Param("vendorId", ParseIntPipe) vendorId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.vendors.getVendorPerformance(u.orgId, vendorId);
+    return this.scorecard.scorecard(u.orgId, vendorId);
+  }
+
+  /** C4. The purchase orders and receipts every rate above was computed from. */
+  @Get(":vendorId/deliveries")
+  @ResponseSchema(vendorDeliveriesResponseSchema)
+  @UseGuards(PermissionGuard)
+  @RequirePermission("inventory:vendors:read")
+  getDeliveries(
+    @Param("vendorId", ParseIntPipe) vendorId: number,
+    @Query(new ZodValidationPipe(vendorDeliveriesSchema)) filters: VendorDeliveriesInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.scorecard.deliveries(u.orgId, vendorId, filters);
   }
 
   @Post()
   @ResponseSchema(invVendorSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:vendors:manage")
+  @Idempotent("inventory.vendor.create")
   @Validate({ body: createVendorSchema })
   create(
     @Body() body: CreateVendorInput,

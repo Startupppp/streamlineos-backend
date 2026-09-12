@@ -1,5 +1,8 @@
 import type { Db } from "../../../../db/drizzle.module";
 import { FxService } from "../fx.service";
+import { BooksService } from "../../../accounting/kernel/books.service";
+import { FxService as AccountingFxService } from "../../../accounting/kernel/fx.service";
+import type { PackRegistry } from "../../../accounting/packs/pack.registry";
 import { EntriesPeriodService } from "../entries-period.service";
 import { ExceptionsDetectorService } from "../exceptions-detector.service";
 import { TimesheetsAuditService } from "../timesheets-audit.service";
@@ -9,7 +12,7 @@ import { RateResolverService } from "../rate-resolver.service";
 import { EntriesReadService } from "../entries-read.service";
 import { TeamService } from "../team.service";
 import { EntriesService } from "../entries.service";
-import { ExceptionsService } from "../exceptions.service";
+import { TimesheetExceptionsService } from "../exceptions.service";
 import { TimerService } from "../timer.service";
 import { PayrollExportService } from "../../payroll/payroll-export.service";
 import { PayrollSettingsService } from "../../payroll/payroll-settings.service";
@@ -121,20 +124,34 @@ const mockAccess = {
 };
 
 describe("FxService — cross-tenant isolation", () => {
+  // Rates live on the org's book (gl_fx_rates), so the tenant boundary is the
+  // book lookup: the real BooksService runs against the double, and the rate
+  // read only ever sees the id of the book that lookup returned.
+  function makeFx() {
+    return {
+      rateFor: jest.fn().mockResolvedValue({ id: "rate-1", rate: "1.2", rateDate: "2025-01-01" }),
+    } as unknown as AccountingFxService & { rateFor: jest.Mock };
+  }
+
   it("returns empty map for attacker org (deny — different org isolation)", async () => {
     const { db, where } = makeDb([]);
-    const svc = new FxService(db);
+    const fx = makeFx();
+    const svc = new FxService(new BooksService(db, {} as PackRegistry), fx);
     const result = await svc.getLatestRates(ATTACKER_ORG, ["USD"], "EUR");
     expect(result.size).toBe(0);
     expect(where).toHaveBeenCalledTimes(1);
     expect(sqlValues(where.mock.calls[0]?.[0])).toContain(ATTACKER_ORG);
+    expect(fx.rateFor).not.toHaveBeenCalled();
   });
 
   it("returns rates for the owning org (control — same-tenant)", async () => {
-    const row = { fromCurrency: "USD", rate: "1.2", asOfDate: "2025-01-01" };
-    const { db } = makeDb([row]);
-    const svc = new FxService(db);
+    const book = { id: "book-owner", orgId: OWNER_ORG, isDefault: true, baseCurrency: "EUR" };
+    const { db, where } = makeDb([book]);
+    const fx = makeFx();
+    const svc = new FxService(new BooksService(db, {} as PackRegistry), fx);
     const result = await svc.getLatestRates(OWNER_ORG, ["USD"], "EUR");
+    expect(sqlValues(where.mock.calls[0]?.[0])).toContain(OWNER_ORG);
+    expect(fx.rateFor).toHaveBeenCalledWith("book-owner", "USD", "EUR", expect.any(String));
     expect(result.size).toBe(1);
     expect(result.get("USD")?.rate).toBeCloseTo(1.2);
   });
@@ -270,8 +287,9 @@ describe("EntriesReadService — cross-tenant isolation", () => {
 describe("TeamService — cross-tenant isolation", () => {
   it("getWeekSummary: WHERE contains attacker orgId (deny — different org isolation)", async () => {
     const { db, where } = makeDb([]);
-    const svc = new TeamService(db, mockAccess as never);
-    const u = { orgId: ATTACKER_ORG, userId: "attacker", isOrgOwner: false, permissions: [], principal: { kind: "human-session", membershipId: 1 } } as never;
+    const access = { ...mockAccess, scopeFor: jest.fn().mockResolvedValue("all") };
+    const svc = new TeamService(db, access as never);
+    const u = { orgId: ATTACKER_ORG, userId: "attacker", isOrgOwner: true, permissions: [], principal: { kind: "human-session", membershipId: 1 } } as never;
     await svc.getWeekSummary(u, { startDate: "2025-01-06", endDate: "2025-01-12", userIds: ["user-1"] } as never);
     const allVals = where.mock.calls.flatMap((c) => sqlValues(c[0]));
     expect(allVals).toContain(ATTACKER_ORG);
@@ -303,10 +321,10 @@ describe("EntriesService — cross-tenant isolation", () => {
   });
 });
 
-describe("ExceptionsService — cross-tenant isolation", () => {
+describe("TimesheetExceptionsService — cross-tenant isolation", () => {
   it("listExceptions: a scope that resolves to none denies before the database is ever queried", async () => {
     const { db, where } = makeDb([]);
-    const svc = new ExceptionsService(db, mockAccess as never, mockAudit as never);
+    const svc = new TimesheetExceptionsService(db, mockAccess as never, mockAudit as never);
     const u = { orgId: ATTACKER_ORG, userId: "attacker", isOrgOwner: false, permissions: [], principal: { kind: "human-session", membershipId: 1 } } as never;
     const result = await svc.listExceptions(u, {} as never);
     expect(result.data).toHaveLength(0);
@@ -315,7 +333,7 @@ describe("ExceptionsService — cross-tenant isolation", () => {
 
   it("listExceptions: returns empty for own org with no exceptions (control)", async () => {
     const { db } = makeDb([]);
-    const svc = new ExceptionsService(db, mockAccess as never, mockAudit as never);
+    const svc = new TimesheetExceptionsService(db, mockAccess as never, mockAudit as never);
     const u = { orgId: OWNER_ORG, userId: "u", isOrgOwner: false, permissions: [], principal: { kind: "human-session", membershipId: 1 } } as never;
     const result = await svc.listExceptions(u, {} as never);
     expect(result.data).toHaveLength(0);

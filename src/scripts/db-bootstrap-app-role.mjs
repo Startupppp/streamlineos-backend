@@ -160,6 +160,29 @@ try {
       `ALTER DEFAULT PRIVILEGES FOR ROLE ${ident(owner)} IN SCHEMA ${ident(schema)}
        GRANT USAGE, SELECT ON SEQUENCES TO ${ident(role)}`,
     );
+
+    /*
+     * EXECUTE, which this script never granted.
+     *
+     * Function grants live in migrations, and many hardcode the role name --
+     * `GRANT EXECUTE ON FUNCTION app.search_chat_message_ids(...) TO streamline_app`
+     * -- so any role NOT literally called `streamline_app` was silently broken
+     * on every function-backed search path, while the verification below (which
+     * counted tables only) printed READY over it. The symptom is a product bug
+     * in whichever feature you happened to run: `Failed query: SELECT
+     * app.search_kb_page_ids($1, $2)`.
+     *
+     * Granting on ALL FUNCTIONS is what makes this role-name independent.
+     */
+    await repair(
+      `grant function execute in ${schema}`,
+      `GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA ${ident(schema)} TO ${ident(role)}`,
+    );
+    await repair(
+      `default privileges for future functions in ${schema}`,
+      `ALTER DEFAULT PRIVILEGES FOR ROLE ${ident(owner)} IN SCHEMA ${ident(schema)}
+       GRANT EXECUTE ON FUNCTIONS TO ${ident(role)}`,
+    );
   }
 
   // A blanket `GRANT ... ON ALL TABLES` re-opens every privilege a migration
@@ -186,13 +209,36 @@ try {
   const [final] = await sql`
     SELECT rolsuper, rolcreatedb, rolcreaterole, rolbypassrls, rolcanlogin
     FROM pg_roles WHERE rolname = ${role}`;
+  /*
+   * Functions are counted here because this verification used to report tables
+   * ONLY, and so printed READY over a role that could execute 4 of 30 app.*
+   * functions. has_function_privilege is the honest question: it resolves
+   * grants made directly, through PUBLIC, and through role membership, which a
+   * scan of information_schema.role_routine_grants does not.
+   *
+   * TRIGGER FUNCTIONS ARE EXCLUDED, and getting this wrong is how a fix becomes
+   * a false alarm. Postgres fires a trigger with the trigger function's own
+   * rights, so the app role needs no EXECUTE on one -- and SHOULD NOT have it,
+   * since these are the append-only guards (app.prevent_audit_log_mutation,
+   * app.prevent_kb_page_version_mutation and three siblings) that exist to
+   * refuse the app. Counting them made even the canonical `streamline_app`
+   * read as 478/483 and would have blocked a correct bootstrap on five
+   * functions nothing is supposed to call.
+   */
   const [counts] = await sql`
     SELECT
       (SELECT count(*)::int FROM information_schema.tables
         WHERE table_schema = ANY(${schemas}) AND table_type = 'BASE TABLE') AS tables,
       (SELECT count(DISTINCT table_schema || '.' || table_name)::int
         FROM information_schema.role_table_grants
-        WHERE table_schema = ANY(${schemas}) AND grantee = ${role}) AS granted`;
+        WHERE table_schema = ANY(${schemas}) AND grantee = ${role}) AS granted,
+      (SELECT count(*)::int FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+        WHERE n.nspname = ANY(${schemas})
+          AND p.prorettype <> 'trigger'::regtype) AS functions,
+      (SELECT count(*)::int FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+        WHERE n.nspname = ANY(${schemas})
+          AND p.prorettype <> 'trigger'::regtype
+          AND has_function_privilege(${role}, p.oid, 'EXECUTE')) AS executable`;
 
   console.log("\n--- verification ---");
   if (!final) {
@@ -203,7 +249,8 @@ try {
         `bypassrls=${final.rolbypassrls} login=${final.rolcanlogin}`,
     );
   }
-  console.log(`tables granted: ${counts.granted}/${counts.tables}`);
+  console.log(`tables granted:    ${counts.granted}/${counts.tables}`);
+  console.log(`functions executable: ${counts.executable}/${counts.functions}`);
 
   const creatable = await sql`
     SELECT nspname FROM pg_namespace

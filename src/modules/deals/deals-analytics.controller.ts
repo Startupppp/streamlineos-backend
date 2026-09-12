@@ -44,27 +44,35 @@ export class DealsAnalyticsController {
     private readonly access: AccessService,
   ) {}
 
+  /**
+   * Every `crm:deals:read` route here resolves the same scope the deals list
+   * resolves, through the same helper. `crm:deals:forecast` and
+   * `crm:deals:manage` below do not, and are not scopable in the catalog: a
+   * snapshot is the organisation's forecast whoever captured it.
+   */
+  private viewScope(u: CurrentUserContext) {
+    return resolveDealsReadScope(this.access, u);
+  }
+
   @Get("stats")
   @RequirePermission("crm:deals:read")
   @ResponseSchema(dealStatsSchema)
   async getStats(@CurrentUser() u: CurrentUserContext) {
-    const read = await resolveDealsReadScope(this.access, u);
-    return this.analytics.getStats(read);
+    return this.analytics.getStats(u.orgId, await this.viewScope(u));
   }
 
   @Get("aging")
   @RequirePermission("crm:deals:read")
   @ResponseSchema(dealAgingSchema)
   async getAging(@CurrentUser() u: CurrentUserContext) {
-    const read = await resolveDealsReadScope(this.access, u);
-    return this.analytics.getAging(read);
+    return this.analytics.getAging(u.orgId, await this.viewScope(u));
   }
 
   @Get("forecast")
   @RequirePermission("crm:deals:read")
   @ResponseSchema(dealForecastSchema)
-  getForecast(@CurrentUser() u: CurrentUserContext) {
-    return this.analytics.getForecast(u.orgId);
+  async getForecast(@CurrentUser() u: CurrentUserContext) {
+    return this.analytics.getForecast(u.orgId, await this.viewScope(u));
   }
 
   @Get("forecast/snapshots")
@@ -104,8 +112,8 @@ export class DealsAnalyticsController {
   @Get("win-loss")
   @RequirePermission("crm:deals:read")
   @ResponseSchema(dealWinLossSchema)
-  getWinLoss(@CurrentUser() u: CurrentUserContext) {
-    return this.analytics.getWinLoss(u.orgId);
+  async getWinLoss(@CurrentUser() u: CurrentUserContext) {
+    return this.analytics.getWinLoss(u.orgId, await this.viewScope(u));
   }
 
   @Get(":dealId/health")
@@ -116,8 +124,7 @@ export class DealsAnalyticsController {
     @Param("dealId", ParseIntPipe) dealId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    const read = await resolveDealsReadScope(this.access, u);
-    return this.analytics.getDealHealth(read, dealId);
+    return this.analytics.getDealHealth(u.orgId, dealId, await this.viewScope(u));
   }
 
   @Patch("forecast/:snapshotId/override")

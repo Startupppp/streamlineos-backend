@@ -1,9 +1,11 @@
 import { ConflictException, NotFoundException } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
 import { PartyService } from "./party.service";
+import { PlanLimitsService } from "../billing/core/plan-limits.service";
 import { CacheService } from "../../common/cache/cache.service";
 import { AuditService } from "../../common/audit/audit.service";
 import { DRIZZLE } from "../../db/drizzle.constants";
+import { drizzlePostgresError, drizzleUniqueViolation } from "../../test/postgres-error-fixture";
 
 const ORG_ID = "org-111";
 const OTHER_ORG = "org-999";
@@ -65,6 +67,14 @@ describe("PartyService — party CRUD", () => {
         { provide: DRIZZLE, useValue: mockDb },
         { provide: AuditService, useValue: mockAudit },
         { provide: CacheService, useValue: mockCache },
+        // A plan with room. Ticket 07 made `createParty` assert one, and every
+        // test here predates that and is about something else; the limit's own
+        // behaviour is asserted next to the guard rather than smuggled in as a
+        // precondition of twenty-two unrelated cases.
+        {
+          provide: PlanLimitsService,
+          useValue: { assertWithinLimit: jest.fn(async () => undefined) },
+        },
       ],
     }).compile();
 
@@ -102,9 +112,10 @@ describe("PartyService — party CRUD", () => {
 
   describe("createParty — unique violation → 409, audit on success", () => {
     it("maps Postgres 23505 to ConflictException", async () => {
+      // As drizzle surfaces it: a DrizzleQueryError with the SQLSTATE on `.cause`.
       (mockDb as { insert: jest.Mock }).insert.mockReturnValue({
         values: jest.fn().mockReturnValue({
-          returning: jest.fn().mockRejectedValue({ code: "23505" }),
+          returning: jest.fn().mockRejectedValue(drizzleUniqueViolation()),
         }),
       });
 
@@ -112,6 +123,19 @@ describe("PartyService — party CRUD", () => {
         svc.createParty(ORG_ID, USER_ID, { name: "Acme Corp" }),
       ).rejects.toBeInstanceOf(ConflictException);
       expect(mockAudit.log).not.toHaveBeenCalled();
+    });
+
+    it("rethrows any other database error untouched", async () => {
+      const fkViolation = drizzlePostgresError("23503", "fk_business_parties_employer");
+      (mockDb as { insert: jest.Mock }).insert.mockReturnValue({
+        values: jest.fn().mockReturnValue({
+          returning: jest.fn().mockRejectedValue(fkViolation),
+        }),
+      });
+
+      await expect(
+        svc.createParty(ORG_ID, USER_ID, { name: "Acme Corp" }),
+      ).rejects.toBe(fkViolation);
     });
 
     it("re-throws unknown errors unchanged", async () => {
@@ -198,10 +222,11 @@ describe("PartyService — party CRUD", () => {
       const existing = makeParty();
       const { selectChain } = makeSelectChain([existing]);
       (mockDb as { select: jest.Mock }).select.mockReturnValue(selectChain);
+      // Rejected inside updatePartyWithMirror's transaction, as drizzle surfaces it.
       (mockDb as { update: jest.Mock }).update.mockReturnValue({
         set: jest.fn().mockReturnValue({
           where: jest.fn().mockReturnValue({
-            returning: jest.fn().mockRejectedValue({ code: "23505" }),
+            returning: jest.fn().mockRejectedValue(drizzleUniqueViolation()),
           }),
         }),
       });
@@ -210,6 +235,23 @@ describe("PartyService — party CRUD", () => {
         svc.updateParty(ORG_ID, USER_ID, PARTY_ID, { name: "Clash" }),
       ).rejects.toBeInstanceOf(ConflictException);
       expect(mockAudit.log).not.toHaveBeenCalled();
+    });
+
+    it("rethrows any other database error untouched during update", async () => {
+      const { selectChain } = makeSelectChain([makeParty()]);
+      (mockDb as { select: jest.Mock }).select.mockReturnValue(selectChain);
+      const fkViolation = drizzlePostgresError("23503", "fk_business_parties_employer");
+      (mockDb as { update: jest.Mock }).update.mockReturnValue({
+        set: jest.fn().mockReturnValue({
+          where: jest.fn().mockReturnValue({
+            returning: jest.fn().mockRejectedValue(fkViolation),
+          }),
+        }),
+      });
+
+      await expect(
+        svc.updateParty(ORG_ID, USER_ID, PARTY_ID, { name: "Clash" }),
+      ).rejects.toBe(fkViolation);
     });
   });
 

@@ -61,6 +61,16 @@ export const businessParties = pgTable(
     email: text("email"),
     phone: text("phone"),
     /**
+     * CRM-P1-09. The clock this party is actually reading, as an IANA zone.
+     *
+     * NULL means unknown, and unknown must stay representable: `resolveTimezone`
+     * falls through to the tenant's zone rather than guessing from an address,
+     * because a confident wrong answer is what sends a message at four in the
+     * morning. Validated on write; re-checked at send time, so a zone the
+     * runtime stops recognising degrades to the tenant's instead of throwing.
+     */
+    timezone: text("timezone"),
+    /**
      * Whether the record itself is live — active · inactive · archived.
      *
      * Deliberately not the pipeline position: `leads.status` holds NEW/QUALIFIED

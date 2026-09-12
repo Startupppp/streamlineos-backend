@@ -97,6 +97,7 @@ function makeHarness(
     cache,
     metadata,
     { savePosition: jest.fn().mockResolvedValue(undefined) } as unknown as MailSyncCheckpointService,
+    { ENCRYPTION_KEY: "mail-cursor-test-secret" },
   );
 
   return { service, gmailList, outlookList, listCached, freshAccountIds };

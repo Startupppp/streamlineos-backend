@@ -6,6 +6,8 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { bulkUpdateFromValues } from "../../common/db/bulk-update";
 import { SurveyVersionService } from "./survey-version.service";
+import { assertSurveyReadable } from "./survey-tenant";
+import type { ScopedRead } from "../access/scoped-read";
 import type { CreateQuestionInput, CreateSectionInput, PatchQuestionInput, PatchSectionInput, ReorderInput } from "./dto/survey-builder.schemas";
 
 @Injectable()
@@ -15,9 +17,18 @@ export class SurveyBuilderService {
     private readonly versions: SurveyVersionService,
   ) {}
 
-  async getBuilder(orgId: string, surveyId: number) {
-    const draft = await this.versions.getDraftVersion(orgId, surveyId);
-    return this.versions.buildSchemaSnapshot(orgId, draft.id);
+  /**
+   * The whole draft — sections, questions, choices — for one survey.
+   *
+   * Takes a `ScopedRead` rather than a bare `orgId` because `surveys:view` is
+   * scopable and this is the survey's content: without the scope, a holder
+   * narrowed to `own` was refused the survey by `GET /surveys/:surveyId` and
+   * handed everything in it here. See `assertSurveyReadable`.
+   */
+  async getBuilder(read: ScopedRead, surveyId: number) {
+    await assertSurveyReadable(this.db, read, surveyId);
+    const draft = await this.versions.getDraftVersion(read.orgId, surveyId);
+    return this.versions.buildSchemaSnapshot(read.orgId, draft.id);
   }
 
   async createSection(orgId: string, surveyId: number, input: CreateSectionInput) {

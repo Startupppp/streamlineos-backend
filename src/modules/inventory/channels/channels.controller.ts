@@ -32,6 +32,7 @@ import type {
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
 import { BodylessAction, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import {
   listChannelsResponseSchema,
   invChannelSchema,
@@ -60,6 +61,7 @@ export class ChannelsController {
   @ResponseSchema(invChannelSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:channels:manage")
+  @Idempotent("inventory.channel.create")
   @Validate({ body: createChannelSchema })
   create(
     @Body() body: CreateChannelInput,

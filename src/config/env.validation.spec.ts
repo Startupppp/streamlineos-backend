@@ -1,4 +1,16 @@
+import { randomBytes } from "node:crypto";
+
 import { validateEnv } from "./env.validation";
+
+/**
+ * Minted per run, never committed. The validator only cares that a password is
+ * PRESENT (a passwordless RDS URL is refused unless DB_IAM_AUTH is set), never
+ * what it is, so a literal here would be a credential-shaped string in the tree
+ * for no test value — which is exactly what `pnpm check:hardcoded-secrets` reads
+ * as a leak. Hex so the value needs no URL-encoding.
+ */
+const OWNER_PASSWORD = randomBytes(12).toString("hex");
+const APP_PASSWORD = randomBytes(12).toString("hex");
 
 describe("validateEnv", () => {
   const base = {
@@ -166,14 +178,14 @@ describe("validateEnv", () => {
       CRON_SECRET: "c".repeat(32),
       INTERNAL_API_SECRET: "i".repeat(32),
       CONTACT_NOTIFICATION_EMAIL: "contact@example.com",
-      DATABASE_URL: `postgresql://streamline_admin:owner-password@${host}:5432/streamlineos?sslmode=require`,
-      DIRECT_DATABASE_URL: `postgresql://streamline_admin:owner-password@${host}:5432/streamlineos?sslmode=require`,
-      APP_DATABASE_URL: `postgresql://streamline_app:application-password@${host}:5432/streamlineos?sslmode=require`,
+      DATABASE_URL: `postgresql://streamline_admin:${OWNER_PASSWORD}@${host}:5432/streamlineos?sslmode=require`,
+      DIRECT_DATABASE_URL: `postgresql://streamline_admin:${OWNER_PASSWORD}@${host}:5432/streamlineos?sslmode=require`,
+      APP_DATABASE_URL: `postgresql://streamline_app:${APP_PASSWORD}@${host}:5432/streamlineos?sslmode=require`,
     });
     expect(config.APP_DATABASE_URL).toContain("streamline_app");
   });
 
-  it("rejects passwordless AWS URLs because the runtime does not mint IAM tokens", () => {
+  it("rejects a passwordless AWS URL unless IAM authentication is declared", () => {
     const host = "streamlineos.cluster-abc.ap-south-1.rds.amazonaws.com";
     expect(() =>
       validateEnv({
@@ -185,7 +197,30 @@ describe("validateEnv", () => {
         DATABASE_URL: `postgresql://streamline_admin@${host}:5432/streamlineos?sslmode=require`,
         APP_DATABASE_URL: `postgresql://streamline_app@${host}:5432/streamlineos?sslmode=require`,
       }),
-    ).toThrow(/IAM-only authentication is not supported/);
+    ).toThrow(/set DB_IAM_AUTH=true/);
+  });
+
+  /**
+   * The other half of the same contract, and the reason the case above no
+   * longer reads "the runtime does not mint IAM tokens": it does now
+   * (`src/db/rds-iam-auth.ts`). Without this, the refusal above could be
+   * satisfied by a validator that rejects every passwordless RDS URL, which
+   * would make IAM authentication unreachable while the suite stayed green.
+   */
+  it("accepts a passwordless AWS URL when DB_IAM_AUTH is set", () => {
+    const host = "streamlineos.cluster-abc.ap-south-1.rds.amazonaws.com";
+    const config = validateEnv({
+      ...base,
+      NODE_ENV: "production",
+      CRON_SECRET: "c".repeat(32),
+      INTERNAL_API_SECRET: "i".repeat(32),
+      CONTACT_NOTIFICATION_EMAIL: "contact@example.com",
+      DB_IAM_AUTH: "true",
+      DATABASE_URL: `postgresql://streamline_admin@${host}:5432/streamlineos?sslmode=require`,
+      APP_DATABASE_URL: `postgresql://streamline_app@${host}:5432/streamlineos?sslmode=require`,
+    });
+
+    expect(config.DB_IAM_AUTH).toBe(true);
   });
 
   it("does not require APP_DATABASE_URL outside production", () => {

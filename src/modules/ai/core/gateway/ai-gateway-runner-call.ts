@@ -256,5 +256,5 @@ export function withUsageMeta<T>(result: AiInvokeResult<T>): AiInvokeWithUsageRe
     costUsd,
   };
 
-  return { ok: true, data: result.data, aiUsage };
+  return { ok: true, data: result.data, aiUsage, correlationId: result.correlationId };
 }

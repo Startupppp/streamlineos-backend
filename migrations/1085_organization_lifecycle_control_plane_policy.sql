@@ -28,7 +28,17 @@ SET "org_id" = g."organization_id"
 FROM "organization_lifecycle_sagas" AS g
 WHERE g."saga_id" = s."saga_id" AND s."org_id" IS NULL;
 --> statement-breakpoint
+ALTER TABLE "organization_saga_steps"
+  DROP CONSTRAINT IF EXISTS "chk_org_saga_steps_org_id_not_null";
+--> statement-breakpoint
+ALTER TABLE "organization_saga_steps"
+  ADD CONSTRAINT "chk_org_saga_steps_org_id_not_null" CHECK ("org_id" IS NOT NULL) NOT VALID;
+--> statement-breakpoint
+ALTER TABLE "organization_saga_steps" VALIDATE CONSTRAINT "chk_org_saga_steps_org_id_not_null";
+--> statement-breakpoint
 ALTER TABLE "organization_saga_steps" ALTER COLUMN "org_id" SET NOT NULL;
+--> statement-breakpoint
+ALTER TABLE "organization_saga_steps" DROP CONSTRAINT "chk_org_saga_steps_org_id_not_null";
 --> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "idx_org_saga_steps_org" ON "organization_saga_steps" ("org_id");
 --> statement-breakpoint

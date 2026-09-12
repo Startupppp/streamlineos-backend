@@ -12,6 +12,7 @@ import {
   outboxEffectIdempotencyKey,
 } from "../../common/outbox/outbox-consumer.registry";
 import { NotificationDispatchService } from "../notifications/notification-dispatch.service";
+import { SignFinalizationService } from "./sign-finalization.service";
 
 const payloadSchema = z.object({
   envelopeId: z.number().int(),
@@ -31,6 +32,7 @@ export class SignEnvelopeCompletedConsumerService
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly registry: OutboxConsumerRegistry,
     private readonly dispatch: NotificationDispatchService,
+    private readonly finalization: SignFinalizationService,
   ) {}
 
   onModuleInit(): void {
@@ -78,6 +80,20 @@ export class SignEnvelopeCompletedConsumerService
       await inbox.markProcessed(CONSUMER_NAME, event.eventId, "SKIPPED", "envelope not found");
       return;
     }
+
+    /*
+     * The signed PDF, the certificate and the completed-copy emails. This ran
+     * inside the last signer's request transaction, which held a pooled
+     * connection for as long as the storage provider and the PDF stamping
+     * took and rolled the signature back when either failed. Here it is
+     * durable — the event committed with the envelope's status — retried by
+     * the relay on failure, and idempotent: a certificate that already exists
+     * is returned, and a claim another attempt still holds is a 409 that the
+     * relay turns into a later retry. It comes before the sender's
+     * notification so that "completed" arrives once the document can be
+     * downloaded.
+     */
+    await this.finalization.finalize(orgId, envelopeId);
 
     if (envelope.senderMembershipId == null) {
       await inbox.markProcessed(CONSUMER_NAME, event.eventId, "SKIPPED", "sender membership not found");

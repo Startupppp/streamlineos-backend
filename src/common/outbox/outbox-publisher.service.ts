@@ -149,34 +149,41 @@ export class OutboxPublisherService {
   }
 
   private async deliver(event: OutboxEventRow): Promise<void> {
-    const consumer = this.registry.get(event.eventType);
-    if (!consumer) {
+    const consumers = this.registry.getAll(event.eventType);
+    if (consumers.length === 0) {
       throw new Error(
         `no dispatch handler for event type '${event.eventType}' — register a consumer via OutboxConsumerRegistry`,
       );
     }
     /**
+     * Each consumer gets its own tenant transaction rather than sharing one: a
+     * rollback in the second must not undo the first's work, and one long
+     * consumer must not hold a pooled connection open for the others.
+     *
      * The transaction is what gives the consumer its tenant GUC — `this.db` in
      * every consumer resolves to this `tx` through the ambient tenant context,
      * and `app.current_org_id()` raises with no GUC set — so it cannot simply be
      * dropped, however long a consumer's provider call takes. What can be fixed
      * is the "however long": see `withDeliveryDeadline` for why an unbounded
-     * `handle()` here re-POSTs a stuck webhook forever.
+     * `handle()` here re-POSTs a stuck webhook forever. The deadline is per
+     * consumer, so one stuck consumer cannot spend the others' budget.
      */
-    await runInNewTenantTransaction(this.db, event.organizationId, async () => {
-      await withDeliveryDeadline(
-        event.eventType,
-        OUTBOX_DELIVERY_DEADLINE_MS,
-        () => consumer.handle(event),
-        (cause: unknown) => {
-          this.logger.error(
-            `outbox ${event.eventId} (${event.eventType}) was abandoned at its delivery ` +
-              `deadline and then failed on a rolled-back transaction: ` +
-              `${truncateForLog(scrubBindParameters(cause instanceof Error ? cause.message : String(cause)))}`,
-          );
-        },
-      );
-    });
+    for (const consumer of consumers) {
+      await runInNewTenantTransaction(this.db, event.organizationId, async () => {
+        await withDeliveryDeadline(
+          event.eventType,
+          OUTBOX_DELIVERY_DEADLINE_MS,
+          () => consumer.handle(event),
+          (cause: unknown) => {
+            this.logger.error(
+              `outbox ${event.eventId} (${event.eventType}) was abandoned at its delivery ` +
+                `deadline and then failed on a rolled-back transaction: ` +
+                `${truncateForLog(scrubBindParameters(cause instanceof Error ? cause.message : String(cause)))}`,
+            );
+          },
+        );
+      });
+    }
   }
 
   private async handleFailure(

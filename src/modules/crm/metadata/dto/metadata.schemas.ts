@@ -37,8 +37,16 @@ export type CreateStageInput = z.infer<typeof createStageSchema>;
 export const updateStageSchema = createStageSchema.partial().strict();
 export type UpdateStageInput = z.infer<typeof updateStageSchema>;
 
+/**
+ * One `UPDATE` per id inside a `Promise.all` in `reorderStages`, so the list is
+ * a concurrent-statement count the caller sets. A pipeline is a handful of
+ * stages; 100 is the same bound `listOptions` and the stage reads already carry,
+ * and no real pipeline approaches it.
+ */
+const STAGE_REORDER_MAX = 100;
+
 export const reorderStagesSchema = z.object({
-  stageIds: z.array(z.string()).min(1),
+  stageIds: z.array(z.string()).min(1).max(STAGE_REORDER_MAX),
 }).strict();
 export type ReorderStagesInput = z.infer<typeof reorderStagesSchema>;
 

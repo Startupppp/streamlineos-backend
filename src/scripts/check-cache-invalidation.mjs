@@ -252,8 +252,6 @@ const KEY_TO_NAMESPACE_PREFIX = {
   targetLeaderboard: "targets:leaderboard:",
   invProductsNamespace: "inv:products:list:",
   invProductDetail: "inv:products:detail:",
-  invStockSummary: "inv:stock:summary:",
-  invLowStock: "inv:low-stock:",
   invWarehouseDetail: "inv:warehouses:detail:",
   invVendorsNamespace: "inv:vendors:list:",
   invPoNamespace: "inv:po:list:",
@@ -261,7 +259,7 @@ const KEY_TO_NAMESPACE_PREFIX = {
   invPoDetail: "inv:po:detail:",
   invSoNamespace: "inv:so:list:",
   invSoDetail: "inv:so:detail:",
-  invDashboard: "inv:dashboard:",
+  invDashboardNamespace: "inv:dashboard:",
   invCycleCountsNamespace: "inv:cycle-counts:list:",
   invQualityInspectionsNamespace: "inv:quality:inspections:",
   invShipmentsNamespace: "inv:shipments:",
@@ -283,9 +281,8 @@ const KEY_TO_NAMESPACE_PREFIX = {
   invCycleCountDetail: "inv:cycle-counts:detail:",
   invQualityHoldsNamespace: "inv:quality:holds:",
   invQualityRecallsNamespace: "inv:quality:recalls:",
-  invReorderReport: "inv:reorder:",
-  invReorderReportPaged: "inv:reorder:paged:",
-  invStockSummaryReport: "inv:stock:summary-report:",
+  invReorderNamespace: "inv:reorder:",
+  invStockSummaryReportNamespace: "inv:stock:summary-report:",
   invReplenishmentSuggestionsNamespace: "inv:replenishment:suggestions:",
   invValuationReport: "inv:valuation:report:",
   invSlowMovingReport: "inv:slow-moving:",
@@ -441,11 +438,6 @@ const NAMESPACE_MISMATCH_ALLOWLIST = [
     shape: "chat:unread:*",
     reason:
       "report 20b F2 (P2): two invalidateNamespace bumps with zero cachedVersioned readers anywhere. Chat module, not this ticket.",
-  },
-  {
-    shape: "fin:forecast:*",
-    reason:
-      "report 20b F3 (P2): finForecastNamespace is bumped but never read through cachedVersioned. Finance module, not this ticket.",
   },
 ];
 

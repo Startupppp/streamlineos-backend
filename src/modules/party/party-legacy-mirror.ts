@@ -61,6 +61,7 @@ const MIRROR_PROBE: PartyRow = {
   website: "probe",
   email: "probe",
   phone: "probe",
+  timezone: "probe",
   status: "active",
   customFields: {},
   notes: "probe",

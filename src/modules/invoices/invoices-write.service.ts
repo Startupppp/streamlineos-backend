@@ -5,14 +5,14 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { logger } from "../../common/logger/logger.service";
 import { AuditService } from "../../common/audit/audit.service";
+import { InvoicesPostingService } from "./invoices-posting.service";
 import { CacheService } from "../../common/cache/cache.service";
-import { CACHE_KEYS } from "../../common/cache/cache-keys";
 import { registerAfterCommit } from "../../common/tenant/tenant-context";
-import { JournalPostingService } from "../accounting/posting/journal-posting.service";
 import { InvoicesLifecycleService } from "./invoices-lifecycle.service";
 import { PlanLimitsService } from "../billing/core/plan-limits.service";
 import {
   round2,
+  gstSplit,
   normalizeGstRate,
   advanceDate,
   resolveSupplierStateCode,
@@ -31,7 +31,7 @@ type InvoiceRow = typeof invoices.$inferSelect;
 export class InvoicesWriteService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
-    private readonly posting: JournalPostingService,
+    private readonly posting: InvoicesPostingService,
     private readonly lifecycle: InvoicesLifecycleService,
     private readonly audit: AuditService,
     private readonly planLimits: PlanLimitsService,
@@ -76,15 +76,7 @@ export class InvoicesWriteService {
 
     const supplierStateCode = await resolveSupplierStateCode(this.db, orgId);
     const placeOfSupplyStateCode = input.placeOfSupply ?? supplierStateCode;
-    const split = this.posting.gstSplit(
-      taxPool,
-      supplierStateCode,
-      placeOfSupplyStateCode,
-    );
-
-    if (status === "ISSUED") {
-      await this.posting.seedChartOfAccountsForOrg(orgId);
-    }
+    const split = gstSplit(taxPool, supplierStateCode, placeOfSupplyStateCode);
 
     const invoice = await this.db.transaction(async (tx) => {
       await tx.execute(
@@ -148,19 +140,20 @@ export class InvoicesWriteService {
         const invoiceDate = (inserted.createdAt ?? new Date())
           .toISOString()
           .slice(0, 10);
-        await this.posting.postInvoiceSend(
+        await this.posting.postInvoiceIssued(
+          orgId,
+          userId,
           {
-            orgId,
             invoiceId: inserted.id,
             invoiceNumber: inserted.invoiceNumber,
             invoiceDate,
-            supplierStateCode,
-            placeOfSupplyStateCode,
+            currency: inserted.currency,
             subtotal,
             discount,
-            taxPool,
+            cgst: split.cgst,
+            sgst: split.sgst,
+            igst: split.igst,
             total,
-            createdBy: userId,
           },
           tx,
         );
@@ -169,13 +162,13 @@ export class InvoicesWriteService {
       return inserted;
     });
 
-    const invalidate = () => Promise.all([
-      this.cache.invalidateNamespace(CACHE_KEYS.finReportsNamespace(orgId)),
-      this.cache.invalidateNamespace(CACHE_KEYS.finTaxDashboardNamespace(orgId)),
-      this.cache.invalidateNamespace(CACHE_KEYS.finTaxReportsNamespace(orgId)),
-      this.cache.invalidateNamespace(CACHE_KEYS.finForecastNamespace(orgId)),
-      this.cache.invalidateNamespaceForOrg(orgId, "invoices:list"),
-    ]);
+    // `invoices:list` is the only namespace an invoice write makes stale that
+    // anything still reads. Four `fin:*` bumps stood here — reports, tax
+    // dashboard, tax reports and forecast — and every one of their readers lived
+    // in `modules/finance/reports/`, which the accounting rewrite absorbed. With
+    // the readers gone the bumps were four Redis INCRs per invoice write against
+    // counters nobody consults.
+    const invalidate = () => this.cache.invalidateNamespaceForOrg(orgId, "invoices:list");
     if (!registerAfterCommit(invalidate)) await invalidate();
 
     this.audit.log({
@@ -197,13 +190,7 @@ export class InvoicesWriteService {
     input: UpdateInvoiceInput,
   ): Promise<{ success: true; posted: boolean }> {
     const result = await this.updateService.updateInvoice(orgId, userId, invoiceId, input);
-    const invalidate = () => Promise.all([
-      this.cache.invalidateNamespace(CACHE_KEYS.finReportsNamespace(orgId)),
-      this.cache.invalidateNamespace(CACHE_KEYS.finTaxDashboardNamespace(orgId)),
-      this.cache.invalidateNamespace(CACHE_KEYS.finTaxReportsNamespace(orgId)),
-      this.cache.invalidateNamespace(CACHE_KEYS.finForecastNamespace(orgId)),
-      this.cache.invalidateNamespaceForOrg(orgId, "invoices:list"),
-    ]);
+    const invalidate = () => this.cache.invalidateNamespaceForOrg(orgId, "invoices:list");
     if (!registerAfterCommit(invalidate)) await invalidate();
     return result;
   }
@@ -223,13 +210,7 @@ export class InvoicesWriteService {
     invoiceId: number,
   ): Promise<{ success: true }> {
     const result = await this.lifecycle.voidInvoice(orgId, userId, invoiceId);
-    const invalidate = () => Promise.all([
-      this.cache.invalidateNamespace(CACHE_KEYS.finReportsNamespace(orgId)),
-      this.cache.invalidateNamespace(CACHE_KEYS.finTaxDashboardNamespace(orgId)),
-      this.cache.invalidateNamespace(CACHE_KEYS.finTaxReportsNamespace(orgId)),
-      this.cache.invalidateNamespace(CACHE_KEYS.finForecastNamespace(orgId)),
-      this.cache.invalidateNamespaceForOrg(orgId, "invoices:list"),
-    ]);
+    const invalidate = () => this.cache.invalidateNamespaceForOrg(orgId, "invoices:list");
     if (!registerAfterCommit(invalidate)) await invalidate();
     return result;
   }

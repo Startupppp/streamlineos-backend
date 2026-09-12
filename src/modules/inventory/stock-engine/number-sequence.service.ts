@@ -23,6 +23,10 @@ const DOC_PREFIXES: Record<string, string> = {
   RECALL: "RCL",
   INSPECTION: "QI",
   INVOICE: "INV",
+  /** NEO-2 — advance shipping notices. */
+  ASN: "ASN",
+  /** NEO-4 — handling units. The label a pallet actually wears. */
+  HANDLING_UNIT: "HU",
 };
 
 @Injectable()

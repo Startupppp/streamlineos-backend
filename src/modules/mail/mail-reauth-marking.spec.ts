@@ -124,6 +124,7 @@ describe("mail reauth marking — one bulk write, and never a silent one", () =>
       {} as unknown as CacheService,
       {} as unknown as MailMetadataService,
       {} as unknown as MailSyncCheckpointService,
+      { ENCRYPTION_KEY: "mail-cursor-test-secret" },
     );
 
     const res = await service.listMessages(ORG, "user-1", null, "inbox", "all", 25, undefined, "q");

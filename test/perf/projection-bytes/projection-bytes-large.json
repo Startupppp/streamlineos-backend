@@ -1,0 +1,80 @@
+[
+ {
+  "id": "kb-pages-list-100",
+  "table": "kb_pages",
+  "note": "the getTrash/list column set. Measured over live pages because trash is empty on this seed; the trash list uses the identical columns and the UI renders only id, title, icon, deleted_at",
+  "rows": 100,
+  "fullColumns": 37,
+  "projectedColumns": 34,
+  "fullBytes": 27000,
+  "projectedBytes": 23800,
+  "saved": 3200,
+  "ratio": 1.13,
+  "columnsNotOnThisTable": []
+ },
+ {
+  "id": "kb-pages-update-guard",
+  "table": "kb_pages",
+  "note": "PATCH /kb/pages/:id reads the row only for is_locked, trust_state and content",
+  "rows": 1,
+  "fullColumns": 37,
+  "projectedColumns": 4,
+  "fullBytes": 270,
+  "projectedBytes": 45,
+  "saved": 225,
+  "ratio": 6,
+  "columnsNotOnThisTable": []
+ },
+ {
+  "id": "dashboard-recent-activity",
+  "table": "build.tickets",
+  "note": "the pair EXPLAIN(BUFFERS) reported as identical at 417 buffers",
+  "rows": 10,
+  "fullColumns": 40,
+  "projectedColumns": 8,
+  "fullBytes": 1560,
+  "projectedBytes": 1080,
+  "saved": 480,
+  "ratio": 1.44,
+  "columnsNotOnThisTable": []
+ },
+ {
+  "id": "attendance-list-page",
+  "table": "attendance",
+  "note": "attendance-read.service.ts findMany with no columns; breaks and location_data are jsonb",
+  "rows": 100,
+  "fullColumns": 18,
+  "projectedColumns": 16,
+  "fullBytes": 14800,
+  "projectedBytes": 14400,
+  "saved": 400,
+  "ratio": 1.03,
+  "columnsNotOnThisTable": []
+ },
+ {
+  "id": "kb-chunks-page-50",
+  "table": "kb_article_chunks",
+  "note": "no shipped read hydrates embedding — this is what one unprojected read of the vector table would cost",
+  "rows": 50,
+  "fullColumns": 20,
+  "projectedColumns": 19,
+  "fullBytes": 322200,
+  "projectedBytes": 14600,
+  "saved": 307600,
+  "ratio": 22.07,
+  "columnsNotOnThisTable": []
+ },
+ {
+  "id": "notifications-list-page",
+  "table": "notifications",
+  "note": "notification list page",
+  "rows": 20,
+  "fullColumns": 26,
+  "projectedColumns": 25,
+  "fullBytes": 6168,
+  "projectedBytes": 5368,
+  "saved": 800,
+  "ratio": 1.15,
+  "columnsNotOnThisTable": []
+ }
+]

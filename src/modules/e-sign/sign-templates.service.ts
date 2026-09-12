@@ -1,19 +1,26 @@
 import { BadRequestException, ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, eq } from "drizzle-orm";
-import { signDocuments, signEnvelopes, signFields, signRecipients, signTemplates } from "../../db/schema";
+import {
+  signDocuments,
+  signEnvelopes,
+  signFields,
+  signRecipients,
+  signTemplates,
+} from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { SignAuditService } from "./sign-audit.service";
+import { SignSettingsService } from "./sign-settings.service";
+import { SignAuthMethodPolicy } from "./sign-auth-method.policy";
 import { SignTokensService } from "./sign-tokens.service";
 import { PlanLimitsService } from "../billing/core/plan-limits.service";
 import { buildTemplateSnapshot, parseTemplateSnapshot } from "./sign-template-snapshot";
-import { insertSignPublicForm, loadSignPublicForm } from "./sign-template-public-forms";
+import { assertSnapshotDocumentsOwned } from "./lib/template-document-keys";
 import type {
   CreateTemplateInput,
   UpdateTemplateInput,
   CreateEnvelopeFromTemplateInput,
 } from "./dto/e-sign.schemas";
-import type { PublishPublicFormInput } from "./dto/e-sign-public.schemas";
 import type { RequestActorContext } from "../../common/audit/actor-context";
 
 @Injectable()
@@ -23,9 +30,12 @@ export class SignTemplatesService {
     private readonly audit: SignAuditService,
     private readonly tokens: SignTokensService,
     private readonly planLimits: PlanLimitsService,
+    private readonly settings: SignSettingsService,
+    private readonly authMethods: SignAuthMethodPolicy,
   ) {}
 
   async create(orgId: string, ownerMembershipId: number | null, input: CreateTemplateInput) {
+    assertSnapshotDocumentsOwned(orgId, parseTemplateSnapshot(input.templateJson));
     const [template] = await this.db
       .insert(signTemplates)
       .values({
@@ -65,6 +75,8 @@ export class SignTemplatesService {
 
   async update(orgId: string, templateId: number, input: UpdateTemplateInput, actor: RequestActorContext) {
     const template = await this.get(orgId, templateId);
+    if (input.templateJson !== undefined)
+      assertSnapshotDocumentsOwned(orgId, parseTemplateSnapshot(input.templateJson));
     const [updated] = await this.db
       .update(signTemplates)
       .set({ ...input, updatedAt: new Date() })
@@ -113,6 +125,7 @@ export class SignTemplatesService {
   async instantiate(orgId: string, senderMembershipId: number | null, templateId: number, input: CreateEnvelopeFromTemplateInput) {
     const template = await this.get(orgId, templateId);
     const snapshot = parseTemplateSnapshot(template.templateJson);
+    assertSnapshotDocumentsOwned(orgId, snapshot);
     if (!snapshot.roles || snapshot.roles.length === 0) {
       throw new BadRequestException("This template has no recipient roles configured");
     }
@@ -123,7 +136,35 @@ export class SignTemplatesService {
       throw new BadRequestException(`Missing recipients for template role(s): ${missingRoles.map((r) => r.roleName).join(", ")}`);
     }
 
+    /**
+     * The snapshot's authentication methods go through the same gate a
+     * recipient does, and before the envelope row exists rather than after.
+     *
+     * `createTemplateSchema` declares `templateJson` as
+     * `z.record(z.string(), z.unknown())`, so a role's `authMethod` is not a
+     * legacy value that leaked in — it is arbitrary caller input, replayed
+     * verbatim into `signRecipients` on every instantiation. That let a holder
+     * of `sign:template:manage` mint recipients on `sso`, `passkey`, `kba`,
+     * `id_verification` or an undeliverable `otp_sms`, none of which
+     * `authenticate` can complete.
+     *
+     * Bulk send drives exactly this path, once per row, so the same bad role
+     * reaches as many customers as the org's row cap allows.
+     */
+    for (const role of snapshot.roles) {
+      const provided = input.recipients.find((r) => r.roleName === role.roleName);
+      await this.authMethods.assertUsable(
+        orgId,
+        role.authMethod as Parameters<SignAuthMethodPolicy["assertUsable"]>[1],
+        provided?.phone,
+        `template role "${role.roleName}"`,
+      );
+    }
+
     await this.planLimits.assertWithinLimit(orgId, "signEnvelopes");
+
+    /** A template that predates the cadence fields inherits the org's, not a constant. */
+    const orgSettings = await this.settings.getOrCreate(orgId);
 
     const [envelope] = await this.db
       .insert(signEnvelopes)
@@ -142,9 +183,10 @@ export class SignTemplatesService {
         sourceEntityType: input.sourceEntityType,
         sourceEntityId: input.sourceEntityId,
         reminderEnabled: snapshot.reminderEnabled,
-        reminderFirstAfterDays: snapshot.reminderFirstAfterDays,
-        reminderRepeatDays: snapshot.reminderRepeatDays,
-        reminderMaxCount: snapshot.reminderMaxCount,
+        reminderFirstAfterDays:
+          snapshot.reminderFirstAfterDays ?? orgSettings.defaultReminderFirstAfterDays,
+        reminderRepeatDays: snapshot.reminderRepeatDays ?? orgSettings.defaultReminderRepeatDays,
+        reminderMaxCount: snapshot.reminderMaxCount ?? orgSettings.defaultReminderMaxCount,
       })
       .returning();
 
@@ -247,32 +289,5 @@ export class SignTemplatesService {
     });
 
     return envelope;
-  }
-
-  async publishPublicForm(orgId: string, createdByMembershipId: number | null, templateId: number, input: PublishPublicFormInput) {
-    const template = await this.get(orgId, templateId);
-    if (template.status !== "published") throw new ForbiddenException("Only published templates can be turned into a public form");
-
-    const form = await insertSignPublicForm(this.db, {
-      orgId,
-      templateId,
-      createdByMembershipId,
-      accessCodeHash: input.accessCode ? this.tokens.hash(input.accessCode) : null,
-      input,
-    });
-
-    await this.audit.record({
-      orgId,
-      envelopeId: null,
-      actorType: "internal_user",
-      eventType: "public_form_published",
-      eventMessage: `Published public form at /${input.slug}`,
-    });
-
-    return form;
-  }
-
-  async getPublicForm(slug: string) {
-    return loadSignPublicForm(this.db, slug);
   }
 }

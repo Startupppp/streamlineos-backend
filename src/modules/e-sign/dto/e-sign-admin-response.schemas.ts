@@ -14,7 +14,6 @@ export const signSettingsResponseSchema = z.object({
   allowedAuthMethods: z.array(z.string()),
   certificateFormat: z.string(),
   retentionPolicyJson: z.record(z.string(), z.unknown()),
-  publicFormsEnabled: z.boolean(),
   bulkSendMaxRowsPerJob: z.number().int(),
   bulkSendMaxActiveJobs: z.number().int(),
   bulkSendMaxRecipientsPerEnvelope: z.number().int(),
@@ -51,3 +50,39 @@ export const watermarkPolicyMutationResponseSchema = signWatermarkPolicyRowSchem
 export const reminderSweepResponseSchema = z.object({ remindedCount: z.number().int() });
 
 export const expirationSweepResponseSchema = z.object({ expiredCount: z.number().int() });
+
+/**
+ * `GET /sign/admin/sweep-status`. Both sweeps are always reported, so `neverRun`
+ * is a real state rather than an absent row — that distinction is the whole
+ * point of the endpoint. `ranAt` is already an ISO string here: `lastRuns` calls
+ * `toISOString()` itself rather than handing the column's `Date` through.
+ */
+export const sweepStatusResponseSchema = z.object({
+  sweeps: z.array(z.object({
+    sweep: z.enum(["reminder", "expiration"]),
+    ranAt: z.string().nullable(),
+    affected: z.number().int().nonnegative(),
+    error: z.string().nullable(),
+    neverRun: z.boolean(),
+    staleness: z.enum(["ok", "never_run", "stale", "errored"]),
+    healthy: z.boolean(),
+    expectedWithinHours: z.number().int(),
+  })),
+});
+
+/**
+ * `GET /sign/admin/sweep-preview`. `truncated` says the listing hit the preview
+ * ceiling, so `entries` is shorter than `envelopes` — without it a capped
+ * preview is indistinguishable from a complete one.
+ */
+export const sweepPreviewResponseSchema = z.object({
+  sweep: z.enum(["reminder", "expiration"]),
+  envelopes: z.number().int().nonnegative(),
+  affected: z.number().int().nonnegative(),
+  entries: z.array(z.object({
+    envelopeId: z.number().int(),
+    title: z.string(),
+    affected: z.number().int().nonnegative(),
+  })),
+  truncated: z.boolean(),
+});

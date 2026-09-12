@@ -113,6 +113,44 @@ export default tseslint.config(
     },
   },
   {
+    /**
+     * Reads that genuinely precede the injector, or that no schema can express.
+     *
+     * Separate from the ratchet below on purpose. The ratchet is a list that is
+     * supposed to shrink; these are not migrations waiting to happen, and each
+     * one carries the reason it cannot be an `APP_CONFIG` injection. If a
+     * future change makes one of them injectable, it moves out — but it does
+     * not belong in a queue of things we simply have not got to yet.
+     */
+    files: [
+      // Default `= process.env` on the resolver that `admission.module.ts`'s
+      // `useFactory` calls to build the AdmissionService provider itself.
+      "src/common/admission/admission.config.ts",
+      // A module-level `const`, evaluated at import — before any injector exists.
+      "src/common/cell-resources/cell-id.ts",
+      // `LogErrorReporter` is hand-constructed in `main.ts`, outside the
+      // container, and must keep stamping the release when the container is
+      // the thing that failed.
+      "src/common/observability/release.ts",
+      // The three reads are the @Module factories that build the region
+      // providers, and `resolveRegionTopology` composes variable names at
+      // runtime (`REGION_<KEY>_APP_DATABASE_URL`) from `REGION_KEYS`, which a
+      // static AppConfig schema cannot enumerate.
+      "src/common/region/region.module.ts",
+      // `EnvKeyProvider` discovers key versions by scanning every env name for
+      // `ENCRYPTION_KEY_V<n>` — again a set no static schema can declare.
+      "src/common/security/envelope-encryption.ts",
+      // `forEachOrg` is a plain function with 65 call sites and no injector
+      // handle (CLAUDE.md §4 makes it *the* background-sweep iterator, and a
+      // sweep has no ambient context); `CELL_ID` names the process, not a
+      // tenant, and the read must stay call-time because it selects the
+      // enumeration database per sweep — `for-each-org.spec.ts` sets and
+      // deletes the variable between tests to prove exactly that.
+      "src/common/tenant/for-each-org.ts",
+    ],
+    rules: { "no-restricted-syntax": "off" },
+  },
+  {
     // Ratchet, not an exemption: these predate the config seam and shrink as they migrate.
     files: [
       "src/common/audit/internal-audit.controller.ts",
@@ -120,6 +158,10 @@ export default tseslint.config(
       "src/common/cache/cache.module.ts",
       "src/common/portal-auth/portal-jwt-auth.guard.ts",
       "src/common/security/secret-encryption.util.ts",
+      // Region topology reads dynamic REGION_<KEY>_* variables parsed at runtime,
+      // so the key set cannot exist in a fixed AppConfig schema. Both
+      // resolveRegionTopology and resolvePoolConfig validate their env bag and throw.
+      "src/common/region/region.module.ts",
       "src/common/tenant/with-tenant.ts",
       "src/modules/ai/confirmation/ai-confirmation.service.ts",
       "src/modules/ai/core/providers/embeddings.service.ts",
@@ -141,79 +183,15 @@ export default tseslint.config(
       "src/modules/hr/import/hr-export-jobs.service.ts",
       "src/modules/hr/interviews/hr-interview-scheduling.service.ts",
       "src/modules/hr/onboarding/core/crypto.helpers.ts",
-      "src/modules/hr/payroll/lib/encryption.ts",
+      // Was `src/modules/hr/payroll/lib/encryption.ts`. Payroll became its own
+      // top-level module (CLAUDE.md §1) and this entry was never moved with it,
+      // so the file has been failing the rule under its real path ever since.
+      "src/modules/payroll/hr-payroll/lib/encryption.ts",
       "src/modules/hr/recruitment/recruitment-jobs.service.ts",
       "src/modules/mfa/mfa.service.ts",
       "src/modules/organization/setup/org-setup.service.ts",
       "src/modules/portal/auth/portal-token.service.ts",
     ],
     rules: { "no-restricted-syntax": "off" },
-  },
-  /**
-   * The authoring-time half of ticket 08.
-   *
-   * `legacy-reader-ratchet.spec.ts` already fails the build if a new file reads
-   * `leads`, `clients` or `contacts` — but it fails in CI, after the code is
-   * written and often after it is reviewed. This says the same thing in the
-   * editor, which is where somebody can still cheaply choose the Party seam
-   * instead.
-   *
-   * Both, not either: a lint rule can be disabled inline or the file excluded,
-   * and the test is what notices when it is. Neither alone is a guard.
-   *
-   * The exemption list below is generated from the ratchet's own `KNOWN_READERS`,
-   * so the two cannot drift into disagreeing about what is allowed. When ticket
-   * 08 drops the tables, both lists go to zero and both of these disappear.
-   */
-  {
-    files: ["src/**/*.ts"],
-    ignores: [
-      "src/db/schema/**",
-      "src/modules/accounting/core/accounting-aged-receivables.service.ts",
-      "src/modules/accounting/core/accounting-payables-query.service.ts",
-      "src/modules/accounting/core/accounting-receivables.service.ts",
-      "src/modules/accounting/core/accounting-vendor-query.service.ts",
-      "src/modules/calendar/calendar-linked-crm-tenant-binding.db.spec.ts",
-      "src/modules/finance/ap/bills-due-check.service.ts",
-      "src/modules/finance/ap/payment-runs.service.ts",
-      "src/modules/finance/ap/recurring-bills.service.ts",
-      "src/modules/finance/ap/vendor-credits.service.ts",
-      "src/modules/finance/ap/vendor-payments-list.service.ts",
-      "src/modules/finance/ar/ar-payments.service.ts",
-      "src/modules/finance/ar/statements.service.ts",
-      "src/modules/finance/banking/matching.service.ts",
-      "src/modules/finance/reports/finance-report-export-worker.service.ts",
-      "src/modules/finance/reports/insights-finders.service.ts",
-      "src/modules/finance/reports/statement-reports.service.ts",
-      "src/modules/finance/tax/tax-reports.service.ts",
-      "src/modules/party/party-divergence.service.ts",
-      "src/modules/party/party-legacy-backfill.db.spec.ts",
-      "src/modules/party/party-legacy-clients.ts",
-      "src/modules/party/party-legacy-contacts.ts",
-      "src/modules/party/party-legacy-employer.ts",
-      "src/modules/party/party-legacy-leads.ts",
-      "src/modules/party/party-legacy-mirror.spec.ts",
-      "src/modules/party/party-legacy-orgs.ts",
-      "src/modules/party/party-legacy-seam.ts",
-      "src/modules/party/party-legacy-writer.db.spec.ts",
-      "src/modules/party/party-legacy-writer.spec.ts",
-      "src/modules/party/party-legacy-writer.ts",
-      "src/modules/party/party-mirror-fields.ts",
-    ],
-    rules: {
-      "no-restricted-imports": [
-        "error",
-        {
-          patterns: [
-            {
-              group: ["**/db/schema", "**/db/schema/crm/**"],
-              importNames: ["leads", "clients", "contacts", "crmOrganizations"],
-              message:
-                "The legacy identity tables are being retired. Resolve through the Party seam instead — see src/modules/party/party-legacy-seam.ts.",
-            },
-          ],
-        },
-      ],
-    },
   },
 );

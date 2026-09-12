@@ -20,6 +20,23 @@ import { PERMISSIONS } from "./permissions";
 
 const CATALOG_KEYS = new Set(PERMISSIONS.map((permission) => permission.name));
 
+/**
+ * Materialising role rows from the FIXED catalog.
+ *
+ * Nothing here is caller-supplied: the caller names a template id and the name,
+ * slug, rank and permission list all come from ROLE_TEMPLATES, so there is
+ * nothing for an actor to escalate and none of this consults grantability —
+ * that is why it is separate from lib/role-mutation.ts, which exists to police
+ * caller-supplied permission keys. The only gate that applies is structural:
+ * materializeTemplate needs org owner or admin standing.
+ *
+ * Both paths are idempotent on (orgId, template.slug): seedDefaultRoles reports
+ * an already-present template as skipped and materializeTemplate returns the
+ * existing row, so re-running either never re-grants permissions an owner has
+ * since revoked. Keys the catalog no longer defines are filtered out rather
+ * than inserted, because a stale template entry must not create a grant for a
+ * permission that no longer exists.
+ */
 @Injectable()
 export class RoleSeedService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}

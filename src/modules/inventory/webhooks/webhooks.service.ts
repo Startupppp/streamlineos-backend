@@ -1,16 +1,25 @@
 import { Injectable, Inject, BadRequestException, NotFoundException } from "@nestjs/common";
-import { logger } from "../../../common/logger/logger.service";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { InventoryAuditService } from "../stock-engine/inventory-audit.service";
-import { invWebhookEventSubscriptions, invWebhooks, invWebhookEvents } from "../../../db/schema";
-import { eq, and, desc, sql } from "drizzle-orm";
-import { createHmac, randomBytes } from "crypto";
+import { invWebhookEventSubscriptions, invWebhooks } from "../../../db/schema";
+import { eq, and, desc } from "drizzle-orm";
+import { randomBytes } from "crypto";
 import { checkWebhookUrl } from "../../../common/security/ssrf-guard";
+import { WebhookTransportService } from "./webhook-transport.service";
+import {
+  listDeadLetters,
+  listEvents,
+  retryEvent,
+  type EventPage,
+  type EventRow,
+  type WebhookEventDeps,
+} from "./lib/webhook-events";
 import type { CreateWebhookInput, UpdateWebhookInput, ListEventsQueryInput } from "./dto/webhooks.schemas";
 
 type WebhookRow = typeof invWebhooks.$inferSelect;
-type EventRow = typeof invWebhookEvents.$inferSelect;
+
+export type { EventPage, EventRow };
 
 @Injectable()
 export class WebhooksService {
@@ -19,6 +28,7 @@ export class WebhooksService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly audit: InventoryAuditService,
+    private readonly transport: WebhookTransportService,
   ) {}
 
   private async assertSafeUrl(url: string): Promise<void> {
@@ -121,6 +131,20 @@ export class WebhooksService {
       await this.assertSafeUrl(input.url);
     }
 
+    /**
+     * E7. Re-enabling clears the health counters.
+     *
+     * Without this, a webhook the policy auto-disabled comes back with
+     * `consecutiveFailures` still at the disable threshold and `alertedAt` still
+     * stamped: the very next dead letter disables it again, and the alert that is
+     * supposed to precede that is suppressed as already-sent. Changing the URL
+     * clears them for the same reason — it is a different endpoint, and it does
+     * not inherit the old one's outage.
+     */
+    const reactivating =
+      (input.isActive === true && !existing[0].isActive) ||
+      (input.url !== undefined && input.url !== existing[0].url);
+
     const updated = await this.db.transaction(async (tx) => {
       const [row] = await tx
         .update(invWebhooks)
@@ -128,6 +152,13 @@ export class WebhooksService {
           ...(input.url !== undefined && { url: input.url }),
           ...(input.events !== undefined && { events: input.events }),
           ...(input.isActive !== undefined && { isActive: input.isActive }),
+          ...(reactivating && {
+            consecutiveFailures: 0,
+            failingSince: null,
+            alertedAt: null,
+            disabledAt: null,
+            disabledReason: null,
+          }),
         })
         .where(and(eq(invWebhooks.id, webhookId), eq(invWebhooks.orgId, orgId)))
         .returning();
@@ -177,169 +208,23 @@ export class WebhooksService {
     return { deleted: true };
   }
 
-  async listEvents(
+  private get eventDeps(): WebhookEventDeps {
+    return { db: this.db, audit: this.audit, transport: this.transport, isProd: this.isProd };
+  }
+
+  listEvents(orgId: string, webhookId: number, query: ListEventsQueryInput): Promise<EventPage> {
+    return listEvents(this.eventDeps, orgId, webhookId, query);
+  }
+
+  listDeadLetters(
     orgId: string,
-    webhookId: number,
     query: ListEventsQueryInput,
-  ): Promise<{ items: EventRow[]; total: number; page: number; totalPages: number }> {
-    const webhookCheck = await this.db
-      .select({ id: invWebhooks.id })
-      .from(invWebhooks)
-      .where(and(eq(invWebhooks.id, webhookId), eq(invWebhooks.orgId, orgId)))
-      .limit(1);
-    if (!webhookCheck[0]) throw new NotFoundException("Webhook not found");
-
-    const conditions = [
-      eq(invWebhookEvents.orgId, orgId),
-      eq(invWebhookEvents.webhookId, webhookId),
-      ...(query.status ? [eq(invWebhookEvents.status, query.status)] : []),
-    ];
-
-    const offset = (query.page - 1) * query.limit;
-
-    const rows = await this.db
-      .select({
-        id: invWebhookEvents.id,
-        orgId: invWebhookEvents.orgId,
-        webhookId: invWebhookEvents.webhookId,
-        eventType: invWebhookEvents.eventType,
-        payload: invWebhookEvents.payload,
-        status: invWebhookEvents.status,
-        attempts: invWebhookEvents.attempts,
-        deliveredAt: invWebhookEvents.deliveredAt,
-        createdAt: invWebhookEvents.createdAt,
-        windowTotal: sql<string>`count(*) OVER ()`,
-      })
-      .from(invWebhookEvents)
-      .where(and(...conditions))
-      .orderBy(desc(invWebhookEvents.createdAt))
-      .limit(query.limit)
-      .offset(offset);
-
-    const first = rows[0];
-    let total: number;
-    if (first) {
-      total = Number(first.windowTotal);
-    } else if (offset === 0) {
-      total = 0;
-    } else {
-      const fallback = await this.db
-        .select({ n: sql<string>`count(*)` })
-        .from(invWebhookEvents)
-        .where(and(...conditions));
-      total = Number(fallback[0]?.n ?? 0);
-    }
-
-    const items: EventRow[] = rows.map(({ windowTotal: _, ...rest }) => rest);
-
-    return {
-      items,
-      total,
-      page: query.page,
-      totalPages: Math.ceil(total / query.limit),
-    };
+    webhookId?: number,
+  ): Promise<EventPage> {
+    return listDeadLetters(this.eventDeps, orgId, query, webhookId);
   }
 
-  async retryEvent(orgId: string, userId: string, eventId: number): Promise<EventRow> {
-    const eventRows = await this.db
-      .select()
-      .from(invWebhookEvents)
-      .where(and(eq(invWebhookEvents.id, eventId), eq(invWebhookEvents.orgId, orgId)))
-      .limit(1);
-    const event = eventRows[0];
-    if (!event) throw new NotFoundException("Event not found");
-
-    if (event.status === "DELIVERED") return event;
-
-    if (event.webhookId === null) throw new NotFoundException("Webhook no longer exists");
-
-    const webhookRows = await this.db
-      .select()
-      .from(invWebhooks)
-      .where(and(eq(invWebhooks.id, event.webhookId), eq(invWebhooks.orgId, orgId)))
-      .limit(1);
-    const webhook = webhookRows[0];
-    if (!webhook) throw new NotFoundException("Webhook no longer exists");
-
-    const status = await this.deliverEvent(webhook, event);
-
-    const [updatedEvent] = await this.db
-      .update(invWebhookEvents)
-      .set({
-        status,
-        attempts: event.attempts + 1,
-        ...(status === "DELIVERED" && { deliveredAt: new Date() }),
-      })
-      .where(and(eq(invWebhookEvents.id, eventId), eq(invWebhookEvents.orgId, orgId)))
-      .returning();
-
-    await this.db
-      .update(invWebhooks)
-      .set({ lastDeliveryAt: new Date(), lastDeliveryStatus: status })
-      .where(and(eq(invWebhooks.id, webhook.id), eq(invWebhooks.orgId, orgId)));
-
-    await this.audit.insert(this.db, {
-      orgId,
-      actorUserId: userId,
-      action: "webhook.event.retried",
-      resourceType: "webhook_event",
-      resourceId: String(eventId),
-      after: { status, attempts: event.attempts + 1 },
-    });
-
-    return updatedEvent ?? event;
-  }
-
-  private async deliverEvent(
-    webhook: WebhookRow,
-    event: EventRow,
-  ): Promise<"DELIVERED" | "FAILED"> {
-    try {
-      await this.assertSafeUrl(webhook.url);
-    } catch (ssrfErr) {
-      logger.warn("webhooks: SSRF guard blocked retry delivery", {
-        orgId: webhook.orgId,
-        webhookId: webhook.id,
-        eventId: event.id,
-        cause: ssrfErr instanceof Error ? ssrfErr.message : String(ssrfErr),
-      });
-      return "FAILED";
-    }
-
-    const payloadStr = JSON.stringify({
-      id: event.id,
-      type: event.eventType,
-      data: event.payload,
-      timestamp: event.createdAt,
-    });
-    const sig = createHmac("sha256", webhook.secret).update(payloadStr).digest("hex");
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 10_000);
-    try {
-      const res = await fetch(webhook.url, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "X-Inventory-Signature": `sha256=${sig}`,
-        },
-        body: payloadStr,
-        signal: controller.signal,
-        redirect: "manual",
-      });
-      clearTimeout(timeout);
-      if (res.type === "opaqueredirect" || (res.status >= 300 && res.status < 400)) {
-        return "FAILED";
-      }
-      return res.ok ? "DELIVERED" : "FAILED";
-    } catch (fetchErr) {
-      clearTimeout(timeout);
-      logger.warn("webhooks: retry delivery fetch failed", {
-        orgId: webhook.orgId,
-        webhookId: webhook.id,
-        eventId: event.id,
-        cause: fetchErr instanceof Error ? fetchErr.message : String(fetchErr),
-      });
-      return "FAILED";
-    }
+  retryEvent(orgId: string, userId: string, eventId: number): Promise<EventRow> {
+    return retryEvent(this.eventDeps, orgId, userId, eventId);
   }
 }

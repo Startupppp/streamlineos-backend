@@ -84,6 +84,60 @@ const RETENTION_OWNERS = new Set([
 ]);
 
 const RETENTION_MATRIX = {
+  /**
+   * Three decided 2026-09-10, from pg_catalog rather than from a guess: the FK
+   * counts quoted below were read out of pg_constraint, and the deleted_at
+   * claims out of information_schema.
+   *
+   * ⚠ FIVE MORE ARE UNCOVERED AND ARE DELIBERATELY NOT HERE. Adding a line to
+   * this map is what turns the gate green, so it is exactly the wrong place to
+   * record a guess — an invented retention period would read as a decision
+   * somebody made, and the sweep that eventually enforces it would delete real
+   * rows on that authority.
+   *
+   *   helpdesk_tickets (237 MB), mail_message_metadata (12 MB),
+   *   announcements (9 MB)
+   *     — each needs a retention PERIOD, which is a product and DPDP question,
+   *       not an engineering one. RETAIN-BOUNDED is almost certainly the shape;
+   *       the number is not mine to pick, and a worker has to exist before the
+   *       decision means anything.
+   *
+   *   performance_reviews (141 MB), hr_reporting_lines (1 MB)
+   *     — HR-owned. Behind the fence, and the retention of appraisal records
+   *       carries statutory obligations this lane has no standing to decide.
+   *
+   * The gate stays red until those five are answered by the people who own
+   * them. That is the gate working.
+   */
+  gl_accounts: {
+    decision: "KEEP-FOREVER",
+    // db/schema/accounting → MODULE_OWNERS.accounting in route-attribution.mjs.
+    owner: "finance-team",
+    worker: null,
+    notes:
+      "Chart of accounts. Referenced by 12 tables including ap_document_lines, ap_payments, ap_withholding, ar_document_lines, ar_receipts and bank_profiles — deleting an account orphans posted financial history, and the row IS the meaning of every amount that points at it. Reference data, not an event stream: 1 MB and it does not grow with volume. Carries deleted_at, so withdrawing an account is a soft delete and the history stays joinable.",
+  },
+  business_parties: {
+    decision: "KEEP-FOREVER",
+    // db/schema/party is nobody's module folder: no registry entry owns the
+    // `party` namespace, CRM merely administers it (administersNamespaces), and
+    // CRM is in route-attribution's SLO_EXCLUDED_MODULES — which is exactly the
+    // case that file resolves to platform-reliability. Accounting, CRM and
+    // Inventory all read this table, so naming any one of them as owner would
+    // be picking a tenant of the record as its landlord.
+    owner: "platform-reliability",
+    worker: null,
+    notes:
+      "Customer/vendor master. Referenced by 45 tables, and it is the single copy since the CRM legacy rows stopped being written — the Party IS the record. Retention is by SOFT delete (deleted_at), so a removed party stays joinable from the invoice that names it. The one physical-delete path is DPDP/GDPR erasure, which root CLAUDE.md lists as an explicit exception to soft-delete and which no retention sweep may pre-empt: erasure is a legal instruction, not a schedule.",
+  },
+  party_roles: {
+    decision: "KEEP-FOREVER",
+    // Shares business_parties' lifecycle, so it shares its owner.
+    owner: "platform-reliability",
+    worker: null,
+    notes:
+      "Child of business_parties and shares its lifecycle; nothing references it, so it is deleted only with its party. Kept for the same reason: a role that vanished would make an old document's counterparty unexplainable.",
+  },
   kb_article_chunks: {
     decision: "RETAIN-BOUNDED",
     worker: "CronKbChunkRetentionService",

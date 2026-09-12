@@ -78,6 +78,24 @@ jobs:
           DIRECT_DATABASE_URL: ${{ secrets.CI_DIRECT_DATABASE_URL }}
           APP_DATABASE_URL: ${{ secrets.CI_APP_DATABASE_URL }}
 
+      # The rollback half of PRD §12.10. Everything above proves the chain goes
+      # forward. Nothing in this repository has ever executed a `.down.sql`:
+      # `check:migration-rollback` asserts the files exist and that their DROP
+      # TYPE names line up, and stops there. This runs them against the cell2
+      # database the step above just rebuilt from scratch — which is what
+      # "disposable" is supposed to mean — reversing the contiguous suffix at the
+      # top of the chain for real and re-applying it, then executing every other
+      # inventory rollback inside a transaction that is discarded.
+      #
+      # Deliberately NOT `continue-on-error`. A rollback file that cannot execute
+      # is the finding, and this is the only place that can see it.
+      - name: Rollback rehearsal on the cold-built cell
+        if: steps.check-creds.outputs.configured == 'true'
+        run: pnpm drill:rollback:self-test && pnpm drill:rollback --database=cell2
+        timeout-minutes: 15
+        env:
+          DATABASE_URL: ${{ secrets.CI_DIRECT_DATABASE_URL }}
+
       # Save .chain-gaps so the `checks` job can restore it on the next PR build.
       # Key includes the run-id so every nightly run overwrites the previous entry
       # via the `chain-gaps-` restore-key prefix in the consumer.

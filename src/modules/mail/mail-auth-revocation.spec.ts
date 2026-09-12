@@ -82,7 +82,7 @@ function buildService(overrides: {
     savePosition: jest.fn().mockResolvedValue(undefined),
   } as unknown as MailSyncCheckpointService;
 
-  const service = new MailService(accounts, gmail, outlook, cache, metadata, checkpoints);
+  const service = new MailService(accounts, gmail, outlook, cache, metadata, checkpoints, { ENCRYPTION_KEY: "mail-cursor-test-secret" });
   return { service, markNeedsReauth, markNeedsReauthMany };
 }
 
@@ -147,7 +147,7 @@ describe("MailService auth-error → markNeedsReauth (listMessages)", () => {
     const checkpoints = { savePosition: jest.fn().mockResolvedValue(undefined) } as unknown as MailSyncCheckpointService;
     const outlook = {} as unknown as OutlookMailProvider;
 
-    const service = new MailService(accounts, gmail, outlook, cache, metadata, checkpoints);
+    const service = new MailService(accounts, gmail, outlook, cache, metadata, checkpoints, { ENCRYPTION_KEY: "mail-cursor-test-secret" });
     const result = await service.listMessages(ORG_ID, USER_ID, null, "inbox", "all", 10);
 
     expect(markNeedsReauthMany).toHaveBeenCalledWith([ACTIVE_ACCOUNT.id], ORG_ID);
@@ -196,7 +196,7 @@ describe("MailService auth-error → markNeedsReauth (getMessage)", () => {
     const metadata = {} as unknown as MailMetadataService;
     const checkpoints = {} as unknown as MailSyncCheckpointService;
 
-    const service = new MailService(accounts, gmail, outlook, cache, metadata, checkpoints);
+    const service = new MailService(accounts, gmail, outlook, cache, metadata, checkpoints, { ENCRYPTION_KEY: "mail-cursor-test-secret" });
 
     await expect(
       service.getMessage(ORG_ID, USER_ID, "msg-1", 999),

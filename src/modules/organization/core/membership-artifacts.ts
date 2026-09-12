@@ -12,7 +12,14 @@ export type RemovalAction =
   | "set-null"
   | "delete"
   | "revoke"
-  | "blocks-removal";
+  | "blocks-removal"
+  /**
+   * The column holds a membership id and carries no foreign key, so removing a
+   * membership does not touch it and nothing else does either. It is recorded
+   * rather than omitted because a countable gap is one somebody can close; an
+   * absent row reads as "handled".
+   */
+  | "unreferenced";
 
 export type SuspensionAction = "revoke" | "retain";
 
@@ -920,16 +927,6 @@ export const MEMBERSHIP_ARTIFACTS = [
       "The owner_membership_id column is a companion attribution field with no FK enforcement. On removal it must be explicitly set to NULL so the campaign record is preserved but the membership reference is cleared.",
   },
   {
-    id: "leads",
-    mechanism: "database-write",
-    table: "leads",
-    keyedBy: "assigned_to_membership_id",
-    onRemoval: "set-null",
-    onSuspension: "retain",
-    reason:
-      "Assignment companion columns (assigned_to_membership_id) carry no FK. On removal they must be explicitly set to NULL so lead records are preserved but stale membership references are cleared.",
-  },
-  {
     id: "lead_activities",
     mechanism: "database-write",
     table: "lead_activities",
@@ -971,23 +968,23 @@ export const MEMBERSHIP_ARTIFACTS = [
   },
   {
     id: "clients",
-    mechanism: "database-write",
+    mechanism: "database-cascade",
     table: "clients",
-    keyedBy: "account_manager_membership_id / sales_rep_membership_id / assigned_crm_membership_id / user_membership_id / assigned_to_membership_id",
+    keyedBy: "account_manager_membership_id",
     onRemoval: "set-null",
     onSuspension: "retain",
     reason:
-      "All membership companion columns are attribution fields with no FK enforcement. On removal they must be explicitly set to NULL so client records are preserved but stale membership references are cleared.",
+      "The account-manager pointer on clients is cleared by fk_clients_acct_mgr_mbr, an ON DELETE SET NULL composite tenant foreign key, so the client record survives the departure without its member pointer. A suspension is reversible, so nothing is written. The table itself is declared for its readers and never written by CRM — the row derives from the Party — which is why the pointer is only ever cleared, never rewritten.",
   },
   {
     id: "client_accounts",
-    mechanism: "database-write",
+    mechanism: "database-cascade",
     table: "client_accounts",
-    keyedBy: "account_manager_membership_id / assigned_to_membership_id",
+    keyedBy: "sales_rep_membership_id / assigned_crm_membership_id",
     onRemoval: "set-null",
     onSuspension: "retain",
     reason:
-      "Membership companion columns carry no FK. On removal they must be explicitly set to NULL so account records are preserved but stale membership references are cleared.",
+      "Both pointers on client_accounts are cleared by fk_client_accts_sales_rep_mbr and fk_client_accts_assigned_crm_mbr, ON DELETE SET NULL composite tenant foreign keys, so account records survive the departure without their member pointers. A suspension is reversible, so nothing is written.",
   },
   {
     id: "client_account_activities",
@@ -1198,16 +1195,6 @@ export const MEMBERSHIP_ARTIFACTS = [
     onSuspension: "retain",
     reason:
       "The composite foreign key fk_workflow_transitions_created_by_actor is ON DELETE SET NULL (migration 0832). The transition definition survives with the creator slot cleared automatically.",
-  },
-  {
-    id: "finance_report_export_jobs_requester",
-    mechanism: "database-cascade",
-    table: "finance_report_export_jobs",
-    keyedBy: "requested_by_membership_id",
-    onRemoval: "set-null",
-    onSuspension: "retain",
-    reason:
-      "The composite FK fin_report_export_jobs_org_requester_membership_fk is ON DELETE SET NULL (migration 0833). The export job record survives with the requester slot cleared automatically.",
   },
   {
     id: "payroll_run_export_jobs_requester",
@@ -1614,16 +1601,6 @@ export const MEMBERSHIP_ARTIFACTS = [
     mechanism: "database-cascade",
     table: "hr_cases",
     keyedBy: "assigned_to_membership_id",
-    onRemoval: "set-null",
-    onSuspension: "retain",
-    reason:
-      "Added by the actor contraction: the row carries a membership pointer beside its legacy user id. The composite tenant foreign key nulls the pointer on removal so historical display survives, and a suspension is reversible so nothing is written.",
-  },
-  {
-    id: "fin_approval_policies",
-    mechanism: "database-cascade",
-    table: "fin_approval_policies",
-    keyedBy: "approver_membership_id",
     onRemoval: "set-null",
     onSuspension: "retain",
     reason:
@@ -2470,26 +2447,6 @@ export const MEMBERSHIP_ARTIFACTS = [
     reason: "Access-provisioning state controls tenant access and must be revoked on suspension and explicitly resolved before removal.",
   },
   {
-    id: "accounting_periods_closed_by_membership",
-    mechanism: "database-cascade",
-    table: "accounting_periods",
-    keyedBy: "closed_by_membership_id",
-    onRemoval: "set-null",
-    onSuspension: "retain",
-    reason:
-      "The closer pointer on accounting_periods is cleared by fk_accounting_periods_closed_by_membership, an ON DELETE SET NULL composite tenant foreign key, so the record survives the departure without its member pointer. A suspension is reversible, so nothing is written.",
-  },
-  {
-    id: "accounting_periods_locked_by_membership",
-    mechanism: "database-cascade",
-    table: "accounting_periods",
-    keyedBy: "locked_by_membership_id",
-    onRemoval: "set-null",
-    onSuspension: "retain",
-    reason:
-      "The locker pointer on accounting_periods is cleared by fk_accounting_periods_locked_by_membership, an ON DELETE SET NULL composite tenant foreign key, so the record survives the departure without its member pointer. A suspension is reversible, so nothing is written.",
-  },
-  {
     id: "ai_summary_snapshots_generated_by_membership",
     mechanism: "database-cascade",
     table: "ai_summary_snapshots",
@@ -2568,66 +2525,6 @@ export const MEMBERSHIP_ARTIFACTS = [
     onSuspension: "retain",
     reason:
       "The member pointer on expenses is cleared by fk_expenses_user_actor, an ON DELETE SET NULL composite tenant foreign key, so the record survives the departure without its member pointer. A suspension is reversible, so nothing is written.",
-  },
-  {
-    id: "fin_bank_imports_created_by_membership",
-    mechanism: "database-cascade",
-    table: "fin_bank_imports",
-    keyedBy: "created_by_membership_id",
-    onRemoval: "set-null",
-    onSuspension: "retain",
-    reason:
-      "Authorship on fin_bank_imports is cleared by fk_fin_bank_imports_created_by_membership, an ON DELETE SET NULL composite tenant foreign key, so the record survives the departure without its member pointer. A suspension is reversible, so nothing is written.",
-  },
-  {
-    id: "fin_bank_transfers_created_by_membership",
-    mechanism: "database-cascade",
-    table: "fin_bank_transfers",
-    keyedBy: "created_by_membership_id",
-    onRemoval: "set-null",
-    onSuspension: "retain",
-    reason:
-      "Authorship on fin_bank_transfers is cleared by fk_fin_bank_transfers_created_by_membership, an ON DELETE SET NULL composite tenant foreign key, so the record survives the departure without its member pointer. A suspension is reversible, so nothing is written.",
-  },
-  {
-    id: "fin_budgets_approved_by_membership",
-    mechanism: "database-cascade",
-    table: "fin_budgets",
-    keyedBy: "approved_by_membership_id",
-    onRemoval: "set-null",
-    onSuspension: "retain",
-    reason:
-      "Approval attribution on fin_budgets is cleared by fk_fin_budgets_approved_by_membership, an ON DELETE SET NULL composite tenant foreign key, so the record survives the departure without its member pointer. A suspension is reversible, so nothing is written.",
-  },
-  {
-    id: "fin_budgets_created_by_membership",
-    mechanism: "database-cascade",
-    table: "fin_budgets",
-    keyedBy: "created_by_membership_id",
-    onRemoval: "set-null",
-    onSuspension: "retain",
-    reason:
-      "Authorship on fin_budgets is cleared by fk_fin_budgets_created_by_membership, an ON DELETE SET NULL composite tenant foreign key, so the record survives the departure without its member pointer. A suspension is reversible, so nothing is written.",
-  },
-  {
-    id: "fin_cash_flow_scenarios_created_by_membership",
-    mechanism: "database-cascade",
-    table: "fin_cash_flow_scenarios",
-    keyedBy: "created_by_membership_id",
-    onRemoval: "set-null",
-    onSuspension: "retain",
-    reason:
-      "Authorship on fin_cash_flow_scenarios is cleared by fk_fin_cash_flow_scenarios_created_by_membership, an ON DELETE SET NULL composite tenant foreign key, so the record survives the departure without its member pointer. A suspension is reversible, so nothing is written.",
-  },
-  {
-    id: "fin_reconciliation_matches_confirmed_by_membership",
-    mechanism: "database-cascade",
-    table: "fin_reconciliation_matches",
-    keyedBy: "confirmed_by_membership_id",
-    onRemoval: "set-null",
-    onSuspension: "retain",
-    reason:
-      "Confirmation attribution on fin_reconciliation_matches is cleared by fk_fin_recon_matches_confirmed_by_membership, an ON DELETE SET NULL composite tenant foreign key, so the record survives the departure without its member pointer. A suspension is reversible, so nothing is written.",
   },
   {
     id: "hr_attendance_regularizations_approved_by_membership",
@@ -2748,16 +2645,6 @@ export const MEMBERSHIP_ARTIFACTS = [
     onSuspension: "retain",
     reason:
       "fk_invitations_org_revoked_by_membership is ON DELETE SET NULL without a column list on the composite FK (org_id, revoked_by_membership_id), so Postgres would attempt to null both org_id (NOT NULL) and revoked_by_membership_id, raising 23502. The revocation path must explicitly clear all revoked_by_membership_id pointers for this membership before the membership row is removed.",
-  },
-  {
-    id: "journal_entries_created_by_membership",
-    mechanism: "database-cascade",
-    table: "journal_entries",
-    keyedBy: "created_by_membership_id",
-    onRemoval: "set-null",
-    onSuspension: "retain",
-    reason:
-      "Authorship on journal_entries is cleared by fk_je_org_created_by_mbr, an ON DELETE SET NULL composite tenant foreign key, so the record survives the departure without its member pointer. A suspension is reversible, so nothing is written.",
   },
   {
     id: "kb_events_actor_membership",
@@ -2980,16 +2867,6 @@ export const MEMBERSHIP_ARTIFACTS = [
       "The voider pointer on sign_envelopes is cleared by fk_sign_env_org_voided_mbr, an ON DELETE SET NULL composite tenant foreign key, so the record survives the departure without its member pointer. A suspension is reversible, so nothing is written.",
   },
   {
-    id: "sign_public_forms_created_by_membership",
-    mechanism: "database-cascade",
-    table: "sign_public_forms",
-    keyedBy: "created_by_membership_id",
-    onRemoval: "set-null",
-    onSuspension: "retain",
-    reason:
-      "Authorship on sign_public_forms is cleared by fk_sign_pf_org_created_mbr, an ON DELETE SET NULL composite tenant foreign key, so the record survives the departure without its member pointer. A suspension is reversible, so nothing is written.",
-  },
-  {
     id: "support_macros_created_by_membership",
     mechanism: "database-cascade",
     table: "support_macros",
@@ -3041,13 +2918,13 @@ export const MEMBERSHIP_ARTIFACTS = [
   },
   {
     id: "timesheet_audit_events_actor_membership",
-    mechanism: "database-cascade",
+    mechanism: "database-write",
     table: "timesheet_audit_events",
     keyedBy: "actor_membership_id",
-    onRemoval: "set-null",
+    onRemoval: "unreferenced",
     onSuspension: "retain",
     reason:
-      "Actor attribution on timesheet_audit_events is cleared by fk_timesheet_audit_actor_membership, an ON DELETE SET NULL composite tenant foreign key, so the record survives the departure without its member pointer. A suspension is reversible, so nothing is written.",
+      "timesheet_audit_events is a hash-chained ledger whose row_hash covers actor_membership_id, so the pointer must outlive the membership unchanged: migration 1104 dropped fk_timesheet_audit_actor_membership, whose ON DELETE SET NULL rewrote every row the departing member had written and broke the organisation's chain at the first of them. The departure path writes nothing here; readers LEFT JOIN organization_members on (org_id, id) and render a departed actor as unresolved. A suspension is reversible, so nothing is written.",
   },
   {
     id: "timesheet_exceptions_resolved_by_membership",

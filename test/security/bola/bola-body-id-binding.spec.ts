@@ -140,31 +140,35 @@ describe("the surface, enumerated from the committed contract", () => {
     // route with four org-scoping id filters is either swept or it is a blind spot.
     // This census tracks `openapi.json`, so it has to be re-read after the release's final
     // `pnpm openapi:generate` rather than assumed.
-    // Descriptive, re-read after `pnpm openapi:generate`; the sweeps below are what bite.
-    // 3667 -> 3666: `48c612a8d refactor(branches)` retired one operation. Descriptive only; the sweeps below are what bite.
-    // 3666 -> 3654, re-pinned 2026-09-11 after the org-access remediation regenerated the
-    // contract. The whole delta is accounted for route by route, and it has to be, because a
-    // count that moved further than the deleted routes explain is a signal, not a rebase:
-    //   -13 deleted: the six `DELETE /org-hierarchy/<kind>/{id}` (D4), the four
-    //       `PATCH /org-hierarchy/<kind>/{id}/move` (D3), `POST /workspace-onboarding/complete`
-    //       (D17, folded into the setup-completed outbox consumer), and the two compat deletes
-    //       `DELETE /hr/org/locations/{locationId}` and `DELETE /hr/org/teams/{teamId}`.
-    //   +1 added: `GET /org/setup/status`.
-    //   3666 - 13 + 1 = 3654.
-    // bodyFields 814 -> 810 and operationsWithIdFields 674 -> 670 are the SAME four operations:
-    // only the four move routes carried a request body at all, each declaring exactly one
-    // id-shaped field — businessUnitId, parentId, branchId, departmentId, read off the
-    // pre-deletion contract. The eight DELETEs and `POST /workspace-onboarding/complete`
-    // declared no request body and no query parameter; `GET /org/setup/status` declares
-    // neither; and the `invitees` array `POST /org/setup/complete` gained holds `email` and
-    // `role`, so it adds no id-shaped field. idFields is bodyFields + queryFields, hence -4.
-    // queryFields is unmoved at 245, which is the control: nothing on either side of the
-    // change declared a query parameter.
-    expect(counts.operations).toBe(3654);
-    expect(counts.bodyFields).toBe(810);
-    expect(counts.queryFields).toBe(245);
-    expect(counts.idFields).toBe(1055);
-    expect(counts.operationsWithIdFields).toBe(670);
+    //
+    // 3654 -> 3893, re-pinned 2026-09-12 against the MERGED contract, and every number below it
+    // moves with it. 3,654 was MAIN's contract (`670436c72`); this branch is main plus the
+    // Inventory, CRM, Timesheets and SignOS surfaces, with main's `finance/` module replaced by
+    // the gl_* accounting kernel. So the whole delta is that merge, and it is accounted for by
+    // module rather than absorbed, because a count that moved further than the merged modules
+    // explain is a signal and not a rebase:
+    //   +458 added — /inventory 194, /accounting 109 (the gl_* kernel's own routes), /crm 100,
+    //        /cron 28, /deals 7, /compliance 5, /waitlist 3, /timesheets 3, /webhooks 2,
+    //        /sign 2, /public 2, /party 1, /onboarding 1, /csat 1.
+    //   -219 removed — /accounting 187 and /finance 19, which are main's finance/ surface that
+    //        the gl_* rewrite absorbed, plus /cron 6, /public 2, /contacts 2, /sign 1, /party 1,
+    //        /csat 1.
+    //   3654 + 458 - 219 = 3893.
+    // bodyFields 810 -> 904, queryFields 245 -> 320 (so idFields 1055 -> 1224) and
+    // operationsWithIdFields 670 -> 760. These five numbers are DESCRIPTIVE. What bites is that
+    // all 169 newly-enumerated id fields go through the same analyser as the rest and land in
+    // the same ratchet below — `written-unresolved` measures 197 against a baseline of 225 and
+    // `unresolved` 148 against 179, with the resolved floor still met, so the merged surface is
+    // swept rather than exempted. `handler-not-found` is still empty, which is the control: an
+    // operation the walk cannot join to a handler would be a blind spot, and none of the 458 is.
+    //   -2 (2026-09-12): the combined `/cron/sign-envelope-sweeps` pair was retired in favour of
+    //        the separately-leased `/cron/sign-reminder-sweep` and `/cron/sign-expiration-sweep`.
+    //   3893 - 2 = 3891.
+    expect(counts.operations).toBe(3891);
+    expect(counts.bodyFields).toBe(904);
+    expect(counts.queryFields).toBe(320);
+    expect(counts.idFields).toBe(1224);
+    expect(counts.operationsWithIdFields).toBe(760);
   });
 
   /**
@@ -185,7 +189,32 @@ describe("the surface, enumerated from the committed contract", () => {
       expect([field, verdict]).toEqual([field, expect.stringMatching(/^(?:org-predicate|filter-in-org-query)$/)]);
   });
 
-  // Pinned by name, not by count: a swapped-in selector must fail, not net to zero.
+  /**
+   * Pinned by name, not by count: a swapped-in selector must fail, not net to zero.
+   *
+   * `actor-selector-surface.json` grew 100 -> 108 on the merge, and the pin's whole value is that
+   * the eight had to be read before they could be added. NOTHING left the list, so this is purely
+   * the merged modules' own surface. Each is a SUBJECT selector — "show/assign for person X" on a
+   * route that gates who may name an X — not an actor selector in the §5 sense of a client
+   * asserting who it is:
+   *   GET /crm/commission/accrual, .../accrual/curve, .../earnings — `userId` is accepted and
+   *     never trusted. `commission-scope.ts` forces the filter to the caller's own id whenever the
+   *     guard did not resolve scope `all` (`if (!viewer.viewAll) return viewer.userId`), and the
+   *     controller's `viewer()` fails closed to "not all" when the guard did not run at all.
+   *   POST /crm/commission/accrual/rebuild — its own key, `crm:commission-accruals:rebuild`,
+   *     deliberately not the read key; `userId` bounds which earnings are re-derived.
+   *   POST /crm/commission/plans/{planId}/assignments — `crm:commission-plans:manage`; naming the
+   *     assignee IS the operation.
+   *   GET /inventory/labor/records — `inventory:labor:read`, a supervisor key held separately from
+   *     the reports key precisely because this screen names individual people.
+   *   POST /inventory/warehouses/{warehouseId}/users — `inventory:warehouses:manage`; the granter
+   *     is `u.userId` from the session and `body.userId` is the grantee.
+   *   GET /timesheets/periods/overdue — `timesheets:approvals:view`, the standing that already
+   *     grants sight of other people's timesheets, narrowed by the same DataScope.
+   * None of the eight lets a caller assert its own identity, and none is excused from the sweep:
+   * they are recorded here because a client sends a person's id, which is the question this pin
+   * keeps open.
+   */
   it("splits out the tenant and actor selectors rather than analysing them as object references", () => {
     const { counts } = enumerateIdFieldSites();
 
@@ -213,12 +242,14 @@ describe("the surface, enumerated from the committed contract", () => {
        * Three of the six named here were resolved by `057adf02`, which regenerated `openapi.json`
        * after it had gone 31 operations stale. The set is TIGHTENED rather than left wide: a
        * blind spot that closed must shrink the allowance, or the next one to open is absorbed.
+       *
+       * EMPTIED on the merge. `SurveyParticipantsController_import` and
+       * `TimesheetBillingController_export` resolve now: both are handlers NAMED after a reserved
+       * word, which the walk in `route-surface.ts` dropped until its keyword list went the way of
+       * the gate's (053db5f39). `FinanceAuditController_export` went with main's `finance/` module
+       * when the gl_* rewrite replaced it — there is no such handler to resolve.
        */
-      new Set([
-        "FinanceAuditController_export",
-        "SurveyParticipantsController_import",
-        "TimesheetBillingController_export",
-      ]),
+      new Set([]),
     );
   });
 });
@@ -273,10 +304,14 @@ const UNRESOLVED_BASELINE = 179;
  * Checked by querying the analyser directly rather than inferring it from the absence.
  * The pin did its job — the site could not vanish quietly.
  */
+/**
+ * One, not four. The three `AssetCategoriesController_update` sites left with main's
+ * `finance/` fixed-asset surface when the gl_* accounting rewrite replaced it: there is no
+ * such controller on this branch, so the pin could only ever fail. Removed because the code
+ * is gone, not because the analyser stopped seeing it — `SignFieldsController_update` is
+ * still held below, which is what proves the spread-before-fallback trace still works.
+ */
 const NEWLY_VISIBLE_BY_SPREAD_ORDERING: readonly string[] = [
-  "AssetCategoriesController_update|assetAccountId",
-  "AssetCategoriesController_update|depreciationExpenseAccountId",
-  "AssetCategoriesController_update|accumulatedDepreciationAccountId",
   "SignFieldsController_update|groupId",
 ];
 

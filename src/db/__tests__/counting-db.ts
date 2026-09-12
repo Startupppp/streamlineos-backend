@@ -111,6 +111,7 @@ export function makeCountingDb(plan: CountingPlan = {}): CountingDb {
 
   const db: Record<string, unknown> = {
     select: root("select"),
+    selectDistinct: root("select"),
     insert: root("insert"),
     update: root("update"),
     delete: root("delete"),

@@ -17,6 +17,7 @@ import {
 } from "../../../db/schema/hr/engagement-extras";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
+import { assertOrganizationActor } from "../../../common/organization/organization-actor";
 import type {
   AwardBadgeInput,
   CreateBadgeInput,

@@ -1,5 +1,5 @@
 /**
- * BOLA sweep of the e-sign module — the three defects it found, and the signer
+ * BOLA sweep of the e-sign module — the defects it found, and the signer
  * token surface it cleared.
  *
  * The module was explicitly NOT covered by the earlier triage pass (its report
@@ -9,7 +9,9 @@
  *
  *   E1  POST /sign/envelopes/:envelopeId/ai/summarize      within-tenant scope escalation
  *   E2  POST /sign/admin/run-{reminder,expiration}-sweep   no tenant predicate at all
- *   E3  POST /sign/templates/:templateId/publish-public-form   23505 escaping as a 500
+ *
+ * (E3, `POST /sign/templates/:templateId/publish-public-form` answering a 23505
+ * as a 500, is gone with the route: migration 0660b retired sign public forms.)
  *
  * Plus the public signer-token surface (`@Public() /public/sign/:token/**`),
  * which is the most dangerous part of the module because a signing link is by
@@ -20,7 +22,7 @@
  */
 
 import { ScopedRead } from "../../../src/modules/access/scoped-read";
-import { ConflictException, ForbiddenException, NotFoundException } from "@nestjs/common";
+import { ForbiddenException, NotFoundException } from "@nestjs/common";
 import type { SQL } from "drizzle-orm";
 import { PgDialect } from "drizzle-orm/pg-core";
 import { signEnvelopes, signRecipients } from "../../../src/db/schema";
@@ -31,7 +33,6 @@ import type { AccessService } from "../../../src/modules/access/access.service";
 import { SignAiService } from "../../../src/modules/e-sign/sign-ai.service";
 import { SignAiController } from "../../../src/modules/e-sign/sign-ai.controller";
 import { SignEnvelopeSweepsService } from "../../../src/modules/e-sign/sign-envelope-sweeps.service";
-import { SignTemplatesService } from "../../../src/modules/e-sign/sign-templates.service";
 import { SignPublicService } from "../../../src/modules/e-sign/sign-public.service";
 
 const CALLER_ORG = "org-caller";
@@ -57,16 +58,6 @@ function asColumns(row: Record<string, unknown>): Record<string, unknown> {
   return Object.fromEntries(
     Object.entries(row).map(([key, value]) => [key.replace(/[A-Z]/g, (c) => `_${c.toLowerCase()}`), value]),
   );
-}
-
-/** A unique-violation error shaped the way postgres-js actually raises one. */
-function uniqueViolation(constraint: string): Error {
-  const driver = Object.assign(new Error("duplicate key value violates unique constraint"), {
-    code: "23505",
-    constraint_name: constraint,
-    table_name: "sign_public_forms",
-  });
-  return Object.assign(new Error("Failed query: insert into sign_public_forms"), { cause: driver });
 }
 
 /* ------------------------------------------------------------------ *
@@ -235,7 +226,8 @@ describe("E2 · the admin sweeps carry a tenant predicate of their own", () => {
     reminderRepeatDays: 1,
     lastReminderAt: null,
     sentAt: new Date("2020-01-01T00:00:00Z"),
-    expiresAt: new Date("2020-02-01T00:00:00Z"),
+    /* Still open: an envelope past its expiry is the expiration sweep's, and the reminder sweep skips it. */
+    expiresAt: new Date("2999-01-01T00:00:00Z"),
     senderMembershipId: CALLER_MEMBERSHIP,
     title: "Own envelope",
   };
@@ -357,76 +349,6 @@ describe("E2 · the admin sweeps carry a tenant predicate of their own", () => {
 });
 
 /* ------------------------------------------------------------------ *
- * E3 — POST /sign/templates/:templateId/publish-public-form
- * ------------------------------------------------------------------ */
-
-describe("E3 · publishing a public form on a slug another tenant already holds", () => {
-  interface TemplateHarness {
-    service: SignTemplatesService;
-    insertValues: jest.Mock;
-  }
-
-  /**
-   * `formFindFirst` answers `undefined` on purpose. That is what RLS does to the
-   * pre-flight check: `sign_public_forms` admits `org_id = current_org_id() OR
-   * slug = current_public_token()`, and an authenticated request sets no public
-   * token, so another tenant's row is invisible to it. The insert is therefore
-   * the only authority, and the harness makes it raise the 23505 the global
-   * `uniq_sign_public_forms_slug` index actually raises.
-   */
-  function makeTemplates(insertError: Error | null): TemplateHarness {
-    const insertValues = jest.fn(() => ({
-      returning: () => (insertError ? Promise.reject(insertError) : Promise.resolve([{ id: 1, slug: "taken" }])),
-    }));
-    const db = {
-      query: {
-        signTemplates: {
-          findFirst: jest.fn().mockResolvedValue({ id: 5, orgId: CALLER_ORG, status: "published", name: "T" }),
-        },
-        signPublicForms: { findFirst: jest.fn().mockResolvedValue(undefined) },
-      },
-      insert: jest.fn(() => ({ values: insertValues })),
-    } as unknown as Db;
-    const service = new SignTemplatesService(
-      db,
-      { record: jest.fn() } as never,
-      { hash: (v: string) => `h:${v}` } as never,
-      {} as never,
-    );
-    return { service, insertValues };
-  }
-
-  const input = { slug: "taken", embedAllowed: false } as never;
-
-  it("answers 409 instead of letting the unique violation escape as a 500", async () => {
-    const h = makeTemplates(uniqueViolation("uniq_sign_public_forms_slug"));
-    const error = await h.service.publishPublicForm(CALLER_ORG, CALLER_MEMBERSHIP, 5, input).catch((e: unknown) => e);
-    expect(error).toBeInstanceOf(ConflictException);
-    expect((error as ConflictException).getStatus()).toBe(409);
-  });
-
-  it("succeeds when the slug is free", async () => {
-    const h = makeTemplates(null);
-    await expect(h.service.publishPublicForm(CALLER_ORG, CALLER_MEMBERSHIP, 5, input)).resolves.toMatchObject({
-      slug: "taken",
-    });
-  });
-
-  it("does not swallow a unique violation raised by some other constraint", async () => {
-    const h = makeTemplates(uniqueViolation("uniq_sign_templates_org_name"));
-    const error = await h.service.publishPublicForm(CALLER_ORG, CALLER_MEMBERSHIP, 5, input).catch((e: unknown) => e);
-    expect(error).not.toBeInstanceOf(ConflictException);
-  });
-
-  it("does not swallow a non-unique database error", async () => {
-    const driver = Object.assign(new Error("null value in column"), { code: "23502" });
-    const h = makeTemplates(Object.assign(new Error("Failed query"), { cause: driver }));
-    const error = await h.service.publishPublicForm(CALLER_ORG, CALLER_MEMBERSHIP, 5, input).catch((e: unknown) => e);
-    expect(error).not.toBeInstanceOf(ConflictException);
-  });
-});
-
-/* ------------------------------------------------------------------ *
  * The public signer-token surface — characterisation, not repair
  * ------------------------------------------------------------------ */
 
@@ -513,7 +435,6 @@ describe("the signer token is bound to one envelope, one recipient, and an expir
       {} as never,
       {} as never,
       {} as never,
-      {} as never,
     );
     return { service, getFileUrl, fieldUpdateWheres };
   }
@@ -543,6 +464,19 @@ describe("the signer token is bound to one envelope, one recipient, and an expir
     fileName: "b.pdf",
     pageCount: 1,
   };
+
+  it("a recipient who has not proved their identity cannot decline on the link alone", async () => {
+    /*
+     * An access-code recipient who never entered the code: the link was
+     * forwarded, or guessed at from a mailbox. The decline ends the envelope
+     * for every signer, so it needs the same proof signing does.
+     */
+    const unproven = { ...activeRecipient, status: "invited", authMethod: "access_code", authenticatedAt: null };
+    const h = makePublic(unproven, [myDocument], []);
+
+    await expect(h.service.decline(TOKEN, { reason: "no" }, {})).rejects.toThrow("Please complete authentication first");
+    expect(h.fieldUpdateWheres).toHaveLength(0);
+  });
 
   it("an unknown token is a 404, so a signing link cannot be enumerated into a session", async () => {
     const h = makePublic(undefined, [], []);

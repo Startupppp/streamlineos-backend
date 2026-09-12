@@ -4,24 +4,12 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import {
-  and,
-  asc,
-  desc,
-  eq,
-  gt,
-  ilike,
-  inArray,
-  lte,
-  or,
-  sql,
-} from "drizzle-orm";
+import { and, asc, eq, inArray } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import {
   organizationMembers,
   userDelegationPermissions,
   userDelegations,
-  users,
 } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
@@ -42,26 +30,15 @@ import {
   assertDelegationPolicy,
   assertDelegationTarget,
 } from "./delegation-policy";
-import { buildCursorPage, decodeCursor } from "../../common/pagination/cursor";
-import { keysetBefore } from "../../common/pagination/keyset";
-
-type DelegationRow = typeof userDelegations.$inferSelect;
-type DelegationDirection = "received" | "given";
-type DelegationLifecycle = "ACTIVE" | "SCHEDULED" | "EXPIRED" | "REVOKED";
-
-function escapeLike(value: string): string {
-  return value.replace(/[\\%_]/g, (character) => `\\${character}`);
-}
-
-function resolveLifecycle(
-  row: DelegationRow,
-  now: Date,
-): DelegationLifecycle {
-  if (row.status !== "ACTIVE") return "REVOKED";
-  if (row.startsAt > now) return "SCHEDULED";
-  if (row.endsAt <= now) return "EXPIRED";
-  return "ACTIVE";
-}
+import {
+  delegateeMember,
+  delegationSelection,
+  delegatorMember,
+  joinDelegateeMember,
+  joinDelegatorMember,
+  listDelegationsPage,
+  type DelegationListingDeps,
+} from "./lib/delegation-listing";
 
 @Injectable()
 export class DelegationsService {
@@ -72,161 +49,14 @@ export class DelegationsService {
     private readonly audit: AuditService,
   ) {}
 
+  private get listingDeps(): DelegationListingDeps {
+    return { db: this.db };
+  }
+
   private async invalidateDelegateeSession(userId: string): Promise<void> {
     const invalidate = () => this.cache.invalidate(CACHE_KEYS.userSession(userId));
     await invalidate();
     registerAfterCommit(invalidate);
-  }
-
-  private async withPermissions(
-    rows: DelegationRow[],
-    now: Date,
-  ) {
-    if (rows.length === 0) return [];
-    const participantMembershipIds = Array.from(
-      new Set(rows.flatMap((row) => [row.delegatorMembershipId, row.delegateeMembershipId])),
-    );
-    const [permissionRows, participantRows] = await Promise.all([
-      this.db
-        .select({
-          delegationId: userDelegationPermissions.delegationId,
-          permissionKey: userDelegationPermissions.permissionKey,
-        })
-        .from(userDelegationPermissions)
-        .where(
-          and(
-            eq(userDelegationPermissions.orgId, rows[0]!.orgId),
-            inArray(
-              userDelegationPermissions.delegationId,
-              rows.map((row) => row.id),
-            ),
-          ),
-        )
-        .orderBy(
-          asc(userDelegationPermissions.delegationId),
-          asc(userDelegationPermissions.permissionKey),
-        ),
-      this.db
-        .select({
-          membershipId: organizationMembers.id,
-          name: users.name,
-          firstName: users.firstName,
-          lastName: users.lastName,
-          email: users.email,
-        })
-        .from(organizationMembers)
-        .innerJoin(users, eq(organizationMembers.userId, users.id))
-        .where(
-          and(
-            eq(organizationMembers.orgId, rows[0]!.orgId),
-            inArray(organizationMembers.id, participantMembershipIds),
-          ),
-        ),
-    ]);
-    const byDelegation = new Map<string, string[]>();
-    for (const row of permissionRows) {
-      const values = byDelegation.get(row.delegationId) ?? [];
-      values.push(row.permissionKey);
-      byDelegation.set(row.delegationId, values);
-    }
-    const nameByMembershipId = new Map(
-      participantRows.map((member) => {
-        const structuredName = [member.firstName, member.lastName]
-          .filter(Boolean)
-          .join(" ");
-        return [member.membershipId, member.name?.trim() || structuredName || member.email];
-      }),
-    );
-    return rows.map((row) => ({
-      ...row,
-      permissions: byDelegation.get(row.id) ?? [],
-      delegatorName: nameByMembershipId.get(row.delegatorMembershipId) ?? null,
-      delegateeName: nameByMembershipId.get(row.delegateeMembershipId) ?? null,
-      lifecycle: resolveLifecycle(row, now),
-    }));
-  }
-
-  private async listPage(
-    orgId: string,
-    userId: string,
-    direction: DelegationDirection,
-    query: ListDelegationsQuery,
-  ) {
-    const now = new Date();
-    const actorMembership = await this.db
-      .select({ id: organizationMembers.id })
-      .from(organizationMembers)
-      .where(
-        and(
-          eq(organizationMembers.orgId, orgId),
-          eq(organizationMembers.userId, userId),
-          eq(organizationMembers.status, "ACTIVE"),
-        ),
-      )
-      .then((rows) => rows[0] ?? null);
-    if (!actorMembership) {
-      return {
-        data: [],
-        pagination: { limit: query.limit, nextCursor: null, hasMore: false },
-      };
-    }
-    const actorMembershipId = actorMembership.id;
-    const participantColumn =
-      direction === "received"
-        ? userDelegations.delegatorMembershipId
-        : userDelegations.delegateeMembershipId;
-    const actorColumn =
-      direction === "received"
-        ? userDelegations.delegateeMembershipId
-        : userDelegations.delegatorMembershipId;
-    const search = query.search?.trim();
-    const searchPattern = search ? `%${escapeLike(search)}%` : null;
-    const participantSearch = searchPattern
-      ? or(
-          ilike(userDelegations.reason, searchPattern),
-          sql`EXISTS (
-            SELECT 1
-            FROM ${organizationMembers}
-            INNER JOIN ${users} ON ${users.id} = ${organizationMembers.userId}
-            WHERE ${organizationMembers.id} = ${participantColumn}
-              AND ${organizationMembers.orgId} = ${orgId}
-              AND (
-                ${users.name} ILIKE ${searchPattern}
-                OR ${users.email} ILIKE ${searchPattern}
-                OR concat_ws(' ', ${users.firstName}, ${users.lastName}) ILIKE ${searchPattern}
-              )
-          )`,
-        )
-      : undefined;
-    const position = decodeCursor(query.cursor);
-    const conditions = and(
-      eq(userDelegations.orgId, orgId),
-      eq(actorColumn, actorMembershipId),
-      direction === "received"
-        ? and(
-            eq(userDelegations.status, "ACTIVE"),
-            lte(userDelegations.startsAt, now),
-            gt(userDelegations.endsAt, now),
-          )
-        : undefined,
-      participantSearch,
-      position
-        ? keysetBefore(userDelegations.createdAt, userDelegations.id, position)
-        : undefined,
-    );
-
-    const rows = await this.db
-      .select()
-      .from(userDelegations)
-      .where(conditions)
-      .orderBy(desc(userDelegations.createdAt), desc(userDelegations.id))
-      .limit(query.limit + 1);
-    const page = buildCursorPage(rows, query.limit, (row) => ({
-      sortValue: row.createdAt.toISOString(),
-      id: row.id,
-    }));
-
-    return { ...page, data: await this.withPermissions(page.data, now) };
   }
 
   async list(
@@ -234,7 +64,7 @@ export class DelegationsService {
     userId: string,
     query: ListDelegationsQuery = { limit: 20 },
   ) {
-    return this.listPage(orgId, userId, "received", query);
+    return listDelegationsPage(this.listingDeps, orgId, userId, "received", query);
   }
 
   async listGiven(
@@ -242,7 +72,7 @@ export class DelegationsService {
     delegatorId: string,
     query: ListDelegationsQuery = { limit: 20 },
   ) {
-    return this.listPage(orgId, delegatorId, "given", query);
+    return listDelegationsPage(this.listingDeps, orgId, delegatorId, "given", query);
   }
 
   async create(actor: CurrentUserContext, body: CreateDelegationInput) {
@@ -326,7 +156,12 @@ export class DelegationsService {
             reason: body.reason ?? null,
           },
         });
-        return { ...created, permissions: body.permissions };
+        return {
+          ...created,
+          delegatorId: actor.userId,
+          delegateeId: body.delegateeId,
+          permissions: body.permissions,
+        };
       },
       { orgId: actor.orgId },
     );
@@ -339,8 +174,10 @@ export class DelegationsService {
       this.db,
       async (tx) => {
         const [delegation] = await tx
-          .select()
+          .select(delegationSelection)
           .from(userDelegations)
+          .innerJoin(delegatorMember, joinDelegatorMember)
+          .innerJoin(delegateeMember, joinDelegateeMember)
           .where(
             and(
               eq(userDelegations.id, id),
@@ -416,6 +253,8 @@ export class DelegationsService {
         return {
           updated: {
             ...updated,
+            delegatorId: delegation.delegatorId,
+            delegateeId: delegation.delegateeId,
             permissions: permissionRows.map((row) => row.permissionKey),
           },
           delegateeUserId,

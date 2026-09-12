@@ -1,14 +1,48 @@
 import { readdirSync, readFileSync, existsSync, statSync } from "node:fs";
-import { join, relative, sep } from "node:path";
+import { basename, join, relative, sep } from "node:path";
 import { execSync } from "node:child_process";
 import { MODULE_REGISTRY } from "../rbac/module-registry";
 import { SEAM_BUDGETS } from "../observability/seam-budgets";
 import { SLO_CATALOGUE, MODULE_SLOS, QUEUE_SLOS, QUEUE_SUBJECTS, SLO_OWNERS } from "./index";
-import { workspaceRoot } from "../testing/repo-paths";
 
 const BACKEND_ROOT = join(__dirname, "..", "..", "..");
-const REPO_ROOT = workspaceRoot();
 const SRC_ROOT = join(BACKEND_ROOT, "src");
+
+/**
+ * Where the runbooks actually live.
+ *
+ * This was `join(BACKEND_ROOT, "..")`, and the two runbook cases below had been
+ * failing with ENOENT — not on a missing heading, which is what they exist to
+ * find, but on a directory that has never existed. `architecture-refactor/` is
+ * inside the FRONTEND checkout; the parent of the backend holds only the sibling
+ * repositories. So these two have never once compared an anchor to a heading.
+ *
+ * Prefer this worktree's OWN paired frontend — `inv-wt-backend` pairs with
+ * `inv-wt-frontend` — over whichever `streamlineos-frontend` happens to sit
+ * beside it holding an unrelated branch, or the anchors get checked against
+ * another branch's runbooks and drift reads as a pass.
+ *
+ * It THROWS when nothing resolves. Returning a path that does not exist gives
+ * ENOENT, which is at least loud; returning `null` and skipping would make these
+ * two cases silently vacuous, which is how five cross-repo drift tests in this
+ * codebase resolved to nowhere and reported green for months.
+ */
+const REPO_ROOT = ((): string => {
+  const parent = join(BACKEND_ROOT, "..");
+  const own = basename(BACKEND_ROOT).replace(/-backend$/, "-frontend");
+  const candidates = [own, "streamlineos-frontend"];
+  for (const name of candidates) {
+    const candidate = join(parent, name);
+    if (existsSync(join(candidate, "architecture-refactor"))) return candidate;
+  }
+  for (const entry of readdirSync(parent))
+    if (existsSync(join(parent, entry, "architecture-refactor"))) return join(parent, entry);
+  throw new Error(
+    `No checkout beside ${BACKEND_ROOT} holds architecture-refactor/. The runbook ` +
+      `assertions cannot resolve their files, and skipping them would make this ` +
+      `spec pass over unread documents. Tried: ${candidates.join(", ")}.`,
+  );
+})();
 
 const EXCLUDED_MODULES = ["crm", "inventory"];
 
@@ -231,7 +265,11 @@ describe("SLO catalogue", () => {
     const jobSubjects = QUEUE_SUBJECTS.filter(
       (subject) => subject.channel === "job" && subject.drains.endsWith("_jobs"),
     );
-    expect(jobSubjects.length).toBeGreaterThanOrEqual(7);
+    // Six since the accounting rewrite deleted `finance/**`, and with it the
+    // finance report export worker and its `finance_report_export_jobs` queue.
+    // The rewrite brought no export queue of its own; lower this again only for
+    // a queue that was deliberately removed, never to hide one that went missing.
+    expect(jobSubjects.length).toBeGreaterThanOrEqual(6);
     const unwatched = jobSubjects.filter((subject) => !registered.has(subject.drains));
     expect(unwatched.map((s) => s.drains)).toEqual([]);
   });

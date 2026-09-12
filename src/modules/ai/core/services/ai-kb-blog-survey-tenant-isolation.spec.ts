@@ -40,7 +40,7 @@ function sqlValues(value: unknown, seen = new Set<object>()): unknown[] {
   ];
 }
 
-interface FluentChain extends PromiseLike<unknown[]> {
+interface FluentChain<T = unknown> extends PromiseLike<T[]> {
   from: jest.Mock;
   innerJoin: jest.Mock;
   leftJoin: jest.Mock;
@@ -49,16 +49,16 @@ interface FluentChain extends PromiseLike<unknown[]> {
   limit: jest.Mock;
 }
 
-function makeFluentChain(finalResult: unknown[]): FluentChain {
-  const chain = {} as FluentChain;
+function makeFluentChain<T = unknown>(finalResult: T[]): FluentChain<T> {
+  const chain = {} as FluentChain<T>;
   chain.from = jest.fn().mockReturnValue(chain);
   chain.innerJoin = jest.fn().mockReturnValue(chain);
   chain.leftJoin = jest.fn().mockReturnValue(chain);
   chain.where = jest.fn().mockReturnValue(chain);
   chain.orderBy = jest.fn().mockReturnValue(chain);
   chain.limit = jest.fn().mockResolvedValue(finalResult);
-  chain.then = function<TResult1 = unknown[], TResult2 = never>(
-    onfulfilled?: ((value: unknown[]) => TResult1 | PromiseLike<TResult1>) | null,
+  chain.then = function <TResult1 = T[], TResult2 = never>(
+    onfulfilled?: ((value: T[]) => TResult1 | PromiseLike<TResult1>) | null,
     onrejected?: ((reason: unknown) => TResult2 | PromiseLike<TResult2>) | null,
   ): Promise<TResult1 | TResult2> {
     return Promise.resolve(finalResult).then(onfulfilled, onrejected);

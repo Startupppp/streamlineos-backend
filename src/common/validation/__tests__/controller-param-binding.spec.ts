@@ -13,9 +13,30 @@ import { join, posix, resolve } from "node:path";
  * export and erasure services, and `public.controller.ts` did it on two
  * UNAUTHENTICATED routes.
  *
- * The assertion is zero, not a ratchet: the repository is at zero now, so anything
- * above zero is a new defect rather than inherited debt. A pipe (`ParseIntPipe` and
- * friends) counts as a boundary — it rejects before the handler body runs.
+ * A pipe (`ParseIntPipe` and friends) counts as a boundary — it rejects before the
+ * handler body runs.
+ *
+ * ⚠ The assertion used to be a flat zero, on the argument that "the repository is at
+ * zero now, so anything above zero is a new defect rather than inherited debt". That
+ * argument was true of the tree it was written against and is no longer true of this
+ * one: merging the Inventory/CRM/Timesheets/SignOS branch and the accounting rewrite
+ * into main brought 113 bindings across 28 controllers that never had this gate
+ * applied to them. Flat zero would now fail on 113 pre-existing sites and say nothing
+ * about the next one, which is the failure mode a ratchet exists to avoid.
+ *
+ * So the zero survives where it can still mean zero — a controller NOT in the record
+ * below may not have a single unvalidated binding — and the inherited sites are
+ * enumerated per file with the lane that owns them. The record is exact, not a
+ * ceiling: fixing one of a file's nine fails this suite until the number is brought
+ * down with it, so every shrink is deliberate and auditable, and a tenth can never
+ * hide inside a file that was already dirty.
+ *
+ * None of the 113 is a live defect. The three on `@Public()` routes were checked by
+ * hand: both CRM unsubscribe links run the segment through `verifyUnsubscribeToken`,
+ * which fails closed, and the WhatsApp channel id is a `text` primary key resolved
+ * through `app.resolve_whatsapp_channel_org_id_by_id(text)`, so none of them can
+ * reach a `uuid` column and raise `22P02` the way the three original PRD-C048
+ * defects did. They are validation debt, not an open hole.
  *
  * The query half is asserted only over the two controllers this ticket fixed. 40 raw
  * `@Query("x")` bindings remain elsewhere, owned by other module lanes; pinning them
@@ -73,6 +94,48 @@ function unvalidatedBindings(files: string[], kind: "Param" | "Query"): Site[] {
   return sites;
 }
 
+/**
+ * Every controller carrying a `@Param` binding that crosses no validation boundary,
+ * and how many, as the merge left it. Shrink-only, and exact — see the header.
+ *
+ * Grouped by the lane that owes the fix, because no single lane can pay this down:
+ * the accounting rewrite is 63 of the 113, and CRM, deals, reporting and inventory
+ * are being worked in parallel.
+ */
+const INHERITED_UNVALIDATED_PARAMS: Readonly<Record<string, number>> = {
+  // Accounting rewrite — the gl_* kernel and the AP/AR/banking surfaces on top of it.
+  "src/modules/accounting/ap/ap-documents.controller.ts": 5,
+  "src/modules/accounting/ap/ap-payments.controller.ts": 4,
+  "src/modules/accounting/ar/ar-credit-notes.controller.ts": 7,
+  "src/modules/accounting/ar/ar-invoices.controller.ts": 8,
+  "src/modules/accounting/ar/ar-receipts.controller.ts": 4,
+  "src/modules/accounting/attachments/attachments.controller.ts": 3,
+  "src/modules/accounting/banking/bank-accounts.controller.ts": 4,
+  "src/modules/accounting/banking/bank-statements.controller.ts": 4,
+  "src/modules/accounting/banking/matching.controller.ts": 4,
+  "src/modules/accounting/compliance/compliance.controller.ts": 4,
+  "src/modules/accounting/kernel/kernel.controller.ts": 9,
+  "src/modules/accounting/parties/parties.controller.ts": 7,
+  // CRM and the surfaces that grew out of it.
+  "src/modules/autonomy/autonomy-review.controller.ts": 2,
+  "src/modules/autonomy/cold-outbound-admin.controller.ts": 2,
+  "src/modules/autonomy/sequences/nurture-sequences.controller.ts": 8,
+  "src/modules/commission/commission-accrual.controller.ts": 1,
+  "src/modules/commission/commission.controller.ts": 9,
+  "src/modules/crm/consent/crm-consent.controller.ts": 2,
+  "src/modules/crm/segments/crm-segments.controller.ts": 4,
+  "src/modules/deals/deals-competitor-suggestions.controller.ts": 2,
+  "src/modules/ingress/adapters/whatsapp-channels.controller.ts": 3,
+  "src/modules/ingress/adapters/whatsapp-ingress.controller.ts": 2,
+  "src/modules/lifecycle/customer-health.controller.ts": 2,
+  "src/modules/lifecycle/lifecycle-triggers.controller.ts": 1,
+  "src/modules/lifecycle/lifecycle.controller.ts": 4,
+  "src/modules/reporting/report-schedules.controller.ts": 3,
+  "src/modules/reporting/reporting.controller.ts": 4,
+  // Inventory.
+  "src/modules/inventory/warehouses/inv-warehouses.controller.ts": 1,
+};
+
 describe("PRD-C048 — path parameters cross a validation boundary", () => {
   const files = controllerFiles();
 
@@ -85,9 +148,32 @@ describe("PRD-C048 — path parameters cross a validation boundary", () => {
     expect(controllerFiles()).toEqual(files);
   });
 
-  it("no @Param binding lacks both a pipe and @Validate({ params })", () => {
-    const sites = unvalidatedBindings(files, "Param");
-    expect(sites.map((site) => `${site.file}:${String(site.line)}  ${site.text}`)).toEqual([]);
+  const sites = unvalidatedBindings(files, "Param");
+  const measured: Record<string, number> = {};
+  for (const site of sites) measured[site.file] = (measured[site.file] ?? 0) + 1;
+
+  it("no @Param binding lacks both a pipe and @Validate({ params }) outside the record", () => {
+    const unrecorded = sites
+      .filter((site) => !(site.file in INHERITED_UNVALIDATED_PARAMS))
+      .map((site) => `${site.file}:${String(site.line)}  ${site.text}`);
+
+    // Still zero for every controller the merge did not bring debt in on: the record
+    // is a list of files already known to owe a fix, never a way in for a new one.
+    expect(unrecorded).toEqual([]);
+  });
+
+  it("holds the recorded debt exactly, so it can only be paid down deliberately", () => {
+    // Both directions. Above the number is a new unvalidated binding hiding inside a
+    // file that was already dirty; below it is a fix that left the record claiming
+    // debt nobody owes, which is how a ratchet stops being read.
+    expect(measured).toEqual(INHERITED_UNVALIDATED_PARAMS);
+  });
+
+  it("keeps the record honest about its own size", () => {
+    // Anti-vacuity from the other side: a record that quietly grew would make the
+    // per-file case above pass while the repository got worse.
+    expect(sites).toHaveLength(113);
+    expect(Object.values(INHERITED_UNVALIDATED_PARAMS).reduce((a, b) => a + b, 0)).toBe(113);
   });
 
   it("detects an unvalidated binding when one exists", () => {

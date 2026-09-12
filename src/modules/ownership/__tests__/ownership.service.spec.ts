@@ -16,6 +16,7 @@ import { AuditService } from "../../../common/audit/audit.service";
 import { CacheService } from "../../../common/cache/cache.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
+import { drizzlePostgresError, drizzleUniqueViolation } from "../../../test/postgres-error-fixture";
 
 type SelectChain = {
   from: jest.Mock;
@@ -98,6 +99,10 @@ describe("OwnershipService — access / business-rule logic", () => {
   const ACTOR_USER = "u-actor";
   const TARGET_USER = "u-target";
 
+  /**
+   * `cancelTransfer` takes the whole `CurrentUserContext`, not a bare `isOrgOwner`
+   * boolean; every case builds one here so the file typechecks under `tsc`.
+   */
   function makeActor(isOrgOwner: boolean): CurrentUserContext {
     return {
       orgId: ORG,
@@ -208,6 +213,48 @@ describe("OwnershipService — access / business-rule logic", () => {
       await expect(
         transfers.initiateOrgTransfer(ORG, ACTOR_USER, { toMembershipId: 2, expiresInHours: 48 }),
       ).rejects.toBeInstanceOf(BadRequestException);
+    });
+  });
+
+  describe("initiating a transfer when the insert fails", () => {
+    const owner = { id: 1, userId: ACTOR_USER, isOwner: true, status: "ACTIVE" };
+    const target = { id: 2, userId: TARGET_USER, isOwner: false, status: "ACTIVE" };
+    const input = { toMembershipId: 2, expiresInHours: 48 };
+    const orgSelects = [[owner], [target]];
+    const moduleSelects = [[owner], [{ ownerMembershipId: 3 }], [target]];
+
+    function rejectInsert(error: Error, selects: unknown[][]): void {
+      for (const rows of selects) mockDb.select.mockReturnValueOnce(makeSelectChain(rows));
+      const chain = makeInsertChain([]);
+      chain.returning.mockRejectedValue(error);
+      mockDb.insert.mockReturnValue(chain);
+    }
+
+    const orgTransfer = () => transfers.initiateOrgTransfer(ORG, ACTOR_USER, input);
+    // An org owner's standing is read off the principal, so the module gate reads nothing.
+    const moduleTransfer = () =>
+      transfers.initiateModuleTransfer(ORG, ACTOR_USER, "hr", input, makeActor(true));
+
+    it("answers 409 when a pending org transfer already exists", async () => {
+      rejectInsert(drizzleUniqueViolation("uniq_ownership_xfers_org_pending_org"), orgSelects);
+      await expect(orgTransfer()).rejects.toBeInstanceOf(ConflictException);
+    });
+
+    it("answers 409 when a pending transfer for the module already exists", async () => {
+      rejectInsert(drizzleUniqueViolation("uniq_ownership_xfers_org_pending_module"), moduleSelects);
+      await expect(moduleTransfer()).rejects.toBeInstanceOf(ConflictException);
+    });
+
+    it("rethrows any other database error from the org transfer insert untouched", async () => {
+      const fkViolation = drizzlePostgresError("23503", "some_fk");
+      rejectInsert(fkViolation, orgSelects);
+      await expect(orgTransfer()).rejects.toBe(fkViolation);
+    });
+
+    it("rethrows any other database error from the module transfer insert untouched", async () => {
+      const fkViolation = drizzlePostgresError("23503", "some_fk");
+      rejectInsert(fkViolation, moduleSelects);
+      await expect(moduleTransfer()).rejects.toBe(fkViolation);
     });
   });
 
@@ -332,6 +379,34 @@ describe("OwnershipService — access / business-rule logic", () => {
         responses.acceptTransfer(ORG, ACTOR_USER, TRANSFER_ID),
       ).rejects.toBeInstanceOf(ForbiddenException);
     });
+
+    // The designated recipient can be the right person and still not be
+    // entitled to hold ownership: a SUSPENDED or LEFT membership must not be
+    // able to accept, or a transfer nominated before the suspension becomes a
+    // way back in. Nothing asserted this until 2026-09-11 — neutering the
+    // status check left all 57 ownership tests green.
+    it.each(["SUSPENDED", "LEFT"])(
+      "throws BadRequestException when the designated recipient's membership is %s",
+      async (status) => {
+        const transfer = {
+          id: TRANSFER_ID,
+          scope: "ORGANIZATION",
+          moduleKey: null,
+          fromMembershipId: 1,
+          initiatedByMembershipId: 1,
+          toMembershipId: 2,
+          status: "PENDING",
+          expiresAt: new Date(Date.now() + 3_600_000),
+        };
+        const actorMembership = { id: 2, userId: ACTOR_USER, isOwner: false, status };
+        mockDb.select
+          .mockReturnValueOnce(makeSelectChain([transfer]))
+          .mockReturnValueOnce(makeSelectChain([actorMembership]));
+        await expect(
+          responses.acceptTransfer(ORG, ACTOR_USER, TRANSFER_ID),
+        ).rejects.toBeInstanceOf(BadRequestException);
+      },
+    );
   });
 
   describe("cancelTransfer", () => {

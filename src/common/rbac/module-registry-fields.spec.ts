@@ -84,6 +84,8 @@ describe("productKey values are in the frontend ProductKey union", () => {
   let frontendProductKeys: Set<string> = new Set();
 
   beforeAll(() => {
+    // Names the failure instead of an ENOENT on a path nobody can read.
+    if (!FRONTEND_NAV_TYPES) throw new Error("frontend checkout not found beside this repo");
     const source = readFileSync(FRONTEND_NAV_TYPES, "utf8");
     frontendProductKeys = parseProductKeyUnion(source);
   });

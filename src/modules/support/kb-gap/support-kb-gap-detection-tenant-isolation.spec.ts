@@ -35,9 +35,18 @@ function makeSearchGapDb(gapRows: unknown[]): { db: Db; gapWhere: jest.Mock; exe
     execute: executeMock,
     select: jest.fn().mockReturnValue({ from: gapFrom }),
     query: {
-      supportKnowledgeGaps: { findFirst: jest.fn().mockResolvedValue(null) },
+      supportKnowledgeGaps: {
+        findFirst: jest.fn().mockResolvedValue(null),
+        // The pre-read `upsertGaps` uses to partition created / updated /
+        // skipped. Empty means "no gap exists yet for any of these keys".
+        findMany: jest.fn().mockResolvedValue([]),
+      },
     },
-    insert: jest.fn().mockReturnValue({ values: jest.fn().mockResolvedValue([]) }),
+    insert: jest.fn().mockReturnValue({
+      values: jest.fn().mockReturnValue({
+        onConflictDoUpdate: jest.fn().mockResolvedValue([]),
+      }),
+    }),
   } as unknown as Db;
 
   return { db, gapWhere, executeMock };

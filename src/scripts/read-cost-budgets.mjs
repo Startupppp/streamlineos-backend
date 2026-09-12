@@ -803,7 +803,7 @@ export const BUDGETS = [
     sql: `
       SELECT id, name, sku, status, category_id
       FROM inv_products
-      WHERE org_id = $1 AND status <> 'DISCONTINUED'
+      WHERE org_id = $1 AND deleted_at IS NULL AND status <> 'DISCONTINUED'
       ORDER BY id DESC
       LIMIT 50`,
     planAssertions: [],
@@ -822,9 +822,25 @@ export const BUDGETS = [
       LIMIT 100`,
     planAssertions: [],
   },
+  /**
+   * G1 — the three shapes the movements and audit lists actually issue.
+   *
+   * The ordering carries `id` because `created_at` alone is not unique on this
+   * table, and the cursor pages carry the boundary as text at microsecond
+   * precision because that is what the endpoint sends. Measured as
+   * `streamline_app` with the tenant GUC on the seed organisation's 4,200-row
+   * ledger, before 0547: page one cost 849 blocks — the planner reached for
+   * `idx_inv_txn_created`, which cannot supply `org_id` and so cannot answer the
+   * tenant qual from the index — and a deep page fell back to a bitmap scan of
+   * the whole tenant plus a sort, 94 blocks and rising with the tenant. After:
+   * single digits, and flat at any depth.
+   *
+   * The ceilings sit far above that and far below one tenant scan, so they fire
+   * when the plan falls off `idx_inv_txn_org_created_id` and not before.
+   */
   {
     id: "inv-stock-transactions",
-    ceiling: 15_000,
+    ceiling: 60,
     minRows: 100,
     rowCountSql: `SELECT count(*)::int FROM inv_stock_transactions WHERE org_id = $1`,
     params: (f) => [f.orgId],
@@ -832,8 +848,42 @@ export const BUDGETS = [
       SELECT id, product_variant_id, transaction_type, quantity_change, posting_date, created_at
       FROM inv_stock_transactions
       WHERE org_id = $1
-      ORDER BY created_at DESC
-      LIMIT 50`,
+      ORDER BY created_at DESC, id DESC
+      LIMIT 51`,
+    planAssertions: [
+      { kind: "forbid-seq-scan", relation: "inv_stock_transactions" },
+    ],
+  },
+  {
+    id: "inv-stock-transactions-cursor",
+    ceiling: 60,
+    minRows: 100,
+    rowCountSql: `SELECT count(*)::int FROM inv_stock_transactions WHERE org_id = $1`,
+    params: (f) => (f.ledgerCursorId ? [f.orgId, f.ledgerCursorAt, f.ledgerCursorId] : null),
+    sql: `
+      SELECT id, product_variant_id, transaction_type, quantity_change, posting_date, created_at,
+             to_char(created_at, 'YYYY-MM-DD"T"HH24:MI:SS.US') AS cursor_at
+      FROM inv_stock_transactions
+      WHERE org_id = $1 AND (created_at, id) < ($2::timestamp, $3::int)
+      ORDER BY created_at DESC, id DESC
+      LIMIT 51`,
+    planAssertions: [
+      { kind: "forbid-seq-scan", relation: "inv_stock_transactions" },
+    ],
+  },
+  {
+    id: "inv-audit-events-cursor",
+    ceiling: 60,
+    minRows: 1,
+    rowCountSql: `SELECT count(*)::int FROM inv_audit_events WHERE org_id = $1`,
+    params: (f) => (f.auditCursorId ? [f.orgId, f.auditCursorAt, f.auditCursorId] : null),
+    sql: `
+      SELECT id, action, resource_type, resource_id, actor_user_id, created_at,
+             to_char(created_at, 'YYYY-MM-DD"T"HH24:MI:SS.US') AS cursor_at
+      FROM inv_audit_events
+      WHERE org_id = $1 AND (created_at, id) < ($2::timestamp, $3::int)
+      ORDER BY created_at DESC, id DESC
+      LIMIT 51`,
     planAssertions: [],
   },
   {
@@ -973,6 +1023,86 @@ export const BUDGETS = [
       // chat_messages is the growing side (12,000 rows); chat_saved_messages is the small one.
       // Measured: 81 warm blocks, 230 rows scanned for 25 returned.
       { kind: "forbid-seq-scan", relation: "chat_messages" },
+    ],
+  },
+  /**
+   * D1 — one hop of the lot/serial genealogy walk.
+   *
+   * Both entries measure the shape, not the volume: the walk is anchored on
+   * fixed ids because the traversal's cost is decided by whether the ledger can
+   * be reached by lot id and by document reference at all, not by how many rows
+   * come back. Measured on the seed organisation's 4,200-row ledger: 3 buffers
+   * on the indexes 0542 adds, 3,936 as a sequential scan — and that gap grows
+   * linearly with the tenant, which is why an uncapped or unindexed traversal
+   * is a denial of service a customer can trigger from a URL.
+   *
+   * The ceiling sits far above the measured cost and far below one scan, so it
+   * fires when the plan falls off the index and not before.
+   */
+  {
+    id: "inv-genealogy-item-hop",
+    ceiling: 500,
+    minRows: 100,
+    rowCountSql: `SELECT count(*)::int FROM inv_stock_transactions WHERE org_id = $1`,
+    params: (f) => [f.orgId, 1, 2, 3],
+    sql: `
+      SELECT 'lot'::text || ':' || a.item_id::text AS source_key,
+             x.id, x.lot_id, x.serial_id, x.reference_type, x.reference_id,
+             x.transaction_type, x.quantity_change, x.location_id, x.created_at, x.reversed
+      FROM (VALUES ($2::int), ($3::int), ($4::int)) AS a(item_id)
+      CROSS JOIN LATERAL (
+        SELECT t.id, t.lot_id, t.serial_id, t.reference_type, t.reference_id,
+               t.transaction_type, t.quantity_change, t.location_id, t.created_at,
+               (t.correction_of_transaction_id IS NOT NULL OR EXISTS (
+                  SELECT 1 FROM inv_stock_transactions c
+                  WHERE c.org_id = t.org_id AND c.correction_of_transaction_id = t.id)) AS reversed
+        FROM inv_stock_transactions t
+        WHERE t.org_id = $1
+          AND t.lot_id = a.item_id
+          AND t.reference_type IS NOT NULL
+          AND t.reference_id IS NOT NULL
+          AND (t.correction_of_transaction_id IS NULL AND NOT EXISTS (
+                SELECT 1 FROM inv_stock_transactions c
+                WHERE c.org_id = t.org_id AND c.correction_of_transaction_id = t.id))
+        ORDER BY t.id DESC
+        LIMIT 26
+      ) x
+      LIMIT 79`,
+    planAssertions: [
+      { kind: "forbid-seq-scan", relation: "inv_stock_transactions" },
+    ],
+  },
+  {
+    id: "inv-genealogy-document-hop",
+    ceiling: 500,
+    minRows: 100,
+    rowCountSql: `SELECT count(*)::int FROM inv_stock_transactions WHERE org_id = $1`,
+    params: (f) => [f.orgId, "inv_grn", "1", "inv_sales_order", "1"],
+    sql: `
+      SELECT d.ref_type || ':' || d.ref_id AS source_key,
+             x.id, x.lot_id, x.serial_id, x.reference_type, x.reference_id,
+             x.transaction_type, x.quantity_change, x.location_id, x.created_at, x.reversed
+      FROM (VALUES ($2::text, $3::text), ($4::text, $5::text)) AS d(ref_type, ref_id)
+      CROSS JOIN LATERAL (
+        SELECT t.id, t.lot_id, t.serial_id, t.reference_type, t.reference_id,
+               t.transaction_type, t.quantity_change, t.location_id, t.created_at,
+               (t.correction_of_transaction_id IS NOT NULL OR EXISTS (
+                  SELECT 1 FROM inv_stock_transactions c
+                  WHERE c.org_id = t.org_id AND c.correction_of_transaction_id = t.id)) AS reversed
+        FROM inv_stock_transactions t
+        WHERE t.org_id = $1
+          AND t.reference_type = d.ref_type
+          AND t.reference_id = d.ref_id
+          AND (t.lot_id IS NOT NULL OR t.serial_id IS NOT NULL)
+          AND (t.correction_of_transaction_id IS NULL AND NOT EXISTS (
+                SELECT 1 FROM inv_stock_transactions c
+                WHERE c.org_id = t.org_id AND c.correction_of_transaction_id = t.id))
+        ORDER BY t.id DESC
+        LIMIT 26
+      ) x
+      LIMIT 53`,
+    planAssertions: [
+      { kind: "forbid-seq-scan", relation: "inv_stock_transactions" },
     ],
   },
   {

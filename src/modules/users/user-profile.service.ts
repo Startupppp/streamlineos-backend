@@ -4,17 +4,14 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, desc, eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { AuditService } from "../../common/audit/audit.service";
 import {
-  loginHistory,
   organizationMembers,
   orgUnitMembers,
   orgUnits,
-  userPreferences,
-  userSessions,
   users,
 } from "../../db/schema";
 import type {
@@ -22,7 +19,6 @@ import type {
   UpdateMembershipInput,
   UpdatePreferencesInput,
 } from "./dto/users.schemas";
-import { withClientInfo } from "../../common/http/parse-user-agent";
 import { syncOrgUnitPlacement } from "../../common/org/sync-org-unit-placement";
 import { SessionsService } from "../sessions/sessions.service";
 import { EmploymentFactsService } from "../directory/employment-facts.service";
@@ -32,11 +28,31 @@ import {
 } from "../../common/hr/sync-canonical-employment-fields";
 import { syncCanonicalReportingLine } from "../../common/hr/sync-canonical-reporting-line";
 import { UserActivityService } from "./user-activity.service";
-import { buildCursorPage, decodeCursor } from "../../common/pagination/cursor";
-import { keysetBefore } from "../../common/pagination/keyset";
+import {
+  getLoginHistory,
+  getPreferences,
+  getUserSessions,
+  revokeAllSessions,
+  revokeSession,
+  updatePreferences,
+  type UserAccountRecordDeps,
+} from "./lib/user-account-records";
 
 const EXPORT_HISTORY_LIMIT = 500;
 
+/**
+ * One person, as an organisation's admin sees them — in two halves that differ
+ * in how they are kept inside the tenant.
+ *
+ * Their ACCOUNT records — sessions, sign-in history, preferences — live in
+ * `lib/user-account-records.ts`. Those tables are keyed by `user_id` alone, so
+ * `assertMember` below is the only thing scoping them to this organisation, and
+ * it is handed to that file bound rather than exported.
+ *
+ * Their PLACEMENT — org units, reporting line, and the subject-access export
+ * that composes everything — stays here, on org-scoped tables that carry their
+ * own `org_id` predicates as well.
+ */
 @Injectable()
 export class UserProfileService {
   constructor(
@@ -59,17 +75,17 @@ export class UserProfileService {
       throw new NotFoundException("User not found in this organization");
   }
 
+  private get accountDeps(): UserAccountRecordDeps {
+    return {
+      db: this.db,
+      audit: this.audit,
+      sessions: this.sessions,
+      assertMember: (orgId, userId) => this.assertMember(orgId, userId),
+    };
+  }
+
   async getUserSessions(orgId: string, userId: string) {
-    await this.assertMember(orgId, userId);
-    const rows = await this.db
-      .select()
-      .from(userSessions)
-      .where(
-        and(eq(userSessions.userId, userId), eq(userSessions.isRevoked, false)),
-      )
-      .orderBy(desc(userSessions.createdAt))
-      .limit(50);
-    return rows.map(withClientInfo);
+    return getUserSessions(this.accountDeps, orgId, userId);
   }
 
   async revokeSession(
@@ -78,66 +94,15 @@ export class UserProfileService {
     sessionId: string,
     actorUserId: string,
   ) {
-    await this.assertMember(orgId, userId);
-    await this.db
-      .update(userSessions)
-      .set({ isRevoked: true })
-      .where(
-        and(eq(userSessions.id, sessionId), eq(userSessions.userId, userId)),
-      );
-    await this.sessions.publishRevocations([sessionId]);
-    this.audit.log({
-      action: "user.session.revoked",
-      userId: actorUserId,
-      orgId,
-      targetId: userId,
-      targetType: "user",
-      metadata: { sessionId },
-    });
-    return { success: true };
+    return revokeSession(this.accountDeps, orgId, userId, sessionId, actorUserId);
   }
 
   async revokeAllSessions(orgId: string, userId: string, actorUserId: string) {
-    await this.assertMember(orgId, userId);
-    const active = await this.db
-      .select({ id: userSessions.id })
-      .from(userSessions)
-      .where(
-        and(eq(userSessions.userId, userId), eq(userSessions.isRevoked, false)),
-      );
-    await this.db
-      .update(userSessions)
-      .set({ isRevoked: true })
-      .where(eq(userSessions.userId, userId));
-    await this.sessions.publishRevocations(active.map((session) => session.id));
-    this.audit.log({
-      action: "user.sessions.revoked_all",
-      userId: actorUserId,
-      orgId,
-      targetId: userId,
-      targetType: "user",
-    });
-    return { success: true };
+    return revokeAllSessions(this.accountDeps, orgId, userId, actorUserId);
   }
 
   async getPreferences(orgId: string, userId: string) {
-    await this.assertMember(orgId, userId);
-    const prefs = await this.db.query.userPreferences.findFirst({
-      where: eq(userPreferences.userId, userId),
-    });
-    if (!prefs) {
-      return {
-        userId,
-        theme: "system",
-        language: "en",
-        timezone: "Asia/Kolkata",
-        dateFormat: "DD/MM/YYYY",
-        timeFormat: "12h",
-        notificationPreferences: {},
-        dashboardPreferences: {},
-      };
-    }
-    return prefs;
+    return getPreferences(this.accountDeps, orgId, userId);
   }
 
   async updatePreferences(
@@ -145,51 +110,7 @@ export class UserProfileService {
     userId: string,
     data: UpdatePreferencesInput,
   ) {
-    await this.assertMember(orgId, userId);
-
-    const updateData: Record<string, unknown> = {};
-    if (data.theme !== undefined) updateData.theme = data.theme;
-    if (data.language !== undefined) updateData.language = data.language;
-    if (data.timezone !== undefined) updateData.timezone = data.timezone;
-    if (data.dateFormat !== undefined) updateData.dateFormat = data.dateFormat;
-    if (data.timeFormat !== undefined) updateData.timeFormat = data.timeFormat;
-    if (data.numberFormat !== undefined)
-      updateData.numberFormat = data.numberFormat;
-    if (data.weekStartDay !== undefined)
-      updateData.weekStartDay = data.weekStartDay;
-    if (data.notificationPreferences !== undefined)
-      updateData.notificationPreferences = data.notificationPreferences;
-    if (data.dashboardPreferences !== undefined)
-      updateData.dashboardPreferences = data.dashboardPreferences;
-
-    if (Object.keys(updateData).length === 0) return { success: true };
-
-    const existing = await this.db.query.userPreferences.findFirst({
-      columns: { userId: true },
-      where: eq(userPreferences.userId, userId),
-    });
-
-    if (existing) {
-      await this.db
-        .update(userPreferences)
-        .set(updateData)
-        .where(eq(userPreferences.userId, userId));
-    } else {
-      await this.db.insert(userPreferences).values({
-        userId,
-        theme: data.theme ?? "system",
-        language: data.language ?? "en",
-        timezone: data.timezone ?? "Asia/Kolkata",
-        dateFormat: data.dateFormat ?? "DD/MM/YYYY",
-        timeFormat: data.timeFormat ?? "12h",
-        notificationPreferences:
-          data.notificationPreferences ?? ({} as Record<string, boolean>),
-        dashboardPreferences:
-          data.dashboardPreferences ?? ({} as Record<string, unknown>),
-      });
-    }
-
-    return { success: true };
+    return updatePreferences(this.accountDeps, orgId, userId, data);
   }
 
   async getLoginHistory(
@@ -197,32 +118,7 @@ export class UserProfileService {
     userId: string,
     params: ListLoginHistoryInput,
   ) {
-    await this.assertMember(orgId, userId);
-
-    const { cursor, limit, success: successFilter } = params;
-
-    const conditions = [eq(loginHistory.userId, userId)];
-    if (successFilter !== undefined) {
-      conditions.push(eq(loginHistory.success, successFilter));
-    }
-
-    const position = decodeCursor(cursor);
-    if (position) {
-      conditions.push(keysetBefore(loginHistory.createdAt, loginHistory.id, position));
-    }
-
-    const rows = await this.db
-      .select()
-      .from(loginHistory)
-      .where(and(...conditions))
-      .orderBy(desc(loginHistory.createdAt), desc(loginHistory.id))
-      .limit(limit + 1);
-    const page = buildCursorPage(rows, limit, (row) => ({
-      sortValue: row.createdAt.toISOString(),
-      id: row.id,
-    }));
-
-    return { ...page, data: page.data.map(withClientInfo) };
+    return getLoginHistory(this.accountDeps, orgId, userId, params);
   }
 
   async getMembership(orgId: string, userId: string) {

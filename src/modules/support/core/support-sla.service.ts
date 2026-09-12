@@ -1,18 +1,23 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, eq, inArray, isNull, notInArray, or } from "drizzle-orm";
+import { and, eq, isNull, or } from "drizzle-orm";
 import {
   supportBusinessHours,
   supportSlaPolicies,
   supportTickets,
-  organizationMembers,
 } from "../../../db/schema";
 import { AccessService } from "../../access/access.service";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
-import { logger } from "../../../common/logger/logger.service";
 import { addWorkingMinutes, type BusinessHoursConfig } from "./support-business-hours.util";
 import { SupportNotificationsService } from "./support-notifications.service";
 import { SupportMacrosService } from "./support-macros.service";
+import {
+  computeRisk,
+  runEscalations,
+  runEscalationsForAllOrgs,
+  type SlaEscalationDeps,
+  type SlaRiskLevel,
+} from "./lib/support-sla-escalation";
 
 import type {
   CreateBusinessHoursInput,
@@ -37,13 +42,7 @@ export interface ResolvedSlaPolicy {
   businessHours: BusinessHoursConfig | null;
 }
 
-export type SlaRiskLevel =
-  | "ok"
-  | "first_response_due_soon"
-  | "first_response_breached"
-  | "resolution_due_soon"
-  | "resolution_breached"
-  | "paused";
+export type { SlaRiskLevel } from "./lib/support-sla-escalation";
 
 @Injectable()
 export class SupportSlaService {
@@ -53,6 +52,15 @@ export class SupportSlaService {
     private readonly macros: SupportMacrosService,
     private readonly access: AccessService,
   ) {}
+
+  private get escalationDeps(): SlaEscalationDeps {
+    return {
+      db: this.db,
+      notifications: this.notifications,
+      macros: this.macros,
+      access: this.access,
+    };
+  }
 
   listBusinessHours(orgId: string) {
     return this.db.query.supportBusinessHours.findMany({
@@ -205,10 +213,6 @@ export class SupportSlaService {
     };
   }
 
-  /**
-   * Pure risk computation off already-materialized ticket fields — no DB/policy
-   * lookups here, so this stays cheap on every ticket read and easy to unit test.
-   */
   computeRisk(ticket: {
     status: TicketStatus;
     createdAt: Date;
@@ -217,26 +221,7 @@ export class SupportSlaService {
     slaDeadline: Date | null;
     slaPausedAt: Date | null;
   }): SlaRiskLevel {
-    if (["RESOLVED", "CLOSED"].includes(ticket.status)) return "ok";
-    if (ticket.slaPausedAt) return "paused";
-
-    const now = new Date();
-
-    if (!ticket.firstRespondedAt && ticket.firstResponseDueAt) {
-      const totalMs = ticket.firstResponseDueAt.getTime() - ticket.createdAt.getTime();
-      const remainingMs = ticket.firstResponseDueAt.getTime() - now.getTime();
-      if (remainingMs < 0) return "first_response_breached";
-      if (totalMs > 0 && remainingMs < totalMs * 0.25) return "first_response_due_soon";
-    }
-
-    if (ticket.slaDeadline) {
-      const totalMs = ticket.slaDeadline.getTime() - ticket.createdAt.getTime();
-      const remainingMs = ticket.slaDeadline.getTime() - now.getTime();
-      if (remainingMs < 0) return "resolution_breached";
-      if (totalMs > 0 && remainingMs < totalMs * 0.25) return "resolution_due_soon";
-    }
-
-    return "ok";
+    return computeRisk(ticket);
   }
 
   /** Called on ticket create/update to apply pause/resume semantics for a status transition. */
@@ -279,195 +264,14 @@ export class SupportSlaService {
       },
     });
     if (!ticket) throw new NotFoundException("Ticket not found");
-    return { risk: this.computeRisk(ticket) };
+    return { risk: computeRisk(ticket) };
   }
 
-  /**
-   * Scans an org's open tickets and notifies the assignee whenever a ticket
-   * crosses a new SLA risk threshold since the last check (tracked via
-   * slaEscalationLevel, so the same threshold never re-notifies). Tickets
-   * still breached on a SUBSEQUENT sweep (already at the max level and still
-   * breached) escalate to org owners/admins ("manager tier") and trigger a
-   * one-time auto-reassignment attempt via the same routing rules used at
-   * ticket creation — this only re-fires the manager notification if the
-   * ticket keeps getting reassigned and re-breaching, since escalationLevel
-   * itself doesn't distinguish "just breached" from "breached again."
-   *
-   * Scheduling: wired into the standard cron pattern via
-   * POST/GET /cron/support-sla-escalations (src/modules/cron) — an external
-   * scheduler still needs to actually call it periodically, same as every
-   * other job in that module; nothing in this repo self-schedules.
-   */
-  async runEscalations(orgId: string): Promise<{ checked: number; escalated: number }> {
-    const tickets = await this.db.query.supportTickets.findMany({
-      where: and(orgId ? eq(supportTickets.orgId, orgId) : undefined, notInArray(supportTickets.status, ["RESOLVED", "CLOSED"])),
-      columns: {
-        id: true,
-        title: true,
-        status: true,
-        category: true,
-        priority: true,
-        createdAt: true,
-        assigneeMembershipId: true,
-        firstRespondedAt: true,
-        firstResponseDueAt: true,
-        slaDeadline: true,
-        slaPausedAt: true,
-        slaEscalationLevel: true,
-      },
-      with: {
-        assigneeMembership: { columns: { id: true }, with: { user: { columns: { id: true } } } },
-      },
-    });
-
-    const ticketsForEscalation = tickets.map((ticket) => ({
-      ...ticket,
-      assigneeId: ticket.assigneeMembership?.user?.id ?? null,
-    }));
-
-    const due: { ticket: (typeof ticketsForEscalation)[number]; risk: SlaRiskLevel; isRepeatBreach: boolean }[] = [];
-    const idsByNewLevel = new Map<number, number[]>();
-
-    for (const ticket of ticketsForEscalation) {
-      const risk = this.computeRisk(ticket);
-      const newLevel = riskToEscalationLevel(risk);
-      const isBreach = risk === "first_response_breached" || risk === "resolution_breached";
-      const isRepeatBreach = isBreach && ticket.slaEscalationLevel >= newLevel;
-
-      if (newLevel <= ticket.slaEscalationLevel && !isRepeatBreach) continue;
-
-      if (newLevel > ticket.slaEscalationLevel) {
-        const ids = idsByNewLevel.get(newLevel);
-        if (ids) ids.push(ticket.id);
-        else idsByNewLevel.set(newLevel, [ticket.id]);
-      }
-
-      due.push({ ticket, risk, isRepeatBreach });
-    }
-
-    for (const [newLevel, ids] of idsByNewLevel) {
-      await this.db
-        .update(supportTickets)
-        .set({ slaEscalationLevel: newLevel })
-        .where(and(inArray(supportTickets.id, ids), eq(supportTickets.orgId, orgId)));
-    }
-
-    let escalated = 0;
-
-    for (const { ticket, risk, isRepeatBreach } of due) {
-      if (ticket.assigneeId && (risk === "first_response_due_soon" || risk === "first_response_breached" || risk === "resolution_due_soon" || risk === "resolution_breached")) {
-        try {
-          await this.notifications.sendEscalationEmail(orgId, ticket.assigneeId, ticket.title, ticket.id, risk);
-        } catch (error) {
-          logger.error("Failed to send SLA escalation email", {
-            orgId,
-            ticketId: ticket.id,
-            error: error instanceof Error ? error.message : String(error),
-          });
-        }
-      }
-
-      if (isRepeatBreach) {
-        const reassignedTo = await this.tryAutoReassign(orgId, ticket);
-        await this.notifyManagers(orgId, ticket, risk, reassignedTo);
-      }
-
-      escalated++;
-    }
-
-    return { checked: tickets.length, escalated };
+  runEscalations(orgId: string): Promise<{ checked: number; escalated: number }> {
+    return runEscalations(this.escalationDeps, orgId);
   }
 
-  /** Cron entrypoint — sweeps every org with at least one open ticket, not just the caller's own. */
-  async runEscalationsForAllOrgs(): Promise<{ orgsProcessed: number; checked: number; escalated: number }> {
-    const orgs = await this.db
-      .selectDistinct({ orgId: supportTickets.orgId })
-      .from(supportTickets)
-      .where(notInArray(supportTickets.status, ["RESOLVED", "CLOSED"]));
-
-    let checked = 0;
-    let escalated = 0;
-    for (const { orgId } of orgs) {
-      const result = await this.runEscalations(orgId);
-      checked += result.checked;
-      escalated += result.escalated;
-    }
-    return { orgsProcessed: orgs.length, checked, escalated };
+  runEscalationsForAllOrgs(): Promise<{ orgsProcessed: number; checked: number; escalated: number }> {
+    return runEscalationsForAllOrgs(this.escalationDeps);
   }
-
-  /**
-   * One-time reassignment attempt for a ticket that's breached and stayed
-   * breached across sweeps — re-runs the same routing rules used at ticket
-   * creation (round-robin/load-balanced candidates rotate the same way) and
-   * only reassigns if that resolves to someone OTHER than the current
-   * assignee, so a ticket with no matching rule or a single-candidate rule
-   * doesn't get bounced back to the same person repeatedly.
-   */
-  private async tryAutoReassign(
-    orgId: string,
-    ticket: { id: number; title: string; category: string | null; priority: string; assigneeId: string | null },
-  ): Promise<string | null> {
-    try {
-      const routing = await this.macros.applyRoutingRules(orgId, {
-        title: ticket.title,
-        category: ticket.category,
-        priority: ticket.priority,
-      });
-      if (!routing.assigneeId || routing.assigneeId === ticket.assigneeId) return null;
-
-      await this.db
-        .update(supportTickets)
-        .set({
-          assigneeMembershipId: (await this.db.query.organizationMembers.findFirst({
-            where: and(
-              eq(organizationMembers.orgId, orgId),
-              eq(organizationMembers.userId, routing.assigneeId),
-              eq(organizationMembers.status, "ACTIVE"),
-            ),
-            columns: { id: true },
-          }))?.id ?? null,
-          updatedAt: new Date(),
-        })
-        .where(and(eq(supportTickets.id, ticket.id), eq(supportTickets.orgId, orgId)));
-      return routing.assigneeId;
-    } catch (error) {
-      logger.error("SLA auto-reassignment failed", {
-        orgId,
-        ticketId: ticket.id,
-        error: error instanceof Error ? error.message : String(error),
-      });
-      return null;
-    }
-  }
-
-  private async notifyManagers(
-    orgId: string,
-    ticket: { id: number; title: string },
-    risk: SlaRiskLevel,
-    reassignedTo: string | null,
-  ): Promise<void> {
-    if (risk !== "first_response_breached" && risk !== "resolution_breached") return;
-
-    const managers = await this.access.membersWithPermission(orgId, "settings:manage");
-
-    for (const manager of managers) {
-      if (manager.userId === reassignedTo) continue;
-      try {
-        await this.notifications.sendEscalationEmail(orgId, manager.userId, ticket.title, ticket.id, risk);
-      } catch (error) {
-        logger.error("Failed to send SLA manager-tier escalation email", {
-          orgId,
-          ticketId: ticket.id,
-          managerId: manager.userId,
-          error: error instanceof Error ? error.message : String(error),
-        });
-      }
-    }
-  }
-}
-
-function riskToEscalationLevel(risk: SlaRiskLevel): number {
-  if (risk === "first_response_breached" || risk === "resolution_breached") return 2;
-  if (risk === "first_response_due_soon" || risk === "resolution_due_soon") return 1;
-  return 0;
 }

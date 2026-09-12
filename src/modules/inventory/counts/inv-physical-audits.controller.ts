@@ -1,4 +1,5 @@
-import { BadRequestException, Controller, Get, Headers, Param, ParseIntPipe, Patch, Post, Body, Query, UseGuards } from "@nestjs/common";
+import { Controller, Get, Param, ParseIntPipe, Patch, Post, Body, Query, UseGuards } from "@nestjs/common";
+import { IdempotencyKey } from "../../../common/idempotency/idempotency-key.decorator";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
 import { ModuleGuard } from "../../../common/rbac/module.guard";
 import { PermissionGuard } from "../../access/permission.guard";
@@ -15,6 +16,7 @@ import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
 import { BodylessAction, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
 import { successSchema } from "../../../common/openapi/response-envelopes";
+import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import {
   listAuditsResponseSchema,
   physicalAuditSchema,
@@ -37,7 +39,7 @@ export class InvPhysicalAuditsController {
     @Query() filters: ListCountsInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.audits.listAudits(u.orgId, filters);
+    return this.audits.listAudits(u.orgId, u.userId, filters);
   }
 
   @Get(":auditId")
@@ -49,13 +51,14 @@ export class InvPhysicalAuditsController {
     @Param("auditId", ParseIntPipe) auditId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.audits.getAudit(u.orgId, auditId);
+    return this.audits.getAudit(u.orgId, u.userId, auditId);
   }
 
   @Post()
   @ResponseSchema(physicalAuditSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:reconcile")
+  @Idempotent("inventory.physical-audit.create")
   @Validate({ body: createAuditSchema })
   create(
     @Body() body: CreateAuditInput,
@@ -69,12 +72,13 @@ export class InvPhysicalAuditsController {
   @ResponseSchema(physicalAuditSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:reconcile")
+  @Idempotent("inventory.physical-audit.start")
   @Validate({ params: auditIdParams })
   start(
     @Param("auditId", ParseIntPipe) auditId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.audits.startAudit(u.orgId, auditId);
+    return this.audits.startAudit(u.orgId, u.userId, auditId);
   }
 
   @Patch(":auditId/lines")
@@ -87,7 +91,7 @@ export class InvPhysicalAuditsController {
     @Body() body: UpdateCountLinesInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.audits.updateLines(u.orgId, auditId, body);
+    return this.audits.updateLines(u.orgId, u.userId, auditId, body);
   }
 
   @Post(":auditId/review")
@@ -95,12 +99,13 @@ export class InvPhysicalAuditsController {
   @ResponseSchema(physicalAuditSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:reconcile")
+  @Idempotent("inventory.physical-audit.review")
   @Validate({ params: auditIdParams })
   review(
     @Param("auditId", ParseIntPipe) auditId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.audits.reviewAudit(u.orgId, auditId);
+    return this.audits.reviewAudit(u.orgId, u.userId, auditId);
   }
 
   @Post(":auditId/post")
@@ -110,12 +115,10 @@ export class InvPhysicalAuditsController {
   @RequirePermission("inventory:stock:reconcile")
   @Validate({ params: auditIdParams })
   post(
-    @Headers("idempotency-key") idempotencyKey: string,
+    @IdempotencyKey() idempotencyKey: string,
     @Param("auditId", ParseIntPipe) auditId: number,
     @CurrentUser() u: CurrentUserContext,
-  ) {
-    if (!idempotencyKey) throw new BadRequestException("Idempotency-Key header required");
-    return this.audits.postAudit(u.orgId, u.userId, auditId, idempotencyKey);
+  ) {return this.audits.postAudit(u.orgId, u.userId, auditId, idempotencyKey);
   }
 
   @Post(":auditId/cancel")
@@ -123,12 +126,13 @@ export class InvPhysicalAuditsController {
   @ResponseSchema(successSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:reconcile")
+  @Idempotent("inventory.physical-audit.cancel")
   @Validate({ params: auditIdParams })
   async cancel(
     @Param("auditId", ParseIntPipe) auditId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    await this.audits.cancelAudit(u.orgId, auditId);
+    await this.audits.cancelAudit(u.orgId, u.userId, auditId);
     return { success: true as const };
   }
 }

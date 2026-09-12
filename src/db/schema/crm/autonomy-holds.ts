@@ -29,7 +29,16 @@ export const autonomyHolds = pgTable(
       .notNull(),
     autonomousDecisionId: text("autonomous_decision_id").notNull(),
 
-    kind: text("kind").$type<"quote.sent">().notNull(),
+    /**
+     * Which decision kind is waiting. Ticket 07 widened this from quotes alone.
+     *
+     * Cold outbound is its own kind rather than a flavour of `outbound.sent`,
+     * so `cancelInFlight` can stop every waiting cold message when the cold
+     * kill switch goes off without touching the follow-ups.
+     */
+    kind: text("kind")
+      .$type<"quote.sent" | "outbound.sent" | "cold_outbound.sent">()
+      .notNull(),
     /**
      * The concurrency control, not a label.
      *
@@ -39,8 +48,18 @@ export const autonomyHolds = pgTable(
      */
     status: text("status").$type<HoldStatus>().default("held").notNull(),
 
-    /** An exclusive arc. A second holdable thing gets its own column. */
+    /**
+     * An exclusive arc. A second holdable thing gets its own column.
+     *
+     * Ticket 07 is that second thing. `chk_autonomy_holds_arc` (migration 0530)
+     * enforces that exactly one of these is set — the alternative, an
+     * `entity_type`/`entity_id` pair, is banned for new tables and would have
+     * been worse here than usual: the workflow dispatches on which one is
+     * populated, so a row with neither would be a hold that waits and then
+     * cannot say what it was waiting to send.
+     */
     quoteId: integer("quote_id"),
+    outboundMessageId: text("outbound_message_id"),
 
     holdUntil: timestamp("hold_until").notNull(),
     /** So an operator can find the run that is waiting. */
@@ -62,6 +81,11 @@ export const autonomyHolds = pgTable(
     // One live hold per quote: two would race to send the same document.
     uniqueIndex("uniq_autonomy_holds_live_quote")
       .on(t.organizationId, t.quoteId)
+      .where(sql`${t.status} = 'held'`),
+    // And one per message, for the same reason: two decisions to send the same
+    // draft are a duplicate, not a race to win.
+    uniqueIndex("uniq_autonomy_holds_live_outbound")
+      .on(t.organizationId, t.outboundMessageId)
       .where(sql`${t.status} = 'held'`),
     index("idx_autonomy_holds_live")
       .on(t.organizationId, t.holdUntil)

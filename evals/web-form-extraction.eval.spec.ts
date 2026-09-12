@@ -1,4 +1,4 @@
-import { EVAL_ACCEPTANCE, meetsGate, runEval, type EvalReport } from "./ai-eval-runner";
+import { EVAL_ACCEPTANCE, gatesPresentIn, meetsGate, runEval, type EvalReport } from "./ai-eval-runner";
 import { EVAL_STAGES, extractFromEvent } from "./channel-extraction";
 import {
   WEB_FORM_EXTRACTION_DATASET,
@@ -90,7 +90,7 @@ describe("web form extraction evals", () => {
       "EXTRACTION_SCHEMA_VALID_RATE",
     ]);
 
-    expect(meetsGate(report, EVAL_ACCEPTANCE)).toBe(true);
+    expect(meetsGate(report, gatesPresentIn(report, EVAL_ACCEPTANCE))).toBe(true);
   });
 
   it("fails the gate when an extractor obeys what a submitter typed", async () => {
@@ -116,7 +116,7 @@ describe("web form extraction evals", () => {
       [{ name: "EXTRACTION_FORM_INJECTION_RESISTANCE_RATE", check: injectionResistance }],
     );
 
-    expect(meetsGate(report, EVAL_ACCEPTANCE)).toBe(false);
+    expect(meetsGate(report, gatesPresentIn(report, EVAL_ACCEPTANCE))).toBe(false);
   });
 
   /**

@@ -31,10 +31,23 @@
  * `classificationOverride` with `sunsetEvidence` explaining it; the derived value is
  * otherwise authoritative, so the rule cannot silently drift from the file.
  *
+ * `deprecationFor` reads a sunset the document ADVERTISES. `sunsetAt`/`sunsetEvidence`
+ * record a sunset a human AUTHORISED. Announcing a removal and being allowed to make
+ * one are different acts, which is why they stay two fields from two sources.
+ *
  * If the registry already exists, manually-set fields (owner, version, consumers,
  * sunsetAt, sunsetEvidence, classificationOverride) are preserved for entries that
  * still exist in the OpenAPI document. Entries for operations that no longer exist
  * are RETAINED.
+ *
+ * `sunsetAt`/`sunsetEvidence` are also READ from published-contract-terms.json, and
+ * the authored value wins over the preserved one. Without that path the workflow
+ * check-contract-breaking-change prints — "declare the deprecation in
+ * contracts/published-contract-terms.json, set sunsetAt + sunsetEvidence on the
+ * entry, and re-run pnpm registry:generate" — could not be carried out: the
+ * generator read neither field from the terms file, so the only way to authorise a
+ * removal was to hand-edit the generated registry, which the same message forbids.
+ * The three entries that carry a `sunsetEvidence` today got it exactly that way.
  *
  * Retention is deliberate and load-bearing. check-contract-breaking-change.mjs
  * detects a removal by finding a registry entry with no matching operation in
@@ -233,10 +246,34 @@ export function termsFor(key, terms) {
 }
 
 /**
+ * The removal a human authorised, for one operation.
+ *
+ * Only an EXACT operation entry counts. `termsFor` falls back to a path family,
+ * which is right for an idempotency rule — a family shares one replay story — and
+ * wrong here: a family-level sunset would authorise the removal of every route
+ * under that prefix at once, including ones nobody has looked at. A removal is
+ * approved one operation at a time or not at all.
+ *
+ * Both fields must be present together. A date with no evidence is a bare
+ * assertion that a window elapsed, and evidence with no date says the removal was
+ * reviewed but never says when it became permissible; check-contract-breaking-change
+ * demands both, so accepting half a declaration here would only move the failure.
+ */
+export function authorisedSunset(key, terms) {
+  const exact = terms?.operations?.[key];
+  const at = exact?.sunsetAt;
+  const evidence = exact?.sunsetEvidence;
+  if (typeof at !== "string" || at.length === 0) return null;
+  if (typeof evidence !== "string" || evidence.length === 0) return null;
+  return { sunsetAt: at, sunsetEvidence: evidence };
+}
+
+/**
  * A declared deprecation window, read straight off the OpenAPI document so the
  * date the contract advertises to consumers and the date the registry records
- * cannot drift apart. `sunsetAt`/`sunsetEvidence` stay separate and manual:
- * announcing a sunset is not the same act as authorising a removal.
+ * cannot drift apart. `sunsetAt`/`sunsetEvidence` stay separate and hand-authored
+ * in published-contract-terms.json (see `authorisedSunset`): announcing a sunset
+ * is not the same act as authorising a removal.
  */
 export function deprecationFor(operation) {
   const sunset = operation?.["x-sunset"];
@@ -462,6 +499,20 @@ if (IS_DIRECT_RUN && process.argv.includes("--self-test")) {
   expect("terms-exact-beats-family", idempotencyFor("POST /public/sign/{token}/auth", "POST", {}, fakeTerms)?.replay, "exact wins");
   expect("terms-records-its-source", idempotencyFor("POST /public/waitlist", "POST", {}, fakeTerms)?.source, "published-contract-terms");
 
+  const sunsetTerms = {
+    families: [{ prefix: "/public/", sunsetAt: "2020-01-01", sunsetEvidence: "a family may not authorise a removal" }],
+    operations: {
+      "DELETE /public/a": { sunsetAt: "2026-09-10", sunsetEvidence: "no caller on any frontend branch" },
+      "DELETE /public/b": { sunsetAt: "2026-09-10" },
+      "DELETE /public/c": { sunsetEvidence: "reviewed, but no date" },
+    },
+  };
+  expect("sunset-exact-entry-is-read", authorisedSunset("DELETE /public/a", sunsetTerms)?.sunsetAt, "2026-09-10");
+  expect("sunset-needs-evidence", authorisedSunset("DELETE /public/b", sunsetTerms), null);
+  expect("sunset-needs-a-date", authorisedSunset("DELETE /public/c", sunsetTerms), null);
+  expect("sunset-family-never-authorises", authorisedSunset("DELETE /public/d", sunsetTerms), null);
+  expect("sunset-absent-terms", authorisedSunset("DELETE /public/a", null), null);
+
   expect("deprecation-absent", deprecationFor({ operationId: "x" }), null);
   expect(
     "deprecation-reads-x-sunset",
@@ -557,6 +608,7 @@ if (IS_DIRECT_RUN) {
 
       const classification = override ?? derived;
       const authored = termsFor(key, terms);
+      const sunset = authorisedSunset(key, terms);
 
       const entry = {
         classification,
@@ -571,8 +623,8 @@ if (IS_DIRECT_RUN) {
             : publishedConsumer !== null
               ? [publishedConsumer]
               : [],
-        sunsetAt: prev?.sunsetAt ?? null,
-        sunsetEvidence: prev?.sunsetEvidence ?? null,
+        sunsetAt: sunset?.sunsetAt ?? prev?.sunsetAt ?? null,
+        sunsetEvidence: sunset?.sunsetEvidence ?? prev?.sunsetEvidence ?? null,
       };
 
       // The versioning, replay and baseline fields exist to serve the published
@@ -610,10 +662,15 @@ if (IS_DIRECT_RUN) {
     if (operations[key] !== undefined) continue;
     const override = prev.classificationOverride ?? null;
     const pathTemplate = key.slice(key.indexOf(" ") + 1);
+    // A tombstone is where an authorised sunset actually matters: the operation is
+    // already gone, and this entry is the only record that its removal was reviewed.
+    const sunset = authorisedSunset(key, terms);
     operations[key] = {
       ...prev,
       classificationOverride: override,
       classification: override ?? classifyOperation(prev.xExposure, pathTemplate),
+      sunsetAt: sunset?.sunsetAt ?? prev.sunsetAt ?? null,
+      sunsetEvidence: sunset?.sunsetEvidence ?? prev.sunsetEvidence ?? null,
     };
   }
 

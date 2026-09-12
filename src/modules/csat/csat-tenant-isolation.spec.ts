@@ -56,7 +56,7 @@ describe("CsatService — cross-tenant isolation", () => {
   });
 
   describe("getSurvey", () => {
-    it("returns undefined when survey belongs to a different org (cross-tenant DENY)", async () => {
+    it("returns null when survey belongs to a different org (cross-tenant DENY)", async () => {
       const findFirst = jest.fn().mockResolvedValue(undefined);
       const db = {
         query: { csatSurveys: { findFirst } },
@@ -65,7 +65,11 @@ describe("CsatService — cross-tenant isolation", () => {
 
       const result = await svc.getSurvey(ATTACKER_ORG, 99);
 
-      expect(result).toBeUndefined();
+      // `null`, not the driver's `undefined`, since the client's name began
+      // coming from Party (aca3b37fd): a miss returns before that read, and the
+      // controller 404s on either. The claim is unchanged -- the lookup is
+      // org-scoped, so another tenant's survey is simply not found.
+      expect(result).toBeNull();
       expect(findFirst).toHaveBeenCalledTimes(1);
       const callArg = findFirst.mock.calls[0]?.[0] as { where?: unknown } | undefined;
       expect(sqlValues(callArg?.where)).toContain(ATTACKER_ORG);

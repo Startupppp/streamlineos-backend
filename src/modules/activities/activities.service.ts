@@ -1,47 +1,40 @@
-import { Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, eq, isNull } from "drizzle-orm";
+import { Inject, Injectable, Optional } from "@nestjs/common";
+import { and, eq } from "drizzle-orm";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.types";
 import { activities, activityParticipants, users } from "../../db/schema";
 import { AuditService } from "../../common/audit/audit.service";
+import { RelationshipStateService } from "../relationships/relationship-state.service";
 import type { TimelinePage } from "./activity-timeline";
 import { queryTimeline } from "./activities-timeline";
+import { type ActivityActor } from "./lib/activity-actor";
+export type { ActivityActor } from "./lib/activity-actor";
+import {
+  completeActivity,
+  removeActivity,
+  requireActivity,
+  updateActivity,
+  type ActivityCommandDeps,
+} from "./lib/activity-commands";
 import type {
   CreateActivityInput,
   TimelineQuery,
   UpdateActivityInput,
 } from "./dto/activity.schemas";
 
-/**
- * Who or what recorded an activity.
- *
- * The same union the deal ledger uses, for the same reason: ticket 10's ingress
- * and ticket 12's extraction both write activities nobody typed, and a reader
- * has to be able to tell.
- */
-export type ActivityActor =
-  | { readonly kind: "human"; readonly userId: string }
-  | { readonly kind: "system"; readonly label: string };
-
-/**
- * `audit_logs.user_id` is NOT NULL, and the repo already writes this sentinel
- * for machine actions (recurring journals, KB page tree, the git integration).
- * The label that says WHICH system did it rides in the entry's metadata, and the
- * activity row itself keeps `actor_label` — this is only the audit column.
- */
-const SYSTEM_AUDIT_USER = "system";
-
-function auditActor(actor: ActivityActor): { userId: string; metadata: Record<string, unknown> } {
-  return actor.kind === "human"
-    ? { userId: actor.userId, metadata: {} }
-    : { userId: SYSTEM_AUDIT_USER, metadata: { actorLabel: actor.label } };
-}
-
 @Injectable()
 export class ActivitiesService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly audit: AuditService,
+    /**
+     * Optional, for the reason the ingress seam takes its own collaborators
+     * optionally: recording what happened must not depend on the thing that
+     * summarises it. A relationship state one activity behind is repaired by the
+     * next activity or by a rebuild; an activity refused because a derived table
+     * could not be written is a lost record of something that happened.
+     */
+    @Optional() private readonly relationships?: RelationshipStateService,
   ) {}
 
   async timeline(organizationId: string, query: TimelineQuery): Promise<TimelinePage> {
@@ -69,7 +62,7 @@ export class ActivitiesService {
     input: CreateActivityInput,
     source = "manual",
   ) {
-    return this.db.transaction(async (tx) => {
+    const created = await this.db.transaction(async (tx) => {
       const [row] = await tx
         .insert(activities)
         .values({
@@ -105,104 +98,61 @@ export class ActivitiesService {
 
       return row;
     });
+
+    await this.materialise(organizationId, created?.activityId);
+    return created;
   }
 
+  /**
+   * The materialisation, after the write it derives from.
+   *
+   * Ticket 01's fourth criterion is that the relationship state moves when an
+   * activity arrives rather than waiting for a sweep, and this is the half of
+   * that which is not the ingress seam — an activity typed into the CRM by a rep
+   * changes what the relationship looks like exactly as much as one that
+   * arrived through an adapter.
+   *
+   * Outside the transaction on purpose. It reads the row it is summarising, so
+   * inside it would be reading its own uncommitted write on a handle the fold
+   * has no business holding; and by the platform's own rule, work that must not
+   * fail the request does not share the request's transaction.
+   */
+  private async materialise(organizationId: string, activityId: string | undefined): Promise<void> {
+    if (!activityId || !this.relationships) return;
+    await this.relationships.tryOnActivity(organizationId, activityId);
+  }
+
+  /** Everyone who was on it, resolved so no caller renders an identifier. */
+  /** @see lib/activity-commands.ts */
   async update(
     organizationId: string,
     activityId: string,
     actor: ActivityActor,
     input: UpdateActivityInput,
   ) {
-    await this.require(organizationId, activityId);
-
-    const [row] = await this.db
-      .update(activities)
-      .set({
-        ...(input.subject === undefined ? {} : { subject: input.subject ?? null }),
-        ...(input.body === undefined ? {} : { body: input.body ?? null }),
-        ...(input.dueAt === undefined ? {} : { dueAt: input.dueAt ? new Date(input.dueAt) : null }),
-        ...(input.assigneeUserId === undefined
-          ? {}
-          : { assigneeUserId: input.assigneeUserId ?? null }),
-      })
-      .where(
-        and(
-          eq(activities.organizationId, organizationId),
-          eq(activities.activityId, activityId),
-        ),
-      )
-      .returning();
-
-    const audited = auditActor(actor);
-    this.audit.log({
-      action: "crm.activity.updated",
-      userId: audited.userId,
-      orgId: organizationId,
-      resourceType: "activity",
-      resourceId: activityId,
-      metadata: { ...audited.metadata, changed: Object.keys(input) },
-    });
-
-    return row;
+    return updateActivity(this.commandDeps, organizationId, activityId, actor, input);
   }
 
-  /** Completion is a timestamp, not a boolean — when it happened is the fact. */
+  /** @see lib/activity-commands.ts */
   async complete(organizationId: string, activityId: string, actor: ActivityActor) {
-    const existing = await this.require(organizationId, activityId);
-    if (existing.kind !== "task") throw new NotFoundException("Task not found");
-
-    const [row] = await this.db
-      .update(activities)
-      .set({ completedAt: new Date() })
-      .where(
-        and(
-          eq(activities.organizationId, organizationId),
-          eq(activities.activityId, activityId),
-          isNull(activities.completedAt),
-        ),
-      )
-      .returning();
-
-    const audited = auditActor(actor);
-    this.audit.log({
-      action: "crm.activity.completed",
-      userId: audited.userId,
-      orgId: organizationId,
-      resourceType: "activity",
-      resourceId: activityId,
-      metadata: audited.metadata,
-    });
-
-    return row ?? existing;
+    return completeActivity(this.commandDeps, organizationId, activityId, actor);
   }
 
+  /** @see lib/activity-commands.ts */
   async remove(organizationId: string, activityId: string, actor: ActivityActor) {
-    await this.require(organizationId, activityId);
-
-    await this.db
-      .update(activities)
-      .set({ deletedAt: new Date() })
-      .where(
-        and(
-          eq(activities.organizationId, organizationId),
-          eq(activities.activityId, activityId),
-        ),
-      );
-
-    const audited = auditActor(actor);
-    this.audit.log({
-      action: "crm.activity.deleted",
-      userId: audited.userId,
-      orgId: organizationId,
-      resourceType: "activity",
-      resourceId: activityId,
-      metadata: audited.metadata,
-    });
+    return removeActivity(this.commandDeps, organizationId, activityId, actor);
   }
 
-  /** Everyone who was on it, resolved so no caller renders an identifier. */
+  private get commandDeps(): ActivityCommandDeps {
+    return {
+      db: this.db,
+      audit: this.audit,
+      materialise: (organizationId, activityId) => this.materialise(organizationId, activityId),
+    };
+  }
+
   async participants(organizationId: string, activityId: string) {
-    await this.require(organizationId, activityId);
+    await requireActivity(this.commandDeps, organizationId, activityId);
 
     return this.db
       .select({
@@ -224,26 +174,4 @@ export class ActivitiesService {
       .limit(100);
   }
 
-  /**
-   * Re-asserts the organisation rather than leaning on row-level security.
-   *
-   * A cross-tenant identifier resolves to not-found, never forbidden — a 403 on
-   * another organisation's id confirms the record exists.
-   */
-  private async require(organizationId: string, activityId: string) {
-    const [row] = await this.db
-      .select()
-      .from(activities)
-      .where(
-        and(
-          eq(activities.organizationId, organizationId),
-          eq(activities.activityId, activityId),
-          isNull(activities.deletedAt),
-        ),
-      )
-      .limit(1);
-
-    if (!row) throw new NotFoundException("Activity not found");
-    return row;
-  }
 }

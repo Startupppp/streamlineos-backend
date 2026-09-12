@@ -27,6 +27,7 @@ import type {
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
 import { BodylessAction, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import {
   listTplConnectionsResponseSchema,
   tplConnectionResponseSchema,
@@ -53,6 +54,7 @@ export class TplController {
   @ResponseSchema(tplConnectionResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:3pl:manage")
+  @Idempotent("inventory.3pl.connection.create")
   @Validate({ body: create3plConnectionSchema })
   createConnection(
     @Body() body: Create3plConnectionInput,

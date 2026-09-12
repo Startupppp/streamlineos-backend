@@ -88,7 +88,9 @@ function makeGatewayFail(kind: "quota_exceeded" | "provider_unavailable" | "not_
 
 function toWithUsageResult(result: AiInvokeResult<unknown>): AiInvokeWithUsageResult<unknown> {
   if (!result.ok) return result;
-  return { ok: true, data: result.data, aiUsage: MOCK_AI_USAGE };
+  // F6. The with-usage success branch carries the gateway's correlation id, so
+  // a caller can record which invocation produced an answer.
+  return { ok: true, data: result.data, aiUsage: MOCK_AI_USAGE, correlationId: result.correlationId };
 }
 
 function makeGateway(result: AiInvokeResult<unknown>): jest.Mocked<AiGatewayService> {

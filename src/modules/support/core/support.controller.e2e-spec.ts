@@ -2,6 +2,9 @@ import { INestApplication } from "@nestjs/common";
 import request from "supertest";
 import { createE2eApp } from "test/helpers/e2e-app";
 import { signToken } from "test/helpers/sign-token";
+import { cleanupSeedOrgs, seedOrg } from "test/helpers/e2e-seed";
+import { DRIZZLE } from "src/db/drizzle.constants";
+import type { Db } from "src/db/drizzle.types";
 
 jest.setTimeout(20000);
 
@@ -9,8 +12,21 @@ describe("Support auth/RBAC (e2e)", () => {
   let app: INestApplication;
   beforeAll(async () => {
     app = await createE2eApp();
+
+    /**
+     * A real organisation, because one route here is `@Idempotent`.
+     *
+     * The interceptor records the key before the handler runs, and that write
+     * needs the tenant to exist — so the internal-note case 500'd on the record
+     * rather than reaching the `authorize` call it is about. Every other case in
+     * this file is decided by a guard and needs nothing.
+     */
+    await seedOrg(app.get<Db>(DRIZZLE), "org_1", "org-1-support-e2e");
   });
-  afterAll(async () => app.close());
+  afterAll(async () => {
+    await cleanupSeedOrgs(app.get<Db>(DRIZZLE), ["org_1"]);
+    await app.close();
+  });
 
   type Method = "get" | "post" | "patch" | "put" | "delete";
 
@@ -430,7 +446,10 @@ describe("Support auth/RBAC (e2e)", () => {
     const res = await request(app.getHttpServer())
       .post("/support/1/messages")
       .set("Authorization", `Bearer ${token}`)
-      .set("Idempotency-Key", "test-internal-note-probe-1")
+      // `@Idempotent("support:ticket.reply")`: without the key the interceptor
+      // refuses with 400 before the controller reads `isInternal`, so this
+      // asserted a permission decision the request never reached.
+      .set("Idempotency-Key", "support-internal-note-rbac")
       .send({ body: "internal note attempt", isInternal: true });
     expect(res.status).toBe(403);
     expect(res.body).toMatchObject({ code: "FORBIDDEN", message: "Permission denied" });

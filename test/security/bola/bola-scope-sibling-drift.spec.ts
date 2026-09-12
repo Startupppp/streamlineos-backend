@@ -59,16 +59,109 @@ const DRIFTING_KEYS: readonly string[] = [
   "self:payroll",
   "settings:rbac:manage",
   "settings:view",
+  // The catalog does not mark `sign:admin:manage` scopable, so every holder resolves `all` and the
+  // three unscoped admin-config reads (settings, sweep-status, watermark-policies) cannot disclose
+  // anything their scoped sibling would have withheld. Listed so a scopable sibling would fail here.
+  "sign:admin:manage",
   "sign:audit:view",
   "support:reports:view",
   "support:tickets:view",
+  // Arrived on the merge and became visible the way `tasks:read` did: `GET /surveys` and
+  // `GET /surveys/:surveyId` started narrowing to what the caller created, so the key qualified
+  // for the first time. Its two REAL siblings — the builder snapshot and the logic rules, the
+  // survey's whole content under a `scopable` key — were repaired rather than listed here; see
+  // `FIXED: the survey's content reads narrow like the survey itself` below. What is left is
+  // `GET /surveys/templates`, and that route reads no table at all: `SurveyTemplateService.list()`
+  // returns a hard-coded in-process catalog, so there is no row any scope could have withheld.
+  // Pinned to exactly that route below, so this entry cannot absorb a second one.
+  "surveys:view",
   "tasks:read",
   "timesheets:billing:view",
   "timesheets:entries:view",
   "timesheets:payroll:view",
 ];
 
-const UNSCOPED_ROUTE_BASELINE = 328;
+/**
+ * 328 -> 339, re-pinned 2026-09-12, and the move is the MERGE — it has been failing since
+ * `2697cd5b1` brought Inventory, CRM, Timesheets and SignOS onto main's tree, and `87ae17f82`
+ * restated two other floors without restating this one. Measured, not guessed: the detector run
+ * against the tree at `ccb90c45d` (where 328 was set) still answers 328, and against this tree
+ * 339, so nothing between them regressed a route that was already here.
+ *
+ *   328  at `ccb90c45d`, pre-merge
+ *   +33  the merged modules' own unscoped collection reads
+ *    -2  `GET /surveys/:surveyId/builder` and `GET /surveys/:surveyId/logic`, REPAIRED in this
+ *        pass rather than listed — they were a real disclosure, not an inventory entry
+ *   -20  routes that left the finding set: the five `crm:autonomy:*` reads, four `crm:deals:read`
+ *        and four `crm:leads:view` aggregates, `GET /contacts/duplicates`,
+ *        `GET /clients/:clientId/activities`, `GET /settings/permissions`,
+ *        `GET /build/:projectId/labels`, `GET /payroll/runs/:runId/approvals`, and the two
+ *        `accounting:journal:read` reads that went with main's `finance/` module
+ *   = 339
+ *
+ * RAISING a ratchet is the move this file's own rules are suspicious of, so the 31 routes it is
+ * being raised to cover are named below and asserted individually. The number can then only hide
+ * a route that is already written down. It is still a ratchet and it still must fall.
+ *
+ * NOT AUDITED, and this is the honest limit of this pass: of those 31, `inventory:*`,
+ * `crm:deals:read`, `kb:articles:view`, `timesheets:entries:view` and `surveys:view` are all
+ * `scopable` keys, so any one of them could be a disclosure of the `/deals/export` shape. Only
+ * the two survey content reads were read end-to-end and repaired. The rest are recorded as
+ * inventory — which is what this ratchet has always been — not as a judgement that they are safe.
+ */
+/**
+ * 339 -> 336, 2026-09-12. Two repairs and one correction to the detector itself:
+ *
+ *   -2  `GET /timesheets/payroll/exports` and `GET /timesheets/payroll/exports/:exportId/rows`,
+ *       REPAIRED — see `FIXED: a payroll export is read only at the scope that covers it` below.
+ *   -1  `GET /timesheets/periods`, which was always scoped. The source index merged every class
+ *       of one name into one bucket, first file winning per method, so the timesheets
+ *       controller's `PeriodsService.listPeriods` was read as accounting's fiscal-period list and
+ *       `ExceptionsService.listExceptions` as payroll's. The detector now follows the caller's
+ *       own import (`resolveImportedClassMethods`), and the timesheets exceptions service is
+ *       named for its entity, as its controller already was.
+ */
+const UNSCOPED_ROUTE_BASELINE = 336;
+
+/**
+ * The 31 unscoped collection reads the merge brought, pinned by name so raising the baseline
+ * cannot absorb a thirty-second. `sign:admin:manage` is NOT scopable (every holder resolves
+ * `all`), so its three admin-config reads are inventory only; the others are listed because
+ * their keys are scopable and the question about them is open.
+ */
+const NEWLY_VISIBLE_ON_THE_MERGE: readonly string[] = [
+  "GET /crm/consent/contacts/:contactId/events",
+  "GET /deals/:dealId/competitor-suggestions",
+  "GET /hr/work-logs/export",
+  "GET /inventory/channels/pools/availability",
+  "GET /inventory/channels/pools/by-variant",
+  "GET /inventory/handling-units",
+  "GET /inventory/kits/:kitVariantId/bom",
+  "GET /inventory/kits/buildable",
+  "GET /inventory/ops/attention",
+  "GET /inventory/ops/summary",
+  "GET /inventory/ops/zones",
+  "GET /inventory/ownership/consigned",
+  "GET /inventory/picking/waves",
+  "GET /inventory/products/pharmacy/h1-register",
+  "GET /inventory/products/variants/:variantId/pharmacy",
+  "GET /inventory/products/variants/:variantId/quantity-capture",
+  "GET /inventory/products/variants/:variantId/receipt-requirements",
+  "GET /inventory/products/variants/:variantId/tax-treatment",
+  "GET /inventory/putaway/tasks",
+  "GET /inventory/quick-commerce/asns",
+  "GET /inventory/settings/packs",
+  "GET /inventory/slotting/recommendations",
+  "GET /inventory/stock/transit/stranded",
+  "GET /inventory/traceability/genealogy",
+  "GET /inventory/warehouses/putaway/suggestions",
+  "GET /kb/articles/:articleId/indexing-status",
+  "GET /sign/admin/settings",
+  "GET /sign/admin/sweep-status",
+  "GET /sign/admin/watermark-policies",
+  "GET /surveys/templates",
+  "GET /timesheets/calendar/holidays",
+];
 
 /**
  * Hand-verified disclosures — the unscoped route returned the same entity's rows
@@ -129,6 +222,53 @@ describe("BOLA sweep — export and search apply their sibling list's DataScope"
     expect(total).toBeLessThanOrEqual(UNSCOPED_ROUTE_BASELINE);
   });
 
+  /**
+   * The raise, held open. Every route the baseline was moved to cover is named, so the number
+   * cannot quietly come to mean a different set of routes than the one it was raised for.
+   * A route that gets FIXED leaves this list and lowers the baseline — that is the intended
+   * direction, and it fails here first so the removal is deliberate.
+   */
+  it("RAISE: every route the baseline was raised for is still one of the routes it names", () => {
+    const unscoped = new Set(findings.flatMap((f) => f.unscoped));
+    const gone = NEWLY_VISIBLE_ON_THE_MERGE.filter((route) => !unscoped.has(route));
+    expect(gone).toEqual([]);
+  });
+
+  /**
+   * REPAIRED, and the pin holds the repair rather than the defect.
+   *
+   * `surveys:view` is `scopable: true`, `GET /surveys` and `GET /surveys/:surveyId` narrow to what
+   * the caller created — and `GET /surveys/:surveyId/builder` and `.../logic` did not. So a holder
+   * narrowed to `own` was refused the survey by its detail read and handed its sections,
+   * questions, choices and branching rules through its children, under the same key. Both now
+   * resolve the survey through `assertSurveyReadable` with the request's `ScopedRead`, and answer
+   * a survey their scope excludes exactly as they answer one that does not exist.
+   *
+   * The residue is asserted as an exact set, not a subset: `GET /surveys/templates` reads no table
+   * (`SurveyTemplateService.list()` returns a hard-coded array), so it is the one route
+   * `surveys:view` may still have here, and a third would fail.
+   */
+  it("FIXED: the survey's content reads narrow like the survey itself", () => {
+    const index = buildSourceIndex();
+    const surface = loadRouteSurface();
+    for (const path of ["/surveys/:surveyId/builder", "/surveys/:surveyId/logic"]) {
+      const handler = surface.find((r) => r.verb === "GET" && r.path === path);
+      expect(handler).toBeDefined();
+      expect(handler && handlerScopeEvidence(handler, index)).toBe(true);
+    }
+
+    const surveys = findings.find((f) => f.permissionKey === "surveys:view");
+    expect(surveys?.scoped).toEqual(
+      expect.arrayContaining([
+        "GET /surveys",
+        "GET /surveys/:surveyId",
+        "GET /surveys/:surveyId/builder",
+        "GET /surveys/:surveyId/logic",
+      ]),
+    );
+    expect(surveys?.unscoped).toEqual(["GET /surveys/templates"]);
+  });
+
   it("FIXED: GET /deals/export applies the same scope as GET /deals", () => {
     const deals = findings.find((f) => f.permissionKey === "crm:deals:read");
     expect(deals?.scoped).toContain("GET /deals");
@@ -166,6 +306,23 @@ describe("BOLA sweep — export and search apply their sibling list's DataScope"
    * the finding set — asserted here so its removal from DRIFTING_KEYS is a
    * measured fact rather than an unexplained deletion.
    */
+  /**
+   * REPAIRED. `timesheets:payroll:view` is `scopable: true` and a timesheets module member holds
+   * it at `own`. `GET /timesheets/payroll/period-summary` narrowed to that member's own rows;
+   * the export history and the rows behind an export — every payee's hours, name and email in
+   * one snapshot — read the whole organisation under the same key. An export belongs to nobody
+   * in particular, so below `all` there is none to read: the list is empty and the rows are 404.
+   */
+  it("FIXED: a payroll export is read only at the scope that covers it", () => {
+    const unscoped = new Set(findings.flatMap((f) => f.unscoped));
+    expect(unscoped.has("GET /timesheets/payroll/exports")).toBe(false);
+    expect(unscoped.has("GET /timesheets/payroll/exports/:exportId/rows")).toBe(false);
+    const payroll = findings.find((f) => f.permissionKey === "timesheets:payroll:view");
+    expect(payroll?.scoped).toEqual(
+      expect.arrayContaining(["GET /timesheets/payroll/exports", "GET /timesheets/payroll/exports/:exportId/rows"]),
+    );
+  });
+
   it("FIXED: sign:envelope:view has no unscoped read left at all", () => {
     expect(findings.map((f) => f.permissionKey)).not.toContain("sign:envelope:view");
     const index = buildSourceIndex();

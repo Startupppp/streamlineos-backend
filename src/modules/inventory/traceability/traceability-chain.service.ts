@@ -1,14 +1,9 @@
 import { Inject, Injectable, BadRequestException } from "@nestjs/common";
-import { and, desc, eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import {
   invLots,
   invSerialNumbers,
   invStockLevels,
-  invStockTransactions,
-  invGrns,
-  invGrnLines,
-  invPurchaseOrders,
-  invVendors,
   invShipments,
   invShipmentLines,
   invVendorReturnLines,
@@ -22,6 +17,7 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { CacheService } from "../../../common/cache/cache.service";
 import { CACHE_TTL } from "../../../common/cache/cache-keys";
+import { fetchEvents, fetchReceipts } from "./lib/genealogy-receipts";
 import type { TraceabilityQueryInput } from "./dto/traceability.schemas";
 
 @Injectable()
@@ -51,12 +47,12 @@ export class TraceabilityChainService {
     const [origin, receipts, currentStock, shipmentItems, vendorReturnItems, customerReturnItems, events] =
       await Promise.all([
         this.fetchOrigin(orgId, lotId, serialId),
-        lotId != null ? this.fetchReceipts(orgId, lotId) : Promise.resolve([]),
+        lotId != null ? fetchReceipts({ db: this.db }, orgId, lotId) : Promise.resolve([]),
         this.fetchCurrentStock(orgId, lotId, serialId),
         this.fetchShipments(orgId, lotId, serialId),
         lotId != null ? this.fetchVendorReturns(orgId, lotId) : Promise.resolve([]),
         lotId != null ? this.fetchCustomerReturns(orgId, lotId) : Promise.resolve([]),
-        this.fetchEvents(orgId, lotId, serialId),
+        fetchEvents({ db: this.db }, orgId, lotId, serialId),
       ]);
 
     return {
@@ -80,30 +76,6 @@ export class TraceabilityChainService {
       where: and(eq(invSerialNumbers.id, serialId!), eq(invSerialNumbers.orgId, orgId)),
       with: { productVariant: { with: { product: { columns: { id: true, name: true, sku: true } } } } },
     });
-  }
-
-  private async fetchReceipts(orgId: string, lotId: number) {
-    const grnLines = await this.db
-      .select({
-        grnLineId: invGrnLines.id,
-        grnId: invGrns.id,
-        grnNumber: invGrns.grnNumber,
-        receivedDate: invGrns.receivedDate,
-        poId: invPurchaseOrders.id,
-        poNumber: invPurchaseOrders.poNumber,
-        vendorId: invVendors.id,
-        vendorName: invVendors.name,
-        vendorCode: invVendors.code,
-        qtyReceived: invGrnLines.quantityReceived,
-      })
-      .from(invStockTransactions)
-      .innerJoin(invGrns, and(eq(invGrns.orgId, orgId), eq(invStockTransactions.referenceType, "GRN")))
-      .innerJoin(invGrnLines, eq(invGrnLines.grnId, invGrns.id))
-      .innerJoin(invPurchaseOrders, eq(invGrns.poId, invPurchaseOrders.id))
-      .innerJoin(invVendors, eq(invPurchaseOrders.vendorId, invVendors.id))
-      .where(and(eq(invStockTransactions.orgId, orgId), eq(invStockTransactions.lotId, lotId)))
-      .limit(50);
-    return grnLines;
   }
 
   private async fetchCurrentStock(orgId: string, lotId: number | undefined, serialId: number | undefined) {
@@ -181,19 +153,4 @@ export class TraceabilityChainService {
     return lines.map((l) => ({ ...l, category: "customer" as const }));
   }
 
-  private async fetchEvents(orgId: string, lotId: number | undefined, serialId: number | undefined) {
-    const condition = lotId != null
-      ? and(eq(invStockTransactions.orgId, orgId), eq(invStockTransactions.lotId, lotId))
-      : and(eq(invStockTransactions.orgId, orgId), eq(invStockTransactions.serialId, serialId!));
-
-    return this.db.query.invStockTransactions.findMany({
-      where: condition,
-      orderBy: [desc(invStockTransactions.createdAt)],
-      limit: 50,
-      with: {
-        location: { columns: { id: true, name: true, code: true } },
-        creator: { columns: { id: true, name: true } },
-      },
-    });
-  }
 }

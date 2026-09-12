@@ -20,20 +20,14 @@ import { ContactRolesService } from "./contact-roles.service";
 import {
   contactRoleCreateSchema,
   contactRoleListSchema,
-  mergeContactsSchema,
-  duplicatesQuerySchema,
   type ContactRoleCreateInput,
   type ContactRoleListInput,
-  type MergeContactsInput,
-  type DuplicatesQueryInput,
 } from "./dto/contact-roles.schemas";
 import { Validate } from "../../common/validation/validate.decorator";
 import { NoContentResponse, ResponseSchema } from "../../common/openapi/zod-operation-contracts";
 import {
   contactRoleListResponseSchema,
   contactRoleRowSchema,
-  duplicateContactsResponseSchema,
-  mergeContactsResponseSchema,
 } from "./dto/contacts-response.schemas";
 import { z } from "zod";
 
@@ -45,29 +39,6 @@ const contactIdroleIdParams = z.object({ contactId: z.coerce.number().int().posi
 @UseGuards(JwtAuthGuard, PermissionGuard)
 export class ContactRolesController {
   constructor(private readonly svc: ContactRolesService) {}
-
-  @Get("duplicates")
-  @ResponseSchema(duplicateContactsResponseSchema)
-  @RequirePermission("crm:contacts:view")
-  @Validate({ query: duplicatesQuerySchema })
-  getDuplicates(
-    @Query() query: DuplicatesQueryInput,
-    @CurrentUser() u: CurrentUserContext,
-  ) {
-    return this.svc.getDuplicateContacts(u.orgId, query);
-  }
-
-  @Post("merge")
-  @HttpCode(200)
-  @ResponseSchema(mergeContactsResponseSchema)
-  @RequirePermission("crm:contacts:merge")
-  @Validate({ body: mergeContactsSchema })
-  mergeContacts(
-    @Body() body: MergeContactsInput,
-    @CurrentUser() u: CurrentUserContext,
-  ) {
-    return this.svc.mergeContacts(u.orgId, body, u.userId);
-  }
 
   @Get(":contactId/roles")
   @ResponseSchema(contactRoleListResponseSchema)

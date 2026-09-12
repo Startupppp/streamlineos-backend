@@ -116,6 +116,7 @@ function buildHarness(freshIds: number[], mirrorCount: number, accounts: MailAcc
       deferUpsertBatch: jest.fn(),
     } as unknown as MailMetadataService,
     { savePosition: jest.fn().mockResolvedValue(undefined) } as unknown as MailSyncCheckpointService,
+    { ENCRYPTION_KEY: "mail-cursor-test-secret" },
   );
 
   return { service, gmailList, outlookList, countUnread, freshAccountIds };

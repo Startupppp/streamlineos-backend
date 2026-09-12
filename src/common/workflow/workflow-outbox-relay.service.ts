@@ -110,6 +110,10 @@ export class WorkflowOutboxRelayService {
    *
    * Events are collected under the sweep and the runs are started after it, so
    * no tenant transaction stays open across the work of starting runs.
+   *
+   * `limit` stays a whole-tick budget rather than becoming per organisation. A
+   * relay that read fifty events per tenant would scale its own batch size with
+   * the customer list, which is the opposite of what a batch size is for.
    */
   async relay(limit: number = RELAY_BATCH_SIZE): Promise<RelayResult> {
     const events: RelayEvent[] = [];

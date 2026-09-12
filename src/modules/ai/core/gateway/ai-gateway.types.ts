@@ -44,6 +44,17 @@ export interface AiInvokeWithUsageSuccess<T> {
   ok: true;
   data: T;
   aiUsage: AiUsageMeta;
+  /**
+   * F6. The gateway's own id for this call, and the join back into
+   * `ai_usage_logs`.
+   *
+   * The failure branch has always carried one; the success branch did not, so a
+   * caller that used a `*WithUsage` variant — which is what new AI endpoints are
+   * required to use — had no way to record *which* call produced an answer. That
+   * makes a "this was wrong" report unactionable: there is a complaint, and no
+   * way to find the invocation, prompt version, model or cost behind it.
+   */
+  correlationId: string;
 }
 
 export type AiInvokeWithUsageResult<T> = AiInvokeWithUsageSuccess<T> | AiInvokeFailure;

@@ -63,7 +63,7 @@ const grnLineSchema = z.object({
   quantityReceived: z.string(),
   uomId: z.number().int().nullable(),
   quantityEntered: z.string().nullable(),
-  status: z.string(),
+  qualityStatus: z.string(),
   rejectionReason: z.string().nullable(),
 });
 

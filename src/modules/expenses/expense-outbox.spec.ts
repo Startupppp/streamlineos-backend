@@ -430,9 +430,14 @@ describe("expense outbox — aggregate version", () => {
 });
 
 describe("expense side effects are observed", () => {
+  // Split-out lib files count as owned expense paths. This scan keys on file
+  // name, so code that moves into lib/ leaves the guard's reach unless it is
+  // listed here — a silent shrink that looks exactly like a passing gate.
   const OWNED_FILES = [
     "expenses-write.service.ts",
     "expense-lifecycle.service.ts",
+    "lib/expense-approval.ts",
+    "lib/expense-policy-rules.ts",
     "expenses.service.ts",
     "expenses-import.service.ts",
     "travel.service.ts",

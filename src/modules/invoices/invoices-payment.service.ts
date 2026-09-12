@@ -3,38 +3,25 @@ import {
   ConflictException,
   Inject,
   Injectable,
-  Logger,
   NotFoundException,
 } from "@nestjs/common";
-import { and, eq, inArray, isNull, sql } from "drizzle-orm";
-import {
-  invoices,
-  payments,
-  organizationMembers,
-  accountingSettings,
-  finPaymentAllocations,
-  finReminderLog,
-} from "../../db/schema";
+import { and, eq, sql } from "drizzle-orm";
+import { invoices, payments, organizationMembers } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { AuditService } from "../../common/audit/audit.service";
-import { JournalPostingService, type DbOrTx } from "../accounting/posting/journal-posting.service";
+import type { DbOrTx } from "../accounting/kernel/sequence.service";
 import { NotificationDispatchService } from "../notifications/notification-dispatch.service";
 import { InvoicesLifecycleService } from "./invoices-lifecycle.service";
-import { ExchangeRateNotFoundError, RateResolverService } from "../finance/controls/rate-resolver.service";
-import { FxService } from "../finance/controls/fx.service";
+import { InvoicesPostingService } from "./invoices-posting.service";
 import {
   compareDecimals,
   decimalFromNumber,
   formatDecimal,
-  multiplyDecimals,
   roundDecimal,
   subtractDecimals,
-  sumDecimals,
   toDecimal,
 } from "../accounting/core/money.util";
-import type { CurrentUserContext } from "../../common/auth/backend-claims";
-import { systemActor } from "../../common/auth/system-actor";
 import type { RecordPaymentInput } from "./dto/invoice-write.schemas";
 import { registerAfterCommit } from "../../common/tenant/tenant-context";
 import { logSideEffectFailure } from "../../common/logger/side-effect";
@@ -42,8 +29,8 @@ import { logSideEffectFailure } from "../../common/logger/side-effect";
 /**
  * `payments.amount` is `numeric(12,2)`, so a receipt can only ever be recorded to
  * the paisa. Pinning the request amount to that scale once — and comparing the
- * outstanding balance at the same scale — is what keeps the payment register, the
- * allocation subledger and the journal recording one quantity instead of three.
+ * outstanding balance at the same scale — is what keeps the payment register and
+ * the journal recording one quantity instead of two.
  */
 export const PAYMENT_SCALE = 2;
 
@@ -58,16 +45,12 @@ function maxPayable(invoiceTotal: string | null, totalPaid: string | null | unde
 
 @Injectable()
 export class InvoicesPaymentService {
-  private readonly classLogger = new Logger(InvoicesPaymentService.name);
-
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
-    private readonly posting: JournalPostingService,
+    private readonly posting: InvoicesPostingService,
     private readonly dispatch: NotificationDispatchService,
     private readonly lifecycle: InvoicesLifecycleService,
     private readonly audit: AuditService,
-    private readonly rateResolver: RateResolverService,
-    private readonly fx: FxService,
   ) {}
 
   private async createPayment(
@@ -122,37 +105,23 @@ export class InvoicesPaymentService {
       );
     }
 
-    const allocations = input.allocations ?? [];
-    const allocatedAmounts = allocations.map((a) =>
-      roundDecimal(decimalFromNumber(a.amount), PAYMENT_SCALE),
-    );
-    if (
-      allocations.length > 0 &&
-      compareDecimals(sumDecimals(allocatedAmounts), settledAmount) !== 0
-    ) {
+    // Spreading one receipt across several invoices lived in
+    // `fin_payment_allocations`, which was dropped with the pre-rewrite
+    // accounting schema. Its successor, `ar_allocations`, is keyed to
+    // `ar_receipts`/`ar_documents` and cannot address these integer-id rows, so
+    // the feature genuinely has no home here. Say so instead of accepting the
+    // input and silently recording a single-invoice payment.
+    if ((input.allocations ?? []).length > 0) {
       throw new BadRequestException(
-        "Allocations total must equal payment amount",
+        "Splitting one payment across several invoices moved to accounting receipts " +
+          "(POST /accounting/ar/receipts). Record this payment against a single invoice.",
       );
     }
 
-    const allocInvoiceIds = allocations.map((a) => a.invoiceId);
-    if (allocInvoiceIds.length > 0) {
-      const validInvoices = await this.db
-        .select({ id: invoices.id })
-        .from(invoices)
-        .where(
-          and(eq(invoices.orgId, orgId), inArray(invoices.id, allocInvoiceIds)),
-        );
-      if (validInvoices.length !== allocInvoiceIds.length) {
-        throw new BadRequestException(
-          "One or more allocation invoices not found in this organisation",
-        );
-      }
-    }
-
-    await this.posting.seedChartOfAccountsForOrg(orgId);
-
     const created = await this.db.transaction(async (tx) => {
+      // The check above ran before the lock. Two receipts racing for the same
+      // outstanding balance both pass it, so the invoice row is locked and the
+      // balance re-read before anything is written.
       const [lockedInvoice] = await tx
         .select({ total: invoices.total, status: invoices.status })
         .from(invoices)
@@ -180,52 +149,17 @@ export class InvoicesPaymentService {
         tx,
       );
 
-      const touchedIds = new Set([invoiceId]);
-      if (allocations.length > 0) {
-        await tx.insert(finPaymentAllocations).values(
-          allocations.map((a, idx) => ({
-            orgId,
-            paymentId: payment.id,
-            invoiceId: a.invoiceId,
-            amount: allocatedAmounts[idx],
-          })),
-        );
-        for (const id of allocations.map((a) => a.invoiceId)) touchedIds.add(id);
-        for (const id of touchedIds) {
-          await this.lifecycle.recomputeInvoiceBalance(id, tx);
-        }
-      }
-
-      const paidNow = new Date();
-      const touchedIdArr = [...touchedIds];
-      const invStatuses = await tx
-        .select({ id: invoices.id, status: invoices.status })
-        .from(invoices)
-        .where(and(inArray(invoices.id, touchedIdArr), eq(invoices.orgId, orgId)));
-
-      const paidInvoiceIds = invStatuses.filter((inv) => inv.status === "PAID").map((inv) => inv.id);
-
-      if (paidInvoiceIds.length > 0) {
-        await tx
-          .update(finReminderLog)
-          .set({ paidAt: paidNow })
-          .where(and(
-            eq(finReminderLog.orgId, orgId),
-            inArray(finReminderLog.invoiceId, paidInvoiceIds),
-            eq(finReminderLog.status, "SENT"),
-            isNull(finReminderLog.paidAt),
-          ));
-      }
-
       await this.posting.postPaymentReceipt(
+        orgId,
+        userId,
         {
-          orgId,
           paymentId: payment.id,
+          invoiceId,
           invoiceNumber: invoice.invoiceNumber,
           paymentDate: input.paymentDate,
           paymentMethod: input.paymentMethod,
+          currency: invoice.currency,
           amount: Number(settledAmount),
-          createdBy: userId,
         },
         tx,
       );
@@ -276,49 +210,40 @@ export class InvoicesPaymentService {
     return created;
   }
 
+  /**
+   * Realised FX when a foreign-currency invoice settles.
+   *
+   * A missing rate must not undo the payment, and it does not: `postRealizedFx`
+   * reports it and posts nothing, as it does for an organisation without
+   * accounting. Anything else — a closed period, a chart without an FX role —
+   * propagates, so a receipt is never recorded without the entry that clears its
+   * FX residue. The rewrite dropped the old `accounting_settings.base_currency`
+   * read and the invoice's stored `exchange_rate` — the first has no successor
+   * table, and the second was never written by the create path, so it was always
+   * 1. Both rates now come from the book's own `gl_fx_rates`.
+   *
+   * The entry is keyed on the payment, so each receipt against an invoice clears
+   * its own residue.
+   */
   private async postArFxGainLoss(
     orgId: string,
     userId: string,
-    invoice: { id: number; currency: string; exchangeRate: string },
+    invoice: { id: number; currency: string; createdAt: Date | null },
     paymentId: number,
-    allocatedAmount: string,
+    settledAmount: string,
     paymentDateIso: string,
   ): Promise<void> {
-    const settingsRows = await this.db
-      .select({ baseCurrency: accountingSettings.baseCurrency })
-      .from(accountingSettings)
-      .where(eq(accountingSettings.orgId, orgId))
-      .limit(1);
-    const baseCurrency = settingsRows[0]?.baseCurrency ?? "INR";
-
-    if (invoice.currency === baseCurrency) return;
-
-    const bookedRate = invoice.exchangeRate ? toDecimal(invoice.exchangeRate) : "1";
-    const baseAmountBooked = multiplyDecimals(allocatedAmount, bookedRate);
-
-    try {
-      const settledRate = await this.rateResolver.getRateString(
-        orgId,
-        invoice.currency,
-        baseCurrency,
-        new Date(`${paymentDateIso}T00:00:00.000Z`),
-      );
-      const baseAmountSettled = multiplyDecimals(allocatedAmount, toDecimal(settledRate));
-      const user = systemActor("invoices.payment.fx-posting", orgId, userId);
-
-      await this.fx.postRealizedGainLoss(user, {
-        sourceType: "invoice",
-        sourceId: String(invoice.id),
-        settlementId: String(paymentId),
-        baseAmountBooked,
-        baseAmountSettled,
-        counterPurpose: "AR",
-      });
-    } catch (err) {
-      if (!(err instanceof ExchangeRateNotFoundError)) throw err;
-      this.classLogger.warn(
-        `No exchange rate for FX on invoice ${invoice.id}: ${err.message}`,
-      );
-    }
+    await this.posting.postRealizedFx(
+      orgId,
+      userId,
+      {
+        id: invoice.id,
+        currency: invoice.currency,
+        issueDate: (invoice.createdAt ?? new Date()).toISOString().slice(0, 10),
+      },
+      paymentId,
+      Number(settledAmount),
+      paymentDateIso,
+    );
   }
 }

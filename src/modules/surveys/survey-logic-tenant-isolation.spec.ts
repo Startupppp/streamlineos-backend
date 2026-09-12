@@ -2,6 +2,8 @@ import { NotFoundException } from "@nestjs/common";
 import { SurveyLogicService } from "./survey-logic.service";
 import { SurveyVersionService } from "./survey-version.service";
 import type { Db } from "../../db/drizzle.module";
+import { ScopedRead } from "../access/scoped-read";
+import type { DataScope } from "../access/access.types";
 
 function sqlValues(value: unknown, seen = new Set<object>()): unknown[] {
   if (value === null || value === undefined || typeof value === "string" || typeof value === "number" || typeof value === "boolean") return [value];
@@ -26,14 +28,24 @@ describe("SurveyLogicService — cross-tenant isolation", () => {
     return { getDraftVersion: jest.fn().mockResolvedValue({ ...DRAFT, orgId }) } as unknown as SurveyVersionService;
   }
 
+  /** `list` now resolves the survey under the caller's scope before reading any rule. */
+  const readAs = (orgId: string, scope: DataScope) => ScopedRead.of(orgId, "author-1", scope);
+
+  function dbWith(findMany: jest.Mock, survey: { id: number } | undefined): Db {
+    return {
+      query: {
+        surveyLogicRules: { findMany },
+        surveyForms: { findFirst: jest.fn().mockResolvedValue(survey) },
+      },
+    } as unknown as Db;
+  }
+
   it("returns empty rules for a different org (deny: isolation)", async () => {
     const findMany = jest.fn().mockResolvedValue([]);
-    const db = {
-      query: { surveyLogicRules: { findMany } },
-    } as unknown as Db;
+    const db = dbWith(findMany, { id: 1 });
     const svc = new SurveyLogicService(db, makeVersions(ATTACKER_ORG));
 
-    const result = await svc.list(ATTACKER_ORG, 1);
+    const result = await svc.list(readAs(ATTACKER_ORG, "all"), 1);
 
     expect(result).toHaveLength(0);
     expect(findMany).toHaveBeenCalledTimes(1);
@@ -44,14 +56,42 @@ describe("SurveyLogicService — cross-tenant isolation", () => {
   it("returns rules for the owning org (control — same-tenant)", async () => {
     const rule = { id: 3, orgId: OWNER_ORG, surveyId: 1 };
     const findMany = jest.fn().mockResolvedValue([rule]);
+    const db = dbWith(findMany, { id: 1 });
+    const svc = new SurveyLogicService(db, makeVersions(OWNER_ORG));
+
+    const result = await svc.list(readAs(OWNER_ORG, "all"), 1);
+
+    expect(result).toHaveLength(1);
+  });
+
+  /**
+   * `surveys:view` is `scopable`, and the rules carry the survey's question text
+   * and its routing. A caller whose scope excludes the survey must be refused
+   * here exactly as `GET /surveys/:surveyId` refuses them — the rules were the
+   * larger half of the disclosure `bola-scope-sibling-drift.spec.ts` caught.
+   */
+  it("refuses the rules of a survey the caller's own scope excludes", async () => {
+    const findMany = jest.fn().mockResolvedValue([]);
+    // The survey read comes back empty: the caller's scope predicate did not
+    // match it, which is indistinguishable from the survey not existing.
+    const db = dbWith(findMany, undefined);
+    const svc = new SurveyLogicService(db, makeVersions(OWNER_ORG));
+
+    await expect(svc.list(readAs(OWNER_ORG, "own"), 1)).rejects.toThrow(NotFoundException);
+    expect(findMany).not.toHaveBeenCalled();
+  });
+
+  it("issues no statement at all at scope none", async () => {
+    const findMany = jest.fn().mockResolvedValue([]);
+    const surveyFindFirst = jest.fn();
     const db = {
-      query: { surveyLogicRules: { findMany } },
+      query: { surveyLogicRules: { findMany }, surveyForms: { findFirst: surveyFindFirst } },
     } as unknown as Db;
     const svc = new SurveyLogicService(db, makeVersions(OWNER_ORG));
 
-    const result = await svc.list(OWNER_ORG, 1);
-
-    expect(result).toHaveLength(1);
+    await expect(svc.list(readAs(OWNER_ORG, "none"), 1)).rejects.toThrow(NotFoundException);
+    expect(surveyFindFirst).not.toHaveBeenCalled();
+    expect(findMany).not.toHaveBeenCalled();
   });
 
   it("throws NotFoundException when patching a cross-tenant rule (isolation)", async () => {

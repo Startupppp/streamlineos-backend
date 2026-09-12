@@ -26,6 +26,21 @@ const REVERSIBILITY: Readonly<Record<DecisionKind, ReversibilityClass>> = {
   "party.created": "instant",
   "activity.logged": "instant",
   "quote.sent": "hold",
+  /**
+   * A message that has left is a message that has left. `hold` is the honest
+   * class for both: while it is waiting, cancelling prevents it entirely; once
+   * it is gone, only a second message apologising for the first is available,
+   * and the feed says so by showing the decision as applied rather than
+   * offering an undo.
+   */
+  "outbound.sent": "hold",
+  "cold_outbound.sent": "hold",
+  /**
+   * Instant, because a repair is undoable by construction: the value each one
+   * replaced is recorded before the write, so putting it back is one statement
+   * per value and one predicate for the batch.
+   */
+  "field.repaired": "instant",
 };
 
 export function reversibilityFor(kind: DecisionKind): ReversibilityClass {
@@ -46,6 +61,31 @@ const ACT_THRESHOLD: Readonly<Record<DecisionKind, number>> = {
   "party.created": 0.7,
   "stage.advanced": 0.85,
   "quote.sent": 0.9,
+  /**
+   * A follow-up sits below a quote and above a task: being wrong reaches a
+   * customer, which a task does not, but it carries no figures they could act
+   * on, which a quote does.
+   */
+  "outbound.sent": 0.8,
+  /**
+   * The highest threshold in the table, and higher than a quote's on purpose. A
+   * quote goes to somebody who is already talking to us; a cold message goes to
+   * somebody who is not, where being wrong is a complaint rather than an
+   * embarrassment, and a complaint is charged against every tenant sharing the
+   * sending infrastructure.
+   */
+  "cold_outbound.sent": 0.95,
+  /**
+   * Deliberately unreachable, and stated rather than omitted.
+   *
+   * A repair never consults a model, so it never asks `shouldAct` — the
+   * enumeration in `repair-classes.ts` is the entire authority and every class
+   * in it is a pure function over the value. One is what a threshold means when
+   * nothing below certainty may act: if anything ever routes a repair through
+   * here, only a decision recorded at certainty gets through, which is the
+   * failure mode that fails closed.
+   */
+  "field.repaired": 1,
 };
 
 export function actThresholdFor(kind: DecisionKind): number {
@@ -99,6 +139,23 @@ export interface DecisionRow {
   decision: Record<string, unknown> | null;
   summary: string | null;
   reversibility: ReversibilityClass;
+}
+
+/**
+ * A deal id as the decision ledger stores one.
+ *
+ * `activities.deal_id` is an integer with a foreign key to `deals`;
+ * `autonomous_decisions.deal_id` is text and deliberately stays that way. The
+ * ledger is an audit record of what the system decided, kept whether or not the
+ * thing it decided about still exists, and it sits beside `trigger_id`, which is
+ * polymorphic by design. A foreign key there would delete the evidence along
+ * with the deal.
+ *
+ * So the conversion is explicit and lives in one place, rather than a `String()`
+ * at each of the call sites where the two columns meet.
+ */
+export function decisionDealId(dealId: number | null): string | null {
+  return dealId === null ? null : String(dealId);
 }
 
 /**

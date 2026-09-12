@@ -40,6 +40,31 @@ export const signAuthMethodSchema = z.enum([
   "id_verification",
 ]);
 
+/**
+ * The authentication methods the self-serve signing flow can actually execute.
+ *
+ * The enum above is the full product vocabulary; this is the part that works
+ * today. `SignPublicService.authenticate` refuses anything outside this set with
+ * "not yet supported for self-serve signing" — honest, but it says so to the
+ * SIGNER, at the end of a link, after the envelope has gone out. The sender had
+ * already chosen the method, been told a phone number was mandatory for it, and
+ * pressed send.
+ *
+ * Exported so the pre-send validator and the signing flow read the SAME list.
+ * Two hand-maintained copies would drift, and the direction they drift in is the
+ * one where an envelope passes validation and cannot be signed. They did drift
+ * once in the other direction: `requestOtp` and `authenticate` gained the SMS
+ * channel while this list still refused `otp_sms` at send, so a recipient the
+ * auth-method policy had admitted was refused by the validator. `otp_sms` is
+ * conditional on the deployment's SMS provider, which the validator consults.
+ */
+export const SELF_SERVE_AUTH_METHODS = ["email_link", "access_code", "otp_email", "otp_sms"] as const;
+export type SelfServeAuthMethod = (typeof SELF_SERVE_AUTH_METHODS)[number];
+
+export function isSelfServeAuthMethod(method: string): method is SelfServeAuthMethod {
+  return (SELF_SERVE_AUTH_METHODS as readonly string[]).includes(method);
+}
+
 export const signRoutingModeSchema = z.enum(["parallel", "sequential", "mixed"]);
 export const signCcTimingSchema = z.enum(["on_send", "on_complete"]);
 
@@ -57,9 +82,16 @@ export const createEnvelopeSchema = z.object({
   watermarkPolicyId: z.number().int().positive().optional(),
   expiresAt: z.string().datetime().optional(),
   reminderEnabled: z.boolean().default(true),
-  reminderFirstAfterDays: z.number().int().min(1).max(90).default(3),
-  reminderRepeatDays: z.number().int().min(1).max(90).default(3),
-  reminderMaxCount: z.number().int().min(0).max(20).default(5),
+  /**
+   * Optional, not defaulted. A `.default(3)` here is indistinguishable from a
+   * caller who asked for 3, so the organisation's configured cadence could
+   * never be consulted — the setting was not merely unread, it was
+   * unreachable. Absence now means "use the org default", resolved in
+   * SignEnvelopesService.create.
+   */
+  reminderFirstAfterDays: z.number().int().min(1).max(90).optional(),
+  reminderRepeatDays: z.number().int().min(1).max(90).optional(),
+  reminderMaxCount: z.number().int().min(0).max(20).optional(),
   metadataJson: z.record(z.string(), z.unknown()).optional(),
 }).strict();
 export type CreateEnvelopeInput = z.infer<typeof createEnvelopeSchema>;
@@ -103,7 +135,13 @@ export const extendExpirationSchema = z.object({
 }).strict();
 export type ExtendExpirationInput = z.infer<typeof extendExpirationSchema>;
 
+/**
+ * `envelopeId` is part of this schema because `@Validate({ query })` parses the
+ * whole query string strictly: declared here, it is coerced and bound; absent,
+ * the interceptor refused every upload the builder sent as an unrecognised key.
+ */
 export const uploadDocumentMetaSchema = z.object({
+  envelopeId: z.coerce.number().int().positive(),
   orderIndex: z.coerce.number().int().min(0).default(0),
 }).strict();
 export type UploadDocumentMetaInput = z.infer<typeof uploadDocumentMetaSchema>;
@@ -232,7 +270,6 @@ export const updateSignSettingsSchema = z.object({
   maxFileSizeMb: z.number().int().min(1).max(200).optional(),
   allowedAuthMethods: z.array(signAuthMethodSchema).max(20).optional(),
   certificateFormat: z.string().trim().max(20).optional(),
-  publicFormsEnabled: z.boolean().optional(),
   bulkSendMaxRowsPerJob: z.number().int().min(1).max(10000).optional(),
   bulkSendMaxActiveJobs: z.number().int().min(1).max(100).optional(),
   bulkSendMaxRecipientsPerEnvelope: z.number().int().min(1).max(500).optional(),
@@ -272,3 +309,9 @@ export const watermarkPolicyInputSchema = z.object({
   enabled: z.boolean().default(true),
 }).strict();
 export type WatermarkPolicyInput = z.infer<typeof watermarkPolicyInputSchema>;
+
+/** `GET /sign/admin/sweep-preview`: which sweep to rehearse, defaulting to the reminder pass. */
+export const sweepPreviewQuerySchema = z
+  .object({ sweep: z.enum(["reminder", "expiration"]).default("reminder") })
+  .strict();
+export type SweepPreviewQuery = z.infer<typeof sweepPreviewQuerySchema>;

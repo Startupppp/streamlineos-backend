@@ -1,5 +1,13 @@
-import { BadRequestException, Controller, Get, Headers, Param, ParseIntPipe, Post, Body, Query, UseGuards } from "@nestjs/common";
-import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
+import {
+  Controller,
+  Get,
+  Param,
+  ParseIntPipe,
+  Post,
+  Body,
+  Query,
+  UseGuards,
+} from "@nestjs/common";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
 import { ModuleGuard } from "../../../common/rbac/module.guard";
 import { PermissionGuard } from "../../access/permission.guard";
@@ -18,6 +26,8 @@ import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
 import { BodylessAction, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
 import { successSchema } from "../../../common/openapi/response-envelopes";
+import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
+import { IdempotencyKey } from "../../../common/idempotency/idempotency-key.decorator";
 import {
   listTransfersResponseSchema,
   getTransferResponseSchema,
@@ -57,20 +67,20 @@ export class InvStockTransfersController {
     @Param("transferId", ParseIntPipe) transferId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.transfers.getTransfer(u.orgId, transferId);
+    return this.transfers.getTransfer(u.orgId, u.userId, transferId);
   }
 
   @Post()
   @ResponseSchema(createTransferResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:transfer")
-  @Idempotent("inventory.stock.transfer.create")
   @Validate({ body: createTransferSchema })
   createTransfer(
+    @IdempotencyKey() idempotencyKey: string,
     @Body() body: CreateTransferInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.transfers.createTransfer(u.orgId, u.userId, body);
+    return this.transfers.createTransfer(u.orgId, u.userId, body, idempotencyKey);
   }
 
   @Post(":transferId/reserve")
@@ -80,12 +90,11 @@ export class InvStockTransfersController {
   @RequirePermission("inventory:stock:transfer")
   @Validate({ params: transferIdParams })
   reserveTransfer(
-    @Headers("idempotency-key") idempotencyKey: string,
+    @IdempotencyKey() idempotencyKey: string,
     @Param("transferId", ParseIntPipe) transferId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!idempotencyKey) throw new BadRequestException("Idempotency-Key header required");
-    return this.transfers.reserveTransfer(u.orgId, u.userId, transferId);
+    return this.transfers.reserveTransfer(u.orgId, u.userId, transferId, idempotencyKey);
   }
 
   @Post(":transferId/dispatch")
@@ -95,11 +104,10 @@ export class InvStockTransfersController {
   @RequirePermission("inventory:stock:transfer")
   @Validate({ params: transferIdParams })
   async dispatchTransfer(
-    @Headers("idempotency-key") idempotencyKey: string,
+    @IdempotencyKey() idempotencyKey: string,
     @Param("transferId", ParseIntPipe) transferId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!idempotencyKey) throw new BadRequestException("Idempotency-Key header required");
     await this.transfers.dispatchTransfer(u.orgId, u.userId, transferId, idempotencyKey);
     return { success: true as const };
   }
@@ -110,12 +118,11 @@ export class InvStockTransfersController {
   @RequirePermission("inventory:stock:transfer")
   @Validate({ params: transferIdParams, body: completeTransferSchema })
   async completeTransfer(
-    @Headers("idempotency-key") idempotencyKey: string,
+    @IdempotencyKey() idempotencyKey: string,
     @Param("transferId", ParseIntPipe) transferId: number,
     @Body() body: CompleteTransferInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!idempotencyKey) throw new BadRequestException("Idempotency-Key header required");
     await this.transfers.completeTransfer(u.orgId, u.userId, transferId, body, idempotencyKey);
     return { success: true as const };
   }
@@ -128,10 +135,11 @@ export class InvStockTransfersController {
   @RequirePermission("inventory:stock:transfer")
   @Validate({ params: transferIdParams })
   async cancelTransfer(
+    @IdempotencyKey() idempotencyKey: string,
     @Param("transferId", ParseIntPipe) transferId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    await this.transfers.cancelTransfer(u.orgId, u.userId, transferId);
+    await this.transfers.cancelTransfer(u.orgId, u.userId, transferId, idempotencyKey);
     return { success: true as const };
   }
 }

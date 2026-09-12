@@ -33,11 +33,23 @@ function makeDeleteChain() {
   return { where: jest.fn().mockResolvedValue(undefined) };
 }
 
+/** `touchLastActivated` reads the affected rows back, because a zero-row update does not throw. */
+function makeUpdateChain(returned: unknown[]) {
+  return {
+    set: jest.fn().mockReturnValue({
+      where: jest.fn().mockReturnValue({
+        returning: jest.fn().mockResolvedValue(returned),
+      }),
+    }),
+  };
+}
+
 interface TxDouble {
   execute: jest.Mock;
   select: jest.Mock;
   insert: jest.Mock;
   delete: jest.Mock;
+  update: jest.Mock;
 }
 
 /**
@@ -49,7 +61,10 @@ interface TxDouble {
  * every capability on the `tx` and none on the `db`, so a regression back onto
  * the pool fails rather than passing quietly.
  */
-function makeDb(selectResults: unknown[][]): {
+function makeDb(
+  selectResults: unknown[][],
+  updateResults: unknown[][] = [],
+): {
   db: Db;
   tx: TxDouble;
   poolSelect: jest.Mock;
@@ -59,6 +74,7 @@ function makeDb(selectResults: unknown[][]): {
 } {
   const gucs: string[] = [];
   let call = 0;
+  let updateCall = 0;
 
   const tx: TxDouble = {
     execute: jest.fn().mockImplementation((query: SQL) => {
@@ -72,6 +88,9 @@ function makeDb(selectResults: unknown[][]): {
       .mockImplementation(() => makeSelectChain(selectResults[call++] ?? [])),
     insert: jest.fn().mockReturnValue(makeInsertChain()),
     delete: jest.fn().mockReturnValue(makeDeleteChain()),
+    update: jest
+      .fn()
+      .mockImplementation(() => makeUpdateChain(updateResults[updateCall++] ?? [])),
   };
 
   const poolSelect = jest.fn().mockImplementation(() => {
@@ -172,6 +191,47 @@ describe("AccountOrganizationIndexService.refreshForUser", () => {
 
     expect(tx.insert).not.toHaveBeenCalled();
     expect(tx.delete).toHaveBeenCalledTimes(1);
+  });
+});
+
+/**
+ * `resolvePreferredOrg` orders by `last_activated_at`, so a stamp that lands on no row resolves the
+ * next session to a different organisation. The projection is written by a refresh pass, so a
+ * just-joined organisation may have no row yet to stamp — which is the case `activate` exists for.
+ * `switchOrg` and `OrgSetupService` both delegate the whole sequence here.
+ */
+describe("AccountOrganizationIndexService.activate", () => {
+  afterEach(() => clearRegionRegistry());
+
+  const STAMPED = [{ orgId: "org-1" }];
+
+  it("stamps the existing projection row without re-projecting", async () => {
+    const { db, tx } = makeDb([], [STAMPED]);
+
+    await new AccountOrganizationIndexService(db).activate("user-1", "org-1");
+
+    expect(tx.update).toHaveBeenCalledTimes(1);
+    expect(tx.insert).not.toHaveBeenCalled();
+  });
+
+  it("projects and re-stamps when the first stamp matched nothing, so a first switch is not lost", async () => {
+    const { db, tx } = makeDb([[LIVE_ROW]], [[], STAMPED]);
+
+    await new AccountOrganizationIndexService(db).activate("user-1", "org-1");
+
+    expect(tx.insert).toHaveBeenCalledTimes(1);
+    expect(tx.update).toHaveBeenCalledTimes(2);
+  });
+
+  it("never throws at its caller — the switch it stamps has already committed", async () => {
+    const { db, tx } = makeDb([], []);
+    tx.update.mockImplementation(() => {
+      throw new Error("index write failed");
+    });
+
+    await expect(
+      new AccountOrganizationIndexService(db).activate("user-1", "org-1"),
+    ).resolves.toBeUndefined();
   });
 });
 

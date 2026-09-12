@@ -1,3 +1,4 @@
+import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { Body, Controller, Get, Param, Patch, Post, Query, UseGuards } from "@nestjs/common";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../access/permission.guard";
@@ -10,6 +11,7 @@ import { REVIEW_PERMISSION, resolveAutonomyReviewScope } from "./autonomy-review
 import { AutonomyReviewService } from "./autonomy-review.service";
 import { AutonomyScoringService } from "./autonomy-scoring.service";
 import { AutonomyHoldService } from "./autonomy-hold.service";
+import { AutonomyRepairService } from "./autonomy-repair.service";
 import {
   listDecisionsQuerySchema,
   reverseDecisionSchema,
@@ -25,6 +27,16 @@ import {
   type ReviewQueueQuery,
   type UpdateAutonomySettingsInput,
   type CancelHoldInput,
+  runRepairsSchema,
+  setRepairPolicySchema,
+  listRepairsQuerySchema,
+  revertRepairSchema,
+  repairMeasureQuerySchema,
+  type RunRepairsInput,
+  type SetRepairPolicyInput,
+  type ListRepairsQuery,
+  type RevertRepairInput,
+  type RepairMeasureQuery,
 } from "./dto/autonomy-review.schemas";
 import { Validate } from "../../common/validation/validate.decorator";
 import { z } from "zod";
@@ -40,6 +52,13 @@ import {
   liveHoldsResponseSchema,
   cancelHoldResponseSchema,
   autonomySettingsResponseSchema,
+  liveClassStopsResponseSchema,
+  releaseClassStopResponseSchema,
+  repairPoliciesResponseSchema,
+  runRepairsResponseSchema,
+  listRepairsResponseSchema,
+  revertRepairResponseSchema,
+  repairMeasureResponseSchema,
 } from "./dto/autonomy-response.schemas";
 
 const decisionIdParams = z.object({ decisionId: z.string().min(1) }).strict();
@@ -53,6 +72,7 @@ export class AutonomyReviewController {
     private readonly svc: AutonomyReviewService,
     private readonly scoring: AutonomyScoringService,
     private readonly holds: AutonomyHoldService,
+    private readonly repairs: AutonomyRepairService,
     private readonly access: AccessService,
   ) {}
 
@@ -187,6 +207,42 @@ export class AutonomyReviewController {
     return this.holds.cancelHold(u.orgId, u.userId, holdId, body.reason);
   }
 
+  /**
+   * Which classes are currently stopped for which parties.
+   *
+   * Cancelling a held message stops its class for that party open-endedly, so
+   * this is where a tenant finds out why a customer stopped hearing from them —
+   * without it, follow-ups thin out and the reason is only in a table.
+   */
+  /**
+   * Spelled out rather than `REVIEW_PERMISSION`, unlike its neighbours.
+   *
+   * `gated-keys-are-catalogued.spec.ts` ratchets how many gates its regex cannot
+   * resolve, because a decorator taking a shared constant is a gate that scan is
+   * quietly not covering. The allowance was at its ceiling of 25 and adding this
+   * route took it to 26. Raising the ratchet would buy the consistency by
+   * covering one less gate, which is the wrong side of that trade.
+   */
+  @Get("class-stops")
+  @RequirePermission("crm:autonomy:view")
+  @ResponseSchema(liveClassStopsResponseSchema)
+  liveClassStops(@CurrentUser() u: CurrentUserContext) {
+    return this.holds.liveClassStops(u.orgId);
+  }
+
+  /** Let that class reach that party again. The stop's only exit. */
+  @Post("class-stops/:outboundClassStopId/release")
+  @BodylessAction()
+  @Idempotent("crm.autonomy.release-class-stop")
+  @RequirePermission("crm:autonomy:manage")
+  @ResponseSchema(releaseClassStopResponseSchema)
+  releaseClassStop(
+    @Param("outboundClassStopId") outboundClassStopId: string,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.holds.releaseClassStop(u.orgId, u.userId, outboundClassStopId);
+  }
+
   @Get("settings")
   @RequirePermission(REVIEW_PERMISSION)
   @ResponseSchema(autonomySettingsResponseSchema)
@@ -194,7 +250,7 @@ export class AutonomyReviewController {
     return this.scoring.settingsFor(u.orgId);
   }
 
-  /** Sampling rate, its daily cap, and the hold window. */
+  /** Sampling rate, its daily cap, the hold window, and the quote opt-in. */
   @Patch("settings")
   @Idempotent("crm.autonomy.settings")
   @RequirePermission("crm:autonomy:manage")
@@ -205,5 +261,98 @@ export class AutonomyReviewController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.scoring.updateSettings(u.orgId, body);
+  }
+
+  // ── Unattended repair ─────────────────────────────────────────────────────
+
+  /**
+   * Which classes this organisation lets the system repair without asking.
+   *
+   * Behind the view key. A reader of the feed asking "why was that not fixed"
+   * needs the answer, and it is the same evidence they would use to decide
+   * whether to grant the class — hiding it behind the ability to change it would
+   * invert the decision it informs.
+   */
+  @Get("repair-policies")
+  @RequirePermission(REVIEW_PERMISSION)
+  @ResponseSchema(repairPoliciesResponseSchema)
+  repairPolicies(@CurrentUser() u: CurrentUserContext) {
+    return this.repairs.policiesFor(u.orgId);
+  }
+
+  /**
+   * Grant or withhold one class.
+   *
+   * Its own key rather than `crm:autonomy:manage`: that one governs whether an
+   * action type runs at all, and this governs whether the system may change
+   * stored customer data unattended. They are different authorities, and folding
+   * the second into the first would make it impossible to give somebody the
+   * kill switch without also giving them this.
+   */
+  @Patch("repair-policies")
+  @Idempotent("crm.autonomy.repair-policy")
+  @RequirePermission("crm:autonomy:repair")
+  @ResponseSchema(repairPoliciesResponseSchema)
+  setRepairPolicy(
+    @Body(new ZodValidationPipe(setRepairPolicySchema)) body: SetRepairPolicyInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.repairs.setPolicy(u.orgId, u.userId, body);
+  }
+
+  /** Run the loop now. Every class is still asked separately whether it may. */
+  @Post("repairs/run")
+  @Idempotent("crm.autonomy.repair-run")
+  @RequirePermission("crm:autonomy:repair")
+  @ResponseSchema(runRepairsResponseSchema)
+  runRepairs(
+    @Body(new ZodValidationPipe(runRepairsSchema)) body: RunRepairsInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.repairs.runRepairs(u.orgId, body);
+  }
+
+  /** Every value the system rewrote, newest first. */
+  @Get("repairs")
+  @RequirePermission(REVIEW_PERMISSION)
+  @ResponseSchema(listRepairsResponseSchema)
+  listRepairs(
+    @Query(new ZodValidationPipe(listRepairsQuerySchema)) query: ListRepairsQuery,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.repairs.listRepairs(u.orgId, query);
+  }
+
+  /**
+   * Put one value back, without touching the rest of its batch.
+   *
+   * Same key as reversing any other autonomous action, because it is one: a
+   * reviewer who may undo a stage change may undo a repair. The batch-wide undo
+   * is the ordinary `decisions/:decisionId/reverse` above.
+   */
+  @Post("repairs/:repairId/revert")
+  @Idempotent("crm.autonomy.repair-revert")
+  @RequirePermission("crm:autonomy:reverse")
+  @ResponseSchema(revertRepairResponseSchema)
+  revertRepair(
+    @Param("repairId") repairId: string,
+    @Body(new ZodValidationPipe(revertRepairSchema)) body: RevertRepairInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.repairs.revertOne(u.orgId, u.userId, repairId, body.reason ?? null);
+  }
+
+  /**
+   * How much of the queue the system cleared, against how much a person did,
+   * and what is left.
+   */
+  @Get("repair-measure")
+  @RequirePermission(REVIEW_PERMISSION)
+  @ResponseSchema(repairMeasureResponseSchema)
+  repairMeasure(
+    @Query(new ZodValidationPipe(repairMeasureQuerySchema)) query: RepairMeasureQuery,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.repairs.measure(u.orgId, query.days);
   }
 }

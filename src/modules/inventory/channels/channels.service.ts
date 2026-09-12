@@ -5,12 +5,16 @@ import { type Db } from "../../../db/drizzle.module";
 import { CacheService } from "../../../common/cache/cache.service";
 import { CACHE_KEYS, CACHE_TTL } from "../../../common/cache/cache-keys";
 import { InventoryAuditService } from "../stock-engine/inventory-audit.service";
+import { ChannelPoolService } from "../stock-engine/channel-pool.service";
 import {
   invChannels,
   invChannelStockPublications,
   invStockLevels,
   invLocations,
 } from "../../../db/schema";
+import { availableQtySumSql } from "../stock-engine/available-sql";
+import { subDec, cmpDec, isNegative } from "../stock-engine/decimal";
+import { isUniqueViolation } from "../../../common/db/postgres-error";
 import type {
   CreateChannelInput,
   UpdateChannelInput,
@@ -18,21 +22,13 @@ import type {
   RetryPublicationsInput,
 } from "./dto/channels.schemas";
 
-function isUniqueViolation(e: unknown): boolean {
-  return (
-    typeof e === "object" &&
-    e !== null &&
-    "code" in e &&
-    e.code === "23505"
-  );
-}
-
 @Injectable()
 export class ChannelsService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly cache: CacheService,
     private readonly audit: InventoryAuditService,
+    private readonly channelPools: ChannelPoolService,
   ) {}
 
   list(orgId: string, page = 1, limit = 100) {
@@ -157,47 +153,38 @@ export class ChannelsService {
 
     const locationIds = locations.map((l) => l.id);
 
+    // A1/A2. What a marketplace is told is for sale is availability, and this
+    // had its own four-term copy in floats: it dropped `outgoing_qty`, so units
+    // already picked into a tote were offered again, and it summed across
+    // locations *before* subtracting, which makes the non-sellable gate
+    // impossible to apply at all — stock sitting at a TRANSIT location while it
+    // was on a lorry was published as buyable.
+    //
+    // Summed in the database by the one shared expression, which applies the
+    // sellable gate per row before aggregating, and returned as text so no
+    // ledger quantity passes through a float on its way to a customer.
     const stockRows =
       locationIds.length > 0
-        ? await this.db
-            .select({
-              productVariantId: invStockLevels.productVariantId,
-              onHand: invStockLevels.onHand,
-              committed: invStockLevels.committed,
-              blockedQty: invStockLevels.blockedQty,
-              qualityHoldQty: invStockLevels.qualityHoldQty,
-            })
-            .from(invStockLevels)
-            .where(
-              and(
-                eq(invStockLevels.orgId, orgId),
-                inArray(invStockLevels.locationId, locationIds),
-              ),
-            )
+        ? await this.db.execute<{ product_variant_id: number; available: string }>(sql`
+            SELECT inv_stock_levels.product_variant_id,
+                   ${availableQtySumSql("inv_stock_levels")}::text AS available
+              FROM inv_stock_levels
+             WHERE inv_stock_levels.org_id = ${orgId}
+               AND inv_stock_levels.location_id IN (${sql.join(
+                 locationIds.map((id) => sql`${id}`),
+                 sql`, `,
+               )})
+             GROUP BY inv_stock_levels.product_variant_id
+          `)
         : [];
 
-    const variantMap = new Map<
-      number,
-      { onHand: number; committed: number; blocked: number; qualityHold: number }
-    >();
-
+    const variantMap = new Map<number, string>();
     for (const row of stockRows) {
-      const prev = variantMap.get(row.productVariantId) ?? {
-        onHand: 0,
-        committed: 0,
-        blocked: 0,
-        qualityHold: 0,
-      };
-      variantMap.set(row.productVariantId, {
-        onHand: prev.onHand + parseFloat(row.onHand ?? "0"),
-        committed: prev.committed + parseFloat(row.committed ?? "0"),
-        blocked: prev.blocked + parseFloat(row.blockedQty ?? "0"),
-        qualityHold: prev.qualityHold + parseFloat(row.qualityHoldQty ?? "0"),
-      });
+      variantMap.set(Number(row.product_variant_id), String(row.available));
     }
 
-    const safetyBuffer = parseFloat(channel.safetyBuffer ?? "0");
-    const publishThreshold = parseFloat(channel.publishThreshold ?? "0");
+    const safetyBuffer = channel.safetyBuffer ?? "0";
+    const publishThreshold = channel.publishThreshold ?? "0";
     const isInternal = channel.channelType === "INTERNAL";
     const pubStatus = isInternal ? ("PUBLISHED" as const) : ("FAILED" as const);
     const pubError = isInternal ? null : "Provider not connected";
@@ -208,12 +195,15 @@ export class ChannelsService {
     let skipped = 0;
 
     const rows: Array<typeof invChannelStockPublications.$inferInsert> = [];
-    for (const [productVariantId, totals] of variantMap.entries()) {
-      const available =
-        totals.onHand - totals.committed - totals.blocked - totals.qualityHold;
-      const publishable = Math.max(0, available - safetyBuffer);
+    // Kept beside `rows` rather than derived from it: `$inferInsert` types
+    // `publishedQty` as optional because the column has a default, so mapping it
+    // back out yields `string | undefined` for a value that is always set here.
+    const poolRows: Array<{ channelId: number; productVariantId: number; publishedQty: string }> = [];
+    for (const [productVariantId, available] of variantMap.entries()) {
+      const afterBuffer = subDec(available, safetyBuffer);
+      const publishable = isNegative(afterBuffer) ? "0.0000" : afterBuffer;
 
-      if (publishable < publishThreshold) {
+      if (cmpDec(publishable, publishThreshold) < 0) {
         skipped++;
         continue;
       }
@@ -222,12 +212,13 @@ export class ChannelsService {
         orgId,
         channelId,
         productVariantId,
-        publishedQty: publishable.toFixed(4),
-        availableQty: available.toFixed(4),
+        publishedQty: publishable,
+        availableQty: available,
         status: pubStatus,
         error: pubError,
         publishedAt: pubAt,
       });
+      poolRows.push({ channelId, productVariantId, publishedQty: publishable });
       synced++;
     }
 
@@ -252,6 +243,21 @@ export class ChannelsService {
             updatedAt: now,
           },
         });
+    }
+
+    // The pool row carries `published_qty` — "what this channel was last told" —
+    // and until now NOTHING wrote it. `listForChannel`, `listForVariant` and the
+    // allocate result all select that column, and the controller serves the first
+    // two, so every caller was reading the DEFAULT '0' forever while the real
+    // figure sat in `inv_channel_stock_publications`. Written here because this is
+    // the moment the channel is told.
+    //
+    // Only on a real publish: `pubStatus` is FAILED for any non-INTERNAL channel
+    // ("Provider not connected"), and a channel that was told nothing has no last
+    // told figure. Upserting cannot disturb promises — `hasAnyPool` gates on
+    // `reserved_qty > 0`, and this writes `published_qty` only.
+    if (pubStatus === "PUBLISHED" && poolRows.length > 0) {
+      await this.channelPools.recordPublishedInTx(this.db, orgId, poolRows);
     }
 
     await this.audit.insert(this.db, {
@@ -353,45 +359,31 @@ export class ChannelsService {
 
     const stockRows =
       locationIds.length > 0
-        ? await this.db
-            .select({
-              productVariantId: invStockLevels.productVariantId,
-              onHand: invStockLevels.onHand,
-              committed: invStockLevels.committed,
-              blockedQty: invStockLevels.blockedQty,
-              qualityHoldQty: invStockLevels.qualityHoldQty,
-            })
-            .from(invStockLevels)
-            .where(
-              and(
-                eq(invStockLevels.orgId, orgId),
-                inArray(invStockLevels.locationId, locationIds),
-                inArray(invStockLevels.productVariantId, variantIds),
-              ),
-            )
+        ? await this.db.execute<{ product_variant_id: number; available: string }>(sql`
+            SELECT inv_stock_levels.product_variant_id,
+                   ${availableQtySumSql("inv_stock_levels")}::text AS available
+              FROM inv_stock_levels
+             WHERE inv_stock_levels.org_id = ${orgId}
+               AND inv_stock_levels.location_id IN (${sql.join(
+                 locationIds.map((id) => sql`${id}`),
+                 sql`, `,
+               )})
+               AND inv_stock_levels.product_variant_id IN (${sql.join(
+                 variantIds.map((id) => sql`${id}`),
+                 sql`, `,
+               )})
+             GROUP BY inv_stock_levels.product_variant_id
+          `)
         : [];
 
-    const variantMap = new Map<
-      number,
-      { onHand: number; committed: number; blocked: number; qualityHold: number }
-    >();
-
+    // The retry path published the same wrong number as the sync path, in its
+    // own copy. One expression now serves both.
+    const variantMap = new Map<number, string>();
     for (const row of stockRows) {
-      const prev = variantMap.get(row.productVariantId) ?? {
-        onHand: 0,
-        committed: 0,
-        blocked: 0,
-        qualityHold: 0,
-      };
-      variantMap.set(row.productVariantId, {
-        onHand: prev.onHand + parseFloat(row.onHand ?? "0"),
-        committed: prev.committed + parseFloat(row.committed ?? "0"),
-        blocked: prev.blocked + parseFloat(row.blockedQty ?? "0"),
-        qualityHold: prev.qualityHold + parseFloat(row.qualityHoldQty ?? "0"),
-      });
+      variantMap.set(Number(row.product_variant_id), String(row.available));
     }
 
-    const safetyBuffer = parseFloat(channel.safetyBuffer ?? "0");
+    const safetyBuffer = channel.safetyBuffer ?? "0";
     const isInternal = channel.channelType === "INTERNAL";
     const pubStatus = isInternal ? ("PUBLISHED" as const) : ("FAILED" as const);
     const pubError = isInternal ? null : "Provider not connected";
@@ -400,22 +392,16 @@ export class ChannelsService {
 
     const retryRows: Array<typeof invChannelStockPublications.$inferInsert> = [];
     for (const productVariantId of variantIds) {
-      const totals = variantMap.get(productVariantId) ?? {
-        onHand: 0,
-        committed: 0,
-        blocked: 0,
-        qualityHold: 0,
-      };
-      const available =
-        totals.onHand - totals.committed - totals.blocked - totals.qualityHold;
-      const publishable = Math.max(0, available - safetyBuffer);
+      const available = variantMap.get(productVariantId) ?? "0.0000";
+      const afterBuffer = subDec(available, safetyBuffer);
+      const publishable = isNegative(afterBuffer) ? "0.0000" : afterBuffer;
 
       retryRows.push({
         orgId,
         channelId,
         productVariantId,
-        publishedQty: publishable.toFixed(4),
-        availableQty: available.toFixed(4),
+        publishedQty: publishable,
+        availableQty: available,
         status: pubStatus,
         error: pubError,
         publishedAt: pubAt,

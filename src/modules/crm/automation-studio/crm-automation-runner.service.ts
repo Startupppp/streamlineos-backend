@@ -1,29 +1,18 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, eq, isNull, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
-import {
-  crmAutomationRules,
-  crmAutomationRuns,
-  crmSequenceEnrollments,
-  tasks,
-  deals,
-  organizationMembers,
-} from "../../../db/schema";
-import { businessParties, leadPartyMap } from "../../../db/schema/party";
-import { PARTY_OF_LEAD } from "../crm-party-reads";
+import { crmAutomationRules, crmAutomationRuns } from "../../../db/schema";
 import type { CrmAutomationCondition, AutomationGraphNode } from "../../../db/schema/crm/automation-rules";
 import { logger } from "../../../common/logger/logger.service";
 import { NotificationsService } from "../../notifications/notifications.service";
 import { CrmOutboundEmailService } from "../consent/crm-outbound-email.service";
-import { isTaskEntityType, type StudioEventPayload, type RunStepLog } from "./types";
+import type { StudioEventPayload, RunStepLog } from "./types";
 import { evaluateConditions, type StudioCondition } from "./crm-automation-condition-evaluator";
-import { updateMirroredLeads } from "../../party/party-legacy-leads";
-import { checkWebhookUrl } from "../../../common/security/ssrf-guard";
-import { outboundTraceHeaders } from "../../../common/outbound/call-provider";
-
-const ALLOWLISTED_LEAD_FIELDS = ["status", "priority", "source", "assignedToId", "score"];
-const ALLOWLISTED_DEAL_FIELDS = ["stage", "priority", "assignedToId"];
+import {
+  executeAction,
+  type AutomationActionDeps,
+} from "./lib/automation-actions";
 
 const STUDIO_OPERATORS: readonly StudioCondition["operator"][] = [
   "eq", "neq", "gt", "lt", "contains", "in", "changed_to",
@@ -189,172 +178,13 @@ export class CrmAutomationRunnerService {
     return steps;
   }
 
-  private async executeAction(
+  private executeAction(
     orgId: string,
     actionKey: string,
     config: Record<string, unknown>,
     payload: StudioEventPayload,
   ): Promise<RunStepLog> {
-    const at = new Date().toISOString();
-    const nodeId = `${actionKey}-${at}`;
-
-    try {
-      switch (actionKey) {
-        case "create_task": {
-          const dueDate = typeof config["dueInDays"] === "number"
-            ? new Date(Date.now() + config["dueInDays"] * 86400000)
-            : null;
-          const upperEntityType = payload.entityType.toUpperCase();
-          await this.db.insert(tasks).values({
-            orgId,
-            title: String(config["title"] ?? "Task from automation"),
-            entityType: isTaskEntityType(upperEntityType) ? upperEntityType : null,
-            entityId: parseInt(payload.entityId, 10),
-            assigneeId: typeof config["assigneeId"] === "string" ? config["assigneeId"] : null,
-            dueDate,
-          });
-          return { nodeId, type: actionKey, status: "ok", at };
-        }
-        case "send_notification": {
-          if (typeof config["userId"] === "string") {
-            await this.notifications.create({
-              orgId,
-              userId: config["userId"],
-              title: String(config["title"] ?? "CRM Automation"),
-              message: String(config["message"] ?? ""),
-              category: "CRM",
-            });
-          }
-          return { nodeId, type: actionKey, status: "ok", at };
-        }
-        case "send_email": {
-          await this.email.send(orgId, {
-            to: String(config["to"] ?? ""),
-            subject: String(config["subject"] ?? ""),
-            html: String(config["body"] ?? ""),
-          });
-          return { nodeId, type: actionKey, status: "ok", at };
-        }
-        case "call_webhook": {
-          const url = String(config["url"] ?? "");
-          if (url) {
-            const urlCheck = await checkWebhookUrl(url);
-            if (!urlCheck.allowed) throw new Error(`SSRF: webhook URL blocked (${urlCheck.reason})`);
-            const body = JSON.stringify({ event: payload.entityType, entityId: payload.entityId, data: payload.data });
-            await fetch(url, {
-              method: "POST",
-              headers: { "Content-Type": "application/json", ...outboundTraceHeaders() },
-              body,
-              signal: AbortSignal.timeout(10_000),
-            });
-          }
-          return { nodeId, type: actionKey, status: "ok", at };
-        }
-        case "start_sequence": {
-          const seqId = String(config["sequenceId"] ?? "");
-          if (seqId) {
-            await this.db
-              .insert(crmSequenceEnrollments)
-              .values({ orgId, sequenceId: seqId, entityType: payload.entityType, entityId: payload.entityId })
-              .onConflictDoNothing();
-          }
-          return { nodeId, type: actionKey, status: "ok", at };
-        }
-        case "stop_sequence": {
-          const seqId = String(config["sequenceId"] ?? "");
-          if (seqId) {
-            await this.db
-              .update(crmSequenceEnrollments)
-              .set({ status: "stopped", stopReason: "automation_action" })
-              .where(and(
-                eq(crmSequenceEnrollments.orgId, orgId),
-                eq(crmSequenceEnrollments.sequenceId, seqId),
-                eq(crmSequenceEnrollments.entityType, payload.entityType),
-                eq(crmSequenceEnrollments.entityId, payload.entityId),
-              ));
-          }
-          return { nodeId, type: actionKey, status: "ok", at };
-        }
-        case "assign_owner": {
-          const targetUserId = typeof config["userId"] === "string" ? config["userId"] : null;
-          if (!targetUserId) return { nodeId, type: actionKey, status: "skipped", message: "missing_userId", at };
-          const [membership] = await this.db
-            .select({ userId: organizationMembers.userId })
-            .from(organizationMembers)
-            .where(and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.userId, targetUserId)))
-            .limit(1);
-          if (!membership) return { nodeId, type: actionKey, status: "error", message: "user_not_in_org", at };
-          if (payload.entityType === "lead") {
-            await updateMirroredLeads(this.db, orgId, [parseInt(payload.entityId, 10)], {
-              assignedToId: targetUserId,
-            });
-          } else if (payload.entityType === "deal") {
-            await this.db.update(deals).set({ assignedToId: targetUserId })
-              .where(and(eq(deals.orgId, orgId), isNull(deals.deletedAt), eq(deals.id, parseInt(payload.entityId, 10))));
-          } else {
-            return { nodeId, type: actionKey, status: "skipped", message: "unsupported_entity", at };
-          }
-          return { nodeId, type: actionKey, status: "ok", at };
-        }
-        case "update_field": {
-          const field = typeof config["field"] === "string" ? config["field"] : null;
-          const value = config["value"] ?? null;
-          if (!field) return { nodeId, type: actionKey, status: "skipped", message: "missing_field", at };
-          if (payload.entityType === "lead") {
-            if (!ALLOWLISTED_LEAD_FIELDS.includes(field)) {
-              return { nodeId, type: actionKey, status: "error", message: "field_not_allowed", at };
-            }
-            // Every allowlisted field is a mirrored `leads` column, so the writer
-            // translates the dynamic key into its party column rather than this
-            // switch needing a second copy of the mapping.
-            await updateMirroredLeads(this.db, orgId, [parseInt(payload.entityId, 10)], {
-              [field]: value,
-            });
-          } else if (payload.entityType === "deal") {
-            if (!ALLOWLISTED_DEAL_FIELDS.includes(field)) {
-              return { nodeId, type: actionKey, status: "error", message: "field_not_allowed", at };
-            }
-            await this.db.update(deals).set({ [field]: value })
-              .where(and(eq(deals.orgId, orgId), isNull(deals.deletedAt), eq(deals.id, parseInt(payload.entityId, 10))));
-          } else {
-            return { nodeId, type: actionKey, status: "skipped", message: "unsupported_entity", at };
-          }
-          return { nodeId, type: actionKey, status: "ok", at };
-        }
-        case "add_tag": {
-          const tag = typeof config["tag"] === "string" ? config["tag"].trim() : null;
-          if (!tag) return { nodeId, type: actionKey, status: "skipped", message: "missing_tag", at };
-          if (payload.entityType === "lead") {
-            await this.changeLeadTags(orgId, parseInt(payload.entityId, 10), (tags) =>
-              tags.includes(tag) ? tags : [...tags, tag],
-            );
-            return { nodeId, type: actionKey, status: "ok", at };
-          }
-          return { nodeId, type: actionKey, status: "skipped", message: "unsupported_entity", at };
-        }
-        case "remove_tag": {
-          const tag = typeof config["tag"] === "string" ? config["tag"].trim() : null;
-          if (!tag) return { nodeId, type: actionKey, status: "skipped", message: "missing_tag", at };
-          if (payload.entityType === "lead") {
-            await this.changeLeadTags(orgId, parseInt(payload.entityId, 10), (tags) =>
-              tags.filter((existing) => existing !== tag),
-            );
-            return { nodeId, type: actionKey, status: "ok", at };
-          }
-          return { nodeId, type: actionKey, status: "skipped", message: "unsupported_entity", at };
-        }
-        case "send_whatsapp":
-        case "create_deal":
-        case "create_quote":
-          return { nodeId, type: actionKey, status: "skipped", message: "not_implemented", at };
-        default:
-          return { nodeId, type: actionKey, status: "skipped", message: "unknown_action", at };
-      }
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : "Action failed";
-      logger.error("crm-automation-runner: action failed", { orgId, actionKey, error: err });
-      return { nodeId, type: actionKey, status: "error", message: msg, at };
-    }
+    return executeAction(this.actionDeps, orgId, actionKey, config, payload);
   }
 
   async dryRunConditions(
@@ -369,31 +199,8 @@ export class CrmAutomationRunnerService {
     const matched = nodes.length === 0 || nodes.every((n) => n.result === "pass");
     return { matched, nodes };
   }
-  /**
-   * A tag edit, read-modify-write instead of `array_append`.
-   *
-   * The array operator wrote `leads.tags` without ever reading it, which the
-   * mirror cannot follow: the party is the canonical copy and its tags are what
-   * the legacy column is derived from. `FOR UPDATE` keeps two concurrent tag
-   * edits serialised, which is what the atomic operator bought — taken on the
-   * party row now that the party is what the next statement writes.
-   */
-  private async changeLeadTags(
-    orgId: string,
-    leadId: number,
-    change: (tags: string[]) => string[],
-  ): Promise<void> {
-    if (!Number.isInteger(leadId)) return;
-    await this.db.transaction(async (tx) => {
-      const [row] = await tx
-        .select({ tags: businessParties.tags })
-        .from(leadPartyMap)
-        .innerJoin(businessParties, PARTY_OF_LEAD)
-        .where(and(eq(leadPartyMap.organizationId, orgId), eq(leadPartyMap.leadId, leadId)))
-        .limit(1)
-        .for("update", { of: businessParties });
-      if (!row) return;
-      await updateMirroredLeads(tx, orgId, [leadId], { tags: change(row.tags ?? []) });
-    });
+
+  private get actionDeps(): AutomationActionDeps {
+    return { db: this.db, notifications: this.notifications, email: this.email };
   }
 }

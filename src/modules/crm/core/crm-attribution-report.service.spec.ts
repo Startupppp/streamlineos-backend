@@ -15,18 +15,47 @@ function makeInsertChain() {
   };
 }
 
-function _makeSelectChain(resolveWith: unknown[]) {
+/**
+ * A chainable stand-in for the query builder, resolving on `groupBy`.
+ *
+ * It mirrors the *shape* of the builder rather than the behaviour of the
+ * database, so the only thing it can check is what `toAttribution` does with a
+ * row it is handed — which is all the two cases below are for. Whether the SQL
+ * underneath produces the right row is a question no mock can answer: the query
+ * fans out or it does not, and a mock that never executes a join sees neither.
+ * That half is pinned against a real database in
+ * `test/crm/crm-attribution-fanout.seeded-e2e-spec.ts`.
+ *
+ * `groupBy` is both a terminal and a subquery step now — the report reduces the
+ * touch log to one row per `(campaign, lead)` before joining any deal — so it
+ * returns something that is awaitable *and* carries `.as()`.
+ */
+function fakeQueryBuilder(wonStages: { key: string }[], rows: unknown[]) {
+  const alias: Record<string, unknown> = {};
+
   const chain: Record<string, unknown> = {};
-  const terminal = jest.fn().mockResolvedValue(resolveWith);
-  chain.select = jest.fn().mockReturnValue(chain);
   chain.from = jest.fn().mockReturnValue(chain);
   chain.leftJoin = jest.fn().mockReturnValue(chain);
   chain.innerJoin = jest.fn().mockReturnValue(chain);
   chain.where = jest.fn().mockReturnValue(chain);
-  chain.groupBy = jest.fn().mockResolvedValue(resolveWith);
-  chain.as = jest.fn().mockReturnValue(chain);
-  chain._terminal = terminal;
-  return chain;
+  chain.groupBy = jest
+    .fn()
+    .mockImplementation(() =>
+      Object.assign(Promise.resolve(rows), { as: jest.fn().mockReturnValue(alias) }),
+    );
+
+  // `resolveWonStageKeys` awaits `.where()` directly, with no `groupBy`.
+  const wonStagesChain: Record<string, unknown> = {};
+  wonStagesChain.from = jest.fn().mockReturnValue(wonStagesChain);
+  wonStagesChain.where = jest.fn().mockResolvedValue(wonStages);
+
+  let call = 0;
+  return {
+    select: jest.fn().mockImplementation(() => {
+      call += 1;
+      return call === 1 ? wonStagesChain : chain;
+    }),
+  };
 }
 
 describe("CrmAttributionReportService", () => {
@@ -92,8 +121,21 @@ describe("CrmAttributionReportService", () => {
   });
 
   describe("toAttribution math (via getFirstTouchAttribution)", () => {
+    async function serviceOver(
+      wonStages: { key: string }[],
+      rows: unknown[],
+    ): Promise<CrmAttributionReportService> {
+      const module: TestingModule = await Test.createTestingModule({
+        providers: [
+          CrmAttributionReportService,
+          { provide: DRIZZLE, useValue: fakeQueryBuilder(wonStages, rows) },
+        ],
+      }).compile();
+      return module.get(CrmAttributionReportService);
+    }
+
     it("computes ROI as 0 when spend is 0", async () => {
-      const rows = [
+      svc = await serviceOver([], [
         {
           campaignId: 1,
           campaignName: "Spring Sale",
@@ -102,38 +144,8 @@ describe("CrmAttributionReportService", () => {
           totalRevenue: 1000,
           spend: 0,
         },
-      ];
+      ]);
 
-      const db: Record<string, unknown> = {};
-      db.select = jest.fn().mockReturnValue(db);
-      db.from = jest.fn().mockReturnValue(db);
-      db.leftJoin = jest.fn().mockReturnValue(db);
-      db.where = jest.fn().mockReturnValue(db);
-      db.groupBy = jest.fn().mockResolvedValue(rows);
-      db.select = jest.fn().mockReturnValue(db);
-      const wonStagesChain: Record<string, unknown> = {};
-      wonStagesChain.select = jest.fn().mockReturnValue(wonStagesChain);
-      wonStagesChain.from = jest.fn().mockReturnValue(wonStagesChain);
-      wonStagesChain.where = jest.fn().mockResolvedValue([]);
-
-      let callCount = 0;
-      const combinedDb = {
-        select: jest.fn().mockImplementation(() => {
-          callCount++;
-          return callCount === 1 ? wonStagesChain : db;
-        }),
-      };
-      (db as Record<string, unknown>).select = combinedDb.select;
-      (wonStagesChain as Record<string, unknown>).select = combinedDb.select;
-
-      const module: TestingModule = await Test.createTestingModule({
-        providers: [
-          CrmAttributionReportService,
-          { provide: DRIZZLE, useValue: combinedDb },
-        ],
-      }).compile();
-
-      svc = module.get(CrmAttributionReportService);
       const result = await svc.getFirstTouchAttribution(ORG);
       expect(result[0].roi).toBe(0);
       expect(result[0].dealRevenueCents).toBe(100000);
@@ -141,7 +153,7 @@ describe("CrmAttributionReportService", () => {
     });
 
     it("computes positive ROI correctly", async () => {
-      const rows = [
+      svc = await serviceOver([{ key: "WON" }], [
         {
           campaignId: 2,
           campaignName: "Black Friday",
@@ -150,44 +162,58 @@ describe("CrmAttributionReportService", () => {
           totalRevenue: 3000,
           spend: 1000,
         },
-      ];
+      ]);
 
-      const db: Record<string, unknown> = {};
-      db.from = jest.fn().mockReturnValue(db);
-      db.leftJoin = jest.fn().mockReturnValue(db);
-      db.where = jest.fn().mockReturnValue(db);
-      db.groupBy = jest.fn().mockResolvedValue(rows);
-
-      const wonStagesChain: Record<string, unknown> = {};
-      wonStagesChain.from = jest.fn().mockReturnValue(wonStagesChain);
-      wonStagesChain.where = jest.fn().mockResolvedValue([{ key: "WON" }]);
-
-      let call = 0;
-      const combinedDb = {
-        select: jest.fn().mockImplementation(() => {
-          call++;
-          return call === 1 ? wonStagesChain : db;
-        }),
-      };
-
-      const module: TestingModule = await Test.createTestingModule({
-        providers: [
-          CrmAttributionReportService,
-          { provide: DRIZZLE, useValue: combinedDb },
-        ],
-      }).compile();
-
-      svc = module.get(CrmAttributionReportService);
       const result = await svc.getFirstTouchAttribution(ORG);
       expect(result[0].roi).toBe(200);
       expect(result[0].dealRevenueCents).toBe(300000);
     });
   });
 
-  describe("getLastTouchAttribution — subquery chain", () => {
-    it.todo(
-      "last-touch uses a subquery (.as()) to find max occurredAt per lead — mock chain depth makes this an integration-level test; cover in e2e",
-    );
+  /**
+   * Both reports go through one aggregate now, so this is the same arithmetic
+   * over a different set of touches — worth one case to say the last-touch entry
+   * point reaches it, and no more. What the two rules actually select, and the
+   * fan-out that made both of them overstate revenue, is measured against a real
+   * database in `test/crm/crm-attribution-fanout.seeded-e2e-spec.ts`.
+   */
+  describe("getLastTouchAttribution", () => {
+    it("returns the same shape through the shared aggregate", async () => {
+      const module: TestingModule = await Test.createTestingModule({
+        providers: [
+          CrmAttributionReportService,
+          {
+            provide: DRIZZLE,
+            useValue: fakeQueryBuilder(
+              [{ key: "WON" }],
+              [
+                {
+                  campaignId: 3,
+                  campaignName: "Webinar",
+                  touchCount: 2,
+                  convertedLeads: 1,
+                  totalRevenue: 500,
+                  spend: 250,
+                },
+              ],
+            ),
+          },
+        ],
+      }).compile();
+
+      svc = module.get(CrmAttributionReportService);
+      const result = await svc.getLastTouchAttribution(ORG);
+      expect(result).toEqual([
+        {
+          campaignId: 3,
+          campaignName: "Webinar",
+          touchCount: 2,
+          convertedLeads: 1,
+          dealRevenueCents: 50000,
+          roi: 100,
+        },
+      ]);
+    });
   });
 });
 

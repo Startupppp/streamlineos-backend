@@ -1,0 +1,12 @@
+// Jest Snapshot v1, https://goo.gl/fbAQLP
+
+exports[`payment provider import boundary documents every current importer so a new one is visible 1`] = `
+[
+  "src/modules/billing/payments/payments.module.ts",
+  "src/modules/billing/payments/razorpay-adapter-readiness.spec.ts",
+  "src/modules/billing/payments/razorpay-ambiguous-order.spec.ts",
+  "src/modules/billing/payments/razorpay-recovery.spec.ts",
+  "src/modules/billing/payments/razorpay-sandbox-failure.spec.ts",
+  "src/scripts/verify-razorpay-sandbox.ts",
+]
+`;

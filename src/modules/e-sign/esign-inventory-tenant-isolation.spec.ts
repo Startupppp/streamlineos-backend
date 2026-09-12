@@ -17,6 +17,7 @@ import type { Db } from "../../db/drizzle.module";
 import { InboxConsumer } from "../../common/outbox/inbox-consumer";
 import { InventoryWebhookEmitter } from "../inventory/webhooks/webhook-emitter.service";
 import { SignEnvelopeCompletedConsumerService } from "./sign-envelope-completed-consumer.service";
+import { SignFinalizationService } from "./sign-finalization.service";
 import { OutboxConsumerRegistry } from "../../common/outbox/outbox-consumer.registry";
 import type { OutboxEventRow } from "../../common/outbox/outbox-consumer.registry";
 import { NotificationDispatchService } from "../notifications/notification-dispatch.service";
@@ -68,7 +69,7 @@ describe("InventoryWebhookEmitter — tenant isolation", () => {
     const { db, getPredicate } = makeSelectChain([]);
     const service = new InventoryWebhookEmitter(db);
 
-    await service.emit(ATTACKER_ORG, "inventory.product.created", { itemId: 1 });
+    await service.emit(ATTACKER_ORG, "inventory.product.created", { itemId: 1 }, {});
 
     expect(sqlValues(getPredicate())).toContain(ATTACKER_ORG);
     expect(db.insert).not.toHaveBeenCalled();
@@ -77,22 +78,27 @@ describe("InventoryWebhookEmitter — tenant isolation", () => {
   it("CONTROL: emit queries OWNER_ORG's webhooks, inserts an event, and delivers", async () => {
     const eventRow = { id: 7, attempts: 0, createdAt: new Date() };
     const returning = jest.fn().mockResolvedValue([eventRow]);
-    const insertValues = jest.fn().mockReturnValue({ returning });
+    // The emitter dedupes on insert: .values().onConflictDoNothing().returning().
+    const insertValues = jest.fn().mockReturnValue({
+      returning,
+      onConflictDoNothing: jest.fn().mockReturnValue({ returning }),
+    });
     const updateWhere = jest.fn().mockResolvedValue(undefined);
     const updateSet = jest.fn().mockReturnValue({ where: updateWhere });
 
     const { db, getPredicate } = makeSelectChain([
       { id: 42, url: "https://example.com/hook", secret: "s3cr3t" },
     ]);
-    Reflect.set(db, "insert", jest.fn().mockReturnValue({ values: insertValues }));
-    Reflect.set(db, "update", jest.fn().mockReturnValue({ set: updateSet }));
+    const dbMut = db as unknown as { insert: jest.Mock; update: jest.Mock };
+    dbMut.insert = jest.fn().mockReturnValue({ values: insertValues });
+    dbMut.update = jest.fn().mockReturnValue({ set: updateSet });
 
     (checkWebhookUrl as jest.Mock).mockResolvedValue({ allowed: true });
     global.fetch = jest.fn().mockResolvedValue({ ok: true, status: 200, type: "basic" } as unknown as Response);
 
     const service = new InventoryWebhookEmitter(db);
 
-    await service.emit(OWNER_ORG, "inventory.product.created", { itemId: 2 });
+    await service.emit(OWNER_ORG, "inventory.product.created", { itemId: 2 }, {});
 
     expect(sqlValues(getPredicate())).toContain(OWNER_ORG);
     expect(db.insert).toHaveBeenCalled();
@@ -124,6 +130,7 @@ describe("SignEnvelopeCompletedConsumerService — tenant isolation", () => {
         { provide: DRIZZLE, useValue: db },
         { provide: OutboxConsumerRegistry, useValue: registry },
         { provide: NotificationDispatchService, useValue: dispatch },
+        { provide: SignFinalizationService, useValue: { finalize: jest.fn().mockResolvedValue({}) } },
       ],
     }).compile();
     return module.get(SignEnvelopeCompletedConsumerService);

@@ -235,6 +235,10 @@ const BASELINE_NO_LOCK_TIMEOUT = new Set([
   "0734_operator_access_grants.sql",
   "0747_operator_access_two_person_approval.sql",
   "0756_fin_reminder_log_measurement.sql",
+  // Lane merge 2026-09-11: applied bodies (content is hash-pinned), so the SQL cannot be fixed in place.
+  "0529_ledger_corrections_and_immutability.sql", // inv: streamline_inv, inv_cold_head
+  "0659a_sign_sweep_runs.sql", // crm: Neon (hash), streamline_crm_merge, crm_cold_0908
+  "0660a_sign_bulk_row_attempts.sql", // crm: Neon (hash), streamline_crm_merge, crm_cold_0908
 ]);
 
 const BASELINE_FK_NOT_VALID = new Set([
@@ -278,6 +282,11 @@ const BASELINE_FK_NOT_VALID = new Set([
   "0621_candidate_resumes_tenant_column.sql",
   "0623_workflow_variables_tenant_constraints.sql",
   "0655_chain_creates_remaining_catalog_objects.sql",
+  // Lane merge 2026-09-11: applied bodies (content is hash-pinned), so the SQL cannot be fixed in place.
+  "0465_accounting_documents.sql", // crm: streamline_crm_merge, streamline_crm_e2e, crm_cold_0908
+  "0519_inventory_resumable_import.sql", // inv: streamline_inv, inv_cold_head
+  "0529_ledger_corrections_and_immutability.sql", // inv: streamline_inv, inv_cold_head
+  "0558_crm_nurture_sequences.sql", // crm: Neon (hash), streamline_crm_merge, streamline_crm_e2e
 ]);
 
 const BASELINE_SET_NOT_NULL = new Set([
@@ -301,6 +310,8 @@ const BASELINE_SET_NOT_NULL = new Set([
   "0628_communication_actor_normalization.sql",
   "0657_kb_article_tags_tenant_integrity.sql",
   "0658_calendar_membership_actors.sql",
+  // Lane merge 2026-09-11: applied bodies (content is hash-pinned), so the SQL cannot be fixed in place.
+  "0520b_rbac_membership_keys.sql", // inv: streamline_inv, inv_cold_head
 ]);
 
 const BASELINE_VALIDATE_BEFORE_BACKFILL = new Set([
@@ -355,6 +366,108 @@ const BASELINE_JOURNAL_INTEGRITY = new Set([
   // commits on cold replay (no-op) and that production never got (0678 also failed there).
   "journal-order:0680_kb_versions_author_membership.sql",
   "insert-order:0678b_feedback_cycle_responses_rls_complete.sql",
+  // Cross-lane numbering collisions from merging integration/crm-ts into the inventory
+  // branch (2026-09-11). In each collision the file NOT on origin/main was renamed to the
+  // next free letter suffix. Renaming is hash-safe: every applier keys on sha256(content)
+  // and the ledger stores no tag. These are not true inserts, so their `when` does not sit
+  // between NNNN_ and the next plain number. Each one below is already applied (content
+  // hash or `when` present in a ledger we can read, named per entry). check:migration-ledger
+  // joins on `when`, so moving it would orphan those rows. Hence baseline, not restamp.
+  // 0267a-0275a: crm lane, interleaved after its own-lane predecessors.
+  "insert-order:0267a_subprocessor_register.sql", // Neon(when), streamline_crm_merge, streamline_crm_e2e, crm_cold_0908 +1 scratch
+  "insert-order:0268a_subject_requests.sql", // Neon(hash), streamline_crm_merge, streamline_crm_e2e, crm_cold_0908 +1 scratch
+  "insert-order:0269a_payment_provider_columns.sql", // Neon(hash), streamline_crm_merge, streamline_crm_e2e, crm_cold_0908 +1 scratch
+  "insert-order:0271a_waitlist_admission.sql", // streamline_crm_merge, streamline_crm_e2e, crm_cold_0908 +1 scratch
+  // 0472a/0473a: crm lane (0464a_gl_kernel already sits inside its window).
+  "insert-order:0472a_activities_deal_fk.sql", // Neon(hash), streamline_crm_merge, streamline_crm_e2e, crm_cold_0908 +1 scratch
+  "insert-order:0473a_accounting_attachments_permissions.sql", // Neon(hash), streamline_crm_merge, streamline_crm_e2e, crm_cold_0908 +1 scratch
+  // 0520a (crm) and 0520b-0524a (inv): origin/main holds 0520-0524 for billing.
+  "insert-order:0520a_relationship_state.sql", // Neon(when), streamline_crm_merge, streamline_crm_e2e, crm_cold_0908 +66 scratch
+  "insert-order:0520b_rbac_membership_keys.sql", // streamline_inv, inv_cold_head +11 scratch
+  "insert-order:0521a_drop_resurrected_sku_uniques.sql", // streamline_inv, inv_cold_head +11 scratch
+  "insert-order:0522a_grn_discrepancy.sql", // streamline_inv, inv_cold_head +11 scratch
+  "insert-order:0523a_pick_line_exceptions.sql", // streamline_inv, inv_cold_head +11 scratch
+  "insert-order:0524a_cartonization.sql", // streamline_inv, inv_cold_head +11 scratch
+  // 0530a-0536a: neither side is on origin/main. The inv file was renamed where the crm
+  // twin is applied on Neon or quoted inside an applied body (0533 in 0559). 0535a is
+  // the crm twin instead: neither side is on Neon and its when already fits its window.
+  "insert-order:0530a_transit_locations.sql", // streamline_inv, inv_cold_head +11 scratch
+  "insert-order:0531a_drop_resurrected_sku_uniques_again.sql", // streamline_inv, inv_cold_head +11 scratch
+  "insert-order:0533a_ledger_correction_objects_relocked.sql", // streamline_inv, inv_cold_head +11 scratch
+  "insert-order:0534a_grn_receiving_lifecycle.sql", // streamline_inv, inv_cold_head +11 scratch
+  "insert-order:0536a_putaway_tasks.sql", // streamline_inv, inv_cold_head +11 scratch
+  // 0540-0545: origin/main holds the HR files at 0540-0544 (fenced, untouched); both
+  // the crm (a) and inv (b) twins were renamed. 0545a: inv, crm twin applied on Neon.
+  "insert-order:0540a_crm_call_analyses.sql", // streamline_crm_merge, streamline_crm_e2e, crm_cold_0908 +1 scratch
+  "insert-order:0540b_package_sales_order_link.sql", // streamline_inv, inv_cold_head +11 scratch
+  "insert-order:0541a_crm_call_analysis_permissions.sql", // Neon(hash), streamline_crm_merge, streamline_crm_e2e, crm_cold_0908 +1 scratch
+  "insert-order:0541b_demand_forecast_versions.sql", // streamline_inv, inv_cold_head +11 scratch
+  "insert-order:0542a_crm_call_analysis_releases.sql", // streamline_crm_merge, streamline_crm_e2e, crm_cold_0908 +1 scratch
+  "insert-order:0542b_genealogy_traversal_indexes.sql", // streamline_inv, inv_cold_head +11 scratch
+  "insert-order:0543a_crm_call_analysis_team_permissions.sql", // Neon(hash), streamline_crm_merge, streamline_crm_e2e, crm_cold_0908 +1 scratch
+  "insert-order:0543b_pick_exception_ownership.sql", // streamline_inv, inv_cold_head +11 scratch
+  "insert-order:0544b_inspection_plans.sql", // streamline_inv, inv_cold_head +11 scratch
+  "insert-order:0545a_stock_write_off.sql", // streamline_inv, inv_cold_head +11 scratch
+  // 0553a: inv, crm twin applied on Neon (0550a/0552a already sit inside their windows).
+  "insert-order:0553a_inventory_pack_flags.sql", // streamline_inv, inv_cold_head +11 scratch
+  // 0580a-0582a: inv lane; origin/main holds 0580-0582 (0575a already fits).
+  "insert-order:0580a_inventory_channel_pools.sql", // streamline_inv, inv_cold_head +11 scratch
+  "insert-order:0581a_inventory_quick_commerce_asn.sql", // streamline_inv, inv_cold_head +11 scratch
+  "insert-order:0582a_inventory_handling_units.sql", // streamline_inv, inv_cold_head +11 scratch
+  // 0656a-0674a: crm lane; origin/main holds 0656-0674.
+  // 0673a/0674a are applied NOWHERE, yet keep their `when`: their insert windows
+  // (1700000447000-448000, 1700000448000-449000) sit below the array predecessor
+  // 0672a (1787942048254) and below streamline_crm_merge's watermark (1787941988254).
+  // Restamping would add a journal-order regression and strand them for when-filtered
+  // runners, which is the hazard journal-order exists to catch.
+  "insert-order:0656a_autonomy_auto_quote_opt_in.sql", // Neon(hash), streamline_crm_merge, crm_cold_0908 +63 scratch
+  "insert-order:0657a_crm_whatsapp_channels.sql", // Neon(hash), streamline_crm_merge, streamline_crm_e2e, crm_cold_0908 +63 scratch
+  "insert-order:0658a_crm_whatsapp_channels_fail_closed.sql", // Neon(hash), streamline_crm_merge, streamline_crm_e2e, crm_cold_0908 +63 scratch
+  "insert-order:0659a_sign_sweep_runs.sql", // Neon(hash), streamline_crm_merge, crm_cold_0908 +62 scratch
+  "insert-order:0659b_timesheets_lifecycle_seq_and_attendance_draft.sql", // streamline_crm_merge +1 scratch
+  "insert-order:0660a_sign_bulk_row_attempts.sql", // Neon(hash), streamline_crm_merge, crm_cold_0908 +62 scratch
+  "insert-order:0660b_retire_sign_public_forms.sql", // scratch_idem_e2e only; its window (1700000437000-438000) is disjoint from its array slot (1700000589000-590000) too
+  "insert-order:0661a_business_parties_timezone.sql", // Neon(hash), streamline_crm_merge, crm_cold_0908 +62 scratch
+  "insert-order:0662a_composite_fk_set_null_nulls_tenant.sql", // Neon(hash), streamline_crm_merge, crm_cold_0908 +62 scratch
+  "insert-order:0663a_audit_logs_unattributed_actor.sql", // Neon(hash), streamline_crm_merge, crm_cold_0908
+  "insert-order:0664a_crm_report_schedules.sql", // Neon(hash), streamline_crm_merge, crm_cold_0908
+  "insert-order:0665a_crm_mcp_off_by_default.sql", // Neon(hash), streamline_crm_merge, crm_cold_0908
+  "insert-order:0666a_lifecycle_expansion_trigger.sql", // Neon(hash), streamline_crm_merge, crm_cold_0908
+  "insert-order:0667a_crm_segments.sql", // Neon(hash), streamline_crm_merge, crm_cold_0908
+  "insert-order:0668a_crm_call_analyses_window.sql", // Neon(hash), streamline_crm_merge, crm_cold_0908
+  "insert-order:0669a_crm_deal_competitor_suggestions.sql", // Neon(hash), streamline_crm_merge, crm_cold_0908
+  "insert-order:0670a_crm_contacts_view_not_scopable.sql", // Neon(hash), crm_cold_0908 +1 scratch
+  "insert-order:0671a_accounting_reads_not_scopable.sql", // Neon(hash), streamline_crm_merge, crm_cold_0908
+  "insert-order:0672a_gl_system_tag_inventory_roles.sql", // crm_cold_0908
+  "insert-order:0673a_compliance_mock_transport.sql", // applied nowhere; windows disjoint, see note above
+  "insert-order:0674a_subprocessor_subscribers_tenant_index.sql", // applied nowhere; windows disjoint, see note above
+  // 0819a/0820a: inv lane; origin/main holds 0819/0820.
+  "insert-order:0819a_drop_resurrected_sku_uniques_third_time.sql", // streamline_inv, inv_cold_head +8 scratch
+  "insert-order:0820a_materials_pack.sql", // streamline_inv, inv_cold_head +9 scratch
+  // Journal-order regressions left by the 2026-09-11 lane merge. Array order is the
+  // cold-build order (each crm/ts entry follows its own-lane predecessor, and the
+  // 0591b/0649b/0676b/0677b/0678b repairs carry a deliberately far-future when). But
+  // `when` comes from each lane own clock, so the two disagree at lane boundaries. Every
+  // entry flagged below is applied (hash or when in the ledgers named), so its when cannot
+  // move without orphaning ledger rows. The one pair with an unapplied side, 0674a -> 0659b,
+  // has no gap to move into: 0659b (1787941868254) already sits below the applied 0671a/0672a.
+  // inv ledgers = streamline_inv/inv_cold_head; crm ledgers = streamline_crm_merge/_e2e/crm_cold_0908.
+  "journal-order:0232_repair_crm_activity_grants.sql", // after 0465_: applied on Neon+inv ledgers+crm ledgers; 0465_ on crm ledgers
+  "journal-order:0471_platform_waitlist.sql", // after 0470_: applied on Neon+inv ledgers+crm ledgers; 0470_ on Neon+crm ledgers
+  "journal-order:0270_activities_thread_window.sql", // after 0472a: applied on Neon+inv ledgers+crm ledgers; 0472a on Neon+crm ledgers
+  "journal-order:0261_crm_connectors.sql", // after 0473a: applied on inv ledgers+crm ledgers; 0473a on Neon+crm ledgers
+  "journal-order:0269_mailbox_push_secret.sql", // after 0271a: applied on Neon+inv ledgers+crm ledgers; 0271a on crm ledgers
+  "journal-order:0278_drop_legacy_identity_tables.sql", // after 0520a: applied on inv ledgers; 0520a on Neon+crm ledgers
+  "journal-order:0472_outbox_inbox_aggregate_fence.sql", // after 0557_: applied on Neon+inv ledgers+crm ledgers; 0557_ on Neon+crm ledgers
+  "journal-order:0478_invoice_line_items_column_drop.sql", // after 0559_: applied on inv ledgers; 0559_ on Neon+crm ledgers
+  "journal-order:0527_po_batching_policy.sql", // after 0591b: applied on inv ledgers; 0591b on Neon+inv ledgers
+  "journal-order:0589_inventory_drop_reason_codes.sql", // after 0649b: applied on inv ledgers; 0649b on Neon+inv ledgers
+  "journal-order:0610_agent_tokens_membership_and_ceiling.sql", // after 0676b: applied on Neon+inv ledgers+crm ledgers; 0676b on Neon+inv ledgers
+  "journal-order:0611_delegations_and_overrides_expand_membership.sql", // after 0677b: applied on inv ledgers; 0677b on Neon+inv ledgers
+  "journal-order:0613_delegations_and_overrides_drop_user_columns.sql", // after 0678b: applied on Neon+inv ledgers+crm ledgers; 0678b on inv ledgers
+  "journal-order:0659b_timesheets_lifecycle_seq_and_attendance_draft.sql", // after 0674a: applied on crm ledgers; 0674a on nowhere
+  "journal-order:0656_communication_tenant_rls.sql", // after 0659b: applied on Neon+inv ledgers; 0659b on crm ledgers
+  "journal-order:0466_drop_legacy_accounting.sql", // after 1096_: applied on crm ledgers; 1096_ on Neon
 ]);
 
 // ─── check functions ──────────────────────────────────────────────────────────

@@ -1,3 +1,4 @@
+import { describeDatabaseCause } from "../db/postgres-error";
 import { createStepContext } from "./step-context";
 import { decideAfterFailure } from "./retry-policy";
 import type { WorkflowRegistry } from "./workflow-registry";
@@ -39,8 +40,26 @@ export interface ExecuteRunDeps {
   readonly onError?: (error: unknown, run: RunRecord) => void;
 }
 
+/**
+ * What a dead-lettered run says about itself, which is the only account of the
+ * failure anybody gets.
+ *
+ * `error.stack` alone was not one. Drizzle wraps a driver error in
+ * `DrizzleQueryError`, whose message is `Failed query: <the whole statement>`
+ * followed by the bound parameters -- so a failing 60-column insert recorded
+ * sixty column names, sixty values, and no reason. The SQLSTATE, the constraint
+ * and PostgreSQL's own sentence are all one level down on `.cause`, which
+ * nothing walked. An operator opening `workflow_runs.last_error` could see
+ * exactly which row was refused and never why.
+ *
+ * Appended rather than substituted: the statement is still how you find the
+ * call site, and the cause is what tells you what to do about it. A failure with
+ * no driver error underneath is left byte-for-byte as it was.
+ */
 function describe(error: unknown): string {
-  return error instanceof Error ? (error.stack ?? error.message) : String(error);
+  const base = error instanceof Error ? (error.stack ?? error.message) : String(error);
+  const cause = describeDatabaseCause(error);
+  return cause === null ? base : `${base}\n  caused by: ${cause}`;
 }
 
 /**

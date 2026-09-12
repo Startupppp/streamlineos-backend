@@ -279,3 +279,76 @@ export const kbFeedbackSchema = z.object({
   success: z.boolean(),
   recorded: z.boolean(),
 });
+
+/**
+ * `GET /public/pricing`. Money is minor units, as everywhere else in billing,
+ * and `seatLimit` is null for unlimited — zero would read as "no seats".
+ *
+ * `isRequestedCurrency` is on the contract rather than implied because a
+ * prospect shown a number without being told which currency it is in finds out
+ * at checkout, which is the worst possible moment.
+ */
+export const publicPricingSchema = z.object({
+  currency: z.string(),
+  isRequestedCurrency: z.boolean(),
+  annualDiscountPct: z.number().int(),
+  trialDays: z.number().int(),
+  plans: z.array(z.object({
+    plan: z.enum(["STARTER", "PROFESSIONAL", "ENTERPRISE"]),
+    monthlyMinor: z.number().int(),
+    annualMinor: z.number().int(),
+    seatLimit: z.number().int().nullable(),
+  })),
+});
+
+/**
+ * `GET /public/data-residency`. `likely` is present only when the caller named a
+ * country, and `isMapped` says whether that country was actually mapped or fell
+ * to the default — a default presented as a determination is how somebody
+ * discovers after migrating that it was a guess.
+ */
+export const dataResidencySchema = z.object({
+  options: z.array(z.object({
+    region: z.enum(["eu", "us", "india"]),
+    description: z.string(),
+    examples: z.array(z.string()),
+  })),
+  likely: z.object({
+    region: z.enum(["eu", "us", "india"]),
+    description: z.string(),
+    isMapped: z.boolean(),
+  }).optional(),
+});
+
+/** The operator's view of the waitlist. Never the token digest. */
+export const waitlistEntryListSchema = z.array(z.object({
+  id: z.number().int(),
+  reference: z.string(),
+  name: z.string(),
+  email: z.string(),
+  organization: z.string().nullable(),
+  role: z.string().nullable(),
+  teamSize: z.string().nullable(),
+  status: z.string(),
+  admittedAt: nullableWireDate(),
+  claimedAt: nullableWireDate(),
+  createdAt: wireDate(),
+}));
+
+/**
+ * The raw claim token is handed to the operator once, inside `claimPath` — it is
+ * stored only as a digest and is never readable again. When an admission email
+ * template exists this stops being returned at all.
+ */
+export const waitlistAdmitSchema = z.object({
+  reference: z.string(),
+  email: z.string(),
+  expiresAt: wireDate(),
+  claimPath: z.string(),
+});
+
+/** A claim answers with the entry it spent, and nothing about the tenant it made. */
+export const waitlistClaimSchema = z.object({
+  reference: z.string(),
+  email: z.string(),
+});

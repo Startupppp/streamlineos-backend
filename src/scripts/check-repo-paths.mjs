@@ -11,13 +11,42 @@
  */
 
 import { existsSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 const SCRIPT_DIR = fileURLToPath(new URL(".", import.meta.url));
 
 const FRONTEND_MARKER = join("lib", "rbac", "permissions");
-const FRONTEND_SIBLINGS = ["frontend", join("streamlineos-frontend", "frontend")];
+
+/**
+ * `…/final-backend` → `…/final-frontend`, the worktree pair convention here.
+ *
+ * Tried before the default checkout. Without it the upward walk reaches the
+ * workspace directory and matches `streamlineos-frontend/frontend`, which is
+ * whatever branch that checkout happens to be on — so a gate run from a feature
+ * worktree compared this backend against another branch's frontend and reported
+ * the difference as a finding. `check:navigation-permissions` did exactly that:
+ * ten accounting keys "enforced by no route" were ten entries in a sidebar this
+ * branch does not have. `frontend-root.mjs` and `lib/repo-roots.mjs` already
+ * pair this way; this is the third resolver and it was the one left behind.
+ */
+const PAIRED_FRONTEND = (() => {
+  for (let dir = SCRIPT_DIR, depth = 0; depth < 8; depth++) {
+    const name = basename(dir);
+    if (name.endsWith("-backend"))
+      return join("..", `${name.slice(0, -"-backend".length)}-frontend`, "frontend");
+    const parent = dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+  return null;
+})();
+
+const FRONTEND_SIBLINGS = [
+  ...(PAIRED_FRONTEND ? [PAIRED_FRONTEND] : []),
+  "frontend",
+  join("streamlineos-frontend", "frontend"),
+];
 
 const WORKSPACE_MARKER = join("architecture-refactor", "final-refactor", "issues");
 const WORKSPACE_SIBLINGS = [".", "streamlineos-frontend"];

@@ -27,9 +27,14 @@
     "optimistic-concurrency": "Lost-update protection via an expected-version field. Not replay protection.",
     "captcha-single-use": "The provider's single-use CAPTCHA token is the de facto fence.",
     "no-persistence-rate-limited": "No business write; a replay costs budget, not data.",
-    "at-least-once-unfenced": "No server-side dedupe. A retry duplicates. Recorded so consumers and reviewers can see it."
+    "at-least-once-unfenced": "No server-side dedupe. A retry duplicates. Recorded so consumers and reviewers can see it.",
+    "provider-signature-only": "Signature verified, and nothing behind it fences a replay — the event id is either not recorded, or the attempt to record it does not work. Like `at-least-once-unfenced`, a finding rather than a mode to copy: it is how a route reads when its dedupe was written but never fired."
   },
   "operations": {
+    "GET /public/sign/forms/{slug}": {
+      "sunsetAt": "2026-09-10",
+      "sunsetEvidence": "RETIRED WITH NO REPLACEMENT alongside its submit half — see POST /public/sign/forms/{slug}/submit for the dependency proof. This half was the anonymous reader of a published sign_public_forms row; migration 0660b dropped the table, so there is nothing left for it to read."
+    },
     "PATCH /agent/v1/tickets/{ticketId}": {
       "idempotency": {
         "mode": "optimistic-concurrency",
@@ -102,6 +107,14 @@
       },
       "evidence": "src/modules/crm/consent/crm-consent.controller.ts"
     },
+    "POST /crm/consent/unsubscribe/{token}": {
+      "idempotency": {
+        "mode": "natural-key-upsert",
+        "key": null,
+        "replay": "The RFC 8058 one-click form of the entry above: the token moves into the path so a mail client can post it with no body, and all three verbs share one `honour()` implementation. Same fence — onConflictDoUpdate on (org_id, contact_id, channel) — so the consent row converges on replay. The crm_contact_consent_events history row beside it is an unconditional insert, so a replay does append a second audit entry."
+      },
+      "evidence": "src/modules/crm/consent/crm-consent.controller.ts (unsubscribeOneClick); write in lib/crm-consent-record.ts"
+    },
     "POST /crm/mailboxes/push": {
       "idempotency": {
         "mode": "provider-signature-idempotent-effect",
@@ -110,13 +123,23 @@
       },
       "evidence": "src/modules/ingress/adapters/crm-mailbox.controller.ts"
     },
+    "POST /csat/public/{publicToken}/responses": {
+      "idempotency": {
+        "mode": "at-least-once-unfenced",
+        "key": null,
+        "replay": "Insert into csat_responses whose only unique index is (org_id, id), so nothing dedupes a resubmission and a retry records a second rating. `@UseRateLimit(\"csat:submit\")` bounds the cost of that, not the duplication. The publicToken authenticates WHICH survey is being answered; it is not consumed and is not a replay fence."
+      },
+      "evidence": "src/modules/csat/csat.service.ts (submitResponse); table src/db/schema/crm/contacts.ts"
+    },
     "POST /csat/{surveyId}/responses": {
       "idempotency": {
         "mode": "at-least-once-unfenced",
         "key": null,
         "replay": "Unauthenticated insert into csat_responses keyed only on a numeric survey id \u2014 no token, no dedupe, no handler rate limit. A retry creates a second response. No server-side replay fence: a client that retries after a timeout must expect a duplicate."
       },
-      "evidence": "src/modules/csat/csat.service.ts"
+      "evidence": "src/modules/csat/csat.service.ts",
+      "sunsetAt": "2026-09-11",
+      "sunsetEvidence": "REPLACED BY POST /csat/public/{publicToken}/responses, and removed as a security fix rather than a rename. The surveyId in this path is the table's serial primary key on a @Public() route, so any caller could count upwards and submit against another tenant's survey; migration 1089 records that csat_surveys was deliberately left off the 0384 public-read arm for exactly that reason. The replacement is keyed on the unguessable public_token the table already minted (uniqueIndex idx_csat_surveys_token), which is what let 1089 give csat_surveys the same public-token policy arm agent_tokens and api_keys carry. Same request body, same 201, same rate-limit tier; only the path segment changed. Retired in 2183bace9 (2026-09-11) together with that migration."
     },
     "POST /integrations/git/webhook": {
       "idempotency": {
@@ -324,7 +347,9 @@
         "key": null,
         "replay": "Each submission instantiates a fresh envelope from the template; the slug is a reusable public form address, capped only by maxSubmissions. A retry creates a second envelope. No server-side replay fence: a client that retries after a timeout must expect a duplicate."
       },
-      "evidence": "src/modules/e-sign/sign-public-form.service.ts"
+      "evidence": "src/modules/e-sign/sign-public-form.service.ts",
+      "sunsetAt": "2026-09-10",
+      "sunsetEvidence": "RETIRED WITH NO REPLACEMENT, deliberately and with dependency proof. e371758b3 records the sweep: every frontend ref for this path on every branch returns only the generated openapi.json — the public form page app/(public)/forms/[token] calls /public/forms/:token, which is the BUILD module's forms feature and a different endpoint. The removal is a removal rather than a deprecation because the route was an unauthenticated WRITER: class-level @Public(), and it instantiated a template into a real envelope, flipped it to sent, minted a live signing token and handed that token back. It was reachable only in principle — a request needs a published sign_public_forms row and no UI ever created one, so every call 404'd — which is dormancy by absence of data, not by a guard. Migration 0660b then dropped sign_public_forms itself, taking the table's public-token read arm from 0384 with it."
     },
     "POST /public/sign/{token}/adopt-signature": {
       "idempotency": {
@@ -478,6 +503,14 @@
       },
       "evidence": "src/modules/email/email-webhook.controller.ts"
     },
+    "POST /webhooks/inventory/carriers/{orgId}/{carrierCode}": {
+      "idempotency": {
+        "mode": "provider-signature-and-event-id",
+        "key": "the carrier's own event id, or a SHA-256 digest of the raw body when it sends none",
+        "replay": "The per-carrier shared secret selected by the orgId in the path signs the raw bytes; a bad signature is 401 and is recorded as a verification failure. Past that, the delivery is claimed by inserting into inv_carrier_webhook_deliveries with onConflictDoNothing on (org_id, carrier_id, event_key), which is the unique constraint uniq_inv_carrier_webhook_deliveries_event, so a redelivery returns 200 {ok:true,duplicate:true} and applies nothing. When the carrier supplies no event id the key is a digest of the body, so a byte-identical redelivery still dedupes but a re-sent event carrying a new timestamp does not — applyEvent's monotonic rule is the second guard there, and a callback arriving after DELIVERED changes nothing."
+      },
+      "evidence": "src/modules/inventory/shipments/transport/carrier-webhook.service.ts (ingest, claim); constraint in src/db/schema/inventory/carrier-transport.ts"
+    },
     "POST /webhooks/payments/{providerKey}/{environment}/{orgId}": {
       "idempotency": {
         "mode": "provider-signature-and-event-id",
@@ -493,6 +526,14 @@
         "replay": "Legacy URL alias for the payments webhook; same signature check and same uq_payment_webhook_events_provider_env_event fence. The event id is read from the body, not a header."
       },
       "evidence": "src/modules/billing/core/razorpay-webhook.controller.ts"
+    },
+    "POST /webhooks/stripe/{orgId}": {
+      "idempotency": {
+        "mode": "provider-signature-only",
+        "key": "Stripe evt_ id",
+        "replay": "The platform's own STRIPE_WEBHOOK_SECRET verifies the raw body before anything is parsed (401 on failure, 503 when Stripe is unconfigured so the delivery is retried), and an event type outside the translated set is acknowledged without being recorded. The dedupe behind that does NOT work today: recordEvent inserts into provider_webhook_events with onConflictDoNothing targeting (provider, provider_event_id), but migration 0605 replaced that unique index with (org_id, provider, provider_event_id) to close a cross-tenant DoS, so Postgres can infer no arbiter and the insert raises 42P10 on every money-moving delivery. So a redelivery is neither deduped nor processed — it errors. Reported by check:conflict-targets at src/modules/billing/core/stripe-webhook-ledger.ts:111; when the target is widened to include orgId this becomes provider-signature-and-event-id and this note must be rewritten."
+      },
+      "evidence": "src/modules/billing/core/stripe-webhook.service.ts (handle) and stripe-webhook-ledger.ts (recordEvent); index in migrations/0605_provider_webhook_events_tenant_scoped_unique.sql"
     },
     "POST /webhooks/calendar/provider": {
       "idempotency": {

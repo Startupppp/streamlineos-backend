@@ -31,6 +31,7 @@ import { OrgService } from "./org.service";
 import { PublicFormsService } from "./public-forms.service";
 import { ContactService } from "./contact.service";
 import { WaitlistService } from "./waitlist.service";
+import { PublicPricingService } from "./pricing.service";
 import {
   applySchema,
   contactSubmitSchema,
@@ -97,6 +98,8 @@ import {
   kbListSchema,
   kbArticleSchema,
   kbFeedbackSchema as kbFeedbackResponseSchema,
+  publicPricingSchema,
+  dataResidencySchema,
 } from "./dto/public-response.schemas";
 
 const tokenParams = z.object({ token: z.string().min(1) }).strict();
@@ -133,6 +136,7 @@ export class PublicController {
     private readonly publicForms: PublicFormsService,
     private readonly contact: ContactService,
     private readonly waitlist: WaitlistService,
+    private readonly pricing: PublicPricingService,
     @Inject(DRIZZLE) private readonly db: Db,
   ) {}
 
@@ -463,5 +467,34 @@ export class PublicController {
       () => this.kb.submitFeedback(slug, query.org, { ...body, visitorId }),
       { orgId: query.org },
     );
+  }
+
+  /**
+   * What the product costs, in the currency the caller asked for.
+   *
+   * Public because a price that requires a demo is a price the buyer assumes is
+   * bad. Reads the same table the charge path reads -- a marketing page with its
+   * own copy of the prices eventually quotes a number we do not charge.
+   */
+  @Get("pricing")
+  @UseGuards(RateLimitGuard)
+  @UseRateLimit("public:pricing")
+  @ResponseSchema(publicPricingSchema)
+  getPricing(@Query("currency") currency?: string) {
+    return this.pricing.pricing(currency);
+  }
+
+  /**
+   * Where a customer's data would rest.
+   *
+   * Every European evaluation asks this before anything else, and a compliance
+   * review that has to contact us to find out is a review that stalls.
+   */
+  @Get("data-residency")
+  @UseGuards(RateLimitGuard)
+  @UseRateLimit("public:pricing")
+  @ResponseSchema(dataResidencySchema)
+  getResidency(@Query("country") country?: string) {
+    return this.pricing.residency(country);
   }
 }

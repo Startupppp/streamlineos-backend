@@ -22,6 +22,7 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { actingMembershipId } from "../../../common/auth/principal";
 import { membershipScope } from "../../timesheets/core/timesheets-core-scope";
 import { canActOnPeriod } from "../../timesheets/core/lib/approval-guard";
+import { assertOrganizationActor } from "../../../common/organization/organization-actor";
 import { resolveTimesheetsScope } from "./timesheets-scope";
 import { formatDateOnly } from "../../../common/date";
 import { timeEntryCursorPredicate, timeEntryPage } from "./timesheets-pagination";
@@ -244,6 +245,13 @@ export class TimesheetsService {
 
     if (entry.status !== "PENDING")
       throw new BadRequestException("Only pending entries can be approved");
+
+    // `approved_by` was contracted onto the membership actor; the user id is no
+    // longer a column on this table.
+    const approver = await assertOrganizationActor(this.db, user.orgId, {
+      kind: "user",
+      userId: user.userId,
+    });
 
     await this.db
       .update(timesheets)

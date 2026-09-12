@@ -1,10 +1,22 @@
 /**
- * Real-database tests for the dual-write window's central claim: that a legacy
- * row and the Party it mirrors cannot be observed disagreeing, because they are
- * written in one transaction with the Party first.
+ * Real-database tests for what the writer promises now that the mirror is gone.
  *
- * Run via `pnpm test:db-specs`. The default hermetic jest config ignores this file.
- *   DATABASE_URL=... npx jest --config jest-db.json --runInBand --testPathPattern="party-legacy-writer.db"
+ * The dual-write window's claim was that a legacy row and the Party it mirrors
+ * could not be observed disagreeing. Ticket 08 made that claim vacuous in the
+ * strongest way available: there is one row, the party, and the legacy shape is
+ * derived from it when somebody asks. Two copies cannot disagree if there is
+ * only one.
+ *
+ * What still needs a real database is atomicity. A record is a party, a map row
+ * and a role grant, written in one transaction, and a half-written record is
+ * still the state this file exists to make impossible -- only the constraint
+ * that catches it has moved. `leads.campaign_id` used to be the foreign key that
+ * failed after the party was written; `business_parties.acquisition_campaign_id`
+ * is the same key on the surviving table, so the test below is the same test.
+ *
+ * Runs whenever DATABASE_URL is present and skips loudly by name when it is
+ * not. Run with:
+ *   DATABASE_URL=... pnpm test:db --testPathPattern="party-legacy-writer.db"
  *
  * Atomicity is the property a mocked database cannot demonstrate. A fake rolls
  * back whatever it was told to roll back; only a real savepoint, and a real
@@ -18,20 +30,10 @@
 import { randomUUID } from "node:crypto";
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/postgres-js";
-import { requireApprovedDatabaseUrl } from "../../test/db-spec-guard";
-import postgres from "postgres";
+import type postgres from "postgres";
 import * as schema from "../../db/schema";
 import type { Db } from "../../db/drizzle.types";
-import {
-  businessParties,
-  contactPartyMap,
-  leadPartyMap,
-  partyIdentifiers,
-  partyRoles,
-} from "../../db/schema/party";
-import { clients, contacts, crmOrganizations } from "../../db/schema/crm/contacts";
-import { leads } from "../../db/schema/crm/leads";
-import { PartyDivergenceService } from "./party-divergence.service";
+import { businessParties, leadPartyMap, partyIdentifiers, partyRoles } from "../../db/schema/party";
 import { diffLegacyMirror, LEAD_MIRROR } from "./party-legacy-mirror";
 import { updatePartyWithMirror } from "./party-legacy-writer";
 import {
@@ -42,37 +44,27 @@ import {
 } from "./party-legacy-leads";
 import { createMirroredClient } from "./party-legacy-clients";
 import { createMirroredContact } from "./party-legacy-contacts";
-import { createMirroredOrganization } from "./party-legacy-orgs";
-import { refreshEmployerColumns } from "./party-legacy-employer";
+import { dbSpecClient, dbSpecSuite, dbSpecUrl } from "../../test/db-spec-gate";
+import { ensureCrmFixtureOrg } from "../../test/db-spec-crm-fixture";
 
+const describeDb = dbSpecSuite();
+
+// The backfill-shaped fixtures here can outlast Jest's unstated 5s default on a
+// production-shaped seed; the transactions already allow longer.
 jest.setTimeout(60_000);
 
 /** Thrown to roll the transaction back once the assertions have run. */
 class Rollback extends Error {}
 
-function connect() {
-  const raw = requireApprovedDatabaseUrl({
-    spec: "party-legacy-writer.db.spec.ts",
-    vars: ["DATABASE_URL"],
-  });
-  const url = new URL(raw);
-  url.searchParams.delete("channel_binding");
-  return postgres(url.toString(), {
-    prepare: false,
-    max: 2,
-    ssl: "require",
-    connect_timeout: 30,
-    onnotice: () => {},
-  });
-}
-
-describe("party-legacy-writer — real database", () => {
-  let client: ReturnType<typeof connect>;
+describeDb("party-legacy-writer — real database", () => {
+  let client: ReturnType<typeof postgres>;
   let db: Db;
+  let fixtureOrgId: string;
 
-  beforeAll(() => {
-    client = connect();
+  beforeAll(async () => {
+    client = dbSpecClient(dbSpecUrl("DATABASE_URL"), { max: 2 });
     db = drizzle(client, { schema });
+    fixtureOrgId = (await ensureCrmFixtureOrg(client)).orgId;
   });
 
   afterAll(async () => {
@@ -84,10 +76,7 @@ describe("party-legacy-writer — real database", () => {
     let captured: T | undefined;
     try {
       await db.transaction(async (tx) => {
-        const [org] = await tx.select({ id: schema.organizations.id }).from(schema.organizations).limit(1);
-        if (!org)
-          throw new Error("party-legacy-writer.db.spec.ts requires at least one seeded organization");
-        captured = await body(tx, org.id);
+        captured = await body(tx, fixtureOrgId);
         throw new Rollback();
       });
     } catch (error) {
@@ -136,7 +125,7 @@ describe("party-legacy-writer — real database", () => {
     });
   });
 
-  it("leaves no orphan party when the legacy insert is refused", async () => {
+  it("leaves no half-written record when a constraint refuses the patch", async () => {
     await withTenant(async (tx, orgId) => {
       const before = await tx
         .select({ n: sql<number>`count(*)::int` })
@@ -147,8 +136,8 @@ describe("party-legacy-writer — real database", () => {
         createMirroredLead(tx, orgId, {
           orgId,
           name: "Doomed",
-          // No such campaign: `leads.campaign_id` has a foreign key, so the
-          // legacy insert fails after the party has already been written.
+          // No such campaign: `fk_business_parties_acquisition_campaign` fails
+          // when the patch lands, after the bare party has already been written.
           campaignId: -1,
         }),
       ).rejects.toBeTruthy();
@@ -158,8 +147,8 @@ describe("party-legacy-writer — real database", () => {
         .from(businessParties)
         .where(eq(businessParties.organizationId, orgId));
 
-      // The savepoint took the party with it. A surviving party here would be a
-      // record that exists on the Party surface and nowhere else.
+      // The savepoint took the bare party with it. A surviving party here would
+      // be a record with no map row -- reachable by nothing, named by nothing.
       expect(after[0]?.n).toBe(before[0]?.n);
     });
   });
@@ -185,15 +174,17 @@ describe("party-legacy-writer — real database", () => {
         .where(eq(businessParties.partyId, map!.partyId));
       expect(party?.jobTitle).toBe("Rear Admiral");
 
-      // Through the party surface: the lead follows.
+      // Through the party surface: the lead view follows, because it is the
+      // party. There is no second row to read back, so the lead is derived --
+      // which is what every reader of a lead does now.
       await updatePartyWithMirror(tx, orgId, map!.partyId, { jobTitle: "Commodore" });
       const [afterParty] = await tx
         .select()
         .from(businessParties)
         .where(eq(businessParties.partyId, map!.partyId));
-      const [afterLead] = await tx.select().from(leads).where(eq(leads.id, created.id));
-      expect(afterLead?.designation).toBe("Commodore");
-      expect(diffLegacyMirror("LEAD", afterParty!, afterLead!)).toEqual([]);
+      const afterLead = LEAD_MIRROR.derive(afterParty!);
+      expect(afterLead.designation).toBe("Commodore");
+      expect(diffLegacyMirror("LEAD", afterParty!, afterLead)).toEqual([]);
     });
   });
 
@@ -264,12 +255,9 @@ describe("party-legacy-writer — real database", () => {
       expect(parties).toHaveLength(2);
       for (const party of parties) expect(party.deletedAt).toBeInstanceOf(Date);
 
-      const rows = await tx
-        .select()
-        .from(leads)
-        .where(and(eq(leads.orgId, orgId), inArray(leads.id, [first.id, second.id])));
-      expect(rows.map((row) => row.name).sort()).toEqual(["Batch One", "Batch Two"]);
-      for (const row of rows) expect(row.deletedAt).toBeInstanceOf(Date);
+      // The lead shape is derived from the party, so the rows handed back are the
+      // mirror; there is no `leads` row left to read a second copy from.
+      expect(deleted.map((row) => row.name).sort()).toEqual(["Batch One", "Batch Two"]);
     });
   });
 
@@ -324,86 +312,6 @@ describe("party-legacy-writer — real database", () => {
     });
   });
 
-  it("gives each contact its own employer id in one bulk update", async () => {
-    await withTenant(async (tx, orgId) => {
-      const marker = randomUUID().slice(0, 8);
-      const employerOne = await createMirroredOrganization(tx, orgId, {
-        orgId,
-        name: `Employer A ${marker}`,
-      });
-      const employerTwo = await createMirroredOrganization(tx, orgId, {
-        orgId,
-        name: `Employer B ${marker}`,
-      });
-      expect(employerOne.id).not.toBe(employerTwo.id);
-
-      const contactOne = await createMirroredContact(tx, orgId, {
-        orgId,
-        name: `Employee A ${marker}`,
-        organizationId: employerOne.id,
-      });
-      const contactTwo = await createMirroredContact(tx, orgId, {
-        orgId,
-        name: `Employee B ${marker}`,
-        organizationId: employerTwo.id,
-      });
-
-      const maps = await tx
-        .select()
-        .from(contactPartyMap)
-        .where(
-          and(
-            eq(contactPartyMap.organizationId, orgId),
-            inArray(contactPartyMap.contactId, [contactOne.id, contactTwo.id]),
-          ),
-        );
-      const partyOf = new Map(maps.map((row) => [row.contactId, row.partyId]));
-      const partyOne = partyOf.get(contactOne.id);
-      const partyTwo = partyOf.get(contactTwo.id);
-      expect(typeof partyOne).toBe("string");
-      expect(typeof partyTwo).toBe("string");
-      expect(partyOne).not.toBe(partyTwo);
-
-      await tx
-        .update(contacts)
-        .set({ organizationId: null })
-        .where(
-          and(eq(contacts.orgId, orgId), inArray(contacts.id, [contactOne.id, contactTwo.id])),
-        );
-      const cleared = await tx
-        .select({ id: contacts.id, organizationId: contacts.organizationId })
-        .from(contacts)
-        .where(
-          and(eq(contacts.orgId, orgId), inArray(contacts.id, [contactOne.id, contactTwo.id])),
-        );
-      expect(cleared.map((row) => row.organizationId)).toEqual([null, null]);
-
-      await refreshEmployerColumns(tx, orgId, [String(partyOne), String(partyTwo)]);
-
-      const repaired = await tx
-        .select({ id: contacts.id, organizationId: contacts.organizationId })
-        .from(contacts)
-        .where(
-          and(eq(contacts.orgId, orgId), inArray(contacts.id, [contactOne.id, contactTwo.id])),
-        );
-      const byContact = new Map(repaired.map((row) => [row.id, row.organizationId]));
-      expect(byContact.get(contactOne.id)).toBe(employerOne.id);
-      expect(byContact.get(contactTwo.id)).toBe(employerTwo.id);
-      expect(byContact.get(contactOne.id)).not.toBe(byContact.get(contactTwo.id));
-
-      const employers = await tx
-        .select({ id: crmOrganizations.id, name: crmOrganizations.name })
-        .from(crmOrganizations)
-        .where(
-          and(
-            eq(crmOrganizations.orgId, orgId),
-            inArray(crmOrganizations.id, [employerOne.id, employerTwo.id]),
-          ),
-        );
-      expect(employers).toHaveLength(2);
-    });
-  });
-
   it("mirrors a client and a contact from their own parties", async () => {
     await withTenant(async (tx, orgId) => {
       const client = await createMirroredClient(tx, orgId, {
@@ -427,99 +335,45 @@ describe("party-legacy-writer — real database", () => {
       expect(contact.title).toBe("Founder");
       expect(contact.twitterUrl).toBe("https://x.test/babbage");
 
-      // Scoped to the two rows this test wrote, via the service's own `after`
-      // cursor. Asserting the WHOLE tenant is divergence-free only held while the
-      // first organisation happened to have no CRM rows: on the production-shaped
-      // seed it reports CONTACT 200 / LEAD 200 — the page size, not a defect — and
-      // this read as a mirror bug. The claim being made is about these two writes.
-      const report = await new PartyDivergenceService(tx).report(orgId, {
-        kinds: ["CLIENT", "CONTACT"],
-        after: { CLIENT: client.id - 1, CONTACT: contact.id - 1 },
-      });
-      // Anti-vacuity: an `after` past the end scans nothing and the filter below
-      // is then empty for free, which is the failure this whole test guards.
-      expect(report.scanned.CLIENT).toBeGreaterThan(0);
-      expect(report.scanned.CONTACT).toBeGreaterThan(0);
-      expect(
-        report.divergent.filter(
-          (row) =>
-            (row.kind === "CLIENT" && row.legacyId === client.id) ||
-            (row.kind === "CONTACT" && row.legacyId === contact.id),
-        ),
-      ).toEqual([]);
+      /*
+        There used to be a divergence report here, asserting the two copies
+        agreed. `PartyDivergenceService` went with the tables it compared: a
+        report that can only ever say zero is not a check, it is a constant.
+
+        What replaces it is the assertion that the returned rows carry the
+        values -- which is the same claim, made where it can still fail. Every
+        column above is a legacy-owned or mirrored one, so a derivation that
+        dropped it shows up right here.
+      */
     });
   });
 
-  it("reports a legacy row somebody wrote behind the mirror's back, and repairs nothing", async () => {
-    await withTenant(async (tx, orgId) => {
-      const created = await createMirroredLead(tx, orgId, {
-        orgId,
-        name: "Ada",
-        designation: "Head of Computation",
-      });
+  /*
+    Two tests stood here and both went with the table.
 
-      // A write that did not go through the writer, which is exactly the
-      // divergence the check exists to surface.
-      await tx.update(leads).set({ designation: "Stale" }).where(eq(leads.id, created.id));
+    One wrote to `leads` behind the writer's back and asserted the divergence
+    check reported it without repairing it. The other inserted a `leads` row
+    with no party -- a restore, or an out-of-band import -- and asserted the
+    next write adopted it rather than refusing.
 
-      const service = new PartyDivergenceService(tx);
-      // `after` starts the scan at this lead. Unscoped, the seeded tenant fills the
-      // 200-row page with older leads and this row never appears — `mine` came back
-      // undefined, which reads as "the divergence was not detected" when in fact it
-      // was never looked at.
-      const scope = { kinds: ["LEAD"] as const, after: { LEAD: created.id - 1 } };
-      const report = await service.report(orgId, scope);
-      const mine = report.divergent.find((row) => row.legacyId === created.id);
-
-      expect(mine?.fields).toEqual([
-        expect.objectContaining({ column: "designation", partyColumn: "jobTitle" }),
-      ]);
-
-      // Run it again: still divergent. A check that repaired would go green here
-      // and take the evidence of which write path did this with it.
-      const second = await service.report(orgId, scope);
-      expect(second.divergent.find((row) => row.legacyId === created.id)?.fields).toHaveLength(1);
-      const [row] = await tx.select().from(leads).where(eq(leads.id, created.id));
-      expect(row?.designation).toBe("Stale");
-    });
-  });
-
-  it("adopts a legacy row that arrived without a party, rather than refusing the write", async () => {
-    await withTenant(async (tx, orgId) => {
-      // Inserted straight at the table, as a restore or an out-of-band import
-      // would leave it.
-      const [orphan] = await tx
-        .insert(leads)
-        .values({ orgId, name: "Out of band", company: "Elsewhere" })
-        .returning();
-
-      const updated = await updateMirroredLead(tx, orgId, orphan!.id, { notes: "now mirrored" });
-      expect(updated?.notes).toBe("now mirrored");
-
-      const [map] = await tx
-        .select()
-        .from(leadPartyMap)
-        .where(and(eq(leadPartyMap.organizationId, orgId), eq(leadPartyMap.leadId, orphan!.id)));
-      // Recorded as an adoption, so an operator can tell these apart from rows
-      // that were always mirrored.
-      expect(map?.linkedBy).toBe("mirror:adopt");
-
-      const [party] = await tx
-        .select()
-        .from(businessParties)
-        .where(eq(businessParties.partyId, map!.partyId));
-      // The legacy row was read as truth exactly once, which is correct only
-      // because there was no party to contradict it.
-      expect(party?.companyName).toBe("Elsewhere");
-      expect(diffLegacyMirror("LEAD", party!, updated!)).toEqual([]);
-    });
-  });
+    Neither can be written now, and that is the contract rather than a loss of
+    coverage: there is no table to write behind the writer's back, and no way to
+    arrive with an identifier that no party answers for, because the map row IS
+    the identifier. `adoptLead` and its siblings went with them.
+  */
 
   it("keeps the mirror inside the tenant that owns the party", async () => {
     await withTenant(async (tx, orgId) => {
       const created = await createMirroredLead(tx, orgId, { orgId, name: "Tenant check" });
-      const [row] = await tx.select().from(leads).where(eq(leads.id, created.id));
-      expect(row?.orgId).toBe(orgId);
+      // The record is the party and the map row now; `leads` holds nothing for a
+      // mirror-created lead, so asking it which tenant owns this was asking the
+      // wrong table. Both surviving sides are checked instead.
+      expect(created.orgId).toBe(orgId);
+      const [map] = await tx
+        .select()
+        .from(leadPartyMap)
+        .where(and(eq(leadPartyMap.organizationId, orgId), eq(leadPartyMap.leadId, created.id)));
+      expect(map?.organizationId).toBe(orgId);
       expect(LEAD_MIRROR.derive({ ...(await onlyParty(tx, orgId, created.id)) }).orgId).toBe(orgId);
     });
   });
@@ -536,12 +390,60 @@ describe("party-legacy-writer — real database", () => {
     return party!;
   }
 
-  it("still has the tables this ticket does not touch", async () => {
-    // A cheap guard that the fixtures above are hitting the schema the rest of
-    // the suite assumes, rather than a database mid-migration.
+  /**
+   * The inverse of what stood here, and the only place the drop is observable.
+   *
+   * This used to check the four tables were still present -- a guard that the
+   * fixtures were hitting the schema the rest of the suite assumed rather than a
+   * database mid-migration. Migration 0278 is the end of that migration, so the
+   * same guard now asks the opposite question, against the same catalogue.
+   *
+   * Asked of `pg_class` rather than by selecting from them, because the point is
+   * a database whose schema no longer has these tables, and there is no Drizzle
+   * symbol left to select from. A tree that typechecks proves the code stopped
+   * naming them; only this proves the database did.
+   */
+  it("no longer has the four legacy identity tables", async () => {
     await withTenant(async (tx) => {
-      await expect(tx.select({ n: sql<number>`1` }).from(clients).limit(1)).resolves.toBeDefined();
-      await expect(tx.select({ n: sql<number>`1` }).from(contacts).limit(1)).resolves.toBeDefined();
+      const rows = await tx.execute(sql`
+        SELECT c.relname::text AS name
+        FROM pg_class c
+        JOIN pg_namespace n ON n.oid = c.relnamespace
+        WHERE n.nspname = 'public'
+          AND c.relkind = 'r'
+          AND c.relname IN ('leads', 'clients', 'contacts', 'crm_organizations')
+      `);
+      expect([...rows].map((row) => (row as { name: string }).name)).toEqual([]);
+    });
+  });
+
+  /**
+   * The sequences outlived the tables, which is what kept the identifiers.
+   *
+   * `leads.id` was the CRM's public identifier -- in twenty controller routes
+   * behind `ParseIntPipe` and in every `/crm/leads/[leadId]` a browser has
+   * bookmarked. Migration 0277 detached each sequence with `OWNED BY NONE` and
+   * pointed the map column's DEFAULT at it, so numbering continues from where
+   * the table left off instead of restarting and colliding with every id
+   * already issued. If a sequence had gone with its table, the next lead created
+   * would take an id somebody else's lead already has.
+   */
+  it("kept the sequences that mint the identifiers", async () => {
+    await withTenant(async (tx) => {
+      const rows = await tx.execute(sql`
+        SELECT c.relname::text AS name
+        FROM pg_class c
+        JOIN pg_namespace n ON n.oid = c.relnamespace
+        WHERE n.nspname = 'public'
+          AND c.relkind = 'S'
+          AND c.relname IN ('leads_id_seq', 'clients_id_seq', 'contacts_id_seq', 'crm_organizations_id_seq')
+      `);
+      expect([...rows].map((row) => (row as { name: string }).name).sort()).toEqual([
+        "clients_id_seq",
+        "contacts_id_seq",
+        "crm_organizations_id_seq",
+        "leads_id_seq",
+      ]);
     });
   });
 });

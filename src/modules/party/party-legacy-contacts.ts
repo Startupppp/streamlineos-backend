@@ -1,44 +1,56 @@
 import { and, eq, inArray, isNull } from "drizzle-orm";
-import { contactPartyMap } from "../../db/schema/party";
-import { contacts } from "../../db/schema/crm/contacts";
+import { businessParties, contactPartyMap } from "../../db/schema/party";
 import { CONTACT_MIRROR } from "./party-legacy-mirror";
+import type { PartyRow } from "./party-mirror-fields";
 import {
   applyPartyPatch,
   employerColumnOf,
-  grantRoles,
-  groupByPayload,
-  insertBareParties,
+  grantRole,
   insertBareParty,
+  mintLegacyId,
   movePartiesFor,
   type ContactInsert,
   type ContactRow,
   type MirrorDb,
   type MirrorWriteOptions,
 } from "./party-legacy-writer";
-import {
-  absorbEmployerColumn,
-  employerLegacyIds,
-  linkedPartyId,
-  partyIdsOfCrmOrgs,
-} from "./party-legacy-employer";
+import { absorbEmployerColumn } from "./party-legacy-employer";
 import {
   absorbLeadColumn,
   convertedFromColumnOf,
-  leadIdsOfParties,
-  partyIdsOfLeads,
   withoutSelfLinks,
 } from "./party-legacy-associations";
 
 /**
  * The `contacts` entry points, Party-first.
  *
- * Two columns skip the field map: `organization_id` is an integer
- * `crm_organizations` id against a party id and `lead_id` an integer `leads` id
- * against another, so both need a `*_party_map` read — which a `MirrorCell`
- * deliberately cannot do. They run through `party-legacy-employer.ts` and
- * `party-legacy-associations.ts` and nowhere else, and every path below reads
- * those maps ONCE per set. `deal_id` is not one: it is the same integer `deals`
- * id as `primary_deal_id`, so it stays a cell.
+ * Ticket 08's contract: none of these writes the `contacts` table any more. The
+ * row each of them used to insert or update was already **derived** from the
+ * Party -- `CONTACT_MIRROR.derive(party)` produced every mirrored column and the
+ * table only added the serial and its two timestamps. So the table contributed
+ * exactly one thing that mattered: the number. Migration 0277 moved the minting
+ * to `contact_party_map`, whose integer column defaults from the sequence
+ * `contacts` used to own, detached with `OWNED BY NONE` so `DROP TABLE` cannot
+ * take it. Numbering continues unbroken and a record keeps the name it had.
+ *
+ * The shape each function hands back is therefore assembled from the same
+ * derivation that would have been written, which is why this is not a behaviour
+ * change dressed as a refactor: the values are identical, and there is now only
+ * one copy of them.
+ *
+ * Two columns here do not go through the field map, and for one reason.
+ * `contacts.organization_id` is an integer `crm_organizations` id whose Party
+ * counterpart `employer_party_id` is a party id; `contacts.lead_id` is an integer
+ * `leads` id whose counterpart `converted_from_party_id` is a party id. Both
+ * translations need a `*_party_map` table and therefore a query — which a
+ * `MirrorCell` deliberately cannot do. They run through `party-legacy-employer.ts`
+ * and `party-legacy-associations.ts` on both sides of every write below, and
+ * nowhere else.
+ *
+ * `contacts.deal_id` is NOT one of them, despite looking like one: it and
+ * `primary_deal_id` are the same integer `deals` id, so it is an ordinary cell in
+ * `party-mirror-fields.ts` and arrives here through `split` and `derive` like
+ * every other column.
  */
 
 async function partyIdsForContacts(
@@ -58,64 +70,53 @@ async function partyIdsForContacts(
   return new Map(rows.map((row) => [row.contactId, row.partyId]));
 }
 
-const unresolvedEmployer = (id: number): string =>
-  `Organization ${id} has no party in this tenant; run the 0264 backfill before pointing an employer at it`;
-
-const unresolvedLead = (id: number): string =>
-  `Lead ${id} has no party in this tenant; run the 0241 backfill before converting from it`;
-
-async function adoptContacts(
+/**
+ * A contact row, assembled from the Party it mirrors.
+ *
+ * The mirrored values come from `CONTACT_MIRROR.derive` and nowhere else -- the
+ * same derivation that used to be handed to `insert(contacts)`. The two
+ * association columns are added by the same translations the insert used, for
+ * the reason recorded at the top of this file: they cross an id space, so they
+ * need a query and cannot be cells.
+ *
+ * Asynchronous for exactly that reason, and the one way this differs from
+ * `legacyLeadRow` in `party-legacy-leads.ts`. A lead's legacy-owned columns are
+ * all pass-through; a contact's two are resolved.
+ *
+ * `merged_into_id` is the only contact column with no Party source at all, and
+ * it defaults to null rather than being left absent: `CONTACT_PARTY_COLUMNS`
+ * already projects it as a literal `null::integer` on every read, because the
+ * merge that sets it sets `deleted_at` in the same breath and the party scope
+ * excludes deleted parties. Answering null here is what the read surface says,
+ * and it keeps the returned shape total. A caller that names it explicitly --
+ * the contact merge does -- still has its value carried through.
+ *
+ * The `??` arm narrows `Partial<ContactInsert>` to the NOT NULL shape; it does
+ * not decide it. The derivation is total over every column it owns, which the
+ * mirror spec asserts separately.
+ */
+async function legacyContactRow(
   db: MirrorDb,
+  contactId: number,
   organizationId: string,
-  contactIds: readonly number[],
-): Promise<Map<number, string>> {
-  const adopted = new Map<number, string>();
-  if (contactIds.length === 0) return adopted;
+  party: PartyRow,
+  legacyOwnedPatch: Partial<ContactInsert>,
+): Promise<ContactRow> {
+  const derived = CONTACT_MIRROR.derive(party);
 
-  const rows = await db
-    .select()
-    .from(contacts)
-    .where(and(eq(contacts.orgId, organizationId), inArray(contacts.id, [...contactIds])))
-    .limit(contactIds.length);
-  if (rows.length === 0) return adopted;
-
-  const employerIds = rows
-    .map((row) => row.organizationId)
-    .filter((id): id is number => id !== null);
-  const sourceLeadIds = rows.map((row) => row.leadId).filter((id): id is number => id !== null);
-  const partyByEmployer = await partyIdsOfCrmOrgs(db, organizationId, employerIds);
-  const partyByLead = await partyIdsOfLeads(db, organizationId, sourceLeadIds);
-
-  const partyIds = await insertBareParties(db, organizationId, rows.map((row) => row.name));
-  const legacyByParty = new Map(
-    rows.map((row, index): [string, ContactRow] => [partyIds[index], row]),
-  );
-
-  await movePartiesFor(db, organizationId, partyIds, (party) => {
-    const legacy = legacyByParty.get(party.partyId);
-    if (!legacy) return {};
-    return withoutSelfLinks(
-      {
-        ...CONTACT_MIRROR.split(legacy, party).partyPatch,
-        employerPartyId: linkedPartyId(partyByEmployer, legacy.organizationId, unresolvedEmployer),
-        convertedFromPartyId: linkedPartyId(partyByLead, legacy.leadId, unresolvedLead),
-      },
-      party.partyId,
-    );
-  });
-
-  const links = rows.map((row, index) => ({
-    organizationId,
-    contactId: row.id,
-    partyId: partyIds[index],
-    linkedBy: "mirror:adopt",
-  }));
-
-  await db.insert(contactPartyMap).values(links).onConflictDoNothing();
-  await grantRoles(db, organizationId, partyIds, "CONTACT", "mirror:adopt");
-
-  for (const link of links) adopted.set(link.contactId, link.partyId);
-  return adopted;
+  return {
+    mergedIntoId: null,
+    ...derived,
+    ...(await employerColumnOf(db, organizationId, party)),
+    ...(await convertedFromColumnOf(db, organizationId, party.convertedFromPartyId)),
+    ...legacyOwnedPatch,
+    id: contactId,
+    orgId: organizationId,
+    name: derived.name ?? party.name,
+    createdAt: party.createdAt,
+    updatedAt: party.updatedAt,
+    deletedAt: party.deletedAt,
+  } as ContactRow;
 }
 
 export async function createMirroredContact(
@@ -141,39 +142,33 @@ export async function createMirroredContact(
       ),
     );
 
-    const [row] = await tx
-      .insert(contacts)
-      .values({
-        orgId: organizationId,
-        name: party.name,
-        ...CONTACT_MIRROR.derive(party),
-        ...(await employerColumnOf(tx, organizationId, party)),
-        ...(await convertedFromColumnOf(tx, organizationId, party.convertedFromPartyId)),
-        ...legacyOwnedPatch,
-      })
-      .returning();
-    if (!row) throw new Error("Failed to mirror the party into contacts");
-
-    await tx.insert(contactPartyMap).values({
-      organizationId,
-      contactId: row.id,
-      partyId: party.partyId,
-      linkedBy: options.linkedBy ?? "mirror:create",
-    });
-    await grantRoles(
+    // The identifier comes from the map now, not from a `contacts` insert; see
+    // `mintLegacyId` and the note at the top of this file.
+    const contactId = await mintLegacyId(
       tx,
       organizationId,
-      [party.partyId],
+      party.partyId,
       "CONTACT",
       options.linkedBy ?? "mirror:create",
     );
-    return row;
+    await grantRole(
+      tx,
+      organizationId,
+      party.partyId,
+      "CONTACT",
+      options.linkedBy ?? "mirror:create",
+    );
+
+    return legacyContactRow(tx, contactId, organizationId, party, legacyOwnedPatch);
   });
 }
 
 /**
- * Many contacts, one transaction, still Party-first: the importer bisects a
- * failing chunk, so all of it lands or none of it does.
+ * Many contacts, one transaction, still Party-first.
+ *
+ * The importer inserts in chunks and bisects a failing chunk, so this has to
+ * behave the same way a plain `insert(...).values(rows)` did: all of it lands or
+ * none of it does.
  */
 export async function createMirroredContacts(
   db: MirrorDb,
@@ -200,11 +195,23 @@ export async function updateMirroredContacts(
   if (ids.length === 0) return [];
 
   return db.transaction(async (tx) => {
+    /*
+     * An id with no map row is an id that names nothing.
+     *
+     * There used to be an adoption pass here, for a legacy row that existed
+     * without a party -- the state the dual-write window could produce. Ticket
+     * 08 removed the table it read, and with it the state: the map row IS the
+     * record now, so no party for an id means the record does not exist, and
+     * the caller gets one fewer row back exactly as it always did for an id
+     * that was never real.
+     */
     const partyByContact = await partyIdsForContacts(tx, organizationId, ids);
-    const unadopted = ids.filter((contactId) => !partyByContact.has(contactId));
-    const adopted = await adoptContacts(tx, organizationId, unadopted);
-    for (const [contactId, partyId] of adopted) partyByContact.set(contactId, partyId);
 
+    /*
+     * Resolved once, outside the per-party derivation: which company the caller
+     * named is a property of the patch, not of whoever is being patched, and a
+     * bulk re-point of fifty contacts should read the map once.
+     */
     const employerPatch = await absorbEmployerColumn(tx, organizationId, patch.organizationId);
     const leadPatch = await absorbLeadColumn(tx, organizationId, patch.leadId);
 
@@ -219,44 +226,24 @@ export async function updateMirroredContacts(
         ),
     );
 
-    const movedParties = [...moved.values()];
-    const employerPartyIds = movedParties.map((party) => party.employerPartyId);
-    const employerLegacyByParty = await employerLegacyIds(tx, organizationId, employerPartyIds);
-    const sourcePartyIds = movedParties
-      .map((party) => party.convertedFromPartyId)
-      .filter((id): id is string => id !== null);
-    const leadIdBySource = await leadIdsOfParties(tx, organizationId, sourcePartyIds);
-
-    const derived: { id: number; payload: Partial<ContactInsert> }[] = [];
+    /*
+     * The legacy UPDATE that used to close this out is gone with the table, and
+     * with it the reason to group identical payloads: there is no statement left
+     * whose count depends on how many of them agree. What replaces it is the
+     * assembly, which is per contact because the identifier is -- one party can
+     * legitimately answer for several after a merge re-points a map row, and each
+     * of those contacts is still called what it was called.
+     */
+    const updated: ContactRow[] = [];
     for (const [contactId, partyId] of partyByContact) {
       const party = moved.get(partyId);
       if (!party) continue;
       // The pass-through half does not depend on the party, so it is the same
       // for every row; the derivation is not, and is computed per party.
       const { legacyOwnedPatch } = CONTACT_MIRROR.split(patch, party);
-      derived.push({
-        id: contactId,
-        payload: {
-          ...CONTACT_MIRROR.derive(party),
-          organizationId: party.employerPartyId
-            ? (employerLegacyByParty.get(party.employerPartyId) ?? null)
-            : null,
-          leadId: party.convertedFromPartyId
-            ? (leadIdBySource.get(party.convertedFromPartyId) ?? null)
-            : null,
-          ...legacyOwnedPatch,
-        },
-      });
-    }
-
-    const updated: ContactRow[] = [];
-    for (const group of groupByPayload(derived)) {
-      const rows = await tx
-        .update(contacts)
-        .set(group.payload)
-        .where(and(eq(contacts.orgId, organizationId), inArray(contacts.id, group.ids)))
-        .returning();
-      updated.push(...rows);
+      updated.push(
+        await legacyContactRow(tx, contactId, organizationId, party, legacyOwnedPatch),
+      );
     }
     return updated;
   });
@@ -280,11 +267,34 @@ export async function softDeleteMirroredContacts(
 ): Promise<ContactRow[]> {
   const ids = [...new Set(contactIds)].filter((id) => Number.isInteger(id));
   if (ids.length === 0) return [];
+  /**
+   * Liveness comes from the party. Ticket 08.
+   *
+   * This used to ask `contacts.deleted_at`, which was a mirror of
+   * `business_parties.deleted_at` -- the party has always been the one that
+   * decides. Asking it directly removes the last read of the table and changes
+   * no answer: the map is what says which party a contact id means.
+   *
+   * The filter is still here rather than dropped. Its purpose is unchanged: a
+   * contact already deleted must not have its timestamp moved by a second
+   * delete.
+   */
   const live = await db
-    .select({ id: contacts.id })
-    .from(contacts)
+    .select({ id: contactPartyMap.contactId })
+    .from(contactPartyMap)
+    .innerJoin(
+      businessParties,
+      and(
+        eq(businessParties.organizationId, contactPartyMap.organizationId),
+        eq(businessParties.partyId, contactPartyMap.partyId),
+      ),
+    )
     .where(
-      and(eq(contacts.orgId, organizationId), inArray(contacts.id, ids), isNull(contacts.deletedAt)),
+      and(
+        eq(contactPartyMap.organizationId, organizationId),
+        inArray(contactPartyMap.contactId, ids),
+        isNull(businessParties.deletedAt),
+      ),
     );
   return updateMirroredContacts(
     db,

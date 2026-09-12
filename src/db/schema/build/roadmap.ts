@@ -4,7 +4,6 @@ import { relations, sql } from "drizzle-orm";
 import { organizations, users } from "../common/auth";
 import { projects } from "./core";
 import { tickets } from "./tasks";
-import { contacts, crmOrganizations } from "../crm/contacts";
 
 export const roadmapStatusEnum = pgEnum("roadmap_status", ["planned", "in_progress", "completed", "cancelled"]);
 export const feedbackStatusEnum = pgEnum("feedback_status", ["open", "planned", "in_progress", "completed", "declined"]);
@@ -62,8 +61,8 @@ export const feedbackPosts = build.table("feedback_posts", {
   votes: integer("votes").default(0).notNull(),
   submittedByName: text("submitted_by_name"),
   submittedByEmail: text("submitted_by_email"),
-  crmContactId: integer("crm_contact_id").references(() => contacts.id, { onDelete: "set null" }),
-  crmOrganizationId: integer("crm_organization_id").references(() => crmOrganizations.id, { onDelete: "set null" }),
+  crmContactId: integer("crm_contact_id"),
+  crmOrganizationId: integer("crm_organization_id"),
   accountValueSnapshot: decimal("account_value_snapshot", { precision: 15, scale: 2 }),
   linkedRoadmapItemId: integer("linked_roadmap_item_id"),
   duplicateOfId: integer("duplicate_of_id"),
@@ -148,14 +147,6 @@ export const feedbackPostsRelations = relations(feedbackPosts, ({ one, many }) =
   linkedRoadmapItem: one(roadmapItems, {
     fields: [feedbackPosts.linkedRoadmapItemId],
     references: [roadmapItems.id],
-  }),
-  crmContact: one(contacts, {
-    fields: [feedbackPosts.crmContactId],
-    references: [contacts.id],
-  }),
-  crmOrganization: one(crmOrganizations, {
-    fields: [feedbackPosts.crmOrganizationId],
-    references: [crmOrganizations.id],
   }),
   postVotes: many(feedbackVotes),
 }));

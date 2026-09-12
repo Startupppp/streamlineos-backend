@@ -21,6 +21,7 @@ import {
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
 import { BodylessAction, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import {
   listWebhooksResponseSchema,
   webhookResponseSchema,
@@ -50,6 +51,7 @@ export class InvWebhooksController {
   @ResponseSchema(webhookResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:webhooks:manage")
+  @Idempotent("inventory.webhook.create")
   @Validate({ body: createWebhookSchema })
   create(
     @Body() body: CreateWebhookInput,

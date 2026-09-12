@@ -2,7 +2,6 @@ import { ForbiddenException, Inject, Injectable, NotFoundException } from "@nest
 import { and, asc, eq, ilike, or, sql } from "drizzle-orm";
 import {
   supportMacros,
-  supportRoutingRules,
   supportTickets,
   supportAgentSkills,
   supportAgentAvailability,
@@ -14,6 +13,15 @@ import {
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { appUrl } from "../../email/app-url";
+import {
+  applyRoutingRules,
+  createRoutingRule,
+  deleteRoutingRule,
+  listRoutingRules,
+  updateRoutingRule,
+  type RoutableTicket,
+  type RoutingOutcome,
+} from "./lib/support-routing";
 import type {
   ApplyMacroInput,
   CreateMacroInput,
@@ -22,14 +30,19 @@ import type {
   UpdateMacroInput,
   UpdateRoutingRuleInput,
 } from "./dto/support.schemas";
-import { resolveAssignmentModeAgent } from "./support-macros-assignment";
-import {
-  matchesRoutingCondition,
-  type RoutableTicket,
-  type RoutingOutcome,
-} from "./support-macros-routing";
 import { isTicketPriority, isTicketStatus } from "./support-ticket-routing";
 
+export type { RoutableTicket, RoutingOutcome } from "./lib/support-routing";
+
+/**
+ * Macros (canned agent replies) and the support agent roster that routing
+ * draws its candidates from — skills, availability and the VIP client list.
+ *
+ * The routing rules themselves, and the engine that picks an assignee, live
+ * in `lib/support-routing.ts`; the five members below are thin delegates
+ * kept because `SupportTicketsService` and `SupportSlaService` inject this
+ * service, not the lib.
+ */
 @Injectable()
 export class SupportMacrosService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
@@ -205,124 +218,25 @@ export class SupportMacrosService {
   }
 
   listRoutingRules(orgId: string) {
-    return this.db.query.supportRoutingRules.findMany({
-      where: eq(supportRoutingRules.orgId, orgId),
-      orderBy: [asc(supportRoutingRules.sortOrder), asc(supportRoutingRules.id)],
-      limit: 100,
-    });
+    return listRoutingRules(this.db, orgId);
   }
 
-  async createRoutingRule(orgId: string, userId: string, input: CreateRoutingRuleInput) {
-    const [rule] = await this.db
-      .insert(supportRoutingRules)
-      .values({
-        orgId,
-        name: input.name,
-        conditions: input.conditions,
-        assigneeMembershipId: input.assigneeId
-          ? (await this.db.query.organizationMembers.findFirst({
-              where: and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.userId, input.assigneeId), eq(organizationMembers.status, "ACTIVE")),
-              columns: { id: true },
-            }))?.id ?? null
-          : null,
-        setPriority: input.setPriority ?? null,
-        assignmentMode: input.assignmentMode,
-        candidateAgentIds: input.candidateAgentIds,
-        requiredSkills: input.requiredSkills,
-        isEnabled: input.isEnabled,
-        sortOrder: input.sortOrder,
-        createdBy: userId,
-      })
-      .returning();
-    return rule;
+  createRoutingRule(orgId: string, userId: string, input: CreateRoutingRuleInput) {
+    return createRoutingRule(this.db, orgId, userId, input);
   }
 
-  async updateRoutingRule(orgId: string, ruleId: number, input: UpdateRoutingRuleInput) {
-    const { assigneeId, ...rest } = input;
-    const [updated] = await this.db
-      .update(supportRoutingRules)
-      .set({
-        ...rest,
-        ...(assigneeId !== undefined
-          ? {
-              assigneeMembershipId: assigneeId
-                ? (await this.db.query.organizationMembers.findFirst({
-                    where: and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.userId, assigneeId), eq(organizationMembers.status, "ACTIVE")),
-                    columns: { id: true },
-                  }))?.id ?? null
-                : null,
-            }
-          : {}),
-        updatedAt: new Date(),
-      })
-      .where(and(eq(supportRoutingRules.id, ruleId), eq(supportRoutingRules.orgId, orgId)))
-      .returning();
-
-    if (!updated) throw new NotFoundException("Routing rule not found");
-    return updated;
+  updateRoutingRule(orgId: string, ruleId: number, input: UpdateRoutingRuleInput) {
+    return updateRoutingRule(this.db, orgId, ruleId, input);
   }
 
-  async deleteRoutingRule(orgId: string, ruleId: number) {
-    const [deleted] = await this.db
-      .delete(supportRoutingRules)
-      .where(and(eq(supportRoutingRules.id, ruleId), eq(supportRoutingRules.orgId, orgId)))
-      .returning();
-
-    if (!deleted) throw new NotFoundException("Routing rule not found");
-    return { success: true };
+  deleteRoutingRule(orgId: string, ruleId: number) {
+    return deleteRoutingRule(this.db, orgId, ruleId);
   }
 
-  async applyRoutingRules(orgId: string, ticket: RoutableTicket): Promise<RoutingOutcome> {
-    const rules = await this.db.query.supportRoutingRules.findMany({
-      where: and(eq(supportRoutingRules.orgId, orgId), eq(supportRoutingRules.isEnabled, true)),
-      orderBy: [asc(supportRoutingRules.sortOrder), asc(supportRoutingRules.id)],
-    });
-
-    for (const rule of rules) {
-      const conditions = Array.isArray(rule.conditions) ? rule.conditions : [];
-      if (conditions.length === 0) continue;
-
-      const allMatch = conditions.every((condition) => matchesRoutingCondition(ticket, condition));
-      if (!allMatch) continue;
-
-      const outcome: RoutingOutcome = {};
-      const candidates = Array.isArray(rule.candidateAgentIds) ? rule.candidateAgentIds : [];
-      const requiredSkills = Array.isArray(rule.requiredSkills) ? rule.requiredSkills : [];
-
-      if (rule.assignmentMode !== "static" && candidates.length > 0) {
-        outcome.assigneeId = await resolveAssignmentModeAgent(
-          this.db,
-          orgId,
-          rule.assignmentMode,
-          candidates,
-          requiredSkills,
-        );
-      } else if (rule.assigneeMembershipId) {
-        const member = await this.db.query.organizationMembers.findFirst({
-          where: and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.id, rule.assigneeMembershipId)),
-          columns: { userId: true },
-        });
-        if (member) outcome.assigneeId = member.userId;
-      }
-
-      if (rule.setPriority) outcome.setPriority = rule.setPriority;
-      return outcome;
-    }
-
-    return {};
+  applyRoutingRules(orgId: string, ticket: RoutableTicket): Promise<RoutingOutcome> {
+    return applyRoutingRules(this.db, orgId, ticket);
   }
 
-  /**
-   * Filters candidates down to those who have EVERY skill in requiredSkills.
-   * Falls back to the full candidate list (rather than returning nothing) if
-   * no candidate qualifies — a misconfigured skill requirement shouldn't
-   * leave a ticket unassigned.
-   */
-  /**
-   * Filters candidates down to those currently marked available (no row =
-   * available by default). Falls back to the full candidate list if nobody
-   * is available — better to assign someone than leave the ticket unassigned.
-   */
   async setAgentSkills(orgId: string, userId: string, skills: string[]) {
     const membershipId = await this.resolveActiveMembershipId(orgId, userId);
     await this.db.transaction(async (tx) => {
@@ -412,5 +326,4 @@ export class SupportMacrosService {
     });
     return Boolean(row);
   }
-
 }

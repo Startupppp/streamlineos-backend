@@ -7,9 +7,28 @@ import { TenantContextInterceptor } from "../tenant-context.interceptor";
 import { TenantContextService, type TenantContext } from "../tenant-context";
 import { runInNewTenantTransaction } from "../run-in-tenant-transaction";
 
-jest.mock("../run-in-tenant-transaction", () => ({
-  runInNewTenantTransaction: jest.fn(),
-}));
+// The interceptor no longer opens each hook's transaction itself: it hands the list to
+// `drainAfterCommitHooks`. The double re-states only what these assertions watch — one transaction
+// per hook, scoped to the request org, and a hook failure that never reaches the handler result.
+jest.mock("../run-in-tenant-transaction", () => {
+  const runInNewTenantTransaction = jest.fn();
+  return {
+    runInNewTenantTransaction,
+    drainAfterCommitHooks: (
+      db: unknown,
+      orgId: string,
+      hooks: readonly (() => Promise<void>)[],
+    ): void => {
+      for (const hook of hooks) {
+        void Promise.resolve(
+          runInNewTenantTransaction(db, orgId, async () => {
+            await hook();
+          }),
+        ).catch(() => undefined);
+      }
+    },
+  };
+});
 
 type MockDb = { transaction: jest.Mock };
 type MockTenant = { run: jest.Mock; current: jest.Mock };

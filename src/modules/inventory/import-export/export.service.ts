@@ -3,7 +3,7 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { CacheService } from "../../../common/cache/cache.service";
 import { CACHE_KEYS, CACHE_TTL } from "../../../common/cache/cache-keys";
-import { eq, and, desc, sql } from "drizzle-orm";
+import { eq, and, desc, isNull, sql } from "drizzle-orm";
 import { invExportJobs, invStockLevels, invStockTransactions, invProducts, invProductVariants, invLots } from "../../../db/schema";
 import { toCsv } from "./csv.util";
 import type { ExportType, CreateExportJobInput, ListJobsQueryInput } from "./dto/import-export.schemas";
@@ -17,6 +17,40 @@ const EXPORT_HEADERS: Record<ExportType, string[]> = {
   reorder: ["info"],
   valuation: ["id", "orgId", "productVariantId", "locationId", "onHand", "committed", "onOrder", "blockedQty", "qualityHoldQty"],
 };
+
+/**
+ * What an export job looks like on the wire, in one place.
+ *
+ * `createExportJob` used to `return { ...result, resultUrl: undefined }` — the
+ * whole ORM row, with one column blanked. Three things were wrong with that and
+ * only the third was visible. It returns a raw ORM row, which §1 forbids
+ * outright. It leaks whatever columns the table gains later, silently, because
+ * a spread has no opinion about new keys — `createdByMembershipId` is already
+ * along for the ride. And `resultUrl` on this table is not a URL: it holds the
+ * entire CSV **body**, so the blanking was load-bearing and rested on nobody
+ * ever writing `{ ...result }` again.
+ *
+ * `list` beside it already selected exactly these twelve columns, which is the
+ * shape the frontend's `ExportJob` interface describes. Naming the projection
+ * once is what stops the two answers to "what is an export job" from drifting
+ * apart again — and `resultUrl` cannot be included by accident, because
+ * including it means typing it.
+ */
+const EXPORT_JOB_FIELDS = {
+  id: invExportJobs.id,
+  orgId: invExportJobs.orgId,
+  jobType: invExportJobs.jobType,
+  status: invExportJobs.status,
+  fileName: invExportJobs.fileName,
+  totalRows: invExportJobs.totalRows,
+  processedRows: invExportJobs.processedRows,
+  errorRows: invExportJobs.errorRows,
+  errors: invExportJobs.errors,
+  createdBy: invExportJobs.createdBy,
+  createdByMembershipId: invExportJobs.createdByMembershipId,
+  createdAt: invExportJobs.createdAt,
+  updatedAt: invExportJobs.updatedAt,
+} as const;
 
 @Injectable()
 export class ExportService {
@@ -38,7 +72,7 @@ export class ExportService {
         errors: null,
         createdBy: userId,
       })
-      .returning();
+      .returning(EXPORT_JOB_FIELDS);
 
     if (!job) throw new BadRequestException("Failed to create export job");
 
@@ -62,12 +96,11 @@ export class ExportService {
         errors: jobErrors,
       })
       .where(and(eq(invExportJobs.id, job.id), eq(invExportJobs.orgId, orgId)))
-      .returning();
+      .returning(EXPORT_JOB_FIELDS);
 
     await this.cache.invalidateNamespace(CACHE_KEYS.invExportJobsNamespace(orgId));
 
-    const result = updated ?? job;
-    return { ...result, resultUrl: undefined };
+    return updated ?? job;
   }
 
   private async fetchExportRows(orgId: string, exportType: ExportType): Promise<unknown[]> {
@@ -82,7 +115,16 @@ export class ExportService {
         })
         .from(invProductVariants)
         .innerJoin(invProducts, eq(invProductVariants.productId, invProducts.id))
-        .where(eq(invProducts.orgId, orgId))
+        // Both tables are soft-deleted and both carry a partial index predicated
+        // on `deleted_at IS NULL`, so without this the export both re-published
+        // products the organisation had deleted and could not use either index.
+        .where(
+          and(
+            eq(invProducts.orgId, orgId),
+            isNull(invProducts.deletedAt),
+            isNull(invProductVariants.deletedAt),
+          ),
+        )
         .limit(10000);
     }
 
@@ -146,19 +188,7 @@ export class ExportService {
     return this.cache.cachedVersioned(CACHE_KEYS.invExportJobsNamespace(orgId), hash, async () => {
       const rows = await this.db
         .select({
-          id: invExportJobs.id,
-          orgId: invExportJobs.orgId,
-          jobType: invExportJobs.jobType,
-          status: invExportJobs.status,
-          fileName: invExportJobs.fileName,
-          totalRows: invExportJobs.totalRows,
-          processedRows: invExportJobs.processedRows,
-          errorRows: invExportJobs.errorRows,
-          errors: invExportJobs.errors,
-          createdBy: invExportJobs.createdBy,
-          createdByMembershipId: invExportJobs.createdByMembershipId,
-          createdAt: invExportJobs.createdAt,
-          updatedAt: invExportJobs.updatedAt,
+          ...EXPORT_JOB_FIELDS,
           windowTotal: sql<string>`count(*) OVER ()`,
         })
         .from(invExportJobs)
@@ -189,18 +219,7 @@ export class ExportService {
   async findOne(orgId: string, jobId: number) {
     const jobs = await this.db
       .select({
-        id: invExportJobs.id,
-        orgId: invExportJobs.orgId,
-        jobType: invExportJobs.jobType,
-        status: invExportJobs.status,
-        fileName: invExportJobs.fileName,
-        totalRows: invExportJobs.totalRows,
-        processedRows: invExportJobs.processedRows,
-        errorRows: invExportJobs.errorRows,
-        errors: invExportJobs.errors,
-        createdBy: invExportJobs.createdBy,
-        createdAt: invExportJobs.createdAt,
-        updatedAt: invExportJobs.updatedAt,
+        ...EXPORT_JOB_FIELDS,
       })
       .from(invExportJobs)
       .where(and(eq(invExportJobs.id, jobId), eq(invExportJobs.orgId, orgId)))

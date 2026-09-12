@@ -14,6 +14,7 @@ import { PayrollJobsController } from "./jobs/jobs.controller";
 import { PayrollJobsWorkerService } from "./jobs/payroll-jobs-worker.service";
 import { DirectoryModule } from "../directory/directory.module";
 import { EmploymentFactsModule } from "../directory/employment-facts.module";
+import { PayrollTimesheetHandoffModule } from "./timesheet-handoff/payroll-timesheet-handoff.module";
 
 @Module({
   imports: [
@@ -24,6 +25,7 @@ import { EmploymentFactsModule } from "../directory/employment-facts.module";
     PayrollInsightsModule,
     PayrollEntitiesModule,
     DirectoryModule,
+    PayrollTimesheetHandoffModule,
   ],
   controllers: [PayrollEntitiesController, PayrollFilingsController, PayrollJobsController],
   providers: [

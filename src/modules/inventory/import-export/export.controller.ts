@@ -24,6 +24,7 @@ import {
   listExportJobsResponseSchema,
 } from "./dto/import-export-response.schemas";
 import { z } from "zod";
+import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 
 const jobIdParams = z.object({ jobId: z.coerce.number().int().positive() }).strict();
 
@@ -37,6 +38,7 @@ export class ExportController {
   @ResponseSchema(createExportJobResponseSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:export")
+  @Idempotent("inventory.export.job.create")
   @Validate({ body: createExportJobSchema })
   createJob(
     @Body() body: CreateExportJobInput,

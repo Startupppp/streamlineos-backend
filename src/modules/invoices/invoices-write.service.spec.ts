@@ -3,8 +3,7 @@ import { InvoicesWriteService } from "./invoices-write.service";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { AuditService } from "../../common/audit/audit.service";
 import { CacheService } from "../../common/cache/cache.service";
-import { CACHE_KEYS } from "../../common/cache/cache-keys";
-import { JournalPostingService } from "../accounting/posting/journal-posting.service";
+import { InvoicesPostingService } from "./invoices-posting.service";
 import { InvoicesLifecycleService } from "./invoices-lifecycle.service";
 import { InvoicesUpdateService } from "./invoices-update.service";
 import { InvoicesPaymentService } from "./invoices-payment.service";
@@ -80,8 +79,9 @@ describe("InvoicesWriteService — cache invalidation", () => {
           findFirst: jest.fn().mockResolvedValue(null),
           findMany: jest.fn().mockResolvedValue([]),
         },
+        // createInvoice resolves the supplier's state code for the GST split.
         organizations: {
-          findFirst: jest.fn().mockResolvedValue(undefined),
+          findFirst: jest.fn().mockResolvedValue({ address: null }),
         },
       },
       select: jest.fn().mockReturnValue({
@@ -104,16 +104,14 @@ describe("InvoicesWriteService — cache invalidation", () => {
     };
 
     const mockPosting = {
-      seedChartOfAccountsForOrg: jest.fn().mockResolvedValue(undefined),
-      gstSplit: jest.fn().mockReturnValue({ cgst: 0, sgst: 0, igst: 0 }),
-      postInvoiceSend: jest.fn().mockResolvedValue(undefined),
+      postInvoiceIssued: jest.fn().mockResolvedValue(null),
     };
 
     const module = await Test.createTestingModule({
       providers: [
         InvoicesWriteService,
         { provide: DRIZZLE, useValue: mockDb },
-        { provide: JournalPostingService, useValue: mockPosting },
+        { provide: InvoicesPostingService, useValue: mockPosting },
         { provide: InvoicesLifecycleService, useValue: mockLifecycle },
         { provide: AuditService, useValue: { log: jest.fn() } },
         { provide: PlanLimitsService, useValue: { assertWithinLimit: jest.fn().mockResolvedValue(undefined) } },
@@ -127,33 +125,35 @@ describe("InvoicesWriteService — cache invalidation", () => {
   });
 
   describe("createInvoice", () => {
-    it("bumps all four fin namespaces after the transaction commits", async () => {
+    it("bumps the invoices:list namespace after the transaction commits", async () => {
       await service.createInvoice(ORG, USER, makeCreateInput());
-      const keys = mockCache.invalidateNamespace.mock.calls.map((c: unknown[]) => c[0]);
-      expect(keys).toContain(CACHE_KEYS.finReportsNamespace(ORG));
-      expect(keys).toContain(CACHE_KEYS.finTaxDashboardNamespace(ORG));
-      expect(keys).toContain(CACHE_KEYS.finTaxReportsNamespace(ORG));
-      expect(keys).toContain(CACHE_KEYS.finForecastNamespace(ORG));
+      expect(mockCache.invalidateNamespaceForOrg).toHaveBeenCalledWith(ORG, "invoices:list");
     });
 
-    it("uses the same key functions the readers use (key construction parity)", async () => {
+    /**
+     * These three cases asserted four `fin:*` bumps until 2026-09-12, and one of
+     * them was named "key construction parity" with the readers. There were no
+     * readers: `modules/finance/reports/` — every `cachedVersioned` call on
+     * `fin:reports`, `fin:tax-dashboard`, `fin:tax-reports` and `fin:forecast` —
+     * was absorbed by the accounting rewrite. The spec agreed with the defect
+     * and would have failed the removal of four pointless Redis INCRs.
+     *
+     * So the assertion now runs the other way: nothing may bump a namespace with
+     * no reader. Asserting the absence is what keeps a merge from reinstating
+     * them, which is exactly how they arrived.
+     */
+    it("bumps no namespace whose readers the accounting rewrite removed", async () => {
       await service.createInvoice(ORG, USER, makeCreateInput());
-      const invalidatedKeys = mockCache.invalidateNamespace.mock.calls.map((c: unknown[]) => c[0]);
-      expect(invalidatedKeys).toContain(`fin:reports:${ORG}`);
-      expect(invalidatedKeys).toContain(`fin:tax-dashboard:${ORG}`);
-      expect(invalidatedKeys).toContain(`fin:tax-reports:${ORG}`);
-      expect(invalidatedKeys).toContain(`fin:forecast:${ORG}`);
+      const keys = mockCache.invalidateNamespace.mock.calls.map((c: unknown[]) => c[0]);
+      expect(keys).toHaveLength(0);
     });
   });
 
   describe("updateInvoice", () => {
-    it("bumps all four fin namespaces after the delegate commits", async () => {
+    it("bumps invoices:list, and no reader-less namespace, after the delegate commits", async () => {
       await service.updateInvoice(ORG, USER, 1, { status: "ISSUED" } as never);
-      const keys = mockCache.invalidateNamespace.mock.calls.map((c: unknown[]) => c[0]);
-      expect(keys).toContain(CACHE_KEYS.finReportsNamespace(ORG));
-      expect(keys).toContain(CACHE_KEYS.finTaxDashboardNamespace(ORG));
-      expect(keys).toContain(CACHE_KEYS.finTaxReportsNamespace(ORG));
-      expect(keys).toContain(CACHE_KEYS.finForecastNamespace(ORG));
+      expect(mockCache.invalidateNamespaceForOrg).toHaveBeenCalledWith(ORG, "invoices:list");
+      expect(mockCache.invalidateNamespace.mock.calls).toHaveLength(0);
     });
 
     it("returns the delegate result unchanged", async () => {
@@ -164,13 +164,10 @@ describe("InvoicesWriteService — cache invalidation", () => {
   });
 
   describe("voidInvoice", () => {
-    it("bumps all four fin namespaces after the delegate commits", async () => {
+    it("bumps invoices:list, and no reader-less namespace, after the delegate commits", async () => {
       await service.voidInvoice(ORG, USER, 1);
-      const keys = mockCache.invalidateNamespace.mock.calls.map((c: unknown[]) => c[0]);
-      expect(keys).toContain(CACHE_KEYS.finReportsNamespace(ORG));
-      expect(keys).toContain(CACHE_KEYS.finTaxDashboardNamespace(ORG));
-      expect(keys).toContain(CACHE_KEYS.finTaxReportsNamespace(ORG));
-      expect(keys).toContain(CACHE_KEYS.finForecastNamespace(ORG));
+      expect(mockCache.invalidateNamespaceForOrg).toHaveBeenCalledWith(ORG, "invoices:list");
+      expect(mockCache.invalidateNamespace.mock.calls).toHaveLength(0);
     });
 
     it("returns the delegate result unchanged", async () => {

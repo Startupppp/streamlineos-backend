@@ -3,8 +3,9 @@
  * holding an email address, a telephone number or a WhatsApp number has an
  * identifier row for it.
  *
- * Run via `pnpm test:db-specs`. The default hermetic jest config ignores this file.
- *   DATABASE_URL=... npx jest --config jest-db.json --runInBand --testPathPattern="party-identifiers.db"
+ * Runs whenever DATABASE_URL is present and skips loudly by name when it is
+ * not. Run with:
+ *   DATABASE_URL=... pnpm test:db --testPathPattern="party-identifiers.db"
  *
  * Totality is the one property a mocked database cannot demonstrate — a fake
  * answers whatever it was told to answer, so a backfill whose anti-join is
@@ -25,39 +26,26 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
-import { requireApprovedDatabaseUrl } from "../../test/db-spec-guard";
-import postgres from "postgres";
+import type postgres from "postgres";
 import { normaliseIdentifier, type IdentifierKind } from "../ingress/inbound-event";
+import { dbSpecClient, dbSpecSuite, dbSpecUrl } from "../../test/db-spec-gate";
+import { ensureCrmFixtureOrg } from "../../test/db-spec-crm-fixture";
 
-const migration = (name: string): string =>
-  readFileSync(join(__dirname, "..", "..", "..", "migrations", name), "utf8");
+const describeDb = dbSpecSuite();
 
-/** Thrown to roll the transaction back once the assertions have run. */
-class Rollback extends Error {}
-
+/** The SQLSTATE a driver error carries, or null for anything that is not one. */
 function sqlStateOf(error: unknown): string | null {
   if (typeof error !== "object" || error === null || !("code" in error)) return null;
   const code = error.code;
   return typeof code === "string" ? code : null;
 }
 
-function connect() {
-  // DATABASE_URL, not APP_DATABASE_URL: applying the migration needs DDL rights
-  // the RLS-enforced application role does not have.
-  const raw = requireApprovedDatabaseUrl({
-    spec: "party-identifiers.db.spec.ts",
-    vars: ["DATABASE_URL"],
-  });
-  const url = new URL(raw);
-  url.searchParams.delete("channel_binding");
-  return postgres(url.toString(), {
-    prepare: false,
-    max: 2,
-    ssl: "require",
-    connect_timeout: 30,
-    onnotice: () => {},
-  });
-}
+/** Read on demand: the default hermetic run loads this file only to skip it. */
+const migration = (name: string): string =>
+  readFileSync(join(__dirname, "..", "..", "..", "migrations", name), "utf8");
+
+/** Thrown to roll the transaction back once the assertions have run. */
+class Rollback extends Error {}
 
 /**
  * The same telephone line and the same address, written the way real records
@@ -78,7 +66,7 @@ const FORMATS: { kind: IdentifierKind; written: string }[] = [
   { kind: "whatsapp", written: "0044 7700 900123" },
 ];
 
-describe("party identifiers — real database", () => {
+describeDb("party identifiers — real database", () => {
   // Every test here drops party_identifiers and re-runs the backfill across the
   // tenant's whole business_parties table, which `withBackfill` already declares
   // may take up to 60s (`SET LOCAL statement_timeout`). Jest's unstated 5s default
@@ -89,10 +77,14 @@ describe("party identifiers — real database", () => {
 
   let sql: ReturnType<typeof postgres>;
   let backfill: string;
+  let fixtureOrgId: string;
 
-  beforeAll(() => {
-    sql = connect();
+  beforeAll(async () => {
+    // DATABASE_URL, not APP_DATABASE_URL: applying the migration needs DDL
+    // rights the RLS-enforced application role does not have.
+    sql = dbSpecClient(dbSpecUrl("DATABASE_URL"), { max: 2 });
     backfill = migration("0260_party_identifiers.sql");
+    fixtureOrgId = (await ensureCrmFixtureOrg(sql)).orgId;
   });
 
   afterAll(async () => {
@@ -107,6 +99,12 @@ describe("party identifiers — real database", () => {
    * 0260 has been applied for real — `CREATE TABLE IF NOT EXISTS` would survive,
    * but `ADD CONSTRAINT` would not, and a test that only passes on a database
    * where the migration is pending stops being run the week it lands.
+   *
+   * Every insert names `party_id` explicitly. `business_parties.party_id` is
+   * `text NOT NULL` with no database default — the identifier comes from
+   * Drizzle's `$defaultFn(() => randomUUID())`, which is client-side and so
+   * does nothing for the raw SQL here. These fixtures omitted it and every one
+   * of them failed on the not-null constraint the first time this file was run.
    */
   async function withBackfill<T>(
     body: (tx: postgres.TransactionSql, orgId: string, marker: string) => Promise<T>,
@@ -117,17 +115,15 @@ describe("party identifiers — real database", () => {
         await tx.unsafe("SET LOCAL statement_timeout = '60s'").simple();
         await tx.unsafe('DROP TABLE IF EXISTS "party_identifiers" CASCADE').simple();
 
-        const [org] = await tx`SELECT id FROM organizations LIMIT 1`;
-        if (!org)
-          throw new Error("party-identifiers.db.spec.ts requires at least one seeded organization");
-        const orgId = org.id as string;
+        const orgId = fixtureOrgId;
         const marker = randomUUID().slice(0, 8);
 
         for (const [index, format] of FORMATS.entries()) {
           const column =
             format.kind === "email" ? "email" : format.kind === "phone" ? "phone" : "whatsapp_phone";
           await tx.unsafe(
-            `INSERT INTO business_parties (party_id, organization_id, name, ${column}) VALUES (gen_random_uuid()::text, $1, $2, $3)`,
+            `INSERT INTO business_parties (party_id, organization_id, name, ${column})
+             VALUES (gen_random_uuid()::text, $1, $2, $3)`,
             [orgId, `fixture ${marker} ${String(index)}`, format.written],
           );
         }
@@ -136,7 +132,8 @@ describe("party identifiers — real database", () => {
         // otherwise poison that address for everybody, permanently.
         await tx`
           INSERT INTO business_parties (party_id, organization_id, name, email, deleted_at)
-          VALUES (gen_random_uuid()::text, ${orgId}, ${`deleted ${marker}`}, ${`deleted-${marker}@example.test`}, now())`;
+          VALUES (gen_random_uuid()::text, ${orgId}, ${`deleted ${marker}`},
+                  ${`deleted-${marker}@example.test`}, now())`;
 
         // Two records for one line. Exactly one of them may hold the claim.
         await tx`

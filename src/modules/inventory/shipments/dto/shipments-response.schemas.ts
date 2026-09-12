@@ -2,6 +2,13 @@ import { z } from "zod";
 import { wireDate } from "../../../../common/openapi/wire-types";
 import { itemsPagedSchema } from "../../../../common/openapi/response-envelopes";
 
+/**
+ * INV-26 widened this, and what it deliberately does NOT carry is the point:
+ * `api_credential_encrypted` and `webhook_secret_encrypted` have no field here
+ * and no field in `CARRIER_COLUMNS`, so the strongest statement this API can
+ * make about a courier key is that one exists and ends in four known
+ * characters.
+ */
 export const invCarrierSchema = z.object({
   id: z.number().int(),
   orgId: z.string(),
@@ -9,6 +16,15 @@ export const invCarrierSchema = z.object({
   code: z.string(),
   trackingUrlTemplate: z.string().nullable(),
   isActive: z.boolean(),
+  /** Which registered adapter speaks for this carrier; null means nobody. */
+  transport: z.string().nullable(),
+  apiBaseUrl: z.string().nullable(),
+  /** "****3f9a". Never enough to reconstruct the key. */
+  apiCredentialHint: z.string().nullable(),
+  webhookSecretSet: z.boolean(),
+  /** The last callback that failed verification — a visible failure state. */
+  webhookLastFailureAt: wireDate().nullable(),
+  webhookFailureReason: z.string().nullable(),
   createdAt: wireDate(),
   updatedAt: wireDate(),
 });
@@ -110,3 +126,109 @@ export const invLoadSchema = z.object({
 export const listLoadsResponseSchema = itemsPagedSchema(invLoadSchema);
 
 export const getLoadResponseSchema = invLoadSchema;
+
+/**
+ * INV-207 — a carrier event, folded in.
+ *
+ * `recorded` says the event was stored; `advanced` says it moved the shipment.
+ * The two are separate because a carrier routinely sends OUT_FOR_DELIVERY after
+ * DELIVERED, and that event is kept and ignored rather than applied.
+ */
+export const recordCarrierStatusResponseSchema = z.object({
+  recorded: z.boolean(),
+  advanced: z.boolean(),
+  status: z.string(),
+});
+
+export const shipmentTimelineResponseSchema = z.object({
+  shipment: z.object({
+    id: z.number().int(),
+    status: z.string(),
+    trackingNumber: z.string().nullable(),
+  }),
+  events: z.array(
+    z.object({
+      id: z.number().int(),
+      status: z.string(),
+      occurredAt: wireDate(),
+      receivedAt: wireDate(),
+      description: z.string().nullable(),
+    }),
+  ),
+});
+
+/**
+ * B7 — asking the carrier where the parcel is. It answers rather than throws:
+ * `polled: false` is the manual adapter's normal reply, and an unreachable
+ * courier is a dead letter rather than a failed request.
+ */
+export const refreshTrackingResponseSchema = z.object({
+  shipmentId: z.number().int(),
+  carrier: z.string(),
+  polled: z.boolean(),
+  /** Events the carrier returned that we had not already recorded. */
+  recorded: z.number().int(),
+  status: z.string(),
+  deadLettered: z.boolean(),
+  error: z.string().optional(),
+});
+
+/**
+ * INV-206 — advisory carton selection. A volumetric and longest-edge check, not
+ * three-dimensional packing, so `recommended` is null whenever nothing fits or
+ * too much is unmeasured to say.
+ */
+const cartonCandidateSchema = z.object({
+  cartonTypeId: z.number().int(),
+  code: z.string(),
+  name: z.string(),
+  capacityWeightGrams: z.number().int(),
+  capacityVolumeMm3: z.number().int(),
+  fits: z.boolean(),
+  /** Why not, when it does not. */
+  reasons: z.array(z.string()),
+});
+
+export const suggestCartonResponseSchema = z.object({
+  totalWeightGrams: z.number(),
+  totalVolumeMm3: z.number(),
+  /** Any of these and the totals above are lower bounds, not the real thing. */
+  unmeasuredVariantIds: z.array(z.number().int()),
+  recommended: cartonCandidateSchema.nullable(),
+  candidates: z.array(cartonCandidateSchema),
+});
+
+/** B6 — the queue the packing bench reads, off the cartons and the picks. */
+export const packingQueueResponseSchema = itemsPagedSchema(
+  z.object({
+    soId: z.number().int(),
+    soNumber: z.string(),
+    status: z.string(),
+    orderDate: z.string(),
+    warehouseId: z.number().int().nullable(),
+    customerName: z.string().nullable(),
+    pickedQuantity: z.string(),
+    packedQuantity: z.string(),
+    packageCount: z.number().int(),
+    openPackageCount: z.number().int(),
+    openPackageId: z.number().int().nullable(),
+    fullyPacked: z.boolean(),
+  }),
+);
+
+/**
+ * What came off the shelf, what went in the boxes, and what is left. `soId` is
+ * null when the carton is not packing a sales order, and the three lists are
+ * then empty because there is nothing to reconcile against.
+ */
+const reconciliationLineSchema = z.object({
+  productVariantId: z.number().int(),
+  quantity: z.string(),
+});
+
+export const packageReconciliationResponseSchema = z.object({
+  soId: z.number().int().nullable(),
+  picked: z.array(reconciliationLineSchema),
+  packed: z.array(reconciliationLineSchema),
+  outstanding: z.array(reconciliationLineSchema),
+});

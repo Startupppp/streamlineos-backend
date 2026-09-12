@@ -21,9 +21,12 @@ jest.mock("../../../../common/rbac/access-invalidate", () => ({
 // A mock that resolves undefined causes resolveCurrentSetupTarget to fail when it destructures
 // the returned Promise.all 2-tuple.
 jest.mock("../../../../common/tenant/with-identity", () => ({
-  withIdentity: jest.fn().mockImplementation(
-    (_db: unknown, _userId: string, fn: (tx: unknown) => Promise<unknown>) => fn(_db),
-  ),
+  withIdentity: jest
+    .fn()
+    .mockImplementation(
+      (_db: unknown, _userId: string, fn: (tx: unknown) => Promise<unknown>) =>
+        fn(_db),
+    ),
 }));
 
 function ownerActor(orgId = "org-1"): CurrentUserContext {
@@ -52,15 +55,17 @@ function buildDb() {
 
   const makeInsert = () =>
     jest.fn().mockImplementation((table: unknown) => ({
-      values: jest.fn().mockImplementation((rows: InsertedRow | InsertedRow[]) => {
-        inserted.push({ table, rows: Array.isArray(rows) ? rows : [rows] });
-        return {
-          onConflictDoUpdate: jest.fn().mockResolvedValue(undefined),
-          onConflictDoNothing: jest
-            .fn()
-            .mockReturnValue({ returning: jest.fn().mockResolvedValue([]) }),
-        };
-      }),
+      values: jest
+        .fn()
+        .mockImplementation((rows: InsertedRow | InsertedRow[]) => {
+          inserted.push({ table, rows: Array.isArray(rows) ? rows : [rows] });
+          return {
+            onConflictDoUpdate: jest.fn().mockResolvedValue(undefined),
+            onConflictDoNothing: jest
+              .fn()
+              .mockReturnValue({ returning: jest.fn().mockResolvedValue([]) }),
+          };
+        }),
     }));
 
   // `claimOnboardingStamp` reads `.returning()` off the same chain the plain `users` update
@@ -76,30 +81,38 @@ function buildDb() {
   const where = jest.fn().mockReturnValue({ limit });
   const from = jest.fn().mockReturnValue({
     where,
-    then: (resolve: (rows: typeof CATALOG_ROWS) => unknown) => resolve(CATALOG_ROWS),
+    then: (resolve: (rows: typeof CATALOG_ROWS) => unknown) =>
+      resolve(CATALOG_ROWS),
   });
   const select = jest.fn().mockReturnValue({ from });
+
+  const query = {
+    organizations: {
+      findFirst: jest.fn().mockResolvedValue({ id: "org-1", name: "Acme" }),
+    },
+    organizationMembers: {
+      findFirst: jest
+        .fn()
+        .mockResolvedValue({ status: "ACTIVE", isOwner: true }),
+    },
+  };
 
   const tx = {
     execute: jest.fn().mockResolvedValue(undefined),
     insert: makeInsert(),
     update,
     select,
+    query,
   };
 
   const db = {
-    query: {
-      organizations: {
-        findFirst: jest.fn().mockResolvedValue({ id: "org-1", name: "Acme" }),
-      },
-      organizationMembers: {
-        findFirst: jest.fn().mockResolvedValue({ status: "ACTIVE", isOwner: true }),
-      },
-    },
+    query,
     insert: makeInsert(),
     transaction: jest
       .fn()
-      .mockImplementation(async (fn: (t: typeof tx) => Promise<unknown>) => fn(tx)),
+      .mockImplementation(async (fn: (t: typeof tx) => Promise<unknown>) =>
+        fn(tx),
+      ),
   };
 
   return { db, inserted, tx };
@@ -122,7 +135,10 @@ async function buildService(
       },
       {
         provide: AccountOrganizationIndexService,
-        useValue: { activate: jest.fn().mockResolvedValue({ status: "activated" }), refreshForUser: jest.fn() },
+        useValue: {
+          activate: jest.fn().mockResolvedValue({ status: "activated" }),
+          refreshForUser: jest.fn(),
+        },
       },
       { provide: DRIZZLE, useValue: db },
       { provide: AuditService, useValue: { log: jest.fn() } },
@@ -256,7 +272,8 @@ describe("org setup post-provisioning is durable, not fire-and-forget", () => {
   describe("the consumer that performs the work", () => {
     it("is registered as a provider of OrgModule, or its onModuleInit never runs", async () => {
       const { OrgModule } = await import("../org.module");
-      const providers = (Reflect.getMetadata("providers", OrgModule) as unknown[]) ?? [];
+      const providers =
+        (Reflect.getMetadata("providers", OrgModule) as unknown[]) ?? [];
       expect(providers).toContain(OrgSetupCompletedConsumerService);
     });
 

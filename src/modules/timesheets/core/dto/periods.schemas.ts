@@ -1,11 +1,10 @@
 import { z } from "zod";
 import { pageSizeField } from "../../../../common/pagination/list-query.schema";
+import { timesheetPeriodStatusSchema } from "./status.schemas";
 
 export const periodsQuerySchema = z.object({
   userId: z.string().optional(),
-  status: z
-    .enum(["OPEN", "DRAFT", "SUBMITTED", "APPROVED", "REJECTED", "LOCKED"])
-    .optional(),
+  status: timesheetPeriodStatusSchema.optional(),
   limit: pageSizeField(20),
 }).strict();
 export type PeriodsQuery = z.infer<typeof periodsQuerySchema>;

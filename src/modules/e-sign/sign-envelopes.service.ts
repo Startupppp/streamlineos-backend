@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   Inject,
   Injectable,
@@ -28,10 +29,14 @@ import {
   type EnvelopeValidationResult,
 } from "./sign-envelope-validation.service";
 import { SignEnvelopeSweepsService } from "./sign-envelope-sweeps.service";
-import { SignEnvelopeDispatchService } from "./sign-envelope-dispatch.service";
+import { SignEnvelopeDispatchService, type InvitationDelivery } from "./sign-envelope-dispatch.service";
+import { SignSettingsService } from "./sign-settings.service";
+import { SignTemplatesService } from "./sign-templates.service";
+import { SignWatermarkService } from "./sign-watermark.service";
 import {
   canTransitionEnvelope,
   isEnvelopeEditable,
+  isEnvelopeSignable,
   isEnvelopeTerminal,
   type SignEnvelopeStatus,
 } from "./sign-state";
@@ -44,6 +49,7 @@ import type {
   ExtendExpirationInput,
 } from "./dto/e-sign.schemas";
 import type { RequestActorContext } from "../../common/audit/actor-context";
+import { registerAfterCommit } from "../../common/tenant/tenant-context";
 
 export type { EnvelopeValidationResult };
 
@@ -63,10 +69,38 @@ export class SignEnvelopesService {
     private readonly validation: SignEnvelopeValidationService,
     private readonly sweeps: SignEnvelopeSweepsService,
     private readonly dispatch: SignEnvelopeDispatchService,
+    private readonly settings: SignSettingsService,
+    private readonly templates: SignTemplatesService,
+    private readonly watermarks: SignWatermarkService,
   ) {}
+
+  /**
+   * The two ids an envelope may point at, read back under the caller's
+   * organisation before they are written. Both columns carry composite tenant
+   * foreign keys, so another organisation's id — or none — was refused by the
+   * database, as a 23503 the caller saw as a 500. Read through the owning
+   * services, a missing target and an out-of-tenant one answer the same 404.
+   */
+  private async assertReferencesInOrg(
+    orgId: string,
+    input: { templateId?: number; watermarkPolicyId?: number },
+  ): Promise<void> {
+    if (input.templateId !== undefined) await this.templates.get(orgId, input.templateId);
+    if (input.watermarkPolicyId !== undefined) await this.watermarks.get(orgId, input.watermarkPolicyId);
+  }
 
   async create(orgId: string, senderMembershipId: number | null, input: CreateEnvelopeInput) {
     await this.planLimits.assertWithinLimit(orgId, "signEnvelopes");
+    await this.assertReferencesInOrg(orgId, input);
+
+    /**
+     * SIGN-P2-03. The three reminder cadence settings were written by the
+     * settings API and read by nothing — an organisation that set "first
+     * reminder after 7 days, repeat weekly, at most twice" got 3/3/5 on every
+     * envelope. That was invisible while the sweep was wired to no scheduler;
+     * since SIGN-P0-01 the sweep actually fires, on the wrong cadence.
+     */
+    const orgSettings = await this.settings.getOrCreate(orgId);
 
     const [envelope] = await this.db
       .insert(signEnvelopes)
@@ -86,9 +120,10 @@ export class SignEnvelopesService {
         senderMembershipId,
         expiresAt: input.expiresAt ? new Date(input.expiresAt) : undefined,
         reminderEnabled: input.reminderEnabled,
-        reminderFirstAfterDays: input.reminderFirstAfterDays,
-        reminderRepeatDays: input.reminderRepeatDays,
-        reminderMaxCount: input.reminderMaxCount,
+        reminderFirstAfterDays:
+          input.reminderFirstAfterDays ?? orgSettings.defaultReminderFirstAfterDays,
+        reminderRepeatDays: input.reminderRepeatDays ?? orgSettings.defaultReminderRepeatDays,
+        reminderMaxCount: input.reminderMaxCount ?? orgSettings.defaultReminderMaxCount,
         metadataJson: input.metadataJson ?? {},
       })
       .returning();
@@ -115,6 +150,7 @@ export class SignEnvelopesService {
         "Only draft envelopes can be edited directly",
       );
     }
+    await this.assertReferencesInOrg(orgId, input);
 
     const [updated] = await this.db
       .update(signEnvelopes)
@@ -250,8 +286,13 @@ export class SignEnvelopesService {
     return this.validation.validate(orgId, envelopeId);
   }
 
-  send(orgId: string, envelopeId: number, actor: RequestActorContext) {
-    return this.dispatch.send(orgId, envelopeId, actor);
+  send(
+    orgId: string,
+    envelopeId: number,
+    actor: RequestActorContext,
+    delivery: InvitationDelivery = "after_commit",
+  ) {
+    return this.dispatch.send(orgId, envelopeId, actor, delivery);
   }
 
   async voidEnvelope(
@@ -298,16 +339,25 @@ export class SignEnvelopesService {
       null,
       envelopeId,
     );
-    for (const r of recipientRows) {
-      if (r.email && r.status !== "completed") {
-        await this.notifications.sendVoidedToRecipient(
-          r.email,
-          r.name,
-          envelope.title,
-          input.reason,
-        );
+    /*
+     * The inner `transaction` above is a savepoint inside the request's
+     * transaction, so "after it returns" is still before anything is durable.
+     * A voided notice that goes out and is then rolled back tells every
+     * recipient about a void that never happened; it waits for the commit.
+     */
+    const notifyRecipients = async () => {
+      for (const r of recipientRows) {
+        if (r.email && r.status !== "completed") {
+          await this.notifications.sendVoidedToRecipient(
+            r.email,
+            r.name,
+            envelope.title,
+            input.reason,
+          );
+        }
       }
-    }
+    };
+    if (!registerAfterCommit(notifyRecipients)) await notifyRecipients();
 
     await this.audit.record({
       orgId,
@@ -340,13 +390,29 @@ export class SignEnvelopesService {
       );
     }
 
+    /*
+     * Each patched recipient must belong to THIS envelope. `recipients.update`
+     * is org-bound only, so without this a `sign:envelope:correct` holder could
+     * reach any recipient in the organisation through any envelope's correct
+     * route, and the audit row would land on the wrong envelope. Out of
+     * envelope reads as not found, the same answer a foreign id gets.
+     */
     for (const patch of input.recipients ?? []) {
-      await this.recipients.update(
+      const current = await this.recipients.get(orgId, patch.id);
+      if (current.envelopeId !== envelopeId) throw new NotFoundException("Recipient not found");
+      const updated = await this.recipients.update(
         orgId,
         patch.id,
         { name: patch.name, email: patch.email, phone: patch.phone },
         actor,
       );
+      if (patch.email !== undefined && patch.email !== current.email && updated.email)
+        await this.dispatch.reinviteCorrectedRecipient(
+          orgId,
+          envelopeId,
+          { ...updated, email: updated.email },
+          actor,
+        );
     }
 
     await this.audit.record({
@@ -378,8 +444,18 @@ export class SignEnvelopesService {
     if (newExpiresAt.getTime() <= Date.now())
       throw new BadRequestException("New expiration must be in the future");
 
-    const nextStatus: SignEnvelopeStatus =
-      envelope.status === "expired" ? "sent" : envelope.status;
+    /*
+     * Only an envelope that can still be signed, or one that expired and can
+     * be reopened, has an expiry to move. A completed or voided envelope is
+     * closed history; a declined one waits on a correction, not a date.
+     */
+    const reopening = envelope.status === "expired";
+    if (!reopening && !isEnvelopeSignable(envelope.status) && !isEnvelopeEditable(envelope.status))
+      throw new ConflictException(`A ${envelope.status} envelope's expiration cannot be extended`);
+    if (reopening && !canTransitionEnvelope(envelope.status, "sent"))
+      throw new ConflictException("This envelope cannot be reopened");
+
+    const nextStatus: SignEnvelopeStatus = reopening ? "sent" : envelope.status;
 
     await this.db
       .update(signRecipients)
@@ -395,7 +471,7 @@ export class SignEnvelopesService {
     const [updated] = await this.db
       .update(signEnvelopes)
       .set({ expiresAt: newExpiresAt, status: nextStatus })
-      .where(eq(signEnvelopes.id, envelopeId))
+      .where(and(eq(signEnvelopes.id, envelopeId), eq(signEnvelopes.orgId, orgId)))
       .returning();
 
     await this.audit.record({
@@ -408,6 +484,9 @@ export class SignEnvelopesService {
       ipAddress: actor.ipAddress,
       userAgent: actor.userAgent,
     });
+
+    /* The sweep revoked their tokens with the expiry; the reopened envelope needs them back. */
+    if (reopening) await this.dispatch.reviveExpiredRecipients(orgId, envelopeId, newExpiresAt, actor);
 
     return updated;
   }

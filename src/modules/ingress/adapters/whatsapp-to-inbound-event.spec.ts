@@ -13,6 +13,7 @@ import {
   validateInboundEvent,
 } from "../inbound-event";
 import { MAX_ATTACHMENT_BYTES } from "./attachment-capture";
+import { inboundEventSchema } from "../dto/inbound-event.schemas";
 import {
   FIXTURE_BUSINESS_NUMBER,
   FIXTURE_CUSTOMER_NAME,
@@ -256,6 +257,67 @@ describe("refusals", () => {
       ok: false,
       reason: "empty",
     });
+  });
+});
+
+/**
+ * The body cap, which nothing asserted.
+ *
+ * `bodyOf` truncates to the same 100,000 characters the seam's own wire schema
+ * enforces, so an in-process caller cannot hand the pipeline a body the wire
+ * contract would reject — the adapter is reachable directly, not only through a
+ * webhook, and a relay is not bound by Meta's own message-length limit.
+ *
+ * Deleting the `.slice(0, MAX_BODY_CHARS)` left all twenty-one ingress suites
+ * green, so the bound was inert as far as the tests were concerned.
+ *
+ * Note where the real limit lives: `validateInboundEvent` does NOT check body
+ * length — it checks structure — so an oversized body passes it. The cap is on
+ * `inboundEventSchema`, the wire contract, which is why the second case asserts
+ * against that rather than against a number copied into this file. Both halves
+ * are needed: the first would still pass if somebody changed the constant, and
+ * the second would still pass if somebody removed the truncation but the wire
+ * limit were also raised.
+ */
+describe("the body cap", () => {
+  const LIMIT = 100_000;
+  const oversized = "x".repeat(LIMIT + 500);
+
+  it("truncates a body longer than the seam accepts", () => {
+    const result = whatsAppToInboundEvent(message({ text: oversized }), context);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.event.body).toHaveLength(LIMIT);
+  });
+
+  it("produces an event the seam's wire contract still accepts, which is the point", () => {
+    const result = whatsAppToInboundEvent(message({ text: oversized }), context);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(inboundEventSchema.safeParse(result.event).success).toBe(true);
+    // Control: without the truncation this is what the seam would have said.
+    expect(inboundEventSchema.safeParse({ ...result.event, body: oversized }).success).toBe(false);
+  });
+
+  it("caps a caption the same way, since a caption is the body", () => {
+    const result = whatsAppToInboundEvent(
+      message({
+        type: "image",
+        text: null,
+        media: { id: "media-cap", mimeType: "image/jpeg", caption: oversized },
+      }),
+      context,
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.event.body).toHaveLength(LIMIT);
+  });
+
+  it("leaves an ordinary body exactly as the sender wrote it", () => {
+    const result = whatsAppToInboundEvent(message({ text: "Can you resend the quote?" }), context);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.event.body).toBe("Can you resend the quote?");
   });
 });
 

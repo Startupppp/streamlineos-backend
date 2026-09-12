@@ -14,17 +14,8 @@ import {
 } from "../../../db/schema";
 import { PaymentProviderResolver } from "./payment-provider-resolver.service";
 import { PaymentAnalyticsService } from "./payment-analytics.service";
-import { ProviderBridgeService } from "../../finance/controls/provider-bridge.service";
 import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
 import { normalizedPaymentWebhookEventSchema, rawEntitySchema } from "./dto/webhook.schemas";
-import { minorUnitsToDecimalString } from "./currency-minor-units";
-
-/**
- * Used only when a payload reaches the bridge with no currency string at all. The schema
- * requires one, so this is the defensive branch for an entity `extractPaymentEntity` picked
- * out of an undeclared payload key rather than an expected shape.
- */
-const FALLBACK_PROVIDER_CURRENCY = "INR";
 
 function redactPayload(
   payload: Record<string, unknown>,
@@ -53,7 +44,6 @@ export class PaymentWebhookReceiverService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly providers: PaymentProviderResolver,
     private readonly paymentAnalytics: PaymentAnalyticsService,
-    private readonly providerBridge: ProviderBridgeService,
   ) {}
 
   async recordSignatureFailure(
@@ -288,71 +278,16 @@ export class PaymentWebhookReceiverService {
       return { status: 200, body: { ok: true, duplicate: true } };
     }
 
-    try {
-      const paymentEntity = this.extractPaymentEntity(neutral.data.payload);
-      if (
-        paymentEntity &&
-        normalized.eventType.includes("payment") &&
-        typeof paymentEntity.amount === "number"
-      ) {
-        /*
-         * The provider reports MINOR UNITS of its OWN currency, and how many minor units
-         * make a major one is a property of that currency — 0 for JPY/KRW/VND, 3 for
-         * KWD/BHD/JOD, 2 for the rest. So the currency has to be resolved BEFORE the
-         * amount can be scaled. Dividing by a constant 100 recorded a ¥100,000 capture as
-         * ¥1,000 and posted it to the general ledger.
-         */
-        const currency =
-          typeof paymentEntity.currency === "string"
-            ? paymentEntity.currency.trim().toUpperCase()
-            : FALLBACK_PROVIDER_CURRENCY;
-        await this.providerBridge.recordProviderPayment(
-          params.orgId,
-          "system",
-          {
-            provider: params.providerKey,
-            providerEventId: providerEventId,
-            // MAJOR units of `currency` as a decimal string — the ledger's carrier type.
-            // Integer/string arithmetic only: no double ever holds the amount.
-            grossAmount: minorUnitsToDecimalString(paymentEntity.amount, currency),
-            feeAmount: minorUnitsToDecimalString(
-              typeof paymentEntity.fee === "number" ? paymentEntity.fee : 0,
-              currency,
-            ),
-            currency,
-            occurredAt:
-              typeof paymentEntity.createdAt === "number"
-                ? new Date(paymentEntity.createdAt * 1000)
-                : new Date(),
-          },
-        );
-      }
-    } catch (err: unknown) {
-      // The event is already recorded, so a retry would short-circuit as a duplicate and never
-      // re-run the bridge. Mark the row failed instead so the webhook health surface shows it.
-      const message = err instanceof Error ? err.message : String(err);
-      this.logger.error("Finance bridge did not record the provider payment", {
-        orgId: params.orgId,
-        providerKey: params.providerKey,
-        providerEventId,
-        cause: message,
-      });
-      await runInTenantTransaction(
-        this.db,
-        async (tx) => {
-          await tx
-            .update(paymentWebhookEvents)
-            .set({ processingStatus: "failed", errorMessage: message.slice(0, 1000) })
-            .where(
-              and(
-                eq(paymentWebhookEvents.orgId, params.orgId),
-                eq(paymentWebhookEvents.id, inserted.id),
-              ),
-            );
-        },
-        { orgId: params.orgId },
-      );
-    }
+    /*
+      Provider payments are not posted to the ledger here.
+
+      This called `ProviderBridgeService.recordProviderPayment`, which lived in
+      `modules/finance/controls` — a module the accounting rewrite replaced with
+      the `gl_*` kernel, and the kernel does not expose an equivalent seam yet.
+      Webhook health, signature checking and idempotency are unaffected; what is
+      missing is the journal entry, and inventing one against a posting API that
+      is not settled would be worse than the gap.
+    */
 
     return { status: 200, body: { ok: true } };
   }

@@ -49,6 +49,8 @@ interface Recorder {
   readonly updateWhere: unknown[];
   readonly deleteWhere: unknown[];
   readonly inserted: unknown[];
+  /** What every UPDATE … RETURNING answers: the rows the predicate matched. */
+  updateReturning: { id: number }[];
 }
 
 /**
@@ -58,7 +60,13 @@ interface Recorder {
  * no-write-on-miss assertions be real.
  */
 function makeDb(selectResults: unknown[][]): { db: Db; rec: Recorder } {
-  const rec: Recorder = { selectWhere: [], updateWhere: [], deleteWhere: [], inserted: [] };
+  const rec: Recorder = {
+    selectWhere: [],
+    updateWhere: [],
+    deleteWhere: [],
+    inserted: [],
+    updateReturning: [{ id: OWNED_ID }],
+  };
   const queue = [...selectResults];
   const nextRows = (): unknown[] => queue.shift() ?? [];
 
@@ -90,7 +98,7 @@ function makeDb(selectResults: unknown[][]): { db: Db; rec: Recorder } {
         where: (where: unknown) => {
           rec.updateWhere.push(where);
           return Object.assign(Promise.resolve(undefined), {
-            returning: () => Promise.resolve([{ id: OWNED_ID }]),
+            returning: () => Promise.resolve(rec.updateReturning),
           });
         },
       }),
@@ -330,6 +338,8 @@ describe("BOLA probe — timesheet bulk approvals refuse a mixed-tenant period l
       [],
       [],
     ]);
+    /* The status-predicated UPDATE reports the rows it flipped; both are still SUBMITTED. */
+    rec.updateReturning = [{ id: OWNED_ID }, { id: 12 }];
     await expect(bulk.bulkApprove(actor, { periodIds: [OWNED_ID, 12] })).resolves.toEqual({
       approved: 2,
       skipped: 0,

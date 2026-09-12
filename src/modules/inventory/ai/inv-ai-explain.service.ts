@@ -1,46 +1,38 @@
 import { Inject, Injectable, NotFoundException, ServiceUnavailableException } from "@nestjs/common";
 import { and, eq } from "drizzle-orm";
-import { z } from "zod";
 import { invAiInsights } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import { AiGatewayService } from "../../ai/core/gateway/ai-gateway.service";
-import { AiConfirmationService } from "../../ai/confirmation/ai-confirmation.service";
-import { InvReplenishmentService } from "../replenishment/inv-replenishment.service";
-import { InvVendorsService } from "../vendors/inv-vendors.service";
+import {
+  VendorScorecardService,
+  type VendorScorecard,
+} from "../vendors/vendor-scorecard.service";
+import { InvAiService, type InventoryOpsBrief } from "./inv-ai.service";
+import { readEvidence } from "./lib/inv-ai-read-evidence";
+import {
+  INV_AI_CONTRACT_VERSION,
+  invAiNarrativeResponseSchema,
+} from "./dto/inv-ai-contract";
+import {
+  buildNarrationSystemPrompt,
+  buildSystemPrompt,
+  referencesFrom,
+  toNarration,
+  type InsightNarration,
+} from "./inv-ai-narration";
+
+/**
+ * F4. The narration helpers and the restraint rules moved to
+ * `inv-ai-narration.ts` when the reorder proposal became its own service
+ * (`proposals/inv-ai-proposal.service.ts`). Re-exported here because they are
+ * this service's response type and callers already import them from it.
+ */
+export type { ExplainFactor, InsightNarration } from "./inv-ai-narration";
 
 const FEATURE_KEY = "inv.insight-explain" as const;
-const REORDER_FEATURE_KEY = "inv.reorder-explain" as const;
 const DELAY_FEATURE_KEY = "inv.supplier-delay-briefing" as const;
-
-const ExplainFactorSchema = z.object({
-  label: z.string(),
-  value: z.string(),
-  isFactual: z.boolean(),
-});
-
-const ExplainResponseSchema = z.object({
-  explanation: z.string(),
-  factors: z.array(ExplainFactorSchema),
-  suggestedActions: z.array(z.string()),
-});
-
-export type ExplainFactor = z.infer<typeof ExplainFactorSchema>;
-export type ExplainResponse = z.infer<typeof ExplainResponseSchema>;
-
-const ReorderSuggestionPayloadSchema = z.object({
-  productVariantId: z.number(),
-  suggestedQty: z.number(),
-  vendorId: z.number().nullable(),
-  warehouseId: z.number().nullable(),
-});
-
-export interface InsightNarration {
-  explanation: string;
-  factors: ExplainFactor[];
-  suggestedActions: string[];
-  evidenceSnapshot: Record<string, unknown>;
-}
+const OPS_BRIEF_FEATURE_KEY = "inv.ops-brief" as const;
 
 interface DigestGroup {
   insightType: string;
@@ -55,43 +47,26 @@ export interface InventoryDigest {
   narration?: string;
 }
 
-export interface ReorderProposalResult {
-  evidence: Record<string, unknown>;
-  explanation: ExplainResponse;
-  proposal: { proposalId: number; token: string; expiresAt: Date };
-}
-
-interface VendorPerformance {
-  vendorId: number;
-  onTimeRate: number;
-  fillRate: number;
-  avgLeadTimeDays: number;
-  returnRate: number;
-  openPoCount: number;
-  totalSpend: string;
-}
-
 export interface SupplierDelayBriefingResult {
   vendors: Array<{
     vendorId: number;
     vendorName: string;
     insightCount: number;
     insights: Array<{ id: number; title: string; body: string; severity: string }>;
-    performance: VendorPerformance;
+    performance: VendorScorecard;
   }>;
   narration: string;
   generatedAt: Date;
 }
 
-function buildSystemPrompt(): string {
+function buildOpsBriefUserPrompt(brief: InventoryOpsBrief): string {
+  const lines = brief.signals
+    .filter((signal) => signal.count > 0)
+    .map((signal) => `- ${signal.label}: ${signal.count} (worst severity ${signal.severity})`);
   return [
-    "You are an inventory operations analyst. Your only job is to narrate and explain pre-computed evidence.",
-    "CRITICAL RULES you must never violate:",
-    "1. You MUST NOT compute, invent, or derive any numbers. Every quantity, value, date, and percentage is provided to you.",
-    "2. You MUST NOT contradict the evidence. Reference the exact figures given.",
-    "3. Your explanation narrates WHY these computed facts are operationally significant.",
-    "4. isFactual=true means the fact comes directly from the evidence data. isFactual=false means it is your operational suggestion.",
-    "5. Keep explanations concise (2-4 sentences). SuggestedActions should be actionable steps (2-4 items).",
+    "These counts were computed by the inventory engine. Do not recompute or adjust them.",
+    ...lines,
+    "Write a short operational brief explaining which of these deserves attention first and why.",
   ].join("\n");
 }
 
@@ -124,18 +99,7 @@ function buildDigestUserPrompt(groups: DigestGroup[]): string {
   ].join("\n");
 }
 
-function buildReorderUserPrompt(evidence: Record<string, unknown>): string {
-  return [
-    "Reorder proposal evidence (all numbers are pre-computed — do not modify or re-derive them):",
-    JSON.stringify(evidence, null, 2),
-    "",
-    "Explain why this reorder is operationally necessary based on the evidence above.",
-    "Extract factual quantities/dates/thresholds as factors (isFactual: true). Add procurement suggestions as factors (isFactual: false).",
-    "Return valid JSON: { explanation: string, factors: [{label, value, isFactual}], suggestedActions: string[] }",
-  ].join("\n");
-}
-
-function buildDelayBriefingUserPrompt(vendors: Array<{ vendorId: number; vendorName: string; insightCount: number; performance: VendorPerformance }>): string {
+function buildDelayBriefingUserPrompt(vendors: Array<{ vendorId: number; vendorName: string; insightCount: number; performance: VendorScorecard }>): string {
   return [
     "Supplier delay briefing — all performance figures are pre-computed (do not invent or modify any numbers):",
     JSON.stringify(vendors, null, 2),
@@ -147,13 +111,105 @@ function buildDelayBriefingUserPrompt(vendors: Array<{ vendorId: number; vendorN
 
 @Injectable()
 export class InvAiExplainService {
+  /**
+   * F4. `AiConfirmationService`, `InvReplenishmentService` and `AccessService`
+   * left with the reorder proposal — it is `InvAiProposalService`'s now, and
+   * this service no longer proposes, confirms or asserts anything. What remains
+   * reads insights and narrates them.
+   */
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly gateway: AiGatewayService,
-    private readonly confirmation: AiConfirmationService,
-    private readonly replenishment: InvReplenishmentService,
-    private readonly vendors: InvVendorsService,
+    private readonly scorecards: VendorScorecardService,
+    private readonly insights: InvAiService,
   ) {}
+
+  /**
+   * INV-101. The deterministic half, passed straight through so the controller
+   * stays thin and the card has one place to ask.
+   */
+  getOpsBrief(orgId: string): Promise<InventoryOpsBrief> {
+    return this.insights.getOpsBrief(orgId);
+  }
+
+  /**
+   * The paid half, and only on request. `charge: true` means a human asked for
+   * this; nothing on this path runs because a page rendered.
+   */
+  async narrateOpsBrief(
+    orgId: string,
+    userId: string,
+  ): Promise<{ brief: InventoryOpsBrief; narration: InsightNarration }> {
+    /*
+     * The only database access on this path, in a short tenant transaction that
+     * COMMITS before the gateway call below. The route is
+     * `@NoTenantTransaction()`, so this opens a real transaction rather than
+     * reusing an ambient one; `getOpsBrief` reads RLS-protected inventory
+     * tables and would be refused on a bare pool connection. Everything after
+     * it is projection over an aggregate already in memory.
+     */
+    const brief = await readEvidence(this.db, orgId, () => this.insights.getOpsBrief(orgId));
+
+    if (brief.totalSignals === 0) {
+      // Short-circuit before the provider. Paying a model to write "nothing is
+      // wrong" is money for a sentence we can write ourselves, and the gateway
+      // rules say to stop before the call when there is no eligible context.
+      return {
+        brief,
+        narration: {
+          status: "ok",
+          explanation: "No open inventory signals.",
+          factors: [],
+          actions: [],
+          evidenceSnapshot: { ...brief },
+          provenance: {
+            contractVersion: INV_AI_CONTRACT_VERSION,
+            promptKey: "inv.ops-brief",
+            promptVersion: 1,
+            model: "none",
+            correlationId: "not-invoked",
+          },
+        },
+      };
+    }
+
+    const result = await this.gateway.invokeStructured({
+      actor: { orgId, userId },
+      feature: OPS_BRIEF_FEATURE_KEY,
+      tier: "fast",
+      maxTokens: 512,
+      charge: true,
+      redact: false,
+      schema: invAiNarrativeResponseSchema,
+      prompt: {
+        system: buildSystemPrompt(),
+        user: buildOpsBriefUserPrompt(brief),
+        promptKey: "inv.ops-brief",
+        promptVersion: 1,
+      },
+    });
+
+    if (!result.ok) throw new ServiceUnavailableException(result.message);
+
+    return {
+      brief,
+      // The brief is an aggregate, so there are no row ids to cite and the
+      // allowlist is empty. A model that invents one is refused by the same
+      // path that refuses one anywhere else.
+      narration: toNarration(
+        result.data,
+        [],
+        { ...brief },
+        {
+          contractVersion: INV_AI_CONTRACT_VERSION,
+          promptKey: "inv.ops-brief",
+          promptVersion: 1,
+          model: result.model,
+          correlationId: result.correlationId,
+        },
+      ),
+    };
+  }
 
   async explainInsight(orgId: string, userId: string, insightId: number): Promise<InsightNarration> {
     const insight = await this.db.query.invAiInsights.findFirst({
@@ -171,7 +227,7 @@ export class InvAiExplainService {
       maxTokens: 512,
       charge: true,
       redact: false,
-      schema: ExplainResponseSchema,
+      schema: invAiNarrativeResponseSchema,
       prompt: {
         system: buildSystemPrompt(),
         user: buildInsightUserPrompt({
@@ -190,11 +246,24 @@ export class InvAiExplainService {
       throw new ServiceUnavailableException(result.message);
     }
 
-    return {
-      explanation: result.data.explanation,
-      factors: result.data.factors,
-      suggestedActions: result.data.suggestedActions,
-      evidenceSnapshot: {
+    // The allowlist is the rows this method actually read. Anything else the
+    // model cites is invented, however plausible the number looks.
+    // These are the keys `collectCandidates` actually writes into sourceRefs --
+    // `variantId`, not `productVariantId`. Guessing the name here would have
+    // produced an empty allowlist, which rejects every citation as invented and
+    // fails every explain call.
+    const allowed = referencesFrom([
+      ["insight", insight.id],
+      ["product_variant", sourceRefs["variantId"]],
+      ["vendor", sourceRefs["vendorId"]],
+      ["lot", sourceRefs["lotId"]],
+      ["purchase_order", sourceRefs["poId"]],
+    ]);
+
+    return toNarration(
+      result.data,
+      allowed,
+      {
         insightId: insight.id,
         insightType: insight.insightType,
         severity: insight.severity,
@@ -203,7 +272,14 @@ export class InvAiExplainService {
         sourceRefs,
         createdAt: insight.createdAt,
       },
-    };
+      {
+        contractVersion: INV_AI_CONTRACT_VERSION,
+        promptKey: "inv.insight-explain",
+        promptVersion: 1,
+        model: result.model,
+        correlationId: result.correlationId,
+      },
+    );
   }
 
   async getDigest(orgId: string, userId: string, narrate: boolean): Promise<InventoryDigest> {
@@ -239,7 +315,7 @@ export class InvAiExplainService {
         charge: true,
         redact: false,
         prompt: {
-          system: buildSystemPrompt(),
+          system: buildNarrationSystemPrompt(),
           user: buildDigestUserPrompt(groups),
           promptKey: "inv.digest-narrate",
           promptVersion: 1,
@@ -251,104 +327,6 @@ export class InvAiExplainService {
     }
 
     return digest;
-  }
-
-  async getReorderProposal(
-    orgId: string,
-    userId: string,
-    variantId: number,
-    warehouseId?: number,
-  ): Promise<ReorderProposalResult> {
-    const suggestion = await this.replenishment.getSuggestionForVariant(orgId, variantId, warehouseId);
-
-    if (!suggestion) {
-      throw new NotFoundException("No reorder suggestion found for this variant — it may not be below the reorder threshold");
-    }
-
-    const evidence: Record<string, unknown> = {
-      productVariantId: suggestion.productVariantId,
-      variantSku: suggestion.variantSku,
-      variantName: suggestion.variantName,
-      productName: suggestion.productName,
-      currentOnHand: suggestion.currentOnHand,
-      forecastedQty: suggestion.forecasted,
-      suggestedOrderQty: suggestion.suggestedQty,
-      vendorId: suggestion.vendorId,
-      leadTimeDays: suggestion.leadTimeDays,
-      expectedDeliveryDate: suggestion.expectedDate,
-      reorderReason: suggestion.reason,
-      warehouseId: suggestion.warehouseId,
-      warehouseName: suggestion.warehouseName,
-    };
-
-    const result = await this.gateway.invokeStructured({
-      actor: { orgId, userId },
-      feature: REORDER_FEATURE_KEY,
-      tier: "fast",
-      maxTokens: 512,
-      charge: true,
-      redact: false,
-      schema: ExplainResponseSchema,
-      prompt: {
-        system: buildSystemPrompt(),
-        user: buildReorderUserPrompt(evidence),
-        promptKey: "inv.reorder-explain",
-        promptVersion: 1,
-      },
-    });
-
-    if (!result.ok) {
-      throw new ServiceUnavailableException(result.message);
-    }
-
-    const proposal = await this.confirmation.propose({
-      orgId,
-      userId,
-      action: "inventory:create-draft-po",
-      payload: { suggestion, explanation: result.data },
-      idempotencyKey: `reorder-${orgId}-${variantId}-${Date.now()}`,
-      ttlSeconds: 120,
-    });
-
-    return { evidence, explanation: result.data, proposal };
-  }
-
-  async confirmReorderProposal(
-    orgId: string,
-    userId: string,
-    proposalId: number,
-    token: string,
-  ) {
-    const confirmed = await this.confirmation.confirm({
-      token,
-      actor: { orgId, userId },
-    });
-
-    const payload = confirmed.payload;
-    const parsedSuggestion = ReorderSuggestionPayloadSchema.safeParse(payload["suggestion"]);
-    if (!parsedSuggestion.success) {
-      throw new ServiceUnavailableException("Reorder proposal payload is malformed");
-    }
-    const suggestion = parsedSuggestion.data;
-
-    if (!suggestion.vendorId) {
-      throw new NotFoundException("No vendor associated with this reorder suggestion — assign a vendor to the reorder rule first");
-    }
-
-    const po = await this.replenishment.generatePo(orgId, userId, {
-      vendorId: suggestion.vendorId,
-      warehouseId: suggestion.warehouseId ?? undefined,
-      suggestions: [
-        {
-          productVariantId: suggestion.productVariantId,
-          suggestedQty: suggestion.suggestedQty,
-          unitCost: 0,
-        },
-      ],
-    });
-
-    await this.confirmation.markExecuted(confirmed.proposalId, { poId: po.id }, orgId);
-    return po;
   }
 
   async getSupplierDelayBriefing(
@@ -384,23 +362,28 @@ export class InvAiExplainService {
       vendorMap.set(vId, entry);
     }
 
-    const vendors = await Promise.all(
-      Array.from(vendorMap.entries()).map(async ([vId, entry]) => {
-        const performance = await this.vendors.getVendorPerformance(orgId, vId);
-        return {
-          vendorId: vId,
-          vendorName: entry.vendorName,
-          insightCount: entry.insights.length,
-          insights: entry.insights.map((i) => ({
-            id: i.id,
-            title: i.title,
-            body: i.body,
-            severity: i.severity,
-          })),
-          performance,
-        };
-      }),
+    // C4. One batched read rather than a scorecard per vendor: the old shape ran
+    // seven queries for every delayed supplier in the briefing.
+    const scorecards = await this.scorecards.scorecardsFor(
+      orgId,
+      Array.from(vendorMap.keys()),
     );
+    const vendors = Array.from(vendorMap.entries()).flatMap(([vId, entry]) => {
+      const performance = scorecards.get(vId);
+      if (!performance) return [];
+      return [{
+        vendorId: vId,
+        vendorName: entry.vendorName,
+        insightCount: entry.insights.length,
+        insights: entry.insights.map((i) => ({
+          id: i.id,
+          title: i.title,
+          body: i.body,
+          severity: i.severity,
+        })),
+        performance,
+      }];
+    });
 
     const narration =
       vendors.length === 0
@@ -414,7 +397,7 @@ export class InvAiExplainService {
               charge: true,
               redact: false,
               prompt: {
-                system: buildSystemPrompt(),
+                system: buildNarrationSystemPrompt(),
                 user: buildDelayBriefingUserPrompt(vendors),
                 promptKey: "inv.supplier-delay-briefing",
                 promptVersion: 1,
