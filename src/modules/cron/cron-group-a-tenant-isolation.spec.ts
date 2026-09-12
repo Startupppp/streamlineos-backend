@@ -4,7 +4,7 @@ jest.mock("../../common/tenant", () => ({
 
 import { Test } from "@nestjs/testing";
 import { DRIZZLE } from "../../db/drizzle.constants";
-import { REDIS } from "../../common/cache/cache.service";
+import { CacheService, REDIS } from "../../common/cache/cache.service";
 import type { Db } from "../../db/drizzle.module";
 import { forEachOrg } from "../../common/tenant";
 import { CronAttendanceService } from "./cron-attendance.service";
@@ -381,6 +381,10 @@ describe("CronHrService — cross-tenant isolation", () => {
         { provide: HrAutomationEngineService, useValue: { emit: jest.fn() } },
         { provide: NotificationDispatchService, useValue: { emit: jest.fn() } },
         { provide: RetentionService, useValue: { sweepStrandedDeleteRequests: jest.fn().mockResolvedValue({ processed: 0, skipped: 0 }) } },
+        // The onboarding sweep writes through MembershipMutations, whose drain
+        // busts the guard's membership cache; these cases assert tenant scoping
+        // on the reads, so the bust only has to be observable, not real.
+        { provide: CacheService, useValue: { invalidate: jest.fn(), invalidateForOrg: jest.fn(), invalidateNamespaceForOrg: jest.fn() } },
       ],
     }).compile().then((m) => m.get(CronHrService));
   }
