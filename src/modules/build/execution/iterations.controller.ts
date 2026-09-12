@@ -42,6 +42,7 @@ import {
   type UpdateModuleInput,
   type UpdateSprintInput,
 } from "./dto/iterations.schemas";
+import { projectIdParams, projectAndSprintIdParams, projectAndCycleIdParams, projectAndModuleIdParams, projectAndEpicIdParams } from "./dto/iterations.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
 import { NoContentResponse, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
@@ -56,12 +57,6 @@ import {
   moduleRowSchema,
   epicRowSchema,
 } from "./dto/execution-response.schemas";
-
-const projectIdParams = z.object({ projectId: z.coerce.number().int().positive() }).strict();
-const projectAndSprintIdParams = z.object({ projectId: z.coerce.number().int().positive(), sprintId: z.coerce.number().int().positive() }).strict();
-const projectAndCycleIdParams = z.object({ projectId: z.coerce.number().int().positive(), cycleId: z.coerce.number().int().positive() }).strict();
-const projectAndModuleIdParams = z.object({ projectId: z.coerce.number().int().positive(), moduleId: z.coerce.number().int().positive() }).strict();
-const projectAndEpicIdParams = z.object({ projectId: z.coerce.number().int().positive(), epicId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("build")
 @Controller("build/:projectId/sprints")

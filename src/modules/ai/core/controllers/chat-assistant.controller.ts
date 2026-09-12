@@ -39,7 +39,7 @@ import { ChatMessagesService } from "../../../chat/chat-messages.service";
 import { EngagementService } from "../../../hr/performance/engagement.service";
 import { BonusesService } from "../../../payroll/hr-payroll/bonuses.service";
 import { createBonusSchema } from "../../../payroll/hr-payroll/dto/payroll.schemas";
-import { MailService } from "../../../mail/mail.service";
+import { MailComposeService } from "../../../mail/mail-compose.service";
 import { MailAccountsService } from "../../../mail/mail-accounts.service";
 import type { CreateRecognitionInput } from "../../../hr/performance/dto/engagement.schemas";
 import {
@@ -436,7 +436,7 @@ export class ChatAssistantController {
         const mailPayload = mailSendPayloadSchema.parse(payload);
         const mailAccountsSvc = this.moduleRef.get(MailAccountsService, { strict: false });
         await mailAccountsSvc.assertOwnedConnection(u.orgId, u.userId, mailPayload.accountId);
-        const mailSvc = this.moduleRef.get(MailService, { strict: false });
+        const mailSvc = this.moduleRef.get(MailComposeService, { strict: false });
         await mailSvc.sendMail(
           u.orgId,
           u.userId,

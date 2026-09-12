@@ -2,6 +2,7 @@ import { Module } from "@nestjs/common";
 import { OrgController } from "./org.controller";
 import { OrgMembersService } from "./org-members.service";
 import { OrgSetupService } from "./org-setup.service";
+import { OrgSetupQueryService } from "./org-setup-query.service";
 import { OrgSetupResolverService } from "./org-setup-resolver.service";
 import { AnnouncementsController } from "./announcements.controller";
 import { AnnouncementsService } from "./announcements.service";
@@ -24,6 +25,7 @@ import { OrgSetupCompletedConsumerService } from "./org-setup-completed-consumer
   providers: [
     OrgMembersService,
     OrgSetupService,
+    OrgSetupQueryService,
     OrgSetupResolverService,
     AnnouncementsService,
     OrgSetupCompletedConsumerService,

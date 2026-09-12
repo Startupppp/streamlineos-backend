@@ -209,3 +209,9 @@ export type CreateModuleInput = z.infer<typeof createModuleSchema>;
 export type UpdateModuleInput = z.infer<typeof updateModuleSchema>;
 export type CreateSprintInput = z.infer<typeof createSprintSchema>;
 export type UpdateSprintInput = z.infer<typeof updateSprintSchema>;
+
+export const projectIdParams = z.object({ projectId: z.coerce.number().int().positive() }).strict();
+export const projectAndSprintIdParams = z.object({ projectId: z.coerce.number().int().positive(), sprintId: z.coerce.number().int().positive() }).strict();
+export const projectAndCycleIdParams = z.object({ projectId: z.coerce.number().int().positive(), cycleId: z.coerce.number().int().positive() }).strict();
+export const projectAndModuleIdParams = z.object({ projectId: z.coerce.number().int().positive(), moduleId: z.coerce.number().int().positive() }).strict();
+export const projectAndEpicIdParams = z.object({ projectId: z.coerce.number().int().positive(), epicId: z.coerce.number().int().positive() }).strict();

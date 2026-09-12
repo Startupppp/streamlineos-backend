@@ -65,7 +65,7 @@ export const inviteUserSchema = z.object({
 export type InviteUserInput = z.infer<typeof inviteUserSchema>;
 
 export const bulkInviteSchema = z.object({
-  emails: z.array(inviteEmailSchema).min(1).max(500),
+  emails: z.array(canonicalEmailSchema).min(1).max(500),
   role: z.enum(ORG_MEMBER_ROLE_VALUES).default(ORG_MEMBER_ROLES.MEMBER),
 }).strict();
 export type BulkInviteInput = z.infer<typeof bulkInviteSchema>;
@@ -156,10 +156,11 @@ export const changeInviteRoleSchema = z.object({
 export type ChangeInviteRoleInput = z.infer<typeof changeInviteRoleSchema>;
 
 export const listInvitationsSchema = z.object({
+  cursor: z.string().optional(),
   page: pageNumberField,
   limit: pageSizeField(20, 100),
   includeAccepted: z.enum(["true", "false"]).optional().transform((v) => v === "true"),
-  status: z.enum(["pending", "accepted", "expired", "revoked"]).optional(),
+  status: z.enum(["pending", "accepted", "expired", "revoked", "declined"]).optional(),
   q: z.string().trim().max(200).optional(),
 }).strict();
 export type ListInvitationsInput = z.infer<typeof listInvitationsSchema>;

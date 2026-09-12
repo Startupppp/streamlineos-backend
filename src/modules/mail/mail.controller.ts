@@ -19,6 +19,7 @@ import { RateLimitGuard } from "../../common/ratelimit/rate-limit.guard";
 import { AuditService } from "../../common/audit/audit.service";
 import { Idempotent } from "../../common/idempotency/idempotent.decorator";
 import { MailService } from "./mail.service";
+import { MailComposeService } from "./mail-compose.service";
 import { MailAiService } from "./mail-ai.service";
 import {
   getAttachmentQuerySchema,
@@ -69,6 +70,7 @@ const messageIdattachmentIdParams = z.object({ messageId: z.string().min(1), att
 export class MailController {
   constructor(
     private readonly mail: MailService,
+    private readonly mailCompose: MailComposeService,
     private readonly mailAi: MailAiService,
     private readonly audit: AuditService,
   ) {}
@@ -136,7 +138,7 @@ export class MailController {
     @Body() body: SendMailInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    await this.mail.sendMail(u.orgId, u.userId, body.accountId, body.to, body.subject, body.bodyHtml, body.cc, body.bcc);
+    await this.mailCompose.sendMail(u.orgId, u.userId, body.accountId, body.to, body.subject, body.bodyHtml, body.cc, body.bcc);
     this.audit.log({ action: "mail.send", userId: u.userId, orgId: u.orgId, metadata: { accountId: body.accountId, to: body.to, subject: body.subject } });
     return { sent: true };
   }
@@ -153,7 +155,7 @@ export class MailController {
     @Body() body: ReplyMailInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    await this.mail.replyMail(u.orgId, u.userId, body.accountId, body.messageId, body.threadId, body.bodyHtml, body.cc, body.to);
+    await this.mailCompose.replyMail(u.orgId, u.userId, body.accountId, body.messageId, body.threadId, body.bodyHtml, body.cc, body.to);
     this.audit.log({ action: "mail.reply", userId: u.userId, orgId: u.orgId, metadata: { accountId: body.accountId, messageId: body.messageId } });
     return { sent: true };
   }
@@ -168,7 +170,7 @@ export class MailController {
     @Body() body: MailActionInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    await this.mail.performAction(u.orgId, u.userId, actingMembershipId(u.principal), messageId, body.accountId, body.action, body.threadId);
+    await this.mailCompose.performAction(u.orgId, u.userId, actingMembershipId(u.principal), messageId, body.accountId, body.action, body.threadId);
     return { ok: true as const };
   }
 
@@ -182,7 +184,7 @@ export class MailController {
     @Query() query: GetAttachmentQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.mail.getAttachment(u.orgId, u.userId, messageId, attachmentId, query.accountId, query.fileName);
+    return this.mailCompose.getAttachment(u.orgId, u.userId, messageId, attachmentId, query.accountId, query.fileName);
   }
 
   @Post("ai/inbox-summary")

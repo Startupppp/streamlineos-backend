@@ -1,11 +1,10 @@
 import { BadRequestException } from "@nestjs/common";
-import { MailService } from "./mail.service";
+import { MailComposeService } from "./mail-compose.service";
 import type { GmailMailProvider } from "./providers/gmail-mail.provider";
 import type { OutlookMailProvider } from "./providers/outlook-mail.provider";
 import type { MailAccountsService, MailAccount } from "./mail-accounts.service";
 import type { CacheService } from "../../common/cache/cache.service";
 import type { MailMetadataService } from "./mail-metadata.service";
-import type { MailSyncCheckpointService } from "./mail-sync-checkpoint.service";
 import type { MailMessageDetail } from "./dto/mail-response.schemas";
 
 const ACCOUNT_EMAIL = "me@example.com";
@@ -43,7 +42,7 @@ function makeDetail(overrides: Partial<MailMessageDetail> = {}): MailMessageDeta
 }
 
 describe("MailService.replyMail — Gmail recipient resolution", () => {
-  let service: MailService;
+  let service: MailComposeService;
   const assertOwnedConnection = jest.fn();
   const getMessage = jest.fn();
   const replyToThread = jest.fn();
@@ -53,13 +52,12 @@ describe("MailService.replyMail — Gmail recipient resolution", () => {
   const outlook = {} as unknown as OutlookMailProvider;
   const cache = {} as unknown as CacheService;
   const metadata = {} as unknown as MailMetadataService;
-  const checkpoints = {} as unknown as MailSyncCheckpointService;
 
   beforeEach(() => {
     jest.resetAllMocks();
     assertOwnedConnection.mockResolvedValue(mockAccount);
     replyToThread.mockResolvedValue(undefined);
-    service = new MailService(accounts, gmail, outlook, cache, metadata, checkpoints);
+    service = new MailComposeService(accounts, gmail, outlook, cache, metadata);
   });
 
   it("sends reply to the original sender email address, NOT the messageId", async () => {
@@ -136,7 +134,7 @@ describe("MailService.replyMail — Gmail recipient resolution", () => {
  * a `to` arriving and being ignored.
  */
 describe("MailService.replyMail — an explicitly chosen recipient overrides the derivation", () => {
-  let service: MailService;
+  let service: MailComposeService;
   const assertOwnedConnection = jest.fn();
   const getMessage = jest.fn();
   const replyToThread = jest.fn();
@@ -147,7 +145,6 @@ describe("MailService.replyMail — an explicitly chosen recipient overrides the
   const outlook = { replyToMessage } as unknown as OutlookMailProvider;
   const cache = {} as unknown as CacheService;
   const metadata = {} as unknown as MailMetadataService;
-  const checkpoints = {} as unknown as MailSyncCheckpointService;
 
   beforeEach(() => {
     jest.resetAllMocks();
@@ -157,7 +154,7 @@ describe("MailService.replyMail — an explicitly chosen recipient overrides the
     getMessage.mockResolvedValue(
       makeDetail({ from: { email: "sender@example.com", name: "Sender" } }),
     );
-    service = new MailService(accounts, gmail, outlook, cache, metadata, checkpoints);
+    service = new MailComposeService(accounts, gmail, outlook, cache, metadata);
   });
 
   it("Gmail: sends to the address the caller chose, not to the original sender", async () => {

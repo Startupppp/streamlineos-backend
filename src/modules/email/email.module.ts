@@ -1,5 +1,7 @@
 import { Global, Module } from "@nestjs/common";
 import { EmailService } from "./email.service";
+import { EmailWorkNotificationsService } from "./email-work-notifications.service";
+import { EmailSignService } from "./email-sign.service";
 import { EmailProviderService } from "./email.provider";
 import { EmailOutboxService } from "./email-outbox.service";
 import { EmailRoutesService } from "./email-routes.service";
@@ -25,11 +27,13 @@ import { UnsubscribeController } from "./unsubscribe.controller";
     EmailProviderService,
     EmailOutboxService,
     EmailService,
+    EmailWorkNotificationsService,
+    EmailSignService,
     EmailRoutesService,
     TwilioGateway,
     EmailSuppressionService,
     EmailWebhookService,
   ],
-  exports: [EmailProviderService, EmailOutboxService, EmailService, EmailSuppressionService],
+  exports: [EmailProviderService, EmailOutboxService, EmailService, EmailWorkNotificationsService, EmailSignService, EmailSuppressionService],
 })
 export class EmailModule {}

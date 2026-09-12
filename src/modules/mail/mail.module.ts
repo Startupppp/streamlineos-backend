@@ -3,6 +3,7 @@ import { IntegrationsModule } from "../integrations/core/integrations.module";
 import { AiGatewayModule } from "../ai/core/gateway/ai-gateway.module";
 import { MailController } from "./mail.controller";
 import { MailService } from "./mail.service";
+import { MailComposeService } from "./mail-compose.service";
 import { MailAccountsService } from "./mail-accounts.service";
 import { MailMetadataService } from "./mail-metadata.service";
 import { MailSyncCheckpointService } from "./mail-sync-checkpoint.service";
@@ -13,7 +14,7 @@ import { OutlookMailProvider } from "./providers/outlook-mail.provider";
 @Module({
   imports: [IntegrationsModule, AiGatewayModule],
   controllers: [MailController],
-  providers: [MailService, MailAccountsService, MailMetadataService, MailSyncCheckpointService, MailAiService, GmailMailProvider, OutlookMailProvider],
-  exports: [MailService, MailAccountsService, MailAiService, GmailMailProvider, OutlookMailProvider],
+  providers: [MailService, MailComposeService, MailAccountsService, MailMetadataService, MailSyncCheckpointService, MailAiService, GmailMailProvider, OutlookMailProvider],
+  exports: [MailService, MailComposeService, MailAccountsService, MailAiService, GmailMailProvider, OutlookMailProvider],
 })
 export class MailModule {}
