@@ -26,7 +26,7 @@ import {
  */
 const MEMBERSHIP_ADMIN_KEY = "settings:organization:manage";
 const HR_RUNGS = ["HR_MODULE_ADMIN", "HR_MODULE_OWNER"] as const;
-const MIGRATION_TAG = "1094_hr_module_roles_drop_org_membership_admin";
+const MIGRATION_TAG = "1109_hr_module_roles_drop_org_membership_admin";
 
 const CATALOG = new Set(ALL_PERMISSION_NAMES);
 const MIGRATIONS_DIR = join(__dirname, "../../../../migrations");

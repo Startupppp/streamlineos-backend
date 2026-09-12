@@ -1,5 +1,5 @@
 import { makeAuthContextFactory } from "../../../test/helpers/module-guard-context";
-import { UnauthorizedException } from "@nestjs/common";
+import { ForbiddenException, UnauthorizedException } from "@nestjs/common";
 import { Reflector } from "@nestjs/core";
 import { decodeJwt } from "jose";
 import { JwtAuthGuard } from "./jwt-auth.guard";
@@ -168,5 +168,96 @@ describe("JwtAuthGuard asymmetric JWT path", () => {
     const result = await guard.canActivate(context as never);
     expect(result).toBe(true);
     expect(keyring.verifyToken).not.toHaveBeenCalled();
+  });
+});
+
+describe("JwtAuthGuard employee removal — HTTP deny surface", () => {
+  beforeEach(() => {
+    (decodeJwt as jest.Mock).mockReturnValue({ aud: "streamlineos-api", sub: "user-removed" });
+  });
+
+  it("throws 403 ORG_MEMBERSHIP_INACTIVE when membership.resolve returns active false", async () => {
+    const keyring = makeKeyring({
+      verifyToken: jest.fn().mockResolvedValue({
+        sub: "user-removed",
+        orgId: "org-1",
+        sessionId: "sess-removed",
+      }),
+    });
+    const guard = makeGuard(keyring);
+
+    const membershipState = {
+      isAccountActive: jest.fn().mockResolvedValue(true),
+      resolve: jest.fn().mockResolvedValue({
+        active: false,
+        membershipId: null,
+        role: "",
+        isOwner: false,
+      }),
+    };
+    (guard as unknown as { membership: typeof membershipState }).membership = membershipState;
+
+    const context = {
+      getHandler: () => ({}),
+      getClass: () => ({}),
+      switchToHttp: () => ({
+        getRequest: () => ({
+          headers: { authorization: "Bearer valid-but-removed-token" },
+          method: "GET",
+          path: "/build/projects",
+        }),
+      }),
+    };
+
+    await expect(guard.canActivate(context as never)).rejects.toBeInstanceOf(
+      ForbiddenException,
+    );
+    const err = await guard.canActivate(context as never).catch((e: unknown) => e);
+    expect((err as ForbiddenException).getResponse()).toMatchObject({
+      code: "ORG_MEMBERSHIP_INACTIVE",
+    });
+  });
+
+  it("consults membership.resolve on every request — no cached allow decision survives removal", async () => {
+    const keyring = makeKeyring({
+      verifyToken: jest.fn().mockResolvedValue({
+        sub: "user-toggled",
+        orgId: "org-1",
+        sessionId: "sess-toggled",
+      }),
+    });
+    const guard = makeGuard(keyring);
+
+    const resolveResults = [
+      { active: true, membershipId: 42, role: "MEMBER", isOwner: false },
+      { active: false, membershipId: null, role: "", isOwner: false },
+    ];
+    let resolveCallCount = 0;
+    const membershipState = {
+      isAccountActive: jest.fn().mockResolvedValue(true),
+      resolve: jest.fn().mockImplementation(async () => resolveResults[resolveCallCount++]),
+    };
+    (guard as unknown as { membership: typeof membershipState }).membership = membershipState;
+
+    const makeContext = () => ({
+      getHandler: () => ({}),
+      getClass: () => ({}),
+      switchToHttp: () => ({
+        getRequest: () => ({
+          headers: { authorization: "Bearer valid-session-token" },
+          method: "GET",
+          path: "/me",
+        }),
+      }),
+    });
+
+    const firstResult = await guard.canActivate(makeContext() as never);
+    expect(firstResult).toBe(true);
+
+    await expect(guard.canActivate(makeContext() as never)).rejects.toBeInstanceOf(
+      ForbiddenException,
+    );
+
+    expect(membershipState.resolve).toHaveBeenCalledTimes(2);
   });
 });

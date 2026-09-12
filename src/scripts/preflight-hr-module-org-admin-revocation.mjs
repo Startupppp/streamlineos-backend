@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Preflight for migration 1094_hr_module_roles_drop_org_membership_admin.sql.
+ * Preflight for migration 1109_hr_module_roles_drop_org_membership_admin.sql.
  *
  * Reports, without changing anything, how many rows that migration would remove:
  * `settings:organization:manage` grants held by the HR module rungs HR_MODULE_ADMIN and
