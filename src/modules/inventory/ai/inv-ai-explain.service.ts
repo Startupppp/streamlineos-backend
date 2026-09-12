@@ -9,6 +9,7 @@ import {
   type VendorScorecard,
 } from "../vendors/vendor-scorecard.service";
 import { InvAiService, type InventoryOpsBrief } from "./inv-ai.service";
+import { readEvidence } from "./lib/inv-ai-read-evidence";
 import {
   INV_AI_CONTRACT_VERSION,
   invAiNarrativeResponseSchema,
@@ -139,7 +140,15 @@ export class InvAiExplainService {
     orgId: string,
     userId: string,
   ): Promise<{ brief: InventoryOpsBrief; narration: InsightNarration }> {
-    const brief = await this.insights.getOpsBrief(orgId);
+    /*
+     * The only database access on this path, in a short tenant transaction that
+     * COMMITS before the gateway call below. The route is
+     * `@NoTenantTransaction()`, so this opens a real transaction rather than
+     * reusing an ambient one; `getOpsBrief` reads RLS-protected inventory
+     * tables and would be refused on a bare pool connection. Everything after
+     * it is projection over an aggregate already in memory.
+     */
+    const brief = await readEvidence(this.db, orgId, () => this.insights.getOpsBrief(orgId));
 
     if (brief.totalSignals === 0) {
       // Short-circuit before the provider. Paying a model to write "nothing is

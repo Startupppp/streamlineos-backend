@@ -39,7 +39,6 @@ export {
 export {
   periodsListResponseSchema,
   periodDetailResponseSchema,
-  overduePeriodSchema,
   overdueQueueResponseSchema,
 } from "./timesheets-periods-response.schemas";
 

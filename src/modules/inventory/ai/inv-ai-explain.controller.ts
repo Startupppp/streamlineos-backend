@@ -7,9 +7,12 @@ import {
   Post,
   Query,
   UseGuards,
+  UseInterceptors,
 } from "@nestjs/common";
 import { z } from "zod";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
+import { AiRequestAbortInterceptor } from "../../ai/core/streaming";
+import { NoTenantTransaction } from "../../../common/tenant";
 import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
@@ -44,9 +47,27 @@ const supplierDelayQuerySchema = z.object({ vendorId: z.coerce.number().int().po
 type DigestQueryInput = z.infer<typeof digestQuerySchema>;
 type SupplierDelayQueryInput = z.infer<typeof supplierDelayQuerySchema>;
 
+/**
+ * `@UseInterceptors(AiRequestAbortInterceptor)` sits on the class rather than on
+ * `narrateOpsBrief` alone, and that is deliberate on both counts.
+ *
+ * On `narrateOpsBrief` it is the required half of the `@NoTenantTransaction()`
+ * opt-out: the decorator removes the tenant context's disconnect signal, which
+ * was `getAmbientAiAbortSignal`'s only source, so without the interceptor the
+ * released connection would be bought with an uncancellable, still-billed
+ * provider call (PRD-C091).
+ *
+ * On the four handlers that KEEP the request transaction it is strictly an
+ * improvement and never a behaviour change: `getAmbientAiAbortSignal` already
+ * falls back to the tenant signal, the interceptor only arms an `AbortSignal`
+ * inside an AsyncLocalStorage scope, and it writes nothing to the response. It
+ * also picks up the caller's `Idempotency-Key` for the gateway's reservation
+ * key, which those four previously had no way to supply.
+ */
 @RequireModule("inventory")
 @Controller("inventory/ai")
 @UseGuards(JwtAuthGuard, ModuleGuard)
+@UseInterceptors(AiRequestAbortInterceptor)
 export class InvAiExplainController {
   constructor(
     private readonly explainService: InvAiExplainService,
@@ -82,6 +103,14 @@ export class InvAiExplainController {
   /**
    * The narrative. A POST because it spends credits: a human asked for it, and
    * no page render reaches this.
+   *
+   * `@NoTenantTransaction()` because it ends in `AiGatewayService.invokeStructured`
+   * and under the ambient request transaction that round trip was awaited with a
+   * pooled connection idle in transaction, against the 60s
+   * `idle_in_transaction_session_timeout` `withTenant` sets. The one read on the
+   * path — `InvAiService.getOpsBrief`, the deterministic signal aggregate — now
+   * runs in a short `runInTenantTransaction` that commits before the call, and
+   * nothing after it touches the database.
    */
   @Post("ops-brief/narrate")
   @BodylessAction()
@@ -89,6 +118,7 @@ export class InvAiExplainController {
   @UseGuards(PermissionGuard, RateLimitGuard)
   @UseRateLimit("ai:invoke")
   @RequirePermission("inventory:ai:read")
+  @NoTenantTransaction()
   narrateOpsBrief(@CurrentUser() u: CurrentUserContext) {
     return this.explainService.narrateOpsBrief(u.orgId, u.userId);
   }

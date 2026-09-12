@@ -134,17 +134,19 @@ export function assertRequesterScope(value: unknown): RequesterScope {
  * join aliases. A scope alias colliding with `BASE_ALIAS` would shadow the base
  * table *inside the subquery* — the predicate would then read ownership from the
  * wrong relation and still return rows, which is the failure mode that does not
- * announce itself. `scope.spec.ts` asserts no registry join can take one of
- * these names.
+ * announce itself.
+ *
+ * ⚠ This block used to end "`scope.spec.ts` asserts no registry join can take
+ * one of these names." It does not, and never did: the only alias assertion is
+ * `registry.spec.ts:68-77`, which checks that joins are distinct from each
+ * other and from `BASE_ALIAS` and never consults these three. The
+ * `SCOPE_ALIASES` array that existed to be that assertion's argument had zero
+ * references anywhere — including in this file — and went with the claim. The
+ * invariant is still worth pinning; nothing pins it today.
  */
 export const SCOPE_TEAMMATE_ALIAS = "scope_teammate";
 export const SCOPE_PEER_UNIT_ALIAS = "scope_peer_unit";
 export const SCOPE_UNIT_ALIAS = "scope_unit";
-export const SCOPE_ALIASES = [
-  SCOPE_TEAMMATE_ALIAS,
-  SCOPE_PEER_UNIT_ALIAS,
-  SCOPE_UNIT_ALIAS,
-] as const;
 
 /**
  * The membership tables the `team` scope resolves against.

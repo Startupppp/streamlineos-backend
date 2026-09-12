@@ -47,7 +47,6 @@ import type { InvoicePdfData } from "./invoice-pdf.types";
 export { sanitizeForPdf } from "./invoice-pdf-format";
 export type {
   InvoicePdfData,
-  InvoicePdfLine,
   InvoicePdfParty,
   InvoicePdfTaxComponent,
 } from "./invoice-pdf.types";

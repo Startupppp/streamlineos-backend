@@ -78,13 +78,6 @@ export function classOf(accountType: GlAccountType): AccountClass {
   return CLASS_OF[accountType];
 }
 
-export function isDebitNormal(accountType: GlAccountType): boolean {
-  return DEBIT_NORMAL[accountType];
-}
-
-export function isContra(accountType: GlAccountType): boolean {
-  return accountType === "CONTRA_ASSET" || accountType === "CONTRA_LIABILITY";
-}
 
 /**
  * The account's balance signed **in its own normal direction** — positive for

@@ -8,6 +8,7 @@ import { eq, and, desc, isNull, sql } from "drizzle-orm";
 import { invImportJobs, invProducts, invProductVariants, invLocations } from "../../../db/schema";
 import { parseCsv } from "./csv.util";
 import type { ImportType, CreateImportJobInput, ListJobsQueryInput } from "./dto/import-export.schemas";
+import { isImportType } from "./dto/import-export.schemas";
 import { readOpeningStockRow, validateOpeningStockRow } from "./lib/opening-stock-row";
 import { resolveLotId, resolveSerialIds } from "../purchase-orders/lib/receipt-lots-serials";
 import { StagedImportService } from "./staged-import.service";
@@ -47,7 +48,11 @@ export class ImportService {
    */
   async processStagedChunk(orgId: string, userId: string, jobId: number) {
     const job = await this.staged.progress(orgId, jobId);
-    const importType = job.importType as ImportType;
+    if (!isImportType(job.importType))
+      throw new BadRequestException(
+        `Import job ${jobId} was staged as "${job.importType}", which is not an import type this release can apply.`,
+      );
+    const importType: ImportType = job.importType;
 
     return this.staged.processChunk(orgId, userId, jobId, async (org, user, id, rowNumber, payload) => {
       const errors = this.validateRow(importType, payload, rowNumber);

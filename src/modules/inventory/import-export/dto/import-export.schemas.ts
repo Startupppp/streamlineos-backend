@@ -4,6 +4,19 @@ import { z } from "zod";
 const IMPORT_TYPES = ["products", "vendors", "categories", "uom", "locations", "opening-stock", "reorder-rules"] as const;
 export type ImportType = typeof IMPORT_TYPES[number];
 
+const IMPORT_TYPE_SET: ReadonlySet<string> = new Set(IMPORT_TYPES);
+
+/**
+ * `inv_import_jobs.job_type` is a bare `text` column, so a job read back from
+ * the database hands out a `string`. Asserting it into `ImportType` at the use
+ * site would make `EXPECTED_COLUMNS[importType]` silently `undefined` for a
+ * value written by an older release or by hand; this narrows instead, so the
+ * unrecognised value is a refusal that names itself.
+ */
+export function isImportType(value: string): value is ImportType {
+  return IMPORT_TYPE_SET.has(value);
+}
+
 const EXPORT_TYPES = ["products", "stock", "movements", "reorder", "valuation", "lots-serials"] as const;
 export type ExportType = typeof EXPORT_TYPES[number];
 

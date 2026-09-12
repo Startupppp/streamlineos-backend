@@ -9,7 +9,7 @@ import { assertGroupingIsValid, compileGroupBy, compileSelect } from "./lib/comp
 import { compileWhere } from "./lib/compile-where";
 import { compileOrderBy, compileWindow } from "./lib/compile-window";
 
-export type { CompileContext, CompiledColumn, CompiledQuery } from "./compile.types";
+export type { CompileContext, CompiledQuery } from "./compile.types";
 
 /**
  * The compiler.

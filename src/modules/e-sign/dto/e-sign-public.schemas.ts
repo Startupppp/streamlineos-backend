@@ -1,21 +1,5 @@
 import { z } from "zod";
 
-export const publishPublicFormSchema = z.object({
-  slug: z
-    .string()
-    .trim()
-    .min(3)
-    .max(80)
-    .regex(/^[a-z0-9-]+$/, "Slug must be lowercase letters, numbers, and hyphens"),
-  accessCode: z.string().trim().min(4).max(50).optional(),
-  maxSubmissions: z.number().int().positive().optional(),
-  expiresAt: z.string().datetime().optional(),
-  completionRedirectUrl: z.string().trim().url().optional(),
-  webhookUrl: z.string().trim().url().optional(),
-  embedAllowed: z.boolean().default(false),
-}).strict();
-export type PublishPublicFormInput = z.infer<typeof publishPublicFormSchema>;
-
 export const publicAuthSchema = z.object({
   accessCode: z.string().trim().max(50).optional(),
   otpCode: z.string().trim().max(10).optional(),

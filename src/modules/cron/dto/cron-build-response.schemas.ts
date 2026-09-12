@@ -22,17 +22,6 @@ export const crmSequencesFlushResponseSchema = z.union([
   }),
 ]);
 
-const financeRunResultSchema = z.object({
-  success: z.literal(true),
-  message: z.string(),
-  ran: z.array(z.string()),
-  errors: z.array(z.object({ task: z.string(), error: z.string() })),
-});
-
-export const financeRecurringFlushResponseSchema = z.union([cronSkippedSchema, financeRunResultSchema]);
-export const financeDueChecksResponseSchema = z.union([cronSkippedSchema, financeRunResultSchema]);
-export const financeDepreciationResponseSchema = z.union([cronSkippedSchema, financeRunResultSchema]);
-
 export const crmTasksOverdueFlushResponseSchema = z.union([
   cronSkippedSchema,
   z.object({

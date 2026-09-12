@@ -1,5 +1,5 @@
 import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { invChannelPools, invChannels } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
@@ -378,31 +378,18 @@ export class ChannelPoolService {
       : inScope.filter((r) => r.warehouseId === null || r.warehouseId === warehouseId);
   }
 
-  /** Bulk read for a stock list: variant → total reserved across all channels. */
-  async reservedByVariant(
-    executor: Tx | Db,
-    orgId: string,
-    productVariantIds: number[],
-    warehouseId?: number | null,
-  ): Promise<Map<number, string>> {
-    const out = new Map<number, string>();
-    if (productVariantIds.length === 0) return out;
-
-    const rows = await executor
-      .select({
-        productVariantId: invChannelPools.productVariantId,
-        warehouseId: invChannelPools.warehouseId,
-        reservedQty: invChannelPools.reservedQty,
-      })
-      .from(invChannelPools)
-      .where(and(eq(invChannelPools.orgId, orgId), inArray(invChannelPools.productVariantId, productVariantIds)));
-
-    for (const row of rows) {
-      if (warehouseId != null && row.warehouseId !== null && row.warehouseId !== warehouseId) continue;
-      out.set(row.productVariantId, addDec(out.get(row.productVariantId) ?? "0", row.reservedQty));
-    }
-    return out;
-  }
+  /*
+   * DELETED 2026-09-12 — `reservedByVariant(executor, orgId, productVariantIds, warehouseId?)`.
+   *
+   * A bulk read over a caller-supplied `productVariantIds` list with no count check, and with no
+   * caller anywhere in the repository: `bola-bulk-mixed-tenant.spec.ts` counted it as an open
+   * silent-subset site, and nothing was served by it. Deleted rather than guarded, because a
+   * guard on an unreachable method is a guard nobody exercises. The reads that ARE served are
+   * `listForChannel` and `listForVariant` above, both of which resolve the caller's warehouse
+   * scope; whoever needs a set-based variant → reserved map should build it from one of those
+   * rather than revive this, and must assert the requested ids under the caller's organisation
+   * first.
+   */
 }
 
 /** `runIdempotent` stores JSON, so a replayed row comes back with string dates. */

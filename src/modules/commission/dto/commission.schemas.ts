@@ -186,7 +186,6 @@ export const listEarningsQuerySchema = z
   })
   .strict();
 
-export type RuleSetInput = z.infer<typeof ruleSetSchema>;
 export type CreatePlanInput = z.infer<typeof createPlanSchema>;
 export type UpdatePlanInput = z.infer<typeof updatePlanSchema>;
 export type CreateVersionInput = z.infer<typeof createVersionSchema>;

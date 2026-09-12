@@ -78,25 +78,6 @@ export interface PayrollRunPosting {
   }>;
 }
 
-/** A billing invoice offered to accounting, identified by its own id. */
-export interface BillingInvoicePosting {
-  externalSystem: string;
-  externalId: string;
-  partyExternalRef?: { system: string; id: string };
-  partyName: string;
-  issueDate: string;
-  dueDate?: string;
-  currency: string;
-  lines: Array<{
-    description: string;
-    quantityMilli?: number;
-    unitPriceMinor: number;
-    /** If billing already computed tax, accounting compares rather than trusts. */
-    expectedTaxMinor?: number;
-  }>;
-  expectedTotalMinor?: number;
-}
-
 export type AdapterRejectionCode =
   | "UNKNOWN_ACCOUNT_TAG"
   | "UNBALANCED_COMMAND"

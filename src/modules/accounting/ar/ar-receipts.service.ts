@@ -39,7 +39,7 @@ import {
   unwindReceiptAllocations,
 } from "./lib/ar-receipt-settlement";
 
-export type { ArAllocationView, ArReceiptPage, ArReceiptView } from "./ar-receipts.types";
+export type { ArReceiptPage, ArReceiptView } from "./ar-receipts.types";
 
 const DEFAULT_PAGE_SIZE = 25;
 const MAX_PAGE_SIZE = 100;

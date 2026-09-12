@@ -35,7 +35,6 @@ export type {
   ExternalRef,
   PartyDetail,
   PartyPage,
-  PartySummary,
   PartyTaxRegistration,
 } from "./parties.types";
 

@@ -253,14 +253,19 @@ export class DealsService {
     if (input.subjectId !== undefined) updateData.subjectId = input.subjectId;
 
     const updated = await this.db.transaction(async (tx) => {
-      const [row] = await (tx as Db)
+      // One widening for the whole callback. Drizzle's transaction handle is not
+      // structurally a `Db`, and every writer in here wants one; repeating the
+      // assertion per statement multiplies the licence without adding a check.
+      const txDb = tx as Db;
+
+      const [row] = await txDb
         .update(deals)
         .set(updateData)
         .where(and(eq(deals.id, dealId), eq(deals.orgId, orgId), isNull(deals.deletedAt)))
         .returning();
       if (!row) return undefined;
 
-      if (transitionRow) await (tx as Db).insert(dealStageTransitions).values(transitionRow);
+      if (transitionRow) await txDb.insert(dealStageTransitions).values(transitionRow);
 
       if (wonStageDetected && stageChanged) {
         /**
@@ -278,7 +283,7 @@ export class DealsService {
          * returns its refusals as values rather than throwing, so a deal with no
          * resolvable customer still closes.
          */
-        await this.lifecycle.recordClosedWon(tx as Db, {
+        await this.lifecycle.recordClosedWon(txDb, {
           organizationId: orgId,
           dealId,
           partyId: row.partyId,

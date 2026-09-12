@@ -1,7 +1,6 @@
 import { z } from "zod";
 import { wireDate, nullableWireDate } from "../../../common/openapi/wire-types";
 import { signFieldRowSchema } from "./e-sign-fields-response.schemas";
-import { signTemplateRowSchema } from "./e-sign-templates-response.schemas";
 
 export const getSessionResponseSchema = z.discriminatedUnion("state", [
   z.object({
@@ -63,19 +62,3 @@ export const completeSigningResponseSchema = z.object({
 });
 
 export const declineSigningResponseSchema = z.object({ declined: z.literal(true) });
-
-export const getPublicFormResponseSchema = z.object({
-  form: z.object({
-    slug: z.string(),
-    requiresAccessCode: z.boolean(),
-    embedAllowed: z.boolean(),
-  }),
-  template: signTemplateRowSchema,
-});
-
-export const submitPublicFormResponseSchema = z.object({
-  token: z.string(),
-  recipientId: z.number().int(),
-  envelopeId: z.number().int(),
-  redirectUrl: z.string().nullable(),
-});

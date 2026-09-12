@@ -1,4 +1,4 @@
-import { BadRequestException, Inject, Injectable } from "@nestjs/common";
+import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { createHash } from "node:crypto";
 import { and, asc, eq, gte, inArray, lte, sql, type SQL } from "drizzle-orm";
 import {
@@ -174,10 +174,65 @@ export class RecallSimulationService {
    * to POSTED receipts — a draft receipt never created stock and never created
    * the lot.
    */
+  /**
+   * Every id the selection NAMES is this organisation's — asserted on its own,
+   * and before a single narrowing criterion is applied.
+   *
+   * It has to be separate from `resolveLots`' own predicate, because that
+   * predicate ANDs the criteria: a lot the caller owns can legitimately fall
+   * outside the date range, so comparing the resolved row count with the
+   * requested id count there would refuse correct selections. Ownership is a
+   * different question from the filter and is answered first.
+   *
+   * Without it, `lotIds` and `productVariantIds` were pure filters — a foreign
+   * id ANDed against `org_id = caller` matched nothing and dropped out in
+   * silence. That is the silent-subset shape `bola-bulk-mixed-tenant.spec.ts`
+   * exists to refuse, and here it is also a safety defect independent of
+   * tenancy: `RecallImpact` echoes the `selection` verbatim and hashes it into
+   * `evidenceVersion`, so the evidence a recall is executed against could name
+   * lots that were never counted in it. A recall that silently narrows is a
+   * wrong recall picture, which is the same reason `resolveLots` refuses at
+   * `MAX_LOTS` instead of truncating.
+   *
+   * 404, never 403, and an id belonging to nobody is answered exactly like an
+   * id belonging to somebody else — so this closes the oracle rather than
+   * opening one.
+   */
+  private async assertSelectionInOrg(
+    orgId: string,
+    selection: RecallSelectionInput,
+  ): Promise<void> {
+    const lotIds = selection.lotIds ?? [];
+    if (lotIds.length > 0) {
+      const ownedLots = await this.db
+        .select({ id: invLots.id })
+        .from(invLots)
+        .where(and(eq(invLots.orgId, orgId), inArray(invLots.id, lotIds)));
+      const missing = lotIds.filter((id) => !ownedLots.some((row) => row.id === id));
+      if (missing.length > 0) {
+        throw new NotFoundException(`No such lot: ${missing.join(", ")}`);
+      }
+    }
+
+    const variantIds = selection.productVariantIds ?? [];
+    if (variantIds.length > 0) {
+      const ownedVariants = await this.db
+        .select({ id: invProductVariants.id })
+        .from(invProductVariants)
+        .where(and(eq(invProductVariants.orgId, orgId), inArray(invProductVariants.id, variantIds)));
+      const absent = variantIds.filter((id) => !ownedVariants.some((row) => row.id === id));
+      if (absent.length > 0) {
+        throw new NotFoundException(`No such product variant: ${absent.join(", ")}`);
+      }
+    }
+  }
+
   private async resolveLots(
     orgId: string,
     selection: RecallSelectionInput,
   ): Promise<RecallImpactLot[]> {
+    await this.assertSelectionInOrg(orgId, selection);
+
     const conditions: SQL[] = [eq(invLots.orgId, orgId)];
 
     if (selection.lotIds?.length) conditions.push(inArray(invLots.id, selection.lotIds));

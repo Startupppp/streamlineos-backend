@@ -15,6 +15,7 @@ import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
+import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { CrmConsentService } from "./crm-consent.service";
 import { Public } from "../../../common/auth/public.decorator";
 import { RateLimitGuard } from "../../../common/ratelimit/rate-limit.guard";
@@ -42,6 +43,7 @@ import {
 } from "./dto/crm-consent-response.schemas";
 
 @Controller("crm/consent")
+@RequireModule("crm")
 @UseGuards(JwtAuthGuard, PermissionGuard)
 export class CrmConsentController {
   constructor(private readonly consent: CrmConsentService) {}

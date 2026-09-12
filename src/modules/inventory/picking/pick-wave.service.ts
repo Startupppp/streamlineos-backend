@@ -8,6 +8,7 @@ import { and, eq, inArray, sql } from "drizzle-orm";
 import {
   invPickLists,
   invPickListLines,
+  invSalesOrders,
   invSoLines,
 } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
@@ -75,6 +76,35 @@ export class PickWaveService {
    */
   async proposeWaveJoin(orgId: string, userId: string, input: CreateWaveInput) {
     await this.warehouseScope.assertWarehouseVisible(orgId, userId, input.warehouseId);
+
+    /*
+     * Every order named must be this organisation's, refused as a whole and
+     * before anything is counted.
+     *
+     * Without this the line-count query below — `eq(orgId) AND soId IN (…)` —
+     * silently narrowed to the orders the caller owns and returned a proposal
+     * anyway, so `propose` answered where the `createWave` and `joinWave` it
+     * precedes would 404: `planWaveLines` has refused an unresolvable `soId`
+     * since it was written. A propose that is more permissive than the act it
+     * proposes is the worse half of that pair, because it is the half an
+     * operator reads. The count it feeds is also wrong in the direction that
+     * matters — a wave sized on a subset of its orders.
+     *
+     * 404, never 403, and unknown and foreign ids are answered identically, so
+     * this cannot be read as an existence oracle over another tenant's orders.
+     * Stated here rather than shared with `planWaveLines`: the rule has to live
+     * in the method that takes the list, or a future reader has to know which
+     * of two call paths carries it.
+     */
+    const owned = await this.db
+      .select({ id: invSalesOrders.id })
+      .from(invSalesOrders)
+      .where(and(eq(invSalesOrders.orgId, orgId), inArray(invSalesOrders.id, input.soIds)));
+    const missing = input.soIds.filter((id) => !owned.some((o) => o.id === id));
+    if (missing.length > 0) {
+      throw new NotFoundException(`No such sales order: ${missing.join(", ")}`);
+    }
+
     const settings = await this.settingsService.get(orgId);
 
     const lineCount = await this.db

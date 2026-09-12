@@ -15,6 +15,7 @@ import { InvReportBuilderService } from "./reports/inv-report-builder.service";
 import { InvAiFeedbackController } from "./feedback/inv-ai-feedback.controller";
 import { InvAiFeedbackService } from "./feedback/inv-ai-feedback.service";
 import { AiModule } from "../../ai/core/ai.module";
+import { AiRequestAbortInterceptor } from "../../ai/core/streaming";
 import { AiConfirmationModule } from "../../ai/confirmation/ai-confirmation.module";
 import { InvReplenishmentModule } from "../replenishment/inv-replenishment.module";
 import { InvVendorsModule } from "../vendors/inv-vendors.module";
@@ -60,6 +61,13 @@ import { InvReportsModule } from "../reports/inv-reports.module";
     InvAiFeedbackController,
   ],
   providers: [
+    /*
+     * The four AI controllers here declare `@UseInterceptors(AiRequestAbortInterceptor)`
+     * as the required half of their `@NoTenantTransaction()` opt-out. `AiModule`
+     * provides it but does not export it, so it is registered here too — the
+     * same thing `executive-brief.module.ts` and `ai-summaries.module.ts` do.
+     */
+    AiRequestAbortInterceptor,
     InvAiService,
     InvAiExplainService,
     InvCopilotService,

@@ -41,11 +41,9 @@ import { buildTaxContext, toPreview } from "./lib/ar-document-tax";
 
 export { computeLineNetMinor } from "./lib/ar-document-maths";
 export type {
-  ArDocumentLineView,
   ArDocumentPage,
   ArDocumentView,
   TaxPreview,
-  TaxPreviewComponent,
 } from "./ar-documents.types";
 
 const DEFAULT_PAGE_SIZE = 25;
@@ -285,5 +283,3 @@ export class ArDocumentsService {
   }
 }
 
-/** Statuses that still carry an open balance. Exported for the aging report. */
-export { OPEN_STATUSES } from "./lib/ar-document-header";

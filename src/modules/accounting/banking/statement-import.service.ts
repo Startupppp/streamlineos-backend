@@ -49,8 +49,6 @@ import type {
 export type {
   ImportedStatementLine,
   ImportStatementInput,
-  ImportWarning,
-  ImportWarningCode,
   StatementImportResult,
   StatementSummary,
 } from "./statement-import.types";

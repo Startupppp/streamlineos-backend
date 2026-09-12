@@ -1,5 +1,7 @@
-import { Body, Controller, Delete, Get, HttpCode, Param, ParseIntPipe, Patch, Post, UseGuards } from "@nestjs/common";
+import { Body, Controller, Delete, Get, HttpCode, Param, ParseIntPipe, Patch, Post, Req, UseGuards } from "@nestjs/common";
+import type { Request } from "express";
 import { z } from "zod";
+import { readRequestScopedRead } from "../organization/core/read-request-scope";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { ModuleGuard } from "../../common/rbac/module.guard";
 import { RequireModule } from "../../common/rbac/require-module.decorator";
@@ -54,8 +56,12 @@ export class SurveyBuilderController {
   @RequirePermission("surveys:view")
   @Validate({ params: surveyIdParams })
   @ResponseSchema(surveyBuilderSnapshotSchema)
-  getBuilder(@Param("surveyId", ParseIntPipe) surveyId: number, @CurrentUser() u: CurrentUserContext) {
-    return this.builder.getBuilder(u.orgId, surveyId);
+  getBuilder(
+    @Param("surveyId", ParseIntPipe) surveyId: number,
+    @CurrentUser() u: CurrentUserContext,
+    @Req() req: Request,
+  ) {
+    return this.builder.getBuilder(readRequestScopedRead(req, u), surveyId);
   }
 
   @Post("sections")
@@ -163,8 +169,12 @@ export class SurveyBuilderController {
   @RequirePermission("surveys:view")
   @Validate({ params: surveyIdParams })
   @ResponseSchema(surveyLogicRuleListSchema)
-  listLogic(@Param("surveyId", ParseIntPipe) surveyId: number, @CurrentUser() u: CurrentUserContext) {
-    return this.logic.list(u.orgId, surveyId);
+  listLogic(
+    @Param("surveyId", ParseIntPipe) surveyId: number,
+    @CurrentUser() u: CurrentUserContext,
+    @Req() req: Request,
+  ) {
+    return this.logic.list(readRequestScopedRead(req, u), surveyId);
   }
 
   @Post("logic")

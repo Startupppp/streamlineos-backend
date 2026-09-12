@@ -330,16 +330,27 @@ describe("COVERAGE — the whole mutating surface, checked against its own schem
   }));
 
   /**
-   * 1,393 -> 1,389, re-pinned 2026-09-11 with the org-access remediation's regenerated
-   * contract. Thirteen routes were deleted and one added, but this counts only POST/PUT/PATCH
-   * operations that declare a request body, so only four of the fourteen can move it: the four
-   * `PATCH /org-hierarchy/<kind>/{id}/move` routes. The six `DELETE /org-hierarchy/<kind>/{id}`
-   * and the two `DELETE /hr/org/...` compat routes are the wrong verb;
-   * `POST /workspace-onboarding/complete` was bodyless in the pre-deletion contract; and the
-   * added `GET /org/setup/status` is a GET. 1393 - 4 = 1389.
+   * 1,389 -> 1,475, re-pinned 2026-09-12 against the MERGED contract.
+   *
+   * 1,389 was main's number (`670436c72`, 3,654 operations). This branch is main plus the
+   * Inventory, CRM, Timesheets and SignOS surfaces, with `finance/` replaced by the gl_*
+   * accounting kernel, and the merged contract carries 3,893 operations. So the whole delta is
+   * the merge, and it is accounted for by module rather than absorbed, because a count that moved
+   * further than the merged modules explain is a signal and not a rebase:
+   *   +167 added — /inventory 79, /accounting 40 (the gl_* kernel's own routes), /crm 39,
+   *        /compliance 3, /waitlist 2, /deals 2, /timesheets 1, /csat 1.
+   *    -81 removed — /accounting 66 and /finance 11 (main's finance/ module, which the gl_*
+   *        rewrite absorbed), plus /sign 1, /public 1, /csat 1, /contacts 1.
+   *   1389 + 167 - 81 = 1475.
+   *
+   * Descriptive, and it has to be re-read after the release's final `pnpm openapi:generate`
+   * rather than assumed. The assertions that BITE are the three below it: every one of the 1,475
+   * gets a body derived from its own schema, every derived body is re-checked by an independent
+   * reader, and `{}` is rejected where the synthesised body is accepted. Those all hold at 1,475
+   * on the merged surface — the 86 new bodies are equipped, not excused.
    */
-  it("ANTI-VACUITY: the contract really does carry the 1,389 mutating bodies the gate counts", () => {
-    expect(mutating.length).toBe(1389);
+  it("ANTI-VACUITY: the contract really does carry the 1,475 mutating bodies the gate counts", () => {
+    expect(mutating.length).toBe(1475);
   });
 
   it("derives a body for every operation that declares a JSON one", () => {

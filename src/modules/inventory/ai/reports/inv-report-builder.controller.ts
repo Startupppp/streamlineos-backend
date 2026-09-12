@@ -1,6 +1,19 @@
-import { Body, Controller, Get, Header, HttpCode, HttpStatus, Post, Res, UseGuards } from "@nestjs/common";
+import {
+  Body,
+  Controller,
+  Get,
+  Header,
+  HttpCode,
+  HttpStatus,
+  Post,
+  Res,
+  UseGuards,
+  UseInterceptors,
+} from "@nestjs/common";
 import type { Response } from "express";
 import { JwtAuthGuard } from "../../../../common/auth/jwt-auth.guard";
+import { AiRequestAbortInterceptor } from "../../../ai/core/streaming";
+import { NoTenantTransaction } from "../../../../common/tenant";
 import { PermissionGuard } from "../../../access/permission.guard";
 import { RequirePermission } from "../../../access/require-permission.decorator";
 import { CurrentUser } from "../../../../common/auth/current-user.decorator";
@@ -42,10 +55,23 @@ import {
  * `inventory:audit:export`, are asserted in the service against the spec the
  * caller actually sent — `@RequirePermission` takes one key, so the conjunction
  * is not expressible on the decorator and the decorator is not the boundary.
+ *
+ * Only `ask` carries `@NoTenantTransaction()`, because only `ask` reaches a
+ * provider. `catalog` is static and `export` has no model in its path, so both
+ * keep the request transaction — which for `export` is what keeps the permission
+ * assertions and the report run atomic.
+ *
+ * `@UseInterceptors(AiRequestAbortInterceptor)` is the other half of the opt-out
+ * on `ask`: the decorator removes the tenant context's disconnect signal that
+ * `getAmbientAiAbortSignal` was reading, and without it the released connection
+ * would be bought with an uncancellable, still-billed provider call (PRD-C091).
+ * On `catalog` and `export` it is inert — it arms an `AbortSignal` in an
+ * AsyncLocalStorage scope and writes nothing to the response.
  */
 @RequireModule("inventory")
 @Controller("inventory/ai/reports")
 @UseGuards(JwtAuthGuard, ModuleGuard)
+@UseInterceptors(AiRequestAbortInterceptor)
 export class InvReportBuilderController {
   constructor(private readonly builder: InvReportBuilderService) {}
 
@@ -87,6 +113,7 @@ export class InvReportBuilderController {
   @UseRateLimit("ai:invoke")
   @RequirePermission("inventory:ai:read")
   @HttpCode(HttpStatus.OK)
+  @NoTenantTransaction()
   ask(
     @Body(new ZodValidationPipe(invReportAskSchema)) body: InvReportAskInput,
     @CurrentUser() u: CurrentUserContext,

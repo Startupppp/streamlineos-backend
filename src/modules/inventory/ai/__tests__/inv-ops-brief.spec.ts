@@ -1,3 +1,16 @@
+/**
+ * The surface under test is `@NoTenantTransaction()`, so it opens its own short
+ * tenant transaction around the reads that must commit before a provider call.
+ * The real helper reaches `withTenant` -> `resolvePlacement`, which is
+ * control-plane infrastructure this unit spec has no business booting; the
+ * pass-through keeps the subject of these tests what it was. Same shape as
+ * `timesheets/core/timesheets-ai-stream.spec.ts`. That the transaction is
+ * really opened is pinned by the placement-bypass gate, not here.
+ */
+jest.mock("../../../../common/tenant/run-in-tenant-transaction", () => ({
+  runInTenantTransaction: async (_db: unknown, read: () => Promise<unknown>) => read(),
+}));
+
 import { InvAiService } from "../inv-ai.service";
 import { InvAiExplainService } from "../inv-ai-explain.service";
 import type { AiGatewayService } from "../../../ai/core/gateway/ai-gateway.service";

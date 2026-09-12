@@ -35,16 +35,13 @@ import type {
 */
 export { parseCsv } from "./lib/csv-reader";
 export { parseAmountToMinor } from "./lib/statement-amounts";
-export type { DecimalSeparator } from "./lib/statement-amounts";
 export { StatementCsvError } from "./lib/statement-csv-error";
-export { isSupportedDateFormat, parseStatementDate, SUPPORTED_DATE_FORMATS } from "./lib/statement-dates";
-export type { StatementDateFormat } from "./lib/statement-dates";
+export { parseStatementDate, SUPPORTED_DATE_FORMATS } from "./lib/statement-dates";
 export type {
   DuplicateLineGroup,
   LooseColumnMapping,
   ParsedStatement,
   ParsedStatementRow,
-  SkippedStatementRow,
   StatementColumnMapping,
 } from "./statement-csv.types";
 

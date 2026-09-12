@@ -149,37 +149,13 @@ export function subtract(a: Money, b: Money): Money {
   return money(a.minor - b.minor, a.currency);
 }
 
-export function negate(a: Money): Money {
-  return money(-a.minor, a.currency);
-}
-
-export function absolute(a: Money): Money {
-  return money(Math.abs(a.minor), a.currency);
-}
-
 export function sum(amounts: readonly Money[], currency: string): Money {
   return amounts.reduce((acc, m) => add(acc, m), zero(currency));
-}
-
-export function isZero(a: Money): boolean {
-  return a.minor === 0;
-}
-
-export function isNegative(a: Money): boolean {
-  return a.minor < 0;
-}
-
-export function isPositive(a: Money): boolean {
-  return a.minor > 0;
 }
 
 export function compare(a: Money, b: Money): number {
   assertSameCurrency(a, b);
   return a.minor === b.minor ? 0 : a.minor < b.minor ? -1 : 1;
-}
-
-export function equals(a: Money, b: Money): boolean {
-  return a.currency === b.currency && a.minor === b.minor;
 }
 
 /* ---------------------------------------------------------------- rounding */

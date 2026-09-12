@@ -9,6 +9,18 @@ import { SignDocumentsService } from "../sign-documents.service";
 import { SignFieldsService } from "../sign-fields.service";
 import { SignRecipientsService } from "../sign-recipients.service";
 import { SignWatermarkService } from "../sign-watermark.service";
+import type { SignAuthMethodPolicy } from "../sign-auth-method.policy";
+
+/**
+ * `remove()` never consults the auth-method policy, so the double is empty —
+ * but it is typed `Partial<SignAuthMethodPolicy>` rather than cast through
+ * `any`, so a later stub naming a method the policy does not have fails to
+ * compile instead of silently proving nothing.
+ */
+function authMethodPolicyDouble(): SignAuthMethodPolicy {
+  const double: Partial<SignAuthMethodPolicy> = {};
+  return double as SignAuthMethodPolicy;
+}
 
 const OWNER_ORG = "org-owner";
 const ATTACKER_ORG = "org-attacker";
@@ -139,7 +151,7 @@ describe("SignRecipientsService.remove — orgId present in DELETE WHERE clause"
 
   it("DENY — deleting a recipient from ATTACKER_ORG throws NotFoundException when recipient not found", async () => {
     const { db, mockAudit, mockTokens, actor } = makeDb(null);
-    const svc = new SignRecipientsService(db, mockAudit, mockTokens, {} as any);
+    const svc = new SignRecipientsService(db, mockAudit, mockTokens, authMethodPolicyDouble());
 
     await expect(svc.remove(ATTACKER_ORG, 77, actor)).rejects.toBeInstanceOf(NotFoundException);
   });
@@ -147,7 +159,7 @@ describe("SignRecipientsService.remove — orgId present in DELETE WHERE clause"
   it("CONTROL — DELETE WHERE clause includes orgId for same-tenant recipient", async () => {
     const recipient = { id: 77, orgId: OWNER_ORG, envelopeId: 1, name: "Alice", email: "a@b.com", status: "pending" };
     const { db, getWhere, mockAudit, mockTokens, actor } = makeDb(recipient);
-    const svc = new SignRecipientsService(db, mockAudit, mockTokens, {} as any);
+    const svc = new SignRecipientsService(db, mockAudit, mockTokens, authMethodPolicyDouble());
 
     await svc.remove(OWNER_ORG, 77, actor);
 

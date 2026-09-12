@@ -2,4 +2,4 @@
  * Re-exported from the kernel so there is exactly one implementation of the
  * Drizzle error-cause unwrapping. See `kernel/pg-errors.ts` for why it exists.
  */
-export { isUniqueViolation, pgErrorOf } from "../kernel/pg-errors";
+export { isUniqueViolation } from "../kernel/pg-errors";

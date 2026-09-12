@@ -169,18 +169,6 @@ export const reverseJournalSchema = z
   .strict();
 export type ReverseJournalInputDto = z.infer<typeof reverseJournalSchema>;
 
-export const listJournalsSchema = z
-  .object({
-    from: isoDate.optional(),
-    to: isoDate.optional(),
-    sourceType: journalSourceSchema.optional(),
-    accountId: uuid.optional(),
-    page: z.coerce.number().int().positive().default(1),
-    pageSize: z.coerce.number().int().positive().max(100).default(50),
-  })
-  .strict();
-export type ListJournalsQueryDto = z.infer<typeof listJournalsSchema>;
-
 export const accountLedgerSchema = z
   .object({
     from: isoDate,

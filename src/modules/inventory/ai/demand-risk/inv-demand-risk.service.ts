@@ -21,6 +21,9 @@ import {
   type ResolvedInvAiAction,
 } from "../inv-ai-action-resolver";
 import type { DemandRiskInput } from "./dto/inv-demand-risk.schemas";
+import { DRIZZLE } from "../../../../db/drizzle.constants";
+import type { Db } from "../../../../db/drizzle.module";
+import { readEvidence } from "../lib/inv-ai-read-evidence";
 
 const FEATURE_KEY = "inv.demand-risk" as const;
 const PROMPT_KEY = "inv.demand-risk" as const;
@@ -166,6 +169,14 @@ function buildUserPrompt(
 @Injectable()
 export class InvDemandRiskService {
   constructor(
+    /**
+     * Injected for one reason: the route is `@NoTenantTransaction()`, so the
+     * evidence reads need a `Db` to open their own short tenant transaction
+     * against. Nothing in this file queries through it directly — the delegate
+     * services below pick the transaction up through their own `this.db`,
+     * because `DRIZZLE` is the tenant-aware proxy.
+     */
+    @Inject(DRIZZLE) private readonly db: Db,
     private readonly gateway: AiGatewayService,
     private readonly baseline: DemandBaselineService,
     /**
@@ -187,16 +198,35 @@ export class InvDemandRiskService {
     const { orgId, userId } = user;
     const generatedAt = new Date().toISOString();
 
-    // The gate, and the only one this surface needs: `scopeFor` answers a
-    // warehouse the caller does not hold with 404 rather than 403, and refuses
-    // an org-wide request from a caller restricted to specific sites — an
-    // org-wide demand series aggregates sites they cannot open.
-    const warehouseId = await this.baseline.scopeFor(orgId, userId, input.warehouseId ?? null);
+    /*
+     * Every database statement this surface makes, in ONE short tenant
+     * transaction that COMMITS before the gateway call below. The route carries
+     * `@NoTenantTransaction()`, so this opens a real transaction rather than
+     * reusing an ambient one — which is the whole point: the provider round trip
+     * that follows must not be awaited while a pooled connection sits idle in
+     * transaction. Nothing after this block touches the database; the rest is
+     * projection over values already in memory.
+     *
+     * The authorization check is deliberately inside it. `scopeFor` answers a
+     * warehouse the caller does not hold with 404 rather than 403, and refuses
+     * an org-wide request from a caller restricted to specific sites — an
+     * org-wide demand series aggregates sites they cannot open — so it must
+     * resolve before either read, and both reads must see the same GUC it did.
+     */
+    const { warehouseId, stored, report } = await readEvidence(this.db, orgId, async () => {
+      const scopedWarehouseId = await this.baseline.scopeFor(
+        orgId,
+        userId,
+        input.warehouseId ?? null,
+      );
 
-    const [stored, report] = await Promise.all([
-      this.forecasts.latest(orgId, input.variantId, warehouseId),
-      this.baseline.baseline(orgId, input.variantId, { warehouseId }),
-    ]);
+      const [latest, baselineReport] = await Promise.all([
+        this.forecasts.latest(orgId, input.variantId, scopedWarehouseId),
+        this.baseline.baseline(orgId, input.variantId, { warehouseId: scopedWarehouseId }),
+      ]);
+
+      return { warehouseId: scopedWarehouseId, stored: latest, report: baselineReport };
+    });
 
     const missing = collectMissing(stored, report);
     if (missing.length > 0) {

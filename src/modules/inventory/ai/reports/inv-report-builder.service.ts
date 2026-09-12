@@ -1,5 +1,8 @@
-import { ForbiddenException, Injectable } from "@nestjs/common";
+import { ForbiddenException, Inject, Injectable } from "@nestjs/common";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
+import { DRIZZLE } from "../../../../db/drizzle.constants";
+import type { Db } from "../../../../db/drizzle.module";
+import { readEvidence } from "../lib/inv-ai-read-evidence";
 import { AccessService } from "../../../access/access.service";
 import { AiGatewayService } from "../../../ai/core/gateway/ai-gateway.service";
 import type { AiUsageMeta } from "../../../ai/core/gateway/ai-gateway.types";
@@ -139,6 +142,15 @@ function buildUserPrompt(question: string): string {
 @Injectable()
 export class InvReportBuilderService {
   constructor(
+    /**
+     * Injected so `ask` can open its own short tenant transactions: the route is
+     * `@NoTenantTransaction()` and the provider call sits in the MIDDLE of this
+     * service's work, so there are two of them. Nothing here queries through
+     * `db` directly — `DRIZZLE` is the tenant-aware proxy, so the report
+     * services and `AccessService` pick the transaction up through their own
+     * `this.db`.
+     */
+    @Inject(DRIZZLE) private readonly db: Db,
     private readonly gateway: AiGatewayService,
     private readonly access: AccessService,
     private readonly warehouseScope: WarehouseScopeService,
@@ -150,80 +162,103 @@ export class InvReportBuilderService {
     const { orgId, userId } = user;
     const generatedAt = new Date().toISOString();
 
-    // The asker's own warehouse, checked before anything else happens. Outside
-    // their scope this is 404 and the request ends here — no model call, no
-    // report, and no confirmation that the warehouse exists.
-    if (input.warehouseId !== undefined) {
-      await this.warehouseScope.assertWarehouseVisible(orgId, userId, input.warehouseId);
+    /*
+     * Transaction one of two. The asker's own warehouse, checked before
+     * anything else happens: outside their scope this is 404 and the request
+     * ends here — no model call, no report, and no confirmation that the
+     * warehouse exists. It gets a short tenant transaction of its own because
+     * the route is `@NoTenantTransaction()` and the model call below must not be
+     * awaited with a pooled connection idle in transaction.
+     *
+     * Hoisted to a local so the narrowing survives into the callback: TypeScript
+     * does not carry a property narrowing across a closure boundary.
+     */
+    const askerWarehouseId = input.warehouseId;
+    if (askerWarehouseId !== undefined) {
+      await readEvidence(this.db, orgId, () =>
+        this.warehouseScope.assertWarehouseVisible(orgId, userId, askerWarehouseId),
+      );
     }
 
     const fallback = planReportFromQuestion(input.question);
+    // The provider round trip, and the reason for the split. It sits in the
+    // MIDDLE of this method's work rather than at the end, so there is a short
+    // transaction on each side of it and none across it.
     const { spec: chosen, plannedBy, aiUsage, correlationId, model } = await this.choose(
       user,
       input.question,
       fallback,
     );
 
-    const { spec, stripped } = await this.scopeSpec(user, chosen, input.warehouseId);
-    const definition = INV_REPORT_CATALOG[spec.report];
+    /*
+     * Transaction two of two, opened AFTER the provider call has returned. It
+     * carries everything that is left: the scope resolution that brings the
+     * model's spec inside the asker's warehouses, both permission checks, and
+     * the report run itself. One transaction rather than four so the view check
+     * and the rows it guards cannot be answered from two different snapshots.
+     */
+    return readEvidence(this.db, orgId, async () => {
+      const { spec, stripped } = await this.scopeSpec(user, chosen, askerWarehouseId);
+      const definition = INV_REPORT_CATALOG[spec.report];
 
-    const provenance: InvAiProvenance | null =
-      plannedBy === "model" && model !== null && correlationId !== null
-        ? {
-            contractVersion: INV_AI_CONTRACT_VERSION,
-            promptKey: PROMPT_KEY,
-            promptVersion: PROMPT_VERSION,
-            model,
-            correlationId,
-          }
-        : null;
+      const provenance: InvAiProvenance | null =
+        plannedBy === "model" && model !== null && correlationId !== null
+          ? {
+              contractVersion: INV_AI_CONTRACT_VERSION,
+              promptKey: PROMPT_KEY,
+              promptVersion: PROMPT_VERSION,
+              model,
+              correlationId,
+            }
+          : null;
 
-    const base = {
-      question: input.question,
-      spec,
-      label: definition.label,
-      plannedBy,
-      columns: toColumnHeaders(definition.columns),
-      stripped,
-      provenance,
-      generatedAt,
-      ...(aiUsage ? { aiUsage } : {}),
-    };
+      const base = {
+        question: input.question,
+        spec,
+        label: definition.label,
+        plannedBy,
+        columns: toColumnHeaders(definition.columns),
+        stripped,
+        provenance,
+        generatedAt,
+        ...(aiUsage ? { aiUsage } : {}),
+      };
 
-    // The report's own key, checked before it runs. Naming a report is not a way
-    // to read one whose screen you cannot open — the valuation report is the
-    // case that makes this concrete, since it costs `inventory:valuation:read`
-    // and the other five do not.
-    if (!(await this.access.holds(user, definition.viewPermission))) {
+      // The report's own key, checked before it runs. Naming a report is not a way
+      // to read one whose screen you cannot open — the valuation report is the
+      // case that makes this concrete, since it costs `inventory:valuation:read`
+      // and the other five do not.
+      if (!(await this.access.holds(user, definition.viewPermission))) {
+        return {
+          ...base,
+          status: "not_permitted",
+          rows: [],
+          rowCount: 0,
+          total: null,
+          truncated: false,
+          requiredPermission: definition.viewPermission,
+          canExport: false,
+        };
+      }
+
+      const { items, total } = await definition.run(
+        { orgId, userId, page: 1, limit: REPORT_PREVIEW_CAP, reports: this.reports, extended: this.extended },
+        spec,
+      );
+
+      const rows = items.map((item) => projectRow(item, definition.columns));
+
       return {
         ...base,
-        status: "not_permitted",
-        rows: [],
-        rowCount: 0,
-        total: null,
-        truncated: false,
-        requiredPermission: definition.viewPermission,
-        canExport: false,
+        status: "ok",
+        rows,
+        rowCount: rows.length,
+        total,
+        truncated: total !== null ? total > rows.length : rows.length === REPORT_PREVIEW_CAP,
+        requiredPermission: null,
+        canExport: await this.access.holds(user, definition.exportPermission),
       };
-    }
-
-    const { items, total } = await definition.run(
-      { orgId, userId, page: 1, limit: REPORT_PREVIEW_CAP, reports: this.reports, extended: this.extended },
-      spec,
-    );
-
-    const rows = items.map((item) => projectRow(item, definition.columns));
-
-    return {
-      ...base,
-      status: "ok",
-      rows,
-      rowCount: rows.length,
-      total,
-      truncated: total !== null ? total > rows.length : rows.length === REPORT_PREVIEW_CAP,
-      requiredPermission: null,
-      canExport: await this.access.holds(user, definition.exportPermission),
-    };
+    });
   }
 
   /**

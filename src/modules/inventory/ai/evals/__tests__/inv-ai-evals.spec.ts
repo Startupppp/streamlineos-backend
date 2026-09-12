@@ -1,4 +1,16 @@
 import { join } from "node:path";
+
+/**
+ * The four inventory AI surfaces are `@NoTenantTransaction()`, so each opens its
+ * own short tenant transaction around the reads that must commit before a
+ * provider call. The real helper reaches `withTenant` -> `resolvePlacement`,
+ * which is control-plane infrastructure these evals have no business booting;
+ * pass-through keeps the subject of the file the prompts, the scoping and the
+ * refusal shapes. Same shape as `timesheets/core/timesheets-ai-stream.spec.ts`.
+ */
+jest.mock("../../../../../common/tenant/run-in-tenant-transaction", () => ({
+  runInTenantTransaction: async (_db: unknown, read: () => Promise<unknown>) => read(),
+}));
 import { NotFoundException, BadRequestException } from "@nestjs/common";
 import {
   INV_AI_EVAL_CASES,
@@ -218,6 +230,9 @@ function buildBuilder(
   ],
 ) {
   return new InvReportBuilderService(
+    // The `Db` readEvidence opens its short transactions against; the helper is
+    // mocked to pass through above, so nothing is ever called on it.
+    {} as never,
     gateway as never,
     accessStub(permissions) as never,
     scope,
@@ -322,6 +337,7 @@ describe("inventory AI evals — golden", () => {
       recommendations: [],
     });
     const service = new InvDemandRiskService(
+      {} as never,
       gateway as never,
       {
         scopeFor: jest.fn().mockResolvedValue(7),
@@ -458,6 +474,7 @@ describe("inventory AI evals — refusal", () => {
 
   function buildDemandRisk(gateway: unknown, latest: unknown) {
     return new InvDemandRiskService(
+      {} as never,
       gateway as never,
       {
         scopeFor: jest.fn().mockResolvedValue(7),
@@ -918,6 +935,7 @@ describe("inventory AI evals — injection", () => {
       recommendations: [],
     });
     const service = new InvDemandRiskService(
+      {} as never,
       gateway as never,
       {
         scopeFor: jest.fn().mockResolvedValue(null),

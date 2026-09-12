@@ -19,6 +19,38 @@
       "verdict": "FALSE-POSITIVE",
       "note": "Two sites, neither a per-row round trip. (1) bustActiveMemberSessions is a for(;;) keyset drain over organization_members paged at SESSION_BUST_PAGE=500 â€” the loop query IS the next page â€” and each page busts through cache.invalidateMany, one variadic DEL per page rather than one per member. It replaced a .limit(10000) that silently never invalidated member 10,001 onward. (2) The other match is the detector reading its own warning: the doc comment above it contains the literal prose `members.map((m) => cache.invalidate(...))` describing the shape NOT used, and this gate does not mask comments the way check-relation-key-reach does. Classified 2026-09-03 by reading; the file was uncommitted and under another agent edit at the time, so re-read the drain before trusting this line."
     },
+    "/accounting/ap/ap-payments.service.ts": {
+      "verdict": "BOUNDED",
+      "note": "Three sites, all per-allocation: two `for (const allocation of input.allocations) await writeAllocation(tx, ...)` and, on reversal, `for (const allocation of allocations) await applySettlement(...)`. `input.allocations` is `z.array(allocationSchema).min(1).max(200)` (ap/dto/ap-payments.schemas.ts:63,71,75), and the reversal walks the allocations ONE payment wrote, so the same cap holds. Each allocation settles a different document by a different amount against that document's running balance; a single statement cannot express it without a VALUES join. Bounded by a request cap, not by tenant size — which is why this stays BOUNDED and stays visible to the detector."
+    },
+    "/accounting/ap/lib/ap-document-post.ts": {
+      "verdict": "BOUNDED",
+      "note": "One UPDATE per document line, each with a different computed SET (net/tax/gross from `totals.perLine`). Bounded by `lines: z.array(apDocumentLineSchema).min(1).max(200)` (ap/dto/ap-documents.schemas.ts:95). Not claimed unbatchable — a VALUES join would do it — but bounded at 200 inside one posting transaction and recorded rather than hidden."
+    },
+    "/accounting/ap/lib/ap-payment-post.ts": {
+      "verdict": "BOUNDED",
+      "note": "The same `writeAllocation` per allocation as ap-payments.service.ts, on the post path, under the same `.max(200)` DTO cap."
+    },
+    "/accounting/ap/lib/ap-payment-reads.ts": {
+      "verdict": "N+1-FIXED",
+      "note": "Fixed 2026-09-12. `for (const row of rows)` in listPayments called loadAllocations AND loadWithholding per payment, so a page cost 2 x pageSize round trips — up to 200, serialised on the one pooled connection the request transaction holds, on top of the count and the page. Both children are now read once for the whole page by inArray over the page's payment ids and attached from a Map; the loop is a plain rows.map with no call in it. No chunking, and that is measured rather than assumed: pageSize is capped at 100 by listApPaymentsQuerySchema, so each child query binds at most 101 parameters against the postgres-js ceiling of 65,534. Two behaviours preserved deliberately — allocations keep `ORDER BY created_at DESC`, with `id DESC` ADDED as a tiebreaker because ap_allocations.created_at defaults to now() (transaction start time), so every allocation written by one postVendorPayment shares a timestamp and the old per-payment order among ties was already arbitrary; and the nullable paymentId (an allocation may hang off a debit note) is skipped rather than bucketed under a falsy key. getPayment keeps its two round trips and now delegates to the batched readers so the detail and list paths cannot drift. The dead `by.debitNoteId` branch went with it — both call sites only ever passed paymentId. NOT covered by a spec: ap.e2e-spec.ts never calls payments.list, so a statement-count spec at 1 row and at 50 rows is still owed here."
+    },
+    "/accounting/ar/lib/ar-document-posting.ts": {
+      "verdict": "BOUNDED",
+      "note": "AR's half of ap-document-post.ts: one UPDATE per line with per-line computed amounts, bounded by `lines: z.array(arDocumentLineSchema).min(1).max(500)` (ar/dto/ar-documents.schemas.ts:93)."
+    },
+    "/accounting/ar/lib/ar-receipt-settlement.ts": {
+      "verdict": "BOUNDED",
+      "note": "Unwinding a receipt takes a row lock on each allocated document and writes that document's own recomputed `settledMinor`/`status`. The loop sorts by `documentId` first, which is the deadlock-avoiding lock order — batching would lose it. Bounded by `allocations: z.array(allocationLineSchema).min(1).max(200)` (ar/dto/ar-receipts.schemas.ts)."
+    },
+    "/accounting/kernel/lib/account-reads.ts": {
+      "verdict": "BOUNDED",
+      "note": "`while (cursor)` walks an account's ancestry one SELECT per level when re-parenting, to refuse a cycle before writing. Bounded by the depth of the chart of accounts, with a `seen` set that throws rather than looping; it does not grow with the number of accounts."
+    },
+    "/accounting/tax/tax.service.ts": {
+      "verdict": "FIXED-SET",
+      "note": "`for (const seed of engine.seedCodes())` — the tax pack's own code list, a constant of the pack implementation. The statement count is a property of the pack, not of the tenant, and `seedPack` runs once per (org, book, pack)."
+    },
     "/ai/core/ops-copilot-tools.ts": {
       "verdict": "N+1-FIXED",
       "note": "variant and stock reads hoisted above the loop into two inArray queries grouped by Map; the Promise.all is gone"
@@ -35,6 +67,14 @@
       "verdict": "FALSE-POSITIVE",
       "note": "for(;;) keyset export page loop bounded by EXPORT_ROW_CAP â€” one query per page of EXPORT_PAGE_SIZE rows"
     },
+    "/autonomy/lib/hold-in-flight.ts": {
+      "verdict": "BATCHED",
+      "note": "MOVED 2026-09-12 from /autonomy/autonomy-hold.service.ts with its verdict and its argument intact — the branch merge split that service and the detected loop came here verbatim. Re-deriving the verdict at the new path is how a split launders a finding. Original note follows. BATCHED (was N+1-FIXED; re-verdicted 2026-09-03 when the braceless scanner made the loop visible again). cancelInFlight issued one UPDATE per cancelled hold with an identical SET; it is now `for (let i = 0; i < ids.length; i += DECISION_REVERSAL_CHUNK) await this.db.update(...).where(inArray(...))` â€” statements bounded by ceil(n/CHUNK), not by n. The loop is SUPPOSED to keep matching, which is what BATCHED means."
+    },
+    "/autonomy/sequences/nurture-step-sender.service.ts": {
+      "verdict": "BOUNDED",
+      "note": "One `stopNurtureEnrolment(this.db, ...)` per candidate the cadence resolves to exit or complete, each writing that enrolment's own terminal status and reason. `loadCandidates` reads `.limit(PER_ORG_CANDIDATES)` = 200 per org per tick (autonomy/sequences/lib/nurture-sweep-reads.ts:30,67), so the sweep is bounded per tick rather than by enrolment count."
+    },
     "/billing/core/ai-credits-packs.service.ts": {
       "verdict": "FALSE-POSITIVE",
       "note": "loop is over the DEFAULT_AI_CREDIT_PACKS module constant, so the call count is fixed at compile time and does not grow with data"
@@ -42,6 +82,14 @@
     "/billing/core/billing-webhook.handler.ts": {
       "verdict": "FIXED-SET",
       "note": "the loop is over `applied.revenue`, which billing-webhook-effects.ts fills from exactly two push sites, so it is <=2 entries per webhook â€” not tenant-sized."
+    },
+    "/billing/core/lib/credit-reservation-close.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "MOVED 2026-09-12 from /billing/core/ai-credits-reservation.service.ts with its verdict and its argument intact — the branch merge split that service and the detected loop came here verbatim. Re-deriving the verdict at the new path is how a split launders a finding. Original note follows. ticket 21 removed the N+1: sweepExpiredReservations opened runInNewTenantTransaction per expired row (up to 500 nested pooled borrows per org) and released each via a read-modify-write wallet update. It is now a bounded keyset drain inside forEachOrg's own transaction â€” one page select, one compare-and-set claim, one atomic `balance + refunded`. What the detector still sees is the for(;;) page stepper, which is the correct shape. Proved by src/db/__tests__/db-call-count-contract.spec.ts: statement count identical at 1 and 50 expired rows"
+    },
+    "/billing/core/lib/plan-quota-alerts.ts": {
+      "verdict": "FIXED-SET",
+      "note": "Split out of /billing/core/plan-limits.service.ts, which carries the same verdict: the loop is over `crossedThresholds()`, which returns at most [100, 80], so the dedup `cache.get`/`cache.set` pair runs at most twice."
     },
     "/billing/core/plan-limits.service.ts": {
       "verdict": "FIXED-SET",
@@ -55,13 +103,13 @@
       "verdict": "N+1-FIXED",
       "note": "ensureUniqueSlug: replaced per-iteration findFirst with single findMany on slug = root OR slug LIKE root-%; compute next suffix in memory"
     },
-    "/build/core/projects-custom-states.service.ts": {
-      "verdict": "N+1-FIXED",
-      "note": "N+1 removed: the reorder is one UPDATE ... FROM (VALUES (id, order), ...) via common/db/bulk-update.ts. Executed against a real database (build.project_statuses, schema-qualified, reserved-word column) and asserted at one statement in projects-custom-states-bulk-reorder.spec.ts"
-    },
     "/build/core/build-ticket-batch-workflow.ts": {
       "verdict": "FALSE-POSITIVE",
       "note": "First seen 2026-09-09. The detector matches `for (const row of changed) await assertTransitionAllowed(db, ...)` at :20-23 because the callee takes a `db` handle, but that call issues ZERO statements on this path. `validateBatchTransition` reads the workflow ONCE at :13 via `fetchTransitionsAndStatuses`, then builds `prefetched` at :19 carrying `{ ...workflow, ticketFields: new Map(rows.map(row => [row.id, row])), wipAlreadyChecked: true }` and passes it as the last argument. `assertTransitionAllowed` (projects-tickets-workflow-utils.ts:93) destructures `prefetched ?? await fetchTransitionsAndStatuses(...)`, so the workflow read is skipped, and its only other query — `readTicketRequiredFields` at :120 — is reached at :163 only when `prefetched?.ticketFields?.get(context.ticketId)` misses. The Map is keyed by every row `readMutationTickets` returned, and `changed` is a subset of those rows, so it never misses. The one remaining round trip is the capacity reservation at :18, which is hoisted ABOVE the loop and runs once for the whole batch. Statement count is therefore independent of batch size; pinned by build-ticket-mutation-bounds.spec.ts, which asserts one read for a 100-ticket batch."
+    },
+    "/build/core/projects-custom-states.service.ts": {
+      "verdict": "N+1-FIXED",
+      "note": "N+1 removed: the reorder is one UPDATE ... FROM (VALUES (id, order), ...) via common/db/bulk-update.ts. Executed against a real database (build.project_statuses, schema-qualified, reserved-word column) and asserted at one statement in projects-custom-states-bulk-reorder.spec.ts"
     },
     "/build/core/projects-tickets-rank-utils.ts": {
       "verdict": "N+1-FIXED",
@@ -122,6 +170,10 @@
     "/clients/clients.service.ts": {
       "verdict": "FALSE-POSITIVE",
       "note": "for(;;) keyset export drain — (name, id) composite cursor + .limit(EXPORT_PAGE) — one SELECT per page, never per row. Same shape as /contacts/contacts.service.ts."
+    },
+    "/commission/commission-accrual.service.ts": {
+      "verdict": "BOUNDED",
+      "note": "One `recordAccrualForEarning(tx, ...)` per earning, writing that earning's own split parts against the plan version that was in force when it was earned. The read is `.limit(input.limit)` and `limit` is `z.coerce.number().int().min(1).max(800).default(400)` (commission/dto/commission-accrual.schemas.ts:42), so the pass is bounded by an explicit request cap."
     },
     "/contacts/contacts.service.ts": {
       "verdict": "FALSE-POSITIVE",
@@ -247,9 +299,21 @@
       "verdict": "N+1-FIXED",
       "note": "The per-finding undoToken UPDATE is collected into a map of findingId to token and written by one statement, SET undo_token = <map>::jsonb -> finding_id WHERE organization_id = $1 AND finding_id IN (...). The map rides as a single jsonb bind parameter and each row picks its own entry. K applied merges: K UPDATEs -> 1. bulkUpdateFromValues was not used here because it routes through executor.execute(), which this service's FakeDb spec double does not implement."
     },
+    "/deals/forecast/lib/forecast-scoring.ts": {
+      "verdict": "BATCHED",
+      "note": "`for (let index = 0; index < rows.length; index += CHUNK)` with CHUNK = 200 and one multi-row upsert per chunk. Statements are ceil(n/200), not n. The loop is supposed to keep matching, which is what BATCHED means."
+    },
     "/directory/worker-engagements.service.ts": {
       "verdict": "FIXED-SET",
       "note": "loop over a 5-element array literal of engagement fields; the number of statements does not grow with tenant data."
+    },
+    "/e-sign/lib/bulk-send-pass.ts": {
+      "verdict": "BOUNDED",
+      "note": "One COMMITTED transaction per row, deliberately: the attempt counter is written before the send so a row that kills the worker is not retried forever, and that only holds if the count survives the pass. A shared transaction would roll the counter back with the failure. Bounded by `orgSettings.bulkSendMaxRowsPerJob`, enforced at job creation (e-sign/sign-bulk-send.service.ts:66)."
+    },
+    "/e-sign/lib/recipient-session.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "The loop is over the after-commit hooks the signing transaction registered, and each one MUST open its own transaction because the one it was registered in has committed (backend/CLAUDE.md §4). Identical shape to `drainAfterCommitHooks` in common/tenant/run-in-tenant-transaction.ts. The count is hooks per signature, not rows."
     },
     "/e-sign/sign-audit.service.ts": {
       "verdict": "BATCHED",
@@ -279,9 +343,9 @@
       "verdict": "N+1-FIXED",
       "note": "instantiate: bulk insert documents (single VALUES), bulk insert recipients (filtered flatMap), bulk insert fields (filtered flatMap)"
     },
-    "/email/email-outbox-retry.ts": {
-      "verdict": "FALSE-POSITIVE",
-      "note": "each iteration is one message's own provider send and its own terminal status; the batch is claim-bounded and the work is not a repeated lookup"
+    "/email/lib/outbox-retries.ts": {
+      "verdict": "BOUNDED",
+      "note": "One provider send and one status UPDATE per outbox row. The send is per-row by nature and its outcome decides that row's status, attempts and lastError, so there is nothing to batch. Bounded by `.limit(BATCH_SIZE)` = 20 per pass (email/lib/outbox-retries.ts:10,35)."
     },
     "/expenses/expenses-import.service.ts": {
       "verdict": "FALSE-POSITIVE",
@@ -375,9 +439,21 @@
       "verdict": "BOUNDED",
       "note": "BOUNDED 2026-09-07. The earlier 'N+1-FIXED via Promise.all' claim was withdrawn: preloading every candidate's permissions did not batch the work, it removed the loop's early exit, so a path that typically resolved ONE candidate always resolved all of them. Concurrency hid the cost in wall-clock while raising it in total. The sequential loop with its early return is restored. There is no bulk resolver to batch into - AccessService exposes only resolveUserPermissions(orgId, userId), and membersWithPermission returns PermissionMember {userId, membershipId} with no DataScope, which is the field the loop actually tests. Bounded instead by APPROVER_CANDIDATE_LIMIT = 100 on the candidate list and by returning at the first candidate whose scope covers another member. Pinned by leave-approver-query-count.spec.ts: 2 statements at 1 and at 50 candidates, and exactly 1 resolution when the first candidate covers."
     },
+    "/inventory/audit-export/audit-export-rows.ts": {
+      "verdict": "EXCLUDED-MODULE",
+      "note": "module excluded from this gate by EXCLUDED_MODULE_PREFIXES; read and left to that module's owner. First seen 2026-09-12 when the inventory branch merged into main — inventory's file count roughly doubled, and every one of these is a new path, not a new defect at an old one."
+    },
     "/inventory/channels/channels.service.ts": {
       "verdict": "EXCLUDED-MODULE",
       "note": "2 DB call(s) detected inside loop body â€” batch with inArray or Promise.all"
+    },
+    "/inventory/channels/lib/channel-snapshot-diff.ts": {
+      "verdict": "EXCLUDED-MODULE",
+      "note": "module excluded from this gate by EXCLUDED_MODULE_PREFIXES; read and left to that module's owner. First seen 2026-09-12 when the inventory branch merged into main — inventory's file count roughly doubled, and every one of these is a new path, not a new defect at an old one."
+    },
+    "/inventory/channels/sync/channel-job.drizzle-store.ts": {
+      "verdict": "EXCLUDED-MODULE",
+      "note": "/inventory/ is in EXCLUDED_MODULE_PREFIXES, so this is a scoping verdict — but it was read rather than waved through, and what the reading found is recorded here so the next person does not have to repeat it. One site: `for (const variant of variants)` at markPublications:193 issues one UPDATE inv_channel_stock_publications per variant. It is a genuine round trip, not one of this baseline's two false-positive shapes — `tx` is a real transaction opened by runInNewTenantTransaction at :176, not an in-process Map named cache and not a prose mention in a comment. It is bounded at 5,000, and the bound is two hops upstream rather than in this file: markPublications' only caller is channel-sync.worker.ts:212, whose accepted/refused partition the offers readOffers returned, and readOffers ends .limit(5_000) at :151 — so |skus| <= |offers| <= 5000 and the inArray on sku stays far under the 65,534 bind ceiling. Delete that limit and this loop grows with the tenant's whole publication set. Batchable if inventory ever comes into scope: accepted rows share one SET and collapse to a single inArray UPDATE, while refused rows need a VALUES join for their per-SKU error (common/db/bulk-update.ts)."
     },
     "/inventory/counts/inv-cycle-counts.service.ts": {
       "verdict": "EXCLUDED-MODULE",
@@ -387,9 +463,37 @@
       "verdict": "EXCLUDED-MODULE",
       "note": "First seen 2026-09-03. Same shape as inv-cycle-counts: a VALUES fragment builder feeding one statement. Inventory is out of scope."
     },
+    "/inventory/import-export/staged-import.service.ts": {
+      "verdict": "EXCLUDED-MODULE",
+      "note": "module excluded from this gate by EXCLUDED_MODULE_PREFIXES; read and left to that module's owner. First seen 2026-09-12 when the inventory branch merged into main — inventory's file count roughly doubled, and every one of these is a new path, not a new defect at an old one."
+    },
+    "/inventory/landed-cost/landed-cost-apply.service.ts": {
+      "verdict": "EXCLUDED-MODULE",
+      "note": "module excluded from this gate by EXCLUDED_MODULE_PREFIXES; read and left to that module's owner. First seen 2026-09-12 when the inventory branch merged into main — inventory's file count roughly doubled, and every one of these is a new path, not a new defect at an old one."
+    },
+    "/inventory/notifications/inv-expiry-sweep.service.ts": {
+      "verdict": "EXCLUDED-MODULE",
+      "note": "module excluded from this gate by EXCLUDED_MODULE_PREFIXES; read and left to that module's owner. First seen 2026-09-12 when the inventory branch merged into main — inventory's file count roughly doubled, and every one of these is a new path, not a new defect at an old one."
+    },
+    "/inventory/picking/pick-completion.service.ts": {
+      "verdict": "EXCLUDED-MODULE",
+      "note": "module excluded from this gate by EXCLUDED_MODULE_PREFIXES; read and left to that module's owner. First seen 2026-09-12 when the inventory branch merged into main — inventory's file count roughly doubled, and every one of these is a new path, not a new defect at an old one."
+    },
+    "/inventory/picking/pick-substitution.ts": {
+      "verdict": "EXCLUDED-MODULE",
+      "note": "module excluded from this gate by EXCLUDED_MODULE_PREFIXES; read and left to that module's owner. First seen 2026-09-12 when the inventory branch merged into main — inventory's file count roughly doubled, and every one of these is a new path, not a new defect at an old one."
+    },
     "/inventory/products/inv-product-crud.service.ts": {
       "verdict": "EXCLUDED-MODULE",
       "note": "1 DB call(s) detected inside loop body â€” batch with inArray or Promise.all"
+    },
+    "/inventory/projects/lib/project-reservation.ts": {
+      "verdict": "EXCLUDED-MODULE",
+      "note": "module excluded from this gate by EXCLUDED_MODULE_PREFIXES; read and left to that module's owner. First seen 2026-09-12 when the inventory branch merged into main — inventory's file count roughly doubled, and every one of these is a new path, not a new defect at an old one."
+    },
+    "/inventory/purchase-orders/grn-post.service.ts": {
+      "verdict": "EXCLUDED-MODULE",
+      "note": "module excluded from this gate by EXCLUDED_MODULE_PREFIXES; read and left to that module's owner. First seen 2026-09-12 when the inventory branch merged into main — inventory's file count roughly doubled, and every one of these is a new path, not a new defect at an old one."
     },
     "/inventory/purchase-orders/grn-receive.service.ts": {
       "verdict": "EXCLUDED-MODULE",
@@ -399,13 +503,53 @@
       "verdict": "EXCLUDED-MODULE",
       "note": "1 DB call(s) detected inside loop body â€” batch with inArray or Promise.all"
     },
+    "/inventory/purchase-orders/lib/grn-draft.ts": {
+      "verdict": "EXCLUDED-MODULE",
+      "note": "module excluded from this gate by EXCLUDED_MODULE_PREFIXES; read and left to that module's owner. First seen 2026-09-12 when the inventory branch merged into main — inventory's file count roughly doubled, and every one of these is a new path, not a new defect at an old one."
+    },
+    "/inventory/purchase-orders/lib/grn-post-tx.ts": {
+      "verdict": "EXCLUDED-MODULE",
+      "note": "module excluded from this gate by EXCLUDED_MODULE_PREFIXES; read and left to that module's owner. First seen 2026-09-12 when the inventory branch merged into main — inventory's file count roughly doubled, and every one of these is a new path, not a new defect at an old one."
+    },
+    "/inventory/purchase-orders/lib/po-lifecycle.ts": {
+      "verdict": "EXCLUDED-MODULE",
+      "note": "module excluded from this gate by EXCLUDED_MODULE_PREFIXES; read and left to that module's owner. First seen 2026-09-12 when the inventory branch merged into main — inventory's file count roughly doubled, and every one of these is a new path, not a new defect at an old one."
+    },
+    "/inventory/putaway/putaway-complete.service.ts": {
+      "verdict": "EXCLUDED-MODULE",
+      "note": "module excluded from this gate by EXCLUDED_MODULE_PREFIXES; read and left to that module's owner. First seen 2026-09-12 when the inventory branch merged into main — inventory's file count roughly doubled, and every one of these is a new path, not a new defect at an old one."
+    },
+    "/inventory/quality/inspection-release.ts": {
+      "verdict": "EXCLUDED-MODULE",
+      "note": "module excluded from this gate by EXCLUDED_MODULE_PREFIXES; read and left to that module's owner. First seen 2026-09-12 when the inventory branch merged into main — inventory's file count roughly doubled, and every one of these is a new path, not a new defect at an old one."
+    },
+    "/inventory/quality/lib/recall-create.ts": {
+      "verdict": "EXCLUDED-MODULE",
+      "note": "module excluded from this gate by EXCLUDED_MODULE_PREFIXES; read and left to that module's owner. First seen 2026-09-12 when the inventory branch merged into main — inventory's file count roughly doubled, and every one of these is a new path, not a new defect at an old one."
+    },
     "/inventory/quality/quality-inspections.service.ts": {
       "verdict": "EXCLUDED-MODULE",
       "note": "2 DB call(s) detected inside loop body â€” batch with inArray or Promise.all"
     },
+    "/inventory/replenishment/inv-replenishment.service.ts": {
+      "verdict": "EXCLUDED-MODULE",
+      "note": "module excluded from this gate by EXCLUDED_MODULE_PREFIXES; read and left to that module's owner. First seen 2026-09-12 when the inventory branch merged into main — inventory's file count roughly doubled, and every one of these is a new path, not a new defect at an old one."
+    },
     "/inventory/returns/customer-returns.service.ts": {
       "verdict": "EXCLUDED-MODULE",
       "note": "1 DB call(s) detected inside loop body â€” batch with inArray or Promise.all"
+    },
+    "/inventory/returns/lib/customer-return-post.ts": {
+      "verdict": "EXCLUDED-MODULE",
+      "note": "module excluded from this gate by EXCLUDED_MODULE_PREFIXES; read and left to that module's owner. First seen 2026-09-12 when the inventory branch merged into main — inventory's file count roughly doubled, and every one of these is a new path, not a new defect at an old one."
+    },
+    "/inventory/returns/vendor-returns.service.ts": {
+      "verdict": "EXCLUDED-MODULE",
+      "note": "module excluded from this gate by EXCLUDED_MODULE_PREFIXES; read and left to that module's owner. First seen 2026-09-12 when the inventory branch merged into main — inventory's file count roughly doubled, and every one of these is a new path, not a new defect at an old one."
+    },
+    "/inventory/sales-orders/lib/so-pick-pack.ts": {
+      "verdict": "EXCLUDED-MODULE",
+      "note": "module excluded from this gate by EXCLUDED_MODULE_PREFIXES; read and left to that module's owner. First seen 2026-09-12 when the inventory branch merged into main — inventory's file count roughly doubled, and every one of these is a new path, not a new defect at an old one."
     },
     "/inventory/sales-orders/so-fulfillment.service.ts": {
       "verdict": "EXCLUDED-MODULE",
@@ -414,6 +558,22 @@
     "/inventory/sales-orders/so-lifecycle.service.ts": {
       "verdict": "EXCLUDED-MODULE",
       "note": "module excluded from this gate by EXCLUDED_MODULE_PREFIXES; read and left to that module's owner"
+    },
+    "/inventory/sales-orders/so-ship.ts": {
+      "verdict": "EXCLUDED-MODULE",
+      "note": "module excluded from this gate by EXCLUDED_MODULE_PREFIXES; read and left to that module's owner. First seen 2026-09-12 when the inventory branch merged into main — inventory's file count roughly doubled, and every one of these is a new path, not a new defect at an old one."
+    },
+    "/inventory/slotting/lib/slotting-sweep.ts": {
+      "verdict": "EXCLUDED-MODULE",
+      "note": "module excluded from this gate by EXCLUDED_MODULE_PREFIXES; read and left to that module's owner. First seen 2026-09-12 when the inventory branch merged into main — inventory's file count roughly doubled, and every one of these is a new path, not a new defect at an old one."
+    },
+    "/inventory/stock-engine/channel-pool.service.ts": {
+      "verdict": "EXCLUDED-MODULE",
+      "note": "module excluded from this gate by EXCLUDED_MODULE_PREFIXES; read and left to that module's owner. First seen 2026-09-12 when the inventory branch merged into main — inventory's file count roughly doubled, and every one of these is a new path, not a new defect at an old one."
+    },
+    "/inventory/stock-engine/lib/reservation-unwind.ts": {
+      "verdict": "EXCLUDED-MODULE",
+      "note": "module excluded from this gate by EXCLUDED_MODULE_PREFIXES; read and left to that module's owner. First seen 2026-09-12 when the inventory branch merged into main — inventory's file count roughly doubled, and every one of these is a new path, not a new defect at an old one."
     },
     "/inventory/stock-engine/movement-costing.service.ts": {
       "verdict": "EXCLUDED-MODULE",
@@ -431,6 +591,10 @@
       "verdict": "EXCLUDED-MODULE",
       "note": "1 DB call(s) detected inside loop body â€” batch with inArray or Promise.all"
     },
+    "/inventory/stock-engine/stock-level-locks.ts": {
+      "verdict": "EXCLUDED-MODULE",
+      "note": "module excluded from this gate by EXCLUDED_MODULE_PREFIXES; read and left to that module's owner. First seen 2026-09-12 when the inventory branch merged into main — inventory's file count roughly doubled, and every one of these is a new path, not a new defect at an old one."
+    },
     "/inventory/stock-engine/valuation.service.ts": {
       "verdict": "EXCLUDED-MODULE",
       "note": "1 DB call(s) detected inside loop body â€” batch with inArray or Promise.all"
@@ -442,6 +606,18 @@
     "/inventory/stock/inv-stock.service.ts": {
       "verdict": "EXCLUDED-MODULE",
       "note": "1 DB call(s) detected inside loop body â€” batch with inArray or Promise.all"
+    },
+    "/inventory/stock/lib/transfer-commands.ts": {
+      "verdict": "EXCLUDED-MODULE",
+      "note": "module excluded from this gate by EXCLUDED_MODULE_PREFIXES; read and left to that module's owner. First seen 2026-09-12 when the inventory branch merged into main — inventory's file count roughly doubled, and every one of these is a new path, not a new defect at an old one."
+    },
+    "/inventory/stock/lib/transfer-complete.ts": {
+      "verdict": "EXCLUDED-MODULE",
+      "note": "module excluded from this gate by EXCLUDED_MODULE_PREFIXES; read and left to that module's owner. First seen 2026-09-12 when the inventory branch merged into main — inventory's file count roughly doubled, and every one of these is a new path, not a new defect at an old one."
+    },
+    "/inventory/traceability/lib/genealogy-labels.ts": {
+      "verdict": "EXCLUDED-MODULE",
+      "note": "module excluded from this gate by EXCLUDED_MODULE_PREFIXES; read and left to that module's owner. First seen 2026-09-12 when the inventory branch merged into main — inventory's file count roughly doubled, and every one of these is a new path, not a new defect at an old one."
     },
     "/inventory/webhooks/webhook-emitter.service.ts": {
       "verdict": "EXCLUDED-MODULE",
@@ -495,6 +671,10 @@
       "verdict": "FALSE-POSITIVE",
       "note": "purgeExpired uses for(;;) chunked batch delete â€” SELECT batch IDs + DELETE batch; not per-row N+1"
     },
+    "/kb/wiki/kb-purge-ledger.ts": {
+      "verdict": "BATCHED",
+      "note": "`for (let i = 0; i < keys.length; i += PURGE_BOOKKEEPING_CHUNK)` with one multi-row `insert ... onConflictDoUpdate` per chunk. Statements are ceil(n/CHUNK)."
+    },
     "/kb/wiki/kb-spaces.service.ts": {
       "verdict": "BATCHED",
       "note": "First seen 2026-09-03 by the braceless scanner, and it was real: deleting a space emitted ONE outbox row per article and per page via `for (const { contentType, id } of [...articles.map(...), ...pages.map(...)]) await OutboxWriter.emit(tx, {...})`, i.e. one INSERT per piece of content in the space. Reclassified N+1-FIXED -> BATCHED on 2026-09-09, which is a verdict correction and NOT a code regression. The per-row emit is gone, but the replacement is not a single statement either: `emitContentDeletes` (:256-287) is a deliberate keyset loop — `for (;;)` reading SPACE_CONTENT_BATCH_SIZE rows ordered by id, then one `OutboxWriter.emitMany` per batch, resuming from the last id. It stays inside the space's own transaction because the events must commit with the soft delete, and it must not read tens of thousands of pages into one array. Statements are 2 per batch, i.e. O(pages / SPACE_CONTENT_BATCH_SIZE), never O(pages). N+1-FIXED asserts the detector no longer matches; a keyset batch is SUPPOSED to keep matching it, exactly as the /access/access-grant-drains.ts and /accounting/recurring-journals entries record. This is the shape the PRD requires of growing work, so it stays visible rather than exempt."
@@ -514,6 +694,10 @@
     "/leads/leads-ops.service.ts": {
       "verdict": "FALSE-POSITIVE",
       "note": "same shape â€” one batched updateMirroredLeads per salesperson, not per lead"
+    },
+    "/lifecycle/lib/lifecycle-open-term.ts": {
+      "verdict": "FIXED-SET",
+      "note": "`candidates` is built from at most four fields of ONE deal (partyId, clientId, leadPartyId, leadId) and the loop returns at the first that resolves, so it is at most four legacy-party lookups per deal and usually one."
     },
     "/mail/mail-accounts.service.ts": {
       "verdict": "BATCHED",
@@ -603,6 +787,10 @@
       "verdict": "N+1-FIXED",
       "note": "identifiersOfParty per candidate is replaced by identifiersOfParties, one inArray read over the subject plus every candidate with an explicit .limit(IDENTIFIER_READ_LIMIT), grouped in memory: 1+N -> 1. Fixing that exposed a second real site the old note never named, an insert(partyDuplicateCandidates) that upserted once per queued candidate in the same loop. The loop now collects QueuedCandidate[] and issues one multi-row insert ... onConflictDoUpdate with RETURNING mapping candidate ids back by (low, high): Q upserts -> 1. The auto-merge branch stays sequential because a merge can remove the subject, and blockers stays insert-only."
     },
+    "/party/party-write-primitives.ts": {
+      "verdict": "BATCHED",
+      "note": "MOVED 2026-09-12 from /party/party-legacy-writer.ts with its verdict and its argument intact — the branch merge split that service and the detected loop came here verbatim. Re-deriving the verdict at the new path is how a split launders a finding. Original note follows. The real site is fixed: claimIdentifiers per moved row became claimIdentifiersOfParties, one insert(partyIdentifiers) ... onConflictDoNothing per group, deduplicated on (kind, normalised_value) across the whole set because the unique index is (org, kind, normalised_value) and ON CONFLICT cannot resolve two conflicting rows inside one INSERT (21000). First-claimant-wins is exactly what the per-party loop did. N inserts per group -> 1. What the detector still matches is site A, the groupByPayload loop, which is batched by construction. countMirroredRows was deleted in the same change: a non-exported function with zero callers in the file and zero references in the repository."
+    },
     "/payroll/jobs/payroll-jobs.service.ts": {
       "verdict": "N+1-FIXED",
       "note": "N+1 removed 2026-09-03 (commit e3bdd8c6). The old FALSE-POSITIVE excuse â€” 'the per-job UPDATE is the compare-and-set claim; batching it would let two workers claim the same job' â€” was wrong: the claim predicate is `status = 'PENDING'`, which does the claiming just as well over a multi-key WHERE, and a row another worker took is simply absent from RETURNING. claimPending now selects the candidate ids and issues ONE `UPDATE ... WHERE id IN (...) AND status = 'PENDING' RETURNING *`, with attempt incremented as `coalesce(attempt, 0) + 1` in SQL rather than written back from the value its own SELECT read (which is what let a concurrent worker's increment be overwritten, so fail()'s maxAttempts ceiling was unreachable for a twice-claimed job). FIFO order restored after RETURNING. No loop in the file issues a database call. Pinned by payroll-jobs-claim-batch.spec.ts."
@@ -647,6 +835,10 @@
       "verdict": "FALSE-POSITIVE",
       "note": "for(;;) keyset export drain — gt(quotes.id, afterId) + .orderBy(asc(quotes.id)).limit(EXPORT_PAGE) — one SELECT per page, never per row. Same shape as /audit-log/audit-log.service.ts."
     },
+    "/rbac/lib/role-permission-writes.ts": {
+      "verdict": "N+1-FIXED",
+      "note": "Fixed 2026-09-12: the session-cache bust after a role grant change was `Promise.all(assignees.map((a) => deps.cache.invalidate(...)))` — up to 500 Redis round trips, made concurrent so the cost showed in neither wall-clock nor this gate's old cache-blind patterns. It is now one `deps.cache.invalidateMany(keys)`, the pipelined method CacheService already exposed for exactly this."
+    },
     "/rbac/role-grant-reconciler.service.ts": {
       "verdict": "FALSE-POSITIVE",
       "note": "all three sites are bounded pagination: a chunked INSERT_CHUNK_SIZE grant insert and two for(;;) keyset drains"
@@ -663,6 +855,10 @@
       "verdict": "BATCHED",
       "note": "fanout loop batches recipients at PUSH_SUBSCRIPTION_BATCH=200 and calls loadSubscriptionsForPage once per page (one DB call for all userIds in the slice). The loop replaced a per-member approach that issued one SELECT per recipient, which was the actual N+1. The file's own comment (line 184) documents the transition: 5,000 members went from 5,000 SELECTs to 25."
     },
+    "/reporting/report-schedules.service.ts": {
+      "verdict": "BOUNDED",
+      "note": "One `UPDATE ... RETURNING` per due schedule, because `runCount` is the outbox aggregate version and `outbox_events` is unique on (org, aggregate type, aggregate id, aggregate version) — a batched increment could not hand each schedule back its own version, and emitting version 1 twice makes a report arrive once and then silently never again. Bounded by `.limit(PER_ORG_DUE_LIMIT)` = 25 per org per tick (reporting/report-schedules.service.ts:38)."
+    },
     "/sessions/sessions.service.ts": {
       "verdict": "BATCHED",
       "note": "Re-verdicted 2026-09-03 (ticket 21, sixth pass). WAS FALSE-POSITIVE naming only the redis.del(...batch) prune loop. There are now two chunk loops and both are batched by construction: pruneExpiredRevocations DELs REVOCATION_PRUNE_BATCH (200) keys per variadic call, and tombstone() writes one MSET plus one variadic ZADD per REVOCATION_WRITE_CHUNK (256) ids where it previously issued two Redis commands per session id (500 sessions cost 1,000 round trips, now 4). BATCHED rather than FALSE-POSITIVE because the loop really does issue a round trip â€” one per chunk, which is the bounded form."
@@ -675,9 +871,25 @@
       "verdict": "FALSE-POSITIVE",
       "note": "collectOrgFileKeys and collectUserFileKeys each became one UNION ALL, with user FK columns discovered from pg_constraint; the loops still detected are bounded cursor drains in drainPages"
     },
+    "/support/core/lib/support-routing.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "MOVED 2026-09-12 from /support/core/support-macros.service.ts with its verdict and its argument intact — the branch merge split that service and the detected loop came here verbatim. Re-deriving the verdict at the new path is how a split launders a finding. Original note follows. verified by reading it: the loop returns on the first matching rule, so at most one member lookup per invocation regardless of rule count"
+    },
+    "/support/core/lib/support-sla-escalation.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "MOVED 2026-09-12 from /support/core/support-sla.service.ts with its verdict and its argument intact — the branch merge split that service and the detected loop came here verbatim. Re-deriving the verdict at the new path is how a split launders a finding. Original note follows. The prescription in the old note was already implemented: escalations are grouped by target level into idsByNewLevel and issued as one inArray UPDATE per level, at most 2. What the detector matches is that group loop itself, which is the target shape. Residual recorded rather than hidden: tryAutoReassign still issues a membership findFirst plus an UPDATE per repeat-breach ticket, because each ticket routes to a different assignee. That site is invisible to this detector (the per-row work is a service call) and is tracked here rather than in the ACTIONABLE-UNDETECTED ratchet only because it is named in this note."
+    },
     "/support/core/support-ticket-erasure.ts": {
       "verdict": "FALSE-POSITIVE",
       "note": "for(;;) keyset drain over support_tickets; one query per page"
+    },
+    "/support/kb-gap/lib/gap-detection.ts": {
+      "verdict": "BATCHED",
+      "note": "Two sites, both introduced 2026-09-12 by the upsertGaps batch that removed the N+1 in the calling service, and both are one round trip per CHUNK rather than per row — the verdict this baseline defines for exactly that shape. upsertGaps issues one findMany pre-read per chunk to learn which cluster keys exist and at what status, then one multi-row insert ... onConflictDoUpdate per chunk. The chunk is not a nicety: a gap row binds 7 parameters, so a single VALUES would hit the postgres-js ceiling of 65,534 at roughly 9,360 rows, and nothing upstream bounds the cluster count — without GAP_UPSERT_CHUNK = 500 (the same chunk common/db/bulk-update.ts uses) batching would turn a large org from slow into throwing. Three per-row behaviours are preserved in SQL: setWhere keeps the status gate so a DISMISSED gap is never resurrected even if its status changed between the pre-read and the write; the conflict `set` writes only ticketCount, sampleTicketIds, evidence and updatedAt, never representativeQuestion or status, so a DRAFTED row is not reset to OPEN; and created/updated/skipped come from the pre-read partition rather than from .returning(), so they depend on no system column. The counts are best-effort under a concurrent sweep — a row created between the pre-read and the write counts as created and lands as an update — but the DATA is correct in that race, which the per-row version was not: two concurrent sweeps both read absent, both INSERTed, and the loser got an unhandled 23505. The single-gap upsertGap is kept for callers that write one."
+    },
+    "/support/kb-gap/support-kb-gap-detection.service.ts": {
+      "verdict": "N+1-FIXED",
+      "note": "Fixed 2026-09-12. detectGaps ran two loops, each awaiting upsertGap per row, and upsertGap is itself read-then-write — so a pass cost 2 x (clusters + searchGaps) round trips on the connection the cron sweep holds. The search half was bounded at 20 by getSearchGaps; the cluster half was bounded by nothing, which is what made this a real N+1 rather than a small fixed cost. Both sources are now projected into one GapUpsertEntry[] and written by a single upsertGaps call; the two .map opener matches in this file contain no database call. The statements moved to /support/kb-gap/lib/gap-detection.ts, which is classified BATCHED. STILL OPEN and deliberately not claimed fixed here: clusterTicketEmbeddings carries no LIMIT, so the entry list still grows with the organisation's open-ticket count, and it is an O(n^2) vector self-join with no ANN path — the dominant cost on a large org, and a backend/CLAUDE.md §7 threshold decision that needs a measurement against a real database rather than a guessed constant. Batching bounds the ROUND TRIPS, not the join."
     },
     "/surveys/survey-builder.service.ts": {
       "verdict": "N+1-FIXED",
@@ -699,9 +911,29 @@
       "verdict": "N+1-FIXED",
       "note": "N+1-FIXED 2026-09-07: bulkApprove rewritten as a set-based operation matching the bulkReject pattern — one inArray SELECT for candidates, one activeDelegationsToActor read, one assertOrganizationActor call, one settings read, then a single transaction with inArray UPDATEs, one billable-entries SELECT, one rateResolver.resolveMany, bounded rateGroup UPDATEs, and audit.recordMany. approveSinglePeriod is no longer called per period."
     },
+    "/timesheets/core/attendance/attendance-draft.service.ts": {
+      "verdict": "BOUNDED",
+      "note": "One `getOrCreatePeriod` plus one timesheet INSERT per clock segment. The request range is capped at MAX_RANGE_DAYS = 62 and rejected above it (timesheets/core/attendance/attendance-draft.service.ts:26,80), so the fan-out is bounded by days asked for, not by tenant size."
+    },
     "/timesheets/core/exceptions-detector.service.ts": {
       "verdict": "FALSE-POSITIVE",
       "note": "chunked bulk insert â€” the loop steps by INSERT_CHUNK_SIZE and each iteration writes a whole batch with onConflictDoNothing"
+    },
+    "/timesheets/core/lib/approval-transition.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "MOVED 2026-09-12 from /timesheets/core/approvals.service.ts with its verdict and its argument intact — the branch merge split that service and the detected loop came here verbatim. Re-deriving the verdict at the new path is how a split launders a finding. Original note follows. the loop is over rateGroups â€” one UPDATE per distinct rate shape, covering every timesheet in that group"
+    },
+    "/timesheets/core/lib/billing-export.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "Both sites are page steppers, not per-row work. `for await (const chunk of billableEntryChunks(tx, conditions))` issues ONE `inArray` UPDATE covering the whole chunk, and the generator's own `for(;;)` is a keyset drain whose query IS the next page. One round trip per page."
+    },
+    "/timesheets/core/lib/rejection-transition.ts": {
+      "verdict": "BOUNDED",
+      "note": "One lifecycle event per period, and deliberately so: `outbox_events` is unique on (org, aggregate type, aggregate id, aggregate version) and an event whose `period_id` is a list is unroutable to the people downstream. Bounded by `periodIds: z.array(z.number().int().positive()).min(1).max(100)` (timesheets/core/dto/approvals.schemas.ts:18)."
+    },
+    "/timesheets/core/reminders-sweep.service.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "`for (let page = 0; page < REMINDER_MAX_PAGES; page++)` is a page stepper (REMINDER_MAX_PAGES = 40): the loop's SELECT is the next page, one round trip per page and not per period."
     },
     "/users/user-ops.service.ts": {
       "verdict": "N+1-FIXED",
@@ -731,6 +963,10 @@
       "verdict": "BATCHED",
       "note": "NEWLY VISIBLE 2026-09-03 with src/common. `for (let offset = 0; offset < rows.length; offset += chunkSize)` issues one UPDATE ... FROM (VALUES ...) per chunk of BULK_UPDATE_CHUNK (500) rows. This helper IS the batching primitive the rest of the gate's ACTIONABLE entries are told to use."
     },
+    "@common/org/membership-mutations.ts": {
+      "verdict": "FIXED-SET",
+      "note": "The loop is over `membershipIdsByRole` — one `syncStructuralRoleAssignments` per DISTINCT ROLE, each carrying every membership id that holds it. Structural org roles are the fixed set OWNER / ORG_ADMIN / MEMBER (backend/CLAUDE.md §5), so this is at most three statements however many members are created."
+    },
     "@common/org/sync-org-unit-placement.ts": {
       "verdict": "FALSE-POSITIVE",
       "note": "NEWLY VISIBLE 2026-09-03 with src/common. The outer loop iterates Object.entries(placement) â€” the fixed set of org-unit kinds, a product constant, not tenant data. The inner `for (const row of existing)` deletes rows selected by (membershipId, orgId, orgUnits.kind), which is one person's placement in one kind: at most a handful, and normally one."
@@ -738,6 +974,10 @@
     "@common/outbox/external-effect-ledger.ts": {
       "verdict": "FALSE-POSITIVE",
       "note": "The db call inside the loop is inside forEachOrg, which issues one transaction per tenant org — exactly the pattern for-each-org.ts was designed for (RLS requires per-tenant transactions). The loop body reads a single aggregate row per org, not one row per item. Same shape as @common/tenant/for-each-org.ts (already FALSE-POSITIVE)."
+    },
+    "@common/outbox/outbox-publisher.service.ts": {
+      "verdict": "FIXED-SET",
+      "note": "One transaction per registered CONSUMER of one event, not per event and not per row. Consumers are a boot-time registration list, and each needs its own transaction so one consumer's failure or delivery-deadline abandonment does not roll back another's work."
     },
     "@common/outbox/outbox-writer.ts": {
       "verdict": "BATCHED",
@@ -762,246 +1002,6 @@
     "@db/seeds/marketplace-apps.seed.ts": {
       "verdict": "FALSE-POSITIVE",
       "note": "NEWLY VISIBLE 2026-09-03 with src/db. Iterates the imported const array APPS â€” literal-bounded, one-shot seed script."
-    },
-    "/autonomy/lib/hold-in-flight.ts": {
-      "verdict": "BATCHED",
-      "note": "MOVED 2026-09-12 from /autonomy/autonomy-hold.service.ts with its verdict and its argument intact — the branch merge split that service and the detected loop came here verbatim. Re-deriving the verdict at the new path is how a split launders a finding. Original note follows. BATCHED (was N+1-FIXED; re-verdicted 2026-09-03 when the braceless scanner made the loop visible again). cancelInFlight issued one UPDATE per cancelled hold with an identical SET; it is now `for (let i = 0; i < ids.length; i += DECISION_REVERSAL_CHUNK) await this.db.update(...).where(inArray(...))` â€” statements bounded by ceil(n/CHUNK), not by n. The loop is SUPPOSED to keep matching, which is what BATCHED means."
-    },
-    "/billing/core/lib/credit-reservation-close.ts": {
-      "verdict": "FALSE-POSITIVE",
-      "note": "MOVED 2026-09-12 from /billing/core/ai-credits-reservation.service.ts with its verdict and its argument intact — the branch merge split that service and the detected loop came here verbatim. Re-deriving the verdict at the new path is how a split launders a finding. Original note follows. ticket 21 removed the N+1: sweepExpiredReservations opened runInNewTenantTransaction per expired row (up to 500 nested pooled borrows per org) and released each via a read-modify-write wallet update. It is now a bounded keyset drain inside forEachOrg's own transaction â€” one page select, one compare-and-set claim, one atomic `balance + refunded`. What the detector still sees is the for(;;) page stepper, which is the correct shape. Proved by src/db/__tests__/db-call-count-contract.spec.ts: statement count identical at 1 and 50 expired rows"
-    },
-    "/party/party-write-primitives.ts": {
-      "verdict": "BATCHED",
-      "note": "MOVED 2026-09-12 from /party/party-legacy-writer.ts with its verdict and its argument intact — the branch merge split that service and the detected loop came here verbatim. Re-deriving the verdict at the new path is how a split launders a finding. Original note follows. The real site is fixed: claimIdentifiers per moved row became claimIdentifiersOfParties, one insert(partyIdentifiers) ... onConflictDoNothing per group, deduplicated on (kind, normalised_value) across the whole set because the unique index is (org, kind, normalised_value) and ON CONFLICT cannot resolve two conflicting rows inside one INSERT (21000). First-claimant-wins is exactly what the per-party loop did. N inserts per group -> 1. What the detector still matches is site A, the groupByPayload loop, which is batched by construction. countMirroredRows was deleted in the same change: a non-exported function with zero callers in the file and zero references in the repository."
-    },
-    "/support/core/lib/support-routing.ts": {
-      "verdict": "FALSE-POSITIVE",
-      "note": "MOVED 2026-09-12 from /support/core/support-macros.service.ts with its verdict and its argument intact — the branch merge split that service and the detected loop came here verbatim. Re-deriving the verdict at the new path is how a split launders a finding. Original note follows. verified by reading it: the loop returns on the first matching rule, so at most one member lookup per invocation regardless of rule count"
-    },
-    "/support/core/lib/support-sla-escalation.ts": {
-      "verdict": "FALSE-POSITIVE",
-      "note": "MOVED 2026-09-12 from /support/core/support-sla.service.ts with its verdict and its argument intact — the branch merge split that service and the detected loop came here verbatim. Re-deriving the verdict at the new path is how a split launders a finding. Original note follows. The prescription in the old note was already implemented: escalations are grouped by target level into idsByNewLevel and issued as one inArray UPDATE per level, at most 2. What the detector matches is that group loop itself, which is the target shape. Residual recorded rather than hidden: tryAutoReassign still issues a membership findFirst plus an UPDATE per repeat-breach ticket, because each ticket routes to a different assignee. That site is invisible to this detector (the per-row work is a service call) and is tracked here rather than in the ACTIONABLE-UNDETECTED ratchet only because it is named in this note."
-    },
-    "/timesheets/core/lib/approval-transition.ts": {
-      "verdict": "FALSE-POSITIVE",
-      "note": "MOVED 2026-09-12 from /timesheets/core/approvals.service.ts with its verdict and its argument intact — the branch merge split that service and the detected loop came here verbatim. Re-deriving the verdict at the new path is how a split launders a finding. Original note follows. the loop is over rateGroups â€” one UPDATE per distinct rate shape, covering every timesheet in that group"
-    },
-    "/accounting/ap/ap-payments.service.ts": {
-      "verdict": "BOUNDED",
-      "note": "Three sites, all per-allocation: two `for (const allocation of input.allocations) await writeAllocation(tx, ...)` and, on reversal, `for (const allocation of allocations) await applySettlement(...)`. `input.allocations` is `z.array(allocationSchema).min(1).max(200)` (ap/dto/ap-payments.schemas.ts:63,71,75), and the reversal walks the allocations ONE payment wrote, so the same cap holds. Each allocation settles a different document by a different amount against that document's running balance; a single statement cannot express it without a VALUES join. Bounded by a request cap, not by tenant size — which is why this stays BOUNDED and stays visible to the detector."
-    },
-    "/accounting/ap/lib/ap-document-post.ts": {
-      "verdict": "BOUNDED",
-      "note": "One UPDATE per document line, each with a different computed SET (net/tax/gross from `totals.perLine`). Bounded by `lines: z.array(apDocumentLineSchema).min(1).max(200)` (ap/dto/ap-documents.schemas.ts:95). Not claimed unbatchable — a VALUES join would do it — but bounded at 200 inside one posting transaction and recorded rather than hidden."
-    },
-    "/accounting/ap/lib/ap-payment-post.ts": {
-      "verdict": "BOUNDED",
-      "note": "The same `writeAllocation` per allocation as ap-payments.service.ts, on the post path, under the same `.max(200)` DTO cap."
-    },
-    "/accounting/ap/lib/ap-payment-reads.ts": {
-      "verdict": "ACTIONABLE",
-      "note": "A genuine READ N+1 on a list endpoint: `for (const row of rows)` issues `loadAllocations(db, ...)` and `loadWithholding(db, ...)` per payment, so a page of `query.pageSize` payments costs 2 x pageSize round trips. The fix is the ordinary one — one `inArray(paymentIds)` per child table above the loop, grouped into a Map. Recorded ACTIONABLE rather than argued away; it is the only new unclassified site on this branch that is a plain N+1 with a plain fix."
-    },
-    "/accounting/ar/lib/ar-document-posting.ts": {
-      "verdict": "BOUNDED",
-      "note": "AR's half of ap-document-post.ts: one UPDATE per line with per-line computed amounts, bounded by `lines: z.array(arDocumentLineSchema).min(1).max(500)` (ar/dto/ar-documents.schemas.ts:93)."
-    },
-    "/accounting/ar/lib/ar-receipt-settlement.ts": {
-      "verdict": "BOUNDED",
-      "note": "Unwinding a receipt takes a row lock on each allocated document and writes that document's own recomputed `settledMinor`/`status`. The loop sorts by `documentId` first, which is the deadlock-avoiding lock order — batching would lose it. Bounded by `allocations: z.array(allocationLineSchema).min(1).max(200)` (ar/dto/ar-receipts.schemas.ts)."
-    },
-    "/accounting/kernel/lib/account-reads.ts": {
-      "verdict": "BOUNDED",
-      "note": "`while (cursor)` walks an account's ancestry one SELECT per level when re-parenting, to refuse a cycle before writing. Bounded by the depth of the chart of accounts, with a `seen` set that throws rather than looping; it does not grow with the number of accounts."
-    },
-    "/accounting/tax/tax.service.ts": {
-      "verdict": "FIXED-SET",
-      "note": "`for (const seed of engine.seedCodes())` — the tax pack's own code list, a constant of the pack implementation. The statement count is a property of the pack, not of the tenant, and `seedPack` runs once per (org, book, pack)."
-    },
-    "/autonomy/sequences/nurture-step-sender.service.ts": {
-      "verdict": "BOUNDED",
-      "note": "One `stopNurtureEnrolment(this.db, ...)` per candidate the cadence resolves to exit or complete, each writing that enrolment's own terminal status and reason. `loadCandidates` reads `.limit(PER_ORG_CANDIDATES)` = 200 per org per tick (autonomy/sequences/lib/nurture-sweep-reads.ts:30,67), so the sweep is bounded per tick rather than by enrolment count."
-    },
-    "/billing/core/lib/plan-quota-alerts.ts": {
-      "verdict": "FIXED-SET",
-      "note": "Split out of /billing/core/plan-limits.service.ts, which carries the same verdict: the loop is over `crossedThresholds()`, which returns at most [100, 80], so the dedup `cache.get`/`cache.set` pair runs at most twice."
-    },
-    "/commission/commission-accrual.service.ts": {
-      "verdict": "BOUNDED",
-      "note": "One `recordAccrualForEarning(tx, ...)` per earning, writing that earning's own split parts against the plan version that was in force when it was earned. The read is `.limit(input.limit)` and `limit` is `z.coerce.number().int().min(1).max(800).default(400)` (commission/dto/commission-accrual.schemas.ts:42), so the pass is bounded by an explicit request cap."
-    },
-    "/data-quality/lib/finding-executors.ts": {
-      "verdict": "BOUNDED",
-      "note": "One savepoint-wrapped action plus one undo-token UPDATE per claimed finding. The savepoint per row is the point of the loop — a finding whose action fails must not roll back the other claims — so a batch would change the behaviour, not just the statement count. Bounded by the claim, which reads `.limit(MAX_BULK)` = 400 (data-quality/data-quality-finding-claim.ts:88, dto/data-quality.schemas.ts:28)."
-    },
-    "/deals/forecast/lib/forecast-scoring.ts": {
-      "verdict": "BATCHED",
-      "note": "`for (let index = 0; index < rows.length; index += CHUNK)` with CHUNK = 200 and one multi-row upsert per chunk. Statements are ceil(n/200), not n. The loop is supposed to keep matching, which is what BATCHED means."
-    },
-    "/e-sign/lib/bulk-send-pass.ts": {
-      "verdict": "BOUNDED",
-      "note": "One COMMITTED transaction per row, deliberately: the attempt counter is written before the send so a row that kills the worker is not retried forever, and that only holds if the count survives the pass. A shared transaction would roll the counter back with the failure. Bounded by `orgSettings.bulkSendMaxRowsPerJob`, enforced at job creation (e-sign/sign-bulk-send.service.ts:66)."
-    },
-    "/e-sign/lib/recipient-session.ts": {
-      "verdict": "FALSE-POSITIVE",
-      "note": "The loop is over the after-commit hooks the signing transaction registered, and each one MUST open its own transaction because the one it was registered in has committed (backend/CLAUDE.md §4). Identical shape to `drainAfterCommitHooks` in common/tenant/run-in-tenant-transaction.ts. The count is hooks per signature, not rows."
-    },
-    "/email/lib/outbox-retries.ts": {
-      "verdict": "BOUNDED",
-      "note": "One provider send and one status UPDATE per outbox row. The send is per-row by nature and its outcome decides that row's status, attempts and lastError, so there is nothing to batch. Bounded by `.limit(BATCH_SIZE)` = 20 per pass (email/lib/outbox-retries.ts:10,35)."
-    },
-    "/kb/wiki/kb-purge-ledger.ts": {
-      "verdict": "BATCHED",
-      "note": "`for (let i = 0; i < keys.length; i += PURGE_BOOKKEEPING_CHUNK)` with one multi-row `insert ... onConflictDoUpdate` per chunk. Statements are ceil(n/CHUNK)."
-    },
-    "/lifecycle/lib/lifecycle-open-term.ts": {
-      "verdict": "FIXED-SET",
-      "note": "`candidates` is built from at most four fields of ONE deal (partyId, clientId, leadPartyId, leadId) and the loop returns at the first that resolves, so it is at most four legacy-party lookups per deal and usually one."
-    },
-    "/rbac/lib/role-permission-writes.ts": {
-      "verdict": "N+1-FIXED",
-      "note": "Fixed 2026-09-12: the session-cache bust after a role grant change was `Promise.all(assignees.map((a) => deps.cache.invalidate(...)))` — up to 500 Redis round trips, made concurrent so the cost showed in neither wall-clock nor this gate's old cache-blind patterns. It is now one `deps.cache.invalidateMany(keys)`, the pipelined method CacheService already exposed for exactly this."
-    },
-    "/reporting/report-schedules.service.ts": {
-      "verdict": "BOUNDED",
-      "note": "One `UPDATE ... RETURNING` per due schedule, because `runCount` is the outbox aggregate version and `outbox_events` is unique on (org, aggregate type, aggregate id, aggregate version) — a batched increment could not hand each schedule back its own version, and emitting version 1 twice makes a report arrive once and then silently never again. Bounded by `.limit(PER_ORG_DUE_LIMIT)` = 25 per org per tick (reporting/report-schedules.service.ts:38)."
-    },
-    "/support/kb-gap/support-kb-gap-detection.service.ts": {
-      "verdict": "ACTIONABLE",
-      "note": "Two loops; the second is over `getSearchGaps`, which is `.limit(20)` and bounded. The FIRST is not: `clusterTicketEmbeddings` (support/kb-gap/lib/gap-detection.ts) carries no LIMIT, so `ticketClusters` grows with the organisation's open ticket count and each cluster costs one `upsertGap` round trip. Recorded as the real finding it is rather than bounded by an appeal to typical data."
-    },
-    "/timesheets/core/attendance/attendance-draft.service.ts": {
-      "verdict": "BOUNDED",
-      "note": "One `getOrCreatePeriod` plus one timesheet INSERT per clock segment. The request range is capped at MAX_RANGE_DAYS = 62 and rejected above it (timesheets/core/attendance/attendance-draft.service.ts:26,80), so the fan-out is bounded by days asked for, not by tenant size."
-    },
-    "/timesheets/core/lib/billing-export.ts": {
-      "verdict": "FALSE-POSITIVE",
-      "note": "Both sites are page steppers, not per-row work. `for await (const chunk of billableEntryChunks(tx, conditions))` issues ONE `inArray` UPDATE covering the whole chunk, and the generator's own `for(;;)` is a keyset drain whose query IS the next page. One round trip per page."
-    },
-    "/timesheets/core/lib/rejection-transition.ts": {
-      "verdict": "BOUNDED",
-      "note": "One lifecycle event per period, and deliberately so: `outbox_events` is unique on (org, aggregate type, aggregate id, aggregate version) and an event whose `period_id` is a list is unroutable to the people downstream. Bounded by `periodIds: z.array(z.number().int().positive()).min(1).max(100)` (timesheets/core/dto/approvals.schemas.ts:18)."
-    },
-    "/timesheets/core/reminders-sweep.service.ts": {
-      "verdict": "FALSE-POSITIVE",
-      "note": "`for (let page = 0; page < REMINDER_MAX_PAGES; page++)` is a page stepper (REMINDER_MAX_PAGES = 40): the loop's SELECT is the next page, one round trip per page and not per period."
-    },
-    "@common/org/membership-mutations.ts": {
-      "verdict": "FIXED-SET",
-      "note": "The loop is over `membershipIdsByRole` — one `syncStructuralRoleAssignments` per DISTINCT ROLE, each carrying every membership id that holds it. Structural org roles are the fixed set OWNER / ORG_ADMIN / MEMBER (backend/CLAUDE.md §5), so this is at most three statements however many members are created."
-    },
-    "@common/outbox/outbox-publisher.service.ts": {
-      "verdict": "FIXED-SET",
-      "note": "One transaction per registered CONSUMER of one event, not per event and not per row. Consumers are a boot-time registration list, and each needs its own transaction so one consumer's failure or delivery-deadline abandonment does not roll back another's work."
-    },
-    "/inventory/audit-export/audit-export-rows.ts": {
-      "verdict": "EXCLUDED-MODULE",
-      "note": "module excluded from this gate by EXCLUDED_MODULE_PREFIXES; read and left to that module's owner. First seen 2026-09-12 when the inventory branch merged into main — inventory's file count roughly doubled, and every one of these is a new path, not a new defect at an old one."
-    },
-    "/inventory/channels/lib/channel-snapshot-diff.ts": {
-      "verdict": "EXCLUDED-MODULE",
-      "note": "module excluded from this gate by EXCLUDED_MODULE_PREFIXES; read and left to that module's owner. First seen 2026-09-12 when the inventory branch merged into main — inventory's file count roughly doubled, and every one of these is a new path, not a new defect at an old one."
-    },
-    "/inventory/import-export/staged-import.service.ts": {
-      "verdict": "EXCLUDED-MODULE",
-      "note": "module excluded from this gate by EXCLUDED_MODULE_PREFIXES; read and left to that module's owner. First seen 2026-09-12 when the inventory branch merged into main — inventory's file count roughly doubled, and every one of these is a new path, not a new defect at an old one."
-    },
-    "/inventory/landed-cost/landed-cost-apply.service.ts": {
-      "verdict": "EXCLUDED-MODULE",
-      "note": "module excluded from this gate by EXCLUDED_MODULE_PREFIXES; read and left to that module's owner. First seen 2026-09-12 when the inventory branch merged into main — inventory's file count roughly doubled, and every one of these is a new path, not a new defect at an old one."
-    },
-    "/inventory/notifications/inv-expiry-sweep.service.ts": {
-      "verdict": "EXCLUDED-MODULE",
-      "note": "module excluded from this gate by EXCLUDED_MODULE_PREFIXES; read and left to that module's owner. First seen 2026-09-12 when the inventory branch merged into main — inventory's file count roughly doubled, and every one of these is a new path, not a new defect at an old one."
-    },
-    "/inventory/picking/pick-completion.service.ts": {
-      "verdict": "EXCLUDED-MODULE",
-      "note": "module excluded from this gate by EXCLUDED_MODULE_PREFIXES; read and left to that module's owner. First seen 2026-09-12 when the inventory branch merged into main — inventory's file count roughly doubled, and every one of these is a new path, not a new defect at an old one."
-    },
-    "/inventory/picking/pick-substitution.ts": {
-      "verdict": "EXCLUDED-MODULE",
-      "note": "module excluded from this gate by EXCLUDED_MODULE_PREFIXES; read and left to that module's owner. First seen 2026-09-12 when the inventory branch merged into main — inventory's file count roughly doubled, and every one of these is a new path, not a new defect at an old one."
-    },
-    "/inventory/projects/lib/project-reservation.ts": {
-      "verdict": "EXCLUDED-MODULE",
-      "note": "module excluded from this gate by EXCLUDED_MODULE_PREFIXES; read and left to that module's owner. First seen 2026-09-12 when the inventory branch merged into main — inventory's file count roughly doubled, and every one of these is a new path, not a new defect at an old one."
-    },
-    "/inventory/purchase-orders/grn-post.service.ts": {
-      "verdict": "EXCLUDED-MODULE",
-      "note": "module excluded from this gate by EXCLUDED_MODULE_PREFIXES; read and left to that module's owner. First seen 2026-09-12 when the inventory branch merged into main — inventory's file count roughly doubled, and every one of these is a new path, not a new defect at an old one."
-    },
-    "/inventory/purchase-orders/lib/grn-draft.ts": {
-      "verdict": "EXCLUDED-MODULE",
-      "note": "module excluded from this gate by EXCLUDED_MODULE_PREFIXES; read and left to that module's owner. First seen 2026-09-12 when the inventory branch merged into main — inventory's file count roughly doubled, and every one of these is a new path, not a new defect at an old one."
-    },
-    "/inventory/purchase-orders/lib/grn-post-tx.ts": {
-      "verdict": "EXCLUDED-MODULE",
-      "note": "module excluded from this gate by EXCLUDED_MODULE_PREFIXES; read and left to that module's owner. First seen 2026-09-12 when the inventory branch merged into main — inventory's file count roughly doubled, and every one of these is a new path, not a new defect at an old one."
-    },
-    "/inventory/purchase-orders/lib/po-lifecycle.ts": {
-      "verdict": "EXCLUDED-MODULE",
-      "note": "module excluded from this gate by EXCLUDED_MODULE_PREFIXES; read and left to that module's owner. First seen 2026-09-12 when the inventory branch merged into main — inventory's file count roughly doubled, and every one of these is a new path, not a new defect at an old one."
-    },
-    "/inventory/putaway/putaway-complete.service.ts": {
-      "verdict": "EXCLUDED-MODULE",
-      "note": "module excluded from this gate by EXCLUDED_MODULE_PREFIXES; read and left to that module's owner. First seen 2026-09-12 when the inventory branch merged into main — inventory's file count roughly doubled, and every one of these is a new path, not a new defect at an old one."
-    },
-    "/inventory/quality/inspection-release.ts": {
-      "verdict": "EXCLUDED-MODULE",
-      "note": "module excluded from this gate by EXCLUDED_MODULE_PREFIXES; read and left to that module's owner. First seen 2026-09-12 when the inventory branch merged into main — inventory's file count roughly doubled, and every one of these is a new path, not a new defect at an old one."
-    },
-    "/inventory/quality/lib/recall-create.ts": {
-      "verdict": "EXCLUDED-MODULE",
-      "note": "module excluded from this gate by EXCLUDED_MODULE_PREFIXES; read and left to that module's owner. First seen 2026-09-12 when the inventory branch merged into main — inventory's file count roughly doubled, and every one of these is a new path, not a new defect at an old one."
-    },
-    "/inventory/replenishment/inv-replenishment.service.ts": {
-      "verdict": "EXCLUDED-MODULE",
-      "note": "module excluded from this gate by EXCLUDED_MODULE_PREFIXES; read and left to that module's owner. First seen 2026-09-12 when the inventory branch merged into main — inventory's file count roughly doubled, and every one of these is a new path, not a new defect at an old one."
-    },
-    "/inventory/returns/lib/customer-return-post.ts": {
-      "verdict": "EXCLUDED-MODULE",
-      "note": "module excluded from this gate by EXCLUDED_MODULE_PREFIXES; read and left to that module's owner. First seen 2026-09-12 when the inventory branch merged into main — inventory's file count roughly doubled, and every one of these is a new path, not a new defect at an old one."
-    },
-    "/inventory/returns/vendor-returns.service.ts": {
-      "verdict": "EXCLUDED-MODULE",
-      "note": "module excluded from this gate by EXCLUDED_MODULE_PREFIXES; read and left to that module's owner. First seen 2026-09-12 when the inventory branch merged into main — inventory's file count roughly doubled, and every one of these is a new path, not a new defect at an old one."
-    },
-    "/inventory/sales-orders/lib/so-pick-pack.ts": {
-      "verdict": "EXCLUDED-MODULE",
-      "note": "module excluded from this gate by EXCLUDED_MODULE_PREFIXES; read and left to that module's owner. First seen 2026-09-12 when the inventory branch merged into main — inventory's file count roughly doubled, and every one of these is a new path, not a new defect at an old one."
-    },
-    "/inventory/sales-orders/so-ship.ts": {
-      "verdict": "EXCLUDED-MODULE",
-      "note": "module excluded from this gate by EXCLUDED_MODULE_PREFIXES; read and left to that module's owner. First seen 2026-09-12 when the inventory branch merged into main — inventory's file count roughly doubled, and every one of these is a new path, not a new defect at an old one."
-    },
-    "/inventory/slotting/lib/slotting-sweep.ts": {
-      "verdict": "EXCLUDED-MODULE",
-      "note": "module excluded from this gate by EXCLUDED_MODULE_PREFIXES; read and left to that module's owner. First seen 2026-09-12 when the inventory branch merged into main — inventory's file count roughly doubled, and every one of these is a new path, not a new defect at an old one."
-    },
-    "/inventory/stock/lib/transfer-commands.ts": {
-      "verdict": "EXCLUDED-MODULE",
-      "note": "module excluded from this gate by EXCLUDED_MODULE_PREFIXES; read and left to that module's owner. First seen 2026-09-12 when the inventory branch merged into main — inventory's file count roughly doubled, and every one of these is a new path, not a new defect at an old one."
-    },
-    "/inventory/stock/lib/transfer-complete.ts": {
-      "verdict": "EXCLUDED-MODULE",
-      "note": "module excluded from this gate by EXCLUDED_MODULE_PREFIXES; read and left to that module's owner. First seen 2026-09-12 when the inventory branch merged into main — inventory's file count roughly doubled, and every one of these is a new path, not a new defect at an old one."
-    },
-    "/inventory/stock-engine/channel-pool.service.ts": {
-      "verdict": "EXCLUDED-MODULE",
-      "note": "module excluded from this gate by EXCLUDED_MODULE_PREFIXES; read and left to that module's owner. First seen 2026-09-12 when the inventory branch merged into main — inventory's file count roughly doubled, and every one of these is a new path, not a new defect at an old one."
-    },
-    "/inventory/stock-engine/lib/reservation-unwind.ts": {
-      "verdict": "EXCLUDED-MODULE",
-      "note": "module excluded from this gate by EXCLUDED_MODULE_PREFIXES; read and left to that module's owner. First seen 2026-09-12 when the inventory branch merged into main — inventory's file count roughly doubled, and every one of these is a new path, not a new defect at an old one."
-    },
-    "/inventory/stock-engine/stock-level-locks.ts": {
-      "verdict": "EXCLUDED-MODULE",
-      "note": "module excluded from this gate by EXCLUDED_MODULE_PREFIXES; read and left to that module's owner. First seen 2026-09-12 when the inventory branch merged into main — inventory's file count roughly doubled, and every one of these is a new path, not a new defect at an old one."
-    },
-    "/inventory/traceability/lib/genealogy-labels.ts": {
-      "verdict": "EXCLUDED-MODULE",
-      "note": "module excluded from this gate by EXCLUDED_MODULE_PREFIXES; read and left to that module's owner. First seen 2026-09-12 when the inventory branch merged into main — inventory's file count roughly doubled, and every one of these is a new path, not a new defect at an old one."
     }
   }
 }

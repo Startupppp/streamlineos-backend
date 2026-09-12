@@ -1,5 +1,7 @@
-import { Body, Controller, Post, UseGuards } from "@nestjs/common";
+import { Body, Controller, Post, UseGuards, UseInterceptors } from "@nestjs/common";
 import { JwtAuthGuard } from "../../../../common/auth/jwt-auth.guard";
+import { AiRequestAbortInterceptor } from "../../../ai/core/streaming";
+import { NoTenantTransaction } from "../../../../common/tenant";
 import { PermissionGuard } from "../../../access/permission.guard";
 import { RequirePermission } from "../../../access/require-permission.decorator";
 import { CurrentUser } from "../../../../common/auth/current-user.decorator";
@@ -27,10 +29,24 @@ import { copilotAskResponseSchema } from "./dto/inv-copilot-response.schemas";
  * Object-level visibility is not enforced here. It cannot be: the answer spans
  * many rows across seven queries, so the gate lives in the SQL predicate of
  * each one, bound to `@CurrentUser()`'s org and the asker's warehouse scope.
+ *
+ * `ask` carries `@NoTenantTransaction()` because it makes **two** provider round
+ * trips — the planning call and the narration call — and under the ambient
+ * request transaction both were awaited with a pooled connection checked out and
+ * idle in transaction, against the 60s `idle_in_transaction_session_timeout`
+ * `withTenant` sets. `InvCopilotService.ask` now opens two short tenant
+ * transactions of its own: the scope resolution and the eligibility probe commit
+ * before the planning call, and the seven tool reads commit before the narration
+ * call. `@UseInterceptors(AiRequestAbortInterceptor)` is the other half of the
+ * opt-out: the decorator removes the tenant context's disconnect signal, which
+ * was `getAmbientAiAbortSignal`'s only source here, so without it the released
+ * connection would be bought with an uncancellable, still-billed provider call
+ * (PRD-C091). Same pairing as `TimesheetsAiController` and `KbAuthoringController`.
  */
 @RequireModule("inventory")
 @Controller("inventory/ai/copilot")
 @UseGuards(JwtAuthGuard, ModuleGuard)
+@UseInterceptors(AiRequestAbortInterceptor)
 export class InvCopilotController {
   constructor(private readonly copilot: InvCopilotService) {}
 
@@ -39,6 +55,7 @@ export class InvCopilotController {
   @UseGuards(PermissionGuard, RateLimitGuard)
   @UseRateLimit("ai:invoke")
   @RequirePermission("inventory:ai:read")
+  @NoTenantTransaction()
   ask(
     @Body(new ZodValidationPipe(invCopilotAskSchema)) body: InvCopilotAskInput,
     @CurrentUser() u: CurrentUserContext,

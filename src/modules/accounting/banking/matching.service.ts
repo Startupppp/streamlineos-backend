@@ -46,7 +46,6 @@ import type {
 */
 export type {
   MatchCounterpart,
-  MatchKind,
   MatchSuggestion,
   RecordedMatch,
   StatementLineContext,

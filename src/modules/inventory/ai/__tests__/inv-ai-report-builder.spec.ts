@@ -1,6 +1,20 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { ForbiddenException } from "@nestjs/common";
+
+/**
+ * `ask` is `@NoTenantTransaction()`, so it opens its own short tenant
+ * transactions around the reads on either side of the provider call. The real
+ * helper reaches `withTenant` -> `resolvePlacement`, which is control-plane
+ * infrastructure this unit spec has no business booting; pass-through keeps the
+ * subject of these tests the report builder's logic. Same shape as
+ * `timesheets/core/timesheets-ai-stream.spec.ts`. That the transaction is
+ * actually opened is pinned separately by the placement-bypass gate and by the
+ * tenant-isolation specs.
+ */
+jest.mock("../../../../common/tenant/run-in-tenant-transaction", () => ({
+  runInTenantTransaction: async (_db: unknown, read: () => Promise<unknown>) => read(),
+}));
 import { z } from "zod";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
 import { InvReportBuilderService, REPORT_EXPORT_CAP, REPORT_PREVIEW_CAP } from "../reports/inv-report-builder.service";
@@ -64,6 +78,9 @@ function buildService(parts: {
   extended?: Record<string, unknown>;
 }) {
   return new InvReportBuilderService(
+    // The `Db` handle `readEvidence` opens its short transactions against. The
+    // helper is mocked to pass through above, so nothing is ever called on it.
+    {} as never,
     (parts.gateway ?? { invokeStructuredWithUsage: jest.fn().mockResolvedValue({ ok: false, kind: "provider_unavailable", message: "down", correlationId: "c" }) }) as never,
     (parts.access ?? { holds: () => Promise.resolve(true) }) as never,
     (parts.warehouseScope ?? {

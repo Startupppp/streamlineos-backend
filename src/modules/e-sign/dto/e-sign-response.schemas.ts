@@ -27,7 +27,6 @@ export {
   templateMutationResponseSchema,
   listTemplatesResponseSchema,
   instantiateTemplateResponseSchema,
-  publishPublicFormResponseSchema,
 } from "./e-sign-templates-response.schemas";
 
 export {
@@ -47,8 +46,6 @@ export {
   adoptSignatureResponseSchema,
   completeSigningResponseSchema,
   declineSigningResponseSchema,
-  getPublicFormResponseSchema,
-  submitPublicFormResponseSchema,
 } from "./e-sign-public-response.schemas";
 
 export {

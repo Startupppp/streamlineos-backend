@@ -73,17 +73,3 @@ export async function requireVendor(
   if (!row) throw new NotFoundException("Vendor not found");
   return row;
 }
-
-/** Display names for a batch of parties, for list and report responses. */
-export async function loadPartyNames(
-  tx: DbOrTx,
-  orgId: string,
-  partyIds: readonly string[],
-): Promise<Map<string, string>> {
-  if (partyIds.length === 0) return new Map();
-  const rows = await tx
-    .select({ id: glParties.id, displayName: glParties.displayName })
-    .from(glParties)
-    .where(and(eq(glParties.orgId, orgId), inArray(glParties.id, [...new Set(partyIds)])));
-  return new Map(rows.map((r) => [r.id, r.displayName]));
-}

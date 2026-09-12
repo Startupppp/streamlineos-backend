@@ -1,8 +1,9 @@
 import { getTableName } from "drizzle-orm";
-import { BadRequestException } from "@nestjs/common";
+import { BadRequestException, NotFoundException } from "@nestjs/common";
 import {
   invCustomerReturnLines,
   invLots,
+  invProductVariants,
   invShipmentLines,
   invStockLevels,
   invStockTransferLines,
@@ -84,7 +85,13 @@ function readOnlyDb(rowsByTable: Record<string, Row[]>): {
   return { db, selectsFrom };
 }
 
+/**
+ * `id` as well as `lotId`: the double returns a table's fixture rows verbatim and
+ * ignores the projection, and `assertSelectionInOrg` reads `inv_lots.id` while
+ * `resolveLots` aliases the same column to `lotId`. One row has to answer both.
+ */
 const LOT = (id: number, lotNumber: string): Row => ({
+  id,
   lotId: id,
   lotNumber,
   productVariantId: 40,
@@ -98,6 +105,8 @@ const LOT = (id: number, lotNumber: string): Row => ({
 function scene(overrides: Record<string, Row[]> = {}): Record<string, Row[]> {
   return {
     [getTableName(invLots)]: [LOT(1, "L-001"), LOT(2, "L-002")],
+    // Every LOT above is variant 40; a selection naming it resolves here first.
+    [getTableName(invProductVariants)]: [{ id: 40 }],
     [getTableName(invStockLevels)]: [
       {
         lotId: 1,
@@ -250,10 +259,17 @@ describe("D4 — the recall simulator", () => {
     expect(scoped.evidenceVersion).not.toBe(unrestricted.evidenceVersion);
   });
 
+  /**
+   * Selected by vendor rather than by `lotIds`, deliberately. The subject here is
+   * "no lots resolved, so no `lot_id IN ()` reads are issued" — and since
+   * `assertSelectionInOrg` now refuses a NAMED id that resolves to nothing, a
+   * `lotIds` selection can no longer reach an empty picture. A vendor selection
+   * names no id, so it still can, and the case keeps measuring what it measured.
+   */
   it("reports an empty picture rather than inventing one", async () => {
     const { service, selectsFrom } = build({ [getTableName(invLots)]: [] });
 
-    const impact = await service.simulate("org_1", "user_1", { ...SELECTION });
+    const impact = await service.simulate("org_1", "user_1", { vendorId: 9 });
 
     expect(impact.lots).toEqual([]);
     expect(impact.totals.onHand).toBe("0");
@@ -262,9 +278,62 @@ describe("D4 — the recall simulator", () => {
     expect(selectsFrom).toEqual([getTableName(invLots)]);
   });
 
+  /**
+   * The mixed-tenant half, which `bola-bulk-mixed-tenant.spec.ts` counted as an
+   * open silent-subset site until 2026-09-12.
+   *
+   * `lotIds` and `productVariantIds` were pure filters: ANDed against
+   * `org_id = caller`, another organisation's id matched nothing and vanished,
+   * and the simulation reported a picture that did not cover every lot the
+   * caller had named — while echoing those ids back in `selection` and hashing
+   * them into `evidenceVersion`.
+   */
+  it("refuses the WHOLE selection when a named lot is not this organisation's", async () => {
+    // The double answers per table, so a lot the caller does not own is a lot
+    // that is simply not in the rows their org-bound query returns.
+    const { service } = build(scene());
+
+    await expect(
+      service.simulate("org_1", "user_1", { lotIds: [1, 999] }),
+    ).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  it("refuses a named variant that is not this organisation's, the same way", async () => {
+    const { service } = build(scene());
+
+    await expect(
+      service.simulate("org_1", "user_1", { productVariantIds: [40, 41] }),
+    ).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  /**
+   * 404, and the same 404, for an id belonging to nobody and an id belonging to
+   * somebody else — otherwise the refusal that closes the silent subset opens an
+   * existence oracle over another tenant's lot table in its place.
+   */
+  it("answers an unknown id exactly as it answers a foreign one", async () => {
+    const { service } = build(scene());
+
+    const foreign = await service
+      .simulate("org_1", "user_1", { lotIds: [999] })
+      .catch((e: unknown) => e);
+    const unknown = await service
+      .simulate("org_1", "user_1", { lotIds: [1000] })
+      .catch((e: unknown) => e);
+
+    expect(foreign).toBeInstanceOf(NotFoundException);
+    expect(unknown).toBeInstanceOf(NotFoundException);
+    expect((foreign as NotFoundException).getStatus()).toBe(
+      (unknown as NotFoundException).getStatus(),
+    );
+  });
+
   it("refuses a selection wider than it can honestly display", async () => {
     const tooMany = Array.from({ length: 501 }, (_, i) => LOT(i + 1, `L-${i}`));
-    const { service } = build({ [getTableName(invLots)]: tooMany });
+    const { service } = build({
+      [getTableName(invLots)]: tooMany,
+      [getTableName(invProductVariants)]: [{ id: 40 }],
+    });
 
     await expect(
       service.simulate("org_1", "user_1", { productVariantIds: [40] }),

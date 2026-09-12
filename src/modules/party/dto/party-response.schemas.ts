@@ -56,26 +56,6 @@ const partyContactRowSchema = z.object({
 export const partyContactListSchema = z.array(partyContactRowSchema);
 export const partyContactDetailSchema = partyContactRowSchema;
 
-const divergentRowSchema = z.object({
-  kind: z.string(),
-  legacyId: z.number().int(),
-  partyId: z.string(),
-  fields: z.array(z.string()),
-});
-
-export const mirrorDivergenceSchema = z.object({
-  checkedAt: z.string(),
-  organizationId: z.string(),
-  scanned: z.record(z.string(), z.number()),
-  divergentCount: z.record(z.string(), z.number()),
-  unmapped: z.record(z.string(), z.number()),
-  divergent: z.array(divergentRowSchema),
-  unexpressibleDeletions: z.array(z.record(z.string(), z.unknown())),
-  employerDisagreements: z.array(z.record(z.string(), z.unknown())),
-  truncated: z.boolean(),
-  nextAfter: z.record(z.string(), z.number().nullable()),
-});
-
 export const partyRolesSchema = z.object({ roles: z.array(z.string()) });
 
 export const detectResultSchema = z.object({

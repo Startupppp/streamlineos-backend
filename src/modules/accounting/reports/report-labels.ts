@@ -14,7 +14,6 @@
 
 export type LabelMode = "founder" | "accountant";
 
-export const LABEL_MODES: readonly LabelMode[] = ["founder", "accountant"] as const;
 
 export interface LabelPair {
   /** Plain English, for someone running a company rather than keeping books. */

@@ -300,14 +300,27 @@ function selfTest() {
   let failed = 0;
   const tmp = join(tmpdir(), `db-spec-gates-selftest-${process.pid}`);
 
+  /**
+   * The baseline the fixture has to satisfy is EVERY assertion, not just the
+   * one a case is about. Assertion 4 (a `jest-db.json` that selects the tier,
+   * and a default jest run that excludes it) arrived without this fixture
+   * learning about it, so the one case that asserts a clean tree — "a compliant
+   * spec produces no violation" — has been failing ever since, while the four
+   * `.some(...)` cases kept passing on violations they were not testing for.
+   * That is why each of those now pins the violation it means.
+   */
+  const COMPLIANT_PACKAGE_JSON = {
+    scripts: { "test:db": "jest --config jest-db.json" },
+    jest: { testPathIgnorePatterns: ["node_modules", "dist", "\\.db\\.spec\\.ts$"] },
+  };
+  const COMPLIANT_JEST_DB = { testRegex: "\\.db\\.spec\\.ts$" };
+
   function fixture(specSource) {
     rmSync(tmp, { recursive: true, force: true });
     mkdirSync(join(tmp, "src", "modules", "x"), { recursive: true });
     mkdirSync(join(tmp, ".github", "workflows"), { recursive: true });
-    writeFileSync(
-      join(tmp, "package.json"),
-      JSON.stringify({ scripts: { "test:db": "jest" } }),
-    );
+    writeFileSync(join(tmp, "package.json"), JSON.stringify(COMPLIANT_PACKAGE_JSON));
+    writeFileSync(join(tmp, "jest-db.json"), JSON.stringify(COMPLIANT_JEST_DB));
     writeFileSync(join(tmp, ".github", "workflows", "ci.yml"), "run: pnpm test:db\n");
     writeFileSync(join(tmp, "src", "modules", "x", "a.db.spec.ts"), specSource);
   }
@@ -349,14 +362,45 @@ function selfTest() {
   rmSync(join(tmp, ".github", "workflows", "ci.yml"));
   expect(
     "no workflow running test:db is a violation",
-    runChecks(tmp, { skipVacuity: true }).violations.some((v) => v.msg.includes("test:db")),
+    runChecks(tmp, { skipVacuity: true }).violations.some(
+      (v) => v.file === ".github/workflows",
+    ),
   );
 
   fixture(compliant);
-  writeFileSync(join(tmp, "package.json"), JSON.stringify({ scripts: {} }));
+  writeFileSync(
+    join(tmp, "package.json"),
+    JSON.stringify({ ...COMPLIANT_PACKAGE_JSON, scripts: {} }),
+  );
   expect(
     "a missing test:db script is a violation",
-    runChecks(tmp, { skipVacuity: true }).violations.some((v) => v.file === "package.json"),
+    runChecks(tmp, { skipVacuity: true }).violations.some(
+      (v) => v.file === "package.json" && v.msg.includes("test:db script"),
+    ),
+  );
+
+  // Assertion 4, both halves. Neither had a case until now, which is how the
+  // fixture drifted out from under the assertion in the first place.
+  fixture(compliant);
+  rmSync(join(tmp, "jest-db.json"));
+  expect(
+    "a jest-db.json that does not select the tier is a violation",
+    runChecks(tmp, { skipVacuity: true }).violations.some((v) => v.file === "jest-db.json"),
+  );
+
+  fixture(compliant);
+  writeFileSync(
+    join(tmp, "package.json"),
+    JSON.stringify({
+      ...COMPLIANT_PACKAGE_JSON,
+      jest: { testPathIgnorePatterns: ["node_modules", "dist"] },
+    }),
+  );
+  expect(
+    "a default jest run that does not exclude *.db.spec.ts is a violation",
+    runChecks(tmp, { skipVacuity: true }).violations.some(
+      (v) => v.file === "package.json" && v.msg.includes("testPathIgnorePatterns"),
+    ),
   );
 
   rmSync(tmp, { recursive: true, force: true });

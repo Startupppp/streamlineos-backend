@@ -66,5 +66,3 @@ export interface ComplianceTransportAdapter {
   submit(payload: CompliancePayload): Promise<TransportResult>;
 }
 
-/** Injection token — the registry resolves the configured adapter, or null. */
-export const COMPLIANCE_TRANSPORT = Symbol("COMPLIANCE_TRANSPORT");

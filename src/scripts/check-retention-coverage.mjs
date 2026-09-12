@@ -111,18 +111,29 @@ const RETENTION_MATRIX = {
    */
   gl_accounts: {
     decision: "KEEP-FOREVER",
+    // db/schema/accounting → MODULE_OWNERS.accounting in route-attribution.mjs.
+    owner: "finance-team",
     worker: null,
     notes:
       "Chart of accounts. Referenced by 12 tables including ap_document_lines, ap_payments, ap_withholding, ar_document_lines, ar_receipts and bank_profiles — deleting an account orphans posted financial history, and the row IS the meaning of every amount that points at it. Reference data, not an event stream: 1 MB and it does not grow with volume. Carries deleted_at, so withdrawing an account is a soft delete and the history stays joinable.",
   },
   business_parties: {
     decision: "KEEP-FOREVER",
+    // db/schema/party is nobody's module folder: no registry entry owns the
+    // `party` namespace, CRM merely administers it (administersNamespaces), and
+    // CRM is in route-attribution's SLO_EXCLUDED_MODULES — which is exactly the
+    // case that file resolves to platform-reliability. Accounting, CRM and
+    // Inventory all read this table, so naming any one of them as owner would
+    // be picking a tenant of the record as its landlord.
+    owner: "platform-reliability",
     worker: null,
     notes:
       "Customer/vendor master. Referenced by 45 tables, and it is the single copy since the CRM legacy rows stopped being written — the Party IS the record. Retention is by SOFT delete (deleted_at), so a removed party stays joinable from the invoice that names it. The one physical-delete path is DPDP/GDPR erasure, which root CLAUDE.md lists as an explicit exception to soft-delete and which no retention sweep may pre-empt: erasure is a legal instruction, not a schedule.",
   },
   party_roles: {
     decision: "KEEP-FOREVER",
+    // Shares business_parties' lifecycle, so it shares its owner.
+    owner: "platform-reliability",
     worker: null,
     notes:
       "Child of business_parties and shares its lifecycle; nothing references it, so it is deleted only with its party. Kept for the same reason: a role that vanished would make an old document's counterparty unexplainable.",

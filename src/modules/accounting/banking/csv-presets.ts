@@ -89,4 +89,3 @@ export function findMappingPreset(code: string): StatementMappingPreset | undefi
   return BY_CODE.get(code);
 }
 
-export const STATEMENT_MAPPING_PRESET_CODES = STATEMENT_MAPPING_PRESETS.map((p) => p.code);

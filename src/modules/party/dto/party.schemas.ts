@@ -164,24 +164,6 @@ export const partyDuplicateQuerySchema = z
   })
   .strict();
 
-/**
- * The mirror check's scan window.
- *
- * `after` resumes a truncated scan of one kind, so it only means anything
- * alongside `kind` -- without one it would silently skip the low ids of all
- * three tables and report a clean mirror it never looked at.
- */
-export const mirrorDivergenceQuerySchema = z
-  .object({
-    kind: z.enum(["LEAD", "CLIENT", "CONTACT", "ORGANISATION"]).optional(),
-    limit: pageSizeField(200),
-    after: z.coerce.number().int().min(0).default(0),
-  }).strict()
-  .refine((query) => query.after === 0 || query.kind !== undefined, {
-    message: "after resumes a single kind's scan and requires kind",
-    path: ["after"],
-  });
-
 export type ListPartiesQuery = z.infer<typeof listPartiesQuerySchema>;
 export type CreatePartyInput = z.infer<typeof createPartySchema>;
 export type UpdatePartyInput = z.infer<typeof updatePartySchema>;
@@ -191,4 +173,3 @@ export type PartyRoleInput = z.infer<typeof partyRoleSchema>;
 export type PartyMergeInput = z.infer<typeof partyMergeSchema>;
 export type PartyMergeListQuery = z.infer<typeof partyMergeListQuerySchema>;
 export type PartyDuplicateQuery = z.infer<typeof partyDuplicateQuerySchema>;
-export type MirrorDivergenceQuery = z.infer<typeof mirrorDivergenceQuerySchema>;

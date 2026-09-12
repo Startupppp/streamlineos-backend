@@ -25,6 +25,7 @@ import {
   type InvCopilotToolResult,
 } from "./inv-copilot-tools";
 import { planFromQuestion, validateModelPlan } from "./inv-copilot-planner";
+import { readEvidence } from "../lib/inv-ai-read-evidence";
 
 const PLAN_FEATURE_KEY = "inv.copilot-plan" as const;
 const ANSWER_FEATURE_KEY = "inv.copilot-answer" as const;
@@ -162,15 +163,34 @@ export class InvCopilotService {
     input: InvCopilotAskInput,
   ): Promise<InvCopilotAnswer> {
     const generatedAt = new Date().toISOString();
-    // Resolved once. It carries the warehouse predicates every tool applies, so
-    // the gate is decided here and enforced in SQL rather than re-derived seven
-    // times with seven chances to be subtly different.
-    const scope = await this.warehouseScope.forUser(user.orgId, user.userId);
 
-    // Denial of wallet. A caller with no visible stock cannot be answered by any
-    // amount of model, so the provider is never reached — not for planning, not
-    // for narration. One indexed probe is the whole cost of finding out.
-    if (scope.isEmpty || !(await this.hasEligibleContext(user.orgId, scope))) {
+    /*
+     * Transaction one of two, and it COMMITS before `choosePlan` talks to the
+     * provider. The route is `@NoTenantTransaction()`, so this opens a real
+     * short transaction rather than reusing an ambient one; both statements
+     * below read RLS-protected inventory tables and would be refused 42501 on a
+     * bare pool connection.
+     *
+     * The scope is resolved once and carried out of the transaction on purpose:
+     * `ResolvedWarehouseScope` closes over a plain `number[] | null` and its
+     * members only BUILD SQL, so it holds no connection and stays valid after
+     * the commit. That is what lets the gate be decided here and enforced in the
+     * SQL predicate of all seven tools rather than re-derived seven times with
+     * seven chances to be subtly different.
+     */
+    const { scope, eligible } = await readEvidence(this.db, user.orgId, async () => {
+      const resolved = await this.warehouseScope.forUser(user.orgId, user.userId);
+      // Denial of wallet. A caller with no visible stock cannot be answered by
+      // any amount of model, so the provider is never reached — not for
+      // planning, not for narration. One indexed probe is the whole cost of
+      // finding out, and `isEmpty` short-circuits even that.
+      return {
+        scope: resolved,
+        eligible: !resolved.isEmpty && (await this.hasEligibleContext(user.orgId, resolved)),
+      };
+    });
+
+    if (!eligible) {
       return {
         status: "no_context",
         question: input.question,
@@ -186,18 +206,25 @@ export class InvCopilotService {
     const fallbackPlan = planFromQuestion(input);
     const { plan, plannedBy } = await this.choosePlan(user, input, fallbackPlan);
 
-    const tools = await Promise.all(
-      plan.map((name) =>
-        runCopilotTool(name, {
-          db: this.db,
-          orgId: user.orgId,
-          scope,
-          focus: {
-            variantId: input.variantId,
-            warehouseId: input.warehouseId,
-            vendorId: input.vendorId,
-          },
-        }),
+    /*
+     * Transaction two of two, and it COMMITS before the narration call below.
+     * The tools are the only remaining database access on this path, so once
+     * this returns no connection is held for the second provider round trip.
+     */
+    const tools = await readEvidence(this.db, user.orgId, () =>
+      Promise.all(
+        plan.map((name) =>
+          runCopilotTool(name, {
+            db: this.db,
+            orgId: user.orgId,
+            scope,
+            focus: {
+              variantId: input.variantId,
+              warehouseId: input.warehouseId,
+              vendorId: input.vendorId,
+            },
+          }),
+        ),
       ),
     );
 
