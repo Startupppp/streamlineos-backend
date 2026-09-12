@@ -115,6 +115,12 @@ export class PeriodsService {
 
     if (existing) return existing.id;
 
+    /*
+     * Two requests for the current week can both miss the read above — two
+     * tabs, a StrictMode double fetch — and the second insert used to die on
+     * `uniq_timesheet_periods_user_membership_range` as a 500. The conflict is
+     * the other request having won, so it is read back rather than raised.
+     */
     const [created] = await this.db
       .insert(timesheetPeriods)
       .values({
@@ -122,10 +128,25 @@ export class PeriodsService {
         periodStart: range.start, periodEnd: range.end,
         status: "OPEN", totalHours: "0", billableHours: "0", nonBillableHours: "0",
       })
+      .onConflictDoNothing({
+        target: [timesheetPeriods.orgId, timesheetPeriods.userMembershipId, timesheetPeriods.periodStart, timesheetPeriods.periodEnd],
+      })
       .returning({ id: timesheetPeriods.id });
 
-    if (!created) throw new Error("Failed to create timesheet period");
-    return created.id;
+    if (created) return created.id;
+
+    const [won] = await this.db
+      .select({ id: timesheetPeriods.id })
+      .from(timesheetPeriods)
+      .where(and(
+        eq(timesheetPeriods.orgId, orgId),
+        eq(timesheetPeriods.userMembershipId, userMembershipId),
+        eq(timesheetPeriods.periodStart, range.start),
+        eq(timesheetPeriods.periodEnd, range.end),
+      ))
+      .limit(1);
+    if (!won) throw new Error("Failed to create timesheet period");
+    return won.id;
   }
 
   async getCurrent(u: CurrentUserContext) {
