@@ -4,7 +4,7 @@ import {
   ServiceUnavailableException,
   UnauthorizedException,
 } from "@nestjs/common";
-import { and, desc, eq, gt, isNull, lt, sql } from "drizzle-orm";
+import { and, desc, eq, gt, isNull, lt, lte, sql } from "drizzle-orm";
 import { randomInt, randomUUID, timingSafeEqual } from "node:crypto";
 import { addMinutes, subDays } from "date-fns";
 import { emailOtpCodes, magicLinkTokens, users } from "../../db/schema";
@@ -14,6 +14,8 @@ import { EmailService } from "../email/email.service";
 import { hashToken } from "../../common/security/token.util";
 import { logger } from "../../common/logger/logger.service";
 import { findOrCreateUser, generateToken, serializeEmailError } from "./auth-passwordless.utils";
+
+const OTP_MAX_ATTEMPTS = 5;
 
 @Injectable()
 export class AuthEmailOtpService {
@@ -103,7 +105,7 @@ export class AuthEmailOtpService {
       .where(and(eq(emailOtpCodes.id, row.id), isNull(emailOtpCodes.usedAt)))
       .returning({ attempts: emailOtpCodes.attempts });
 
-    if (!bumped || bumped.attempts > 5)
+    if (!bumped || bumped.attempts > OTP_MAX_ATTEMPTS)
       throw new UnauthorizedException("Invalid or expired code");
 
     const submittedHash = Buffer.from(hashToken(normalizedCode), "hex");
@@ -113,28 +115,41 @@ export class AuthEmailOtpService {
       timingSafeEqual(submittedHash, expectedHash);
     if (!codeMatches) throw new UnauthorizedException("Invalid or expired code");
 
-    const [updated] = await this.db
-      .update(emailOtpCodes)
-      .set({ usedAt: new Date() })
-      .where(and(eq(emailOtpCodes.id, row.id), isNull(emailOtpCodes.usedAt)))
-      .returning({ id: emailOtpCodes.id });
-
-    if (!updated) throw new UnauthorizedException("Invalid or expired code");
-
-    await this.db
-      .update(users)
-      .set({ emailVerified: new Date() })
-      .where(and(eq(users.id, user.id), isNull(users.emailVerified)));
-
     const rawToken = generateToken();
     const tokenHash = hashToken(rawToken);
 
-    await this.db.insert(magicLinkTokens).values({
-      id: randomUUID(),
-      userId: user.id,
-      tokenHash,
-      expiresAt: addMinutes(new Date(), 5),
+    const claimed = await this.db.transaction(async (tx) => {
+      const [consumed] = await tx
+        .update(emailOtpCodes)
+        .set({ usedAt: new Date() })
+        .where(
+          and(
+            eq(emailOtpCodes.id, row.id),
+            isNull(emailOtpCodes.usedAt),
+            gt(emailOtpCodes.expiresAt, sql`now()`),
+            lte(emailOtpCodes.attempts, OTP_MAX_ATTEMPTS),
+          ),
+        )
+        .returning({ id: emailOtpCodes.id });
+
+      if (!consumed) return false;
+
+      await tx
+        .update(users)
+        .set({ emailVerified: new Date() })
+        .where(and(eq(users.id, user.id), isNull(users.emailVerified)));
+
+      await tx.insert(magicLinkTokens).values({
+        id: randomUUID(),
+        userId: user.id,
+        tokenHash,
+        expiresAt: addMinutes(new Date(), 5),
+      });
+
+      return true;
     });
+
+    if (!claimed) throw new UnauthorizedException("Invalid or expired code");
 
     return { autoLoginToken: rawToken };
   }

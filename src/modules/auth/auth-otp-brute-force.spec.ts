@@ -39,6 +39,13 @@ function buildDb(bumpedAttempts: number | null, succeeds: boolean): Db {
     values: jest.fn().mockResolvedValue(undefined),
   });
 
+  type Tx = { update: typeof update; insert: typeof insert };
+  const transaction = jest
+    .fn()
+    .mockImplementation(async (callback: (tx: Tx) => Promise<unknown>) =>
+      callback({ update, insert }),
+    );
+
   return {
     query: {
       users: {
@@ -50,6 +57,7 @@ function buildDb(bumpedAttempts: number | null, succeeds: boolean): Db {
     },
     update,
     insert,
+    transaction,
   } as unknown as Db;
 }
 

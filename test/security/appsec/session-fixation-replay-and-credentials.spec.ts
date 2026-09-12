@@ -18,6 +18,7 @@ import { JwtAuthGuard } from "../../../src/common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../../../src/modules/access/permission.guard";
 import { MembershipStateService } from "../../../src/common/auth/membership-state.service";
 import { REDIS } from "../../../src/common/cache/cache.service";
+import { DRIZZLE } from "../../../src/db/drizzle.constants";
 import {
   SESSION_PROOF_AUDIENCE,
   SESSION_PROOF_ISSUER,
@@ -48,6 +49,21 @@ async function makeProof(
     .setIssuedAt()
     .setExpirationTime("30s")
     .sign(new TextEncoder().encode(NEXTAUTH_SECRET));
+}
+
+// The exchange consults `user_sessions` whenever the Redis tombstone is absent
+// or unavailable, mirroring JwtAuthGuard. These suites are about proof identity,
+// replay and revocation, so the row they read is a live one.
+function liveSessionDb(): Db {
+  return {
+    select: () => ({
+      from: () => ({
+        where: () => ({
+          limit: () => Promise.resolve([{ isRevoked: false, expiresAt: null }]),
+        }),
+      }),
+    }),
+  } as unknown as Db;
 }
 
 async function realKeyring(): Promise<JwtKeyringService> {
@@ -100,6 +116,7 @@ describe("Session fixation — the minted token's identity comes from the signed
         { provide: JwtKeyringService, useValue: keyring },
         { provide: MembershipStateService, useValue: membershipState },
         { provide: REDIS, useValue: redis },
+        { provide: DRIZZLE, useValue: liveSessionDb() },
       ],
     })
       .overrideGuard(JwtAuthGuard)
@@ -218,6 +235,7 @@ describe("Session replay — a captured proof is spendable exactly once", () => 
           },
         },
         { provide: REDIS, useValue: redis },
+        { provide: DRIZZLE, useValue: liveSessionDb() },
       ],
     })
       .overrideGuard(JwtAuthGuard)
@@ -287,7 +305,12 @@ function passwordlessDb(options: {
       set: (values: Record<string, unknown>) => {
         const apply = (): unknown[] => {
           if (table === magicLinkTokens && row) {
+            // Mirrors the real claim predicate in AuthMagicLinkService.verifyMagicLink:
+            // `id = $1 AND used_at IS NULL AND expires_at > now()`. Modelling only
+            // `used_at` let an expired row be claimed, which reads as the service
+            // accepting an expired credential.
             if (row.usedAt !== null) return [];
+            if (row.expiresAt.getTime() <= Date.now()) return [];
             row.usedAt = values.usedAt as Date;
             return [{ id: row.id }];
           }
@@ -489,13 +512,56 @@ describe("Generic authentication failures are indistinguishable", () => {
     expect(JSON.stringify(wrongCode)).toContain("Invalid or expired code");
   });
 
-  it("registration with an already-registered address answers exactly as a fresh one does", () => {
-    const source = readFileSync(
-      resolve(BACKEND_ROOT, "src/modules/auth/auth.service.ts"),
-      "utf8",
+  function signupDb(existingUser: { id: string; email: string } | null) {
+    const inserted = { id: "created-1", email: "someone@example.com" };
+    return {
+      query: {
+        users: { findFirst: () => Promise.resolve(existingUser ?? undefined) },
+      },
+      insert: () => ({
+        values: () => ({
+          onConflictDoNothing: () => ({
+            returning: () => Promise.resolve(existingUser ? [] : [inserted]),
+          }),
+          returning: () => Promise.resolve([{ id: "otp-1" }]),
+        }),
+      }),
+      update: () => ({ set: () => ({ where: () => Promise.resolve([]) }) }),
+      delete: () => ({ where: () => Promise.resolve([]) }),
+    } as unknown as Db;
+  }
+
+  async function signupOutcome(
+    existingUser: { id: string; email: string } | null,
+  ): Promise<{ status: number | null; body: unknown }> {
+    const sent: string[] = [];
+    const email = {
+      sendEmailOtpEmail: (address: string) => {
+        sent.push(address);
+        return Promise.resolve(undefined);
+      },
+    };
+    const service = new AuthEmailOtpService(
+      signupDb(existingUser),
+      email as never,
     );
-    expect(source).toMatch(/if \(existing\) return \{ success: true \};/);
-    expect(source).not.toMatch(/ConflictException\(["'`][^"'`]*already/i);
+    const outcome = await service
+      .requestEmailOtp("someone@example.com")
+      .then(() => null)
+      .catch((err: unknown) => err);
+    if (outcome === null) return { status: null, body: { sent: sent.length } };
+    const http = outcome as HttpException;
+    return { status: http.getStatus(), body: http.getResponse() };
+  }
+
+  it("requesting a sign-in code answers identically for a known and an unknown address", async () => {
+    const [known, unknown] = await Promise.all([
+      signupOutcome({ id: "u1", email: "someone@example.com" }),
+      signupOutcome(null),
+    ]);
+
+    expect(JSON.stringify(known)).toBe(JSON.stringify(unknown));
+    expect(known.status).toBeNull();
   });
 
   it("resend-verification answers the same whether or not the address exists", () => {
