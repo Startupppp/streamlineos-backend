@@ -1,4 +1,4 @@
-import { and, eq, isNull, sql } from "drizzle-orm";
+import { and, eq, gte, isNull, lt, sql } from "drizzle-orm";
 import type { Db } from "../../../db/drizzle.types";
 import { activities } from "../../../db/schema/crm/activities";
 import { supportTickets } from "../../../db/schema/support/tickets";
@@ -18,6 +18,13 @@ import type { HealthFactor } from "../health-score";
   of `CustomerHealthService` with the handle passed in. Each counts rows and
   hands the counts to the pure factor in `health-factors.ts`; none of them
   decides what a count means.
+
+  The window bounds are compared with drizzle's `gte`/`lt` embedded as fragments
+  rather than written out as `${column} >= ${window.from}`. `window.from` and
+  `window.to` are `Date`s, and a raw template forwards a Date to postgres-js as
+  a bind parameter, which throws ERR_INVALID_ARG_TYPE — the operator form goes
+  through the column's own mapper instead. `pnpm check:date-in-sql-template`
+  holds this.
 */
 
 /**
@@ -39,13 +46,13 @@ export async function readEngagement(
 ): Promise<HealthFactor> {
   const [row] = await db
     .select({
-      activityCount: sql<number>`count(*) FILTER (WHERE ${activities.occurredAt} >= ${window.from})::int`,
+      activityCount: sql<number>`count(*) FILTER (WHERE ${gte(activities.occurredAt, window.from)})::int`,
       /**
        * Distinct days, not rows. An ingested mail thread writes dozens of rows
        * in one second and counting them would score an import as a quarter of
        * daily contact.
        */
-      contactDays: sql<number>`count(DISTINCT date(${activities.occurredAt})) FILTER (WHERE ${activities.occurredAt} >= ${window.from})::int`,
+      contactDays: sql<number>`count(DISTINCT date(${activities.occurredAt})) FILTER (WHERE ${gte(activities.occurredAt, window.from)})::int`,
       lastActivityAt: sql<Date | null>`max(${activities.occurredAt})`,
     })
     .from(activities)
@@ -90,14 +97,14 @@ export async function readSupport(
 ): Promise<HealthFactor> {
   const [row] = await db
     .select({
-      opened: sql<number>`count(*) FILTER (WHERE ${supportTickets.createdAt} >= ${window.from})::int`,
-      urgent: sql<number>`count(*) FILTER (WHERE ${supportTickets.createdAt} >= ${window.from} AND ${supportTickets.priority} IN ('HIGH', 'URGENT'))::int`,
+      opened: sql<number>`count(*) FILTER (WHERE ${gte(supportTickets.createdAt, window.from)})::int`,
+      urgent: sql<number>`count(*) FILTER (WHERE ${gte(supportTickets.createdAt, window.from)} AND ${supportTickets.priority} IN ('HIGH', 'URGENT'))::int`,
       slaBreached: sql<number>`count(*) FILTER (
-        WHERE ${supportTickets.createdAt} >= ${window.from}
+        WHERE ${gte(supportTickets.createdAt, window.from)}
           AND ${supportTickets.slaDeadline} IS NOT NULL
           AND (
             (${supportTickets.resolvedAt} IS NOT NULL AND ${supportTickets.resolvedAt} > ${supportTickets.slaDeadline})
-            OR (${supportTickets.resolvedAt} IS NULL AND ${supportTickets.slaDeadline} < ${window.to})
+            OR (${supportTickets.resolvedAt} IS NULL AND ${lt(supportTickets.slaDeadline, window.to)})
           )
       )::int`,
       openNow: sql<number>`count(*) FILTER (WHERE ${supportTickets.status} NOT IN ('RESOLVED', 'CLOSED'))::int`,
@@ -142,7 +149,7 @@ export async function readSentiment(
   sourceInUse: boolean,
 ): Promise<HealthFactor> {
   const verdict = sql`${supportAiSuggestions.payload}->>'sentiment'`;
-  const inWindow = sql`${supportAiSuggestions.createdAt} >= ${window.from}`;
+  const inWindow = gte(supportAiSuggestions.createdAt, window.from);
 
   const [row] = await db
     .select({
@@ -198,8 +205,8 @@ export async function readUsage(
 ): Promise<HealthFactor> {
   const [row] = await db
     .select({
-      observationCount: sql<number>`count(*) FILTER (WHERE ${customerLifecycleSignals.observedAt} >= ${window.from})::int`,
-      declineImpact: sql<number>`coalesce(sum(${customerLifecycleSignals.impact}) FILTER (WHERE ${customerLifecycleSignals.observedAt} >= ${window.from}), 0)::int`,
+      observationCount: sql<number>`count(*) FILTER (WHERE ${gte(customerLifecycleSignals.observedAt, window.from)})::int`,
+      declineImpact: sql<number>`coalesce(sum(${customerLifecycleSignals.impact}) FILTER (WHERE ${gte(customerLifecycleSignals.observedAt, window.from)}), 0)::int`,
       everCount: sql<number>`count(*)::int`,
     })
     .from(customerLifecycleSignals)

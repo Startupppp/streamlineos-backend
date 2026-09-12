@@ -136,6 +136,13 @@ const TIERS: Record<string, Tier> = {
   // a forged-signature flood from locking up the write path. Generous enough for
   // a real provider that can burst at retry time.
   "billing:webhook": { limit: 600, windowSecs: 60 },
+  // INV-26. Carrier status callbacks are @Public and unauthenticated, and the
+  // signature is checked before anything is written — so the limit is not the
+  // security boundary, it is what stops a forged-signature flood occupying the
+  // write path. Sized like the payment one: a courier draining its retry queue
+  // after an outage bursts, and a warehouse's whole day of parcels is far under
+  // 600 a minute.
+  "inventory:carrier-webhook": { limit: 600, windowSecs: 60 },
   // Checkout creates a provider order; 5/hour per user prevents order flooding
   // while leaving headroom for legitimate retries with different plans.
   "billing:checkout": { limit: 5, windowSecs: 3600 },

@@ -57,8 +57,15 @@ export class LaborService {
    * the alternative is asking a picker to press start, which nobody does twice.
    */
   async recordInTx(tx: Tx, orgId: string, input: RecordLaborInput): Promise<void> {
-    const [previous] = await tx.execute<{ completed_at: Date; location_id: number | null }>(sql`
-      SELECT completed_at, location_id
+    // `completed_at::text`, not the parsed Date. It goes straight back into the
+    // INSERT below, and a Date cannot make that round trip: drizzle's raw `sql`
+    // template hands a Date to postgres-js as a bind parameter and the driver
+    // throws ERR_INVALID_ARG_TYPE, while `.toISOString()` would shift the value
+    // by the host offset, because `started_at` is `timestamp` WITHOUT time zone
+    // and the driver parses that text as LOCAL time. Text in, text out, no
+    // timezone in the path at all. `pnpm check:date-in-sql-template` holds this.
+    const [previous] = await tx.execute<{ completed_at: string; location_id: number | null }>(sql`
+      SELECT completed_at::text AS completed_at, location_id
       FROM inv_labor_records
       WHERE org_id = ${orgId}
         AND user_id = ${input.userId}
