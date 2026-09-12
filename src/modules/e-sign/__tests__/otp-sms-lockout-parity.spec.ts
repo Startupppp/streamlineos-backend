@@ -107,7 +107,6 @@ function buildHarness(authMethod: Method) {
     } as never, // audit
     { hash: (v: string) => `hash:${v}` } as never, // tokens
     {} as never, // envelopes
-    {} as never, // finalization
     { sendOtpCode: async () => undefined } as never, // notifications
     {} as never, // integrations
     { isConfigured: () => true, send: async () => undefined } as never, // sms

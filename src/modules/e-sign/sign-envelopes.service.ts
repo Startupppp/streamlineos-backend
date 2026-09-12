@@ -45,6 +45,7 @@ import type {
   ExtendExpirationInput,
 } from "./dto/e-sign.schemas";
 import type { RequestActorContext } from "../../common/audit/actor-context";
+import { registerAfterCommit } from "../../common/tenant/tenant-context";
 
 export type { EnvelopeValidationResult };
 
@@ -315,16 +316,25 @@ export class SignEnvelopesService {
       null,
       envelopeId,
     );
-    for (const r of recipientRows) {
-      if (r.email && r.status !== "completed") {
-        await this.notifications.sendVoidedToRecipient(
-          r.email,
-          r.name,
-          envelope.title,
-          input.reason,
-        );
+    /*
+     * The inner `transaction` above is a savepoint inside the request's
+     * transaction, so "after it returns" is still before anything is durable.
+     * A voided notice that goes out and is then rolled back tells every
+     * recipient about a void that never happened; it waits for the commit.
+     */
+    const notifyRecipients = async () => {
+      for (const r of recipientRows) {
+        if (r.email && r.status !== "completed") {
+          await this.notifications.sendVoidedToRecipient(
+            r.email,
+            r.name,
+            envelope.title,
+            input.reason,
+          );
+        }
       }
-    }
+    };
+    if (!registerAfterCommit(notifyRecipients)) await notifyRecipients();
 
     await this.audit.record({
       orgId,

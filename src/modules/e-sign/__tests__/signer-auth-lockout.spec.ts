@@ -86,7 +86,6 @@ function serviceWith(recipient: Partial<Record<string, unknown>>) {
     noop,
     noop,
     noop,
-    noop,
     noop, // sms
   );
 

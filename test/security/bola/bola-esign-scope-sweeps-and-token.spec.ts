@@ -434,7 +434,6 @@ describe("the signer token is bound to one envelope, one recipient, and an expir
       {} as never,
       {} as never,
       {} as never,
-      {} as never,
     );
     return { service, getFileUrl, fieldUpdateWheres };
   }

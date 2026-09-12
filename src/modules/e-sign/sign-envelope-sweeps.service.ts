@@ -21,6 +21,7 @@ import { bulkUpdateFromValues } from "../../common/db/bulk-update";
 import type { RequestActorContext } from "../../common/audit/actor-context";
 import { forEachOrg } from "../../common/tenant/for-each-org";
 import { runInNewTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
+import { registerAfterCommit } from "../../common/tenant/tenant-context";
 import {
   SWEEP_EXPECTED_WITHIN_HOURS,
   sweepStaleness,
@@ -162,16 +163,27 @@ export class SignEnvelopeSweepsService {
         )
       : null;
 
-    for (const { recipient, rawToken } of rotated) {
-      await this.notifications.sendReminder(
-        recipient.email,
-        recipient.name,
-        senderNameStr,
-        envelope.title,
-        this.tokens.buildSigningUrl(rawToken),
-        daysRemaining,
-      );
-    }
+    /*
+     * After the rotation commits, never inside it. Each reminder carries the
+     * token the UPDATE above just installed; sent inside the transaction, a
+     * rollback after the provider accepted the mail left the recipient holding
+     * a link to a token that never existed. The sweep and the manual reminder
+     * both run in a context with an after-commit queue; the inline fallback
+     * is for a caller with none, where there is no commit to wait for.
+     */
+    const deliverReminders = async () => {
+      for (const { recipient, rawToken } of rotated) {
+        await this.notifications.sendReminder(
+          recipient.email,
+          recipient.name,
+          senderNameStr,
+          envelope.title,
+          this.tokens.buildSigningUrl(rawToken),
+          daysRemaining,
+        );
+      }
+    };
+    if (!registerAfterCommit(deliverReminders)) await deliverReminders();
 
     await this.audit.record(
       rotated.map(({ recipient }) => ({

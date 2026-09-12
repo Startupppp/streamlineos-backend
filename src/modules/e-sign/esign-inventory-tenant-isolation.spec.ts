@@ -17,6 +17,7 @@ import type { Db } from "../../db/drizzle.module";
 import { InboxConsumer } from "../../common/outbox/inbox-consumer";
 import { InventoryWebhookEmitter } from "../inventory/webhooks/webhook-emitter.service";
 import { SignEnvelopeCompletedConsumerService } from "./sign-envelope-completed-consumer.service";
+import { SignFinalizationService } from "./sign-finalization.service";
 import { OutboxConsumerRegistry } from "../../common/outbox/outbox-consumer.registry";
 import type { OutboxEventRow } from "../../common/outbox/outbox-consumer.registry";
 import { NotificationDispatchService } from "../notifications/notification-dispatch.service";
@@ -129,6 +130,7 @@ describe("SignEnvelopeCompletedConsumerService — tenant isolation", () => {
         { provide: DRIZZLE, useValue: db },
         { provide: OutboxConsumerRegistry, useValue: registry },
         { provide: NotificationDispatchService, useValue: dispatch },
+        { provide: SignFinalizationService, useValue: { finalize: jest.fn().mockResolvedValue({}) } },
       ],
     }).compile();
     return module.get(SignEnvelopeCompletedConsumerService);

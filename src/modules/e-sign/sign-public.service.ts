@@ -7,7 +7,6 @@ import { StorageService } from "../storage/storage.service";
 import { SignAuditService } from "./sign-audit.service";
 import { SignTokensService } from "./sign-tokens.service";
 import { SignEnvelopesService } from "./sign-envelopes.service";
-import { SignFinalizationService } from "./sign-finalization.service";
 import { SignNotificationsService } from "./sign-notifications.service";
 import { SignIntegrationsService } from "./sign-integrations.service";
 import { SMS_SENDER, type SmsSenderPort } from "./sms/sms-sender.port";
@@ -53,7 +52,6 @@ export class SignPublicService {
     private readonly audit: SignAuditService,
     private readonly tokens: SignTokensService,
     private readonly envelopes: SignEnvelopesService,
-    private readonly finalization: SignFinalizationService,
     private readonly notifications: SignNotificationsService,
     private readonly integrations: SignIntegrationsService,
     @Inject(SMS_SENDER) private readonly sms: SmsSenderPort,
@@ -222,7 +220,6 @@ export class SignPublicService {
       tokens: this.tokens,
       audit: this.audit,
       envelopes: this.envelopes,
-      finalization: this.finalization,
       notifications: this.notifications,
       integrations: this.integrations,
       assertActive: (recipient, envelope) => this.assertActive(recipient, envelope),

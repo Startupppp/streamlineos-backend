@@ -5,11 +5,11 @@ import { type Db } from "../../../db/drizzle.module";
 import { SignAuditService } from "../sign-audit.service";
 import { SignTokensService } from "../sign-tokens.service";
 import { SignEnvelopesService } from "../sign-envelopes.service";
-import { SignFinalizationService } from "../sign-finalization.service";
 import { SignNotificationsService } from "../sign-notifications.service";
 import { SignIntegrationsService } from "../sign-integrations.service";
 import type { DeclineInput } from "../dto/e-sign-public.schemas";
 import { withRecipientSession, type PublicRequestContext } from "./recipient-session";
+import { registerAfterCommit } from "../../../common/tenant/tenant-context";
 
 /**
  * The two ways a recipient leaves the envelope for good.
@@ -31,7 +31,6 @@ export interface RecipientOutcomeDeps {
   readonly tokens: SignTokensService;
   readonly audit: SignAuditService;
   readonly envelopes: SignEnvelopesService;
-  readonly finalization: SignFinalizationService;
   readonly notifications: SignNotificationsService;
   readonly integrations: SignIntegrationsService;
   /** The session-state gate, bound from the service. See `RecipientIdentityDeps`. */
@@ -91,10 +90,17 @@ export async function complete(deps: RecipientOutcomeDeps, token: string, ctx: P
 
     deps.integrations.emitRecipientCompleted(envelope, { id: recipient.id, name: recipient.name, email: recipient.email });
 
+    /*
+     * Finalisation — merging and stamping the PDFs, the certificate, the
+     * completed-copy emails — is no longer run here. It used to run inside
+     * this transaction, so the signer's completion was held open on a pooled
+     * connection for as long as the storage provider and the PDF stamping
+     * took, and a provider failure rolled the signature back. It now runs
+     * from the `sign.envelope.completed` outbox event that
+     * `applyRecipientOutcome` writes in the same transaction as the status:
+     * committed with the completion, retried by the relay, and idempotent.
+     */
     const outcome = await deps.envelopes.applyRecipientOutcome(envelope.orgId, envelope.id);
-    if (outcome.becameCompleted) {
-      await deps.finalization.finalize(envelope.orgId, envelope.id);
-    }
 
     return { completed: true, envelopeCompleted: outcome.becameCompleted };
   });
@@ -140,7 +146,14 @@ export async function decline(
           })
         : null;
     if (declineSenderMember?.user?.email) {
-      await deps.notifications.sendDeclinedToSender(declineSenderMember.user.email, declineSenderMember.user.name ?? "Sender", envelope.id, envelope.title, recipient.name, input.reason);
+      const { email, name } = declineSenderMember.user;
+      /*
+       * Drained awaited by `withRecipientSession` once the decline has
+       * committed, so the sender is never told of a decline that rolled back.
+       */
+      const notifySender = () =>
+        deps.notifications.sendDeclinedToSender(email, name ?? "Sender", envelope.id, envelope.title, recipient.name, input.reason);
+      if (!registerAfterCommit(notifySender)) await notifySender();
     }
 
     return { declined: true };
