@@ -115,6 +115,8 @@
     "verify:auth-races:self-test": "node src/scripts/verify-auth-claim-races.mjs --self-test",
     "verify:otp-delivery": "node src/scripts/verify-otp-email-delivery.mjs",
     "verify:otp-delivery:self-test": "node src/scripts/verify-otp-email-delivery.mjs --self-test",
+    "verify:identity-journey": "node src/scripts/verify-identity-session-journey.mjs",
+    "verify:identity-journey:self-test": "node src/scripts/verify-identity-session-journey.mjs --self-test",
     "verify:razorpay-sandbox": "node --env-file-if-exists=.env -r ts-node/register/transpile-only src/scripts/verify-razorpay-sandbox.ts",
     "verify:razorpay-sandbox:self-test": "node -r ts-node/register/transpile-only src/scripts/verify-razorpay-sandbox.ts --self-test",
     "seed:build-load": "node --env-file=.env src/scripts/seed-build-load.mjs",
