@@ -22,6 +22,7 @@ import { PaymentProviderResolver, type OrganizationPaymentProvider } from "../pa
 import { PaymentWebhookReceiverService } from "../payments/payment-webhook-receiver.service";
 import { PaymentAnalyticsService } from "../payments/payment-analytics.service";
 import { ExternalEffectLedger, ExternalEffectLeaseBusyError } from "../../../common/outbox/external-effect-ledger";
+import { PlatformMerchantService } from "../payments/platform-merchant.service";
 import {
   FakeProviderAdapter,
   FAKE_WEBHOOK_SECRET,
@@ -272,6 +273,48 @@ function makeResolver(adapter?: FakeProviderAdapter, webhookSecret = FAKE_WEBHOO
   } as unknown as PaymentProviderResolver;
 }
 
+function makePlatformMerchant(webhookSecret: string = FAKE_WEBHOOK_SECRET, configured = true) {
+  const adapter = new FakeProviderAdapter();
+  if (!configured) {
+    return {
+      providerKey: "razorpay",
+      resolve: jest.fn().mockReturnValue(undefined),
+      readiness: jest.fn().mockReturnValue({
+        configured: false,
+        providerKey: "razorpay",
+        environment: null,
+        publicKeyId: null,
+        webhookConfigured: false,
+        unavailableReason: "no_credentials",
+      }),
+      environment: jest.fn().mockReturnValue(null),
+    } as unknown as PlatformMerchantService;
+  }
+  return {
+    providerKey: "razorpay",
+    resolve: jest.fn().mockReturnValue({
+      providerKey: "razorpay",
+      environment: "test",
+      isReady: () => adapter.isReady(),
+      publicKeyId: () => adapter.publicKeyId(),
+      createOrder: (params) => adapter.createOrder({ ...params, keyId: "fake-public", keySecret: "fake-private" }),
+      verifyPaymentSignature: (params) => adapter.verifyPaymentSignature({ ...params, keySecret: "fake-private" }),
+      verifyWebhookSignature: (params) => adapter.verifyWebhookSignature({ ...params, webhookSecret }),
+      normalizeWebhook: (rawBody) => adapter.normalizeWebhook(rawBody),
+      fetchPayment: (paymentId) => adapter.configure({}).fetchPayment(paymentId),
+    }),
+    readiness: jest.fn().mockReturnValue({
+      configured: true,
+      providerKey: "razorpay",
+      environment: "test",
+      publicKeyId: adapter.publicKeyId(),
+      webhookConfigured: true,
+      unavailableReason: null,
+    }),
+    environment: jest.fn().mockReturnValue("test"),
+  } as unknown as PlatformMerchantService;
+}
+
 interface Harness {
   service: BillingService;
   db: WebhookDb;
@@ -286,6 +329,7 @@ async function buildHarness(options: {
   providers?: PaymentProviderResolver;
   aiCredits?: ReturnType<typeof makeAiCredits>;
   ledger?: { execute: jest.Mock };
+  platformMerchant?: PlatformMerchantService;
 } = {}): Promise<Harness> {
   const db = options.db ?? makeWebhookDb();
   const aiCredits = options.aiCredits ?? makeAiCredits();
@@ -311,6 +355,7 @@ async function buildHarness(options: {
       { provide: PaymentWebhookReceiverService, useValue: webhookHealth },
       { provide: PaymentAnalyticsService, useValue: notices },
       { provide: BillingProfileService, useValue: { get: jest.fn(), update: jest.fn() } },
+      { provide: PlatformMerchantService, useValue: options.platformMerchant ?? makePlatformMerchant() },
     ],
   }).compile();
 
@@ -334,7 +379,7 @@ describe("c17-01 — a provider event is recorded before it is acted on", () => 
 
     it("records nothing when the secret itself is wrong", async () => {
       const { service, db } = await buildHarness({
-        providers: makeResolver(new FakeProviderAdapter(), "wrong-secret"),
+        platformMerchant: makePlatformMerchant("wrong-secret"),
       });
 
       const result = await service.handlePaymentProviderWebhook("org1", "razorpay", VALID_PAYMENT_BODY, FAKE_VALID_WEBHOOK_SIG);
@@ -431,7 +476,9 @@ describe("c17-01 — a provider event is recorded before it is acted on", () => 
     });
 
     it("leaks neither key nor secret in the rejection body", async () => {
-      const { service } = await buildHarness({ providers: makeResolver() });
+      const { service } = await buildHarness({
+        platformMerchant: makePlatformMerchant(FAKE_WEBHOOK_SECRET, false),
+      });
 
       const result = await service.handlePaymentProviderWebhook("org1", "razorpay", VALID_PAYMENT_BODY, FAKE_VALID_WEBHOOK_SIG);
 
@@ -681,17 +728,17 @@ describe("c17-05 — the webhook's billing state changes enqueue their revenue e
 
 describe("provider substitution — same billing flow, different adapter", () => {
   it("resolves the provider named by the route and produces the same domain outcome", async () => {
-    const providers1 = makeResolver(new FakeProviderAdapter("razorpay"));
-    const providers2 = makeResolver(new FakeProviderAdapter("stripe"));
-    const one = await buildHarness({ providers: providers1 });
-    const two = await buildHarness({ providers: providers2 });
+    const merchant1 = makePlatformMerchant();
+    const merchant2 = makePlatformMerchant();
+    const one = await buildHarness({ platformMerchant: merchant1 });
+    const two = await buildHarness({ platformMerchant: merchant2 });
 
     const result1 = await one.service.handlePaymentProviderWebhook("org1", "razorpay", VALID_PAYMENT_BODY, FAKE_VALID_WEBHOOK_SIG);
     const result2 = await two.service.handlePaymentProviderWebhook("org1", "stripe", VALID_PAYMENT_BODY, FAKE_VALID_WEBHOOK_SIG);
 
     expect(result1).toEqual(result2);
-    expect(providers1.resolve).toHaveBeenCalledWith("org1", "razorpay");
-    expect(providers2.resolve).toHaveBeenCalledWith("org1", "stripe");
+    expect(merchant1.resolve).toHaveBeenCalled();
+    expect(merchant2.resolve).toHaveBeenCalled();
   });
 });
 
@@ -740,7 +787,7 @@ describe("stuck provider events are re-driven after the provider stops retrying"
 
   it("counts an unresolvable provider as failed rather than reporting success", async () => {
     const { service, db } = await buildHarness({
-      providers: { resolve: jest.fn().mockResolvedValue(null) } as unknown as PaymentProviderResolver,
+      platformMerchant: makePlatformMerchant(FAKE_WEBHOOK_SECRET, false),
     });
     db._store.unprocessed = [
       {

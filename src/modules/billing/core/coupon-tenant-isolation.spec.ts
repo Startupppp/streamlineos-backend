@@ -5,7 +5,6 @@ import type { Db } from "../../../db/drizzle.module";
 
 const dialect = new PgDialect();
 const OWNER_ORG = "org-owner";
-const ATTACKER_ORG = "org-attacker";
 
 type Condition = Parameters<PgDialect["sqlToQuery"]>[0];
 
@@ -43,7 +42,6 @@ describe("BillingCoupons — tenant isolation", () => {
     expect(query.sql).toContain('"coupons"."org_id"');
     expect(query.sql).toContain("is null");
     expect(query.params).toContain(OWNER_ORG);
-    expect(query.params).not.toContain(ATTACKER_ORG);
   });
 
   it("validate scopes the code lookup to the caller's org", async () => {
@@ -93,7 +91,7 @@ describe("BillingCoupons — tenant isolation", () => {
     expect(query.params).toContain(7);
   });
 
-  it("list returns only redeemable coupons and only the caller's own redemptions", async () => {
+  it("listRedeemable returns only redeemable coupons and only the caller's own redemptions", async () => {
     const captured: { where?: unknown; nested?: unknown } = {};
     const db = {
       query: {
@@ -107,7 +105,7 @@ describe("BillingCoupons — tenant isolation", () => {
       },
     } as unknown as Db;
 
-    await new BillingCoupons(db).list(OWNER_ORG);
+    await new BillingCoupons(db).listRedeemable(OWNER_ORG);
 
     const scope = render(captured.where);
     expect(scope.sql).toContain('"coupons"."org_id"');
@@ -118,7 +116,7 @@ describe("BillingCoupons — tenant isolation", () => {
     expect(redemptions.params).toContain(OWNER_ORG);
   });
 
-  it("create stamps the caller's org onto the coupon", async () => {
+  it("create (platform) always writes org_id NULL — never a tenant row", async () => {
     const values: Array<Record<string, unknown>> = [];
     const db = {
       insert: jest.fn(() => ({
@@ -129,16 +127,16 @@ describe("BillingCoupons — tenant isolation", () => {
       })),
     } as unknown as Db;
 
-    await new BillingCoupons(db).create(OWNER_ORG, {
+    await new BillingCoupons(db).create({
       code: "SAVE10",
       type: "PERCENTAGE",
       value: 10,
     });
 
-    expect(values[0]?.orgId).toBe(OWNER_ORG);
+    expect(values[0]?.orgId).toBeNull();
   });
 
-  it("update refuses a coupon owned by another org and re-asserts org_id in the WHERE", async () => {
+  it("update (platform) scopes WHERE to org_id IS NULL so a tenant row is never touched", async () => {
     let where: unknown;
     const db = {
       update: jest.fn(() => ({
@@ -152,15 +150,15 @@ describe("BillingCoupons — tenant isolation", () => {
     } as unknown as Db;
 
     await expect(
-      new BillingCoupons(db).update(ATTACKER_ORG, 7, { isActive: false }),
+      new BillingCoupons(db).update(7, { isActive: false }),
     ).rejects.toThrow(NotFoundException);
 
     const query = render(where);
     expect(query.sql).toContain('"coupons"."org_id"');
-    expect(query.params).toContain(ATTACKER_ORG);
+    expect(query.sql).toContain("is null");
   });
 
-  it("remove refuses a coupon owned by another org instead of reporting success", async () => {
+  it("remove (platform) scopes WHERE to org_id IS NULL so a tenant row is never touched", async () => {
     let where: unknown;
     const db = {
       update: jest.fn(() => ({
@@ -173,23 +171,23 @@ describe("BillingCoupons — tenant isolation", () => {
       })),
     } as unknown as Db;
 
-    await expect(new BillingCoupons(db).remove(ATTACKER_ORG, 7)).rejects.toThrow(
+    await expect(new BillingCoupons(db).remove(7)).rejects.toThrow(
       NotFoundException,
     );
 
     const query = render(where);
     expect(query.sql).toContain('"coupons"."org_id"');
-    expect(query.params).toContain(ATTACKER_ORG);
+    expect(query.sql).toContain("is null");
   });
 
-  it("remove succeeds for the owning org", async () => {
+  it("remove (platform) succeeds for an existing platform promotion", async () => {
     const db = {
       update: jest.fn(() => ({
         set: () => ({ where: () => ({ returning: async () => [{ id: 7 }] }) }),
       })),
     } as unknown as Db;
 
-    await expect(new BillingCoupons(db).remove(OWNER_ORG, 7)).resolves.toEqual({
+    await expect(new BillingCoupons(db).remove(7)).resolves.toEqual({
       success: true,
     });
   });

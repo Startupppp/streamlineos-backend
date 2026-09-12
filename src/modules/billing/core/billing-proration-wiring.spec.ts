@@ -8,6 +8,7 @@ import {
   PaymentProviderResolver,
   type OrganizationPaymentProvider,
 } from "../payments/payment-provider-resolver.service";
+import { PlatformMerchantService } from "../payments/platform-merchant.service";
 import { PaymentAnalyticsService } from "../payments/payment-analytics.service";
 import { PaymentWebhookReceiverService } from "../payments/payment-webhook-receiver.service";
 import {
@@ -30,8 +31,32 @@ const UPGRADE_INPUT = {
   orderId: "order_test_1",
   paymentId: "pay_test_abc123",
   signature: FAKE_VALID_PAYMENT_SIG,
-  plan: "PROFESSIONAL" as const,
 };
+
+const MERCHANT_KEY_ID = new FakeProviderAdapter("razorpay").publicKeyId();
+const PURCHASE_AMOUNT_MINOR = 249_900;
+const PURCHASE_CURRENCY = "INR";
+
+function makePurchase(plan: "STARTER" | "PROFESSIONAL" | "ENTERPRISE") {
+  return {
+    id: 7,
+    orgId: "org1",
+    providerKey: "razorpay",
+    environment: "test",
+    merchantKeyId: MERCHANT_KEY_ID,
+    providerOrderId: UPGRADE_INPUT.orderId,
+    plan,
+    billingCycle: "monthly",
+    catalogVersion: null,
+    baseAmountMinor: PURCHASE_AMOUNT_MINOR,
+    discountAmountMinor: 0,
+    amountMinor: PURCHASE_AMOUNT_MINOR,
+    currency: PURCHASE_CURRENCY,
+    couponId: null,
+    status: "PENDING",
+    subscriptionId: null,
+  };
+}
 
 function priceVersion(id: number, amountMinor: number) {
   return {
@@ -70,13 +95,59 @@ function makeResolver() {
   } as unknown as PaymentProviderResolver;
 }
 
+function makePlatformMerchant() {
+  const adapter = new FakeProviderAdapter("razorpay");
+  return {
+    providerKey: "razorpay",
+    resolve: jest.fn().mockReturnValue({
+      providerKey: "razorpay",
+      environment: "test",
+      isReady: () => adapter.isReady(),
+      publicKeyId: () => adapter.publicKeyId(),
+      createOrder: (params) =>
+        adapter.createOrder({ ...params, keyId: "fake-public", keySecret: "fake-private" }),
+      verifyPaymentSignature: (params) =>
+        adapter.verifyPaymentSignature({ ...params, keySecret: "fake-private" }),
+      verifyWebhookSignature: (params) =>
+        adapter.verifyWebhookSignature({
+          ...params,
+          webhookSecret: "fake-webhook-secret-at-least-32chars",
+        }),
+      normalizeWebhook: (rawBody) => adapter.normalizeWebhook(rawBody),
+      fetchPayment: (paymentId: string) =>
+        Promise.resolve({
+          paymentId,
+          orderId: UPGRADE_INPUT.orderId,
+          status: "captured" as const,
+          amountMinor: PURCHASE_AMOUNT_MINOR,
+          currency: PURCHASE_CURRENCY,
+        }),
+    }),
+    readiness: jest.fn().mockReturnValue({
+      configured: true,
+      providerKey: "razorpay",
+      environment: "test",
+      publicKeyId: adapter.publicKeyId(),
+      webhookConfigured: true,
+      unavailableReason: null,
+    }),
+    environment: jest.fn().mockReturnValue("test"),
+  } as unknown as PlatformMerchantService;
+}
+
 /** The transaction double invokes its callback; a bare jest.fn() would void every assertion inside it. */
-function makeDb(subscription: Record<string, unknown> | null) {
+function makeDb(subscription: Record<string, unknown> | null, purchase: Record<string, unknown>) {
   const tx = {
     query: { subscriptions: { findFirst: jest.fn().mockResolvedValue(subscription) } },
     update: jest.fn().mockReturnThis(),
     set: jest.fn().mockReturnThis(),
-    where: jest.fn().mockResolvedValue([]),
+    where: jest.fn(() => {
+      const updated = [{ ...purchase, status: "ACTIVATED", activatedAt: null }];
+      return {
+        returning: () => Promise.resolve(updated),
+        then: (resolve: (rows: typeof updated) => unknown) => Promise.resolve(updated).then(resolve),
+      };
+    }),
     insert: jest.fn().mockImplementation(() => ({
       values: () => {
         const rows = [{ id: 1 }];
@@ -86,11 +157,13 @@ function makeDb(subscription: Record<string, unknown> | null) {
         };
       },
     })),
-    select: jest.fn().mockReturnValue({
-      from: jest.fn().mockReturnThis(),
-      where: jest.fn().mockReturnThis(),
-      for: jest.fn().mockReturnThis(),
-      limit: jest.fn().mockResolvedValue([{ id: 42, maxUses: null, usedCount: 0 }]),
+    select: jest.fn(() => {
+      const chainObj: Record<string, unknown> = {};
+      chainObj["from"] = () => chainObj;
+      chainObj["where"] = () => chainObj;
+      chainObj["for"] = () => chainObj;
+      chainObj["limit"] = () => Promise.resolve([{ id: 42, maxUses: null, usedCount: 0 }]);
+      return chainObj;
     }),
     execute: jest.fn().mockResolvedValue([]),
   };
@@ -105,9 +178,14 @@ function makeDb(subscription: Record<string, unknown> | null) {
       coupons: { findFirst: jest.fn().mockResolvedValue(null) },
       couponRedemptions: { findFirst: jest.fn().mockResolvedValue(null) },
     },
-    select: jest.fn().mockReturnValue({
-      from: jest.fn().mockReturnThis(),
-      where: jest.fn().mockResolvedValue([]),
+    select: jest.fn(() => {
+      const chainObj: Record<string, unknown> = {};
+      chainObj["from"] = () => chainObj;
+      chainObj["for"] = () => chainObj;
+      chainObj["limit"] = () => Promise.resolve([purchase]);
+      chainObj["where"] = () => chainObj;
+      chainObj["then"] = (resolve: (rows: unknown[]) => unknown) => Promise.resolve([]).then(resolve);
+      return chainObj;
     }),
     insert: jest.fn().mockReturnValue({ values: jest.fn().mockResolvedValue([]) }),
     execute: jest.fn().mockResolvedValue([]),
@@ -118,8 +196,9 @@ async function buildService(options: {
   subscription: Record<string, unknown> | null;
   recordPlanChange: jest.Mock;
   prices: Record<string, ReturnType<typeof priceVersion> | null>;
+  purchasePlan?: "STARTER" | "PROFESSIONAL" | "ENTERPRISE";
 }) {
-  const db = makeDb(options.subscription);
+  const db = makeDb(options.subscription, makePurchase(options.purchasePlan ?? "PROFESSIONAL"));
   const moduleRef = await Test.createTestingModule({
     providers: [
       BillingService,
@@ -160,6 +239,7 @@ async function buildService(options: {
       { provide: PaymentWebhookReceiverService, useValue: { recordSignatureFailure: jest.fn() } },
       { provide: PaymentAnalyticsService, useValue: { notifyOwner: jest.fn(), track: jest.fn() } },
       { provide: BillingProfileService, useValue: { get: jest.fn(), update: jest.fn() } },
+      { provide: PlatformMerchantService, useValue: makePlatformMerchant() },
     ],
   }).compile();
 
@@ -228,9 +308,10 @@ describe("BillingService — a plan change produces a proration line", () => {
       subscription: ACTIVE_STARTER,
       recordPlanChange,
       prices: PRICES,
+      purchasePlan: "STARTER",
     });
 
-    await service.verifyAndActivate("org1", "user1", { ...UPGRADE_INPUT, plan: "STARTER" });
+    await service.verifyAndActivate("org1", "user1", UPGRADE_INPUT);
 
     expect(recordPlanChange).not.toHaveBeenCalled();
   });

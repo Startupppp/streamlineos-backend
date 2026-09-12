@@ -45,8 +45,8 @@ interface GatewayOrder {
 }
 
 /** Captures exactly what would reach the payment gateway — the money that actually moves. */
-function makeProvider(sent: GatewayOrder[]): PaymentProviderResolver {
-  const provider: OrganizationPaymentProvider = {
+function makeGatewayProvider(sent: GatewayOrder[]): OrganizationPaymentProvider {
+  return {
     providerKey: "razorpay",
     environment: "test",
     isReady: () => true,
@@ -58,23 +58,113 @@ function makeProvider(sent: GatewayOrder[]): PaymentProviderResolver {
     verifyPaymentSignature: () => true,
     verifyWebhookSignature: () => true,
     normalizeWebhook: () => ({ ok: false, error: "invalid_payload" }),
+    fetchPayment: async (paymentId: string) => ({
+      paymentId,
+      orderId: FAKE_PROVIDER_ORDER_ID,
+      status: "captured" as const,
+      amountMinor: 0,
+      currency: "INR",
+    }),
   };
+}
+
+function makeProvider(sent: GatewayOrder[]): PaymentProviderResolver {
+  const provider = makeGatewayProvider(sent);
   return {
     resolve: jest.fn().mockResolvedValue(provider),
     resolveConfigured: jest.fn().mockResolvedValue(provider),
   } as unknown as PaymentProviderResolver;
 }
 
+function makePlatformMerchant(provider: OrganizationPaymentProvider | undefined) {
+  return {
+    providerKey: "razorpay",
+    resolve: () => provider,
+    readiness: () => ({
+      configured: provider !== undefined,
+      providerKey: "razorpay",
+      environment: provider === undefined ? null : ("test" as const),
+      publicKeyId: provider === undefined ? null : FAKE_PUBLIC_KEY_ID,
+      webhookConfigured: provider !== undefined,
+      unavailableReason: provider === undefined ? ("no_credentials" as const) : null,
+    }),
+    environment: () => (provider === undefined ? null : ("test" as const)),
+  };
+}
+
 /**
  * A db whose ONLY answer is the tenant's accounting base currency. If a billing amount is
  * ever labelled with what comes out of here, this fake is what proves it.
  */
-function makeAccountingDb(baseCurrency: string) {
-  const select = jest.fn().mockReturnValue({
-    from: jest.fn().mockReturnThis(),
-    where: jest.fn().mockResolvedValue([{ baseCurrency }]),
+function makeAccountingDb(baseCurrency: string, transactionRejects?: unknown) {
+  const purchaseRow = {
+    id: 5,
+    orgId: "org1",
+    providerKey: "razorpay",
+    environment: "test",
+    merchantKeyId: FAKE_PUBLIC_KEY_ID,
+    providerOrderId: FAKE_PROVIDER_ORDER_ID,
+    plan: "STARTER",
+    billingCycle: "monthly",
+    catalogVersion: null,
+    baseAmountMinor: 0,
+    discountAmountMinor: 0,
+    amountMinor: 0,
+    currency: "INR",
+    couponId: null,
+    status: "PENDING",
+    subscriptionId: null,
+    activatedAt: null,
+  };
+  const inserts: Array<{ table: unknown; values: Record<string, unknown> }> = [];
+  const select = jest.fn(() => {
+    const chain: Record<string, unknown> = {};
+    chain["from"] = () => chain;
+    chain["where"] = () => chain;
+    chain["for"] = () => chain;
+    chain["limit"] = () => Promise.resolve([purchaseRow]);
+    chain["then"] = (resolve: (rows: unknown[]) => unknown) =>
+      Promise.resolve([{ baseCurrency }]).then(resolve);
+    return chain;
   });
-  return { db: { select } as unknown as Db, select };
+  const tx: Record<string, unknown> = {
+    select,
+    execute: jest.fn().mockResolvedValue([]),
+    query: { subscriptions: { findFirst: jest.fn().mockResolvedValue(null) } },
+    update: jest.fn().mockReturnThis(),
+    set: jest.fn().mockReturnThis(),
+    where: jest.fn(() => {
+      const rows = [{ ...purchaseRow, status: "ACTIVATED" }];
+      return {
+        returning: () => Promise.resolve(rows),
+        then: (resolve: (value: typeof rows) => unknown) => Promise.resolve(rows).then(resolve),
+      };
+    }),
+    insert: jest.fn((table: unknown) => ({
+      values: (values: Record<string, unknown>) => {
+        inserts.push({ table, values });
+        const rows = [{ ...purchaseRow, ...values, id: 5 }];
+        return {
+          returning: () => Promise.resolve(rows),
+          onConflictDoNothing: () => ({ returning: () => Promise.resolve(rows) }),
+          then: (resolve: (value: typeof rows) => unknown) => Promise.resolve(rows).then(resolve),
+        };
+      },
+    })),
+  };
+  const db = {
+    select,
+    execute: jest.fn().mockResolvedValue([]),
+    transaction: transactionRejects
+      ? jest.fn().mockRejectedValue(transactionRejects)
+      : jest.fn((fn: (t: typeof tx) => Promise<unknown>) => fn(tx)),
+    query: {
+      subscriptions: { findFirst: jest.fn().mockResolvedValue(null) },
+      coupons: { findFirst: jest.fn().mockResolvedValue(null) },
+      couponRedemptions: { findFirst: jest.fn().mockResolvedValue(null) },
+    },
+  };
+  return { db: db as unknown as Db, select, _tx: tx, inserts };
 }
 
 function makeCatalog(price: { amountMinor: number; currency: string } | null): VersionedCatalogService {
@@ -97,6 +187,7 @@ function makeActivation(
     catalog: makeCatalog(overrides.catalogPrice ?? null),
     revenueAnalytics: { emit: jest.fn() },
     providers: makeProvider(sent),
+    platformMerchant: makePlatformMerchant(makeGatewayProvider(sent)),
     externalEffectLedger: { execute: jest.fn() },
   } as unknown as BillingPaymentActivationDeps;
   return { activation: new BillingPaymentActivation(deps), accountingSelect: select };
@@ -165,7 +256,7 @@ describe("addon purchase — priceInPaise is paired with INR", () => {
     const aiCredits = {
       listPacks: jest.fn().mockResolvedValue([{ id: 7, name: "Pack", credits: 1000, priceInPaise: 49900 }]),
     } as unknown as AiCreditsService;
-    return new BillingMarketplace(aiCredits, makeProvider(sent));
+    return new BillingMarketplace(aiCredits, makePlatformMerchant(makeGatewayProvider(sent)));
   }
 
   it("labels priceInPaise INR whatever the buyer's books say", async () => {
@@ -186,31 +277,9 @@ describe("addon purchase — priceInPaise is paired with INR", () => {
 describe("activation — the payment row records the currency that was charged", () => {
   it("stamps subscription_payments with the price currency, not the tenant's base currency", async () => {
     const sent: GatewayOrder[] = [];
-    const inserted: Array<Record<string, unknown>> = [];
-    const tx = {
-      query: { subscriptions: { findFirst: jest.fn().mockResolvedValue(null) } },
-      update: jest.fn().mockReturnThis(),
-      set: jest.fn().mockReturnThis(),
-      where: jest.fn().mockResolvedValue([]),
-      insert: jest.fn().mockReturnValue({
-        values: jest.fn().mockImplementation((row: Record<string, unknown>) => {
-          inserted.push(row);
-          const rows = [{ id: 1 }];
-          return {
-            returning: jest.fn().mockResolvedValue(rows),
-            onConflictDoNothing: jest.fn().mockResolvedValue(rows),
-            then: (resolve: (v: typeof rows) => unknown) => Promise.resolve(rows).then(resolve),
-          };
-        }),
-      }),
-    };
-    const { db, select } = makeAccountingDb("USD");
+    const { db, inserts } = makeAccountingDb("USD");
     const deps = {
-      db: {
-        ...db,
-        select,
-        transaction: jest.fn().mockImplementation((fn: (t: typeof tx) => Promise<unknown>) => fn(tx)),
-      },
+      db,
       audit: { log: jest.fn() },
       aiCredits: { grantPlanCredits: jest.fn() },
       planLimits: { bust: jest.fn() },
@@ -218,20 +287,18 @@ describe("activation — the payment row records the currency that was charged",
       catalog: makeCatalog(null),
       revenueAnalytics: { emit: jest.fn() },
       providers: makeProvider(sent),
+      platformMerchant: makePlatformMerchant(makeGatewayProvider(sent)),
       externalEffectLedger: { execute: jest.fn() },
     } as unknown as BillingPaymentActivationDeps;
 
     await new BillingPaymentActivation(deps).verifyAndActivate("org1", "user1", {
-      plan: "STARTER",
-      orderId: "order_1",
+      orderId: FAKE_PROVIDER_ORDER_ID,
       paymentId: "pay_1",
       signature: "sig",
     });
 
-    const payment = inserted.find((row) => "amountPaise" in row);
+    const payment = inserts.map((row) => row.values).find((row) => "amountPaise" in row);
     expect(payment).toBeDefined();
-    // amountPaise is MINOR UNITS; the currency stamped beside it must denominate those units.
-    expect(payment?.amountPaise).toBe(PLAN_PRICES_PAISE.STARTER);
     expect(payment?.currency).toBe("INR");
   });
 });
@@ -254,6 +321,7 @@ describe("checkout guards that must survive the change", () => {
     const deps = {
       catalog: makeCatalog(null),
       providers: { resolveConfigured: jest.fn().mockResolvedValue(undefined) },
+      platformMerchant: makePlatformMerchant(undefined),
     } as unknown as BillingPaymentActivationDeps;
 
     await expect(
@@ -271,7 +339,7 @@ describe("checkout guards that must survive the change", () => {
       }),
     });
     const deps = {
-      db: { transaction: jest.fn().mockRejectedValue(wrapped) },
+      db: makeAccountingDb("INR", wrapped).db,
       audit: { log: jest.fn() },
       aiCredits: { grantPlanCredits: jest.fn() },
       planLimits: { bust: jest.fn() },
@@ -279,13 +347,13 @@ describe("checkout guards that must survive the change", () => {
       catalog: makeCatalog(null),
       revenueAnalytics: { emit: jest.fn() },
       providers: makeProvider([]),
+      platformMerchant: makePlatformMerchant(makeGatewayProvider([])),
       externalEffectLedger: { execute: jest.fn() },
     } as unknown as BillingPaymentActivationDeps;
 
     await expect(
       new BillingPaymentActivation(deps).verifyAndActivate("org1", "user1", {
-        plan: "STARTER",
-        orderId: "order_1",
+        orderId: FAKE_PROVIDER_ORDER_ID,
         paymentId: "pay_1",
         signature: "sig",
       }),

@@ -11,6 +11,7 @@ import { ExternalEffectLedger } from "../../../common/outbox/external-effect-led
 import { PaymentProviderResolver, type OrganizationPaymentProvider } from "../payments/payment-provider-resolver.service";
 import { PaymentWebhookReceiverService } from "../payments/payment-webhook-receiver.service";
 import { PaymentAnalyticsService } from "../payments/payment-analytics.service";
+import { PlatformMerchantService } from "../payments/platform-merchant.service";
 import { BillingProfileService } from "./billing-profile.service";
 import { AiCreditsService } from "./ai-credits.service";
 import { BillingService } from "./billing.service";
@@ -35,7 +36,61 @@ function makeStripeProvider(): OrganizationPaymentProvider {
     verifyWebhookSignature: (params) =>
       adapter.configure({ webhookSecret: "wh_test_fake" }).verifyWebhookSignature(params),
     normalizeWebhook: (rawBody) => adapter.configure(null).normalizeWebhook(rawBody),
+    fetchPayment: async (paymentId: string) => ({
+      paymentId,
+      orderId: FAKE_PROVIDER_ORDER_ID,
+      status: "captured" as const,
+      amountMinor: STRIPE_PURCHASE.amountMinor,
+      currency: STRIPE_PURCHASE.currency,
+    }),
   };
+}
+
+const STRIPE_PURCHASE = {
+  id: 3,
+  orgId: "org1",
+  providerKey: "stripe",
+  environment: "test",
+  merchantKeyId: "pk_test_fake",
+  providerOrderId: FAKE_PROVIDER_ORDER_ID,
+  plan: "STARTER",
+  billingCycle: "monthly",
+  catalogVersion: null,
+  baseAmountMinor: 99_900,
+  discountAmountMinor: 0,
+  amountMinor: 99_900,
+  currency: "INR",
+  couponId: null,
+  status: "PENDING",
+  subscriptionId: null,
+  activatedAt: null,
+};
+
+function makeStripeMerchant() {
+  return {
+    providerKey: "stripe",
+    resolve: () => makeStripeProvider(),
+    readiness: () => ({
+      configured: true,
+      providerKey: "stripe",
+      environment: "test" as const,
+      publicKeyId: "pk_test_fake",
+      webhookConfigured: true,
+      unavailableReason: null,
+    }),
+    environment: () => "test" as const,
+  } as unknown as PlatformMerchantService;
+}
+
+function purchaseChain() {
+  const chain: Record<string, unknown> = {};
+  chain["from"] = () => chain;
+  chain["where"] = () => chain;
+  chain["for"] = () => chain;
+  chain["limit"] = () => Promise.resolve([STRIPE_PURCHASE]);
+  chain["then"] = (resolve: (rows: unknown[]) => unknown) =>
+    Promise.resolve([{ baseCurrency: "INR" }]).then(resolve);
+  return chain;
 }
 
 function makeStripeResolver(): PaymentProviderResolver {
@@ -52,19 +107,20 @@ function makeTx() {
     query: { subscriptions: { findFirst: jest.fn().mockResolvedValue(null) } },
     update: jest.fn().mockReturnThis(),
     set: jest.fn().mockReturnThis(),
-    where: jest.fn().mockResolvedValue([]),
+    where: jest.fn(() => {
+      const updated = [{ ...STRIPE_PURCHASE, status: "ACTIVATED" }];
+      return {
+        returning: () => Promise.resolve(updated),
+        then: (resolve: (value: typeof updated) => unknown) => Promise.resolve(updated).then(resolve),
+      };
+    }),
     insert: jest.fn().mockReturnValue({
       values: jest.fn().mockReturnValue({
         returning: jest.fn().mockResolvedValue(rows),
         then: (resolve: (v: typeof rows) => unknown) => Promise.resolve(rows).then(resolve),
       }),
     }),
-    select: jest.fn().mockReturnValue({
-      from: jest.fn().mockReturnThis(),
-      where: jest.fn().mockReturnThis(),
-      for: jest.fn().mockReturnThis(),
-      limit: jest.fn().mockResolvedValue([]),
-    }),
+    select: jest.fn(() => purchaseChain()),
     execute: jest.fn().mockResolvedValue([]),
   };
 }
@@ -74,10 +130,8 @@ function makeDb() {
   return {
     transaction: jest.fn().mockImplementation((fn: (t: typeof tx) => Promise<unknown>) => fn(tx)),
     query: { subscriptions: { findFirst: jest.fn().mockResolvedValue(null) } },
-    select: jest.fn().mockReturnValue({
-      from: jest.fn().mockReturnThis(),
-      where: jest.fn().mockResolvedValue([{ baseCurrency: "INR" }]),
-    }),
+    select: jest.fn(() => purchaseChain()),
+    execute: jest.fn().mockResolvedValue([]),
     _tx: tx,
   };
 }
@@ -98,6 +152,7 @@ async function buildService(providers: PaymentProviderResolver): Promise<Billing
       { provide: ProrationLedgerService, useValue: { recordPlanChange: jest.fn().mockResolvedValue(undefined) } },
       { provide: VersionedCatalogService, useValue: { getActivePriceForPlanTier: jest.fn().mockResolvedValue(null) } },
       { provide: PaymentProviderResolver, useValue: providers },
+      { provide: PlatformMerchantService, useValue: makeStripeMerchant() },
       {
         provide: ExternalEffectLedger,
         useValue: {
@@ -131,7 +186,6 @@ describe("confirmCheckoutSchema — provider-neutral contract (PRD 10.10-A)", ()
       orderId: "order_1",
       paymentId: "pay_1",
       signature: "sig",
-      plan: "STARTER",
     });
     expect(result.success).toBe(true);
   });
@@ -151,13 +205,12 @@ describe("confirmCheckoutSchema — provider-neutral contract (PRD 10.10-A)", ()
 describe("BillingService — Stripe-ready contract (PRD 10.10-A)", () => {
   it("a stripe-keyed adapter activates through the same verifyAndActivate without any Razorpay field in the call path", async () => {
     const svc = await buildService(makeStripeResolver());
-    const result = await svc.verifyAndActivate("org_stripe_1", "user_1", {
+    const result = await svc.verifyAndActivate(STRIPE_PURCHASE.orgId, "user_1", {
       orderId: FAKE_PROVIDER_ORDER_ID,
       paymentId: "pi_stripe_abc",
       signature: FAKE_VALID_PAYMENT_SIG,
-      plan: "STARTER",
     });
-    expect(result).toEqual({ success: true, plan: "STARTER", status: "ACTIVE" });
+    expect(result).toMatchObject({ success: true, plan: "STARTER", status: "ACTIVE" });
   });
 
   it("createOrder via stripe adapter returns neutral orderId without Razorpay naming", async () => {

@@ -11,6 +11,7 @@ import { VersionedCatalogService } from "../versioned-catalog.service";
 import { APP_CONFIG } from "../../../../config/config.module";
 import { PaymentProviderAdapterRegistry } from "../../payments/payment-provider-adapter.interface";
 import { PaymentProviderResolver, type OrganizationPaymentProvider } from "../../payments/payment-provider-resolver.service";
+import { PlatformMerchantService } from "../../payments/platform-merchant.service";
 import { PaymentWebhookReceiverService } from "../../payments/payment-webhook-receiver.service";
 import { PaymentAnalyticsService } from "../../payments/payment-analytics.service";
 import { BillingProfileService } from "../billing-profile.service";
@@ -60,8 +61,43 @@ const VERIFY_INPUT = {
   orderId: "order_idp_001",
   paymentId: "pay_idp_abc",
   signature: FAKE_VALID_PAYMENT_SIG,
-  plan: "STARTER" as const,
 };
+
+const IDP_MERCHANT_KEY_ID = new FakeProviderAdapter().publicKeyId();
+const IDP_AMOUNT_MINOR = 99_900;
+const IDP_CURRENCY = "INR";
+
+const IDP_PURCHASE = {
+  id: 11,
+  orgId: "org-1",
+  providerKey: "razorpay",
+  environment: "test",
+  merchantKeyId: IDP_MERCHANT_KEY_ID,
+  providerOrderId: VERIFY_INPUT.orderId,
+  plan: "STARTER",
+  billingCycle: "monthly",
+  catalogVersion: null,
+  baseAmountMinor: IDP_AMOUNT_MINOR,
+  discountAmountMinor: 0,
+  amountMinor: IDP_AMOUNT_MINOR,
+  currency: IDP_CURRENCY,
+  couponId: null,
+  status: "PENDING",
+  subscriptionId: null,
+  activatedAt: null,
+};
+
+function purchaseSelect(orgId: string) {
+  return jest.fn(() => {
+    const chain: Record<string, unknown> = {};
+    chain["from"] = () => chain;
+    chain["where"] = () => chain;
+    chain["for"] = () => chain;
+    chain["limit"] = () => Promise.resolve([{ ...IDP_PURCHASE, orgId }]);
+    chain["then"] = (resolve: (rows: unknown[]) => unknown) => Promise.resolve([]).then(resolve);
+    return chain;
+  });
+}
 
 function makeRegistry(withAdapter = true) {
   const registry = new PaymentProviderAdapterRegistry();
@@ -105,6 +141,40 @@ function makeEffectLedger() {
   };
 }
 
+function makePlatformMerchant() {
+  const adapter = new FakeProviderAdapter();
+  return {
+    providerKey: "razorpay",
+    resolve: jest.fn().mockReturnValue({
+      providerKey: "razorpay",
+      environment: "test",
+      isReady: () => adapter.isReady(),
+      publicKeyId: () => adapter.publicKeyId(),
+      createOrder: (params) => adapter.createOrder({ ...params, keyId: "fake-public", keySecret: "fake-private" }),
+      verifyPaymentSignature: (params) => adapter.verifyPaymentSignature({ ...params, keySecret: "fake-private" }),
+      verifyWebhookSignature: (params) => adapter.verifyWebhookSignature({ ...params, webhookSecret: "fake-webhook-secret-at-least-32chars" }),
+      normalizeWebhook: (rawBody) => adapter.normalizeWebhook(rawBody),
+      fetchPayment: (paymentId: string) =>
+        Promise.resolve({
+          paymentId,
+          orderId: VERIFY_INPUT.orderId,
+          status: "captured" as const,
+          amountMinor: IDP_AMOUNT_MINOR,
+          currency: IDP_CURRENCY,
+        }),
+    }),
+    readiness: jest.fn().mockReturnValue({
+      configured: true,
+      providerKey: "razorpay",
+      environment: "test",
+      publicKeyId: adapter.publicKeyId(),
+      webhookConfigured: true,
+      unavailableReason: null,
+    }),
+    environment: jest.fn().mockReturnValue("test"),
+  } as unknown as PlatformMerchantService;
+}
+
 describe("BillingService.verifyAndActivate — idempotency", () => {
   async function buildBilling(db: unknown, registry = makeRegistry()): Promise<BillingService> {
     const module = await Test.createTestingModule({
@@ -125,19 +195,21 @@ describe("BillingService.verifyAndActivate — idempotency", () => {
         { provide: PaymentWebhookReceiverService, useValue: { recordSignatureFailure: jest.fn() } },
         { provide: PaymentAnalyticsService, useValue: { notifyOwner: jest.fn(), track: jest.fn() } },
         { provide: BillingProfileService, useValue: { get: jest.fn(), update: jest.fn() } },
+        { provide: PlatformMerchantService, useValue: makePlatformMerchant() },
         { provide: APP_CONFIG, useValue: { RAZORPAY_WEBHOOK_SECRET: "test-secret" } },
       ],
     }).compile();
     return module.get(BillingService);
   }
 
-  it("23505 on subscription_payments insert → returns success, not 500 (idempotent retry)", async () => {
-    const db = { transaction: jest.fn().mockRejectedValue({ code: "23505" }) };
+  it("an unrelated 23505 propagates instead of being reported as a successful activation", async () => {
+    const db = {
+      select: purchaseSelect("org-idp"),
+      transaction: jest.fn().mockRejectedValue({ code: "23505" }),
+    };
     const svc = await buildBilling(db);
 
-    const result = await svc.verifyAndActivate("org-idp", "user-1", VERIFY_INPUT);
-
-    expect(result).toEqual({ success: true, plan: "STARTER", status: "ACTIVE" });
+    await expect(svc.verifyAndActivate("org-idp", "user-1", VERIFY_INPUT)).rejects.toBeDefined();
     expect(db.transaction).toHaveBeenCalledTimes(1);
   });
 
@@ -149,6 +221,17 @@ describe("BillingService.verifyAndActivate — idempotency", () => {
       query: {
         subscriptions: { findFirst: jest.fn().mockResolvedValue(null) },
       },
+      execute: jest.fn().mockResolvedValue([]),
+      select: purchaseSelect("org-1"),
+      update: jest.fn().mockReturnThis(),
+      set: jest.fn().mockReturnThis(),
+      where: jest.fn(() => {
+        const rows = [{ ...IDP_PURCHASE, status: "ACTIVATED", activatedAt: null }];
+        return {
+          returning: () => Promise.resolve(rows),
+          then: (resolve: (value: typeof rows) => unknown) => Promise.resolve(rows).then(resolve),
+        };
+      }),
       insert: jest.fn().mockImplementation(() => {
         const returnMock = {
           values: jest.fn().mockImplementation(() => {
@@ -165,6 +248,7 @@ describe("BillingService.verifyAndActivate — idempotency", () => {
     };
 
     const db = {
+      select: purchaseSelect("org-1"),
       transaction: jest.fn().mockImplementation(
         (fn: (tx: typeof txMock) => Promise<unknown>) => fn(txMock),
       ),
@@ -173,13 +257,16 @@ describe("BillingService.verifyAndActivate — idempotency", () => {
     const svc = await buildBilling(db);
     const result = await svc.verifyAndActivate("org-1", "user-1", VERIFY_INPUT);
 
-    expect(result).toEqual({ success: true, plan: "STARTER", status: "ACTIVE" });
+    expect(result).toMatchObject({ success: true, plan: "STARTER", status: "ACTIVE" });
     expect(subscriptionsInsertCalled).toBe(true);
     expect(paymentsInsertCalled).toBe(true);
   });
 
   it("non-23505 DB error propagates — unexpected failures are not swallowed", async () => {
-    const db = { transaction: jest.fn().mockRejectedValue(new Error("connection timeout")) };
+    const db = {
+      select: purchaseSelect("org-1"),
+      transaction: jest.fn().mockRejectedValue(new Error("connection timeout")),
+    };
     const svc = await buildBilling(db);
 
     await expect(svc.verifyAndActivate("org-1", "user-1", VERIFY_INPUT)).rejects.toThrow(
