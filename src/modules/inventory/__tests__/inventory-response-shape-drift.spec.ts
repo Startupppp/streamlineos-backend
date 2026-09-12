@@ -69,6 +69,17 @@ const INVENTORY_DIR = resolve(__dirname, "..");
  * beside `<repo>/backend` layout that no worktree here has ever had.
  */
 function frontendHooksDir(): { dir: string; tried: string[] } {
+  const tried: string[] = [];
+
+  const envFront = process.env.STREAMLINE_FRONTEND_ROOT || process.env.STREAMLINE_WORKSPACE_ROOT;
+  if (envFront) {
+    for (const nested of [".", "frontend"]) {
+      const candidate = resolve(envFront, nested, "hooks", "api", "inventory");
+      tried.push(candidate);
+      if (existsSync(candidate)) return { dir: candidate, tried };
+    }
+  }
+
   const checkout = basename(BACKEND_ROOT);
   const paired = checkout.endsWith("-backend")
     ? `${checkout.slice(0, -"-backend".length)}-frontend`
@@ -76,21 +87,31 @@ function frontendHooksDir(): { dir: string; tried: string[] } {
   const roots = [
     ...(paired === null ? [] : [paired]),
     "streamlineos-frontend",
+    "tsign-frontend",
     "frontend",
   ];
 
-  const tried: string[] = [];
+  // Try child checkouts (inside BACKEND_ROOT, e.g. GITHUB_WORKSPACE/streamlineos-frontend)
   for (const root of roots) {
-    // Both layouts: a repo whose Next app sits in a `frontend/` package, and one
-    // whose app is the repo.
+    for (const nested of ["frontend", "."]) {
+      const dir = resolve(BACKEND_ROOT, root, nested, "hooks", "api", "inventory");
+      tried.push(dir);
+      if (existsSync(dir)) return { dir, tried };
+    }
+  }
+
+  // Try sibling checkouts (beside BACKEND_ROOT)
+  for (const root of roots) {
     for (const nested of ["frontend", "."]) {
       const dir = resolve(BACKEND_ROOT, "..", root, nested, "hooks", "api", "inventory");
       tried.push(dir);
       if (existsSync(dir)) return { dir, tried };
     }
   }
+
   throw new Error(
-    `INV-22 shape gate: no frontend checkout beside this backend. A cross-repo gate that cannot find the other repo must FAIL, never skip — five guards in this workspace reported green for months by skipping here. Tried:\n  ${tried.join("\n  ")}`,
+    `INV-22 shape gate: no frontend checkout found. A cross-repo gate that cannot find the frontend repo must FAIL, never skip. ` +
+      `Ensure FRONTEND_REPO_TOKEN is configured in GitHub secrets so CI can check out Startupppp/streamlineos-frontend. Tried:\n  ${tried.join("\n  ")}`,
   );
 }
 
