@@ -1,5 +1,6 @@
-import { DelhiveryHttpCarrierAdapter } from "../delhivery-http.adapter";
-import type { CarrierAccount, CarrierBookingRequest, CarrierHttp } from "../carrier-transport.port";
+import { DelhiveryHttpCarrierAdapter, DEFAULT_DELHIVERY_SANDBOX_URL } from "../delhivery-http.adapter";
+import type { CarrierAccount, CarrierBookingRequest } from "../carrier-transport.port";
+import type { CarrierHttp } from "../carrier-http";
 
 describe("DelhiveryHttpCarrierAdapter (INV-26)", () => {
   const dummyAccount: CarrierAccount = {
@@ -131,7 +132,7 @@ describe("DelhiveryHttpCarrierAdapter (INV-26)", () => {
     expect(result.outcome).toBe("accepted");
     if (result.outcome === "accepted") {
       expect(result.value).toHaveLength(1);
-      expect(result.value[0].status).toBe("IN_TRANSIT");
+      expect(result.value[0].status).toBe("SHIPPED");
     }
   });
 

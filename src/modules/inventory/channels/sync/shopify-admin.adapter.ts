@@ -473,13 +473,7 @@ export class ShopifyAdminAdapter implements ChannelCommerceAdapter {
    *  - no location id, where the call needs one: Shopify inventory is per
    *    location and guessing one would push stock to a building nobody named.
    */
-  isConfigured(): boolean {
-    return this.token !== null || Boolean(process.env.SHOPIFY_SANDBOX_TOKEN);
-  }
 
-  configurationProblem(): string | null {
-    return this.isConfigured() ? null : "INV_CHANNEL_SHOPIFY_ACCESS_TOKEN is not set";
-  }
 
   /* ---------------------------------------------------------------- *
    * E6's port: what does the channel think it has

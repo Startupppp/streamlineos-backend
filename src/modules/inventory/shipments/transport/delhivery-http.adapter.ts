@@ -34,7 +34,7 @@ import type { CarrierStatusInput } from "../dto/carrier-status.schemas";
  * - Webhook Ingest & Verification: HMAC SHA256 over raw body or secret match.
  */
 
-const DEFAULT_DELHIVERY_SANDBOX_URL = "https://staging-express.delhivery.com";
+export const DEFAULT_DELHIVERY_SANDBOX_URL = "https://staging-express.delhivery.com";
 
 const delhiveryBookingResponseSchema = z.object({
   success: z.boolean().optional(),
@@ -91,14 +91,10 @@ const delhiveryWebhookSchema = z.object({
 
 function mapDelhiveryStatus(rawStatus: string): CarrierStatusInput["status"] {
   const normalized = rawStatus.toUpperCase().replace(/\s+/g, "_");
-  if (normalized.includes("DELIVERED")) return "DELIVERED";
-  if (normalized.includes("OUT_FOR_DELIVERY")) return "OUT_FOR_DELIVERY";
-  if (normalized.includes("IN_TRANSIT")) return "IN_TRANSIT";
-  if (normalized.includes("DISPATCH")) return "DISPATCHED";
-  if (normalized.includes("FAIL") || normalized.includes("UNDELIVERED")) return "FAILED_DELIVERY";
-  if (normalized.includes("RETURN")) return "RETURNED";
-  if (normalized.includes("MANIFEST") || normalized.includes("PICK")) return "PICKED_UP";
-  return "IN_TRANSIT";
+  if (normalized.includes("DELIVERED") && !normalized.includes("UNDELIVERED")) return "DELIVERED";
+  if (normalized.includes("CANCEL")) return "CANCELLED";
+  if (normalized.includes("LABEL") || normalized.includes("MANIFEST")) return "LABEL_CREATED";
+  return "SHIPPED";
 }
 
 @Injectable()
