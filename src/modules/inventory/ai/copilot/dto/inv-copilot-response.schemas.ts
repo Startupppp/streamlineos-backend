@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { invEvidenceReferenceSchema } from "../../dto/inv-ai-contract";
-import { aiUsageMetaSchema, invAiProvenanceSchema } from "../../dto/inv-ai-wire.schemas";
+import { aiUsageMetaSchema, invAiProvenanceSchema } from "../../dto/inv-ai-wire-response.schemas";
 
 /** `InvCopilotCell` — a projected column, never a nested object. */
 const copilotCellSchema = z.union([z.string(), z.number(), z.null()]);

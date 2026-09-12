@@ -4,7 +4,7 @@ import {
   invAiFactorSchema,
   invEvidenceReferenceSchema,
 } from "../../dto/inv-ai-contract";
-import { aiUsageMetaSchema, invAiProvenanceSchema } from "../../dto/inv-ai-wire.schemas";
+import { aiUsageMetaSchema, invAiProvenanceSchema } from "../../dto/inv-ai-wire-response.schemas";
 
 /** `ResolvedInvAiAction` (`inv-ai-action-resolver.ts`) — resolved server-side. */
 const resolvedActionSchema = z.object({

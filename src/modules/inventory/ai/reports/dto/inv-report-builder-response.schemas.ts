@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { aiUsageMetaSchema, invAiProvenanceSchema } from "../../dto/inv-ai-wire.schemas";
+import { aiUsageMetaSchema, invAiProvenanceSchema } from "../../dto/inv-ai-wire-response.schemas";
 import { invReportSpecSchema } from "./inv-report-spec.schemas";
 
 /** `InvReportCell` — a projected column, never a nested object. */
