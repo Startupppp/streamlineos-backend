@@ -58,6 +58,7 @@ const planCatalogEntrySchema = z.object({
   monthlyPrice: z.number(),
   annualPrice: z.number(),
   monthlyPricePaise: z.number().int(),
+  annualTotalPaise: z.number().int(),
   features: z.array(z.string()),
   maxEmployees: z.number().int().nullable(),
 });

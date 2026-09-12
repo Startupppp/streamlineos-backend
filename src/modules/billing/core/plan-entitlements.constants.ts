@@ -157,6 +157,7 @@ export interface PlanCatalogEntry {
   monthlyPrice: number;
   annualPrice: number;
   monthlyPricePaise: number;
+  annualTotalPaise: number;
   features: string[];
   maxEmployees: number | null;
 }
@@ -190,6 +191,7 @@ export function buildPlanCatalog(): PlanCatalogEntry[] {
     monthlyPrice: monthlyPriceInr(id),
     annualPrice: annualMonthlyPriceInr(id),
     monthlyPricePaise: PLAN_PRICES_PAISE[id],
+    annualTotalPaise: annualTotalPaise(id),
     features: PLAN_FEATURE_BULLETS[id],
     maxEmployees: PLAN_LIMITS.members[id],
   }));
