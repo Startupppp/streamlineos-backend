@@ -3,7 +3,8 @@ import { and, asc, eq, gt, isNotNull, isNull } from "drizzle-orm";
 import type { Db } from "../../db/drizzle.module";
 import { organizations } from "../../db/schema";
 import { logger } from "../logger/logger.service";
-import { runWithTenantContext } from "./tenant-context";
+import { runWithTenantContext, type AfterCommitHook } from "./tenant-context";
+import { drainAfterCommitHooks } from "./run-in-tenant-transaction";
 import { withTenant, type TenantTx } from "./with-tenant";
 import type { PlacementIntent } from "../region/placement";
 import { getRegionRegistry, hasRegionRegistry } from "../region/region-registry";
@@ -251,9 +252,18 @@ export async function forEachOrg(
           // `withTenant` resolves the correct cell db per org from the registry, so the callback
           // always operates against the cell that owns the organization — regardless of which db
           // was used for enumeration above.
+          // An `afterCommit` array, as every other fresh context carries one. Without it
+          // `registerAfterCommit` answers false inside a sweep, and a service that defers
+          // its emails or webhooks to the commit falls back to sending them inside this
+          // transaction — before the token rotation or status change they describe is
+          // durable, and with a rollback leaving the message sent and the state gone.
+          const afterCommit: AfterCommitHook[] = [];
           await withTenant(db, { orgId: org.id, audience: "INTERNAL", intent }, (tx) =>
-            runWithTenantContext({ orgId: org.id, audience: "INTERNAL", tx }, () => fn(tx, org.id)),
+            runWithTenantContext({ orgId: org.id, audience: "INTERNAL", tx, afterCommit }, () =>
+              fn(tx, org.id),
+            ),
           );
+          drainAfterCommitHooks(db, org.id, afterCommit);
           return true;
         } catch (err) {
           // Drizzle's message is only "Failed query: <sql> params: <...>" — the reason the
