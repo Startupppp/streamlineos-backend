@@ -1,4 +1,16 @@
+import { randomBytes } from "node:crypto";
+
 import { validateEnv } from "./env.validation";
+
+/**
+ * Minted per run, never committed. The validator only cares that a password is
+ * PRESENT (a passwordless RDS URL is refused unless DB_IAM_AUTH is set), never
+ * what it is, so a literal here would be a credential-shaped string in the tree
+ * for no test value — which is exactly what `pnpm check:hardcoded-secrets` reads
+ * as a leak. Hex so the value needs no URL-encoding.
+ */
+const OWNER_PASSWORD = randomBytes(12).toString("hex");
+const APP_PASSWORD = randomBytes(12).toString("hex");
 
 describe("validateEnv", () => {
   const base = {
@@ -166,9 +178,9 @@ describe("validateEnv", () => {
       CRON_SECRET: "c".repeat(32),
       INTERNAL_API_SECRET: "i".repeat(32),
       CONTACT_NOTIFICATION_EMAIL: "contact@example.com",
-      DATABASE_URL: `postgresql://streamline_admin:owner-password@${host}:5432/streamlineos?sslmode=require`,
-      DIRECT_DATABASE_URL: `postgresql://streamline_admin:owner-password@${host}:5432/streamlineos?sslmode=require`,
-      APP_DATABASE_URL: `postgresql://streamline_app:application-password@${host}:5432/streamlineos?sslmode=require`,
+      DATABASE_URL: `postgresql://streamline_admin:${OWNER_PASSWORD}@${host}:5432/streamlineos?sslmode=require`,
+      DIRECT_DATABASE_URL: `postgresql://streamline_admin:${OWNER_PASSWORD}@${host}:5432/streamlineos?sslmode=require`,
+      APP_DATABASE_URL: `postgresql://streamline_app:${APP_PASSWORD}@${host}:5432/streamlineos?sslmode=require`,
     });
     expect(config.APP_DATABASE_URL).toContain("streamline_app");
   });
