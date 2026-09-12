@@ -3,14 +3,13 @@ import {
   ForbiddenException,
   Inject,
   Injectable,
-  NotFoundException,
 } from "@nestjs/common";
 import { and, eq } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import { addDays } from "date-fns";
 import { OutboxWriter } from "../../common/outbox/outbox-writer";
 import { registerAfterCommit } from "../../common/tenant/tenant-context";
-import { organizationMembers, signEnvelopes, signRecipients } from "../../db/schema";
+import { signEnvelopes, signRecipients } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { appUrl } from "../email/app-url";
@@ -20,6 +19,12 @@ import { SignSettingsService } from "./sign-settings.service";
 import { SignNotificationsService } from "./sign-notifications.service";
 import { SignRecipientsService } from "./sign-recipients.service";
 import { systemEnvelopeScope } from "./sign-envelope-scope";
+import { findEnvelopeOrThrow, resolveSenderName } from "./sign-envelope-lookup";
+import {
+  SignEnvelopeInvitationsService,
+  type InvitationDelivery,
+  type InvitationPlan,
+} from "./sign-envelope-invitations.service";
 import { SignIntegrationsService } from "./sign-integrations.service";
 import {
   SignEnvelopeValidationService,
@@ -35,25 +40,6 @@ import {
 } from "./sign-state";
 import type { RequestActorContext } from "../../common/audit/actor-context";
 
-/** One recipient's pending invitation, resolved while the transaction is live. */
-interface InvitationPlan {
-  email: string;
-  name: string;
-  rawToken: string;
-}
-
-/**
- * How a send's invitations leave the process.
- *
- * `after_commit` is the request path: the email is attempted the moment the
- * request transaction commits, so a signer has their link within seconds.
- * `outbox` is bulk send's: the invitation is written to the email outbox
- * inside the row's own transaction and the outbox cron delivers it, so a row
- * is `success` only if its invitation is durably queued, and a pass over five
- * hundred rows does not fan five hundred provider calls out behind it.
- */
-export type InvitationDelivery = "after_commit" | "outbox";
-
 @Injectable()
 export class SignEnvelopeDispatchService {
   constructor(
@@ -65,84 +51,8 @@ export class SignEnvelopeDispatchService {
     private readonly recipients: SignRecipientsService,
     private readonly integrations: SignIntegrationsService,
     private readonly validation: SignEnvelopeValidationService,
+    private readonly invitations: SignEnvelopeInvitationsService,
   ) {}
-
-  private async findEnvelope(orgId: string, envelopeId: number) {
-    const row = await this.db.query.signEnvelopes.findFirst({
-      where: and(eq(signEnvelopes.id, envelopeId), eq(signEnvelopes.orgId, orgId)),
-    });
-    if (!row) throw new NotFoundException("Envelope not found");
-    return row;
-  }
-
-  /**
-   * Hand a batch of invitations to the transaction boundary, never to the
-   * transaction.
-   *
-   * `this.db` is the tenant-aware proxy, so anything issued under an ambient
-   * tenant transaction stays inside it — an SMTP outage would hold that
-   * transaction's pooled connection for its whole duration, which §4 forbids,
-   * and a throw partway through the loop rolled the token writes back
-   * underneath mail already sitting in inboxes.
-   *
-   * `registerAfterCommit` is the right one of §4's three mechanisms rather than
-   * the outbox: the recipient rows carry only the token *hash*, so an outbox
-   * payload would have to hold the raw signing token — a bearer credential in
-   * plaintext at rest — whereas a hook that never runs is re-drivable through
-   * `resend`, which rotates a fresh token for anyone left at `invited`.
-   *
-   * It returns false when the ambient context carries no hook array, and §4 is
-   * explicit that the fallback is to run inline rather than drop the work.
-   *
-   * `outbox` delivery is the exception that proves the rule: the outbox row is
-   * a database write, so it belongs inside the transaction — the send and its
-   * invitation commit together or not at all — and no network call is made
-   * here. The token still reaches the outbox row's html either way, since the
-   * request path inserts the same row before its first attempt.
-   */
-  private async deliverInvitations(
-    invitations: InvitationPlan[],
-    senderNameStr: string,
-    envelope: { title: string; message: string | null },
-    delivery: InvitationDelivery,
-  ): Promise<void> {
-    if (invitations.length === 0) return;
-    if (delivery === "outbox") {
-      for (const invitation of invitations) {
-        await this.notifications.queueInvitation(
-          invitation.email,
-          invitation.name,
-          senderNameStr,
-          envelope.title,
-          envelope.message ?? undefined,
-          this.tokens.buildSigningUrl(invitation.rawToken),
-        );
-      }
-      return;
-    }
-    const deliver = async () => {
-      for (const invitation of invitations) {
-        await this.notifications.sendInvitation(
-          invitation.email,
-          invitation.name,
-          senderNameStr,
-          envelope.title,
-          envelope.message ?? undefined,
-          this.tokens.buildSigningUrl(invitation.rawToken),
-        );
-      }
-    };
-    if (!registerAfterCommit(deliver)) await deliver();
-  }
-
-  private async senderName(orgId: string, membershipId: number | null | undefined): Promise<string> {
-    if (membershipId == null) return "A StreamlineOS user";
-    const member = await this.db.query.organizationMembers.findFirst({
-      where: and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.id, membershipId)),
-      with: { user: { columns: { name: true } } },
-    });
-    return member?.user?.name ?? "A StreamlineOS user";
-  }
 
   async send(
     orgId: string,
@@ -150,7 +60,7 @@ export class SignEnvelopeDispatchService {
     actor: RequestActorContext,
     delivery: InvitationDelivery = "after_commit",
   ) {
-    const envelope = await this.findEnvelope(orgId, envelopeId);
+    const envelope = await findEnvelopeOrThrow(this.db, orgId, envelopeId);
     if (!isEnvelopeEditable(envelope.status)) {
       throw new ForbiddenException("Only draft envelopes can be sent");
     }
@@ -178,7 +88,7 @@ export class SignEnvelopeDispatchService {
         })),
       ),
     );
-    const senderNameStr = await this.senderName(orgId, actor.membershipId);
+    const senderNameStr = await resolveSenderName(this.db, orgId, actor.membershipId);
 
     type SendPlan = {
       id: number;
@@ -234,7 +144,7 @@ export class SignEnvelopeDispatchService {
      * behind it. It asks for `outbox` delivery instead and the invitation
      * commits with the row.
      */
-    await this.deliverInvitations(
+    await this.invitations.deliverInvitations(
       sendPlans.flatMap((plan) =>
         plan.shouldInviteNow && plan.email
           ? [{ email: plan.email, name: plan.name, rawToken: plan.rawToken }]
@@ -290,12 +200,12 @@ export class SignEnvelopeDispatchService {
   }
 
   async resend(orgId: string, envelopeId: number, actor: RequestActorContext) {
-    const envelope = await this.findEnvelope(orgId, envelopeId);
+    const envelope = await findEnvelopeOrThrow(this.db, orgId, envelopeId);
     if (!isEnvelopeSignable(envelope.status)) {
       throw new ForbiddenException("Only sent envelopes can be resent");
     }
 
-    const senderNameStr = await this.senderName(orgId, actor.membershipId);
+    const senderNameStr = await resolveSenderName(this.db, orgId, actor.membershipId);
     const recipientRows = await this.recipients.listForEnvelope(systemEnvelopeScope(orgId), null, envelopeId);
     const invitations: InvitationPlan[] = [];
     for (const r of recipientRows) {
@@ -332,7 +242,7 @@ export class SignEnvelopeDispatchService {
      * reported deliveries anyway: a mid-loop SMTP throw rolled the whole
      * request back, so no caller ever saw a partial count.
      */
-    await this.deliverInvitations(invitations, senderNameStr, envelope, "after_commit");
+    await this.invitations.deliverInvitations(invitations, senderNameStr, envelope, "after_commit");
 
     await this.audit.record({
       orgId,
@@ -365,7 +275,7 @@ export class SignEnvelopeDispatchService {
     recipient: { id: number; name: string; email: string; recipientType: string; status: string },
     actor: RequestActorContext,
   ): Promise<boolean> {
-    const envelope = await this.findEnvelope(orgId, envelopeId);
+    const envelope = await findEnvelopeOrThrow(this.db, orgId, envelopeId);
     if (!isEnvelopeSignable(envelope.status)) return false;
     if (!isSigningType(recipient.recipientType)) return false;
     if (recipient.status !== "invited" && recipient.status !== "viewed" && recipient.status !== "authenticated")
@@ -377,8 +287,8 @@ export class SignEnvelopeDispatchService {
       .set({ signingTokenHash: this.tokens.hash(rawToken), tokenRevokedAt: null, status: "invited" })
       .where(and(eq(signRecipients.id, recipient.id), eq(signRecipients.orgId, orgId)));
 
-    const senderNameStr = await this.senderName(orgId, actor.membershipId);
-    await this.deliverInvitations(
+    const senderNameStr = await resolveSenderName(this.db, orgId, actor.membershipId);
+    await this.invitations.deliverInvitations(
       [{ email: recipient.email, name: recipient.name, rawToken }],
       senderNameStr,
       envelope,
@@ -405,7 +315,7 @@ export class SignEnvelopeDispatchService {
     expiresAt: Date,
     actor: RequestActorContext,
   ): Promise<number> {
-    const envelope = await this.findEnvelope(orgId, envelopeId);
+    const envelope = await findEnvelopeOrThrow(this.db, orgId, envelopeId);
     const recipientRows = await this.recipients.listForEnvelope(systemEnvelopeScope(orgId), null, envelopeId);
     const revivable = recipientRows.filter(
       (r): r is typeof r & { email: string } =>
@@ -413,7 +323,7 @@ export class SignEnvelopeDispatchService {
     );
     if (revivable.length === 0) return 0;
 
-    const senderNameStr = await this.senderName(orgId, envelope.senderMembershipId);
+    const senderNameStr = await resolveSenderName(this.db, orgId, envelope.senderMembershipId);
     const invitations: InvitationPlan[] = [];
     for (const r of revivable) {
       const rawToken = this.tokens.generateSigningToken();
@@ -428,7 +338,7 @@ export class SignEnvelopeDispatchService {
         .where(and(eq(signRecipients.id, r.id), eq(signRecipients.orgId, orgId)));
       invitations.push({ email: r.email, name: r.name, rawToken });
     }
-    await this.deliverInvitations(invitations, senderNameStr, envelope, "after_commit");
+    await this.invitations.deliverInvitations(invitations, senderNameStr, envelope, "after_commit");
     await this.audit.record({
       orgId,
       envelopeId,
@@ -446,7 +356,7 @@ export class SignEnvelopeDispatchService {
     orgId: string,
     envelopeId: number,
   ): Promise<{ status: SignEnvelopeStatus; becameCompleted: boolean }> {
-    const envelope = await this.findEnvelope(orgId, envelopeId);
+    const envelope = await findEnvelopeOrThrow(this.db, orgId, envelopeId);
     const recipientRows = await this.recipients.listForEnvelope(systemEnvelopeScope(orgId), null, envelopeId);
     const signingRecipients = recipientRows.filter((r) => isSigningType(r.recipientType));
 
@@ -519,7 +429,7 @@ export class SignEnvelopeDispatchService {
           })),
         ),
       );
-      const senderNameStr = await this.senderName(orgId, envelope.senderMembershipId);
+      const senderNameStr = await resolveSenderName(this.db, orgId, envelope.senderMembershipId);
       const invitations: InvitationPlan[] = [];
       for (const r of signingRecipients) {
         if (r.status !== "pending" || !eligibleIds.has(r.id)) continue;
@@ -544,7 +454,7 @@ export class SignEnvelopeDispatchService {
        * after the commit, with a provider failure logged in the signer's
        * request rather than fired and forgotten.
        */
-      await this.deliverInvitations(invitations, senderNameStr, envelope, "after_commit");
+      await this.invitations.deliverInvitations(invitations, senderNameStr, envelope, "after_commit");
     }
 
     return {

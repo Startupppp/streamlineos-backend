@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, inArray, isNull, lte, or, sql, type SQL } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull, lte, or } from "drizzle-orm";
 import { type Db } from "../../../../db/drizzle.module";
 import { forEachOrg } from "../../../../common/tenant";
 import { runInNewTenantTransaction } from "../../../../common/tenant/run-in-tenant-transaction";
@@ -17,6 +17,7 @@ import type { ChannelSnapshotResult } from "../channel-adapter";
 import { loadChannelContext } from "../lib/channel-snapshot-context";
 import { recordDifferences } from "../lib/channel-snapshot-diff";
 import type { ChannelCallFailure, ChannelStockOffer } from "./channel-commerce.port";
+import { listChannelJobFailures } from "./channel-job-failure.drizzle-store";
 import type {
   ChannelJob,
   ChannelJobStore,
@@ -474,43 +475,6 @@ export class DrizzleChannelJobStore implements ChannelJobStore {
     orgId: string,
     filters: { channelId?: number; status?: "FAILED" | "DEAD"; page: number; limit: number },
   ) {
-    const conditions = [
-      eq(invChannelJobs.orgId, orgId),
-      filters.channelId === undefined ? undefined : eq(invChannelJobs.channelId, filters.channelId),
-      filters.status
-        ? eq(invChannelJobs.status, filters.status)
-        : or(eq(invChannelJobs.status, "FAILED"), eq(invChannelJobs.status, "DEAD")),
-    ].filter((condition): condition is SQL => condition !== undefined);
-
-    const offset = (filters.page - 1) * filters.limit;
-    const [items, [countRow]] = await Promise.all([
-      this.db
-        .select({
-          id: invChannelJobs.id,
-          channelId: invChannelJobs.channelId,
-          kind: invChannelJobs.kind,
-          externalRef: invChannelJobs.externalRef,
-          status: invChannelJobs.status,
-          attemptCount: invChannelJobs.attemptCount,
-          lastErrorCode: invChannelJobs.lastErrorCode,
-          lastError: invChannelJobs.lastError,
-          nextAttemptAt: invChannelJobs.nextAttemptAt,
-          deadLetteredAt: invChannelJobs.deadLetteredAt,
-          createdAt: invChannelJobs.createdAt,
-          updatedAt: invChannelJobs.updatedAt,
-        })
-        .from(invChannelJobs)
-        .where(and(...conditions))
-        .orderBy(desc(invChannelJobs.updatedAt))
-        .limit(filters.limit)
-        .offset(offset),
-      this.db
-        .select({ count: sql<number>`count(*)::int` })
-        .from(invChannelJobs)
-        .where(and(...conditions)),
-    ]);
-
-    const total = countRow?.count ?? 0;
-    return { items, total, page: filters.page, totalPages: Math.ceil(total / filters.limit) };
+    return listChannelJobFailures(this.db, orgId, filters);
   }
 }

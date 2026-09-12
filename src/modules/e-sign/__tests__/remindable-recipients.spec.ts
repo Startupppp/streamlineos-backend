@@ -1,4 +1,4 @@
-import { remindableRecipients } from "../sign-envelope-sweeps.service";
+import { remindableRecipients } from "../sign-reminder-targeting";
 
 /**
  * SIGN-P1-01. The predicate the reminder sweep and its dry run share.

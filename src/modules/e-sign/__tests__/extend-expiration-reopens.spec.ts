@@ -1,6 +1,7 @@
 import { ConflictException } from "@nestjs/common";
 import type { Db } from "../../../db/drizzle.module";
 import { SignEnvelopesService } from "../sign-envelopes.service";
+import { SignEnvelopeLifecycleService } from "../sign-envelope-lifecycle.service";
 import type { RequestActorContext } from "../../../common/audit/actor-context";
 
 const ORG = "org-extend";
@@ -31,6 +32,14 @@ function harness(status: string) {
   } as unknown as Db;
   const dispatch = { reviveExpiredRecipients: jest.fn(async () => 2) };
   const audit = { record: jest.fn() };
+  const lifecycle = new SignEnvelopeLifecycleService(
+    db,
+    audit as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    dispatch as never,
+  );
   const service = new SignEnvelopesService(
     db,
     audit as never,
@@ -43,6 +52,8 @@ function harness(status: string) {
     dispatch as never,
     {} as never,
     {} as never,
+    {} as never,
+    lifecycle,
     {} as never,
   );
   return { service, updates, dispatch, audit };

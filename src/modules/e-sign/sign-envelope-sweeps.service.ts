@@ -1,12 +1,7 @@
-import {
-  ForbiddenException,
-  Inject,
-  Injectable,
-  NotFoundException,
-} from "@nestjs/common";
+import { ForbiddenException, Inject, Injectable } from "@nestjs/common";
 import { and, eq, inArray, lte, notInArray, sql } from "drizzle-orm";
 import { addDays } from "date-fns";
-import { organizationMembers, signEnvelopes, signRecipients, signSweepRuns } from "../../db/schema";
+import { signEnvelopes, signRecipients, signSweepRuns } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { SignAuditService } from "./sign-audit.service";
@@ -15,47 +10,28 @@ import { SignNotificationsService } from "./sign-notifications.service";
 import { SignRecipientsService } from "./sign-recipients.service";
 import { systemEnvelopeScope } from "./sign-envelope-scope";
 import { SignIntegrationsService } from "./sign-integrations.service";
-import { isSigningType } from "./sign-envelope-validation.service";
 import { isEnvelopeSignable } from "./sign-state";
 import { bulkUpdateFromValues } from "../../common/db/bulk-update";
 import type { RequestActorContext } from "../../common/audit/actor-context";
 import { forEachOrg } from "../../common/tenant/for-each-org";
 import { runInNewTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
 import { registerAfterCommit } from "../../common/tenant/tenant-context";
+import { findEnvelopeOrThrow, resolveSenderName } from "./sign-envelope-lookup";
+import {
+  remindableRecipients,
+  type RemindableRecipient,
+} from "./sign-reminder-targeting";
+import {
+  SWEEP_PREVIEW_LIMIT,
+  type SignSweepRunSummary,
+  type SweepAllResult,
+  type SweepPreview,
+  type SweepPreviewEntry,
+} from "./sign-sweep-types";
 import {
   SWEEP_EXPECTED_WITHIN_HOURS,
   sweepStaleness,
-  type SweepStaleness,
 } from "./sign-sweep-staleness";
-
-/**
- * Which of an envelope's recipients a reminder would go to.
- *
- * Shared by the sweep and its preview for the same reason the interval rule is:
- * the count a dry run reports has to be the count the real run produces, and
- * two copies of a filter are how those quietly diverge. A recipient with no
- * email or no issued token is skipped rather than failed — there is nothing to
- * remind them at. Issuance is read from `tokenExpiresAt`, which `send` and the
- * auto-advance stamp beside the token; the token's digest itself never leaves
- * the public authentication path.
- */
-export function remindableRecipients<
-  T extends {
-    recipientType: string;
-    status: string;
-    email: string | null;
-    tokenExpiresAt: Date | null;
-  },
->(recipients: T[]): Array<T & { email: string; tokenExpiresAt: Date }> {
-  return recipients.filter(
-    (r): r is T & { email: string; tokenExpiresAt: Date } =>
-      isSigningType(r.recipientType) &&
-      (r.status === "invited" || r.status === "viewed" || r.status === "authenticated") &&
-      r.email !== null &&
-      r.email !== "" &&
-      r.tokenExpiresAt !== null,
-  );
-}
 
 /**
  * Envelopes flipped per statement.
@@ -78,12 +54,6 @@ export function remindableRecipients<
  */
 const EXPIRATION_SWEEP_CHUNK = 500;
 
-interface RemindableRecipient {
-  readonly id: number;
-  readonly name: string;
-  readonly email: string;
-}
-
 @Injectable()
 export class SignEnvelopeSweepsService {
   constructor(
@@ -94,23 +64,6 @@ export class SignEnvelopeSweepsService {
     private readonly recipients: SignRecipientsService,
     private readonly integrations: SignIntegrationsService,
   ) {}
-
-  private async findEnvelope(orgId: string, envelopeId: number) {
-    const row = await this.db.query.signEnvelopes.findFirst({
-      where: and(eq(signEnvelopes.id, envelopeId), eq(signEnvelopes.orgId, orgId)),
-    });
-    if (!row) throw new NotFoundException("Envelope not found");
-    return row;
-  }
-
-  private async senderName(orgId: string, membershipId: number | null | undefined): Promise<string> {
-    if (membershipId == null) return "A StreamlineOS user";
-    const member = await this.db.query.organizationMembers.findFirst({
-      where: and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.id, membershipId)),
-      with: { user: { columns: { name: true } } },
-    });
-    return member?.user?.name ?? "A StreamlineOS user";
-  }
 
   private async remindEnvelopeRecipients(
     envelope: typeof signEnvelopes.$inferSelect,
@@ -137,7 +90,7 @@ export class SignEnvelopeSweepsService {
     const remindedCount = remindable.length;
     if (remindedCount === 0) return 0;
 
-    const senderNameStr = await this.senderName(envelope.orgId, envelope.senderMembershipId);
+    const senderNameStr = await resolveSenderName(this.db, envelope.orgId, envelope.senderMembershipId);
     const rotated = remindable.map((recipient) => ({
       recipient,
       rawToken: this.tokens.generateSigningToken(),
@@ -213,7 +166,7 @@ export class SignEnvelopeSweepsService {
     envelopeId: number,
     actor: RequestActorContext,
   ): Promise<{ remindedCount: number }> {
-    const envelope = await this.findEnvelope(orgId, envelopeId);
+    const envelope = await findEnvelopeOrThrow(this.db, orgId, envelopeId);
     if (!isEnvelopeSignable(envelope.status)) {
       throw new ForbiddenException(
         "Reminders can only be sent for envelopes awaiting signature",
@@ -512,40 +465,4 @@ export class SignEnvelopeSweepsService {
       };
     });
   }
-}
-
-const SWEEP_PREVIEW_LIMIT = 100;
-
-export interface SweepPreviewEntry {
-  envelopeId: number;
-  title: string;
-  affected: number;
-}
-
-export interface SweepPreview {
-  sweep: "reminder" | "expiration";
-  envelopes: number;
-  affected: number;
-  entries: SweepPreviewEntry[];
-  truncated: boolean;
-}
-
-export interface SweepAllResult {
-  sweep: "reminder" | "expiration";
-  dryRun: boolean;
-  organizations: number;
-  succeeded: number;
-  failed: number;
-  affected: number;
-}
-
-export interface SignSweepRunSummary {
-  sweep: "reminder" | "expiration";
-  ranAt: string | null;
-  affected: number;
-  error: string | null;
-  neverRun: boolean;
-  staleness: SweepStaleness;
-  healthy: boolean;
-  expectedWithinHours: number;
 }

@@ -1,5 +1,5 @@
 import { isSigningType } from "../sign-envelope-validation.service";
-import { remindableRecipients } from "../sign-envelope-sweeps.service";
+import { remindableRecipients } from "../sign-reminder-targeting";
 
 /**
  * SIGN-P2-01. `in_person_host` is a label, and this pins the three facts that

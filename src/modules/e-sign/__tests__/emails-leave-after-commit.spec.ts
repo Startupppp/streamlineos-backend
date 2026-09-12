@@ -1,4 +1,5 @@
 import { SignEnvelopeDispatchService } from "../sign-envelope-dispatch.service";
+import { SignEnvelopeInvitationsService } from "../sign-envelope-invitations.service";
 import { withRecipientSession } from "../lib/recipient-session";
 import {
   registerAfterCommit,
@@ -137,19 +138,21 @@ function makeHarness(
   };
 
   let counter = 0;
+  const tokens = {
+    generateSigningToken: jest.fn(() => `raw-token-${(counter += 1)}`),
+    hash: jest.fn((t: string) => `hash-of-${t}`),
+    buildSigningUrl: jest.fn((t: string) => `https://app.example.com/sign/${t}`),
+  };
   const service = new SignEnvelopeDispatchService(
     db as unknown as Db,
     { record: jest.fn() } as never,
-    {
-      generateSigningToken: jest.fn(() => `raw-token-${(counter += 1)}`),
-      hash: jest.fn((t: string) => `hash-of-${t}`),
-      buildSigningUrl: jest.fn((t: string) => `https://app.example.com/sign/${t}`),
-    } as never,
+    tokens as never,
     { getOrCreate: jest.fn(async () => ({ defaultExpirationDays: 14 })) } as never,
     notifications as never,
     { listForEnvelope: jest.fn(async () => recipientRows) } as never,
     { emitEnvelopeEvent: jest.fn() } as never,
     { validate: jest.fn(async () => ({ valid: true, errors: [] })) } as never,
+    new SignEnvelopeInvitationsService(tokens as never, notifications as never),
   );
 
   return { service, sent, notifications, written };

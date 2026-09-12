@@ -6,6 +6,7 @@ import { SignAiService } from "../sign-ai.service";
 import { SignEnvelopeValidationService } from "../sign-envelope-validation.service";
 import { SignBulkSendService } from "../sign-bulk-send.service";
 import { SignEnvelopeDispatchService } from "../sign-envelope-dispatch.service";
+import { SignEnvelopeInvitationsService } from "../sign-envelope-invitations.service";
 import { SignEnvelopeSweepsService } from "../sign-envelope-sweeps.service";
 import { systemEnvelopeScope } from "../sign-envelope-scope";
 import { runWithTenantContext } from "../../../common/tenant/tenant-context";
@@ -290,6 +291,10 @@ describe("SignEnvelopeDispatchService — cross-tenant isolation", () => {
       stubService<SignRecipientsService>({ listForEnvelope: jest.fn().mockResolvedValue([]) }),
       stubService<SignIntegrationsService>({}),
       mockValidation,
+      new SignEnvelopeInvitationsService(
+        stubService<SignTokensService>({ generateSigningToken: jest.fn().mockReturnValue("tok") }),
+        stubService<SignNotificationsService>({}),
+      ),
     );
   }
 

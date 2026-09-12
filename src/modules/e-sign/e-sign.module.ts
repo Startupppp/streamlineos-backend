@@ -27,7 +27,9 @@ import { SignEnvelopesService } from "./sign-envelopes.service";
 import { SignEnvelopeAccessService } from "./sign-envelope-access.service";
 import { SignEnvelopeValidationService } from "./sign-envelope-validation.service";
 import { SignEnvelopeDispatchService } from "./sign-envelope-dispatch.service";
+import { SignEnvelopeInvitationsService } from "./sign-envelope-invitations.service";
 import { SignEnvelopeSweepsService } from "./sign-envelope-sweeps.service";
+import { SignEnvelopeLifecycleService } from "./sign-envelope-lifecycle.service";
 import { SMS_SENDER } from "./sms/sms-sender.port";
 import { EnvSmsSender } from "./sms/env-sms-sender";
 import { SIGN_GEO_IP } from "./geo/geo-ip.port";
@@ -89,8 +91,10 @@ import { SignEnvelopeCompletedConsumerService } from "./sign-envelope-completed-
     SignEnvelopesService,
     SignEnvelopeAccessService,
     SignEnvelopeValidationService,
+    SignEnvelopeInvitationsService,
     SignEnvelopeDispatchService,
     SignEnvelopeSweepsService,
+    SignEnvelopeLifecycleService,
     SignFinalizationService,
     SignTemplatesService,
     SignPublicService,

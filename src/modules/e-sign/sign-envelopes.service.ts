@@ -21,7 +21,8 @@ import {
   type EnvelopeValidationResult,
 } from "./sign-envelope-validation.service";
 import { SignEnvelopeSweepsService } from "./sign-envelope-sweeps.service";
-import { SignEnvelopeDispatchService, type InvitationDelivery } from "./sign-envelope-dispatch.service";
+import { SignEnvelopeDispatchService } from "./sign-envelope-dispatch.service";
+import { type InvitationDelivery } from "./sign-envelope-invitations.service";
 import { SignSettingsService } from "./sign-settings.service";
 import { SignTemplatesService } from "./sign-templates.service";
 import { SignWatermarkService } from "./sign-watermark.service";

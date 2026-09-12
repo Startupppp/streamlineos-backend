@@ -4,6 +4,8 @@ import { SignEnvelopesService } from "../sign-envelopes.service";
 import { SignEnvelopeValidationService } from "../sign-envelope-validation.service";
 import { SignEnvelopeDispatchService } from "../sign-envelope-dispatch.service";
 import { SignEnvelopeSweepsService } from "../sign-envelope-sweeps.service";
+import { SignEnvelopeLifecycleService } from "../sign-envelope-lifecycle.service";
+import { SignEnvelopeQueriesService } from "../sign-envelope-queries.service";
 import { SignSettingsService } from "../sign-settings.service";
 import { SignTemplatesService } from "../sign-templates.service";
 import { SignWatermarkService } from "../sign-watermark.service";
@@ -64,6 +66,8 @@ describe("SignEnvelopesService plan-limit enforcement", () => {
         { provide: SignEnvelopeValidationService, useValue: { validate: jest.fn() } },
         { provide: SignEnvelopeDispatchService, useValue: { send: jest.fn(), resend: jest.fn(), applyRecipientOutcome: jest.fn() } },
         { provide: SignEnvelopeSweepsService, useValue: { sendManualReminder: jest.fn(), runReminderSweep: jest.fn(), runExpirationSweep: jest.fn() } },
+        { provide: SignEnvelopeLifecycleService, useValue: { correct: jest.fn(), extendExpiration: jest.fn(), voidEnvelope: jest.fn() } },
+        { provide: SignEnvelopeQueriesService, useValue: { getFull: jest.fn(), list: jest.fn() } },
         { provide: SignSettingsService, useValue: { getOrCreate: jest.fn().mockResolvedValue(ORG_SETTINGS) } },
         { provide: SignTemplatesService, useValue: { get: jest.fn() } },
         { provide: SignWatermarkService, useValue: { get: jest.fn() } },

@@ -13,6 +13,7 @@ import { ScopedRead } from "../../access/scoped-read";
 import { ForbiddenException, NotFoundException } from "@nestjs/common";
 import type { Db } from "../../../db/drizzle.module";
 import { SignEnvelopesService } from "../sign-envelopes.service";
+import { SignEnvelopeQueriesService } from "../sign-envelope-queries.service";
 import type { Request } from "express";
 import type { SignEnvelopeAccessService } from "../sign-envelope-access.service";
 import { SignEnvelopesController } from "../sign-envelopes.controller";
@@ -56,6 +57,7 @@ function makeDb(envelope: ReturnType<typeof makeEnvelope> | null): Db {
 function makeService(envelope: ReturnType<typeof makeEnvelope> | null) {
   const db = makeDb(envelope);
   const recipients = { listForEnvelope: jest.fn().mockResolvedValue([]) };
+  const queries = new SignEnvelopeQueriesService(db, recipients as never);
   return new SignEnvelopesService(
     db,
     {} as never,
@@ -69,6 +71,8 @@ function makeService(envelope: ReturnType<typeof makeEnvelope> | null) {
     {} as never,
     {} as never,
     {} as never,
+    {} as never,
+    queries,
   );
 }
 
