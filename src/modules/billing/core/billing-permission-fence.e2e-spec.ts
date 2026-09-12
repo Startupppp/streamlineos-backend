@@ -70,37 +70,6 @@ const stubBilling = {
   getSeatInfo: jest.fn().mockResolvedValue({ total: 0, used: 0, available: 0 }),
   listAddons: jest.fn().mockResolvedValue([]),
   listCoupons: jest.fn().mockResolvedValue([]),
-  createCoupon: jest.fn().mockResolvedValue({
-    id: 1,
-    code: "SAVE10",
-    type: "PERCENTAGE",
-    value: "10.00",
-    minPurchase: null,
-    maxUses: null,
-    usedCount: 0,
-    isActive: true,
-    applicablePlans: null,
-    expiresAt: null,
-    orgId: null,
-    createdAt: new Date("2026-01-01T00:00:00.000Z"),
-    updatedAt: new Date("2026-01-01T00:00:00.000Z"),
-  }),
-  updateCoupon: jest.fn().mockResolvedValue({
-    id: 1,
-    code: "SAVE10",
-    type: "PERCENTAGE",
-    value: "15.00",
-    minPurchase: null,
-    maxUses: null,
-    usedCount: 0,
-    isActive: true,
-    applicablePlans: null,
-    expiresAt: null,
-    orgId: null,
-    createdAt: new Date("2026-01-01T00:00:00.000Z"),
-    updatedAt: new Date("2026-01-01T00:00:00.000Z"),
-  }),
-  deleteCoupon: jest.fn().mockResolvedValue({ success: true }),
   listProvisioningFailures: jest.fn().mockResolvedValue([]),
 };
 
@@ -257,9 +226,6 @@ const BILLING_MUTATIONS: ReadonlyArray<MutationCase> = [
   ["PATCH", "/billing/checkout", "billing:subscription:manage", { orderId: "order_1", paymentId: "pay_1", signature: "sig", plan: "STARTER" }, 200],
   ["POST", "/billing/addons/purchase", "billing:subscription:manage", { addonId: "ai_pack_1", quantity: 1 }, 200],
   ["PATCH", "/billing/profile", "billing:profile:update", { billingName: "Acme Inc" }, 200],
-  ["POST", "/billing/coupons", "billing:coupons:manage", { code: "SAVE10", type: "PERCENTAGE", value: 10 }, 201],
-  ["PATCH", "/billing/coupons/1", "billing:coupons:manage", { value: 15 }, 200],
-  ["DELETE", "/billing/coupons/1", "billing:coupons:manage", {}, 200],
 ] as const;
 
 const PAYMENTS_MUTATIONS: ReadonlyArray<MutationCase> = [

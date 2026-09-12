@@ -41,6 +41,16 @@ export const subscriptionResponseSchema = z.object({
     .nullable(),
   publicKeyId: z.string().nullable(),
   isConfigured: z.boolean(),
+  platformCheckout: z.object({
+    configured: z.boolean(),
+    providerKey: z.string().nullable(),
+    environment: z.enum(["test", "live"]).nullable(),
+    publicKeyId: z.string().nullable(),
+    webhookConfigured: z.boolean(),
+    unavailableReason: z
+      .enum(["no_credentials", "incomplete_credentials", "unsupported_provider"])
+      .nullable(),
+  }),
 });
 
 const planCatalogEntrySchema = z.object({

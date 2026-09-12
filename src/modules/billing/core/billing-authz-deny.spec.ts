@@ -45,8 +45,7 @@ class HeaderAuthGuard implements CanActivate {
 const billing = {
   getSubscription: jest.fn(), getSummary: jest.fn(), purchaseAddon: jest.fn(),
   getBillingProfile: jest.fn(), updateBillingProfile: jest.fn(), getSeatInfo: jest.fn(),
-  listAddons: jest.fn(), listCoupons: jest.fn(), createCoupon: jest.fn(),
-  updateCoupon: jest.fn(), deleteCoupon: jest.fn(), validateCoupon: jest.fn(),
+  listAddons: jest.fn(), listCoupons: jest.fn(), validateCoupon: jest.fn(),
   listProvisioningFailures: jest.fn(), requestAffiliatePayoutRequest: jest.fn(),
   createOrder: jest.fn(), verifyAndActivate: jest.fn(), getPlans: jest.fn(),
   getMarketplace: jest.fn(), handlePaymentProviderWebhook: jest.fn(),
@@ -110,7 +109,6 @@ const GET_ROUTES: readonly string[] = [
 
 const POST_ROUTES: readonly string[] = [
   "/billing/addons/purchase",
-  "/billing/coupons",
   "/billing/affiliate/register",
   "/billing/affiliate/payout-request",
   "/billing/enterprise-quotes",
@@ -141,18 +139,6 @@ describe("Billing controllers — permission guard deny", () => {
 
   it("PATCH /billing/profile is denied without billing:profile:update (403)", async () => {
     const res = await request(app.getHttpServer()).patch("/billing/profile").set("Authorization", "Bearer token").send({});
-    expect(res.status).toBe(403);
-  });
-
-  it("PATCH /billing/coupons/* is denied without billing:coupons:manage (403)", async () => {
-    const couponId = 1;
-    const res = await request(app.getHttpServer()).patch(`/billing/coupons/${couponId}`).set("Authorization", "Bearer token").send({});
-    expect(res.status).toBe(403);
-  });
-
-  it("DELETE /billing/coupons/* is denied without billing:coupons:manage (403)", async () => {
-    const couponId = 1;
-    const res = await request(app.getHttpServer()).delete(`/billing/coupons/${couponId}`).set("Authorization", "Bearer token");
     expect(res.status).toBe(403);
   });
 
