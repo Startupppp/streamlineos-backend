@@ -123,11 +123,18 @@ export const invCustomerReturns = pgTable("inv_customer_returns", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
+  /**
+   * NO ACTION, deliberately — see 0662. The bare `SET NULL` this used to declare
+   * nulls org_id as well on a composite key, which is NOT NULL, so the party
+   * delete aborted. The party set takes NO ACTION rather than the column-list
+   * form because it is the DPDP erasure path and that flow clears children
+   * explicitly.
+   */
   foreignKey({
     columns: [table.orgId, table.clientPartyId],
     foreignColumns: [businessParties.organizationId, businessParties.partyId],
     name: "fk_inv_customer_returns_client_party_id",
-  }).onDelete("set null"),
+  }),
   uniqueIndex("uniq_inv_cret_org_number").on(table.orgId, table.returnNumber),
   unique("uniq_inv_customer_returns_org_id").on(table.orgId, table.id),
   index("idx_inv_cret_org_status").on(table.orgId, table.status),

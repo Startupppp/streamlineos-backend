@@ -1,5 +1,5 @@
 {
-  "note": "ON DELETE actions that disagree between the Drizzle declaration and the catalog at journal head, accepted at the time of writing. The gate fails only on a mismatch NOT listed here. This list can only shrink — every entry is a foreign key whose declared referential action is a lie about what the database does.",
+  "note": "ON DELETE actions that disagree between the Drizzle declaration and the catalog at journal head, accepted at the time of writing. The gate fails only on a mismatch NOT listed here. This list can only shrink — every entry is a foreign key whose declared referential action is a lie about what the database does. One class in here is UNFIXABLE on the declaration side rather than merely unfixed: a composite key carrying Postgres 15's column-list form, `ON DELETE SET NULL (<col>)`, reads as `no action->set null` because drizzle-orm 0.45 cannot express the column list at all — and declaring the bare `.onDelete(\"set null\")` instead would reinstall the 0662 defect, nulling org_id and aborting the parent delete. The kb_* structural keys and inv_project_requirements' warehouse key are that class; `check:composite-fk-set-null` is what guards the bare form from coming back.",
   "generated": "2026-09-08",
   "accepted": [
     "billing_invoice_line_snapshots.fk_billing_inv_lines_org_proration:no action->set null",
@@ -29,6 +29,7 @@
     "kb_page_visits.fk_kb_page_visits_org_page:no action->cascade",
     "kb_pages.fk_kb_pages_org_parent:no action->set null",
     "kb_pages.fk_kb_pages_org_space:no action->set null",
+    "inv_project_requirements.fk_inv_project_reqs_org_warehouse:no action->set null",
     "kb_sources.fk_kb_sources_org_space:no action->set null",
     "kb_space_members.fk_kb_space_members_org_space:no action->cascade",
     "ledger_accounts.fk_ledger_accounts_org_parent:no action->set null",
