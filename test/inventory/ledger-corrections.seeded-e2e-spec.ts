@@ -375,6 +375,10 @@ describe("[seeded-e2e] ledger corrections and immutability", () => {
 
       // A posted count cannot be posted again — the status guard refuses before
       // the transaction opens, so nothing announces a second correction.
+      //
+      // Named: a bare `.rejects.toThrow()` is satisfied by a missing count, a
+      // tenant-GUC failure or a crash in the service's own setup, none of which
+      // reach the status guard this line exists to prove.
       await expect(
         asTenant(() =>
           counts.postCycleCount(
@@ -384,7 +388,7 @@ describe("[seeded-e2e] ledger corrections and immutability", () => {
             `cyc-post-again-${randomUUID().slice(0, 8)}`,
           ),
         ),
-      ).rejects.toThrow();
+      ).rejects.toThrow(/Only REVIEW counts can be posted/);
       expect(await eventsFor("inv_cycle_count", String(countId))).toHaveLength(1);
     });
 

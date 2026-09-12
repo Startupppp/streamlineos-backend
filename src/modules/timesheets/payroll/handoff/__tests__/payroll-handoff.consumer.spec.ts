@@ -1,3 +1,5 @@
+import { ZodError } from "zod";
+
 import { PayrollHandoffConsumer } from "../payroll-handoff.consumer";
 import { RecordingPayrollHandoffAdapter } from "../recording-handoff.adapter";
 import { TIMESHEET_EVENTS, payrollHandoffPayloadSchema } from "../handoff.schemas";
@@ -219,6 +221,15 @@ describe("RecordingPayrollHandoffAdapter", () => {
     const adapter = new RecordingPayrollHandoffAdapter();
     const broken = { ...payload, exportId: -1 } as PayrollHandoffPayload;
 
-    await expect(adapter.deliver(broken)).rejects.toThrow();
+    // Named, and on the offending field. A bare `.rejects.toThrow()` is
+    // satisfied by any crash inside the adapter — a missing logger, a bad
+    // template literal — so it would stay green with the contract `parse`
+    // deleted, which is the only thing this adapter does that matters.
+    const refusal = await adapter.deliver(broken).then(
+      () => null,
+      (error: unknown) => error,
+    );
+    expect(refusal).toBeInstanceOf(ZodError);
+    expect((refusal as ZodError).issues.map((issue) => issue.path.join("."))).toContain("exportId");
   });
 });

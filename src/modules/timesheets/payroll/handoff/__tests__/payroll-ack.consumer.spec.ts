@@ -1,3 +1,5 @@
+import { ZodError } from "zod";
+
 import { PayrollAckConsumer } from "../payroll-ack.consumer";
 import { RecordingPayrollHandoffAdapter } from "../recording-handoff.adapter";
 import { TIMESHEET_EVENTS, payrollAckPayloadSchema } from "../handoff.schemas";
@@ -142,8 +144,17 @@ describe("RecordingPayrollHandoffAdapter.acknowledged", () => {
 
   it("rejects an acknowledgement that breaks the contract", async () => {
     const adapter = new RecordingPayrollHandoffAdapter();
-    await expect(
-      adapter.acknowledged({ ...payload, status: "MAYBE" } as unknown as PayrollAckPayload),
-    ).rejects.toThrow();
+    // Named, and on the offending field. A bare `.rejects.toThrow()` is
+    // satisfied by any crash inside the adapter — a missing logger, a bad
+    // template literal — so it would stay green with the contract `parse`
+    // deleted, which is the only thing this adapter does that matters.
+    const refusal = await adapter
+      .acknowledged({ ...payload, status: "MAYBE" } as unknown as PayrollAckPayload)
+      .then(
+        () => null,
+        (error: unknown) => error,
+      );
+    expect(refusal).toBeInstanceOf(ZodError);
+    expect((refusal as ZodError).issues.map((issue) => issue.path.join("."))).toContain("status");
   });
 });

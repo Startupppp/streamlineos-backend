@@ -24,6 +24,7 @@ import {
   users,
 } from "../../../db/schema";
 import type { Db } from "../../../db/drizzle.module";
+import { PG_CHECK_VIOLATION, getPostgresErrorDetails } from "../../../common/db/postgres-error";
 import { PackRegistry } from "../packs/pack.registry";
 import { BooksService } from "./books.service";
 import { LedgerService } from "./ledger.service";
@@ -41,6 +42,22 @@ let books: BooksService;
 
 const createdOrgIds: string[] = [];
 const createdUserIds: string[] = [];
+
+/**
+ * The error a statement was refused with, or `null` when it was accepted.
+ *
+ * `null` is deliberate rather than `undefined`: `getPostgresErrorDetails(null)`
+ * answers `{}`, so a statement the database *allowed* fails the assertion that
+ * names the constraint instead of silently matching nothing.
+ */
+async function refusalOf(statement: PromiseLike<unknown>): Promise<unknown> {
+  try {
+    await statement;
+    return null;
+  } catch (error) {
+    return error;
+  }
+}
 
 /**
  * Create a tenant the way the platform really does.
@@ -421,20 +438,38 @@ describe("5 — a posted journal is immutable", () => {
 
     // Unbalancing a line by hand violates the CHECK that both sides cannot be
     // set, so the write is refused rather than quietly corrupting the books.
-    await expect(
-      db
-        .update(glJournalLines)
-        .set({ creditMinor: 500 })
-        .where(and(eq(glJournalLines.journalId, posted.id), eq(glJournalLines.accountId, bank))),
-    ).rejects.toThrow();
+    //
+    // Each refusal is identified by SQLSTATE *and* constraint name, never by a
+    // bare `.rejects.toThrow()`: a dropped connection, a typo in the builder or
+    // a renamed column all throw too, so a bare throw stays green against a
+    // database that has lost these CHECKs entirely — which is the only thing
+    // this test exists to detect. Read through `.cause`, because drizzle wraps
+    // the driver error and its own message carries no SQLSTATE.
+    expect(
+      getPostgresErrorDetails(
+        await refusalOf(
+          db
+            .update(glJournalLines)
+            .set({ creditMinor: 500 })
+            .where(and(eq(glJournalLines.journalId, posted.id), eq(glJournalLines.accountId, bank))),
+        ),
+      ),
+    ).toMatchObject({ code: PG_CHECK_VIOLATION, constraint: "ck_gl_journal_lines_one_side" });
 
     // And the functional amount cannot drift away from the posted side.
-    await expect(
-      db
-        .update(glJournalLines)
-        .set({ debitMinor: 999 })
-        .where(and(eq(glJournalLines.journalId, posted.id), eq(glJournalLines.accountId, bank))),
-    ).rejects.toThrow();
+    expect(
+      getPostgresErrorDetails(
+        await refusalOf(
+          db
+            .update(glJournalLines)
+            .set({ debitMinor: 999 })
+            .where(and(eq(glJournalLines.journalId, posted.id), eq(glJournalLines.accountId, bank))),
+        ),
+      ),
+    ).toMatchObject({
+      code: PG_CHECK_VIOLATION,
+      constraint: "ck_gl_journal_lines_functional_matches_side",
+    });
 
     const tb = await trialBalance(orgId, book.id);
     expect(tb["1020"]).toBe(1_000);

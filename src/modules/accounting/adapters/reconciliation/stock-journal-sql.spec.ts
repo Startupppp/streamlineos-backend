@@ -62,8 +62,13 @@ describe("stock journal SQL lent to inventory", () => {
   });
 
   it("refuses an alias that is not a plain identifier", () => {
-    expect(() => stockJournalsLateral(match, "j; DROP TABLE x")).toThrow();
-    expect(() => noStockJournalsLateral("1j")).toThrow();
+    // Named, because the alias reaches `sql.raw` — a bare `.toThrow()` here is
+    // also satisfied by a TypeError from a mis-shaped argument, which would pass
+    // while the injection guard was gone.
+    expect(() => stockJournalsLateral(match, "j; DROP TABLE x")).toThrow(
+      /Not a usable SQL alias: "j; DROP TABLE x"/,
+    );
+    expect(() => noStockJournalsLateral("1j")).toThrow(/Not a usable SQL alias: "1j"/);
   });
 
   it("finds journals whose document never moved stock, in one book and one window", () => {

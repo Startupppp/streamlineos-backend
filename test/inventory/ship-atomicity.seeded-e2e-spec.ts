@@ -390,11 +390,17 @@ describe("[seeded-e2e] shipment posting is atomic", () => {
       // A key is a promise about one request. Reusing it for another order is a
       // client bug, and answering the first order's result would be worse than
       // refusing.
+      //
+      // Named on the request-hash mismatch specifically. A bare
+      // `.rejects.toThrow()` is equally satisfied by the in-flight
+      // ConflictException, by a NotFound on `otherSo`, or by the shipment
+      // failing for an unrelated reason — and in every one of those the key
+      // scoping this asserts was never consulted.
       await expect(
         asTenant(() =>
           ship().shipSo(scene.orgId, otherSo, scene.userId, key, { shipDate: "2026-08-29" }),
         ),
-      ).rejects.toThrow();
+      ).rejects.toThrow(/already used with a different request/);
     }, 300_000);
   });
 

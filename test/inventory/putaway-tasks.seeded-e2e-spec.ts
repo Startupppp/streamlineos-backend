@@ -4,6 +4,10 @@ import { sql } from "drizzle-orm";
 import { DRIZZLE } from "src/db/drizzle.constants";
 import type { Db } from "src/db/drizzle.module";
 import { runInNewTenantTransaction } from "src/common/tenant/run-in-tenant-transaction";
+import {
+  PG_UNIQUE_VIOLATION,
+  getPostgresErrorDetails,
+} from "src/common/db/postgres-error";
 import { PoService } from "src/modules/inventory/purchase-orders/po.service";
 import { GrnService } from "src/modules/inventory/purchase-orders/grn.service";
 import { PutawayTaskService } from "src/modules/inventory/putaway/putaway-task.service";
@@ -464,9 +468,27 @@ describe("[seeded-e2e] putaway tasks", () => {
         tasks().createFromReceipt(scene.orgId, scene.userId, { grnId }),
       );
 
-      await expect(
-        asTenant(() => tasks().createFromReceipt(scene.orgId, scene.userId, { grnId })),
-      ).rejects.toThrow();
+      // One live task per receipt. The *database* is the only thing that says
+      // so today — the partial unique `uniq_inv_putaway_tasks_org_live_grn` —
+      // because `createFromReceipt` carries no pre-check, despite its own
+      // docblock promising one ("The check is there to say something legible
+      // when it does"). So this arrives as a wrapped 23505 rather than a
+      // ConflictException, and is asserted as what it is.
+      //
+      // Named rather than bare: a bare `.rejects.toThrow()` here is equally
+      // satisfied by the NotFound/BadRequest guards that run before the insert,
+      // and would stay green if the partial unique were ever dropped — which is
+      // the single object enforcing the invariant this test is named for.
+      const duplicate: unknown = await asTenant(() =>
+        tasks().createFromReceipt(scene.orgId, scene.userId, { grnId }),
+      ).then(
+        () => null,
+        (error: unknown) => error,
+      );
+      expect(getPostgresErrorDetails(duplicate)).toMatchObject({
+        code: PG_UNIQUE_VIOLATION,
+        constraint: "uniq_inv_putaway_tasks_org_live_grn",
+      });
 
       const queue = await asTenant(() =>
         tasks().list(scene.orgId, scene.userId, {
