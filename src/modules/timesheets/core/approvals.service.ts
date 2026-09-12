@@ -7,10 +7,16 @@ import {
 import { and, gt, eq, gte, inArray, lte } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
-import { organizationMembers, timesheetPeriods, timesheetSettings, userDelegations } from "../../../db/schema";
+import {
+  organizationMembers,
+  timesheetPeriods,
+  timesheetSettings,
+  userDelegationPermissions,
+  userDelegations,
+} from "../../../db/schema";
 import { AccessService } from "../../access/access.service";
 import { actingMembershipId } from "../../../common/auth/principal";
-import { resolveApprovalScope, membershipScope } from "./timesheets-core-scope";
+import { resolveApprovalScope, membershipScope, TS_APPROVALS_MANAGE_PERMISSION } from "./timesheets-core-scope";
 import { buildCursorPage, decodeCursor } from "../../../common/pagination/cursor";
 import { keysetBeforeId } from "../../../common/pagination/keyset";
 import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
@@ -53,9 +59,16 @@ export class ApprovalsService {
   }
 
   /**
-   * The delegators who have an active delegation to this actor, out of a bounded
-   * set of approvers. A bulk endpoint resolves the whole page in one indexed
-   * multi-key read instead of one probe per period.
+   * The delegators who have an active delegation to this actor that carries
+   * the approval authority, out of a bounded set of approvers. A bulk endpoint
+   * resolves the whole page in one indexed multi-key read instead of one probe
+   * per period.
+   *
+   * A delegation stores one child row per permission it hands over (§5), so
+   * "acting for the approver" means holding a delegation that names
+   * `timesheets:approvals:manage`. Reading only the header, as this did, let a
+   * delegation of any key at all — a knowledge-base read, say — confer
+   * standing over the delegator's approval queue.
    */
   async activeDelegationsToActor(
     orgId: string,
@@ -66,8 +79,16 @@ export class ApprovalsService {
     if (wanted.length === 0) return new Set<number>();
     const now = new Date();
     const rows = await this.db
-      .select({ delegatorMembershipId: userDelegations.delegatorMembershipId })
+      .selectDistinct({ delegatorMembershipId: userDelegations.delegatorMembershipId })
       .from(userDelegations)
+      .innerJoin(
+        userDelegationPermissions,
+        and(
+          eq(userDelegationPermissions.orgId, userDelegations.orgId),
+          eq(userDelegationPermissions.delegationId, userDelegations.id),
+          eq(userDelegationPermissions.permissionKey, TS_APPROVALS_MANAGE_PERMISSION),
+        ),
+      )
       .where(
         and(
           eq(userDelegations.orgId, orgId),

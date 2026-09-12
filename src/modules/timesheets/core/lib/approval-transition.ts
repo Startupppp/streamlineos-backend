@@ -1,3 +1,4 @@
+import { ConflictException } from "@nestjs/common";
 import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import type { Db } from "../../../../db/drizzle.module";
 import { timesheetPeriods, timesheets } from "../../../../db/schema";
@@ -63,9 +64,19 @@ export async function applyApproval(
       and(
         eq(timesheetPeriods.id, periodId),
         eq(timesheetPeriods.orgId, u.orgId),
+        eq(timesheetPeriods.status, "SUBMITTED"),
       ),
     )
     .returning(LIFECYCLE_RETURNING);
+
+  /*
+   * The status predicate is what serialises two decisions on one period.
+   * The service checked SUBMITTED before opening this transaction, unlocked;
+   * a concurrent approve or reject that committed in between would otherwise
+   * be overwritten here, with a second event_seq claimed and a second audit
+   * row written. Zero rows means somebody else decided first.
+   */
+  if (!transition) throw new ConflictException(`Period ${periodId} is no longer awaiting a decision`);
 
   await tx
     .update(timesheets)
@@ -213,11 +224,17 @@ export async function applyBulkApproval(
     readonly owners: ReadonlyMap<number, string>;
     readonly now: Date;
   },
-): Promise<void> {
+): Promise<number[]> {
   const { approverActor, lockAfterApproval, owners, now } = approval;
-  const periodIds = [...ids];
   const emitCount = lockAfterApproval ? 2 : 1;
 
+  /*
+   * Same predicate as the single transition, for the same race. The ids the
+   * UPDATE returns are the periods that were still SUBMITTED when it ran, and
+   * everything below — entries, rates, audit rows, events — is driven by those
+   * rather than by the ids the caller asked for; the caller reports the
+   * difference as skipped.
+   */
   const transitions = await tx
     .update(timesheetPeriods)
     .set({
@@ -231,10 +248,13 @@ export async function applyBulkApproval(
     .where(
       and(
         eq(timesheetPeriods.orgId, u.orgId),
-        inArray(timesheetPeriods.id, periodIds),
+        inArray(timesheetPeriods.id, [...ids]),
+        eq(timesheetPeriods.status, "SUBMITTED"),
       ),
     )
     .returning({ ...LIFECYCLE_RETURNING, id: timesheetPeriods.id });
+  const periodIds = transitions.map((transition) => transition.id);
+  if (periodIds.length === 0) return periodIds;
 
   await tx
     .update(timesheets)
@@ -349,4 +369,5 @@ export async function applyBulkApproval(
     }
   }
   await emitPeriodLifecycleEvents(tx, events);
+  return periodIds;
 }

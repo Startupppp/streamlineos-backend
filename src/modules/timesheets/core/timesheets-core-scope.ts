@@ -7,6 +7,7 @@ import { AccessService } from "../../access/access.service";
 export const TS_ENTRIES_VIEW_PERMISSION = "timesheets:entries:view";
 export const TS_TEAM_VIEW_PERMISSION = "timesheets:team:view";
 export const TS_APPROVALS_VIEW_PERMISSION = "timesheets:approvals:view";
+export const TS_APPROVALS_MANAGE_PERMISSION = "timesheets:approvals:manage";
 export const TS_REPORTS_VIEW_PERMISSION = "timesheets:reports:view";
 export const TS_PAYROLL_VIEW_PERMISSION = "timesheets:payroll:view";
 

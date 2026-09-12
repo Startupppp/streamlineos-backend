@@ -80,7 +80,24 @@ function makeDb(period: unknown, settings: unknown, postApprovalPeriod: unknown,
   const dbSelect = jest.fn().mockReturnValue({ from: dbFrom });
 
   const setCaptures: Record<string, unknown>[] = [];
-  const txReturning = jest.fn().mockResolvedValue([]);
+  /*
+   * The period UPDATE carries `status = 'SUBMITTED'` and returns the row it
+   * flipped; an empty RETURNING now means another decision won the race and
+   * the transition refuses with 409, so the double answers as Postgres would
+   * for a period that was still submitted.
+   */
+  const txReturning = jest.fn().mockResolvedValue([
+    {
+      eventSeq: 1,
+      userMembershipId: 12,
+      periodStart: "2026-09-01",
+      periodEnd: "2026-09-07",
+      status: "APPROVED",
+      totalHours: "0",
+      billableHours: "0",
+      nonBillableHours: "0",
+    },
+  ]);
   const txWhere = jest.fn().mockReturnValue({ returning: txReturning });
   const txSet = jest.fn().mockImplementation((arg: Record<string, unknown>) => {
     setCaptures.push(arg);
@@ -95,8 +112,12 @@ function makeDb(period: unknown, settings: unknown, postApprovalPeriod: unknown,
   const txSelectFrom = jest.fn().mockReturnValue({ where: txSelectWhere });
   const txSelect = jest.fn().mockReturnValue({ from: txSelectFrom });
 
-  type TxMock = { update: typeof txUpdate; select: typeof txSelect };
-  const tx: TxMock = { update: txUpdate, select: txSelect };
+  /* The transition emits its lifecycle event through the outbox inside the same transaction. */
+  const txInsertValues = jest.fn().mockResolvedValue(undefined);
+  const txInsert = jest.fn().mockReturnValue({ values: txInsertValues });
+
+  type TxMock = { update: typeof txUpdate; select: typeof txSelect; insert: typeof txInsert };
+  const tx: TxMock = { update: txUpdate, select: txSelect, insert: txInsert };
   const transaction = jest.fn().mockImplementation(async (fn: (tx: TxMock) => Promise<void>) => fn(tx));
 
   return {

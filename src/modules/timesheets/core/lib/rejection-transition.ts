@@ -1,3 +1,4 @@
+import { ConflictException } from "@nestjs/common";
 import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import type { Db } from "../../../../db/drizzle.module";
 import { timesheetPeriods, timesheets } from "../../../../db/schema";
@@ -63,9 +64,13 @@ export async function applyRejection(
       and(
         eq(timesheetPeriods.id, periodId),
         eq(timesheetPeriods.orgId, u.orgId),
+        eq(timesheetPeriods.status, "SUBMITTED"),
       ),
     )
     .returning(LIFECYCLE_RETURNING);
+
+  /* Zero rows: another decision committed between the service's check and this write. */
+  if (!transition) throw new ConflictException(`Period ${periodId} is no longer awaiting a decision`);
 
   await tx
     .update(timesheets)
@@ -125,9 +130,10 @@ export async function applyBulkRejection(
     readonly owners: ReadonlyMap<number, string>;
     readonly now: Date;
   },
-): Promise<void> {
+): Promise<number[]> {
   const { input, owners, now } = rejection;
 
+  /* The returned ids are the periods still SUBMITTED when the UPDATE ran; see applyBulkApproval. */
   const transitions = await tx
     .update(timesheetPeriods)
     .set({
@@ -141,9 +147,12 @@ export async function applyBulkRejection(
       and(
         eq(timesheetPeriods.orgId, u.orgId),
         inArray(timesheetPeriods.id, ids),
+        eq(timesheetPeriods.status, "SUBMITTED"),
       ),
     )
     .returning({ ...LIFECYCLE_RETURNING, id: timesheetPeriods.id });
+  const periodIds = transitions.map((transition) => transition.id);
+  if (periodIds.length === 0) return periodIds;
 
   await tx
     .update(timesheets)
@@ -154,7 +163,7 @@ export async function applyBulkRejection(
     })
     .where(
       and(
-        inArray(timesheets.timesheetPeriodId, ids),
+        inArray(timesheets.timesheetPeriodId, periodIds),
         eq(timesheets.orgId, u.orgId),
         isNull(timesheets.voidedAt),
       ),
@@ -163,7 +172,7 @@ export async function applyBulkRejection(
   const actorMembId = actingMembershipId(u.principal);
   await deps.audit.recordMany(
     tx,
-    ids.map((id) => ({
+    periodIds.map((id) => ({
       orgId: u.orgId,
       actorMembershipId: actorMembId,
       entityType: "period",
@@ -203,4 +212,5 @@ export async function applyBulkRejection(
       ),
     });
   }
+  return periodIds;
 }

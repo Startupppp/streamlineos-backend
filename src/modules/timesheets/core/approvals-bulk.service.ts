@@ -206,13 +206,15 @@ export class ApprovalsBulkService {
     );
 
     const now = new Date();
-    await this.db.transaction((tx) =>
-      applyBulkApproval(
-        tx,
-        { rateResolver: this.rateResolver, audit: this.audit },
-        u,
-        ids,
-        { approverActor, lockAfterApproval, owners, now },
+    const approvedIds = new Set(
+      await this.db.transaction((tx) =>
+        applyBulkApproval(
+          tx,
+          { rateResolver: this.rateResolver, audit: this.audit },
+          u,
+          ids,
+          { approverActor, lockAfterApproval, owners, now },
+        ),
       ),
     );
 
@@ -222,6 +224,7 @@ export class ApprovalsBulkService {
      * per period: one action for the approver is N pieces of news for N people.
      */
     for (const p of approvable) {
+      if (!approvedIds.has(p.id)) continue;
       const ownerUserId =
         p.userMembershipId === null ? undefined : owners.get(p.userMembershipId);
       if (!ownerUserId) continue;
@@ -239,7 +242,8 @@ export class ApprovalsBulkService {
       });
     }
 
-    return { approved: ids.length, skipped };
+    /* A period decided by someone else between the check and the write counts as skipped, not overwritten. */
+    return { approved: approvedIds.size, skipped: skipped + (ids.length - approvedIds.size) };
   }
 
   async bulkReject(u: CurrentUserContext, input: BulkRejectInput) {
@@ -298,12 +302,14 @@ export class ApprovalsBulkService {
       periods.map((p) => p.userMembershipId),
     );
 
-    await this.db.transaction((tx) =>
-      applyBulkRejection(tx, { audit: this.audit }, u, ids, {
-        input,
-        owners,
-        now,
-      }),
+    const rejectedIds = new Set(
+      await this.db.transaction((tx) =>
+        applyBulkRejection(tx, { audit: this.audit }, u, ids, {
+          input,
+          owners,
+          now,
+        }),
+      ),
     );
 
     /**
@@ -312,6 +318,7 @@ export class ApprovalsBulkService {
      * people, each of whom needs the reason and their own period link.
      */
     for (const p of periods) {
+      if (!rejectedIds.has(p.id)) continue;
       const ownerUserId =
         p.userMembershipId === null ? undefined : owners.get(p.userMembershipId);
       if (!ownerUserId) continue;
@@ -324,6 +331,6 @@ export class ApprovalsBulkService {
       });
     }
 
-    return { rejected: ids.length };
+    return { rejected: rejectedIds.size };
   }
 }
