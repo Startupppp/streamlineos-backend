@@ -122,6 +122,23 @@ function isPlatformGlobal(name) {
   return PLATFORM_GLOBAL_TABLES.has(name);
 }
 
+const CONSTRAINT_EXCEPTIONS = new Map([
+  [
+    "fk_subscription_purchases_coupon",
+    "coupons.org_id is nullable by design — org_id IS NULL is what marks a StreamlineOS platform " +
+      "promotion (promotionRowSchema types orgId as z.null(); /platform/promotions creates exactly " +
+      "those rows). Under MATCH SIMPLE a composite (org_id, coupon_id) -> (org_id, id) FK compares a " +
+      "purchase's real org_id against NULL, matches nothing, and would reject every platform-promotion " +
+      "purchase. The tenant boundary here is held by the application path and proved by " +
+      "coupon-tenant-isolation.spec.ts + billing-purchase-binding.spec.ts (2 suites / 22 tests, " +
+      "including cross-tenant receipt substitution).",
+  ],
+]);
+function constraintException(name) {
+  const reason = CONSTRAINT_EXCEPTIONS.get(name);
+  return typeof reason === "string" && reason.trim().length > 0 ? reason : null;
+}
+
 // ---------------------------------------------------------------------------
 // pg_catalog mode
 // ---------------------------------------------------------------------------
@@ -135,9 +152,11 @@ async function runCatalogMode() {
     return null;
   }
 
-  let dotenv;
-  try { dotenv = await import("dotenv"); } catch { dotenv = null; }
-  if (dotenv) dotenv.config({ path: resolve(BACKEND_ROOT, ".env") });
+  if (resolveTarget(process.env) === null) {
+    let dotenv;
+    try { dotenv = await import("dotenv"); } catch { dotenv = null; }
+    if (dotenv) dotenv.config({ path: resolve(BACKEND_ROOT, ".env") });
+  }
 
   const resolved = resolveTarget(process.env);
   if (!resolved) return null;
@@ -275,7 +294,7 @@ async function runQuery(postgres, url, resolved = null) {
       ORDER BY child_schema, child, parent, con.conname
     `;
 
-    const result = { total: rows.length, actionable: [], excl_crm: [], excl_inv: [], excl_migrated: [] };
+    const result = { total: rows.length, actionable: [], excl_crm: [], excl_inv: [], excl_migrated: [], excl_named: [] };
     for (const r of rows) {
       if (isPlatformGlobal(r.child) || isPlatformGlobal(r.parent)) { result.excl_migrated.push(r); continue; }
       if (isExcluded(r.child) || isExcluded(r.parent)) {
@@ -283,6 +302,8 @@ async function runQuery(postgres, url, resolved = null) {
         else result.excl_inv.push(r);
         continue;
       }
+      const reason = constraintException(r.constraint_name);
+      if (reason !== null) { result.excl_named.push({ ...r, reason }); continue; }
       result.actionable.push(r);
     }
     result.midBootstrap = midBootstrap;
@@ -575,6 +596,23 @@ export const creditNotes = pgTable("credit_notes", {
     detects_return_type_annotated_inline_reference: badAnnotatedInline.length === 1,
     accounting_credit_notes_is_not_excluded_as_crm: accountingNotCrm.length === 1,
     ignores_composite_fk: good.length === 0,
+    named_exception_is_recognised:
+      constraintException("fk_subscription_purchases_coupon") !== null,
+    named_exception_carries_a_reason:
+      String(constraintException("fk_subscription_purchases_coupon")).includes("platform promotion"),
+    unknown_constraint_is_not_excepted:
+      constraintException("fk_subscription_purchases_org") === null,
+    exception_is_keyed_on_constraint_not_table:
+      constraintException("coupons") === null && constraintException("subscription_purchases") === null,
+    coupons_is_not_registered_platform_global:
+      !isPlatformGlobal("coupons"),
+    empty_reason_would_not_except:
+      (() => {
+        CONSTRAINT_EXCEPTIONS.set("fk_selftest_blank", "   ");
+        const verdict = constraintException("fk_selftest_blank") === null;
+        CONSTRAINT_EXCEPTIONS.delete("fk_selftest_blank");
+        return verdict;
+      })(),
     ignores_global_user_ref: globalRef.length === 0,
     crm_file_path_excluded: crmFile.length === 0,
   };
@@ -657,7 +695,8 @@ async function main() {
 
   if (catalogResult) {
     const { total, actionable, excl_crm, excl_inv, excl_migrated } = catalogResult;
-    const excl_total = excl_crm.length + excl_inv.length + excl_migrated.length;
+    const excl_named = catalogResult.excl_named ?? [];
+    const excl_total = excl_crm.length + excl_inv.length + excl_migrated.length + excl_named.length;
 
     console.log(`Mode                   pg_catalog (${catalogResult.target ?? "unknown target"})`);
     console.log(`Target                 ${catalogResult.targetLabel ?? "unknown"}  (from ${catalogResult.targetSource ?? "unknown"}${catalogResult.targetRewritten ? ", rewritten off neondb" : ""})`);
@@ -666,8 +705,14 @@ async function main() {
     console.log(`EXCL: CRM              ${excl_crm.length} (child or parent is a CRM table — AR-02 scope exclusion)`);
     console.log(`EXCL: Inventory        ${excl_inv.length} (child or parent is Inventory — AR-02 scope exclusion)`);
     console.log(`EXCL: platform-global  ${excl_migrated.length} (child or parent is a registered platform-global table)`);
+    console.log(`EXCL: named exception  ${excl_named.length} (constraint-specific, reasons below)`);
     console.log(`Actionable             ${actionable.length}`);
     console.log("");
+    for (const r of excl_named) {
+      console.log(`NAMED EXCEPTION  ${r.child_schema}.${r.child} → ${r.parent_schema}.${r.parent}  (${r.constraint_name})`);
+      console.log(`  ${r.reason}`);
+      console.log("");
+    }
 
     if (typeof catalogResult.midBootstrap === "number" && catalogResult.midBootstrap < JOURNAL_ENTRY_COUNT) {
       console.error(
