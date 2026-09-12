@@ -78,16 +78,17 @@ function makeResolver() {
     environment: "test",
     isReady: () => adapter.isReady(),
     publicKeyId: () => adapter.publicKeyId(),
-    createOrder: (params) =>
+    createOrder: (params: { amount: string; currency: string; receipt: string; notes?: Record<string, string> }) =>
       adapter.createOrder({ ...params, keyId: "fake-public", keySecret: "fake-private" }),
-    verifyPaymentSignature: (params) =>
+    verifyPaymentSignature: (params: { orderId: string; paymentId: string; signature: string }) =>
       adapter.verifyPaymentSignature({ ...params, keySecret: "fake-private" }),
-    verifyWebhookSignature: (params) =>
+    verifyWebhookSignature: (params: { rawBody: string; signature: string }) =>
       adapter.verifyWebhookSignature({
         ...params,
         webhookSecret: "fake-webhook-secret-at-least-32chars",
       }),
-    normalizeWebhook: (rawBody) => adapter.normalizeWebhook(rawBody),
+    normalizeWebhook: (rawBody: string) => adapter.normalizeWebhook(rawBody),
+    fetchPayment: async () => null,
   };
   return {
     resolve: jest.fn().mockResolvedValue(provider),
@@ -104,16 +105,16 @@ function makePlatformMerchant() {
       environment: "test",
       isReady: () => adapter.isReady(),
       publicKeyId: () => adapter.publicKeyId(),
-      createOrder: (params) =>
+      createOrder: (params: { amount: string; currency: string; receipt: string; notes?: Record<string, string> }) =>
         adapter.createOrder({ ...params, keyId: "fake-public", keySecret: "fake-private" }),
-      verifyPaymentSignature: (params) =>
+      verifyPaymentSignature: (params: { orderId: string; paymentId: string; signature: string }) =>
         adapter.verifyPaymentSignature({ ...params, keySecret: "fake-private" }),
-      verifyWebhookSignature: (params) =>
+      verifyWebhookSignature: (params: { rawBody: string; signature: string }) =>
         adapter.verifyWebhookSignature({
           ...params,
           webhookSecret: "fake-webhook-secret-at-least-32chars",
         }),
-      normalizeWebhook: (rawBody) => adapter.normalizeWebhook(rawBody),
+      normalizeWebhook: (rawBody: string) => adapter.normalizeWebhook(rawBody),
       fetchPayment: (paymentId: string) =>
         Promise.resolve({
           paymentId,

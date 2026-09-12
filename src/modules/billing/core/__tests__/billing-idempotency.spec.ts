@@ -124,10 +124,11 @@ function makeResolver() {
     environment: "test",
     isReady: () => adapter.isReady(),
     publicKeyId: () => adapter.publicKeyId(),
-    createOrder: (params) => adapter.createOrder({ ...params, keyId: "fake-public", keySecret: "fake-private" }),
-    verifyPaymentSignature: (params) => adapter.verifyPaymentSignature({ ...params, keySecret: "fake-private" }),
-    verifyWebhookSignature: (params) => adapter.verifyWebhookSignature({ ...params, webhookSecret: "fake-webhook-secret-at-least-32chars" }),
-    normalizeWebhook: (rawBody) => adapter.normalizeWebhook(rawBody),
+    createOrder: (params: { amount: string; currency: string; receipt: string; notes?: Record<string, string> }) => adapter.createOrder({ ...params, keyId: "fake-public", keySecret: "fake-private" }),
+    verifyPaymentSignature: (params: { orderId: string; paymentId: string; signature: string }) => adapter.verifyPaymentSignature({ ...params, keySecret: "fake-private" }),
+    verifyWebhookSignature: (params: { rawBody: string; signature: string }) => adapter.verifyWebhookSignature({ ...params, webhookSecret: "fake-webhook-secret-at-least-32chars" }),
+    normalizeWebhook: (rawBody: string) => adapter.normalizeWebhook(rawBody),
+    fetchPayment: async () => null,
   };
   return { resolve: jest.fn().mockResolvedValue(provider), resolveConfigured: jest.fn().mockResolvedValue(provider) };
 }
@@ -150,10 +151,10 @@ function makePlatformMerchant() {
       environment: "test",
       isReady: () => adapter.isReady(),
       publicKeyId: () => adapter.publicKeyId(),
-      createOrder: (params) => adapter.createOrder({ ...params, keyId: "fake-public", keySecret: "fake-private" }),
-      verifyPaymentSignature: (params) => adapter.verifyPaymentSignature({ ...params, keySecret: "fake-private" }),
-      verifyWebhookSignature: (params) => adapter.verifyWebhookSignature({ ...params, webhookSecret: "fake-webhook-secret-at-least-32chars" }),
-      normalizeWebhook: (rawBody) => adapter.normalizeWebhook(rawBody),
+      createOrder: (params: { amount: string; currency: string; receipt: string; notes?: Record<string, string> }) => adapter.createOrder({ ...params, keyId: "fake-public", keySecret: "fake-private" }),
+      verifyPaymentSignature: (params: { orderId: string; paymentId: string; signature: string }) => adapter.verifyPaymentSignature({ ...params, keySecret: "fake-private" }),
+      verifyWebhookSignature: (params: { rawBody: string; signature: string }) => adapter.verifyWebhookSignature({ ...params, webhookSecret: "fake-webhook-secret-at-least-32chars" }),
+      normalizeWebhook: (rawBody: string) => adapter.normalizeWebhook(rawBody),
       fetchPayment: (paymentId: string) =>
         Promise.resolve({
           paymentId,
@@ -162,7 +163,7 @@ function makePlatformMerchant() {
           amountMinor: IDP_AMOUNT_MINOR,
           currency: IDP_CURRENCY,
         }),
-    }),
+    } satisfies OrganizationPaymentProvider),
     readiness: jest.fn().mockReturnValue({
       configured: true,
       providerKey: "razorpay",

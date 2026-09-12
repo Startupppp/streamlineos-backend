@@ -123,11 +123,11 @@ describe("PlanLimitsService — cache unavailable: fails closed, never open", ()
       set: jest.fn(),
       get: jest.fn(),
     };
-    const svc = new (PlanLimitsService as unknown as new (
-      db: typeof db,
-      cache: typeof brokenCache,
-      notifications: null,
-    ) => PlanLimitsService)(db, brokenCache as never, null);
+    const svc = new PlanLimitsService(
+      db as unknown as Db,
+      brokenCache as unknown as CacheService,
+      null,
+    );
 
     await expect(svc.resolveTier(ORG)).rejects.toThrow("Redis ECONNREFUSED");
   });
@@ -140,11 +140,11 @@ describe("PlanLimitsService — cache unavailable: fails closed, never open", ()
       set: jest.fn(),
       get: jest.fn(),
     };
-    const svc = new (PlanLimitsService as unknown as new (
-      db: typeof db,
-      cache: typeof brokenCache,
-      notifications: null,
-    ) => PlanLimitsService)(db, brokenCache as never, null);
+    const svc = new PlanLimitsService(
+      db as unknown as Db,
+      brokenCache as unknown as CacheService,
+      null,
+    );
 
     await expect(svc.resolveTier(ORG)).rejects.toThrow("Redis unavailable");
   });

@@ -3,6 +3,7 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import { outboxEvents } from "../../../db/schema";
 import { OutboxConsumerRegistry } from "../../../common/outbox/outbox-consumer.registry";
 import { RevenueAnalyticsService } from "./revenue-analytics.service";
+import type { BillingPaymentActivation } from "./billing-payment-activation";
 import { BillingWebhookEffects } from "./billing-webhook-effects";
 import { BillingPaymentState } from "./billing-payment-state";
 import { AiCreditsService } from "./ai-credits.service";
@@ -93,6 +94,9 @@ function makeEffects(): BillingWebhookEffects {
       } as unknown as AiCreditsService,
       externalEffectLedger: ledger,
       paymentNotices: { notifyOwner: jest.fn() } as unknown as PaymentAnalyticsService,
+      activation: {
+        performActivationFromWebhook: jest.fn().mockResolvedValue(undefined),
+      } as unknown as BillingPaymentActivation,
     },
     {} as BillingPaymentState,
   );
@@ -113,7 +117,7 @@ async function emitTwice(
   const revenue = await buildRevenueService(db);
 
   for (let pass = 0; pass < 2; pass += 1) {
-    const applied = await effects.apply(event, payment, ORG, PROVIDER);
+    const applied = await effects.apply(event, payment, ORG, PROVIDER, null);
     if (!applied.ok) throw new Error("effects refused the event");
     for (const entry of applied.revenue) await revenue.emit(db, entry);
   }

@@ -21,6 +21,7 @@ import {
 } from "../../../common/outbox/outbox-consumer.registry";
 import { type DbOrTx } from "../../../common/rbac/access-invalidate";
 import { RevenueAnalyticsService } from "./revenue-analytics.service";
+import type { BillingPaymentActivation } from "./billing-payment-activation";
 import { BillingWebhookEffects } from "./billing-webhook-effects";
 import { BillingPaymentState } from "./billing-payment-state";
 import { AiCreditsService } from "./ai-credits.service";
@@ -170,6 +171,9 @@ function makeEffects(): BillingWebhookEffects {
       } as unknown as AiCreditsService,
       externalEffectLedger: ledger,
       paymentNotices: { notifyOwner: jest.fn() } as unknown as PaymentAnalyticsService,
+      activation: {
+        performActivationFromWebhook: jest.fn().mockResolvedValue(undefined),
+      } as unknown as BillingPaymentActivation,
     },
     {} as BillingPaymentState,
   );
@@ -241,7 +245,7 @@ describe("revenue events name the denomination of their own money", () => {
 
 describe("a provider webhook labels its money with the payment's currency, not the platform's", () => {
   it("labels a refund JPY when the payment was in JPY", async () => {
-    const applied = await makeEffects().apply(JPY_REFUND_EVENT, JPY_REFUND, "org1", "razorpay");
+    const applied = await makeEffects().apply(JPY_REFUND_EVENT, JPY_REFUND, "org1", "razorpay", null);
 
     expect(applied.ok).toBe(true);
     if (!applied.ok) return;
@@ -257,6 +261,7 @@ describe("a provider webhook labels its money with the payment's currency, not t
       JPY_PACK_CAPTURE,
       "org1",
       "razorpay",
+      null,
     );
 
     expect(applied.ok).toBe(true);

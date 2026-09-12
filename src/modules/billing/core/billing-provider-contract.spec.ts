@@ -195,7 +195,6 @@ describe("confirmCheckoutSchema — provider-neutral contract (PRD 10.10-A)", ()
       orderId: "order_1",
       paymentId: "pay_1",
       signature: "sig",
-      plan: "STARTER",
       unexpectedField: "x",
     });
     expect(result.success).toBe(false);
@@ -227,7 +226,6 @@ describe("BillingService — Stripe-ready contract (PRD 10.10-A)", () => {
       orderId: FAKE_PROVIDER_ORDER_ID,
       paymentId: "pi_stripe_abc",
       signature: "invalid-stripe-signature",
-      plan: "STARTER",
     })).rejects.toBeInstanceOf(BadRequestException);
   });
 });

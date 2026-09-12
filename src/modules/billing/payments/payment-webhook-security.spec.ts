@@ -50,6 +50,7 @@ function makeProvider(): OrganizationPaymentProvider {
         webhookSecret: FAKE_WEBHOOK_SECRET,
       }),
     normalizeWebhook: (rawBody) => adapter.normalizeWebhook(rawBody),
+    fetchPayment: async () => null,
   };
 }
 

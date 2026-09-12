@@ -138,6 +138,7 @@ function makeProvider(): OrganizationPaymentProvider {
     verifyWebhookSignature: (params) =>
       adapter.configure({ webhookSecret: FAKE_WEBHOOK_SECRET }).verifyWebhookSignature(params),
     normalizeWebhook: (rawBody) => adapter.configure(null).normalizeWebhook(rawBody),
+    fetchPayment: async () => null,
   };
 }
 

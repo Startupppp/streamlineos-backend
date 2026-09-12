@@ -29,6 +29,7 @@
 import { ConflictException, ServiceUnavailableException } from "@nestjs/common";
 import type { Db } from "../../../db/drizzle.module";
 import { BillingPaymentActivation, type BillingPaymentActivationDeps } from "./billing-payment-activation";
+import { PlatformMerchantService } from "../payments/platform-merchant.service";
 import { BillingMarketplace } from "./billing-marketplace";
 import { planSchema } from "./dto/billing.schemas";
 import { AiCreditsService } from "./ai-credits.service";
@@ -89,7 +90,7 @@ function makePlatformMerchant(provider: OrganizationPaymentProvider | undefined)
       unavailableReason: provider === undefined ? ("no_credentials" as const) : null,
     }),
     environment: () => (provider === undefined ? null : ("test" as const)),
-  };
+  } as unknown as PlatformMerchantService;
 }
 
 /**
