@@ -3,6 +3,7 @@ import { BillingModule } from "../../billing/core/billing.module";
 import { NotificationsModule } from "../../notifications/notifications.module";
 import { UsersModule } from "../../users/users.module";
 import { ProjectsController } from "./projects.controller";
+import { ProjectResourcesController } from "./project-resources.controller";
 import { ProjectsTicketsController } from "./projects-tickets.controller";
 import { ProjectsTicketCommentsController } from "./projects-ticket-comments.controller";
 import { ProjectsTicketChecklistsController } from "./projects-ticket-checklists.controller";
@@ -79,6 +80,7 @@ import { BuildTicketStatusChangedConsumerService } from "./build-ticket-status-c
     ProjectsWorkspaceMembersController,
     ProjectsCustomersController,
     ProjectsController,
+    ProjectResourcesController,
   ],
   providers: [
     BuildReleasePublishedConsumerService,

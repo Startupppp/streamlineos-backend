@@ -23,9 +23,7 @@ import type {
   VerifyArticleInput,
   VoteArticleInput,
 } from "../core/dto/kb.schemas";
-import { KB_ARTICLE_COLUMNS } from "./kb-article-columns";
-
-type ArticleWithTags = ArticleRow & { tags: string[] };
+import { KB_ARTICLE_COLUMNS, type ArticleWithTags } from "./kb-article-columns";
 
 @Injectable()
 export class KbArticlesService {

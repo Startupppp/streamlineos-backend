@@ -15,9 +15,6 @@ import type {
   RebuildAccrualInput,
 } from "./dto/commission-accrual.schemas";
 
-export { recordAccrualForEarning, snapshotDate, utcToday } from "./lib/accrual-ledger";
-export type { DealContribution } from "./lib/accrual-parts";
-
 /**
  * Reading an accrual, and keeping the ledger that makes it decomposable.
  *

@@ -11,3 +11,5 @@ const { fts: _fts, ...articleColumns } = getTableColumns(kbArticles);
 export const KB_ARTICLE_COLUMNS = articleColumns;
 
 export type KbArticleRow = Omit<typeof kbArticles.$inferSelect, "fts">;
+
+export type ArticleWithTags = KbArticleRow & { tags: string[] };

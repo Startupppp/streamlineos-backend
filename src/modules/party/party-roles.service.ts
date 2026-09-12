@@ -11,11 +11,11 @@ import {
 } from "../../db/schema";
 import { AuditService } from "../../common/audit/audit.service";
 import { assessDuplicate, type PartyFingerprint } from "./party-duplicates";
+import { IDENTIFIER_KINDS } from "./party-identifiers";
 import {
-  IDENTIFIER_KINDS,
   partiesSharingIdentifiers,
   type IdentifierClaim,
-} from "./party-identifiers";
+} from "./party-identifiers-merge";
 import { orderPair } from "./party-merge-plan";
 import { PartyMergeService } from "./party-merge.service";
 import { assertPartyInOrg } from "./party-tenant";

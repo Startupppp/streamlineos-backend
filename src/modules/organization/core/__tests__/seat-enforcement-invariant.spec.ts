@@ -58,10 +58,6 @@ const FIRST_MEMBER_PATHS: ReadonlyMap<string, string> = new Map([
     "modules/organization/core/bootstrap-cell-organization.ts",
     "createOrganization — the founder, before a plan exists",
   ],
-  [
-    "modules/auth/auth.service.ts",
-    "registration — creates the organisation and its first member together",
-  ],
 ]);
 
 /** Reserving a seat is the advisory lock and the assertion, or a helper doing both. */

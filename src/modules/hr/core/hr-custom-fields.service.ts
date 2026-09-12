@@ -14,46 +14,15 @@ import { organizationMembers } from "../../../db/schema";
 import type { CreateCustomFieldInput, UpdateCustomFieldInput, UpsertCustomFieldValuesInput } from "./dto/hr-custom-fields.schemas";
 import type { ScopedRead } from "../../access/scoped-read";
 import { assertActiveOrgUnit } from "../../../common/org/sync-org-unit-placement";
-
-type HrFieldDef = {
-  id: number;
-  orgId: string;
-  entityType: string;
-  name: string;
-  key: string;
-  fieldType: string;
-  options: Array<{ label: string; value: string }> | null | undefined;
-  settings: typeof customFieldDefinitions.$inferSelect["settings"];
-  isSensitive: boolean;
-  isRequired: boolean;
-  isActive: boolean;
-  displayOrder: number;
-  createdAt: Date;
-  updatedAt: Date;
-};
+import {
+  type HrFieldDef,
+  toHrFieldDef,
+  validateFieldValue,
+} from "./hr-custom-field-helpers";
 
 @Injectable()
 export class HrCustomFieldsService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
-
-  private toHrFieldDef(row: typeof customFieldDefinitions.$inferSelect): HrFieldDef {
-    return {
-      id: row.id,
-      orgId: row.orgId,
-      entityType: row.entityType,
-      name: row.label,
-      key: row.key,
-      fieldType: row.fieldType,
-      options: row.options,
-      settings: row.settings,
-      isSensitive: row.isSensitive,
-      isRequired: row.isRequired,
-      isActive: row.isActive,
-      displayOrder: row.displayOrder,
-      createdAt: row.createdAt,
-      updatedAt: row.updatedAt,
-    };
-  }
 
   private async loadDefinition(orgId: string, id: number): Promise<HrFieldDef> {
     const [row] = await this.db
@@ -62,7 +31,7 @@ export class HrCustomFieldsService {
       .where(and(eq(customFieldDefinitions.id, id), eq(customFieldDefinitions.orgId, orgId)))
       .limit(1);
     if (!row) throw new NotFoundException("Custom field definition not found");
-    return this.toHrFieldDef(row);
+    return toHrFieldDef(row);
   }
 
   private async assertEmploymentInScope(
@@ -115,7 +84,7 @@ export class HrCustomFieldsService {
       )
       .orderBy(asc(customFieldDefinitions.displayOrder), asc(customFieldDefinitions.id))
       .limit(100);
-    return rows.map((r) => this.toHrFieldDef(r));
+    return rows.map((r) => toHrFieldDef(r));
   }
 
   async createDefinition(orgId: string, input: CreateCustomFieldInput) {
@@ -137,7 +106,7 @@ export class HrCustomFieldsService {
       })
       .returning();
     if (!row) throw new BadRequestException("Failed to create custom field");
-    return this.toHrFieldDef(row);
+    return toHrFieldDef(row);
   }
 
   async updateDefinition(orgId: string, id: number, input: UpdateCustomFieldInput) {
@@ -157,7 +126,7 @@ export class HrCustomFieldsService {
       .where(and(eq(customFieldDefinitions.id, id), eq(customFieldDefinitions.orgId, orgId)))
       .returning();
     if (!row) throw new NotFoundException("Custom field definition not found");
-    return this.toHrFieldDef(row);
+    return toHrFieldDef(row);
   }
 
   async deleteDefinition(orgId: string, id: number) {
@@ -230,7 +199,7 @@ export class HrCustomFieldsService {
       if (def.isSensitive && !canManageSensitive) {
         throw new ForbiddenException("Cannot update sensitive field without hr:sensitive:manage");
       }
-      this.validateFieldValue(def.fieldType, item.value, def.isRequired);
+      validateFieldValue(def.fieldType, item.value, def.isRequired);
       await this.validateReferenceValue(orgId, def.fieldType, item.value);
       patch[def.key] = item.value;
     }
@@ -309,28 +278,6 @@ export class HrCustomFieldsService {
         )
         .limit(1);
       if (!member) throw new BadRequestException("Invalid employee selection.");
-    }
-  }
-
-  private validateFieldValue(
-    fieldType: string,
-    value: unknown,
-    isRequired: boolean,
-  ): void {
-    if (isRequired && (value === null || value === undefined || value === "")) {
-      throw new BadRequestException("Required field value is missing");
-    }
-    if (value === null || value === undefined) return;
-    if (fieldType === "number" || fieldType === "currency") {
-      if (typeof value !== "number") throw new BadRequestException("Expected number value");
-    }
-    if (fieldType === "boolean") {
-      if (typeof value !== "boolean") throw new BadRequestException("Expected boolean value");
-    }
-    if (fieldType === "date") {
-      if (typeof value !== "string" || isNaN(Date.parse(value))) {
-        throw new BadRequestException("Expected ISO date string");
-      }
     }
   }
 }

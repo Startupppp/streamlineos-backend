@@ -1,0 +1,12 @@
+{
+  "extends": "./tsconfig.json",
+  "include": [
+    "src/modules/organization/core/invitation-create.service.ts",
+    "src/modules/organization/core/invitation-bulk-dedup.spec.ts",
+    "src/modules/organization/setup/org-setup-completed-consumer.service.ts",
+    "src/modules/organization/setup/__tests__/org-setup-completed-consumer.service.spec.ts",
+    "src/modules/organization/setup/__tests__/org-setup-completed-consumer-savepoint.spec.ts",
+    "src/modules/organization/setup/__tests__/org-setup-completed-tenant-isolation.spec.ts",
+    "src/types/**/*.d.ts"
+  ]
+}

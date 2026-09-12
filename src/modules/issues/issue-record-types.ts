@@ -10,13 +10,11 @@ import {
   type IssueSectionSpec,
 } from "./lib/issue-field-declarations";
 
-export {
-  ISSUE_FIELD_NAMES,
-  type IssueColumnSpec,
-  type IssueFieldName,
-  type IssueFieldOption,
-  type IssueFieldSpec,
-  type IssueSectionSpec,
+export type {
+  IssueColumnSpec,
+  IssueFieldName,
+  IssueFieldSpec,
+  IssueSectionSpec,
 } from "./lib/issue-field-declarations";
 
 /**

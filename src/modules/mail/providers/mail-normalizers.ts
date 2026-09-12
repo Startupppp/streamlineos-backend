@@ -31,7 +31,6 @@ export {
 export type {
   AccountCursorValue,
   OpaqueCursor,
-  PartialGmailCursor,
 } from "./lib/mail-cursor";
 
 

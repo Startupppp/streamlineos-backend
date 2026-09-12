@@ -3,7 +3,6 @@ import {
   Inject,
   Injectable,
   NotFoundException,
-  ServiceUnavailableException,
 } from "@nestjs/common";
 import { and, asc, desc, eq, gt, inArray, isNull, ne, or } from "drizzle-orm";
 import { addDays } from "date-fns";
@@ -15,16 +14,8 @@ import { REDIS } from "../../common/cache/cache.service";
 import type { Redis } from "@upstash/redis";
 import { isApiClientUserAgent, withClientInfo } from "../../common/http/parse-user-agent";
 import { logger } from "../../common/logger/logger.service";
+import { writeTombstones, pruneRevocations, describeRedisFailure } from "./session-revocation-helpers";
 
-const SESSION_TTL_SECONDS = 8 * 60 * 60;
-const REVOKED_SESSION_INDEX_KEY = "revoked:sessions:index";
-const REVOCATION_PRUNE_BATCH = 200;
-/**
- * One MSET and one variadic ZADD per chunk. The Upstash REST transport puts the
- * whole command in one request body, so an unbounded id list is an unbounded
- * payload; a failed chunk then loses only its own tombstones.
- */
-const REVOCATION_WRITE_CHUNK = 256;
 /**
  * The device list is a page, not a dump. Matches the admin twin
  * `UserProfileService.getUserSessions`, which has always read `.limit(50)`.
@@ -260,70 +251,17 @@ export class SessionsService {
     }
   }
 
-  // Tombstones carry no TTL on purpose: volatile-lru only evicts keys that have one, and an evicted tombstone silently un-revokes a session. MSET cannot carry one at all.
   async publishRevocations(sessionIds: string[]): Promise<void> {
     await this.tombstone(sessionIds);
   }
 
   private async tombstone(sessionIds: string[]): Promise<void> {
     if (!this.redis || sessionIds.length === 0) return;
-    const redis = this.redis;
-    const expiresAt = Date.now() + SESSION_TTL_SECONDS * 1000;
-    const unique = [...new Set(sessionIds)];
-    let unwritten = 0;
-    for (let i = 0; i < unique.length; i += REVOCATION_WRITE_CHUNK) {
-      const chunk = unique.slice(i, i + REVOCATION_WRITE_CHUNK);
-      const [head, ...rest] = chunk;
-      if (head === undefined) continue;
-      const [written, indexed] = await Promise.allSettled([
-        redis.mset(Object.fromEntries(chunk.map((id) => [`revoked:session:${id}`, true]))),
-        redis.zadd(
-          REVOKED_SESSION_INDEX_KEY,
-          { score: expiresAt, member: head },
-          ...rest.map((id) => ({ score: expiresAt, member: id })),
-        ),
-      ]);
-      if (indexed?.status === "rejected")
-        logger.error("session revocation index write failed", {
-          sessions: chunk.length,
-          cause: describeRedisFailure(indexed.reason),
-        });
-      if (written?.status === "rejected") {
-        unwritten += chunk.length;
-        logger.error("session revocation tombstone write failed", {
-          sessions: chunk.length,
-          cause: describeRedisFailure(written.reason),
-        });
-      }
-    }
-    if (unwritten > 0)
-      throw new ServiceUnavailableException(
-        `Could not publish ${String(unwritten)} session revocation(s)`,
-      );
+    await writeTombstones(this.redis, sessionIds);
   }
 
   async pruneExpiredRevocations(): Promise<{ removed: number }> {
     if (!this.redis) return { removed: 0 };
-    const redis = this.redis;
-    const now = Date.now();
-
-    const expired = await redis.zrange<string[]>(REVOKED_SESSION_INDEX_KEY, 0, now, {
-      byScore: true,
-    });
-    if (expired.length === 0) return { removed: 0 };
-
-    for (let i = 0; i < expired.length; i += REVOCATION_PRUNE_BATCH) {
-      const batch = expired.slice(i, i + REVOCATION_PRUNE_BATCH);
-      await redis.del(...batch.map((id) => `revoked:session:${id}`));
-    }
-    await redis.zremrangebyscore(REVOKED_SESSION_INDEX_KEY, 0, now);
-
-    return { removed: expired.length };
+    return pruneRevocations(this.redis);
   }
-}
-
-function describeRedisFailure(err: unknown): string {
-  if (!(err instanceof Error)) return String(err);
-  const cause = err.cause;
-  return cause instanceof Error ? `${err.message}: ${cause.message}` : err.message;
 }

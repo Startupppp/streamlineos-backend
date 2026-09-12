@@ -4,7 +4,7 @@ import { signEnvelopes, signTemplates, signWatermarkPolicies } from "../../db/sc
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { SignAuditService } from "./sign-audit.service";
-import type { WatermarkPolicyInput } from "./dto/e-sign.schemas";
+import type { WatermarkPolicyInput } from "./dto/e-sign-settings.schemas";
 
 @Injectable()
 export class SignWatermarkService {

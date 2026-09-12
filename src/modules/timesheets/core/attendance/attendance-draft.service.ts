@@ -227,6 +227,3 @@ function describeSegment(segment: ClockSegment): string {
   const auto = segment.autoCheckedOut ? " (auto checked out)" : "";
   return `Drafted from attendance ${window}${breaks}${auto}`;
 }
-
-/** Exported for the spec: the sentence a person reads is worth pinning. */
-export const attendanceDraftInternals = { describeSegment, MAX_RANGE_DAYS };

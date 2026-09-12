@@ -29,7 +29,6 @@ import {
   compOffSchema,
   createLeaveSchema,
   leaveAnalyticsQuerySchema,
-  leaveCalendarQuerySchema,
   listLeaveRequestsSchema,
   rejectLeaveSchema,
   updateLeaveSchema,
@@ -37,7 +36,6 @@ import {
   type CompOffInput,
   type CreateLeaveInput,
   type LeaveAnalyticsQuery,
-  type LeaveCalendarQuery,
   type ListLeaveRequestsQuery,
   type RejectLeaveInput,
   type UpdateLeaveInput,
@@ -62,7 +60,6 @@ import {
   leavesThisWeekItemSchema,
   leavesAnalyticsResponseSchema,
   leavesCreateResponseSchema,
-  leaveCalendarItemSchema,
   leaveSummaryRowSchema,
   leavesPageDataSchema,
   compOffGrantResponseSchema,
@@ -295,29 +292,5 @@ export class LeavesController {
       throw new BadRequestException("periodStart and periodEnd are required");
     }
     return this.leaves.leaveSummary(currentUser.orgId, periodStart, periodEnd);
-  }
-}
-
-@RequireModule("hr")
-@Controller("hr/leave-calendar")
-@UseGuards(JwtAuthGuard, PermissionGuard)
-export class LeaveCalendarController {
-  constructor(private readonly leaves: LeavesService) {}
-
-  @Get()
-  @ResponseSchema(z.array(leaveCalendarItemSchema))
-  @RequirePermission("hr:leaves:read")
-  @Validate({ query: leaveCalendarQuerySchema })
-  calendar(
-    @Query() query: LeaveCalendarQuery,
-    @CurrentUser() currentUser: CurrentUserContext,
-  ) {
-    const now = new Date();
-    const month = query.month ?? now.getMonth() + 1;
-    const year = query.year ?? now.getFullYear();
-    if (month < 1 || month > 12) {
-      throw new BadRequestException("month must be between 1 and 12");
-    }
-    return this.leaves.calendar(currentUser.orgId, month, year);
   }
 }

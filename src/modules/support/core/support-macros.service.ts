@@ -6,13 +6,10 @@ import {
   supportAgentSkills,
   supportAgentAvailability,
   supportVipClients,
-  users,
-  organizations,
   organizationMembers,
 } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
-import { appUrl } from "../../email/app-url";
 import {
   applyRoutingRules,
   createRoutingRule,
@@ -31,6 +28,7 @@ import type {
   UpdateRoutingRuleInput,
 } from "./dto/support.schemas";
 import { isTicketPriority, isTicketStatus } from "./support-ticket-routing";
+import { renderMacroBody, resolveActiveMembershipId } from "./lib/support-macro-helpers";
 
 export type { RoutableTicket, RoutingOutcome } from "./lib/support-routing";
 
@@ -46,19 +44,6 @@ export type { RoutableTicket, RoutingOutcome } from "./lib/support-routing";
 @Injectable()
 export class SupportMacrosService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
-
-  private async resolveActiveMembershipId(orgId: string, userId: string): Promise<number> {
-    const member = await this.db.query.organizationMembers.findFirst({
-      where: and(
-        eq(organizationMembers.orgId, orgId),
-        eq(organizationMembers.userId, userId),
-        eq(organizationMembers.status, "ACTIVE"),
-      ),
-      columns: { id: true },
-    });
-    if (!member) throw new NotFoundException("Active organization member not found");
-    return member.id;
-  }
 
   listMacros(orgId: string, _userId: string, membershipId: number | null, query: ListMacrosInput) {
     if (membershipId === null) throw new ForbiddenException("Organization membership required");
@@ -137,7 +122,7 @@ export class SupportMacrosService {
       throw new ForbiddenException("This macro is private to its creator");
     }
 
-    const rendered = await this.renderMacroBody(orgId, userId, ticketId, macro.body);
+    const rendered = await renderMacroBody(this.db, orgId, userId, ticketId, macro.body);
     return { body: rendered };
   }
 
@@ -159,7 +144,7 @@ export class SupportMacrosService {
       throw new ForbiddenException("This macro is private to its creator");
     }
 
-    const rendered = await this.renderMacroBody(orgId, userId, input.ticketId, macro.body);
+    const rendered = await renderMacroBody(this.db, orgId, userId, input.ticketId, macro.body);
 
     const ticketUpdate: Partial<typeof supportTickets.$inferInsert> = {};
     if (macro.actions?.setStatus && isTicketStatus(macro.actions.setStatus)) {
@@ -193,30 +178,6 @@ export class SupportMacrosService {
       .limit(50);
   }
 
-  private async renderMacroBody(orgId: string, userId: string, ticketId: number, body: string): Promise<string> {
-    const [ticket, agent, org] = await Promise.all([
-      this.db.query.supportTickets.findFirst({
-        where: and(eq(supportTickets.id, ticketId), eq(supportTickets.orgId, orgId)),
-        columns: { id: true, requesterName: true },
-        with: { creatorMembership: { columns: { id: true }, with: { user: { columns: { name: true } } } } },
-      }),
-      this.db.query.users.findFirst({ where: eq(users.id, userId), columns: { name: true } }),
-      this.db.query.organizations.findFirst({ where: eq(organizations.id, orgId), columns: { name: true } }),
-    ]);
-    if (!ticket) throw new NotFoundException("Ticket not found");
-
-    const customerName = ticket.requesterName ?? ticket.creatorMembership?.user?.name ?? "there";
-    const variables: Record<string, string> = {
-      "customer.name": customerName,
-      "ticket.id": String(ticket.id),
-      "agent.name": agent?.name ?? "Support",
-      "company.name": org?.name ?? "our team",
-      "portal.link": `${appUrl()}/support/portal/tickets/${ticket.id}`,
-    };
-
-    return body.replace(/\{\{\s*([\w.]+)\s*\}\}/g, (match, key: string) => variables[key] ?? match);
-  }
-
   listRoutingRules(orgId: string) {
     return listRoutingRules(this.db, orgId);
   }
@@ -238,7 +199,7 @@ export class SupportMacrosService {
   }
 
   async setAgentSkills(orgId: string, userId: string, skills: string[]) {
-    const membershipId = await this.resolveActiveMembershipId(orgId, userId);
+    const membershipId = await resolveActiveMembershipId(this.db, orgId, userId);
     await this.db.transaction(async (tx) => {
       await tx
         .delete(supportAgentSkills)
@@ -271,7 +232,7 @@ export class SupportMacrosService {
   }
 
   async setAgentAvailability(orgId: string, userId: string, isAvailable: boolean) {
-    const membershipId = await this.resolveActiveMembershipId(orgId, userId);
+    const membershipId = await resolveActiveMembershipId(this.db, orgId, userId);
     const [row] = await this.db
       .insert(supportAgentAvailability)
       .values({ orgId, userMembershipId: membershipId, isAvailable })

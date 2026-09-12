@@ -1,6 +1,6 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { describe as narrate } from "../compliance.controller";
+import { describe as narrate } from "../compliance-narrative";
 import { ComplianceTransportRegistry } from "./compliance-transport.registry";
 import { LiveIrpAdapter } from "./live-irp.adapter";
 import { MockIrpAdapter } from "./mock-irp.adapter";

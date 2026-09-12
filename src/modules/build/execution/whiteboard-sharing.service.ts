@@ -11,14 +11,12 @@ import {
   organizationMembers,
   projectWhiteboardShares,
   projectWhiteboards,
-  projects,
   users,
 } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { withPublicToken } from "../../../common/tenant/with-public-token";
 import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
-import { resolveWhiteboardAccess } from "./whiteboard-access";
 import { AccessService } from "../../access/access.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import type {
@@ -26,14 +24,7 @@ import type {
   SetWhiteboardSharesInput,
   UpdateWhiteboardSharingInput,
 } from "./dto/workspace.schemas";
-
-async function assertProject(db: Db, orgId: string, projectId: number): Promise<void> {
-  const project = await db.query.projects.findFirst({
-    where: and(eq(projects.id, projectId), eq(projects.orgId, orgId), isNull(projects.deletedAt)),
-    columns: { id: true },
-  });
-  if (!project) throw new NotFoundException("Project not found");
-}
+import { requireWhiteboardManageAccess } from "./whiteboard-board-helpers";
 
 @Injectable()
 export class WhiteboardSharingService {
@@ -42,62 +33,13 @@ export class WhiteboardSharingService {
     private readonly access: AccessService,
   ) {}
 
-  private async requireManageAccess(
-    u: CurrentUserContext,
-    projectId: number,
-    whiteboardId: number,
-  ): Promise<typeof projectWhiteboards.$inferSelect> {
-    await assertProject(this.db, u.orgId, projectId);
-
-    const rows = await this.db
-      .select({
-        board: projectWhiteboards,
-        shareRole: projectWhiteboardShares.role,
-      })
-      .from(projectWhiteboards)
-      .leftJoin(
-        projectWhiteboardShares,
-        and(
-          eq(projectWhiteboardShares.whiteboardId, projectWhiteboards.id),
-          sql`${projectWhiteboardShares.membershipId} IN (SELECT id FROM organization_members WHERE org_id = ${u.orgId} AND user_id = ${u.userId} AND status = 'ACTIVE')`,
-        ),
-      )
-      .where(
-        and(
-          eq(projectWhiteboards.id, whiteboardId),
-          eq(projectWhiteboards.projectId, projectId),
-          eq(projectWhiteboards.orgId, u.orgId),
-          isNull(projectWhiteboards.deletedAt),
-        ),
-      )
-      .limit(1);
-
-    const row = rows[0];
-    if (!row) throw new NotFoundException("Whiteboard not found");
-
-    const hasManagePermission = await this.access.holds(
-      u,
-      "build:whiteboards:manage",
-    );
-
-    const access = resolveWhiteboardAccess({
-      board: { createdBy: row.board.createdBy, visibility: row.board.visibility },
-      shareRole: row.shareRole ?? null,
-      user: { userId: u.userId, isOrgOwner: u.isOrgOwner},
-      hasManagePermission,
-    });
-
-    if (access !== "manage") throw new ForbiddenException("Manage access required");
-    return row.board;
-  }
-
   async updateSharing(
     u: CurrentUserContext,
     projectId: number,
     whiteboardId: number,
     input: UpdateWhiteboardSharingInput,
   ) {
-    const board = await this.requireManageAccess(u, projectId, whiteboardId);
+    const board = await requireWhiteboardManageAccess(this.db, this.access, u, projectId, whiteboardId);
 
     const newVisibility = input.visibility ?? board.visibility;
     const willBePublic = newVisibility === "public";
@@ -135,7 +77,7 @@ export class WhiteboardSharingService {
     projectId: number,
     whiteboardId: number,
   ) {
-    await this.requireManageAccess(u, projectId, whiteboardId);
+    await requireWhiteboardManageAccess(this.db, this.access, u, projectId, whiteboardId);
     const newToken = randomBytes(24).toString("base64url");
 
     const [updated] = await this.db
@@ -159,7 +101,7 @@ export class WhiteboardSharingService {
     whiteboardId: number,
     input: SetWhiteboardSharesInput,
   ) {
-    const board = await this.requireManageAccess(u, projectId, whiteboardId);
+    const board = await requireWhiteboardManageAccess(this.db, this.access, u, projectId, whiteboardId);
     const { shares } = input;
     let members: Array<{ id: number; userId: string }> = [];
 
@@ -225,7 +167,7 @@ export class WhiteboardSharingService {
     whiteboardId: number,
     targetUserId: string,
   ) {
-    await this.requireManageAccess(u, projectId, whiteboardId);
+    await requireWhiteboardManageAccess(this.db, this.access, u, projectId, whiteboardId);
     await this.db
       .delete(projectWhiteboardShares)
       .where(

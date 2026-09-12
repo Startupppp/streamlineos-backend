@@ -1,6 +1,4 @@
-import { BadRequestException } from "@nestjs/common";
 import { registerAfterCommit } from "../../common/tenant/tenant-context";
-import { validateMagicBytes } from "../storage/file-signatures";
 import type { StorageService } from "../storage/storage.service";
 import type { MediaTransformRunner } from "../storage/media-transform.runner";
 
@@ -67,23 +65,4 @@ export async function queueMediaTransforms(
     };
     if (!registerAfterCommit(enqueue)) await enqueue();
   }
-}
-
-const ALLOWED_IMAGE_MIMES = new Set(["image/jpeg", "image/png", "image/gif", "image/webp"]);
-
-/**
- * Declared size, declared type and MAGIC BYTES, in that order. The declared
- * content-type is the caller's word and this endpoint has no caller to trust,
- * so the bytes have to agree with it before a key is minted for them.
- */
-export function assertUploadableScreenshot(
-  screenshot: Express.Multer.File,
-  maxBytes: number,
-): void {
-  if (screenshot.size > maxBytes)
-    throw new BadRequestException("Screenshot must be under 5MB");
-  if (!ALLOWED_IMAGE_MIMES.has(screenshot.mimetype))
-    throw new BadRequestException("Screenshot must be an image (JPEG, PNG, GIF, or WebP)");
-  if (!validateMagicBytes(screenshot.buffer, screenshot.mimetype))
-    throw new BadRequestException("Screenshot file content does not match its type");
 }

@@ -10,7 +10,7 @@ import {
   buildModuleAdminPermissionKeys,
   buildModuleMemberPermissionKeys,
   buildOrgAdminPermissionKeys,
-  buildSeededRoleSpecs,
+  systemRoleSpecs,
 } from "../seed-system-roles";
 
 /**
@@ -84,14 +84,14 @@ describe("HR module rungs do not hold organisation membership administration", (
   });
 
   it.each(HR_RUNGS)("the seeded %s spec does not grant it", (slug) => {
-    const spec = buildSeededRoleSpecs(CATALOG).find((candidate) => candidate.slug === slug);
+    const spec = systemRoleSpecs(CATALOG).find((candidate) => candidate.slug === slug);
 
     expect(spec).toBeDefined();
     expect(spec?.permissionKeys).not.toContain(MEMBERSHIP_ADMIN_KEY);
   });
 
   it("no module-scoped seeded rung in any module holds it", () => {
-    const offenders = buildSeededRoleSpecs(CATALOG)
+    const offenders = systemRoleSpecs(CATALOG)
       .filter((spec) => spec.moduleKey !== null)
       .filter((spec) => spec.permissionKeys.includes(MEMBERSHIP_ADMIN_KEY))
       .map((spec) => spec.slug);
@@ -135,7 +135,7 @@ describe("organisation administration keeps the authority", () => {
   });
 
   it("the seeded ORG_ADMIN spec still holds it", () => {
-    const spec = buildSeededRoleSpecs(CATALOG).find((candidate) => candidate.slug === "ORG_ADMIN");
+    const spec = systemRoleSpecs(CATALOG).find((candidate) => candidate.slug === "ORG_ADMIN");
 
     expect(spec?.permissionKeys).toContain(MEMBERSHIP_ADMIN_KEY);
   });

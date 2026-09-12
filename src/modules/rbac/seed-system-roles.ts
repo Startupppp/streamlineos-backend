@@ -138,7 +138,7 @@ export interface SeededRoleSpec {
  *
  * Pure and exported so the shape of the ladder can be asserted directly, rather
  * than inferred from how many times an insert mock was called.
- * `RoleGrantReconcilerService` reads the same function (as `buildSeededRoleSpecs`)
+ * `RoleGrantReconcilerService` reads this same function
  * so an organisation seeded before a rung was widened converges on what a fresh
  * one gets — the invariant `MODULE_ADMIN_EXTRA_KEYS` states and that migration
  * 0226 exists because it was broken once.
@@ -188,8 +188,6 @@ export function systemRoleSpecs(dbCatalog: Set<string>): SeededRoleSpec[] {
   return [...bySlug.values()];
 }
 
-/** The name `RoleGrantReconcilerService` imports; the same function as `systemRoleSpecs`. */
-export const buildSeededRoleSpecs = systemRoleSpecs;
 
 /**
  * `MODULE_MEMBER_KEY_SCOPE_OVERRIDE` applies only to the member rung, so the
@@ -201,8 +199,6 @@ export function scopeForGrant(slug: string, permissionKey: string): "own" | "tea
   return MODULE_MEMBER_KEY_SCOPE_OVERRIDE[permissionKey] ?? "all";
 }
 
-/** The name `RoleGrantReconcilerService` imports; the same function as `scopeForGrant`. */
-export const seededGrantScope = scopeForGrant;
 
 /**
  * How many grant rows go in one statement.

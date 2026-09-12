@@ -4,7 +4,6 @@ import { and, eq, inArray, like, sql } from "drizzle-orm";
 import {
   automationRules,
   automationRuns,
-  AUTOMATION_TRIGGERS,
   supportTickets,
   type AutomationAction,
   type AutomationCondition,
@@ -17,23 +16,14 @@ import { logSideEffectFailure } from "../../common/logger/side-effect";
 import { PlanLimitsService } from "../billing/core/plan-limits.service";
 import { evaluateConditions, type EventPayload } from "./automation.evaluator";
 import type { CreateAutomationRuleInput, UpdateAutomationRuleInput } from "./dto/automation.schemas";
+import {
+  type AutomationTrigger,
+  type EvaluationResult,
+  type RuleDefinition,
+  isValidTrigger,
+} from "./automation-types";
 
-export type AutomationTrigger = (typeof AUTOMATION_TRIGGERS)[number];
-
-function isValidTrigger(value: string): value is AutomationTrigger {
-  return (AUTOMATION_TRIGGERS as readonly string[]).includes(value);
-}
-
-interface RuleDefinition {
-  id: number;
-  conditions: AutomationCondition[];
-  actions: AutomationAction[];
-}
-
-export interface EvaluationResult {
-  matched: boolean;
-  actionResults: ActionResult[];
-}
+export type { AutomationTrigger, EvaluationResult };
 
 @Injectable()
 export class AutomationService {

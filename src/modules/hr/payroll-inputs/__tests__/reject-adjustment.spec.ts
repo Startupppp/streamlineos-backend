@@ -1,5 +1,5 @@
 import { BadRequestException, NotFoundException } from "@nestjs/common";
-import { PayrollInputsService } from "../payroll-inputs.service";
+import { PayrollInputAdjustmentsService } from "../payroll-input-adjustments.service";
 
 function makeService(adj: unknown) {
   const findFirst = jest.fn().mockResolvedValue(adj);
@@ -12,14 +12,11 @@ function makeService(adj: unknown) {
     update,
   };
   const audit = { log: jest.fn().mockResolvedValue(undefined) };
-  const hrAutomation = {} as never;
-  const buildService = {} as never;
-  const snapshots = {} as never;
-  const service = new PayrollInputsService(db as never, audit as never, hrAutomation, buildService, snapshots);
+  const service = new PayrollInputAdjustmentsService(db as never, audit as never);
   return { service, update, audit, findFirst };
 }
 
-describe("PayrollInputsService.rejectAdjustment", () => {
+describe("PayrollInputAdjustmentsService.rejectAdjustment", () => {
   it("rejects a pending adjustment with reason", async () => {
     const { service, update, audit } = makeService({ id: 1, status: "pending" });
 

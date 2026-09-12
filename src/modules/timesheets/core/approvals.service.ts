@@ -37,7 +37,6 @@ export {
   membershipUserIds,
   periodOwnerUserIdOrWarn,
 } from "./lib/approval-lifecycle";
-export type { LifecycleRow } from "./lib/approval-lifecycle";
 
 @Injectable()
 export class ApprovalsService {

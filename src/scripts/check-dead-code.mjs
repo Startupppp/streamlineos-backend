@@ -193,8 +193,45 @@ const FINDING_VERDICTS = new Map([
   // ---- src/modules/notifications/dto ---------------------------------------
   ["src/modules/notifications/dto/unified-inbox.schemas.ts:InboxActor", { verdict: "KEEP", reason: "the named public type for the actor shape (id, name, image) embedded as `actor: inboxActorSchema.nullable()` in every unified inbox item variant. The source schema `inboxActorSchema` is composed internally into `inboxItemBaseFields` and never parsed by a separate file, so `inferredTypeOfLiveSchema` does not retain this alias automatically. Kept as the canonical name for code that formats or renders actor data from inbox items without re-inferring through the discriminated union." }],
 
+  // ---- src/modules/billing/core — platform checkout pricing ----------------
+  // The `796100a2f` merge landed the multi-currency + tax half of platform
+  // checkout without its caller: `c552b8b01` added the pricing pair and restored
+  // the spec that drives it, while the merge resolution kept main's
+  // `BillingPaymentActivation`, which prices through `resolveQuotePrice` and
+  // charges no tax at all.
+  ["file:src/modules/billing/core/billing-platform-pricing.ts", { verdict: "WIRE", reason: "the missing caller is `BillingPaymentActivation.billablePrice` (billing-payment-activation.ts:457, reached from `createOrder` at :82), which today calls `resolveQuotePrice(plan, cycle, catalogPrice)` from `coupon-pricing.ts` — catalog row or the INR `PLAN_PRICES_PAISE` list, no country, no tax. `billablePrice` here adds the per-country currency (`currencyForCountry` + `priceFor`) that `public/pricing.service.ts` ALREADY quotes on the marketing page via `priceList`, and `taxFor` adds the determination `createOrder` and `verifyAndActivate` must share. `platform-provider-reachability.spec.ts:155-165` is the waiting consumer test — it asserts `order.taxMinor > 0` and `order.amount === order.netMinor + order.taxMinor`, fields nothing in the module produces; measured 2026-09-12 that suite is 8/8 red, though on a missing `PlatformMerchantService` provider rather than on the pricing. NOT wired here because connecting it changes what a customer is charged (currency by billing country, plus GST/VAT on the gross) and adds `netMinor`/`taxMinor` to the checkout response contract — a pricing decision with a frontend half, not a dead-code cleanup. Owner: billing. Deleting the file instead would delete the fix and leave the marketing page quoting EUR while checkout charges INR." }],
+  ["src/modules/billing/core/plan-pricing.ts:currencyForCountry", { verdict: "WIRE", reason: "reported unused only because its one importer is `billing-platform-pricing.ts`, which the graph calls dead — see the `file:` verdict above. Its siblings in the same file are live (`priceList`/`annualPrice` from `public/pricing.service.ts:8`, `priceFor` from the same dead pricing pair). It goes live in the same change that wires `billablePrice` into `BillingPaymentActivation.createOrder`; nothing else should grow a second country-to-currency rule beside it" }],
+
+  // ---- src/common/tenant — region-aware creation seam ----------------------
+  ["src/common/tenant/index.ts:withNewOrgInRegion", { verdict: "KEEP", reason: "the barrel re-export is itself the enumerated arrangement. `cross-region.ts:70-73` lists `src/common/tenant/index.ts` as a CROSS_REGION_OPERATION with the reason \"Barrel. Re-exports the primitive; performs no operation itself\", and `cross-region.spec.ts` asserts the enumeration in BOTH directions — an unlisted file that names a region fails, and a listed file that no longer names one fails as a stale entry. Removing this one name would therefore make `cross-region.spec.ts` red, and the accompanying edit to `cross-region.ts` would delete a documented entry from the list that keeps ~800 service files from reaching another region" }],
+  ["src/common/tenant/run-in-tenant-transaction.ts:runInNewOrgTransaction", { verdict: "WIRE", reason: "the missing caller is `bootstrapCellOrganization` (modules/organization/core/bootstrap-cell-organization.ts:52), the one production path that INSERTs an `organizations` row. It already receives `input.region` and then opens the transaction with `runInNewTenantTransaction(db, orgId, ...)`, which resolves the region by looking the organisation up — the exact case this function's doc (run-in-tenant-transaction.ts:114-140) says fails: for the transaction writing the organisation's own row there is nothing to read, so `regionForOrg` raises \"has no region\" on any deployment with a live registry. Its previous caller, `AuthService.register`, was dropped on main by `7c0094080` (\"drop unproven registration\"), which is why it is consumerless rather than new. NOT swapped here: it is the org-creation seam, the swap needs an entry added to `CROSS_REGION_OPERATIONS` (bootstrap-cell-organization.ts is not listed) and the failure it fixes only reproduces on a multi-region registry this checkout cannot exercise. Owner: organization/region" }],
+
+  // ---- src/modules/public --------------------------------------------------
+  ["src/modules/public/waitlist-admission.ts:WaitlistStatus", { verdict: "WIRE", reason: "the four legal values of `platform_waitlist.status`, which is a plain `text` column (db/schema/common/platform.ts:58) with no pgEnum behind it. The missing consumers are in the same module: `AdmissionCandidate.status` is declared `string` (waitlist-admission.ts:24) and `waitlist-admission.service.ts:111/168/198` write `\"INVITED\"` / `\"CLAIMED\"` as bare literals, so nothing today stops a fifth value being written and read back past `mayAdmit`. Adopting it needs a narrowing parse where the row is read, because the column type is `string`; that is the change, and it belongs with whoever owns the waitlist admission flow rather than with a dead-code sweep" }],
+
+  // ---- src/modules/timesheets/core/dto -------------------------------------
+  ["src/modules/timesheets/core/dto/status.schemas.ts:timesheetPayPeriodSchema", { verdict: "WIRE", reason: "the only one of the ten sibling enum schemas in this file with no consumer, and the reason is that its feature is unwired rather than that the schema is redundant: `timesheet_settings.pay_period` is a live NOT NULL column defaulting to MONTHLY (db/schema/timesheets/settings.ts:80) that no code reads and no DTO admits. The missing caller is `updateCoreSettingsSchema` in `dto/settings.schemas.ts`, which is exactly the failure its own comment at :36-39 records for `autoDraftFromAttendance`: \"a policy flag missing from the DTO is a flag nobody can turn on\". Deliberately NOT added yet, because nothing reads the column either — admitting it first would ship a setting with no behaviour behind it. Owner: timesheets" }],
+
+  // ---- src/modules/deals — excluded territory ------------------------------
+  // Type re-exports the merge left behind; every consumer imports from the
+  // owning `*.types.ts`. Confirmed dead, but `src/modules/deals/**` belongs to
+  // another workstream this session must not edit, so they are debt rather than
+  // a deletion here.
+  ["src/modules/deals/deals-analytics.service.ts:ForecastMonth", { verdict: "REMOVE", reason: "a pass-through re-export at deals-analytics.service.ts:20 of a type whose only consumers — `lib/forecast-summary.ts:7` and `deals-forecast.types.ts:24` — import it from `deals-forecast.types`. `DealsViewScope` and `ForecastSummary` on the same line are live, so only this name goes. Deferred: `src/modules/deals/**` is owned by the Deals workstream this session is barred from editing" }],
+  ["src/modules/deals/deals-forecast.service.ts:ForecastMonth", { verdict: "REMOVE", reason: "the second hop of the same chain — deals-forecast.service.ts:22 re-exports it from `deals-forecast.types`, and nothing imports the name from here. Deferred for the same reason: `src/modules/deals/**` is another workstream's territory" }],
+  ["src/modules/deals/forecast/forecast-training.service.ts:TrainingAccepted", { verdict: "REMOVE", reason: "re-exported at forecast-training.service.ts:34 from `forecast-training.types`, where it is already live inside the `TrainingAttempt` union at :31. No consumer names it through the service. Deferred: Deals territory" }],
+  ["src/modules/deals/forecast/forecast-training.service.ts:TrainingRejected", { verdict: "REMOVE", reason: "the sibling of the entry above, re-exported at forecast-training.service.ts:36 and consumed only through `TrainingAttempt` in `forecast-training.types.ts:31`. Deferred: Deals territory" }],
+
+  // ---- src/modules/lifecycle ----------------------------------------------
+  ["src/modules/lifecycle/renewal-triggers.ts:RENEWAL_LEAD_DAYS|EXPANSION_QUIET_BEFORE_RENEWAL_DAYS", { verdict: "KEEP", reason: "not a redundant alias — a deliberate DERIVATION, and both names are live. `RENEWAL_LEAD_DAYS` is read at renewal-triggers.ts:210/:228, by `lib/lifecycle-trigger-candidates.ts:86` and by `renewal-triggers.spec.ts:302`; `EXPANSION_QUIET_BEFORE_RENEWAL_DAYS` is read at renewal-triggers.ts:306. It is written `= RENEWAL_LEAD_DAYS` rather than as a number of its own precisely so the expansion quiet window and the renewal lead window cannot drift into overlapping or leaving a gap (the argument is at :92-94). knip reports the pair because two exported names bind one value; collapsing them to a literal would reintroduce exactly the drift the derivation prevents" }],
+
+  // ---- src/modules/commission/dto -----------------------------------------
+  ["src/modules/commission/dto/commission-response.schemas.ts:commissionEarningSchema|approveCommissionEarningResponseSchema", { verdict: "KEEP", reason: "not a duplicate implementation — the second is a one-line alias of the first at commission-response.schemas.ts:137, reported because two exported names bind one value. Both are live: `approveCommissionEarningResponseSchema` is the `@ResponseSchema` of the approve route at `commission.controller.ts:239`, while the canonical name is the row shape composed internally at :131/:135 and imported by `commission-accrual-response.schemas.ts:3`. Collapsing them would move a per-route wire contract into a shared constant, the same argument as the nine alias pairs above" }],
+
   // ---- dependencies --------------------------------------------------------
   ["dep:@jitl/quickjs-wasmfile-release-sync", { verdict: "KEEP", reason: "not a direct dependency by design. `script.executor.ts` resolves it with `require.resolve(spec, { paths: [dirname(require.resolve(\"quickjs-emscripten\"))] })`, i.e. from the declared dependency's own directory, to get a CJS build of the WASM module that Jest can load. Verified resolvable; knip reports it because it does not model the `paths` option" }],
+  ["dep:openssl", { verdict: "KEEP", reason: "a SYSTEM binary, not an npm package, so there is no dependency to declare. `test/notifications/web-push-from-worker.seeded-e2e-spec.ts:115` shells out to it with `execFileSync(\"openssl\", …)` to mint a real VAPID key pair rather than fixture one — the point of that spec being that the worker signs a push the browser would accept. knip's `binaries` check reports every binary it cannot trace to a package; adding `openssl` to `ignoreDependencies` would hide it from the check that catches an undeclared REAL package by the same name" }],
+  ["dep:../../finance/controls/provider-bridge.service", { verdict: "WIRE", reason: "an unresolvable import, and a broken spec rather than a dead symbol: `modules/billing/payments/provider-amount-scaling.spec.ts:33` imports `ProviderBridgeService` from a file the accounting rewrite `59c0c2610` deleted along with the rest of `modules/finance/controls/`. The suite therefore fails to load — 0 tests, measured 2026-09-12 — so the provider-amount-scaling assertions are not running. The missing piece is named in the source it guards: `payment-webhook-receiver.service.ts:282-290` records that the receiver used to call `ProviderBridgeService.recordProviderPayment`, that the `gl_*` kernel \"does not expose an equivalent seam yet\", and that inventing one against an unsettled posting API would be worse than the gap. So the repair is that kernel seam plus repointing this spec at it. The spec is NOT deleted or skipped here: a provider payment that never reaches the ledger is the defect, and a removed spec is how it would stop being visible. Owner: accounting kernel + billing payments" }],
 ]);
 
 // ---------------------------------------------------------------------------
@@ -294,7 +331,7 @@ function buildImporterMap(root) {
 // Classifiers
 // ---------------------------------------------------------------------------
 
-function classifyFile(relPath, knipDeadSet, importerMap, root) {
+function classifyFile(relPath, knipDeadSet, importerMap, root, verdicts = FINDING_VERDICTS) {
   if (relPath.split("/").some((seg) => isOutOfScopeDir(seg)))
     return { cls: "OUT-OF-SCOPE", reason: "generated, vendored or scratch path — not authored product source" };
 
@@ -328,6 +365,24 @@ function classifyFile(relPath, knipDeadSet, importerMap, root) {
       }
     }
   }
+
+  /*
+    The ledger is consulted LAST, and only for a file the module graph has
+    already found no live importer for. Before this the only exit from a dead
+    file was `rm`, which is the wrong instrument twice over: a file whose
+    consumer a merge deleted, and a file that IS the capability somebody has not
+    connected yet, both read as garbage and both get thrown away. The FAIL line
+    has always said "Delete them, or explain why they stand" while offering no
+    way to say the second half.
+
+    It is the same fail-closed mechanism the symbol findings use, not a
+    suppression list: an unclassified dead file still exits 1, a `file:` verdict
+    knip stops reporting is STALE and also exits 1, and the reason is prose
+    somebody has to write. It cannot rescue a file the graph thinks is live,
+    because the graph answers first.
+  */
+  const verdict = verdicts.get(`file:${relPath}`);
+  if (verdict) return { cls: verdict.verdict, reason: verdict.reason };
 
   return { cls: "DEAD", reason: "no live importers found in the module graph" };
 }
@@ -485,6 +540,16 @@ function runSelfTest() {
   assert(classifyFile("dist/main.js", new Set(["dist/main.js"]), new Map(), root).cls === "OUT-OF-SCOPE",
     "(h) a generated path is out of scope");
 
+  const fileLedger = new Map([["file:src/awaits-a-caller.ts", { verdict: "WIRE", reason: "test" }]]);
+  assert(classifyFile("src/awaits-a-caller.ts", new Set(["src/awaits-a-caller.ts"]), new Map(), root, fileLedger).cls === "WIRE",
+    "(h2) a dead file with a file: verdict carries that verdict — otherwise the only exit is `rm`, and a capability whose caller a merge deleted gets thrown away");
+  assert(classifyFile("src/nobody-argued-for-me.ts", new Set(["src/nobody-argued-for-me.ts"]), new Map(), root, fileLedger).cls === "DEAD",
+    "(h3) a dead file with no verdict stays DEAD, so the file ledger is fail-closed like the symbol one");
+  assert(classifyFile("src/awaits-a-caller.ts", new Set(["src/awaits-a-caller.ts"]),
+    new Map([[join(root, "src", "awaits-a-caller.ts"), { sideEffect: new Set(), named: new Set([liveEntry]), reexport: new Set(), dynamic: new Set() }]]),
+    root, fileLedger).cls === "RETAINED-BY-CONTRACT",
+    "(h4) the module graph answers before the ledger — a file verdict may never overrule a live importer");
+
   assert(classifyFinding("src/modules/foo/new-thing.ts:useNewThing", "src/modules/foo/new-thing.ts").cls === "UNCLASSIFIED",
     "(i) a finding with no verdict must be UNCLASSIFIED so the gate bites");
   assert(classifyFinding("dep:@jitl/quickjs-wasmfile-release-sync", "src/modules/workflows/engine/executors/script.executor.ts").cls === "KEEP",
@@ -605,6 +670,9 @@ function runSelfTest() {
     "  (f) src/scripts/*                                -> RETAINED-BY-CONVENTION",
     "  (g) CRM/Inventory file                           -> EXCLUDED",
     "  (h) dist/ path                                   -> OUT-OF-SCOPE",
+    "  (h2) dead file with a file: verdict              -> that verdict",
+    "  (h3) dead file with no verdict                   -> DEAD (gate bites)",
+    "  (h4) file verdict vs a live importer             -> RETAINED-BY-CONTRACT (graph wins)",
     "  (i) finding with no verdict                      -> UNCLASSIFIED (gate bites)",
     "  (j) finding with a KEEP verdict                  -> KEEP",
     "  (k) finding inside an excluded module            -> EXCLUDED",
@@ -756,14 +824,16 @@ function main() {
     buckets.get(cls).push(line);
   };
 
+  const seenKeys = new Set();
+
   for (const relPath of deadFiles) {
+    seenKeys.add(`file:${toFwd(relPath)}`);
     const { cls, reason } = classifyFile(toFwd(relPath), knipDeadSet, importerMap, ROOT);
     push(cls, `  [file] ${relPath}  — ${reason}`);
   }
 
   const sourceIndex = buildSymbolIndex(ROOT, schemaNamesFor(findings, ROOT));
 
-  const seenKeys = new Set();
   const unclassified = [];
   for (const finding of findings) {
     const key = finding.depKey ? `dep:${finding.name}` : `${toFwd(finding.file)}:${finding.name}`;

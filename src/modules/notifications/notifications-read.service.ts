@@ -23,37 +23,13 @@ import { buildIdCursorPage } from "../../common/pagination/cursor";
 import { listSchema, type ListInput } from "./dto/notification.schemas";
 import { NotificationVisibilityRegistry } from "./notification-visibility.registry";
 import type { Principal } from "../../common/auth/principal";
-import type { NotificationTicketContext } from "./notifications.types";
+import type { NotificationListRow, NotificationTicketContext } from "./notifications.types";
 import { ASSIGNED_EVENT_KEYS, MENTION_EVENT_KEYS } from "./inbox-section-keys";
 import {
   notificationNotSnoozed,
   notificationWindowEnd,
   notificationWindowStart,
 } from "./notification-read-window";
-
-type NotificationListRow = {
-  id: number;
-  orgId: string;
-  userId: string | null;
-  type: string;
-  priority: string;
-  category: string;
-  sourceModule: string | null;
-  eventKey: string | null;
-  entityType: string | null;
-  entityId: string | null;
-  reason: string | null;
-  title: string;
-  message: string;
-  link: string | null;
-  isRead: boolean;
-  pinned: boolean;
-  channel: string;
-  metadata: Record<string, unknown> | null;
-  archivedAt: Date | null;
-  snoozedUntil: Date | null;
-  createdAt: Date;
-};
 
 function extractTicketId(row: {
   entityType: string | null;

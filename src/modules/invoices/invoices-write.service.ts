@@ -1,5 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, asc, eq, lte, sql } from "drizzle-orm";
+import { and, eq, lte, sql } from "drizzle-orm";
 import { invoices, invoiceItems } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
@@ -13,12 +13,12 @@ import { PlanLimitsService } from "../billing/core/plan-limits.service";
 import {
   round2,
   gstSplit,
-  normalizeGstRate,
   advanceDate,
   resolveSupplierStateCode,
 } from "./lib/invoice-helpers";
 import { InvoicesPaymentService } from "./invoices-payment.service";
 import { InvoicesUpdateService } from "./invoices-update.service";
+import { buildCloneInput } from "./lib/invoice-recurring-helpers";
 import type {
   CreateInvoiceInput,
   RecordPaymentInput,
@@ -219,38 +219,6 @@ export class InvoicesWriteService {
     return this.lifecycle.markOverdueInvoices(orgId);
   }
 
-  private async buildCloneInput(sourceId: number): Promise<CreateInvoiceInput> {
-    const source = await this.db.query.invoices.findFirst({
-      where: eq(invoices.id, sourceId),
-      with: { items: { orderBy: [asc(invoiceItems.lineOrder)] } },
-    });
-    if (!source) throw new Error(`Recurring source invoice ${sourceId} not found`);
-
-    const items = source.items.map((item) => ({
-      description: item.description,
-      hsnSacCode: item.hsnSacCode ?? undefined,
-      quantity: Number(item.quantity),
-      rate: Number(item.rate),
-      gstRate: normalizeGstRate(item.gstRate),
-    }));
-
-    return {
-      clientId: source.clientId ?? undefined,
-      projectId: source.projectId ?? undefined,
-      items: items.length > 0 ? items : undefined,
-      taxRate: 0,
-      discount: Number(source.discount ?? "0"),
-      currency: source.currency,
-      notes: source.notes ?? undefined,
-      status: "DRAFT",
-      placeOfSupply: source.placeOfSupply ?? undefined,
-      customerGstin: source.customerGstin ?? undefined,
-      supplierGstin: source.supplierGstin ?? undefined,
-      reverseCharge: source.reverseCharge,
-      taxInclusive: source.taxInclusive,
-    };
-  }
-
   async generateDueRecurringInvoices(
     orgId: string,
     userId: string,
@@ -289,7 +257,7 @@ export class InvoicesWriteService {
           .returning({ id: invoices.id });
         if (claimed.length === 0) continue;
 
-        const input = await this.buildCloneInput(due.id);
+        const input = await buildCloneInput(this.db, due.id);
         const { invoice } = await this.createInvoice(orgId, userId, input);
         invoiceIds.push(invoice.id);
       } catch (error) {

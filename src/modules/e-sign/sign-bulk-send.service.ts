@@ -16,23 +16,16 @@ import type { CreateBulkSendJobInput } from "./dto/e-sign.schemas";
 import type { BulkProcessResult } from "./sign-bulk-send.types";
 import { runBulkSendPass, type BulkSendPassDeps } from "./lib/bulk-send-pass";
 import { mapRows } from "./lib/bulk-send-rows";
+import {
+  JOB_ROWS_PAGE_LIMIT,
+  ERROR_REPORT_LIMIT,
+  SIGNING_RECIPIENT_TYPES,
+  ACTIVE_JOB_STATUSES,
+} from "./sign-bulk-send.constants";
 export type { BulkProcessResult } from "./sign-bulk-send.types";
 
 /** The one event name, so producer and consumer cannot disagree. */
 export const SIGN_BULK_SEND_QUEUED = "sign.bulk_send.queued";
-
-/** One page of a job's rows, for the detail view. The job's counts are exact. */
-const JOB_ROWS_PAGE_LIMIT = 100;
-
-/**
- * The error report is a download, so it is not paged at 100 like a list — a
- * report truncated to a screenful is not a report. It is still bounded, and
- * says when it hit the bound.
- */
-const ERROR_REPORT_LIMIT = 5_000;
-
-const SIGNING_RECIPIENT_TYPES = ["signer", "approver", "in_person_host", "internal_reviewer"];
-const ACTIVE_JOB_STATUSES = ["pending", "validating", "running"] as const;
 
 @Injectable()
 export class SignBulkSendService {

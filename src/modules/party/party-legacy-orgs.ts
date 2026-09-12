@@ -1,10 +1,6 @@
-import { and, eq, inArray, isNull } from "drizzle-orm";
-import { businessParties, crmOrgPartyMap } from "../../db/schema/party";
 import { ORGANISATION_MIRROR } from "./party-legacy-mirror";
-import type { PartyRow } from "./party-mirror-fields";
 import {
   absorbParentColumn,
-  parentColumnOf,
   withoutSelfLinks,
 } from "./party-legacy-associations";
 import {
@@ -12,12 +8,13 @@ import {
   grantRole,
   insertBareParty,
   mintLegacyId,
-  movePartiesFor,
   type CrmOrgInsert,
   type CrmOrgRow,
   type MirrorDb,
   type MirrorWriteOptions,
 } from "./party-legacy-writer";
+import { legacyOrganisationRow } from "./party-legacy-orgs-helpers";
+export { updateMirroredOrganizations, updateMirroredOrganization, softDeleteMirroredOrganizations } from "./party-legacy-orgs-update";
 
 /**
  * The `crm_organizations` entry points, Party-first — and, from ticket 08, Party-only.
@@ -63,91 +60,6 @@ import {
  * `crm_org_party_map` now names nothing and is skipped rather than conjured,
  * which is what these functions already did when adoption found no row.
  */
-
-async function partyIdsForOrganisations(
-  db: MirrorDb,
-  organizationId: string,
-  crmOrganizationIds: readonly number[],
-): Promise<Map<number, string>> {
-  const rows = await db
-    .select({
-      crmOrganizationId: crmOrgPartyMap.crmOrganizationId,
-      partyId: crmOrgPartyMap.partyId,
-    })
-    .from(crmOrgPartyMap)
-    .where(
-      and(
-        eq(crmOrgPartyMap.organizationId, organizationId),
-        inArray(crmOrgPartyMap.crmOrganizationId, [...crmOrganizationIds]),
-      ),
-    );
-  return new Map(rows.map((row) => [row.crmOrganizationId, row.partyId]));
-}
-
-/**
- * Gives a company row that predates the backfill a Party, on first write.
- *
- * The same adoption path the other three kinds have: a row restored from a
- * backup, or imported out of band, still has to be writable, and failing the
- * write because the migration has not seen it would make the mirror the thing
- * standing between a user and their own data.
- *
- * The one read of `crm_organizations` ticket 08 leaves standing, and it is not a
- * mirror write: it reads a legacy row as truth exactly once, which is correct
- * precisely because there is no Party to contradict it. Nothing on the Party side
- * can stand in for it, so it goes when the table goes, not before.
- */
-
-/**
- * A company row, assembled from the Party it mirrors.
- *
- * The values come from `ORGANISATION_MIRROR.derive` and nowhere else -- the same
- * derivation that used to be handed to `insert(crmOrganizations)`. What the table
- * contributed on top was the serial and two timestamps, and Party carries both
- * timestamps already.
- *
- * Async, unlike its `leads` counterpart, because `parent_id` crosses id spaces
- * and resolving it is a read of `crm_org_party_map`. The order of the spreads is
- * the order the `insert`/`update` payload used before ticket 08, and it is
- * load-bearing: a caller's explicit `parentId` still wins over the one derived
- * from `parent_party_id`, exactly as `.returning()` used to report it.
- *
- * The `??` arms narrow `Partial<CrmOrgInsert>` to the NOT NULL shape; they do not
- * decide it. The derivation is total over every column it owns, which the mirror
- * spec asserts separately.
- */
-async function legacyOrganisationRow(
-  db: MirrorDb,
-  crmOrganizationId: number,
-  organizationId: string,
-  party: PartyRow,
-  legacyOwnedPatch: Partial<CrmOrgInsert>,
-): Promise<CrmOrgRow> {
-  const derived = ORGANISATION_MIRROR.derive(party);
-
-  return {
-    ...derived,
-    ...(await parentColumnOf(db, organizationId, party.parentPartyId)),
-    ...legacyOwnedPatch,
-    id: crmOrganizationId,
-    orgId: organizationId,
-    name: derived.name ?? party.name,
-    /**
-     * Null unless the caller named one, which nothing does.
-     *
-     * `merged_into_id` was the legacy merge pointer, and `PartyMergeService` is
-     * the merge this codebase has: it re-points the loser's `crm_org_party_map`
-     * row onto the survivor and snapshots the rest, so the column stopped being
-     * written before this ticket (see `crm-organizations.service.ts`). It is
-     * stated here rather than left off so the shape stays total -- a consumer
-     * reading `row.mergedIntoId` gets the null it always got, not `undefined`.
-     */
-    mergedIntoId: legacyOwnedPatch.mergedIntoId ?? null,
-    createdAt: party.createdAt,
-    updatedAt: party.updatedAt,
-    deletedAt: party.deletedAt,
-  } as CrmOrgRow;
-}
 
 export async function createMirroredOrganization(
   db: MirrorDb,
@@ -203,121 +115,4 @@ export async function createMirroredOrganization(
 
     return legacyOrganisationRow(tx, crmOrganizationId, organizationId, party, legacyOwnedPatch);
   });
-}
-
-export async function updateMirroredOrganizations(
-  db: MirrorDb,
-  organizationId: string,
-  crmOrganizationIds: readonly number[],
-  patch: Partial<CrmOrgInsert>,
-): Promise<CrmOrgRow[]> {
-  const ids = [...new Set(crmOrganizationIds)].filter((id) => Number.isInteger(id));
-  if (ids.length === 0) return [];
-
-  return db.transaction(async (tx) => {
-    const partyByOrg = await partyIdsForOrganisations(tx, organizationId, ids);
-
-    /*
-     * Resolved once, outside the per-party derivation: which parent the caller
-     * named is a property of the patch, not of whichever company is being
-     * patched, and `reparentSubsidiaries` moves every child of a merged company
-     * in one call. The self-check is not a property of the patch, so it stays
-     * inside -- and it is the one that matters here, because re-parenting the
-     * children of a loser onto the survivor can hand a company itself.
-     */
-    const parentPatch = await absorbParentColumn(tx, organizationId, patch.parentId);
-
-    const moved = await movePartiesFor(
-      tx,
-      organizationId,
-      [...new Set(partyByOrg.values())],
-      (party) =>
-        withoutSelfLinks(
-          { ...ORGANISATION_MIRROR.split(patch, party).partyPatch, ...parentPatch },
-          party.partyId,
-        ),
-    );
-
-    /*
-     * One assembled row per company that moved, in place of the grouped
-     * `UPDATE ... RETURNING` this used to issue. The grouping existed to keep a
-     * bulk write to a handful of statements; the statements it grouped are gone,
-     * and `movePartiesFor` still groups the Party writes, which are the only
-     * writes left. What is returned is what the party *became*, which is what
-     * `.returning()` reported too -- the mirror was always derived from the moved
-     * row rather than from the patch.
-     */
-    const updated: CrmOrgRow[] = [];
-    for (const [crmOrganizationId, partyId] of partyByOrg) {
-      const party = moved.get(partyId);
-      if (!party) continue;
-      // The pass-through half does not depend on the party, so it is the same
-      // for every row; the derivation is not, and is computed per party.
-      const { legacyOwnedPatch } = ORGANISATION_MIRROR.split(patch, party);
-      updated.push(
-        await legacyOrganisationRow(tx, crmOrganizationId, organizationId, party, legacyOwnedPatch),
-      );
-    }
-    return updated;
-  });
-}
-
-export async function updateMirroredOrganization(
-  db: MirrorDb,
-  organizationId: string,
-  crmOrganizationId: number,
-  patch: Partial<CrmOrgInsert>,
-): Promise<CrmOrgRow | undefined> {
-  const [row] = await updateMirroredOrganizations(db, organizationId, [crmOrganizationId], patch);
-  return row;
-}
-
-/**
- * Idempotent, for the reason recorded on `softDeleteMirroredLeads`: deleting an
- * already-deleted record must not move the timestamp that says when it went.
- *
- * Liveness is asked of the Party now rather than of `crm_organizations.deleted_at`
- * — the same question, of the column the legacy one was derived from, and the one
- * that still has an answer after the drop. The map row stays either way: it is
- * the record of what this company is *called*, and deleting it would orphan an
- * identifier that is still in URLs, in FKs and in every other module's copy of
- * the number.
- *
- * One consequence, recorded rather than hidden: an unmapped legacy row is no
- * longer adopted on the delete path, because the join that finds live companies
- * starts from the map. It is still adopted on the update path, where a caller is
- * changing values that must not be lost. A delete of a row the 0264 backfill
- * never saw now reports nothing deleted instead of adopting it in order to mark
- * it deleted — which is the direction that survives the table going away.
- */
-export async function softDeleteMirroredOrganizations(
-  db: MirrorDb,
-  organizationId: string,
-  crmOrganizationIds: readonly number[],
-): Promise<CrmOrgRow[]> {
-  const ids = [...new Set(crmOrganizationIds)].filter((id) => Number.isInteger(id));
-  if (ids.length === 0) return [];
-  const live = await db
-    .select({ crmOrganizationId: crmOrgPartyMap.crmOrganizationId })
-    .from(crmOrgPartyMap)
-    .innerJoin(
-      businessParties,
-      and(
-        eq(businessParties.partyId, crmOrgPartyMap.partyId),
-        eq(businessParties.organizationId, crmOrgPartyMap.organizationId),
-      ),
-    )
-    .where(
-      and(
-        eq(crmOrgPartyMap.organizationId, organizationId),
-        inArray(crmOrgPartyMap.crmOrganizationId, ids),
-        isNull(businessParties.deletedAt),
-      ),
-    );
-  return updateMirroredOrganizations(
-    db,
-    organizationId,
-    live.map((row) => row.crmOrganizationId),
-    { deletedAt: new Date() },
-  );
 }

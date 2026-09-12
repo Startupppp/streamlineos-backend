@@ -15,7 +15,7 @@ import {
   identifiersOfParty,
   moveIdentifiers,
   type IdentifierClaim,
-} from "./party-identifiers";
+} from "./party-identifiers-merge";
 import { chooseSurvivor, orderPair, planMerge, type FieldConflict, type MergeableField } from "./party-merge-plan";
 import { refreshEmployerColumns, repointEmployerParties } from "./party-legacy-employer";
 import {

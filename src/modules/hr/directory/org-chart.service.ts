@@ -1,10 +1,8 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { type SQL, and, asc, eq, gt, ilike, inArray, isNull, or, sql } from "drizzle-orm";
-import { alias } from "drizzle-orm/pg-core";
 import {
   hrEmployments,
   hrPeople,
-  hrReportingLines,
   organizationMembers,
   orgUnits,
   users,
@@ -16,58 +14,28 @@ import type { ScopedRead } from "../../access/scoped-read";
 import { decodeOrgChartCursor, encodeOrgChartCursor } from "./org-chart-cursor";
 import { EmploymentFactsService } from "../../directory/employment-facts.service";
 import { livePersonOfUser, primaryEmploymentOfPerson } from "../../directory/employment-query";
+import {
+  type OrgChartNode,
+  type OrgChartPage,
+  orgChartChildUsers,
+  orgChartChildMembers,
+  orgChartManagerUsers,
+  orgChartManagerMembers,
+  rlVis,
+  rlVisEmpEmp,
+  rlVisEmpPpl,
+  rlVisMgrEmp,
+  rlVisMgrPpl,
+  rlChild,
+  rlChildMgrEmp,
+  rlChildMgrPpl,
+  rlChildEmpEmp,
+  rlChildEmpPpl,
+  toTitleCase,
+  escapeLikeValue,
+} from "./org-chart-helpers";
 
-export interface OrgChartNode {
-  id: string;
-  name: string;
-  role: string;
-  designation: string | null;
-  image: string | null;
-  departmentId: string | null;
-  departmentName: string | null;
-  hasDirectReports: boolean;
-}
-
-export interface OrgChartPage {
-  data: OrgChartNode[];
-  pageInfo: {
-    limit: number;
-    hasMore: boolean;
-    nextCursor: string | null;
-  };
-}
-
-const orgChartChildUsers = alias(users, "org_chart_child_users");
-const orgChartChildMembers = alias(organizationMembers, "org_chart_child_members");
-const orgChartManagerUsers = alias(users, "org_chart_manager_users");
-const orgChartManagerMembers = alias(organizationMembers, "org_chart_manager_members");
-
-const rlVis = alias(hrReportingLines, "rl_vis");
-const rlVisEmpEmp = alias(hrEmployments, "rl_vis_emp_emp");
-const rlVisEmpPpl = alias(hrPeople, "rl_vis_emp_ppl");
-const rlVisMgrEmp = alias(hrEmployments, "rl_vis_mgr_emp");
-const rlVisMgrPpl = alias(hrPeople, "rl_vis_mgr_ppl");
-
-const rlChild = alias(hrReportingLines, "rl_child");
-const rlChildMgrEmp = alias(hrEmployments, "rl_child_mgr_emp");
-const rlChildMgrPpl = alias(hrPeople, "rl_child_mgr_ppl");
-const rlChildEmpEmp = alias(hrEmployments, "rl_child_emp_emp");
-const rlChildEmpPpl = alias(hrPeople, "rl_child_emp_ppl");
-
-function toTitleCase(str: string): string {
-  return str
-    .toLowerCase()
-    .split(/[\s_]+/)
-    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
-    .join(" ");
-}
-
-function escapeLikeValue(value: string): string {
-  return value
-    .replaceAll("\\", "\\\\")
-    .replaceAll("%", "\\%")
-    .replaceAll("_", "\\_");
-}
+export type { OrgChartPage };
 
 @Injectable()
 export class OrgChartService {

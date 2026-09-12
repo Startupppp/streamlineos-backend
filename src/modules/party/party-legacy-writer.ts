@@ -1,13 +1,5 @@
-import { eq, sql } from "drizzle-orm";
 import type { LegacyClientInsert, LegacyClientRow, LegacyContactInsert, LegacyContactRow, LegacyCrmOrgInsert, LegacyCrmOrgRow, LegacyLeadInsert, LegacyLeadRow } from "./legacy-shapes";
-import {
-  clientPartyMap,
-  contactPartyMap,
-  crmOrgPartyMap,
-  leadPartyMap,
-} from "../../db/schema/party";
 import { type PartyPatch, type PartyRow } from "./party-legacy-mirror";
-import type { MappedLegacyKind } from "./party-legacy-seam";
 import { applyPartyPatch, loadParty, type MirrorDb } from "./party-write-primitives";
 import { employerLegacyIds } from "./party-legacy-employer";
 
@@ -59,7 +51,6 @@ import { employerLegacyIds } from "./party-legacy-employer";
 export {
   applyPartyPatch,
   grantRole,
-  groupByPayload,
   insertBareParty,
   mintLegacyId,
   movePartiesFor,
@@ -168,38 +159,4 @@ export async function restorePartyWithMirror(
   patch: PartyPatch = {},
 ): Promise<PartyRow> {
   return updatePartyWithMirror(db, organizationId, partyId, { ...patch, deletedAt: null });
-}
-
-/**
- * How many legacy rows currently disagree with their Party, per kind.
- *
- * Kept here rather than in the divergence service so that a test of the writer
- * can assert its own claim: after any function above, this is zero.
- */
-export async function countMirroredRows(
-  db: MirrorDb,
-  organizationId: string,
-): Promise<Record<MappedLegacyKind, number>> {
-  const [lead] = await db
-    .select({ n: sql<number>`count(*)::int` })
-    .from(leadPartyMap)
-    .where(eq(leadPartyMap.organizationId, organizationId));
-  const [client] = await db
-    .select({ n: sql<number>`count(*)::int` })
-    .from(clientPartyMap)
-    .where(eq(clientPartyMap.organizationId, organizationId));
-  const [contact] = await db
-    .select({ n: sql<number>`count(*)::int` })
-    .from(contactPartyMap)
-    .where(eq(contactPartyMap.organizationId, organizationId));
-  const [organisation] = await db
-    .select({ n: sql<number>`count(*)::int` })
-    .from(crmOrgPartyMap)
-    .where(eq(crmOrgPartyMap.organizationId, organizationId));
-  return {
-    LEAD: lead?.n ?? 0,
-    CLIENT: client?.n ?? 0,
-    CONTACT: contact?.n ?? 0,
-    ORGANISATION: organisation?.n ?? 0,
-  };
 }

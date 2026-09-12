@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { EXEMPLAR_METRICS } from "../call-exemplars";
+import { EXEMPLAR_MAX_PAGE_SIZE, EXEMPLAR_METRICS } from "../call-exemplars";
 
 /**
  * What the two rep-facing intelligence reads accept.
@@ -60,7 +60,7 @@ export const callExemplarsQuerySchema = z
     sinceDays: sinceDaysSchema,
     page: pageSchema,
     /** Ten by default: this is a shortlist to listen to, not a table to scan. */
-    limit: z.coerce.number().int().min(1).max(100).default(10),
+    limit: z.coerce.number().int().min(1).max(EXEMPLAR_MAX_PAGE_SIZE).default(10),
   })
   .strict();
 

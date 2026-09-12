@@ -30,7 +30,7 @@ import {
   type SweepPreviewQuery,
   type UpdateSignSettingsInput,
   type WatermarkPolicyInput,
-} from "./dto/e-sign.schemas";
+} from "./dto/e-sign-settings.schemas";
 
 const policyIdParams = z.object({ policyId: z.coerce.number().int().positive() }).strict();
 const updateWatermarkPolicyBodySchema = watermarkPolicyInputSchema.partial();

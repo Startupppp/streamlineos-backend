@@ -177,7 +177,13 @@ Arity is not fixed at three: 53 keys are two-segment (`surveys:create`) and some
 
 - Unit-test services with mocked providers; e2e-test controllers (auth + RBAC + scope allow/deny, credit exhaustion, cross-tenant isolation). `*e2e-spec` runs only under `pnpm test:e2e`.
 - A `db.transaction` mock must invoke its callback — a bare `jest.fn()` silently voids every assertion inside the transaction.
-- `tsc --noEmit` needs a raised heap here: `NODE_OPTIONS=--max-old-space-size=8192`.
+- `tsc --noEmit` needs a raised heap here: `NODE_OPTIONS=--max-old-space-size=10240`.
+  ⚠ **CORRECTED 2026-09-12: 8192 is no longer enough and fails in a way that reads like a hang.**
+  After the `796100a2f` merge grew the program, `-p tsconfig.json` at 8192 dies after ~220 s with
+  `FATAL ERROR: Ineffective mark-compacts near heap limit`, exit **134** — no type errors printed,
+  so it looks like an environment fault rather than a heap limit. Measured twice, by two sessions
+  independently. 10240 completes. `-p tsconfig.build.json` is the smaller program and the one
+  `nest build` actually uses; prefer it when you only need build-blocking errors.
 - ⚠ **`test/security/**` and `test/perf/**` are RUN by jest but never TYPECHECKED.** `tsconfig.json`
   includes only `src/**/*` and `evals/**/*`, while the jest `roots` add `<rootDir>/test/security` and
   `<rootDir>/test/perf`. Typecheck is the only gate that sees an arity change, so a constructor that

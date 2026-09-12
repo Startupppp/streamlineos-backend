@@ -9,7 +9,7 @@ import {
   partyRoles,
 } from "../../db/schema";
 import { AuditService } from "../../common/audit/audit.service";
-import { restoreIdentifiers } from "./party-identifiers";
+import { restoreIdentifiers } from "./party-identifiers-merge";
 import { refreshEmployerColumns } from "./party-legacy-employer";
 import {
   refreshPartyMirrors,

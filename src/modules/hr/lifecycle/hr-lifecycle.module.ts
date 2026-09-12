@@ -27,6 +27,7 @@ import { TerminationLifecycleService } from "./termination-lifecycle.service";
 import { TerminationCommunicationsService } from "./termination-communications.service";
 import { AlumniService } from "./alumni.service";
 import { HrAnalyticsService } from "./hr-analytics.service";
+import { HrAttendanceAnalyticsService } from "./hr-attendance-analytics.service";
 import { HrDashboardService } from "./hr-dashboard.service";
 import { HrDashboardReportsService } from "./hr-dashboard-reports.service";
 import { OnboardingViewsService } from "./onboarding-views.service";
@@ -61,6 +62,7 @@ import { EmploymentFactsModule } from "../../directory/employment-facts.module";
     TerminationCommunicationsService,
     AlumniService,
     HrAnalyticsService,
+    HrAttendanceAnalyticsService,
     HrDashboardService,
     HrDashboardReportsService,
     OnboardingViewsService,

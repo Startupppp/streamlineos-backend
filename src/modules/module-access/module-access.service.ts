@@ -10,7 +10,7 @@ import { type Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_KEYS, CACHE_TTL } from "../../common/cache/cache-keys";
 import { AuditService } from "../../common/audit/audit.service";
-import { administeringModuleOf, impliedViewKey } from "../../common/rbac/module-vocabulary";
+import { administeringModuleOf } from "../../common/rbac/module-vocabulary";
 import { isStructuralOrgAdmin } from "../../common/rbac/is-structural-org-admin";
 import {
   assertManagedModule,
@@ -37,10 +37,6 @@ import {
 } from "./lib/module-audit-log";
 import { setModuleRolePermissions } from "./module-role-permissions";
 
-// `impliedViewKey` has one definition, in `common/rbac/module-vocabulary`: the
-// copy `normalizeModulePermissionItems` calls. It is re-exported here so a
-// caller that imported it from this service still reaches that same copy.
-export { impliedViewKey };
 export { invalidateRoleAssigneePages } from "./module-role-permissions";
 
 export interface ModuleRoleView {

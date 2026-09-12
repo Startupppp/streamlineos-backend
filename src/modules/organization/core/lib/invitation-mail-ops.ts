@@ -14,20 +14,19 @@ import { SeatLedgerService } from "../../../billing/core/seat-ledger.service";
 import { invitationEvents, invitations, users } from "../../../../db/schema";
 import {
   findActorMembershipId,
-  openAdminInvitationFilter,
   recordDeliveryFailure,
   requireActiveOrg,
   type InviteActor,
 } from "../invitations.helpers";
 
 /**
- * The two invitation operations that SEND MAIL.
+ * The invitation operation that SENDS MAIL.
  *
  * Split from `changeRole` and `revokeAllPending` on that line, because it is the
- * line that decides how each can fail. These two mint or void a token and then
- * hand a message to a provider that may be down — hence `recordDeliveryFailure`
- * and the `ServiceUnavailableException`, and hence a logger. The other two
- * change a row and are finished.
+ * line that decides how each can fail. This one mints a token and then hands a
+ * message to a provider that may be down — hence `recordDeliveryFailure` and the
+ * `ServiceUnavailableException`, and hence a logger. The others change a row and
+ * are finished.
  *
  * A deps bag and free functions rather than a second `@Injectable`, the
  * `so-ship.ts` shape: the DI graph and every caller stay unchanged.
@@ -136,82 +135,6 @@ export async function resendInvitation(
     targetType: "invitation",
     metadata: { email: invitation.email },
   });
-
-  await deps.cache.invalidateForOrg(orgId, "users:stats");
-  return { success: true };
-}
-
-export async function cancelInvitation(
-  deps: InvitationMailDeps,
-  orgId: string,
-  invitationId: string,
-  actor: InviteActor,
-): Promise<{ success: true }> {
-  const actorUserId = actor.userId;
-  const invitation = await deps.db.query.invitations.findFirst({
-    where: openAdminInvitationFilter(invitationId, orgId),
-  });
-  if (!invitation)
-    throw new NotFoundException("Invitation not found or already accepted");
-
-  await assertMayManageOrganizationMembership(deps.access, orgId, actor);
-
-  const org = await requireActiveOrg(deps.db, orgId);
-  const actorMembership = await findActorMembershipId(deps.db, orgId, actorUserId);
-
-  await runInTenantTransaction(
-    deps.db,
-    async (tx) => {
-      const updated = await tx
-        .update(invitations)
-        .set({
-          status: "REVOKED",
-          revokedAt: new Date(),
-          revokedByMembershipId: actorMembership?.id ?? null,
-        })
-        .where(openAdminInvitationFilter(invitationId, orgId))
-        .returning({ id: invitations.id });
-      if (updated.length === 0)
-        throw new NotFoundException("Invitation not found or already accepted");
-
-      await tx.insert(invitationEvents).values({
-        orgId,
-        invitationId,
-        event: "REVOKED",
-        actorMembershipId: actorMembership?.id ?? null,
-      });
-
-      await deps.seatLedger.recordSeatEvent(
-        {
-          orgId,
-          eventType: "INVITE_CANCELLED",
-          subjectId: invitationId,
-          actorId: actorUserId,
-          reason: "invitation cancelled",
-          idempotencyKey: `invite-cancelled:${invitationId}`,
-        },
-        tx,
-      );
-    },
-    { orgId },
-  );
-
-  deps.audit.log({
-    action: "user.invitation.cancelled",
-    userId: actorUserId,
-    orgId,
-    targetId: invitationId,
-    targetType: "invitation",
-    metadata: { email: invitation.email },
-  });
-
-  void deps.email
-    .sendInvitationRevokedEmail(invitation.email, org.name)
-    .catch((err: unknown) =>
-      deps.logger.warn(
-        `Invitation revocation notice not delivered to ${invitation.email}: ${err instanceof Error ? err.message : String(err)}`,
-      ),
-    );
 
   await deps.cache.invalidateForOrg(orgId, "users:stats");
   return { success: true };

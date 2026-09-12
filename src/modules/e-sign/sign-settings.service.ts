@@ -4,7 +4,7 @@ import { signOrgSettings } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { SignAuditService } from "./sign-audit.service";
-import type { UpdateSignSettingsInput } from "./dto/e-sign.schemas";
+import type { UpdateSignSettingsInput } from "./dto/e-sign-settings.schemas";
 
 export type SignOrgSettings = typeof signOrgSettings.$inferSelect;
 

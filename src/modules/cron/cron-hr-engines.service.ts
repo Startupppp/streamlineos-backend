@@ -16,37 +16,16 @@ import { ContractsService } from "../hr/global/contracts.service";
 import { forEachOrg } from "../../common/tenant";
 import { REDIS } from "../../common/cache/cache.service";
 import { RotatingCursor, drainWithCursor } from "./drain";
-
-const GOAL_PAGE = 200;
-const REVIEW_PAGE = 100;
-const ASSET_PAGE = 200;
-/**
- * The per-tick budget. These sweeps emit an automation event and mark nothing, so
- * without a resumable cursor the same first page matched every tick and everything
- * past it was never emitted at all. The budget keeps one tick bounded; the cursor
- * makes the coverage complete across ticks.
- */
-const MAX_PAGES_PER_TICK = 5;
-
-export interface EmitSweepResult {
-  swept: number;
-  /** The per-tick budget was spent with rows still eligible; the next tick resumes. */
-  truncated: boolean;
-}
-
-interface SweepResult {
-  orgId: string;
-  sweep: string;
-  ok: boolean;
-  error?: string;
-}
-
-interface RunAllResult {
-  results: SweepResult[];
-  orgsProcessed: number;
-  succeeded: number;
-  failed: number;
-}
+import {
+  GOAL_PAGE,
+  REVIEW_PAGE,
+  ASSET_PAGE,
+  MAX_PAGES_PER_TICK,
+  type EmitSweepResult,
+  type SweepResult,
+  type RunAllResult,
+} from "./cron-hr-engines.types";
+export type { EmitSweepResult } from "./cron-hr-engines.types";
 
 @Injectable()
 export class CronHrEnginesService {

@@ -56,14 +56,7 @@ import { ACTIVITIES, DEALS, PARTIES, type DemoDataset } from "./demo-records";
  * would have to be imported back by the file that holds the values, and
  * `madge --circular` counts that.
  */
-export type {
-  DemoActivity,
-  DemoDataset,
-  DemoDeal,
-  DemoParty,
-  DemoPartyKind,
-  DemoPartyType,
-} from "./demo-records";
+export type { DemoDataset } from "./demo-records";
 
 /**
  * The dataset, whole.

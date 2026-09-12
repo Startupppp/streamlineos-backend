@@ -9,8 +9,6 @@ import {
   projectWhiteboardShares,
   projectWhiteboards,
   projects,
-  organizationMembers,
-  users,
 } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
@@ -21,23 +19,7 @@ import type {
   CreateWhiteboardInput,
   UpdateWhiteboardInput,
 } from "./dto/workspace.schemas";
-
-async function assertProject(db: Db, orgId: string, projectId: number): Promise<void> {
-  const project = await db.query.projects.findFirst({
-    where: and(eq(projects.id, projectId), eq(projects.orgId, orgId), isNull(projects.deletedAt)),
-    columns: { id: true },
-  });
-  if (!project) throw new NotFoundException("Project not found");
-}
-
-type ShareEntry = {
-  userId: string;
-  role: "viewer" | "editor";
-  name: string | null;
-  email: string;
-};
-
-type BoardRow = typeof projectWhiteboards.$inferSelect;
+import { assertProject, loadShares, type BoardRow, type ShareEntry } from "./whiteboard-board-helpers";
 
 @Injectable()
 export class WhiteboardsService {
@@ -48,20 +30,6 @@ export class WhiteboardsService {
 
   async hasManagePermission(user: CurrentUserContext): Promise<boolean> {
     return this.access.holds(user, "build:whiteboards:manage");
-  }
-
-  private async loadShares(whiteboardId: number): Promise<ShareEntry[]> {
-    return this.db
-      .select({
-        userId: organizationMembers.userId,
-        role: projectWhiteboardShares.role,
-        name: users.name,
-        email: users.email,
-      })
-      .from(projectWhiteboardShares)
-      .innerJoin(organizationMembers, and(eq(organizationMembers.orgId, projectWhiteboardShares.orgId), eq(organizationMembers.id, projectWhiteboardShares.membershipId)))
-      .innerJoin(users, eq(users.id, organizationMembers.userId))
-      .where(eq(projectWhiteboardShares.whiteboardId, whiteboardId));
   }
 
   private buildDto(
@@ -234,7 +202,7 @@ export class WhiteboardsService {
     await assertProject(this.db, u.orgId, projectId);
     const { board, access } = await this.loadBoardWithAccess(u, projectId, whiteboardId);
     if (access === "none") throw new NotFoundException("Whiteboard not found");
-    const shares = access === "manage" ? await this.loadShares(whiteboardId) : null;
+    const shares = access === "manage" ? await loadShares(this.db, whiteboardId) : null;
     return this.buildDto(board, access, shares);
   }
 
@@ -289,7 +257,7 @@ export class WhiteboardsService {
       .returning();
 
     if (!updated) throw new NotFoundException("Whiteboard not found");
-    const shares = access === "manage" ? await this.loadShares(whiteboardId) : null;
+    const shares = access === "manage" ? await loadShares(this.db, whiteboardId) : null;
     return this.buildDto(updated, access, shares);
   }
 

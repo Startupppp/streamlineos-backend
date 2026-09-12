@@ -25,48 +25,22 @@ import {
 } from "./lib/input-puller";
 import type { ResolvedComponent } from "./lib/calculation-engine";
 import type { ProfileData, RunBatchData } from "./run-types";
+import {
+  getFyString,
+  groupBy,
+  type BonusRow,
+  type IncentiveRow,
+  type ReimbursementRow,
+  type TaxDeclarationRow,
+} from "./run-batch-loader.helpers";
 
 type RunInputRow = typeof payrollInputs.$inferSelect;
-type BonusRow = { id: number; userId: string; amount: string; type: string; taxable: boolean };
-type IncentiveRow = { id: number; salesRepId: string; approvedAmount: string | null; calculatedAmount: string };
-type ReimbursementRow = { id: number; userId: string; amount: string; category: string };
-type TaxDeclarationRow = {
-  userId: string;
-  section80c: string;
-  section80d: string;
-  hra: string;
-  lta: string;
-  homeLoanInterest: string;
-  section80g: string;
-  previousEmploymentIncome: string;
-  previousEmployerTds: string;
-  status: string;
-};
 
 // A run is materialized for a bounded employee snapshot. These caps keep a
 // malformed or unexpectedly large input set from turning a calculation into
 // an unbounded read; the caller already supplies the run's employee IDs.
 const MAX_RUN_INPUT_ROWS = 10_000;
 const MAX_COMPONENT_ROWS = 100_000;
-
-function getFyString(month: string): string {
-  const [yearStr, monStr] = month.split("-");
-  const year = parseInt(yearStr ?? "2025", 10);
-  const mon = parseInt(monStr ?? "4", 10);
-  if (mon >= 4) return `${year}-${String(year + 1).slice(-2)}`;
-  return `${year - 1}-${String(year).slice(-2)}`;
-}
-
-function groupBy<T>(rows: T[], key: (row: T) => string): Map<string, T[]> {
-  const map = new Map<string, T[]>();
-  for (const row of rows) {
-    const k = key(row);
-    const list = map.get(k) ?? [];
-    list.push(row);
-    map.set(k, list);
-  }
-  return map;
-}
 
 @Injectable()
 export class RunBatchLoaderService {

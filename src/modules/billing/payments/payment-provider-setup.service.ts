@@ -12,6 +12,7 @@ import { PaymentAnalyticsService } from "./payment-analytics.service";
 import type { SaveCredentialsInput, UpdateProviderInput } from "./dto/payments.schemas";
 import type { RequestActorContext } from "../../../common/audit/actor-context";
 import { assertOrganizationActor } from "../../../common/organization/organization-actor";
+import { toPublicCredential } from "./payment-provider-credential.helpers";
 
 
 @Injectable()
@@ -44,16 +45,6 @@ export class PaymentProviderSetupService {
     });
   }
 
-  private toPublicCredential(cred: typeof paymentProviderCredentials.$inferSelect) {
-    return {
-      environment: cred.environment,
-      maskedKeyHint: cred.maskedKeyHint,
-      hasSecret: !!cred.secretRef,
-      hasWebhookSecret: !!cred.webhookSecretRef,
-      lastRotatedAt: cred.lastRotatedAt,
-    };
-  }
-
   async listProviders(orgId: string) {
     const providers = await this.db.query.paymentProviders.findMany({
       where: eq(paymentProviders.orgId, orgId),
@@ -80,14 +71,14 @@ export class PaymentProviderSetupService {
 
     return providers.map((p) => ({
       ...p,
-      credentials: (byProvider.get(p.id) ?? []).map((c) => this.toPublicCredential(c)),
+      credentials: (byProvider.get(p.id) ?? []).map((c) => toPublicCredential(c)),
     }));
   }
 
   async getProvider(orgId: string, providerKey: string) {
     const provider = await this.findProvider(orgId, providerKey);
     const creds = await this.credentialsFor(orgId, provider.id);
-    return { ...provider, credentials: creds.map((c) => this.toPublicCredential(c)) };
+    return { ...provider, credentials: creds.map((c) => toPublicCredential(c)) };
   }
 
   async createProvider(orgId: string, providerKey: string, actor: RequestActorContext) {
@@ -243,7 +234,7 @@ export class PaymentProviderSetupService {
       metadata: { providerKey, environment: input.environment },
     });
 
-    return { credential: this.toPublicCredential(saved), warning };
+    return { credential: toPublicCredential(saved), warning };
   }
 
   async disconnectCredentials(orgId: string, providerKey: string, environment: "test" | "live", actor: RequestActorContext) {

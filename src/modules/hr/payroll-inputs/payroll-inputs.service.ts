@@ -4,7 +4,6 @@ import {
   ForbiddenException,
   Inject,
   Injectable,
-  NotFoundException,
 } from "@nestjs/common";
 import { and, desc, eq } from "drizzle-orm";
 import { buildCursorPage, decodeCursor } from "../../../common/pagination/cursor";
@@ -17,18 +16,12 @@ import { HrAuditService } from "../core/hr-audit.service";
 import { HrAutomationEngineService } from "../automations/hr-automation-engine.service";
 import { PayrollInputsBuildService } from "./payroll-inputs-build.service";
 import { PayrollInputSnapshotsService } from "./payroll-input-snapshots.service";
-import {
-  approveAdjustment as runApproveAdjustment,
-  insertAdjustment as runInsertAdjustment,
-  listAdjustments as runListAdjustments,
-  rejectAdjustment as runRejectAdjustment,
-  type PayrollAdjustmentDeps,
-} from "./payroll-adjustments";
+import { PayrollInputAdjustmentsService } from "./payroll-input-adjustments.service";
+import { getPeriodById } from "./payroll-input-period-query";
 import {
   freezePeriodSourceRecords,
   releasePeriodSourceRecords,
 } from "./payroll-input-freeze";
-import { nextMonthKey } from "./payroll-period-key";
 import type {
   CreatePeriodInput,
   ListPeriodsInput,
@@ -45,6 +38,7 @@ export class PayrollInputsService {
     private readonly hrAutomation: HrAutomationEngineService,
     private readonly buildService: PayrollInputsBuildService,
     private readonly snapshots: PayrollInputSnapshotsService,
+    private readonly adjustments: PayrollInputAdjustmentsService,
   ) {}
 
   async listPeriods(orgId: string, input: ListPeriodsInput) {
@@ -110,18 +104,11 @@ export class PayrollInputsService {
   }
 
   async getPeriod(orgId: string, periodId: number) {
-    const period = await this.db.query.hrPayrollInputPeriods.findFirst({
-      where: and(
-        eq(hrPayrollInputPeriods.id, periodId),
-        eq(hrPayrollInputPeriods.orgId, orgId),
-      ),
-    });
-    if (!period) throw new NotFoundException("Period not found");
-    return period;
+    return getPeriodById(this.db, orgId, periodId);
   }
 
   async buildPeriod(orgId: string, actorId: string, periodId: number) {
-    const period = await this.getPeriod(orgId, periodId);
+    const period = await getPeriodById(this.db, orgId, periodId);
     if (period.status === "locked") {
       throw new ForbiddenException("Cannot rebuild a locked period");
     }
@@ -169,7 +156,7 @@ export class PayrollInputsService {
   }
 
   async lockPeriod(orgId: string, actorId: string, periodId: number) {
-    const period = await this.getPeriod(orgId, periodId);
+    const period = await getPeriodById(this.db, orgId, periodId);
     if (period.status !== "built") {
       throw new BadRequestException("Period must be in 'built' status before locking");
     }
@@ -243,7 +230,7 @@ export class PayrollInputsService {
   }
 
   async unlockPeriod(orgId: string, actorId: string, periodId: number) {
-    const period = await this.getPeriod(orgId, periodId);
+    const period = await getPeriodById(this.db, orgId, periodId);
     if (period.status !== "locked") {
       throw new BadRequestException("Period is not locked");
     }
@@ -279,45 +266,23 @@ export class PayrollInputsService {
     section: typeof hrPayrollInputSnapshots.$inferSelect["section"],
     input: SectionQueryInput,
   ) {
-    await this.getPeriod(orgId, periodId);
+    await getPeriodById(this.db, orgId, periodId);
     return this.snapshots.listSectionSnapshot(orgId, periodId, section, input);
   }
 
   async listAdjustments(orgId: string, periodId: number, input: SectionQueryInput) {
-    await this.getPeriod(orgId, periodId);
-    return runListAdjustments(this.adjustmentDeps(), orgId, periodId, input);
+    return this.adjustments.listAdjustments(orgId, periodId, input);
   }
 
   async createAdjustment(orgId: string, actorId: string, input: CreateAdjustmentInput) {
-    if (input.periodId) {
-      const period = await this.getPeriod(orgId, input.periodId);
-      if (period.status === "locked") {
-        const nextPeriod = await this.db.query.hrPayrollInputPeriods.findFirst({
-          where: and(
-            eq(hrPayrollInputPeriods.orgId, orgId),
-            eq(hrPayrollInputPeriods.periodKey, nextMonthKey(period.periodKey)),
-          ),
-        });
-        const targetPeriodId = nextPeriod?.id ?? null;
-        return runInsertAdjustment(this.adjustmentDeps(), orgId, actorId, {
-          ...input,
-          periodId: targetPeriodId ?? undefined,
-        });
-      }
-    }
-
-    return runInsertAdjustment(this.adjustmentDeps(), orgId, actorId, input);
+    return this.adjustments.createAdjustment(orgId, actorId, input);
   }
 
   async approveAdjustment(orgId: string, actorId: string, adjustmentId: number) {
-    return runApproveAdjustment(this.adjustmentDeps(), orgId, actorId, adjustmentId);
+    return this.adjustments.approveAdjustment(orgId, actorId, adjustmentId);
   }
 
   async rejectAdjustment(orgId: string, actorId: string, adjustmentId: number, reason: string) {
-    return runRejectAdjustment(this.adjustmentDeps(), orgId, actorId, adjustmentId, reason);
-  }
-
-  private adjustmentDeps(): PayrollAdjustmentDeps {
-    return { db: this.db, audit: this.audit };
+    return this.adjustments.rejectAdjustment(orgId, actorId, adjustmentId, reason);
   }
 }

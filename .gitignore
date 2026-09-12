@@ -1,4 +1,5 @@
 node_modules
+dist-*
 dist
 coverage
 .env
@@ -40,9 +41,6 @@ backups/
 # (.tmp-probe.mjs, .tmp-ticket-patch3.py) in a shared working tree.
 .tmp-*
 
-dist-local/
 
 # Agent scratch probes: local-only, may hold credentials in the process env. Never commit.
 .scratch-billing-verify/
-
-dist-verify

@@ -26,7 +26,6 @@ import {
 } from "./user-permission-grants.helpers";
 import type { SetUserPermissionGrantsInput } from "./dto/user-permission-grants.schemas";
 
-export type { TargetMembership };
 
 export interface UserPermissionGrant {
   permissionKey: string;

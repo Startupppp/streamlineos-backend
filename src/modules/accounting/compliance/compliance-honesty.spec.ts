@@ -1,6 +1,6 @@
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
-import { describe as narrate } from "./compliance.controller";
+import { describe as narrate } from "./compliance-narrative";
 
 /**
  * ACC-12. The product must never imply a document was filed with a tax

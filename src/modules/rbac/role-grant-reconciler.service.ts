@@ -8,9 +8,9 @@ import { bumpPermissionsVersion } from "../../common/rbac/access-invalidate";
 import { rolePermissionGrants, roles } from "../../db/schema";
 import { ROLE_TEMPLATES } from "./role-templates.constants";
 import {
-  buildSeededRoleSpecs,
+  systemRoleSpecs,
   resolveDbPermissionSet,
-  seededGrantScope,
+  scopeForGrant,
 } from "./seed-system-roles";
 
 const ROLE_PAGE_SIZE = 200;
@@ -33,13 +33,13 @@ export function buildDesiredGrants(
 ): Map<string, DesiredGrant[]> {
   const desired = new Map<string, DesiredGrant[]>();
 
-  for (const spec of buildSeededRoleSpecs(new Set(catalog))) {
+  for (const spec of systemRoleSpecs(new Set(catalog))) {
     if (spec.permissionKeys.length === 0) continue;
     desired.set(
       spec.slug,
       spec.permissionKeys.map((permissionKey) => ({
         permissionKey,
-        scope: seededGrantScope(spec.slug, permissionKey),
+        scope: scopeForGrant(spec.slug, permissionKey),
       })),
     );
   }

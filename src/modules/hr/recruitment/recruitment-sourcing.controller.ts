@@ -19,29 +19,21 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { AccessService } from "../../access/access.service";
 import { RecruitmentSourcingService } from "./recruitment-sourcing.service";
 import {
-  createHeadcountSchema,
   createReferralSubmissionSchema,
   createSubmissionSchema,
   createVendorSchema,
-  headcountListSchema,
-  rejectHeadcountSchema,
   submissionIdQuerySchema,
   updateExternalReferralSchema,
   updateExternalReferrerStatusSchema,
-  updateHeadcountSchema,
   updateReferralStatusSchema,
   updateSubmissionSchema,
   updateVendorSchema,
-  type CreateHeadcountInput,
   type CreateReferralSubmissionInput,
   type CreateSubmissionInput,
   type CreateVendorInput,
-  type HeadcountListInput,
-  type RejectHeadcountInput,
   type SubmissionIdQueryInput,
   type UpdateExternalReferralInput,
   type UpdateExternalReferrerStatusInput,
-  type UpdateHeadcountInput,
   type UpdateReferralStatusInput,
   type UpdateSubmissionInput,
   type UpdateVendorInput,
@@ -60,9 +52,6 @@ import {
   vendorPortalLinkSchema,
   vendorSubmissionItemSchema,
   vendorSubmissionRawSchema,
-  headcountListPageSchema,
-  headcountRowSchema,
-  createJobFromRequisitionResponseSchema,
   externalReferralWithRelationsSchema,
   externalReferralRawSchema,
   externalReferrerListItemSchema,
@@ -71,7 +60,6 @@ import {
 
 const referralIdParams = z.object({ referralId: z.coerce.number().int().positive() }).strict();
 const vendorIdParams = z.object({ vendorId: z.coerce.number().int().positive() }).strict();
-const requestIdParams = z.object({ requestId: z.coerce.number().int().positive() }).strict();
 const referrerIdParams = z.object({ referrerId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("hr")
@@ -198,76 +186,6 @@ export class RecruitmentSourcingController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.sourcing.updateSubmission(u.orgId, vendorId, query.submissionId, body);
-  }
-
-  @Get("headcount")
-  @ResponseSchema(headcountListPageSchema)
-  @RequirePermission("hr:employees:view")
-  @Validate({ query: headcountListSchema })
-  async listHeadcount(
-    @Query() query: HeadcountListInput,
-    @CurrentUser() u: CurrentUserContext,
-  ) {
-    const canManage = u.isOrgOwner
-      || (await this.access.resolveUserPermissions(u.orgId, u.userId)).has("hr:requisitions:manage");
-    return this.sourcing.listHeadcount(u.orgId, u.userId, canManage, query, actingMembershipId(u.principal));
-  }
-
-  @Post("headcount")
-  @HttpCode(201)
-  @ResponseSchema(headcountRowSchema)
-  @RequirePermission("hr:employees:view")
-  @Validate({ body: createHeadcountSchema })
-  createHeadcount(
-    @Body() body: CreateHeadcountInput,
-    @CurrentUser() u: CurrentUserContext,
-  ) {
-    return this.sourcing.createHeadcount(u.orgId, u.userId, body, actingMembershipId(u.principal));
-  }
-
-  @Patch("headcount/:requestId")
-  @ResponseSchema(headcountRowSchema)
-  @RequirePermission("hr:employees:view")
-  @Validate({ params: requestIdParams, body: updateHeadcountSchema })
-  updateHeadcount(
-    @Param("requestId", ParseIntPipe) requestId: number,
-    @Body() body: UpdateHeadcountInput,
-    @CurrentUser() u: CurrentUserContext,
-  ) {
-    return this.sourcing.updateHeadcount(u.orgId, u.userId, requestId, body, actingMembershipId(u.principal));
-  }
-
-  @Post("headcount/:requestId/approve")
-  @BodylessAction()
-  @Idempotent("hr.headcount.approve")
-  @ResponseSchema(headcountRowSchema)
-  @RequirePermission("hr:employees:manage")
-  @Validate({ params: requestIdParams })
-  approveHeadcount(@Param("requestId", ParseIntPipe) requestId: number, @CurrentUser() u: CurrentUserContext) {
-    return this.sourcing.approveHeadcount(u.orgId, u.userId, requestId, actingMembershipId(u.principal));
-  }
-
-  @Post("headcount/:requestId/reject")
-  @Idempotent("hr.headcount.reject")
-  @ResponseSchema(headcountRowSchema)
-  @RequirePermission("hr:employees:manage")
-  @Validate({ params: requestIdParams, body: rejectHeadcountSchema })
-  rejectHeadcount(
-    @Param("requestId", ParseIntPipe) requestId: number,
-    @Body() body: RejectHeadcountInput,
-    @CurrentUser() u: CurrentUserContext,
-  ) {
-    return this.sourcing.rejectHeadcount(u.orgId, requestId, body.reason);
-  }
-
-  @Post("headcount/:requestId/create-job")
-  @BodylessAction()
-  @HttpCode(201)
-  @ResponseSchema(createJobFromRequisitionResponseSchema)
-  @RequirePermission("hr:employees:manage")
-  @Validate({ params: requestIdParams })
-  createJobFromHeadcount(@Param("requestId", ParseIntPipe) requestId: number, @CurrentUser() u: CurrentUserContext) {
-    return this.sourcing.createJobFromHeadcount(u.orgId, u.userId, requestId);
   }
 
   @Get("external-referrals")

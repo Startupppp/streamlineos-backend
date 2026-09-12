@@ -107,6 +107,8 @@ import { CronRetentionSchedulerService } from "./cron-retention-scheduler.servic
 import { CronOutboxWorkerService } from "./cron-outbox-worker.service";
 import { CronSweepFailureSinkService } from "./cron-sweep-failure-sink.service";
 import { CronGdprExportRetentionService } from "./cron-gdpr-export-retention.service";
+import { CronHrDocumentsService } from "./cron-hr-documents.service";
+import { CronPlatformRetentionController } from "./cron-platform-retention.controller";
 
 @Module({
   imports: [
@@ -153,6 +155,7 @@ import { CronGdprExportRetentionService } from "./cron-gdpr-export-retention.ser
     CronHrController,
     CronHrNotificationsController,
     CronPlatformController,
+    CronPlatformRetentionController,
     CronCalendarController,
     CronGdprController,
     CronNotificationsController,
@@ -178,6 +181,7 @@ import { CronGdprExportRetentionService } from "./cron-gdpr-export-retention.ser
     CronProjectsService,
     CronRecruitmentService,
     CronHrService,
+    CronHrDocumentsService,
     CronHrEnginesService,
     CronWeeklyRecapService,
     CronEmailOutboxService,

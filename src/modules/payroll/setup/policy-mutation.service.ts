@@ -30,7 +30,7 @@ import type {
   PayrollPolicyConfig,
   TemplateComponentDef,
 } from "../payroll.types";
-import { DEFAULT_PAYROLL_TOGGLES, isPayrollToggleKey } from "../payroll.types";
+import { DEFAULT_PAYROLL_TOGGLES } from "../payroll.types";
 import {
   normalizePayrollToggles,
   toPayrollPolicyConfig,
@@ -40,10 +40,10 @@ import { DEFAULT_PAYROLL_POLICY_CONFIG } from "./payroll-policy-defaults.constan
 import {
   buildDefaultConfig,
   calendarEventsForMonth,
-  RISKY_TOGGLES,
   assertBelongsToOrg,
 } from "./lib/policy-builders";
 import { buildActivationChecklist } from "./lib/policy-checklist";
+import { buildPolicyVersion } from "./policy-version-builder";
 
 /**
  * `components` comes from a tenant-owned template's `defaultComponents` JSON, so
@@ -256,63 +256,6 @@ export class PolicyMutationService {
   }
 
   async createVersion(u: CurrentUserContext, policyId: number, input: CreatePolicyVersionInput) {
-    const policy = await assertBelongsToOrg(this.db, u.orgId, policyId);
-    if (policy.status !== "ACTIVE") {
-      throw new BadRequestException("Policy must be ACTIVE before creating a new version");
-    }
-
-    const activeVersion = policy.activeVersionId
-      ? await this.db.query.payrollPolicyVersions.findFirst({
-          where: and(
-            eq(payrollPolicyVersions.id, policy.activeVersionId),
-            eq(payrollPolicyVersions.orgId, u.orgId),
-          ),
-        })
-      : null;
-
-    const newToggles: PayrollToggles = {
-      ...normalizePayrollToggles(activeVersion?.toggles),
-      ...(input.toggleOverrides ?? {}),
-    };
-
-    const baseConfig = toPayrollPolicyConfig(activeVersion?.config) ?? DEFAULT_PAYROLL_POLICY_CONFIG;
-    const newConfig: PayrollPolicyConfig = { ...baseConfig, ...(input.config ?? {}) };
-
-    const hasRiskyChange = input.toggleOverrides
-      ? Object.keys(input.toggleOverrides).some((k) => isPayrollToggleKey(k) && RISKY_TOGGLES.has(k))
-      : false;
-
-    if (hasRiskyChange && !input.reason) {
-      throw new BadRequestException(
-        "A reason is required when changing statutory or workflow toggles",
-      );
-    }
-
-    const versionsResult = await this.db
-      .select({
-        maxVersion: sql<number>`COALESCE(MAX(${payrollPolicyVersions.version}), 0)`,
-      })
-      .from(payrollPolicyVersions)
-      .where(eq(payrollPolicyVersions.policyId, policyId));
-
-    const nextVersion = (versionsResult[0]?.maxVersion ?? 0) + 1;
-
-    const [newVersion] = await this.db
-      .insert(payrollPolicyVersions)
-      .values({
-        orgId: u.orgId,
-        policyId,
-        version: nextVersion,
-        templateKey: activeVersion?.templateKey ?? undefined,
-        toggles: newToggles,
-        config: newConfig,
-        status: "DRAFT",
-        effectiveFrom: input.effectiveFrom,
-        reason: input.reason,
-        createdBy: u.userId,
-      })
-      .returning();
-
-    return newVersion;
+    return buildPolicyVersion(this.db, u, policyId, input);
   }
 }

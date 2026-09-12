@@ -1,5 +1,6 @@
 import { Inject, Injectable, InternalServerErrorException } from "@nestjs/common";
-import { and, count, desc, eq, inArray, isNotNull, isNull, lt, sql } from "drizzle-orm";
+import { and, count, desc, eq, inArray, isNotNull, isNull } from "drizzle-orm";
+import { decodeChannelCursor, encodeChannelCursor, channelKeysetWhere } from "./chat-channel-cursor";
 import {
   chatChannelMembers,
   chatChannels,
@@ -148,7 +149,7 @@ export class ChatChannelListService {
     const currentMembershipId = await this.getMembershipId(orgId, userId);
     if (currentMembershipId === null) return { channels: [], nextCursor: null };
     const PAGE_SIZE = Math.min(limit ?? CHAT_CHANNEL_PAGE_SIZE, PAGE_SIZE_CAP);
-    const decoded = this.decodeChannelCursor(cursor ?? null);
+    const decoded = decodeChannelCursor(cursor ?? null);
     const pageRows = await this.db
       .select({
         id: chatChannels.id,
@@ -160,7 +161,7 @@ export class ChatChannelListService {
         lastMessageAt: chatChannels.lastMessageAt,
       })
       .from(chatChannels)
-      .where(and(eq(chatChannels.orgId, orgId), eq(chatChannels.type, "PUBLIC"), eq(chatChannels.isArchived, false), this.channelKeysetWhere(decoded)))
+      .where(and(eq(chatChannels.orgId, orgId), eq(chatChannels.type, "PUBLIC"), eq(chatChannels.isArchived, false), channelKeysetWhere(decoded)))
       .orderBy(desc(chatChannels.lastMessageAt), desc(chatChannels.id))
       .limit(PAGE_SIZE + 1);
     const hasMore = pageRows.length > PAGE_SIZE;
@@ -168,7 +169,7 @@ export class ChatChannelListService {
     if (pageSlice.length === 0) return { channels: [], nextCursor: null };
     const channelIds = pageSlice.map((r) => r.id);
     const lastRow = pageSlice[pageSlice.length - 1];
-    const nextCursor = hasMore && lastRow ? this.encodeChannelCursor(lastRow.lastMessageAt, lastRow.id) : null;
+    const nextCursor = hasMore && lastRow ? encodeChannelCursor(lastRow.lastMessageAt, lastRow.id) : null;
     const [countRows, memberRows] = await Promise.all([
       this.db
         .select({ channelId: chatChannelMembers.channelId, cnt: count() })
@@ -188,39 +189,6 @@ export class ChatChannelListService {
     };
   }
 
-  private decodeChannelCursor(raw: string | null): { lma: Date | null; id: number } | null {
-    if (!raw) return null;
-    try {
-      const parsed = JSON.parse(Buffer.from(raw, "base64url").toString("utf8")) as unknown;
-      if (typeof parsed !== "object" || parsed === null) return null;
-      const obj = parsed as Record<string, unknown>;
-      if (typeof obj["id"] !== "number") return null;
-      if (obj["lma"] !== null && typeof obj["lma"] !== "string") return null;
-      return {
-        lma: typeof obj["lma"] === "string" ? new Date(obj["lma"]) : null,
-        id: obj["id"] as number,
-      };
-    } catch {
-      return null;
-    }
-  }
-
-  private encodeChannelCursor(lma: Date | null, id: number): string {
-    return Buffer.from(JSON.stringify({ lma: lma?.toISOString() ?? null, id }), "utf8").toString("base64url");
-  }
-  private channelKeysetWhere(cursor: { lma: Date | null; id: number } | null) {
-    if (!cursor) return undefined;
-    const { lma, id } = cursor;
-    if (lma !== null) {
-      return sql`(
-        ${chatChannels.lastMessageAt} < ${lma.toISOString()}::timestamptz
-        OR (${chatChannels.lastMessageAt} = ${lma.toISOString()}::timestamptz AND ${chatChannels.id} < ${id})
-        OR ${chatChannels.lastMessageAt} IS NULL
-      )`;
-    }
-    return and(isNull(chatChannels.lastMessageAt), lt(chatChannels.id, id));
-  }
-
   private async listMemberChannels(
     actor: EntityActor,
     archived: boolean,
@@ -231,7 +199,7 @@ export class ChatChannelListService {
     const { orgId } = actor;
     if (!actor.membershipId) return { channels: [], nextCursor: null };
     const actorMembershipId = actor.membershipId;
-    const cursor = this.decodeChannelCursor(rawCursor);
+    const cursor = decodeChannelCursor(rawCursor);
 
     try {
       const pageRows = await this.db
@@ -250,7 +218,7 @@ export class ChatChannelListService {
             eq(chatChannelMembers.orgId, orgId),
             eq(chatChannelMembers.membershipId, actorMembershipId),
             archived ? isNotNull(chatChannelMembers.archivedAt) : isNull(chatChannelMembers.archivedAt),
-            this.channelKeysetWhere(cursor),
+            channelKeysetWhere(cursor),
           ),
         )
         .orderBy(desc(chatChannels.lastMessageAt), desc(chatChannels.id))
@@ -263,7 +231,7 @@ export class ChatChannelListService {
 
       const lastRow = pageSlice[pageSlice.length - 1];
       const nextCursor = hasMore && lastRow
-        ? this.encodeChannelCursor(lastRow.lastMessageAt, lastRow.id)
+        ? encodeChannelCursor(lastRow.lastMessageAt, lastRow.id)
         : null;
 
       const pageChannelIds = pageSlice.map((r) => r.id);

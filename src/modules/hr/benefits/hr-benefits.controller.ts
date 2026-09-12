@@ -20,7 +20,6 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { actingMembershipId } from "../../../common/auth/principal";
 import { HrBenefitsPlansService } from "./hr-benefits-plans.service";
 import { HrBenefitsEnrollmentService } from "./hr-benefits-enrollment.service";
-import { HrBenefitsClaimsService } from "./hr-benefits-claims.service";
 import {
   createBenefitPlanSchema,
   patchBenefitPlanSchema,
@@ -29,12 +28,8 @@ import {
   waiveSchema,
   createDependentSchema,
   patchDependentSchema,
-  submitClaimSchema,
-  reviewClaimSchema,
-  setPayoutRouteSchema,
   benefitPlansQuerySchema,
   availableBenefitPlansQuerySchema,
-  claimsQuerySchema,
   type CreateBenefitPlanInput,
   type PatchBenefitPlanInput,
   type CreateEnrollmentWindowInput,
@@ -42,23 +37,18 @@ import {
   type WaiveInput,
   type CreateDependentInput,
   type PatchDependentInput,
-  type SubmitClaimInput,
-  type ReviewClaimInput,
-  type SetPayoutRouteInput,
   type BenefitPlansQuery,
   type AvailableBenefitPlansQuery,
-  type ClaimsQuery,
 } from "./dto/benefits.schemas";
 import { AccessService } from "../../access/access.service";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
 import { ResponseSchema, NoContentResponse } from "../../../common/openapi/zod-operation-contracts"
-import { listPlansResponseSchema, getPlanResponseSchema, checkEligibilityResponseSchema, createPlanResponseSchema, updatePlanResponseSchema, deletePlanResponseSchema, listWindowsResponseSchema, createWindowResponseSchema, updateWindowResponseSchema, getMyBenefitsResponseSchema, enrollResponseSchema, waiveResponseSchema, listDependentsResponseSchema, addDependentResponseSchema, updateDependentResponseSchema, deleteDependentResponseSchema, listClaimsResponseSchema, submitClaimResponseSchema, reviewClaimResponseSchema, setPayoutRouteResponseSchema } from "./dto/benefits-response.schemas"
+import { listPlansResponseSchema, getPlanResponseSchema, checkEligibilityResponseSchema, createPlanResponseSchema, updatePlanResponseSchema, deletePlanResponseSchema, listWindowsResponseSchema, createWindowResponseSchema, updateWindowResponseSchema, getMyBenefitsResponseSchema, enrollResponseSchema, waiveResponseSchema, listDependentsResponseSchema, addDependentResponseSchema, updateDependentResponseSchema, deleteDependentResponseSchema } from "./dto/benefits-response.schemas"
 
 const planIdParams = z.object({ planId: z.coerce.number().int().positive() }).strict();
 const windowIdParams = z.object({ windowId: z.coerce.number().int().positive() }).strict();
 const depIdParams = z.object({ depId: z.coerce.number().int().positive() }).strict();
-const claimIdParams = z.object({ claimId: z.coerce.number().int().positive() }).strict();
 const updateWindowSchema = createEnrollmentWindowSchema.partial();
 
 @RequireModule("hr")
@@ -68,7 +58,6 @@ export class HrBenefitsController {
   constructor(
     private readonly plans: HrBenefitsPlansService,
     private readonly enrollment: HrBenefitsEnrollmentService,
-    private readonly claims: HrBenefitsClaimsService,
     private readonly access: AccessService,
   ) {}
 
@@ -279,57 +268,5 @@ export class HrBenefitsController {
     @Param("depId", ParseIntPipe) depId: number,
   ) {
     return this.enrollment.deleteDependent(u.orgId, u.userId, actingMembershipId(u.principal), depId);
-  }
-
-  @ResponseSchema(listClaimsResponseSchema)
-  @Get("claims")
-  @UseGuards(PermissionGuard)
-  @RequirePermission("hr:benefits:view")
-  @Validate({ query: claimsQuerySchema })
-  async listClaims(
-    @CurrentUser() u: CurrentUserContext,
-    @Query() query: ClaimsQuery,
-  ) {
-    const isAdmin = await this.isAdmin(u);
-    return this.claims.listClaims(u.orgId, query, u.userId, actingMembershipId(u.principal), isAdmin);
-  }
-
-  @ResponseSchema(submitClaimResponseSchema)
-  @Post("claims")
-  @HttpCode(201)
-  @UseGuards(PermissionGuard)
-  @RequirePermission("hr:benefits:view")
-  @Validate({ body: submitClaimSchema })
-  submitClaim(
-    @CurrentUser() u: CurrentUserContext,
-    @Body() body: SubmitClaimInput,
-  ) {
-    return this.claims.submitClaim(u.orgId, u.userId, actingMembershipId(u.principal), body);
-  }
-
-  @ResponseSchema(reviewClaimResponseSchema)
-  @Patch("claims/:claimId/review")
-  @UseGuards(PermissionGuard)
-  @RequirePermission("hr:benefits:manage")
-  @Validate({ params: claimIdParams, body: reviewClaimSchema })
-  reviewClaim(
-    @CurrentUser() u: CurrentUserContext,
-    @Param("claimId", ParseIntPipe) claimId: number,
-    @Body() body: ReviewClaimInput,
-  ) {
-    return this.claims.reviewClaim(u.orgId, claimId, u.userId, actingMembershipId(u.principal), body);
-  }
-
-  @ResponseSchema(setPayoutRouteResponseSchema)
-  @Patch("claims/:claimId/payout-route")
-  @UseGuards(PermissionGuard)
-  @RequirePermission("hr:benefits:manage")
-  @Validate({ params: claimIdParams, body: setPayoutRouteSchema })
-  setPayoutRoute(
-    @CurrentUser() u: CurrentUserContext,
-    @Param("claimId", ParseIntPipe) claimId: number,
-    @Body() body: SetPayoutRouteInput,
-  ) {
-    return this.claims.setPayoutRoute(u.orgId, claimId, body.payoutRoute);
   }
 }

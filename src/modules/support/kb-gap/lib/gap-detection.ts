@@ -138,11 +138,10 @@ function chunked<T>(items: readonly T[], size: number): T[][] {
  * Upsert a whole detection pass in two statements per chunk instead of two per
  * gap.
  *
- * `upsertGap` (below, kept for single-gap callers) is read-then-write: one
- * `findFirst` to decide insert vs update, then the write. Called once per
- * cluster it cost `2N` round trips on the one pooled connection the sweep holds,
- * and `ticketClusters` is unbounded — so the cost grew with the organisation's
- * open-ticket count.
+ * The per-gap predecessor was read-then-write: one `findFirst` to decide insert
+ * vs update, then the write. Called once per cluster it cost `2N` round trips on
+ * the one pooled connection the sweep holds, and `ticketClusters` is unbounded —
+ * so the cost grew with the organisation's open-ticket count.
  *
  * Three things the per-row version did that this has to keep doing, spelled out
  * because each is easy to lose in a batch:
@@ -247,56 +246,6 @@ export async function upsertGaps(
 
   return { created, updated, skipped };
 }
-
-export async function upsertGap(
-    db: Db,
-    orgId: string,
-    clusterKey: string,
-    representativeQuestion: string,
-    data: {
-      ticketCount: number;
-      sampleTicketIds: number[];
-      evidence: { searchQueries: Array<{ query: string; count: number }>; relatedTicketIds: number[] };
-    },
-  ): Promise<"created" | "updated" | "skipped"> {
-    const existing = await db.query.supportKnowledgeGaps.findFirst({
-      where: and(
-        eq(supportKnowledgeGaps.orgId, orgId),
-        eq(supportKnowledgeGaps.clusterKey, clusterKey),
-      ),
-      columns: { id: true, status: true },
-    });
-
-    if (existing) {
-      if (
-        existing.status !== SupportKnowledgeGapStatus.OPEN &&
-        existing.status !== SupportKnowledgeGapStatus.DRAFTED
-      ) {
-        return "skipped";
-      }
-      await db
-        .update(supportKnowledgeGaps)
-        .set({
-          ticketCount: data.ticketCount,
-          sampleTicketIds: data.sampleTicketIds,
-          evidence: data.evidence,
-          updatedAt: new Date(),
-        })
-        .where(and(eq(supportKnowledgeGaps.id, existing.id), eq(supportKnowledgeGaps.orgId, orgId)));
-      return "updated";
-    }
-
-    await db.insert(supportKnowledgeGaps).values({
-      orgId,
-      clusterKey,
-      representativeQuestion,
-      ticketCount: data.ticketCount,
-      sampleTicketIds: data.sampleTicketIds,
-      evidence: data.evidence,
-      status: SupportKnowledgeGapStatus.OPEN,
-    });
-    return "created";
-  }
 
 export async function findKbOwners(
     db: Db,orgId: string): Promise<string[]> {

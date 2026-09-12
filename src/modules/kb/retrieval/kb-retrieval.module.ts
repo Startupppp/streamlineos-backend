@@ -28,12 +28,13 @@ import { KbResearchBriefService } from "./kb-research-brief.service";
 import { KbResearchBriefHandler } from "./kb-research-brief.handler";
 import { KbSearchController } from "./kb-search.controller";
 import { KbAskController } from "./kb-ask.controller";
+import { KbConversationsController } from "./kb-conversations.controller";
 import { KbResearchBriefController } from "./kb-research-brief.controller";
 import { KbPageIndexingController } from "./kb-page-indexing.controller";
 
 @Module({
   imports: [AiModule, AiJobsModule, KbCoreModule, OutboxModule],
-  controllers: [KbSearchController, KbAskController, KbResearchBriefController, KbPageIndexingController],
+  controllers: [KbSearchController, KbAskController, KbConversationsController, KbResearchBriefController, KbPageIndexingController],
   providers: [
     KbIndexingService,
     KbIngestionCheckpointService,

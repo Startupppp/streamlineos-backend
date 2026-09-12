@@ -4,9 +4,6 @@ import { dirname, join, resolve } from "node:path";
 const FRONTEND_MARKER = join("lib", "rbac", "permissions");
 const FRONTEND_SIBLINGS = ["frontend", join("streamlineos-frontend", "frontend")];
 
-const WORKSPACE_MARKER = join("architecture-refactor", "final-refactor", "issues");
-const WORKSPACE_SIBLINGS = [".", "streamlineos-frontend"];
-
 function resolveRoot(
   marker: string,
   siblings: readonly string[],
@@ -57,13 +54,4 @@ export function frontendRoot(): string {
 
 export function frontendPath(...segments: string[]): string {
   return join(frontendRoot(), ...segments);
-}
-
-export function workspaceRoot(): string {
-  return requireRoot(
-    WORKSPACE_MARKER,
-    WORKSPACE_SIBLINGS,
-    "STREAMLINE_WORKSPACE_ROOT",
-    "Workspace",
-  );
 }

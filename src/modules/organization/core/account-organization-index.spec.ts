@@ -223,15 +223,16 @@ describe("AccountOrganizationIndexService.activate", () => {
     expect(tx.update).toHaveBeenCalledTimes(2);
   });
 
-  it("never throws at its caller — the switch it stamps has already committed", async () => {
+  it("never throws at its caller, and reports the failure instead of swallowing it", async () => {
     const { db, tx } = makeDb([], []);
     tx.update.mockImplementation(() => {
       throw new Error("index write failed");
     });
 
-    await expect(
-      new AccountOrganizationIndexService(db).activate("user-1", "org-1"),
-    ).resolves.toBeUndefined();
+    const outcome = await new AccountOrganizationIndexService(db).activate("user-1", "org-1");
+
+    expect(outcome.status).toBe("failed");
+    if (outcome.status === "failed") expect(outcome.reason).toContain("index write failed");
   });
 });
 

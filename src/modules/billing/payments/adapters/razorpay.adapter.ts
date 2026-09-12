@@ -1,8 +1,7 @@
 import { Injectable, BadGatewayException, OnModuleInit, Optional } from "@nestjs/common";
-import { createHmac, timingSafeEqual } from "node:crypto";
-import { z } from "zod";
-import { outboundRequest, OutboundRequestError, type OutboundRequestInit } from "../../../../common/http/outbound-request";
-import { callProvider, type FailureClass } from "../../../../common/outbound/call-provider";
+import { createHmac } from "node:crypto";
+import { outboundRequest, type OutboundRequestInit } from "../../../../common/http/outbound-request";
+import { callProvider } from "../../../../common/outbound/call-provider";
 import { ProviderCircuitBreaker } from "../../../../common/outbound/provider-circuit-breaker";
 import { PaymentProviderAdapterRegistry, type PaymentCredentialWarning, type PaymentProviderAdapter, type PaymentProviderRuntime, type PaymentWebhookNormalization, type ProviderPaymentSnapshot } from "../payment-provider-adapter.interface";
 import {
@@ -11,6 +10,16 @@ import {
   rawPaymentEntitySchema,
   tenantCredentialFieldsSchema,
 } from "../dto/webhook.schemas";
+import {
+  razorpayOrderResponseSchema,
+  razorpayOrderErrorSchema,
+  razorpayPaymentResponseSchema,
+  constantTimeEquals,
+  RazorpayServerError,
+  RazorpayClientError,
+  classifyRazorpayError,
+  razorpayBreaker,
+} from "./razorpay-internals";
 export type RazorpayTransport = (url: string, init: OutboundRequestInit) => Promise<Response>;
 
 interface RazorpayAdapterOptions {
@@ -26,59 +35,6 @@ interface TenantRazorpayCredentials {
   readonly secret: string | null;
   readonly webhookSecret: string | null;
 }
-
-const razorpayOrderResponseSchema = z.object({
-  id: z.string(),
-  amount: z.number(),
-  currency: z.string(),
-});
-
-const razorpayOrderErrorSchema = z.object({
-  error: z.object({ description: z.string().optional() }).optional(),
-});
-
-const razorpayPaymentResponseSchema = z.object({
-  id: z.string(),
-  order_id: z.string().nullable(),
-  status: z.enum(["created", "authorized", "captured", "refunded", "failed"]),
-  amount: z.number(),
-  currency: z.string(),
-});
-
-
-function constantTimeEquals(expected: string, provided: string): boolean {
-  const a = Buffer.from(expected, "utf8");
-  const b = Buffer.from(provided, "utf8");
-  if (a.length !== b.length) return false;
-  try {
-    return timingSafeEqual(a, b);
-  } catch {
-    return false;
-  }
-}
-
-class RazorpayServerError extends Error {
-  constructor(description: string) {
-    super(description);
-    this.name = "RazorpayServerError";
-  }
-}
-
-class RazorpayClientError extends Error {
-  constructor(description: string) {
-    super(description);
-    this.name = "RazorpayClientError";
-  }
-}
-
-function classifyRazorpayError(error: unknown): FailureClass {
-  if (error instanceof RazorpayClientError) return "terminal";
-  if (error instanceof OutboundRequestError) return "retryable";
-  if (error instanceof RazorpayServerError) return "retryable";
-  return "retryable";
-}
-
-const razorpayBreaker = new ProviderCircuitBreaker();
 
 @Injectable()
 export class RazorpayAdapter implements PaymentProviderAdapter, OnModuleInit {

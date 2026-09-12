@@ -24,8 +24,6 @@ import { isKnownTimeZone, nextOpening, OUTBOUND_WORKING_HOURS } from "./working-
  * for one customer" and the next person reads the override as the rule.
  */
 
-export const GUARDRAIL_VERSION = 1;
-
 export type ConsentStatus = "OPTED_IN" | "OPTED_OUT" | "UNKNOWN";
 
 export interface SendTimeFacts {

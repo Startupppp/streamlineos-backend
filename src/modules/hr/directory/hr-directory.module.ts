@@ -4,6 +4,7 @@ import { WebhooksModule } from "../../webhooks/webhooks.module";
 import { HrAutomationsModule } from "../automations/hr-automations.module";
 import { HrCoreModule } from "../core/hr-core.module";
 import { EmployeesController } from "./employees.controller";
+import { EmployeeDetailController } from "./employee-detail.controller";
 import { OrgStructureController } from "./org-structure.controller";
 import { TeamEventsController } from "./team-events.controller";
 import { HrAssetsController } from "./assets.controller";
@@ -43,6 +44,7 @@ import { MembershipAdmissionModule } from "../../organization/core/membership-ad
   ],
   controllers: [
     EmployeesController,
+    EmployeeDetailController,
     OrgStructureController,
     TeamEventsController,
     HrAssetsController,
