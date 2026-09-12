@@ -15,6 +15,7 @@ import { RevenueAnalyticsService } from "./revenue-analytics.service";
 import { PaymentProviderResolver } from "../payments/payment-provider-resolver.service";
 import { PaymentWebhookReceiverService } from "../payments/payment-webhook-receiver.service";
 import { PaymentAnalyticsService } from "../payments/payment-analytics.service";
+import { PlatformMerchantService } from "../payments/platform-merchant.service";
 import {
   BillingWebhookHandler,
   type WebhookResult,
@@ -23,10 +24,8 @@ import { BillingCoupons } from "./billing-coupons";
 import {
   type BillingCycle,
   type ConfirmCheckoutInput,
-  type CreateCouponInput,
   type Plan,
   type UpdateBillingProfileInput,
-  type UpdateCouponInput,
 } from "./dto/billing.schemas";
 import { buildPlanCatalog, TRIAL_PLAN } from "./plan-entitlements.constants";
 import { ExternalEffectLedger } from "../../../common/outbox/external-effect-ledger";
@@ -50,6 +49,7 @@ export class BillingService {
     private readonly paymentWebhooks: PaymentWebhookReceiverService,
     private readonly paymentNotices: PaymentAnalyticsService,
     private readonly billingProfile: BillingProfileService,
+    private readonly platformMerchant: PlatformMerchantService,
   ) {
     this.paymentActivation = new BillingPaymentActivation({
       db: this.db,
@@ -61,6 +61,7 @@ export class BillingService {
       revenueAnalytics: this.revenueAnalytics,
       providers: this.providers,
       externalEffectLedger: this.externalEffectLedger,
+      platformMerchant: this.platformMerchant,
     });
     this.couponAdmin = new BillingCoupons(this.db);
     this.webhooks = new BillingWebhookHandler({
@@ -72,12 +73,13 @@ export class BillingService {
       externalEffectLedger: this.externalEffectLedger,
       paymentWebhooks: this.paymentWebhooks,
       paymentNotices: this.paymentNotices,
+      platformMerchant: this.platformMerchant,
     });
-    this.marketplace = new BillingMarketplace(this.aiCredits, this.providers);
+    this.marketplace = new BillingMarketplace(this.aiCredits, this.platformMerchant);
     this.accountOverview = new BillingAccountOverview(
       this.db,
       this.planLimits,
-      this.providers,
+      this.platformMerchant,
     );
   }
 
@@ -99,11 +101,12 @@ export class BillingService {
       },
     });
 
-    const adapter = await this.providers.resolveConfigured(orgId);
+    const readiness = this.platformMerchant.readiness();
     return {
       subscription: subscription ?? null,
-      publicKeyId: adapter?.publicKeyId() ?? null,
-      isConfigured: adapter?.isReady() ?? false,
+      publicKeyId: readiness.configured ? readiness.publicKeyId : null,
+      isConfigured: readiness.configured,
+      platformCheckout: readiness,
     };
   }
 
@@ -130,19 +133,7 @@ export class BillingService {
   }
 
   listCoupons(orgId: string) {
-    return this.couponAdmin.list(orgId);
-  }
-
-  createCoupon(orgId: string, data: CreateCouponInput) {
-    return this.couponAdmin.create(orgId, data);
-  }
-
-  updateCoupon(orgId: string, id: number, data: UpdateCouponInput) {
-    return this.couponAdmin.update(orgId, id, data);
-  }
-
-  deleteCoupon(orgId: string, id: number) {
-    return this.couponAdmin.remove(orgId, id);
+    return this.couponAdmin.listRedeemable(orgId);
   }
 
 

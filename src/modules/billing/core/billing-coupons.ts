@@ -2,18 +2,25 @@ import { ConflictException, NotFoundException } from "@nestjs/common";
 import { and, asc, eq, isNull, or, sql } from "drizzle-orm";
 import { coupons, couponRedemptions } from "../../../db/schema";
 import { type Db } from "../../../db/drizzle.module";
+import { type DbOrTx } from "../../../common/rbac/access-invalidate";
 import {
   evaluateCoupon,
   COUPON_NOT_FOUND,
+  planBaseAmountPaise,
   type CouponEvaluation,
 } from "./coupon-pricing";
-import { PLAN_PRICES_PAISE } from "./plan-entitlements.constants";
+import { ANNUAL_DISCOUNT_PCT } from "./plan-entitlements.constants";
 import {
+  type BillingCycle,
   type CreateCouponInput,
   type Plan,
   type UpdateCouponInput,
 } from "./dto/billing.schemas";
 import { isUniqueViolation } from "../../../common/db/postgres-error";
+
+export type CouponReservation =
+  | { reserved: true; couponId: number; discountAmountMinor: number }
+  | { reserved: false; reason: string };
 
 // A coupon is redeemable by the organisation that owns it, or by everyone when it is a
 // platform-wide coupon (`org_id IS NULL`). Every read applies this predicate.
@@ -58,10 +65,60 @@ export class BillingCoupons {
     });
   }
 
+  async reserve(
+    tx: DbOrTx,
+    couponId: number,
+    orgId: string,
+    plan: Plan,
+    baseAmountMinor: number,
+  ): Promise<CouponReservation> {
+    const evaluation = await this.evaluate(couponId, orgId, plan, baseAmountMinor);
+    if (!evaluation.eligible) return { reserved: false, reason: evaluation.reason };
+
+    const rows = await tx
+      .update(coupons)
+      .set({ usedCount: sql`${coupons.usedCount} + 1`, updatedAt: new Date() })
+      .where(
+        and(
+          eq(coupons.id, couponId),
+          eq(coupons.isActive, true),
+          redeemableBy(orgId),
+          or(isNull(coupons.maxUses), sql`${coupons.usedCount} < ${coupons.maxUses}`),
+        ),
+      )
+      .returning({ id: coupons.id });
+
+    if (!rows[0]) return { reserved: false, reason: "Coupon is no longer available" };
+    return { reserved: true, couponId, discountAmountMinor: evaluation.discountAmount };
+  }
+
+  async release(tx: DbOrTx, couponId: number): Promise<void> {
+    await tx
+      .update(coupons)
+      .set({ usedCount: sql`GREATEST(${coupons.usedCount} - 1, 0)`, updatedAt: new Date() })
+      .where(eq(coupons.id, couponId));
+  }
+
+  async redeem(
+    tx: DbOrTx,
+    couponId: number,
+    orgId: string,
+    userId: string,
+    amountMinor: number,
+  ): Promise<void> {
+    await tx.insert(couponRedemptions).values({
+      couponId,
+      orgId,
+      userId,
+      amountPaise: amountMinor,
+    });
+  }
+
   async validate(
     code: string,
     orgId: string,
     plan: Plan,
+    billingCycle: BillingCycle = "monthly",
   ): Promise<{
     valid: boolean;
     couponId: number | null;
@@ -94,11 +151,12 @@ export class BillingCoupons {
       };
     }
 
+    const baseAmountPaise = planBaseAmountPaise(plan, billingCycle, ANNUAL_DISCOUNT_PCT);
     const evaluation = await this.evaluate(
       coupon.id,
       orgId,
       plan,
-      PLAN_PRICES_PAISE[plan],
+      baseAmountPaise,
     );
     if (!evaluation.eligible) {
       return {
@@ -124,7 +182,7 @@ export class BillingCoupons {
     };
   }
 
-  async list(orgId: string) {
+  async listRedeemable(orgId: string) {
     const all = await this.db.query.coupons.findMany({
       where: redeemableBy(orgId),
       orderBy: (c, { desc: d }) => [d(c.createdAt)],
@@ -138,12 +196,23 @@ export class BillingCoupons {
     return all;
   }
 
-  async create(orgId: string, data: CreateCouponInput) {
+  async listPlatform(page: number, limit: number) {
+    const safeLimit = Math.min(limit, 100);
+    const offset = Math.max(0, (page - 1) * safeLimit);
+    return this.db.query.coupons.findMany({
+      where: isNull(coupons.orgId),
+      orderBy: (c, { desc: d }) => [d(c.createdAt)],
+      limit: safeLimit,
+      offset,
+    });
+  }
+
+  async create(data: CreateCouponInput) {
     try {
       const [created] = await this.db
         .insert(coupons)
         .values({
-          orgId,
+          orgId: null,
           code: data.code.toUpperCase(),
           type: data.type,
           value: String(data.value),
@@ -155,13 +224,13 @@ export class BillingCoupons {
       return created;
     } catch (err: unknown) {
       if (isUniqueViolation(err)) {
-        throw new ConflictException("A coupon with this code already exists");
+        throw new ConflictException("A platform promotion with this code already exists");
       }
       throw err;
     }
   }
 
-  async update(orgId: string, id: number, data: UpdateCouponInput) {
+  async update(id: number, data: UpdateCouponInput) {
     const [updated] = await this.db
       .update(coupons)
       .set({
@@ -178,19 +247,46 @@ export class BillingCoupons {
         ...(data.isActive !== undefined ? { isActive: data.isActive } : {}),
         updatedAt: new Date(),
       })
-      .where(and(eq(coupons.id, id), eq(coupons.orgId, orgId)))
+      .where(and(eq(coupons.id, id), isNull(coupons.orgId)))
       .returning();
-    if (!updated) throw new NotFoundException("Coupon not found");
+    if (!updated) throw new NotFoundException("Platform promotion not found");
     return updated;
   }
 
-  async remove(orgId: string, id: number) {
+  async remove(id: number) {
     const [removed] = await this.db
       .update(coupons)
       .set({ isActive: false, updatedAt: new Date() })
-      .where(and(eq(coupons.id, id), eq(coupons.orgId, orgId)))
+      .where(and(eq(coupons.id, id), isNull(coupons.orgId)))
       .returning({ id: coupons.id });
-    if (!removed) throw new NotFoundException("Coupon not found");
+    if (!removed) throw new NotFoundException("Platform promotion not found");
     return { success: true };
+  }
+
+  /**
+   * Atomically increments `used_count` only when the limit has not been reached.
+   *
+   * Returns `true` when the slot was reserved (1 row affected), `false` when
+   * `used_count >= max_uses` (0 rows affected — the caller must reject).
+   *
+   * LANE-B call site in `verifyAndActivate` (inside the activation transaction):
+   *   const reserved = await this.couponAdmin.atomicConsumeMaxUses(tx, couponId);
+   *   if (!reserved) throw new BadRequestException("This coupon has reached its usage limit");
+   */
+  async atomicConsumeMaxUses(tx: DbOrTx, couponId: number): Promise<boolean> {
+    const result = await tx
+      .update(coupons)
+      .set({ usedCount: sql`${coupons.usedCount} + 1`, updatedAt: new Date() })
+      .where(
+        and(
+          eq(coupons.id, couponId),
+          or(
+            isNull(coupons.maxUses),
+            sql`${coupons.usedCount} < ${coupons.maxUses}`,
+          ),
+        ),
+      )
+      .returning({ id: coupons.id });
+    return result.length > 0;
   }
 }

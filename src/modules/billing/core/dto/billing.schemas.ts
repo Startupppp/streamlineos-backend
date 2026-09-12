@@ -23,9 +23,6 @@ export const confirmCheckoutSchema = z.object({
   orderId: z.string().min(1),
   paymentId: z.string().min(1),
   signature: z.string().min(1),
-  plan: planSchema,
-  billingCycle: billingCycleSchema.optional(),
-  couponId: z.number().int().positive().optional(),
 }).strict();
 export type ConfirmCheckoutInput = z.infer<typeof confirmCheckoutSchema>;
 

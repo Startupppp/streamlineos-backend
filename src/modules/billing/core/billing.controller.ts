@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, HttpCode, Param, ParseIntPipe, Patch, Post, Query, UseGuards } from "@nestjs/common";
+import { Body, Controller, Get, HttpCode, Patch, Post, Query, UseGuards } from "@nestjs/common";
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
 import { Universal } from "../../../common/auth/universal.decorator";
@@ -13,18 +13,14 @@ import { BillingService } from "./billing.service";
 import { PlanLimitsService } from "./plan-limits.service";
 import {
   confirmCheckoutSchema,
-  createCouponSchema,
   createOrderSchema,
   purchaseAddonSchema,
   updateBillingProfileSchema,
-  updateCouponSchema,
   validateCouponQuerySchema,
   type ConfirmCheckoutInput,
-  type CreateCouponInput,
   type CreateOrderInput,
   type PurchaseAddonInput,
   type UpdateBillingProfileInput,
-  type UpdateCouponInput,
   type ValidateCouponQueryInput,
 } from "./dto/billing.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
@@ -46,12 +42,7 @@ import {
   billingProfileResponseSchema,
   listAddonsResponseSchema,
   couponListResponseSchema,
-  couponRowSchema,
-  successSchema,
 } from "./dto/billing-core-response.schemas";
-import { z } from "zod";
-
-const couponIdParams = z.object({ couponId: z.coerce.number().int().positive() }).strict();
 
 @Controller("billing")
 @UseGuards(JwtAuthGuard)
@@ -205,40 +196,5 @@ export class BillingController {
   @ResponseSchema(couponListResponseSchema)
   listCoupons(@CurrentUser() u: CurrentUserContext) {
     return this.billing.listCoupons(u.orgId);
-  }
-
-  @Post("coupons")
-  @HttpCode(201)
-  @UseGuards(PermissionGuard)
-  @RequirePermission("billing:coupons:manage")
-  @Validate({ body: createCouponSchema })
-  @ResponseSchema(couponRowSchema)
-  createCoupon(@Body() body: CreateCouponInput, @CurrentUser() u: CurrentUserContext) {
-    return this.billing.createCoupon(u.orgId, body);
-  }
-
-  @Patch("coupons/:couponId")
-  @UseGuards(PermissionGuard)
-  @RequirePermission("billing:coupons:manage")
-  @Validate({ params: couponIdParams, body: updateCouponSchema })
-  @ResponseSchema(couponRowSchema)
-  updateCoupon(
-    @Param("couponId", ParseIntPipe) couponId: number,
-    @Body() body: UpdateCouponInput,
-    @CurrentUser() u: CurrentUserContext,
-  ) {
-    return this.billing.updateCoupon(u.orgId, couponId, body);
-  }
-
-  @Delete("coupons/:couponId")
-  @UseGuards(PermissionGuard)
-  @RequirePermission("billing:coupons:manage")
-  @Validate({ params: couponIdParams })
-  @ResponseSchema(successSchema)
-  deleteCoupon(
-    @Param("couponId", ParseIntPipe) couponId: number,
-    @CurrentUser() u: CurrentUserContext,
-  ) {
-    return this.billing.deleteCoupon(u.orgId, couponId);
   }
 }

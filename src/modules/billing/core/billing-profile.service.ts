@@ -24,31 +24,51 @@ const billingProfileColumns = {
   updatedAt: billingProfiles.updatedAt,
 };
 
+type BillingProfileRow = Pick<typeof billingProfiles.$inferSelect, keyof typeof billingProfileColumns>;
+
+function defaultBillingProfile(orgId: string): BillingProfileRow {
+  const now = new Date();
+  return {
+    id: 0,
+    orgId,
+    gstin: null,
+    pan: null,
+    billingName: null,
+    billingEmail: null,
+    addressLine1: null,
+    addressLine2: null,
+    city: null,
+    state: null,
+    pincode: null,
+    country: null,
+    isTaxExempt: false,
+    metadata: null,
+    createdAt: now,
+    updatedAt: now,
+  };
+}
+
 @Injectable()
 export class BillingProfileService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
-  async get(orgId: string) {
+  async get(orgId: string): Promise<BillingProfileRow> {
     const [existing] = await this.db
       .select(billingProfileColumns)
       .from(billingProfiles)
       .where(eq(billingProfiles.orgId, orgId));
-    if (existing) return existing;
-
-    const [profile] = await this.db
-      .insert(billingProfiles)
-      .values({ orgId })
-      .returning(billingProfileColumns);
-    return profile;
+    return existing ?? defaultBillingProfile(orgId);
   }
 
-  async update(orgId: string, data: UpdateBillingProfileInput) {
-    await this.get(orgId);
-    const [updated] = await this.db
-      .update(billingProfiles)
-      .set({ ...data, updatedAt: new Date() })
-      .where(eq(billingProfiles.orgId, orgId))
+  async update(orgId: string, data: UpdateBillingProfileInput): Promise<BillingProfileRow> {
+    const [upserted] = await this.db
+      .insert(billingProfiles)
+      .values({ orgId, ...data })
+      .onConflictDoUpdate({
+        target: billingProfiles.orgId,
+        set: { ...data, updatedAt: new Date() },
+      })
       .returning(billingProfileColumns);
-    return updated;
+    return upserted ?? defaultBillingProfile(orgId);
   }
 }

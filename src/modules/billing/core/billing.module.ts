@@ -3,6 +3,7 @@ import { BillingController } from "./billing.controller";
 import { BillingMarketplaceController } from "./billing-marketplace.controller";
 import { BillingEnterpriseController } from "./billing-enterprise.controller";
 import { RazorpayWebhookController } from "./razorpay-webhook.controller";
+import { PlatformPromotionsController } from "./platform-promotions.controller";
 import { BillingService } from "./billing.service";
 import { BillingProfileService } from "./billing-profile.service";
 import { MarketplaceService } from "./marketplace.service";
@@ -25,7 +26,7 @@ import { NotificationsModule } from "../../notifications/notifications.module";
 
 @Module({
   imports: [AiCreditsModule, PaymentsModule, OutboxModule, NotificationsModule],
-  controllers: [BillingController, BillingMarketplaceController, BillingEnterpriseController, RazorpayWebhookController],
+  controllers: [BillingController, BillingMarketplaceController, BillingEnterpriseController, RazorpayWebhookController, PlatformPromotionsController],
   providers: [BillingService, BillingProfileService, MarketplaceService, AiCreditsUsageService, AffiliateService, ReferralService, RevenueAnalyticsService, EnterpriseQuotesService, PlanLimitsService, VersionedCatalogService, SeatLedgerService, ProrationLedgerService, ProrationLedgerReportsService, UsageMeteringService, InvoiceSnapshotService],
   exports: [AiCreditsModule, BillingService, AiCreditsUsageService, RevenueAnalyticsService, PlanLimitsService, VersionedCatalogService, SeatLedgerService, ProrationLedgerService, ProrationLedgerReportsService, UsageMeteringService, InvoiceSnapshotService],
 })

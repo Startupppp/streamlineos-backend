@@ -1,12 +1,12 @@
 import { BadRequestException, ServiceUnavailableException } from "@nestjs/common";
 import { AiCreditsService } from "./ai-credits.service";
-import { PaymentProviderResolver } from "../payments/payment-provider-resolver.service";
+import { PlatformMerchantService } from "../payments/platform-merchant.service";
 import { PLATFORM_PRICE_CURRENCY } from "./plan-entitlements.constants";
 
 export class BillingMarketplace {
   constructor(
     private readonly aiCredits: AiCreditsService,
-    private readonly providers: PaymentProviderResolver,
+    private readonly platformMerchant: PlatformMerchantService,
   ) {}
 
   getMarketplace() {
@@ -23,8 +23,8 @@ export class BillingMarketplace {
     const pack = packs.find((item) => item.id === packId);
     if (!pack) throw new BadRequestException("AI credit pack not found");
 
-    const adapter = await this.providers.resolveConfigured(orgId);
-    if (adapter === undefined || !adapter.isReady()) {
+    const merchant = this.platformMerchant.resolve();
+    if (!merchant || !merchant.isReady()) {
       throw new ServiceUnavailableException(
         "Payment gateway not configured. Contact support.",
       );
@@ -34,7 +34,7 @@ export class BillingMarketplace {
     // PLATFORM_PRICE_CURRENCY, full stop. This used to be labelled with the buyer's own
     // accounting base currency, which billed a USD-books tenant $499 for a ₹499 pack.
     const currency = PLATFORM_PRICE_CURRENCY;
-    const { providerOrderId: addonOrderId } = await adapter.createOrder({
+    const { providerOrderId: addonOrderId } = await merchant.createOrder({
       // paise x quantity — minor units of `currency`
       amount: String(pack.priceInPaise * quantity),
       currency,
@@ -50,7 +50,7 @@ export class BillingMarketplace {
       orderId: addonOrderId,
       amount: pack.priceInPaise * quantity,
       currency,
-      keyId: adapter.publicKeyId(),
+      keyId: merchant.publicKeyId(),
       pack,
     };
   }
@@ -64,7 +64,7 @@ export class BillingMarketplace {
           description: "Purchase additional AI processing credits",
           icon: "Zap",
           available: true,
-          href: "/billing/ai-credits",
+          href: "/settings/billing/ai-credits",
         },
         {
           id: "extra_storage",
@@ -72,7 +72,7 @@ export class BillingMarketplace {
           description: "Add 100GB of document and file storage",
           icon: "HardDrive",
           priceInPaise: 49900,
-          available: true,
+          available: false,
         },
         {
           id: "whatsapp",

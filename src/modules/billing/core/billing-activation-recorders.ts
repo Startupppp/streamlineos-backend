@@ -8,7 +8,7 @@ import {
   ExternalEffectLeaseBusyError,
 } from "../../../common/outbox/external-effect-ledger";
 import { AiCreditsService } from "./ai-credits.service";
-import { type ConfirmCheckoutInput, type Plan } from "./dto/billing.schemas";
+import { type Plan } from "./dto/billing.schemas";
 import { ProrationLedgerService } from "./proration-ledger.service";
 import { VersionedCatalogService } from "./versioned-catalog.service";
 import { couponDiscountPaise } from "./coupon-pricing";
@@ -64,63 +64,27 @@ export async function recordProrationForPlanChange(
   }, tx);
 }
 
-export async function recordCouponRedemption(
-  tx: DbOrTx,
-  orgId: string,
-  userId: string,
-  couponId: number | undefined,
-  amount: number,
-): Promise<void> {
-  if (couponId === undefined) return;
-  const [lockedCoupon] = await tx.select({
-    id: coupons.id,
-    type: coupons.type,
-    value: coupons.value,
-    maxUses: coupons.maxUses,
-    usedCount: coupons.usedCount,
-  }).from(coupons).where(and(eq(coupons.orgId, orgId), eq(coupons.id, couponId), eq(coupons.isActive, true))).for("update").limit(1);
-  if (!lockedCoupon) return;
-  if (lockedCoupon.maxUses !== null && lockedCoupon.usedCount >= lockedCoupon.maxUses) {
-    throw new BadRequestException("This coupon has reached its usage limit");
-  }
-  await tx.update(coupons).set({ usedCount: sql`${coupons.usedCount} + 1` }).where(and(eq(coupons.orgId, orgId), eq(coupons.id, couponId)));
-  const discountPaise = couponDiscountPaise({
-    id: lockedCoupon.id,
-    type: lockedCoupon.type,
-    value: lockedCoupon.value,
-    maxUses: lockedCoupon.maxUses,
-    usedCount: lockedCoupon.usedCount,
-    applicablePlans: null,
-    expiresAt: null,
-  }, amount);
-  await tx.insert(couponRedemptions).values({
-    couponId,
-    orgId,
-    userId,
-    amountPaise: discountPaise,
-  });
-}
-
 export async function grantPlanCredits(
   deps: PlanCreditsRecorderDeps,
   orgId: string,
   userId: string,
-  input: ConfirmCheckoutInput,
+  paymentId: string,
+  plan: Plan,
 ): Promise<void> {
   try {
     await deps.externalEffectLedger.execute({
       organizationId: orgId,
-      producerEventId: input.paymentId,
-      effectKey: `${input.paymentId}:plan-credit-grant`,
+      producerEventId: paymentId,
+      effectKey: `${paymentId}:plan-credit-grant`,
       effectType: "billing.plan-credit-grant",
       providerIdempotency: "NONE",
-    }, () => deps.aiCredits.grantPlanCredits(orgId, input.plan, userId, input.paymentId));
+    }, () => deps.aiCredits.grantPlanCredits(orgId, plan, userId, paymentId));
   } catch (err: unknown) {
     if (err instanceof ExternalEffectLeaseBusyError) {
-      logger.warn("[billing] plan credit grant already in flight", { orgId, plan: input.plan });
+      logger.warn("[billing] plan credit grant already in flight", { orgId, plan });
       return;
     }
-    logger.error("[billing] plan credit grant failed", { orgId, plan: input.plan, err });
+    logger.error("[billing] plan credit grant failed", { orgId, plan, err });
     throw new ServiceUnavailableException(
       "Payment recorded but credits could not be granted. The system will retry automatically.",
     );

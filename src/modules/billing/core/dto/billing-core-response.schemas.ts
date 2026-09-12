@@ -65,9 +65,12 @@ export const marketplaceOverviewResponseSchema = z.object({
 
 export const checkoutResponseSchema = z.object({
   orderId: z.string(),
+  purchaseId: z.number().int(),
+  expiresAt: z.string(),
   amount: z.number().int(),
   currency: z.string(),
-  keyId: z.string(),
+  keyId: z.string().nullable(),
+  environment: z.string().nullable(),
   plan: z.string(),
   billingCycle: z.string(),
   discountAmount: z.number().int(),
@@ -76,7 +79,10 @@ export const checkoutResponseSchema = z.object({
 export const verifyActivateResponseSchema = z.object({
   success: z.literal(true),
   plan: z.string(),
-  status: z.literal("ACTIVE"),
+  billingCycle: z.string(),
+  status: z.string(),
+  currentPeriodEnd: z.string().nullable(),
+  alreadyActivated: z.boolean(),
 });
 
 const aiCreditPackSchema = z.object({

@@ -1,4 +1,4 @@
-import { PLAN_PRICES_PAISE } from "./plan-entitlements.constants";
+import { ANNUAL_DISCOUNT_PCT, PLAN_PRICES_PAISE, PLATFORM_PRICE_CURRENCY } from "./plan-entitlements.constants";
 import type { Plan } from "./dto/billing.schemas";
 
 export interface CouponRecord {
@@ -92,4 +92,19 @@ export function applyDiscount(baseAmountPaise: number, discountPaise: number): n
 export function planBaseAmountPaise(plan: Plan, billingCycle: "monthly" | "annual", annualDiscountPct: number): number {
   const monthly = PLAN_PRICES_PAISE[plan];
   return billingCycle === "annual" ? Math.round(monthly * 12 * (1 - annualDiscountPct)) : monthly;
+}
+
+export function resolveQuotePrice(
+  plan: Plan,
+  billingCycle: "monthly" | "annual",
+  catalogPrice: { amountMinor: number; currency: string } | null,
+): { amount: number; currency: string } {
+  const monthlyAmountMinor = catalogPrice?.amountMinor ?? PLAN_PRICES_PAISE[plan];
+  const currency = catalogPrice?.currency ?? PLATFORM_PRICE_CURRENCY;
+  return {
+    amount: billingCycle === "annual"
+      ? Math.round(monthlyAmountMinor * 12 * (1 - ANNUAL_DISCOUNT_PCT))
+      : monthlyAmountMinor,
+    currency,
+  };
 }

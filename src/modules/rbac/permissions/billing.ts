@@ -47,7 +47,21 @@ export const BILLING_PERMISSIONS: Permission[] = [
     name: "billing:coupons:manage",
     resource: "billing:coupons",
     action: "manage",
-    description: "Create, update, delete and validate coupon codes",
+    description: "Redeem and validate a promotion code on this organization's own subscription",
+    scopable: false,
+  },
+  {
+    name: "billing:promotions:view",
+    resource: "billing:promotions",
+    action: "view",
+    description: "View platform promotion codes (vendor operators only)",
+    scopable: false,
+  },
+  {
+    name: "billing:promotions:manage",
+    resource: "billing:promotions",
+    action: "manage",
+    description: "Create, update and deactivate platform promotion codes (vendor operators only)",
     scopable: false,
   },
   {

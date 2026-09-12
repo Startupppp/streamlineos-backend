@@ -12,6 +12,10 @@ import { normalizedPaymentWebhookEventSchema, type PaymentWebhookPayment, type N
 import { ProviderEventLedger, type ProviderEventKey } from "./provider-event-ledger";
 import { BillingPaymentState } from "./billing-payment-state";
 import { BillingWebhookEffects, type WebhookResult } from "./billing-webhook-effects";
+import { BillingPaymentActivation } from "./billing-payment-activation";
+import { SubscriptionPurchaseService } from "./subscription-purchase.service";
+import type { PlatformMerchantService } from "../payments/platform-merchant.service";
+import type { SubscriptionPurchase } from "../../../db/schema/billing/subscription-purchases";
 
 export type { WebhookResult };
 
@@ -24,18 +28,30 @@ export interface BillingWebhookDeps {
   externalEffectLedger: ExternalEffectLedger;
   paymentWebhooks: PaymentWebhookReceiverService;
   paymentNotices: PaymentAnalyticsService;
+  platformMerchant: PlatformMerchantService;
+  activation?: BillingPaymentActivation;
 }
 
-// Record, act, then acknowledge. A collaborator, not a provider — nothing outside billing resolves it.
 export class BillingWebhookHandler {
   private readonly ledger: ProviderEventLedger;
   private readonly state: BillingPaymentState;
   private readonly effects: BillingWebhookEffects;
+  private readonly purchaseService: SubscriptionPurchaseService;
 
   constructor(private readonly deps: BillingWebhookDeps) {
     this.ledger = new ProviderEventLedger(deps.db);
     this.state = new BillingPaymentState(deps.db, deps.planLimits);
-    this.effects = new BillingWebhookEffects(deps, this.state);
+    this.purchaseService = new SubscriptionPurchaseService(deps.db);
+    this.effects = new BillingWebhookEffects(
+      {
+        db: deps.db,
+        aiCredits: deps.aiCredits,
+        externalEffectLedger: deps.externalEffectLedger,
+        paymentNotices: deps.paymentNotices,
+        activation: deps.activation,
+      },
+      this.state,
+    );
   }
 
   async handle(
@@ -44,13 +60,13 @@ export class BillingWebhookHandler {
     rawBody: string,
     signature: string,
   ): Promise<WebhookResult> {
-    const adapter = await this.deps.providers.resolve(orgId, providerKey);
+    const adapter = this.deps.platformMerchant.resolve();
+
     if (!adapter) {
       logger.warn("[billing] no payment provider registered for webhook verification");
       return { status: 503, body: { ok: false } };
     }
     if (!adapter.verifyWebhookSignature({ rawBody, signature })) {
-      // Reported through the same channel the primary receiver uses, not just a log line.
       logger.warn(`[billing:${providerKey}] invalid webhook signature`);
       await this.deps.paymentWebhooks.recordSignatureFailure(orgId, providerKey);
       return { status: 401, body: { ok: false } };
@@ -96,10 +112,6 @@ export class BillingWebhookHandler {
     return this.settle(event, payment, orgId, providerKey, key);
   }
 
-  /**
-   * Re-drives events the provider stopped retrying. The signature was verified when the row was
-   * recorded, so the stored payload is trusted here; nothing outside the ledger enters this path.
-   */
   async redriveUnprocessed(
     orgId: string,
     window: { minAgeMs: number; maxAgeMs: number; limit: number },
@@ -110,7 +122,8 @@ export class BillingWebhookHandler {
     let failed = 0;
 
     for (const row of rows) {
-      const adapter = await this.deps.providers.resolve(orgId, row.provider);
+      const adapter = this.deps.platformMerchant.resolve();
+
       if (!adapter) {
         failed += 1;
         continue;
@@ -165,10 +178,21 @@ export class BillingWebhookHandler {
      * On the live path this is behaviour-preserving: `handle` already refused any mismatch,
      * so the `resolvedOrgId = org?.id ?? orgId` it used to compute was always `orgId`.
      */
-    const org = await this.state.findOrgFromNotes(payment.notes);
-    if (org && org.id !== orgId) {
-      logger.warn(`[billing:${providerKey}] webhook organization does not match endpoint organization`);
-      return { status: 400, body: { ok: false, error: "organization mismatch" } };
+    let purchase: SubscriptionPurchase | null = null;
+    if (payment.orderId) {
+      purchase = await this.purchaseService.findByOrderId(this.deps.db, payment.orderId);
+      if (purchase !== null && purchase.orgId !== orgId) {
+        logger.warn(`[billing:${providerKey}] webhook organization does not match purchase org`);
+        return { status: 400, body: { ok: false, error: "organization mismatch" } };
+      }
+    }
+
+    if (purchase === null) {
+      const org = await this.state.findOrgFromNotes(payment.notes);
+      if (org && org.id !== orgId) {
+        logger.warn(`[billing:${providerKey}] webhook organization does not match endpoint organization`);
+        return { status: 400, body: { ok: false, error: "organization mismatch" } };
+      }
     }
 
     try {
@@ -178,10 +202,9 @@ export class BillingWebhookHandler {
       return { status: 500, body: { ok: false } };
     }
 
-    const applied = await this.effects.apply(event, payment, orgId, providerKey);
+    const applied = await this.effects.apply(event, payment, orgId, providerKey, purchase);
     if (!applied.ok) return applied.result;
 
-    // Success is claimed only here: the revenue events and the processed_at stamp commit together.
     try {
       await runInNewTenantTransaction(this.deps.db, key.orgId, async (tx) => {
         for (const entry of applied.revenue) await this.deps.revenueAnalytics.emit(tx, entry);
@@ -199,5 +222,4 @@ export class BillingWebhookHandler {
 
     return { status: 200, body: { ok: true } };
   }
-
 }

@@ -7,13 +7,13 @@ import {
 } from "../../../db/schema";
 import { type Db } from "../../../db/drizzle.module";
 import { PlanLimitsService } from "./plan-limits.service";
-import { PaymentProviderResolver } from "../payments/payment-provider-resolver.service";
+import { PlatformMerchantService } from "../payments/platform-merchant.service";
 
 export class BillingAccountOverview {
   constructor(
     private readonly db: Db,
     private readonly planLimits: PlanLimitsService,
-    private readonly providers: PaymentProviderResolver,
+    private readonly platformMerchant: PlatformMerchantService,
   ) {}
 
   async getSeatInfo(orgId: string) {
@@ -119,8 +119,7 @@ export class BillingAccountOverview {
         failed: 0,
         voided: 0,
       },
-      isConfigured:
-        (await this.providers.resolveConfigured(orgId))?.isReady() ?? false,
+      isConfigured: this.platformMerchant.readiness().configured,
     };
   }
 }

@@ -33,6 +33,8 @@ export const PLATFORM_ONLY_PERMISSION_KEYS: ReadonlySet<string> = new Set([
   "blog:posts:manage",
   "blog:categories:manage",
   "blog:ai:use",
+  "billing:promotions:view",
+  "billing:promotions:manage",
 ]);
 
 function isOrgOnlyNamespace(key: string): boolean {

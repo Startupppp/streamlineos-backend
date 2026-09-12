@@ -13,6 +13,8 @@ import {
   type NormalizedPaymentWebhookEvent,
 } from "../payments/dto/webhook.schemas";
 import { BillingPaymentState } from "./billing-payment-state";
+import { BillingPaymentActivation } from "./billing-payment-activation";
+import type { SubscriptionPurchase } from "../../../db/schema/billing/subscription-purchases";
 
 export interface WebhookResult {
   status: number;
@@ -28,6 +30,7 @@ export interface BillingWebhookEffectDeps {
   aiCredits: AiCreditsService;
   externalEffectLedger: ExternalEffectLedger;
   paymentNotices: PaymentAnalyticsService;
+  activation?: BillingPaymentActivation;
 }
 
 export function packIdFor(
@@ -40,7 +43,6 @@ export function packIdFor(
   return isNaN(packId) ? null : packId;
 }
 
-// What a verified payment does to the tenant's billing state, isolated from the webhook transport.
 export class BillingWebhookEffects {
   constructor(
     private readonly deps: BillingWebhookEffectDeps,
@@ -52,6 +54,7 @@ export class BillingWebhookEffects {
     payment: PaymentWebhookPayment,
     orgId: string,
     providerKey: string,
+    purchase: SubscriptionPurchase | null,
   ): Promise<EffectOutcome> {
     const revenue: RevenueEventInput[] = [];
     const packId = packIdFor(event, payment);
@@ -95,16 +98,76 @@ export class BillingWebhookEffects {
       }
     }
 
-    if (event.event === "payment.failed" && payment.status === "failed") {
+    if (
+      event.event === "payment.captured" &&
+      payment.status === "captured" &&
+      packId === null &&
+      purchase !== null &&
+      this.deps.activation
+    ) {
+      const activation = this.deps.activation;
       try {
-        await this.state.transitionToPastDue(orgId, payment.id);
+        await this.deps.externalEffectLedger.execute(
+          {
+            organizationId: orgId,
+            producerEventId: payment.id,
+            effectKey: `${payment.id}:subscription-activation`,
+            effectType: "billing.subscription-activation",
+            providerIdempotency: "NONE",
+          },
+          async () => {
+            await activation.performActivationFromWebhook(
+              orgId,
+              payment.id,
+              payment.amount,
+              payment.currency,
+              purchase,
+            );
+          },
+        );
+        revenue.push({
+          type: "new_subscription",
+          orgId,
+          mrr: 0,
+          amount: payment.amount,
+          currency: payment.currency,
+          metadata: { paymentId: payment.id, source: "provider-webhook" },
+          dedupeKey: `${providerKey}:${payment.id}:sub`,
+        });
       } catch (err: unknown) {
-        logger.error(`[billing:${providerKey}] PAST_DUE transition failed`, {
+        if (err instanceof ExternalEffectLeaseBusyError)
+          return { ok: false, result: { status: 503, body: { ok: false, error: "activation in-flight" } } };
+        logger.error(`[billing:${providerKey}] subscription activation from webhook failed`, {
           orgId,
           paymentId: payment.id,
           err,
         });
+        await this.notifyProvisioningFailure(
+          orgId,
+          payment.id,
+          "your subscription could not be activated",
+        );
         return { ok: false, result: { status: 500, body: { ok: false } } };
+      }
+    }
+
+    if (event.event === "payment.failed" && payment.status === "failed") {
+      if (purchase !== null) {
+        try {
+          await this.state.transitionToPastDue(orgId, payment.id);
+        } catch (err: unknown) {
+          logger.error(`[billing:${providerKey}] PAST_DUE transition failed`, {
+            orgId,
+            paymentId: payment.id,
+            err,
+          });
+          return { ok: false, result: { status: 500, body: { ok: false } } };
+        }
+      } else {
+        logger.info(`[billing:${providerKey}] payment.failed with no subscription purchase — ignoring PAST_DUE transition`, {
+          orgId,
+          paymentId: payment.id,
+        });
       }
     }
 
@@ -123,7 +186,6 @@ export class BillingWebhookEffects {
     return { ok: true, revenue };
   }
 
-  // Through the effect ledger so a retrying provider produces one message, not a stream.
   async notifyProvisioningFailure(
     orgId: string,
     paymentId: string,
