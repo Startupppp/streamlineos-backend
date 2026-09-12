@@ -243,7 +243,10 @@ describe("when the materialisation cannot be written", () => {
 
     const warn = jest.spyOn(service["logger"], "warn").mockImplementation(() => undefined);
 
-    await expect(service.tryOnActivity(ORG, "a1")).resolves.toBeUndefined();
+    // Phase 4 ticket 03: a caught failure now resolves `null` rather than
+    // `undefined` — `tryOnActivity` reports "nothing to compare", the same
+    // answer a subject-anchored activity gives, rather than "void".
+    await expect(service.tryOnActivity(ORG, "a1")).resolves.toBeNull();
     expect(warn).toHaveBeenCalledTimes(1);
     expect(warn.mock.calls[0][0]).toContain("a1");
 

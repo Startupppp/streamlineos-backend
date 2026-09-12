@@ -15,6 +15,18 @@ import { loadRelationshipWindow, writeRelationshipState } from "./lib/relationsh
 export type { RelationshipAnchor, StoredRelationship } from "./relationship-state.types";
 
 /**
+ * The state on both sides of a fold — what `onActivity` hands back so a
+ * caller can judge what CHANGED, which `RelationshipStateService` itself
+ * never does. See `relationships.module.ts` for why: a judgement over this
+ * pair lives in `autonomy`, not here.
+ */
+export interface RelationshipDelta {
+  readonly anchor: RelationshipAnchor;
+  readonly before: StoredRelationship | null;
+  readonly after: StoredRelationship | null;
+}
+
+/**
  * The deal a stored row is anchored to, insisted upon.
  *
  * A row reaches here having already failed the `party_id` test, so it is
@@ -69,7 +81,7 @@ export class RelationshipStateService {
    * activity changes what the relationship looks like just as much as adding
    * one, and the anchor is still on the row.
    */
-  async onActivity(organizationId: string, activityId: string): Promise<void> {
+  async onActivity(organizationId: string, activityId: string): Promise<RelationshipDelta | null> {
     const [row] = await this.db
       .select({ partyId: activities.partyId, dealId: activities.dealId })
       .from(activities)
@@ -78,7 +90,7 @@ export class RelationshipStateService {
       )
       .limit(1);
 
-    if (!row) return;
+    if (!row) return null;
 
     // A subject-anchored activity has neither, and is not a relationship.
     const anchor: RelationshipAnchor | null = row.partyId
@@ -87,8 +99,20 @@ export class RelationshipStateService {
         ? { kind: "deal", dealId: row.dealId }
         : null;
 
-    if (!anchor) return;
+    if (!anchor) return null;
+
+    /*
+     * Read before the fold overwrites it, not because this method needs the
+     * value — it does not — but because after `rebuild` runs there is no
+     * "before" left anywhere to read. Phase 4 ticket 03's whole subject is a
+     * comparison across this exact boundary, and this is the only point in
+     * the system where both sides of it still exist at once.
+     */
+    const before = await this.read(organizationId, anchor);
     await this.rebuild(organizationId, anchor);
+    const after = await this.read(organizationId, anchor);
+
+    return { anchor, before, after };
   }
 
   /**
@@ -280,15 +304,16 @@ export class RelationshipStateService {
    * It never swallows silently — a deferred failure nobody logged is the next
    * outage nobody can see.
    */
-  async tryOnActivity(organizationId: string, activityId: string): Promise<void> {
+  async tryOnActivity(organizationId: string, activityId: string): Promise<RelationshipDelta | null> {
     try {
-      await this.onActivity(organizationId, activityId);
+      return await this.onActivity(organizationId, activityId);
     } catch (error) {
       this.logger.warn(
         `relationship state not updated for activity ${activityId}: ${
           error instanceof Error ? error.message : String(error)
         }`,
       );
+      return null;
     }
   }
 }

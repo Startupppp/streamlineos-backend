@@ -604,9 +604,8 @@ describe("CrmMcpService", () => {
         arguments: { source: "deals" },
       });
 
-      const [, , description] = reportingService.runAdHoc.mock.calls[0] as [
-        string,
-        string,
+      const [, description] = reportingService.runAdHoc.mock.calls[0] as [
+        McpContext,
         Record<string, unknown>,
       ];
 

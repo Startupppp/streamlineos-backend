@@ -50,6 +50,23 @@ export const DECISION_KINDS = [
    * second mechanism for an operator to remember.
    */
   "field.repaired",
+  /**
+   * Phase 4 ticket 03. The participant set on a relationship changed in a way
+   * that matters — the person who was replying has gone quiet while somebody
+   * else on the thread has started, which is a fact about who to sell to, not
+   * a repair to any record. Recorded rather than acted on: nothing about a
+   * detected role shift writes to the deal itself, so this kind exists purely
+   * to make the observation reviewable.
+   */
+  "participant.changed",
+  /**
+   * Phase 4 ticket 03. A relationship's thread lineage forked into a distinct
+   * subject, and the system opened a second opportunity for it. Not
+   * "recorded" like the kind above: this one can write, which is why it is
+   * `instant` rather than unreachable — deleting a deal this created is a
+   * clean, complete undo, unlike a message that already reached somebody.
+   */
+  "thread.forked",
 ] as const;
 export type DecisionKind = (typeof DECISION_KINDS)[number];
 

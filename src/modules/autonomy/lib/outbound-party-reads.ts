@@ -47,6 +47,13 @@ export async function resolveOutboundRecipient(
 
   if (contact?.email?.trim()) return contact.email.trim();
 
+  /*
+   * Filtered on `deletedAt`, same as the `partyContacts` read above — a
+   * soft-deleted party's own address must never be resolved into a send. A
+   * missing address here becomes the "no reachable address" failure the
+   * caller treats as a hard failure, which is a shorter path to the same
+   * outcome `evaluateGuardrails`'s `party-deleted` reason exists to guarantee.
+   */
   const [party] = await db
     .select({ email: businessParties.email })
     .from(businessParties)
@@ -54,6 +61,7 @@ export async function resolveOutboundRecipient(
       and(
         eq(businessParties.organizationId, organizationId),
         eq(businessParties.partyId, partyId),
+        isNull(businessParties.deletedAt),
       ),
     )
     .limit(1);

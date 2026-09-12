@@ -1,3 +1,4 @@
+import { NotFoundException } from "@nestjs/common";
 import { and, eq, inArray, isNull } from "drizzle-orm";
 import { deals, chatChannels, chatChannelMembers, organizationMembers } from "../../../db/schema";
 import { type Db } from "../../../db/drizzle.module";
@@ -11,6 +12,7 @@ import { AutomationService } from "../../automation/automation.service";
 import { WebhooksDispatchService } from "../../webhooks/webhooks-dispatch.service";
 import { CrmMetadataService } from "../../crm/metadata/crm-metadata.service";
 import { CrmAutomationBusService } from "../../crm/automation-studio/crm-automation-bus.service";
+import type { CommissionService } from "../../commission/commission.service";
 import type { UpdateDealInput } from "../dto/deals.schemas";
 
 /**
@@ -45,6 +47,13 @@ export interface DealUpdateEffectsDeps {
   readonly webhooksDispatch: WebhooksDispatchService;
   readonly crmMetadata: CrmMetadataService;
   readonly bus: CrmAutomationBusService;
+  /**
+   * Optional the same way every other cross-cutting effect below is meant to
+   * be missing-safe — an unconfigured commission module must not fail a
+   * stage update. `CommissionService` itself decides whether there is
+   * anything to claw back; this file only decides WHEN to ask it to.
+   */
+  readonly commission?: CommissionService;
 }
 
 /**
@@ -197,6 +206,36 @@ export async function announceDealUpdate(
   if (stageChanged && input.stage) {
     const stageMapFinal = await resolvePipelineStageMap(deps, orgId, null);
     const newStageInfo = stageMapFinal.get(input.stage);
+    const previousStageInfo = previousStage ? stageMapFinal.get(previousStage) : undefined;
+
+    /**
+     * Phase 5 ticket 06. "Reversed" is precisely this transition: a deal that
+     * WAS won moving to a stage that is not — lost, reopened, or reclassified
+     * into any non-won stage. Moving between two non-won stages, or into WON
+     * for the first time, is not a reversal and claws nothing back.
+     *
+     * Fire-and-forget like every other effect in this function — `clawbackForDeal`
+     * opens its own transaction and this update's has already committed by the
+     * time this runs, so nothing here can roll either back into the other.
+     */
+    if (previousStageInfo?.stageType === "won" && newStageInfo?.stageType !== "won" && deps.commission) {
+      void deps.commission
+        .clawbackForDeal(orgId, {
+          dealId,
+          reason: `Deal moved from ${previousStage} to ${input.stage}`,
+          actorUserId: userId,
+        })
+        .catch((err: unknown) => {
+          // NotFoundException here means "commission was never calculated for
+          // this deal" — the ordinary case for most reversed deals, since
+          // calculation is its own explicit step, not automatic on winning.
+          // That is not a side-effect failure and does not belong in the warn
+          // log every other one here does; a genuine failure still does.
+          if (err instanceof NotFoundException) return;
+          logSideEffectFailure("commission clawback", { orgId, dealId: updated.id })(err);
+        });
+    }
+
     if (newStageInfo?.stageType === "won") {
       deps.webhooksDispatch.dispatch(orgId, "deal.won", { id: updated.id, name: updated.name, value: updated.value, assignedToId: updated.assignedToId });
     } else if (newStageInfo?.stageType === "lost") {
