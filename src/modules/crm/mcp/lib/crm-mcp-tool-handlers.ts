@@ -205,11 +205,17 @@ export async function runCrmMcpTool(
         select,
         limit: args.limit ?? 50,
       });
-      result = await services.reportingService.runAdHoc(
-        context.orgId,
-        context.userId,
-        asQueryDescription(query),
-      );
+      /*
+       * The full context, not the `(orgId, userId)` pair this used to pass.
+       *
+       * `runAdHoc`'s ceiling check reads a token's scope off the context
+       * itself (`assertMayRunSource`/`requesterScope`, both principal-aware
+       * since the MCP report-ceiling fix) — a bare id pair is exactly the
+       * shape that bug exploited, because it carries no ceiling for an agent
+       * token to be clamped by. This call site was written after that fix
+       * landed and needed the same correction independently.
+       */
+      result = await services.reportingService.runAdHoc(context, asQueryDescription(query));
       break;
     }
 
