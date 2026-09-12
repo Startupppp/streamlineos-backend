@@ -161,7 +161,10 @@ describe("the surface, enumerated from the committed contract", () => {
     // `unresolved` 148 against 179, with the resolved floor still met, so the merged surface is
     // swept rather than exempted. `handler-not-found` is still empty, which is the control: an
     // operation the walk cannot join to a handler would be a blind spot, and none of the 458 is.
-    expect(counts.operations).toBe(3893);
+    //   -2 (2026-09-12): the combined `/cron/sign-envelope-sweeps` pair was retired in favour of
+    //        the separately-leased `/cron/sign-reminder-sweep` and `/cron/sign-expiration-sweep`.
+    //   3893 - 2 = 3891.
+    expect(counts.operations).toBe(3891);
     expect(counts.bodyFields).toBe(904);
     expect(counts.queryFields).toBe(320);
     expect(counts.idFields).toBe(1224);

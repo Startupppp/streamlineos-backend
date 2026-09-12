@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   Inject,
   Injectable,
@@ -35,6 +36,7 @@ import { SignWatermarkService } from "./sign-watermark.service";
 import {
   canTransitionEnvelope,
   isEnvelopeEditable,
+  isEnvelopeSignable,
   isEnvelopeTerminal,
   type SignEnvelopeStatus,
 } from "./sign-state";
@@ -442,8 +444,18 @@ export class SignEnvelopesService {
     if (newExpiresAt.getTime() <= Date.now())
       throw new BadRequestException("New expiration must be in the future");
 
-    const nextStatus: SignEnvelopeStatus =
-      envelope.status === "expired" ? "sent" : envelope.status;
+    /*
+     * Only an envelope that can still be signed, or one that expired and can
+     * be reopened, has an expiry to move. A completed or voided envelope is
+     * closed history; a declined one waits on a correction, not a date.
+     */
+    const reopening = envelope.status === "expired";
+    if (!reopening && !isEnvelopeSignable(envelope.status) && !isEnvelopeEditable(envelope.status))
+      throw new ConflictException(`A ${envelope.status} envelope's expiration cannot be extended`);
+    if (reopening && !canTransitionEnvelope(envelope.status, "sent"))
+      throw new ConflictException("This envelope cannot be reopened");
+
+    const nextStatus: SignEnvelopeStatus = reopening ? "sent" : envelope.status;
 
     await this.db
       .update(signRecipients)
@@ -459,7 +471,7 @@ export class SignEnvelopesService {
     const [updated] = await this.db
       .update(signEnvelopes)
       .set({ expiresAt: newExpiresAt, status: nextStatus })
-      .where(eq(signEnvelopes.id, envelopeId))
+      .where(and(eq(signEnvelopes.id, envelopeId), eq(signEnvelopes.orgId, orgId)))
       .returning();
 
     await this.audit.record({
@@ -472,6 +484,9 @@ export class SignEnvelopesService {
       ipAddress: actor.ipAddress,
       userAgent: actor.userAgent,
     });
+
+    /* The sweep revoked their tokens with the expiry; the reopened envelope needs them back. */
+    if (reopening) await this.dispatch.reviveExpiredRecipients(orgId, envelopeId, newExpiresAt, actor);
 
     return updated;
   }

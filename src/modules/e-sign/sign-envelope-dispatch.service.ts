@@ -387,6 +387,61 @@ export class SignEnvelopeDispatchService {
     return true;
   }
 
+  /**
+   * Brings an expired envelope's recipients back with the envelope.
+   *
+   * The expiration sweep marks every unfinished recipient `expired` and revokes
+   * their tokens, so an envelope whose expiry was merely moved forward came
+   * back as `sent` with nobody able to sign it: every session closed on the
+   * revoked token and no new link was ever sent. The recipients the sweep
+   * expired are exactly the ones who were eligible when it ran — in a
+   * sequential envelope, the current step; the rest were still `pending` and
+   * stay so — and each gets a fresh token and a fresh invitation after the
+   * commit. Returns how many were reinvited.
+   */
+  async reviveExpiredRecipients(
+    orgId: string,
+    envelopeId: number,
+    expiresAt: Date,
+    actor: RequestActorContext,
+  ): Promise<number> {
+    const envelope = await this.findEnvelope(orgId, envelopeId);
+    const recipientRows = await this.recipients.listForEnvelope(systemEnvelopeScope(orgId), null, envelopeId);
+    const revivable = recipientRows.filter(
+      (r): r is typeof r & { email: string } =>
+        isSigningType(r.recipientType) && r.status === "expired" && r.completedAt === null && r.email !== null,
+    );
+    if (revivable.length === 0) return 0;
+
+    const senderNameStr = await this.senderName(orgId, envelope.senderMembershipId);
+    const invitations: InvitationPlan[] = [];
+    for (const r of revivable) {
+      const rawToken = this.tokens.generateSigningToken();
+      await this.db
+        .update(signRecipients)
+        .set({
+          status: "invited",
+          signingTokenHash: this.tokens.hash(rawToken),
+          tokenRevokedAt: null,
+          tokenExpiresAt: expiresAt,
+        })
+        .where(and(eq(signRecipients.id, r.id), eq(signRecipients.orgId, orgId)));
+      invitations.push({ email: r.email, name: r.name, rawToken });
+    }
+    await this.deliverInvitations(invitations, senderNameStr, envelope, "after_commit");
+    await this.audit.record({
+      orgId,
+      envelopeId,
+      actorType: "internal_user",
+      actorUserId: actor.userId,
+      eventType: "envelope_sent",
+      eventMessage: `Re-invited ${invitations.length} recipient(s) after the expiration was extended`,
+      ipAddress: actor.ipAddress,
+      userAgent: actor.userAgent,
+    });
+    return invitations.length;
+  }
+
   async applyRecipientOutcome(
     orgId: string,
     envelopeId: number,

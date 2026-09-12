@@ -458,3 +458,59 @@ describe("the transaction seams decide whether a hook can be held at all", () =>
     ]);
   });
 });
+
+describe("reviving an expired envelope's recipients", () => {
+  const EXPIRED_SIGNER: Recipient & { completedAt: null } = {
+    ...SIGNER,
+    status: "expired",
+    completedAt: null,
+  };
+  const DONE_SIGNER: Recipient & { completedAt: string } = {
+    id: 3,
+    recipientType: "signer",
+    routingOrder: 1,
+    status: "completed",
+    email: "done@example.com",
+    name: "Dee Done",
+    completedAt: "2026-06-01T00:00:00.000Z",
+  };
+  const PENDING_SIGNER: Recipient & { completedAt: null } = {
+    id: 4,
+    recipientType: "signer",
+    routingOrder: 2,
+    status: "pending",
+    email: "next@example.com",
+    name: "Nia Next",
+    completedAt: null,
+  };
+
+  it("re-invites only the recipients the sweep expired, after the commit, with a fresh token", async () => {
+    const h = makeHarness({ status: "sent", recipients: [EXPIRED_SIGNER, DONE_SIGNER, PENDING_SIGNER] });
+    const expiresAt = new Date("2999-01-01T00:00:00.000Z");
+
+    const { result, drain } = await underRequestContext(() =>
+      h.service.reviveExpiredRecipients(ORG, ENVELOPE, expiresAt, ACTOR),
+    );
+
+    expect(result).toBe(1);
+    expect(h.sent).toHaveLength(0);
+    const restored = h.written.find((w) => w["status"] === "invited");
+    expect(restored).toMatchObject({ tokenRevokedAt: null, tokenExpiresAt: expiresAt });
+    expect(restored?.["signingTokenHash"]).toMatch(/^hash-of-raw-token-/);
+
+    await drain();
+
+    expect(h.sent).toEqual([{ to: EXPIRED_SIGNER.email, kind: "invitation", txOpen: false }]);
+  });
+
+  it("does nothing when no recipient was expired", async () => {
+    const h = makeHarness({ status: "sent", recipients: [DONE_SIGNER, PENDING_SIGNER] });
+
+    const { result } = await underRequestContext(() =>
+      h.service.reviveExpiredRecipients(ORG, ENVELOPE, new Date("2999-01-01T00:00:00.000Z"), ACTOR),
+    );
+
+    expect(result).toBe(0);
+    expect(h.written).toHaveLength(0);
+  });
+});
