@@ -118,9 +118,36 @@ export async function readSendTimeFacts(
    * CRM-P1-09. Read here rather than carried on the draft, like every other
    * fact in this function: somebody may correct a customer's zone during the
    * hold window, and the send should honour the correction.
+   *
+   * Filtered on `deletedAt`, the same way `resolveOutboundRecipient` filters
+   * `partyContacts.deletedAt` — a soft-deleted party's timezone must not be
+   * read into a fact this function hands to the guardrail, even though
+   * `partyDeleted` (read next) is what actually blocks the send.
    */
   const [party] = await deps.db
     .select({ timezone: businessParties.timezone })
+    .from(businessParties)
+    .where(
+      and(
+        eq(businessParties.organizationId, organizationId),
+        eq(businessParties.partyId, message.partyId),
+        isNull(businessParties.deletedAt),
+      ),
+    )
+    .limit(1);
+
+  /**
+   * Whether the party is still there at all.
+   *
+   * Deliberately unfiltered by `deletedAt` — this is the one read in this
+   * function whose job is to notice a deletion, so it cannot filter deleted
+   * rows out the way the query above does. A missing row (hard-deleted, or
+   * never there) counts the same as a soft-deleted one: either way there is
+   * nobody left to send to, and `evaluateGuardrails`'s `party-deleted` reason
+   * is what turns this into a refusal.
+   */
+  const [partyRow] = await deps.db
+    .select({ deletedAt: businessParties.deletedAt })
     .from(businessParties)
     .where(
       and(
@@ -133,6 +160,7 @@ export async function readSendTimeFacts(
   return {
     now,
     outboundClass: message.outboundClass,
+    partyDeleted: !partyRow || partyRow.deletedAt !== null,
     consent: toConsentStatus(consent?.status),
     consentExpiresAt: consent?.expiresAt ?? null,
     suppressed: await isSuppressed(deps, organizationId, message.recipientEmail),

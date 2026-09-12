@@ -41,6 +41,10 @@ const REVERSIBILITY: Readonly<Record<DecisionKind, ReversibilityClass>> = {
    * per value and one predicate for the batch.
    */
   "field.repaired": "instant",
+  /** A recorded observation, never a write to the deal or party it is about. */
+  "participant.changed": "instant",
+  /** Deleting the deal this opened is a complete, clean undo. */
+  "thread.forked": "instant",
 };
 
 export function reversibilityFor(kind: DecisionKind): ReversibilityClass {
@@ -86,6 +90,18 @@ const ACT_THRESHOLD: Readonly<Record<DecisionKind, number>> = {
    * failure mode that fails closed.
    */
   "field.repaired": 1,
+  /**
+   * Below `party.created`'s 0.7: being wrong here costs a reviewer one glance
+   * at a row that turns out to be noise, never a write anywhere.
+   */
+  "participant.changed": 0.65,
+  /**
+   * Above `party.created`'s 0.7, because this kind creates a second deal a
+   * rep will see on their board — closer to `stage.advanced`'s cost of being
+   * wrong than to a passive observation, though the write itself is a clean
+   * undo either way.
+   */
+  "thread.forked": 0.8,
 };
 
 export function actThresholdFor(kind: DecisionKind): number {

@@ -21,11 +21,13 @@ import { asQueryDescription } from "./dto/reporting.schemas";
 import {
   createDefinitionSchema,
   listQuerySchema,
+  nlProposeSchema,
   runAdHocSchema,
   runDefinitionSchema,
   updateDefinitionSchema,
   type CreateDefinitionInput,
   type ListQuery,
+  type NlProposeInput,
   type RunAdHocInput,
   type RunDefinitionInput,
   type UpdateDefinitionInput,
@@ -39,6 +41,7 @@ import {
   explainReportResponseSchema,
   runReportResponseSchema,
   listReportRunsResponseSchema,
+  nlProposeResponseSchema,
 } from "./dto/reporting-response.schemas";
 
 /**
@@ -135,7 +138,7 @@ export class ReportingController {
     @Body(new ZodValidationPipe(createDefinitionSchema)) body: CreateDefinitionInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.reporting.createDefinition(u.orgId, u.userId, body);
+    return this.reporting.createDefinition(u, body);
   }
 
   @Patch("definitions/:reportDefinitionId")
@@ -146,7 +149,7 @@ export class ReportingController {
     @Body(new ZodValidationPipe(updateDefinitionSchema)) body: UpdateDefinitionInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.reporting.updateDefinition(u.orgId, u.userId, reportDefinitionId, body);
+    return this.reporting.updateDefinition(u, reportDefinitionId, body);
   }
 
   @Delete("definitions/:reportDefinitionId")
@@ -174,7 +177,22 @@ export class ReportingController {
     @Body(new ZodValidationPipe(runAdHocSchema)) body: RunAdHocInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.reporting.explain(u.orgId, u.userId, asQueryDescription(body.query));
+    return this.reporting.explain(u, asQueryDescription(body.query));
+  }
+
+  /**
+   * Phase 5 ticket 15. A plain-language question, proposed as a query
+   * description — never run. Same authority as `explain`: the response
+   * carries a compile preview with physical table and column names.
+   */
+  @Post("nl-propose")
+  @RequirePermission("crm:reporting:manage")
+  @ResponseSchema(nlProposeResponseSchema)
+  proposeFromQuestion(
+    @Body(new ZodValidationPipe(nlProposeSchema)) body: NlProposeInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.reporting.proposeFromQuestion(u, body.question);
   }
 
   @Post("run")
@@ -184,7 +202,7 @@ export class ReportingController {
     @Body(new ZodValidationPipe(runAdHocSchema)) body: RunAdHocInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.reporting.runAdHoc(u.orgId, u.userId, asQueryDescription(body.query));
+    return this.reporting.runAdHoc(u, asQueryDescription(body.query));
   }
 
   @Post("definitions/:reportDefinitionId/run")
@@ -195,7 +213,7 @@ export class ReportingController {
     @Body(new ZodValidationPipe(runDefinitionSchema)) body: RunDefinitionInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.reporting.runDefinition(u.orgId, u.userId, reportDefinitionId, body);
+    return this.reporting.runDefinition(u, reportDefinitionId, body);
   }
 
   /**

@@ -21,6 +21,7 @@ function facts(overrides: Partial<SendTimeFacts> = {}): SendTimeFacts {
   return {
     now: NOW,
     outboundClass: "follow_up",
+    partyDeleted: false,
     consent: "UNKNOWN",
     consentExpiresAt: null,
     suppressed: false,
@@ -47,6 +48,43 @@ describe("evaluateGuardrails — the allowed case", () => {
 
   it("does not treat UNKNOWN consent as a block — the legal basis may be contract", () => {
     expect(evaluateGuardrails(facts({ consent: "UNKNOWN" })).allow).toBe(true);
+  });
+});
+
+/**
+ * A party can be soft-deleted, merged away, or erased while a message sits in
+ * its hold window. Nothing that places a hold re-checks the party still
+ * exists, so this has to be a send-time fact like every other one here.
+ */
+describe("evaluateGuardrails — a party deleted while it waited", () => {
+  it("blocks a pending send to a party that no longer exists", () => {
+    expect(evaluateGuardrails(facts({ partyDeleted: true }))).toEqual({
+      allow: false,
+      action: "block",
+      reason: "party-deleted",
+    });
+  });
+
+  it("allows the same message when the party is not deleted", () => {
+    expect(evaluateGuardrails(facts({ partyDeleted: false })).allow).toBe(true);
+  });
+
+  /**
+   * Checked first, ahead of consent and suppression both. Those two are about
+   * whether this party wants the message; this one is about whether there is
+   * still a party there to have an opinion at all.
+   */
+  it("blocks on the deletion ahead of every other reason", () => {
+    expect(
+      evaluateGuardrails(
+        facts({
+          partyDeleted: true,
+          suppressed: true,
+          consent: "OPTED_OUT",
+          classStopped: true,
+        }),
+      ),
+    ).toEqual({ allow: false, action: "block", reason: "party-deleted" });
   });
 });
 
@@ -327,6 +365,7 @@ describe("none of these are settings a tenant can override", () => {
 describe("guardrailSummary", () => {
   it("has a sentence for every block reason", () => {
     const reasons = [
+      "party-deleted",
       "suppressed",
       "opted-out",
       "consent-expired",
