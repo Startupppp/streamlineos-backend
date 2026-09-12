@@ -6,13 +6,20 @@ import {
   timestamp,
   jsonb,
   index,
-  foreignKey,
 } from "drizzle-orm/pg-core";
-import { organizations, organizationMembers } from "../common/auth";
+import { organizations } from "../common/auth";
 
 export const timesheetAuditEvents = pgTable("timesheet_audit_events", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  /**
+   * A historical pointer, deliberately without a foreign key. The row is a
+   * link in a hash chain that covers this column; a referential action that
+   * rewrote it on member departure (as ON DELETE SET NULL did until 1104)
+   * changed the hashed input and broke the chain at that row. Readers resolve
+   * the name through a LEFT JOIN on (org_id, id) and render a departed actor
+   * as unresolved.
+   */
   actorMembershipId: integer("actor_membership_id"),
   entityType: text("entity_type").notNull(),
   entityId: text("entity_id").notNull(),
@@ -25,9 +32,4 @@ export const timesheetAuditEvents = pgTable("timesheet_audit_events", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (t) => [
   index("idx_timesheet_audit_entity").on(t.orgId, t.entityType, t.entityId, t.createdAt),
-  foreignKey({
-    columns: [t.orgId, t.actorMembershipId],
-    foreignColumns: [organizationMembers.orgId, organizationMembers.id],
-    name: "fk_timesheet_audit_actor_membership",
-  }).onDelete("set null"),
 ]);

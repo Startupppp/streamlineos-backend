@@ -2918,13 +2918,13 @@ export const MEMBERSHIP_ARTIFACTS = [
   },
   {
     id: "timesheet_audit_events_actor_membership",
-    mechanism: "database-cascade",
+    mechanism: "database-write",
     table: "timesheet_audit_events",
     keyedBy: "actor_membership_id",
-    onRemoval: "set-null",
+    onRemoval: "unreferenced",
     onSuspension: "retain",
     reason:
-      "Actor attribution on timesheet_audit_events is cleared by fk_timesheet_audit_actor_membership, an ON DELETE SET NULL composite tenant foreign key, so the record survives the departure without its member pointer. A suspension is reversible, so nothing is written.",
+      "timesheet_audit_events is a hash-chained ledger whose row_hash covers actor_membership_id, so the pointer must outlive the membership unchanged: migration 1104 dropped fk_timesheet_audit_actor_membership, whose ON DELETE SET NULL rewrote every row the departing member had written and broke the organisation's chain at the first of them. The departure path writes nothing here; readers LEFT JOIN organization_members on (org_id, id) and render a departed actor as unresolved. A suspension is reversible, so nothing is written.",
   },
   {
     id: "timesheet_exceptions_resolved_by_membership",
