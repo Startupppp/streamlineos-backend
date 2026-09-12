@@ -64,6 +64,10 @@ export class InvWarehousesController {
     return this.putaway.suggest(u.orgId, u.userId, query);
   }
 
+  /**
+   * G8/T15. The paginated envelope — the frontend hook was requesting no
+   * `page`/`limit` at all and had no `total` to page against.
+   */
   @Get()
   @ResponseSchema(listWarehousesResponseSchema)
   @UseGuards(PermissionGuard)
@@ -73,7 +77,7 @@ export class InvWarehousesController {
     @Query() filters: ListWarehousesInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.warehouses.listWarehouses(u.orgId, u.userId, filters);
+    return this.warehouses.listWarehousesPage(u.orgId, u.userId, filters);
   }
 
   @Get(":warehouseId")

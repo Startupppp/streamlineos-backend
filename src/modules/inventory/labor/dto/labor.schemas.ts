@@ -18,7 +18,10 @@ export const laborBoardQuerySchema = z
 export const laborRecentQuerySchema = z
   .object({
     userId: z.string().min(1).max(128),
-    limit: z.coerce.number().int().positive().max(200).default(50),
+    // Capped at the platform's hard limit (§3: "All list endpoints paginated,
+    // hard cap 100/page"). Was 200, and `labor.service.ts` passes this straight
+    // into `.limit(limit)` with no clamp of its own.
+    limit: z.coerce.number().int().positive().max(100).default(50),
   })
   .strict();
 

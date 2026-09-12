@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { pageNumberField, pageSizeField } from "../../../../common/pagination/list-query.schema";
 
 export const handlingUnitKindSchema = z.enum(["PALLET", "CARTON", "CAGE", "TOTE"]);
 
@@ -35,6 +36,8 @@ export const listHandlingUnitsQuerySchema = z
     status: z.enum(["OPEN", "CLOSED", "SHIPPED", "EMPTY"]).optional(),
     /** Roots only, for a screen that lists pallets rather than every carton on them. */
     rootsOnly: z.coerce.boolean().optional(),
+    page: pageNumberField,
+    limit: pageSizeField(50, 100),
   })
   .strict();
 

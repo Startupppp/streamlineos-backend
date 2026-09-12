@@ -58,7 +58,11 @@ export class InvWarehousesService {
     // The unfiltered list is cached per org, so the caller's scope has to be part
     // of the key or one operator's warehouses would be served to the next.
     const scopeKey = scope === null ? "all" : ([...scope].sort((a, b) => a - b).join(".") || "none");
-    const hasFilters = filters && (filters.q || filters.status || filters.isDefault !== undefined || filters.country || filters.city || filters.zone || filters.facilityType);
+    // G8/T15. `page`/`limit` belong in this check too: without them, a caller
+    // paginating with no other filter active (page 2, say) fell through to the
+    // cached branch below, which always resolves page 1 at the internal
+    // default limit regardless of what was asked for.
+    const hasFilters = filters && (filters.q || filters.status || filters.isDefault !== undefined || filters.country || filters.city || filters.zone || filters.facilityType || filters.page || filters.limit);
     if (!hasFilters) {
       return this.cache.cachedVersionedForOrg(orgId, "inv:warehouses", scopeKey, () =>
         this.queryWarehouses(orgId, {}, scope),
@@ -68,7 +72,34 @@ export class InvWarehousesService {
     return this.queryWarehouses(orgId, filters ?? {}, scope);
   }
 
-  private async queryWarehouses(orgId: string, filters: Partial<ListWarehousesInput>, scope: WarehouseScope = null) {
+  /**
+   * G8/T15. Row count for the exact predicate `queryWarehouses` selects with —
+   * `listWarehouses` alone hands the frontend a bare, page-capped array with no
+   * way to tell whether more rows exist past the 100-row cap.
+   */
+  async countWarehouses(orgId: string, userId: string, filters?: Partial<ListWarehousesInput>): Promise<number> {
+    const scope = await this.warehouseScope.resolve(orgId, userId);
+    const conds = this.buildWarehouseConds(orgId, filters ?? {}, scope);
+    const [row] = await this.db
+      .select({ count: sql<number>`count(*)` })
+      .from(invWarehouses)
+      .where(and(...conds));
+    return Number(row?.count ?? 0);
+  }
+
+  /** The paginated envelope the controller serves — `listWarehouses` stays array-shaped for its other caller (the isolation spec) and any future internal use. */
+  async listWarehousesPage(orgId: string, userId: string, filters?: ListWarehousesInput) {
+    const [items, total] = await Promise.all([
+      this.listWarehouses(orgId, userId, filters),
+      this.countWarehouses(orgId, userId, filters),
+    ]);
+    const page = filters?.page ?? 1;
+    const limit = Math.min(filters?.limit ?? MAX_PAGE_LIMIT, MAX_PAGE_LIMIT);
+    return { items, total, page, totalPages: Math.max(1, Math.ceil(total / limit)) };
+  }
+
+  /** Shared by `queryWarehouses` and `countWarehouses` so the count matches the page exactly. */
+  private buildWarehouseConds(orgId: string, filters: Partial<ListWarehousesInput>, scope: WarehouseScope) {
     const conds = [eq(invWarehouses.orgId, orgId)];
     conds.push(this.warehouseScope.warehousePredicate(scope, sql`${invWarehouses.id}`));
 
@@ -92,6 +123,11 @@ export class InvWarehousesService {
     if (filters.city) conds.push(ilike(invWarehouses.city, filters.city));
     if (filters.zone) conds.push(eq(invWarehouses.zone, filters.zone));
     if (filters.facilityType) conds.push(eq(invWarehouses.facilityType, filters.facilityType));
+    return conds;
+  }
+
+  private async queryWarehouses(orgId: string, filters: Partial<ListWarehousesInput>, scope: WarehouseScope = null) {
+    const conds = this.buildWarehouseConds(orgId, filters, scope);
 
     const page = filters.page ?? 1;
     const limit = Math.min(filters.limit ?? MAX_PAGE_LIMIT, MAX_PAGE_LIMIT);
