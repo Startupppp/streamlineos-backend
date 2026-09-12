@@ -127,13 +127,33 @@ try {
     }),
   }));
   process.stdout.write(JSON.stringify(results) + "\n");
-  const failed = results.filter(
-    (r) =>
-      !r.isAppRole || !r.updateRevoked || !r.deleteRevoked || !r.triggerPresent || !r.truncateGuardPresent,
-  );
-  if (failed.length > 0) {
-    process.stderr.write(`APPEND-ONLY BOUNDARY FAILED: ${failed.map((r) => r.table).join(", ")}\n`);
-    process.exitCode = 1;
+
+  // The connection is not the application role. Nothing about the boundary the
+  // running service has was measured — the owner holds UPDATE and DELETE on
+  // every table by definition, so reporting that as a BOUNDARY FAILURE (exit 1)
+  // records a defect that does not exist and hides the one condition this gate
+  // opens by naming: a connection pointed at the wrong role. This is exactly the
+  // "could not determine" the missing-variable branch above already exits 2 for;
+  // an APP_DATABASE_URL that is set but points at the owner is the same state,
+  // reached a different way. Exit 2 is not a pass.
+  const wrongRole = results.filter((r) => !r.isAppRole);
+  if (wrongRole.length > 0) {
+    process.stderr.write(
+      `PREREQUISITE UNMET — cannot determine. APP_DATABASE_URL connected as "${results[0]?.role}",\n` +
+        "which is not the application role. The owner has BYPASSRLS and every table privilege, so\n" +
+        "its answer describes the owner, not the running service. Nothing about the append-only\n" +
+        "boundary was measured — this is neither a pass nor a failure.\n" +
+        "Required: APP_DATABASE_URL=postgres://streamline_app:<password>@<host>/<database>\n",
+    );
+    process.exitCode = 2;
+  } else {
+    const failed = results.filter(
+      (r) => !r.updateRevoked || !r.deleteRevoked || !r.triggerPresent || !r.truncateGuardPresent,
+    );
+    if (failed.length > 0) {
+      process.stderr.write(`APPEND-ONLY BOUNDARY FAILED: ${failed.map((r) => r.table).join(", ")}\n`);
+      process.exitCode = 1;
+    }
   }
 } catch (error) {
   process.stderr.write(`AUDIT PRIVILEGE QUERY FAILED: ${error instanceof Error ? error.message : String(error)}\n`);
