@@ -11,6 +11,7 @@ import type { Db } from "../../db/drizzle.types";
 import { crmReportDefinitions, crmReportRuns, users } from "../../db/schema";
 import { runInTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
+import { AuthContextFactory } from "../../common/auth/auth-context.factory";
 import { AccessService } from "../access/access.service";
 import { authorize } from "../access/authorize";
 import { compileQuery, type CompiledQuery } from "./compiler/compile";
@@ -64,6 +65,7 @@ export class ReportingService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly access: AccessService,
+    private readonly authContexts: AuthContextFactory,
   ) {}
 
   // ── What may be asked ─────────────────────────────────────────────────────
@@ -440,7 +442,19 @@ export class ReportingService {
     user: CurrentUserContext,
     sourceKey: string,
   ): Promise<void> {
-    const runDecision = await authorize(this.access, user, REPORTING_RUN);
+    /*
+     * `authorize` takes an `AuthContext`, not the bare `CurrentUserContext`
+     * every caller here actually holds — the HTTP controller's `@CurrentUser()`,
+     * the CRM MCP service's principal, and the cron consumer's synthesized
+     * "human-session" user are all just the actor. `AuthContextFactory.create`
+     * needs no live request: its lookups (module availability, membership,
+     * MFA) are ordinary injectable services, so building it here is exactly
+     * what `CrmMcpService.executeTool` already does before its own `authorize`
+     * call, and it is what lets an agent token's ceiling reach this check —
+     * `scopeFor`'s agent-token branch lives behind `AuthContext`, not before it.
+     */
+    const authCtx = this.authContexts.create(user);
+    const runDecision = await authorize(this.access, authCtx, REPORTING_RUN);
     if (!runDecision.allow)
       throw new ForbiddenException(`this report requires ${REPORTING_RUN}`);
 
@@ -448,7 +462,7 @@ export class ReportingService {
     if (!source)
       throw new BadRequestException(`no queryable source named ${JSON.stringify(sourceKey)}`);
 
-    const sourceDecision = await authorize(this.access, user, source.requiredPermission);
+    const sourceDecision = await authorize(this.access, authCtx, source.requiredPermission);
     if (!sourceDecision.allow)
       throw new ForbiddenException(`this report requires ${source.requiredPermission}`);
   }
@@ -482,7 +496,7 @@ export class ReportingService {
    * pipeline once the admission check above passed.
    */
   private async requesterScope(user: CurrentUserContext): Promise<RequesterScope> {
-    const decision = await authorize(this.access, user, REPORTING_RUN);
+    const decision = await authorize(this.access, this.authContexts.create(user), REPORTING_RUN);
     return { userId: user.userId, scope: decision.allow ? decision.scope : "none" };
   }
 }
