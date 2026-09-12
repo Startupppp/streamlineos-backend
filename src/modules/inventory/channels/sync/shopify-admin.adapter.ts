@@ -148,8 +148,9 @@ export class ShopifyAdminAdapter implements ChannelCommerceAdapter {
     const target: ChannelTarget = {
       channelType: request.channelType,
       storeUrl: request.storeUrl,
-      settings: {},
+      settings: request.settings ?? {},
     };
+
     // `fetchSnapshot` predates the settings-carrying target, so it cannot know
     // the location. Shopify's `inventory_levels` may be asked without one, and
     // the sum across locations is the right answer for "what is the store

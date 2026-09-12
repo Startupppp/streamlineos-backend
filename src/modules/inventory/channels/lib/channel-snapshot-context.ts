@@ -49,6 +49,7 @@ export interface ChannelContext {
   readonly storeUrl: string | null;
   readonly warehouseIds: number[];
   readonly skuToVariant: Map<string, number>;
+  readonly settings?: Readonly<Record<string, unknown>>;
 }
 
 /** Everything about a channel the refetch needs, read once inside a tenant tx. */
@@ -85,6 +86,11 @@ export async function loadChannelContext(
 
   const settings = (channel.settings ?? {}) as Record<string, unknown>;
   const storeUrl = typeof settings.storeUrl === "string" ? settings.storeUrl : null;
+  const mergedSettings: Record<string, unknown> = {
+    ...settings,
+    ...(channel.apiCredentialEncrypted ? { apiCredentialEncrypted: channel.apiCredentialEncrypted } : {}),
+    ...(channel.apiCredentialHint ? { apiCredentialHint: channel.apiCredentialHint } : {}),
+  };
 
   return {
     orgId,
@@ -93,5 +99,7 @@ export async function loadChannelContext(
     storeUrl,
     warehouseIds: (channel.warehouseIds ?? []) as number[],
     skuToVariant: new Map(published.map((p) => [p.sku, p.productVariantId])),
+    settings: mergedSettings,
   };
 }
+
