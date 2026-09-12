@@ -10,6 +10,7 @@ import { addDays } from "date-fns";
 import { hashToken } from "../../../common/security/token.util";
 import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
 import { registerAfterCommit } from "../../../common/tenant";
+import { runInConsumerSavepoint } from "../../../common/outbox/consumer-savepoint";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { AccessService } from "../../access/access.service";
 import { assertMayGrantRole } from "../../../common/rbac/assert-may-grant-role";
@@ -110,12 +111,8 @@ export class InvitationCreateService {
       seenCanonical.set(canonicalEmail, i);
 
       try {
-        const result = await this.inviteAuthorized(
-          orgId,
-          actor.userId,
-          canonicalEmail,
-          role,
-          delivery,
+        const result = await runInConsumerSavepoint(() =>
+          this.inviteAuthorized(orgId, actor.userId, canonicalEmail, role, delivery),
         );
         results.push({
           email: canonicalEmail,

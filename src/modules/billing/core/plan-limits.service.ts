@@ -224,6 +224,16 @@ export class PlanLimitsService {
     }
   }
 
+  async limitFor(orgId: string, key: LimitKey): Promise<number | null> {
+    const { tier, plan } = await this.resolveTier(orgId);
+    let limit = PLAN_LIMITS[key][plan];
+    if (key === "members" && tier === "ENTERPRISE") {
+      const negotiated = await this.fetchNegotiatedSeats(orgId);
+      if (negotiated !== null) limit = negotiated;
+    }
+    return limit;
+  }
+
   async assertWithinLimit(
     orgId: string,
     key: LimitKey,

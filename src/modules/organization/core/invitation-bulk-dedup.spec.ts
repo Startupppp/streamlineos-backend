@@ -2,8 +2,11 @@ jest.mock("../../../common/rbac/assert-may-grant-role", () => ({
   assertMayGrantRole: jest.fn().mockResolvedValue(undefined),
 }));
 
+import { ConflictException } from "@nestjs/common";
 import { InvitationCreateService } from "./invitation-create.service";
 import { canonicalAdmissionEmail } from "./membership-admission.service";
+import { runWithTenantContext } from "../../../common/tenant/tenant-context";
+import type { TenantTx } from "../../../db/drizzle.types";
 
 interface InviteAuthorizedSeam {
   inviteAuthorized(
@@ -226,5 +229,182 @@ describe("InvitationCreateService.bulkInvite — one bad recipient never voids t
         { email: "b@other.test", success: false, error: "Email domain not allowed" },
       ],
     });
+  });
+});
+
+const ABORTED_MESSAGE =
+  "current transaction is aborted, commands ignored until end of transaction block (25P02)";
+
+/**
+ * A transaction that behaves the way PostgreSQL actually does: one failed statement puts the
+ * whole transaction in the aborted state, every later statement raises 25P02, and only a
+ * ROLLBACK TO SAVEPOINT restores it. `transaction()` is what a nested postgres-js transaction is.
+ */
+class AbortableTransaction {
+  aborted = false;
+  readonly applied: string[] = [];
+  readonly refused: string[] = [];
+
+  statement(label: string): void {
+    if (this.aborted) {
+      this.refused.push(label);
+      throw new Error(ABORTED_MESSAGE);
+    }
+    this.applied.push(label);
+  }
+
+  abortAndThrow(label: string, error: Error): never {
+    if (this.aborted) {
+      this.refused.push(label);
+      throw new Error(ABORTED_MESSAGE);
+    }
+    this.aborted = true;
+    throw error;
+  }
+
+  async transaction<T>(fn: (tx: AbortableTransaction) => Promise<T>): Promise<T> {
+    const entryState = this.aborted;
+    try {
+      return await fn(this);
+    } catch (error) {
+      this.aborted = entryState;
+      throw error;
+    }
+  }
+}
+
+describe("InvitationCreateService.bulkInvite — one duplicate row never aborts the batch (P12)", () => {
+  const orgId = "org-1";
+  const actor = { userId: "actor-1", isOrgOwner: true };
+  const role = "MEMBER";
+  const DUPLICATE_MESSAGE = "An invitation is already pending for this email";
+
+  function inAmbientTransaction<T>(
+    tx: AbortableTransaction,
+    fn: () => Promise<T>,
+  ): Promise<T> {
+    return runWithTenantContext(
+      {
+        orgId,
+        audience: "INTERNAL",
+        tx: tx as unknown as TenantTx,
+        afterCommit: [],
+      },
+      fn,
+    );
+  }
+
+  function arrange(duplicateEmail: string) {
+    const service = makeService();
+    const tx = new AbortableTransaction();
+    jest
+      .spyOn(seam(service), "inviteAuthorized")
+      .mockImplementation(async (_orgId, _actorUserId, email) => {
+        if (email === duplicateEmail)
+          tx.abortAndThrow(
+            `insert:${email}`,
+            new ConflictException(DUPLICATE_MESSAGE),
+          );
+        tx.statement(`insert:${email}`);
+        return {
+          success: true as const,
+          invitationId: `inv-${email}`,
+          organizationName: "Acme",
+          resent: false,
+        };
+      });
+    return { service, tx };
+  }
+
+  it("the double models PostgreSQL: with no savepoint a later statement raises 25P02", () => {
+    const tx = new AbortableTransaction();
+
+    expect(() =>
+      tx.abortAndThrow("insert:dup", new ConflictException(DUPLICATE_MESSAGE)),
+    ).toThrow(DUPLICATE_MESSAGE);
+    expect(() => tx.statement("insert:third")).toThrow(/25P02/);
+    expect(tx.refused).toEqual(["insert:third"]);
+  });
+
+  it("a duplicate email mid-batch leaves every other recipient created", async () => {
+    const { service, tx } = arrange("dup@acme.test");
+
+    const { results } = await inAmbientTransaction(tx, () =>
+      service.bulkInvite(
+        orgId,
+        actor,
+        ["first@acme.test", "dup@acme.test", "third@acme.test"],
+        role,
+        "enqueue",
+      ),
+    );
+
+    expect(results.map((row) => row.success)).toEqual([true, false, true]);
+    expect(tx.applied).toEqual([
+      "insert:first@acme.test",
+      "insert:third@acme.test",
+    ]);
+    expect(tx.refused).toEqual([]);
+  });
+
+  it("the failed row reports the duplicate reason, never 25P02", async () => {
+    const { service, tx } = arrange("dup@acme.test");
+
+    const { results } = await inAmbientTransaction(tx, () =>
+      service.bulkInvite(
+        orgId,
+        actor,
+        ["first@acme.test", "dup@acme.test", "third@acme.test"],
+        role,
+        "enqueue",
+      ),
+    );
+
+    expect(results[1]).toMatchObject({
+      email: "dup@acme.test",
+      success: false,
+      error: DUPLICATE_MESSAGE,
+    });
+    for (const row of results) expect(row.error ?? "").not.toContain("25P02");
+  });
+
+  it("the ambient transaction is still usable after a duplicate row", async () => {
+    const { service, tx } = arrange("dup@acme.test");
+
+    await inAmbientTransaction(tx, () =>
+      service.bulkInvite(
+        orgId,
+        actor,
+        ["first@acme.test", "dup@acme.test", "third@acme.test"],
+        role,
+        "enqueue",
+      ),
+    );
+
+    expect(tx.aborted).toBe(false);
+    expect(() => tx.statement("post-batch-write")).not.toThrow();
+    expect(tx.applied).toContain("post-batch-write");
+  });
+
+  it("a batch whose FIRST row is the duplicate still creates the rest", async () => {
+    const { service, tx } = arrange("dup@acme.test");
+
+    const { results } = await inAmbientTransaction(tx, () =>
+      service.bulkInvite(
+        orgId,
+        actor,
+        ["dup@acme.test", "second@acme.test", "third@acme.test"],
+        role,
+        "enqueue",
+      ),
+    );
+
+    expect(results.map((row) => row.success)).toEqual([false, true, true]);
+    expect(results[0]?.error).toBe(DUPLICATE_MESSAGE);
+    expect(tx.applied).toEqual([
+      "insert:second@acme.test",
+      "insert:third@acme.test",
+    ]);
+    expect(tx.refused).toEqual([]);
   });
 });

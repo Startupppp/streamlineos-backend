@@ -56,9 +56,9 @@ export interface CreateNotificationInput {
 /**
  * One notification as the list query selects it.
  *
- * Lives here rather than beside the query because `notification-ticket-context`
- * enriches these rows and the query calls that enrichment — declaring the row
- * in either file closes an import cycle over a type that compiles away.
+ * Lives here rather than beside the query so that the reader and any row
+ * enrichment can share it without closing an import cycle over a type that
+ * compiles away.
  */
 export type NotificationListRow = {
   id: number;

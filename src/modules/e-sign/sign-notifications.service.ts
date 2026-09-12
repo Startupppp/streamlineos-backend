@@ -25,7 +25,7 @@ ${renderButton("View status", envelopeViewUrl)}`,
 
   /** The CC notice as an outbox row only; see `queueInvitation`. */
   async queueCcNotice(email: string, name: string, envelopeTitle: string, envelopeViewUrl: string): Promise<void> {
-    await this.email.queueEmail(this.ccNoticeOptions(email, name, envelopeTitle, envelopeViewUrl));
+    await this.email.sendEmail(this.ccNoticeOptions(email, name, envelopeTitle, envelopeViewUrl));
   }
 
   /**
@@ -89,7 +89,7 @@ ${renderButton("View status", envelopeViewUrl)}`,
     message: string | undefined,
     signingUrl: string,
   ): Promise<void> {
-    await this.email.queueSignEnvelopeInvitationEmail(
+    await this.email.sendSignEnvelopeInvitationEmail(
       recipientEmail,
       recipientName,
       senderName,

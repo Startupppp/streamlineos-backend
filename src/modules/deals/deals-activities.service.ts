@@ -4,8 +4,6 @@ import { deals, dealActivities, dealStageTransitions, users } from "../../db/sch
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { ActivitiesService } from "../activities/activities.service";
-import type { ScopedRead } from "../access/scoped-read";
-import { assertDealInScope } from "./deals-scope";
 import { activityKindFor, subjectFor } from "./deal-activity-kind";
 import type { LogActivityInput, PatchCustomDataInput } from "./dto/deals.schemas";
 
@@ -24,8 +22,7 @@ export class DealsActivitiesService {
    * review feed will read the same rows. The actor's name is resolved here so no
    * caller is left rendering an identifier.
    */
-  async listStageTransitions(read: ScopedRead, dealId: number) {
-    await assertDealInScope(this.db, read, dealId);
+  listStageTransitions(orgId: string, dealId: number) {
     return this.db
       .select({
         dealStageTransitionId: dealStageTransitions.dealStageTransitionId,
@@ -41,7 +38,7 @@ export class DealsActivitiesService {
       .leftJoin(users, eq(users.id, dealStageTransitions.actorUserId))
       .where(
         and(
-          eq(dealStageTransitions.organizationId, read.orgId),
+          eq(dealStageTransitions.organizationId, orgId),
           eq(dealStageTransitions.dealId, dealId),
         ),
       )
@@ -62,9 +59,7 @@ export class DealsActivitiesService {
    * Both are read during the migration, newest first across the two. The legacy
    * half goes when the stage-change writer moves, and the union goes with it.
    */
-  async listActivities(read: ScopedRead, dealId: number) {
-    await assertDealInScope(this.db, read, dealId);
-    const orgId = read.orgId;
+  async listActivities(orgId: string, dealId: number) {
     const [current, legacy] = await Promise.all([
       this.activities.timeline(orgId, { dealId, limit: 50 }),
       this.db

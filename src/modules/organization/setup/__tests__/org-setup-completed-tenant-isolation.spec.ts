@@ -89,8 +89,11 @@ function payloadFor(orgId: string): Record<string, unknown> {
 function membershipSelect() {
   const chain: Record<string, jest.Mock> = {};
   chain.from = jest.fn().mockReturnValue(chain);
+  chain.innerJoin = jest.fn().mockReturnValue(chain);
   chain.where = jest.fn().mockReturnValue(chain);
-  chain.limit = jest.fn().mockResolvedValue([{ isOwner: true }]);
+  chain.limit = jest
+    .fn()
+    .mockResolvedValue([{ isOwner: true, email: "owner@alpha.test" }]);
   return jest.fn().mockReturnValue(chain);
 }
 

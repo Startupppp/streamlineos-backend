@@ -10,6 +10,7 @@ import {
   OutboxConsumerRegistry,
   type OutboxEventRow,
 } from "../../../../common/outbox/outbox-consumer.registry";
+import { resolveProvisioningAndError } from "../org-setup-internals";
 
 const seedSystemRolesForOrg = jest.fn().mockResolvedValue(undefined);
 jest.mock("../../../rbac/seed-system-roles", () => ({
@@ -35,6 +36,8 @@ function event(payload: Record<string, unknown>): OutboxEventRow {
   } as unknown as OutboxEventRow;
 }
 
+const OWNER_EMAIL = "owner@acme.test";
+
 const COMPLETE_PAYLOAD = {
   orgId: "org-1",
   userId: "user-1",
@@ -53,6 +56,7 @@ const COMPLETE_PAYLOAD = {
 function membershipSelect(rows: unknown[]) {
   const chain: Record<string, jest.Mock> = {};
   chain.from = jest.fn().mockReturnValue(chain);
+  chain.innerJoin = jest.fn().mockReturnValue(chain);
   chain.where = jest.fn().mockReturnValue(chain);
   chain.limit = jest.fn().mockResolvedValue(rows);
   return jest.fn().mockReturnValue(chain);
@@ -87,7 +91,9 @@ async function build(overrides: {
         provide: DRIZZLE,
         useValue: {
           query: { users: { findFirst } },
-          select: membershipSelect(overrides.actorRows ?? [{ isOwner: true }]),
+          select: membershipSelect(
+            overrides.actorRows ?? [{ isOwner: true, email: OWNER_EMAIL }],
+          ),
         },
       },
       {
@@ -426,6 +432,146 @@ describe("OrgSetupCompletedConsumerService", () => {
       "FAILED",
       expect.anything(),
     );
+  });
+
+  it("the acting owner's own address is skipped, never invited and never a failure", async () => {
+    const { svc, bulkInvite } = await build();
+
+    await svc.handle(
+      event({
+        ...COMPLETE_PAYLOAD,
+        invitees: [
+          { email: "OWNER@Acme.Test", role: "ORG_ADMIN" },
+          { email: "new@acme.test", role: "MEMBER" },
+        ],
+      }),
+    );
+
+    expect(bulkInvite).toHaveBeenCalledTimes(1);
+    expect(bulkInvite).toHaveBeenCalledWith(
+      "org-1",
+      expect.anything(),
+      ["new@acme.test"],
+      "MEMBER",
+      "enqueue",
+    );
+    expect(markProcessed).toHaveBeenCalledWith(
+      "organization:setup-completed",
+      expect.any(String),
+      "COMPLETED",
+      null,
+    );
+  });
+
+  it("a wizard list holding only the owner's own address invites nobody and fails nothing", async () => {
+    const { svc, bulkInvite } = await build();
+
+    await svc.handle(
+      event({
+        ...COMPLETE_PAYLOAD,
+        invitees: [{ email: OWNER_EMAIL, role: "ORG_ADMIN" }],
+      }),
+    );
+
+    expect(bulkInvite).not.toHaveBeenCalled();
+    expect(markProcessed).toHaveBeenCalledWith(
+      "organization:setup-completed",
+      expect.any(String),
+      "COMPLETED",
+      null,
+    );
+  });
+
+  it("a failing FIRST role group still leaves every later role group invited", async () => {
+    const { svc, bulkInvite } = await build();
+    bulkInvite.mockImplementationOnce(async () => {
+      throw new Error("seat ledger unavailable");
+    });
+
+    await svc.handle(
+      event({
+        ...COMPLETE_PAYLOAD,
+        invitees: [
+          { email: "admin@acme.test", role: "ORG_ADMIN" },
+          { email: "member@acme.test", role: "MEMBER" },
+        ],
+      }),
+    );
+
+    expect(bulkInvite).toHaveBeenCalledTimes(2);
+    expect(bulkInvite).toHaveBeenNthCalledWith(
+      1,
+      "org-1",
+      expect.anything(),
+      ["admin@acme.test"],
+      "ORG_ADMIN",
+      "enqueue",
+    );
+    expect(bulkInvite).toHaveBeenNthCalledWith(
+      2,
+      "org-1",
+      expect.anything(),
+      ["member@acme.test"],
+      "MEMBER",
+      "enqueue",
+    );
+  });
+
+  it("per-recipient outcomes reach the setup status: the address, its reason and a PARTIAL verdict", async () => {
+    const { svc, bulkInvite } = await build();
+    bulkInvite.mockResolvedValueOnce({
+      results: [
+        { email: "good@acme.test", success: true, invitationId: "inv-1" },
+        {
+          email: "dup@acme.test",
+          success: false,
+          error: "An invitation is already pending for this email",
+        },
+      ],
+    });
+
+    await svc.handle(
+      event({
+        ...COMPLETE_PAYLOAD,
+        invitees: [
+          { email: "good@acme.test", role: "MEMBER" },
+          { email: "dup@acme.test", role: "MEMBER" },
+        ],
+      }),
+    );
+
+    const recorded = markProcessed.mock.calls.at(-1);
+    expect(recorded?.[2]).toBe("COMPLETED");
+    const lastError = recorded?.[3];
+    expect(typeof lastError).toBe("string");
+    expect(lastError).toContain("dup@acme.test");
+    expect(lastError).toContain("An invitation is already pending for this email");
+    expect(lastError).not.toContain("good@acme.test");
+    expect(lastError).toContain("1 of 2");
+
+    expect(
+      resolveProvisioningAndError("COMPLETED", "DELIVERED", lastError !== null),
+    ).toEqual({ provisioning: "completed", errorCode: "SETUP_BACKGROUND_PARTIAL" });
+  });
+
+  it("an optional phase failure never records a cleanly COMPLETED inbox row", async () => {
+    const { svc, bulkInvite } = await build();
+    bulkInvite.mockResolvedValueOnce({
+      results: [{ email: "new@acme.test", success: false, error: "seat limit" }],
+    });
+
+    await svc.handle(event(COMPLETE_PAYLOAD));
+
+    expect(markProcessed).not.toHaveBeenCalledWith(
+      "organization:setup-completed",
+      expect.any(String),
+      "COMPLETED",
+      null,
+    );
+    expect(resolveProvisioningAndError("COMPLETED", "DELIVERED", false)).toEqual({
+      provisioning: "completed",
+      errorCode: null,
+    });
   });
 
   it("OS6 regression lock: ensureChecklistsForModules is called exactly once per provisioning pass", async () => {

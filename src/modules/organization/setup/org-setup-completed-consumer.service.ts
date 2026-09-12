@@ -21,6 +21,7 @@ import {
   hasStructureTemplate,
 } from "../onboarding/workspace-onboarding.service";
 import { InvitationCreateService } from "../core/invitation-create.service";
+import { canonicalAdmissionEmail } from "../core/membership-admission.service";
 import { orgSetupCompletedPayloadSchema } from "./dto/org-setup-completed-payload.schema";
 import type { SetupInvitee } from "./dto/org.schemas";
 
@@ -97,8 +98,12 @@ export class OrgSetupCompletedConsumerService
     if (invitees.length === 0) return [];
 
     const [actor] = await this.db
-      .select({ isOwner: organizationMembers.isOwner })
+      .select({
+        isOwner: organizationMembers.isOwner,
+        email: users.email,
+      })
       .from(organizationMembers)
+      .innerJoin(users, eq(users.id, organizationMembers.userId))
       .where(
         and(
           eq(organizationMembers.orgId, orgId),
@@ -113,12 +118,24 @@ export class OrgSetupCompletedConsumerService
         `Organization ${orgId} has no active membership for the setup invitation actor`,
       );
 
+    const actorEmail = canonicalAdmissionEmail(actor.email);
+    const skipped: string[] = [];
     const uniqueInvitees = new Map<string, SetupInvitee>();
     for (const invitee of invitees) {
-      const email = invitee.email.trim().toLowerCase();
+      const email = canonicalAdmissionEmail(invitee.email);
+      if (email === actorEmail) {
+        if (!skipped.includes(email)) skipped.push(email);
+        continue;
+      }
       if (!uniqueInvitees.has(email))
         uniqueInvitees.set(email, { ...invitee, email });
     }
+
+    if (skipped.length > 0)
+      this.logger.log(
+        `[org-setup] org ${orgId}: skipped ${skipped.length} wizard invitation(s) addressed to the ` +
+          `acting member's own address`,
+      );
 
     const emailsByRole = new Map<string, string[]>();
     for (const invitee of uniqueInvitees.values())
@@ -143,7 +160,11 @@ export class OrgSetupCompletedConsumerService
         if (failed.length > 0)
           failures.push(
             `${role}: ${failed.length} of ${emails.length} invitation(s) failed ` +
-              `(${failed.map((result) => result.email).join(", ")})`,
+              `(${failed
+                .map((result) =>
+                  result.error ? `${result.email} — ${result.error}` : result.email,
+                )
+                .join(", ")})`,
           );
       } catch (error: unknown) {
         const message = error instanceof Error ? error.message : String(error);

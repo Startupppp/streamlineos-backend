@@ -1,13 +1,12 @@
 import { randomBytes } from "node:crypto";
-import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, desc, eq, isNull, sql } from "drizzle-orm";
+import { BadRequestException, Inject, Injectable, NotImplementedException, NotFoundException } from "@nestjs/common";
+import { and, desc, eq, isNull } from "drizzle-orm";
 import { addDays } from "date-fns";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.types";
 import { platformWaitlist } from "../../db/schema";
 import { hashToken } from "../../common/security/token.util";
 import { logger } from "../../common/logger/logger.service";
-import { AuthService } from "../auth/auth.service";
 import {
   ADMISSION_TOKEN_DAYS,
   mayAdmit,
@@ -52,7 +51,6 @@ export interface ClaimInput {
 export class WaitlistAdmissionService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
-    private readonly auth: AuthService,
   ) {}
 
   /** The queue, newest first, for whoever decides who gets in. */
@@ -176,13 +174,9 @@ export class WaitlistAdmissionService {
     }
 
     try {
-      await this.auth.register({
-        email: entry.email,
-        firstName: input.firstName,
-        lastName: input.lastName ?? "",
-        companyName: input.companyName,
-        ...(input.country ? { country: input.country } : {}),
-      });
+      throw new NotImplementedException(
+        "Waitlist provisioning is not available: the signup path (AuthService.register) was removed when /signup was retired. An operator must provision this tenant manually, then update the waitlist entry directly.",
+      );
     } catch (error) {
       /*
        * Hand the entry back, because the comment above promised it.
@@ -208,38 +202,6 @@ export class WaitlistAdmissionService {
         error,
       });
       throw error;
-    }
-
-    /**
-     * Which organisation this claim produced, recorded after the fact.
-     *
-     * `register` allocates the id and does not return it, and the alternative is
-     * duplicating its provisioning to learn the id early -- which is the half
-     * that would drift.
-     *
-     * Read through the user's `last_active_org_id`, which `register` sets in the
-     * same transaction as the organisation. Best-effort and deliberately
-     * non-fatal: this column is for the operator's queue, and failing a claim
-     * that already created a working tenant because a reporting field could not
-     * be filled in would be the worst possible trade.
-     */
-    try {
-      const rows = await this.db.execute(
-        sql`SELECT last_active_org_id AS org_id FROM users
-            WHERE lower(email) = lower(${entry.email}) LIMIT 1`,
-      );
-      const orgId = rows[0]?.["org_id"];
-
-      if (typeof orgId === "string" && orgId) {
-        await this.db
-          .update(platformWaitlist)
-          .set({ claimedOrgId: orgId })
-          .where(eq(platformWaitlist.id, entry.id));
-      }
-    } catch (error) {
-      logger.warn(`waitlist: could not record the organisation for ${entry.reference}`, {
-        error,
-      });
     }
 
     logger.info(`waitlist: claimed ${entry.reference}`);

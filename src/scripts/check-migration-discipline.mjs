@@ -325,6 +325,22 @@ const BASELINE_NO_JOURNAL_ENTRY = new Set();
 const BASELINE_CONCURRENTLY = new Set();
 
 const BASELINE_JOURNAL_INTEGRITY = new Set([
+  // Inherited 2026-09-12 from the feat/timesheets-signos-finish merge, not authored here.
+  // The seven *a entries are the same deliberate shape as 0591b/0649b/0676b/0677b below:
+  // cold-replay repairs inserted mid-journal, `when` above the production watermark so
+  // production applies them as idempotent no-ops. 1090_inv_quality_hold_stock_grain
+  // arrived colliding with the already-sealed 1090_subscription_purchases; renaming a
+  // sealed migration would break its hash, and renaming theirs would break a tag that
+  // production may already have applied, so both files keep their names and the journal
+  // tag — not the numeric prefix — remains the identity drizzle resolves.
+  "dup-prefix:1090_subscription_purchases.sql",
+  "insert-order:0487a_hr_people_backfill_identity_to_org_person.sql",
+  "insert-order:0535a_crm_outbound.sql",
+  "insert-order:0550a_customer_lifecycle_records.sql",
+  "insert-order:0552a_customer_health_assessments.sql",
+  "insert-order:0574a_inventory_party_columns.sql",
+  "insert-order:0617a_control_plane_child_tenant_columns.sql",
+  "insert-order:0622a_custom_field_twin_key_yields.sql",
   "dup-prefix:0300_timesheets_launch_grade.sql",
   "dup-prefix:0370_tenant_column_integrity.sql",
   "dup-prefix:0371_drop_users_role.sql",

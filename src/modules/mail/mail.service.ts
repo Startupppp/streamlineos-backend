@@ -1,4 +1,6 @@
-import { Injectable } from "@nestjs/common";
+import { Inject, Injectable } from "@nestjs/common";
+import { APP_CONFIG } from "../../config/config.module";
+import type { AppConfig } from "../../config/env.validation";
 import { CacheService } from "../../common/cache/cache.service";
 import { ComposioToolError } from "../integrations/core/composio.gateway";
 import { GmailMailProvider } from "./providers/gmail-mail.provider";
@@ -34,6 +36,7 @@ export class MailService {
     private readonly cache: CacheService,
     private readonly metadata: MailMetadataService,
     private readonly checkpoints: MailSyncCheckpointService,
+    @Inject(APP_CONFIG) private readonly config: Pick<AppConfig, "ENCRYPTION_KEY">,
   ) {}
 
   async listAccounts(orgId: string, userId: string) {
@@ -133,7 +136,7 @@ export class MailService {
       }
     }
 
-    const parsedCursor = cursor ? decodeCursor(cursor, userId) : {};
+    const parsedCursor = cursor ? decodeCursor(cursor, userId, this.config.ENCRYPTION_KEY) : {};
     const skipCache = Boolean(query);
 
     const fetchDeps: MailFetchDeps = {
@@ -220,7 +223,7 @@ export class MailService {
     const hasMore = Object.values(nextCursorMap).some(
       (v) => v !== undefined && v !== null,
     );
-    const nextCursor = hasMore ? encodeCursor(nextCursorMap, userId) : null;
+    const nextCursor = hasMore ? encodeCursor(nextCursorMap, userId, this.config.ENCRYPTION_KEY) : null;
 
     return { messages: merged, nextCursor, accountErrors };
   }

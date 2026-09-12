@@ -112,6 +112,7 @@ const PAYLOAD = {
 function membershipSelect(rows: unknown[]) {
   const chain: Record<string, jest.Mock> = {};
   chain.from = jest.fn().mockReturnValue(chain);
+  chain.innerJoin = jest.fn().mockReturnValue(chain);
   chain.where = jest.fn().mockReturnValue(chain);
   chain.limit = jest.fn().mockImplementation(async () => {
     activeTx.statement("select:actor-membership");
@@ -152,7 +153,7 @@ async function build(overrides: { bulkInvite?: jest.Mock } = {}) {
         provide: DRIZZLE,
         useValue: {
           query: { users: { findFirst } },
-          select: membershipSelect([{ isOwner: true }]),
+          select: membershipSelect([{ isOwner: true, email: "owner@acme.test" }]),
         },
       },
       {
