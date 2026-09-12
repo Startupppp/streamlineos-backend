@@ -22,6 +22,7 @@ import { keysetBeforeId } from "../../../common/pagination/keyset";
 import { payrollSnapshotSchema } from "./dto/payroll.schemas";
 import { OutboxWriter } from "../../../common/outbox/outbox-writer";
 import { TIMESHEET_EVENTS } from "./handoff/handoff.schemas";
+import type { ScopedRead } from "../../access/scoped-read";
 import type {
   AckExportInput,
   ExportsListQuery,
@@ -63,24 +64,79 @@ export class PayrollExportsReadService {
     private readonly audit: AuditService,
   ) {}
 
-  async listExports(orgId: string, query: ExportsListQuery) {
+  /**
+   * An export is a payroll run over the organisation — every payee's hours in
+   * one snapshot — so no row of it belongs to one person. `timesheets:payroll:view`
+   * is scopable and a module member holds it at `own`; a scope narrower than
+   * `all` therefore reads no export at all. That is what the `own: false` shape
+   * says: the person's own share of an export is empty, not the export. The
+   * cache key carries the scope, so an owner's page is never served to a member.
+   */
+  private static readonly NOBODYS_OWN_ROW = { own: sql`false` } as const;
+
+  async listExports(read: ScopedRead, query: ExportsListQuery) {
+    const orgId = read.orgId;
     return this.cache.cachedVersioned(
       CACHE_KEYS.payrollExportsNamespace(orgId),
-      `${query.cursor ?? ""}:${query.limit}`,
+      `${read.discriminator}:${query.cursor ?? ""}:${query.limit}`,
       async () => {
         const limit = Math.min(query.limit, 100);
         const pos = decodeCursor(query.cursor);
-        const conditions = [eq(timesheetExports.orgId, orgId)];
-        if (pos)
-          conditions.push(
-            keysetBeforeId(
-              timesheetExports.createdAt,
-              timesheetExports.id,
-              pos,
-            ),
-          );
+        const empty = () => buildCursorPage<TimesheetExportDto>([], limit, (dto) => ({ sortValue: dto.createdAt, id: String(dto.id) }));
 
-        const rawRows = await this.db
+        return read.read(
+          {
+            tenant: timesheetExports.orgId,
+            scope: PayrollExportsReadService.NOBODYS_OWN_ROW,
+            and: [pos ? keysetBeforeId(timesheetExports.createdAt, timesheetExports.id, pos) : undefined],
+          },
+          async ({ sql: where }) => {
+            const rawRows = await this.db
+              .select({
+                export: timesheetExports,
+                creatorName: organizationPeople.displayName,
+              })
+              .from(timesheetExports)
+              .leftJoin(
+                organizationPeople,
+                and(
+                  eq(organizationPeople.organizationId, timesheetExports.orgId),
+                  eq(
+                    organizationPeople.organizationMembershipId,
+                    timesheetExports.createdByMembershipId,
+                  ),
+                ),
+              )
+              .where(where)
+              .orderBy(desc(timesheetExports.createdAt), desc(timesheetExports.id))
+              .limit(limit + 1);
+
+            const dtos = rawRows.map(({ export: exp, creatorName }) =>
+              toExportDto(exp, creatorName ?? null),
+            );
+
+            return buildCursorPage(dtos, limit, (dto) => ({
+              sortValue: dto.createdAt,
+              id: String(dto.id),
+            }));
+          },
+          empty,
+        );
+      },
+      CACHE_TTL.MEDIUM,
+    );
+  }
+
+  async getExportRows(read: ScopedRead, exportId: number) {
+    /* Same shape as the list: below `all` the export is not there to be read, and a 404 confirms nothing. */
+    const [result] = await read.read(
+      {
+        tenant: timesheetExports.orgId,
+        scope: PayrollExportsReadService.NOBODYS_OWN_ROW,
+        and: [eq(timesheetExports.id, exportId)],
+      },
+      ({ sql: where }) =>
+        this.db
           .select({
             export: timesheetExports,
             creatorName: organizationPeople.displayName,
@@ -96,47 +152,10 @@ export class PayrollExportsReadService {
               ),
             ),
           )
-          .where(and(...conditions))
-          .orderBy(desc(timesheetExports.createdAt), desc(timesheetExports.id))
-          .limit(limit + 1);
-
-        const dtos = rawRows.map(({ export: exp, creatorName }) =>
-          toExportDto(exp, creatorName ?? null),
-        );
-
-        return buildCursorPage(dtos, limit, (dto) => ({
-          sortValue: dto.createdAt,
-          id: String(dto.id),
-        }));
-      },
-      CACHE_TTL.MEDIUM,
+          .where(where)
+          .limit(1),
+      () => [],
     );
-  }
-
-  async getExportRows(orgId: string, exportId: number) {
-    const [result] = await this.db
-      .select({
-        export: timesheetExports,
-        creatorName: organizationPeople.displayName,
-      })
-      .from(timesheetExports)
-      .leftJoin(
-        organizationPeople,
-        and(
-          eq(organizationPeople.organizationId, timesheetExports.orgId),
-          eq(
-            organizationPeople.organizationMembershipId,
-            timesheetExports.createdByMembershipId,
-          ),
-        ),
-      )
-      .where(
-        and(
-          eq(timesheetExports.id, exportId),
-          eq(timesheetExports.orgId, orgId),
-        ),
-      )
-      .limit(1);
 
     if (!result) throw new NotFoundException("Export not found");
 

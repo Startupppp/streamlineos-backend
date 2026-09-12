@@ -1,5 +1,6 @@
 import type { Db } from "../../../db/drizzle.module";
 import { PayrollExportsReadService } from "./payroll-exports-read.service";
+import { ScopedRead } from "../../access/scoped-read";
 
 function sqlValues(value: unknown, seen = new Set<object>()): unknown[] {
   if (value === null || value === undefined || typeof value === "string" || typeof value === "number" || typeof value === "boolean") return [value];
@@ -44,7 +45,7 @@ describe("PayrollExportsReadService — cross-tenant isolation", () => {
     const { db, getWhere } = makeSelectChain([]);
     const svc = makeSvc(db);
 
-    const result = await svc.listExports(ATTACKER_ORG, { limit: 20 });
+    const result = await svc.listExports(ScopedRead.of(ATTACKER_ORG, "attacker", "all"), { limit: 20 });
 
     expect(result.data).toHaveLength(0);
     const vals = sqlValues(getWhere());
@@ -56,7 +57,7 @@ describe("PayrollExportsReadService — cross-tenant isolation", () => {
     const { db, getWhere } = makeSelectChain([]);
     const svc = makeSvc(db);
 
-    await svc.listExports(OWNER_ORG, { limit: 20 });
+    await svc.listExports(ScopedRead.of(OWNER_ORG, "owner", "all"), { limit: 20 });
 
     expect(sqlValues(getWhere())).toContain(OWNER_ORG);
   });
@@ -65,7 +66,7 @@ describe("PayrollExportsReadService — cross-tenant isolation", () => {
     const { db, getWhere } = makeSelectChain([]);
     const svc = makeSvc(db);
 
-    await expect(svc.getExportRows(ATTACKER_ORG, 1)).rejects.toThrow("Export not found");
+    await expect(svc.getExportRows(ScopedRead.of(ATTACKER_ORG, "attacker", "all"), 1)).rejects.toThrow("Export not found");
     const vals = sqlValues(getWhere());
     expect(vals).toContain(ATTACKER_ORG);
     expect(vals).not.toContain(OWNER_ORG);

@@ -27,6 +27,7 @@ import {
   round2,
 } from "./lib/payroll-calc";
 import { PayrollExportsReadService } from "./payroll-exports-read.service";
+import type { ScopedRead } from "../../access/scoped-read";
 import { OutboxWriter } from "../../../common/outbox/outbox-writer";
 import { TIMESHEET_EVENTS } from "./handoff/handoff.schemas";
 import type {
@@ -67,12 +68,12 @@ export class PayrollExportService {
     private readonly reader: PayrollExportsReadService,
   ) {}
 
-  listExports(orgId: string, query: ExportsListQuery) {
-    return this.reader.listExports(orgId, query);
+  listExports(read: ScopedRead, query: ExportsListQuery) {
+    return this.reader.listExports(read, query);
   }
 
-  getExportRows(orgId: string, exportId: number) {
-    return this.reader.getExportRows(orgId, exportId);
+  getExportRows(read: ScopedRead, exportId: number) {
+    return this.reader.getExportRows(read, exportId);
   }
 
   ackExport(orgId: string, userId: string, exportId: number, input: AckExportInput) {

@@ -89,11 +89,12 @@ export class PayrollController {
   @RequirePermission("timesheets:payroll:view")
   @Validate({ query: exportsListQuerySchema })
   @ResponseSchema(payrollExportListResponseSchema)
-  listExports(
+  async listExports(
     @Query() query: ExportsListQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.exportSvc.listExports(u.orgId, query);
+    const read = await resolvePayrollScope(this.access, u);
+    return this.exportSvc.listExports(read, query);
   }
 
   @Patch("exports/:exportId/ack")
@@ -113,11 +114,12 @@ export class PayrollController {
   @RequirePermission("timesheets:payroll:view")
   @Validate({ params: exportIdParams })
   @ResponseSchema(payrollExportRowsResponseSchema)
-  getExportRows(
+  async getExportRows(
     @Param("exportId", ParseIntPipe) exportId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.exportSvc.getExportRows(u.orgId, exportId);
+    const read = await resolvePayrollScope(this.access, u);
+    return this.exportSvc.getExportRows(read, exportId);
   }
 
   @Get("settings")
