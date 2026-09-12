@@ -1,4 +1,3 @@
-import { BadRequestException } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
 import { Reflector } from "@nestjs/core";
 import type { NestExpressApplication } from "@nestjs/platform-express";
@@ -13,6 +12,7 @@ import { trustProxySetting } from "src/common/http/trust-proxy";
 import { TurnstileService } from "src/common/security/turnstile.service";
 import { EmailService } from "src/modules/email/email.service";
 import { ContactService } from "src/modules/public/contact.service";
+import type { AppConfig } from "src/config/env.validation";
 import { CrmService } from "src/modules/public/crm.service";
 import { IntakeService } from "src/modules/public/intake.service";
 import { KbService } from "src/modules/public/kb.service";
@@ -24,6 +24,7 @@ import { PublicOffersService } from "src/modules/public/public-offers.service";
 import { PublicReferrersService } from "src/modules/public/public-referrers.service";
 import { RoadmapService } from "src/modules/public/roadmap.service";
 import { WaitlistService } from "src/modules/public/waitlist.service";
+import { PublicPricingService } from "src/modules/public/pricing.service";
 
 const validSubmission = {
   name: "Ada Lovelace",
@@ -52,20 +53,25 @@ describe("Public contact form (e2e)", () => {
         RateLimitGuard,
         { provide: RateLimitService, useValue: { check: checkRateLimit } },
         { provide: EmailService, useValue: { sendEmail } },
+        /**
+         * A live view of `process.env`, not a snapshot.
+         *
+         * `ContactService` and `TurnstileService` read `APP_CONFIG` now, where
+         * they used to read the environment directly — so this module stopped
+         * resolving at all ("APP_CONFIG at index [0]"). The cases here still set
+         * and delete `TURNSTILE_SECRET_KEY` between them, so a config object
+         * captured when the module was built would freeze the first value and
+         * quietly decide every case. The proxy keeps the reads live, which is
+         * what those cases have always assumed.
+         */
         {
           provide: APP_CONFIG,
-          useValue: { CONTACT_NOTIFICATION_EMAIL: process.env.CONTACT_NOTIFICATION_EMAIL },
+          useValue: new Proxy(
+            {},
+            { get: (_target, key: string) => process.env[key] },
+          ) as AppConfig,
         },
-        {
-          provide: TurnstileService,
-          useValue: {
-            verify: async (token: string | undefined) => {
-              const secret = process.env.TURNSTILE_SECRET_KEY?.trim();
-              if (!secret) return;
-              if (!token) throw new BadRequestException("Bot verification is required");
-            },
-          },
-        },
+        TurnstileService,
         ContactService,
         { provide: PublicCareersService, useValue: {} },
         { provide: PublicOffersService, useValue: {} },
@@ -77,6 +83,8 @@ describe("Public contact form (e2e)", () => {
         { provide: IntakeService, useValue: {} },
         { provide: OrgService, useValue: {} },
         { provide: PublicFormsService, useValue: {} },
+        { provide: WaitlistService, useValue: {} },
+        { provide: PublicPricingService, useValue: {} },
         { provide: DRIZZLE, useValue: {} },
       ],
     }).compile();

@@ -5,8 +5,10 @@ import { businessParties, partyContacts, partyRoles } from "../../db/schema/part
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { AuditService } from "../../common/audit/audit.service";
+import { isUniqueViolation } from "../../common/db/postgres-error";
 import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_KEYS } from "../../common/cache/cache-keys";
+import { PlanLimitsService } from "../billing/core/plan-limits.service";
 import { buildCursorPage, decodeCursor } from "../../common/pagination/cursor";
 import { softDeletePartyWithMirror, updatePartyWithMirror } from "./party-legacy-writer";
 import { claimIdentifiers, identifierClaimsOfColumns } from "./party-identifiers";
@@ -17,7 +19,6 @@ import type {
   CreateContactInput,
   UpdateContactInput,
 } from "./dto/party.schemas";
-import { isUniqueViolation } from "../../common/db/postgres-error";
 
 type PartyRow = typeof businessParties.$inferSelect;
 type PartyPatch = Partial<typeof businessParties.$inferInsert>;
@@ -49,6 +50,7 @@ export class PartyService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly audit: AuditService,
     private readonly cache: CacheService,
+    private readonly planLimits: PlanLimitsService,
   ) {}
 
   /**
@@ -206,6 +208,17 @@ export class PartyService {
   }
 
   async createParty(organizationId: string, userId: string, input: CreatePartyInput) {
+    /**
+     * The human path's share of ticket 07.
+     *
+     * The ticket is about autonomous writers, and closing only that half would
+     * have left the odd position that a plan limit binds the robot and not the
+     * person -- so the same record, created by hand, was unbounded. This is the
+     * ordinary throwing assertion every other write path in the platform uses,
+     * because here there *is* somebody to be told.
+     */
+    await this.planLimits.assertWithinLimit(organizationId, "crmContacts");
+
     const [row] = await this.db
       .insert(businessParties)
       .values({
@@ -271,6 +284,12 @@ export class PartyService {
     if (input.website !== undefined) patch.website = input.website ?? null;
     if (input.notes !== undefined) patch.notes = input.notes ?? null;
     if (input.status !== undefined) patch.status = input.status;
+    /**
+     * CRM-P1-09. Null clears it back to "unknown", which is a real answer —
+     * send-time working hours then fall through to the tenant's zone rather
+     * than keeping a value somebody has decided is wrong.
+     */
+    if (input.timezone !== undefined) patch.timezone = input.timezone ?? null;
     if (input.partyKind !== undefined) patch.partyKind = input.partyKind ?? null;
     // Reaches `contacts.organization_id` through the writer, which translates it
     // back into a `crm_organizations` id: see `party-legacy-employer.ts`.

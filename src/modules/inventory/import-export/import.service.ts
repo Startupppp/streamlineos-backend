@@ -4,10 +4,14 @@ import { type Db } from "../../../db/drizzle.module";
 import { CacheService } from "../../../common/cache/cache.service";
 import { CACHE_KEYS, CACHE_TTL } from "../../../common/cache/cache-keys";
 import { StockEngineService } from "../stock-engine/stock-engine.service";
-import { eq, and, desc, sql } from "drizzle-orm";
+import { eq, and, desc, isNull, sql } from "drizzle-orm";
 import { invImportJobs, invProducts, invProductVariants, invLocations } from "../../../db/schema";
 import { parseCsv } from "./csv.util";
 import type { ImportType, CreateImportJobInput, ListJobsQueryInput } from "./dto/import-export.schemas";
+import { isImportType } from "./dto/import-export.schemas";
+import { readOpeningStockRow, validateOpeningStockRow } from "./lib/opening-stock-row";
+import { resolveLotId, resolveSerialIds } from "../purchase-orders/lib/receipt-lots-serials";
+import { StagedImportService } from "./staged-import.service";
 
 export interface RowError {
   row: number;
@@ -31,7 +35,39 @@ export class ImportService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly cache: CacheService,
     private readonly stockEngine: StockEngineService,
+    private readonly staged: StagedImportService,
   ) {}
+
+  /**
+   * Applies the next chunk of a staged job — INV-108.
+   *
+   * The per-row validation and the opening-stock applier are the same ones the
+   * in-request importer uses; what changed is where the rows come from and that
+   * each one's outcome is durable. A row that fails is recorded and skipped, so
+   * one bad line in a hundred thousand does not discard the rest.
+   */
+  async processStagedChunk(orgId: string, userId: string, jobId: number) {
+    const job = await this.staged.progress(orgId, jobId);
+    if (!isImportType(job.importType))
+      throw new BadRequestException(
+        `Import job ${jobId} was staged as "${job.importType}", which is not an import type this release can apply.`,
+      );
+    const importType: ImportType = job.importType;
+
+    return this.staged.processChunk(orgId, userId, jobId, async (org, user, id, rowNumber, payload) => {
+      const errors = this.validateRow(importType, payload, rowNumber);
+      const first = errors[0];
+      if (first)
+        return { status: "FAILED", code: "VALIDATION_FAILED", field: first.field, message: first.message };
+
+      if (importType === "opening-stock") {
+        const failure = await this.processOpeningStockRow(org, user, id, payload, rowNumber - 1);
+        if (failure)
+          return { status: "FAILED", code: "OPENING_STOCK_FAILED", field: failure.field, message: failure.message };
+      }
+      return null;
+    });
+  }
 
   async previewImport(orgId: string, file: Express.Multer.File, importType: ImportType) {
     const text = file.buffer.toString("utf-8");
@@ -125,6 +161,27 @@ export class ImportService {
     return updated;
   }
 
+  /**
+   * INV-37 — posts one opening balance at the grain the file named.
+   *
+   * The lot and the serial are the point. `EXPECTED_COLUMNS` has advertised
+   * both since this importer was written and neither was ever read, so the
+   * movement carried a variant and a location and nothing else: two batches of
+   * one SKU merged onto one anonymous stock row, and no recall, FEFO pick or
+   * genealogy walk could tell them apart afterwards. Measured before the fix at
+   * 40 + 15 arriving as a single row of 55.
+   *
+   * Handling unit and ownership stay absent because the file has no column for
+   * them, and that is the right answer rather than a second collapse: an
+   * opening balance is this organisation's own stock standing loose on a shelf.
+   *
+   * The quantity is passed through as written. It used to go through
+   * `parseFloat` and back out through `String`, and `parseFloat` returns what it
+   * could read instead of failing — so "1,000", the separator a spreadsheet
+   * writes by default, imported as one unit and the row was marked APPLIED.
+   * `validateOpeningStockRow` now refuses the string that `decimal.ts` cannot
+   * read, which is the same grammar the engine will parse it with.
+   */
   private async processOpeningStockRow(
     orgId: string,
     userId: string,
@@ -132,30 +189,55 @@ export class ImportService {
     row: Record<string, string>,
     rowIndex: number,
   ): Promise<RowError | null> {
+    const line = readOpeningStockRow(row);
     try {
       const variant = await this.db
         .select({ id: invProductVariants.id })
         .from(invProductVariants)
         .innerJoin(invProducts, eq(invProductVariants.productId, invProducts.id))
-        .where(and(eq(invProducts.orgId, orgId), eq(invProducts.sku, row["sku"] ?? "")))
+        // A deleted product keeps its SKU, and only the LIVE uniqueness index is
+        // partial on `deleted_at IS NULL` — so without this an opening-stock row
+        // could resolve to a deleted product and post stock onto it, and a SKU
+        // reused after a deletion would match the wrong one of the two.
+        .where(
+          and(
+            eq(invProducts.orgId, orgId),
+            eq(invProducts.sku, line.sku),
+            isNull(invProducts.deletedAt),
+            isNull(invProductVariants.deletedAt),
+          ),
+        )
         .limit(1);
 
       if (variant.length === 0 || !variant[0]) {
-        return { row: rowIndex, field: "sku", message: `Product variant not found for SKU: ${row["sku"] ?? ""}` };
+        return { row: rowIndex, field: "sku", message: `Product variant not found for SKU: ${line.sku}` };
       }
 
       const loc = await this.db
         .select({ id: invLocations.id })
         .from(invLocations)
-        .where(and(eq(invLocations.orgId, orgId), eq(invLocations.code, row["locationCode"] ?? "")))
+        .where(and(eq(invLocations.orgId, orgId), eq(invLocations.code, line.locationCode)))
         .limit(1);
 
       if (loc.length === 0 || !loc[0]) {
-        return { row: rowIndex, field: "locationCode", message: `Location not found for code: ${row["locationCode"] ?? ""}` };
+        return { row: rowIndex, field: "locationCode", message: `Location not found for code: ${line.locationCode}` };
       }
 
-      const qty = parseFloat(row["quantity"] ?? "0");
-      const unitCost = row["unitCost"] ? parseFloat(row["unitCost"]) : 0;
+      const productVariantId = variant[0].id;
+      const locationId = loc[0].id;
+
+      // Through the receipt's own resolvers, so an opening balance and a goods
+      // receipt agree about when a lot number is reused and when a new batch is
+      // opened. A second copy here is the duplication INV-48 deletes.
+      const lotId = await resolveLotId(this.db, orgId, productVariantId, {
+        lotNumber: line.lotNumber,
+        expiryDate: null,
+        manufactureDate: null,
+      });
+      const serialIds = line.serialNumber
+        ? await resolveSerialIds(this.db, orgId, productVariantId, locationId, lotId, [line.serialNumber])
+        : [];
+      const serialId = serialIds[0];
 
       await this.stockEngine.execute(orgId, userId, {
         idempotencyKey: `import:${jobId}:${rowIndex}`,
@@ -164,10 +246,12 @@ export class ImportService {
         movements: [
           {
             transactionType: "OPENING_BALANCE",
-            productVariantId: variant[0].id,
-            locationId: loc[0].id,
-            quantityDelta: String(qty),
-            unitCost: unitCost > 0 ? String(unitCost) : undefined,
+            productVariantId,
+            locationId,
+            ...(lotId === undefined ? {} : { lotId }),
+            ...(serialId === undefined ? {} : { serialId }),
+            quantityDelta: line.quantity,
+            ...(line.unitCost === null ? {} : { unitCost: line.unitCost }),
           },
         ],
       });
@@ -190,17 +274,10 @@ export class ImportService {
         errors.push({ row: rowIndex, field: "name", message: "name is required" });
       }
     } else if (importType === "opening-stock") {
-      if (!row["sku"] || row["sku"].trim() === "") {
-        errors.push({ row: rowIndex, field: "sku", message: "sku is required" });
-      }
-      if (!row["quantity"] || row["quantity"].trim() === "") {
-        errors.push({ row: rowIndex, field: "quantity", message: "quantity is required" });
-      } else {
-        const qty = parseFloat(row["quantity"]);
-        if (isNaN(qty) || qty <= 0) {
-          errors.push({ row: rowIndex, field: "quantity", message: "quantity must be a positive number" });
-        }
-      }
+      // INV-37. Read through the same function the applier reads the row with,
+      // so the pass that decides a row is acceptable and the pass that posts it
+      // cannot hold different opinions of what it says.
+      errors.push(...validateOpeningStockRow(row, rowIndex));
     } else if (importType === "vendors") {
       if (!row["name"] || row["name"].trim() === "") {
         errors.push({ row: rowIndex, field: "name", message: "name is required" });

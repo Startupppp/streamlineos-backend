@@ -26,25 +26,63 @@ describe("tenant FK probe configuration and rejection identity", () => {
       .toThrow(/TENANT_FK_PROBE_DATABASE_URL/);
   });
 
+  /**
+   * Every row names the refusal it expects. These cases all end in "something
+   * threw", and a bare `.toThrow()` cannot tell the intended refusal from the
+   * one that arrives by accident — an unsafe-host row satisfied by the
+   * fixture-id validator, or by a typo in the env key that makes EVERY row
+   * refuse for the same uninteresting reason. That is precisely how a guard
+   * gets weakened without a single test going red.
+   */
   it.each([
-    { ...approved, ALLOW_DESTRUCTIVE_DB_TESTS: undefined },
-    { ...approved, TENANT_FK_PROBE_DATABASE_URL: "postgres://probe@unapproved.example/scratch_fk_probe" },
-    { ...approved, TENANT_FK_PROBE_DATABASE_URL: "postgres://probe@127.0.0.1/production" },
-    { ...approved, TENANT_FK_PROBE_DATABASE_URL: "https://127.0.0.1/scratch_fk_probe" },
-  ])("refuses an unsafe database configuration %# before any connection", (env) => {
-    expect(() => loadTenantFkProbeConfig(env)).toThrow();
+    { because: /ALLOW_DESTRUCTIVE_DB_TESTS is not set/, env: { ...approved, ALLOW_DESTRUCTIVE_DB_TESTS: undefined } },
+    {
+      because: /is not approved for destructive testing/,
+      env: { ...approved, TENANT_FK_PROBE_DATABASE_URL: "postgres://probe@unapproved.example/scratch_fk_probe" },
+    },
+    {
+      because: /must name a disposable database/,
+      env: { ...approved, TENANT_FK_PROBE_DATABASE_URL: "postgres://probe@127.0.0.1/production" },
+    },
+    {
+      because: /must use the PostgreSQL protocol/,
+      env: { ...approved, TENANT_FK_PROBE_DATABASE_URL: "https://127.0.0.1/scratch_fk_probe" },
+    },
+  ])("refuses an unsafe database configuration $# before any connection", ({ because, env }) => {
+    expect(() => loadTenantFkProbeConfig(env)).toThrow(because);
   });
 
   it.each([
-    { ...approved, TENANT_FK_PROBE_ORG_A: undefined },
-    { ...approved, TENANT_FK_PROBE_ORG_B: "org-a" },
-    { ...approved, TENANT_FK_PROBE_PROJECT_B_ID: "11" },
-    { ...approved, TENANT_FK_PROBE_CHILD_B_ID: "202" },
-    { ...approved, TENANT_FK_PROBE_PARENT_A_ID: "-1" },
-    { ...approved, TENANT_FK_PROBE_PARENT_A_ID: "1.5" },
-    { ...approved, TENANT_FK_PROBE_PARENT_A_ID: "2147483648" },
-  ])("refuses missing, ambiguous or invalid fixture identifiers %#", (env) => {
-    expect(() => loadTenantFkProbeConfig(env)).toThrow();
+    {
+      because: /TENANT_FK_PROBE_ORG_A is required/,
+      env: { ...approved, TENANT_FK_PROBE_ORG_A: undefined },
+    },
+    {
+      because: /two distinct organizations and projects/,
+      env: { ...approved, TENANT_FK_PROBE_ORG_B: "org-a" },
+    },
+    {
+      because: /two distinct organizations and projects/,
+      env: { ...approved, TENANT_FK_PROBE_PROJECT_B_ID: "11" },
+    },
+    {
+      because: /two distinct parent epics and a separate child ticket/,
+      env: { ...approved, TENANT_FK_PROBE_CHILD_B_ID: "202" },
+    },
+    {
+      because: /TENANT_FK_PROBE_PARENT_A_ID must be a positive PostgreSQL integer/,
+      env: { ...approved, TENANT_FK_PROBE_PARENT_A_ID: "-1" },
+    },
+    {
+      because: /TENANT_FK_PROBE_PARENT_A_ID must be a positive PostgreSQL integer/,
+      env: { ...approved, TENANT_FK_PROBE_PARENT_A_ID: "1.5" },
+    },
+    {
+      because: /TENANT_FK_PROBE_PARENT_A_ID must be a positive PostgreSQL integer/,
+      env: { ...approved, TENANT_FK_PROBE_PARENT_A_ID: "2147483648" },
+    },
+  ])("refuses missing, ambiguous or invalid fixture identifiers $#", ({ because, env }) => {
+    expect(() => loadTenantFkProbeConfig(env)).toThrow(because);
   });
 
   it("accepts only the intended FK violation, including a wrapped driver error", () => {

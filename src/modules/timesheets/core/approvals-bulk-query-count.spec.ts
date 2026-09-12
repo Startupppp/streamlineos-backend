@@ -4,6 +4,7 @@ import { humanSessionPrincipal } from "../../../common/auth/principal";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import type { CacheService } from "../../../common/cache/cache.service";
 import type { AccessService } from "../../access/access.service";
+import type { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
 import { ApprovalsBulkService } from "./approvals-bulk.service";
 import { ApprovalsService } from "./approvals.service";
 import { RateResolverService } from "./rate-resolver.service";
@@ -19,12 +20,18 @@ import { TimesheetsAuditService } from "./timesheets-audit.service";
  * spend statements, and a per-row shape anywhere in that chain would show up in
  * the total. Stubbing them would move the N+1 out of the measurement instead of
  * out of the code.
+ *
+ * Every period still announces its own approval and lock (the payroll handoff
+ * waits on each period's `timesheets.period.locked`), so the path also reads the
+ * workers' user ids once and writes every period's events in one outbox INSERT.
+ * Only the notification dispatcher is a stub: it sends after the commit and
+ * spends no statement of this handle.
  */
 
 const ORG = "org-approvals-bulk";
 const ACTOR_MEMBERSHIP = 7;
 const BATCH_SIZES = [1, 50] as const;
-const BULK_APPROVE_STATEMENTS = 14;
+const BULK_APPROVE_STATEMENTS = 17;
 
 function repeat<T>(count: number, make: (index: number) => T): T[] {
   return Array.from({ length: count }, (_unused, index) => make(index));
@@ -79,6 +86,8 @@ function selectPlan(size: number): unknown[] {
     ],
     [{ id: "person-7" }], // organization person of the actor's membership
     [{ lockAfterApproval: true }],
+    // the workers' user ids, which the events and the notices are addressed by
+    repeat(size, (index) => ({ id: 500 + index, userId: `user-worker-${index}` })),
     repeat(size, (index) => ({
       id: index + 1,
       projectId: 1,
@@ -92,8 +101,26 @@ function selectPlan(size: number): unknown[] {
   ];
 }
 
+/** The batch period UPDATE reads back every row, `event_seq` already bumped for approved + locked. */
+function updatePlan(size: number): unknown[] {
+  return [
+    repeat(size, (index) => ({
+      id: index + 1,
+      eventSeq: 2,
+      userMembershipId: 500 + index,
+      periodStart: "2026-06-01",
+      periodEnd: "2026-06-07",
+      status: "APPROVED",
+      totalHours: "8.00",
+      billableHours: "8.00",
+      nonBillableHours: "0.00",
+    })),
+    [], // the entries UPDATE returns nothing
+  ];
+}
+
 function harness(size: number) {
-  const counting = makeCountingDb({ select: selectPlan(size) });
+  const counting = makeCountingDb({ select: selectPlan(size), update: updatePlan(size) });
   const db = counting.db as Db;
   const cache = {
     cachedVersioned: (
@@ -105,7 +132,16 @@ function harness(size: number) {
 
   const audit = new TimesheetsAuditService(db);
   const rateResolver = new RateResolverService(db, cache);
-  const approvals = new ApprovalsService(db, {} as unknown as AccessService, audit, rateResolver);
+  const notifications = {
+    emit: (): Promise<unknown> => Promise.resolve({ notificationIds: [] }),
+  } as unknown as NotificationDispatchService;
+  const approvals = new ApprovalsService(
+    db,
+    {} as unknown as AccessService,
+    audit,
+    rateResolver,
+    notifications,
+  );
 
   return {
     ...counting,
@@ -129,10 +165,11 @@ describe("ApprovalsBulkService.bulkApprove — statement count", () => {
       expect(statements()).toBe(BULK_APPROVE_STATEMENTS);
       // Two set-based UPDATEs — the periods and their entries — never one per period.
       expect(countOf("update")).toBe(2);
-      // One UPDATE … FROM (VALUES …) carries every resolved rate.
-      expect(countOf("execute")).toBe(1);
-      // One multi-row audit INSERT.
-      expect(countOf("insert")).toBe(1);
+      // One UPDATE … FROM (VALUES …) carries every resolved rate, and the audit
+      // chain takes its per-organisation advisory lock once for the whole batch.
+      expect(countOf("execute")).toBe(2);
+      // One multi-row audit INSERT, and one outbox INSERT carrying every period's events.
+      expect(countOf("insert")).toBe(2);
       totals.push(statements());
     }
 
@@ -145,9 +182,10 @@ describe("ApprovalsBulkService.bulkApprove — statement count", () => {
 
     await service.bulkApprove(USER, { periodIds });
 
-    // 50 periods with 50 distinct current approvers, one delegation read; and one
-    // rate read plus one default-currency read for 50 billable entries.
-    expect(countOf("select")).toBe(10);
+    // 50 periods with 50 distinct current approvers, one delegation read; one read
+    // of the 50 workers' user ids; and one rate read plus one default-currency read
+    // for 50 billable entries.
+    expect(countOf("select")).toBe(11);
   });
 
   it("issues two statements and no write for an empty batch", async () => {

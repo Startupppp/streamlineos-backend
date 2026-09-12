@@ -29,10 +29,17 @@ import { dirname, join } from "node:path";
  * does not complete before the write does. `return exportWorkLogsCsv(...)`
  * (`work-logs.service.ts:294`) satisfies that; `void x()` and a bare `x();` do not.
  */
-const CRITICAL_CALL_RE = /(await\s+|return\s+)?\b(?:this\.)?audit\.logCritical\s*\(/g;
+/*
+  Any receiver, not just `this`. A split moved three of these onto a deps
+  object — `await deps.audit.logCritical(` — and a pattern anchored at
+  `audit.` matched from there, leaving the `await` outside the match. The
+  scan then read three awaited writes as three unawaited ones, which is the
+  failure this gate exists to raise, reported against code that is correct.
+*/
+const CRITICAL_CALL_RE = /(await\s+|return\s+)?(?:\b[A-Za-z_$][\w$]*\.)*\baudit\.logCritical\s*\(/g;
 
 /** `this.audit.log(` — the best-effort variant, which swallows its own failures. */
-const BEST_EFFORT_LOG_RE = /\b(?:this\.)?audit\.log\s*\(/;
+const BEST_EFFORT_LOG_RE = /(?:\b[A-Za-z_$][\w$]*\.)*\baudit\.log\s*\(/;
 
 /** `import { a, b as c } from "./x"` — the only import form a helper arrives through. */
 const NAMED_IMPORT_RE = /import\s+(?:type\s+)?\{([^}]*)\}\s*from\s*["']([^"']+)["']/g;
@@ -147,7 +154,16 @@ function importedSymbols(source: string): ImportedSymbol[] {
 }
 
 function countHelperCalls(source: string, local: string): CallCount {
-  const callRe = new RegExp(`(await\\s+|return\\s+)?\\b${local}\\s*\\(`, "g");
+  /*
+    A call to the helper, not the service method that shares its name. The
+    bare word boundary matched `async updateEngagement(` — the declaration —
+    so each subject counted one call more than it makes, and the awaited
+    ratio read as half what it is.
+  */
+  const callRe = new RegExp(
+    `(await\\s+|return\\s+)?(?<![.\\w$])(?<!\\bfunction\\s)(?<!\\basync\\s)${local}\\s*\\(`,
+    "g",
+  );
   let total = 0;
   let awaited = 0;
   for (const match of source.matchAll(callRe)) {

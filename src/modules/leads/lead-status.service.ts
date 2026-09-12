@@ -48,8 +48,10 @@ export class LeadStatusService {
   }
 
   private async ensureDealForLead(orgId: string, lead: LeadRow): Promise<void> {
+    // Existence only: the deal is never read, just not created twice.
     const existingDeal = await this.db.query.deals.findFirst({
       where: and(eq(deals.leadId, lead.id), eq(deals.orgId, orgId), isNull(deals.deletedAt)),
+      columns: { id: true },
     });
     if (existingDeal) return;
     await this.planLimits.assertWithinLimit(orgId, "crmDeals");

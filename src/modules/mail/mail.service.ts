@@ -1,4 +1,6 @@
-import { BadRequestException, Injectable, Logger } from "@nestjs/common";
+import { BadRequestException, Inject, Injectable, Logger } from "@nestjs/common";
+import { APP_CONFIG } from "../../config/config.module";
+import type { AppConfig } from "../../config/env.validation";
 import { CacheService } from "../../common/cache/cache.service";
 import { ComposioToolError } from "../integrations/core/composio.gateway";
 import { GmailMailProvider } from "./providers/gmail-mail.provider";
@@ -39,6 +41,17 @@ export class MailService {
     private readonly cache: CacheService,
     private readonly metadata: MailMetadataService,
     private readonly checkpoints: MailSyncCheckpointService,
+    /**
+     * The inbox cursor is signed, and its key comes through the config token.
+     *
+     * `mail-normalizers` used to read `ENCRYPTION_KEY` from `process.env` inside
+     * `cursorKey`, on every encode and decode. `no-restricted-syntax` bans that;
+     * holding it here means the signer takes the secret as an argument and a
+     * test can state it rather than mutate the environment. Required by
+     * `env.validation.ts`, so it is a `string` and never absent.
+     */
+    @Inject(APP_CONFIG)
+    private readonly config: Pick<AppConfig, "ENCRYPTION_KEY">,
   ) {}
 
   async listAccounts(orgId: string, userId: string) {
@@ -137,7 +150,7 @@ export class MailService {
       }
     }
 
-    const parsedCursor = cursor ? decodeCursor(cursor, userId) : {};
+    const parsedCursor = cursor ? decodeCursor(cursor, userId, this.config.ENCRYPTION_KEY) : {};
     const skipCache = Boolean(query);
 
     const settled = await Promise.allSettled(
@@ -212,10 +225,10 @@ export class MailService {
       carriedCursors,
     );
 
-    const hasMore = Object.values(nextCursorMap).some(
-      (v) => v !== undefined && v !== null,
-    );
-    const nextCursor = hasMore ? encodeCursor(nextCursorMap, userId) : null;
+    const hasMore = Object.values(nextCursorMap).some((v) => v !== undefined && v !== null);
+    const nextCursor = hasMore
+      ? encodeCursor(nextCursorMap, userId, this.config.ENCRYPTION_KEY)
+      : null;
 
     return { messages: merged, nextCursor, accountErrors };
   }

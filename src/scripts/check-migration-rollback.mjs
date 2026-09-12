@@ -61,6 +61,24 @@ const MIN_SQL_FILES = 380;
 const BASELINE_CUTOFF = 839;
 
 /**
+ * A migration is inventory when its tag says so. Stated as a rule so the number
+ * below can be reproduced, rather than being a count somebody once made.
+ */
+const INVENTORY_TAG = /^\d+[a-z]?_(inv_|inventory)/;
+
+/**
+ * How many inventory migrations have neither a rollback file nor an
+ * `-- @irreversible` declaration, and therefore pass this gate only because they
+ * predate the cutoff. It can only shrink.
+ *
+ * The gate reported PASSED while enforcing exactly nothing about inventory: all
+ * of them sit at or below 839, so the green covered the module and said so
+ * nowhere. The count is now printed on every run and ratcheted here, so the debt
+ * is a number somebody has to look at and cannot quietly grow.
+ */
+const INVENTORY_WITHOUT_ROLLBACK_BASELINE = 38;
+
+/**
  * Files that are intentionally unjournalled and never applied via db:migrate.
  * They are exempt from the rollback requirement.
  */
@@ -123,6 +141,35 @@ function scanRollbackFiles(rollbackDir) {
   );
 }
 
+/**
+ * The accounting the gate used to keep to itself: how much of that PASSED is
+ * exemption, and how much of the exemption is inventory.
+ */
+function exemptionCensus(migrationsDir, tags, journalTags, rollbacks) {
+  const inventory = tags.filter((t) => INVENTORY_TAG.test(t));
+  let withRollback = 0;
+  let irreversible = 0;
+  const neither = [];
+  for (const tag of inventory) {
+    if (rollbacks.has(tag)) {
+      withRollback++;
+      continue;
+    }
+    const content = readFileSync(join(migrationsDir, `${tag}.sql`), "utf8");
+    if (hasIrreversibleDeclaration(content)) irreversible++;
+    else neither.push(tag);
+  }
+  return {
+    belowCutoff: tags.filter((t) => numericPrefixOf(t) <= BASELINE_CUTOFF).length,
+    inventory: inventory.length,
+    inventoryBelowCutoff: inventory.filter((t) => numericPrefixOf(t) <= BASELINE_CUTOFF).length,
+    withRollback,
+    irreversible,
+    neither,
+    journalled: journalTags.size,
+  };
+}
+
 function runChecks(migrationsDir, { skipVacuity = false } = {}) {
   const tags = scanMigrations(migrationsDir);
   const journalTags = readJournalTags(migrationsDir);
@@ -176,7 +223,19 @@ function runChecks(migrationsDir, { skipVacuity = false } = {}) {
     });
   }
 
-  return { tags, violations };
+  const census = exemptionCensus(migrationsDir, tags, journalTags, rollbacks);
+  if (!skipVacuity && census.neither.length > INVENTORY_WITHOUT_ROLLBACK_BASELINE)
+    violations.push({
+      tag: "inventory",
+      label: "inventory-rollback-ratchet",
+      msg:
+        `${census.neither.length} inventory migrations have neither a rollback file nor an ` +
+        `-- @irreversible declaration; the recorded baseline is ` +
+        `${INVENTORY_WITHOUT_ROLLBACK_BASELINE} and it can only shrink. A new one below the ` +
+        `${BASELINE_CUTOFF} cutoff cannot be added silently.`,
+    });
+
+  return { tags, violations, census };
 }
 
 function selfTest() {
@@ -366,13 +425,32 @@ async function main() {
     return;
   }
 
-  const { tags, violations } = runChecks(MIGRATIONS_DIR);
+  const { tags, violations, census } = runChecks(MIGRATIONS_DIR);
 
   if (violations.length === 0) {
     console.log(`check:migration-rollback PASSED`);
     console.log(`  ${tags.length} migrations scanned`);
     console.log(`  Compliance required for numeric prefix > ${BASELINE_CUTOFF}`);
     console.log(`  All rollback type-name checks passed`);
+    console.log(``);
+    console.log(`  What that PASSED does not cover, printed here rather than left in the source:`);
+    console.log(
+      `    ${census.belowCutoff} of ${tags.length} migrations are at or below ${BASELINE_CUTOFF} ` +
+        `and this gate requires nothing of them`,
+    );
+    console.log(
+      `    inventory (tag matches ${INVENTORY_TAG.source}): ${census.inventory} migrations, ` +
+        `${census.inventoryBelowCutoff} of them below the cutoff`,
+    );
+    console.log(`      ${census.withRollback} have migrations/rollback/<tag>.down.sql`);
+    console.log(`      ${census.irreversible} declare -- @irreversible or -- @data-loss`);
+    console.log(
+      `      ${census.neither.length} have neither and pass only by the cutoff ` +
+        `(baseline ${INVENTORY_WITHOUT_ROLLBACK_BASELINE}, can only shrink)`,
+    );
+    console.log(
+      `    This gate never executes a rollback. \`pnpm drill:rollback\` does, and reports which ones run.`,
+    );
     process.exit(0);
   }
 

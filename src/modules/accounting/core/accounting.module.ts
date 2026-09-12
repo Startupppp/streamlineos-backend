@@ -1,42 +1,16 @@
 import { Module } from "@nestjs/common";
-import { AccountingLedgerController } from "./accounting-ledger.controller";
-import { AccountingStatementsController } from "./accounting-statements.controller";
-import { AccountingPayablesReceivablesController } from "./accounting-payables-receivables.controller";
-import { AccountingGstController } from "./accounting-gst.controller";
-import { AccountingLedgerService } from "./accounting-ledger.service";
-import { AccountingStatementsService } from "./accounting-statements.service";
-import { AccountingPayablesService } from "./accounting-payables.service";
-import { AccountingPayablesQueryService } from "./accounting-payables-query.service";
-import { AccountingReceivablesService } from "./accounting-receivables.service";
-import { AccountingGstService } from "./accounting-gst.service";
-import { AccountingCashFlowService } from "./accounting-cash-flow.service";
-import { AccountingVendorQueryService } from "./accounting-vendor-query.service";
-import { AccountingJournalEntryService } from "./accounting-journal-entry.service";
-import { AccountingAgedReceivablesService } from "./accounting-aged-receivables.service";
-import { NotificationsModule } from "../../notifications/notifications.module";
-import { FinanceControlsModule } from "../../finance/controls/finance-controls.module";
-import { AccountingPostingModule } from "../posting/accounting-posting.module";
+import { AccountingAdaptersModule } from "../adapters/accounting-adapters.module";
+import { AccountingKernelModule } from "../kernel/accounting-kernel.module";
 
+/**
+ * Compatibility module for Payroll, which imports `AccountingModule` from this
+ * path and is not ours to edit. The legacy ledger this module used to assemble
+ * is gone: payroll posts through `PostingCommandService` (the adapters) and
+ * resolves its book through `BooksService` (the kernel), so this re-exports
+ * exactly those two modules and registers nothing of its own.
+ */
 @Module({
-  imports: [NotificationsModule, AccountingPostingModule, FinanceControlsModule],
-  controllers: [
-    AccountingLedgerController,
-    AccountingStatementsController,
-    AccountingPayablesReceivablesController,
-    AccountingGstController,
-  ],
-  providers: [
-    AccountingLedgerService,
-    AccountingStatementsService,
-    AccountingPayablesQueryService,
-    AccountingPayablesService,
-    AccountingReceivablesService,
-    AccountingAgedReceivablesService,
-    AccountingGstService,
-    AccountingCashFlowService,
-    AccountingVendorQueryService,
-    AccountingJournalEntryService,
-  ],
-  exports: [AccountingPostingModule],
+  imports: [AccountingAdaptersModule, AccountingKernelModule],
+  exports: [AccountingAdaptersModule, AccountingKernelModule],
 })
 export class AccountingModule {}

@@ -1,4 +1,5 @@
 import { classifyRetiredPermissions } from "./permission-catalog-sync.service";
+import { permissions } from "../../db/schema";
 
 describe("classifyRetiredPermissions", () => {
   it("deletes only stale keys without persisted role or delegation grants", () => {
@@ -56,9 +57,14 @@ describe("PermissionCatalogSyncService.sync — administering module column", ()
             Promise.resolve(catalogModules.map((moduleKey) => ({ moduleKey }))),
         }),
       }),
-      insert: () => ({
+      /*
+       * Keyed on the table: since ed6c7bef2 the sync self-heals `modules_catalog`
+       * with an insert of its own before the permission rows go in, and a double
+       * that captured the first insert it saw recorded module rows as permissions.
+       */
+      insert: (table: unknown) => ({
         values: (rows: Array<Record<string, unknown>>) => {
-          if (inserted.length === 0) inserted = rows;
+          if (table === permissions && inserted.length === 0) inserted = rows;
           return {
             onConflictDoUpdate: (args: { set: Record<string, unknown> }) => {
               if (Object.keys(conflictSet).length === 0) conflictSet = args.set;

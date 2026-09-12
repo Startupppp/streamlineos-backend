@@ -1,8 +1,15 @@
-import { Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, desc, eq, lt, or } from "drizzle-orm";
+import { Inject, Injectable } from "@nestjs/common";
+import { and, desc, eq, lt } from "drizzle-orm";
 import { DRIZZLE } from "../../../../db/drizzle.constants";
 import { type Db } from "../../../../db/drizzle.module";
-import { aiChatConversations, aiChatMessages, type AiChatRole } from "../../../../db/schema";
+import { aiChatMessages, type AiChatRole } from "../../../../db/schema";
+import {
+  createConversation,
+  deleteConversation,
+  listConversations,
+  renameConversation,
+} from "./lib/ai-conversations";
+import type { AiConversation, AiConversationListPage } from "./lib/ai-conversations";
 import {
   appendMessageToConversation,
   listConversationMessages,
@@ -10,17 +17,7 @@ import {
   type ChatHistoryPage,
 } from "./chat-conversation-messages";
 
-export interface AiConversation {
-  id: number;
-  title: string | null;
-  createdAt: string;
-  updatedAt: string;
-}
-
-export interface AiConversationListPage {
-  conversations: AiConversation[];
-  nextCursor: number | null;
-}
+export type { AiConversation, AiConversationListPage };
 
 @Injectable()
 export class ChatHistoryService {
@@ -79,149 +76,45 @@ export class ChatHistoryService {
       .where(and(eq(aiChatMessages.orgId, orgId), eq(aiChatMessages.userMembershipId, membershipId)));
   }
 
+  /** @see lib/ai-conversations.ts */
   async listConversations(
     orgId: string,
     userId: string,
     membershipId: number,
     opts: { cursor?: number; limit: number },
   ): Promise<AiConversationListPage> {
-    const limit = Math.min(Math.max(opts.limit, 1), 50);
-
-    let cursorRow: { updatedAt: Date; id: number } | undefined;
-    if (opts.cursor) {
-      const [found] = await this.db
-        .select({ updatedAt: aiChatConversations.updatedAt, id: aiChatConversations.id })
-        .from(aiChatConversations)
-        .where(
-          and(
-            eq(aiChatConversations.id, opts.cursor),
-            eq(aiChatConversations.orgId, orgId),
-            eq(aiChatConversations.userMembershipId, membershipId),
-          ),
-        )
-        .limit(1);
-      cursorRow = found;
-    }
-
-    const rows = await this.db
-      .select({
-        id: aiChatConversations.id,
-        title: aiChatConversations.title,
-        createdAt: aiChatConversations.createdAt,
-        updatedAt: aiChatConversations.updatedAt,
-      })
-      .from(aiChatConversations)
-      .where(
-        cursorRow
-          ? and(
-              eq(aiChatConversations.orgId, orgId),
-              eq(aiChatConversations.userMembershipId, membershipId),
-              or(
-                lt(aiChatConversations.updatedAt, cursorRow.updatedAt),
-                and(
-                  eq(aiChatConversations.updatedAt, cursorRow.updatedAt),
-                  lt(aiChatConversations.id, cursorRow.id),
-                ),
-              ),
-            )
-          : and(eq(aiChatConversations.orgId, orgId), eq(aiChatConversations.userMembershipId, membershipId)),
-      )
-      .orderBy(desc(aiChatConversations.updatedAt), desc(aiChatConversations.id))
-      .limit(limit + 1);
-
-    const hasMore = rows.length > limit;
-    const page = hasMore ? rows.slice(0, limit) : rows;
-    const last = page[page.length - 1];
-    const nextCursor = hasMore && last ? last.id : null;
-
-    return {
-      conversations: page.map((r) => ({
-        id: r.id,
-        title: r.title,
-        createdAt: r.createdAt.toISOString(),
-        updatedAt: r.updatedAt.toISOString(),
-      })),
-      nextCursor,
-    };
+    return listConversations(this.db, orgId, userId, membershipId, opts);
   }
 
-  async createConversation(orgId: string, userId: string, membershipId: number, title?: string): Promise<AiConversation> {
-    const rows = await this.db
-      .insert(aiChatConversations)
-      .values({ orgId, userId, userMembershipId: membershipId, title: title ?? null })
-      .returning();
-    const conv = rows[0];
-    if (!conv) throw new Error("Failed to create conversation");
-    return {
-      id: conv.id,
-      title: conv.title,
-      createdAt: conv.createdAt.toISOString(),
-      updatedAt: conv.updatedAt.toISOString(),
-    };
+  /** @see lib/ai-conversations.ts */
+  async createConversation(
+    orgId: string,
+    userId: string,
+    membershipId: number,
+    title?: string,
+  ): Promise<AiConversation> {
+    return createConversation(this.db, orgId, userId, membershipId, title);
   }
 
-  async renameConversation(orgId: string, userId: string, membershipId: number, id: number, title: string): Promise<AiConversation> {
-    const [existing] = await this.db
-      .select({
-        id: aiChatConversations.id,
-        createdAt: aiChatConversations.createdAt,
-      })
-      .from(aiChatConversations)
-      .where(
-        and(
-          eq(aiChatConversations.id, id),
-          eq(aiChatConversations.orgId, orgId),
-          eq(aiChatConversations.userMembershipId, membershipId),
-        ),
-      )
-      .limit(1);
-
-    if (!existing) throw new NotFoundException("Conversation not found");
-
-    const now = new Date();
-    await this.db
-      .update(aiChatConversations)
-      .set({ title, updatedAt: now })
-      .where(
-        and(
-          eq(aiChatConversations.id, id),
-          eq(aiChatConversations.orgId, orgId),
-          eq(aiChatConversations.userMembershipId, membershipId),
-        ),
-      );
-
-    return {
-      id: existing.id,
-      title,
-      createdAt: existing.createdAt.toISOString(),
-      updatedAt: now.toISOString(),
-    };
+  /** @see lib/ai-conversations.ts */
+  async renameConversation(
+    orgId: string,
+    userId: string,
+    membershipId: number,
+    id: number,
+    title: string,
+  ): Promise<AiConversation> {
+    return renameConversation(this.db, orgId, userId, membershipId, id, title);
   }
 
-  async deleteConversation(orgId: string, userId: string, membershipId: number, id: number): Promise<void> {
-    const [existing] = await this.db
-      .select({ id: aiChatConversations.id })
-      .from(aiChatConversations)
-      .where(
-        and(
-          eq(aiChatConversations.id, id),
-          eq(aiChatConversations.orgId, orgId),
-          eq(aiChatConversations.userMembershipId, membershipId),
-        ),
-      )
-      .limit(1);
-
-    if (!existing) throw new NotFoundException("Conversation not found");
-
-    await this.db
-      .delete(aiChatConversations)
-      .where(
-        and(
-          eq(aiChatConversations.id, id),
-          eq(aiChatConversations.orgId, orgId),
-          eq(aiChatConversations.userMembershipId, membershipId),
-        ),
-      );
+  /** @see lib/ai-conversations.ts */
+  async deleteConversation(
+    orgId: string,
+    userId: string,
+    membershipId: number,
+    id: number,
+  ): Promise<void> {
+    return deleteConversation(this.db, orgId, userId, membershipId, id);
   }
 
   async listMessages(

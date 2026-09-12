@@ -15,7 +15,6 @@ import {
   templateMutationResponseSchema,
   listTemplatesResponseSchema,
   instantiateTemplateResponseSchema,
-  publishPublicFormResponseSchema,
 } from "./dto/e-sign-response.schemas";
 import {
   createTemplateSchema,
@@ -27,10 +26,6 @@ import {
   type SaveAsTemplateInput,
   type CreateEnvelopeFromTemplateInput,
 } from "./dto/e-sign.schemas";
-import {
-  publishPublicFormSchema,
-  type PublishPublicFormInput,
-} from "./dto/e-sign-public.schemas";
 
 const envelopeIdParams = z.object({ envelopeId: z.coerce.number().int().positive() }).strict();
 const templateIdParams = z.object({ templateId: z.coerce.number().int().positive() }).strict();
@@ -110,17 +105,5 @@ export class SignTemplatesController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.templates.instantiate(u.orgId, actingMembershipId(u.principal), templateId, body);
-  }
-
-  @Post("templates/:templateId/publish-public-form")
-  @RequirePermission("sign:template:manage")
-  @ResponseSchema(publishPublicFormResponseSchema)
-  @Validate({ params: templateIdParams, body: publishPublicFormSchema })
-  publishPublicForm(
-    @Param("templateId", ParseIntPipe) templateId: number,
-    @Body() body: PublishPublicFormInput,
-    @CurrentUser() u: CurrentUserContext,
-  ) {
-    return this.templates.publishPublicForm(u.orgId, actingMembershipId(u.principal), templateId, body);
   }
 }

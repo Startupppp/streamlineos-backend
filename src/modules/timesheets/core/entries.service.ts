@@ -8,7 +8,6 @@ import {
   UnprocessableEntityException,
 } from "@nestjs/common";
 import { and, eq, isNull, sql } from "drizzle-orm";
-import { isUniqueViolationOn } from "../../../common/db/postgres-error";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { timesheets, projects, tickets } from "../../../db/schema";
@@ -18,8 +17,12 @@ import { TimesheetsAuditService } from "./timesheets-audit.service";
 import { EntriesReadService } from "./entries-read.service";
 import { EntriesPeriodService } from "./entries-period.service";
 import { roundHours } from "./lib/rounding";
-import { formatDateOnly } from "./lib/period.helpers";
+import { formatDateOnly, wholeDaysBetween } from "./lib/period.helpers";
 import { parseStoredRequiredFields } from "./dto/settings.schemas";
+import { sqlstateOf } from "../../../common/observability/error-classification";
+
+/** `unique_violation`. */
+const SQLSTATE_UNIQUE_VIOLATION = "23505";
 import type {
   CreateEntryInput,
   UpdateEntryInput,
@@ -40,10 +43,6 @@ export class EntriesService {
 
   listEntries(u: CurrentUserContext, query: EntriesQuery) {
     return this.reader.listEntries(u, query);
-  }
-
-  getEntryById(orgId: string, entryId: number) {
-    return this.reader.getEntryById(orgId, entryId);
   }
 
   recomputePeriodTotals(
@@ -93,11 +92,7 @@ export class EntriesService {
       throw new BadRequestException("Backdated entries are not allowed");
     }
     if (backdateLimitDays !== null && input.date < today) {
-      const diffDays = Math.floor(
-        (new Date(today).getTime() -
-          new Date(input.date + "T12:00:00").getTime()) /
-          86_400_000,
-      );
+      const diffDays = wholeDaysBetween(input.date, today);
       if (diffDays > backdateLimitDays) {
         throw new BadRequestException(
           `Cannot log time more than ${backdateLimitDays} days in the past`,
@@ -135,6 +130,11 @@ export class EntriesService {
       );
 
     const currentTotal = parseFloat(dailyHours?.total ?? "0");
+    if (!(settings?.allowOverlappingEntries ?? true) && currentTotal > 0) {
+      throw new ConflictException(
+        "An entry already exists for this day. Overlapping entries are disabled.",
+      );
+    }
     if (currentTotal + hours > maxHoursPerDay) {
       throw new BadRequestException(
         `Logging ${hours}h would exceed the daily limit of ${maxHoursPerDay}h`,
@@ -156,18 +156,30 @@ export class EntriesService {
       ]);
     }
 
-    let entry: typeof timesheets.$inferSelect;
-    try {
-      entry = await this.db.transaction(async (tx) => {
-        const periodId = await this.periodService.getOrCreatePeriod(
-          u.orgId,
-          membershipId,
-          input.date,
-          workWeekStart,
-          tx,
-        );
+    const entry = await this.db.transaction(async (tx) => {
+      const periodId = await this.periodService.getOrCreatePeriod(
+        u.orgId,
+        membershipId,
+        input.date,
+        workWeekStart,
+        tx,
+      );
 
-        const [inserted] = await tx
+      /**
+       * `timesheets` carries three partial unique indexes, and the widest of
+       * them — `uniq_timesheets_work_log`, one ticket-less entry per person
+       * per day — allows only one ticket-less entry per person per day. A
+       * second one raises 23505, and until this catch existed that
+       * reached the client as a 500: an ordinary thing for a user to do,
+       * answered with "internal server error" and an alert.
+       *
+       * SQLSTATE via `sqlstateOf`, not `err.code`: drizzle wraps the driver
+       * error, so the code sits one or two `cause` links down and a direct
+       * `err.code === "23505"` is simply never true.
+       */
+      let inserted;
+      try {
+        [inserted] = await tx
           .insert(timesheets)
           .values({
             orgId: u.orgId,
@@ -187,40 +199,45 @@ export class EntriesService {
             payrollStatus: "UNPROCESSED",
           })
           .returning();
-
-        if (!inserted)
-          throw new ConflictException("Could not create the time entry");
-
-        if (input.ticketId) {
-          await this.periodService.syncTicketTimeSpent(tx, u.orgId, input.ticketId);
+      } catch (err: unknown) {
+        if (sqlstateOf(err) === SQLSTATE_UNIQUE_VIOLATION) {
+          throw new ConflictException(
+            `A time entry already exists for ${input.date}. This organisation allows one ` +
+              `entry per day unless the entry is attached to a ticket; edit the existing ` +
+              `entry instead.`,
+          );
         }
+        throw err;
+      }
 
-        await this.periodService.recomputePeriodTotals(u.orgId, periodId, tx);
+      if (!inserted)
+        throw new ConflictException("Could not create the time entry");
 
-        await this.audit.record(tx, {
-          orgId: u.orgId,
-          actorMembershipId: membershipId,
-          entityType: "entry",
-          entityId: inserted.id.toString(),
-          action: "entry.created",
-          after: {
-            hours,
-            ...(hours !== input.hours ? { rawHours: input.hours } : {}),
-            date: input.date,
-            projectId: input.projectId,
-            ticketId: input.ticketId,
-          },
-        });
+      if (input.ticketId) {
+        await this.periodService.syncTicketTimeSpent(tx, u.orgId, input.ticketId);
+      }
 
-        return inserted;
+      await this.periodService.recomputePeriodTotals(u.orgId, periodId, tx);
+
+      await this.audit.record(tx, {
+        orgId: u.orgId,
+        actorMembershipId: membershipId,
+        entityType: "entry",
+        entityId: inserted.id.toString(),
+        action: "entry.created",
+        after: {
+          hours,
+          ...(hours !== input.hours ? { rawHours: input.hours } : {}),
+          date: input.date,
+          projectId: input.projectId,
+          ticketId: input.ticketId,
+        },
       });
-    } catch (error) {
-      if (isUniqueViolationOn(error, "uniq_timesheets_work_log"))
-        throw new ConflictException("A time entry for this date already exists");
-      throw error;
-    }
 
-    return this.reader.getEntryById(u.orgId, entry.id);
+      return inserted;
+    });
+
+    return this.reader.getEntryUnscoped(u.orgId, entry.id);
   }
 
   async updateEntry(
@@ -316,7 +333,7 @@ export class EntriesService {
       });
     });
 
-    return this.reader.getEntryById(u.orgId, entryId);
+    return this.reader.getEntryUnscoped(u.orgId, entryId);
   }
 
   async voidEntry(

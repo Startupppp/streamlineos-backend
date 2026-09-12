@@ -1,10 +1,4 @@
-import {
-  ConflictException,
-  ForbiddenException,
-  Inject,
-  Injectable,
-  NotFoundException,
-} from "@nestjs/common";
+import { Inject, Injectable, NotFoundException } from "@nestjs/common";
 import {
   and,
   asc,
@@ -15,8 +9,6 @@ import {
   sql,
 } from "drizzle-orm";
 import {
-  groupRoleAssignments,
-  organizationMembers,
   roleAssignments,
   rolePermissionGrants,
   roles,
@@ -24,26 +16,18 @@ import {
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
 import { AuditService } from "../../common/audit/audit.service";
-import { bumpPermissionsVersion } from "../../common/rbac/access-invalidate";
-import { runInTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
-import {
-  assertKnownPermissionKeys,
-  assertPermissionsGrantable,
-  buildPermissionAdministeringModuleMap,
-  isImmutableSystemRole,
-  toGrantableSet,
-  type RoleGrantTarget,
-} from "../../common/rbac/grantability";
-import { isStructuralOrgAdmin } from "../../common/rbac/is-structural-org-admin";
-import { resolveActorRankContext } from "../../common/rbac/resolve-actor-rank";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import type { DataScope } from "../access/access.types";
 import { AccessService } from "../access/access.service";
 import {
-  PERMISSIONS,
   ROLE_DEFAULT_PERMISSIONS,
   UNIVERSAL_MEMBER_PERMISSIONS,
 } from "./permissions";
+import {
+  deleteRole,
+  updateRole,
+  type RoleMutationDeps,
+} from "./lib/role-mutation";
 import {
   RolePermissionService,
   type RolePermissionMatrixEntry,
@@ -58,7 +42,6 @@ import type {
 import { buildCursorPage, decodeCursor } from "../../common/pagination/cursor";
 import { keysetAfterValueExpression } from "../../common/pagination/keyset";
 
-const CATALOG_KEYS = new Set(PERMISSIONS.map((permission) => permission.name));
 
 function escapeLike(value: string): string {
   return value.replace(/[\\%_]/g, "\\$&");
@@ -74,29 +57,23 @@ export class RolesService {
     private readonly roleMember: RoleMemberService,
   ) {}
 
+  private get mutationDeps(): RoleMutationDeps {
+    return { db: this.db, audit: this.audit, access: this.access };
+  }
 
-  private async assertGrantable(
+  updateRole(
     actor: CurrentUserContext,
-    requestedKeys: readonly string[],
-    target?: RoleGrantTarget,
-  ): Promise<void> {
-    if (actor.isOrgOwner) return;
-    const [resolved, { bestRank, allowedModules }] = await Promise.all([
-      this.access.resolveUserPermissions(actor.orgId, actor.userId),
-      resolveActorRankContext(this.db, actor.orgId, actor.userId),
-    ]);
-    const administeringModules = buildPermissionAdministeringModuleMap(requestedKeys);
-    assertPermissionsGrantable(
-      {
-        isOrgOwner: false,
-        grantable: toGrantableSet(resolved),
-        bestRank,
-        allowedModules,
-      },
-      requestedKeys,
-      target,
-      administeringModules,
-    );
+    roleId: number,
+    input: UpdateRoleInput,
+  ): Promise<{ success: true }> {
+    return updateRole(this.mutationDeps, actor, roleId, input);
+  }
+
+  deleteRole(
+    actor: CurrentUserContext,
+    roleId: number,
+  ): Promise<{ success: true }> {
+    return deleteRole(this.mutationDeps, actor, roleId);
   }
 
   async getRoles(orgId: string, input: ListRolesQuery) {
@@ -181,143 +158,6 @@ export class RolesService {
     });
     if (!role) throw new NotFoundException("Role not found");
     return role;
-  }
-
-  async updateRole(
-    actor: CurrentUserContext,
-    roleId: number,
-    input: UpdateRoleInput,
-  ): Promise<{ success: true }> {
-    await runInTenantTransaction(
-      this.db,
-      async (tx): Promise<void> => {
-        const existing = await tx.query.roles.findFirst({
-          where: and(eq(roles.id, roleId), eq(roles.orgId, actor.orgId)),
-        });
-        if (!existing) throw new NotFoundException("Role not found");
-
-        if (
-          isImmutableSystemRole(existing) &&
-          (input.name !== undefined || input.permissions !== undefined)
-        ) {
-          throw new ForbiddenException(
-            "Organization-level system roles cannot be modified",
-          );
-        }
-
-        if (input.permissions !== undefined) {
-          assertKnownPermissionKeys(input.permissions, CATALOG_KEYS);
-          const target: RoleGrantTarget = {
-            rank: existing.rank,
-            moduleKey: existing.moduleKey,
-          };
-          await this.assertGrantable(actor, input.permissions, target);
-        }
-
-        const updateData: {
-          updatedAt: Date;
-          name?: string;
-        } = {
-          updatedAt: new Date(),
-        };
-        if (input.name) updateData.name = input.name;
-
-        await tx
-          .update(roles)
-          .set(updateData)
-          .where(and(eq(roles.id, roleId), eq(roles.orgId, actor.orgId)));
-
-        if (input.permissions !== undefined) {
-          await tx
-            .delete(rolePermissionGrants)
-            .where(
-              and(
-                eq(rolePermissionGrants.orgId, actor.orgId),
-                eq(rolePermissionGrants.roleId, roleId),
-              ),
-            );
-          if (input.permissions.length > 0) {
-            await tx.insert(rolePermissionGrants).values(
-              input.permissions.map((permissionKey) => ({
-                orgId: actor.orgId,
-                roleId,
-                permissionKey,
-                scope: "all" as const,
-              })),
-            );
-          }
-        }
-
-        await bumpPermissionsVersion(tx, actor.orgId);
-      },
-      { orgId: actor.orgId },
-    );
-
-    this.audit.log({
-      action: "role.changed",
-      userId: actor.userId,
-      orgId: actor.orgId,
-      targetId: String(roleId),
-      targetType: "role",
-      metadata: { name: input.name, permissionsUpdated: !!input.permissions },
-    });
-
-    return { success: true };
-  }
-
-  async deleteRole(
-    actor: CurrentUserContext,
-    roleId: number,
-  ): Promise<{ success: true }> {
-    if (!(await isStructuralOrgAdmin(this.db, actor)))
-      throw new ForbiddenException("Only org admins may delete roles");
-
-    await runInTenantTransaction(
-      this.db,
-      async (tx): Promise<void> => {
-        const existing = await tx.query.roles.findFirst({
-          where: and(eq(roles.id, roleId), eq(roles.orgId, actor.orgId)),
-        });
-        if (!existing) throw new NotFoundException("Role not found");
-        if (existing.isSystem)
-          throw new ForbiddenException("System roles cannot be deleted");
-
-        const [{ value: directCount }] = await tx
-          .select({ value: count() })
-          .from(roleAssignments)
-          .where(
-            and(
-              eq(roleAssignments.orgId, actor.orgId),
-              eq(roleAssignments.roleId, roleId),
-            ),
-          );
-
-        const [{ value: groupCount }] = await tx
-          .select({ value: count() })
-          .from(groupRoleAssignments)
-          .where(
-            and(
-              eq(groupRoleAssignments.orgId, actor.orgId),
-              eq(groupRoleAssignments.roleId, roleId),
-            ),
-          );
-
-        const total = Number(directCount) + Number(groupCount);
-        if (total > 0) {
-          throw new ConflictException(
-            `Cannot delete role — ${total} member assignment${total !== 1 ? "s are" : " is"} attached to it. Reassign them first.`,
-          );
-        }
-
-        await tx
-          .delete(roles)
-          .where(and(eq(roles.id, roleId), eq(roles.orgId, actor.orgId)));
-        await bumpPermissionsVersion(tx, actor.orgId);
-      },
-      { orgId: actor.orgId },
-    );
-
-    return { success: true };
   }
 
   getRolePermissions(

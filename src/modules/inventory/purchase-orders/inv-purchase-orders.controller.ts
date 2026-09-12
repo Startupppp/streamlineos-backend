@@ -1,8 +1,6 @@
-import {
-  BadRequestException, Controller, Get, Post, Patch, Body, Param,
-  ParseIntPipe, Query, UseGuards, HttpCode, HttpStatus, Headers,
-} from "@nestjs/common";
+import { Controller, Get, Post, Patch, Body, Param, ParseIntPipe, Query, UseGuards, HttpCode, HttpStatus, Headers } from "@nestjs/common";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
+import { IdempotencyKey } from "../../../common/idempotency/idempotency-key.decorator";
 import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { AccessService } from "../../access/access.service";
@@ -29,11 +27,6 @@ import {
 } from "./dto/purchase-orders-response.schemas";
 
 const poIdParams = z.object({ poId: z.coerce.number().int().positive() }).strict();
-
-function requireIdempotencyKey(key: string | undefined): string {
-  if (!key) throw new BadRequestException("Idempotency-Key header is required");
-  return key;
-}
 
 @RequireModule("inventory")
 @Controller("inventory/purchase-orders")
@@ -67,7 +60,7 @@ export class InvPurchaseOrdersController {
     @Param("poId", ParseIntPipe) poId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.pos.getPo(u.orgId, poId);
+    return this.pos.getPo(u.orgId, poId, u.userId);
   }
 
   @Post()
@@ -93,7 +86,7 @@ export class InvPurchaseOrdersController {
     @Body() body: UpdatePoInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.pos.updatePo(u.orgId, poId, body);
+    return this.pos.updatePo(u.orgId, poId, u.userId, body);
   }
 
   @Post(":poId/approve")
@@ -123,7 +116,7 @@ export class InvPurchaseOrdersController {
     @Param("poId", ParseIntPipe) poId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.pos.sendPo(u.orgId, poId);
+    return this.pos.sendPo(u.orgId, poId, u.userId);
   }
 
   @Post(":poId/close")
@@ -131,13 +124,14 @@ export class InvPurchaseOrdersController {
   @ResponseSchema(invPoSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:purchase-orders:approve")
+  @Idempotent("inventory.purchase-order.close")
   @HttpCode(HttpStatus.OK)
   @Validate({ params: poIdParams })
   close(
     @Param("poId", ParseIntPipe) poId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.pos.closePo(u.orgId, poId);
+    return this.pos.closePo(u.orgId, poId, u.userId);
   }
 
   @Post(":poId/cancel")
@@ -145,13 +139,14 @@ export class InvPurchaseOrdersController {
   @ResponseSchema(invPoSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:purchase-orders:approve")
+  @Idempotent("inventory.purchase-order.cancel")
   @HttpCode(HttpStatus.OK)
   @Validate({ params: poIdParams })
   cancel(
     @Param("poId", ParseIntPipe) poId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.pos.cancelPo(u.orgId, poId);
+    return this.pos.cancelPo(u.orgId, poId, u.userId);
   }
 
   @Post(":poId/receive")
@@ -163,10 +158,9 @@ export class InvPurchaseOrdersController {
   receiveGoods(
     @Param("poId", ParseIntPipe) poId: number,
     @Body() body: CreateGrnInput,
-    @Headers("idempotency-key") idempotencyKeyHeader: string | undefined,
+    @IdempotencyKey() idempotencyKey: string,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    const idempotencyKey = requireIdempotencyKey(idempotencyKeyHeader);
     return this.grns.receiveGoods(u.orgId, poId, u.userId, idempotencyKey, body);
   }
 }

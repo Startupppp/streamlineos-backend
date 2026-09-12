@@ -12,13 +12,11 @@ import {
   publicFieldValueSchema,
   adoptSignatureSchema,
   declineSchema,
-  publicFormSubmitSchema,
   type PublicAuthInput,
   type PublicConsentInput,
   type PublicFieldValueInput,
   type AdoptSignatureInput,
   type DeclineInput,
-  type PublicFormESignSubmitInput,
 } from "./dto/e-sign-public.schemas";
 import { resolveClientIpOr } from "../../common/http/client-ip";
 import { ResponseSchema } from "../../common/openapi/zod-operation-contracts";
@@ -32,13 +30,10 @@ import {
   adoptSignatureResponseSchema,
   completeSigningResponseSchema,
   declineSigningResponseSchema,
-  getPublicFormResponseSchema,
-  submitPublicFormResponseSchema,
 } from "./dto/e-sign-response.schemas";
 
 
 const tokenParams = z.object({ token: z.string().min(1) }).strict();
-const slugParams = z.object({ slug: z.string().min(1) }).strict();
 const tokenAndDocumentIdParams = z.object({ token: z.string().min(1), documentId: z.coerce.number().int().positive() }).strict();
 const tokenAndFieldIdParams = z.object({ token: z.string().min(1), fieldId: z.coerce.number().int().positive() }).strict();
 
@@ -155,26 +150,5 @@ export class SignPublicController {
   ) {
     await this.guard("sign:public-complete", token, req);
     return this.publicSigning.decline(token, body, { ipAddress: resolveClientIpOr(req, "anon"), userAgent: req.headers["user-agent"] });
-  }
-
-  @Get("forms/:slug")
-  @ResponseSchema(getPublicFormResponseSchema)
-  @Validate({ params: slugParams })
-  async getPublicForm(@Param("slug") slug: string, @Req() req: Request) {
-    await this.guard("sign:public-session", slug, req);
-    return this.publicSigning.getPublicForm(slug);
-  }
-
-  @Post("forms/:slug/submit")
-  @HttpCode(201)
-  @ResponseSchema(submitPublicFormResponseSchema)
-  @Validate({ params: slugParams, body: publicFormSubmitSchema })
-  async submitPublicForm(
-    @Param("slug") slug: string,
-    @Body() body: PublicFormESignSubmitInput,
-    @Req() req: Request,
-  ) {
-    await this.guard("sign:public-form-submit", slug, req);
-    return this.publicSigning.submitPublicForm(slug, body, { ipAddress: resolveClientIpOr(req, "anon"), userAgent: req.headers["user-agent"] });
   }
 }

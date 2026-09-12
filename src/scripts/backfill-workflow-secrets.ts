@@ -6,7 +6,7 @@ import { encryptSecret, isEncryptedSecret } from "../common/security/secret-encr
 interface PlaintextRow extends Record<string, unknown> {
   id: string;
   encrypted_value: string;
-}
+};
 
 async function backfill(): Promise<void> {
   const databaseUrl = process.env.DATABASE_URL;

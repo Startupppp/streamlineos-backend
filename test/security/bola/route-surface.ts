@@ -45,11 +45,15 @@ const UNIVERSAL_RE = /@Universal\s*\(\s*\)/;
 const IN_SERVICE_RE = /@AuthorizedInService\s*\(\s*["'`][^"'`]/;
 const METHOD_RE = /^\s*(?:public\s+|private\s+|protected\s+)?(?:async\s+)?(\w+)\s*[(<]/;
 
-const KEYWORDS = new Set([
-  "if", "for", "while", "return", "throw", "catch", "switch", "case", "const",
-  "let", "var", "new", "import", "export", "await", "try", "else", "default",
-  "typeof", "instanceof", "void", "delete", "constructor",
-]);
+/**
+ * Only `constructor` is excluded. A reserved-word list used to sit here — the same list
+ * `check:route-classification` carried until 053db5f39 removed it — and it silently dropped every
+ * handler NAMED `delete`, `export`, `import` or `void`: 14 real routes on this branch, the delete
+ * and export routes whose binding matters most. METHOD_RE is only ever tried on the first code
+ * line after an HTTP-verb decorator block, where control flow cannot appear, so the list guarded
+ * nothing; with it gone the walk and the gate enumerate the same handlers again.
+ */
+const KEYWORDS = new Set(["constructor"]);
 
 function* walkControllers(dir: string): Generator<string> {
   for (const entry of readdirSync(dir)) {

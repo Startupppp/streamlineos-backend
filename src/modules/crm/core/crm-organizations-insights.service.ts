@@ -1,32 +1,27 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { aliasedTable, and, asc, count, desc, eq, ilike, inArray, isNull, or, sql } from "drizzle-orm";
+import { and, count, eq, ilike, inArray, isNull, or, sql } from "drizzle-orm";
 import { deals } from "../../../db/schema";
-import {
-  businessParties,
-  contactPartyMap,
-  crmOrgPartyMap,
-  leadPartyMap,
-} from "../../../db/schema/party";
-import { PARTY_OF_CRM_ORG, PARTY_OF_LEAD, leadPriority, leadSource, leadStatus } from "../crm-party-reads";
-import { crmOrgIdsOfParties, partyIdsOfCrmOrgs } from "../../party/party-legacy-employer";
+import { businessParties, leadPartyMap } from "../../../db/schema/party";
+import { PARTY_OF_LEAD } from "../crm-party-reads";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { CacheService } from "../../../common/cache/cache.service";
 import { CACHE_KEYS, CACHE_TTL } from "../../../common/cache/cache-keys";
+import {
+  companies,
+  getAccountHierarchy,
+  getAllDescendantIds,
+  wouldCreateCycle,
+  type CrmOrgHierarchyDeps,
+  type OrgHierarchyNode,
+} from "./lib/crm-org-hierarchy";
+import {
+  getRelatedLeads,
+  queryAccountTimeline,
+  type OrgTimelineEvent,
+} from "./lib/crm-org-records";
 
-const HIERARCHY_MAX_DEPTH = 100;
-
-/** The person end of the self-referential employer link; see the company end. */
-const employee = aliasedTable(businessParties, "employee_party");
-
-export interface OrgHierarchyNode {
-  id: number;
-  name: string;
-  industry: string | null;
-  healthScore: number | null;
-  parentId: number | null;
-  children: OrgHierarchyNode[];
-}
+export type { OrgHierarchyNode, OrgTimelineEvent };
 
 export interface OrgRollup {
   totalContacts: number;
@@ -34,14 +29,6 @@ export interface OrgRollup {
   openDeals: number;
   totalDealValue: number;
   totalLeads: number;
-}
-
-export interface OrgTimelineEvent {
-  id: string;
-  date: string;
-  type: "contact_created" | "deal_created" | "lead_linked" | "note_added";
-  description: string;
-  entityId: number;
 }
 
 /**
@@ -54,9 +41,15 @@ export interface OrgTimelineEvent {
  *
  * 0265 absorbed it, as `parent_party_id` — a second link of the same shape as
  * `employer_party_id` rather than a second meaning for it, because a subsidiary's
- * parent is not its employer. So the two recursive walks below descend
- * `business_parties` and the map is joined only to answer in the integer ids
- * every URL still holds. Nothing here reads a legacy table.
+ * parent is not its employer. The two recursive walks that descend
+ * `business_parties` are in `lib/crm-org-hierarchy.ts`, together with the map
+ * join that answers in the integer ids every URL still holds. Nothing anywhere
+ * here reads a legacy table.
+ *
+ * What is left is the ROLLUP — the counts. `lib/crm-org-records.ts` returns the
+ * rows behind the same joins, and that is the split: a count of five deals is
+ * cheap and cacheable at any size, and a list of them is not, which is why every
+ * function there carries a limit and this one does not.
  *
  * "Who works here" is `employer_party_id` rather than `contacts.organization_id`,
  * which is the relation ticket 25 exists to create.
@@ -68,135 +61,17 @@ export class CrmOrganizationsInsightsService {
     private readonly cache: CacheService,
   ) {}
 
-  async wouldCreateCycle(
-    orgId: string,
-    accountId: number,
-    candidateParentId: number,
-  ): Promise<boolean> {
-    if (candidateParentId === accountId) return true;
-
-    const parties = await partyIdsOfCrmOrgs(this.db, orgId, [accountId, candidateParentId]);
-    const accountPartyId = parties.get(accountId);
-    const candidatePartyId = parties.get(candidateParentId);
-    // A company with no party cannot be in anybody's hierarchy, so it cannot
-    // close a cycle either. The caller reads this as "go ahead", which is what
-    // the legacy walk answered when the row was missing.
-    if (!accountPartyId || !candidatePartyId) return false;
-    if (accountPartyId === candidatePartyId) return true;
-
-    const result = await this.db.execute(sql`
-      WITH RECURSIVE ancestors AS (
-        SELECT party_id, parent_party_id, 1 AS depth
-        FROM business_parties
-        WHERE organization_id = ${orgId} AND party_id = ${candidatePartyId} AND deleted_at IS NULL
-        UNION ALL
-        SELECT p.party_id, p.parent_party_id, a.depth + 1
-        FROM business_parties p
-        JOIN ancestors a ON p.party_id = a.parent_party_id
-        WHERE p.organization_id = ${orgId} AND p.deleted_at IS NULL AND a.depth < ${HIERARCHY_MAX_DEPTH}
-      )
-      SELECT 1 FROM ancestors WHERE party_id = ${accountPartyId} LIMIT 1
-    `);
-
-    return result.length > 0;
+  private get orgDeps(): CrmOrgHierarchyDeps {
+    return { db: this.db };
   }
 
-  private async getAllDescendantIds(orgId: string, accountId: number): Promise<number[]> {
-    const rootPartyId = (await partyIdsOfCrmOrgs(this.db, orgId, [accountId])).get(accountId);
-    if (!rootPartyId) return [accountId];
-
-    /*
-     * The walk is over parties and the map is joined at the end, not inside the
-     * recursion: a party that answers to several company ids after a merge is one
-     * node of the hierarchy with several names, and recursing on the names would
-     * walk the same subtree once per name.
-     */
-    const rows = await this.db.execute(sql`
-      WITH RECURSIVE descendants AS (
-        SELECT party_id, 1 AS depth
-        FROM business_parties
-        WHERE organization_id = ${orgId} AND party_id = ${rootPartyId} AND deleted_at IS NULL
-        UNION
-        SELECT p.party_id, d.depth + 1
-        FROM business_parties p
-        JOIN descendants d ON p.parent_party_id = d.party_id
-        WHERE p.organization_id = ${orgId} AND p.deleted_at IS NULL AND d.depth < ${HIERARCHY_MAX_DEPTH}
-      )
-      SELECT m.crm_organization_id AS id
-      FROM descendants d
-      JOIN crm_org_party_map m
-        ON m.organization_id = ${orgId} AND m.party_id = d.party_id
-    `);
-
-    const ids = rows.map((row) => Number(row.id)).filter((id) => Number.isInteger(id));
-    return ids.length > 0 ? ids : [accountId];
+  /** The write-time guard on `parent_party_id`; see `lib/crm-org-hierarchy.ts`. */
+  wouldCreateCycle(orgId: string, accountId: number, candidateParentId: number): Promise<boolean> {
+    return wouldCreateCycle(this.orgDeps, orgId, accountId, candidateParentId);
   }
 
-  /**
-   * The company rows for a set of legacy ids, valued from their parties.
-   *
-   * `parent_id` is resolved after the query rather than joined. `crm_org_party_map`
-   * is keyed by `(organization_id, crm_organization_id)` and its `party_id` side
-   * is deliberately not unique — after a merge one surviving party answers to
-   * several company ids — so joining the map a second time to name the parent
-   * would duplicate the child and put it in the tree twice. `crmOrgIdsOfParties`
-   * applies the same lowest-id-wins rule the mirror writes `parent_id` with.
-   */
-  private async companies(orgId: string, ids: readonly number[]) {
-    const rows = await this.db
-      .select({
-        id: crmOrgPartyMap.crmOrganizationId,
-        partyId: crmOrgPartyMap.partyId,
-        name: businessParties.name,
-        industry: businessParties.industry,
-        healthScore: businessParties.healthScore,
-        parentPartyId: businessParties.parentPartyId,
-        notes: businessParties.notes,
-      })
-      .from(crmOrgPartyMap)
-      .innerJoin(businessParties, PARTY_OF_CRM_ORG)
-      .where(
-        and(
-          eq(crmOrgPartyMap.organizationId, orgId),
-          isNull(businessParties.deletedAt),
-          inArray(crmOrgPartyMap.crmOrganizationId, [...ids]),
-        ),
-      );
-
-    const parentIds = await crmOrgIdsOfParties(
-      this.db,
-      orgId,
-      rows.map((row) => row.parentPartyId).filter((id): id is string => id !== null),
-    );
-
-    return rows.map(({ parentPartyId, ...row }) => ({
-      ...row,
-      parentId: parentPartyId ? (parentIds.get(parentPartyId) ?? null) : null,
-    }));
-  }
-
-  async getAccountHierarchy(orgId: string, accountId: number): Promise<OrgHierarchyNode | null> {
-    const ids = await this.getAllDescendantIds(orgId, accountId);
-    const rows = await this.companies(orgId, ids);
-
-    const nodeMap = new Map<number, OrgHierarchyNode>();
-    for (const row of rows)
-      nodeMap.set(row.id, {
-        id: row.id,
-        name: row.name,
-        industry: row.industry,
-        healthScore: row.healthScore,
-        parentId: row.parentId,
-        children: [],
-      });
-
-    let root: OrgHierarchyNode | null = null;
-    for (const node of nodeMap.values()) {
-      if (node.id === accountId) root = node;
-      else if (node.parentId !== null) nodeMap.get(node.parentId)?.children.push(node);
-    }
-
-    return root;
+  getAccountHierarchy(orgId: string, accountId: number): Promise<OrgHierarchyNode | null> {
+    return getAccountHierarchy(this.orgDeps, orgId, accountId);
   }
 
   getAccountRollup(orgId: string, accountId: number): Promise<OrgRollup> {
@@ -209,10 +84,10 @@ export class CrmOrganizationsInsightsService {
   }
 
   private async queryAccountRollup(orgId: string, accountId: number): Promise<OrgRollup> {
-    const ids = await this.getAllDescendantIds(orgId, accountId);
-    const companies = await this.companies(orgId, ids);
-    const partyIds = companies.map((row) => row.partyId);
-    const orgNames = companies.map((row) => row.name);
+    const ids = await getAllDescendantIds(this.orgDeps, orgId, accountId);
+    const rows = await companies(this.orgDeps, orgId, ids);
+    const partyIds = rows.map((row) => row.partyId);
+    const orgNames = rows.map((row) => row.name);
 
     // Everyone whose employer is one of these companies. `employer_party_id`
     // rather than `contacts.organization_id`: the count is over people, and a
@@ -286,181 +161,13 @@ export class CrmOrganizationsInsightsService {
     return this.cache.cachedVersioned(
       CACHE_KEYS.crmOrganizationDetailNamespace(orgId),
       `timeline:${accountId}:${limit}`,
-      () => this.queryAccountTimeline(orgId, accountId, limit),
+      () => queryAccountTimeline(this.orgDeps, orgId, accountId, limit),
       CACHE_TTL.SHORT,
     );
   }
 
-  private async queryAccountTimeline(
-    orgId: string,
-    accountId: number,
-    limit: number,
-  ): Promise<OrgTimelineEvent[]> {
-    const [company] = await this.companies(orgId, [accountId]);
-    if (!company) return [];
-
-    const safeName = company.name.replaceAll("%", "\\%");
-
-    const [employees, dealRows, leadRows] = await Promise.all([
-      // Everyone whose employer is this company, through `employer_party_id`
-      // rather than `contacts.organization_id`. The contact id still comes back
-      // off the map, because the event carries one and every link the client
-      // draws is still a `contacts` URL.
-      this.db
-        .select({
-          id: contactPartyMap.contactId,
-          name: employee.name,
-          createdAt: employee.createdAt,
-        })
-        .from(employee)
-        .innerJoin(
-          contactPartyMap,
-          and(
-            eq(contactPartyMap.partyId, employee.partyId),
-            eq(contactPartyMap.organizationId, employee.organizationId),
-          ),
-        )
-        .where(
-          and(
-            eq(employee.organizationId, orgId),
-            eq(employee.employerPartyId, company.partyId),
-          ),
-        )
-        .orderBy(desc(employee.createdAt), desc(contactPartyMap.contactId))
-        .limit(limit),
-      this.db
-        .select({ id: deals.id, name: deals.name, stage: deals.stage, createdAt: deals.createdAt })
-        .from(deals)
-        .where(
-          and(
-            eq(deals.orgId, orgId),
-            isNull(deals.deletedAt),
-            ilike(deals.name, `%${safeName}%`),
-          ),
-        )
-        .orderBy(desc(deals.createdAt), desc(deals.id))
-        .limit(limit),
-      this.db
-        .select({
-          id: leadPartyMap.leadId,
-          name: businessParties.name,
-          createdAt: businessParties.createdAt,
-        })
-        .from(leadPartyMap)
-        .innerJoin(businessParties, PARTY_OF_LEAD)
-        .where(
-          and(
-            eq(leadPartyMap.organizationId, orgId),
-            isNull(businessParties.deletedAt),
-            ilike(businessParties.companyName, `%${safeName}%`),
-          ),
-        )
-        .orderBy(desc(businessParties.createdAt), desc(leadPartyMap.leadId))
-        .limit(limit),
-    ]);
-
-    const events: OrgTimelineEvent[] = [];
-
-    for (const person of employees)
-      events.push({
-        id: `contact-${person.id}`,
-        date: person.createdAt.toISOString(),
-        type: "contact_created",
-        description: `Contact "${person.name}" added to organization`,
-        entityId: person.id,
-      });
-
-    for (const d of dealRows)
-      events.push({
-        id: `deal-${d.id}`,
-        date: d.createdAt?.toISOString() ?? new Date().toISOString(),
-        type: "deal_created",
-        description: `Deal "${d.name}" (${d.stage}) linked`,
-        entityId: d.id,
-      });
-
-    for (const l of leadRows)
-      events.push({
-        id: `lead-${l.id}`,
-        date: l.createdAt?.toISOString() ?? new Date().toISOString(),
-        type: "lead_linked",
-        description: `Lead "${l.name ?? "Unnamed"}" linked (company match)`,
-        entityId: l.id,
-      });
-
-    if (company.notes)
-      events.push({
-        id: `note-${accountId}`,
-        date: new Date().toISOString(),
-        type: "note_added",
-        description: "Account notes updated",
-        entityId: accountId,
-      });
-
-    return events
-      .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
-      .slice(0, limit);
-  }
-
-  async getRelatedLeads(orgId: string, id: number) {
-    const [company] = await this.companies(orgId, [id]);
-    if (!company) return null;
-
-    const safeName = company.name.replaceAll("%", "\\%").replaceAll("_", "\\_");
-
-    /*
-     * The leads whose free-text employer looks like this company, plus the ones an
-     * employee of it came from. That second half is `converted_from_party_id`
-     * since 0265, so it compares party to party -- the map is still joined to
-     * confirm the employee is a contact, and to keep the set the same one the
-     * legacy `contacts.lead_id` read produced.
-     */
-    const employeeLeadPartyIds = await this.db
-      .select({ leadPartyId: employee.convertedFromPartyId })
-      .from(employee)
-      .innerJoin(
-        contactPartyMap,
-        and(
-          eq(contactPartyMap.partyId, employee.partyId),
-          eq(contactPartyMap.organizationId, employee.organizationId),
-        ),
-      )
-      .where(
-        and(
-          eq(employee.organizationId, orgId),
-          eq(employee.employerPartyId, company.partyId),
-        ),
-      )
-      .then((rows) =>
-        rows.map((row) => row.leadPartyId).filter((id): id is string => id !== null),
-      );
-
-    const conditions = [ilike(businessParties.companyName, `%${safeName}%`)];
-    if (employeeLeadPartyIds.length > 0)
-      conditions.push(inArray(businessParties.partyId, employeeLeadPartyIds));
-
-    return this.db
-      .select({
-        id: leadPartyMap.leadId,
-        name: businessParties.name,
-        email: businessParties.email,
-        phone: businessParties.phone,
-        status: leadStatus,
-        priority: leadPriority,
-        company: businessParties.companyName,
-        source: leadSource,
-        createdAt: businessParties.createdAt,
-      })
-      .from(leadPartyMap)
-      .innerJoin(businessParties, PARTY_OF_LEAD)
-      .where(
-        and(
-          eq(leadPartyMap.organizationId, orgId),
-          isNull(businessParties.deletedAt),
-          or(...conditions),
-        ),
-      )
-      .orderBy(asc(businessParties.createdAt), asc(leadPartyMap.leadId))
-      .limit(50);
+  /** The rows, not the counts; see `lib/crm-org-records.ts`. */
+  getRelatedLeads(orgId: string, id: number) {
+    return getRelatedLeads(this.orgDeps, orgId, id);
   }
 }

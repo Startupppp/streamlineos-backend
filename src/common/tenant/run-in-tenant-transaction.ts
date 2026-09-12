@@ -8,7 +8,7 @@ import {
   type TenantAudience,
 } from "./tenant-context";
 import { runOutsidePoolBorrow } from "../../db/pool-telemetry";
-import { withTenant, type TenantTx } from "./with-tenant";
+import { withNewOrgInRegion, withTenant, type TenantTx } from "./with-tenant";
 import { logger } from "../logger/logger.service";
 import { bindObservabilityContext, reportError } from "../observability";
 import { runAfterCommitWork } from "../observability/after-commit-work";
@@ -108,5 +108,67 @@ export async function runInReplicaTenantRead<T>(
       return fn(tx);
     },
     { accessMode: "read only" },
+  );
+}
+
+/**
+ * `runInNewTenantTransaction` for the transaction that **creates** an
+ * organisation.
+ *
+ * Identical in every respect but one: the region is declared rather than looked
+ * up. `runInNewTenantTransaction` reaches `withTenant`, which asks the registry
+ * where the organisation lives — and for the transaction writing the
+ * organisation's own row there is nothing to read, so `regionForOrg` raises
+ * "has no region" and creation fails on any deployment with a live registry.
+ * `withNewOrgInRegion` is the seam's answer to that, and this is how the two
+ * remaining creation paths reach it while keeping everything else
+ * `runInNewTenantTransaction` does for them.
+ *
+ * That "everything else" is not decoration:
+ *
+ *   - `runOutsideTenantContext` so creation is not refused as a nested
+ *     transaction when the request already opened one for another organisation.
+ *   - `runWithTenantContext` so the `DRIZZLE` proxy routes the body's
+ *     `this.db` calls into *this* transaction. `seedSystemRolesForOrg(this.db,
+ *     …)` and every other helper taking a `Db` rather than a `tx` depends on it;
+ *     without it they issue autocommit statements with no tenant GUC, against
+ *     the primary pool, for an organisation that has not committed yet.
+ *   - `runOutsidePoolBorrow` so a long provisioning transaction is not counted
+ *     against the request's borrow.
+ *
+ * Calling `withNewOrgInRegion` directly is correct only where the body touches
+ * nothing but `tx` — which is true of `auth.register` and of nothing else.
+ */
+export async function runInNewOrgTransaction<T>(
+  db: Db,
+  org: { orgId: string; region: string },
+  fn: (tx: TenantTx) => Promise<T>,
+): Promise<T> {
+  if (!org.orgId)
+    throw new Error("runInNewOrgTransaction: orgId must be a non-empty string");
+  if (!org.region)
+    throw new Error("runInNewOrgTransaction: region must be a non-empty string");
+
+  const { orgId, region } = org;
+
+  /*
+   * Carries an `afterCommit` array and drains it, as `openTenantTransaction` does
+   * for every other fresh context: without one `registerAfterCommit` answers
+   * `false` and a hook registered while the organisation is being created is
+   * silently dropped. The hooks run after this transaction commits, by which
+   * point the organisation row exists and `withTenant` can look its region up.
+   */
+  return runOutsidePoolBorrow(() =>
+    runOutsideTenantContext(async () => {
+      const afterCommit: AfterCommitHook[] = [];
+      const result = await withNewOrgInRegion(
+        db,
+        { orgId, region, audience: "INTERNAL" },
+        (tx) =>
+          runWithTenantContext({ orgId, audience: "INTERNAL", tx, afterCommit }, () => fn(tx)),
+      );
+      drainAfterCommitHooks(db, orgId, afterCommit);
+      return result;
+    }),
   );
 }

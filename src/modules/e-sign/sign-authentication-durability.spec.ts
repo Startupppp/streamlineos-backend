@@ -11,7 +11,8 @@ import { SignEnvelopesService } from "./sign-envelopes.service";
 import { SignFinalizationService } from "./sign-finalization.service";
 import { SignNotificationsService } from "./sign-notifications.service";
 import { SignIntegrationsService } from "./sign-integrations.service";
-import { SignPublicFormService } from "./sign-public-form.service";
+import { SMS_SENDER } from "./sms/sms-sender.port";
+import { SIGN_GEO_IP } from "./geo/geo-ip.port";
 import { StorageService } from "../storage/storage.service";
 import type { signRecipients } from "../../db/schema";
 
@@ -53,6 +54,9 @@ async function build() {
       select: () => ({
         from: () => ({
           where: () => ({
+            // The real chain is .where().limit(1).for("update") — one recipient,
+            // addressed by primary key, so the lock covers one row.
+            limit: () => ({
             for: async (mode: string) => {
               expect(mode).toBe("update");
               const previous = pendingRowLock;
@@ -61,6 +65,7 @@ async function build() {
               draftRecipient = { ...recipient };
               return [draftRecipient];
             },
+            }),
           }),
         }),
       }),
@@ -109,6 +114,12 @@ async function build() {
       SignAuditService,
       SignTokensService,
       { provide: "TEST_SIGN_DB", useValue: db },
+      /*
+       * Constructor ports this suite never exercises: authentication sends no
+       * SMS, and the audit writer's geo lookup must answer rather than throw.
+       */
+      { provide: SMS_SENDER, useValue: {} },
+      { provide: SIGN_GEO_IP, useValue: { locate: async () => null } },
       {
         provide: DRIZZLE,
         inject: ["TEST_SIGN_DB"],
@@ -122,7 +133,6 @@ async function build() {
         SignFinalizationService,
         SignNotificationsService,
         SignIntegrationsService,
-        SignPublicFormService,
       ].map((provide) => ({ provide, useValue: {} })),
     ],
   }).compile();

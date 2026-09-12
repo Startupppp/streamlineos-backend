@@ -5,6 +5,8 @@ import { surveyLogicRules } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { SurveyVersionService } from "./survey-version.service";
+import { assertSurveyReadable } from "./survey-tenant";
+import type { ScopedRead } from "../access/scoped-read";
 import type { CreateLogicRuleInput, PatchLogicRuleInput } from "./dto/survey-builder.schemas";
 
 @Injectable()
@@ -14,10 +16,18 @@ export class SurveyLogicService {
     private readonly versions: SurveyVersionService,
   ) {}
 
-  async list(orgId: string, surveyId: number) {
-    const draft = await this.versions.getDraftVersion(orgId, surveyId);
+  /**
+   * The branching rules of one survey's draft.
+   *
+   * Scoped for the same reason `SurveyBuilderService.getBuilder` is: the rules
+   * carry the survey's question text and its routing, and they were readable
+   * under `surveys:view` for a survey the caller's own scope refused them.
+   */
+  async list(read: ScopedRead, surveyId: number) {
+    await assertSurveyReadable(this.db, read, surveyId);
+    const draft = await this.versions.getDraftVersion(read.orgId, surveyId);
     return this.db.query.surveyLogicRules.findMany({
-      where: and(eq(surveyLogicRules.orgId, orgId), eq(surveyLogicRules.versionId, draft.id)),
+      where: and(eq(surveyLogicRules.orgId, read.orgId), eq(surveyLogicRules.versionId, draft.id)),
       orderBy: [asc(surveyLogicRules.sortOrder)],
       limit: 100,
     });

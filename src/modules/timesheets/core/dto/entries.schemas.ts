@@ -1,4 +1,9 @@
 import { z } from "zod";
+import {
+  timesheetBillingTypeSchema,
+  timesheetEntrySourceSchema,
+  timesheetEntryStatusSchema,
+} from "./status.schemas";
 import { pageSizeField } from "../../../../common/pagination/list-query.schema";
 
 const dateString = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
@@ -7,7 +12,7 @@ export const entriesQuerySchema = z.object({
   userId: z.string().optional(),
   projectId: z.coerce.number().int().positive().optional(),
   ticketId: z.coerce.number().int().positive().optional(),
-  status: z.enum(["PENDING", "APPROVED", "REJECTED"]).optional(),
+  status: timesheetEntryStatusSchema.optional(),
   startDate: dateString.optional(),
   endDate: dateString.optional(),
   billable: z.enum(["true", "false"]).optional(),
@@ -23,9 +28,9 @@ export const createEntrySchema = z.object({
   ticketId: z.number().int().positive().optional(),
   description: z.string().max(2000).optional(),
   isBillable: z.boolean().optional(),
-  billingType: z.enum(["BILLABLE", "NON_BILLABLE", "FIXED"]).optional(),
+  billingType: timesheetBillingTypeSchema.optional(),
   workLink: z.string().url().max(500).optional(),
-  source: z.enum(["MANUAL", "TIMER", "API", "IMPORT"]).optional(),
+  source: timesheetEntrySourceSchema.optional(),
 }).strict();
 export type CreateEntryInput = z.infer<typeof createEntrySchema>;
 
@@ -33,7 +38,7 @@ export const updateEntrySchema = z.object({
   hours: z.number().positive().optional(),
   description: z.string().max(2000).optional().nullable(),
   isBillable: z.boolean().optional(),
-  billingType: z.enum(["BILLABLE", "NON_BILLABLE", "FIXED"]).optional(),
+  billingType: timesheetBillingTypeSchema.optional(),
   projectId: z.number().int().positive().optional().nullable(),
   workLink: z.string().url().max(500).optional().nullable(),
 }).strict();
@@ -43,3 +48,18 @@ export const voidEntrySchema = z.object({
   reason: z.string().min(1).max(500),
 }).strict();
 export type VoidEntryInput = z.infer<typeof voidEntrySchema>;
+
+/**
+ * TS-09. The window of attendance to turn into draft entries.
+ *
+ * Required rather than defaulted to "this week". The endpoint writes rows into
+ * somebody's timesheet, and a caller that has not said which days it means
+ * should be told so rather than have a week chosen for it.
+ */
+export const draftFromAttendanceSchema = z
+  .object({
+    start: dateString,
+    end: dateString,
+  })
+  .strict();
+export type DraftFromAttendanceInput = z.infer<typeof draftFromAttendanceSchema>;

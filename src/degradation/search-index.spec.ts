@@ -310,6 +310,19 @@ async function captureFallbackPlan(client: ReturnType<typeof postgres>): Promise
     await client.begin(async (tx) => {
       await seedTenantFixture(tx);
       await tx`SELECT set_config('app.organization_id', ${PROBE_SUBJECT_ORG}, true)`;
+      /*
+        Seq scans are priced out for this probe, deliberately.
+
+        On an empty or nearly empty `build.tickets` a sequential scan is the
+        cheapest plan whatever indexes exist, so the assertion below would fail
+        on a fresh database and pass on a full one — a test that measures how
+        much data the environment happens to hold rather than anything about the
+        query. The fixture above gives the planner a reason to choose; penalising
+        the seq scan as well asks the question actually worth asking: is there an
+        index the tenant predicate *can* use. If none applies, the plan still
+        comes back sequential and the case still fails.
+      */
+      await tx`SET LOCAL enable_seqscan = off`;
       const rows = await tx`
         EXPLAIN (FORMAT JSON)
         SELECT id, title FROM build.tickets

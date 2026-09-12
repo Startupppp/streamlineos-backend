@@ -68,16 +68,62 @@ const deliver = async (
 ) => {
   const { ingress, seen } = seam(answers);
   const { rawBody, signature, parsed } = signedDelivery(body, secret);
+  const entered: string[] = [];
   const outcome = await new WhatsAppIngressService(ingress).accept(
     { ...binding, ...over },
     rawBody,
     signature,
     parsed,
+    /**
+     * The tenant the production caller opens a transaction for, recorded
+     * rather than opened. A delivery carries no session, so nothing upstream
+     * has entered a tenant — and the seam's writes are against tables behind
+     * `tenant_isolation`. Here that is a list; in production it is
+     * `WhatsAppChannelsService.runInTenant`.
+     */
+    (organizationId, fn) => {
+      entered.push(organizationId);
+      return fn();
+    },
   );
-  return { outcome, seen, ingress };
+  return { outcome, seen, ingress, entered };
 };
 
 describe("WhatsAppIngressService", () => {
+  /**
+   * The regression this exists for.
+   *
+   * A WhatsApp delivery arrives with no session, so nothing upstream has opened
+   * a tenant transaction — and every table the seam writes to is behind
+   * `tenant_isolation`. The first seeded run of this channel filed nothing for
+   * exactly that reason: every signature verified, every message was offered,
+   * and every write was refused by a policy. The counts said `failed`, which
+   * from outside is indistinguishable from a broken provider.
+   *
+   * So the organisation the adapter enters is the binding's, once per message,
+   * and it is asserted rather than assumed.
+   */
+  it("enters the binding's tenant for each message it files", async () => {
+    const { entered, outcome } = await deliver(
+      webhookBody([
+        deliveryBlock({
+          messages: [textMessage(), textMessage({ id: "wamid.second" })],
+        }),
+      ]),
+    );
+
+    expect(entered).toEqual(["org-1", "org-1"]);
+    expect(outcome.accepted && outcome.delivered).toBe(2);
+  });
+
+  /** A refused delivery opens no transaction at all. */
+  it("enters no tenant when the signature does not check", async () => {
+    const { entered, outcome } = await deliver(webhookBody(), [], {}, "the-wrong-secret");
+
+    expect(outcome.accepted).toBe(false);
+    expect(entered).toEqual([]);
+  });
+
   it("offers each message to the seam and says what became of it", async () => {
     const { outcome, seen } = await deliver(
       webhookBody([deliveryBlock({ messages: [textMessage(), documentMessage()] })]),

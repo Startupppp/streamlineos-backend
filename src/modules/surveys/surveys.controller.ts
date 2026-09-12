@@ -1,5 +1,7 @@
-import { Body, Controller, Get, HttpCode, Param, ParseIntPipe, Patch, Post, Query, UseGuards } from "@nestjs/common";
+import { Body, Controller, Get, HttpCode, Param, ParseIntPipe, Patch, Post, Query, Req, UseGuards } from "@nestjs/common";
+import type { Request } from "express";
 import { z } from "zod";
+import { readRequestScopedRead } from "../organization/core/read-request-scope";
 import { Idempotent } from "../../common/idempotency/idempotent.decorator";
 import { Validate } from "../../common/validation/validate.decorator";
 import { BodylessAction, ResponseSchema } from "../../common/openapi/zod-operation-contracts";
@@ -49,8 +51,8 @@ export class SurveysController {
   @RequirePermission("surveys:view")
   @Validate({ query: listSurveysSchema })
   @ResponseSchema(surveyFormListSchema)
-  list(@Query() query: ListSurveysInput, @CurrentUser() u: CurrentUserContext) {
-    return this.forms.list(u.orgId, query);
+  list(@Query() query: ListSurveysInput, @CurrentUser() u: CurrentUserContext, @Req() req: Request) {
+    return this.forms.list(query, readRequestScopedRead(req, u));
   }
 
   @Post()
@@ -66,8 +68,8 @@ export class SurveysController {
   @RequirePermission("surveys:view")
   @Validate({ params: surveyIdParams })
   @ResponseSchema(surveyFormRowSchema)
-  get(@Param("surveyId", ParseIntPipe) surveyId: number, @CurrentUser() u: CurrentUserContext) {
-    return this.forms.get(u.orgId, surveyId);
+  get(@Param("surveyId", ParseIntPipe) surveyId: number, @CurrentUser() u: CurrentUserContext, @Req() req: Request) {
+    return this.forms.get(surveyId, readRequestScopedRead(req, u));
   }
 
   @Patch(":surveyId")
@@ -77,9 +79,9 @@ export class SurveysController {
   patch(
     @Param("surveyId", ParseIntPipe) surveyId: number,
     @Body() body: PatchSurveyInput,
-    @CurrentUser() u: CurrentUserContext,
+    @CurrentUser() u: CurrentUserContext, @Req() req: Request
   ) {
-    return this.forms.patch(u.orgId, surveyId, body);
+    return this.forms.patch(u.orgId, surveyId, body, readRequestScopedRead(req, u));
   }
 
   @Post(":surveyId/publish")
@@ -88,8 +90,8 @@ export class SurveysController {
   @RequirePermission("surveys:publish")
   @Validate({ params: surveyIdParams })
   @ResponseSchema(surveyVersionRowSchema)
-  publish(@Param("surveyId", ParseIntPipe) surveyId: number, @CurrentUser() u: CurrentUserContext) {
-    return this.forms.publish(u.orgId, surveyId);
+  publish(@Param("surveyId", ParseIntPipe) surveyId: number, @CurrentUser() u: CurrentUserContext, @Req() req: Request) {
+    return this.forms.publish(u.orgId, surveyId, readRequestScopedRead(req, u));
   }
 
   @Post(":surveyId/pause")
@@ -97,8 +99,8 @@ export class SurveysController {
   @RequirePermission("surveys:publish")
   @Validate({ params: surveyIdParams })
   @ResponseSchema(surveyFormRowSchema)
-  pause(@Param("surveyId", ParseIntPipe) surveyId: number, @CurrentUser() u: CurrentUserContext) {
-    return this.forms.pause(u.orgId, surveyId);
+  pause(@Param("surveyId", ParseIntPipe) surveyId: number, @CurrentUser() u: CurrentUserContext, @Req() req: Request) {
+    return this.forms.pause(u.orgId, surveyId, readRequestScopedRead(req, u));
   }
 
   @Post(":surveyId/close")
@@ -106,8 +108,8 @@ export class SurveysController {
   @RequirePermission("surveys:publish")
   @Validate({ params: surveyIdParams })
   @ResponseSchema(surveyFormRowSchema)
-  close(@Param("surveyId", ParseIntPipe) surveyId: number, @CurrentUser() u: CurrentUserContext) {
-    return this.forms.close(u.orgId, surveyId);
+  close(@Param("surveyId", ParseIntPipe) surveyId: number, @CurrentUser() u: CurrentUserContext, @Req() req: Request) {
+    return this.forms.close(u.orgId, surveyId, readRequestScopedRead(req, u));
   }
 
   @Post(":surveyId/archive")
@@ -115,8 +117,8 @@ export class SurveysController {
   @RequirePermission("surveys:delete")
   @Validate({ params: surveyIdParams })
   @ResponseSchema(surveyFormRowSchema)
-  archive(@Param("surveyId", ParseIntPipe) surveyId: number, @CurrentUser() u: CurrentUserContext) {
-    return this.forms.archive(u.orgId, surveyId);
+  archive(@Param("surveyId", ParseIntPipe) surveyId: number, @CurrentUser() u: CurrentUserContext, @Req() req: Request) {
+    return this.forms.archive(u.orgId, surveyId, readRequestScopedRead(req, u));
   }
 
   @Post(":surveyId/duplicate")
@@ -124,7 +126,7 @@ export class SurveysController {
   @RequirePermission("surveys:create")
   @Validate({ params: surveyIdParams })
   @ResponseSchema(surveyFormRowSchema)
-  duplicate(@Param("surveyId", ParseIntPipe) surveyId: number, @CurrentUser() u: CurrentUserContext) {
-    return this.forms.duplicate(u.orgId, surveyId, u.userId);
+  duplicate(@Param("surveyId", ParseIntPipe) surveyId: number, @CurrentUser() u: CurrentUserContext, @Req() req: Request) {
+    return this.forms.duplicate(u.orgId, surveyId, u.userId, readRequestScopedRead(req, u));
   }
 }

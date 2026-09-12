@@ -6,15 +6,29 @@
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, eq, lt } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { timingSafeEqual } from "node:crypto";
 import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
 import { aiActionProposals } from "../../../db/schema/ai/ai-confirmation";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { AuditService } from "../../../common/audit/audit.service";
+import {
+  cancelProposal,
+  getProposalExecutedResult,
+  markProposalExecuted,
+  sweepExpiredProposals,
+  type ProposalLifecycleDeps,
+} from "./lib/proposal-lifecycle";
 import { computeHmac, DEFAULT_TTL, getSecret, MAX_TTL, stableHash, type ConfirmInput, type ConfirmResult, type ProposeInput, type ProposeResult } from "./ai-confirmation.helpers";
 
+/**
+ * The token protocol for AI-proposed actions: `propose` mints a token bound by
+ * HMAC to the proposal, org, user, action, payload hash and expiry, and
+ * `confirm` is the only place one is ever verified. What happens to a proposal
+ * afterwards (execution bookkeeping, result lookup, cancellation, the expiry
+ * sweep) never touches a token and lives in `lib/proposal-lifecycle.ts`.
+ */
 @Injectable()
 export class AiConfirmationService {
   constructor(
@@ -171,127 +185,30 @@ export class AiConfirmationService {
     }, { orgId: input.actor.orgId });
   }
 
+  private get lifecycleDeps(): ProposalLifecycleDeps {
+    return { db: this.db, audit: this.audit };
+  }
+
   async markExecuted(
     proposalId: number,
     result: Record<string, unknown>,
     orgId: string,
   ): Promise<void> {
-    const rows = await runInTenantTransaction(
-      this.db,
-      (tx) =>
-        tx
-          .select()
-          .from(aiActionProposals)
-          .where(and(eq(aiActionProposals.id, proposalId), eq(aiActionProposals.orgId, orgId)))
-          .limit(1),
-      { orgId },
-    );
-
-    const row = rows[0];
-    if (!row) throw new BadRequestException("Proposal not found");
-
-    if (row.status === "EXECUTED") return;
-
-    if (row.status !== "CONFIRMED") {
-      throw new BadRequestException("Proposal must be CONFIRMED before marking executed");
-    }
-
-    const now = new Date();
-    await runInTenantTransaction(
-      this.db,
-      (tx) =>
-        tx
-          .update(aiActionProposals)
-          .set({ status: "EXECUTED", executedAt: now, result, updatedAt: now })
-          .where(eq(aiActionProposals.id, proposalId)),
-      { orgId },
-    );
-
-    this.audit.log({
-      action: "ai.proposal.executed",
-      userId: row.userId,
-      orgId: row.orgId,
-      resourceType: "ai_action_proposal",
-      resourceId: String(row.id),
-      metadata: { action: row.action },
-    });
+    return markProposalExecuted(this.lifecycleDeps, proposalId, result, orgId);
   }
 
   async getExecutedResult(
     proposalId: number,
     orgId: string,
   ): Promise<Record<string, unknown> | null> {
-    const rows = await runInTenantTransaction(
-      this.db,
-      (tx) =>
-        tx
-          .select()
-          .from(aiActionProposals)
-          .where(and(eq(aiActionProposals.id, proposalId), eq(aiActionProposals.orgId, orgId)))
-          .limit(1),
-      { orgId },
-    );
-
-    const row = rows[0];
-    if (!row || row.status !== "EXECUTED") return null;
-    return row.result ?? null;
+    return getProposalExecutedResult(this.lifecycleDeps, proposalId, orgId);
   }
 
   async cancel(proposalId: number, actor: { orgId: string; userId: string }): Promise<void> {
-    const rows = await runInTenantTransaction(
-      this.db,
-      (tx) =>
-        tx
-          .select()
-          .from(aiActionProposals)
-          .where(and(eq(aiActionProposals.id, proposalId), eq(aiActionProposals.orgId, actor.orgId)))
-          .limit(1),
-      { orgId: actor.orgId },
-    );
-
-    const row = rows[0];
-    if (!row) throw new BadRequestException("Proposal not found");
-
-    if (row.orgId !== actor.orgId || row.userId !== actor.userId) {
-      throw new ForbiddenException("Actor mismatch");
-    }
-
-    if (row.status !== "PROPOSED") {
-      throw new BadRequestException("Only PROPOSED proposals can be cancelled");
-    }
-
-    await runInTenantTransaction(
-      this.db,
-      (tx) =>
-        tx
-          .update(aiActionProposals)
-          .set({ status: "CANCELLED", updatedAt: new Date() })
-          .where(eq(aiActionProposals.id, proposalId)),
-      { orgId: actor.orgId },
-    );
-
-    this.audit.log({
-      action: "ai.proposal.cancelled",
-      userId: row.userId,
-      orgId: row.orgId,
-      resourceType: "ai_action_proposal",
-      resourceId: String(row.id),
-      metadata: { action: row.action },
-    });
+    return cancelProposal(this.lifecycleDeps, proposalId, actor);
   }
 
   async sweepExpired(): Promise<number> {
-    const updated = await this.db
-      .update(aiActionProposals)
-      .set({ status: "EXPIRED", updatedAt: new Date() })
-      .where(
-        and(
-          eq(aiActionProposals.status, "PROPOSED"),
-          lt(aiActionProposals.expiresAt, new Date()),
-        ),
-      )
-      .returning({ id: aiActionProposals.id });
-
-    return updated.length;
+    return sweepExpiredProposals(this.lifecycleDeps);
   }
 }

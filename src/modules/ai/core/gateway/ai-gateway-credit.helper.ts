@@ -150,7 +150,7 @@ export class AiGatewayCreditHelper {
 
     this.audit.log({
       action: "ai.invoke",
-      userId: actor.userId ?? "system",
+      ...(actor.userId ? { userId: actor.userId } : { systemActor: "ai.gateway.unattended-invoke" }),
       orgId: actor.orgId,
       metadata: {
         feature,

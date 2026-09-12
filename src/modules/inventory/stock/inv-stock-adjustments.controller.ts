@@ -1,5 +1,13 @@
-import { BadRequestException, Controller, Get, Headers, Param, ParseIntPipe, Post, Body, Query, UseGuards } from "@nestjs/common";
-import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
+import {
+  Controller,
+  Get,
+  Param,
+  ParseIntPipe,
+  Post,
+  Body,
+  Query,
+  UseGuards,
+} from "@nestjs/common";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
 import { ModuleGuard } from "../../../common/rbac/module.guard";
 import { PermissionGuard } from "../../access/permission.guard";
@@ -18,6 +26,8 @@ import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
 import { BodylessAction, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
 import { successSchema } from "../../../common/openapi/response-envelopes";
+import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
+import { IdempotencyKey } from "../../../common/idempotency/idempotency-key.decorator";
 import {
   listAdjustmentsResponseSchema,
   getAdjustmentResponseSchema,
@@ -53,11 +63,10 @@ export class InvStockAdjustmentsController {
   @RequirePermission("inventory:stock:adjust")
   @Validate({ body: createAdjustmentSchema })
   createAdjustment(
-    @Headers("idempotency-key") idempotencyKey: string,
+    @IdempotencyKey() idempotencyKey: string,
     @Body() body: CreateAdjustmentInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!idempotencyKey) throw new BadRequestException("Idempotency-Key header required");
     return this.adjustments.createAdjustment(u.orgId, u.userId, body, idempotencyKey);
   }
 
@@ -70,7 +79,7 @@ export class InvStockAdjustmentsController {
     @Param("adjustmentId", ParseIntPipe) adjustmentId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.adjustments.getAdjustment(u.orgId, adjustmentId);
+    return this.adjustments.getAdjustment(u.orgId, adjustmentId, u.userId);
   }
 
   @Post(":adjustmentId/approve")
@@ -81,10 +90,11 @@ export class InvStockAdjustmentsController {
   @RequirePermission("inventory:adjustments:approve")
   @Validate({ params: adjustmentIdParams })
   approveAdjustment(
+    @IdempotencyKey() idempotencyKey: string,
     @Param("adjustmentId", ParseIntPipe) adjustmentId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.adjustments.approveAdjustment(u.orgId, u.userId, adjustmentId);
+    return this.adjustments.approveAdjustment(u.orgId, u.userId, adjustmentId, idempotencyKey);
   }
 
   @Post(":adjustmentId/post")
@@ -94,11 +104,10 @@ export class InvStockAdjustmentsController {
   @RequirePermission("inventory:adjustments:post")
   @Validate({ params: adjustmentIdParams })
   postAdjustment(
-    @Headers("idempotency-key") idempotencyKey: string,
+    @IdempotencyKey() idempotencyKey: string,
     @Param("adjustmentId", ParseIntPipe) adjustmentId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!idempotencyKey) throw new BadRequestException("Idempotency-Key header required");
     return this.adjustments.postAdjustment(u.orgId, u.userId, adjustmentId, idempotencyKey);
   }
 
@@ -107,12 +116,13 @@ export class InvStockAdjustmentsController {
   @ResponseSchema(successSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:adjust")
+  @Idempotent("inventory.stock-adjustment.cancel")
   @Validate({ params: adjustmentIdParams })
   async cancelAdjustment(
     @Param("adjustmentId", ParseIntPipe) adjustmentId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    await this.adjustments.cancelAdjustment(u.orgId, adjustmentId);
+    await this.adjustments.cancelAdjustment(u.orgId, u.userId, adjustmentId);
     return { success: true as const };
   }
 }

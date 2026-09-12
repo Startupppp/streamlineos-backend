@@ -1,4 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
+import { partyNamesFor } from "../party/party-names";
 import { randomUUID } from "node:crypto";
 import { and, desc, eq } from "drizzle-orm";
 import { csatResponses, csatSurveys } from "../../db/schema";
@@ -22,20 +23,37 @@ export class CsatService {
     const surveys = await this.db.query.csatSurveys.findMany({
       where: eq(csatSurveys.orgId, orgId),
       with: {
-        client: { columns: { id: true, name: true } },
         responses: { columns: { rating: true } },
       },
       orderBy: [desc(csatSurveys.createdAt)],
     });
 
+    /**
+     * The client's name from Party, not from `clients`. Ticket 08.
+     *
+     * `client_id` is still the identifier this survey was filed under and is
+     * still returned as `client.id`, so nothing downstream changes shape; only
+     * the *name* moved. That is the whole of what this service read the legacy
+     * table for, and it is one of the twelve foreign keys standing between the
+     * CRM and dropping it.
+     */
+    const names = await partyNamesFor(
+      this.db,
+      orgId,
+      surveys.map((s) => s.clientPartyId),
+    );
+
     return surveys.map((s) => {
       const { responses, ...rest } = s;
+      const client = s.clientId
+        ? { id: s.clientId, name: s.clientPartyId ? (names.get(s.clientPartyId) ?? null) : null }
+        : null;
       const responseCount = responses.length;
       const avgRating =
         responseCount > 0
           ? responses.reduce((sum, r) => sum + r.rating, 0) / responseCount
           : null;
-      return { ...rest, responseCount, avgRating };
+      return { ...rest, client, responseCount, avgRating };
     });
   }
 
@@ -57,14 +75,26 @@ export class CsatService {
     return survey;
   }
 
-  getSurvey(orgId: string, surveyId: number) {
-    return this.db.query.csatSurveys.findFirst({
+  async getSurvey(orgId: string, surveyId: number) {
+    const survey = await this.db.query.csatSurveys.findFirst({
       where: and(eq(csatSurveys.id, surveyId), eq(csatSurveys.orgId, orgId)),
-      with: {
-        client: { columns: { id: true, name: true } },
-        responses: true,
-      },
+      with: { responses: true },
     });
+    if (!survey) return survey ?? null;
+
+    // Ticket 08: same as the list path -- the identifier stays, the name comes
+    // from Party, and the shape the caller sees is unchanged.
+    const names = await partyNamesFor(this.db, orgId, [survey.clientPartyId]);
+
+    return {
+      ...survey,
+      client: survey.clientId
+        ? {
+            id: survey.clientId,
+            name: survey.clientPartyId ? (names.get(survey.clientPartyId) ?? null) : null,
+          }
+        : null,
+    };
   }
 
   async updateSurvey(orgId: string, surveyId: number, input: PatchInput) {

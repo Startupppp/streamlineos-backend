@@ -1,3 +1,4 @@
+import { positiveDecimalQuantity } from "../../stock-engine/dto/quantity.schemas";
 import { z } from "zod";
 import { pageNumberField, pageSizeField } from "../../../../common/pagination/list-query.schema";
 
@@ -16,9 +17,14 @@ const soLineSchema = z.object({
   productVariantId: z.number().int().positive(),
   quantity: z.number().positive(),
   unitPrice: z.string().regex(/^\d+(\.\d{1,4})?$/),
+  /**
+   * NEO-10 - how many pieces this line's weight is. Only for a catch-weight SKU,
+   * where the price is per unit of weight and the quantity is the weight.
+   */
+  quantityPieces: z.number().positive().optional(),
   taxRate: z.string().regex(/^\d+(\.\d{1,2})?$/).default("0"),
   lineOrder: z.number().int().min(0).default(0),
-});
+}).strict();
 
 export const createSoSchema = z.object({
   clientId: z.number().int().positive().optional(),
@@ -26,6 +32,16 @@ export const createSoSchema = z.object({
   requiredDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   shippingAddress: z.string().max(500).optional(),
   warehouseId: z.number().int().positive().optional(),
+  /**
+   * NEO-1 — the sales channel this order arrived on. Absent means a direct sale,
+   * which may draw on no channel's reserved pool.
+   */
+  channelId: z.number().int().positive().optional(),
+  /**
+   * NEO-3 - the platform purchase order this order fulfils, so fill rate is a
+   * join rather than a guess.
+   */
+  platformPoId: z.number().int().positive().optional(),
   currency: z.string().length(3).default("INR"),
   notes: z.string().max(2000).optional(),
   lines: z.array(soLineSchema).min(1),
@@ -38,6 +54,8 @@ export const updateSoSchema = z.object({
   requiredDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   shippingAddress: z.string().max(500).optional(),
   warehouseId: z.number().int().positive().optional(),
+  channelId: z.number().int().positive().nullable().optional(),
+  platformPoId: z.number().int().positive().nullable().optional(),
   currency: z.string().length(3).optional(),
   notes: z.string().max(2000).optional(),
   lines: z.array(soLineSchema).min(1).optional(),
@@ -49,8 +67,8 @@ const reserveAllocationSchema = z.object({
   locationId: z.number().int().positive(),
   lotId: z.number().int().positive().optional(),
   serialId: z.number().int().positive().optional(),
-  qty: z.number().positive(),
-});
+  qty: positiveDecimalQuantity,
+}).strict();
 
 export const reserveSoSchema = z.object({
   warehouseId: z.number().int().positive().optional(),
@@ -63,8 +81,12 @@ const pickLineSchema = z.object({
   locationId: z.number().int().positive(),
   lotId: z.number().int().positive().optional(),
   serialId: z.number().int().positive().optional(),
-  quantityPicked: z.number().positive(),
-});
+  /**
+   * INV-204. A decimal string: this quantity closes a reservation and feeds
+   * the shipment, and it was being written through `Number(...).toFixed(4)`.
+   */
+  quantityPicked: positiveDecimalQuantity,
+}).strict();
 
 export const pickSoSchema = z.object({
   lines: z.array(pickLineSchema).min(1),

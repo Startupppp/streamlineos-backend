@@ -1,5 +1,6 @@
 jest.mock("../../../common/tenant/run-in-tenant-transaction", () => ({
   runInTenantTransaction: jest.fn(),
+  runInNewTenantTransaction: jest.fn(),
 }));
 
 import { NotFoundException } from "@nestjs/common";
@@ -9,8 +10,10 @@ import { PaymentWebhookReceiverService } from "./payment-webhook-receiver.servic
 import type { PaymentProviderAdapterRegistry } from "./payment-provider-adapter.interface";
 import type { PaymentProviderSetupService } from "./payment-provider-setup.service";
 import type { PaymentAnalyticsService } from "./payment-analytics.service";
-import type { ProviderBridgeService } from "../../finance/controls/provider-bridge.service";
-import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
+import {
+  runInNewTenantTransaction,
+  runInTenantTransaction,
+} from "../../../common/tenant/run-in-tenant-transaction";
 
 function sqlValues(value: unknown, seen = new Set<object>()): unknown[] {
   if (value === null || value === undefined || typeof value === "string" || typeof value === "number" || typeof value === "boolean") return [value];
@@ -28,11 +31,18 @@ const ATTACKER_ORG = "org-attacker";
 const OWNER_ORG = "org-owner";
 
 const mockRunInTenantTransaction = runInTenantTransaction as jest.MockedFunction<typeof runInTenantTransaction>;
+const mockRunInNewTenantTransaction = runInNewTenantTransaction as jest.MockedFunction<
+  typeof runInNewTenantTransaction
+>;
 
 beforeEach(() => {
   jest.resetAllMocks();
   mockRunInTenantTransaction.mockImplementation(
     async (_db, fn, _opts) => fn({} as Parameters<typeof fn>[0]),
+  );
+  // The resolver reads in the org's own new transaction; the db double is the tx.
+  mockRunInNewTenantTransaction.mockImplementation(
+    async (db, _orgId, fn) => fn(db as unknown as Parameters<typeof fn>[0]),
   );
 });
 
@@ -67,6 +77,7 @@ describe("PaymentProviderResolver — cross-tenant isolation", () => {
     await svc.resolve(ATTACKER_ORG, "razorpay");
     const call = findFirst.mock.calls[0]?.[0];
     expect(sqlValues(call?.where)).toContain(ATTACKER_ORG);
+    expect(mockRunInNewTenantTransaction).toHaveBeenCalledWith(db, ATTACKER_ORG, expect.any(Function));
   });
 
   it("returns a provider facade for the owning org (CONTROL)", async () => {
@@ -100,8 +111,7 @@ describe("PaymentWebhookReceiverService — cross-tenant isolation", () => {
       notifyOwner: jest.fn().mockResolvedValue(undefined),
       ...analytics,
     } as unknown as PaymentAnalyticsService;
-    const providerBridge = {} as unknown as ProviderBridgeService;
-    const svc = new PaymentWebhookReceiverService(db, providers, paymentAnalytics, providerBridge);
+    const svc = new PaymentWebhookReceiverService(db, providers, paymentAnalytics);
     return { svc, paymentAnalytics };
   }
 
@@ -119,7 +129,7 @@ describe("PaymentWebhookReceiverService — cross-tenant isolation", () => {
       }),
     };
     mockRunInTenantTransaction.mockImplementation(async (_db, fn, _opts) =>
-      fn(emptyTx as Parameters<typeof fn>[0]),
+      fn(emptyTx as unknown as Parameters<typeof fn>[0]),
     );
     await expect(svc.recordSignatureFailure(ATTACKER_ORG, "razorpay")).resolves.toBeUndefined();
     expect(paymentAnalytics.notifyOwner).not.toHaveBeenCalled();
@@ -137,7 +147,7 @@ describe("PaymentWebhookReceiverService — cross-tenant isolation", () => {
       }),
     };
     mockRunInTenantTransaction.mockImplementation(async (_db, fn, _opts) =>
-      fn(emptyTx as Parameters<typeof fn>[0]),
+      fn(emptyTx as unknown as Parameters<typeof fn>[0]),
     );
     await svc.recordSignatureFailure(ATTACKER_ORG, "razorpay");
     expect(mockRunInTenantTransaction).toHaveBeenCalledWith(
@@ -174,8 +184,8 @@ describe("PaymentWebhookReceiverService — cross-tenant isolation", () => {
     };
 
     mockRunInTenantTransaction
-      .mockImplementationOnce(async (_db, fn, _opts) => fn(tx1 as Parameters<typeof fn>[0]))
-      .mockImplementationOnce(async (_db, fn, _opts) => fn(tx2 as Parameters<typeof fn>[0]));
+      .mockImplementationOnce(async (_db, fn, _opts) => fn(tx1 as unknown as Parameters<typeof fn>[0]))
+      .mockImplementationOnce(async (_db, fn, _opts) => fn(tx2 as unknown as Parameters<typeof fn>[0]));
 
     await svc.recordSignatureFailure(OWNER_ORG, "razorpay");
 

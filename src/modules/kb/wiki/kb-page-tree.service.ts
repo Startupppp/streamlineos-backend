@@ -374,7 +374,7 @@ export class KbPageTreeService {
 
     this.audit.log({
       action: "kb.page.auto_purged",
-      userId: "system",
+      systemActor: "kb.page.retention-sweep",
       orgId,
       resourceType: "kb_page",
       metadata: { purgedCount, olderThan: olderThan.toISOString() },

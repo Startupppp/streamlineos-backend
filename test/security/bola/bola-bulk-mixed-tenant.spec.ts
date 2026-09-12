@@ -21,7 +21,45 @@ import { buildSourceIndex } from "./tenant-binding";
  * grow. `sites.length` only guards against the scan quietly finding less.
  */
 const BULK_SITE_FLOOR = 60;
-const NO_COUNT_CHECK_BASELINE = 45;
+/**
+ * 45 -> 46 on the inventory/CRM merge, and the whole move is accounted for site by site.
+ *
+ * Two blind spots in the scan closed first, so the number is measured against a detector that
+ * sees what it always claimed to: a bulk list forwarded WHOLE into a module-level function
+ * (`return bulkDelete(this.bulkDeps, orgId, userId, input)`) is followed into the slot it lands
+ * in, and `assertUsersInOrg`'s set-membership refusal counts as the guard it is. Against main's
+ * own tree that detector measures 41, not 42 — `CalendarService.createEvent` was never unguarded.
+ *
+ *   41  main, re-measured
+ *   -2  `MatchingService.suggestMatches` and `PaymentRunsService.createRun` left with main's
+ *       `finance/` module when the gl_* accounting rewrite replaced it.
+ *   +7  the derived-id helpers named in GUARDED_BY_CALLER below, brought in by this branch.
+ *   = 46
+ *
+ * This branch measured 49 when that arithmetic was written, and the note here said so: three open
+ * defects in `modules/inventory`, "fixing or deleting those three is what brings this green;
+ * raising the number to cover them is the move CLOSURE-DEFINITION forbids". They were fixed, on
+ * 2026-09-12, and the baseline is UNCHANGED at 46 — which is the whole point of having left them
+ * above it. What each one was, and what it is now, is pinned in `REPAIRED_ON_THE_MERGE` below:
+ *
+ *   `RecallSimulationService.resolveLots` — `selection.lotIds` and `.productVariantIds` were pure
+ *     filters ANDed with `org_id = caller`, so another organisation's id matched nothing and
+ *     dropped out in silence while `RecallImpact` echoed it back in `selection` and hashed it into
+ *     `evidenceVersion`. A recall that silently narrows is a wrong recall picture. Ownership is now
+ *     asserted by `assertSelectionInOrg` FIRST and on its own — it cannot be a count check on the
+ *     resolved rows, because the other criteria narrow legitimately.
+ *   `PickWaveService.proposeWaveJoin` — took the same `input.soIds` that `createWave` and
+ *     `joinWave` take, and counted lines over only the orders the caller owned. `planWaveLines`
+ *     has refused an unresolvable `soId` since it was written, so propose answered where the act
+ *     it proposes would 404. It now refuses the same list the same way.
+ *   `ChannelPoolService.reservedByVariant` — DELETED. A bulk read over a caller-supplied
+ *     `productVariantIds` list with no count check and no caller anywhere in the repository.
+ *     Guarding an unreachable method would have moved the number without closing anything.
+ *
+ * All three answer 404, never 403, and answer an unknown id exactly as they answer a foreign one,
+ * so none of the refusals is an existence oracle.
+ */
+const NO_COUNT_CHECK_BASELINE = 46;
 const FAIL_WHOLE_FLOOR = 21;
 
 /**
@@ -81,8 +119,43 @@ const REPAIRED_FAIL_WHOLE: readonly string[] = [
  * status filter is applied, so a foreign id is no longer indistinguishable from
  * a skip. Neither name appears in the scan's inventory any more. An entry may
  * only return here with the same kind of evidence.
+ *
+ * REOPENED on the inventory/CRM merge with exactly that evidence, for seven PRIVATE helpers whose
+ * only caller derives the id list from a query already bound to the caller's organisation. Each
+ * was read at the call site, not inferred from the name:
+ *
+ *   `AttributionReportService.load{Marketing,Sales}Touches` — `getReport` derives `leadIds` and
+ *     `dealIds` from `loadWonDeals`, whose query is `eq(deals.orgId, orgId)`.
+ *   `InvReportsService.availabilityByLevelId` — the ids are the primary keys of the page the
+ *     caller just read under `eq(invStockLevels.orgId, orgId)`.
+ *   `RecallSimulationService.read{OnHand,InTransit,Shipped,Returned}` — every one is handed
+ *     `lots.map(l => l.lotId)` from `resolveLots`, whose conditions start `eq(invLots.orgId, orgId)`.
+ *
+ * A mixed-tenant list cannot reach any of them, so a count check would compare a number with
+ * itself. `resolveLots` itself is NOT here: it takes the request's own `selection.lotIds`.
  */
-const GUARDED_BY_CALLER: readonly string[] = [];
+const GUARDED_BY_CALLER: readonly string[] = [
+  "AttributionReportService.loadMarketingTouches",
+  "AttributionReportService.loadSalesTouches",
+  "InvReportsService.availabilityByLevelId",
+  "RecallSimulationService.readOnHand",
+  "RecallSimulationService.readInTransit",
+  "RecallSimulationService.readShipped",
+  "RecallSimulationService.readReturned",
+];
+
+/**
+ * The two repaired on the inventory/CRM merge, pinned by name so the repair is held rather than
+ * the number. Both now assert the caller's ownership of the WHOLE requested list, separately from
+ * and before any narrowing the request also asked for.
+ *
+ * `ChannelPoolService.reservedByVariant` is not here because it no longer exists; its absence is
+ * asserted below instead, so "deleted" cannot quietly become "renamed".
+ */
+const REPAIRED_ON_THE_MERGE: readonly string[] = [
+  "PickWaveService.proposeWaveJoin",
+  "RecallSimulationService.resolveLots",
+];
 
 const source = (rel: string): string => readFileSync(join(BACKEND_ROOT, rel), "utf8");
 
@@ -241,6 +314,40 @@ describe("BOLA sweep — bulk endpoints refuse a mixed-tenant id list", () => {
   it("FIXED: every repaired site now refuses a partial match", () => {
     const guarded = new Set(failWhole.map(name));
     expect(REPAIRED_FAIL_WHOLE.filter((s) => !guarded.has(s))).toEqual([]);
+  });
+
+  it("FIXED on the merge: the two inventory sites the baseline was left short for", () => {
+    const guarded = new Set(failWhole.map(name));
+    expect(REPAIRED_ON_THE_MERGE.filter((s) => !guarded.has(s))).toEqual([]);
+  });
+
+  /**
+   * The third was deleted, not guarded. Asserted against the source rather than against the
+   * scan's verdict: a method absent from `noCountCheck` is indistinguishable from one the
+   * detector stopped seeing, and that difference is exactly what this gate is for.
+   */
+  it("DELETED on the merge: the unreachable bulk read is gone, not merely unreported", () => {
+    expect(source("src/modules/inventory/stock-engine/channel-pool.service.ts")).not.toContain(
+      "async reservedByVariant(",
+    );
+    expect(sites.some((s) => s.owner === "ChannelPoolService")).toBe(false);
+  });
+
+  /**
+   * The repairs, read at the code rather than through the classifier — a count check is a shape,
+   * and the shape a regex recognises is not proof the right list is being compared.
+   */
+  it("FIXED on the merge: each repair compares the caller's OWN requested list", () => {
+    const recall = source("src/modules/inventory/quality/recall-simulation.service.ts");
+    expect(recall).toContain("eq(invLots.orgId, orgId), inArray(invLots.id, lotIds)");
+    expect(recall).toContain("lotIds.filter((id) => !ownedLots.some((row) => row.id === id))");
+    expect(recall).toContain("NotFoundException");
+    expect(recall).not.toContain("ForbiddenException");
+
+    const wave = source("src/modules/inventory/picking/pick-wave.service.ts");
+    expect(wave).toContain("inArray(invSalesOrders.id, input.soIds)");
+    expect(wave).toContain("input.soIds.filter((id) => !owned.some((o) => o.id === id))");
+    expect(wave).not.toContain("ForbiddenException");
   });
 
   it("EXCLUDED-BY-SCOPE: the CRM sites are still open and still detected as such", () => {

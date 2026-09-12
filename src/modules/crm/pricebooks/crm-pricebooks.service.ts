@@ -10,6 +10,7 @@ import {
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
+import { getPostgresErrorCode } from "../../../common/db/postgres-error";
 import type {
   CreatePricebookInput,
   UpdatePricebookInput,
@@ -60,8 +61,12 @@ export class CrmPricebooksService {
         { orgId },
       );
     } catch (e: unknown) {
-      const err = e as { code?: string };
-      if (err.code === "23505") throw new ConflictException("A pricebook with this name already exists");
+      // `uniq_crm_pricebooks_org_name` — (org_id, name), and not partial on
+      // `deleted_at`, so a soft-deleted pricebook still holds its name.
+      if (getPostgresErrorCode(e) === "23505")
+        throw new ConflictException(
+          `A pricebook named "${input.name}" already exists`,
+        );
       throw e;
     }
   }
@@ -92,8 +97,14 @@ export class CrmPricebooksService {
         { orgId },
       );
     } catch (e: unknown) {
-      const err = e as { code?: string };
-      if (err.code === "23505") throw new ConflictException("A pricebook with this name already exists");
+      // `uniq_crm_pricebooks_org_name` — (org_id, name). `name` is optional on
+      // the update DTO, so it is only named when the caller supplied one.
+      if (getPostgresErrorCode(e) === "23505")
+        throw new ConflictException(
+          input.name
+            ? `A pricebook named "${input.name}" already exists`
+            : "A pricebook with this name already exists",
+        );
       throw e;
     }
   }
@@ -139,32 +150,36 @@ export class CrmPricebooksService {
       columns: { id: true },
     });
     if (!pb) throw new NotFoundException("Pricebook not found");
-    try {
-      const [entry] = await this.db
-        .insert(crmPricebookEntries)
-        .values({
-          orgId,
-          pricebookId,
-          productId: input.productId,
-          unitPriceCents: input.unitPriceCents,
-          minQuantity: input.minQuantity,
-        })
-        .onConflictDoUpdate({
-          target: [
-            crmPricebookEntries.orgId,
-            crmPricebookEntries.pricebookId,
-            crmPricebookEntries.productId,
-            crmPricebookEntries.minQuantity,
-          ],
-          set: { unitPriceCents: input.unitPriceCents, updatedAt: new Date() },
-        })
-        .returning();
-      return entry;
-    } catch (e: unknown) {
-      const err = e as { code?: string };
-      if (err.code === "23505") throw new ConflictException("Entry already exists");
-      throw e;
-    }
+    /**
+     * No conflict handler, deliberately.
+     *
+     * `uniq_crm_pb_entry` — (org_id, pricebook_id, product_id, min_quantity) —
+     * is exactly this statement's ON CONFLICT arbiter, so the one unique a
+     * caller can collide is resolved into an update rather than raised. The
+     * only other unique on the table is (org_id, id) over a generated uuid,
+     * which no caller supplies. A 23505 branch here would be unreachable, and
+     * an unreachable branch reads as a load-bearing one.
+     */
+    const [entry] = await this.db
+      .insert(crmPricebookEntries)
+      .values({
+        orgId,
+        pricebookId,
+        productId: input.productId,
+        unitPriceCents: input.unitPriceCents,
+        minQuantity: input.minQuantity,
+      })
+      .onConflictDoUpdate({
+        target: [
+          crmPricebookEntries.orgId,
+          crmPricebookEntries.pricebookId,
+          crmPricebookEntries.productId,
+          crmPricebookEntries.minQuantity,
+        ],
+        set: { unitPriceCents: input.unitPriceCents, updatedAt: new Date() },
+      })
+      .returning();
+    return entry;
   }
 
   async deleteEntry(orgId: string, pricebookId: string, entryId: string) {
@@ -321,8 +336,11 @@ export class CrmPricebooksService {
       }
       return tmpl;
     } catch (e: unknown) {
-      const err = e as { code?: string };
-      if (err.code === "23505") throw new ConflictException("A template with this name already exists");
+      // `uniq_crm_quote_templates_org_name` — (org_id, name).
+      if (getPostgresErrorCode(e) === "23505")
+        throw new ConflictException(
+          `A quote template named "${input.name}" already exists`,
+        );
       throw e;
     }
   }
@@ -351,8 +369,14 @@ export class CrmPricebooksService {
       }
       return tmpl;
     } catch (e: unknown) {
-      const err = e as { code?: string };
-      if (err.code === "23505") throw new ConflictException("A template with this name already exists");
+      // `uniq_crm_quote_templates_org_name` — (org_id, name). `name` is
+      // optional on the update DTO, so it is only named when supplied.
+      if (getPostgresErrorCode(e) === "23505")
+        throw new ConflictException(
+          input.name
+            ? `A quote template named "${input.name}" already exists`
+            : "A quote template with this name already exists",
+        );
       throw e;
     }
   }

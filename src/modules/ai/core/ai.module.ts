@@ -32,6 +32,7 @@ import { MeetingActionAiService } from "./services/meeting-action-ai.service";
 import { HrCopilotTools } from "./hr-copilot-tools";
 import { WorkspaceCopilotTools } from "./workspace-copilot-tools";
 import { OpsCopilotTools } from "./ops-copilot-tools";
+import { WarehouseScopeService } from "../../inventory/stock-engine/warehouse-scope.service";
 import { CrmCopilotTools } from "./crm-copilot-tools";
 import { CommsCopilotTools } from "./comms-copilot-tools";
 import { ProjectsCopilotTools } from "./projects-copilot-tools";
@@ -87,6 +88,12 @@ import { AiRequestAbortInterceptor } from "./streaming";
     HrCopilotTools,
     WorkspaceCopilotTools,
     OpsCopilotTools,
+    // F2. The copilot's inventory reads apply the same warehouse scope the stock,
+    // reservation and report endpoints apply, so they use the same service. It is
+    // provided here rather than by importing InvStockEngineModule: both of its
+    // dependencies are global, it holds no state, and importing that module would
+    // drag the accounting posting graph into AiModule for one predicate builder.
+    WarehouseScopeService,
     CrmCopilotTools,
     CommsCopilotTools,
     ProjectsCopilotTools,

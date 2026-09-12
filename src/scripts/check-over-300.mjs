@@ -19,7 +19,23 @@ import { join, relative, extname } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const LIMIT = 300;
-const BASELINE = 390;
+/**
+ * 394 was set on 2026-08-31. Lowered to 380 on 2026-09-11 after the split
+ * programme took the real count from 476 to 380 without registering an
+ * exemption, so the ratchet holds the new floor instead of leaving 14 files of
+ * silent headroom for a regression to spend.
+ *
+ * Raised to 413 on 2026-09-11 by the lane merge, not by growth: 380 counted the
+ * inventory lane alone, and the CRM/Timesheets/accounting lanes brought files
+ * this gate had never measured. Of the 413, 349 are inventory-lane files and 64
+ * came from the other lanes; none grew in the merge, and the five files the
+ * merge did push past 300 were split back under.
+ *
+ * origin/main carried 390 for its own tree when it was merged in on 2026-09-11.
+ * Neither number describes the merged tree; re-measure it and set this to the
+ * measured count.
+ */
+const BASELINE = 413;
 const MIN_FILES = 50;
 
 function resolvePath(rel) {

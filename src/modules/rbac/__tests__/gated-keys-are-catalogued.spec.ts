@@ -92,6 +92,7 @@ describe("every gated permission key is in the catalogue", () => {
     const { gates, viaConstant } = scan();
 
     expect(gates.length).toBeGreaterThan(2500);
-    expect(viaConstant).toBeLessThanOrEqual(25);
+    // +3 over 25: main's payroll reimbursements gate on HR_PAYROLL_LIST_PERMISSION ("hr:payroll:view").
+    expect(viaConstant).toBeLessThanOrEqual(28);
   });
 });

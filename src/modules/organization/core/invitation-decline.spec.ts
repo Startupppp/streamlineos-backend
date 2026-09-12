@@ -33,7 +33,12 @@ describe("InvitationAcceptanceService.decline", () => {
       }),
     }),
     insert: jest.fn().mockReturnValue({ values: eventValues }),
-    query: { invitations: { findFirst: invitationFindFirst } },
+    // Decline runs on a public route with no ambient GUC, so the inviter lookup opens its own
+    // tenant transaction rather than reading the membership on the pool.
+    query: {
+      invitations: { findFirst: invitationFindFirst },
+      organizationMembers: { findFirst: memberFindFirst },
+    },
   };
 
   const db = {

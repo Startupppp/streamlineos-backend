@@ -1,6 +1,5 @@
 import { pgTable, serial, text, integer, boolean, timestamp, index, uniqueIndex, unique, foreignKey } from "drizzle-orm/pg-core";
 import { organizations, organizationMembers } from "../common/auth";
-import { clients } from "../crm/contacts";
 
 export const supportAgentSkills = pgTable(
   "support_agent_skills",
@@ -50,14 +49,21 @@ export const supportVipClients = pgTable(
     id: serial("id").primaryKey(),
     orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
     clientId: integer("client_id").notNull(),
+    /**
+    * The party this row belongs to. Ticket 08's expand.
+    *
+    * Beside `client_id` rather than replacing it: every existing reader keeps
+    * working while readers move over one at a time, and the old column goes in
+    * the contract migration once none is left. Nullable until then -- a null
+    * means "not yet backfilled", which is a state worth being able to see.
+    */
+    clientPartyId: text("client_party_id"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (table) => [
-    foreignKey({
-      columns: [table.orgId, table.clientId],
-      foreignColumns: [clients.orgId, clients.id],
-      name: "fk_support_vip_clients_client_id_org",
-    }).onDelete("cascade"),
+    // `fk_support_vip_clients_client_id_org` is not declared here: this schema has
+    // no `clients` table (CRM rows derive from the Party), and migration 1096
+    // re-points that constraint at the party map rather than at `clients`.
     uniqueIndex("uniq_support_vip_clients_org_client").on(table.orgId, table.clientId),
     unique("uniq_support_vip_clients_org_id").on(table.orgId, table.id),
   ],

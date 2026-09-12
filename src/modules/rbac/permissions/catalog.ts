@@ -44,6 +44,7 @@ import { AI_SUMMARIES_PERMISSIONS, AI_USAGE_PERMISSIONS, EXECUTIVE_BRIEF_PERMISS
 import { DIRECTORY_PERMISSIONS } from "./directory";
 import { PARTY_PERMISSIONS } from "./party";
 import { MAIL_PERMISSIONS } from "./mail";
+import { COMPLIANCE_PERMISSIONS } from "./compliance";
 import { STORAGE_PERMISSIONS } from "./storage";
 
 export const PERMISSIONS: Permission[] = [
@@ -91,6 +92,7 @@ export const PERMISSIONS: Permission[] = [
   ...DIRECTORY_PERMISSIONS,
   ...PARTY_PERMISSIONS,
   ...MAIL_PERMISSIONS,
+  ...COMPLIANCE_PERMISSIONS,
   ...STORAGE_PERMISSIONS,
 ];
 

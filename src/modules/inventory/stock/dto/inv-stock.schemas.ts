@@ -33,6 +33,13 @@ export const listTransactionsSchema = z.object({
   toDate: z.string().optional(),
   page: pageNumberField,
   limit: pageSizeField(50, 100),
+  /**
+   * G1. Opaque `(created_at, id)` position. Present, it replaces `page`: the
+   * ledger is append-only and a reader who scrolls it while the engine posts
+   * loses or repeats a row at every offset boundary. Absent, the offset path is
+   * unchanged, so callers that only know `page` keep working.
+   */
+  cursor: z.string().min(1).max(512).optional(),
 }).strict();
 export type ListTransactionsInput = z.infer<typeof listTransactionsSchema>;
 
@@ -63,6 +70,15 @@ export const createReservationSchema = z.object({
   serialId: z.number().int().positive().optional(),
   qty: z.string().regex(/^\d+(\.\d+)?$/, "must be a positive decimal"),
   expiresAt: z.string().datetime().optional(),
+  /**
+   * D2. Deliberately taking a lot the allocator would not have chosen.
+   *
+   * A reason, not a boolean: an override that records only that somebody clicked
+   * past a rule tells the next person nothing, and this is the row a quality
+   * investigation reads. Requires `inventory:allocation:override`, and it never
+   * reaches an expired, recalled or blocked lot — those are not judgement calls.
+   */
+  overrideReason: z.string().min(3).max(500).optional(),
 }).strict();
 export type CreateReservationInput = z.infer<typeof createReservationSchema>;
 
@@ -76,7 +92,7 @@ const openingStockLineSchema = z.object({
   locationId: z.number().int().positive(),
   qty: z.number().positive(),
   unitCost: z.number().min(0).optional(),
-});
+}).strict();
 
 export const openingStockSchema = z.object({
   lines: z.array(openingStockLineSchema).min(1).max(500),
@@ -84,8 +100,15 @@ export const openingStockSchema = z.object({
 }).strict();
 export type OpeningStockInput = z.infer<typeof openingStockSchema>;
 
+export const adjustmentReasons = [
+  "PURCHASE", "SALE", "RETURN", "DAMAGE", "EXPIRY", "THEFT", "RECOUNT", "OTHER", "SCRAP",
+] as const;
+
 export const listAdjustmentsSchema = z.object({
   status: z.enum(["DRAFT", "PENDING_APPROVAL", "APPROVED", "PENDING_POST", "POSTED", "CANCELLED"]).optional(),
+  reason: z.enum(adjustmentReasons).optional(),
+  /** D8. Every reason that condemns stock, in one filter — the write-off queue. */
+  writeOffsOnly: queryBoolean.optional(),
   page: pageNumberField,
   limit: pageSizeField(50, 100),
 }).strict();
@@ -96,11 +119,17 @@ const adjustmentLineSchema = z.object({
   locationId: z.number().int().positive(),
   quantityChange: z.number().refine((v) => v !== 0, { message: "must not be zero" }),
   notes: z.string().max(500).optional(),
-});
+}).strict();
 
 export const createAdjustmentSchema = z.object({
-  reason: z.enum(["PURCHASE", "SALE", "RETURN", "DAMAGE", "EXPIRY", "THEFT", "RECOUNT", "OTHER"]),
+  reason: z.enum(adjustmentReasons),
   notes: z.string().max(1000).optional(),
+  /**
+   * D8. Where the condemned goods physically went, for a write-off reason only.
+   * Optional: the server resolves the warehouse's own scrap bin when the caller
+   * names none, and a warehouse that has no scrap bin still writes stock off.
+   */
+  scrapLocationId: z.number().int().positive().optional(),
   lines: z.array(adjustmentLineSchema).min(1),
 }).strict();
 export type CreateAdjustmentInput = z.infer<typeof createAdjustmentSchema>;
@@ -123,7 +152,7 @@ const transferLineSchema = z.object({
   quantity: z.number().positive(),
   lotId: z.number().int().positive().optional(),
   serialId: z.number().int().positive().optional(),
-});
+}).strict();
 
 export const createTransferSchema = z.object({
   fromLocationId: z.number().int().positive(),
@@ -139,6 +168,6 @@ export const completeTransferSchema = z.object({
   lines: z.array(z.object({
     transferLineId: z.number().int().positive(),
     quantityReceived: z.number().min(0),
-  })).min(1),
+  }).strict()).min(1),
 }).strict();
 export type CompleteTransferInput = z.infer<typeof completeTransferSchema>;

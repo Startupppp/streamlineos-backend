@@ -28,6 +28,7 @@ import { tmpdir } from "node:os";
 import { join, dirname, relative, extname, sep } from "node:path";
 import { pathToFileURL } from "node:url";
 import { WORKSPACE_ROOT, workspaceAvailable, workspaceUnreachableReason } from "./check-repo-paths.mjs";
+import { resolveFrontendRepoRoot } from "./lib/repo-roots.mjs";
 
 const LIMIT = 500;
 /**
@@ -50,11 +51,19 @@ function resolvePath(relativeUrl) {
 
 const SRC = resolvePath("../");
 const BACKEND_ROOT = resolvePath("../../");
-// The registry lives in the workspace docs tree, which is a sibling repository on
-// a split checkout. Guessing "../../.." resolved outside both repos and the gate
-// died on ENOENT rather than measuring anything.
-const EXCEPTIONS_DOC = workspaceAvailable
-  ? join(WORKSPACE_ROOT, "architecture-refactor", "final-refactor", "issues", "file-size-exceptions.md")
+/**
+ * The registry lives in a frontend repository's docs tree, not in this repo.
+ * Guessing "../../.." resolved outside both repos and the gate died on ENOENT
+ * rather than measuring anything. The paired-worktree helper is asked first,
+ * because a checkout reads the registry beside ITS frontend (this merge's
+ * `final-frontend/`, an inventory lane's `inv-wt-frontend/`), not whichever
+ * `streamlineos-frontend/` happens to sit above it; the shared workspace
+ * lookup is the fallback, and honours `STREAMLINE_WORKSPACE_ROOT`.
+ */
+const { root: FRONTEND_REPO_ROOT } = resolveFrontendRepoRoot();
+const REGISTRY_ROOT = FRONTEND_REPO_ROOT ?? (workspaceAvailable ? WORKSPACE_ROOT : null);
+const EXCEPTIONS_DOC = REGISTRY_ROOT
+  ? join(REGISTRY_ROOT, "architecture-refactor", "final-refactor", "issues", "file-size-exceptions.md")
   : null;
 
 /**

@@ -1,4 +1,4 @@
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, isNotNull, sql } from "drizzle-orm";
 import {
   dunningAttempts,
   organizations,
@@ -40,7 +40,16 @@ export class BillingPaymentState {
         .insert(platformPayments)
         .values(fields)
         .onConflictDoUpdate({
+          /*
+            uniq_platform_payments_razorpay_payment is PARTIAL — it carries
+            WHERE razorpay_payment_id IS NOT NULL — and Postgres will not infer
+            a partial index unless the arbiter repeats its predicate. Without
+            targetWhere this upsert raised 42P10 on every captured payment.
+            Drizzle spells the arbiter's predicate targetWhere; `where` is the
+            DO UPDATE guard and would not have helped.
+          */
           target: platformPayments.razorpayPaymentId,
+          targetWhere: isNotNull(platformPayments.razorpayPaymentId),
           set: {
             ...fields,
             capturedAt:

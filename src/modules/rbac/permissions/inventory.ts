@@ -144,6 +144,27 @@ export const INVENTORY_PERMISSIONS: Permission[] = [
     description: "Invoice sales orders",
   },
   {
+    /**
+     * B5. Swapping a SKU at the shelf rewrites what the customer is owed, so it
+     * is not the same authority as walking a wave. `inventory:sales-orders:ship`
+     * says "you may pick and dispatch what was ordered"; this says "you may
+     * change what was ordered", which is why it is a key of its own rather than
+     * one more thing every picker holds.
+     */
+    name: "inventory:picking:substitute",
+    resource: "inventory:picking",
+    action: "substitute",
+    description:
+      "Swap a different SKU in at the shelf, rewriting the sales-order line and its reservation",
+  },
+  {
+    /** B5. The supervisor half: owning, reassigning and resolving exceptions. */
+    name: "inventory:picking:review",
+    resource: "inventory:picking",
+    action: "review",
+    description: "Own and resolve pick exceptions raised by pickers",
+  },
+  {
     name: "inventory:reports:read",
     resource: "inventory:reports",
     action: "read",
@@ -192,6 +213,17 @@ export const INVENTORY_PERMISSIONS: Permission[] = [
     description: "View inventory valuation and costing reports",
   },
   {
+    // Distinct from `purchase-orders:receive`, which every receiving clerk holds:
+    // applying a landed-cost voucher restates what inventory is worth and posts
+    // to the general ledger. Signing for a pallet and revaluing the balance sheet
+    // are different authorities.
+    name: "inventory:landed-cost:manage",
+    resource: "inventory:landed-cost",
+    action: "manage",
+    description:
+      "Raise landed-cost vouchers and apply freight, duty and handling into inventory cost layers",
+  },
+  {
     name: "inventory:settings:manage",
     resource: "inventory:settings",
     action: "manage",
@@ -208,6 +240,18 @@ export const INVENTORY_PERMISSIONS: Permission[] = [
     resource: "inventory:export",
     action: "export",
     description: "Export inventory data",
+  },
+  {
+    name: "inventory:audit:read",
+    resource: "inventory:audit",
+    action: "read",
+    description: "Read the inventory audit trail — who changed which record, and when",
+  },
+  {
+    name: "inventory:audit:export",
+    resource: "inventory:audit",
+    action: "export",
+    description: "Take an immutable, checksummed audit export of the inventory ledger and audit trail",
   },
   {
     name: "inventory:webhooks:manage",
@@ -238,6 +282,13 @@ export const INVENTORY_PERMISSIONS: Permission[] = [
     resource: "inventory:quality",
     action: "recall",
     description: "Manage product recalls",
+  },
+  {
+    name: "inventory:quality:plans:manage",
+    resource: "inventory:quality:plans",
+    action: "manage",
+    description:
+      "Author and version the inspection plans that decide which arrivals must be inspected before they become available",
   },
   {
     name: "inventory:packages:manage",
@@ -276,10 +327,78 @@ export const INVENTORY_PERMISSIONS: Permission[] = [
     description: "Manage reorder rules and replenishment",
   },
   {
+    name: "inventory:replenishment:read",
+    resource: "inventory:replenishment",
+    action: "read",
+    description: "View replenishment proposals, transfer recommendations and forecast drift",
+    scopable: true,
+  },
+  {
+    name: "inventory:allocation:override",
+    resource: "inventory:allocation",
+    action: "override",
+    description: "Override FEFO or a near-expiry block when allocating a lot, with a recorded reason",
+  },
+  {
+    name: "inventory:transit:abandon",
+    resource: "inventory:transit",
+    action: "abandon",
+    description: "Abandon or return-to-source stock stranded in transit by a short receipt",
+  },
+  {
+    name: "inventory:labels:print",
+    resource: "inventory:labels",
+    action: "print",
+    description: "Print barcode labels, goods-receipt notes and pick lists",
+  },
+  {
+    name: "inventory:dock:manage",
+    resource: "inventory:dock",
+    action: "manage",
+    description: "Book and manage dock appointments: which vehicle is at which door, and when",
+  },
+  {
+    name: "inventory:kits:assemble",
+    resource: "inventory:kits",
+    action: "assemble",
+    description:
+      "Assemble and disassemble kits: consume components and create the kit SKU, moving valuation with them",
+  },
+  {
+    name: "inventory:labor:read",
+    resource: "inventory:labor",
+    action: "read",
+    description:
+      "Read the warehouse labour board: units per hour and performance against standard, by named person",
+    scopable: true,
+  },
+  {
+    name: "inventory:ai:read",
+    resource: "inventory:ai",
+    action: "read",
+    description:
+      "Read AI-assisted inventory surfaces: the operations brief, the digest, insight explanations and supplier-delay signals",
+  },
+  {
     name: "inventory:ai:propose",
     resource: "inventory:ai",
     action: "propose",
     description: "Propose AI-generated reorder draft POs and confirm them",
+  },
+  {
+    name: "inventory:projects:read",
+    resource: "inventory:projects",
+    action: "read",
+    description:
+      "View construction projects and the material each site still needs, including what is at risk of missing its date",
+    scopable: true,
+  },
+  {
+    name: "inventory:projects:manage",
+    resource: "inventory:projects",
+    action: "manage",
+    description:
+      "Create and edit construction projects and their material requirements. Reserving stock against a line is a separate key (inventory:stock:reserve)",
   },
   {
     name: "inventory:ai:manage",

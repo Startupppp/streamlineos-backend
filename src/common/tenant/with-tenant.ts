@@ -119,6 +119,49 @@ export async function withTenant<T>(
     ? getRegionRegistry().bindingFor(placement.region).db
     : db;
 
+  return withTenantOn(regional, db, context, placement, intent, fn);
+}
+
+/**
+ * Create an organisation in a region it declares rather than one it is placed in.
+ *
+ * `withTenant` resolves placement by lookup, and an organisation being created
+ * has no placement row yet — so the lookup fails closed and the org can never be
+ * written in the first place. This is the seam for that one case: the caller
+ * states the region, and everything else about the transaction is identical.
+ */
+export async function withNewOrgInRegion<T>(
+  db: Db,
+  context: { orgId: string; region: string; audience: TenantAudience },
+  fn: (tx: TenantTx) => Promise<T>,
+): Promise<T> {
+  if (!context.orgId)
+    throw new Error("withNewOrgInRegion: orgId must be a non-empty string");
+  if (!context.region)
+    throw new Error("withNewOrgInRegion: region must be a non-empty string");
+
+  const regional = hasRegionRegistry()
+    ? getRegionRegistry().bindingFor(context.region).db
+    : db;
+
+  return withTenantOn(regional, db, context, null, "write", fn);
+}
+
+/**
+ * The body both entry points share, against a connection already chosen.
+ *
+ * Split out so that placement-by-lookup and placement-by-declaration cannot
+ * drift apart on the GUCs, the pool borrow or the guard settings — two copies of
+ * that is how one of them quietly stops setting `app.audience`.
+ */
+async function withTenantOn<T>(
+  regional: Db,
+  db: Db,
+  context: { orgId: string; audience: TenantAudience },
+  placement: OrganizationPlacement | null,
+  intent: PlacementIntent,
+  fn: (tx: TenantTx) => Promise<T>,
+): Promise<T> {
   const fenced =
     intent === "write" && placement !== null && placement.writeFenceToken !== null;
 

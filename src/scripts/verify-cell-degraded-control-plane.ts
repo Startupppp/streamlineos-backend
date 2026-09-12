@@ -38,7 +38,7 @@ function cellEnv(base: NodeJS.ProcessEnv, regionKey: string): NodeJS.ProcessEnv 
   if (base[`${prefix}_APP_DATABASE_URL`]) return base;
 
   const appBase = base.APP_DATABASE_URL;
-  if (!appBase) throw new Error("APP_DATABASE_URL is required.");
+  if (!appBase) throw new PrerequisiteError("APP_DATABASE_URL is required.");
 
   const url = new URL(appBase);
   url.pathname = `/${regionKey.replace(/-/g, "")}`;
@@ -230,6 +230,10 @@ function selfTest(): void {
   process.exitCode = 1;
 }
 
+class PrerequisiteError extends Error {
+  override readonly name = "PrerequisiteError";
+}
+
 async function main(): Promise<void> {
   const argv = process.argv.slice(2);
   if (argv.includes("--self-test")) return selfTest();
@@ -244,10 +248,10 @@ async function main(): Promise<void> {
 
   if (!orgId) {
     console.error(
-      "An organization placed in the cell is required: --org=<id>.\n" +
+      "PREREQUISITE MISSING: an organization placed in the cell is required: --org=<id>.\n" +
         "Create one with: node src/scripts/place-cell-org.mjs --region=" + regionKey,
     );
-    process.exitCode = 1;
+    process.exitCode = 2;
     return;
   }
 
@@ -259,6 +263,12 @@ async function main(): Promise<void> {
 }
 
 main().catch((e: unknown) => {
+  if (e instanceof PrerequisiteError) {
+    // Exit 2 is PREREQUISITE UNMET here. Exit 1 would claim a measured violation.
+    console.error("PREREQUISITE MISSING:", e.message);
+    process.exitCode = 2;
+    return;
+  }
   console.error("DEGRADED CONTROL PLANE CHECK FAILED:", e instanceof Error ? e.message : e);
   process.exitCode = 1;
 });

@@ -2,13 +2,41 @@ import { NotFoundException } from "@nestjs/common";
 import type { Db } from "../../db/drizzle.module";
 import type { AuditService } from "../../common/audit/audit.service";
 import type { CacheService } from "../../common/cache/cache.service";
-import { stubService } from "../../test/service-stub.spec-fixtures";
-import type { JournalPostingService } from "../accounting/posting/journal-posting.service";
 import type { PlanLimitsService } from "../billing/core/plan-limits.service";
 import type { InvoicesLifecycleService } from "./invoices-lifecycle.service";
 import type { InvoicesPaymentService } from "./invoices-payment.service";
+import type { InvoicesPostingService } from "./invoices-posting.service";
 import type { InvoicesUpdateService } from "./invoices-update.service";
 import { InvoicesWriteService } from "./invoices-write.service";
+
+/**
+ * Every double is typed `Partial<T>` rather than cast through `any`, so an
+ * object literal naming a method the real collaborator does not have fails to
+ * compile. That is not hypothetical here: the posting double used to stub
+ * `seedChartOfAccountsForOrg`, which the accounting rewrite deliberately
+ * removed from `InvoicesPostingService` — the chart is seeded by
+ * `AccountingSetupService` when an organisation enables accounting. The stub
+ * was inert and `as any` is what kept it compiling.
+ */
+function collaborators(lifecycle: Partial<InvoicesLifecycleService>, updateService: Partial<InvoicesUpdateService> = {}) {
+  const posting: Partial<InvoicesPostingService> = {};
+  const audit: Partial<AuditService> = { log: jest.fn() };
+  const planLimits: Partial<PlanLimitsService> = { assertWithinLimit: jest.fn() };
+  const paymentService: Partial<InvoicesPaymentService> = {};
+  const cache: Partial<CacheService> = {
+    invalidateNamespace: jest.fn(),
+    invalidateNamespaceForOrg: jest.fn(),
+  };
+  return [
+    posting as InvoicesPostingService,
+    lifecycle as InvoicesLifecycleService,
+    audit as AuditService,
+    planLimits as PlanLimitsService,
+    paymentService as InvoicesPaymentService,
+    updateService as InvoicesUpdateService,
+    cache as CacheService,
+  ] as const;
+}
 
 describe("InvoicesWriteService — cross-tenant isolation", () => {
   const ATTACKER = "org-attacker";
@@ -36,27 +64,18 @@ describe("InvoicesWriteService — cross-tenant isolation", () => {
 
   it("voidInvoice throws NotFoundException for a different org (cross-tenant isolation)", async () => {
     const db = makeDb();
-    const mockPosting = stubService<JournalPostingService>({ seedChartOfAccountsForOrg: jest.fn() });
-    const mockLifecycle = stubService<InvoicesLifecycleService>({ voidInvoice: jest.fn().mockRejectedValue(new NotFoundException("Invoice not found")) });
-    const mockAudit = stubService<AuditService>({ log: jest.fn() });
-    const mockPlanLimits = stubService<PlanLimitsService>({ assertWithinLimit: jest.fn() });
-    const mockPaymentService = stubService<InvoicesPaymentService>({});
-    const mockUpdateService = stubService<InvoicesUpdateService>({ updateInvoice: jest.fn().mockRejectedValue(new NotFoundException("Invoice not found")) });
-    const mockCache = stubService<CacheService>({ invalidateNamespace: jest.fn(), invalidateNamespaceForOrg: jest.fn() });
-    const svc = new InvoicesWriteService(db, mockPosting, mockLifecycle, mockAudit, mockPlanLimits, mockPaymentService, mockUpdateService, mockCache);
+    const svc = new InvoicesWriteService(db, ...collaborators(
+      { voidInvoice: jest.fn().mockRejectedValue(new NotFoundException("Invoice not found")) },
+      { updateInvoice: jest.fn().mockRejectedValue(new NotFoundException("Invoice not found")) },
+    ));
     await expect(svc.voidInvoice(ATTACKER, USER_ID, INVOICE_ID)).rejects.toThrow(NotFoundException);
   });
 
   it("succeeds for invoice in the owning org (control — same-tenant)", async () => {
     const db = makeDb();
-    const mockPosting = stubService<JournalPostingService>({});
-    const mockLifecycle = stubService<InvoicesLifecycleService>({ voidInvoice: jest.fn().mockResolvedValue({ success: true }) });
-    const mockAudit = stubService<AuditService>({ log: jest.fn() });
-    const mockPlanLimits = stubService<PlanLimitsService>({ assertWithinLimit: jest.fn() });
-    const mockPaymentService = stubService<InvoicesPaymentService>({});
-    const mockUpdateService = stubService<InvoicesUpdateService>({});
-    const mockCache = stubService<CacheService>({ invalidateNamespace: jest.fn(), invalidateNamespaceForOrg: jest.fn() });
-    const svc = new InvoicesWriteService(db, mockPosting, mockLifecycle, mockAudit, mockPlanLimits, mockPaymentService, mockUpdateService, mockCache);
+    const svc = new InvoicesWriteService(db, ...collaborators(
+      { voidInvoice: jest.fn().mockResolvedValue({ success: true }) },
+    ));
     const result = await svc.voidInvoice(OWNER, USER_ID, INVOICE_ID);
     expect(result).toEqual({ success: true });
   });

@@ -68,7 +68,6 @@ describe("SignPublicService.getDocumentPreview — second factor before the sign
       {} as never,
       {} as never,
       {} as never,
-      {} as never,
     );
   }
 

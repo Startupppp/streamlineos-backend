@@ -318,6 +318,8 @@ export class AccessPermissionMembersResolver {
         this.db
           .select({ userId: organizationMembers.userId })
           .from(userModuleAccess)
+          // Keyed on the membership now; the candidate list is user ids, so
+          // the join is what translates between them.
           .innerJoin(
             organizationMembers,
             and(

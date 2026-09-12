@@ -3,7 +3,6 @@ import { Test } from "@nestjs/testing";
 import { OwnershipTransferResponseService } from "../ownership-transfer-response.service";
 import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
 import type { TenantTx } from "../../../common/tenant/with-tenant";
-import { stubService } from "../../../test/service-stub.spec-fixtures";
 import { assertTransitionAllowed } from "../../organization/core/lifecycle/organization-lifecycle-transitions";
 import { bustMembershipStatusCache } from "../../../common/auth/membership-state.service";
 import { syncStructuralRoleAssignment } from "../../../common/rbac/sync-structural-role";
@@ -80,12 +79,28 @@ function makeInsertChain(): InsertChain {
   return chain;
 }
 
-function makeTenantTx(statusV2: string | null, hasHold: boolean) {
-  return {
+/**
+ * The lifecycle gate reads two rows and nothing else, so the double supplies
+ * only `select`.
+ *
+ * Every one of the seven call sites used to widen this with `as any` at the
+ * point of use. `runInTenantTransaction`'s callback takes a full Drizzle
+ * `TenantTx` — a structural type with dozens of methods — so a two-row double
+ * can never be assignable to it and some widening is unavoidable. What is
+ * avoidable is doing it seven times, in `any`, where nothing checks that the
+ * double still spells `select` the way the service calls it. Annotating the
+ * slice checks the name once and returns the type the callback actually wants,
+ * so the call sites need no cast at all.
+ */
+type TxDouble = Pick<TenantTx, "select">;
+
+function makeTenantTx(statusV2: string | null, hasHold: boolean): TenantTx {
+  const double: TxDouble = {
     select: jest.fn()
       .mockReturnValueOnce(makeSelectChain([{ statusV2 }]))
       .mockReturnValueOnce(makeSelectChain(hasHold ? [{ holdId: "hold-1" }] : [])),
   };
+  return double as unknown as TenantTx;
 }
 
 describe("OwnershipTransferResponseService — OWNERSHIP_TRANSFER lifecycle gate", () => {
@@ -208,7 +223,7 @@ describe("OwnershipTransferResponseService — OWNERSHIP_TRANSFER lifecycle gate
     it("is NOT blocked by an active legal hold, which only refuses destructive transitions", async () => {
       setupCommonDbMocks();
       jest.mocked(runInTenantTransaction).mockImplementation(
-        async (_db, fn) => fn(stubService<TenantTx>(makeTenantTx("ACTIVE", true))),
+        async (_db, fn) => fn(makeTenantTx("ACTIVE", true)),
       );
       setupOrgTransferTx();
 
@@ -240,7 +255,7 @@ describe("OwnershipTransferResponseService — OWNERSHIP_TRANSFER lifecycle gate
     it("throws BadRequestException when the org statusV2 disallows the OWNERSHIP_TRANSFER transition", async () => {
       setupCommonDbMocks();
       jest.mocked(runInTenantTransaction).mockImplementation(
-        async (_db, fn) => fn(stubService<TenantTx>(makeTenantTx("ARCHIVED", false))),
+        async (_db, fn) => fn(makeTenantTx("ARCHIVED", false)),
       );
 
       await expect(
@@ -254,7 +269,7 @@ describe("OwnershipTransferResponseService — OWNERSHIP_TRANSFER lifecycle gate
     it("succeeds when the org is ACTIVE with no legal hold", async () => {
       setupCommonDbMocks();
       jest.mocked(runInTenantTransaction).mockImplementation(
-        async (_db, fn) => fn(stubService<TenantTx>(makeTenantTx("ACTIVE", false))),
+        async (_db, fn) => fn(makeTenantTx("ACTIVE", false)),
       );
       setupOrgTransferTx();
 
@@ -307,7 +322,7 @@ describe("OwnershipTransferResponseService — OWNERSHIP_TRANSFER lifecycle gate
     it("calls runInTenantTransaction with the correct orgId and invokes the callback", async () => {
       setupCommonDbMocks();
       jest.mocked(runInTenantTransaction).mockImplementation(
-        async (_db, fn) => fn(stubService<TenantTx>(makeTenantTx("ARCHIVED", true))),
+        async (_db, fn) => fn(makeTenantTx("ARCHIVED", true)),
       );
 
       await expect(
@@ -327,7 +342,7 @@ describe("OwnershipTransferResponseService — OWNERSHIP_TRANSFER lifecycle gate
     it("org transfer: retry skips validate-new-owner when already DONE", async () => {
       setupCommonDbMocks();
       jest.mocked(runInTenantTransaction).mockImplementation(
-        async (_db, fn) => fn(stubService<TenantTx>(makeTenantTx("ACTIVE", false))),
+        async (_db, fn) => fn(makeTenantTx("ACTIVE", false)),
       );
       setupOrgTransferTx();
 
@@ -349,7 +364,7 @@ describe("OwnershipTransferResponseService — OWNERSHIP_TRANSFER lifecycle gate
     it("org transfer: failure in transfer-ownership calls compensate and rethrows", async () => {
       setupCommonDbMocks();
       jest.mocked(runInTenantTransaction).mockImplementation(
-        async (_db, fn) => fn(stubService<TenantTx>(makeTenantTx("ACTIVE", false))),
+        async (_db, fn) => fn(makeTenantTx("ACTIVE", false)),
       );
 
       const boom = new Error("transfer failed");
@@ -367,7 +382,7 @@ describe("OwnershipTransferResponseService — OWNERSHIP_TRANSFER lifecycle gate
     it("org transfer: saga begin is called with org-scoped transfer requestKey", async () => {
       setupCommonDbMocks();
       jest.mocked(runInTenantTransaction).mockImplementation(
-        async (_db, fn) => fn(stubService<TenantTx>(makeTenantTx("ACTIVE", false))),
+        async (_db, fn) => fn(makeTenantTx("ACTIVE", false)),
       );
       setupOrgTransferTx();
 

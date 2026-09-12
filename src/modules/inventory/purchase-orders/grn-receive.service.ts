@@ -1,6 +1,7 @@
 import {
   Inject,
   Injectable,
+  Logger,
   BadRequestException,
   NotFoundException,
 } from "@nestjs/common";
@@ -23,19 +24,24 @@ import { StockEngineService } from "../stock-engine/stock-engine.service";
 import { InventorySettingsService } from "../stock-engine/inventory-settings.service";
 import { NumberSequenceService } from "../stock-engine/number-sequence.service";
 import { INV_ERRORS } from "../stock-engine/stock-engine.types";
-import { JournalPostingService } from "../../accounting/posting/journal-posting.service";
+import { addDec, mulDec, isPositive } from "../stock-engine/decimal";
+import { PostingCommandService } from "../../accounting/adapters/posting-command.service";
+import { AdapterRejection } from "../../accounting/adapters/posting-command.types";
+import type { DbOrTx } from "../../accounting/kernel/sequence.service";
 import type { CreateGrnInput } from "./dto/inv-purchase-orders.schemas";
 import { PoService } from "./po.service";
 
 @Injectable()
 export class GrnReceiveService {
+  private readonly logger = new Logger(GrnReceiveService.name);
+
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly cache: CacheService,
     private readonly engine: StockEngineService,
     private readonly settingsService: InventorySettingsService,
     private readonly numSeq: NumberSequenceService,
-    private readonly journalPosting: JournalPostingService,
+    private readonly posting: PostingCommandService,
     private readonly poService: PoService,
   ) {}
 
@@ -123,17 +129,18 @@ export class GrnReceiveService {
         const maxAllowed =
           remaining * (1 + overReceiptTolerancePct / 100);
 
-        if (line.quantityReceived > maxAllowed + 0.0001) {
+        const incomingQuantityReceived = Number(line.quantityReceived);
+        if (incomingQuantityReceived > maxAllowed + 0.0001) {
           throw new BadRequestException(
-            `Line ${line.poLineId}: received qty ${line.quantityReceived} exceeds allowed max ${maxAllowed.toFixed(4)} (over-receipt tolerance ${settings.overReceiptTolerancePct}%)`,
+            `Line ${line.poLineId}: received qty ${incomingQuantityReceived} exceeds allowed max ${maxAllowed.toFixed(4)} (over-receipt tolerance ${settings.overReceiptTolerancePct}%)`,
           );
         }
 
         if (trackingMethod === "SERIAL") {
           const serials = line.serialNumbers ?? [];
-          if (serials.length !== line.quantityReceived) {
+          if (serials.length !== incomingQuantityReceived) {
             throw new BadRequestException(
-              `Line ${line.poLineId}: SERIAL-tracked product requires ${line.quantityReceived} serial numbers, got ${serials.length}`,
+              `Line ${line.poLineId}: SERIAL-tracked product requires ${incomingQuantityReceived} serial numbers, got ${serials.length}`,
             );
           }
 
@@ -165,6 +172,28 @@ export class GrnReceiveService {
           notes: data.notes,
           createdBy: userId,
           receivedDate: data.receivedDate,
+          /*
+           * POSTED at insert, because this path posts. It writes the stock
+           * movements through `engine.executeInTx` and the receipt journal
+           * below, in this same transaction -- the goods have landed by the
+           * time it commits.
+           *
+           * Leaving these to the column default wrote DRAFT onto a receipt
+           * whose stock had already moved, and `GrnPostingService.postInTx`
+           * refuses only POSTED and CANCELLED. So the workbench went on
+           * offering "Post to stock" on a delivery that was already in the
+           * building, and taking it moved the same goods a SECOND time and
+           * posted a second journal entry. Measured on GRN-00003/4/5, each
+           * carrying a GRN movement while sitting at DRAFT with a null
+           * posted_at.
+           *
+           * Same three columns the two-step path sets when it finishes
+           * (grn-post.service.ts), so both routes leave a receipt in one
+           * shape rather than two.
+           */
+          status: "POSTED",
+          postedBy: userId,
+          postedAt: new Date(),
         })
         .returning();
 
@@ -266,6 +295,7 @@ export class GrnReceiveService {
         }
 
         await tx.insert(invGrnLines).values({
+          orgId,
           grnId: grn.id,
           poLineId: line.poLineId,
           quantityReceived: line.quantityReceived.toString(),
@@ -312,7 +342,7 @@ export class GrnReceiveService {
               locationId,
               lotId,
               serialId: undefined,
-              quantityDelta: line.quantityReceived.toFixed(4),
+              quantityDelta: Number(line.quantityReceived).toFixed(4),
               unitCost: poLine.unitCost ?? undefined,
             });
           }
@@ -348,47 +378,46 @@ export class GrnReceiveService {
         });
       }
 
+      // Goods-received accrual, on the SAME transaction as the movement it
+      // values (ACC-05). Accounting resolves the accounts from the org's own
+      // chart via system tags — which is what INV-09's per-organisation mapping
+      // becomes on the kernel — and a redelivered receipt is idempotent on the
+      // GRN id (`stock_move:{grnId}:receive`).
+      //
+      // Inside, not after the commit. A refusal — a missing account role, a
+      // locked period — now rolls the receipt back with it instead of leaving
+      // a committed GRN the ledger never heard about, which is the 500-after-
+      // commit this path used to give. The one expected absence, an org that
+      // never enabled accounting, is `BOOK_NOT_ENABLED` and is skipped.
+      //
+      // Exact, not float: `quantity * parseFloat(unitCost)` is the arithmetic
+      // the PRD forbids for money, and this figure lands on both sides of the
+      // journal. It credits `ap_control`, as the kernel's receiving post does
+      // today. The inventory lane named this line GRNI (whose default account
+      // was AP's); moving it onto the kernel's `grni` role is the contract's
+      // §2.2 / ACC-03 decision, not this merge's.
+      let receivedValue = "0.0000";
+      for (const line of data.lines) {
+        if (line.qualityStatus !== "ACCEPTED") continue;
+        const poLine = po.lines.find((l) => l.id === line.poLineId);
+        if (!poLine) continue;
+        receivedValue = addDec(receivedValue, mulDec(String(line.quantityReceived), poLine.unitCost ?? "0"));
+      }
+      const totalMinor = isPositive(receivedValue) ? Math.round(Number(receivedValue) * 100) : 0;
+      if (totalMinor > 0) {
+        await this.postReceipt(orgId, userId, tx, {
+          grnId: grn.id,
+          grnNumber,
+          poNumber: po.poNumber,
+          receivedDate: data.receivedDate,
+          totalMinor,
+        });
+      }
+
       return grn.id;
     });
 
     await this.engine.invalidateCaches(orgId);
-
-    const acceptedLines = data.lines.filter(
-      (l) => l.qualityStatus === "ACCEPTED",
-    );
-
-    let totalValue = 0;
-    for (const line of acceptedLines) {
-      const poLine = po.lines.find((l) => l.id === line.poLineId)!;
-      totalValue += line.quantityReceived * parseFloat(poLine.unitCost);
-    }
-
-    if (totalValue > 0) {
-      await this.journalPosting.persistJournalEntry({
-        orgId,
-        entryDate: data.receivedDate,
-        description: `Goods received: ${grnNumber}`,
-        sourceType: "inv_grn",
-        sourceId: String(grnId),
-        sourceEvent: "receive",
-        status: "POSTED",
-        createdBy: userId,
-        lines: [
-          {
-            credit: 0,
-            debit: totalValue,
-            accountCode: "1300",
-            description: `Inventory received - ${grnNumber}`,
-          },
-          {
-            accountCode: "2000",
-            debit: 0,
-            credit: totalValue,
-            description: `AP - PO ${po.poNumber}`,
-          },
-        ],
-      });
-    }
 
     if (settings.inspectionOnReceipt) {
       const inspNumber = await this.numSeq.next(orgId, "INSPECTION");
@@ -412,5 +441,54 @@ export class GrnReceiveService {
       where: eq(invGrns.id, grnId),
       with: { lines: true, creator: { columns: { id: true, name: true } } },
     });
+  }
+
+  /**
+   * Accounting is opt-in. An org that never enabled it has no book to post
+   * into, and that must not fail a goods receipt — every other rejection (a
+   * missing account role, a locked period, an unbalanced total) still surfaces
+   * loudly, and on the receipt's own transaction it takes the receipt with it.
+   * See `docs/inventory-gl-contract.md` §3.3/§4.
+   */
+  private async postReceipt(
+    orgId: string,
+    userId: string,
+    tx: DbOrTx,
+    receipt: { grnId: number; grnNumber: string; poNumber: string; receivedDate: string; totalMinor: number },
+  ): Promise<void> {
+    try {
+      await this.posting.submit(
+        orgId,
+        userId,
+        {
+          sourceType: "stock_move",
+          sourceId: String(receipt.grnId),
+          purpose: "receive",
+          journalDate: receipt.receivedDate,
+          memo: `Goods received: ${receipt.grnNumber}`,
+          lines: [
+            {
+              accountTag: "inventory",
+              debitMinor: receipt.totalMinor,
+              description: `Inventory received - ${receipt.grnNumber}`,
+            },
+            {
+              accountTag: "ap_control",
+              creditMinor: receipt.totalMinor,
+              description: `AP - PO ${receipt.poNumber}`,
+            },
+          ],
+        },
+        tx,
+      );
+    } catch (error) {
+      if (error instanceof AdapterRejection && error.code === "BOOK_NOT_ENABLED") {
+        this.logger.debug(
+          `Accounting is not enabled for org ${orgId}; GRN ${receipt.grnNumber} was not posted`,
+        );
+        return;
+      }
+      throw error;
+    }
   }
 }

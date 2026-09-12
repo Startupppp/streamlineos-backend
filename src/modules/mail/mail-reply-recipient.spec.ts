@@ -59,7 +59,7 @@ describe("MailService.replyMail — Gmail recipient resolution", () => {
     jest.resetAllMocks();
     assertOwnedConnection.mockResolvedValue(mockAccount);
     replyToThread.mockResolvedValue(undefined);
-    service = new MailService(accounts, gmail, outlook, cache, metadata, checkpoints);
+    service = new MailService(accounts, gmail, outlook, cache, metadata, checkpoints, { ENCRYPTION_KEY: "mail-cursor-test-secret" });
   });
 
   it("sends reply to the original sender email address, NOT the messageId", async () => {
@@ -157,7 +157,7 @@ describe("MailService.replyMail — an explicitly chosen recipient overrides the
     getMessage.mockResolvedValue(
       makeDetail({ from: { email: "sender@example.com", name: "Sender" } }),
     );
-    service = new MailService(accounts, gmail, outlook, cache, metadata, checkpoints);
+    service = new MailService(accounts, gmail, outlook, cache, metadata, checkpoints, { ENCRYPTION_KEY: "mail-cursor-test-secret" });
   });
 
   it("Gmail: sends to the address the caller chose, not to the original sender", async () => {

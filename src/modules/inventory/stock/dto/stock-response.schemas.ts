@@ -15,20 +15,31 @@ const locationRefSchema = z.object({
 
 export const stockLevelItemSchema = z.object({
   id: z.number().int(),
-  org_id: z.string(),
-  product_variant_id: z.number().int(),
-  location_id: z.number().int(),
-  lot_id: z.number().int().nullable(),
-  serial_id: z.number().int().nullable(),
-  on_hand: z.string(),
+  onHand: z.string(),
   committed: z.string(),
-  on_order: z.string(),
-  blocked_qty: z.string().nullable(),
-  quality_hold_qty: z.string().nullable(),
-  outgoing_qty: z.string().nullable(),
-  average_cost: z.string().nullable().optional(),
-  updated_at: z.string(),
+  onOrder: z.string(),
   available: z.string(),
+  blockedQty: z.string(),
+  qualityHoldQty: z.string(),
+  // Removed from the payload, not nulled, when the caller cannot see cost.
+  averageCost: z.string().nullable().optional(),
+  productVariant: z.object({
+    id: z.number().int(),
+    name: z.string().nullable(),
+    sku: z.string().nullable(),
+    product: z.object({
+      id: z.number().int(),
+      name: z.string(),
+      sku: z.string(),
+      reorderPoint: z.string().nullable(),
+    }).nullable(),
+  }).nullable(),
+  location: z.object({
+    id: z.number().int(),
+    name: z.string(),
+    code: z.string(),
+    warehouse: z.object({ id: z.number().int(), name: z.string() }).nullable(),
+  }).nullable(),
 });
 
 export const listStockLevelsResponseSchema = itemsPagedSchema(stockLevelItemSchema);
@@ -75,7 +86,17 @@ export const stockTransactionItemSchema = z.object({
   creator: userRefSchema.nullable(),
 });
 
-export const listTransactionsResponseSchema = itemsPagedSchema(stockTransactionItemSchema);
+// A cursor walk has no page count to render, so `total` and `totalPages` are
+// null on that path; the cursor fields ride alongside on both.
+export const listTransactionsResponseSchema = z.object({
+  items: z.array(stockTransactionItemSchema),
+  total: z.number().int().nullable(),
+  page: z.number().int(),
+  totalPages: z.number().int().nullable(),
+  limit: z.number().int().optional(),
+  hasMore: z.boolean().optional(),
+  nextCursor: z.string().nullable().optional(),
+});
 
 export const stockAvailabilityResponseSchema = z.object({
   variantId: z.number().int(),
@@ -204,8 +225,8 @@ const reservationSchema = z.object({
     name: z.string(),
     sku: z.string(),
   }).optional(),
-  location: z.object({ id: z.number().int(), name: z.string(), code: z.string() }).optional(),
-  warehouse: z.object({ id: z.number().int(), name: z.string() }).optional(),
+  location: z.object({ id: z.number().int(), name: z.string(), code: z.string() }).nullable().optional(),
+  warehouse: z.object({ id: z.number().int(), name: z.string() }).nullable().optional(),
 });
 
 export const listReservationsResponseSchema = itemsPagedSchema(reservationSchema);
@@ -219,4 +240,51 @@ export const stockEngineResultSchema = z.object({
     locationId: z.number().int(),
     onHand: z.string(),
   })),
+});
+
+/**
+ * R3 — the stranded-transit queue and the decision that empties it.
+ *
+ * The queue rows come back from `db.execute` on hand-written SQL, so they keep
+ * the column names the projection asked for and `dispatched_at` arrives as a
+ * `Date` — it is not cast to text the way the quantities are.
+ */
+export const listStrandedTransitResponseSchema = itemsPagedSchema(
+  z.object({
+    transfer_id: z.number().int(),
+    reference_number: z.string().nullable(),
+    status: z.string(),
+    dispatched_at: wireDate().nullable(),
+    transfer_line_id: z.number().int(),
+    product_variant_id: z.number().int(),
+    sku: z.string().nullable(),
+    variant_name: z.string().nullable(),
+    lot_id: z.number().int().nullable(),
+    lot_number: z.string().nullable(),
+    serial_id: z.number().int().nullable(),
+    quantity_dispatched: z.string(),
+    quantity_received: z.string(),
+    quantity_stranded: z.string(),
+    transit_location_id: z.number().int(),
+    transit_location_code: z.string().nullable(),
+    transit_warehouse_id: z.number().int(),
+    transit_on_hand: z.string(),
+    from_location_id: z.number().int(),
+    to_location_id: z.number().int().nullable(),
+  }),
+);
+
+/** `TransitExitResult` — and the shape `reviveTransitExit` rebuilds on a replay. */
+export const transitExitResponseSchema = z.object({
+  transferId: z.number().int(),
+  disposition: z.string(),
+  /** Where the goods were standing, so a caller can look at what is left. */
+  transitLocationId: z.number().int(),
+  lines: z.array(
+    z.object({ transferLineId: z.number().int(), quantity: z.string() }),
+  ),
+  transactionIds: z.array(z.number().int()),
+  /** Terminal once nothing is left in transit. */
+  transferStatus: z.string(),
+  strandedRemaining: z.string(),
 });

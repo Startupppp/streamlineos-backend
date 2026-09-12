@@ -17,6 +17,16 @@ export const invStockReservations = pgTable("inv_stock_reservations", {
   locationId: integer("location_id").references(() => invLocations.id, { onDelete: "set null" }),
   lotId: integer("lot_id").references(() => invLots.id, { onDelete: "set null" }),
   serialId: integer("serial_id").references(() => invSerialNumbers.id, { onDelete: "set null" }),
+  /**
+   * NEO-4 - the handling unit the promise is against.
+   *
+   * It has to be here because `committed` is decremented on the reservation's
+   * full natural key: a promise made against a pallet and released against the
+   * loose row at the same bin leaves `committed` standing on the pallet for
+   * good, and the units read as reserved for ever. The same defect the lot and
+   * serial columns were added to this table to fix.
+   */
+  handlingUnitId: integer("handling_unit_id"),
   reservedQty: decimal("reserved_qty", { precision: 18, scale: 4 }).notNull(),
   status: invReservationStatusEnum("status").default("ACTIVE").notNull(),
   idempotencyKey: text("idempotency_key"),
@@ -28,6 +38,9 @@ export const invStockReservations = pgTable("inv_stock_reservations", {
   index("idx_inv_res_org_source").on(table.orgId, table.sourceType, table.sourceId),
   index("idx_inv_res_org_variant_status").on(table.orgId, table.productVariantId, table.status),
   index("idx_inv_res_org_status").on(table.orgId, table.status),
+  index("idx_inv_res_org_hu")
+    .on(table.orgId, table.handlingUnitId)
+    .where(sql`handling_unit_id IS NOT NULL`),
   uniqueIndex("uniq_inv_reservations_org_idem").on(table.orgId, table.idempotencyKey).where(sql`idempotency_key IS NOT NULL`),
   uniqueIndex("uniq_inv_reservations_org_source_active")
     .on(table.orgId, table.sourceType, table.sourceId, sql`coalesce(${table.sourceLineId}, '')`)

@@ -6,6 +6,14 @@ import { type Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_TTL } from "../../common/cache/cache-keys";
 import { calcReadingTime, slugify } from "./blog-utils";
+import {
+  createCategory,
+  deleteCategory,
+  listAdminCategories,
+  listCategories,
+  updateCategory,
+  type BlogCategoryDeps,
+} from "./lib/blog-categories";
 import type {
   CategoryCreateInput,
   CategoryUpdateInput,
@@ -152,28 +160,8 @@ export class BlogService {
     return { success: true };
   }
 
-  async getCategories() {
-    const rows = await this.db
-      .select({
-        id: blogCategories.id,
-        name: blogCategories.name,
-        slug: blogCategories.slug,
-        color: blogCategories.color,
-        description: blogCategories.description,
-        count: count(blogPosts.id),
-      })
-      .from(blogCategories)
-      .leftJoin(
-        blogPosts,
-        and(
-          eq(blogPosts.categoryId, blogCategories.id),
-          eq(blogPosts.status, "published"),
-        ),
-      )
-      .groupBy(blogCategories.id)
-      .orderBy(asc(blogCategories.name));
-
-    return rows.map((r) => ({ ...r, count: Number(r.count) }));
+  getCategories() {
+    return listCategories(this.categoryDeps);
   }
 
   /**
@@ -181,74 +169,26 @@ export class BlogService {
    * counts PUBLISHED posts only, so a category holding nothing but drafts reads
    * as empty to the person deciding whether to delete it; here every post that
    * references the category counts, and `createdAt` is carried through.
+   * @see lib/blog-categories.ts
    */
-  async getAdminCategories() {
-    const rows = await this.db
-      .select({
-        id: blogCategories.id,
-        name: blogCategories.name,
-        slug: blogCategories.slug,
-        description: blogCategories.description,
-        color: blogCategories.color,
-        createdAt: blogCategories.createdAt,
-        postCount: count(blogPosts.id),
-      })
-      .from(blogCategories)
-      .leftJoin(blogPosts, eq(blogPosts.categoryId, blogCategories.id))
-      .groupBy(blogCategories.id)
-      .orderBy(asc(blogCategories.name));
-
-    return rows.map((r) => ({ ...r, postCount: Number(r.postCount) }));
+  getAdminCategories() {
+    return listAdminCategories(this.categoryDeps);
   }
 
-  async createCategory(input: CategoryCreateInput) {
-    const slug = slugify(input.name);
-
-    const existing = await this.db.query.blogCategories.findFirst({
-      columns: { id: true },
-      where: eq(blogCategories.slug, slug),
-    });
-    if (existing) return { error: "duplicate" as const };
-
-    const [created] = await this.db
-      .insert(blogCategories)
-      .values({
-        name: input.name,
-        slug,
-        description: input.description ?? null,
-        color: input.color ?? null,
-      })
-      .returning();
-
-    return created;
+  createCategory(input: CategoryCreateInput) {
+    return createCategory(this.categoryDeps, input);
   }
 
-  async updateCategory(id: string, input: CategoryUpdateInput) {
-    const updates: Record<string, unknown> = {};
-    if (input.name !== undefined) {
-      updates.name = input.name;
-      updates.slug = slugify(input.name);
-    }
-    if (input.description !== undefined) updates.description = input.description;
-    if (input.color !== undefined) updates.color = input.color;
-
-    const [updated] = await this.db
-      .update(blogCategories)
-      .set(updates)
-      .where(eq(blogCategories.id, id))
-      .returning();
-
-    if (!updated) return null;
-    return updated;
+  updateCategory(id: string, input: CategoryUpdateInput) {
+    return updateCategory(this.categoryDeps, id, input);
   }
 
-  async deleteCategory(id: string) {
-    const [deleted] = await this.db
-      .delete(blogCategories)
-      .where(eq(blogCategories.id, id))
-      .returning();
-    if (!deleted) return null;
-    return { success: true };
+  deleteCategory(id: string) {
+    return deleteCategory(this.categoryDeps, id);
+  }
+
+  private get categoryDeps(): BlogCategoryDeps {
+    return { db: this.db };
   }
 
   getPublishedPostBySlug(slug: string) {

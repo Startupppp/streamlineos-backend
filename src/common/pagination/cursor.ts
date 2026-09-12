@@ -50,6 +50,49 @@ export function decodeCursor(cursor: string | undefined | null): CursorPosition 
   return { sortValue, id };
 }
 
+export interface IntegerCursorPosition {
+  readonly sortValue: string;
+  readonly id: number;
+}
+
+/**
+ * The same decode for a table whose primary key is `serial` or an identity
+ * column, with the id narrowed to an integer.
+ *
+ * The narrowing is a validation, not a convenience: a hand-edited cursor whose
+ * id is `1074; --` or `9e99` would otherwise be handed to the driver and left
+ * for Postgres to reinterpret. Anything that is not a positive 32-bit integer
+ * reads as no cursor at all, which returns the first page — the same answer a
+ * stale cursor gets, and never a 500.
+ */
+export function decodeIntegerCursor(
+  cursor: string | undefined | null,
+): IntegerCursorPosition | null {
+  const position = decodeCursor(cursor);
+  if (!position) return null;
+  if (!/^[1-9][0-9]{0,9}$/.test(position.id)) return null;
+  const id = Number(position.id);
+  if (!Number.isSafeInteger(id) || id > 2_147_483_647) return null;
+  return { sortValue: position.sortValue, id };
+}
+
+/** `YYYY-MM-DDTHH:MM:SS.uuuuuu` — what `keysetBeforeMicros` binds and casts. */
+const MICROSECOND_TIMESTAMP_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{6}$/;
+
+/**
+ * The same decode again, with the sort half narrowed to a microsecond-precision
+ * timestamp so it can be bound as text and cast in SQL — see
+ * `keysetBeforeMicros` for why the timestamp must not travel as a `Date`.
+ */
+export function decodeTimestampCursor(
+  cursor: string | undefined | null,
+): IntegerCursorPosition | null {
+  const position = decodeIntegerCursor(cursor);
+  if (!position) return null;
+  if (!MICROSECOND_TIMESTAMP_PATTERN.test(position.sortValue)) return null;
+  return position;
+}
+
 /**
  * The same opaque encoding for a sort of more than two columns.
  *
@@ -95,14 +138,11 @@ export interface CursorPage<T> {
 }
 
 /**
- * Trims the over-fetched sentinel row and reports the last row still in the page.
+ * Trims the over-fetched sentinel row and derives the next cursor.
  *
  * Callers ask for `limit + 1` rows: the presence of that extra row is how you
  * know there is a next page without a second count query, which on a large
- * tenant is the expensive part. The next cursor must come from the last row the
- * caller *keeps*, never from the sentinel — pointing at the discarded row makes
- * an exclusive bound skip it permanently, which is the defect c13-05 was raised
- * for and which chat carried at three call sites.
+ * tenant is the expensive part.
  */
 function trimSentinel<T>(rows: T[], limit: number): { data: T[]; hasMore: boolean; last: T | undefined } {
   const hasMore = rows.length > limit;

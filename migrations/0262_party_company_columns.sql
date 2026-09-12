@@ -110,21 +110,42 @@ CREATE INDEX IF NOT EXISTS "idx_business_parties_employer"
 -- NOT VALID then VALIDATE, never one statement: ADD CONSTRAINT ... FOREIGN KEY
 -- takes ACCESS EXCLUSIVE on both sides while it installs the triggers, and both
 -- sides here are the same large table.
-ALTER TABLE "business_parties" ADD CONSTRAINT "fk_business_parties_employer"
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_business_parties_employer') THEN
+    ALTER TABLE "business_parties" ADD CONSTRAINT "fk_business_parties_employer"
   FOREIGN KEY ("organization_id", "employer_party_id")
   REFERENCES "business_parties"("organization_id", "party_id")
   ON DELETE CASCADE NOT VALID;
+  END IF;
+END $$;
 --> statement-breakpoint
-ALTER TABLE "business_parties" VALIDATE CONSTRAINT "fk_business_parties_employer";
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_business_parties_employer' AND NOT convalidated) THEN
+    ALTER TABLE "business_parties" VALIDATE CONSTRAINT "fk_business_parties_employer";
+  END IF;
+END $$;
 
 --> statement-breakpoint
 -- Nobody employs themselves. A one-hop cycle is the only one a constraint can
 -- see; deeper ones stay the application's problem, as they already are for
 -- `crm_organizations.parent_id`.
-ALTER TABLE "business_parties" ADD CONSTRAINT "chk_business_parties_employer_not_self"
-  CHECK ("employer_party_id" IS NULL OR "employer_party_id" <> "party_id") NOT VALID;
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'chk_business_parties_employer_not_self') THEN
+    ALTER TABLE "business_parties" ADD CONSTRAINT "chk_business_parties_employer_not_self"
+      CHECK ("employer_party_id" IS NULL OR "employer_party_id" <> "party_id") NOT VALID;
+  END IF;
+END $$;
 --> statement-breakpoint
-ALTER TABLE "business_parties" VALIDATE CONSTRAINT "chk_business_parties_employer_not_self";
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_constraint
+              WHERE conname = 'chk_business_parties_employer_not_self' AND NOT convalidated) THEN
+    ALTER TABLE "business_parties" VALIDATE CONSTRAINT "chk_business_parties_employer_not_self";
+  END IF;
+END $$;
 
 --> statement-breakpoint
 -- The Companies list: every organisation in the tenant.

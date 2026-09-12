@@ -1,9 +1,7 @@
 import { NotFoundException, ServiceUnavailableException } from "@nestjs/common";
 import { InvAiExplainService } from "./inv-ai-explain.service";
 import type { AiGatewayService } from "../../ai/core/gateway/ai-gateway.service";
-import type { AiConfirmationService } from "../../ai/confirmation/ai-confirmation.service";
-import type { InvReplenishmentService } from "../replenishment/inv-replenishment.service";
-import type { InvVendorsService } from "../vendors/inv-vendors.service";
+import type { VendorScorecardService } from "../vendors/vendor-scorecard.service";
 
 const MOCK_INSIGHT = {
   id: 1,
@@ -22,32 +20,55 @@ const MOCK_INSIGHT = {
   createdAt: new Date("2026-01-01"),
 };
 
+/**
+ * INV-102 shape. The model returns a status, bounded fields, and actions as
+ * enum members with evidence it was actually given -- `suggestedActions`, a
+ * list of sentences the model wrote, is gone.
+ */
 const MOCK_NARRATION = {
+  status: "ok" as const,
   explanation: "SKU-007 has critically low stock relative to weekly demand.",
   factors: [
     { label: "Available qty", value: "2", isFactual: true },
     { label: "Weekly demand", value: "10", isFactual: true },
     { label: "Action needed", value: "Reorder immediately", isFactual: false },
   ],
-  suggestedActions: [
-    "Create a purchase order for SKU-007",
-    "Alert the procurement team",
+  recommendations: [
+    {
+      action: "draft_purchase_order" as const,
+      rationale: "Cover is below the weekly demand figure above.",
+      evidence: [{ kind: "product_variant" as const, id: 7 }],
+    },
+    {
+      action: "open_stock_movements" as const,
+      rationale: "The recent issues explain the drop.",
+      evidence: [{ kind: "product_variant" as const, id: 7 }],
+    },
   ],
 };
 
+/**
+ * F4. The reorder proposal left this service for
+ * `proposals/inv-ai-proposal.service.ts`, taking the confirmation service, the
+ * replenishment service and the access service with it — so this builder no
+ * longer has anything to hand them. The two placeholder parameters are kept in
+ * position because every remaining call site passes `undefined` for them, and
+ * renumbering forty call sites to delete two holes is churn that could only
+ * introduce a mistake.
+ */
 function buildService(
   db: object,
   gateway: Partial<AiGatewayService>,
-  confirmation?: Partial<AiConfirmationService>,
-  replenishment?: Partial<InvReplenishmentService>,
-  vendors?: Partial<InvVendorsService>,
+  _confirmation?: undefined,
+  _replenishment?: undefined,
+  scorecards?: Partial<VendorScorecardService>,
+  insights?: { getOpsBrief?: unknown },
 ) {
   return new InvAiExplainService(
     db as never,
     gateway as AiGatewayService,
-    (confirmation ?? {}) as AiConfirmationService,
-    (replenishment ?? {}) as InvReplenishmentService,
-    (vendors ?? {}) as InvVendorsService,
+    (scorecards ?? {}) as VendorScorecardService,
+    (insights ?? {}) as never,
   );
 }
 
@@ -145,7 +166,25 @@ describe("InvAiExplainService - explainInsight", () => {
     const result = await service.explainInsight("org-1", "user-1", 1);
 
     expect(result.explanation).toBe(MOCK_NARRATION.explanation);
-    expect(result.suggestedActions).toEqual(MOCK_NARRATION.suggestedActions);
+    // Actions are resolved server-side now: the model named two enum members
+    // and the server supplied the label, route and permission for each.
+    expect(result.actions.map((a) => a.action)).toEqual([
+      "draft_purchase_order",
+      "open_stock_movements",
+    ]);
+    expect(result.actions.every((a) => a.permission.startsWith("inventory:"))).toBe(
+      true,
+    );
+    expect(result.provenance).toEqual({
+      contractVersion: 1,
+      promptKey: "inv.insight-explain",
+      promptVersion: 1,
+      // Both come from the gateway result rather than being defaulted here,
+      // which is the point: a stored narrative can be traced to the call that
+      // produced it.
+      model: "fast",
+      correlationId: "x",
+    });
 
     const factual = result.factors.filter((f) => f.isFactual);
     const nonFactual = result.factors.filter((f) => !f.isFactual);
@@ -204,6 +243,290 @@ describe("InvAiExplainService - explainInsight", () => {
   });
 });
 
+const MOCK_DELAY_INSIGHT_V1 = {
+  id: 10,
+  title: "Delay: ACME Corp",
+  body: "3 open POs overdue",
+  severity: "high",
+  sourceRefs: { vendorId: 1, vendorName: "ACME Corp" },
+};
+
+const MOCK_DELAY_INSIGHT_V2A = {
+  id: 20,
+  title: "Delay: BestVend",
+  body: "2 open POs overdue",
+  severity: "medium",
+  sourceRefs: { vendorId: 2, vendorName: "BestVend" },
+};
+
+const MOCK_DELAY_INSIGHT_V2B = {
+  id: 21,
+  title: "Delay: BestVend repeat",
+  body: "1 more PO late",
+  severity: "low",
+  sourceRefs: { vendorId: 2, vendorName: "BestVend" },
+};
+
+/**
+ * C4. Every rate arrives beside the sample it was computed from, so the
+ * briefing can say "72% over 25 orders" rather than a bare percentage.
+ */
+const MOCK_VENDOR_SCORECARD = {
+  vendorId: 1,
+  leadTime: {
+    observations: 9,
+    meanDays: 9,
+    stdDevDays: 2,
+    p50Days: 8,
+    p90Days: 14,
+    reliable: true,
+  },
+  onTime: {
+    percent: "72.00",
+    numerator: "18",
+    denominator: "25",
+    sampleSize: 25,
+    sufficient: true,
+  },
+  lineFill: {
+    percent: "87.00",
+    numerator: "87",
+    denominator: "100",
+    sampleSize: 100,
+    sufficient: true,
+  },
+  unitFill: {
+    percent: "87.00",
+    numerator: "870.0000",
+    denominator: "1000.0000",
+    sampleSize: 100,
+    sufficient: true,
+  },
+  returns: {
+    percent: "1.00",
+    numerator: "10.0000",
+    denominator: "1000.0000",
+    sampleSize: 2,
+    sufficient: false,
+  },
+  rejection: {
+    percent: "2.00",
+    numerator: "2",
+    denominator: "100",
+    sampleSize: 100,
+    sufficient: true,
+  },
+  discrepancy: {
+    percent: "3.00",
+    numerator: "3",
+    denominator: "100",
+    sampleSize: 100,
+    sufficient: true,
+  },
+  openPoCount: 3,
+  spend: { amount: "12000.0000", currency: "INR", excludedCurrencies: [] },
+  notes: [],
+};
+
+const scorecardStub = (...vendorIds: number[]) => ({
+  scorecardsFor: jest
+    .fn()
+    .mockResolvedValue(
+      new Map(
+        vendorIds.map((id) => [id, { ...MOCK_VENDOR_SCORECARD, vendorId: id }]),
+      ),
+    ),
+});
+
+describe("InvAiExplainService - getSupplierDelayBriefing", () => {
+  it("should group vendor_delay insights by vendor and return one entry per vendor", async () => {
+    const db = {
+      query: {
+        invAiInsights: {
+          findMany: jest
+            .fn()
+            .mockResolvedValue([
+              MOCK_DELAY_INSIGHT_V1,
+              MOCK_DELAY_INSIGHT_V2A,
+              MOCK_DELAY_INSIGHT_V2B,
+            ]),
+          findFirst: jest.fn(),
+        },
+      },
+    };
+    const gateway = {
+      invokeText: jest
+        .fn()
+        .mockResolvedValue({ ok: true, data: "Vendor ACME has shown delays." }),
+    };
+    const vendors = scorecardStub(1, 2);
+
+    const service = buildService(db, gateway, undefined, undefined, vendors);
+    const result = await service.getSupplierDelayBriefing("org-1", "user-1");
+
+    expect(result.vendors).toHaveLength(2);
+    const vendorIds = result.vendors.map((v) => v.vendorId).sort();
+    expect(vendorIds).toEqual([1, 2]);
+  });
+
+  it("should return AI-generated narration text, not computed numbers", async () => {
+    const aiNarration =
+      "Vendor ACME has shown persistent delays with an on-time rate of 72%.";
+    const db = {
+      query: {
+        invAiInsights: {
+          findMany: jest.fn().mockResolvedValue([MOCK_DELAY_INSIGHT_V1]),
+          findFirst: jest.fn(),
+        },
+      },
+    };
+    const gateway = {
+      invokeText: jest.fn().mockResolvedValue({ ok: true, data: aiNarration }),
+    };
+    const vendors = scorecardStub(1, 2);
+
+    const service = buildService(db, gateway, undefined, undefined, vendors);
+    const result = await service.getSupplierDelayBriefing("org-1", "user-1");
+
+    expect(result.narration).toBe(aiNarration);
+    expect(result.vendors[0]!.performance).toEqual({
+      ...MOCK_VENDOR_SCORECARD,
+      vendorId: result.vendors[0]!.vendorId,
+    });
+  });
+
+  it("should have performance figures from the scorecard service, not from invokeText", async () => {
+    const db = {
+      query: {
+        invAiInsights: {
+          findMany: jest.fn().mockResolvedValue([MOCK_DELAY_INSIGHT_V1]),
+          findFirst: jest.fn(),
+        },
+      },
+    };
+    const invokeText = jest.fn().mockResolvedValue({
+      ok: true,
+      data: "Some narrative with no computed numbers.",
+    });
+    const gateway = { invokeText };
+    const vendors = scorecardStub(1, 2);
+
+    const service = buildService(db, gateway, undefined, undefined, vendors);
+    const result = await service.getSupplierDelayBriefing("org-1", "user-1");
+
+    expect(result.vendors[0]!.performance.onTime.percent).toBe("72.00");
+    expect(result.vendors[0]!.performance.onTime.sampleSize).toBe(25);
+    expect(result.vendors[0]!.performance.leadTime.p90Days).toBe(14);
+    const invokeTextReturn = (
+      invokeText.mock.results[0] as {
+        value: Promise<{ ok: boolean; data: string }>;
+      }
+    ).value;
+    await expect(invokeTextReturn).resolves.toMatchObject({
+      data: expect.stringContaining("narrative"),
+    });
+  });
+
+  it("should charge credits via feature key inv.supplier-delay-briefing", async () => {
+    const db = {
+      query: {
+        invAiInsights: {
+          findMany: jest.fn().mockResolvedValue([MOCK_DELAY_INSIGHT_V1]),
+          findFirst: jest.fn(),
+        },
+      },
+    };
+    const gateway = {
+      invokeText: jest.fn().mockResolvedValue({ ok: true, data: "Narrative." }),
+    };
+    const vendors = scorecardStub(1, 2);
+
+    const service = buildService(db, gateway, undefined, undefined, vendors);
+    await service.getSupplierDelayBriefing("org-1", "user-1");
+
+    const callArgs = (gateway.invokeText as jest.Mock).mock.calls[0][0];
+    expect(callArgs.feature).toBe("inv.supplier-delay-briefing");
+    expect(callArgs.charge).toBe(true);
+  });
+
+  it("should throw ServiceUnavailableException when AI gateway invokeText returns not-ok", async () => {
+    const db = {
+      query: {
+        invAiInsights: {
+          findMany: jest.fn().mockResolvedValue([MOCK_DELAY_INSIGHT_V1]),
+          findFirst: jest.fn(),
+        },
+      },
+    };
+    const gateway = {
+      invokeText: jest.fn().mockResolvedValue({
+        ok: false,
+        kind: "provider_unavailable",
+        message: "Gateway error",
+        correlationId: "z",
+      }),
+    };
+
+    const vendors = scorecardStub(1, 2);
+
+    const service = buildService(db, gateway, undefined, undefined, vendors);
+    await expect(
+      service.getSupplierDelayBriefing("org-1", "user-1"),
+    ).rejects.toThrow(ServiceUnavailableException);
+  });
+
+  it("should return static narration without calling AI when there are no delay insights", async () => {
+    const db = {
+      query: {
+        invAiInsights: {
+          findMany: jest.fn().mockResolvedValue([]),
+          findFirst: jest.fn(),
+        },
+      },
+    };
+    const invokeText = jest.fn();
+    const gateway = { invokeText };
+    const vendors = scorecardStub();
+
+    const service = buildService(db, gateway, undefined, undefined, vendors);
+    const result = await service.getSupplierDelayBriefing("org-1", "user-1");
+
+    expect(invokeText).not.toHaveBeenCalled();
+    expect(result.vendors).toHaveLength(0);
+    expect(result.narration).toBe("No active supplier delay alerts detected.");
+  });
+
+  it("should filter insights by vendorId when vendorId is provided", async () => {
+    const db = {
+      query: {
+        invAiInsights: {
+          findMany: jest
+            .fn()
+            .mockResolvedValue([
+              MOCK_DELAY_INSIGHT_V1,
+              MOCK_DELAY_INSIGHT_V2A,
+              MOCK_DELAY_INSIGHT_V2B,
+            ]),
+          findFirst: jest.fn(),
+        },
+      },
+    };
+    const gateway = {
+      invokeText: jest
+        .fn()
+        .mockResolvedValue({ ok: true, data: "Only ACME narrative." }),
+    };
+    const vendors = scorecardStub(1, 2);
+
+    const service = buildService(db, gateway, undefined, undefined, vendors);
+    const result = await service.getSupplierDelayBriefing("org-1", "user-1", 1);
+
+    expect(result.vendors).toHaveLength(1);
+    expect(result.vendors[0]!.vendorId).toBe(1);
+    expect(result.vendors[0]!.vendorName).toBe("ACME Corp");
+  });
+});
+
 const MOCK_SUGGESTION = {
   productVariantId: 77,
   variantSku: "SKU-077",
@@ -237,239 +560,3 @@ const MOCK_PROPOSAL = {
   expiresAt: new Date(Date.now() + 120_000),
 };
 
-function buildReorderDb() {
-  return {
-    query: {
-      invAiInsights: {
-        findFirst: jest.fn(),
-        findMany: jest.fn().mockResolvedValue([]),
-      },
-    },
-  };
-}
-
-describe("InvAiExplainService - getReorderProposal", () => {
-  it("should embed suggestedQty from deterministic engine in the AI user prompt", async () => {
-    let capturedUserPrompt = "";
-
-    const gateway = {
-      invokeStructured: jest
-        .fn()
-        .mockImplementation((opts: { prompt: { user: string } }) => {
-          capturedUserPrompt = opts.prompt.user;
-          return Promise.resolve({ ok: true, data: MOCK_EXPLAIN_RESPONSE });
-        }),
-    };
-    const confirmation = {
-      propose: jest.fn().mockResolvedValue(MOCK_PROPOSAL),
-    };
-    const replenishment = {
-      getSuggestionForVariant: jest.fn().mockResolvedValue(MOCK_SUGGESTION),
-    };
-
-    const service = buildService(
-      buildReorderDb(),
-      gateway,
-      confirmation,
-      replenishment,
-    );
-    const result = await service.getReorderProposal("org-1", "user-1", 77);
-
-    expect(capturedUserPrompt).toContain("42");
-    expect(result.evidence["suggestedOrderQty"]).toBe(42);
-  });
-
-  it("should include AI restraint instruction in the system prompt", async () => {
-    let capturedSystemPrompt = "";
-
-    const gateway = {
-      invokeStructured: jest
-        .fn()
-        .mockImplementation((opts: { prompt: { system: string } }) => {
-          capturedSystemPrompt = opts.prompt.system;
-          return Promise.resolve({ ok: true, data: MOCK_EXPLAIN_RESPONSE });
-        }),
-    };
-    const confirmation = {
-      propose: jest.fn().mockResolvedValue(MOCK_PROPOSAL),
-    };
-    const replenishment = {
-      getSuggestionForVariant: jest.fn().mockResolvedValue(MOCK_SUGGESTION),
-    };
-
-    const service = buildService(
-      buildReorderDb(),
-      gateway,
-      confirmation,
-      replenishment,
-    );
-    await service.getReorderProposal("org-1", "user-1", 77);
-
-    expect(capturedSystemPrompt.toLowerCase()).toMatch(
-      /must not compute|must not derive|must not invent/i,
-    );
-  });
-
-  it("should charge credits via feature key inv.reorder-explain", async () => {
-    const gateway = {
-      invokeStructured: jest
-        .fn()
-        .mockResolvedValue({ ok: true, data: MOCK_EXPLAIN_RESPONSE }),
-    };
-    const confirmation = {
-      propose: jest.fn().mockResolvedValue(MOCK_PROPOSAL),
-    };
-    const replenishment = {
-      getSuggestionForVariant: jest.fn().mockResolvedValue(MOCK_SUGGESTION),
-    };
-
-    const service = buildService(
-      buildReorderDb(),
-      gateway,
-      confirmation,
-      replenishment,
-    );
-    await service.getReorderProposal("org-1", "user-1", 77);
-
-    const callArgs = (gateway.invokeStructured as jest.Mock).mock.calls[0][0];
-    expect(callArgs.feature).toBe("inv.reorder-explain");
-    expect(callArgs.charge).toBe(true);
-  });
-
-  it("should call AiConfirmationService.propose with action inventory:create-draft-po, not generatePo", async () => {
-    const gateway = {
-      invokeStructured: jest
-        .fn()
-        .mockResolvedValue({ ok: true, data: MOCK_EXPLAIN_RESPONSE }),
-    };
-    const generatePo = jest.fn();
-    const confirmation = {
-      propose: jest.fn().mockResolvedValue(MOCK_PROPOSAL),
-    };
-    const replenishment = {
-      getSuggestionForVariant: jest.fn().mockResolvedValue(MOCK_SUGGESTION),
-      generatePo,
-    };
-
-    const service = buildService(
-      buildReorderDb(),
-      gateway,
-      confirmation,
-      replenishment,
-    );
-    await service.getReorderProposal("org-1", "user-1", 77);
-
-    expect(confirmation.propose).toHaveBeenCalledTimes(1);
-    const proposeArg = (confirmation.propose as jest.Mock).mock.calls[0][0];
-    expect(proposeArg.action).toBe("inventory:create-draft-po");
-    expect(generatePo).not.toHaveBeenCalled();
-  });
-
-  it("should return proposal from AiConfirmationService.propose in the result", async () => {
-    const gateway = {
-      invokeStructured: jest
-        .fn()
-        .mockResolvedValue({ ok: true, data: MOCK_EXPLAIN_RESPONSE }),
-    };
-    const confirmation = {
-      propose: jest.fn().mockResolvedValue(MOCK_PROPOSAL),
-    };
-    const replenishment = {
-      getSuggestionForVariant: jest.fn().mockResolvedValue(MOCK_SUGGESTION),
-    };
-
-    const service = buildService(
-      buildReorderDb(),
-      gateway,
-      confirmation,
-      replenishment,
-    );
-    const result = await service.getReorderProposal("org-1", "user-1", 77);
-
-    expect(result.proposal.proposalId).toBe(101);
-    expect(result.proposal.token).toBe("101.9999999999.abc123");
-  });
-
-  it("should throw NotFoundException when no suggestion matches the variantId", async () => {
-    const gateway = { invokeStructured: jest.fn() };
-    const confirmation = { propose: jest.fn() };
-    const replenishment = {
-      getSuggestionForVariant: jest.fn().mockResolvedValue(null),
-    };
-
-    const service = buildService(
-      buildReorderDb(),
-      gateway,
-      confirmation,
-      replenishment,
-    );
-    await expect(
-      service.getReorderProposal("org-1", "user-1", 9999),
-    ).rejects.toThrow(NotFoundException);
-    expect(gateway.invokeStructured).not.toHaveBeenCalled();
-  });
-
-  it("should throw ServiceUnavailableException when AI gateway returns not-ok", async () => {
-    const gateway = {
-      invokeStructured: jest.fn().mockResolvedValue({
-        ok: false,
-        kind: "provider_unavailable",
-        message: "Gateway error",
-        correlationId: "z",
-      }),
-    };
-    const confirmation = { propose: jest.fn() };
-    const replenishment = {
-      getSuggestionForVariant: jest.fn().mockResolvedValue(MOCK_SUGGESTION),
-    };
-
-    const service = buildService(
-      buildReorderDb(),
-      gateway,
-      confirmation,
-      replenishment,
-    );
-    await expect(
-      service.getReorderProposal("org-1", "user-1", 77),
-    ).rejects.toThrow(ServiceUnavailableException);
-    expect(confirmation.propose).not.toHaveBeenCalled();
-  });
-
-  it("should preserve isFactual values for both factual and suggestion factors", async () => {
-    const explainWithBothFactTypes = {
-      explanation: "Reorder necessary.",
-      factors: [
-        { label: "Stock level", value: "42", isFactual: true },
-        { label: "Consider safety stock", value: "10%", isFactual: false },
-      ],
-      suggestedActions: ["Order now"],
-    };
-
-    const gateway = {
-      invokeStructured: jest
-        .fn()
-        .mockResolvedValue({ ok: true, data: explainWithBothFactTypes }),
-    };
-    const confirmation = {
-      propose: jest.fn().mockResolvedValue(MOCK_PROPOSAL),
-    };
-    const replenishment = {
-      getSuggestionForVariant: jest.fn().mockResolvedValue(MOCK_SUGGESTION),
-    };
-
-    const service = buildService(
-      buildReorderDb(),
-      gateway,
-      confirmation,
-      replenishment,
-    );
-    const result = await service.getReorderProposal("org-1", "user-1", 77);
-
-    const factual = result.explanation.factors.filter((f) => f.isFactual);
-    const nonFactual = result.explanation.factors.filter((f) => !f.isFactual);
-    expect(factual).toHaveLength(1);
-    expect(factual[0]!.label).toBe("Stock level");
-    expect(nonFactual).toHaveLength(1);
-    expect(nonFactual[0]!.label).toBe("Consider safety stock");
-  });
-});

@@ -1,16 +1,18 @@
 import { readFileSync } from "fs";
 import { join } from "path";
 import { MODULE_MANIFEST_VERSION, MODULE_REGISTRY } from "./module-registry";
+import { frontendPath } from "../testing/repo-paths";
 
 const BACKEND_ROOT = join(__dirname, "..", "..", "..");
 const BACKEND_MANIFEST = join(BACKEND_ROOT, "module-manifest.json");
-const FRONTEND_MANIFEST = join(
-  BACKEND_ROOT,
-  "..",
-  "frontend",
-  "lib",
-  "module-manifest.json",
-);
+/*
+  Resolved, not assumed: the repositories are siblings named
+  `<something>-backend` and `<something>-frontend`, never `<repo>/frontend`.
+  The hardcoded path made this suite die with ENOENT in every checkout, which
+  reads as "the manifest was deleted" rather than "this layout has no such
+  directory".
+*/
+const FRONTEND_MANIFEST = frontendPath("lib", "module-manifest.json");
 
 interface ManifestModule {
   id: string;

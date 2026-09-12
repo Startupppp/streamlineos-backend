@@ -193,6 +193,11 @@ export class AuthController {
   @ResponseSchema(authAutoLoginTokenResponseSchema)
   @Public()
   @HttpCode(200)
+  // PRD-C089 (BREACH) — this body carries an auto-login bearer token and
+  // `app.enableCors({ credentials: true })` is live, so a compressed length is a
+  // cross-origin size oracle. Same reasoning as `sessionExchange` below;
+  // `shouldCompress` checks this opt-out first, so no content type can overrule it.
+  @Header(NO_COMPRESSION_HEADER, "1")
   @Validate({ body: verifyEmailSchema })
   async verifyEmail(
     @Body() body: VerifyEmailInput,
@@ -300,6 +305,11 @@ export class AuthController {
   @ResponseSchema(authAutoLoginTokenResponseSchema)
   @Public()
   @HttpCode(200)
+  // PRD-C089 (BREACH) — this body carries an auto-login bearer token and
+  // `app.enableCors({ credentials: true })` is live, so a compressed length is a
+  // cross-origin size oracle. Same reasoning as `sessionExchange` below;
+  // `shouldCompress` checks this opt-out first, so no content type can overrule it.
+  @Header(NO_COMPRESSION_HEADER, "1")
   @Validate({ body: verifyEmailOtpSchema })
   async verifyEmailOtp(
     @Body() body: VerifyEmailOtpInput,

@@ -43,6 +43,17 @@ jest.mock("../../common/security/secret-encryption.util", () => ({
   decryptSecret: jest.fn((s: string) => s),
 }));
 
+/*
+  `deliverNow` reads the endpoints in the org's own new transaction and writes
+  each wave's log rows in a short one of its own. The db double is a bare query
+  surface, so both helpers hand it to the callback as the transaction.
+*/
+jest.mock("../../common/tenant/run-in-tenant-transaction", () => ({
+  runInTenantTransaction: <T>(db: unknown, fn: (tx: unknown) => Promise<T>) => fn(db),
+  runInNewTenantTransaction: <T>(db: unknown, _orgId: string, fn: (tx: unknown) => Promise<T>) =>
+    fn(db),
+}));
+
 jest.mock("../../common/logger/logger.service", () => ({
   logger: { error: jest.fn(), warn: jest.fn(), info: jest.fn(), debug: jest.fn() },
 }));
@@ -129,9 +140,7 @@ describe("WebhooksDispatchService — callProvider seam", () => {
   it("classifies 4xx as terminal — exactly 1 postSafeWebhook attempt, log records attempt=1", async () => {
     mockPostSafeWebhook.mockResolvedValueOnce({ statusCode: 400, responseBody: "Bad Request" });
 
-    await (svc as unknown as { run: (o: string, e: string, p: Record<string, unknown>) => Promise<void> }).run(
-      ORG, EVENT, PAYLOAD,
-    );
+    await svc.deliverNow(ORG, EVENT, PAYLOAD);
 
     expect(mockPostSafeWebhook).toHaveBeenCalledTimes(1);
     const log = insertedLogs[0];
@@ -161,9 +170,7 @@ describe("WebhooksDispatchService — callProvider seam", () => {
 
     mockPostSafeWebhook.mockResolvedValue({ statusCode: 503, responseBody: "Service Unavailable" });
 
-    await (svc as unknown as { run: (o: string, e: string, p: Record<string, unknown>) => Promise<void> }).run(
-      ORG, EVENT, PAYLOAD,
-    );
+    await svc.deliverNow(ORG, EVENT, PAYLOAD);
 
     expect(mockPostSafeWebhook).toHaveBeenCalledTimes(5);
     const log = insertedLogs[0];
@@ -175,9 +182,7 @@ describe("WebhooksDispatchService — callProvider seam", () => {
   it("succeeds and writes success=true when endpoint returns 2xx", async () => {
     mockPostSafeWebhook.mockResolvedValueOnce({ statusCode: 200, responseBody: "OK" });
 
-    await (svc as unknown as { run: (o: string, e: string, p: Record<string, unknown>) => Promise<void> }).run(
-      ORG, EVENT, PAYLOAD,
-    );
+    await svc.deliverNow(ORG, EVENT, PAYLOAD);
 
     expect(mockPostSafeWebhook).toHaveBeenCalledTimes(1);
     const log = insertedLogs[0];
@@ -203,9 +208,7 @@ describe("WebhooksDispatchService — callProvider seam", () => {
 
     mockPostSafeWebhook.mockResolvedValue({ statusCode: 400, responseBody: "Bad Request" });
 
-    await (svc as unknown as { run: (o: string, e: string, p: Record<string, unknown>) => Promise<void> }).run(
-      ORG, EVENT, PAYLOAD,
-    );
+    await svc.deliverNow(ORG, EVENT, PAYLOAD);
 
     expect(mockPostSafeWebhook).toHaveBeenCalledTimes(5);
   });
@@ -230,9 +233,7 @@ describe("WebhooksDispatchService — callProvider seam", () => {
 
     mockPostSafeWebhook.mockRejectedValue(new UnsafeWebhookTargetError("blocked-address"));
 
-    await (svc as unknown as { run: (o: string, e: string, p: Record<string, unknown>) => Promise<void> }).run(
-      ORG, EVENT, PAYLOAD,
-    );
+    await svc.deliverNow(ORG, EVENT, PAYLOAD);
 
     expect(mockPostSafeWebhook).toHaveBeenCalledTimes(1);
     const log = insertedLogs[0];
@@ -285,9 +286,7 @@ describe("WebhooksDispatchService — bounded fan-out and batched delivery logs"
     mockPostSafeWebhook.mockResolvedValue({ statusCode: 200, responseBody: "OK" });
     const svc = new WebhooksDispatchService(makeDb(endpointsOf(20)));
 
-    await (svc as unknown as { run: (o: string, e: string, p: Record<string, unknown>) => Promise<void> }).run(
-      ORG, EVENT, PAYLOAD,
-    );
+    await svc.deliverNow(ORG, EVENT, PAYLOAD);
 
     expect(insertedLogs).toHaveLength(20);
     expect(insertBatchSizes).toEqual([WEBHOOK_DISPATCH_CHUNK, WEBHOOK_DISPATCH_CHUNK, 4]);
@@ -306,9 +305,7 @@ describe("WebhooksDispatchService — bounded fan-out and batched delivery logs"
     });
     const svc = new WebhooksDispatchService(makeDb(endpointsOf(20)));
 
-    await (svc as unknown as { run: (o: string, e: string, p: Record<string, unknown>) => Promise<void> }).run(
-      ORG, EVENT, PAYLOAD,
-    );
+    await svc.deliverNow(ORG, EVENT, PAYLOAD);
 
     expect(peak).toBeLessThanOrEqual(WEBHOOK_DISPATCH_CHUNK);
     expect(peak).toBeGreaterThan(1);
@@ -319,9 +316,7 @@ describe("WebhooksDispatchService — bounded fan-out and batched delivery logs"
     const db = makeDb(endpointsOf(1));
     const svc = new WebhooksDispatchService(db);
 
-    await (svc as unknown as { run: (o: string, e: string, p: Record<string, unknown>) => Promise<void> }).run(
-      ORG, EVENT, PAYLOAD,
-    );
+    await svc.deliverNow(ORG, EVENT, PAYLOAD);
 
     const projection = (db.select as jest.Mock).mock.calls[0]?.[0] as Record<string, unknown>;
     expect(Object.keys(projection).sort()).toEqual(["events", "id", "secret", "url"]);

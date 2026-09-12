@@ -11,7 +11,23 @@
 
 import { INSERT_TRIGGERS_QUERY, LIVE_COLUMNS_QUERY } from "./catalog";
 import type { LiveColumn, LiveTrigger } from "./catalog";
-import { triggerNamesColumn } from "./catalog";
+import { triggerAssignsColumn, triggerNamesColumn } from "./catalog";
+
+/**
+ * The real `set_org_id_from_parent` source. Its target column is hardcoded in the
+ * BODY; the arguments carry the PARENT's column names only.
+ */
+const SET_ORG_ID_BODY = `
+DECLARE fk_val text; v_org text;
+BEGIN
+  IF (to_jsonb(NEW) ->> 'org_id') IS NOT NULL THEN RETURN NEW; END IF;
+  fk_val := to_jsonb(NEW) ->> TG_ARGV[3];
+  IF fk_val IS NULL THEN RETURN NEW; END IF;
+  EXECUTE format('SELECT %I::text FROM %I WHERE %I::text = $1', TG_ARGV[2], TG_ARGV[0], TG_ARGV[1])
+    INTO v_org USING fk_val;
+  NEW.org_id := v_org;
+  RETURN NEW;
+END;`;
 import { compare } from "./compare";
 import { countDeclaredColumns, declaredTablesOf } from "./declared";
 import type { DeclaredTable } from "./declared";
@@ -77,6 +93,7 @@ export function runSelfTest(barrel: Record<string, unknown>, floors: Declaration
     trigger: "trg_set_org_id",
     definition:
       "CREATE TRIGGER trg_set_org_id BEFORE INSERT ON public.invoice_items FOR EACH ROW EXECUTE FUNCTION set_org_id_from_parent('invoices', 'id', 'org_id', 'invoice_id')",
+    body: SET_ORG_ID_BODY,
   };
   const supplied = compare([items], itemsLive, [setOrgId]);
   assert(
@@ -91,7 +108,49 @@ export function runSelfTest(barrel: Record<string, unknown>, floors: Declaration
   );
   assert(
     "a trigger that does not name the column does not downgrade it",
-    compare([items], itemsLive, [{ ...setOrgId, definition: "CREATE TRIGGER t BEFORE INSERT ON public.invoice_items FOR EACH ROW EXECUTE FUNCTION touch_updated_at()" }]).writeBlocking.length === 1,
+    compare([items], itemsLive, [{ ...setOrgId, definition: "CREATE TRIGGER t BEFORE INSERT ON public.invoice_items FOR EACH ROW EXECUTE FUNCTION touch_updated_at()", body: "BEGIN NEW.updated_at := now(); RETURN NEW; END;" }]).writeBlocking.length === 1,
+  );
+
+  // REGRESSION — the control-plane shape. The SAME shared function, but the third
+  // argument is the PARENT's column, which control-plane parents spell
+  // `organization_id`. The arguments therefore never contain `org_id`, and reading
+  // them alone reported a false 23502 on organization_saga_steps and
+  // organization_relocation_checksums. The body is what fills the column.
+  const controlPlaneTrigger: LiveTrigger = {
+    ...setOrgId,
+    definition:
+      "CREATE TRIGGER trg_set_org_id BEFORE INSERT ON public.invoice_items FOR EACH ROW EXECUTE FUNCTION set_org_id_from_parent('organization_lifecycle_sagas', 'saga_id', 'organization_id', 'saga_id')",
+  };
+  assert(
+    "the args never say org_id in the control-plane shape — which is why the args alone were not enough",
+    !triggerNamesColumn(controlPlaneTrigger.definition, "org_id"),
+  );
+  assert(
+    "a trigger whose BODY assigns the column downgrades it even though its args never name it",
+    compare([items], itemsLive, [controlPlaneTrigger]).writeBlocking.length === 0 &&
+      compare([items], itemsLive, [controlPlaneTrigger]).triggerSupplied.length === 1,
+  );
+  assert(
+    "strip the assignment out of that body and it fails again — the downgrade is the assignment's doing",
+    compare([items], itemsLive, [
+      { ...controlPlaneTrigger, body: SET_ORG_ID_BODY.replace("NEW.org_id := v_org;", "") },
+    ]).writeBlocking.length === 1,
+  );
+  assert(
+    "an assignment, not a mention — reading to_jsonb(NEW) ->> 'org_id' does not count as supplying it",
+    !triggerAssignsColumn("BEGIN IF (to_jsonb(NEW) ->> 'org_id') IS NOT NULL THEN RETURN NEW; END IF; END;", "org_id"),
+  );
+  assert(
+    "the body match is word-bounded too — NEW.source_org_id does not count as org_id",
+    !triggerAssignsColumn("BEGIN NEW.source_org_id := 'x'; END;", "org_id"),
+  );
+  assert(
+    "plpgsql is case-insensitive, so the body match is too",
+    triggerAssignsColumn("begin new.org_id := v; end;", "org_id"),
+  );
+  assert(
+    "the trigger query selects the function body — without prosrc the body test can never fire",
+    INSERT_TRIGGERS_QUERY.includes("prosrc") && INSERT_TRIGGERS_QUERY.includes("pg_proc"),
   );
   assert(
     "a trigger on a different table does not downgrade",

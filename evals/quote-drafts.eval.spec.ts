@@ -1,4 +1,4 @@
-import { EVAL_ACCEPTANCE, meetsGate, runEval } from "./ai-eval-runner";
+import { EVAL_ACCEPTANCE, gatesPresentIn, meetsGate, runEval } from "./ai-eval-runner";
 import { QUOTE_DRAFTS_DATASET, type QuoteCase } from "./datasets/quote-drafts.dataset";
 import { draftQuoteFromDeal } from "../src/modules/autonomy/quote-draft";
 
@@ -60,7 +60,7 @@ describe("quote draft evals", () => {
       "QUOTE_SUBJECT_QUALITY_RATE",
     ]);
 
-    expect(meetsGate(report, EVAL_ACCEPTANCE)).toBe(true);
+    expect(meetsGate(report, gatesPresentIn(report, EVAL_ACCEPTANCE))).toBe(true);
   });
 
   it("fails the gate when a drafter invents a figure", async () => {
@@ -84,7 +84,7 @@ describe("quote draft evals", () => {
       ],
     );
 
-    expect(meetsGate(report, EVAL_ACCEPTANCE)).toBe(false);
+    expect(meetsGate(report, gatesPresentIn(report, EVAL_ACCEPTANCE))).toBe(false);
   });
 
   it("carries the cases where the right answer is to draft nothing", () => {

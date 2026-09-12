@@ -135,6 +135,12 @@ describe("ModuleAccessController auth / RBAC (e2e)", () => {
         { provide: ModuleStandingMutationsService, useValue: mockModuleStandingMutationsService },
         { provide: ModuleStandingRosterService, useValue: mockModuleStandingRosterService },
         { provide: IdempotencyInterceptor, useValue: idempotencyPassThrough },
+        /*
+          The limiter is backed by Redis, whose counters outlive the process, so
+          a suite run twice in quick succession starts answering 429 — masking
+          every status these cases assert. What is under test here is the guard
+          chain's decision, not how often it may be asked.
+        */
         { provide: RateLimitService, useValue: rateLimitAllowAll },
       ],
     });
@@ -847,7 +853,11 @@ describe("ModuleAccessController auth / RBAC (e2e)", () => {
         const res = await request(app.getHttpServer())
           .post(`/module-access/${moduleKey}/ownership/transfer`)
           .set("Authorization", `Bearer ${token}`)
-          .set("Idempotency-Key", `it-${moduleKey}-transfer-denied`)
+          // Distinct from the successful initiate above, which for `hr` used this
+          // very key: a fence is keyed by (org, key), so reusing one across two
+          // cases replays the first instead of running the second, and the 403
+          // this case is about arrives as a 422 about the key.
+          .set("Idempotency-Key", `it-${moduleKey}-transfer-initiate-denied`)
           .send({ toUserId: "u-new-owner" });
         expect(res.status).toBe(403);
         expect(res.body).toMatchObject({ code: "FORBIDDEN" });

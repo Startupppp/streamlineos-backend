@@ -6,7 +6,8 @@ const userMinimalSchema = z.object({ id: z.string(), name: z.string().nullable()
 const userNoImageSchema = z.object({ id: z.string(), name: z.string().nullable() });
 const membershipMinimalSchema = z.object({ id: z.number().int(), user: userMinimalSchema.nullable() });
 const membershipNoImageSchema = z.object({ id: z.number().int(), user: userNoImageSchema.nullable() });
-const clientMinimalSchema = z.object({ id: z.number().int(), name: z.string() });
+/** `name` comes from the client's Party, and is null when that no longer resolves. */
+const clientMinimalSchema = z.object({ id: z.number().int(), name: z.string().nullable() });
 
 export const supportTicketRowSchema = z.object({
   id: z.number().int(),

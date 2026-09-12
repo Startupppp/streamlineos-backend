@@ -76,12 +76,15 @@ export class DealsMeetingsService {
   }
 
   async updateMeeting(orgId: string, dealId: number, meetingId: number, input: UpdateMeetingInput) {
+    // The row is only ever tested for null — the update below addresses the
+    // meeting by id again — so hydrating its agenda and notes buys nothing.
     const existing = await this.db.query.dealMeetings.findFirst({
       where: and(
         eq(dealMeetings.id, meetingId),
         eq(dealMeetings.dealId, dealId),
         eq(dealMeetings.orgId, orgId),
       ),
+      columns: { id: true },
     });
     if (!existing) throw new NotFoundException("Meeting not found.");
 

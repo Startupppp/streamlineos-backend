@@ -308,7 +308,7 @@ export class AiGatewayService {
         costUsd,
       };
 
-      return { ok: true, data: result.data, aiUsage };
+      return { ok: true, data: result.data, aiUsage, correlationId: call.correlationId };
     } finally {
       this.concurrencyLimiter.release(opts.actor.orgId);
     }

@@ -15,6 +15,7 @@ import {
   invCarrierSchema,
 } from "./dto/shipments-response.schemas";
 import { z } from "zod";
+import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 
 const carrierIdParams = z.object({ carrierId: z.coerce.number().int().positive() }).strict();
 
@@ -36,6 +37,7 @@ export class CarriersController {
   @ResponseSchema(invCarrierSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:shipments:manage")
+  @Idempotent("inventory.carrier.create")
   @Validate({ body: createCarrierSchema })
   create(
     @Body() body: CreateCarrierInput,

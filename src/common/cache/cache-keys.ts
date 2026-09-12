@@ -77,12 +77,6 @@ export const CACHE_KEYS = {
     `dashboard:executive:${orgId}:${projection}`,
   announcementsList: (orgId: string) => `dashboard:announcements:${orgId}`,
 
-  invoicesList: (orgId: string, hash: string) =>
-    `invoices:list:${orgId}:${hash}`,
-  invoiceDetail: (orgId: string, id: number) =>
-    `invoices:detail:${orgId}:${id}`,
-  invoiceStats: (orgId: string) => `invoices:stats:${orgId}`,
-
   taskDetail: (orgId: string, id: number) => `tasks:detail:${orgId}:${id}`,
 
   quotesList: (orgId: string, hash: string) => `quotes:list:${orgId}:${hash}`,
@@ -109,8 +103,6 @@ export const CACHE_KEYS = {
   invProductsNamespace: (orgId: string) => namespace(`inv:products:list:${orgId}`),
   invProductDetail: (orgId: string, id: number) =>
     `inv:products:detail:${orgId}:${id}`,
-  invStockSummary: (orgId: string) => `inv:stock:summary:${orgId}`,
-  invLowStock: (orgId: string) => `inv:low-stock:${orgId}`,
   invWarehouseDetail: (orgId: string, id: number) =>
     `inv:warehouses:detail:${orgId}:${id}`,
   invVendorsNamespace: (orgId: string) => namespace(`inv:vendors:list:${orgId}`),
@@ -125,12 +117,19 @@ export const CACHE_KEYS = {
   invCustomerReturnsNamespace: (orgId: string) => namespace(`inv:cret:list:${orgId}`),
   invSoNamespace: (orgId: string) => namespace(`inv:so:list:${orgId}`),
   invSoDetail: (orgId: string, id: number) => `inv:so:detail:${orgId}:${id}`,
-  invDashboard: (orgId: string) => `inv:dashboard:${orgId}`,
-  invReorderReport: (orgId: string) => `inv:reorder:${orgId}`,
-  invReorderReportPaged: (orgId: string, hash: string) =>
-    `inv:reorder:paged:${orgId}:${hash}`,
-  invStockSummaryReport: (orgId: string, hash: string) =>
-    `inv:stock:summary-report:${orgId}:${hash}`,
+  // The four stock-derived reports are namespaces, not exact keys, because every
+  // one of them reads under a discriminator the writer does not know: the
+  // caller's warehouse scope, and for the paged pair a page and a limit as well.
+  // They were exact keys until 2026-09-12, and `invalidate()` is `redis.del` of
+  // one key with no prefix form, so every `invalidate(invDashboard(orgId))` after
+  // a stock movement deleted `inv:dashboard:<org>` while the reader had stored
+  // `inv:dashboard:<org>:<scopeKey>` — the dashboard, the reorder report and the
+  // stock summary all served pre-movement numbers until their TTL expired.
+  // A generation bump is scope-blind by construction, which is the point.
+  invDashboardNamespace: (orgId: string) => namespace(`inv:dashboard:${orgId}`),
+  invReorderNamespace: (orgId: string) => namespace(`inv:reorder:${orgId}`),
+  invStockSummaryReportNamespace: (orgId: string) =>
+    namespace(`inv:stock:summary-report:${orgId}`),
   invReplenishmentSuggestionsNamespace: (orgId: string) =>
     namespace(`inv:replenishment:suggestions:${orgId}`),
 
@@ -143,10 +142,22 @@ export const CACHE_KEYS = {
   invCycleCountsNamespace: (orgId: string) => namespace(`inv:cycle-counts:list:${orgId}`),
   invCycleCountDetail: (orgId: string, id: number) =>
     `inv:cycle-counts:detail:${orgId}:${id}`,
+  // Physical audits sit beside cycle counts here rather than in their own module
+  // for a reason beyond tidiness: the list namespace is bumped from
+  // `counts/lib/physical-audit-commands.ts` and read from
+  // `counts/inv-physical-audits.service.ts`, and a module-local `const` factory
+  // resolves only within the file that declares it. Every static reader of this
+  // codebase — the cache gates included — therefore saw the bump and not the
+  // read, and reported a correctly paired namespace as a bump reaching nothing.
+  invPhysicalAuditsNamespace: (orgId: string) =>
+    namespace(`inv:physical-audits:list:${orgId}`),
+  invPhysicalAuditDetail: (orgId: string, id: number) =>
+    `inv:physical-audits:detail:${orgId}:${id}`,
   invQualityInspectionsNamespace: (orgId: string) =>
     namespace(`inv:quality:inspections:${orgId}`),
   invQualityHoldsNamespace: (orgId: string) => namespace(`inv:quality:holds:${orgId}`),
   invQualityRecallsNamespace: (orgId: string) => namespace(`inv:quality:recalls:${orgId}`),
+  invInspectionPlansNamespace: (orgId: string) => namespace(`inv:quality:plans:${orgId}`),
   invPackagesNamespace: (orgId: string) => namespace(`inv:packages:${orgId}`),
   invShipmentsNamespace: (orgId: string) => namespace(`inv:shipments:${orgId}`),
   invLoadsNamespace: (orgId: string) => namespace(`inv:loads:${orgId}`),
@@ -157,6 +168,8 @@ export const CACHE_KEYS = {
   inv3plList: (orgId: string) => `inv:3pl:list:${orgId}`,
   invImportJobsNamespace: (orgId: string) => namespace(`inv:import-jobs:list:${orgId}`),
   invExportJobsNamespace: (orgId: string) => namespace(`inv:export-jobs:list:${orgId}`),
+  invAuditExportJobsNamespace: (orgId: string) =>
+    namespace(`inv:audit-export-jobs:list:${orgId}`),
   invSettings: (orgId: string) => `inv:settings:${orgId}`,
   invNumberSequences: (orgId: string) => `inv:numseq:${orgId}`,
   invAiInsightsList: (orgId: string) => `inv:ai-insights:${orgId}`,
@@ -173,6 +186,9 @@ export const CACHE_KEYS = {
   orgHierarchyNamespace: (orgId: string) => namespace(`org:hierarchy:${orgId}`),
   leaveAnalyticsNamespace: (orgId: string) => namespace(`hr:leave-analytics:${orgId}`),
   hrEmployeesListNamespace: (orgId: string) => namespace(`hr:employees:list:${orgId}`),
+
+  /** Employee expense claims (`modules/expenses`), versioned per organisation. */
+  expensesListNamespace: (orgId: string) => namespace(`expenses:list:${orgId}`),
 
   supportReportsOverview: (orgId: string) =>
     `support:reports:overview:${orgId}`,
@@ -204,7 +220,6 @@ export const CACHE_KEYS = {
   finCategorizeSuggest: (orgId: string, merchant: string) =>
     `fin:cat-suggest:${orgId}:${merchant}`,
 
-  expensesListNamespace: (orgId: string) => namespace(`hr:expenses:${orgId}`),
   finAssetsListNamespace: (orgId: string) => namespace(`fin:assets:list:${orgId}`),
   finAssetCategoriesNamespace: (orgId: string) =>
     namespace(`fin:asset-categories:${orgId}`),

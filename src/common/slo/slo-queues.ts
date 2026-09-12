@@ -27,6 +27,20 @@ export const QUEUE_SUBJECTS: readonly QueueSubject[] = [
     channel: "outbox",
   },
   {
+    /*
+      The in-process half of the same drain. `workflow-outbox-relay` is what an
+      external scheduler drives through /cron; this ticks every 15s inside the
+      application under a lease, and when it is disabled the relay above is the
+      only thing draining `outbox_events`. Both carry the objective, because a
+      backlog is a backlog whichever one was meant to clear it.
+    */
+    id: "cron-outbox-worker",
+    sourceFile: "src/modules/cron/cron-outbox-worker.service.ts",
+    drains: "outbox_events",
+    owner: "delivery-team",
+    channel: "outbox",
+  },
+  {
     id: "notification-outbox-relay",
     sourceFile: "src/modules/notifications/notification-outbox-relay.service.ts",
     drains: "notification_outbox",
@@ -48,15 +62,8 @@ export const QUEUE_SUBJECTS: readonly QueueSubject[] = [
     channel: "outbox",
   },
   {
-    id: "ar-reminder-outbox",
-    sourceFile: "src/modules/finance/ar/reminder-outbox.consumer.ts",
-    drains: "outbox_events",
-    owner: "finance-team",
-    channel: "outbox",
-  },
-  {
-    id: "finance-report-export-outbox",
-    sourceFile: "src/modules/finance/reports/finance-report-export.consumer.ts",
+    id: "accounting-journal-posted",
+    sourceFile: "src/modules/accounting/adapters/journal-posted.consumer.ts",
     drains: "outbox_events",
     owner: "finance-team",
     channel: "outbox",
@@ -71,6 +78,44 @@ export const QUEUE_SUBJECTS: readonly QueueSubject[] = [
   {
     id: "hr-helpdesk-events",
     sourceFile: "src/modules/hr/helpdesk/hr-helpdesk-events.consumer.ts",
+    drains: "outbox_events",
+    owner: "people-team",
+    channel: "outbox",
+  },
+  {
+    id: "sign-bulk-send",
+    sourceFile: "src/modules/e-sign/sign-bulk-send.consumer.ts",
+    drains: "outbox_events",
+    owner: "delivery-team",
+    channel: "outbox",
+  },
+  {
+    // No domain team owns `reporting` — it has no module objective and no route
+    // attribution — so the queue sits with the owner of the dead-outbox alert it
+    // pages on, as the other cross-cutting consumers here do.
+    id: "report-schedule",
+    sourceFile: "src/modules/reporting/report-schedule.consumer.ts",
+    drains: "outbox_events",
+    owner: "platform-reliability",
+    channel: "outbox",
+  },
+  {
+    id: "timesheet-lifecycle",
+    sourceFile: "src/modules/timesheets/core/events/timesheet-lifecycle.consumer.ts",
+    drains: "outbox_events",
+    owner: "people-team",
+    channel: "outbox",
+  },
+  {
+    id: "timesheets-payroll-handoff",
+    sourceFile: "src/modules/timesheets/payroll/handoff/payroll-handoff.consumer.ts",
+    drains: "outbox_events",
+    owner: "people-team",
+    channel: "outbox",
+  },
+  {
+    id: "timesheets-payroll-ack",
+    sourceFile: "src/modules/timesheets/payroll/handoff/payroll-ack.consumer.ts",
     drains: "outbox_events",
     owner: "people-team",
     channel: "outbox",
@@ -122,13 +167,6 @@ export const QUEUE_SUBJECTS: readonly QueueSubject[] = [
     id: "expense-export",
     sourceFile: "src/modules/expenses/expense-export-worker.service.ts",
     drains: "expense_export_jobs",
-    owner: "finance-team",
-    channel: "job",
-  },
-  {
-    id: "finance-report-export",
-    sourceFile: "src/modules/finance/reports/finance-report-export-worker.service.ts",
-    drains: "finance_report_export_jobs",
     owner: "finance-team",
     channel: "job",
   },

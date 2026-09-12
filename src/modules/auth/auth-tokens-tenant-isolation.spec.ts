@@ -17,7 +17,7 @@ const OWNER_ORG = "org-owner";
 
 beforeEach(() => jest.resetAllMocks());
 
-interface FluentChain extends PromiseLike<unknown[]> {
+interface FluentChain<T = unknown> extends PromiseLike<T[]> {
   from: jest.Mock;
   innerJoin: jest.Mock;
   leftJoin: jest.Mock;
@@ -26,8 +26,8 @@ interface FluentChain extends PromiseLike<unknown[]> {
   limit: jest.Mock;
 }
 
-function makeFluentChain(finalResult: unknown[]): FluentChain {
-  const chain = {} as FluentChain;
+function makeFluentChain<T = unknown>(finalResult: T[]): FluentChain<T> {
+  const chain = {} as FluentChain<T>;
   chain.from = jest.fn().mockReturnValue(chain);
   chain.innerJoin = jest.fn().mockReturnValue(chain);
   chain.leftJoin = jest.fn().mockReturnValue(chain);

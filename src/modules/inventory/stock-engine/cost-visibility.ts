@@ -27,6 +27,8 @@ const COST_FIELD_SET: ReadonlySet<string> = new Set(COST_FIELDS);
 
 function stripValue(value: unknown, depth: number): unknown {
   if (depth > 6 || value === null || typeof value !== "object") return value;
+  // A Date has no own keys: rebuilding it below would send `{}` for every timestamp.
+  if (value instanceof Date) return value;
   if (Array.isArray(value)) return value.map((v) => stripValue(v, depth + 1));
 
   const out: Record<string, unknown> = {};

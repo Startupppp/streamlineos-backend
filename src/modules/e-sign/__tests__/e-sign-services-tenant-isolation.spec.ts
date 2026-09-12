@@ -19,6 +19,7 @@ import type { SignRecipientsService } from "../sign-recipients.service";
 import type { SignNotificationsService } from "../sign-notifications.service";
 import type { SignEnvelopesService } from "../sign-envelopes.service";
 import type { SignIntegrationsService } from "../sign-integrations.service";
+import type { SignAuthMethodPolicy } from "../sign-auth-method.policy";
 
 const OWNER_ORG = "org-owner";
 const ATTACKER_ORG = "org-attacker";
@@ -110,7 +111,14 @@ describe("SignTemplatesService — cross-tenant isolation", () => {
     const mockAudit = stubService<SignAuditService>({ record: jest.fn() });
     const mockTokens = stubService<SignTokensService>({ hash: jest.fn().mockReturnValue("hashed") });
     const mockPlanLimits = stubService<PlanLimitsService>({ assertWithinLimit: jest.fn() });
-    const svc = new SignTemplatesService(db, mockAudit, mockTokens, mockPlanLimits);
+    const svc = new SignTemplatesService(
+      db,
+      mockAudit,
+      mockTokens,
+      mockPlanLimits,
+      stubService<SignSettingsService>({}),
+      stubService<SignAuthMethodPolicy>({}),
+    );
     const result = await svc.list(ATTACKER_ORG);
     expect(result).toHaveLength(0);
     expect(findMany).toHaveBeenCalledTimes(1);
@@ -126,7 +134,14 @@ describe("SignTemplatesService — cross-tenant isolation", () => {
     const mockAudit = stubService<SignAuditService>({ record: jest.fn() });
     const mockTokens = stubService<SignTokensService>({ hash: jest.fn().mockReturnValue("hashed") });
     const mockPlanLimits = stubService<PlanLimitsService>({ assertWithinLimit: jest.fn() });
-    const svc = new SignTemplatesService(db, mockAudit, mockTokens, mockPlanLimits);
+    const svc = new SignTemplatesService(
+      db,
+      mockAudit,
+      mockTokens,
+      mockPlanLimits,
+      stubService<SignSettingsService>({}),
+      stubService<SignAuthMethodPolicy>({}),
+    );
     const result = await svc.list(OWNER_ORG);
     expect(result).toHaveLength(1);
   });
@@ -198,7 +213,7 @@ describe("SignEnvelopeValidationService — cross-tenant isolation", () => {
   it("validate: envelope query scoped to attacker orgId (deny — different org isolation)", async () => {
     const { db, findFirst } = makeDb([]);
     const mockRecipients = stubService<SignRecipientsService>({ listForEnvelope: jest.fn().mockResolvedValue([]) });
-    const svc = new SignEnvelopeValidationService(db, mockRecipients);
+    const svc = new SignEnvelopeValidationService(db, mockRecipients, { isConfigured: () => false, send: async () => undefined });
     await expect(svc.validate(ATTACKER_ORG, 999)).rejects.toBeDefined();
     expect(findFirst).toHaveBeenCalled();
     const callArg = findFirst.mock.calls[0]?.[0];
@@ -209,7 +224,7 @@ describe("SignEnvelopeValidationService — cross-tenant isolation", () => {
   it("validate: rejects for own org when envelope not found (control — org is scoped correctly)", async () => {
     const { db, findFirst } = makeDb([]);
     const mockRecipients = stubService<SignRecipientsService>({ listForEnvelope: jest.fn().mockResolvedValue([]) });
-    const svc = new SignEnvelopeValidationService(db, mockRecipients);
+    const svc = new SignEnvelopeValidationService(db, mockRecipients, { isConfigured: () => false, send: async () => undefined });
     await expect(svc.validate(OWNER_ORG, 999)).rejects.toBeDefined();
     expect(findFirst).toHaveBeenCalled();
     const callArg = findFirst.mock.calls[0]?.[0];

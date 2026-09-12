@@ -1,3 +1,20 @@
+/*
+ * `emit` reads inside `runInNewTenantTransaction`, which now opens its
+ * transaction on the placement's regional connection through `withPoolBorrow`
+ * -- infrastructure this spec is not about, and which a select-only double
+ * cannot stand in for. The helper runs the body against the same double, as the
+ * sibling isolation specs do, and records the organisation it was opened for,
+ * so the tenant the GUC would have carried is still asserted.
+ */
+const mockRunInNewTenantTransaction = jest.fn(
+  (db: unknown, _orgId: string, fn: (tx: unknown) => Promise<unknown>) => fn(db),
+);
+jest.mock("../../common/tenant/run-in-tenant-transaction", () => ({
+  ...jest.requireActual("../../common/tenant/run-in-tenant-transaction"),
+  runInNewTenantTransaction: (db: unknown, orgId: string, fn: (tx: unknown) => Promise<unknown>) =>
+    mockRunInNewTenantTransaction(db, orgId, fn),
+}));
+
 import type { Db } from "../../db/drizzle.module";
 import { CrmSequencesService } from "./automation-studio/crm-sequences.service";
 import { CrmAutomationBusService } from "./automation-studio/crm-automation-bus.service";
@@ -63,12 +80,15 @@ describe("CrmAutomationBusService — cross-tenant isolation", () => {
     return new CrmAutomationBusService(db, runner as never);
   }
 
+  beforeEach(() => mockRunInNewTenantTransaction.mockClear());
+
   it("emit: event lookup queries scoped to attacker org (deny)", async () => {
     const { db, where } = makeDb([]);
     const svc = buildSvc(db);
     await svc.emit(ATTACKER, "lead.created", { entityType: "lead", entityId: "1" } as never);
     expect(where).toHaveBeenCalled();
     expect(sqlValues(where.mock.calls[0]?.[0])).toContain(ATTACKER);
+    expect(mockRunInNewTenantTransaction.mock.calls.map((call) => call[1])).toEqual([ATTACKER]);
   });
 
   it("emit: event lookup queries scoped to owner org (control)", async () => {
@@ -77,6 +97,7 @@ describe("CrmAutomationBusService — cross-tenant isolation", () => {
     await svc.emit(OWNER, "lead.created", { entityType: "lead", entityId: "1" } as never);
     expect(where).toHaveBeenCalled();
     expect(sqlValues(where.mock.calls[0]?.[0])).toContain(OWNER);
+    expect(mockRunInNewTenantTransaction.mock.calls.map((call) => call[1])).toEqual([OWNER]);
   });
 });
 

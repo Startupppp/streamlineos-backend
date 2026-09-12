@@ -29,6 +29,8 @@ export const ratePreviewQuerySchema = z.object({
   projectId: z.coerce.number().int().positive().optional(),
   userId: z.string().optional(),
   ticketId: z.coerce.number().int().positive().optional(),
+  clientId: z.coerce.number().int().positive().optional(),
+  date: dateString.optional(),
 }).strict();
 export type RatePreviewQuery = z.infer<typeof ratePreviewQuerySchema>;
 

@@ -47,7 +47,10 @@ const baseGap = {
 
 const makeDb = () => ({
   query: {
-    supportKnowledgeGaps: { findFirst: jest.fn() },
+    // `findMany` is the pre-read `upsertGaps` uses to learn which cluster keys
+    // already exist and at what status; `findFirst` is still the single-gap
+    // `upsertGap` and the drafting path.
+    supportKnowledgeGaps: { findFirst: jest.fn(), findMany: jest.fn().mockResolvedValue([]) },
     kbSpaces: { findFirst: jest.fn() },
   },
   execute: jest.fn().mockResolvedValue([]),
@@ -122,8 +125,7 @@ describe("SupportKbGapService", () => {
         },
       ]);
       db.limit.mockResolvedValue([]);
-      db.query.supportKnowledgeGaps.findFirst.mockResolvedValue(null);
-      db.returning.mockResolvedValue([]);
+      db.query.supportKnowledgeGaps.findMany.mockResolvedValue([]);
 
       const service = await makeDetectionService(db);
       const result = await service.detectGaps("org1");
@@ -139,8 +141,7 @@ describe("SupportKbGapService", () => {
         { representative_ticket_id: 3, cluster_ids: [4], representative_question: "Q2" },
       ]);
       db.limit.mockResolvedValue([]);
-      db.query.supportKnowledgeGaps.findFirst.mockResolvedValue(null);
-      db.returning.mockResolvedValue([]);
+      db.query.supportKnowledgeGaps.findMany.mockResolvedValue([]);
 
       const service = await makeDetectionService(db);
       const result = await service.detectGaps("org1");
@@ -159,11 +160,9 @@ describe("SupportKbGapService", () => {
         },
       ]);
       db.limit.mockResolvedValue([]);
-      db.query.supportKnowledgeGaps.findFirst.mockResolvedValue({
-        id: 5,
-        status: SupportKnowledgeGapStatus.OPEN,
-      });
-      db.returning.mockResolvedValue([]);
+      db.query.supportKnowledgeGaps.findMany.mockResolvedValue([
+        { clusterKey: "cluster:10", status: SupportKnowledgeGapStatus.OPEN },
+      ]);
 
       const service = await makeDetectionService(db);
       const result = await service.detectGaps("org1");
@@ -178,10 +177,9 @@ describe("SupportKbGapService", () => {
         { representative_ticket_id: 10, cluster_ids: [11], representative_question: "Q" },
       ]);
       db.limit.mockResolvedValue([]);
-      db.query.supportKnowledgeGaps.findFirst.mockResolvedValue({
-        id: 5,
-        status: SupportKnowledgeGapStatus.DISMISSED,
-      });
+      db.query.supportKnowledgeGaps.findMany.mockResolvedValue([
+        { clusterKey: "cluster:10", status: SupportKnowledgeGapStatus.DISMISSED },
+      ]);
 
       const service = await makeDetectionService(db);
       const result = await service.detectGaps("org1");
@@ -197,24 +195,25 @@ describe("SupportKbGapService", () => {
         .mockResolvedValueOnce([
           { query: "how to export data", count: 8, lastOccurredAt: new Date() },
         ]);
-      db.query.supportKnowledgeGaps.findFirst.mockResolvedValue(null);
-      db.returning.mockResolvedValue([]);
+      db.query.supportKnowledgeGaps.findMany.mockResolvedValue([]);
 
       const service = await makeDetectionService(db);
       const result = await service.detectGaps("org1");
 
       expect(result.created).toBe(1);
       expect(db.insert).toHaveBeenCalled();
+      // `values` now takes the whole chunk as one array, not one row.
       const insertValuesCall = db.values.mock.calls[0] as [
-        {
+        Array<{
           orgId: string;
           clusterKey: string;
           status: string;
           evidence: { searchQueries: Array<{ query: string; count: number }> };
-        },
+        }>,
       ];
-      expect(insertValuesCall[0].status).toBe(SupportKnowledgeGapStatus.OPEN);
-      expect(insertValuesCall[0].evidence.searchQueries[0]).toMatchObject({
+      expect(insertValuesCall[0]).toHaveLength(1);
+      expect(insertValuesCall[0][0].status).toBe(SupportKnowledgeGapStatus.OPEN);
+      expect(insertValuesCall[0][0].evidence.searchQueries[0]).toMatchObject({
         query: "how to export data",
         count: 8,
       });
@@ -226,17 +225,68 @@ describe("SupportKbGapService", () => {
       db.limit.mockResolvedValueOnce([
         { query: "invoice download", count: 5, lastOccurredAt: new Date() },
       ]);
-      db.query.supportKnowledgeGaps.findFirst.mockResolvedValue(null);
-      db.returning.mockResolvedValue([]);
+      db.query.supportKnowledgeGaps.findMany.mockResolvedValue([]);
 
       const service = await makeDetectionService(db);
       await service.detectGaps("org1");
 
       const insertValuesCall = db.values.mock.calls[0] as [
-        { clusterKey: string; evidence: { searchQueries: Array<{ query: string }> } },
+        Array<{ clusterKey: string; evidence: { searchQueries: Array<{ query: string }> } }>,
       ];
-      expect(insertValuesCall[0].clusterKey).toBe("search:invoice download");
-      expect(insertValuesCall[0].evidence.searchQueries).toHaveLength(1);
+      expect(insertValuesCall[0][0].clusterKey).toBe("search:invoice download");
+      expect(insertValuesCall[0][0].evidence.searchQueries).toHaveLength(1);
+    });
+
+    /*
+     * The N+1 this replaced was two round trips PER gap — one findFirst to
+     * decide insert vs update, then the write — so a pass over n clusters and m
+     * search gaps cost 2(n+m). Asserting the shape of the statements is not
+     * enough to stop that coming back: the old code produced correct rows too.
+     * This asserts the COUNT, which is the only thing that regresses.
+     */
+    it("writes a whole detection pass in one pre-read and one insert, not two per gap", async () => {
+      const db = makeDb();
+      db.execute.mockResolvedValue([
+        { representative_ticket_id: 1, cluster_ids: [2], representative_question: "Q1" },
+        { representative_ticket_id: 3, cluster_ids: [4], representative_question: "Q2" },
+        { representative_ticket_id: 5, cluster_ids: [6], representative_question: "Q3" },
+      ]);
+      db.limit.mockResolvedValueOnce([
+        { query: "export data", count: 8, lastOccurredAt: new Date() },
+        { query: "invoice pdf", count: 3, lastOccurredAt: new Date() },
+      ]);
+      db.query.supportKnowledgeGaps.findMany.mockResolvedValue([]);
+
+      const service = await makeDetectionService(db);
+      const result = await service.detectGaps("org1");
+
+      expect(result).toEqual({ created: 5, updated: 0 });
+      expect(db.query.supportKnowledgeGaps.findMany).toHaveBeenCalledTimes(1);
+      expect(db.insert).toHaveBeenCalledTimes(1);
+      // All five gaps travel in the one statement.
+      expect(db.values.mock.calls[0][0]).toHaveLength(5);
+      // And the per-gap read-then-write is gone entirely.
+      expect(db.query.supportKnowledgeGaps.findFirst).not.toHaveBeenCalled();
+    });
+
+    it("does not resurrect a DISMISSED gap while still writing its OPEN sibling", async () => {
+      const db = makeDb();
+      db.execute.mockResolvedValue([
+        { representative_ticket_id: 10, cluster_ids: [11], representative_question: "Q-dismissed" },
+        { representative_ticket_id: 20, cluster_ids: [21], representative_question: "Q-open" },
+      ]);
+      db.limit.mockResolvedValue([]);
+      db.query.supportKnowledgeGaps.findMany.mockResolvedValue([
+        { clusterKey: "cluster:10", status: SupportKnowledgeGapStatus.DISMISSED },
+        { clusterKey: "cluster:20", status: SupportKnowledgeGapStatus.OPEN },
+      ]);
+
+      const service = await makeDetectionService(db);
+      const result = await service.detectGaps("org1");
+
+      expect(result).toEqual({ created: 0, updated: 1 });
+      const written = db.values.mock.calls[0][0] as Array<{ clusterKey: string }>;
+      expect(written.map((row) => row.clusterKey)).toEqual(["cluster:20"]);
     });
   });
 

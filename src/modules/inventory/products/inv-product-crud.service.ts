@@ -3,42 +3,42 @@ import {
   Injectable,
   ConflictException,
   NotFoundException,
-  BadRequestException,
 } from "@nestjs/common";
-import { and, eq, ilike, or, desc, sql, inArray } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
 import { assertNoBarcodeConflict } from "./lib/barcode-conflict";
+import {
+  assertCaptureConfig,
+  assertNoStockForVariants,
+  assertPacksForFields,
+  assertUomBelongsToOrg,
+  assertVendorBelongsToOrg,
+  type ProductAssertionDeps,
+} from "./lib/product-assertions";
+import { getProduct, listProducts, type ProductReadDeps } from "./lib/product-reads";
+import { deleteProduct, type ProductDeleteDeps } from "./lib/product-delete";
+import {
+  archiveProduct,
+  restoreProduct,
+  type ProductArchiveDeps,
+} from "./lib/product-archive";
 import {
   invProducts,
   invProductVariants,
-  invUom,
-  invStockLevels,
-  invVendors,
-  invPurchaseOrders,
-  invPoLines,
-  invSalesOrders,
-  invSoLines,
 } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { CacheService } from "../../../common/cache/cache.service";
-import { CACHE_KEYS, CACHE_TTL } from "../../../common/cache/cache-keys";
+import { CACHE_KEYS } from "../../../common/cache/cache-keys";
+import { isUniqueViolation } from "../../../common/db/postgres-error";
 import { ScopedRead } from "../../access/scoped-read";
 import { InventoryAuditService } from "../stock-engine/inventory-audit.service";
-import { CostVisibilityService, stripCostFields } from "../stock-engine/cost-visibility";
+import { InventorySettingsService } from "../stock-engine/inventory-settings.service";
+import { CostVisibilityService } from "../stock-engine/cost-visibility";
 import type {
   CreateProductInput,
   UpdateProductInput,
   ListProductsInput,
 } from "./dto/inv-products.schemas";
-
-function isUniqueViolation(err: unknown): boolean {
-  return (
-    typeof err === "object" &&
-    err !== null &&
-    "code" in err &&
-    err.code === "23505"
-  );
-}
 
 @Injectable()
 export class InvProductCrudService {
@@ -47,138 +47,17 @@ export class InvProductCrudService {
     private readonly cache: CacheService,
     private readonly audit: InventoryAuditService,
     private readonly costVisibility: CostVisibilityService,
+    private readonly settings: InventorySettingsService,
   ) {}
 
-  private async assertNoStockForVariants(
-    orgId: string,
-    productId: number,
-    errorCode: string,
-    message: string,
-  ): Promise<void> {
-    const variants = await this.db.query.invProductVariants.findMany({
-      where: and(
-        eq(invProductVariants.productId, productId),
-        eq(invProductVariants.orgId, orgId),
-      ),
-      columns: { id: true },
-    });
-    if (variants.length === 0) return;
-    const variantIds = variants.map((v) => v.id);
-    const [result] = await this.db
-      .select({
-        total: sql<string>`COALESCE(SUM(${invStockLevels.onHand}), '0')`,
-      })
-      .from(invStockLevels)
-      .where(inArray(invStockLevels.productVariantId, variantIds));
-    if (parseFloat(result?.total ?? "0") > 0) {
-      throw new BadRequestException({ message, code: errorCode });
-    }
+  /** @see lib/product-reads.ts */
+  async listProducts(read: ScopedRead, query: ListProductsInput) {
+    return listProducts(this.productDeps, read, query);
   }
 
-  private async assertUomBelongsToOrg(
-    orgId: string,
-    uomId: number,
-    fieldName: string,
-  ): Promise<void> {
-    const uom = await this.db.query.invUom.findFirst({
-      where: and(eq(invUom.id, uomId), eq(invUom.orgId, orgId)),
-      columns: { id: true },
-    });
-    if (!uom)
-      throw new BadRequestException(
-        `${fieldName} refers to a UOM not found in this organisation`,
-      );
-  }
-
-  private async assertVendorBelongsToOrg(
-    orgId: string,
-    vendorId: number,
-  ): Promise<void> {
-    const vendor = await this.db.query.invVendors.findFirst({
-      where: and(eq(invVendors.id, vendorId), eq(invVendors.orgId, orgId)),
-      columns: { id: true },
-    });
-    if (!vendor)
-      throw new BadRequestException(
-        "defaultVendorId refers to a vendor not found in this organisation",
-      );
-  }
-
-  async listProducts(read: ScopedRead, filters: ListProductsInput) {
-    const orgId = read.orgId;
-    const { status, productType, categoryId, search, page, limit } = filters;
-    const offset = (page - 1) * limit;
-    // Cost visibility is part of the key: this list is cached per org, so a
-    // masked payload must not be served to a cost-permitted caller or vice versa.
-    const showCost = await this.costVisibility.canSeeCost(orgId, read.actorId);
-    const hash = `${showCost ? "cost" : "nocost"}:${status ?? ""}:${productType ?? ""}:${categoryId ?? ""}:${search ?? ""}:${limit}:${offset}:${read.discriminator}`;
-    return this.cache.cachedVersioned(
-      CACHE_KEYS.invProductsNamespace(orgId),
-      hash,
-      () =>
-        read.read(
-          {
-            tenant: invProducts.orgId,
-            scope: { columns: { ownerColumn: invProducts.createdBy } },
-            and: [
-              status ? eq(invProducts.status, status) : undefined,
-              productType ? eq(invProducts.productType, productType) : undefined,
-              categoryId ? eq(invProducts.categoryId, categoryId) : undefined,
-              search
-                ? or(
-                    ilike(invProducts.name, `%${search}%`),
-                    ilike(invProducts.sku, `%${search}%`),
-                  )
-                : undefined,
-            ],
-          },
-          async ({ sql: where }) => {
-            const [items, countResult] = await Promise.all([
-              this.db.query.invProducts.findMany({
-                where,
-                orderBy: [desc(invProducts.createdAt)],
-                limit,
-                offset,
-                with: {
-                  category: { columns: { id: true, name: true } },
-                  uom: { columns: { id: true, name: true, abbreviation: true } },
-                  variants: {
-                    columns: { id: true, sku: true, name: true, isActive: true },
-                  },
-                },
-              }),
-              this.db
-                .select({ count: sql<number>`count(*)::int` })
-                .from(invProducts)
-                .where(where),
-            ]);
-
-            return {
-              items: showCost ? items : stripCostFields(items),
-              total: countResult[0]?.count ?? 0,
-              page,
-              totalPages: Math.ceil((countResult[0]?.count ?? 0) / limit),
-            };
-          },
-          () => ({ items: [], total: 0, page, totalPages: 0 }),
-        ),
-      CACHE_TTL.SHORT,
-    );
-  }
-
-  async getProduct(orgId: string, productId: number, userId?: string) {
-    const showCost = userId ? await this.costVisibility.canSeeCost(orgId, userId) : false;
-    const product = await this.db.query.invProducts.findFirst({
-      where: and(eq(invProducts.id, productId), eq(invProducts.orgId, orgId)),
-      with: {
-        category: true,
-        uom: true,
-        variants: true,
-        creator: { columns: { id: true, name: true } },
-      },
-    });
-    if (!product) throw new NotFoundException("Product not found");
-    return showCost ? product : stripCostFields(product);
+  /** @see lib/product-reads.ts */
+  async getProduct(orgId: string, productId: number, userId?: string, includeDeleted = false) {
+    return getProduct(this.productDeps, orgId, productId, userId, includeDeleted);
   }
 
   private async generateNextSku(orgId: string): Promise<string> {
@@ -199,17 +78,19 @@ export class InvProductCrudService {
   }
 
   async createProduct(orgId: string, userId: string, data: CreateProductInput) {
+    await assertPacksForFields(this.productDeps, orgId, data);
+    await assertCaptureConfig(this.productDeps, orgId, null, data);
     if (data.barcode) await assertNoBarcodeConflict(this.db, orgId, data.barcode);
     if (data.purchaseUomId)
-      await this.assertUomBelongsToOrg(
+      await assertUomBelongsToOrg(this.productDeps, 
         orgId,
         data.purchaseUomId,
         "purchaseUomId",
       );
     if (data.salesUomId)
-      await this.assertUomBelongsToOrg(orgId, data.salesUomId, "salesUomId");
+      await assertUomBelongsToOrg(this.productDeps, orgId, data.salesUomId, "salesUomId");
     if (data.defaultVendorId)
-      await this.assertVendorBelongsToOrg(orgId, data.defaultVendorId);
+      await assertVendorBelongsToOrg(this.productDeps, orgId, data.defaultVendorId);
 
     const { sku: providedSku, ...rest } = data;
     const maxAttempts = providedSku ? 1 : 5;
@@ -218,8 +99,14 @@ export class InvProductCrudService {
       const sku = providedSku ?? (await this.generateNextSku(orgId));
 
       if (providedSku) {
+        // The uniqueness index is partial on deleted_at IS NULL, so a SKU
+        // freed by a deletion is available again and this pre-check has to agree.
         const existing = await this.db.query.invProducts.findFirst({
-          where: and(eq(invProducts.orgId, orgId), eq(invProducts.sku, sku)),
+          where: and(
+            eq(invProducts.orgId, orgId),
+            eq(invProducts.sku, sku),
+            isNull(invProducts.deletedAt),
+          ),
           columns: { id: true },
         });
         if (existing)
@@ -271,8 +158,14 @@ export class InvProductCrudService {
     productId: number,
     data: UpdateProductInput,
   ) {
+    await assertPacksForFields(this.productDeps, orgId, data);
+    await assertCaptureConfig(this.productDeps, orgId, productId, data);
     const existing = await this.db.query.invProducts.findFirst({
-      where: and(eq(invProducts.id, productId), eq(invProducts.orgId, orgId)),
+      where: and(
+        eq(invProducts.id, productId),
+        eq(invProducts.orgId, orgId),
+        isNull(invProducts.deletedAt),
+      ),
       columns: { id: true, trackingMethod: true, costingMethod: true },
     });
     if (!existing) throw new NotFoundException("Product not found");
@@ -281,7 +174,7 @@ export class InvProductCrudService {
       data.trackingMethod &&
       data.trackingMethod !== existing.trackingMethod
     ) {
-      await this.assertNoStockForVariants(
+      await assertNoStockForVariants(this.productDeps, 
         orgId,
         productId,
         "TRACKING_METHOD_LOCKED",
@@ -289,7 +182,7 @@ export class InvProductCrudService {
       );
     }
     if (data.costingMethod && data.costingMethod !== existing.costingMethod) {
-      await this.assertNoStockForVariants(
+      await assertNoStockForVariants(this.productDeps, 
         orgId,
         productId,
         "COSTING_METHOD_LOCKED",
@@ -299,15 +192,15 @@ export class InvProductCrudService {
     if (data.barcode)
       await assertNoBarcodeConflict(this.db, orgId, data.barcode, productId);
     if (data.purchaseUomId)
-      await this.assertUomBelongsToOrg(
+      await assertUomBelongsToOrg(this.productDeps, 
         orgId,
         data.purchaseUomId,
         "purchaseUomId",
       );
     if (data.salesUomId)
-      await this.assertUomBelongsToOrg(orgId, data.salesUomId, "salesUomId");
+      await assertUomBelongsToOrg(this.productDeps, orgId, data.salesUomId, "salesUomId");
     if (data.defaultVendorId)
-      await this.assertVendorBelongsToOrg(orgId, data.defaultVendorId);
+      await assertVendorBelongsToOrg(this.productDeps, orgId, data.defaultVendorId);
 
     const [updated] = await this.db
       .update(invProducts)
@@ -320,131 +213,36 @@ export class InvProductCrudService {
     return updated;
   }
 
-  async deleteProduct(orgId: string, productId: number) {
-    const existing = await this.db.query.invProducts.findFirst({
-      where: and(eq(invProducts.id, productId), eq(invProducts.orgId, orgId)),
-      columns: { id: true },
-    });
-    if (!existing) throw new NotFoundException("Product not found");
-
-    const variants = await this.db.query.invProductVariants.findMany({
-      where: and(
-        eq(invProductVariants.productId, productId),
-        eq(invProductVariants.orgId, orgId),
-      ),
-      columns: { id: true },
-    });
-
-    if (variants.length > 0) {
-      const variantIds = variants.map((v) => v.id);
-
-      const [stockRows, openPoLines, openSoLines] = await Promise.all([
-        this.db
-          .select({
-            total: sql<string>`COALESCE(SUM(${invStockLevels.onHand}), '0')`,
-          })
-          .from(invStockLevels)
-          .where(inArray(invStockLevels.productVariantId, variantIds)),
-        this.db
-          .select({ id: invPoLines.id })
-          .from(invPoLines)
-          .innerJoin(
-            invPurchaseOrders,
-            eq(invPoLines.poId, invPurchaseOrders.id),
-          )
-          .where(
-            and(
-              inArray(invPoLines.productVariantId, variantIds),
-              inArray(invPurchaseOrders.status, ["DRAFT", "SENT", "PARTIAL"]),
-            ),
-          )
-          .limit(1),
-        this.db
-          .select({ id: invSoLines.id })
-          .from(invSoLines)
-          .innerJoin(invSalesOrders, eq(invSoLines.soId, invSalesOrders.id))
-          .where(
-            and(
-              inArray(invSoLines.productVariantId, variantIds),
-              inArray(invSalesOrders.status, ["DRAFT", "CONFIRMED"]),
-            ),
-          )
-          .limit(1),
-      ]);
-
-      if (parseFloat(stockRows[0]?.total ?? "0") > 0) {
-        throw new ConflictException(
-          "Cannot delete product with existing stock. Archive it instead.",
-        );
-      }
-
-      if (openPoLines.length > 0 || openSoLines.length > 0) {
-        throw new ConflictException(
-          "Cannot delete product referenced in open purchase or sales orders. Archive it instead.",
-        );
-      }
-    }
-
-    await this.db
-      .delete(invProducts)
-      .where(and(eq(invProducts.id, productId), eq(invProducts.orgId, orgId)));
-    await this.cache.del(CACHE_KEYS.invProductDetail(orgId, productId));
-    await this.cache.invalidateNamespace(CACHE_KEYS.invProductsNamespace(orgId));
+  /** @see lib/product-delete.ts */
+  async deleteProduct(orgId: string, productId: number, userId: string) {
+    return deleteProduct(this.productDeps, orgId, productId, userId);
   }
 
+  /** @see lib/product-archive.ts */
   async archiveProduct(orgId: string, productId: number, userId: string) {
-    const existing = await this.db.query.invProducts.findFirst({
-      where: and(eq(invProducts.id, productId), eq(invProducts.orgId, orgId)),
-      columns: { id: true, status: true },
-    });
-    if (!existing) throw new NotFoundException("Product not found");
-
-    const [updated] = await this.db
-      .update(invProducts)
-      .set({ status: "INACTIVE", updatedAt: new Date() })
-      .where(and(eq(invProducts.id, productId), eq(invProducts.orgId, orgId)))
-      .returning();
-
-    await this.audit.insert(this.db, {
-      orgId,
-      actorUserId: userId,
-      action: "product.archive",
-      resourceType: "product",
-      resourceId: String(productId),
-      before: { status: existing.status },
-      after: { status: "INACTIVE" },
-    });
-
-    await this.cache.del(CACHE_KEYS.invProductDetail(orgId, productId));
-    await this.cache.invalidateNamespace(CACHE_KEYS.invProductsNamespace(orgId));
-    return updated;
+    return archiveProduct(this.productDeps, orgId, productId, userId);
   }
 
+  /** @see lib/product-archive.ts */
   async restoreProduct(orgId: string, productId: number, userId: string) {
-    const existing = await this.db.query.invProducts.findFirst({
-      where: and(eq(invProducts.id, productId), eq(invProducts.orgId, orgId)),
-      columns: { id: true, status: true },
-    });
-    if (!existing) throw new NotFoundException("Product not found");
-
-    const [updated] = await this.db
-      .update(invProducts)
-      .set({ status: "ACTIVE", updatedAt: new Date() })
-      .where(and(eq(invProducts.id, productId), eq(invProducts.orgId, orgId)))
-      .returning();
-
-    await this.audit.insert(this.db, {
-      orgId,
-      actorUserId: userId,
-      action: "product.restore",
-      resourceType: "product",
-      resourceId: String(productId),
-      before: { status: existing.status },
-      after: { status: "ACTIVE" },
-    });
-
-    await this.cache.del(CACHE_KEYS.invProductDetail(orgId, productId));
-    await this.cache.invalidateNamespace(CACHE_KEYS.invProductsNamespace(orgId));
-    return updated;
+    return restoreProduct(this.productDeps, orgId, productId, userId);
   }
+
+  /**
+   * Built explicitly rather than passing `this`: TypeScript will not
+   * structurally match a class carrying `private` members to an interface.
+   */
+  private get productDeps(): ProductAssertionDeps &
+    ProductReadDeps &
+    ProductDeleteDeps &
+    ProductArchiveDeps {
+    return {
+      db: this.db,
+      cache: this.cache,
+      audit: this.audit,
+      costVisibility: this.costVisibility,
+      settings: this.settings,
+    };
+  }
+
 }

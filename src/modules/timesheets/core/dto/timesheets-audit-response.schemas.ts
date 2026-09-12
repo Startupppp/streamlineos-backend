@@ -17,17 +17,17 @@ export const timesheetAuditEventSchema = z.object({
 
 export const auditListResponseSchema = cursorPageSchema(timesheetAuditEventSchema);
 
+const auditVerifyCountsSchema = z.object({
+  checked: z.number().int(),
+  verified: z.number().int(),
+  legacyRows: z.number().int(),
+  total: z.number().int(),
+  truncated: z.boolean(),
+});
+
 export const auditVerifyResponseSchema = z.union([
-  z.object({
-    valid: z.literal(true),
-    checked: z.number().int(),
-    verified: z.number().int(),
-    legacyRows: z.number().int(),
-  }),
-  z.object({
-    valid: z.literal(false),
-    brokenAtId: z.number().int(),
-    checked: z.number().int(),
-    legacyRows: z.number().int(),
-  }),
+  auditVerifyCountsSchema.extend({ valid: z.literal(true) }),
+  auditVerifyCountsSchema.extend({ valid: z.literal(false), brokenAtId: z.number().int() }),
 ]);
+
+export type AuditVerifyResult = z.infer<typeof auditVerifyResponseSchema>;

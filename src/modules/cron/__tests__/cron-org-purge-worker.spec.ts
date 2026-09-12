@@ -72,8 +72,23 @@ describe("CronOrgPurgeWorkerService", () => {
     };
   }
 
+  /**
+   * `.where()` here has to be both awaitable and chainable.
+   *
+   * Two of the reads this double stands in for end at `.where()` and one goes on
+   * to `.limit()`, so a `where` that resolves straight to rows dies with
+   * "limit is not a function" — inside `purgeSingle`'s try, which turns a purge
+   * into a silent skip and leaves every assertion in this file looking at the
+   * wrong outcome.
+   */
   function memberSelect(rows: unknown[]) {
-    return { from: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue(rows) }) };
+    const settled = Promise.resolve(rows);
+    const terminal = {
+      limit: jest.fn().mockResolvedValue(rows),
+      then: (ok: (value: unknown) => unknown, no?: (reason: unknown) => unknown) =>
+        settled.then(ok, no),
+    };
+    return { from: jest.fn().mockReturnValue({ where: jest.fn().mockReturnValue(terminal) }) };
   }
 
   beforeEach(async () => {

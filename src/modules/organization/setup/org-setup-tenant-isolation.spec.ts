@@ -110,7 +110,12 @@ describe("OrgSetupService — cross-tenant isolation", () => {
     const sessions = { skipSession: jest.fn().mockResolvedValue(undefined) };
     const creation = { createFromSetup: jest.fn() } as unknown as OrganizationCreationService;
     const resolver = new OrgSetupResolverService(db, cache as never, audit as never, creation);
-    const accountOrgIndex = { refreshForUser: jest.fn().mockResolvedValue(undefined) };
+    // `publishSetupResult` stamps the landing org through the index service before it drops the
+    // session cache; the projection sequencing itself belongs to `activate`, not to this service.
+    const accountOrgIndex = {
+      refreshForUser: jest.fn().mockResolvedValue(undefined),
+      activate: jest.fn().mockResolvedValue(undefined),
+    };
     const svc = new OrgSetupService(
       db,
       audit as never,

@@ -175,6 +175,21 @@ export class SearchService {
     const numericTicket = /^\d+$/.test(q) ? Number(q) : null;
     const needsTicketProbe = access.build !== null && keyMatch === null && numericTicket === null;
 
+    /*
+     * A narrowed viewer sees a contact through what it is attached to: the lead
+     * it came from, or the deal it is on. Both associations are Party's now --
+     * `converted_from_party_id` and `primary_deal_id`, from 0265 -- so the two
+     * EXISTS below correlate to `business_parties` rather than to a `contacts`
+     * row, and this file stops joining the legacy table for two integers.
+     *
+     * The predicate is unchanged in what it admits: the same lead, the same deal,
+     * the same owner columns, the same `or`. `contacts.lead_id` and its party link
+     * are one relation under two spellings, kept equal by the mirror.
+     *
+     * The *owner* is still read from the lead's Party rather than from
+     * `leads.assigned_to_id`: a mirror column deciding who may see a record is the
+     * one place a lagging copy would be a disclosure rather than a display glitch.
+     */
     // Not built at all for a caller who may read no contacts: they should issue no query, not even a subquery.
     const contactOwnPredicate = access.contacts === null ? sql`false` :
       or(
@@ -311,6 +326,8 @@ export class SearchService {
                   id: clientPartyMap.clientId,
                   name: businessParties.name,
                   company: businessParties.companyName,
+                  // `clients.status` mirrors the record's own status, not the pipeline
+                  // stage, and Party declares it NOT NULL -- so no coalesce here.
                   status: businessParties.status,
                 })
                 .from(clientPartyMap)

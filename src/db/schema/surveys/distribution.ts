@@ -1,8 +1,7 @@
 import { pgTable, pgEnum, text, serial, integer, jsonb, timestamp, index, unique, foreignKey } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { organizations, users, organizationMembers } from "../common/auth";
-import { contacts, clientAccounts } from "../crm/contacts";
-import { leads } from "../crm/leads";
+import { clientAccounts } from "../crm/contacts";
 import { surveyForms, surveyVersions } from "./forms";
 
 export const surveyCollectorTypeEnum = pgEnum("survey_collector_type", [
@@ -83,8 +82,6 @@ export const surveyParticipants = pgTable("survey_participants", {
 }, (table) => [
   foreignKey({ columns: [table.orgId, table.collectorId], foreignColumns: [surveyCollectors.orgId, surveyCollectors.id], name: "fk_survey_participants_collector_id_org" }).onDelete("set null"),
   foreignKey({ columns: [table.orgId, table.surveyId], foreignColumns: [surveyForms.orgId, surveyForms.id], name: "fk_survey_participants_survey_id_org" }).onDelete("cascade"),
-  foreignKey({ columns: [table.orgId, table.contactId], foreignColumns: [contacts.orgId, contacts.id], name: "fk_survey_participants_contact_id_org" }).onDelete("set null"),
-  foreignKey({ columns: [table.orgId, table.leadId], foreignColumns: [leads.orgId, leads.id], name: "fk_survey_participants_lead_id_org" }).onDelete("set null"),
   foreignKey({ columns: [table.orgId, table.clientId], foreignColumns: [clientAccounts.orgId, clientAccounts.id], name: "fk_survey_participants_client_id_org" }).onDelete("set null"),
   index("idx_survey_participants_org_survey_status").on(table.orgId, table.surveyId, table.status),
   unique("uq_survey_participants_access_token_hash").on(table.accessTokenHash),
@@ -106,7 +103,5 @@ export const surveyParticipantsRelations = relations(surveyParticipants, ({ one 
   survey: one(surveyForms, { fields: [surveyParticipants.surveyId], references: [surveyForms.id] }),
   collector: one(surveyCollectors, { fields: [surveyParticipants.collectorId], references: [surveyCollectors.id] }),
   user: one(users, { fields: [surveyParticipants.userId], references: [users.id] }),
-  contact: one(contacts, { fields: [surveyParticipants.contactId], references: [contacts.id] }),
-  lead: one(leads, { fields: [surveyParticipants.leadId], references: [leads.id] }),
   client: one(clientAccounts, { fields: [surveyParticipants.clientId], references: [clientAccounts.id] }),
 }));

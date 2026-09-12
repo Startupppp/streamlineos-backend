@@ -1,13 +1,28 @@
-import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, desc, eq, gte, inArray, isNull, lte, sql } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { organizationMembers, timesheetBudgets, timesheets, projects } from "../../../db/schema";
 import { TimesheetsAuditService } from "./timesheets-audit.service";
 import { computeBurn } from "./lib/budget-burn";
+import { isForeignKeyViolation, isUniqueViolation } from "../../../common/db/postgres-error";
 import type { CreateBudgetInput, UpdateBudgetInput } from "./dto/budgets.schemas";
 
 type BudgetRow = typeof timesheetBudgets.$inferSelect;
+
+/**
+ * The two constraints a budget write can trip, as the caller's answers.
+ * `uniq_timesheet_budgets_active_project` allows one ACTIVE budget per
+ * project, and `fk_timesheet_budgets_project_id_org` is a composite tenant
+ * key, so a project id from another organisation — or none — is refused by
+ * the database. Both surfaced as 500s; the first is a 409 and the second the
+ * same 404 an absent project answers, so the refusal confirms nothing.
+ */
+function budgetWriteRefusal(error: unknown): never {
+  if (isUniqueViolation(error)) throw new ConflictException("An active budget already exists for this project");
+  if (isForeignKeyViolation(error)) throw new NotFoundException("Project not found");
+  throw error;
+}
 
 @Injectable()
 export class BudgetsService {
@@ -148,7 +163,8 @@ export class BudgetsService {
         endsAt: input.endsAt ?? null,
         status: input.status ?? "ACTIVE",
       })
-      .returning();
+      .returning()
+      .catch(budgetWriteRefusal);
 
     if (!row) throw new Error("Insert into timesheet_budgets returned no row");
 
@@ -184,7 +200,11 @@ export class BudgetsService {
     if (input.endsAt !== undefined) updateData.endsAt = input.endsAt;
     if (input.status !== undefined) updateData.status = input.status;
 
-    await this.db.update(timesheetBudgets).set(updateData).where(and(eq(timesheetBudgets.id, budgetId), eq(timesheetBudgets.orgId, orgId)));
+    await this.db
+      .update(timesheetBudgets)
+      .set(updateData)
+      .where(and(eq(timesheetBudgets.id, budgetId), eq(timesheetBudgets.orgId, orgId)))
+      .catch(budgetWriteRefusal);
 
     await this.audit.recordWithDb({
       orgId,

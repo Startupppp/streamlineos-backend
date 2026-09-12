@@ -16,7 +16,7 @@ import {
   businessParties,
   deals,
 } from "../../db/schema";
-import type { DecisionKind } from "../../db/schema/crm/autonomous-decisions";
+import { DECISION_KINDS, type DecisionKind } from "../../db/schema/crm/autonomous-decisions";
 import { buildCursorPage, decodeCursor } from "../../common/pagination/cursor";
 import type { ScopedRead } from "../access/scoped-read";
 import { AutonomyReversalService } from "./autonomy-reversal.service";
@@ -151,6 +151,12 @@ export class AutonomyReviewService {
     return this.reversal.reverseDecision(organizationId, userId, decisionId, input);
   }
 
+  /**
+   * Every switch that governs this organisation, platform rows included.
+   *
+   * A tenant needs to see the platform veto, or "why has automation stopped"
+   * has no answer they can reach.
+   */
   async listSwitches(organizationId: string) {
     const rows = await this.db
       .select({
@@ -169,7 +175,8 @@ export class AutonomyReviewService {
 
     return {
       switches: rows,
-      effective: (["task.extracted", "stage.advanced", "party.created", "activity.logged", "quote.sent"] as const).map(
+      /** The resolved answer per action type — what actually governs behaviour. */
+      effective: DECISION_KINDS.map(
         (kind) => ({ kind, ...resolveSwitch(organizationId, kind, scoped) }),
       ),
     };

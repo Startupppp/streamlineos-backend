@@ -13,8 +13,10 @@ import {
   resolveEntriesScope,
   resolvePayrollScope,
   resolveReportsScope,
+  TS_ENTRIES_VIEW_PERMISSION,
   TS_PAYROLL_VIEW_PERMISSION,
   TS_REPORTS_VIEW_PERMISSION,
+  TS_TEAM_VIEW_PERMISSION,
 } from "./timesheets-core-scope";
 
 const mockAccess = { scopeFor: jest.fn() } as unknown as AccessService;
@@ -38,16 +40,39 @@ beforeEach(() => {
 });
 
 describe("resolveEntriesScope", () => {
-  it("returns none when team permission is absent", async () => {
+  const scopes = (byKey: Record<string, "all" | "team" | "own" | "none">) =>
+    (mockAccess.scopeFor as jest.Mock).mockImplementation(async (_: unknown, key: string) => byKey[key] ?? "none");
+
+  it("returns none when neither the gate key nor the widening key is held", async () => {
     (mockAccess.scopeFor as jest.Mock).mockResolvedValue("none");
     const read = await resolveEntriesScope(mockAccess, makeUser());
     expect(read.denied).toBe(true);
   });
 
-  it("returns none when permission is not scopable", async () => {
-    (mockAccess.scopeFor as jest.Mock).mockResolvedValue("none");
+  /**
+   * A plain member holds `timesheets:entries:view` through self-service at
+   * `own` and no `timesheets:team:view` at all. Resolving only the widening
+   * key answered `none`, and My Time listed a member's own entries as empty.
+   */
+  it("gives a member who holds only entries:view their own rows, not nothing", async () => {
+    scopes({ [TS_ENTRIES_VIEW_PERMISSION]: "own" });
     const read = await resolveEntriesScope(mockAccess, makeUser());
-    expect(read.denied).toBe(true);
+    expect(read.denied).toBe(false);
+    expect(read.unrestricted).toBe(false);
+    expect(mockAccess.scopeFor).toHaveBeenCalledWith(expect.anything(), TS_ENTRIES_VIEW_PERMISSION);
+    expect(mockAccess.scopeFor).toHaveBeenCalledWith(expect.anything(), TS_TEAM_VIEW_PERMISSION);
+  });
+
+  it("widens to all through team:view without touching the gate key's own scope", async () => {
+    scopes({ [TS_ENTRIES_VIEW_PERMISSION]: "own", [TS_TEAM_VIEW_PERMISSION]: "all" });
+    const read = await resolveEntriesScope(mockAccess, makeUser());
+    expect(read.unrestricted).toBe(true);
+  });
+
+  it("never narrows: a widening key at none leaves the gate key's own scope in place", async () => {
+    scopes({ [TS_ENTRIES_VIEW_PERMISSION]: "all", [TS_TEAM_VIEW_PERMISSION]: "none" });
+    const read = await resolveEntriesScope(mockAccess, makeUser());
+    expect(read.unrestricted).toBe(true);
   });
 });
 

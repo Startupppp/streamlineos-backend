@@ -21,7 +21,9 @@ export type PayrollCommandName =
   | "run.reject_stage"
   | "payout.create_batch"
   | "payout.mark_sent"
-  | "payout.mark_paid";
+  | "payout.mark_paid"
+  | "timesheet.handoff.deliver"
+  | "timesheet.handoff.ack";
 
 export type CommandBeginResult =
   | { kind: "replay"; response: unknown }

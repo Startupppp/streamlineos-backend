@@ -35,7 +35,8 @@ export const traceabilityQuerySchema = z
   .object({
     lotId: z.coerce.number().int().positive().optional(),
     serialId: z.coerce.number().int().positive().optional(),
-  }).strict()
+  })
+  .strict()
   .refine((d) => d.lotId != null || d.serialId != null, {
     message: "lotId or serialId is required",
   });

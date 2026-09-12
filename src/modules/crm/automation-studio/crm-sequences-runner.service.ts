@@ -7,7 +7,7 @@ import { businessParties, leadPartyMap } from "../../../db/schema/party";
 import { PARTY_OF_LEAD } from "../crm-party-reads";
 import { logger } from "../../../common/logger/logger.service";
 import { logSideEffectFailure } from "../../../common/logger/side-effect";
-import { CrmOutboundEmailService } from "../consent/crm-outbound-email.service";
+import { CrmOutboundEmailService, contactUnsubscribe } from "../consent/crm-outbound-email.service";
 import { isTaskEntityType } from "./types";
 
 interface FlushResult {
@@ -15,6 +15,7 @@ interface FlushResult {
   advanced: number;
   stopped: number;
 }
+
 
 @Injectable()
 export class CrmSequencesRunnerService {
@@ -196,11 +197,21 @@ export class CrmSequencesRunnerService {
     const cfg = step.config ?? {};
     switch (step.stepType) {
       case "email": {
-        await this.email.send(orgId, {
-          to: String(cfg["to"] ?? ""),
-          subject: String(cfg["subject"] ?? ""),
-          html: String(cfg["body"] ?? ""),
-        });
+        await this.email.send(
+          orgId,
+          {
+            to: String(cfg["to"] ?? ""),
+            subject: String(cfg["subject"] ?? ""),
+            html: String(cfg["body"] ?? ""),
+          },
+          /*
+            Only a contact can be unsubscribed: consent is a row against a
+            contact and a channel, and a lead or a deal has no such row. The
+            sender re-checks that this contact is actually the recipient, so
+            passing it here is a request rather than an assertion.
+          */
+          contactUnsubscribe(entityType, entityId),
+        );
         return;
       }
       case "call_task": {

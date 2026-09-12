@@ -88,6 +88,17 @@ carried forward. The complete implemented job catalog is the route list in
 `src/modules/cron/cron.controller.ts`; only enable jobs whose product workflow and cadence
 have been approved.
 
+Two jobs are not optional, because the feature they serve does not work without them:
+
+| Schedule (UTC) | Backend request | Why |
+| --- | --- | --- |
+| `* * * * *` | `POST /cron/outbox-events-worker` | Drains the transactional outbox. Nothing downstream of a domain event happens until it runs. |
+| `* * * * *` | `POST /cron/inventory-webhook-delivery` | Delivers and retries outbound inventory webhooks. Every attempt after the first is scheduled here; unscheduled, a subscriber gets one attempt and never a retry. |
+
+Both are safe to over-trigger: each claims its work under a lease, so an overlapping run finds
+nothing to do rather than delivering twice. A minute is the natural cadence — the webhook
+worker's first retry is a minute after the failure, and a slower tick only delays every
+subsequent attempt, it does not lose one.
 ### Cadenced sweeps are code-scheduled — no external configuration required
 
 The table above never contained a retention sweep, and no scheduler in either repository

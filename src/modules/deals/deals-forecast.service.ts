@@ -1,41 +1,26 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, desc, eq, isNull, notInArray } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import { buildCursorPage, decodeCursor } from "../../common/pagination/cursor";
 import { keysetBefore } from "../../common/pagination/keyset";
-import { deals, crmForecastSnapshots } from "../../db/schema";
+import { crmForecastSnapshots } from "../../db/schema";
 import type { ForecastSnapshotData } from "../../db/schema/crm/deals";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_KEYS, CACHE_TTL } from "../../common/cache/cache-keys";
 import { CrmMetadataService } from "../crm/metadata/crm-metadata.service";
+import { ForecastTrainingService } from "./forecast/forecast-training.service";
 import type {
   CreateForecastSnapshotInput,
   CompareForecastSnapshotsInput,
   ForecastSnapshotsQueryInput,
 } from "./dto/deals.schemas";
+import type { DealsViewScope, ForecastSummary } from "./deals-forecast.types";
+import * as forecastSummary from "./lib/forecast-summary";
+import { orgWideDealsRead } from "./deals-scope";
 
-export interface ForecastMonth {
-  month: string;
-  label: string;
-  weighted: number;
-  bestCase: number;
-  dealCount: number;
-}
-
-export interface ForecastSummary {
-  totalWeighted: number;
-  totalBestCase: number;
-  totalDeals: number;
-  byMonth: ForecastMonth[];
-  byStage: Array<{
-    stage: string;
-    count: number;
-    totalValue: number;
-    weightedValue: number;
-    avgProbability: number;
-  }>;
-}
+export type { DealsViewScope, ForecastMonth, ForecastSummary } from "./deals-forecast.types";
+export { visibleDeals } from "./lib/forecast-summary";
 
 @Injectable()
 export class DealsForecastService {
@@ -43,99 +28,52 @@ export class DealsForecastService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly cache: CacheService,
     private readonly crmMetadata: CrmMetadataService,
+    private readonly forecastModel: ForecastTrainingService,
   ) {}
 
-  private async getTerminalStageKeys(orgId: string): Promise<{ wonKeys: string[]; lostKeys: string[] }> {
-    const metadata = await this.crmMetadata.getAggregate(orgId);
-    const wonKeys = metadata.stages
-      .filter((s) => s.stageType === "won" && s.isActive)
-      .map((s) => s.key);
-    const lostKeys = metadata.stages
-      .filter((s) => s.stageType === "lost" && s.isActive)
-      .map((s) => s.key);
-    return { wonKeys: wonKeys.length ? wonKeys : ["WON"], lostKeys: lostKeys.length ? lostKeys : ["LOST"] };
-  }
-
-  getForecast(orgId: string) {
+  /**
+   * The forecast, over the deals the caller may see.
+   *
+   * ONLY THE ORG-WIDE ANSWER IS CACHED, and deliberately so. `CACHE_KEYS.dealsForecast`
+   * is invalidated by exact key from three write paths in `deals-crud.service.ts`
+   * — create, delete and the shared `invalidateDealCaches`. Appending a scope to
+   * that key would leave every narrowed entry unreachable by those invalidations,
+   * so a rep would keep reading a forecast that included a deal deleted ten
+   * minutes earlier. Fixing that means changing the writers to bump a namespace,
+   * which is a different file and a different change. A narrowed forecast is two
+   * queries over one rep's open deals; it is computed each time and it is
+   * correct, and the shared entry the whole organisation reads is untouched —
+   * same key, same invalidation, same value.
+   */
+  getForecast(orgId: string, view: DealsViewScope): Promise<ForecastSummary> {
+    if (!view.unrestricted) return this.buildForecast(orgId, view);
     return this.cache.cached(
       CACHE_KEYS.dealsForecast(orgId),
-      () => this.buildForecast(orgId),
+      () => this.buildForecast(orgId, orgWideDealsRead(orgId)),
       CACHE_TTL.MEDIUM,
     );
   }
 
-  private async buildForecast(orgId: string): Promise<ForecastSummary> {
-    const { wonKeys, lostKeys } = await this.getTerminalStageKeys(orgId);
-    const metaRaw = await this.crmMetadata.getAggregate(orgId);
-    const stageProbMap = new Map<string, number>(
-      metaRaw.stages
-        .filter((s) => s.isActive)
-        .map((s) => [s.key, s.probability]),
+  /** The forecast itself, uncached; the arithmetic is in `lib/forecast-summary.ts`. */
+  private buildForecast(orgId: string, view: DealsViewScope): Promise<ForecastSummary> {
+    return forecastSummary.buildForecast(
+      { db: this.db, crmMetadata: this.crmMetadata, forecastModel: this.forecastModel },
+      orgId,
+      view,
     );
-
-    const allDeals = await this.db
-      .select({
-        value: deals.value,
-        stage: deals.stage,
-        probability: deals.probability,
-        expectedCloseDate: deals.expectedCloseDate,
-        createdAt: deals.createdAt,
-      })
-      .from(deals)
-      .where(and(eq(deals.orgId, orgId), isNull(deals.deletedAt), notInArray(deals.stage, [...wonKeys, ...lostKeys])))
-      .limit(10000);
-
-    const monthMap = new Map<string, ForecastMonth>();
-    const stageMap = new Map<string, { count: number; totalValue: number; weightedValue: number; probSum: number }>();
-
-    for (const deal of allDeals) {
-      const value = Number(deal.value ?? 0);
-      const probability = deal.probability || stageProbMap.get(deal.stage) || 20;
-      const weighted = Math.round((value * probability) / 100);
-
-      const closeDate = deal.expectedCloseDate
-        ? new Date(deal.expectedCloseDate)
-        : deal.createdAt
-          ? new Date(new Date(deal.createdAt).getTime() + 90 * 24 * 60 * 60 * 1000)
-          : new Date();
-
-      const monthKey = `${closeDate.getFullYear()}-${String(closeDate.getMonth() + 1).padStart(2, "0")}`;
-      const monthLabel = closeDate.toLocaleDateString("en-IN", { month: "short", year: "numeric" });
-
-      const existing = monthMap.get(monthKey) ?? { month: monthKey, label: monthLabel, weighted: 0, bestCase: 0, dealCount: 0 };
-      existing.weighted += weighted;
-      existing.bestCase += value;
-      existing.dealCount += 1;
-      monthMap.set(monthKey, existing);
-
-      const stageData = stageMap.get(deal.stage) ?? { count: 0, totalValue: 0, weightedValue: 0, probSum: 0 };
-      stageData.count += 1;
-      stageData.totalValue += value;
-      stageData.weightedValue += weighted;
-      stageData.probSum += probability;
-      stageMap.set(deal.stage, stageData);
-    }
-
-    const byMonth = [...monthMap.values()].sort((a, b) => a.month.localeCompare(b.month));
-    const byStage = [...stageMap.entries()].map(([stage, data]) => ({
-      stage,
-      count: data.count,
-      totalValue: data.totalValue,
-      weightedValue: data.weightedValue,
-      avgProbability: data.count > 0 ? Math.round(data.probSum / data.count) : 0,
-    }));
-
-    return {
-      totalWeighted: byMonth.reduce((s, m) => s + m.weighted, 0),
-      totalBestCase: byMonth.reduce((s, m) => s + m.bestCase, 0),
-      totalDeals: allDeals.length,
-      byMonth,
-      byStage,
-    };
   }
 
+  /**
+   * A snapshot is the ORGANISATION's forecast, whoever pressed the button.
+   *
+   * `orgWideDealsRead` rather than the caller's scope: a snapshot is captured
+   * for a period and compared against later, so two captures of one period taken
+   * by two different people have to be the same number. The route is gated on
+   * `crm:deals:forecast`, which the catalog does not declare scopable — the same
+   * statement, in the permission catalog.
+   */
   async createForecastSnapshot(orgId: string, userId: string, input: CreateForecastSnapshotInput) {
-    const forecast = await this.getForecast(orgId);
+    const forecast = await this.getForecast(orgId, orgWideDealsRead(orgId));
     const data: ForecastSnapshotData = {
       byCategory: [],
       byRep: [],
@@ -202,7 +140,10 @@ export class DealsForecastService {
     });
     if (!snapshot) throw new NotFoundException(`No snapshot found for period ${input.period}`);
     const baseline = snapshot.data;
-    const current = await this.buildForecast(orgId);
+    // Org-wide, because the baseline it is subtracted from is org-wide. A
+    // narrowed `current` against a stored organisation snapshot would report a
+    // delta between two different populations.
+    const current = await this.buildForecast(orgId, orgWideDealsRead(orgId));
     const currentData: ForecastSnapshotData = {
       byCategory: [],
       byRep: [],

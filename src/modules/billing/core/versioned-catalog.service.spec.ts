@@ -1,8 +1,9 @@
 import { MODULE_METADATA } from "@nestjs/common/constants";
 import { Test } from "@nestjs/testing";
-import type { Provider } from "@nestjs/common";
+import { ConflictException, type Provider } from "@nestjs/common";
 import { CacheService } from "../../../common/cache/cache.service";
 import { DRIZZLE } from "../../../db/drizzle.constants";
+import { drizzlePostgresError, drizzleUniqueViolation } from "../../../test/postgres-error-fixture";
 import { BillingModule } from "./billing.module";
 import { VersionedCatalogService } from "./versioned-catalog.service";
 
@@ -96,6 +97,42 @@ describe("VersionedCatalogService — the entitlement snapshot is busted after c
     await service.upsertOrgEntitlementOverride("org1", "seats", 25, "user1", "negotiated");
 
     expect(cache.invalidate).toHaveBeenCalledWith("billing:ent-overrides:org1");
+  });
+});
+
+describe("VersionedCatalogService — an override that collides on its window", () => {
+  async function serviceWhoseUpsertRejects(err: unknown): Promise<VersionedCatalogService> {
+    const onConflictDoUpdate = jest.fn().mockRejectedValue(err);
+    const values = jest.fn().mockReturnValue({ onConflictDoUpdate });
+    const moduleRef = await Test.createTestingModule({
+      providers: [
+        VersionedCatalogService,
+        { provide: DRIZZLE, useValue: { insert: jest.fn().mockReturnValue({ values }), execute: jest.fn() } },
+        { provide: CacheService, useValue: makeCache() },
+      ],
+    }).compile();
+    return moduleRef.get(VersionedCatalogService);
+  }
+
+  beforeEach(() => jest.clearAllMocks());
+
+  it("is a 409 naming the feature, not a 500, when uq_org_ent_overrides_org_key_from refuses it", async () => {
+    const service = await serviceWhoseUpsertRejects(drizzleUniqueViolation("uq_org_ent_overrides_org_key_from"));
+
+    const attempt = service.upsertOrgEntitlementOverride("org1", "seats", 25, "user1", "negotiated");
+
+    await expect(attempt).rejects.toBeInstanceOf(ConflictException);
+    await expect(attempt).rejects.toThrow('An entitlement override for "seats" already exists for this window');
+    expect(registerAfterCommit).not.toHaveBeenCalled();
+  });
+
+  it("a different database error propagates untouched", async () => {
+    const err = drizzlePostgresError("23503", "some_fk");
+    const service = await serviceWhoseUpsertRejects(err);
+
+    await expect(
+      service.upsertOrgEntitlementOverride("org1", "seats", 25, "user1", "negotiated"),
+    ).rejects.toBe(err);
   });
 });
 

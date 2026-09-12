@@ -4,6 +4,7 @@ import { scoreCitations } from "./scorers/citation.scorer";
 import { isRefusal } from "./scorers/refusal.scorer";
 import { containsPII, looksLikeInjectionEcho } from "./scorers/safety.scorer";
 import { validateAgainstSchema } from "./scorers/schema.scorer";
+import { EVAL_ACCEPTANCE, gatesPresentIn, meetsGate, type EvalReport } from "./ai-eval-runner";
 
 describe("scoreGrounding", () => {
   it("returns grounded=true when all key tokens appear in context", () => {
@@ -183,5 +184,58 @@ describe("validateAgainstSchema", () => {
     const NullableSchema = z.object({ field: z.string().nullable() });
     const result = validateAgainstSchema({ field: null }, NullableSchema);
     expect(result.valid).toBe(true);
+  });
+});
+
+/**
+ * T21 — the three ways `meetsGate` used to report a passing gate while
+ * measuring nothing. Each one had already produced a real green-and-empty gate,
+ * or was one typo away from it, and four suites carried a hand-written
+ * `expect(Object.keys(report.byCriterion))` beside their call because of it.
+ */
+describe("meetsGate refuses a gate that would check nothing", () => {
+  const report = (criterion: string, passed: number, total: number): EvalReport => ({
+    total,
+    passed,
+    failed: total - passed,
+    byCriterion: { [criterion]: { passed, failed: total - passed } },
+    cases: [],
+  });
+
+  it("scores a criterion it measured", () => {
+    expect(meetsGate(report("grounded", 9, 10), { grounded: 0.8 })).toBe(true);
+    expect(meetsGate(report("grounded", 7, 10), { grounded: 0.8 })).toBe(false);
+  });
+
+  it("throws when a threshold names a criterion nobody scored", () => {
+    // The defect: this used to `continue`, so `groundedd` returned true and the
+    // suite reported a gate it had never applied.
+    expect(() => meetsGate(report("grounded", 0, 10), { groundedd: 0.8 })).toThrow(
+      /no criterion named "groundedd"/,
+    );
+  });
+
+  it("throws when a threshold read off the catalog is not a number", () => {
+    // A mistyped catalog key is `undefined`, and `rate < undefined` is false,
+    // so the gate passed. This is how a recorded threshold stops being one.
+    const mistyped = (EVAL_ACCEPTANCE as Record<string, number | undefined>)
+      .INVENTORY_INJECTION_RESISTANCE;
+    expect(mistyped).toBeUndefined();
+    expect(() =>
+      meetsGate(report("grounded", 0, 10), { grounded: mistyped as unknown as number }),
+    ).toThrow(/not a finite/);
+  });
+
+  it("throws on an empty report rather than passing every gate", () => {
+    expect(() => meetsGate(report("grounded", 0, 0), { grounded: 1.0 })).toThrow(
+      /no cases/,
+    );
+  });
+
+  it("gatesPresentIn is the explicit form of the skip, and keeps the rest strict", () => {
+    const measured = report("IMPORT_COLUMN_RECALL", 10, 10);
+    const narrowed = gatesPresentIn(measured, EVAL_ACCEPTANCE);
+    expect(Object.keys(narrowed)).toEqual(["IMPORT_COLUMN_RECALL"]);
+    expect(meetsGate(measured, narrowed)).toBe(true);
   });
 });

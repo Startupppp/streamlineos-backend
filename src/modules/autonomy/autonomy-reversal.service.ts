@@ -1,4 +1,4 @@
-import { ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { ConflictException, Inject, Injectable, NotFoundException, Optional } from "@nestjs/common";
 import { and, eq, isNull } from "drizzle-orm";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.types";
@@ -14,12 +14,20 @@ import { DealsService } from "../deals/deals.service";
 import { planReversal, type TargetState } from "./reversal-plan";
 import { softDeletePartyWithMirror } from "../party/party-legacy-writer";
 import type { ReverseDecisionInput } from "./dto/autonomy-review.schemas";
+import { AutonomyRepairService } from "./autonomy-repair.service";
 
 @Injectable()
 export class AutonomyReversalService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly dealsService: DealsService,
+    /**
+     * Optional, as it was on the review service before the reversal moved here:
+     * specs build this by hand, and a reversal of a repair batch that reaches
+     * this without it refuses rather than half-succeeding.
+     */
+    @Optional()
+    private readonly repairs?: AutonomyRepairService,
   ) {}
 
   async reverseDecision(
@@ -51,7 +59,7 @@ export class AutonomyReversalService {
 
     if (!decision) throw new NotFoundException("Decision not found");
 
-    const target = await this.loadTarget(organizationId, decision.kind, decision);
+    const target = await this.loadTarget(organizationId, decision.kind, decisionId, decision);
     const plan = planReversal(
       {
         kind: decision.kind,
@@ -91,6 +99,7 @@ export class AutonomyReversalService {
     const { field, systemValue, humanValue } = await this.applyReversal(
       organizationId,
       userId,
+      decisionId,
       plan,
     );
 
@@ -113,6 +122,7 @@ export class AutonomyReversalService {
   private async applyReversal(
     organizationId: string,
     userId: string,
+    decisionId: string,
     plan: Extract<ReturnType<typeof planReversal>, { ok: true }>,
   ): Promise<{ field: string; systemValue: string | null; humanValue: string | null }> {
     switch (plan.action) {
@@ -146,6 +156,32 @@ export class AutonomyReversalService {
         return { field: "task", systemValue: "created", humanValue: "removed" };
       }
 
+      case "restore-fields": {
+        /**
+         * Delegated whole, because the batch is not a single write.
+         *
+         * Each value is put back only if it is still the value the system wrote,
+         * so a batch reversal is N guarded restores rather than one statement —
+         * and the guard is the point: a reviewer undoing four hundred repairs
+         * must not overwrite the three somebody has since corrected by hand.
+         */
+        if (!this.repairs)
+          throw new ConflictException("Repairs cannot be reversed from here right now.");
+
+        const { reverted, skipped } = await this.repairs.revertBatch(
+          organizationId,
+          userId,
+          decisionId,
+          null,
+        );
+
+        return {
+          field: "repairs",
+          systemValue: String(reverted + skipped),
+          humanValue: String(reverted),
+        };
+      }
+
       case "delete-party": {
         const [live] = await this.db
           .select({ partyId: businessParties.partyId })
@@ -168,6 +204,7 @@ export class AutonomyReversalService {
   private async loadTarget(
     organizationId: string,
     kind: DecisionKind,
+    decisionId: string,
     decision: { dealId: string | null; activityId: string | null; partyId: string | null },
   ): Promise<TargetState> {
     if (kind === "stage.advanced") {
@@ -198,6 +235,14 @@ export class AutonomyReversalService {
         .limit(1);
 
       return row ? { kind: "activity", deletedAt: row.deletedAt, completedAt: row.completedAt } : null;
+    }
+
+    if (kind === "field.repaired") {
+      if (!this.repairs) return null;
+      return {
+        kind: "repairs",
+        unreverted: await this.repairs.countUnreverted(organizationId, decisionId),
+      };
     }
 
     if (kind === "party.created") {

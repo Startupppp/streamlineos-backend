@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { Inject, Injectable } from "@nestjs/common";
-import { and, asc, desc, eq } from "drizzle-orm";
+import { and, asc, desc, eq, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
@@ -11,6 +11,7 @@ import {
 } from "../../../common/pagination/cursor";
 import { keysetBeforeId } from "../../../common/pagination/keyset";
 import type { AuditQuery } from "./dto/audit.schemas";
+import type { AuditVerifyResult } from "./dto/timesheets-audit-response.schemas";
 
 export interface AuditEventParams {
   orgId: string;
@@ -23,7 +24,7 @@ export interface AuditEventParams {
   reason?: string;
 }
 
-type DbLike = Pick<Db, "insert" | "select">;
+type DbLike = Pick<Db, "insert" | "select" | "execute">;
 
 const AUDIT_INSERT_CHUNK = 500;
 
@@ -67,7 +68,28 @@ export function computeAuditRowHash(
 export class TimesheetsAuditService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
+  /**
+   * Serialises the writers of one organisation's chain for the rest of the
+   * transaction.
+   *
+   * Every link commits to the hash of the row before it, so the tail must not
+   * move between reading it and inserting. Without this, two approvals landing
+   * together both read tail T and both write `prev_hash = T`: the chain forks,
+   * and the next verification reports the second, entirely legitimate, row as
+   * a break. Neither `ORDER BY id DESC LIMIT 1` nor `FOR UPDATE` on that row
+   * closes the window — the second writer's read is not blocked by a lock on
+   * a row it is not inserting after. The lock is transaction-scoped and keyed
+   * on the organisation, so it costs other tenants nothing and is released
+   * with the commit, and it comes before the tail read on purpose.
+   */
+  private async lockChainTail(dbOrTx: DbLike, orgId: string): Promise<void> {
+    await dbOrTx.execute(
+      sql`SELECT pg_advisory_xact_lock(hashtextextended(${`timesheets-audit:${orgId}`}, 0))`,
+    );
+  }
+
   async record(dbOrTx: DbLike, params: AuditEventParams): Promise<void> {
+    await this.lockChainTail(dbOrTx, params.orgId);
     const [last] = await dbOrTx
       .select({ rowHash: timesheetAuditEvents.rowHash })
       .from(timesheetAuditEvents)
@@ -103,6 +125,7 @@ export class TimesheetsAuditService {
     const first = paramsList[0];
     if (!first) return;
 
+    await this.lockChainTail(dbOrTx, first.orgId);
     const [last] = await dbOrTx
       .select({ rowHash: timesheetAuditEvents.rowHash })
       .from(timesheetAuditEvents)
@@ -191,7 +214,27 @@ export class TimesheetsAuditService {
     }));
   }
 
-  async verifyChain(orgId: string, limit = 10_000) {
+  /**
+   * Walk the hash chain and say, honestly, how much of it was walked.
+   *
+   * The `limit` is real and an organisation will pass it: this reads the
+   * OLDEST `limit` events by id, so on a chain longer than that, everything
+   * after the cut is never examined and `valid: true` used to come back
+   * regardless. A caller had no way to tell "the whole chain is intact" from
+   * "the first ten thousand of ninety thousand are intact", which is the
+   * difference between an audit trail and a reassuring number.
+   *
+   * So the result carries `truncated` and `total`. A surface rendering this
+   * must say which of the two it is looking at — a green tick over a truncated
+   * check is worse than no check, because it is believed.
+   */
+  async verifyChain(orgId: string, limit = 10_000): Promise<AuditVerifyResult> {
+    const [counted] = await this.db
+      .select({ n: sql<string>`count(*)` })
+      .from(timesheetAuditEvents)
+      .where(eq(timesheetAuditEvents.orgId, orgId));
+    const total = Number(counted?.n ?? 0);
+
     const rows = await this.db
       .select({
         id: timesheetAuditEvents.id,
@@ -215,8 +258,27 @@ export class TimesheetsAuditService {
     let legacyRows = 0;
     let verified = 0;
 
+    const broken = (brokenAtId: number): AuditVerifyResult => ({
+      valid: false,
+      brokenAtId,
+      checked: verified + legacyRows,
+      verified,
+      legacyRows,
+      total,
+      /* A break found early says nothing about what lies past the cut. */
+      truncated: total > rows.length,
+    });
+
     for (const row of rows) {
       if (!row.rowHash) {
+        /*
+         * Rows have carried a hash since the chain was introduced and nothing
+         * writes one without it, so hashless rows can only be a prefix — the
+         * events that predate hashing. One appearing after a hashed row means
+         * a hash was erased, and erasing the hash is the cheapest way to hide
+         * an edit; it is a break at that row, not a legacy row.
+         */
+        if (verified > 0) return broken(row.id);
         legacyRows++;
         continue;
       }
@@ -230,19 +292,18 @@ export class TimesheetsAuditService {
         after: row.after,
         reason: row.reason ?? undefined,
       });
-      if (expected !== row.rowHash || (row.prevHash ?? null) !== prevHash) {
-        if (row.actorMembershipId === null) {
-          legacyRows++;
-          prevHash = row.rowHash;
-          continue;
-        }
-        return {
-          valid: false,
-          brokenAtId: row.id,
-          checked: verified + legacyRows,
-          legacyRows,
-        };
-      }
+      /*
+       * No row is forgiven for who wrote it. A mismatch used to be waved
+       * through when `actorMembershipId` was null — meant for rows whose actor
+       * a membership cutover could not map, it also covered every row the
+       * system writes (detection sweeps, cron locks) and every row a departed
+       * member's foreign key had nulled, and re-anchored the chain on whatever
+       * hash the row now carried. An altered system row therefore verified.
+       * The cutover left no such rows behind (measured: none on the shared
+       * database, 2026-09-12), and migration 1104 stops the departure path
+       * rewriting the actor, so the tolerance has nothing left to excuse.
+       */
+      if (expected !== row.rowHash || (row.prevHash ?? null) !== prevHash) return broken(row.id);
       prevHash = row.rowHash;
       verified++;
     }
@@ -252,6 +313,8 @@ export class TimesheetsAuditService {
       checked: verified + legacyRows,
       verified,
       legacyRows,
+      total,
+      truncated: total > rows.length,
     };
   }
 }

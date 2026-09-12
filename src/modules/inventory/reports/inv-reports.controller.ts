@@ -22,6 +22,14 @@ import {
   type ExpiryReportInput,
 } from "./dto/inv-reports.schemas";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
+import { OperationsMetricsService } from "./operations-metrics.service";
+import { WorkAgingService } from "./work-aging.service";
+import {
+  throughputQuerySchema,
+  workAgingQuerySchema,
+  type ThroughputQueryInput,
+  type WorkAgingQueryInput,
+} from "./dto/operations-metrics.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
 import {
@@ -32,6 +40,8 @@ import {
   valuationReportResponseSchema,
   slowMovingReportResponseSchema,
   expiryReportResponseSchema,
+  throughputResponseSchema,
+  workAgingResponseSchema,
 } from "./dto/reports-response.schemas";
 
 @RequireModule("inventory")
@@ -41,7 +51,44 @@ export class InvReportsController {
   constructor(
     private readonly reports: InvReportsService,
     private readonly extended: InvReportsExtendedService,
+    private readonly operationsMetrics: OperationsMetricsService,
+    private readonly workAging: WorkAgingService,
   ) {}
+
+  /**
+   * INV-210. Throughput and SLA over a bounded window, computed from the facts
+   * the rest of the phase records rather than from a counter that would drift.
+   */
+  @Get("throughput")
+  @ResponseSchema(throughputResponseSchema)
+  @UseGuards(PermissionGuard)
+  @RequirePermission("inventory:reports:read")
+  @Validate({ query: throughputQuerySchema })
+  throughput(
+    @Query() query: ThroughputQueryInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.operationsMetrics.throughput(u.orgId, u.userId, query);
+  }
+
+  /**
+   * How long the open work in each stage has been standing there.
+   *
+   * The same permission as throughput: both are the same floor-supervisor view
+   * over the same rows, and a second key nobody has been granted would put the
+   * dashboard behind a permission that exists only in this file.
+   */
+  @Get("work-aging")
+  @ResponseSchema(workAgingResponseSchema)
+  @UseGuards(PermissionGuard)
+  @RequirePermission("inventory:reports:read")
+  @Validate({ query: workAgingQuerySchema })
+  getWorkAging(
+    @Query() query: WorkAgingQueryInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.workAging.workAging(u.orgId, u.userId, query);
+  }
 
   @Get("dashboard")
   @ResponseSchema(dashboardResponseSchema)
@@ -72,7 +119,7 @@ export class InvReportsController {
     @Query() query: ReorderQueryInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.reports.getReorderReport(u.orgId, query);
+    return this.reports.getReorderReport(u.orgId, u.userId, query);
   }
 
   @Get("movements")

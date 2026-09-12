@@ -1,6 +1,6 @@
 {
   "note": "Every top-level integer constant in every backend gate script, with the direction it may move. check:baseline-integrity fails on an unregistered constant (which is what a rename looks like), a stale registration (the other half of a rename), and any move in the unsafe direction. ratchet = may only decrease. floor = may only increase; lowering a floor is how a gate goes blind while printing OK. pinned = may not change without re-registering, used where the safe direction is genuinely not obvious.",
-  "measured": "2026-09-06",
+  "measured": "2026-09-12",
   "entries": {
     "baselines/authz-deny.json": {
       "uncoveredRatchet": {
@@ -43,7 +43,7 @@
         "value": 1,
         "direction": "ratchet",
         "owner": "CRM/inventory release owner",
-        "reason": "inv-engine-misc-isolation-ai.spec.ts:133 \u2014 inventory, accepted residual R-9, review 2026-12-01."
+        "reason": "inv-engine-misc-isolation-ai.spec.ts:133 — inventory, accepted residual R-9, review 2026-12-01."
       },
       "ratchets.TAUTOLOGY": {
         "value": 2,
@@ -66,7 +66,7 @@
       "ratchets.EARLY_RETURN": {
         "value": 4,
         "direction": "ratchet",
-        "owner": "platform DB \u00b7 platform \u00b7 surveys \u00b7 timesheets",
+        "owner": "platform DB · platform · surveys · timesheets",
         "reason": "Lowered 5 -> 4 on 2026-09-11 after removing tenant-relationship-integrity.spec.ts's always-null live-DB adapter and early return. Its four design tests now explicitly make no SQL claim; a requested live mode fails closed and directs operators to the guarded dedicated DB probe. The prior five-site baseline was established after two earlier repairs; four existing environment/domain guards remain."
       }
     },
@@ -245,7 +245,7 @@
         "value": 8,
         "direction": "ratchet",
         "owner": "api/platform owner",
-        "reason": "New constant, not a rename \u2014 registered 2026-09-04 when this gate's reach went from 2 of 336 paginated GETs to the whole corpus. It caps how many times the payload classifier will follow a return expression through a callback wrapper (runInTenantTransaction, cachedVersioned, withTenant and friends) before giving up and reporting `unresolved`. A ratchet because RAISING it is the dangerous direction: a deeper walk resolves more handlers and so makes the gate look better without any code improving, and an unbounded walk would recurse on a cyclic re-export. Lowering it is safe \u2014 it only turns resolved handlers back into honestly-unresolved ones."
+        "reason": "New constant, not a rename — registered 2026-09-04 when this gate's reach went from 2 of 336 paginated GETs to the whole corpus. It caps how many times the payload classifier will follow a return expression through a callback wrapper (runInTenantTransaction, cachedVersioned, withTenant and friends) before giving up and reporting `unresolved`. A ratchet because RAISING it is the dangerous direction: a deeper walk resolves more handlers and so makes the gate look better without any code improving, and an unbounded walk would recurse on a cyclic re-export. Lowering it is safe — it only turns resolved handlers back into honestly-unresolved ones."
       }
     },
     "check-evidence-redaction.mjs": {
@@ -277,7 +277,7 @@
         "value": 500,
         "direction": "ratchet",
         "owner": "release owner",
-        "reason": "CLAUDE.md \u00a77's hard review limit. Policy, not debt; raising it would retire the rule by arithmetic."
+        "reason": "CLAUDE.md §7's hard review limit. Policy, not debt; raising it would retire the rule by arithmetic."
       },
       "MIN_FILES": {
         "value": 2000,
@@ -430,6 +430,12 @@
         "direction": "ratchet",
         "owner": "migrations owner",
         "reason": "Migration index below which a rollback script is not required. Raising it exempts more migrations from the requirement."
+      },
+      "INVENTORY_WITHOUT_ROLLBACK_BASELINE": {
+        "value": 38,
+        "direction": "ratchet",
+        "owner": "CRM/inventory release owner",
+        "reason": "Inventory migrations with neither a rollback file nor an `-- @irreversible` declaration, which pass only because they sit at or below BASELINE_CUTOFF (839). NOT a net raise against this file's other two entries: it is a NEW measurement of debt that was previously invisible, not a loosening of MIN_SQL_FILES or BASELINE_CUTOFF. Before it existed the gate printed PASSED while enforcing nothing at all about inventory — every inventory migration predates the cutoff, so the green covered the module and said so nowhere. Ratcheted so the count is a number somebody has to look at and cannot quietly grow; it drops by one for every one of the 38 that gains a rollback or declares itself irreversible."
       }
     },
     "check-mock-surface.mjs": {
@@ -495,7 +501,7 @@
         "value": 102,
         "direction": "ratchet",
         "owner": "perf/db owner",
-        "reason": "Growing-collection loop sites. Never raised; lowered 106 -> 102 while this registry was being written, which is how the shared working tree moves under a measurement \u2014 the value here is HEAD's, not the tree's."
+        "reason": "Growing-collection loop sites. Never raised; lowered 106 -> 102 while this registry was being written, which is how the shared working tree moves under a measurement — the value here is HEAD's, not the tree's."
       },
       "MIN_LOOP_NODES": {
         "value": 4800,
@@ -591,13 +597,13 @@
         "value": 300,
         "direction": "ratchet",
         "owner": "release owner",
-        "reason": "CLAUDE.md \u00a77's 300-line target. Policy, not debt."
+        "reason": "CLAUDE.md §7's 300-line target. Policy, not debt."
       },
       "BASELINE": {
-        "value": 390,
+        "value": 413,
         "direction": "ratchet",
         "owner": "release owner",
-        "reason": "Files over 300 lines. Was RAISED ONCE, 392 -> 394 by c3f0b73db -- the one upward move in either repository this release has not justified away. LOWERED BACK to 392 and banked 2026-09-03 by v2 ticket 30 as ticket 37's splits landed. LOWERED to 390 on 2026-09-08: the gate had drifted RED at 414, and 26 files were split along a responsibility seam (cron controllers by product domain, DTO contract files by owning controller, services by read/write) taking the count to 390 of 4,086 production files. Two of the 414 crossed 300 during that window from work outside this change (hr/core/person-employment-sync.service.ts, hr/time/attendance-read.service.ts) and are counted in the 390."
+        "reason": "Files over 300 lines. THIS IS A RAISE, 390 -> 413, and it is registered as one rather than absorbed: origin/main's 390 counted main's tree and the inventory lane's 380 counted the inventory lane; neither number describes the merged tree, which is a strictly larger corpus (349 of the 413 are inventory-lane files, 64 came from the CRM/Timesheets/accounting lanes). What makes 413 honest rather than arithmetic is that it does NOT make check:over-300 green: the merged tree measures 447 at head on 2026-09-12, so that gate is RED by 34 files. 413 is the number those 34 have to be split back under. It is not the merged tree's count and must not be edited to become one — the previous sentence is the whole reason this entry exists. History: 394 set 2026-08-31; lowered to 392, then 390, then (on the inventory lane) to 380 as the split programme took the real count from 476 down."
       },
       "MIN_FILES": {
         "value": 50,
@@ -659,7 +665,7 @@
         "value": 5,
         "direction": "floor",
         "owner": "billing owner",
-        "reason": "Anti-vacuity floor on the INVERSE check added 2026-09-08. The gate previously proved only that each LimitKey had at least one assertWithinLimit call site somewhere; it now walks every .insert(candidates) site and requires assertWithinLimit(\"hrCandidates\", ...) ahead of it in the same enclosing function body. Measured 9 sites at authoring time, floor set with headroom so ordinary refactoring does not false-positive. Without this floor a broken table matcher finds zero inserts and the inverse check reports clean over nothing \u2014 which is the exact shape of the gap it was written to close: hrCandidates had 1 covered site and 7 uncovered ones, two of them reachable from @Public() unauthenticated endpoints."
+        "reason": "Anti-vacuity floor on the INVERSE check added 2026-09-08. The gate previously proved only that each LimitKey had at least one assertWithinLimit call site somewhere; it now walks every .insert(candidates) site and requires assertWithinLimit(\"hrCandidates\", ...) ahead of it in the same enclosing function body. Measured 9 sites at authoring time, floor set with headroom so ordinary refactoring does not false-positive. Without this floor a broken table matcher finds zero inserts and the inverse check reports clean over nothing — which is the exact shape of the gap it was written to close: hrCandidates had 1 covered site and 7 uncovered ones, two of them reachable from @Public() unauthenticated endpoints."
       }
     },
     "check-public-object-urls.mjs": {
@@ -828,10 +834,10 @@
         "direction": "floor"
       },
       "QUARANTINE_BASELINE": {
-        "value": 6,
+        "value": 0,
         "direction": "ratchet",
         "owner": "CRM/inventory release owner",
-        "reason": "6 describe.skip blocks in src/modules/ai/core/crm-copilot.service.phase2.spec.ts, all targeting CrmScoringService/CrmBriefService. Accepted residual R-9, blocker SCOPE, review 2026-12-01."
+        "reason": "BANKED 6 -> 0 on 2026-09-12. The six were the describe.skip blocks of src/modules/ai/core/crm-copilot.service.phase2.spec.ts; they were un-skipped on 2026-09-10 and their registry entries in baselines/test-suppressions.json outlived the suppression, so the gate had been reporting \"quarantine 0 (ratchet 6)\" ever since. Six of slack is six regressions a later change may land for free. No spec in this repository now has live assertions switched off, and adding one has to argue for itself."
       },
       "CONDITIONAL_BASELINE": {
         "value": 19,
@@ -939,6 +945,22 @@
       "MIN_EXPECTS": {
         "value": 20000,
         "direction": "floor"
+      }
+    },
+    "check-db-spec-gates.mjs": {
+      "MIN_DB_SPECS": {
+        "value": 12,
+        "direction": "floor",
+        "owner": "backend platform owner",
+        "reason": "Anti-vacuity floor on *.db.spec.ts files found by the walk. NOT a net raise despite reading as one: check-db-spec-gates.mjs is new on this branch (it does not exist on origin/main), so its constants have never been registered and there is no prior identifier to have been renamed from. The floor is deliberately far below the real corpus — 65 measured at head — because it is here to catch a walk that resolves to nothing, which is the defect the gate itself was written for (nine specs gated on INV_DB_TESTS, a variable nothing set, all describe.skip in every run and reported as a silent green). Raise it as the tier grows; never lower it to make a change fit."
+      }
+    },
+    "check-timesheets-payroll-boundary.mjs": {
+      "MINIMUM_FILES": {
+        "value": 40,
+        "direction": "floor",
+        "owner": "Timesheets release owner",
+        "reason": "Anti-vacuity floor on files walked under src/modules/timesheets. NOT a net raise: check-timesheets-payroll-boundary.mjs arrived with the Timesheets lane and has never had a registration, so there is no prior identifier this could be a rename of. The gate asserts Timesheets imports nothing from payroll or hr; a walk that returns a handful of files means the module moved and the boundary is guarding nothing while printing OK. 40 is well under the module's real file count, which is what a floor should be."
       }
     }
   }

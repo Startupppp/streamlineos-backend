@@ -67,10 +67,35 @@ export function isBareDateType(text: string): boolean {
   return /(^|[^A-Za-z_$])Date([^A-Za-z_$]|$)/.test(text);
 }
 
+/**
+ * `sql` names TWO different tags in this repo, and only one of them is the defect.
+ *
+ * Drizzle's `sql` builds a fragment whose parameters are handed to `postgres.unsafe(query, params)`
+ * — the driver's per-type serialisers never run, which is the whole bug. postgres-js's OWN client
+ * handle is also conventionally called `sql` (`const sql = pg!` in the `.db.spec.ts` files), and
+ * ITS template DOES serialise a Date, through the `date` type in `postgres/src/types.js`
+ * (`serialize: x => x.toISOString()`). The docblock at the top of this file has said so since the
+ * check was written; the scanner just could not tell the two apart, because it matched the tag by
+ * NAME. That cost two findings in `crm/metadata/lib/data-quality-leads.db.spec.ts`, where the Date
+ * is correct and `.toISOString()` would have been a no-op change made to satisfy a gate.
+ *
+ * The two are distinguishable by type, not by name: a drizzle tag evaluates to `SQL<…>`, the
+ * driver's to `PendingQuery<…>` (its tag is `Sql<…>`). The driver's shape is what gets EXCLUDED,
+ * rather than drizzle's being what gets included, so a template whose type the checker cannot
+ * resolve is still scanned instead of silently dropped.
+ */
+const DRIVER_TEMPLATE_RE = /^PendingQuery\b|^PendingRequest\b/;
+const DRIVER_TAG_RE = /^Sql\b|^TransactionSql\b/;
+
+export function isDriverTemplate(tagType: string, expressionType: string): boolean {
+  return DRIVER_TAG_RE.test(tagType) || DRIVER_TEMPLATE_RE.test(expressionType);
+}
+
 export interface ScanResult {
   hits: DateInterpolation[];
   filesScanned: number;
   templatesSeen: number;
+  driverTemplatesSkipped: number;
 }
 
 export function findDateInterpolations(program: ts.Program): ScanResult {
@@ -78,6 +103,7 @@ export function findDateInterpolations(program: ts.Program): ScanResult {
   const found: DateInterpolation[] = [];
   let filesScanned = 0;
   let templatesSeen = 0;
+  let driverTemplatesSkipped = 0;
 
   for (const sourceFile of program.getSourceFiles()) {
     if (sourceFile.isDeclarationFile) continue;
@@ -85,10 +111,15 @@ export function findDateInterpolations(program: ts.Program): ScanResult {
     filesScanned++;
 
     const visit = (node: ts.Node): void => {
-      if (ts.isTaggedTemplateExpression(node) && tagNameOf(node) === "sql") templatesSeen++;
       if (ts.isTaggedTemplateExpression(node) && tagNameOf(node) === "sql") {
+        templatesSeen++;
+        const driver = isDriverTemplate(
+          checker.typeToString(checker.getTypeAtLocation(node.tag)),
+          checker.typeToString(checker.getTypeAtLocation(node)),
+        );
+        if (driver) driverTemplatesSkipped++;
         const template = node.template;
-        if (ts.isTemplateExpression(template))
+        if (!driver && ts.isTemplateExpression(template))
           for (const span of template.templateSpans) {
             const typeText = checker.typeToString(checker.getTypeAtLocation(span.expression));
             if (!isBareDateType(typeText)) continue;
@@ -106,7 +137,7 @@ export function findDateInterpolations(program: ts.Program): ScanResult {
     visit(sourceFile);
   }
 
-  return { hits: found, filesScanned, templatesSeen };
+  return { hits: found, filesScanned, templatesSeen, driverTemplatesSkipped };
 }
 
 function buildProgram(fileNames: string[], options: ts.CompilerOptions): ts.Program {
@@ -199,9 +230,34 @@ function runSelfTest(): void {
     return;
   }
 
+  // Same reasoning as the wrapper cases: the type texts below are the ones the checker actually
+  // printed for the two tags (measured on `lifecycle/lib/customer-health-readers.ts` and
+  // `crm/metadata/lib/data-quality-leads.db.spec.ts`), and reproducing a real postgres-js handle
+  // inside the synthetic program would need the driver's types in it.
+  const tagCases: [string, string, boolean][] = [
+    ["typeof sql", "SQL<unknown>", false],
+    ["typeof sql", "SQL<number>", false],
+    ["typeof sql", "SQL<Date | null>", false],
+    ["Sql<{}>", "PendingQuery<Row[]>", true],
+    ["TransactionSql<{}>", "PendingQuery<Row[]>", true],
+    // An unresolvable type must stay SCANNED — excluding drizzle by omission would turn a broken
+    // checker into a clean sweep, which is the outcome this whole file exists to prevent.
+    ["any", "any", false],
+  ];
+  const wrongTags = tagCases.filter(([tag, expr, want]) => isDriverTemplate(tag, expr) !== want);
+  if (wrongTags.length > 0) {
+    console.error(
+      `SELF-TEST FAIL: driver-tag predicate disagrees on ` +
+        wrongTags.map(([tag, expr]) => `${tag} / ${expr}`).join(", "),
+    );
+    process.exitCode = 1;
+    return;
+  }
+
   console.log(
     "SELF-TEST PASS: a bare Date and a Date|null are both detected; .toISOString(), a string, " +
-      "a number and every drizzle SQL/Column wrapper are not.",
+      "a number and every drizzle SQL/Column wrapper are not; the postgres-js client's own tag " +
+      "is excluded and an unresolvable tag is still scanned.",
   );
 }
 
@@ -211,7 +267,8 @@ function main(): void {
     return;
   }
 
-  const { hits, filesScanned, templatesSeen } = findDateInterpolations(loadRepoProgram());
+  const { hits, filesScanned, templatesSeen, driverTemplatesSkipped } =
+    findDateInterpolations(loadRepoProgram());
 
   // A collector that silently stops matching reports a clean sweep, which is the one outcome
   // indistinguishable from success. Exit 2 (inconclusive) rather than 0 when the corpus
@@ -227,7 +284,9 @@ function main(): void {
   }
 
   console.log(
-    `Scanned ${String(filesScanned)} files — found ${String(templatesSeen)} sql template(s).`,
+    `Scanned ${String(filesScanned)} files — found ${String(templatesSeen)} sql template(s), ` +
+      `of which ${String(driverTemplatesSkipped)} are the postgres-js client's own tag (it ` +
+      "serialises Dates itself) and are not scanned.",
   );
 
   if (hits.length === 0) {

@@ -20,6 +20,7 @@ import { DrizzleModule } from "./db/drizzle.module";
 import { CacheModule } from "./common/cache/cache.module";
 import { AuditModule } from "./common/audit/audit.module";
 import { RateLimitModule } from "./common/ratelimit/rate-limit.module";
+import { ActivationModule } from "./modules/onboarding-activation/activation.module";
 import { AdmissionModule } from "./common/admission/admission.module";
 import { AdmissionGuard } from "./common/admission/admission.guard";
 import { AdmissionInterceptor } from "./common/admission/admission.interceptor";
@@ -30,7 +31,6 @@ import { SurveysModule } from "./modules/surveys/surveys.module";
 import { BlogModule } from "./modules/blog/blog.module";
 import { AuditLogModule } from "./modules/audit-log/audit-log.module";
 import { GoalsModule } from "./modules/goals/goals.module";
-import { ExpensesModule } from "./modules/expenses/expenses.module";
 import { TasksModule } from "./modules/tasks/tasks.module";
 import { PlatformModule } from "./modules/platform/platform.module";
 import { NotificationsModule } from "./modules/notifications/notifications.module";
@@ -40,7 +40,6 @@ import { ReportsModule } from "./modules/reports/reports.module";
 import { SalesModule } from "./modules/sales/sales.module";
 import { CalendarModule } from "./modules/calendar/calendar.module";
 import { SettingsModule } from "./modules/settings/settings.module";
-import { InvoicesModule } from "./modules/invoices/invoices.module";
 import { CareersModule } from "./modules/careers/careers.module";
 import { WebhooksModule } from "./modules/webhooks/webhooks.module";
 import { ClientsModule } from "./modules/clients/clients.module";
@@ -58,6 +57,8 @@ import { SupportRootModule } from "./modules/support/support.module";
 import { ESignModule } from "./modules/e-sign/e-sign.module";
 import { KbModule } from "./modules/kb/kb.module";
 import { AccountingRootModule } from "./modules/accounting/accounting.module";
+import { ExpensesModule } from "./modules/expenses/expenses.module";
+import { InvoicesModule } from "./modules/invoices/invoices.module";
 import { ChatModule } from "./modules/chat/chat.module";
 import { HrModule } from "./modules/hr/hr.module";
 import { SearchModule } from "./modules/search/search.module";
@@ -80,16 +81,27 @@ import { WorkflowsModule } from "./modules/workflows/workflows.module";
 import { PayrollModule } from "./modules/payroll/payroll.module";
 import { TimesheetsRootModule } from "./modules/timesheets/timesheets.module";
 import { FeedbucketModule } from "./modules/feedbucket/feedbucket.module";
-import { FinanceModule } from "./modules/finance/finance.module";
 import { AgentAccessModule } from "./modules/agent-access/agent-access.module";
 import { MailModule } from "./modules/mail/mail.module";
 import { GdprModule } from "./modules/gdpr/gdpr.module";
 import { DirectoryModule } from "./modules/directory/directory.module";
 import { PartyModule } from "./modules/party/party.module";
+import { ComplianceModule } from "./modules/compliance/compliance.module";
 import { ActivitiesModule } from "./modules/activities/activities.module";
+import { AttributionModule } from "./modules/attribution/attribution.module";
+import { RelationshipsModule } from "./modules/relationships/relationships.module";
+import { CallsModule } from "./modules/calls/calls.module";
+import { CommissionModule } from "./modules/commission/commission.module";
+import { LifecycleModule } from "./modules/lifecycle/lifecycle.module";
+import { LifecycleTriggersModule } from "./modules/lifecycle/lifecycle-triggers.module";
+import { ReportingModule } from "./modules/reporting/reporting.module";
+import { SequenceReplyExitModule } from "./modules/autonomy/sequences/sequence-reply-exit.module";
+import { CrmMcpModule } from "./modules/crm/mcp/crm-mcp.module";
 import { IngressModule } from "./modules/ingress/ingress.module";
 import { AutonomyModule } from "./modules/autonomy/autonomy.module";
+import { AutonomySequencesModule } from "./modules/autonomy/sequences/autonomy-sequences.module";
 import { CrmImportModule } from "./modules/crm/import/crm-import.module";
+import { CrmSegmentsModule } from "./modules/crm/segments/crm-segments.module";
 import { PortalModule } from "./modules/portal/portal.module";
 import { ModuleAccessModule } from "./modules/module-access/module-access.module";
 import { IdempotencyModule } from "./common/idempotency/idempotency.module";
@@ -109,7 +121,9 @@ import { EmploymentFactsModule } from "./modules/directory/employment-facts.modu
 
 @Module({
   imports: [
+    ActivationModule,
     EmploymentFactsModule,
+    RecordLayoutsModule,
     DiscoveryModule,
     RegionModule,
     WorkflowModule,
@@ -126,7 +140,6 @@ import { EmploymentFactsModule } from "./modules/directory/employment-facts.modu
     AdmissionModule,
     AuditLogModule,
     GoalsModule,
-    ExpensesModule,
     TasksModule,
     PlatformModule,
     NotificationsModule,
@@ -137,12 +150,10 @@ import { EmploymentFactsModule } from "./modules/directory/employment-facts.modu
     SalesModule,
     CalendarModule,
     SettingsModule,
-    InvoicesModule,
     CareersModule,
     WebhooksModule,
     ClientsModule,
     CrmRootModule,
-    FinanceModule,
     DashboardModule,
     PublicModule,
     RbacModule,
@@ -157,17 +168,43 @@ import { EmploymentFactsModule } from "./modules/directory/employment-facts.modu
     ESignModule,
     KbModule,
     AccountingRootModule,
+    ExpensesModule,
+    InvoicesModule,
     ChatModule,
     HrModule,
     DirectoryModule,
     PartyModule,
+    ComplianceModule,
     DataQualityModule,
     ActivitiesModule,
+    AttributionModule,
+    RelationshipsModule,
+    /*
+      Phase 5. Registered here and nowhere else, because a module that exists and
+      is not registered is code the router never sees — every route it declares
+      404s and every workflow step it registers never runs. The build agents were
+      told to leave this file alone so six of them could work the same tree at
+      once, which means this list is the single place their work becomes
+      reachable at all.
+    */
+    CallsModule,
+    CommissionModule,
+    LifecycleModule,
+    LifecycleTriggersModule,
+    ReportingModule,
+    SequenceReplyExitModule,
+    CrmMcpModule,
     IngressModule,
     AutonomyModule,
+    // After `AutonomyModule`, which it imports for `OutboundService`. The reply
+    // exit half is registered above and stays a leaf — see its module docstring.
+    AutonomySequencesModule,
     CrmImportModule,
+    // Consumes the reporting compiler and imports nothing, so it sits anywhere;
+    // beside the other CRM sub-modules rather than beside `ReportingModule`,
+    // because the surface it owns is a CRM one.
+    CrmSegmentsModule,
     IssuesModule,
-    RecordLayoutsModule,
     PortalModule,
     ModuleAccessModule,
     IdempotencyModule,

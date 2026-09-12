@@ -1,6 +1,5 @@
 import { z } from "zod";
 import { wireDate, nullableWireDate } from "../../../common/openapi/wire-types";
-import { itemsPagedSchema } from "../../../common/openapi/response-envelopes";
 
 const associationRef = z.object({ id: z.number().int(), name: z.string().nullable() }).nullable();
 
@@ -71,26 +70,3 @@ export const contactRoleRowSchema = z.object({
 });
 
 export const contactRoleListResponseSchema = z.array(contactRoleRowSchema);
-
-const duplicateContactSideSchema = z.object({
-  id: z.number().int(),
-  name: z.string(),
-  email: z.string().nullable(),
-  phone: z.string().nullable(),
-});
-
-export const duplicateContactPairSchema = z.object({
-  contact1: duplicateContactSideSchema,
-  contact2: duplicateContactSideSchema,
-  matchReason: z.string(),
-});
-
-export const duplicateContactsResponseSchema = itemsPagedSchema(duplicateContactPairSchema).extend({
-  pageSize: z.number().int(),
-});
-
-export const mergeContactsResponseSchema = z.object({
-  success: z.literal(true),
-  primaryId: z.number().int(),
-  mergedId: z.number().int(),
-});

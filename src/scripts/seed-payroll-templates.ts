@@ -1,5 +1,10 @@
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
+// Drizzle driver config: the whole schema object is passed to
+// `drizzle(client, { schema })` to register relational queries. This resolves no
+// legacy identity table; the Party seam is for code that reads
+// leads/clients/contacts/crmOrganizations, which this does not.
+// eslint-disable-next-line no-restricted-imports -- see above
 import * as schema from "../db/schema";
 import { seedPayrollTemplates } from "../modules/payroll/setup/templates.service";
 

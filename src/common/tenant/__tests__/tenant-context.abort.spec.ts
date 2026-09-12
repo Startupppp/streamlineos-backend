@@ -7,9 +7,27 @@ import { TenantContextInterceptor } from "../tenant-context.interceptor";
 import { TenantContextService, type TenantContext } from "../tenant-context";
 import { runInNewTenantTransaction } from "../run-in-tenant-transaction";
 
-jest.mock("../run-in-tenant-transaction", () => ({
-  runInNewTenantTransaction: jest.fn(),
-}));
+// The interceptor drains through `drainAfterCommitHooks` now; the double keeps the one behaviour
+// the disconnect assertions watch — a hook still gets its own transaction after the request ends.
+jest.mock("../run-in-tenant-transaction", () => {
+  const runInNewTenantTransaction = jest.fn();
+  return {
+    runInNewTenantTransaction,
+    drainAfterCommitHooks: (
+      db: unknown,
+      orgId: string,
+      hooks: readonly (() => Promise<void>)[],
+    ): void => {
+      for (const hook of hooks) {
+        void Promise.resolve(
+          runInNewTenantTransaction(db, orgId, async () => {
+            await hook();
+          }),
+        ).catch(() => undefined);
+      }
+    },
+  };
+});
 
 type MockDb = { transaction: jest.Mock };
 type MockTenant = { run: jest.Mock; current: jest.Mock };

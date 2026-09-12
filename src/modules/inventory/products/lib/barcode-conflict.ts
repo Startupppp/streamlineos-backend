@@ -1,5 +1,5 @@
 import { ConflictException } from "@nestjs/common";
-import { and, eq, ne } from "drizzle-orm";
+import { and, eq, isNull, ne } from "drizzle-orm";
 import { invProducts, invProductVariants } from "../../../../db/schema";
 import type { Db } from "../../../../db/drizzle.module";
 
@@ -10,9 +10,13 @@ export async function assertNoBarcodeConflict(
   excludeProductId?: number,
   excludeVariantId?: number,
 ): Promise<void> {
+  // INV-107 made deletion soft and SKU uniqueness partial, so a deleted
+  // product's SKU is immediately reusable. Its barcode was not: this check kept
+  // matching the archived row, and the replacement could never be created.
   const productConditions = [
     eq(invProducts.orgId, orgId),
     eq(invProducts.barcode, barcode),
+    isNull(invProducts.deletedAt),
   ];
   if (excludeProductId !== undefined) {
     productConditions.push(ne(invProducts.id, excludeProductId));
@@ -20,6 +24,7 @@ export async function assertNoBarcodeConflict(
   const variantConditions = [
     eq(invProductVariants.orgId, orgId),
     eq(invProductVariants.barcode, barcode),
+    isNull(invProductVariants.deletedAt),
   ];
   if (excludeVariantId !== undefined) {
     variantConditions.push(ne(invProductVariants.id, excludeVariantId));

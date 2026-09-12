@@ -79,7 +79,14 @@ WHERE hp.organization_person_id IS NULL
 -- Add the FK constraint NOT VALID: existing rows are not scanned, so no long lock.
 -- New inserts and updates are checked immediately.
 -- Migration 0487 runs VALIDATE CONSTRAINT.
--- Postgres has no ADD CONSTRAINT IF NOT EXISTS; the guard has to be a catalog check.
+--
+-- PEND-DB: this said `ADD CONSTRAINT IF NOT EXISTS`, which Postgres does not
+-- have — `ALTER TABLE ... ADD CONSTRAINT` takes no `IF NOT EXISTS`, and the
+-- statement dies with `syntax error at or near "EXISTS"`. It was the second
+-- thing standing between an empty database and a working schema, and it took
+-- 0487 down with it, because 0487 validates a constraint this never created.
+-- The intent — "skip if it is already there" — needs the catalogue check the
+-- rest of this repository uses.
 DO $$
 BEGIN
   IF NOT EXISTS (

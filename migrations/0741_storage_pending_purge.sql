@@ -28,7 +28,14 @@ CREATE INDEX "idx_storage_pending_purge_retry"
 
 ALTER TABLE "storage_pending_purge" ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY tenant_isolation ON public.storage_pending_purge
+DO $policy$ BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'public' AND tablename = 'storage_pending_purge' AND policyname = 'tenant_isolation'
+  ) THEN
+    CREATE POLICY tenant_isolation ON public.storage_pending_purge
   FOR ALL
   USING (org_id = app.current_org_id())
   WITH CHECK (org_id = app.current_org_id());
+  END IF;
+END $policy$;

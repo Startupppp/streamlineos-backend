@@ -274,3 +274,82 @@ describe("HRMS Phase 1 SQL-managed bundle", () => {
     expect(entry).toBeGreaterThan(effectiveDate);
   });
 });
+
+/*
+ * Chain-repair migrations transcribe a pg_catalog, so they recreate STRUCTURE
+ * and cannot recreate DATA — and they do not always recreate the structure
+ * faithfully either.
+ *
+ * `0464a_gl_kernel` creates `gl_currencies` with `code text PRIMARY KEY` and two
+ * CHECK constraints, then seeds 20 currencies. `0489_chain_creates_early` and
+ * `0619_chain_creates_what_production_has` create the same table with NO primary
+ * key and NO checks, and no rows. On a cold build that is harmless: 0464 sits at
+ * journal position 248 and the repairs at 366 and 385, so 0464 wins and their
+ * `IF NOT EXISTS` skips. It bites only where 0464 was skipped — which is exactly
+ * what happened on the shared Neon branch, whose applied watermark ran ahead of
+ * the journal (see [[db-migrate-lies-on-neon]]). There the table exists, empty,
+ * without its key, and `accounting-setup.service.ts:173` reads it to decide
+ * whether the currency catalogue is installed.
+ *
+ * A table correctly shaped and empty is the hardest kind of missing to notice,
+ * so this bounds the set rather than leaving it to be rediscovered. It is a
+ * RATCHET, not a fix: the shared branch is repaired by a decision that is not
+ * ours to take, so the known case stays listed and the test fails if the set
+ * GROWS. Note the drifted copy has no unique constraint, so a repair cannot use
+ * `ON CONFLICT (code)` — it has to restore the key first.
+ */
+describe("chain-repair migrations do not silently weaken a table", () => {
+  const journal = JSON.parse(readMigration("meta/_journal.json")) as MigrationJournal;
+  const tags = journal.entries.map((e) => e.tag);
+
+  // "public"."x", "x" and bare x all appear in this tree.
+  const NAME = String.raw`(?:"?[a-z_0-9]+"?\.)?"?([a-z_0-9]+)"?`;
+  const created = (sql: string): Set<string> =>
+    new Set([...sql.matchAll(new RegExp(String.raw`CREATE TABLE(?:\s+IF NOT EXISTS)?\s+${NAME}`, "gi"))].map((m) => m[1].toLowerCase()));
+  const seeded = (sql: string): Set<string> =>
+    new Set([...sql.matchAll(new RegExp(String.raw`INSERT INTO\s+${NAME}`, "gi"))].map((m) => m[1].toLowerCase()));
+
+  /** Tables a migration both creates and fills — their rows exist nowhere else. */
+  function seededOnCreation(): Map<string, string> {
+    const out = new Map<string, string>();
+    for (const tag of tags) {
+      const sql = readMigration(`${tag}.sql`);
+      for (const t of created(sql)) if (seeded(sql).has(t)) out.set(t, tag);
+    }
+    return out;
+  }
+
+  function chainRepairTags(): string[] {
+    return tags.filter((t) => t.includes("chain_creates"));
+  }
+
+  it("reads the migrations it claims to, and finds the case we know about", () => {
+    // Without this the two cases below pass over an empty census.
+    expect(chainRepairTags().length).toBeGreaterThanOrEqual(2);
+    const onCreation = seededOnCreation();
+    expect(onCreation.size).toBeGreaterThanOrEqual(20);
+    expect(onCreation.get("gl_currencies")).toBe("0464a_gl_kernel");
+  });
+
+  it("lists exactly the tables a chain repair can leave shaped and empty", () => {
+    const onCreation = seededOnCreation();
+    const byRepair = new Set(chainRepairTags().flatMap((t) => [...created(readMigration(`${t}.sql`))]));
+    const atRisk = [...onCreation.keys()].filter((t) => byRepair.has(t)).sort();
+    // Growing this list means a new chain repair took over a seeded table.
+    // Add it here only with the repair for it, never to make the test pass.
+    expect(atRisk).toEqual(["gl_currencies"]);
+  });
+
+  it("keeps the authoritative migration ahead of every repair that recreates it", () => {
+    // This ordering is the only reason a cold build is unaffected. If a repair
+    // ever sorts first, its keyless copy wins and 0464's un-guarded CREATE TABLE
+    // fails outright.
+    const authoritative = tags.indexOf("0464a_gl_kernel");
+    expect(authoritative).toBeGreaterThan(-1);
+    for (const repair of chainRepairTags()) {
+      if (created(readMigration(`${repair}.sql`)).has("gl_currencies")) {
+        expect(tags.indexOf(repair)).toBeGreaterThan(authoritative);
+      }
+    }
+  });
+});

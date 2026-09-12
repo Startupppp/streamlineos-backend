@@ -1,4 +1,4 @@
-import { EVAL_ACCEPTANCE, meetsGate, rateOverApplicable, runEval } from "./ai-eval-runner";
+import { EVAL_ACCEPTANCE, gatesPresentIn, meetsGate, rateOverApplicable, runEval } from "./ai-eval-runner";
 import {
   COLUMN_MAPPING_DATASET,
   type ColumnCase,
@@ -114,7 +114,7 @@ describe("column mapping evals", () => {
       "IMPORT_NO_WRONG_COLUMN_RATE",
     ]);
 
-    expect(meetsGate(report, EVAL_ACCEPTANCE)).toBe(true);
+    expect(meetsGate(report, gatesPresentIn(report, EVAL_ACCEPTANCE))).toBe(true);
   });
 
   /**
@@ -154,7 +154,7 @@ describe("column mapping evals", () => {
         check: (output, input: ColumnCase) => output === input.expected,
       },
     ]);
-    expect(meetsGate(report, EVAL_ACCEPTANCE)).toBe(false);
+    expect(meetsGate(report, gatesPresentIn(report, EVAL_ACCEPTANCE))).toBe(false);
   });
 
   /**
@@ -179,7 +179,7 @@ describe("column mapping evals", () => {
       },
     ]);
 
-    expect(meetsGate(report, EVAL_ACCEPTANCE)).toBe(false);
+    expect(meetsGate(report, gatesPresentIn(report, EVAL_ACCEPTANCE))).toBe(false);
   });
 
   it("covers the four products this ticket names", () => {

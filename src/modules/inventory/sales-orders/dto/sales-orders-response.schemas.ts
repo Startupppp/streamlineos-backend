@@ -52,7 +52,7 @@ const soLineSchema = z.object({
 
 export const listSosResponseSchema = itemsPagedSchema(
   invSoSchema.extend({
-    client: z.object({ id: z.number().int(), name: z.string() }).nullable().optional(),
+    client: z.object({ id: z.number().int(), name: z.string().nullable() }).nullable().optional(),
     creator: userRefSchema.optional(),
   }),
 );
@@ -123,7 +123,8 @@ export const pickSoResponseSchema = z.object({
 export const packSoResponseSchema = z.object({
   soId: z.number().int(),
   status: z.literal("PACKED"),
-  packageId: z.number().int(),
+  // Only set when the organisation requires a package to ship.
+  packageId: z.number().int().optional(),
 });
 
 export const shipSoResponseSchema = z.object({

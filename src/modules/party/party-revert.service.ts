@@ -144,9 +144,8 @@ export class PartyRevertService {
       .set({ revertedAt: new Date(), revertedByUserId: userId ?? null })
       .where(eq(partyMerges.partyMergeId, partyMergeId));
 
-    await this.audit.logCritical({
+    const revertAudit = {
       action: "party.merge.revert",
-      userId: userId ?? "system",
       orgId: organizationId,
       resourceType: "business_party",
       resourceId: record.survivorPartyId,
@@ -155,7 +154,15 @@ export class PartyRevertService {
         restoredPartyId: record.mergedPartyId,
         originallyDecidedBy: record.decidedBy,
       },
-    });
+    };
+
+    // An unattended revert has no user: the string "system" has no row in
+    // `users`, so it aborted the very reverts logCritical exists to record.
+    await this.audit.logCritical(
+      userId
+        ? { ...revertAudit, userId }
+        : { ...revertAudit, systemActor: "party.merge.revert.unattended" },
+    );
 
     return {
       survivorPartyId: record.survivorPartyId,

@@ -2,6 +2,7 @@ import { and, eq, inArray, sql } from "drizzle-orm";
 import {
   orgModules,
   organizationMembers,
+  organizationPlacement,
   organizations,
   pmWorkspaces,
   projectMembers,
@@ -11,6 +12,7 @@ import {
   roles,
   subscriptions,
   users,
+  auditLogs,
 } from "src/db/schema";
 import type { Db } from "src/db/drizzle.module";
 import { bumpPermissionsVersion } from "src/common/rbac/access-invalidate";
@@ -23,6 +25,38 @@ import {
   unplaceOrganization,
 } from "src/common/region/placement-lookup";
 import { DEFAULT_REGION } from "src/common/region/region-registry";
+import {
+  DEFAULT_DATABASE_SHARD,
+  DEFAULT_SEARCH_CLUSTER,
+  LEGACY_CELL_ID,
+} from "src/common/region/placement";
+
+/**
+ * `users` rows are inserted through raw SQL naming only the two columns a
+ * seeded tenant actually needs.
+ *
+ * Drizzle's insert emits *every* declared column, defaulting the ones the
+ * caller omitted — so a fixture that sets nothing but id and email still fails
+ * the moment an unrelated module moves a user column. That is not
+ * hypothetical: the HR employment refactor moved `joining_date`, `employee_id`,
+ * `designation`, `monthly_salary`, `tax_id`, `bank_details`,
+ * `org_department_id`, `reporting_to` and `branch_id` out to `hr_employments`
+ * and migrated the shared database ahead of this branch, whose `users`
+ * declaration still lists all nine. Every seeded e2e suite in the repo died on
+ * `column "joining_date" of relation "users" does not exist`, in a fixture that
+ * had never heard of the column.
+ *
+ * Naming the columns explicitly is also what the repo asks of production reads.
+ * The declaration drift is real and still wants fixing where it lives; a test
+ * fixture is not the place to be sensitive to it.
+ */
+async function insertSeedUser(
+  tx: { execute: (q: ReturnType<typeof sql>) => Promise<unknown> },
+  id: string,
+  email: string,
+): Promise<void> {
+  await tx.execute(sql`INSERT INTO users (id, email) VALUES (${id}, ${email})`);
+}
 
 export interface SeededMember {
   userId: string;
@@ -176,12 +210,24 @@ export class SeedBuilder {
         ownerMembershipId,
         region: DEFAULT_REGION,
       });
+      await tx.insert(organizationPlacement).values({
+        organizationId: orgId,
+        region: DEFAULT_REGION,
+        cellId: LEGACY_CELL_ID,
+        databaseShard: DEFAULT_DATABASE_SHARD,
+        objectStorageRegion: DEFAULT_REGION,
+        searchCluster: DEFAULT_SEARCH_CLUSTER,
+        placementVersion: 1,
+        writeFenceToken: crypto.randomUUID(),
+        leaseExpiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+        status: "ACTIVE",
+      });
 
       if (ownerAliasEntry) {
         const [alias, spec] = ownerAliasEntry;
         const userId = crypto.randomUUID();
         allUserIds.push(userId);
-        await tx.insert(users).values({ id: userId, email: spec.email });
+        await insertSeedUser(tx, userId, spec.email);
         await tx.insert(organizationMembers).values({
           id: ownerMembershipId,
           userId,
@@ -211,7 +257,7 @@ export class SeedBuilder {
         if (ownerAliasEntry && alias === ownerAliasEntry[0]) continue;
         const userId = crypto.randomUUID();
         allUserIds.push(userId);
-        await tx.insert(users).values({ id: userId, email: spec.email });
+        await insertSeedUser(tx, userId, spec.email);
         const [memberRow] = await tx
           .insert(organizationMembers)
           .values({
@@ -356,6 +402,19 @@ export class SeedBuilder {
       label: () =>
         `org=${orgId} members=${JSON.stringify(Object.fromEntries(Object.entries(members).map(([k, v]) => [k, v.userId])))}`,
       teardown: async () => {
+        /**
+         * Audit rows first: `audit_logs.org_id` references `organizations`
+         * without a cascade, on purpose — an audit trail that a delete could
+         * quietly take with it is not one.
+         *
+         * The consequence for a fixture is that any test performing an audited
+         * action — a merge, a plan change, anything through `AuditService` —
+         * leaves a row that makes this delete fail, and the failure surfaces as
+         * the whole suite erroring in `afterAll` with every test having passed.
+         * Cleared here rather than in each spec, because which actions are
+         * audited is not something a spec should have to know.
+         */
+        await db.delete(auditLogs).where(eq(auditLogs.orgId, orgId));
         await db.delete(organizations).where(eq(organizations.id, orgId));
         await db.delete(users).where(inArray(users.id, allUserIds));
         // organization_placement carries no FK to organizations, so the row outlives the delete.

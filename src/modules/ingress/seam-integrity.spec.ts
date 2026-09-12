@@ -25,8 +25,22 @@ describe("the ingress seam still holds", () => {
   const ingressDir = __dirname;
   const read = (relative: string): string => readFileSync(join(ingressDir, relative), "utf8");
 
-  /** Everything downstream of the seam, which no channel may require a change to. */
-  const BELOW_THE_SEAM = ["inbound-ingress.workflow.ts", "inbound-ingress.service.ts"];
+  /**
+   * Everything downstream of the seam, which no channel may require a change to.
+   *
+   * The two `lib/` files are the workflow's step bodies, moved out of
+   * `inbound-ingress.workflow.ts` by the file-size split. They are below the seam
+   * for exactly the reasons the workflow is, so they are read by every rule here
+   * that reads it.
+   */
+  const BELOW_THE_SEAM = [
+    "inbound-ingress.workflow.ts",
+    "inbound-ingress.service.ts",
+    "lib/ingress-resolve-party.ts",
+    "lib/ingress-filing.ts",
+  ];
+  /** The workflow and its step bodies: what no adapter may import. */
+  const WORKFLOW_PARTS = ["inbound-ingress.workflow", "lib/ingress-resolve-party", "lib/ingress-filing"];
 
   it("keeps the seam itself pure", () => {
     // `inbound-event.ts` is imported by every adapter. The moment it imports a
@@ -141,7 +155,7 @@ describe("the ingress seam still holds", () => {
 
       for (const match of source.matchAll(/^import\s[\s\S]*?from\s+"([^"]+)"/gm)) {
         const target = match[1]!;
-        if (target.includes("inbound-ingress.workflow"))
+        if (WORKFLOW_PARTS.some((part) => target.includes(part)))
           workflowOffenders.push(`${file} -> ${target}`);
         if (isNormaliser && BELOW_THE_SEAM.some((b) => target.includes(b.replace(/\.ts$/, ""))))
           pureOffenders.push(`${file} -> ${target}`);

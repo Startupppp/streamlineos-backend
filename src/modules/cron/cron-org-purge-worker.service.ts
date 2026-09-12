@@ -253,7 +253,7 @@ export class CronOrgPurgeWorkerService {
     await this.revokeAndBustMembers(orgId, memberUserIds);
     this.audit.log({
       action: "org.purged",
-      userId: "system",
+      systemActor: "cron.org-purge-worker",
       orgId: null,
       targetId: orgId,
       targetType: "organization",

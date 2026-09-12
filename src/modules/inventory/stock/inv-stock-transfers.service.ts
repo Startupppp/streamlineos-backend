@@ -1,18 +1,37 @@
 import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, desc, eq, gte, inArray, lte, sql, type SQL } from "drizzle-orm";
+import { and, desc, eq, gte, lte, sql, type SQL } from "drizzle-orm";
 import { ScopedRead } from "../../access/scoped-read";
-import { invStockTransfers, invStockTransferLines, invStockReservations, invStockTransactions } from "../../../db/schema";
+import { invStockTransfers } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { CacheService } from "../../../common/cache/cache.service";
-import { CACHE_KEYS } from "../../../common/cache/cache-keys";
+import { invalidateStockDerivedReads } from "../stock-engine/lib/stock-read-invalidation";
 import { StockEngineService } from "../stock-engine/stock-engine.service";
+import { runIdempotent, revivedId } from "../stock-engine/idempotency";
+import { StockMovementBridgeService } from "../../accounting/adapters/stock-movement-bridge.service";
 import { ReservationService } from "../stock-engine/reservation.service";
 import { NumberSequenceService } from "../stock-engine/number-sequence.service";
-import { WarehouseScopeService } from "../stock-engine/warehouse-scope.service";
+import {
+  WarehouseScopeService,
+} from "../stock-engine/warehouse-scope.service";
+import { TransitLocationService } from "../stock-engine/transit-location.service";
 import type { ListTransfersInput, CreateTransferInput, CompleteTransferInput } from "./dto/inv-stock.schemas";
+import { loadOrderableVariants } from "../products/lib/orderable-variants";
+import {
+  assertCommandEnd,
+  loadTransfer,
+  transferInScope,
+} from "./lib/transfer-scope";
+import {
+  cancelTransferInTx,
+  createTransferInTx,
+  reserveTransferInTx,
+} from "./lib/transfer-commands";
+import type { TransferDeps } from "./lib/transfer-movement";
+import { dispatchTransfer } from "./lib/transfer-dispatch";
+import { completeTransfer } from "./lib/transfer-complete";
 
-type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
+
 
 @Injectable()
 export class InvStockTransfersService {
@@ -23,7 +42,19 @@ export class InvStockTransfersService {
     private readonly reservationService: ReservationService,
     private readonly numSeq: NumberSequenceService,
     private readonly warehouseScope: WarehouseScopeService,
+    private readonly transitLocations: TransitLocationService,
+    private readonly glBridge: StockMovementBridgeService,
   ) {}
+
+
+  private async assertScopedTransfer(orgId: string, userId: string, transferId: number) {
+    const scope = await this.warehouseScope.forUser(orgId, userId);
+    const found = await loadTransfer(this.db, orgId, transferId, transferInScope(scope));
+    // 404 rather than 403: a "forbidden" on a transfer id confirms the transfer
+    // exists, which turns a probe into an existence oracle (§4).
+    if (!found) throw new NotFoundException("Transfer not found");
+    return found;
+  }
 
   async listTransfers(read: ScopedRead, filters: ListTransfersInput) {
     const orgId = read.orgId;
@@ -61,9 +92,7 @@ export class InvStockTransfersService {
     }
     // A transfer is in scope only if BOTH ends are — seeing one leg would
     // expose the counterpart warehouse's stock movement.
-    const warehouseScope = await this.warehouseScope.resolve(orgId, read.actorId);
-    domain.push(this.warehouseScope.locationPredicate(warehouseScope, sql`${invStockTransfers.fromLocationId}`));
-    domain.push(this.warehouseScope.locationPredicate(warehouseScope, sql`${invStockTransfers.toLocationId}`));
+    domain.push(transferInScope(await this.warehouseScope.forUser(orgId, read.actorId)));
 
     return read.read(
       {
@@ -96,298 +125,224 @@ export class InvStockTransfersService {
     );
   }
 
-  getTransfer(orgId: string, transferId: number) {
-    return this.db.query.invStockTransfers.findFirst({
-      where: and(eq(invStockTransfers.id, transferId), eq(invStockTransfers.orgId, orgId)),
-      with: {
-        fromLocation: true,
-        toLocation: true,
-        fromWarehouse: { columns: { id: true, name: true } },
-        toWarehouse: { columns: { id: true, name: true } },
-        creator: { columns: { id: true, name: true } },
-        lines: {
-          with: {
-            productVariant: { with: { product: { columns: { id: true, name: true, sku: true } } } },
-            lot: { columns: { id: true, lotNumber: true } },
-            serial: { columns: { id: true, serialNumber: true } },
-          },
-        },
-      },
-    });
+  async getTransfer(orgId: string, userId: string, transferId: number) {
+    return this.assertScopedTransfer(orgId, userId, transferId);
   }
 
   // B1-04: Header + lines inserted in a single transaction.
-  async createTransfer(orgId: string, userId: string, data: CreateTransferInput) {
+  /**
+   * The route demanded an `Idempotency-Key` and then called this without it —
+   * the same defect `reserveTransfer` below documents, one step earlier and
+   * with no status guard to soften it. A retried create took a second reference
+   * number from the sequence and wrote a second transfer document for the same
+   * goods, so the duplicate was indistinguishable from a real one.
+   */
+  async createTransfer(
+    orgId: string,
+    userId: string,
+    data: CreateTransferInput,
+    idempotencyKey: string,
+  ) {
     if (data.fromLocationId === data.toLocationId) {
       throw new BadRequestException("From and to locations must be different");
     }
 
-    const transfer = await this.db.transaction(async (tx) => {
-      const referenceNumber = await this.numSeq.next(orgId, "TRANSFER", tx);
-      const [created] = await tx.insert(invStockTransfers).values({
+    /*
+     * You may send stock only out of a building you hold.
+     *
+     * `createTransferInTx` below is two plain inserts — no stock engine, no
+     * movements — so nothing checked either location, and `fromLocationId` came
+     * straight off the request body. Any holder of the create permission could
+     * draft a transfer OUT of any warehouse in the organisation. The engine's
+     * `assertLocationsInScope` only bites later, when movements actually post,
+     * and only when there are movements to post.
+     *
+     * THE SOURCE IS ASSERTED AND THE DESTINATION DELIBERATELY IS NOT, and that
+     * asymmetry is a product rule rather than an oversight: an operator in one
+     * building sending stock to another is the ordinary case, and they will
+     * routinely hold no part of the destination. Requiring both would refuse
+     * every legitimate inter-warehouse transfer made by the people who make
+     * them. Taking stock OUT of a building you hold nothing in is the move that
+     * has no honest reading.
+     *
+     * 404 rather than 403, so naming a location you cannot see does not confirm
+     * it exists.
+     */
+    await this.warehouseScope.assertLocationVisible(orgId, userId, data.fromLocationId);
+
+    // A4. Moving a discontinued SKU between warehouses is new demand on it —
+    // the goods have to be picked, counted and put away somewhere — and the
+    // lifecycle gate covered selling but not this.
+    await loadOrderableVariants(this.db, orgId, data.lines.map((l) => l.productVariantId));
+
+    const transferId = await this.db.transaction((tx) =>
+      runIdempotent(
+        tx,
         orgId,
-        referenceNumber,
-        fromLocationId: data.fromLocationId,
-        toLocationId: data.toLocationId,
-        fromWarehouseId: data.fromWarehouseId ?? null,
-        toWarehouseId: data.toWarehouseId ?? null,
-        notes: data.notes,
-        createdBy: userId,
-      }).returning();
+        idempotencyKey,
+        { command: "inventory.transfers.create", input: data },
+        () => createTransferInTx(this.numSeq, tx, orgId, userId, data),
+        revivedId,
+      ),
+    );
 
-      await tx.insert(invStockTransferLines).values(
-        data.lines.map((line) => ({
-          transferId: created!.id,
-          productVariantId: line.productVariantId,
-          quantity: line.quantity.toString(),
-          lotId: line.lotId ?? null,
-          serialId: line.serialId ?? null,
-        }))
-      );
-
-      return created!;
-    });
-
+    // Unscoped on purpose: the caller's standing was settled by the source
+    // assert above, and the create rule lets them name a destination they do
+    // not hold — so the list's both-ends predicate would 404 them the document
+    // they have just raised.
+    const transfer = await loadTransfer(this.db, orgId, transferId, null);
+    if (!transfer) throw new NotFoundException("Transfer not found after create");
     return transfer;
   }
 
+
   // B1-03: All line reservations created atomically in one transaction.
-  async reserveTransfer(orgId: string, userId: string, transferId: number) {
-    const transfer = await this.db.transaction(async (tx) => {
-      const [locked] = await tx.execute<{
-        id: number; status: string; from_location_id: number; org_id: string;
-      }>(sql`
-        SELECT id, status, from_location_id, org_id
-        FROM inv_stock_transfers
-        WHERE id = ${transferId} AND org_id = ${orgId}
-        FOR UPDATE
-      `);
+  /**
+   * A3. The route demanded an `Idempotency-Key` and then called this without it.
+   *
+   * The status guard made a retry safe but not *correct*: the second call found
+   * the transfer already RESERVED and threw 400, so a client retrying a request
+   * that had actually succeeded — the usual reason to retry — was told its
+   * transfer could not be reserved. Replaying the original answer is the point
+   * of the key.
+   */
+  /**
+   * Holds the stock the transfer will take, at the SOURCE bin.
+   *
+   * This was the sharpest of the four. Nothing downstream catches it, and here
+   * that is a rule rather than an omission: a reservation is a soft hold that
+   * posts no movement, so `ReservationService` never reaches the stock engine
+   * and `assertLocationsInScope` never runs. `reserveTransferInTx` locked the
+   * row on `org_id` and the id alone, so any holder of the transfer permission
+   * could take another building's stock out of its available pool — the goods
+   * stay on the shelf and stop being sellable, and the keeper there sees their
+   * availability fall with no document of their own to explain it.
+   *
+   * Gated on the entry read so an out-of-scope attempt never reaches the
+   * idempotency claim and cannot burn a key either.
+   */
+  async reserveTransfer(orgId: string, userId: string, transferId: number, idempotencyKey: string) {
+    await assertCommandEnd(this.db, this.warehouseScope, orgId, userId, transferId, "source");
 
-      if (!locked) throw new NotFoundException("Transfer not found");
-      if (locked.status !== "PENDING") throw new BadRequestException("Only PENDING transfers can be reserved");
-
-      const lines = await tx.query.invStockTransferLines.findMany({
-        where: eq(invStockTransferLines.transferId, transferId),
-      });
-
-      for (const line of lines) {
-        await this.reservationService.createReservationInTx(tx, orgId, userId, {
-          sourceType: "inv_transfer",
-          sourceId: transferId.toString(),
-          sourceLineId: line.id.toString(),
-          productVariantId: line.productVariantId,
-          locationId: locked.from_location_id,
-          lotId: line.lotId ?? undefined,
-          serialId: line.serialId ?? undefined,
-          qty: line.quantity,
-        });
-      }
-
-      await tx.update(invStockTransfers)
-        .set({ status: "RESERVED", reservedAt: new Date() })
-        .where(and(eq(invStockTransfers.orgId, orgId), eq(invStockTransfers.id, transferId)));
-
-      return transferId;
-    });
-
-    return this.getTransfer(orgId, transfer);
-  }
-
-  // B1-06: engine.executeInTx + reservation consumption + status update in one transaction.
-  // invalidateCaches (stock levels + reservations list) called after the outer tx commits.
-  async dispatchTransfer(orgId: string, userId: string, transferId: number, idempotencyKey: string) {
-    const transfer = await this.db.query.invStockTransfers.findFirst({
-      where: and(eq(invStockTransfers.id, transferId), eq(invStockTransfers.orgId, orgId)),
-      with: { lines: true },
-    });
-    if (!transfer) throw new NotFoundException("Transfer not found");
-    if (transfer.status !== "PENDING" && transfer.status !== "RESERVED") {
-      throw new BadRequestException("Only PENDING or RESERVED transfers can be dispatched");
-    }
-
-    await this.db.transaction(async (tx) => {
-      const result = await this.engine.executeInTx(tx, orgId, userId, {
+    const transfer = await this.db.transaction((tx) =>
+      runIdempotent(
+        tx,
+        orgId,
         idempotencyKey,
-        sourceType: "inv_transfer",
-        sourceId: transferId.toString(),
-        reason: `Dispatch transfer ${transfer.referenceNumber}`,
-        movements: transfer.lines.map((line) => ({
-          transactionType: "TRANSFER_OUT" as const,
-          productVariantId: line.productVariantId,
-          locationId: transfer.fromLocationId,
-          quantityDelta: `-${line.quantity}`,
-          lotId: line.lotId ?? undefined,
-          serialId: line.serialId ?? undefined,
-        })),
-      });
+        { command: "inventory.transfers.reserve", transferId },
+        () => reserveTransferInTx(this.reservationService, tx, orgId, userId, transferId, idempotencyKey),
+        revivedId,
+      ),
+    );
 
-      // Carry the cost the source layers were actually consumed at onto the
-      // line, so completion can rebuild it at the destination. Cost layers are
-      // keyed per location, so without this the stock arrives with no basis.
-      await this.stampDispatchedCost(tx, orgId, transfer.lines, result.transactionIds);
-
-      if (transfer.status === "RESERVED") {
-        const activeReservations = await tx
-          .select({
-            id: invStockReservations.id,
-            locationId: invStockReservations.locationId,
-            productVariantId: invStockReservations.productVariantId,
-            reservedQty: invStockReservations.reservedQty,
-          })
-          .from(invStockReservations)
-          .where(and(
-            eq(invStockReservations.orgId, orgId),
-            eq(invStockReservations.sourceType, "inv_transfer"),
-            eq(invStockReservations.sourceId, transferId.toString()),
-            eq(invStockReservations.status, "ACTIVE"),
-          ));
-
-        await this.reservationService.consumeReservationsBatch(tx, orgId, userId, activeReservations);
-      }
-
-      await tx.update(invStockTransfers)
-        .set({ status: "IN_TRANSIT", dispatchedAt: new Date() })
-        .where(and(eq(invStockTransfers.orgId, orgId), eq(invStockTransfers.id, transferId)));
-    });
-
-    await Promise.all([
-      this.engine.invalidateCaches(orgId),
-      this.cache.invalidateNamespace(`inv:reservations:list:${orgId}`),
-    ]);
+    // Unscoped for the same reason `createTransfer` is: the source gate above
+    // has already settled this caller's standing, and the both-ends predicate
+    // would refuse them a transfer they were entitled to reserve.
+    return loadTransfer(this.db, orgId, transfer, null);
   }
+
 
   /**
-   * Reads back the unit cost the engine derived for each TRANSFER_OUT and stores
-   * it on the matching transfer line. Matched on (variant, lot) because a
-   * transfer may move several lots of the same variant.
+   * The dependency bag the movement commands take. Built explicitly rather than
+   * passing `this`: the constructor fields are `private`, and TypeScript will not
+   * structurally match a class with private members to an interface.
    */
-  private async stampDispatchedCost(
-    tx: Tx,
-    orgId: string,
-    lines: ReadonlyArray<{ id: number; productVariantId: number; lotId: number | null }>,
-    transactionIds: readonly number[],
-  ): Promise<void> {
-    if (transactionIds.length === 0) return;
-
-    const txns = await tx
-      .select({
-        productVariantId: invStockTransactions.productVariantId,
-        lotId: invStockTransactions.lotId,
-        unitCost: invStockTransactions.unitCost,
-      })
-      .from(invStockTransactions)
-      .where(and(
-        eq(invStockTransactions.orgId, orgId),
-        inArray(invStockTransactions.id, [...transactionIds]),
-      ));
-
-    const costByKey = new Map<string, string>();
-    for (const t of txns)
-      if (t.unitCost) costByKey.set(`${t.productVariantId}:${t.lotId ?? ""}`, t.unitCost);
-
-    for (const line of lines) {
-      const cost = costByKey.get(`${line.productVariantId}:${line.lotId ?? ""}`);
-      if (!cost) continue;
-      await tx.update(invStockTransferLines)
-        .set({ dispatchedUnitCost: cost })
-        .where(eq(invStockTransferLines.id, line.id));
-    }
+  private get transferDeps(): TransferDeps {
+    return {
+      db: this.db,
+      cache: this.cache,
+      engine: this.engine,
+      reservationService: this.reservationService,
+      transitLocations: this.transitLocations,
+      warehouseScope: this.warehouseScope,
+      glBridge: this.glBridge,
+    };
   }
 
-  // B1-07: engine.executeInTx + line quantityReceived updates + status update in one transaction.
-  // invalidateCaches called after.
+  /** @see lib/transfer-movement.ts — the body moved, the route surface did not. */
+  async dispatchTransfer(orgId: string, userId: string, transferId: number, idempotencyKey: string) {
+    return dispatchTransfer(this.transferDeps, orgId, userId, transferId, idempotencyKey);
+  }
+
+
+  /** @see lib/transfer-movement.ts — the body moved, the route surface did not. */
   async completeTransfer(orgId: string, userId: string, transferId: number, data: CompleteTransferInput, idempotencyKey: string) {
-    const transfer = await this.db.query.invStockTransfers.findFirst({
-      where: and(eq(invStockTransfers.id, transferId), eq(invStockTransfers.orgId, orgId)),
-      with: { lines: true },
-    });
-    if (!transfer) throw new NotFoundException("Transfer not found");
-    if (transfer.status !== "IN_TRANSIT" && transfer.status !== "PENDING" && transfer.status !== "RESERVED") {
-      throw new BadRequestException("Transfer cannot be completed in its current status");
-    }
-
-    const movements = data.lines
-      .map((completion) => {
-        const line = transfer.lines.find((l) => l.id === completion.transferLineId);
-        if (!line || completion.quantityReceived <= 0) return null;
-        return {
-          transactionType: "TRANSFER_IN" as const,
-          productVariantId: line.productVariantId,
-          locationId: transfer.toLocationId,
-          quantityDelta: completion.quantityReceived.toFixed(4),
-          lotId: line.lotId ?? undefined,
-          serialId: line.serialId ?? undefined,
-          unitCost: line.dispatchedUnitCost ?? undefined,
-        };
-      })
-      .filter((m): m is NonNullable<typeof m> => m !== null);
-
-    await this.db.transaction(async (tx: Tx) => {
-      await this.engine.executeInTx(tx, orgId, userId, {
-        idempotencyKey,
-        sourceType: "inv_transfer",
-        sourceId: transferId.toString(),
-        reason: `Complete transfer ${transfer.referenceNumber}`,
-        movements,
-      });
-
-      for (const completion of data.lines) {
-        const line = transfer.lines.find((l) => l.id === completion.transferLineId);
-        if (!line) continue;
-        await tx.update(invStockTransferLines)
-          .set({ quantityReceived: completion.quantityReceived.toString() })
-          .where(and(
-            eq(invStockTransferLines.id, completion.transferLineId),
-            eq(invStockTransferLines.transferId, transferId),
-          ));
-      }
-
-      await tx.update(invStockTransfers)
-        .set({ status: "COMPLETED", completedAt: new Date() })
-        .where(and(eq(invStockTransfers.orgId, orgId), eq(invStockTransfers.id, transferId)));
-    });
-
-    await this.engine.invalidateCaches(orgId);
+    return completeTransfer(this.transferDeps, orgId, userId, transferId, data, idempotencyKey);
   }
 
   // B1-20/21: Cancel releases reservations (via releaseReservationInTx in one tx) and
   // invalidates stock summary + stock level caches.
-  async cancelTransfer(orgId: string, userId: string, transferId: number) {
+  /**
+   * A3. Cancelling took no key at all. The status guard makes a repeat safe, but
+   * a client retrying a timed-out cancel was told the transfer could not be
+   * cancelled — the request had in fact succeeded.
+   */
+  async cancelTransfer(orgId: string, userId: string, transferId: number, idempotencyKey: string) {
+    /*
+     * The SOURCE end. Cancelling releases the reservations this transfer holds
+     * at the source bin and flips the document terminal, and both are the source
+     * keeper's business.
+     *
+     * Nothing downstream catches this one either: cancel posts no movements at
+     * all — it stops at RESERVED by design, so there is never anything in
+     * transit to unwind — which means the stock engine is not on this path and
+     * `assertLocationsInScope` never runs. So a stranger could cancel another
+     * building's transfer outright: the reservations are released, the document
+     * goes CANCELLED, and nothing is visible until goods that were supposed to
+     * leave have not left.
+     */
+    await assertCommandEnd(this.db, this.warehouseScope, orgId, userId, transferId, "source");
+
     const transfer = await this.db.query.invStockTransfers.findFirst({
       where: and(eq(invStockTransfers.id, transferId), eq(invStockTransfers.orgId, orgId)),
-      columns: { id: true, status: true },
+      // Existence only — the status check moved inside the claim.
+      columns: { id: true },
     });
     if (!transfer) throw new NotFoundException("Transfer not found");
-    if (transfer.status !== "PENDING" && transfer.status !== "RESERVED") {
-      throw new BadRequestException("Only PENDING or RESERVED transfers can be cancelled");
-    }
+    // A2. Deliberately unchanged. Cancelling stops at RESERVED, so no cancel can
+    // strand goods at a transit location -- there is nothing there to strand
+    // until a dispatch has happened. The gap that did exist was the other way
+    // round: an IN_TRANSIT transfer had no terminal state but COMPLETED, so a
+    // journey that was abandoned, or completed short, left its stock standing in
+    // transit with no route out. R3 closes that with `TransitExitService`, which
+    // is the state-machine decision it needed -- goods return to the source bin
+    // or are written off, both as posted movements -- rather than a wider cancel
+    // that would have had to move stock it never named.
 
-    await this.db.transaction(async (tx) => {
-      if (transfer.status === "RESERVED") {
-        const activeReservations = await tx
-          .select({ id: invStockReservations.id })
-          .from(invStockReservations)
-          .where(and(
-            eq(invStockReservations.orgId, orgId),
-            eq(invStockReservations.sourceType, "inv_transfer"),
-            eq(invStockReservations.sourceId, transferId.toString()),
-            eq(invStockReservations.status, "ACTIVE"),
-          ));
-
-        for (const res of activeReservations) {
-          await this.reservationService.releaseReservationInTx(tx, orgId, userId, res.id);
-        }
-      }
-
-      await tx.update(invStockTransfers)
-        .set({ status: "CANCELLED" })
-        .where(and(eq(invStockTransfers.orgId, orgId), eq(invStockTransfers.id, transferId)));
-    });
+    await this.db.transaction((tx) =>
+      runIdempotent(
+        tx,
+        orgId,
+        idempotencyKey,
+        { command: "inventory.transfers.cancel", transferId },
+        async () => {
+          // T04. This check used to sit in front of `runIdempotent`, where cancel's
+          // own effect invalidated it — the comment above says exactly that, and the
+          // guard was left outside anyway. At HTTP the controller's `@Idempotent`
+          // fence hid it; a service-level caller had no such cover. Read through `tx`
+          // so the check sees the same snapshot the write does.
+          const [current] = await tx.select({ status: invStockTransfers.status })
+            .from(invStockTransfers)
+            .where(and(eq(invStockTransfers.id, transferId), eq(invStockTransfers.orgId, orgId)))
+            .limit(1);
+          if (!current) throw new NotFoundException("Transfer not found");
+          if (current.status !== "PENDING" && current.status !== "RESERVED") {
+            throw new BadRequestException("Only PENDING or RESERVED transfers can be cancelled");
+          }
+          return cancelTransferInTx(this.reservationService, tx, orgId, userId, transferId, current.status);
+        },
+        () => ({ cancelled: transferId }),
+      ),
+    );
 
     await Promise.all([
-      this.cache.invalidate(CACHE_KEYS.invStockSummary(orgId)),
+      // Was `invalidate(invStockSummary(orgId))`, an exact del of a key nothing
+      // writes. Cancelling a RESERVED transfer releases the reservation, so the
+      // dashboard, the reorder report and the zone boards all move with it.
+      invalidateStockDerivedReads(this.cache, orgId),
       this.cache.invalidateNamespace(`inv:stock:levels:${orgId}`),
       this.cache.invalidateNamespace(`inv:reservations:list:${orgId}`),
     ]);
   }
+
 }

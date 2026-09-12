@@ -1,0 +1,19 @@
+{
+  "moduleFileExtensions": ["js", "json", "ts", "mjs", "cjs"],
+  "rootDir": ".",
+  "testEnvironment": "node",
+  "testTimeout": 120000,
+  "workerIdleMemoryLimit": "1GB",
+  "testMatch": [
+    "<rootDir>/test/helpers/__tests__/seeded-e2e-app.spec.ts",
+    "<rootDir>/test/**/*.seeded-e2e-spec.ts"
+  ],
+  "transform": { "^.+\\.(t|j|mj)s$": ["ts-jest", { "tsconfig": { "allowJs": true }, "diagnostics": false }] },
+  "transformIgnorePatterns": [
+    "/node_modules/(?!(?:\\.pnpm/)?(?:@scure|otplib|@otplib|@noble|@composio|@openrouter|@ai-sdk|@workflow|@standard-schema|eventsource-parser|ai)[@/+])"
+  ],
+  "moduleNameMapper": { "^src/(.*)$": "<rootDir>/src/$1", "^test/(.*)$": "<rootDir>/test/$1" },
+  "setupFiles": ["dotenv/config", "<rootDir>/test/helpers/arm-mail-egress.setup.ts"],
+  "maxWorkers": 1,
+  "testResultsProcessor": "./test/e2e-suite-exit-guard.cjs"
+}

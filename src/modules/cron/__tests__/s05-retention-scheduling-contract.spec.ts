@@ -14,7 +14,10 @@ describe("S05 retention scheduling contracts", () => {
     expect(module).toMatch(/CronSupportController/);
     expect(module).toMatch(/CronKbController/);
     expect(module).toMatch(/CronBuildController/);
-    expect(module).toMatch(/CronFinanceController/);
+    // No `CronFinanceController`: its three sweeps drove `modules/finance`, which the
+    // accounting rewrite replaced with the gl_* kernel, and they have no counterpart
+    // there yet. cron.module.ts names it in a comment, so a regex here would pass
+    // vacuously rather than prove a registration.
     expect(module).toMatch(/CronPlatformController/);
     expect(module).toMatch(/CronHrRetentionService/);
     expect(module).toMatch(/CronNotificationRetentionService/);

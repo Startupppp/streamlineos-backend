@@ -1,0 +1,24 @@
+-- 1104 — the audit chain must not be rewritten by a referential action
+-- =============================================================================
+-- `timesheet_audit_events` is an append-only, hash-chained ledger: every row's
+-- `row_hash` covers its actor, and `GET /timesheets/audit/verify` recomputes
+-- it. `fk_timesheet_audit_actor_membership` was ON DELETE SET NULL, so removing
+-- a member — which the departure path does with a real DELETE — nulled
+-- `actor_membership_id` on every row that member ever wrote, changing the
+-- hashed input under a hash that could no longer be recomputed. Verification
+-- then reported the organisation's trail as altered at that member's first
+-- row, forever, and stopped there.
+--
+-- The verifier used to hide this by forgiving any mismatch on a null-actor
+-- row, which also forgave every row the system writes. That tolerance is
+-- removed in the same change, so the ledger has to be genuinely immutable:
+-- the actor becomes a historical pointer with no referential action, as
+-- `audit_logs.actor_user_id` already is. Reads still resolve the name through
+-- a LEFT JOIN on (org_id, id); a departed actor renders as unresolved rather
+-- than as an alteration of the record.
+--
+-- Measured before authoring (shared database, 2026-09-12, BEGIN READ ONLY):
+-- 0 rows in timesheet_audit_events, so nothing is re-hashed or reset here.
+SET lock_timeout = '5s';
+--> statement-breakpoint
+ALTER TABLE "timesheet_audit_events" DROP CONSTRAINT IF EXISTS "fk_timesheet_audit_actor_membership";

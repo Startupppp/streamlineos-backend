@@ -4,6 +4,7 @@ import { ForbiddenException, NotFoundException } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { WfhService } from "../time/wfh.service";
+import { type HrPolicyEvaluationService } from "../policies/hr-policy-evaluation.service";
 
 function makeWfhRequest(overrides: Record<string, unknown> = {}) {
   return { id: 1, orgId: "org-1", userId: "employee-1", date: "2026-09-01", status: "PENDING", ...overrides };

@@ -1,5 +1,6 @@
 import { BadRequestException, ConflictException, UnprocessableEntityException } from "@nestjs/common";
 import { StockEngineService, addDec, mulDec, divDec } from "../stock-engine.service";
+import { MovementApplyService } from "../movement-apply.service";
 import type { StockEngineCommand } from "../stock-engine.types";
 
 function makeInsertChain(txnReturningId?: number, conflictRows: Array<{ id: number }> = [{ id: 1 }]) {
@@ -54,10 +55,31 @@ type MockTx = {
   };
 };
 
+/**
+ * The engine locks every grain in one ordered statement and matches the rows
+ * back by natural key, so the fixture has to carry the grain columns the real
+ * SELECT returns — without them every lookup misses and the engine reports the
+ * location as missing.
+ */
+// The full natural key. NEO-4 added the handling unit and NEO-11 the ownership;
+// a fixture row missing either lands under a different key than the engine looks
+// it up with, and the movement then reports "location not found".
+const LEVEL_GRAIN = {
+  product_variant_id: 1,
+  location_id: 1,
+  lot_id: null,
+  serial_id: null,
+  handling_unit_id: null,
+  ownership: "OWNED" as const,
+};
+
 function buildTx(levelRow?: Record<string, unknown>): MockTx {
-  const level = levelRow ?? {
-    id: 1, on_hand: "0.0000", committed: "0.0000",
-    blocked_qty: "0.0000", quality_hold_qty: "0.0000", average_cost: null,
+  const level = {
+    ...LEVEL_GRAIN,
+    ...(levelRow ?? {
+      id: 1, on_hand: "0.0000", committed: "0.0000",
+      blocked_qty: "0.0000", quality_hold_qty: "0.0000", average_cost: null,
+    }),
   };
   return {
     insert: jest.fn(),
@@ -96,13 +118,27 @@ function defaultAudit() {
 
 function defaultMovementCosting() {
   return {
-    applyCosting: jest.fn(async () => null),
+    plan: jest.fn(async () => ({ kind: "receipt", costingMethod: "FIFO", unitCost: null, totalCost: null })),
+    commit: jest.fn(async () => null),
     emitLowStock: jest.fn(async () => undefined),
   };
 }
 
+/**
+ * The period guard is the accounting kernel's: the org's default book, then the
+ * period covering the posting date. The inventory lane's version skipped the
+ * check when `accounting_periods` was absent (every command used to die on
+ * 42P01); the kernel's equivalent is "no default book", which `defaultBooks`
+ * answers below.
+ */
 function defaultPeriods() {
-  return { assertPeriodOpen: jest.fn(async () => undefined) };
+  return { periodForDate: jest.fn(async () => null) };
+}
+
+// No default book means accounting is not enabled, so the period guard is a
+// no-op — which is what the engine's own maths tests want to isolate.
+function defaultBooks() {
+  return { findDefault: jest.fn(async () => null) };
 }
 
 function defaultWarehouseScope() {
@@ -136,6 +172,25 @@ function setupInserts(tx: MockTx, txnId = 101) {
     makeInsertChain(),
   ];
   tx.insert = jest.fn().mockImplementation(() => chains[idx++] ?? makeInsertChain());
+}
+
+/**
+ * R1 — the movement body lives in `MovementApplyService` now, and both engine
+ * paths run it. The real one is constructed here rather than mocked so these
+ * specs keep asserting the arithmetic they were written for.
+ */
+function makeEngine(tx: MockTx, settings = defaultSettings()) {
+  const apply = new MovementApplyService(defaultAudit() as never, defaultMovementCosting() as never);
+  return new StockEngineService(
+    buildDb(tx) as never,
+    settings as never,
+    defaultCache() as never,
+    defaultValuation() as never,
+    defaultWarehouseScope() as never,
+    defaultPeriods() as never,
+    defaultBooks() as never,
+    apply,
+  );
 }
 
 const baseCmd: StockEngineCommand = {
@@ -197,7 +252,7 @@ describe("StockEngineService", () => {
     it("returns correct onHand when starting from zero and adding 10", async () => {
       const tx = buildTx();
       setupInserts(tx);
-      const service = new StockEngineService(buildDb(tx) as never, defaultSettings() as never, defaultAudit() as never, defaultCache() as never, defaultValuation() as never, defaultWarehouseScope() as never, defaultPeriods() as never, defaultMovementCosting() as never);
+      const service = makeEngine(tx);
 
       const result = await service.execute("org1", "u1", baseCmd);
 
@@ -209,11 +264,65 @@ describe("StockEngineService", () => {
     it("accumulates on existing balance: before=5, delta=+10 → after=15", async () => {
       const tx = buildTx({ id: 1, on_hand: "5.0000", committed: "0.0000", blocked_qty: "0.0000", quality_hold_qty: "0.0000", average_cost: null });
       setupInserts(tx, 201);
-      const service = new StockEngineService(buildDb(tx) as never, defaultSettings() as never, defaultAudit() as never, defaultCache() as never, defaultValuation() as never, defaultWarehouseScope() as never, defaultPeriods() as never, defaultMovementCosting() as never);
+      const service = makeEngine(tx);
 
       const result = await service.execute("org1", "u1", { ...baseCmd, idempotencyKey: "idem-2" });
 
       expect(result.levels[0].onHand).toBe("15.0000");
+    });
+  });
+
+  describe("execute — repeated grain in one command", () => {
+    it("carries the first movement's result into the second rather than reading a stale before-quantity", async () => {
+      const tx = buildTx({ id: 1, on_hand: "5.0000", committed: "0.0000", blocked_qty: "0.0000", quality_hold_qty: "0.0000", average_cost: null });
+      // Locking is a snapshot taken once per command, so a second movement over
+      // the same grain has to see the first one's write. Reading the snapshot
+      // twice would post before=5 twice and lose one of the deltas.
+      // chain 0 claims the idempotency key, chain 1 creates the stock row,
+      // chains 2 and 3 are the two ledger movements
+      let txnId = 400;
+      let call = 0;
+      tx.insert = jest.fn().mockImplementation(() =>
+        call++ < 2 ? makeInsertChain() : makeInsertChain(++txnId),
+      );
+      const service = makeEngine(tx);
+
+      const cmd: StockEngineCommand = {
+        ...baseCmd,
+        idempotencyKey: "same-grain",
+        movements: [
+          { transactionType: "ADJUSTMENT_IN", productVariantId: 1, locationId: 1, quantityDelta: "10.0000" },
+          { transactionType: "ADJUSTMENT_IN", productVariantId: 1, locationId: 1, quantityDelta: "3.0000" },
+        ],
+      };
+
+      const result = await service.execute("org1", "u1", cmd);
+
+      expect(result.levels.map((l) => l.onHand)).toEqual(["15.0000", "18.0000"]);
+    });
+
+    it("locks the grain once however many movements reference it", async () => {
+      const tx = buildTx();
+      let ledgerId = 500;
+      let insertCall = 0;
+      tx.insert = jest.fn().mockImplementation(() =>
+        insertCall++ < 2 ? makeInsertChain() : makeInsertChain(++ledgerId),
+      );
+      const service = makeEngine(tx);
+
+      await service.execute("org1", "u1", {
+        ...baseCmd,
+        idempotencyKey: "one-lock",
+        movements: [
+          { transactionType: "ADJUSTMENT_IN", productVariantId: 1, locationId: 1, quantityDelta: "1.0000" },
+          { transactionType: "ADJUSTMENT_IN", productVariantId: 1, locationId: 1, quantityDelta: "1.0000" },
+        ],
+      });
+
+      const lockingCalls = tx.execute.mock.calls.filter((call) =>
+        JSON.stringify(call[0]).includes("FOR UPDATE"),
+      );
+      expect(lockingCalls).toHaveLength(1);
     });
   });
 
@@ -222,7 +331,7 @@ describe("StockEngineService", () => {
       const tx = buildTx({ id: 1, on_hand: "3.0000", committed: "0.0000", blocked_qty: "0.0000", quality_hold_qty: "0.0000", average_cost: null });
       setupInserts(tx);
       const settings = defaultSettings({ allowNegativeStock: false });
-      const service = new StockEngineService(buildDb(tx) as never, settings as never, defaultAudit() as never, defaultCache() as never, defaultValuation() as never, defaultWarehouseScope() as never, defaultPeriods() as never, defaultMovementCosting() as never);
+      const service = makeEngine(tx, settings);
 
       const cmd: StockEngineCommand = { ...baseCmd, idempotencyKey: "neg-1", movements: [{ ...baseCmd.movements[0], transactionType: "SALE", quantityDelta: "-10.0000" }] };
 
@@ -232,10 +341,10 @@ describe("StockEngineService", () => {
     it("succeeds when allowNegativeStock=true even if result is negative", async () => {
       const tx = buildTx({ id: 1, on_hand: "3.0000", committed: "0.0000", blocked_qty: "0.0000", quality_hold_qty: "0.0000", average_cost: null });
       tx.execute = jest.fn()
-        .mockResolvedValue([{ id: 1, on_hand: "3.0000", committed: "0.0000", blocked_qty: "0.0000", quality_hold_qty: "0.0000", average_cost: null }]);
+        .mockResolvedValue([{ ...LEVEL_GRAIN, id: 1, on_hand: "3.0000", committed: "0.0000", blocked_qty: "0.0000", quality_hold_qty: "0.0000", average_cost: null }]);
       setupInserts(tx, 301);
       const settings = defaultSettings({ allowNegativeStock: true });
-      const service = new StockEngineService(buildDb(tx) as never, settings as never, defaultAudit() as never, defaultCache() as never, defaultValuation() as never, defaultWarehouseScope() as never, defaultPeriods() as never, defaultMovementCosting() as never);
+      const service = makeEngine(tx, settings);
 
       const cmd: StockEngineCommand = { ...baseCmd, idempotencyKey: "neg-ok", movements: [{ ...baseCmd.movements[0], transactionType: "SALE", quantityDelta: "-10.0000" }] };
 
@@ -257,7 +366,7 @@ describe("StockEngineService", () => {
         leaseExpiresAt: new Date(Date.now() + 86_400_000),
       });
 
-      const service = new StockEngineService(buildDb(tx) as never, defaultSettings() as never, defaultAudit() as never, defaultCache() as never, defaultValuation() as never, defaultWarehouseScope() as never, defaultPeriods() as never, defaultMovementCosting() as never);
+      const service = makeEngine(tx);
 
       await expect(service.execute("org1", "u1", baseCmd)).rejects.toThrow(ConflictException);
     });
@@ -275,7 +384,7 @@ describe("StockEngineService", () => {
         leaseExpiresAt: new Date(Date.now() + 86_400_000),
       });
 
-      const service = new StockEngineService(buildDb(tx) as never, defaultSettings() as never, defaultAudit() as never, defaultCache() as never, defaultValuation() as never, defaultWarehouseScope() as never, defaultPeriods() as never, defaultMovementCosting() as never);
+      const service = makeEngine(tx);
 
       const result = await service.execute("org1", "u1", baseCmd);
 
@@ -296,7 +405,7 @@ describe("StockEngineService", () => {
         leaseExpiresAt: new Date(Date.now() + 86_400_000),
       });
 
-      const service = new StockEngineService(buildDb(tx) as never, defaultSettings() as never, defaultAudit() as never, defaultCache() as never, defaultValuation() as never, defaultWarehouseScope() as never, defaultPeriods() as never, defaultMovementCosting() as never);
+      const service = makeEngine(tx);
 
       await expect(service.execute("org1", "u1", baseCmd)).rejects.toThrow(UnprocessableEntityException);
     });

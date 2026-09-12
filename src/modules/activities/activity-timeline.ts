@@ -11,7 +11,7 @@ import type { ActivityActorKind, ActivityKind } from "../../db/schema/crm/activi
 /** What a timeline is anchored to. Exactly one, never a type-plus-id pair. */
 type TimelineAnchor =
   | { readonly kind: "party"; readonly partyId: string }
-  | { readonly kind: "deal"; readonly dealId: string }
+  | { readonly kind: "deal"; readonly dealId: number }
   | { readonly kind: "subject"; readonly subjectId: string };
 
 export interface TimelineEntry {

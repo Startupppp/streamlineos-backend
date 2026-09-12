@@ -70,15 +70,17 @@ export class LeadsReportsController {
   @Get("dashboard-metrics")
   @RequirePermission("crm:leads:view")
   @ResponseSchema(leadsDashboardMetricsSchema)
-  getDashboardMetrics(@CurrentUser() u: CurrentUserContext) {
-    return this.reports.getDashboardMetrics(u.orgId);
+  async getDashboardMetrics(@CurrentUser() u: CurrentUserContext) {
+    const read = await resolveLeadsViewScope(this.access, u);
+    return this.reports.getDashboardMetrics(read);
   }
 
   @Get("source-report")
   @RequirePermission("crm:leads:view")
   @ResponseSchema(leadsSourceReportSchema)
-  getSourceReport(@CurrentUser() u: CurrentUserContext) {
-    return this.reports.getSourceReport(u.orgId);
+  async getSourceReport(@CurrentUser() u: CurrentUserContext) {
+    const read = await resolveLeadsViewScope(this.access, u);
+    return this.reports.getSourceReport(read);
   }
 
   @Get("sales-leaderboard")
@@ -107,18 +109,20 @@ export class LeadsReportsController {
   @RequirePermission("crm:leads:view")
   @ResponseSchema(leadsFollowUpsSchema)
   @Validate({ query: followUpsQuerySchema })
-  getFollowUps(
+  async getFollowUps(
     @Query() query: FollowUpsQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.reports.getFollowUps(u.orgId, query);
+    const read = await resolveLeadsViewScope(this.access, u);
+    return this.reports.getFollowUps(read, query);
   }
 
   @Get("unverified")
   @RequirePermission("crm:leads:view")
   @ResponseSchema(leadsUnverifiedSchema)
-  getUnverified(@CurrentUser() u: CurrentUserContext) {
-    return this.reports.getUnverifiedLeads(u.orgId);
+  async getUnverified(@CurrentUser() u: CurrentUserContext) {
+    const read = await resolveLeadsViewScope(this.access, u);
+    return this.reports.getUnverifiedLeads(read);
   }
 
   @Get("duplicates")

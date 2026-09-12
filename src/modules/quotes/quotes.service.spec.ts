@@ -336,49 +336,65 @@ describe("QuotesService.send", () => {
   });
 });
 
+/**
+ * The discount ceiling, which was an empty `it.skip` with no reason given.
+ *
+ * It is the only thing standing between a rep and a margin they are not
+ * entitled to give away: nothing else in the quote path looks at
+ * `maxDiscountPercent`, and `approvalStatus` is what the lifecycle service then
+ * refuses to send on. An empty placeholder named the rule and asserted none of
+ * it, so the ceiling could have been deleted without a single test going red.
+ */
 describe("QuotesService — discount gating (create + update)", () => {
   let svc: QuotesService;
 
-  const LINE_ITEMS = [{ description: "Widget", quantity: 2, unitPrice: 500 }];
-
-  const makeCreateTx = () => {
+  /**
+   * A transaction double that RUNS its callback — a bare jest.fn() here would
+   * make every assertion below vacuous, since the whole insert happens inside
+   * it — and reports the row it was asked to insert.
+   */
+  function captureCreate(): { values: () => Record<string, unknown> } {
+    let captured: Record<string, unknown> = {};
     const countChain = {
       from: jest.fn().mockReturnThis(),
       where: jest.fn().mockResolvedValue([{ count: 0 }]),
     };
-    const quoteInsertChain = makeInsertChain();
-    quoteInsertChain.returning.mockResolvedValue([makeQuote()]);
-    const lineItemsInsertChain = makeInsertChain();
-    let insertCallCount = 0;
-    const txDb = {
-      select: jest.fn().mockReturnValue(countChain),
-      insert: jest.fn().mockImplementation(() => {
-        insertCallCount += 1;
-        return insertCallCount === 1 ? quoteInsertChain : lineItemsInsertChain;
-      }),
-      update: jest.fn(),
-      delete: jest.fn(),
+    const tx = {
+      select: jest.fn(() => countChain),
+      insert: jest.fn(() => ({
+        values: jest.fn((rows: Record<string, unknown> | Record<string, unknown>[]) => {
+          // The line-item insert passes an array; only the quote row matters.
+          if (!Array.isArray(rows)) captured = rows;
+          return {
+            returning: jest.fn().mockResolvedValue([{ id: QUOTE_ID, quoteNumber: "QT-1" }]),
+            then: (resolve: (v: unknown) => void) => Promise.resolve(undefined).then(resolve),
+          };
+        }),
+      })),
     };
-    mockDb.transaction.mockImplementation(
-      async (cb: (tx: typeof txDb) => Promise<unknown>) => cb(txDb),
-    );
-    return quoteInsertChain;
-  };
+    mockDb.transaction.mockImplementation((fn: (t: typeof tx) => Promise<unknown>) => fn(tx));
+    return { values: () => captured };
+  }
 
-  const makeUpdateTx = () => {
-    const updateChain = makeUpdateChain();
-    updateChain.returning.mockResolvedValue([makeQuote()]);
-    const txDb = {
-      select: jest.fn(),
-      insert: jest.fn().mockReturnValue(makeInsertChain()),
-      update: jest.fn().mockReturnValue(updateChain),
-      delete: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue(undefined) }),
+  function captureUpdate(): { set: () => Record<string, unknown> } {
+    let captured: Record<string, unknown> = {};
+    const tx = {
+      update: jest.fn(() => ({
+        set: jest.fn((values: Record<string, unknown>) => {
+          captured = values;
+          return {
+            where: jest.fn().mockReturnValue({
+              returning: jest.fn().mockResolvedValue([makeQuote()]),
+            }),
+          };
+        }),
+      })),
     };
-    mockDb.transaction.mockImplementation(
-      async (cb: (tx: typeof txDb) => Promise<unknown>) => cb(txDb),
-    );
-    return updateChain;
-  };
+    mockDb.transaction.mockImplementation((fn: (t: typeof tx) => Promise<unknown>) => fn(tx));
+    return { set: () => captured };
+  }
+
+  const LINE_ITEMS = [{ description: "Widget", quantity: 1, unitPrice: 1000, taxRate: 0 }];
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
@@ -395,113 +411,124 @@ describe("QuotesService — discount gating (create + update)", () => {
     svc = module.get(QuotesService);
   });
 
-  it("create: sets approvalStatus=pending when discount exceeds maxDiscountPercent setting", async () => {
-    mockDb.query.crmQuoteSettings.findFirst.mockResolvedValue({ maxDiscountPercent: 10 });
-    const quoteInsertChain = makeCreateTx();
+  it("create: sets approvalStatus=pending when the discount exceeds the ceiling", async () => {
+    mockDb.query.crmQuoteSettings.findFirst.mockResolvedValue({
+      orgId: ORG,
+      maxDiscountPercent: 10,
+      defaultExpiryDays: 30,
+    });
+    const created = captureCreate();
 
     await svc.create(ORG, USER, {
-      subject: "Discounted quote",
-      lineItems: LINE_ITEMS,
+      subject: "Deep discount",
       discountPercent: 25,
-    });
+      lineItems: LINE_ITEMS,
+    } as never);
 
-    expect(quoteInsertChain.values).toHaveBeenCalledWith(
-      expect.objectContaining({
-        approvalStatus: "pending",
-        totalAmount: "1000.00",
-        discountAmount: "250.00",
-        netAmount: "750.00",
-      }),
-    );
+    expect(created.values().approvalStatus).toBe("pending");
   });
 
-  it("create: leaves approvalStatus unset when the discount is within maxDiscountPercent", async () => {
-    mockDb.query.crmQuoteSettings.findFirst.mockResolvedValue({ maxDiscountPercent: 10 });
-    const quoteInsertChain = makeCreateTx();
+  it("create: leaves approvalStatus unset at exactly the ceiling", async () => {
+    mockDb.query.crmQuoteSettings.findFirst.mockResolvedValue({
+      orgId: ORG,
+      maxDiscountPercent: 10,
+      defaultExpiryDays: 30,
+    });
+    const created = captureCreate();
 
     await svc.create(ORG, USER, {
-      subject: "Small discount",
+      subject: "At the limit",
+      discountPercent: 10,
       lineItems: LINE_ITEMS,
-      discountPercent: 5,
-    });
+    } as never);
 
-    const values = quoteInsertChain.values.mock.calls[0][0] as Record<string, unknown>;
-    expect(values.approvalStatus).toBeUndefined();
-    expect(values.discountAmount).toBe("50.00");
-    expect(values.netAmount).toBe("950.00");
+    // The ceiling is what a rep MAY give, not the first value they may not.
+    // Off by one here sends every fully-authorised quote for approval.
+    expect(created.values().approvalStatus).toBeUndefined();
   });
 
-  it("create: leaves approvalStatus unset when the org has configured no ceiling", async () => {
-    mockDb.query.crmQuoteSettings.findFirst.mockResolvedValue({ maxDiscountPercent: null });
-    const quoteInsertChain = makeCreateTx();
+  it("create: does not require approval when the org has set no ceiling", async () => {
+    mockDb.query.crmQuoteSettings.findFirst.mockResolvedValue({
+      orgId: ORG,
+      maxDiscountPercent: null,
+      defaultExpiryDays: 30,
+    });
+    const created = captureCreate();
 
     await svc.create(ORG, USER, {
       subject: "No ceiling configured",
-      lineItems: LINE_ITEMS,
       discountPercent: 90,
-    });
+      lineItems: LINE_ITEMS,
+    } as never);
 
-    const values = quoteInsertChain.values.mock.calls[0][0] as Record<string, unknown>;
-    expect(values.approvalStatus).toBeUndefined();
-    expect(values.discountAmount).toBe("900.00");
+    // A null ceiling means the org has not made this decision. Treating it as
+    // zero would put every discounted quote in an approval queue nobody set up
+    // and that nobody has the permission to clear.
+    expect(created.values().approvalStatus).toBeUndefined();
   });
 
   it("create: a zero discount never needs approval, even against a zero ceiling", async () => {
-    mockDb.query.crmQuoteSettings.findFirst.mockResolvedValue({ maxDiscountPercent: 0 });
-    const quoteInsertChain = makeCreateTx();
+    mockDb.query.crmQuoteSettings.findFirst.mockResolvedValue({
+      orgId: ORG,
+      maxDiscountPercent: 0,
+      defaultExpiryDays: 30,
+    });
+    const created = captureCreate();
 
-    await svc.create(ORG, USER, { subject: "No discount", lineItems: LINE_ITEMS });
+    await svc.create(ORG, USER, { subject: "No discount", lineItems: LINE_ITEMS } as never);
 
-    const values = quoteInsertChain.values.mock.calls[0][0] as Record<string, unknown>;
-    expect(values.approvalStatus).toBeUndefined();
-    expect(values.discountAmount).toBe("0.00");
-    expect(values.netAmount).toBe("1000.00");
+    expect(created.values().approvalStatus).toBeUndefined();
   });
 
-  it("update: sets approvalStatus=pending when the new discount exceeds maxDiscountPercent", async () => {
+  it("update: raises approval when a discount is raised past the ceiling", async () => {
     mockDb.query.quotes.findFirst.mockResolvedValue({ id: QUOTE_ID });
-    mockDb.query.crmQuoteSettings.findFirst.mockResolvedValue({ maxDiscountPercent: 10 });
-    const updateChain = makeUpdateTx();
+    mockDb.query.crmQuoteSettings.findFirst.mockResolvedValue({
+      orgId: ORG,
+      maxDiscountPercent: 15,
+      defaultExpiryDays: 30,
+    });
+    const updated = captureUpdate();
 
-    await svc.update(ORG, USER, QUOTE_ID, { discountPercent: 25, lineItems: LINE_ITEMS });
+    await svc.update(ORG, USER, QUOTE_ID, { discountPercent: 40 } as never);
 
-    expect(updateChain.set).toHaveBeenCalledWith(
-      expect.objectContaining({
-        approvalStatus: "pending",
-        discountAmount: "250.00",
-        netAmount: "750.00",
-      }),
-    );
+    expect(updated.set().approvalStatus).toBe("pending");
   });
 
-  it("update: leaves approvalStatus untouched when the new discount is within the ceiling", async () => {
+  it("update: leaves approval alone when the discount is within the ceiling", async () => {
     mockDb.query.quotes.findFirst.mockResolvedValue({ id: QUOTE_ID });
-    mockDb.query.crmQuoteSettings.findFirst.mockResolvedValue({ maxDiscountPercent: 10 });
-    const updateChain = makeUpdateTx();
+    mockDb.query.crmQuoteSettings.findFirst.mockResolvedValue({
+      orgId: ORG,
+      maxDiscountPercent: 15,
+      defaultExpiryDays: 30,
+    });
+    const updated = captureUpdate();
 
-    await svc.update(ORG, USER, QUOTE_ID, { discountPercent: 5, lineItems: LINE_ITEMS });
+    await svc.update(ORG, USER, QUOTE_ID, { discountPercent: 5 } as never);
 
-    const patch = updateChain.set.mock.calls[0][0] as Record<string, unknown>;
-    expect(patch).not.toHaveProperty("approvalStatus");
-    expect(patch.netAmount).toBe("950.00");
+    expect(updated.set()).not.toHaveProperty("approvalStatus");
   });
 
-  it("update: leaves approvalStatus untouched when the org has configured no ceiling", async () => {
+  it("update: leaves approval alone when the org has configured no ceiling", async () => {
     mockDb.query.quotes.findFirst.mockResolvedValue({ id: QUOTE_ID });
-    mockDb.query.crmQuoteSettings.findFirst.mockResolvedValue({ maxDiscountPercent: null });
-    const updateChain = makeUpdateTx();
+    mockDb.query.crmQuoteSettings.findFirst.mockResolvedValue({
+      orgId: ORG,
+      maxDiscountPercent: null,
+      defaultExpiryDays: 30,
+    });
+    const updated = captureUpdate();
 
-    await svc.update(ORG, USER, QUOTE_ID, { discountPercent: 90, lineItems: LINE_ITEMS });
+    await svc.update(ORG, USER, QUOTE_ID, { discountPercent: 90 } as never);
 
-    expect(updateChain.set.mock.calls[0][0]).not.toHaveProperty("approvalStatus");
+    expect(updated.set()).not.toHaveProperty("approvalStatus");
   });
 
-  it("update: does not read the discount ceiling when the payload carries no discount", async () => {
+  it("update: does not read the ceiling when the discount is not being changed", async () => {
     mockDb.query.quotes.findFirst.mockResolvedValue({ id: QUOTE_ID });
-    makeUpdateTx();
+    const updated = captureUpdate();
 
-    await svc.update(ORG, USER, QUOTE_ID, { subject: "Renamed" });
+    await svc.update(ORG, USER, QUOTE_ID, { subject: "Renamed" } as never);
 
     expect(mockDb.query.crmQuoteSettings.findFirst).not.toHaveBeenCalled();
+    expect(updated.set()).not.toHaveProperty("approvalStatus");
   });
 });

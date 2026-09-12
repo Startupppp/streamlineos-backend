@@ -12,6 +12,7 @@
 
 import { readFileSync, readdirSync, existsSync } from "node:fs";
 import { join, resolve, relative } from "node:path";
+import { describeFrontendRoot, resolveFrontendRoot } from "./frontend-root.mjs";
 import { fileURLToPath } from "node:url";
 import {
   FRONTEND_ROOT,
@@ -287,6 +288,8 @@ if (!frontendAvailable)
 
 if (!existsSync(NAV_DIR)) {
   process.stderr.write(`Cannot read frontend navigation manifest dir: ${NAV_DIR}\n`);
+  process.stderr.write("Tried these frontend roots:\n");
+  for (const candidate of FRONTEND_CANDIDATES) process.stderr.write(`  ${candidate}\n`);
   process.exit(2);
 }
 

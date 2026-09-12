@@ -1,20 +1,26 @@
-import { ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { Inject, Injectable } from "@nestjs/common";
 import { and, eq, isNull, lte, or, sql } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import { CacheService } from "../../../common/cache/cache.service";
 import {
   billingPlans,
-  billingPlanEntitlements,
   billingPriceVersions,
   billingProducts,
-  orgEntitlementOverrides,
   subscriptionItems,
 } from "../../../db/schema";
 import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
-import { registerAfterCommit } from "../../../common/tenant/tenant-context";
 import type { DbOrTx } from "../../../common/rbac/access-invalidate";
-import { isUniqueViolation } from "../../../common/db/postgres-error";
+import {
+  bustOrgEntitlementCache,
+  listPlanEntitlements,
+  resolveOrgEntitlements,
+  upsertOrgEntitlementOverride,
+  type EntitlementDeps,
+} from "./lib/org-entitlements";
+import type { PlanEntitlementSnapshot } from "./lib/org-entitlements";
+
+export type { PlanEntitlementSnapshot };
 
 export interface ActivePriceVersion {
   id: number;
@@ -26,14 +32,6 @@ export interface ActivePriceVersion {
   effectiveFrom: Date;
   effectiveUntil: Date | null;
 }
-
-export interface PlanEntitlementSnapshot {
-  featureKey: string;
-  limitValue: number | null;
-  source: "plan" | "org_override";
-}
-
-const ENTITLEMENT_CACHE_TTL = 60;
 
 @Injectable()
 export class VersionedCatalogService {
@@ -123,50 +121,28 @@ export class VersionedCatalogService {
     return row ?? null;
   }
 
-  async resolveOrgEntitlements(orgId: string, now = new Date()): Promise<PlanEntitlementSnapshot[]> {
-    const cacheKey = `billing:ent-overrides:${orgId}`;
-    return this.cache.cached(
-      cacheKey,
-      () => this.fetchOrgEntitlements(orgId, now),
-      ENTITLEMENT_CACHE_TTL,
-    );
+  /** @see lib/org-entitlements.ts */
+  async resolveOrgEntitlements(
+    orgId: string,
+    now = new Date(),
+  ): Promise<PlanEntitlementSnapshot[]> {
+    return resolveOrgEntitlements(this.entitlementDeps, orgId, now);
   }
 
-  private async fetchOrgEntitlements(orgId: string, now: Date): Promise<PlanEntitlementSnapshot[]> {
-    const rows = await runInTenantTransaction(
-      this.db,
-      (tx) =>
-        tx
-          .select({
-            featureKey: orgEntitlementOverrides.featureKey,
-            limitValue: orgEntitlementOverrides.limitValue,
-          })
-          .from(orgEntitlementOverrides)
-          .where(
-            and(
-              eq(orgEntitlementOverrides.orgId, orgId),
-              lte(orgEntitlementOverrides.effectiveFrom, now),
-              or(
-                isNull(orgEntitlementOverrides.effectiveUntil),
-                sql`${orgEntitlementOverrides.effectiveUntil} > ${now.toISOString()}::timestamptz`,
-              ),
-            ),
-          )
-          .orderBy(orgEntitlementOverrides.effectiveFrom),
-      { orgId },
-    );
-
-    return rows.map((r) => ({
-      featureKey: r.featureKey,
-      limitValue: r.limitValue,
-      source: "org_override" as const,
-    }));
-  }
-
+  /** @see lib/org-entitlements.ts */
   async bustOrgEntitlementCache(orgId: string): Promise<void> {
-    await this.cache.invalidate(`billing:ent-overrides:${orgId}`);
+    return bustOrgEntitlementCache(this.entitlementDeps, orgId);
   }
 
+  /** @see lib/org-entitlements.ts */
+  async listPlanEntitlements(
+    planId: number,
+    now = new Date(),
+  ): Promise<PlanEntitlementSnapshot[]> {
+    return listPlanEntitlements(this.entitlementDeps, planId, now);
+  }
+
+  /** @see lib/org-entitlements.ts */
   async upsertOrgEntitlementOverride(
     orgId: string,
     featureKey: string,
@@ -176,33 +152,20 @@ export class VersionedCatalogService {
     idempotencyKey?: string,
     tx?: DbOrTx,
   ): Promise<void> {
-    const now = new Date();
-    const executor = tx ?? this.db;
-    try {
-      await executor
-        .insert(orgEntitlementOverrides)
-        .values({
-          orgId,
-          featureKey,
-          limitValue,
-          reason,
-          actorId,
-          idempotencyKey: idempotencyKey ?? null,
-          effectiveFrom: now,
-          effectiveUntil: null,
-        })
-        .onConflictDoUpdate({
-          target: [orgEntitlementOverrides.orgId, orgEntitlementOverrides.idempotencyKey],
-          targetWhere: sql`idempotency_key IS NOT NULL`,
-          set: { limitValue, reason, effectiveFrom: now, effectiveUntil: null },
-          setWhere: sql`idempotency_key IS NOT NULL`,
-        });
-    } catch (err: unknown) {
-      if (isUniqueViolation(err)) throw new ConflictException("Entitlement override already exists for this window");
-      throw err;
-    }
-    const deferred = registerAfterCommit(() => this.bustOrgEntitlementCache(orgId));
-    if (!deferred) await this.bustOrgEntitlementCache(orgId);
+    return upsertOrgEntitlementOverride(
+      this.entitlementDeps,
+      orgId,
+      featureKey,
+      limitValue,
+      actorId,
+      reason,
+      idempotencyKey,
+      tx,
+    );
+  }
+
+  private get entitlementDeps(): EntitlementDeps {
+    return { db: this.db, cache: this.cache };
   }
 
   async listProducts() {
@@ -269,29 +232,4 @@ export class VersionedCatalogService {
     return row ?? null;
   }
 
-  async listPlanEntitlements(planId: number, now = new Date()): Promise<PlanEntitlementSnapshot[]> {
-    const rows = await this.db
-      .select({
-        featureKey: billingPlanEntitlements.featureKey,
-        limitValue: billingPlanEntitlements.limitValue,
-      })
-      .from(billingPlanEntitlements)
-      .where(
-        and(
-          eq(billingPlanEntitlements.planId, planId),
-          lte(billingPlanEntitlements.effectiveFrom, now),
-          or(
-            isNull(billingPlanEntitlements.effectiveUntil),
-            sql`${billingPlanEntitlements.effectiveUntil} > ${now.toISOString()}::timestamptz`,
-          ),
-        ),
-      )
-      .orderBy(billingPlanEntitlements.featureKey);
-
-    return rows.map((r) => ({
-      featureKey: r.featureKey,
-      limitValue: r.limitValue,
-      source: "plan" as const,
-    }));
-  }
 }

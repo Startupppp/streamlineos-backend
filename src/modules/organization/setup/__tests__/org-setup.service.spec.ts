@@ -48,6 +48,10 @@ type TxMock = {
   insert: jest.Mock;
   update: jest.Mock;
   select: jest.Mock;
+  query: {
+    organizations: { findFirst: jest.Mock };
+    organizationMembers: { findFirst: jest.Mock };
+  };
 };
 
 const CATALOG_ROWS = [
@@ -90,8 +94,25 @@ function buildTxMock(ownerMembershipId: number | null) {
   });
   const select = jest.fn().mockReturnValue({ from });
 
+  // `resolveCurrentSetupTarget` reads the membership and the org through `withIdentity`, which sets
+  // `app.user_id` inside its own transaction — the only GUC the `organization_members` policy admits
+  // on for a `@NoTenantTransaction()` setup route. So both `findFirst`s hang off the tx, not the pool.
+  const orgFindFirst = jest.fn().mockResolvedValue({ id: "org-1", name: "Acme" });
+  const memberFindFirst = jest
+    .fn()
+    .mockResolvedValue({ status: "ACTIVE", isOwner: true });
+
   const execute = jest.fn().mockResolvedValue(undefined);
-  const tx: TxMock = { execute, insert, update, select };
+  const tx: TxMock = {
+    execute,
+    insert,
+    update,
+    select,
+    query: {
+      organizations: { findFirst: orgFindFirst },
+      organizationMembers: { findFirst: memberFindFirst },
+    },
+  };
   return { tx, mocks: { insert, values, onConflictDoUpdate, onConflictDoNothing, returning, returningUpdate, update, select, limit } };
 }
 
@@ -138,7 +159,7 @@ async function buildService(
       },
       {
         provide: AccountOrganizationIndexService,
-        useValue: { refreshForUser: jest.fn() },
+        useValue: { refreshForUser: jest.fn(), activate: jest.fn() },
       },
       { provide: DRIZZLE, useValue: db },
       { provide: AuditService, useValue: { log: jest.fn() } },

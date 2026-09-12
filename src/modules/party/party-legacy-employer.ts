@@ -1,8 +1,6 @@
 import { and, eq, inArray } from "drizzle-orm";
 import type { Db } from "../../db/drizzle.types";
-import { bulkUpdateFromValues, type BulkUpdateRow } from "../../common/db/bulk-update";
-import { businessParties, contactPartyMap, crmOrgPartyMap } from "../../db/schema/party";
-import { contacts } from "../../db/schema/crm/contacts";
+import { businessParties, crmOrgPartyMap } from "../../db/schema/party";
 
 /**
  * The one translation between an employer and the column that used to hold it.
@@ -177,72 +175,26 @@ export async function repointEmployerParties(
 }
 
 /**
- * Brings `contacts.organization_id` back in line for a set of employees, in bulk.
+ * Kept as a no-op so the merge path still reads honestly.
  *
- * `refreshPartyMirrors` would do this one party at a time, which is the right
- * shape for a single edit and the wrong one for a merge that just moved five
- * hundred people. One `UPDATE … FROM (VALUES …)` for the whole set, because the
- * new value differs per row: grouping by the employer's legacy id was a statement
- * per DISTINCT company, which a re-parenting sweep makes as many as there are
- * companies. The tenant predicate is inside the statement, not merely implied by
- * RLS, and `contact_party_map`'s own `(organization_id, contact_id)` key is what
- * makes a contact id unrepeatable in the VALUES list.
+ * Ticket 08's contract. This used to bring `contacts.organization_id` back in
+ * line after a merge moved employees between companies — grouped by the
+ * employer's legacy id, one statement per distinct company rather than one per
+ * person.
+ *
+ * There is no legacy column to bring in line. `contacts.organization_id` is
+ * derived from `employer_party_id` at the moment a contact is read, so moving
+ * the employee's party IS moving the column, for five hundred people as cheaply
+ * as for one.
+ *
+ * Kept rather than deleted for the reason `refreshPartyMirrors` is: the merge
+ * calls it exactly where the mirror used to need catching up, and removing the
+ * call would leave a future reader wondering whether the merge forgot a step.
  */
 export async function refreshEmployerColumns(
-  db: Db,
-  organizationId: string,
-  employeePartyIds: readonly string[],
+  _db: Db,
+  _organizationId: string,
+  _employeePartyIds: readonly string[],
 ): Promise<void> {
-  const ids = [...new Set(employeePartyIds)];
-  if (!organizationId || ids.length === 0) return;
-
-  const employees = await db
-    .select({
-      partyId: businessParties.partyId,
-      employerPartyId: businessParties.employerPartyId,
-    })
-    .from(businessParties)
-    .where(
-      and(
-        eq(businessParties.organizationId, organizationId),
-        inArray(businessParties.partyId, ids),
-      ),
-    );
-
-  const legacyByEmployer = await crmOrgIdsOfParties(
-    db,
-    organizationId,
-    employees.map((row) => row.employerPartyId).filter((id): id is string => Boolean(id)),
-  );
-
-  const legacyByEmployee = new Map<string, number | null>();
-  for (const employee of employees)
-    legacyByEmployee.set(
-      employee.partyId,
-      employee.employerPartyId ? (legacyByEmployer.get(employee.employerPartyId) ?? null) : null,
-    );
-
-  const links = await db
-    .select({ partyId: contactPartyMap.partyId, contactId: contactPartyMap.contactId })
-    .from(contactPartyMap)
-    .where(
-      and(
-        eq(contactPartyMap.organizationId, organizationId),
-        inArray(contactPartyMap.partyId, ids),
-      ),
-    );
-
-  const rows: BulkUpdateRow[] = [];
-  for (const link of links) {
-    if (!legacyByEmployee.has(link.partyId)) continue;
-    rows.push({ key: link.contactId, values: [legacyByEmployee.get(link.partyId) ?? null] });
-  }
-
-  await bulkUpdateFromValues(db, {
-    table: contacts,
-    orgId: organizationId,
-    key: { column: "id", type: "integer" },
-    columns: [{ column: "organization_id", type: "integer" }],
-    rows,
-  });
+  return Promise.resolve();
 }

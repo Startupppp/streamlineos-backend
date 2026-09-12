@@ -142,7 +142,27 @@ export class EntriesReadService {
     return Number(row?.total ?? 0);
   }
 
-  async getEntryById(orgId: string, entryId: number) {
+  /**
+   * One entry, WITHOUT a scope check — for handing back a row the caller has
+   * just written.
+   *
+   * `listEntries` above reads through a `ScopedRead` over
+   * `membershipScope(..., timesheets.userMembershipId)`, so a person with `own`
+   * scope sees only their own entries. This applies nothing, and what it
+   * returns includes `billRate`, `currency`, `description`
+   * and `workLink` — a colleague's commercial rate among them.
+   *
+   * That is safe today only because nothing routes to it: its two callers are
+   * `createEntry` and `updateEntry`, both returning the row they have just
+   * written after their own guards have run (`updateEntry` refuses unless the
+   * caller manages entries or owns this one). A third caller was a public
+   * passthrough on `EntriesService` with no caller of its own, now deleted.
+   *
+   * The name carries the warning because the next person to want "get one
+   * entry" will find this first. Give a routed read its own method that takes
+   * `CurrentUserContext` and applies the scope — do not add a parameter here.
+   */
+  async getEntryUnscoped(orgId: string, entryId: number) {
     const dp = alias(projects, "dp");
     const tp = alias(projects, "tp");
     const approverMember = alias(organizationMembers, "approver_member");

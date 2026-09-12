@@ -1,5 +1,5 @@
-import { readFileSync, readdirSync, statSync } from "node:fs";
-import { join, relative } from "node:path";
+import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
+import { dirname, join, relative, resolve } from "node:path";
 import { BACKEND_ROOT, handlerBody, type HandlerRoute } from "./route-surface";
 
 const SRC_ROOT = join(BACKEND_ROOT, "src");
@@ -16,6 +16,15 @@ export interface SourceMethod {
 export interface SourceIndex {
   readonly methodsByClass: ReadonlyMap<string, ReadonlyMap<string, SourceMethod>>;
   readonly functions: ReadonlyMap<string, SourceMethod>;
+  /**
+   * The same classes keyed by the file that declares them. `methodsByClass`
+   * merges every class of one name into one bucket, first file wins per
+   * method — so `PeriodsService.listPeriods` answered with accounting's fiscal
+   * periods for a timesheets controller, and `ExceptionsService.listExceptions`
+   * with payroll's. A detector that knows which file the caller imported from
+   * reads the right class through `resolveImportedClassMethods`.
+   */
+  readonly methodsByFile: ReadonlyMap<string, ReadonlyMap<string, ReadonlyMap<string, SourceMethod>>>;
 }
 
 const CLASS_DECL_RE = /^\s*(?:export\s+)?(?:abstract\s+)?class\s+(\w+)/;
@@ -44,6 +53,7 @@ let indexCache: SourceIndex | null = null;
 export function buildSourceIndex(): SourceIndex {
   if (indexCache) return indexCache;
   const methodsByClass = new Map<string, Map<string, SourceMethod>>();
+  const methodsByFile = new Map<string, Map<string, Map<string, SourceMethod>>>();
   const functions = new Map<string, SourceMethod>();
 
   for (const abs of walkSource(SRC_ROOT)) {
@@ -51,6 +61,8 @@ export function buildSourceIndex(): SourceIndex {
     const lines = readFileSync(abs, "utf8").split("\n");
     let currentClass: string | null = null;
     let classIndent = 0;
+    const classesInFile = new Map<string, Map<string, SourceMethod>>();
+    methodsByFile.set(file, classesInFile);
 
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i] as string;
@@ -59,6 +71,7 @@ export function buildSourceIndex(): SourceIndex {
         currentClass = klass[1] as string;
         classIndent = line.length - line.trimStart().length;
         if (!methodsByClass.has(currentClass)) methodsByClass.set(currentClass, new Map());
+        if (!classesInFile.has(currentClass)) classesInFile.set(currentClass, new Map());
         continue;
       }
       if (currentClass && line.trimStart().startsWith("}") && line.length - line.trimStart().length === classIndent)
@@ -79,14 +92,62 @@ export function buildSourceIndex(): SourceIndex {
       const name = member[1] as string;
       if (SKIP_MEMBER.has(name)) continue;
       const { signature, body, end } = handlerBody(lines, i);
+      const method: SourceMethod = { owner: currentClass, file, name, signature, body };
       const bucket = methodsByClass.get(currentClass);
-      if (bucket && !bucket.has(name)) bucket.set(name, { owner: currentClass, file, name, signature, body });
+      if (bucket && !bucket.has(name)) bucket.set(name, method);
+      const own = classesInFile.get(currentClass);
+      if (own && !own.has(name)) own.set(name, method);
       i = end;
     }
   }
 
-  indexCache = { methodsByClass, functions };
+  indexCache = { methodsByClass, functions, methodsByFile };
   return indexCache;
+}
+
+const importCache = new Map<string, Map<string, string>>();
+
+/**
+ * Where `fromFile` imports `className` from, as a repo-relative path, or null
+ * when it is not a relative import this index can follow. Only the class's own
+ * file is resolved — `./x`, `../y/z`, with `.ts` or `/index.ts` supplied — so a
+ * barrel re-export answers null and the caller falls back to the name-keyed map.
+ */
+export function resolveImportedClassFile(fromFile: string, className: string): string | null {
+  let imports = importCache.get(fromFile);
+  if (!imports) {
+    imports = new Map<string, string>();
+    const src = readFileSync(join(BACKEND_ROOT, fromFile), "utf8");
+    for (const m of src.matchAll(/import\s+(?:type\s+)?\{([^}]*)\}\s+from\s+["'](\.[^"']+)["']/g)) {
+      const specifier = m[2] as string;
+      for (const raw of (m[1] as string).split(",")) {
+        const name = raw.trim().replace(/^type\s+/, "").split(/\s+as\s+/).pop()?.trim();
+        if (name) imports.set(name, specifier);
+      }
+    }
+    importCache.set(fromFile, imports);
+  }
+  const specifier = imports.get(className);
+  if (!specifier) return null;
+  const base = resolve(BACKEND_ROOT, dirname(fromFile), specifier);
+  for (const candidate of [`${base}.ts`, join(base, "index.ts")]) {
+    if (existsSync(candidate)) return relative(BACKEND_ROOT, candidate).replace(/\\/g, "/");
+  }
+  return null;
+}
+
+/**
+ * The methods of the class `fromFile` actually imports under `className`,
+ * falling back to the name-keyed bucket when the import cannot be followed.
+ */
+export function resolveImportedClassMethods(
+  index: SourceIndex,
+  fromFile: string,
+  className: string,
+): ReadonlyMap<string, SourceMethod> | undefined {
+  const file = resolveImportedClassFile(fromFile, className);
+  const own = file ? index.methodsByFile.get(file)?.get(className) : undefined;
+  return own ?? index.methodsByClass.get(className);
 }
 
 // --- tenant-binding evidence -------------------------------------------------
@@ -246,6 +307,17 @@ export function analyzeRoute(route: HandlerRoute, index: SourceIndex): RouteBind
 
   for (const call of route.body.matchAll(/this\.(\w+)\s*\(/g)) {
     const verdict = classifyMethod(route.controllerClass, call[1] as string, index);
+    if (verdict.verdict !== "unbound") return { route, ...verdict, tenantThreaded };
+  }
+
+  // A handler that hands its work to a module-level function — the shape a controller split by
+  // responsibility produces (`submitPublicFeedback(this.submitDeps, widget, …)`) — is followed
+  // into it exactly as `classifyMethod` already follows one out of a service method. Without
+  // this, moving a handler's body into a lib reads as removing its tenant binding.
+  for (const call of route.body.matchAll(/(?<![\w.])([a-z][\w$]*)\s*\(/g)) {
+    const fnName = call[1] as string;
+    if (!index.functions.has(fnName)) continue;
+    const verdict = classifyMethod(fnName, fnName, index);
     if (verdict.verdict !== "unbound") return { route, ...verdict, tenantThreaded };
   }
   if (inline) return { route, ...inline, resolved: `${route.controllerClass}.${route.handler}`, tenantThreaded };

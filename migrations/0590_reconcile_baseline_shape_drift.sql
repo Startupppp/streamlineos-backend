@@ -94,14 +94,21 @@ END $$;
 --> statement-breakpoint
 DO $$
 BEGIN
-  IF NOT EXISTS (
+  -- Guarded on the referenced table, not just the constraint name. The accounting
+  -- rewrite replaced `journal_entries` with the `gl_*` kernel, so on a database
+  -- built from this journal there is nothing for this key to point at and the
+  -- ALTER fails outright, taking the rest of the migration chain with it. Where
+  -- the old table is still present the key is added exactly as before.
+  IF to_regclass('public.journal_entries') IS NOT NULL AND NOT EXISTS (
     SELECT 1 FROM pg_constraint WHERE conname = 'fin_reimbursement_batches_journal_entry_id_fk'
   ) THEN
     ALTER TABLE "fin_reimbursement_batches"
       ADD CONSTRAINT "fin_reimbursement_batches_journal_entry_id_fk"
       FOREIGN KEY ("journal_entry_id") REFERENCES "journal_entries"("id") NOT VALID;
   END IF;
-  IF NOT EXISTS (
+  -- Same guard, same reason: `fin_bank_accounts` belongs to the finance module
+  -- the rewrite replaced.
+  IF to_regclass('public.fin_bank_accounts') IS NOT NULL AND NOT EXISTS (
     SELECT 1 FROM pg_constraint WHERE conname = 'fin_reimbursement_batches_bank_account_id_fk'
   ) THEN
     ALTER TABLE "fin_reimbursement_batches"

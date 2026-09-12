@@ -10,6 +10,7 @@ import {
 import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
 import { AccessService } from "../../access/access.service";
 import { invStockLowPayloadSchema } from "./dto/inv-stock-low-payload.schema";
+import { INVENTORY_COMMAND_EVENTS } from "../stock-engine/command-events";
 
 const CONSUMER_NAME = "inventory:inv-stock-low";
 
@@ -29,6 +30,17 @@ export class InvStockLowConsumerService
 
   onModuleInit(): void {
     this.registry.register(this);
+    /**
+     * B3. A stockout is now announced under its own name, and the buyer still
+     * has to hear about it — an outage is the most urgent buying signal there
+     * is. Registered as a second consumer sharing `handle`, which is safe
+     * because `InboxConsumer.claim` keys on the event id: the two names are two
+     * different events, never the same one delivered twice.
+     */
+    this.registry.register({
+      eventType: INVENTORY_COMMAND_EVENTS.STOCK_OUT,
+      handle: (event) => this.handle(event),
+    });
   }
 
   async handle(event: OutboxEventRow): Promise<void> {

@@ -29,6 +29,22 @@ const jobIdParams = z.object({ jobId: z.coerce.number().int().positive() }).stri
 export class SignBulkSendController {
   constructor(private readonly bulkSend: SignBulkSendService) {}
 
+  /*
+   * In the request transaction, like any bounded write.
+   *
+   * This handler used to opt out with `@NoTenantTransaction()`, because it sent
+   * every row's invitation email inline: up to 5000 network calls held in one
+   * pooled connection and one rollback boundary (backend §4). SIGN-P0-05 moved
+   * the send onto the outbox, and `SignBulkSendConsumer` now runs the row pass
+   * in the relay's tenant transaction, with one new transaction per row write
+   * (`lib/bulk-send-pass.ts`). What is left here is validation, the job, its
+   * rows and the queue entry: bounded database work.
+   *
+   * The opt-out outlived its reason and broke the request. With it the
+   * interceptor set no `app.current_org_id`, and nothing in `createJob` opened
+   * a tenant transaction, so RLS refused the first read (`sign_templates`,
+   * SQLSTATE 42501) and every bulk send answered 500.
+   */
   @Post("jobs")
   @HttpCode(201)
   @Idempotent("sign:bulk_send.create")

@@ -4,7 +4,8 @@
  * Single-pass CI guard for the migration chain. Exits non-zero if any of:
  *   a) An .sql file under migrations/ is absent from the journal and not on the allowlist.
  *   b) Two or more .sql files share the same numeric prefix (first segment before '_').
- *   c) A journal entry's `when` timestamp is not strictly greater than the one before it.
+ *   c) A journal entry's `when` timestamp is not strictly greater than the one before it,
+ *      unless that exact adjacent pair is listed in HISTORICAL_TIMESTAMP_REGRESSIONS.
  *   d) A journal entry names a file that does not exist on disk.
  *   e) The last reported chain_gaps count (read from the chain-gaps marker file) is > 0.
  *   f) The applied watermark in drizzle.__drizzle_migrations is ahead of every journal
@@ -21,6 +22,7 @@
 
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
+import { sslForConnectionString } from "./lib/repo-roots.mjs";
 import { tmpdir } from "node:os";
 import { createHash } from "node:crypto";
 
@@ -45,11 +47,32 @@ const DELIBERATE_ALLOWLIST = new Set([
 ]);
 
 /**
- * Duplicate numeric prefixes that already exist in applied history. Renaming an
- * applied migration changes its hash and would re-propose it against every
- * database, so these are baselined rather than fixed. Recorded 2026-08-29 — the
- * set is closed, so a NEW collision still fails. Do not extend it to silence a
- * fresh duplicate; rename the new file instead.
+ * Duplicate numeric prefixes that already exist in applied history.
+ *
+ * The rule is unchanged and the set is still CLOSED: a NEW collision must fail,
+ * and the fix for one is to rename the new file, never to add a line here. What
+ * changed is the reason, because the reason recorded here until 2026-09-10 was
+ * false and pointed at the wrong fix.
+ *
+ * It said renaming an applied migration changes its hash and would re-propose it
+ * against every database. It does not. All four appliers in this repository —
+ * run-pending-migrations.mjs:45, apply-journalled-migration.mjs:44,
+ * apply-chain-cold.mjs:46 and db-bootstrap.mjs:22 — hash the FILE CONTENT and
+ * nothing else. The tag never enters the hash, and `drizzle.__drizzle_migrations`
+ * stores only (hash, created_at), so a renamed migration on a database that
+ * already has it matches by hash and is skipped. Renaming is hash-safe. (Editing
+ * a migration's BODY is not — including its comments — which is the neighbouring
+ * fact this one was probably confused with.)
+ *
+ * The true reason to baseline an old collision and rename a new one is reference,
+ * not hashing. A tag that has been applied somewhere is quoted in runbooks, in
+ * `db:apply-one --tag=`, in rollback manifests and in cross-session notes;
+ * renaming it silently invalidates all of them, and the numeric prefix decides
+ * nothing at runtime anyway — the journal array is the authoritative order. A
+ * collision caught before it is applied has none of those references yet, so
+ * renaming costs nothing. That asymmetry is the policy.
+ *
+ * Recorded 2026-08-29, rationale corrected 2026-09-10.
  */
 const HISTORICAL_DUPLICATE_PREFIXES = new Set([
   "0300",
@@ -66,6 +89,43 @@ const HISTORICAL_DUPLICATE_PREFIXES = new Set([
   "0432",
   "0700",
   "0701",
+]);
+
+/**
+ * Adjacent journal pairs whose `when` regresses and that are already applied.
+ *
+ * Keyed on the exact pair "prev -> cur", not on the entry alone, so an entry that
+ * gains a different predecessor is checked again. The set is CLOSED like the one
+ * above: a new regression on an unapplied entry is fixed by restamping it into the
+ * gap between its neighbours, never by adding a line here.
+ *
+ * Every pair below comes from the 2026-09-11 merge of integration/crm-ts into the
+ * inventory branch. Array order is the cold-build order (each crm/ts entry follows
+ * its own-lane predecessor, and the 0591b/0649b/0676b/0677b/0678b chain repairs carry
+ * a deliberately far-future `when`), while `when` comes from each lane's own clock.
+ * In every pair the later entry is applied (hash or `when` present on Neon or the
+ * local inventory/CRM ledgers), and check:migration-ledger joins on `when`, so
+ * restamping it would orphan ledger rows. The one pair with an unapplied side
+ * (0674a -> 0659b) has no gap to move into. check:migration-discipline carries
+ * the same 16 as `journal-order:` baseline entries, each with where it is applied.
+ */
+const HISTORICAL_TIMESTAMP_REGRESSIONS = new Set([
+  "0465_accounting_documents -> 0232_repair_crm_activity_grants",
+  "0470_ar_document_pdf_cache -> 0471_platform_waitlist",
+  "0472a_activities_deal_fk -> 0270_activities_thread_window",
+  "0473a_accounting_attachments_permissions -> 0261_crm_connectors",
+  "0271a_waitlist_admission -> 0269_mailbox_push_secret",
+  "0520a_relationship_state -> 0278_drop_legacy_identity_tables",
+  "0557_relationship_states_deal_fk -> 0472_outbox_inbox_aggregate_fence",
+  "0559_data_quality_autonomous_decision -> 0478_invoice_line_items_column_drop",
+  "0591b_gl_ap_ar_bank_tax_chain_repair -> 0527_po_batching_policy",
+  "0649b_inv_carton_shipment_chain_repair -> 0589_inventory_drop_reason_codes",
+  "0676b_inv_compliance_documents_chain_repair -> 0610_agent_tokens_membership_and_ceiling",
+  "0677b_feedback_cycle_responses_policy_repair -> 0611_delegations_and_overrides_expand_membership",
+  "0678b_feedback_cycle_responses_rls_complete -> 0613_delegations_and_overrides_drop_user_columns",
+  "0674a_subprocessor_subscribers_tenant_index -> 0659b_timesheets_lifecycle_seq_and_attendance_draft",
+  "0659b_timesheets_lifecycle_seq_and_attendance_draft -> 0656_communication_tenant_rls",
+  "1096_crm_legacy_keys_follow_the_party_map -> 0466_drop_legacy_accounting",
 ]);
 
 const CHAIN_GAPS_FILE = resolve(process.cwd(), ".chain-gaps");
@@ -146,7 +206,12 @@ function isPendingPath(tag, dir) {
   return tag.includes("/") || existsSync(join(dir, "pending", tag + ".sql"));
 }
 
-function runChecks(dir, gapsFile = CHAIN_GAPS_FILE, appliedWatermark = null) {
+function runChecks(
+  dir,
+  gapsFile = CHAIN_GAPS_FILE,
+  appliedWatermark = null,
+  timestampBaseline = HISTORICAL_TIMESTAMP_REGRESSIONS,
+) {
   const journal = readJournal(dir);
   const entries = journal.entries ?? [];
   const journalled = new Set(entries.map((e) => e.tag));
@@ -177,7 +242,7 @@ function runChecks(dir, gapsFile = CHAIN_GAPS_FILE, appliedWatermark = null) {
   for (let i = 1; i < entries.length; i++) {
     const prev = entries[i - 1];
     const cur = entries[i];
-    if (cur.when <= prev.when) {
+    if (cur.when <= prev.when && !timestampBaseline.has(`${prev.tag} -> ${cur.tag}`)) {
       failures.push(
         `(c) TIMESTAMP REGRESSION  ${cur.tag} (when=${cur.when}) <= ${prev.tag} (when=${prev.when})`,
       );
@@ -194,12 +259,23 @@ function runChecks(dir, gapsFile = CHAIN_GAPS_FILE, appliedWatermark = null) {
 
   // (f) The applied watermark is ahead of the journal.
   //
-  // Drizzle decides what to run by comparing each entry's `when` against the highest
-  // created_at already in drizzle.__drizzle_migrations. A row recorded with a
-  // timestamp above every journal entry therefore disables the migrator for everyone:
-  // db:migrate keeps reporting success while applying nothing, and the tables those
-  // migrations were meant to create or protect never appear. This is checked only
-  // when a database is reachable, because CI has none.
+  // Stock drizzle-kit decides what to run by comparing each entry's `when` against
+  // the highest created_at already in drizzle.__drizzle_migrations. A row recorded
+  // with a timestamp above every journal entry therefore disables that migrator for
+  // everyone: it reports success while applying nothing, and the tables those
+  // migrations were meant to create or protect never appear.
+  //
+  // `db:migrate` no longer runs stock drizzle-kit — it runs
+  // run-pending-migrations.mjs, which queues every entry and lets the file-hash
+  // guard decide, so it SEES work below the watermark. This check still matters for
+  // two reasons: the condition means the database and the journal were built by
+  // different lineages and neither describes the other, and anything still invoking
+  // `drizzle-kit migrate` directly (a CI step, a runbook, a habit) is silently
+  // applying nothing. Measured on the shared Neon branch 2026-09-10: 140 of 434
+  // journalled migrations unapplied, and the watermark dated 2027-02-19 — a FUTURE
+  // timestamp, which is how it got above every entry in the first place.
+  //
+  // Checked only when a database is reachable, because CI has none.
   if (appliedWatermark !== null && entries.length > 0) {
     const journalMax = Math.max(...entries.map((e) => e.when));
     if (appliedWatermark > journalMax) {
@@ -207,7 +283,7 @@ function runChecks(dir, gapsFile = CHAIN_GAPS_FILE, appliedWatermark = null) {
         `(f) WATERMARK AHEAD OF JOURNAL  applied max created_at=${appliedWatermark} ` +
           `(${new Date(appliedWatermark).toISOString()}) exceeds the newest journal entry ` +
           `when=${journalMax} (${new Date(journalMax).toISOString()}) — every entry below it is ` +
-          `silently skipped and db:migrate still reports success`,
+          `silently skipped by stock drizzle-kit, which still reports success. db:migrate now uses run-pending-migrations.mjs and is unaffected; run it with --dry-run to see what this database is actually missing.`,
       );
     }
   }
@@ -316,6 +392,27 @@ function selfTest() {
     writeSql("0002_gamma");
     const failures = check(tmp);
     assert("timestamp regression caught", failures, "(c)");
+    rmSync(join(tmp, "0002_gamma.sql"));
+    writeJournal([{ idx: 0, version: "7", when: 1000, tag: "0001_alpha", breakpoints: false }]);
+  }
+
+  console.log("Self-test: (c) a baselined pair is exempt, and only that pair");
+  {
+    writeJournal([
+      { idx: 0, version: "7", when: 2000, tag: "0001_alpha", breakpoints: false },
+      { idx: 1, version: "7", when: 1000, tag: "0002_gamma", breakpoints: false },
+    ]);
+    writeSql("0002_gamma");
+    const exempt = runChecks(tmp, undefined, null, new Set(["0001_alpha -> 0002_gamma"]));
+    if (exempt.some((f) => f.includes("(c)"))) {
+      console.error("  FAIL  a regression listed as its exact pair must not be reported");
+      failed++;
+    } else {
+      console.log("  PASS  a regression listed as its exact pair is not reported");
+      passed++;
+    }
+    const otherPair = runChecks(tmp, undefined, null, new Set(["0009_other -> 0002_gamma"]));
+    assert("the same entry after a different predecessor is still caught", otherPair, "(c)");
     rmSync(join(tmp, "0002_gamma.sql"));
     writeJournal([{ idx: 0, version: "7", when: 1000, tag: "0001_alpha", breakpoints: false }]);
   }

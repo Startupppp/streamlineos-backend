@@ -1,97 +1,107 @@
 import { InvReplenishmentService } from "./inv-replenishment.service";
 
 /**
- * Proves that getForecasting places orderBy before offset in the paged stock query.
+ * Proves that getForecasting orders before it paginates.
  *
- * Without ORDER BY, Postgres may return rows in any order between pages, so page 2
- * can silently repeat rows from page 1 or omit rows entirely. This is a data
- * correctness bug, not a performance issue.
+ * Without ORDER BY, Postgres may return rows in any order between pages, so
+ * page 2 can silently repeat rows from page 1 or omit rows entirely. That is a
+ * correctness bug, not a performance one.
  *
- * Bite proof: remove the `.orderBy(...)` line from `getForecasting` in
- * `inv-replenishment.service.ts` and the "orderBy precedes offset" assertion fails
- * because `orderByCalledAt` will be undefined and `orderByCalledAt < offsetCalledAt`
- * evaluates to false.
+ * The paged query is still a Drizzle builder chain here, so the order the
+ * builder is driven in is the thing to watch: `.groupBy().orderBy().limit()
+ * .offset()`. The bite is proven by deleting the `.orderBy(...)` line from
+ * `getForecasting` — "orders before it paginates" then fails because no
+ * orderBy is ever recorded.
  */
 
-describe("InvReplenishmentService.getForecasting — deterministic ORDER BY before paging", () => {
-  it("orderBy precedes offset in the paged stock-levels query", async () => {
-    const globalOrder: string[] = [];
+interface Recorder {
+  order: string[];
+}
 
-    const pagedResult: unknown[] = [];
+interface PagedChain {
+  limit: jest.Mock;
+}
 
-    type StockChain = { groupBy: jest.Mock; where: jest.Mock };
-    const stockChain: StockChain = {
-      groupBy: jest.fn(() => ({
-        orderBy: jest.fn((..._args: unknown[]) => {
-          globalOrder.push("orderBy");
-          return {
-            limit: jest.fn(() => ({
-              offset: jest.fn(() => {
-                globalOrder.push("offset");
-                return Promise.resolve(pagedResult);
-              }),
-            })),
-          };
-        }),
-      })),
-      where: jest.fn(function (this: StockChain) { return stockChain; }),
-    };
+interface StockChain {
+  groupBy: jest.Mock;
+  where: jest.Mock;
+}
 
-    const salesChain = {
-      where: jest.fn(() => ({
-        groupBy: jest.fn(() => Promise.resolve([])),
-      })),
-    };
-
-    const countChain = {
-      where: jest.fn(() => Promise.resolve([{ total: 0 }])),
-    };
-
-    let call = 0;
-    const mockDb = {
-      select: jest.fn(() => {
-        call += 1;
-        if (call === 1) {
-          return {
-            from: jest.fn(() => ({
-              innerJoin: jest.fn(() => ({
-                innerJoin: jest.fn(() => stockChain),
-              })),
-            })),
-          };
-        }
-        if (call === 2) {
-          return { from: jest.fn(() => salesChain) };
-        }
-        return { from: jest.fn(() => countChain) };
+function buildStockChain(rec: Recorder): StockChain {
+  const paged: PagedChain = {
+    limit: jest.fn(() => ({
+      offset: jest.fn(() => {
+        rec.order.push("offset");
+        return Promise.resolve([]);
       }),
-    };
+    })),
+  };
 
-    const mockCache = {
+  const chain: StockChain = {
+    groupBy: jest.fn(() => ({
+      orderBy: jest.fn((..._args: unknown[]) => {
+        rec.order.push("orderBy");
+        return paged;
+      }),
+      // Present so a chain that skips orderBy still terminates rather than
+      // throwing — the assertion, not a TypeError, is what must report it.
+      limit: paged.limit,
+    })),
+    where: jest.fn(() => chain),
+  };
+  return chain;
+}
+
+function buildDb(rec: Recorder) {
+  const stockChain = buildStockChain(rec);
+  const salesChain = {
+    where: jest.fn(() => ({ groupBy: jest.fn(() => Promise.resolve([])) })),
+  };
+  const countChain = { where: jest.fn(() => Promise.resolve([{ total: 0 }])) };
+
+  let call = 0;
+  return {
+    select: jest.fn(() => {
+      call += 1;
+      if (call === 1)
+        return {
+          from: jest.fn(() => ({
+            innerJoin: jest.fn(() => ({ innerJoin: jest.fn(() => stockChain) })),
+          })),
+        };
+      if (call === 2) return { from: jest.fn(() => salesChain) };
+      return { from: jest.fn(() => countChain) };
+    }),
+  };
+}
+
+function buildService(rec: Recorder) {
+  return new InvReplenishmentService(
+    buildDb(rec) as never,
+    {
       cachedVersioned: jest.fn((_ns: string, _k: string, fn: () => Promise<unknown>) => fn()),
-    };
-    const mockNumSeq = { next: jest.fn() };
+    } as never,
+    { next: jest.fn() } as never,
+    { propose: jest.fn() } as never,
+    { can: jest.fn().mockResolvedValue(true) } as never,
+  );
+}
 
-    const service = new InvReplenishmentService(
-      mockDb as never,
-      mockCache as never,
-      mockNumSeq as never,
-    );
-
-    await service.getForecasting("org1", { page: 2, limit: 5 });
-
-    const orderByCalledAt = globalOrder.indexOf("orderBy");
-    const offsetCalledAt = globalOrder.indexOf("offset");
-
-    expect(orderByCalledAt).toBeGreaterThanOrEqual(0);
-    expect(offsetCalledAt).toBeGreaterThan(orderByCalledAt);
+describe("InvReplenishmentService.getForecasting — deterministic ORDER BY before paging", () => {
+  it("drives the paged query at all, so an empty sweep cannot pass", async () => {
+    const rec: Recorder = { order: [] };
+    await buildService(rec).getForecasting("org1", { page: 2, limit: 5 });
+    expect(rec.order).toContain("offset");
   });
 
-  it("bite: if orderBy were absent the main test's orderByIdx check would fail", () => {
-    const sequenceWithoutOrderBy = ["offset"];
-    const orderByIdx = sequenceWithoutOrderBy.indexOf("orderBy");
+  it("orders before it paginates", async () => {
+    const rec: Recorder = { order: [] };
+    await buildService(rec).getForecasting("org1", { page: 2, limit: 5 });
 
-    expect(orderByIdx).toBe(-1);
-    expect(orderByIdx).not.toBeGreaterThanOrEqual(0);
+    const orderBy = rec.order.indexOf("orderBy");
+    const offset = rec.order.indexOf("offset");
+
+    expect(orderBy).toBeGreaterThanOrEqual(0);
+    expect(offset).toBeGreaterThan(orderBy);
   });
 });

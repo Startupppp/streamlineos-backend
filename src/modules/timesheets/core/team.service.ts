@@ -2,7 +2,7 @@ import { Inject, Injectable } from "@nestjs/common";
 import { and, eq, gte, inArray, isNull, lte, sql } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
-import { timesheets, timesheetPeriods, organizationMembers } from "../../../db/schema";
+import { timesheets, timesheetPeriods, organizationMembers, users } from "../../../db/schema";
 import { AccessService } from "../../access/access.service";
 import { actingMembershipId } from "../../../common/auth/principal";
 import { resolveReportsScope, membershipScope } from "./timesheets-core-scope";
@@ -21,24 +21,53 @@ export class TeamService {
   ) {}
 
   async getWeekSummary(u: CurrentUserContext, query: TeamWeekSummaryQuery) {
-    const ids = query.userIds.slice(0, 100);
-    if (ids.length === 0) return { summaries: [] };
-
     const read = await resolveReportsScope(this.access, u);
     const actorMembId = actingMembershipId(u.principal);
+    const requested = (query.userIds ?? []).slice(0, 100);
+
+    const memberWhere = read.compose(
+      {
+        tenant: organizationMembers.orgId,
+        scope: membershipScope(actorMembId, organizationMembers.id),
+        and: requested.length > 0 ? [inArray(organizationMembers.userId, requested)] : [],
+      },
+      ({ sql: w }) => w,
+      () => sql`false`,
+    );
 
     const memberRows = await this.db
-      .select({ id: organizationMembers.id, userId: organizationMembers.userId })
+      .select({
+        id: organizationMembers.id,
+        userId: organizationMembers.userId,
+        name: users.name,
+        email: users.email,
+      })
       .from(organizationMembers)
-      .where(and(eq(organizationMembers.orgId, u.orgId), inArray(organizationMembers.userId, ids)))
-      .limit(ids.length);
+      .innerJoin(users, eq(users.id, organizationMembers.userId))
+      .where(memberWhere)
+      .limit(100);
+
+    const ids = memberRows.map((m) => m.userId);
+    if (ids.length === 0) return { summaries: [] };
 
     const userIdToMembId = new Map(memberRows.map((m) => [m.userId, m.id]));
-    const membIdToUserId = new Map(memberRows.map((m) => [m.id, m.userId]));
     const membershipIds = memberRows.map((m) => m.id);
+    const identityByUserId = new Map(memberRows.map((m) => [m.userId, { name: m.name, email: m.email }]));
 
     if (membershipIds.length === 0) {
-      return { summaries: ids.map((userId) => ({ userId, period: null, dailyHours: {}, totalHours: 0 })) };
+      return {
+        summaries: ids.map((userId) => {
+          const identity = identityByUserId.get(userId);
+          return {
+            userId,
+            name: identity?.name ?? null,
+            email: identity?.email ?? null,
+            period: null,
+            dailyHours: {},
+            totalHours: 0,
+          };
+        }),
+      };
     }
 
     const periodsWhere = read.compose(
@@ -118,8 +147,11 @@ export class TeamService {
 
     const summaries = ids.map((userId) => {
       const membId = userIdToMembId.get(userId);
+      const identity = identityByUserId.get(userId);
       return {
         userId,
+        name: identity?.name ?? null,
+        email: identity?.email ?? null,
         period: membId != null ? periodByMembId.get(membId) ?? null : null,
         dailyHours: membId != null ? dailyByMembId.get(membId) ?? {} : {},
         totalHours: membId != null ? totalByMembId.get(membId) ?? 0 : 0,

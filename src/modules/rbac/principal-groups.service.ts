@@ -16,6 +16,7 @@ import {
 } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
+import { isUniqueViolation } from "../../common/db/postgres-error";
 import { bumpPermissionsVersion } from "../../common/rbac/access-invalidate";
 import { runInTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
@@ -34,7 +35,6 @@ import type {
 } from "./dto/principal-groups.schemas";
 import { buildCursorPage, decodeCursor } from "../../common/pagination/cursor";
 import { keysetAfterValueUuid } from "../../common/pagination/keyset";
-import { isUniqueViolation } from "../../common/db/postgres-error";
 
 @Injectable()
 export class PrincipalGroupsService {

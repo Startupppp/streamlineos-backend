@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { wireDate, nullableWireDate } from "../../../common/openapi/wire-types";
+import { wireDate } from "../../../common/openapi/wire-types";
 import { signEnvelopeRowSchema } from "./e-sign-envelopes-response.schemas";
 
 export const signTemplateRowSchema = z.object({
@@ -23,22 +23,3 @@ export const templateMutationResponseSchema = signTemplateRowSchema;
 export const listTemplatesResponseSchema = z.array(signTemplateRowSchema);
 
 export const instantiateTemplateResponseSchema = signEnvelopeRowSchema;
-
-export const signPublicFormRowSchema = z.object({
-  id: z.number().int(),
-  orgId: z.string(),
-  templateId: z.number().int(),
-  slug: z.string(),
-  accessCodeHash: z.string().nullable(),
-  maxSubmissions: z.number().int().nullable(),
-  submissionCount: z.number().int(),
-  expiresAt: nullableWireDate(),
-  completionRedirectUrl: z.string().nullable(),
-  webhookUrl: z.string().nullable(),
-  embedAllowed: z.boolean(),
-  createdByMembershipId: z.number().int().nullable(),
-  createdAt: wireDate(),
-  updatedAt: wireDate(),
-});
-
-export const publishPublicFormResponseSchema = signPublicFormRowSchema;

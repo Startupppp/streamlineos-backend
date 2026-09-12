@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { pgTable, text, timestamp, jsonb, index, uniqueIndex } from "drizzle-orm/pg-core";
+import { pgTable, text, integer, timestamp, jsonb, index, uniqueIndex } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import { organizations } from "../common/auth";
 
@@ -65,7 +65,18 @@ export const activities = pgTable(
 
     /** The records this belongs to. A timeline is read by one of these three. */
     partyId: text("party_id"),
-    dealId: text("deal_id"),
+    /**
+     * Integer, because `deals.id` is a `serial` and this is a foreign key to it.
+     *
+     * It was `text` for symmetry with the party and subject anchors either side,
+     * which are genuinely text. The cost was not cosmetic: `fk_activities_deal`
+     * could not be created across the type boundary, so migration 0472 failed on
+     * every database and the deal anchor had no referential integrity at all,
+     * while every join between the two carried an implicit cast that kept
+     * `idx_activities_deal_timeline` out of the plan. 0472 now converts the
+     * column and installs the key.
+     */
+    dealId: integer("deal_id"),
     subjectId: text("subject_id"),
 
     /** `human` or `system` — constrained by a CHECK alongside the actor column. */

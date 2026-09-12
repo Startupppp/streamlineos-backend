@@ -270,6 +270,7 @@ export class ChatChannelsService {
         channelId: created.id,
         membershipId: actorMembershipId,
         role: "ADMIN",
+        notificationPreference: "DEFAULT",
       });
     });
 

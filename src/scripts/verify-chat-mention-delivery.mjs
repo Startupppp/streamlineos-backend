@@ -34,8 +34,10 @@ if (!SIGNING_KEYS) {
   process.exit(1);
 }
 if (!ABLY_KEY) {
-  console.error("ABLY_API_KEY is not set. Mentions publish over Ably; without it this proves nothing.");
-  process.exit(1);
+  console.error(
+    "PREREQUISITE MISSING: ABLY_API_KEY is not set. Mentions publish over Ably; without it this proves nothing.",
+  );
+  process.exit(2);
 }
 
 let keyring;
@@ -163,6 +165,22 @@ async function main() {
     });
     const body = await res.text();
     console.log(`POST message -> ${res.status}`);
+    if (res.status === 401 || res.status === 403) {
+      // Nothing was measured. This probe seeds its org into DATABASE_URL and then
+      // talks to API_URL; a 401 on the very first send means the API on that port
+      // is serving a DIFFERENT database (a dev server another worktree started is
+      // the usual cause), so the seeded user does not exist as far as it is
+      // concerned. Every assertion after this would fail for that reason and read
+      // as "mentions are broken", which is the false report this exists to avoid.
+      console.error(`  body: ${body.slice(0, 400)}`);
+      console.error(
+        "\nPREREQUISITE MISSING: the API at " + API + " rejected the probe's token.\n" +
+          "  It must be booted against the SAME database as DATABASE_URL and share BACKEND_JWT_SECRET.\n" +
+          "  Nothing about mention delivery was observed, so no finding is reported.",
+      );
+      process.exitCode = 2;
+      return;
+    }
     if (res.status !== 201) {
       console.error(`  body: ${body.slice(0, 400)}`);
       failures += 1;

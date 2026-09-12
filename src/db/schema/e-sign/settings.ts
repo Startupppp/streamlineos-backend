@@ -1,4 +1,4 @@
-import { pgTable, serial, text, integer, boolean, jsonb, timestamp, uniqueIndex, unique } from "drizzle-orm/pg-core";
+import { pgTable, serial, text, integer, jsonb, timestamp, uniqueIndex, unique } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { organizations } from "../common/auth";
 
@@ -24,7 +24,6 @@ export const signOrgSettings = pgTable(
     certificateFormat: text("certificate_format").default("pdf").notNull(),
     retentionPolicyJson: jsonb("retention_policy_json").$type<Record<string, unknown>>().default({}).notNull(),
 
-    publicFormsEnabled: boolean("public_forms_enabled").default(true).notNull(),
     bulkSendMaxRowsPerJob: integer("bulk_send_max_rows_per_job").default(500).notNull(),
     bulkSendMaxActiveJobs: integer("bulk_send_max_active_jobs").default(5).notNull(),
     bulkSendMaxRecipientsPerEnvelope: integer("bulk_send_max_recipients_per_envelope").default(20).notNull(),

@@ -1,4 +1,5 @@
 import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { runInNewTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
 import { and, eq, inArray } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
@@ -281,13 +282,18 @@ export class PaymentProviderSetupService {
 
   /** For internal use by webhook/test-transaction/live-activation services — never exposed via API. */
   async getDecryptedSecret(orgId: string, providerId: number, environment: "test" | "live") {
-    const cred = await this.db.query.paymentProviderCredentials.findFirst({
-      where: and(
-        eq(paymentProviderCredentials.orgId, orgId),
-        eq(paymentProviderCredentials.providerId, providerId),
-        eq(paymentProviderCredentials.environment, environment),
-      ),
-    });
+    // In the organisation's own transaction: the credentials table is under
+    // row-level security, and the caller that needs it most is a provider
+    // webhook, which arrives with no tenant context at all.
+    const cred = await runInNewTenantTransaction(this.db, orgId, (tx) =>
+      tx.query.paymentProviderCredentials.findFirst({
+        where: and(
+          eq(paymentProviderCredentials.orgId, orgId),
+          eq(paymentProviderCredentials.providerId, providerId),
+          eq(paymentProviderCredentials.environment, environment),
+        ),
+      }),
+    );
     if (!cred) return null;
     return {
       keyId: cred.keyId,

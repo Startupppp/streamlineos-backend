@@ -45,12 +45,16 @@ function selfTest(): void {
   process.exitCode = 1;
 }
 
+class PrerequisiteError extends Error {
+  override readonly name = "PrerequisiteError";
+}
+
 async function main(): Promise<void> {
   const argv = process.argv.slice(2);
   if (argv.includes("--self-test")) return selfTest();
 
   const url = process.env.APP_DATABASE_URL;
-  if (!url) throw new Error("APP_DATABASE_URL is required (the non-BYPASSRLS app role).");
+  if (!url) throw new PrerequisiteError("APP_DATABASE_URL is required (the non-BYPASSRLS app role).");
 
   const topology = resolveRegionTopology(process.env);
   const keyring = resolvePlacementKeyring(process.env);
@@ -137,6 +141,13 @@ async function main(): Promise<void> {
 }
 
 main().catch((e: unknown) => {
+  if (e instanceof PrerequisiteError) {
+    // Exit 2 is PREREQUISITE UNMET in this repository. Reporting a missing
+    // APP_DATABASE_URL as exit 1 claims a violation was measured when nothing ran.
+    console.error("PREREQUISITE MISSING:", e.message);
+    process.exitCode = 2;
+    return;
+  }
   console.error("ADMISSION CHECK FAILED:", e instanceof Error ? e.message : e);
   process.exitCode = 1;
 });

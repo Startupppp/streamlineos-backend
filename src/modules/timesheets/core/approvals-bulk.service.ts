@@ -1,20 +1,25 @@
 import { ConflictException, ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, eq, inArray, isNull } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { logger } from "../../../common/logger/logger.service";
-import { timesheetPeriods, timesheets, timesheetSettings } from "../../../db/schema";
+import { timesheetPeriods, timesheetSettings } from "../../../db/schema";
 import { actingMembershipId } from "../../../common/auth/principal";
 import {
   assertOrganizationActor,
   OrganizationActorError,
   organizationActorHttpError,
 } from "../../../common/organization/organization-actor";
-import { bulkUpdateFromValues } from "../../../common/db/bulk-update";
 import { TimesheetsAuditService } from "./timesheets-audit.service";
-import { ApprovalsService } from "./approvals.service";
+import {
+  ApprovalsService,
+  membershipUserIds,
+  periodOwnerUserIdOrWarn,
+} from "./approvals.service";
 import { RateResolverService } from "./rate-resolver.service";
 import { canActOnPeriod } from "./lib/approval-guard";
+import { applyBulkApproval } from "./lib/approval-transition";
+import { applyBulkRejection, applyRejection } from "./lib/rejection-transition";
 import type {
   BulkApproveInput,
   BulkRejectInput,
@@ -22,6 +27,12 @@ import type {
 } from "./dto/approvals.schemas";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 
+/*
+  The service decides who and whether: it reads the periods, runs the guard on
+  each, resolves the owners, opens the transaction and sends the notices once it
+  commits. What an approval or a rejection writes inside that transaction is in
+  `lib/approval-transition.ts` and `lib/rejection-transition.ts`.
+*/
 @Injectable()
 export class ApprovalsBulkService {
   constructor(
@@ -52,47 +63,36 @@ export class ApprovalsBulkService {
       throw new ConflictException("Only submitted periods can be rejected");
     await this.approvals.assertCanActOnPeriod(u, period);
 
-    const now = new Date();
-    await this.db.transaction(async (tx) => {
-      await tx
-        .update(timesheetPeriods)
-        .set({
-          status: "REJECTED",
-          rejectedAt: now,
-          rejectionReason: input.reason,
-          updatedAt: now,
-        })
-        .where(
-          and(
-            eq(timesheetPeriods.id, periodId),
-            eq(timesheetPeriods.orgId, u.orgId),
-          ),
-        );
-
-      await tx
-        .update(timesheets)
-        .set({
-          status: "REJECTED",
-          rejectionReason: input.reason,
-          updatedAt: now,
-        })
-        .where(
-          and(
-            eq(timesheets.timesheetPeriodId, periodId),
-            eq(timesheets.orgId, u.orgId),
-            isNull(timesheets.voidedAt),
-          ),
-        );
-
-      await this.audit.record(tx, {
-        orgId: u.orgId,
-        actorMembershipId: actingMembershipId(u.principal),
-        entityType: "period",
-        entityId: periodId.toString(),
-        action: "period.rejected",
-        reason: input.reason,
-      });
+    const owners = await membershipUserIds(this.db, u.orgId, [period.userMembershipId]);
+    const ownerUserId = periodOwnerUserIdOrWarn(owners, period.userMembershipId, {
+      orgId: u.orgId,
+      periodId,
+      operation: "reject",
     });
+
+    const now = new Date();
+    await this.db.transaction((tx) =>
+      applyRejection(tx, { audit: this.audit }, u, periodId, {
+        input,
+        ownerUserId,
+        now,
+      }),
+    );
+
+    if (ownerUserId) {
+      await this.approvals.notifyPeriodRejected(u, {
+        periodId,
+        ownerUserId,
+        title: `Timesheet rejected: ${period.periodStart} to ${period.periodEnd}`,
+        message: `Your timesheet for ${period.periodStart}–${period.periodEnd} was rejected: ${input.reason}`,
+        variables: {
+          periodId,
+          periodStart: period.periodStart,
+          periodEnd: period.periodEnd,
+          reason: input.reason,
+        },
+      });
+    }
 
     const [updated] = await this.db
       .select()
@@ -110,12 +110,12 @@ export class ApprovalsBulkService {
 
   /**
    * A mixed-tenant id list must fail the whole request. Both bulk actions used
-   * to fold a foreign id into their ordinary skip path — `isExpectedApprovalSkip`
-   * swallows the `NotFoundException`, and the reject query narrows to the
-   * caller's org in the same predicate as the status filter — so the caller was
-   * told the request succeeded. Tenant membership is checked first and on its
-   * own, which leaves the per-period status and approver skips meaning what they
-   * say. A miss is 404, never 403.
+   * to fold a foreign id into their ordinary skip path — the approve loop
+   * swallowed the `NotFoundException` as a skip, and the reject query narrows to
+   * the caller's org in the same predicate as the status filter — so the caller
+   * was told the request succeeded. Tenant membership is checked first and on
+   * its own, which leaves the per-period status and approver skips meaning what
+   * they say. A miss is 404, never 403.
    */
   private async assertPeriodsInOrg(orgId: string, periodIds: readonly number[]): Promise<number[]> {
     const requestedIds = [...new Set(periodIds)];
@@ -139,6 +139,9 @@ export class ApprovalsBulkService {
         id: timesheetPeriods.id,
         userMembershipId: timesheetPeriods.userMembershipId,
         currentApproverMembershipId: timesheetPeriods.currentApproverMembershipId,
+        periodStart: timesheetPeriods.periodStart,
+        periodEnd: timesheetPeriods.periodEnd,
+        totalHours: timesheetPeriods.totalHours,
       })
       .from(timesheetPeriods)
       .where(
@@ -149,19 +152,18 @@ export class ApprovalsBulkService {
         ),
       );
 
-    const actorMembershipIdForDelegation = actingMembershipId(u.principal);
+    const membershipId = actingMembershipId(u.principal);
     const delegations =
-      actorMembershipIdForDelegation === null
+      membershipId === null
         ? new Set<number>()
         : await this.approvals.activeDelegationsToActor(
             u.orgId,
-            actorMembershipIdForDelegation,
+            membershipId,
             candidates
-              .map(p => p.currentApproverMembershipId)
+              .map((p) => p.currentApproverMembershipId)
               .filter((id): id is number => id !== null),
           );
 
-    const membershipId = actingMembershipId(u.principal);
     const actor = { membershipId, isOrgOwner: !!u.isOrgOwner };
 
     const approvable: typeof candidates = [];
@@ -178,9 +180,21 @@ export class ApprovalsBulkService {
     }
 
     const skipped = requestedIds.length - approvable.length;
-    if (approvable.length === 0) return { approved: 0, skipped };
+    /**
+     * TS-15. A caller who may approve none of a SUBMITTED batch used to get
+     * 200 `{ approved: 0, skipped: N }`, indistinguishable from "already
+     * approved". The single-period route answers 403 for the same standing;
+     * bulk must not launder that into success. Periods that are simply not
+     * SUBMITTED stay a skip — those are not an authority miss.
+     */
+    if (approvable.length === 0) {
+      if (candidates.length > 0) {
+        throw new ForbiddenException("You are not allowed to approve any of the selected periods");
+      }
+      return { approved: 0, skipped };
+    }
 
-    const ids = approvable.map(p => p.id);
+    const ids = approvable.map((p) => p.id);
 
     const approverActor = await assertOrganizationActor(this.db, u.orgId, {
       kind: "user",
@@ -197,110 +211,51 @@ export class ApprovalsBulkService {
       .limit(1);
     const lockAfterApproval = settings?.lockAfterApproval ?? true;
 
+    const owners = await membershipUserIds(
+      this.db,
+      u.orgId,
+      approvable.map((p) => p.userMembershipId),
+    );
+
     const now = new Date();
+    const approvedIds = new Set(
+      await this.db.transaction((tx) =>
+        applyBulkApproval(
+          tx,
+          { rateResolver: this.rateResolver, audit: this.audit },
+          u,
+          ids,
+          { approverActor, lockAfterApproval, owners, now },
+        ),
+      ),
+    );
 
-    await this.db.transaction(async (tx) => {
-      await tx
-        .update(timesheetPeriods)
-        .set({
-          status: "APPROVED",
-          approvedAt: now,
-          approvedByMembershipId: approverActor.membershipId,
-          lockedAt: lockAfterApproval ? now : null,
-          updatedAt: now,
-        })
-        .where(
-          and(
-            eq(timesheetPeriods.orgId, u.orgId),
-            inArray(timesheetPeriods.id, ids),
-          ),
-        );
+    /**
+     * One notification per worker, after the batch commits — the same notice
+     * `approveSinglePeriod` sends, for the same reason bulk rejection sends one
+     * per period: one action for the approver is N pieces of news for N people.
+     */
+    for (const p of approvable) {
+      if (!approvedIds.has(p.id)) continue;
+      const ownerUserId =
+        p.userMembershipId === null ? undefined : owners.get(p.userMembershipId);
+      if (!ownerUserId) continue;
+      await this.approvals.notifyPeriodApproved(u, {
+        periodId: p.id,
+        ownerUserId,
+        title: `Timesheet approved: ${p.periodStart} to ${p.periodEnd}`,
+        message: `Your timesheet for ${p.periodStart}–${p.periodEnd} (${p.totalHours}h) was approved.`,
+        variables: {
+          periodId: p.id,
+          periodStart: p.periodStart,
+          periodEnd: p.periodEnd,
+          totalHours: p.totalHours,
+        },
+      });
+    }
 
-      await tx
-        .update(timesheets)
-        .set({
-          status: "APPROVED",
-          approvedByMembershipId: approverActor.membershipId,
-          approvedAt: now,
-          lockedAt: lockAfterApproval ? now : null,
-          lockedByMembershipId: lockAfterApproval ? approverActor.membershipId : null,
-          updatedAt: now,
-        })
-        .where(
-          and(
-            inArray(timesheets.timesheetPeriodId, ids),
-            eq(timesheets.orgId, u.orgId),
-            isNull(timesheets.voidedAt),
-          ),
-        );
-
-      const billableEntries = await tx
-        .select()
-        .from(timesheets)
-        .where(
-          and(
-            inArray(timesheets.timesheetPeriodId, ids),
-            eq(timesheets.orgId, u.orgId),
-            eq(timesheets.isBillable, true),
-            isNull(timesheets.billRate),
-            isNull(timesheets.voidedAt),
-          ),
-        );
-
-      const resolvedRates = await this.rateResolver.resolveMany(
-        u.orgId,
-        billableEntries.map(entry => ({
-          projectId: entry.projectId,
-          userMembershipId: entry.userMembershipId,
-          ticketId: entry.ticketId,
-          date: entry.date,
-        })),
-      );
-
-      const rateRows: Array<{ key: number; values: [string, string | null, string, string | null] }> = [];
-      for (const [i, entry] of billableEntries.entries()) {
-        const resolved = resolvedRates[i];
-        if (!resolved || resolved.billRate === null) continue;
-        rateRows.push({
-          key: entry.id,
-          values: [
-            resolved.billRate.toString(),
-            resolved.costRate !== null ? resolved.costRate.toString() : null,
-            resolved.currency,
-            resolved.source,
-          ],
-        });
-      }
-      if (rateRows.length > 0) {
-        await bulkUpdateFromValues(tx, {
-          table: timesheets,
-          orgId: u.orgId,
-          key: { column: "id", type: "integer" },
-          columns: [
-            { column: "bill_rate", type: "numeric(10, 2)" },
-            { column: "cost_rate", type: "numeric(10, 2)" },
-            { column: "currency", type: "text" },
-            { column: "rate_source", type: "timesheet_rate_source" },
-          ],
-          rows: rateRows,
-          touch: ["updated_at"],
-        });
-      }
-
-      await this.audit.recordMany(
-        tx,
-        ids.map(id => ({
-          orgId: u.orgId,
-          actorMembershipId: actingMembershipId(u.principal),
-          entityType: "period",
-          entityId: id.toString(),
-          action: "period.approved",
-          after: { status: "APPROVED" },
-        })),
-      );
-    });
-
-    return { approved: ids.length, skipped };
+    /* A period decided by someone else between the check and the write counts as skipped, not overwritten. */
+    return { approved: approvedIds.size, skipped: skipped + (ids.length - approvedIds.size) };
   }
 
   async bulkReject(u: CurrentUserContext, input: BulkRejectInput) {
@@ -353,52 +308,41 @@ export class ApprovalsBulkService {
 
     const now = new Date();
     const ids = periods.map((p) => p.id);
+    const owners = await membershipUserIds(
+      this.db,
+      u.orgId,
+      periods.map((p) => p.userMembershipId),
+    );
 
-    await this.db.transaction(async (tx) => {
-      await tx
-        .update(timesheetPeriods)
-        .set({
-          status: "REJECTED",
-          rejectedAt: now,
-          rejectionReason: input.reason,
-          updatedAt: now,
-        })
-        .where(
-          and(
-            eq(timesheetPeriods.orgId, u.orgId),
-            inArray(timesheetPeriods.id, ids),
-          ),
-        );
+    const rejectedIds = new Set(
+      await this.db.transaction((tx) =>
+        applyBulkRejection(tx, { audit: this.audit }, u, ids, {
+          input,
+          owners,
+          now,
+        }),
+      ),
+    );
 
-      await tx
-        .update(timesheets)
-        .set({
-          status: "REJECTED",
-          rejectionReason: input.reason,
-          updatedAt: now,
-        })
-        .where(
-          and(
-            inArray(timesheets.timesheetPeriodId, ids),
-            eq(timesheets.orgId, u.orgId),
-            isNull(timesheets.voidedAt),
-          ),
-        );
+    /**
+     * One notification per worker, after the batch commits. A bulk rejection is
+     * one action for the approver and N separate pieces of bad news for N
+     * people, each of whom needs the reason and their own period link.
+     */
+    for (const p of periods) {
+      if (!rejectedIds.has(p.id)) continue;
+      const ownerUserId =
+        p.userMembershipId === null ? undefined : owners.get(p.userMembershipId);
+      if (!ownerUserId) continue;
+      await this.approvals.notifyPeriodRejected(u, {
+        periodId: p.id,
+        ownerUserId,
+        title: "Timesheet rejected",
+        message: `Your submitted timesheet was rejected: ${input.reason}`,
+        variables: { periodId: p.id, reason: input.reason },
+      });
+    }
 
-      const actorMembId = actingMembershipId(u.principal);
-      await this.audit.recordMany(
-        tx,
-        ids.map((id) => ({
-          orgId: u.orgId,
-          actorMembershipId: actorMembId,
-          entityType: "period",
-          entityId: id.toString(),
-          action: "period.rejected",
-          reason: input.reason,
-        })),
-      );
-    });
-
-    return { rejected: ids.length };
+    return { rejected: rejectedIds.size };
   }
 }

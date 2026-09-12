@@ -1,45 +1,31 @@
 import { ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, eq, inArray, isNull, sql } from "drizzle-orm";
-import { createHash } from "node:crypto";
-import {
-  crmContactChannelConsent,
-  crmContactConsentEvents,
-  crmSuppressionHashes,
-} from "../../../db/schema";
-import { businessParties, contactPartyMap } from "../../../db/schema/party";
-import { PARTY_OF_CONTACT } from "../crm-party-reads";
-import { isLegacyResolved, resolveLegacyParty } from "../../party/party-legacy-seam";
+import { and, eq, inArray } from "drizzle-orm";
+import { crmContactChannelConsent } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
-import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
 import { AuditService } from "../../../common/audit/audit.service";
+import type {
+  ConsentChannel,
+  ConsentDecision,
+  ConsentRecordInput,
+} from "./lib/crm-consent.types";
+import { readSuppressedEmails, writeErasureSuppression } from "./lib/crm-consent-suppression";
+import { recordConsentChange } from "./lib/crm-consent-record";
+import {
+  countContactsMissingConsent,
+  readConsentEvents,
+  readConsentForContact,
+  readContactEmail,
+} from "./lib/crm-consent-reads";
 import { logger } from "../../../common/logger/logger.service";
 
-/** Salted-free SHA-256 of the normalised address — never store the address. */
-function hashAddress(normalisedAddress: string): string {
-  return createHash("sha256").update(normalisedAddress).digest("hex");
-}
-
-export type ConsentChannel = "EMAIL" | "SMS" | "WHATSAPP" | "PHONE" | "POST";
-export type ConsentStatus = "OPTED_IN" | "OPTED_OUT" | "UNKNOWN";
-export type ConsentSource =
-  | "USER_ENTRY"
-  | "IMPORT"
-  | "WEB_FORM"
-  | "UNSUBSCRIBE_LINK"
-  | "API"
-  | "ENRICHMENT";
-export type LegalBasis =
-  | "CONSENT"
-  | "CONTRACT"
-  | "LEGITIMATE_INTEREST"
-  | "LEGAL_OBLIGATION";
-
-export interface ConsentDecision {
-  contactId: number;
-  allowed: boolean;
-  reason: "allowed" | "opted_out" | "expired";
-}
+export type {
+  ConsentChannel,
+  ConsentStatus,
+  ConsentSource,
+  LegalBasis,
+  ConsentDecision,
+} from "./lib/crm-consent.types";
 
 /**
  * The single authority on whether the org may contact someone on a channel.
@@ -54,6 +40,10 @@ export class CrmConsentService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly audit: AuditService,
   ) {}
+
+  // The suppression-hash reader and writer, the `record` transaction and the
+  // read-only projections live in `lib/` and take this service's handle. The
+  // send gate itself, `filterSendable` and `assertSendable`, stays here.
 
   /**
    * Suppression is authoritative: an explicit OPTED_OUT, or an OPTED_IN whose
@@ -132,60 +122,7 @@ export class CrmConsentService {
     orgId: string,
     emails: readonly string[],
   ): Promise<Set<string>> {
-    if (emails.length === 0) return new Set();
-    const normalised = [...new Set(emails.map((email) => email.trim().toLowerCase()))];
-
-    // Deliberately does NOT filter `isNull(businessParties.deletedAt)`. An opt-out
-    // must outlive the record it was captured on: if the contact is deleted and
-    // the same address is later re-added, suppression still applies. Adding that
-    // filter here would silently resume emailing people who opted out — the one
-    // direction this query must never fail in. `countMissingConsent` filters
-    // deleted contacts because it is a coverage metric, not a safety gate.
-    const rows = await this.db
-      .select({ email: businessParties.email })
-      .from(crmContactChannelConsent)
-      .innerJoin(
-        contactPartyMap,
-        and(
-          eq(contactPartyMap.contactId, crmContactChannelConsent.contactId),
-          eq(contactPartyMap.organizationId, orgId),
-        ),
-      )
-      .innerJoin(businessParties, PARTY_OF_CONTACT)
-      .where(
-        and(
-          eq(crmContactChannelConsent.orgId, orgId),
-          eq(crmContactChannelConsent.channel, "EMAIL"),
-          eq(crmContactChannelConsent.status, "OPTED_OUT"),
-          inArray(sql`lower(${businessParties.email})`, normalised),
-        ),
-      );
-
-    const fromConsent = rows.flatMap((row) =>
-      row.email ? [row.email.trim().toLowerCase()] : [],
-    );
-
-    // Union with erasure-surviving suppression: a contact deleted under a DPDP
-    // request takes its consent rows with it, but the opt-out must persist or
-    // re-importing the address resumes emailing someone who withdrew consent.
-    const hashes = normalised.map((email) => hashAddress(email));
-    const suppressedHashes = await this.db
-      .select({ addressHash: crmSuppressionHashes.addressHash })
-      .from(crmSuppressionHashes)
-      .where(
-        and(
-          eq(crmSuppressionHashes.orgId, orgId),
-          eq(crmSuppressionHashes.channel, "EMAIL"),
-          inArray(crmSuppressionHashes.addressHash, hashes),
-        ),
-      );
-
-    const suppressedHashSet = new Set(suppressedHashes.map((row) => row.addressHash));
-    const fromHashes = normalised.filter((email) =>
-      suppressedHashSet.has(hashAddress(email)),
-    );
-
-    return new Set([...fromConsent, ...fromHashes]);
+    return readSuppressedEmails(this.db, orgId, emails);
   }
 
   /**
@@ -199,112 +136,28 @@ export class CrmConsentService {
     channel: ConsentChannel,
     reason: string,
   ): Promise<void> {
-    const normalised = address.trim().toLowerCase();
-    if (!normalised) return;
-
-    await this.db
-      .insert(crmSuppressionHashes)
-      .values({ orgId, channel, addressHash: hashAddress(normalised), reason })
-      .onConflictDoNothing();
+    await writeErasureSuppression(this.db, orgId, address, channel, reason);
   }
 
-  async record(
-    orgId: string,
-    input: {
-      contactId: number;
-      channel: ConsentChannel;
-      status: ConsentStatus;
-      source: ConsentSource;
-      legalBasis?: LegalBasis;
-      sourceDetail?: string;
-      expiresAt?: Date | null;
-      recordedByUserId?: string | null;
-    },
-  ): Promise<void> {
-    await runInTenantTransaction(
-      this.db,
-      async (tx) => {
-        const contact = await resolveLegacyParty(tx, orgId, {
-          kind: "CONTACT",
-          legacyId: input.contactId,
-        });
-        if (!isLegacyResolved(contact) || contact.party.deletedAt)
-          throw new NotFoundException("Contact not found");
-
-        const [existing] = await tx
-          .select({ status: crmContactChannelConsent.status })
-          .from(crmContactChannelConsent)
-          .where(
-            and(
-              eq(crmContactChannelConsent.orgId, orgId),
-              eq(crmContactChannelConsent.contactId, input.contactId),
-              eq(crmContactChannelConsent.channel, input.channel),
-            ),
-          )
-          .limit(1);
-
-        await tx
-          .insert(crmContactChannelConsent)
-          .values({
-            orgId,
-            contactId: input.contactId,
-            channel: input.channel,
-            status: input.status,
-            source: input.source,
-            legalBasis: input.legalBasis ?? null,
-            sourceDetail: input.sourceDetail ?? null,
-            expiresAt: input.expiresAt ?? null,
-            recordedByUserId: input.recordedByUserId ?? null,
-          })
-          .onConflictDoUpdate({
-            target: [
-              crmContactChannelConsent.orgId,
-              crmContactChannelConsent.contactId,
-              crmContactChannelConsent.channel,
-            ],
-            set: {
-              status: input.status,
-              source: input.source,
-              legalBasis: input.legalBasis ?? null,
-              sourceDetail: input.sourceDetail ?? null,
-              expiresAt: input.expiresAt ?? null,
-              recordedByUserId: input.recordedByUserId ?? null,
-              capturedAt: new Date(),
-              updatedAt: new Date(),
-            },
-          });
-
-        await tx.insert(crmContactConsentEvents).values({
-          orgId,
-          contactId: input.contactId,
-          channel: input.channel,
-          fromStatus: existing?.status ?? null,
-          toStatus: input.status,
-          legalBasis: input.legalBasis ?? null,
-          source: input.source,
-          sourceDetail: input.sourceDetail ?? null,
-          recordedByUserId: input.recordedByUserId ?? null,
-        });
-
-        await this.audit.logCritical({
-          action: "crm.consent.recorded",
-          userId: input.recordedByUserId ?? "system",
-          orgId,
-          targetId: String(input.contactId),
-          targetType: "crm_contact_consent",
-          metadata: {
-            channel: input.channel,
-            from: existing?.status ?? null,
-            to: input.status,
-            source: input.source,
-            legalBasis: input.legalBasis ?? null,
-          },
-        });
-      },
-      { orgId },
-    );
+  /**
+   * One channel's new position for one contact, recorded with its event, its
+   * erasure-surviving suppression copy (an EMAIL opt-out) and its audit entry
+   * in one tenant transaction. The body, and why each part is there, is
+   * `recordConsentChange` in `lib/crm-consent-record.ts`.
+   */
+  async record(orgId: string, input: ConsentRecordInput): Promise<void> {
+    await recordConsentChange(this.db, this.audit, orgId, input);
   }
 
+  /**
+   * The opt-out a signed unsubscribe link carries, for the public routes.
+   *
+   * A token naming a contact outside its own organisation (or one that no
+   * longer resolves) writes nothing and is answered like every other token, so
+   * the public endpoint is not an oracle for whether a contact exists. The
+   * refusal is still logged, because a signed token that resolves nowhere is
+   * worth being able to see.
+   */
   async recordUnsubscribe(input: {
     orgId: string;
     contactId: number;
@@ -332,39 +185,54 @@ export class CrmConsentService {
     }
   }
 
+  /**
+   * The evidence trail, which was being written and read by nothing.
+   *
+   * `record()` appends a row here on every change, carrying `fromStatus` ->
+   * `toStatus`, the basis claimed and who claimed it. Nothing in the codebase
+   * read that table: no service method, no route. So the product recorded
+   * exactly what a DPDP or GDPR review asks for — what changed, when, on what
+   * basis, at whose hand — and had no way to produce it.
+   *
+   * Separate from `listForContact` because they answer different questions.
+   * That one returns the CURRENT position, at most one row per channel, because
+   * `uniq_crm_consent_org_contact_channel` allows only one and `record()`
+   * upserts. This one is the history, and only this one can answer "when did
+   * they opt out".
+   *
+   * Projected rather than `select()`, per §1: `orgId` and `contactPartyId` are
+   * ours and not the caller's, and a raw row hands back both.
+   */
+  async listConsentEvents(orgId: string, contactId: number, limit: number) {
+    return readConsentEvents(this.db, orgId, contactId, limit);
+  }
+
+  /**
+   * Current position per channel — at most one row each, because
+   * `uniq_crm_consent_org_contact_channel` allows only one and `record()`
+   * upserts. For the history, see `listConsentEvents`.
+   */
   async listForContact(orgId: string, contactId: number) {
-    return this.db
-      .select()
-      .from(crmContactChannelConsent)
-      .where(
-        and(
-          eq(crmContactChannelConsent.orgId, orgId),
-          eq(crmContactChannelConsent.contactId, contactId),
-        ),
-      );
+    return readConsentForContact(this.db, orgId, contactId);
+  }
+
+  /**
+   * The address a contact is reachable at, so an unsubscribe link can be checked
+   * against the person it is about to be sent to.
+   *
+   * An unsubscribe token names a contact. Putting one in a message that went to
+   * somebody else would hand that somebody the power to opt this contact out, so
+   * the sender verifies rather than assuming its `to` is the enrolled contact's
+   * address. Returns null when there is no party, no address, or the contact
+   * belongs to another organisation -- every one of which means "do not attach
+   * a link", which is the safe answer for all three.
+   */
+  async contactEmail(orgId: string, contactId: number): Promise<string | null> {
+    return readContactEmail(this.db, orgId, contactId);
   }
 
   /** Contacts with no consent row at all for a channel, for data-quality surfacing. */
   async countMissingConsent(orgId: string, channel: ConsentChannel): Promise<number> {
-    const [row] = await this.db
-      .select({ cnt: sql<number>`count(*)` })
-      .from(contactPartyMap)
-      .innerJoin(businessParties, PARTY_OF_CONTACT)
-      .leftJoin(
-        crmContactChannelConsent,
-        and(
-          eq(crmContactChannelConsent.contactId, contactPartyMap.contactId),
-          eq(crmContactChannelConsent.orgId, orgId),
-          eq(crmContactChannelConsent.channel, channel),
-        ),
-      )
-      .where(
-        and(
-          eq(contactPartyMap.organizationId, orgId),
-          isNull(businessParties.deletedAt),
-          isNull(crmContactChannelConsent.id),
-        ),
-      );
-    return Number(row?.cnt ?? 0);
+    return countContactsMissingConsent(this.db, orgId, channel);
   }
 }

@@ -90,6 +90,25 @@ function event(overrides: Partial<EventRow> = {}): EventRow {
 }
 
 describe("WorkflowOutboxRelayService", () => {
+  /**
+   * The regression this file exists to prevent a second time.
+   *
+   * A relay that reads the outbox directly works against an owner connection and
+   * fails against the non-owner role the application is supposed to use — so the
+   * failure appears only in an environment nobody runs unit tests in, and what
+   * it looks like there is every durable workflow in the product quietly
+   * stopping. Discovery therefore goes through `forEachOrg`, once per tick.
+   */
+  it("discovers per organisation rather than across tenants", async () => {
+    const registry = new WorkflowRegistry();
+    const relay = new WorkflowOutboxRelayService(dbReturning([[event()]]), registry, runnerSpy().service);
+
+    await relay.relay();
+
+    expect(mockForEachOrg).toHaveBeenCalledTimes(1);
+    expect(mockForEachOrg.mock.calls[0]?.[1]).toBe("workflow-outbox-relay");
+  });
+
   it("starts a run for an event a workflow listens to", async () => {
     const registry = new WorkflowRegistry();
     registry.register({ name: "onboard", triggers: ["party.created"], handler: async () => null });

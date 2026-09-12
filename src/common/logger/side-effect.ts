@@ -26,6 +26,15 @@ function describeCause(err: unknown, depth = 0): unknown {
   if (!(err instanceof Error)) return String(err);
   return {
     message: err.message,
+    /**
+     * An `AggregateError` keeps its members on `errors`, not `cause`, so a
+     * fan-out that reported "failed for 3 subscription(s)" and nothing else was
+     * the same invisibility one level down: the summary names a count and never
+     * says what went wrong.
+     */
+    ...(err instanceof AggregateError
+      ? { errors: err.errors.map((inner: unknown) => describeCause(inner, depth + 1)) }
+      : {}),
     ...(err.cause !== undefined ? { cause: describeCause(err.cause, depth + 1) } : {}),
   };
 }

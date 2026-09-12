@@ -18,6 +18,7 @@ const FIXED_SNAPSHOT: AccessSnapshot = {
   modules: {},
   isOrgOwner: false,
   canManageOrganizationMembership: false,
+  membershipId: null,
   mfa: { enforced: false, satisfied: true },
   version: 1,
 };

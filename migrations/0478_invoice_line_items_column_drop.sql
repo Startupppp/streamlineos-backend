@@ -11,11 +11,34 @@
 
 SET lock_timeout = '5s';
 
+-- PEND-DB: this file was one of fifteen missing from `_journal.json`, so it has
+-- never run anywhere and is about to run everywhere. On a database where the
+-- invoice line items cutover was completed by hand the column is already gone, and both
+-- the verification block and the DROP below read it by name — so the whole file
+-- is short-circuited when there is nothing left to drop. The guards themselves
+-- are unchanged: where the column is present they still refuse rather than
+-- destroy.
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+     WHERE table_schema = 'public' AND table_name = 'invoices' AND column_name = 'line_items'
+  ) THEN
+    RAISE NOTICE '0478: invoices.line_items is already gone; nothing to do.';
+  END IF;
+END $$;
+--> statement-breakpoint
+
 DO $$
 DECLARE
   unmigrated_count int;
   mismatch_count int;
 BEGIN
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                  WHERE table_schema = 'public' AND table_name = 'invoices' AND column_name = 'line_items') THEN
+    RETURN;
+  END IF;
+
   -- Guard 1: nothing may be left behind in the column being dropped.
   -- An invoice whose line_items JSONB is non-empty but which has NO invoice_items
   -- rows was never migrated. Guard 2 cannot see it -- an invoice with no rows is
@@ -49,7 +72,7 @@ BEGIN
   END IF;
 END $$;
 
-ALTER TABLE invoices DROP COLUMN line_items;
+ALTER TABLE invoices DROP COLUMN IF EXISTS line_items;
 
 -- Operator action required after this migration applies:
 --   VACUUM ANALYZE invoices;

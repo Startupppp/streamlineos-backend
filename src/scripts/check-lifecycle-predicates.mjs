@@ -94,7 +94,18 @@ const MIN_READ_SITES = 500;
  * go down. It exists so the join class — which no statement scanner can see —
  * cannot grow silently.
  */
-const JOIN_CANDIDATE_BASELINE = 230;
+/*
+ * LOWERED 230 -> 85 on 2026-09-12, in the same change that stopped this arm
+ * counting `users` and `organizations` (see the `joinCandidates` filter). The
+ * population fell 279 -> 85 because 194 of those joins were onto tables this file
+ * already declares outside the rule. 230 over a population of 85 would have been a
+ * ratchet that could never fire, so it is re-recorded at the measurement.
+ *
+ * Then 85 -> 83 in the same pass: the product export and the opening-stock import
+ * each gained an `is null` predicate on the product/variant join they had been
+ * missing, which is the ratchet doing what it is for.
+ */
+const JOIN_CANDIDATE_BASELINE = 83;
 
 /**
  * Primary reads (`from` / `db.query`) of a lifecycle table with no predicate,
@@ -548,7 +559,31 @@ const candidates = sites.filter(
 const globalIdentityCandidates = sites.filter(
   (s) => s.verdict === "CANDIDATE" && s.kind !== "join" && GLOBAL_IDENTITY_TABLES.has(s.table),
 );
-const joinCandidates = sites.filter((s) => s.verdict === "CANDIDATE" && s.kind === "join");
+/*
+ * ⚠ CORRECTED 2026-09-12. `GLOBAL_IDENTITY_TABLES` was applied to the primary-read
+ * arm (twice, at the vacuity guard and at `candidates`) and forgotten here, so the
+ * join arm counted the very tables this file declares outside the rule. It was not
+ * a small leak: 188 of 279 join candidates were joins onto `users` and 6 more onto
+ * `organizations` — 194 of 279.
+ *
+ * The exclusion applies with MORE force to a join than to a primary read, and both
+ * comments above already say so. `users` is excluded because "a deactivated user
+ * must still resolve for auth, audit attribution and historical display", and
+ * JOIN_CANDIDATE_BASELINE's own docblock describes this class as "mostly display
+ * joins that must render a historical name". Those are the same sentence about the
+ * same rows. A `leftJoin(users, ...)` fetching an author's name is the case the
+ * exclusion was written for; adding `deleted_at is null` to it would blank the name
+ * on every historical record a departed user touched.
+ *
+ * The baseline is lowered to the post-exclusion measurement in the same change —
+ * leaving it at 230 over a population of ~85 would have retired the ratchet.
+ */
+const joinCandidates = sites.filter(
+  (s) => s.verdict === "CANDIDATE" && s.kind === "join" && !GLOBAL_IDENTITY_TABLES.has(s.table),
+);
+const globalIdentityJoins = sites.filter(
+  (s) => s.verdict === "CANDIDATE" && s.kind === "join" && GLOBAL_IDENTITY_TABLES.has(s.table),
+);
 const dormant = sites.filter((s) => s.verdict === "DORMANT");
 
 console.log(
@@ -594,6 +629,12 @@ if (dormant.length > 0)
 if (globalIdentityCandidates.length > 0)
   console.log(
     `NOTE — ${globalIdentityCandidates.length} read(s) of a global identity or tenant-root table are outside this rule by design: ${[...GLOBAL_IDENTITY_TABLES.keys()].join(", ")}.`,
+  );
+// Printed rather than silently dropped: this is the larger half of the exclusion
+// and it must stay visible, not become an invisible exemption.
+if (globalIdentityJoins.length > 0)
+  console.log(
+    `NOTE — ${globalIdentityJoins.length} JOIN(s) onto those same tables, excluded for the same reason. A display join that rendered only non-deleted users would blank the name on every record a departed colleague touched.`,
   );
 
 let failed = false;

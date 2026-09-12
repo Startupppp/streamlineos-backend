@@ -1,8 +1,8 @@
 import { CallHandler, ExecutionContext, Injectable, NestInterceptor } from "@nestjs/common";
 import type { Observable } from "rxjs";
 import { finalize } from "rxjs/operators";
-import type { AdmissionScopedRequest } from "./admission-slot";
 import { AdmissionService } from "./admission.service";
+import { releaseAdmissionOnce, type AdmittedRequest } from "./release-once";
 
 @Injectable()
 export class AdmissionInterceptor implements NestInterceptor {
@@ -11,13 +11,16 @@ export class AdmissionInterceptor implements NestInterceptor {
   intercept(context: ExecutionContext, next: CallHandler): Observable<unknown> {
     if (context.getType() !== "http") return next.handle();
 
-    const req = context.switchToHttp().getRequest<AdmissionScopedRequest | undefined>();
-    if (req === undefined) return next.handle();
-
-    const orgId = req._admissionOrgId;
-    if (orgId === undefined) return next.handle();
-
-    const release = req._admissionRelease ?? (() => this.admissionService.release(orgId));
-    return next.handle().pipe(finalize(release));
+    const req = context.switchToHttp().getRequest<AdmittedRequest | undefined>();
+    if (req?._admissionOrgId === undefined) return next.handle();
+    /**
+     * Kept, and now idempotent. The guard's response listener covers every
+     * outcome including the ones this cannot see, but `finalize` runs the moment
+     * the handler settles rather than when the bytes are out, so releasing here
+     * returns capacity sooner on the common path. `releaseAdmissionOnce` is what
+     * makes having both safe: the response may also have ended by another route,
+     * and a slot must be given back exactly once.
+     */
+    return next.handle().pipe(finalize(() => { releaseAdmissionOnce(req, this.admissionService); }));
   }
 }

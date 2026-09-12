@@ -5,7 +5,6 @@ import {
   certifications,
   documents,
   onboardingTasks,
-  organizationMembers,
   users,
 } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
@@ -17,6 +16,8 @@ import { appUrl } from "../email/app-url";
 import { NotificationDispatchService } from "../notifications/notification-dispatch.service";
 import { RetentionService } from "../hr/governance/retention/retention.service";
 import { logger } from "../../common/logger/logger.service";
+import { CacheService } from "../../common/cache/cache.service";
+import { withMembershipMutations } from "../../common/org/membership-mutations";
 import { forEachOrg } from "../../common/tenant";
 
 const DEFAULT_LOCALE = "en-IN";
@@ -29,6 +30,7 @@ export class CronHrService {
     private readonly hrAutomation: HrAutomationEngineService,
     private readonly dispatch: NotificationDispatchService,
     private readonly retention: RetentionService,
+    private readonly cache: CacheService,
   ) {}
 
   async processCertificationExpiry(): Promise<{ fired: number }> {
@@ -109,72 +111,80 @@ export class CronHrService {
     const now = new Date();
     let fired = 0;
 
-    await forEachOrg(this.db, "onboarding-completion", async (tx, orgId) => {
-      const taskStats = await tx
-        .select({
-          userId: onboardingTasks.userId,
-          orgId: onboardingTasks.orgId,
-          total: sql<number>`COUNT(*)::int`,
-          pending: sql<number>`SUM(CASE WHEN ${onboardingTasks.status} != 'COMPLETED' THEN 1 ELSE 0 END)::int`,
-        })
-        .from(onboardingTasks)
-        .where(eq(onboardingTasks.orgId, orgId))
-        .groupBy(onboardingTasks.userId, onboardingTasks.orgId);
+    // The sweep stamps `organization_members.onboarding_completed_at`, which
+    // `JwtAuthGuard` reads through its 15-second membership cache. The write and
+    // its invalidation are one operation, owned by `MembershipMutations`; the
+    // drain runs once the whole sweep resolves, outside any org transaction, so
+    // `scheduleMembershipBust` falls through to running it inline.
+    await withMembershipMutations(this.cache, (membership) =>
+      forEachOrg(this.db, "onboarding-completion", async (tx, orgId) => {
+        const taskStats = await tx
+          .select({
+            userId: onboardingTasks.userId,
+            orgId: onboardingTasks.orgId,
+            total: sql<number>`COUNT(*)::int`,
+            pending: sql<number>`SUM(CASE WHEN ${onboardingTasks.status} != 'COMPLETED' THEN 1 ELSE 0 END)::int`,
+          })
+          .from(onboardingTasks)
+          .where(eq(onboardingTasks.orgId, orgId))
+          .groupBy(onboardingTasks.userId, onboardingTasks.orgId);
 
-      const fullyCompleted = taskStats.filter((s) => s.total > 0 && s.pending === 0);
-      if (fullyCompleted.length === 0) return;
+        const fullyCompleted = taskStats.filter((s) => s.total > 0 && s.pending === 0);
+        if (fullyCompleted.length === 0) return;
 
-      const userIds = fullyCompleted.map((s) => s.userId);
-      const employeeRows = await tx
-        .select({ id: users.id, name: users.name, email: users.email })
-        .from(users)
-        .where(and(inArray(users.id, userIds), isNull(users.onboardingCompletedAt)));
+        const userIds = fullyCompleted.map((s) => s.userId);
+        const employeeRows = await tx
+          .select({ id: users.id, name: users.name, email: users.email })
+          .from(users)
+          .where(and(inArray(users.id, userIds), isNull(users.onboardingCompletedAt)));
 
-      if (employeeRows.length === 0) return;
+        if (employeeRows.length === 0) return;
 
-      const statsByUserId = new Map(fullyCompleted.map((s) => [s.userId, s]));
+        const statsByUserId = new Map(fullyCompleted.map((s) => [s.userId, s]));
 
-      const onboardedUserIds: string[] = [];
-      for (const employee of employeeRows) {
-        const stats = statsByUserId.get(employee.id);
-        if (!stats) continue;
+        const onboardedUserIds: string[] = [];
+        for (const employee of employeeRows) {
+          const stats = statsByUserId.get(employee.id);
+          if (!stats) continue;
 
-        await this.automation.runAutomationsForEvent(stats.orgId, "onboarding.completed", {
-          userId: employee.id,
-          employeeName: employee.name ?? "",
-          employeeEmail: employee.email ?? "",
-          totalTasks: stats.total,
-          completedAt: now.toISOString(),
-        });
+          await this.automation.runAutomationsForEvent(stats.orgId, "onboarding.completed", {
+            userId: employee.id,
+            employeeName: employee.name ?? "",
+            employeeEmail: employee.email ?? "",
+            totalTasks: stats.total,
+            completedAt: now.toISOString(),
+          });
 
-        await this.hrAutomation.emit(stats.orgId, "employee.onboarded", {
-          userId: employee.id,
-          employeeName: employee.name ?? "",
-          employeeEmail: employee.email ?? "",
-          totalTasks: stats.total,
-          completedAt: now.toISOString(),
-        });
+          await this.hrAutomation.emit(stats.orgId, "employee.onboarded", {
+            userId: employee.id,
+            employeeName: employee.name ?? "",
+            employeeEmail: employee.email ?? "",
+            totalTasks: stats.total,
+            completedAt: now.toISOString(),
+          });
 
-        await tx
-          .update(organizationMembers)
-          .set({ onboardingCompletedAt: now })
-          .where(
-            and(
-              eq(organizationMembers.userId, employee.id),
-              eq(organizationMembers.orgId, stats.orgId),
-            ),
-          );
+          onboardedUserIds.push(employee.id);
+          fired++;
+        }
 
-        onboardedUserIds.push(employee.id);
-        fired++;
-      }
-
-      if (onboardedUserIds.length > 0)
-        await tx
-          .update(users)
-          .set({ onboardingCompletedAt: now })
-          .where(inArray(users.id, onboardedUserIds));
-    });
+        if (onboardedUserIds.length > 0) {
+          // Both stamps are one statement for the whole org, not one per person:
+          // `taskStats` is already filtered to `orgId`, so every `stats.orgId`
+          // in the loop above is this org. The membership half used to run
+          // inside the loop, which is the N+1 `check:db-call-count` had marked
+          // fixed while it was still there.
+          await membership.markOnboardingCompleted(tx, {
+            orgId,
+            userIds: onboardedUserIds,
+            completedAt: now,
+          });
+          await tx
+            .update(users)
+            .set({ onboardingCompletedAt: now })
+            .where(inArray(users.id, onboardedUserIds));
+        }
+      }),
+    );
 
     logger.info("Onboarding completion sweep done", { fired });
     return { fired };

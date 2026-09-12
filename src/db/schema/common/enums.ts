@@ -1,6 +1,19 @@
 ﻿
 import { pgEnum } from "drizzle-orm/pg-core";
 
+/**
+ * `enums.ts` is the contract, not the file layout: every pgEnum in the schema is
+ * importable from here, and 100+ call sites say `from "../common/enums"`. The four
+ * domain files below hold the declarations verbatim; what stays in this file is the
+ * platform and cross-module set — work items, CRM, notifications, billing, support,
+ * knowledge, accounting, onboarding, payments, party and portal — which has no
+ * vertical of its own to move to.
+ */
+export * from "./enums-people";
+export * from "./enums-inventory";
+export * from "./enums-inventory-fulfilment";
+export * from "./enums-inventory-verticals";
+
 export const ticketTypeEnum = pgEnum("ticket_type", ["EPIC", "STORY", "TASK", "BUG"]);
 export const ticketStatusEnum = pgEnum("ticket_status", ["TODO", "IN_PROGRESS", "IN_REVIEW", "DONE"]);
 export const ticketPriorityEnum = pgEnum("ticket_priority", ["LOW", "MEDIUM", "HIGH", "URGENT"]);
@@ -14,32 +27,6 @@ export const intakeStatusEnum = pgEnum("intake_status", ["pending", "accepted", 
 export const intakeSourceEnum = pgEnum("intake_source", ["manual", "web_form", "email"]);
 export const workItemRelationTypeEnum = pgEnum("work_item_relation_type", ["blocks", "blocked_by", "duplicate_of", "relates_to"]);
 export const viewLayoutEnum = pgEnum("view_layout", ["board", "list", "table", "calendar", "gantt"]);
-
-export const leaveStatusEnum = pgEnum("leave_status", ["PENDING", "APPROVED", "REJECTED", "CANCELLED"]);
-export const expenseStatusEnum = pgEnum("expense_status", ["DRAFT", "SUBMITTED", "PENDING", "APPROVED", "REJECTED", "REIMBURSEMENT_PENDING", "REIMBURSED", "PAID"]);
-export const assetStatusEnum = pgEnum("asset_status", ["AVAILABLE", "ASSIGNED", "MAINTENANCE", "RETIRED"]);
-export const documentTypeEnum = pgEnum("document_type", ["CONTRACT", "CERTIFICATE", "ID_PROOF", "PAYSLIP", "POLICY", "OFFER_LETTER", "RESUME", "OTHER"]);
-export const reviewStatusEnum = pgEnum("review_status", ["DRAFT", "IN_PROGRESS", "COMPLETED", "ARCHIVED"]);
-export const onboardingStatusEnum = pgEnum("onboarding_status", ["PENDING", "IN_PROGRESS", "COMPLETED", "REJECTED"]);
-export const genderEnum = pgEnum("gender", ["MALE", "FEMALE", "OTHER"]);
-export const wfhRequestStatusEnum = pgEnum("wfh_request_status", ["PENDING", "APPROVED", "REJECTED"]);
-export const deviceStatusEnum = pgEnum("device_status", ["ACTIVE", "INACTIVE", "LOST", "RETURNED"]);
-export const reviewCycleStatusEnum = pgEnum("review_cycle_status", ["DRAFT", "ACTIVE", "COMPLETED", "CANCELLED"]);
-export const meetingStatusEnum = pgEnum("meeting_status", ["SCHEDULED", "COMPLETED", "CANCELLED", "NO_SHOW"]);
-export const resignationStatusEnum = pgEnum("resignation_status", ["SUBMITTED", "PENDING_HR", "HR_APPROVED", "FINAL_APPROVED", "IN_PROGRESS", "APPROVED", "WITHDRAWN", "COMPLETED", "REJECTED"]);
-export const exitChecklistStatusEnum = pgEnum("exit_checklist_status", ["PENDING", "DONE"]);
-export const ackStatusEnum = pgEnum("ack_status", ["PENDING", "ACKNOWLEDGED", "DECLINED"]);
-export const reimbursementStatusEnum = pgEnum("reimbursement_status", ["PENDING", "APPROVED", "REJECTED", "PAID"]);
-export const loanStatusEnum = pgEnum("loan_status", ["PENDING", "APPROVED", "ACTIVE", "REPAID", "REJECTED"]);
-export const pipStatusEnum = pgEnum("pip_status", ["ACTIVE", "EXTENDED", "COMPLETED", "TERMINATED"]);
-export const surveyStatusEnum = pgEnum("survey_status", ["DRAFT", "ACTIVE", "CLOSED"]);
-export const feedbackTypeEnum = pgEnum("feedback_type", ["SELF", "PEER", "MANAGER", "SKIP_LEVEL"]);
-export const bonusTypeEnum = pgEnum("bonus_type", ["PERFORMANCE", "FESTIVAL", "REFERRAL", "SPOT", "ANNUAL", "JOINING", "RETENTION", "COMMISSION", "ADJUSTMENT"]);
-export const fnfStatusEnum = pgEnum("fnf_status", ["DRAFT", "PENDING_APPROVAL", "APPROVED", "PAID", "HR_REVIEW", "FINANCE_REVIEW"]);
-export const terminationStatusEnum = pgEnum("termination_status", ["DRAFT", "PENDING_FINAL", "APPROVED", "REJECTED", "SENT", "COMPLETED"]);
-export const onboardingDocStatusEnum = pgEnum("onboarding_doc_status", ["PENDING", "IN_PROGRESS", "SUBMITTED", "APPROVED"]);
-export const onboardingDocumentStatusEnum = pgEnum("onboarding_document_status", ["PENDING", "SUBMITTED", "APPROVED", "REJECTED", "RE_UPLOAD_REQUESTED"]);
-export const docAuditActionEnum = pgEnum("doc_audit_action", ["UPLOADED", "APPROVED", "REJECTED", "RE_UPLOAD_REQUESTED", "RE_UPLOADED"]);
 
 export const leadEmailDirectionEnum = pgEnum("lead_email_direction", ["sent", "received"]);
 export const leadTaskStatusEnum = pgEnum("lead_task_status", ["open", "done"]);
@@ -66,12 +53,6 @@ export const crmConsentChannelEnum = pgEnum("crm_consent_channel", ["EMAIL", "SM
 export const crmConsentStatusEnum = pgEnum("crm_consent_status", ["OPTED_IN", "OPTED_OUT", "UNKNOWN"]);
 export const crmConsentSourceEnum = pgEnum("crm_consent_source", ["USER_ENTRY", "IMPORT", "WEB_FORM", "UNSUBSCRIBE_LINK", "API", "ENRICHMENT"]);
 export const crmLegalBasisEnum = pgEnum("crm_legal_basis", ["CONSENT", "CONTRACT", "LEGITIMATE_INTEREST", "LEGAL_OBLIGATION"]);
-
-export const jobPostingStatusEnum = pgEnum("job_posting_status", ["DRAFT", "OPEN", "PAUSED", "CLOSED", "FILLED"]);
-export const candidateStatusEnum = pgEnum("candidate_status", ["NEW", "SCREENING", "INTERVIEW", "OFFER", "HIRED", "REJECTED"]);
-export const interviewTypeEnum = pgEnum("interview_type", ["PHONE", "VIDEO", "ONSITE", "TECHNICAL", "HR", "FINAL"]);
-export const interviewResultEnum = pgEnum("interview_result", ["PENDING", "PASSED", "FAILED", "NO_SHOW"]);
-export const applicationStatusEnum = pgEnum("application_status", ["APPLIED", "SHORTLISTED", "INTERVIEWING", "OFFERED", "ACCEPTED", "REJECTED", "WITHDRAWN"]);
 
 export const chatMessageTypeEnum = pgEnum("chat_message_type", ["text", "lead_submission", "system"]);
 
@@ -129,19 +110,6 @@ export const taskStatusEnum = pgEnum("task_status", ["pending", "completed", "ca
 
 export const blogPostStatusEnum = pgEnum("blog_post_status", ["draft", "published", "archived"]);
 
-export const accountTypeEnum = pgEnum("account_type", ["ASSET", "LIABILITY", "EQUITY", "INCOME", "EXPENSE"]);
-export const journalEntryStatusEnum = pgEnum("journal_entry_status", ["DRAFT", "PENDING_APPROVAL", "POSTED", "VOID"]);
-
-export const invProductStatusEnum = pgEnum("inv_product_status", ["ACTIVE", "INACTIVE", "DISCONTINUED"]);
-export const invAdjReasonEnum = pgEnum("inv_adj_reason", ["PURCHASE", "SALE", "RETURN", "DAMAGE", "EXPIRY", "THEFT", "RECOUNT", "OTHER"]);
-export const invTxnTypeEnum = pgEnum("inv_txn_type", ["PURCHASE", "SALE", "ADJUSTMENT_IN", "ADJUSTMENT_OUT", "TRANSFER_IN", "TRANSFER_OUT", "RETURN_IN", "RETURN_OUT", "GRN", "OPENING_BALANCE", "VENDOR_RETURN", "CUSTOMER_RETURN", "CYCLE_COUNT_GAIN", "CYCLE_COUNT_LOSS", "SCRAP", "QUARANTINE_IN", "QUARANTINE_OUT", "RESERVATION_CREATE", "RESERVATION_RELEASE", "RESERVATION_CONSUME"]);
-export const invPoStatusEnum = pgEnum("inv_po_status", ["DRAFT", "SENT", "PARTIAL", "RECEIVED", "CLOSED", "CANCELLED"]);
-export const invSoStatusEnum = pgEnum("inv_so_status", ["DRAFT", "CONFIRMED", "PARTIALLY_RESERVED", "RESERVED", "PICKED", "PACKED", "SHIPPED", "PARTIALLY_SHIPPED", "INVOICED", "CANCELLED", "CLOSED"]);
-export const invTransferStatusEnum = pgEnum("inv_transfer_status", ["PENDING", "RESERVED", "IN_TRANSIT", "COMPLETED", "CANCELLED"]);
-export const invLocationTypeEnum = pgEnum("inv_location_type", ["ZONE", "AISLE", "RACK", "BIN", "RECEIVING", "SHIPPING", "QUARANTINE", "SCRAP", "TRANSIT", "RETURNS"]);
-export const invGrnQualityEnum = pgEnum("inv_grn_quality", ["ACCEPTED", "REJECTED"]);
-export const invAdjustmentStatusEnum = pgEnum("inv_adjustment_status", ["DRAFT", "PENDING_APPROVAL", "APPROVED", "PENDING_POST", "POSTED", "CANCELLED"]);
-export const invReturnStatusEnum = pgEnum("inv_return_status", ["DRAFT", "POSTED", "CANCELLED"]);
 
 export const appInstallStatusEnum = pgEnum("app_install_status", [
   "TRIALING",
@@ -196,77 +164,6 @@ export const revenueEventTypeEnum = pgEnum("revenue_event_type", [
 
 export const enterpriseQuoteStatusEnum = pgEnum("enterprise_quote_status", [
   "DRAFT", "PENDING_APPROVAL", "APPROVED", "SENT", "ACCEPTED", "REJECTED", "EXPIRED"
-]);
-
-export const payrollRunStatusEnum = pgEnum("payroll_run_status", [
-  "PREPARING", "DRAFT", "PREVIEW_READY", "EXCEPTIONS_FOUND", "PENDING_APPROVAL",
-  "APPROVED", "LOCKED", "PAID", "PAYSLIPS_PUBLISHED", "CLOSED", "REOPENED",
-]);
-
-export const payrollWorkerTypeEnum = pgEnum("payroll_worker_type", [
-  "EMPLOYEE", "CONTRACTOR", "CONSULTANT", "INTERN", "EOR",
-]);
-
-export const salaryComponentTypeEnum = pgEnum("salary_component_type", [
-  "EARNING", "DEDUCTION", "EMPLOYER_CONTRIBUTION", "REIMBURSEMENT", "TAX", "ADJUSTMENT",
-]);
-
-export const salaryComponentCalcMethodEnum = pgEnum("salary_component_calc_method", [
-  "FIXED", "PERCENT_OF_BASIC", "PERCENT_OF_GROSS", "FORMULA",
-  "ATTENDANCE_BASED", "TIMESHEET_BASED", "MANUAL",
-]);
-
-export const payrollExceptionSeverityEnum = pgEnum("payroll_exception_severity", [
-  "BLOCKER", "WARNING", "INFO",
-]);
-
-export const payrollExceptionStatusEnum = pgEnum("payroll_exception_status", [
-  "OPEN", "RESOLVED", "OVERRIDDEN",
-]);
-
-export const payrollApprovalStatusEnum = pgEnum("payroll_approval_status", [
-  "PENDING", "APPROVED", "REJECTED",
-]);
-
-export const payrollBankBatchStatusEnum = pgEnum("payroll_bank_batch_status", [
-  "DRAFT", "GENERATED", "SENT", "PARTIALLY_PAID", "PAID", "FAILED",
-]);
-
-export const payrollBankItemStatusEnum = pgEnum("payroll_bank_item_status", [
-  "PENDING", "SENT", "PAID", "FAILED", "HELD",
-]);
-
-export const payrollPolicyStatusEnum = pgEnum("payroll_policy_status", [
-  "DRAFT", "ACTIVE", "SUPERSEDED", "ARCHIVED",
-]);
-
-export const salaryProfileStatusEnum = pgEnum("salary_profile_status", [
-  "UPCOMING", "ACTIVE", "SUPERSEDED",
-]);
-
-export const payFrequencyEnum = pgEnum("pay_frequency", [
-  "MONTHLY", "SEMI_MONTHLY", "BI_WEEKLY", "WEEKLY",
-]);
-
-export const taxRegimeTypeEnum = pgEnum("tax_regime_type", [
-  "OLD", "NEW",
-]);
-
-export const payslipLayoutEnum = pgEnum("payslip_layout", [
-  "CLASSIC", "MODERN", "COMPLIANCE",
-]);
-
-export const payslipPublishChannelEnum = pgEnum("payslip_publish_channel", [
-  "PORTAL", "EMAIL",
-]);
-
-export const payrollCalendarEventTypeEnum = pgEnum("payroll_calendar_event_type", [
-  "ATTENDANCE_CUTOFF", "REIMBURSEMENT_CUTOFF", "DECLARATION_CUTOFF",
-  "PREVIEW_DUE", "APPROVAL_DEADLINE", "PAY_DATE", "PUBLISH_DATE",
-]);
-
-export const payrollLoanAdjustmentTypeEnum = pgEnum("payroll_loan_adjustment_type", [
-  "SKIP_EMI", "EXTRA_RECOVERY", "FORECLOSURE", "MANUAL_ADJUST",
 ]);
 
 // Onboarding Flow (org setup / module checklists / guided tours) â€” see onboarding.ts.
@@ -337,36 +234,6 @@ export const paymentTestTransactionStatusEnum = pgEnum("payment_test_transaction
 export const paymentManualMethodStatusEnum = pgEnum("payment_manual_method_status", [
   "enabled", "missing_instructions", "disabled",
 ]);
-
-export const invProductTypeEnum = pgEnum("inv_product_type", ["STOCKABLE", "CONSUMABLE", "SERVICE"]);
-export const invTrackingMethodEnum = pgEnum("inv_tracking_method", ["NONE", "LOT", "SERIAL"]);
-export const invCostingMethodEnum = pgEnum("inv_costing_method", ["STANDARD", "WEIGHTED_AVERAGE", "FIFO"]);
-export const invReservationStatusEnum = pgEnum("inv_reservation_status", ["ACTIVE", "CONSUMED", "RELEASED", "EXPIRED"]);
-export const invLotStatusEnum = pgEnum("inv_lot_status", ["ACTIVE", "EXPIRED", "BLOCKED", "CONSUMED", "RECALLED"]);
-export const invSerialStatusEnum = pgEnum("inv_serial_status", ["IN_STOCK", "RESERVED", "SHIPPED", "RETURNED", "SCRAPPED", "QUARANTINE"]);
-export const invBarcodeTypeEnum = pgEnum("inv_barcode_type", ["GTIN", "EAN13", "UPC", "CODE128", "QR", "OTHER"]);
-export const invReasonCategoryEnum = pgEnum("inv_reason_category", ["ADJUSTMENT", "COUNT", "SCRAP", "RETURN", "TRANSFER", "OTHER"]);
-export const invVendorReturnReasonEnum = pgEnum("inv_vendor_return_reason", ["DAMAGED", "WRONG_ITEM", "EXCESS", "EXPIRED", "QUALITY_REJECTED"]);
-export const invCustomerReturnDispositionEnum = pgEnum("inv_customer_return_disposition", ["RESTOCK", "QUARANTINE", "SCRAP"]);
-export const invPickListStatusEnum = pgEnum("inv_pick_list_status", ["PENDING", "IN_PROGRESS", "COMPLETED", "CANCELLED"]);
-export const invCycleCountStatusEnum = pgEnum("inv_cycle_count_status", ["PLANNED", "COUNTING", "REVIEW", "POSTED", "CANCELLED"]);
-export const invQualityInspectionStatusEnum = pgEnum("inv_quality_inspection_status", ["PENDING", "IN_PROGRESS", "PASSED", "FAILED", "DISPOSITION_REQUIRED", "COMPLETED", "CANCELLED"]);
-export const invQualityHoldStatusEnum = pgEnum("inv_quality_hold_status", ["ACTIVE", "RELEASED"]);
-export const invQualityDispositionEnum = pgEnum("inv_quality_disposition", ["RELEASE_TO_AVAILABLE", "QUARANTINE", "RETURN_TO_VENDOR", "SCRAP"]);
-export const invRecallStatusEnum = pgEnum("inv_recall_status", ["OPEN", "IN_PROGRESS", "CLOSED"]);
-export const invShipmentStatusEnum = pgEnum("inv_shipment_status", ["DRAFT", "PACKED", "LABEL_CREATED", "SHIPPED", "DELIVERED", "CANCELLED"]);
-export const invPackageStatusEnum = pgEnum("inv_package_status", ["OPEN", "CLOSED", "SHIPPED"]);
-export const invLoadStatusEnum = pgEnum("inv_load_status", ["DRAFT", "DISPATCHED", "ARRIVED", "CLOSED", "CANCELLED"]);
-export const invChannelTypeEnum = pgEnum("inv_channel_type", ["INTERNAL", "SHOPIFY", "WOOCOMMERCE", "MARKETPLACE", "B2B", "THREE_PL"]);
-export const invChannelStatusEnum = pgEnum("inv_channel_status", ["ACTIVE", "PAUSED"]);
-export const invChannelPubStatusEnum = pgEnum("inv_channel_pub_status", ["PENDING", "PUBLISHED", "FAILED"]);
-export const inv3plStatusEnum = pgEnum("inv_3pl_status", ["DISCONNECTED", "CONNECTED", "ERROR"]);
-export const invIdempotencyStatusEnum = pgEnum("inv_idempotency_status", ["IN_FLIGHT", "COMPLETED", "FAILED"]);
-export const invJobStatusEnum = pgEnum("inv_job_status", ["PENDING", "VALIDATING", "RUNNING", "COMPLETED", "FAILED"]);
-export const invWebhookEventStatusEnum = pgEnum("inv_webhook_event_status", ["PENDING", "DELIVERED", "FAILED"]);
-export const invReservationStrategyEnum = pgEnum("inv_reservation_strategy", ["MANUAL", "AUTO_ON_CONFIRM", "FEFO", "FIFO"]);
-export const invExpiryPolicyEnum = pgEnum("inv_expiry_policy", ["BLOCK", "WARN", "ALLOW"]);
-export const invAiInsightStatusEnum = pgEnum("inv_ai_insight_status", ["NEW", "ACKNOWLEDGED", "DISMISSED"]);
 
 export const partyTypeEnum = pgEnum("party_type", ["CUSTOMER", "VENDOR", "PARTNER", "BOTH"]);
 

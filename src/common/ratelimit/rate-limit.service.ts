@@ -46,7 +46,23 @@ const TIERS: Record<string, Tier> = {
   // reconnects but stops a script inflating the in-process token map.
   "notifications:stream-token": { limit: 30, windowSecs: 60 },
   "public:contact": { limit: 5, windowSecs: 3600 },
+  // Read-only marketing reads. Generous: an evaluation reloads a pricing page.
+  "public:pricing": { limit: 120, windowSecs: 60 },
+  // The subprocessor register is @Public() because the people who read it are a
+  // prospect's counsel and a customer's compliance officer, who have no login.
+  // The read is generous; the subscribe is an unauthenticated write taking an
+  // email address, which is the shape of every mailing-list abuse there is.
+  "compliance:subprocessors": { limit: 60, windowSecs: 60 },
+  "compliance:subscribe": { limit: 5, windowSecs: 3600 },
   "public:waitlist": { limit: 5, windowSecs: 3600 },
+  /**
+   * Claiming an invitation, which is unauthenticated and creates an
+   * organisation. Tighter than joining the waitlist because the failure mode is
+   * worse: the endpoint is a token oracle, and a wrong guess is cheap for an
+   * attacker and free for us to refuse. Ten an hour is generous for somebody
+   * mistyping their own details and useless for enumeration.
+   */
+  "public:waitlist-claim": { limit: 10, windowSecs: 3600 },
   "public:kb": { limit: 60, windowSecs: 60 },
   "public:kb-article": { limit: 60, windowSecs: 60 },
   "public:roadmap": { limit: 60, windowSecs: 60 },
@@ -79,7 +95,6 @@ const TIERS: Record<string, Tier> = {
   "sign:public-auth": { limit: 10, windowSecs: 60 },
   "sign:public-otp-request": { limit: 5, windowSecs: 3600 },
   "sign:public-complete": { limit: 10, windowSecs: 60 },
-  "sign:public-form-submit": { limit: 10, windowSecs: 3600 },
   "sign:bulk-send-create": { limit: 5, windowSecs: 3600 },
   // A "send me a test" button on a template preview. It used to take an
   // arbitrary destination with no limiter, so one holder of
@@ -121,6 +136,13 @@ const TIERS: Record<string, Tier> = {
   // a forged-signature flood from locking up the write path. Generous enough for
   // a real provider that can burst at retry time.
   "billing:webhook": { limit: 600, windowSecs: 60 },
+  // INV-26. Carrier status callbacks are @Public and unauthenticated, and the
+  // signature is checked before anything is written — so the limit is not the
+  // security boundary, it is what stops a forged-signature flood occupying the
+  // write path. Sized like the payment one: a courier draining its retry queue
+  // after an outage bursts, and a warehouse's whole day of parcels is far under
+  // 600 a minute.
+  "inventory:carrier-webhook": { limit: 600, windowSecs: 60 },
   // Checkout creates a provider order; 5/hour per user prevents order flooding
   // while leaving headroom for legitimate retries with different plans.
   "billing:checkout": { limit: 5, windowSecs: 3600 },

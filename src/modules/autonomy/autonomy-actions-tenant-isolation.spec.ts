@@ -69,7 +69,7 @@ describe("AutonomyActionsService — cross-tenant isolation", () => {
     const { db, where } = makeDb([]);
     const svc = new AutonomyActionsService(db, makeDealsService());
 
-    const result = await svc.loadDeal(ATTACKER_ORG, "42");
+    const result = await svc.loadDeal(ATTACKER_ORG, 42);
 
     expect(result).toBeNull();
     expect(where).toHaveBeenCalled();
@@ -81,7 +81,7 @@ describe("AutonomyActionsService — cross-tenant isolation", () => {
     const { db } = makeDb([DEAL]);
     const svc = new AutonomyActionsService(db, makeDealsService());
 
-    const result = await svc.loadDeal(OWNER_ORG, "42");
+    const result = await svc.loadDeal(OWNER_ORG, 42);
 
     expect(result).not.toBeNull();
     expect(result?.id).toBe(42);

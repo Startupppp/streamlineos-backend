@@ -64,9 +64,15 @@ export interface TemplateSnapshot {
   allowDecline: boolean;
   expirationDays: number;
   reminderEnabled: boolean;
-  reminderFirstAfterDays: number;
-  reminderRepeatDays: number;
-  reminderMaxCount: number;
+  /**
+   * Optional on purpose. The parser used to substitute 3/2/3 here — a third
+   * hardcoded cadence, agreeing with neither the column defaults (3/3/5) nor
+   * the DTO's, and unreachable by any org setting. Absence now means "use the
+   * organisation's default", resolved at instantiation.
+   */
+  reminderFirstAfterDays?: number;
+  reminderRepeatDays?: number;
+  reminderMaxCount?: number;
   watermarkPolicyId?: number | null;
   roles: TemplateRole[];
   documents: TemplateDocument[];
@@ -87,6 +93,7 @@ const optionalText = (value: unknown): string | undefined => (value != null ? St
 const nullableText = (value: unknown): string | null => (value != null ? String(value) : null);
 const num = (value: unknown, fallback: number): number => (typeof value === "number" ? value : fallback);
 const nullableNum = (value: unknown): number | null => (typeof value === "number" ? value : null);
+const optionalNum = (value: unknown): number | undefined => (typeof value === "number" ? value : undefined);
 
 function enumValue<T extends string>(candidates: readonly T[], value: unknown, fallback: T): T {
   return candidates.find((candidate) => candidate === value) ?? fallback;
@@ -152,9 +159,9 @@ export function parseTemplateSnapshot(json: Record<string, unknown>): TemplateSn
     allowDecline: Boolean(json["allowDecline"]),
     expirationDays: num(json["expirationDays"], 30),
     reminderEnabled: Boolean(json["reminderEnabled"]),
-    reminderFirstAfterDays: num(json["reminderFirstAfterDays"], 3),
-    reminderRepeatDays: num(json["reminderRepeatDays"], 2),
-    reminderMaxCount: num(json["reminderMaxCount"], 3),
+    reminderFirstAfterDays: optionalNum(json["reminderFirstAfterDays"]),
+    reminderRepeatDays: optionalNum(json["reminderRepeatDays"]),
+    reminderMaxCount: optionalNum(json["reminderMaxCount"]),
     watermarkPolicyId: nullableNum(json["watermarkPolicyId"]),
     roles: Array.isArray(json["roles"]) ? json["roles"].map(parseRole) : [],
     documents: Array.isArray(json["documents"]) ? json["documents"].map(parseDocument) : [],

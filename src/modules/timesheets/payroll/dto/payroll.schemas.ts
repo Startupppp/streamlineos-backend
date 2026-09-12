@@ -88,6 +88,7 @@ export const updateSettingsSchema = z.object({
   overtimeWeeklyHours: z.number().min(1).max(168).optional(),
   includeNonBillable: z.boolean().optional(),
   payrollMapping: payrollMappingSchema.optional(),
+  changeReason: z.string().min(1).max(500).optional(),
 }).strict();
 
 export type PeriodSummaryQuery = z.infer<typeof periodSummaryQuerySchema>;

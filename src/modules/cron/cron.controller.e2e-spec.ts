@@ -26,6 +26,36 @@ describe("Cron auth (e2e)", () => {
     ["post", "/cron/interview-no-shows"],
     ["get", "/cron/support-sla-escalations"],
     ["post", "/cron/support-sla-escalations"],
+    /**
+     * The renewal sweep, which until now had no scheduled entry point at all.
+     *
+     * A 401 here is the assertion that matters twice over: the route is mounted
+     * (an absent one answers 404, not 401), and `AppModule` booted with
+     * `CronModule` holding `LifecycleTriggersModule` — a provider Nest cannot
+     * resolve fails at boot, which `tsc` cannot see.
+     */
+    ["get", "/cron/crm-lifecycle-triggers-sweep"],
+    ["post", "/cron/crm-lifecycle-triggers-sweep"],
+    /**
+     * The silence loop and the repair loop, which had the same problem as the
+     * renewal one: a detector and an action that had never been introduced.
+     * `listAwaitingReply` says in its own docstring that it is the detector a
+     * sweep runs, and no sweep existed to run it.
+     */
+    ["get", "/cron/crm-silence-sweep"],
+    ["post", "/cron/crm-silence-sweep"],
+    ["get", "/cron/crm-nurture-steps"],
+    ["post", "/cron/crm-nurture-steps"],
+    ["get", "/cron/crm-field-repairs"],
+    ["post", "/cron/crm-field-repairs"],
+    /**
+     * The report timetable. Listed here for the reason the block above gives:
+     * this table is what proves the route resolves at boot, which is the one
+     * failure mode a scheduled feature has that `tsc` cannot see — an
+     * unregistered sweep compiles green and simply never runs.
+     */
+    ["get", "/cron/crm-report-schedules"],
+    ["post", "/cron/crm-report-schedules"],
     ["get", "/cron/operator-grant-expiry"],
     ["post", "/cron/operator-grant-expiry"],
     ["get", "/cron/trial-expiry"],

@@ -12,6 +12,7 @@ import { actingMembershipId } from "../../common/auth/principal";
 import { Validate } from "../../common/validation/validate.decorator";
 import { AccessService } from "../access/access.service";
 import { SignFieldsService } from "./sign-fields.service";
+import { SignEnvelopeAccessService } from "./sign-envelope-access.service";
 import { resolveEnvelopeViewScope } from "./sign-envelope-scope";
 import { createFieldSchema, updateFieldSchema, type CreateFieldInput, type UpdateFieldInput } from "./dto/e-sign.schemas";
 import { resolveClientIp } from "../../common/http/client-ip";
@@ -30,6 +31,7 @@ export class SignFieldsController {
   constructor(
     private readonly fields: SignFieldsService,
     private readonly access: AccessService,
+    private readonly envelopeAccess: SignEnvelopeAccessService,
   ) {}
 
   @Post("envelopes/:envelopeId/fields")
@@ -37,12 +39,13 @@ export class SignFieldsController {
   @RequirePermission("sign:envelope:create")
   @ResponseSchema(fieldMutationResponseSchema)
   @Validate({ params: envelopeIdParams, body: createFieldSchema })
-  add(
+  async add(
     @Param("envelopeId", ParseIntPipe) envelopeId: number,
     @Body() body: CreateFieldInput,
     @CurrentUser() u: CurrentUserContext,
     @Req() req: Request,
   ) {
+    await this.envelopeAccess.mustGetActionable(u, envelopeId);
     return this.fields.add(u.orgId, envelopeId, body, { orgId: u.orgId, userId: u.userId, ipAddress: resolveClientIp(req) });
   }
 
@@ -59,12 +62,13 @@ export class SignFieldsController {
   @RequirePermission("sign:envelope:create")
   @ResponseSchema(fieldMutationResponseSchema)
   @Validate({ params: fieldIdParams, body: updateFieldSchema })
-  update(
+  async update(
     @Param("fieldId", ParseIntPipe) fieldId: number,
     @Body() body: UpdateFieldInput,
     @CurrentUser() u: CurrentUserContext,
     @Req() req: Request,
   ) {
+    await this.envelopeAccess.mustGetActionableByField(u, fieldId);
     return this.fields.update(u.orgId, fieldId, body, { orgId: u.orgId, userId: u.userId, ipAddress: resolveClientIp(req) });
   }
 
@@ -73,6 +77,7 @@ export class SignFieldsController {
   @ResponseSchema(successSchema)
   @Validate({ params: fieldIdParams })
   async remove(@Param("fieldId", ParseIntPipe) fieldId: number, @CurrentUser() u: CurrentUserContext, @Req() req: Request) {
+    await this.envelopeAccess.mustGetActionableByField(u, fieldId);
     await this.fields.remove(u.orgId, fieldId, { orgId: u.orgId, userId: u.userId, ipAddress: resolveClientIp(req) });
     return { success: true };
   }

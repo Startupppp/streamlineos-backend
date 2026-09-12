@@ -12,13 +12,14 @@ import type {
 import { NotificationEventService } from "./notification-event.service";
 import { WebPushService } from "../realtime/web-push.service";
 import { NotificationsReadService } from "./notifications-read.service";
-import { logger } from "../../common/logger/logger.service";
+import { logSideEffectFailure } from "../../common/logger/side-effect";
+import { runOutsideTenantContext } from "../../common/tenant/tenant-context";
+import { runOutsidePoolBorrow } from "../../db/pool-telemetry";
 import { NotificationsLifecycleService } from "./notifications-lifecycle.service";
 import { isNotificationCategory } from "./notifications.types";
 import type {
   AnnounceInput,
   CreateNotificationInput,
-  NotificationCategoryValue,
 } from "./notifications.types";
 
 export type { AnnounceInput, CreateNotificationInput };
@@ -117,21 +118,45 @@ export class NotificationsService {
   private pushToDevice(input: AnnounceInput): void {
     if (input.priority === "LOW") return;
     if (input.sourceModule === "chat") return;
-    // RT-001: id + category only. The title and message stay server-side; the
-    // client fetches them through the authenticated API.
-    void this.webPush
-      .sendToUser(input.orgId, input.userId, {
+    /**
+     * `runOutsideTenantContext` because this work outlives the transaction
+     * that started it, and the tenant context does not.
+     *
+     * The context is async-local, so the continuation inherits whatever
+     * transaction was open at the call — which, raised from an outbox consumer
+     * or a cron sweep, has committed and closed by the time the subscription
+     * lookup runs. `push_subscriptions` is behind `tenant_isolation` with the
+     * raising accessor, and against a dead handle that query does not fail: it
+     * never settles, so the `.catch` below never runs and a subscribed device
+     * was simply never pushed to, with nothing anywhere saying so.
+     *
+     * Detaching means `sendToUser` finds no ambient and opens its own scope
+     * from the `orgId` it is now handed, which is what a detached side effect
+     * needed all along. The awaiting callers keep the ambient they reuse
+     * correctly.
+     *
+     * `runOutsidePoolBorrow` for the same reason one step over: the borrow is
+     * async-local too, and `withPoolBorrow` no-ops inside one that is already
+     * open. Left inherited from a request that has long since returned, the
+     * connection this now takes for itself would be held by a real fan-out and
+     * counted by nothing — invisible to the saturation metrics that exist to
+     * catch precisely this.
+     */
+    void runOutsidePoolBorrow(() => runOutsideTenantContext(() =>
+      // RT-001: id + category only. The title and message stay server-side; the
+      // client fetches them through the authenticated API.
+      this.webPush.sendToUser(input.orgId, input.userId, {
         notificationId: input.id,
         category: isNotificationCategory(input.category) ? input.category : undefined,
         url: input.link ?? "/notifications",
-      })
-      .catch((err: unknown) => {
-        logger.warn("web push delivery failed", {
-          userId: input.userId,
-          notificationId: input.id,
-          cause: err instanceof Error ? (err.cause ?? err.message) : String(err),
-        });
-      });
+      }),
+    )).catch(
+      logSideEffectFailure("web push delivery", {
+        orgId: input.orgId,
+        userId: input.userId,
+        notificationId: input.id,
+      }),
+    );
   }
 
   list(orgId: string, userId: string, filters: ListInput, principal?: Principal) {

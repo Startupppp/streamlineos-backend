@@ -1,8 +1,8 @@
 import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { logSideEffectFailure } from "../../common/logger/side-effect";
-import { and, count, desc, eq, inArray, isNull, type SQL } from "drizzle-orm";
+import { and, count, desc, eq, isNull, sql, type SQL } from "drizzle-orm";
 import type { ScopedRead } from "../access/scoped-read";
-import { deals, dealStageTransitions, organizationMembers } from "../../db/schema";
+import { deals, organizationMembers } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
@@ -11,7 +11,13 @@ import { CACHE_KEYS, CACHE_TTL } from "../../common/cache/cache-keys";
 import { CrmValidationService } from "../crm/metadata/crm-validation.service";
 import { CrmAutomationBusService } from "../crm/automation-studio/crm-automation-bus.service";
 import { PlanLimitsService } from "../billing/core/plan-limits.service";
-import { toMinorUnits, toTransitionRow } from "./deal-stage-ledger";
+import { toMinorUnits } from "./deal-stage-ledger";
+import { withPartyLabels } from "./deal-party-projection";
+import {
+  bulkDelete,
+  bulkUpdate,
+  type DealBulkDeps,
+} from "./lib/deal-bulk-ops";
 import { buildListResponse } from "../../common/pagination/pagination";
 import type {
   CreateDealInput,
@@ -19,6 +25,18 @@ import type {
   DealBulkUpdateInput,
   ListDealsInput,
 } from "./dto/deals.schemas";
+
+/** The owner column every `crm:deals:read` narrowing uses: the list, one deal, a clone's source. */
+const DEAL_OWNER_SCOPE = { columns: { ownerColumn: deals.assignedToId } };
+
+/** The caller's deals as a predicate; `false` when the scope denies, so the lookup finds nothing. */
+function dealReadScope(read: ScopedRead): SQL {
+  return read.compose(
+    { tenant: deals.orgId, scope: DEAL_OWNER_SCOPE },
+    ({ sql: where }) => where,
+    () => sql`false`,
+  );
+}
 
 @Injectable()
 export class DealsCrudService {
@@ -49,7 +67,7 @@ export class DealsCrudService {
         return read.read(
           {
             tenant: deals.orgId,
-            scope: { columns: { ownerColumn: deals.assignedToId } },
+            scope: DEAL_OWNER_SCOPE,
             and: [isNull(deals.deletedAt), ...filters],
           },
           async ({ sql: where }) => {
@@ -58,8 +76,6 @@ export class DealsCrudService {
                 where,
                 with: {
                   assignedTo: { columns: { id: true, name: true, image: true } },
-                  lead: { columns: { id: true, name: true } },
-                  client: { columns: { id: true, name: true } },
                 },
                 orderBy: [desc(deals.updatedAt)],
                 limit: pageSize,
@@ -67,7 +83,10 @@ export class DealsCrudService {
               }),
               this.db.select({ total: count() }).from(deals).where(where),
             ]);
-            return buildListResponse(rows, Number(totalRow?.total ?? 0), page);
+            // `lead` and `client` come from Party now; see `deal-party-projection.ts`.
+            // One extra statement for the page, not one per deal.
+            const labelled = await withPartyLabels(this.db, orgId, rows);
+            return buildListResponse(labelled, Number(totalRow?.total ?? 0), page);
           },
           () => buildListResponse([], 0, page),
         );
@@ -144,15 +163,35 @@ export class DealsCrudService {
     return deal;
   }
 
-  getDeal(orgId: string, dealId: number) {
-    return this.db.query.deals.findFirst({
-      where: and(eq(deals.id, dealId), eq(deals.orgId, orgId), isNull(deals.deletedAt)),
+  /**
+   * One deal, behind the SAME scope `listDeals` applies.
+   *
+   * `crm:deals:read` is declared `scopable: true`, and ninety lines above this
+   * `listDeals` honours it — the owner predicate over `deals.assignedToId` — so a
+   * rep granted `own` sees only the deals assigned to them. This applied
+   * nothing. Same file, same entity: the list narrowed and reading one by id did
+   * not, so an organisation that had granted `own` to restrict a rep had not
+   * restricted them at all, and believed it had.
+   *
+   * Returning `undefined` rather than throwing is deliberate and unchanged: the
+   * controller turns it into 404, which is the same answer a deal in another
+   * org gives, so this does not become an oracle for which deals exist.
+   */
+  async getDeal(orgId: string, _userId: string, dealId: number, read: ScopedRead) {
+    const deal = await this.db.query.deals.findFirst({
+      where: and(
+        eq(deals.id, dealId),
+        eq(deals.orgId, orgId),
+        isNull(deals.deletedAt),
+        dealReadScope(read),
+      ),
       with: {
         assignedTo: { columns: { id: true, name: true, image: true } },
-        lead: { columns: { id: true, name: true, email: true, phone: true } },
-        client: { columns: { id: true, name: true } },
       },
     });
+    if (!deal) return deal;
+    const [withLabels] = await withPartyLabels(this.db, orgId, [deal]);
+    return withLabels;
   }
 
   async deleteDeal(orgId: string, userId: string, dealId: number) {
@@ -179,135 +218,40 @@ export class DealsCrudService {
     return { deleted: true };
   }
 
-  /**
-   * One batched UPDATE rather than N single writes: the whole selection either
-   * moves or it does not, and the row count comes from `.returning()` so a
-   * caller passing another tenant's ids is told 0, not "success".
-   */
+  /** @see lib/deal-bulk-ops.ts */
   async bulkUpdate(orgId: string, userId: string, input: DealBulkUpdateInput) {
-    const setData: Partial<typeof deals.$inferInsert> = { updatedAt: new Date() };
-    if (input.update.stage !== undefined) setData.stage = input.update.stage;
-
-    if (input.update.assignedToId !== undefined) {
-      const member = await this.db.query.organizationMembers.findFirst({
-        where: and(
-          eq(organizationMembers.userId, input.update.assignedToId),
-          eq(organizationMembers.orgId, orgId),
-        ),
-        columns: { userId: true },
-      });
-      if (!member) throw new BadRequestException("Assignee is not a member of this organization");
-      setData.assignedToId = input.update.assignedToId;
-    }
-
-    /**
-     * A bulk stage change is still a stage change.
-     *
-     * This path used to move any number of deals with no transition recorded at
-     * all, so the pipeline's own history depended on which screen a person
-     * happened to use. The prior stages are read and the ledger written inside
-     * the same transaction as the update, so a rolled-back move leaves no row
-     * claiming it happened.
-     */
-    const updated = await this.db.transaction(async (tx) => {
-      const before =
-        setData.stage === undefined
-          ? []
-          : await (tx as Db)
-              .select({ id: deals.id, stage: deals.stage, pipelineId: deals.pipelineId })
-              .from(deals)
-              .where(
-                and(
-                  eq(deals.orgId, orgId),
-                  inArray(deals.id, input.dealIds),
-                  isNull(deals.deletedAt),
-                ),
-              );
-
-      const rows = await (tx as Db)
-        .update(deals)
-        .set(setData)
-        .where(
-          and(
-            eq(deals.orgId, orgId),
-            inArray(deals.id, input.dealIds),
-            isNull(deals.deletedAt),
-          ),
-        )
-        .returning({ id: deals.id });
-
-      const toStage = setData.stage;
-      if (toStage !== undefined) {
-        const moved = before.filter((deal) => deal.stage !== toStage);
-        if (moved.length > 0)
-          await (tx as Db).insert(dealStageTransitions).values(
-            moved.map((deal) =>
-              toTransitionRow({
-                organizationId: orgId,
-                dealId: deal.id,
-                pipelineId: deal.pipelineId ?? null,
-                fromStage: deal.stage ?? null,
-                toStage,
-                actor: { kind: "human", userId },
-                reason: "Bulk stage change",
-              }),
-            ),
-          );
-      }
-
-      return rows;
-    });
-
-    await this.invalidateDealCaches(orgId);
-    this.audit.log({
-      action: "deal.bulk_updated",
-      userId,
-      orgId,
-      targetType: "deal",
-      metadata: { requested: input.dealIds.length, updated: updated.length, update: input.update },
-    });
-
-    return { updated: updated.length, requested: input.dealIds.length };
+    return bulkUpdate(this.bulkDeps, orgId, userId, input);
   }
 
+  /** @see lib/deal-bulk-ops.ts */
   async bulkDelete(orgId: string, userId: string, input: DealBulkDeleteInput) {
-    const deleted = await this.db
-      .update(deals)
-      .set({ deletedAt: new Date() })
-      .where(
-        and(
-          eq(deals.orgId, orgId),
-          inArray(deals.id, input.dealIds),
-          isNull(deals.deletedAt),
-        ),
-      )
-      .returning({ id: deals.id });
-
-    await this.invalidateDealCaches(orgId);
-    this.audit.log({
-      action: "deal.bulk_deleted",
-      userId,
-      orgId,
-      targetType: "deal",
-      metadata: { requested: input.dealIds.length, deleted: deleted.length },
-    });
-
-    return { deleted: deleted.length, requested: input.dealIds.length };
+    return bulkDelete(this.bulkDeps, orgId, userId, input);
   }
 
-  private async invalidateDealCaches(orgId: string): Promise<void> {
-    await Promise.all([
-      this.cache.invalidateNamespace(`deals:list:${orgId}`),
-      this.cache.invalidate(CACHE_KEYS.dealsForecast(orgId)),
-      this.cache.invalidate(CACHE_KEYS.salesDashboard(orgId)),
-    ]);
+  private get bulkDeps(): DealBulkDeps {
+    return { db: this.db, cache: this.cache, audit: this.audit };
   }
 
-  async cloneDeal(orgId: string, dealId: number) {
+  /**
+   * Clone one, out of the deals the caller may read.
+   *
+   * The route is gated on `crm:deals:create`, but the SOURCE is a read and takes
+   * the read scope: you may copy a deal you could have opened. Unscoped, a rep
+   * at `own` could clone a colleague's deal — reading its value, contact email,
+   * phone and notes into a new record on the way, and spending one of the plan's
+   * deal slots. The copy keeps `assignedToId`, so it lands in that colleague's
+   * pipeline, which makes it quiet as well as wrong.
+   */
+  async cloneDeal(orgId: string, _userId: string, dealId: number, read: ScopedRead) {
     await this.planLimits.assertWithinLimit(orgId, "crmDeals");
 
     const existing = await this.db.query.deals.findFirst({
-      where: and(eq(deals.id, dealId), eq(deals.orgId, orgId), isNull(deals.deletedAt)),
+      where: and(
+        eq(deals.id, dealId),
+        eq(deals.orgId, orgId),
+        isNull(deals.deletedAt),
+        dealReadScope(read),
+      ),
     });
     if (!existing) throw new NotFoundException("Deal not found");
 

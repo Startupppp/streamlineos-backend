@@ -17,6 +17,7 @@ import { AccountOrganizationIndexService } from "../organization/core/account-or
 import { CronIdempotencyService } from "./cron-idempotency.service";
 import { CronWorkflowService } from "./cron-workflow.service";
 import { ExceptionsDetectorService } from "../timesheets/core/exceptions-detector.service";
+import { TimesheetRemindersSweepService } from "../timesheets/core/reminders-sweep.service";
 import { BuildDueSweepService } from "../build/core/build-due-sweep.service";
 import { CronLeaseService } from "./cron-lease.service";
 import { BodylessAction, ResponseSchema } from "../../common/openapi/zod-operation-contracts";
@@ -38,6 +39,7 @@ import {
   aiUsageRetentionSweepResponseSchema,
   mailMetadataRetentionSweepResponseSchema,
   announcementsRetentionSweepResponseSchema,
+  timesheetsRemindersResponseSchema,
 } from "./dto/cron-platform-response.schemas";
 
 @Public()
@@ -50,6 +52,7 @@ export class CronPlatformController {
     private readonly ownershipTransfers: OwnershipTransfersService,
     private readonly orgPurgeWorker: CronOrgPurgeWorkerService,
     private readonly timesheetExceptionsDetector: ExceptionsDetectorService,
+    private readonly timesheetReminders: TimesheetRemindersSweepService,
     private readonly idempotency: CronIdempotencyService,
     private readonly buildDueSweep: BuildDueSweepService,
     private readonly accountOrgIndex: AccountOrganizationIndexService,
@@ -170,6 +173,20 @@ export class CronPlatformController {
   @ResponseSchema(idempotencyFenceSweepResponseSchema)
   postIdempotencyFenceSweep(@Headers("authorization") authorization?: string) {
     return this.runIdempotencyFenceSweep(authorization);
+  }
+
+  @Get("timesheets-reminders")
+  @ResponseSchema(timesheetsRemindersResponseSchema)
+  getTimesheetsReminders(@Headers("authorization") authorization?: string) {
+    return this.runTimesheetsReminders(authorization);
+  }
+
+  @Post("timesheets-reminders")
+  @BodylessAction()
+  @HttpCode(200)
+  @ResponseSchema(timesheetsRemindersResponseSchema)
+  postTimesheetsReminders(@Headers("authorization") authorization?: string) {
+    return this.runTimesheetsReminders(authorization);
   }
 
   @Get("timesheets-exception-detection")
@@ -372,6 +389,41 @@ export class CronPlatformController {
       };
     } catch (error) {
       logger.error("Idempotency fence sweep cron failed", error);
+      throw new InternalServerErrorException("Internal server error");
+    }
+  }
+
+  /**
+   * Reminders for unsubmitted timesheet periods.
+   *
+   * 600s lease, matching the detection sweep beside it: both walk every
+   * organisation and a second copy starting underneath the first would send
+   * every reminder twice. The notification dedupe window is a day, so a double
+   * run would be caught there too — but relying on the second line of defence
+   * to cover a missing first one is how both end up load-bearing.
+   */
+  private async runTimesheetsReminders(authorization?: string) {
+    assertCronSecret(authorization);
+    try {
+      const outcome = await this.cronLease.withLease("timesheets-reminders", 600, () =>
+        this.timesheetReminders.remindAllOrgs(),
+      );
+      if (!outcome.ran) {
+        return { success: true, skipped: true, message: "timesheets-reminders already running" };
+      }
+      const result = outcome.result;
+      return {
+        success: true,
+        message:
+          `Timesheet reminders: scanned ${result.orgsScanned} orgs, ` +
+          `sent ${result.remindersSent} of ${result.periodsConsidered} open periods` +
+          (result.orgsMalformed > 0
+            ? `, ${result.orgsMalformed} org(s) have unreadable reminder rules`
+            : ""),
+        ...result,
+      };
+    } catch (error) {
+      logger.error("Timesheet reminders cron failed", error);
       throw new InternalServerErrorException("Internal server error");
     }
   }

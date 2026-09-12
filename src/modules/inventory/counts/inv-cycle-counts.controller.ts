@@ -1,4 +1,5 @@
-import { BadRequestException, Controller, Get, Headers, Param, ParseIntPipe, Patch, Post, Body, Query, UseGuards } from "@nestjs/common";
+import { Controller, Get, Param, ParseIntPipe, Patch, Post, Body, Query, UseGuards } from "@nestjs/common";
+import { IdempotencyKey } from "../../../common/idempotency/idempotency-key.decorator";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
 import { ModuleGuard } from "../../../common/rbac/module.guard";
 import { PermissionGuard } from "../../access/permission.guard";
@@ -15,6 +16,7 @@ import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
 import { BodylessAction, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
 import { successSchema } from "../../../common/openapi/response-envelopes";
+import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import {
   listCycleCountsResponseSchema,
   cycleCountSchema,
@@ -49,13 +51,14 @@ export class InvCycleCountsController {
     @Param("countId", ParseIntPipe) countId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.counts.getCycleCount(u.orgId, countId);
+    return this.counts.getCycleCount(u.orgId, u.userId, countId);
   }
 
   @Post()
   @ResponseSchema(cycleCountSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:reconcile")
+  @Idempotent("inventory.cycle-count.create")
   @Validate({ body: createCycleCountSchema })
   create(
     @Body() body: CreateCycleCountInput,
@@ -69,12 +72,13 @@ export class InvCycleCountsController {
   @ResponseSchema(cycleCountSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:reconcile")
+  @Idempotent("inventory.cycle-count.start")
   @Validate({ params: countIdParams })
   start(
     @Param("countId", ParseIntPipe) countId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.counts.startCycleCount(u.orgId, countId);
+    return this.counts.startCycleCount(u.orgId, u.userId, countId);
   }
 
   @Patch(":countId/lines")
@@ -87,7 +91,7 @@ export class InvCycleCountsController {
     @Body() body: UpdateCountLinesInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.counts.updateLines(u.orgId, countId, body);
+    return this.counts.updateLines(u.orgId, u.userId, countId, body);
   }
 
   @Post(":countId/review")
@@ -95,12 +99,13 @@ export class InvCycleCountsController {
   @ResponseSchema(cycleCountSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:reconcile")
+  @Idempotent("inventory.cycle-count.review")
   @Validate({ params: countIdParams })
   review(
     @Param("countId", ParseIntPipe) countId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.counts.reviewCycleCount(u.orgId, countId);
+    return this.counts.reviewCycleCount(u.orgId, u.userId, countId);
   }
 
   @Post(":countId/post")
@@ -110,12 +115,10 @@ export class InvCycleCountsController {
   @RequirePermission("inventory:stock:reconcile")
   @Validate({ params: countIdParams })
   post(
-    @Headers("idempotency-key") idempotencyKey: string,
+    @IdempotencyKey() idempotencyKey: string,
     @Param("countId", ParseIntPipe) countId: number,
     @CurrentUser() u: CurrentUserContext,
-  ) {
-    if (!idempotencyKey) throw new BadRequestException("Idempotency-Key header required");
-    return this.counts.postCycleCount(u.orgId, u.userId, countId, idempotencyKey);
+  ) {return this.counts.postCycleCount(u.orgId, u.userId, countId, idempotencyKey);
   }
 
   @Post(":countId/cancel")
@@ -123,12 +126,13 @@ export class InvCycleCountsController {
   @ResponseSchema(successSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("inventory:stock:reconcile")
+  @Idempotent("inventory.cycle-count.cancel")
   @Validate({ params: countIdParams })
   async cancel(
     @Param("countId", ParseIntPipe) countId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    await this.counts.cancelCycleCount(u.orgId, countId);
+    await this.counts.cancelCycleCount(u.orgId, u.userId, countId);
     return { success: true as const };
   }
 }

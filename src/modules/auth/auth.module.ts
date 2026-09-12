@@ -9,10 +9,11 @@ import { AuthAnalyticsService } from "./auth-analytics.service";
 import { RateLimitModule } from "../../common/ratelimit/rate-limit.module";
 import { SessionsModule } from "../sessions/sessions.module";
 import { NotificationsModule } from "../notifications/notifications.module";
+import { OrganizationModule } from "../organization/core/organization.module";
 
 @Module({
   controllers: [AuthController],
-  imports: [RateLimitModule, NotificationsModule, SessionsModule],
+  imports: [RateLimitModule, NotificationsModule, SessionsModule, OrganizationModule],
   exports: [AuthService],
   providers: [
     AuthService,

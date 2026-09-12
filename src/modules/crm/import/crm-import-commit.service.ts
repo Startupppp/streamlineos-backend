@@ -7,9 +7,10 @@ import {
 } from "@nestjs/common";
 import { and, asc, eq, gte, isNull, lte, sql } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
-import type { Db, TenantTx } from "../../../db/drizzle.types";
-import { crmImportRows, crmImports, dataQualityFindings } from "../../../db/schema";
+import type { Db } from "../../../db/drizzle.types";
+import { crmImportRows, crmImports } from "../../../db/schema";
 import { WorkflowRunnerService } from "../../../common/workflow";
+import { PlanLimitsService } from "../../billing/core/plan-limits.service";
 import { COMMIT_WORKFLOW } from "./import-workflow-names";
 import {
   inOwnTransaction,
@@ -19,9 +20,8 @@ import {
   REVERT_WINDOW_DAYS,
   startPhase,
 } from "./crm-import-internals";
-import type { BatchOutcome, ImportContext, PhaseExtent } from "./crm-import-internals";
-import { writerFor } from "./writers";
-import { uncertaintyFinding } from "./import-uncertainty";
+import type { BatchOutcome, PhaseExtent } from "./crm-import-internals";
+import { commitRow } from "./lib/commit-row";
 
 @Injectable()
 export class CrmImportCommitService {
@@ -30,6 +30,7 @@ export class CrmImportCommitService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly workflows: WorkflowRunnerService,
+    private readonly planLimits: PlanLimitsService,
   ) {}
 
   async startCommit(organizationId: string, crmImportId: string): Promise<string> {
@@ -53,6 +54,35 @@ export class CrmImportCommitService {
     if (!imported) throw new NotFoundException("Import not found");
     if (imported.status !== "previewing" && imported.status !== "committing")
       throw new ConflictException(`That import is already ${imported.status}.`);
+
+    /*
+      What the plan allows, asked once for the whole batch and before any row
+      lands.
+
+      An import is the easiest way to walk past a seat or record cap: it creates
+      in bulk, from a file, with nobody watching. Asking per row would refuse
+      halfway through and leave the tenant with a partial import, so the question
+      is asked here -- against the rows still uncommitted, which is what a resumed
+      commit would go on to create rather than what the file originally held.
+
+      This guard existed before the importer moved to `crm/import/`; the move
+      left it behind, and `party-creation-invariant.spec.ts` is what noticed.
+    */
+    const [creating] = await this.db
+      .select({ rows: sql<number>`count(*)::int` })
+      .from(crmImportRows)
+      .where(
+        and(
+          eq(crmImportRows.organizationId, organizationId),
+          eq(crmImportRows.crmImportId, crmImportId),
+          eq(crmImportRows.action, "create"),
+          isNull(crmImportRows.committedAt),
+        ),
+      );
+
+    if (creating && creating.rows > 0) {
+      await this.planLimits.assertWithinLimit(organizationId, "crmContacts", creating.rows);
+    }
 
     return startPhase(this.db, this.workflows, organizationId, crmImportId, {
       workflowName: COMMIT_WORKFLOW,
@@ -121,7 +151,7 @@ export class CrmImportCommitService {
     for (const row of rows) {
       try {
         const outcome = await this.db.transaction((tx) =>
-          this.commitRow(tx, organizationId, crmImportId, row.crmImportRowId, context),
+          commitRow(tx, organizationId, crmImportId, row.crmImportRowId, context),
         );
 
         if (outcome) tally[outcome] += 1;
@@ -156,134 +186,6 @@ export class CrmImportCommitService {
           eq(crmImports.organizationId, organizationId),
           eq(crmImports.crmImportId, crmImportId),
           eq(crmImports.status, "committing"),
-        ),
-      );
-  }
-
-  private async commitRow(
-    tx: TenantTx,
-    organizationId: string,
-    crmImportId: string,
-    rowId: string,
-    context: ImportContext,
-  ): Promise<keyof BatchOutcome | null> {
-    const [row] = await tx
-      .update(crmImportRows)
-      .set({ committedAt: new Date() })
-      .where(
-        and(
-          eq(crmImportRows.organizationId, organizationId),
-          eq(crmImportRows.crmImportRowId, rowId),
-          isNull(crmImportRows.committedAt),
-        ),
-      )
-      .returning();
-
-    if (!row) return null;
-    if (row.action === "skip") return "skipped";
-    if (row.action === "merge") return "merged";
-
-    if (row.action === "review") {
-      await this.fileUncertainty(tx, organizationId, crmImportId, row, context.filename);
-      return "review";
-    }
-
-    const writer = writerFor(context.entity);
-    const planned = { values: row.values ?? {}, customFields: row.customFields ?? null };
-
-    if (row.action === "create") {
-      const recordId = await writer.create(tx, context.write, planned);
-
-      await tx
-        .update(crmImportRows)
-        .set({ createdRecordId: recordId })
-        .where(
-          and(
-            eq(crmImportRows.organizationId, organizationId),
-            eq(crmImportRows.crmImportRowId, rowId),
-          ),
-        );
-
-      return "created";
-    }
-
-    if (!row.matchedRecordId) throw new Error("an update row with nothing to update");
-
-    const updates = writer.updates;
-    if (!updates)
-      throw new Error(`a ${context.entity} import cannot update an existing record`);
-
-    const before = await updates.before(tx, context.write, row.matchedRecordId);
-    if (!before) throw new Error("the matched record no longer exists");
-
-    await updates.fillGaps(tx, context.write, row.matchedRecordId, before, planned);
-
-    await tx
-      .update(crmImportRows)
-      .set({ previous: before })
-      .where(
-        and(
-          eq(crmImportRows.organizationId, organizationId),
-          eq(crmImportRows.crmImportRowId, rowId),
-        ),
-      );
-
-    return "updated";
-  }
-
-  private async fileUncertainty(
-    tx: TenantTx,
-    organizationId: string,
-    crmImportId: string,
-    row: typeof crmImportRows.$inferSelect,
-    filename: string | null,
-  ): Promise<void> {
-    if (!row.matchedRecordId || !row.match)
-      throw new Error("a review row with nothing recorded about why");
-
-    const finding = uncertaintyFinding({
-      crmImportId,
-      rowNumber: row.rowNumber,
-      matchedPartyId: row.matchedRecordId,
-      match: row.match,
-      values: row.values ?? {},
-      reason: row.reason,
-      sourceFilename: filename,
-    });
-
-    const now = new Date();
-    const [filed] = await tx
-      .insert(dataQualityFindings)
-      .values({ organizationId, ...finding, lastSeenAt: now })
-      .onConflictDoUpdate({
-        target: [
-          dataQualityFindings.organizationId,
-          dataQualityFindings.producer,
-          dataQualityFindings.findingKind,
-          dataQualityFindings.subjectKey,
-        ],
-        targetWhere: sql`status = 'open'`,
-        set: {
-          lastSeenAt: now,
-          severity: sql`excluded.severity`,
-          groupKey: sql`excluded.group_key`,
-          evidence: sql`excluded.evidence`,
-          score: sql`excluded.score`,
-          proposedAction: sql`excluded.proposed_action`,
-          reversibility: sql`excluded.reversibility`,
-        },
-      })
-      .returning({ findingId: dataQualityFindings.findingId });
-
-    if (!filed) throw new Error("the data-quality queue accepted nothing for this row");
-
-    await tx
-      .update(crmImportRows)
-      .set({ dataQualityFindingId: filed.findingId })
-      .where(
-        and(
-          eq(crmImportRows.organizationId, organizationId),
-          eq(crmImportRows.crmImportRowId, row.crmImportRowId),
         ),
       );
   }

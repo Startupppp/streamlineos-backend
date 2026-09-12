@@ -1,11 +1,7 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, desc, eq, inArray, or, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, or, sql, type SQL } from "drizzle-orm";
 import {
   invRecallEvents,
-  invRecallLines,
-  invLots,
-  invStockLevels,
-  invQualityHolds,
   invShipments,
   invShipmentLines,
 } from "../../../db/schema";
@@ -17,26 +13,43 @@ import { StockEngineBatchService } from "../stock-engine/stock-engine-batch.serv
 import { NumberSequenceService } from "../stock-engine/number-sequence.service";
 import { InventoryAuditService } from "../stock-engine/inventory-audit.service";
 import type { ListRecallsQueryInput, CreateRecallInput, UpdateRecallInput } from "./dto/quality.schemas";
+import {
+  WarehouseScopeService,
+} from "../stock-engine/warehouse-scope.service";
+import { RecallSimulationService } from "./recall-simulation.service";
+import { recallInScope } from "./lib/recall-scope";
+export type { RecallLineOutcome } from "./lib/recall-executed";
+import { createRecall, type RecallCreateDeps } from "./lib/recall-create";
 
 @Injectable()
 export class RecallsService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly cache: CacheService,
+    private readonly warehouseScope: WarehouseScopeService,
     private readonly engine: StockEngineBatchService,
     private readonly numSeq: NumberSequenceService,
     private readonly audit: InventoryAuditService,
+    private readonly simulation: RecallSimulationService,
   ) {}
 
-  async list(orgId: string, query: ListRecallsQueryInput) {
+  async list(orgId: string, userId: string, query: ListRecallsQueryInput) {
     const { status, page, limit } = query;
     const offset = (page - 1) * limit;
-    const hash = `${status ?? ""}:${limit}:${offset}`;
+    const scope = await this.warehouseScope.forUser(orgId, userId);
+    // The resolved scope belongs in the key. Without it the first caller's
+    // warehouses are cached and served to the next, which defeats the
+    // predicate in both directions.
+    const hash = `${scope.key}:${status ?? ""}:${limit}:${offset}`;
     return this.cache.cachedVersioned(
       CACHE_KEYS.invQualityRecallsNamespace(orgId),
       hash,
       async () => {
         const conditions = [eq(invRecallEvents.orgId, orgId)];
+
+        const inScope = recallInScope(orgId, scope);
+        if (inScope !== undefined) conditions.push(inScope);
+
         if (status) conditions.push(eq(invRecallEvents.status, status));
         const where = and(...conditions);
         const [items, countResult] = await Promise.all([
@@ -55,9 +68,40 @@ export class RecallsService {
     );
   }
 
-  async findOne(orgId: string, id: number) {
+  /**
+   * One recall, read by id.
+   *
+   * `list` above resolves the caller's warehouses; this took no `userId`, so it
+   * answered on `org_id` and the id alone — and it returns more than the list
+   * does, since it goes on to name every shipment the recalled lots went out
+   * on. An operator who could not see the recall could still read its whole
+   * blast radius, customers included, by walking the ids.
+   *
+   * A miss is 404, never 403 (§4): telling somebody they are forbidden from
+   * recall 91 tells them recall 91 exists.
+   */
+  async findOne(orgId: string, userId: string, id: number) {
+    const scope = await this.warehouseScope.forUser(orgId, userId);
+    return this.loadRecallDetail(orgId, id, recallInScope(orgId, scope));
+  }
+
+  /**
+   * The same detail without the warehouse gate, for the one path entitled to it.
+   *
+   * `create` ends by handing back the recall it has just raised, and gating that
+   * would 404 an operator against their own new record — a recall raised against
+   * lots that turn out to hold no stock in their warehouses matches no EXISTS at
+   * all. A named private method rather than a flag on `findOne`, so a future
+   * route cannot be pointed at the ungated read by accident; this is the shape
+   * the ASN detail fix used (`loadAsnUnscoped`), for the same reason.
+   */
+  private loadRecallUnscoped(orgId: string, id: number) {
+    return this.loadRecallDetail(orgId, id, undefined);
+  }
+
+  private async loadRecallDetail(orgId: string, id: number, inScope: SQL | undefined) {
     const recall = await this.db.query.invRecallEvents.findFirst({
-      where: and(eq(invRecallEvents.id, id), eq(invRecallEvents.orgId, orgId)),
+      where: and(eq(invRecallEvents.id, id), eq(invRecallEvents.orgId, orgId), inScope),
       with: { lines: true },
     });
     if (!recall) throw new NotFoundException("Not found");
@@ -85,92 +129,45 @@ export class RecallsService {
     return { ...recall, affectedShipments };
   }
 
-  async create(orgId: string, userId: string, input: CreateRecallInput) {
-    const { recall, lines } = await this.db.transaction(async (tx) => {
-      const recallNumber = await this.numSeq.next(orgId, "RECALL", tx);
-      const [recall] = await tx.insert(invRecallEvents).values({
-        orgId,
-        recallNumber,
-        title: input.title,
-        description: input.description ?? null,
-        createdBy: userId,
-      }).returning();
-      if (!recall) throw new Error("Insert recall failed");
-      const lines = await tx.insert(invRecallLines).values(
-        input.lines.map(l => ({
-          recallId: recall.id,
-          productVariantId: l.productVariantId ?? null,
-          lotId: l.lotId ?? null,
-          serialId: l.serialId ?? null,
-        })),
-      ).returning();
-      const recalledLotIds = lines
-        .map(l => l.lotId)
-        .filter((id): id is number => id !== null && id !== undefined);
-      if (recalledLotIds.length > 0) {
-        await tx.update(invLots)
-          .set({ status: "RECALLED" })
-          .where(and(inArray(invLots.id, recalledLotIds), eq(invLots.orgId, orgId)));
-      }
-      await this.audit.insert(tx, {
-        orgId, actorUserId: userId, action: "recall.created",
-        resourceType: "recall", resourceId: String(recall.id),
-        after: { recallNumber, linesCount: lines.length },
-      });
-      return { recall, lines };
-    });
-
-    const lotIds = lines
-      .map(l => l.lotId)
-      .filter((lotId): lotId is number => lotId !== null && lotId !== undefined);
-
-    if (lotIds.length > 0) {
-      const allStockLevels = await this.db.select().from(invStockLevels)
-        .where(and(eq(invStockLevels.orgId, orgId), inArray(invStockLevels.lotId, lotIds)));
-
-      const eligibleLevels = allStockLevels.filter(level => parseFloat(level.onHand) > 0);
-
-      const recallCommands = eligibleLevels.flatMap(level => {
-        const lotId = level.lotId;
-        if (lotId === null || lotId === undefined) return [];
-        const iKey = `recall:${recall.id}:lot:${lotId}:loc:${level.locationId}`;
-        return [{
-          idempotencyKey: iKey,
-          sourceType: "RECALL",
-          sourceId: String(recall.id),
-          movements: [
-            { transactionType: "QUARANTINE_IN", productVariantId: level.productVariantId, locationId: level.locationId, lotId, quantityDelta: "-" + level.onHand, qualityBucket: "ON_HAND" as const },
-            { transactionType: "QUARANTINE_IN", productVariantId: level.productVariantId, locationId: level.locationId, lotId, quantityDelta: level.onHand, qualityBucket: "QUALITY_HOLD" as const },
-          ],
-        }];
-      });
-
-      if (recallCommands.length > 0) {
-        await this.engine.executeMany(orgId, userId, recallCommands);
-      }
-
-      if (eligibleLevels.length > 0) {
-        await this.db.insert(invQualityHolds).values(
-          eligibleLevels.map(level => ({
-            orgId,
-            productVariantId: level.productVariantId,
-            locationId: level.locationId,
-            lotId: level.lotId,
-            quantity: level.onHand,
-            reason: `Recall ${recall.recallNumber}`,
-            createdBy: userId,
-          })),
-        );
-      }
-    }
-
-    await this.cache.invalidateNamespace(CACHE_KEYS.invQualityRecallsNamespace(orgId));
-    return recall;
+  /** @see lib/recall-create.ts */
+  async create(orgId: string, userId: string, input: CreateRecallInput, idempotencyKey: string) {
+    return createRecall(this.recallDeps, orgId, userId, input, idempotencyKey);
   }
 
+  /**
+   * Built explicitly rather than passing `this`: TypeScript will not
+   * structurally match a class carrying `private` members to an interface.
+   * `reloadUnscopedRecall` is what keeps the ungated read on the service —
+   * see the note in `lib/recall-create.ts`.
+   */
+  private get recallDeps(): RecallCreateDeps {
+    return {
+      db: this.db,
+      cache: this.cache,
+      engine: this.engine,
+      numSeq: this.numSeq,
+      audit: this.audit,
+      simulation: this.simulation,
+      reloadUnscopedRecall: (orgId, id) => this.loadRecallUnscoped(orgId, id),
+    };
+  }
+
+  /**
+   * Closing or renarrating a recall — the same gate the detail now applies.
+   *
+   * This one had `userId` in hand and spent it only on the audit row, so an
+   * operator holding one warehouse could CLOSE a recall raised against stock in
+   * another. Closing is what stops a safety event being chased, so it is a
+   * worse thing to reach than the read beside it.
+   */
   async update(orgId: string, userId: string, id: number, input: UpdateRecallInput) {
+    const scope = await this.warehouseScope.forUser(orgId, userId);
     const recall = await this.db.query.invRecallEvents.findFirst({
-      where: and(eq(invRecallEvents.id, id), eq(invRecallEvents.orgId, orgId)),
+      where: and(
+        eq(invRecallEvents.id, id),
+        eq(invRecallEvents.orgId, orgId),
+        recallInScope(orgId, scope),
+      ),
     });
     if (!recall) throw new NotFoundException("Not found");
     const patch: Partial<typeof invRecallEvents.$inferInsert> = {};
@@ -178,6 +175,10 @@ export class RecallsService {
       patch.status = input.status;
       if (input.status === "CLOSED") patch.closedAt = new Date();
     }
+    // `notes` is the client's name for the recall's narrative, and the column
+    // holding it is `description`. The field was accepted and then dropped on
+    // the floor: the UI's notes editor reported success and stored nothing.
+    if (input.notes !== undefined) patch.description = input.notes;
     await this.db.update(invRecallEvents).set(patch)
       .where(and(eq(invRecallEvents.id, id), eq(invRecallEvents.orgId, orgId)));
     await this.audit.insert(this.db, {

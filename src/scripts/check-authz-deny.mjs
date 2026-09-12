@@ -862,6 +862,26 @@ if (WHY) {
   process.exit(0);
 }
 
+/**
+ * The identity of one uncovered handler, in the baseline and in the comparison.
+ *
+ * Separators are normalised because `relative()` emits the HOST's, and the
+ * committed baseline was measured on Windows: every one of its 2,196 entries
+ * spells `src\modules\…`. Read verbatim on a POSIX host, not a single key
+ * matched, so the "newly uncovered" set printed on a failure was the WHOLE
+ * uncovered set — the report named 40 handlers that had been in the baseline
+ * since it was written and said nothing about the ones that had just landed.
+ * The count was right and the diagnosis was unusable.
+ */
+function handlerKey(h) {
+  return `${h.verb.toUpperCase()} ${h.route}  ${h.controller}.${h.method}  (${String(h.file).replaceAll("\\", "/")})`;
+}
+
+/** The same normalisation applied to a line already written into the baseline. */
+function normaliseBaselineKey(line) {
+  return String(line).replaceAll("\\", "/");
+}
+
 if (EMIT_BASELINE) {
   mkdirSync(dirname(BASELINE_PATH), { recursive: true });
   writeFileSync(
@@ -874,9 +894,7 @@ if (EMIT_BASELINE) {
         covered: covered.length,
         uncovered: uncovered.length,
         uncoveredRatchet: uncovered.length,
-        uncoveredHandlers: uncovered
-          .map((h) => `${h.verb.toUpperCase()} ${h.route}  ${h.controller}.${h.method}  (${h.file})`)
-          .sort(),
+        uncoveredHandlers: uncovered.map(handlerKey).sort(),
       },
       null,
       2,
@@ -918,10 +936,8 @@ if (typeof ratchet !== "number") {
 }
 
 if (uncovered.length > ratchet) {
-  const known = new Set(baseline.uncoveredHandlers ?? []);
-  const fresh = uncovered.filter(
-    (h) => !known.has(`${h.verb.toUpperCase()} ${h.route}  ${h.controller}.${h.method}  (${h.file})`),
-  );
+  const known = new Set((baseline.uncoveredHandlers ?? []).map(normaliseBaselineKey));
+  const fresh = uncovered.filter((h) => !known.has(handlerKey(h)));
   console.error(
     `\nFAIL — ${uncovered.length} authorization-gated handler(s) have no attributable deny test, ${uncovered.length - ratchet} above the ratchet of ${ratchet}.`,
   );

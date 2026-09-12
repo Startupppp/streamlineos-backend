@@ -40,6 +40,11 @@ function makeDb(rows: unknown[]): { db: Db; where: jest.Mock } {
   for (const m of ["orderBy", "limit", "offset", "groupBy", "having", "leftJoin", "innerJoin", "rightJoin"]) {
     chain[m] = jest.fn().mockReturnValue(chain);
   }
+  // A grouped read can end in `.as()` instead of being awaited: the attribution
+  // report reduces the touch log to one row per `(campaign, lead)` as a
+  // subquery before any deal is joined. A subquery is only ever read from, so a
+  // bare object stands in for it -- its predicate was already recorded by `where`.
+  chain.as = jest.fn().mockReturnValue({});
   where.mockReturnValue(chain);
   const from = jest.fn().mockReturnValue(chain);
   const db = { select: jest.fn().mockReturnValue({ from }) } as unknown as Db;
@@ -124,6 +129,11 @@ describe("CrmAttributionReportService — cross-tenant isolation", () => {
     expect(result).toHaveLength(0);
     expect(where).toHaveBeenCalled();
     expect(sqlValues(where.mock.calls[0]?.[0])).toContain(ATTACKER);
+    // Three filtered reads -- the won stage keys, the touch grain and the won
+    // revenue per lead -- and the last two are subqueries with no outer WHERE to
+    // inherit a tenant from, so each must carry its own.
+    expect(where).toHaveBeenCalledTimes(3);
+    for (const [predicate] of where.mock.calls) expect(sqlValues(predicate)).toContain(ATTACKER);
   });
 
   it("getFirstTouchAttribution: returns attributions for the owning org (control)", async () => {

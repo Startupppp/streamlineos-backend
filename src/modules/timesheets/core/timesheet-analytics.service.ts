@@ -1,9 +1,9 @@
-import { Inject, Injectable } from "@nestjs/common";
+import { BadRequestException, Inject, Injectable } from "@nestjs/common";
 import { and, eq, gte, inArray, isNull, lte, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
-import { timesheets, timesheetPeriods, timesheetSettings, projects, users, organizationMembers } from "../../../db/schema";
+import { timesheets, timesheetPeriods, timesheetSettings, projects, users, organizationMembers, holidays } from "../../../db/schema";
 import { AccessService } from "../../access/access.service";
 import { actingMembershipId } from "../../../common/auth/principal";
 import { resolveReportsScope, membershipScope } from "./timesheets-core-scope";
@@ -23,6 +23,15 @@ import {
   type CurrencyAmountInput,
 } from "./lib/report-metrics";
 
+function boundedReportRange(startDate?: string, endDate?: string) {
+  try {
+    return resolveDateRange(startDate, endDate);
+  } catch (err) {
+    if (err instanceof RangeError) throw new BadRequestException(err.message);
+    throw err;
+  }
+}
+
 @Injectable()
 export class TimesheetAnalyticsService {
   constructor(
@@ -32,7 +41,7 @@ export class TimesheetAnalyticsService {
 
   async getClientProfitability(u: CurrentUserContext, query: ReportRangeQuery) {
     const read = await resolveReportsScope(this.access, u);
-    const { startDate, endDate } = resolveDateRange(query.startDate, query.endDate);
+    const { startDate, endDate } = boundedReportRange(query.startDate, query.endDate);
     const actorMembId = actingMembershipId(u.principal);
 
     const where = read.compose(
@@ -114,7 +123,7 @@ export class TimesheetAnalyticsService {
 
   async getCompliance(u: CurrentUserContext, query: ReportRangeQuery) {
     const read = await resolveReportsScope(this.access, u);
-    const { startDate, endDate } = resolveDateRange(query.startDate, query.endDate);
+    const { startDate, endDate } = boundedReportRange(query.startDate, query.endDate);
     const actorMembId = actingMembershipId(u.principal);
 
     const tsMember = alias(organizationMembers, "ts_member");
@@ -169,7 +178,10 @@ export class TimesheetAnalyticsService {
         .where(periodWhere)
         .groupBy(periodMember.userId),
       this.db
-        .select({ expectedWeeklyHours: timesheetSettings.expectedWeeklyHours })
+        .select({
+          expectedWeeklyHours: timesheetSettings.expectedWeeklyHours,
+          expectedDailyHours: timesheetSettings.expectedDailyHours,
+        })
         .from(timesheetSettings)
         .where(eq(timesheetSettings.orgId, u.orgId))
         .limit(1),
@@ -177,7 +189,31 @@ export class TimesheetAnalyticsService {
 
     const expectedWeeklyHours =
       settingsRows[0]?.expectedWeeklyHours != null ? Number(settingsRows[0].expectedWeeklyHours) : null;
-    const expectedHours = expectedHoursForRange(startDate, endDate, expectedWeeklyHours);
+    const expectedDailyHours =
+      settingsRows[0]?.expectedDailyHours != null ? Number(settingsRows[0].expectedDailyHours) : null;
+
+    /**
+     * Read, not owned. `holidays` belongs to HR; this is the read-only seam the
+     * boundary doc describes, and the payroll export already uses it the same
+     * way. Nothing here writes to it.
+     */
+    const holidayRows = await this.db
+      .select({ date: holidays.date })
+      .from(holidays)
+      .where(
+        and(
+          eq(holidays.orgId, u.orgId),
+          gte(holidays.date, startDate),
+          lte(holidays.date, endDate),
+        ),
+      );
+    const expectedHours = expectedHoursForRange(
+      startDate,
+      endDate,
+      expectedWeeklyHours,
+      holidayRows.map((h) => h.date),
+      expectedDailyHours,
+    );
 
     const workedDates = new Map<string, Set<string>>();
     for (const r of dateRows) {
@@ -223,7 +259,7 @@ export class TimesheetAnalyticsService {
 
   async getApprovalSla(u: CurrentUserContext, query: ReportRangeQuery) {
     const read = await resolveReportsScope(this.access, u);
-    const { startDate, endDate } = resolveDateRange(query.startDate, query.endDate);
+    const { startDate, endDate } = boundedReportRange(query.startDate, query.endDate);
     const actorMembId = actingMembershipId(u.principal);
 
     const ownerMember = alias(organizationMembers, "owner_member");
@@ -327,7 +363,7 @@ export class TimesheetAnalyticsService {
 
   async getBillingLeakage(u: CurrentUserContext, query: ReportRangeQuery) {
     const read = await resolveReportsScope(this.access, u);
-    const { startDate, endDate } = resolveDateRange(query.startDate, query.endDate);
+    const { startDate, endDate } = boundedReportRange(query.startDate, query.endDate);
     const actorMembId = actingMembershipId(u.principal);
 
     const rangeWhere = read.compose(

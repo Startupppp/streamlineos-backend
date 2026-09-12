@@ -1,7 +1,6 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { createHash } from "crypto";
 import { Readable } from "stream";
-import { extname } from "path";
 import {
   PutObjectCommand,
   GetObjectCommand,
@@ -25,6 +24,7 @@ import {
   parseStorageKey,
 } from "./storage-key";
 import { FileQuarantineService, type KeyBlockCheck } from "./file-quarantine.service";
+import { getFileKeyFromUrl, getFileNameFromKey, getMimeType } from "./lib/storage-keys";
 
 export type { R2Config, StorageConfig, StoragePlacement };
 
@@ -422,32 +422,15 @@ export class StorageService {
   }
 
   getFileKeyFromUrl(url: string): string {
-    const value = url.trim();
-    if (!/^https?:\/\//i.test(value)) return value;
-
-    const base = this.config.NEXT_PUBLIC_R2_PUBLIC_URL?.replace(/\/$/, "");
-    if (!base || !value.startsWith(`${base}/`)) return "";
-
-    try {
-      return decodeURIComponent(
-        value.slice(base.length + 1).split(/[?#]/, 1)[0] ?? "",
-      );
-    } catch {
-      return "";
-    }
+    return getFileKeyFromUrl(url, this.config.NEXT_PUBLIC_R2_PUBLIC_URL);
   }
 
   getFileNameFromKey(key: string): string {
-    const parts = key.split("/");
-    const last = parts[parts.length - 1] ?? "download";
-    const match = last.match(/^(?:\d+|[0-9a-f-]{36})-(.+)$/i);
-    return match ? match[1] : last;
+    return getFileNameFromKey(key);
   }
 
   getMimeType(filePath: string): string {
-    return (
-      MIME_MAP[extname(filePath).toLowerCase()] || "application/octet-stream"
-    );
+    return getMimeType(filePath);
   }
 
   isValidFileKey(key: string): boolean {

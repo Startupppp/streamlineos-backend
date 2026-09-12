@@ -9,6 +9,9 @@ import { WebhooksService } from "./webhooks/webhooks.service";
 import { CacheService } from "../../common/cache/cache.service";
 import { InventoryAuditService } from "./stock-engine/inventory-audit.service";
 import { WarehouseScopeService } from "./stock-engine/warehouse-scope.service";
+import { INVENTORY_ISOLATION_STUBS } from "./__tests__/isolation-stubs";
+
+const USER = "user-1";
 
 function sqlValues(value: unknown, seen = new Set<object>()): unknown[] {
   if (value === null || value === undefined || typeof value === "string" || typeof value === "number" || typeof value === "boolean") return [value];
@@ -48,16 +51,17 @@ function makeDb(rows: unknown[] = []) {
   const selectWhere = rootChain.where as jest.Mock;
   const selectFrom = jest.fn().mockReturnValue(rootChain);
 
+  const execute = jest.fn().mockResolvedValue(rows);
   const db = {
     select: jest.fn().mockReturnValue({ from: selectFrom }),
     query: new Proxy({} as Record<string, typeof handler>, { get: () => handler }),
-    execute: jest.fn().mockResolvedValue(rows),
+    execute,
     transaction: jest.fn().mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => fn({})),
     update: jest.fn().mockReturnValue({ set: jest.fn().mockReturnValue({ where: jest.fn().mockReturnValue({ returning: jest.fn().mockResolvedValue(rows), then: (onFulfilled: ((v: unknown) => unknown) | null | undefined, onRejected?: ((r: unknown) => unknown) | null | undefined) => Promise.resolve([]).then(onFulfilled ?? undefined, onRejected ?? undefined) }), returning: jest.fn().mockResolvedValue(rows) }) }),
-    insert: jest.fn().mockReturnValue({ values: jest.fn().mockReturnValue({ returning: jest.fn().mockResolvedValue([]), onConflictDoNothing: jest.fn().mockResolvedValue([]) }) }),
+    insert: jest.fn().mockReturnValue({ values: jest.fn().mockReturnValue({ returning: jest.fn().mockResolvedValue([]), onConflictDoNothing: jest.fn().mockReturnValue({ returning: jest.fn().mockResolvedValue([]) }) }) }),
     delete: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue([]) }),
   } as unknown as Db;
-  return { db, findMany, findFirst, selectWhere };
+  return { db, findMany, findFirst, selectWhere, execute };
 }
 
 const cache = {
@@ -79,9 +83,10 @@ describe("InvValuationService — cross-tenant isolation", () => {
   };
 
   it("returns empty valuation summary for a foreign org (isolation — deny)", async () => {
-    const { db, selectWhere } = makeDb([]);
+    const { db, execute } = makeDb([]);
     const svc = await Test.createTestingModule({
       providers: [
+        ...INVENTORY_ISOLATION_STUBS,
         InvValuationService,
         { provide: DRIZZLE, useValue: db },
         { provide: CacheService, useValue: cache },
@@ -91,9 +96,10 @@ describe("InvValuationService — cross-tenant isolation", () => {
 
     const result = await svc.getValuationSummary(ATTACKER, "user-x", { page: 1, limit: 20 });
     expect(result.items).toHaveLength(0);
-    expect(selectWhere).toHaveBeenCalled();
-    const whereArg = selectWhere.mock.calls[0]?.[0] as unknown;
-    expect(sqlValues(whereArg)).toContain(ATTACKER);
+    // Valuation reads through raw SQL, so the tenant predicate is in the
+    // statement db.execute is handed, not in a query-builder .where().
+    expect(execute).toHaveBeenCalled();
+    expect(sqlValues(execute.mock.calls[0]?.[0])).toContain(ATTACKER);
   });
 
   it("returns valuation for the owning org (isolation — control)", async () => {
@@ -101,6 +107,7 @@ describe("InvValuationService — cross-tenant isolation", () => {
     const { db } = makeDb([VAL]);
     const svc = await Test.createTestingModule({
       providers: [
+        ...INVENTORY_ISOLATION_STUBS,
         InvValuationService,
         { provide: DRIZZLE, useValue: db },
         { provide: CacheService, useValue: cache },
@@ -121,13 +128,14 @@ describe("InvTraceabilityService — cross-tenant isolation", () => {
     const { db, selectWhere } = makeDb([]);
     const svc = await Test.createTestingModule({
       providers: [
+        ...INVENTORY_ISOLATION_STUBS,
         InvTraceabilityService,
         { provide: DRIZZLE, useValue: db },
         { provide: CacheService, useValue: cache },
       ],
     }).compile().then((m) => m.get(InvTraceabilityService));
 
-    const result = await svc.listLots(ATTACKER, { page: 1, limit: 20 });
+    const result = await svc.listLots(ATTACKER, USER, { page: 1, limit: 20 });
     expect(result.items).toHaveLength(0);
     expect(selectWhere).toHaveBeenCalled();
     const whereArg = selectWhere.mock.calls[0]?.[0] as unknown;
@@ -139,13 +147,14 @@ describe("InvTraceabilityService — cross-tenant isolation", () => {
     const { db } = makeDb([LOT]);
     const svc = await Test.createTestingModule({
       providers: [
+        ...INVENTORY_ISOLATION_STUBS,
         InvTraceabilityService,
         { provide: DRIZZLE, useValue: db },
         { provide: CacheService, useValue: cache },
       ],
     }).compile().then((m) => m.get(InvTraceabilityService));
 
-    const result = await svc.listLots(OWNER, { page: 1, limit: 20 });
+    const result = await svc.listLots(OWNER, USER, { page: 1, limit: 20 });
     expect(result.items).toHaveLength(1);
   });
 });
@@ -158,6 +167,7 @@ describe("TraceabilityChainService — cross-tenant isolation", () => {
     const { db, findFirst } = makeDb([]);
     const svc = await Test.createTestingModule({
       providers: [
+        ...INVENTORY_ISOLATION_STUBS,
         TraceabilityChainService,
         { provide: DRIZZLE, useValue: db },
         { provide: CacheService, useValue: cache },
@@ -176,6 +186,7 @@ describe("TraceabilityChainService — cross-tenant isolation", () => {
     const { db } = makeDb([LOT]);
     const svc = await Test.createTestingModule({
       providers: [
+        ...INVENTORY_ISOLATION_STUBS,
         TraceabilityChainService,
         { provide: DRIZZLE, useValue: db },
         { provide: CacheService, useValue: cache },
@@ -195,6 +206,7 @@ describe("InventoryWebhookEmitter — cross-tenant isolation", () => {
     const { db, selectWhere } = makeDb([]);
     const svc = await Test.createTestingModule({
       providers: [
+        ...INVENTORY_ISOLATION_STUBS,
         InventoryWebhookEmitter,
         { provide: DRIZZLE, useValue: db },
       ],
@@ -211,6 +223,7 @@ describe("InventoryWebhookEmitter — cross-tenant isolation", () => {
     const { db } = makeDb([WH]);
     const svc = await Test.createTestingModule({
       providers: [
+        ...INVENTORY_ISOLATION_STUBS,
         InventoryWebhookEmitter,
         { provide: DRIZZLE, useValue: db },
       ],
@@ -228,6 +241,7 @@ describe("WebhooksService — cross-tenant isolation", () => {
     const { db, selectWhere } = makeDb([]);
     const svc = await Test.createTestingModule({
       providers: [
+        ...INVENTORY_ISOLATION_STUBS,
         WebhooksService,
         { provide: DRIZZLE, useValue: db },
         { provide: InventoryAuditService, useValue: { insert: jest.fn() } },
@@ -245,6 +259,7 @@ describe("WebhooksService — cross-tenant isolation", () => {
     const { db } = makeDb([WH]);
     const svc = await Test.createTestingModule({
       providers: [
+        ...INVENTORY_ISOLATION_STUBS,
         WebhooksService,
         { provide: DRIZZLE, useValue: db },
         { provide: InventoryAuditService, useValue: { insert: jest.fn() } },

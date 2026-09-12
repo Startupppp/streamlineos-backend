@@ -33,6 +33,15 @@ describe("TimesheetsService — approver cannot action their own entry", () => {
       update: jest.fn().mockReturnValue({
         set: jest.fn().mockReturnValue({ where: updateWhere }),
       }),
+      // Approving now resolves the approver's membership, because
+      // `timesheets.approved_by` was contracted onto the membership actor.
+      select: jest.fn().mockReturnValue({
+        from: jest.fn().mockReturnValue({
+          where: jest.fn().mockReturnValue({
+            limit: jest.fn().mockResolvedValue([{ id: 7, userId: "approver", status: "ACTIVE" }]),
+          }),
+        }),
+      }),
     } as unknown as Db;
     const access = {
       resolveUserPermissions: jest.fn().mockResolvedValue(new Set(["build:timesheets:manage"])),

@@ -1,0 +1,26 @@
+-- Rollback for 1088 — structurally reversible, NOT data-reversible.
+-- Same shape, and the same warning, as the 1080 rollback.
+--
+-- WHAT COMES BACK. `organization_members.onboarding_completed_at` is removed and
+-- the per-organisation completion stamp goes with it. Onboarding completion
+-- reverts to being a per-USER fact on `users.onboarding_completed_at`, which
+-- 1088 never touched and which is therefore still intact and still correct for
+-- the first organisation each user completed.
+--
+-- WHAT DOES NOT COME BACK. Every per-membership value written while 1088 was
+-- applied is destroyed. Concretely: a member who joined a SECOND organisation
+-- and completed its onboarding after 1088 landed has that completion recorded
+-- only in this column, so after this rollback that organisation has no record of
+-- it — and because the old code reads the user-level stamp, which is already
+-- set, that member is treated as having completed onboarding everywhere and is
+-- never sent through it again. Their bank, statutory and leave-balance details
+-- for that organisation stay missing and nothing asks for them. That is the
+-- exact defect 1088 exists to fix, re-armed for anyone who onboarded during the
+-- window.
+--
+-- The backfill 1088 ran is not separately reversible and does not need to be: it
+-- only ever copied values OUT of users.onboarding_completed_at into the column
+-- being dropped here, and wrote nothing back to `users`.
+SET lock_timeout = '5s';
+--> statement-breakpoint
+ALTER TABLE "organization_members" DROP COLUMN IF EXISTS "onboarding_completed_at";

@@ -21,6 +21,7 @@ import { SignNotificationsService } from "./sign-notifications.service";
 import { SignIntegrationsService } from "./sign-integrations.service";
 import { mustGetVisibleEnvelope, systemEnvelopeScope } from "./sign-envelope-scope";
 import type { ScopedRead } from "../access/scoped-read";
+import { registerAfterCommit } from "../../common/tenant/tenant-context";
 
 const SIGNING_RECIPIENT_TYPES = ["signer", "approver", "in_person_host", "internal_reviewer"];
 const SIGNED_URL_EXPIRY_SECONDS = 900;
@@ -280,12 +281,21 @@ export class SignFinalizationService {
       eventMessage: `Certificate ${certificateNumber} generated`,
     });
 
-    for (const r of recipients) {
-      if (!r.email) continue;
-      if (SIGNING_RECIPIENT_TYPES.includes(r.recipientType) || r.recipientType === "cc" || r.recipientType === "viewer") {
-        await this.notifications.sendCompletedToRecipient(r.email, r.name, envelopeId, envelope.title);
+    /*
+     * Once the certificate and the final PDF key are durable. The email links
+     * to the final PDF; sent inside this transaction, a rollback after the
+     * provider accepted it pointed every recipient at a document the next
+     * attempt would produce under a different key and hash.
+     */
+    const sendCompletedCopies = async () => {
+      for (const r of recipients) {
+        if (!r.email) continue;
+        if (SIGNING_RECIPIENT_TYPES.includes(r.recipientType) || r.recipientType === "cc" || r.recipientType === "viewer") {
+          await this.notifications.sendCompletedToRecipient(r.email, r.name, envelopeId, envelope.title);
+        }
       }
-    }
+    };
+    if (!registerAfterCommit(sendCompletedCopies)) await sendCompletedCopies();
 
     this.integrations.emitEnvelopeEvent(
       { ...envelope, status: "completed" },

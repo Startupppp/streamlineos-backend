@@ -141,14 +141,18 @@ describe("KbSearchService — ACL enforced as SQL predicate before model context
 
 describe("Sign public routes — orgId derived from DB token record not from request (static analysis)", () => {
   const signPublicSrc = src("src/modules/e-sign/sign-public.service.ts");
+  // withRecipientSession moved out of the service, unchanged, into the session seam every public
+  // step imports (81bdc2851); the DB-derivation checks read it there.
+  const recipientSessionSrc = src("src/modules/e-sign/lib/recipient-session.ts");
   const signPublicControllerSrc = src("src/modules/e-sign/sign-public.controller.ts");
 
   it("withRecipientSession resolves recipient from the DB by token hash — not from URL orgId", () => {
-    expect(signPublicSrc).toMatch(/withPublicToken\s*\(\s*this\.db\s*,\s*hash/);
+    expect(signPublicSrc).toMatch(/import \{ withRecipientSession\b[^}]*\} from "\.\/lib\/recipient-session"/);
+    expect(recipientSessionSrc).toMatch(/withPublicToken\s*\(\s*(?:this\.)?db\s*,\s*hash/);
   });
 
   it("tenant transaction is opened with orgId from the DB recipient row not a request parameter", () => {
-    expect(signPublicSrc).toMatch(/orgId:\s*recipient\.orgId/);
+    expect(recipientSessionSrc).toMatch(/orgId:\s*recipient\.orgId/);
   });
 
   it("sign public controller has no orgId URL parameter — token is the sole tenant selector", () => {

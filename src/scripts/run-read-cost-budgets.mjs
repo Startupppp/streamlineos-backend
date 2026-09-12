@@ -222,6 +222,12 @@ async function runBudget(budget, fixtures, dbUrl, ssl, orgId, samples) {
   const db = postgres(dbUrl, { max: 1, prepare: false, ssl, onnotice: () => {} });
   try {
     return await db.begin(async (tx) => {
+      // Measuring as the owner is measuring nothing: the owner has BYPASSRLS, so
+      // the tenant predicate never appears in the plan and every cost this
+      // harness exists to catch is invisible. Assuming the app role for the
+      // transaction gets a genuine plan without needing a password Neon cannot
+      // durably hold.
+      if (assumeRole) await tx.unsafe(`SET LOCAL ROLE ${assumeRole}`);
       await tx`SELECT set_config('app.organization_id', ${orgId}, true)`;
 
       const countParams = budget.rowCountParams ? budget.rowCountParams(fixtures) : [orgId];
@@ -344,6 +350,7 @@ async function main() {
 
   const ssl = resolveSsl(process.env);
   const db = postgres(url, { max: 1, prepare: false, ssl, onnotice: () => {} });
+  const assumeRole = process.env.APP_DB_ROLE ?? "streamline_app";
 
   // PRD-C079: the role is READ, never asserted. Every artifact this run writes carries the
   // value observed here, and measure-route-budgets.mjs refuses an artifact without it.
@@ -533,6 +540,23 @@ async function main() {
     const [announcementRow] = (await tryFixture((tx) => tx`
         SELECT 1 FROM announcements WHERE org_id = ${ORG} LIMIT 1`)) ?? [null];
 
+    // G1. Page two of a keyset walk starts where page one ended, so the fixture
+    // is the 51st row in the list's own order. The timestamp is read as text at
+    // full precision, exactly as the endpoint projects it -- a boundary that
+    // went through a JS Date would name a different instant.
+    const [ledgerCursor] = (await tryFixture((tx) => tx`
+        SELECT to_char(created_at, 'YYYY-MM-DD"T"HH24:MI:SS.US') AS cursor_at, id
+        FROM inv_stock_transactions
+        WHERE org_id = ${ORG}
+        ORDER BY created_at DESC, id DESC
+        OFFSET 50 LIMIT 1`)) ?? [null];
+
+    const [auditCursor] = (await tryFixture((tx) => tx`
+        SELECT to_char(created_at, 'YYYY-MM-DD"T"HH24:MI:SS.US') AS cursor_at, id
+        FROM inv_audit_events
+        WHERE org_id = ${ORG}
+        ORDER BY created_at DESC, id DESC
+        OFFSET 10 LIMIT 1`)) ?? [null];
     const [businessPartyRow] = (await tryFixture((tx) => tx`
         SELECT 1 FROM business_parties WHERE organization_id = ${ORG} AND deleted_at IS NULL LIMIT 1`)) ?? [null];
 
@@ -540,6 +564,10 @@ async function main() {
         SELECT 1 FROM roles WHERE org_id = ${ORG} AND module_key IS NOT NULL LIMIT 1`)) ?? [null];
 
     const fixtures = {
+        ledgerCursorAt: ledgerCursor?.cursor_at ?? null,
+        ledgerCursorId: ledgerCursor?.id ?? null,
+        auditCursorAt: auditCursor?.cursor_at ?? null,
+        auditCursorId: auditCursor?.id ?? null,
         orgId: ORG,
         projectId: project?.project_id ?? null,
         projectTickets: project?.n ?? 0,
@@ -575,6 +603,24 @@ async function main() {
           ` · leave types ${fixtures.leaveTypeIds.length} (period ${fixtures.period})`,
       );
       console.log(`\nRunning ${budgets.length} budgets…\n`);
+    }
+
+    // Fail closed. A misconfigured role here does not error -- it quietly
+    // measures as the owner and reports comfortable numbers that mean nothing,
+    // which is worse than not measuring at all.
+    if (assumeRole) {
+      const [effective] = await db.begin(async (tx) => {
+        await tx.unsafe(`SET LOCAL ROLE ${assumeRole}`);
+        return tx`SELECT current_user,
+                         (SELECT rolbypassrls FROM pg_roles WHERE rolname = current_user) AS bypass`;
+      });
+      if (effective.bypass) {
+        console.error(
+          `Refusing to measure: ${effective.current_user} has BYPASSRLS, so every plan would omit the tenant predicate.`,
+        );
+        process.exit(1);
+      }
+      if (!SELF_TEST) console.log(`Measuring as ${effective.current_user} (no BYPASSRLS).`);
     }
 
     const breaches = [];

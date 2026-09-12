@@ -16,8 +16,25 @@ const mockDb = {
   orderBy: jest.fn().mockResolvedValue([]),
 };
 
+/*
+  One spy for both cache forms, so the "did we use the cache?" assertions below
+  observe every call whichever the service reaches for.
+
+  The two differ only in where the fetcher sits: `cachedForOrg(orgId, key, fn)`
+  puts it third, `cached(key, fn, ttl)` puts it second. The alias assumed the
+  org-scoped order for both, so a plain `cached` call bound the TTL to `fetcher`
+  and the read died on "fetcher is not a function". Picking by argument type
+  keeps one spy without pretending the signatures are the same.
+*/
+const cachedForOrg = jest.fn((...args: unknown[]) => {
+  const fetcher = args.find((arg): arg is () => Promise<unknown> => typeof arg === "function");
+  if (!fetcher) throw new Error("cache double: no fetcher argument");
+  return fetcher();
+});
+
 const mockCache = {
-  cached: jest.fn((_key: string, fetcher: () => Promise<unknown>) => fetcher()),
+  cached: cachedForOrg,
+  cachedForOrg,
 };
 
 describe("SupportReportsService", () => {
@@ -33,7 +50,13 @@ describe("SupportReportsService", () => {
     mockDb.where.mockReturnThis();
     mockDb.groupBy.mockReturnThis();
     mockDb.orderBy.mockResolvedValue([]);
-    mockCache.cached.mockImplementation((_key: string, fetcher: () => Promise<unknown>) => fetcher());
+    // Same reason as the double above: the fetcher's position differs between
+    // `cached` and `cachedForOrg`, so it is found by type rather than index.
+    mockCache.cached.mockImplementation((...args: unknown[]) => {
+      const fetcher = args.find((arg): arg is () => Promise<unknown> => typeof arg === "function");
+      if (!fetcher) throw new Error("cache double: no fetcher argument");
+      return fetcher();
+    });
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [SupportReportsService, { provide: DRIZZLE, useValue: mockDb }, { provide: CacheService, useValue: mockCache }],

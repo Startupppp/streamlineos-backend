@@ -6,7 +6,6 @@ import { PartyMergeService } from "../party/party-merge.service";
 import { DataQualityQueueService } from "./data-quality-queue.service";
 import { DataQualityHealthService } from "./dataset-health.service";
 import { strictestReversibility } from "./finding-vocabulary";
-import { planResolutionReversal } from "./resolution-reversal";
 import {
   MAX_RECORDED_FAILURES,
   claimReversal,
@@ -23,6 +22,7 @@ import {
 } from "./data-quality-finding-claim";
 import { applyAll, type ExecutionFailure } from "./data-quality-remediation";
 import { type ResolveFindingsInput, type ReverseResolutionInput } from "./dto/data-quality.schemas";
+import { planResolutionReversal } from "./resolution-reversal";
 
 /**
  * Deciding about many findings at once, and taking that decision back.
@@ -34,9 +34,11 @@ import { type ResolveFindingsInput, type ReverseResolutionInput } from "./dto/da
  * remediation that is irreducibly per item, and each of those gets a savepoint
  * so item seven failing costs item seven.
  *
- * The isolation is `withSavepoint`, and it is subtler than it looks — see
- * `savepoint.ts` for why a nested service would otherwise write straight past
- * the savepoint it appears to be inside.
+ * That per-item remediation lives in `data-quality-remediation.ts`, the claim
+ * and reopen statements in `data-quality-finding-claim.ts`, and the decision row
+ * in `data-quality-decision-record.ts`. The isolation is `withSavepoint`, and it is
+ * subtler than it looks — see `savepoint.ts` for why a nested service would
+ * otherwise write straight past the savepoint it appears to be inside.
  */
 @Injectable()
 export class DataQualityResolutionService {

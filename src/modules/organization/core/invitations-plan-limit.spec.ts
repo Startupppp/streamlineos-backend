@@ -15,6 +15,8 @@ import { CacheService } from "../../../common/cache/cache.service";
 import { EmailService } from "../../email/email.service";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { hashToken } from "../../../common/security/token.util";
+import { invitations, users } from "../../../db/schema";
+import { drizzlePostgresError, drizzleUniqueViolation } from "../../../test/postgres-error-fixture";
 
 const ORG_ID = "org-abc";
 const ACTOR_ID = "user-xyz";
@@ -112,6 +114,11 @@ function buildMockDb() {
   };
 }
 
+/** Fails the next `tx.insert(...).values(...)` with `error`, built in the shape drizzle throws. */
+function rejectNextInsert(tx: ReturnType<typeof buildUniversalTx>, error: Error): void {
+  tx.insert.mockImplementationOnce(() => ({ values: jest.fn().mockRejectedValue(error) }));
+}
+
 describe("InvitationCreateService.invite — plan limit enforcement", () => {
   let svc: InvitationCreateService;
   let mockDb: ReturnType<typeof buildMockDb>;
@@ -192,6 +199,28 @@ describe("InvitationCreateService.invite — plan limit enforcement", () => {
     expect(results.results[1].success).toBe(false);
     expect(results.results[1].error).toContain("limit exceeded");
     expect(mockPlanLimits.assertWithinLimit).toHaveBeenCalledTimes(2);
+  });
+
+  describe("when the invitation insert fails", () => {
+    const invite = () =>
+      svc.invite(ORG_ID, { userId: ACTOR_ID, isOrgOwner: true }, "new@example.com", "MEMBER");
+
+    it("answers 409 when the insert hits the pending-invitation unique index", async () => {
+      rejectNextInsert(
+        mockDb.universalTx,
+        drizzleUniqueViolation("uniq_invitations_org_email_pending"),
+      );
+
+      await expect(invite()).rejects.toBeInstanceOf(ConflictException);
+      expect(mockDb.universalTx.insert.mock.calls[0]?.[0]).toBe(invitations);
+    });
+
+    it("rethrows any other database error untouched", async () => {
+      const fkViolation = drizzlePostgresError("23503", "some_fk");
+      rejectNextInsert(mockDb.universalTx, fkViolation);
+
+      await expect(invite()).rejects.toBe(fkViolation);
+    });
   });
 });
 
@@ -345,5 +374,28 @@ describe("InvitationAcceptanceService.accept — plan limit enforcement", () => 
     );
 
     expect(mockDb.universalTx.insert).not.toHaveBeenCalled();
+  });
+
+  describe("when the new user's insert fails", () => {
+    const acceptAsNewUser = () => {
+      mockDb.query.invitations.findFirst.mockResolvedValue(BASE_INVITATION);
+      mockDb.query.users.findFirst.mockResolvedValue(null);
+      return svc.accept({ token: RAW_TOKEN, firstName: "Jane", lastName: "Doe" });
+    };
+
+    it("answers 409 when the insert hits a unique violation", async () => {
+      // users.email is `.unique()` with no name in src/db/schema, so no constraint is named.
+      rejectNextInsert(mockDb.universalTx, drizzleUniqueViolation());
+
+      await expect(acceptAsNewUser()).rejects.toBeInstanceOf(ConflictException);
+      expect(mockDb.universalTx.insert.mock.calls[0]?.[0]).toBe(users);
+    });
+
+    it("rethrows any other database error untouched", async () => {
+      const fkViolation = drizzlePostgresError("23503", "some_fk");
+      rejectNextInsert(mockDb.universalTx, fkViolation);
+
+      await expect(acceptAsNewUser()).rejects.toBe(fkViolation);
+    });
   });
 });

@@ -1,7 +1,5 @@
 import type { Db } from "../../db/drizzle.types";
 import { businessParties, leadPartyMap, partyRoles } from "../../db/schema/party";
-import { clients, contacts } from "../../db/schema/crm/contacts";
-import { leads } from "../../db/schema/crm/leads";
 import { LEAD_MIRROR, type PartyRow } from "./party-legacy-mirror";
 import { updatePartyWithMirror } from "./party-legacy-writer";
 import {
@@ -42,6 +40,7 @@ const PARTY: PartyRow = {
   website: null,
   email: null,
   phone: null,
+  timezone: null,
   status: "active",
   customFields: null,
   notes: null,
@@ -158,11 +157,18 @@ class FakeDb {
   }
 }
 
+/**
+ * Every table this writer is allowed to touch, by name.
+ *
+ * The four legacy tables used to be named here too. They are gone, and nothing
+ * replaces the branches: a statement against a table this function does not
+ * know reads as `other`, and every assertion below is an exact `toEqual` on the
+ * whole trace. So a reintroduced write does not have to be anticipated to be
+ * caught -- it shows up as an `other` nobody expected, which is the property
+ * that made these traces worth inverting rather than deleting.
+ */
 function tableName(table: unknown): string {
   if (table === businessParties) return "party";
-  if (table === leads) return "leads";
-  if (table === clients) return "clients";
-  if (table === contacts) return "contacts";
   if (table === leadPartyMap) return "leadMap";
   if (table === partyRoles) return "roles";
   return "other";
@@ -174,8 +180,15 @@ function world(overrides: Partial<Record<string, unknown[]>> = {}): Answer {
     if (statement.table === businessParties) return overrides.parties ?? [PARTY];
     if (statement.table === leadPartyMap && statement.kind === "select")
       return overrides.leadMap ?? [{ leadId: 7, partyId: "party-1", id: 7 }];
-    if (statement.table === leads)
-      return overrides.leads ?? [{ id: 7, orgId: "org-1", name: "Ada Lovelace" }];
+    /**
+     * The map mints the identifier now.
+     *
+     * Ticket 08: `lead_party_map.lead_id` defaults from the sequence `leads`
+     * used to own, so an insert that omits it gets one back. The fake has to
+     * answer the same way or the writer cannot tell what the record is called.
+     */
+    if (statement.table === leadPartyMap && statement.kind === "insert")
+      return overrides.leadMapInsert ?? [{ id: 7, leadId: 7 }];
     if (statement.kind === "select") return [];
     return [];
   };
@@ -189,10 +202,15 @@ describe("party-legacy-writer — the party is written first, in one transaction
 
     expect(fake.trace()).toEqual([
       // The bare party, then the values it takes, then everything that is a
-      // function of it. Nothing touches `leads` before `business_parties`.
+      // function of it.
+      //
+      // Ticket 08's contract removed the `insert:leads` that used to sit third.
+      // The row it wrote was already derived from the party -- the table's only
+      // unique contribution was the serial, and the map mints that now. So the
+      // trace is what it always was, minus a write that produced nothing the
+      // derivation did not already know.
       "insert:party@1",
       "update:party@1",
-      "insert:leads@1",
       "insert:leadMap@1",
       "insert:roles@1",
     ]);
@@ -201,49 +219,65 @@ describe("party-legacy-writer — the party is written first, in one transaction
   it("writes the lead from the derivation, not from the caller's values", async () => {
     const fake = new FakeDb(world());
 
-    await createMirroredLead(fake.db, "org-1", {
+    const lead = await createMirroredLead(fake.db, "org-1", {
       orgId: "org-1",
       name: "Ada Lovelace",
       // The party the fake returns says QUALIFIED/HOT regardless. If the writer
-      // echoed the caller instead of deriving, these would land on the row.
+      // echoed the caller instead of deriving, these would come back.
       status: "NEW",
       priority: "COLD",
     });
 
-    const [inserted] = fake.of("insert", leads);
-    expect(inserted?.values[0]).toMatchObject(LEAD_MIRROR.derive(PARTY));
-    expect(inserted?.values[0]?.status).toBe("QUALIFIED");
-    expect(inserted?.values[0]?.priority).toBe("HOT");
+    /**
+     * Asserted on what the writer *returns* now, not on what it inserted.
+     *
+     * Ticket 08's contract: there is no `leads` insert to inspect. That is not a
+     * weaker test -- it is a stronger one. Inspecting the insert checked what
+     * was written; this checks what the caller is handed, which is the thing
+     * every consumer actually depends on and is where an echoed value would
+     * show up.
+     */
+    expect(lead).toMatchObject(LEAD_MIRROR.derive(PARTY));
+    expect(lead.status).toBe("QUALIFIED");
+    expect(lead.priority).toBe("HOT");
   });
 
   it("carries a column the party does not own straight onto the legacy row", async () => {
     const fake = new FakeDb(world());
 
-    await createMirroredLead(fake.db, "org-1", {
+    const lead = await createMirroredLead(fake.db, "org-1", {
       orgId: "org-1",
       name: "Ada",
       dmLeadId: 99,
     });
 
-    expect(fake.of("insert", leads)[0]?.values[0]?.dmLeadId).toBe(99);
+    // A legacy-owned column has no Party home, so it can only survive by being
+    // carried through the assembly. `dm_lead_id` is the one lead column in that
+    // position -- everything else the table owned maps somewhere.
+    expect(lead.dmLeadId).toBe(99);
   });
 
-  it("updates the party before the lead, both in one savepoint", async () => {
+  it("updates the party, and derives the lead it returns rather than writing one", async () => {
     const fake = new FakeDb(world());
 
-    await updateMirroredLeads(fake.db, "org-1", [7], { designation: "Rear Admiral" });
+    const [updated] = await updateMirroredLeads(fake.db, "org-1", [7], {
+      designation: "Rear Admiral",
+    });
 
-    expect(fake.trace()).toEqual([
-      "select:leadMap@1",
-      "select:party@1",
-      "update:party@1",
-      "update:leads@1",
-    ]);
+    // Ticket 08: the trailing `update:leads` is gone. The party write is the
+    // only write, because the lead is computed when somebody asks for it.
+    expect(fake.trace()).toEqual(["select:leadMap@1", "select:party@1", "update:party@1"]);
+
     // The party takes the merged model's name for the field.
     expect(fake.of("update", businessParties)[0]?.set).toEqual({ jobTitle: "Rear Admiral" });
-    // The lead takes the whole derivation, not just the field that changed, so a
-    // column that drifted for any other reason is corrected by the next write.
-    expect(fake.of("update", leads)[0]?.set).toEqual(LEAD_MIRROR.derive(PARTY));
+
+    /*
+      The returned lead is still the WHOLE derivation, not just the field that
+      changed — which is the property the old assertion was protecting when it
+      checked what the UPDATE `set`. It matters for the same reason: a caller
+      reading one field off this row must not find the rest stale.
+    */
+    expect(updated).toMatchObject(LEAD_MIRROR.derive(PARTY));
   });
 
   it("keeps a bulk update to a fixed number of statements", async () => {
@@ -259,39 +293,65 @@ describe("party-legacy-writer — the party is written first, in one transaction
 
     await updateMirroredLeads(fake.db, "org-1", [7, 8], { designation: "Rear Admiral" });
 
-    // Deriving per row is what keeps the mirror correct; grouping identical
-    // payloads is what stops a bulk operation from costing four statements per
-    // record. Two leads, two parties, one statement each way.
+    // Deriving per row is what keeps every returned lead correct; grouping
+    // identical payloads is what stops a bulk operation costing a statement per
+    // record. Two leads, two parties, one statement each way — and since ticket
+    // 08 there is no third statement, because there is no second copy to write.
     expect(fake.of("select", businessParties)).toHaveLength(1);
     expect(fake.of("update", businessParties)).toHaveLength(1);
-    expect(fake.of("update", leads)).toHaveLength(1);
   });
 
   it("checks a lead is live before deleting it, so a delete does not move the timestamp", async () => {
-    const fake = new FakeDb(world({ leads: [] }));
+    // Liveness is the party's `deleted_at` now, read through the map — ticket 08
+    // removed the last read of `leads`. The property under test is unchanged: a
+    // lead already deleted must not have its timestamp moved by a second delete.
+    const fake = new FakeDb(world({ leadMap: [] }));
 
     await softDeleteMirroredLeads(fake.db, "org-1", [7]);
 
-    // No live lead came back, so nothing was written at all.
-    expect(fake.trace()).toEqual(["select:leads@0"]);
+    // Nothing live came back, so nothing was written at all.
+    expect(fake.trace()).toEqual(["select:leadMap@0"]);
   });
 
-  it("soft-deletes the party and the lead together when the lead is live", async () => {
+  it("soft-deletes the party, which is the whole of deleting the lead", async () => {
     const fake = new FakeDb(world());
 
     await softDeleteMirroredLeads(fake.db, "org-1", [7]);
 
+    /*
+      Ticket 08: the liveness read is the map joined to the party, and the
+      trailing `update:leads` is gone.
+
+      The test's name changed with it, and the change is the point rather than
+      cosmetic: there is no longer a lead to delete *alongside* the party. The
+      lead is a view of the party, so stamping the party IS deleting it, and a
+      second write could only ever have disagreed.
+    */
     expect(fake.trace()).toEqual([
-      "select:leads@0",
+      // Depth 0: the liveness check, outside the transaction, exactly where the
+      // read of `leads` used to sit.
+      "select:leadMap@0",
       "select:leadMap@1",
       "select:party@1",
       "update:party@1",
-      "update:leads@1",
     ]);
     expect(fake.of("update", businessParties)[0]?.set?.deletedAt).toBeInstanceOf(Date);
   });
 
-  it("pushes a party write out to every legacy row that mirrors it", async () => {
+  /**
+   * The inverse of what this used to assert, and the point of the contract.
+   *
+   * A party write used to fan out: read all four maps, then UPDATE every legacy
+   * row that mirrored the party — five statements to keep a second copy in step.
+   * There is no second copy now. A legacy shape is derived from the party at the
+   * moment somebody reads it, so writing the party IS writing them, and a fan-out
+   * would be writing to tables that no longer exist.
+   *
+   * Asserted as an exact trace rather than "does not touch leads", because the
+   * failure worth catching is a *reintroduced* write, and only an exact trace
+   * catches one that goes to a table this test did not think to name.
+   */
+  it("no longer fans a party write out, because there is nothing to fan out to", async () => {
     const fake = new FakeDb((statement) => {
       if (statement.table === businessParties) return [PARTY];
       if (statement.table === leadPartyMap) return [{ id: 7 }];
@@ -300,16 +360,7 @@ describe("party-legacy-writer — the party is written first, in one transaction
 
     await updatePartyWithMirror(fake.db, "org-1", "party-1", { jobTitle: "Commodore" });
 
-    expect(fake.trace()).toEqual([
-      "update:party@1",
-      // All four maps are asked, because a merge can leave one party answering
-      // for a lead, a client, a contact and a company at once.
-      "select:leadMap@1",
-      "select:other@1",
-      "select:other@1",
-      "select:other@1",
-      "update:leads@1",
-    ]);
+    expect(fake.trace()).toEqual(["update:party@1"]);
   });
 
   it("nests inside a transaction the caller already opened", async () => {

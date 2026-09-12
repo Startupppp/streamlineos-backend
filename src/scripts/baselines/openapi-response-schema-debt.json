@@ -1,10 +1,5 @@
 {
   "version": 1,
   "purpose": "Exact reviewed legacy response-contract debt. Entries may be removed, never added without explicit API-owner review.",
-  "uncoveredOperationIds": [
-    "CrmImportController_archive",
-    "CrmImportController_preview",
-    "LeadsOpsController_getImportBatch",
-    "OrgHierarchyController_getTree"
-  ]
+  "uncoveredOperationIds": []
 }

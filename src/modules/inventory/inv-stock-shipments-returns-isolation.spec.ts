@@ -20,7 +20,33 @@ import { NumberSequenceService } from "./stock-engine/number-sequence.service";
 import { InventoryAuditService } from "./stock-engine/inventory-audit.service";
 import { CostVisibilityService } from "./stock-engine/cost-visibility";
 import { ReservationService } from "./stock-engine/reservation.service";
-import { JournalPostingService } from "../accounting/posting/journal-posting.service";
+import { INVENTORY_ISOLATION_STUBS } from "./__tests__/isolation-stubs";
+
+/**
+ * The three methods `InvStockTransfersService` actually calls on
+ * `ReservationService` — createReservationInTx (reserve), consumeReservationsBatch
+ * (complete) and releaseReservationInTx (cancel).
+ *
+ * It used to name `releaseReservation`, which does not exist on the real class,
+ * and omitted `consumeReservationsBatch`, which does. Neither showed up as a
+ * failure because these tests only exercise the LIST paths, so the reserve /
+ * consume / release branches are never reached — a stub can name anything at all
+ * as long as nobody calls it. The moment one of those tests grew to cover a
+ * cancel, it would have died on `releaseReservationInTx is not a function` and
+ * looked like a bug in the service rather than in its double.
+ *
+ * Keep this list matching the real surface, not the calls a given test happens
+ * to make. `check:mock-surface` compares the two and fails on a name the real
+ * class does not have.
+ */
+const RESERVATION_STUB = {
+  createReservationInTx: jest.fn(),
+  consumeReservationsBatch: jest.fn(),
+  releaseReservationInTx: jest.fn(),
+};
+
+
+const USER = "user-1";
 
 function sqlValues(value: unknown, seen = new Set<object>()): unknown[] {
   if (value === null || value === undefined || typeof value === "string" || typeof value === "number" || typeof value === "boolean") return [value];
@@ -78,6 +104,15 @@ const cache = {
 };
 
 const warehouseScope = {
+  forUser: jest.fn().mockResolvedValue({
+    key: "all",
+    isEmpty: false,
+    unrestricted: true,
+    warehouse: () => ({ queryChunks: [] }),
+    location: () => ({ queryChunks: [] }),
+    anyOf: () => ({ queryChunks: [] }),
+  }),
+  scopeKey: jest.fn().mockReturnValue("all"),
   resolve: jest.fn().mockResolvedValue(null),
   locationPredicate: jest.fn().mockReturnValue({ queryChunks: [] }),
   warehousePredicate: jest.fn().mockReturnValue({ queryChunks: [] }),
@@ -92,6 +127,7 @@ describe("InvStockService — cross-tenant isolation", () => {
     const { db } = makeDb([]);
     const svc = await Test.createTestingModule({
       providers: [
+        ...INVENTORY_ISOLATION_STUBS,
         InvStockService,
         { provide: DRIZZLE, useValue: db },
         { provide: CacheService, useValue: cache },
@@ -105,10 +141,27 @@ describe("InvStockService — cross-tenant isolation", () => {
   });
 
   it("returns stock levels for the owning org (isolation — control)", async () => {
-    const ROW = { id: 1, org_id: OWNER, on_hand: "100", available: "100" };
+    /*
+     * The joined row `listStockLevels` now projects. It used to be the driver's
+     * raw `{ on_hand, org_id }` -- the snake_case payload that reached the
+     * browser as `NaN` in every quantity column and a dash for every name.
+     */
+    const ROW = {
+      id: 1,
+      onHand: "100",
+      committed: "0",
+      onOrder: "0",
+      available: "100",
+      blockedQty: "0",
+      qualityHoldQty: "0",
+      averageCost: null,
+      productVariant: { id: 5, name: "V", sku: "SKU-1", productId: 9, productName: "P", productSku: "P-1", reorderPoint: "0" },
+      location: { id: 3, name: "Bin", code: "B-1", warehouseId: 2, warehouseName: "WH" },
+    };
     const { db } = makeDb([ROW]);
     const svc = await Test.createTestingModule({
       providers: [
+        ...INVENTORY_ISOLATION_STUBS,
         InvStockService,
         { provide: DRIZZLE, useValue: db },
         { provide: CacheService, useValue: cache },
@@ -130,6 +183,7 @@ describe("InvStockAdjustmentsService — cross-tenant isolation", () => {
     const { db, selectWhere } = makeDb([]);
     const svc = await Test.createTestingModule({
       providers: [
+        ...INVENTORY_ISOLATION_STUBS,
         InvStockAdjustmentsService,
         { provide: DRIZZLE, useValue: db },
         { provide: CacheService, useValue: cache },
@@ -151,6 +205,7 @@ describe("InvStockAdjustmentsService — cross-tenant isolation", () => {
     const { db } = makeDb([ADJ]);
     const svc = await Test.createTestingModule({
       providers: [
+        ...INVENTORY_ISOLATION_STUBS,
         InvStockAdjustmentsService,
         { provide: DRIZZLE, useValue: db },
         { provide: CacheService, useValue: cache },
@@ -174,11 +229,12 @@ describe("InvStockTransfersService — cross-tenant isolation", () => {
     const { db, findMany } = makeDb([]);
     const svc = await Test.createTestingModule({
       providers: [
+        ...INVENTORY_ISOLATION_STUBS,
         InvStockTransfersService,
         { provide: DRIZZLE, useValue: db },
         { provide: CacheService, useValue: cache },
         { provide: StockEngineService, useValue: { execute: jest.fn() } },
-        { provide: ReservationService, useValue: { createReservationInTx: jest.fn(), releaseReservation: jest.fn() } },
+        { provide: ReservationService, useValue: RESERVATION_STUB },
         { provide: NumberSequenceService, useValue: { next: jest.fn() } },
         { provide: WarehouseScopeService, useValue: warehouseScope },
       ],
@@ -195,11 +251,12 @@ describe("InvStockTransfersService — cross-tenant isolation", () => {
     const { db } = makeDb([TRF]);
     const svc = await Test.createTestingModule({
       providers: [
+        ...INVENTORY_ISOLATION_STUBS,
         InvStockTransfersService,
         { provide: DRIZZLE, useValue: db },
         { provide: CacheService, useValue: cache },
         { provide: StockEngineService, useValue: { execute: jest.fn() } },
-        { provide: ReservationService, useValue: { createReservationInTx: jest.fn(), releaseReservation: jest.fn() } },
+        { provide: ReservationService, useValue: RESERVATION_STUB },
         { provide: NumberSequenceService, useValue: { next: jest.fn() } },
         { provide: WarehouseScopeService, useValue: warehouseScope },
       ],
@@ -218,15 +275,16 @@ describe("InvStockReservationsService — cross-tenant isolation", () => {
     const { db, findMany } = makeDb([]);
     const svc = await Test.createTestingModule({
       providers: [
+        ...INVENTORY_ISOLATION_STUBS,
         InvStockReservationsService,
         { provide: DRIZZLE, useValue: db },
         { provide: CacheService, useValue: cache },
-        { provide: ReservationService, useValue: { createReservationInTx: jest.fn(), releaseReservation: jest.fn() } },
+        { provide: ReservationService, useValue: RESERVATION_STUB },
         { provide: StockEngineService, useValue: { execute: jest.fn() } },
       ],
     }).compile().then((m) => m.get(InvStockReservationsService));
 
-    const result = await svc.listReservations(ATTACKER, { page: 1, limit: 20 });
+    const result = await svc.listReservations(ATTACKER, USER, { page: 1, limit: 20 });
     expect(result.items).toHaveLength(0);
     const arg = findMany.mock.calls[0]?.[0] as { where?: unknown } | undefined;
     expect(sqlValues(arg?.where)).toContain(ATTACKER);
@@ -237,15 +295,16 @@ describe("InvStockReservationsService — cross-tenant isolation", () => {
     const { db } = makeDb([RES]);
     const svc = await Test.createTestingModule({
       providers: [
+        ...INVENTORY_ISOLATION_STUBS,
         InvStockReservationsService,
         { provide: DRIZZLE, useValue: db },
         { provide: CacheService, useValue: cache },
-        { provide: ReservationService, useValue: { createReservationInTx: jest.fn(), releaseReservation: jest.fn() } },
+        { provide: ReservationService, useValue: RESERVATION_STUB },
         { provide: StockEngineService, useValue: { execute: jest.fn() } },
       ],
     }).compile().then((m) => m.get(InvStockReservationsService));
 
-    const result = await svc.listReservations(OWNER, { page: 1, limit: 20 });
+    const result = await svc.listReservations(OWNER, USER, { page: 1, limit: 20 });
     expect(result.items).toHaveLength(1);
   });
 });
@@ -258,6 +317,7 @@ describe("ShipmentsService — cross-tenant isolation", () => {
     const { db, selectWhere } = makeDb([]);
     const svc = await Test.createTestingModule({
       providers: [
+        ...INVENTORY_ISOLATION_STUBS,
         ShipmentsService,
         { provide: DRIZZLE, useValue: db },
         { provide: CacheService, useValue: cache },
@@ -267,7 +327,7 @@ describe("ShipmentsService — cross-tenant isolation", () => {
       ],
     }).compile().then((m) => m.get(ShipmentsService));
 
-    const result = await svc.list(ATTACKER, { page: 1, limit: 20 });
+    const result = await svc.list(ATTACKER, USER, { page: 1, limit: 20 });
     expect(result.items).toHaveLength(0);
     expect(selectWhere).toHaveBeenCalled();
     const whereArg = selectWhere.mock.calls[0]?.[0] as unknown;
@@ -279,6 +339,7 @@ describe("ShipmentsService — cross-tenant isolation", () => {
     const { db } = makeDb([SHP]);
     const svc = await Test.createTestingModule({
       providers: [
+        ...INVENTORY_ISOLATION_STUBS,
         ShipmentsService,
         { provide: DRIZZLE, useValue: db },
         { provide: CacheService, useValue: cache },
@@ -288,7 +349,7 @@ describe("ShipmentsService — cross-tenant isolation", () => {
       ],
     }).compile().then((m) => m.get(ShipmentsService));
 
-    const result = await svc.list(OWNER, { page: 1, limit: 20 });
+    const result = await svc.list(OWNER, USER, { page: 1, limit: 20 });
     expect(result.items).toHaveLength(1);
   });
 });
@@ -301,6 +362,7 @@ describe("LoadsService — cross-tenant isolation", () => {
     const { db, selectWhere } = makeDb([]);
     const svc = await Test.createTestingModule({
       providers: [
+        ...INVENTORY_ISOLATION_STUBS,
         LoadsService,
         { provide: DRIZZLE, useValue: db },
         { provide: CacheService, useValue: cache },
@@ -309,7 +371,7 @@ describe("LoadsService — cross-tenant isolation", () => {
       ],
     }).compile().then((m) => m.get(LoadsService));
 
-    const result = await svc.list(ATTACKER, { page: 1, limit: 20 });
+    const result = await svc.list(ATTACKER, USER, { page: 1, limit: 20 });
     expect(result.items).toHaveLength(0);
     const whereArg = selectWhere.mock.calls[0]?.[0] as unknown;
     expect(sqlValues(whereArg)).toContain(ATTACKER);
@@ -320,6 +382,7 @@ describe("LoadsService — cross-tenant isolation", () => {
     const { db } = makeDb([LOAD]);
     const svc = await Test.createTestingModule({
       providers: [
+        ...INVENTORY_ISOLATION_STUBS,
         LoadsService,
         { provide: DRIZZLE, useValue: db },
         { provide: CacheService, useValue: cache },
@@ -328,7 +391,7 @@ describe("LoadsService — cross-tenant isolation", () => {
       ],
     }).compile().then((m) => m.get(LoadsService));
 
-    const result = await svc.list(OWNER, { page: 1, limit: 20 });
+    const result = await svc.list(OWNER, USER, { page: 1, limit: 20 });
     expect(result.items).toHaveLength(1);
   });
 });
@@ -341,6 +404,7 @@ describe("PackagesService — cross-tenant isolation", () => {
     const { db, selectWhere } = makeDb([]);
     const svc = await Test.createTestingModule({
       providers: [
+        ...INVENTORY_ISOLATION_STUBS,
         PackagesService,
         { provide: DRIZZLE, useValue: db },
         { provide: CacheService, useValue: cache },
@@ -349,7 +413,7 @@ describe("PackagesService — cross-tenant isolation", () => {
       ],
     }).compile().then((m) => m.get(PackagesService));
 
-    const result = await svc.list(ATTACKER, { page: 1, limit: 20 });
+    const result = await svc.list(ATTACKER, USER, { page: 1, limit: 20 });
     expect(result.items).toHaveLength(0);
     const whereArg = selectWhere.mock.calls[0]?.[0] as unknown;
     expect(sqlValues(whereArg)).toContain(ATTACKER);
@@ -360,6 +424,7 @@ describe("PackagesService — cross-tenant isolation", () => {
     const { db } = makeDb([PKG]);
     const svc = await Test.createTestingModule({
       providers: [
+        ...INVENTORY_ISOLATION_STUBS,
         PackagesService,
         { provide: DRIZZLE, useValue: db },
         { provide: CacheService, useValue: cache },
@@ -368,7 +433,7 @@ describe("PackagesService — cross-tenant isolation", () => {
       ],
     }).compile().then((m) => m.get(PackagesService));
 
-    const result = await svc.list(OWNER, { page: 1, limit: 20 });
+    const result = await svc.list(OWNER, USER, { page: 1, limit: 20 });
     expect(result.items).toHaveLength(1);
   });
 });
@@ -381,6 +446,7 @@ describe("CarriersService — cross-tenant isolation", () => {
     const { db, selectWhere } = makeDb([]);
     const svc = await Test.createTestingModule({
       providers: [
+        ...INVENTORY_ISOLATION_STUBS,
         CarriersService,
         { provide: DRIZZLE, useValue: db },
         { provide: CacheService, useValue: cache },
@@ -400,6 +466,7 @@ describe("CarriersService — cross-tenant isolation", () => {
     const { db } = makeDb([CARRIER]);
     const svc = await Test.createTestingModule({
       providers: [
+        ...INVENTORY_ISOLATION_STUBS,
         CarriersService,
         { provide: DRIZZLE, useValue: db },
         { provide: CacheService, useValue: cache },
@@ -420,6 +487,7 @@ describe("CustomerReturnsService — cross-tenant isolation", () => {
     const { db, findMany } = makeDb([]);
     const svc = await Test.createTestingModule({
       providers: [
+        ...INVENTORY_ISOLATION_STUBS,
         CustomerReturnsService,
         { provide: DRIZZLE, useValue: db },
         { provide: CacheService, useValue: cache },
@@ -428,7 +496,7 @@ describe("CustomerReturnsService — cross-tenant isolation", () => {
       ],
     }).compile().then((m) => m.get(CustomerReturnsService));
 
-    const result = await svc.list(ATTACKER, { page: 1, limit: 20 });
+    const result = await svc.list(ATTACKER, USER, { page: 1, limit: 20 });
     expect(result.items).toHaveLength(0);
     const arg = findMany.mock.calls[0]?.[0] as { where?: unknown } | undefined;
     expect(sqlValues(arg?.where)).toContain(ATTACKER);
@@ -439,6 +507,7 @@ describe("CustomerReturnsService — cross-tenant isolation", () => {
     const { db } = makeDb([CRET]);
     const svc = await Test.createTestingModule({
       providers: [
+        ...INVENTORY_ISOLATION_STUBS,
         CustomerReturnsService,
         { provide: DRIZZLE, useValue: db },
         { provide: CacheService, useValue: cache },
@@ -447,7 +516,7 @@ describe("CustomerReturnsService — cross-tenant isolation", () => {
       ],
     }).compile().then((m) => m.get(CustomerReturnsService));
 
-    const result = await svc.list(OWNER, { page: 1, limit: 20 });
+    const result = await svc.list(OWNER, USER, { page: 1, limit: 20 });
     expect(result.items).toHaveLength(1);
   });
 });
@@ -460,6 +529,7 @@ describe("VendorReturnsService — cross-tenant isolation", () => {
     const { db, findMany } = makeDb([]);
     const svc = await Test.createTestingModule({
       providers: [
+        ...INVENTORY_ISOLATION_STUBS,
         VendorReturnsService,
         { provide: DRIZZLE, useValue: db },
         { provide: CacheService, useValue: cache },
@@ -468,7 +538,7 @@ describe("VendorReturnsService — cross-tenant isolation", () => {
       ],
     }).compile().then((m) => m.get(VendorReturnsService));
 
-    const result = await svc.list(ATTACKER, { page: 1, limit: 20 });
+    const result = await svc.list(ATTACKER, USER, { page: 1, limit: 20 });
     expect(result.items).toHaveLength(0);
     const arg = findMany.mock.calls[0]?.[0] as { where?: unknown } | undefined;
     expect(sqlValues(arg?.where)).toContain(ATTACKER);
@@ -479,6 +549,7 @@ describe("VendorReturnsService — cross-tenant isolation", () => {
     const { db } = makeDb([VRET]);
     const svc = await Test.createTestingModule({
       providers: [
+        ...INVENTORY_ISOLATION_STUBS,
         VendorReturnsService,
         { provide: DRIZZLE, useValue: db },
         { provide: CacheService, useValue: cache },
@@ -487,7 +558,7 @@ describe("VendorReturnsService — cross-tenant isolation", () => {
       ],
     }).compile().then((m) => m.get(VendorReturnsService));
 
-    const result = await svc.list(OWNER, { page: 1, limit: 20 });
+    const result = await svc.list(OWNER, USER, { page: 1, limit: 20 });
     expect(result.items).toHaveLength(1);
   });
 });

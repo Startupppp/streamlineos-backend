@@ -7,7 +7,7 @@ import {
 } from "@nestjs/common";
 import { and, desc, eq } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
-import { apiKeys } from "../../../db/schema/common/auth-session-security";
+import { apiKeys } from "../../../db/schema";
 import { generateApiToken } from "./api-token-key";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";

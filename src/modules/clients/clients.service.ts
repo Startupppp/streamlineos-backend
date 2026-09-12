@@ -1,17 +1,16 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, asc, desc, eq, gt, or, type SQL } from "drizzle-orm";
+import { and, asc, desc, eq, gt, or } from "drizzle-orm";
 import { users } from "../../db/schema";
 import { businessParties, clientPartyMap } from "../../db/schema/party";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
-import { CACHE_KEYS, CACHE_TTL } from "../../common/cache/cache-keys";
+import { CACHE_TTL } from "../../common/cache/cache-keys";
 import type { ScopedRead } from "../access/scoped-read";
 import { toCsv } from "../inventory/import-export/csv.util";
 import {
   CLIENT_PARTY_COLUMNS,
   CLIENT_PARTY_JOIN,
-  clientPartyScope,
   CLIENT_PARTY_SCOPE,
 } from "./client-party-reader";
 

@@ -8,9 +8,8 @@ import {
   foreignKey,
 } from "drizzle-orm/pg-core";
 import { organizations } from "../common/auth";
+import { sql } from "drizzle-orm";
 import { businessParties } from "./business-parties";
-import { leads } from "../crm/leads";
-import { clients, contacts, crmOrganizations } from "../crm/contacts";
 
 /**
  * Which Party a legacy identifier means.
@@ -22,13 +21,18 @@ import { clients, contacts, crmOrganizations } from "../crm/contacts";
  * Party.
  *
  * A real table, and one per legacy kind rather than one polymorphic
- * `(kind, id)` table. The polymorphic shape is banned for new tables here for
- * the reason it matters most in exactly this case: it carries no referential
- * integrity, so nothing stops a row pointing at a lead that no longer exists,
- * and a resolution that quietly returns the wrong person is worse than one that
- * fails. With a real composite foreign key, deleting the legacy row takes the
- * mapping with it and the resolver simply misses. The polymorphism lives in
- * TypeScript, in `party-legacy-seam.ts`, where it is checked.
+ * `(kind, id)` table. The polymorphic shape is banned for new tables here, and
+ * the typed columns are what let each map carry its own primary key on
+ * `(organization_id, <kind>_id)` -- which is what makes these identifiers real
+ * rather than conventional. The polymorphism lives in TypeScript, in
+ * `party-legacy-seam.ts`, where it is checked.
+ *
+ * These used to carry a composite foreign key back to the legacy row, so that
+ * deleting it took the mapping with it. Ticket 08 inverted that relationship
+ * rather than weakening it: 0277 detached the sequences and pointed each map
+ * column's DEFAULT at them, 0278 dropped the tables, and the map row IS the
+ * record now. There is nothing left to point at, and nothing left that could
+ * delete a record out from under its mapping.
  *
  * Not unique on `party_id`: after a merge, several legacy identifiers
  * legitimately answer to one surviving Party. That is the point of it.
@@ -40,7 +44,18 @@ export const leadPartyMap = pgTable(
   "lead_party_map",
   {
     organizationId: text("organization_id").notNull(),
-    leadId: integer("lead_id").notNull(),
+    /**
+    * The identifier the record is publicly known by, minted here.
+    *
+    * Ticket 08. This used to come from the legacy table's serial; migration
+    * 0277 detached that sequence with `OWNED BY NONE` and pointed this column's
+    * default at it, so the number survives `DROP TABLE` and numbering continues
+    * unbroken. Declared here so Drizzle knows it is optional on insert -- the
+    * database supplies it, exactly as the legacy table used to.
+    */
+    leadId: integer("lead_id")
+      .notNull()
+      .default(sql`nextval('leads_id_seq')`),
     partyId: text("party_id").notNull(),
     /** `migration:0241` for the backfill, a user id when someone re-pointed it. */
     linkedBy: text("linked_by"),
@@ -58,11 +73,6 @@ export const leadPartyMap = pgTable(
       name: "fk_lead_party_map_org",
     }).onDelete("cascade"),
     foreignKey({
-      columns: [t.organizationId, t.leadId],
-      foreignColumns: [leads.orgId, leads.id],
-      name: "fk_lead_party_map_lead",
-    }).onDelete("cascade"),
-    foreignKey({
       columns: [t.organizationId, t.partyId],
       foreignColumns: [businessParties.organizationId, businessParties.partyId],
       name: "fk_lead_party_map_party",
@@ -74,7 +84,18 @@ export const clientPartyMap = pgTable(
   "client_party_map",
   {
     organizationId: text("organization_id").notNull(),
-    clientId: integer("client_id").notNull(),
+    /**
+    * The identifier the record is publicly known by, minted here.
+    *
+    * Ticket 08. This used to come from the legacy table's serial; migration
+    * 0277 detached that sequence with `OWNED BY NONE` and pointed this column's
+    * default at it, so the number survives `DROP TABLE` and numbering continues
+    * unbroken. Declared here so Drizzle knows it is optional on insert -- the
+    * database supplies it, exactly as the legacy table used to.
+    */
+    clientId: integer("client_id")
+      .notNull()
+      .default(sql`nextval('clients_id_seq')`),
     partyId: text("party_id").notNull(),
     linkedBy: text("linked_by"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -88,11 +109,6 @@ export const clientPartyMap = pgTable(
       name: "fk_client_party_map_org",
     }).onDelete("cascade"),
     foreignKey({
-      columns: [t.organizationId, t.clientId],
-      foreignColumns: [clients.orgId, clients.id],
-      name: "fk_client_party_map_client",
-    }).onDelete("cascade"),
-    foreignKey({
       columns: [t.organizationId, t.partyId],
       foreignColumns: [businessParties.organizationId, businessParties.partyId],
       name: "fk_client_party_map_party",
@@ -104,7 +120,18 @@ export const contactPartyMap = pgTable(
   "contact_party_map",
   {
     organizationId: text("organization_id").notNull(),
-    contactId: integer("contact_id").notNull(),
+    /**
+    * The identifier the record is publicly known by, minted here.
+    *
+    * Ticket 08. This used to come from the legacy table's serial; migration
+    * 0277 detached that sequence with `OWNED BY NONE` and pointed this column's
+    * default at it, so the number survives `DROP TABLE` and numbering continues
+    * unbroken. Declared here so Drizzle knows it is optional on insert -- the
+    * database supplies it, exactly as the legacy table used to.
+    */
+    contactId: integer("contact_id")
+      .notNull()
+      .default(sql`nextval('contacts_id_seq')`),
     partyId: text("party_id").notNull(),
     linkedBy: text("linked_by"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -116,11 +143,6 @@ export const contactPartyMap = pgTable(
       columns: [t.organizationId],
       foreignColumns: [organizations.id],
       name: "fk_contact_party_map_org",
-    }).onDelete("cascade"),
-    foreignKey({
-      columns: [t.organizationId, t.contactId],
-      foreignColumns: [contacts.orgId, contacts.id],
-      name: "fk_contact_party_map_contact",
     }).onDelete("cascade"),
     foreignKey({
       columns: [t.organizationId, t.partyId],
@@ -150,7 +172,18 @@ export const crmOrgPartyMap = pgTable(
   "crm_org_party_map",
   {
     organizationId: text("organization_id").notNull(),
-    crmOrganizationId: integer("crm_organization_id").notNull(),
+    /**
+    * The identifier the record is publicly known by, minted here.
+    *
+    * Ticket 08. This used to come from the legacy table's serial; migration
+    * 0277 detached that sequence with `OWNED BY NONE` and pointed this column's
+    * default at it, so the number survives `DROP TABLE` and numbering continues
+    * unbroken. Declared here so Drizzle knows it is optional on insert -- the
+    * database supplies it, exactly as the legacy table used to.
+    */
+    crmOrganizationId: integer("crm_organization_id")
+      .notNull()
+      .default(sql`nextval('crm_organizations_id_seq')`),
     partyId: text("party_id").notNull(),
     /** `migration:0264` for the backfill, a user id when someone re-pointed it. */
     linkedBy: text("linked_by"),
@@ -166,11 +199,6 @@ export const crmOrgPartyMap = pgTable(
       columns: [t.organizationId],
       foreignColumns: [organizations.id],
       name: "fk_crm_org_party_map_org",
-    }).onDelete("cascade"),
-    foreignKey({
-      columns: [t.organizationId, t.crmOrganizationId],
-      foreignColumns: [crmOrganizations.orgId, crmOrganizations.id],
-      name: "fk_crm_org_party_map_crm_org",
     }).onDelete("cascade"),
     foreignKey({
       columns: [t.organizationId, t.partyId],

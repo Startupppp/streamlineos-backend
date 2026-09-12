@@ -4,6 +4,9 @@ import { SignEnvelopesService } from "../sign-envelopes.service";
 import { SignEnvelopeValidationService } from "../sign-envelope-validation.service";
 import { SignEnvelopeDispatchService } from "../sign-envelope-dispatch.service";
 import { SignEnvelopeSweepsService } from "../sign-envelope-sweeps.service";
+import { SignSettingsService } from "../sign-settings.service";
+import { SignTemplatesService } from "../sign-templates.service";
+import { SignWatermarkService } from "../sign-watermark.service";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { PlanLimitsService } from "../../billing/core/plan-limits.service";
 import { SignAuditService } from "../sign-audit.service";
@@ -36,6 +39,17 @@ const makeDb = () => {
   return chain;
 };
 
+/**
+ * SIGN-P2-03. Deliberately none of 3/3/5 (the column and DTO defaults) and
+ * none of 3/2/3 (the template snapshot's), so an assertion on these numbers
+ * cannot pass by accidentally agreeing with a hardcoded constant.
+ */
+const ORG_SETTINGS = {
+  defaultReminderFirstAfterDays: 7,
+  defaultReminderRepeatDays: 14,
+  defaultReminderMaxCount: 2,
+};
+
 describe("SignEnvelopesService plan-limit enforcement", () => {
   const buildModule = async (db: Record<string, jest.Mock>, planLimits: Pick<PlanLimitsService, "assertWithinLimit">) => {
     const module: TestingModule = await Test.createTestingModule({
@@ -50,6 +64,9 @@ describe("SignEnvelopesService plan-limit enforcement", () => {
         { provide: SignEnvelopeValidationService, useValue: { validate: jest.fn() } },
         { provide: SignEnvelopeDispatchService, useValue: { send: jest.fn(), resend: jest.fn(), applyRecipientOutcome: jest.fn() } },
         { provide: SignEnvelopeSweepsService, useValue: { sendManualReminder: jest.fn(), runReminderSweep: jest.fn(), runExpirationSweep: jest.fn() } },
+        { provide: SignSettingsService, useValue: { getOrCreate: jest.fn().mockResolvedValue(ORG_SETTINGS) } },
+        { provide: SignTemplatesService, useValue: { get: jest.fn() } },
+        { provide: SignWatermarkService, useValue: { get: jest.fn() } },
       ],
     }).compile();
 
@@ -69,6 +86,45 @@ describe("SignEnvelopesService plan-limit enforcement", () => {
     expect(db.insert).not.toHaveBeenCalled();
   });
 
+  it("lets an explicit cadence override the organisation default", async () => {
+    const db = makeDb();
+    const svc = await buildModule(db, makePlanLimits(false));
+
+    await svc.create(ORG, MEMBER_ID, {
+      title: "Contract",
+      routingMode: "parallel",
+      reminderFirstAfterDays: 1,
+      reminderRepeatDays: 1,
+      reminderMaxCount: 9,
+    } as Parameters<SignEnvelopesService["create"]>[2]);
+
+    expect(db.values).toHaveBeenCalledWith(
+      expect.objectContaining({
+        reminderFirstAfterDays: 1,
+        reminderRepeatDays: 1,
+        reminderMaxCount: 9,
+      }),
+    );
+  });
+
+  it("takes a zero maximum literally rather than as absence", async () => {
+    const db = makeDb();
+    const svc = await buildModule(db, makePlanLimits(false));
+
+    /**
+     * `reminderMaxCount: 0` means "never remind". `||` would read that as
+     * unset and quietly substitute the org's 2, turning an explicit opt-out
+     * into two emails to a customer.
+     */
+    await svc.create(ORG, MEMBER_ID, {
+      title: "Contract",
+      routingMode: "parallel",
+      reminderMaxCount: 0,
+    } as Parameters<SignEnvelopesService["create"]>[2]);
+
+    expect(db.values).toHaveBeenCalledWith(expect.objectContaining({ reminderMaxCount: 0 }));
+  });
+
   it("proceeds to insert when within envelope limit", async () => {
     const db = makeDb();
     const planLimits = makePlanLimits(false);
@@ -78,5 +134,19 @@ describe("SignEnvelopesService plan-limit enforcement", () => {
 
     expect(planLimits.assertWithinLimit).toHaveBeenCalledWith(ORG, "signEnvelopes");
     expect(db.insert).toHaveBeenCalled();
+
+    /**
+     * SIGN-P2-03. The caller named no cadence, so the organisation's applies.
+     * Before this, the DTO substituted 3/3/5 before the service ever saw the
+     * request, and the configured cadence was unreachable — which stopped
+     * being cosmetic the moment SIGN-P0-01 gave the sweep a scheduler.
+     */
+    expect(db.values).toHaveBeenCalledWith(
+      expect.objectContaining({
+        reminderFirstAfterDays: 7,
+        reminderRepeatDays: 14,
+        reminderMaxCount: 2,
+      }),
+    );
   });
 });

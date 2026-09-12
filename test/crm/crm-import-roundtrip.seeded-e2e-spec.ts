@@ -1,9 +1,9 @@
-import { and, eq, isNull, sql } from "drizzle-orm";
+import request from "supertest";
+import { eq, sql } from "drizzle-orm";
+import { workflowRuns } from "src/db/schema";
 import { CrmImportService } from "src/modules/crm/import/crm-import.service";
-import { CrmExportService } from "src/modules/crm/import/crm-export.service";
-import { rowWindows } from "src/modules/crm/import/import-batches";
+import { CrmExportService, type ExportEntity } from "src/modules/crm/import/crm-export.service";
 import { runInNewTenantTransaction } from "src/common/tenant/run-in-tenant-transaction";
-import { businessParties } from "src/db/schema";
 import { DRIZZLE } from "src/db/drizzle.constants";
 import type { Db } from "src/db/drizzle.module";
 import { createSeededE2eApp, type SeededE2eApp } from "test/helpers/seeded-e2e-app";
@@ -16,13 +16,6 @@ import { seedOrg } from "test/helpers/seed-builder";
  * round trip can settle: that the committed result matches the preview, and
  * that reverting restores the prior state *exactly*. Both are asserted here by
  * doing it and reading back what happened.
- *
- * Committing is a durable workflow rather than one call, so this file walks the
- * batches itself — `beginCommit`, a `commitBatch` per row window, `finishCommit`
- * — which is exactly what `CrmImportWorkflow` does around `step.run`. Driving
- * the same three methods keeps the assertions on the service that does the work
- * rather than on the step machinery, and the windows come from the production
- * `rowWindows` so a batch here means the rows a batch means in a real run.
  */
 describe("[seeded-e2e] CRM import round trip", () => {
   let seededApp: SeededE2eApp;
@@ -34,68 +27,70 @@ describe("[seeded-e2e] CRM import round trip", () => {
   const inTenant = async <T>(work: () => Promise<T>): Promise<T> =>
     runInNewTenantTransaction(seededApp.app.get<Db>(DRIZZLE), orgId, work);
 
-  const commitAll = async (crmImportId: string) => {
-    const total = { created: 0, updated: 0, merged: 0, review: 0, skipped: 0, failed: 0 };
-    const extent = await inTenant(() => imports.beginCommit(orgId, crmImportId));
-    if (extent.settled) return total;
+  /**
+   * Committing and reverting are durable runs, not method calls.
+   *
+   * `commit()` and `revert()` were single-shot and are gone: an import of any
+   * size has to survive a restart mid-file, so the service now claims a run and
+   * the workflow walks it in batches. Driving it here through the real cron
+   * endpoint rather than by calling `commitBatch` in a loop is the point — a
+   * runtime that is unregistered, unclaimable or dead-lettering fails this file,
+   * and that is the failure calling the phases by hand cannot see.
+   */
+  async function drive(workflowRunId: string): Promise<string> {
+    for (let pass = 0; pass < 12; pass += 1) {
+      const res = await request(seededApp.app.getHttpServer())
+        .post("/cron/workflow-tick")
+        .set("Authorization", `Bearer ${process.env.CRON_SECRET ?? ""}`);
+      expect(res.status).toBe(200);
 
-    for (const window of rowWindows(extent.maxRowNumber)) {
-      const outcome = await inTenant(() => imports.commitBatch(orgId, crmImportId, window));
-      total.created += outcome.created;
-      total.updated += outcome.updated;
-      total.merged += outcome.merged;
-      total.review += outcome.review;
-      total.skipped += outcome.skipped;
-      total.failed += outcome.failed;
+      const [run] = await seededApp.seedDb
+        .select({ status: workflowRuns.status, runAfter: workflowRuns.runAfter })
+        .from(workflowRuns)
+        .where(eq(workflowRuns.workflowRunId, workflowRunId));
+      if (!run) throw new Error(`workflow run ${workflowRunId} disappeared`);
+      if (run.status === "COMPLETED" || run.status === "DEAD_LETTERED") return run.status;
+
+      const waitMs = Math.min(Math.max(run.runAfter.getTime() - Date.now(), 0) + 100, 3_000);
+      await new Promise((resolve) => setTimeout(resolve, waitMs));
     }
-
-    await inTenant(() => imports.finishCommit(orgId, crmImportId));
-    return total;
-  };
+    return "STUCK";
+  }
 
   /**
-   * Backwards, for the reason the workflow gives: a later row may have updated a
-   * party an earlier row created, and undoing in file order would write the
-   * update's before-image onto a record that is about to be soft-deleted.
+   * The exporter streams now: `rowsFor` and `toCsv` are gone, replaced by
+   * generators a response can be written with straight from the database. An
+   * export of a departing tenant's whole CRM cannot be assembled in memory
+   * first, which is the point — so the test collects the chunks the way the
+   * controller writes them.
    */
-  const revertAll = async (crmImportId: string) => {
-    const total = { deleted: 0, restored: 0, dismissed: 0, failed: 0 };
-    const extent = await inTenant(() => imports.beginRevert(orgId, crmImportId));
-    if (extent.settled) return total;
-
-    for (const window of rowWindows(extent.maxRowNumber).reverse()) {
-      const outcome = await inTenant(() => imports.revertBatch(orgId, crmImportId, window));
-      total.deleted += outcome.deleted;
-      total.restored += outcome.restored;
-      total.dismissed += outcome.dismissed;
-      total.failed += outcome.failed;
-    }
-
-    await inTenant(() => imports.finishRevert(orgId, crmImportId, userId));
-    return total;
-  };
-
-  /** What the export would carry: this tenant's parties that have not been taken back. */
-  const livingParties = () =>
-    inTenant(() =>
-      seededApp.app
-        .get<Db>(DRIZZLE)
-        .select()
-        .from(businessParties)
-        .where(
-          and(
-            eq(businessParties.organizationId, orgId),
-            isNull(businessParties.deletedAt),
-          ),
-        ),
-    );
-
-  const exportCsv = () =>
-    inTenant(async () => {
-      let csv = "";
-      for await (const chunk of exports.csvChunks(orgId, "parties")) csv += chunk;
-      return csv;
+  async function exportedRows(entity: ExportEntity): Promise<Record<string, unknown>[]> {
+    return inTenant(async () => {
+      let out = "";
+      for await (const chunk of exports.jsonChunks(orgId, entity)) out += chunk;
+      return JSON.parse(out) as Record<string, unknown>[];
     });
+  }
+
+  async function exportedCsv(entity: ExportEntity): Promise<string> {
+    return inTenant(async () => {
+      let out = "";
+      for await (const chunk of exports.csvChunks(orgId, entity)) out += chunk;
+      return out;
+    });
+  }
+
+  async function commit(crmImportId: string) {
+    const runId = await inTenant(() => imports.startCommit(orgId, crmImportId));
+    expect(await drive(runId)).toBe("COMPLETED");
+    return inTenant(() => imports.progress(orgId, crmImportId));
+  }
+
+  async function revert(crmImportId: string) {
+    const runId = await inTenant(() => imports.startRevert(orgId, userId, crmImportId));
+    expect(await drive(runId)).toBe("COMPLETED");
+    return inTenant(() => imports.progress(orgId, crmImportId));
+  }
 
   beforeAll(async () => {
     seededApp = await createSeededE2eApp();
@@ -129,8 +124,9 @@ describe("[seeded-e2e] CRM import round trip", () => {
         imports.preview({ organizationId: orgId, userId, headers: HEADERS, rows }),
       );
 
-      // Row 3 repeats row 1 and is folded into it: `merge` is its own outcome now,
-      // and counting it as a skip would say the file wrote nothing for that row.
+      // `merge`, not a second `skip`: row 3 repeats row 1 under a different name
+      // and the same address, and the planner folds it into that row rather than
+      // discarding it. The bucket did not exist when this expectation was written.
       expect(preview.summary).toMatchObject({
         create: 2,
         update: 0,
@@ -142,10 +138,10 @@ describe("[seeded-e2e] CRM import round trip", () => {
       expect(preview.needsConfirmation).toHaveLength(0);
 
       // ── The committed result matches the preview ────────────────────────
-      const committed = await commitAll(preview.crmImportId);
-      expect(committed).toMatchObject({ created: 2, updated: 0, failed: 0 });
+      const committed = await commit(preview.crmImportId);
+      expect(committed).toMatchObject({ created: 2, updated: 0, failed: 0, complete: true });
 
-      const afterImport = await livingParties();
+      const afterImport = await exportedRows("parties");
       expect(afterImport).toHaveLength(2);
 
       const acme = afterImport.find((row) => row.name === "Acme Trading Ltd");
@@ -156,15 +152,20 @@ describe("[seeded-e2e] CRM import round trip", () => {
       expect(acme?.phone).toBe("+441234567890");
 
       // ── Export round-trips ──────────────────────────────────────────────
-      const csv = await exportCsv();
+      const csv = await exportedCsv("parties");
       expect(csv.split("\n")).toHaveLength(3); // header + two records
       expect(csv).toContain("Acme Trading Ltd");
 
       // ── One action takes the whole thing back ───────────────────────────
-      const reverted = await revertAll(preview.crmImportId);
-      expect(reverted).toMatchObject({ deleted: 2, restored: 0 });
+      const reverted = await revert(preview.crmImportId);
+      // Four, not two. `progress.reverted` counts rows the revert walked —
+      // `reverted_at is not null` — and it walks every committed row including
+      // the skip and the merge, which is what makes the file as a whole undone.
+      // The old single-shot `revert()` returned records affected instead. What
+      // the criterion is actually about is the line below: nothing is left.
+      expect(reverted).toMatchObject({ reverted: 4, complete: true });
 
-      const afterRevert = await livingParties();
+      const afterRevert = await exportedRows("parties");
       expect(afterRevert).toHaveLength(0);
     },
     180_000,
@@ -192,7 +193,7 @@ describe("[seeded-e2e] CRM import round trip", () => {
 
       expect(preview.summary).toMatchObject({ update: 1, create: 0 });
 
-      await commitAll(preview.crmImportId);
+      await commit(preview.crmImportId);
 
       const [updated] = await inTenant(() =>
         seededApp.seedDb.execute(sql`SELECT email, tax_number, notes FROM business_parties WHERE party_id = ${partyId}`),
@@ -201,7 +202,7 @@ describe("[seeded-e2e] CRM import round trip", () => {
       // An import fills gaps; it does not overwrite what a person curated.
       expect(updated).toMatchObject({ notes: "Curated by a human" });
 
-      await revertAll(preview.crmImportId);
+      await revert(preview.crmImportId);
 
       const [restored] = await inTenant(() =>
         seededApp.seedDb.execute(sql`SELECT name, email, tax_number, notes FROM business_parties WHERE party_id = ${partyId}`),
@@ -269,15 +270,17 @@ describe("[seeded-e2e] CRM import round trip", () => {
       }),
     );
 
-    await commitAll(preview.crmImportId);
-
-    await expect(imports.startCommit(orgId, preview.crmImportId)).rejects.toThrow(
-      /already committed/i,
-    );
+    await commit(preview.crmImportId);
+    // A committed import cannot be claimed again: `claimForCommit` refuses any
+    // status but `previewing` or `committing`, which is what stops a retried
+    // request creating every row twice.
+    await expect(inTenant(() => imports.startCommit(orgId, preview.crmImportId))).rejects.toThrow();
+    // Settled rather than re-walked: the batches a retried workflow step would
+    // re-enter find nothing left to write.
     await expect(inTenant(() => imports.beginCommit(orgId, preview.crmImportId))).resolves.toMatchObject({
       settled: true,
     });
 
-    await revertAll(preview.crmImportId);
+    await revert(preview.crmImportId);
   }, 180_000);
 });

@@ -1,9 +1,9 @@
 /**
- * c19-04 read-after-write verification — all 142 cache namespace matrix entries.
+ * c19-04 read-after-write verification — all 143 cache namespace matrix entries.
  *
- * Of the 142 entries in CACHE_INVALIDATION_MATRIX:
- *   105 are kind:"write" — exercised by the table-driven tests below.
- *   37 are kind:"ttl-only" — excluded from read-after-write; their non-empty
+ * Of the 143 entries in CACHE_INVALIDATION_MATRIX:
+ *   107 are kind:"write" — exercised by the table-driven tests below.
+ *   36 are kind:"ttl-only" — excluded from read-after-write; their non-empty
  *      reason fields are verified in "matrix structure".
  *
  * All tests run against the real CacheService with a stateful in-memory Redis
@@ -77,9 +77,27 @@ function alternateTenantNs(template: string): string {
 
 // Matrix structure tests
 
+/**
+ * 142 -> 143, 105 -> 107 write and 37 -> 36 ttl-only, re-pinned 2026-09-12. The whole delta is
+ * `e4082ca30 fix(inventory): a stock write invalidates the reads that actually exist`, and it is
+ * accounted for entry by entry, because a census that moved further than the registry change
+ * explains is a signal, not a rebase:
+ *   -3 write: `inv:stock:summary:<orgId>` and `inv:low-stock:<orgId>` were written by nobody, and
+ *      `inv:reorder:paged:<orgId>` was a child said to be reached "implicitly via the inv:reorder
+ *      parent" — a prefix delete Redis does not have. All three named a key no reader ever stored.
+ *   +4 write: `inv:ops:zones:<orgId>`, `inv:ops:summary:<orgId>`, `inv:physical-audits:list:<orgId>`
+ *      and `inv:physical-audits:detail:<orgId>:<id>` — four real generation namespaces that existed
+ *      in the readers and were absent from this registry, so nothing bumped them.
+ *   1 moved ttl-only -> write: `inv:dashboard:<orgId>`, which was documented as a deliberate
+ *      TTL-only aggregate while four `invalidate()` calls were in fact aimed at it and missing.
+ * 142 - 3 + 4 = 143; 105 - 3 + 4 + 1 = 107; 37 - 1 = 36.
+ * The numbers are descriptive. What bites is the table-driven read-after-write suite below, which
+ * is derived from the matrix itself — so the four added namespaces are exercised by the fact of
+ * being in the registry, not by anyone remembering to add a case.
+ */
 describe("CACHE_INVALIDATION_MATRIX — structure", () => {
-  it("has exactly 142 entries", () => {
-    expect(CACHE_INVALIDATION_MATRIX).toHaveLength(142);
+  it("has exactly 143 entries", () => {
+    expect(CACHE_INVALIDATION_MATRIX).toHaveLength(143);
   });
 
   it("has no duplicate namespace keys", () => {
@@ -100,7 +118,7 @@ describe("CACHE_INVALIDATION_MATRIX — structure", () => {
   });
 
   it(
-    "coverage guard — 105 write and 37 ttl-only" +
+    "coverage guard — 107 write and 36 ttl-only" +
       " (update both counts when the matrix grows)",
     () => {
       const writeCount = CACHE_INVALIDATION_MATRIX.filter(
@@ -109,8 +127,8 @@ describe("CACHE_INVALIDATION_MATRIX — structure", () => {
       const ttlCount = CACHE_INVALIDATION_MATRIX.filter(
         (e) => e.invalidation.kind === "ttl-only",
       ).length;
-      expect(writeCount).toBe(105);
-      expect(ttlCount).toBe(37);
+      expect(writeCount).toBe(107);
+      expect(ttlCount).toBe(36);
       expect(writeCount + ttlCount).toBe(CACHE_INVALIDATION_MATRIX.length);
     },
   );
@@ -184,7 +202,7 @@ describe("namespace read-after-write — negative control", () => {
 // Read-after-write — table-driven, one case per kind:"write" entry.
 //
 
-describe("namespace read-after-write — event-invalidated (105 namespaces)", () => {
+describe("namespace read-after-write — event-invalidated (107 namespaces)", () => {
   it.each(writeEntries)("$namespace", async (entry) => {
     const cache = makeFreshCache();
     const ns = primaryNs(entry.namespace);

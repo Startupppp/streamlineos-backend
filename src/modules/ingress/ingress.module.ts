@@ -1,14 +1,19 @@
 import { Module } from "@nestjs/common";
 import { AutonomyModule } from "../autonomy/autonomy.module";
+import { BillingModule } from "../billing/core/billing.module";
 import { IntegrationsModule } from "../integrations/core/integrations.module";
 import { MailModule } from "../mail/mail.module";
+import { RelationshipsModule } from "../relationships/relationships.module";
 import { CrmMailboxController } from "./adapters/crm-mailbox.controller";
 import { CrmMailboxService } from "./adapters/crm-mailbox.service";
 import { TelephonyCallLogService } from "./adapters/telephony-call-log.service";
-import { WhatsAppIngressService } from "./adapters/whatsapp-ingress.service";
 import { InboundIngressController } from "./inbound-ingress.controller";
 import { InboundIngressService } from "./inbound-ingress.service";
 import { InboundIngressWorkflow } from "./inbound-ingress.workflow";
+import { WhatsAppChannelsController } from "./adapters/whatsapp-channels.controller";
+import { WhatsAppChannelsService } from "./adapters/whatsapp-channels.service";
+import { WhatsAppIngressController } from "./adapters/whatsapp-ingress.controller";
+import { WhatsAppIngressService } from "./adapters/whatsapp-ingress.service";
 
 /**
  * The inbound communications seam.
@@ -27,13 +32,19 @@ import { InboundIngressWorkflow } from "./inbound-ingress.workflow";
  * without re-exporting it, so it is not visible here by inheritance.
  */
 @Module({
-  imports: [AutonomyModule, IntegrationsModule, MailModule],
-  controllers: [InboundIngressController, CrmMailboxController],
+  imports: [AutonomyModule, BillingModule, IntegrationsModule, MailModule, RelationshipsModule],
+  controllers: [
+    InboundIngressController,
+    CrmMailboxController,
+    WhatsAppIngressController,
+    WhatsAppChannelsController,
+  ],
   providers: [
     InboundIngressService,
     InboundIngressWorkflow,
     CrmMailboxService,
     TelephonyCallLogService,
+    WhatsAppChannelsService,
     WhatsAppIngressService,
   ],
 })

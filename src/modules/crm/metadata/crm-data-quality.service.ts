@@ -1,28 +1,25 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, count, desc, eq, isNull, lt, sql } from "drizzle-orm";
+import { sql } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
-import { deals, dealActivities, crmPipelineStages } from "../../../db/schema";
-import { businessParties, leadPartyMap } from "../../../db/schema/party";
-import { PARTY_OF_LEAD } from "../crm-party-reads";
-
-const OFFENDER_LIMIT = 10;
-const PHONE_BASIC_RE = /^[+\d\s\-().]{7,20}$/;
-
-function thirtyDaysAgo(): Date {
-  return new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
-}
-
-interface DataQualityOffender {
-  id: number | string;
-  name: string;
-  detail?: string;
-}
-
-interface DataQualityAggregate {
-  count: number;
-  offenders: DataQualityOffender[];
-}
+import { OFFENDER_LIMIT, type DataQualityAggregate } from "./lib/data-quality-shapes";
+/*
+ * Aliased on the way in. `getReport` destructures the results into consts named
+ * for the report keys, and an un-aliased import would be shadowed by its own
+ * result — tsc reports it as "referenced directly or indirectly in its own
+ * initializer", which is the fourth time this shape has appeared in this branch.
+ */
+import {
+  duplicateLeads as checkDuplicateLeads,
+  leadsWithInvalidPhone as checkLeadsWithInvalidPhone,
+  leadsWithNoOwner as checkLeadsWithNoOwner,
+  leadsWithoutEmail as checkLeadsWithoutEmail,
+} from "./lib/data-quality-leads";
+import {
+  dealsMissingStageFields as checkDealsMissingStageFields,
+  dealsWithNoNextActivity as checkDealsWithNoNextActivity,
+  staleDeals as checkStaleDeals,
+} from "./lib/data-quality-deals";
 
 export interface DataQualityReport {
   leadsWithoutEmail: DataQualityAggregate;
@@ -50,14 +47,14 @@ export class CrmDataQualityService {
       leadsWithNoOwner,
       dealsMissingStageFields,
     ] = await Promise.all([
-      this.leadsWithoutEmail(orgId),
-      this.leadsWithInvalidPhone(orgId),
-      this.duplicateLeads(orgId),
+      checkLeadsWithoutEmail(this.db, orgId),
+      checkLeadsWithInvalidPhone(this.db, orgId),
+      checkDuplicateLeads(this.db, orgId),
       this.duplicateCompanies(orgId),
-      this.staleDeals(orgId),
-      this.dealsWithNoNextActivity(orgId),
-      this.leadsWithNoOwner(orgId),
-      this.dealsMissingStageFields(orgId),
+      checkStaleDeals(this.db, orgId),
+      checkDealsWithNoNextActivity(this.db, orgId),
+      checkLeadsWithNoOwner(this.db, orgId),
+      checkDealsMissingStageFields(this.db, orgId),
     ]);
     return {
       leadsWithoutEmail,
@@ -69,97 +66,6 @@ export class CrmDataQualityService {
       leadsWithNoOwner,
       dealsMissingStageFields,
     };
-  }
-
-  private async leadsWithoutEmail(orgId: string): Promise<DataQualityAggregate> {
-    const where = and(
-      eq(leadPartyMap.organizationId, orgId),
-      isNull(businessParties.deletedAt),
-      isNull(businessParties.email),
-    );
-    const [countRow] = await this.db
-      .select({ n: count() })
-      .from(leadPartyMap)
-      .innerJoin(businessParties, PARTY_OF_LEAD)
-      .where(where);
-    const offenderRows = await this.db
-      .select({ id: leadPartyMap.leadId, name: businessParties.name })
-      .from(leadPartyMap)
-      .innerJoin(businessParties, PARTY_OF_LEAD)
-      .where(where)
-      .orderBy(desc(businessParties.createdAt))
-      .limit(OFFENDER_LIMIT);
-    return {
-      count: Number(countRow?.n ?? 0),
-      offenders: offenderRows.map((r) => ({ id: r.id, name: r.name })),
-    };
-  }
-
-  private async leadsWithInvalidPhone(orgId: string): Promise<DataQualityAggregate> {
-    const rows = await this.db
-      .select({ id: leadPartyMap.leadId, name: businessParties.name, phone: businessParties.phone })
-      .from(leadPartyMap)
-      .innerJoin(businessParties, PARTY_OF_LEAD)
-      .where(and(eq(leadPartyMap.organizationId, orgId), isNull(businessParties.deletedAt)))
-      .orderBy(desc(businessParties.createdAt));
-    const invalid = rows.filter(
-      (r) => r.phone !== null && r.phone !== undefined && r.phone !== "" && !PHONE_BASIC_RE.test(r.phone),
-    );
-    return {
-      count: invalid.length,
-      offenders: invalid.slice(0, OFFENDER_LIMIT).map((r) => ({ id: r.id, name: r.name, detail: r.phone ?? undefined })),
-    };
-  }
-
-  private async duplicateLeads(orgId: string): Promise<DataQualityAggregate> {
-    const emailDups = await this.db.execute(
-      sql`
-        SELECT p.email,
-               string_agg(m.lead_id::text, ',') AS ids,
-               string_agg(p.name, ' | ') AS names
-        FROM ${leadPartyMap} m
-        JOIN ${businessParties} p
-          ON p.party_id = m.party_id
-         AND p.organization_id = m.organization_id
-        WHERE m.organization_id = ${orgId}
-          AND p.deleted_at IS NULL
-          AND p.email IS NOT NULL
-          AND p.email != ''
-        GROUP BY p.email
-        HAVING count(*) > 1
-        LIMIT ${OFFENDER_LIMIT}
-      `,
-    );
-    const phoneDups = await this.db.execute(
-      sql`
-        SELECT p.phone,
-               string_agg(m.lead_id::text, ',') AS ids,
-               string_agg(p.name, ' | ') AS names
-        FROM ${leadPartyMap} m
-        JOIN ${businessParties} p
-          ON p.party_id = m.party_id
-         AND p.organization_id = m.organization_id
-        WHERE m.organization_id = ${orgId}
-          AND p.deleted_at IS NULL
-          AND p.phone IS NOT NULL
-          AND p.phone != ''
-        GROUP BY p.phone
-        HAVING count(*) > 1
-        LIMIT ${OFFENDER_LIMIT}
-      `,
-    );
-    const emailOffenders = emailDups.map((r) => ({
-      id: String(r["ids"] ?? ""),
-      name: String(r["names"] ?? ""),
-      detail: `Duplicate email: ${String(r["email"] ?? "")}`,
-    }));
-    const phoneOffenders = phoneDups.map((r) => ({
-      id: String(r["ids"] ?? ""),
-      name: String(r["names"] ?? ""),
-      detail: `Duplicate phone: ${String(r["phone"] ?? "")}`,
-    }));
-    const offenders = [...emailOffenders, ...phoneOffenders].slice(0, OFFENDER_LIMIT);
-    return { count: emailOffenders.length + phoneOffenders.length, offenders };
   }
 
   /**
@@ -206,112 +112,4 @@ export class CrmDataQualityService {
     return { count: offenders.length, offenders };
   }
 
-  private async staleDeals(orgId: string): Promise<DataQualityAggregate> {
-    const terminalStages = await this.db
-      .select({ key: crmPipelineStages.key })
-      .from(crmPipelineStages)
-      .where(and(eq(crmPipelineStages.orgId, orgId), eq(crmPipelineStages.isTerminal, true), eq(crmPipelineStages.isActive, true)));
-    const terminalKeys = terminalStages.map((s) => s.key);
-    const cutoff = thirtyDaysAgo();
-    const baseWhere = and(eq(deals.orgId, orgId), isNull(deals.deletedAt), lt(deals.updatedAt, cutoff));
-    const whereClause = terminalKeys.length > 0
-      ? and(baseWhere, sql`${deals.stage} NOT IN (${sql.join(terminalKeys.map((k) => sql`${k}`), sql`, `)})`)
-      : baseWhere;
-    const [countRow] = await this.db.select({ n: count() }).from(deals).where(whereClause);
-    const offenderRows = await this.db
-      .select({ id: deals.id, name: deals.name, updatedAt: deals.updatedAt })
-      .from(deals)
-      .where(whereClause)
-      .orderBy(deals.updatedAt)
-      .limit(OFFENDER_LIMIT);
-    return {
-      count: Number(countRow?.n ?? 0),
-      offenders: offenderRows.map((r) => ({
-        id: r.id,
-        name: r.name,
-        detail: r.updatedAt ? `Last updated: ${r.updatedAt.toISOString().slice(0, 10)}` : undefined,
-      })),
-    };
-  }
-
-  private async dealsWithNoNextActivity(orgId: string): Promise<DataQualityAggregate> {
-    const terminalStages = await this.db
-      .select({ key: crmPipelineStages.key })
-      .from(crmPipelineStages)
-      .where(and(eq(crmPipelineStages.orgId, orgId), eq(crmPipelineStages.isTerminal, true), eq(crmPipelineStages.isActive, true)));
-    const terminalKeys = terminalStages.map((s) => s.key);
-    const cutoff = thirtyDaysAgo();
-    const recentActivityDealIds = await this.db
-      .selectDistinct({ dealId: dealActivities.dealId })
-      .from(dealActivities)
-      .where(and(eq(dealActivities.orgId, orgId), sql`${dealActivities.createdAt} >= ${cutoff.toISOString()}`));
-    const activeIds = new Set(recentActivityDealIds.map((r) => r.dealId));
-    const openDeals = await this.db
-      .select({ id: deals.id, name: deals.name, stage: deals.stage })
-      .from(deals)
-      .where(and(eq(deals.orgId, orgId), isNull(deals.deletedAt)));
-    const stale = openDeals.filter(
-      (d) => !terminalKeys.includes(d.stage) && !activeIds.has(d.id),
-    );
-    return {
-      count: stale.length,
-      offenders: stale.slice(0, OFFENDER_LIMIT).map((d) => ({ id: d.id, name: d.name, detail: `Stage: ${d.stage}` })),
-    };
-  }
-
-  private async leadsWithNoOwner(orgId: string): Promise<DataQualityAggregate> {
-    const where = and(
-      eq(leadPartyMap.organizationId, orgId),
-      isNull(businessParties.deletedAt),
-      isNull(businessParties.ownerUserId),
-    );
-    const [countRow] = await this.db
-      .select({ n: count() })
-      .from(leadPartyMap)
-      .innerJoin(businessParties, PARTY_OF_LEAD)
-      .where(where);
-    const offenderRows = await this.db
-      .select({ id: leadPartyMap.leadId, name: businessParties.name })
-      .from(leadPartyMap)
-      .innerJoin(businessParties, PARTY_OF_LEAD)
-      .where(where)
-      .orderBy(desc(businessParties.createdAt))
-      .limit(OFFENDER_LIMIT);
-    return {
-      count: Number(countRow?.n ?? 0),
-      offenders: offenderRows.map((r) => ({ id: r.id, name: r.name })),
-    };
-  }
-
-  private async dealsMissingStageFields(orgId: string): Promise<DataQualityAggregate> {
-    const stagesWithReqs = await this.db
-      .select({ key: crmPipelineStages.key, requiredFields: crmPipelineStages.requiredFields })
-      .from(crmPipelineStages)
-      .where(and(eq(crmPipelineStages.orgId, orgId), eq(crmPipelineStages.isActive, true)));
-    const reqMap = new Map<string, string[]>();
-    for (const s of stagesWithReqs) {
-      const fields = (s.requiredFields as string[] | null) ?? [];
-      if (fields.length > 0) reqMap.set(s.key, fields);
-    }
-    if (reqMap.size === 0) return { count: 0, offenders: [] };
-    const openDeals = await this.db
-      .select({ id: deals.id, name: deals.name, stage: deals.stage, customData: deals.customData })
-      .from(deals)
-      .where(and(eq(deals.orgId, orgId), isNull(deals.deletedAt)))
-      .limit(200);
-    const offenders: DataQualityOffender[] = [];
-    for (const deal of openDeals) {
-      const required = reqMap.get(deal.stage);
-      if (!required) continue;
-      const record: Record<string, unknown> = { ...(deal.customData ?? {}), stage: deal.stage };
-      const missing = required.filter((f) => {
-        const v = record[f];
-        return v === null || v === undefined || v === "";
-      });
-      if (missing.length > 0) {
-        offenders.push({ id: deal.id, name: deal.name, detail: `Missing: ${missing.join(", ")}` });
-      }
-    }
-    return { count: offenders.length, offenders: offenders.slice(0, OFFENDER_LIMIT) };
-  }
 }

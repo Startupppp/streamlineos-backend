@@ -23,7 +23,9 @@ import { fileURLToPath } from "node:url";
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
 const BACKEND_SRC = resolve(__dirname, "..");
 
-const MIN_SERVICE_FILES = 30;
+// Sized against the widened scan below (~4,000 files under modules/ + common/).
+// A floor of 30 was survivable by an almost entirely broken walk.
+const MIN_SERVICE_FILES = 1000;
 const MIN_READ_NAMESPACES = 5;
 const SELF_TEST = process.argv.includes("--self-test");
 
@@ -87,7 +89,25 @@ const FACTORY_TO_NS = {
   invVendorReturnsNamespace: "inv:vret:list",
   invCarriersNamespace: "inv:carriers",
   invChannelsList: "inv:channels:list",
+  invDashboardNamespace: "inv:dashboard",
+  invReorderNamespace: "inv:reorder",
+  invStockSummaryReportNamespace: "inv:stock:summary-report",
+  invPhysicalAuditsNamespace: "inv:physical-audits:list",
+  invAuditExportJobsNamespace: "inv:audit-export-jobs:list",
+  invInspectionPlansNamespace: "inv:quality:plans",
+  hrEmployeesListNamespace: "hr:employees:list",
 };
+
+/**
+ * The invalidation matrix files declare namespaces as DATA, and their prose
+ * quotes call syntax verbatim — "this row claimed a
+ * cachedVersioned('projects:list:<orgId>') reader that has never existed" is a
+ * description field explaining a namespace that was deliberately left uncached.
+ * Scanned as source, that sentence reads as a live unbumped read, and the gate
+ * reported the very namespace whose entry documents why it must not be cached.
+ * The `<orgId>` placeholder form is the tell: no call site writes one.
+ */
+const MATRIX_DATA_FILE = /[/\\]common[/\\]cache[/\\]cache-invalidation-[^/\\]+\.ts$/;
 
 // ─── normalize a raw namespace string to a bare prefix ───────────────────────
 // Two forms:
@@ -384,10 +404,22 @@ function runFullScan() {
   const modulesDir = join(BACKEND_SRC, "modules");
   const commonDir = join(BACKEND_SRC, "common");
 
+  // ⚠ WIDENED 2026-09-12. This used to keep only `*.service.ts`, and that made
+  // the gate report a correctly invalidated namespace as stale. `sales:kpis` is
+  // bumped by `CACHE_KEYS.salesKpisNamespace(orgId)` — a fully resolvable
+  // expression — from `modules/deals/lib/deal-update-effects.ts`, which is where
+  // the body moved when `deals.service.ts` was split. On the previous branch the
+  // identical call sat in `deals.service.ts` and the gate saw it. Nothing about
+  // the invalidation changed; only the file name did.
+  //
+  // The same blind spot runs the other way: move a `cachedVersioned` read into a
+  // `lib/` helper and its live bump starts reporting as dead. Splitting a service
+  // is routine here, so the filter was steadily converting refactors into
+  // findings. Cache calls are not a property of a file's suffix.
   const serviceFiles = [
     ...walkDir(modulesDir),
     ...walkDir(commonDir),
-  ].filter((f) => f.endsWith(".service.ts") || f.endsWith(".service.mts"));
+  ].filter((f) => !MATRIX_DATA_FILE.test(f));
 
   if (serviceFiles.length < MIN_SERVICE_FILES) {
     process.stderr.write(

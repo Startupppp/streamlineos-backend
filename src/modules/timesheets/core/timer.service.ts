@@ -15,50 +15,16 @@ import { actingMembershipId } from "../../../common/auth/principal";
 import { TimesheetsAuditService } from "./timesheets-audit.service";
 import { EntriesService } from "./entries.service";
 import { formatDateOnly } from "./lib/period.helpers";
+import { buildTimerShape } from "./lib/timer-shape";
+import {
+  discardTimer,
+  pauseTimer,
+  resumeTimer,
+  stopTimer,
+  type TimerTransitionDeps,
+} from "./lib/timer-transitions";
 import type { StartTimerInput, ConvertTimerInput } from "./dto/timer.schemas";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import * as transitions from "./timer-transitions";
-
-function elapsedSeconds(session: {
-  accumulatedSeconds: number;
-  status: string;
-  lastResumedAt: Date | null;
-}): number {
-  if (session.status !== "RUNNING" || !session.lastResumedAt) {
-    return session.accumulatedSeconds;
-  }
-  const sinceResume = Math.floor((Date.now() - session.lastResumedAt.getTime()) / 1000);
-  return session.accumulatedSeconds + sinceResume;
-}
-
-function buildTimerShape(
-  session: typeof timerSessions.$inferSelect & {
-    projectName?: string | null;
-    ticketTitle?: string | null;
-  },
-) {
-  return {
-    id: session.id,
-    userMembershipId: session.userMembershipId,
-    projectId: session.projectId,
-    ticketId: session.ticketId,
-    description: session.description,
-    billable: session.billable,
-    startedAt: session.startedAt,
-    lastResumedAt: session.lastResumedAt,
-    accumulatedSeconds: session.accumulatedSeconds,
-    status: session.status,
-    elapsedSeconds: elapsedSeconds(session),
-    project:
-      session.projectId && session.projectName
-        ? { id: session.projectId, name: session.projectName }
-        : null,
-    ticket:
-      session.ticketId && session.ticketTitle
-        ? { id: session.ticketId, title: session.ticketTitle }
-        : null,
-  };
-}
 
 @Injectable()
 export class TimerService {
@@ -182,29 +148,31 @@ export class TimerService {
     return buildTimerShape(row);
   }
 
+  /** @see lib/timer-transitions.ts */
   async pauseTimer(u: CurrentUserContext, timerId: number) {
-    await transitions.pauseTimer(this.db, u, timerId);
-    const row = await this.fetchTimerWithRelations(u.orgId, timerId);
-    if (!row) throw new InternalServerErrorException("Timer not found after update");
-    return buildTimerShape(row);
+    return pauseTimer(this.transitionDeps, u, timerId);
   }
 
+  /** @see lib/timer-transitions.ts */
   async resumeTimer(u: CurrentUserContext, timerId: number) {
-    await transitions.resumeTimer(this.db, u, timerId);
-    const row = await this.fetchTimerWithRelations(u.orgId, timerId);
-    if (!row) throw new InternalServerErrorException("Timer not found after update");
-    return buildTimerShape(row);
+    return resumeTimer(this.transitionDeps, u, timerId);
   }
 
+  /** @see lib/timer-transitions.ts */
   async stopTimer(u: CurrentUserContext, timerId: number) {
-    await transitions.stopTimer(this.db, u, timerId);
-    const row = await this.fetchTimerWithRelations(u.orgId, timerId);
-    if (!row) throw new InternalServerErrorException("Timer not found after update");
-    return buildTimerShape(row);
+    return stopTimer(this.transitionDeps, u, timerId);
   }
 
+  /** @see lib/timer-transitions.ts */
   async discardTimer(u: CurrentUserContext, timerId: number) {
-    return transitions.discardTimer(this.db, u, timerId);
+    return discardTimer(this.transitionDeps, u, timerId);
+  }
+
+  private get transitionDeps(): TimerTransitionDeps {
+    return {
+      db: this.db,
+      reloadTimer: (orgId, timerId) => this.fetchTimerWithRelations(orgId, timerId),
+    };
   }
 
   async convertTimer(u: CurrentUserContext, timerId: number, input: ConvertTimerInput) {

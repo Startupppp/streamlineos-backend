@@ -10,6 +10,22 @@ export const listVendorsSchema = z.object({
 }).strict();
 export type ListVendorsInput = z.infer<typeof listVendorsSchema>;
 
+/**
+ * C4 — the drill-through behind the scorecard's rates. Capped like every list.
+ *
+ * `.max(100)` rather than `pageSizeField`, because the shared helper *clamps*:
+ * `?limit=500` came back 200 with a hundred rows and no indication the request
+ * had been narrowed. Every other inventory list refuses — `forecast-drift`'s
+ * schema is the same `.max(100)` and its spec asserts the same 400 — and a cap
+ * the caller is not told about is the silent-strip this module's boundary rules
+ * exist to prevent.
+ */
+export const vendorDeliveriesSchema = z.object({
+  page: pageNumberField,
+  limit: z.coerce.number().int().min(1).max(100).default(25),
+}).strict();
+export type VendorDeliveriesInput = z.infer<typeof vendorDeliveriesSchema>;
+
 export const createVendorSchema = z.object({
   name: z.string().trim().min(1).max(255),
   code: z.string().trim().min(1).max(50).optional(),

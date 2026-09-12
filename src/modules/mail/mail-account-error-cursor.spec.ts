@@ -141,7 +141,7 @@ function buildHarness(
   } as unknown as MailSyncCheckpointService;
 
   return {
-    service: new MailService(accounts, gmail, outlook, cache, metadata, checkpoints),
+    service: new MailService(accounts, gmail, outlook, cache, metadata, checkpoints, { ENCRYPTION_KEY: "mail-cursor-test-secret" }),
     failOutlookOnce: () => {
       outlookFailures = 1;
     },
@@ -170,7 +170,7 @@ describe("multi-account inbox paging — an account that errors mid-scroll", () 
 
     const first = await harness.service.listMessages(ORG_ID, USER_ID, null, FOLDER, "all", 8, undefined);
     expect(first.nextCursor).not.toBeNull();
-    const afterFirst = decodeCursor(first.nextCursor ?? "", USER_ID);
+    const afterFirst = decodeCursor(first.nextCursor ?? "", USER_ID, "mail-cursor-test-secret");
     expect(afterFirst[OUTLOOK_ACCOUNT.id]).toBe(4);
 
     harness.failOutlookOnce();
@@ -180,7 +180,7 @@ describe("multi-account inbox paging — an account that errors mid-scroll", () 
 
     expect(second.accountErrors.map((e) => e.accountId)).toEqual([OUTLOOK_ACCOUNT.id]);
     expect(second.nextCursor).not.toBeNull();
-    const afterSecond = decodeCursor(second.nextCursor ?? "", USER_ID);
+    const afterSecond = decodeCursor(second.nextCursor ?? "", USER_ID, "mail-cursor-test-secret");
     expect(afterSecond[OUTLOOK_ACCOUNT.id]).toBe(afterFirst[OUTLOOK_ACCOUNT.id]);
   });
 
@@ -230,7 +230,7 @@ describe("multi-account inbox paging — an account that errors mid-scroll", () 
     const first = await harness.service.listMessages(ORG_ID, USER_ID, null, FOLDER, "all", 8, undefined);
 
     expect(first.accountErrors).toHaveLength(1);
-    const afterFirst = decodeCursor(first.nextCursor ?? "", USER_ID);
+    const afterFirst = decodeCursor(first.nextCursor ?? "", USER_ID, "mail-cursor-test-secret");
     expect(afterFirst[OUTLOOK_ACCOUNT.id]).toBeUndefined();
 
     const second = await harness.service.listMessages(

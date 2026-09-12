@@ -1,15 +1,24 @@
-import { Inject, Injectable } from "@nestjs/common";
+import { BadRequestException, Inject, Injectable } from "@nestjs/common";
 import { and, eq, gte, inArray, isNull, lte, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
-import { timesheets, timesheetPeriods, projects, users, organizationMembers } from "../../../db/schema";
+import { timesheets, timesheetPeriods, projects, users, organizationMembers, holidays } from "../../../db/schema";
 import { AccessService } from "../../access/access.service";
 import { actingMembershipId } from "../../../common/auth/principal";
 import { resolveReportsScope, membershipScope } from "./timesheets-core-scope";
 import type { OverviewQuery, ReportRangeQuery } from "./dto/reports.schemas";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { resolveDateRange, round2, utilizationRate } from "./lib/report-metrics";
+
+function boundedReportRange(startDate?: string, endDate?: string) {
+  try {
+    return resolveDateRange(startDate, endDate);
+  } catch (err) {
+    if (err instanceof RangeError) throw new BadRequestException(err.message);
+    throw err;
+  }
+}
 
 function round2Local(n: number): number {
   return Math.round(n * 100) / 100;
@@ -140,7 +149,7 @@ export class ReportsService {
 
   async getUtilization(u: CurrentUserContext, query: ReportRangeQuery) {
     const read = await resolveReportsScope(this.access, u);
-    const { startDate, endDate } = resolveDateRange(query.startDate, query.endDate);
+    const { startDate, endDate } = boundedReportRange(query.startDate, query.endDate);
     const actorMembId = actingMembershipId(u.principal);
 
     const ownerMember = alias(organizationMembers, "owner_member");
@@ -200,5 +209,32 @@ export class ReportsService {
       },
       users: perUser,
     };
+  }
+
+  /**
+   * The organisation's holidays in a range, for the week grid to mark.
+   *
+   * `holidays` is HR's table and this only reads it — the same seam the
+   * payroll export and the compliance report use. It lives on the reports
+   * service because that is where the other calendar-shaped reads already are.
+   *
+   * Not scoped by DataScope: a public holiday is the same for everyone in the
+   * organisation, and hiding it from someone whose scope is "own" would make
+   * their grid wrong rather than private.
+   */
+  async getHolidays(u: CurrentUserContext, startDate: string, endDate: string) {
+    const rows = await this.db
+      .select({ date: holidays.date, name: holidays.name, isPublic: holidays.isPublic })
+      .from(holidays)
+      .where(
+        and(
+          eq(holidays.orgId, u.orgId),
+          gte(holidays.date, startDate),
+          lte(holidays.date, endDate),
+        ),
+      )
+      .orderBy(holidays.date);
+
+    return { startDate, endDate, holidays: rows };
   }
 }

@@ -140,7 +140,7 @@ describe("PRD E2E scenarios 1–12 (contract journey)", () => {
       jobs as never,
       { get: jest.fn() } as never,
       db as never,
-      undefined,
+      undefined as never,
       publishing as never,
       undefined,
     );

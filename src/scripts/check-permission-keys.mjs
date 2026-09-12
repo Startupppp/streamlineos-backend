@@ -345,7 +345,7 @@ const missingFrontend = new Map();
 const unresolved = new Map();
 
 for (const ref of routeRefs) {
-  const rel = relative(REPO_ROOT, ref.file);
+  const rel = relative(BACKEND_ROOT, ref.file);
   if (!ref.resolved) {
     if (!unresolved.has(ref.identifier)) unresolved.set(ref.identifier, []);
     unresolved.get(ref.identifier).push(`${rel}:${ref.line}`);

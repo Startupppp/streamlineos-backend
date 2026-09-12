@@ -18,6 +18,7 @@ import {
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
 import { BodylessAction, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import {
   listInsightsResponseSchema,
   generateInsightsResponseSchema,
@@ -41,7 +42,7 @@ export class InvAiController {
     @Query() filters: ListInsightsInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.aiService.listInsights(u.orgId, filters);
+    return this.aiService.listInsights(u, filters);
   }
 
   @Post("insights/generate")
@@ -49,6 +50,7 @@ export class InvAiController {
   @ResponseSchema(generateInsightsResponseSchema)
   @UseGuards(PermissionGuard, RateLimitGuard)
   @RequirePermission("inventory:ai:manage")
+  @Idempotent("inventory.ai.insights.generate")
   @UseRateLimit("ai:invoke")
   @HttpCode(HttpStatus.OK)
   generateInsights(@CurrentUser() u: CurrentUserContext) {
@@ -65,6 +67,6 @@ export class InvAiController {
     @Body() body: UpdateInsightStatusInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.aiService.updateInsightStatus(u.orgId, insightId, body);
+    return this.aiService.updateInsightStatus(u, insightId, body);
   }
 }

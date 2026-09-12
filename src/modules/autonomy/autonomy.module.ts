@@ -10,11 +10,18 @@ import { AutonomySettingsService } from "./autonomy-settings.service";
 import { AutonomyHoldService } from "./autonomy-hold.service";
 import { AutonomyHoldWorkflow } from "./autonomy-hold.workflow";
 import { AutonomyReversalService } from "./autonomy-reversal.service";
+import { AutonomyRepairService } from "./autonomy-repair.service";
+import { OutboundService } from "./outbound.service";
+import { OutboundWorkflow } from "./outbound.workflow";
 import { QuotesModule } from "../quotes/quotes.module";
 import { NotificationsModule } from "../notifications/notifications.module";
 import { WorkflowModule } from "../../common/workflow/workflow.module";
 import { DataQualityModule } from "../data-quality/data-quality.module";
+import { SequenceReplyExitModule } from "./sequences/sequence-reply-exit.module";
 import { AutonomyReviewController } from "./autonomy-review.controller";
+import { OutboundController } from "./outbound.controller";
+import { ColdOutboundAdminController } from "./cold-outbound-admin.controller";
+import { ColdOutboundAdminService } from "./cold-outbound-admin.service";
 
 /**
  * The part of the product that acts without being asked.
@@ -28,7 +35,8 @@ import { AutonomyReviewController } from "./autonomy-review.controller";
  * decision ledger this module writes -- putting it elsewhere would mean two
  * modules agreeing on what a decision means.
  *
- * `DataQualityModule` is imported for one number. The scoreboard is where a
+ * `DataQualityModule` is imported for one number and, since the repair loop, for
+ * one narrow seam. The scoreboard is where a The scoreboard is where a
  * tenant asks whether any of this is working, and how good the dataset is
  * belongs in that answer rather than on a second surface nobody would think to
  * open -- a rising correction rate and a rising dataset-health penalty are
@@ -44,8 +52,9 @@ import { AutonomyReviewController } from "./autonomy-review.controller";
     NotificationsModule,
     WorkflowModule,
     DataQualityModule,
+    SequenceReplyExitModule,
   ],
-  controllers: [AutonomyReviewController],
+  controllers: [AutonomyReviewController, OutboundController, ColdOutboundAdminController],
   providers: [
     AutonomyService,
     AutonomyActionsService,
@@ -55,7 +64,17 @@ import { AutonomyReviewController } from "./autonomy-review.controller";
     AutonomyScoringService,
     AutonomyHoldService,
     AutonomyHoldWorkflow,
+    AutonomyRepairService,
+    OutboundService,
+    ColdOutboundAdminService,
+    /**
+     * A provider and not an export, like `AutonomyHoldWorkflow`. It exists to be
+     * constructed so its `onModuleInit` reaches `WorkflowRegistry` — a workflow
+     * class Nest never instantiates registers nothing, and its runs are
+     * dead-lettered on arrival for want of a handler rather than failing at boot.
+     */
+    OutboundWorkflow,
   ],
-  exports: [AutonomyService, AutonomyScoringService],
+  exports: [AutonomyService, AutonomyScoringService, AutonomyRepairService, OutboundService],
 })
 export class AutonomyModule {}

@@ -1,20 +1,9 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, asc, count, desc, eq, gte, inArray, isNotNull, isNull, lt, lte, notInArray, sql } from "drizzle-orm";
+import { and, asc, count, desc, eq, inArray, isNotNull, isNull, lt, lte, notInArray, sql } from "drizzle-orm";
 import { AccessService } from "../access/access.service";
-import {
-  leadActivities,
-  deals,
-  users,
-  crmOptions,
-  crmPipelineStages,
-} from "../../db/schema";
+import { leadActivities, users, crmOptions } from "../../db/schema";
 import { businessParties, leadPartyMap } from "../../db/schema/party";
-import {
-  LEAD_PARTY_COLUMNS,
-  LEAD_PARTY_JOIN,
-  leadPartyScope,
-  LEAD_PARTY_SCOPE,
-} from "./lead-party-reader";
+import { LEAD_PARTY_COLUMNS, LEAD_PARTY_JOIN } from "./lead-party-reader";
 import { resolveLeadStatusSemantics } from "./lead-status-semantics";
 import type {
   AnalyticsQuery,
@@ -26,18 +15,60 @@ import type { ScopedRead } from "../access/scoped-read";
 import { CACHE_TTL } from "../../common/cache/cache-keys";
 import { CacheService } from "../../common/cache/cache.service";
 import { LeadsReportsTeamService } from "./leads-reports-team.service";
+import {
+  getLeadAnalytics,
+  visibleLeadsWhere,
+  type LeadAnalyticsDeps,
+} from "./lib/lead-analytics-report";
 
-const EMPTY_LEAD_ANALYTICS = {
-  totalLeads: 0,
-  totalLeadsPrevPeriod: 0,
-  conversionRate: 0,
-  conversionRatePrevPeriod: 0,
-  totalRevenue: 0,
-  conversionBySource: [] as { source: string; total: number; converted: number }[],
-  monthlyRevenue: [] as { month: string; revenue: number }[],
-  assignmentDistribution: [] as { userId: string; name: string | null; total: number }[],
-};
+/**
+ * The cache entry belongs to whoever may read it.
+ *
+ * `cachedVersioned` keys on `${namespace}:v${version}:${key}` and the namespace
+ * is the organisation, so a narrowed report reusing the org-wide key would serve
+ * one rep's numbers to the next rep AND to the manager who asked for the org's
+ * — a worse leak than the one being fixed, and a wrong number besides. `all` and
+ * `none` answer the same thing for everyone holding them, so they stay a single
+ * shared entry; `own` and `team` fan out per caller, because that is what they
+ * mean. Nothing changes for an organisation that grants nobody a narrowed scope:
+ * every read still lands on the one `:all` entry.
+ *
+ * `ScopedRead.discriminator` is exactly that key: `all` and `none` as
+ * themselves, `own` and `team` with the caller appended.
+ */
+function scopedCacheKey(key: string, read: ScopedRead): string {
+  return `${key}:${read.discriminator}`;
+}
 
+/**
+ * WHAT A NARROWED LEAD REPORT MEANS, decided once so the screens agree.
+ *
+ * `crm:leads:view` is declared `scopable: true`, so an organisation may grant a
+ * rep `own`. For a list that is unambiguous — you see the leads assigned to you.
+ * For a REPORT it is a decision, because narrowing changes what the number is:
+ * "conversion rate" becomes MY conversion rate, not the organisation's.
+ *
+ * The decision is taken, not invented: `getLeadAnalytics` on this same
+ * controller, behind this same key, has always narrowed. So a rep at `own`
+ * already sees a conversion rate that is theirs. Leaving `dashboard-metrics` and
+ * `source-report` org-wide meant the same person read two different conversion
+ * rates on two tiles of one screen and had no way to tell which was which — and
+ * the org-wide one disclosed exactly the totals the grant was meant to withhold.
+ *
+ * So: every figure on these reports is over THE LEADS THE CALLER MAY SEE. At
+ * `all` — every manager, every org owner, and every organisation that has not
+ * granted a narrowed scope to anybody — the predicate is `true` and each number
+ * is byte-for-byte what it was.
+ *
+ * `follow-ups` and `unverified` are not aggregates at all. They are lead lists,
+ * carrying name, email, phone, company and free-text follow-up notes, and they
+ * were returning every lead in the organisation to a rep restricted to their
+ * own. Those are the two that leaked records rather than totals.
+ *
+ * Every one of them takes the caller's `ScopedRead`, so the tenant predicate and
+ * the scope predicate arrive together (`visibleLeadsWhere`) and no report can
+ * be handed a scope it did not resolve.
+ */
 @Injectable()
 export class LeadsReportsService {
   constructor(
@@ -47,187 +78,37 @@ export class LeadsReportsService {
     private readonly access: AccessService,
   ) {}
 
-  async getLeadAnalytics(read: ScopedRead, filters: AnalyticsQuery) {
-    const orgId = read.orgId;
-    const analyticsWhere = read.compose(
-      {
-        tenant: businessParties.organizationId,
-        scope: LEAD_PARTY_SCOPE,
-        and: [
-          eq(leadPartyMap.organizationId, orgId),
-          isNull(businessParties.deletedAt),
-          filters.dateFrom ? gte(LEAD_PARTY_COLUMNS.createdAt, new Date(filters.dateFrom)) : undefined,
-          filters.dateTo
-            ? lte(LEAD_PARTY_COLUMNS.createdAt, new Date(filters.dateTo + "T23:59:59"))
-            : undefined,
-        ],
-      },
-      (where) => where.sql,
-      () => null,
-    );
-    if (analyticsWhere === null) return EMPTY_LEAD_ANALYTICS;
-    const f = [analyticsWhere];
-
-    const now = new Date();
-    const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
-    const sixtyDaysAgo = new Date(now.getTime() - 60 * 24 * 60 * 60 * 1000);
-
-    const statusOptions = await this.db
-      .select()
-      .from(crmOptions)
-      .where(and(eq(crmOptions.orgId, orgId), eq(crmOptions.type, "lead_status")));
-    const semantics = resolveLeadStatusSemantics(statusOptions);
-
-    const convertedExpr =
-      semantics.convertedKeys.length > 0
-        ? sql`${LEAD_PARTY_COLUMNS.status} = ANY(ARRAY[${sql.join(
-            semantics.convertedKeys.map((k) => sql`${k}`),
-            sql`, `,
-          )}])`
-        : sql`false`;
-
-    const [totalsRows, prevPeriodRows, wonStages, sourceRows, assignRows, permittedMembers] =
-      await Promise.all([
-        this.db
-          .select({
-            total: sql<number>`COUNT(*)::int`,
-            converted: sql<number>`COUNT(*) FILTER (WHERE ${convertedExpr})::int`,
-          })
-          .from(leadPartyMap)
-          .innerJoin(businessParties, LEAD_PARTY_JOIN)
-          .where(and(...f)),
-        this.db
-          .select({
-            total: sql<number>`COUNT(*)::int`,
-            converted: sql<number>`COUNT(*) FILTER (WHERE ${convertedExpr})::int`,
-          })
-          .from(leadPartyMap)
-          .innerJoin(businessParties, LEAD_PARTY_JOIN)
-          .where(
-            and(
-              ...leadPartyScope(orgId),
-              gte(LEAD_PARTY_COLUMNS.createdAt, sixtyDaysAgo),
-              lte(LEAD_PARTY_COLUMNS.createdAt, thirtyDaysAgo),
-            ),
-          ),
-        this.db
-          .select({ key: crmPipelineStages.key })
-          .from(crmPipelineStages)
-          .where(
-            and(
-              eq(crmPipelineStages.orgId, orgId),
-              eq(crmPipelineStages.stageType, "won"),
-            ),
-          ),
-        this.db
-          .select({
-            source: LEAD_PARTY_COLUMNS.source,
-            total: sql<number>`COUNT(*)::int`,
-            converted: sql<number>`COUNT(*) FILTER (WHERE ${convertedExpr})::int`,
-          })
-          .from(leadPartyMap)
-          .innerJoin(businessParties, LEAD_PARTY_JOIN)
-          .where(and(...f))
-          .groupBy(LEAD_PARTY_COLUMNS.source),
-        this.db
-          .select({
-            assignedToId: LEAD_PARTY_COLUMNS.assignedToId,
-            cnt: sql<number>`COUNT(*)::int`,
-          })
-          .from(leadPartyMap)
-          .innerJoin(businessParties, LEAD_PARTY_JOIN)
-          .where(and(...f, isNotNull(LEAD_PARTY_COLUMNS.assignedToId)))
-          .groupBy(LEAD_PARTY_COLUMNS.assignedToId),
-        this.access.membersWithPermission(orgId, "crm:leads:view"),
-      ]);
-
-    const permittedUserIds = permittedMembers.map((m) => m.userId);
-    const salesUsers = permittedUserIds.length > 0
-      ? await this.db
-          .select({ id: users.id, name: users.name })
-          .from(users)
-          .where(inArray(users.id, permittedUserIds))
-      : [];
-
-    const totalLeads = totalsRows[0]?.total ?? 0;
-    const converted = totalsRows[0]?.converted ?? 0;
-    const conversionRate =
-      totalLeads > 0 ? Math.round((converted / totalLeads) * 100) : 0;
-
-    const prevTotal = prevPeriodRows[0]?.total ?? 0;
-    const prevConverted = prevPeriodRows[0]?.converted ?? 0;
-    const prevConversionRate =
-      prevTotal > 0 ? Math.round((prevConverted / prevTotal) * 100) : 0;
-
-    const wonStageKeys = wonStages.length ? wonStages.map((s) => s.key) : ["WON"];
-
-    const [revenueRow, wonDeals] = await Promise.all([
-      this.db
-        .select({
-          totalRevenue: sql<number>`COALESCE(SUM(${deals.value}::numeric), 0)::float`,
-        })
-        .from(deals)
-        .where(and(eq(deals.orgId, orgId), isNull(deals.deletedAt), inArray(deals.stage, wonStageKeys)))
-        .then((r) => r[0]),
-      this.db
-        .select({ value: deals.value, createdAt: deals.createdAt })
-        .from(deals)
-        .where(and(eq(deals.orgId, orgId), isNull(deals.deletedAt), inArray(deals.stage, wonStageKeys))),
-    ]);
-
-    const totalRevenue = revenueRow?.totalRevenue ?? 0;
-
-    const conversionBySource: {
-      source: string;
-      total: number;
-      converted: number;
-      rate: number;
-    }[] = sourceRows.map((r) => ({
-      source: r.source.replace(/_/g, " "),
-      total: r.total,
-      converted: r.converted,
-      rate: r.total > 0 ? Math.round((r.converted / r.total) * 100) : 0,
-    }));
-
-    const monthMap = new Map<string, number>();
-    for (const d of wonDeals) {
-      const date = d.createdAt;
-      if (!date) continue;
-      const m = new Date(date);
-      const key = `${m.getFullYear()}-${String(m.getMonth() + 1).padStart(2, "0")}`;
-      monthMap.set(key, (monthMap.get(key) ?? 0) + Number(d.value ?? 0));
-    }
-    const monthlyRevenue = [...monthMap.entries()]
-      .sort((a, b) => a[0].localeCompare(b[0]))
-      .slice(-6)
-      .map(([month, revenue]) => ({ month, revenue }));
-
-    const assignMap = new Map<string, number>();
-    for (const row of assignRows) {
-      if (row.assignedToId) assignMap.set(row.assignedToId, row.cnt);
-    }
-    const assignmentDistribution = salesUsers.map((u) => ({
-      userId: u.id,
-      name: u.name ?? "Unknown",
-      count: assignMap.get(u.id) ?? 0,
-    }));
-
-    return {
-      totalLeads,
-      totalLeadsPrevPeriod: prevTotal,
-      conversionRate,
-      conversionRatePrevPeriod: prevConversionRate,
-      totalRevenue,
-      conversionBySource,
-      monthlyRevenue,
-      assignmentDistribution,
-    };
+  /** Bound once so the extracted report sees the same injected instances. */
+  private get analyticsDeps(): LeadAnalyticsDeps {
+    return { db: this.db, access: this.access };
   }
 
-  getDashboardMetrics(orgId: string) {
+  getLeadAnalytics(read: ScopedRead, filters: AnalyticsQuery) {
+    return getLeadAnalytics(this.analyticsDeps, read, filters);
+  }
+
+  /**
+   * The dashboard tiles, over the leads the caller may see.
+   *
+   * This took no caller id at all, so every tile was the organisation's while
+   * the analytics screen behind the same `crm:leads:view` key was the rep's. A
+   * rep granted `own` read their own conversion rate on one screen and the
+   * organisation's on the next, and the organisation believed it had restricted
+   * them.
+   *
+   * The activity counts narrow on who LOGGED the call or meeting rather than on
+   * who owns the lead. That is deliberate: `lead_activities` has no owner column
+   * and reaching one would mean joining through `lead_party_map`, which would
+   * drop activities whose lead has since been deleted — changing the org-wide
+   * number for everybody in order to narrow it for one rep. `user_id` is the
+   * person who did the work, it is indexed, and at `all` the predicate is `true`
+   * so the tile is unchanged.
+   */
+  getDashboardMetrics(read: ScopedRead) {
+    const orgId = read.orgId;
     return this.cache.cachedVersioned(
       `leads:${orgId}`,
-      "dashboard-metrics",
+      scopedCacheKey("dashboard-metrics", read),
       async () => {
         const threeDaysAgo = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000);
 
@@ -240,34 +121,41 @@ export class LeadsReportsService {
         const semantics = resolveLeadStatusSemantics(statusOptions);
         const terminalKeys = [...semantics.convertedKeys, ...semantics.lostKeys];
 
+        const byStatusWhere = visibleLeadsWhere(read);
+        const followUpWhere = visibleLeadsWhere(
+          read,
+          notInArray(LEAD_PARTY_COLUMNS.status, terminalKeys),
+          lt(LEAD_PARTY_COLUMNS.updatedAt, threeDaysAgo),
+        );
+        // Narrowed on who LOGGED the activity (see above), through the same
+        // ScopedRead, so the tenant and the scope still arrive together.
+        const activityWhere = read.compose(
+          {
+            tenant: leadActivities.orgId,
+            scope: { columns: { ownerColumn: leadActivities.userId } },
+            and: [inArray(leadActivities.type, ["call", "meeting", "site_visit"])],
+          },
+          (where) => where.sql,
+          () => sql`false`,
+        );
+
         const [leadCounts, activityCounts, followUpCount] = await Promise.all([
           this.db
             .select({ status: LEAD_PARTY_COLUMNS.status, cnt: count() })
             .from(leadPartyMap)
             .innerJoin(businessParties, LEAD_PARTY_JOIN)
-            .where(and(...leadPartyScope(orgId)))
+            .where(byStatusWhere)
             .groupBy(LEAD_PARTY_COLUMNS.status),
           this.db
             .select({ type: leadActivities.type, cnt: count() })
             .from(leadActivities)
-            .where(
-              and(
-                eq(leadActivities.orgId, orgId),
-                inArray(leadActivities.type, ["call", "meeting", "site_visit"]),
-              ),
-            )
+            .where(activityWhere)
             .groupBy(leadActivities.type),
           this.db
             .select({ cnt: count() })
             .from(leadPartyMap)
             .innerJoin(businessParties, LEAD_PARTY_JOIN)
-            .where(
-              and(
-                ...leadPartyScope(orgId),
-                notInArray(LEAD_PARTY_COLUMNS.status, terminalKeys),
-                lt(LEAD_PARTY_COLUMNS.updatedAt, threeDaysAgo),
-              ),
-            )
+            .where(followUpWhere)
             .then((r) => r[0]?.cnt ?? 0),
         ]);
 
@@ -303,10 +191,22 @@ export class LeadsReportsService {
     );
   }
 
-  getSourceReport(orgId: string) {
+  /**
+   * The source breakdown, over the leads the caller may see.
+   *
+   * `getLeadAnalytics` returns this exact breakdown as `conversionBySource` and
+   * has always narrowed it. This one did not, so the same person could read
+   * "Referral: 40 leads, 12 converted" narrowed on one screen and the
+   * organisation's figure on the other, with nothing on either saying which.
+   * `totalValue` sums `expected_value` across those leads, so the org-wide
+   * version also handed a restricted rep the size of the whole pipeline by
+   * channel.
+   */
+  getSourceReport(read: ScopedRead) {
+    const orgId = read.orgId;
     return this.cache.cachedVersioned(
       `leads:${orgId}`,
-      "source-report",
+      scopedCacheKey("source-report", read),
       async () => {
         const statusOptions = await this.db.select().from(crmOptions)
           .where(and(eq(crmOptions.orgId, orgId), eq(crmOptions.type, "lead_status")));
@@ -315,6 +215,8 @@ export class LeadsReportsService {
           semantics.convertedKeys.map((k) => sql`${k}`),
           sql`, `,
         );
+
+        const where = visibleLeadsWhere(read);
 
         const rows = await this.db
           .select({
@@ -325,7 +227,7 @@ export class LeadsReportsService {
           })
           .from(leadPartyMap)
           .innerJoin(businessParties, LEAD_PARTY_JOIN)
-          .where(and(...leadPartyScope(orgId)))
+          .where(where)
           .groupBy(LEAD_PARTY_COLUMNS.source)
           .orderBy(sql`count(*) desc`);
 
@@ -358,16 +260,23 @@ export class LeadsReportsService {
     return this.teamReports.getLeadSlaAlerts(read);
   }
 
-  async getFollowUps(orgId: string, query: FollowUpsQuery) {
+  /**
+   * The follow-ups due, out of the leads the caller may see.
+   *
+   * Not an aggregate: this returns lead ROWS — name, email, phone, company and
+   * the free-text follow-up notes somebody typed about a person. It took no
+   * caller id, so a rep granted `own` got up to a hundred of the organisation's
+   * leads with contact details attached, from a route gated on the very key that
+   * was supposed to be narrowing them.
+   */
+  async getFollowUps(read: ScopedRead, query: FollowUpsQuery) {
     const maxResults = Math.min(query.limit ?? 20, 100);
 
-    const conditions = [
-      ...leadPartyScope(orgId),
+    const conditions = visibleLeadsWhere(
+      read,
       isNotNull(LEAD_PARTY_COLUMNS.followUpDate),
-    ];
-    if (query.overdue === "true") {
-      conditions.push(lte(LEAD_PARTY_COLUMNS.followUpDate, new Date()));
-    }
+      query.overdue === "true" ? lte(LEAD_PARTY_COLUMNS.followUpDate, new Date()) : undefined,
+    );
 
     const results = await this.db
       .select({
@@ -387,7 +296,7 @@ export class LeadsReportsService {
       .from(leadPartyMap)
       .innerJoin(businessParties, LEAD_PARTY_JOIN)
       .leftJoin(users, eq(LEAD_PARTY_COLUMNS.assignedToId, users.id))
-      .where(and(...conditions))
+      .where(conditions)
       .orderBy(asc(LEAD_PARTY_COLUMNS.followUpDate), asc(LEAD_PARTY_COLUMNS.id))
       .limit(maxResults);
 
@@ -396,11 +305,26 @@ export class LeadsReportsService {
     return { items: results.map(({ _total, ...r }) => r), total };
   }
 
-  async getUnverifiedLeads(orgId: string) {
+  /**
+   * The unverified leads, out of the ones the caller may see.
+   *
+   * The projection is `LEAD_PARTY_COLUMNS` — the WHOLE lead, every column the
+   * detail screen shows, up to a hundred of them, plus the assignee. Same defect
+   * as `getFollowUps` and the same cost: a rep restricted to their own leads was
+   * reading the organisation's book, contact details and notes included.
+   */
+  async getUnverifiedLeads(read: ScopedRead) {
+    const orgId = read.orgId;
     const statusOptions = await this.db.select().from(crmOptions)
       .where(and(eq(crmOptions.orgId, orgId), eq(crmOptions.type, "lead_status")));
     const semantics = resolveLeadStatusSemantics(statusOptions);
     const activeKeys = semantics.activeKeys.length > 0 ? semantics.activeKeys : ["NEW"];
+
+    const where = visibleLeadsWhere(
+      read,
+      inArray(LEAD_PARTY_COLUMNS.status, activeKeys),
+      isNull(LEAD_PARTY_COLUMNS.verifiedById),
+    );
 
     const rows = await this.db
       .select({
@@ -412,13 +336,7 @@ export class LeadsReportsService {
       .from(leadPartyMap)
       .innerJoin(businessParties, LEAD_PARTY_JOIN)
       .leftJoin(users, eq(LEAD_PARTY_COLUMNS.assignedToId, users.id))
-      .where(
-        and(
-          ...leadPartyScope(orgId),
-          inArray(LEAD_PARTY_COLUMNS.status, activeKeys),
-          isNull(LEAD_PARTY_COLUMNS.verifiedById),
-        ),
-      )
+      .where(where)
       .orderBy(desc(LEAD_PARTY_COLUMNS.createdAt), desc(LEAD_PARTY_COLUMNS.id))
       .limit(100);
 

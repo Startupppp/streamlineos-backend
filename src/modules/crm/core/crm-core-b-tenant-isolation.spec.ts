@@ -186,7 +186,8 @@ describe("CrmSupportDashboardService — cross-tenant isolation", () => {
 
 describe("CrmOrganizationsService — cross-tenant isolation", () => {
   function buildSvc(db: Db) {
-    return new CrmOrganizationsService(db, makeCache() as never);
+    // Only the list is exercised here; the plan check sits on `create`.
+    return new CrmOrganizationsService(db, makeCache() as never, { assertWithinLimit: jest.fn() } as never);
   }
 
   it("list: queries scoped to attacker org (deny)", async () => {

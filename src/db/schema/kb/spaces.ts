@@ -10,9 +10,10 @@ import {
   uniqueIndex,
   unique,
   foreignKey,
+  uuid,
 } from "drizzle-orm/pg-core";
 import { relations, sql } from "drizzle-orm";
-import { organizations, organizationMembers } from "../common/auth";
+import { organizations, organizationMembers, users } from "../common/auth";
 import { kbAudienceEnum, kbSpaceRoleEnum } from "../common/enums";
 
 export const kbSpaces = pgTable(
@@ -84,4 +85,60 @@ export const kbSpacesRelations = relations(kbSpaces, ({ one, many }) => ({
 export const kbSpaceMembersRelations = relations(kbSpaceMembers, ({ one }) => ({
   space: one(kbSpaces, { fields: [kbSpaceMembers.spaceId], references: [kbSpaces.id] }),
   membership: one(organizationMembers, { fields: [kbSpaceMembers.membershipId], references: [organizationMembers.id] }),
+}));
+
+/**
+ * Per-principal grants on a single space, moved here from `common/access.ts`.
+ *
+ * It sat in the RBAC file because it is an access-control row, but the thing it
+ * controls is a KB space: `space_id` is `kb_spaces.id`, and every reader of it is
+ * in the knowledge module. Nothing in `common/access.ts` referenced it, so it was
+ * a leaf in the wrong folder — the root barrel it is imported from is unchanged.
+ *
+ * `principal_type` / `principal_id` stay text rather than an FK: a grant can name
+ * a user or a group, and the unique index carries the org so one tenant's grants
+ * cannot collide with another's.
+ */
+export const kbSpaceGrants = pgTable(
+  "kb_space_grants",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    orgId: text("org_id")
+      .references(() => organizations.id, { onDelete: "cascade" })
+      .notNull(),
+    spaceId: integer("space_id").notNull(),
+    principalType: text("principal_type").notNull().default("user"),
+    principalId: text("principal_id").notNull(),
+    permissionKey: text("permission_key").notNull(),
+    grantedBy: text("granted_by").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (t) => [
+    uniqueIndex("uniq_kb_space_grants").on(
+      t.orgId,
+      t.spaceId,
+      t.principalType,
+      t.principalId,
+      t.permissionKey,
+    ),
+    index("idx_kb_space_grants_org_space").on(t.orgId, t.spaceId),
+    index("idx_kb_space_grants_principal").on(
+      t.orgId,
+      t.principalType,
+      t.principalId,
+    ),
+  ],
+);
+
+export const kbSpaceGrantsRelations = relations(kbSpaceGrants, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [kbSpaceGrants.orgId],
+    references: [organizations.id],
+  }),
+  grantedByUser: one(users, {
+    fields: [kbSpaceGrants.grantedBy],
+    references: [users.id],
+  }),
 }));

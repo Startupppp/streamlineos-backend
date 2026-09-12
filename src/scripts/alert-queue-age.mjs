@@ -28,7 +28,13 @@ import { resolve } from "node:path";
 import postgres from "postgres";
 import * as dotenv from "dotenv";
 
-dotenv.config({ path: resolve(process.cwd(), ".env") });
+/**
+ * `quiet` because stdout is the alert payload. dotenv prints a banner there
+ * by default, which makes `pnpm alert:… | jq` fail on the first character —
+ * so the rows naming the affected organisations could not be read by the
+ * oncall integration these scripts exist to feed.
+ */
+dotenv.config({ path: resolve(process.cwd(), ".env"), quiet: true });
 
 const args = process.argv.slice(2);
 const thresholdSecs = Math.max(

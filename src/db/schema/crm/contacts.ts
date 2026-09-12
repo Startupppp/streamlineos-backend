@@ -1,16 +1,27 @@
-import { pgTable, text, serial, timestamp, boolean, jsonb, decimal, date, integer, index, uniqueIndex, foreignKey, unique } from "drizzle-orm/pg-core";
-import { relations, sql } from "drizzle-orm";
-import {
-  clientAccountStatusEnum, orgSizeEnum, crmHealthEnum,
-} from "../common/enums";
+import { pgTable, text, serial, timestamp, boolean, jsonb, decimal, date, integer, index, uniqueIndex, unique } from "drizzle-orm/pg-core";
+import { relations } from "drizzle-orm";
+import { clientAccountStatusEnum, crmHealthEnum } from "../common/enums";
 import { organizations, users } from "../common/auth";
 import { orgUnits } from "../common/organization";
-import { leads } from "./leads";
 
+/**
+ * The legacy `clients` table, declared for its readers and never written.
+ *
+ * CRM stopped writing it with the Party model: a client's id is minted by
+ * `client_party_map` and the row is derived from the Party. The declaration
+ * stays because code outside CRM still names the table — `build/ticket-core.ts`
+ * and `support/agent-routing.ts` hold foreign keys to it — and the table itself
+ * survives until the opt-in 0278 drop runs. Nothing in CRM may insert, update
+ * or delete through it; `cold-build-integrity.spec.ts` names the readers.
+ *
+ * `lead_id` is declared without its reference: `leads` is no longer declared
+ * anywhere, and a Drizzle reference is only documentation here — migrations
+ * are hand-authored.
+ */
 export const clients = pgTable("clients", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-  leadId: integer("lead_id").references(() => leads.id, { onDelete: "set null" }),
+  leadId: integer("lead_id"),
   name: text("name").notNull(),
   email: text("email"),
   phone: text("phone"),
@@ -43,7 +54,15 @@ export const clientAccounts = pgTable("client_accounts", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
   branchId: text("branch_id").references(() => orgUnits.id, { onDelete: "set null" }),
-  leadId: integer("lead_id").notNull().references(() => leads.id),
+  leadId: integer("lead_id").notNull(),
+  /**
+  * The party behind this row's legacy id. Ticket 08's expand.
+  *
+  * Beside the old column, not replacing it -- the contract migration removes
+  * the old one once nothing reads it. Kept in step by a trigger, so no writer
+  * has to remember.
+  */
+  leadPartyId: text("lead_party_id"),
   salesRepId: text("sales_rep_id").notNull().references(() => users.id),
   salesRepMembershipId: integer("sales_rep_membership_id"),
   assignedCrmId: text("assigned_crm_id").references(() => users.id),
@@ -88,65 +107,18 @@ export const clientAccountActivities = pgTable("client_account_activities", {
   index("idx_client_account_activities_user").on(table.userId),
 ]);
 
-export const crmOrganizations = pgTable("crm_organizations", {
-  id: serial("id").primaryKey(),
-  orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-  name: text("name").notNull(),
-  domain: text("domain"),
-  industry: text("industry"),
-  size: orgSizeEnum("size"),
-  website: text("website"),
-  linkedinUrl: text("linkedin_url"),
-  description: text("description"),
-  healthScore: integer("health_score"),
-  parentId: integer("parent_id"),
-  notes: text("notes"),
-  deletedAt: timestamp("deleted_at"),
-  mergedIntoId: integer("merged_into_id"),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-  updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
-}, (table) => [
-  index("idx_crm_organizations_org_live").on(table.orgId).where(sql`deleted_at IS NULL`),
-  index("idx_crm_organizations_parent").on(table.orgId, table.parentId).where(sql`deleted_at IS NULL`),
-  foreignKey({ columns: [table.parentId], foreignColumns: [table.id] }).onDelete("set null"),
-  foreignKey({ columns: [table.mergedIntoId], foreignColumns: [table.id] }).onDelete("set null"),
-  unique("uniq_crm_organizations_org_id").on(table.orgId, table.id),
-]);
-
-export const contacts = pgTable("contacts", {
-  id: serial("id").primaryKey(),
-  orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-  name: text("name").notNull(),
-  email: text("email"),
-  phone: text("phone"),
-  title: text("title"),
-  department: text("department"),
-  company: text("company"),
-  organizationId: integer("organization_id").references(() => crmOrganizations.id, { onDelete: "set null" }),
-  linkedinUrl: text("linkedin_url"),
-  twitterUrl: text("twitter_url"),
-  websiteUrl: text("website_url"),
-  avatarUrl: text("avatar_url"),
-  leadId: integer("lead_id").references(() => leads.id, { onDelete: "set null" }),
-  dealId: integer("deal_id"),
-  notes: text("notes"),
-  tags: jsonb("tags").$type<string[]>().default([]).notNull(),
-  deletedAt: timestamp("deleted_at"),
-  mergedIntoId: integer("merged_into_id"),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-  updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
-}, (table) => [
-  index("idx_contacts_org_live").on(table.orgId, table.createdAt).where(sql`deleted_at IS NULL`),
-  index("idx_contacts_organization").on(table.organizationId),
-  index("idx_contacts_name_email").on(table.orgId, table.name, table.email).where(sql`deleted_at IS NULL`),
-  unique("uniq_contacts_org_id").on(table.orgId, table.id),
-  foreignKey({ columns: [table.mergedIntoId], foreignColumns: [table.id] }).onDelete("set null"),
-]);
-
 export const clientOpportunities = pgTable("client_opportunities", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-  clientId: integer("client_id").references(() => clients.id, { onDelete: "cascade" }).notNull(),
+  clientId: integer("client_id").notNull(),
+  /**
+   * The party this row's client is. Ticket 08's expand.
+   *
+   * Beside `client_id` rather than replacing it: every existing reader keeps
+   * working while readers move over one at a time, and the old column goes in
+   * the contract migration once none is left.
+   */
+  clientPartyId: text("client_party_id"),
   title: text("title").notNull(),
   type: text("type").default("upsell").notNull(),
   stage: text("stage").default("identified").notNull(),
@@ -181,7 +153,15 @@ export const clientOnboardingTemplates = pgTable("client_onboarding_templates", 
 export const clientOnboardingItems = pgTable("client_onboarding_items", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-  clientId: integer("client_id").references(() => clients.id, { onDelete: "cascade" }).notNull(),
+  clientId: integer("client_id").notNull(),
+  /**
+   * The party this row's client is. Ticket 08's expand.
+   *
+   * Beside `client_id` rather than replacing it: every existing reader keeps
+   * working while readers move over one at a time, and the old column goes in
+   * the contract migration once none is left.
+   */
+  clientPartyId: text("client_party_id"),
   templateId: integer("template_id").references(() => clientOnboardingTemplates.id),
   title: text("title").notNull(),
   description: text("description"),
@@ -203,7 +183,16 @@ export const clientOnboardingItems = pgTable("client_onboarding_items", {
 export const csatSurveys = pgTable("csat_surveys", {
   id: serial("id").primaryKey(),
   orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
-  clientId: integer("client_id").references(() => clients.id, { onDelete: "cascade" }),
+  clientId: integer("client_id"),
+  /**
+  * The party this row belongs to. Ticket 08's expand.
+  *
+  * Beside `client_id` rather than replacing it: every existing reader keeps
+  * working while readers move over one at a time, and the old column goes in
+  * the contract migration once none is left. Nullable until then -- a null
+  * means "not yet backfilled", which is a state worth being able to see.
+  */
+  clientPartyId: text("client_party_id"),
   title: text("title").notNull(),
   question: text("question").notNull().default("How satisfied are you with our service?"),
   scaleMax: integer("scale_max").default(5).notNull(),
@@ -235,15 +224,9 @@ export const csatResponses = pgTable("csat_responses", {
   unique("uniq_csat_responses_org_id").on(table.orgId, table.id),
 ]);
 
-export const clientsRelations = relations(clients, ({ one }) => ({
-  lead: one(leads, { fields: [clients.leadId], references: [leads.id] }),
-  accountManager: one(users, { fields: [clients.accountManagerId], references: [users.id] }),
-}));
-
 export const clientAccountsRelations = relations(clientAccounts, ({ one, many }) => ({
   organization: one(organizations, { fields: [clientAccounts.orgId], references: [organizations.id] }),
   branch: one(orgUnits, { fields: [clientAccounts.branchId], references: [orgUnits.id] }),
-  lead: one(leads, { fields: [clientAccounts.leadId], references: [leads.id] }),
   salesRep: one(users, { fields: [clientAccounts.salesRepId], references: [users.id], relationName: "clientAccountSalesRep" }),
   assignedCrm: one(users, { fields: [clientAccounts.assignedCrmId], references: [users.id], relationName: "clientAccountCrm" }),
   activities: many(clientAccountActivities),
@@ -254,16 +237,7 @@ export const clientAccountActivitiesRelations = relations(clientAccountActivitie
   user: one(users, { fields: [clientAccountActivities.userId], references: [users.id] }),
 }));
 
-export const crmOrganizationsRelations = relations(crmOrganizations, ({ one, many }) => ({
-  org: one(organizations, { fields: [crmOrganizations.orgId], references: [organizations.id] }),
-  contacts: many(contacts),
-  parent: one(crmOrganizations, { fields: [crmOrganizations.parentId], references: [crmOrganizations.id], relationName: "orgParent" }),
-  children: many(crmOrganizations, { relationName: "orgParent" }),
-}));
-
-
 export const clientOpportunitiesRelations = relations(clientOpportunities, ({ one }) => ({
-  client: one(clients, { fields: [clientOpportunities.clientId], references: [clients.id] }),
   creator: one(users, { fields: [clientOpportunities.createdBy], references: [users.id] }),
 }));
 
@@ -274,7 +248,6 @@ export const clientOnboardingTemplatesRelations = relations(clientOnboardingTemp
 }));
 
 export const clientOnboardingItemsRelations = relations(clientOnboardingItems, ({ one }) => ({
-  client: one(clients, { fields: [clientOnboardingItems.clientId], references: [clients.id] }),
   template: one(clientOnboardingTemplates, { fields: [clientOnboardingItems.templateId], references: [clientOnboardingTemplates.id] }),
   assignee: one(users, { fields: [clientOnboardingItems.assignedTo], references: [users.id] }),
   completedByUser: one(users, { fields: [clientOnboardingItems.completedBy], references: [users.id] }),
@@ -282,7 +255,6 @@ export const clientOnboardingItemsRelations = relations(clientOnboardingItems, (
 
 export const csatSurveysRelations = relations(csatSurveys, ({ one, many }) => ({
   organization: one(organizations, { fields: [csatSurveys.orgId], references: [organizations.id] }),
-  client: one(clients, { fields: [csatSurveys.clientId], references: [clients.id] }),
   creator: one(users, { fields: [csatSurveys.createdBy], references: [users.id] }),
   responses: many(csatResponses),
 }));

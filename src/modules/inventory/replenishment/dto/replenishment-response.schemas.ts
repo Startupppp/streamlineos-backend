@@ -65,8 +65,9 @@ const forecastItemSchema = z.object({
   variantSku: z.string(),
   variantName: z.string(),
   productName: z.string(),
-  onHand: z.number(),
-  onOrder: z.number(),
+  // Exact decimal strings (`SUM(...)::text`), not floats.
+  onHand: z.string(),
+  onOrder: z.string(),
   avgWeeklyDemand: z.number(),
   weeksOfStock: z.number().nullable(),
   stockoutRisk: z.string(),

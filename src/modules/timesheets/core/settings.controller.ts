@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Patch, UseGuards } from "@nestjs/common";
+import { Body, Controller, Get, Patch, Query, UseGuards } from "@nestjs/common";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
 import { ModuleGuard } from "../../../common/rbac/module.guard";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
@@ -7,7 +7,12 @@ import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { SettingsService } from "./settings.service";
-import { updateCoreSettingsSchema, type UpdateCoreSettingsInput } from "./dto/settings.schemas";
+import {
+  settingsHistoryQuerySchema,
+  updateCoreSettingsSchema,
+  type SettingsHistoryQuery,
+  type UpdateCoreSettingsInput,
+} from "./dto/settings.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
 import { timesheetSettingsSchema, settingsHistoryListResponseSchema } from "./dto/timesheets-response.schemas";
@@ -27,9 +32,13 @@ export class TimesheetSettingsController {
 
   @Get("history")
   @RequirePermission("timesheets:settings:view")
+  @Validate({ query: settingsHistoryQuerySchema })
   @ResponseSchema(settingsHistoryListResponseSchema)
-  history(@CurrentUser() u: CurrentUserContext) {
-    return this.settings.getSettingsHistory(u.orgId);
+  history(
+    @Query() query: SettingsHistoryQuery,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.settings.getSettingsHistory(u.orgId, query.limit);
   }
 
   @Patch()

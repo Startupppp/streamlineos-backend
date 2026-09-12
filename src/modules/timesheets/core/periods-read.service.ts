@@ -182,10 +182,12 @@ export class PeriodsReadService {
     const read = await resolveEntriesScope(this.access, u);
     // In-process authorization of one already-fetched row, not a WHERE predicate.
     const scope = read.rawScope("in-process authorization of an already-fetched single row, not a row predicate");
-    const canSeeOthers =
-      u.isOrgOwner ||
-      scope === "all" ||
-      scope === "team";
+    /**
+     * `team` reads as `own` in every list until the team scope is
+     * materialised (`ScopedRead` applies `shape.team ?? shape.own`), so a
+     * by-id read must not grant more than the list beside it would.
+     */
+    const canSeeOthers = u.isOrgOwner || scope === "all";
 
     if (row.userMembershipId !== actingMembershipId(u.principal) && !canSeeOthers) {
       throw new ForbiddenException("You do not have access to this period");

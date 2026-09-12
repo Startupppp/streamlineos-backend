@@ -125,8 +125,32 @@ export const NO_TENANT_TRANSACTION_ALLOWLIST = new Map([
     "SSE notification stream that consumes a short-lived token and never touches the database; no tenant context is needed",
   ],
   [
-    "src/modules/organization/core/organization.controller.ts#listOrganizations,listArchivedOrganizations,switchOrg,restoreOrg",
+    "src/modules/organization/setup/org.controller.ts#getSetupSession,getSetupStatus,complete,skip",
+    "the four org-setup wizard routes, audited 2026-09-12. The file comment's claim — 'the org being set up need not be the session's' — is literally true in THREE ways, and reading the resolver is what shows it: resolveExistingSetupTarget's second `find` (org-setup-resolver.service.ts:127) carries no `orgId === u.orgId` constraint at all, so the target may be the session's org, ANY other live org the caller holds an ACTIVE membership in, or an org that does not exist yet, because resolveOrCreateOrg falls through to creation.createFromSetup (:192). The concrete failure the decorator avoids is a THROW, not a silent wrong-tenant write: with an ambient transaction open for the session's org Y, all six explicit calls (org-setup.service.ts:179, 238, 253, 290, 360, 372) are runInTenantTransaction(this.db, fn, { orgId: X }) and hit run-in-tenant-transaction.ts:68-71 — 'refusing to open a transaction for org X inside an active transaction for org Y' — a hard 500 for every user whose setup target is not their session org. Under it sits the same _or_null trap as the org-lifecycle entry: organization_members' 0383 policy returns NULL rather than raising, so the membership reads are withIdentity (org-setup-resolver.service.ts:42 and :81, whose own comment records that they silently matched nothing before), and migration 1083 names this exact population — the wizard could never be completed. Everything each handler actually writes is NOT-NULL-tenant and therefore on the RAISING policy — onboarding_flow_sessions, onboarding_analytics_events, outbox_events, inbox_records, org_modules — so each block opens its own explicit runInTenantTransaction and nothing reaches the pool without a GUC; the proxy is what carries it into OnboardingSessionService's bare this.db, and the completeSetup/skipSetup mutation blocks thread an explicit tx instead. Note that the two GETs WRITE (the session row and an analytics row), which is why they are decorated at all. No third-party network call on any of the four: every slow fan-out — RBAC seeding, workspace structure, invitations, the welcome notification — is deferred to the outbox by design. Authorization is in the service, not on the route: @Universal() + @AllowNoOrg() with no PermissionGuard, and the withIdentity membership reads are the gate — a caller can only resolve a target among orgs they hold a row in, SUSPENDED throws 403, and the isOwner flag from those same reads gates the destructive half of complete and skip",
+  ],
+  [
+    "src/modules/chat/chat-huddles.controller.ts#startHuddle",
+    "starting a huddle, audited 2026-09-12. This is the provider-in-transaction shape with a NON-AI provider, which is why no rule above it fires: startHuddleWithMeeting (chat/chat-huddle-start.ts:180-201) mints a Google Meet link through Composio at chat-huddle-meeting.ts:80, and under the ambient request transaction that round trip held a pooled connection idle in transaction for the length of a Google outage, against the 60s idle_in_transaction_session_timeout withTenant sets. It is now genuinely three-phase with the third-party call between two committed transactions: prepareStart runs in runInNewTenantTransaction (:187) and carries the authorization — assertHuddleChannelMember (chat-huddle-access.ts:18-35), 403 on a departed or non-member, 404 on a cross-tenant channel id — plus the active-huddle lookup that returns a rejoin WITHOUT ever calling Google; then the mint (:192); then commitStart in a second runInNewTenantTransaction (:198). Every helper takes db as a parameter and is handed the tenant-aware proxy, so there is no bare this.db on the path, and the inner db.transaction at :103 is a SAVEPOINT inside :198 rather than a second pool borrow. The tables involved — chat_huddles, chat_channels, chat_huddle_participants, user_integration_connections, calendar_events — all carry NOT NULL org_id and therefore 0378's RAISING policy, so an unscoped statement here would be a hard 42501, not a silent zero. The org is the SESSION's throughout; PermissionGuard resolves chat:huddles:start in the guard phase through AccessService, which opens its own explicit tenant transaction and is unaffected by the decorator. RECORDED RATHER THAN PAPERED OVER: the decorator fixes the Composio hold and NOT the Ably one — ably.publishHuddleEvent (:153) is an awaited REST HTTPS publish and notifyHuddleStarted (:168) a member fan-out scan, and both still run INSIDE the phase-3 transaction. That is a much shorter hold than a Meet mint and it is pre-existing, but it is the same defect class and this file's docblock overstates the fix; it belongs to the chat module to move onto the outbox",
+  ],
+  [
+    "src/modules/inventory/channels/channel-webhook.controller.ts",
+    "FILE-SCOPED because the decorator is: `@NoTenantTransaction()` sits on the CLASS, above `@Controller(\"inventory/channels\")`, so the finding carries no handler name and a `#inbound` pattern cannot match it. The class has exactly one route. Audited 2026-09-12 by reading the path rather than the docblock. The route is @Public(), so there IS no session to derive a tenant from, and `inv_channels` is behind RLS — the handler cannot read the row that would tell it which tenant to open a transaction for. `receiveDelivery` (channels/lib/channel-snapshot-delivery.ts) resolves it with one `SELECT app.resolve_inv_channel_org_id($1)`, a SECURITY DEFINER function that returns an org id and nothing else, then opens its own `runInTenantTransaction` for the channel read, the signature verification and the delivery insert — so no database access on this path reaches the pool without a tenant GUC, and the decorator is what makes the interceptor stop trying to open a transaction it has no tenant for. The handler does no work beyond that: the durable PENDING row IS the queue and `ChannelSnapshotWorker` drains it, because a marketplace bounds how long it waits (Shopify: five seconds) and an inline refetch would both miss that deadline and hold a pooled connection for the length of somebody else's outage",
+  ],
+  [
+    // `restoreOrg` was in this `#` list and is now dropped from it: the handler
+    // MOVED to organization-lifecycle.controller.ts in the controller split, so
+    // the token here matched nothing and the real handler had no entry at all.
+    // Its entry is the one two below.
+    "src/modules/organization/core/organization.controller.ts#listOrganizations,listArchivedOrganizations,switchOrg",
     "identity-scoped organization discovery and switching; each handler opens its own withIdentity or runInTenantTransaction before touching the database",
+  ],
+  [
+    "src/modules/organization/core/organization.controller.ts#createOrganization",
+    "organisation creation, audited 2026-09-12 — a separate entry from the discovery handlers above because the reason is different in kind: those run before an org is CHOSEN, this one runs before the org EXISTS. Two distinct orgs are in play on one request. The route is not @AllowNoOrg(), so JwtAuthGuard requires the caller to already hold a session org, and @Idempotent(\"organization.create\")'s command_fences write is scoped to THAT org (command-fence-store.ts:123) — while the handler provisions a different, newly minted one (organization-creation.service.ts:93). Under the ambient request transaction the new org's work would be running under the old org's GUC. Every statement on the path is scoped, and the scoping is unusual enough to name: the saga and reservation bookkeeping (OrganizationSagaService, bare this.db throughout) reaches the pool with NO GUC deliberately, and that is safe only because migration 1085_organization_lifecycle_control_plane_policy.sql gives organization_lifecycle_sagas / organization_saga_steps / organization_reservations a control-plane policy — `app.current_org_id_or_null() IS NULL OR col = app.current_org_id_or_null()` — which ADMITS an absent GUC and REFUSES a mismatched one; that migration's own header records that this route 42501'd and answered 500 before it existed, so the decorator is load-bearing for those writes rather than incidental. organization_placement and cell_capacity_measurements are read under runOutsideTenantContext (placement-lookup.ts:51/87, cell-admission.ts:237). The whole org bootstrap — organizations insert, owner membership, roles, modules — runs in runInNewTenantTransaction(db, orgId) at bootstrap-cell-organization.ts:53, and it can resolve a region for an org whose own row does not exist because the saga writes the organization_placement row FIRST (step reserve-placement, organization-creation.service.ts:187) and withTenant's registry reads organization_placement, not organizations. account_organization_index is written under withIdentity (account-organization-index.service.ts:83/116), which its 1083 policy requires since it admits by app.user_id. The only unscoped read is `SELECT users.email` at org-profile.service.ts:187, and users carries no RLS. There is no third-party network call on this path and deliberately no per-resource authorization: @AuthorizedInService says so, and @UseRateLimit(\"organization:create\") is the abuse control",
+  ],
+  [
+    "src/modules/organization/core/organization-lifecycle.controller.ts#restoreOrg",
+    "org restore, audited 2026-09-12. Split out of organization.controller.ts, where the stale `restoreOrg` token in the entry above used to sit; it has never actually been audited, because that token stopped matching the moment the handler moved. The target org comes from the BODY and is @AllowNoOrg(), and it is ARCHIVED, so it is generally NOT the session's live org — which is precisely why an ambient transaction is wrong rather than merely unnecessary. Three concrete failures it avoids, each a different mechanism. (1) The ownership read joins organization_members, whose 0383 policy is `org_id = app.current_org_id_or_null() OR user_id = app.current_user_id_or_null()` — the _or_null variant, which RETURNS NULL rather than raising — so under the session's own GUC for another org it would match zero rows and the handler would answer a spurious 404 for an org the caller genuinely owns. It runs under withIdentity(this.db, userId) at org-lifecycle.service.ts:234, the only helper that sets the GUC that policy admits on. (2) The saga bookkeeping is bare this.db with no GUC, safe only under 1085's control-plane policy, which refuses a MISMATCHED org — so the session's transaction would have made those writes fail, not succeed wrongly. (3) The account_organization_index update at :322 is withIdentity for the same reason as (1), and its 1083 policy carries _or_null on WITH CHECK too, so under the wrong GUC it would write zero rows SILENTLY and the last_activated_at stamp resolvePreferredOrg orders by would simply not appear. organization_legal_holds is NOT-NULL-tenant and therefore on the RAISING policy, so it gets its own runInNewTenantTransaction at :261; organizations carries no RLS. The authorization is exactly what @AuthorizedInService claims — an ACTIVE isOwner membership of the target org, 404 not 403 on a miss (org-lifecycle.service.ts:253-255), pinned by org-lifecycle-tenant-isolation.spec.ts. No third-party network call; Redis only",
   ],
   // The entries below are NOT the SSE shape above. `respondWithAiTextStream` AWAITS
   // `pipeAiTextStream`, and the two CSV exports await `drain` between pages, so the
@@ -199,6 +223,40 @@ export const NO_TENANT_TRANSACTION_ALLOWLIST = new Map([
     "src/modules/timesheets/core/timesheets-ai.controller.ts#summarize,draftRejectionReason,describeEntry,billingNarrative,reportsNarrative,summarizeStream,rejectionReasonStream,describeEntryStream,billingNarrativeStream,reportsNarrativeStream",
     "the five timesheets AI actions, audited 2026-09-03 and the same fix as the KB pair above: each one ends in an AiGatewayService call, and under the request transaction that provider round trip was made with a pooled connection still checked out and idle in transaction, against the 60s idle_in_transaction_session_timeout withTenant sets. TimesheetsAiService now routes every evidence read through readEvidence, one short runInTenantTransaction(db, fn, { orgId }) that commits before the gateway call — periods.getPeriod for summarize and draftRejectionReason, reports.getOverview for reportsNarrative, billing.getBillableWorkForNarrative for billingNarrative. describeEntry reads nothing at all: its prompt is built entirely from the request body, the same shape as kb-authoring. The delegate services keep their signatures because this.db is the tenant-aware proxy and resolves to the transaction opened here. Everything the gateway itself touches — credit reservation, settlement and the ai_usage_logs insert — already passes an explicit orgId. AiRequestAbortInterceptor is declared on the class for the same PRD-C091 reason as the e-sign entry above: the decorator removes the tenant context's disconnect signal, which was the only cancellation source these five had",
   ],
+  // The four below are the inventory AI surfaces, audited and FIXED 2026-09-12.
+  //
+  // They are not the "PRE-EXISTING, UNAUDITED" shape. They arrived on this
+  // branch as four fresh instances of exactly the defect the
+  // provider-in-transaction rule was written for — no decorator, so no finding
+  // under any rule above it — and the rule caught all four. Each has had the fix
+  // the rule prescribes applied rather than an excuse written for it: the
+  // decorator on the handler, the tenant-scoped reads and the authorization
+  // check moved into short explicit `runInTenantTransaction(db, fn, { orgId })`
+  // calls that COMMIT before the provider round trip, and
+  // AiRequestAbortInterceptor on the controller so the released connection is
+  // not bought with an uncancellable, still-billed provider call (PRD-C091).
+  //
+  // They share one helper, `inventory/ai/lib/inv-ai-read-evidence.ts`'s
+  // `readEvidence`, which is the inventory twin of the timesheets one directly
+  // above. Handler-scoped on purpose, per this list's own `#` rule: the fifth
+  // route somebody adds to any of these four controllers has to be argued on its
+  // own rather than inheriting an entry written for its siblings.
+  [
+    "src/modules/inventory/ai/copilot/inv-copilot.controller.ts#ask",
+    "the inventory copilot's one route, and the largest hold of the four because it makes TWO provider round trips rather than one: InvCopilotService.ask awaits AiGatewayService.invokeStructured to pick the tool plan and then AiGatewayService.invokeTextWithUsage to narrate the results, and under the request transaction BOTH were awaited with a pooled connection checked out and idle in transaction, against the 60s idle_in_transaction_session_timeout withTenant sets. It is now two short tenant transactions, one on each side of neither-provider-call: the first carries WarehouseScopeService.forUser and the hasEligibleContext LIMIT 1 probe on inv_stock_levels and commits before the planning call; the second carries all seven runCopilotTool reads and commits before the narration call. The resolved scope is deliberately carried ACROSS the first commit and that is safe by construction — ResolvedWarehouseScope closes over a plain number[] | null and its members only BUILD SQL, so it holds no connection, which is what lets the visibility gate be decided once and enforced in the SQL predicate of all seven tools rather than re-derived seven times. The denial-of-wallet short-circuit is preserved and still precedes both calls: an empty scope or no eligible row returns no_context without reaching a provider at all (backend CLAUDE.md §4). The tools keep their signatures because this.db is the tenant-aware proxy and resolves to the transaction opened here",
+  ],
+  [
+    "src/modules/inventory/ai/demand-risk/inv-demand-risk.controller.ts#explain",
+    "the demand-risk narrative's one route: InvDemandRiskService.explain ends in AiGatewayService.invokeStructuredWithUsage, and under the request transaction that round trip pinned a pooled connection idle in transaction for the whole provider call. Every database statement on the path now sits in ONE short runInTenantTransaction(db, fn, { orgId }) that commits before the gateway call — DemandBaselineService.scopeFor, ForecastPersistenceService.latest and DemandBaselineService.baseline — and nothing after it touches the database, because the rest is projection over values already in memory. The authorization check is deliberately INSIDE that transaction rather than before it: scopeFor is the only gate this surface has (it answers a warehouse the caller does not hold with 404 rather than 403, and refuses an org-wide request from a caller restricted to specific sites), so it must resolve before either read and both reads must see the same GUC it did. The service gained an injected DRIZZLE handle for this and queries nothing through it directly; the two delegate services pick the transaction up through their own this.db. The insufficient_evidence short-circuit still precedes the provider call, so a variant with no stored forecast costs no credits",
+  ],
+  [
+    "src/modules/inventory/ai/inv-ai-explain.controller.ts#narrateOpsBrief",
+    "ops-brief narration, the fifth route on a controller whose other four sit in PROVIDER_IN_TRANSACTION_ALLOWLIST as PRE-EXISTING, UNAUDITED — and the reason this list's `#` rule exists. It is new on this branch and was caught rather than excused by the file-scoped entry those four carry. InvAiExplainService.narrateOpsBrief awaits AiGatewayService.invokeStructured; its one read, InvAiService.getOpsBrief (the deterministic signal aggregate over the RLS-protected inv_ai_insights tables), now runs in a short runInTenantTransaction(db, fn, { orgId }) that commits before that call, and nothing after it touches the database. The totalSignals === 0 short-circuit still precedes the provider call, so an organisation with no open signals is answered from a constant and pays nothing. AiRequestAbortInterceptor is declared on the CLASS rather than on this handler alone, which is deliberate and is not a behaviour change for the other four: getAmbientAiAbortSignal already falls back to the tenant signal they still have, the interceptor only arms an AbortSignal inside an AsyncLocalStorage scope and writes nothing to the response, and it additionally gives those four the caller's Idempotency-Key for the gateway's reservation key, which they previously had no way to supply",
+  ],
+  [
+    "src/modules/inventory/ai/reports/inv-report-builder.controller.ts#ask",
+    "the natural-language report builder's ask route, and the only one of the four whose provider call sits in the MIDDLE of the work rather than at the end — so it gets a short transaction on each side of it and none across it. InvReportBuilderService.choose awaits AiGatewayService.invokeStructuredWithUsage to turn the question into an allowlisted report spec. Transaction one carries WarehouseScopeService.assertWarehouseVisible, the 404-not-403 check on a warehouse the ASKER named, and commits before the model call — it runs first so an out-of-scope warehouse ends the request with no credits spent and no confirmation that the warehouse exists. Transaction two is opened AFTER the call returns and carries everything left: scopeSpec's WarehouseScopeService.resolve (which strips a warehouse the MODEL proposed and reports the strip), both AccessService.holds checks, and definition.run itself. Those four are ONE transaction rather than four on purpose, so the view-permission check and the rows it guards cannot be answered from two different snapshots. The other two routes on this controller keep the request transaction and are correct to: catalog is static with no provider and no database, and export has no model in its path, which is what keeps its permission assertions atomic with the report run. The service gained an injected DRIZZLE handle and queries nothing through it directly",
+  ],
 ]);
 
 export const CONTEXT_EXIT_ALLOWLIST = new Map([
@@ -246,6 +304,33 @@ export const CONTEXT_EXIT_ALLOWLIST = new Map([
     "src/modules/organization/core/org-membership-status.service.ts",
     "planLastActiveOrganizationChange exits the tenant context to query the user's active memberships across all organizations when computing the new lastActiveOrgId after suspension or reactivation; a tenant-scoped GUC would restrict the query to only the current org",
   ],
+  // The three below are one class, and they are the CURE rather than the disease.
+  //
+  // Each is a side effect that outlives the request that raised it. The tenant
+  // context is async-local, so the continuation inherits whatever transaction
+  // was open at the call — which by then has committed and closed. A query
+  // issued against that dead handle does not throw: it never settles. The
+  // surrounding `.catch` therefore never runs, and the failure is invisible in
+  // a way no log, metric or test can see. Every one of these was found that
+  // way: zero rows written, nobody told.
+  //
+  // Detaching first is what lets the callee open a scope of its own from the
+  // orgId it is handed. Removing these calls does not restore tenant safety,
+  // it restores the hang — so if one of these files ever needs its entry
+  // removed, the fix is to make the effect durable (OutboxWriter) or deferred
+  // (registerAfterCommit), never to re-inherit the ambient.
+  [
+    "src/modules/notifications/notifications.service.ts",
+    "detached web-push fan-out: raised from outbox consumers and cron sweeps whose transaction has already committed, so the push_subscriptions read under tenant_isolation would hang on a closed handle instead of failing; runOutsideTenantContext lets sendToUser open its own scope from the orgId it is passed",
+  ],
+  [
+    "src/modules/chat/chat-huddles.service.ts",
+    "detached huddle-start push, same shape as the notifications fan-out one line up: the subscription lookup only won the race by microtask ordering and the 404/410 endpoint reap lost it outright, so expired endpoints were never reaped and real delivery failures were swallowed with them",
+  ],
+  [
+    "src/modules/webhooks/webhooks-dispatch.service.ts",
+    "detached outbound webhook dispatch: run() asks for runInNewTenantTransaction and that helper reuses any ambient it finds, so without exiting first the delivery insert was issued against the returned request's closed transaction and every dispatch silently wrote no delivery row",
+  ],
 ]);
 
 export const WITH_IDENTITY_ALLOWLIST = new Map([
@@ -266,16 +351,16 @@ export const WITH_IDENTITY_ALLOWLIST = new Map([
     "pre-tenant membership resolution: resolvePreferredOrgId, resolveActiveMembership and resolveSuspendedMembership all run before the org context is known, reading cross-org identity tables under user identity",
   ],
   [
-    "src/modules/auth/auth.service.ts",
-    "register() writes and resolvePreferredOrg() reads the cross-org accountOrganizationIndex under user identity; the table is a global identity projection that cannot be read or written under a single org's tenant context",
-  ],
-  [
     "src/modules/organization/core/account-organization-index.service.ts",
     "the account-to-organization discovery projection answers which organizations an account may enter, so it necessarily runs before one is chosen; its RLS policy admits rows by app.user_id and a read on the pool would silently return none",
   ],
   [
     "src/modules/organization/setup/org-setup.service.ts",
     "creates the first org membership under user identity, before the new org's tenant context exists",
+  ],
+  [
+    "src/modules/organization/core/lib/invitation-join.ts",
+    "touchIndexLastActivated writes the joining account's row in account_organization_index, the global cross-org discovery index whose RLS admits rows by app.user_id; it runs best-effort after the join transaction commits, so there is no tenant transaction to ride and a tenant GUC would hide the row",
   ],
   [
     "src/modules/organization/core/org-lifecycle.service.ts",
@@ -297,9 +382,19 @@ export const WITH_IDENTITY_ALLOWLIST = new Map([
     "src/modules/organization/core/org-profile.service.ts",
     "lists all orgs a user belongs to, which is a cross-org identity read that cannot run under a single org's tenant context",
   ],
+  // Both below touch `account_organization_index`, the same cross-org discovery
+  // projection as the entry above. Its RLS policy admits rows by `app.user_id`,
+  // NOT by `app.current_org_id`, so a tenant transaction is not a stricter
+  // choice here — it is the wrong one: the policy would admit nothing and the
+  // read would come back empty rather than refused. `withIdentity` is the only
+  // helper that sets the GUC this table's policy actually reads.
+  [
+    "src/modules/auth/auth.service.ts",
+    "registration projects the new membership into account_organization_index before any org is current, so it necessarily precedes a tenant context, and the table is keyed and policed by user, not org",
+  ],
   [
     "src/modules/organization/core/invitation-acceptance.service.ts",
-    "updates the cross-org accountOrganizationIndex under user identity after invitation acceptance; the table is a global identity projection and must not be written under a single org's tenant context",
+    "an accepted invitation upserts the acceptor's row into the same user-policed discovery projection; the row may not exist yet, which is why this is an upsert rather than the service's touchLastActivated update",
   ],
   [
     "src/modules/organization/core/org-membership-access-revocation.ts",

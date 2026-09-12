@@ -1,4 +1,4 @@
-import { BadRequestException, Body, Controller, Get, Headers, Param, ParseIntPipe, Post, Query, UseGuards } from "@nestjs/common";
+import { Body, Controller, Get, Param, ParseIntPipe, Post, Query, UseGuards } from "@nestjs/common";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
@@ -12,6 +12,7 @@ import type { ListHoldsQueryInput, CreateHoldInput } from "./dto/quality.schemas
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
 import { BodylessAction, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { IdempotencyKey } from "../../../common/idempotency/idempotency-key.decorator";
 import {
   listHoldsResponseSchema,
   invQualityHoldSchema,
@@ -46,7 +47,7 @@ export class HoldsController {
     @Param("holdId", ParseIntPipe) holdId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.findOne(u.orgId, holdId);
+    return this.svc.findOne(u.orgId, u.userId, holdId);
   }
 
   @Post()
@@ -55,11 +56,10 @@ export class HoldsController {
   @RequirePermission("inventory:quality:inspect")
   @Validate({ body: createHoldSchema })
   create(
-    @Headers("idempotency-key") idempotencyKey: string | undefined,
+    @IdempotencyKey() idempotencyKey: string,
     @Body() body: CreateHoldInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!idempotencyKey) throw new BadRequestException("Idempotency-Key header required");
     return this.svc.create(u.orgId, u.userId, idempotencyKey, body);
   }
 
@@ -71,10 +71,9 @@ export class HoldsController {
   @Validate({ params: holdIdParams })
   release(
     @Param("holdId", ParseIntPipe) holdId: number,
-    @Headers("idempotency-key") idempotencyKey: string | undefined,
+    @IdempotencyKey() idempotencyKey: string,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    if (!idempotencyKey) throw new BadRequestException("Idempotency-Key header required");
     return this.svc.release(u.orgId, u.userId, holdId, idempotencyKey);
   }
 }

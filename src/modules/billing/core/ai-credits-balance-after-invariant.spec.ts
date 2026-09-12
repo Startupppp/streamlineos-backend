@@ -9,6 +9,7 @@ import { AiCreditsService } from "./ai-credits.service";
 import { AiCreditsReservationService } from "./ai-credits-reservation.service";
 import { AiCreditsPacksService } from "./ai-credits-packs.service";
 import { creditsToMilli, milliToCredits } from "../../ai/core/billing/ai-model-pricing.constants";
+import { drizzlePostgresError, drizzleUniqueViolation } from "../../../test/postgres-error-fixture";
 
 const PACK = {
   id: 7,
@@ -261,6 +262,103 @@ describe("AI credits — 23505 backstop does not double-credit the wallet", () =
 
     expect(result.balance).toBe(milliToCredits(100_000));
     expect(db.transaction).toHaveBeenCalledTimes(1);
+  });
+
+  it("grantPlanCredits: a replayed plan grant is a no-op, not a 500", async () => {
+    const db = {
+      transaction: jest.fn().mockRejectedValue(drizzleUniqueViolation("uq_ai_credit_txns_plan_grant_ref")),
+    };
+
+    const svc = await buildSvc(db);
+    await expect(svc.grantPlanCredits("org1", "STARTER")).resolves.toBeUndefined();
+    expect(db.transaction).toHaveBeenCalledTimes(1);
+  });
+
+  it("grantAiPackCreditsFromWebhook: a redelivered payment is a no-op, and its writes ran in a savepoint", async () => {
+    let selectCallCount = 0;
+    let insertCallCount = 0;
+    const db = {
+      select: jest.fn().mockImplementation(() => {
+        selectCallCount++;
+        if (selectCallCount === 1) return makeSelectChain([PACK]);
+        return makeSelectChain([{ balance: 300_000 }]);
+      }),
+      // First insert is the wallet upsert (`creditWallet`), which succeeds; the
+      // second is the PURCHASE ledger row, which hits the reference index.
+      insert: jest.fn().mockImplementation(() => {
+        insertCallCount++;
+        if (insertCallCount === 1)
+          return {
+            values: () => ({
+              onConflictDoUpdate: () => ({
+                returning: () => Promise.resolve([{ balance: 300_000 }]),
+              }),
+            }),
+          };
+        return {
+          values: jest.fn().mockRejectedValue(drizzleUniqueViolation("uq_ai_credit_txns_purchase_ref")),
+        };
+      }),
+      transaction: jest.fn().mockImplementation(
+        (fn: (tx: unknown) => Promise<unknown>) => fn(db),
+      ),
+    };
+
+    const svc = await buildSvc(db);
+    await expect(svc.grantAiPackCreditsFromWebhook("org1", PACK.id, "pay_redelivered")).resolves.toBeUndefined();
+    // runInTenantTransaction reuses the request transaction, so the swallowed
+    // 23505 is only safe if the failed insert sat inside a nested transaction.
+    expect(db.transaction).toHaveBeenCalledTimes(1);
+  });
+
+  it("getWallet: a missing wallet is taken from the reservation service's race-safe ensureWalletForOrg", async () => {
+    const winner = {
+      id: 1,
+      orgId: "org1",
+      balance: 250_000,
+      lifetimeGranted: 250_000,
+      lifetimeConsumed: 0,
+      autoTopUpEnabled: false,
+      autoTopUpPackId: null,
+      autoTopUpThreshold: null,
+      updatedAt: new Date(),
+    };
+    const walletReads: unknown[][] = [[]];
+    let selectCallCount = 0;
+    const db = {
+      select: jest.fn().mockImplementation(() => {
+        const rows = walletReads[selectCallCount++];
+        if (rows) return { from: () => ({ where: () => Promise.resolve(rows) }) };
+        return { from: () => ({ where: () => ({ orderBy: () => ({ limit: () => Promise.resolve([]) }) }) }) };
+      }),
+    };
+    const ensureWalletForOrg = jest.fn().mockResolvedValue(winner);
+
+    const module = await Test.createTestingModule({
+      providers: [
+        AiCreditsService,
+        { provide: DRIZZLE, useValue: db },
+        { provide: AiCreditsReservationService, useValue: { ensureWalletForOrg } },
+        { provide: AiCreditsPacksService, useValue: {} },
+      ],
+    }).compile();
+    const svc = module.get(AiCreditsService);
+
+    await expect(svc.getWallet("org1")).resolves.toMatchObject({
+      wallet: { balance: milliToCredits(250_000) },
+    });
+    expect(ensureWalletForOrg).toHaveBeenCalledWith("org1");
+  });
+
+  it("a different database error propagates untouched", async () => {
+    const err = drizzlePostgresError("23503", "some_fk");
+    const db = {
+      select: jest.fn().mockImplementation(() => makeSelectChain([PACK])),
+      transaction: jest.fn().mockRejectedValue(err),
+    };
+
+    const svc = await buildSvc(db);
+    await expect(svc.purchaseCreditsDirectly("org1", "user1", PACK.id)).rejects.toBe(err);
   });
 
   it("still rethrows a violation that is not a unique-key conflict", async () => {

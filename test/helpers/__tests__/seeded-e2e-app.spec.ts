@@ -15,6 +15,8 @@ import {
   type SeededE2eApp,
 } from "test/helpers/seeded-e2e-app";
 import { seedOrg } from "test/helpers/seed-builder";
+import { EmailProviderService } from "src/modules/email/email.provider";
+import { mailEgressTripwire } from "test/helpers/mail-egress-tripwire";
 
 // Bounded suite runtime: ≤ 120 s per test, expected total ≤ 90 s.
 
@@ -201,6 +203,62 @@ describe(`${SEEDED_HARNESS} harness self-tests`, () => {
         rolbypassrls: row?.["rolbypassrls"],
         message: "APP_DATABASE_URL must point to a non-owner role (NOBYPASSRLS). Set APP_DATABASE_URL=<app_role_url>.",
       }).toMatchObject({ rolbypassrls: false });
+    },
+    30_000,
+  );
+
+  /**
+   * The seeded run cannot mail anyone. Both halves, because either alone fails
+   * open.
+   *
+   * `jest-e2e-seeded.json` loads the real `.env` via `dotenv/config`, so every
+   * seeded run holds a live `RESEND_API_KEY` and `EMAIL_PROVIDER=resend`. Two
+   * things stop it being used: the harness overrides `EmailProviderService`
+   * with an in-memory capture, and `arm-mail-egress.setup.ts` blocks the socket
+   * underneath. Neither announces its own absence — delete the override and
+   * mail goes out; drop the setup file from `setupFiles` and every suite still
+   * passes while the floor is gone. So both are asserted here rather than left
+   * to be noticed.
+   */
+  it(
+    `${SEEDED_HARNESS} outbound mail is captured, not sent`,
+    async () => {
+      /** The container hands out the capture, so no Resend client was built. */
+      const bound = seededApp.app.get(EmailProviderService);
+      expect(bound).toBe(seededApp.mail);
+
+      /**
+       * Not `"none"`: three callers skip the send on that answer, so a capture
+       * reporting it would make them no-ops and record nothing.
+       */
+      expect(bound.getEmailProvider()).not.toBe("none");
+
+      const before = seededApp.mail.count;
+      await bound.dispatchEmail({
+        to: "harness-self-test@test.invalid",
+        subject: "captured, not sent",
+        html: "<p>captured</p>",
+      });
+      expect(seededApp.mail.count).toBe(before + 1);
+      expect(seededApp.mail.last()).toMatchObject({
+        to: ["harness-self-test@test.invalid"],
+        subject: "captured, not sent",
+        via: "dispatchEmail",
+      });
+    },
+    30_000,
+  );
+
+  it(
+    `${SEEDED_HARNESS} the mail egress tripwire is armed`,
+    async () => {
+      /** Throws when nothing is armed, which is the case this test exists for. */
+      const egress = mailEgressTripwire();
+
+      await expect(fetch("https://api.resend.com/emails")).rejects.toThrow(
+        /mail egress blocked/,
+      );
+      expect(egress.attempts).toContain("api.resend.com");
     },
     30_000,
   );

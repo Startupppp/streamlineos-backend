@@ -24,7 +24,14 @@ import type { PgColumn } from "drizzle-orm/pg-core";
  */
 export interface KeysetPosition {
   readonly sortValue: string | Date;
-  readonly id: string;
+  /**
+   * `number` for the tables whose primary key is `serial`/`identity` — the
+   * inventory ledger and its audit trail among them. A numeric id handed over as
+   * a string reaches the driver as text and the row-value comparison then
+   * depends on Postgres inferring the type back, which is a silent correctness
+   * risk on the one predicate that decides whether a page skips a row.
+   */
+  readonly id: string | number;
 }
 
 function invalidCursor(): never {
@@ -44,11 +51,8 @@ function numericId(position: KeysetPosition): number {
 }
 
 function uuidId(position: KeysetPosition): string {
-  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
-    position.id,
-  )
-    ? position.id
-    : invalidCursor();
+  const id = String(position.id);
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id) ? id : invalidCursor();
 }
 
 function integerSortValue(position: KeysetPosition): number {
@@ -223,6 +227,46 @@ export function keysetInteger(raw: string): number {
 /** A date-as-text or an already-ordered text column; length-capped so a cursor cannot carry a payload. */
 export function keysetTextValue(raw: string): string {
   return raw.length > 0 && raw.length <= 512 ? raw : invalidCursor();
+}
+
+/**
+ * Everything strictly before the position, for a boundary carried at the
+ * column's own precision rather than through a JavaScript `Date`.
+ *
+ * The bound above loses microseconds, and on a busy append-only table that
+ * silently drops rows. `timestamp` in Postgres stores microseconds; a JS `Date`
+ * holds milliseconds, and postgres-js has already truncated by the time drizzle
+ * maps the row. So a cursor built from `row.createdAt.toISOString()` names an
+ * instant up to 999µs EARLIER than the row it is supposed to point at, and every
+ * row that falls in that gap fails `<` and never appears on any page. Nothing
+ * detects it: the page is full, the ids are unique, the walk terminates — rows
+ * are simply missing from the middle. On the inventory ledger, where a bulk
+ * import posts thousands of movements inside one second, that gap has rows in it.
+ *
+ * A caller using this projects the boundary column as text at full precision —
+ * `to_char(col, 'YYYY-MM-DD"T"HH24:MI:SS.US')` — and hands the result straight
+ * back. It is bound through `sql.param` as text and cast in SQL; it is never
+ * rebuilt as a `Date`, because rebuilding is the truncation. Decode the cursor with
+ * `decodeTimestampCursor`, which is what checks the text is a timestamp at all:
+ * an unvalidated one would reach Postgres and come back as a 500 rather than as
+ * page one.
+ */
+export function keysetBeforeMicros(
+  sortColumn: PgColumn,
+  idColumn: PgColumn,
+  position: { readonly sortValue: string; readonly id: number },
+): SQL {
+  return sql`(${sortColumn}, ${idColumn}) < (${sql.param(position.sortValue)}::timestamp, ${sql.param(position.id, idColumn)})`;
+}
+
+/**
+ * The boundary column projected as text at full precision, which is the half of
+ * `keysetBeforeMicros` that has to happen in the SELECT. Reading the same column
+ * twice costs nothing — it is already on the heap tuple — and it is the only way
+ * to get the microseconds past a driver that hands back a `Date`.
+ */
+export function microsecondCursorValue(column: PgColumn): SQL<string> {
+  return sql<string>`to_char(${column}, 'YYYY-MM-DD"T"HH24:MI:SS.US')`;
 }
 
 /**

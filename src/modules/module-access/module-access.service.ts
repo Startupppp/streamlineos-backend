@@ -1,11 +1,9 @@
 import { ForbiddenException, Inject, Injectable } from "@nestjs/common";
-import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, eq, inArray } from "drizzle-orm";
 import {
-  auditLogs,
   organizationMembers,
   rolePermissionGrants,
   roles,
-  users,
 } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
@@ -32,10 +30,17 @@ import type {
   AuditLogQuery,
   SetModuleRolePermissionsInput,
 } from "./dto/module-access.schemas";
-import { buildCursorPage, decodeCursor, encodeCursor } from "../../common/pagination/cursor";
-import { keysetBeforeId } from "../../common/pagination/keyset";
+import {
+  listModuleAuditLog,
+  type ModuleAuditLogDeps,
+  type ModuleAuditLogPage,
+} from "./lib/module-audit-log";
 import { setModuleRolePermissions } from "./module-role-permissions";
 
+// `impliedViewKey` has one definition, in `common/rbac/module-vocabulary`: the
+// copy `normalizeModulePermissionItems` calls. It is re-exported here so a
+// caller that imported it from this service still reaches that same copy.
+export { impliedViewKey };
 export { invalidateRoleAssigneePages } from "./module-role-permissions";
 
 export interface ModuleRoleView {
@@ -246,126 +251,23 @@ export class ModuleAccessService {
     };
   }
 
+  private get auditLogDeps(): ModuleAuditLogDeps {
+    return {
+      db: this.db,
+      assertModuleAccess: (actor, moduleKey, action) =>
+        this.assertModuleAccess(actor, moduleKey, action),
+    };
+  }
+
+  /**
+   * The module's access-change history. Lives in `lib/module-audit-log.ts`,
+   * which runs the `view` gate above before it reads anything.
+   */
   async getAuditLog(
     actor: CurrentUserContext,
     moduleKey: string,
-    { limit: rawLimit, cursor: cursorStr }: AuditLogQuery,
-  ): Promise<{
-    data: {
-      id: number;
-      action: string;
-      actorUserId: string;
-      actorName: string;
-      actorEmail: string;
-      targetId: string | null;
-      targetType: string | null;
-      targetName: string | null;
-      metadata: Record<string, unknown> | null;
-      ipAddress: string | null;
-      createdAt: string;
-    }[];
-    pagination: {
-      limit: number;
-      nextCursor: string | null;
-      hasMore: boolean;
-    };
-  }> {
-    await this.assertModuleAccess(actor, moduleKey, "view");
-
-    const limit = Math.min(rawLimit, 100);
-    const position = decodeCursor(cursorStr);
-
-    const cursorFilter = position
-      ? keysetBeforeId(auditLogs.createdAt, auditLogs.id, position)
-      : undefined;
-
-    const where = and(
-      eq(auditLogs.orgId, actor.orgId),
-      sql`${auditLogs.metadata}->>'moduleKey' = ${moduleKey}`,
-      cursorFilter,
-    );
-
-    const rows = await this.db
-      .select({
-        id: auditLogs.id,
-        action: auditLogs.action,
-        actorUserId: auditLogs.userId,
-        actorName: users.name,
-        actorEmail: users.email,
-        targetId: auditLogs.targetId,
-        targetType: auditLogs.targetType,
-        metadata: auditLogs.metadata,
-        ipAddress: auditLogs.ipAddress,
-        createdAt: auditLogs.createdAt,
-      })
-      .from(auditLogs)
-      .leftJoin(users, eq(auditLogs.userId, users.id))
-      .where(where)
-      .orderBy(desc(auditLogs.createdAt), desc(auditLogs.id))
-      .limit(limit + 1);
-
-    const cursorPage = buildCursorPage(rows, limit, (r) => ({
-      sortValue: r.createdAt.toISOString(),
-      id: String(r.id),
-    }));
-
-    const targetUserIds = cursorPage.data.flatMap((row) =>
-      row.targetType === "user" && row.targetId ? [row.targetId] : [],
-    );
-    const targetRoleIds = cursorPage.data.flatMap((row) => {
-      if (row.targetType !== "role" || !row.targetId) return [];
-      const roleId = Number(row.targetId);
-      return Number.isInteger(roleId) ? [roleId] : [];
-    });
-    const [targetUsers, targetRoles] = await Promise.all([
-      targetUserIds.length
-        ? this.db
-            .select({ id: users.id, name: users.name, email: users.email })
-            .from(organizationMembers)
-            .innerJoin(users, eq(users.id, organizationMembers.userId))
-            .where(
-              and(
-                eq(organizationMembers.orgId, actor.orgId),
-                inArray(organizationMembers.userId, targetUserIds),
-              ),
-            )
-        : [],
-      targetRoleIds.length
-        ? this.db
-            .select({ id: roles.id, name: roles.name })
-            .from(roles)
-            .where(
-              and(
-                eq(roles.orgId, actor.orgId),
-                inArray(roles.id, targetRoleIds),
-              ),
-            )
-        : [],
-    ]);
-    const userNames = new Map(
-      targetUsers.map((user) => [user.id, user.name ?? user.email]),
-    );
-    const roleNames = new Map(targetRoles.map((role) => [role.id, role.name]));
-
-    const data = cursorPage.data.map((r) => ({
-      id: r.id,
-      action: r.action,
-      actorUserId: r.actorUserId,
-      actorName: r.actorName ?? r.actorEmail ?? r.actorUserId,
-      actorEmail: r.actorEmail ?? "",
-      targetId: r.targetId,
-      targetType: r.targetType,
-      targetName:
-        r.targetType === "user" && r.targetId
-          ? (userNames.get(r.targetId) ?? null)
-          : r.targetType === "role" && r.targetId
-            ? (roleNames.get(Number(r.targetId)) ?? null)
-            : null,
-      metadata: r.metadata,
-      ipAddress: r.ipAddress,
-      createdAt: r.createdAt.toISOString(),
-    }));
-
-    return { data, pagination: cursorPage.pagination };
+    query: AuditLogQuery,
+  ): Promise<ModuleAuditLogPage> {
+    return listModuleAuditLog(this.auditLogDeps, actor, moduleKey, query);
   }
 }
