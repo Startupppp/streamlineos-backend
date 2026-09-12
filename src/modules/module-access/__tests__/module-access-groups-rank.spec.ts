@@ -32,7 +32,8 @@ function actor(overrides: Partial<CurrentUserContext> = {}): CurrentUserContext 
 
 function makeChain(rows: unknown[]) {
   const limitMock = jest.fn().mockResolvedValue(rows);
-  const whereMock = jest.fn().mockReturnValue({ limit: limitMock });
+  const orderByMock = jest.fn().mockReturnValue({ limit: limitMock });
+  const whereMock = jest.fn().mockReturnValue({ limit: limitMock, orderBy: orderByMock });
   const innerJoin2 = jest.fn().mockReturnValue({ where: whereMock });
   const innerJoin1 = jest.fn().mockReturnValue({ innerJoin: innerJoin2, where: whereMock });
   const fromMock = jest.fn().mockReturnValue({ innerJoin: innerJoin1, where: whereMock });

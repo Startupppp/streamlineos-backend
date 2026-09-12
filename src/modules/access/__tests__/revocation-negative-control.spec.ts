@@ -2,6 +2,7 @@ import {
   AccessVersionChannel,
   type AccessVersionStore,
 } from "../../../common/rbac/access-version-channel";
+import { SHARED_VERSION_TTL_SECONDS } from "../access-version-cache";
 
 function makeRealStore(): { store: AccessVersionStore; map: Map<string, number> } {
   const map = new Map<string, number>();
@@ -157,5 +158,51 @@ describe("bumpPermissionsVersion seam — publish is the cross-instance invalida
     await channelA.publish("org-isolation");
 
     expect(bCallbacks).toHaveLength(0);
+  });
+});
+
+function makeThrowingClearStore(): AccessVersionStore & { map: Map<string, number> } {
+  const map = new Map<string, number>();
+  return {
+    map,
+    get: async (orgId) => map.get(orgId) ?? null,
+    set: async (orgId, version) => { map.set(orgId, version); },
+    clear: async () => { throw new Error("redis unavailable"); },
+  };
+}
+
+describe("THROWING STORE — store.clear() throws on publish", () => {
+  it("when clear() throws, publish() resolves without throwing, local listeners still fire, and SHARED_VERSION_TTL_SECONDS bounds the stale window within the access snapshot window", async () => {
+    const store = makeThrowingClearStore();
+    const channel = new AccessVersionChannel();
+    channel.useStore(store);
+    const fired: string[] = [];
+    channel.subscribe((orgId) => fired.push(orgId));
+
+    await expect(channel.publish("org-throw")).resolves.toBeUndefined();
+
+    expect(fired).toEqual(["org-throw"]);
+    expect(SHARED_VERSION_TTL_SECONDS).toBeLessThanOrEqual(30);
+  });
+
+  it("instance B reads the stale shared-store version after a failed clear on instance A, proving the TTL is the sole recovery bound", async () => {
+    const store = makeThrowingClearStore();
+    const channelA = new AccessVersionChannel();
+    const channelB = new AccessVersionChannel();
+    channelA.useStore(store);
+    channelB.useStore(store);
+
+    let dbVersion = 5;
+    await channelA.read("org-stale-bound", async () => dbVersion);
+    expect(store.map.get("org-stale-bound")).toBe(5);
+
+    dbVersion = 6;
+    await channelA.publish("org-stale-bound");
+    expect(store.map.get("org-stale-bound")).toBe(5);
+
+    const staleRead = await channelB.read("org-stale-bound", async () => dbVersion);
+    expect(staleRead).toBe(5);
+
+    expect(SHARED_VERSION_TTL_SECONDS).toBeLessThanOrEqual(30);
   });
 });

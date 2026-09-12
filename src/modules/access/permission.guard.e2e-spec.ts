@@ -8,6 +8,8 @@ import { Reflector } from "@nestjs/core";
 import { Test } from "@nestjs/testing";
 import type { NextFunction, Request, Response } from "express";
 import request from "supertest";
+import { attachTestAuthContext } from "../../../test/helpers/module-guard-context";
+import type { AuthContext } from "../../common/auth/auth-context";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../common/auth/principal";
 import { Public } from "../../common/auth/public.decorator";
@@ -53,8 +55,17 @@ const user: CurrentUserContext = {
   principal: humanSessionPrincipal(1, false),
 };
 
-function attachUser(req: Request, _res: Response, next: NextFunction): void {
-  (req as Request & { user: CurrentUserContext }).user = { ...user };
+type AuthenticatedRequest = Request & {
+  user?: CurrentUserContext;
+  authContext?: AuthContext;
+};
+
+function attachUser(
+  req: AuthenticatedRequest,
+  _res: Response,
+  next: NextFunction,
+): void {
+  attachTestAuthContext(req, { ...user });
   next();
 }
 

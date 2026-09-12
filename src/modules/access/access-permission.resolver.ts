@@ -1,4 +1,4 @@
-import { and, eq, gt, inArray, isNull, or } from "drizzle-orm";
+import { and, asc, eq, gt, inArray, isNull, or } from "drizzle-orm";
 import type { Db } from "../../db/drizzle.module";
 import {
   groupRoleAssignments,
@@ -147,6 +147,7 @@ export class AccessPermissionResolver {
                 ),
               ),
             )
+            .orderBy(asc(roleAssignments.id))
             .limit(500),
       ),
       this.readAccessTable(
@@ -165,6 +166,7 @@ export class AccessPermissionResolver {
                 ),
               ),
             )
+            .orderBy(asc(principalGroupMembers.id))
             .limit(500),
       ),
       this.readAccessTable(
@@ -178,6 +180,7 @@ export class AccessPermissionResolver {
                 eq(moduleOwnerships.ownerMembershipId, membershipId),
               ),
             )
+            .orderBy(asc(moduleOwnerships.id))
             .limit(100),
       ),
       drainUserPermissionGrants(
@@ -204,6 +207,7 @@ export class AccessPermissionResolver {
                 inArray(groupRoleAssignments.principalGroupId, groupIds),
               ),
             )
+            .orderBy(asc(groupRoleAssignments.id))
             .limit(500),
       );
       for (const row of groupRoleRows) roleIds.add(row.roleId);

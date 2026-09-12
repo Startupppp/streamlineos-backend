@@ -1,13 +1,21 @@
 import { ForbiddenException } from "@nestjs/common";
+import { drizzle } from "drizzle-orm/pg-proxy";
 import { assertNotLastStructuralAdmin } from "./assert-not-last-structural-admin";
 import type { DbOrTx } from "./access-invalidate";
 
 function txReturning(remaining: number): DbOrTx {
+  const adminIds = Array.from({ length: remaining + 1 }, (_, i) =>
+    i === 0 ? MEMBERSHIP : MEMBERSHIP + i,
+  );
   const chain = {
     from: jest.fn(),
-    where: jest.fn().mockResolvedValue([{ value: remaining }]),
+    where: jest.fn(),
+    orderBy: jest.fn(),
+    for: jest.fn().mockResolvedValue(adminIds.map((id) => ({ id }))),
   };
   chain.from.mockReturnValue(chain);
+  chain.where.mockReturnValue(chain);
+  chain.orderBy.mockReturnValue(chain);
   return { select: jest.fn().mockReturnValue(chain) } as unknown as DbOrTx;
 }
 
@@ -41,5 +49,45 @@ describe("assertNotLastStructuralAdmin", () => {
       assertNotLastStructuralAdmin(tx, ORG, MEMBERSHIP, "MEMBER", "MEMBER"),
     ).resolves.toBeUndefined();
     expect(tx.select).not.toHaveBeenCalled();
+  });
+});
+
+describe("assertNotLastStructuralAdmin serialisation", () => {
+  it("emits FOR UPDATE with ORDER BY id to serialise concurrent demotions", async () => {
+    const captured: string[] = [];
+    const db = drizzle(async (sql: string) => {
+      captured.push(sql);
+      return { rows: [[MEMBERSHIP], [MEMBERSHIP + 1]] };
+    });
+
+    await assertNotLastStructuralAdmin(
+      db as unknown as DbOrTx,
+      ORG,
+      MEMBERSHIP,
+      "ORG_ADMIN",
+      "MEMBER",
+    );
+
+    expect(captured).toHaveLength(1);
+    expect(captured[0]).toContain("for update");
+    expect(captured[0]).toContain("order by");
+  });
+
+  it("counts only the rows whose id differs from the target membership", async () => {
+    const captured: string[] = [];
+    const db = drizzle(async (sql: string) => {
+      captured.push(sql);
+      return { rows: [[MEMBERSHIP]] };
+    });
+
+    await expect(
+      assertNotLastStructuralAdmin(
+        db as unknown as DbOrTx,
+        ORG,
+        MEMBERSHIP,
+        "ORG_ADMIN",
+        "MEMBER",
+      ),
+    ).rejects.toBeInstanceOf(ForbiddenException);
   });
 });

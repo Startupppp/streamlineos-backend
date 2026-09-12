@@ -1,4 +1,4 @@
-import { and, eq, gt, isNull, or } from "drizzle-orm";
+import { and, asc, eq, gt, isNull, or } from "drizzle-orm";
 import type { Db } from "../../db/drizzle.types";
 import { organizationMembers, roleAssignments, roles } from "../../db/schema";
 import { ROLE_RANK } from "./grantability";
@@ -36,6 +36,7 @@ export async function resolveActorRankContext(
         or(isNull(roleAssignments.expiresAt), gt(roleAssignments.expiresAt, now)),
       ),
     )
+    .orderBy(asc(roleAssignments.id))
     .limit(100);
 
   if (rows.length === 0)

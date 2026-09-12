@@ -1,5 +1,12 @@
+import { and, asc, eq, gt, isNull, or } from "drizzle-orm";
+import { PgDialect } from "drizzle-orm/pg-core";
 import { resolveActorRankContext } from "./resolve-actor-rank";
 import { ROLE_RANK } from "./grantability";
+import {
+  organizationMembers,
+  roleAssignments,
+  roles,
+} from "../../db/schema";
 import type { Db } from "../../db/drizzle.types";
 
 type Row = { rank: number; moduleKey: string | null };
@@ -10,6 +17,7 @@ function makeDb(rows: Row[]): Db {
     from: jest.fn().mockReturnThis(),
     innerJoin: jest.fn().mockReturnThis(),
     where: jest.fn().mockReturnThis(),
+    orderBy: jest.fn().mockReturnThis(),
     limit: jest.fn().mockResolvedValue(rows),
   };
   return chain as unknown as Db;
@@ -64,5 +72,25 @@ describe("resolveActorRankContext", () => {
     const result = await resolveActorRankContext(db, "org-1", "user-1");
     expect(result.bestRank).toBe(ROLE_RANK.ORG_ADMIN);
     expect(result.allowedModules).toBeNull();
+  });
+});
+
+describe("resolveActorRankContext query determinism: LIMIT must have ORDER BY", () => {
+  it("the rank resolution query has orderBy before limit in source code", async () => {
+    const fs = await import("fs").then((m) => m.promises);
+    const path = await import("path");
+
+    const resolveActorRankPath = path.join(__dirname, "resolve-actor-rank.ts");
+    const content = await fs.readFile(resolveActorRankPath, "utf-8");
+
+    expect(content).toContain(".orderBy(asc(roleAssignments.id))");
+    expect(content).toContain(".limit(100)");
+
+    const orderByIndex = content.indexOf(".orderBy(asc(roleAssignments.id))");
+    const limitIndex = content.indexOf(".limit(100)");
+
+    expect(orderByIndex).toBeGreaterThan(0);
+    expect(limitIndex).toBeGreaterThan(0);
+    expect(orderByIndex).toBeLessThan(limitIndex);
   });
 });

@@ -17,6 +17,7 @@ import {
 } from "../../rbac/permissions";
 import type { DataScope } from "../access.types";
 import type { Db } from "../../../db/drizzle.module";
+import { membershipStatusEnum } from "../../../db/schema";
 import { CacheService } from "../../../common/cache/cache.service";
 import type { EntitlementsService } from "../entitlements.service";
 import { isCoreModuleKey } from "../entitlements.service";
@@ -493,6 +494,79 @@ describe("AccessService.resolveUserPermissions — cross-tenant isolation: org A
     const result = await buildService(db).resolveUserPermissions(ORG_B, USER);
 
     expect(result.size).toBe(0);
+  });
+});
+
+function schemaMembershipStatus(value: string): string {
+  const declared = membershipStatusEnum.enumValues.find(
+    (candidate) => candidate === value,
+  );
+  if (declared === undefined)
+    throw new Error(
+      `membership_status declares no value "${value}" — it holds ${membershipStatusEnum.enumValues.join(", ")}`,
+    );
+  return declared;
+}
+
+function membershipAtStatus(status: string): {
+  query: {
+    accessVersions: { findFirst: jest.Mock };
+    organizationMembers: { findFirst: jest.Mock };
+  };
+  select: jest.Mock;
+} {
+  return {
+    query: {
+      accessVersions: { findFirst: jest.fn().mockResolvedValue(undefined) },
+      organizationMembers: {
+        findFirst: jest.fn().mockResolvedValue({
+          isOwner: false,
+          status,
+          role: "MEMBER",
+          id: 77,
+        }),
+      },
+    },
+    select: jest.fn().mockReturnValue(makeSelectChain([])),
+  };
+}
+
+describe("AccessService.resolveUserPermissions — a membership that is not live resolves to nothing", () => {
+  it("takes every status from the membership_status pgEnum, so no test below can name a value the column cannot hold", () => {
+    expect(membershipStatusEnum.enumValues.length).toBeGreaterThan(1);
+    expect(() => schemaMembershipStatus("REMOVED")).toThrow(
+      /membership_status declares no value "REMOVED"/,
+    );
+    expect(schemaMembershipStatus("LEFT")).toBe("LEFT");
+    expect(schemaMembershipStatus("INVITED")).toBe("INVITED");
+    expect(schemaMembershipStatus("ACTIVE")).toBe("ACTIVE");
+  });
+
+  it("resolves an empty permission map for a membership removed from the organization — LEFT is the schema's removed standing, there is no REMOVED", async () => {
+    const db = membershipAtStatus(schemaMembershipStatus("LEFT"));
+
+    const result = await buildService(db).resolveUserPermissions(ORG_A, USER);
+
+    expect(result.size).toBe(0);
+    expect(db.select).not.toHaveBeenCalled();
+  });
+
+  it("resolves an empty permission map for an invitation that was never accepted", async () => {
+    const db = membershipAtStatus(schemaMembershipStatus("INVITED"));
+
+    const result = await buildService(db).resolveUserPermissions(ORG_A, USER);
+
+    expect(result.size).toBe(0);
+    expect(db.select).not.toHaveBeenCalled();
+  });
+
+  it("and neither emptiness is vacuous — the identical fixture at ACTIVE resolves the member baseline", async () => {
+    const db = membershipAtStatus(schemaMembershipStatus("ACTIVE"));
+
+    const result = await buildService(db).resolveUserPermissions(ORG_A, USER);
+
+    expect(result.size).toBeGreaterThan(0);
+    expectActiveMemberBaseline(result);
   });
 });
 

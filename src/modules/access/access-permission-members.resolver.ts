@@ -131,6 +131,7 @@ export class AccessPermissionMembersResolver {
                 eq(rolePermissionGrants.permissionKey, permissionKey),
               ),
             )
+            .orderBy(asc(rolePermissionGrants.roleId))
             .limit(500),
       ),
 
@@ -140,6 +141,7 @@ export class AccessPermissionMembersResolver {
             .selectDistinct({ roleId: rolePermissionGrants.roleId })
             .from(rolePermissionGrants)
             .where(eq(rolePermissionGrants.orgId, orgId))
+            .orderBy(asc(rolePermissionGrants.roleId))
             .limit(500),
       ),
 

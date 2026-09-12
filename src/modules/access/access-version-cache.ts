@@ -10,7 +10,7 @@ import { accessVersionChannel } from "../../common/rbac/access-version-channel";
 import type { VersionEntry } from "./access.types";
 
 const VERSION_CACHE_TTL_MS = 1_000;
-const SHARED_VERSION_TTL_SECONDS = 300;
+export const SHARED_VERSION_TTL_SECONDS = 30;
 
 @Injectable()
 export class AccessVersionCache {

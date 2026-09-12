@@ -103,6 +103,25 @@ describe("per-person grants fold into the resolved permission set", () => {
     expect(withoutRole.perms[GRANT_KEY]).toBe("all");
   });
 
+  it("ALLOW-WINS: a personal grant of none does NOT override a role grant of own — the union ranks scopes, it has no deny rule", async () => {
+    const resolver = buildResolver({
+      roleIds: [{ roleId: 1 }],
+      roleGrants: [{ roleId: 1, permissionKey: GRANT_KEY, scope: "own" }],
+      personalGrants: [{ permissionKey: GRANT_KEY, scope: "none" }],
+    });
+    const resolved = (await resolver.computeUserPermissions(ORG, USER, 1)).perms;
+    expect(resolved[GRANT_KEY]).toBe("own");
+    expect(resolved[GRANT_KEY]).not.toBe("none");
+  });
+
+  it("and that is not vacuous — the identical personal grant of none is the whole answer when no role grant supplies a broader one", async () => {
+    const resolver = buildResolver({
+      personalGrants: [{ permissionKey: GRANT_KEY, scope: "none" }],
+    });
+    const resolved = (await resolver.computeUserPermissions(ORG, USER, 1)).perms;
+    expect(resolved[GRANT_KEY]).toBe("none");
+  });
+
   it("gives an inactive member nothing, personal grant or not", async () => {
     const db = {
       query: {

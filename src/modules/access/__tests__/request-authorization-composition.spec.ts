@@ -1,6 +1,10 @@
 import { ExecutionContext, ForbiddenException, UnauthorizedException } from "@nestjs/common";
 import { Reflector } from "@nestjs/core";
+import { generateKeyPairSync } from "node:crypto";
+import { exportJWK } from "jose";
 import { AuthContextFactory } from "../../../common/auth/auth-context.factory";
+import { JwtKeyringService } from "../../../common/auth/jwt-keyring.service";
+import { personalTokenPrincipal } from "../../../common/auth/principal";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
 import { MfaGuard } from "../../../common/auth/mfa.guard";
 import { ModuleGuard } from "../../../common/rbac/module.guard";
@@ -27,6 +31,8 @@ const ORG = "org-composition";
 const USER = "user-composition";
 const TOKEN = "Bearer composed.jwt.token";
 const KEY = "hr:employees:view";
+const OTHER_KEY = "hr:leaves:view";
+const MEMBERSHIP_ID = 5;
 
 class ProbeController {
   @RequirePermission(KEY)
@@ -45,6 +51,27 @@ interface StackOptions {
   available?: ModuleAvailabilityResult;
   moduleLookupRejects?: boolean;
   orgIdInToken?: string;
+  keyring?: JwtKeyringService;
+}
+
+async function keyringWithGeneratedKey(): Promise<JwtKeyringService> {
+  const pair = generateKeyPairSync("ed25519");
+  const previous = process.env.AUTH_SIGNING_KEYS;
+  process.env.AUTH_SIGNING_KEYS = JSON.stringify([
+    {
+      kid: "composition-key",
+      privateKey: await exportJWK(pair.privateKey),
+      publicKey: await exportJWK(pair.publicKey),
+    },
+  ]);
+  const keyring = new JwtKeyringService();
+  try {
+    await keyring.onModuleInit();
+  } finally {
+    if (previous === undefined) delete process.env.AUTH_SIGNING_KEYS;
+    else process.env.AUTH_SIGNING_KEYS = previous;
+  }
+  return keyring;
 }
 
 function makeDb(): Db {
@@ -52,6 +79,7 @@ function makeDb(): Db {
   for (const method of ["from", "innerJoin", "leftJoin", "where", "orderBy"])
     chain[method] = () => chain;
   chain["limit"] = () => Promise.resolve([]);
+  chain["then"] = (resolve: (value: unknown) => unknown) => resolve([]);
   const db: Record<string, unknown> = {
     query: {
       accessVersions: { findFirst: async () => ({ permissionsVersion: 1 }) },
@@ -92,13 +120,14 @@ function buildStack(options: StackOptions = {}) {
     available = { available: true } as ModuleAvailabilityResult,
     moduleLookupRejects = false,
     orgIdInToken = ORG,
+    keyring: keyringOverride,
   } = options;
 
   const resolve = jest.fn(async () => ({
     active,
     isOwner: false,
     role,
-    membershipId: active ? 5 : null,
+    membershipId: active ? MEMBERSHIP_ID : null,
   }));
   const membership = {
     resolve,
@@ -121,13 +150,15 @@ function buildStack(options: StackOptions = {}) {
     mfaPolicy,
   );
 
-  const keyring = {
-    verifyToken: jest.fn(async () => ({
-      sub: USER,
-      orgId: orgIdInToken,
-      sessionId: "session-composition",
-    })),
-  } as unknown as JwtKeyringService;
+  const keyring =
+    keyringOverride ??
+    ({
+      verifyToken: jest.fn(async () => ({
+        sub: USER,
+        orgId: orgIdInToken,
+        sessionId: "session-composition",
+      })),
+    } as unknown as JwtKeyringService);
 
   const db = makeDb();
   const cache = makeCache();
@@ -160,6 +191,7 @@ function buildStack(options: StackOptions = {}) {
     mfaResolve,
     moduleAvailability,
     access,
+    factory,
     jwtGuard: new JwtAuthGuard(reflector, db, null, membership, keyring, factory),
     mfaGuard: new MfaGuard(reflector, mfaPolicy),
     moduleGuard: new ModuleGuard(reflector),
@@ -175,9 +207,10 @@ function requireActor(req: { user?: CurrentUserContext }): CurrentUserContext {
 
 function contextFor(
   methodName: "read" | "account",
+  authorization: string = TOKEN,
 ): { context: ExecutionContext; req: { user?: CurrentUserContext; authContext?: AuthContext } } {
   const req: { user?: CurrentUserContext; authContext?: AuthContext; headers: Record<string, string>; path: string; method: string } = {
-    headers: { authorization: TOKEN },
+    headers: { authorization },
     path: "/probe",
     method: "GET",
   };
@@ -360,5 +393,100 @@ describe("account-only requests keep their existing semantics", () => {
 
     await expect(stack.mfaGuard.canActivate(context)).resolves.toBe(true);
     expect(stack.mfaResolve).not.toHaveBeenCalled();
+  });
+});
+
+describe("a malformed principal never reaches the permission gate", () => {
+  it("rejects a token whose subject is an empty string, and admits the same token shape with a real subject", async () => {
+    const keyring = await keyringWithGeneratedKey();
+    expect(keyring.isReady()).toBe(true);
+
+    const emptySubjectToken = await keyring.signToken({
+      sub: "",
+      orgId: ORG,
+      sessionId: "session-composition",
+    });
+    expect(await keyring.verifyToken(emptySubjectToken)).toBeNull();
+
+    const denied = contextFor("read", `Bearer ${emptySubjectToken}`);
+    await expect(
+      buildStack({ keyring }).jwtGuard.canActivate(denied.context),
+    ).rejects.toBeInstanceOf(UnauthorizedException);
+    expect(denied.req.user).toBeUndefined();
+    expect(denied.req.authContext).toBeUndefined();
+
+    const realSubjectToken = await keyring.signToken({
+      sub: USER,
+      orgId: ORG,
+      sessionId: "session-composition",
+    });
+    expect((await keyring.verifyToken(realSubjectToken))?.sub).toBe(USER);
+
+    const admitted = contextFor("read", `Bearer ${realSubjectToken}`);
+    await expect(
+      buildStack({ keyring }).jwtGuard.canActivate(admitted.context),
+    ).resolves.toBe(true);
+    expect(admitted.req.user?.userId).toBe(USER);
+  });
+
+  it("rejects a request carrying no organization on a route that is not @AllowNoOrg, and still admits the @AllowNoOrg route", async () => {
+    const gated = buildStack({ orgIdInToken: "" });
+    const gatedRequest = contextFor("read");
+
+    await expect(
+      gated.jwtGuard.canActivate(gatedRequest.context),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+    expect(gatedRequest.req.user).toBeUndefined();
+    expect(gatedRequest.req.authContext).toBeUndefined();
+    expect(gated.resolve).not.toHaveBeenCalled();
+
+    const accountOnly = buildStack({ orgIdInToken: "" });
+    await expect(
+      accountOnly.jwtGuard.canActivate(contextFor("account").context),
+    ).resolves.toBe(true);
+  });
+
+  it("denies a token-attenuated principal whose ceiling excludes the route key, even though the same person holds that key", async () => {
+    const stack = buildStack();
+    const session = contextFor("read");
+
+    await stack.jwtGuard.canActivate(session.context);
+    const holder = requireActor(session.req);
+    expect(holder.principal.kind).toBe("human-session");
+    await expect(
+      stack.permissionGuard.canActivate(session.context),
+    ).resolves.toBe(true);
+    expect(
+      (await stack.access.resolveUserPermissions(ORG, USER, session.req.authContext)).get(KEY),
+    ).toBe("all");
+
+    const attenuatedActor: CurrentUserContext = {
+      ...holder,
+      tokenScopes: [OTHER_KEY],
+      principal: personalTokenPrincipal(MEMBERSHIP_ID, false, "pat-1", [OTHER_KEY]),
+    };
+    const attenuated = contextFor("read");
+    attenuated.req.user = attenuatedActor;
+    attenuated.req.authContext = stack.factory.create(attenuatedActor);
+
+    await expect(
+      stack.permissionGuard.canActivate(attenuated.context),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+
+    const widenedActor: CurrentUserContext = {
+      ...holder,
+      tokenScopes: [OTHER_KEY, KEY],
+      principal: personalTokenPrincipal(MEMBERSHIP_ID, false, "pat-1", [
+        OTHER_KEY,
+        KEY,
+      ]),
+    };
+    const widened = contextFor("read");
+    widened.req.user = widenedActor;
+    widened.req.authContext = stack.factory.create(widenedActor);
+
+    await expect(
+      stack.permissionGuard.canActivate(widened.context),
+    ).resolves.toBe(true);
   });
 });
