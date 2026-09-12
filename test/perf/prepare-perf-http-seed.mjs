@@ -36,7 +36,7 @@
  *
  * SAFETY
  *
- *   - refuses any database whose name does not contain "scratch", and `cornerstone_*` outright;
+ *   - refuses any database whose name does not BEGIN with "scratch";
  *   - `ON CONFLICT DO NOTHING`, so it never rewrites an existing row;
  *   - dry run by default; prints counts, never a connection string.
  *
@@ -79,18 +79,27 @@ export function sslModeOf(url) {
   }
 }
 
-/** The same rule `assertDisposableDatabase` applies, plus an explicit cornerstone refusal. */
+/**
+ * `assertDisposableDatabase`'s rule, tightened from CONTAINS to BEGINS WITH.
+ *
+ * It used to be "contains scratch", plus a second clause refusing one named
+ * customer's databases outright. Two problems with that: the customer's name sat
+ * in the source of a tenant-neutral product, and the guard only covered the one
+ * customer anybody had thought of — `<anyone-else>_scratch` still passed. An
+ * anchor covers every such name and names none of them: every disposable
+ * database this harness has ever used is called `scratch…`
+ * (`scratch_perf_seed`, `scratch_e2e`, `scratch_x`), so nothing legitimate
+ * loses access, and a real database with the word buried in it no longer does.
+ */
 export function assertWritable(url) {
   const database = databaseName(url);
   if (!database) return { ok: false, reason: "the connection string does not name a database" };
-  if (/^cornerstone/i.test(database))
-    return { ok: false, reason: `refusing to write to "${database}" — cornerstone databases are off limits` };
-  if (!/scratch/i.test(database))
+  if (!/^scratch/i.test(database))
     return {
       ok: false,
       reason:
         `refusing to write to "${database}" — this places organisations and grants entitlements, so ` +
-        `the target must be a disposable database whose name contains "scratch"`,
+        `the target must be a disposable database whose name BEGINS with "scratch"`,
     };
   return { ok: true, database };
 }
@@ -276,7 +285,10 @@ function selfTest() {
   const check = (name, condition) => checks.push({ name, ok: condition === true });
 
   check("refuses a non-scratch database", assertWritable("postgres://u@h/production").ok === false);
-  check("refuses cornerstone by name", assertWritable("postgres://u@h/cornerstone_scratch").ok === false);
+  check(
+    "refuses a real database that merely contains the word",
+    assertWritable("postgres://u@h/acme_scratch").ok === false,
+  );
   check("accepts a scratch database", assertWritable("postgres://u@h/scratch_perf_seed").ok === true);
   check("reads the database name out of the path", databaseName("postgres://u@h/scratch_x?sslmode=disable") === "scratch_x");
   check("sslmode=require asks postgres for TLS", sslModeOf("postgres://u@h/scratch_x?sslmode=require") === "require");

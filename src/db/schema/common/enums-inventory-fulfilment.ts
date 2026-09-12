@@ -116,6 +116,30 @@ export const invChannelSnapshotDiffStatusEnum = pgEnum("inv_channel_snapshot_dif
  * warehouse scope — the same path a manual adjustment takes.
  */
 export const invChannelSnapshotPolicyEnum = pgEnum("inv_channel_snapshot_policy", ["RECORD_DIFFERENCE", "ALLOW_ADJUSTMENT"]);
+
+/**
+ * INV-27 — which of the five things a channel job is.
+ *
+ * The split between `ORDER_PULL` and `ORDER_IMPORT` is the one a reader should
+ * not skim. A pull is one conversation with the marketplace: "what orders do
+ * you have". An import is one *order* becoming one of ours, keyed on the
+ * channel's own order id, and it is a separate row precisely so that the key
+ * exists in the database. Collapsing them would put idempotency back into the
+ * worker's memory, where a crash between "fetched" and "created" loses it — and
+ * the failure that costs is a duplicate sales order for a customer who ordered
+ * once.
+ *
+ * `STOCK_PUSH` and `STOCK_PULL` are likewise two rows, not one round trip: a
+ * push that succeeds and a pull that times out must not report as one failure,
+ * because retrying the pair would re-push a figure the channel already took.
+ */
+export const invChannelJobKindEnum = pgEnum("inv_channel_job_kind", [
+  "STOCK_PUSH",
+  "STOCK_PULL",
+  "ORDER_PULL",
+  "ORDER_IMPORT",
+  "SHIP_CONFIRM",
+]);
 export const invIdempotencyStatusEnum = pgEnum("inv_idempotency_status", ["IN_FLIGHT", "COMPLETED", "FAILED"]);
 export const invJobStatusEnum = pgEnum("inv_job_status", ["PENDING", "VALIDATING", "RUNNING", "COMPLETED", "FAILED"]);
 
