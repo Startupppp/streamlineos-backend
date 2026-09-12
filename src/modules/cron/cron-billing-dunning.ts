@@ -139,7 +139,7 @@ async function notifyOwner(
         targetUserIds: [owner.userId],
         title: `Payment overdue — action required (day ${attempt.day})`,
         message: `Your subscription payment remains outstanding. Please update your payment method within ${attempt.daysRemaining} day(s) to avoid suspension.`,
-        link: `${appUrl()}/billing`,
+        link: `${appUrl()}/settings/billing`,
         priority: "HIGH",
       })
       .catch((err: unknown) =>

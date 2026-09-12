@@ -78,7 +78,7 @@ export async function suspendPastDue(
           title: "Subscription suspended due to non-payment",
           message:
             "Your subscription has been suspended because an outstanding payment could not be collected. Your data is safe. Please update your payment method to restore full access.",
-          link: `${appUrl()}/billing`,
+          link: `${appUrl()}/settings/billing`,
           priority: "CRITICAL",
         })
         .catch((err: unknown) =>

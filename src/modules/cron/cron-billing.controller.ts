@@ -19,6 +19,7 @@ import {
   autoTopUpFlushResponseSchema,
   providerWebhookRedriveResponseSchema,
   aiJobsFlushResponseSchema,
+  periodExpirySweepResponseSchema,
 } from "./dto/cron-billing-response.schemas";
 import { BodylessAction, ResponseSchema } from "../../common/openapi/zod-operation-contracts";
 
@@ -210,6 +211,20 @@ export class CronBillingController {
     }
   }
 
+  @Get("period-expiry")
+  @ResponseSchema(periodExpirySweepResponseSchema)
+  getPeriodExpiry(@Headers("authorization") authorization?: string) {
+    return this.runPeriodExpiry(authorization);
+  }
+
+  @Post("period-expiry")
+  @BodylessAction()
+  @HttpCode(200)
+  @ResponseSchema(periodExpirySweepResponseSchema)
+  postPeriodExpiry(@Headers("authorization") authorization?: string) {
+    return this.runPeriodExpiry(authorization);
+  }
+
   private async runAiJobsFlush(authorization?: string) {
     assertCronSecret(authorization);
     try {
@@ -225,6 +240,25 @@ export class CronBillingController {
       };
     } catch (error) {
       logger.error("AI jobs flush cron failed", error);
+      throw new InternalServerErrorException("Internal server error");
+    }
+  }
+
+  private async runPeriodExpiry(authorization?: string) {
+    assertCronSecret(authorization);
+    try {
+      const outcome = await this.cronLease.withLease("period-expiry", 300, () =>
+        this.billing.processPeriodExpiry(),
+      );
+      if (!outcome.ran) return { success: true, skipped: true, message: "period-expiry already running" };
+      const result = outcome.result;
+      return {
+        success: true,
+        message: `Period expiry sweep: ${result.expired} expired, ${result.notified} notified`,
+        ...result,
+      };
+    } catch (error) {
+      logger.error("Period expiry cron failed", error);
       throw new InternalServerErrorException("Internal server error");
     }
   }

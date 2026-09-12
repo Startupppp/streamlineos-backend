@@ -62,3 +62,13 @@ export const aiJobsFlushResponseSchema = z.union([
     failed: z.number().int().nonnegative(),
   }),
 ]);
+
+export const periodExpirySweepResponseSchema = z.union([
+  cronSkippedSchema,
+  z.object({
+    success: z.literal(true),
+    message: z.string(),
+    expired: z.number().int().nonnegative(),
+    notified: z.number().int().nonnegative(),
+  }),
+]);

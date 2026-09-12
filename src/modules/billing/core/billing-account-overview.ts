@@ -1,5 +1,5 @@
 import { BadRequestException, NotFoundException } from "@nestjs/common";
-import { eq, sql } from "drizzle-orm";
+import { and, eq, ne, sql } from "drizzle-orm";
 import {
   invoices,
   organizationMembers,
@@ -22,7 +22,7 @@ export class BillingAccountOverview {
       this.db
         .select({ count: sql<number>`count(*)::int` })
         .from(organizationMembers)
-        .where(eq(organizationMembers.orgId, orgId)),
+        .where(and(eq(organizationMembers.orgId, orgId), ne(organizationMembers.status, "LEFT"))),
       this.db.execute(sql`
         SELECT COUNT(*)::int AS count FROM invitations
         WHERE org_id = ${orgId}

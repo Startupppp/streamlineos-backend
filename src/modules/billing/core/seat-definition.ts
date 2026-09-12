@@ -2,7 +2,7 @@ import { sql, type SQL } from "drizzle-orm";
 
 export function seatCount(orgId: string): SQL<number> {
   return sql<number>`(
-    (SELECT COUNT(*)::int FROM organization_members WHERE org_id = ${orgId}) +
+    (SELECT COUNT(*)::int FROM organization_members WHERE org_id = ${orgId} AND status != 'LEFT') +
     (SELECT COUNT(*)::int FROM invitations
      WHERE org_id = ${orgId}
        AND status = 'PENDING'

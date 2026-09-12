@@ -117,7 +117,7 @@ export class PlanLimitsService {
       this.db,
       (tx) =>
         tx.execute(
-          sql`SELECT plan, status, trial_ends_at, created_at FROM subscriptions WHERE org_id = ${orgId} ORDER BY created_at DESC LIMIT 1`,
+          sql`SELECT plan, status, trial_ends_at, created_at, current_period_end FROM subscriptions WHERE org_id = ${orgId} ORDER BY created_at DESC LIMIT 1`,
         ),
       { orgId },
     );
@@ -129,6 +129,7 @@ export class PlanLimitsService {
     const status = String(row["status"] ?? "");
     const plan = String(row["plan"] ?? "");
     const trialEndsAt = row["trial_ends_at"];
+    const currentPeriodEnd = row["current_period_end"];
 
     if (status === "EXPIRED" || status === "CANCELLED") {
       return { tier: "FREE", plan: "FREE" };
@@ -137,6 +138,13 @@ export class PlanLimitsService {
     if (status === "TRIAL") {
       const endsAt = trialEndsAt ? new Date(String(trialEndsAt)).getTime() : 0;
       if (endsAt < Date.now()) {
+        return { tier: "FREE", plan: "FREE" };
+      }
+    }
+
+    if (status === "ACTIVE" && currentPeriodEnd !== null && currentPeriodEnd !== undefined) {
+      const periodEnd = new Date(String(currentPeriodEnd)).getTime();
+      if (periodEnd < Date.now()) {
         return { tier: "FREE", plan: "FREE" };
       }
     }
@@ -197,7 +205,7 @@ export class PlanLimitsService {
           ${seatCount(orgId)}                                                                                                              AS members,
           (SELECT COUNT(*)::int FROM build.projects WHERE org_id = ${orgId})                                                              AS projects,
           (SELECT COUNT(*)::int FROM kb_pages WHERE org_id = ${orgId} AND deleted_at IS NULL)                                             AS "kbPages",
-          (SELECT COUNT(*)::int FROM chat_channels WHERE org_id = ${orgId})                                                               AS "chatChannels",
+          (SELECT COUNT(*)::int FROM chat_channels WHERE org_id = ${orgId} AND entity_id IS NULL)                                         AS "chatChannels",
           (${liveCustomerCount(leadPartyMap.partyId, leadPartyMap.organizationId, orgId)})                                                AS "crmLeads",
           (${liveCustomerCount(contactPartyMap.partyId, contactPartyMap.organizationId, orgId)})                                          AS "crmContacts",
           (SELECT COUNT(*)::int FROM deals WHERE org_id = ${orgId})                                                                    AS "crmDeals",
@@ -313,7 +321,7 @@ export class PlanLimitsService {
       }
       case "chatChannels": {
         const rows = await countExecutor.execute(
-          sql`SELECT COUNT(*)::int AS count FROM chat_channels WHERE org_id = ${orgId}`,
+          sql`SELECT COUNT(*)::int AS count FROM chat_channels WHERE org_id = ${orgId} AND entity_id IS NULL`,
         );
         return readCount(rows, "count");
       }

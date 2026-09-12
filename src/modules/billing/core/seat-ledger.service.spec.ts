@@ -45,8 +45,13 @@ function makeTx(options: TxOptions = {}) {
     return Promise.resolve([{ count: options.seatCount ?? 0 }]);
   });
 
+  const idempotentRows = new Map<string, Record<string, unknown>>();
+
   function nextRows(): Record<string, unknown>[] {
-    return selectResults.shift() ?? [];
+    const queued = selectResults.shift();
+    if (queued) return queued;
+    const stored = [...idempotentRows.values()];
+    return stored.length === 1 && stored[0] !== undefined ? [stored[0]] : [];
   }
 
   const select = jest.fn().mockImplementation(() => {
@@ -66,9 +71,23 @@ function makeTx(options: TxOptions = {}) {
     values: (values: Record<string, unknown>) => {
       insertedValues.push(values);
       calls.push("insert");
+      const key = values["idempotencyKey"];
+      const conflicts = typeof key === "string" && idempotentRows.has(key);
+      const rows = options.inserted ?? [{ id: 1 }];
+      if (typeof key === "string" && !conflicts) {
+        const first = rows[0];
+        idempotentRows.set(key, {
+          id: typeof first?.id === "number" ? first.id : 1,
+          eventType: values["eventType"],
+          subjectId: values["subjectId"],
+          quantityDelta: values["quantityDelta"],
+          billedQuantityAfter: values["billedQuantityAfter"],
+          effectiveAt: values["effectiveAt"],
+        });
+      }
       return {
         onConflictDoNothing: () => ({
-          returning: () => Promise.resolve(options.inserted ?? [{ id: 1 }]),
+          returning: () => Promise.resolve(conflicts ? [] : rows),
         }),
       };
     },
@@ -403,5 +422,109 @@ describe("SeatLedgerService — listSeatEvents", () => {
     const service = await buildService();
 
     await expect(service.listSeatEvents("org1", 5000)).resolves.toEqual([]);
+  });
+});
+
+describe("SeatLedgerService — seatCount only counts organization_members, not organization_people", () => {
+  it("seatCount SQL queries organization_members, not organization_people", () => {
+    const rendered = renderSql(seatCount("org1"));
+    expect(rendered).toContain("organization_members");
+    expect(rendered).not.toContain("organization_people");
+  });
+
+  it("seatCount SQL counts live pending invitations (expires_at > NOW) separately from members", () => {
+    const rendered = renderSql(seatCount("org1"));
+    expect(rendered).toContain("invitations");
+    expect(rendered).toContain("expires_at");
+  });
+
+  it("seatCount SQL filters invitations by status=PENDING and accepted_at IS NULL", () => {
+    const rendered = renderSql(seatCount("org1"));
+    expect(rendered).toContain("PENDING");
+    expect(rendered).toContain("accepted_at");
+  });
+});
+
+describe("SeatLedgerService — suspension/reactivation seat invariant", () => {
+  it("MEMBER_SUSPENDED records delta=0 so the seat stays occupied during suspension", async () => {
+    const { tx, insertedValues } = makeTx({ seatCount: 5 });
+    const service = await buildService();
+
+    await service.recordSeatEvent({ orgId: "org1", eventType: "MEMBER_SUSPENDED", subjectId: "u1" }, tx as never);
+
+    expect(insertedValues[0]).toMatchObject({ quantityDelta: 0 });
+  });
+
+  it("MEMBER_REACTIVATED records delta=0 because the seat was never vacated", async () => {
+    const { tx, insertedValues } = makeTx({ seatCount: 5 });
+    const service = await buildService();
+
+    await service.recordSeatEvent({ orgId: "org1", eventType: "MEMBER_REACTIVATED", subjectId: "u1" }, tx as never);
+
+    expect(insertedValues[0]).toMatchObject({ quantityDelta: 0 });
+  });
+
+  it("MEMBER_DEACTIVATED records delta=-1 when the row is removed from organization_members", async () => {
+    const { tx, insertedValues } = makeTx({ seatCount: 4 });
+    const service = await buildService();
+
+    await service.recordSeatEvent({ orgId: "org1", eventType: "MEMBER_DEACTIVATED", subjectId: "u1" }, tx as never);
+
+    expect(insertedValues[0]).toMatchObject({ quantityDelta: -1, billedQuantityAfter: 4 });
+  });
+
+  it("suspension then removal: total ledger delta across the lifecycle is -1", () => {
+    const { MEMBER_SUSPENDED, MEMBER_REACTIVATED, MEMBER_DEACTIVATED } = SEAT_EVENT_DELTAS;
+    expect(MEMBER_SUSPENDED + MEMBER_REACTIVATED + MEMBER_DEACTIVATED).toBe(-1);
+  });
+});
+
+describe("SeatLedgerService — expired invitation frees a seat for re-invitation", () => {
+  it("INVITE_EXPIRED records delta=-1, matching the +1 from INVITE_SENT", () => {
+    expect(SEAT_EVENT_DELTAS.INVITE_SENT + SEAT_EVENT_DELTAS.INVITE_EXPIRED).toBe(0);
+  });
+
+  it("after INVITE_EXPIRED, another INVITE_SENT can take the same seat slot", async () => {
+    const { tx, insertedValues } = makeTx({ seatCount: 5 });
+    const service = await buildService();
+
+    await service.recordSeatEvent({ orgId: "org1", eventType: "INVITE_EXPIRED", subjectId: "expired-invite" }, tx as never);
+    await service.recordSeatEvent({ orgId: "org1", eventType: "INVITE_SENT", subjectId: "new-invite" }, tx as never);
+
+    const expiredDelta = insertedValues[0];
+    const newInviteDelta = insertedValues[1];
+    expect(expiredDelta).toMatchObject({ quantityDelta: -1 });
+    expect(newInviteDelta).toMatchObject({ quantityDelta: 1 });
+  });
+});
+
+describe("SeatLedgerService — concurrent resend quota safety", () => {
+  it("the advisory lock is acquired before the count, preventing two concurrent resends from each reserving a seat", async () => {
+    const { tx, calls } = makeTx({ seatCount: 5 });
+    const service = await buildService();
+
+    await service.recordSeatEvent({ orgId: "org1", eventType: "INVITE_SENT", subjectId: "resend-1" }, tx as never);
+
+    const lockIndex = calls.indexOf("lock");
+    const countIndex = calls.indexOf("count");
+    expect(lockIndex).toBeLessThan(countIndex);
+  });
+
+  it("an idempotency key on concurrent resends means only one seat event is recorded", async () => {
+    const { tx } = makeTx({ seatCount: 5 });
+    const service = await buildService();
+
+    const first = service.recordSeatEvent(
+      { orgId: "org1", eventType: "INVITE_SENT", subjectId: "inv1", idempotencyKey: "resend-key-1" },
+      tx as never,
+    );
+    const second = service.recordSeatEvent(
+      { orgId: "org1", eventType: "INVITE_SENT", subjectId: "inv1", idempotencyKey: "resend-key-1" },
+      tx as never,
+    );
+
+    const [r1, r2] = await Promise.all([first, second]);
+    expect(r1.id).toBe(r2.id);
+    expect(r2.replayed).toBe(true);
   });
 });

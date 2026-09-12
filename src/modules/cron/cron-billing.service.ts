@@ -1,5 +1,5 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, eq, gte, isNotNull, lt, or } from "drizzle-orm";
+import { and, eq, gte, isNotNull, lt, ne, or } from "drizzle-orm";
 import {
   aiCreditTransactions,
   organizationMembers,
@@ -16,7 +16,7 @@ import { BillingService } from "../billing/core/billing.service";
 import { PlanLimitsService } from "../billing/core/plan-limits.service";
 import { RevenueAnalyticsService } from "../billing/core/revenue-analytics.service";
 import { type RevenueEventInput } from "../billing/core/revenue-events";
-import { PLATFORM_PRICE_CURRENCY } from "../billing/core/plan-entitlements.constants";
+import { PLAN_PRICES_PAISE, PLATFORM_PRICE_CURRENCY, type PaidPlan } from "../billing/core/plan-entitlements.constants";
 import { NotificationDispatchService } from "../notifications/notification-dispatch.service";
 import { forEachOrg } from "../../common/tenant";
 import { triagePastDue, type PastDueSubscription } from "./cron-billing-past-due";
@@ -114,6 +114,84 @@ export class CronBillingService {
     });
 
     return { expired, reminded };
+  }
+
+  async processPeriodExpiry(): Promise<{ expired: number; notified: number }> {
+    const now = new Date();
+    let expired = 0;
+    let notified = 0;
+
+    await forEachOrg(this.db, "billing-period-expiry", async (tx, orgId) => {
+      const expiredRows = await tx
+        .update(subscriptions)
+        .set({ status: "EXPIRED", updatedAt: now })
+        .where(
+          and(
+            eq(subscriptions.orgId, orgId),
+            eq(subscriptions.status, "ACTIVE"),
+            isNotNull(subscriptions.currentPeriodEnd),
+            lt(subscriptions.currentPeriodEnd, now),
+          ),
+        )
+        .returning({ id: subscriptions.id, plan: subscriptions.plan });
+
+      expired += expiredRows.length;
+      if (expiredRows.length === 0) return;
+
+      await this.planLimits.bust(orgId);
+
+      const expiryChurn = expiredRows.map((row): RevenueEventInput => ({
+        type: "churn",
+        orgId,
+        plan: row.plan,
+        mrr: PLAN_PRICES_PAISE[row.plan as PaidPlan] ?? 0,
+        currency: PLATFORM_PRICE_CURRENCY,
+        metadata: { subscriptionId: row.id, source: "period-expiry" },
+        dedupeKey: `period-expiry:${row.id}`,
+      }));
+      await this.revenue.emitMany(tx, expiryChurn);
+
+      const ownerRows = await tx
+        .select({ userId: users.id })
+        .from(organizationMembers)
+        .innerJoin(users, eq(organizationMembers.userId, users.id))
+        .where(
+          and(
+            eq(organizationMembers.orgId, orgId),
+            eq(organizationMembers.isOwner, true),
+            eq(users.isActive, true),
+          ),
+        )
+        .limit(1);
+
+      const owner = ownerRows[0];
+      if (!owner?.userId) return;
+
+      for (const row of expiredRows) {
+        await this.dispatch
+          .emit({
+            orgId,
+            eventKey: "billing.subscription.expired",
+            targetUserIds: [owner.userId],
+            title: "Subscription period has ended",
+            message:
+              "Your subscription term has ended. Your workspace is now on the Free plan. Renew your subscription to restore full access.",
+            link: `${appUrl()}/settings/billing`,
+            priority: "HIGH",
+            dedupeKey: `period-expiry:${row.id}:owner-notify`,
+          })
+          .catch((err: unknown) =>
+            logger.warn("[billing-cron] period expiry notification failed", {
+              orgId,
+              subscriptionId: row.id,
+              err,
+            }),
+          );
+        notified++;
+      }
+    });
+
+    return { expired, notified };
   }
 
   async processMonthlyPlanGrants(): Promise<{ granted: number; skipped: number }> {

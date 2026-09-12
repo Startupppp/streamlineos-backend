@@ -144,6 +144,14 @@ export const RETENTION_JOBS: readonly RetentionJobDeclaration[] = [
     label: "Trial expiry and expiry reminders (TRIAL -> EXPIRED, 7/3/1-day notices)",
   },
   {
+    jobKey: "period-expiry",
+    sweepName: "billing-period-expiry",
+    leaseSeconds: 300,
+    intervalMs: DAY_MS,
+    maxAgeMs: DAILY_MAX_AGE_MS,
+    label: "Paid subscription period expiry (ACTIVE -> EXPIRED when current_period_end has passed)",
+  },
+  {
     jobKey: "ai-reservations-sweep",
     sweepName: "sweep:expired-ai-reservations",
     leaseSeconds: 120,

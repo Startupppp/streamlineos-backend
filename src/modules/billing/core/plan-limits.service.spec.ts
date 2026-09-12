@@ -1,4 +1,6 @@
 ﻿import { Logger, ServiceUnavailableException } from "@nestjs/common";
+import { SQL } from "drizzle-orm";
+import { PgDialect } from "drizzle-orm/pg-core";
 import { PaymentRequiredException } from "../../../common/http/api-exceptions";
 import { Test } from "@nestjs/testing";
 import { DRIZZLE } from "../../../db/drizzle.constants";
@@ -124,6 +126,55 @@ describe("PlanLimitsService", () => {
       service = await build(mockDb);
       const result = await service.resolveTier("org1");
       expect(result).toEqual({ tier: "ENTERPRISE", plan: "ENTERPRISE" });
+    });
+
+    it("returns FREE when ACTIVE subscription has a past current_period_end", async () => {
+      const pastPeriodEnd = new Date(Date.now() - 86_400_000).toISOString();
+      mockDb = makeDb({
+        execute: jest.fn().mockResolvedValue([{ plan: "STARTER", status: "ACTIVE", trial_ends_at: null, current_period_end: pastPeriodEnd }]),
+      });
+      service = await build(mockDb);
+      const result = await service.resolveTier("org1");
+      expect(result).toEqual({ tier: "FREE", plan: "FREE" });
+    });
+
+    it("returns PAID when ACTIVE subscription has a future current_period_end", async () => {
+      const futurePeriodEnd = new Date(Date.now() + 30 * 86_400_000).toISOString();
+      mockDb = makeDb({
+        execute: jest.fn().mockResolvedValue([{ plan: "PROFESSIONAL", status: "ACTIVE", trial_ends_at: null, current_period_end: futurePeriodEnd }]),
+      });
+      service = await build(mockDb);
+      const result = await service.resolveTier("org1");
+      expect(result).toEqual({ tier: "PAID", plan: "PROFESSIONAL" });
+    });
+
+    it("returns PAID when ACTIVE subscription has no current_period_end (legacy row without period)", async () => {
+      mockDb = makeDb({
+        execute: jest.fn().mockResolvedValue([{ plan: "STARTER", status: "ACTIVE", trial_ends_at: null, current_period_end: null }]),
+      });
+      service = await build(mockDb);
+      const result = await service.resolveTier("org1");
+      expect(result).toEqual({ tier: "PAID", plan: "STARTER" });
+    });
+
+    it("keeps PAID tier while PAST_DUE regardless of current_period_end, because dunning cancels at D+14", async () => {
+      const pastPeriodEnd = new Date(Date.now() - 86_400_000).toISOString();
+      mockDb = makeDb({
+        execute: jest.fn().mockResolvedValue([{ plan: "PROFESSIONAL", status: "PAST_DUE", trial_ends_at: null, current_period_end: pastPeriodEnd }]),
+      });
+      service = await build(mockDb);
+      const result = await service.resolveTier("org1");
+      expect(result).toEqual({ tier: "PAID", plan: "PROFESSIONAL" });
+    });
+
+    it("annual subscription with future 12-month period end is still PAID", async () => {
+      const annualEnd = new Date(Date.now() + 365 * 86_400_000).toISOString();
+      mockDb = makeDb({
+        execute: jest.fn().mockResolvedValue([{ plan: "STARTER", status: "ACTIVE", trial_ends_at: null, current_period_end: annualEnd }]),
+      });
+      service = await build(mockDb);
+      const result = await service.resolveTier("org1");
+      expect(result).toEqual({ tier: "PAID", plan: "STARTER" });
     });
   });
 
@@ -282,6 +333,60 @@ describe("PlanLimitsService", () => {
       });
       service = await build(mockDb);
       await expect(service.assertWithinLimit("org1", "members", 0)).rejects.toBeInstanceOf(PaymentRequiredException);
+    });
+  });
+
+  describe("assertWithinLimit — chatChannels excludes entity-linked rows", () => {
+    const FREE_TIER = [{ plan: "FREE", status: "ACTIVE", trial_ends_at: null }];
+
+    function renderedSql(execute: jest.Mock, callIndex: number): string {
+      const arg: unknown = execute.mock.calls[callIndex]?.[0];
+      if (!(arg instanceof SQL))
+        throw new Error(`call ${callIndex} did not receive a drizzle SQL statement`);
+      return new PgDialect().sqlToQuery(arg).sql;
+    }
+
+    it("counts only channels with no entity_id, so a project channel does not consume the quota", async () => {
+      const execute = jest
+        .fn()
+        .mockResolvedValueOnce(FREE_TIER)
+        .mockResolvedValueOnce([{ count: 0 }]);
+      service = await build(makeDb({ execute }));
+
+      await expect(service.assertWithinLimit("org1", "chatChannels", 1)).resolves.toBeUndefined();
+      const counted = renderedSql(execute, 1);
+      expect(counted).toContain("chat_channels");
+      expect(counted).toContain("entity_id IS NULL");
+    });
+
+    it("still refuses a non-entity channel once the counted rows reach the FREE limit", async () => {
+      const execute = jest
+        .fn()
+        .mockResolvedValueOnce(FREE_TIER)
+        .mockResolvedValueOnce([{ count: 1 }]);
+      service = await build(makeDb({ execute }));
+
+      await expect(service.assertWithinLimit("org1", "chatChannels", 1)).rejects.toBeInstanceOf(
+        PaymentRequiredException,
+      );
+    });
+
+    it("excludes entity-linked rows from the bulk usage projection too", async () => {
+      const USAGE_ROW = {
+        members: 1, projects: 0, kbPages: 0, chatChannels: 0, crmLeads: 0, crmContacts: 0,
+        crmDeals: 0, supportTickets: 0, automations: 0, signEnvelopes: 0, surveys: 0,
+        acctInvoices: 0, hrCandidates: 0, hrJobPostings: 0,
+      };
+      const execute = jest
+        .fn()
+        .mockResolvedValueOnce(FREE_TIER)
+        .mockResolvedValueOnce([USAGE_ROW]);
+      service = await build(makeDb({ execute }));
+
+      await service.getEntitlements("org1");
+      const usageSql = renderedSql(execute, 1);
+      expect(usageSql).toContain("chat_channels");
+      expect(usageSql).toContain("entity_id IS NULL");
     });
   });
 
@@ -498,6 +603,87 @@ describe("PlanLimitsService", () => {
       });
       service = await build(mockDb);
       await expect(service.getEntitlements("org1")).rejects.toBeInstanceOf(ServiceUnavailableException);
+    });
+  });
+
+  describe("assertWithinLimit — seat count includes pending invitations", () => {
+    it("blocks a new invite when active members plus live pending invitations reach the limit", async () => {
+      mockDb = makeDb({
+        execute: jest
+          .fn()
+          .mockResolvedValueOnce([{ plan: "FREE", status: "ACTIVE", trial_ends_at: null }])
+          .mockResolvedValueOnce([{ count: 5 }]),
+      });
+      service = await build(mockDb);
+      await expect(service.assertWithinLimit("org1", "members", 1)).rejects.toBeInstanceOf(PaymentRequiredException);
+    });
+
+    it("allows a new invite once the count drops when a pending invitation expires", async () => {
+      mockDb = makeDb({
+        execute: jest
+          .fn()
+          .mockResolvedValueOnce([{ plan: "FREE", status: "ACTIVE", trial_ends_at: null }])
+          .mockResolvedValueOnce([{ count: 4 }]),
+      });
+      service = await build(mockDb);
+      await expect(service.assertWithinLimit("org1", "members", 1)).resolves.toBeUndefined();
+    });
+
+    it("allows a new invite once the count drops when a pending invitation is cancelled", async () => {
+      mockDb = makeDb({
+        execute: jest
+          .fn()
+          .mockResolvedValueOnce([{ plan: "FREE", status: "ACTIVE", trial_ends_at: null }])
+          .mockResolvedValueOnce([{ count: 3 }]),
+      });
+      service = await build(mockDb);
+      await expect(service.assertWithinLimit("org1", "members", 1)).resolves.toBeUndefined();
+    });
+
+    it("an organization_people row without organization_members does not consume a seat — seatCount only counts members", async () => {
+      mockDb = makeDb({
+        execute: jest
+          .fn()
+          .mockResolvedValueOnce([{ plan: "FREE", status: "ACTIVE", trial_ends_at: null }])
+          .mockResolvedValueOnce([{ count: 0 }]),
+      });
+      service = await build(mockDb);
+      await expect(service.assertWithinLimit("org1", "members", 1)).resolves.toBeUndefined();
+    });
+  });
+
+  describe("assertWithinLimit — suspension does not free a seat", () => {
+    it("a suspended member still occupies a seat (MEMBER_SUSPENDED delta = 0)", async () => {
+      mockDb = makeDb({
+        execute: jest
+          .fn()
+          .mockResolvedValueOnce([{ plan: "FREE", status: "ACTIVE", trial_ends_at: null }])
+          .mockResolvedValueOnce([{ count: 5 }]),
+      });
+      service = await build(mockDb);
+      await expect(service.assertWithinLimit("org1", "members", 1)).rejects.toBeInstanceOf(PaymentRequiredException);
+    });
+
+    it("a reactivated member was never unoccupied — the seat count does not jump", async () => {
+      mockDb = makeDb({
+        execute: jest
+          .fn()
+          .mockResolvedValueOnce([{ plan: "FREE", status: "ACTIVE", trial_ends_at: null }])
+          .mockResolvedValueOnce([{ count: 5 }]),
+      });
+      service = await build(mockDb);
+      await expect(service.assertWithinLimit("org1", "members", 0)).resolves.toBeUndefined();
+    });
+
+    it("removal (DELETE of organization_members row) drops the live count and allows re-invitation", async () => {
+      mockDb = makeDb({
+        execute: jest
+          .fn()
+          .mockResolvedValueOnce([{ plan: "FREE", status: "ACTIVE", trial_ends_at: null }])
+          .mockResolvedValueOnce([{ count: 4 }]),
+      });
+      service = await build(mockDb);
+      await expect(service.assertWithinLimit("org1", "members", 1)).resolves.toBeUndefined();
     });
   });
 

@@ -113,3 +113,97 @@ describe("PlanLimitsService — the resolved tier is fleet-wide, not per-process
     expect(state.reads).toBe(2);
   });
 });
+
+describe("PlanLimitsService — cache unavailable: fails closed, never open", () => {
+  it("propagates a Redis error rather than serving a FREE tier that might be stale PAID", async () => {
+    const { db } = makeDb(PAID);
+    const brokenCache = {
+      cached: jest.fn().mockRejectedValue(new Error("Redis ECONNREFUSED")),
+      invalidate: jest.fn(),
+      set: jest.fn(),
+      get: jest.fn(),
+    };
+    const svc = new (PlanLimitsService as unknown as new (
+      db: typeof db,
+      cache: typeof brokenCache,
+      notifications: null,
+    ) => PlanLimitsService)(db, brokenCache as never, null);
+
+    await expect(svc.resolveTier(ORG)).rejects.toThrow("Redis ECONNREFUSED");
+  });
+
+  it("propagates a Redis error rather than serving a PAID tier that might be stale FREE", async () => {
+    const { db } = makeDb(CANCELLED);
+    const brokenCache = {
+      cached: jest.fn().mockRejectedValue(new Error("Redis unavailable")),
+      invalidate: jest.fn(),
+      set: jest.fn(),
+      get: jest.fn(),
+    };
+    const svc = new (PlanLimitsService as unknown as new (
+      db: typeof db,
+      cache: typeof brokenCache,
+      notifications: null,
+    ) => PlanLimitsService)(db, brokenCache as never, null);
+
+    await expect(svc.resolveTier(ORG)).rejects.toThrow("Redis unavailable");
+  });
+
+  it("a bust on a cancelled subscription invalidates both the tier and the entitlements key", async () => {
+    const redis = new InMemoryRedis();
+    const { db } = makeDb(CANCELLED);
+    const a = instance(db, redis);
+
+    await redis.set(`billing:tier:${ORG}`, JSON.stringify({ tier: "PAID", plan: "PROFESSIONAL" }), { ex: 30 });
+    await redis.set(`billing:entitlements:${ORG}`, JSON.stringify({ tier: "PAID" }), { ex: 60 });
+
+    await a.bust(ORG);
+
+    expect(await redis.get(`billing:tier:${ORG}`)).toBeNull();
+    expect(await redis.get(`billing:entitlements:${ORG}`)).toBeNull();
+  });
+});
+
+describe("PlanLimitsService — current_period_end enforcement (fake clock)", () => {
+  it("serves PAID tier when the period ends in the future", async () => {
+    const redis = new InMemoryRedis();
+    const futureEnd = new Date(Date.now() + 30 * 86_400_000).toISOString();
+    const { db } = makeDb({ ...PAID, current_period_end: futureEnd });
+    const svc = instance(db, redis);
+
+    await expect(svc.resolveTier(ORG)).resolves.toEqual({ tier: "PAID", plan: "PROFESSIONAL" });
+  });
+
+  it("serves FREE tier when the period has ended", async () => {
+    const redis = new InMemoryRedis();
+    const pastEnd = new Date(Date.now() - 86_400_000).toISOString();
+    const { db } = makeDb({ ...PAID, current_period_end: pastEnd });
+    const svc = instance(db, redis);
+
+    await expect(svc.resolveTier(ORG)).resolves.toEqual({ tier: "FREE", plan: "FREE" });
+  });
+
+  it("serves PAID tier when current_period_end is null (no period set, legacy row)", async () => {
+    const redis = new InMemoryRedis();
+    const { db } = makeDb({ ...PAID, current_period_end: null });
+    const svc = instance(db, redis);
+
+    await expect(svc.resolveTier(ORG)).resolves.toEqual({ tier: "PAID", plan: "PROFESSIONAL" });
+  });
+
+  it("a second API instance sees the expired tier after the first one busts it", async () => {
+    const redis = new InMemoryRedis();
+    const futureEnd = new Date(Date.now() + 30 * 86_400_000).toISOString();
+    const { db, state } = makeDb({ ...PAID, current_period_end: futureEnd });
+    const a = instance(db, redis);
+    const b = instance(db, redis);
+
+    await a.resolveTier(ORG);
+    await b.resolveTier(ORG);
+
+    state.row = { ...CANCELLED, current_period_end: new Date(Date.now() - 86_400_000).toISOString() };
+    await a.bust(ORG);
+
+    await expect(b.resolveTier(ORG)).resolves.toEqual({ tier: "FREE", plan: "FREE" });
+  });
+});
