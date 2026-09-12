@@ -387,11 +387,11 @@ function rejectScript(seq: number): Script {
   };
 }
 
-/** `lockPeriod` writes `locked_at`, not a status; the row stays APPROVED. */
+/** `lockPeriod` writes status LOCKED and locked_at. */
 function lockScript(seq: number, userMembershipId: number | null = WORKER_MEMBERSHIP): Script {
   return {
     selects: [[timesheetPeriods, [[{ ...SUBMITTED_ROW, status: "APPROVED", userMembershipId }]]]],
-    transitions: [[transitionRow("APPROVED", seq, userMembershipId)]],
+    transitions: [[transitionRow("LOCKED", seq, userMembershipId)]],
   };
 }
 
@@ -699,7 +699,7 @@ describe("TS-24 period lifecycle durable rows", () => {
       await periodsService(db, makeNotifications([])).lockPeriod(APPROVER, PERIOD_ID);
 
       expect(ranTransaction()).toBe(true);
-      expect(periodUpdates()[0]).toMatchObject({ lockedAt: expect.any(Date) });
+      expect(periodUpdates()[0]).toMatchObject({ status: "LOCKED", lockedAt: expect.any(Date) });
       expect(outbox).toEqual([]);
       expect(warn).toHaveBeenCalledWith(
         expect.stringContaining("skipped"),

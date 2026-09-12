@@ -29,10 +29,9 @@ import {
  * union would, with no way for the two to disagree. Drift stops being possible
  * rather than being caught by a test.
  *
- * These are for validating *input*. They are not a claim that every status is
- * reachable through the API — `LOCKED` is in the period enum and no code path
- * writes it (recorded as a finding on TS-05/TS-14) — only that a status which
- * arrives from a client is one the column can hold.
+ * These are for validating *input*. `LOCKED` is written by `lockPeriod` and
+ * cleared back to `APPROVED` by `unlockPeriod`. A status which arrives from a
+ * client must still be one the column can hold.
  */
 export const timesheetEntryStatusSchema = z.enum(timesheetEntryStatusEnum.enumValues);
 export const timesheetPeriodStatusSchema = z.enum(timesheetPeriodStatusEnum.enumValues);

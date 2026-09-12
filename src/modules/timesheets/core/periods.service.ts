@@ -227,6 +227,18 @@ export class PeriodsService {
   async lockPeriod(u: CurrentUserContext, periodId: number) {
     const row = await this.reader.getPeriodWithUser(u.orgId, periodId);
     if (!row) throw new NotFoundException("Period not found");
+    /**
+     * TS-14. Lock is a transition from APPROVED, not a stamp you can put on a
+     * draft. A DRAFT that froze with no approval in the history is how hours
+     * reached payroll unsigned. Idempotent on an already-LOCKED row so a retry
+     * does not 409 after the first success.
+     */
+    if (row.status === "LOCKED") {
+      return this.reader.mapPeriod(row);
+    }
+    if (row.status !== "APPROVED") {
+      throw new ConflictException("Only approved periods can be locked");
+    }
 
     const owners = await membershipUserIds(this.db, u.orgId, [row.userMembershipId]);
     const ownerUserId = periodOwnerUserIdOrWarn(owners, row.userMembershipId, {
@@ -247,12 +259,23 @@ export class PeriodsService {
       const [transition] = await tx
         .update(timesheetPeriods)
         .set({
+          status: "LOCKED",
           lockedAt,
           eventSeq: sql`${timesheetPeriods.eventSeq} + 1`,
           updatedAt: lockedAt,
         })
-        .where(and(eq(timesheetPeriods.id, periodId), eq(timesheetPeriods.orgId, u.orgId)))
+        .where(
+          and(
+            eq(timesheetPeriods.id, periodId),
+            eq(timesheetPeriods.orgId, u.orgId),
+            eq(timesheetPeriods.status, "APPROVED"),
+          ),
+        )
         .returning(LIFECYCLE_RETURNING);
+
+      if (!transition) {
+        throw new ConflictException("Only approved periods can be locked");
+      }
 
       await tx
         .update(timesheets)
@@ -275,12 +298,9 @@ export class PeriodsService {
        * the usual reason: a lock that announced itself and then rolled back
        * would hand payroll a window it could act on.
        *
-       * Note what `status` carries — whatever the period already had, usually
-       * APPROVED. `lockPeriod` writes `locked_at` and does not write the
-       * `LOCKED` status the enum declares, so the event reports the row as it
-       * actually is rather than as the name suggests. Recorded as a finding;
-       * changing it is a decision about what "locked" means, not a detail to
-       * fix inside an emit.
+       * Status is LOCKED, not APPROVED-with-a-timestamp. The enum declared
+       * LOCKED and reopen already accepted it; writing the status is what
+       * makes that branch reachable and what stops a draft being frozen.
        *
        * A period whose worker's membership no longer resolves is still locked
        * but announces nothing, so payroll does not hear about it; the skip is
@@ -307,10 +327,13 @@ export class PeriodsService {
     const actorMembId = actingMembershipId(u.principal);
     const row = await this.reader.getPeriodWithUser(u.orgId, periodId);
     if (!row) throw new NotFoundException("Period not found");
+    if (row.status !== "LOCKED" && row.lockedAt == null) {
+      throw new ConflictException("Period is not locked");
+    }
 
     await this.db.transaction(async (tx) => {
       await tx.update(timesheetPeriods)
-        .set({ lockedAt: null, updatedAt: new Date() })
+        .set({ status: "APPROVED", lockedAt: null, updatedAt: new Date() })
         .where(and(eq(timesheetPeriods.id, periodId), eq(timesheetPeriods.orgId, u.orgId)));
 
       await tx.update(timesheets)

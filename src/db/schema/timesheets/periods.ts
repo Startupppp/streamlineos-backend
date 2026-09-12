@@ -52,6 +52,7 @@ export const timesheetPeriods = pgTable("timesheet_periods", {
 }, (t) => [
   uniqueIndex("uniq_timesheet_periods_user_membership_range").on(t.orgId, t.userMembershipId, t.periodStart, t.periodEnd),
   index("idx_timesheet_periods_org_user_membership").on(t.orgId, t.userMembershipId),
+  index("idx_ts_periods_org_status_submitted").on(t.orgId, t.status, t.submittedAt),
   foreignKey({
     columns: [t.orgId, t.userMembershipId],
     foreignColumns: [organizationMembers.orgId, organizationMembers.id],
