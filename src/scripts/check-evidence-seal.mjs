@@ -87,16 +87,47 @@ const DECLARED_UNSEALED = [
 const TEXT_EVIDENCE = /\.(md|txt|json|sql|mjs|ts|js|csv|log|yml|yaml|sh|ps1|patch|diff|conf|ini)$/i;
 
 /**
- * Text evidence is hashed with line endings normalised, because a Windows checkout
- * rewrites LF to CRLF and that is a transport artifact, not a change to what was
- * attested. Seals in this tree were taken on both forms, so a byte hash can never be
- * green for all of them on one platform. Binary evidence is still hashed byte for byte.
+ * Text evidence is hashed with line endings normalised to LF, because a Windows
+ * checkout rewrites LF to CRLF and that is a transport artifact, not a change to
+ * what was attested. Binary evidence is still hashed byte for byte. This is the
+ * digest the report prints as `actual`.
  */
 export function sha256File(filePath) {
   const bytes = readFileSync(filePath);
   const normalised = bytes.toString("utf8").split("\r\n").join("\n");
   const content = TEXT_EVIDENCE.test(filePath) ? Buffer.from(normalised, "utf8") : bytes;
   return createHash("sha256").update(content).digest("hex");
+}
+
+/**
+ * Every digest a seal over this file may legitimately carry.
+ *
+ * ---------------------------------------------------------------------------
+ * 2026-09-12 — normalising to ONE form was only half the fix.
+ *
+ * The docblock above already said the right thing ("Seals in this tree were
+ * taken on both forms, so a byte hash can never be green for all of them on one
+ * platform") — and then compared against LF only. A seal taken on a Windows
+ * checkout hashes the CRLF bytes, so it mismatched on every run, forever, and
+ * no amount of re-sealing fixes it for both platforms at once.
+ *
+ * Measured on the live tree: 38 of 106 sealed files were reported CHANGED while
+ * `git status` showed the evidence directory clean, and every single one of the
+ * 38 matched its seal EXACTLY under the CRLF form. Zero matched neither form.
+ * That is not evidence drift, it is the gate comparing against the wrong
+ * normalisation.
+ *
+ * Accepting both forms narrows nothing, because the two forms differ only in
+ * line endings: a file whose CONTENT changed matches neither, so all four
+ * failure modes still bite. The self-test proves that directly — a CRLF-sealed
+ * file that is ALSO tampered with is still rejected.
+ */
+export function sha256FileVariants(filePath) {
+  const bytes = readFileSync(filePath);
+  const digest = (buf) => createHash("sha256").update(buf).digest("hex");
+  if (!TEXT_EVIDENCE.test(filePath)) return [digest(bytes)];
+  const lf = bytes.toString("utf8").split("\r\n").join("\n");
+  return [digest(Buffer.from(lf, "utf8")), digest(Buffer.from(lf.split("\n").join("\r\n"), "utf8"))];
 }
 
 export function findSeals(root) {
@@ -240,8 +271,10 @@ export function verifySeal(sealPath, declaredUnsealed = []) {
       missing.push(rel);
       continue;
     }
-    const actual = sha256File(full);
-    if (actual !== hashes[rel]) changed.push({ file: rel, expected: hashes[rel], actual });
+    // Both line-ending normalisations are accepted; see `sha256FileVariants`.
+    const accepted = sha256FileVariants(full);
+    if (!accepted.includes(hashes[rel]))
+      changed.push({ file: rel, expected: hashes[rel], actual: sha256File(full) });
     else matched++;
   }
 
@@ -332,6 +365,50 @@ function runSelfTest() {
     }
 
     assert("a re-verified clean tree passes again", verifySeal(join(evidence, SEAL_FILENAME), ["declared-out.md"]).changed.length === 0);
+
+    // (5) LINE ENDINGS, both directions — the 2026-09-12 defect. A seal taken on
+    // a CRLF checkout must verify against the same evidence checked out LF, and
+    // the reverse. Until this, only the LF direction worked, so 38 of 106 files
+    // in the live tree read as CHANGED while their content was untouched.
+    {
+      const crlfDir = join(fixtureRoot, "crlf");
+      mkdirSync(crlfDir, { recursive: true });
+      const body = "line one\nline two\nline three\n";
+      const digest = (s) => createHash("sha256").update(Buffer.from(s, "utf8")).digest("hex");
+
+      // Sealed as CRLF (Windows), on disk as LF (macOS/Linux).
+      writeFileSync(join(crlfDir, "taken-on-windows.log"), body);
+      // Sealed as LF, on disk as CRLF.
+      writeFileSync(join(crlfDir, "taken-on-linux.log"), body.split("\n").join("\r\n"));
+      // Sealed as CRLF AND edited since — content differs, not just endings.
+      writeFileSync(join(crlfDir, "tampered.log"), "line one\nline TWO\nline three\n");
+
+      writeFileSync(
+        join(crlfDir, SEAL_FILENAME),
+        JSON.stringify({
+          hashes: {
+            "taken-on-windows.log": digest(body.split("\n").join("\r\n")),
+            "taken-on-linux.log": digest(body),
+            "tampered.log": digest(body.split("\n").join("\r\n")),
+          },
+        }),
+      );
+
+      const endings = verifySeal(join(crlfDir, SEAL_FILENAME));
+      assert(
+        "a CRLF-taken seal verifies against an LF checkout — the defect: this used to be reported CHANGED",
+        !endings.changed.some((c) => c.file === "taken-on-windows.log"),
+      );
+      assert(
+        "an LF-taken seal still verifies against a CRLF checkout",
+        !endings.changed.some((c) => c.file === "taken-on-linux.log"),
+      );
+      assert(
+        "BITE: accepting both line endings does NOT accept a changed file — content differing by more than endings matches neither form",
+        endings.changed.length === 1 && endings.changed[0].file === "tampered.log",
+      );
+      assert("and two of the three still count as matched", endings.matched === 2);
+    }
 
     // An unreadable seal is a failure, never a pass.
     writeFileSync(join(nested, SEAL_FILENAME), "{ not json");
