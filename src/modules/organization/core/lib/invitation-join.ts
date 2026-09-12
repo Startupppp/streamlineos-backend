@@ -11,7 +11,8 @@ import { LEGACY_CELL_ID } from "../../../../common/region/placement";
 import { runInTenantTransaction } from "../../../../common/tenant/run-in-tenant-transaction";
 import { isUniqueViolation } from "../../../../common/db/postgres-error";
 import { type Db } from "../../../../db/drizzle.module";
-import { syncStructuralRoleAssignment } from "../../../../common/rbac/sync-structural-role";
+import { withMembershipMutations } from "../../../../common/org/membership-mutations";
+import type { CacheService } from "../../../../common/cache/cache.service";
 import type { PlanLimitsService } from "../../../billing/core/plan-limits.service";
 import type { SeatLedgerService } from "../../../billing/core/seat-ledger.service";
 import {
@@ -44,6 +45,14 @@ import { lockPendingInvitation } from "../invitations.helpers";
  */
 export interface InvitationJoinDeps {
   readonly db: Db;
+  /**
+   * Needed because the membership insert below goes through
+   * `withMembershipMutations`, which drains the authorization-cache bust after
+   * the transaction resolves. `JwtAuthGuard` reads `organization_members`
+   * through a 15-second cache, so a join whose bust never ran leaves the new
+   * member unable to act for up to a TTL while everything reports success.
+   */
+  readonly cache: CacheService;
   readonly planLimits: PlanLimitsService;
   readonly seatLedger: SeatLedgerService;
 }
@@ -181,47 +190,39 @@ export async function acceptAsExistingUser(
   userId: string,
   autoLoginToken: string,
 ): Promise<string> {
-  await runInTenantTransaction(
-    deps.db,
-    async (tx) => {
-      const lockedInvitation = await lockPendingInvitation(
-        tx,
-        invitationId,
-        tokenHash,
-      );
-      await assertSeatAvailable(deps, tx, orgId);
-
-      const inserted = await tx
-        .insert(organizationMembers)
-        .values({
-          userId,
-          orgId: lockedInvitation.orgId,
-          role: lockedInvitation.role,
-        })
-        .onConflictDoNothing()
-        .returning({ id: organizationMembers.id });
-      const membershipId = inserted[0]?.id;
-      if (membershipId === undefined) {
-        throw new ConflictException(
-          "You are already a member of this organization",
+  await withMembershipMutations(deps.cache, (membership) =>
+    runInTenantTransaction(
+      deps.db,
+      async (tx) => {
+        const lockedInvitation = await lockPendingInvitation(
+          tx,
+          invitationId,
+          tokenHash,
         );
-      }
-      await syncStructuralRoleAssignment(
-        tx,
-        lockedInvitation.orgId,
-        membershipId,
-        lockedInvitation.role,
-      );
+        await assertSeatAvailable(deps, tx, orgId);
 
-      await tx
-        .update(users)
-        .set({ lastActiveOrgId: lockedInvitation.orgId })
-        .where(eq(users.id, userId));
+        const membershipId = await membership.createMembership(tx, {
+          orgId: lockedInvitation.orgId,
+          userId,
+          role: lockedInvitation.role,
+          onConflict: "skip",
+        });
+        if (membershipId === null) {
+          throw new ConflictException(
+            "You are already a member of this organization",
+          );
+        }
 
-      await claimInvitation(deps, tx, invitationId, orgId, membershipId);
-      await issueMagicLink(tx, userId, autoLoginToken);
-    },
-    { orgId },
+        await tx
+          .update(users)
+          .set({ lastActiveOrgId: lockedInvitation.orgId })
+          .where(eq(users.id, userId));
+
+        await claimInvitation(deps, tx, invitationId, orgId, membershipId);
+        await issueMagicLink(tx, userId, autoLoginToken);
+      },
+      { orgId },
+    ),
   );
   return userId;
 }
@@ -239,56 +240,48 @@ export async function acceptAsNewUser(
   const lastName = input.lastName?.trim() || null;
 
   try {
-    await runInTenantTransaction(
-      deps.db,
-      async (tx) => {
-        const lockedInvitation = await lockPendingInvitation(
-          tx,
-          invitationId,
-          tokenHash,
-        );
-        await assertSeatAvailable(deps, tx, orgId);
-
-        const fromNames =
-          [firstName, lastName].filter(Boolean).join(" ") || null;
-        const emailLocal =
-          lockedInvitation.email.split("@")[0]?.trim() || null;
-
-        await tx.insert(users).values({
-          id: userId,
-          email: lockedInvitation.email,
-          name: fromNames ?? emailLocal,
-          firstName,
-          lastName,
-          emailVerified: new Date(),
-          lastActiveOrgId: lockedInvitation.orgId,
-        });
-        const inserted = await tx
-          .insert(organizationMembers)
-          .values({
-            userId,
-            orgId: lockedInvitation.orgId,
-            role: lockedInvitation.role,
-          })
-          .onConflictDoNothing()
-          .returning({ id: organizationMembers.id });
-        const membershipId = inserted[0]?.id;
-        if (membershipId === undefined) {
-          throw new ConflictException(
-            "You are already a member of this organization",
+    await withMembershipMutations(deps.cache, (membership) =>
+      runInTenantTransaction(
+        deps.db,
+        async (tx) => {
+          const lockedInvitation = await lockPendingInvitation(
+            tx,
+            invitationId,
+            tokenHash,
           );
-        }
-        await syncStructuralRoleAssignment(
-          tx,
-          lockedInvitation.orgId,
-          membershipId,
-          lockedInvitation.role,
-        );
+          await assertSeatAvailable(deps, tx, orgId);
 
-        await claimInvitation(deps, tx, invitationId, orgId, membershipId);
-        await issueMagicLink(tx, userId, autoLoginToken);
-      },
-      { orgId },
+          const fromNames =
+            [firstName, lastName].filter(Boolean).join(" ") || null;
+          const emailLocal =
+            lockedInvitation.email.split("@")[0]?.trim() || null;
+
+          await tx.insert(users).values({
+            id: userId,
+            email: lockedInvitation.email,
+            name: fromNames ?? emailLocal,
+            firstName,
+            lastName,
+            emailVerified: new Date(),
+            lastActiveOrgId: lockedInvitation.orgId,
+          });
+          const membershipId = await membership.createMembership(tx, {
+            orgId: lockedInvitation.orgId,
+            userId,
+            role: lockedInvitation.role,
+            onConflict: "skip",
+          });
+          if (membershipId === null) {
+            throw new ConflictException(
+              "You are already a member of this organization",
+            );
+          }
+
+          await claimInvitation(deps, tx, invitationId, orgId, membershipId);
+          await issueMagicLink(tx, userId, autoLoginToken);
+        },
+        { orgId },
+      ),
     );
   } catch (err) {
     if (isUniqueViolation(err)) {

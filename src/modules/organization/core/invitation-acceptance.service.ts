@@ -51,6 +51,7 @@ export class InvitationAcceptanceService {
   private get joinDeps(): InvitationJoinDeps {
     return {
       db: this.db,
+      cache: this.cache,
       planLimits: this.planLimits,
       seatLedger: this.seatLedger,
     };

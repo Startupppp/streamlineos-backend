@@ -12,9 +12,8 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { AuditService } from "../../common/audit/audit.service";
 import { CacheService } from "../../common/cache/cache.service";
-import { CACHE_KEYS } from "../../common/cache/cache-keys";
 import { logger } from "../../common/logger/logger.service";
-import { bustMembershipStatusCache } from "../../common/auth/membership-state.service";
+import { bustMembershipAfterOwnershipChange } from "../../common/org/membership-bust";
 import { NotificationDispatchService } from "../notifications/notification-dispatch.service";
 import {
   fetchMembershipByUser,
@@ -41,9 +40,16 @@ export class OwnershipTransferResponseService {
     private readonly saga: OrganizationSagaService,
   ) {}
 
-  private async invalidateUserAccess(orgId: string, userId: string): Promise<void> {
-    await this.cache.invalidate(CACHE_KEYS.userSession(userId));
-    await bustMembershipStatusCache(this.cache, userId, orgId);
+  /**
+   * The named operation, not the primitive underneath it. Both call sites run
+   * AFTER the transfer has committed, so `bustMembershipAfterOwnershipChange`
+   * busts the session key and then schedules the membership bust, falling back
+   * to running it inline when there is no ambient context — which is the case
+   * here. `check:membership-writes` bans the primitive import precisely so a
+   * caller cannot bust for one half of a change and forget the other.
+   */
+  private invalidateUserAccess(orgId: string, userId: string): Promise<void> {
+    return bustMembershipAfterOwnershipChange(this.cache, orgId, userId);
   }
 
   private invalidateTransferCaches(orgId: string, moduleKey: string | null): Promise<unknown[]> {

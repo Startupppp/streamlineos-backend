@@ -216,6 +216,38 @@ export class MembershipMutations {
     this.record(input.userId, input.orgId);
   }
 
+  /**
+   * Stamps onboarding completion on one or more members of a single org. No
+   * permission version bump: the column grants nothing, it records that every
+   * onboarding task closed.
+   *
+   * It is still a membership write and still needs the bust, because the guard
+   * caches the whole row — two writers were setting it directly
+   * (`cron/cron-hr.service.ts` and `hr/onboarding/core/onboarding-submission.service.ts`),
+   * which is the second-writer shape `check:membership-writes` exists to stop.
+   *
+   * Set-shaped rather than per-row on purpose: the cron sweep completes every
+   * onboarded member of an organisation in one pass, and `check:db-call-count`
+   * had that loop marked N+1-FIXED while it still issued one UPDATE per person.
+   * A single-member caller passes a one-element array.
+   */
+  async markOnboardingCompleted(
+    tx: DbOrTx,
+    input: { orgId: string; userIds: readonly string[]; completedAt: Date },
+  ): Promise<void> {
+    if (input.userIds.length === 0) return;
+    await tx
+      .update(organizationMembers)
+      .set({ onboardingCompletedAt: input.completedAt })
+      .where(
+        and(
+          eq(organizationMembers.orgId, input.orgId),
+          inArray(organizationMembers.userId, [...input.userIds]),
+        ),
+      );
+    for (const userId of input.userIds) this.record(userId, input.orgId);
+  }
+
   async transferOrgOwnership(
     tx: DbOrTx,
     input: {

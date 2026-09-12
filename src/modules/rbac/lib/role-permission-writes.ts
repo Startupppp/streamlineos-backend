@@ -81,10 +81,11 @@ async function invalidateRoleHolderSessions(
       ),
     )
     .limit(500);
-  await Promise.all(
-    assignees.map((a) =>
-      deps.cache.invalidate(CACHE_KEYS.userSession(a.userId)),
-    ),
+  // One pipelined call, not one round trip per assignee. `Promise.all` made the
+  // 500 concurrent, which hides the cost in wall-clock without removing it;
+  // `invalidateMany` is the CacheService method that exists for exactly this.
+  await deps.cache.invalidateMany(
+    assignees.map((a) => CACHE_KEYS.userSession(a.userId)),
   );
 }
 
