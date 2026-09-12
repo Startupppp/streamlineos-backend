@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * Gate: no TypeScript source file in src/ may exceed 500 lines, except those
- * recorded in architecture-refactor/final-refactor/issues/file-size-exceptions.md.
+ * recorded in architecture-refactor/prd/completion-plan.md.
  *
  * The registry fails CLOSED. An entry is only an exception when every one of these
  * holds, and any failure fails the gate rather than silently granting or dropping
@@ -63,7 +63,7 @@ const BACKEND_ROOT = resolvePath("../../");
 const { root: FRONTEND_REPO_ROOT } = resolveFrontendRepoRoot();
 const REGISTRY_ROOT = FRONTEND_REPO_ROOT ?? (workspaceAvailable ? WORKSPACE_ROOT : null);
 const EXCEPTIONS_DOC = REGISTRY_ROOT
-  ? join(REGISTRY_ROOT, "architecture-refactor", "final-refactor", "issues", "file-size-exceptions.md")
+  ? join(REGISTRY_ROOT, "architecture-refactor", "prd", "completion-plan.md")
   : null;
 
 /**

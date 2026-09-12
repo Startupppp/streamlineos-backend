@@ -491,5 +491,5 @@ for (const r of results) {
   if (r.fail.length > 12) console.error(`    … and ${r.fail.length - 12} more`);
 }
 console.error("\nRecapture: re-run the bootstraps against fresh databases and write a new");
-console.error(`${EVIDENCE_REL}/${BUNDLE_PREFIX}<n> bundle. See the newest bundle's README.md > Recapture.`);
+console.error(`${EVIDENCE_REL}/${BUNDLE_PREFIX}<n> bundle. Follow architecture-refactor/prd/completion-plan.md for recapture requirements.`);
 process.exit(1);

@@ -1,6 +1,6 @@
 # RB — Physical read replica routing
 
-Companion to `architecture-refactor/c28-cell-based-platform-at-20m/CELL-RUNBOOK.md` (cell operations) and `RUNBOOKS.md` (alert runbooks).
+Companion to [the completion plan](../../architecture-refactor/prd/completion-plan.md), which contains the current cell-operations requirements and alert runbooks.
 
 **Do not provision a replica before closing the two code blockers below.** A replica that exists but whose GUC is never set will fail every RLS-protected query with `42501`, silently or visibly depending on error handling at the call site.
 

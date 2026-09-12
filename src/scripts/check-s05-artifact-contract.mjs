@@ -20,7 +20,7 @@ const backendDir = resolve(scriptDir, "../..");
 // on a split checkout. Guessing "backendDir/.." resolved outside both repos and
 // the gate died with a raw stack trace instead of saying it could not measure.
 const templatePath = workspaceAvailable
-  ? resolve(WORKSPACE_ROOT, "architecture-refactor/decisions/README.md")
+  ? resolve(WORKSPACE_ROOT, "architecture-refactor/prd/completion-plan.md")
   : null;
 const bundlePath = resolve(backendDir, "src/scripts/evidence/s05-evidence-bundle.json");
 const REQUIRED_CHECKS = [

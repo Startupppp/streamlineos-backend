@@ -27,22 +27,50 @@ const SRC_ROOT = join(BACKEND_ROOT, "src");
  * two cases silently vacuous, which is how five cross-repo drift tests in this
  * codebase resolved to nowhere and reported green for months.
  */
-const REPO_ROOT = ((): string => {
-  const parent = join(BACKEND_ROOT, "..");
-  const own = basename(BACKEND_ROOT).replace(/-backend$/, "-frontend");
+function resolveRunbookRoot(
+  parent: string,
+  own: string,
+  hasPlan: (candidate: string) => boolean,
+  siblings: () => string[],
+): string {
   const candidates = [own, "streamlineos-frontend"];
   for (const name of candidates) {
     const candidate = join(parent, name);
-    if (existsSync(join(candidate, "architecture-refactor"))) return candidate;
+    if (hasPlan(candidate)) return candidate;
   }
-  for (const entry of readdirSync(parent))
-    if (existsSync(join(parent, entry, "architecture-refactor"))) return join(parent, entry);
+  if (hasPlan(parent)) return parent;
+  for (const entry of siblings())
+    if (hasPlan(join(parent, entry))) return join(parent, entry);
   throw new Error(
     `No checkout beside ${BACKEND_ROOT} holds architecture-refactor/. The runbook ` +
       `assertions cannot resolve their files, and skipping them would make this ` +
       `spec pass over unread documents. Tried: ${candidates.join(", ")}.`,
   );
-})();
+}
+
+const REPO_ROOT = resolveRunbookRoot(
+  join(BACKEND_ROOT, ".."),
+  basename(BACKEND_ROOT).replace(/-backend$/, "-frontend"),
+  (candidate) => existsSync(join(candidate, "architecture-refactor", "prd", "completion-plan.md")),
+  () => readdirSync(join(BACKEND_ROOT, "..")),
+);
+
+describe("Runbook checkout resolution", () => {
+  const parent = join("fixture", "workspace");
+  const paired = join(parent, "feature-frontend");
+
+  it("does not let a parent checkout replace the paired frontend", () => {
+    expect(resolveRunbookRoot(parent, "feature-frontend", (candidate) => candidate === parent || candidate === paired, () => [])).toBe(paired);
+  });
+
+  it("supports a nested backend when no paired checkout exists", () => {
+    expect(resolveRunbookRoot(parent, "backend", (candidate) => candidate === parent, () => [])).toBe(parent);
+  });
+
+  it("refuses to pass over an absent plan", () => {
+    expect(() => resolveRunbookRoot(parent, "backend", () => false, () => [])).toThrow("cannot resolve");
+  });
+});
 
 const EXCLUDED_MODULES = ["crm", "inventory"];
 
@@ -200,10 +228,10 @@ describe("SLO catalogue", () => {
     const slugCache = new Map<string, Set<string>>();
     const files: Record<string, string> = {
       FAILURE_RUNBOOK:
-        "architecture-refactor/final-refactor/evidence/40-observability/FAILURE-RUNBOOKS.md",
+        "architecture-refactor/prd/completion-plan.md",
     };
     const base =
-      "architecture-refactor/final-refactor/evidence/40-observability/FAILURE-RUNBOOKS.md";
+      "architecture-refactor/prd/completion-plan.md";
     const broken: string[] = [];
     for (const [id, entry] of registry) {
       const file = entry.file === null ? base : files[entry.file];

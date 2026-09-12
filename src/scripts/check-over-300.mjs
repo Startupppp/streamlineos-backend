@@ -176,6 +176,6 @@ for (const v of over300.sort((a, b) => b.lines - a.lines)) {
   console.error(`  ${v.lines}  ${v.path}`);
 }
 console.error(
-  `\nTo fix: split the new file(s) or, if the count is a genuine exception, decrement BASELINE in this script after justifying in architecture-refactor/final-refactor/issues/file-size-exceptions.md.`,
+  `\nTo fix: split the new file(s) or, if the count is a genuine exception, decrement BASELINE in this script after justifying in architecture-refactor/prd/completion-plan.md.`,
 );
 process.exit(1);

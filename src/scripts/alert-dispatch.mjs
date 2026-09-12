@@ -10,7 +10,7 @@ import { URL } from "node:url";
 import { Buffer } from "node:buffer";
 
 const FAILURE_RUNBOOK =
-  "architecture-refactor/final-refactor/evidence/40-observability/FAILURE-RUNBOOKS.md";
+  "architecture-refactor/prd/completion-plan.md";
 
 const REGISTRY = {
   "dead-outbox": { owner: "platform-reliability", runbookAnchor: "#dead-outbox", severity: "critical" },
@@ -44,7 +44,7 @@ const REGISTRY = {
 
 const RUNBOOK_BASE =
   process.env.ALERT_RUNBOOK_BASE ??
-  "architecture-refactor/final-refactor/evidence/40-observability/FAILURE-RUNBOOKS.md";
+  "architecture-refactor/prd/completion-plan.md";
 
 const DEFAULT_SUPPRESSION_WINDOW_MS = 60 * 60 * 1000;
 

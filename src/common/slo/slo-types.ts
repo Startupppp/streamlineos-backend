@@ -17,7 +17,11 @@ export type SloOwner = (typeof SLO_OWNERS)[number];
 export type SloSubjectKind = "module" | "queue";
 
 export type SloIndicator =
-  | { readonly kind: "seam"; readonly seam: SeamKey; readonly percentile: "p95" }
+  | {
+      readonly kind: "seam";
+      readonly seam: SeamKey;
+      readonly percentile: "p95";
+    }
   | {
       readonly kind: "queue-age";
       readonly maxPendingAgeSeconds: number;
@@ -40,9 +44,3 @@ export interface ServiceLevelObjective {
   readonly runbookFile: string;
   readonly runbookAnchor: string;
 }
-
-export const ALERT_RUNBOOK =
-  "architecture-refactor/final-refactor/evidence/40-observability/FAILURE-RUNBOOKS.md";
-
-export const FAILURE_RUNBOOK =
-  "architecture-refactor/final-refactor/evidence/40-observability/FAILURE-RUNBOOKS.md";

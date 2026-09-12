@@ -1,6 +1,6 @@
 {
   "_schema": "1",
-  "_description": "Historical-display-only users.id FK allowlist. Every entry here is excluded from the ACTIONABLE gate. A column may only appear here if NO service reads it in a WHERE predicate for authorization, DataScope, ownership or routing. NOTE 2026-09-03: architecture-refactor/ACTOR-CLASSIFICATION.md, formerly cited here as the per-relationship justification table for every entry below, DOES NOT EXIST in either repository - verified by find across both trees. These entries are therefore accepted exclusions with no recorded justification. Do not read an entry's presence here as evidence it was assessed. Superseded text follows: See architecture-refactor/ACTOR-CLASSIFICATION.md for the full per-relationship table.",
+  "_description": "Historical-display-only users.id FK allowlist. Every entry here is excluded from the ACTIONABLE gate. A column may only appear here if NO service reads it in a WHERE predicate for authorization, DataScope, ownership or routing. The former per-relationship justification document was already absent on 2026-09-03. These entries are accepted exclusions with no recorded justification; presence is not evidence of assessment. Current review requirements belong to architecture-refactor/prd/completion-plan.md.",
   "entries": [
     {
       "table": "fin_approval_requests",

@@ -74,6 +74,6 @@ export const ATTRIBUTION_NOTES = {
   cacheTime: "cache.roundtrip spans carry org.id from ObservabilityContext; aggregate from APP_LOG_FILE JSON lines.",
   pgStatStatements: "pg_stat_statements aggregates by (userid, dbid, queryid) — no org-level attribution; use span log instead.",
   pgStatDatabase: "pg_stat_database reports whole-database totals — no org-level attribution; use span log instead.",
-  egress: "Network egress is measured at the CDN or load balancer, not in the application process. Source: Cloudflare analytics dashboard or host bandwidth billing. Runbook: EGRESS section in RUNBOOKS.md.",
+  egress: "Network egress is measured at the CDN or load balancer, not in the application process. Source: Cloudflare analytics dashboard or host bandwidth billing. Runbook: architecture-refactor/prd/completion-plan.md.",
   redisMemory: "Per-org Redis memory is estimable via SCAN + MEMORY USAGE on org-prefixed keys (e.g. 'org:<id>:*'). Requires UPSTASH_REDIS_REST_URL + UPSTASH_REDIS_REST_TOKEN. Upstash REST API supports MEMORY USAGE per key but not bulk scanning — scan with SCAN 0 MATCH 'org:<id>:*' COUNT 100.",
 };

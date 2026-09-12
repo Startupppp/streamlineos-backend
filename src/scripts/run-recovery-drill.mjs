@@ -358,7 +358,7 @@ if (!disturbed) {
       note: "Exercised during actual cell-2 outage window. Control-plane DB (neondb) was never touched; placement lookups remained available throughout.",
     },
     notes: [
-      "REGIONAL_DISASTER RPO target (<= 5m): UNVERIFIED. Neon PITR provides this guarantee at the control-plane layer, but no NEON_API_KEY and no scripted branch-restore exercise exist. Gap recorded in CELL-RUNBOOK.md.",
+      "REGIONAL_DISASTER RPO target (<= 5m): UNVERIFIED. Neon PITR provides this guarantee at the control-plane layer, but no NEON_API_KEY and no scripted branch-restore exercise exist. Gap recorded in architecture-refactor/prd/completion-plan.md.",
       `CELL_DB_FAILURE RPO (${rpo_seconds}s): time between backup completion and disaster declaration in this drill. Real-world RPO = backup run frequency; to meet the 5-minute target, schedule backups every <= 5 minutes.`,
       `CELL_DB_FAILURE RTO (${rto_seconds}s vs ${RTO_TARGET_SECONDS}s target).`,
       "cell2 is also used by migration-chain work. If the bootstrap was disturbed, re-run the drill and report the clean run.",

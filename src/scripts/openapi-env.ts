@@ -8,7 +8,7 @@
  * application itself has a chance to produce an opaque DI or RegionModule
  * error.
  *
- * See architecture-refactor/final-refactor/evidence/41-openapi/OPENAPI-CI.md
+ * See architecture-refactor/prd/completion-plan.md
  * for the reasoning behind each variable and why placeholder values are safe.
  */
 
@@ -33,7 +33,7 @@ export class OpenApiEnvError extends Error {
     super(
       `[openapi-env] Contract generation requires the following variables to be set:\n` +
         missing.map((name) => `  ${name}`).join("\n") +
-        `\n\nSee architecture-refactor/final-refactor/evidence/41-openapi/OPENAPI-CI.md` +
+        `\n\nSee architecture-refactor/prd/completion-plan.md` +
         ` for the minimum values and the reason each variable is required.`,
     );
     this.name = "OpenApiEnvError";

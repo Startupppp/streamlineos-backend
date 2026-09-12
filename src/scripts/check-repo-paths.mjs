@@ -48,7 +48,7 @@ const FRONTEND_SIBLINGS = [
   join("streamlineos-frontend", "frontend"),
 ];
 
-const WORKSPACE_MARKER = join("architecture-refactor", "final-refactor", "issues");
+const WORKSPACE_MARKER = join("architecture-refactor", "prd", "completion-plan.md");
 const WORKSPACE_SIBLINGS = [".", "streamlineos-frontend"];
 
 function resolveRoot(marker, siblings, envName) {
