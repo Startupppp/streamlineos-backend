@@ -61,6 +61,41 @@ export const WRITE_EXEMPT = new Map([
     "src/test/db-spec-fixture.ts",
     "the .db.spec tier's own floor: two fixed organisations planted idempotently in a scratch database before any suite runs. There is no cache to invalidate and no request to serve, and the file deliberately holds no Drizzle schema import — pulling the barrel in would drag the Nest module graph into a fixture whose whole job is to be cheap to load, which is the reason it is raw SQL and the reason the owner is unreachable from it",
   ],
+  [
+    // OWNERSHIP EXEMPTION, NOT A DESIGN EXEMPTION. Every other entry in this map says
+    // "the owner is the wrong tool here". This one does not: the write is a genuine
+    // second writer and it should go through the owner. It is exempted because the file
+    // belongs to the HR developer and `src/modules/hr/` is fenced off from this branch,
+    // so this branch may not author the change — not because the gate is wrong about it.
+    //
+    // What the write is. `OnboardingSubmissionService.submit` runs one transaction that
+    // finishes a new joiner's onboarding, and at line 51 it stamps the membership row
+    // directly:
+    //
+    //   await tx.update(organizationMembers)
+    //     .set({ onboardingCompletedAt: completedAt })
+    //     .where(eq(organizationMembers.id, membership.id));
+    //
+    // It is a narrow write — one non-authorization column, on a row the same transaction
+    // has already SELECT … FOR UPDATE'd inside an advisory lock — and the method does
+    // invalidate `CACHE_KEYS.userSession(userId)` afterwards. That is why this has not
+    // produced a visible incident. It is still the shape this gate exists to stop: the
+    // invalidation is a separate statement after the transaction rather than part of the
+    // write, it busts the session key and not the membership-status cache JwtAuthGuard
+    // reads, and nothing ties the two together if either side is edited later.
+    //
+    // What the owner must do with it. Move the stamp onto a `MembershipMutations` method
+    // (an onboarding-completion mutation alongside the existing status writers) and call
+    // it inside `withMembershipMutations(cache, ...)`, passing the request transaction, so
+    // the write and its invalidation are one operation and this entry can be deleted. The
+    // surrounding lock and FOR UPDATE stay as they are; only the update statement moves.
+    //
+    // Until then this is recorded debt with a named owner, not a blessing — and it is
+    // spelled as a file exemption rather than a directory skip so that a SECOND write
+    // appearing anywhere else under src/modules/hr/ still fails this gate.
+    "src/modules/hr/onboarding/core/onboarding-submission.service.ts",
+    "owned by the HR developer and fenced off from this branch, which may not edit src/modules/hr/. The write is real and not excused on its merits: `submit` stamps organizationMembers.onboardingCompletedAt directly at line 51 and invalidates only the user-session key afterwards, so the write and its invalidation are two operations rather than one. It must be migrated to a MembershipMutations method called inside withMembershipMutations(cache, ...) by that owner, after which this entry is deleted",
+  ],
 ]);
 
 /** file -> why it may import an invalidation primitive. */
