@@ -20,18 +20,30 @@ import { basename, join, resolve } from "node:path";
  * say so. `tsc` cannot: `apiClient.get<T>()` is an assertion about a wire
  * payload, not a fact the compiler can check.
  *
- * **Why the shape comes from the service and not from OpenAPI.** The obvious
- * source of truth is `openapi.json`, and it is unusable for this: of its 3,577
- * operations exactly ONE declares a 2xx response schema, and of the 198
- * `/inventory` operations, ZERO do. `@Validate({ body, query, params })` is a
- * REQUEST contract; the response half of this API is simply not described. The
- * `openapiResponseCanary` test below pins that number so this reasoning is
- * checkable rather than remembered.
+ * **Why the shape comes from the service and not from OpenAPI.** Written when
+ * `openapi.json` was unusable for this: of its 3,577 operations exactly ONE
+ * declared a 2xx response schema, and of the 198 `/inventory` operations, ZERO
+ * did — `@Validate({ body, query, params })` is a REQUEST contract, and the
+ * response half of this API was simply not described.
  *
- * What IS declarative is the service's own `.select({ ... })` projection — a
- * literal list of the exact keys that reach the wire, written down in one place
- * and enforced by Drizzle's types. That is the backend's declared response
- * shape, and it is what this compares.
+ * ⚠ **That is no longer true, as of the response-contract lane merged into
+ * `main`:** 3,731 of 3,893 operations now declare a 2xx response schema, and so
+ * do 391 of the 392 `/inventory` ones — the last being a `204`, which has no
+ * body to describe. The canary at the bottom of this file asserted the zero and
+ * now asserts the coverage, so this paragraph stays checkable rather than
+ * remembered either way.
+ *
+ * It does not change what this gate compares. `openapi.json` is a statement of
+ * the BACKEND's response shape; the drift that breaks a screen is between that
+ * shape and the FRONTEND type a hook reads it through, and the frontend's types
+ * are in neither the document nor the compiler's reach (`apiClient.get<T>()` is
+ * an assertion about a wire payload, not a fact `tsc` can check). What is
+ * declarative on the backend side is the service's own `.select({ ... })`
+ * projection — a literal list of the exact keys that reach the wire, in one
+ * place, enforced by Drizzle's types — and comparing it against the consuming
+ * type is the half nothing else does. Comparing the projections against the new
+ * `@ResponseSchema` declarations is a worthwhile second gate, and a different
+ * one from this.
  */
 
 /** `src/modules/inventory/__tests__` → the backend checkout root. */
@@ -243,6 +255,39 @@ function interfaceMembers(source: string, name: string): string[] | null {
   return membersOf(source.slice(open, close + 1));
 }
 
+/** The members of a `const <contract> = z.object({ … })` in the same file. */
+function zodContractMembers(source: string, contract: string): string[] | null {
+  const declared = new RegExp(`const ${contract}\\s*=\\s*z\\.object\\(`).exec(source);
+  if (declared === null) return null;
+  const open = source.indexOf("{", declared.index);
+  const close = closingBrace(source, open);
+  if (close === -1) return null;
+  return membersOf(source.slice(open, close + 1));
+}
+
+/**
+ * The members of the type a hook consumes a response through, however it is
+ * declared — or `null` when it is genuinely gone.
+ *
+ * A bare `export interface` is one of two forms in use. The other is a runtime
+ * contract, `export type X = z.infer<typeof xContract>` over a `z.object`, which
+ * is strictly the better of the two: it checks the payload at the boundary
+ * instead of asserting it. `valuation.ts` moved `InventoryPeriod` onto one and
+ * this gate read it as a DELETED type, which is the failure mode that punishes
+ * the better code — the same one `constProjection` exists to avoid on the
+ * backend side. A zod object's keys are as declarative as an interface's, so
+ * both are read and the comparison below is unchanged.
+ */
+function typeMembers(source: string, name: string): string[] | null {
+  const asInterface = interfaceMembers(source, name);
+  if (asInterface !== null) return asInterface;
+  const inferred = new RegExp(
+    `export type ${name}\\s*=\\s*z\\.infer<\\s*typeof\\s+([A-Za-z_$][\\w$]*)\\s*>`,
+  ).exec(source);
+  if (inferred === null) return null;
+  return zodContractMembers(source, inferred[1]!);
+}
+
 interface Pair {
   /** Controller file under `src/modules/inventory`, and the route it declares. */
   controller: string;
@@ -296,7 +341,10 @@ const PAIRS: readonly Pair[] = [
   { controller: "reports/inv-reports.controller.ts", prefix: "inventory/reports", verb: "Get", route: "expiry", service: "reports/inv-reports-extended.service.ts", table: "invLots", anchor: "daysUntilExpiry", hook: "reports-types.ts", type: "ExpiryReportRow", consumer: "reports.ts" },
   { controller: "settings/settings.controller.ts", prefix: "inventory/settings", verb: "Get", route: "shelf-life-rules", service: "settings/shelf-life-rules.service.ts", table: "invCustomerShelfLifeRules", anchor: "clientName", hook: "system-health.ts", type: "ShelfLifeRule" },
   { controller: "shipments/carrier-status.controller.ts", prefix: "inventory/shipments", verb: "Get", route: ":shipmentId/timeline", service: "shipments/carrier-status.service.ts", table: "invShipmentStatusEvents", anchor: "occurredAt", hook: "shipping.ts", type: "ShipmentStatusEvent" },
-  { controller: "valuation/inv-valuation.controller.ts", prefix: "inventory/valuation", verb: "Get", route: "periods", service: "valuation/inventory-period.service.ts", table: "glPeriods", anchor: "periodId", hook: "valuation.ts", type: "InventoryPeriod" },
+  /* `valuation.ts` calls the endpoint; the type it calls it through now lives in
+     `valuation-schema.ts` as a zod contract, so the two files are named
+     separately — see `typeMembers`. */
+  { controller: "valuation/inv-valuation.controller.ts", prefix: "inventory/valuation", verb: "Get", route: "periods", service: "valuation/inventory-period.service.ts", table: "glPeriods", anchor: "periodId", hook: "valuation-schema.ts", type: "InventoryPeriod", consumer: "valuation.ts" },
   { controller: "warehouses/inv-warehouses.controller.ts", prefix: "inventory/warehouses", verb: "Get", route: ":warehouseId/users", service: "warehouses/warehouse-assignments.service.ts", table: "invUserWarehouses", anchor: "grantedByName", hook: "warehouses.ts", type: "WarehouseAssignee" },
   { controller: "warehouses/inv-warehouses.controller.ts", prefix: "inventory/warehouses", verb: "Get", route: ":warehouseId/assignable-users", service: "warehouses/warehouse-assignments.service.ts", table: "organizationMembers", anchor: "email", hook: "warehouses.ts", type: "AssignableWarehouseUser" },
   /*
@@ -412,7 +460,7 @@ describe("inventory response shapes against the hooks that consume them", () => 
 
       const hookFile = join(HOOKS_DIR, pair.hook);
       expect(existsSync(hookFile)).toBe(true);
-      const consumed = interfaceMembers(read(hookFile), pair.type);
+      const consumed = typeMembers(read(hookFile), pair.type);
       expect(consumed).not.toBeNull();
 
       const onWire = new Set(declared);
@@ -462,37 +510,59 @@ describe("the gate cannot pass by comparing nothing", () => {
 });
 
 /**
- * Why the shape is read out of the service rather than out of the contract.
+ * The document DOES describe responses now, and this gate is still needed.
  *
- * If this ever fails because the number went UP, that is good news and this gate
- * should be reconsidered against the document instead — but until then, "use
- * OpenAPI" is a suggestion with nothing behind it, and the number is here so
- * nobody has to take that on trust.
+ * This canary used to assert the opposite: zero of the inventory operations
+ * declared a 2xx response schema, which is what put the backend half of every
+ * comparison above on the service's `.select()` projection instead of on
+ * `openapi.json`. It said of itself that a number going UP would be good news
+ * and a reason to reconsider. It went up, so this records the new number in the
+ * same checkable form rather than being deleted: `@ResponseSchema` now covers
+ * every inventory operation but the one `204`, which carries `x-no-content`
+ * because a No Content response has no body to describe.
+ *
+ * What that changes: nothing about this gate's reason to exist, and one thing
+ * about its reading. OpenAPI is now a second, independent statement of the
+ * BACKEND half — worth comparing the projections against, as its own gate — but
+ * it is silent on the half that actually breaks screens. `openapi.json` cannot
+ * say whether the frontend's `LandedCostVoucherListItem` still lists the fields
+ * the service sends, because the frontend's types are not in it. That
+ * endpoint↔hook comparison is what the pairs above do and what no contract
+ * document replaces.
+ *
+ * Both directions are asserted as floors so additive work does not fail here.
  */
-describe("the OpenAPI document is not a response contract", () => {
-  it("declares a 2xx response schema on no inventory operation at all", () => {
+describe("the OpenAPI document now declares response contracts", () => {
+  it("declares a 2xx response schema on every inventory operation with a body", () => {
     const document = JSON.parse(read(join(BACKEND_ROOT, "openapi.json"))) as {
-      paths?: Record<string, Record<string, { responses?: Record<string, { content?: Record<string, { schema?: unknown }> }> }>>;
+      paths?: Record<string, Record<string, { responses?: Record<string, { content?: Record<string, { schema?: unknown }>; "x-no-content"?: boolean }> }>>;
     };
 
     let inventoryOperations = 0;
     let withResponseSchema = 0;
+    const undescribed: string[] = [];
     for (const [path, item] of Object.entries(document.paths ?? {})) {
       if (!path.startsWith("/inventory")) continue;
       for (const [verb, operation] of Object.entries(item)) {
         if (!["get", "post", "put", "patch", "delete"].includes(verb)) continue;
         inventoryOperations += 1;
-        const described = Object.entries(operation.responses ?? {}).some(
-          ([code, response]) =>
-            code.startsWith("2") &&
-            Object.values(response.content ?? {}).some((media) => media.schema !== undefined),
+        const success = Object.entries(operation.responses ?? {}).filter(([code]) =>
+          code.startsWith("2"),
+        );
+        const described = success.some(([, response]) =>
+          Object.values(response.content ?? {}).some((media) => media.schema !== undefined),
         );
         if (described) withResponseSchema += 1;
+        // A declared No Content response is described; it just has no body.
+        else if (!success.some(([, response]) => response["x-no-content"] === true))
+          undescribed.push(`${verb.toUpperCase()} ${path}`);
       }
     }
 
-    // The document is real and large; it simply says nothing about responses.
+    // The document is real and large, and the walk above is not matching nothing.
     expect(inventoryOperations).toBeGreaterThanOrEqual(150);
-    expect(withResponseSchema).toBe(0);
+    expect(withResponseSchema).toBeGreaterThanOrEqual(150);
+    // Every operation that returns a body says what that body is.
+    expect(undescribed).toEqual([]);
   });
 });
