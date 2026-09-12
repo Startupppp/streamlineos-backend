@@ -64,55 +64,6 @@
       "kind": "it.skip",
       "class": "PLACEHOLDER",
       "blocker": "Local Ably API-key configuration exists, but its validity and suitability for disposable testing are unverified. The reconnect/subscription/history probe is unimplemented and requires authorized test channels plus an approved database with watermark fixtures. No provider acceptance was performed. Empty body — nothing is switched off."
-    },
-    {
-      "file": "src/modules/ai/core/crm-copilot.service.phase2.spec.ts",
-      "title": "stalePipelineDigest",
-      "kind": "describe.skip",
-      "class": "QUARANTINE",
-      "blocker": "QUARANTINE, recorded not excused: CRM is excluded from the 10/10 release and these blocks hold live assertions against CrmScoringService/CrmBriefService that do not run. Counted against the quarantine ratchet so the class cannot grow."
-    },
-    {
-      "file": "src/modules/ai/core/crm-copilot.service.phase2.spec.ts",
-      "title": "dataQualityCopilot",
-      "kind": "describe.skip",
-      "class": "QUARANTINE",
-      "blocker": "QUARANTINE, recorded not excused: CRM is excluded from the 10/10 release and these blocks hold live assertions against CrmScoringService/CrmBriefService that do not run. Counted against the quarantine ratchet so the class cannot grow."
-    },
-    {
-      "file": "src/modules/ai/core/crm-copilot.service.phase2.spec.ts",
-      "title": "nextBestActionWithEvidence (CrmScoringService)",
-      "kind": "describe.skip",
-      "class": "QUARANTINE",
-      "blocker": "QUARANTINE, recorded not excused: CRM is excluded from the 10/10 release and these blocks hold live assertions against CrmScoringService/CrmBriefService that do not run. Counted against the quarantine ratchet so the class cannot grow."
-    },
-    {
-      "file": "src/modules/ai/core/crm-copilot.service.phase2.spec.ts",
-      "title": "leadSummaryWithCitations",
-      "kind": "describe.skip",
-      "class": "QUARANTINE",
-      "blocker": "QUARANTINE, recorded not excused: CRM is excluded from the 10/10 release and these blocks hold live assertions against CrmScoringService/CrmBriefService that do not run. Counted against the quarantine ratchet so the class cannot grow."
-    },
-    {
-      "file": "src/modules/ai/core/crm-copilot.service.phase2.spec.ts",
-      "title": "predictDeal (estimateDisclaimer)",
-      "kind": "describe.skip",
-      "class": "QUARANTINE",
-      "blocker": "QUARANTINE, recorded not excused: CRM is excluded from the 10/10 release and these blocks hold live assertions against CrmScoringService/CrmBriefService that do not run. Counted against the quarantine ratchet so the class cannot grow."
-    },
-    {
-      "file": "src/modules/ai/core/crm-copilot.service.phase2.spec.ts",
-      "title": "meetingFollowUpDraft (CrmBriefService)",
-      "kind": "describe.skip",
-      "class": "QUARANTINE",
-      "blocker": "QUARANTINE, recorded not excused: CRM is excluded from the 10/10 release and these blocks hold live assertions against CrmScoringService/CrmBriefService that do not run. Counted against the quarantine ratchet so the class cannot grow."
-    },
-    {
-      "file": "src/modules/crm/core/crm-attribution-report.service.spec.ts",
-      "title": "last-touch uses a subquery (.as()) to find max occurredAt per lead — mock chain depth makes this an integration-level test; cover in e2e",
-      "kind": "it.todo",
-      "class": "PLACEHOLDER",
-      "blocker": "CRM is excluded from the 10/10 release; the last-touch subquery needs an integration harness the mock chain cannot reach. Empty body — nothing is switched off."
     }
   ]
 }

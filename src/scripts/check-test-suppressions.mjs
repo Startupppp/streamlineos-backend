@@ -78,11 +78,20 @@ const MIN_SPEC_FILES = 200;
 const MIN_SITES = 5;
 
 /**
- * Live assertions that do not run. May only go down. Set to the state measured
- * on 2026-09-02; every entry is registered with its blocker in
- * baselines/test-suppressions.json.
+ * Live assertions that do not run. May only go down. Every entry is registered
+ * with its blocker in baselines/test-suppressions.json.
+ *
+ * 6 -> 0 on 2026-09-12. The six were the `describe.skip` blocks of
+ * `ai/core/crm-copilot.service.phase2.spec.ts`, and they were un-skipped on
+ * 2026-09-10 — that file's own header records the three rotted things the
+ * un-skip found. Their registry entries outlived the suppression and the gate
+ * had been reporting "quarantine 0 (ratchet 6)" ever since. Six of slack is six
+ * regressions a future change may land for free, which is the same defect as a
+ * baseline raised to go green, pointing the other way. There is now no spec in
+ * this repository whose live assertions are switched off; adding one has to
+ * argue for itself here.
  */
-const QUARANTINE_BASELINE = 6;
+const QUARANTINE_BASELINE = 0;
 
 /**
  * Suppressions selected at runtime, plus helper wrappers. Honest, but ratcheted
