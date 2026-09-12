@@ -44,7 +44,6 @@ describe("AuthService organization access session state", () => {
       {} as never,
       membershipResolver as never,
       {} as never,
-      {} as never,
     );
 
     return { service, membershipResolver };

@@ -343,7 +343,7 @@ function createWorld(userOverrides: Partial<UserRow> = {}): World {
 }
 
 function createEmail(options: { fails?: boolean } = {}) {
-  const sendEmailOtpEmail = jest.fn(() =>
+  const sendEmailOtpEmail = jest.fn((_address: string, _code: string) =>
     options.fails
       ? Promise.reject(new Error("transport unavailable"))
       : Promise.resolve(undefined),
