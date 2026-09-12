@@ -36,6 +36,7 @@ import { userSessions, users } from "../../db/schema";
 import { SESSION_LIST_CAP, SessionsService } from "./sessions.service";
 import { MeService } from "../../me/me.service";
 import { EmploymentFactsService } from "../../modules/directory/employment-facts.service";
+import { CacheService } from "../../common/cache/cache.service";
 
 const DB_URL = process.env.SESSIONS_PROBE_DATABASE_URL ?? process.env.DATABASE_URL ?? "";
 if (!DB_URL)
@@ -177,6 +178,7 @@ describe("SessionsService.list — expiry and bound, against a real database", (
     const { activeSessions } = await new MeService(
       db,
       new EmploymentFactsService(db),
+      new CacheService(null),
     ).getAuthAnalytics(userId);
 
     expect(listed).toHaveLength(2);

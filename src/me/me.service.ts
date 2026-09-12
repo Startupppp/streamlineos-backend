@@ -13,13 +13,31 @@ import { withClientInfo } from "../common/http/parse-user-agent";
 import { readOrgDisplay, type OrgDisplay } from "./org-display";
 import { EmploymentFactsService } from "../modules/directory/employment-facts.service";
 import { syncCanonicalSensitiveFields } from "../common/hr/sync-canonical-sensitive-fields";
+import { CacheService } from "../common/cache/cache.service";
+import { CACHE_KEYS } from "../common/cache/cache-keys";
+import { registerAfterCommit } from "../common/tenant/tenant-context";
+
+const SESSION_PROJECTED_PROFILE_FIELDS = [
+  "firstName",
+  "lastName",
+  "name",
+  "image",
+] as const;
 
 @Injectable()
 export class MeService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly employmentFacts: EmploymentFactsService,
+    private readonly cache: CacheService,
   ) {}
+
+  private async invalidateSessionProfile(userId: string): Promise<void> {
+    const invalidate = () =>
+      this.cache.invalidate(CACHE_KEYS.userSession(userId));
+    await invalidate();
+    registerAfterCommit(invalidate);
+  }
 
   getOrgDisplay(organizationId: string): Promise<OrgDisplay> {
     return readOrgDisplay(this.db, organizationId);
@@ -78,6 +96,11 @@ export class MeService {
           bankDetails: input.bankDetails,
         });
     });
+
+    const touchesSession = SESSION_PROJECTED_PROFILE_FIELDS.some(
+      (field) => field in setFields,
+    );
+    if (touchesSession) await this.invalidateSessionProfile(userId);
 
     return { success: true };
   }
