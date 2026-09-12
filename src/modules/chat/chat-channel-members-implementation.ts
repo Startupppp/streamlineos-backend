@@ -196,13 +196,16 @@ export class ChatChannelMembersImplementation {
 
     if (existing) return { ok: true };
 
-    await this.db.insert(chatChannelMembers).values({
-      orgId: actor.orgId,
-      channelId,
-      membershipId: actorMembershipId,
-      role: "MEMBER",
-      lastReadPosition: channelHighWaterMark(channelId, actor.orgId),
-    });
+    await this.db
+      .insert(chatChannelMembers)
+      .values({
+        orgId: actor.orgId,
+        channelId,
+        membershipId: actorMembershipId,
+        role: "MEMBER",
+        lastReadPosition: channelHighWaterMark(channelId, actor.orgId),
+      })
+      .onConflictDoNothing();
 
     return { ok: true };
   }

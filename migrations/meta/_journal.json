@@ -6091,6 +6091,20 @@
       "when": 1803000010324,
       "tag": "1108_notifications_created_at_list_cursor_index",
       "breakpoints": true
+    },
+    {
+      "idx": 870,
+      "version": "7",
+      "when": 1803000010325,
+      "tag": "1111_app_role_grants_for_ungranted_tables",
+      "breakpoints": true
+    },
+    {
+      "idx": 871,
+      "version": "7",
+      "when": 1803000010326,
+      "tag": "1110_subscription_purchase_intent_before_provider_order",
+      "breakpoints": true
     }
   ]
 }

@@ -63,21 +63,25 @@ CREATE TABLE IF NOT EXISTS "crm_call_analysis_releases" (
 );
 
 --> statement-breakpoint
+DO $$ BEGIN
 -- A note is a sentence, not a thread. Without the bound this column becomes a
 -- comment field by accretion, with no retention rule and no redaction pass over
 -- text a rep may well paste a customer's words into.
 ALTER TABLE "crm_call_analysis_releases" ADD CONSTRAINT "chk_crm_call_analysis_releases_note"
   CHECK ("note" IS NULL OR char_length("note") <= 500);
-
+EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
 --> statement-breakpoint
+DO $$ BEGIN
 ALTER TABLE "crm_call_analysis_releases" ADD CONSTRAINT "chk_crm_call_analysis_releases_version"
   CHECK ("analyzer_version" > 0);
-
+EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
 --> statement-breakpoint
+DO $$ BEGIN
 -- NOT VALID then VALIDATE, so adding the edge does not hold ACCESS EXCLUSIVE on
 -- organizations while it runs.
 ALTER TABLE "crm_call_analysis_releases" ADD CONSTRAINT "fk_crm_call_analysis_releases_org"
   FOREIGN KEY ("organization_id") REFERENCES "organizations"("id") ON DELETE CASCADE NOT VALID;
+EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
 --> statement-breakpoint
 ALTER TABLE "crm_call_analysis_releases" VALIDATE CONSTRAINT "fk_crm_call_analysis_releases_org";
 

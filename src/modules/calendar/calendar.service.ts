@@ -1,4 +1,4 @@
-import { Inject, Injectable } from "@nestjs/common";
+import { ConflictException, Inject, Injectable } from "@nestjs/common";
 import { and, eq, inArray, like, or, sql } from "drizzle-orm";
 import {
   calendarEvents,
@@ -231,11 +231,30 @@ export class CalendarService {
             eq(calendarEvents.id, id),
             eq(calendarEvents.orgId, orgId),
             eq(calendarEvents.createdByMembershipId, memberRow.id),
+            input.expectedVersion === undefined
+              ? undefined
+              : eq(calendarEvents.localVersion, input.expectedVersion),
           ),
         )
         .returning(calendarEventUpdateReturning);
       const updated = rows[0] ?? null;
-      if (!updated) return null;
+      if (!updated) {
+        if (input.expectedVersion !== undefined) {
+          const current = await tx.query.calendarEvents.findFirst({
+            columns: { localVersion: true },
+            where: and(
+              eq(calendarEvents.id, id),
+              eq(calendarEvents.orgId, orgId),
+              eq(calendarEvents.createdByMembershipId, memberRow.id),
+            ),
+          });
+          if (current && current.localVersion !== input.expectedVersion)
+            throw new ConflictException(
+              "This event changed since you opened it. Reload to see the current version before saving again.",
+            );
+        }
+        return null;
+      }
 
       if (timeChanged)
         await tx

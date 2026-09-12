@@ -42,3 +42,10 @@ CREATE UNIQUE INDEX IF NOT EXISTS "uniq_subscription_purchases_payment_id"
 --> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "idx_subscription_purchases_org_status"
   ON "subscription_purchases" ("org_id", "status", "created_at" DESC);
+--> statement-breakpoint
+-- Without these the application role cannot write the purchase at all: the Razorpay order is
+-- created first, so the insert fails 42501 AFTER a payable order exists at the provider. The
+-- sequence grant is as load-bearing as the table one — a sequence-backed id fails separately.
+GRANT SELECT, INSERT, UPDATE, DELETE ON "subscription_purchases" TO streamline_app;
+--> statement-breakpoint
+GRANT USAGE, SELECT ON SEQUENCE "subscription_purchases_id_seq" TO streamline_app;

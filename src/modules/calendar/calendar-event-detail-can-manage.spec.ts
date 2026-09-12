@@ -26,6 +26,7 @@ interface EventRow {
   description: string | null;
   rrule: string | null;
   createdByMembershipId: number;
+  localVersion: number;
 }
 
 function eventRow(createdByMembershipId: number): EventRow {
@@ -45,6 +46,7 @@ function eventRow(createdByMembershipId: number): EventRow {
     description: "org visible",
     rrule: null,
     createdByMembershipId,
+    localVersion: 3,
   };
 }
 

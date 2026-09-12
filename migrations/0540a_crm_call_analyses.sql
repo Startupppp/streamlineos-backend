@@ -73,32 +73,37 @@ CREATE TABLE IF NOT EXISTS "crm_call_analyses" (
 );
 
 --> statement-breakpoint
+DO $$ BEGIN
 -- A truncated digest is not a cache key, it is a collision waiting to show one
 -- customer's objections on another customer's timeline. Pinned in the database
 -- so a later caller that decided storage mattered more cannot write one.
 ALTER TABLE "crm_call_analyses" ADD CONSTRAINT "chk_crm_call_analyses_hash"
   CHECK ("transcript_hash" ~ '^[0-9a-f]{64}$');
-
+EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
 --> statement-breakpoint
+DO $$ BEGIN
 ALTER TABLE "crm_call_analyses" ADD CONSTRAINT "chk_crm_call_analyses_talk_ratio"
   CHECK ("talk_ratio_bps" IS NULL OR ("talk_ratio_bps" >= 0 AND "talk_ratio_bps" <= 10000));
-
+EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
 --> statement-breakpoint
+DO $$ BEGIN
 -- The three metrics come from one parse of one transcript, so they are all
 -- known or none of them is. A row with a talk ratio and no turn count would make
 -- the question rate silently undefined for a call that reports a confident
 -- ratio, which reads as "this rep asked no questions".
 ALTER TABLE "crm_call_analyses" ADD CONSTRAINT "chk_crm_call_analyses_metrics_arc"
   CHECK (num_nonnulls("talk_ratio_bps", "rep_turn_count", "rep_question_count") IN (0, 3));
-
+EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
 --> statement-breakpoint
+DO $$ BEGIN
 ALTER TABLE "crm_call_analyses" ADD CONSTRAINT "chk_crm_call_analyses_counts"
   CHECK (
     ("rep_turn_count" IS NULL AND "rep_question_count" IS NULL) OR
     ("rep_turn_count" >= 0 AND "rep_question_count" >= 0)
   );
-
+EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
 --> statement-breakpoint
+DO $$ BEGIN
 -- A commitment nobody could name is not a commitment. Without this arc the
 -- next-step rate counts every polite goodbye, which is the metric reporting
 -- every call as a success.
@@ -107,22 +112,26 @@ ALTER TABLE "crm_call_analyses" ADD CONSTRAINT "chk_crm_call_analyses_next_step"
     ("next_step_committed" = true AND "next_step" IS NOT NULL) OR
     ("next_step_committed" = false AND "next_step" IS NULL)
   );
-
+EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
 --> statement-breakpoint
+DO $$ BEGIN
 ALTER TABLE "crm_call_analyses" ADD CONSTRAINT "chk_crm_call_analyses_transcript_chars"
   CHECK ("transcript_chars" > 0);
-
+EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
 --> statement-breakpoint
+DO $$ BEGIN
 -- The quoted material is an array of objects; a bare string or a number here
 -- would pass the column type and then break every reader.
 ALTER TABLE "crm_call_analyses" ADD CONSTRAINT "chk_crm_call_analyses_json_arrays"
   CHECK (jsonb_typeof("objections") = 'array' AND jsonb_typeof("competitor_mentions") = 'array');
-
+EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
 --> statement-breakpoint
+DO $$ BEGIN
 -- NOT VALID then VALIDATE, so adding the edge does not hold ACCESS EXCLUSIVE on
 -- organizations while it runs.
 ALTER TABLE "crm_call_analyses" ADD CONSTRAINT "fk_crm_call_analyses_org"
   FOREIGN KEY ("organization_id") REFERENCES "organizations"("id") ON DELETE CASCADE NOT VALID;
+EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
 --> statement-breakpoint
 ALTER TABLE "crm_call_analyses" VALIDATE CONSTRAINT "fk_crm_call_analyses_org";
 

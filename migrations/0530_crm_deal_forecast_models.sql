@@ -66,10 +66,12 @@ CREATE TABLE IF NOT EXISTS "crm_deal_forecast_models" (
 --> statement-breakpoint
 ALTER TABLE "crm_deal_forecast_models" DROP CONSTRAINT IF EXISTS "chk_crm_deal_forecast_models_status";
 --> statement-breakpoint
+DO $$ BEGIN
 ALTER TABLE "crm_deal_forecast_models" ADD CONSTRAINT "chk_crm_deal_forecast_models_status"
   CHECK ("status" IN ('active', 'superseded'));
-
+EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
 --> statement-breakpoint
+DO $$ BEGIN
 -- A model fitted on nothing is not a model. The floor the product enforces is
 -- much higher; this only makes the degenerate row unrepresentable.
 ALTER TABLE "crm_deal_forecast_models" ADD CONSTRAINT "chk_crm_deal_forecast_models_counts"
@@ -79,27 +81,31 @@ ALTER TABLE "crm_deal_forecast_models" ADD CONSTRAINT "chk_crm_deal_forecast_mod
     AND "won_deals" >= 0
     AND "lost_deals" >= 0
   );
-
+EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
 --> statement-breakpoint
+DO $$ BEGIN
 -- Without a penalty a separable sales history has no finite fit and every
 -- probability collapses to 0 or 1, so a stored model with no ridge would be a
 -- stored set of infinities.
 ALTER TABLE "crm_deal_forecast_models" ADD CONSTRAINT "chk_crm_deal_forecast_models_ridge"
   CHECK ("ridge" > 0);
-
+EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
 --> statement-breakpoint
+DO $$ BEGIN
 ALTER TABLE "crm_deal_forecast_models" ADD CONSTRAINT "fk_crm_deal_forecast_models_org"
   FOREIGN KEY ("organization_id") REFERENCES "organizations"("id") ON DELETE CASCADE NOT VALID;
+EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
 --> statement-breakpoint
 ALTER TABLE "crm_deal_forecast_models" VALIDATE CONSTRAINT "fk_crm_deal_forecast_models_org";
 
 --> statement-breakpoint
+DO $$ BEGIN
 -- The tenant key the scores table's composite foreign key targets. A constraint
 -- rather than a bare index, so it is a declared referent rather than one the
 -- planner happens to accept today.
 ALTER TABLE "crm_deal_forecast_models" ADD CONSTRAINT "uniq_crm_deal_forecast_models_org_id"
   UNIQUE ("organization_id", "crm_deal_forecast_model_id");
-
+EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
 --> statement-breakpoint
 -- Exactly one current model per organisation. Partial, because superseded rows
 -- are kept: a score written last week names the model that produced it, and
@@ -133,10 +139,12 @@ CREATE TABLE IF NOT EXISTS "crm_deal_forecast_scores" (
 );
 
 --> statement-breakpoint
+DO $$ BEGIN
 ALTER TABLE "crm_deal_forecast_scores" ADD CONSTRAINT "chk_crm_deal_forecast_scores_probability"
   CHECK ("probability" >= 0 AND "probability" <= 1);
-
+EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
 --> statement-breakpoint
+DO $$ BEGIN
 -- The interval has to contain the estimate it is an interval for. A row that
 -- fails this is a rendering that shows "62% (71% – 48%)", which reads as a bug
 -- in the product rather than in the arithmetic that produced it.
@@ -147,31 +155,38 @@ ALTER TABLE "crm_deal_forecast_scores" ADD CONSTRAINT "chk_crm_deal_forecast_sco
     AND "interval_lower" <= "probability"
     AND "probability" <= "interval_upper"
   );
-
+EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
 --> statement-breakpoint
+DO $$ BEGIN
 ALTER TABLE "crm_deal_forecast_scores" ADD CONSTRAINT "chk_crm_deal_forecast_scores_value"
   CHECK ("expected_value_minor" >= 0);
-
+EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
 --> statement-breakpoint
+DO $$ BEGIN
 ALTER TABLE "crm_deal_forecast_scores" ADD CONSTRAINT "fk_crm_deal_forecast_scores_org"
   FOREIGN KEY ("organization_id") REFERENCES "organizations"("id") ON DELETE CASCADE NOT VALID;
+EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
 --> statement-breakpoint
 ALTER TABLE "crm_deal_forecast_scores" VALIDATE CONSTRAINT "fk_crm_deal_forecast_scores_org";
 
 --> statement-breakpoint
+DO $$ BEGIN
 -- Composite on the tenant, so a score can never point at another organisation's
 -- deal even if the application forgets to say which organisation it is in.
 ALTER TABLE "crm_deal_forecast_scores" ADD CONSTRAINT "fk_crm_deal_forecast_scores_deal"
   FOREIGN KEY ("organization_id", "deal_id")
   REFERENCES "deals"("org_id", "id") ON DELETE CASCADE NOT VALID;
+EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
 --> statement-breakpoint
 ALTER TABLE "crm_deal_forecast_scores" VALIDATE CONSTRAINT "fk_crm_deal_forecast_scores_deal";
 
 --> statement-breakpoint
+DO $$ BEGIN
 ALTER TABLE "crm_deal_forecast_scores" ADD CONSTRAINT "fk_crm_deal_forecast_scores_model"
   FOREIGN KEY ("organization_id", "crm_deal_forecast_model_id")
   REFERENCES "crm_deal_forecast_models"("organization_id", "crm_deal_forecast_model_id")
   ON DELETE CASCADE NOT VALID;
+EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
 --> statement-breakpoint
 ALTER TABLE "crm_deal_forecast_scores" VALIDATE CONSTRAINT "fk_crm_deal_forecast_scores_model";
 
@@ -185,9 +200,10 @@ CREATE INDEX IF NOT EXISTS "idx_crm_deal_forecast_scores_org_scored"
   ON "crm_deal_forecast_scores" ("organization_id", "scored_at");
 
 --> statement-breakpoint
+DO $$ BEGIN
 ALTER TABLE "crm_deal_forecast_scores" ADD CONSTRAINT "uniq_crm_deal_forecast_scores_org_id"
   UNIQUE ("organization_id", "crm_deal_forecast_score_id");
-
+EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
 --> statement-breakpoint
 -- The activity half of feature assembly: count and last timestamp per deal, for
 -- every open deal in one grouped pass. `idx_deal_activities_deal` is on

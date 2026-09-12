@@ -1,10 +1,13 @@
 import { ForbiddenException, NotFoundException } from "@nestjs/common";
+import type { SQL } from "drizzle-orm";
+import { PgDialect } from "drizzle-orm/pg-core";
 import type { Db } from "../../../db/drizzle.module";
 import type { CacheService } from "../../../common/cache/cache.service";
 import type { AblyService } from "../../realtime/ably.service";
 import type { EntityReferenceService } from "../../entity-reference/entity-reference.service";
 import type { EntityActor } from "../../entity-reference/entity-reference.types";
 import { ChatChannelMembersService } from "../chat-channel-members.service";
+import { ChatChannelListService } from "../chat-channel-list.service";
 
 const ORG = "org-a";
 const USER = "user-a";
@@ -58,7 +61,13 @@ function build(
         findFirst: jest.fn(() => Promise.resolve(memberships[membershipCall++])),
       },
     },
-    insert: jest.fn(() => ({ values: jest.fn((v: unknown) => { inserted.push(v); return Promise.resolve(); }) })),
+    insert: jest.fn(() => ({
+      values: jest.fn((v: unknown) => {
+        inserted.push(v);
+        const settled = Promise.resolve();
+        return Object.assign(settled, { onConflictDoNothing: () => settled });
+      }),
+    })),
     delete: jest.fn(() => ({ where: jest.fn((w: unknown) => { deleted.push(w); return Promise.resolve(); }) })),
     select: jest.fn(),
     transaction: jest.fn(async (cb: (tx: unknown) => Promise<unknown>) =>
@@ -208,5 +217,217 @@ describe("leaveChannel — a non-member cannot leave what they are not in", () =
       { ok: true },
     );
     expect(deleted).toHaveLength(1);
+  });
+});
+
+const dialect = new PgDialect();
+
+interface MemberRow {
+  channelId: number;
+  membershipId: number;
+  role: string;
+  archivedAt: Date | null;
+}
+
+function equalityBindings(where: SQL): Map<string, unknown> {
+  const { sql: text, params } = dialect.sqlToQuery(where);
+  const bindings = new Map<string, unknown>();
+  const pattern = /"(\w+)"\."(\w+)"\s*=\s*\$(\d+)/gi;
+  let match = pattern.exec(text);
+  while (match !== null) {
+    bindings.set(`${match[1]}.${match[2]}`, params[Number(match[3]) - 1]);
+    match = pattern.exec(text);
+  }
+  return bindings;
+}
+
+function isKeysetPage(where: SQL): boolean {
+  const { sql: text } = dialect.sqlToQuery(where);
+  return (
+    /"chat_channel_members"\."archived_at"/i.test(text) &&
+    /"chat_channel_members"\."membership_id"\s*=\s*\$/i.test(text)
+  );
+}
+
+function archiveSideOf(where: SQL): "archived" | "active" {
+  const { sql: text } = dialect.sqlToQuery(where);
+  if (/"chat_channel_members"\."archived_at"\s+is\s+not\s+null/i.test(text)) return "archived";
+  if (/"chat_channel_members"\."archived_at"\s+is\s+null/i.test(text)) return "active";
+  throw new Error(`the channel list does not constrain archived_at: ${text}`);
+}
+
+const LIST_CHANNEL_ROW = {
+  id: CHANNEL,
+  name: "Launch",
+  type: "PRIVATE",
+  avatarUrl: null,
+  isArchived: false,
+  entityType: null,
+  entityId: null,
+};
+
+interface RoundTrip {
+  members: ChatChannelMembersService;
+  list: ChatChannelListService;
+  store: MemberRow[];
+  deleteCalls: () => number;
+}
+
+function buildRoundTrip(): RoundTrip {
+  const store: MemberRow[] = [
+    { channelId: CHANNEL, membershipId: MEMBERSHIP, role: "MEMBER", archivedAt: null },
+    { channelId: CHANNEL, membershipId: TARGET_MEMBERSHIP, role: "ADMIN", archivedAt: null },
+  ];
+  const deleteMock = jest.fn();
+
+  const pageRows = (where: SQL) => {
+    const row = store.find((r) => r.channelId === CHANNEL && r.membershipId === MEMBERSHIP);
+    if (!row) return [];
+    const wanted = archiveSideOf(where);
+    const isArchived = row.archivedAt !== null;
+    if (wanted === "archived" && !isArchived) return [];
+    if (wanted === "active" && isArchived) return [];
+    return [{ id: CHANNEL, lastMessageAt: null }];
+  };
+
+  const makeChain = () => {
+    let where: SQL | undefined;
+    const chain: Record<string, unknown> = {};
+    for (const method of ["from", "innerJoin", "innerJoinLateral", "leftJoin", "groupBy", "having", "orderBy", "limit", "as"])
+      chain[method] = jest.fn(() => chain);
+    chain.where = jest.fn((predicate: SQL) => {
+      where = predicate;
+      return chain;
+    });
+    chain.then = (resolve: (value: unknown[]) => unknown) =>
+      resolve(where !== undefined && isKeysetPage(where) ? pageRows(where) : []);
+    return chain;
+  };
+
+  const db = {
+    query: {
+      chatChannels: {
+        findFirst: jest
+          .fn()
+          .mockResolvedValue({ id: CHANNEL, isPrivate: true, entityType: null, entityId: null }),
+        findMany: jest.fn().mockResolvedValue([LIST_CHANNEL_ROW]),
+      },
+      organizationMembers: { findFirst: jest.fn().mockResolvedValue({ id: MEMBERSHIP, isOwner: false }) },
+      chatChannelMembers: {
+        findFirst: jest.fn(() => {
+          const row = store.find((r) => r.channelId === CHANNEL && r.membershipId === MEMBERSHIP);
+          return Promise.resolve(row ? { role: row.role } : undefined);
+        }),
+      },
+    },
+    select: jest.fn(() => makeChain()),
+    update: jest.fn(() => ({
+      set: (values: Partial<MemberRow>) => ({
+        where: (predicate: SQL) => {
+          const bindings = equalityBindings(predicate);
+          if (!bindings.has("chat_channel_members.org_id"))
+            throw new Error("a member-state write must be tenant-scoped");
+          const matches = (column: string, value: unknown) =>
+            !bindings.has(column) || bindings.get(column) === value;
+          for (const row of store) {
+            if (bindings.get("chat_channel_members.org_id") !== ORG) continue;
+            if (!matches("chat_channel_members.channel_id", row.channelId)) continue;
+            if (!matches("chat_channel_members.membership_id", row.membershipId)) continue;
+            Object.assign(row, values);
+          }
+          return Promise.resolve(undefined);
+        },
+      }),
+    })),
+    delete: deleteMock,
+  } as unknown as Db;
+
+  const resolver = entities(RESOLVED);
+  return {
+    members: new ChatChannelMembersService(
+      db,
+      { invalidateNamespace: jest.fn() } as unknown as CacheService,
+      resolver,
+      {} as unknown as AblyService,
+    ),
+    list: new ChatChannelListService(db, resolver),
+    store,
+    deleteCalls: () => deleteMock.mock.calls.length,
+  };
+}
+
+async function listedIds(list: ChatChannelListService, archived: boolean): Promise<number[]> {
+  const page = archived ? await list.getArchivedChannels(actor) : await list.getMyChannels(actor);
+  return page.channels.map((channel) => channel.id);
+}
+
+describe("archive then unarchive returns the channel to the list it came from", () => {
+  it("CONTROL: an unarchived channel is in my channels and absent from archived", async () => {
+    const harness = buildRoundTrip();
+
+    expect(await listedIds(harness.list, false)).toEqual([CHANNEL]);
+    expect(await listedIds(harness.list, true)).toEqual([]);
+  });
+
+  it("archiving moves it out of my channels and into archived", async () => {
+    const harness = buildRoundTrip();
+
+    await expect(harness.members.archiveChannel(CHANNEL, USER, ORG)).resolves.toEqual({ ok: true });
+
+    expect(await listedIds(harness.list, false)).toEqual([]);
+    expect(await listedIds(harness.list, true)).toEqual([CHANNEL]);
+  });
+
+  it("unarchiving puts it back in my channels exactly once and clears it from archived", async () => {
+    const harness = buildRoundTrip();
+
+    await harness.members.archiveChannel(CHANNEL, USER, ORG);
+    await expect(harness.members.unarchiveChannel(CHANNEL, USER, ORG)).resolves.toEqual({ ok: true });
+
+    expect(await listedIds(harness.list, false)).toEqual([CHANNEL]);
+    expect(await listedIds(harness.list, true)).toEqual([]);
+  });
+
+  it("the round trip loses no membership: the same two rows with the same roles survive it", async () => {
+    const harness = buildRoundTrip();
+
+    await harness.members.archiveChannel(CHANNEL, USER, ORG);
+    await harness.members.unarchiveChannel(CHANNEL, USER, ORG);
+
+    expect(harness.store).toHaveLength(2);
+    expect(harness.store.map((row) => [row.membershipId, row.role, row.archivedAt])).toEqual([
+      [MEMBERSHIP, "MEMBER", null],
+      [TARGET_MEMBERSHIP, "ADMIN", null],
+    ]);
+    expect(harness.deleteCalls()).toBe(0);
+  });
+
+  it("archiving is the caller's own view: the other member's row is not stamped", async () => {
+    const harness = buildRoundTrip();
+
+    await harness.members.archiveChannel(CHANNEL, USER, ORG);
+
+    const mine = harness.store.find((row) => row.membershipId === MEMBERSHIP);
+    const theirs = harness.store.find((row) => row.membershipId === TARGET_MEMBERSHIP);
+    expect(mine?.archivedAt).toBeInstanceOf(Date);
+    expect(theirs?.archivedAt).toBeNull();
+  });
+
+  it("unarchiving clears archived_at rather than stamping a newer date", async () => {
+    const harness = buildRoundTrip();
+
+    await harness.members.archiveChannel(CHANNEL, USER, ORG);
+    await harness.members.unarchiveChannel(CHANNEL, USER, ORG);
+
+    expect(harness.store.find((row) => row.membershipId === MEMBERSHIP)?.archivedAt).toBeNull();
+  });
+
+  it("DENY: a non-member cannot archive, so the lists cannot be moved by an outsider", async () => {
+    const harness = buildRoundTrip();
+    harness.store.splice(0, 1);
+
+    await expect(harness.members.archiveChannel(CHANNEL, USER, ORG)).rejects.toBeInstanceOf(
+      NotFoundException,
+    );
   });
 });

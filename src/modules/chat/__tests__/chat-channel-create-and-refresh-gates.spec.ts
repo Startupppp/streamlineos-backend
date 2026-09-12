@@ -1,5 +1,7 @@
 import { Test, type TestingModule } from "@nestjs/testing";
 import { NotFoundException } from "@nestjs/common";
+import type { SQL } from "drizzle-orm";
+import { PgDialect } from "drizzle-orm/pg-core";
 import { ChatChannelsService } from "../chat-channels.service";
 import { ChatChannelListService } from "../chat-channel-list.service";
 import { createChannelSchema, type CreateChannelInput } from "../dto/chat.schemas";
@@ -15,8 +17,15 @@ import type { EntityActor } from "../../entity-reference/entity-reference.types"
 const ORG = "org-1";
 const ACTOR_USER = "user-1";
 const OTHER_USER = "user-2";
+const THIRD_USER = "user-3";
 const CHANNEL_ID = 77;
+const ACTOR_MEMBERSHIP = 3;
+const OTHER_MEMBERSHIP = 4;
+const THIRD_MEMBERSHIP = 9;
+const NEW_DM_ID = 501;
 const ACTOR: EntityActor = { orgId: ORG, userId: ACTOR_USER, membershipId: 3, isOrgOwner: false };
+
+const dialect = new PgDialect();
 
 const CLEAN_GROUP_BODY = {
   type: "GROUP",
@@ -259,5 +268,243 @@ describe("POST /chat/channels/:channelId/refresh-name — a non-member is told n
     ).resolves.toBeUndefined();
     expect(harness.resolveDisplayName).toHaveBeenCalled();
     expect(harness.update).toHaveBeenCalled();
+  });
+});
+
+interface ExistingDm {
+  id: number;
+  members: { membershipId: number }[];
+}
+
+interface DmHarness {
+  service: ChatChannelsService;
+  inserts: InsertCall[];
+  existingDmLookup: () => SQL;
+}
+
+const MEMBERSHIP_BY_USER = new Map<string, number>([
+  [ACTOR_USER, ACTOR_MEMBERSHIP],
+  [OTHER_USER, OTHER_MEMBERSHIP],
+  [THIRD_USER, THIRD_MEMBERSHIP],
+]);
+
+const USER_NAMES = new Map<string, string>([
+  [ACTOR_USER, "Alice"],
+  [OTHER_USER, "Bob"],
+]);
+
+function boundChannelId(where: SQL): number {
+  const { sql: text, params } = dialect.sqlToQuery(where);
+  const match = /"chat_channels"\."id"\s*=\s*\$(\d+)/i.exec(text);
+  if (!match?.[1]) throw new Error(`the channel detail read does not bind chat_channels.id: ${text}`);
+  const value = params[Number(match[1]) - 1];
+  if (typeof value !== "number") throw new Error("chat_channels.id is not bound to a number");
+  return value;
+}
+
+function membersOf(existingDMs: readonly ExistingDm[], channelId: number): { membershipId: number }[] {
+  return existingDMs.find((dm) => dm.id === channelId)?.members ?? [{ membershipId: ACTOR_MEMBERSHIP }];
+}
+
+async function buildDmHarness(existingDMs: readonly ExistingDm[]): Promise<DmHarness> {
+  const inserts: InsertCall[] = [];
+  let lookupWhere: SQL | undefined;
+
+  const detailFindFirst = (config: { where?: SQL }) => {
+    if (!config.where) throw new Error("the channel detail read ran with no predicate");
+    const id = boundChannelId(config.where);
+    return Promise.resolve({
+      id,
+      orgId: ORG,
+      name: "detail",
+      type: "DIRECT",
+      isPrivate: true,
+      entityType: null,
+      entityId: null,
+      members: membersOf(existingDMs, id).map((member) => ({
+        id: member.membershipId,
+        channelId: id,
+        role: "MEMBER",
+        membership: { userId: ACTOR_USER, user: { id: ACTOR_USER, name: "Alice", image: null, email: null } },
+      })),
+    });
+  };
+
+  const query = {
+    chatChannels: {
+      findFirst: jest.fn(detailFindFirst),
+      findMany: jest.fn((config: { where?: SQL }) => {
+        if (!config.where) throw new Error("the existing-DM lookup ran with no predicate");
+        lookupWhere = config.where;
+        return Promise.resolve(existingDMs.map((dm) => ({ id: dm.id, members: dm.members })));
+      }),
+    },
+    users: {
+      findFirst: jest.fn(({ where }: { where?: SQL }) => {
+        const params = where ? dialect.sqlToQuery(where).params : [];
+        const id = params.find((param): param is string => typeof param === "string");
+        return Promise.resolve({ name: id ? USER_NAMES.get(id) ?? null : null });
+      }),
+    },
+  };
+
+  const insert = (table: unknown) => ({
+    values: (values: unknown) => {
+      inserts.push({ table, values });
+      return {
+        returning: () => Promise.resolve([{ id: NEW_DM_ID, orgId: ORG }]),
+        then: (resolve: (value: undefined) => unknown) => resolve(undefined),
+      };
+    },
+  });
+
+  let selectCall = 0;
+  const selectResults: unknown[][] = [
+    [{ userId: ACTOR_USER }, { userId: OTHER_USER }, { userId: THIRD_USER }],
+    existingDMs.map((dm) => ({ channelId: dm.id })),
+  ];
+  const select = () => {
+    const index = selectCall++;
+    return { from: () => ({ where: () => Promise.resolve(selectResults[index] ?? []) }) };
+  };
+
+  const db = {
+    query,
+    select,
+    insert,
+    transaction: jest.fn((run: (tx: { insert: typeof insert; query: typeof query }) => Promise<unknown>) =>
+      run({ insert, query }),
+    ),
+  } as unknown as Db;
+
+  const module: TestingModule = await Test.createTestingModule({
+    providers: [
+      ChatChannelsService,
+      { provide: DRIZZLE, useValue: db },
+      { provide: PlanLimitsService, useValue: { assertWithinLimit: jest.fn() } },
+      { provide: CacheService, useValue: { invalidateNamespace: jest.fn() } },
+      { provide: EntityReferenceService, useValue: { resolve: jest.fn() } },
+      {
+        provide: ChatChannelListService,
+        useValue: {
+          getMembershipId: jest.fn((_orgId: string, userId: string) =>
+            Promise.resolve(MEMBERSHIP_BY_USER.get(userId) ?? null),
+          ),
+        },
+      },
+    ],
+  }).compile();
+
+  return {
+    service: module.get(ChatChannelsService),
+    inserts,
+    existingDmLookup: () => {
+      if (!lookupWhere) throw new Error("the existing-DM lookup never ran");
+      return lookupWhere;
+    },
+  };
+}
+
+const PAIR_DM: ExistingDm = {
+  id: 91,
+  members: [{ membershipId: ACTOR_MEMBERSHIP }, { membershipId: OTHER_MEMBERSHIP }],
+};
+const SELF_DM: ExistingDm = { id: 92, members: [{ membershipId: ACTOR_MEMBERSHIP }] };
+const THIRD_PARTY_DM: ExistingDm = {
+  id: 93,
+  members: [{ membershipId: ACTOR_MEMBERSHIP }, { membershipId: THIRD_MEMBERSHIP }],
+};
+
+function directBody(targetUserId: string) {
+  return { type: "DIRECT" as const, targetUserId };
+}
+
+describe("POST /chat/channels type=DIRECT — a second conversation with the same person is never created", () => {
+  it("returns the DM that already exists with that person and writes nothing", async () => {
+    const harness = await buildDmHarness([PAIR_DM]);
+
+    const result = await harness.service.createChannel(ORG, ACTOR_USER, directBody(OTHER_USER));
+
+    expect(result.created).toBe(false);
+    expect(result.channel.id).toBe(PAIR_DM.id);
+    expect(harness.inserts).toHaveLength(0);
+  });
+
+  it("CONTROL: with no DM on record it creates one channel and two membership rows", async () => {
+    const harness = await buildDmHarness([]);
+
+    const result = await harness.service.createChannel(ORG, ACTOR_USER, directBody(OTHER_USER));
+
+    expect(result.created).toBe(true);
+    expect(result.channel.id).toBe(NEW_DM_ID);
+    expect(insertedChannelRow(harness.inserts)).toMatchObject({ type: "DIRECT", isPrivate: true });
+    const memberRows = harness.inserts.find((entry) => entry.table !== chatChannels)?.values;
+    expect(memberRows).toEqual([
+      { orgId: ORG, channelId: NEW_DM_ID, membershipId: ACTOR_MEMBERSHIP, role: "MEMBER" },
+      { orgId: ORG, channelId: NEW_DM_ID, membershipId: OTHER_MEMBERSHIP, role: "MEMBER" },
+    ]);
+  });
+
+  it("does not hand back the DM the caller has with a DIFFERENT person", async () => {
+    const harness = await buildDmHarness([THIRD_PARTY_DM]);
+
+    const result = await harness.service.createChannel(ORG, ACTOR_USER, directBody(OTHER_USER));
+
+    expect(result.created).toBe(true);
+    expect(result.channel.id).toBe(NEW_DM_ID);
+  });
+
+  it("does not hand back the caller's own self-DM when they ask for a DM with someone else", async () => {
+    const harness = await buildDmHarness([SELF_DM]);
+
+    const result = await harness.service.createChannel(ORG, ACTOR_USER, directBody(OTHER_USER));
+
+    expect(result.created).toBe(true);
+    expect(result.channel.id).toBe(NEW_DM_ID);
+  });
+
+  it("the existing-DM lookup binds type = DIRECT and the caller's org, so a GROUP is never reused", async () => {
+    const harness = await buildDmHarness([PAIR_DM]);
+
+    await harness.service.createChannel(ORG, ACTOR_USER, directBody(OTHER_USER));
+
+    const { sql: text, params } = dialect.sqlToQuery(harness.existingDmLookup());
+    expect(text).toMatch(/"chat_channels"\."type"\s*=\s*\$\d+/i);
+    expect(text).toMatch(/"chat_channels"\."org_id"\s*=\s*\$\d+/i);
+    expect(params).toContain("DIRECT");
+    expect(params).toContain(ORG);
+  });
+});
+
+describe("POST /chat/channels type=DIRECT — a self-DM dedupes on the single-member shape", () => {
+  it("returns the existing one-member channel instead of a second note to self", async () => {
+    const harness = await buildDmHarness([SELF_DM]);
+
+    const result = await harness.service.createChannel(ORG, ACTOR_USER, directBody(ACTOR_USER));
+
+    expect(result.created).toBe(false);
+    expect(result.channel.id).toBe(SELF_DM.id);
+    expect(harness.inserts).toHaveLength(0);
+  });
+
+  it("does not mistake the two-member DM the caller is already in for their self-DM", async () => {
+    const harness = await buildDmHarness([PAIR_DM]);
+
+    const result = await harness.service.createChannel(ORG, ACTOR_USER, directBody(ACTOR_USER));
+
+    expect(result.created).toBe(true);
+    expect(result.channel.id).toBe(NEW_DM_ID);
+  });
+
+  it("CONTROL: the created self-DM carries exactly one membership row, named for the caller alone", async () => {
+    const harness = await buildDmHarness([]);
+
+    const result = await harness.service.createChannel(ORG, ACTOR_USER, directBody(ACTOR_USER));
+
+    expect(result.created).toBe(true);
+    expect(insertedChannelRow(harness.inserts)).toMatchObject({ type: "DIRECT", name: "Alice" });
+    expect(harness.inserts.find((entry) => entry.table !== chatChannels)?.values).toEqual([
+      { orgId: ORG, channelId: NEW_DM_ID, membershipId: ACTOR_MEMBERSHIP, role: "MEMBER" },
+    ]);
   });
 });

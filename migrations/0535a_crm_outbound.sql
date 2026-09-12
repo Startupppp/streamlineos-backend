@@ -80,18 +80,21 @@ CREATE TABLE IF NOT EXISTS "crm_outbound_messages" (
 );
 
 --> statement-breakpoint
+DO $$ BEGIN
 ALTER TABLE "crm_outbound_messages" ADD CONSTRAINT "chk_crm_outbound_messages_status"
   CHECK ("status" IN ('drafted', 'held', 'sent', 'cancelled', 'blocked', 'failed'));
-
+EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
 --> statement-breakpoint
+DO $$ BEGIN
 -- The class vocabulary is `outbound-classes.ts`, which writes it as a total map
 -- so a sixth class is a compile error. This is the same enumeration seen from
 -- the other side: a class the database has never heard of is a row nobody can
 -- filter, and the class is what a stop in `crm_outbound_class_stops` names.
 ALTER TABLE "crm_outbound_messages" ADD CONSTRAINT "chk_crm_outbound_messages_class"
   CHECK ("outbound_class" IN ('follow_up', 'nudge', 'check_in', 'meeting_request', 'cold_outreach'));
-
+EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
 --> statement-breakpoint
+DO $$ BEGIN
 -- Derived from the class and stored so a query can filter it -- and constrained
 -- so it cannot disagree with the class it was derived from. A `cold_outreach`
 -- row carrying `engaged` would be counted against the wrong ramp and would slip
@@ -101,12 +104,14 @@ ALTER TABLE "crm_outbound_messages" ADD CONSTRAINT "chk_crm_outbound_messages_tr
     ("outbound_class" = 'cold_outreach' AND "track" = 'cold') OR
     ("outbound_class" <> 'cold_outreach' AND "track" = 'engaged')
   );
-
+EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
 --> statement-breakpoint
+DO $$ BEGIN
 ALTER TABLE "crm_outbound_messages" ADD CONSTRAINT "chk_crm_outbound_messages_tz_source"
   CHECK ("timezone_source" IS NULL OR "timezone_source" IN ('party', 'tenant'));
-
+EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
 --> statement-breakpoint
+DO $$ BEGIN
 -- A send is a moment and an address together, or neither. A row at `sent` with
 -- no `sent_at` cannot be counted by the frequency cap -- which reads `sent_at`
 -- and would silently omit it -- and that omission spends the cap on a message
@@ -116,26 +121,30 @@ ALTER TABLE "crm_outbound_messages" ADD CONSTRAINT "chk_crm_outbound_messages_se
     ("status" = 'sent' AND "sent_at" IS NOT NULL AND "recipient_email" IS NOT NULL) OR
     ("status" <> 'sent' AND "sent_at" IS NULL)
   );
-
+EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
 --> statement-breakpoint
+DO $$ BEGIN
 -- Deferrals are bounded in `send-guardrails.ts` at MAX_WORKING_HOUR_DEFERRALS.
 -- The database refuses a negative one rather than the ceiling, because the
 -- ceiling is enforcement and belongs in one place; a negative count is corruption.
 ALTER TABLE "crm_outbound_messages" ADD CONSTRAINT "chk_crm_outbound_messages_deferrals"
   CHECK ("working_hour_deferrals" >= 0);
-
+EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
 --> statement-breakpoint
+DO $$ BEGIN
 ALTER TABLE "crm_outbound_messages" ADD CONSTRAINT "fk_crm_outbound_messages_org"
   FOREIGN KEY ("organization_id") REFERENCES "organizations"("id") ON DELETE CASCADE NOT VALID;
+EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
 --> statement-breakpoint
 ALTER TABLE "crm_outbound_messages" VALIDATE CONSTRAINT "fk_crm_outbound_messages_org";
 
 --> statement-breakpoint
+DO $$ BEGIN
 -- The composite tenant key `autonomy_holds` needs to point here, so the
 -- reference carries the organisation with it rather than trusting the id alone.
 ALTER TABLE "crm_outbound_messages" ADD CONSTRAINT "uniq_crm_outbound_messages_org_id"
   UNIQUE ("organization_id", "outbound_message_id");
-
+EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
 --> statement-breakpoint
 -- The frequency cap's read: everything sent to one party, newest first. Partial
 -- on `sent`, because that is the only status the cap counts and it is a small
@@ -194,12 +203,15 @@ CREATE TABLE IF NOT EXISTS "crm_outbound_class_stops" (
 );
 
 --> statement-breakpoint
+DO $$ BEGIN
 ALTER TABLE "crm_outbound_class_stops" ADD CONSTRAINT "chk_crm_outbound_class_stops_class"
   CHECK ("outbound_class" IN ('follow_up', 'nudge', 'check_in', 'meeting_request', 'cold_outreach'));
-
+EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
 --> statement-breakpoint
+DO $$ BEGIN
 ALTER TABLE "crm_outbound_class_stops" ADD CONSTRAINT "fk_crm_outbound_class_stops_org"
   FOREIGN KEY ("organization_id") REFERENCES "organizations"("id") ON DELETE CASCADE NOT VALID;
+EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
 --> statement-breakpoint
 ALTER TABLE "crm_outbound_class_stops" VALIDATE CONSTRAINT "fk_crm_outbound_class_stops_org";
 
@@ -256,18 +268,21 @@ CREATE TABLE IF NOT EXISTS "crm_cold_outbound_settings" (
 );
 
 --> statement-breakpoint
+DO $$ BEGIN
 ALTER TABLE "crm_cold_outbound_settings" ADD CONSTRAINT "fk_crm_cold_outbound_settings_org"
   FOREIGN KEY ("organization_id") REFERENCES "organizations"("id") ON DELETE CASCADE NOT VALID;
+EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
 --> statement-breakpoint
 ALTER TABLE "crm_cold_outbound_settings" VALIDATE CONSTRAINT "fk_crm_cold_outbound_settings_org";
 
 --> statement-breakpoint
+DO $$ BEGIN
 -- A pause is a moment and a reason together, or neither. `evaluateColdGate`
 -- reports `paused` from the timestamp alone, so a pause with no reason is a
 -- refusal an operator cannot act on and will clear without reading.
 ALTER TABLE "crm_cold_outbound_settings" ADD CONSTRAINT "chk_crm_cold_outbound_settings_pause"
   CHECK (("paused_at" IS NULL AND "pause_reason" IS NULL) OR ("paused_at" IS NOT NULL AND "pause_reason" IS NOT NULL));
-
+EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
 --> statement-breakpoint
 ALTER TABLE "crm_cold_outbound_settings" ENABLE ROW LEVEL SECURITY;
 --> statement-breakpoint
@@ -301,12 +316,15 @@ CREATE TABLE IF NOT EXISTS "crm_sending_domains" (
 );
 
 --> statement-breakpoint
+DO $$ BEGIN
 ALTER TABLE "crm_sending_domains" ADD CONSTRAINT "chk_crm_sending_domains_purpose"
   CHECK ("purpose" IN ('transactional', 'cold'));
-
+EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
 --> statement-breakpoint
+DO $$ BEGIN
 ALTER TABLE "crm_sending_domains" ADD CONSTRAINT "fk_crm_sending_domains_org"
   FOREIGN KEY ("organization_id") REFERENCES "organizations"("id") ON DELETE CASCADE NOT VALID;
+EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
 --> statement-breakpoint
 ALTER TABLE "crm_sending_domains" VALIDATE CONSTRAINT "fk_crm_sending_domains_org";
 
@@ -346,6 +364,7 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON "crm_sending_domains" TO streamline_app;
 -- hold fails before it has a row of its own to fail against.
 ALTER TABLE "autonomous_decisions" DROP CONSTRAINT IF EXISTS "chk_autonomous_decisions_kind";
 --> statement-breakpoint
+DO $$ BEGIN
 ALTER TABLE "autonomous_decisions" ADD CONSTRAINT "chk_autonomous_decisions_kind"
   CHECK ("kind" IN (
     'task.extracted',
@@ -357,24 +376,27 @@ ALTER TABLE "autonomous_decisions" ADD CONSTRAINT "chk_autonomous_decisions_kind
     'cold_outbound.sent',
     'field.repaired'
   ));
-
+EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
 --> statement-breakpoint
 -- Cold is its own kind rather than a flavour of `outbound.sent`, so
 -- `cancelInFlight` can stop every waiting cold message when the cold kill switch
 -- goes off without touching the follow-ups.
 ALTER TABLE "autonomy_holds" DROP CONSTRAINT IF EXISTS "chk_autonomy_holds_kind";
 --> statement-breakpoint
+DO $$ BEGIN
 ALTER TABLE "autonomy_holds" ADD CONSTRAINT "chk_autonomy_holds_kind"
   CHECK ("kind" IN ('quote.sent', 'outbound.sent', 'cold_outbound.sent'));
-
+EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
 --> statement-breakpoint
 ALTER TABLE "autonomy_holds" ADD COLUMN IF NOT EXISTS "outbound_message_id" text;
 
 --> statement-breakpoint
+DO $$ BEGIN
 ALTER TABLE "autonomy_holds" ADD CONSTRAINT "fk_autonomy_holds_outbound_message"
   FOREIGN KEY ("organization_id", "outbound_message_id")
   REFERENCES "crm_outbound_messages"("organization_id", "outbound_message_id")
   ON DELETE CASCADE NOT VALID;
+EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
 --> statement-breakpoint
 ALTER TABLE "autonomy_holds" VALIDATE CONSTRAINT "fk_autonomy_holds_outbound_message";
 
@@ -393,9 +415,10 @@ ALTER TABLE "autonomy_holds" DROP CONSTRAINT IF EXISTS "chk_autonomy_holds_targe
 --> statement-breakpoint
 ALTER TABLE "autonomy_holds" DROP CONSTRAINT IF EXISTS "chk_autonomy_holds_arc";
 --> statement-breakpoint
+DO $$ BEGIN
 ALTER TABLE "autonomy_holds" ADD CONSTRAINT "chk_autonomy_holds_arc"
   CHECK (num_nonnulls("quote_id", "outbound_message_id") = 1);
-
+EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
 --> statement-breakpoint
 -- One live hold per message, for the same reason there is one per quote: two
 -- decisions to send the same draft are a duplicate, not a race to win. This is

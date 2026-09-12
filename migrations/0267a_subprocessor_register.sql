@@ -34,8 +34,10 @@ CREATE TABLE IF NOT EXISTS "subprocessors" (
 );
 
 --> statement-breakpoint
+DO $$ BEGIN
 ALTER TABLE "subprocessors" ADD CONSTRAINT "fk_subprocessors_updated_by"
   FOREIGN KEY ("updated_by") REFERENCES "users"("id") ON DELETE SET NULL NOT VALID;
+EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
 --> statement-breakpoint
 ALTER TABLE "subprocessors" VALIDATE CONSTRAINT "fk_subprocessors_updated_by";
 

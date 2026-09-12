@@ -117,13 +117,15 @@ CREATE TABLE IF NOT EXISTS "relationship_states" (
 );
 
 --> statement-breakpoint
+DO $$ BEGIN
 ALTER TABLE "relationship_states" ADD CONSTRAINT "chk_relationship_states_one_anchor"
   CHECK (
     ("party_id" IS NOT NULL AND "deal_id" IS NULL) OR
     ("party_id" IS NULL AND "deal_id" IS NOT NULL)
   );
-
+EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
 --> statement-breakpoint
+DO $$ BEGIN
 -- Counts and durations are counts and durations. A negative reply latency is a
 -- clock problem upstream, and storing it would put a nonsense number into the
 -- baseline every downstream judgement is built on.
@@ -137,8 +139,9 @@ ALTER TABLE "relationship_states" ADD CONSTRAINT "chk_relationship_states_counts
     ("reply_min_seconds" IS NULL OR "reply_min_seconds" >= 0) AND
     ("reply_max_seconds" IS NULL OR "reply_max_seconds" >= 0)
   );
-
+EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
 --> statement-breakpoint
+DO $$ BEGIN
 -- A distribution with no samples must not carry percentiles, and one with
 -- samples must. The pair is what ticket 02 branches on to decide whether it may
 -- use this relationship's own baseline or must fall back to a stated default,
@@ -150,10 +153,12 @@ ALTER TABLE "relationship_states" ADD CONSTRAINT "chk_relationship_states_latenc
     ("reply_sample_count" > 0 AND "reply_p50_seconds" IS NOT NULL AND "reply_p90_seconds" IS NOT NULL
        AND "reply_min_seconds" IS NOT NULL AND "reply_max_seconds" IS NOT NULL)
   );
-
+EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
 --> statement-breakpoint
+DO $$ BEGIN
 ALTER TABLE "relationship_states" ADD CONSTRAINT "fk_relationship_states_org"
   FOREIGN KEY ("organization_id") REFERENCES "organizations"("id") ON DELETE CASCADE NOT VALID;
+EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
 --> statement-breakpoint
 ALTER TABLE "relationship_states" VALIDATE CONSTRAINT "fk_relationship_states_org";
 
@@ -180,6 +185,7 @@ BEGIN
 END $$;
 
 --> statement-breakpoint
+DO $$ BEGIN
 -- CASCADE rather than SET NULL: the tempting SET NULL over a composite key nulls
 -- `organization_id` too, which is NOT NULL. It costs nothing here in practice --
 -- parties are soft-deleted and nothing in `src/` hard-deletes one -- and the one
@@ -188,6 +194,7 @@ END $$;
 ALTER TABLE "relationship_states" ADD CONSTRAINT "fk_relationship_states_party"
   FOREIGN KEY ("organization_id", "party_id")
   REFERENCES "business_parties"("organization_id", "party_id") ON DELETE CASCADE NOT VALID;
+EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
 --> statement-breakpoint
 ALTER TABLE "relationship_states" VALIDATE CONSTRAINT "fk_relationship_states_party";
 
@@ -215,10 +222,11 @@ CREATE INDEX IF NOT EXISTS "idx_relationship_states_awaiting"
   WHERE "awaiting_reply_since" IS NOT NULL;
 
 --> statement-breakpoint
+DO $$ BEGIN
 -- The composite tenant key the two child tables point at.
 ALTER TABLE "relationship_states" ADD CONSTRAINT "uniq_relationship_states_org_id"
   UNIQUE ("organization_id", "relationship_state_id");
-
+EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
 --> statement-breakpoint
 CREATE TABLE IF NOT EXISTS "relationship_participants" (
   "relationship_participant_id" text PRIMARY KEY NOT NULL,
@@ -260,23 +268,29 @@ CREATE TABLE IF NOT EXISTS "relationship_participants" (
 );
 
 --> statement-breakpoint
+DO $$ BEGIN
 ALTER TABLE "relationship_participants" ADD CONSTRAINT "chk_relationship_participants_identity"
   CHECK ("party_id" IS NOT NULL OR "user_id" IS NOT NULL OR "address" IS NOT NULL);
-
+EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
 --> statement-breakpoint
+DO $$ BEGIN
 ALTER TABLE "relationship_participants" ADD CONSTRAINT "chk_relationship_participants_counts"
   CHECK ("message_count" >= 0 AND "replied_count" >= 0 AND "replied_count" <= "message_count");
-
+EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
 --> statement-breakpoint
+DO $$ BEGIN
 ALTER TABLE "relationship_participants" ADD CONSTRAINT "fk_relationship_participants_org"
   FOREIGN KEY ("organization_id") REFERENCES "organizations"("id") ON DELETE CASCADE NOT VALID;
+EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
 --> statement-breakpoint
 ALTER TABLE "relationship_participants" VALIDATE CONSTRAINT "fk_relationship_participants_org";
 
 --> statement-breakpoint
+DO $$ BEGIN
 ALTER TABLE "relationship_participants" ADD CONSTRAINT "fk_relationship_participants_state"
   FOREIGN KEY ("organization_id", "relationship_state_id")
   REFERENCES "relationship_states"("organization_id", "relationship_state_id") ON DELETE CASCADE NOT VALID;
+EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
 --> statement-breakpoint
 ALTER TABLE "relationship_participants" VALIDATE CONSTRAINT "fk_relationship_participants_state";
 
@@ -325,23 +339,29 @@ CREATE TABLE IF NOT EXISTS "relationship_threads" (
 );
 
 --> statement-breakpoint
+DO $$ BEGIN
 ALTER TABLE "relationship_threads" ADD CONSTRAINT "chk_relationship_threads_direction"
   CHECK ("last_direction" IS NULL OR "last_direction" IN ('inbound', 'outbound'));
-
+EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
 --> statement-breakpoint
+DO $$ BEGIN
 ALTER TABLE "relationship_threads" ADD CONSTRAINT "chk_relationship_threads_counts"
   CHECK ("message_count" >= 0 AND ("preceded_by_thread_id" IS NULL OR "preceded_by_thread_id" <> "thread_id"));
-
+EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
 --> statement-breakpoint
+DO $$ BEGIN
 ALTER TABLE "relationship_threads" ADD CONSTRAINT "fk_relationship_threads_org"
   FOREIGN KEY ("organization_id") REFERENCES "organizations"("id") ON DELETE CASCADE NOT VALID;
+EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
 --> statement-breakpoint
 ALTER TABLE "relationship_threads" VALIDATE CONSTRAINT "fk_relationship_threads_org";
 
 --> statement-breakpoint
+DO $$ BEGIN
 ALTER TABLE "relationship_threads" ADD CONSTRAINT "fk_relationship_threads_state"
   FOREIGN KEY ("organization_id", "relationship_state_id")
   REFERENCES "relationship_states"("organization_id", "relationship_state_id") ON DELETE CASCADE NOT VALID;
+EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
 --> statement-breakpoint
 ALTER TABLE "relationship_threads" VALIDATE CONSTRAINT "fk_relationship_threads_state";
 

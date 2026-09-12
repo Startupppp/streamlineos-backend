@@ -204,28 +204,34 @@ export class ChatInviteLinksService {
       });
 
       if (!existingMember) {
-        await tx.insert(chatChannelMembers).values({
-          orgId: channel.orgId,
-          channelId: channel.id,
-          membershipId: joinerOrgMember.id,
-          role: "MEMBER",
-        });
+        const [joined] = await tx
+          .insert(chatChannelMembers)
+          .values({
+            orgId: channel.orgId,
+            channelId: channel.id,
+            membershipId: joinerOrgMember.id,
+            role: "MEMBER",
+          })
+          .onConflictDoNothing()
+          .returning({ id: chatChannelMembers.id });
 
-        const [updated] = await tx
-          .update(chatChannelInviteLinks)
-          .set({ useCount: sql`${chatChannelInviteLinks.useCount} + 1` })
-          .where(
-            and(
-              eq(chatChannelInviteLinks.id, link.id),
-              isNull(chatChannelInviteLinks.revokedAt),
-              sql`(${chatChannelInviteLinks.expiresAt} IS NULL OR ${chatChannelInviteLinks.expiresAt} > now())`,
-              sql`(${chatChannelInviteLinks.maxUses} IS NULL OR ${chatChannelInviteLinks.useCount} < ${chatChannelInviteLinks.maxUses})`,
-            ),
-          )
-          .returning({ id: chatChannelInviteLinks.id });
+        if (joined) {
+          const [updated] = await tx
+            .update(chatChannelInviteLinks)
+            .set({ useCount: sql`${chatChannelInviteLinks.useCount} + 1` })
+            .where(
+              and(
+                eq(chatChannelInviteLinks.id, link.id),
+                isNull(chatChannelInviteLinks.revokedAt),
+                sql`(${chatChannelInviteLinks.expiresAt} IS NULL OR ${chatChannelInviteLinks.expiresAt} > now())`,
+                sql`(${chatChannelInviteLinks.maxUses} IS NULL OR ${chatChannelInviteLinks.useCount} < ${chatChannelInviteLinks.maxUses})`,
+              ),
+            )
+            .returning({ id: chatChannelInviteLinks.id });
 
-        if (!updated)
-          throw new NotFoundException("Invite link is invalid or has been revoked");
+          if (!updated)
+            throw new NotFoundException("Invite link is invalid or has been revoked");
+        }
       }
 
       return { ok: true as const, channelId: channel.id };

@@ -121,6 +121,7 @@ export const updateEventSchema = z.object({
   linkedLeadId: z.number().int().nullable().optional(),
   rrule: z.string().refine(isValidRrule, "Must be a valid RFC 5545 RRULE string").nullable().optional(),
   recurrenceEnd: z.string().datetime().nullable().optional(),
+  expectedVersion: z.number().int().nonnegative().optional(),
 }).strict()
   .refine(
     (v) => {

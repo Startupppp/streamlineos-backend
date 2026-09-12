@@ -53,15 +53,19 @@ CREATE TABLE IF NOT EXISTS "inv_compliance_documents" (
   "updated_at" timestamp DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
+DO $$ BEGIN
 ALTER TABLE "inv_compliance_documents"
   ADD CONSTRAINT "fk_inv_compliance_documents_org"
   FOREIGN KEY ("org_id") REFERENCES "organizations"("id") ON DELETE cascade NOT VALID;
+EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
 --> statement-breakpoint
 ALTER TABLE "inv_compliance_documents" VALIDATE CONSTRAINT "fk_inv_compliance_documents_org";
 --> statement-breakpoint
+DO $$ BEGIN
 ALTER TABLE "inv_compliance_documents"
   ADD CONSTRAINT "fk_inv_compliance_documents_created_by"
   FOREIGN KEY ("created_by") REFERENCES "users"("id") ON DELETE set null NOT VALID;
+EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
 --> statement-breakpoint
 ALTER TABLE "inv_compliance_documents" VALIDATE CONSTRAINT "fk_inv_compliance_documents_created_by";
 --> statement-breakpoint

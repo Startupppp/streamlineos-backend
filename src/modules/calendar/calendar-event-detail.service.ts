@@ -49,6 +49,7 @@ export class CalendarEventDetailService {
         description: calendarEvents.description,
         rrule: calendarEvents.rrule,
         createdByMembershipId: calendarEvents.createdByMembershipId,
+        localVersion: calendarEvents.localVersion,
       })
       .from(calendarEvents)
       .where(
@@ -149,6 +150,7 @@ export class CalendarEventDetailService {
       rrule: row.rrule,
       isRecurring: row.rrule !== null,
       canManage: callerMembershipId > 0 && row.createdByMembershipId === callerMembershipId,
+      localVersion: row.localVersion,
     };
   }
 }

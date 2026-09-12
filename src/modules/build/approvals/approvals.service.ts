@@ -7,6 +7,7 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { and, eq, inArray, isNull } from "drizzle-orm";
+import { PaymentRequiredException } from "../../../common/http/api-exceptions";
 import { projectApprovals } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
@@ -137,6 +138,12 @@ export class ApprovalsService {
       runInNewTenantTransaction(this.db, orgId, () =>
         this.notifyProjectChannel(orgId, projectId, userId, approval.title),
       ).catch((error: unknown) => {
+        if (error instanceof PaymentRequiredException) {
+          this.logger.warn(
+            `approval notification skipped for project ${projectId} in org ${orgId}: the organisation is at its chat-channel limit, so no project channel was created. The approval itself is unaffected.`,
+          );
+          return;
+        }
         this.logger.error(
           `approval notification failed for project ${projectId} in org ${orgId}: ${error instanceof Error ? (error.stack ?? error.message) : String(error)}`,
         );

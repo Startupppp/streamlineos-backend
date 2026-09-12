@@ -35,10 +35,12 @@ CREATE TABLE IF NOT EXISTS "autonomy_repair_policies" (
 );
 
 --> statement-breakpoint
+DO $$ BEGIN
 -- NOT VALID then VALIDATE, so adding the constraint does not hold ACCESS
 -- EXCLUSIVE on organizations while it runs.
 ALTER TABLE "autonomy_repair_policies" ADD CONSTRAINT "fk_autonomy_repair_policies_org"
   FOREIGN KEY ("organization_id") REFERENCES "organizations"("id") ON DELETE CASCADE NOT VALID;
+EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
 --> statement-breakpoint
 ALTER TABLE "autonomy_repair_policies" VALIDATE CONSTRAINT "fk_autonomy_repair_policies_org";
 
@@ -88,17 +90,20 @@ CREATE TABLE IF NOT EXISTS "autonomy_repairs" (
 );
 
 --> statement-breakpoint
+DO $$ BEGIN
 ALTER TABLE "autonomy_repairs" ADD CONSTRAINT "fk_autonomy_repairs_org"
   FOREIGN KEY ("organization_id") REFERENCES "organizations"("id") ON DELETE CASCADE NOT VALID;
+EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
 --> statement-breakpoint
 ALTER TABLE "autonomy_repairs" VALIDATE CONSTRAINT "fk_autonomy_repairs_org";
 
 --> statement-breakpoint
+DO $$ BEGIN
 -- The composite tenant key anything pointing back at a repair needs, so a
 -- reference carries the organisation with it rather than trusting the id alone.
 ALTER TABLE "autonomy_repairs" ADD CONSTRAINT "uniq_autonomy_repairs_org_id"
   UNIQUE ("organization_id", "autonomy_repair_id");
-
+EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
 --> statement-breakpoint
 -- The batch's own read: everything one decision changed, which is also the set
 -- a whole-batch undo has to replay.

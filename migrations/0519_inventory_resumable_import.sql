@@ -11,7 +11,9 @@ SET lock_timeout = '5s';
 -- Rows are staged first and processed against a cursor, so a crash costs at most
 -- one chunk and a resume is just "call process again". Per-row status is what
 -- makes a re-run skip what already applied rather than double-posting it.
-CREATE TYPE inv_import_row_status AS ENUM ('PENDING', 'APPLIED', 'FAILED', 'SKIPPED');
+DO $$ BEGIN
+  CREATE TYPE inv_import_row_status AS ENUM ('PENDING', 'APPLIED', 'FAILED', 'SKIPPED');
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 --> statement-breakpoint
 ALTER TABLE "inv_import_jobs" ADD COLUMN IF NOT EXISTS "checksum" text;
 --> statement-breakpoint

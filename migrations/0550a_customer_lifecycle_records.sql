@@ -104,23 +104,27 @@ CREATE TABLE IF NOT EXISTS "customer_lifecycles" (
 );
 
 --> statement-breakpoint
+DO $$ BEGIN
 ALTER TABLE "customer_lifecycles" ADD CONSTRAINT "chk_customer_lifecycles_status"
   CHECK ("status" IN ('active', 'churned', 'cancelled'));
-
+EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
 --> statement-breakpoint
+DO $$ BEGIN
 -- A month-to-month deal at one end and a decade at the other. Outside that range
 -- the number is a typo, and a typo here becomes a renewal date nobody acts on
 -- because it is eighty years away.
 ALTER TABLE "customer_lifecycles" ADD CONSTRAINT "chk_customer_lifecycles_term"
   CHECK ("term_months" BETWEEN 1 AND 120);
-
+EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
 --> statement-breakpoint
+DO $$ BEGIN
 -- The renewal date must be after the start. A term that ends before it began
 -- would sit permanently at the top of the overdue list and never leave it.
 ALTER TABLE "customer_lifecycles" ADD CONSTRAINT "chk_customer_lifecycles_dates"
   CHECK ("renewal_on" > "started_on");
-
+EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
 --> statement-breakpoint
+DO $$ BEGIN
 -- Money is never negative here and the score is the band vocabulary's range.
 -- `risk_band()` maps 0..100; a stored 140 would have no band and render as
 -- nothing on every surface that colours by one.
@@ -130,8 +134,9 @@ ALTER TABLE "customer_lifecycles" ADD CONSTRAINT "chk_customer_lifecycles_amount
     "renewal_count" >= 0 AND
     "risk_score" BETWEEN 0 AND 100
   );
-
+EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
 --> statement-breakpoint
+DO $$ BEGIN
 -- Closed together or not at all. A status of 'churned' with no reason makes the
 -- churn unmeasurable, and a reason on an active contract is a half-applied
 -- close somebody will read as an ending.
@@ -140,10 +145,12 @@ ALTER TABLE "customer_lifecycles" ADD CONSTRAINT "chk_customer_lifecycles_closur
     ("status" = 'active' AND "closed_at" IS NULL AND "closed_reason" IS NULL) OR
     ("status" <> 'active' AND "closed_at" IS NOT NULL AND "closed_reason" IS NOT NULL)
   );
-
+EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
 --> statement-breakpoint
+DO $$ BEGIN
 ALTER TABLE "customer_lifecycles" ADD CONSTRAINT "fk_customer_lifecycles_org"
   FOREIGN KEY ("organization_id") REFERENCES "organizations"("id") ON DELETE CASCADE NOT VALID;
+EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
 --> statement-breakpoint
 ALTER TABLE "customer_lifecycles" VALIDATE CONSTRAINT "fk_customer_lifecycles_org";
 
@@ -178,6 +185,7 @@ BEGIN
 END $$;
 
 --> statement-breakpoint
+DO $$ BEGIN
 -- CASCADE rather than SET NULL, following 0520: SET NULL over a composite key
 -- nulls `organization_id` too, which is NOT NULL. It costs nothing in practice
 -- -- parties are soft-deleted and nothing in `src/` hard-deletes one -- and the
@@ -185,14 +193,17 @@ END $$;
 ALTER TABLE "customer_lifecycles" ADD CONSTRAINT "fk_customer_lifecycles_party"
   FOREIGN KEY ("organization_id", "party_id")
   REFERENCES "business_parties"("organization_id", "party_id") ON DELETE CASCADE NOT VALID;
+EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
 --> statement-breakpoint
 ALTER TABLE "customer_lifecycles" VALIDATE CONSTRAINT "fk_customer_lifecycles_party";
 
 --> statement-breakpoint
+DO $$ BEGIN
 -- Deals are soft-deleted too, so this also only fires on organisation teardown.
 ALTER TABLE "customer_lifecycles" ADD CONSTRAINT "fk_customer_lifecycles_deal"
   FOREIGN KEY ("organization_id", "source_deal_id")
   REFERENCES "deals"("org_id", "id") ON DELETE CASCADE NOT VALID;
+EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
 --> statement-breakpoint
 ALTER TABLE "customer_lifecycles" VALIDATE CONSTRAINT "fk_customer_lifecycles_deal";
 
@@ -223,10 +234,11 @@ CREATE INDEX IF NOT EXISTS "idx_customer_lifecycles_party"
   ON "customer_lifecycles" ("organization_id", "party_id");
 
 --> statement-breakpoint
+DO $$ BEGIN
 -- The composite tenant key the signal table points at.
 ALTER TABLE "customer_lifecycles" ADD CONSTRAINT "uniq_customer_lifecycles_org_id"
   UNIQUE ("organization_id", "customer_lifecycle_id");
-
+EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
 --> statement-breakpoint
 CREATE TABLE IF NOT EXISTS "customer_lifecycle_signals" (
   "lifecycle_signal_id" text PRIMARY KEY NOT NULL,
@@ -256,34 +268,41 @@ CREATE TABLE IF NOT EXISTS "customer_lifecycle_signals" (
 );
 
 --> statement-breakpoint
+DO $$ BEGIN
 ALTER TABLE "customer_lifecycle_signals" ADD CONSTRAINT "chk_customer_lifecycle_signals_kind"
   CHECK ("kind" IN (
     'support-escalation', 'invoice-overdue', 'champion-departed', 'usage-decline',
     'detractor-response', 'relationship-silence', 'expansion-interest',
     'renewal-commitment', 'note'
   ));
-
+EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
 --> statement-breakpoint
+DO $$ BEGIN
 ALTER TABLE "customer_lifecycle_signals" ADD CONSTRAINT "chk_customer_lifecycle_signals_source"
   CHECK ("source" IN ('system', 'human'));
-
+EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
 --> statement-breakpoint
+DO $$ BEGIN
 -- The bound `clampImpact` also enforces. Stated on both sides because a producer
 -- that bypassed the service would otherwise be able to write a single signal
 -- that pins every score at 100 forever.
 ALTER TABLE "customer_lifecycle_signals" ADD CONSTRAINT "chk_customer_lifecycle_signals_impact"
   CHECK ("impact" BETWEEN -100 AND 100);
-
+EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
 --> statement-breakpoint
+DO $$ BEGIN
 ALTER TABLE "customer_lifecycle_signals" ADD CONSTRAINT "fk_customer_lifecycle_signals_org"
   FOREIGN KEY ("organization_id") REFERENCES "organizations"("id") ON DELETE CASCADE NOT VALID;
+EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
 --> statement-breakpoint
 ALTER TABLE "customer_lifecycle_signals" VALIDATE CONSTRAINT "fk_customer_lifecycle_signals_org";
 
 --> statement-breakpoint
+DO $$ BEGIN
 ALTER TABLE "customer_lifecycle_signals" ADD CONSTRAINT "fk_customer_lifecycle_signals_lifecycle"
   FOREIGN KEY ("organization_id", "customer_lifecycle_id")
   REFERENCES "customer_lifecycles"("organization_id", "customer_lifecycle_id") ON DELETE CASCADE NOT VALID;
+EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
 --> statement-breakpoint
 ALTER TABLE "customer_lifecycle_signals" VALIDATE CONSTRAINT "fk_customer_lifecycle_signals_lifecycle";
 

@@ -101,14 +101,17 @@ CREATE TABLE IF NOT EXISTS "customer_lifecycle_triggers" (
 );
 
 --> statement-breakpoint
+DO $$ BEGIN
 ALTER TABLE "customer_lifecycle_triggers" ADD CONSTRAINT "chk_customer_lifecycle_triggers_kind"
   CHECK ("kind" IN ('renewal-due', 'churn-risk'));
-
+EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
 --> statement-breakpoint
+DO $$ BEGIN
 ALTER TABLE "customer_lifecycle_triggers" ADD CONSTRAINT "chk_customer_lifecycle_triggers_outcome"
   CHECK ("outcome" IS NULL OR "outcome" IN ('held', 'skipped'));
-
+EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
 --> statement-breakpoint
+DO $$ BEGIN
 -- Five stages, and the two at the ends are the ones a reader most needs.
 -- `opportunity` is the trigger failing before the loop was ever reached (no
 -- owner to write as, the deal could not be opened); `loop-error` is the loop
@@ -118,8 +121,9 @@ ALTER TABLE "customer_lifecycle_triggers" ADD CONSTRAINT "chk_customer_lifecycle
 ALTER TABLE "customer_lifecycle_triggers" ADD CONSTRAINT "chk_customer_lifecycle_triggers_stage"
   CHECK ("refusal_stage" IS NULL OR "refusal_stage" IN
     ('opportunity', 'eligibility', 'draft', 'confidence', 'loop-error'));
-
+EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
 --> statement-breakpoint
+DO $$ BEGIN
 -- The invariant the log rests on, in the database rather than only in the
 -- service. A HELD trigger points at the message it produced and states no
 -- refusal; a SKIPPED one states where it stopped and why, and points at nothing.
@@ -135,8 +139,9 @@ ALTER TABLE "customer_lifecycle_triggers" ADD CONSTRAINT "chk_customer_lifecycle
     ("outcome" = 'skipped' AND "refusal_stage" IS NOT NULL AND "refusal_reason" IS NOT NULL
        AND "autonomy_hold_id" IS NULL AND "outbound_message_id" IS NULL)
   );
-
+EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
 --> statement-breakpoint
+DO $$ BEGIN
 -- An outcome means the loop was asked, and being asked means an attempt. The
 -- pair going out of step is how a re-offer interval computed from `attempts`
 -- silently stops bounding anything.
@@ -145,8 +150,9 @@ ALTER TABLE "customer_lifecycle_triggers" ADD CONSTRAINT "chk_customer_lifecycle
     "attempts" >= 0 AND
     ("outcome" IS NULL OR ("attempts" > 0 AND "last_attempt_at" IS NOT NULL))
   );
-
+EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
 --> statement-breakpoint
+DO $$ BEGIN
 -- The bands both scores are drawn from. A stored 140 would have no band and
 -- would render as nothing on every surface that colours by one.
 ALTER TABLE "customer_lifecycle_triggers" ADD CONSTRAINT "chk_customer_lifecycle_triggers_scores"
@@ -154,27 +160,32 @@ ALTER TABLE "customer_lifecycle_triggers" ADD CONSTRAINT "chk_customer_lifecycle
     "risk_score" BETWEEN 0 AND 100 AND
     ("health_score" IS NULL OR "health_score" BETWEEN 0 AND 100)
   );
-
+EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
 --> statement-breakpoint
+DO $$ BEGIN
 -- A conversation cannot become due after the renewal it is about, and cannot
 -- become due before the term it belongs to began. Both are only reachable
 -- through a bug in the trigger's date arithmetic, which is exactly the class of
 -- bug that produces a plausible-looking wrong date nobody notices.
 ALTER TABLE "customer_lifecycle_triggers" ADD CONSTRAINT "chk_customer_lifecycle_triggers_dates"
   CHECK ("due_on" <= "renewal_on" AND "due_on" >= "term_started_on");
-
+EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
 --> statement-breakpoint
+DO $$ BEGIN
 ALTER TABLE "customer_lifecycle_triggers" ADD CONSTRAINT "fk_customer_lifecycle_triggers_org"
   FOREIGN KEY ("organization_id") REFERENCES "organizations"("id") ON DELETE CASCADE NOT VALID;
+EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
 --> statement-breakpoint
 ALTER TABLE "customer_lifecycle_triggers" VALIDATE CONSTRAINT "fk_customer_lifecycle_triggers_org";
 
 --> statement-breakpoint
+DO $$ BEGIN
 -- The composite tenant key, so a trigger cannot cite another organisation's
 -- contract. 0550 created `uniq_customer_lifecycles_org_id` for exactly this.
 ALTER TABLE "customer_lifecycle_triggers" ADD CONSTRAINT "fk_customer_lifecycle_triggers_lifecycle"
   FOREIGN KEY ("organization_id", "customer_lifecycle_id")
   REFERENCES "customer_lifecycles"("organization_id", "customer_lifecycle_id") ON DELETE CASCADE NOT VALID;
+EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
 --> statement-breakpoint
 ALTER TABLE "customer_lifecycle_triggers" VALIDATE CONSTRAINT "fk_customer_lifecycle_triggers_lifecycle";
 
@@ -200,9 +211,11 @@ BEGIN
 END $$;
 
 --> statement-breakpoint
+DO $$ BEGIN
 ALTER TABLE "customer_lifecycle_triggers" ADD CONSTRAINT "fk_customer_lifecycle_triggers_party"
   FOREIGN KEY ("organization_id", "party_id")
   REFERENCES "business_parties"("organization_id", "party_id") ON DELETE CASCADE NOT VALID;
+EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
 --> statement-breakpoint
 ALTER TABLE "customer_lifecycle_triggers" VALIDATE CONSTRAINT "fk_customer_lifecycle_triggers_party";
 
@@ -226,6 +239,7 @@ BEGIN
 END $$;
 
 --> statement-breakpoint
+DO $$ BEGIN
 -- The opportunity, against `uniq_deals_org_id`. Nullable, so a claimed term with
 -- no deal yet is permitted (MATCH SIMPLE ignores a partly-null key) while a
 -- non-null id is guaranteed to name a deal of THIS organisation. CASCADE
@@ -236,6 +250,7 @@ END $$;
 ALTER TABLE "customer_lifecycle_triggers" ADD CONSTRAINT "fk_customer_lifecycle_triggers_deal"
   FOREIGN KEY ("organization_id", "opportunity_deal_id")
   REFERENCES "deals"("org_id", "id") ON DELETE CASCADE NOT VALID;
+EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
 --> statement-breakpoint
 ALTER TABLE "customer_lifecycle_triggers" VALIDATE CONSTRAINT "fk_customer_lifecycle_triggers_deal";
 

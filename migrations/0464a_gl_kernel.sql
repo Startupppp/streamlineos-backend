@@ -15,23 +15,34 @@
 SET lock_timeout = '5s';
 
 --> statement-breakpoint
+DO $$ BEGIN
 CREATE TYPE "public"."gl_account_type" AS ENUM (
   'ASSET', 'CONTRA_ASSET', 'LIABILITY', 'CONTRA_LIABILITY', 'EQUITY', 'INCOME', 'EXPENSE'
 );
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 --> statement-breakpoint
+DO $$ BEGIN
 CREATE TYPE "public"."gl_period_status" AS ENUM ('OPEN', 'LOCKED');
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 --> statement-breakpoint
+DO $$ BEGIN
 CREATE TYPE "public"."gl_fiscal_year_status" AS ENUM ('OPEN', 'CLOSED');
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 --> statement-breakpoint
+DO $$ BEGIN
 CREATE TYPE "public"."gl_book_status" AS ENUM ('ACTIVE', 'ARCHIVED');
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 --> statement-breakpoint
+DO $$ BEGIN
 CREATE TYPE "public"."gl_journal_source" AS ENUM (
   'manual', 'opening_balance', 'sales_invoice', 'credit_note', 'receipt',
   'purchase_bill', 'debit_note', 'payment', 'bank_fee', 'bank_transfer',
   'payroll_run', 'billing_invoice', 'withholding', 'fx_reval', 'depreciation',
   'stock_move', 'period_close'
 );
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 --> statement-breakpoint
+DO $$ BEGIN
 CREATE TYPE "public"."gl_system_tag" AS ENUM (
   'cash', 'bank', 'undeposited', 'ar_control', 'ap_control', 'sales',
   'other_income', 'cogs', 'opex', 'salary', 'equity_capital',
@@ -44,10 +55,10 @@ CREATE TYPE "public"."gl_system_tag" AS ENUM (
   'fixed_asset', 'accum_depreciation', 'depreciation_expense',
   'deferred_revenue', 'inventory'
 );
-
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 --> statement-breakpoint
 -- A book is the set of books for one legal entity. v1 creates one per org.
-CREATE TABLE "gl_books" (
+CREATE TABLE IF NOT EXISTS "gl_books" (
   "id" text PRIMARY KEY NOT NULL,
   "org_id" text NOT NULL REFERENCES "organizations"("id") ON DELETE cascade,
   "legal_entity_id" text REFERENCES "legal_entities"("id") ON DELETE restrict,
@@ -71,14 +82,14 @@ CREATE TABLE "gl_books" (
   CONSTRAINT "ck_gl_books_base_currency" CHECK ("base_currency" ~ '^[A-Z]{3}$')
 );
 --> statement-breakpoint
-CREATE INDEX "idx_gl_books_org_status" ON "gl_books" ("org_id", "status");
+CREATE INDEX IF NOT EXISTS "idx_gl_books_org_status" ON "gl_books" ("org_id", "status");
 --> statement-breakpoint
-CREATE UNIQUE INDEX "uniq_gl_books_org_default" ON "gl_books" ("org_id")
+CREATE UNIQUE INDEX IF NOT EXISTS "uniq_gl_books_org_default" ON "gl_books" ("org_id")
   WHERE "is_default" = true AND "deleted_at" IS NULL;
 
 --> statement-breakpoint
 -- Global catalog. A currency's scale is a fact about the world, not an org.
-CREATE TABLE "gl_currencies" (
+CREATE TABLE IF NOT EXISTS "gl_currencies" (
   "code" text PRIMARY KEY NOT NULL,
   "name" text NOT NULL,
   "minor_units" integer NOT NULL,
@@ -89,7 +100,7 @@ CREATE TABLE "gl_currencies" (
 );
 
 --> statement-breakpoint
-CREATE TABLE "gl_book_currencies" (
+CREATE TABLE IF NOT EXISTS "gl_book_currencies" (
   "id" text PRIMARY KEY NOT NULL,
   "org_id" text NOT NULL REFERENCES "organizations"("id") ON DELETE cascade,
   "book_id" text NOT NULL REFERENCES "gl_books"("id") ON DELETE cascade,
@@ -99,18 +110,18 @@ CREATE TABLE "gl_book_currencies" (
   CONSTRAINT "uniq_gl_book_currencies_org_id" UNIQUE ("org_id", "id")
 );
 --> statement-breakpoint
-CREATE UNIQUE INDEX "uniq_gl_book_currencies_book_code"
+CREATE UNIQUE INDEX IF NOT EXISTS "uniq_gl_book_currencies_book_code"
   ON "gl_book_currencies" ("book_id", "currency_code");
 --> statement-breakpoint
 -- Exactly one base currency per book (PRD 11 invariant).
-CREATE UNIQUE INDEX "uniq_gl_book_currencies_base"
+CREATE UNIQUE INDEX IF NOT EXISTS "uniq_gl_book_currencies_base"
   ON "gl_book_currencies" ("book_id") WHERE "is_base" = true;
 --> statement-breakpoint
-CREATE INDEX "idx_gl_book_currencies_org_book" ON "gl_book_currencies" ("org_id", "book_id");
+CREATE INDEX IF NOT EXISTS "idx_gl_book_currencies_org_book" ON "gl_book_currencies" ("org_id", "book_id");
 
 --> statement-breakpoint
 -- `rate` multiplies transaction currency into functional currency.
-CREATE TABLE "gl_fx_rates" (
+CREATE TABLE IF NOT EXISTS "gl_fx_rates" (
   "id" text PRIMARY KEY NOT NULL,
   "org_id" text NOT NULL REFERENCES "organizations"("id") ON DELETE cascade,
   "book_id" text NOT NULL REFERENCES "gl_books"("id") ON DELETE cascade,
@@ -126,13 +137,13 @@ CREATE TABLE "gl_fx_rates" (
   CONSTRAINT "ck_gl_fx_rates_distinct" CHECK ("from_code" <> "to_code")
 );
 --> statement-breakpoint
-CREATE UNIQUE INDEX "uniq_gl_fx_rates_book_pair_date"
+CREATE UNIQUE INDEX IF NOT EXISTS "uniq_gl_fx_rates_book_pair_date"
   ON "gl_fx_rates" ("book_id", "from_code", "to_code", "rate_date");
 --> statement-breakpoint
-CREATE INDEX "idx_gl_fx_rates_org_book_date" ON "gl_fx_rates" ("org_id", "book_id", "rate_date");
+CREATE INDEX IF NOT EXISTS "idx_gl_fx_rates_org_book_date" ON "gl_fx_rates" ("org_id", "book_id", "rate_date");
 
 --> statement-breakpoint
-CREATE TABLE "gl_accounts" (
+CREATE TABLE IF NOT EXISTS "gl_accounts" (
   "id" text PRIMARY KEY NOT NULL,
   "org_id" text NOT NULL REFERENCES "organizations"("id") ON DELETE cascade,
   "book_id" text NOT NULL REFERENCES "gl_books"("id") ON DELETE cascade,
@@ -154,24 +165,24 @@ CREATE TABLE "gl_accounts" (
   CONSTRAINT "ck_gl_accounts_header_not_cash" CHECK (NOT ("is_header" AND "is_cash"))
 );
 --> statement-breakpoint
-CREATE UNIQUE INDEX "uniq_gl_accounts_book_code"
+CREATE UNIQUE INDEX IF NOT EXISTS "uniq_gl_accounts_book_code"
   ON "gl_accounts" ("book_id", "code") WHERE "deleted_at" IS NULL;
 --> statement-breakpoint
 -- One account per role per book, so tag resolution is never ambiguous.
-CREATE UNIQUE INDEX "uniq_gl_accounts_book_system_tag"
+CREATE UNIQUE INDEX IF NOT EXISTS "uniq_gl_accounts_book_system_tag"
   ON "gl_accounts" ("book_id", "system_tag")
   WHERE "system_tag" IS NOT NULL AND "deleted_at" IS NULL;
 --> statement-breakpoint
-CREATE INDEX "idx_gl_accounts_org_book_type"
+CREATE INDEX IF NOT EXISTS "idx_gl_accounts_org_book_type"
   ON "gl_accounts" ("org_id", "book_id", "account_type") WHERE "deleted_at" IS NULL;
 --> statement-breakpoint
-CREATE INDEX "idx_gl_accounts_book_cash"
+CREATE INDEX IF NOT EXISTS "idx_gl_accounts_book_cash"
   ON "gl_accounts" ("book_id") WHERE "is_cash" = true AND "deleted_at" IS NULL;
 --> statement-breakpoint
-CREATE INDEX "idx_gl_accounts_book_parent" ON "gl_accounts" ("book_id", "parent_account_id");
+CREATE INDEX IF NOT EXISTS "idx_gl_accounts_book_parent" ON "gl_accounts" ("book_id", "parent_account_id");
 
 --> statement-breakpoint
-CREATE TABLE "gl_fiscal_years" (
+CREATE TABLE IF NOT EXISTS "gl_fiscal_years" (
   "id" text PRIMARY KEY NOT NULL,
   "org_id" text NOT NULL REFERENCES "organizations"("id") ON DELETE cascade,
   "book_id" text NOT NULL REFERENCES "gl_books"("id") ON DELETE cascade,
@@ -186,14 +197,14 @@ CREATE TABLE "gl_fiscal_years" (
   CONSTRAINT "ck_gl_fiscal_years_range" CHECK ("ends_on" > "starts_on")
 );
 --> statement-breakpoint
-CREATE UNIQUE INDEX "uniq_gl_fiscal_years_book_name" ON "gl_fiscal_years" ("book_id", "name");
+CREATE UNIQUE INDEX IF NOT EXISTS "uniq_gl_fiscal_years_book_name" ON "gl_fiscal_years" ("book_id", "name");
 --> statement-breakpoint
-CREATE UNIQUE INDEX "uniq_gl_fiscal_years_book_start" ON "gl_fiscal_years" ("book_id", "starts_on");
+CREATE UNIQUE INDEX IF NOT EXISTS "uniq_gl_fiscal_years_book_start" ON "gl_fiscal_years" ("book_id", "starts_on");
 --> statement-breakpoint
-CREATE INDEX "idx_gl_fiscal_years_org_book" ON "gl_fiscal_years" ("org_id", "book_id");
+CREATE INDEX IF NOT EXISTS "idx_gl_fiscal_years_org_book" ON "gl_fiscal_years" ("org_id", "book_id");
 
 --> statement-breakpoint
-CREATE TABLE "gl_periods" (
+CREATE TABLE IF NOT EXISTS "gl_periods" (
   "id" text PRIMARY KEY NOT NULL,
   "org_id" text NOT NULL REFERENCES "organizations"("id") ON DELETE cascade,
   "book_id" text NOT NULL REFERENCES "gl_books"("id") ON DELETE cascade,
@@ -213,18 +224,18 @@ CREATE TABLE "gl_periods" (
   CONSTRAINT "ck_gl_periods_range" CHECK ("ends_on" >= "starts_on")
 );
 --> statement-breakpoint
-CREATE UNIQUE INDEX "uniq_gl_periods_fy_sequence" ON "gl_periods" ("fiscal_year_id", "sequence");
+CREATE UNIQUE INDEX IF NOT EXISTS "uniq_gl_periods_fy_sequence" ON "gl_periods" ("fiscal_year_id", "sequence");
 --> statement-breakpoint
-CREATE UNIQUE INDEX "uniq_gl_periods_book_start" ON "gl_periods" ("book_id", "starts_on");
+CREATE UNIQUE INDEX IF NOT EXISTS "uniq_gl_periods_book_start" ON "gl_periods" ("book_id", "starts_on");
 --> statement-breakpoint
 -- The date -> period lookup runs on every single post.
-CREATE INDEX "idx_gl_periods_book_range" ON "gl_periods" ("book_id", "starts_on", "ends_on");
+CREATE INDEX IF NOT EXISTS "idx_gl_periods_book_range" ON "gl_periods" ("book_id", "starts_on", "ends_on");
 --> statement-breakpoint
-CREATE INDEX "idx_gl_periods_org_book_status" ON "gl_periods" ("org_id", "book_id", "status");
+CREATE INDEX IF NOT EXISTS "idx_gl_periods_org_book_status" ON "gl_periods" ("org_id", "book_id", "status");
 
 --> statement-breakpoint
 -- Append-only. There is no UPDATE path for business fields and no DELETE path.
-CREATE TABLE "gl_journals" (
+CREATE TABLE IF NOT EXISTS "gl_journals" (
   "id" text PRIMARY KEY NOT NULL,
   "org_id" text NOT NULL REFERENCES "organizations"("id") ON DELETE cascade,
   "book_id" text NOT NULL REFERENCES "gl_books"("id") ON DELETE cascade,
@@ -244,28 +255,28 @@ CREATE TABLE "gl_journals" (
 );
 --> statement-breakpoint
 -- Double-submit returns the original journal instead of posting twice.
-CREATE UNIQUE INDEX "uniq_gl_journals_book_idempotency"
+CREATE UNIQUE INDEX IF NOT EXISTS "uniq_gl_journals_book_idempotency"
   ON "gl_journals" ("book_id", "idempotency_key");
 --> statement-breakpoint
-CREATE UNIQUE INDEX "uniq_gl_journals_book_number" ON "gl_journals" ("book_id", "journal_number");
+CREATE UNIQUE INDEX IF NOT EXISTS "uniq_gl_journals_book_number" ON "gl_journals" ("book_id", "journal_number");
 --> statement-breakpoint
 -- A journal is reversed at most once, and reverses at most one.
-CREATE UNIQUE INDEX "uniq_gl_journals_reverses"
+CREATE UNIQUE INDEX IF NOT EXISTS "uniq_gl_journals_reverses"
   ON "gl_journals" ("reverses_journal_id") WHERE "reverses_journal_id" IS NOT NULL;
 --> statement-breakpoint
-CREATE UNIQUE INDEX "uniq_gl_journals_reversed_by"
+CREATE UNIQUE INDEX IF NOT EXISTS "uniq_gl_journals_reversed_by"
   ON "gl_journals" ("reversed_by_journal_id") WHERE "reversed_by_journal_id" IS NOT NULL;
 --> statement-breakpoint
-CREATE INDEX "idx_gl_journals_book_date" ON "gl_journals" ("book_id", "journal_date");
+CREATE INDEX IF NOT EXISTS "idx_gl_journals_book_date" ON "gl_journals" ("book_id", "journal_date");
 --> statement-breakpoint
-CREATE INDEX "idx_gl_journals_org_book_date" ON "gl_journals" ("org_id", "book_id", "journal_date");
+CREATE INDEX IF NOT EXISTS "idx_gl_journals_org_book_date" ON "gl_journals" ("org_id", "book_id", "journal_date");
 --> statement-breakpoint
-CREATE INDEX "idx_gl_journals_source" ON "gl_journals" ("book_id", "source_type", "source_id");
+CREATE INDEX IF NOT EXISTS "idx_gl_journals_source" ON "gl_journals" ("book_id", "source_type", "source_id");
 --> statement-breakpoint
-CREATE INDEX "idx_gl_journals_period" ON "gl_journals" ("period_id");
+CREATE INDEX IF NOT EXISTS "idx_gl_journals_period" ON "gl_journals" ("period_id");
 
 --> statement-breakpoint
-CREATE TABLE "gl_journal_lines" (
+CREATE TABLE IF NOT EXISTS "gl_journal_lines" (
   "id" text PRIMARY KEY NOT NULL,
   "org_id" text NOT NULL REFERENCES "organizations"("id") ON DELETE cascade,
   "book_id" text NOT NULL REFERENCES "gl_books"("id") ON DELETE cascade,
@@ -302,30 +313,30 @@ CREATE TABLE "gl_journal_lines" (
     CHECK ("txn_currency" <> "functional_currency" OR "fx_rate" = 1)
 );
 --> statement-breakpoint
-CREATE UNIQUE INDEX "uniq_gl_journal_lines_journal_line_no"
+CREATE UNIQUE INDEX IF NOT EXISTS "uniq_gl_journal_lines_journal_line_no"
   ON "gl_journal_lines" ("journal_id", "line_no");
 --> statement-breakpoint
 -- The trial balance and account ledger access path.
-CREATE INDEX "idx_gl_journal_lines_book_account" ON "gl_journal_lines" ("book_id", "account_id");
+CREATE INDEX IF NOT EXISTS "idx_gl_journal_lines_book_account" ON "gl_journal_lines" ("book_id", "account_id");
 --> statement-breakpoint
-CREATE INDEX "idx_gl_journal_lines_org_book_account"
+CREATE INDEX IF NOT EXISTS "idx_gl_journal_lines_org_book_account"
   ON "gl_journal_lines" ("org_id", "book_id", "account_id");
 --> statement-breakpoint
-CREATE INDEX "idx_gl_journal_lines_journal" ON "gl_journal_lines" ("journal_id");
+CREATE INDEX IF NOT EXISTS "idx_gl_journal_lines_journal" ON "gl_journal_lines" ("journal_id");
 --> statement-breakpoint
-CREATE INDEX "idx_gl_journal_lines_book_party" ON "gl_journal_lines" ("book_id", "party_id");
+CREATE INDEX IF NOT EXISTS "idx_gl_journal_lines_book_party" ON "gl_journal_lines" ("book_id", "party_id");
 --> statement-breakpoint
-CREATE INDEX "idx_gl_journal_lines_book_tax_code" ON "gl_journal_lines" ("book_id", "tax_code_id");
+CREATE INDEX IF NOT EXISTS "idx_gl_journal_lines_book_tax_code" ON "gl_journal_lines" ("book_id", "tax_code_id");
 --> statement-breakpoint
-CREATE INDEX "idx_gl_journal_lines_book_project"
+CREATE INDEX IF NOT EXISTS "idx_gl_journal_lines_book_project"
   ON "gl_journal_lines" ("book_id", "dimension_project_id");
 --> statement-breakpoint
-CREATE INDEX "idx_gl_journal_lines_book_branch"
+CREATE INDEX IF NOT EXISTS "idx_gl_journal_lines_book_branch"
   ON "gl_journal_lines" ("book_id", "dimension_branch_id");
 
 --> statement-breakpoint
 -- Numbering for journals and every tax document, incremented atomically.
-CREATE TABLE "gl_document_sequences" (
+CREATE TABLE IF NOT EXISTS "gl_document_sequences" (
   "id" text PRIMARY KEY NOT NULL,
   "org_id" text NOT NULL REFERENCES "organizations"("id") ON DELETE cascade,
   "book_id" text NOT NULL REFERENCES "gl_books"("id") ON DELETE cascade,
@@ -344,15 +355,15 @@ CREATE TABLE "gl_document_sequences" (
 --> statement-breakpoint
 -- Two partial uniques, because Postgres treats NULLs as distinct and a plain
 -- composite would let a continuous series be created twice.
-CREATE UNIQUE INDEX "uniq_gl_document_sequences_book_kind_fy"
+CREATE UNIQUE INDEX IF NOT EXISTS "uniq_gl_document_sequences_book_kind_fy"
   ON "gl_document_sequences" ("book_id", "kind", "fiscal_year_id")
   WHERE "fiscal_year_id" IS NOT NULL;
 --> statement-breakpoint
-CREATE UNIQUE INDEX "uniq_gl_document_sequences_book_kind"
+CREATE UNIQUE INDEX IF NOT EXISTS "uniq_gl_document_sequences_book_kind"
   ON "gl_document_sequences" ("book_id", "kind")
   WHERE "fiscal_year_id" IS NULL;
 --> statement-breakpoint
-CREATE INDEX "idx_gl_document_sequences_org_book" ON "gl_document_sequences" ("org_id", "book_id");
+CREATE INDEX IF NOT EXISTS "idx_gl_document_sequences_org_book" ON "gl_document_sequences" ("org_id", "book_id");
 
 --> statement-breakpoint
 -- ISO 4217 seed. Scales are the standard's, not a preference: JPY has no minor

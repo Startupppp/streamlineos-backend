@@ -80,16 +80,19 @@ CREATE TABLE IF NOT EXISTS "customer_health_assessments" (
 );
 
 --> statement-breakpoint
+DO $$ BEGIN
 -- The score is the band vocabulary's range. A stored 140 would have no band and
 -- would render as nothing on every surface that colours by one.
 ALTER TABLE "customer_health_assessments" ADD CONSTRAINT "chk_customer_health_assessments_score"
   CHECK ("score" IS NULL OR "score" BETWEEN 0 AND 100);
-
+EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
 --> statement-breakpoint
+DO $$ BEGIN
 ALTER TABLE "customer_health_assessments" ADD CONSTRAINT "chk_customer_health_assessments_coverage"
   CHECK ("coverage_bps" BETWEEN 0 AND 10000);
-
+EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
 --> statement-breakpoint
+DO $$ BEGIN
 -- Scored or unscored, never half of each. A band with no score is a colour with
 -- nothing behind it; a score with no band is a number no screen can place.
 ALTER TABLE "customer_health_assessments" ADD CONSTRAINT "chk_customer_health_assessments_band"
@@ -97,10 +100,12 @@ ALTER TABLE "customer_health_assessments" ADD CONSTRAINT "chk_customer_health_as
     ("score" IS NULL AND "health_status" IS NULL) OR
     ("score" IS NOT NULL AND "health_status" IS NOT NULL)
   );
-
+EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
 --> statement-breakpoint
+DO $$ BEGIN
 ALTER TABLE "customer_health_assessments" ADD CONSTRAINT "fk_customer_health_assessments_org"
   FOREIGN KEY ("organization_id") REFERENCES "organizations"("id") ON DELETE CASCADE NOT VALID;
+EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
 --> statement-breakpoint
 ALTER TABLE "customer_health_assessments" VALIDATE CONSTRAINT "fk_customer_health_assessments_org";
 
@@ -127,6 +132,7 @@ BEGIN
 END $$;
 
 --> statement-breakpoint
+DO $$ BEGIN
 -- CASCADE rather than SET NULL, following 0520 and 0550: SET NULL over a
 -- composite key nulls `organization_id` too, which is NOT NULL. Parties are
 -- soft-deleted and nothing in `src/` hard-deletes one, so the path that does
@@ -134,6 +140,7 @@ END $$;
 ALTER TABLE "customer_health_assessments" ADD CONSTRAINT "fk_customer_health_assessments_party"
   FOREIGN KEY ("organization_id", "party_id")
   REFERENCES "business_parties"("organization_id", "party_id") ON DELETE CASCADE NOT VALID;
+EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
 --> statement-breakpoint
 ALTER TABLE "customer_health_assessments" VALIDATE CONSTRAINT "fk_customer_health_assessments_party";
 
@@ -154,10 +161,11 @@ CREATE INDEX IF NOT EXISTS "idx_customer_health_assessments_score"
   ON "customer_health_assessments" ("organization_id", "score");
 
 --> statement-breakpoint
+DO $$ BEGIN
 -- The composite tenant key the factor table points at.
 ALTER TABLE "customer_health_assessments" ADD CONSTRAINT "uniq_customer_health_assessments_org_id"
   UNIQUE ("organization_id", "customer_health_assessment_id");
-
+EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
 --> statement-breakpoint
 CREATE TABLE IF NOT EXISTS "customer_health_factors" (
   "customer_health_factor_id" text PRIMARY KEY NOT NULL,
@@ -208,14 +216,17 @@ CREATE TABLE IF NOT EXISTS "customer_health_factors" (
 );
 
 --> statement-breakpoint
+DO $$ BEGIN
 ALTER TABLE "customer_health_factors" ADD CONSTRAINT "chk_customer_health_factors_key"
   CHECK ("factor_key" IN ('usage', 'engagement', 'support', 'sentiment'));
-
+EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
 --> statement-breakpoint
+DO $$ BEGIN
 ALTER TABLE "customer_health_factors" ADD CONSTRAINT "chk_customer_health_factors_status"
   CHECK ("status" IN ('measured', 'missing'));
-
+EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
 --> statement-breakpoint
+DO $$ BEGIN
 -- The invariant the whole ticket rests on, in the database rather than only in
 -- the service: a MISSING input has no value and states why it is missing; a
 -- MEASURED one has a value and no reason. Without this a writer can file
@@ -227,16 +238,18 @@ ALTER TABLE "customer_health_factors" ADD CONSTRAINT "chk_customer_health_factor
     ("status" = 'measured' AND "value" IS NOT NULL AND "missing_reason" IS NULL) OR
     ("status" = 'missing' AND "value" IS NULL AND "missing_reason" IS NOT NULL)
   );
-
+EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
 --> statement-breakpoint
+DO $$ BEGIN
 -- Three reasons, kept apart: no source at all in this organisation, a source in
 -- use but nothing ever observed for this customer, and something observed but
 -- all of it older than the window. They are fixed by three different actions,
 -- which is why collapsing them would make the score's own gaps unactionable.
 ALTER TABLE "customer_health_factors" ADD CONSTRAINT "chk_customer_health_factors_reason"
   CHECK ("missing_reason" IS NULL OR "missing_reason" IN ('no-source', 'no-observations', 'stale'));
-
+EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
 --> statement-breakpoint
+DO $$ BEGIN
 ALTER TABLE "customer_health_factors" ADD CONSTRAINT "chk_customer_health_factors_amounts"
   CHECK (
     "weight_bps" BETWEEN 0 AND 10000 AND
@@ -247,8 +260,9 @@ ALTER TABLE "customer_health_factors" ADD CONSTRAINT "chk_customer_health_factor
     "window_to" > "window_from" AND
     ("value" IS NULL OR "value" BETWEEN 0 AND 100)
   );
-
+EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
 --> statement-breakpoint
+DO $$ BEGIN
 -- A missing input carries no weight and adds no points. Stated as a constraint
 -- rather than left to the writer because this is exactly the arithmetic that
 -- turns "missing" back into "zero" -- a missing factor with a non-zero
@@ -258,17 +272,21 @@ ALTER TABLE "customer_health_factors" ADD CONSTRAINT "chk_customer_health_factor
     "status" = 'measured' OR
     ("effective_weight_bps" = 0 AND "contribution_bps" = 0 AND "observations" = 0)
   );
-
+EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
 --> statement-breakpoint
+DO $$ BEGIN
 ALTER TABLE "customer_health_factors" ADD CONSTRAINT "fk_customer_health_factors_org"
   FOREIGN KEY ("organization_id") REFERENCES "organizations"("id") ON DELETE CASCADE NOT VALID;
+EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
 --> statement-breakpoint
 ALTER TABLE "customer_health_factors" VALIDATE CONSTRAINT "fk_customer_health_factors_org";
 
 --> statement-breakpoint
+DO $$ BEGIN
 ALTER TABLE "customer_health_factors" ADD CONSTRAINT "fk_customer_health_factors_assessment"
   FOREIGN KEY ("organization_id", "customer_health_assessment_id")
   REFERENCES "customer_health_assessments"("organization_id", "customer_health_assessment_id") ON DELETE CASCADE NOT VALID;
+EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
 --> statement-breakpoint
 ALTER TABLE "customer_health_factors" VALIDATE CONSTRAINT "fk_customer_health_factors_assessment";
 

@@ -82,36 +82,43 @@ CREATE TABLE IF NOT EXISTS "crm_call_recording_consent" (
 );
 
 --> statement-breakpoint
+DO $$ BEGIN
 -- The shape the rule's register is keyed on. Without the constraint a free-text
 -- "California" is stored, matches no register entry, and resolves to all-party --
 -- the right answer arrived at by accident, which stops being right the day
 -- somebody adds a case-insensitive or fuzzy lookup.
 ALTER TABLE "crm_call_recording_consent" ADD CONSTRAINT "chk_crm_call_recording_consent_jurisdiction"
   CHECK ("jurisdiction" ~ '^[A-Z]{2}(-[A-Z0-9]{1,3})?$');
-
+EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
 --> statement-breakpoint
+DO $$ BEGIN
 -- A note is a sentence, not a thread. Same bound and same reason as
 -- `chk_crm_call_analysis_releases_note` in 0542: without it the column becomes a
 -- comment field by accretion, with no retention rule over text an attester may
 -- well paste a customer's words into.
 ALTER TABLE "crm_call_recording_consent" ADD CONSTRAINT "chk_crm_call_recording_consent_note"
   CHECK ("note" IS NULL OR char_length("note") <= 500);
-
+EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
 --> statement-breakpoint
+DO $$ BEGIN
 -- A method with no timestamp is a claim with no date on it, and a timestamp with
 -- no method is evidence that cannot be reviewed. Either both or neither, on each
 -- side independently.
 ALTER TABLE "crm_call_recording_consent" ADD CONSTRAINT "chk_crm_call_recording_consent_org_pair"
   CHECK (("org_party_consented_at" IS NULL) = ("org_party_method" IS NULL));
+EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
 --> statement-breakpoint
+DO $$ BEGIN
 ALTER TABLE "crm_call_recording_consent" ADD CONSTRAINT "chk_crm_call_recording_consent_other_pair"
   CHECK (("counterparty_consented_at" IS NULL) = ("counterparty_method" IS NULL));
-
+EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
 --> statement-breakpoint
+DO $$ BEGIN
 -- NOT VALID then VALIDATE, so adding the edge does not hold ACCESS EXCLUSIVE on
 -- organizations while it runs.
 ALTER TABLE "crm_call_recording_consent" ADD CONSTRAINT "fk_crm_call_recording_consent_org"
   FOREIGN KEY ("organization_id") REFERENCES "organizations"("id") ON DELETE CASCADE NOT VALID;
+EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
 --> statement-breakpoint
 ALTER TABLE "crm_call_recording_consent" VALIDATE CONSTRAINT "fk_crm_call_recording_consent_org";
 
@@ -181,12 +188,15 @@ CREATE TABLE IF NOT EXISTS "crm_call_analysis_refusals" (
 );
 
 --> statement-breakpoint
+DO $$ BEGIN
 ALTER TABLE "crm_call_analysis_refusals" ADD CONSTRAINT "chk_crm_call_analysis_refusals_attempts"
   CHECK ("attempts" >= 1);
-
+EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
 --> statement-breakpoint
+DO $$ BEGIN
 ALTER TABLE "crm_call_analysis_refusals" ADD CONSTRAINT "fk_crm_call_analysis_refusals_org"
   FOREIGN KEY ("organization_id") REFERENCES "organizations"("id") ON DELETE CASCADE NOT VALID;
+EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
 --> statement-breakpoint
 ALTER TABLE "crm_call_analysis_refusals" VALIDATE CONSTRAINT "fk_crm_call_analysis_refusals_org";
 

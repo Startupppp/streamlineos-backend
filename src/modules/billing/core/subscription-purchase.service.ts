@@ -1,4 +1,4 @@
-import { and, eq, inArray, lte } from "drizzle-orm";
+import { and, eq, inArray, isNull, lte } from "drizzle-orm";
 import { subscriptionPurchases } from "../../../db/schema";
 import type { SubscriptionPurchase, SubscriptionPurchaseBillingCycle, SubscriptionPurchaseStatus } from "../../../db/schema/billing/subscription-purchases";
 import type { DbOrTx } from "../../../common/rbac/access-invalidate";
@@ -13,7 +13,7 @@ export interface CreatePurchaseInput {
   providerKey: string;
   environment: string;
   merchantKeyId: string;
-  providerOrderId: string;
+  providerOrderId?: string | null;
   plan: Plan;
   billingCycle: SubscriptionPurchaseBillingCycle;
   catalogVersion: number | null;
@@ -46,7 +46,7 @@ export class SubscriptionPurchaseService {
         providerKey: input.providerKey,
         environment: input.environment,
         merchantKeyId: input.merchantKeyId,
-        providerOrderId: input.providerOrderId,
+        providerOrderId: input.providerOrderId ?? null,
         plan: input.plan,
         billingCycle: input.billingCycle,
         catalogVersion: input.catalogVersion,
@@ -60,6 +60,34 @@ export class SubscriptionPurchaseService {
       })
       .returning();
     return row;
+  }
+
+  /**
+   * Claims an intent row with the order the provider just issued.
+   *
+   * Conditional on the row still being unclaimed, so a retry cannot repoint a purchase that
+   * already carries a different order — that would detach a payable order from its only record.
+   * Returns null when nothing matched, which the caller treats as a failed claim rather than
+   * assuming success.
+   */
+  async attachProviderOrder(
+    tx: DbOrTx,
+    purchaseId: number,
+    orgId: string,
+    providerOrderId: string,
+  ): Promise<SubscriptionPurchase | null> {
+    const [row] = await tx
+      .update(subscriptionPurchases)
+      .set({ providerOrderId, updatedAt: new Date() })
+      .where(
+        and(
+          eq(subscriptionPurchases.id, purchaseId),
+          eq(subscriptionPurchases.orgId, orgId),
+          isNull(subscriptionPurchases.providerOrderId),
+        ),
+      )
+      .returning();
+    return row ?? null;
   }
 
   async findByOrderId(executor: DbOrTx, providerOrderId: string): Promise<SubscriptionPurchase | null> {

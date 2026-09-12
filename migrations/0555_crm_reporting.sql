@@ -43,10 +43,12 @@ CREATE TABLE IF NOT EXISTS "crm_report_definitions" (
 );
 
 --> statement-breakpoint
+DO $$ BEGIN
 -- NOT VALID then VALIDATE, so adding the constraint does not hold ACCESS
 -- EXCLUSIVE on organizations while it runs.
 ALTER TABLE "crm_report_definitions" ADD CONSTRAINT "fk_crm_report_definitions_org"
   FOREIGN KEY ("organization_id") REFERENCES "organizations"("id") ON DELETE CASCADE NOT VALID;
+EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
 --> statement-breakpoint
 ALTER TABLE "crm_report_definitions" VALIDATE CONSTRAINT "fk_crm_report_definitions_org";
 
@@ -90,8 +92,10 @@ CREATE TABLE IF NOT EXISTS "crm_report_runs" (
 );
 
 --> statement-breakpoint
+DO $$ BEGIN
 ALTER TABLE "crm_report_runs" ADD CONSTRAINT "fk_crm_report_runs_org"
   FOREIGN KEY ("organization_id") REFERENCES "organizations"("id") ON DELETE CASCADE NOT VALID;
+EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
 --> statement-breakpoint
 ALTER TABLE "crm_report_runs" VALIDATE CONSTRAINT "fk_crm_report_runs_org";
 

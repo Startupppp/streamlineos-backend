@@ -37,7 +37,7 @@ export const subscriptionPurchases = pgTable(
     providerKey: varchar("provider_key", { length: 50 }).notNull(),
     environment: varchar("environment", { length: 10 }).notNull(),
     merchantKeyId: varchar("merchant_key_id", { length: 120 }).notNull(),
-    providerOrderId: text("provider_order_id").notNull(),
+    providerOrderId: text("provider_order_id"),
     plan: subscriptionPlanEnum("plan").notNull(),
     billingCycle: varchar("billing_cycle", { length: 10 })
       .$type<SubscriptionPurchaseBillingCycle>()

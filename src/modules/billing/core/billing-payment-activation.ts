@@ -101,29 +101,22 @@ export class BillingPaymentActivation {
       reservedCouponId = couponId;
     }
 
-    let providerOrderId: string;
+    /**
+     * The intent row is written BEFORE the provider is called, and claimed with the order id
+     * afterwards. The reverse order — which this used to do — creates a payable order that no
+     * local row points at whenever the insert fails, and the customer is then charged for a term
+     * activation will refuse to grant, because it is gated on that row existing.
+     */
+    let purchase: Awaited<ReturnType<SubscriptionPurchaseService["create"]>>;
     try {
-      const result = await provider.createOrder({
-        amount: String(amount),
-        currency: price.currency,
-        receipt: `sub_${orgId.slice(-8)}_${Date.now().toString().slice(-8)}`,
-        notes: { orgId, plan, userId, billingCycle },
-      });
-      providerOrderId = result.providerOrderId;
-    } catch (err: unknown) {
-      await this.releaseReservation(orgId, reservedCouponId, "order creation error");
-      throw err;
-    }
-
-    try {
-      const purchase = await this.deps.db.transaction(async (tx) => {
-        return this.purchaseService.create(tx, {
+      purchase = await this.deps.db.transaction(async (tx) =>
+        this.purchaseService.create(tx, {
           orgId,
           createdByUserId: userId,
           providerKey: provider.providerKey,
           environment,
           merchantKeyId,
-          providerOrderId,
+          providerOrderId: null,
           plan,
           billingCycle,
           catalogVersion,
@@ -132,8 +125,36 @@ export class BillingPaymentActivation {
           amountMinor: amount,
           currency: price.currency,
           couponId: reservedCouponId,
-        });
+        }),
+      );
+    } catch (err: unknown) {
+      await this.releaseReservation(orgId, reservedCouponId, "purchase intent write error");
+      throw err;
+    }
+
+    let providerOrderId: string;
+    try {
+      const result = await provider.createOrder({
+        amount: String(amount),
+        currency: price.currency,
+        receipt: `sub_${orgId.slice(-8)}_${String(purchase.id)}`,
+        notes: { orgId, plan, userId, billingCycle, purchaseId: String(purchase.id) },
       });
+      providerOrderId = result.providerOrderId;
+    } catch (err: unknown) {
+      await this.abandonIntent(orgId, purchase.id);
+      await this.releaseReservation(orgId, reservedCouponId, "order creation error");
+      throw err;
+    }
+
+    try {
+      const claimed = await this.deps.db.transaction(async (tx) =>
+        this.purchaseService.attachProviderOrder(tx, purchase.id, orgId, providerOrderId),
+      );
+      if (claimed === null)
+        throw new Error(
+          `purchase ${purchase.id} could not be claimed for order ${providerOrderId}; it already carries an order`,
+        );
 
       return {
         orderId: providerOrderId,
@@ -149,6 +170,27 @@ export class BillingPaymentActivation {
     } catch (err: unknown) {
       await this.releaseReservation(orgId, reservedCouponId, "purchase record write error");
       throw err;
+    }
+  }
+
+  /**
+   * Retires an intent row whose provider call failed. Such a row holds no order anyone could pay,
+   * so leaving it PENDING would have a sweep chase a purchase that never existed. Failure to retire
+   * it is logged and swallowed: the provider call already failed and that error is the one the
+   * caller needs, and the row is still identifiable by a null provider_order_id.
+   */
+  private async abandonIntent(orgId: string, purchaseId: number): Promise<void> {
+    try {
+      await this.deps.db.transaction(async (tx) =>
+        this.purchaseService.markFailed(tx, purchaseId, orgId, {
+          abandonedReason: "provider order creation failed before an order id existed",
+        }),
+      );
+    } catch (error: unknown) {
+      this.logger.error(
+        `[billing] could not retire purchase intent ${String(purchaseId)} after an order-creation failure`,
+        { error: error instanceof Error ? error.message : String(error) },
+      );
     }
   }
 
@@ -391,7 +433,10 @@ export class BillingPaymentActivation {
     } catch (err: unknown) {
       if (err instanceof ConflictException) throw err;
       if (err instanceof ConcurrentActivationError) {
-        const fresh = await this.purchaseService.findByOrderId(this.deps.db, purchase.providerOrderId);
+        const fresh =
+          purchase.providerOrderId === null
+            ? null
+            : await this.purchaseService.findByOrderId(this.deps.db, purchase.providerOrderId);
         if (fresh?.status === "ACTIVATED") {
           return this.buildStoredOutcome(fresh, true);
         }
@@ -431,7 +476,10 @@ export class BillingPaymentActivation {
       };
     }
 
-    const fresh = await this.purchaseService.findByOrderId(this.deps.db, purchase.providerOrderId);
+    const fresh =
+          purchase.providerOrderId === null
+            ? null
+            : await this.purchaseService.findByOrderId(this.deps.db, purchase.providerOrderId);
     if (fresh?.status === "ACTIVATED") {
       return this.buildStoredOutcome(fresh, true);
     }

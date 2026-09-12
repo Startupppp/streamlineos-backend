@@ -255,6 +255,103 @@ describe("ChatMessagesService", () => {
     });
   });
 
+  describe("forwarding a message's attachments into another channel", () => {
+    const TARGET_CHANNEL = 2;
+    const FORWARDED = {
+      fileName: "quarterly.pdf",
+      fileUrl: "https://public.example.com/permanent/quarterly.pdf",
+      fileKey: "org1/chat/1f0c9d0e-4a7b-4c1e-9f3a-8b6d5e2c1a09-quarterly.pdf",
+      fileSize: 4096,
+      mimeType: "application/pdf",
+    };
+
+    function attachmentValues(): Record<string, unknown>[] {
+      const call = mockDb.values.mock.calls[1];
+      if (!call) throw new Error("no attachment insert was issued");
+      const values = call[0];
+      if (!Array.isArray(values)) throw new Error("the attachment insert is not a row array");
+      return values as Record<string, unknown>[];
+    }
+
+    beforeEach(() => {
+      mockDb.query.chatChannels.findFirst.mockResolvedValue({ id: TARGET_CHANNEL, isPrivate: false });
+      mockDb.query.chatChannelMembers.findFirst.mockResolvedValue({ id: 10, role: "MEMBER" });
+      mockDb.query.users.findFirst.mockResolvedValue({ id: "user1", name: "Alice" });
+    });
+
+    it("never persists the client-supplied fileUrl, so a forward cannot plant a permanent public link", async () => {
+      await service.send(TARGET_CHANNEL, "user1", "org1", {
+        attachments: [FORWARDED],
+        metadata: { forwardCount: 1 },
+      });
+
+      const rows = attachmentValues();
+      expect(rows).toHaveLength(1);
+      expect(rows[0]).toMatchObject({ fileUrl: "" });
+      expect(JSON.stringify(rows[0])).not.toContain("public.example.com");
+    });
+
+    it("binds the copied rows to the newly created message and the caller's org", async () => {
+      await service.send(TARGET_CHANNEL, "user1", "org1", {
+        attachments: [FORWARDED],
+        metadata: { forwardCount: 1 },
+      });
+
+      expect(attachmentValues()[0]).toMatchObject({
+        orgId: "org1",
+        messageId: 1,
+        fileKey: FORWARDED.fileKey,
+        fileName: FORWARDED.fileName,
+        fileSize: FORWARDED.fileSize,
+        mimeType: FORWARDED.mimeType,
+      });
+    });
+
+    it("writes the forwarded message against the TARGET channel, not the channel it came from", async () => {
+      await service.send(TARGET_CHANNEL, "user1", "org1", {
+        content: "sharing this",
+        attachments: [FORWARDED],
+        metadata: { forwardCount: 2 },
+      });
+
+      expect(mockDb.values).toHaveBeenNthCalledWith(
+        1,
+        expect.objectContaining({
+          channelId: TARGET_CHANNEL,
+          orgId: "org1",
+          metadata: { forwardCount: 2 },
+        }),
+      );
+    });
+
+    it("DENY: forwarding into a channel the caller is not in never reaches the attachment work", async () => {
+      mockDb.query.chatChannels.findFirst.mockResolvedValue({ id: TARGET_CHANNEL, isPrivate: true });
+      mockDb.query.chatChannelMembers.findFirst.mockResolvedValue(null);
+
+      await expect(
+        service.send(TARGET_CHANNEL, "user1", "org1", {
+          attachments: [FORWARDED],
+          metadata: { forwardCount: 1 },
+        }),
+      ).rejects.toThrow(NotFoundException);
+
+      expect(mockOrgSettings.getSettings).not.toHaveBeenCalled();
+      expect(mockStorage.isValidFileKey).not.toHaveBeenCalled();
+      expect(mockDb.transaction).not.toHaveBeenCalled();
+    });
+
+    it("DENY: forwarding a key that belongs to another tenant is refused before the transaction", async () => {
+      await expect(
+        service.send(TARGET_CHANNEL, "user1", "org1", {
+          attachments: [{ ...FORWARDED, fileKey: "org-other/chat/stolen.pdf" }],
+          metadata: { forwardCount: 1 },
+        }),
+      ).rejects.toThrow(BadRequestException);
+
+      expect(mockDb.transaction).not.toHaveBeenCalled();
+    });
+  });
+
   describe("sendSystemMessage", () => {
     it("uses the sender identity read in the message transaction", async () => {
       mockDb.limit

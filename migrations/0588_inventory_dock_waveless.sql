@@ -175,7 +175,7 @@ DO $$ BEGIN
       "door_id" WITH =,
       tsrange("window_start", "window_end", '[)') WITH &&
     ) WHERE ("status" IN ('BOOKED', 'ARRIVED', 'COMPLETED'));
-EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+EXCEPTION WHEN duplicate_object OR duplicate_table THEN NULL; END $$;
 --> statement-breakpoint
 
 ALTER TABLE "inv_settings" ADD COLUMN IF NOT EXISTS "waveless_picking" boolean DEFAULT false NOT NULL;
