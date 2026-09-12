@@ -1,4 +1,3 @@
-import { registerSchema } from "../modules/auth/dto/auth.schemas";
 import { createEpicSchema } from "../modules/build/execution/dto/iterations.schemas";
 import { createBugFromResultSchema } from "../modules/build/qa/dto/qa.schemas";
 import { createScorecardTemplateSchema } from "../modules/hr/interviews/dto/hr-interviews.schemas";
@@ -16,14 +15,6 @@ import { createScorecardTemplateSchema } from "../modules/hr/interviews/dto/hr-i
  * same no-op it already was. These assertions pin `.strict()` on each schema.
  */
 describe("removed unread request fields are rejected, not stripped", () => {
-  it("registerSchema rejects plan — register() always opens a TRIAL subscription", () => {
-    const base = { firstName: "A", email: "a@example.com", companyName: "Co" };
-    expect(registerSchema.safeParse(base).success).toBe(true);
-    const withField = registerSchema.safeParse({ ...base, plan: "enterprise" });
-    expect(withField.success).toBe(false);
-    expect(JSON.stringify(withField.error?.issues)).toContain("plan");
-  });
-
   it("createEpicSchema rejects assigneeId — createEpic writes assigneeMembershipId: undefined", () => {
     expect(createEpicSchema.safeParse({ title: "Epic" }).success).toBe(true);
     const withField = createEpicSchema.safeParse({ title: "Epic", assigneeId: "user-1" });

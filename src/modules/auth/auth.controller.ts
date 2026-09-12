@@ -36,7 +36,6 @@ import { AuthEmailOtpService } from "./auth-email-otp.service";
 import { AuthAnalyticsService } from "./auth-analytics.service";
 import { internalSecretMatches } from "./internal-secret";
 import {
-  registerSchema,
   verifyEmailSchema,
   resendVerificationSchema,
   magicLinkRequestSchema,
@@ -45,7 +44,6 @@ import {
   requestEmailOtpSchema,
   verifyEmailOtpSchema,
   sessionExchangeSchema,
-  type RegisterInput,
   type VerifyEmailInput,
   type MagicLinkRequestInput,
   type MagicLinkVerifyInput,
@@ -61,7 +59,6 @@ import { BodylessAction, ResponseSchema } from "../../common/openapi/zod-operati
 import { successSchema } from "../../common/openapi/response-envelopes";
 import { resolveClientIpOr } from "../../common/http/client-ip";
 import {
-  authRegisterResponseSchema,
   authAutoLoginTokenResponseSchema,
   authMessageResponseSchema,
   authAuditAnalyticsResponseSchema,
@@ -71,6 +68,10 @@ import {
   authSessionExchangeResponseSchema,
   authJwksResponseSchema,
 } from "./dto/auth-response.schemas";
+import { DRIZZLE } from "../../db/drizzle.constants";
+import { type Db } from "../../db/drizzle.module";
+import { eq } from "drizzle-orm";
+import { userSessions } from "../../db/schema";
 
 const userIdParams = z.object({ userId: z.string().min(1) }).strict();
 
@@ -89,6 +90,7 @@ export class AuthController {
     private readonly keyring: JwtKeyringService,
     private readonly membershipState: MembershipStateService,
     @Optional() @Inject(REDIS) private readonly redis: Redis | null = null,
+    @Optional() @Inject(DRIZZLE) private readonly db: Db | null = null,
   ) {}
 
   private async isNonceFirstUse(nonce: string, ttlSecs: number): Promise<boolean> {
@@ -156,17 +158,24 @@ export class AuthController {
     }
   }
 
-  @Post("register")
-  @ResponseSchema(authRegisterResponseSchema)
-  @Public()
-  @HttpCode(201)
-  @Validate({ body: registerSchema })
-  async register(
-    @Body() body: RegisterInput,
-    @Request() req: { ip?: string; headers: Record<string, string> },
-  ) {
-    await this.enforceRateLimit("auth:register", this.getIp(req));
-    return this.authService.register(body);
+  private async checkSessionRevocationInDatabase(
+    sessionId: string,
+  ): Promise<"valid" | "revoked" | "missing" | "expired" | "error"> {
+    if (!this.db) return "error";
+    try {
+      const rows = await this.db
+        .select({ isRevoked: userSessions.isRevoked, expiresAt: userSessions.expiresAt })
+        .from(userSessions)
+        .where(eq(userSessions.id, sessionId))
+        .limit(1);
+      const row = rows[0];
+      if (!row) return "missing";
+      if (row.isRevoked) return "revoked";
+      if (row.expiresAt !== null && row.expiresAt < new Date()) return "expired";
+      return "valid";
+    } catch {
+      return "error";
+    }
   }
 
   @Post("logout")
@@ -362,9 +371,25 @@ export class AuthController {
       throw new HttpException("Unauthorized", HttpStatus.UNAUTHORIZED);
     }
 
+    let tombstone: boolean | null = null;
+    let redisErrored = false;
     if (this.redis) {
-      const tombstone = await this.redis.get<boolean>(`revoked:session:${sessionId}`);
-      if (tombstone === true) {
+      try {
+        tombstone = await this.redis.get<boolean>(`revoked:session:${sessionId}`);
+      } catch {
+        redisErrored = true;
+      }
+    }
+
+    if (tombstone === true) {
+      throw new HttpException("Unauthorized", HttpStatus.UNAUTHORIZED);
+    }
+
+    const needsDatabase =
+      this.redis === null || redisErrored || tombstone === null;
+    if (needsDatabase) {
+      const dbState = await this.checkSessionRevocationInDatabase(sessionId);
+      if (dbState !== "valid") {
         throw new HttpException("Unauthorized", HttpStatus.UNAUTHORIZED);
       }
     }

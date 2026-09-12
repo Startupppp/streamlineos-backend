@@ -15,6 +15,7 @@ import { PermissionGuard } from "../access/permission.guard";
 import { MembershipStateService } from "../../common/auth/membership-state.service";
 import { REDIS } from "../../common/cache/cache.service";
 import { SESSION_PROOF_ISSUER, SESSION_PROOF_AUDIENCE } from "../../common/auth/backend-claims";
+import { DRIZZLE } from "../../db/drizzle.constants";
 
 const NEXTAUTH_SECRET = "test-nextauth-secret-at-least-32-chars-long-xxx";
 const INTERNAL_SECRET = "test-internal-secret-at-least-32-chars-long-xx";
@@ -42,11 +43,25 @@ async function makeProof(
     .sign(new TextEncoder().encode(overrides.secret ?? NEXTAUTH_SECRET));
 }
 
+function makeDbStub(sessionRow: { isRevoked: boolean; expiresAt: Date | null } | null, throws = false) {
+  const select = jest.fn().mockReturnValue({
+    from: jest.fn().mockReturnValue({
+      where: jest.fn().mockReturnValue({
+        limit: throws
+          ? jest.fn().mockRejectedValue(new Error("db unavailable"))
+          : jest.fn().mockResolvedValue(sessionRow ? [sessionRow] : []),
+      }),
+    }),
+  });
+  return { select };
+}
+
 describe("AuthController — session-exchange endpoint", () => {
   let controller: AuthController;
   let keyring: jest.Mocked<JwtKeyringService>;
   let membershipState: jest.Mocked<MembershipStateService>;
   let redis: { set: jest.Mock; get: jest.Mock };
+  let db: ReturnType<typeof makeDbStub>;
 
   const originalNextAuth = process.env.NEXTAUTH_SECRET;
   const originalInternal = process.env.INTERNAL_API_SECRET;
@@ -58,6 +73,8 @@ describe("AuthController — session-exchange endpoint", () => {
     redis = { set: jest.fn(), get: jest.fn() };
     redis.set.mockResolvedValue("OK");
     redis.get.mockResolvedValue(null);
+
+    db = makeDbStub({ isRevoked: false, expiresAt: null });
 
     keyring = {
       isReady: jest.fn().mockReturnValue(true),
@@ -81,6 +98,7 @@ describe("AuthController — session-exchange endpoint", () => {
         { provide: JwtKeyringService, useValue: keyring },
         { provide: MembershipStateService, useValue: membershipState },
         { provide: REDIS, useValue: redis },
+        { provide: DRIZZLE, useValue: db },
       ],
     })
       .overrideGuard(JwtAuthGuard)
@@ -161,13 +179,179 @@ describe("AuthController — session-exchange endpoint", () => {
     );
   });
 
-  it("denies when the session is revoked at exchange time", async () => {
+  it("denies when the session is revoked via Redis tombstone", async () => {
     redis.get.mockResolvedValue(true);
     const proof = await makeProof("user-1", "sess-1");
     const req = { headers: { "x-internal-secret": INTERNAL_SECRET, "x-session-proof": proof } };
     await expect(controller.sessionExchange({ orgId: null }, req as never)).rejects.toThrow(
       new HttpException("Unauthorized", HttpStatus.UNAUTHORIZED),
     );
+  });
+
+  it("denies when the session is revoked in the DB and Redis is absent (the bite)", async () => {
+    const revokedDb = makeDbStub({ isRevoked: true, expiresAt: null });
+    const module: TestingModule = await Test.createTestingModule({
+      controllers: [AuthController],
+      providers: [
+        { provide: AuthService, useValue: {} },
+        { provide: AuthEmailVerificationService, useValue: {} },
+        { provide: AuthMagicLinkService, useValue: {} },
+        { provide: AuthEmailOtpService, useValue: {} },
+        { provide: AuthAnalyticsService, useValue: {} },
+        { provide: RateLimitService, useValue: { check: jest.fn().mockResolvedValue({ allowed: true }) } },
+        { provide: JwtKeyringService, useValue: keyring },
+        { provide: MembershipStateService, useValue: membershipState },
+        { provide: REDIS, useValue: null },
+        { provide: DRIZZLE, useValue: revokedDb },
+      ],
+    })
+      .overrideGuard(JwtAuthGuard)
+      .useValue({ canActivate: jest.fn().mockReturnValue(true) })
+      .overrideGuard(PermissionGuard)
+      .useValue({ canActivate: jest.fn().mockReturnValue(true) })
+      .compile();
+    const ctrlNoRedis = module.get(AuthController);
+    const proof = await makeProof("user-1", "sess-1");
+    const req = { headers: { "x-internal-secret": INTERNAL_SECRET, "x-session-proof": proof } };
+    await expect(ctrlNoRedis.sessionExchange({ orgId: null }, req as never)).rejects.toThrow(
+      new HttpException("Unauthorized", HttpStatus.UNAUTHORIZED),
+    );
+    expect(revokedDb.select).toHaveBeenCalled();
+  });
+
+  it("denies when Redis tombstone is absent but DB shows session row is missing (fail-closed at mint boundary)", async () => {
+    const missingDb = makeDbStub(null);
+    const module: TestingModule = await Test.createTestingModule({
+      controllers: [AuthController],
+      providers: [
+        { provide: AuthService, useValue: {} },
+        { provide: AuthEmailVerificationService, useValue: {} },
+        { provide: AuthMagicLinkService, useValue: {} },
+        { provide: AuthEmailOtpService, useValue: {} },
+        { provide: AuthAnalyticsService, useValue: {} },
+        { provide: RateLimitService, useValue: { check: jest.fn().mockResolvedValue({ allowed: true }) } },
+        { provide: JwtKeyringService, useValue: keyring },
+        { provide: MembershipStateService, useValue: membershipState },
+        { provide: REDIS, useValue: null },
+        { provide: DRIZZLE, useValue: missingDb },
+      ],
+    })
+      .overrideGuard(JwtAuthGuard)
+      .useValue({ canActivate: jest.fn().mockReturnValue(true) })
+      .overrideGuard(PermissionGuard)
+      .useValue({ canActivate: jest.fn().mockReturnValue(true) })
+      .compile();
+    const ctrlNoRedis = module.get(AuthController);
+    const proof = await makeProof("user-1", "sess-1");
+    const req = { headers: { "x-internal-secret": INTERNAL_SECRET, "x-session-proof": proof } };
+    await expect(ctrlNoRedis.sessionExchange({ orgId: null }, req as never)).rejects.toThrow(
+      new HttpException("Unauthorized", HttpStatus.UNAUTHORIZED),
+    );
+  });
+
+  it("denies when Redis tombstone is absent but DB shows session is expired", async () => {
+    const yesterday = new Date(Date.now() - 86_400_000);
+    const expiredDb = makeDbStub({ isRevoked: false, expiresAt: yesterday });
+    const module: TestingModule = await Test.createTestingModule({
+      controllers: [AuthController],
+      providers: [
+        { provide: AuthService, useValue: {} },
+        { provide: AuthEmailVerificationService, useValue: {} },
+        { provide: AuthMagicLinkService, useValue: {} },
+        { provide: AuthEmailOtpService, useValue: {} },
+        { provide: AuthAnalyticsService, useValue: {} },
+        { provide: RateLimitService, useValue: { check: jest.fn().mockResolvedValue({ allowed: true }) } },
+        { provide: JwtKeyringService, useValue: keyring },
+        { provide: MembershipStateService, useValue: membershipState },
+        { provide: REDIS, useValue: null },
+        { provide: DRIZZLE, useValue: expiredDb },
+      ],
+    })
+      .overrideGuard(JwtAuthGuard)
+      .useValue({ canActivate: jest.fn().mockReturnValue(true) })
+      .overrideGuard(PermissionGuard)
+      .useValue({ canActivate: jest.fn().mockReturnValue(true) })
+      .compile();
+    const ctrlNoRedis = module.get(AuthController);
+    const proof = await makeProof("user-1", "sess-1");
+    const req = { headers: { "x-internal-secret": INTERNAL_SECRET, "x-session-proof": proof } };
+    await expect(ctrlNoRedis.sessionExchange({ orgId: null }, req as never)).rejects.toThrow(
+      new HttpException("Unauthorized", HttpStatus.UNAUTHORIZED),
+    );
+  });
+
+  it("denies when Redis throws (error path) and DB shows session is revoked", async () => {
+    redis.get.mockRejectedValue(new Error("redis connection refused"));
+    db = makeDbStub({ isRevoked: true, expiresAt: null });
+    const module: TestingModule = await Test.createTestingModule({
+      controllers: [AuthController],
+      providers: [
+        { provide: AuthService, useValue: {} },
+        { provide: AuthEmailVerificationService, useValue: {} },
+        { provide: AuthMagicLinkService, useValue: {} },
+        { provide: AuthEmailOtpService, useValue: {} },
+        { provide: AuthAnalyticsService, useValue: {} },
+        { provide: RateLimitService, useValue: { check: jest.fn().mockResolvedValue({ allowed: true }) } },
+        { provide: JwtKeyringService, useValue: keyring },
+        { provide: MembershipStateService, useValue: membershipState },
+        { provide: REDIS, useValue: redis },
+        { provide: DRIZZLE, useValue: db },
+      ],
+    })
+      .overrideGuard(JwtAuthGuard)
+      .useValue({ canActivate: jest.fn().mockReturnValue(true) })
+      .overrideGuard(PermissionGuard)
+      .useValue({ canActivate: jest.fn().mockReturnValue(true) })
+      .compile();
+    const ctrlWithThrowingRedis = module.get(AuthController);
+    const proof = await makeProof("user-1", "sess-1");
+    const req = { headers: { "x-internal-secret": INTERNAL_SECRET, "x-session-proof": proof } };
+    await expect(ctrlWithThrowingRedis.sessionExchange({ orgId: null }, req as never)).rejects.toThrow(
+      new HttpException("Unauthorized", HttpStatus.UNAUTHORIZED),
+    );
+    expect(db.select).toHaveBeenCalled();
+  });
+
+  it("denies when Redis is present, the tombstone is a cache MISS, and the DB says the session is revoked", async () => {
+    redis.get.mockResolvedValue(null);
+    const revokedDb = makeDbStub({ isRevoked: true, expiresAt: null });
+    const module: TestingModule = await Test.createTestingModule({
+      controllers: [AuthController],
+      providers: [
+        { provide: AuthService, useValue: {} },
+        { provide: AuthEmailVerificationService, useValue: {} },
+        { provide: AuthMagicLinkService, useValue: {} },
+        { provide: AuthEmailOtpService, useValue: {} },
+        { provide: AuthAnalyticsService, useValue: {} },
+        { provide: RateLimitService, useValue: { check: jest.fn().mockResolvedValue({ allowed: true }) } },
+        { provide: JwtKeyringService, useValue: keyring },
+        { provide: MembershipStateService, useValue: membershipState },
+        { provide: REDIS, useValue: redis },
+        { provide: DRIZZLE, useValue: revokedDb },
+      ],
+    })
+      .overrideGuard(JwtAuthGuard)
+      .useValue({ canActivate: jest.fn().mockReturnValue(true) })
+      .overrideGuard(PermissionGuard)
+      .useValue({ canActivate: jest.fn().mockReturnValue(true) })
+      .compile();
+    const ctrlCacheMiss = module.get(AuthController);
+    const proof = await makeProof("user-1", "sess-1");
+    const req = { headers: { "x-internal-secret": INTERNAL_SECRET, "x-session-proof": proof } };
+    await expect(ctrlCacheMiss.sessionExchange({ orgId: null }, req as never)).rejects.toThrow(
+      new HttpException("Unauthorized", HttpStatus.UNAUTHORIZED),
+    );
+    expect(revokedDb.select).toHaveBeenCalled();
+    expect(keyring.signToken).not.toHaveBeenCalled();
+  });
+
+  it("NEUTER: Redis present, tombstone a cache MISS, DB says live — the session still mints", async () => {
+    redis.get.mockResolvedValue(null);
+    const proof = await makeProof("user-1", "sess-1");
+    const req = { headers: { "x-internal-secret": INTERNAL_SECRET, "x-session-proof": proof } };
+    const result = await controller.sessionExchange({ orgId: "org-1" }, req as never);
+    expect(result).toEqual({ token: "signed.backend.jwt" });
+    expect(db.select).toHaveBeenCalled();
   });
 
   it("denies when the session proof names a different userId than any body field would imply", async () => {

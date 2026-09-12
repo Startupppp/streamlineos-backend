@@ -32,6 +32,7 @@ import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../access/permission.guard";
 import { MembershipStateService } from "../../common/auth/membership-state.service";
 import { REDIS } from "../../common/cache/cache.service";
+import { DRIZZLE } from "../../db/drizzle.constants";
 import { SESSION_PROOF_ISSUER, SESSION_PROOF_AUDIENCE } from "../../common/auth/backend-claims";
 
 const NEXTAUTH_SECRET = "test-nextauth-secret-at-least-32-chars-long-xxx";
@@ -120,6 +121,20 @@ describe("AuthController — the INTERNAL_API_SECRET routes enforce a rate limit
           },
         },
         { provide: REDIS, useValue: { set: jest.fn().mockResolvedValue("OK"), get: jest.fn().mockResolvedValue(null) } },
+        {
+          provide: DRIZZLE,
+          useValue: {
+            select: jest.fn().mockReturnValue({
+              from: jest.fn().mockReturnValue({
+                where: jest.fn().mockReturnValue({
+                  limit: jest
+                    .fn()
+                    .mockResolvedValue([{ isRevoked: false, expiresAt: null }]),
+                }),
+              }),
+            }),
+          },
+        },
       ],
     })
       .overrideGuard(JwtAuthGuard)

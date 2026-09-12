@@ -14,11 +14,6 @@ import { EFFECTIVE_PLANS } from "../../billing/core/plan-entitlements.constants"
  * NOT `.strict()`: added response fields are backward-compatible.
  */
 
-/** `AuthService.register` — `auth.service.ts`. */
-export const authRegisterResponseSchema = z.object({
-  success: z.literal(true),
-});
-
 /** `AuthEmailVerificationService.verifyEmail` — issues a magic-link auto-login token. */
 export const authAutoLoginTokenResponseSchema = z.object({
   autoLoginToken: z.string(),

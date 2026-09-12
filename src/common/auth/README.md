@@ -54,6 +54,5 @@ When a bearer-carried `sessionId` has no matching DB row (e.g. session minted be
 | POST /auth/email-otp/verify | 10 | 60s |
 | POST /auth/magic-link | 5 | 60s |
 | POST /auth/email-otp | 5 | 60s |
-| POST /auth/register | 3 | 60s |
 | POST /auth/verify-email | 10 | 60s |
 | POST /auth/resend-verification | 3 | 60s |

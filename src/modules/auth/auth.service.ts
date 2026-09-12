@@ -6,52 +6,30 @@ import {
   NotFoundException,
   UnauthorizedException,
 } from "@nestjs/common";
-import { ORG_MEMBER_ROLES } from "../../common/rbac/org-roles";
-import { seedSystemRolesForOrg } from "../rbac/seed-system-roles";
-import {
-  DEFAULT_SKIP_MODULES,
-  provisionOrgModules,
-} from "../../common/org/provision-org-modules";
 import { EntitlementsService } from "../access/entitlements.service";
-import { NotificationDispatchService } from "../notifications/notification-dispatch.service";
 import { and, desc, eq, sql } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import {
   accountOrganizationIndex,
   accounts,
-  organizations,
   subscriptions,
   users,
 } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { AuditService } from "../../common/audit/audit.service";
-import { withMembershipMutations } from "../../common/org/membership-mutations";
 import { withIdentity } from "../../common/tenant/with-identity";
 import {
-  runInNewTenantTransaction,
   runInTenantTransaction,
 } from "../../common/tenant/run-in-tenant-transaction";
-import { generateOrgSlug } from "../organization/core/bootstrap-cell-organization";
 import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_KEYS } from "../../common/cache/cache-keys";
 import { SessionsService } from "../sessions/sessions.service";
 import { AuthMembershipResolverService } from "./auth-membership-resolver.service";
 import { AuthAnalyticsService } from "./auth-analytics.service";
-import type { RegisterInput, GoogleOAuthInput } from "./dto/auth.schemas";
+import type { GoogleOAuthInput } from "./dto/auth.schemas";
 import type { AuthSessionData } from "./dto/auth-response.schemas";
 import { type EffectivePlan } from "../billing/core/plan-entitlements.constants";
-import { insertTrialSubscription } from "../billing/core/trial-subscription";
-import {
-  placeOrganization,
-  unplaceOrganization,
-} from "../../common/region/placement-lookup";
-import { logger } from "../../common/logger/logger.service";
-import {
-  chooseRegionForNewOrg,
-  regionPlacementCoordinates,
-} from "../../common/region/cell-admission";
-import { organizationRowExists } from "../organization/core/cell-organization-state";
 
 @Injectable()
 export class AuthService {
@@ -62,130 +40,8 @@ export class AuthService {
     private readonly audit: AuditService,
     private readonly entitlements: EntitlementsService,
     private readonly membershipResolver: AuthMembershipResolverService,
-    private readonly dispatch: NotificationDispatchService,
     private readonly analytics: AuthAnalyticsService,
   ) {}
-
-  async register(input: RegisterInput): Promise<{ success: true }> {
-    const normalizedEmail = input.email.toLowerCase().trim();
-
-    const existing = await this.db.query.users.findFirst({
-      where: sql`lower(${users.email}) = ${normalizedEmail}`,
-      columns: { id: true },
-    });
-
-    if (existing) return { success: true };
-
-    const userId = randomUUID();
-    const orgId = randomUUID();
-    const orgSlug = generateOrgSlug(input.companyName);
-
-    let placement: ReturnType<typeof regionPlacementCoordinates> | null = null;
-    let placementAttempted = false;
-    try {
-      placement = regionPlacementCoordinates(
-        await chooseRegionForNewOrg(this.db, { organizationId: orgId }),
-      );
-      const selectedPlacement = placement;
-      placementAttempted = true;
-      await placeOrganization(this.db, { orgId, ...selectedPlacement });
-      await withMembershipMutations(this.cache, (membership) =>
-        runInNewTenantTransaction(this.db, orgId, async (tx) => {
-          const ownerMembershipId = await membership.allocateMembershipId(tx);
-
-          await tx.insert(organizations).values({
-            id: orgId,
-            region: selectedPlacement.region,
-            ownerMembershipId,
-            name: input.companyName,
-            slug: orgSlug,
-          });
-
-          await tx.insert(users).values({
-            id: userId,
-            isActive: true,
-            email: normalizedEmail,
-            lastActiveOrgId: orgId,
-            emailVerified: new Date(),
-            firstName: input.firstName,
-            lastName: input.lastName ?? "",
-            name: input.lastName
-              ? `${input.firstName} ${input.lastName}`
-              : input.firstName,
-          });
-
-          await membership.createOwnerMembership(tx, {
-            orgId,
-            userId,
-            membershipId: ownerMembershipId,
-            role: ORG_MEMBER_ROLES.OWNER,
-          });
-
-          await insertTrialSubscription(tx, orgId);
-
-          await seedSystemRolesForOrg(this.db, orgId);
-          await provisionOrgModules(tx, orgId, DEFAULT_SKIP_MODULES, userId);
-        }),
-      );
-    } catch (error) {
-      const organizationExists =
-        placementAttempted && placement
-          ? await organizationRowExists(this.db, orgId, placement.region).catch(
-              () => true,
-            )
-          : false;
-      if (placementAttempted && !organizationExists)
-        await unplaceOrganization(this.db, orgId).catch(
-          (compensationError: unknown) => {
-            logger.error("[register] placement compensation failed", {
-              orgId,
-              error:
-                compensationError instanceof Error
-                  ? compensationError.message
-                  : String(compensationError),
-            });
-          },
-        );
-      throw error;
-    }
-
-    if (!placement) throw new Error("Organization placement was not selected");
-
-    await withIdentity(this.db, userId, (tx) =>
-      tx
-        .insert(accountOrganizationIndex)
-        .values({
-          userId,
-          orgId,
-          cellId: placement.cellId,
-          region: placement.region,
-          organizationName: input.companyName,
-          organizationSlug: orgSlug,
-          membershipRole: ORG_MEMBER_ROLES.OWNER,
-          membershipStatus: "ACTIVE",
-          organizationStatus: "ACTIVE",
-          joinedAt: new Date(),
-          lastActivatedAt: new Date(),
-          projectedAt: new Date(),
-        })
-        .onConflictDoUpdate({
-          target: [
-            accountOrganizationIndex.userId,
-            accountOrganizationIndex.orgId,
-          ],
-          set: { lastActivatedAt: new Date() },
-        }),
-    );
-
-    this.audit.log({
-      action: "user.registered",
-      userId,
-      orgId,
-      metadata: { email: normalizedEmail, companyName: input.companyName },
-    });
-
-    return { success: true };
-  }
 
   async logout(sessionId: string, userId: string): Promise<void> {
     await this.sessions.revokeCurrent(userId, sessionId);
@@ -302,51 +158,74 @@ export class AuthService {
       return { userId: existingUser.id, isNewUser: false, sessionId };
     }
 
-    const userId = randomUUID();
+    const newUserId = randomUUID();
     const rawName = (input.name ?? normalizedEmail.split("@")[0]).trim();
     const spaceIdx = rawName.indexOf(" ");
     const firstName = spaceIdx === -1 ? rawName : rawName.slice(0, spaceIdx);
     const lastName = spaceIdx === -1 ? "" : rawName.slice(spaceIdx + 1).trim();
 
-    await this.db.transaction(async (tx) => {
-      await tx.insert(users).values({
-        id: userId,
-        email: normalizedEmail,
-        name: rawName,
-        firstName,
-        lastName,
-        image: input.image || null,
-        isActive: true,
-        emailVerified: new Date(),
-      });
+    const resolvedUserId = await this.db.transaction(async (tx) => {
+      const insertResult = await tx
+        .insert(users)
+        .values({
+          id: newUserId,
+          email: normalizedEmail,
+          name: rawName,
+          firstName,
+          lastName,
+          image: input.image || null,
+          isActive: true,
+          emailVerified: new Date(),
+        })
+        .onConflictDoNothing()
+        .returning({ id: users.id });
 
-      await tx.insert(accounts).values({
-        userId,
-        type: "oauth",
-        provider: "google",
-        providerAccountId: input.googleId,
+      if (insertResult[0]) {
+        await tx.insert(accounts).values({
+          userId: insertResult[0].id,
+          type: "oauth",
+          provider: "google",
+          providerAccountId: input.googleId,
+        });
+        return insertResult[0].id;
+      }
+
+      const raced = await tx.query.users.findFirst({
+        where: sql`lower(${users.email}) = ${normalizedEmail}`,
+        columns: { id: true },
       });
+      if (!raced) throw new Error("Concurrent user creation conflict unresolvable");
+      await tx
+        .insert(accounts)
+        .values({
+          userId: raced.id,
+          type: "oauth",
+          provider: "google",
+          providerAccountId: input.googleId,
+        })
+        .onConflictDoNothing();
+      return raced.id;
     });
 
     this.audit.log({
       action: "user.registered",
-      userId,
+      userId: resolvedUserId,
       metadata: { email: normalizedEmail, provider: "google" },
     });
 
     const sessionId = await this.membershipResolver.createLoginSession(
-      userId,
+      resolvedUserId,
       context,
     );
     void this.analytics.logLoginEvent(
-      userId,
+      resolvedUserId,
       null,
       "google_oauth.register",
       true,
       null,
       context,
     );
-    return { userId, isNewUser: true, sessionId };
+    return { userId: resolvedUserId, isNewUser: true, sessionId };
   }
 
   private async resolvePreferredOrg(

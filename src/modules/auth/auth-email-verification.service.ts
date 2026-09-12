@@ -25,41 +25,52 @@ export class AuthEmailVerificationService {
   async verifyEmail(
     input: VerifyEmailInput,
   ): Promise<{ autoLoginToken: string }> {
-    const record = await this.db.query.verificationTokens.findFirst({
-      where: and(
-        eq(verificationTokens.token, hashToken(input.token)),
-        gt(verificationTokens.expires, sql`now()`),
-      ),
-    });
-    if (!record)
-      throw new BadRequestException({
-        code: "AUTH_TOKEN_INVALID",
-        message: "Invalid or expired verification token",
-      });
-
-    const [updatedUsers] = await Promise.all([
-      this.db
-        .update(users)
-        .set({ emailVerified: new Date() })
-        .where(sql`lower(${users.email}) = ${record.identifier.toLowerCase()}`)
-        .returning({ id: users.id }),
-      this.db
-        .delete(verificationTokens)
-        .where(eq(verificationTokens.identifier, record.identifier)),
-    ]);
-
-    const userId = updatedUsers[0]?.id;
-    if (!userId) throw new BadRequestException("User not found");
-
+    const tokenHash = hashToken(input.token);
     const rawToken = generateToken();
-    const tokenHash = hashToken(rawToken);
+    const autoLoginTokenHash = hashToken(rawToken);
     const expiresAt = addMinutes(new Date(), 5);
 
-    await this.db.insert(magicLinkTokens).values({
-      id: randomUUID(),
-      userId,
-      tokenHash,
-      expiresAt,
+    await this.db.transaction(async (tx) => {
+      const [claimed] = await tx
+        .delete(verificationTokens)
+        .where(
+          and(
+            eq(verificationTokens.token, tokenHash),
+            gt(verificationTokens.expires, sql`now()`),
+          ),
+        )
+        .returning();
+
+      if (!claimed)
+        throw new BadRequestException({
+          code: "AUTH_TOKEN_INVALID",
+          message: "Invalid or expired verification token",
+        });
+
+      const identifier = claimed.identifier.toLowerCase();
+
+      const user = await tx.query.users.findFirst({
+        where: sql`lower(${users.email}) = ${identifier}`,
+        columns: { id: true, isActive: true, deletedAt: true },
+      });
+
+      if (!user || !user.isActive || user.deletedAt !== null)
+        throw new BadRequestException({
+          code: "AUTH_TOKEN_INVALID",
+          message: "Invalid or expired verification token",
+        });
+
+      await tx
+        .update(users)
+        .set({ emailVerified: new Date() })
+        .where(sql`lower(${users.email}) = ${identifier}`);
+
+      await tx.insert(magicLinkTokens).values({
+        id: randomUUID(),
+        userId: user.id,
+        tokenHash: autoLoginTokenHash,
+        expiresAt,
+      });
     });
 
     return { autoLoginToken: rawToken };

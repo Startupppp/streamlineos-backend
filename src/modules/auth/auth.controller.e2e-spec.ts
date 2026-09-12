@@ -15,7 +15,6 @@ describe("Auth controller (e2e)", () => {
   afterAll(async () => app.close());
 
   const publicPostRoutes: ReadonlyArray<string> = [
-    "/auth/register",
     "/auth/verify-email",
     "/auth/resend-verification",
     "/auth/magic-link",
@@ -51,20 +50,11 @@ describe("Auth controller (e2e)", () => {
     expect(res.status).toBe(403);
   });
 
-  it("400 on POST /auth/register with an invalid email address", async () => {
+  it("404 on POST /auth/register — the endpoint has been removed", async () => {
     const res = await request(app.getHttpServer())
       .post("/auth/register")
-      .send({ firstName: "A", email: "not-an-email", companyName: "Co" });
-    expect(res.status).toBe(400);
-    expect(res.body).toMatchObject({ code: "VALIDATION_FAILED", message: "Validation failed." });
-  });
-
-  it("400 on POST /auth/register when companyName is missing", async () => {
-    const res = await request(app.getHttpServer())
-      .post("/auth/register")
-      .send({ firstName: "A", email: "test@example.com" });
-    expect(res.status).toBe(400);
-    expect(res.body).toMatchObject({ code: "VALIDATION_FAILED", message: "Validation failed." });
+      .send({ firstName: "A", email: "test@example.com", companyName: "Co" });
+    expect(res.status).toBe(404);
   });
 
   it("403 on GET /auth/session-data/:userId when x-internal-secret header is absent", async () => {
@@ -87,26 +77,6 @@ describe("Auth controller (e2e)", () => {
       .get("/auth/session-data/nonexistent-user")
       .set("x-internal-secret", correctSecret);
     expect(res.status).not.toBe(403);
-  });
-
-  it("429 on POST /auth/register after exhausting its rate limit", async () => {
-    const ip = "10.0.1.11";
-    const body = { firstName: "R", email: "rl-register@example.com", companyName: "Co" };
-    for (let i = 0; i < effectiveRateLimit("auth:register"); i++) {
-      await request(app.getHttpServer())
-        .post("/auth/register")
-        .set("X-Forwarded-For", ip)
-        .send(body);
-    }
-    const res = await request(app.getHttpServer())
-      .post("/auth/register")
-      .set("X-Forwarded-For", ip)
-      .send(body);
-    expect(res.status).toBe(429);
-    expect(res.body).toMatchObject({
-      code: "AUTH_RATE_LIMITED",
-      details: { retryAfterSeconds: expect.any(Number) },
-    });
   });
 
   it("429 on POST /auth/magic-link after exhausting its rate limit", async () => {
