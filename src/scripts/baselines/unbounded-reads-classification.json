@@ -3572,7 +3572,7 @@
     "/support/kb-gap/lib/gap-detection.ts": {
       "verdict": "FALSE-POSITIVE",
       "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
-      "justification": "Classified 2026-09-12. L67's findMany has no .limit(), but it runs inside `for (const chunk of chunked(deduped, GAP_UPSERT_CHUNK))` (GAP_UPSERT_CHUNK=500) filtered by inArray(clusterKey, chunk.map(...)) — the row count is bounded by the chunk's own size (at most 500, one row per distinct clusterKey since it's the table's dedup key), not by an explicit .limit()."
+      "justification": "Classified 2026-09-12. L186's findMany has no .limit(), but it runs inside `for (const chunk of chunked(deduped, GAP_UPSERT_CHUNK))` (GAP_UPSERT_CHUNK=500, gap-detection.ts:129) filtered by inArray(clusterKey, chunk.map(...)) — the row count is bounded by the chunk's own size (at most 500, one row per distinct clusterKey since it's the table's dedup key), not by an explicit .limit()."
     },
     "/surveys/survey-analytics.service.ts": {
       "verdict": "FALSE-POSITIVE",
