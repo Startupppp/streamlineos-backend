@@ -1,6 +1,6 @@
 import { and, eq, inArray, lte } from "drizzle-orm";
 import { subscriptionPurchases } from "../../../db/schema";
-import type { SubscriptionPurchase, SubscriptionPurchaseStatus } from "../../../db/schema/billing/subscription-purchases";
+import type { SubscriptionPurchase, SubscriptionPurchaseBillingCycle, SubscriptionPurchaseStatus } from "../../../db/schema/billing/subscription-purchases";
 import type { DbOrTx } from "../../../common/rbac/access-invalidate";
 import type { Db } from "../../../db/drizzle.module";
 import type { Plan } from "./dto/billing.schemas";
@@ -15,7 +15,7 @@ export interface CreatePurchaseInput {
   merchantKeyId: string;
   providerOrderId: string;
   plan: Plan;
-  billingCycle: string;
+  billingCycle: SubscriptionPurchaseBillingCycle;
   catalogVersion: number | null;
   baseAmountMinor: number;
   discountAmountMinor: number;

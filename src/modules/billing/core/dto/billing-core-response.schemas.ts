@@ -1,6 +1,5 @@
 import { z } from "zod";
 import { wireDate, nullableWireDate } from "../../../../common/openapi/wire-types";
-import { successSchema } from "../../../../common/openapi/response-envelopes";
 
 const count = z.number().int().nonnegative();
 
@@ -202,4 +201,3 @@ export const couponWithRedemptionsSchema = couponRowSchema.extend({
 
 export const couponListResponseSchema = z.array(couponWithRedemptionsSchema);
 
-export { successSchema };
