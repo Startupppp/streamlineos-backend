@@ -3,15 +3,13 @@ import type { Db } from "../../db/drizzle.module";
 import { bumpPermissionsVersion } from "../../common/rbac/access-invalidate";
 import { MODULE_CATALOG } from "../../common/rbac/module-vocabulary";
 import { ROLE_RANK } from "../../common/rbac/grantability";
-import { ACCESS_MANAGED_MODULES, MODULE_ACCESS_PERMISSIONS, moduleScopedPermissions, ROLE_DEFAULT_PERMISSIONS } from "./permissions";
+import {
+  ACCESS_MANAGED_MODULES,
+  MODULE_ACCESS_PERMISSIONS,
+  moduleScopedPermissions,
+  ROLE_DEFAULT_PERMISSIONS,
+} from "./permissions";
 
-/**
- * Every module with a ladder needs an admin rung, but `MODULE_CATALOG` also
- * decides plan gating: a key whose module sits there resolves to NO_MODULE
- * unless the organisation has it enabled. Deriving the admin rung from the union
- * keeps the two questions apart, so a module can be delegatable without becoming
- * plan-gated — which for mail and calendar would 403 every route they own.
- */
 export const MODULE_ADMIN_MODULES: readonly string[] = Array.from(
   new Set<string>([...MODULE_CATALOG, ...ACCESS_MANAGED_MODULES]),
 );
@@ -40,37 +38,11 @@ export function buildOrgAdminPermissionKeys(dbCatalog: Set<string>): string[] {
   return candidates.filter((key) => dbCatalog.has(key));
 }
 
-/**
- * Keys that module members receive at a narrower scope than the default "all".
- * Consulted only when inserting grants for MODULE_MEMBER roles, so admin-rung
- * roles are unaffected. Add an entry here whenever a module's view key is
- * scopable and new orgs should default members to "own" or "team".
- */
-const MODULE_MEMBER_KEY_SCOPE_OVERRIDE: Record<string, "own" | "team" | "all"> = {
-  "sign:envelope:view": "own",
-};
+const MODULE_MEMBER_KEY_SCOPE_OVERRIDE: Record<string, "own" | "team" | "all"> =
+  {
+    "sign:envelope:view": "own",
+  };
 
-/**
- * Keys a module's admins need that live outside their own namespace.
- *
- * `settings:record-layouts:manage` is a `settings:` key, so `ORG_ADMIN` receives
- * it through `buildOrgAdminPermissionKeys` already — but every record type it
- * can arrange is a CRM or Party one, and a CRM administrator who cannot arrange
- * a CRM list would have to borrow organisation administration to move a column.
- * Named here rather than only in the backfill, so a newly seeded organisation
- * and a backfilled one resolve to the same capability; migration 0226 exists
- * because that invariant was broken once already.
- *
- * `integrations:git:*` is the same shape for Build. Repository connections are
- * the Build module's own settings page (`/build/settings/integrations`) and
- * `git_connections.project_id` points at a Build project, but the keys sit in
- * the `integrations` namespace, so `moduleScopedPermissions("build")` skips
- * them. Until this entry existed the page was gated on `settings:manage` —
- * organisation administration — and a `BUILD_MODULE_ADMIN` could not open their
- * own module's integrations. The pair is deliberately narrow: it reaches
- * repository connections and nothing else in `integrations`, and `RoleGrantReconciler`
- * delivers it to organisations that already exist.
- */
 const MODULE_ADMIN_EXTRA_KEYS: Readonly<Record<string, readonly string[]>> = {
   hr: ["settings:view", "settings:organization:manage"],
   crm: ["settings:record-layouts:manage"],
@@ -103,7 +75,9 @@ export function buildModuleMemberPermissionKeys(
 }
 
 export function buildOrgMemberPermissionKeys(dbCatalog: Set<string>): string[] {
-  return (ROLE_DEFAULT_PERMISSIONS["MEMBER"] ?? []).filter((key) => dbCatalog.has(key));
+  return (ROLE_DEFAULT_PERMISSIONS["MEMBER"] ?? []).filter((key) =>
+    dbCatalog.has(key),
+  );
 }
 
 export interface SeededRoleSpec {
@@ -114,13 +88,6 @@ export interface SeededRoleSpec {
   permissionKeys: string[];
 }
 
-/**
- * The rungs a newly seeded organisation receives, and the only definition of
- * what each seeded slug is supposed to hold. `RoleGrantReconcilerService` reads
- * the same function so an organisation seeded before a rung was widened
- * converges on what a fresh one gets — the invariant `MODULE_ADMIN_EXTRA_KEYS`
- * states and that migration 0226 exists because it was broken once.
- */
 export function buildSeededRoleSpecs(dbCatalog: Set<string>): SeededRoleSpec[] {
   return [
     {
@@ -163,11 +130,6 @@ export function buildSeededRoleSpecs(dbCatalog: Set<string>): SeededRoleSpec[] {
   ];
 }
 
-/**
- * `MODULE_MEMBER_KEY_SCOPE_OVERRIDE` applies only to the member rung, so the
- * scope a grant is seeded at is a function of the slug and the key. Exported so
- * the reconciler seats a backfilled grant at the same scope the seeder would.
- */
 export function seededGrantScope(
   slug: string,
   permissionKey: string,
@@ -183,42 +145,46 @@ export async function seedSystemRolesForOrg(
   const dbCatalog = await resolveDbPermissionSet(db);
   const specs = buildSeededRoleSpecs(dbCatalog);
 
-  let created = 0;
-  for (const spec of specs) {
-    await db.transaction(async (tx) => {
-      const inserted = await tx
-        .insert(roles)
-        .values({
+  if (specs.length === 0) return { created: 0 };
+
+  return db.transaction(async (tx) => {
+    const inserted = await tx
+      .insert(roles)
+      .values(
+        specs.map((spec) => ({
           name: spec.name,
           slug: spec.slug,
           orgId,
           isSystem: true,
           rank: spec.rank,
           moduleKey: spec.moduleKey,
-        })
-        .onConflictDoNothing({ target: [roles.slug, roles.orgId] })
-        .returning({ id: roles.id });
+        })),
+      )
+      .onConflictDoNothing({ target: [roles.slug, roles.orgId] })
+      .returning({ id: roles.id, slug: roles.slug });
 
-      if (inserted.length > 0) {
-        created += 1;
-        const row = inserted[0];
-        if (row && spec.permissionKeys.length > 0) {
-          await tx
-            .insert(rolePermissionGrants)
-            .values(
-              spec.permissionKeys.map((permissionKey) => ({
-                orgId,
-                roleId: row.id,
-                permissionKey,
-                scope: seededGrantScope(spec.slug, permissionKey),
-              })),
-            )
-            .onConflictDoNothing();
-        }
-        await bumpPermissionsVersion(tx, orgId);
-      }
+    if (inserted.length === 0) return { created: 0 };
+
+    const specBySlug = new Map(specs.map((spec) => [spec.slug, spec]));
+    const grants = inserted.flatMap((role) => {
+      const spec = specBySlug.get(role.slug);
+      if (!spec) return [];
+      return spec.permissionKeys.map((permissionKey) => ({
+        orgId,
+        roleId: role.id,
+        permissionKey,
+        scope: seededGrantScope(spec.slug, permissionKey),
+      }));
     });
-  }
 
-  return { created };
+    if (grants.length > 0)
+      await tx
+        .insert(rolePermissionGrants)
+        .values(grants)
+        .onConflictDoNothing();
+
+    await bumpPermissionsVersion(tx, orgId);
+
+    return { created: inserted.length };
+  });
 }

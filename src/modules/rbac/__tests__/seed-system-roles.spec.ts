@@ -5,6 +5,7 @@ import {
   seedSystemRolesForOrg,
 } from "../seed-system-roles";
 import { ACCESS_MANAGED_MODULES, ALL_PERMISSION_NAMES } from "../permissions";
+import { rolePermissionGrants, roles } from "../../../db/schema";
 
 const ORG_ID = "org-seed-test";
 const ORG_WIDE_SYSTEM_ROLES = 2;
@@ -22,6 +23,24 @@ function makeInsertChain(returningValue: unknown[] = []) {
   return chain;
 }
 
+function makeRolesInsertChain(insertedAll: boolean) {
+  const chain: Record<string, jest.Mock> = {};
+  let captured: { slug: string }[] = [];
+  chain.values = jest.fn().mockImplementation((rows: { slug: string }[]) => {
+    captured = rows;
+    return chain;
+  });
+  chain.onConflictDoNothing = jest.fn().mockReturnValue(chain);
+  chain.returning = jest.fn().mockImplementation(() =>
+    Promise.resolve(
+      insertedAll
+        ? captured.map((row, index) => ({ id: index + 1, slug: row.slug }))
+        : [],
+    ),
+  );
+  return chain;
+}
+
 function makeSelectChain(resolveValue: unknown[] = []) {
   const chain: Record<string, jest.Mock> = {};
   chain.from = jest.fn().mockReturnValue(chain);
@@ -29,49 +48,62 @@ function makeSelectChain(resolveValue: unknown[] = []) {
   return chain;
 }
 
-function buildDb(rolesInsertReturning: unknown[]) {
-  const txInsert = jest.fn().mockImplementation(() => makeInsertChain(rolesInsertReturning));
+function buildDb(insertedAll: boolean, catalog: unknown[] = []) {
+  const grantsInsert = jest.fn();
+  const txInsert = jest.fn().mockImplementation((table: unknown) => {
+    if (table === rolePermissionGrants) {
+      const chain = makeInsertChain([]);
+      chain.values = jest.fn().mockImplementation((rows: unknown) => {
+        grantsInsert(rows);
+        return chain;
+      });
+      return chain;
+    }
+    if (table === roles) return makeRolesInsertChain(insertedAll);
+    return makeInsertChain([]);
+  });
   const txMock = { insert: txInsert };
   const db = {
-    select: jest.fn().mockReturnValue(makeSelectChain([])),
+    select: jest.fn().mockReturnValue(makeSelectChain(catalog)),
     transaction: jest.fn().mockImplementation(
       (fn: (tx: typeof txMock) => Promise<unknown>) => fn(txMock),
     ),
   };
-  return { db, txInsert };
+  return { db, txInsert, grantsInsert };
 }
 
 describe("seedSystemRolesForOrg", () => {
   it("creates all expected system roles for a fresh org", async () => {
-    const { db } = buildDb([{ id: 42 }]);
+    const { db } = buildDb(true);
 
     const result = await seedSystemRolesForOrg(db as never, ORG_ID);
 
     expect(result.created).toBe(EXPECTED_SYSTEM_ROLE_COUNT);
   });
 
-  it("is idempotent — a second run creates nothing new", async () => {
-    const { db, txInsert } = buildDb([]);
+  it("is idempotent — a second run creates nothing new and writes no grants", async () => {
+    const { db, grantsInsert } = buildDb(false);
 
     const result = await seedSystemRolesForOrg(db as never, ORG_ID);
 
     expect(result.created).toBe(0);
-    expect(txInsert).toHaveBeenCalledTimes(EXPECTED_SYSTEM_ROLE_COUNT);
+    expect(grantsInsert).not.toHaveBeenCalled();
   });
 
   it("does not insert grants when the role already exists", async () => {
-    const txInsert = jest.fn().mockImplementation(() => makeInsertChain([]));
-    const txMock = { insert: txInsert };
-    const db = {
-      select: jest.fn().mockReturnValue(makeSelectChain([{ name: "hr:employees:view" }])),
-      transaction: jest.fn().mockImplementation(
-        (fn: (tx: typeof txMock) => Promise<unknown>) => fn(txMock),
-      ),
-    };
+    const { db, grantsInsert } = buildDb(false, [{ name: "hr:employees:view" }]);
 
     await seedSystemRolesForOrg(db as never, ORG_ID);
 
-    expect(txInsert).toHaveBeenCalledTimes(EXPECTED_SYSTEM_ROLE_COUNT);
+    expect(grantsInsert).not.toHaveBeenCalled();
+  });
+
+  it("writes grants in a single bulk insert when roles are created", async () => {
+    const { db, grantsInsert } = buildDb(true, [{ name: "hr:employees:view" }]);
+
+    await seedSystemRolesForOrg(db as never, ORG_ID);
+
+    expect(grantsInsert).toHaveBeenCalledTimes(1);
   });
 });
 
