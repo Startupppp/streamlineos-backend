@@ -15,12 +15,18 @@ import {
 import { availableQtySumSql } from "../stock-engine/available-sql";
 import { subDec, cmpDec, isNegative } from "../stock-engine/decimal";
 import { isUniqueViolation } from "../../../common/db/postgres-error";
+import { encryptSecret, maskSecretHint } from "../../../common/security/secret-encryption.util";
 import type {
   CreateChannelInput,
   UpdateChannelInput,
   ListPublicationsQueryInput,
   RetryPublicationsInput,
 } from "./dto/channels.schemas";
+
+function sanitizeChannelRow<T extends Record<string, any>>(row: T) {
+  const { apiCredentialEncrypted, webhookSecretEncrypted, ...safe } = row;
+  return safe;
+}
 
 @Injectable()
 export class ChannelsService {
@@ -31,10 +37,10 @@ export class ChannelsService {
     private readonly channelPools: ChannelPoolService,
   ) {}
 
-  list(orgId: string, page = 1, limit = 100) {
+  async list(orgId: string, page = 1, limit = 100) {
     const safeLimit = Math.min(limit, 100);
     const offset = (page - 1) * safeLimit;
-    return this.cache.cached(
+    const rows = await this.cache.cached(
       CACHE_KEYS.invChannelsList(orgId),
       () =>
         this.db.query.invChannels.findMany({
@@ -45,6 +51,7 @@ export class ChannelsService {
         }),
       CACHE_TTL.MEDIUM,
     );
+    return rows.map(sanitizeChannelRow);
   }
 
   async findOne(orgId: string, channelId: number) {
@@ -55,18 +62,29 @@ export class ChannelsService {
           where: and(eq(invChannels.id, channelId), eq(invChannels.orgId, orgId)),
         });
         if (!channel) throw new NotFoundException("Channel not found");
-        return channel;
+        return sanitizeChannelRow(channel);
       },
       CACHE_TTL.MEDIUM,
     );
   }
 
   async create(orgId: string, userId: string, input: CreateChannelInput) {
+    const { apiCredential, webhookSecret, ...rest } = input;
+    const apiCredentialEncrypted = apiCredential ? encryptSecret(apiCredential) : null;
+    const apiCredentialHint = apiCredential ? maskSecretHint(apiCredential) : null;
+    const webhookSecretEncrypted = webhookSecret ? encryptSecret(webhookSecret) : null;
+
     let channel: typeof invChannels.$inferSelect;
     try {
       const [created] = await this.db
         .insert(invChannels)
-        .values({ orgId, ...input })
+        .values({
+          orgId,
+          ...rest,
+          apiCredentialEncrypted,
+          apiCredentialHint,
+          webhookSecretEncrypted,
+        })
         .returning();
       channel = created;
     } catch (e) {
@@ -86,7 +104,7 @@ export class ChannelsService {
     });
 
     await this.cache.invalidate(CACHE_KEYS.invChannelsList(orgId));
-    return channel;
+    return sanitizeChannelRow(channel);
   }
 
   async update(orgId: string, userId: string, channelId: number, input: UpdateChannelInput) {
@@ -95,11 +113,22 @@ export class ChannelsService {
     });
     if (!existing) throw new NotFoundException("Channel not found");
 
+    const { apiCredential, webhookSecret, ...rest } = input;
+    const patch: Record<string, unknown> = { ...rest, updatedAt: new Date() };
+
+    if (apiCredential !== undefined) {
+      patch.apiCredentialEncrypted = apiCredential ? encryptSecret(apiCredential) : null;
+      patch.apiCredentialHint = apiCredential ? maskSecretHint(apiCredential) : null;
+    }
+    if (webhookSecret !== undefined) {
+      patch.webhookSecretEncrypted = webhookSecret ? encryptSecret(webhookSecret) : null;
+    }
+
     let updated: typeof invChannels.$inferSelect;
     try {
       const [result] = await this.db
         .update(invChannels)
-        .set({ ...input, updatedAt: new Date() })
+        .set(patch)
         .where(and(eq(invChannels.id, channelId), eq(invChannels.orgId, orgId)))
         .returning();
       updated = result;
@@ -125,8 +154,9 @@ export class ChannelsService {
       this.cache.invalidate(CACHE_KEYS.invChannelsList(orgId)),
     ]);
 
-    return updated;
+    return sanitizeChannelRow(updated);
   }
+
 
   async syncStock(orgId: string, userId: string, channelId: number) {
     const channel = await this.db.query.invChannels.findFirst({

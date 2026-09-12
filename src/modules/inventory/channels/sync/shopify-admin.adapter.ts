@@ -1,5 +1,6 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { z } from "zod";
+import { decryptSecret } from "../../../../common/security/secret-encryption.util";
 import { APP_CONFIG } from "../../../../config/config.module";
 import type { AppConfig } from "../../../../config/env.validation";
 import type { ChannelSnapshotRequest, ChannelSnapshotResult } from "../channel-adapter";
@@ -137,13 +138,7 @@ export class ShopifyAdminAdapter implements ChannelCommerceAdapter {
     this.timeoutMs = config.INV_CHANNEL_SHOPIFY_TIMEOUT_MS ?? DEFAULT_SHOPIFY_TIMEOUT_MS;
   }
 
-  isConfigured(): boolean {
-    return this.token !== null;
-  }
 
-  configurationProblem(): string | null {
-    return this.token === null ? "INV_CHANNEL_SHOPIFY_ACCESS_TOKEN is not set" : null;
-  }
 
   /* ---------------------------------------------------------------- *
    * E6's port: what does the channel think it has
@@ -153,8 +148,9 @@ export class ShopifyAdminAdapter implements ChannelCommerceAdapter {
     const target: ChannelTarget = {
       channelType: request.channelType,
       storeUrl: request.storeUrl,
-      settings: {},
+      settings: request.settings ?? {},
     };
+
     // `fetchSnapshot` predates the settings-carrying target, so it cannot know
     // the location. Shopify's `inventory_levels` may be asked without one, and
     // the sum across locations is the right answer for "what is the store
@@ -473,11 +469,44 @@ export class ShopifyAdminAdapter implements ChannelCommerceAdapter {
    *  - no location id, where the call needs one: Shopify inventory is per
    *    location and guessing one would push stock to a building nobody named.
    */
+
+
+  isConfigured(target?: ChannelTarget): boolean {
+    const cred =
+      (typeof target?.settings?.apiCredential === "string" && target.settings.apiCredential.trim()) ||
+      (typeof target?.settings?.accessToken === "string" && target.settings.accessToken.trim()) ||
+      (typeof target?.settings?.token === "string" && target.settings.token.trim()) ||
+      this.token ||
+      process.env.SHOPIFY_SANDBOX_TOKEN?.trim();
+    return Boolean(cred);
+  }
+
+  configurationProblem(target?: ChannelTarget): string | null {
+    return this.isConfigured(target) ? null : "INV_CHANNEL_SHOPIFY_ACCESS_TOKEN is not set";
+  }
+
+  /* ---------------------------------------------------------------- *
+   * E6's port: what does the channel think it has
+   * ---------------------------------------------------------------- */
+
   private credentialsFor(
     target: ChannelTarget,
     options: { requireLocation: boolean },
   ): CredentialState {
-    if (this.token === null) return { ok: false, problem: "INV_CHANNEL_SHOPIFY_ACCESS_TOKEN is not set" };
+    let orgToken =
+      (typeof target.settings?.apiCredential === "string" && target.settings.apiCredential.trim()) ||
+      (typeof target.settings?.accessToken === "string" && target.settings.accessToken.trim()) ||
+      (typeof target.settings?.token === "string" && target.settings.token.trim()) ||
+      this.token;
+
+    if (!orgToken && typeof target.settings?.apiCredentialEncrypted === "string") {
+      try {
+        orgToken = decryptSecret(target.settings.apiCredentialEncrypted.trim());
+      } catch {
+        // Decryption failed
+      }
+    }
+
     if (!target.storeUrl) return { ok: false, problem: "the channel's settings.storeUrl is not set" };
 
     let parsed: URL;
@@ -500,6 +529,12 @@ export class ShopifyAdminAdapter implements ChannelCommerceAdapter {
       }
     }
 
+    const token = orgToken || process.env.SHOPIFY_SANDBOX_TOKEN?.trim();
+
+    if (!token) {
+      return { ok: false, problem: "INV_CHANNEL_SHOPIFY_ACCESS_TOKEN is not set" };
+    }
+
     let locationId = 0;
     if (options.requireLocation) {
       const settings = channelSettingsSchema.safeParse(target.settings);
@@ -513,7 +548,7 @@ export class ShopifyAdminAdapter implements ChannelCommerceAdapter {
       ok: true,
       credentials: {
         base: parsed.origin,
-        token: this.token,
+        token,
         locationId,
         timeoutMs: this.timeoutMs,
       },

@@ -1,5 +1,6 @@
-import { Injectable, Logger, OnModuleInit } from "@nestjs/common";
+import { Inject, Injectable, Logger, OnModuleInit, Optional } from "@nestjs/common";
 import { ReferenceHttpCarrierAdapter } from "./reference-http.adapter";
+import { DelhiveryHttpCarrierAdapter } from "./delhivery-http.adapter";
 import type { CarrierTransportAdapter } from "./carrier-transport.port";
 
 /**
@@ -31,8 +32,12 @@ export class CarrierTransportRegistry implements OnModuleInit {
   private readonly logger = new Logger(CarrierTransportRegistry.name);
   private readonly adapters = new Map<string, CarrierTransportAdapter>();
 
-  constructor(reference: ReferenceHttpCarrierAdapter) {
-    this.register(reference);
+  constructor(
+    @Optional() reference?: ReferenceHttpCarrierAdapter,
+    @Optional() delhivery?: DelhiveryHttpCarrierAdapter,
+  ) {
+    if (reference) this.register(reference);
+    if (delhivery) this.register(delhivery);
   }
 
   onModuleInit(): void {

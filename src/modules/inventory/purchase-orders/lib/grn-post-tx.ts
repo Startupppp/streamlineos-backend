@@ -353,6 +353,11 @@ export async function postInTx(
       sourceType: "inv_grn",
       sourceId: String(grn.id),
       reason: `GRN: ${grn.grnNumber}`,
+      // The receipt's own business date, not "today" — so the period guard
+      // (PeriodsService.assertPeriodOpen, via InventoryAccountingBridge.assertOpen)
+      // checks a backdated receipt against the period it actually belongs to
+      // instead of always passing because the current month is open.
+      postingDate: grn.receivedDate,
       movements,
     });
   }

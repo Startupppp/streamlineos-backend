@@ -82,8 +82,19 @@ const MIN_DB_FILES = 300;
  * its row count grew with account age rather than with the batch. Narrowing it to the
  * periods in play caps it at one row per (entry, milestone), which its limit now states.
  * Six newly hidden reads remain. Lower this the moment any of them is bounded.
+ *
+ * RAISED 649 -> 650 on this branch's origin tip (2026-09-12): removed the stale
+ * /clients/lib/client-timeline.ts entry (file no longer exists at that path, so it
+ * contributed 0 to the suppressed count already — its removal is a no-op here, done
+ * only because the gate itself reports a stale entry as a separate failure) and
+ * classified one genuinely new read, /support/kb-gap/lib/gap-detection.ts:186,
+ * FALSE-POSITIVE — bounded by the chunk it runs inside (chunked(deduped,
+ * GAP_UPSERT_CHUNK=500), filtered by inArray(clusterKey, chunk)), so its row count
+ * can't exceed the chunk size. That one addition is the entire net change: +1.
+ * (The new handling-unit.service.ts offset-pagination entry classified alongside this
+ * is ACTIONABLE, not FALSE-POSITIVE, so it does not touch this ceiling.)
  */
-const MAX_SUPPRESSED_UNBOUNDED = 649;
+const MAX_SUPPRESSED_UNBOUNDED = 650;
 const ORDER_BY_LOOKBACK = 25;
 const STATEMENT_MAX_LINES = 120;
 

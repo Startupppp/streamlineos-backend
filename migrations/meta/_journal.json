@@ -6063,6 +6063,21 @@
       "when": 1803000010317,
       "tag": "1105_timesheet_exports_event_seq",
       "breakpoints": true
+    },
+    {
+      "idx": 999,
+      "version": "7",
+      "when": 1803000010318,
+      "tag": "1106_inv_3pl_connections_credentials",
+      "breakpoints": true
+    },
+    {
+      "idx": 1000,
+      "version": "7",
+      "when": 1803000010319,
+      "tag": "1107_inv_channels_credentials",
+      "breakpoints": true
     }
   ]
 }
+
