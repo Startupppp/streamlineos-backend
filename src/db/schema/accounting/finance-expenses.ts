@@ -31,16 +31,28 @@ export const finReimbursementBatches = pgTable("fin_reimbursement_batches", {
   status: finReimbursementBatchStatusEnum("status").default("DRAFT").notNull(),
   totalAmount: decimal("total_amount", { precision: 18, scale: 4 }).default("0").notNull(),
   paidDate: date("paid_date"),
-  /** The kernel journal this batch's disbursement posted as. */
-  postedJournalId: text("posted_journal_id").references(() => glJournals.id, { onDelete: "set null" }),
+  /**
+   * The kernel journal this batch's disbursement posted as.
+   *
+   * Keyed by `(org_id, posted_journal_id)`, not by the journal id alone — see
+   * the composite below. Migration 1101.
+   */
+  postedJournalId: text("posted_journal_id"),
   /** The cash/bank GL account the batch was paid from (`gl_accounts.is_cash`). */
-  cashAccountId: text("cash_account_id").references(() => glAccounts.id, { onDelete: "set null" }),
+  cashAccountId: text("cash_account_id"),
   createdBy: text("created_by").references(() => users.id).notNull(),
   approvedBy: text("approved_by").references(() => users.id),
   approvedAt: timestamp("approved_at"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
+  // Both parents are tenant-owned, so a single-column key would let a batch in
+  // one tenant name another tenant's journal or GL account. `gl_journals` and
+  // `gl_accounts` each carry `uniq_*_org_id`, which is what makes the composite
+  // expressible. Installed by migration 1101; SET NULL names the pointer column
+  // explicitly there so a deleted parent never nulls `org_id`.
+  foreignKey({ columns: [table.orgId, table.postedJournalId], foreignColumns: [glJournals.orgId, glJournals.id], name: "fk_fin_reimbursement_batches_posted_journal_id_org" }).onDelete("set null"),
+  foreignKey({ columns: [table.orgId, table.cashAccountId], foreignColumns: [glAccounts.orgId, glAccounts.id], name: "fk_fin_reimbursement_batches_cash_account_id_org" }).onDelete("set null"),
   unique("uniq_fin_reimbursement_batches_org_id").on(table.orgId, table.id),
   index("idx_fin_reimbursement_batches_org_status").on(table.orgId, table.status),
 ]);
