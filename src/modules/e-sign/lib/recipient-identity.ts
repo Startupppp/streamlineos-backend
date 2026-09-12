@@ -7,6 +7,7 @@ import { SignTokensService } from "../sign-tokens.service";
 import { SignNotificationsService } from "../sign-notifications.service";
 import type { SmsSenderPort } from "../sms/sms-sender.port";
 import { SELF_SERVE_AUTH_METHODS } from "../dto/e-sign.schemas";
+import { digestsMatch } from "../../../common/security/token.util";
 import type { PublicAuthInput, PublicConsentInput } from "../dto/e-sign-public.schemas";
 import { withRecipientSession, type PublicRequestContext } from "./recipient-session";
 
@@ -155,7 +156,7 @@ export async function authenticate(
       if (recipient.authMethod === "email_link") {
         passed = true;
       } else if (recipient.authMethod === "access_code") {
-        passed = Boolean(input.accessCode) && recipient.accessCodeHash === deps.tokens.hash(input.accessCode ?? "");
+        passed = Boolean(input.accessCode) && digestsMatch(recipient.accessCodeHash, deps.tokens.hash(input.accessCode ?? ""));
       } else if (recipient.authMethod === "otp_email" || recipient.authMethod === "otp_sms") {
         /**
          * One branch for both channels, deliberately. The code, the hash, the
@@ -165,7 +166,7 @@ export async function authenticate(
          */
         passed =
           Boolean(input.otpCode) &&
-          recipient.otpCodeHash === deps.tokens.hash(input.otpCode ?? "") &&
+          digestsMatch(recipient.otpCodeHash, deps.tokens.hash(input.otpCode ?? "")) &&
           recipient.otpExpiresAt != null &&
           recipient.otpExpiresAt.getTime() > Date.now();
       } else {

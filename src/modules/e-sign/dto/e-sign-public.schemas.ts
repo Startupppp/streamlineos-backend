@@ -29,11 +29,3 @@ export const declineSchema = z.object({
   reason: z.string().trim().min(1, "Decline reason is required").max(1000),
 }).strict();
 export type DeclineInput = z.infer<typeof declineSchema>;
-
-export const publicFormSubmitSchema = z.object({
-  name: z.string().trim().min(1).max(200),
-  email: z.string().trim().email(),
-  phone: z.string().trim().max(30).optional(),
-  accessCode: z.string().trim().max(50).optional(),
-}).strict();
-export type PublicFormESignSubmitInput = z.infer<typeof publicFormSubmitSchema>;
