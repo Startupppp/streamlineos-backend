@@ -130,6 +130,11 @@ export class EntriesService {
       );
 
     const currentTotal = parseFloat(dailyHours?.total ?? "0");
+    if (!(settings?.allowOverlappingEntries ?? true) && currentTotal > 0) {
+      throw new ConflictException(
+        "An entry already exists for this day. Overlapping entries are disabled.",
+      );
+    }
     if (currentTotal + hours > maxHoursPerDay) {
       throw new BadRequestException(
         `Logging ${hours}h would exceed the daily limit of ${maxHoursPerDay}h`,

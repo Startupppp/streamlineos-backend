@@ -1,4 +1,4 @@
-import { Inject, Injectable } from "@nestjs/common";
+import { BadRequestException, Inject, Injectable } from "@nestjs/common";
 import { and, eq, gte, inArray, isNull, lte, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { DRIZZLE } from "../../../db/drizzle.constants";
@@ -10,6 +10,15 @@ import { resolveReportsScope, membershipScope } from "./timesheets-core-scope";
 import type { OverviewQuery, ReportRangeQuery } from "./dto/reports.schemas";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { resolveDateRange, round2, utilizationRate } from "./lib/report-metrics";
+
+function boundedReportRange(startDate?: string, endDate?: string) {
+  try {
+    return resolveDateRange(startDate, endDate);
+  } catch (err) {
+    if (err instanceof RangeError) throw new BadRequestException(err.message);
+    throw err;
+  }
+}
 
 function round2Local(n: number): number {
   return Math.round(n * 100) / 100;
@@ -140,7 +149,7 @@ export class ReportsService {
 
   async getUtilization(u: CurrentUserContext, query: ReportRangeQuery) {
     const read = await resolveReportsScope(this.access, u);
-    const { startDate, endDate } = resolveDateRange(query.startDate, query.endDate);
+    const { startDate, endDate } = boundedReportRange(query.startDate, query.endDate);
     const actorMembId = actingMembershipId(u.principal);
 
     const ownerMember = alias(organizationMembers, "owner_member");

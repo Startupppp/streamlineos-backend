@@ -156,6 +156,16 @@ describe("report-metrics", () => {
         endDate: "2026-03-30",
       });
     });
+
+    it("refuses a range longer than 366 days", () => {
+      expect(() => resolveDateRange("2025-01-01", "2026-12-31", now)).toThrow(RangeError);
+    });
+  });
+
+  describe("expectedHoursForRange daily fallback", () => {
+    it("uses expectedDailyHours * 5 when weekly hours are unset", () => {
+      expect(expectedHoursForRange("2026-07-01", "2026-07-14", null, [], 8)).toBe(80);
+    });
   });
 
   describe("currencyBreakdown", () => {

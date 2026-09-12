@@ -115,46 +115,47 @@ export class SettingsService {
   }
 
   async updateSettings(u: CurrentUserContext, input: UpdateCoreSettingsInput) {
-    const before = await this.fetchOrCreate(u.orgId);
-    const updateData: Record<string, unknown> = { updatedAt: new Date() };
+    await this.fetchOrCreate(u.orgId);
     const { changeReason, ...fields } = input;
-    const stored = before as unknown as Record<string, unknown>;
-    const materialChanges: string[] = [];
-
-    for (const [key, value] of Object.entries(fields)) {
-      if (value === undefined) continue;
-      if (PAYROLL_FIELDS.has(key)) continue;
-      if (MATERIAL_FIELDS.has(key) && isChanged(stored[key], value)) {
-        materialChanges.push(key);
-      }
-      if (key === "expectedDailyHours" || key === "expectedWeeklyHours") {
-        updateData[key] = value === null ? null : String(value);
-        continue;
-      }
-      updateData[key] = value;
-    }
-
-    /**
-     * TS-16. Required on a material change, and only on one.
-     *
-     * Checked against what is actually stored rather than against what the
-     * payload mentions: a settings screen that PATCHes every field on every
-     * save would otherwise demand a justification for pressing Save with
-     * nothing altered, and a requirement that fires when nothing happened is
-     * one people learn to satisfy with a full stop.
-     *
-     * A 400 rather than a silently-null history row. The history table has
-     * carried a nullable `change_reason` since it shipped and nothing has ever
-     * required it, so the column is full of nulls for changes nobody can now
-     * explain — which is the failure this ticket exists to stop repeating.
-     */
-    if (materialChanges.length > 0 && !changeReason?.trim()) {
-      throw new BadRequestException(
-        `A changeReason is required when changing ${materialChanges.sort().join(", ")}`,
-      );
-    }
 
     await this.db.transaction(async (tx) => {
+      /**
+       * The settings row is the race. Two PATCHes that both read `before`
+       * outside the transaction and then write will last-write-win without
+       * a history gap — FOR UPDATE on the row serialises them so the second
+       * sees the first's values before it decides what changed.
+       */
+      const [before] = await tx
+        .select()
+        .from(timesheetSettings)
+        .where(eq(timesheetSettings.orgId, u.orgId))
+        .limit(1)
+        .for("update");
+      if (!before) throw new Error("Failed to load timesheet settings");
+
+      const updateData: Record<string, unknown> = { updatedAt: new Date() };
+      const stored = before as unknown as Record<string, unknown>;
+      const materialChanges: string[] = [];
+
+      for (const [key, value] of Object.entries(fields)) {
+        if (value === undefined) continue;
+        if (PAYROLL_FIELDS.has(key)) continue;
+        if (MATERIAL_FIELDS.has(key) && isChanged(stored[key], value)) {
+          materialChanges.push(key);
+        }
+        if (key === "expectedDailyHours" || key === "expectedWeeklyHours") {
+          updateData[key] = value === null ? null : String(value);
+          continue;
+        }
+        updateData[key] = value;
+      }
+
+      if (materialChanges.length > 0 && !changeReason?.trim()) {
+        throw new BadRequestException(
+          `A changeReason is required when changing ${materialChanges.sort().join(", ")}`,
+        );
+      }
+
       const [actorMember] = await tx
         .select({ id: organizationMembers.id })
         .from(organizationMembers)
@@ -201,6 +202,11 @@ export class SettingsService {
       });
     });
 
+    /**
+     * Invalidate after commit. Doing it inside the transaction lets a concurrent
+     * reader refill the cache from the pre-commit snapshot, then see the write
+     * land under a still-stale key.
+     */
     await this.cache.invalidateNamespace(CACHE_KEYS.timesheetSettingsNamespace(u.orgId));
 
     return this.fetchOrCreate(u.orgId);

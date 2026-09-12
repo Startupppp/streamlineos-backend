@@ -36,7 +36,9 @@ export class ExceptionsDetectorService {
     const week = lastCompleteWeekRange(new Date(), workWeekStart);
     const expectedWeeklyHours = settings?.expectedWeeklyHours
       ? parseFloat(settings.expectedWeeklyHours)
-      : null;
+      : settings?.expectedDailyHours
+        ? parseFloat(settings.expectedDailyHours) * 5
+        : null;
     const maxHoursPerDay = parseFloat(settings?.maxHoursPerDay ?? "24");
     const graceDays = settings?.submissionGraceDays ?? 0;
 

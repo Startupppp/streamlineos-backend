@@ -26,6 +26,7 @@ import {
   type ResolveExceptionInput,
   type DismissExceptionInput,
 } from "./dto/exceptions.schemas";
+import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { BodylessAction, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
 import { z } from "zod";
@@ -95,6 +96,7 @@ export class TimesheetExceptionsController {
   @BodylessAction()
   @HttpCode(200)
   @RequirePermission("timesheets:exceptions:manage")
+  @Idempotent("timesheets.exceptions.run_detection", { required: false })
   @ResponseSchema(detectorResponseSchema)
   runDetection(@CurrentUser() u: CurrentUserContext) {
     return this.detector.detectForOrg(u.orgId);
