@@ -1,4 +1,5 @@
 import { classifyRetiredPermissions } from "./permission-catalog-sync.service";
+import { modulesCatalog } from "../../db/schema";
 
 describe("classifyRetiredPermissions", () => {
   it("deletes only stale keys without persisted role or delegation grants", () => {
@@ -56,12 +57,17 @@ describe("PermissionCatalogSyncService.sync — administering module column", ()
             Promise.resolve(catalogModules.map((moduleKey) => ({ moduleKey }))),
         }),
       }),
-      insert: () => ({
+      insert: (table: unknown) => ({
         values: (rows: Array<Record<string, unknown>>) => {
-          if (inserted.length === 0) inserted = rows;
+          // The self-heal insert into modulesCatalog runs before the
+          // permission-catalog insert this mock exists to observe — keyed on
+          // table identity so it doesn't shadow the rows these assertions
+          // actually care about.
+          if (table !== modulesCatalog && inserted.length === 0) inserted = rows;
           return {
             onConflictDoUpdate: (args: { set: Record<string, unknown> }) => {
-              if (Object.keys(conflictSet).length === 0) conflictSet = args.set;
+              if (table !== modulesCatalog && Object.keys(conflictSet).length === 0)
+                conflictSet = args.set;
               return Promise.resolve();
             },
             onConflictDoNothing: () => Promise.resolve(),
