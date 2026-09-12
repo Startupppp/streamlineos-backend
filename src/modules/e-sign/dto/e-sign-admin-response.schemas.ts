@@ -14,7 +14,6 @@ export const signSettingsResponseSchema = z.object({
   allowedAuthMethods: z.array(z.string()),
   certificateFormat: z.string(),
   retentionPolicyJson: z.record(z.string(), z.unknown()),
-  publicFormsEnabled: z.boolean(),
   bulkSendMaxRowsPerJob: z.number().int(),
   bulkSendMaxActiveJobs: z.number().int(),
   bulkSendMaxRecipientsPerEnvelope: z.number().int(),

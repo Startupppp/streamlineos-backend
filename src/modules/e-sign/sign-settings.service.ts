@@ -40,7 +40,6 @@ const DEFAULTS: Omit<SignOrgSettings, "id" | "orgId" | "createdAt" | "updatedAt"
   allowedAuthMethods: ["email_link", "access_code", "otp_email"],
   certificateFormat: "pdf",
   retentionPolicyJson: {},
-  publicFormsEnabled: true,
   bulkSendMaxRowsPerJob: 500,
   bulkSendMaxActiveJobs: 5,
   bulkSendMaxRecipientsPerEnvelope: 20,

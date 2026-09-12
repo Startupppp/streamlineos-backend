@@ -266,7 +266,6 @@ export const updateSignSettingsSchema = z.object({
   maxFileSizeMb: z.number().int().min(1).max(200).optional(),
   allowedAuthMethods: z.array(signAuthMethodSchema).max(20).optional(),
   certificateFormat: z.string().trim().max(20).optional(),
-  publicFormsEnabled: z.boolean().optional(),
   bulkSendMaxRowsPerJob: z.number().int().min(1).max(10000).optional(),
   bulkSendMaxActiveJobs: z.number().int().min(1).max(100).optional(),
   bulkSendMaxRecipientsPerEnvelope: z.number().int().min(1).max(500).optional(),

@@ -6028,6 +6028,13 @@
       "when": 1803000019165,
       "tag": "1101_reimbursement_batch_ledger_tenant_keys",
       "breakpoints": true
+    },
+    {
+      "idx": 861,
+      "version": "7",
+      "when": 1803000019166,
+      "tag": "1102_sign_settings_drop_public_forms_enabled",
+      "breakpoints": true
     }
   ]
 }

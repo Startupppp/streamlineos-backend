@@ -1,0 +1,21 @@
+-- 1102 — sign_org_settings loses the switch for a surface 0660b retired
+-- =============================================================================
+-- 0660b dropped `sign_public_forms` and the service, controller and frontend
+-- routes behind it; the settings row kept `public_forms_enabled`, and the
+-- settings screen kept rendering it as "Allow public signing forms" — a toggle
+-- that changed a column nothing read. SignOS's honesty rule is that the product
+-- must not advertise what it cannot do, and this switch advertised a feature
+-- that no longer exists.
+--
+-- The column is dropped rather than left undeclared: the Drizzle declaration,
+-- the settings PATCH schema, the response schema and the form all lose it in
+-- the same change, and `check:drop-column-safety` holds the declaration and the
+-- drop together.
+--
+-- Nothing reads the value at the time of writing (measured by grep over src/ —
+-- only the declaration, the two schemas and the settings default named it), so
+-- there is no data to preserve; the rollback restores the column with the
+-- default 0000 gave it.
+SET lock_timeout = '5s';
+--> statement-breakpoint
+ALTER TABLE "sign_org_settings" DROP COLUMN IF EXISTS "public_forms_enabled";
