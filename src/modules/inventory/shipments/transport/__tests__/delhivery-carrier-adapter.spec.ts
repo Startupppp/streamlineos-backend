@@ -15,6 +15,8 @@ describe("DelhiveryHttpCarrierAdapter (INV-26)", () => {
     destinationPin: "560001",
     destinationPhone: "9876543210",
     originName: "Bengaluru Hub",
+    originAddress: "456 Indiranagar, Bengaluru 560038",
+    originPin: "560038",
     parcels: [
       {
         reference: "PKG-1",
@@ -39,10 +41,48 @@ describe("DelhiveryHttpCarrierAdapter (INV-26)", () => {
     }
   });
 
+  it("refuses booking with MISSING_ORIGIN when origin name and address are missing", async () => {
+    const adapter = new DelhiveryHttpCarrierAdapter();
+    const invalidRequest: CarrierBookingRequest = {
+      shipmentNumber: "SHP-10002",
+      destinationAddress: "123 MG Road, Bengaluru, KA 560001",
+      destinationPin: "560001",
+      destinationPhone: "9876543210",
+      parcels: [],
+    };
+    const result = await adapter.book(dummyAccount, invalidRequest);
+
+    expect(result.outcome).toBe("rejected");
+    if (result.outcome === "rejected") {
+      expect(result.errors[0]?.code).toBe("MISSING_ORIGIN");
+    }
+  });
+
+  it("refuses booking with MISSING_ORIGIN_PIN when origin PIN is missing", async () => {
+    const adapter = new DelhiveryHttpCarrierAdapter();
+    const invalidRequest: CarrierBookingRequest = {
+      shipmentNumber: "SHP-10002",
+      originName: "Bengaluru Hub",
+      destinationAddress: "123 MG Road, Bengaluru, KA 560001",
+      destinationPin: "560001",
+      destinationPhone: "9876543210",
+      parcels: [],
+    };
+    const result = await adapter.book(dummyAccount, invalidRequest);
+
+    expect(result.outcome).toBe("rejected");
+    if (result.outcome === "rejected") {
+      expect(result.errors[0]?.code).toBe("MISSING_ORIGIN_PIN");
+    }
+  });
+
   it("refuses booking with MISSING_DESTINATION_PIN when pin is missing", async () => {
     const adapter = new DelhiveryHttpCarrierAdapter();
     const invalidRequest: CarrierBookingRequest = {
       shipmentNumber: "SHP-10002",
+      originName: "Bengaluru Hub",
+      originAddress: "456 Indiranagar, Bengaluru 560038",
+      originPin: "560038",
       destinationAddress: "No Pin Address",
       parcels: [],
     };
@@ -53,6 +93,7 @@ describe("DelhiveryHttpCarrierAdapter (INV-26)", () => {
       expect(result.errors[0]?.code).toBe("MISSING_DESTINATION_PIN");
     }
   });
+
 
   it("books a shipment successfully with real PIN, phone, and pickup location", async () => {
     const mockHttp: CarrierHttp = {

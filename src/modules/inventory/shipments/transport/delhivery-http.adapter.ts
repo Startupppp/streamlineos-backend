@@ -172,9 +172,38 @@ export class DelhiveryHttpCarrierAdapter implements CarrierTransportAdapter {
       };
     }
 
+    const pickupName = request.originName?.trim() || request.originAddress?.trim();
+    if (!pickupName) {
+      return {
+        outcome: "rejected",
+        errors: [
+          {
+            code: "MISSING_ORIGIN",
+            message: "Origin name or address is required for Delhivery booking.",
+          },
+        ],
+      };
+    }
+
+    const originPin =
+      request.originPin?.trim() ||
+      (request.originAddress ? request.originAddress.match(/\b([1-9][0-9]{5})\b/)?.[1] : null);
+
+    if (!originPin) {
+      return {
+        outcome: "rejected",
+        errors: [
+          {
+            code: "MISSING_ORIGIN_PIN",
+            message: "Origin PIN code is required for Delhivery booking.",
+          },
+        ],
+      };
+    }
+
     const baseUrl = this.resolveBaseUrl(account);
     const parcel = request.parcels[0];
-    const pickupName = request.originName?.trim() || request.originAddress?.trim() || "Main Warehouse";
+
 
     const payload = {
       format: "json",
