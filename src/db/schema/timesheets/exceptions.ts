@@ -7,8 +7,10 @@ import {
   integer,
   jsonb,
   index,
+  uniqueIndex,
   foreignKey,
 } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 import { organizations, organizationMembers } from "../common/auth";
 import { timesheetPeriods } from "./periods";
 
@@ -34,6 +36,15 @@ export const timesheetExceptions = pgTable("timesheet_exceptions", {
   foreignKey({ columns: [t.orgId, t.periodId], foreignColumns: [timesheetPeriods.orgId, timesheetPeriods.id], name: "fk_timesheet_exceptions_org_period" }).onDelete("cascade"),
   index("idx_ts_exceptions_org_status").on(t.orgId, t.status, t.severity),
   index("idx_ts_exceptions_user_membership").on(t.orgId, t.userMembershipId),
+  uniqueIndex("uniq_ts_exceptions_open_rule")
+    .on(
+      t.orgId,
+      sql`COALESCE(${t.userMembershipId}, -1)`,
+      t.rule,
+      sql`COALESCE(${t.periodId}, -1)`,
+      sql`COALESCE(${t.entryId}, -1)`,
+    )
+    .where(sql`${t.status} = 'OPEN'`),
   foreignKey({
     columns: [t.orgId, t.userMembershipId],
     foreignColumns: [organizationMembers.orgId, organizationMembers.id],
