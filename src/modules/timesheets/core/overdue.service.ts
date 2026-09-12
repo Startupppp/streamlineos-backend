@@ -79,6 +79,10 @@ const UNSETTLED = ["OPEN", "DRAFT", "REJECTED"] as const;
  * from 2 days to 5 and every stored row is wrong until something recomputes it.
  * Computing from `period_end + grace` on read means the queue is always
  * consistent with the policy as it stands right now.
+ *
+ * Pagination: Offset pagination (`page`, `limit` <= 100) is deliberately retained
+ * because the frontend DataTable uses server-side page numbers and total count
+ * for direct page navigation.
  */
 @Injectable()
 export class TimesheetOverdueService {
