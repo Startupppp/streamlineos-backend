@@ -5,6 +5,8 @@ import { SignEnvelopeValidationService } from "../sign-envelope-validation.servi
 import { SignEnvelopeDispatchService } from "../sign-envelope-dispatch.service";
 import { SignEnvelopeSweepsService } from "../sign-envelope-sweeps.service";
 import { SignSettingsService } from "../sign-settings.service";
+import { SignTemplatesService } from "../sign-templates.service";
+import { SignWatermarkService } from "../sign-watermark.service";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { PlanLimitsService } from "../../billing/core/plan-limits.service";
 import { SignAuditService } from "../sign-audit.service";
@@ -63,6 +65,8 @@ describe("SignEnvelopesService plan-limit enforcement", () => {
         { provide: SignEnvelopeDispatchService, useValue: { send: jest.fn(), resend: jest.fn(), applyRecipientOutcome: jest.fn() } },
         { provide: SignEnvelopeSweepsService, useValue: { sendManualReminder: jest.fn(), runReminderSweep: jest.fn(), runExpirationSweep: jest.fn() } },
         { provide: SignSettingsService, useValue: { getOrCreate: jest.fn().mockResolvedValue(ORG_SETTINGS) } },
+        { provide: SignTemplatesService, useValue: { get: jest.fn() } },
+        { provide: SignWatermarkService, useValue: { get: jest.fn() } },
       ],
     }).compile();
 

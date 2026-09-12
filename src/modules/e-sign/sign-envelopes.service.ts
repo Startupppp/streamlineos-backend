@@ -30,6 +30,8 @@ import {
 import { SignEnvelopeSweepsService } from "./sign-envelope-sweeps.service";
 import { SignEnvelopeDispatchService, type InvitationDelivery } from "./sign-envelope-dispatch.service";
 import { SignSettingsService } from "./sign-settings.service";
+import { SignTemplatesService } from "./sign-templates.service";
+import { SignWatermarkService } from "./sign-watermark.service";
 import {
   canTransitionEnvelope,
   isEnvelopeEditable,
@@ -66,10 +68,28 @@ export class SignEnvelopesService {
     private readonly sweeps: SignEnvelopeSweepsService,
     private readonly dispatch: SignEnvelopeDispatchService,
     private readonly settings: SignSettingsService,
+    private readonly templates: SignTemplatesService,
+    private readonly watermarks: SignWatermarkService,
   ) {}
+
+  /**
+   * The two ids an envelope may point at, read back under the caller's
+   * organisation before they are written. Both columns carry composite tenant
+   * foreign keys, so another organisation's id — or none — was refused by the
+   * database, as a 23503 the caller saw as a 500. Read through the owning
+   * services, a missing target and an out-of-tenant one answer the same 404.
+   */
+  private async assertReferencesInOrg(
+    orgId: string,
+    input: { templateId?: number; watermarkPolicyId?: number },
+  ): Promise<void> {
+    if (input.templateId !== undefined) await this.templates.get(orgId, input.templateId);
+    if (input.watermarkPolicyId !== undefined) await this.watermarks.get(orgId, input.watermarkPolicyId);
+  }
 
   async create(orgId: string, senderMembershipId: number | null, input: CreateEnvelopeInput) {
     await this.planLimits.assertWithinLimit(orgId, "signEnvelopes");
+    await this.assertReferencesInOrg(orgId, input);
 
     /**
      * SIGN-P2-03. The three reminder cadence settings were written by the
@@ -128,6 +148,7 @@ export class SignEnvelopesService {
         "Only draft envelopes can be edited directly",
       );
     }
+    await this.assertReferencesInOrg(orgId, input);
 
     const [updated] = await this.db
       .update(signEnvelopes)

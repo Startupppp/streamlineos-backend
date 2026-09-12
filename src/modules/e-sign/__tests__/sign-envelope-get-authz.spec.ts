@@ -67,6 +67,8 @@ function makeService(envelope: ReturnType<typeof makeEnvelope> | null) {
     {} as never,
     {} as never,
     {} as never,
+    {} as never,
+    {} as never,
   );
 }
 
