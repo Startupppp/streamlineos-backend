@@ -11,6 +11,7 @@ import {
 } from "../../db/schema";
 import { PERMISSIONS } from "./permissions";
 import { buildPermissionCatalogRows } from "./permission-catalog-rows";
+import { buildModulesCatalogRows } from "../../common/rbac/modules-catalog-rows";
 import { RoleGrantReconcilerService } from "./role-grant-reconciler.service";
 
 type SupportedScope = "all" | "team" | "own";
@@ -85,6 +86,11 @@ export class PermissionCatalogSyncService implements OnModuleInit {
         retainedKeys: [],
       };
     }
+
+    await this.db
+      .insert(modulesCatalog)
+      .values(buildModulesCatalogRows())
+      .onConflictDoNothing();
 
     const catalogModules = new Set(
       (await this.db.select({ moduleKey: modulesCatalog.moduleKey }).from(modulesCatalog).limit(100))
