@@ -19,7 +19,6 @@ import { CronWorkflowService } from "./cron-workflow.service";
 import { ExceptionsDetectorService } from "../timesheets/core/exceptions-detector.service";
 import { TimesheetRemindersSweepService } from "../timesheets/core/reminders-sweep.service";
 import { BuildDueSweepService } from "../build/core/build-due-sweep.service";
-import { CronSignService } from "./cron-sign.service";
 import { CronLeaseService } from "./cron-lease.service";
 import { BodylessAction, ResponseSchema } from "../../common/openapi/zod-operation-contracts";
 import { CronOperatorAccessService } from "./cron-operator-access.service";
@@ -41,7 +40,6 @@ import {
   mailMetadataRetentionSweepResponseSchema,
   announcementsRetentionSweepResponseSchema,
   timesheetsRemindersResponseSchema,
-  signEnvelopeSweepsResponseSchema,
 } from "./dto/cron-platform-response.schemas";
 
 @Public()
@@ -58,7 +56,6 @@ export class CronPlatformController {
     private readonly idempotency: CronIdempotencyService,
     private readonly buildDueSweep: BuildDueSweepService,
     private readonly accountOrgIndex: AccountOrganizationIndexService,
-    private readonly signSweeps: CronSignService,
     private readonly cronLease: CronLeaseService,
     private readonly operatorAccess: CronOperatorAccessService,
     private readonly aiUsageRetention: CronAiUsageRetentionService,
@@ -204,20 +201,6 @@ export class CronPlatformController {
   @ResponseSchema(timesheetsExceptionDetectionResponseSchema)
   postTimesheetsExceptionDetection(@Headers("authorization") authorization?: string) {
     return this.runTimesheetsExceptionDetection(authorization);
-  }
-
-  @Get("sign-envelope-sweeps")
-  @ResponseSchema(signEnvelopeSweepsResponseSchema)
-  getSignEnvelopeSweeps(@Headers("authorization") authorization?: string) {
-    return this.runSignEnvelopeSweeps(authorization);
-  }
-
-  @Post("sign-envelope-sweeps")
-  @BodylessAction()
-  @HttpCode(200)
-  @ResponseSchema(signEnvelopeSweepsResponseSchema)
-  postSignEnvelopeSweeps(@Headers("authorization") authorization?: string) {
-    return this.runSignEnvelopeSweeps(authorization);
   }
 
   @Get("operator-grant-expiry")
@@ -441,30 +424,6 @@ export class CronPlatformController {
       };
     } catch (error) {
       logger.error("Timesheet reminders cron failed", error);
-      throw new InternalServerErrorException("Internal server error");
-    }
-  }
-
-  private async runSignEnvelopeSweeps(authorization?: string) {
-    assertCronSecret(authorization);
-    try {
-      const outcome = await this.cronLease.withLease("sign-envelope-sweeps", 600, () =>
-        this.signSweeps.sweepEnvelopes(),
-      );
-      if (!outcome.ran) {
-        return { success: true, skipped: true, message: "sign-envelope-sweeps already running" };
-      }
-      const result = outcome.result;
-      return {
-        success: true,
-        message:
-          `E-sign envelope sweeps: scanned ${result.organizations} orgs, ` +
-          `expired ${result.expired}, reminded ${result.reminded}` +
-          (result.failed > 0 ? `, ${result.failed} org(s) failed` : ""),
-        ...result,
-      };
-    } catch (error) {
-      logger.error("Sign envelope sweeps cron failed", error);
       throw new InternalServerErrorException("Internal server error");
     }
   }

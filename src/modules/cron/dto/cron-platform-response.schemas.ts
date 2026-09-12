@@ -165,15 +165,3 @@ export const timesheetsRemindersResponseSchema = z.union([
   }),
 ]);
 
-/** Expiration runs before reminders, so `expired` counts envelopes this tick closed. */
-export const signEnvelopeSweepsResponseSchema = z.union([
-  cronSkippedSchema,
-  z.object({
-    success: z.literal(true),
-    message: z.string(),
-    organizations: z.number().int().nonnegative(),
-    failed: z.number().int().nonnegative(),
-    reminded: z.number().int().nonnegative(),
-    expired: z.number().int().nonnegative(),
-  }),
-]);

@@ -24,8 +24,10 @@ import {
 import { successSchema } from "../../common/openapi/response-envelopes";
 import { SignEnvelopeSweepsService } from "./sign-envelope-sweeps.service";
 import {
+  sweepPreviewQuerySchema,
   updateSignSettingsSchema,
   watermarkPolicyInputSchema,
+  type SweepPreviewQuery,
   type UpdateSignSettingsInput,
   type WatermarkPolicyInput,
 } from "./dto/e-sign.schemas";
@@ -130,10 +132,10 @@ export class SignAdminController {
    */
   @Get("sweep-preview")
   @RequirePermission("sign:admin:manage")
+  @Validate({ query: sweepPreviewQuerySchema })
   @ResponseSchema(sweepPreviewResponseSchema)
-  async sweepPreview(@CurrentUser() u: CurrentUserContext, @Query("sweep") sweep?: string) {
-    const which = sweep === "expiration" ? "expiration" : "reminder";
-    return this.sweeps.previewSweep(u.orgId, which);
+  async sweepPreview(@CurrentUser() u: CurrentUserContext, @Query() query: SweepPreviewQuery) {
+    return this.sweeps.previewSweep(u.orgId, query.sweep);
   }
 
   /**
@@ -141,8 +143,9 @@ export class SignAdminController {
    *
    * `u.orgId` is not a convenience — until it was passed, an admin here swept
    * every tenant in the database. See `SignEnvelopeSweepsService.runReminderSweep`.
-   * These two remain manual triggers; the scheduled pass is
-   * `POST /cron/sign-envelope-sweeps`, which walks organisations itself.
+   * These two remain manual triggers; the scheduled passes are
+   * `POST /cron/sign-reminder-sweep` and `POST /cron/sign-expiration-sweep`,
+   * which walk organisations themselves.
    */
   @Post("run-reminder-sweep")
   @BodylessAction()

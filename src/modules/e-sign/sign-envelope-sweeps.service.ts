@@ -249,6 +249,14 @@ export class SignEnvelopeSweepsService {
     });
 
     return candidates.filter((envelope) => {
+      /*
+       * Past its expiry, an envelope is the expiration sweep's to close, not
+       * this one's to chase: a reminder re-issues the signing token, so
+       * reminding here would email a fresh link to a document the next
+       * expiration pass closes. The two sweeps are scheduled separately and
+       * may run in either order; this is what makes the order not matter.
+       */
+      if (envelope.expiresAt && envelope.expiresAt.getTime() <= now.getTime()) return false;
       if (envelope.reminderSentCount >= envelope.reminderMaxCount) return false;
       const baseline = envelope.lastReminderAt ?? envelope.sentAt;
       if (!baseline) return false;

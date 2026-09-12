@@ -52,9 +52,13 @@ export const signAuthMethodSchema = z.enum([
  *
  * Exported so the pre-send validator and the signing flow read the SAME list.
  * Two hand-maintained copies would drift, and the direction they drift in is the
- * one where an envelope passes validation and cannot be signed.
+ * one where an envelope passes validation and cannot be signed. They did drift
+ * once in the other direction: `requestOtp` and `authenticate` gained the SMS
+ * channel while this list still refused `otp_sms` at send, so a recipient the
+ * auth-method policy had admitted was refused by the validator. `otp_sms` is
+ * conditional on the deployment's SMS provider, which the validator consults.
  */
-export const SELF_SERVE_AUTH_METHODS = ["email_link", "access_code", "otp_email"] as const;
+export const SELF_SERVE_AUTH_METHODS = ["email_link", "access_code", "otp_email", "otp_sms"] as const;
 export type SelfServeAuthMethod = (typeof SELF_SERVE_AUTH_METHODS)[number];
 
 export function isSelfServeAuthMethod(method: string): method is SelfServeAuthMethod {
@@ -305,3 +309,9 @@ export const watermarkPolicyInputSchema = z.object({
   enabled: z.boolean().default(true),
 }).strict();
 export type WatermarkPolicyInput = z.infer<typeof watermarkPolicyInputSchema>;
+
+/** `GET /sign/admin/sweep-preview`: which sweep to rehearse, defaulting to the reminder pass. */
+export const sweepPreviewQuerySchema = z
+  .object({ sweep: z.enum(["reminder", "expiration"]).default("reminder") })
+  .strict();
+export type SweepPreviewQuery = z.infer<typeof sweepPreviewQuerySchema>;

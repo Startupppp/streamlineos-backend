@@ -226,7 +226,8 @@ describe("E2 · the admin sweeps carry a tenant predicate of their own", () => {
     reminderRepeatDays: 1,
     lastReminderAt: null,
     sentAt: new Date("2020-01-01T00:00:00Z"),
-    expiresAt: new Date("2020-02-01T00:00:00Z"),
+    /* Still open: an envelope past its expiry is the expiration sweep's, and the reminder sweep skips it. */
+    expiresAt: new Date("2999-01-01T00:00:00Z"),
     senderMembershipId: CALLER_MEMBERSHIP,
     title: "Own envelope",
   };

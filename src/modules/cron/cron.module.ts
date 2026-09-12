@@ -72,7 +72,6 @@ import { CronEmailOutboxService } from "./cron-email-outbox.service";
 import { CronSupportService } from "./cron-support.service";
 import { CronCrmTasksService } from "./cron-crm-tasks.service";
 import { CronCrmLifecycleService } from "./cron-crm-lifecycle.service";
-import { CronSignService } from "./cron-sign.service";
 import { CronCrmAutonomyService } from "./cron-crm-autonomy.service";
 import { RelationshipsModule } from "../relationships/relationships.module";
 import { AutonomyModule } from "../autonomy/autonomy.module";
@@ -189,7 +188,6 @@ import { CronGdprExportRetentionService } from "./cron-gdpr-export-retention.ser
     PartitionMaintenanceService,
     CronCrmTasksService,
     CronCrmLifecycleService,
-    CronSignService,
     CronCrmAutonomyService,
     CronCrmForecastService,
     CronIdempotencyService,

@@ -5,6 +5,8 @@ import { SignEnvelopeSweepsService } from "../e-sign/sign-envelope-sweeps.servic
 import { assertCronSecret } from "./cron-secret";
 import { CronLeaseService } from "./cron-lease.service";
 import { signSweepTickResponseSchema } from "./dto/cron-sign-response.schemas";
+import { signSweepTickQuerySchema, type SignSweepTickQuery } from "./dto/cron-sign.schemas";
+import { Validate } from "../../common/validation/validate.decorator";
 
 /**
  * The scheduler entry point SignOS never had.
@@ -29,42 +31,34 @@ export class CronSignController {
 
   @Get("sign-reminder-sweep")
   @ResponseSchema(signSweepTickResponseSchema)
-  reminderGet(
-    @Headers("authorization") authorization?: string,
-    @Query("dryRun") dryRun?: string,
-  ) {
-    return this.run("reminder", authorization, dryRun);
+  @Validate({ query: signSweepTickQuerySchema })
+  reminderGet(@Query() query: SignSweepTickQuery, @Headers("authorization") authorization?: string) {
+    return this.run("reminder", authorization, query.dryRun);
   }
 
   @Post("sign-reminder-sweep")
   @BodylessAction()
   @HttpCode(200)
   @ResponseSchema(signSweepTickResponseSchema)
-  reminderPost(
-    @Headers("authorization") authorization?: string,
-    @Query("dryRun") dryRun?: string,
-  ) {
-    return this.run("reminder", authorization, dryRun);
+  @Validate({ query: signSweepTickQuerySchema })
+  reminderPost(@Query() query: SignSweepTickQuery, @Headers("authorization") authorization?: string) {
+    return this.run("reminder", authorization, query.dryRun);
   }
 
   @Get("sign-expiration-sweep")
   @ResponseSchema(signSweepTickResponseSchema)
-  expirationGet(
-    @Headers("authorization") authorization?: string,
-    @Query("dryRun") dryRun?: string,
-  ) {
-    return this.run("expiration", authorization, dryRun);
+  @Validate({ query: signSweepTickQuerySchema })
+  expirationGet(@Query() query: SignSweepTickQuery, @Headers("authorization") authorization?: string) {
+    return this.run("expiration", authorization, query.dryRun);
   }
 
   @Post("sign-expiration-sweep")
   @BodylessAction()
   @HttpCode(200)
   @ResponseSchema(signSweepTickResponseSchema)
-  expirationPost(
-    @Headers("authorization") authorization?: string,
-    @Query("dryRun") dryRun?: string,
-  ) {
-    return this.run("expiration", authorization, dryRun);
+  @Validate({ query: signSweepTickQuerySchema })
+  expirationPost(@Query() query: SignSweepTickQuery, @Headers("authorization") authorization?: string) {
+    return this.run("expiration", authorization, query.dryRun);
   }
 
   /**
