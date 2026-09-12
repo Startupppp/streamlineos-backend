@@ -8,7 +8,7 @@ import { renderButton } from "../email/templates/components";
 export class SignNotificationsService {
   constructor(private readonly email: EmailService) {}
 
-  async sendCcNotice(email: string, name: string, envelopeTitle: string, envelopeViewUrl: string): Promise<void> {
+  private ccNoticeOptions(email: string, name: string, envelopeTitle: string, envelopeViewUrl: string) {
     const html = getEmailTemplate({
       title: `You were copied on "${envelopeTitle}"`,
       preheader: `You've been added as a copy recipient on ${envelopeTitle}`,
@@ -16,7 +16,16 @@ export class SignNotificationsService {
 <p class="email-text">You've been copied on <strong>${escapeHtml(envelopeTitle)}</strong> for your records.</p>
 ${renderButton("View status", envelopeViewUrl)}`,
     });
-    await this.email.sendEmail({ to: email, subject: `Copied on: ${envelopeTitle}`, html });
+    return { to: email, subject: `Copied on: ${envelopeTitle}`, html };
+  }
+
+  async sendCcNotice(email: string, name: string, envelopeTitle: string, envelopeViewUrl: string): Promise<void> {
+    await this.email.sendEmail(this.ccNoticeOptions(email, name, envelopeTitle, envelopeViewUrl));
+  }
+
+  /** The CC notice as an outbox row only; see `queueInvitation`. */
+  async queueCcNotice(email: string, name: string, envelopeTitle: string, envelopeViewUrl: string): Promise<void> {
+    await this.email.queueEmail(this.ccNoticeOptions(email, name, envelopeTitle, envelopeViewUrl));
   }
 
   /**
@@ -59,6 +68,28 @@ ${renderButton("View status", envelopeViewUrl)}`,
     signingUrl: string,
   ): Promise<void> {
     await this.email.sendSignEnvelopeInvitationEmail(
+      recipientEmail,
+      recipientName,
+      senderName,
+      envelopeTitle,
+      message,
+      signingUrl,
+    );
+  }
+
+  /**
+   * The invitation as an outbox row only, written inside the caller's
+   * transaction. The outbox cron delivers it; nothing is attempted here.
+   */
+  async queueInvitation(
+    recipientEmail: string,
+    recipientName: string,
+    senderName: string,
+    envelopeTitle: string,
+    message: string | undefined,
+    signingUrl: string,
+  ): Promise<void> {
+    await this.email.queueSignEnvelopeInvitationEmail(
       recipientEmail,
       recipientName,
       senderName,

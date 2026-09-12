@@ -15,6 +15,7 @@ import { SignAuthMethodPolicy } from "./sign-auth-method.policy";
 import { SignTokensService } from "./sign-tokens.service";
 import { PlanLimitsService } from "../billing/core/plan-limits.service";
 import { buildTemplateSnapshot, parseTemplateSnapshot } from "./sign-template-snapshot";
+import { assertSnapshotDocumentsOwned } from "./lib/template-document-keys";
 import type {
   CreateTemplateInput,
   UpdateTemplateInput,
@@ -34,6 +35,7 @@ export class SignTemplatesService {
   ) {}
 
   async create(orgId: string, ownerMembershipId: number | null, input: CreateTemplateInput) {
+    assertSnapshotDocumentsOwned(orgId, parseTemplateSnapshot(input.templateJson));
     const [template] = await this.db
       .insert(signTemplates)
       .values({
@@ -73,6 +75,8 @@ export class SignTemplatesService {
 
   async update(orgId: string, templateId: number, input: UpdateTemplateInput, actor: RequestActorContext) {
     const template = await this.get(orgId, templateId);
+    if (input.templateJson !== undefined)
+      assertSnapshotDocumentsOwned(orgId, parseTemplateSnapshot(input.templateJson));
     const [updated] = await this.db
       .update(signTemplates)
       .set({ ...input, updatedAt: new Date() })
@@ -121,6 +125,7 @@ export class SignTemplatesService {
   async instantiate(orgId: string, senderMembershipId: number | null, templateId: number, input: CreateEnvelopeFromTemplateInput) {
     const template = await this.get(orgId, templateId);
     const snapshot = parseTemplateSnapshot(template.templateJson);
+    assertSnapshotDocumentsOwned(orgId, snapshot);
     if (!snapshot.roles || snapshot.roles.length === 0) {
       throw new BadRequestException("This template has no recipient roles configured");
     }

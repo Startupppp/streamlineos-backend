@@ -42,6 +42,18 @@ interface InvitationPlan {
   rawToken: string;
 }
 
+/**
+ * How a send's invitations leave the process.
+ *
+ * `after_commit` is the request path: the email is attempted the moment the
+ * request transaction commits, so a signer has their link within seconds.
+ * `outbox` is bulk send's: the invitation is written to the email outbox
+ * inside the row's own transaction and the outbox cron delivers it, so a row
+ * is `success` only if its invitation is durably queued, and a pass over five
+ * hundred rows does not fan five hundred provider calls out behind it.
+ */
+export type InvitationDelivery = "after_commit" | "outbox";
+
 @Injectable()
 export class SignEnvelopeDispatchService {
   constructor(
@@ -81,13 +93,33 @@ export class SignEnvelopeDispatchService {
    *
    * It returns false when the ambient context carries no hook array, and §4 is
    * explicit that the fallback is to run inline rather than drop the work.
+   *
+   * `outbox` delivery is the exception that proves the rule: the outbox row is
+   * a database write, so it belongs inside the transaction — the send and its
+   * invitation commit together or not at all — and no network call is made
+   * here. The token still reaches the outbox row's html either way, since the
+   * request path inserts the same row before its first attempt.
    */
   private async deliverInvitations(
     invitations: InvitationPlan[],
     senderNameStr: string,
     envelope: { title: string; message: string | null },
+    delivery: InvitationDelivery,
   ): Promise<void> {
     if (invitations.length === 0) return;
+    if (delivery === "outbox") {
+      for (const invitation of invitations) {
+        await this.notifications.queueInvitation(
+          invitation.email,
+          invitation.name,
+          senderNameStr,
+          envelope.title,
+          envelope.message ?? undefined,
+          this.tokens.buildSigningUrl(invitation.rawToken),
+        );
+      }
+      return;
+    }
     const deliver = async () => {
       for (const invitation of invitations) {
         await this.notifications.sendInvitation(
@@ -112,7 +144,12 @@ export class SignEnvelopeDispatchService {
     return member?.user?.name ?? "A StreamlineOS user";
   }
 
-  async send(orgId: string, envelopeId: number, actor: RequestActorContext) {
+  async send(
+    orgId: string,
+    envelopeId: number,
+    actor: RequestActorContext,
+    delivery: InvitationDelivery = "after_commit",
+  ) {
     const envelope = await this.findEnvelope(orgId, envelopeId);
     if (!isEnvelopeEditable(envelope.status)) {
       throw new ForbiddenException("Only draft envelopes can be sent");
@@ -188,13 +225,14 @@ export class SignEnvelopeDispatchService {
     });
 
     /*
-     * Bulk send is why the fallback inside `deliverInvitations` matters here:
-     * it reaches this method one row at a time inside
-     * `runInNewTenantTransaction`, which builds a context with no hook array,
-     * so `registerAfterCommit` returns false and the email goes out inline —
-     * inside that row's transaction, as it does today — rather than being
-     * dropped. The single-envelope route runs under
-     * `TenantContextInterceptor` and does defer.
+     * The single-envelope route runs under `TenantContextInterceptor`, whose
+     * context holds a hook array, so its invitations defer past the commit.
+     * Bulk send reaches this method one row at a time inside
+     * `runInNewTenantTransaction`; that context holds a hook array too, but a
+     * hook drained after the row's commit is fire-and-forget, so a provider
+     * refusal there would leave the row reading `success` with no invitation
+     * behind it. It asks for `outbox` delivery instead and the invitation
+     * commits with the row.
      */
     await this.deliverInvitations(
       sendPlans.flatMap((plan) =>
@@ -204,6 +242,7 @@ export class SignEnvelopeDispatchService {
       ),
       senderNameStr,
       envelope,
+      delivery,
     );
 
     /*
@@ -220,17 +259,18 @@ export class SignEnvelopeDispatchService {
           )
         : [];
     if (ccPlans.length > 0) {
-      const deliverCcNotices = async () => {
-        for (const cc of ccPlans) {
-          await this.notifications.sendCcNotice(
-            cc.email,
-            cc.name,
-            envelope.title,
-            `${appUrl()}/sign/envelopes/${envelopeId}`,
-          );
-        }
-      };
-      if (!registerAfterCommit(deliverCcNotices)) await deliverCcNotices();
+      const envelopeViewUrl = `${appUrl()}/sign/envelopes/${envelopeId}`;
+      if (delivery === "outbox") {
+        for (const cc of ccPlans)
+          await this.notifications.queueCcNotice(cc.email, cc.name, envelope.title, envelopeViewUrl);
+      } else {
+        const deliverCcNotices = async () => {
+          for (const cc of ccPlans) {
+            await this.notifications.sendCcNotice(cc.email, cc.name, envelope.title, envelopeViewUrl);
+          }
+        };
+        if (!registerAfterCommit(deliverCcNotices)) await deliverCcNotices();
+      }
     }
 
     await this.audit.record({
@@ -292,7 +332,7 @@ export class SignEnvelopeDispatchService {
      * reported deliveries anyway: a mid-loop SMTP throw rolled the whole
      * request back, so no caller ever saw a partial count.
      */
-    await this.deliverInvitations(invitations, senderNameStr, envelope);
+    await this.deliverInvitations(invitations, senderNameStr, envelope, "after_commit");
 
     await this.audit.record({
       orgId,
@@ -306,6 +346,45 @@ export class SignEnvelopeDispatchService {
     });
 
     return { resentCount: count };
+  }
+
+  /**
+   * A correction that changes where an invited recipient is reached.
+   *
+   * The link already mailed to the old address stays valid until its token is
+   * rotated — lookup is by digest, so a fresh token is what revokes it — and
+   * the new address has never been sent anything. Rotate, then invite the new
+   * address the same way `resend` does, after the correction commits. A
+   * recipient who has not been invited yet (pending, or the envelope is still a
+   * draft) needs neither: their first invitation goes to whatever address is on
+   * the row when the envelope is sent.
+   */
+  async reinviteCorrectedRecipient(
+    orgId: string,
+    envelopeId: number,
+    recipient: { id: number; name: string; email: string; recipientType: string; status: string },
+    actor: RequestActorContext,
+  ): Promise<boolean> {
+    const envelope = await this.findEnvelope(orgId, envelopeId);
+    if (!isEnvelopeSignable(envelope.status)) return false;
+    if (!isSigningType(recipient.recipientType)) return false;
+    if (recipient.status !== "invited" && recipient.status !== "viewed" && recipient.status !== "authenticated")
+      return false;
+
+    const rawToken = this.tokens.generateSigningToken();
+    await this.db
+      .update(signRecipients)
+      .set({ signingTokenHash: this.tokens.hash(rawToken), tokenRevokedAt: null, status: "invited" })
+      .where(and(eq(signRecipients.id, recipient.id), eq(signRecipients.orgId, orgId)));
+
+    const senderNameStr = await this.senderName(orgId, actor.membershipId);
+    await this.deliverInvitations(
+      [{ email: recipient.email, name: recipient.name, rawToken }],
+      senderNameStr,
+      envelope,
+      "after_commit",
+    );
+    return true;
   }
 
   async applyRecipientOutcome(
@@ -405,12 +484,12 @@ export class SignEnvelopeDispatchService {
        * The one caller of this method is the public signing flow, which is
        * `@Public()` — so `resolveTenant` finds no org, `TenantContextInterceptor`
        * opens nothing, and the enclosing transaction is the one
-       * `SignPublicService.withRecipientSession` opens. That is why it installs
-       * a hook array of its own: without it `registerAfterCommit` would return
-       * false on the only path that reaches here, and this deferral would be
-       * decoration over an unchanged send.
+       * `withRecipientSession` opens. It shadows the helper's hook array with
+       * one of its own so the next signer's invitation is drained *awaited*
+       * after the commit, with a provider failure logged in the signer's
+       * request rather than fired and forgotten.
        */
-      await this.deliverInvitations(invitations, senderNameStr, envelope);
+      await this.deliverInvitations(invitations, senderNameStr, envelope, "after_commit");
     }
 
     return {

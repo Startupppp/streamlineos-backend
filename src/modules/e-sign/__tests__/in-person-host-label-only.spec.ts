@@ -35,7 +35,7 @@ describe("in-person host is a label on an ordinary signing recipient", () => {
       recipientType: "in_person_host",
       status: "invited",
       email: "host@example.test",
-      signingTokenHash: "hash",
+      tokenExpiresAt: new Date("2030-01-01T00:00:00Z"),
     };
     expect(remindableRecipients([host])).toHaveLength(1);
   });
@@ -51,7 +51,7 @@ describe("in-person host is a label on an ordinary signing recipient", () => {
       recipientType: "in_person_host",
       status: "invited",
       email: null,
-      signingTokenHash: "hash",
+      tokenExpiresAt: new Date("2030-01-01T00:00:00Z"),
     };
     expect(remindableRecipients([legacyHost])).toHaveLength(0);
   });

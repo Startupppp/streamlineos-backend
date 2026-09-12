@@ -34,23 +34,25 @@ import {
  * the count a dry run reports has to be the count the real run produces, and
  * two copies of a filter are how those quietly diverge. A recipient with no
  * email or no issued token is skipped rather than failed — there is nothing to
- * remind them at.
+ * remind them at. Issuance is read from `tokenExpiresAt`, which `send` and the
+ * auto-advance stamp beside the token; the token's digest itself never leaves
+ * the public authentication path.
  */
 export function remindableRecipients<
   T extends {
     recipientType: string;
     status: string;
     email: string | null;
-    signingTokenHash: string | null;
+    tokenExpiresAt: Date | null;
   },
->(recipients: T[]): Array<T & { email: string; signingTokenHash: string }> {
+>(recipients: T[]): Array<T & { email: string; tokenExpiresAt: Date }> {
   return recipients.filter(
-    (r): r is T & { email: string; signingTokenHash: string } =>
+    (r): r is T & { email: string; tokenExpiresAt: Date } =>
       isSigningType(r.recipientType) &&
       (r.status === "invited" || r.status === "viewed" || r.status === "authenticated") &&
       r.email !== null &&
       r.email !== "" &&
-      r.signingTokenHash !== null,
+      r.tokenExpiresAt !== null,
   );
 }
 

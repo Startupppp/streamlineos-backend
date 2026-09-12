@@ -115,11 +115,19 @@ export async function runBulkSendPass(
     }
 
     try {
+      /*
+       * `outbox` delivery, so the invitation is an outbox row inside this same
+       * transaction: `success` below means the envelope is sent AND its
+       * invitation is durably queued, or neither happened. An after-commit
+       * hook would drain fire-and-forget after `commitRow` returns, and a
+       * provider refusal there would leave a `success` row with no invitation
+       * behind it and nothing in the error report.
+       */
       await commitRow(deps.db, orgId, async () => {
         const envelope = await deps.templates.instantiate(orgId, job.senderMembershipId, job.templateId, {
           recipients: [{ roleName, name, email: row.email, phone: row.phone }],
         });
-        await deps.envelopes.send(orgId, envelope.id, actor);
+        await deps.envelopes.send(orgId, envelope.id, actor, "outbox");
         await deps.db
           .update(signBulkSendRows)
           .set({ status: "success", envelopeId: envelope.id, errorMessage: null, updatedAt: new Date() })

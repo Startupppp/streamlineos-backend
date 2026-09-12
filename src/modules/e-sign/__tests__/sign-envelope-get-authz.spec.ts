@@ -14,6 +14,7 @@ import { ForbiddenException, NotFoundException } from "@nestjs/common";
 import type { Db } from "../../../db/drizzle.module";
 import { SignEnvelopesService } from "../sign-envelopes.service";
 import type { Request } from "express";
+import type { SignEnvelopeAccessService } from "../sign-envelope-access.service";
 import { SignEnvelopesController } from "../sign-envelopes.controller";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 
@@ -69,6 +70,9 @@ function makeService(envelope: ReturnType<typeof makeEnvelope> | null) {
   );
 }
 
+/** Read routes never consult it; the mutation gate is proved in bola-esign-envelope-children-404. */
+const envelopeAccessStub = { mustGetActionable: jest.fn() } as unknown as SignEnvelopeAccessService;
+
 describe("SignEnvelopesService.getFull — scope gate", () => {
   it("returns the envelope when viewAll is true regardless of sender", async () => {
     const svc = makeService(makeEnvelope(SENDER_MEMBERSHIP));
@@ -112,7 +116,7 @@ describe("SignEnvelopesController.get — scope forwarded from request", () => {
 
   it("forwards an unrestricted read to getFull when rbacScope is 'all'", async () => {
     const svc = { getFull: jest.fn().mockResolvedValue({ envelope: {}, documents: [], recipients: [], fields: [] }) } as unknown as SignEnvelopesService;
-    const ctrl = new SignEnvelopesController(svc);
+    const ctrl = new SignEnvelopesController(svc, envelopeAccessStub);
     const req = { rbacScope: "all" } as Request;
 
     await ctrl.get(ENVELOPE_ID, makeUser(), req);
@@ -125,7 +129,7 @@ describe("SignEnvelopesController.get — scope forwarded from request", () => {
 
   it("forwards a narrowed read to getFull when rbacScope is 'own'", async () => {
     const svc = { getFull: jest.fn().mockResolvedValue({ envelope: {}, documents: [], recipients: [], fields: [] }) } as unknown as SignEnvelopesService;
-    const ctrl = new SignEnvelopesController(svc);
+    const ctrl = new SignEnvelopesController(svc, envelopeAccessStub);
     const req = { rbacScope: "own" } as Request;
 
     await ctrl.get(ENVELOPE_ID, makeUser(), req);
@@ -139,7 +143,7 @@ describe("SignEnvelopesController.get — scope forwarded from request", () => {
 
   it("forwards a denied read when rbacScope is absent — fails closed", async () => {
     const svc = { getFull: jest.fn().mockResolvedValue({ envelope: {}, documents: [], recipients: [], fields: [] }) } as unknown as SignEnvelopesService;
-    const ctrl = new SignEnvelopesController(svc);
+    const ctrl = new SignEnvelopesController(svc, envelopeAccessStub);
     const req = {} as Request;
 
     await ctrl.get(ENVELOPE_ID, makeUser(), req);

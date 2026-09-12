@@ -27,6 +27,7 @@ import { actingMembershipId } from "../../common/auth/principal";
 import { Validate } from "../../common/validation/validate.decorator";
 import { AccessService } from "../access/access.service";
 import { SignDocumentsService } from "./sign-documents.service";
+import { SignEnvelopeAccessService } from "./sign-envelope-access.service";
 import { resolveEnvelopeViewScope } from "./sign-envelope-scope";
 import { uploadDocumentMetaSchema, type UploadDocumentMetaInput } from "./dto/e-sign.schemas";
 import { MultipartAction, ResponseSchema } from "../../common/openapi/zod-operation-contracts";
@@ -49,6 +50,7 @@ export class SignDocumentsController {
   constructor(
     private readonly documents: SignDocumentsService,
     private readonly access: AccessService,
+    private readonly envelopeAccess: SignEnvelopeAccessService,
   ) {}
 
   @Post("documents/upload")
@@ -60,14 +62,14 @@ export class SignDocumentsController {
   @Validate({ query: uploadDocumentMetaSchema })
   async upload(
     @UploadedFile() file: Express.Multer.File | undefined,
-    @Query("envelopeId", ParseIntPipe) envelopeId: number,
     @Query() query: UploadDocumentMetaInput,
     @CurrentUser() u: CurrentUserContext,
     @Req() req: Request,
   ) {
     if (!file) throw new BadRequestException("No file provided");
+    await this.envelopeAccess.mustGetActionable(u, query.envelopeId);
     return this.documents.upload(
-      envelopeId,
+      query.envelopeId,
       { buffer: file.buffer, originalName: file.originalname, mimeType: file.mimetype, size: file.size },
       query.orderIndex,
       { orgId: u.orgId, userId: u.userId, membershipId: actingMembershipId(u.principal), ipAddress: resolveClientIp(req), userAgent: req.headers["user-agent"] },
@@ -97,6 +99,7 @@ export class SignDocumentsController {
   @ResponseSchema(successSchema)
   @Validate({ params: documentIdParams })
   async remove(@Param("documentId", ParseIntPipe) documentId: number, @CurrentUser() u: CurrentUserContext) {
+    await this.envelopeAccess.mustGetActionableByDocument(u, documentId);
     await this.documents.delete(u.orgId, documentId);
     return { success: true };
   }

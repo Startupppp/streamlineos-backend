@@ -56,12 +56,12 @@ export async function withRecipientSession<T>(
      * Every public signing route is `@Public()`, so `JwtAuthGuard` returns
      * before setting `req.user`, `resolveTenant` finds no organisation and
      * `TenantContextInterceptor` opens nothing. The transaction below is
-     * therefore the outermost one on this path, and the context
-     * `runInTenantTransaction` builds carries no `afterCommit` array — which
-     * means `registerAfterCommit` would return false for everything running
-     * inside it, including the auto-advance invitation in
-     * `applyRecipientOutcome`. Deferring there without this would have been
-     * decoration over an unchanged send.
+     * therefore the outermost one on this path. `runInTenantTransaction` gives
+     * it a hook array of its own and drains that fire-and-forget after the
+     * commit; the array installed here shadows it so the hooks registered on
+     * this path — the auto-advance invitation in `applyRecipientOutcome` — are
+     * drained below, awaited, with a failure logged and reported inside the
+     * signer's request instead of after it has been answered.
      *
      * Installed only when we are the ones opening the transaction. If a caller
      * above already holds a context, the queue is theirs and drains after

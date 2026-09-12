@@ -28,7 +28,7 @@ import {
   type EnvelopeValidationResult,
 } from "./sign-envelope-validation.service";
 import { SignEnvelopeSweepsService } from "./sign-envelope-sweeps.service";
-import { SignEnvelopeDispatchService } from "./sign-envelope-dispatch.service";
+import { SignEnvelopeDispatchService, type InvitationDelivery } from "./sign-envelope-dispatch.service";
 import { SignSettingsService } from "./sign-settings.service";
 import {
   canTransitionEnvelope,
@@ -262,8 +262,13 @@ export class SignEnvelopesService {
     return this.validation.validate(orgId, envelopeId);
   }
 
-  send(orgId: string, envelopeId: number, actor: RequestActorContext) {
-    return this.dispatch.send(orgId, envelopeId, actor);
+  send(
+    orgId: string,
+    envelopeId: number,
+    actor: RequestActorContext,
+    delivery: InvitationDelivery = "after_commit",
+  ) {
+    return this.dispatch.send(orgId, envelopeId, actor, delivery);
   }
 
   async voidEnvelope(
@@ -352,13 +357,29 @@ export class SignEnvelopesService {
       );
     }
 
+    /*
+     * Each patched recipient must belong to THIS envelope. `recipients.update`
+     * is org-bound only, so without this a `sign:envelope:correct` holder could
+     * reach any recipient in the organisation through any envelope's correct
+     * route, and the audit row would land on the wrong envelope. Out of
+     * envelope reads as not found, the same answer a foreign id gets.
+     */
     for (const patch of input.recipients ?? []) {
-      await this.recipients.update(
+      const current = await this.recipients.get(orgId, patch.id);
+      if (current.envelopeId !== envelopeId) throw new NotFoundException("Recipient not found");
+      const updated = await this.recipients.update(
         orgId,
         patch.id,
         { name: patch.name, email: patch.email, phone: patch.phone },
         actor,
       );
+      if (patch.email !== undefined && patch.email !== current.email && updated.email)
+        await this.dispatch.reinviteCorrectedRecipient(
+          orgId,
+          envelopeId,
+          { ...updated, email: updated.email },
+          actor,
+        );
     }
 
     await this.audit.record({

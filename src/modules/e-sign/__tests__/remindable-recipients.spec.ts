@@ -14,12 +14,12 @@ const recipient = (over: Partial<{
   recipientType: string;
   status: string;
   email: string | null;
-  signingTokenHash: string | null;
+  tokenExpiresAt: Date | null;
 }> = {}) => ({
   recipientType: "signer",
   status: "invited",
   email: "signer@example.test",
-  signingTokenHash: "hash",
+  tokenExpiresAt: new Date("2030-01-01T00:00:00Z"),
   ...over,
 });
 
@@ -68,7 +68,7 @@ describe("remindableRecipients", () => {
      * No `signing_token_hash` means no signing link was ever minted for them.
      * Reminding them would mail a link to a session that does not exist.
      */
-    expect(remindableRecipients([recipient({ signingTokenHash: null })])).toHaveLength(0);
+    expect(remindableRecipients([recipient({ tokenExpiresAt: null })])).toHaveLength(0);
   });
 
   it("narrows the type, so callers cannot mail a null address", () => {

@@ -41,6 +41,21 @@ import {
 
 export type { EmailOptions } from "./email.provider";
 
+function signEnvelopeInvitationEmailOptions(
+  email: string,
+  recipientName: string,
+  senderName: string,
+  envelopeTitle: string,
+  message: string | undefined,
+  signingUrl: string,
+): EmailOptions {
+  return {
+    to: email,
+    subject: `${senderName} sent you a document to sign: ${envelopeTitle}`,
+    html: getSignEnvelopeInvitationEmailTemplate(recipientName, senderName, envelopeTitle, message, signingUrl),
+  };
+}
+
 @Injectable()
 export class EmailService extends EmailSendersBase {
   constructor(
@@ -432,11 +447,33 @@ export class EmailService extends EmailSendersBase {
     message: string | undefined,
     signingUrl: string,
   ): Promise<void> {
-    return this.sendEmail({
-      to: email,
-      subject: `${senderName} sent you a document to sign: ${envelopeTitle}`,
-      html: getSignEnvelopeInvitationEmailTemplate(recipientName, senderName, envelopeTitle, message, signingUrl),
-    });
+    return this.sendEmail(
+      signEnvelopeInvitationEmailOptions(email, recipientName, senderName, envelopeTitle, message, signingUrl),
+    );
+  }
+
+  /**
+   * The invitation as a durable outbox row and nothing else: no send attempt,
+   * so it can be written inside the transaction that sends the envelope and
+   * commit or roll back with it. Bulk send's per-row contract needs exactly
+   * that — see `SignEnvelopeDispatchService.deliverInvitations`.
+   */
+  queueSignEnvelopeInvitationEmail(
+    email: string,
+    recipientName: string,
+    senderName: string,
+    envelopeTitle: string,
+    message: string | undefined,
+    signingUrl: string,
+  ): Promise<void> {
+    return this.queueEmail(
+      signEnvelopeInvitationEmailOptions(email, recipientName, senderName, envelopeTitle, message, signingUrl),
+    );
+  }
+
+  /** `sendEmail`'s durable half: the outbox row without the first attempt. */
+  queueEmail(options: EmailOptions): Promise<void> {
+    return this.outbox.enqueueOnly(options);
   }
 
   sendSignReminderEmail(

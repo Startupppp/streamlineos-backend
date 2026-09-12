@@ -131,7 +131,13 @@ export const extendExpirationSchema = z.object({
 }).strict();
 export type ExtendExpirationInput = z.infer<typeof extendExpirationSchema>;
 
+/**
+ * `envelopeId` is part of this schema because `@Validate({ query })` parses the
+ * whole query string strictly: declared here, it is coerced and bound; absent,
+ * the interceptor refused every upload the builder sent as an unrecognised key.
+ */
 export const uploadDocumentMetaSchema = z.object({
+  envelopeId: z.coerce.number().int().positive(),
   orderIndex: z.coerce.number().int().min(0).default(0),
 }).strict();
 export type UploadDocumentMetaInput = z.infer<typeof uploadDocumentMetaSchema>;

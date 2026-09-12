@@ -12,6 +12,7 @@ import { actingMembershipId } from "../../common/auth/principal";
 import { Validate } from "../../common/validation/validate.decorator";
 import { AccessService } from "../access/access.service";
 import { SignRecipientsService } from "./sign-recipients.service";
+import { SignEnvelopeAccessService } from "./sign-envelope-access.service";
 import { resolveEnvelopeViewScope } from "./sign-envelope-scope";
 import {
   createRecipientSchema,
@@ -38,6 +39,7 @@ export class SignRecipientsController {
   constructor(
     private readonly recipients: SignRecipientsService,
     private readonly access: AccessService,
+    private readonly envelopeAccess: SignEnvelopeAccessService,
   ) {}
 
   @Post("envelopes/:envelopeId/recipients")
@@ -45,12 +47,13 @@ export class SignRecipientsController {
   @RequirePermission("sign:envelope:create")
   @ResponseSchema(recipientMutationResponseSchema)
   @Validate({ params: envelopeIdParams, body: createRecipientSchema })
-  add(
+  async add(
     @Param("envelopeId", ParseIntPipe) envelopeId: number,
     @Body() body: CreateRecipientInput,
     @CurrentUser() u: CurrentUserContext,
     @Req() req: Request,
   ) {
+    await this.envelopeAccess.mustGetActionable(u, envelopeId);
     return this.recipients.add(u.orgId, envelopeId, body, { orgId: u.orgId, userId: u.userId, ipAddress: resolveClientIp(req) });
   }
 
@@ -67,12 +70,13 @@ export class SignRecipientsController {
   @RequirePermission("sign:envelope:create")
   @ResponseSchema(recipientMutationResponseSchema)
   @Validate({ params: recipientIdParams, body: updateRecipientSchema })
-  update(
+  async update(
     @Param("recipientId", ParseIntPipe) recipientId: number,
     @Body() body: UpdateRecipientInput,
     @CurrentUser() u: CurrentUserContext,
     @Req() req: Request,
   ) {
+    await this.envelopeAccess.mustGetActionableByRecipient(u, recipientId);
     return this.recipients.update(u.orgId, recipientId, body, { orgId: u.orgId, userId: u.userId, ipAddress: resolveClientIp(req) });
   }
 
@@ -81,6 +85,7 @@ export class SignRecipientsController {
   @ResponseSchema(successSchema)
   @Validate({ params: recipientIdParams })
   async remove(@Param("recipientId", ParseIntPipe) recipientId: number, @CurrentUser() u: CurrentUserContext, @Req() req: Request) {
+    await this.envelopeAccess.mustGetActionableByRecipient(u, recipientId);
     await this.recipients.remove(u.orgId, recipientId, { orgId: u.orgId, userId: u.userId, ipAddress: resolveClientIp(req) });
     return { success: true };
   }

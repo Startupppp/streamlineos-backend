@@ -9,6 +9,7 @@ import { SignAuthMethodPolicy } from "./sign-auth-method.policy";
 import { mustGetVisibleEnvelope } from "./sign-envelope-scope";
 import type { ScopedRead } from "../access/scoped-read";
 import { isEnvelopeEditable, isEnvelopeTerminal } from "./sign-state";
+import { RECIPIENT_WIRE_COLUMNS, RECIPIENT_WIRE_SELECTION } from "./lib/recipient-projection";
 import type { CreateRecipientInput, UpdateRecipientInput } from "./dto/e-sign.schemas";
 import type { RequestActorContext } from "../../common/audit/actor-context";
 
@@ -77,7 +78,7 @@ export class SignRecipientsService {
         authMethod: input.authMethod,
         accessCodeHash: input.accessCode ? this.tokens.hash(input.accessCode) : null,
       })
-      .returning();
+      .returning(RECIPIENT_WIRE_COLUMNS);
 
     await this.audit.record({
       orgId,
@@ -143,7 +144,7 @@ export class SignRecipientsService {
       .update(signRecipients)
       .set(patch)
       .where(and(eq(signRecipients.id, recipientId), eq(signRecipients.orgId, orgId)))
-      .returning();
+      .returning(RECIPIENT_WIRE_COLUMNS);
 
     await this.audit.record({
       orgId,
@@ -184,6 +185,7 @@ export class SignRecipientsService {
   async get(orgId: string, recipientId: number) {
     const recipient = await this.db.query.signRecipients.findFirst({
       where: and(eq(signRecipients.id, recipientId), eq(signRecipients.orgId, orgId)),
+      columns: RECIPIENT_WIRE_SELECTION,
     });
     if (!recipient) throw new NotFoundException("Recipient not found");
     return recipient;
@@ -198,6 +200,7 @@ export class SignRecipientsService {
     await mustGetVisibleEnvelope(this.db, read, membershipId, envelopeId, "Envelope not found");
     return this.db.query.signRecipients.findMany({
       where: and(eq(signRecipients.orgId, read.orgId), eq(signRecipients.envelopeId, envelopeId)),
+      columns: RECIPIENT_WIRE_SELECTION,
       orderBy: (r, { asc }) => [asc(r.routingOrder), asc(r.id)],
       limit: 100,
     });
