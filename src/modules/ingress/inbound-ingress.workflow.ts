@@ -8,6 +8,7 @@ import type { StepContext, WorkflowRunContext } from "../../common/workflow";
 import { runInNewTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
 import { getRegionRegistry, hasRegionRegistry } from "../../common/region/region-registry";
 import { AutonomyService } from "../autonomy/autonomy.service";
+import { RelationshipSignalsService } from "../autonomy/relationship-signals.service";
 import { RelationshipStateService } from "../relationships/relationship-state.service";
 import { AutonomyScoringService } from "../autonomy/autonomy-scoring.service";
 import { PlanLimitsService } from "../billing/core/plan-limits.service";
@@ -68,6 +69,12 @@ export class InboundIngressWorkflow implements OnModuleInit {
      * be written is a customer's message the CRM never filed.
      */
     @Optional() private readonly relationships?: RelationshipStateService,
+    /**
+     * Optional for the same reason `autonomy` is: ticket 03's judgement must
+     * not gate filing either. Reached through `AutonomyModule`, already
+     * imported here for `AutonomyService` — no new module edge.
+     */
+    @Optional() private readonly relationshipSignals?: RelationshipSignalsService,
   ) {}
 
   onModuleInit(): void {
@@ -153,7 +160,23 @@ export class InboundIngressWorkflow implements OnModuleInit {
      */
     await step.run("materialise-relationship", async () => {
       if (!this.relationships) return null;
-      await this.relationships.tryOnActivity(context.organizationId, activity.activityId);
+      const delta = await this.relationships.tryOnActivity(context.organizationId, activity.activityId);
+      /*
+       * Ticket 03's judgement, folded into this same step rather than a step
+       * of its own: `step.run` memoizes a completed step, so a retry replays
+       * this result instead of re-running it — exactly what stops a retried
+       * delivery from writing the same decision twice. A second step would
+       * re-run on every retry that reached it, since its own memo would be
+       * fresh each time this one already was not.
+       */
+      if (delta && this.relationshipSignals) {
+        await this.relationshipSignals.evaluate(
+          context.organizationId,
+          activity.activityId,
+          delta.before,
+          delta.after,
+        );
+      }
       return null;
     });
 

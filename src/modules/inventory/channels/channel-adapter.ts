@@ -221,7 +221,9 @@ export interface ChannelSnapshotRequest {
   readonly storeUrl: string | null;
   /** The SKUs we publish to this channel, which is what we ask it about. */
   readonly skus: readonly string[];
+  readonly settings?: Readonly<Record<string, unknown>>;
 }
+
 
 export interface ChannelAdapter {
   readonly code: string;

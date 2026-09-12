@@ -1,4 +1,4 @@
-import { BadRequestException, Inject, Injectable } from "@nestjs/common";
+import { BadRequestException, Inject, Injectable, Optional } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
 import { and, eq, isNull } from "drizzle-orm";
 import { deals, dealActivities, dealApprovals, dealStageTransitions } from "../../db/schema";
@@ -14,6 +14,7 @@ import { CrmBlueprintsService } from "../crm/metadata/crm-blueprints.service";
 import { CrmMetadataService } from "../crm/metadata/crm-metadata.service";
 import { CrmValidationService } from "../crm/metadata/crm-validation.service";
 import { CrmAutomationBusService } from "../crm/automation-studio/crm-automation-bus.service";
+import { CommissionService } from "../commission/commission.service";
 import { DealsCrudService } from "./deals-crud.service";
 import { DealsActivitiesService } from "./deals-activities.service";
 import { DealsImportExportService } from "./deals-import-export.service";
@@ -66,6 +67,12 @@ export class DealsService {
     private readonly activities: DealsActivitiesService,
     private readonly importExport: DealsImportExportService,
     private readonly lifecycle: LifecycleService,
+    /**
+     * Optional so a deployment with commission plans unconfigured still
+     * moves deals — see `deal-update-effects.ts`'s own comment on why the
+     * clawback trigger checks for this rather than assuming it.
+     */
+    @Optional() private readonly commission?: CommissionService,
   ) {}
 
   listDeals(read: ScopedRead, query: ListDealsInput) {
@@ -131,6 +138,7 @@ export class DealsService {
       webhooksDispatch: this.webhooksDispatch,
       crmMetadata: this.crmMetadata,
       bus: this.bus,
+      commission: this.commission,
     };
   }
 

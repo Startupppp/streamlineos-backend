@@ -83,7 +83,7 @@ function store() {
 describe("CommissionService — cross-tenant isolation", () => {
   it("deny: listPlans shows the attacker none of another org's plans", async () => {
     const t = store();
-    const plans = await new CommissionService(t.db).listPlans(ATTACKER_ORG);
+    const plans = await new CommissionService(t.db, {} as never).listPlans(ATTACKER_ORG);
 
     expect(plans).toEqual([]);
     expect(t.orgBound(t.on(crmCommissionPlans, "select")[0], crmCommissionPlans.orgId)).toEqual([ATTACKER_ORG]);
@@ -91,7 +91,7 @@ describe("CommissionService — cross-tenant isolation", () => {
 
   it("control: listPlans returns the owning org's plan", async () => {
     const t = store();
-    const plans = await new CommissionService(t.db).listPlans(OWNER_ORG);
+    const plans = await new CommissionService(t.db, {} as never).listPlans(OWNER_ORG);
 
     expect(plans).toEqual([expect.objectContaining({ planId: "plan-owner" })]);
   });
@@ -99,7 +99,7 @@ describe("CommissionService — cross-tenant isolation", () => {
   it("deny: getPlan on another org's plan id is a 404 and reads none of its versions or assignments", async () => {
     const t = store();
 
-    await expect(new CommissionService(t.db).getPlan(ATTACKER_ORG, "plan-owner")).rejects.toBeInstanceOf(
+    await expect(new CommissionService(t.db, {} as never).getPlan(ATTACKER_ORG, "plan-owner")).rejects.toBeInstanceOf(
       NotFoundException,
     );
     expect(t.orgBound(t.on(crmCommissionPlans, "select")[0], crmCommissionPlans.orgId)).toEqual([ATTACKER_ORG]);
@@ -109,7 +109,7 @@ describe("CommissionService — cross-tenant isolation", () => {
 
   it("control: getPlan returns the owning org's plan with its own versions and assignments", async () => {
     const t = store();
-    const result = await new CommissionService(t.db).getPlan(OWNER_ORG, "plan-owner");
+    const result = await new CommissionService(t.db, {} as never).getPlan(OWNER_ORG, "plan-owner");
 
     expect(result.plan).toMatchObject({ planId: "plan-owner" });
     expect(result.versions).toHaveLength(1);
@@ -124,7 +124,7 @@ describe("CommissionService — cross-tenant isolation", () => {
 
   it("deny: listEarnings for another org's rep returns nothing, even to a view-all viewer", async () => {
     const t = store();
-    const earnings = await new CommissionService(t.db).listEarnings(
+    const earnings = await new CommissionService(t.db, {} as never).listEarnings(
       ATTACKER_ORG,
       { userId: "rep-owner", limit: 50, offset: 0 } as never,
       VIEW_ALL,
@@ -138,7 +138,7 @@ describe("CommissionService — cross-tenant isolation", () => {
 
   it("control: listEarnings returns the owning org's earning", async () => {
     const t = store();
-    const earnings = await new CommissionService(t.db).listEarnings(
+    const earnings = await new CommissionService(t.db, {} as never).listEarnings(
       OWNER_ORG,
       { userId: "rep-owner", limit: 50, offset: 0 } as never,
       { userId: "mgr-owner", viewAll: true },
@@ -151,7 +151,7 @@ describe("CommissionService — cross-tenant isolation", () => {
     const t = store();
 
     await expect(
-      new CommissionService(t.db).approveEarning(ATTACKER_ORG, "earn-owner", "usr-attacker"),
+      new CommissionService(t.db, {} as never).approveEarning(ATTACKER_ORG, "earn-owner", "usr-attacker"),
     ).rejects.toBeInstanceOf(ConflictException);
     expect(t.orgBound(t.on(crmCommissionEarnings, "update")[0], crmCommissionEarnings.orgId)).toEqual([
       ATTACKER_ORG,
@@ -160,7 +160,7 @@ describe("CommissionService — cross-tenant isolation", () => {
 
   it("control: approveEarning approves the owning org's calculated earning", async () => {
     const t = store();
-    const approved = await new CommissionService(t.db).approveEarning(OWNER_ORG, "earn-owner", "mgr-owner");
+    const approved = await new CommissionService(t.db, {} as never).approveEarning(OWNER_ORG, "earn-owner", "mgr-owner");
 
     expect(approved).toMatchObject({ earningId: "earn-owner", status: "APPROVED", approvedBy: "mgr-owner" });
   });

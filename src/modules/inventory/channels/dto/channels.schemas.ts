@@ -18,6 +18,8 @@ export const createChannelSchema = z.object({
   publishThreshold: z.string().optional(),
   warehouseIds: z.array(z.number().int()).max(CHANNEL_BULK_IDS_MAX).optional().default([]),
   settings: z.record(z.string(), z.unknown()).optional(),
+  apiCredential: z.string().min(1).max(2000).optional(),
+  webhookSecret: z.string().min(1).max(2000).optional(),
 }).strict();
 export type CreateChannelInput = z.infer<typeof createChannelSchema>;
 
@@ -28,8 +30,11 @@ export const updateChannelSchema = z.object({
   warehouseIds: z.array(z.number().int()).max(CHANNEL_BULK_IDS_MAX).optional(),
   status: z.enum(["ACTIVE", "PAUSED"]).optional(),
   settings: z.record(z.string(), z.unknown()).optional(),
+  apiCredential: z.string().min(1).max(2000).optional(),
+  webhookSecret: z.string().min(1).max(2000).optional(),
 }).strict();
 export type UpdateChannelInput = z.infer<typeof updateChannelSchema>;
+
 
 export const listPublicationsQuerySchema = z.object({
   status: z.enum(["PENDING", "PUBLISHED", "FAILED"]).optional(),
@@ -49,6 +54,8 @@ export const create3plConnectionSchema = z.object({
   externalWarehouseRef: z.string().optional(),
   skuMapping: z.record(z.string(), z.string()).optional(),
   settings: z.record(z.string(), z.unknown()).optional(),
+  apiCredential: z.string().min(1).max(2000).optional(),
+  webhookSecret: z.string().min(1).max(2000).optional(),
 }).strict();
 export type Create3plConnectionInput = z.infer<typeof create3plConnectionSchema>;
 
@@ -59,5 +66,7 @@ export const update3plConnectionSchema = z.object({
   skuMapping: z.record(z.string(), z.string()).optional(),
   status: z.enum(["DISCONNECTED", "CONNECTED", "ERROR"]).optional(),
   settings: z.record(z.string(), z.unknown()).optional(),
+  apiCredential: z.string().min(1).max(2000).optional(),
+  webhookSecret: z.string().min(1).max(2000).optional(),
 }).strict();
 export type Update3plConnectionInput = z.infer<typeof update3plConnectionSchema>;

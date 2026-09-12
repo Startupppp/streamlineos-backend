@@ -22,6 +22,7 @@ import { AutonomyReviewController } from "./autonomy-review.controller";
 import { OutboundController } from "./outbound.controller";
 import { ColdOutboundAdminController } from "./cold-outbound-admin.controller";
 import { ColdOutboundAdminService } from "./cold-outbound-admin.service";
+import { RelationshipSignalsService } from "./relationship-signals.service";
 
 /**
  * The part of the product that acts without being asked.
@@ -74,7 +75,15 @@ import { ColdOutboundAdminService } from "./cold-outbound-admin.service";
      * dead-lettered on arrival for want of a handler rather than failing at boot.
      */
     OutboundWorkflow,
+    /** Phase 4 ticket 03 — needs `DealsModule`, already imported above. */
+    RelationshipSignalsService,
   ],
-  exports: [AutonomyService, AutonomyScoringService, AutonomyRepairService, OutboundService],
+  exports: [
+    AutonomyService,
+    AutonomyScoringService,
+    AutonomyRepairService,
+    OutboundService,
+    RelationshipSignalsService,
+  ],
 })
 export class AutonomyModule {}

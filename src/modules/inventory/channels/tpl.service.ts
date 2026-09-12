@@ -6,7 +6,13 @@ import { CacheService } from "../../../common/cache/cache.service";
 import { CACHE_KEYS, CACHE_TTL } from "../../../common/cache/cache-keys";
 import { InventoryAuditService } from "../stock-engine/inventory-audit.service";
 import { inv3plConnections } from "../../../db/schema";
+import { encryptSecret, maskSecretHint } from "../../../common/security/secret-encryption.util";
 import type { Create3plConnectionInput, Update3plConnectionInput } from "./dto/channels.schemas";
+
+function sanitizeConnectionRow<T extends Record<string, any>>(row: T) {
+  const { apiCredentialEncrypted, webhookSecretEncrypted, ...safe } = row;
+  return safe;
+}
 
 @Injectable()
 export class TplService {
@@ -16,10 +22,10 @@ export class TplService {
     private readonly audit: InventoryAuditService,
   ) {}
 
-  listConnections(orgId: string, page = 1, limit = 100) {
+  async listConnections(orgId: string, page = 1, limit = 100) {
     const safeLimit = Math.min(limit, 100);
     const offset = (page - 1) * safeLimit;
-    return this.cache.cached(
+    const rows = await this.cache.cached(
       CACHE_KEYS.inv3plList(orgId),
       () =>
         this.db.query.inv3plConnections.findMany({
@@ -30,12 +36,25 @@ export class TplService {
         }),
       CACHE_TTL.MEDIUM,
     );
+    return rows.map(sanitizeConnectionRow);
   }
 
   async createConnection(orgId: string, userId: string, input: Create3plConnectionInput) {
+    const { apiCredential, webhookSecret, ...rest } = input;
+    const apiCredentialEncrypted = apiCredential ? encryptSecret(apiCredential) : null;
+    const apiCredentialHint = apiCredential ? maskSecretHint(apiCredential) : null;
+    const webhookSecretEncrypted = webhookSecret ? encryptSecret(webhookSecret) : null;
+
     const [connection] = await this.db
       .insert(inv3plConnections)
-      .values({ orgId, status: "DISCONNECTED", ...input })
+      .values({
+        orgId,
+        status: "DISCONNECTED",
+        ...rest,
+        apiCredentialEncrypted,
+        apiCredentialHint,
+        webhookSecretEncrypted,
+      })
       .returning();
 
     await this.audit.insert(this.db, {
@@ -48,7 +67,7 @@ export class TplService {
     });
 
     await this.cache.invalidate(CACHE_KEYS.inv3plList(orgId));
-    return connection;
+    return sanitizeConnectionRow(connection);
   }
 
   async updateConnection(
@@ -62,9 +81,20 @@ export class TplService {
     });
     if (!existing) throw new NotFoundException("3PL connection not found");
 
+    const { apiCredential, webhookSecret, ...rest } = input;
+    const patch: Record<string, unknown> = { ...rest, updatedAt: new Date() };
+
+    if (apiCredential !== undefined) {
+      patch.apiCredentialEncrypted = apiCredential ? encryptSecret(apiCredential) : null;
+      patch.apiCredentialHint = apiCredential ? maskSecretHint(apiCredential) : null;
+    }
+    if (webhookSecret !== undefined) {
+      patch.webhookSecretEncrypted = webhookSecret ? encryptSecret(webhookSecret) : null;
+    }
+
     const [updated] = await this.db
       .update(inv3plConnections)
-      .set({ ...input, updatedAt: new Date() })
+      .set(patch)
       .where(and(eq(inv3plConnections.id, connectionId), eq(inv3plConnections.orgId, orgId)))
       .returning();
 
@@ -79,7 +109,7 @@ export class TplService {
     });
 
     await this.cache.invalidate(CACHE_KEYS.inv3plList(orgId));
-    return updated;
+    return sanitizeConnectionRow(updated);
   }
 
   async syncConnection(orgId: string, userId: string, connectionId: number) {

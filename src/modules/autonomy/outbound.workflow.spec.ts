@@ -170,6 +170,7 @@ function allowingFacts(over: Partial<SendTimeFacts> = {}): SendTimeFacts {
   return {
     now: OPEN_HOURS,
     outboundClass: "follow_up",
+    partyDeleted: false,
     consent: "UNKNOWN",
     consentExpiresAt: null,
     suppressed: false,

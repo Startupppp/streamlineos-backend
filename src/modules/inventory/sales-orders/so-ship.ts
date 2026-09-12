@@ -263,6 +263,11 @@ export async function postShipment(
     sourceType: "inv_sales_order",
     sourceId: String(soId),
     reason: `Shipment for SO ${so.soNumber}`,
+    // The shipment's own business date, not "today" — so the period guard
+    // (PeriodsService.assertPeriodOpen, via InventoryAccountingBridge.assertOpen)
+    // checks a backdated shipment against the period it actually belongs to
+    // instead of always passing because the current month is open.
+    postingDate: data.shipDate,
     movements: movements.map((m) => ({
       transactionType: "SALE",
       productVariantId: m.productVariantId,

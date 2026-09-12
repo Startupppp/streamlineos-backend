@@ -216,6 +216,32 @@ export function planReversal(
        */
       return refuse("not-reversible", "A message that has already gone cannot be taken back.");
 
+    case "participant.changed":
+      /**
+       * A recorded observation, never a write anywhere — the whole point of
+       * classifying it `instant` is that nothing needs undoing for it to
+       * already be "reversed". No `TargetState` kind carries a decision that
+       * touched nothing, so this is a refusal rather than a no-op plan.
+       */
+      return refuse("not-reversible", "This is a recorded observation, not a write — there is nothing to take back.");
+
+    case "thread.forked":
+      /**
+       * A real write — this kind creates a deal — but not through THIS
+       * mechanism yet: `TargetState`'s `"deal"` variant carries `stage` for
+       * `stage.advanced`'s restore, not the `deletedAt` a delete-and-restore
+       * plan here would need, and adding it is `stage.advanced`'s target
+       * loader's call to make, not this ticket's. The deal this created is an
+       * ordinary deal a reviewer can delete the ordinary way — through
+       * `DELETE /deals/:dealId`, gated by the same permission as any other —
+       * so "not reversible via this feed" is a scope limit on the one-click
+       * action, not on whether the deal can be removed at all.
+       */
+      return refuse(
+        "not-reversible",
+        "Delete the opportunity this opened from the deal itself; there is no one-click undo for it here yet.",
+      );
+
     default: {
       return refuse("unsupported-kind", `Unknown action type: ${String(decision.kind satisfies never)}`);
     }

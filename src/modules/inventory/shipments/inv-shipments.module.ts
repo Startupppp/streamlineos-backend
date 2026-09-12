@@ -21,6 +21,7 @@ import { CarrierTransportRegistry } from "./transport/carrier-transport.registry
 import { CarrierCredentialsService } from "./transport/carrier-credentials.service";
 import { CarrierWebhookReceiverService } from "./transport/carrier-webhook.service";
 import { ReferenceHttpCarrierAdapter } from "./transport/reference-http.adapter";
+import { DelhiveryHttpCarrierAdapter } from "./transport/delhivery-http.adapter";
 
 @Module({
   // B6. Packing resolves a scan the way picking does, so the bench accepts the
@@ -57,6 +58,7 @@ import { ReferenceHttpCarrierAdapter } from "./transport/reference-http.adapter"
     CarrierStatusService,
     CarrierAdapterRegistry,
     ReferenceHttpCarrierAdapter,
+    DelhiveryHttpCarrierAdapter,
     CarrierTransportRegistry,
     CarrierCredentialsService,
     CarrierTransportService,

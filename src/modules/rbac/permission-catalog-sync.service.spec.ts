@@ -61,7 +61,8 @@ describe("PermissionCatalogSyncService.sync — administering module column", ()
           if (table === permissions) inserted = rows;
           return {
             onConflictDoUpdate: (args: { set: Record<string, unknown> }) => {
-              if (Object.keys(conflictSet).length === 0) conflictSet = args.set;
+              if (table === permissions && Object.keys(conflictSet).length === 0)
+                conflictSet = args.set;
               return Promise.resolve();
             },
             onConflictDoNothing: () => Promise.resolve(),

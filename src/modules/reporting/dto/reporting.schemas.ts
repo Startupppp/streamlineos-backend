@@ -191,6 +191,9 @@ export const updateDefinitionSchema = z
 
 export const runAdHocSchema = z.object({ query: queryDescriptionSchema }).strict();
 
+/** Phase 5 ticket 15 — a plain-language question, proposed as a query description. */
+export const nlProposeSchema = z.object({ question: z.string().min(1).max(500) }).strict();
+
 /** Overrides for a saved report, so one definition serves a date range picker. */
 export const runDefinitionSchema = z
   .object({
@@ -209,6 +212,7 @@ export const listQuerySchema = z
 export type CreateDefinitionInput = z.infer<typeof createDefinitionSchema>;
 export type UpdateDefinitionInput = z.infer<typeof updateDefinitionSchema>;
 export type RunAdHocInput = z.infer<typeof runAdHocSchema>;
+export type NlProposeInput = z.infer<typeof nlProposeSchema>;
 export type RunDefinitionInput = z.infer<typeof runDefinitionSchema>;
 export type ListQuery = z.infer<typeof listQuerySchema>;
 

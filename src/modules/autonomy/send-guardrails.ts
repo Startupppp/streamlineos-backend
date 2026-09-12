@@ -30,6 +30,17 @@ export interface SendTimeFacts {
   readonly now: Date;
   readonly outboundClass: OutboundClass;
 
+  /**
+   * Whether the party this message is addressed to has been soft-deleted (or
+   * is simply gone) since the draft was held.
+   *
+   * A hold can sit for hours, and a party can be deleted, merged away, or
+   * erased inside that window — nothing about placing the hold re-checks that
+   * before the send fires. Read fresh at send time like every other fact
+   * here, never carried from the draft.
+   */
+  readonly partyDeleted: boolean;
+
   /** Read from the consent model at send time, not copied from the draft. */
   readonly consent: ConsentStatus;
   readonly consentExpiresAt: Date | null;
@@ -60,6 +71,7 @@ export interface SendTimeFacts {
 }
 
 export type GuardrailBlock =
+  | "party-deleted"
   | "suppressed"
   | "opted-out"
   | "consent-expired"
@@ -155,6 +167,12 @@ export function exceedsFrequencyCap(sends: readonly Date[], now: Date): boolean 
  * happen, and would report the wrong reason to the person reading the ledger.
  */
 export function evaluateGuardrails(facts: SendTimeFacts): GuardrailVerdict {
+  // Absolute, and checked first: every other reason below is about whether
+  // this party should be written to; this one is about whether there is
+  // still a party there to write to. A hold placed against a live party can
+  // outlive that party, and nothing upstream of send time re-checks it.
+  if (facts.partyDeleted) return { allow: false, action: "block", reason: "party-deleted" };
+
   // Absolute. A suppressed address is undeliverable as well as unwanted, and
   // continuing to send to one damages delivery for every other recipient.
   if (facts.suppressed) return { allow: false, action: "block", reason: "suppressed" };
@@ -213,6 +231,8 @@ export function evaluateGuardrails(facts: SendTimeFacts): GuardrailVerdict {
 /** What the ledger and the review feed say about a refusal. */
 export function guardrailSummary(reason: GuardrailBlock): string {
   switch (reason) {
+    case "party-deleted":
+      return "The party this was addressed to was deleted while it was waiting.";
     case "suppressed":
       return "The address is on a suppression list; nothing was sent.";
     case "opted-out":

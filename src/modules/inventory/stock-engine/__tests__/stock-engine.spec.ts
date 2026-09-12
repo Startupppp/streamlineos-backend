@@ -411,6 +411,112 @@ describe("StockEngineService", () => {
     });
   });
 
+  /**
+   * `resolvePostingDate` defaults an unset `cmd.postingDate` to today, so a
+   * backdated receipt/shipment is only checked against its real transaction
+   * date when the caller actually threads that date onto the command —
+   * `grn-post-tx.ts` (`grn.receivedDate`) and `so-ship.ts` (`data.shipDate`)
+   * both used to omit it, so a receipt or shipment dated inside an
+   * already-closed period was checked against TODAY's period instead and
+   * never correctly blocked. This asserts the engine's half of that fix:
+   * given a real postingDate, `PeriodsService.assertPeriodOpen` (reached via
+   * `InventoryAccountingBridge.assertOpen`) is asked about that date, not
+   * today, and a rejection from it aborts the whole command.
+   */
+  describe("execute — posting date reaches the period guard", () => {
+    // `StockEngineService.assertPeriodOpen` delegates to `assertStockPeriodOpen(books,
+    // periods, orgId, postingDate)` (accounting-bridge.ts), which is a no-op unless
+    // `books.findDefault` resolves a book — every mock here supplies one so the
+    // guard actually runs, then asks `periods.periodForDate(book.id, postingDate)`.
+    const book = { id: "book1" };
+
+    it("passes cmd.postingDate through to the period guard rather than today", async () => {
+      const tx = buildTx();
+      setupInserts(tx);
+      const books = { findDefault: jest.fn(async () => book) };
+      const periods = { periodForDate: jest.fn(async () => null) };
+      const apply = new MovementApplyService(defaultAudit() as never, defaultMovementCosting() as never);
+      const service = new StockEngineService(
+        buildDb(tx) as never,
+        defaultSettings() as never,
+        defaultCache() as never,
+        defaultValuation() as never,
+        defaultWarehouseScope() as never,
+        periods as never,
+        books as never,
+        apply,
+      );
+
+      await service.execute("org1", "u1", {
+        ...baseCmd,
+        idempotencyKey: "backdated-1",
+        postingDate: "2020-01-15",
+      });
+
+      expect(periods.periodForDate).toHaveBeenCalledWith(book.id, "2020-01-15");
+    });
+
+    it("falls back to today's date only when the caller supplies no postingDate at all", async () => {
+      const tx = buildTx();
+      setupInserts(tx);
+      const books = { findDefault: jest.fn(async () => book) };
+      const periods = { periodForDate: jest.fn(async () => null) };
+      const apply = new MovementApplyService(defaultAudit() as never, defaultMovementCosting() as never);
+      const service = new StockEngineService(
+        buildDb(tx) as never,
+        defaultSettings() as never,
+        defaultCache() as never,
+        defaultValuation() as never,
+        defaultWarehouseScope() as never,
+        periods as never,
+        books as never,
+        apply,
+      );
+
+      const todayIso = new Date().toISOString().slice(0, 10);
+      await service.execute("org1", "u1", { ...baseCmd, idempotencyKey: "no-date-1" });
+
+      expect(periods.periodForDate).toHaveBeenCalledWith(book.id, todayIso);
+    });
+
+    it("blocks the whole command when the real transaction date falls in a closed period", async () => {
+      const tx = buildTx();
+      setupInserts(tx);
+      // Stands in for `PeriodsService.periodForDate`, which `assertStockPeriodOpen`
+      // turns into a ConflictException the moment the resolved period is LOCKED.
+      const books = { findDefault: jest.fn(async () => book) };
+      const periods = {
+        periodForDate: jest.fn(async (_bookId: string, postingDate: string) =>
+          postingDate === "2020-01-15" ? { name: "Jan 2020", status: "LOCKED" } : null,
+        ),
+      };
+      const apply = new MovementApplyService(defaultAudit() as never, defaultMovementCosting() as never);
+      const service = new StockEngineService(
+        buildDb(tx) as never,
+        defaultSettings() as never,
+        defaultCache() as never,
+        defaultValuation() as never,
+        defaultWarehouseScope() as never,
+        periods as never,
+        books as never,
+        apply,
+      );
+
+      await expect(
+        service.execute("org1", "u1", {
+          ...baseCmd,
+          idempotencyKey: "backdated-closed",
+          postingDate: "2020-01-15",
+        }),
+      ).rejects.toThrow(ConflictException);
+
+      // Nothing was posted: the ledger insert chains set up by `setupInserts`
+      // are for the idempotency claim only, so a stock transaction row was
+      // never reached once the period guard threw.
+      expect(tx.update).not.toHaveBeenCalled();
+    });
+  });
+
   // Weighted-average recomputation and FIFO layer consumption moved to
   // ValuationService — covered directly in valuation.service.spec.ts against the
   // real implementation rather than through the engine's mocks.

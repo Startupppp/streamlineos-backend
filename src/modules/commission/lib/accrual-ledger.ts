@@ -105,6 +105,34 @@ export async function recordAccrualForEarning(
 }
 
 /**
+ * One earner's accrued total for a period, right now.
+ *
+ * Summed straight off the parts rather than read from
+ * `crmCommissionAccrualSnapshots` — the snapshot is a curve POINT, dated, and
+ * the question here ("if this clawback lands, does the period go negative")
+ * needs the true current total, not the most recent day somebody happened to
+ * write one. Same aggregate `refreshSnapshot` runs; kept separate because
+ * that one dates and stores its result and this one only asks.
+ */
+export async function periodAccruedMinor(
+  tx: TenantTx,
+  input: { orgId: string; userId: string; planId: string; periodStart: string },
+): Promise<number> {
+  const [totals] = await tx
+    .select({ accrued: sql<string>`coalesce(sum(${crmCommissionAccrualParts.amountMinor}), 0)` })
+    .from(crmCommissionAccrualParts)
+    .where(
+      and(
+        eq(crmCommissionAccrualParts.orgId, input.orgId),
+        eq(crmCommissionAccrualParts.userId, input.userId),
+        eq(crmCommissionAccrualParts.planId, input.planId),
+        eq(crmCommissionAccrualParts.periodStart, input.periodStart),
+      ),
+    );
+  return toMinor(totals?.accrued);
+}
+
+/**
  * Recompute today's curve point for one earner, plan and period.
  *
  * Reads the parts back rather than adding a delta to the previous point. A delta

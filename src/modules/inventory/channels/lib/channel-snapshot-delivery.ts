@@ -4,7 +4,8 @@ import { and, eq, sql } from "drizzle-orm";
 import { type Db } from "../../../../db/drizzle.module";
 import type { AppConfig } from "../../../../config/env.validation";
 import { runInTenantTransaction } from "../../../../common/tenant/run-in-tenant-transaction";
-import { invChannels, invChannelWebhookDeliveries } from "../../../../db/schema";
+import { invChannels, inv3plConnections, invChannelWebhookDeliveries } from "../../../../db/schema";
+import { decryptSecret } from "../../../../common/security/secret-encryption.util";
 import { verifyChannelDelivery } from "../channel-adapter";
 import type { ReceiveOutcome } from "./channel-snapshot-context";
 
@@ -73,9 +74,24 @@ export async function receiveDelivery(
       });
       if (!channel) return { accepted: false as const, reason: "unknown-channel" as const };
 
+      let orgSecret: string | null = null;
+      if (tx.query?.inv3plConnections) {
+        const conn = await tx.query.inv3plConnections.findFirst({
+          where: eq(inv3plConnections.orgId, orgId),
+          columns: { webhookSecretEncrypted: true },
+        });
+        if (conn?.webhookSecretEncrypted) {
+          try {
+            orgSecret = decryptSecret(conn.webhookSecretEncrypted);
+          } catch {
+            orgSecret = null;
+          }
+        }
+      }
+
       const verified = verifyChannelDelivery({
         channelType: channel.channelType,
-        secret: secretFor(deps.config, channel.channelType),
+        secret: orgSecret || secretFor(deps.config, channel.channelType),
         rawBody: input.rawBody,
         headers: input.headers,
       });

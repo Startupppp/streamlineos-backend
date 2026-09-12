@@ -6104,6 +6104,17 @@
       "version": "7",
       "when": 1803000010326,
       "tag": "1110_subscription_purchase_intent_before_provider_order",
+      "idx": 999,
+      "version": "7",
+      "when": 1803000010318,
+      "tag": "1106_inv_3pl_connections_credentials",
+      "breakpoints": true
+    },
+    {
+      "idx": 1000,
+      "version": "7",
+      "when": 1803000010319,
+      "tag": "1107_inv_channels_credentials",
       "breakpoints": true
     }
   ]

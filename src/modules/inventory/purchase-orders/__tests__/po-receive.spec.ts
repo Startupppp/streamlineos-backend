@@ -194,3 +194,36 @@ describe("a receipt that posted its own stock cannot be posted again", () => {
     expect(values).toContain("postedAt");
   });
 });
+
+/**
+ * `resolvePostingDate` (movement-apply.service.ts) defaults to today when a
+ * command carries no `postingDate` — which is exactly what made a backdated
+ * receipt check against TODAY's accounting period instead of its own, so a
+ * receipt landing in an already-closed period was never blocked. Proven at
+ * the engine level in `stock-engine.spec.ts`; this is the other half — the
+ * call site actually has to hand the engine the receipt's real date.
+ */
+describe("GRN receive — the engine command carries the receipt's own date", () => {
+  const postSrc = readFileSync(join(__dirname, "..", "lib", "grn-post-tx.ts"), "utf8");
+
+  /** The `.values(...)` object of the `engine.executeInTx(...)` call. */
+  function engineCommandLiteral(): string {
+    const at = postSrc.indexOf("deps.engine.executeInTx(");
+    expect(at).toBeGreaterThan(-1);
+    const open = postSrc.indexOf("{", postSrc.indexOf(",", postSrc.indexOf(",", at) + 1));
+    let depth = 0;
+    for (let i = open; i < postSrc.length; i++) {
+      if (postSrc[i] === "{") depth++;
+      else if (postSrc[i] === "}" && --depth === 0) return postSrc.slice(open, i + 1);
+    }
+    return "";
+  }
+
+  it("reads the real call site, so the assertion below is not vacuous", () => {
+    expect(engineCommandLiteral()).toContain("movements");
+  });
+
+  it("passes postingDate: grn.receivedDate rather than leaving it unset", () => {
+    expect(engineCommandLiteral()).toMatch(/postingDate:\s*grn\.receivedDate/);
+  });
+});

@@ -1,3 +1,6 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+
 interface LotRow { id: number; expiryDate: string | null; status: string; }
 interface LevelRow {
   locationId: number;
@@ -253,5 +256,38 @@ describe("pickSo — serial validation", () => {
       [{ id: 99, trackingMethod: "SERIAL" }],
     );
     expect(result).toMatch(/99/);
+  });
+});
+
+/**
+ * `resolvePostingDate` (movement-apply.service.ts) defaults to today when a
+ * command carries no `postingDate` — which is exactly what made a backdated
+ * shipment check against TODAY's accounting period instead of its own, so a
+ * shipment dated inside an already-closed period was never blocked. Proven at
+ * the engine level in `stock-engine.spec.ts`; this is the other half — the
+ * call site actually has to hand the engine the shipment's real date.
+ */
+describe("SO ship — the engine command carries the shipment's own date", () => {
+  const shipSrc = readFileSync(join(__dirname, "..", "so-ship.ts"), "utf8");
+
+  /** The `.values(...)` object of the `deps.engine.executeInTx(...)` call. */
+  function engineCommandLiteral(): string {
+    const at = shipSrc.indexOf("deps.engine.executeInTx(");
+    expect(at).toBeGreaterThan(-1);
+    const open = shipSrc.indexOf("{", shipSrc.indexOf(",", shipSrc.indexOf(",", at) + 1));
+    let depth = 0;
+    for (let i = open; i < shipSrc.length; i++) {
+      if (shipSrc[i] === "{") depth++;
+      else if (shipSrc[i] === "}" && --depth === 0) return shipSrc.slice(open, i + 1);
+    }
+    return "";
+  }
+
+  it("reads the real call site, so the assertion below is not vacuous", () => {
+    expect(engineCommandLiteral()).toContain("movements");
+  });
+
+  it("passes postingDate: data.shipDate rather than leaving it unset", () => {
+    expect(engineCommandLiteral()).toMatch(/postingDate:\s*data\.shipDate/);
   });
 });

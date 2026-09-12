@@ -237,6 +237,13 @@ export async function seedSystemRolesForOrg(
   const dbCatalog = await resolveDbPermissionSet(db);
   const specs = systemRoleSpecs(dbCatalog);
 
+  // Defensive: systemRoleSpecs always yields ORG_ADMIN + MEMBER today, so this
+  // is not reachable in current behavior — kept from main's ed6c7bef2 as a
+  // cheap guard against a schema-only clone where dbCatalog resolves to
+  // something degenerate enough to empty the ladder before it's meaningful
+  // to open a transaction at all.
+  if (specs.length === 0) return { created: 0 };
+
   return db.transaction(async (tx) => {
     /*
      * Untargeted `DO NOTHING`, where this once named the slug index. `roles`

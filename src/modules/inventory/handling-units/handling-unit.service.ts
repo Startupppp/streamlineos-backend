@@ -442,7 +442,11 @@ export class HandlingUnitService {
           ))`;
   }
 
-  async list(orgId: string, userId: string, filters: { locationId?: number; status?: string; rootsOnly?: boolean }) {
+  async list(
+    orgId: string,
+    userId: string,
+    filters: { locationId?: number; status?: string; rootsOnly?: boolean; page?: number; limit?: number },
+  ) {
     const scope = await this.warehouseScope.resolve(orgId, userId);
     const conditions = [eq(invHandlingUnits.orgId, orgId)];
     if (filters.locationId) conditions.push(eq(invHandlingUnits.locationId, filters.locationId));
@@ -450,21 +454,40 @@ export class HandlingUnitService {
     if (filters.rootsOnly) conditions.push(sql`${invHandlingUnits.parentHuId} IS NULL`);
     const gate = this.scopePredicate(orgId, scope);
     if (gate !== null) conditions.push(gate);
+    const where = and(...conditions);
 
-    return this.db
-      .select({
-        id: invHandlingUnits.id,
-        huCode: invHandlingUnits.huCode,
-        kind: invHandlingUnits.kind,
-        status: invHandlingUnits.status,
-        locationId: invHandlingUnits.locationId,
-        parentHuId: invHandlingUnits.parentHuId,
-        updatedAt: invHandlingUnits.updatedAt,
-      })
-      .from(invHandlingUnits)
-      .where(and(...conditions))
-      .orderBy(asc(invHandlingUnits.huCode))
-      .limit(100);
+    // Rows beyond the first page were permanently unreachable behind a bare
+    // `.limit(100)` with no `page`/`limit` param at all. Bounded to the
+    // platform's 100-row hard cap either way (`listHandlingUnitsQuerySchema`
+    // clamps it before this runs; re-clamped here for any other caller).
+    const page = filters.page ?? 1;
+    const limit = Math.min(filters.limit ?? 100, 100);
+    const offset = (page - 1) * limit;
+
+    const [data, countResult] = await Promise.all([
+      this.db
+        .select({
+          id: invHandlingUnits.id,
+          huCode: invHandlingUnits.huCode,
+          kind: invHandlingUnits.kind,
+          status: invHandlingUnits.status,
+          locationId: invHandlingUnits.locationId,
+          parentHuId: invHandlingUnits.parentHuId,
+          updatedAt: invHandlingUnits.updatedAt,
+        })
+        .from(invHandlingUnits)
+        .where(where)
+        .orderBy(asc(invHandlingUnits.huCode))
+        .limit(limit)
+        .offset(offset),
+      this.db.select({ count: sql<number>`count(*)::int` }).from(invHandlingUnits).where(where),
+    ]);
+
+    const total = countResult[0]?.count ?? 0;
+    return {
+      data,
+      pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
+    };
   }
 
 }
