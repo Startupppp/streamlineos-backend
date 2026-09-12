@@ -159,6 +159,17 @@ describe("the system role ladder", () => {
 
   it("narrows a module member's scope where the ladder says to", () => {
     expect(scopeForGrant("SIGN_MODULE_MEMBER", "sign:envelope:view")).toBe("own");
+    for (const key of [
+      "timesheets:entries:view",
+      "timesheets:team:view",
+      "timesheets:approvals:view",
+      "timesheets:reports:view",
+      "timesheets:payroll:view",
+      "timesheets:exceptions:view",
+    ]) {
+      expect(scopeForGrant("TIMESHEETS_MODULE_MEMBER", key)).toBe("own");
+      expect(scopeForGrant("TIMESHEETS_MODULE_ADMIN", key)).toBe("all");
+    }
     expect(scopeForGrant("SIGN_MODULE_ADMIN", "sign:envelope:view")).toBe("all");
     expect(scopeForGrant("SIGN_MODULE_MEMBER", "sign:envelope:create")).toBe("all");
   });

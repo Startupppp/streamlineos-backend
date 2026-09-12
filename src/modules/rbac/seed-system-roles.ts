@@ -53,6 +53,18 @@ const MODULE_MEMBER_KEY_SCOPE_OVERRIDE: Record<string, "own" | "team" | "all"> =
   // existing organisations at "own" — divergence by signup date, and in the
   // direction where the new tenants are the ones leaking salaries.
   "crm:commission-earnings:view": "own",
+  // A timesheets module member is a person who logs time, not one who
+  // supervises it. Every scopable timesheets view key would otherwise be
+  // seeded at "all" and hand each member the organisation's entries, approval
+  // queue, payroll period summaries, reports and exception queue; the
+  // non-scopable keys the generic member rung grants are a product decision
+  // recorded in docs/timesheets-signos-final-handoff.md.
+  "timesheets:entries:view": "own",
+  "timesheets:team:view": "own",
+  "timesheets:approvals:view": "own",
+  "timesheets:reports:view": "own",
+  "timesheets:payroll:view": "own",
+  "timesheets:exceptions:view": "own",
 };
 
 /**

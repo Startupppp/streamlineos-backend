@@ -84,8 +84,16 @@ export const CATALOG_MODULES = Array.from(
 
 export const EMPTY_DENIED_MODULES: ReadonlySet<string> = new Set<string>();
 
+/**
+ * A self-service grant reaches every active member, so its scope decides what
+ * every member sees. `self:*` keys are own by construction. The timesheets
+ * keys are the member's own time as well: `timesheets:entries:view` at `all`
+ * handed every member the organisation's entries the moment a list resolved
+ * its scope from that key, and nothing narrower than `own` is a self-service
+ * reading of it.
+ */
 function employeeSelfServiceScope(permissionKey: string): DataScope {
-  return permissionKey.startsWith("self:") ? "own" : "all";
+  return permissionKey.startsWith("self:") || permissionKey.startsWith("timesheets:") ? "own" : "all";
 }
 
 export const EMPLOYEE_SELF_SERVICE_GRANTS: ReadonlyArray<{

@@ -97,6 +97,23 @@ describe("Home surfaces are allowed to everyone", () => {
     for (const [, key] of HOME_SURFACES) expect(resolved[key]).toBeDefined();
   });
 
+  /**
+   * Self-service is the member's own time. The grant used to arrive at `all`,
+   * so any list that resolved its scope from it showed a member everyone's
+   * entries; the alternative — resolving only the manager's widening key —
+   * showed them nothing.
+   */
+  it("gives an active member their own timesheet entries, not the organisation's", async () => {
+    const resolved = (await resolverForMemberWithNoRoles().computeUserPermissions(
+      "org-1",
+      "u-1",
+      1,
+    )).perms;
+    expect(resolved["timesheets:entries:view"]).toBe("own");
+    expect(resolved["timesheets:entries:create"]).toBe("own");
+    expect(resolved["timesheets:team:view"]).toBeUndefined();
+  });
+
   it.each(["chat:huddles:moderate", "home:access:manage"])(
     "keeps %s out of the universal set, so it stays delegatable",
     (key) => {

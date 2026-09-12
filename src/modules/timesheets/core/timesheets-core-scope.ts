@@ -4,16 +4,32 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { ScopedRead, type OwnershipScope } from "../../access/scoped-read";
 import { AccessService } from "../../access/access.service";
 
+export const TS_ENTRIES_VIEW_PERMISSION = "timesheets:entries:view";
 export const TS_TEAM_VIEW_PERMISSION = "timesheets:team:view";
 export const TS_APPROVALS_VIEW_PERMISSION = "timesheets:approvals:view";
 export const TS_REPORTS_VIEW_PERMISSION = "timesheets:reports:view";
 export const TS_PAYROLL_VIEW_PERMISSION = "timesheets:payroll:view";
 
+/**
+ * How far a caller sees into entries, periods and exceptions: the broader of
+ * the gate key's own scope and the widening key's.
+ *
+ * `timesheets:entries:view` is what the routes require and what every active
+ * member holds through self-service, at `own`. `timesheets:team:view` is the
+ * widening key a manager or module admin holds at `team` or `all`. Resolving
+ * only the widening key, as this did, gave a plain member — who holds no
+ * `team:view` at all — a scope of `none`, and My Time answered their own
+ * entries with an empty page.
+ */
 export async function resolveEntriesScope(
   access: AccessService,
   u: CurrentUserContext,
 ): Promise<ScopedRead> {
-  return ScopedRead.for(access, u, TS_TEAM_VIEW_PERMISSION);
+  const [own, widened] = await Promise.all([
+    ScopedRead.for(access, u, TS_ENTRIES_VIEW_PERMISSION),
+    ScopedRead.for(access, u, TS_TEAM_VIEW_PERMISSION),
+  ]);
+  return ScopedRead.broadest(own, widened);
 }
 
 export async function resolveApprovalScope(
