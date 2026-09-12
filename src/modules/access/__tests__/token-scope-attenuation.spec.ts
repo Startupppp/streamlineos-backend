@@ -16,6 +16,7 @@ function makeSnapshot(
     modules,
     isOrgOwner,
     canManageOrganizationMembership: isOrgOwner,
+    membershipId: null,
     mfa: { enforced: false, satisfied: true },
     version: 1,
   };
