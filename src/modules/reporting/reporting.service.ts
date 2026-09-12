@@ -14,6 +14,9 @@ import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { AuthContextFactory } from "../../common/auth/auth-context.factory";
 import { AccessService } from "../access/access.service";
 import { authorize } from "../access/authorize";
+import { AiGatewayService } from "../ai/core/gateway/ai-gateway.service";
+import { nlProposalSchema, type NlProposal } from "./nl-proposal.schemas";
+import { nlProposalPrompt } from "./nl-proposal.prompt";
 import { compileQuery, type CompiledQuery } from "./compiler/compile";
 import type { RequesterScope } from "./compiler/scope";
 import { QueryCompilationError } from "./compiler/errors";
@@ -66,6 +69,7 @@ export class ReportingService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly access: AccessService,
     private readonly authContexts: AuthContextFactory,
+    private readonly aiGateway: AiGatewayService,
   ) {}
 
   // ── What may be asked ─────────────────────────────────────────────────────
@@ -261,6 +265,85 @@ export class ReportingService {
       parameterCount: compiled.params.length,
       columns: compiled.columns,
     };
+  }
+
+  /**
+   * Phase 5 ticket 15. A plain-language question, proposed as a query
+   * description — never run.
+   *
+   * The evaluation gate the ticket's fifth criterion asks for is three
+   * layers, each catching what the one before it cannot:
+   *  1. The model itself may answer `{ ok: false, reason }` — the schema in
+   *     `nl-proposal.schemas.ts` gives it that shape explicitly, so refusing
+   *     is a real branch rather than a temptation to fabricate.
+   *  2. `assertMayRunSource` — a model that proposed a source or field the
+   *     CALLER cannot see fails here, structurally, before the description
+   *     is ever shown to them.
+   *  3. `explain` — the same compiler a hand-built description goes
+   *     through. A hallucinated field name here throws, and this method
+   *     turns that into a `{ accepted: false }` the same shape as (1) rather
+   *     than a 500 — a reviewer reading "the model's proposal didn't
+   *     compile" and "the model said it couldn't answer this" should not
+   *     have to tell the two apart from a stack trace.
+   *
+   * `accepted: true` returns the description and its compile preview —
+   * SQL text and column list, never rows — for a person to read before
+   * deciding anything. Running it is a SEPARATE call to `explain`'s
+   * sibling `run`, made only once a person chooses to; nothing on this
+   * path reaches it.
+   */
+  async proposeFromQuestion(
+    user: CurrentUserContext,
+    question: string,
+  ): Promise<
+    | { accepted: true; description: QueryDescription; explanation: string; preview: Awaited<ReturnType<ReportingService["explain"]>> }
+    | { accepted: false; reason: string }
+  > {
+    const sources = await this.describeSources(user.orgId, user.userId);
+    if (sources.length === 0) {
+      return { accepted: false, reason: "You do not have access to any reportable data source." };
+    }
+
+    const prompt = nlProposalPrompt(question, sources);
+    const result = await this.aiGateway.invokeStructured<NlProposal>({
+      actor: { orgId: user.orgId, userId: user.userId },
+      feature: "crm.reporting.nl-propose",
+      prompt: { system: prompt.system, user: prompt.user, promptKey: "crm.reporting.nl_propose", promptVersion: 1 },
+      schema: nlProposalSchema,
+      tier: "standard",
+      maxTokens: 1024,
+      charge: true,
+    });
+
+    if (!result.ok) {
+      throw new BadRequestException(
+        result.kind === "concurrency_exceeded"
+          ? "Too many report questions in flight right now — try again shortly."
+          : `Could not reach the model to propose a query: ${result.message}`,
+      );
+    }
+
+    const proposal = result.data;
+    if (!proposal.ok) return { accepted: false, reason: proposal.reason };
+
+    try {
+      await this.assertMayRunSource(user, proposal.description.source);
+      const preview = await this.explain(user, proposal.description as QueryDescription);
+      return {
+        accepted: true,
+        description: proposal.description as QueryDescription,
+        explanation: proposal.explanation,
+        preview,
+      };
+    } catch (error) {
+      return {
+        accepted: false,
+        reason:
+          error instanceof ForbiddenException || error instanceof BadRequestException
+            ? `The model's proposal didn't hold up: ${error.message}`
+            : "The model's proposal didn't hold up against the real data model.",
+      };
+    }
   }
 
   async runAdHoc(user: CurrentUserContext, query: QueryDescription) {

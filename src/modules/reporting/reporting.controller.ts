@@ -21,11 +21,13 @@ import { asQueryDescription } from "./dto/reporting.schemas";
 import {
   createDefinitionSchema,
   listQuerySchema,
+  nlProposeSchema,
   runAdHocSchema,
   runDefinitionSchema,
   updateDefinitionSchema,
   type CreateDefinitionInput,
   type ListQuery,
+  type NlProposeInput,
   type RunAdHocInput,
   type RunDefinitionInput,
   type UpdateDefinitionInput,
@@ -39,6 +41,7 @@ import {
   explainReportResponseSchema,
   runReportResponseSchema,
   listReportRunsResponseSchema,
+  nlProposeResponseSchema,
 } from "./dto/reporting-response.schemas";
 
 /**
@@ -175,6 +178,21 @@ export class ReportingController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.reporting.explain(u, asQueryDescription(body.query));
+  }
+
+  /**
+   * Phase 5 ticket 15. A plain-language question, proposed as a query
+   * description — never run. Same authority as `explain`: the response
+   * carries a compile preview with physical table and column names.
+   */
+  @Post("nl-propose")
+  @RequirePermission("crm:reporting:manage")
+  @ResponseSchema(nlProposeResponseSchema)
+  proposeFromQuestion(
+    @Body(new ZodValidationPipe(nlProposeSchema)) body: NlProposeInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.reporting.proposeFromQuestion(u, body.question);
   }
 
   @Post("run")

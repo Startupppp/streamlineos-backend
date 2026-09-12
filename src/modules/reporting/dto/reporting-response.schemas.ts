@@ -104,6 +104,26 @@ export const runReportResponseSchema = z.object({
   truncated: z.boolean(),
 });
 
+/**
+ * Phase 5 ticket 15 — what `proposeFromQuestion` returns.
+ *
+ * A discriminated union, matching the internal shape exactly: `accepted`
+ * carries the proposal AND its compile preview (never rows — the same
+ * `explain` shape `POST /explain` returns), so a client can render both the
+ * description and its SQL preview without a second round trip; a refusal
+ * carries only a reason, whether that refusal came from the model itself or
+ * from the proposal failing to compile.
+ */
+export const nlProposeResponseSchema = z.discriminatedUnion("accepted", [
+  z.object({
+    accepted: z.literal(true),
+    description: z.record(z.string(), z.unknown()),
+    explanation: z.string(),
+    preview: explainReportResponseSchema,
+  }),
+  z.object({ accepted: z.literal(false), reason: z.string() }),
+]);
+
 /** `listRuns` — the audit read. The statements carry no tenant values. */
 export const listReportRunsResponseSchema = z.array(
   z.object({
