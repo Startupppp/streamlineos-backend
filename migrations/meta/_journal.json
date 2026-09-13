@@ -6133,6 +6133,13 @@
       "when": 1803000010330,
       "tag": "1115_build_events_grants_for_relocated_tables",
       "breakpoints": true
+    },
+    {
+      "idx": 1004,
+      "version": "7",
+      "when": 1803000010331,
+      "tag": "1116_rls_billing_and_finance_tenant_isolation",
+      "breakpoints": true
     }
   ]
 }
