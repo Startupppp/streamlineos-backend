@@ -57,18 +57,51 @@ describe("TurnstileService — absent secret", () => {
     );
   });
 
-  it("development + no secret → passes without calling Cloudflare", async () => {
+  it("development + no secret → throws; NODE_ENV alone never opens the gate", async () => {
     const service = await build({ NODE_ENV: "development", TURNSTILE_SECRET_KEY: undefined });
+    await expect(service.verify("any-token", "1.2.3.4")).rejects.toBeInstanceOf(
+      ServiceUnavailableException,
+    );
+  });
+
+  it("test + no secret → throws; a deployment set to NODE_ENV=test keeps bot protection", async () => {
+    const service = await build({ NODE_ENV: "test", TURNSTILE_SECRET_KEY: undefined });
+    await expect(service.verify(undefined, undefined)).rejects.toBeInstanceOf(
+      ServiceUnavailableException,
+    );
+  });
+
+  it("production + no secret + TURNSTILE_DISABLED=true → still throws; the opt-out cannot disarm production", async () => {
+    const service = await build({
+      NODE_ENV: "production",
+      TURNSTILE_SECRET_KEY: undefined,
+      TURNSTILE_DISABLED: "true",
+    });
+    await expect(service.verify("any-token", "1.2.3.4")).rejects.toBeInstanceOf(
+      ServiceUnavailableException,
+    );
+  });
+
+  it("development + no secret + TURNSTILE_DISABLED=true → passes without calling Cloudflare", async () => {
+    const service = await build({
+      NODE_ENV: "development",
+      TURNSTILE_SECRET_KEY: undefined,
+      TURNSTILE_DISABLED: "true",
+    });
     const fetchSpy = jest.spyOn(global, "fetch");
     await expect(service.verify("any-token", "1.2.3.4")).resolves.toBeUndefined();
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
-  it("test + no secret → passes without calling Cloudflare", async () => {
-    const service = await build({ NODE_ENV: "test", TURNSTILE_SECRET_KEY: undefined });
-    const fetchSpy = jest.spyOn(global, "fetch");
-    await expect(service.verify(undefined, undefined)).resolves.toBeUndefined();
-    expect(fetchSpy).not.toHaveBeenCalled();
+  it("development + no secret + TURNSTILE_DISABLED=false → throws; the flag must say true", async () => {
+    const service = await build({
+      NODE_ENV: "development",
+      TURNSTILE_SECRET_KEY: undefined,
+      TURNSTILE_DISABLED: "false",
+    });
+    await expect(service.verify("any-token", "1.2.3.4")).rejects.toBeInstanceOf(
+      ServiceUnavailableException,
+    );
   });
 });
 

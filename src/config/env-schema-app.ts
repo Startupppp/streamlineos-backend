@@ -25,6 +25,10 @@ export const appEnvShape = {
     /** Below 100ms the cache factory throws at boot; bound here so the error appears in the aggregated env-validation report. */
     REDIS_COMMAND_TIMEOUT_MS: z.preprocess(emptyToUndefined, z.coerce.number().int().min(100).optional()),
     TURNSTILE_SECRET_KEY: z.string().optional(),
+    TURNSTILE_DISABLED: z.preprocess(
+      emptyToUndefined,
+      z.enum(["true", "false"]).optional(),
+    ),
     ABLY_API_KEY: z.string().optional(),
     ENCRYPTION_KEY: z
       .string()
