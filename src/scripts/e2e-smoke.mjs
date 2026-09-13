@@ -1,7 +1,8 @@
 import fs from "node:fs";
 import path from "node:path";
 import postgres from "postgres";
-import { SignJWT } from "jose";
+import { SignJWT, importJWK } from "jose";
+import { randomUUID } from "node:crypto";
 
 const args = process.argv.slice(2);
 const verbose = args.includes("--verbose");
@@ -16,12 +17,64 @@ function env(key) {
 }
 
 const API = baseUrl || `http://localhost:${env("PORT") ?? "1500"}`;
-const SECRET = env("BACKEND_JWT_SECRET");
 const DB_URL = env("DATABASE_URL");
 
-if (!SECRET) {
-  console.error("BACKEND_JWT_SECRET is required to mint a test token.");
+if (!env("AUTH_SIGNING_KEYS")) {
+  console.error("AUTH_SIGNING_KEYS is required to mint a test token; the API verifies EdDSA.");
   process.exit(1);
+}
+
+const PRODUCTION_HOST_PATTERNS = ["amazonaws.com", "neon.tech", "neon-db.net", "supabase.co", ".render.com"];
+export function assertDisposableSmokeTarget(databaseUrl, apiUrl) {
+  if (databaseUrl) {
+    for (const pattern of PRODUCTION_HOST_PATTERNS)
+      if (databaseUrl.includes(pattern))
+        return { allowed: false, reason: `DATABASE_URL contains '${pattern}' — a known production host` };
+    let host;
+    try {
+      host = new URL(databaseUrl).hostname;
+    } catch {
+      return { allowed: false, reason: "DATABASE_URL does not parse" };
+    }
+    if (!["127.0.0.1", "localhost", "::1", "[::1]"].includes(host))
+      return { allowed: false, reason: `DATABASE_URL host '${host}' is not loopback` };
+  }
+  let apiHost;
+  try {
+    apiHost = new URL(apiUrl).hostname;
+  } catch {
+    return { allowed: false, reason: "API url does not parse" };
+  }
+  if (!["127.0.0.1", "localhost", "::1"].includes(apiHost))
+    return { allowed: false, reason: `API host '${apiHost}' is not loopback` };
+  return { allowed: true, reason: "loopback database and API" };
+}
+
+if (args.includes("--self-test")) {
+  const cases = [
+    [assertDisposableSmokeTarget("postgresql://u:p@127.0.0.1:5432/scratch_local", "http://127.0.0.1:1500"), true],
+    [assertDisposableSmokeTarget("postgresql://u:p@prod.cluster.amazonaws.com:5432/app", "http://127.0.0.1:1500"), false],
+    [assertDisposableSmokeTarget("postgresql://u:p@db.neon.tech:5432/app", "http://127.0.0.1:1500"), false],
+    [assertDisposableSmokeTarget("postgresql://u:p@10.0.0.5:5432/app", "http://127.0.0.1:1500"), false],
+    [assertDisposableSmokeTarget("postgresql://u:p@127.0.0.1:5432/scratch_local", "https://api.streamlineos.in"), false],
+    [assertDisposableSmokeTarget(null, "http://localhost:1500"), true],
+  ];
+  let failed = 0;
+  for (const [verdict, expected] of cases)
+    if (verdict.allowed !== expected) {
+      console.error(`FAIL: ${verdict.reason}`);
+      failed++;
+    }
+  if (failed) process.exit(1);
+  console.log("PASS: e2e-smoke target refusal, 6 cases, production and remote targets both refused.");
+  process.exit(0);
+}
+
+const smokeTarget = assertDisposableSmokeTarget(DB_URL, API);
+if (!smokeTarget.allowed) {
+  console.error(`Refusing to smoke-test: ${smokeTarget.reason}.`);
+  console.error("Pass an explicit disposable DATABASE_URL and --url=http://127.0.0.1:<port>.");
+  process.exit(2);
 }
 
 /** GET endpoints grouped by the domain they belong to. */
@@ -50,29 +103,43 @@ async function resolveActor() {
       JOIN users u ON u.id = m.user_id
       WHERE m.is_owner = true
       LIMIT 1`;
-    return rows[0] ?? null;
+    const actor = rows[0];
+    if (!actor) return null;
+    const sessionId = `e2e-smoke-${randomUUID()}`;
+    await sql`
+      INSERT INTO user_sessions (id, user_id, is_revoked, last_active, expires_at, created_at)
+      VALUES (${sessionId}, ${actor.userId}, false, now(), now() + interval '1 hour', now())`;
+    return { ...actor, sessionId };
+  } finally {
+    await sql.end({ timeout: 5 }).catch(() => undefined);
+  }
+}
+
+async function releaseActor(actor) {
+  if (!DB_URL || !actor?.sessionId) return;
+  const sql = postgres(DB_URL, { prepare: false, max: 1, onnotice: () => {} });
+  try {
+    await sql`DELETE FROM user_sessions WHERE id = ${actor.sessionId}`;
   } finally {
     await sql.end({ timeout: 5 }).catch(() => undefined);
   }
 }
 
 async function mintToken(actor) {
-  return new SignJWT({
-    orgId: actor.orgId,
-    branchId: null,
-    role: actor.role,
-    enabledModules: [],
-    plan: null,
-    isOrgOwner: actor.isOwner,
-    sessionId: "e2e-smoke",
-  })
-    .setProtectedHeader({ alg: "HS256" })
+  const raw = env("AUTH_SIGNING_KEYS");
+  if (!raw) throw new Error("AUTH_SIGNING_KEYS is required — the API verifies EdDSA, not HS256");
+  const entries = JSON.parse(raw);
+  const entry = entries[entries.length - 1];
+  const privateKey = await importJWK(entry.privateKey, "EdDSA");
+  return new SignJWT({ orgId: actor.orgId, sessionId: actor.sessionId })
+    .setProtectedHeader({ alg: "EdDSA", kid: entry.kid })
     .setSubject(actor.userId)
     .setAudience("streamlineos-api")
     .setIssuer("streamlineos-web")
     .setIssuedAt()
     .setExpirationTime("10m")
-    .sign(new TextEncoder().encode(SECRET));
+    .setJti(randomUUID())
+    .sign(privateKey);
 }
 
 async function call(pathname, token) {
@@ -119,6 +186,8 @@ function summarise(body) {
   return String(inner).slice(0, 90);
 }
 
+let mintedActor = null;
+
 async function main() {
   console.log(`\nAPI      : ${API}`);
 
@@ -130,6 +199,7 @@ async function main() {
   }
 
   const actor = await resolveActor();
+  mintedActor = actor;
   if (!actor) {
     console.error("\nNo org owner found in the database — cannot mint a test session.");
     process.exit(1);
@@ -173,10 +243,17 @@ async function main() {
   );
   console.log(`A 500 means a real server error. A 404 means the route does not exist as written.\n`);
 
+  await releaseActor(mintedActor);
+  if (counts.PASS === 0) {
+    console.error("FAILED SMOKE: no route authenticated. The token was rejected everywhere;");
+    console.error("this run proves nothing about route health.");
+    process.exit(1);
+  }
   process.exit(counts.FAIL > 0 ? 1 : 0);
 }
 
-main().catch((err) => {
+main().catch(async (err) => {
+  await releaseActor(mintedActor).catch(() => undefined);
   console.error(`\nFailed: ${err instanceof Error ? err.message : String(err)}`);
   process.exit(1);
 });

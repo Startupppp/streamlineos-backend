@@ -282,4 +282,72 @@ describe("validateEnv", () => {
       validateEnv({ ...base, ZEPTOMAIL_TOKEN: "too-short" }),
     ).toThrow(/ZEPTOMAIL_TOKEN/);
   });
+
+  describe("regional URL boot validation", () => {
+    it("boots without REGION_KEYS (single-region deployment)", () => {
+      expect(validateEnv(base).NODE_ENV).toBe("test");
+    });
+
+    it("rejects a malformed secondary-region APP_DATABASE_URL at boot", () => {
+      expect(() =>
+        validateEnv({
+          ...base,
+          REGION_KEYS: "eu",
+          REGION_EU_APP_DATABASE_URL: "not-a-url",
+        }),
+      ).toThrow(/REGION_EU_APP_DATABASE_URL/);
+    });
+
+    it("rejects a non-PostgreSQL protocol in a secondary-region database URL", () => {
+      expect(() =>
+        validateEnv({
+          ...base,
+          REGION_KEYS: "eu",
+          REGION_EU_APP_DATABASE_URL: "mysql://user:pass@eu-db:5432/main",
+        }),
+      ).toThrow(/REGION_EU_APP_DATABASE_URL/);
+    });
+
+    it("rejects a malformed UPSTASH_REDIS_REST_URL for a secondary region at boot", () => {
+      expect(() =>
+        validateEnv({
+          ...base,
+          REGION_KEYS: "eu",
+          REGION_EU_APP_DATABASE_URL: "postgres://app:pass@eu-db:5432/main",
+          REGION_EU_UPSTASH_REDIS_REST_URL: "not-a-url",
+        }),
+      ).toThrow(/REGION_EU_UPSTASH_REDIS_REST_URL/);
+    });
+
+    it("accepts well-formed secondary-region database and Redis URLs", () => {
+      const cfg = validateEnv({
+        ...base,
+        REGION_KEYS: "eu",
+        REGION_EU_APP_DATABASE_URL: "postgres://app:pass@eu-db:5432/main",
+        REGION_EU_UPSTASH_REDIS_REST_URL: "https://eu.upstash.io",
+      });
+      expect(cfg.REGION_KEYS).toBe("eu");
+    });
+
+    it("accepts a multi-region deployment with well-formed URLs", () => {
+      const cfg = validateEnv({
+        ...base,
+        REGION_KEYS: "eu,us",
+        REGION_EU_APP_DATABASE_URL: "postgres://app:pass@eu-db:5432/main",
+        REGION_US_APP_DATABASE_URL: "postgres://app:pass@us-db:5432/main",
+      });
+      expect(cfg.REGION_KEYS).toBe("eu,us");
+    });
+
+    it("catches a malformed URL in one region even when others are valid", () => {
+      expect(() =>
+        validateEnv({
+          ...base,
+          REGION_KEYS: "eu,us",
+          REGION_EU_APP_DATABASE_URL: "postgres://app:pass@eu-db:5432/main",
+          REGION_US_APP_DATABASE_URL: "posgresql://typo",
+        }),
+      ).toThrow(/REGION_US_APP_DATABASE_URL/);
+    });
+  });
 });

@@ -1,6 +1,7 @@
 import { Test } from "@nestjs/testing";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { OutboxConsumerRegistry, type OutboxEventRow } from "../../../common/outbox/outbox-consumer.registry";
+import { ExternalEffectLedger, ExternalEffectLeaseBusyError } from "../../../common/outbox/external-effect-ledger";
 import { ComposioGateway } from "../../integrations/core/composio.gateway";
 import { IntegrationConnectionDisconnectedConsumer } from "./integration-connection-disconnected-consumer.service";
 
@@ -71,13 +72,20 @@ function buildDbMock(options: { claimed?: boolean }): DbMock {
 async function buildService(options: {
   claimed?: boolean;
   deleteImpl?: () => Promise<void>;
+  effectsOverride?: { execute: jest.Mock };
 }) {
-  const { deleteImpl = async () => undefined } = options;
+  const { deleteImpl = async () => undefined, effectsOverride } = options;
   const db = buildDbMock(options);
   const composio = {
     deleteConnectedAccount: jest.fn().mockImplementation(deleteImpl),
   } as unknown as ComposioGateway;
   const registry = new OutboxConsumerRegistry();
+  const effects = effectsOverride ?? {
+    execute: jest.fn().mockImplementation(async (_e: unknown, send: () => Promise<void>) => {
+      await send();
+      return "EXECUTED" as const;
+    }),
+  };
 
   const module = await Test.createTestingModule({
     providers: [
@@ -85,11 +93,12 @@ async function buildService(options: {
       { provide: DRIZZLE, useValue: db },
       { provide: ComposioGateway, useValue: composio },
       { provide: OutboxConsumerRegistry, useValue: registry },
+      { provide: ExternalEffectLedger, useValue: effects },
     ],
   }).compile();
 
   const svc = module.get(IntegrationConnectionDisconnectedConsumer);
-  return { svc, db, composio, registry };
+  return { svc, db, composio, registry, effects };
 }
 
 describe("IntegrationConnectionDisconnectedConsumer", () => {
@@ -245,6 +254,34 @@ describe("IntegrationConnectionDisconnectedConsumer", () => {
       expect(setCall?.set).toHaveBeenCalledWith(
         expect.objectContaining({ status: "FAILED" }),
       );
+    });
+  });
+
+  describe("ledger fence", () => {
+    it("propagates BUSY when an abandoned in-flight delete holds the lease — no duplicate Composio call", async () => {
+      const busyEffects = {
+        execute: jest.fn().mockRejectedValueOnce(
+          new ExternalEffectLeaseBusyError(`outbox:${ORG_ID}:integration:connection-disconnected:${EVENT_ID}`),
+        ),
+      };
+      const { svc, composio, db } = await buildService({ effectsOverride: busyEffects });
+
+      await expect(svc.handle(makeEvent())).rejects.toBeInstanceOf(ExternalEffectLeaseBusyError);
+      expect(composio.deleteConnectedAccount).not.toHaveBeenCalled();
+      const setCall = (db.update as jest.Mock).mock.results[0]?.value as { set: jest.Mock } | undefined;
+      expect(setCall?.set).toHaveBeenCalledWith(expect.objectContaining({ status: "FAILED" }));
+    });
+
+    it("suppresses the Composio call and marks COMPLETED when the effect already SUCCEEDED", async () => {
+      const succeededEffects = {
+        execute: jest.fn().mockResolvedValueOnce("ALREADY_SUCCEEDED" as const),
+      };
+      const { svc, composio, db } = await buildService({ effectsOverride: succeededEffects });
+
+      await svc.handle(makeEvent());
+      expect(composio.deleteConnectedAccount).not.toHaveBeenCalled();
+      const setCall = (db.update as jest.Mock).mock.results[0]?.value as { set: jest.Mock } | undefined;
+      expect(setCall?.set).toHaveBeenCalledWith(expect.objectContaining({ status: "COMPLETED" }));
     });
   });
 });

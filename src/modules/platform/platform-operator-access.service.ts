@@ -15,6 +15,7 @@ import {
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { runInNewTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
+import { AuditService } from "../../common/audit/audit.service";
 import { NotificationDispatchService } from "../notifications/notification-dispatch.service";
 
 export type OperatorScope =
@@ -41,6 +42,7 @@ export class PlatformOperatorAccessService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly notifications: NotificationDispatchService,
+    private readonly audit: AuditService,
   ) {}
 
   async createGrant(params: GrantParams): Promise<string> {
@@ -182,6 +184,34 @@ export class PlatformOperatorAccessService {
         detail: { operatorUserId: grant.operatorUserId },
         ipAddress: ipAddress ?? null,
       });
+    });
+    const tenantAdminRows = await this.db
+      .select({ userId: organizationMembers.userId })
+      .from(organizationMembers)
+      .where(and(
+        eq(organizationMembers.orgId, grant.orgId),
+        eq(organizationMembers.status, "ACTIVE"),
+        or(
+          eq(organizationMembers.isOwner, true),
+          eq(organizationMembers.role, "ORG_ADMIN"),
+        ),
+      ));
+    const notifyIds = [
+      grant.operatorUserId,
+      ...tenantAdminRows.map((m) => m.userId).filter((id) => id !== grant.operatorUserId),
+    ];
+    await this.notifications.emit({
+      eventKey: "security.operator_access.approved",
+      orgId: grant.orgId,
+      actorUserId: approverId,
+      targetUserIds: notifyIds,
+      notifySelf: false,
+      entityType: "operator_access_grant",
+      entityId: grantId,
+      title: "Operator access approved",
+      message: "A break-glass operator access request for your organization was approved.",
+      priority: "HIGH",
+      metadata: { approverId },
     });
     return { orgId: grant.orgId, operatorUserId: grant.operatorUserId };
   }
@@ -353,10 +383,19 @@ export class PlatformOperatorAccessService {
           ),
         )
         .limit(1);
-      if (!grant)
+      if (!grant) {
+        await this.audit.logCriticalOutsideTransaction({
+          action: "operator_access.denied",
+          userId: operatorUserId,
+          orgId,
+          resourceType: "operator_access_grant",
+          metadata: { scope, requestedAction: action },
+          ipAddress: ipAddress ?? null,
+        });
         throw new ForbiddenException(
           "No active operator access grant for this organisation and scope",
         );
+      }
 
       await tx.insert(operatorAccessLog).values({
         grantId: grant.grantId,

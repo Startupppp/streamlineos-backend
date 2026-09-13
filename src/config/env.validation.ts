@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { AWS_RDS_HOST, endpointIdentity, decodedUsername, parseDatabaseUrl } from "./env-schema-helpers";
+import { AWS_RDS_HOST, endpointIdentity, decodedUsername, parseDatabaseUrl, databaseUrl } from "./env-schema-helpers";
 import { databaseEnvShape } from "./env-schema-database";
 import { appEnvShape } from "./env-schema-app";
 import { providerEnvShape } from "./env-schema-providers";
@@ -197,6 +197,40 @@ export function validateEnv(
       .join("\n");
     throw new Error(`[env] Validation failed:\n${issues}`);
   }
+  const rawRegionKeys = result.data.REGION_KEYS;
+  if (rawRegionKeys) {
+    const regionKeys = rawRegionKeys
+      .split(",")
+      .map((k) => k.trim().toLowerCase())
+      .filter((k) => k.length > 0);
+
+    const regionalErrors: string[] = [];
+
+    for (const key of regionKeys) {
+      const prefix = `REGION_${key.toUpperCase().replace(/-/g, "_")}`;
+      const dbUrlVarName = `${prefix}_APP_DATABASE_URL`;
+      const dbUrlFallbackName = `${prefix}_DATABASE_URL`;
+      const redisUrlVarName = `${prefix}_UPSTASH_REDIS_REST_URL`;
+
+      const rawDbUrl = source[dbUrlVarName] ?? source[dbUrlFallbackName];
+      if (typeof rawDbUrl === "string" && rawDbUrl.trim().length > 0) {
+        const check = databaseUrl(dbUrlVarName).safeParse(rawDbUrl);
+        if (!check.success)
+          regionalErrors.push(...check.error.issues.map((i) => `  ${dbUrlVarName}: ${i.message}`));
+      }
+
+      const rawRedisUrl = source[redisUrlVarName];
+      if (typeof rawRedisUrl === "string" && rawRedisUrl.trim().length > 0) {
+        const check = z.string().trim().url().safeParse(rawRedisUrl);
+        if (!check.success)
+          regionalErrors.push(`  ${redisUrlVarName}: must be a valid URL`);
+      }
+    }
+
+    if (regionalErrors.length > 0)
+      throw new Error(`[env] Validation failed:\n${regionalErrors.join("\n")}`);
+  }
+
   const corsOrigins = result.data.CORS_ORIGINS.split(",")
     .map((s) => s.trim())
     .filter(Boolean);

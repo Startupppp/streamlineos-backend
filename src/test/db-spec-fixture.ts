@@ -43,6 +43,7 @@ async function createOrg(client: Client, orgId: string): Promise<DbSpecOrg> {
     const [seq] = await tx<{ id: string }[]>`
       SELECT nextval(pg_get_serial_sequence('organization_members', 'id')) AS id`;
     membershipId = Number(seq!.id);
+    await tx`SELECT set_config('app.organization_id', ${orgId}, true)`;
     await tx`
       INSERT INTO users (id, email) VALUES (${userId}, ${`${userId}@test.invalid`})
       ON CONFLICT (id) DO NOTHING`;

@@ -46,31 +46,45 @@ const DEBUG_PORT = Number(flag("debug-port", "9333"));
 const SETTLE_MS = Number(flag("settle", "4000"));
 
 const STATUS_PATH = "/org/setup/status";
+const COMPLETE_PATH = "/org/setup/complete";
 
 function statusBody(overrides) {
   return {
     success: true,
     data: {
       orgId: "00000000-0000-4000-8000-000000000001",
-      onboardingCompletedAt: "2026-01-01T00:00:00.000Z",
-      ready: true,
+      onboardingCompletedAt: null,
+      ready: false,
       provisioning: "pending",
       errorCode: null,
       correlationId: null,
+      recipientOutcomes: null,
       ...overrides,
     },
+  };
+}
+
+function completeBody() {
+  return {
+    success: true,
+    data: { success: true, orgId: "00000000-0000-4000-8000-000000000001" },
   };
 }
 
 /**
  * `expect` is matched against the page's rendered text. Each string is copy the wizard owns,
  * so a wording change fails loudly rather than silently weakening the capture.
+ *
+ * All failure scenarios use `ready: false` so `useSetupProvisioning` never sets `isReady: true`
+ * and the `finishSetup` path (which calls `completeOnboardingGate` against a real backend) does
+ * not run during the capture. The issue banner remains visible for the full `SETTLE_MS` window.
  */
 export const SCENARIOS = [
   {
     name: "background-partial",
     status: 200,
     body: statusBody({
+      ready: false,
       provisioning: "completed",
       errorCode: "SETUP_BACKGROUND_PARTIAL",
       correlationId: "corr-partial",
@@ -81,6 +95,7 @@ export const SCENARIOS = [
     name: "background-dead",
     status: 200,
     body: statusBody({
+      ready: false,
       provisioning: "failed",
       errorCode: "SETUP_BACKGROUND_DEAD",
       correlationId: "corr-dead",
@@ -91,6 +106,7 @@ export const SCENARIOS = [
     name: "background-invalid",
     status: 200,
     body: statusBody({
+      ready: false,
       provisioning: "failed",
       errorCode: "SETUP_BACKGROUND_INVALID",
       correlationId: "corr-invalid",
@@ -101,11 +117,23 @@ export const SCENARIOS = [
     name: "background-suppressed",
     status: 200,
     body: statusBody({
+      ready: false,
       provisioning: "failed",
       errorCode: "SETUP_BACKGROUND_SUPPRESSED",
       correlationId: "corr-suppressed",
     }),
     expect: ["Optional setup step was skipped"],
+  },
+  {
+    name: "background-retrying",
+    status: 200,
+    body: statusBody({
+      ready: false,
+      provisioning: "failed",
+      errorCode: "SETUP_BACKGROUND_RETRYING",
+      correlationId: null,
+    }),
+    expect: ["Creating organization"],
   },
   {
     name: "unauthorized-401",
@@ -133,8 +161,43 @@ export const SCENARIOS = [
   },
 ];
 
-function encodeBody(scenario) {
-  return Buffer.from(JSON.stringify(scenario.body ?? {}), "utf8").toString("base64");
+function encodeBody(body) {
+  return Buffer.from(JSON.stringify(body ?? {}), "utf8").toString("base64");
+}
+
+const WIZARD_DRAFT = JSON.stringify({
+  goals: ["sales"],
+  industry: "Technology",
+  companyName: "Test Corp",
+  teamSize: "1-10",
+  phone: "+911234567890",
+  invitees: [],
+  installedApps: ["crm", "chat", "kb"],
+  modules: ["crm", "chat", "kb"],
+});
+
+async function seedWizardLocalStorage(cdp) {
+  const sessionResult = await cdp.send("Runtime.evaluate", {
+    expression:
+      "fetch('/api/auth/session').then(r => r.json()).then(d => JSON.stringify(d?.user ?? {})).catch(() => '{}')",
+    awaitPromise: true,
+    returnByValue: true,
+  });
+  let userId = "";
+  try {
+    const user = JSON.parse(sessionResult.result?.value ?? "{}");
+    userId = user.id ?? "";
+  } catch {
+    void 0;
+  }
+  if (!userId) return;
+  await cdp.send("Runtime.evaluate", {
+    expression: `
+      localStorage.setItem("org-setup-draft--${userId}", ${JSON.stringify(WIZARD_DRAFT)});
+      localStorage.setItem("org-setup-step--${userId}", "3");
+    `,
+    returnByValue: false,
+  });
 }
 
 function findBrowser() {
@@ -148,14 +211,18 @@ async function waitForDevTools(port, timeoutMs) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     try {
-      const response = await fetch(`http://127.0.0.1:${port}/json/version`);
-      if (response.ok) return (await response.json()).webSocketDebuggerUrl;
+      const response = await fetch(`http://127.0.0.1:${port}/json/list`);
+      if (response.ok) {
+        const targets = await response.json();
+        const page = targets.find((t) => t.type === "page" && t.webSocketDebuggerUrl);
+        if (page) return page.webSocketDebuggerUrl;
+      }
     } catch {
       // not up yet
     }
     await sleep(200);
   }
-  throw new Error(`Chrome DevTools endpoint not ready after ${timeoutMs}ms`);
+  throw new Error(`Chrome DevTools page target not ready after ${timeoutMs}ms`);
 }
 
 async function cdpSession(wsUrl) {
@@ -199,6 +266,15 @@ async function cdpSession(wsUrl) {
 
 async function captureScenario(cdp, scenario) {
   await cdp.send("Page.navigate", { url: `${BASE_URL}/org-setup` });
+  await sleep(2500);
+  await seedWizardLocalStorage(cdp);
+  await cdp.send("Page.navigate", { url: `${BASE_URL}/org-setup` });
+  await sleep(2000);
+  await cdp.send("Runtime.evaluate", {
+    expression:
+      "([...document.querySelectorAll('button')].find(b => (b.textContent ?? '').includes('Build my organization')))?.click()",
+    returnByValue: false,
+  });
   await sleep(SETTLE_MS);
   const { result } = await cdp.send("Runtime.evaluate", {
     expression: "document.body.innerText",
@@ -219,7 +295,7 @@ function selfTest() {
     if (scenario.status === null && !scenario.failWith)
       throw new Error(`${scenario.name} has neither a status nor a failure reason`);
     if (scenario.status !== null) {
-      const decoded = JSON.parse(Buffer.from(encodeBody(scenario), "base64").toString("utf8"));
+      const decoded = JSON.parse(Buffer.from(encodeBody(scenario.body), "base64").toString("utf8"));
       if (typeof decoded !== "object" || decoded === null)
         throw new Error(`${scenario.name} does not encode to an object`);
     }
@@ -229,6 +305,7 @@ function selfTest() {
     "SETUP_BACKGROUND_DEAD",
     "SETUP_BACKGROUND_INVALID",
     "SETUP_BACKGROUND_SUPPRESSED",
+    "SETUP_BACKGROUND_RETRYING",
   ]) {
     const covered = SCENARIOS.some(
       (scenario) => scenario.body?.data?.errorCode === code,
@@ -287,12 +364,24 @@ async function main() {
       url: BASE_URL,
     });
     await cdp.send("Fetch.enable", {
-      patterns: [{ urlPattern: `*${STATUS_PATH}*`, requestStage: "Request" }],
+      patterns: [
+        { urlPattern: `*${STATUS_PATH}*`, requestStage: "Request" },
+        { urlPattern: `*${COMPLETE_PATH}*`, requestStage: "Request" },
+      ],
     });
 
     let active = SCENARIOS[0];
     cdp.on("Fetch.requestPaused", (params) => {
       const handle = async () => {
+        if (params.request.url.includes(COMPLETE_PATH)) {
+          await cdp.send("Fetch.fulfillRequest", {
+            requestId: params.requestId,
+            responseCode: 200,
+            responseHeaders: [{ name: "content-type", value: "application/json" }],
+            body: encodeBody(completeBody()),
+          });
+          return;
+        }
         if (!params.request.url.includes(STATUS_PATH)) {
           await cdp.send("Fetch.continueRequest", { requestId: params.requestId });
           return;
@@ -308,7 +397,7 @@ async function main() {
           requestId: params.requestId,
           responseCode: active.status,
           responseHeaders: [{ name: "content-type", value: "application/json" }],
-          body: encodeBody(active),
+          body: encodeBody(active.body),
         });
       };
       void handle().catch((error) => console.error(`Fetch handler: ${error.message}`));

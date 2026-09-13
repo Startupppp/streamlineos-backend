@@ -5,9 +5,11 @@ import { type Db } from "../../../db/drizzle.module";
 import { InboxConsumer } from "../../../common/outbox/inbox-consumer";
 import {
   OutboxConsumerRegistry,
+  outboxEffectIdempotencyKey,
   type OutboxEventConsumer,
   type OutboxEventRow,
 } from "../../../common/outbox/outbox-consumer.registry";
+import { ExternalEffectLedger } from "../../../common/outbox/external-effect-ledger";
 import { ComposioGateway } from "../../integrations/core/composio.gateway";
 
 const payloadSchema = z.object({
@@ -31,6 +33,7 @@ export class IntegrationConnectionDisconnectedConsumer
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly registry: OutboxConsumerRegistry,
     private readonly composio: ComposioGateway,
+    private readonly effects: ExternalEffectLedger,
   ) {}
 
   onModuleInit(): void {
@@ -74,7 +77,16 @@ export class IntegrationConnectionDisconnectedConsumer
     }
 
     try {
-      await this.composio.deleteConnectedAccount(composioConnectedAccountId);
+      await this.effects.execute(
+        {
+          organizationId: event.organizationId,
+          producerEventId: event.eventId,
+          effectKey: outboxEffectIdempotencyKey(event, CONSUMER_NAME),
+          effectType: "composio.delete_connected_account",
+          providerIdempotency: "NONE",
+        },
+        () => this.composio.deleteConnectedAccount(composioConnectedAccountId),
+      );
       await inbox.markProcessed(CONSUMER_NAME, event.eventId, "COMPLETED", null);
       this.logger.log(
         `integration.connection.disconnected ${event.eventId}: deleted Composio account ${composioConnectedAccountId} for connection ${connectionId}`,

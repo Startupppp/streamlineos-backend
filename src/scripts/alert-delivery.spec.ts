@@ -281,6 +281,17 @@ describe("alert delivery", () => {
           restoredAt: new Date().toISOString(),
         }),
       },
+      {
+        alertId: "workflow-stranded",
+        owner: "platform-reliability",
+        severity: "critical",
+        anchor: "#workflow-stranded",
+        stdin: JSON.stringify({
+          fired: true,
+          count: 1,
+          rows: [{ org_id: "org_fixture_1", status: "timed_out" }],
+        }),
+      },
     ];
 
     for (const { alertId, owner, severity, anchor, stdin } of cases) {
@@ -330,6 +341,30 @@ describe("alert delivery", () => {
     expect(r3.code).toBe(0);
     expect((JSON.parse(r3.out.trim()) as { dispatched: boolean }).dispatched).toBe(true);
     expect(collected).toHaveLength(2);
+  });
+
+  it("(f) workflow-stranded is in the dispatch registry — exits 2 on an unknown id", async () => {
+    const alertInput = JSON.stringify({
+      fired: true,
+      count: 1,
+      rows: [{ org_id: "org_fixture_1", status: "timed_out" }],
+    });
+    const r = await runDispatch(
+      [
+        "--alert-id=workflow-stranded",
+        `--state-file=${sf("f-stranded")}`,
+        "--suppression-window-minutes=0",
+      ],
+      { ALERT_WEBHOOK_URL: webhookUrl },
+      alertInput,
+    );
+    expect(r.code).toBe(0);
+    expect(collected).toHaveLength(1);
+    expect(collected[0].alertId).toBe("workflow-stranded");
+    expect(collected[0].owner).toBe("platform-reliability");
+    expect(collected[0].severity).toBe("critical");
+    expect(typeof collected[0].runbook).toBe("string");
+    expect((collected[0].runbook as string).includes("#workflow-stranded")).toBe(true);
   });
 
   it("(e) failure modes: no ALERT_WEBHOOK_URL exits 2; connection refused exits non-zero", async () => {

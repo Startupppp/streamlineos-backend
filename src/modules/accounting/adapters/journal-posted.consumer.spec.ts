@@ -1,4 +1,5 @@
 import type { OutboxEventRow } from "../../../common/outbox/outbox-consumer.registry";
+import { ExternalEffectLeaseBusyError } from "../../../common/outbox/external-effect-ledger";
 import { JOURNAL_POSTED_EVENT, JournalPostedConsumer } from "./journal-posted.consumer";
 
 /**
@@ -31,11 +32,17 @@ function event(overrides: Partial<OutboxEventRow> = {}, payload: Record<string, 
 }
 
 describe("JournalPostedConsumer", () => {
-  function build() {
+  function build(effectsOverride?: { execute: jest.Mock }) {
     const registry = { register: jest.fn() };
     const webhooks = { deliverNow: jest.fn().mockResolvedValue(undefined) };
-    const consumer = new JournalPostedConsumer(webhooks as never, registry as never);
-    return { consumer, registry, webhooks };
+    const effects = effectsOverride ?? {
+      execute: jest.fn().mockImplementation(async (_e: unknown, send: () => Promise<void>) => {
+        await send();
+        return "EXECUTED" as const;
+      }),
+    };
+    const consumer = new JournalPostedConsumer(webhooks as never, registry as never, effects as never);
+    return { consumer, registry, webhooks, effects };
   }
 
   it("registers itself for accounting.journal.posted on module init", () => {
@@ -71,5 +78,37 @@ describe("JournalPostedConsumer", () => {
     const { consumer, webhooks } = build();
     webhooks.deliverNow.mockRejectedValueOnce(new Error("endpoint 503"));
     await expect(consumer.handle(event())).rejects.toThrow("endpoint 503");
+  });
+
+  describe("ledger fence", () => {
+    it("propagates BUSY when an abandoned in-flight send holds the lease — no duplicate delivery", async () => {
+      const busyExecute: jest.Mock = jest.fn().mockRejectedValueOnce(
+        new ExternalEffectLeaseBusyError("outbox:org-a:accounting:journal-posted:webhook-delivery:evt-1"),
+      );
+      const { consumer, webhooks } = build({ execute: busyExecute });
+      await expect(consumer.handle(event())).rejects.toBeInstanceOf(ExternalEffectLeaseBusyError);
+      expect(webhooks.deliverNow).not.toHaveBeenCalled();
+    });
+
+    it("suppresses delivery and completes without error when the effect already SUCCEEDED", async () => {
+      const succeededExecute: jest.Mock = jest.fn().mockResolvedValueOnce("ALREADY_SUCCEEDED" as const);
+      const { consumer, webhooks } = build({ execute: succeededExecute });
+      await consumer.handle(event());
+      expect(webhooks.deliverNow).not.toHaveBeenCalled();
+    });
+
+    it("passes the correct effect descriptor to the ledger for a valid event", async () => {
+      const { consumer, effects } = build();
+      await consumer.handle(event());
+      expect(effects.execute).toHaveBeenCalledWith(
+        expect.objectContaining({
+          organizationId: "org-a",
+          producerEventId: "evt-1",
+          effectType: "webhook.delivery",
+          providerIdempotency: "NONE",
+        }),
+        expect.any(Function),
+      );
+    });
   });
 });

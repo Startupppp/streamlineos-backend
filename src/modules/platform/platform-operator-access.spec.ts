@@ -1,6 +1,7 @@
 import { ConflictException, ForbiddenException, NotFoundException } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
 import { DRIZZLE } from "../../db/drizzle.constants";
+import { AuditService } from "../../common/audit/audit.service";
 import { NotificationDispatchService } from "../notifications/notification-dispatch.service";
 import { PlatformOperatorAccessService } from "./platform-operator-access.service";
 
@@ -52,12 +53,17 @@ function makeTransactionDb<T extends Record<string, unknown>>(
   } as T & { transaction: jest.Mock };
 }
 
+function makeAuditMock() {
+  return { logCriticalOutsideTransaction: jest.fn().mockResolvedValue(undefined), logCritical: jest.fn(), log: jest.fn() };
+}
+
 async function buildService(db: unknown): Promise<PlatformOperatorAccessService> {
   const module = await Test.createTestingModule({
     providers: [
       PlatformOperatorAccessService,
       { provide: DRIZZLE, useValue: db },
       { provide: NotificationDispatchService, useValue: { emit: jest.fn() } },
+      { provide: AuditService, useValue: makeAuditMock() },
     ],
   }).compile();
   return module.get(PlatformOperatorAccessService);
@@ -162,6 +168,7 @@ describe("PlatformOperatorAccessService.createGrantAndLog", () => {
         PlatformOperatorAccessService,
         { provide: DRIZZLE, useValue: db },
         { provide: NotificationDispatchService, useValue: notification },
+        { provide: AuditService, useValue: makeAuditMock() },
       ],
     }).compile();
     const svc = module.get(PlatformOperatorAccessService);
@@ -504,6 +511,7 @@ describe("PlatformOperatorAccessService — org-admin notification", () => {
         PlatformOperatorAccessService,
         { provide: DRIZZLE, useValue: db },
         { provide: NotificationDispatchService, useValue: notification },
+        { provide: AuditService, useValue: makeAuditMock() },
       ],
     }).compile();
     return module.get(PlatformOperatorAccessService);
@@ -640,6 +648,7 @@ describe("PlatformOperatorAccessService — org-admin notification", () => {
         PlatformOperatorAccessService,
         { provide: DRIZZLE, useValue: db },
         { provide: NotificationDispatchService, useValue: notification },
+        { provide: AuditService, useValue: makeAuditMock() },
       ],
     }).compile();
     const svc = module.get(PlatformOperatorAccessService);
@@ -654,5 +663,192 @@ describe("PlatformOperatorAccessService — org-admin notification", () => {
     const targets = emitCall.targetUserIds as string[];
     expect(targets).toContain("op-alice");
     expect(targets).toContain("org-owner-1");
+  });
+});
+
+describe("PlatformOperatorAccessService.approveGrant — D01/D02 approval notification", () => {
+  async function buildApproveService(
+    db: unknown,
+    notification: { emit: jest.Mock },
+    audit?: ReturnType<typeof makeAuditMock>,
+  ) {
+    const mod = await Test.createTestingModule({
+      providers: [
+        PlatformOperatorAccessService,
+        { provide: DRIZZLE, useValue: db },
+        { provide: NotificationDispatchService, useValue: notification },
+        { provide: AuditService, useValue: audit ?? makeAuditMock() },
+      ],
+    }).compile();
+    return mod.get(PlatformOperatorAccessService);
+  }
+
+  it("emits security.operator_access.approved to operator and org owners/admins on a successful approval", async () => {
+    const notification = { emit: jest.fn().mockResolvedValue(undefined) };
+    const grantRow = {
+      grantId: "grant-approve-notify",
+      grantedBy: "op-alice",
+      approverId: null,
+      status: "pending",
+      orgId: "org-1",
+      operatorUserId: "op-charlie",
+    };
+    const grantSelect = makeSelectChain([grantRow]);
+    const orgAdminSelect = makeSelectChain([{ userId: "org-owner-1" }, { userId: "org-admin-2" }]);
+    const updateChain = makeUpdateChain();
+    const db = makeTransactionDb({
+      select: jest.fn()
+        .mockReturnValueOnce(grantSelect)
+        .mockReturnValueOnce(orgAdminSelect),
+      update: jest.fn().mockReturnValue(updateChain),
+      insert: jest.fn().mockReturnValue(makeInsertLogChain()),
+    }, {});
+    const svc = await buildApproveService(db, notification);
+
+    await svc.approveGrant("grant-approve-notify", "op-bob");
+
+    expect(notification.emit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        eventKey: "security.operator_access.approved",
+        orgId: "org-1",
+        entityId: "grant-approve-notify",
+      }),
+    );
+    const emitCall = notification.emit.mock.calls[0]?.[0] as Record<string, unknown>;
+    const targets = emitCall.targetUserIds as string[];
+    expect(targets).toContain("op-charlie");
+    expect(targets).toContain("org-owner-1");
+    expect(targets).toContain("org-admin-2");
+  });
+
+  it("(bite) does not notify on idempotent repeat-approve by the same approver", async () => {
+    const notification = { emit: jest.fn() };
+    const row = {
+      grantId: "grant-idempotent",
+      grantedBy: "op-alice",
+      approverId: "op-bob",
+      status: "active",
+      orgId: "org-1",
+      operatorUserId: "op-charlie",
+    };
+    const db = { select: jest.fn().mockReturnValue(makeSelectChain([row])) };
+    const svc = await buildApproveService(db, notification);
+
+    const result = await svc.approveGrant("grant-idempotent", "op-bob");
+
+    expect(notification.emit).not.toHaveBeenCalled();
+    expect(result.orgId).toBe("org-1");
+  });
+
+  it("(bite) deduplicates operatorUserId when they are also an org owner/admin", async () => {
+    const notification = { emit: jest.fn().mockResolvedValue(undefined) };
+    const grantRow = {
+      grantId: "grant-dedup-approve",
+      grantedBy: "op-alice",
+      approverId: null,
+      status: "pending",
+      orgId: "org-1",
+      operatorUserId: "op-charlie",
+    };
+    const grantSelect = makeSelectChain([grantRow]);
+    const orgAdminSelect = makeSelectChain([{ userId: "op-charlie" }]);
+    const updateChain = makeUpdateChain();
+    const db = makeTransactionDb({
+      select: jest.fn()
+        .mockReturnValueOnce(grantSelect)
+        .mockReturnValueOnce(orgAdminSelect),
+      update: jest.fn().mockReturnValue(updateChain),
+      insert: jest.fn().mockReturnValue(makeInsertLogChain()),
+    }, {});
+    const svc = await buildApproveService(db, notification);
+
+    await svc.approveGrant("grant-dedup-approve", "op-bob");
+
+    const emitCall = notification.emit.mock.calls[0]?.[0] as Record<string, unknown>;
+    const targets = emitCall.targetUserIds as string[];
+    const charlieCount = targets.filter((id) => id === "op-charlie").length;
+    expect(charlieCount).toBe(1);
+  });
+});
+
+describe("PlatformOperatorAccessService.authorizeRequest — denied-attempt audit (D01/D02)", () => {
+  async function buildAuthorizeService(
+    db: unknown,
+    audit: ReturnType<typeof makeAuditMock>,
+  ) {
+    const mod = await Test.createTestingModule({
+      providers: [
+        PlatformOperatorAccessService,
+        { provide: DRIZZLE, useValue: db },
+        { provide: NotificationDispatchService, useValue: { emit: jest.fn() } },
+        { provide: AuditService, useValue: audit },
+      ],
+    }).compile();
+    return mod.get(PlatformOperatorAccessService);
+  }
+
+  it("writes operator_access.denied to audit_logs when no active grant is found", async () => {
+    const audit = makeAuditMock();
+    const tx = {
+      select: jest.fn().mockReturnValue(makeSelectChain([])),
+      insert: jest.fn(),
+    };
+    const db = makeTransactionDb({}, tx);
+    const svc = await buildAuthorizeService(db, audit);
+
+    await expect(
+      svc.authorizeRequest("op-alice", "org-1", "read_customer_data", "operator.get./some/route", "1.2.3.4"),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+
+    expect(audit.logCriticalOutsideTransaction).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "operator_access.denied",
+        userId: "op-alice",
+        orgId: "org-1",
+        resourceType: "operator_access_grant",
+      }),
+    );
+    expect(tx.insert).not.toHaveBeenCalled();
+  });
+
+  it("(fail-closed) audit write failure propagates and access is still denied", async () => {
+    const auditFailure = new Error("audit write failed");
+    const audit = {
+      logCriticalOutsideTransaction: jest.fn().mockRejectedValue(auditFailure),
+      logCritical: jest.fn(),
+      log: jest.fn(),
+    };
+    const tx = {
+      select: jest.fn().mockReturnValue(makeSelectChain([])),
+      insert: jest.fn(),
+    };
+    const db = makeTransactionDb({}, tx);
+    const svc = await buildAuthorizeService(db, audit as ReturnType<typeof makeAuditMock>);
+
+    await expect(
+      svc.authorizeRequest("op-alice", "org-1", "read_customer_data", "operator.get./some/route", undefined),
+    ).rejects.toThrow("audit write failed");
+
+    expect(tx.insert).not.toHaveBeenCalled();
+  });
+
+  it("(bite) does not log a denial when a valid grant exists — only the access log insert fires", async () => {
+    const audit = makeAuditMock();
+    const logChain = makeInsertLogChain();
+    const tx = {
+      select: jest.fn().mockReturnValue(makeSelectChain([{ grantId: "grant-active" }])),
+      insert: jest.fn().mockReturnValue(logChain),
+    };
+    const db = makeTransactionDb({}, tx);
+    const svc = await buildAuthorizeService(db, audit);
+
+    await expect(
+      svc.authorizeRequest("op-alice", "org-1", "read_customer_data", "operator.get./some/route", "1.2.3.4"),
+    ).resolves.toBeUndefined();
+
+    expect(audit.logCriticalOutsideTransaction).not.toHaveBeenCalled();
+    expect(logChain.values).toHaveBeenCalledWith(
+      expect.objectContaining({ grantId: "grant-active", action: "operator.get./some/route" }),
+    );
   });
 });

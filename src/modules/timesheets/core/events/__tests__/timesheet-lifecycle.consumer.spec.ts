@@ -7,6 +7,7 @@ import {
   OutboxConsumerRegistry,
   type OutboxEventRow,
 } from "../../../../../common/outbox/outbox-consumer.registry";
+import { ExternalEffectLeaseBusyError } from "../../../../../common/outbox/external-effect-ledger";
 import type { WebhooksDispatchService } from "../../../../webhooks/webhooks-dispatch.service";
 
 /**
@@ -60,7 +61,6 @@ function stubWebhooks() {
       if (fail) throw fail;
       calls.push({ orgId, eventName, payload });
     },
-    /** Present so a consumer that reached for the fire-and-forget form would be caught. */
     dispatch: () => {
       throw new Error("the consumer must await deliverNow, not fire-and-forget dispatch");
     },
@@ -68,10 +68,19 @@ function stubWebhooks() {
   return { service, calls, failWith: (e: Error) => (fail = e) };
 }
 
+function passThruEffects() {
+  return {
+    execute: jest.fn().mockImplementation(async (_e: unknown, send: () => Promise<void>) => {
+      await send();
+      return "EXECUTED" as const;
+    }),
+  };
+}
+
 describe("TimesheetLifecycleConsumer", () => {
   it("registers a consumer for every lifecycle event type", () => {
     const registry = new OutboxConsumerRegistry();
-    new TimesheetLifecycleConsumer(stubWebhooks().service, registry).onModuleInit();
+    new TimesheetLifecycleConsumer(stubWebhooks().service, registry, passThruEffects() as never).onModuleInit();
 
     for (const eventType of TIMESHEET_LIFECYCLE_EVENT_TYPES) {
       expect(registry.get(eventType)?.eventType).toBe(eventType);
@@ -81,7 +90,7 @@ describe("TimesheetLifecycleConsumer", () => {
 
   it("fans the event out to the organisation's subscribed endpoints", async () => {
     const webhooks = stubWebhooks();
-    const consumer = new TimesheetLifecycleConsumer(webhooks.service, new OutboxConsumerRegistry());
+    const consumer = new TimesheetLifecycleConsumer(webhooks.service, new OutboxConsumerRegistry(), passThruEffects() as never);
 
     await consumer.handle(eventRow());
 
@@ -101,7 +110,7 @@ describe("TimesheetLifecycleConsumer", () => {
   it("routes through the registered adapter, not just the method", async () => {
     const webhooks = stubWebhooks();
     const registry = new OutboxConsumerRegistry();
-    new TimesheetLifecycleConsumer(webhooks.service, registry).onModuleInit();
+    new TimesheetLifecycleConsumer(webhooks.service, registry, passThruEffects() as never).onModuleInit();
 
     const submitted = TIMESHEET_LIFECYCLE_EVENTS.submitted;
     await registry.get(submitted)!.handle(eventRow({ eventType: submitted, payload: { ...PAYLOAD, status: "SUBMITTED" } } as Partial<OutboxEventRow>));
@@ -111,7 +120,7 @@ describe("TimesheetLifecycleConsumer", () => {
 
   it("throws on a payload that does not match the published schema", async () => {
     const webhooks = stubWebhooks();
-    const consumer = new TimesheetLifecycleConsumer(webhooks.service, new OutboxConsumerRegistry());
+    const consumer = new TimesheetLifecycleConsumer(webhooks.service, new OutboxConsumerRegistry(), passThruEffects() as never);
 
     await expect(
       consumer.handle(eventRow({ payload: { ...PAYLOAD, period_id: "forty-two" } } as Partial<OutboxEventRow>)),
@@ -127,7 +136,7 @@ describe("TimesheetLifecycleConsumer", () => {
    */
   it("refuses an event whose payload names a different organisation", async () => {
     const webhooks = stubWebhooks();
-    const consumer = new TimesheetLifecycleConsumer(webhooks.service, new OutboxConsumerRegistry());
+    const consumer = new TimesheetLifecycleConsumer(webhooks.service, new OutboxConsumerRegistry(), passThruEffects() as never);
 
     await expect(
       consumer.handle(eventRow({ payload: { ...PAYLOAD, organization_id: "org-2" } } as Partial<OutboxEventRow>)),
@@ -144,8 +153,32 @@ describe("TimesheetLifecycleConsumer", () => {
   it("propagates a delivery failure so the publisher can retry", async () => {
     const webhooks = stubWebhooks();
     webhooks.failWith(new Error("endpoint timed out"));
-    const consumer = new TimesheetLifecycleConsumer(webhooks.service, new OutboxConsumerRegistry());
+    const consumer = new TimesheetLifecycleConsumer(webhooks.service, new OutboxConsumerRegistry(), passThruEffects() as never);
 
     await expect(consumer.handle(eventRow())).rejects.toThrow("endpoint timed out");
+  });
+
+  describe("ledger fence", () => {
+    it("propagates BUSY when an abandoned in-flight send holds the lease — no duplicate delivery", async () => {
+      const busyEffects = {
+        execute: jest.fn().mockRejectedValueOnce(
+          new ExternalEffectLeaseBusyError("outbox:org-1:timesheets:lifecycle:webhook-delivery:11111111-1111-4111-8111-111111111111"),
+        ),
+      };
+      const webhooks = stubWebhooks();
+      const consumer = new TimesheetLifecycleConsumer(webhooks.service, new OutboxConsumerRegistry(), busyEffects as never);
+      await expect(consumer.handle(eventRow())).rejects.toBeInstanceOf(ExternalEffectLeaseBusyError);
+      expect(webhooks.calls).toHaveLength(0);
+    });
+
+    it("suppresses delivery and completes without error when the effect already SUCCEEDED", async () => {
+      const succeededEffects = {
+        execute: jest.fn().mockResolvedValueOnce("ALREADY_SUCCEEDED" as const),
+      };
+      const webhooks = stubWebhooks();
+      const consumer = new TimesheetLifecycleConsumer(webhooks.service, new OutboxConsumerRegistry(), succeededEffects as never);
+      await consumer.handle(eventRow());
+      expect(webhooks.calls).toHaveLength(0);
+    });
   });
 });

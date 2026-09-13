@@ -2,12 +2,16 @@ import { Injectable, Logger, type OnModuleInit } from "@nestjs/common";
 import { z } from "zod";
 import {
   OutboxConsumerRegistry,
+  outboxEffectIdempotencyKey,
   type OutboxEventConsumer,
   type OutboxEventRow,
 } from "../../../common/outbox/outbox-consumer.registry";
+import { ExternalEffectLedger } from "../../../common/outbox/external-effect-ledger";
 import { WebhooksDispatchService } from "../../webhooks/webhooks-dispatch.service";
 
 export const JOURNAL_POSTED_EVENT = "accounting.journal.posted";
+
+const CONSUMER_NAME = "accounting:journal-posted:webhook-delivery";
 
 /**
  * What `LedgerService.post` writes. Only the two ids this consumer acts on are
@@ -48,6 +52,7 @@ export class JournalPostedConsumer implements OutboxEventConsumer, OnModuleInit 
   constructor(
     private readonly webhooks: WebhooksDispatchService,
     private readonly registry: OutboxConsumerRegistry,
+    private readonly effects: ExternalEffectLedger,
   ) {}
 
   onModuleInit(): void {
@@ -65,7 +70,16 @@ export class JournalPostedConsumer implements OutboxEventConsumer, OnModuleInit 
       );
     }
 
-    await this.webhooks.deliverNow(event.organizationId, event.eventType, { ...parsed.data });
+    await this.effects.execute(
+      {
+        organizationId: event.organizationId,
+        producerEventId: event.eventId,
+        effectKey: outboxEffectIdempotencyKey(event, CONSUMER_NAME),
+        effectType: "webhook.delivery",
+        providerIdempotency: "NONE",
+      },
+      () => this.webhooks.deliverNow(event.organizationId, event.eventType, { ...parsed.data }),
+    );
     this.logger.debug(`${event.eventType} ${parsed.data.journal_id} fanned out to webhooks`);
   }
 }

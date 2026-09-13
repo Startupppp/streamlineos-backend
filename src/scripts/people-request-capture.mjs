@@ -79,6 +79,20 @@ const INVITE_EMAIL =
 
 const sql = postgres(DATABASE_URL, { prepare: false, max: 1, onnotice: () => {} });
 
+async function fetchExistingMemberEmail() {
+  const rows = await sql`
+    SELECT u.email FROM organization_members om
+    JOIN users u ON u.id = om.user_id
+    WHERE om.org_id = ${ORG_ID}
+      AND om.status = 'ACTIVE'
+      AND u.is_active = true
+      AND u.deleted_at IS NULL
+      AND u.email != ${INVITE_EMAIL}
+    LIMIT 2
+  `;
+  return rows[1]?.email ?? rows[0]?.email ?? null;
+}
+
 async function statementCount() {
   try {
     const [row] = await sql`SELECT coalesce(sum(calls), 0)::bigint AS calls FROM pg_stat_statements`;
@@ -91,7 +105,7 @@ async function statementCount() {
 const legs = [];
 
 async function leg(options) {
-  const { label, queryKey, caller, method = "GET", path, body = null, expect = [200] } = options;
+  const { label, queryKey, caller, method = "GET", path, body = null, expect = [200], extraHeaders = {} } = options;
   const before = await statementCount();
   const startedAt = process.hrtime.bigint();
   let status = 0;
@@ -105,6 +119,7 @@ async function leg(options) {
         authorization: `Bearer ${TOKEN}`,
         "content-type": "application/json",
         "x-organization-id": ORG_ID,
+        ...extraHeaders,
       },
       body: body === null ? undefined : JSON.stringify(body),
     });
@@ -143,10 +158,13 @@ async function run() {
         "Enable the extension on the disposable database for a complete capture.",
     );
 
+  const existingMemberEmail = await fetchExistingMemberEmail();
+  if (!existingMemberEmail) fail("could not find an existing active member email for the conflict test");
+
   const directoryRead = {
-    queryKey: 'usersAndCommerceQueryKeys.users.list({ page, limit })',
+    queryKey: 'usersAndCommerceQueryKeys.users.list({ cursor, limit })',
     caller: "features/directory/users/users-page.tsx -> hooks/api/users",
-    path: "/users?page=1&limit=20",
+    path: "/users?limit=20",
   };
   const invitationRead = {
     queryKey: "usersAndCommerceQueryKeys.users.invitations(params)",
@@ -173,6 +191,7 @@ async function run() {
     path: "/users/invite",
     body: { email: INVITE_EMAIL, role: "MEMBER" },
     expect: [200, 201],
+    extraHeaders: { "idempotency-key": randomUUID() },
   });
 
   await leg({ label: "invalidated-read", ...invitationRead });
@@ -183,8 +202,9 @@ async function run() {
     queryKey: "mutation: users.invite",
     method: "POST",
     path: "/users/invite",
-    body: { email: INVITE_EMAIL, role: "MEMBER" },
+    body: { email: existingMemberEmail, role: "MEMBER" },
     expect: [409],
+    extraHeaders: { "idempotency-key": randomUUID() },
   });
 
   await leg({ label: "read-after-failed-mutation", ...invitationRead });
@@ -198,6 +218,7 @@ async function run() {
       path: "/users/invite",
       body: { email: `concurrent-${randomUUID()}@example.invalid`, role: "MEMBER" },
       expect: [200, 201, 409],
+      extraHeaders: { "idempotency-key": randomUUID() },
     }),
     leg({ label: "concurrent-read", ...invitationRead }),
   ]);
@@ -216,7 +237,7 @@ async function run() {
       queryKey: "mutation: organization.switch",
       method: "POST",
       path: "/organization/switch",
-      body: { organizationId: SECOND_ORG_ID },
+      body: { orgId: SECOND_ORG_ID },
       expect: [200, 201],
     });
     await leg({ label: "read-after-org-switch", ...invitationRead });
@@ -234,6 +255,7 @@ async function run() {
     orgId: mask(ORG_ID),
     secondOrgId: mask(SECOND_ORG_ID),
     inviteSubject: mask(INVITE_EMAIL),
+    conflictSubject: mask(existingMemberEmail),
     inviteCreated: invite.ok,
     concurrentPair: concurrent.map((entry) => ({
       label: entry.label,

@@ -19,15 +19,11 @@ import { AiCreditsService } from "./ai-credits.service";
 import { BillingCoupons } from "./billing-coupons";
 import { type BillingCycle, type ConfirmCheckoutInput, type Plan } from "./dto/billing.schemas";
 import { PlanLimitsService } from "./plan-limits.service";
-import {
-  PLAN_PRICES_PAISE,
-  PLATFORM_PRICE_CURRENCY,
-} from "./plan-entitlements.constants";
+import { PLATFORM_PRICE_CURRENCY } from "./plan-entitlements.constants";
 import { ProrationLedgerService } from "./proration-ledger.service";
 import { RevenueAnalyticsService } from "./revenue-analytics.service";
 import { classifyPlanChange } from "./revenue-events";
 import { VersionedCatalogService } from "./versioned-catalog.service";
-import { applyDiscount, resolveQuotePrice } from "./coupon-pricing";
 import {
   grantPlanCredits,
   recordProrationForPlanChange,
@@ -37,6 +33,7 @@ import { isUniqueViolation, isUniqueViolationOn } from "../../../common/db/postg
 import { SubscriptionPurchaseService } from "./subscription-purchase.service";
 import type { SubscriptionPurchase } from "../../../db/schema/billing/subscription-purchases";
 import type { PlatformMerchantService } from "../payments/platform-merchant.service";
+import { BillingOrderCreation } from "./billing-order-creation";
 
 export interface BillingPaymentActivationDeps {
   db: Db;
@@ -57,165 +54,27 @@ export class BillingPaymentActivation {
   private readonly couponAdmin: BillingCoupons;
   private readonly logger = new Logger(BillingPaymentActivation.name);
   private readonly purchaseService: SubscriptionPurchaseService;
+  private readonly orderCreation: BillingOrderCreation;
 
   constructor(private readonly deps: BillingPaymentActivationDeps) {
     this.couponAdmin = new BillingCoupons(deps.db);
     this.purchaseService = deps.purchaseService ?? new SubscriptionPurchaseService(deps.db);
+    this.orderCreation = new BillingOrderCreation({
+      db: deps.db,
+      catalog: deps.catalog,
+      platformMerchant: deps.platformMerchant,
+      purchaseService: this.purchaseService,
+    });
   }
 
-  async createOrder(
+  createOrder(
     orgId: string,
     userId: string,
     plan: Plan,
     billingCycle: BillingCycle = "monthly",
     couponId?: number,
   ) {
-    const platformMerchant = this.deps.platformMerchant;
-    const provider = platformMerchant.resolve();
-    if (!provider || !provider.isReady()) {
-      throw new ServiceUnavailableException("Payment gateway not configured. Contact support.");
-    }
-    if (!PLAN_PRICES_PAISE[plan]) throw new BadRequestException("Invalid plan");
-
-    const readiness = platformMerchant.readiness();
-    const environment = platformMerchant.environment();
-    const merchantKeyId = readiness.publicKeyId;
-    if (!readiness.configured || environment === null || merchantKeyId === null) {
-      throw new ServiceUnavailableException("Payment gateway not configured. Contact support.");
-    }
-
-    const price = await this.billablePrice(plan, billingCycle);
-    const baseAmount = price.amount;
-    let amount = baseAmount;
-    let couponDiscountAmount = 0;
-    let reservedCouponId: number | null = null;
-
-    const catalogVersion = await this.deps.catalog
-      .getActivePriceForPlanTier(plan)
-      .then((p) => p?.id ?? null);
-
-    if (couponId !== undefined) {
-      const reservation = await this.deps.db.transaction(async (tx) => {
-        return this.couponAdmin.reserve(tx, couponId, orgId, plan, baseAmount);
-      });
-      if (!reservation.reserved) {
-        throw new BadRequestException(reservation.reason);
-      }
-      couponDiscountAmount = reservation.discountAmountMinor;
-      amount = applyDiscount(baseAmount, couponDiscountAmount);
-      reservedCouponId = couponId;
-    }
-
-    /**
-     * The intent row is written BEFORE the provider is called, and claimed with the order id
-     * afterwards. The reverse order — which this used to do — creates a payable order that no
-     * local row points at whenever the insert fails, and the customer is then charged for a term
-     * activation will refuse to grant, because it is gated on that row existing.
-     */
-    let purchase: Awaited<ReturnType<SubscriptionPurchaseService["create"]>>;
-    try {
-      purchase = await this.deps.db.transaction(async (tx) =>
-        this.purchaseService.create(tx, {
-          orgId,
-          createdByUserId: userId,
-          providerKey: provider.providerKey,
-          environment,
-          merchantKeyId,
-          providerOrderId: null,
-          plan,
-          billingCycle,
-          catalogVersion,
-          baseAmountMinor: baseAmount,
-          discountAmountMinor: couponDiscountAmount,
-          amountMinor: amount,
-          currency: price.currency,
-          couponId: reservedCouponId,
-        }),
-      );
-    } catch (err: unknown) {
-      await this.releaseReservation(orgId, reservedCouponId, "purchase intent write error");
-      throw err;
-    }
-
-    let providerOrderId: string;
-    try {
-      const result = await provider.createOrder({
-        amount: String(amount),
-        currency: price.currency,
-        receipt: `sub_${orgId.slice(-8)}_${String(purchase.id)}`,
-        notes: { orgId, plan, userId, billingCycle, purchaseId: String(purchase.id) },
-      });
-      providerOrderId = result.providerOrderId;
-    } catch (err: unknown) {
-      await this.abandonIntent(orgId, purchase.id);
-      await this.releaseReservation(orgId, reservedCouponId, "order creation error");
-      throw err;
-    }
-
-    try {
-      const claimed = await this.deps.db.transaction(async (tx) =>
-        this.purchaseService.attachProviderOrder(tx, purchase.id, orgId, providerOrderId),
-      );
-      if (claimed === null)
-        throw new Error(
-          `purchase ${purchase.id} could not be claimed for order ${providerOrderId}; it already carries an order`,
-        );
-
-      return {
-        orderId: providerOrderId,
-        purchaseId: purchase.id,
-        amount,
-        currency: price.currency,
-        keyId: merchantKeyId,
-        environment,
-        plan,
-        billingCycle,
-        discountAmount: couponDiscountAmount,
-      };
-    } catch (err: unknown) {
-      await this.releaseReservation(orgId, reservedCouponId, "purchase record write error");
-      throw err;
-    }
-  }
-
-  /**
-   * Retires an intent row whose provider call failed. Such a row holds no order anyone could pay,
-   * so leaving it PENDING would have a sweep chase a purchase that never existed. Failure to retire
-   * it is logged and swallowed: the provider call already failed and that error is the one the
-   * caller needs, and the row is still identifiable by a null provider_order_id.
-   */
-  private async abandonIntent(orgId: string, purchaseId: number): Promise<void> {
-    try {
-      await this.deps.db.transaction(async (tx) =>
-        this.purchaseService.markFailed(tx, purchaseId, orgId, {
-          abandonedReason: "provider order creation failed before an order id existed",
-        }),
-      );
-    } catch (error: unknown) {
-      this.logger.error(
-        `[billing] could not retire purchase intent ${String(purchaseId)} after an order-creation failure`,
-        { error: error instanceof Error ? error.message : String(error) },
-      );
-    }
-  }
-
-  private async releaseReservation(
-    orgId: string,
-    reservedCouponId: number | null,
-    context: string,
-  ): Promise<void> {
-    if (reservedCouponId === null) return;
-    await this.deps.db
-      .transaction(async (tx) => {
-        await this.couponAdmin.release(tx, reservedCouponId);
-      })
-      .catch((releaseErr: unknown) => {
-        this.logger.error(`[billing] coupon reservation release failed after ${context}`, {
-          orgId,
-          couponId: reservedCouponId,
-          releaseErr,
-        });
-      });
+    return this.orderCreation.createOrder(orgId, userId, plan, billingCycle, couponId);
   }
 
   async verifyAndActivate(orgId: string, userId: string, input: ConfirmCheckoutInput) {
@@ -517,11 +376,6 @@ export class BillingPaymentActivation {
       currentPeriodEnd: periodEnd.toISOString(),
       alreadyActivated,
     };
-  }
-
-  private async billablePrice(plan: Plan, billingCycle: BillingCycle) {
-    const catalogPrice = await this.deps.catalog.getActivePriceForPlanTier(plan);
-    return resolveQuotePrice(plan, billingCycle, catalogPrice ?? null);
   }
 }
 

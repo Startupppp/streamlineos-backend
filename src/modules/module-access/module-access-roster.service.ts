@@ -143,7 +143,7 @@ export class ModuleAccessRosterService {
       )
       .innerJoin(users, eq(organizationMembers.userId, users.id))
       .where(baseWhere)
-      .orderBy(asc(organizationMembers.id))
+      .orderBy(asc(roleAssignments.organizationMembershipId))
       .limit(limit + 1);
 
     const page = buildIdCursorPage(rawRows, limit, (r) => r.membershipId);

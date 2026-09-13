@@ -3,6 +3,7 @@ import { PgDialect } from "drizzle-orm/pg-core";
 import type { SQL } from "drizzle-orm";
 import { Test } from "@nestjs/testing";
 import { DRIZZLE } from "../../db/drizzle.constants";
+import { AuditService } from "../../common/audit/audit.service";
 import { NotificationDispatchService } from "../notifications/notification-dispatch.service";
 import { PlatformOperatorAccessService } from "./platform-operator-access.service";
 
@@ -28,6 +29,7 @@ async function buildService(db: unknown): Promise<PlatformOperatorAccessService>
       PlatformOperatorAccessService,
       { provide: DRIZZLE, useValue: db },
       { provide: NotificationDispatchService, useValue: { emit: jest.fn() } },
+      { provide: AuditService, useValue: { logCriticalOutsideTransaction: jest.fn().mockResolvedValue(undefined), logCritical: jest.fn(), log: jest.fn() } },
     ],
   }).compile();
   return module.get(PlatformOperatorAccessService);
@@ -224,8 +226,12 @@ describe("PlatformOperatorAccessService — Item E: break-glass policy", () => {
       const limit = jest.fn().mockResolvedValue([grant]);
       const where = jest.fn().mockReturnValue({ limit });
       const from = jest.fn().mockReturnValue({ where });
+      const adminWhere = jest.fn().mockResolvedValue([]);
+      const adminFrom = jest.fn().mockReturnValue({ where: adminWhere });
       return {
-        select: jest.fn().mockReturnValue({ from }),
+        select: jest.fn()
+          .mockReturnValueOnce({ from })
+          .mockReturnValue({ from: adminFrom }),
         transaction: jest.fn(),
         insert: jest.fn(),
       };

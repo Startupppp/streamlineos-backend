@@ -44,12 +44,12 @@ const SELF_TEST = process.argv.includes("--self-test");
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
 const SRC_ROOT = join(__dirname, "..");
 const SCHEMA_ROOT = join(SRC_ROOT, "db", "schema");
-const ARTIFACTS_FILE = join(
+const ARTIFACTS_CATALOG_DIR = join(
   SRC_ROOT,
   "modules",
   "organization",
   "core",
-  "membership-artifacts.ts",
+  "membership-artifact-catalog",
 );
 
 /**
@@ -440,9 +440,17 @@ if (SELF_TEST) {
 
 let artifactsContent;
 try {
-  artifactsContent = readFileSync(ARTIFACTS_FILE, "utf8");
+  const catalogFiles = readdirSync(ARTIFACTS_CATALOG_DIR)
+    .filter((f) => f.endsWith(".ts"))
+    .sort()
+    .map((f) => readFileSync(join(ARTIFACTS_CATALOG_DIR, f), "utf8"));
+  if (catalogFiles.length === 0) {
+    console.error(`No artifact catalog files found in: ${ARTIFACTS_CATALOG_DIR}`);
+    process.exit(2);
+  }
+  artifactsContent = catalogFiles.join("\n");
 } catch {
-  console.error(`Cannot read artifacts file: ${ARTIFACTS_FILE}`);
+  console.error(`Cannot read artifacts catalog directory: ${ARTIFACTS_CATALOG_DIR}`);
   process.exit(2);
 }
 

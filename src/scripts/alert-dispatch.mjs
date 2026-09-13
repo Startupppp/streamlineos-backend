@@ -40,6 +40,12 @@ const REGISTRY = {
     runbookAnchor: "#retention-dead-man",
     severity: "critical",
   },
+  "workflow-stranded": {
+    owner: "platform-reliability",
+    runbookFile: FAILURE_RUNBOOK,
+    runbookAnchor: "#workflow-stranded",
+    severity: "critical",
+  },
 };
 
 const RUNBOOK_BASE =
