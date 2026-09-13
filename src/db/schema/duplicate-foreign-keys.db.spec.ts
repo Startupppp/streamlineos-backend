@@ -100,10 +100,10 @@ describe("duplicate foreign keys", () => {
            ('build','project_template_tickets','project_template_tickets_org_id_organizations_id_fk'),
            ('public','exit_checklists','exit_checklists_org_id_organizations_id_fk'),
            ('public','feedback_cycle_responses','fk_feedback_cycle_responses_org'),
-           ('public','fin_expense_policies','fin_expense_policies_org_id_organizations_id_fk'),
-           ('public','fin_reimbursement_batches','fin_reimbursement_batches_org_id_organizations_id_fk'),
-           ('public','fin_reimbursement_batches','fin_reimbursement_batches_created_by_users_id_fk'),
-           ('public','fin_reimbursement_batches','fin_reimbursement_batches_approved_by_users_id_fk'),
+           ('public','fin_expense_policies','fin_expense_policies_org_id_fkey'),
+           ('public','fin_reimbursement_batches','fin_reimbursement_batches_org_id_fkey'),
+           ('public','fin_reimbursement_batches','fin_reimbursement_batches_created_by_fkey'),
+           ('public','fin_reimbursement_batches','fin_reimbursement_batches_approved_by_fkey'),
            ('public','invitation_events','invitation_events_org_id_organizations_id_fk'),
            ('public','workflow_variables','workflow_variables_org_id_organizations_id_fk'),
            ('public','workflow_versions','workflow_versions_org_id_organizations_id_fk')
@@ -126,9 +126,9 @@ describe("duplicate foreign keys", () => {
        ORDER BY c.conname`;
 
     expect(rows.map((row) => row.name)).toEqual([
-      "fin_reimbursement_batches_approved_by_users_id_fk",
-      "fin_reimbursement_batches_created_by_users_id_fk",
-      "fin_reimbursement_batches_org_id_organizations_id_fk",
+      "fin_reimbursement_batches_approved_by_fkey",
+      "fin_reimbursement_batches_created_by_fkey",
+      "fin_reimbursement_batches_org_id_fkey",
     ]);
   });
 });

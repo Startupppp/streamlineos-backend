@@ -171,19 +171,22 @@ describe("calendar linked deal/lead — tenant binding against a real database",
         select conname, pg_get_constraintdef(oid) as def
         from pg_constraint
         where conrelid = 'calendar_events'::regclass
-          and conname in ('fk_calendar_events_linked_deal', 'fk_calendar_events_linked_lead')
+          and conname in ('fk_calendar_events_linked_deal', 'fk_calendar_events_linked_lead_id_org')
       `);
       const defs = (fks as unknown as { conname: string; def: string }[]);
       expect(defs).toHaveLength(2);
-      for (const fk of defs) expect(fk.def).not.toMatch(/org_id/);
+      const dealFkDef = defs.find((fk) => fk.conname === "fk_calendar_events_linked_deal")?.def;
+      const leadFkDef = defs.find((fk) => fk.conname === "fk_calendar_events_linked_lead_id_org")?.def;
+      expect(dealFkDef).not.toMatch(/org_id/);
+      expect(leadFkDef).toMatch(/org_id/);
 
       await tx.execute(sql`
-        insert into calendar_events (org_id, title, start_date, end_date, category, created_by_membership_id, linked_deal_id, linked_lead_id)
-        values (${s.orgA}, 'cross-tenant', now(), now(), 'meeting', ${s.membershipA}, ${s.dealB}, ${s.leadB})
+        insert into calendar_events (org_id, title, start_date, end_date, category, created_by_membership_id, linked_deal_id)
+        values (${s.orgA}, 'cross-tenant', now(), now(), 'meeting', ${s.membershipA}, ${s.dealB})
       `);
       const landed = await tx.execute(sql`
         select count(*)::int as n from calendar_events
-        where org_id = ${s.orgA} and linked_deal_id = ${s.dealB} and linked_lead_id = ${s.leadB}
+        where org_id = ${s.orgA} and linked_deal_id = ${s.dealB}
       `);
       expect(Number((landed as unknown as { n: number }[])[0]?.n)).toBe(1);
     });

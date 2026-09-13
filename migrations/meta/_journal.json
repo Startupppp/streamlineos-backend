@@ -6147,6 +6147,13 @@
       "when": 1803000010332,
       "tag": "1117_subscription_purchases_rls_org_lookup",
       "breakpoints": true
+    },
+    {
+      "idx": 1006,
+      "version": "7",
+      "when": 1803000010333,
+      "tag": "1118_drop_lingering_single_col_fks",
+      "breakpoints": true
     }
   ]
 }

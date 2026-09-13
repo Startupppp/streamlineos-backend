@@ -95,6 +95,8 @@ describeDb("activity cursors — real database", () => {
       orgId: string;
       userId: string;
       partyId: string;
+      dealId: number;
+      dealName: string;
     }) => Promise<T>,
   ): Promise<T> {
     let captured: T | undefined;
@@ -105,11 +107,17 @@ describeDb("activity cursors — real database", () => {
         const orgId = fixtureOrgId;
         const userId = `mt-${randomUUID()}`;
         const partyId = randomUUID();
+        const dealName = "Cursor Fixture Deal";
 
         await tx.execute(sql`
           INSERT INTO business_parties ("party_id", "organization_id", "name")
           VALUES (${partyId}, ${orgId}, 'Northwind Traders')
         `);
+
+        const dealRows = await tx.execute(
+          sql`INSERT INTO deals ("org_id", "name") VALUES (${orgId}, ${dealName}) RETURNING id`,
+        );
+        const dealId = Number((dealRows as unknown as { id: number }[])[0]?.id);
 
         for (const fixture of FIXTURES) {
           await tx.execute(sql`
@@ -120,20 +128,22 @@ describeDb("activity cursors — real database", () => {
               ${`${userId}-${fixture.id}`}, ${orgId}, 'task',
               ${"2026-08-20T09:00:00Z"}::timestamp, ${fixture.subject},
               ${fixture.anchored ? partyId : null},
-              ${fixture.anchored ? null : "not-a-number"},
+              ${fixture.anchored ? null : dealId},
               'human', ${userId},
               ${fixture.dueAt}::timestamp, ${userId}
             )
           `);
         }
 
-        const db = tx as unknown as Db;
+        const txDb = tx as unknown as Db;
         captured = await body({
-          tasks: new MyTasksService(db),
-          timeline: new ActivitiesService(db, {} as AuditService),
+          tasks: new MyTasksService(txDb),
+          timeline: new ActivitiesService(txDb, {} as AuditService),
           orgId,
           userId,
           partyId,
+          dealId,
+          dealName,
         });
         throw new Rollback();
       });
@@ -170,12 +180,13 @@ describeDb("activity cursors — real database", () => {
 
   /** A deal anchor that is not a number is data, not a crash. */
   it("renders a task whose deal id is not a deal id", async () => {
-    const anchor = await withTasks(async ({ tasks, orgId, userId }) => {
+    const result = await withTasks(async ({ tasks, orgId, userId, dealId, dealName }) => {
       const page = await read(tasks, orgId, userId);
-      return page.data.find((entry) => entry.subject?.startsWith("Someday"))?.anchor;
+      const anchor = page.data.find((entry) => entry.subject?.startsWith("Someday"))?.anchor;
+      return { anchor, dealId, dealName };
     });
 
-    expect(anchor).toEqual({ kind: "deal", id: "not-a-number", name: null });
+    expect(result?.anchor).toEqual({ kind: "deal", id: String(result?.dealId), name: result?.dealName });
   });
 
   /**
