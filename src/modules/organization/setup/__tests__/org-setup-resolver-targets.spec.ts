@@ -72,6 +72,13 @@ function makeDb(options: {
             }),
           }),
         }),
+        innerJoin: jest.fn().mockReturnValue({
+          where: jest.fn().mockReturnValue({
+            orderBy: jest.fn().mockReturnValue({
+              limit: jest.fn().mockResolvedValue([]),
+            }),
+          }),
+        }),
       }),
     }),
     transaction: jest.fn().mockImplementation(
@@ -488,7 +495,7 @@ describe("OrgSetupResolverService — target selection and authorization", () =>
     });
   });
 
-  describe("listSetupMemberships — 100-row scan limit", () => {
+  describe("listSetupMemberships — 100-row scan limit and findActiveSetupTarget bypass", () => {
     it("applies LIMIT 100 to the membership query", async () => {
       const limitFn = jest.fn().mockResolvedValue([]);
       const db = {
@@ -510,12 +517,10 @@ describe("OrgSetupResolverService — target selection and authorization", () =>
       expect(limitFn).toHaveBeenCalledWith(100);
     });
 
-    it("an ACTIVE target beyond 100 rows is invisible to the scan — this is a known gap", async () => {
-      // listSetupMemberships returns at most 100 rows. A user who holds more than 100 memberships
-      // may have a valid ACTIVE target that is not visible, causing resolveOrCreateOrg to create a
-      // new (unwanted) organization. This gap is known: owner the query to increase the limit or
-      // page through all memberships before resolving requires a product decision.
-      // File: org-setup-resolver.service.ts:60-63
+    it("resolveExistingSetupTarget alone cannot see a target at position 101+", () => {
+      // resolveExistingSetupTarget operates on the results of listSetupMemberships,
+      // which is bounded to 100 rows. An ACTIVE target at position 101+ is invisible to it.
+      // resolveOrCreateOrg handles this with findActiveSetupTarget (see test below).
       const rows100: SetupMembership[] = Array.from({ length: 100 }, (_, i) =>
         membership({ id: i + 1, orgId: `org-${i}`, existingOrgId: `org-${i}`, status: "LEFT" }),
       );
@@ -525,7 +530,6 @@ describe("OrgSetupResolverService — target selection and authorization", () =>
         {} as never, {} as never, {} as never, {} as never,
       );
 
-      // Simulate what happens when the scan returned exactly 100 rows and the active target was #101
       const resultWithout = resolver.resolveExistingSetupTarget(
         actor({ orgId: "" }),
         rows100,
@@ -537,6 +541,27 @@ describe("OrgSetupResolverService — target selection and authorization", () =>
 
       expect(resultWithout).toBeNull();
       expect(resultWith).toEqual({ orgId: "org-active", isOwner: true });
+    });
+
+    it("resolveOrCreateOrg returns an ACTIVE target via findActiveSetupTarget even when beyond the bounded scan", async () => {
+      const creation = { createFromSetup: jest.fn() };
+      const db = makeDb({});
+      const resolver = await buildResolver(db, creation);
+
+      jest.spyOn(resolver, "listSetupMemberships").mockResolvedValue(
+        Array.from({ length: 100 }, (_, i) =>
+          membership({ id: i + 1, orgId: `org-${i}`, existingOrgId: `org-${i}`, status: "LEFT" }),
+        ),
+      );
+      jest.spyOn(
+        resolver as unknown as { findActiveSetupTarget: (userId: string) => Promise<{ orgId: string; isOwner: boolean } | null> },
+        "findActiveSetupTarget",
+      ).mockResolvedValue({ orgId: "org-active", isOwner: true });
+
+      const result = await resolver.resolveOrCreateOrg(actor({ orgId: "" }), {});
+
+      expect(result).toEqual({ orgId: "org-active", isOwner: true });
+      expect(creation.createFromSetup).not.toHaveBeenCalled();
     });
   });
 

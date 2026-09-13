@@ -47,6 +47,15 @@ const SETTLE_MS = Number(flag("settle", "4000"));
 
 const STATUS_PATH = "/org/setup/status";
 const COMPLETE_PATH = "/org/setup/complete";
+const BACKEND_HOST = "127.0.0.1:1500";
+
+const CORS_HEADERS = [
+  { name: "access-control-allow-origin", value: "http://localhost:1000" },
+  { name: "access-control-allow-methods", value: "GET,POST,PUT,DELETE,PATCH,OPTIONS" },
+  { name: "access-control-allow-headers", value: "content-type,authorization,x-requested-with,x-internal-api-secret" },
+  { name: "access-control-allow-credentials", value: "true" },
+  { name: "access-control-max-age", value: "86400" },
+];
 
 function statusBody(overrides) {
   return {
@@ -347,6 +356,7 @@ async function main() {
       "--no-first-run",
       "--no-default-browser-check",
       "--disable-gpu",
+      "--disable-web-security",
     ],
     { stdio: "pipe" },
   );
@@ -365,6 +375,7 @@ async function main() {
     });
     await cdp.send("Fetch.enable", {
       patterns: [
+        { urlPattern: `*${BACKEND_HOST}*`, requestStage: "Request" },
         { urlPattern: `*${STATUS_PATH}*`, requestStage: "Request" },
         { urlPattern: `*${COMPLETE_PATH}*`, requestStage: "Request" },
       ],
@@ -373,32 +384,52 @@ async function main() {
     let active = SCENARIOS[0];
     cdp.on("Fetch.requestPaused", (params) => {
       const handle = async () => {
-        if (params.request.url.includes(COMPLETE_PATH)) {
+        const url = params.request.url;
+        const isOptions = params.request.method === "OPTIONS";
+        if (isOptions) {
+          await cdp.send("Fetch.fulfillRequest", {
+            requestId: params.requestId,
+            responseCode: 204,
+            responseHeaders: CORS_HEADERS,
+            body: "",
+          });
+          return;
+        }
+        if (url.includes(COMPLETE_PATH)) {
           await cdp.send("Fetch.fulfillRequest", {
             requestId: params.requestId,
             responseCode: 200,
-            responseHeaders: [{ name: "content-type", value: "application/json" }],
+            responseHeaders: [{ name: "content-type", value: "application/json" }, ...CORS_HEADERS],
             body: encodeBody(completeBody()),
           });
           return;
         }
-        if (!params.request.url.includes(STATUS_PATH)) {
-          await cdp.send("Fetch.continueRequest", { requestId: params.requestId });
-          return;
-        }
-        if (active.status === null) {
-          await cdp.send("Fetch.failRequest", {
+        if (url.includes(STATUS_PATH)) {
+          if (active.status === null) {
+            await cdp.send("Fetch.failRequest", {
+              requestId: params.requestId,
+              errorReason: active.failWith,
+            });
+            return;
+          }
+          await cdp.send("Fetch.fulfillRequest", {
             requestId: params.requestId,
-            errorReason: active.failWith,
+            responseCode: active.status,
+            responseHeaders: [{ name: "content-type", value: "application/json" }, ...CORS_HEADERS],
+            body: encodeBody(active.body),
           });
           return;
         }
-        await cdp.send("Fetch.fulfillRequest", {
-          requestId: params.requestId,
-          responseCode: active.status,
-          responseHeaders: [{ name: "content-type", value: "application/json" }],
-          body: encodeBody(active.body),
-        });
+        if (url.includes(BACKEND_HOST)) {
+          await cdp.send("Fetch.fulfillRequest", {
+            requestId: params.requestId,
+            responseCode: 200,
+            responseHeaders: [{ name: "content-type", value: "application/json" }, ...CORS_HEADERS],
+            body: encodeBody({ success: true, data: null }),
+          });
+          return;
+        }
+        await cdp.send("Fetch.continueRequest", { requestId: params.requestId });
       };
       void handle().catch((error) => console.error(`Fetch handler: ${error.message}`));
     });

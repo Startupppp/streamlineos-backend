@@ -226,12 +226,42 @@ export class OrgSetupResolverService {
     }
   }
 
+  private async findActiveSetupTarget(userId: string): Promise<SetupTarget | null> {
+    const rows = await withIdentity(this.db, userId, (tx) =>
+      tx
+        .select({ orgId: organizationMembers.orgId, isOwner: organizationMembers.isOwner })
+        .from(organizationMembers)
+        .innerJoin(
+          organizations,
+          and(
+            eq(organizations.id, organizationMembers.orgId),
+            eq(organizations.status, "ACTIVE"),
+            isNull(organizations.deletedAt),
+          ),
+        )
+        .where(
+          and(
+            eq(organizationMembers.userId, userId),
+            eq(organizationMembers.status, "ACTIVE"),
+          ),
+        )
+        .orderBy(desc(organizationMembers.joinedAt))
+        .limit(1),
+    );
+    const row = rows[0];
+    if (!row) return null;
+    return { orgId: row.orgId, isOwner: row.isOwner };
+  }
+
   async resolveOrCreateOrg(
     u: CurrentUserContext,
     input: Pick<SetupInput, "companyName">,
   ): Promise<SetupTarget> {
     const currentTarget = await this.resolveCurrentSetupTarget(u);
     if (currentTarget) return currentTarget;
+
+    const activeTarget = await this.findActiveSetupTarget(u.userId);
+    if (activeTarget) return activeTarget;
 
     const memberships = await this.listSetupMemberships(u.userId);
     const existingTarget = this.resolveExistingSetupTarget(u, memberships);

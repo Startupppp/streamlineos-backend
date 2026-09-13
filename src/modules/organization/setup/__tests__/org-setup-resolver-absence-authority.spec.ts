@@ -99,6 +99,13 @@ function makeDb(options: {
             }),
           }),
         }),
+        innerJoin: jest.fn().mockReturnValue({
+          where: jest.fn().mockReturnValue({
+            orderBy: jest.fn().mockReturnValue({
+              limit: jest.fn().mockResolvedValue([]),
+            }),
+          }),
+        }),
       }),
     }),
   };

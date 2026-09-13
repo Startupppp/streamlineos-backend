@@ -397,3 +397,71 @@ describe("alert delivery", () => {
     expect(collected).toHaveLength(0);
   });
 });
+
+describe("alert runbook anchors", () => {
+  const dispatchSource = fs.readFileSync(path.resolve(__dirname, "alert-dispatch.mjs"), "utf8");
+  const repoRoot = path.resolve(__dirname, "..", "..", "..");
+
+  const resolveConst = (name: string): string => {
+    const hit = new RegExp(`const ${name} =[^;]*?"([^"]+)"`).exec(dispatchSource);
+    if (!hit) throw new Error(`could not read ${name} from alert-dispatch.mjs`);
+    return hit[1];
+  };
+
+  const registryEntries = (): { id: string; file: string; anchor: string }[] => {
+    const block = /const REGISTRY = \{([\s\S]*?)\n\};/.exec(dispatchSource);
+    if (!block) throw new Error("could not read REGISTRY from alert-dispatch.mjs");
+    const found: { id: string; file: string; anchor: string }[] = [];
+    let current: { id: string; fileConst: string | null; anchor: string | null } | null = null;
+    const flush = (): void => {
+      if (current?.anchor)
+        found.push({
+          id: current.id,
+          file: resolveConst(current.fileConst ?? "RUNBOOK_BASE"),
+          anchor: current.anchor,
+        });
+      current = null;
+    };
+    for (const line of block[1].split(/\r?\n/)) {
+      const key = /^\s{2}"?([a-z][a-z0-9-]*)"?:\s*\{/.exec(line);
+      if (key) {
+        flush();
+        current = { id: key[1], fileConst: null, anchor: null };
+      }
+      if (!current) continue;
+      const anchor = /runbookAnchor:\s*"([^"]+)"/.exec(line);
+      if (anchor) current.anchor = anchor[1];
+      const fileConst = /runbookFile:\s*([A-Z_]+)/.exec(line);
+      if (fileConst) current.fileConst = fileConst[1];
+      if (/\},?\s*$/.test(line)) flush();
+    }
+    flush();
+    return found;
+  };
+
+  it("every registered alert names a runbook heading that actually exists", () => {
+    const registered = registryEntries();
+    expect(registered.length).toBeGreaterThanOrEqual(14);
+
+    const missing: string[] = [];
+    for (const { id, file, anchor } of registered) {
+      const full = path.join(repoRoot, file);
+      if (!fs.existsSync(full)) {
+        missing.push(`${id}: runbook file ${file} does not exist`);
+        continue;
+      }
+      const heading = anchor.replace(/^#/, "");
+      const headings = new Set(
+        fs
+          .readFileSync(full, "utf8")
+          .split(/\r?\n/)
+          .map((line) => /^#{1,6}\s+#?(.+?)\s*$/.exec(line))
+          .filter((hit): hit is RegExpExecArray => hit !== null)
+          .map((hit) => hit[1]),
+      );
+      if (!headings.has(heading)) missing.push(`${id}: no heading "${heading}" in ${file}`);
+    }
+
+    expect(missing).toEqual([]);
+  });
+});

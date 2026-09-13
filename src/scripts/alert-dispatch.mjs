@@ -12,6 +12,9 @@ import { Buffer } from "node:buffer";
 const FAILURE_RUNBOOK =
   "architecture-refactor/prd/completion-plan.md";
 
+const OBSERVABILITY_RUNBOOK =
+  "architecture-refactor/final-refactor/evidence/40-observability/FAILURE-RUNBOOKS.md";
+
 const REGISTRY = {
   "dead-outbox": { owner: "platform-reliability", runbookAnchor: "#dead-outbox", severity: "critical" },
   "dead-delivery": { owner: "notifications-team", runbookAnchor: "#dead-delivery", severity: "high" },
@@ -42,7 +45,7 @@ const REGISTRY = {
   },
   "workflow-stranded": {
     owner: "platform-reliability",
-    runbookFile: FAILURE_RUNBOOK,
+    runbookFile: OBSERVABILITY_RUNBOOK,
     runbookAnchor: "#workflow-stranded",
     severity: "critical",
   },

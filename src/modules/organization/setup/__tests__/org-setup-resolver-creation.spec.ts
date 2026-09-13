@@ -27,6 +27,10 @@ describe("OrgSetupResolverService organization creation", () => {
     }).compile();
     const resolver = moduleRef.get(OrgSetupResolverService);
     jest.spyOn(resolver, "listSetupMemberships").mockResolvedValue([]);
+    jest.spyOn(
+      resolver as unknown as { findActiveSetupTarget: (userId: string) => Promise<null> },
+      "findActiveSetupTarget",
+    ).mockResolvedValue(null);
     const actor: CurrentUserContext = {
       userId: "user-1",
       orgId: "",
