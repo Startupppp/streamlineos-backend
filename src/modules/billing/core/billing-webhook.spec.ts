@@ -25,6 +25,7 @@ import { PaymentWebhookReceiverService } from "../payments/payment-webhook-recei
 import { PaymentAnalyticsService } from "../payments/payment-analytics.service";
 import { ExternalEffectLedger, ExternalEffectLeaseBusyError } from "../../../common/outbox/external-effect-ledger";
 import { PlatformMerchantService } from "../payments/platform-merchant.service";
+import { CacheService } from "../../../common/cache/cache.service";
 import {
   FakeProviderAdapter,
   FAKE_WEBHOOK_SECRET,
@@ -360,6 +361,7 @@ async function buildHarness(options: {
       { provide: PaymentAnalyticsService, useValue: notices },
       { provide: BillingProfileService, useValue: { get: jest.fn(), update: jest.fn() } },
       { provide: PlatformMerchantService, useValue: options.platformMerchant ?? makePlatformMerchant() },
+      { provide: CacheService, useValue: { get: jest.fn().mockResolvedValue(null), set: jest.fn().mockResolvedValue(undefined), del: jest.fn().mockResolvedValue(undefined) } },
     ],
   }).compile();
 
@@ -819,6 +821,60 @@ describe("stuck provider events are re-driven after the provider stops retrying"
     expect(rendered.sql).toContain('"created_at" <');
     expect(rendered.sql).toContain('"created_at" >');
     expect(rendered.params).toContain("org1");
+  });
+});
+
+describe("the order-id mismatch guard uses the SECURITY DEFINER lookup after RLS", () => {
+  const ORDER_MISMATCH_BODY = JSON.stringify({
+    event: "payment.captured",
+    payload: {
+      payment: {
+        entity: {
+          id: "pay_ordermismatch_001",
+          amount: 49900,
+          currency: "INR",
+          status: "captured",
+          method: "card",
+          order_id: "order_b_001",
+          notes: { packId: "1" },
+        },
+      },
+    },
+  });
+
+  it("refuses and returns 400 when the SECURITY DEFINER lookup returns a different org's id", async () => {
+    const db = makeWebhookDb();
+    db.execute = jest.fn().mockResolvedValue([{ org_id: "org_b" }]);
+    const { service, aiCredits } = await buildHarness({ db });
+
+    const result = await service.handlePaymentProviderWebhook("org_a", "razorpay", ORDER_MISMATCH_BODY, FAKE_VALID_WEBHOOK_SIG);
+
+    expect(result.status).toBe(400);
+    expect(result.body).toMatchObject({ error: "organization mismatch" });
+    expect(aiCredits.grantAiPackCreditsFromWebhook).not.toHaveBeenCalled();
+    expect(db._store.payments).toHaveLength(0);
+  });
+
+  it("does not refuse when the SECURITY DEFINER lookup returns the same org's id", async () => {
+    const db = makeWebhookDb();
+    db.execute = jest.fn().mockResolvedValue([{ org_id: "org_a" }]);
+    const { service } = await buildHarness({ db });
+
+    const result = await service.handlePaymentProviderWebhook("org_a", "razorpay", ORDER_MISMATCH_BODY, FAKE_VALID_WEBHOOK_SIG);
+
+    expect(result.status).toBe(200);
+    expect(result.body).not.toMatchObject({ error: "organization mismatch" });
+  });
+
+  it("does not refuse when no purchase row exists for the order id", async () => {
+    const db = makeWebhookDb();
+    db.execute = jest.fn().mockResolvedValue([{ org_id: null }]);
+    const { service } = await buildHarness({ db });
+
+    const result = await service.handlePaymentProviderWebhook("org_a", "razorpay", ORDER_MISMATCH_BODY, FAKE_VALID_WEBHOOK_SIG);
+
+    expect(result.status).toBe(200);
+    expect(result.body).not.toMatchObject({ error: "organization mismatch" });
   });
 });
 

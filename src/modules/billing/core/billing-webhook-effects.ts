@@ -1,5 +1,6 @@
 import { logger } from "../../../common/logger/logger.service";
 import { runInNewTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
+
 import {
   ExternalEffectLedger,
   ExternalEffectLeaseBusyError,
@@ -132,13 +133,15 @@ export class BillingWebhookEffects {
               providerIdempotency: "NONE",
             },
             async () => {
-              await activation.performActivationFromWebhook(
-                orgId,
-                payment.id,
-                payment.amount,
-                payment.currency,
-                purchase,
-              );
+              await runInNewTenantTransaction(this.deps.db, orgId, async () => {
+                await activation.performActivationFromWebhook(
+                  orgId,
+                  payment.id,
+                  payment.amount,
+                  payment.currency,
+                  purchase,
+                );
+              });
             },
           );
           revenue.push({

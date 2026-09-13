@@ -1,4 +1,4 @@
-import { and, eq, inArray, isNull, lte } from "drizzle-orm";
+import { and, eq, inArray, isNull, lte, sql } from "drizzle-orm";
 import { subscriptionPurchases } from "../../../db/schema";
 import type { SubscriptionPurchase, SubscriptionPurchaseBillingCycle, SubscriptionPurchaseStatus } from "../../../db/schema/billing/subscription-purchases";
 import type { DbOrTx } from "../../../common/rbac/access-invalidate";
@@ -97,6 +97,14 @@ export class SubscriptionPurchaseService {
       .where(eq(subscriptionPurchases.providerOrderId, providerOrderId))
       .limit(1);
     return row ?? null;
+  }
+
+  async findOrgIdByOrderId(executor: DbOrTx, providerOrderId: string): Promise<string | null> {
+    const rows = await executor.execute(
+      sql`SELECT app.subscription_purchase_org_for_order(${providerOrderId}) AS org_id`,
+    );
+    const orgId = rows[0]?.org_id;
+    return orgId != null ? String(orgId) : null;
   }
 
   async findById(executor: DbOrTx, purchaseId: number, orgId: string): Promise<SubscriptionPurchase | null> {

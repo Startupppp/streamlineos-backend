@@ -1,6 +1,6 @@
 import { type Db } from "../../../db/drizzle.module";
-import { logger } from "../../../common/logger/logger.service";
 import { runInNewTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
+import { logger } from "../../../common/logger/logger.service";
 import { ExternalEffectLedger } from "../../../common/outbox/external-effect-ledger";
 import { AiCreditsService } from "./ai-credits.service";
 import { PlanLimitsService } from "./plan-limits.service";
@@ -238,11 +238,17 @@ export class BillingWebhookHandler {
      * so the `resolvedOrgId = org?.id ?? orgId` it used to compute was always `orgId`.
      */
     let purchase: SubscriptionPurchase | null = null;
-    if (payment.orderId) {
-      purchase = await this.purchaseService.findByOrderId(this.deps.db, payment.orderId);
-      if (purchase !== null && purchase.orgId !== orgId) {
+    const orderId = payment.orderId;
+    if (orderId) {
+      const purchaseOrgId = await this.purchaseService.findOrgIdByOrderId(this.deps.db, orderId);
+      if (purchaseOrgId !== null && purchaseOrgId !== orgId) {
         logger.warn(`[billing:${providerKey}] webhook organization does not match purchase org`);
         return { status: 400, body: { ok: false, error: "organization mismatch" } };
+      }
+      if (purchaseOrgId !== null) {
+        purchase = await runInNewTenantTransaction(this.deps.db, orgId, (tx) =>
+          this.purchaseService.findByOrderId(tx, orderId),
+        );
       }
     }
 
@@ -254,8 +260,10 @@ export class BillingWebhookHandler {
       }
     }
 
-    if (purchase === null && payment.orderId !== undefined) {
-      purchase = await this.reconcileFromNotes(payment, orgId, providerKey);
+    if (purchase === null && orderId !== undefined) {
+      purchase = await runInNewTenantTransaction(this.deps.db, orgId, async () =>
+        this.reconcileFromNotes(payment, orgId, providerKey),
+      );
     }
 
     try {

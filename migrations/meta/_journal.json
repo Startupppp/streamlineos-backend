@@ -6140,6 +6140,13 @@
       "when": 1803000010331,
       "tag": "1116_rls_billing_and_finance_tenant_isolation",
       "breakpoints": true
+    },
+    {
+      "idx": 1005,
+      "version": "7",
+      "when": 1803000010332,
+      "tag": "1117_subscription_purchases_rls_org_lookup",
+      "breakpoints": true
     }
   ]
 }
