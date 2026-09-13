@@ -590,6 +590,18 @@ jobs:
         if: ${{ !cancelled() }}
         run: pnpm check:migration-discipline:self-test && pnpm check:migration-discipline
 
+      - name: Migration appliers are watermark-free
+        if: ${{ !cancelled() }}
+        run: pnpm check:watermark-free:self-test && pnpm check:watermark-free
+
+      - name: SELECT DISTINCT orders only on projected columns
+        if: ${{ !cancelled() }}
+        run: pnpm check:distinct-order-by:self-test && pnpm check:distinct-order-by
+
+      - name: Destructive scripts refuse production targets
+        if: ${{ !cancelled() }}
+        run: pnpm check:destructive-targets:self-test && pnpm check:destructive-targets
+
       # An applied migration's SQL may not change. Both runners now decide "already applied"
       # from the journal's `when`, so an edited applied file is skipped rather than re-run —
       # correct, and silent: a cold build gets the new SQL while every warm database keeps the
