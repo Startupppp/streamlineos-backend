@@ -22,6 +22,41 @@ import { resolve } from "node:path";
 import postgres from "postgres";
 import * as dotenv from "dotenv";
 
+const PRODUCTION_HOST_PATTERNS = ["amazonaws.com", "neon.tech", "neon-db.net", "supabase.co", ".render.com"];
+
+function assertDisposableTarget(url) {
+  if (!url) return { allowed: false, reason: "DATABASE_URL is not set" };
+  const matched = PRODUCTION_HOST_PATTERNS.find((p) => url.includes(p));
+  if (matched) return { allowed: false, reason: `DATABASE_URL names production host '${matched}'` };
+  let host, dbName;
+  try {
+    const u = new URL(url.replace(/^postgresql:\/\//, "http://").replace(/^postgres:\/\//, "http://"));
+    host = u.hostname;
+    dbName = u.pathname.replace(/^\//, "");
+  } catch {
+    return { allowed: false, reason: "DATABASE_URL does not parse" };
+  }
+  if (host === "127.0.0.1" || host === "localhost") return { allowed: true, reason: `loopback target '${host}'` };
+  if (/scratch|test/i.test(dbName)) return { allowed: true, reason: `scratch/test database '${dbName}'` };
+  return { allowed: false, reason: `host '${host}' is not loopback and database '${dbName}' is not a scratch/test database` };
+}
+
+if (process.argv.includes("--self-test")) {
+  const cases = [
+    [assertDisposableTarget("postgresql://u:p@127.0.0.1:5432/scratch_local"), true],
+    [assertDisposableTarget("postgresql://u:p@localhost:5432/app"), true],
+    [assertDisposableTarget("postgresql://u:p@prod.cluster.amazonaws.com/app"), false],
+    [assertDisposableTarget("postgresql://u:p@prod.cluster.amazonaws.com/scratch_test"), false],
+    [assertDisposableTarget(null), false],
+  ];
+  let failed = 0;
+  for (const [verdict, expected] of cases)
+    if (verdict.allowed !== expected) { console.error(`FAIL: expected allowed=${expected}, got ${verdict.reason}`); failed++; }
+  if (failed) process.exit(1);
+  console.log("PASS: seed-inventory-load target guard, 5 cases.");
+  process.exit(0);
+}
+
 const PERF_TAG = "PERFLOAD";
 
 function arg(name, fallback) {
@@ -56,6 +91,14 @@ async function main() {
   const url = process.env.DATABASE_URL;
   if (!url) {
     console.error("DATABASE_URL is required.");
+    process.exit(1);
+  }
+  const _invGuard = assertDisposableTarget(url);
+  if (!_invGuard.allowed) {
+    process.stderr.write(
+      `seed-inventory-load BLOCKED — ${_invGuard.reason}\n` +
+      "  Set DATABASE_URL to a loopback or named scratch/test database before seeding.\n",
+    );
     process.exit(1);
   }
   const sql = postgres(url, { max: 1, prepare: false, onnotice: () => {} });

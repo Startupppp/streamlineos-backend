@@ -3,11 +3,55 @@ import { resolve } from "node:path";
 import postgres from "postgres";
 import * as dotenv from "dotenv";
 
+const PRODUCTION_HOST_PATTERNS = ["amazonaws.com", "neon.tech", "neon-db.net", "supabase.co", ".render.com"];
+
+function assertDisposableTarget(url) {
+  if (!url) return { allowed: false, reason: "DATABASE_URL is not set" };
+  const matched = PRODUCTION_HOST_PATTERNS.find((p) => url.includes(p));
+  if (matched) return { allowed: false, reason: `DATABASE_URL names production host '${matched}'` };
+  let host, dbName;
+  try {
+    const u = new URL(url.replace(/^postgresql:\/\//, "http://").replace(/^postgres:\/\//, "http://"));
+    host = u.hostname;
+    dbName = u.pathname.replace(/^\//, "");
+  } catch {
+    return { allowed: false, reason: "DATABASE_URL does not parse" };
+  }
+  if (host === "127.0.0.1" || host === "localhost") return { allowed: true, reason: `loopback target '${host}'` };
+  if (/scratch|test/i.test(dbName)) return { allowed: true, reason: `scratch/test database '${dbName}'` };
+  return { allowed: false, reason: `host '${host}' is not loopback and database '${dbName}' is not a scratch/test database` };
+}
+
+if (process.argv.includes("--self-test")) {
+  const cases = [
+    [assertDisposableTarget("postgresql://u:p@127.0.0.1:5432/scratch_local"), true],
+    [assertDisposableTarget("postgresql://u:p@localhost:5432/app"), true],
+    [assertDisposableTarget("postgresql://u:p@prod.cluster.amazonaws.com/app"), false],
+    [assertDisposableTarget("postgresql://u:p@prod.cluster.amazonaws.com/scratch_test"), false],
+    [assertDisposableTarget(null), false],
+  ];
+  let failed = 0;
+  for (const [verdict, expected] of cases)
+    if (verdict.allowed !== expected) { console.error(`FAIL: expected allowed=${expected}, got ${verdict.reason}`); failed++; }
+  if (failed) process.exit(1);
+  console.log("PASS: db-verify-rls target guard, 5 cases.");
+  process.exit(0);
+}
+
 dotenv.config({ path: resolve(process.cwd(), ".env") });
 
 const poolerUrl = process.env.DATABASE_URL;
 if (!poolerUrl) {
   console.error("DATABASE_URL is required in .env");
+  process.exit(1);
+}
+
+const _rlsGuard = assertDisposableTarget(poolerUrl);
+if (!_rlsGuard.allowed) {
+  process.stderr.write(
+    `db-verify-rls BLOCKED — ${_rlsGuard.reason}\n` +
+    "  Set DATABASE_URL to a loopback or named scratch/test database before running RLS verification.\n",
+  );
   process.exit(1);
 }
 

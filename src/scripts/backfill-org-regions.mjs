@@ -5,17 +5,47 @@ import { randomUUID } from "node:crypto";
 import * as dotenv from 'dotenv';
 import { resolve } from "node:path";
 
+const PRODUCTION_HOST_PATTERNS = ["amazonaws.com", "neon.tech", "neon-db.net", "supabase.co", ".render.com"];
+
+function assertBootstrapTarget(url, allowProduction) {
+  if (!url) return { allowed: false, reason: "DATABASE_URL is not set" };
+  const matched = PRODUCTION_HOST_PATTERNS.find((p) => url.includes(p));
+  if (!matched) return { allowed: true, reason: "not a known production host" };
+  if (allowProduction === "1") return { allowed: true, reason: `production host '${matched}' — ALLOW_PRODUCTION_MIGRATION=1 acknowledged` };
+  return { allowed: false, reason: `DATABASE_URL names production host '${matched}'; set ALLOW_PRODUCTION_MIGRATION=1 to proceed deliberately` };
+}
+
+if (process.argv.includes("--self-test")) {
+  const cases = [
+    [assertBootstrapTarget("postgresql://u:p@127.0.0.1:5432/app", undefined), true],
+    [assertBootstrapTarget("postgresql://u:p@prod.cluster.amazonaws.com/app", undefined), false],
+    [assertBootstrapTarget("postgresql://u:p@prod.cluster.amazonaws.com/app", "1"), true],
+    [assertBootstrapTarget("postgresql://u:p@db.neon.tech/neondb", undefined), false],
+    [assertBootstrapTarget(undefined, undefined), false],
+  ];
+  let failed = 0;
+  for (const [verdict, expected] of cases)
+    if (verdict.allowed !== expected) { console.error(`FAIL: expected allowed=${expected}, got '${verdict.reason}'`); failed++; }
+  if (failed) process.exit(1);
+  console.log("PASS: backfill-org-regions target guard, 5 cases.");
+  process.exit(0);
+}
+
 dotenv.config({ path: resolve(process.cwd(), ".env") });
 
 async function main() {
   const controlUrl = process.env.DIRECT_DATABASE_URL || process.env.DATABASE_URL;
-  // This is a simplification; a real cell setup has many databases.
-  // For this fix, we are assuming a single-cell setup or similar to what place-cell-org.mjs uses.
   const cellUrl = process.env.REGION_PRIMARY_DATABASE_URL || process.env.DATABASE_URL;
 
   if (!cellUrl || !controlUrl) {
     console.error('DATABASE_URL (Control Plane) and REGION_PRIMARY_DATABASE_URL (Cell) must be set');
     process.exit(1);
+  }
+
+  const _backfillGuard = assertBootstrapTarget(controlUrl, process.env.ALLOW_PRODUCTION_MIGRATION);
+  if (!_backfillGuard.allowed) {
+    process.stderr.write(`backfill-org-regions BLOCKED — ${_backfillGuard.reason}\n`);
+    process.exit(2);
   }
 
   const cellClient = postgres(cellUrl);

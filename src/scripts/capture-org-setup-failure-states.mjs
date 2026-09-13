@@ -398,6 +398,9 @@ async function main() {
       name: COOKIE.split("=")[0],
       value: COOKIE.slice(COOKIE.indexOf("=") + 1),
       url: BASE_URL,
+      path: "/",
+      sameSite: "Lax",
+      httpOnly: true,
     });
     await cdp.send("Fetch.enable", {
       patterns: [

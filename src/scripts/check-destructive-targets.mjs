@@ -18,9 +18,20 @@ const DESTRUCTIVE_SCRIPTS = [
   { script: "src/scripts/run-recovery-drill.mjs", env: { DATABASE_URL: PRODUCTION_TEST_URL }, args: [] },
   { script: "src/scripts/db-bootstrap.mjs", env: { DATABASE_URL: PRODUCTION_TEST_URL }, args: [] },
   { script: "src/scripts/run-pending-migrations.mjs", env: { DATABASE_URL: PRODUCTION_TEST_URL }, args: [] },
+  { script: "src/scripts/apply-chain-cold.mjs", env: { DATABASE_URL: PRODUCTION_TEST_URL }, args: [] },
+  { script: "src/scripts/backfill-org-regions.mjs", env: { DATABASE_URL: PRODUCTION_TEST_URL }, args: [] },
+  { script: "src/scripts/db-bootstrap-app-role.mjs", env: { DATABASE_URL: PRODUCTION_TEST_URL }, args: [] },
+  { script: "src/scripts/db-verify-rls.mjs", env: { DATABASE_URL: PRODUCTION_TEST_URL }, args: [] },
+  { script: "src/scripts/run-cell-capacity.mjs", env: { DATABASE_URL: PRODUCTION_TEST_URL }, args: [] },
+  { script: "src/scripts/seed-build-load.mjs", env: { DATABASE_URL: PRODUCTION_TEST_URL }, args: [] },
+  { script: "src/scripts/seed-envelope.mjs", env: { DATABASE_URL: PRODUCTION_TEST_URL }, args: [] },
+  { script: "src/scripts/seed-hr-list-read-scale.mjs", env: { DATABASE_URL: PRODUCTION_TEST_URL }, args: [] },
+  { script: "src/scripts/seed-inventory-load.mjs", env: { DATABASE_URL: PRODUCTION_TEST_URL }, args: [] },
+  { script: "src/scripts/seed-multi-org-employment-fixture.mjs", env: { DATABASE_URL: PRODUCTION_TEST_URL }, args: [] },
+  { script: "src/scripts/seed-perf1-budgets.mjs", env: { DATABASE_URL: PRODUCTION_TEST_URL }, args: [] },
 ];
 
-const MIN_SCRIPT_COUNT = 8;
+const MIN_SCRIPT_COUNT = 19;
 
 const args = process.argv.slice(2);
 const isSelfTest = args.includes("--self-test");

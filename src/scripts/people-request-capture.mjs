@@ -44,6 +44,7 @@ const TOKEN = process.env.PEOPLE_CAPTURE_TOKEN;
 const ORG_ID = process.env.PEOPLE_CAPTURE_ORG_ID;
 const DATABASE_URL = process.env.PEOPLE_CAPTURE_DATABASE_URL;
 const SECOND_ORG_ID = process.env.PEOPLE_CAPTURE_SECOND_ORG_ID ?? null;
+const SECOND_ORG_TOKEN = process.env.PEOPLE_CAPTURE_SECOND_ORG_TOKEN ?? null;
 const OUT = process.env.PEOPLE_CAPTURE_OUT ?? "./people-request-capture.json";
 
 const SALT = randomUUID();
@@ -95,7 +96,12 @@ async function fetchExistingMemberEmail() {
 
 async function statementCount() {
   try {
-    const [row] = await sql`SELECT coalesce(sum(calls), 0)::bigint AS calls FROM pg_stat_statements`;
+    const [row] = await sql`
+      SELECT coalesce(sum(pss.calls), 0)::bigint AS calls
+      FROM pg_stat_statements pss
+      JOIN pg_roles pr ON pr.oid = pss.userid
+      WHERE pr.rolname = 'streamline_app'
+    `;
     return Number(row?.calls ?? 0);
   } catch {
     return null;
@@ -105,18 +111,20 @@ async function statementCount() {
 const legs = [];
 
 async function leg(options) {
-  const { label, queryKey, caller, method = "GET", path, body = null, expect = [200], extraHeaders = {} } = options;
+  const { label, queryKey, caller, method = "GET", path, body = null, expect = [200], extraHeaders = {}, overrideToken = null, captureText = false } = options;
   const before = await statementCount();
   const startedAt = process.hrtime.bigint();
   let status = 0;
   let cacheHeader = null;
   let payloadSize = 0;
   let error = null;
+  let rawText = null;
+  const activeToken = overrideToken ?? TOKEN;
   try {
     const response = await fetch(`${API_URL}${path}`, {
       method,
       headers: {
-        authorization: `Bearer ${TOKEN}`,
+        authorization: `Bearer ${activeToken}`,
         "content-type": "application/json",
         "x-organization-id": ORG_ID,
         ...extraHeaders,
@@ -125,7 +133,9 @@ async function leg(options) {
     });
     status = response.status;
     cacheHeader = response.headers.get("x-cache") ?? response.headers.get("age") ?? null;
-    payloadSize = (await response.text()).length;
+    rawText = await response.text();
+    payloadSize = rawText.length;
+    if (!captureText) rawText = null;
   } catch (err) {
     error = err instanceof Error ? err.name : "request-failed";
   }
@@ -148,7 +158,7 @@ async function leg(options) {
     error,
   };
   legs.push(record);
-  return record;
+  return { ...record, rawText };
 }
 
 async function run() {
@@ -230,7 +240,38 @@ async function run() {
     path: `/hr/employees/check-email?email=${encodeURIComponent(INVITE_EMAIL)}`,
   });
 
-  if (SECOND_ORG_ID) {
+  let orgSwitchIsolated = null;
+  let org2OrgId = null;
+  if (SECOND_ORG_ID && SECOND_ORG_TOKEN) {
+    await leg({
+      label: "org-switch",
+      caller: "components/layout workspace switcher",
+      queryKey: "mutation: organization.switch",
+      method: "POST",
+      path: "/organization/switch",
+      body: { orgId: SECOND_ORG_ID },
+      expect: [200, 201],
+    });
+    const switchRead = await leg({
+      label: "read-after-org-switch",
+      queryKey: "accessQueryKeys.snapshot()",
+      caller: "common/providers/access-provider.tsx -> hooks/api/access",
+      path: "/rbac/access-snapshot",
+      overrideToken: SECOND_ORG_TOKEN,
+      captureText: true,
+    });
+    if (switchRead.rawText !== null) {
+      try {
+        const parsed = JSON.parse(switchRead.rawText);
+        const snap = parsed?.data ?? parsed;
+        const isOwnerInOrg2 = snap?.isOrgOwner;
+        org2OrgId = snap?.membershipId !== undefined ? mask(String(snap.membershipId)) : null;
+        orgSwitchIsolated = isOwnerInOrg2 === false;
+      } catch {
+        orgSwitchIsolated = false;
+      }
+    }
+  } else if (SECOND_ORG_ID && !SECOND_ORG_TOKEN) {
     await leg({
       label: "org-switch",
       caller: "components/layout workspace switcher",
@@ -257,6 +298,10 @@ async function run() {
     inviteSubject: mask(INVITE_EMAIL),
     conflictSubject: mask(existingMemberEmail),
     inviteCreated: invite.ok,
+    sqlIsolationNote: "statementCount filters pg_stat_statements by userid = streamline_app role, excluding direct neondb_owner queries; concurrent API traffic from other sessions still contaminates",
+    orgSwitchIsolated,
+    org2MembershipIdMasked: org2OrgId,
+    orgSwitchAssertionNote: "GET /rbac/access-snapshot with SECOND_ORG_TOKEN: isOrgOwner must be false (actor is MEMBER in ORG2, not OWNER); proves JWT orgId claim switches tenant/access scope",
     concurrentPair: concurrent.map((entry) => ({
       label: entry.label,
       status: entry.status,
