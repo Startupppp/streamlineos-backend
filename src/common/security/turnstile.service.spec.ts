@@ -57,18 +57,18 @@ describe("TurnstileService — absent secret", () => {
     );
   });
 
-  it("development + no secret → passes without calling Cloudflare", async () => {
+  it("development + no secret → throws ServiceUnavailableException (fail closed, not only production)", async () => {
     const service = await build({ NODE_ENV: "development", TURNSTILE_SECRET_KEY: undefined });
-    const fetchSpy = jest.spyOn(global, "fetch");
-    await expect(service.verify("any-token", "1.2.3.4")).resolves.toBeUndefined();
-    expect(fetchSpy).not.toHaveBeenCalled();
+    await expect(service.verify("any-token", "1.2.3.4")).rejects.toBeInstanceOf(
+      ServiceUnavailableException,
+    );
   });
 
-  it("test + no secret → passes without calling Cloudflare", async () => {
+  it("test + no secret → throws ServiceUnavailableException (fail closed regardless of NODE_ENV)", async () => {
     const service = await build({ NODE_ENV: "test", TURNSTILE_SECRET_KEY: undefined });
-    const fetchSpy = jest.spyOn(global, "fetch");
-    await expect(service.verify(undefined, undefined)).resolves.toBeUndefined();
-    expect(fetchSpy).not.toHaveBeenCalled();
+    await expect(service.verify(undefined, undefined)).rejects.toBeInstanceOf(
+      ServiceUnavailableException,
+    );
   });
 });
 

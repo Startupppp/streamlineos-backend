@@ -67,13 +67,17 @@ export class BillingPaymentActivation {
     });
   }
 
-  createOrder(
+  async createOrder(
     orgId: string,
     userId: string,
     plan: Plan,
     billingCycle: BillingCycle = "monthly",
     couponId?: number,
   ) {
+    const adapter = this.deps.platformMerchant.resolve();
+    if (adapter === undefined || !adapter.isReady()) {
+      throw new ServiceUnavailableException("Payment gateway not configured. Contact support.");
+    }
     return this.orderCreation.createOrder(orgId, userId, plan, billingCycle, couponId);
   }
 

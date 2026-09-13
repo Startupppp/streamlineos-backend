@@ -57,6 +57,24 @@ const CORS_HEADERS = [
   { name: "access-control-max-age", value: "86400" },
 ];
 
+const SESSION_STUB = {
+  id: 1,
+  type: "org_setup",
+  status: "not_started",
+  currentStep: null,
+  completedSteps: [],
+  skippedSteps: [],
+  data: {},
+};
+
+function backendStub(url) {
+  if (url.includes("/org/setup/session"))
+    return { success: true, data: SESSION_STUB };
+  if (url.includes("/organization/archived"))
+    return { success: true, data: [] };
+  return { success: true, data: null };
+}
+
 function statusBody(overrides) {
   return {
     success: true,
@@ -289,9 +307,18 @@ async function captureScenario(cdp, scenario) {
     expression: "document.body.innerText",
     returnByValue: true,
   });
+  const finalUrl = (await cdp.send("Runtime.evaluate", {
+    expression: "location.href",
+    returnByValue: true,
+  })).result?.value ?? "";
   const text = typeof result?.value === "string" ? result.value : "";
   const missing = scenario.expect.filter((needle) => !text.includes(needle));
-  return { name: scenario.name, matched: missing.length === 0, missing, textLength: text.length };
+  const matched = missing.length === 0;
+  if (!matched) {
+    const snippet = text.slice(0, 300).replace(/\n+/g, " ").trim();
+    console.error(`  [${scenario.name}] url=${finalUrl} text="${snippet}"`);
+  }
+  return { name: scenario.name, matched, missing, textLength: text.length };
 }
 
 function selfTest() {
@@ -425,7 +452,7 @@ async function main() {
             requestId: params.requestId,
             responseCode: 200,
             responseHeaders: [{ name: "content-type", value: "application/json" }, ...CORS_HEADERS],
-            body: encodeBody({ success: true, data: null }),
+            body: encodeBody(backendStub(url)),
           });
           return;
         }

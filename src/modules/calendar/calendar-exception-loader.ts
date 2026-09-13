@@ -24,7 +24,7 @@ interface ExceptionPageRow {
 
 function afterEventCursor(after: ExceptionPageRow | undefined): SQL | undefined {
   if (!after) return undefined;
-  return sql`(${calendarEventExceptions.eventId}, ${calendarEventExceptions.id}) > (${after.eventId}, ${after.id})`;
+  return sql`(${calendarEventExceptions.eventId}, ${calendarEventExceptions.id}) > (${sql.param(after.eventId, calendarEventExceptions.eventId)}, ${sql.param(after.id, calendarEventExceptions.id)})`;
 }
 
 export interface RescheduledOccurrence {
