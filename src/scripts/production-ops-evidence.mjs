@@ -1,11 +1,4 @@
 #!/usr/bin/env node
-/**
- * Production-operations evidence intake and gate.
- *
- * This script never runs a deployment probe and it never manufactures a passing
- * result. An operator captures redacted output from a real deployment under the
- * evidence root, then this script hashes and gates the submitted bundle.
- */
 import { createHash } from "node:crypto";
 import {
   existsSync,
@@ -13,27 +6,14 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
-  readdirSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
 import { basename, dirname, isAbsolute, relative, resolve, sep } from "node:path";
 import { tmpdir } from "node:os";
 import process from "node:process";
-import { fileURLToPath } from "node:url";
 import { WORKSPACE_ROOT, workspaceAvailable, workspaceUnreachableReason } from "./check-repo-paths.mjs";
 
-/**
- * The evidence tree lives in the WORKSPACE docs repository, which is a sibling
- * checkout here. `resolve(scriptDir, "../../..")` guessed a depth and landed on
- * `<parent-of-backend>/architecture-refactor`, a directory that exists in no
- * layout this project uses -- measured 2026-09-03: the guess resolved to
- * `.../streamline/architecture-refactor/...` while the real tree is
- * `.../streamlineos-frontend/architecture-refactor/...`. Every capture wrote,
- * and every verify read, somewhere that was not the evidence root. Resolve it
- * from the marker instead, and fail loudly when it is absent rather than
- * composing onto a wrong root.
- */
 const EVIDENCE_REL = ["architecture-refactor", "final-refactor", "evidence", "42-production-ops"];
 const EVIDENCE_ROOT = workspaceAvailable ? resolve(WORKSPACE_ROOT, ...EVIDENCE_REL) : null;
 
@@ -46,6 +26,8 @@ function requireEvidenceRoot() {
   process.exit(2);
 }
 const FORMAT = "streamlineos.production-ops-evidence/v1";
+const SUBMISSION_INDEX_FILENAME = "submission-index.json";
+const SUBMISSION_INDEX_FORMAT = "streamlineos.ops-submission-index/v1";
 const RUNBOOKS = ["RB-01", "RB-02", "RB-03", "RB-04", "RB-05", "RB-06", "RB-07", "RB-08"];
 const REQUIRED_ASSERTIONS = {
   "RB-01": ["independent-resource-identity", "cross-cell-credential-boundary"],
@@ -156,38 +138,51 @@ function validateArtifact(record, artifact, root) {
   if (SECRET.test(text)) throw new Error(`artifact appears to contain an unredacted credential: ${artifact.path}`);
 }
 
-function collectJson(dir) {
-  if (!existsSync(dir)) return [];
-  const result = [];
-  for (const entry of readdirSync(dir, { withFileTypes: true })) {
-    const full = resolve(dir, entry.name);
-    if (entry.isDirectory()) result.push(...collectJson(full));
-    else if (entry.isFile() && entry.name.endsWith(".json") && !entry.name.endsWith(".input.json")) result.push(full);
+function readSubmissionIndex(dir) {
+  const indexPath = resolve(dir, SUBMISSION_INDEX_FILENAME);
+  if (!existsSync(indexPath)) return null;
+  const obj = readJson(indexPath);
+  if (obj?.format !== SUBMISSION_INDEX_FORMAT) throw new Error(`submission index format is wrong or missing at ${indexPath}`);
+  if (!Array.isArray(obj.submittedManifests)) throw new Error(`submission index is missing submittedManifests array at ${indexPath}`);
+  return obj.submittedManifests;
+}
+
+function updateSubmissionIndex(dir, manifestRelPath) {
+  const indexPath = resolve(dir, SUBMISSION_INDEX_FILENAME);
+  let existing = [];
+  if (existsSync(indexPath)) {
+    const obj = readJson(indexPath);
+    if (obj?.format === SUBMISSION_INDEX_FORMAT && Array.isArray(obj.submittedManifests)) existing = obj.submittedManifests;
   }
-  return result;
+  const normalized = manifestRelPath.replaceAll("\\", "/");
+  if (!existing.includes(normalized)) existing = [...existing, normalized];
+  writeFileSync(indexPath, `${JSON.stringify({ format: SUBMISSION_INDEX_FORMAT, submittedManifests: existing }, null, 2)}\n`, "utf8");
 }
 
 function verify(dir) {
-  const candidates = collectJson(dir);
-  const manifests = [];
-  for (const candidatePath of candidates) {
-    let obj;
-    try { obj = readJson(candidatePath); } catch { continue; }
-    if (typeof obj?.format !== "string") continue;
-    manifests.push({ path: candidatePath, record: obj });
+  const submittedPaths = readSubmissionIndex(dir);
+  if (submittedPaths === null || submittedPaths.length === 0) {
+    throw new Error(`no submitted evidence manifests found under ${dir}; deployed evidence has not been collected`);
   }
-  if (manifests.length === 0) throw new Error(`no submitted evidence manifests found under ${dir}; deployed evidence has not been collected`);
   const seen = new Set();
   const failures = [];
-  for (const { path: manifestPath, record } of manifests) {
+  for (const relPath of submittedPaths) {
+    const displayPath = typeof relPath === "string" && relPath.length > 0 ? relPath : "(invalid entry)";
     try {
+      if (typeof relPath !== "string" || relPath.length === 0) throw new Error(`submission index contains an invalid entry`);
+      const manifestPath = resolve(dir, relPath);
+      if (!isInside(dir, manifestPath)) throw new Error(`submission index path escapes evidence directory: ${relPath}`);
+      if (!existsSync(manifestPath) || lstatSync(manifestPath).isSymbolicLink() || !lstatSync(manifestPath).isFile()) {
+        throw new Error(`listed manifest does not exist or is not a regular file: ${relPath}`);
+      }
+      const record = readJson(manifestPath);
       const errors = checksFor(record);
       for (const artifact of record.artifacts ?? []) validateArtifact(record, artifact, dir);
       if (errors.length > 0) throw new Error(errors.join("; "));
       seen.add(record.runbook);
-      process.stdout.write(`PASS ${record.runbook} ${relative(dir, manifestPath).replaceAll("\\", "/")}\n`);
+      process.stdout.write(`PASS ${record.runbook} ${relPath.replaceAll("\\", "/")}\n`);
     } catch (error) {
-      failures.push(`${relative(dir, manifestPath).replaceAll("\\", "/")}: ${error instanceof Error ? error.message : String(error)}`);
+      failures.push(`${displayPath}: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
   for (const runbook of RUNBOOKS) if (!seen.has(runbook)) failures.push(`missing passing deployed evidence for ${runbook}`);
@@ -215,7 +210,9 @@ function capture(metadataPath, outputPath) {
   if (!isInside(evidenceRoot, target)) throw new Error("output path must stay inside the production-ops evidence root");
   mkdirSync(dirname(target), { recursive: true });
   writeFileSync(target, `${JSON.stringify(record, null, 2)}\n`, "utf8");
-  process.stdout.write(`CAPTURED ${record.runbook} evidence: ${relative(evidenceRoot, target).replaceAll("\\", "/")}\n`);
+  const manifestRelPath = relative(evidenceRoot, target).replaceAll("\\", "/");
+  updateSubmissionIndex(evidenceRoot, manifestRelPath);
+  process.stdout.write(`CAPTURED ${record.runbook} evidence: ${manifestRelPath}\n`);
 }
 
 function selfTest() {
@@ -258,6 +255,16 @@ function selfTest() {
       return { merged, artifactAbsPath };
     };
 
+    const writeSubmissionIndex = (testDir, relativePaths) => {
+      const indexPath = resolve(testDir, SUBMISSION_INDEX_FILENAME);
+      mkdirSync(dirname(indexPath), { recursive: true });
+      writeFileSync(
+        indexPath,
+        `${JSON.stringify({ format: SUBMISSION_INDEX_FORMAT, submittedManifests: relativePaths }, null, 2)}\n`,
+        "utf8",
+      );
+    };
+
     const tryVerify = (dir) => {
       try { verify(dir); return { passed: true, message: "" }; }
       catch (e) { return { passed: false, message: e instanceof Error ? e.message : String(e) }; }
@@ -266,8 +273,10 @@ function selfTest() {
     const dir1 = resolve(testRoot, "c1");
     for (const rb of RUNBOOKS) writeManifest(dir1, rb);
     writeFileSync(resolve(dir1, "raw-measurements.json"), JSON.stringify({ generatedAt: new Date().toISOString(), counts: [1, 2, 3] }), "utf8");
+    writeFileSync(resolve(dir1, "unlisted-ops-format.json"), JSON.stringify({ format: FORMAT, runbook: "RB-99" }), "utf8");
+    writeSubmissionIndex(dir1, RUNBOOKS.map((rb) => `${rb}/manifest.json`));
     const c1 = tryVerify(dir1);
-    checks.case1_allPassBesideUnrelatedJson = c1.passed && !c1.message.includes("raw-measurements.json");
+    checks.case1_allPassBesideUnrelatedJson = c1.passed;
 
     const dir2 = resolve(testRoot, "c2");
     mkdirSync(dir2, { recursive: true });
@@ -278,40 +287,53 @@ function selfTest() {
     const dir3a = resolve(testRoot, "c3a");
     mkdirSync(dir3a, { recursive: true });
     writeFileSync(resolve(dir3a, "bad-runbook.json"), JSON.stringify({ format: FORMAT, runbook: "RB-99" }), "utf8");
+    writeSubmissionIndex(dir3a, ["bad-runbook.json"]);
     const c3a = tryVerify(dir3a);
     checks.case3a_unsupportedRunbookFails = !c3a.passed && c3a.message.includes("unsupported runbook RB-99");
 
     const dir3b = resolve(testRoot, "c3b");
     mkdirSync(dir3b, { recursive: true });
     writeFileSync(resolve(dir3b, "old-version.json"), JSON.stringify({ format: "streamlineos.production-ops-evidence/v0", runbook: "RB-01" }), "utf8");
+    writeSubmissionIndex(dir3b, ["old-version.json"]);
     const c3b = tryVerify(dir3b);
     checks.case3b_wrongFormatVersionFails = !c3b.passed && c3b.message.includes("wrong or missing evidence format");
 
     const dir3c = resolve(testRoot, "c3c");
     const { merged: rb01c } = writeManifest(dir3c, "RB-01");
     writeFileSync(resolve(dir3c, "RB-01/manifest.json"), JSON.stringify({ ...rb01c, execution: { ...rb01c.execution, command: "pnpm cell:runbook --self-test" } }, null, 2), "utf8");
+    writeSubmissionIndex(dir3c, ["RB-01/manifest.json"]);
     const c3c = tryVerify(dir3c);
     checks.case3c_selfTestClaimBlocked = !c3c.passed && c3c.message.includes("self-test");
 
     const dir4 = resolve(testRoot, "c4");
     const { merged: rb01d } = writeManifest(dir4, "RB-01");
     writeFileSync(resolve(dir4, "RB-01/manifest.json"), JSON.stringify({ ...rb01d, assertions: [] }, null, 2), "utf8");
+    writeSubmissionIndex(dir4, ["RB-01/manifest.json"]);
     const c4 = tryVerify(dir4);
     checks.case4_missingAssertionsFails = !c4.passed && c4.message.includes("required assertion is not a pass:");
 
     const dir5 = resolve(testRoot, "c5");
     const { artifactAbsPath: artifact5 } = writeManifest(dir5, "RB-02");
+    writeSubmissionIndex(dir5, ["RB-02/manifest.json"]);
     writeFileSync(artifact5, "tampered content that changes the hash\n", "utf8");
     const c5 = tryVerify(dir5);
     checks.case5_tamperedArtifactFails = !c5.passed && c5.message.includes("artifact hash does not match");
 
+    const dir5b = resolve(testRoot, "c5b");
+    mkdirSync(dir5b, { recursive: true });
+    writeSubmissionIndex(dir5b, ["RB-02/manifest.json"]);
+    const c5b = tryVerify(dir5b);
+    checks.case5b_missingListedManifestFails = !c5b.passed && c5b.message.includes("listed manifest does not exist");
+
     const dir6a = resolve(testRoot, "c6a");
     writeManifest(dir6a, "RB-03", { synthetic: true });
+    writeSubmissionIndex(dir6a, ["RB-03/manifest.json"]);
     const c6a = tryVerify(dir6a);
     checks.case6a_syntheticRejected = !c6a.passed && c6a.message.includes("evidence must declare live=true and synthetic must not be true");
 
     const dir6b = resolve(testRoot, "c6b");
     writeManifest(dir6b, "RB-04", { environment: { name: "dev-local", region: "local", cell: "local-01", target: "http://localhost:3000" } });
+    writeSubmissionIndex(dir6b, ["RB-04/manifest.json"]);
     const c6b = tryVerify(dir6b);
     checks.case6b_localTargetRejected = !c6b.passed;
 

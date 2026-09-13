@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+export const OUTBOX_EVENT_SCHEMA_VERSION = 1;
+
 export const outboxEventInputSchema = z.object({
   eventId: z.string().uuid(),
   organizationId: z.string().min(1),
@@ -9,7 +11,7 @@ export const outboxEventInputSchema = z.object({
   eventType: z.string().min(1),
   payload: z.record(z.string(), z.unknown()),
   occurredAt: z.date(),
-  schemaVersion: z.number().int().positive().default(1),
+  schemaVersion: z.number().int().positive().default(OUTBOX_EVENT_SCHEMA_VERSION),
   audience: z.enum(["INTERNAL", "PORTAL"]).default("INTERNAL"),
   actorMembershipId: z.string().min(1).nullable().default(null),
   causationId: z.string().uuid().nullable().default(null),

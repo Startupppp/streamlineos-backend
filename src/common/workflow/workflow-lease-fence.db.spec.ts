@@ -117,6 +117,58 @@ describe("workflow run lease fencing", () => {
     expect(observed).toBe(1);
   });
 
+  it("TWO-CONNECTION: Worker B claim supersedes Worker A — stale write rejected across separate committed transactions", async () => {
+    const runId = `lease-fence-two-conn-${randomUUID().slice(0, 8)}`;
+    const workerALease = new Date(Date.now() + 5 * 60 * 1000);
+    const workerBLease = new Date(Date.now() + 10 * 60 * 1000);
+    const clientB = connect();
+
+    try {
+      await sql.begin(async (tx) => {
+        await tx`SELECT set_config('app.organization_id', ${orgId}, true)`;
+        await tx`
+          INSERT INTO workflow_runs
+            (workflow_run_id, organization_id, workflow_name, input, status, lease_expires_at, run_after)
+          VALUES
+            (${runId}, ${orgId}, 'test-workflow', '{}', 'RUNNING', ${workerALease}, now())
+        `;
+      });
+
+      await clientB.begin(async (tx) => {
+        await tx`SELECT set_config('app.organization_id', ${orgId}, true)`;
+        await tx`
+          UPDATE workflow_runs
+             SET status = 'RUNNING', lease_expires_at = ${workerBLease}, updated_at = now()
+           WHERE organization_id = ${orgId} AND workflow_run_id = ${runId}
+        `;
+      });
+
+      const rowsAffected = await sql.begin(async (tx) => {
+        await tx`SELECT set_config('app.organization_id', ${orgId}, true)`;
+        const [row] = await tx<Array<{ n: number }>>`
+          WITH fenced AS (
+            UPDATE workflow_runs
+               SET status = 'COMPLETED', lease_expires_at = NULL, completed_at = now(), updated_at = now()
+             WHERE organization_id = ${orgId}
+               AND workflow_run_id = ${runId}
+               AND lease_expires_at = ${workerALease}
+            RETURNING 1
+          )
+          SELECT count(*)::int AS n FROM fenced
+        `;
+        return row!.n;
+      });
+
+      expect(rowsAffected).toBe(0);
+    } finally {
+      await sql.begin(async (tx) => {
+        await tx`SELECT set_config('app.organization_id', ${orgId}, true)`;
+        await tx`DELETE FROM workflow_runs WHERE workflow_run_id = ${runId}`;
+      });
+      await clientB.end({ timeout: 5 });
+    }
+  });
+
   it("AFTER fix: stale worker write fenced — UPDATE with stale lease predicate affects 0 rows", async () => {
     const runId = `lease-fence-after-${randomUUID().slice(0, 8)}`;
     const workerALease = new Date(Date.now() + 5 * 60 * 1000);

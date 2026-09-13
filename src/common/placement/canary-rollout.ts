@@ -1,3 +1,5 @@
+export const CANARY_CELL_SCHEMA_VERSION = 1;
+
 export interface Release {
   readonly releaseId: string;
   readonly schemaVersion: number;

@@ -1,6 +1,7 @@
 import { resolve } from "node:path";
 import * as dotenv from "dotenv";
 import {
+  CANARY_CELL_SCHEMA_VERSION,
   checkCompatibility,
   nextRolloutAction,
   rollbackPlan,
@@ -11,6 +12,7 @@ import type {
   RolloutPlan,
   SloSnapshot,
 } from "../common/placement/canary-rollout";
+import { OUTBOX_EVENT_SCHEMA_VERSION } from "../common/outbox/outbox-event-schema";
 import { measureCellSlo } from "./rollout/cell-slo-probe";
 
 dotenv.config({ path: resolve(process.cwd(), ".env") });
@@ -46,8 +48,8 @@ function resolveUrls(env: NodeJS.ProcessEnv): {
 }
 
 function makePlan(env: NodeJS.ProcessEnv): RolloutPlan {
-  const schemaVersion = Number(env.CELL_SCHEMA_VERSION ?? "1");
-  const eventVersion = Number(env.CELL_EVENT_VERSION ?? "1");
+  const schemaVersion = Number(env.CELL_SCHEMA_VERSION ?? String(CANARY_CELL_SCHEMA_VERSION));
+  const eventVersion = Number(env.CELL_EVENT_VERSION ?? String(OUTBOX_EVENT_SCHEMA_VERSION));
   return {
     release: {
       releaseId: env.RELEASE_ID ?? "rollout-demo-v1",
@@ -66,8 +68,8 @@ function resolveOldestVersions(env: NodeJS.ProcessEnv): {
   eventVersion: number;
 } {
   return {
-    schemaVersion: Number(env.OLDEST_SCHEMA_VERSION ?? env.CELL_SCHEMA_VERSION ?? "1"),
-    eventVersion: Number(env.OLDEST_EVENT_VERSION ?? env.CELL_EVENT_VERSION ?? "1"),
+    schemaVersion: Number(env.OLDEST_SCHEMA_VERSION ?? env.CELL_SCHEMA_VERSION ?? String(CANARY_CELL_SCHEMA_VERSION)),
+    eventVersion: Number(env.OLDEST_EVENT_VERSION ?? env.CELL_EVENT_VERSION ?? String(OUTBOX_EVENT_SCHEMA_VERSION)),
   };
 }
 
