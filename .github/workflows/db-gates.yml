@@ -120,20 +120,24 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
-      - run: pnpm install --frozen-lockfile
+      - if: ${{ !cancelled() }}
+        run: pnpm install --frozen-lockfile
 
       # MUST precede db:bootstrap. 84 migrations GRANT to this role by name and
       # do not guard the grant, so on a fresh cluster the chain dies at 0423.
       # This is exactly how run 33733281657 failed.
       - name: Create the app role the migration chain grants to
+        if: ${{ !cancelled() }}
         run: pnpm db:bootstrap-role
         env:
           APP_DB_PASSWORD: ci
 
       - name: Bootstrap Database
+        if: ${{ !cancelled() }}
         run: pnpm db:bootstrap
 
       - name: Migration ledger agrees with the journal
+        if: ${{ !cancelled() }}
         run: pnpm check:migration-ledger:self-test && pnpm check:migration-ledger
 
       # Nine RBAC foreign keys, each bitten by a probe that names the SQLSTATE *and* the
@@ -143,14 +147,17 @@ jobs:
       # and fail both ACCEPT controls. It never skips: a database that cannot support the
       # probes fails loudly naming what is missing, because a skip reads as a pass.
       - name: RBAC referential integrity (live probes)
+        if: ${{ !cancelled() }}
         run: pnpm verify:rbac-integrity:self-test && pnpm verify:rbac-integrity
 
       - name: ON DELETE SET NULL column lists (catalog half)
+        if: ${{ !cancelled() }}
         run: pnpm check:set-null-column-lists
         env:
           SET_NULL_GATE_DATABASE_URL: postgres://ci:ci@127.0.0.1:5432/ci
 
       - name: Retention coverage (live)
+        if: ${{ !cancelled() }}
         run: pnpm check:retention-coverage
 
       # Both drift gates read pg_attribute / pg_constraint / pg_index against a database at
@@ -159,11 +166,13 @@ jobs:
       # db-gates.yml when a bootstrapped target exists" — and neither name appeared anywhere
       # in this file. The reason is now true because the steps exist.
       - name: Declared columns match the catalog
+        if: ${{ !cancelled() }}
         run: pnpm check:declaration-column-drift:self-test && pnpm check:declaration-column-drift
         env:
           COLUMN_DRIFT_GATE_DATABASE_URL: postgres://ci:ci@127.0.0.1:5432/ci
 
       - name: Declared constraints and indexes match the catalog
+        if: ${{ !cancelled() }}
         run: >-
           pnpm check:declaration-constraint-drift:self-test &&
           pnpm check:declaration-constraint-drift
@@ -179,6 +188,7 @@ jobs:
       # journal head") with no database, which is the correct prerequisite-absent code and not a
       # red. Its live half runs here, where the URL is supplied.
       - name: Foreign keys use the declared referential action
+        if: ${{ !cancelled() }}
         run: >-
           pnpm check:referential-action-drift:self-test &&
           pnpm check:referential-action-drift
@@ -195,11 +205,36 @@ jobs:
       # exits 0 over 344 column-level expectations. With no database it exits 2
       # (INCONCLUSIVE), the prerequisite-absent code, not a red.
       - name: Membership artifacts match the catalog
+        if: ${{ !cancelled() }}
         run: >-
           pnpm check:membership-parity:self-test &&
           pnpm check:membership-parity
         env:
           MEMBERSHIP_PARITY_GATE_DATABASE_URL: postgres://ci:ci@127.0.0.1:5432/ci
+
+      # pg_dump --schema-only clones the full schema (tables, indexes, RLS policies,
+      # functions, grants) without re-running the 870+ migration chain. The app role
+      # grants from db:bootstrap-role are NOT captured by pg_dump (they come from a
+      # separate script, not from migrations), so db:bootstrap-role runs a second time
+      # targeting scratch_bootci to apply them.
+      - name: Create scratch_bootci for boot gate
+        if: ${{ !cancelled() }}
+        run: |
+          psql -h 127.0.0.1 -U ci -d ci -c 'CREATE DATABASE scratch_bootci'
+          pg_dump -h 127.0.0.1 -U ci --schema-only ci | psql -h 127.0.0.1 -U ci scratch_bootci
+        env:
+          PGPASSWORD: ci
+
+      - name: Grant app role on scratch_bootci
+        if: ${{ !cancelled() }}
+        run: pnpm db:bootstrap-role
+        env:
+          DATABASE_URL: postgres://ci:ci@127.0.0.1:5432/scratch_bootci
+          APP_DB_PASSWORD: ci
+
+      - name: Build
+        if: ${{ !cancelled() }}
+        run: pnpm build
 
       # The application speaks the Upstash REST protocol, not RESP directly.
       # local-upstash-shim.mjs bridges them: it listens on :8079 and forwards
@@ -207,6 +242,7 @@ jobs:
       # Values are read from the script's own defaults (port 8079, token
       # "local-dev-token"); do not invent them.
       - name: Start Upstash REST shim
+        if: ${{ !cancelled() }}
         run: >-
           nohup node src/scripts/local-upstash-shim.mjs
           --port=8079 --redis=127.0.0.1:6379 --token=local-dev-token
@@ -216,6 +252,7 @@ jobs:
       # that died silently would let the test suite fail on an unrelated-looking
       # connection error; this step names the real cause and prints the shim log.
       - name: Wait for Upstash shim to be ready
+        if: ${{ !cancelled() }}
         run: |
           for i in $(seq 1 30); do
             status=$(curl -s -o /dev/null -w "%{http_code}" -X POST \
@@ -231,6 +268,30 @@ jobs:
           cat /tmp/upstash-shim.log || true
           exit 1
 
+      - name: Write CI boot env file
+        if: ${{ !cancelled() }}
+        run: |
+          cat > /tmp/ci-boot.env << 'ENVEOF'
+          NODE_ENV=test
+          PORT=4321
+          CELL_ID=legacy-1
+          PRIMARY_REGION=primary
+          DATABASE_URL=postgres://ci:ci@127.0.0.1:5432/scratch_bootci
+          APP_DATABASE_URL=postgres://streamline_app:ci@127.0.0.1:5432/scratch_bootci
+          BACKEND_JWT_SECRET=ci-only-backend-jwt-secret-with-at-least-44-characters
+          PORTAL_JWT_SECRET=ci-only-portal-jwt-secret-with-at-least-44-characters-xx
+          ENCRYPTION_KEY=ci-only-encryption-key-min-32-characters-for-testing
+          CORS_ORIGINS=http://localhost:1000
+          APP_URL=http://localhost:1000
+          UPSTASH_REDIS_REST_URL=http://127.0.0.1:8079
+          UPSTASH_REDIS_REST_TOKEN=local-dev-token
+          PGSSLMODE=disable
+          ENVEOF
+
+      - name: Boot gate (DI container resolves and /health answers)
+        if: ${{ !cancelled() }}
+        run: pnpm check:boot:self-test && pnpm check:boot --env-file=/tmp/ci-boot.env
+
       # MEASURED 2026-09-08 at commit 514ea82da: 16 suites / 787 tests, 0
       # ResponseContractViolation, 0 live email sends, on a co-located PostgreSQL
       # 18.6 + Redis + Upstash-shim stack. Now provisioned here: PostgreSQL
@@ -239,11 +300,13 @@ jobs:
       # UNPROVEN IN CI — the local measurement is the only green read so far.
       # A real CI green is required before citing this as a passing gate.
       - name: Controller E2E Tests
+        if: ${{ !cancelled() }}
         run: pnpm test:e2e:ci
         env:
           NODE_OPTIONS: --max-old-space-size=8192
 
       - name: Five-area billing replay and hierarchy protection (real Postgres)
+        if: ${{ !cancelled() }}
         run: >-
           pnpm test:db-specs --runTestsByPath
           src/modules/billing/core/provider-event-ledger.db.spec.ts
@@ -285,7 +348,7 @@ jobs:
       # three now create their own tenant fixtures and run on every event above.
       # Other suites in the full run still require a seed step.
       - name: Database-gated spec suites (.db.spec.ts)
-        if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+        if: ${{ !cancelled() && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') }}
         run: pnpm test:db-specs
         env:
           NODE_OPTIONS: --max-old-space-size=8192

@@ -80,6 +80,24 @@ function completeBody() {
   };
 }
 
+const SESSION_STUB = {
+  id: 1,
+  type: "org_setup",
+  status: "not_started",
+  currentStep: null,
+  completedSteps: [],
+  skippedSteps: [],
+  data: {},
+};
+
+function backendStub(url) {
+  if (url.includes("/org/setup/session"))
+    return { success: true, data: SESSION_STUB };
+  if (url.includes("/organization/archived"))
+    return { success: true, data: [] };
+  return { success: true, data: null };
+}
+
 /**
  * `expect` is matched against the page's rendered text. Each string is copy the wizard owns,
  * so a wording change fails loudly rather than silently weakening the capture.
@@ -145,12 +163,6 @@ export const SCENARIOS = [
     expect: ["Creating organization"],
   },
   {
-    name: "unauthorized-401",
-    status: 401,
-    body: { success: false, message: "Unauthorized" },
-    expect: ["Session verification failed"],
-  },
-  {
     name: "forbidden-403",
     status: 403,
     body: { success: false, message: "Forbidden" },
@@ -167,6 +179,12 @@ export const SCENARIOS = [
     status: null,
     failWith: "ConnectionFailed",
     expect: ["Connection issue"],
+  },
+  {
+    name: "unauthorized-401",
+    status: 401,
+    body: { success: false, message: "Unauthorized" },
+    expect: ["Session verification failed"],
   },
 ];
 
@@ -290,7 +308,15 @@ async function captureScenario(cdp, scenario) {
     returnByValue: true,
   });
   const text = typeof result?.value === "string" ? result.value : "";
+  const finalUrl = (await cdp.send("Runtime.evaluate", {
+    expression: "location.href",
+    returnByValue: true,
+  })).result?.value ?? "";
   const missing = scenario.expect.filter((needle) => !text.includes(needle));
+  if (missing.length > 0) {
+    const snippet = text.slice(0, 400).replace(/\n+/g, " ").trim();
+    console.error(`  [${scenario.name}] url=${finalUrl} text="${snippet}"`);
+  }
   return { name: scenario.name, matched: missing.length === 0, missing, textLength: text.length };
 }
 
@@ -425,7 +451,7 @@ async function main() {
             requestId: params.requestId,
             responseCode: 200,
             responseHeaders: [{ name: "content-type", value: "application/json" }, ...CORS_HEADERS],
-            body: encodeBody({ success: true, data: null }),
+            body: encodeBody(backendStub(url)),
           });
           return;
         }
