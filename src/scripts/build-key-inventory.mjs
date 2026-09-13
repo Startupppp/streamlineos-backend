@@ -396,11 +396,8 @@ function codeRegistryRows(corpora, literalReach) {
       registry: "code.cache-namespace",
       item: namespace.item,
       owner: areaOfKey(namespace.item),
-      verdict: namespace.item === "chat:unread" ? "REFACTOR" : "KEEP",
-      failurePrevented:
-        namespace.item === "chat:unread"
-          ? "PRD-C061: bumped on every write and read by nothing (check:namespace-coverage prints it as a DEAD BUMP). Either the cached read it implies was never written, or the bump is pure write amplification."
-          : "A namespace whose bump is the only thing that invalidates its cached reads; removing it serves stale rows after a write.",
+      verdict: "KEEP",
+      failurePrevented: "A namespace whose bump is the only thing that invalidates its cached reads; removing it serves stale rows after a write.",
       evidence: reachedAt ?? namespace.evidence,
     });
   }

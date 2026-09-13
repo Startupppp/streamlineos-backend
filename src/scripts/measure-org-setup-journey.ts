@@ -172,6 +172,24 @@ export function assertEmailTransportDisabled(env: Record<string, string | undefi
   return { allowed: true, reason: "email transport disabled" };
 }
 
+export function assertNotProductionDatabase(databaseUrl: string): TargetRefusal {
+  const productionPatterns = [
+    "amazonaws.com",
+    "neon.tech",
+    "neon-db.net",
+    "supabase.co",
+    ".render.com",
+  ];
+  for (const pattern of productionPatterns) {
+    if (databaseUrl.includes(pattern))
+      return {
+        allowed: false,
+        reason: `APP_DATABASE_URL contains '${pattern}' — matches a known production host; never measure against production even with SETUP_ALLOW_REMOTE=1`,
+      };
+  }
+  return { allowed: true, reason: "database URL does not contain known production host patterns" };
+}
+
 function required(name: string): string {
   const value = process.env[name];
   if (!value) {
@@ -237,6 +255,30 @@ async function verifyApiRefusesUnauthenticated(baseUrl: string): Promise<void> {
   );
   if (badToken.status !== 401 && badToken.status !== 403)
     throw new Error(`preflight: expected 401 or 403 with invalid token, got ${badToken.status}`);
+}
+
+async function verifyTokensPreOrg(baseUrl: string, tokens: readonly string[]): Promise<void> {
+  for (const [index, token] of tokens.entries()) {
+    const response = await fetchWithTimeout(
+      `${baseUrl}/org/setup/status`,
+      { headers: { Authorization: `Bearer ${token}` } },
+      PREFLIGHT_TIMEOUT_MS,
+    );
+    if (!response.ok)
+      throw new Error(
+        `fixture token[${index}] rejected by /org/setup/status (${response.status}); token must be for a pre-org user with a valid session`,
+      );
+    const parsed: unknown = await response.json();
+    const data =
+      typeof parsed === "object" && parsed !== null
+        ? (Reflect.get(parsed, "data") ?? parsed)
+        : null;
+    const ready = typeof data === "object" && data !== null ? Reflect.get(data, "ready") : null;
+    if (ready === true)
+      throw new Error(
+        `fixture token[${index}] is for a user that already completed org setup (ready=true); each token must correspond to a pre-org user`,
+      );
+  }
 }
 
 async function postComplete(
@@ -485,6 +527,31 @@ function selfTest(): void {
     if (result.allowed !== expected)
       throw new Error(`self-test: email transport refusal mismatch — ${result.reason}`);
 
+  const prodDbRefusals: Array<[TargetRefusal, boolean]> = [
+    [assertNotProductionDatabase("postgresql://u:p@db.neon.tech:5432/scratch"), false],
+    [assertNotProductionDatabase("postgresql://u:p@prod.cluster.amazonaws.com:5432/scratch_local"), false],
+    [assertNotProductionDatabase("postgresql://u:p@db.supabase.co:5432/scratch_local"), false],
+    [assertNotProductionDatabase("postgresql://u:p@127.0.0.1:5432/scratch_local"), true],
+    [assertNotProductionDatabase("postgresql://u:p@localhost:5432/scratch_local"), true],
+  ];
+  for (const [result, expected] of prodDbRefusals)
+    if (result.allowed !== expected)
+      throw new Error(`self-test: production DB refusal mismatch — ${result.reason}`);
+
+  const combinedADb = assertDisposableTarget("postgresql://u:p@127.0.0.1:5432/scratch_local", "scratch_local", false);
+  const combinedAApi = assertDisposableApiTarget("http://api.prod.streamlineos.com:443", false);
+  if (!combinedADb.allowed)
+    throw new Error("self-test: combined (a) local DB should be allowed");
+  if (combinedAApi.allowed)
+    throw new Error("self-test: combined (a) remote API must be refused when DB is local");
+
+  const combinedBDb = assertDisposableTarget("postgresql://u:p@127.0.0.1:5432/scratch_local", "scratch_local", false);
+  const combinedBApi = assertDisposableApiTarget(undefined, false);
+  if (!combinedBDb.allowed)
+    throw new Error("self-test: combined (b) local DB should be allowed");
+  if (combinedBApi.allowed)
+    throw new Error("self-test: combined (b) undefined/wrong API must be refused");
+
   console.log("measure-org-setup-journey self-test passed");
 }
 
@@ -496,6 +563,11 @@ async function main(): Promise<void> {
 
   const namedEnvironment = process.env["SETUP_MEASUREMENT_ENV"];
   const databaseUrl = required("APP_DATABASE_URL");
+  const prodRefusal = assertNotProductionDatabase(databaseUrl);
+  if (!prodRefusal.allowed) {
+    console.error(`refusing to measure: ${prodRefusal.reason}`);
+    process.exit(1);
+  }
   const dbRefusal = assertDisposableTarget(
     databaseUrl,
     namedEnvironment,
@@ -538,6 +610,9 @@ async function main(): Promise<void> {
   await verifyApiRefusesUnauthenticated(baseUrl);
   console.log("preflight: API refuses unauthenticated and invalid-token requests");
 
+  await verifyTokensPreOrg(baseUrl, tokens);
+  console.log("preflight: all fixture tokens accepted and correspond to pre-org users");
+
   const sql = postgres(databaseUrl, { max: 1, prepare: false, onnotice: () => undefined });
   const createdOrgIds: string[] = [];
   try {
@@ -566,12 +641,21 @@ async function main(): Promise<void> {
     process.exitCode = exitCode;
   } finally {
     const toClean = createdOrgIds.length;
+    let cleaned = 0;
+    const notCleaned: string[] = [];
     for (const orgId of createdOrgIds) {
       try {
-        await sql`DELETE FROM organizations WHERE id = ${orgId}`;
-      } catch {}
+        const deleted = await sql`DELETE FROM organizations WHERE id = ${orgId} RETURNING id`;
+        if (deleted.length > 0) cleaned++;
+        else notCleaned.push(orgId);
+      } catch (err) {
+        console.error(`cleanup: failed to delete org ${orgId}: ${err instanceof Error ? err.message : String(err)}`);
+        notCleaned.push(orgId);
+      }
     }
-    console.log(`cleanup: ${toClean} test organisations processed`);
+    console.log(`cleanup: ${cleaned}/${toClean} test organisations deleted`);
+    if (notCleaned.length > 0)
+      console.error(`cleanup assertion FAILED: ${notCleaned.length} organisation(s) not deleted: ${notCleaned.join(", ")}`);
     await sql.end({ timeout: 5 });
   }
 }

@@ -433,13 +433,7 @@ export function tableMatchCoverage(tables, contents) {
  * Each entry must still be a live finding — a stale entry fails the gate, so
  * this cannot rot into a silent permanent exemption.
  */
-const NAMESPACE_MISMATCH_ALLOWLIST = [
-  {
-    shape: "chat:unread:*",
-    reason:
-      "report 20b F2 (P2): two invalidateNamespace bumps with zero cachedVersioned readers anywhere. Chat module, not this ticket.",
-  },
-];
+const NAMESPACE_MISMATCH_ALLOWLIST = [];
 
 function fileHasPattern(content, keywords) {
   return keywords.some((kw) => {

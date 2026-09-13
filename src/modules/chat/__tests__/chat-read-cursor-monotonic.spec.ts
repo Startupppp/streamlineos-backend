@@ -194,7 +194,6 @@ describe("chat read cursor advances monotonically", () => {
     expect(rendered.sql).toContain('"chat_channel_members"."channel_id"');
     expect(rendered.sql).toContain('"chat_channel_members"."membership_id"');
     expect(rendered.params).toEqual([ORG, CHANNEL_ID, MEMBERSHIP]);
-    expect(cache.invalidateNamespace).toHaveBeenCalledWith(`chat:unread:${ORG}`);
   });
 
   it("markChannelUnread deliberately moves both cursors back, so neither may be guarded", async () => {

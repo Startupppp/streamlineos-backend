@@ -136,7 +136,6 @@ describe("ChatChannelMembersService — channel BOLA", () => {
     await service.markRead(CHANNEL_ID, USER_OWNER, ORG_OWNER);
 
     expect(db.update).toHaveBeenCalledTimes(1);
-    expect(stubCache.invalidateNamespace).toHaveBeenCalledWith(`chat:unread:${ORG_OWNER}`);
   });
 
   it("DENY: 404 not 403 when channel does not exist in caller's org (cross-tenant oracle prevention)", async () => {

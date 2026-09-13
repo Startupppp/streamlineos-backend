@@ -62,8 +62,6 @@ export class ChatChannelMemberState {
         ),
       );
 
-    await this.cache.invalidateNamespace(`chat:unread:${orgId}`);
-
     return { ok: true };
   }
 

@@ -285,7 +285,6 @@ export class ChatMessagesService {
     const { message, insertedAttachments, senderName, senderImage, channelType } = sendResult;
 
     const deferWork = async () => {
-      await this.cache.invalidateNamespace(`chat:unread:${orgId}`);
       await this.replyReminders.scheduleForMessage(orgId, channelId, message.id, userId, senderMembershipId);
     };
 
