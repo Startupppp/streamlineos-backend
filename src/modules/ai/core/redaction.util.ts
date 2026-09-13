@@ -25,10 +25,10 @@ export function redactSensitiveData(text: string): string {
     .replace(API_KEY_PATTERN, "[REDACTED_TOKEN]")
     .replace(GSTIN_PATTERN, "[REDACTED_GSTIN]")
     .replace(PAN_PATTERN, "[REDACTED_PAN]")
+    .replace(CREDIT_CARD_PATTERN, "[REDACTED_CARD]")
     .replace(AADHAAR_PATTERN, "[REDACTED_AADHAAR]")
     .replace(IFSC_PATTERN, "[REDACTED_IFSC]")
     .replace(INDIAN_PHONE_PATTERN, "[REDACTED_PHONE]")
     .replace(SSN_PATTERN, "[REDACTED_SSN]")
-    .replace(CREDIT_CARD_PATTERN, "[REDACTED_CARD]")
     .replace(PHONE_PATTERN, "[REDACTED_PHONE]");
 }
