@@ -60,6 +60,23 @@ function loadEnvVar(name) {
   return process.env[name] ?? null;
 }
 
+const PRODUCTION_HOST_PATTERNS = ["amazonaws.com", "neon.tech", "neon-db.net", "supabase.co", ".render.com"];
+
+export function assertDisposableTarget(url) {
+  if (!url) return { allowed: false, reason: "DATABASE_URL is not set" };
+  const matched = PRODUCTION_HOST_PATTERNS.find((p) => url.includes(p));
+  if (matched) return { allowed: false, reason: `DATABASE_URL names production host '${matched}'` };
+  let host;
+  try {
+    host = new URL(url.replace(/^postgresql:\/\//, "http://").replace(/^postgres:\/\//, "http://")).hostname;
+  } catch {
+    return { allowed: false, reason: "DATABASE_URL does not parse" };
+  }
+  if (!["127.0.0.1", "localhost", "::1", "[::1]"].includes(host))
+    return { allowed: false, reason: `DATABASE_URL host '${host}' is not loopback` };
+  return { allowed: true, reason: `loopback target '${host}'` };
+}
+
 function assert(condition, message) {
   if (!condition) throw new Error(`ASSERTION FAILED: ${message}`);
 }
@@ -195,7 +212,24 @@ function selfTest() {
   assert(fired, "assertion (owner_subject_is_rejected) must fire when subject is an org owner");
   process.stdout.write("  PASS  assertion fires when subject is org owner (owner_subject_is_rejected)\n");
 
-  process.stdout.write("\n=== SELF-TEST RESULT: PASS — all 9 assertion bite proofs confirmed ===\n");
+  section("Self-test 9: target guard refusal bites on production host");
+  const guardCases = [
+    [assertDisposableTarget("postgresql://u:p@127.0.0.1:5432/app"), true],
+    [assertDisposableTarget("postgresql://u:p@prod.cluster.amazonaws.com/app"), false],
+    [assertDisposableTarget("postgresql://u:p@db.neon.tech/neondb"), false],
+    [assertDisposableTarget("postgresql://u:p@10.0.0.5:5432/app"), false],
+    [assertDisposableTarget(null), false],
+  ];
+  let guardFailed = false;
+  for (const [verdict, expected] of guardCases) {
+    if (verdict.allowed !== expected) {
+      process.stderr.write(`  FAIL  target guard: expected allowed=${expected}, got '${verdict.reason}'\n`);
+      guardFailed = true;
+    }
+  }
+  if (!guardFailed) process.stdout.write("  PASS  target guard: all 5 cases correct\n");
+
+  process.stdout.write("\n=== SELF-TEST RESULT: PASS — all assertion bite proofs confirmed ===\n");
 }
 
 async function discoverSubject(db) {
@@ -472,7 +506,14 @@ async function main() {
 
   const dbUrl = loadEnvVar("DATABASE_URL");
   if (!dbUrl) {
-    process.stderr.write("DATABASE_URL not set and no .env found\n");
+    process.stderr.write("DATABASE_URL not set\n");
+    process.exit(2);
+  }
+
+  const _target = assertDisposableTarget(dbUrl);
+  if (!_target.allowed) {
+    process.stderr.write(`compliance-drill-e2e BLOCKED — ${_target.reason}\n`);
+    process.stderr.write("Set DATABASE_URL to a loopback database before running the compliance e2e drill.\n");
     process.exit(2);
   }
 

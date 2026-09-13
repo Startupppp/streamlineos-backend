@@ -24,15 +24,11 @@ import * as dotenv from "dotenv";
 import { resolve } from "node:path";
 import { createHash, randomUUID } from "node:crypto";
 
-dotenv.config({ path: resolve(process.cwd(), ".env") });
+const PRODUCTION_HOST_PATTERNS = ["amazonaws.com", "neon.tech", "neon-db.net", "supabase.co", ".render.com"];
 
-/**
- * Requiring a distinct env var is advice, not a guard: SCRATCH_DATABASE_URL set to
- * the live URL writes 25,000 rows into production, and `--purge` deletes there.
- * The database name is checked, and the URL is compared against the live ones, so
- * a copy-paste cannot be the only thing standing between the seed and real data.
- */
 export function assertScratchTarget(scratchUrl, liveUrls) {
+  const matched = PRODUCTION_HOST_PATTERNS.find((p) => scratchUrl.includes(p));
+  if (matched) return { ok: false, reason: `SCRATCH_DATABASE_URL names production host '${matched}'` };
   let database;
   try {
     database = new URL(scratchUrl).pathname.replace(/^\//, "").split("?")[0];
@@ -57,6 +53,8 @@ if (process.argv.includes("--self-test")) {
     ["accepts a scratch database name", assertScratchTarget("postgres://u:p@h/scratch_e2e", []).ok, true],
     ["rejects a url identical to DATABASE_URL", assertScratchTarget("postgres://u:p@h/scratch_e2e", ["postgres://u:p@h/scratch_e2e"]).ok, false],
     ["rejects an unparseable url", assertScratchTarget("not a url", []).ok, false],
+    ["rejects production host even with scratch name", assertScratchTarget("postgres://u:p@prod.cluster.amazonaws.com/scratch_e2e", []).ok, false],
+    ["rejects neon.tech host", assertScratchTarget("postgres://u:p@db.neon.tech/scratch_e2e", []).ok, false],
     ["ENTERPRISE subscription plan avoids 402 on seeded volume", "ENTERPRISE", "ENTERPRISE"],
     ["subscription status ACTIVE is not TRIAL/CANCELLED/EXPIRED", "ACTIVE", "ACTIVE"],
   ];
@@ -71,6 +69,8 @@ if (process.argv.includes("--self-test")) {
   console.log(failed ? "\nSELF-TEST FAILED" : "\nSELF-TEST PASSED");
   process.exit(failed ? 1 : 0);
 }
+
+dotenv.config({ path: resolve(process.cwd(), ".env") });
 
 const SCRATCH_URL = process.env.SCRATCH_DATABASE_URL;
 if (!SCRATCH_URL) {

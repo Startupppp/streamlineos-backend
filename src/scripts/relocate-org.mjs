@@ -61,19 +61,23 @@ function nextForwardState(current) {
   return FORWARD_SEQUENCE[idx + 1];
 }
 
+const PRODUCTION_HOST_PATTERNS = ["amazonaws.com", "neon.tech", "neon-db.net", "supabase.co", ".render.com"];
+
+export function assertRelocationTarget(url, allowProduction) {
+  if (!url) return { allowed: false, reason: "DATABASE_URL is not set" };
+  const matched = PRODUCTION_HOST_PATTERNS.find((p) => url.includes(p));
+  if (!matched) return { allowed: true, reason: "not a known production host" };
+  if (allowProduction === "1") return { allowed: true, reason: `production host '${matched}' — ALLOW_PRODUCTION_MIGRATION=1 acknowledged` };
+  return { allowed: false, reason: `DATABASE_URL names production host '${matched}'; set ALLOW_PRODUCTION_MIGRATION=1 to proceed deliberately` };
+}
+
 function loadDatabaseUrl() {
-  if (process.env.DATABASE_URL) return process.env.DATABASE_URL;
-  const envPath = path.resolve(process.cwd(), ".env");
-  if (!fs.existsSync(envPath)) {
-    console.error("DATABASE_URL is not set and no .env file was found.");
+  const url = process.env.DATABASE_URL;
+  if (!url) {
+    console.error("DATABASE_URL is required (set it explicitly; no .env fallback).");
     process.exit(1);
   }
-  const match = fs.readFileSync(envPath, "utf8").match(/^DATABASE_URL\s*=\s*(.+)$/m);
-  if (!match) {
-    console.error("DATABASE_URL not found in .env");
-    process.exit(1);
-  }
-  return match[1].trim().replace(/^['"]|['"]$/g, "");
+  return url;
 }
 
 async function getRelocation(db, orgId) {
@@ -193,13 +197,25 @@ function runSelfTest() {
   if (!preFlipRollback)
     failures.push("FAIL: pre-flip rollback from VERIFY_TARGET was rejected");
 
+  const guardCases = [
+    [assertRelocationTarget("postgresql://u:p@127.0.0.1:5432/app", undefined), true],
+    [assertRelocationTarget("postgresql://u:p@prod.cluster.amazonaws.com/app", undefined), false],
+    [assertRelocationTarget("postgresql://u:p@prod.cluster.amazonaws.com/app", "1"), true],
+    [assertRelocationTarget("postgresql://u:p@db.neon.tech/neondb", undefined), false],
+    [assertRelocationTarget(undefined, undefined), false],
+  ];
+  for (const [verdict, expected] of guardCases) {
+    if (verdict.allowed !== expected)
+      failures.push(`FAIL: target guard: expected allowed=${expected}, got '${verdict.reason}'`);
+  }
+
   if (failures.length > 0) {
     for (const f of failures) console.error(f);
     console.error("\nSELF-TEST FAIL: guards are not biting.");
     process.exit(1);
   }
 
-  console.log("SELF-TEST PASS: illegal transition rejected, post-flip rollback rejected.");
+  console.log("SELF-TEST PASS: illegal transition rejected, post-flip rollback rejected, target guard correct.");
 }
 
 async function main() {
@@ -237,6 +253,11 @@ Operator runner for organization cell relocations.
   const orgId = orgArg.slice("--org=".length);
 
   const url = loadDatabaseUrl();
+  const _relocGuard = assertRelocationTarget(url, process.env.ALLOW_PRODUCTION_MIGRATION);
+  if (!_relocGuard.allowed) {
+    console.error(`relocate-org BLOCKED — ${_relocGuard.reason}`);
+    process.exit(2);
+  }
   const db = postgres(url, { max: 1, prepare: false, onnotice: () => {} });
 
   try {

@@ -10,6 +10,45 @@ const keepOwnedOrgs = args.includes("--keep-owned-orgs");
 const assumeYes = args.includes("--yes");
 const skipLegalHoldCheck = args.includes("--skip-legal-hold-check");
 
+const PRODUCTION_HOST_PATTERNS = ["amazonaws.com", "neon.tech", "neon-db.net", "supabase.co", ".render.com"];
+
+export function assertDisposableTarget(url) {
+  if (!url) return { allowed: false, reason: "DATABASE_URL is not set" };
+  const matched = PRODUCTION_HOST_PATTERNS.find((p) => url.includes(p));
+  if (matched) return { allowed: false, reason: `DATABASE_URL names production host '${matched}'` };
+  let host, dbName;
+  try {
+    const u = new URL(url.replace(/^postgresql:\/\//, "http://").replace(/^postgres:\/\//, "http://"));
+    host = u.hostname;
+    dbName = u.pathname.replace(/^\//, "");
+  } catch {
+    return { allowed: false, reason: "DATABASE_URL does not parse" };
+  }
+  if (host === "127.0.0.1" || host === "localhost") return { allowed: true, reason: `loopback target '${host}'` };
+  if (/scratch|test/i.test(dbName)) return { allowed: true, reason: `scratch/test database '${dbName}'` };
+  return { allowed: false, reason: `host '${host}' is not loopback and database '${dbName}' is not a scratch/test database` };
+}
+
+if (args.includes("--self-test")) {
+  const cases = [
+    [assertDisposableTarget("postgresql://u:p@127.0.0.1:5432/app"), true],
+    [assertDisposableTarget("postgresql://u:p@localhost:5432/app"), true],
+    [assertDisposableTarget("postgresql://u:p@127.0.0.1:5432/scratch_local"), true],
+    [assertDisposableTarget("postgresql://u:p@10.0.0.5:5432/scratch_e2e"), true],
+    [assertDisposableTarget("postgresql://u:p@prod.cluster.amazonaws.com/app"), false],
+    [assertDisposableTarget("postgresql://u:p@prod.cluster.amazonaws.com/scratch_test"), false],
+    [assertDisposableTarget("postgresql://u:p@db.neon.tech/neondb"), false],
+    [assertDisposableTarget("postgresql://u:p@10.0.0.5:5432/production"), false],
+    [assertDisposableTarget(null), false],
+  ];
+  let failed = 0;
+  for (const [verdict, expected] of cases)
+    if (verdict.allowed !== expected) { console.error(`FAIL: expected allowed=${expected}, got ${verdict.reason}`); failed++; }
+  if (failed) process.exit(1);
+  console.log("PASS: purge-user target refusal, 9 cases.");
+  process.exit(0);
+}
+
 if (!emailArg) {
   console.error(`
 Purge every trace of a user, and by default every organization they own.
@@ -47,25 +86,12 @@ function loadDatabaseUrl() {
   return url;
 }
 
-function isDisposableTarget(url) {
-  try {
-    const u = new URL(url.replace(/^postgresql:\/\//, "http://").replace(/^postgres:\/\//, "http://"));
-    const host = u.hostname;
-    const dbName = u.pathname.replace(/^\//, "");
-    if (host === "127.0.0.1" || host === "localhost") return true;
-    if (dbName.includes("scratch") || dbName.includes("test")) return true;
-    return false;
-  } catch {
-    return false;
-  }
-}
-
 const _dbUrl = loadDatabaseUrl();
-if (!isDisposableTarget(_dbUrl)) {
+const _guard = assertDisposableTarget(_dbUrl);
+if (!_guard.allowed) {
   process.stderr.write(
-    "PURGE BLOCKED — DATABASE_URL does not point to a disposable target.\n" +
-    "  Allowed: host=127.0.0.1, host=localhost, or database name contains 'scratch' or 'test'.\n" +
-    "  Set DATABASE_URL to a named scratch/test database before running a user purge.\n",
+    `PURGE BLOCKED — ${_guard.reason}\n` +
+    "  Set DATABASE_URL to a loopback or named scratch/test database before running a user purge.\n",
   );
   process.exit(1);
 }

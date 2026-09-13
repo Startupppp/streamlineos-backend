@@ -44,6 +44,23 @@ import { fileURLToPath } from "node:url";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const BACKEND_DIR = resolve(__dirname, "../..");
 
+const PRODUCTION_HOST_PATTERNS = ["amazonaws.com", "neon.tech", "neon-db.net", "supabase.co", ".render.com"];
+
+export function assertDisposableDrillTarget(databaseUrl) {
+  if (!databaseUrl) return { allowed: true, reason: "DATABASE_URL not set — sub-scripts use cell topology" };
+  const matched = PRODUCTION_HOST_PATTERNS.find((p) => databaseUrl.includes(p));
+  if (matched) return { allowed: false, reason: `DATABASE_URL names production host '${matched}'` };
+  let host;
+  try {
+    host = new URL(databaseUrl.replace(/^postgresql:\/\//, "http://").replace(/^postgres:\/\//, "http://")).hostname;
+  } catch {
+    return { allowed: false, reason: "DATABASE_URL does not parse" };
+  }
+  if (!["127.0.0.1", "localhost", "::1", "[::1]"].includes(host))
+    return { allowed: false, reason: `DATABASE_URL host '${host}' is not loopback` };
+  return { allowed: true, reason: `loopback target '${host}'` };
+}
+
 const argv = process.argv.slice(2);
 const isSelfTest = argv.includes("--self-test");
 const isDryRun = argv.includes("--dry-run");
@@ -141,7 +158,24 @@ function parseVerifyResult(verifyOutput, backupOutput) {
 }
 
 if (isSelfTest) {
-  log("self-test: verifying drill script structure and JSON output shape");
+  log("self-test: verifying drill script structure, JSON output shape, and target guard");
+
+  const guardCases = [
+    [assertDisposableDrillTarget(undefined), true],
+    [assertDisposableDrillTarget("postgresql://u:p@127.0.0.1:5432/app"), true],
+    [assertDisposableDrillTarget("postgresql://u:p@prod.cluster.amazonaws.com/app"), false],
+    [assertDisposableDrillTarget("postgresql://u:p@db.neon.tech/neondb"), false],
+    [assertDisposableDrillTarget("postgresql://u:p@10.0.0.5:5432/app"), false],
+  ];
+  let guardFailed = false;
+  for (const [verdict, expected] of guardCases) {
+    if (verdict.allowed !== expected) {
+      process.stderr.write(`SELF-TEST FAIL: target guard: expected allowed=${expected}, got '${verdict.reason}'\n`);
+      guardFailed = true;
+    }
+  }
+  if (guardFailed) process.exit(1);
+  log("target guard: all 5 cases correct");
 
   const mockResult = {
     failure_class: "CELL_DB_FAILURE",
@@ -200,6 +234,13 @@ if (isSelfTest) {
 
   process.stdout.write("SELF-TEST PASS: drill script structure and result shape are correct\n");
   process.exit(0);
+}
+
+const _drillGuard = assertDisposableDrillTarget(process.env.DATABASE_URL);
+if (!_drillGuard.allowed) {
+  process.stderr.write(`RECOVERY DRILL BLOCKED — ${_drillGuard.reason}\n`);
+  process.stderr.write("Point DATABASE_URL at a loopback cell database or unset it to use cell topology.\n");
+  process.exit(2);
 }
 
 log(`recovery drill — region=${regionKey} dry-run=${isDryRun}`);

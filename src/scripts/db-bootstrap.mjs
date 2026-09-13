@@ -4,12 +4,45 @@ import postgres from "postgres";
 import * as dotenv from "dotenv";
 import { driftedEntries, planMigrations, sha256 } from "./migration-plan.mjs";
 
+const PRODUCTION_HOST_PATTERNS = ["amazonaws.com", "neon.tech", "neon-db.net", "supabase.co", ".render.com"];
+
+export function assertBootstrapTarget(url, allowProduction) {
+  if (!url) return { allowed: false, reason: "DATABASE_URL is not set" };
+  const matched = PRODUCTION_HOST_PATTERNS.find((p) => url.includes(p));
+  if (!matched) return { allowed: true, reason: "not a known production host" };
+  if (allowProduction === "1") return { allowed: true, reason: `production host '${matched}' — ALLOW_PRODUCTION_MIGRATION=1 acknowledged` };
+  return { allowed: false, reason: `DATABASE_URL names production host '${matched}'; set ALLOW_PRODUCTION_MIGRATION=1 to proceed deliberately` };
+}
+
+if (process.argv.includes("--self-test")) {
+  const cases = [
+    [assertBootstrapTarget("postgresql://u:p@127.0.0.1:5432/app", undefined), true],
+    [assertBootstrapTarget("postgresql://u:p@prod.cluster.amazonaws.com/app", undefined), false],
+    [assertBootstrapTarget("postgresql://u:p@prod.cluster.amazonaws.com/app", "1"), true],
+    [assertBootstrapTarget("postgresql://u:p@db.neon.tech/neondb", undefined), false],
+    [assertBootstrapTarget("postgresql://u:p@db.neon.tech/neondb", "1"), true],
+    [assertBootstrapTarget(undefined, undefined), false],
+  ];
+  let failed = 0;
+  for (const [verdict, expected] of cases)
+    if (verdict.allowed !== expected) { console.error(`FAIL: expected allowed=${expected}, got '${verdict.reason}'`); failed++; }
+  if (failed) process.exit(1);
+  console.log("PASS: db-bootstrap target guard, 6 cases.");
+  process.exit(0);
+}
+
 dotenv.config({ path: resolve(process.cwd(), ".env") });
 
 const poolerUrl = process.env.DATABASE_URL;
 if (!poolerUrl) {
-  console.error("DATABASE_URL is required in .env");
+  console.error("DATABASE_URL is required");
   process.exit(1);
+}
+
+const _bootstrapGuard = assertBootstrapTarget(poolerUrl, process.env.ALLOW_PRODUCTION_MIGRATION);
+if (!_bootstrapGuard.allowed) {
+  console.error(`db-bootstrap BLOCKED — ${_bootstrapGuard.reason}`);
+  process.exit(2);
 }
 
 // Migrations need a direct (session-mode) connection. Neon encodes that in the host;

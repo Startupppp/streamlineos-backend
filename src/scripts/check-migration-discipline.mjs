@@ -31,12 +31,16 @@
  * Ratchet: historical violations are baselined explicitly. The gate fails only
  * on NEW violations. The baseline can only shrink.
  *
- *   8. journal integrity — when values strictly increasing, idx unique, no two
- *                      files sharing a numeric prefix, and no journal entry
- *                      without a file on disk. A when value at or below the
- *                      applied watermark is skipped forever while db:migrate
- *                      still prints success; this stranded five migrations and
- *                      six columns of schema drift on 2026-08-30.
+ *   8. journal integrity — idx unique, no two files sharing a numeric prefix,
+ *                      and no journal entry without a file on disk. These fail
+ *                      the gate. Non-monotonic `when` is now reported as a NOTE
+ *                      rather than a violation: it was fatal while db:migrate ran
+ *                      drizzle-kit, which selected by created_at watermark and
+ *                      stranded five migrations on 2026-08-30, but db:migrate now
+ *                      runs run-pending-migrations.mjs, which walks the journal
+ *                      array and guards by file hash. check:watermark-free
+ *                      enforces that no applier reverts to watermark selection,
+ *                      which is the condition that makes `when` order matter.
  *
  * NOT COVERED (see companion check:migration-chain):
  *   - Applied-watermark ahead of journal (needs a live DB connection).
@@ -598,7 +602,7 @@ function checkJournalIntegrity(migrationsDir, sqlFiles) {
       out.push({
         filename: `${cur.tag}.sql`,
         label: "journal-order",
-        msg: `when=${cur.when} is not greater than the preceding entry ${prev.tag} (when=${prev.when}) — db:migrate applies in when order and skips anything at or below the applied watermark, while still printing success`,
+        msg: `when=${cur.when} is not greater than the preceding entry ${prev.tag} (when=${prev.when}) — harmless while every applier iterates the journal array and guards by file hash, and fatal the moment one selects by created_at watermark instead, which check:watermark-free enforces`,
       });
   }
 
@@ -716,6 +720,7 @@ function runScan(migrationsDir, { printBaseline = true } = {}) {
   }
 
   const violations = [];
+  const notes = [];
 
   for (const filename of sqlFiles) {
     const content = readFileSync(join(migrationsDir, filename), "utf8");
@@ -742,10 +747,16 @@ function runScan(migrationsDir, { printBaseline = true } = {}) {
     }
   }
 
-  for (const v of checkJournalIntegrity(migrationsDir, sqlFiles))
-    if (!BASELINE_JOURNAL_INTEGRITY.has(`${v.label}:${v.filename}`)) violations.push(v);
+  for (const v of checkJournalIntegrity(migrationsDir, sqlFiles)) {
+    if (BASELINE_JOURNAL_INTEGRITY.has(`${v.label}:${v.filename}`)) continue;
+    if (v.label === "journal-order") {
+      notes.push(v);
+      continue;
+    }
+    violations.push(v);
+  }
 
-  return { sqlFiles, violations };
+  return { sqlFiles, violations, notes };
 }
 
 // ─── self-test ────────────────────────────────────────────────────────────────
@@ -1015,7 +1026,13 @@ function selfTest() {
 if (SELF_TEST) {
   selfTest();
 } else {
-  const { sqlFiles, violations } = runScan(MIGRATIONS_DIR);
+  const { sqlFiles, violations, notes } = runScan(MIGRATIONS_DIR);
+
+  for (const n of notes) {
+    console.log(`  NOTE [${n.label}] ${n.filename}`);
+    console.log(`    ${n.msg}`);
+  }
+  if (notes.length) console.log(``);
 
   if (violations.length === 0) {
     console.log(`check:migration-discipline PASSED`);

@@ -32,11 +32,30 @@ import * as dotenv from "dotenv";
 
 const SCRIPT_DIR = fileURLToPath(new URL(".", import.meta.url));
 const BACKEND_ROOT = resolve(SCRIPT_DIR, "../..");
-dotenv.config({ path: join(BACKEND_ROOT, ".env") });
 
 const args = process.argv.slice(2);
 const isDryRun = !args.includes("--execute");
 const isSelfTest = args.includes("--self-test");
+
+if (!isSelfTest) dotenv.config({ path: join(BACKEND_ROOT, ".env") });
+
+const PRODUCTION_HOST_PATTERNS = ["amazonaws.com", "neon.tech", "neon-db.net", "supabase.co", ".render.com"];
+
+export function assertDisposableDrillTarget(databaseUrl, execute) {
+  if (!execute) return { allowed: true, reason: "dry run performs no mutation" };
+  if (!databaseUrl) return { allowed: false, reason: "DATABASE_URL is not set" };
+  const matched = PRODUCTION_HOST_PATTERNS.find((pattern) => databaseUrl.includes(pattern));
+  if (matched) return { allowed: false, reason: `DATABASE_URL names production host '${matched}'` };
+  let host;
+  try {
+    host = new URL(databaseUrl).hostname;
+  } catch {
+    return { allowed: false, reason: "DATABASE_URL does not parse" };
+  }
+  if (!["127.0.0.1", "localhost", "::1", "[::1]"].includes(host))
+    return { allowed: false, reason: `DATABASE_URL host '${host}' is not loopback` };
+  return { allowed: true, reason: `loopback target '${host}'` };
+}
 const selectedDrill = args.find((a) => a.startsWith("--drill="))?.slice(8) ?? null;
 
 const ALL_DRILLS = [
@@ -271,6 +290,13 @@ const drillsToRun = selectedDrill
 
 if (drillsToRun.length === 0) {
   process.stderr.write(`Unknown drill: "${selectedDrill}". Valid drills: ${ALL_DRILLS.join(", ")}\n`);
+  process.exit(2);
+}
+
+const drillTarget = assertDisposableDrillTarget(process.env.DATABASE_URL, !isDryRun);
+if (!drillTarget.allowed) {
+  process.stderr.write(`Refusing to execute drills: ${drillTarget.reason}.\n`);
+  process.stderr.write("Point DATABASE_URL at an explicitly named loopback disposable database.\n");
   process.exit(2);
 }
 

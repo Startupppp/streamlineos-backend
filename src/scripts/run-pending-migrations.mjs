@@ -7,14 +7,47 @@ const ROOT = path.resolve(import.meta.dirname, "../..");
 const MIGRATIONS = path.join(ROOT, "migrations");
 const JOURNAL = path.join(MIGRATIONS, "meta", "_journal.json");
 
+const PRODUCTION_HOST_PATTERNS = ["amazonaws.com", "neon.tech", "neon-db.net", "supabase.co", ".render.com"];
+
+export function assertMigrationTarget(url, allowProduction) {
+  if (!url) return { allowed: false, reason: "DATABASE_URL is not set" };
+  const matched = PRODUCTION_HOST_PATTERNS.find((p) => url.includes(p));
+  if (!matched) return { allowed: true, reason: "not a known production host" };
+  if (allowProduction === "1") return { allowed: true, reason: `production host '${matched}' — ALLOW_PRODUCTION_MIGRATION=1 acknowledged` };
+  return { allowed: false, reason: `DATABASE_URL names production host '${matched}'; set ALLOW_PRODUCTION_MIGRATION=1 to proceed deliberately` };
+}
+
 const args = process.argv.slice(2);
 const dryRun = args.includes("--dry-run");
 const tagArg = args.find((a) => a.startsWith("--tag="))?.slice("--tag=".length);
+
+if (args.includes("--self-test")) {
+  const cases = [
+    [assertMigrationTarget("postgresql://u:p@127.0.0.1:5432/app", undefined), true],
+    [assertMigrationTarget("postgresql://u:p@prod.cluster.amazonaws.com/app", undefined), false],
+    [assertMigrationTarget("postgresql://u:p@prod.cluster.amazonaws.com/app", "1"), true],
+    [assertMigrationTarget("postgresql://u:p@db.neon.tech/neondb", undefined), false],
+    [assertMigrationTarget("postgresql://u:p@db.neon.tech/neondb", "1"), true],
+    [assertMigrationTarget(undefined, undefined), false],
+  ];
+  let failed = 0;
+  for (const [verdict, expected] of cases)
+    if (verdict.allowed !== expected) { console.error(`FAIL: expected allowed=${expected}, got '${verdict.reason}'`); failed++; }
+  if (failed) process.exit(1);
+  console.log("PASS: run-pending-migrations target guard, 6 cases.");
+  process.exit(0);
+}
 
 const url = process.env.DATABASE_URL ?? process.env.DB;
 if (!url) {
   console.error("DATABASE_URL is not set");
   process.exit(1);
+}
+
+const _migGuard = assertMigrationTarget(url, process.env.ALLOW_PRODUCTION_MIGRATION);
+if (!_migGuard.allowed) {
+  console.error(`run-pending-migrations BLOCKED — ${_migGuard.reason}`);
+  process.exit(2);
 }
 
 /**
