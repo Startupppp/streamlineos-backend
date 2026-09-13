@@ -815,5 +815,95 @@ describe("PlanLimitsService", () => {
 
       expect(registerAfterCommit).not.toHaveBeenCalled();
     });
+
+
+    it("when the ambient transaction rolls back the hook is never invoked and no dedup key is written", async () => {
+      const db = makeDb({
+        execute: jest
+          .fn()
+          .mockResolvedValueOnce(FREE_TIER)
+          .mockResolvedValueOnce([{ count: 4 }])
+          .mockResolvedValueOnce([{ user_id: "owner-1" }]),
+      });
+      const cacheSet = jest.fn().mockResolvedValue(undefined);
+      const cache = {
+        cached: jest.fn().mockImplementation(async (_key: string, fn: () => Promise<unknown>) => fn()),
+        get: jest.fn().mockResolvedValue(null),
+        set: cacheSet,
+        invalidate: jest.fn().mockResolvedValue(undefined),
+        del: jest.fn().mockResolvedValue(undefined),
+      } as unknown as CacheService;
+      const notifications = { create: jest.fn().mockResolvedValue(undefined) };
+      let capturedHook: (() => Promise<void>) | undefined;
+      registerAfterCommit.mockImplementation((hook: () => Promise<void>) => {
+        capturedHook = hook;
+        return true;
+      });
+
+      const module = await Test.createTestingModule({
+        providers: [
+          PlanLimitsService,
+          { provide: DRIZZLE, useValue: db },
+          { provide: CacheService, useValue: cache },
+        ],
+      }).compile();
+      const svc = module.get(PlanLimitsService);
+      Object.assign(svc, { notifications });
+
+      await svc.assertWithinLimit("org1", "members", 1);
+      await new Promise<void>(resolve => setTimeout(resolve, 20));
+
+      expect(capturedHook).toBeDefined();
+      expect(cacheSet).not.toHaveBeenCalled();
+      expect(notifications.create).not.toHaveBeenCalled();
+    });
+
+    it("after a rolled-back admission a subsequent inline call sends the alert because the dedup key is absent", async () => {
+      const cacheGet = jest.fn().mockResolvedValue(null);
+      const cacheSet = jest.fn().mockResolvedValue(undefined);
+      const cache = {
+        cached: jest.fn().mockImplementation(async (_key: string, fn: () => Promise<unknown>) => fn()),
+        get: cacheGet,
+        set: cacheSet,
+        invalidate: jest.fn().mockResolvedValue(undefined),
+        del: jest.fn().mockResolvedValue(undefined),
+      } as unknown as CacheService;
+      const notifications = { create: jest.fn().mockResolvedValue(undefined) };
+      const db = makeDb({
+        execute: jest
+          .fn()
+          .mockResolvedValueOnce(FREE_TIER)
+          .mockResolvedValueOnce([{ count: 4 }])
+          .mockResolvedValueOnce(FREE_TIER)
+          .mockResolvedValueOnce([{ count: 4 }])
+          .mockResolvedValueOnce([{ user_id: "owner-1" }]),
+      });
+
+      const module = await Test.createTestingModule({
+        providers: [
+          PlanLimitsService,
+          { provide: DRIZZLE, useValue: db },
+          { provide: CacheService, useValue: cache },
+        ],
+      }).compile();
+      const svc = module.get(PlanLimitsService);
+      Object.assign(svc, { notifications });
+
+      registerAfterCommit.mockReturnValueOnce(true);
+      await svc.assertWithinLimit("org1", "members", 1);
+      expect(cacheSet).not.toHaveBeenCalled();
+      expect(notifications.create).not.toHaveBeenCalled();
+
+      registerAfterCommit.mockReturnValueOnce(false);
+      await svc.assertWithinLimit("org1", "members", 1);
+      await new Promise<void>(resolve => setTimeout(resolve, 20));
+
+      expect(notifications.create).toHaveBeenCalled();
+      expect(cacheSet).toHaveBeenCalledWith(
+        expect.stringContaining("billing:quota-alert:org1:members:"),
+        true,
+        expect.any(Number),
+      );
+    });
   });
 });
