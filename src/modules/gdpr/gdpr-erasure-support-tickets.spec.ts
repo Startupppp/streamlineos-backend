@@ -202,9 +202,17 @@ function makeTx(store: Store) {
     return chain;
   };
 
-  const insertChain = () => ({
-    values: () => Promise.resolve(undefined),
-  });
+  const insertChain = () => {
+    const chain: Record<string, unknown> = {
+      values: () => chain,
+      onConflictDoNothing: () => chain,
+      onConflictDoUpdate: () => chain,
+      returning: () => Promise.resolve([{ id: 1 }]),
+      then: (onOk: (v: unknown) => unknown, onErr?: (r: unknown) => unknown) =>
+        Promise.resolve([{ id: 1 }]).then(onOk, onErr),
+    };
+    return chain;
+  };
 
   return {
     select: jest.fn(() => selectChain()),
@@ -238,6 +246,27 @@ function makeDb(store: Store) {
   };
   const db = {
     select: jest.fn(() => dbSelectChain()),
+    update: jest.fn(() => {
+      const postUpdate: Record<string, unknown> = {
+        set: () => postUpdate,
+        where: () => postUpdate,
+        returning: () => Promise.resolve([]),
+        then: (resolve: (v: unknown) => unknown, reject?: (r: unknown) => unknown) =>
+          Promise.resolve([]).then(resolve, reject),
+      };
+      return postUpdate;
+    }),
+    insert: jest.fn(() => {
+      const postChain: Record<string, unknown> = {
+        values: () => postChain,
+        onConflictDoNothing: () => postChain,
+        onConflictDoUpdate: () => postChain,
+        returning: () => Promise.resolve([{ id: 1 }]),
+        then: (resolve: (v: unknown) => unknown, reject?: (r: unknown) => unknown) =>
+          Promise.resolve([{ id: 1 }]).then(resolve, reject),
+      };
+      return postChain;
+    }),
     transaction: jest.fn(async (fn: (t: typeof tx) => Promise<unknown>) => fn(tx)),
   };
   return { db, tx };
@@ -259,12 +288,19 @@ function makePurgeDouble() {
 
 function buildService(db: unknown, purge: unknown) {
   const cache = {} as CacheService;
+  const effectLedger = {
+    execute: jest.fn().mockImplementation(async (_eff: unknown, send: () => Promise<unknown>) => {
+      await send();
+      return "EXECUTED" as const;
+    }),
+  };
   const sessions = { revokeAllForUser: jest.fn().mockResolvedValue({ revokedCount: 0 }) };
   return new GdprSubjectErasureService(
     db as never,
     cache,
     sessions as never,
     purge as never,
+    effectLedger as never,
   );
 }
 

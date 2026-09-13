@@ -3,6 +3,7 @@ import { resolve } from "node:path";
 import { assertSafeWebhookUrl, checkWebhookUrl } from "./ssrf-guard";
 import { sealSensitive, readSensitive, isSealed } from "./sensitive-field";
 import { EnvKeyProvider, setKeyProvider, resetKeyProvider } from "./envelope-encryption";
+import { redactSensitiveData } from "../../modules/ai/core/redaction.util";
 
 const BACKEND_ROOT = resolve(__dirname, "../../..");
 const ORIGINAL_ENV = { ...process.env };
@@ -192,5 +193,75 @@ describe("Brute-force and credential stuffing — rate limit contract", () => {
     } catch {
       // file may not exist if auth is owned by another agent — skip
     }
+  });
+});
+
+describe("AI redaction — Indian identifier coverage (PAN/Aadhaar/UAN/GSTIN/IFSC/mobile)", () => {
+  it("redacts PAN-shaped identifiers before AI egress", () => {
+    expect(redactSensitiveData("Taxpayer PAN is ABCDE1234F on record")).not.toContain("ABCDE1234F");
+    expect(redactSensitiveData("PAN: ABCDE1234F")).toContain("[REDACTED_PAN]");
+  });
+
+  it("redacts Aadhaar in formatted (space-separated) form", () => {
+    const result = redactSensitiveData("Aadhaar: 1234 5678 9012");
+    expect(result).not.toContain("1234 5678 9012");
+    expect(result).toContain("[REDACTED_AADHAAR]");
+  });
+
+  it("redacts Aadhaar in hyphen-separated form", () => {
+    const result = redactSensitiveData("UID: 1234-5678-9012");
+    expect(result).not.toContain("1234-5678-9012");
+    expect(result).toContain("[REDACTED_AADHAAR]");
+  });
+
+  it("redacts Aadhaar/UAN in compact (no-separator) 12-digit form", () => {
+    const result = redactSensitiveData("UAN 123456789012 linked");
+    expect(result).not.toContain("123456789012");
+    expect(result).toContain("[REDACTED_AADHAAR]");
+  });
+
+  it("redacts GSTIN-shaped identifiers", () => {
+    const result = redactSensitiveData("GST registration: 27ABCDE1234F1Z5");
+    expect(result).not.toContain("27ABCDE1234F1Z5");
+    expect(result).toContain("[REDACTED_GSTIN]");
+  });
+
+  it("redacts IFSC codes before AI egress", () => {
+    const result = redactSensitiveData("Bank IFSC: HDFC0001234");
+    expect(result).not.toContain("HDFC0001234");
+    expect(result).toContain("[REDACTED_IFSC]");
+  });
+
+  it("redacts Indian mobile numbers without country code", () => {
+    const result = redactSensitiveData("Contact: 9876543210");
+    expect(result).not.toContain("9876543210");
+    expect(result).toContain("[REDACTED_PHONE]");
+  });
+
+  it("redacts Indian mobile numbers with +91 country code", () => {
+    const result = redactSensitiveData("WhatsApp: +91 9876543210");
+    expect(result).not.toContain("9876543210");
+    expect(result).toContain("[REDACTED_PHONE]");
+  });
+
+  it("does not redact short or structurally invalid identifiers", () => {
+    expect(redactSensitiveData("ref #1234")).toBe("ref #1234");
+    expect(redactSensitiveData("code AB123")).toBe("code AB123");
+  });
+
+  it("handles multiple Indian identifiers in a single string", () => {
+    const text = "PAN ABCDE1234F, Aadhaar 1234 5678 9012, mobile 9876543210";
+    const result = redactSensitiveData(text);
+    expect(result).not.toContain("ABCDE1234F");
+    expect(result).not.toContain("1234 5678 9012");
+    expect(result).not.toContain("9876543210");
+    expect(result).toContain("[REDACTED_PAN]");
+    expect(result).toContain("[REDACTED_AADHAAR]");
+    expect(result).toContain("[REDACTED_PHONE]");
+  });
+
+  it("does not double-redact — already-inserted placeholders are not re-matched", () => {
+    const already = "PAN [REDACTED_PAN] and Aadhaar [REDACTED_AADHAAR]";
+    expect(redactSensitiveData(already)).toBe(already);
   });
 });

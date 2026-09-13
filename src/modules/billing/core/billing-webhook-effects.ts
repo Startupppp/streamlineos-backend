@@ -101,52 +101,70 @@ export class BillingWebhookEffects {
     if (
       event.event === "payment.captured" &&
       payment.status === "captured" &&
-      packId === null &&
-      purchase != null
+      packId === null
     ) {
-      const activation = this.deps.activation;
-      try {
-        await this.deps.externalEffectLedger.execute(
-          {
-            organizationId: orgId,
-            producerEventId: payment.id,
-            effectKey: `${payment.id}:subscription-activation`,
-            effectType: "billing.subscription-activation",
-            providerIdempotency: "NONE",
-          },
-          async () => {
-            await activation.performActivationFromWebhook(
-              orgId,
-              payment.id,
-              payment.amount,
-              payment.currency,
-              purchase,
-            );
-          },
-        );
-        revenue.push({
-          type: "new_subscription",
-          orgId,
-          mrr: 0,
-          amount: payment.amount,
-          currency: payment.currency,
-          metadata: { paymentId: payment.id, source: "provider-webhook" },
-          dedupeKey: `${providerKey}:${payment.id}:sub`,
-        });
-      } catch (err: unknown) {
-        if (err instanceof ExternalEffectLeaseBusyError)
-          return { ok: false, result: { status: 503, body: { ok: false, error: "activation in-flight" } } };
-        logger.error(`[billing:${providerKey}] subscription activation from webhook failed`, {
+      const subscriptionLinked =
+        payment.orderId !== undefined ||
+        (payment.notes !== undefined && "purchaseId" in payment.notes);
+
+      if (purchase === null && subscriptionLinked) {
+        logger.warn(`[billing:${providerKey}] subscription capture arrived with no purchase record`, {
           orgId,
           paymentId: payment.id,
-          err,
         });
         await this.notifyProvisioningFailure(
           orgId,
           payment.id,
-          "your subscription could not be activated",
+          "your payment was received but your subscription could not be activated",
         );
         return { ok: false, result: { status: 500, body: { ok: false } } };
+      }
+
+      if (purchase !== null) {
+        const activation = this.deps.activation;
+        try {
+          await this.deps.externalEffectLedger.execute(
+            {
+              organizationId: orgId,
+              producerEventId: payment.id,
+              effectKey: `${payment.id}:subscription-activation`,
+              effectType: "billing.subscription-activation",
+              providerIdempotency: "NONE",
+            },
+            async () => {
+              await activation.performActivationFromWebhook(
+                orgId,
+                payment.id,
+                payment.amount,
+                payment.currency,
+                purchase,
+              );
+            },
+          );
+          revenue.push({
+            type: "new_subscription",
+            orgId,
+            mrr: 0,
+            amount: payment.amount,
+            currency: payment.currency,
+            metadata: { paymentId: payment.id, source: "provider-webhook" },
+            dedupeKey: `${providerKey}:${payment.id}:sub`,
+          });
+        } catch (err: unknown) {
+          if (err instanceof ExternalEffectLeaseBusyError)
+            return { ok: false, result: { status: 503, body: { ok: false, error: "activation in-flight" } } };
+          logger.error(`[billing:${providerKey}] subscription activation from webhook failed`, {
+            orgId,
+            paymentId: payment.id,
+            err,
+          });
+          await this.notifyProvisioningFailure(
+            orgId,
+            payment.id,
+            "your subscription could not be activated",
+          );
+          return { ok: false, result: { status: 500, body: { ok: false } } };
+        }
       }
     }
 

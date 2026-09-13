@@ -201,11 +201,33 @@ function makeDb(store: Store) {
     select: jest.fn(() => emptySelectChain()),
     update: jest.fn((t: unknown) => updateChain(t)),
     delete: jest.fn((t: unknown) => deleteChain(t)),
-    insert: jest.fn(() => ({ values: () => Promise.resolve(undefined) })),
+    insert: jest.fn(() => {
+      const insertChain: Record<string, unknown> = {
+        values: () => insertChain,
+        onConflictDoNothing: () => insertChain,
+        onConflictDoUpdate: () => insertChain,
+        returning: () => Promise.resolve([{ id: 1 }]),
+        then: (resolve: (v: unknown) => unknown, reject?: (r: unknown) => unknown) =>
+          Promise.resolve([{ id: 1 }]).then(resolve, reject),
+      };
+      return insertChain;
+    }),
   };
 
   const db = {
     select: jest.fn(() => dbSelectChain()),
+    update: jest.fn((t: unknown) => updateChain(t)),
+    insert: jest.fn(() => {
+      const postChain: Record<string, unknown> = {
+        values: () => postChain,
+        onConflictDoNothing: () => postChain,
+        onConflictDoUpdate: () => postChain,
+        returning: () => Promise.resolve([{ id: 1 }]),
+        then: (resolve: (v: unknown) => unknown, reject?: (r: unknown) => unknown) =>
+          Promise.resolve([{ id: 1 }]).then(resolve, reject),
+      };
+      return postChain;
+    }),
     transaction: jest.fn(async (fn: (t: typeof tx) => Promise<unknown>) => {
       store.callOrder.push("db.transaction");
       return fn(tx);
@@ -249,8 +271,14 @@ function makePurgeDouble(store?: Store) {
 
 function buildService(db: unknown, purge: unknown) {
   const cache = {} as CacheService;
+  const effectLedger = {
+    execute: jest.fn().mockImplementation(async (_eff: unknown, send: () => Promise<unknown>) => {
+      await send();
+      return "EXECUTED" as const;
+    }),
+  };
   const sessions = { revokeAllForUser: jest.fn().mockResolvedValue({ revokedCount: 0 }) };
-  return new GdprSubjectErasureService(db as never, cache, sessions as never, purge as never);
+  return new GdprSubjectErasureService(db as never, cache, sessions as never, purge as never, effectLedger as never);
 }
 
 function manifestKeys(purge: ReturnType<typeof makePurgeDouble>): ManifestKey[] {

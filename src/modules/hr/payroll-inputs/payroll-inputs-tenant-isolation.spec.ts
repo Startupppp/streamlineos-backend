@@ -58,7 +58,7 @@ describe("PayrollInputsService — cross-tenant isolation", () => {
     const mockAutomation = { trigger: jest.fn() };
     const mockBuild = { build: jest.fn() };
     const mockSnapshots = { listSectionSnapshot: jest.fn(), buildFreezeSummary: jest.fn() };
-    const svc = new PayrollInputsService(db, mockAudit as never, mockAutomation as never, mockBuild as never, mockSnapshots as never);
+    const svc = new PayrollInputsService(db, mockAudit as never, mockAutomation as never, mockBuild as never, mockSnapshots as never, {} as never);
     await svc.listPeriods(ATTACKER, { limit: 10 });
     expect(sqlValues(isolationArg(where, findMany))).toContain(ATTACKER);
   });
@@ -69,7 +69,7 @@ describe("PayrollInputsService — cross-tenant isolation", () => {
     const mockAutomation = { trigger: jest.fn() };
     const mockBuild = { build: jest.fn() };
     const mockSnapshots = { listSectionSnapshot: jest.fn(), buildFreezeSummary: jest.fn() };
-    const svc = new PayrollInputsService(db, mockAudit as never, mockAutomation as never, mockBuild as never, mockSnapshots as never);
+    const svc = new PayrollInputsService(db, mockAudit as never, mockAutomation as never, mockBuild as never, mockSnapshots as never, {} as never);
     await svc.listPeriods(OWNER, { limit: 10 });
     expect(sqlValues(isolationArg(where, findMany))).toContain(OWNER);
   });

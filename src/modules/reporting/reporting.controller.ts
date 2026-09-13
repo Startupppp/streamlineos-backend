@@ -17,6 +17,7 @@ import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ZodValidationPipe } from "../../common/pipes/zod-validation.pipe";
 import { ReportingService } from "./reporting.service";
+import { ReportingDefinitionsService } from "./reporting-definitions.service";
 import { asQueryDescription } from "./dto/reporting.schemas";
 import {
   createDefinitionSchema,
@@ -94,7 +95,10 @@ import {
 @Controller("crm/reporting")
 @UseGuards(JwtAuthGuard, PermissionGuard)
 export class ReportingController {
-  constructor(private readonly reporting: ReportingService) {}
+  constructor(
+    private readonly reporting: ReportingService,
+    private readonly reportingDefinitions: ReportingDefinitionsService,
+  ) {}
 
   /**
    * What this caller may ask about.
@@ -118,7 +122,7 @@ export class ReportingController {
     @Query(new ZodValidationPipe(listQuerySchema)) query: ListQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.reporting.listDefinitions(u.orgId, query);
+    return this.reportingDefinitions.listDefinitions(u.orgId, query);
   }
 
   @Get("definitions/:reportDefinitionId")
@@ -128,7 +132,7 @@ export class ReportingController {
     @Param("reportDefinitionId") reportDefinitionId: string,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.reporting.getDefinition(u.orgId, reportDefinitionId);
+    return this.reportingDefinitions.getDefinition(u.orgId, reportDefinitionId);
   }
 
   @Post("definitions")
@@ -138,7 +142,7 @@ export class ReportingController {
     @Body(new ZodValidationPipe(createDefinitionSchema)) body: CreateDefinitionInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.reporting.createDefinition(u, body);
+    return this.reportingDefinitions.createDefinition(u, body);
   }
 
   @Patch("definitions/:reportDefinitionId")
@@ -149,7 +153,7 @@ export class ReportingController {
     @Body(new ZodValidationPipe(updateDefinitionSchema)) body: UpdateDefinitionInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.reporting.updateDefinition(u, reportDefinitionId, body);
+    return this.reportingDefinitions.updateDefinition(u, reportDefinitionId, body);
   }
 
   @Delete("definitions/:reportDefinitionId")
@@ -159,7 +163,7 @@ export class ReportingController {
     @Param("reportDefinitionId") reportDefinitionId: string,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.reporting.deleteDefinition(u.orgId, reportDefinitionId);
+    return this.reportingDefinitions.deleteDefinition(u.orgId, reportDefinitionId);
   }
 
   /**
@@ -231,6 +235,6 @@ export class ReportingController {
     @Query(new ZodValidationPipe(listQuerySchema)) query: ListQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.reporting.listRuns(u.orgId, query);
+    return this.reportingDefinitions.listRuns(u.orgId, query);
   }
 }

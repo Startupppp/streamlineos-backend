@@ -21,6 +21,8 @@ const ALERT_SCRIPTS = [
   "alert-dispatch.mjs",
   "alert-cell-recovery.mjs",
   "check-alert-ack.mjs",
+  "alert-workflow-stranded.mjs",
+  "alert-retention-dead-man.mjs",
 ];
 
 function runSelfTest(script) {

@@ -97,42 +97,35 @@ export class PayrollPostingService {
    *
    *   net pay clearing   net   (debit)
    *   bank               net   (credit)
-   *
-   * Failures are logged, never thrown: the money already left the bank and a
-   * ledger hiccup must not reopen a paid run.
    */
   async postPaid(u: CurrentUserContext, runId: number, month: string, net: string): Promise<void> {
     const netPaise = toPaise(net ?? "0");
     if (netPaise <= 0) return;
 
-    try {
-      const currency = await this.baseCurrency(u.orgId, runId);
-      if (!currency) return;
+    const currency = await this.baseCurrency(u.orgId, runId);
+    if (!currency) return;
 
-      await this.posting.submit(u.orgId, u.userId, {
-        sourceType: "payroll_run",
-        sourceId: String(runId),
-        purpose: "paid",
-        journalDate: `${month}-01`,
-        memo: `Payroll payment ${month} — bank disbursement`,
-        lines: [
-          {
-            accountTag: "net_pay_clearing",
-            debitMinor: netPaise,
-            currency,
-            description: `Net pay settled ${month}`,
-          },
-          {
-            accountTag: "bank",
-            creditMinor: netPaise,
-            currency,
-            description: `Bank disbursement ${month}`,
-          },
-        ],
-      });
-    } catch (err) {
-      this.logger.error("Payroll paid ledger posting failed", { runId, month, err });
-    }
+    await this.posting.submit(u.orgId, u.userId, {
+      sourceType: "payroll_run",
+      sourceId: String(runId),
+      purpose: "paid",
+      journalDate: `${month}-01`,
+      memo: `Payroll payment ${month} — bank disbursement`,
+      lines: [
+        {
+          accountTag: "net_pay_clearing",
+          debitMinor: netPaise,
+          currency,
+          description: `Net pay settled ${month}`,
+        },
+        {
+          accountTag: "bank",
+          creditMinor: netPaise,
+          currency,
+          description: `Bank disbursement ${month}`,
+        },
+      ],
+    });
   }
 
   /**

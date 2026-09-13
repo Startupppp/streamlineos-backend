@@ -55,6 +55,8 @@ function harness(opts: { templateFound: boolean; policyFound: boolean }) {
     { getOrCreate: jest.fn(async () => ({ defaultReminderFirstAfterDays: 3, defaultReminderRepeatDays: 3, defaultReminderMaxCount: 5 })) } as never,
     templates as never,
     watermarks as never,
+    {} as never,
+    {} as never,
   );
   return { service, inserted, templates, watermarks };
 }

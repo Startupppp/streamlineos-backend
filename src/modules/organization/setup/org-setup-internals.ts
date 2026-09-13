@@ -5,7 +5,10 @@ import type { TenantTx } from "../../../common/tenant/with-tenant";
 import { OutboxWriter } from "../../../common/outbox/outbox-writer";
 import type { SetupInvitee } from "./dto/org.schemas";
 import type { z } from "zod";
-import { orgSetupStatusErrorCodeSchema } from "./dto/org-setup-response.schemas";
+import {
+  orgSetupStatusErrorCodeSchema,
+  recipientOutcomeSchema,
+} from "./dto/org-setup-response.schemas";
 
 export type OrgSetupProvisioningState =
   | "not-started"
@@ -21,6 +24,7 @@ export interface OrgSetupStatus {
   provisioning: OrgSetupProvisioningState;
   errorCode: z.infer<typeof orgSetupStatusErrorCodeSchema> | null;
   correlationId: string | null;
+  recipientOutcomes: z.infer<typeof recipientOutcomeSchema>[] | null;
 }
 
 export const READY_ENTITLEMENT_STATUSES = ["TRIAL", "ACTIVE", "PAST_DUE"] as const;

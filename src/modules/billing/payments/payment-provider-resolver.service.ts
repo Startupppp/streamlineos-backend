@@ -3,6 +3,7 @@ import { and, asc, desc, eq } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import { paymentProviders } from "../../../db/schema";
+import { runInNewTenantTransaction, runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
 import { PaymentProviderAdapterRegistry, type PaymentProviderAdapter, type PaymentProviderRuntime, type PaymentWebhookNormalization, type ProviderPaymentSnapshot } from "./payment-provider-adapter.interface";
 import { PaymentProviderSetupService } from "./payment-provider-setup.service";
 
@@ -47,9 +48,11 @@ export class PaymentProviderResolver {
     providerKey: string,
     requestedEnvironment?: PaymentEnvironment,
   ): Promise<OrganizationPaymentProvider | undefined> {
-    const provider = await this.db.query.paymentProviders.findFirst({
-      where: and(eq(paymentProviders.orgId, orgId), eq(paymentProviders.providerKey, providerKey)),
-    });
+    const provider = await runInNewTenantTransaction(this.db, orgId, (tx) =>
+      tx.query.paymentProviders.findFirst({
+        where: and(eq(paymentProviders.orgId, orgId), eq(paymentProviders.providerKey, providerKey)),
+      }),
+    );
     if (!provider || provider.status === "disabled") return undefined;
     return this.buildFromRow(provider, requestedEnvironment);
   }
@@ -59,10 +62,15 @@ export class PaymentProviderResolver {
     orgId: string,
     requestedEnvironment?: PaymentEnvironment,
   ): Promise<OrganizationPaymentProvider | undefined> {
-    const providers = await this.db.query.paymentProviders.findMany({
-      where: eq(paymentProviders.orgId, orgId),
-      orderBy: [desc(paymentProviders.isPrimary), asc(paymentProviders.id)],
-    });
+    const providers = await runInTenantTransaction(
+      this.db,
+      (tx) =>
+        tx.query.paymentProviders.findMany({
+          where: eq(paymentProviders.orgId, orgId),
+          orderBy: [desc(paymentProviders.isPrimary), asc(paymentProviders.id)],
+        }),
+      { orgId },
+    );
 
     for (const provider of providers) {
       if (provider.status === "disabled") continue;

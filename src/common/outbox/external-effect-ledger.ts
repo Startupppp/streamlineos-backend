@@ -9,10 +9,12 @@ import {
   type ExternalEffectLedgerReport,
   reportExternalEffectLedger,
 } from "./external-effect-ledger-report";
+import { OUTBOX_DELIVERY_DEADLINE_MS } from "./outbox-delivery-deadline";
 
 export type { ExternalEffectLedgerReport };
 
-const EFFECT_LEASE_MS = 60_000;
+const MAX_PROVIDER_CALL_MS = 90_000;
+const EFFECT_LEASE_MS = OUTBOX_DELIVERY_DEADLINE_MS + MAX_PROVIDER_CALL_MS;
 
 export type ProviderIdempotencyGuarantee =
   | "NONE"

@@ -23,7 +23,7 @@ export const ORG_MODULE_KEYS = [
  * wall-clock deadline; a 500-row loop would be abandoned mid-way and re-send on retry. The wizard
  * adds invitees one at a time — bulk import is `POST /users/bulk-invite`, which is not deadline-bound.
  */
-const MAX_SETUP_INVITEES = 50;
+export const MAX_SETUP_INVITEES = 50;
 
 export const setupInviteeSchema = z
   .object({

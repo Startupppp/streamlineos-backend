@@ -194,7 +194,7 @@ describe("HR Lifecycle services — cross-tenant isolation", () => {
     it("scopes analytics queries to the requesting org (DENY — cross-tenant isolation)", async () => {
       const { db, where } = makeDb([]);
       const mockCache = makeCacheMock();
-      const svc = new HrAnalyticsService(db, mockCache);
+      const svc = new HrAnalyticsService(db, mockCache, {} as never);
       await svc.overview(ATTACKER);
       expect(where).toHaveBeenCalled();
       expect(sqlValues(where.mock.calls[0]?.[0])).toContain(ATTACKER);
@@ -203,7 +203,7 @@ describe("HR Lifecycle services — cross-tenant isolation", () => {
     it("returns analytics for the owning org (CONTROL)", async () => {
       const { db } = makeDb([{ count: 1 }]);
       const mockCache = makeCacheMock();
-      const svc = new HrAnalyticsService(db, mockCache);
+      const svc = new HrAnalyticsService(db, mockCache, {} as never);
       const result = await svc.overview(OWNER);
       expect(result).toBeDefined();
     });

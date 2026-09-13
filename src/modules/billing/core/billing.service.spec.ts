@@ -31,6 +31,7 @@ import { PaymentWebhookReceiverService } from "../payments/payment-webhook-recei
 import { PaymentAnalyticsService } from "../payments/payment-analytics.service";
 import { BillingProfileService } from "./billing-profile.service";
 import { PlatformMerchantService } from "../payments/platform-merchant.service";
+import { CacheService } from "../../../common/cache/cache.service";
 import { PLAN_PRICES_PAISE } from "./plan-entitlements.constants";
 import { COUPON_EXHAUSTED, COUPON_EXPIRED, COUPON_WRONG_PLAN } from "./coupon-pricing";
 import {
@@ -380,6 +381,15 @@ async function buildService(
       { provide: PaymentAnalyticsService, useValue: { notifyOwner: jest.fn(), track: jest.fn() } },
       { provide: BillingProfileService, useValue: { get: jest.fn(), update: jest.fn() } },
       { provide: PlatformMerchantService, useValue: merchant },
+      {
+        provide: CacheService,
+        useValue: {
+          invalidate: jest.fn().mockResolvedValue(undefined),
+          invalidateMany: jest.fn().mockResolvedValue(undefined),
+          invalidateForOrg: jest.fn().mockResolvedValue(undefined),
+          cached: jest.fn().mockImplementation(async (_key: unknown, fn: () => Promise<unknown>) => fn()),
+        },
+      },
     ],
   }).compile();
   return module.get(BillingService);
@@ -763,7 +773,7 @@ describe("BillingService.createOrder — records an authoritative purchase", () 
     expect(message).not.toContain("fake-public");
   });
 
-  it("provider network failure on createOrder propagates without writing a purchase", async () => {
+  it("provider network failure on createOrder propagates, leaving an unclaimed intent row rather than no record at all", async () => {
     const networkError = new Error("ECONNRESET");
     const failingProvider: OrganizationPaymentProvider = {
       providerKey: "razorpay",
@@ -793,7 +803,11 @@ describe("BillingService.createOrder — records an authoritative purchase", () 
     const svc = await buildService(db, makeResolver(), undefined, merchant);
 
     await expect(svc.createOrder("org1", "user1", "STARTER")).rejects.toThrow("ECONNRESET");
-    expect(db._store.allInserts.find((i) => i.table === subscriptionPurchases)).toBeUndefined();
+
+    const intent = db._store.allInserts.find((i) => i.table === subscriptionPurchases);
+    expect(intent).toBeDefined();
+    expect(intent?.values).toMatchObject({ orgId: "org1", plan: "STARTER", status: "PENDING" });
+    expect(intent?.values).toMatchObject({ providerOrderId: null });
   });
 });
 

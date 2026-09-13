@@ -59,7 +59,9 @@ function chain(result: unknown[] = []) {
     set: jest.fn().mockReturnThis(),
     limit: jest.fn().mockResolvedValue(result),
     returning: jest.fn().mockResolvedValue(result),
-    values: jest.fn().mockResolvedValue(undefined),
+    onConflictDoNothing: jest.fn().mockReturnThis(),
+    onConflictDoUpdate: jest.fn().mockReturnThis(),
+    values: jest.fn().mockReturnThis(),
     then: (
       resolve: (value: unknown) => unknown,
       reject?: (reason: unknown) => unknown,
@@ -91,7 +93,7 @@ function makeHarness(options: HarnessOptions = {}) {
       }),
     })),
     update: jest.fn().mockImplementation(() => chain([])),
-    insert: jest.fn().mockImplementation(() => chain([])),
+    insert: jest.fn().mockImplementation(() => chain([{ id: 1 }])),
     delete: jest.fn().mockImplementation((table: unknown) => {
       if (table === kbArticleChunks) {
         const c = chain([{ id: 1 }]);
@@ -114,7 +116,8 @@ function makeHarness(options: HarnessOptions = {}) {
       if (dbSelectCount === 1) return chain(options.membershipRows ?? [{ id: 1 }]);
       return chain(options.legalHoldRows ?? []);
     }),
-    insert: jest.fn().mockImplementation(() => chain([])),
+    insert: jest.fn().mockImplementation(() => chain([{ id: 1 }])),
+    update: jest.fn().mockImplementation(() => chain([])),
     transaction: jest
       .fn()
       .mockImplementation(async (fn: (t: typeof tx) => Promise<unknown>) => fn(tx)),
@@ -142,12 +145,19 @@ function buildService(
   purge: ReturnType<typeof makePurgeDouble>,
 ) {
   const cache = {} as CacheService;
+  const effectLedger = {
+    execute: jest.fn().mockImplementation(async (_eff: unknown, send: () => Promise<unknown>) => {
+      await send();
+      return "EXECUTED" as const;
+    }),
+  };
   const sessions = { revokeAllForUser: jest.fn().mockResolvedValue({ revokedCount: 0 }) };
   return new GdprSubjectErasureService(
     db as unknown as Db,
     cache,
     sessions as never,
     purge as never,
+    effectLedger as never,
   );
 }
 
@@ -349,7 +359,7 @@ describe("GdprStoragePurgeService — org-scoped keys are never deleted", () => 
   function purgeService(storage: Partial<StorageService>) {
     const db = {
       select: jest.fn().mockReturnValue(chain([])),
-      insert: jest.fn().mockReturnValue(chain([])),
+      insert: jest.fn().mockReturnValue(chain([{ id: 1 }])),
     };
     return new GdprStoragePurgeService(
       db as unknown as Db,

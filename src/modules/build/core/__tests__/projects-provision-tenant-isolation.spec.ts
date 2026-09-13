@@ -23,6 +23,7 @@ function makeMockDb(overrides: Partial<{ queryResult: unknown; transactionRows: 
 
   const transactionMock = jest.fn().mockImplementation(async (cb: (tx: unknown) => Promise<unknown>) => {
     const tx = {
+      execute: jest.fn().mockResolvedValue([]),
       insert: () => ({
         values: () => ({
           returning: jest.fn().mockResolvedValue(transactionRows),
@@ -130,6 +131,7 @@ describe("ProjectsProvisionService — cross-tenant isolation", () => {
         async (cb: (tx: unknown) => Promise<unknown>) => {
           const insertedRows: Array<{ orgId: string; table: string }> = [];
           const tx = {
+            execute: jest.fn().mockResolvedValue([]),
             insert: (_table: unknown) => ({
               values: (vals: { orgId?: string } | Array<{ orgId?: string }>) => {
                 const arr = Array.isArray(vals) ? vals : [vals];

@@ -158,6 +158,65 @@ export class BillingWebhookHandler {
     return this.ledger.listUnprocessed(orgId);
   }
 
+  private async reconcileFromNotes(
+    payment: PaymentWebhookPayment,
+    orgId: string,
+    providerKey: string,
+  ): Promise<SubscriptionPurchase | null> {
+    const orderId = payment.orderId;
+    const rawPurchaseId = payment.notes?.purchaseId;
+    if (!orderId || !rawPurchaseId) return null;
+    const purchaseId = parseInt(rawPurchaseId, 10);
+    if (isNaN(purchaseId)) return null;
+
+    const found = await this.purchaseService.findById(this.deps.db, purchaseId, orgId);
+    if (!found) return null;
+
+    const readiness = this.deps.platformMerchant.readiness();
+    const currentEnv = this.deps.platformMerchant.environment();
+    if (
+      !readiness.configured ||
+      readiness.publicKeyId === null ||
+      found.merchantKeyId !== readiness.publicKeyId ||
+      found.environment !== currentEnv ||
+      found.amountMinor !== payment.amount ||
+      found.currency !== payment.currency
+    ) {
+      logger.warn(`[billing:${providerKey}] reconciled purchase failed integrity check`, {
+        orgId,
+        purchaseId,
+      });
+      return null;
+    }
+
+    if (found.providerOrderId === null) {
+      const attached = await this.deps.db.transaction(
+        async (tx) => this.purchaseService.attachProviderOrder(tx, found.id, orgId, orderId),
+      );
+      if (attached !== null) return attached;
+
+      const refetched = await this.purchaseService.findById(this.deps.db, purchaseId, orgId);
+      if (!refetched || refetched.providerOrderId !== orderId) {
+        logger.warn(`[billing:${providerKey}] reconciled purchase already carries a different order`, {
+          orgId,
+          purchaseId,
+        });
+        return null;
+      }
+      return refetched;
+    }
+
+    if (found.providerOrderId !== orderId) {
+      logger.warn(`[billing:${providerKey}] reconciled purchase carries a different order id`, {
+        orgId,
+        purchaseId,
+      });
+      return null;
+    }
+
+    return found;
+  }
+
   private async settle(
     event: NormalizedPaymentWebhookEvent,
     payment: PaymentWebhookPayment,
@@ -193,6 +252,10 @@ export class BillingWebhookHandler {
         logger.warn(`[billing:${providerKey}] webhook organization does not match endpoint organization`);
         return { status: 400, body: { ok: false, error: "organization mismatch" } };
       }
+    }
+
+    if (purchase === null && payment.orderId !== undefined) {
+      purchase = await this.reconcileFromNotes(payment, orgId, providerKey);
     }
 
     try {

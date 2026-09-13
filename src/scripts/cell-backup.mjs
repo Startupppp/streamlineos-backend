@@ -4,9 +4,10 @@ import { pipeline } from "node:stream/promises";
 import { dirname, resolve } from "node:path";
 import postgres from "postgres";
 import { loadEnv, parseCellArgs, redact } from "./cell-topology.mjs";
+import { requireSafeTarget, topologicalOrder } from "./cell-backup-utils.mjs";
 
-const env = loadEnv();
 const argv = process.argv.slice(2);
+const SELF_TEST = argv.includes("--self-test");
 
 if (argv.includes("--help") || argv.length === 0) {
   console.log(`
@@ -24,15 +25,17 @@ rows fails here.
   process.exit(0);
 }
 
-const topology = parseCellArgs(argv, env);
+const env = SELF_TEST ? {} : loadEnv();
+const topology = SELF_TEST ? null : parseCellArgs(argv, env);
+
+
 const flag = (name, fallback) => {
   const hit = argv.find((a) => a.startsWith(`--${name}=`));
   return hit ? hit.slice(name.length + 3) : fallback;
 };
 
-const DEFAULT_FILE = `backups/${topology.cellId}.ndjson`;
-const file = resolve(process.cwd(), flag("out", flag("in", DEFAULT_FILE)));
-const SELF_TEST = argv.includes("--self-test");
+const DEFAULT_FILE = SELF_TEST ? null : `backups/${topology.cellId}.ndjson`;
+const file = SELF_TEST ? null : resolve(process.cwd(), flag("out", flag("in", DEFAULT_FILE)));
 
 const started = Date.now();
 const log = (msg) => console.log(`[${((Date.now() - started) / 1000).toFixed(1)}s] ${msg}`);
@@ -77,40 +80,6 @@ async function foreignKeyEdges(sql) {
     WHERE k.contype = 'f'`;
 }
 
-export function topologicalOrder(tables, edges) {
-  const key = (schema, table) => `${schema}.${table}`;
-  const present = new Set(tables.map((t) => key(t.schema, t.table)));
-  const parents = new Map(tables.map((t) => [key(t.schema, t.table), new Set()]));
-
-  for (const e of edges) {
-    const child = key(e.child_schema, e.child);
-    const parent = key(e.parent_schema, e.parent);
-    if (child === parent) continue;
-    if (e.deferrable) continue;
-    if (!present.has(child) || !present.has(parent)) continue;
-    parents.get(child).add(parent);
-  }
-
-  const ordered = [];
-  const emitted = new Set();
-  let progress = true;
-
-  while (progress) {
-    progress = false;
-    for (const t of tables) {
-      const id = key(t.schema, t.table);
-      if (emitted.has(id)) continue;
-      const blockers = [...parents.get(id)].filter((p) => !emitted.has(p));
-      if (blockers.length > 0) continue;
-      emitted.add(id);
-      ordered.push(t);
-      progress = true;
-    }
-  }
-
-  const cyclic = tables.filter((t) => !emitted.has(key(t.schema, t.table)));
-  return { ordered, cyclic };
-}
 
 async function backup() {
   const sql = connect(topology.cell.ownerDirect);
@@ -314,6 +283,8 @@ function selfTest() {
 
 async function main() {
   if (SELF_TEST) return selfTest();
+
+  requireSafeTarget(topology);
 
   console.log(`cell    : ${topology.cellId}`);
   console.log(`database: ${redact(topology.cell.ownerDirect)}`);

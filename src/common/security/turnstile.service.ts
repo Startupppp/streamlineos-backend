@@ -26,7 +26,14 @@ export class TurnstileService {
     clientIp: string | undefined,
   ): Promise<void> {
     const secret = this.config.TURNSTILE_SECRET_KEY?.trim();
-    if (!secret) return;
+    if (!secret) {
+      if (this.config.NODE_ENV === "production") {
+        throw new ServiceUnavailableException(
+          "Bot verification is not configured",
+        );
+      }
+      return;
+    }
     if (!token) {
       throw new BadRequestException("Bot verification is required");
     }

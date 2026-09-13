@@ -15,6 +15,7 @@ import { PlatformMerchantService } from "../payments/platform-merchant.service";
 import { BillingProfileService } from "./billing-profile.service";
 import { AiCreditsService } from "./ai-credits.service";
 import { BillingService } from "./billing.service";
+import { CacheService } from "../../../common/cache/cache.service";
 import {
   FakeProviderAdapter,
   FAKE_VALID_PAYMENT_SIG,
@@ -165,6 +166,15 @@ async function buildService(providers: PaymentProviderResolver): Promise<Billing
       { provide: PaymentWebhookReceiverService, useValue: { recordSignatureFailure: jest.fn() } },
       { provide: PaymentAnalyticsService, useValue: { notifyOwner: jest.fn(), track: jest.fn() } },
       { provide: BillingProfileService, useValue: { get: jest.fn(), update: jest.fn() } },
+      {
+        provide: CacheService,
+        useValue: {
+          invalidate: jest.fn().mockResolvedValue(undefined),
+          invalidateMany: jest.fn().mockResolvedValue(undefined),
+          invalidateForOrg: jest.fn().mockResolvedValue(undefined),
+          cached: jest.fn().mockImplementation(async (_key: unknown, fn: () => Promise<unknown>) => fn()),
+        },
+      },
     ],
   }).compile();
   return module.get(BillingService);

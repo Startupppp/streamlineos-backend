@@ -24,7 +24,7 @@ export const createGrantSchema = z.object({
 export type CreateGrantInput = z.infer<typeof createGrantSchema>;
 
 export const revokeGrantSchema = z.object({
-  reason: z.string().min(1).max(1000),
+  reason: z.string().trim().min(3).max(1000),
 }).strict();
 
 export type RevokeGrantInput = z.infer<typeof revokeGrantSchema>;

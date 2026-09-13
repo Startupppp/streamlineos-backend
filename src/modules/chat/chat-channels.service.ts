@@ -6,7 +6,6 @@ import { type Db } from "../../db/drizzle.module";
 import type { TenantTx } from "../../db/drizzle.types";
 import { PlanLimitsService } from "../billing/core/plan-limits.service";
 import { lockQuota } from "../billing/core/seat-definition";
-import { CacheService } from "../../common/cache/cache.service";
 import type { CreateChannelInput } from "./dto/chat.schemas";
 import { assertUsersInOrg } from "../../common/tenant/org-membership";
 import { EntityReferenceService } from "../entity-reference/entity-reference.service";
@@ -29,7 +28,6 @@ export class ChatChannelsService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly planLimits: PlanLimitsService,
-    private readonly cache: CacheService,
     private readonly entities: EntityReferenceService,
     private readonly listService: ChatChannelListService,
   ) {}

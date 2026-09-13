@@ -51,7 +51,9 @@ function chain(resolvedValue: unknown = []) {
     limit: jest.fn().mockResolvedValue(resolvedValue),
     set: jest.fn().mockReturnThis(),
     returning: jest.fn().mockResolvedValue(resolvedValue),
-    values: jest.fn().mockResolvedValue(undefined),
+    onConflictDoNothing: jest.fn().mockReturnThis(),
+    onConflictDoUpdate: jest.fn().mockReturnThis(),
+    values: jest.fn().mockReturnThis(),
     then: (
       resolve: (v: unknown) => unknown,
       reject?: (r: unknown) => unknown,
@@ -179,11 +181,18 @@ function buildService(db: ReturnType<typeof makeKbDb>["db"]): GdprSubjectErasure
       manifest: [],
     }),
   };
+  const effectLedger = {
+    execute: jest.fn().mockImplementation(async (_eff: unknown, send: () => Promise<unknown>) => {
+      await send();
+      return "EXECUTED" as const;
+    }),
+  };
   return new GdprSubjectErasureService(
     db as unknown as Db,
     cache,
     sessions,
     storagePurge as never,
+    effectLedger as never,
   );
 }
 

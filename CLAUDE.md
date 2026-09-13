@@ -184,12 +184,16 @@ Arity is not fixed at three: 53 keys are two-segment (`surveys:create`) and some
   so it looks like an environment fault rather than a heap limit. Measured twice, by two sessions
   independently. 10240 completes. `-p tsconfig.build.json` is the smaller program and the one
   `nest build` actually uses; prefer it when you only need build-blocking errors.
-- ⚠ **`test/security/**` and `test/perf/**` are RUN by jest but never TYPECHECKED.** `tsconfig.json`
-  includes only `src/**/*` and `evals/**/*`, while the jest `roots` add `<rootDir>/test/security` and
-  `<rootDir>/test/perf`. Typecheck is the only gate that sees an arity change, so a constructor that
-  gains a parameter breaks those specs invisibly: measured 2026-09-10, `JwtAuthGuard` went from 5 to 6
-  arguments, `tsc` reported 34 errors across `src/**` and **zero** for the three constructions under
-  `test/security/appsec/`, one of which then failed at runtime and two of which passed only because
-  the missing dependency was never reached. After any signature change, grep `test/` for the symbol by
-  hand — the typecheck will not do it for you.
+- ⚠ **CORRECTED 2026-09-13: `test/**` IS typechecked now, and the hand-grep instruction below is withdrawn.**
+  `tsconfig.json:27` reads `"include": ["src/**/*", "evals/**/*", "test/**/*"]` — the `test/**/*` glob was
+  added after the 2026-09-10 measurement, so `pnpm check:spec-typecheck` (`-p tsconfig.json`),
+  `pnpm check:test-typecheck` and `pnpm typecheck:test` (both `-p tsconfig.test.json`) all cover
+  `test/security/**` and `test/perf/**`. Only `pnpm typecheck` (`-p tsconfig.build.json`) still excludes
+  them, which is correct — that is the production build program.
+  The original finding is kept because the failure mode is real and will recur if the glob is ever removed:
+  jest `roots` are `src`, `evals`, `test/security`, `test/perf`, and typecheck is the only gate that sees an
+  arity change. Measured 2026-09-10, `JwtAuthGuard` went from 5 to 6 arguments, `tsc` reported 34 errors
+  across `src/**` and **zero** for the three constructions under `test/security/appsec/` — one then failed at
+  runtime and two passed only because the missing dependency was never reached. Run a test-inclusive
+  program after any signature change; do not rely on `pnpm typecheck` alone.
 - **Typecheck and mocked tests are not proof the feature works.** For anything touching notifications, background sweeps, RLS or post-commit hooks, boot the API and exercise the real request — a swallowed `42501` passes every static check.

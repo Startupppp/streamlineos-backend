@@ -17,16 +17,16 @@ describe("BillingCoupons.create — a duplicate code", () => {
   it("is a 409 naming the code, not a 500, when coupons.code refuses it", async () => {
     const coupons = new BillingCoupons(dbWhoseInsertRejects(drizzleUniqueViolation("coupons_code_unique")));
 
-    const attempt = coupons.create("org-1", INPUT);
+    const attempt = coupons.create(INPUT);
 
     await expect(attempt).rejects.toBeInstanceOf(ConflictException);
-    await expect(attempt).rejects.toThrow("A coupon with the code SAVE10 already exists");
+    await expect(attempt).rejects.toThrow("A platform promotion with this code already exists");
   });
 
   it("a different database error propagates untouched", async () => {
     const err = drizzlePostgresError("23503", "some_fk");
     const coupons = new BillingCoupons(dbWhoseInsertRejects(err));
 
-    await expect(coupons.create("org-1", INPUT)).rejects.toBe(err);
+    await expect(coupons.create(INPUT)).rejects.toBe(err);
   });
 });

@@ -13,6 +13,7 @@ import { ACCOUNT_ONLY_PRINCIPAL, humanSessionPrincipal } from "../../common/auth
 import { EmailOutboxService } from "../email/email-outbox.service";
 import { ReportSchedulesService, REPORT_SCHEDULE_DUE } from "./report-schedules.service";
 import { ReportingService } from "./reporting.service";
+import { ReportingDefinitionsService } from "./reporting-definitions.service";
 import { renderReportEmail } from "./report-delivery-render";
 
 /**
@@ -45,6 +46,7 @@ export class ReportScheduleConsumer implements OutboxEventConsumer, OnModuleInit
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly schedules: ReportSchedulesService,
     private readonly reporting: ReportingService,
+    private readonly reportingDefinitions: ReportingDefinitionsService,
     private readonly email: EmailOutboxService,
     private readonly registry: OutboxConsumerRegistry,
   ) {}
@@ -63,7 +65,7 @@ export class ReportScheduleConsumer implements OutboxEventConsumer, OnModuleInit
 
     try {
       const schedule = await this.schedules.get(orgId, reportScheduleId);
-      const definition = await this.reporting.getDefinition(
+      const definition = await this.reportingDefinitions.getDefinition(
         orgId,
         schedule.reportDefinitionId,
       );

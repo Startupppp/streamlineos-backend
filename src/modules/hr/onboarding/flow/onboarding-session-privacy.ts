@@ -24,14 +24,20 @@ export const ONBOARDING_DRAFT_SECRET_KEYS: readonly string[] = [
 
 const SECRET_KEY_SET = new Set(ONBOARDING_DRAFT_SECRET_KEYS.map((key) => key.toLowerCase()));
 
-const MAX_DEPTH = 8;
+export const ONBOARDING_DRAFT_MAX_DEPTH = 8;
+
+const MAX_DEPTH = ONBOARDING_DRAFT_MAX_DEPTH;
 
 function isPlainRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function stripValue(value: unknown, depth: number): unknown {
-  if (depth > MAX_DEPTH) return value;
+  if (depth > MAX_DEPTH) {
+    if (isPlainRecord(value)) return {};
+    if (Array.isArray(value)) return [];
+    return value;
+  }
   if (Array.isArray(value)) return value.map((item) => stripValue(item, depth + 1));
   if (!isPlainRecord(value)) return value;
   const out: Record<string, unknown> = {};

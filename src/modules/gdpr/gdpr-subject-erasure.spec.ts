@@ -52,7 +52,8 @@ function fluentChain(limitResult: unknown, returningResult: unknown = []) {
     limit: jest.fn().mockResolvedValue(limitResult),
     set: jest.fn().mockReturnThis(),
     returning: jest.fn().mockResolvedValue(returningResult),
-    values: jest.fn().mockResolvedValue(undefined),
+    values: jest.fn().mockReturnThis(),
+    onConflictDoNothing: jest.fn().mockReturnThis(),
     then: (
       resolve: (v: unknown) => unknown,
       reject?: (r: unknown) => unknown,
@@ -98,6 +99,8 @@ function makeDb(opts: {
   aiConvUpdated?: unknown[];
   aiMsgUpdated?: unknown[];
   chatMsgUpdated?: unknown[];
+  dataReqId?: number;
+  storagePurgeFailed?: Array<{ key: string; reason: string }>;
 } = {}): DbMocks {
   const membershipRows = opts.membershipRows ?? [{ id: 1 }];
   const legalHoldRows = opts.legalHoldRows ?? [];
@@ -130,7 +133,11 @@ function makeDb(opts: {
   const chatMsgUpdateChain = fluentChain([], chatMsgUpdated);
   const usersUpdateChain = fluentChain([], []);
 
-  const dataReqInsertChain = fluentChain([]);
+  const dataReqInsertChain = fluentChain(
+    [],
+    opts.dataReqId !== undefined ? [{ id: opts.dataReqId }] : [],
+  );
+  const ledgerInsertChain = fluentChain([]);
   const auditInsertChain = fluentChain([]);
 
   let txSelectCount = 0;
@@ -167,7 +174,8 @@ function makeDb(opts: {
     insert: jest.fn().mockImplementation(() => {
       txInsertCount++;
       if (txInsertCount === 1) return dataReqInsertChain;
-      if (txInsertCount === 2) return auditInsertChain;
+      if (txInsertCount === 2) return ledgerInsertChain;
+      if (txInsertCount === 3) return auditInsertChain;
       return fluentChain([]);
     }),
     delete: jest.fn().mockReturnValue(fluentChain([], [])),
@@ -193,7 +201,7 @@ function makeDb(opts: {
     txMocks: {
       tx,
       updateChains: [opUpdateChain, sfUpdateChain, depUpdateChain, aiConvUpdateChain, aiMsgUpdateChain, chatMsgUpdateChain, usersUpdateChain],
-      insertChains: [dataReqInsertChain, auditInsertChain],
+      insertChains: [dataReqInsertChain, ledgerInsertChain, auditInsertChain],
       selectedTables,
     },
   };
@@ -206,15 +214,19 @@ function identityUpdates(txMocks: TxMocks): unknown[][] {
   );
 }
 
-function makeStoragePurge(keys: SubjectFileKey[] = []) {
+function makeStoragePurge(
+  keys: SubjectFileKey[] = [],
+  failedKeys: Array<{ key: string; reason: string }> = [],
+) {
+  const deletedKeys = keys.map((k) => k.key).filter((k) => !failedKeys.some((f) => f.key === k));
   return {
     buildManifest: jest.fn().mockResolvedValue({ blocked: false, keys }),
     purgeFromManifest: jest.fn().mockResolvedValue({
       blocked: false,
       dryRun: false,
-      deleted: keys.map((k) => k.key),
+      deleted: deletedKeys,
       skipped: [],
-      failed: [],
+      failed: failedKeys,
       manifest: keys,
     }),
   };
@@ -227,11 +239,18 @@ function buildService(
 ): GdprSubjectErasureService {
   const cache = {} as CacheService;
   const sessions = sessionsService ?? { revokeAllForUser: jest.fn().mockResolvedValue({ revokedCount: 0 }) };
+  const effectLedger = {
+    execute: jest.fn().mockImplementation(async (_eff: unknown, send: () => Promise<unknown>) => {
+      await send();
+      return "EXECUTED" as const;
+    }),
+  };
   return new GdprSubjectErasureService(
     db as unknown as Db,
     cache,
     sessions as never,
     (storagePurge ?? makeStoragePurge()) as never,
+    effectLedger as never,
   );
 }
 
@@ -389,14 +408,16 @@ describe("GdprSubjectErasureService — immutable records are not touched", () =
     expect(txMocks.tx.update).not.toHaveBeenCalledWith(payrollRunEmployees);
   });
 
-  it("writes exactly one audit INSERT after erasure, recording the actor not the subject", async () => {
-    const { db, txMocks } = makeDb({});
+  it("writes a completion audit INSERT after erasure via db.insert, recording the actor not the subject", async () => {
+    const { db } = makeDb({ dataReqId: 42 });
     const svc = buildService(db);
 
     await svc.eraseSubject(SUBJECT, ORG, ACTOR, { dryRun: false });
 
-    const auditInsertChain = txMocks.insertChains[1];
-    expect(auditInsertChain?.values).toHaveBeenCalledWith(
+    const { auditLogs: auditLogsTable } = await import("../../db/schema");
+    expect(db.insert).toHaveBeenCalledWith(auditLogsTable);
+    const completionChain = (db.insert as jest.Mock).mock.results[0]?.value as ReturnType<typeof fluentChain>;
+    expect(completionChain?.values).toHaveBeenCalledWith(
       expect.objectContaining({
         action: "subject.data.erased",
         userId: ACTOR,
@@ -405,8 +426,8 @@ describe("GdprSubjectErasureService — immutable records are not touched", () =
         targetType: "user",
       }),
     );
-    expect(auditInsertChain?.values.mock.calls[0]?.[0]).not.toHaveProperty("email");
-    expect(auditInsertChain?.values.mock.calls[0]?.[0]).not.toHaveProperty("name");
+    expect(completionChain?.values.mock.calls[0]?.[0]).not.toHaveProperty("email");
+    expect(completionChain?.values.mock.calls[0]?.[0]).not.toHaveProperty("name");
   });
 });
 
@@ -624,7 +645,8 @@ describe("GdprSubjectErasureService — the id scan drains instead of capping", 
       limit: jest.fn().mockImplementation(() => Promise.resolve(pages[call++] ?? [])),
       set: jest.fn().mockReturnThis(),
       returning: jest.fn().mockResolvedValue([]),
-      values: jest.fn().mockResolvedValue(undefined),
+      values: jest.fn().mockReturnThis(),
+      onConflictDoNothing: jest.fn().mockReturnThis(),
     };
   }
 
@@ -665,11 +687,18 @@ describe("GdprSubjectErasureService — the id scan drains instead of capping", 
     const sessions = { revokeAllForUser: jest.fn().mockResolvedValue({ revokedCount: 0 }) } as unknown as ConstructorParameters<
       typeof GdprSubjectErasureService
     >[2];
+    const effectLedger = {
+      execute: jest.fn().mockImplementation(async (_eff: unknown, send: () => Promise<unknown>) => {
+        await send();
+        return "EXECUTED" as const;
+      }),
+    } as unknown as ConstructorParameters<typeof GdprSubjectErasureService>[4];
     const service = new GdprSubjectErasureService(
       db,
       cache,
       sessions,
       makeStoragePurge() as never,
+      effectLedger,
     );
 
     await service.eraseSubject(SUBJECT, ORG, ACTOR, { dryRun: false });
@@ -823,5 +852,154 @@ describe("GdprSubjectErasureService — session revocation", () => {
     await svc.eraseSubject(SUBJECT, ORG, ACTOR, { dryRun: false });
 
     expect(callOrder).toEqual(["transaction", "revokeAllForUser"]);
+  });
+});
+
+// ─── Durable erasure status (defect-4 repairs) ───────────────────────────────
+
+describe("GdprSubjectErasureService — durable erasure status", () => {
+  it("inserts hrDataRequests with status processing inside the transaction, not completed", async () => {
+    const { db, txMocks } = makeDb({ dataReqId: 777 });
+    const svc = buildService(db);
+
+    await svc.eraseSubject(SUBJECT, ORG, ACTOR, { dryRun: false });
+
+    const dataReqInsertArgs = txMocks.insertChains[0]?.values.mock.calls[0]?.[0] as Record<string, unknown> | undefined;
+    expect(dataReqInsertArgs).toBeDefined();
+    expect(dataReqInsertArgs?.["status"]).toBe("processing");
+    expect(dataReqInsertArgs?.["completedAt"]).toBeUndefined();
+  });
+
+  it("(bite proof) status processing is NOT completed — test would fail if service used completed directly", async () => {
+    const { db, txMocks } = makeDb({ dataReqId: 777 });
+    const svc = buildService(db);
+
+    await svc.eraseSubject(SUBJECT, ORG, ACTOR, { dryRun: false });
+
+    const dataReqInsertArgs = txMocks.insertChains[0]?.values.mock.calls[0]?.[0] as Record<string, unknown> | undefined;
+    expect(dataReqInsertArgs?.["status"]).not.toBe("completed");
+  });
+
+  it("updates hrDataRequests to completed after storage purge succeeds", async () => {
+    const { db } = makeDb({ dataReqId: 42 });
+    const svc = buildService(db, undefined, makeStoragePurge([], []));
+
+    await svc.eraseSubject(SUBJECT, ORG, ACTOR, { dryRun: false });
+
+    const { hrDataRequests: hrDataRequestsTable } = await import("../../db/schema");
+    expect(db.update).toHaveBeenCalledWith(hrDataRequestsTable);
+
+    const updateCall = (db.update as jest.Mock).mock.results.find(
+      (r: jest.MockResult<ReturnType<typeof fluentChain>>) =>
+        (db.update as jest.Mock).mock.calls[
+          (db.update as jest.Mock).mock.results.indexOf(r)
+        ]?.[0] === hrDataRequestsTable,
+    );
+    const chain = updateCall?.value as ReturnType<typeof fluentChain> | undefined;
+    if (chain) {
+      expect(chain.set).toHaveBeenCalledWith(
+        expect.objectContaining({ status: "completed" }),
+      );
+    }
+  });
+
+  it("updates hrDataRequests to partial when storage purge has failures", async () => {
+    const failedKeys = [{ key: "obj/some-key", reason: "network error" }];
+    const { db } = makeDb({ dataReqId: 55 });
+    const svc = buildService(db, undefined, makeStoragePurge([], failedKeys));
+
+    await svc.eraseSubject(SUBJECT, ORG, ACTOR, { dryRun: false });
+
+    const { hrDataRequests: hrDataRequestsTable } = await import("../../db/schema");
+    const updateCalls = (db.update as jest.Mock).mock.calls;
+    const hrUpdateIdx = updateCalls.findIndex((args: unknown[]) => args[0] === hrDataRequestsTable);
+    expect(hrUpdateIdx).toBeGreaterThanOrEqual(0);
+
+    const updateChain = (db.update as jest.Mock).mock.results[hrUpdateIdx]?.value as ReturnType<typeof fluentChain> | undefined;
+    expect(updateChain?.set).toHaveBeenCalledWith(
+      expect.objectContaining({ status: "partial" }),
+    );
+  });
+
+  it("does not call db.update(hrDataRequests) when dataRequest id is not returned (insert dry-run / mock stub)", async () => {
+    const { db } = makeDb({});
+    const svc = buildService(db);
+
+    await svc.eraseSubject(SUBJECT, ORG, ACTOR, { dryRun: false });
+
+    const { hrDataRequests: hrDataRequestsTable } = await import("../../db/schema");
+    const hrUpdateCalls = (db.update as jest.Mock).mock.calls.filter(
+      (args: unknown[]) => args[0] === hrDataRequestsTable,
+    );
+    expect(hrUpdateCalls).toHaveLength(0);
+  });
+
+  it("includes storageManifestKeys in the audit log metadata for crash recovery", async () => {
+    const keys: SubjectFileKey[] = [
+      { key: "uploads/file-a", table: "hr_documents", column: "file_key", source: "user-fk", orgId: ORG },
+      { key: "uploads/file-b", table: "hr_documents", column: "file_key", source: "user-fk", orgId: ORG },
+    ];
+    const { db, txMocks } = makeDb({ dataReqId: 99 });
+    const svc = buildService(db, undefined, makeStoragePurge(keys));
+
+    await svc.eraseSubject(SUBJECT, ORG, ACTOR, { dryRun: false });
+
+    const auditInsertArgs = txMocks.insertChains[2]?.values.mock.calls[0]?.[0] as Record<string, unknown> | undefined;
+    expect(auditInsertArgs).toBeDefined();
+    const metadata = auditInsertArgs?.["metadata"] as Record<string, unknown> | undefined;
+    expect(metadata?.["storageManifestKeys"]).toEqual(["uploads/file-a", "uploads/file-b"]);
+    expect(metadata?.["storageManifestSize"]).toBe(2);
+  });
+
+  it("(bite proof) manifest keys absent from audit log when storage purge is not set up — test catches if keys were omitted", async () => {
+    const { db, txMocks } = makeDb({ dataReqId: 10 });
+    const svc = buildService(db, undefined, makeStoragePurge([]));
+
+    await svc.eraseSubject(SUBJECT, ORG, ACTOR, { dryRun: false });
+
+    const auditInsertArgs = txMocks.insertChains[2]?.values.mock.calls[0]?.[0] as Record<string, unknown> | undefined;
+    const metadata = auditInsertArgs?.["metadata"] as Record<string, unknown> | undefined;
+    expect(metadata?.["storageManifestKeys"]).toEqual([]);
+    expect(metadata?.["storageManifestSize"]).toBe(0);
+  });
+
+  it("does not mark hrDataRequests completed on a dry run", async () => {
+    const { db } = makeDb({ dataReqId: 11 });
+    const svc = buildService(db);
+
+    await svc.eraseSubject(SUBJECT, ORG, ACTOR, { dryRun: true });
+
+    const { hrDataRequests: hrDataRequestsTable } = await import("../../db/schema");
+    const hrUpdateCalls = (db.update as jest.Mock).mock.calls.filter(
+      (args: unknown[]) => args[0] === hrDataRequestsTable,
+    );
+    expect(hrUpdateCalls).toHaveLength(0);
+  });
+
+  it("processing state is a durable incomplete record: hrDataRequests has status processing before storage purge resolves", async () => {
+    const { db, txMocks } = makeDb({ dataReqId: 200 });
+    const callOrder: string[] = [];
+
+    const origTransaction = db.transaction.getMockImplementation()!;
+    db.transaction.mockImplementation(async (fn: (t: typeof db) => Promise<unknown>) => {
+      const result = await origTransaction(fn);
+      callOrder.push("transaction-with-processing-status");
+      return result;
+    });
+
+    const storagePurge = makeStoragePurge();
+    const origPurge = storagePurge.purgeFromManifest.getMockImplementation()!;
+    storagePurge.purgeFromManifest.mockImplementation((...args: Parameters<typeof origPurge>) => {
+      callOrder.push("storage-purge");
+      return origPurge(...args);
+    });
+
+    const svc = buildService(db, undefined, storagePurge);
+    await svc.eraseSubject(SUBJECT, ORG, ACTOR, { dryRun: false });
+
+    expect(callOrder).toEqual(["transaction-with-processing-status", "storage-purge"]);
+
+    const dataReqInsertArgs = txMocks.insertChains[0]?.values.mock.calls[0]?.[0] as Record<string, unknown> | undefined;
+    expect(dataReqInsertArgs?.["status"]).toBe("processing");
   });
 });

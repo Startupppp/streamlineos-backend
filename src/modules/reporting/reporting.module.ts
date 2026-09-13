@@ -4,6 +4,8 @@ import { OutboxModule } from "../../common/outbox/outbox.module";
 import { AiGatewayModule } from "../ai/core/gateway/ai-gateway.module";
 import { ReportingController } from "./reporting.controller";
 import { ReportingService } from "./reporting.service";
+import { ReportingAuthService } from "./reporting-auth.service";
+import { ReportingDefinitionsService } from "./reporting-definitions.service";
 import { ReportSchedulesController } from "./report-schedules.controller";
 import { ReportSchedulesService } from "./report-schedules.service";
 import { ReportScheduleConsumer } from "./report-schedule.consumer";
@@ -39,7 +41,7 @@ import { ReportScheduleConsumer } from "./report-schedule.consumer";
 @Module({
   imports: [OutboxModule, EmailModule, AiGatewayModule],
   controllers: [ReportingController, ReportSchedulesController],
-  providers: [ReportingService, ReportSchedulesService, ReportScheduleConsumer],
+  providers: [ReportingAuthService, ReportingDefinitionsService, ReportingService, ReportSchedulesService, ReportScheduleConsumer],
   exports: [ReportingService, ReportSchedulesService],
 })
 export class ReportingModule {}

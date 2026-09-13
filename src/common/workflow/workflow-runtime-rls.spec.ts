@@ -291,7 +291,12 @@ describe("the workflow runtime under row-level security", () => {
      * that repeats work on the next tick.
      */
     it("records a terminal status inside a tenant scope", async () => {
-      const lifecycle = createLifecycleStore(failClosedDb(), "org-1");
+      const leaseToken = new Date("2026-01-01T00:00:00.000Z");
+      const lifecycle = createLifecycleStore(
+        failClosedDb([{ workflow_run_id: "run-1" }]),
+        "org-1",
+        leaseToken,
+      );
 
       await expect(lifecycle.complete("run-1", null, new Date())).resolves.toBeUndefined();
       await expect(

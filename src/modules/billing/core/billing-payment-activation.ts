@@ -5,9 +5,13 @@ import {
   NotFoundException,
   ServiceUnavailableException,
 } from "@nestjs/common";
-import { eq } from "drizzle-orm";
-import { subscriptionPayments, subscriptions } from "../../../db/schema";
+import { asc, and, eq, gt } from "drizzle-orm";
+import { organizationMembers, subscriptionPayments, subscriptions } from "../../../db/schema";
 import { type Db } from "../../../db/drizzle.module";
+import { registerAfterCommit } from "../../../common/tenant/tenant-context";
+import { runInNewTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
+import type { CacheService } from "../../../common/cache/cache.service";
+import { CACHE_KEYS } from "../../../common/cache/cache-keys";
 import { AuditService } from "../../../common/audit/audit.service";
 import { ExternalEffectLedger } from "../../../common/outbox/external-effect-ledger";
 import { PaymentProviderResolver } from "../payments/payment-provider-resolver.service";
@@ -36,6 +40,7 @@ import type { PlatformMerchantService } from "../payments/platform-merchant.serv
 
 export interface BillingPaymentActivationDeps {
   db: Db;
+  cache?: CacheService;
   audit: AuditService;
   aiCredits: AiCreditsService;
   planLimits: PlanLimitsService;
@@ -466,6 +471,18 @@ export class BillingPaymentActivation {
       });
       await grantPlanCredits(this.deps, orgId, userId ?? "", paymentId, plan);
 
+      const cache = this.deps.cache;
+      if (cache) {
+        const bust = () => bustBillingMemberSessions(this.deps.db, cache, orgId);
+        if (!registerAfterCommit(bust))
+          await bust().catch((err: unknown) => {
+            this.logger.error(
+              "[billing] member session bust failed after plan activation",
+              { orgId, error: err instanceof Error ? err.message : String(err) },
+            );
+          });
+      }
+
       return {
         success: true as const,
         plan,
@@ -505,6 +522,37 @@ export class BillingPaymentActivation {
   private async billablePrice(plan: Plan, billingCycle: BillingCycle) {
     const catalogPrice = await this.deps.catalog.getActivePriceForPlanTier(plan);
     return resolveQuotePrice(plan, billingCycle, catalogPrice ?? null);
+  }
+}
+
+const MEMBER_BUST_PAGE = 500;
+
+async function bustBillingMemberSessions(
+  db: Db,
+  cache: CacheService,
+  orgId: string,
+): Promise<void> {
+  let afterId = 0;
+  for (;;) {
+    const members = await runInNewTenantTransaction(db, orgId, (tx) =>
+      tx
+        .select({ membershipId: organizationMembers.id, userId: organizationMembers.userId })
+        .from(organizationMembers)
+        .where(
+          and(
+            eq(organizationMembers.orgId, orgId),
+            eq(organizationMembers.status, "ACTIVE"),
+            gt(organizationMembers.id, afterId),
+          ),
+        )
+        .orderBy(asc(organizationMembers.id))
+        .limit(MEMBER_BUST_PAGE),
+    );
+    if (members.length === 0) return;
+    await cache.invalidateMany(members.map((m) => CACHE_KEYS.userSession(m.userId)));
+    const last = members[members.length - 1];
+    if (!last || members.length < MEMBER_BUST_PAGE) return;
+    afterId = last.membershipId;
   }
 }
 

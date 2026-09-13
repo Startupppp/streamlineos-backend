@@ -42,15 +42,34 @@ Storage deletion:
 const email = emailArg.trim().toLowerCase();
 
 function loadDatabaseUrl() {
-  if (process.env.DATABASE_URL) return process.env.DATABASE_URL;
-  const envPath = path.resolve(process.cwd(), ".env");
-  if (!fs.existsSync(envPath)) throw new Error("DATABASE_URL not set and no .env found");
-  const match = fs.readFileSync(envPath, "utf8").match(/^DATABASE_URL\s*=\s*(.+)$/m);
-  if (!match) throw new Error("DATABASE_URL not found in .env");
-  return match[1].trim().replace(/^['"]|['"]$/g, "");
+  const url = process.env.DATABASE_URL;
+  if (!url) throw new Error("DATABASE_URL not set in environment (set it explicitly; never relies on .env fallback)");
+  return url;
 }
 
-const sql = postgres(loadDatabaseUrl(), { prepare: false, max: 1, onnotice: () => {} });
+function isDisposableTarget(url) {
+  try {
+    const u = new URL(url.replace(/^postgresql:\/\//, "http://").replace(/^postgres:\/\//, "http://"));
+    const host = u.hostname;
+    const dbName = u.pathname.replace(/^\//, "");
+    if (host === "127.0.0.1" || host === "localhost") return true;
+    if (dbName.includes("scratch") || dbName.includes("test")) return true;
+    return false;
+  } catch {
+    return false;
+  }
+}
+
+const _dbUrl = loadDatabaseUrl();
+if (!isDisposableTarget(_dbUrl)) {
+  process.stderr.write(
+    "PURGE BLOCKED — DATABASE_URL does not point to a disposable target.\n" +
+    "  Allowed: host=127.0.0.1, host=localhost, or database name contains 'scratch' or 'test'.\n" +
+    "  Set DATABASE_URL to a named scratch/test database before running a user purge.\n",
+  );
+  process.exit(1);
+}
+const sql = postgres(_dbUrl, { prepare: false, max: 1, onnotice: () => {} });
 
 const APP_SCHEMAS = ["public", "build", "build_events"];
 
@@ -129,11 +148,14 @@ async function userReferencingColumns() {
  * FK violations are retried by the caller in a later pass.
  */
 async function tryDelete(tx, statement, tally, label) {
+  await tx.unsafe("SAVEPOINT sp_try");
   try {
     const result = await tx.unsafe(statement.text, statement.values);
     if (result.count > 0) tally.set(label, (tally.get(label) ?? 0) + result.count);
+    await tx.unsafe("RELEASE SAVEPOINT sp_try");
     return { ok: true };
   } catch (err) {
+    await tx.unsafe("ROLLBACK TO SAVEPOINT sp_try");
     if (err.code === "23503") return { ok: false, err };
     if (err.code === "42P01" || err.code === "42703") return { ok: true };
     throw err;
@@ -181,11 +203,11 @@ async function checkLegalHolds(userId) {
 
 async function main() {
   const [user] = await sql`
-    SELECT id, email, name, is_active, user_status
+    SELECT id, is_active, user_status
     FROM users WHERE lower(email) = ${email} LIMIT 1`;
 
   if (!user) {
-    console.error(`No user found with email ${email}`);
+    console.error(`No user found for the given address`);
     await sql.end();
     process.exit(1);
   }
@@ -196,14 +218,10 @@ async function main() {
   if (hasHolds) {
     console.error(`\n⚠  LEGAL HOLD DETECTED — erasure is blocked.`);
     if (hrHolds.length > 0) {
-      console.error(`\n  HR legal holds (${hrHolds.length}):`);
-      for (const h of hrHolds)
-        console.error(`    - id=${h.id} org=${h.org_id} reason="${h.reason}" placed=${h.placed_at}`);
+      console.error(`\n  HR legal holds (${hrHolds.length}): see hold ids ${hrHolds.map((h) => h.id).join(", ")}`);
     }
     if (orgHolds.length > 0) {
-      console.error(`\n  Org-level legal holds (${orgHolds.length}):`);
-      for (const h of orgHolds)
-        console.error(`    - holdId=${h.hold_id} org=${h.org_id} reason="${h.reason}" placed=${h.placed_at}`);
+      console.error(`\n  Org-level legal holds (${orgHolds.length}): see hold ids ${orgHolds.map((h) => h.hold_id).join(", ")}`);
     }
     if (!skipLegalHoldCheck) {
       console.error(`\n  Aborting. Release all active legal holds before running an erasure.`);
@@ -229,29 +247,38 @@ async function main() {
     LEFT JOIN organizations o ON o.id = m.org_id
     WHERE m.user_id = ${user.id}`;
 
-  const ownedOrgs = keepOwnedOrgs ? [] : memberships.filter((m) => m.is_owner);
+  const actualOwnedOrgs = memberships.filter((m) => m.is_owner);
+
+  if (keepOwnedOrgs && actualOwnedOrgs.length > 0) {
+    console.error(
+      `\nPURGE BLOCKED — --keep-owned-orgs was given but the subject owns ${actualOwnedOrgs.length} organization(s).\n` +
+      `  Removing their membership would leave those organizations without an owner.\n` +
+      `  Transfer ownership to another member first, then re-run.\n`,
+    );
+    await sql.end();
+    process.exit(1);
+  }
+
+  const ownedOrgs = keepOwnedOrgs ? [] : actualOwnedOrgs;
   const otherOrgs = memberships.filter((m) => !ownedOrgs.some((o) => o.org_id === m.org_id));
 
-  console.log(`\nUser:  ${user.email}  (${user.name ?? "no name"})`);
-  console.log(`       id=${user.id} status=${user.user_status} active=${user.is_active}`);
-  console.log(`\nOrganizations OWNED (will be purged entirely):`);
-  if (ownedOrgs.length === 0) console.log("  (none)");
+  console.log(`\nUser id=${user.id} status=${user.user_status} active=${user.is_active}`);
+  console.log(`\nOrganizations OWNED (will be purged entirely): ${ownedOrgs.length}`);
   for (const o of ownedOrgs) {
-    console.log(`  - ${o.org_name ?? "(unnamed)"}  id=${o.org_id}  members=${o.member_count}`);
+    console.log(`  - id=${o.org_id}  members=${o.member_count}`);
   }
   const collateral = ownedOrgs.reduce((sum, o) => sum + Number(o.member_count) - 1, 0);
   if (collateral > 0) {
     console.log(`\n  WARNING: ${collateral} other member(s) will lose their organization and all its data.`);
   }
-  console.log(`\nOrganizations where this user is only a member (membership removed, org kept):`);
-  if (otherOrgs.length === 0) console.log("  (none)");
-  for (const o of otherOrgs) console.log(`  - ${o.org_name ?? "(unnamed)"}  id=${o.org_id}`);
+  console.log(`\nOrganizations where this user is only a member (membership removed, org kept): ${otherOrgs.length}`);
+  for (const o of otherOrgs) console.log(`  - id=${o.org_id}`);
 
   if (execute && !assumeYes) {
     const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
-    const answer = await rl.question(`\nType the email again to permanently delete: `);
+    const answer = await rl.question(`\nType "DELETE" to permanently remove this subject: `);
     rl.close();
-    if (answer.trim().toLowerCase() !== email) {
+    if (answer.trim() !== "DELETE") {
       console.error("Confirmation did not match. Aborted.");
       await sql.end();
       process.exit(1);
@@ -274,8 +301,15 @@ async function main() {
       const orgIds = ownedOrgs.map((o) => o.org_id);
 
       if (orgIds.length > 0) {
-        // organizations.owner_membership_id -> organization_members is a cycle; break it first.
-        await tx`UPDATE organizations SET owner_membership_id = NULL WHERE id = ANY(${orgIds})`;
+        await tx`
+          UPDATE organizations
+          SET owner_membership_id = NULL
+          WHERE id = ANY(${orgIds})
+            AND owner_membership_id IN (
+              SELECT id FROM organization_members
+              WHERE user_id = ${user.id} AND org_id = ANY(${orgIds})
+            )
+        `;
 
         const jobs = orgTableOrder
           .filter((t) => t !== "public.organizations")
@@ -334,7 +368,7 @@ async function main() {
   } else {
     console.log(`\n⚠  OBJECT STORAGE: database rows are deleted, but blobs in R2/S3 are NOT.`);
     console.log(`   Enumerate and delete storage objects separately:`);
-    console.log(`   node src/scripts/audit-storage-keys.mjs ${email} --delete`);
+    console.log(`   node src/scripts/audit-storage-keys.mjs <subject-email> --delete`);
     console.log(`   (set R2_ENDPOINT, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_BUCKET_NAME in env)`);
   }
 

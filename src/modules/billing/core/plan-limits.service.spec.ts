@@ -11,6 +11,11 @@ jest.mock("../../../common/tenant/run-in-tenant-transaction", () => ({
   runInTenantTransaction: (db: unknown, fn: (tx: unknown) => Promise<unknown>) => fn(db),
 }));
 
+const registerAfterCommit = jest.fn();
+jest.mock("../../../common/tenant", () => ({
+  registerAfterCommit: (...args: unknown[]) => registerAfterCommit(...args),
+}));
+
 function makeDb(overrides: Record<string, unknown> = {}) {
   return {
     execute: jest.fn().mockResolvedValue([]),
@@ -44,6 +49,7 @@ describe("PlanLimitsService", () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    registerAfterCommit.mockReturnValue(false);
   });
 
   describe("resolveTier", () => {
@@ -727,6 +733,87 @@ describe("PlanLimitsService", () => {
       const entitlements = await svc.getEntitlements("org1");
       expect(entitlements.limits.members).toEqual({ limit: 5, used: 5 });
       expect(entitlements.plan).toBe("FREE");
+    });
+  });
+
+  describe("assertWithinLimit — quota alert deferral via registerAfterCommit", () => {
+    const FREE_TIER = [{ plan: "FREE", status: "ACTIVE", trial_ends_at: null }];
+
+    async function buildWithNotifications(
+      db: ReturnType<typeof makeDb>,
+      notifications: { create: jest.Mock },
+    ) {
+      const module = await Test.createTestingModule({
+        providers: [
+          PlanLimitsService,
+          { provide: DRIZZLE, useValue: db },
+          { provide: CacheService, useValue: makeCache() },
+          { provide: "NotificationsService", useValue: notifications },
+        ],
+      })
+        .overrideProvider("NotificationsService")
+        .useValue(notifications)
+        .compile();
+
+      const svc = module.get(PlanLimitsService);
+      Object.assign(svc, { notifications });
+      return svc;
+    }
+
+    it("defers the alert work to after-commit when an ambient transaction context exists", async () => {
+      const db = makeDb({
+        execute: jest
+          .fn()
+          .mockResolvedValueOnce(FREE_TIER)
+          .mockResolvedValueOnce([{ count: 4 }]),
+      });
+      const notifications = { create: jest.fn().mockResolvedValue(undefined) };
+      let capturedHook: (() => Promise<void>) | undefined;
+      registerAfterCommit.mockImplementation((hook: () => Promise<void>) => {
+        capturedHook = hook;
+        return true;
+      });
+
+      const svc = await buildWithNotifications(db, notifications);
+      await svc.assertWithinLimit("org1", "members", 1);
+
+      expect(registerAfterCommit).toHaveBeenCalledTimes(1);
+      expect(capturedHook).toBeDefined();
+    });
+
+    it("fires the alert inline when there is no ambient transaction context", async () => {
+      const db = makeDb({
+        execute: jest
+          .fn()
+          .mockResolvedValueOnce(FREE_TIER)
+          .mockResolvedValueOnce([{ count: 4 }])
+          .mockResolvedValueOnce([]),
+      });
+      const notifications = { create: jest.fn().mockResolvedValue(undefined) };
+      registerAfterCommit.mockReturnValue(false);
+
+      const svc = await buildWithNotifications(db, notifications);
+      await svc.assertWithinLimit("org1", "members", 1);
+      await Promise.resolve();
+
+      expect(registerAfterCommit).toHaveBeenCalledTimes(1);
+    });
+
+    it("does not fire the alert when the threshold is not crossed", async () => {
+      const db = makeDb({
+        execute: jest
+          .fn()
+          .mockResolvedValueOnce(FREE_TIER)
+          .mockResolvedValueOnce([{ count: 1 }]),
+      });
+      const notifications = { create: jest.fn().mockResolvedValue(undefined) };
+      registerAfterCommit.mockReturnValue(false);
+
+      const svc = await buildWithNotifications(db, notifications);
+      await svc.assertWithinLimit("org1", "members", 1);
+      await Promise.resolve();
+
+      expect(registerAfterCommit).not.toHaveBeenCalled();
     });
   });
 });

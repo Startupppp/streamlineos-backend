@@ -2,6 +2,7 @@ import {
   Inject,
   Injectable,
   Logger,
+  Optional,
 } from "@nestjs/common";
 import { createHash } from "node:crypto";
 import { and, eq, inArray } from "drizzle-orm";
@@ -16,6 +17,8 @@ import { PaymentProviderResolver } from "./payment-provider-resolver.service";
 import { PaymentAnalyticsService } from "./payment-analytics.service";
 import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
 import { normalizedPaymentWebhookEventSchema, rawEntitySchema } from "./dto/webhook.schemas";
+import { PostingCommandService } from "../../accounting/adapters/posting-command.service";
+import { AdapterRejection } from "../../accounting/adapters/posting-command.types";
 
 function redactPayload(
   payload: Record<string, unknown>,
@@ -44,6 +47,7 @@ export class PaymentWebhookReceiverService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly providers: PaymentProviderResolver,
     private readonly paymentAnalytics: PaymentAnalyticsService,
+    @Optional() private readonly postingCmd?: PostingCommandService,
   ) {}
 
   async recordSignatureFailure(
@@ -226,7 +230,7 @@ export class PaymentWebhookReceiverService {
     const [inserted] = await runInTenantTransaction(
       this.db,
       async (tx) => {
-        return tx
+        const rows = await tx
           .insert(paymentWebhookEvents)
           .values({
             orgId: params.orgId,
@@ -248,6 +252,46 @@ export class PaymentWebhookReceiverService {
             ],
           })
           .returning();
+
+        const [row] = rows;
+        if (row && this.postingCmd) {
+          const entity = neutral.data.payload.payment?.entity;
+          if (entity && entity.status === "captured" && entity.amount > 0) {
+            const journalDate = entity.createdAt
+              ? new Date(entity.createdAt * 1000).toISOString().slice(0, 10)
+              : new Date().toISOString().slice(0, 10);
+            const clearingTag =
+              params.providerKey === "razorpay" ? "razorpay_clearing" : "psp_clearing";
+            try {
+              await this.postingCmd.submit(
+                params.orgId,
+                null,
+                {
+                  sourceType: "receipt",
+                  sourceId: String(row.id),
+                  purpose: "post",
+                  journalDate,
+                  memo: `${entity.id} via ${params.providerKey}`,
+                  lines: [
+                    { accountTag: clearingTag, debitMinor: entity.amount, currency: entity.currency },
+                    { accountTag: "ar_control", creditMinor: entity.amount, currency: entity.currency },
+                  ],
+                },
+                tx,
+              );
+            } catch (err) {
+              if (err instanceof AdapterRejection && err.code === "BOOK_NOT_ENABLED") {
+                this.logger.debug(
+                  `Accounting not enabled for org ${params.orgId}; payment ${entity.id} not posted to GL`,
+                );
+              } else {
+                throw err;
+              }
+            }
+          }
+        }
+
+        return rows;
       },
       { orgId: params.orgId },
     );
@@ -277,17 +321,6 @@ export class PaymentWebhookReceiverService {
     if (!inserted) {
       return { status: 200, body: { ok: true, duplicate: true } };
     }
-
-    /*
-      Provider payments are not posted to the ledger here.
-
-      This called `ProviderBridgeService.recordProviderPayment`, which lived in
-      `modules/finance/controls` — a module the accounting rewrite replaced with
-      the `gl_*` kernel, and the kernel does not expose an equivalent seam yet.
-      Webhook health, signature checking and idempotency are unaffected; what is
-      missing is the journal entry, and inventing one against a posting API that
-      is not settled would be worse than the gap.
-    */
 
     return { status: 200, body: { ok: true } };
   }

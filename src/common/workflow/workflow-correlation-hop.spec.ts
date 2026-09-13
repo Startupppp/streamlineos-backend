@@ -210,6 +210,7 @@ describe("correlation across the enqueue → consume hop", () => {
       values: () => chain,
       onConflictDoUpdate: async () => undefined,
       set: () => chain,
+      returning: async () => [{ workflowRunId: "run-1" }],
     };
     const db = {
       execute: async () => [
@@ -221,6 +222,7 @@ describe("correlation across the enqueue → consume hop", () => {
           attempt: 0,
           max_attempts: 5,
           correlation_id: REQUEST_ID,
+          lease_expires_at: new Date("2026-01-01T00:00:00.000Z"),
         },
       ],
       select: () => chain,
@@ -273,6 +275,7 @@ describe("correlation across the enqueue → consume hop", () => {
       values: () => chain,
       onConflictDoUpdate: async () => undefined,
       set: () => chain,
+      returning: async () => [{ workflowRunId: "run-1" }],
     };
     const db = {
       execute: async () => [
@@ -284,6 +287,7 @@ describe("correlation across the enqueue → consume hop", () => {
           attempt: 0,
           max_attempts: 5,
           correlation_id: null,
+          lease_expires_at: new Date("2026-01-01T00:00:00.000Z"),
         },
       ],
       select: () => chain,

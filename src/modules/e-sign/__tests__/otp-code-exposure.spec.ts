@@ -1,5 +1,5 @@
 import { SignNotificationsService } from "../sign-notifications.service";
-import type { EmailService } from "../../email/email.service";
+import type { EmailSignService } from "../../email/email-sign.service";
 
 const CODE = "483927";
 
@@ -23,7 +23,7 @@ function capture() {
       sent.push(message);
     }),
   };
-  return { sent, service: new SignNotificationsService(email as unknown as EmailService) };
+  return { sent, service: new SignNotificationsService(email as unknown as EmailSignService) };
 }
 
 describe("the one-time signing code", () => {

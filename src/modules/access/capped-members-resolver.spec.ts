@@ -44,7 +44,7 @@ function buildResolver(opts: {
     },
   };
 
-  const readAccessTable = <Result>(read: () => PromiseLike<Result>) => read();
+  const readAccessTable = <Result>(read: () => PromiseLike<Result>) => Promise.resolve(read());
 
   return new AccessPermissionMembersResolver(
     db as unknown as Db,

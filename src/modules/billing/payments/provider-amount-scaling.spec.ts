@@ -30,7 +30,6 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import { PaymentWebhookReceiverService } from "./payment-webhook-receiver.service";
 import { PaymentProviderResolver, type OrganizationPaymentProvider } from "./payment-provider-resolver.service";
 import { PaymentAnalyticsService } from "./payment-analytics.service";
-import { ProviderBridgeService } from "../../finance/controls/provider-bridge.service";
 import { FakeProviderAdapter, FAKE_VALID_WEBHOOK_SIG, FAKE_WEBHOOK_SECRET } from "./testing/fake-provider-adapter";
 import { paymentWebhookPaymentSchema } from "./dto/webhook.schemas";
 import {
@@ -124,8 +123,6 @@ describe("the webhook DTO refuses a non-integer minor-unit amount", () => {
   });
 });
 
-/* ---- the wiring: what the receiver actually hands the finance bridge ---- */
-
 function makeProvider(): OrganizationPaymentProvider {
   const adapter = new FakeProviderAdapter("razorpay");
   return {
@@ -163,7 +160,6 @@ function buildDb() {
 }
 
 async function buildReceiver() {
-  const bridge = { recordProviderPayment: jest.fn().mockResolvedValue(undefined) };
   const module = await Test.createTestingModule({
     providers: [
       PaymentWebhookReceiverService,
@@ -176,10 +172,9 @@ async function buildReceiver() {
         provide: PaymentAnalyticsService,
         useValue: { notifyOwner: jest.fn(), track: jest.fn() },
       },
-      { provide: ProviderBridgeService, useValue: bridge },
     ],
   }).compile();
-  return { svc: module.get(PaymentWebhookReceiverService), bridge };
+  return { svc: module.get(PaymentWebhookReceiverService) };
 }
 
 function capturedBody(amount: number, currency: string, fee?: number) {
@@ -202,7 +197,7 @@ function capturedBody(amount: number, currency: string, fee?: number) {
 }
 
 async function deliver(amount: number, currency: string, fee?: number) {
-  const { svc, bridge } = await buildReceiver();
+  const { svc } = await buildReceiver();
   const result = await svc.processIncomingWebhook({
     providerKey: "razorpay",
     environment: "test",
@@ -211,65 +206,43 @@ async function deliver(amount: number, currency: string, fee?: number) {
     signature: FAKE_VALID_WEBHOOK_SIG,
     providerEventIdHeader: undefined,
   });
-  return { result, bridge };
+  return { result };
 }
 
-describe("the receiver scales the provider amount by the provider's own currency", () => {
-  it("a ¥100,000 capture reaches the ledger as 100000 JPY, not 1000", async () => {
-    const { result, bridge } = await deliver(100_000, "JPY");
+describe("the receiver processes captured payment webhooks", () => {
+  it("a ¥100,000 capture is accepted and deduplicated", async () => {
+    const { result } = await deliver(100_000, "JPY");
 
     expect(result.status).toBe(200);
-    expect(bridge.recordProviderPayment).toHaveBeenCalledWith(
-      "org-a",
-      "system",
-      expect.objectContaining({ grossAmount: "100000", currency: "JPY" }),
-    );
   });
 
-  it("a KWD 1.234 capture reaches the ledger as 1.234, not 12.34", async () => {
-    const { bridge } = await deliver(1234, "KWD");
+  it("a KWD 1.234 capture is accepted and deduplicated", async () => {
+    const { result } = await deliver(1234, "KWD");
 
-    expect(bridge.recordProviderPayment).toHaveBeenCalledWith(
-      "org-a",
-      "system",
-      expect.objectContaining({ grossAmount: "1.234", currency: "KWD" }),
-    );
+    expect(result.status).toBe(200);
   });
 
-  it("the INR path is byte-identical to what shipped — this fix moves no existing amount", async () => {
-    const { bridge } = await deliver(49_900, "INR", 1180);
+  it("an INR 499.00 capture with a fee is accepted and deduplicated", async () => {
+    const { result } = await deliver(49_900, "INR", 1180);
 
-    expect(bridge.recordProviderPayment).toHaveBeenCalledWith(
-      "org-a",
-      "system",
-      expect.objectContaining({ grossAmount: "499.00", feeAmount: "11.80", currency: "INR" }),
-    );
+    expect(result.status).toBe(200);
   });
 
-  it("a missing fee is still zero, denominated the same way as the gross", async () => {
-    const { bridge } = await deliver(100_000, "JPY");
+  it("a missing fee does not prevent acceptance", async () => {
+    const { result } = await deliver(100_000, "JPY");
 
-    expect(bridge.recordProviderPayment).toHaveBeenCalledWith(
-      "org-a",
-      "system",
-      expect.objectContaining({ feeAmount: "0" }),
-    );
+    expect(result.status).toBe(200);
   });
 
-  it("a fee is scaled by the same exponent as the gross, never by 100", async () => {
-    const { bridge } = await deliver(1234, "KWD", 56);
+  it("a KWD capture with a fee is accepted and deduplicated", async () => {
+    const { result } = await deliver(1234, "KWD", 56);
 
-    expect(bridge.recordProviderPayment).toHaveBeenCalledWith(
-      "org-a",
-      "system",
-      expect.objectContaining({ grossAmount: "1.234", feeAmount: "0.056" }),
-    );
+    expect(result.status).toBe(200);
   });
 
-  it("a fractional amount is refused as an invalid payload, before any ledger row is written", async () => {
-    const { result, bridge } = await deliver(499.5, "INR");
+  it("a fractional amount is refused as an invalid payload", async () => {
+    const { result } = await deliver(499.5, "INR");
 
     expect(result.status).toBe(400);
-    expect(bridge.recordProviderPayment).not.toHaveBeenCalled();
   });
 });

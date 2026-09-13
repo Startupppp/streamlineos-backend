@@ -168,13 +168,19 @@ function collectJson(dir) {
 }
 
 function verify(dir) {
-  const manifests = collectJson(dir);
-  if (manifests.length === 0) throw new Error(`no evidence manifests found under ${dir}; deployed evidence has not been collected`);
+  const candidates = collectJson(dir);
+  const manifests = [];
+  for (const candidatePath of candidates) {
+    let obj;
+    try { obj = readJson(candidatePath); } catch { continue; }
+    if (typeof obj?.format !== "string") continue;
+    manifests.push({ path: candidatePath, record: obj });
+  }
+  if (manifests.length === 0) throw new Error(`no submitted evidence manifests found under ${dir}; deployed evidence has not been collected`);
   const seen = new Set();
   const failures = [];
-  for (const manifestPath of manifests) {
+  for (const { path: manifestPath, record } of manifests) {
     try {
-      const record = readJson(manifestPath);
       const errors = checksFor(record);
       for (const artifact of record.artifacts ?? []) validateArtifact(record, artifact, dir);
       if (errors.length > 0) throw new Error(errors.join("; "));
@@ -187,6 +193,7 @@ function verify(dir) {
   for (const runbook of RUNBOOKS) if (!seen.has(runbook)) failures.push(`missing passing deployed evidence for ${runbook}`);
   if (failures.length > 0) throw new Error(`PRODUCTION OPS EVIDENCE GATE FAILED\n${failures.map((failure) => `- ${failure}`).join("\n")}`);
   process.stdout.write(`PRODUCTION OPS EVIDENCE GATE PASS: ${RUNBOOKS.length}/${RUNBOOKS.length} runbooks have hashed, operator-attested deployed evidence.\n`);
+  process.stdout.write(`NOTE: a parseable operator name/timestamp is not authentication of a human approval. OPS-004 requires the real accountable decision.\n`);
 }
 
 function capture(metadataPath, outputPath) {
@@ -214,30 +221,102 @@ function capture(metadataPath, outputPath) {
 function selfTest() {
   const testRoot = mkdtempSync(resolve(tmpdir(), "streamlineos-ops-evidence-"));
   try {
-    const artifact = resolve(testRoot, "RB-01/output.txt");
-    mkdirSync(dirname(artifact), { recursive: true });
-    writeFileSync(artifact, "real deployment output: isolated resources verified\n", "utf8");
-    const now = new Date().toISOString();
-    const record = {
-      format: FORMAT, runbook: "RB-01", evidenceKind: "deployed-operator-attested", live: true,
-      environment: { name: "staging", region: "us-east-1", cell: "cell-us-01", target: "https://staging.example.invalid" },
-      release: { sha: "a1b2c3d", topologySha256: "a".repeat(64) },
-      dataset: { shape: "production-shaped sanitized", activeOrganizations: 1 },
-      operator: { name: "Test Operator", approvedAt: now },
-      execution: { command: "pnpm cell:isolation", exitCode: 0, startedAt: now, finishedAt: now },
-      artifacts: [{ path: "RB-01/output.txt", bytes: readFileSync(artifact).length, sha256: sha256(readFileSync(artifact)) }],
-      assertions: REQUIRED_ASSERTIONS["RB-01"].map((id) => ({ id, result: "pass", artifact: "RB-01/output.txt", observedAt: now })),
+    const checks = {};
+
+    const buildRecord = (runbook, testDir) => {
+      const assertionIds = REQUIRED_ASSERTIONS[runbook] ?? [];
+      const artifactRelPath = `${runbook}/output.txt`;
+      const artifactAbsPath = resolve(testDir, artifactRelPath);
+      mkdirSync(dirname(artifactAbsPath), { recursive: true });
+      writeFileSync(artifactAbsPath, `deployed output for ${runbook}\n`, "utf8");
+      const bytes = readFileSync(artifactAbsPath);
+      const now = new Date().toISOString();
+      return {
+        record: {
+          format: FORMAT,
+          runbook,
+          evidenceKind: "deployed-operator-attested",
+          live: true,
+          environment: { name: "production-us", region: "us-east-1", cell: "cell-01", target: "https://api.example.invalid" },
+          release: { sha: "abc1234def5678a", topologySha256: "a".repeat(64) },
+          dataset: { shape: "production-shaped", activeOrganizations: 10 },
+          operator: { name: "Release Operator", approvedAt: now },
+          execution: { command: "pnpm cell:runbook", exitCode: 0, startedAt: now, finishedAt: now },
+          artifacts: [{ path: artifactRelPath, bytes: bytes.length, sha256: sha256(bytes) }],
+          assertions: assertionIds.map((id) => ({ id, result: "pass", artifact: artifactRelPath, observedAt: now })),
+        },
+        artifactAbsPath,
+      };
     };
-    writeFileSync(resolve(testRoot, "RB-01/manifest.json"), JSON.stringify(record), "utf8");
-    const directPass = checksFor(record).length === 0;
-    validateArtifact(record, record.artifacts[0], testRoot);
-    writeFileSync(artifact, "altered\n", "utf8");
-    let tamperBlocked = false;
-    try { validateArtifact(record, record.artifacts[0], testRoot); } catch { tamperBlocked = true; }
-    record.execution.command = "pnpm cell:isolation --self-test";
-    const selfTestBlocked = checksFor(record).some((error) => error.includes("forbidden"));
-    const pass = directPass && tamperBlocked && selfTestBlocked;
-    process.stdout.write(JSON.stringify({ selfTest: true, pass, checks: { validDeployedShapePasses: directPass, alteredArtifactBlocked: tamperBlocked, selfTestClaimBlocked: selfTestBlocked } }) + "\n");
+
+    const writeManifest = (testDir, runbook, overrides = {}) => {
+      const { record, artifactAbsPath } = buildRecord(runbook, testDir);
+      const merged = { ...record, ...overrides };
+      const manifestPath = resolve(testDir, `${runbook}/manifest.json`);
+      mkdirSync(dirname(manifestPath), { recursive: true });
+      writeFileSync(manifestPath, JSON.stringify(merged, null, 2), "utf8");
+      return { merged, artifactAbsPath };
+    };
+
+    const tryVerify = (dir) => {
+      try { verify(dir); return { passed: true, message: "" }; }
+      catch (e) { return { passed: false, message: e instanceof Error ? e.message : String(e) }; }
+    };
+
+    const dir1 = resolve(testRoot, "c1");
+    for (const rb of RUNBOOKS) writeManifest(dir1, rb);
+    writeFileSync(resolve(dir1, "raw-measurements.json"), JSON.stringify({ generatedAt: new Date().toISOString(), counts: [1, 2, 3] }), "utf8");
+    const c1 = tryVerify(dir1);
+    checks.case1_allPassBesideUnrelatedJson = c1.passed && !c1.message.includes("raw-measurements.json");
+
+    const dir2 = resolve(testRoot, "c2");
+    mkdirSync(dir2, { recursive: true });
+    writeFileSync(resolve(dir2, "artifact-hashes.json"), JSON.stringify({ covers: ["foo"], generatedAt: new Date().toISOString() }), "utf8");
+    const c2 = tryVerify(dir2);
+    checks.case2_noManifestsError = !c2.passed && c2.message.includes("no submitted evidence manifests found");
+
+    const dir3a = resolve(testRoot, "c3a");
+    mkdirSync(dir3a, { recursive: true });
+    writeFileSync(resolve(dir3a, "bad-runbook.json"), JSON.stringify({ format: FORMAT, runbook: "RB-99" }), "utf8");
+    const c3a = tryVerify(dir3a);
+    checks.case3a_unsupportedRunbookFails = !c3a.passed && c3a.message.includes("unsupported runbook RB-99");
+
+    const dir3b = resolve(testRoot, "c3b");
+    mkdirSync(dir3b, { recursive: true });
+    writeFileSync(resolve(dir3b, "old-version.json"), JSON.stringify({ format: "streamlineos.production-ops-evidence/v0", runbook: "RB-01" }), "utf8");
+    const c3b = tryVerify(dir3b);
+    checks.case3b_wrongFormatVersionFails = !c3b.passed && c3b.message.includes("wrong or missing evidence format");
+
+    const dir3c = resolve(testRoot, "c3c");
+    const { merged: rb01c } = writeManifest(dir3c, "RB-01");
+    writeFileSync(resolve(dir3c, "RB-01/manifest.json"), JSON.stringify({ ...rb01c, execution: { ...rb01c.execution, command: "pnpm cell:runbook --self-test" } }, null, 2), "utf8");
+    const c3c = tryVerify(dir3c);
+    checks.case3c_selfTestClaimBlocked = !c3c.passed && c3c.message.includes("self-test");
+
+    const dir4 = resolve(testRoot, "c4");
+    const { merged: rb01d } = writeManifest(dir4, "RB-01");
+    writeFileSync(resolve(dir4, "RB-01/manifest.json"), JSON.stringify({ ...rb01d, assertions: [] }, null, 2), "utf8");
+    const c4 = tryVerify(dir4);
+    checks.case4_missingAssertionsFails = !c4.passed && c4.message.includes("required assertion is not a pass:");
+
+    const dir5 = resolve(testRoot, "c5");
+    const { artifactAbsPath: artifact5 } = writeManifest(dir5, "RB-02");
+    writeFileSync(artifact5, "tampered content that changes the hash\n", "utf8");
+    const c5 = tryVerify(dir5);
+    checks.case5_tamperedArtifactFails = !c5.passed && c5.message.includes("artifact hash does not match");
+
+    const dir6a = resolve(testRoot, "c6a");
+    writeManifest(dir6a, "RB-03", { synthetic: true });
+    const c6a = tryVerify(dir6a);
+    checks.case6a_syntheticRejected = !c6a.passed && c6a.message.includes("evidence must declare live=true and synthetic must not be true");
+
+    const dir6b = resolve(testRoot, "c6b");
+    writeManifest(dir6b, "RB-04", { environment: { name: "dev-local", region: "local", cell: "local-01", target: "http://localhost:3000" } });
+    const c6b = tryVerify(dir6b);
+    checks.case6b_localTargetRejected = !c6b.passed;
+
+    const pass = Object.values(checks).every(Boolean);
+    process.stdout.write(JSON.stringify({ selfTest: true, pass, checks }) + "\n");
     process.exitCode = pass ? 0 : 1;
   } finally {
     rmSync(testRoot, { recursive: true, force: true });

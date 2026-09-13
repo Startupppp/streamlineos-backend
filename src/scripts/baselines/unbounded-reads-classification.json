@@ -601,6 +601,16 @@
       "verdict": "ACTIONABLE",
       "note": "Offset pagination; needs keyset migration or proven depth bound",
       "justification": "Classified 2026-09-12. New pagination added to GET /inventory/handling-units (list() at L482), the same `.limit(n).offset(n*(page-1))` beside a `count(*)` shape as the other inventory list endpoints in this file's neighborhood: the page size is capped but the DEPTH is not, so a deep page still scans and discards every row before it. Left ACTIONABLE deliberately, matching the existing backlog entries for this shape (see staged-import.service.ts, inv-pharmacy.service.ts) rather than a false-positive dismissal."
+    },
+    "/inventory/channels/sync/channel-job-failure.drizzle-store.ts": {
+      "verdict": "ACTIONABLE",
+      "note": "Offset pagination; needs keyset migration or proven depth bound",
+      "justification": "Classified 2026-09-13. Split out of channel-job.drizzle-store.ts, which carries the same ACTIONABLE offset verdict; the code moved, the debt did not. CRM/Inventory is excluded PRD scope, so it is reported rather than counted."
+    },
+    "/reporting/reporting-definitions.service.ts": {
+      "verdict": "ACTIONABLE",
+      "note": "Offset pagination; needs keyset migration or proven depth bound",
+      "justification": "Classified 2026-09-13. Split verbatim out of reporting.service.ts during the reporting file-size split; that file holds the same ACTIONABLE offset verdict. Splitting a file uncovers its reads to this detector without changing them."
     }
   },
   "unbounded": {
@@ -1877,8 +1887,9 @@
       "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
     },
     "/hr/directory/employee-bulk-onboarding.service.ts": {
-      "verdict": "BOUNDED",
-      "note": "HR lane â€” deadline 2026-12-31; needs keyset migration paired with frontend caller"
+      "verdict": "FALSE-POSITIVE",
+      "note": "bounded by its parent entity, not by a LIMIT",
+      "justification": "Classified 2026-09-13. Reads globally-inactive users via inArray(users.id, existingUserIds); existingUserIds derives from the bulk upload, which bulkOnboardEmployeesSchema caps at 100 rows. Re-verdicted from BOUNDED on 2026-09-13: the read is genuinely bounded, but by inArray over a capped list rather than by a LIMIT, so BOUNDED read as 'fixed' and the detector kept reporting it as a regression."
     },
     "/hr/directory/employee-mutations.service.ts": {
       "verdict": "BOUNDED",
@@ -2951,16 +2962,6 @@
       "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
       "justification": "broadcast reads bounded by broadcastId or orgId+status filter; small per-org broadcast set 2026-09-01"
     },
-    "/notifications/lib/notification-queries.ts": {
-      "verdict": "FALSE-POSITIVE",
-      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
-      "justification": "Classified 2026-09-11 by reading the call site, when the inbox queries moved out of /notifications/notifications-read.service.ts unchanged — this gate keys on path, so a move forces a restatement. The one match is `fetchLastReadId`, a single-row read of ONE user's read watermark by (org_id, user_id), destructured as `const [wm]`. The inbox list beside it is keyset-paginated and already limited. FALSE-POSITIVE rather than BOUNDED because BOUNDED is a FIXED verdict here — it asserts the scanner no longer matches, and a continued match is reported as a regression."
-    },
-    "/notifications/lib/notification-ticket-context.ts": {
-      "verdict": "FALSE-POSITIVE",
-      "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
-      "justification": "Classified 2026-09-11 by reading the call site, when attachTicketContext moved out of /notifications/notifications-read.service.ts unchanged — this gate keys on path, so a move forces a restatement. The one match is filtered `inArray` on the ticket ids extracted from the notification rows already in hand, behind an empty-set early return, so the bound is the page of notifications the caller is rendering. FALSE-POSITIVE rather than BOUNDED because BOUNDED is a FIXED verdict here — it asserts the scanner no longer matches, and a continued match is reported as a regression."
-    },
     "/notifications/notification-dispatch.service.ts": {
       "verdict": "FALSE-POSITIVE",
       "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
@@ -3955,6 +3956,56 @@
       "verdict": "ACTIONABLE",
       "note": "Unbounded select; needs limit, aggregate exemption, or false-positive review",
       "justification": "Classified 2026-09-12. Both reads resolve `inv_product_variants` by `inArray(sku, skus)` for one publication outcome (:174) or one channel order (:262), each behind a `skus.length === 0` early return, so the caller's SKU list is the bound. Recorded ACTIONABLE rather than FALSE-POSITIVE because that bound is only exact now that the missing `deleted_at IS NULL` predicate has been added to both (same pass): `uniq_inv_product_variants_org_sku_live` is PARTIAL on `deleted_at IS NULL`, so before that a SKU reused after a deletion returned two rows and the second silently overwrote the `bySku` entry. What remains is the limit — one row per SKU asked for — which nothing yet states."
+    },
+    "/build/execution/whiteboard-board-helpers.ts": {
+      "verdict": "ACTIONABLE",
+      "note": "parent-scoped read with no LIMIT and no proven cap",
+      "justification": "Classified 2026-09-13. loadShares reads every share row of one whiteboard with no LIMIT. Scoped to the board, but a board's share list has no enforced cap, so this is real debt rather than a detector artefact. Sibling whiteboard files carry FALSE-POSITIVE; that verdict is generous and is not inherited here."
+    },
+    "/calls/call-analysis-subjects.ts": {
+      "verdict": "ACTIONABLE",
+      "note": "parent-scoped read with no LIMIT and no proven cap",
+      "justification": "Classified 2026-09-13. Reads a call analysis's subject rows with no LIMIT and no enforced cap on subjects per analysis."
+    },
+    "/e-sign/sign-envelope-queries.service.ts": {
+      "verdict": "ACTIONABLE",
+      "note": "parent-scoped read with no LIMIT and no proven cap",
+      "justification": "Classified 2026-09-13. Reads every signDocument and signField of one envelope with no LIMIT; neither documents-per-envelope nor fields-per-document is capped."
+    },
+    "/organization/setup/org-setup-query.service.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "bounded by its parent entity, not by a LIMIT",
+      "justification": "Classified 2026-09-13. Both reads are bounded by inArray over the setup payload's invitee list, which the request DTO caps at MAX_SETUP_INVITEES (50); on 2026-09-13 that same cap was applied to org-setup-completed-payload.schema.ts so the stored/replayed payload is bounded too, not merely bounded in practice. The detector cannot see an inArray bound."
+    },
+    "/party/party-identifiers-merge.ts": {
+      "verdict": "ACTIONABLE",
+      "note": "parent-scoped read with no LIMIT and no proven cap",
+      "justification": "Classified 2026-09-13. Merge helper reads a party's identifier rows with no LIMIT; identifiers per party are uncapped."
+    },
+    "/party/party-legacy-contacts-helpers.ts": {
+      "verdict": "ACTIONABLE",
+      "note": "parent-scoped read with no LIMIT and no proven cap",
+      "justification": "Classified 2026-09-13. Legacy contact read with no LIMIT; contacts per party are uncapped."
+    },
+    "/party/party-legacy-contacts-update.ts": {
+      "verdict": "ACTIONABLE",
+      "note": "parent-scoped read with no LIMIT and no proven cap",
+      "justification": "Classified 2026-09-13. Legacy contact update path reads with no LIMIT; contacts per party are uncapped."
+    },
+    "/party/party-legacy-orgs-helpers.ts": {
+      "verdict": "ACTIONABLE",
+      "note": "parent-scoped read with no LIMIT and no proven cap",
+      "justification": "Classified 2026-09-13. Legacy org read with no LIMIT; linked orgs per party are uncapped."
+    },
+    "/party/party-legacy-orgs-update.ts": {
+      "verdict": "ACTIONABLE",
+      "note": "parent-scoped read with no LIMIT and no proven cap",
+      "justification": "Classified 2026-09-13. Legacy org update path reads with no LIMIT; linked orgs per party are uncapped."
+    },
+    "@common/rbac/assert-not-last-structural-admin.ts": {
+      "verdict": "FALSE-POSITIVE",
+      "note": "bounded by its parent entity, not by a LIMIT",
+      "justification": "Classified 2026-09-13. Guard read: selects structural-admin membership ids for ONE org to refuse demoting the last one. Bounded by that org's admin count, which the six-standing model keeps small; a LIMIT would break the guard, since it must count what is there."
     }
   }
 }

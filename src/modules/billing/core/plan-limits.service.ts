@@ -3,6 +3,7 @@ import { sql, type Column, type SQL } from "drizzle-orm";
 import { businessParties, contactPartyMap, leadPartyMap } from "../../../db/schema/party";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
+import { registerAfterCommit } from "../../../common/tenant";
 import type { Db } from "../../../db/drizzle.module";
 import { CacheService } from "../../../common/cache/cache.service";
 import {
@@ -264,9 +265,13 @@ export class PlanLimitsService {
       });
     }
 
-    void this.maybeAlertQuota(orgId, key, used + increment, limit).catch((err: unknown) =>
-      this.logger.warn(`quota alert failed [${orgId}/${key}]`, { err }),
-    );
+    if (this.crossedThresholds(used + increment, limit).length > 0) {
+      const alertWork = () =>
+        this.maybeAlertQuota(orgId, key, used + increment, limit).catch((err: unknown) =>
+          this.logger.warn(`quota alert failed [${orgId}/${key}]`, { err }),
+        );
+      if (!registerAfterCommit(alertWork)) void alertWork();
+    }
   }
 
   async checkFeature(orgId: string, feature: Feature): Promise<boolean> {

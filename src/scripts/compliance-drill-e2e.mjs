@@ -57,11 +57,7 @@ const orgArg = (() => {
 })();
 
 function loadEnvVar(name) {
-  if (process.env[name]) return process.env[name];
-  const envPath = path.resolve(BACKEND_ROOT, ".env");
-  if (!fs.existsSync(envPath)) return null;
-  const match = fs.readFileSync(envPath, "utf8").match(new RegExp(`^${name}\\s*=\\s*(.+)$`, "m"));
-  return match ? match[1].trim().replace(/^['"]|['"]$/g, "") : null;
+  return process.env[name] ?? null;
 }
 
 function assert(condition, message) {
@@ -188,7 +184,18 @@ function selfTest() {
     process.stdout.write("  SKIP  drill-storage-purge.mjs not found\n");
   }
 
-  process.stdout.write("\n=== SELF-TEST RESULT: PASS — all 8 assertion bite proofs confirmed ===\n");
+  section("Self-test 8: owner_subject_is_rejected (Phase 3 must FAIL not PASS for an owner)");
+  fired = false;
+  try {
+    const mockIsOwner = true;
+    assert(!mockIsOwner, "Phase 3 requires a non-owner subject — the drill discovered an owner; pass --subject <non-owner-email>");
+  } catch {
+    fired = true;
+  }
+  assert(fired, "assertion (owner_subject_is_rejected) must fire when subject is an org owner");
+  process.stdout.write("  PASS  assertion fires when subject is org owner (owner_subject_is_rejected)\n");
+
+  process.stdout.write("\n=== SELF-TEST RESULT: PASS — all 9 assertion bite proofs confirmed ===\n");
 }
 
 async function discoverSubject(db) {
@@ -199,6 +206,10 @@ async function discoverSubject(db) {
     JOIN organizations o ON o.id = om.org_id
     WHERE u.email IS NOT NULL
       AND om.role != 'OWNER'
+      AND NOT EXISTS (
+        SELECT 1 FROM organization_members om2
+        WHERE om2.user_id = u.id AND om2.role = 'OWNER'
+      )
     ORDER BY om.joined_at ASC
     LIMIT 1
   `;
@@ -322,11 +333,11 @@ async function runPhase2Export(db, email, orgId) {
 }
 
 async function runPhase3Erasure(db, email) {
-  section("Phase 3 — Erasure dry-run (rolled-back transaction)");
+  section("Phase 3 — Erasure dry-run (delegates to drill-erasure.mjs)");
 
   const [user] = await db`SELECT id FROM users WHERE lower(email) = ${email.toLowerCase()} LIMIT 1`;
   if (!user) {
-    fail(`Erasure: subject not found (${email})`);
+    fail("Erasure: subject not found");
     return;
   }
 
@@ -344,50 +355,45 @@ async function runPhase3Erasure(db, email) {
   }
   pass("No active legal hold — erasure may proceed");
 
-  const memberRows = await db`
-    SELECT user_id FROM organization_members WHERE user_id = ${user.id}
+  const [ownerRow] = await db`
+    SELECT 1 FROM organization_members WHERE user_id = ${user.id} AND role = 'OWNER' LIMIT 1
   `;
-  const isOwner = memberRows.length > 0
-    && (await db`SELECT 1 FROM organization_members WHERE user_id = ${user.id} AND role = 'OWNER' LIMIT 1`).length > 0;
-
-  if (isOwner) {
-    pass("Subject is org owner — erasure correctly refused (transfer ownership first); dry-run skipped for owner");
+  if (ownerRow) {
+    fail("Phase 3 requires a non-owner subject — the drill discovered an owner; pass --subject <non-owner-email> to specify a valid test subject");
     return;
   }
 
-  let residualFound = false;
-  // The rollback throw used to live in a `finally`, where it replaced whatever
-  // the try block had thrown. So a failing residual-rows assertion was rewritten
-  // into `__rollback__` on its way out and the catch below read it as a clean
-  // rollback: this drill reported a pass no matter what the assertion found.
-  // Capture the real error first, then throw the sentinel to roll back.
-  let simulationError = null;
-  await db.begin(async (tx) => {
-    try {
-      await tx`DELETE FROM organization_members WHERE user_id = ${user.id}`;
-
-      const [residual] = await tx`SELECT COUNT(*) AS n FROM organization_members WHERE user_id = ${user.id}`;
-      const n = Number(residual?.n ?? 0);
-      assert(n === 0, `residual_rows_after_erasure: ${n} organization_members row(s) remain after deletion`);
-      pass(`Erasure simulation: 0 residual organization_members row(s) — assertion holds`);
-    } catch (e) {
-      simulationError = e;
-    }
-    throw new Error("__rollback__");
-  }).catch((e) => {
-    if (e.message !== "__rollback__") {
-      residualFound = true;
-      fail(`Erasure simulation failed: ${e.message}`);
-    }
-  });
-
-  if (simulationError) {
-    residualFound = true;
-    fail(`Erasure simulation failed: ${simulationError.message}`);
+  const drillScript = path.resolve(SCRIPT_DIR, "drill-erasure.mjs");
+  if (!fs.existsSync(drillScript)) {
+    fail("drill-erasure.mjs not found at expected path");
+    return;
   }
 
-  if (!residualFound) {
-    pass("Erasure dry-run complete (rolled back; 0 residual row(s) in simulation)");
+  const dbUrl = loadEnvVar("DATABASE_URL");
+  if (!dbUrl) {
+    fail("DATABASE_URL not set — cannot run drill-erasure.mjs");
+    return;
+  }
+
+  const result = spawnSync(
+    process.execPath,
+    [drillScript, email],
+    {
+      encoding: "utf8",
+      cwd: BACKEND_ROOT,
+      env: { ...process.env, DATABASE_URL: dbUrl },
+    },
+  );
+
+  const output = (result.stdout || "") + (result.stderr || "");
+  for (const line of output.split(/\r?\n/).filter(Boolean)) {
+    process.stdout.write(`    ${line}\n`);
+  }
+
+  if (result.status === 0) {
+    pass("Erasure dry-run: all deletion checks passed (drill-erasure.mjs exited 0)");
+  } else {
+    fail(`Erasure dry-run failed: drill-erasure.mjs exited ${result.status ?? "null"}`);
   }
 }
 
@@ -492,7 +498,7 @@ async function main() {
     }
   }
 
-  process.stdout.write(`\nTest subject: ${subject.email}  (id=${subject.id}, org=${subject.org_id})\n`);
+  process.stdout.write(`\nTest subject: id=${subject.id}  org=${subject.org_id}\n`);
   process.stdout.write(`Drill ID: ${drillId}\n`);
 
   try {

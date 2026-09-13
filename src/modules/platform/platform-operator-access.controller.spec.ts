@@ -2,19 +2,20 @@ import { UnauthorizedException } from "@nestjs/common";
 import type { Request } from "express";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { BODYLESS_ACTION } from "../../common/openapi/zod-operation-contracts";
-import { createGrantSchema, listGrantsQuerySchema } from "./dto/platform.schemas";
+import { createGrantSchema, listGrantsQuerySchema, revokeGrantSchema } from "./dto/platform.schemas";
 import { PlatformOperatorAccessController } from "./platform-operator-access.controller";
 import type { PlatformOperatorAccessService } from "./platform-operator-access.service";
+
+const PLATFORM_ADMIN_IDS = "requester-admin,approver-admin,platform-op";
 
 function operator(
   userId: string,
   kind: "human-session" | "service-api-key" = "human-session",
-  role = "ADMIN",
 ): CurrentUserContext {
   return {
     userId,
     orgId: "platform-org",
-    role,
+    role: "MEMBER",
     isOrgOwner: false,
     sessionId: "session-1",
     tokenScopes: null,
@@ -40,6 +41,14 @@ describe("PlatformOperatorAccessController identity integrity", () => {
   const service = { createGrantAndLog, approveGrant, recordAccess } as unknown as PlatformOperatorAccessService;
   const controller = new PlatformOperatorAccessController(service, {
     INTERNAL_API_SECRET: "test-internal-secret",
+  });
+
+  beforeAll(() => {
+    process.env.PLATFORM_ADMIN_USER_IDS = PLATFORM_ADMIN_IDS;
+  });
+
+  afterAll(() => {
+    delete process.env.PLATFORM_ADMIN_USER_IDS;
   });
 
   beforeEach(() => {
@@ -70,6 +79,12 @@ describe("PlatformOperatorAccessController identity integrity", () => {
 
   it("accepts revoked grants in the management-plane list filter", () => {
     expect(listGrantsQuerySchema.safeParse({ orgId: "customer-org", status: "revoked" }).success).toBe(true);
+  });
+
+  it("(bite proof) revoke reason min-3 enforced at schema boundary", () => {
+    expect(revokeGrantSchema.safeParse({ reason: "yes" }).success).toBe(true);
+    expect(revokeGrantSchema.safeParse({ reason: "ab" }).success).toBe(false);
+    expect(revokeGrantSchema.safeParse({ reason: "  x  " }).success).toBe(false);
   });
 
   it("derives grantedBy from the authenticated human and ignores forwarded audit IP headers", async () => {
@@ -107,7 +122,7 @@ describe("PlatformOperatorAccessController identity integrity", () => {
   });
 
   it.each(["create", "approve"] as const)("rejects a service principal on %s", async (operation) => {
-    const serviceUser = operator("automation", "service-api-key");
+    const serviceUser = operator("platform-op", "service-api-key");
     const attempt = operation === "create"
       ? controller.createGrant(
           "test-internal-secret",
@@ -129,7 +144,7 @@ describe("PlatformOperatorAccessController identity integrity", () => {
     expect(approveGrant).not.toHaveBeenCalled();
   });
 
-  it("rejects a human session without an eligible admin role", async () => {
+  it("(bite proof) rejects a human session whose userId is not in PLATFORM_ADMIN_USER_IDS", async () => {
     await expect(
       controller.createGrant(
         "test-internal-secret",
@@ -141,7 +156,50 @@ describe("PlatformOperatorAccessController identity integrity", () => {
           scope: "read_customer_data",
           expiresAt: new Date(Date.now() + 60_000).toISOString(),
         },
-        operator("ordinary-member", "human-session", "MEMBER"),
+        operator("tenant-org-admin"),
+        httpRequest(),
+      ),
+    ).rejects.toBeInstanceOf(UnauthorizedException);
+    expect(createGrantAndLog).not.toHaveBeenCalled();
+  });
+
+  it("(bite proof) org owner who is not a platform admin is denied — tenant-level standing does not confer platform access", async () => {
+    const tenantOwner: CurrentUserContext = {
+      ...operator("tenant-owner"),
+      isOrgOwner: true,
+      role: "OWNER",
+    };
+    await expect(
+      controller.createGrant(
+        "test-internal-secret",
+        {
+          operatorUserId: "support-op",
+          orgId: "customer-org",
+          incidentRef: "INC-1",
+          reason: "Investigate customer incident",
+          scope: "read_customer_data",
+          expiresAt: new Date(Date.now() + 60_000).toISOString(),
+        },
+        tenantOwner,
+        httpRequest(),
+      ),
+    ).rejects.toBeInstanceOf(UnauthorizedException);
+    expect(createGrantAndLog).not.toHaveBeenCalled();
+  });
+
+  it("wrong internal secret is refused regardless of platform admin standing", async () => {
+    await expect(
+      controller.createGrant(
+        "wrong-secret",
+        {
+          operatorUserId: "support-op",
+          orgId: "customer-org",
+          incidentRef: "INC-1",
+          reason: "Investigate customer incident",
+          scope: "read_customer_data",
+          expiresAt: new Date(Date.now() + 60_000).toISOString(),
+        },
+        operator("requester-admin"),
         httpRequest(),
       ),
     ).rejects.toBeInstanceOf(UnauthorizedException);

@@ -18,6 +18,8 @@ export interface RunRecord {
   readonly maxAttempts: number;
   /** What the producer persisted, so the drain can report under it. */
   readonly correlationId?: string | null;
+  /** The lease_expires_at value set during claim — used to fence terminal writes. */
+  readonly leaseExpiresAt: Date;
 }
 
 export interface RunLifecycleStore {

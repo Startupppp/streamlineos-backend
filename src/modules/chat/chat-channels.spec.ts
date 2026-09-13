@@ -2,7 +2,6 @@ import { Test, type TestingModule } from "@nestjs/testing";
 import { ChatChannelsService, entityChannelFallbackName } from "./chat-channels.service";
 import { ChatChannelListService } from "./chat-channel-list.service";
 import { DRIZZLE } from "../../db/drizzle.constants";
-import { CacheService } from "../../common/cache/cache.service";
 import { PlanLimitsService } from "../billing/core/plan-limits.service";
 import { EntityReferenceService } from "../entity-reference/entity-reference.service";
 import type { EntityActor } from "../entity-reference/entity-reference.types";
@@ -89,14 +88,7 @@ function buildMocks() {
     }),
   };
 
-  const mockCache = {
-    cachedVersioned: jest.fn().mockResolvedValue([]),
-    cached: jest.fn(),
-    invalidate: jest.fn(),
-    invalidateNamespace: jest.fn(),
-  };
-
-  return { mockDb, mockCache, updateSpy, resolveSpy, findManyMock, selectResults };
+  return { mockDb, updateSpy, resolveSpy, findManyMock, selectResults };
 }
 
 describe("ChatChannelsService — read path", () => {
@@ -118,7 +110,6 @@ describe("ChatChannelsService — read path", () => {
         ChatChannelListService,
         ChatChannelsService,
         { provide: DRIZZLE, useValue: mocks.mockDb },
-        { provide: CacheService, useValue: mocks.mockCache },
         { provide: PlanLimitsService, useValue: { assertWithinLimit: jest.fn() } },
         { provide: EntityReferenceService, useValue: { resolve: resolveSpy } },
       ],

@@ -637,10 +637,6 @@
       "as": 0,
       "nonNull": 1
     },
-    "src/modules/inventory/stock/inv-stock-transfers.service.ts": {
-      "as": 0,
-      "nonNull": 2
-    },
     "src/modules/inventory/traceability/traceability-chain.service.ts": {
       "as": 0,
       "nonNull": 5
@@ -781,10 +777,6 @@
       "as": 1,
       "nonNull": 0
     },
-    "src/modules/support/kb-gap/support-kb-gap-detection.service.ts": {
-      "as": 1,
-      "nonNull": 0
-    },
     "src/modules/support/kb-gap/support-kb-gap.service.ts": {
       "as": 1,
       "nonNull": 1
@@ -796,10 +788,6 @@
     "src/modules/users/organization-users.reader.ts": {
       "as": 0,
       "nonNull": 3
-    },
-    "src/modules/users/user-profile.service.ts": {
-      "as": 2,
-      "nonNull": 0
     },
     "src/modules/workflows/engine/workflow-runner.service.ts": {
       "as": 5,

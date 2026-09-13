@@ -53,6 +53,7 @@ const run: RunRecord = {
   input: { partyId: "p-1" },
   attempt: 0,
   maxAttempts: 3,
+  leaseExpiresAt: new Date("2026-08-23T10:05:00.000Z"),
 };
 
 const now = () => new Date("2026-08-23T10:00:00.000Z");

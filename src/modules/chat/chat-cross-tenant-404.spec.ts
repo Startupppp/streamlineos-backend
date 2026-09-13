@@ -57,7 +57,6 @@ describe("chat — a channel, huddle or saved message outside the caller's org a
         stub<ConstructorParameters<typeof ChatChannelsService>[1]>(),
         stub<ConstructorParameters<typeof ChatChannelsService>[2]>(),
         stub<ConstructorParameters<typeof ChatChannelsService>[3]>(),
-        stub<ConstructorParameters<typeof ChatChannelsService>[4]>(),
       );
     }
     const actor = { orgId: ATTACKER_ORG, userId: "u-1", membershipId: 3 } as EntityActor;

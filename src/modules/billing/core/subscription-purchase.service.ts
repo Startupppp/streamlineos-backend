@@ -99,6 +99,20 @@ export class SubscriptionPurchaseService {
     return row ?? null;
   }
 
+  async findById(executor: DbOrTx, purchaseId: number, orgId: string): Promise<SubscriptionPurchase | null> {
+    const [row] = await executor
+      .select()
+      .from(subscriptionPurchases)
+      .where(
+        and(
+          eq(subscriptionPurchases.id, purchaseId),
+          eq(subscriptionPurchases.orgId, orgId),
+        ),
+      )
+      .limit(1);
+    return row ?? null;
+  }
+
   async lockForActivation(
     tx: DbOrTx,
     purchaseId: number,

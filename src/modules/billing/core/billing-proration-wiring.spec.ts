@@ -18,6 +18,7 @@ import {
 import { AiCreditsService } from "./ai-credits.service";
 import { BillingProfileService } from "./billing-profile.service";
 import { BillingService } from "./billing.service";
+import { CacheService } from "../../../common/cache/cache.service";
 import { PlanLimitsService } from "./plan-limits.service";
 import { ProrationLedgerService } from "./proration-ledger.service";
 import { RevenueAnalyticsService } from "./revenue-analytics.service";
@@ -241,6 +242,15 @@ async function buildService(options: {
       { provide: PaymentAnalyticsService, useValue: { notifyOwner: jest.fn(), track: jest.fn() } },
       { provide: BillingProfileService, useValue: { get: jest.fn(), update: jest.fn() } },
       { provide: PlatformMerchantService, useValue: makePlatformMerchant() },
+      {
+        provide: CacheService,
+        useValue: {
+          invalidate: jest.fn().mockResolvedValue(undefined),
+          invalidateMany: jest.fn().mockResolvedValue(undefined),
+          invalidateForOrg: jest.fn().mockResolvedValue(undefined),
+          cached: jest.fn().mockImplementation(async (_key: unknown, fn: () => Promise<unknown>) => fn()),
+        },
+      },
     ],
   }).compile();
 

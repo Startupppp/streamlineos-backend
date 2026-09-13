@@ -89,7 +89,6 @@ describe("ChatChannelsService — the channel list is a read", () => {
     const service = new ChatChannelsService(
       db as never,
       { assertWithinLimit: jest.fn() } as never,
-      { cachedVersioned: jest.fn() } as never,
       makeEntities("title") as never,
       listService,
     );
@@ -103,7 +102,6 @@ describe("ChatChannelsService — the channel list is a read", () => {
     const service = new ChatChannelsService(
       db as never,
       { assertWithinLimit: jest.fn() } as never,
-      { cachedVersioned: jest.fn(async (_n: string, _k: string, fn: () => unknown) => fn()) } as never,
       makeEntities("Renamed ticket") as never,
       listService,
     );
@@ -119,7 +117,6 @@ describe("ChatChannelsService — the channel list is a read", () => {
     const service = new ChatChannelsService(
       db as never,
       { assertWithinLimit: jest.fn() } as never,
-      { cachedVersioned: jest.fn(async (_n: string, _k: string, fn: () => unknown) => fn()) } as never,
       makeEntities("Renamed ticket") as never,
       listService,
     );

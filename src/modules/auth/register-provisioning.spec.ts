@@ -1,45 +1,11 @@
-/**
- * What a stranger gets, and when they are let in.
- *
- * Phase 3 ticket 13. Two things have to hold at once: the claim must not return
- * until the workspace is usable, and a workspace that never became usable must
- * not be reachable. The interesting assertions here are therefore about
- * *ordering* and about what survives a failure, not about which functions were
- * reached.
- */
 const events: string[] = [];
 
-/**
- * Every tenant-transaction seam runs its body against the shared `tx` and
- * records where that transaction began and committed, so a case can say which
- * writes one transaction carried. A body that throws records no commit: that is
- * a rollback, and whatever the body wrote goes with it.
- */
 async function mockTransaction(body: (handle: unknown) => Promise<unknown>) {
   events.push("tx:begin");
   const result = await body(tx);
   events.push("tx:commit");
   return result;
 }
-
-jest.mock("../../common/tenant", () => ({
-  withNewOrgInRegion: jest.fn(
-    async (_db: unknown, _placement: unknown, body: (tx: unknown) => Promise<unknown>) =>
-      mockTransaction(body),
-  ),
-  runWithTenantContext: jest.fn(
-    async (_context: unknown, body: () => Promise<unknown>) => body(),
-  ),
-  // `register` places the organisation and then opens a normal tenant
-  // transaction to mint the membership id. The double named only the
-  // create-time seam, so the call after it died on "withTenant is not a
-  // function" — inside the try, which is why the failure case saw that message
-  // instead of the one it throws.
-  withTenant: jest.fn(
-    async (_db: unknown, _context: unknown, body: (tx: unknown) => Promise<unknown>) =>
-      mockTransaction(body),
-  ),
-}));
 
 jest.mock("../../common/tenant/run-in-tenant-transaction", () => ({
   runInNewTenantTransaction: jest.fn(
@@ -51,22 +17,17 @@ jest.mock("../../common/tenant/run-in-tenant-transaction", () => ({
   ),
 }));
 
-jest.mock("../../common/region/region-registry", () => ({
-  regionForNewOrg: jest.fn().mockReturnValue("eu"),
-  // `withNewOrgInRegion` asks whether a registry is configured before it binds a
-  // connection. A factory naming only `regionForNewOrg` leaves that undefined,
-  // and the provisioning path then dies on "hasRegionRegistry is not a function"
-  // rather than on anything this file is about.
-  hasRegionRegistry: jest.fn().mockReturnValue(false),
-  DEFAULT_REGION: "primary",
-}));
-
-jest.mock("../../common/region/cell-admission", () => ({
-  chooseRegionForNewOrg: jest.fn().mockResolvedValue({ region: "eu" }),
-  regionPlacementCoordinates: jest.fn((choice: { region: string }) => ({
-    region: choice.region,
-    cellId: `${choice.region}-1`,
-  })),
+jest.mock("../../common/org/membership-mutations", () => ({
+  withMembershipMutations: jest.fn(
+    async (_cache: unknown, body: (mutations: unknown) => Promise<unknown>) =>
+      body({
+        allocateMembershipId: jest.fn().mockResolvedValue(42),
+        createOwnerMembership: jest.fn(async () => {
+          events.push("owner");
+        }),
+        record: jest.fn(),
+      }),
+  ),
 }));
 
 jest.mock("../rbac/seed-system-roles", () => ({
@@ -83,30 +44,23 @@ jest.mock("../../common/org/provision-org-modules", () => ({
   }),
 }));
 
-jest.mock("../onboarding-activation/seed-demo-dataset", () => ({
-  seedDemoDataset: jest.fn(async () => {
-    events.push("demo");
-    return { seeded: true };
-  }),
+jest.mock("../billing/core/trial-subscription", () => ({
+  insertTrialSubscription: jest.fn().mockResolvedValue(undefined),
 }));
 
-import { AuthService } from "./auth.service";
-import { seedSystemRolesForOrg } from "../rbac/seed-system-roles";
-import { seedDemoDataset } from "../onboarding-activation/seed-demo-dataset";
-import { regionForNewOrg } from "../../common/region/region-registry";
-import { chooseRegionForNewOrg } from "../../common/region/cell-admission";
+jest.mock("../../common/org/provision-employee-self-service", () => ({
+  provisionEmployeeSelfService: jest.fn().mockResolvedValue(undefined),
+}));
 
-/**
- * What `.values()` returns has to be both awaitable and chainable.
- *
- * Provisioning calls `.values(...).onConflictDoNothing()`, so a double whose
- * `values` resolves straight to a promise dies on "onConflictDoNothing is not a
- * function" — before reaching anything these cases assert. This returns a
- * thenable that also carries the builder method, so both spellings work.
- */
-function valuesResult(record?: (rows: unknown) => void) {
-  return (rows: unknown) => {
-    record?.(rows);
+jest.mock("../../common/rbac/access-invalidate", () => ({
+  bumpPermissionsVersion: jest.fn().mockResolvedValue(undefined),
+}));
+
+import { bootstrapCellOrganization } from "../organization/core/bootstrap-cell-organization";
+import { seedSystemRolesForOrg } from "../rbac/seed-system-roles";
+
+function valuesResult() {
+  return (_rows: unknown) => {
     const settled = Promise.resolve(undefined);
     return {
       onConflictDoNothing: () => settled,
@@ -119,219 +73,111 @@ function valuesResult(record?: (rows: unknown) => void) {
 }
 
 const tx = {
-  execute: jest.fn().mockResolvedValue([{ id: 7 }]),
-  insert: jest.fn(() => ({ values: jest.fn(valuesResult()) })),
+  execute: jest.fn(),
+  insert: jest.fn(),
+  update: jest.fn(),
+  select: jest.fn(),
 };
 
-interface UserRow {
-  id: string;
-  isActive: boolean;
-  lastActiveOrgId: string | null;
-}
+const mockDb = {
+  execute: jest.fn().mockResolvedValue([]),
+  insert: jest.fn(),
+  transaction: jest.fn(async (body: (handle: unknown) => Promise<unknown>) => body(tx)),
+};
 
-function buildService(options: {
-  existingUser?: UserRow | null;
-  ladder?: { id: number }[];
-} = {}) {
-  const inserted: { table: string; rows: unknown[] }[] = [];
-  const updates: Record<string, unknown>[] = [];
+const mockCache = {
+  invalidate: jest.fn().mockResolvedValue(undefined),
+  invalidateForOrg: jest.fn().mockResolvedValue(undefined),
+};
 
-  const db = {
-    query: {
-      users: { findFirst: jest.fn().mockResolvedValue(options.existingUser ?? null) },
-    },
-    execute: jest.fn().mockResolvedValue([{ id: 7 }]),
-    // `placeOrganization` opens its own transaction to set `app.user_id`; the
-    // double runs the body against the same `tx` every other seam here uses.
-    transaction: jest.fn(async (body: (handle: unknown) => Promise<unknown>) => body(tx)),
-    insert: jest.fn().mockImplementation(() => ({
-      values: jest.fn().mockImplementation(
-        valuesResult((rows) => {
-          inserted.push({ table: "any", rows: Array.isArray(rows) ? rows : [rows] });
-        }),
-      ),
-    })),
-    update: jest.fn().mockReturnValue({
-      set: jest.fn().mockImplementation((patch: Record<string, unknown>) => {
-        updates.push(patch);
-        if (patch["isActive"] === true) events.push("activate");
-        return { where: jest.fn().mockResolvedValue(undefined) };
-      }),
-    }),
-    select: jest.fn().mockReturnValue({
-      from: jest.fn().mockReturnValue({
-        where: jest.fn().mockReturnValue({
-          limit: jest.fn().mockResolvedValue(options.ladder ?? []),
-        }),
-      }),
-    }),
-  };
-
-  tx.insert.mockImplementation(() => ({
-    values: jest.fn(
-      valuesResult((rows) => {
-        const list = Array.isArray(rows) ? rows : [rows];
-        inserted.push({ table: "tenant", rows: list });
-        if (list.some((row) => typeof row === "object" && row !== null && "emailVerified" in row))
-          events.push("owner");
-      }),
-    ),
-  }));
-
-  const service = new AuthService(
-    db as never,
-    {} as never,
-    {
-      del: jest.fn().mockResolvedValue(undefined),
-      // main's membership-status bust runs on activation.
-      invalidate: jest.fn().mockResolvedValue(undefined),
-      invalidateNamespace: jest.fn().mockResolvedValue(undefined),
-      invalidateForOrg: jest.fn().mockResolvedValue(undefined),
-      invalidateNamespaceForOrg: jest.fn().mockResolvedValue(undefined),
-    } as never,
-    { log: jest.fn() } as never,
-    {} as never,
-    {} as never,
-    {} as never,
-    new Proxy({}, { get: () => () => Promise.resolve(undefined) }) as never,
-    { resolvePreferredOrg: jest.fn().mockResolvedValue(null) } as never,
-  );
-
-  return { service, db, inserted, updates };
-}
-
-const SIGNUP = {
-  email: "Founder@Example.com",
-  firstName: "Ada",
-  lastName: "Byron",
-  companyName: "Analytical Engines",
-  country: "DE",
+const PROVISION_INPUT = {
+  orgId: "org-new-1",
+  userId: "user-founder",
+  region: "eu",
+  name: "Analytical Engines",
+  slug: "analytical-engines",
 };
 
 beforeEach(() => {
   events.length = 0;
   jest.clearAllMocks();
+
+  tx.execute.mockResolvedValue(undefined);
+  tx.insert.mockImplementation(() => ({ values: jest.fn(valuesResult()) }));
+  tx.update.mockImplementation(() => ({
+    set: jest.fn(() => ({ where: jest.fn().mockResolvedValue(undefined) })),
+  }));
+  tx.select.mockImplementation(() => ({
+    from: jest.fn(() => ({
+      where: jest.fn(() => ({
+        limit: jest.fn().mockResolvedValue([]),
+      })),
+    })),
+  }));
+
+  mockDb.execute.mockResolvedValue([]);
+  mockDb.insert.mockImplementation(() => ({ values: jest.fn(valuesResult()) }));
+
   (seedSystemRolesForOrg as jest.Mock).mockImplementation(async () => {
     events.push("roles");
     return { created: 41 };
   });
-  (seedDemoDataset as jest.Mock).mockImplementation(async () => {
-    events.push("demo");
-    return { seeded: true };
-  });
 });
 
-/**
- * A new signup writes the owner, the roles, the modules and the demo dataset in
- * one transaction (main's register). No sign-in path exists mid-provisioning
- * because none of it is visible until all of it commits; the owner does not need
- * creating closed and opening afterwards. The retry cases below cover owners the
- * earlier two-step flow left closed.
- */
-describe("a stranger signing up", () => {
-  it("is let in by the same commit that gives the workspace roles, modules and something in it", async () => {
-    const { service } = buildService();
+describe("provisioning a new workspace", () => {
+  it("seeds roles and modules inside the same transaction as the org", async () => {
+    await bootstrapCellOrganization(mockDb as never, mockCache as never, PROVISION_INPUT);
 
-    await service.register(SIGNUP);
-
-    expect(events).toEqual(["tx:begin", "owner", "roles", "modules", "demo", "tx:commit"]);
-  });
-
-  it("writes the owner through that transaction's handle, never on its own connection", async () => {
-    const { service, inserted } = buildService();
-
-    await service.register(SIGNUP);
-
-    const userWrites = inserted.filter((statement) =>
-      statement.rows.some(
-        (row) => typeof row === "object" && row !== null && "emailVerified" in row,
-      ),
-    );
-
-    expect(userWrites.map((statement) => statement.table)).toEqual(["tenant"]);
-  });
-
-  it("gets a workspace with a demo dataset in it", async () => {
-    const { service } = buildService();
-
-    await service.register(SIGNUP);
-
-    expect(seedDemoDataset).toHaveBeenCalledTimes(1);
-  });
-
-  it("places the workspace from the signup country", async () => {
-    const { service } = buildService();
-
-    await service.register(SIGNUP);
-
-    expect(regionForNewOrg).toHaveBeenCalledWith("DE");
-    expect(chooseRegionForNewOrg).toHaveBeenCalledWith(
-      expect.anything(),
-      { organizationId: expect.any(String), region: "eu" },
-    );
+    expect(events).toEqual(["tx:begin", "owner", "roles", "modules", "tx:commit"]);
   });
 });
 
 describe("when provisioning fails", () => {
-  it("rolls the owner back with it, rather than leaving one who lands nowhere", async () => {
+  it("rolls the workspace back with it, rather than leaving a half-provisioned org", async () => {
     (seedSystemRolesForOrg as jest.Mock).mockRejectedValue(new Error("neon went away"));
-    const { service, updates } = buildService();
 
-    await expect(service.register(SIGNUP)).rejects.toThrow("neon went away");
+    await expect(
+      bootstrapCellOrganization(mockDb as never, mockCache as never, PROVISION_INPUT),
+    ).rejects.toThrow("neon went away");
 
-    // The transaction that wrote the owner never commits. (A compensation check
-    // may open another afterwards; that one commits nothing either.)
     expect(events.slice(0, 2)).toEqual(["tx:begin", "owner"]);
     expect(events).not.toContain("tx:commit");
-    expect(updates.some((patch) => patch["isActive"] === true)).toBe(false);
   });
 });
 
-describe("retrying a claim", () => {
-  it("finishes the provisioning that did not finish, without a second organisation", async () => {
-    const { service, inserted } = buildService({
-      existingUser: { id: "user-1", isActive: false, lastActiveOrgId: "org-1" },
-      ladder: [],
-    });
+describe("re-provisioning the same workspace", () => {
+  function orgAlreadyExists() {
+    tx.select.mockImplementation(() => ({
+      from: jest.fn(() => ({
+        where: jest.fn(() => ({
+          limit: jest.fn().mockResolvedValue([{ id: PROVISION_INPUT.orgId }]),
+        })),
+      })),
+    }));
+  }
 
-    await service.register(SIGNUP);
+  it("returns without seeding a second time when the organization row is already there", async () => {
+    orgAlreadyExists();
 
-    // The account opens only after the provisioning transaction has committed.
-    expect(events).toEqual(["tx:begin", "roles", "modules", "demo", "tx:commit", "activate"]);
-    const organisationsWritten = inserted
-      .flatMap((statement) => statement.rows)
-      .filter(
-        (row) => typeof row === "object" && row !== null && "ownerMembershipId" in row,
-      );
-    expect(organisationsWritten).toHaveLength(0);
+    await bootstrapCellOrganization(mockDb as never, mockCache as never, PROVISION_INPUT);
+
+    expect(events).toEqual(["tx:begin", "tx:commit"]);
+    expect(seedSystemRolesForOrg).not.toHaveBeenCalled();
+    expect(tx.insert).not.toHaveBeenCalled();
   });
 
-  it("does nothing at all for somebody who already has a workspace", async () => {
-    const { service, updates } = buildService({
-      existingUser: { id: "user-1", isActive: true, lastActiveOrgId: "org-1" },
-    });
+  it("takes the per-organization advisory lock before it reads, so two claims cannot both pass", async () => {
+    orgAlreadyExists();
 
-    await service.register(SIGNUP);
+    await bootstrapCellOrganization(mockDb as never, mockCache as never, PROVISION_INPUT);
 
-    expect(events).toEqual([]);
-    expect(updates).toEqual([]);
-  });
+    expect(tx.execute).toHaveBeenCalled();
+    expect(tx.select).toHaveBeenCalled();
+    const lockedAt = tx.execute.mock.invocationCallOrder[0];
+    const readAt = tx.select.mock.invocationCallOrder[0];
+    expect(lockedAt).toBeLessThan(readAt as number);
 
-  /**
-   * The reason the resume is not simply "inactive means unfinished".
-   *
-   * `/auth/register` is public, so anyone knowing an address could otherwise
-   * reactivate an account an administrator had deliberately closed.
-   */
-  it("will not reactivate an account somebody deliberately deactivated", async () => {
-    const { service, updates } = buildService({
-      existingUser: { id: "user-1", isActive: false, lastActiveOrgId: "org-1" },
-      ladder: [{ id: 3 }],
-    });
-
-    await service.register(SIGNUP);
-
-    expect(events).toEqual([]);
-    expect(updates.some((patch) => patch["isActive"] === true)).toBe(false);
+    const locked = tx.execute.mock.calls[0]?.[0];
+    expect(JSON.stringify(locked)).toContain("pg_advisory_xact_lock");
   });
 });

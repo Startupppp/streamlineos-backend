@@ -42,6 +42,7 @@ import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 import { CacheService } from "../common/cache/cache.service";
 import { MediaCompressionService } from "../common/media/media-compression.service";
+import { ExternalEffectLedger } from "../common/outbox/external-effect-ledger";
 import { runInNewTenantTransaction } from "../common/tenant/run-in-tenant-transaction";
 import { createTenantAwareDb, type DbWithClient } from "../common/tenant/tenant-db";
 import * as schema from "../db/schema";
@@ -148,6 +149,7 @@ async function runDrill(email: string, orgId: string, url: string): Promise<Dril
         new CacheService(null),
         new SessionsService(db, null),
         storagePurge,
+        new ExternalEffectLedger(db),
       );
 
       const actor = subjectUserId;

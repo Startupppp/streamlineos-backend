@@ -50,6 +50,8 @@ import { PartyService } from "../../party/party.service";
 import { DealsService } from "../../deals/deals.service";
 import { ActivitiesService } from "../../activities/activities.service";
 import { ReportingService } from "../../reporting/reporting.service";
+import { ReportingAuthService } from "../../reporting/reporting-auth.service";
+import { ReportingDefinitionsService } from "../../reporting/reporting-definitions.service";
 import { makeMfaPolicyStub } from "../../../../test/helpers/mfa-policy-stub";
 import { CrmMcpSettingsService } from "./crm-mcp-settings.service";
 import { AccessVersionCache } from "../../access/access-version-cache";
@@ -323,6 +325,8 @@ describe("CRM MCP agent token, issuer to guard", () => {
          * query, so no further database wiring is needed for the denial path
          * exercised below.
          */
+        ReportingAuthService,
+        ReportingDefinitionsService,
         ReportingService,
         /**
          * Agent access is on unless a test says otherwise.

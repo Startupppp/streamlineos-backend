@@ -120,6 +120,27 @@ describe("ExternalEffectLedger", () => {
     expect(send).not.toHaveBeenCalled();
   });
 
+  it("deadline sequence: live lease blocks retry until abandoned work records SUCCEEDED, then suppresses the retry", async () => {
+    const harness = makeHarness();
+    const abandonedSend = jest.fn().mockResolvedValue(undefined);
+    const retrySend = jest.fn().mockResolvedValue(undefined);
+
+    await expect(harness.ledger.execute(effect, abandonedSend)).resolves.toBe("EXECUTED");
+    expect(harness.row.state).toBe("SUCCEEDED");
+
+    await expect(harness.ledger.execute(effect, retrySend)).resolves.toBe("ALREADY_SUCCEEDED");
+    expect(retrySend).not.toHaveBeenCalled();
+  });
+
+  it("deadline sequence: retry is blocked by a live lease while abandoned send is still in flight", async () => {
+    const harness = makeHarness({ state: "IN_FLIGHT" });
+    const retrySend = jest.fn();
+
+    await expect(harness.ledger.execute(effect, retrySend)).rejects.toBeInstanceOf(ExternalEffectLeaseBusyError);
+    expect(retrySend).not.toHaveBeenCalled();
+    expect(harness.row.state).toBe("IN_FLIGHT");
+  });
+
   it("reclaims an expired attempt and records the uncertain crash-window retry", async () => {
     const harness = makeHarness({ state: "IN_FLIGHT", expired: true });
     await expect(harness.ledger.execute(effect, jest.fn().mockResolvedValue(undefined))).resolves.toBe("EXECUTED");

@@ -44,3 +44,9 @@ export interface ServiceLevelObjective {
   readonly runbookFile: string;
   readonly runbookAnchor: string;
 }
+
+export const ALERT_RUNBOOK =
+  "architecture-refactor/final-refactor/evidence/40-observability/FAILURE-RUNBOOKS.md";
+
+export const FAILURE_RUNBOOK =
+  "architecture-refactor/final-refactor/evidence/40-observability/FAILURE-RUNBOOKS.md";

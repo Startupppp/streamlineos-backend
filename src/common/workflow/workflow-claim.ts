@@ -68,7 +68,7 @@ export async function claimDueRuns(db: Db, limit: number): Promise<RunRecord[]> 
         LIMIT ${remaining}
         FOR UPDATE SKIP LOCKED
       )
-      RETURNING workflow_run_id, organization_id, workflow_name, input, attempt, max_attempts, correlation_id
+      RETURNING workflow_run_id, organization_id, workflow_name, input, attempt, max_attempts, correlation_id, lease_expires_at
     `);
 
     for (const row of rows) {
@@ -82,6 +82,10 @@ export async function claimDueRuns(db: Db, limit: number): Promise<RunRecord[]> 
           typeof record.correlation_id === "string" ? record.correlation_id : null,
         attempt: Number(record.attempt ?? 0),
         maxAttempts: Number(record.max_attempts ?? 5),
+        leaseExpiresAt:
+          record.lease_expires_at instanceof Date
+            ? record.lease_expires_at
+            : new Date(String(record.lease_expires_at)),
       });
     }
   });

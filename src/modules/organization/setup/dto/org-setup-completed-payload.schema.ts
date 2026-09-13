@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { setupInviteeSchema } from "./org.schemas";
+import { MAX_SETUP_INVITEES, setupInviteeSchema } from "./org.schemas";
 
 /**
  * Closed at the boundary. A bare `z.object({})` strips an unexpected key rather than
@@ -20,6 +20,6 @@ export const orgSetupCompletedPayloadSchema = z
     skipReason: z.string().nullable(),
     sendWelcome: z.boolean(),
     industry: z.string().nullable().default(null),
-    invitees: z.array(setupInviteeSchema).default([]),
+    invitees: z.array(setupInviteeSchema).max(MAX_SETUP_INVITEES).default([]),
   })
   .strict();

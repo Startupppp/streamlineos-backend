@@ -2383,6 +2383,20 @@
       "breakpoints": true
     },
     {
+      "idx": 717,
+      "version": "7",
+      "when": 1803000010169,
+      "tag": "0464a_gl_kernel",
+      "breakpoints": true
+    },
+    {
+      "idx": 726,
+      "version": "7",
+      "when": 1803000010178,
+      "tag": "0271a_waitlist_admission",
+      "breakpoints": true
+    },
+    {
       "idx": 340,
       "version": "7",
       "when": 1787895425277,
@@ -5022,13 +5036,6 @@
       "breakpoints": true
     },
     {
-      "idx": 717,
-      "version": "7",
-      "when": 1803000010169,
-      "tag": "0464a_gl_kernel",
-      "breakpoints": true
-    },
-    {
       "idx": 718,
       "version": "7",
       "when": 1803000010170,
@@ -5082,13 +5089,6 @@
       "version": "7",
       "when": 1803000010177,
       "tag": "0269a_payment_provider_columns",
-      "breakpoints": true
-    },
-    {
-      "idx": 726,
-      "version": "7",
-      "when": 1803000010178,
-      "tag": "0271a_waitlist_admission",
       "breakpoints": true
     },
     {
@@ -6100,21 +6100,38 @@
       "breakpoints": true
     },
     {
-      "idx": 871,
-      "version": "7",
-      "when": 1803000010326,
-      "tag": "1110_subscription_purchase_intent_before_provider_order",
       "idx": 999,
       "version": "7",
-      "when": 1803000010318,
-      "tag": "1106_inv_3pl_connections_credentials",
+      "when": 1803000010326,
+      "tag": "1113_inv_3pl_connections_credentials",
       "breakpoints": true
     },
     {
       "idx": 1000,
       "version": "7",
-      "when": 1803000010319,
-      "tag": "1107_inv_channels_credentials",
+      "when": 1803000010327,
+      "tag": "1114_inv_channels_credentials",
+      "breakpoints": true
+    },
+    {
+      "idx": 1001,
+      "version": "7",
+      "when": 1803000010328,
+      "tag": "1112_operator_access_log_restore_append_only_privileges",
+      "breakpoints": true
+    },
+    {
+      "idx": 1002,
+      "version": "7",
+      "when": 1803000010329,
+      "tag": "1110_subscription_purchase_intent_before_provider_order",
+      "breakpoints": true
+    },
+    {
+      "idx": 1003,
+      "version": "7",
+      "when": 1803000010330,
+      "tag": "1115_build_events_grants_for_relocated_tables",
       "breakpoints": true
     }
   ]

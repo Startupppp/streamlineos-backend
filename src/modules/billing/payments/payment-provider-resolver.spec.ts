@@ -121,7 +121,11 @@ describe("PaymentProviderResolver", () => {
       { id: 11, orgId: "org-a", providerKey: "stripe", environment: "test", status: "active", isPrimary: false },
     ]);
     const findFirst = jest.fn();
-    const db = { query: { paymentProviders: { findMany, findFirst } } };
+    const db: Record<string, unknown> = {
+      transaction: (body: (handle: unknown) => Promise<unknown>) => body(db),
+      execute: () => Promise.resolve([]),
+      query: { paymentProviders: { findMany, findFirst } },
+    };
 
     const setup = {
       getDecryptedSecret: jest.fn().mockImplementation(async (_orgId: string, providerId: number) => {
@@ -147,7 +151,11 @@ describe("PaymentProviderResolver", () => {
     const findMany = jest.fn().mockResolvedValue([
       { id: 20, orgId: "org-b", providerKey: "razorpay", environment: "test", status: "active", isPrimary: true },
     ]);
-    const db = { query: { paymentProviders: { findMany } } };
+    const db: Record<string, unknown> = {
+      transaction: (body: (handle: unknown) => Promise<unknown>) => body(db),
+      execute: () => Promise.resolve([]),
+      query: { paymentProviders: { findMany } },
+    };
 
     const setup = {
       getDecryptedSecret: jest.fn().mockResolvedValue({}),
@@ -167,7 +175,11 @@ describe("PaymentProviderResolver", () => {
     const findMany = jest.fn().mockResolvedValue([
       { id: 30, orgId: "org-c", providerKey: "razorpay", environment: "test", status: "disabled", isPrimary: true },
     ]);
-    const db = { query: { paymentProviders: { findMany } } };
+    const db: Record<string, unknown> = {
+      transaction: (body: (handle: unknown) => Promise<unknown>) => body(db),
+      execute: () => Promise.resolve([]),
+      query: { paymentProviders: { findMany } },
+    };
 
     const setup = { getDecryptedSecret: jest.fn() };
 
@@ -188,7 +200,11 @@ describe("PaymentProviderResolver", () => {
       { id: 41, orgId: "org-d", providerKey: "razorpay", environment: "live", status: "active", isPrimary: false },
     ]);
     const findFirst = jest.fn();
-    const db = { query: { paymentProviders: { findMany, findFirst } } };
+    const db: Record<string, unknown> = {
+      transaction: (body: (handle: unknown) => Promise<unknown>) => body(db),
+      execute: () => Promise.resolve([]),
+      query: { paymentProviders: { findMany, findFirst } },
+    };
 
     const setup = {
       getDecryptedSecret: jest.fn().mockResolvedValue({ keyId: "rzp_test_k", secret: "s", webhookSecret: "wh" }),

@@ -1,19 +1,22 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import {
   inboxRecords,
+  invitations,
   outboxEvents,
   modulesCatalog,
   orgModules,
   organizationMembers,
   subscriptions,
   organizations,
+  users,
 } from "../../../db/schema";
 import { type Db } from "../../../db/drizzle.module";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { OnboardingSessionService } from "../../hr/onboarding/flow/onboarding-session.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
+import type { TenantTx } from "../../../common/tenant/with-tenant";
 import { OrgSetupResolverService } from "./org-setup-resolver.service";
 import { ORG_SETUP_COMPLETED_CONSUMER } from "./org-setup-completed-consumer.service";
 import {
@@ -21,6 +24,19 @@ import {
   READY_ENTITLEMENT_STATUSES,
   type OrgSetupStatus,
 } from "./org-setup-internals";
+import { orgSetupCompletedPayloadSchema } from "./dto/org-setup-completed-payload.schema";
+import type { SetupInvitee } from "./dto/org.schemas";
+import { recipientOutcomeSchema } from "./dto/org-setup-response.schemas";
+import type { z } from "zod";
+import { canonicalAdmissionEmail } from "../core/membership-admission.service";
+
+function inviteeStatusPriority(status: string): number {
+  if (status === "ACCEPTED") return 4;
+  if (status === "PENDING") return 3;
+  if (status === "DECLINED") return 2;
+  if (status === "REVOKED") return 1;
+  return 0;
+}
 
 @Injectable()
 export class OrgSetupQueryService {
@@ -72,18 +88,108 @@ export class OrgSetupQueryService {
     );
   }
 
-  /**
-   * What the wizard polls instead of sequencing provisioning from the browser.
-   *
-   * `ready` and `provisioning` answer two different questions and must stay independent. `ready`
-   * is the committed minimum invariant — the caller's own live membership (proved by resolving a
-   * target), a stamped organisation, a present ACTIVE owner, an entitlement in
-   * `READY_ENTITLEMENT_STATUSES` and an enabled module that still exists in the catalog — all
-   * written by bootstrap and the setup transaction, so it is true the instant that transaction
-   * commits. It reports those facts; it never grants any of them. `provisioning` tracks only the
-   * optional enrichment the outbox consumer performs. The wizard used to wait on `provisioning`,
-   * so an offline relay or one failed invitation trapped an owner whose workspace was usable.
-   */
+  private async resolveInviteeOutcomes(
+    tx: TenantTx,
+    orgId: string,
+    actorUserId: string,
+    inviteesFromPayload: readonly SetupInvitee[],
+  ): Promise<z.infer<typeof recipientOutcomeSchema>[]> {
+    const [actorUserRow] = await tx
+      .select({ email: users.email })
+      .from(users)
+      .where(eq(users.id, actorUserId))
+      .limit(1);
+
+    const actorEmail = actorUserRow
+      ? canonicalAdmissionEmail(actorUserRow.email)
+      : null;
+
+    const nonSkippedEmails: string[] = [];
+    const seenForDedup = new Set<string>();
+
+    for (const invitee of inviteesFromPayload) {
+      const email = canonicalAdmissionEmail(invitee.email);
+      if (seenForDedup.has(email)) continue;
+      seenForDedup.add(email);
+      if (email !== actorEmail) nonSkippedEmails.push(email);
+    }
+
+    const invitationStatusByEmail = new Map<string, string>();
+    if (nonSkippedEmails.length > 0) {
+      const invitationRows = await tx
+        .select({ email: invitations.email, status: invitations.status })
+        .from(invitations)
+        .where(
+          and(
+            eq(invitations.orgId, orgId),
+            inArray(invitations.email, nonSkippedEmails),
+          ),
+        );
+
+      for (const row of invitationRows) {
+        const existing = invitationStatusByEmail.get(row.email);
+        if (
+          !existing ||
+          inviteeStatusPriority(row.status) > inviteeStatusPriority(existing)
+        ) {
+          invitationStatusByEmail.set(row.email, row.status);
+        }
+      }
+    }
+
+    const failedEmails = nonSkippedEmails.filter((email) => {
+      const status = invitationStatusByEmail.get(email);
+      return status !== "PENDING" && status !== "ACCEPTED";
+    });
+
+    const activeMemberEmailSet = new Set<string>();
+    if (failedEmails.length > 0) {
+      const memberRows = await tx
+        .select({ email: users.email })
+        .from(organizationMembers)
+        .innerJoin(users, eq(users.id, organizationMembers.userId))
+        .where(
+          and(
+            eq(organizationMembers.orgId, orgId),
+            eq(organizationMembers.status, "ACTIVE"),
+            inArray(users.email, failedEmails),
+          ),
+        );
+      for (const row of memberRows) {
+        activeMemberEmailSet.add(canonicalAdmissionEmail(row.email));
+      }
+    }
+
+    const outcomes: z.infer<typeof recipientOutcomeSchema>[] = [];
+    const processedEmails = new Set<string>();
+
+    for (const invitee of inviteesFromPayload) {
+      const email = canonicalAdmissionEmail(invitee.email);
+      if (processedEmails.has(email)) continue;
+      processedEmails.add(email);
+
+      if (email === actorEmail) {
+        outcomes.push({ email, outcome: "skipped", reason: null });
+        continue;
+      }
+
+      const status = invitationStatusByEmail.get(email);
+      if (status === "PENDING") {
+        outcomes.push({ email, outcome: "queued", reason: null });
+      } else if (status === "ACCEPTED") {
+        outcomes.push({ email, outcome: "successful", reason: null });
+      } else if (status === "DECLINED" || status === "REVOKED") {
+        outcomes.push({ email, outcome: "failed", reason: "invitation_revoked" });
+      } else if (activeMemberEmailSet.has(email)) {
+        outcomes.push({ email, outcome: "failed", reason: "already_member" });
+      } else {
+        outcomes.push({ email, outcome: "failed", reason: "unknown" });
+      }
+    }
+
+    return outcomes;
+  }
+
   async getSetupStatus(u: CurrentUserContext): Promise<OrgSetupStatus> {
     const target =
       (await this.resolver.resolveCurrentSetupTarget(u)) ??
@@ -100,6 +206,7 @@ export class OrgSetupQueryService {
         provisioning: "not-started",
         errorCode: null,
         correlationId: null,
+        recipientOutcomes: null,
       };
 
     const { orgId } = target;
@@ -166,6 +273,7 @@ export class OrgSetupQueryService {
             provisioning: "not-started",
             errorCode: null,
             correlationId: null,
+            recipientOutcomes: null,
           };
 
         const [inboxRows, outboxRows] = await Promise.all([
@@ -189,6 +297,7 @@ export class OrgSetupQueryService {
             .select({
               deliveryState: outboxEvents.deliveryState,
               correlationId: outboxEvents.correlationId,
+              payload: outboxEvents.payload,
             })
             .from(outboxEvents)
             .where(
@@ -212,6 +321,23 @@ export class OrgSetupQueryService {
         const correlationId =
           errorCode !== null ? (outboxRows[0]?.correlationId ?? null) : null;
 
+        const payloadParseResult = orgSetupCompletedPayloadSchema.safeParse(
+          outboxRows[0]?.payload ?? null,
+        );
+
+        const recipientOutcomes =
+          errorCode === "SETUP_BACKGROUND_PARTIAL" &&
+          u.isOrgOwner &&
+          payloadParseResult.success &&
+          payloadParseResult.data.invitees.length > 0
+            ? await this.resolveInviteeOutcomes(
+                tx,
+                orgId,
+                payloadParseResult.data.userId,
+                payloadParseResult.data.invitees,
+              )
+            : null;
+
         return {
           orgId,
           onboardingCompletedAt,
@@ -219,6 +345,7 @@ export class OrgSetupQueryService {
           provisioning,
           errorCode,
           correlationId,
+          recipientOutcomes,
         };
       },
       { orgId },

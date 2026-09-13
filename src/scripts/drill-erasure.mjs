@@ -29,11 +29,20 @@ if (!selfTest && !emailArg) {
 }
 
 function loadVar(name) {
-  if (process.env[name]) return process.env[name];
-  const p = path.resolve(process.cwd(), ".env");
-  if (!fs.existsSync(p)) return null;
-  const m = fs.readFileSync(p, "utf8").match(new RegExp(`^${name}\\s*=\\s*(.+)$`, "m"));
-  return m ? m[1].trim().replace(/^['"]|['"]$/g, "") : null;
+  return process.env[name] ?? null;
+}
+
+function isDisposableTarget(url) {
+  try {
+    const u = new URL(url.replace(/^postgresql:\/\//, "http://").replace(/^postgres:\/\//, "http://"));
+    const host = u.hostname;
+    const dbName = u.pathname.replace(/^\//, "");
+    if (host === "127.0.0.1" || host === "localhost") return true;
+    if (dbName.includes("scratch") || dbName.includes("test")) return true;
+    return false;
+  } catch {
+    return false;
+  }
 }
 
 function runSelfTest() {
@@ -130,7 +139,16 @@ const DATABASE_URL = loadVar("DATABASE_URL");
 const APP_DATABASE_URL = loadVar("APP_DATABASE_URL");
 
 if (!DATABASE_URL) {
-  process.stderr.write("DRILL BLOCKED — DATABASE_URL not set (owner-role connection required for erasure)\n");
+  process.stderr.write("DRILL BLOCKED — DATABASE_URL not set in environment (set it explicitly; never relies on .env fallback)\n");
+  process.exit(1);
+}
+
+if (!isDisposableTarget(DATABASE_URL)) {
+  process.stderr.write(
+    "DRILL BLOCKED — DATABASE_URL does not point to a disposable target.\n" +
+    "  Allowed: host=127.0.0.1, host=localhost, or database name contains 'scratch' or 'test'.\n" +
+    "  Set DATABASE_URL to a named scratch/test database before running erasure drills.\n",
+  );
   process.exit(1);
 }
 
@@ -209,32 +227,30 @@ function deletionOrder(tables, edges) {
 }
 
 async function main() {
-  out(`\n=== ERASURE DRILL for ${email} (${execute ? "EXECUTE — will commit" : "DRY-RUN — will roll back"}) ===\n`);
+  out(`\n=== ERASURE DRILL (${execute ? "EXECUTE — will commit" : "DRY-RUN — will roll back"}) ===\n`);
 
   const [user] = await ownerSql`
-    SELECT id, email, name FROM users WHERE lower(email) = ${email} LIMIT 1`;
+    SELECT id FROM users WHERE lower(email) = ${email} LIMIT 1`;
 
   if (!user) {
-    process.stderr.write(`DRILL BLOCKED — subject not found: ${email}\n`);
+    process.stderr.write(`DRILL BLOCKED — subject not found\n`);
     await ownerSql.end();
     process.exit(1);
   }
 
   const holds = await ownerSql`
-    SELECT id, org_id, reason FROM hr_legal_holds
+    SELECT id, org_id FROM hr_legal_holds
     WHERE subject_user_id = ${user.id} AND status = 'active' AND deleted_at IS NULL`;
 
   if (holds.length > 0) {
     process.stderr.write(
-      `DRILL BLOCKED — subject has ${holds.length} active legal hold(s):\n` +
-      holds.map((h) => `  hold id=${h.id} org=${h.org_id} reason="${h.reason}"`).join("\n") +
-      "\n  Release all holds before running erasure. Do NOT use --skip-legal-hold-check.\n",
+      `DRILL BLOCKED — subject has ${holds.length} active legal hold(s) — release all holds before running erasure.\n`,
     );
     await ownerSql.end();
     process.exit(1);
   }
 
-  out(`Subject found: id=${user.id} email=${user.email}`);
+  out(`Subject found (id present)`);
   out("No active legal holds — erasure may proceed.\n");
 
   out("Step 1 — enumerating FK dependencies from pg_catalog");
@@ -269,15 +285,18 @@ async function main() {
     for (const { table_name, column_name, del_rule } of userRefs) {
       if (del_rule === "c") continue;
       const [schema, table] = table_name.split(".");
+      await tx.unsafe("SAVEPOINT sp_del");
       try {
         const res = await tx.unsafe(
           `DELETE FROM "${schema}"."${table}" WHERE "${column_name}" = $1`,
           [userId],
         );
         if (res.count > 0) tally.set(table_name, res.count);
+        await tx.unsafe("RELEASE SAVEPOINT sp_del");
       } catch (err) {
-        if (err.code !== "42P01" && err.code !== "42703")
-          out(`  WARNING: delete from ${table_name} failed (${err.code}): ${err.message}`);
+        await tx.unsafe("ROLLBACK TO SAVEPOINT sp_del");
+        if (err.code === "42P01" || err.code === "42703") continue;
+        throw err;
       }
     }
 
@@ -291,6 +310,7 @@ async function main() {
     let residual = 0;
     for (const { table_name, column_name } of userRefs) {
       const [schema, table] = table_name.split(".");
+      await tx.unsafe("SAVEPOINT sp_chk");
       try {
         const [cnt] = await tx.unsafe(
           `SELECT count(*)::int AS n FROM "${schema}"."${table}" WHERE "${column_name}" = $1`,
@@ -303,9 +323,11 @@ async function main() {
         } else {
           out(`  PASS  ${table_name}: 0 rows remaining`);
         }
+        await tx.unsafe("RELEASE SAVEPOINT sp_chk");
       } catch (err) {
-        if (err.code !== "42P01" && err.code !== "42703")
-          out(`  SKIP  ${table_name}: table not queryable (${err.code})`);
+        await tx.unsafe("ROLLBACK TO SAVEPOINT sp_chk");
+        if (err.code === "42P01" || err.code === "42703") continue;
+        throw err;
       }
     }
 

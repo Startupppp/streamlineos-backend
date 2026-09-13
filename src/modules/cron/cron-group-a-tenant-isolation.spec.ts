@@ -15,6 +15,7 @@ import { CronCrmTasksService } from "./cron-crm-tasks.service";
 import { CronHolidayService } from "./cron-holiday.service";
 import { CronHrEnginesService } from "./cron-hr-engines.service";
 import { CronHrService } from "./cron-hr.service";
+import { CronHrDocumentsService } from "./cron-hr-documents.service";
 import { CronIdempotencyService } from "./cron-idempotency.service";
 import { CronInvitationExpiryService } from "./cron-invitation-expiry.service";
 import { HrAutomationEngineService } from "../hr/automations/hr-automation-engine.service";
@@ -379,6 +380,7 @@ describe("CronHrService — cross-tenant isolation", () => {
         { provide: BillingService, useValue: { redriveStuckProviderEvents: jest.fn().mockResolvedValue({ attempted: 0, recovered: 0, failed: 0 }) } },
         { provide: AutomationService, useValue: { runAutomationsForEvent: jest.fn() } },
         { provide: HrAutomationEngineService, useValue: { emit: jest.fn() } },
+        { provide: CronHrDocumentsService, useValue: { processDocumentExpiry: jest.fn().mockResolvedValue({ fired: 0 }) } },
         { provide: NotificationDispatchService, useValue: { emit: jest.fn() } },
         { provide: RetentionService, useValue: { sweepStrandedDeleteRequests: jest.fn().mockResolvedValue({ processed: 0, skipped: 0 }) } },
         // The onboarding sweep writes through MembershipMutations, whose drain

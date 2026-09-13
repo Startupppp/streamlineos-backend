@@ -1,6 +1,7 @@
 import { resolve } from "node:path";
 import * as dotenv from "dotenv";
 import {
+  checkCompatibility,
   nextRolloutAction,
   rollbackPlan,
   shouldRollBack,
@@ -44,17 +45,29 @@ function resolveUrls(env: NodeJS.ProcessEnv): {
   return { canaryApp: appBase, cell2App };
 }
 
-function makePlan(): RolloutPlan {
+function makePlan(env: NodeJS.ProcessEnv): RolloutPlan {
+  const schemaVersion = Number(env.CELL_SCHEMA_VERSION ?? "1");
+  const eventVersion = Number(env.CELL_EVENT_VERSION ?? "1");
   return {
     release: {
-      releaseId: "rollout-demo-v1",
-      schemaVersion: 1,
-      eventVersion: 1,
-      minSchemaVersion: 1,
-      minEventVersion: 1,
+      releaseId: env.RELEASE_ID ?? "rollout-demo-v1",
+      schemaVersion,
+      eventVersion,
+      minSchemaVersion: Number(env.MIN_SCHEMA_VERSION ?? String(schemaVersion)),
+      minEventVersion: Number(env.MIN_EVENT_VERSION ?? String(eventVersion)),
     },
     canaryCellId: CANARY_CELL,
     orderedCells: [CANARY_CELL, SECOND_CELL],
+  };
+}
+
+function resolveOldestVersions(env: NodeJS.ProcessEnv): {
+  schemaVersion: number;
+  eventVersion: number;
+} {
+  return {
+    schemaVersion: Number(env.OLDEST_SCHEMA_VERSION ?? env.CELL_SCHEMA_VERSION ?? "1"),
+    eventVersion: Number(env.OLDEST_EVENT_VERSION ?? env.CELL_EVENT_VERSION ?? "1"),
   };
 }
 
@@ -102,7 +115,7 @@ async function selfTest(canaryApp: string): Promise<void> {
       ` avail=${regressed.availabilityPercent.toFixed(2)}%`,
   );
 
-  const plan = makePlan();
+  const plan = makePlan(process.env);
   const deployed = [CANARY_CELL];
 
   const healthySloPassed = !shouldRollBack(
@@ -143,7 +156,17 @@ async function selfTest(canaryApp: string): Promise<void> {
 }
 
 async function regressedCanaryRun(canaryApp: string): Promise<void> {
-  const plan = makePlan();
+  const plan = makePlan(process.env);
+  const oldest = resolveOldestVersions(process.env);
+  const compat = checkCompatibility(plan.release, oldest.schemaVersion, oldest.eventVersion);
+  if (!compat.compatible) {
+    console.error(`Compatibility check FAIL: ${compat.reason}`);
+    process.exitCode = 1;
+    return;
+  }
+  console.log(
+    `Compatibility OK — schema ${oldest.schemaVersion}/${plan.release.minSchemaVersion}, event ${oldest.eventVersion}/${plan.release.minEventVersion}`,
+  );
   let deployed: string[] = [];
 
   console.log("Step 1: determine first action");
@@ -228,7 +251,17 @@ async function regressedCanaryRun(canaryApp: string): Promise<void> {
 }
 
 async function fullRollout(canaryApp: string, cell2App: string): Promise<void> {
-  const plan = makePlan();
+  const plan = makePlan(process.env);
+  const oldest = resolveOldestVersions(process.env);
+  const compat = checkCompatibility(plan.release, oldest.schemaVersion, oldest.eventVersion);
+  if (!compat.compatible) {
+    console.error(`Compatibility check FAIL: ${compat.reason}`);
+    process.exitCode = 1;
+    return;
+  }
+  console.log(
+    `Compatibility OK — schema ${oldest.schemaVersion}/${plan.release.minSchemaVersion}, event ${oldest.eventVersion}/${plan.release.minEventVersion}`,
+  );
   const deployed: string[] = [];
   let baseline: SloSnapshot | null = null;
   let lastSloPassed = true;

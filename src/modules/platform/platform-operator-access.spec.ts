@@ -496,3 +496,163 @@ describe("PlatformOperatorAccessService.recordAccess", () => {
     );
   });
 });
+
+describe("PlatformOperatorAccessService — org-admin notification", () => {
+  async function buildServiceWithNotification(db: unknown, notification: { emit: jest.Mock }) {
+    const module = await Test.createTestingModule({
+      providers: [
+        PlatformOperatorAccessService,
+        { provide: DRIZZLE, useValue: db },
+        { provide: NotificationDispatchService, useValue: notification },
+      ],
+    }).compile();
+    return module.get(PlatformOperatorAccessService);
+  }
+
+  it("(bite proof) notification targetUserIds includes org owner/admin alongside the operator", async () => {
+    const notification = { emit: jest.fn().mockResolvedValue(undefined) };
+    const grantInsert = makeInsertChain([{ grantId: "grant-org-notify" }]);
+    const auditInsert = makeInsertLogChain();
+    const membershipSelect = makeSelectChain([{ userId: "op-alice" }]);
+    const orgAdminSelect = makeSelectChain([{ userId: "org-owner-1" }, { userId: "org-admin-2" }]);
+    const tx = {
+      select: jest.fn()
+        .mockReturnValueOnce(membershipSelect)
+        .mockReturnValueOnce(orgAdminSelect),
+      insert: jest.fn()
+        .mockReturnValueOnce(grantInsert)
+        .mockReturnValueOnce(auditInsert),
+    };
+    const db = makeTransactionDb({}, tx);
+    const svc = await buildServiceWithNotification(db, notification);
+
+    await svc.createGrantAndLog(
+      {
+        operatorUserId: "op-alice",
+        orgId: "org-1",
+        incidentRef: "INC-NOTIFY",
+        reason: "Investigate customer incident",
+        grantedBy: "op-bob",
+        scope: "read_customer_data",
+        expiresAt: new Date(Date.now() + 60_000),
+      },
+      "1.2.3.4",
+    );
+
+    const emitCall = notification.emit.mock.calls[0]?.[0] as Record<string, unknown>;
+    const targets = emitCall.targetUserIds as string[];
+    expect(targets).toContain("op-alice");
+    expect(targets).toContain("org-owner-1");
+    expect(targets).toContain("org-admin-2");
+  });
+
+  it("does not duplicate operatorUserId when they are also an org admin", async () => {
+    const notification = { emit: jest.fn().mockResolvedValue(undefined) };
+    const grantInsert = makeInsertChain([{ grantId: "grant-dedup" }]);
+    const auditInsert = makeInsertLogChain();
+    const membershipSelect = makeSelectChain([{ userId: "op-alice" }]);
+    const orgAdminSelect = makeSelectChain([{ userId: "op-alice" }]);
+    const tx = {
+      select: jest.fn()
+        .mockReturnValueOnce(membershipSelect)
+        .mockReturnValueOnce(orgAdminSelect),
+      insert: jest.fn()
+        .mockReturnValueOnce(grantInsert)
+        .mockReturnValueOnce(auditInsert),
+    };
+    const db = makeTransactionDb({}, tx);
+    const svc = await buildServiceWithNotification(db, notification);
+
+    await svc.createGrantAndLog(
+      {
+        operatorUserId: "op-alice",
+        orgId: "org-1",
+        incidentRef: "INC-DEDUP",
+        reason: "Investigate customer incident",
+        grantedBy: "op-bob",
+        scope: "read_customer_data",
+        expiresAt: new Date(Date.now() + 60_000),
+      },
+      undefined,
+    );
+
+    const emitCall = notification.emit.mock.calls[0]?.[0] as Record<string, unknown>;
+    const targets = emitCall.targetUserIds as string[];
+    const aliceCount = targets.filter((id) => id === "op-alice").length;
+    expect(aliceCount).toBe(1);
+  });
+
+  it("(fail-closed) audit-write failure inside the transaction prevents grant creation — notification is never reached", async () => {
+    const notification = { emit: jest.fn() };
+    const auditFailure = new Error("audit write failed");
+    const grantInsert = makeInsertChain([{ grantId: "grant-fail-closed" }]);
+    const auditInsert = { values: jest.fn().mockRejectedValue(auditFailure) };
+    const membershipSelect = makeSelectChain([{ userId: "op-alice" }]);
+    const tx = {
+      select: jest.fn().mockReturnValue(membershipSelect),
+      insert: jest.fn()
+        .mockReturnValueOnce(grantInsert)
+        .mockReturnValueOnce(auditInsert),
+    };
+    const db = makeTransactionDb({}, tx);
+    const svc = await buildServiceWithNotification(db, notification);
+
+    await expect(
+      svc.createGrantAndLog(
+        {
+          operatorUserId: "op-alice",
+          orgId: "org-1",
+          incidentRef: "INC-FAIL",
+          reason: "Investigate customer incident",
+          grantedBy: "op-bob",
+          scope: "read_customer_data",
+          expiresAt: new Date(Date.now() + 60_000),
+        },
+        undefined,
+      ),
+    ).rejects.toBe(auditFailure);
+
+    expect(notification.emit).not.toHaveBeenCalled();
+  });
+
+  it("revokeGrant sends a notification to org owner/admin and the revoked operator", async () => {
+    const notification = { emit: jest.fn().mockResolvedValue(undefined) };
+    const grantExistSelect = makeSelectChain([{ grantId: "grant-rev" }]);
+    const grantDetailSelect = makeSelectChain([{ orgId: "org-1", operatorUserId: "op-alice" }]);
+    const orgAdminSelect = makeSelectChain([{ userId: "org-owner-1" }]);
+    const updateChain: ChainMock = {};
+    updateChain.set = jest.fn().mockReturnValue(updateChain);
+    updateChain.where = jest.fn().mockReturnValue(updateChain);
+    updateChain.returning = jest.fn().mockResolvedValue([{ grantId: "grant-rev", operatorUserId: "op-alice" }]);
+    const tx = {
+      update: jest.fn().mockReturnValue(updateChain),
+      insert: jest.fn().mockReturnValue(makeInsertLogChain()),
+    };
+    const db = makeTransactionDb({
+      select: jest.fn()
+        .mockReturnValueOnce(grantExistSelect)
+        .mockReturnValueOnce(grantDetailSelect)
+        .mockReturnValueOnce(orgAdminSelect),
+    }, tx);
+
+    const module = await Test.createTestingModule({
+      providers: [
+        PlatformOperatorAccessService,
+        { provide: DRIZZLE, useValue: db },
+        { provide: NotificationDispatchService, useValue: notification },
+      ],
+    }).compile();
+    const svc = module.get(PlatformOperatorAccessService);
+
+    await svc.revokeGrant("grant-rev", "access no longer needed", "op-bob");
+
+    expect(notification.emit).toHaveBeenCalledWith(expect.objectContaining({
+      eventKey: "security.operator_access.revoked",
+      orgId: "org-1",
+    }));
+    const emitCall = notification.emit.mock.calls[0]?.[0] as Record<string, unknown>;
+    const targets = emitCall.targetUserIds as string[];
+    expect(targets).toContain("op-alice");
+    expect(targets).toContain("org-owner-1");
+  });
+});

@@ -285,7 +285,7 @@ describe("OwnershipTransferResponseService — OWNERSHIP_TRANSFER lifecycle gate
     it("demotes the outgoing owner, promotes the incoming one and bumps the version on the same handle", async () => {
       setupCommonDbMocks();
       jest.mocked(runInTenantTransaction).mockImplementation(
-        async (_db, fn) => fn(stubService<TenantTx>(makeTenantTx("ACTIVE", false))),
+        async (_db, fn) => fn(makeTenantTx("ACTIVE", false)),
       );
       const txMock = setupOrgTransferTx();
 
@@ -301,7 +301,7 @@ describe("OwnershipTransferResponseService — OWNERSHIP_TRANSFER lifecycle gate
     it("writes the owner_membership_id repoint and the transfer's ACCEPTED stamp on that same handle", async () => {
       setupCommonDbMocks();
       jest.mocked(runInTenantTransaction).mockImplementation(
-        async (_db, fn) => fn(stubService<TenantTx>(makeTenantTx("ACTIVE", false))),
+        async (_db, fn) => fn(makeTenantTx("ACTIVE", false)),
       );
       const txMock = setupOrgTransferTx();
 

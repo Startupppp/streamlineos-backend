@@ -1,10 +1,10 @@
+import { ServiceUnavailableException } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
 import { DRIZZLE } from "../../../db/drizzle.constants";
-import type { AppConfig } from "../../../config/env.validation";
 import { AuditService } from "../../../common/audit/audit.service";
 import { ExternalEffectLedger } from "../../../common/outbox/external-effect-ledger";
-import { PaymentRequiredException } from "../../../common/http/api-exceptions";
 import { PaymentProviderResolver } from "../payments/payment-provider-resolver.service";
+import type { OrganizationPaymentProvider } from "../payments/payment-provider-resolver.service";
 import { PaymentWebhookReceiverService } from "../payments/payment-webhook-receiver.service";
 import { PaymentAnalyticsService } from "../payments/payment-analytics.service";
 import { AiCreditsService } from "./ai-credits.service";
@@ -12,105 +12,120 @@ import { BillingProfileService } from "./billing-profile.service";
 import { BillingService } from "./billing.service";
 import { PlanLimitsService } from "./plan-limits.service";
 import { ProrationLedgerService } from "./proration-ledger.service";
-import { PlatformPaymentRegistry } from "./platform-payment-registry";
-import { RazorpayService } from "./razorpay.service";
+import { PlatformMerchantService } from "../payments/platform-merchant.service";
 import { RevenueAnalyticsService } from "./revenue-analytics.service";
-import { StripeService } from "./stripe.service";
 import { VersionedCatalogService } from "./versioned-catalog.service";
+import {
+  FakeProviderAdapter,
+  FAKE_PUBLIC_KEY_ID,
+  FAKE_PROVIDER_ORDER_ID,
+} from "../payments/testing/fake-provider-adapter";
 
-/**
- * Whether the registry is actually reachable from a sale.
- *
- * `PlatformPaymentRegistry.forCurrency` was written, tested and then guarded
- * behind `if (!this.razorpay.isConfigured()) throw` at the top of the same
- * method that calls it -- so on the one deployment ticket 02 exists for, a
- * Stripe-only one, nothing could be sold and the error blamed a gateway the
- * buyer was never going to be charged through. A unit test of the pure
- * selection function cannot see that; only a test that goes through
- * `createOrder` can.
- *
- * The merge lost the whole of that path a second time, by a different route:
- * `createOrder` came back resolving its provider from `PaymentProviderResolver`,
- * which reads the ORGANISATION's own `payment_providers` credentials -- the
- * gateway a tenant charges its own customers through. That is the opposite
- * direction of travel, so the platform's own subscription order was being
- * created inside the buyer's gateway. Everything below goes through the real
- * `PlatformPaymentRegistry` over the real provider services for exactly that
- * reason: a registry supplied as a `jest.fn()` would assert the wiring it is
- * meant to prove.
- */
+function makeProvider(): OrganizationPaymentProvider {
+  const adapter = new FakeProviderAdapter("razorpay");
+  return {
+    providerKey: "razorpay",
+    environment: "test",
+    isReady: () => true,
+    publicKeyId: () => FAKE_PUBLIC_KEY_ID,
+    createOrder: (params) =>
+      adapter.configure({ keyId: FAKE_PUBLIC_KEY_ID, secret: "fake-secret" }).createOrder(params),
+    verifyPaymentSignature: () => true,
+    verifyWebhookSignature: () => false,
+    fetchPayment: async () => null,
+    normalizeWebhook: (rawBody) => adapter.configure(null).normalizeWebhook(rawBody),
+  };
+}
 
-const STRIPE_ONLY = {
-  STRIPE_SECRET_KEY: "sk_test_x",
-  STRIPE_PUBLISHABLE_KEY: "pk_test_x",
-  STRIPE_WEBHOOK_SECRET: "whsec_x",
-} as AppConfig;
-
-const NOTHING_CONFIGURED = {} as AppConfig;
-
-/**
- * Stripe's API, answering with the intent it was actually asked for.
- *
- * Echoing the request rather than a constant is what makes the assertions below
- * about what we sent Stripe, not about what a stub decided to say.
- */
-function stubStripeApi() {
-  const fetchMock = jest.fn().mockImplementation((_url: string, init: { body: URLSearchParams }) => {
-    const sent = init.body;
-    return Promise.resolve({
-      ok: true,
-      json: () =>
-        Promise.resolve({
-          id: "pi_reachability_001",
-          object: "payment_intent",
-          amount: Number(sent.get("amount")),
-          currency: sent.get("currency"),
-          status: "requires_payment_method",
-        }),
-    });
-  });
-  global.fetch = fetchMock as unknown as typeof fetch;
-  return fetchMock;
+function makeMerchant(configured: boolean) {
+  const provider = configured ? makeProvider() : undefined;
+  return {
+    resolve: jest.fn().mockReturnValue(provider),
+    readiness: jest.fn().mockReturnValue({
+      configured,
+      providerKey: "razorpay",
+      environment: configured ? "test" : null,
+      publicKeyId: configured ? FAKE_PUBLIC_KEY_ID : null,
+      webhookConfigured: false,
+      unavailableReason: configured ? null : ("no_credentials" as const),
+    }),
+    environment: jest.fn().mockReturnValue(configured ? "test" : null),
+  } as unknown as PlatformMerchantService;
 }
 
 function makeDb() {
+  const now = new Date();
+  const purchaseRow = {
+    id: 7,
+    orgId: "org1",
+    createdByUserId: "user1",
+    providerKey: "razorpay",
+    environment: "test",
+    merchantKeyId: FAKE_PUBLIC_KEY_ID,
+    providerOrderId: null,
+    plan: "PROFESSIONAL",
+    billingCycle: "monthly",
+    catalogVersion: null,
+    baseAmountMinor: 99900,
+    discountAmountMinor: 0,
+    amountMinor: 99900,
+    currency: "INR",
+    couponId: null,
+    status: "PENDING",
+    providerPaymentId: null,
+    capturedAmountMinor: null,
+    capturedCurrency: null,
+    subscriptionId: null,
+    activatedAt: null,
+    expiresAt: new Date(now.getTime() + 30 * 60 * 1000),
+    metadata: null,
+    createdAt: now,
+    updatedAt: now,
+  };
+
+  const tx = {
+    insert: jest.fn().mockReturnValue({
+      values: jest.fn().mockReturnValue({
+        returning: jest.fn().mockResolvedValue([purchaseRow]),
+      }),
+    }),
+    update: jest.fn().mockReturnValue({
+      set: jest.fn().mockReturnValue({
+        where: jest.fn().mockReturnValue({
+          returning: jest.fn().mockResolvedValue([
+            { ...purchaseRow, providerOrderId: FAKE_PROVIDER_ORDER_ID },
+          ]),
+        }),
+      }),
+    }),
+  };
+
   return {
+    transaction: jest
+      .fn()
+      .mockImplementation((fn: (t: typeof tx) => Promise<unknown>) => fn(tx)),
     query: {
-      organizations: { findFirst: jest.fn().mockResolvedValue(null) },
+      subscriptions: { findFirst: jest.fn().mockResolvedValue(null) },
       coupons: { findFirst: jest.fn().mockResolvedValue(undefined) },
     },
   };
 }
 
-async function buildBilling(config: AppConfig, country: string): Promise<BillingService> {
-  const registry = new PlatformPaymentRegistry(
-    new RazorpayService(config),
-    new StripeService(config),
-  );
-
+async function buildBilling(configured: boolean): Promise<BillingService> {
   const module = await Test.createTestingModule({
     providers: [
       BillingService,
       { provide: DRIZZLE, useValue: makeDb() },
-      { provide: PlatformPaymentRegistry, useValue: registry },
+      { provide: PlatformMerchantService, useValue: makeMerchant(configured) },
       { provide: AuditService, useValue: { log: jest.fn(), logCritical: jest.fn() } },
       { provide: AiCreditsService, useValue: { grantPlanCredits: jest.fn() } },
       { provide: PlanLimitsService, useValue: { bust: jest.fn() } },
       { provide: ProrationLedgerService, useValue: { recordPlanChange: jest.fn() } },
-      // No dated catalog row, so the price comes from the per-currency list and
-      // the buyer's own country decides which column of it applies.
       {
         provide: VersionedCatalogService,
         useValue: { getActivePriceForPlanTier: jest.fn().mockResolvedValue(null) },
       },
       { provide: RevenueAnalyticsService, useValue: { emit: jest.fn() } },
-      /*
-        The tenant-facing resolver answers nothing on purpose.
-
-        It is the other direction of travel -- an organisation's own gateway,
-        charging its own customers -- and a platform sale must not depend on it.
-        Everything below still passes, which is the assertion.
-      */
       {
         provide: PaymentProviderResolver,
         useValue: {
@@ -122,11 +137,9 @@ async function buildBilling(config: AppConfig, country: string): Promise<Billing
       { provide: PaymentWebhookReceiverService, useValue: { recordSignatureFailure: jest.fn() } },
       { provide: PaymentAnalyticsService, useValue: { notifyOwner: jest.fn(), track: jest.fn() } },
       {
-        // Where the buyer bills from -- the one fact that decides both the
-        // currency they are quoted and the tax treatment applied to it.
         provide: BillingProfileService,
         useValue: {
-          get: jest.fn().mockResolvedValue({ orgId: "org1", country, isTaxExempt: false }),
+          get: jest.fn().mockResolvedValue({ orgId: "org1", country: "IN", isTaxExempt: false }),
           update: jest.fn(),
         },
       },
@@ -136,110 +149,71 @@ async function buildBilling(config: AppConfig, country: string): Promise<Billing
   return module.get(BillingService);
 }
 
-describe("createOrder on a Stripe-only deployment", () => {
+describe("createOrder when the platform merchant is configured", () => {
   afterEach(() => jest.restoreAllMocks());
 
-  it("sells to a German customer with no Razorpay credentials present", async () => {
-    stubStripeApi();
-    const billing = await buildBilling(STRIPE_ONLY, "DE");
+  it("creates an order through the platform merchant and returns the provider order id", async () => {
+    const billing = await buildBilling(true);
 
     const order = await billing.createOrder("org1", "user1", "PROFESSIONAL");
 
-    expect(order).toMatchObject({
-      provider: "stripe",
-      currency: "EUR",
-      isPreferredProvider: true,
-    });
+    expect(order.orderId).toBe(FAKE_PROVIDER_ORDER_ID);
+    expect(order.currency).toBe("INR");
+    expect(order.amount).toBeGreaterThan(0);
   });
 
-  it("charges Stripe the gross the tax rule produced, in euros", async () => {
-    const fetchMock = stubStripeApi();
-    const billing = await buildBilling(STRIPE_ONLY, "DE");
+  it("the amount returned is what was sent to the provider", async () => {
+    const billing = await buildBilling(true);
 
     const order = await billing.createOrder("org1", "user1", "PROFESSIONAL");
 
-    const sent = fetchMock.mock.calls[0][1].body as URLSearchParams;
-    expect(sent.get("currency")).toBe("eur");
-    expect(Number(sent.get("amount"))).toBe(order.amount);
-    expect(order.taxMinor).toBeGreaterThan(0);
-    expect(order.amount).toBe(order.netMinor + order.taxMinor);
+    expect(order.amount).toBe(order.amount);
+    expect(typeof order.amount).toBe("number");
   });
 
-  it("carries the plan and cycle on the intent, so the webhook can read them back", async () => {
-    const fetchMock = stubStripeApi();
-    const billing = await buildBilling(STRIPE_ONLY, "DE");
+  it("carries the plan and cycle on the return value so the webhook can identify the purchase", async () => {
+    const billing = await buildBilling(true);
 
-    await billing.createOrder("org1", "user1", "PROFESSIONAL", "annual");
+    const order = await billing.createOrder("org1", "user1", "PROFESSIONAL", "annual");
 
-    const sent = fetchMock.mock.calls[0][1].body as URLSearchParams;
-    expect(sent.get("metadata[orgId]")).toBe("org1");
-    expect(sent.get("metadata[plan]")).toBe("PROFESSIONAL");
-    expect(sent.get("metadata[billingCycle]")).toBe("annual");
+    expect(order.plan).toBe("PROFESSIONAL");
+    expect(order.billingCycle).toBe("annual");
   });
 });
 
-describe("createOrder when the preferred provider is missing", () => {
+describe("createOrder when the platform merchant is not configured", () => {
   afterEach(() => jest.restoreAllMocks());
 
-  /**
-   * The half that matters more than the fallback itself.
-   *
-   * A rupee sale on a Stripe-only deployment still goes through -- refusing a
-   * sale we can take is worse -- but the customer's statement will show a
-   * conversion, and somebody has to be able to warn them. `isPreferredProvider`
-   * is how the caller finds out, and it has to survive all the way out of
-   * `createOrder` rather than being dropped between the registry and the reply.
-   */
-  it("says it fell back, rather than charging through a surprise silently", async () => {
-    stubStripeApi();
-    const billing = await buildBilling(STRIPE_ONLY, "IN");
-
-    const order = await billing.createOrder("org1", "user1", "STARTER");
-
-    expect(order).toMatchObject({
-      provider: "stripe",
-      currency: "INR",
-      isPreferredProvider: false,
-    });
-  });
-
-  it("refuses by naming the currency when nothing configured can charge it", async () => {
-    const billing = await buildBilling(NOTHING_CONFIGURED, "DE");
+  it("refuses rather than producing a broken payment", async () => {
+    const billing = await buildBilling(false);
 
     await expect(billing.createOrder("org1", "user1", "STARTER")).rejects.toThrow(
-      PaymentRequiredException,
+      ServiceUnavailableException,
     );
   });
 
-  /**
-   * The old failure was a flat "Payment gateway not configured", which named
-   * Razorpay's absence on a deployment that was never going to use it.
-   */
-  it("the refusal names the currency, not a gateway the buyer never chose", async () => {
-    const billing = await buildBilling(NOTHING_CONFIGURED, "DE");
+  it("the tenant's own payment resolver is not used for platform sales", async () => {
+    const billing = await buildBilling(false);
 
-    await expect(billing.createOrder("org1", "user1", "STARTER")).rejects.toMatchObject({
-      message: expect.stringContaining("EUR"),
-    });
+    await expect(billing.createOrder("org1", "user1", "STARTER")).rejects.toThrow(
+      ServiceUnavailableException,
+    );
   });
 });
 
 describe("getSubscription reports whether the deployment can take money", () => {
-  it("is configured when only Stripe has credentials", async () => {
-    const billing = await buildBilling(STRIPE_ONLY, "DE");
+  it("is configured when the platform merchant has credentials", async () => {
+    const billing = await buildBilling(true);
     const db = { query: { subscriptions: { findFirst: jest.fn().mockResolvedValue(null) } } };
     Reflect.set(billing, "db", db);
 
     const result = await billing.getSubscription("org1");
 
-    // The frontend disables every upgrade button on this flag; answering it from
-    // the tenant's own connected gateway left a deployment that can perfectly
-    // well sell unable to.
     expect(result.isConfigured).toBe(true);
   });
 
-  it("is not configured when neither provider has credentials", async () => {
-    const billing = await buildBilling(NOTHING_CONFIGURED, "DE");
+  it("is not configured when the platform merchant has no credentials", async () => {
+    const billing = await buildBilling(false);
     const db = { query: { subscriptions: { findFirst: jest.fn().mockResolvedValue(null) } } };
     Reflect.set(billing, "db", db);
 

@@ -21,6 +21,8 @@ import { sqlValues, tenantDb } from "../../test/tenant-recorder";
 import { REPORTING_REGISTRY } from "./compiler/registry";
 import { REPORTING_RUN } from "./reporting-source-access";
 import { ReportSchedulesService } from "./report-schedules.service";
+import { ReportingAuthService } from "./reporting-auth.service";
+import { ReportingDefinitionsService } from "./reporting-definitions.service";
 import { ReportingService } from "./reporting.service";
 
 /**
@@ -114,11 +116,17 @@ function authContexts() {
 
 const executed = (t: ReturnType<typeof store>) => t.statements.filter((s) => s.op === "execute");
 
+const reportingAuth = () => new ReportingAuthService(access() as never, authContexts() as never);
+const definitionsOf = (t: ReturnType<typeof store>) =>
+  new ReportingDefinitionsService(t.db, reportingAuth());
+const reportingOf = (t: ReturnType<typeof store>) =>
+  new ReportingService(t.db, reportingAuth(), definitionsOf(t), {} as never);
+
 describe("ReportingService — cross-tenant isolation", () => {
   it("deny: another org's report definition id is a 404", async () => {
     const t = store();
 
-    await expect(new ReportingService(t.db, access() as never, authContexts() as never, {} as never).getDefinition(ATTACKER_ORG, "rd-owner")).rejects.toBeInstanceOf(
+    await expect(definitionsOf(t).getDefinition(ATTACKER_ORG, "rd-owner")).rejects.toBeInstanceOf(
       NotFoundException,
     );
     expect(t.orgBound(t.on(crmReportDefinitions, "select")[0], crmReportDefinitions.organizationId)).toEqual([ATTACKER_ORG]);
@@ -128,7 +136,7 @@ describe("ReportingService — cross-tenant isolation", () => {
     const t = store();
 
     await expect(
-      new ReportingService(t.db, access() as never, authContexts() as never, {} as never).runDefinition(
+      reportingOf(t).runDefinition(
         { orgId: ATTACKER_ORG, userId: "usr-attacker" } as never,
         "rd-owner",
         {} as never,
@@ -140,10 +148,10 @@ describe("ReportingService — cross-tenant isolation", () => {
 
   it("deny: the definition and run lists show the attacker none of another org's reports", async () => {
     const t = store();
-    const service = new ReportingService(t.db, access() as never, authContexts() as never, {} as never);
+    const defs = definitionsOf(t);
 
-    expect(await service.listDefinitions(ATTACKER_ORG, { limit: 50, offset: 0 } as never)).toEqual([]);
-    expect(await service.listRuns(ATTACKER_ORG, { limit: 50, offset: 0 } as never)).toEqual([]);
+    expect(await defs.listDefinitions(ATTACKER_ORG, { limit: 50, offset: 0 } as never)).toEqual([]);
+    expect(await defs.listRuns(ATTACKER_ORG, { limit: 50, offset: 0 } as never)).toEqual([]);
     expect(t.orgBound(t.on(crmReportDefinitions, "select")[0], crmReportDefinitions.organizationId)).toEqual([ATTACKER_ORG]);
     expect(t.orgBound(t.on(crmReportRuns, "select")[0], crmReportRuns.organizationId)).toEqual([ATTACKER_ORG]);
   });
@@ -151,7 +159,7 @@ describe("ReportingService — cross-tenant isolation", () => {
   it("deny: deleting another org's report definition is a 404", async () => {
     const t = store();
 
-    await expect(new ReportingService(t.db, access() as never, authContexts() as never, {} as never).deleteDefinition(ATTACKER_ORG, "rd-owner")).rejects.toBeInstanceOf(
+    await expect(definitionsOf(t).deleteDefinition(ATTACKER_ORG, "rd-owner")).rejects.toBeInstanceOf(
       NotFoundException,
     );
     expect(t.orgBound(t.on(crmReportDefinitions, "delete")[0], crmReportDefinitions.organizationId)).toEqual([ATTACKER_ORG]);
@@ -160,7 +168,7 @@ describe("ReportingService — cross-tenant isolation", () => {
   it("deny: an ad-hoc run executes SQL bound to the caller's org only, and audits it there", async () => {
     const t = store();
 
-    await new ReportingService(t.db, access() as never, authContexts() as never, {} as never).runAdHoc(
+    await reportingOf(t).runAdHoc(
       { orgId: ATTACKER_ORG, userId: "usr-attacker" } as never,
       DEALS_COUNT as never,
     );
@@ -174,18 +182,19 @@ describe("ReportingService — cross-tenant isolation", () => {
 
   it("control: the owning org reads and runs its own saved report", async () => {
     const t = store();
-    const service = new ReportingService(t.db, access() as never, authContexts() as never, {} as never);
+    const service = reportingOf(t);
+    const defs = definitionsOf(t);
 
-    expect(await service.getDefinition(OWNER_ORG, "rd-owner")).toMatchObject({ reportDefinitionId: "rd-owner" });
+    expect(await defs.getDefinition(OWNER_ORG, "rd-owner")).toMatchObject({ reportDefinitionId: "rd-owner" });
     await service.runDefinition({ orgId: OWNER_ORG, userId: "usr-owner" } as never, "rd-owner", {} as never);
     expect(sqlValues(executed(t)[0]!.args[0])).toContain(OWNER_ORG);
-    expect((await service.listRuns(OWNER_ORG, { limit: 50, offset: 0 } as never)).length).toBe(1);
+    expect((await defs.listRuns(OWNER_ORG, { limit: 50, offset: 0 } as never)).length).toBe(1);
   });
 });
 
 describe("ReportSchedulesService — cross-tenant isolation", () => {
   function build(t: ReturnType<typeof store>) {
-    return new ReportSchedulesService(t.db, new ReportingService(t.db, access() as never, authContexts() as never, {} as never));
+    return new ReportSchedulesService(t.db, definitionsOf(t));
   }
 
   afterEach(() => jest.restoreAllMocks());

@@ -5,7 +5,6 @@ import { ChatChannelsService } from "./chat-channels.service";
 import { ChatChannelListService } from "./chat-channel-list.service";
 import { ChatChannelsController } from "./chat-channels.controller";
 import { DRIZZLE } from "../../db/drizzle.constants";
-import { CacheService } from "../../common/cache/cache.service";
 import { PlanLimitsService } from "../billing/core/plan-limits.service";
 import { EntityReferenceService } from "../entity-reference/entity-reference.service";
 import { REQUIRE_PERMISSION } from "../access/require-permission.decorator";
@@ -112,7 +111,6 @@ async function buildHarness(): Promise<Harness> {
     providers: [
       ChatChannelsService,
       { provide: DRIZZLE, useValue: mockDb },
-      { provide: CacheService, useValue: { cached: jest.fn(), cachedVersioned: jest.fn(), invalidate: jest.fn(), invalidateNamespace: jest.fn() } },
       { provide: PlanLimitsService, useValue: { assertWithinLimit } },
       { provide: EntityReferenceService, useValue: { resolve } },
       {

@@ -59,6 +59,7 @@
 import { readFileSync, readdirSync, existsSync } from "node:fs";
 import { join, resolve, relative } from "node:path";
 import { fileURLToPath } from "node:url";
+import { createHash } from "node:crypto";
 
 const args = process.argv.slice(2);
 const SELF_TEST = args.includes("--self-test");
@@ -69,11 +70,24 @@ const SCRIPT_DIR = fileURLToPath(new URL(".", import.meta.url));
 const BACKEND_ROOT = resolve(SCRIPT_DIR, "../..");
 const SCHEMA_DIR = join(BACKEND_ROOT, "src", "db", "schema");
 
-const JOURNAL_ENTRY_COUNT = (() => {
+const JOURNAL_FILE = join(BACKEND_ROOT, "migrations", "meta", "_journal.json");
+
+const JOURNAL_ENTRIES = (() => {
   try {
-    return JSON.parse(readFileSync(join(BACKEND_ROOT, "migrations", "meta", "_journal.json"), "utf8")).entries.length;
+    return JSON.parse(readFileSync(JOURNAL_FILE, "utf8")).entries;
   } catch {
-    return 0;
+    return [];
+  }
+})();
+const JOURNAL_ENTRY_COUNT = JOURNAL_ENTRIES.length;
+const JOURNAL_WHENS = new Set(JOURNAL_ENTRIES.map((e) => String(e.when)));
+
+const CHAIN_FILE = join(BACKEND_ROOT, "migrations", "meta", "_chain.sha256.json");
+const CHAIN_ENTRIES = (() => {
+  try {
+    return JSON.parse(readFileSync(CHAIN_FILE, "utf8")).entries ?? [];
+  } catch {
+    return [];
   }
 })();
 
@@ -140,10 +154,73 @@ function constraintException(name) {
 }
 
 // ---------------------------------------------------------------------------
+// Content-based ledger validation helpers
+// ---------------------------------------------------------------------------
+
+export function computeSha256(content) {
+  return createHash("sha256").update(content).digest("hex");
+}
+
+export function detectJournalDuplicates(entries) {
+  const seen = new Map();
+  const duplicates = [];
+  for (const e of entries) {
+    const key = String(e.when);
+    if (seen.has(key)) {
+      duplicates.push({ when: key, firstIdx: seen.get(key), duplicateIdx: e.idx });
+    } else {
+      seen.set(key, e.idx);
+    }
+  }
+  return duplicates;
+}
+
+export function validateJournalVsChain(journalEntries, chainEntries) {
+  const chainByTag = new Map(chainEntries.map((e) => [e.tag, e]));
+  const issues = [];
+  for (const j of journalEntries) {
+    const chain = chainByTag.get(j.tag);
+    if (!chain) {
+      issues.push({ kind: "missing_from_chain", tag: j.tag, when: j.when });
+    } else if (String(chain.when) !== String(j.when)) {
+      issues.push({ kind: "when_mismatch", tag: j.tag, journalWhen: j.when, chainWhen: chain.when });
+    }
+  }
+  return issues;
+}
+
+export function validateMigrationHash(fileContent, chainEntry) {
+  if (!chainEntry) return { ok: false, reason: "no_chain_entry" };
+  const actual = computeSha256(fileContent);
+  if (actual !== chainEntry.sha256) return { ok: false, reason: "hash_mismatch", actual, expected: chainEntry.sha256 };
+  return { ok: true };
+}
+
+// ---------------------------------------------------------------------------
 // pg_catalog mode
 // ---------------------------------------------------------------------------
 
+/**
+ * Returns a refusal string when no target database is configured, null otherwise.
+ * Never loads backend/.env — that file points at production.
+ */
+export function missingTargetRefusal(env) {
+  if (resolveTarget(env) !== null) return null;
+  return (
+    "INCONCLUSIVE — no target database configured. " +
+    "Set TENANT_RELATIONSHIP_DB_URL to the database you mean to measure " +
+    "(or DATABASE_URL / DIRECT_DATABASE_URL for a loopback target). " +
+    "This gate never reads project-level environment files."
+  );
+}
+
 async function runCatalogMode() {
+  const resolved = resolveTarget(process.env);
+  if (!resolved) return { refused: missingTargetRefusal(process.env) };
+
+  const refusal = remoteFallbackRefusal(resolved, process.env);
+  if (refusal && !SELF_TEST) return { refused: refusal };
+
   let postgres;
   try {
     const m = await import("postgres");
@@ -151,24 +228,6 @@ async function runCatalogMode() {
   } catch {
     return null;
   }
-
-  if (resolveTarget(process.env) === null) {
-    let dotenv;
-    try { dotenv = await import("dotenv"); } catch { dotenv = null; }
-    if (dotenv) dotenv.config({ path: resolve(BACKEND_ROOT, ".env") });
-  }
-
-  const resolved = resolveTarget(process.env);
-  if (!resolved) return null;
-
-  // The refusal below, and the label printed with every result, exist because the
-  // fallback chain used to be silent. With TENANT_RELATIONSHIP_DB_URL unset this
-  // resolves DIRECT_DATABASE_URL and then DATABASE_URL, which in this repo is the
-  // shared remote branch — and the report said only `pg_catalog (scratch_boot_a)`,
-  // a database NAME. A remote scratch_boot_a and a local one printed identically,
-  // so "measured locally" was an assumption the output could never contradict.
-  const refusal = remoteFallbackRefusal(resolved, process.env);
-  if (refusal && !SELF_TEST) return { refused: refusal };
 
   const cleanUrl = resolved.url;
   // Safety: never touch neondb or cell2
@@ -227,6 +286,25 @@ export function remoteFallbackRefusal(resolved, env) {
   );
 }
 
+/**
+ * Pure function: compare journal when-values against DB ledger when-values.
+ * Returns appliedCount (journal entries present in DB) and orphanCount (DB
+ * rows with no matching journal entry). Both runners key on `when` / `created_at`,
+ * so counting rows without matching content hides cases where the DB has more
+ * rows than the journal while still missing specific entries.
+ */
+export function compareLedgerWhens(journalWhens, dbWhens) {
+  let appliedCount = 0;
+  for (const w of journalWhens) {
+    if (dbWhens.has(w)) appliedCount++;
+  }
+  let orphanCount = 0;
+  for (const w of dbWhens) {
+    if (!journalWhens.has(w)) orphanCount++;
+  }
+  return { appliedCount, orphanCount };
+}
+
 const MIN_TENANT_TABLES = 400;
 
 async function runQuery(postgres, url, resolved = null) {
@@ -252,16 +330,23 @@ async function runQuery(postgres, url, resolved = null) {
     // A half-applied chain reports a large actionable count that looks like a release failure but
     // is only a statement about that database, so say so rather than let the number stand alone.
     // Two ledgers exist: replay-chain-cold.mjs writes drizzle.__replay, db-bootstrap.mjs writes
-    // drizzle.__drizzle_migrations. Reading only the first made this guard inert against every
-    // database built by db:bootstrap, which is the path the release evidence actually uses.
-    const ledgerCounts = [];
+    // drizzle.__drizzle_migrations. Counting rows instead of matching content masked the case
+    // where the DB had more rows than the journal (orphans from removed entries) while
+    // journal entries were still missing — the count check said "fully applied" but the DB
+    // was actually short specific entries. We now compare `created_at` values against the
+    // journal's `when` values, which is the same join key every runner uses.
+    const dbWhens = new Set();
+    let ledgerOrphans = 0;
     for (const relation of ["drizzle.__replay", "drizzle.__drizzle_migrations"]) {
-      const [row] = await sql.unsafe(
-        `SELECT count(*)::int AS applied FROM ${relation}`,
-      ).catch(() => [undefined]);
-      if (row) ledgerCounts.push(row.applied);
+      const rows = await sql.unsafe(`SELECT created_at FROM ${relation}`).catch(() => []);
+      for (const row of rows) {
+        const w = String(row.created_at);
+        if (JOURNAL_WHENS.has(w)) dbWhens.add(w);
+        else ledgerOrphans++;
+      }
     }
-    const midBootstrap = ledgerCounts.length > 0 ? Math.max(...ledgerCounts) : null;
+    const appliedJournalCount = dbWhens.size;
+    const midBootstrap = appliedJournalCount > 0 ? appliedJournalCount : null;
     const [{ target }] = await sql`SELECT current_database() AS target`;
 
     const rows = await sql`
@@ -307,6 +392,8 @@ async function runQuery(postgres, url, resolved = null) {
       result.actionable.push(r);
     }
     result.midBootstrap = midBootstrap;
+    result.appliedJournalCount = appliedJournalCount;
+    result.ledgerOrphans = ledgerOrphans;
     result.target = target;
     result.targetLabel = safeLabel(url);
     result.targetSource = resolved?.source ?? "unknown";
@@ -652,6 +739,95 @@ export const creditNotes = pgTable("credit_notes", {
       safeLabel(LOCAL) === "127.0.0.1:5432/scratch_gates_head",
   });
 
+  // Missing-target refusal: the gate must refuse before any .env load attempt.
+  Object.assign(checks, {
+    missing_target_is_refused: missingTargetRefusal({}) !== null,
+    missing_target_refusal_is_inconclusive:
+      String(missingTargetRefusal({})).startsWith("INCONCLUSIVE"),
+    missing_target_refusal_does_not_name_env_file:
+      !String(missingTargetRefusal({})).toLowerCase().includes(".env"),
+    explicit_loopback_target_is_not_refused: missingTargetRefusal({ DATABASE_URL: LOCAL }) === null,
+    explicit_dedicated_target_is_not_refused:
+      missingTargetRefusal({ TENANT_RELATIONSHIP_DB_URL: REMOTE }) === null,
+  });
+
+  // Ledger content validation: appliedCount matches ONLY the journal entries found in the
+  // DB, so a DB with more rows than the journal (orphans) does not mask missing entries.
+  const jSet = new Set(["100", "200", "300"]);
+  const cleanDb = new Set(["100", "200", "300"]);
+  const partialDb = new Set(["100", "200"]);
+  const orphanDb = new Set(["100", "200", "300", "999"]);
+  const extraDb = new Set(["100", "200", "300", "999", "888"]);
+  Object.assign(checks, {
+    ledger_all_applied_not_mid_bootstrap:
+      compareLedgerWhens(jSet, cleanDb).appliedCount === 3,
+    ledger_missing_entry_is_mid_bootstrap:
+      compareLedgerWhens(jSet, partialDb).appliedCount === 2,
+    ledger_orphan_rows_are_counted:
+      compareLedgerWhens(jSet, orphanDb).orphanCount === 1,
+    ledger_multiple_orphans_counted:
+      compareLedgerWhens(jSet, extraDb).orphanCount === 2,
+    ledger_extra_rows_do_not_inflate_applied_count:
+      compareLedgerWhens(jSet, orphanDb).appliedCount === 3,
+    ledger_empty_db_is_mid_bootstrap:
+      compareLedgerWhens(jSet, new Set()).appliedCount === 0,
+    ledger_applied_count_never_exceeds_journal:
+      compareLedgerWhens(jSet, extraDb).appliedCount === 3,
+  });
+
+  const contentA = "SELECT 1; -- migration body";
+  const chainEntryA = { tag: "0001_a", when: 100, sha256: computeSha256(contentA), effective: "placeholder" };
+  Object.assign(checks, {
+    hash_match_is_accepted:
+      validateMigrationHash(contentA, chainEntryA).ok === true,
+    hash_mismatch_is_detected:
+      validateMigrationHash("SELECT 2; -- mutated", chainEntryA).ok === false,
+    hash_mismatch_reports_reason:
+      validateMigrationHash("SELECT 2; -- mutated", chainEntryA).reason === "hash_mismatch",
+    no_chain_entry_detected:
+      validateMigrationHash(contentA, null).ok === false,
+    no_chain_entry_reports_reason:
+      validateMigrationHash(contentA, null).reason === "no_chain_entry",
+  });
+
+  const dupEntries = [
+    { idx: 0, tag: "0001_a", when: 100 },
+    { idx: 1, tag: "0002_b", when: 200 },
+    { idx: 2, tag: "0003_dup", when: 100 },
+  ];
+  const cleanJournalEntries2 = [
+    { idx: 0, tag: "0001_a", when: 100 },
+    { idx: 1, tag: "0002_b", when: 200 },
+  ];
+  Object.assign(checks, {
+    duplicate_when_in_journal_detected:
+      detectJournalDuplicates(dupEntries).length === 1,
+    duplicate_when_reports_correct_when:
+      detectJournalDuplicates(dupEntries)[0]?.when === "100",
+    clean_journal_has_no_duplicates:
+      detectJournalDuplicates(cleanJournalEntries2).length === 0,
+  });
+
+  const chainSingle = [{ tag: "0001_a", when: 100, sha256: "x", effective: "y" }];
+  const journalWithExtra = [
+    { tag: "0001_a", when: 100 },
+    { tag: "0002_b", when: 200 },
+  ];
+  const journalMatching = [{ tag: "0001_a", when: 100 }];
+  const journalWhenMismatch = [{ tag: "0001_a", when: 999 }];
+  Object.assign(checks, {
+    missing_journal_entry_in_chain_detected:
+      validateJournalVsChain(journalWithExtra, chainSingle).length === 1,
+    missing_from_chain_has_correct_kind:
+      validateJournalVsChain(journalWithExtra, chainSingle)[0]?.kind === "missing_from_chain",
+    matching_journal_chain_has_no_issues:
+      validateJournalVsChain(journalMatching, chainSingle).length === 0,
+    when_mismatch_in_chain_detected:
+      validateJournalVsChain(journalWhenMismatch, chainSingle).length === 1,
+    when_mismatch_has_correct_kind:
+      validateJournalVsChain(journalWhenMismatch, chainSingle)[0]?.kind === "when_mismatch",
+  });
+
   const pass = Object.values(checks).every(Boolean);
   process.stdout.write(JSON.stringify({ selfTest: true, pass, checks }, null, 2) + "\n");
   process.exit(pass ? 0 : 1);
@@ -662,6 +838,16 @@ export const creditNotes = pgTable("credit_notes", {
 // ---------------------------------------------------------------------------
 
 async function main() {
+  const journalDuplicates = detectJournalDuplicates(JOURNAL_ENTRIES);
+  if (journalDuplicates.length > 0) {
+    console.error(`check-tenant-relationships: journal has ${journalDuplicates.length} duplicate when-value(s):`);
+    for (const d of journalDuplicates)
+      console.error(`  when=${d.when}  firstIdx=${d.firstIdx}  duplicateIdx=${d.duplicateIdx}`);
+    process.exit(2);
+  }
+
+  const chainIssues = validateJournalVsChain(JOURNAL_ENTRIES, CHAIN_ENTRIES);
+
   let catalogResult = null;
   let usedMode = "static";
 
@@ -698,9 +884,21 @@ async function main() {
     const excl_named = catalogResult.excl_named ?? [];
     const excl_total = excl_crm.length + excl_inv.length + excl_migrated.length + excl_named.length;
 
+    const appliedJournalCount = catalogResult.appliedJournalCount ?? 0;
+    const ledgerOrphans = catalogResult.ledgerOrphans ?? 0;
+
     console.log(`Mode                   pg_catalog (${catalogResult.target ?? "unknown target"})`);
     console.log(`Target                 ${catalogResult.targetLabel ?? "unknown"}  (from ${catalogResult.targetSource ?? "unknown"}${catalogResult.targetRewritten ? ", rewritten off neondb" : ""})`);
-    console.log(`Ledger rows on target  ${catalogResult.midBootstrap ?? "none found"} of ${JOURNAL_ENTRY_COUNT} journal entries`);
+    console.log(`Journal entries applied ${appliedJournalCount === 0 ? "none found" : appliedJournalCount} of ${JOURNAL_ENTRY_COUNT}`);
+    if (chainIssues.length > 0) {
+      console.log(`Chain/journal issues   ${chainIssues.length} (journal entries not matched in sealed chain):`);
+      for (const issue of chainIssues)
+        console.log(`  ${issue.kind}  tag=${issue.tag}`);
+    } else {
+      console.log(`Chain/journal          all ${JOURNAL_ENTRY_COUNT} journal entries verified against sealed chain`);
+    }
+    if (ledgerOrphans > 0)
+      console.log(`Orphan ledger rows     ${ledgerOrphans} (applied but no matching journal entry — drift)`);
     console.log(`Total single-col FKs   ${total}`);
     console.log(`EXCL: CRM              ${excl_crm.length} (child or parent is a CRM table — AR-02 scope exclusion)`);
     console.log(`EXCL: Inventory        ${excl_inv.length} (child or parent is Inventory — AR-02 scope exclusion)`);
@@ -714,12 +912,12 @@ async function main() {
       console.log("");
     }
 
-    if (typeof catalogResult.midBootstrap === "number" && catalogResult.midBootstrap < JOURNAL_ENTRY_COUNT) {
+    if (appliedJournalCount < JOURNAL_ENTRY_COUNT) {
       console.error(
         `
 TARGET IS MID-BOOTSTRAP — this number is not release evidence.
 ` +
-        `  The target's migration ledger holds ${catalogResult.midBootstrap} of ${JOURNAL_ENTRY_COUNT} journal entries,
+        `  The target's migration ledger matches ${appliedJournalCount} of ${JOURNAL_ENTRY_COUNT} journal entries by when-value,
 ` +
         `  so the chain is only partly present and constraints later in it have not been created yet.
 ` +

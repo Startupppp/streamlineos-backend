@@ -64,6 +64,25 @@ export const orgSetupStatusErrorCodeSchema = z.enum(
   ORG_SETUP_STATUS_ERROR_CODES,
 );
 
+export const inviteeOutcomeSchema = z.enum([
+  "successful",
+  "queued",
+  "failed",
+  "skipped",
+]);
+
+export const inviteeFailureReasonSchema = z.enum([
+  "already_member",
+  "invitation_revoked",
+  "unknown",
+]);
+
+export const recipientOutcomeSchema = z.object({
+  email: z.string(),
+  outcome: inviteeOutcomeSchema,
+  reason: inviteeFailureReasonSchema.nullable(),
+});
+
 export const orgSetupStatusResponseSchema = z.object({
   orgId: z.string().nullable(),
   onboardingCompletedAt: nullableWireDate(),
@@ -77,4 +96,5 @@ export const orgSetupStatusResponseSchema = z.object({
   ]),
   errorCode: orgSetupStatusErrorCodeSchema.nullable(),
   correlationId: z.string().nullable(),
+  recipientOutcomes: z.array(recipientOutcomeSchema).nullable(),
 });

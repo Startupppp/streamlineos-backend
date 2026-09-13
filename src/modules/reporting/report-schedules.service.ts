@@ -17,7 +17,7 @@ import {
 import { OutboxWriter } from "../../common/outbox/outbox-writer";
 import { forEachOrg } from "../../common/tenant";
 import { runInNewTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
-import { ReportingService } from "./reporting.service";
+import { ReportingDefinitionsService } from "./reporting-definitions.service";
 import { nextRunAt, type CadenceSpec, type ReportCadence } from "./report-schedule-cadence";
 import type { CreateScheduleInput, UpdateScheduleInput } from "./dto/reporting.schemas";
 
@@ -55,7 +55,7 @@ export class ReportSchedulesService {
 
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
-    private readonly reporting: ReportingService,
+    private readonly reporting: ReportingDefinitionsService,
   ) {}
 
   async list(orgId: string) {

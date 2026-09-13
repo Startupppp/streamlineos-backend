@@ -77,8 +77,9 @@ describe("PlatformOperatorAccessService — Item E: break-glass policy", () => {
     it("accepts a grant expiring within 4 hours", async () => {
       const grantInsert = { values: jest.fn().mockReturnThis(), returning: jest.fn().mockResolvedValue([{ grantId: "g1" }]) };
       const auditInsert = { values: jest.fn().mockResolvedValue(undefined) };
-      const membership = { from: jest.fn().mockReturnThis(), where: jest.fn().mockReturnThis(), limit: jest.fn().mockResolvedValue([{ userId: "op-alice" }]) };
-      const tx = { execute: jest.fn().mockResolvedValue([]), select: jest.fn().mockReturnValue(membership), insert: jest.fn().mockReturnValueOnce(grantInsert).mockReturnValueOnce(auditInsert) };
+      const membershipChain = { from: jest.fn().mockReturnThis(), where: jest.fn().mockReturnThis(), limit: jest.fn().mockResolvedValue([{ userId: "op-alice" }]) };
+      const orgAdminChain = { from: jest.fn().mockReturnThis(), where: jest.fn().mockReturnValue(Promise.resolve([])) };
+      const tx = { execute: jest.fn().mockResolvedValue([]), select: jest.fn().mockReturnValueOnce(membershipChain).mockReturnValueOnce(orgAdminChain), insert: jest.fn().mockReturnValueOnce(grantInsert).mockReturnValueOnce(auditInsert) };
       const db = { transaction: jest.fn(async (callback: (transaction: typeof tx) => Promise<unknown>) => callback(tx)) };
       const svc = await buildService(db);
 
@@ -144,21 +145,25 @@ describe("PlatformOperatorAccessService — Item E: break-glass policy", () => {
 
   describe("revokeGrant: updates status to 'revoked' for query-time enforcement consistency", () => {
     it("(bite proof) sets status='revoked' and revokedAt — status column stays consistent with revokedAt", async () => {
-      const selectChain = {
-        from: jest.fn().mockReturnThis(),
-        where: jest.fn().mockReturnThis(),
-        limit: jest.fn().mockResolvedValue([{ grantId: "grant-1", orgId: "org-1", operatorUserId: "op-alice" }]),
-      };
+      const grantRow = { grantId: "grant-1", orgId: "org-1", operatorUserId: "op-alice" };
+      const existChain = { from: jest.fn().mockReturnThis(), where: jest.fn().mockReturnThis(), limit: jest.fn().mockResolvedValue([grantRow]) };
+      const detailChain = { from: jest.fn().mockReturnThis(), where: jest.fn().mockReturnThis(), limit: jest.fn().mockResolvedValue([grantRow]) };
+      const relocationChain = { from: jest.fn().mockReturnThis(), where: jest.fn().mockReturnThis(), limit: jest.fn().mockResolvedValue([]) };
+      const orgAdminChain = { from: jest.fn().mockReturnThis(), where: jest.fn().mockReturnValue(Promise.resolve([])) };
       const updateChain = {
         set: jest.fn().mockReturnThis(),
         where: jest.fn().mockReturnThis(),
-        returning: jest.fn().mockResolvedValue([{ grantId: "grant-1" }]),
+        returning: jest.fn().mockResolvedValue([{ grantId: "grant-1", operatorUserId: "op-alice" }]),
       };
       const updateMock = jest.fn().mockReturnValue(updateChain);
       const insertMock = jest.fn().mockReturnValue({ values: jest.fn().mockResolvedValue(undefined) });
       const transaction = { execute: jest.fn().mockResolvedValue([]), update: updateMock, insert: insertMock };
       const db = {
-        select: jest.fn().mockReturnValue(selectChain),
+        select: jest.fn()
+          .mockReturnValueOnce(existChain)
+          .mockReturnValueOnce(detailChain)
+          .mockReturnValueOnce(relocationChain)
+          .mockReturnValueOnce(orgAdminChain),
         update: updateMock,
         insert: insertMock,
         transaction: jest.fn(async (callback: (value: typeof transaction) => Promise<unknown>) => callback(transaction)),

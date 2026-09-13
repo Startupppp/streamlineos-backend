@@ -80,7 +80,7 @@ export class ImportPump {
           run,
           registry: this.registry,
           steps: createStepStore(this.db, run.organizationId),
-          lifecycle: createLifecycleStore(this.db, run.organizationId),
+          lifecycle: createLifecycleStore(this.db, run.organizationId, run.leaseExpiresAt),
           withinStep: (stepName, fn) =>
             runInNewTenantTransaction(this.db, run.organizationId, () => {
               this.logger.debug(`${run.workflowName}/${stepName} — org ${run.organizationId}`);
@@ -132,7 +132,7 @@ export class ImportPump {
           )
         FOR UPDATE SKIP LOCKED
       )
-      RETURNING workflow_run_id, organization_id, workflow_name, input, attempt, max_attempts
+      RETURNING workflow_run_id, organization_id, workflow_name, input, attempt, max_attempts, lease_expires_at
     `),
     );
 
@@ -148,6 +148,10 @@ export class ImportPump {
       input: isPlainObject ? (input as Record<string, unknown>) : {},
       attempt: Number(row.attempt ?? 0),
       maxAttempts: Number(row.max_attempts ?? 5),
+      leaseExpiresAt:
+        row.lease_expires_at instanceof Date
+          ? row.lease_expires_at
+          : new Date(String(row.lease_expires_at)),
     };
   }
 }

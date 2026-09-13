@@ -184,6 +184,12 @@ describe("GDPR erasure — a multi-org subject keeps their global identity", () 
                   ${`${subject}@erasure-probe.invalid`}, ${REAL_PHONE})`;
     });
 
+  const effectLedger = {
+    execute: jest.fn().mockImplementation(async (_eff: unknown, send: () => Promise<unknown>) => {
+      await send();
+      return "EXECUTED" as const;
+    }),
+  };
     revokeAllForUser = jest.fn().mockResolvedValue({ revokedCount: 0 });
     service = new GdprSubjectErasureService(
       appDb,
@@ -202,6 +208,7 @@ describe("GDPR erasure — a multi-org subject keeps their global identity", () 
           manifest: [],
         }),
       } as unknown as GdprStoragePurgeService,
+    effectLedger as never,
     );
   }, 180_000);
 

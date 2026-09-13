@@ -19,13 +19,18 @@
  *   SETUP_MEASUREMENT_ENV=scratch_local \
  *   SETUP_API_BASE_URL=http://127.0.0.1:1600 \
  *   APP_DATABASE_URL=postgresql://streamline_app:...@127.0.0.1:5432/scratch_local \
- *   SETUP_SESSION_COOKIE_FILE=./setup-cookies.txt \
+ *   SETUP_JWT_TOKEN_FILE=./setup-tokens.txt \
  *     node -r ts-node/register/transpile-only src/scripts/measure-org-setup-journey.ts
  *
- * `SETUP_SESSION_COOKIE_FILE` holds one `Cookie:` header value per line, each for a DISTINCT
- * freshly registered user that holds no organization. One line is consumed per sample: setup is
- * idempotent per organisation, so re-using an identity measures a replay, not a journey. This
- * script never creates users and never writes to any table itself.
+ * `SETUP_JWT_TOKEN_FILE` holds one raw JWT bearer token per line, each minted for a DISTINCT
+ * freshly registered user that holds no organization. One token is consumed per sample: setup
+ * creates an organization per call, so re-using an identity measures a replay, not a journey.
+ * Token files must be stored outside the repository. Token values are never logged.
+ *
+ * ZEPTOMAIL_TOKEN and RESEND_API_KEY must be absent so the stack sends no real email.
+ * The harness refuses to proceed if either credential is present.
+ *
+ * This script creates organizations via POST /org/setup/complete. It does not create user accounts.
  *
  *   --self-test   exercise the pure aggregation and refusal logic only; no network, no database.
  */
@@ -64,6 +69,7 @@ export const FIRST_USABLE_ORG_TARGET_MS = 10_000;
 const CONSUMER_NAME = "organization:setup-completed";
 const POLL_INTERVAL_MS = 150;
 const POLL_TIMEOUT_MS = 120_000;
+const PREFLIGHT_TIMEOUT_MS = 10_000;
 
 export function summarise(scenario: string, samples: readonly SpanSample[]): ScenarioReport {
   const spans: ScenarioReport["spans"] = {};
@@ -106,10 +112,6 @@ export interface TargetRefusal {
   reason: string;
 }
 
-/**
- * A measurement run issues real `POST /org/setup/complete` calls, so it creates organisations.
- * It must never point at anything but an explicitly named disposable environment.
- */
 export function assertDisposableTarget(
   databaseUrl: string,
   namedEnvironment: string | undefined,
@@ -138,6 +140,38 @@ export function assertDisposableTarget(
   return { allowed: true, reason: `${database}@${parsed.hostname}` };
 }
 
+export function assertDisposableApiTarget(
+  apiBaseUrl: string | undefined,
+  allowRemote: boolean,
+): TargetRefusal {
+  if (!apiBaseUrl)
+    return { allowed: false, reason: "SETUP_API_BASE_URL is required" };
+  let parsed: URL;
+  try {
+    parsed = new URL(apiBaseUrl);
+  } catch {
+    return { allowed: false, reason: "SETUP_API_BASE_URL is not a valid URL" };
+  }
+  const loopback = parsed.hostname === "127.0.0.1" || parsed.hostname === "localhost";
+  if (!loopback && !allowRemote)
+    return {
+      allowed: false,
+      reason: `API host '${parsed.hostname}' is not loopback; set SETUP_ALLOW_REMOTE=1 only for an identified test target`,
+    };
+  return { allowed: true, reason: `api@${parsed.hostname}:${parsed.port || "default"}` };
+}
+
+export function assertEmailTransportDisabled(env: Record<string, string | undefined>): TargetRefusal {
+  const zepto = env["ZEPTOMAIL_TOKEN"] ?? "";
+  const resend = env["RESEND_API_KEY"] ?? "";
+  if (zepto || resend)
+    return {
+      allowed: false,
+      reason: "email transport credentials must be absent on a measurement stack; unset ZEPTOMAIL_TOKEN and RESEND_API_KEY",
+    };
+  return { allowed: true, reason: "email transport disabled" };
+}
+
 function required(name: string): string {
   const value = process.env[name];
   if (!value) {
@@ -147,14 +181,14 @@ function required(name: string): string {
   return value;
 }
 
-function readCookies(): string[] {
-  const path = required("SETUP_SESSION_COOKIE_FILE");
+function readTokens(): string[] {
+  const path = required("SETUP_JWT_TOKEN_FILE");
   const lines = readFileSync(path, "utf8")
     .split(/\r?\n/)
     .map((line) => line.trim())
     .filter((line) => line.length > 0 && !line.startsWith("#"));
   if (lines.length === 0) {
-    console.error(`${path} contains no cookie lines`);
+    console.error(`${path} contains no token lines`);
     process.exit(1);
   }
   return lines;
@@ -173,15 +207,47 @@ function setupBody(inviteeCount: number): Record<string, unknown> {
   };
 }
 
+async function fetchWithTimeout(
+  url: string,
+  init: RequestInit,
+  timeoutMs: number,
+): Promise<Response> {
+  const controller = new AbortController();
+  const id = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...init, signal: controller.signal });
+  } finally {
+    clearTimeout(id);
+  }
+}
+
+async function verifyApiRefusesUnauthenticated(baseUrl: string): Promise<void> {
+  const noAuth = await fetchWithTimeout(
+    `${baseUrl}/org/setup/status`,
+    {},
+    PREFLIGHT_TIMEOUT_MS,
+  );
+  if (noAuth.status !== 401 && noAuth.status !== 403)
+    throw new Error(`preflight: expected 401 or 403 without credentials, got ${noAuth.status}`);
+
+  const badToken = await fetchWithTimeout(
+    `${baseUrl}/org/setup/status`,
+    { headers: { Authorization: "Bearer invalid.preflight.token" } },
+    PREFLIGHT_TIMEOUT_MS,
+  );
+  if (badToken.status !== 401 && badToken.status !== 403)
+    throw new Error(`preflight: expected 401 or 403 with invalid token, got ${badToken.status}`);
+}
+
 async function postComplete(
   baseUrl: string,
-  cookie: string,
+  token: string,
   inviteeCount: number,
 ): Promise<{ orgId: string; elapsedMs: number; startedAt: number }> {
   const startedAt = Date.now();
   const response = await fetch(`${baseUrl}/org/setup/complete`, {
     method: "POST",
-    headers: { "content-type": "application/json", cookie },
+    headers: { "content-type": "application/json", Authorization: `Bearer ${token}` },
     body: JSON.stringify(setupBody(inviteeCount)),
   });
   const elapsedMs = Date.now() - startedAt;
@@ -200,11 +266,13 @@ async function postComplete(
 
 async function pollUntilReady(
   baseUrl: string,
-  cookie: string,
+  token: string,
   startedAt: number,
 ): Promise<number | null> {
   while (Date.now() - startedAt < POLL_TIMEOUT_MS) {
-    const response = await fetch(`${baseUrl}/org/setup/status`, { headers: { cookie } });
+    const response = await fetch(`${baseUrl}/org/setup/status`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
     if (response.ok) {
       const parsed: unknown = await response.json();
       const data =
@@ -219,9 +287,11 @@ async function pollUntilReady(
   return null;
 }
 
-async function timedGet(baseUrl: string, cookie: string, path: string): Promise<number | null> {
+async function timedGet(baseUrl: string, token: string, path: string): Promise<number | null> {
   const startedAt = Date.now();
-  const response = await fetch(`${baseUrl}${path}`, { headers: { cookie } });
+  const response = await fetch(`${baseUrl}${path}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
   if (!response.ok) return null;
   await response.arrayBuffer();
   return Date.now() - startedAt;
@@ -305,23 +375,25 @@ async function runScenario(
     baseUrl: string;
     usablePath: string;
     inviteeCount: number;
-    cookies: readonly string[];
+    tokens: readonly string[];
+    createdOrgIds: string[];
   },
   sql: Sql,
 ): Promise<SpanSample[]> {
   const samples: SpanSample[] = [];
-  for (const cookie of options.cookies) {
+  for (const token of options.tokens) {
     const before = await statementCalls(sql);
     const { orgId, elapsedMs, startedAt } = await postComplete(
       options.baseUrl,
-      cookie,
+      token,
       options.inviteeCount,
     );
-    const readyMs = await pollUntilReady(options.baseUrl, cookie, startedAt);
+    options.createdOrgIds.push(orgId);
+    const readyMs = await pollUntilReady(options.baseUrl, token, startedAt);
     const commitToClaimMs = await waitForDurableClaim(sql, orgId, startedAt);
     const consumerMs = await consumerSpanMs(sql, orgId);
-    const usableColdMs = await timedGet(options.baseUrl, cookie, options.usablePath);
-    const usableWarmMs = await timedGet(options.baseUrl, cookie, options.usablePath);
+    const usableColdMs = await timedGet(options.baseUrl, token, options.usablePath);
+    const usableWarmMs = await timedGet(options.baseUrl, token, options.usablePath);
     const after = await statementCalls(sql);
     samples.push({
       completeMs: elapsedMs,
@@ -379,7 +451,7 @@ function selfTest(): void {
   if (targetVerdict([]).verdict !== "INCONCLUSIVE")
     throw new Error("self-test: zero scenarios must report INCONCLUSIVE");
 
-  const refusals: Array<[TargetRefusal, boolean]> = [
+  const dbRefusals: Array<[TargetRefusal, boolean]> = [
     [assertDisposableTarget("postgresql://u:p@127.0.0.1:5432/scratch_local", "scratch_local", false), true],
     [assertDisposableTarget("postgresql://u:p@127.0.0.1:5432/streamlineos", "scratch_local", false), false],
     [assertDisposableTarget("postgresql://u:p@db.prod.example:5432/scratch_local", "scratch_local", false), false],
@@ -387,9 +459,31 @@ function selfTest(): void {
     [assertDisposableTarget("postgresql://u:p@127.0.0.1:5432/scratch_local", undefined, false), false],
     [assertDisposableTarget("not-a-url", "scratch_local", false), false],
   ];
-  for (const [result, expected] of refusals)
+  for (const [result, expected] of dbRefusals)
     if (result.allowed !== expected)
-      throw new Error(`self-test: refusal mismatch — ${result.reason}`);
+      throw new Error(`self-test: DB refusal mismatch — ${result.reason}`);
+
+  const apiRefusals: Array<[TargetRefusal, boolean]> = [
+    [assertDisposableApiTarget("http://127.0.0.1:1600", false), true],
+    [assertDisposableApiTarget("http://localhost:1600", false), true],
+    [assertDisposableApiTarget("http://api.prod.example:1600", false), false],
+    [assertDisposableApiTarget(undefined, false), false],
+    [assertDisposableApiTarget("not-a-url", false), false],
+    [assertDisposableApiTarget("http://api.test.example:1600", true), true],
+  ];
+  for (const [result, expected] of apiRefusals)
+    if (result.allowed !== expected)
+      throw new Error(`self-test: API refusal mismatch — ${result.reason}`);
+
+  const emailRefusals: Array<[TargetRefusal, boolean]> = [
+    [assertEmailTransportDisabled({}), true],
+    [assertEmailTransportDisabled({ ZEPTOMAIL_TOKEN: "token" }), false],
+    [assertEmailTransportDisabled({ RESEND_API_KEY: "re_key" }), false],
+    [assertEmailTransportDisabled({ ZEPTOMAIL_TOKEN: "a", RESEND_API_KEY: "b" }), false],
+  ];
+  for (const [result, expected] of emailRefusals)
+    if (result.allowed !== expected)
+      throw new Error(`self-test: email transport refusal mismatch — ${result.reason}`);
 
   console.log("measure-org-setup-journey self-test passed");
 }
@@ -402,38 +496,60 @@ async function main(): Promise<void> {
 
   const namedEnvironment = process.env["SETUP_MEASUREMENT_ENV"];
   const databaseUrl = required("APP_DATABASE_URL");
-  const refusal = assertDisposableTarget(
+  const dbRefusal = assertDisposableTarget(
     databaseUrl,
     namedEnvironment,
     process.env["SETUP_ALLOW_REMOTE"] === "1",
   );
-  if (!refusal.allowed) {
-    console.error(`refusing to measure: ${refusal.reason}`);
+  if (!dbRefusal.allowed) {
+    console.error(`refusing to measure: ${dbRefusal.reason}`);
     process.exit(1);
   }
 
-  const baseUrl = required("SETUP_API_BASE_URL").replace(/\/$/, "");
+  const apiBaseUrl = required("SETUP_API_BASE_URL");
+  const apiRefusal = assertDisposableApiTarget(
+    apiBaseUrl,
+    process.env["SETUP_ALLOW_REMOTE"] === "1",
+  );
+  if (!apiRefusal.allowed) {
+    console.error(`refusing to measure: ${apiRefusal.reason}`);
+    process.exit(1);
+  }
+
+  const emailRefusal = assertEmailTransportDisabled(process.env);
+  if (!emailRefusal.allowed) {
+    console.error(`refusing to measure: ${emailRefusal.reason}`);
+    process.exit(1);
+  }
+
+  const baseUrl = apiBaseUrl.replace(/\/$/, "");
   const usablePath = process.env["SETUP_USABLE_PAGE_PATH"] ?? "/me/access";
   const inviteeBatch = Number(process.env["SETUP_INVITEE_BATCH"] ?? 10);
-  const cookies = readCookies();
-  const half = Math.floor(cookies.length / 2);
+  const tokens = readTokens();
+  const half = Math.floor(tokens.length / 2);
   if (half === 0) {
-    console.error("at least two cookie lines are required — one scenario each");
+    console.error("at least two token lines are required — one scenario each");
     process.exit(1);
   }
 
+  console.log(`api target: ${apiRefusal.reason}`);
+  console.log(`db target: ${dbRefusal.reason}`);
+
+  await verifyApiRefusesUnauthenticated(baseUrl);
+  console.log("preflight: API refuses unauthenticated and invalid-token requests");
+
   const sql = postgres(databaseUrl, { max: 1, prepare: false, onnotice: () => undefined });
+  const createdOrgIds: string[] = [];
   try {
-    console.log(`target: ${refusal.reason}`);
     console.log(`dataset: ${await describeDataset(sql)}`);
     console.log(`usable-page read: GET ${usablePath}`);
 
     const noInvitees = await runScenario(
-      { baseUrl, usablePath, inviteeCount: 0, cookies: cookies.slice(0, half) },
+      { baseUrl, usablePath, inviteeCount: 0, tokens: tokens.slice(0, half), createdOrgIds },
       sql,
     );
     const withInvitees = await runScenario(
-      { baseUrl, usablePath, inviteeCount: inviteeBatch, cookies: cookies.slice(half) },
+      { baseUrl, usablePath, inviteeCount: inviteeBatch, tokens: tokens.slice(half), createdOrgIds },
       sql,
     );
 
@@ -449,6 +565,13 @@ async function main(): Promise<void> {
     );
     process.exitCode = exitCode;
   } finally {
+    const toClean = createdOrgIds.length;
+    for (const orgId of createdOrgIds) {
+      try {
+        await sql`DELETE FROM organizations WHERE id = ${orgId}`;
+      } catch {}
+    }
+    console.log(`cleanup: ${toClean} test organisations processed`);
     await sql.end({ timeout: 5 });
   }
 }

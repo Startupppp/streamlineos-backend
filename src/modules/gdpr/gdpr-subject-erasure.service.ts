@@ -2,6 +2,7 @@ import { Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, eq, isNull } from "drizzle-orm";
 import {
   auditLogs,
+  externalEffectLedger,
   hrDataRequests,
   hrLegalHolds,
   organizationMembers,
@@ -11,6 +12,7 @@ import type { Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
 import { bustMembershipAfterIdentityErasure } from "../../common/org/membership-bust";
 import { bumpPermissionsVersion } from "../../common/rbac/access-invalidate";
+import { ExternalEffectLedger } from "../../common/outbox/external-effect-ledger";
 import { SessionsService } from "../sessions/sessions.service";
 import { anonymiseSubjectSupportTickets } from "../support/core/support-ticket-erasure";
 import { GdprStoragePurgeService, type PurgeManifest } from "./gdpr-storage-purge.service";
@@ -88,6 +90,7 @@ export class GdprSubjectErasureService {
     private readonly cache: CacheService,
     private readonly sessionsService: SessionsService,
     private readonly storagePurge: GdprStoragePurgeService,
+    private readonly effectLedger: ExternalEffectLedger,
   ) {}
 
   async eraseSubject(
@@ -161,6 +164,8 @@ export class GdprSubjectErasureService {
     // organisation the subject still belongs to. See `subjectHasSurvivingMembership`.
     const hasSurvivingMembership = await subjectHasSurvivingMembership(this.db, scope);
 
+    let dataRequestId: number | undefined;
+
     await this.db.transaction(async (tx) => {
       tablesAnonymised.push(...(await anonymiseSubjectProfile(tx, scope)));
       const conversations = await anonymiseSubjectConversations(tx, scope);
@@ -197,17 +202,35 @@ export class GdprSubjectErasureService {
 
       tablesAnonymised.push(...(await eraseSubjectKbContent(tx, scope)));
 
-      await tx.insert(hrDataRequests).values({
-        orgId,
-        subjectUserId,
-        type: "delete",
-        status: "completed",
-        requestedBy: actorUserId,
-        completedAt: new Date(),
-      });
+      const [dataReq] = await tx
+        .insert(hrDataRequests)
+        .values({
+          orgId,
+          subjectUserId,
+          type: "delete",
+          status: "processing",
+          requestedBy: actorUserId,
+        })
+        .returning({ id: hrDataRequests.id });
+      dataRequestId = dataReq?.id;
+
+      if (dataRequestId !== undefined) {
+        await tx
+          .insert(externalEffectLedger)
+          .values({
+            organizationId: orgId,
+            producerEventId: String(dataRequestId),
+            effectKey: `gdpr:storage-purge:${orgId}:${subjectUserId}:${dataRequestId}`,
+            effectType: "GDPR_STORAGE_PURGE",
+            providerIdempotency: "NONE",
+          })
+          .onConflictDoNothing({
+            target: [externalEffectLedger.organizationId, externalEffectLedger.effectKey],
+          });
+      }
 
       await tx.insert(auditLogs).values({
-        action: "subject.data.erased",
+        action: "subject.erasure.started",
         userId: actorUserId,
         orgId,
         targetId: subjectUserId,
@@ -216,6 +239,8 @@ export class GdprSubjectErasureService {
           tablesAnonymised,
           globalIdentityAnonymised,
           subjectUserIdHash: hashSubjectId(subjectUserId),
+          storageManifestSize: storageManifest.keys.length,
+          storageManifestKeys: storageManifest.keys.map((k) => k.key),
         },
         isPlatformEvent: false,
       });
@@ -226,14 +251,53 @@ export class GdprSubjectErasureService {
     await bustMembershipAfterIdentityErasure(this.cache, subjectUserId);
     await this.sessionsService.revokeAllForUser(subjectUserId);
 
-    const purge = await this.storagePurge.purgeFromManifest(
-      storageManifest,
-      subjectUserId,
-      actorUserId,
-      orgId,
-      { dryRun: false },
-    );
-    if (purge.deleted.length > 0) tablesAnonymised.push("object_storage");
+    let purgeDeleted = 0;
+    let purgeSkipped = 0;
+    let purgeFailed = 0;
+
+    if (dataRequestId !== undefined) {
+      const capturedRequestId = dataRequestId;
+      const effectKey = `gdpr:storage-purge:${orgId}:${subjectUserId}:${capturedRequestId}`;
+      await this.effectLedger.execute(
+        {
+          organizationId: orgId,
+          producerEventId: String(capturedRequestId),
+          effectKey,
+          effectType: "GDPR_STORAGE_PURGE",
+          providerIdempotency: "NONE",
+        },
+        async () => {
+          const purge = await this.storagePurge.purgeFromManifest(
+            storageManifest,
+            subjectUserId,
+            actorUserId,
+            orgId,
+            { dryRun: false },
+          );
+          purgeDeleted = purge.deleted.length;
+          purgeSkipped = purge.skipped.length;
+          purgeFailed = purge.failed.length;
+
+          if (purgeDeleted > 0) tablesAnonymised.push("object_storage");
+
+          const finalStatus: "completed" | "partial" = purgeFailed > 0 ? "partial" : "completed";
+          await this.db
+            .update(hrDataRequests)
+            .set({ status: finalStatus, completedAt: new Date() })
+            .where(eq(hrDataRequests.id, capturedRequestId));
+
+          await this.db.insert(auditLogs).values({
+            action: "subject.data.erased",
+            userId: actorUserId,
+            orgId,
+            targetId: subjectUserId,
+            targetType: "user",
+            metadata: { finalStatus, storageDeleted: purgeDeleted, storageFailed: purgeFailed },
+            isPlatformEvent: false,
+          });
+        },
+      );
+    }
 
     return {
       blocked: false,
@@ -242,9 +306,9 @@ export class GdprSubjectErasureService {
       globalIdentityAnonymised,
       storage: {
         manifestSize: storageManifest.keys.length,
-        deleted: purge.deleted.length,
-        skipped: purge.skipped.length,
-        failed: purge.failed.length,
+        deleted: purgeDeleted,
+        skipped: purgeSkipped,
+        failed: purgeFailed,
       },
     };
   }

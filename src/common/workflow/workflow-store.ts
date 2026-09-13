@@ -118,26 +118,31 @@ export function createStepStore(db: Db, organizationId: string): WorkflowStepSto
   };
 }
 
-export function createLifecycleStore(db: Db, organizationId: string): RunLifecycleStore {
-  /**
-   * Scoped by run id *and* organisation.
-   *
-   * The policy would filter a foreign run anyway, but a silent zero-row update
-   * is the wrong failure: naming the organisation keeps the predicate on the
-   * `(organization_id, ...)` index and states the tenant the write belongs to
-   * rather than leaving it to be inferred.
-   */
+export function createLifecycleStore(
+  db: Db,
+  organizationId: string,
+  leaseToken: Date,
+): RunLifecycleStore {
   const ownRun = (runId: string) =>
     and(
       eq(workflowRuns.organizationId, organizationId),
       eq(workflowRuns.workflowRunId, runId),
+      eq(workflowRuns.leaseExpiresAt, leaseToken),
     );
 
   const write = (set: Parameters<ReturnType<Db["update"]>["set"]>[0], runId: string) =>
     runInTenantTransaction(
       db,
       async (tx) => {
-        await tx.update(workflowRuns).set(set).where(ownRun(runId));
+        const updated = await tx
+          .update(workflowRuns)
+          .set(set)
+          .where(ownRun(runId))
+          .returning({ workflowRunId: workflowRuns.workflowRunId });
+        if (updated.length === 0)
+          throw new Error(
+            `workflow run ${runId} lease superseded — stale write rejected (0 rows)`,
+          );
       },
       { orgId: organizationId },
     );

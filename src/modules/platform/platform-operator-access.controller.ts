@@ -22,6 +22,7 @@ import { BodylessAction, ResponseSchema } from "../../common/openapi/zod-operati
 import { Validate } from "../../common/validation/validate.decorator";
 import { APP_CONFIG } from "../../config/config.module";
 import type { AppConfig } from "../../config/env.validation";
+import { isPlatformAdmin } from "../../common/rbac/platform-operators";
 import { PlatformOperatorAccessService } from "./platform-operator-access.service";
 import {
   createGrantSchema,
@@ -49,13 +50,9 @@ function ipOf(req: Request): string | undefined {
 function humanOperatorId(user: CurrentUserContext): string {
   if (user.principal.kind !== "human-session")
     throw new UnauthorizedException("Operator administration requires a human session");
-  if (!isEligibleOperator(user))
-    throw new UnauthorizedException("Operator administration requires an eligible admin role");
+  if (!isPlatformAdmin(user.userId))
+    throw new UnauthorizedException("Operator administration requires a platform admin account");
   return user.userId;
-}
-
-function isEligibleOperator(user: CurrentUserContext): boolean {
-  return user.isOrgOwner || ["ADMIN", "OWNER", "ORG_ADMIN"].includes(user.role);
 }
 
 

@@ -6,6 +6,7 @@ import { eq } from "drizzle-orm";
 import { subscriptions } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
+import { CacheService } from "../../../common/cache/cache.service";
 import { AuditService } from "../../../common/audit/audit.service";
 import { AiCreditsService } from "./ai-credits.service";
 import { PlanLimitsService } from "./plan-limits.service";
@@ -50,9 +51,11 @@ export class BillingService {
     private readonly paymentNotices: PaymentAnalyticsService,
     private readonly billingProfile: BillingProfileService,
     private readonly platformMerchant: PlatformMerchantService,
+    private readonly cache: CacheService,
   ) {
     this.paymentActivation = new BillingPaymentActivation({
       db: this.db,
+      cache: this.cache,
       audit: this.audit,
       aiCredits: this.aiCredits,
       planLimits: this.planLimits,

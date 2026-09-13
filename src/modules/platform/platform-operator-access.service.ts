@@ -6,7 +6,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, eq, gt, inArray, isNull, lte } from "drizzle-orm";
+import { and, eq, gt, inArray, isNull, lte, or } from "drizzle-orm";
 import {
   organizationMembers,
   operatorAccessGrants,
@@ -101,11 +101,26 @@ export class PlatformOperatorAccessService {
         ipAddress: ipAddress ?? null,
       });
 
+      const tenantAdminRows = await tx
+        .select({ userId: organizationMembers.userId })
+        .from(organizationMembers)
+        .where(and(
+          eq(organizationMembers.orgId, params.orgId),
+          eq(organizationMembers.status, "ACTIVE"),
+          or(
+            eq(organizationMembers.isOwner, true),
+            eq(organizationMembers.role, "ORG_ADMIN"),
+          ),
+        ));
+      const tenantAdminIds = tenantAdminRows
+        .map((m) => m.userId)
+        .filter((id) => id !== params.operatorUserId);
+
       await this.notifications.emit({
         eventKey: "security.operator_access.requested",
         orgId: params.orgId,
         actorUserId: params.grantedBy,
-        targetUserIds: [params.operatorUserId],
+        targetUserIds: [params.operatorUserId, ...tenantAdminIds],
         notifySelf: true,
         entityType: "operator_access_grant",
         entityId: row!.grantId,
@@ -367,6 +382,7 @@ export class PlatformOperatorAccessService {
       .where(eq(operatorAccessGrants.grantId, grantId))
       .limit(1);
     if (!grant) throw new NotFoundException("Grant not found");
+    let revokedOperatorId: string | undefined;
     await runInNewTenantTransaction(this.db, grant.orgId, async (tx) => {
       const revoked = await tx
         .update(operatorAccessGrants)
@@ -376,9 +392,10 @@ export class PlatformOperatorAccessService {
           eq(operatorAccessGrants.status, "active"),
           isNull(operatorAccessGrants.revokedAt),
         ))
-        .returning({ grantId: operatorAccessGrants.grantId });
+        .returning({ grantId: operatorAccessGrants.grantId, operatorUserId: operatorAccessGrants.operatorUserId });
       if (!revoked?.[0])
         throw new ConflictException("Grant was changed before revocation completed");
+      revokedOperatorId = revoked[0].operatorUserId;
       await tx.insert(operatorAccessLog).values({
         grantId,
         operatorUserId: actorId,
@@ -387,6 +404,34 @@ export class PlatformOperatorAccessService {
         detail: { operatorUserId: grant.operatorUserId, reason },
         ipAddress: ipAddress ?? null,
       });
+    });
+    const tenantAdminRows = await this.db
+      .select({ userId: organizationMembers.userId })
+      .from(organizationMembers)
+      .where(and(
+        eq(organizationMembers.orgId, grant.orgId),
+        eq(organizationMembers.status, "ACTIVE"),
+        or(
+          eq(organizationMembers.isOwner, true),
+          eq(organizationMembers.role, "ORG_ADMIN"),
+        ),
+      ));
+    const notifyIds = [
+      ...(revokedOperatorId ? [revokedOperatorId] : []),
+      ...tenantAdminRows.map((m) => m.userId).filter((id) => id !== revokedOperatorId),
+    ];
+    await this.notifications.emit({
+      eventKey: "security.operator_access.revoked",
+      orgId: grant.orgId,
+      actorUserId: actorId,
+      targetUserIds: notifyIds,
+      notifySelf: false,
+      entityType: "operator_access_grant",
+      entityId: grantId,
+      title: "Operator access revoked",
+      message: "A break-glass operator access grant for your organization was revoked.",
+      priority: "HIGH",
+      metadata: { reason },
     });
   }
 

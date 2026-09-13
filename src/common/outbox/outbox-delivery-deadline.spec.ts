@@ -194,6 +194,77 @@ describe("outbox delivery deadline", () => {
     expect(result).toMatchObject({ claimed: 1, delivered: 1, retried: 0 });
     expect(writes).toEqual([expect.objectContaining({ deliveryState: "DELIVERED" })]);
   });
+
+  it("stalled consumer in one tenant does not permanently block delivery for another tenant", async () => {
+    jest.useFakeTimers();
+
+    const stalledRow = makeRow();
+    const fastRow: OutboxEventRow = {
+      ...makeRow(),
+      outboxEventId: 2,
+      eventId: "evt-fast",
+      organizationId: "org-2",
+      eventType: "a.fast.event",
+    };
+
+    const writes: RecordedUpdate[] = [];
+    const db = {
+      select: () => ({
+        from: () => ({ where: () => ({ limit: () => Promise.resolve([{ status: "ACTIVE" }]) }) }),
+      }),
+    };
+
+    mockForEachOrg.mockImplementation(
+      async (_db: unknown, _sweep: string, fn: (tx: TenantTx, orgId: string) => Promise<void>) => {
+        const makeChain = (row: OutboxEventRow) => ({
+          update: () => ({
+            set: () => ({ where: () => ({ returning: () => Promise.resolve([row]) }) }),
+          }),
+        });
+        await fn(makeChain(stalledRow) as never, stalledRow.organizationId);
+        await fn(makeChain(fastRow) as never, fastRow.organizationId);
+        return { organizations: 2, succeeded: 2, failed: 0 };
+      },
+    );
+
+    mockRunInNewTenantTransaction.mockImplementation(
+      async (_db: unknown, _orgId: string, fn: (tx: unknown) => Promise<unknown>) =>
+        fn({
+          ...db,
+          update: () => ({
+            set: (values: RecordedUpdate) => {
+              writes.push(values);
+              return { where: () => ({ returning: () => Promise.resolve([{ outboxEventId: 1 }]) }) };
+            },
+          }),
+        }),
+    );
+
+    const registry = new OutboxConsumerRegistry();
+    registry.register({
+      eventType: stalledRow.eventType,
+      handle: () => new Promise<void>(() => undefined),
+    });
+    registry.register({
+      eventType: fastRow.eventType,
+      handle: () => Promise.resolve(),
+    });
+
+    const service = new OutboxPublisherService(
+      db as never,
+      { OUTBOX_DISPATCH_ENABLED: "true" } as never,
+      registry,
+      new OutboxReportService(db as never),
+    );
+
+    const flushed = service.flush();
+    await jest.advanceTimersByTimeAsync(OUTBOX_DELIVERY_DEADLINE_MS + 1_000);
+    const result = await flushed;
+
+    expect(result).toMatchObject({ claimed: 2, delivered: 1, retried: 1 });
+    expect(writes.some((w) => w.deliveryState === "PENDING")).toBe(true);
+    expect(writes.some((w) => w.deliveryState === "DELIVERED")).toBe(true);
+  });
 });
 
 describe("withDeliveryDeadline — the abandoned promise stays observed", () => {
