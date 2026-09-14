@@ -10,6 +10,7 @@ import {
 import type { SeamKey } from "../observability/seam-budgets";
 import { PROCESS_CELL_ID } from "../cell-resources/cell-id";
 import { currentRelease } from "../observability/release";
+import { resolveClientIp } from "./client-ip";
 
 const READ_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
 
@@ -72,8 +73,25 @@ export function correlationIdMiddleware(
    * work, which runs inside this context, nests under this span rather than
    * appearing as an orphan trace.
    */
+  const clientIp = resolveClientIp(req);
+  const rawUa = req.headers["user-agent"];
+  const userAgent =
+    typeof rawUa === "string"
+      ? rawUa.slice(0, 512)
+      : Array.isArray(rawUa)
+        ? rawUa[0]?.slice(0, 512)
+        : undefined;
+
   runWithObservabilityContext(
-    { correlationId, method: req.method, route: req.path, cellId: PROCESS_CELL_ID, release: currentRelease() },
+    {
+      correlationId,
+      method: req.method,
+      route: req.path,
+      cellId: PROCESS_CELL_ID,
+      release: currentRelease(),
+      ...(clientIp ? { clientIp } : {}),
+      ...(userAgent ? { userAgent } : {}),
+    },
     () => {
       const open = startSpan(`${req.method} ${req.path}`, {
         parent: parseTraceparent(req.headers[TRACEPARENT_HEADER] as string | undefined),

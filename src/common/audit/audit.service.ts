@@ -10,6 +10,7 @@ import {
 } from "../tenant";
 import { logger } from "../logger/logger.service";
 import { reportError } from "../observability/error-reporter";
+import { getObservabilityContext } from "../observability/observability-context";
 
 interface AuditEntryFields {
   action: string;
@@ -73,17 +74,20 @@ export class AuditService {
 
   /** Best-effort telemetry only. Transactional/security audit must use logCritical. */
   log(entry: AuditEntry): void {
+    // Snapshot ambient request meta now: after-commit dispatch may run outside
+    // the HTTP ALS store, and callers almost never pass ipAddress themselves.
+    const stamped = this.withAmbientRequestMeta(entry);
     const dispatch = () =>
-      runOutsideTenantContext(() => this.write(entry)).catch((error: unknown) => {
-        logger.error("audit.log failed", { error, action: entry.action });
-        reportError(error, { action: entry.action });
+      runOutsideTenantContext(() => this.write(stamped)).catch((error: unknown) => {
+        logger.error("audit.log failed", { error, action: stamped.action });
+        reportError(error, { action: stamped.action });
       });
     if (!registerAfterCommit(dispatch)) void dispatch();
   }
 
   /** Awaited and transaction-aware; failures prevent the enclosing mutation from committing. */
   async logCritical(entry: AuditEntry): Promise<void> {
-    await this.write(entry);
+    await this.write(this.withAmbientRequestMeta(entry));
   }
 
   /**
@@ -112,7 +116,24 @@ export class AuditService {
    * a change that never happened.
    */
   async logCriticalOutsideTransaction(entry: AuditEntry): Promise<void> {
-    await runOutsideTenantContext(() => this.write(entry));
+    const stamped = this.withAmbientRequestMeta(entry);
+    await runOutsideTenantContext(() => this.write(stamped));
+  }
+
+  /**
+   * Fills IP / UA / request id from the ambient HTTP context when the caller
+   * omitted them. Explicit entry fields win — platform and GDPR paths already
+   * pass a resolved address and must not be overwritten.
+   */
+  private withAmbientRequestMeta(entry: AuditEntry): AuditEntry {
+    const obs = getObservabilityContext();
+    if (!obs) return entry;
+    return {
+      ...entry,
+      ipAddress: entry.ipAddress ?? obs.clientIp ?? null,
+      userAgent: entry.userAgent ?? obs.userAgent ?? null,
+      requestId: entry.requestId ?? obs.correlationId ?? null,
+    };
   }
 
   private async write(entry: AuditEntry): Promise<void> {
