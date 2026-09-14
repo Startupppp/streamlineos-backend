@@ -20,6 +20,14 @@ export interface ObservabilityContext {
   cellId?: string;
   /** Build identifier stamped at the edge from APP_RELEASE so a deploy can be implicated in a spike. */
   release?: string;
+  /**
+   * Express-resolved client address (`req.ip` under `TRUST_PROXY_HOPS`).
+   * Set at the edge so audit and session writers can read it without each
+   * caller threading the request object.
+   */
+  clientIp?: string;
+  /** Raw `User-Agent` header, capped when stored on an audit row. */
+  userAgent?: string;
 }
 
 /** Everything callers may fill in later; the correlation id is fixed at entry. */
@@ -55,6 +63,8 @@ export function enrichObservabilityContext(patch: ObservabilityEnrichment): bool
   if (patch.route) context.route = patch.route;
   if (patch.cellId) context.cellId = patch.cellId;
   if (patch.release) context.release = patch.release;
+  if (patch.clientIp) context.clientIp = patch.clientIp;
+  if (patch.userAgent) context.userAgent = patch.userAgent;
   return true;
 }
 
