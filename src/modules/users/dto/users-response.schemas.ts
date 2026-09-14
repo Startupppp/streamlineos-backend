@@ -1,5 +1,9 @@
 import { z } from "zod";
-import { wireDate, nullableWireDate } from "../../../common/openapi/wire-types";
+import {
+  wireDate,
+  nullableWireDate,
+  nullableWireTimestamp,
+} from "../../../common/openapi/wire-types";
 import { cursorPageSchema } from "../../../common/openapi/response-envelopes";
 
 /**
@@ -28,7 +32,7 @@ const userListItemSchema = z.object({
   phone: z.string().nullable(),
   createdAt: wireDate(),
   joinedAt: wireDate(),
-  lastSeenAt: nullableWireDate(),
+  lastSeenAt: nullableWireTimestamp(),
   teams: z.array(z.string()),
   departmentId: z.string().nullable(),
   branchId: z.string().nullable(),

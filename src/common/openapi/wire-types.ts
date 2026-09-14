@@ -35,3 +35,11 @@ export function wireDate(): z.ZodType<Date> {
 export function nullableWireDate(): z.ZodType<Date | null> {
   return wireDate().nullable();
 }
+
+export function wireTimestamp(): z.ZodType<Date | string> {
+  return z.union([wireDate(), z.iso.datetime()]);
+}
+
+export function nullableWireTimestamp(): z.ZodType<Date | string | null> {
+  return wireTimestamp().nullable();
+}
