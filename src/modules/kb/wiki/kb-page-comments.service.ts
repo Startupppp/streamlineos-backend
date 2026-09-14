@@ -14,6 +14,7 @@ import { NotificationDispatchService } from "../../notifications/notification-di
 import { AccessService } from "../../access/access.service";
 
 type CommentRow = typeof kbPageComments.$inferSelect;
+type CommentWithAuthor = CommentRow & { authorName: string | null };
 
 const PAGE_SIZE = 50;
 
@@ -29,7 +30,7 @@ export class KbPageCommentsService {
     user: CurrentUserContext,
     pageId: number,
     cursor?: KeysetPosition,
-  ): Promise<Array<CommentRow & { authorName: string | null }>> {
+  ): Promise<CommentWithAuthor[]> {
     const orgId = user.orgId;
     await this.assertPageExists(user, pageId);
     const conditions = [eq(kbPageComments.orgId, orgId), eq(kbPageComments.pageId, pageId)];
@@ -50,7 +51,7 @@ export class KbPageCommentsService {
     });
   }
 
-  async create(user: CurrentUserContext, pageId: number, input: CreatePageCommentInput): Promise<CommentRow> {
+  async create(user: CurrentUserContext, pageId: number, input: CreatePageCommentInput): Promise<CommentWithAuthor> {
     const orgId = user.orgId;
     const authorId = user.userId;
     const projectIds = await getAccessibleProjectIds(this.db, user);
@@ -101,10 +102,10 @@ export class KbPageCommentsService {
       });
     }
 
-    return comment;
+    return this.loadWithAuthor(orgId, comment.id);
   }
 
-  async update(user: CurrentUserContext, commentId: number, input: UpdatePageCommentInput): Promise<CommentRow> {
+  async update(user: CurrentUserContext, commentId: number, input: UpdatePageCommentInput): Promise<CommentWithAuthor> {
     const orgId = user.orgId;
     const existing = await this.db.query.kbPageComments.findFirst({
       where: and(eq(kbPageComments.id, commentId), eq(kbPageComments.orgId, orgId)),
@@ -123,7 +124,7 @@ export class KbPageCommentsService {
       .where(and(eq(kbPageComments.id, commentId), eq(kbPageComments.orgId, orgId)))
       .returning();
     if (!updated) throw new NotFoundException("Comment not found");
-    return updated;
+    return this.loadWithAuthor(orgId, commentId);
   }
 
   async remove(user: CurrentUserContext, commentId: number): Promise<void> {
@@ -144,7 +145,7 @@ export class KbPageCommentsService {
       .where(and(eq(kbPageComments.id, commentId), eq(kbPageComments.orgId, orgId)));
   }
 
-  async resolve(user: CurrentUserContext, commentId: number): Promise<CommentRow> {
+  async resolve(user: CurrentUserContext, commentId: number): Promise<CommentWithAuthor> {
     const orgId = user.orgId;
     const existing = await this.db.query.kbPageComments.findFirst({
       where: and(eq(kbPageComments.id, commentId), eq(kbPageComments.orgId, orgId)),
@@ -160,7 +161,17 @@ export class KbPageCommentsService {
       .where(and(eq(kbPageComments.id, commentId), eq(kbPageComments.orgId, orgId)))
       .returning();
     if (!updated) throw new NotFoundException("Comment not found");
-    return updated;
+    return this.loadWithAuthor(orgId, commentId);
+  }
+
+  private async loadWithAuthor(orgId: string, commentId: number): Promise<CommentWithAuthor> {
+    const [row] = await this.db
+      .select({ comment: kbPageComments, authorName: users.name, authorEmail: users.email })
+      .from(kbPageComments)
+      .leftJoin(users, eq(users.id, kbPageComments.authorId))
+      .where(and(eq(kbPageComments.id, commentId), eq(kbPageComments.orgId, orgId)));
+    if (!row) throw new NotFoundException("Comment not found");
+    return { ...row.comment, authorName: row.authorName ?? row.authorEmail };
   }
 
   private async assertPageExists(user: CurrentUserContext, pageId: number): Promise<void> {

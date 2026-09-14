@@ -12,6 +12,55 @@ import { type Db } from "../../../db/drizzle.module";
 export class ProjectsTicketChecklistsService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
+  private async loadChecklistRow(orgId: string, checklistId: number) {
+    const [row] = await this.db
+      .select({
+        id: ticketChecklists.id,
+        orgId: ticketChecklists.orgId,
+        ticketId: ticketChecklists.ticketId,
+        title: ticketChecklists.title,
+        createdAt: ticketChecklists.createdAt,
+        updatedAt: ticketChecklists.updatedAt,
+        projectId: tickets.projectId,
+      })
+      .from(ticketChecklists)
+      .leftJoin(tickets, eq(tickets.id, ticketChecklists.ticketId))
+      .where(and(eq(ticketChecklists.id, checklistId), eq(ticketChecklists.orgId, orgId)))
+      .limit(1);
+    if (!row) return null;
+    return {
+      id: row.id,
+      orgId: row.orgId,
+      projectId: row.projectId ?? 0,
+      ticketId: row.ticketId,
+      title: row.title,
+      position: 0,
+      createdAt: row.createdAt,
+      updatedAt: row.updatedAt,
+    };
+  }
+
+  private toChecklistItemRow(item: {
+    id: number;
+    orgId: string;
+    checklistId: number;
+    text: string;
+    isCompleted: boolean;
+    order: number;
+    createdAt: Date;
+  }) {
+    return {
+      id: item.id,
+      orgId: item.orgId,
+      checklistId: item.checklistId,
+      title: item.text,
+      isCompleted: item.isCompleted,
+      position: item.order,
+      createdAt: item.createdAt,
+      updatedAt: item.createdAt,
+    };
+  }
+
   async getChecklists(orgId: string, projectId: number, ticketId: number) {
     const ticket = await this.db.query.tickets.findFirst({
       where: and(
@@ -24,7 +73,7 @@ export class ProjectsTicketChecklistsService {
     });
     if (!ticket) throw new NotFoundException("Ticket not found");
 
-    return this.db.query.ticketChecklists.findMany({
+    const checklists = await this.db.query.ticketChecklists.findMany({
       where: and(
         eq(ticketChecklists.ticketId, ticketId),
         eq(ticketChecklists.orgId, orgId),
@@ -33,6 +82,18 @@ export class ProjectsTicketChecklistsService {
       orderBy: (c, { asc }) => [asc(c.createdAt)],
       limit: 100,
     });
+
+    return checklists.map((checklist) => ({
+      id: checklist.id,
+      orgId: checklist.orgId,
+      projectId,
+      ticketId: checklist.ticketId,
+      title: checklist.title,
+      position: 0,
+      createdAt: checklist.createdAt,
+      updatedAt: checklist.updatedAt,
+      items: checklist.items.map((item) => this.toChecklistItemRow(item)),
+    }));
   }
 
   async createChecklist(
@@ -55,8 +116,11 @@ export class ProjectsTicketChecklistsService {
     const [checklist] = await this.db
       .insert(ticketChecklists)
       .values({ orgId, ticketId, title: data.title })
-      .returning();
-    return checklist;
+      .returning({ id: ticketChecklists.id });
+    if (!checklist) throw new NotFoundException("Checklist not found after creation");
+    const loaded = await this.loadChecklistRow(orgId, checklist.id);
+    if (!loaded) throw new NotFoundException("Checklist not found after creation");
+    return loaded;
   }
 
   async updateChecklist(
@@ -73,9 +137,11 @@ export class ProjectsTicketChecklistsService {
           eq(ticketChecklists.orgId, orgId),
         ),
       )
-      .returning();
+      .returning({ id: ticketChecklists.id });
     if (!updated) throw new NotFoundException("Checklist not found");
-    return updated;
+    const loaded = await this.loadChecklistRow(orgId, updated.id);
+    if (!loaded) throw new NotFoundException("Checklist not found");
+    return loaded;
   }
 
   async deleteChecklist(orgId: string, checklistId: number) {
@@ -122,7 +188,8 @@ export class ProjectsTicketChecklistsService {
         order: data.order,
       })
       .returning();
-    return item;
+    if (!item) throw new NotFoundException("Checklist item not found after creation");
+    return this.toChecklistItemRow(item);
   }
 
   async updateChecklistItem(
@@ -150,7 +217,7 @@ export class ProjectsTicketChecklistsService {
       .where(and(eq(ticketChecklistItems.orgId, orgId), eq(ticketChecklistItems.id, itemId)))
       .returning();
     if (!item) throw new NotFoundException("Checklist item not found");
-    return item;
+    return this.toChecklistItemRow(item);
   }
 
   async deleteChecklistItem(orgId: string, itemId: number) {

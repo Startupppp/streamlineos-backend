@@ -334,15 +334,15 @@ export class GoalsService {
     return { ...goal, owner: null, keyResults, updates, links };
   }
 
-  async update(orgId: string, goalId: number, input: UpdateInput): Promise<typeof okrGoals.$inferSelect | null> {
+  async update(orgId: string, goalId: number, input: UpdateInput): Promise<GoalDetail | null> {
     const [updated] = await this.db
       .update(okrGoals)
       .set({ ...input, updatedAt: new Date() })
       .where(and(eq(okrGoals.id, goalId), eq(okrGoals.orgId, orgId), isNull(okrGoals.deletedAt)))
-      .returning();
+      .returning({ id: okrGoals.id });
 
     if (!updated) return null;
-    return updated;
+    return this.getGoal(orgId, goalId);
   }
 
   async remove(orgId: string, goalId: number): Promise<{ success: true } | null> {
@@ -361,7 +361,7 @@ export class GoalsService {
     userId: string,
     goalId: number,
     input: CheckInInput,
-  ): Promise<typeof okrGoals.$inferSelect | null> {
+  ): Promise<GoalDetail | null> {
     const goalExists = await this.db.query.okrGoals.findFirst({
       where: and(eq(okrGoals.id, goalId), eq(okrGoals.orgId, orgId), isNull(okrGoals.deletedAt)),
       columns: { id: true },
@@ -405,10 +405,6 @@ export class GoalsService {
 
     await this.recomputeGoalProgress(goalId, orgId);
 
-    const goal = await this.db.query.okrGoals.findFirst({
-      where: and(eq(okrGoals.id, goalId), eq(okrGoals.orgId, orgId), isNull(okrGoals.deletedAt)),
-    });
-
-    return goal ?? null;
+    return this.getGoal(orgId, goalId);
   }
 }

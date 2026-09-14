@@ -107,7 +107,25 @@ export class ExitWriteService {
     this.dispatchResignationSubmitted(orgId, actorUserId, resignation.id, input, noticePeriodDays);
     this.resignationJobs.notifyResignationSubmitted(orgId, actorUserId);
 
-    return resignation;
+    return this.readResignation(orgId, resignation.id);
+  }
+
+  private async readResignation(orgId: string, id: number) {
+    const data = await this.db.query.resignations.findFirst({
+      where: and(eq(resignations.id, id), eq(resignations.orgId, orgId)),
+      with: {
+        user: { columns: { id: true, name: true, email: true, image: true } },
+        checklists: true,
+        hrReviewer: { columns: { id: true, name: true } },
+        finalReviewer: { columns: { id: true, name: true } },
+      },
+    });
+    if (!data) throw new NotFoundException("Resignation not found.");
+    return {
+      ...data,
+      user: data.user ? { ...data.user, designation: null, joiningDate: null } : null,
+      hasResignationLetter: data.resignationLetterUrl != null,
+    };
   }
 
   async update(orgId: string, actor: ExitActor, resignationId: number, input: ResignationUpdateInput) {

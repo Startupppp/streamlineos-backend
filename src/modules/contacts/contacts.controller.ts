@@ -47,6 +47,7 @@ import { ApiOkResponse } from "@nestjs/swagger";
 import {
   contactListSchema,
   contactDetailSchema,
+  contactItemSchema,
   bulkImportSchema,
   contactSearchSchema,
 } from "./dto/contacts-response.schemas";
@@ -78,7 +79,7 @@ export class ContactsController {
   @Post()
   @HttpCode(201)
   @RequirePermission("crm:contacts:manage")
-  @ResponseSchema(contactDetailSchema)
+  @ResponseSchema(contactItemSchema)
   @Validate({ body: createSchema })
   create(
     @Body() body: CreateInput,
@@ -145,7 +146,7 @@ export class ContactsController {
   @Deprecated({ sunset: "2026-10-25", link: "/party/contacts/:partyContactId" })
   @Patch(":contactId")
   @RequirePermission("crm:contacts:manage")
-  @ResponseSchema(contactDetailSchema)
+  @ResponseSchema(contactItemSchema)
   @Validate({ params: contactIdParams, body: updateSchema })
   async update(
     @Param("contactId", ParseIntPipe) contactId: number,

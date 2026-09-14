@@ -37,7 +37,6 @@ import { ResponseSchema, NoContentResponse } from "../../common/openapi/zod-oper
 import {
   leadListSchema,
   leadDetailSchema,
-  leadMutatedSchema,
   leadBoardSchema,
   leadStatsSchema,
 } from "./dto/leads-response.schemas";
@@ -69,7 +68,7 @@ export class LeadsController {
   @HttpCode(201)
   @RequirePermission("crm:leads:create")
   @Idempotent("crm.lead.create")
-  @ResponseSchema(leadMutatedSchema)
+  @ResponseSchema(leadDetailSchema)
   @Validate({ body: createSchema })
   async create(
     @Body() body: CreateInput,
@@ -114,7 +113,7 @@ export class LeadsController {
 
   @Patch(":leadId")
   @RequirePermission("crm:leads:update")
-  @ResponseSchema(leadMutatedSchema)
+  @ResponseSchema(leadDetailSchema)
   @Validate({ params: leadIdParams, body: updateSchema })
   async update(
     @Param("leadId", ParseIntPipe) leadId: number,

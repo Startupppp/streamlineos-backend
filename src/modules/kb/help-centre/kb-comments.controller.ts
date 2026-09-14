@@ -27,7 +27,6 @@ import { Validate } from "../../../common/validation/validate.decorator";
 import { BodylessAction, ResponseSchema, NoContentResponse } from "../../../common/openapi/zod-operation-contracts";
 import {
   kbArticleCommentListSchema,
-  kbArticleCommentSchema,
   kbArticleCommentWithAuthorSchema,
 } from "./dto/kb-helpcenter-response.schemas";
 import { z } from "zod";
@@ -61,7 +60,7 @@ export class KbCommentsController {
   @RequirePermission("kb:articles:create")
   @HttpCode(201)
   @Validate({ params: articleIdParams, body: createCommentSchema })
-  @ResponseSchema(kbArticleCommentSchema)
+  @ResponseSchema(kbArticleCommentWithAuthorSchema)
   async create(
     @Param("articleId", ParseIntPipe) articleId: number,
     @Body() body: CreateCommentInput,
@@ -73,7 +72,7 @@ export class KbCommentsController {
   @Patch("comments/:commentId")
   @RequirePermission("kb:articles:update")
   @Validate({ params: commentIdParams, body: updateCommentSchema })
-  @ResponseSchema(kbArticleCommentSchema)
+  @ResponseSchema(kbArticleCommentWithAuthorSchema)
   async update(
     @Param("commentId", ParseIntPipe) commentId: number,
     @Body() body: UpdateCommentInput,
@@ -99,7 +98,7 @@ export class KbCommentsController {
   @RequirePermission("kb:articles:update")
   @HttpCode(200)
   @Validate({ params: commentIdParams })
-  @ResponseSchema(kbArticleCommentSchema)
+  @ResponseSchema(kbArticleCommentWithAuthorSchema)
   async resolve(
     @Param("commentId", ParseIntPipe) commentId: number,
     @CurrentUser() u: CurrentUserContext,

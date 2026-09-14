@@ -79,6 +79,45 @@ export class DealsStakeholdersService {
       .limit(100);
   }
 
+  async getOne(orgId: string, dealId: number, stakeholderId: string) {
+    const rows = await this.db
+      .select({
+        id: crmDealStakeholders.id,
+        dealId: crmDealStakeholders.dealId,
+        contactId: crmDealStakeholders.contactId,
+        roleKey: crmDealStakeholders.roleKey,
+        influence: crmDealStakeholders.influence,
+        isPrimary: crmDealStakeholders.isPrimary,
+        notes: crmDealStakeholders.notes,
+        createdAt: crmDealStakeholders.createdAt,
+        contact: {
+          id: contactPartyMap.contactId,
+          name: businessParties.name,
+          email: businessParties.email,
+          title: businessParties.jobTitle,
+          company: businessParties.companyName,
+        },
+      })
+      .from(crmDealStakeholders)
+      .innerJoin(
+        contactPartyMap,
+        and(
+          eq(contactPartyMap.contactId, crmDealStakeholders.contactId),
+          eq(contactPartyMap.organizationId, crmDealStakeholders.orgId),
+        ),
+      )
+      .innerJoin(businessParties, PARTY_OF_CONTACT)
+      .where(
+        and(
+          eq(crmDealStakeholders.id, stakeholderId),
+          eq(crmDealStakeholders.dealId, dealId),
+          eq(crmDealStakeholders.orgId, orgId),
+        ),
+      )
+      .limit(1);
+    return rows[0] ?? null;
+  }
+
   async createStakeholder(orgId: string, dealId: number, input: CreateStakeholderInput) {
     await this.assertDealBelongsToOrg(orgId, dealId);
     // Through the seam rather than `contacts`: the question is whether this

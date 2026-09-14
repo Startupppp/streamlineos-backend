@@ -121,9 +121,7 @@ export class HrHelpdeskService {
   }
 
   async getById(orgId: string, userId: string, isAdmin: boolean, ticketId: number) {
-    const ticket = await this.db.query.helpdeskTickets.findFirst({
-      where: and(eq(helpdeskTickets.id, ticketId), eq(helpdeskTickets.orgId, orgId)),
-    });
+    const ticket = await this.loadTicketRow(orgId, ticketId);
 
     if (!ticket) throw new NotFoundException("Ticket not found.");
 
@@ -149,9 +147,12 @@ export class HrHelpdeskService {
     return this.db
       .select({
         id: hrHelpdeskComments.id,
+        ticketId: hrHelpdeskComments.ticketId,
+        orgId: hrHelpdeskComments.orgId,
         body: hrHelpdeskComments.body,
         createdAt: hrHelpdeskComments.createdAt,
         authorId: hrHelpdeskComments.authorId,
+        authorMembershipId: hrHelpdeskComments.authorMembershipId,
         authorName: users.name,
         authorImage: users.image,
       })
@@ -181,6 +182,64 @@ export class HrHelpdeskService {
       after = { sortValue: last.createdAt, id: String(last.id) };
     }
     return comments;
+  }
+
+  private async loadTicketRow(orgId: string, ticketId: number) {
+    const [row] = await this.db
+      .select({
+        id: helpdeskTickets.id,
+        orgId: helpdeskTickets.orgId,
+        userId: helpdeskTickets.userId,
+        userMembershipId: helpdeskTickets.userMembershipId,
+        title: helpdeskTickets.title,
+        description: helpdeskTickets.description,
+        category: helpdeskTickets.category,
+        priority: helpdeskTickets.priority,
+        status: helpdeskTickets.status,
+        assigneeId: helpdeskTickets.assigneeId,
+        assigneeMembershipId: helpdeskTickets.assigneeMembershipId,
+        isConfidential: helpdeskTickets.isConfidential,
+        slaDueAt: helpdeskTickets.slaDueAt,
+        resolvedAt: helpdeskTickets.resolvedAt,
+        resolution: helpdeskTickets.resolution,
+        createdAt: helpdeskTickets.createdAt,
+        updatedAt: helpdeskTickets.updatedAt,
+        authorName: users.name,
+        authorImage: users.image,
+      })
+      .from(helpdeskTickets)
+      .leftJoin(users, eq(users.id, helpdeskTickets.userId))
+      .where(and(eq(helpdeskTickets.id, ticketId), eq(helpdeskTickets.orgId, orgId)))
+      .limit(1);
+    return row ?? null;
+  }
+
+  private async loadTicketDetail(orgId: string, ticketId: number) {
+    const ticket = await this.loadTicketRow(orgId, ticketId);
+    if (!ticket) throw new NotFoundException("Ticket not found.");
+    const comments = await this.scanComments(orgId, ticketId);
+    return { ...ticket, comments };
+  }
+
+  private async loadComment(orgId: string, commentId: number) {
+    const [row] = await this.db
+      .select({
+        id: hrHelpdeskComments.id,
+        ticketId: hrHelpdeskComments.ticketId,
+        orgId: hrHelpdeskComments.orgId,
+        authorId: hrHelpdeskComments.authorId,
+        authorMembershipId: hrHelpdeskComments.authorMembershipId,
+        body: hrHelpdeskComments.body,
+        createdAt: hrHelpdeskComments.createdAt,
+        authorName: users.name,
+        authorImage: users.image,
+      })
+      .from(hrHelpdeskComments)
+      .leftJoin(users, eq(users.id, hrHelpdeskComments.authorId))
+      .where(and(eq(hrHelpdeskComments.id, commentId), eq(hrHelpdeskComments.orgId, orgId)))
+      .limit(1);
+    if (!row) throw new NotFoundException("Comment not found.");
+    return row;
   }
 
   async create(orgId: string, userId: string, body: CreateInput) {
@@ -222,7 +281,7 @@ export class HrHelpdeskService {
       }
     }
 
-    const ticket = await this.db.transaction(async (tx) => {
+    const ticketId = await this.db.transaction(async (tx) => {
       const [row] = await tx
         .insert(helpdeskTickets)
         .values({
@@ -237,7 +296,7 @@ export class HrHelpdeskService {
           assigneeId,
           assigneeMembershipId,
         })
-        .returning();
+        .returning({ id: helpdeskTickets.id });
 
       if (!row) throw new ConflictException("Failed to create ticket.");
 
@@ -259,10 +318,10 @@ export class HrHelpdeskService {
         occurredAt: new Date(),
       });
 
-      return row;
+      return row.id;
     });
 
-    return ticket;
+    return this.loadTicketDetail(orgId, ticketId);
   }
 
   async updateTicket(
@@ -308,12 +367,12 @@ export class HrHelpdeskService {
     const statusChanged = body.status !== undefined && body.status !== ticket.status;
     const newAssigneeId = body.assigneeId ?? null;
 
-    const updated = await this.db.transaction(async (tx) => {
+    await this.db.transaction(async (tx) => {
       const [row] = await tx
         .update(helpdeskTickets)
         .set(patch)
         .where(and(eq(helpdeskTickets.id, ticketId), eq(helpdeskTickets.orgId, orgId)))
-        .returning();
+        .returning({ id: helpdeskTickets.id, title: helpdeskTickets.title, userId: helpdeskTickets.userId });
 
       if (!row) throw new NotFoundException("Ticket not found.");
 
@@ -355,11 +414,9 @@ export class HrHelpdeskService {
           occurredAt: new Date(),
         });
       }
-
-      return row;
     });
 
-    return updated;
+    return this.loadTicketDetail(orgId, ticketId);
   }
 
   async addComment(
@@ -378,23 +435,28 @@ export class HrHelpdeskService {
     if (!isAdmin && ticket.userId !== userId) throw new ForbiddenException("Access denied.");
     if (ticket.isConfidential && !isAdmin && ticket.userId !== userId) throw new ForbiddenException("Access denied.");
 
-    const [comment] = await this.db
+    const [inserted] = await this.db
       .insert(hrHelpdeskComments)
       .values({ ticketId, orgId, authorId: userId, body: body.body })
-      .returning();
+      .returning({ id: hrHelpdeskComments.id });
 
-    return comment;
+    if (!inserted) throw new NotFoundException("Comment not found after insert.");
+
+    return this.loadComment(orgId, inserted.id);
   }
 
   listRoutingRules(orgId: string) {
     return this.db
       .select({
         id: hrHelpdeskRouting.id,
+        orgId: hrHelpdeskRouting.orgId,
         category: hrHelpdeskRouting.category,
         assigneeUserId: hrHelpdeskRouting.assigneeUserId,
+        assigneeMembershipId: hrHelpdeskRouting.assigneeMembershipId,
+        createdAt: hrHelpdeskRouting.createdAt,
+        updatedAt: hrHelpdeskRouting.updatedAt,
         assigneeName: users.name,
         assigneeImage: users.image,
-        createdAt: hrHelpdeskRouting.createdAt,
       })
       .from(hrHelpdeskRouting)
       .leftJoin(users, eq(users.id, hrHelpdeskRouting.assigneeUserId))
@@ -404,14 +466,34 @@ export class HrHelpdeskService {
   }
 
   async upsertRoutingRule(orgId: string, body: RoutingRuleInput) {
-    const [rule] = await this.db
+    const [inserted] = await this.db
       .insert(hrHelpdeskRouting)
       .values({ orgId, category: body.category, assigneeUserId: body.assigneeUserId })
       .onConflictDoUpdate({
         target: [hrHelpdeskRouting.orgId, hrHelpdeskRouting.category],
         set: { assigneeUserId: body.assigneeUserId, updatedAt: new Date() },
       })
-      .returning();
+      .returning({ id: hrHelpdeskRouting.id });
+
+    if (!inserted) throw new NotFoundException("Routing rule not found after upsert.");
+
+    const [rule] = await this.db
+      .select({
+        id: hrHelpdeskRouting.id,
+        orgId: hrHelpdeskRouting.orgId,
+        category: hrHelpdeskRouting.category,
+        assigneeUserId: hrHelpdeskRouting.assigneeUserId,
+        assigneeMembershipId: hrHelpdeskRouting.assigneeMembershipId,
+        createdAt: hrHelpdeskRouting.createdAt,
+        updatedAt: hrHelpdeskRouting.updatedAt,
+        assigneeName: users.name,
+        assigneeImage: users.image,
+      })
+      .from(hrHelpdeskRouting)
+      .leftJoin(users, eq(users.id, hrHelpdeskRouting.assigneeUserId))
+      .where(and(eq(hrHelpdeskRouting.id, inserted.id), eq(hrHelpdeskRouting.orgId, orgId)))
+      .limit(1);
+
     return rule;
   }
 

@@ -2,12 +2,12 @@ import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
 import postgres from "postgres";
+import { PRODUCTION_HOST_PATTERNS } from "./lib/production-host-guard.mjs";
 
 const ROOT = path.resolve(import.meta.dirname, "../..");
 const MIGRATIONS = path.join(ROOT, "migrations");
 const JOURNAL = path.join(MIGRATIONS, "meta", "_journal.json");
 
-const PRODUCTION_HOST_PATTERNS = ["amazonaws.com", "neon.tech", "neon-db.net", "supabase.co", ".render.com"];
 
 export function assertMigrationTarget(url, allowProduction) {
   if (!url) return { allowed: false, reason: "DATABASE_URL is not set" };

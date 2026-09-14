@@ -83,6 +83,43 @@ export class WorkerEngagementsService {
     return row;
   }
 
+  private async loadWorkerWithPerson(organizationId: string, workerId: string) {
+    const personJoin = and(
+      eq(workers.organizationPersonId, organizationPeople.organizationPersonId),
+      eq(workers.organizationId, organizationPeople.organizationId),
+    );
+    const [row] = await this.db
+      .select({
+        workerId: workers.workerId,
+        organizationId: workers.organizationId,
+        organizationPersonId: workers.organizationPersonId,
+        workerNumber: workers.workerNumber,
+        status: workers.status,
+        isPayee: workers.isPayee,
+        deletedAt: workers.deletedAt,
+        createdAt: workers.createdAt,
+        updatedAt: workers.updatedAt,
+        firstName: organizationPeople.firstName,
+        lastName: organizationPeople.lastName,
+        displayName: organizationPeople.displayName,
+        workEmail: organizationPeople.workEmail,
+        avatarUrl: organizationPeople.avatarUrl,
+        userId: organizationPeople.userId,
+      })
+      .from(workers)
+      .innerJoin(organizationPeople, personJoin)
+      .where(
+        and(
+          eq(workers.workerId, workerId),
+          eq(workers.organizationId, organizationId),
+          isNull(workers.deletedAt),
+        ),
+      )
+      .limit(1);
+    if (!row) throw new NotFoundException("Worker not found");
+    return row;
+  }
+
   private async resolveWorkerSearchCondition(search: string): Promise<SQL<unknown>> {
     const workerNumberClause = ilike(workers.workerNumber, `%${search}%`);
     const personFallback = or(
@@ -153,7 +190,7 @@ export class WorkerEngagementsService {
   }
 
   getWorker(organizationId: string, workerId: string) {
-    return this.loadWorker(organizationId, workerId);
+    return this.loadWorkerWithPerson(organizationId, workerId);
   }
 
   async createWorker(organizationId: string, userId: string, input: CreateWorkerInput) {
@@ -184,7 +221,7 @@ export class WorkerEngagementsService {
       resourceId: row.workerId,
       metadata: { workerId: row.workerId, organizationPersonId: row.organizationPersonId },
     });
-    return row;
+    return this.loadWorkerWithPerson(organizationId, row.workerId);
   }
 
   async listEngagements(organizationId: string, workerId: string) {

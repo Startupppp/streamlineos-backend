@@ -23,6 +23,7 @@ const ALERT_SCRIPTS = [
   "check-alert-ack.mjs",
   "alert-workflow-stranded.mjs",
   "alert-retention-dead-man.mjs",
+  "alert-response-contract-violations.mjs",
 ];
 
 function runSelfTest(script) {

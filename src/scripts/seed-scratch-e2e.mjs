@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { PRODUCTION_HOST_PATTERNS } from "./lib/production-host-guard.mjs";
 /**
  * Reproducible, idempotent production-shaped seed for scratch_e2e.
  *
@@ -24,7 +25,6 @@ import * as dotenv from "dotenv";
 import { resolve } from "node:path";
 import { createHash, randomUUID } from "node:crypto";
 
-const PRODUCTION_HOST_PATTERNS = ["amazonaws.com", "neon.tech", "neon-db.net", "supabase.co", ".render.com"];
 
 export function assertScratchTarget(scratchUrl, liveUrls) {
   const matched = PRODUCTION_HOST_PATTERNS.find((p) => scratchUrl.includes(p));

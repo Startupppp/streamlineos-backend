@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { SignJWT, importJWK } from "jose";
+import { CACHE_HIT_CEILING_MS } from "./timing-slo-thresholds.mjs";
 
 const arg = (name, fallback) => {
   const hit = process.argv.find((a) => a.startsWith(`--${name}=`));
@@ -16,7 +17,7 @@ const N = Number(arg("n", "200"));
 const WARMUP = Number(arg("warmup", "20"));
 const CONCURRENCY = arg("concurrency", "1,8").split(",").map(Number);
 const PHASE = arg("phase", "hit");
-const CEILING_MS = Number(arg("ceiling-ms", "100"));
+const CEILING_MS = Number(arg("ceiling-ms", String(CACHE_HIT_CEILING_MS)));
 const OUT = resolve(process.cwd(), arg("out", `.artifacts/cache-${PHASE}-latency.json`));
 
 export function percentile(sorted, p) {

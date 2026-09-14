@@ -2,10 +2,10 @@ import { BadRequestException, ForbiddenException, Inject, Injectable, NotFoundEx
 import { and, eq, isNull, sql } from "drizzle-orm";
 import {
   organizationPeople,
-  projects,
   ticketCommentReactions,
   ticketComments,
   tickets,
+  users,
 } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
@@ -49,6 +49,67 @@ export class ProjectsTicketCommentsService {
     }
 
     return ticket;
+  }
+
+  private async loadCommentRow(orgId: string, ticketId: number, commentId: number) {
+    const rows = await this.db
+      .select({
+        id: ticketComments.id,
+        orgId: ticketComments.orgId,
+        ticketId: ticketComments.ticketId,
+        body: ticketComments.content,
+        clientVisible: ticketComments.clientVisible,
+        isEdited: sql<boolean>`${ticketComments.updatedAt} > ${ticketComments.createdAt}`,
+        createdAt: ticketComments.createdAt,
+        updatedAt: ticketComments.updatedAt,
+        authorId: ticketComments.userId,
+        authorDisplayName: organizationPeople.displayName,
+        authorFirstName: organizationPeople.firstName,
+        authorLastName: organizationPeople.lastName,
+        authorImage: organizationPeople.avatarUrl,
+        authorEmail: users.email,
+      })
+      .from(ticketComments)
+      .leftJoin(
+        organizationPeople,
+        and(
+          eq(organizationPeople.userId, ticketComments.userId),
+          eq(organizationPeople.organizationId, orgId),
+        ),
+      )
+      .leftJoin(users, eq(users.id, ticketComments.userId))
+      .where(
+        and(
+          eq(ticketComments.id, commentId),
+          eq(ticketComments.ticketId, ticketId),
+          eq(ticketComments.orgId, orgId),
+          isNull(ticketComments.deletedAt),
+        ),
+      )
+      .limit(1);
+
+    const row = rows[0];
+    if (!row) return null;
+
+    const fallbackName = `${row.authorFirstName ?? ""} ${row.authorLastName ?? ""}`.trim();
+    const authorName = row.authorDisplayName ?? (fallbackName.length > 0 ? fallbackName : null);
+
+    return {
+      id: row.id,
+      orgId: row.orgId,
+      ticketId: row.ticketId,
+      body: row.body,
+      clientVisible: row.clientVisible,
+      isEdited: row.isEdited,
+      createdAt: row.createdAt,
+      updatedAt: row.updatedAt,
+      author: {
+        id: row.authorId,
+        name: authorName,
+        image: row.authorImage ?? null,
+        email: row.authorEmail ?? null,
+      },
+    };
   }
 
   async addComment(u: CurrentUserContext, ticketId: number, body: CommentInput) {
@@ -120,71 +181,17 @@ export class ProjectsTicketCommentsService {
       logger.error("Failed to process comment mentions", { error });
     }
 
-    return comment;
+    const saved = await this.loadCommentRow(u.orgId, ticketId, comment.id);
+    if (!saved) throw new NotFoundException("Comment not found after creation");
+    return saved;
   }
 
   async getComment(u: CurrentUserContext, projectId: number, ticketId: number, commentId: number) {
     const ticket = await this.resolveTicketForComment(u, ticketId);
     if (ticket.projectId !== projectId) throw new NotFoundException("Ticket not found");
-
-    const rows = await this.db
-      .select({
-        id: ticketComments.id,
-        content: ticketComments.content,
-        createdAt: ticketComments.createdAt,
-        updatedAt: ticketComments.updatedAt,
-        parentCommentId: ticketComments.parentCommentId,
-        authorUserId: ticketComments.userId,
-        authorDisplayName: organizationPeople.displayName,
-        authorFirstName: organizationPeople.firstName,
-        authorLastName: organizationPeople.lastName,
-        authorImage: organizationPeople.avatarUrl,
-        projectKey: projects.key,
-      })
-      .from(ticketComments)
-      .leftJoin(
-        organizationPeople,
-        and(
-          eq(organizationPeople.userId, ticketComments.userId),
-          eq(organizationPeople.organizationId, u.orgId),
-        ),
-      )
-      .leftJoin(projects, and(eq(projects.id, projectId), eq(projects.orgId, u.orgId)))
-      .where(
-        and(
-          eq(ticketComments.id, commentId),
-          eq(ticketComments.ticketId, ticketId),
-          eq(ticketComments.orgId, u.orgId),
-          isNull(ticketComments.deletedAt),
-        ),
-      )
-      .limit(1);
-
-    const row = rows[0];
-    if (!row) throw new ProjectsCommentNotFoundException();
-
-    const fallbackName = `${row.authorFirstName ?? ""} ${row.authorLastName ?? ""}`.trim();
-    const authorName = row.authorDisplayName ?? (fallbackName.length > 0 ? fallbackName : null);
-
-    return {
-      id: row.id,
-      content: row.content,
-      createdAt: row.createdAt,
-      updatedAt: row.updatedAt,
-      parentCommentId: row.parentCommentId,
-      author: {
-        id: row.authorUserId ?? null,
-        name: authorName,
-        image: row.authorImage ?? null,
-      },
-      ticket: {
-        id: ticket.id,
-        ticketNumber: ticket.ticketNumber,
-        title: ticket.title,
-        projectKey: row.projectKey ?? null,
-        projectId,
-      },
-    };
+    const comment = await this.loadCommentRow(u.orgId, ticketId, commentId);
+    if (!comment) throw new ProjectsCommentNotFoundException();
+    return comment;
   }
 
   async editComment(u: CurrentUserContext, projectId: number, ticketId: number, commentId: number, content: string) {

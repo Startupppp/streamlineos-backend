@@ -37,6 +37,7 @@ import {
   joinDelegateeMember,
   joinDelegatorMember,
   listDelegationsPage,
+  loadOneDelegation,
   type DelegationListingDeps,
 } from "./lib/delegation-listing";
 
@@ -166,7 +167,9 @@ export class DelegationsService {
       { orgId: actor.orgId },
     );
     await this.invalidateDelegateeSession(body.delegateeId);
-    return record;
+    const enriched = await loadOneDelegation(this.listingDeps, actor.orgId, record.id);
+    if (!enriched) throw new NotFoundException("Delegation not found after creation");
+    return enriched;
   }
 
   async revoke(orgId: string, id: string, actor: CurrentUserContext) {

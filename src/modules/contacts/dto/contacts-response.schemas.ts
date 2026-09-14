@@ -3,7 +3,7 @@ import { wireDate, nullableWireDate } from "../../../common/openapi/wire-types";
 
 const associationRef = z.object({ id: z.number().int(), name: z.string().nullable() }).nullable();
 
-const contactItemSchema = z.object({
+export const contactItemSchema = z.object({
   id: z.number().int(),
   orgId: z.string(),
   name: z.string(),

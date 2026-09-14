@@ -60,12 +60,19 @@ export class HrDisciplinaryService {
     return this.db
       .select({
         id: hrDisciplinaryActions.id,
-        actionType: hrDisciplinaryActions.actionType,
-        effectiveDate: hrDisciplinaryActions.effectiveDate,
-        note: hrDisciplinaryActions.note,
+        orgId: hrDisciplinaryActions.orgId,
         caseId: hrDisciplinaryActions.caseId,
+        employeeId: hrDisciplinaryActions.employeeId,
+        employeeMembershipId: hrDisciplinaryActions.employeeMembershipId,
+        actionType: hrDisciplinaryActions.actionType,
+        letterRenderId: hrDisciplinaryActions.letterRenderId,
+        effectiveDate: hrDisciplinaryActions.effectiveDate,
+        issuedBy: hrDisciplinaryActions.issuedBy,
+        note: hrDisciplinaryActions.note,
         acknowledgedAt: hrDisciplinaryActions.acknowledgedAt,
+        acknowledgedBy: hrDisciplinaryActions.acknowledgedBy,
         createdAt: hrDisciplinaryActions.createdAt,
+        updatedAt: hrDisciplinaryActions.updatedAt,
       })
       .from(hrDisciplinaryActions)
       .where(and(eq(hrDisciplinaryActions.orgId, u.orgId), employeePredicate))

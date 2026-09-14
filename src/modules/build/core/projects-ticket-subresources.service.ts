@@ -253,7 +253,24 @@ export class ProjectsTicketSubresourcesService {
       .insert(ticketWatchers)
       .values({ orgId: u.orgId, ticketId, membershipId: member.id })
       .onConflictDoNothing();
-    return { success: true };
+    const [person] = await this.db
+      .select({
+        displayName: organizationPeople.displayName,
+        firstName: organizationPeople.firstName,
+        lastName: organizationPeople.lastName,
+        image: organizationPeople.avatarUrl,
+      })
+      .from(organizationPeople)
+      .where(and(eq(organizationPeople.userId, userId), eq(organizationPeople.organizationId, u.orgId)))
+      .limit(1);
+    const fallbackName = `${person?.firstName ?? ""} ${person?.lastName ?? ""}`.trim();
+    const name = person?.displayName ?? (fallbackName.length > 0 ? fallbackName : null);
+    return {
+      userId,
+      name,
+      image: person?.image ?? null,
+      membershipId: member.id,
+    };
   }
 
   async removeWatcher(u: CurrentUserContext, ticketId: number) {

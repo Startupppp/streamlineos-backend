@@ -1,5 +1,5 @@
 import { Inject, Injectable, Logger } from "@nestjs/common";
-import { and, asc, eq, gt, lt, inArray } from "drizzle-orm";
+import { and, asc, eq, gt, lt, inArray, sql } from "drizzle-orm";
 import { Redis } from "@upstash/redis";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
@@ -79,6 +79,10 @@ export class CronAiUsageRetentionService {
             eq(aiUsageLogs.orgId, orgId),
             lt(aiUsageLogs.createdAt, cutoff),
             gt(aiUsageLogs.id, cursor),
+            sql`(${aiUsageLogs.userId} IS NULL OR ${aiUsageLogs.userId} NOT IN (
+              SELECT subject_user_id FROM hr_legal_holds
+              WHERE org_id = ${orgId} AND status = 'active' AND deleted_at IS NULL AND subject_user_id IS NOT NULL
+            ))`,
           ),
         )
         .orderBy(asc(aiUsageLogs.id))

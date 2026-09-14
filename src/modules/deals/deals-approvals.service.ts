@@ -90,7 +90,29 @@ export class DealsApprovalsService {
     });
 
     await this.cache.invalidate(CACHE_KEYS.approvalsList(orgId));
-    return updated;
+    return this.fetchApprovalDetail(orgId, updated.id);
+  }
+
+  private async fetchApprovalDetail(orgId: string, approvalId: number) {
+    const rows = await this.db
+      .select({
+        id: dealApprovals.id,
+        dealId: dealApprovals.dealId,
+        dealName: deals.name,
+        dealValue: deals.value,
+        requesterName: users.name,
+        requestedStage: dealApprovals.requestedStage,
+        status: dealApprovals.status,
+        rejectionReason: dealApprovals.rejectionReason,
+        createdAt: dealApprovals.createdAt,
+        resolvedAt: dealApprovals.resolvedAt,
+      })
+      .from(dealApprovals)
+      .leftJoin(deals, eq(dealApprovals.dealId, deals.id))
+      .leftJoin(users, eq(dealApprovals.requestedBy, users.id))
+      .where(and(eq(dealApprovals.id, approvalId), eq(dealApprovals.orgId, orgId)))
+      .limit(1);
+    return rows[0] ?? null;
   }
 
   async requestApproval(orgId: string, actorUserId: string, input: RequestApprovalInput) {

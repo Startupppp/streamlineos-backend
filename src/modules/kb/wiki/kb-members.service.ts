@@ -75,7 +75,7 @@ export class KbMembersService {
       .limit(500);
   }
 
-  async add(orgId: string, spaceId: number, input: AddMemberInput): Promise<MemberRow & { userId: string | null }> {
+  async add(orgId: string, spaceId: number, input: AddMemberInput): Promise<MemberListItem> {
     await this.assertSpaceExists(orgId, spaceId);
     let membershipId: number | null = null;
     if (input.userId) {
@@ -114,7 +114,37 @@ export class KbMembersService {
 
     await this.indexing.bumpSpaceAclRevision(orgId, spaceId);
     await this.access.invalidateAccessibleSpaceIds(orgId);
-    return { ...member, userId: input.userId ?? null };
+    return this.loadWithUser(orgId, member.id);
+  }
+
+  private async loadWithUser(orgId: string, memberId: number): Promise<MemberListItem> {
+    const [row] = await this.db
+      .select({
+        id: kbSpaceMembers.id,
+        orgId: kbSpaceMembers.orgId,
+        spaceId: kbSpaceMembers.spaceId,
+        userId: organizationMembers.userId,
+        membershipId: kbSpaceMembers.membershipId,
+        role: kbSpaceMembers.role,
+        team: kbSpaceMembers.team,
+        spaceRole: kbSpaceMembers.spaceRole,
+        createdAt: kbSpaceMembers.createdAt,
+        userName: users.name,
+        userEmail: users.email,
+        userImage: users.image,
+      })
+      .from(kbSpaceMembers)
+      .leftJoin(
+        organizationMembers,
+        and(
+          eq(organizationMembers.orgId, kbSpaceMembers.orgId),
+          eq(organizationMembers.id, kbSpaceMembers.membershipId),
+        ),
+      )
+      .leftJoin(users, eq(organizationMembers.userId, users.id))
+      .where(and(eq(kbSpaceMembers.id, memberId), eq(kbSpaceMembers.orgId, orgId)));
+    if (!row) throw new NotFoundException("Member not found after save");
+    return row;
   }
 
   async remove(orgId: string, spaceId: number, memberId: number): Promise<{ success: boolean }> {

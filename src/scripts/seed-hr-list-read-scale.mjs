@@ -1,8 +1,8 @@
 import { resolve } from "node:path";
 import postgres from "postgres";
 import * as dotenv from "dotenv";
+import { PRODUCTION_HOST_PATTERNS } from "./lib/production-host-guard.mjs";
 
-const PRODUCTION_HOST_PATTERNS = ["amazonaws.com", "neon.tech", "neon-db.net", "supabase.co", ".render.com"];
 
 function assertDisposableTarget(url) {
   if (!url) return { allowed: false, reason: "DATABASE_URL is not set" };

@@ -163,7 +163,7 @@ export class RecruitmentCandidatesController {
   }
 
   @Patch(":candidateId")
-  @ResponseSchema(candidateSchema)
+  @ResponseSchema(successSchema)
   @RequirePermission("hr:employees:manage")
   @Validate({ params: candidateIdParams, body: updateCandidateSchema })
   update(

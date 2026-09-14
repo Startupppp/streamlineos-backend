@@ -120,7 +120,7 @@ describe("ProjectsTicketCommentsService.getComment — ROW-76 historical identit
 
     expect(result.author.id).toBe("departed-user");
     expect(result.author.name).toBeNull();
-    expect(result.content).toBe("Old comment");
+    expect(result.body).toBe("Old comment");
   });
 
   it("DENY — comment not found (cross-org) returns an HttpException (404 semantics)", async () => {

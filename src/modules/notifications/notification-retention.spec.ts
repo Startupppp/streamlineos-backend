@@ -20,6 +20,10 @@ const leaseHeld = {
   withLease: jest.fn().mockResolvedValue({ ran: false as const }),
 };
 
+const mockDb = {
+  execute: jest.fn().mockResolvedValue([{ has_held_data: false }]),
+};
+
 const WELL_PAST_RETENTION = new Date("2030-01-15T00:00:00Z");
 
 function makeMaintenanceMock(result = { detached: 0, dropped: 0 }) {
@@ -31,7 +35,7 @@ describe("NotificationRetentionService", () => {
 
   it("delegates to PartitionMaintenanceService — issues no DELETE itself", async () => {
     const maintenance = makeMaintenanceMock();
-    const svc = new NotificationRetentionService(maintenance as never, leaseRuns as never);
+    const svc = new NotificationRetentionService(maintenance as never, leaseRuns as never, mockDb as never);
 
     await svc.sweep(WELL_PAST_RETENTION);
 
@@ -40,7 +44,7 @@ describe("NotificationRetentionService", () => {
 
   it("does nothing when another worker holds the lease", async () => {
     const maintenance = makeMaintenanceMock();
-    const svc = new NotificationRetentionService(maintenance as never, leaseHeld as never);
+    const svc = new NotificationRetentionService(maintenance as never, leaseHeld as never, mockDb as never);
 
     const result = await svc.sweep(WELL_PAST_RETENTION);
 
@@ -50,7 +54,7 @@ describe("NotificationRetentionService", () => {
 
   it("covers every table named in the retention policy", async () => {
     const maintenance = makeMaintenanceMock();
-    const svc = new NotificationRetentionService(maintenance as never, leaseRuns as never);
+    const svc = new NotificationRetentionService(maintenance as never, leaseRuns as never, mockDb as never);
 
     const result = await svc.sweep(WELL_PAST_RETENTION);
 
@@ -66,7 +70,7 @@ describe("NotificationRetentionService", () => {
 
   it("passes the full expired-partition list per table to sweepParent", async () => {
     const maintenance = makeMaintenanceMock();
-    const svc = new NotificationRetentionService(maintenance as never, leaseRuns as never);
+    const svc = new NotificationRetentionService(maintenance as never, leaseRuns as never, mockDb as never);
 
     await svc.sweep(WELL_PAST_RETENTION);
 
@@ -80,7 +84,7 @@ describe("NotificationRetentionService", () => {
 
   it("probes via sweepParent and returns 0 detached when maintenance returns 0", async () => {
     const maintenance = makeMaintenanceMock({ detached: 0, dropped: 0 });
-    const svc = new NotificationRetentionService(maintenance as never, leaseRuns as never);
+    const svc = new NotificationRetentionService(maintenance as never, leaseRuns as never, mockDb as never);
 
     const result = await svc.sweep(WELL_PAST_RETENTION);
 
@@ -100,7 +104,8 @@ describe("NotificationRetentionService", () => {
 
   it("accumulates detach/drop counts across tables", async () => {
     const maintenance = { sweepParent: jest.fn().mockResolvedValue({ detached: 3, dropped: 3 }) };
-    const svc = new NotificationRetentionService(maintenance as never, leaseRuns as never);
+    const svc = new NotificationRetentionService(maintenance as never, leaseRuns as never, mockDb as never);
+
 
     const result = await svc.sweep(WELL_PAST_RETENTION);
 

@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import postgres from "postgres";
+import { PRODUCTION_HOST_PATTERNS } from "./lib/production-host-guard.mjs";
 
 const RELOCATION_STATES = [
   "ACTIVE_SOURCE",
@@ -61,7 +62,6 @@ function nextForwardState(current) {
   return FORWARD_SEQUENCE[idx + 1];
 }
 
-const PRODUCTION_HOST_PATTERNS = ["amazonaws.com", "neon.tech", "neon-db.net", "supabase.co", ".render.com"];
 
 export function assertRelocationTarget(url, allowProduction) {
   if (!url) return { allowed: false, reason: "DATABASE_URL is not set" };

@@ -344,7 +344,7 @@ export class ExecutiveBriefService {
       sources,
       uncertaintyNotes,
       generatedAt: new Date().toISOString(),
-      aiUsage,
+      aiUsage: aiUsage ?? null,
     };
   }
 

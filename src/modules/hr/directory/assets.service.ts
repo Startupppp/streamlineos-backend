@@ -91,7 +91,54 @@ export class AssetsService {
       })
       .returning();
 
-    return record;
+    if (!record) throw new NotFoundException("Asset return record not found.");
+
+    return this.loadAssetReturn(orgId, record.id);
+  }
+
+  private async loadAssetReturn(orgId: string, returnId: number) {
+    const [row] = await this.db
+      .select({
+        id: assetReturns.id,
+        orgId: assetReturns.orgId,
+        userId: assetReturns.userId,
+        assetId: assetReturns.assetId,
+        assetName: assetReturns.assetName,
+        status: assetReturns.status,
+        returnedAt: assetReturns.returnedAt,
+        condition: assetReturns.condition,
+        notes: assetReturns.notes,
+        createdAt: assetReturns.createdAt,
+        userFirstName: users.firstName,
+        userLastName: users.lastName,
+        userEmail: users.email,
+      })
+      .from(assetReturns)
+      .leftJoin(users, eq(assetReturns.userId, users.id))
+      .where(and(eq(assetReturns.id, returnId), eq(assetReturns.orgId, orgId)))
+      .limit(1);
+
+    if (!row) throw new NotFoundException("Asset return record not found.");
+
+    const assetType: string | null = null;
+    const serialNumber: string | null = null;
+    const name = `${row.userFirstName ?? ""} ${row.userLastName ?? ""}`.trim();
+
+    return {
+      id: row.id,
+      orgId: row.orgId,
+      userId: row.userId,
+      assetId: row.assetId,
+      assetName: row.assetName,
+      assetType,
+      serialNumber,
+      status: row.status,
+      returnedAt: row.returnedAt,
+      condition: row.condition,
+      notes: row.notes,
+      createdAt: row.createdAt,
+      employeeName: name || row.userEmail || null,
+    };
   }
 
   async updateAssetReturn(orgId: string, returnId: number, body: PatchAssetReturnInput) {
@@ -119,7 +166,9 @@ export class AssetsService {
       .where(and(eq(assetReturns.id, returnId), eq(assetReturns.orgId, orgId)))
       .returning();
 
-    return updated;
+    if (!updated) throw new NotFoundException("Asset return record not found.");
+
+    return this.loadAssetReturn(orgId, updated.id);
   }
 
   async listDevices(orgId: string) {
@@ -197,7 +246,52 @@ export class AssetsService {
       })
       .returning();
 
-    return device;
+    return this.loadDevice(orgId, device.id);
+  }
+
+  private async loadDevice(orgId: string, deviceId: number) {
+    const [row] = await this.db
+      .select({
+        id: employeeDevices.id,
+        orgId: employeeDevices.orgId,
+        userId: employeeDevices.userId,
+        deviceType: employeeDevices.deviceType,
+        deviceName: employeeDevices.deviceName,
+        serialNumber: employeeDevices.serialNumber,
+        brand: employeeDevices.brand,
+        model: employeeDevices.model,
+        assignedDate: employeeDevices.assignedDate,
+        returnDate: employeeDevices.returnDate,
+        status: employeeDevices.status,
+        notes: employeeDevices.notes,
+        createdAt: employeeDevices.createdAt,
+        userFirstName: users.firstName,
+        userLastName: users.lastName,
+        userEmail: users.email,
+      })
+      .from(employeeDevices)
+      .innerJoin(users, eq(employeeDevices.userId, users.id))
+      .where(and(eq(employeeDevices.id, deviceId), eq(employeeDevices.orgId, orgId)))
+      .limit(1);
+
+    if (!row) throw new NotFoundException("Device not found.");
+
+    return {
+      id: row.id,
+      orgId: row.orgId,
+      userId: row.userId,
+      deviceType: row.deviceType,
+      deviceName: row.deviceName,
+      serialNumber: row.serialNumber,
+      brand: row.brand,
+      model: row.model,
+      assignedDate: row.assignedDate,
+      returnDate: row.returnDate,
+      status: row.status,
+      notes: row.notes,
+      createdAt: row.createdAt,
+      user: { id: row.userId, firstName: row.userFirstName, lastName: row.userLastName, email: row.userEmail },
+    };
   }
 
   async updateDevice(orgId: string, deviceId: number, body: PatchDeviceInput) {

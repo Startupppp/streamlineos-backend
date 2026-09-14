@@ -1,4 +1,4 @@
-import { ConflictException, Inject, Injectable } from "@nestjs/common";
+import { ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, asc, eq, max, sql } from "drizzle-orm";
 import { documentTypes, documentTypeRoles } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
@@ -95,8 +95,8 @@ export class HrDocumentTypesService {
     const slug = toSlug(input.name);
     const sortOrder = input.sortOrder ?? (await this.nextSortOrder(orgId));
 
-    return this.db.transaction(async (tx) => {
-      const [record] = await tx
+    const record = await this.db.transaction(async (tx) => {
+      const [created] = await tx
         .insert(documentTypes)
         .values({
           orgId,
@@ -109,16 +109,20 @@ export class HrDocumentTypesService {
         })
         .returning();
 
-      if (!record) throw new Error("Failed to create document type");
+      if (!created) throw new Error("Failed to create document type");
 
       if (input.applicableRoles && input.applicableRoles.length > 0) {
         await tx.insert(documentTypeRoles).values(
-          input.applicableRoles.map((roleSlug) => ({ orgId, documentTypeId: record.id, roleSlug })),
+          input.applicableRoles.map((roleSlug) => ({ orgId, documentTypeId: created.id, roleSlug })),
         );
       }
 
-      return record;
+      return created;
     });
+
+    const row = await this.getById(orgId, record.id);
+    if (!row) throw new NotFoundException("Document type not found.");
+    return row;
   }
 
   async update(orgId: string, id: number, input: UpdateDocumentTypeInput) {
@@ -155,6 +159,10 @@ export class HrDocumentTypesService {
 
       return updated;
     });
+
+    const row = await this.getById(orgId, id);
+    if (!row) throw new NotFoundException("Document type not found.");
+    return row;
   }
 
   softDelete(orgId: string, id: number) {

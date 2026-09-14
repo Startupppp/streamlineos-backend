@@ -4,8 +4,8 @@ import { sql } from 'drizzle-orm';
 import { randomUUID } from "node:crypto";
 import * as dotenv from 'dotenv';
 import { resolve } from "node:path";
+import { PRODUCTION_HOST_PATTERNS } from "./lib/production-host-guard.mjs";
 
-const PRODUCTION_HOST_PATTERNS = ["amazonaws.com", "neon.tech", "neon-db.net", "supabase.co", ".render.com"];
 
 function assertBootstrapTarget(url, allowProduction) {
   if (!url) return { allowed: false, reason: "DATABASE_URL is not set" };

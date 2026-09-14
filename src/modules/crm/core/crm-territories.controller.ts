@@ -45,6 +45,10 @@ const territoryIdParams = z.object({ territoryId: z.coerce.number().int().positi
 export class CrmTerritoriesController {
   constructor(private readonly territories: CrmTerritoriesService) {}
 
+  private async loadTerritoryWithDetail(orgId: string, id: number) {
+    return this.territories.getOne(orgId, id);
+  }
+
   @Get()
   @RequirePermission("crm:territories:manage")
   @ResponseSchema(z.array(territorySchema))
@@ -72,11 +76,14 @@ export class CrmTerritoriesController {
   @HttpCode(201)
   @ResponseSchema(territorySchema)
   @Validate({ body: territoryCreateSchema })
-  create(
+  async create(
     @Body() body: TerritoryCreateInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.territories.create(u.orgId, u.userId, body);
+    const created = await this.territories.create(u.orgId, u.userId, body);
+    const detail = await this.loadTerritoryWithDetail(u.orgId, created.id);
+    if (!detail) throw new NotFoundException("Territory not found");
+    return detail;
   }
 
   @Patch(":territoryId")
@@ -90,7 +97,10 @@ export class CrmTerritoriesController {
   ) {
     const exists = await this.territories.exists(u.orgId, territoryId);
     if (!exists) throw new NotFoundException("Territory not found");
-    return this.territories.update(u.orgId, territoryId, body);
+    await this.territories.update(u.orgId, territoryId, body);
+    const updated = await this.loadTerritoryWithDetail(u.orgId, territoryId);
+    if (!updated) throw new NotFoundException("Territory not found");
+    return updated;
   }
 
   @Delete(":territoryId")

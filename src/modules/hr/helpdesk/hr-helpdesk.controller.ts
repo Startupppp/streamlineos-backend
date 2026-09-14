@@ -42,7 +42,6 @@ import {
   helpdeskSuggestSchema,
   hrHelpdeskRoutingSchema,
   helpdeskTicketDetailSchema,
-  helpdeskTicketSchema,
   hrHelpdeskCommentSchema,
   successSchema,
 } from "./dto/helpdesk-response.schemas";
@@ -106,7 +105,7 @@ export class HrHelpdeskController {
   }
 
   @Post()
-  @ResponseSchema(helpdeskTicketSchema)
+  @ResponseSchema(helpdeskTicketDetailSchema)
   @HttpCode(201)
   @RequirePermission("hr:helpdesk:create")
   @Validate({ body: createSchema })
@@ -118,7 +117,7 @@ export class HrHelpdeskController {
   }
 
   @Patch(":ticketId")
-  @ResponseSchema(helpdeskTicketSchema)
+  @ResponseSchema(helpdeskTicketDetailSchema)
   @RequirePermission("hr:helpdesk:manage")
   @Validate({ params: ticketIdParams, body: updateTicketSchema })
   async update(

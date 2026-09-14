@@ -1,4 +1,4 @@
-import { ConflictException, ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { ConflictException, ForbiddenException, Inject, Injectable, InternalServerErrorException, NotFoundException } from "@nestjs/common";
 import {
   assertOrganizationActor,
   OrganizationActorError,
@@ -280,7 +280,16 @@ export class ApprovalsService {
 
   async approvePeriod(u: CurrentUserContext, periodId: number) {
     await this.approveSinglePeriod(u, periodId);
-    return readApprovedPeriod(this.db, u.orgId, periodId);
+    const row = await readApprovedPeriod(this.db, u.orgId, periodId);
+    if (!row) throw new InternalServerErrorException("Period not found after approval");
+    return {
+      ...row,
+      user: {
+        membershipId: row.userMembershipId,
+        name: row.userName ?? row.userEmail,
+        email: row.userEmail,
+      },
+    };
   }
 
   /**

@@ -1,3 +1,4 @@
+import { PRODUCTION_HOST_PATTERNS } from "./lib/production-host-guard.mjs";
 /**
  * PERF1 budget seeder — seeds the org used by run-read-cost-budgets.mjs
  * so every budget can measure rather than skip.
@@ -13,7 +14,6 @@ import { resolve } from "node:path";
 import postgres from "postgres";
 import * as dotenv from "dotenv";
 
-const PRODUCTION_HOST_PATTERNS = ["amazonaws.com", "neon.tech", "neon-db.net", "supabase.co", ".render.com"];
 
 function assertDisposableTarget(url) {
   if (!url) return { allowed: false, reason: "DATABASE_URL is not set" };

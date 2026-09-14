@@ -1,4 +1,4 @@
-import { ConflictException, ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { ConflictException, ForbiddenException, Inject, Injectable, InternalServerErrorException, NotFoundException } from "@nestjs/common";
 import { and, eq, inArray } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
@@ -20,6 +20,7 @@ import { RateResolverService } from "./rate-resolver.service";
 import { canActOnPeriod } from "./lib/approval-guard";
 import { applyBulkApproval } from "./lib/approval-transition";
 import { applyBulkRejection, applyRejection } from "./lib/rejection-transition";
+import { readApprovedPeriod } from "./lib/approval-period-reads";
 import type {
   BulkApproveInput,
   BulkRejectInput,
@@ -94,18 +95,16 @@ export class ApprovalsBulkService {
       });
     }
 
-    const [updated] = await this.db
-      .select()
-      .from(timesheetPeriods)
-      .where(
-        and(
-          eq(timesheetPeriods.id, periodId),
-          eq(timesheetPeriods.orgId, u.orgId),
-        ),
-      )
-      .limit(1);
-
-    return updated;
+    const row = await readApprovedPeriod(this.db, u.orgId, periodId);
+    if (!row) throw new InternalServerErrorException("Period not found after rejection");
+    return {
+      ...row,
+      user: {
+        membershipId: row.userMembershipId,
+        name: row.userName ?? row.userEmail,
+        email: row.userEmail,
+      },
+    };
   }
 
   /**

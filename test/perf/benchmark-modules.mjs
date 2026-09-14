@@ -48,8 +48,7 @@ export const TENANTS = [
   { label: "tiny", id: "aaaaaaaa-1111-0000-0000-000000000004", share: "0.18%" },
 ];
 
-/** PRD §12.1, the two statement-level ceilings. The request-level ceilings live in the gate. */
-export const STATEMENT_CEILING_MS = { ordinary: 50, complex: 200 };
+export { STATEMENT_CEILING_MS } from "../../src/scripts/timing-slo-thresholds.mjs";
 
 const C = (approval) => ({ class: "complex", approval });
 const O = { class: "ordinary", approval: null };

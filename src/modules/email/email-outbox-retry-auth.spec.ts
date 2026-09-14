@@ -55,7 +55,9 @@ describe("EmailOutboxService.processRetries — recipient re-authorization", () 
       select: jest.fn().mockReturnValue({
         from: jest.fn().mockReturnValue({
           where: jest.fn().mockReturnValue({
-            limit: jest.fn().mockResolvedValue([makeRow()]),
+            orderBy: jest.fn().mockReturnValue({
+              limit: jest.fn().mockResolvedValue([makeRow()]),
+            }),
           }),
         }),
       }),
@@ -152,7 +154,9 @@ describe("EmailOutboxService.processRetries — recipient re-authorization", () 
       select: jest.fn().mockReturnValue({
         from: jest.fn().mockReturnValue({
           where: jest.fn().mockReturnValue({
-            limit: jest.fn().mockResolvedValue([makeRow({ recipientUserId: null })]),
+            orderBy: jest.fn().mockReturnValue({
+              limit: jest.fn().mockResolvedValue([makeRow({ recipientUserId: null })]),
+            }),
           }),
         }),
       }),

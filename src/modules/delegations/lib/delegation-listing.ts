@@ -147,6 +147,7 @@ async function withPermissions(
     delegatorName: nameByMembershipId.get(row.delegatorMembershipId) ?? null,
     delegateeName: nameByMembershipId.get(row.delegateeMembershipId) ?? null,
     lifecycle: resolveLifecycle(row, now),
+    updatedAt: row.revokedAt ?? row.createdAt,
   }));
 }
 
@@ -234,4 +235,23 @@ export async function listDelegationsPage(
   }));
 
   return { ...page, data: await withPermissions(deps, page.data, now) };
+}
+
+export async function loadOneDelegation(
+  deps: DelegationListingDeps,
+  orgId: string,
+  id: string,
+) {
+  const now = new Date();
+  const rows = await deps.db
+    .select(delegationSelection)
+    .from(userDelegations)
+    .innerJoin(delegatorMember, joinDelegatorMember)
+    .innerJoin(delegateeMember, joinDelegateeMember)
+    .where(and(eq(userDelegations.id, id), eq(userDelegations.orgId, orgId)))
+    .limit(1);
+  const row = rows[0];
+  if (!row) return null;
+  const enriched = await withPermissions(deps, [row], now);
+  return enriched[0] ?? null;
 }

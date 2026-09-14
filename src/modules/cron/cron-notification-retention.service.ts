@@ -92,6 +92,11 @@ export class CronNotificationRetentionService {
     // notification_deliveries enforces org_id = app.current_org_id(), so a global
     // sweep is denied 42501. Iterate tenants (CLAUDE.md §20).
     await forEachOrg(this.db, "notification-retention", async (tx, orgId) => {
+      const holdExclusion = sql`${notificationDeliveries.userId} NOT IN (
+        SELECT subject_user_id FROM hr_legal_holds
+        WHERE org_id = ${orgId} AND status = 'active' AND deleted_at IS NULL AND subject_user_id IS NOT NULL
+      )`;
+
       const purged = await tx
         .update(notificationDeliveries)
         .set({ metadata: null })
@@ -100,6 +105,7 @@ export class CronNotificationRetentionService {
             eq(notificationDeliveries.orgId, orgId),
             lt(notificationDeliveries.createdAt, bodyCutoff),
             isNotNull(notificationDeliveries.metadata),
+            holdExclusion,
           ),
         )
         .returning({ id: notificationDeliveries.id });
@@ -111,6 +117,7 @@ export class CronNotificationRetentionService {
           and(
             eq(notificationDeliveries.orgId, orgId),
             lt(notificationDeliveries.createdAt, recordCutoff),
+            holdExclusion,
           ),
         )
         .returning({ id: notificationDeliveries.id });

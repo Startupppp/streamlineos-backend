@@ -45,8 +45,7 @@ const BACKEND_ROOT = resolve(fileURLToPath(new URL(".", import.meta.url)), "../.
 const MANIFEST_PATH = resolve(BACKEND_ROOT, "contracts/benchmark-manifest.json");
 const ROUTE_BUDGETS_PATH = resolve(BACKEND_ROOT, "contracts/route-budgets.json");
 
-export const ORDINARY_REQUEST_CEILING_MS = 300;
-export const COMPLEX_REQUEST_CEILING_MS = 800;
+export { ORDINARY_REQUEST_CEILING_MS, COMPLEX_REQUEST_CEILING_MS } from "../../src/scripts/timing-slo-thresholds.mjs";
 
 export const EXCLUDED_CLASS_REASON =
   "an all-organisation background sweep, not an authenticated user request — the PRD §12.1 " +

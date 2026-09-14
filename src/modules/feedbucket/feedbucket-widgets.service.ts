@@ -1,4 +1,4 @@
-import { ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { ConflictException, Inject, Injectable, InternalServerErrorException, NotFoundException } from "@nestjs/common";
 import { and, count, eq, inArray, isNull, sql } from "drizzle-orm";
 import { randomBytes } from "node:crypto";
 import { feedbucketSubmissions, feedbucketWidgets } from "../../db/schema";
@@ -28,8 +28,9 @@ export class FeedbucketWidgetsService {
           theme: dto.theme ?? null,
           createdBy: userId,
         })
-        .returning();
-      return widget;
+        .returning({ id: feedbucketWidgets.id });
+      if (!widget) throw new InternalServerErrorException("Widget not found after creation");
+      return this.findOne(orgId, widget.id);
     } catch (error: unknown) {
       if (isUniqueViolation(error)) {
         throw new ConflictException("Widget key conflict, please try again");

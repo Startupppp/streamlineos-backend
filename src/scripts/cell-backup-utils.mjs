@@ -1,13 +1,17 @@
 const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "::1"]);
 
+export function safeBackupTarget(url) {
+  if (!url) return { allowed: false, reason: "target URL is not set" };
+  const host = new URL(url).hostname;
+  if (LOCAL_HOSTS.has(host)) return { allowed: true, reason: "local host" };
+  return { allowed: false, reason: `"${host}" is not a local host — recovery drills require localhost / 127.0.0.1` };
+}
+
 export function requireSafeTarget(topo) {
   for (const url of [topo.cell.ownerDirect, topo.cell.app].filter(Boolean)) {
-    const host = new URL(url).hostname;
-    if (!LOCAL_HOSTS.has(host))
-      throw new Error(
-        `Unsafe target refused: "${host}" is not a local host. ` +
-          `Recovery drills require a local scratch database (localhost / 127.0.0.1).`,
-      );
+    const verdict = safeBackupTarget(url);
+    if (!verdict.allowed)
+      throw new Error(`Unsafe target refused: ${verdict.reason}`);
   }
 }
 

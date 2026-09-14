@@ -1,9 +1,8 @@
 import { defineConfig } from "drizzle-kit";
 import * as dotenv from "dotenv";
+import { PRODUCTION_HOST_PATTERNS } from "./src/scripts/lib/production-host-guard.mjs";
 
 dotenv.config({ path: ".env" });
-
-const PRODUCTION_HOST_PATTERNS = ["amazonaws.com", "neon.tech", "neon-db.net", "supabase.co", ".render.com"];
 
 export function assertNamedMigrationTarget(
   url: string | undefined,

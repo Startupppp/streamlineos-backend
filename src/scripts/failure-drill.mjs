@@ -1,3 +1,4 @@
+import { PRODUCTION_HOST_PATTERNS } from "./lib/production-host-guard.mjs";
 /**
  * Failure drill runner — exercises the five platform failure scenarios in a reversible way.
  *
@@ -39,7 +40,6 @@ const isSelfTest = args.includes("--self-test");
 
 if (!isSelfTest) dotenv.config({ path: join(BACKEND_ROOT, ".env") });
 
-const PRODUCTION_HOST_PATTERNS = ["amazonaws.com", "neon.tech", "neon-db.net", "supabase.co", ".render.com"];
 
 export function assertDisposableDrillTarget(databaseUrl, execute) {
   if (!execute) return { allowed: true, reason: "dry run performs no mutation" };

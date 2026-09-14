@@ -56,14 +56,11 @@ export class TestRunsService {
       const s = countMap.get(run.id);
       return {
         ...run,
-        counts: {
-          total: Number(s?.total ?? 0),
-          passed: Number(s?.passed ?? 0),
-          failed: Number(s?.failed ?? 0),
-          blocked: Number(s?.blocked ?? 0),
-          skipped: Number(s?.skipped ?? 0),
-          notRun: Number(s?.notRun ?? 0),
-        },
+        passCount: Number(s?.passed ?? 0),
+        failCount: Number(s?.failed ?? 0),
+        blockedCount: Number(s?.blocked ?? 0),
+        notRunCount: Number(s?.notRun ?? 0),
+        skippedCount: Number(s?.skipped ?? 0),
       };
     });
   }

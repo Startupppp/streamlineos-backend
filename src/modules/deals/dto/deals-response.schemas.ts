@@ -143,7 +143,7 @@ export const dealApprovalRuleSchema = z.object({
   id: z.number().int(),
   orgId: z.string(),
   minValue: z.string(),
-  approverRole: z.string(),
+  approverRole: z.string().nullable(),
   isActive: z.boolean(),
   createdAt: wireDate(),
 });
@@ -182,7 +182,7 @@ export const dealRequestApprovalSchema = z.union([
 ]);
 
 export const dealStakeholderSchema = z.object({
-  id: z.number().int(),
+  id: z.string(),
   dealId: z.number().int(),
   contactId: z.number().int(),
   roleKey: z.string().nullable(),
@@ -212,13 +212,12 @@ export const dealStakeholderMutatedSchema = z.object({
 });
 
 export const dealCompetitorSchema = z.object({
-  id: z.number().int(),
+  id: z.string(),
   orgId: z.string(),
   dealId: z.number().int(),
-  name: z.string(),
+  competitorKey: z.string(),
+  status: z.string(),
   notes: z.string().nullable(),
-  strength: z.string().nullable(),
-  weakness: z.string().nullable(),
   createdAt: wireDate(),
   updatedAt: wireDate(),
 });
@@ -228,12 +227,15 @@ export const dealMeetingSchema = z.object({
   orgId: z.string(),
   dealId: z.number().int(),
   title: z.string(),
-  description: z.string().nullable(),
   scheduledAt: wireDate(),
-  durationMinutes: z.number().int().nullable(),
-  location: z.string().nullable(),
-  meetingUrl: z.string().nullable(),
-  createdById: z.string().nullable(),
+  durationMinutes: z.number().int(),
+  agenda: z.string().nullable(),
+  notes: z.string().nullable(),
+  actionItems: z.string().nullable(),
+  recordingLink: z.string().nullable(),
+  status: z.string(),
+  createdBy: z.string(),
+  createdByMembershipId: z.number().int().nullable(),
   createdAt: wireDate(),
   updatedAt: wireDate(),
   creator: z.object({ id: z.string(), name: z.string().nullable() }).nullable().optional(),

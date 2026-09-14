@@ -85,6 +85,31 @@ export const CAPACITY_BUDGETS = [
   },
 ];
 
+export function validateCapacityHistoryEntry(entry) {
+  const errors = [];
+  const add = (condition, message) => { if (!condition) errors.push(message); };
+  add(entry !== null && typeof entry === "object" && !Array.isArray(entry), "entry must be a plain object");
+  if (errors.length > 0) return errors;
+  add(Number.isFinite(entry.ts) && entry.ts > 0, "entry.ts must be a positive finite number (epoch ms)");
+  add(typeof entry.cellId === "string" && entry.cellId.length > 0, "entry.cellId must be a non-empty string");
+  add(entry.resources !== null && typeof entry.resources === "object" && !Array.isArray(entry.resources), "entry.resources must be a plain object");
+  if (entry.resources !== null && typeof entry.resources === "object" && !Array.isArray(entry.resources)) {
+    const ids = Object.keys(entry.resources);
+    add(ids.length > 0, "entry.resources must have at least one budget key");
+    for (const id of ids) {
+      const r = entry.resources[id];
+      add(r !== null && typeof r === "object" && !Array.isArray(r), `entry.resources["${id}"] must be a plain object`);
+      if (r !== null && typeof r === "object") {
+        add(Number.isFinite(r.used), `entry.resources["${id}"].used must be a finite number`);
+        add(Number.isFinite(r.limit) && r.limit > 0, `entry.resources["${id}"].limit must be a positive finite number`);
+      }
+    }
+  }
+  if (entry.duringBulkLoad !== undefined) add(typeof entry.duringBulkLoad === "boolean", "entry.duringBulkLoad must be boolean if present");
+  if (entry.tooCloseToPrevious !== undefined) add(typeof entry.tooCloseToPrevious === "boolean", "entry.tooCloseToPrevious must be boolean if present");
+  return errors;
+}
+
 export function validateCapacityBudgets(budgets) {
   const errors = [];
   for (let i = 0; i < budgets.length; i++) {

@@ -4,7 +4,7 @@ import { pipeline } from "node:stream/promises";
 import { dirname, resolve } from "node:path";
 import postgres from "postgres";
 import { loadEnv, parseCellArgs, redact } from "./cell-topology.mjs";
-import { requireSafeTarget, topologicalOrder } from "./cell-backup-utils.mjs";
+import { requireSafeTarget, safeBackupTarget, topologicalOrder } from "./cell-backup-utils.mjs";
 
 const argv = process.argv.slice(2);
 const SELF_TEST = argv.includes("--self-test");
@@ -273,12 +273,32 @@ function selfTest() {
   console.log(`order: ${names.join(" -> ")}`);
   console.log(`cyclic: ${cyclic.map((t) => t.table).join(", ") || "(none)"}`);
 
-  if (parentFirst && cycleDetected) {
-    console.log("SELF-TEST PASS: parents precede children and the cycle is reported, not silently ordered");
+  let failed = 0;
+
+  if (!parentFirst || !cycleDetected) {
+    console.error("FAIL: dependency ordering is wrong");
+    failed++;
+  }
+
+  const guardCases = [
+    [safeBackupTarget("postgresql://u:p@localhost:5432/scratch"), true],
+    [safeBackupTarget("postgresql://u:p@127.0.0.1:5432/scratch"), true],
+    [safeBackupTarget("postgresql://u:p@ep-xxx.us-east-2.aws.neon.tech/neondb"), false],
+    [safeBackupTarget(undefined), false],
+  ];
+  for (const [verdict, expected] of guardCases)
+    if (verdict.allowed !== expected) {
+      console.error(`FAIL: guard expected allowed=${expected}, got '${verdict.reason}'`);
+      failed++;
+    }
+
+  if (failed > 0) {
+    console.error(`SELF-TEST FAIL: ${failed} check(s) failed`);
+    process.exitCode = 1;
     return;
   }
-  console.error("SELF-TEST FAIL: dependency ordering is wrong");
-  process.exitCode = 1;
+  const total = 1 + guardCases.length;
+  console.log(`SELF-TEST PASS: parents precede children, cycle detected, guard correct (${total} checks)`);
 }
 
 async function main() {

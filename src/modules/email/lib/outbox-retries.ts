@@ -1,5 +1,5 @@
 import { Logger } from "@nestjs/common";
-import { and, eq, lte } from "drizzle-orm";
+import { and, asc, eq, lte } from "drizzle-orm";
 import { emailOutbox } from "../../../db/schema";
 import { type Db } from "../../../db/drizzle.module";
 import type { EmailOptions } from "../email.provider";
@@ -32,6 +32,7 @@ export async function processRetries(
     .select()
     .from(emailOutbox)
     .where(and(eq(emailOutbox.status, "PENDING"), lte(emailOutbox.nextAttemptAt, now)))
+    .orderBy(asc(emailOutbox.nextAttemptAt), asc(emailOutbox.id))
     .limit(BATCH_SIZE);
 
   let processed = 0;

@@ -1,3 +1,4 @@
+import { PRODUCTION_HOST_PATTERNS } from "./lib/production-host-guard.mjs";
 /**
  * Recovery drill for ticket 44, criteria 1 and 2.
  *
@@ -44,7 +45,6 @@ import { fileURLToPath } from "node:url";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const BACKEND_DIR = resolve(__dirname, "../..");
 
-const PRODUCTION_HOST_PATTERNS = ["amazonaws.com", "neon.tech", "neon-db.net", "supabase.co", ".render.com"];
 
 export function assertDisposableDrillTarget(databaseUrl) {
   if (!databaseUrl) return { allowed: true, reason: "DATABASE_URL not set — sub-scripts use cell topology" };

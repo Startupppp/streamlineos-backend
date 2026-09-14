@@ -248,7 +248,12 @@ describe("HrHelpdeskService", () => {
       mockDb.select.mockReturnThis();
       mockDb.from.mockReturnThis();
       mockDb.where.mockReturnThis();
-      mockDb.limit.mockResolvedValue([]);
+      mockDb.leftJoin.mockReturnThis();
+      mockDb.limit
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([makeTicket({ id: 42 })])
+        .mockResolvedValue([]);
 
       await service.create("org1", "user1", {
         title: "Help needed for payroll",
@@ -291,6 +296,7 @@ describe("HrHelpdeskService", () => {
       mockDb.select
         .mockReturnValueOnce(memberChain)
         .mockReturnValueOnce(personChain);
+      mockDb.limit.mockResolvedValueOnce([makeTicket({ id: 1 })]);
 
       await service.updateTicket("org1", "admin1", true, 1, { assigneeId: "agent1" });
 
@@ -301,6 +307,7 @@ describe("HrHelpdeskService", () => {
       const existing = makeTicket({ id: 1, assigneeId: null, status: "TODO" });
       mockDb.query.helpdeskTickets.findFirst.mockResolvedValue(existing);
       mockTx.returning.mockResolvedValue([{ ...existing, status: "IN_PROGRESS", title: existing.title }]);
+      mockDb.limit.mockResolvedValueOnce([makeTicket({ id: 1 })]);
 
       await service.updateTicket("org1", "admin1", true, 1, { status: "IN_PROGRESS" });
 

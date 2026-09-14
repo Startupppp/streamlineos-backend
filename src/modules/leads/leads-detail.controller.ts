@@ -20,6 +20,7 @@ import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { LeadsDetailService } from "./leads-detail.service";
 import { LeadStatusService } from "./lead-status.service";
+import { LeadsReadService } from "./leads-read.service";
 import {
   assignSchema,
   customDataSchema,
@@ -46,7 +47,7 @@ import {
   leadTimelineSchema,
   leadScoreExplanationSchema,
   leadCustomDataSchema,
-  leadMutatedSchema,
+  leadDetailSchema,
   successSchema,
 } from "./dto/leads-response.schemas";
 
@@ -65,7 +66,12 @@ export class LeadsDetailController {
   constructor(
     private readonly detail: LeadsDetailService,
     private readonly status: LeadStatusService,
+    private readonly reads: LeadsReadService,
   ) {}
+
+  private async loadLeadWithDetail(orgId: string, id: number) {
+    return this.reads.getLead(orgId, id);
+  }
 
   @Get(":leadId/activities")
   @RequirePermission("crm:leads:view")
@@ -133,7 +139,7 @@ export class LeadsDetailController {
 
   @Patch(":leadId/status")
   @RequirePermission("crm:leads:update")
-  @ResponseSchema(leadMutatedSchema)
+  @ResponseSchema(leadDetailSchema)
   @Validate({ params: leadIdParams, body: transitionLeadStatusSchema })
   async changeStatus(
     @Param("leadId", ParseIntPipe) leadId: number,
@@ -149,12 +155,12 @@ export class LeadsDetailController {
         "Lead status has been updated by someone else, or lead not found. Please refresh.",
       );
     }
-    return result.lead;
+    return (await this.loadLeadWithDetail(u.orgId, leadId)) ?? result.lead;
   }
 
   @Patch(":leadId/verify")
   @RequirePermission("crm:leads:update")
-  @ResponseSchema(leadMutatedSchema)
+  @ResponseSchema(leadDetailSchema)
   @Validate({ params: leadIdParams, body: verifySchema })
   async verify(
     @Param("leadId", ParseIntPipe) leadId: number,
@@ -163,13 +169,13 @@ export class LeadsDetailController {
   ) {
     const updated = await this.detail.verify(u.orgId, u.userId, leadId, body);
     if (!updated) throw new NotFoundException("Lead not found");
-    return updated;
+    return (await this.loadLeadWithDetail(u.orgId, leadId)) ?? updated;
   }
 
   @Patch(":leadId/reject")
   @Idempotent("leads.lead.reject")
   @RequirePermission("crm:leads:update")
-  @ResponseSchema(leadMutatedSchema)
+  @ResponseSchema(leadDetailSchema)
   @Validate({ params: leadIdParams, body: rejectSchema })
   async reject(
     @Param("leadId", ParseIntPipe) leadId: number,
@@ -178,13 +184,13 @@ export class LeadsDetailController {
   ) {
     const updated = await this.detail.reject(u.orgId, u.userId, leadId, body);
     if (!updated) throw new NotFoundException("Lead not found");
-    return updated;
+    return (await this.loadLeadWithDetail(u.orgId, leadId)) ?? updated;
   }
 
   @Patch(":leadId/self-assign")
   @BodylessAction()
   @RequirePermission("crm:leads:update")
-  @ResponseSchema(leadMutatedSchema)
+  @ResponseSchema(leadDetailSchema)
   @Validate({ params: leadIdParams })
   async selfAssign(
     @Param("leadId", ParseIntPipe) leadId: number,
@@ -192,12 +198,12 @@ export class LeadsDetailController {
   ) {
     const updated = await this.detail.selfAssign(u.orgId, u.userId, leadId);
     if (!updated) throw new NotFoundException("Lead not found");
-    return updated;
+    return (await this.loadLeadWithDetail(u.orgId, leadId)) ?? updated;
   }
 
   @Patch(":leadId/assign")
   @RequirePermission("crm:leads:assign")
-  @ResponseSchema(leadMutatedSchema)
+  @ResponseSchema(leadDetailSchema)
   @Validate({ params: leadIdParams, body: assignSchema })
   async assign(
     @Param("leadId", ParseIntPipe) leadId: number,
@@ -206,7 +212,7 @@ export class LeadsDetailController {
   ) {
     const updated = await this.detail.assign(u.orgId, u.userId, leadId, body);
     if (!updated) throw new NotFoundException("Lead not found");
-    return updated;
+    return (await this.loadLeadWithDetail(u.orgId, leadId)) ?? updated;
   }
 
   @Post(":leadId/merge")

@@ -141,16 +141,20 @@ export class HrSafetyService {
     const rows = await this.db
       .select({
         id: hrSafetyIncidents.id,
+        orgId: hrSafetyIncidents.orgId,
         incidentNumber: hrSafetyIncidents.incidentNumber,
         type: hrSafetyIncidents.type,
         location: hrSafetyIncidents.location,
         occurredAt: hrSafetyIncidents.occurredAt,
         reportedBy: hrSafetyIncidents.reportedBy,
+        description: hrSafetyIncidents.description,
         severity: hrSafetyIncidents.severity,
         status: hrSafetyIncidents.status,
         medicalAttention: hrSafetyIncidents.medicalAttention,
+        confidentialMedicalNote: hrSafetyIncidents.confidentialMedicalNote,
         createdAt: hrSafetyIncidents.createdAt,
-        description: hrSafetyIncidents.description,
+        updatedAt: hrSafetyIncidents.updatedAt,
+        deletedAt: hrSafetyIncidents.deletedAt,
       })
       .from(hrSafetyIncidents)
       .where(and(...conditions))

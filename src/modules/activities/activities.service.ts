@@ -159,8 +159,8 @@ export class ActivitiesService {
         activityParticipantId: activityParticipants.activityParticipantId,
         partyId: activityParticipants.partyId,
         userId: activityParticipants.userId,
-        userName: users.name,
-        address: activityParticipants.address,
+        name: users.name,
+        email: activityParticipants.address,
         role: activityParticipants.role,
       })
       .from(activityParticipants)

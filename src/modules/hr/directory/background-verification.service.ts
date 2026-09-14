@@ -78,7 +78,37 @@ export class BackgroundVerificationService {
       })
       .returning();
 
-    return bgv;
+    return this.readBgv(orgId, bgv.id);
+  }
+
+  private async readBgv(orgId: string, id: number) {
+    const row = await this.db.query.backgroundVerifications.findFirst({
+      where: and(eq(backgroundVerifications.id, id), eq(backgroundVerifications.orgId, orgId)),
+      with: {
+        user: {
+          columns: {
+            id: true,
+            name: true,
+            firstName: true,
+            lastName: true,
+            email: true,
+            image: true,
+          },
+        },
+      },
+    });
+    if (!row) throw new NotFoundException("Verification not found.");
+    const facts = row.user ? await this.employmentFacts.getFacts(orgId, row.user.id) : null;
+    return {
+      ...row,
+      user: row.user
+        ? {
+            ...row.user,
+            designation: facts?.designation ?? null,
+            employeeId: facts?.employeeNumber ?? null,
+          }
+        : null,
+    };
   }
 
   async update(orgId: string, body: UpdateBgvInput) {

@@ -67,6 +67,10 @@ export class CrmOrganizationsController {
     private readonly insights: CrmOrganizationsInsightsService,
   ) {}
 
+  private async loadOrgWithDetail(orgId: string, id: number) {
+    return this.orgs.getWithContacts(orgId, id);
+  }
+
   @Get()
   @RequirePermission("crm:organizations:view")
   @ResponseSchema(crmOrgsListSchema)
@@ -164,7 +168,10 @@ export class CrmOrganizationsController {
       }
     }
 
-    return this.orgs.applyUpdate(u.orgId, organizationId, body);
+    await this.orgs.applyUpdate(u.orgId, organizationId, body);
+    const updated = await this.loadOrgWithDetail(u.orgId, organizationId);
+    if (!updated) throw new NotFoundException("Organization not found");
+    return updated;
   }
 
   @Delete(":organizationId")

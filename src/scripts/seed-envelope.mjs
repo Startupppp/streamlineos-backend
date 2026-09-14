@@ -2,12 +2,12 @@ import { resolve } from "node:path";
 import postgres from "postgres";
 import * as dotenv from "dotenv";
 import {
+import { PRODUCTION_HOST_PATTERNS } from "./lib/production-host-guard.mjs";
   KEY_PREFIX, USER_EMAIL_PATTERN, ORG_PERSON_ID_PREFIX,
   seedMembers, seedHR, seedNotifications, seedChat, seedKB, seedLeave,
 } from "./envelope-fixtures.mjs";
 import { CELL_SHARE } from "./envelope-profile.mjs";
 
-const PRODUCTION_HOST_PATTERNS = ["amazonaws.com", "neon.tech", "neon-db.net", "supabase.co", ".render.com"];
 
 function assertDisposableTarget(url) {
   if (!url) return { allowed: false, reason: "DATABASE_URL is not set" };

@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { PRODUCTION_HOST_PATTERNS } from "./lib/production-host-guard.mjs";
 /**
  * Boots the compiled application and asserts it reaches a healthy listener.
  *
@@ -29,13 +30,6 @@ const arg = (name, fallback) => {
 };
 const SELF_TEST = argv.includes("--self-test");
 
-const PRODUCTION_HOST_PATTERNS = [
-  "amazonaws.com",
-  "neon.tech",
-  "neon-db.net",
-  "supabase.co",
-  ".render.com",
-];
 
 export function assertDisposableBootTarget(databaseUrl) {
   if (!databaseUrl)

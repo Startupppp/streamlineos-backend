@@ -83,23 +83,45 @@ export class ProjectsTicketLinksService {
       .limit(100);
   }
 
+  private toRelatedLinkRow(
+    row: { id: number; orgId: string; ticketId: number; url: string; label: string | null; createdBy: string | null; createdAt: Date },
+    projectId: number,
+  ) {
+    return {
+      id: row.id,
+      orgId: row.orgId,
+      projectId,
+      ticketId: row.ticketId,
+      url: row.url,
+      title: row.label,
+      description: null,
+      createdBy: row.createdBy,
+      createdAt: row.createdAt,
+      updatedAt: row.createdAt,
+    };
+  }
+
   async listRelatedLinks(
     u: CurrentUserContext,
     projectId: number,
     ticketId: number,
   ) {
     await this.assertTicketAccess(u, projectId, ticketId);
-    return this.db
+    const rows = await this.db
       .select({
         id: ticketRelatedLinks.id,
+        orgId: ticketRelatedLinks.orgId,
+        ticketId: ticketRelatedLinks.ticketId,
         url: ticketRelatedLinks.url,
         label: ticketRelatedLinks.label,
+        createdBy: ticketRelatedLinks.createdBy,
         createdAt: ticketRelatedLinks.createdAt,
       })
       .from(ticketRelatedLinks)
       .where(eq(ticketRelatedLinks.ticketId, ticketId))
       .orderBy(ticketRelatedLinks.createdAt)
       .limit(50);
+    return rows.map((row) => this.toRelatedLinkRow(row, projectId));
   }
 
   async addRelatedLink(
@@ -133,7 +155,8 @@ export class ProjectsTicketLinksService {
         createdByMembershipId: membership?.id ?? null,
       })
       .returning();
-    return created;
+    if (!created) throw new NotFoundException("Related link not found after creation");
+    return this.toRelatedLinkRow(created, projectId);
   }
 
   async updateRelatedLink(
@@ -174,7 +197,8 @@ export class ProjectsTicketLinksService {
         ),
       )
       .returning();
-    return updated;
+    if (!updated) throw new NotFoundException("Related link not found");
+    return this.toRelatedLinkRow(updated, projectId);
   }
 
   async deleteRelatedLink(

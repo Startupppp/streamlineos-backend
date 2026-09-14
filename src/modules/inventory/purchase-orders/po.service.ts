@@ -208,7 +208,7 @@ export class PoService {
     await this.db.insert(invPoLines).values(await resolveLines(this.db, this.uom, orgId, po.id, data.lines));
 
     await this.cache.invalidateNamespace(CACHE_KEYS.invPoNamespace(orgId));
-    return po;
+    return this.getPo(orgId, po.id);
   }
 
 

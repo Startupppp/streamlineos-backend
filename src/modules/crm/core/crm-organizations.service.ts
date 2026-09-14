@@ -144,18 +144,7 @@ export class CrmOrganizationsService {
     });
 
     await this.invalidateOrgCaches(orgId);
-    return {
-      id: row.id,
-      name: row.name,
-      domain: row.domain,
-      industry: row.industry,
-      size: row.size,
-      website: row.website,
-      linkedinUrl: row.linkedinUrl,
-      description: row.description,
-      createdAt: row.createdAt,
-      possibleDuplicates,
-    };
+    return { ...row, possibleDuplicates };
   }
 
   /**

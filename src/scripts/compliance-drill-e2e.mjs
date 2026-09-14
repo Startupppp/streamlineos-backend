@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { PRODUCTION_HOST_PATTERNS } from "./lib/production-host-guard.mjs";
 /**
  * compliance-drill-e2e.mjs
  *
@@ -60,7 +61,6 @@ function loadEnvVar(name) {
   return process.env[name] ?? null;
 }
 
-const PRODUCTION_HOST_PATTERNS = ["amazonaws.com", "neon.tech", "neon-db.net", "supabase.co", ".render.com"];
 
 export function assertDisposableTarget(url) {
   if (!url) return { allowed: false, reason: "DATABASE_URL is not set" };

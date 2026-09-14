@@ -10,6 +10,8 @@ export const hrHelpdeskCommentSchema = z.object({
   authorMembershipId: z.number().int().nullable(),
   body: z.string(),
   createdAt: wireDate(),
+  authorName: z.string().nullable(),
+  authorImage: z.string().nullable(),
 });
 
 export const helpdeskTicketSchema = z.object({
@@ -30,6 +32,8 @@ export const helpdeskTicketSchema = z.object({
   resolution: z.string().nullable(),
   createdAt: wireDate(),
   updatedAt: wireDate(),
+  authorName: z.string().nullable(),
+  authorImage: z.string().nullable(),
 });
 
 export const helpdeskTicketDetailSchema = helpdeskTicketSchema.extend({
@@ -46,6 +50,8 @@ export const hrHelpdeskRoutingSchema = z.object({
   assigneeMembershipId: z.number().int().nullable(),
   createdAt: wireDate(),
   updatedAt: wireDate(),
+  assigneeName: z.string().nullable(),
+  assigneeImage: z.string().nullable(),
 });
 
 export const helpdeskSuggestSchema = z.object({

@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, HttpCode, Param, ParseIntPipe, Patch, Post, UseGuards } from "@nestjs/common";
+import { Body, Controller, Delete, Get, HttpCode, NotFoundException, Param, ParseIntPipe, Patch, Post, UseGuards } from "@nestjs/common";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../access/permission.guard";
 import { RequirePermission } from "../access/require-permission.decorator";
@@ -15,7 +15,7 @@ import {
 import { Validate } from "../../common/validation/validate.decorator";
 import { z } from "zod";
 import { ResponseSchema, NoContentResponse } from "../../common/openapi/zod-operation-contracts";
-import { dealStakeholderSchema, dealStakeholderMutatedSchema } from "./dto/deals-response.schemas";
+import { dealStakeholderSchema } from "./dto/deals-response.schemas";
 
 const dealIdParams = z.object({ dealId: z.coerce.number().int().positive() }).strict();
 const dealAndStakeholderIdParams = z.object({ dealId: z.coerce.number().int().positive(), stakeholderId: z.string().min(1) }).strict();
@@ -25,6 +25,10 @@ const dealAndStakeholderIdParams = z.object({ dealId: z.coerce.number().int().po
 @UseGuards(JwtAuthGuard)
 export class DealsStakeholdersController {
   constructor(private readonly stakeholders: DealsStakeholdersService) {}
+
+  private async loadStakeholderWithContact(orgId: string, dealId: number, stakeholderId: string) {
+    return this.stakeholders.getOne(orgId, dealId, stakeholderId);
+  }
 
   @Get()
   @UseGuards(PermissionGuard)
@@ -42,28 +46,35 @@ export class DealsStakeholdersController {
   @UseGuards(PermissionGuard)
   @RequirePermission("crm:deals:update")
   @HttpCode(201)
-  @ResponseSchema(dealStakeholderMutatedSchema)
+  @ResponseSchema(dealStakeholderSchema)
   @Validate({ params: dealIdParams, body: createStakeholderSchema })
-  createStakeholder(
+  async createStakeholder(
     @Param("dealId", ParseIntPipe) dealId: number,
     @Body() body: CreateStakeholderInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.stakeholders.createStakeholder(u.orgId, dealId, body);
+    const row = await this.stakeholders.createStakeholder(u.orgId, dealId, body);
+    if (!row) throw new NotFoundException("Stakeholder could not be created");
+    const detail = await this.loadStakeholderWithContact(u.orgId, dealId, row.id);
+    if (!detail) throw new NotFoundException("Stakeholder not found");
+    return detail;
   }
 
   @Patch(":stakeholderId")
   @UseGuards(PermissionGuard)
   @RequirePermission("crm:deals:update")
-  @ResponseSchema(dealStakeholderMutatedSchema)
+  @ResponseSchema(dealStakeholderSchema)
   @Validate({ params: dealAndStakeholderIdParams, body: updateStakeholderSchema })
-  updateStakeholder(
+  async updateStakeholder(
     @Param("dealId", ParseIntPipe) dealId: number,
     @Param("stakeholderId") stakeholderId: string,
     @Body() body: UpdateStakeholderInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.stakeholders.updateStakeholder(u.orgId, dealId, stakeholderId, body);
+    await this.stakeholders.updateStakeholder(u.orgId, dealId, stakeholderId, body);
+    const detail = await this.loadStakeholderWithContact(u.orgId, dealId, stakeholderId);
+    if (!detail) throw new NotFoundException("Stakeholder not found");
+    return detail;
   }
 
   @Delete(":stakeholderId")

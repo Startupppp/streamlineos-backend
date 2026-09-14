@@ -238,7 +238,7 @@ export class LeadsService {
       assignedToId: newLead.assignedToId,
     });
 
-    return newLead;
+    return (await this.loadLeadWithDetail(orgId, newLead.id)) ?? newLead;
   }
 
   async update(orgId: string, userId: string, id: number, input: UpdateInput) {
@@ -347,7 +347,11 @@ export class LeadsService {
 
     void this.bus.emit(orgId, "lead.updated", { entityType: "lead", entityId: String(updated.id), data: { changedFields }, actorId: userId }).catch(logSideEffectFailure("lead.updated bus emit", { orgId, leadId: updated.id }));
 
-    return updated;
+    return (await this.loadLeadWithDetail(orgId, id)) ?? updated;
+  }
+
+  private async loadLeadWithDetail(orgId: string, id: number) {
+    return this.reads.getLead(orgId, id);
   }
 
   async remove(orgId: string, userId: string, id: number) {

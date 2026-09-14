@@ -338,12 +338,14 @@ export class BroadcastsService {
     const rows = await this.db
       .select({
         id: broadcasts.id,
+        orgId: broadcasts.orgId,
         title: broadcasts.title,
         message: broadcasts.message,
         type: broadcasts.type,
         priority: broadcasts.priority,
         category: broadcasts.category,
         channels: broadcasts.channels,
+        status: broadcasts.status,
         sentAt: broadcasts.sentAt,
         createdAt: broadcasts.createdAt,
       })

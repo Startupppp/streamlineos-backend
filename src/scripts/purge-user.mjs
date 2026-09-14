@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import readline from "node:readline/promises";
 import postgres from "postgres";
+import { PRODUCTION_HOST_PATTERNS } from "./lib/production-host-guard.mjs";
 
 const args = process.argv.slice(2);
 const emailArg = args.find((a) => !a.startsWith("--"));
@@ -10,7 +11,6 @@ const keepOwnedOrgs = args.includes("--keep-owned-orgs");
 const assumeYes = args.includes("--yes");
 const skipLegalHoldCheck = args.includes("--skip-legal-hold-check");
 
-const PRODUCTION_HOST_PATTERNS = ["amazonaws.com", "neon.tech", "neon-db.net", "supabase.co", ".render.com"];
 
 export function assertDisposableTarget(url) {
   if (!url) return { allowed: false, reason: "DATABASE_URL is not set" };

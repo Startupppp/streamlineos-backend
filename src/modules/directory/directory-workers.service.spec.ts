@@ -87,8 +87,20 @@ describe("DirectoryService worker operations", () => {
     it("inserts and audit-logs on success", async () => {
       const person = makePerson();
       const worker = makeWorker({ workerId: WORKER_ID });
-      const { selectChain } = makeSelectChain([person]);
-      (mockDb as { select: jest.Mock }).select.mockReturnValue(selectChain);
+      const enrichedWorker = {
+        ...worker,
+        firstName: "Jane",
+        lastName: "Doe",
+        displayName: null as string | null,
+        workEmail: "jane@example.com" as string | null,
+        avatarUrl: null as string | null,
+        userId: null as string | null,
+      };
+      const { selectChain: personChain } = makeSelectChain([person]);
+      const { selectChain: workerChain } = makeSelectChain([enrichedWorker]);
+      (mockDb as { select: jest.Mock }).select
+        .mockReturnValueOnce(personChain)
+        .mockReturnValueOnce(workerChain);
 
       (mockDb as { insert: jest.Mock }).insert.mockReturnValue({
         values: jest.fn().mockReturnValue({
@@ -120,7 +132,18 @@ describe("DirectoryService worker operations", () => {
         organizationMembershipId: 42,
       });
       const worker = makeWorker();
+      const enrichedWorker = {
+        ...worker,
+        firstName: "Jane",
+        lastName: "Doe",
+        displayName: null as string | null,
+        workEmail: "jane@example.com" as string | null,
+        avatarUrl: null as string | null,
+        userId: USER_ID as string | null,
+      };
       mockEnsure.ensurePersonForMember.mockResolvedValue(person);
+      const { selectChain } = makeSelectChain([enrichedWorker]);
+      (mockDb as { select: jest.Mock }).select.mockReturnValue(selectChain);
       (mockDb as { insert: jest.Mock }).insert.mockReturnValue({
         values: jest.fn().mockReturnValue({
           returning: jest.fn().mockReturnValue({

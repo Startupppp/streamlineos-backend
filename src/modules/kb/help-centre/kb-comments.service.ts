@@ -54,7 +54,7 @@ export class KbCommentsService {
     });
   }
 
-  async create(user: CurrentUserContext, articleId: number, input: CreateCommentInput): Promise<CommentRow> {
+  async create(user: CurrentUserContext, articleId: number, input: CreateCommentInput): Promise<CommentWithAuthor> {
     await this.kbAccess.assertArticleViewable(user, articleId);
 
     if (input.parentId) {
@@ -74,10 +74,10 @@ export class KbCommentsService {
       .values({ orgId: user.orgId, articleId, authorId: user.userId, content: input.content, parentId: input.parentId ?? null })
       .returning();
     if (!comment) throw new Error("Failed to create comment");
-    return comment;
+    return this.loadWithAuthor(user.orgId, comment.id);
   }
 
-  async update(user: CurrentUserContext, commentId: number, input: UpdateCommentInput): Promise<CommentRow> {
+  async update(user: CurrentUserContext, commentId: number, input: UpdateCommentInput): Promise<CommentWithAuthor> {
     const existing = await this.db.query.kbArticleComments.findFirst({
       where: and(eq(kbArticleComments.id, commentId), eq(kbArticleComments.orgId, user.orgId)),
       columns: { id: true, authorId: true, articleId: true },
@@ -95,7 +95,7 @@ export class KbCommentsService {
       .where(and(eq(kbArticleComments.id, commentId), eq(kbArticleComments.orgId, user.orgId)))
       .returning();
     if (!updated) throw new NotFoundException("Comment not found");
-    return updated;
+    return this.loadWithAuthor(user.orgId, commentId);
   }
 
   async remove(user: CurrentUserContext, commentId: number): Promise<void> {
@@ -115,7 +115,7 @@ export class KbCommentsService {
       .where(and(eq(kbArticleComments.id, commentId), eq(kbArticleComments.orgId, user.orgId)));
   }
 
-  async resolve(user: CurrentUserContext, commentId: number): Promise<CommentRow> {
+  async resolve(user: CurrentUserContext, commentId: number): Promise<CommentWithAuthor> {
     const existing = await this.db.query.kbArticleComments.findFirst({
       where: and(eq(kbArticleComments.id, commentId), eq(kbArticleComments.orgId, user.orgId)),
       columns: { id: true, articleId: true },
@@ -130,6 +130,16 @@ export class KbCommentsService {
       .where(and(eq(kbArticleComments.id, commentId), eq(kbArticleComments.orgId, user.orgId)))
       .returning();
     if (!updated) throw new NotFoundException("Comment not found");
-    return updated;
+    return this.loadWithAuthor(user.orgId, commentId);
+  }
+
+  private async loadWithAuthor(orgId: string, commentId: number): Promise<CommentWithAuthor> {
+    const [row] = await this.db
+      .select({ comment: kbArticleComments, authorName: users.name })
+      .from(kbArticleComments)
+      .leftJoin(users, eq(users.id, kbArticleComments.authorId))
+      .where(and(eq(kbArticleComments.id, commentId), eq(kbArticleComments.orgId, orgId)));
+    if (!row) throw new NotFoundException("Comment not found");
+    return { ...row.comment, authorName: row.authorName };
   }
 }

@@ -3,6 +3,7 @@ import path from "node:path";
 import postgres from "postgres";
 import { SignJWT, importJWK } from "jose";
 import { randomUUID } from "node:crypto";
+import { PRODUCTION_HOST_PATTERNS } from "./lib/production-host-guard.mjs";
 
 const args = process.argv.slice(2);
 const verbose = args.includes("--verbose");
@@ -24,7 +25,6 @@ if (!env("AUTH_SIGNING_KEYS")) {
   process.exit(1);
 }
 
-const PRODUCTION_HOST_PATTERNS = ["amazonaws.com", "neon.tech", "neon-db.net", "supabase.co", ".render.com"];
 export function assertDisposableSmokeTarget(databaseUrl, apiUrl) {
   if (databaseUrl) {
     for (const pattern of PRODUCTION_HOST_PATTERNS)

@@ -6,10 +6,12 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { and, eq, isNull } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
 import {
   kbPageReviews,
   kbPages,
   organizationMembers,
+  users,
 } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
@@ -25,6 +27,12 @@ import { AccessService } from "../../access/access.service";
 import { actingMembershipId } from "../../../common/auth/principal";
 
 type ReviewRow = typeof kbPageReviews.$inferSelect;
+
+type ReviewWithContext = ReviewRow & {
+  pageTitle: string | null;
+  requestedByName: string | null;
+  reviewerName: string | null;
+};
 
 export async function reviewerCanSeeAllReviews(
   user: CurrentUserContext,
@@ -71,7 +79,7 @@ export class KbPageReviewsService {
     user: CurrentUserContext,
     pageId: number,
     input: CreatePageReviewInput,
-  ): Promise<ReviewRow> {
+  ): Promise<ReviewWithContext> {
     const page = await this.db.query.kbPages.findFirst({
       where: and(
         eq(kbPages.id, pageId),
@@ -126,14 +134,14 @@ export class KbPageReviewsService {
       });
     }
 
-    return review;
+    return this.loadWithContext(user.orgId, review.id);
   }
 
   async approve(
     user: CurrentUserContext,
     reviewId: number,
     input: ApproveReviewInput,
-  ): Promise<ReviewRow> {
+  ): Promise<ReviewWithContext> {
     const existing = await this.db.query.kbPageReviews.findFirst({
       where: and(
         eq(kbPageReviews.id, reviewId),
@@ -184,14 +192,14 @@ export class KbPageReviewsService {
       });
     }
 
-    return updated;
+    return this.loadWithContext(user.orgId, reviewId);
   }
 
   async reject(
     user: CurrentUserContext,
     reviewId: number,
     input: RejectReviewInput,
-  ): Promise<ReviewRow> {
+  ): Promise<ReviewWithContext> {
     const existing = await this.db.query.kbPageReviews.findFirst({
       where: and(
         eq(kbPageReviews.id, reviewId),
@@ -243,6 +251,42 @@ export class KbPageReviewsService {
       });
     }
 
-    return updated;
+    return this.loadWithContext(user.orgId, reviewId);
+  }
+
+  private async loadWithContext(orgId: string, reviewId: number): Promise<ReviewWithContext> {
+    const requester = alias(users, "requester");
+    const reviewer = alias(users, "reviewer");
+    const requesterMembership = alias(organizationMembers, "reviewer_requester_membership");
+    const reviewerMembership = alias(organizationMembers, "reviewer_assignee_membership");
+    const [row] = await this.db
+      .select({
+        id: kbPageReviews.id,
+        orgId: kbPageReviews.orgId,
+        pageId: kbPageReviews.pageId,
+        type: kbPageReviews.type,
+        status: kbPageReviews.status,
+        requestedById: kbPageReviews.requestedById,
+        reviewerId: kbPageReviews.reviewerId,
+        requestedByMembershipId: kbPageReviews.requestedByMembershipId,
+        reviewerMembershipId: kbPageReviews.reviewerMembershipId,
+        dueAt: kbPageReviews.dueAt,
+        decidedAt: kbPageReviews.decidedAt,
+        decisionNote: kbPageReviews.decisionNote,
+        createdAt: kbPageReviews.createdAt,
+        updatedAt: kbPageReviews.updatedAt,
+        pageTitle: kbPages.title,
+        requestedByName: requester.name,
+        reviewerName: reviewer.name,
+      })
+      .from(kbPageReviews)
+      .leftJoin(kbPages, eq(kbPageReviews.pageId, kbPages.id))
+      .leftJoin(requesterMembership, eq(kbPageReviews.requestedByMembershipId, requesterMembership.id))
+      .leftJoin(reviewerMembership, eq(kbPageReviews.reviewerMembershipId, reviewerMembership.id))
+      .leftJoin(requester, eq(requesterMembership.userId, requester.id))
+      .leftJoin(reviewer, eq(reviewerMembership.userId, reviewer.id))
+      .where(and(eq(kbPageReviews.id, reviewId), eq(kbPageReviews.orgId, orgId)));
+    if (!row) throw new InternalServerErrorException("Review not found after save");
+    return row;
   }
 }

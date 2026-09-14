@@ -4,6 +4,7 @@ import {
   CAPACITY_BUDGETS,
   ADMISSION_THRESHOLD,
   validateCapacityBudgets,
+  validateCapacityHistoryEntry,
   identifyLimitingResource,
   checkAdmission,
   forecastSaturation,
@@ -264,6 +265,69 @@ test("forecastSaturation excludes duringBulkLoad entries from the trend", () => 
   const result = forecastSaturation(history, "connections");
   assert.equal(result.status, "refused", `Expected refused, got ${result.status} — bulk-load entry must not count as a qualifying sample`);
   assert.equal(result.wellSpaced, 2, `Expected 2 well-spaced non-bulk samples, got ${result.wellSpaced}`);
+});
+
+test("validateCapacityHistoryEntry passes a well-formed entry", () => {
+  const entry = { ts: Date.now(), cellId: "cell-01", resources: { "database-size": { used: 100, limit: 1000 } } };
+  assert.deepEqual(validateCapacityHistoryEntry(entry), []);
+});
+
+test("validateCapacityHistoryEntry passes an entry with optional flags", () => {
+  const entry = { ts: Date.now(), cellId: "cell-01", resources: { "connections": { used: 5, limit: 100 } }, duringBulkLoad: true, tooCloseToPrevious: false };
+  assert.deepEqual(validateCapacityHistoryEntry(entry), []);
+});
+
+test("validateCapacityHistoryEntry rejects a non-object", () => {
+  const errors = validateCapacityHistoryEntry(null);
+  assert.ok(errors.length > 0 && errors[0].includes("plain object"), `Expected plain object error, got: ${errors.join(", ")}`);
+});
+
+test("validateCapacityHistoryEntry rejects missing ts", () => {
+  const entry = { cellId: "cell-01", resources: { "connections": { used: 5, limit: 100 } } };
+  const errors = validateCapacityHistoryEntry(entry);
+  assert.ok(errors.some((e) => e.includes("ts")), `Expected ts error, got: ${errors.join(", ")}`);
+});
+
+test("validateCapacityHistoryEntry rejects non-positive ts", () => {
+  const entry = { ts: -1, cellId: "cell-01", resources: { "connections": { used: 5, limit: 100 } } };
+  const errors = validateCapacityHistoryEntry(entry);
+  assert.ok(errors.some((e) => e.includes("ts")), `Expected ts error, got: ${errors.join(", ")}`);
+});
+
+test("validateCapacityHistoryEntry rejects missing cellId", () => {
+  const entry = { ts: Date.now(), resources: { "connections": { used: 5, limit: 100 } } };
+  const errors = validateCapacityHistoryEntry(entry);
+  assert.ok(errors.some((e) => e.includes("cellId")), `Expected cellId error, got: ${errors.join(", ")}`);
+});
+
+test("validateCapacityHistoryEntry rejects empty resources object", () => {
+  const entry = { ts: Date.now(), cellId: "cell-01", resources: {} };
+  const errors = validateCapacityHistoryEntry(entry);
+  assert.ok(errors.some((e) => e.includes("at least one budget key")), `Expected at-least-one error, got: ${errors.join(", ")}`);
+});
+
+test("validateCapacityHistoryEntry rejects resource with non-finite used", () => {
+  const entry = { ts: Date.now(), cellId: "cell-01", resources: { "connections": { used: NaN, limit: 100 } } };
+  const errors = validateCapacityHistoryEntry(entry);
+  assert.ok(errors.some((e) => e.includes("used") && e.includes("connections")), `Expected used error for connections, got: ${errors.join(", ")}`);
+});
+
+test("validateCapacityHistoryEntry rejects resource with non-positive limit", () => {
+  const entry = { ts: Date.now(), cellId: "cell-01", resources: { "database-size": { used: 100, limit: 0 } } };
+  const errors = validateCapacityHistoryEntry(entry);
+  assert.ok(errors.some((e) => e.includes("limit") && e.includes("database-size")), `Expected limit error for database-size, got: ${errors.join(", ")}`);
+});
+
+test("validateCapacityHistoryEntry rejects non-boolean duringBulkLoad", () => {
+  const entry = { ts: Date.now(), cellId: "cell-01", resources: { "connections": { used: 5, limit: 100 } }, duringBulkLoad: "yes" };
+  const errors = validateCapacityHistoryEntry(entry);
+  assert.ok(errors.some((e) => e.includes("duringBulkLoad")), `Expected duringBulkLoad error, got: ${errors.join(", ")}`);
+});
+
+test("validateCapacityHistoryEntry rejects non-boolean tooCloseToPrevious", () => {
+  const entry = { ts: Date.now(), cellId: "cell-01", resources: { "connections": { used: 5, limit: 100 } }, tooCloseToPrevious: 1 };
+  const errors = validateCapacityHistoryEntry(entry);
+  assert.ok(errors.some((e) => e.includes("tooCloseToPrevious")), `Expected tooCloseToPrevious error, got: ${errors.join(", ")}`);
 });
 
 if (process.exitCode !== 1)

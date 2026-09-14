@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { PRODUCTION_HOST_PATTERNS } from "./lib/production-host-guard.mjs";
 /**
  * Seeds the fixture required by verify:multi-org-employment.
  *
@@ -29,7 +30,6 @@ import postgres from "postgres";
 import * as dotenv from "dotenv";
 import { resolve } from "node:path";
 
-const PRODUCTION_HOST_PATTERNS = ["amazonaws.com", "neon.tech", "neon-db.net", "supabase.co", ".render.com"];
 
 function assertDisposableTarget(url) {
   if (!url) return { allowed: false, reason: "DATABASE_URL is not set" };

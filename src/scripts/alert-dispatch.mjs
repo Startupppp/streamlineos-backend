@@ -49,6 +49,11 @@ const REGISTRY = {
     runbookAnchor: "#workflow-stranded",
     severity: "critical",
   },
+  "response-contract-violations": {
+    owner: "platform-reliability",
+    runbookAnchor: "#response-contract-violations",
+    severity: "high",
+  },
 };
 
 const RUNBOOK_BASE =

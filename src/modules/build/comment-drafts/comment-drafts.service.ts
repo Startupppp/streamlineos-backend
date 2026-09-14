@@ -27,6 +27,8 @@ export class CommentDraftsService {
     const rows = await this.db
       .select({
         id: commentDrafts.id,
+        orgId: commentDrafts.orgId,
+        membershipId: commentDrafts.membershipId,
         assigneeId: users.id,
         body: commentDrafts.body,
         projectKey: projects.key,
@@ -65,6 +67,8 @@ export class CommentDraftsService {
 
     return rows.map((r) => ({
       id: r.id,
+      orgId: r.orgId,
+      membershipId: r.membershipId,
       ticketId: r.ticketId,
       body: r.body,
       createdAt: r.createdAt,

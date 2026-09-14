@@ -15,6 +15,7 @@ import { readRequestScopedRead } from "../organization/core/read-request-scope";
 import { SignEnvelopesService } from "./sign-envelopes.service";
 import { SignEnvelopeAccessService } from "./sign-envelope-access.service";
 import { BodylessAction, ResponseSchema } from "../../common/openapi/zod-operation-contracts";
+import { successSchema } from "../../common/openapi/response-envelopes";
 import {
   envelopeMutationResponseSchema,
   listEnvelopesResponseSchema,
@@ -106,7 +107,7 @@ export class SignEnvelopesController {
 
   @Delete(":envelopeId")
   @RequirePermission("sign:envelope:create")
-  @ResponseSchema(envelopeMutationResponseSchema)
+  @ResponseSchema(successSchema)
   @Validate({ params: envelopeIdParams })
   async remove(@Param("envelopeId", ParseIntPipe) envelopeId: number, @CurrentUser() u: CurrentUserContext, @Req() req: Request) {
     await this.envelopeAccess.mustGetActionable(u, envelopeId);

@@ -104,7 +104,11 @@ export function makeEngagement(overrides: Record<string, unknown> = {}) {
 export function makeSelectChain(rows: unknown[]) {
   const limitFn = jest.fn().mockResolvedValue(rows);
   const whereChain = { limit: limitFn };
-  const fromChain = { where: jest.fn().mockReturnValue(whereChain) };
+  const innerJoinChain = { where: jest.fn().mockReturnValue(whereChain) };
+  const fromChain = {
+    where: jest.fn().mockReturnValue(whereChain),
+    innerJoin: jest.fn().mockReturnValue(innerJoinChain),
+  };
   const selectChain = { from: jest.fn().mockReturnValue(fromChain) };
   return { selectChain, fromChain, whereChain };
 }
