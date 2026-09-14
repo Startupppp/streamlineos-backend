@@ -65,6 +65,9 @@ const STRIPE_PURCHASE = {
   status: "PENDING",
   subscriptionId: null,
   activatedAt: null,
+  expiresAt: new Date(Date.now() + 30 * 60 * 1000),
+  createdAt: new Date(),
+  updatedAt: new Date(),
 };
 
 function makeStripeMerchant() {

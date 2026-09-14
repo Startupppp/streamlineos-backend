@@ -124,6 +124,7 @@ export class BillingOrderCreation {
       return {
         orderId: providerOrderId,
         purchaseId: purchase.id,
+        expiresAt: claimed.expiresAt.toISOString(),
         amount,
         currency: price.currency,
         keyId: merchantKeyId,

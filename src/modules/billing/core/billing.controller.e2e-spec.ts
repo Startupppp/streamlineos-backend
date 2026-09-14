@@ -20,9 +20,12 @@ import { BillingService } from "./billing.service";
 const stubBilling = {
   createOrder: jest.fn().mockResolvedValue({
     orderId: "order_1",
+    purchaseId: 1,
+    expiresAt: new Date(Date.now() + 30 * 60 * 1000).toISOString(),
     amount: 100,
     currency: "INR",
     keyId: "key_1",
+    environment: "test",
     plan: "STARTER",
     billingCycle: "monthly",
     discountAmount: 0,
@@ -177,6 +180,8 @@ describe("Billing auth/RBAC (e2e)", () => {
       .set("Idempotency-Key", randomUUID())
       .send({ plan: "STARTER" });
     expect(res.status).toBe(200);
+    expect(typeof res.body.expiresAt).toBe("string");
+    expect(typeof res.body.purchaseId).toBe("number");
     expect(res.body).toMatchObject({ orderId: "order_1", plan: "STARTER", billingCycle: "monthly", discountAmount: 0 });
   });
 

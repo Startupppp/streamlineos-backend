@@ -116,6 +116,7 @@ function makeAccountingDb(baseCurrency: string, transactionRejects?: unknown) {
     status: "PENDING",
     subscriptionId: null,
     activatedAt: null,
+    expiresAt: new Date(Date.now() + 30 * 60 * 1000),
   };
   const inserts: Array<{ table: unknown; values: Record<string, unknown> }> = [];
   const select = jest.fn(() => {

@@ -23,7 +23,7 @@ function build(options: { orderFails?: boolean; claimReturnsNull?: boolean } = {
   });
   const attachProviderOrder = jest.fn().mockImplementation(() => {
     calls.push("purchase.attachProviderOrder");
-    return Promise.resolve(options.claimReturnsNull === true ? null : { id: 7, orgId: ORG });
+    return Promise.resolve(options.claimReturnsNull === true ? null : { id: 7, orgId: ORG, expiresAt: new Date(Date.now() + 30 * 60 * 1000) });
   });
   const markFailed = jest.fn().mockImplementation(() => {
     calls.push("purchase.markFailed");
