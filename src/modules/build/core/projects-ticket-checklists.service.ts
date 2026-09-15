@@ -7,6 +7,7 @@ import {
 } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
+import { toChecklistItemRow } from "./projects-ticket-checklist-row";
 
 @Injectable()
 export class ProjectsTicketChecklistsService {
@@ -37,27 +38,6 @@ export class ProjectsTicketChecklistsService {
       position: 0,
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,
-    };
-  }
-
-  private toChecklistItemRow(item: {
-    id: number;
-    orgId: string;
-    checklistId: number;
-    text: string;
-    isCompleted: boolean;
-    order: number;
-    createdAt: Date;
-  }) {
-    return {
-      id: item.id,
-      orgId: item.orgId,
-      checklistId: item.checklistId,
-      title: item.text,
-      isCompleted: item.isCompleted,
-      position: item.order,
-      createdAt: item.createdAt,
-      updatedAt: item.createdAt,
     };
   }
 
@@ -92,7 +72,7 @@ export class ProjectsTicketChecklistsService {
       position: 0,
       createdAt: checklist.createdAt,
       updatedAt: checklist.updatedAt,
-      items: checklist.items.map((item) => this.toChecklistItemRow(item)),
+      items: checklist.items.map((item) => toChecklistItemRow(item)),
     }));
   }
 
@@ -189,7 +169,7 @@ export class ProjectsTicketChecklistsService {
       })
       .returning();
     if (!item) throw new NotFoundException("Checklist item not found after creation");
-    return this.toChecklistItemRow(item);
+    return toChecklistItemRow(item);
   }
 
   async updateChecklistItem(
@@ -217,7 +197,7 @@ export class ProjectsTicketChecklistsService {
       .where(and(eq(ticketChecklistItems.orgId, orgId), eq(ticketChecklistItems.id, itemId)))
       .returning();
     if (!item) throw new NotFoundException("Checklist item not found");
-    return this.toChecklistItemRow(item);
+    return toChecklistItemRow(item);
   }
 
   async deleteChecklistItem(orgId: string, itemId: number) {

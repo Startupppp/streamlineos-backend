@@ -14,8 +14,13 @@ import { type Db } from "../../../db/drizzle.module";
 import { logger } from "../../../common/logger/logger.service";
 import { NotificationsService } from "../../notifications/notifications.service";
 import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
+import {
+  resolveActivityActorName,
+  UNRESOLVED_ACTOR_NAME,
+} from "./projects-activity-actor-name";
 
-type TicketActivityAction = (typeof ticketActivityLog.action.enumValues)[number];
+type TicketActivityAction =
+  (typeof ticketActivityLog.action.enumValues)[number];
 
 interface TicketSnapshot {
   title: string;
@@ -82,7 +87,9 @@ function displayName(user: {
 function extractMentionTokens(content: string): string[] {
   const matches = content.match(/@([\w.+-]+(?:\s+[\w.+-]+)?)/g);
   if (!matches) return [];
-  return matches.map((token) => token.slice(1).trim().toLowerCase()).filter(Boolean);
+  return matches
+    .map((token) => token.slice(1).trim().toLowerCase())
+    .filter(Boolean);
 }
 
 function matchMentionedUsers(content: string, orgUsers: OrgUser[]): OrgUser[] {
@@ -113,12 +120,20 @@ export class ProjectsActivityService {
     private readonly dispatch: NotificationDispatchService,
   ) {}
 
-  private async resolveMembershipId(orgId: string, userId: string | null): Promise<number | null> {
+  private async resolveMembershipId(
+    orgId: string,
+    userId: string | null,
+  ): Promise<number | null> {
     if (!userId) return null;
     const [row] = await this.db
       .select({ id: organizationMembers.id })
       .from(organizationMembers)
-      .where(and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.userId, userId)))
+      .where(
+        and(
+          eq(organizationMembers.orgId, orgId),
+          eq(organizationMembers.userId, userId),
+        ),
+      )
       .limit(1);
     return row?.id ?? null;
   }
@@ -149,45 +164,118 @@ export class ProjectsActivityService {
     before: TicketSnapshot,
     changes: TicketChanges,
   ): Promise<void> {
-    const entries: Array<{ action: TicketActivityAction; from: string | null; to: string | null }> = [];
+    const entries: Array<{
+      action: TicketActivityAction;
+      from: string | null;
+      to: string | null;
+    }> = [];
 
-    if (changes.title !== undefined && normalize(changes.title) !== normalize(before.title)) {
-      entries.push({ action: "title_changed", from: normalize(before.title), to: normalize(changes.title) });
+    if (
+      changes.title !== undefined &&
+      normalize(changes.title) !== normalize(before.title)
+    ) {
+      entries.push({
+        action: "title_changed",
+        from: normalize(before.title),
+        to: normalize(changes.title),
+      });
     }
-    if (changes.status !== undefined && normalize(changes.status) !== normalize(before.status)) {
-      entries.push({ action: "status_changed", from: normalize(before.status), to: normalize(changes.status) });
+    if (
+      changes.status !== undefined &&
+      normalize(changes.status) !== normalize(before.status)
+    ) {
+      entries.push({
+        action: "status_changed",
+        from: normalize(before.status),
+        to: normalize(changes.status),
+      });
     }
-    if (changes.priority !== undefined && normalize(changes.priority) !== normalize(before.priority)) {
-      entries.push({ action: "priority_changed", from: normalize(before.priority), to: normalize(changes.priority) });
+    if (
+      changes.priority !== undefined &&
+      normalize(changes.priority) !== normalize(before.priority)
+    ) {
+      entries.push({
+        action: "priority_changed",
+        from: normalize(before.priority),
+        to: normalize(changes.priority),
+      });
     }
-    if (changes.assigneeId !== undefined && normalize(changes.assigneeId) !== normalize(before.assigneeId)) {
-      const ids = [before.assigneeId, changes.assigneeId].filter((id): id is string => !!id);
+    if (
+      changes.assigneeId !== undefined &&
+      normalize(changes.assigneeId) !== normalize(before.assigneeId)
+    ) {
+      const ids = [before.assigneeId, changes.assigneeId].filter(
+        (id): id is string => !!id,
+      );
       const nameById = await this.resolveUserNames(orgId, ids);
       entries.push({
         action: "assignee_changed",
-        from: before.assigneeId ? (nameById.get(before.assigneeId) ?? before.assigneeId) : null,
-        to: changes.assigneeId ? (nameById.get(changes.assigneeId) ?? changes.assigneeId) : null,
+        from: before.assigneeId
+          ? (nameById.get(before.assigneeId) ?? before.assigneeId)
+          : null,
+        to: changes.assigneeId
+          ? (nameById.get(changes.assigneeId) ?? changes.assigneeId)
+          : null,
       });
     }
-    if (changes.sprintId !== undefined && normalize(changes.sprintId) !== normalize(before.sprintId)) {
-      entries.push({ action: "sprint_changed", from: normalize(before.sprintId), to: normalize(changes.sprintId) });
+    if (
+      changes.sprintId !== undefined &&
+      normalize(changes.sprintId) !== normalize(before.sprintId)
+    ) {
+      entries.push({
+        action: "sprint_changed",
+        from: normalize(before.sprintId),
+        to: normalize(changes.sprintId),
+      });
     }
-    if (changes.dueDate !== undefined && normalize(changes.dueDate) !== normalize(before.dueDate)) {
-      entries.push({ action: "due_date_changed", from: normalize(before.dueDate), to: normalize(changes.dueDate) });
+    if (
+      changes.dueDate !== undefined &&
+      normalize(changes.dueDate) !== normalize(before.dueDate)
+    ) {
+      entries.push({
+        action: "due_date_changed",
+        from: normalize(before.dueDate),
+        to: normalize(changes.dueDate),
+      });
     }
-    if (changes.points !== undefined && normalize(changes.points) !== normalize(before.points)) {
-      entries.push({ action: "estimate_changed", from: normalize(before.points), to: normalize(changes.points) });
+    if (
+      changes.points !== undefined &&
+      normalize(changes.points) !== normalize(before.points)
+    ) {
+      entries.push({
+        action: "estimate_changed",
+        from: normalize(before.points),
+        to: normalize(changes.points),
+      });
     }
-    if (changes.type !== undefined && normalize(changes.type) !== normalize(before.type)) {
-      entries.push({ action: "type_changed", from: normalize(before.type), to: normalize(changes.type) });
+    if (
+      changes.type !== undefined &&
+      normalize(changes.type) !== normalize(before.type)
+    ) {
+      entries.push({
+        action: "type_changed",
+        from: normalize(before.type),
+        to: normalize(changes.type),
+      });
     }
-    if (changes.cycleId !== undefined && normalize(changes.cycleId) !== normalize(before.cycleId)) {
-      const cycleIds = [before.cycleId, changes.cycleId].filter((id): id is number => id != null);
+    if (
+      changes.cycleId !== undefined &&
+      normalize(changes.cycleId) !== normalize(before.cycleId)
+    ) {
+      const cycleIds = [before.cycleId, changes.cycleId].filter(
+        (id): id is number => id != null,
+      );
       const cycleNameById = await this.resolveCycleNames(orgId, cycleIds);
       entries.push({
         action: "cycle_changed",
-        from: before.cycleId != null ? (cycleNameById.get(before.cycleId) ?? String(before.cycleId)) : null,
-        to: changes.cycleId != null ? (cycleNameById.get(changes.cycleId) ?? String(changes.cycleId)) : null,
+        from:
+          before.cycleId != null
+            ? (cycleNameById.get(before.cycleId) ?? String(before.cycleId))
+            : null,
+        to:
+          changes.cycleId != null
+            ? (cycleNameById.get(changes.cycleId) ?? String(changes.cycleId))
+            : null,
       });
     }
 
@@ -206,7 +294,10 @@ export class ProjectsActivityService {
     );
   }
 
-  private async resolveUserNames(orgId: string, ids: string[]): Promise<Map<string, string>> {
+  private async resolveUserNames(
+    orgId: string,
+    ids: string[],
+  ): Promise<Map<string, string>> {
     const map = new Map<string, string>();
     const unique = Array.from(new Set(ids));
     if (unique.length === 0) return map;
@@ -229,24 +320,44 @@ export class ProjectsActivityService {
 
     for (const row of rows) {
       if (!row.userId) continue;
-      const fallback = `${row.firstName ?? ""} ${row.lastName ?? ""}`.trim();
-      const name = row.displayName ?? (fallback.length > 0 ? fallback : (row.workEmail ?? row.userId));
-      map.set(row.userId, name);
+      const name = resolveActivityActorName({
+        displayName: row.displayName,
+        firstName: row.firstName,
+        lastName: row.lastName,
+        userName: null,
+        userEmail: row.workEmail,
+      });
+      if (name !== UNRESOLVED_ACTOR_NAME) map.set(row.userId, name);
+    }
+
+    const unresolved = unique.filter((id) => !map.has(id));
+    if (unresolved.length === 0) return map;
+
+    const membersOfOrg = this.db
+      .select({ userId: organizationMembers.userId })
+      .from(organizationMembers)
+      .where(eq(organizationMembers.orgId, orgId));
+
+    const accounts = await this.db
+      .select({ id: users.id, name: users.name, email: users.email })
+      .from(users)
+      .where(
+        and(inArray(users.id, unresolved), inArray(users.id, membersOfOrg)),
+      );
+
+    for (const account of accounts) {
+      const name = resolveActivityActorName({
+        displayName: null,
+        firstName: null,
+        lastName: null,
+        userName: account.name,
+        userEmail: account.email,
+      });
+      if (name !== UNRESOLVED_ACTOR_NAME) map.set(account.id, name);
     }
     return map;
   }
 
-  /**
-   * Cycle names for an activity feed, scoped to the organisation.
-   *
-   * Defence in depth, not a leak that was reachable: the ids come from the
-   * ticket's own `cycle_id`, which carries a composite foreign key into
-   * `(cycles.org_id, cycles.id)`, and `cycles.id` is a globally unique identity
-   * column — so a match already had to belong to this organisation. Stating the
-   * tenant means a future caller that passes ids from somewhere less
-   * constrained cannot turn this into a cross-tenant name lookup, and it keeps
-   * the scan on the organisation-leading index.
-   */
   private async resolveCycleNames(
     orgId: string,
     ids: number[],
@@ -300,9 +411,17 @@ export class ProjectsActivityService {
 
     const mentionedUserIds = mentioned.map((u) => u.id);
     const memberRows = await this.db
-      .select({ id: organizationMembers.id, userId: organizationMembers.userId })
+      .select({
+        id: organizationMembers.id,
+        userId: organizationMembers.userId,
+      })
       .from(organizationMembers)
-      .where(and(eq(organizationMembers.orgId, input.orgId), inArray(organizationMembers.userId, mentionedUserIds)));
+      .where(
+        and(
+          eq(organizationMembers.orgId, input.orgId),
+          inArray(organizationMembers.userId, mentionedUserIds),
+        ),
+      );
     const membershipByUserId = new Map(memberRows.map((r) => [r.userId, r.id]));
 
     try {
@@ -328,7 +447,13 @@ export class ProjectsActivityService {
       const [projectRow] = await this.db
         .select({ key: projects.key })
         .from(projects)
-        .where(and(eq(projects.id, input.projectId), eq(projects.orgId, input.orgId), isNull(projects.deletedAt)))
+        .where(
+          and(
+            eq(projects.id, input.projectId),
+            eq(projects.orgId, input.orgId),
+            isNull(projects.deletedAt),
+          ),
+        )
         .limit(1);
 
       ticketKey = projectRow?.key
@@ -355,6 +480,8 @@ export class ProjectsActivityService {
           ticketKey: ticketKey ?? null,
         },
       })
-      .catch((error: unknown) => logger.error("Failed to notify mentioned users", { error }));
+      .catch((error: unknown) =>
+        logger.error("Failed to notify mentioned users", { error }),
+      );
   }
 }

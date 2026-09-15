@@ -250,11 +250,12 @@ const checklistItemSchema = z.object({
   id: z.number().int(),
   orgId: z.string(),
   checklistId: z.number().int(),
-  title: z.string(),
+  text: z.string(),
   isCompleted: z.boolean(),
-  position: z.number().int(),
+  assigneeId: z.string().nullable(),
+  dueDate: z.string().nullable(),
+  order: z.number().int(),
   createdAt: wireDate(),
-  updatedAt: wireDate(),
 });
 
 export const checklistRowSchema = z.object({
