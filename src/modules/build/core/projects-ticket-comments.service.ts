@@ -20,6 +20,7 @@ import {
 } from "../../../common/http/api-exceptions";
 import { ProjectsWebhooksDispatchService } from "./projects-webhooks-dispatch.service";
 import type { CommentInput } from "./dto/projects.schemas";
+import { resolvePersonDisplayName } from "../../../common/organization/person-display-name";
 
 @Injectable()
 export class ProjectsTicketCommentsService {
@@ -91,8 +92,12 @@ export class ProjectsTicketCommentsService {
     const row = rows[0];
     if (!row) return null;
 
-    const fallbackName = `${row.authorFirstName ?? ""} ${row.authorLastName ?? ""}`.trim();
-    const authorName = row.authorDisplayName ?? (fallbackName.length > 0 ? fallbackName : null);
+    const authorName = resolvePersonDisplayName({
+      displayName: row.authorDisplayName,
+      firstName: row.authorFirstName,
+      lastName: row.authorLastName,
+      email: row.authorEmail,
+    });
 
     return {
       id: row.id,

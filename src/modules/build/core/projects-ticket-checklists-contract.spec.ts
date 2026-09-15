@@ -1,5 +1,5 @@
 import { checklistItemSchema } from "./dto/build-tickets-response.schemas";
-import { toChecklistItemRow } from "./projects-ticket-checklist-row";
+import { toChecklistItemRow } from "./projects-ticket-checklists.service";
 
 const ROW = {
   id: 11,
@@ -7,8 +7,9 @@ const ROW = {
   checklistId: 4,
   text: "Write the migration",
   isCompleted: false,
-  assigneeId: "user-1",
-  dueDate: "2026-09-30",
+  assigneeId: "user-1" as string | null,
+  assigneeMembershipId: null,
+  dueDate: "2026-09-30" as string | null,
   order: 2,
   createdAt: new Date("2026-09-15T10:00:00.000Z"),
 };

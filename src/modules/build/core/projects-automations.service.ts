@@ -50,9 +50,12 @@ export class ProjectsAutomationsService {
     return this.db
       .select({
         id: projectAutomations.id,
+        projectId: projectAutomations.projectId,
         name: projectAutomations.name,
         triggerEvent: projectAutomations.triggerEvent,
         isActive: projectAutomations.isActive,
+        conditions: projectAutomations.conditions,
+        actions: projectAutomations.actions,
         createdAt: projectAutomations.createdAt,
         updatedAt: projectAutomations.updatedAt,
       })

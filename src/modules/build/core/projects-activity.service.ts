@@ -14,10 +14,7 @@ import { type Db } from "../../../db/drizzle.module";
 import { logger } from "../../../common/logger/logger.service";
 import { NotificationsService } from "../../notifications/notifications.service";
 import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
-import {
-  resolveActivityActorName,
-  UNRESOLVED_ACTOR_NAME,
-} from "./projects-activity-actor-name";
+import { resolvePersonDisplayName } from "../../../common/organization/person-display-name";
 
 type TicketActivityAction =
   (typeof ticketActivityLog.action.enumValues)[number];
@@ -72,18 +69,6 @@ function normalize(value: string | number | null | undefined): string | null {
   return str.length > 0 ? str : null;
 }
 
-function displayName(user: {
-  name: string | null;
-  firstName: string | null;
-  lastName: string | null;
-  email: string | null;
-}): string {
-  if (user.name && user.name.trim()) return user.name.trim();
-  const full = `${user.firstName ?? ""} ${user.lastName ?? ""}`.trim();
-  if (full) return full;
-  return user.email ?? "Unknown";
-}
-
 function extractMentionTokens(content: string): string[] {
   const matches = content.match(/@([\w.+-]+(?:\s+[\w.+-]+)?)/g);
   if (!matches) return [];
@@ -101,7 +86,14 @@ function matchMentionedUsers(content: string, orgUsers: OrgUser[]): OrgUser[] {
     const candidates = [
       user.email.toLowerCase(),
       user.email.split("@")[0]?.toLowerCase() ?? "",
-      displayName(user).toLowerCase(),
+      (
+        resolvePersonDisplayName({
+          firstName: user.firstName,
+          lastName: user.lastName,
+          accountName: user.name,
+          email: user.email,
+        }) ?? ""
+      ).toLowerCase(),
       `${user.firstName ?? ""}`.toLowerCase().trim(),
     ].filter(Boolean);
 
@@ -320,14 +312,13 @@ export class ProjectsActivityService {
 
     for (const row of rows) {
       if (!row.userId) continue;
-      const name = resolveActivityActorName({
+      const name = resolvePersonDisplayName({
         displayName: row.displayName,
         firstName: row.firstName,
         lastName: row.lastName,
-        userName: null,
-        userEmail: row.workEmail,
+        email: row.workEmail,
       });
-      if (name !== UNRESOLVED_ACTOR_NAME) map.set(row.userId, name);
+      if (name) map.set(row.userId, name);
     }
 
     const unresolved = unique.filter((id) => !map.has(id));
@@ -346,14 +337,11 @@ export class ProjectsActivityService {
       );
 
     for (const account of accounts) {
-      const name = resolveActivityActorName({
-        displayName: null,
-        firstName: null,
-        lastName: null,
-        userName: account.name,
-        userEmail: account.email,
+      const name = resolvePersonDisplayName({
+        accountName: account.name,
+        email: account.email,
       });
-      if (name !== UNRESOLVED_ACTOR_NAME) map.set(account.id, name);
+      if (name) map.set(account.id, name);
     }
     return map;
   }

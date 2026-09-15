@@ -13,6 +13,12 @@ import {
 import type { CreateReleaseInput, UpdateReleaseInput } from "./dto/releases.schemas";
 import { assertProjectInOrg } from "./project-access";
 
+type ReleaseRow = typeof projectReleases.$inferSelect;
+
+export function releaseRowWithCount(row: ReleaseRow, ticketCount: number) {
+  return { ...row, ticketCount };
+}
+
 @Injectable()
 export class ProjectsReleasesService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
@@ -57,7 +63,7 @@ export class ProjectsReleasesService {
       createdBy: userId,
       ...data,
     }).returning();
-    return release;
+    return releaseRowWithCount(release, 0);
   }
 
   async updateRelease(orgId: string, releaseId: number, data: UpdateReleaseInput) {
@@ -90,7 +96,11 @@ export class ProjectsReleasesService {
     });
     const updated = rows[0];
     if (!updated) throw new NotFoundException("Release not found");
-    return updated;
+    const [counted] = await this.db
+      .select({ ticketCount: sql<number>`CAST(COUNT(*) AS INT)` })
+      .from(releaseTickets)
+      .where(eq(releaseTickets.releaseId, releaseId));
+    return releaseRowWithCount(updated, counted?.ticketCount ?? 0);
   }
 
   async deleteRelease(orgId: string, releaseId: number) {

@@ -39,7 +39,10 @@ import {
   assertTicketReadAccess,
   type TicketReadAccess,
 } from "./build-ticket-read-access";
-import { resolveActivityActorName } from "./projects-activity-actor-name";
+import {
+  resolvePersonDisplayName,
+  UNRESOLVED_MEMBER_NAME,
+} from "../../../common/organization/person-display-name";
 
 const ACTION_LABELS: Record<string, string> = {
   created: "created this ticket",
@@ -185,8 +188,8 @@ export class ProjectsTicketSubresourcesService {
         firstName: organizationPeople.firstName,
         lastName: organizationPeople.lastName,
         avatarUrl: organizationPeople.avatarUrl,
-        userName: users.name,
-        userEmail: users.email,
+        accountName: users.name,
+        email: users.email,
         userImage: users.image,
       })
       .from(ticketActivityLog)
@@ -221,7 +224,7 @@ export class ProjectsTicketSubresourcesService {
         row.userMembershipId !== null && row.userMembershipId !== undefined
           ? {
               id: row.personUserId ?? row.memberUserId ?? null,
-              name: resolveActivityActorName(row),
+              name: resolvePersonDisplayName(row) ?? UNRESOLVED_MEMBER_NAME,
               image: row.avatarUrl ?? row.userImage ?? null,
             }
           : null,
@@ -329,10 +332,7 @@ export class ProjectsTicketSubresourcesService {
         ),
       )
       .limit(1);
-    const fallbackName =
-      `${person?.firstName ?? ""} ${person?.lastName ?? ""}`.trim();
-    const name =
-      person?.displayName ?? (fallbackName.length > 0 ? fallbackName : null);
+    const name = resolvePersonDisplayName(person ?? {});
     return {
       userId,
       name,

@@ -7,7 +7,20 @@ import {
 } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
-import { toChecklistItemRow } from "./projects-ticket-checklist-row";
+
+export function toChecklistItemRow(item: typeof ticketChecklistItems.$inferSelect) {
+  return {
+    id: item.id,
+    orgId: item.orgId,
+    checklistId: item.checklistId,
+    text: item.text,
+    isCompleted: item.isCompleted,
+    assigneeId: item.assigneeId,
+    dueDate: item.dueDate,
+    order: item.order,
+    createdAt: item.createdAt,
+  };
+}
 
 @Injectable()
 export class ProjectsTicketChecklistsService {
