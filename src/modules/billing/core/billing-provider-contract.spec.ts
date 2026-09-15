@@ -6,15 +6,14 @@ import { PlanLimitsService } from "./plan-limits.service";
 import { ProrationLedgerService } from "./proration-ledger.service";
 import { VersionedCatalogService } from "./versioned-catalog.service";
 import { RevenueAnalyticsService } from "./revenue-analytics.service";
-import { OutboxConsumerRegistry } from "../../../common/outbox/outbox-consumer.registry";
 import { ExternalEffectLedger } from "../../../common/outbox/external-effect-ledger";
 import { PaymentProviderResolver, type OrganizationPaymentProvider } from "../payments/payment-provider-resolver.service";
 import { PaymentWebhookReceiverService } from "../payments/payment-webhook-receiver.service";
 import { PaymentAnalyticsService } from "../payments/payment-analytics.service";
 import { PlatformMerchantService } from "../payments/platform-merchant.service";
-import { BillingProfileService } from "./billing-profile.service";
 import { AiCreditsService } from "./ai-credits.service";
-import { BillingService } from "./billing.service";
+import { BillingPaymentActivation } from "./billing-payment-activation";
+import { BillingCoupons } from "./billing-coupons";
 import { CacheService } from "../../../common/cache/cache.service";
 import {
   FakeProviderAdapter,
@@ -140,13 +139,13 @@ function makeDb() {
   };
 }
 
-async function buildService(providers: PaymentProviderResolver): Promise<BillingService> {
+async function buildService(providers: PaymentProviderResolver): Promise<BillingPaymentActivation> {
   const module = await Test.createTestingModule({
     providers: [
-      BillingService,
-      RevenueAnalyticsService,
+      BillingPaymentActivation,
+      BillingCoupons,
       { provide: DRIZZLE, useValue: makeDb() },
-      { provide: OutboxConsumerRegistry, useValue: { register: jest.fn(), get: jest.fn() } },
+      { provide: RevenueAnalyticsService, useValue: { emit: jest.fn().mockResolvedValue(undefined) } },
       {
         provide: AiCreditsService,
         useValue: { grantPlanCredits: jest.fn().mockResolvedValue(undefined), listPacks: jest.fn().mockResolvedValue([]) },
@@ -168,7 +167,6 @@ async function buildService(providers: PaymentProviderResolver): Promise<Billing
       },
       { provide: PaymentWebhookReceiverService, useValue: { recordSignatureFailure: jest.fn() } },
       { provide: PaymentAnalyticsService, useValue: { notifyOwner: jest.fn(), track: jest.fn() } },
-      { provide: BillingProfileService, useValue: { get: jest.fn(), update: jest.fn() } },
       {
         provide: CacheService,
         useValue: {
@@ -180,7 +178,7 @@ async function buildService(providers: PaymentProviderResolver): Promise<Billing
       },
     ],
   }).compile();
-  return module.get(BillingService);
+  return module.get(BillingPaymentActivation);
 }
 
 describe("confirmCheckoutSchema — provider-neutral contract (PRD 10.10-A)", () => {
@@ -214,7 +212,7 @@ describe("confirmCheckoutSchema — provider-neutral contract (PRD 10.10-A)", ()
   });
 });
 
-describe("BillingService — Stripe-ready contract (PRD 10.10-A)", () => {
+describe("BillingPaymentActivation — Stripe-ready contract (PRD 10.10-A)", () => {
   it("a stripe-keyed adapter activates through the same verifyAndActivate without any Razorpay field in the call path", async () => {
     const svc = await buildService(makeStripeResolver());
     const result = await svc.verifyAndActivate(STRIPE_PURCHASE.orgId, "user_1", {

@@ -1,7 +1,9 @@
 import request from "supertest";
 import { eq, sql } from "drizzle-orm";
 import { workflowRuns } from "src/db/schema";
-import { CrmImportService } from "src/modules/crm/import/crm-import.service";
+import { CrmImportPreviewService } from "src/modules/crm/import/crm-import-preview.service";
+import { CrmImportCommitService } from "src/modules/crm/import/crm-import-commit.service";
+import { CrmImportRevertService } from "src/modules/crm/import/crm-import-revert.service";
 import { CrmExportService, type ExportEntity } from "src/modules/crm/import/crm-export.service";
 import { runInNewTenantTransaction } from "src/common/tenant/run-in-tenant-transaction";
 import { DRIZZLE } from "src/db/drizzle.constants";
@@ -19,7 +21,9 @@ import { seedOrg } from "test/helpers/seed-builder";
  */
 describe("[seeded-e2e] CRM import round trip", () => {
   let seededApp: SeededE2eApp;
-  let imports: CrmImportService;
+  let imports: CrmImportPreviewService;
+  let commits: CrmImportCommitService;
+  let reverts: CrmImportRevertService;
   let exports: CrmExportService;
   let orgId: string;
   let userId: string;
@@ -81,20 +85,22 @@ describe("[seeded-e2e] CRM import round trip", () => {
   }
 
   async function commit(crmImportId: string) {
-    const runId = await inTenant(() => imports.startCommit(orgId, crmImportId));
+    const runId = await inTenant(() => commits.startCommit(orgId, crmImportId));
     expect(await drive(runId)).toBe("COMPLETED");
     return inTenant(() => imports.progress(orgId, crmImportId));
   }
 
   async function revert(crmImportId: string) {
-    const runId = await inTenant(() => imports.startRevert(orgId, userId, crmImportId));
+    const runId = await inTenant(() => reverts.startRevert(orgId, userId, crmImportId));
     expect(await drive(runId)).toBe("COMPLETED");
     return inTenant(() => imports.progress(orgId, crmImportId));
   }
 
   beforeAll(async () => {
     seededApp = await createSeededE2eApp();
-    imports = seededApp.app.get(CrmImportService);
+    imports = seededApp.app.get(CrmImportPreviewService);
+    commits = seededApp.app.get(CrmImportCommitService);
+    reverts = seededApp.app.get(CrmImportRevertService);
     exports = seededApp.app.get(CrmExportService);
 
     const fixture = await seedOrg(seededApp.seedDb).addMember("importer").build();
@@ -274,10 +280,10 @@ describe("[seeded-e2e] CRM import round trip", () => {
     // A committed import cannot be claimed again: `claimForCommit` refuses any
     // status but `previewing` or `committing`, which is what stops a retried
     // request creating every row twice.
-    await expect(inTenant(() => imports.startCommit(orgId, preview.crmImportId))).rejects.toThrow();
+    await expect(inTenant(() => commits.startCommit(orgId, preview.crmImportId))).rejects.toThrow();
     // Settled rather than re-walked: the batches a retried workflow step would
     // re-enter find nothing left to write.
-    await expect(inTenant(() => imports.beginCommit(orgId, preview.crmImportId))).resolves.toMatchObject({
+    await expect(inTenant(() => commits.beginCommit(orgId, preview.crmImportId))).resolves.toMatchObject({
       settled: true,
     });
 

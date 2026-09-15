@@ -67,9 +67,11 @@ function makeHarness(options: {
     transaction: jest.fn((fn: (inner: unknown) => Promise<unknown>) => fn(tx)),
   };
 
-  const service = new OnboardingDetailsService(db as never, {
-    invalidate: jest.fn().mockResolvedValue(undefined),
-  } as never);
+  const service = new OnboardingDetailsService(
+    db as never,
+    { invalidate: jest.fn().mockResolvedValue(undefined) } as never,
+    { ensureFromUserId: jest.fn().mockResolvedValue(null) } as never,
+  );
 
   const upsert = jest
     .spyOn(

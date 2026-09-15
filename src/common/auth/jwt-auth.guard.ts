@@ -39,6 +39,7 @@ import {
 } from "./api-token-hash";
 import {
   accountOrganizationIndex,
+  impersonationSessions,
   organizationMembers,
   organizations,
   userApiTokens,
@@ -157,48 +158,57 @@ export class JwtAuthGuard implements CanActivate {
         sub: verified.sub,
         orgId: verified.orgId,
         sessionId: verified.sessionId,
+        impersonation: verified.impersonation,
       };
     }
 
     if (claims !== null) {
       if (!claims.sessionId.startsWith("pat:")) {
-        // Every request re-reads the tombstone. A positive-result cache used to sit here
-        // and it made revocation take effect up to its TTL later, on a per-process basis.
-        let tombstone: boolean | null = null;
-        let redisErrored = false;
-        if (this.redis) {
-          try {
-            tombstone = await this.redis.get<boolean>(
-              `revoked:session:${claims.sessionId}`,
-            );
-          } catch (err) {
-            redisErrored = true;
-            this.logger.error(
-              `session revocation lookup failed, falling back to the database: ${err instanceof Error ? err.message : String(err)}`,
-            );
+        if (claims.impersonation) {
+          const impersonated = await this.isImpersonationSessionRevoked(
+            claims.impersonation.impersonationSessionId,
+          );
+          if (impersonated !== false)
+            throw new UnauthorizedException("Impersonation session has been revoked");
+        } else {
+          // Every request re-reads the tombstone. A positive-result cache used to sit here
+          // and it made revocation take effect up to its TTL later, on a per-process basis.
+          let tombstone: boolean | null = null;
+          let redisErrored = false;
+          if (this.redis) {
+            try {
+              tombstone = await this.redis.get<boolean>(
+                `revoked:session:${claims.sessionId}`,
+              );
+            } catch (err) {
+              redisErrored = true;
+              this.logger.error(
+                `session revocation lookup failed, falling back to the database: ${err instanceof Error ? err.message : String(err)}`,
+              );
+            }
           }
-        }
 
-        // Positive tombstone: session is durably revoked — deny without a DB read (hot path).
-        if (tombstone === true)
-          throw new UnauthorizedException("Session has been revoked");
-
-        // Consult the DB when: Redis is absent, Redis errored, or tombstone was a cache miss (null).
-        const needsDatabase =
-          this.redis === null || redisErrored || tombstone === null;
-        if (needsDatabase) {
-          const dbResult = await this.isRevokedInDatabase(claims.sessionId);
-          if (dbResult === null) {
-            // Both revocation authorities failed — fail closed rather than admit a possibly-revoked session.
-            this.logger.error(
-              `session revocation double-failure for sessionId=${claims.sessionId}: both Redis and the database were unavailable; denying to fail closed`,
-            );
-            throw new UnauthorizedException(
-              "Session revocation check unavailable",
-            );
-          }
-          if (dbResult)
+          // Positive tombstone: session is durably revoked — deny without a DB read (hot path).
+          if (tombstone === true)
             throw new UnauthorizedException("Session has been revoked");
+
+          // Consult the DB when: Redis is absent, Redis errored, or tombstone was a cache miss (null).
+          const needsDatabase =
+            this.redis === null || redisErrored || tombstone === null;
+          if (needsDatabase) {
+            const dbResult = await this.isRevokedInDatabase(claims.sessionId);
+            if (dbResult === null) {
+              // Both revocation authorities failed — fail closed rather than admit a possibly-revoked session.
+              this.logger.error(
+                `session revocation double-failure for sessionId=${claims.sessionId}: both Redis and the database were unavailable; denying to fail closed`,
+              );
+              throw new UnauthorizedException(
+                "Session revocation check unavailable",
+              );
+            }
+            if (dbResult)
+              throw new UnauthorizedException("Session has been revoked");
+          }
         }
       }
       const allowNoOrg = this.reflector.getAllAndOverride<boolean>(
@@ -264,6 +274,7 @@ export class JwtAuthGuard implements CanActivate {
           sessionId: claims.sessionId,
           tokenScopes: null,
           principal,
+          impersonation: claims.impersonation,
         },
         membership,
       );
@@ -277,6 +288,30 @@ export class JwtAuthGuard implements CanActivate {
     }
 
     throw new UnauthorizedException("Unauthorized");
+  }
+
+  private async isImpersonationSessionRevoked(
+    impersonationSessionId: string,
+  ): Promise<boolean> {
+    try {
+      if (this.redis) {
+        const tombstone = await this.redis.get<boolean>(
+          `revoked:impersonation:${impersonationSessionId}`,
+        );
+        if (tombstone === true) return true;
+      }
+      const rows = await this.db
+        .select({ isRevoked: impersonationSessions.isRevoked })
+        .from(impersonationSessions)
+        .where(eq(impersonationSessions.id, impersonationSessionId))
+        .limit(1);
+      return rows[0]?.isRevoked ?? true;
+    } catch (err) {
+      this.logger.error(
+        `impersonation session revocation check failed: ${err instanceof Error ? err.message : String(err)}`,
+      );
+      return true;
+    }
   }
 
   private async isRevokedInDatabase(

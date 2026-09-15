@@ -39,7 +39,7 @@ import { z } from "zod";
 import { NoContentResponse, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
 import { successSchema } from "../../../common/openapi/response-envelopes";
 import {
-  ticketRowSchema,
+  ticketListRowSchema,
   watcherSchema,
   ticketRelationSchema,
   gitLinkSchema,
@@ -60,7 +60,7 @@ export class ProjectsTicketAssociationsController {
 
   @Get(":projectId/tickets/:ticketId/subtasks")
   @RequirePermission("build:tickets:view")
-  @ResponseSchema(z.array(ticketRowSchema))
+  @ResponseSchema(z.array(ticketListRowSchema))
   @Validate({ params: projectIdticketIdParams })
   getSubtasks(
     @Param("ticketId", ParseIntPipe) ticketId: number,

@@ -1,20 +1,55 @@
-import { BadRequestException, NotFoundException } from "@nestjs/common";
+import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, eq, ne, sql } from "drizzle-orm";
 import {
   invoices,
   organizationMembers,
   subscriptions,
 } from "../../../db/schema";
+import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { PlanLimitsService } from "./plan-limits.service";
 import { PlatformMerchantService } from "../payments/platform-merchant.service";
 
+@Injectable()
 export class BillingAccountOverview {
   constructor(
-    private readonly db: Db,
+    @Inject(DRIZZLE) private readonly db: Db,
     private readonly planLimits: PlanLimitsService,
     private readonly platformMerchant: PlatformMerchantService,
   ) {}
+
+  async getSubscription(orgId: string) {
+    const subscription = await this.db.query.subscriptions.findFirst({
+      where: eq(subscriptions.orgId, orgId),
+      columns: {
+        provider: false,
+        providerSubscriptionRef: false,
+        providerCustomerRef: false,
+        providerPlanRef: false,
+      },
+      with: {
+        payments: {
+          limit: 5,
+          orderBy: (payment, { desc: descending }) => [
+            descending(payment.createdAt),
+          ],
+          columns: {
+            provider: false,
+            providerPaymentRef: false,
+            providerOrderRef: false,
+          },
+        },
+      },
+    });
+
+    const readiness = this.platformMerchant.readiness();
+    return {
+      subscription: subscription ?? null,
+      publicKeyId: readiness.configured ? readiness.publicKeyId : null,
+      isConfigured: readiness.configured,
+      platformCheckout: readiness,
+    };
+  }
 
   async getSeatInfo(orgId: string) {
     const [{ seatLimit }, memberRows, invitationRows] = await Promise.all([

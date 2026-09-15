@@ -32,9 +32,6 @@ export interface StripeWebhookResult {
  * Stripe, it is the only path by which a Stripe payment ever activates
  * anything**, and a browser that never comes back still credits the tenant.
  *
- * Kept out of `BillingService` because that class is already far past the size
- * this repo reviews at, and because the two providers share no envelope, no
- * credential and no ordering assumptions -- only the ledger they land in.
  */
 @Injectable()
 export class StripePlatformWebhookService {
@@ -55,11 +52,7 @@ export class StripePlatformWebhookService {
 
   async handle(orgId: string, rawBody: string, signature: string): Promise<StripeWebhookResult> {
     /*
-      The PLATFORM's Stripe credentials, not the tenant's.
-
-      `BillingService.handlePaymentProviderWebhook` resolves an adapter from the
-      org's own `payment_providers` row, which is right for the other direction
-      -- a tenant's gateway charging a tenant's customers. This direction is us
+      The PLATFORM's Stripe credentials, not the tenant's. This direction is us
       billing them, and its secret is `STRIPE_WEBHOOK_SECRET` on the deployment.
       Verifying a platform delivery against a tenant-held secret would let a
       tenant who has connected their own Stripe account sign their own

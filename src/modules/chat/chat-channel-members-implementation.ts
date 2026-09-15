@@ -1,6 +1,8 @@
 import {
   ConflictException,
   ForbiddenException,
+  Inject,
+  Injectable,
   NotFoundException,
 } from "@nestjs/common";
 import { and, asc, desc, eq, gt, lt } from "drizzle-orm";
@@ -11,6 +13,7 @@ import {
   chatMessages,
 } from "../../db/schema";
 import { type Db } from "../../db/drizzle.module";
+import { DRIZZLE } from "../../db/drizzle.constants";
 import { channelHighWaterMark } from "./chat-channel-member-state";
 import type { UpdateChannelInput } from "./dto/chat.schemas";
 import { assertUsersInOrg } from "../../common/tenant/org-membership";
@@ -34,9 +37,10 @@ import {
   flattenChannelMember,
 } from "./chat-channel-member-shape";
 
+@Injectable()
 export class ChatChannelMembersImplementation {
   constructor(
-    private readonly db: Db,
+    @Inject(DRIZZLE) private readonly db: Db,
     private readonly entities: EntityReferenceService,
   ) {}
 

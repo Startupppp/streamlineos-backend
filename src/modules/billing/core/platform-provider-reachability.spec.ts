@@ -2,14 +2,16 @@ import { ServiceUnavailableException } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { AuditService } from "../../../common/audit/audit.service";
+import { CacheService } from "../../../common/cache/cache.service";
 import { ExternalEffectLedger } from "../../../common/outbox/external-effect-ledger";
 import { PaymentProviderResolver } from "../payments/payment-provider-resolver.service";
 import type { OrganizationPaymentProvider } from "../payments/payment-provider-resolver.service";
 import { PaymentWebhookReceiverService } from "../payments/payment-webhook-receiver.service";
 import { PaymentAnalyticsService } from "../payments/payment-analytics.service";
 import { AiCreditsService } from "./ai-credits.service";
-import { BillingProfileService } from "./billing-profile.service";
-import { BillingService } from "./billing.service";
+import { BillingPaymentActivation } from "./billing-payment-activation";
+import { BillingCoupons } from "./billing-coupons";
+import { BillingAccountOverview } from "./billing-account-overview";
 import { PlanLimitsService } from "./plan-limits.service";
 import { ProrationLedgerService } from "./proration-ledger.service";
 import { PlatformMerchantService } from "../payments/platform-merchant.service";
@@ -111,10 +113,11 @@ function makeDb() {
   };
 }
 
-async function buildBilling(configured: boolean): Promise<BillingService> {
+async function buildBilling(configured: boolean): Promise<BillingPaymentActivation> {
   const module = await Test.createTestingModule({
     providers: [
-      BillingService,
+      BillingPaymentActivation,
+      BillingCoupons,
       { provide: DRIZZLE, useValue: makeDb() },
       { provide: PlatformMerchantService, useValue: makeMerchant(configured) },
       { provide: AuditService, useValue: { log: jest.fn(), logCritical: jest.fn() } },
@@ -137,16 +140,31 @@ async function buildBilling(configured: boolean): Promise<BillingService> {
       { provide: PaymentWebhookReceiverService, useValue: { recordSignatureFailure: jest.fn() } },
       { provide: PaymentAnalyticsService, useValue: { notifyOwner: jest.fn(), track: jest.fn() } },
       {
-        provide: BillingProfileService,
+        provide: CacheService,
         useValue: {
-          get: jest.fn().mockResolvedValue({ orgId: "org1", country: "IN", isTaxExempt: false }),
-          update: jest.fn(),
+          invalidate: jest.fn().mockResolvedValue(undefined),
+          invalidateMany: jest.fn().mockResolvedValue(undefined),
+          invalidateForOrg: jest.fn().mockResolvedValue(undefined),
+          cached: jest.fn().mockImplementation(async (_key: unknown, fn: () => Promise<unknown>) => fn()),
         },
       },
     ],
   }).compile();
 
-  return module.get(BillingService);
+  return module.get(BillingPaymentActivation);
+}
+
+async function buildAccountOverview(configured: boolean): Promise<BillingAccountOverview> {
+  const module = await Test.createTestingModule({
+    providers: [
+      BillingAccountOverview,
+      { provide: DRIZZLE, useValue: makeDb() },
+      { provide: PlatformMerchantService, useValue: makeMerchant(configured) },
+      { provide: PlanLimitsService, useValue: { bust: jest.fn() } },
+    ],
+  }).compile();
+
+  return module.get(BillingAccountOverview);
 }
 
 describe("createOrder when the platform merchant is configured", () => {
@@ -203,21 +221,21 @@ describe("createOrder when the platform merchant is not configured", () => {
 
 describe("getSubscription reports whether the deployment can take money", () => {
   it("is configured when the platform merchant has credentials", async () => {
-    const billing = await buildBilling(true);
+    const overview = await buildAccountOverview(true);
     const db = { query: { subscriptions: { findFirst: jest.fn().mockResolvedValue(null) } } };
-    Reflect.set(billing, "db", db);
+    Reflect.set(overview, "db", db);
 
-    const result = await billing.getSubscription("org1");
+    const result = await overview.getSubscription("org1");
 
     expect(result.isConfigured).toBe(true);
   });
 
   it("is not configured when the platform merchant has no credentials", async () => {
-    const billing = await buildBilling(false);
+    const overview = await buildAccountOverview(false);
     const db = { query: { subscriptions: { findFirst: jest.fn().mockResolvedValue(null) } } };
-    Reflect.set(billing, "db", db);
+    Reflect.set(overview, "db", db);
 
-    const result = await billing.getSubscription("org1");
+    const result = await overview.getSubscription("org1");
 
     expect(result.isConfigured).toBe(false);
   });

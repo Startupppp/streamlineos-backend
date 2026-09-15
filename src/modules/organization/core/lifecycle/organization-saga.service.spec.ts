@@ -47,9 +47,16 @@ function buildInsertOnConflictChain(opts: { throwCode?: string } = {}) {
       onConflictDoNothing: jest.fn().mockImplementation(() => {
         if (opts.throwCode) {
           const e = Object.assign(new Error("duplicate"), { code: opts.throwCode });
-          return Promise.reject(e);
+          const rejected = Promise.reject<never>(e);
+          // Suppress unhandled rejection warning — the caller will catch via .returning()
+          rejected.catch(() => {});
+          return Object.assign(rejected, {
+            returning: jest.fn().mockRejectedValue(e),
+          });
         }
-        return Promise.resolve();
+        return Object.assign(Promise.resolve([] as unknown[]), {
+          returning: jest.fn().mockResolvedValue([] as unknown[]),
+        });
       }),
     }),
   };

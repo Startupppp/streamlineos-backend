@@ -84,6 +84,22 @@ async function build(overrides: {
     .fn()
     .mockResolvedValue({ email: "owner@acme.test", name: "Acme Owner", firstName: null });
 
+  // The consumer now issues a SELECT on `roles` before calling seedSystemRolesForOrg.
+  // Call 0 = the roles pre-check; it must return [] so seeding is triggered.
+  // Subsequent calls = membership/user lookups (sendInvitations actor check, etc.).
+  const actorRows = overrides.actorRows ?? [{ isOwner: true, email: OWNER_EMAIL }];
+  let selectCallIndex = 0;
+  const select = jest.fn().mockImplementation(() => {
+    const idx = selectCallIndex++;
+    const rows = idx === 0 ? [] : actorRows;
+    const chain: Record<string, jest.Mock> = {};
+    chain.from = jest.fn().mockReturnValue(chain);
+    chain.innerJoin = jest.fn().mockReturnValue(chain);
+    chain.where = jest.fn().mockReturnValue(chain);
+    chain.limit = jest.fn().mockResolvedValue(rows);
+    return chain;
+  });
+
   const moduleRef = await Test.createTestingModule({
     providers: [
       OrgSetupCompletedConsumerService,
@@ -91,9 +107,7 @@ async function build(overrides: {
         provide: DRIZZLE,
         useValue: {
           query: { users: { findFirst } },
-          select: membershipSelect(
-            overrides.actorRows ?? [{ isOwner: true, email: OWNER_EMAIL }],
-          ),
+          select,
         },
       },
       {

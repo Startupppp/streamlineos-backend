@@ -2,11 +2,9 @@ import { Injectable, Logger, type OnModuleInit } from "@nestjs/common";
 import { WorkflowRegistry } from "../../../common/workflow";
 import type { JsonValue, StepContext, WorkflowRunContext } from "../../../common/workflow";
 import { ATTEMPT_BUDGET_MS, pauseStepName } from "./import-batches";
-import {
-  CrmConnectorService,
-  MAX_PAGES_PER_WALK,
-  type WalkExtent,
-} from "./crm-connector.service";
+import { MAX_PAGES_PER_WALK, type WalkExtent } from "./crm-connector-internals";
+import { CrmConnectorWalkService } from "./crm-connector-walk.service";
+import { CrmConnectorLifecycleService } from "./crm-connector-lifecycle.service";
 import { CONNECTOR_SYNC_WORKFLOW } from "./import-workflow-names";
 
 
@@ -47,7 +45,8 @@ export class CrmConnectorWorkflow implements OnModuleInit {
 
   constructor(
     private readonly registry: WorkflowRegistry,
-    private readonly connectors: CrmConnectorService,
+    private readonly walkSvc: CrmConnectorWalkService,
+    private readonly lifecycleSvc: CrmConnectorLifecycleService,
   ) {}
 
   onModuleInit(): void {
@@ -69,7 +68,7 @@ export class CrmConnectorWorkflow implements OnModuleInit {
     const startedAt = Date.now();
 
     const extent: WalkExtent = await step.run("sync-begin", () =>
-      this.connectors.beginWalk(context.organizationId, crmConnectorSyncId),
+      this.walkSvc.beginWalk(context.organizationId, crmConnectorSyncId),
     );
 
     if (extent.settled) {
@@ -89,7 +88,7 @@ export class CrmConnectorWorkflow implements OnModuleInit {
        * the watermark are deliberately untouched, so the retry reads exactly the
        * page that failed.
        */
-      await this.connectors.recordFailure(
+      await this.lifecycleSvc.recordFailure(
         context.organizationId,
         crmConnectorSyncId,
         error instanceof Error ? error.message : String(error),
@@ -120,7 +119,7 @@ export class CrmConnectorWorkflow implements OnModuleInit {
       if (await pauseIfSpent(step, page, startedAt)) continue;
 
       const outcome = await step.run(`fetch-page-${String(page)}`, () =>
-        this.connectors.fetchPage(organizationId, crmConnectorSyncId, request),
+        this.walkSvc.fetchPage(organizationId, crmConnectorSyncId, request),
       );
 
       read += outcome.staged;
@@ -138,13 +137,13 @@ export class CrmConnectorWorkflow implements OnModuleInit {
        * import. A large account becomes several reviewable, separately
        * revertable imports rather than one that could not be previewed.
        */
-      if (this.connectors.isFull(outcome.total)) break;
+      if (this.walkSvc.isFull(outcome.total)) break;
 
       request = outcome.next;
     }
 
     const result = await step.run("sync-finish", () =>
-      this.connectors.finishWalk(organizationId, crmConnectorSyncId, drained),
+      this.walkSvc.finishWalk(organizationId, crmConnectorSyncId, drained),
     );
 
     this.logger.log(

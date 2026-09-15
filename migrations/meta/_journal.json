@@ -6154,6 +6154,13 @@
       "when": 1803000010333,
       "tag": "1118_drop_lingering_single_col_fks",
       "breakpoints": true
+    },
+    {
+      "idx": 1007,
+      "version": "7",
+      "when": 1803000010334,
+      "tag": "1119_impersonation_sessions",
+      "breakpoints": true
     }
   ]
 }

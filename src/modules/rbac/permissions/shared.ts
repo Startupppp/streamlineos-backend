@@ -216,6 +216,12 @@ export const SHARED_PERMISSIONS: Permission[] = [
     description: "Manage RBAC permissions",
   },
   {
+    name: "settings:impersonate:manage",
+    resource: "settings:impersonate",
+    action: "manage",
+    description: "Log in as another organization member to troubleshoot their access",
+  },
+  {
     name: "settings:automations:view",
     resource: "settings:automations",
     action: "view",

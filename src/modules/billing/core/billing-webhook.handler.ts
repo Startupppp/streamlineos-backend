@@ -1,3 +1,5 @@
+import { Inject, Injectable } from "@nestjs/common";
+import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { runInNewTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
 import { logger } from "../../../common/logger/logger.service";
@@ -14,7 +16,7 @@ import { BillingPaymentState } from "./billing-payment-state";
 import { BillingWebhookEffects, type WebhookResult } from "./billing-webhook-effects";
 import { BillingPaymentActivation } from "./billing-payment-activation";
 import { SubscriptionPurchaseService } from "./subscription-purchase.service";
-import type { PlatformMerchantService } from "../payments/platform-merchant.service";
+import { PlatformMerchantService } from "../payments/platform-merchant.service";
 import type { SubscriptionPurchase } from "../../../db/schema/billing/subscription-purchases";
 
 export type { WebhookResult };
@@ -32,23 +34,37 @@ export interface BillingWebhookDeps {
   activation: BillingPaymentActivation;
 }
 
+@Injectable()
 export class BillingWebhookHandler {
   private readonly ledger: ProviderEventLedger;
   private readonly state: BillingPaymentState;
   private readonly effects: BillingWebhookEffects;
   private readonly purchaseService: SubscriptionPurchaseService;
+  private readonly deps: BillingWebhookDeps;
 
-  constructor(private readonly deps: BillingWebhookDeps) {
-    this.ledger = new ProviderEventLedger(deps.db);
-    this.state = new BillingPaymentState(deps.db, deps.planLimits);
-    this.purchaseService = new SubscriptionPurchaseService(deps.db);
+  constructor(
+    @Inject(DRIZZLE) db: Db,
+    aiCredits: AiCreditsService,
+    planLimits: PlanLimitsService,
+    revenueAnalytics: RevenueAnalyticsService,
+    providers: PaymentProviderResolver,
+    externalEffectLedger: ExternalEffectLedger,
+    paymentWebhooks: PaymentWebhookReceiverService,
+    paymentNotices: PaymentAnalyticsService,
+    platformMerchant: PlatformMerchantService,
+    activation: BillingPaymentActivation,
+  ) {
+    this.deps = { db, aiCredits, planLimits, revenueAnalytics, providers, externalEffectLedger, paymentWebhooks, paymentNotices, platformMerchant, activation };
+    this.ledger = new ProviderEventLedger(db);
+    this.state = new BillingPaymentState(db, planLimits);
+    this.purchaseService = new SubscriptionPurchaseService(db);
     this.effects = new BillingWebhookEffects(
       {
-        db: deps.db,
-        aiCredits: deps.aiCredits,
-        externalEffectLedger: deps.externalEffectLedger,
-        paymentNotices: deps.paymentNotices,
-        activation: deps.activation,
+        db,
+        aiCredits,
+        externalEffectLedger,
+        paymentNotices,
+        activation,
       },
       this.state,
     );
@@ -93,8 +109,18 @@ export class BillingWebhookHandler {
     const payment = event.payload.payment?.entity;
     if (!payment) return { status: 200, body: { ok: true, ignored: event.event } };
 
+    let effectiveOrgId = orgId;
+    if (payment.orderId) {
+      const purchaseOrgId = await this.purchaseService.findOrgIdByOrderId(this.deps.db, payment.orderId);
+      if (purchaseOrgId !== null) effectiveOrgId = purchaseOrgId;
+    }
+    if (effectiveOrgId === orgId) {
+      const org = await this.state.findOrgFromNotes(payment.notes);
+      if (org !== null) effectiveOrgId = org.id;
+    }
+
     const key: ProviderEventKey = {
-      orgId,
+      orgId: effectiveOrgId,
       providerKey,
       providerEventId: normalized.providerEventId ?? payment.id,
     };
@@ -109,7 +135,7 @@ export class BillingWebhookHandler {
       return { status: 409, body: { ok: false, error: "event already recorded" } };
     }
 
-    return this.settle(event, payment, orgId, providerKey, key);
+    return this.settle(event, payment, effectiveOrgId, providerKey, key);
   }
 
   async redriveUnprocessed(
@@ -224,29 +250,14 @@ export class BillingWebhookHandler {
     providerKey: string,
     key: ProviderEventKey,
   ): Promise<WebhookResult> {
-    /*
-     * Both entrances converge here, which is why the guard lives here and not in `handle`.
-     *
-     * It used to sit in `handle` alone, and `handle` returns the 400 AFTER `ledger.claim`
-     * has written the row and BEFORE anything stamps `processed_at`. `listRedrivable`
-     * selects on exactly `processed_at IS NULL` plus an age window, so the refused row was
-     * a redrive candidate `minAgeMs` later — and `redriveUnprocessed` settled it with no
-     * notes check, persisting another tenant's payment under this org and granting this org
-     * the credits from `notes.packId`.
-     *
-     * On the live path this is behaviour-preserving: `handle` already refused any mismatch,
-     * so the `resolvedOrgId = org?.id ?? orgId` it used to compute was always `orgId`.
-     */
     let purchase: SubscriptionPurchase | null = null;
+    let effectiveOrgId = orgId;
     const orderId = payment.orderId;
     if (orderId) {
       const purchaseOrgId = await this.purchaseService.findOrgIdByOrderId(this.deps.db, orderId);
-      if (purchaseOrgId !== null && purchaseOrgId !== orgId) {
-        logger.warn(`[billing:${providerKey}] webhook organization does not match purchase org`);
-        return { status: 400, body: { ok: false, error: "organization mismatch" } };
-      }
       if (purchaseOrgId !== null) {
-        purchase = await runInNewTenantTransaction(this.deps.db, orgId, (tx) =>
+        effectiveOrgId = purchaseOrgId;
+        purchase = await runInNewTenantTransaction(this.deps.db, effectiveOrgId, (tx) =>
           this.purchaseService.findByOrderId(tx, orderId),
         );
       }
@@ -254,37 +265,34 @@ export class BillingWebhookHandler {
 
     if (purchase === null) {
       const org = await this.state.findOrgFromNotes(payment.notes);
-      if (org && org.id !== orgId) {
-        logger.warn(`[billing:${providerKey}] webhook organization does not match endpoint organization`);
-        return { status: 400, body: { ok: false, error: "organization mismatch" } };
-      }
+      if (org !== null) effectiveOrgId = org.id;
     }
 
     if (purchase === null && orderId !== undefined) {
-      purchase = await runInNewTenantTransaction(this.deps.db, orgId, async () =>
-        this.reconcileFromNotes(payment, orgId, providerKey),
+      purchase = await runInNewTenantTransaction(this.deps.db, effectiveOrgId, async () =>
+        this.reconcileFromNotes(payment, effectiveOrgId, providerKey),
       );
     }
 
     try {
-      await this.state.persistPayment(payment, orgId);
+      await this.state.persistPayment(payment, effectiveOrgId);
     } catch (error) {
       logger.error(`[billing:${providerKey}] failed to persist payment`, { error });
       return { status: 500, body: { ok: false } };
     }
 
-    const applied = await this.effects.apply(event, payment, orgId, providerKey, purchase);
+    const applied = await this.effects.apply(event, payment, effectiveOrgId, providerKey, purchase);
     if (!applied.ok) return applied.result;
 
     try {
-      await runInNewTenantTransaction(this.deps.db, key.orgId, async (tx) => {
+      await runInNewTenantTransaction(this.deps.db, effectiveOrgId, async (tx) => {
         for (const entry of applied.revenue) await this.deps.revenueAnalytics.emit(tx, entry);
         await this.ledger.acknowledge(tx, key);
       });
     } catch (error) {
       logger.error(`[billing:${providerKey}] failed to acknowledge the provider event`, { error, ...key });
       await this.effects.notifyProvisioningFailure(
-        key.orgId,
+        effectiveOrgId,
         payment.id,
         "your payment was received but its billing effects have not completed",
       );

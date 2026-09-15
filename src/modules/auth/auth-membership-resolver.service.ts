@@ -125,6 +125,7 @@ export class AuthMembershipResolverService {
   async createLoginSession(
     userId: string,
     context: { userAgent?: string; ipAddress?: string },
+    maxConcurrentSessionsCap?: number | null,
   ): Promise<string> {
     const sessionId = await this.sessions.create({
       userId,
@@ -133,8 +134,10 @@ export class AuthMembershipResolverService {
       expiresAt: addDays(new Date(), 30),
     });
 
-    const membership = await this.resolveActiveMembership(userId, null);
-    const cap = membership?.maxConcurrentSessions ?? null;
+    const cap =
+      maxConcurrentSessionsCap !== undefined
+        ? maxConcurrentSessionsCap
+        : ((await this.resolveActiveMembership(userId, null))?.maxConcurrentSessions ?? null);
     if (cap !== null)
       await this.sessions.enforceMaxSessions(userId, cap, sessionId);
 

@@ -18,8 +18,7 @@ import {
   decrypt,
   encrypt,
 } from "./crypto.helpers";
-import { sealSensitiveJson } from "../../../../common/security/sensitive-field";
-import { readBankDetails } from "../../../../common/hr/canonical-bank-details";
+import { readBankDetails, sealBankDetails } from "../../../../common/hr/canonical-bank-details";
 import { resolveCountryRequirements } from "./onboarding-requirements.catalog";
 import type { BankDetailsInput, PersonalDetailsInput } from "./dto/onboarding.schemas";
 import { runInTenantTransaction } from "../../../../common/tenant/run-in-tenant-transaction";
@@ -28,6 +27,7 @@ import {
   livePersonOfEmployment,
   primaryEmploymentOfPerson,
 } from "../../../directory/employment-query";
+import { PersonEmploymentSyncService } from "../../core/person-employment-sync.service";
 
 export const BANK_DETAILS_NEED_EMPLOYMENT_MESSAGE =
   "Your employment record is not set up yet, so bank and tax details cannot be saved. Ask your HR administrator to complete your employment record, then finish this step.";
@@ -37,6 +37,7 @@ export class OnboardingDetailsService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly cache: CacheService,
+    private readonly employmentSync: PersonEmploymentSyncService,
   ) {}
 
   async savePersonalDetails(
@@ -215,26 +216,19 @@ export class OnboardingDetailsService {
         .where(and(primaryEmploymentOfPerson(orgId, hrPeople, hrEmployments), eq(hrPeople.userId, userId)))
         .limit(1);
 
-      if (!employment) throw new ConflictException(BANK_DETAILS_NEED_EMPLOYMENT_MESSAGE);
+      const employmentId =
+        employment?.id ??
+        (await this.employmentSync.ensureFromUserId(orgId, userId, userId, tx))
+          ?.employmentId;
 
-      const sensitiveBankDetails = {
-        accountNumber: bankDetails.accountNumber,
-        bankName: bankDetails.bankName,
-        branch: bankDetails.branch,
-        ifsc: bankDetails.ifsc,
-        swift: bankDetails.swift,
-        accountHolder: bankDetails.accountHolder,
-        pfUanNumber: bankDetails.pfUanNumber,
-        esiIpNumber: bankDetails.esiIpNumber,
-        iban: bankDetails.iban,
-        routingNumber: bankDetails.routingCode,
-      };
-      const sealedBankDetails = sealSensitiveJson(sensitiveBankDetails);
+      if (!employmentId) throw new ConflictException(BANK_DETAILS_NEED_EMPLOYMENT_MESSAGE);
+
+      const sealedBankDetails = sealBankDetails(bankDetails);
       await tx
         .insert(hrEmployeeSensitiveFields)
         .values({
           orgId,
-          employmentId: employment.id,
+          employmentId,
           bankDetails: sealedBankDetails,
           taxId: encryptedTaxId ?? null,
         })

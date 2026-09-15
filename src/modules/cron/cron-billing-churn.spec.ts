@@ -16,7 +16,7 @@ import { subscriptions } from "../../db/schema";
 import { CronBillingService } from "./cron-billing.service";
 import { EmailService } from "../email/email.service";
 import { AiCreditsService } from "../billing/core/ai-credits.service";
-import { BillingService } from "../billing/core/billing.service";
+import { BillingWebhookHandler } from "../billing/core/billing-webhook.handler";
 import { PlanLimitsService } from "../billing/core/plan-limits.service";
 import { RevenueAnalyticsService } from "../billing/core/revenue-analytics.service";
 import { NotificationDispatchService } from "../notifications/notification-dispatch.service";
@@ -121,7 +121,7 @@ async function build(db: ReturnType<typeof makeDb>) {
     providers: [
       CronBillingService,
       { provide: DRIZZLE, useValue: db },
-        { provide: BillingService, useValue: { redriveStuckProviderEvents: jest.fn().mockResolvedValue({ attempted: 0, recovered: 0, failed: 0 }) } },
+        { provide: BillingWebhookHandler, useValue: { redriveUnprocessed: jest.fn().mockResolvedValue({ attempted: 0, recovered: 0, failed: 0 }) } },
       { provide: EmailService, useValue: { sendEmail: jest.fn() } },
       { provide: AiCreditsService, useValue: { getWallet: jest.fn(), purchaseCreditsDirectly: jest.fn() } },
       { provide: PlanLimitsService, useValue: planLimits },

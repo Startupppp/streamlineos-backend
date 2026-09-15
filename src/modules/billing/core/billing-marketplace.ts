@@ -1,8 +1,9 @@
-import { BadRequestException, ServiceUnavailableException } from "@nestjs/common";
+import { BadRequestException, Injectable, ServiceUnavailableException } from "@nestjs/common";
 import { AiCreditsService } from "./ai-credits.service";
 import { PlatformMerchantService } from "../payments/platform-merchant.service";
 import { PLATFORM_PRICE_CURRENCY } from "./plan-entitlements.constants";
 
+@Injectable()
 export class BillingMarketplace {
   constructor(
     private readonly aiCredits: AiCreditsService,

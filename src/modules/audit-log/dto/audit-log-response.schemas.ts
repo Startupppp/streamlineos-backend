@@ -2,7 +2,7 @@ import { z } from "zod";
 import { wireDate } from "../../../common/openapi/wire-types";
 
 const auditLogItemSchema = z.object({
-  id: z.string(),
+  id: z.number(),
   action: z.string(),
   userId: z.string().nullable(),
   userName: z.string().nullable(),

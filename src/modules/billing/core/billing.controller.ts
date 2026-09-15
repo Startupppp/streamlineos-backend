@@ -9,8 +9,14 @@ import { RateLimitGuard } from "../../../common/ratelimit/rate-limit.guard";
 import { UseRateLimit } from "../../../common/ratelimit/use-rate-limit.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { BillingService } from "./billing.service";
+import { BillingPaymentActivation } from "./billing-payment-activation";
+import { BillingCoupons } from "./billing-coupons";
+import { BillingWebhookHandler } from "./billing-webhook.handler";
+import { BillingMarketplace } from "./billing-marketplace";
+import { BillingAccountOverview } from "./billing-account-overview";
+import { BillingProfileService } from "./billing-profile.service";
 import { PlanLimitsService } from "./plan-limits.service";
+import { buildPlanCatalog, TRIAL_PLAN } from "./plan-entitlements.constants";
 import {
   confirmCheckoutSchema,
   createOrderSchema,
@@ -48,7 +54,12 @@ import {
 @UseGuards(JwtAuthGuard)
 export class BillingController {
   constructor(
-    private readonly billing: BillingService,
+    private readonly paymentActivation: BillingPaymentActivation,
+    private readonly coupons: BillingCoupons,
+    private readonly webhookHandler: BillingWebhookHandler,
+    private readonly marketplace: BillingMarketplace,
+    private readonly accountOverview: BillingAccountOverview,
+    private readonly billingProfile: BillingProfileService,
     private readonly planLimits: PlanLimitsService,
   ) {}
 
@@ -57,7 +68,7 @@ export class BillingController {
   @Get()
   @ResponseSchema(subscriptionResponseSchema)
   getSubscription(@CurrentUser() u: CurrentUserContext) {
-    return this.billing.getSubscription(u.orgId);
+    return this.accountOverview.getSubscription(u.orgId);
   }
 
   @AllowNoOrg()
@@ -65,14 +76,14 @@ export class BillingController {
   @Universal()
   @ResponseSchema(plansResponseSchema)
   getPlans() {
-    return this.billing.getPlans();
+    return { plans: buildPlanCatalog(), trialPlan: TRIAL_PLAN };
   }
 
   @Get("marketplace")
   @Universal()
   @ResponseSchema(marketplaceOverviewResponseSchema)
   getMarketplace() {
-    return this.billing.getMarketplace();
+    return this.marketplace.getMarketplace();
   }
 
   @Post("checkout")
@@ -87,7 +98,7 @@ export class BillingController {
     @Body() body: CreateOrderInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.billing.createOrder(u.orgId, u.userId, body.plan, body.billingCycle, body.couponId);
+    return this.paymentActivation.createOrder(u.orgId, u.userId, body.plan, body.billingCycle, body.couponId);
   }
 
   @Patch("checkout")
@@ -102,7 +113,7 @@ export class BillingController {
     @Body() body: ConfirmCheckoutInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.billing.verifyAndActivate(u.orgId, u.userId, body);
+    return this.paymentActivation.verifyAndActivate(u.orgId, u.userId, body);
   }
 
   @Post("addons/purchase")
@@ -116,7 +127,7 @@ export class BillingController {
     @Body() body: PurchaseAddonInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.billing.purchaseAddon(u.orgId, body.addonId, body.quantity);
+    return this.marketplace.purchaseAddon(u.orgId, body.addonId, body.quantity);
   }
 
   @UseGuards(PermissionGuard)
@@ -124,7 +135,7 @@ export class BillingController {
   @Get("summary")
   @ResponseSchema(billingSummaryResponseSchema)
   getSummary(@CurrentUser() u: CurrentUserContext) {
-    return this.billing.getSummary(u.orgId);
+    return this.accountOverview.getSummary(u.orgId);
   }
 
   @Get("entitlements")
@@ -139,7 +150,7 @@ export class BillingController {
   @Get("provisioning-failures")
   @ResponseSchema(provisioningFailuresResponseSchema)
   listProvisioningFailures(@CurrentUser() u: CurrentUserContext) {
-    return this.billing.listProvisioningFailures(u.orgId);
+    return this.webhookHandler.listProvisioningFailures(u.orgId);
   }
 
   @UseGuards(PermissionGuard)
@@ -151,7 +162,12 @@ export class BillingController {
     @Query() query: ValidateCouponQueryInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.billing.validateCoupon(query.code, u.orgId, query.plan);
+    return this.coupons.validate(
+      query.code,
+      u.orgId,
+      query.plan,
+      query.billingCycle,
+    );
   }
 
   @Get("profile")
@@ -159,7 +175,7 @@ export class BillingController {
   @RequirePermission("billing:profile:view")
   @ResponseSchema(billingProfileResponseSchema)
   getBillingProfile(@CurrentUser() u: CurrentUserContext) {
-    return this.billing.getBillingProfile(u.orgId);
+    return this.billingProfile.get(u.orgId);
   }
 
   @Patch("profile")
@@ -171,7 +187,7 @@ export class BillingController {
     @Body() body: UpdateBillingProfileInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.billing.updateBillingProfile(u.orgId, body);
+    return this.billingProfile.update(u.orgId, body);
   }
 
   @Get("seats")
@@ -179,7 +195,7 @@ export class BillingController {
   @UseGuards(PermissionGuard)
   @RequirePermission("billing:seats:view")
   getSeatInfo(@CurrentUser() u: CurrentUserContext) {
-    return this.billing.getSeatInfo(u.orgId);
+    return this.accountOverview.getSeatInfo(u.orgId);
   }
 
   @Get("addons")
@@ -187,7 +203,7 @@ export class BillingController {
   @RequirePermission("billing:marketplace:view")
   @ResponseSchema(listAddonsResponseSchema)
   listAddons() {
-    return this.billing.listAddons();
+    return this.marketplace.listAddons();
   }
 
   @Get("coupons")
@@ -195,6 +211,6 @@ export class BillingController {
   @RequirePermission("billing:coupons:manage")
   @ResponseSchema(couponListResponseSchema)
   listCoupons(@CurrentUser() u: CurrentUserContext) {
-    return this.billing.listCoupons(u.orgId);
+    return this.coupons.listRedeemable(u.orgId);
   }
 }

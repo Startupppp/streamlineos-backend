@@ -5,7 +5,7 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { BillingService } from "./billing.service";
+import { BillingAccountOverview } from "./billing-account-overview";
 import { AffiliateService } from "./affiliate.service";
 import { ReferralService } from "./referral.service";
 import { RevenueAnalyticsService } from "./revenue-analytics.service";
@@ -45,7 +45,7 @@ const quoteIdParams = z.object({ quoteId: z.coerce.number().int().positive() }).
 @UseGuards(JwtAuthGuard)
 export class BillingEnterpriseController {
   constructor(
-    private readonly billing: BillingService,
+    private readonly accountOverview: BillingAccountOverview,
     private readonly affiliate: AffiliateService,
     private readonly referral: ReferralService,
     private readonly analytics: RevenueAnalyticsService,
@@ -79,7 +79,7 @@ export class BillingEnterpriseController {
   @RequirePermission("billing:affiliate:manage")
   @ResponseSchema(affiliatePayoutResponseSchema)
   requestAffiliatePayoutRequest(@CurrentUser() u: CurrentUserContext) {
-    return this.billing.requestAffiliatePayoutRequest(u.orgId);
+    return this.accountOverview.requestAffiliatePayoutRequest(u.orgId);
   }
 
   @Post("referrals")

@@ -3,7 +3,8 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, desc, eq, isNull, lt } from "drizzle-orm";
+import { and, asc, desc, eq, isNull, lt } from "drizzle-orm";
+import { queryTickets } from "./projects-tickets-read.query";
 import { buildCursorPage, decodeCursor } from "../../../common/pagination/cursor";
 import {
   organizationPeople,
@@ -189,15 +190,12 @@ export class ProjectsTicketSubresourcesService {
 
   async getSubtasks(orgId: string, ticketId: number) {
     await assertTicketInOrg(this.db, orgId, ticketId);
-    return this.db.query.tickets.findMany({
-      where: and(eq(tickets.parentTicketId, ticketId), eq(tickets.orgId, orgId), isNull(tickets.deletedAt)),
-      with: {
-        assignee: {
-          with: { user: { columns: { id: true, name: true, firstName: true, lastName: true, image: true, email: true } } },
-        },
-      },
-      limit: 200,
-    });
+    return queryTickets(
+      this.db,
+      and(eq(tickets.parentTicketId, ticketId), eq(tickets.orgId, orgId), isNull(tickets.deletedAt)),
+      [asc(tickets.rank), asc(tickets.id)],
+      200,
+    );
   }
 
   private async requireTicket(orgId: string, ticketId: number): Promise<void> {

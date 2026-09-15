@@ -33,10 +33,19 @@ describe("ProjectsTicketSubresourcesService — cross-tenant isolation", () => {
   });
 
   it("returns subtasks scoped to owning org (same-tenant control)", async () => {
-    const subtask = { id: 2, parentTicketId: 1, orgId: OWNER_ORG };
+    const subtask = { id: 2, parentTicketId: 1, orgId: OWNER_ORG, assignees: [], labels: [] };
     const db = makeDb({ id: 1, orgId: OWNER_ORG }, [subtask]);
     const svc = new ProjectsTicketSubresourcesService(db, activity as never, comments, checklists, links, relations, access);
     const result = await svc.getSubtasks(OWNER_ORG, 1);
     expect(result).toHaveLength(1);
+  });
+
+  it("flattens the assignee onto each subtask, because the row schema carries assigneeId and a flat assignee rather than the nested membership", async () => {
+    const user = { id: "user-1", name: "Ada", firstName: "Ada", lastName: null, email: "ada@example.com", image: null };
+    const subtask = { id: 2, parentTicketId: 1, orgId: OWNER_ORG, assignee: { user }, assignees: [], labels: [] };
+    const db = makeDb({ id: 1, orgId: OWNER_ORG }, [subtask]);
+    const svc = new ProjectsTicketSubresourcesService(db, activity as never, comments, checklists, links, relations, access);
+    const [row] = await svc.getSubtasks(OWNER_ORG, 1);
+    expect(row).toMatchObject({ assigneeId: "user-1", assignee: user });
   });
 });

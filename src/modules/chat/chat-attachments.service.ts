@@ -4,7 +4,7 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
 import { chatAttachments, chatMessages } from "../../db/schema";
 import { StorageService } from "../storage/storage.service";
-import { ChatChannelMembersService } from "./chat-channel-members.service";
+import { ChatChannelMembersImplementation } from "./chat-channel-members-implementation";
 import type { EntityActor } from "../entity-reference/entity-reference.types";
 
 @Injectable()
@@ -12,7 +12,7 @@ export class ChatAttachmentsService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly storage: StorageService,
-    private readonly members: ChatChannelMembersService,
+    private readonly members: ChatChannelMembersImplementation,
   ) {}
 
   async getSignedUrl(

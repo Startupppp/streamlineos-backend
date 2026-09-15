@@ -1,9 +1,9 @@
 import { ForbiddenException, NotFoundException } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
 import { DRIZZLE } from "../../../db/drizzle.constants";
-import { CacheService } from "../../../common/cache/cache.service";
 import { EntityReferenceService } from "../../entity-reference/entity-reference.service";
-import { ChatChannelMembersService } from "../chat-channel-members.service";
+import { ChatChannelMembersImplementation } from "../chat-channel-members-implementation";
+import { ChatChannelMemberState } from "../chat-channel-member-state";
 import { ChatMessageTimelineService } from "../chat-message-timeline.service";
 import { ChatReplyRemindersService } from "../chat-reply-reminders.service";
 import { ChatSavedService } from "../chat-saved.service";
@@ -15,7 +15,6 @@ import { humanSessionPrincipal } from "../../../common/auth/principal";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
 import { APP_CONFIG } from "../../../config/config.module";
-import { AblyService } from "../../realtime/ably.service";
 import type { EntityActor } from "../../entity-reference/entity-reference.types";
 
 function flatValues(where: unknown, seen = new Set<object>()): unknown[] {
@@ -50,21 +49,15 @@ const ownerActor: EntityActor = {
 const CHANNEL_ID = 7;
 const MESSAGE_ID = 101;
 
-const stubCache = {
-  invalidateNamespace: jest.fn().mockResolvedValue(undefined),
-  cachedVersioned: jest.fn().mockResolvedValue([]),
-};
-
 const stubEntities = {} as unknown as EntityReferenceService;
-const stubAbly = {} as unknown as AblyService;
 
 beforeEach(() => jest.resetAllMocks());
 
 // ---------------------------------------------------------------------------
-// ChatChannelMembersService — channel BOLA
+// ChatChannelMembersImplementation / ChatChannelMemberState — channel BOLA
 // ---------------------------------------------------------------------------
 
-describe("ChatChannelMembersService — channel BOLA", () => {
+describe("ChatChannelMembersImplementation — channel BOLA", () => {
   function makeDb(overrides: Partial<{
     channelRow: object | null;
     memberRow: object | null;
@@ -95,7 +88,7 @@ describe("ChatChannelMembersService — channel BOLA", () => {
 
   it("DENY: getChannel returns NotFoundException for an unknown channel — cross-org channel id resolves to null", async () => {
     const db = makeDb({ channelRow: null, memberRow: null });
-    const service = new ChatChannelMembersService(db as never, stubCache as never, stubEntities, stubAbly);
+    const service = new ChatChannelMembersImplementation(db as never, stubEntities);
 
     await expect(service.getChannel(CHANNEL_ID, attackerActor)).rejects.toThrow(NotFoundException);
 
@@ -105,7 +98,7 @@ describe("ChatChannelMembersService — channel BOLA", () => {
 
   it("DENY: listMembers throws when caller is not a channel member of this org", async () => {
     const db = makeDb({ channelRow: null, memberRow: null });
-    const service = new ChatChannelMembersService(db as never, stubCache as never, stubEntities, stubAbly);
+    const service = new ChatChannelMembersImplementation(db as never, stubEntities);
 
     await expect(service.listMembers(CHANNEL_ID, attackerActor)).rejects.toThrow(NotFoundException);
 
@@ -115,9 +108,9 @@ describe("ChatChannelMembersService — channel BOLA", () => {
 
   it("DENY: markRead WHERE predicate binds orgId — cannot mark another org's channel read", async () => {
     const db = makeDb();
-    const service = new ChatChannelMembersService(db as never, stubCache as never, stubEntities, stubAbly);
+    const state = new ChatChannelMemberState(db as never);
 
-    await service.markRead(CHANNEL_ID, USER_ATTACKER, ORG_ATTACKER);
+    await state.markRead(CHANNEL_ID, USER_ATTACKER, ORG_ATTACKER);
 
     const updateCall = db.update.mock.calls[0];
     expect(updateCall).toBeDefined();
@@ -131,16 +124,16 @@ describe("ChatChannelMembersService — channel BOLA", () => {
 
   it("CONTROL: owner org member can mark their channel read", async () => {
     const db = makeDb();
-    const service = new ChatChannelMembersService(db as never, stubCache as never, stubEntities, stubAbly);
+    const state = new ChatChannelMemberState(db as never);
 
-    await service.markRead(CHANNEL_ID, USER_OWNER, ORG_OWNER);
+    await state.markRead(CHANNEL_ID, USER_OWNER, ORG_OWNER);
 
     expect(db.update).toHaveBeenCalledTimes(1);
   });
 
   it("DENY: 404 not 403 when channel does not exist in caller's org (cross-tenant oracle prevention)", async () => {
     const db = makeDb({ channelRow: null, memberRow: null });
-    const service = new ChatChannelMembersService(db as never, stubCache as never, stubEntities, stubAbly);
+    const service = new ChatChannelMembersImplementation(db as never, stubEntities);
 
     const error = await service.getChannel(CHANNEL_ID, attackerActor).catch((e: unknown) => e);
     expect(error).toBeInstanceOf(NotFoundException);
@@ -254,12 +247,12 @@ describe("Chat channel existence oracle prevention", () => {
       update: jest.fn().mockReturnValue({ set: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue(undefined) }) }),
       select: jest.fn().mockReturnValue({ from: jest.fn().mockReturnValue({ where: jest.fn().mockReturnValue({ orderBy: jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue([]) }) }) }) }),
     };
-    return new ChatChannelMembersService(db as never, stubCache as never, stubEntities, stubAbly);
+    return new ChatChannelMembersImplementation(db as never, stubEntities);
   }
 
   const cases = [
-    ["getChannel", (s: ChatChannelMembersService) => s.getChannel(CHANNEL_ID, attackerActor)],
-    ["listMembers", (s: ChatChannelMembersService) => s.listMembers(CHANNEL_ID, attackerActor)],
+    ["getChannel", (s: ChatChannelMembersImplementation) => s.getChannel(CHANNEL_ID, attackerActor)],
+    ["listMembers", (s: ChatChannelMembersImplementation) => s.listMembers(CHANNEL_ID, attackerActor)],
   ] as const;
 
   it.each(cases)("%s returns 404 (not 403) for a cross-org channel id", async (_name, call) => {
@@ -297,7 +290,7 @@ describe("Private channel non-member BOLA", () => {
 
   it("DENY: private channel non-member → 404 (not 403)", async () => {
     const db = makeDb(true, false);
-    const service = new ChatChannelMembersService(db as never, stubCache as never, stubEntities, stubAbly);
+    const service = new ChatChannelMembersImplementation(db as never, stubEntities);
     const err = await service.getChannel(CHANNEL_ID, attackerActor).catch((e: unknown) => e);
     expect(err).toBeInstanceOf(NotFoundException);
     expect(err).not.toBeInstanceOf(ForbiddenException);
@@ -305,7 +298,7 @@ describe("Private channel non-member BOLA", () => {
 
   it("DENY: public channel non-member → 403 (membership enforced, channel existence ok to reveal)", async () => {
     const db = makeDb(false, false);
-    const service = new ChatChannelMembersService(db as never, stubCache as never, stubEntities, stubAbly);
+    const service = new ChatChannelMembersImplementation(db as never, stubEntities);
     const err = await service.getChannel(CHANNEL_ID, attackerActor).catch((e: unknown) => e);
     expect(err).toBeInstanceOf(ForbiddenException);
   });
@@ -315,7 +308,7 @@ describe("Private channel non-member BOLA", () => {
     (db.query.chatChannels.findFirst as jest.Mock)
       .mockResolvedValueOnce({ id: CHANNEL_ID, isPrivate: true })
       .mockResolvedValueOnce({ id: CHANNEL_ID, isPrivate: true, name: "secret", type: "GROUP", members: [] });
-    const service = new ChatChannelMembersService(db as never, stubCache as never, stubEntities, stubAbly);
+    const service = new ChatChannelMembersImplementation(db as never, stubEntities);
     const result = await service.getChannel(CHANNEL_ID, ownerActor);
     expect(result).toBeDefined();
   });

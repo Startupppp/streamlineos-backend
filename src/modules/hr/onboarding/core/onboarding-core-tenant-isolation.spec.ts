@@ -98,7 +98,9 @@ describe("OnboardingDetailsService — cross-tenant isolation", () => {
   it("scopes getPersonalDetails to org (cross-tenant isolation — NotFoundException if not in org)", async () => {
     const { db, where, findFirst, findMany } = makeDb([]);
     const mockCache = { invalidate: jest.fn() };
-    const svc = new OnboardingDetailsService(db, mockCache as never);
+    const svc = new OnboardingDetailsService(db, mockCache as never, {
+      ensureFromUserId: jest.fn().mockResolvedValue(null),
+    } as never);
     await expect(svc.getPersonalDetails(ATTACKER, "user-1")).rejects.toThrow(NotFoundException);
     expect(allArgs(where, findFirst, findMany)).toContain(ATTACKER);
   });
@@ -107,7 +109,9 @@ describe("OnboardingDetailsService — cross-tenant isolation", () => {
     const ROW = { userPhone: null, userGender: null, userDateOfBirth: null, userEmergencyContact: null, personPhone: null, personGender: null, personDateOfBirth: null, personAddress: null, personEmergencyContact: null };
     const { db, where, findFirst, findMany } = makeDb([ROW]);
     const mockCache = { invalidate: jest.fn() };
-    const svc = new OnboardingDetailsService(db, mockCache as never);
+    const svc = new OnboardingDetailsService(db, mockCache as never, {
+      ensureFromUserId: jest.fn().mockResolvedValue(null),
+    } as never);
     await svc.getPersonalDetails(OWNER, "user-1");
     expect(allArgs(where, findFirst, findMany)).toContain(OWNER);
   });
@@ -115,7 +119,9 @@ describe("OnboardingDetailsService — cross-tenant isolation", () => {
   it("scopes getStatus to org (cross-tenant isolation)", async () => {
     const { db, where, findFirst, findMany } = makeDb([]);
     const mockCache = { invalidate: jest.fn() };
-    const svc = new OnboardingDetailsService(db, mockCache as never);
+    const svc = new OnboardingDetailsService(db, mockCache as never, {
+      ensureFromUserId: jest.fn().mockResolvedValue(null),
+    } as never);
     await svc.getStatus("user-1", ATTACKER);
     expect(allArgs(where, findFirst, findMany)).toContain(ATTACKER);
   });
@@ -238,7 +244,7 @@ describe("OnboardingSubmissionService — cross-tenant isolation", () => {
     const mockCache = { invalidate: jest.fn() };
     const mockAudit = { logCritical: jest.fn().mockResolvedValue(undefined) };
     const svc = new OnboardingSubmissionService(db, mockCache as never, mockAudit as never);
-    await expect(svc.submit(ATTACKER, "user-1")).rejects.toThrow(NotFoundException);
+    await expect(svc.complete(ATTACKER, "user-1")).rejects.toThrow(NotFoundException);
     expect(allArgs(where, findFirst, findMany)).toContain(ATTACKER);
   });
 
@@ -248,7 +254,7 @@ describe("OnboardingSubmissionService — cross-tenant isolation", () => {
     const mockCache = { invalidate: jest.fn() };
     const mockAudit = { logCritical: jest.fn().mockResolvedValue(undefined) };
     const svc = new OnboardingSubmissionService(db, mockCache as never, mockAudit as never);
-    await svc.submit(OWNER, "user-1");
+    await svc.complete(OWNER, "user-1");
     expect(allArgs(where, findFirst, findMany)).toContain(OWNER);
   });
 });

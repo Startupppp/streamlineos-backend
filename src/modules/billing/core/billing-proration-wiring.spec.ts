@@ -3,7 +3,6 @@ import { Logger } from "@nestjs/common";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { AuditService } from "../../../common/audit/audit.service";
 import { ExternalEffectLedger } from "../../../common/outbox/external-effect-ledger";
-import { OutboxConsumerRegistry } from "../../../common/outbox/outbox-consumer.registry";
 import {
   PaymentProviderResolver,
   type OrganizationPaymentProvider,
@@ -16,8 +15,8 @@ import {
   FAKE_VALID_PAYMENT_SIG,
 } from "../payments/testing/fake-provider-adapter";
 import { AiCreditsService } from "./ai-credits.service";
-import { BillingProfileService } from "./billing-profile.service";
-import { BillingService } from "./billing.service";
+import { BillingPaymentActivation } from "./billing-payment-activation";
+import { BillingCoupons } from "./billing-coupons";
 import { CacheService } from "../../../common/cache/cache.service";
 import { PlanLimitsService } from "./plan-limits.service";
 import { ProrationLedgerService } from "./proration-ledger.service";
@@ -203,10 +202,10 @@ async function buildService(options: {
   const db = makeDb(options.subscription, makePurchase(options.purchasePlan ?? "PROFESSIONAL"));
   const moduleRef = await Test.createTestingModule({
     providers: [
-      BillingService,
-      RevenueAnalyticsService,
+      BillingPaymentActivation,
+      BillingCoupons,
       { provide: DRIZZLE, useValue: db },
-      { provide: OutboxConsumerRegistry, useValue: { register: jest.fn(), get: jest.fn() } },
+      { provide: RevenueAnalyticsService, useValue: { emit: jest.fn().mockResolvedValue(undefined) } },
       {
         provide: AiCreditsService,
         useValue: {
@@ -240,7 +239,6 @@ async function buildService(options: {
       },
       { provide: PaymentWebhookReceiverService, useValue: { recordSignatureFailure: jest.fn() } },
       { provide: PaymentAnalyticsService, useValue: { notifyOwner: jest.fn(), track: jest.fn() } },
-      { provide: BillingProfileService, useValue: { get: jest.fn(), update: jest.fn() } },
       { provide: PlatformMerchantService, useValue: makePlatformMerchant() },
       {
         provide: CacheService,
@@ -254,7 +252,7 @@ async function buildService(options: {
     ],
   }).compile();
 
-  return { service: moduleRef.get(BillingService), db };
+  return { service: moduleRef.get(BillingPaymentActivation), db };
 }
 
 const ACTIVE_STARTER = {
@@ -273,7 +271,7 @@ const PRICES = {
 
 beforeEach(() => jest.clearAllMocks());
 
-describe("BillingService — a plan change produces a proration line", () => {
+describe("BillingPaymentActivation — a plan change produces a proration line", () => {
   it("records the change against the subscription, inside the payment transaction", async () => {
     const recordPlanChange = jest.fn().mockResolvedValue(undefined);
     const { service, db } = await buildService({
@@ -341,7 +339,7 @@ describe("BillingService — a plan change produces a proration line", () => {
   });
 });
 
-describe("BillingService — an unseeded price catalog cannot fail a captured payment", () => {
+describe("BillingPaymentActivation — an unseeded price catalog cannot fail a captured payment", () => {
   it("still activates the plan, and reports the missing price version rather than swallowing it", async () => {
     const errors: unknown[] = [];
     jest.spyOn(Logger.prototype, "error").mockImplementation((...args: unknown[]) => void errors.push(args));

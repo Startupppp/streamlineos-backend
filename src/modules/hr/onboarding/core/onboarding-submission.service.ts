@@ -23,8 +23,8 @@ export class OnboardingSubmissionService {
     private readonly audit: AuditService,
   ) {}
 
-  async submit(orgId: string, userId: string): Promise<{ success: true }> {
-    await this.db.transaction(async (tx) => {
+  async complete(orgId: string, userId: string): Promise<{ completedAt: Date; leaveBalancesAllocated: number }> {
+    const { completedAt, leaveBalancesAllocated } = await this.db.transaction(async (tx) => {
       await tx.execute(
         sql`SELECT pg_advisory_xact_lock(hashtextextended(${`${orgId}:${userId}:onboarding`}, 0))`,
       );
@@ -44,16 +44,16 @@ export class OnboardingSubmissionService {
         throw new NotFoundException("User not found in this organization.");
 
       await this.completeFinalReview(tx, orgId, userId);
-      await this.initializeLeaveBalances(tx, orgId, userId);
+      const allocated = await this.initializeLeaveBalances(tx, orgId, userId);
       await this.completeFlowSession(tx, orgId, userId);
-      const completedAt = new Date();
+      const at = new Date();
       await tx
         .update(organizationMembers)
-        .set({ onboardingCompletedAt: completedAt })
+        .set({ onboardingCompletedAt: at })
         .where(eq(organizationMembers.id, membership.id));
       await tx
         .update(users)
-        .set({ onboardingCompletedAt: completedAt })
+        .set({ onboardingCompletedAt: at })
         .where(eq(users.id, userId));
       await tx.insert(onboardingAnalyticsEvents).values({
         orgId,
@@ -70,10 +70,11 @@ export class OnboardingSubmissionService {
         targetType: "organization_member",
         metadata: { membershipId: membership.id },
       });
+      return { completedAt: at, leaveBalancesAllocated: allocated };
     });
 
     await this.cache.invalidate(CACHE_KEYS.userSession(userId));
-    return { success: true };
+    return { completedAt, leaveBalancesAllocated };
   }
 
   private async completeFinalReview(
@@ -118,7 +119,7 @@ export class OnboardingSubmissionService {
     tx: Db,
     orgId: string,
     userId: string,
-  ): Promise<void> {
+  ): Promise<number> {
     const year = new Date().getFullYear();
     const [types, balances] = await Promise.all([
       tx
@@ -140,7 +141,7 @@ export class OnboardingSubmissionService {
     ]);
     const existingIds = new Set(balances.map((balance) => balance.leaveTypeId));
     const missing = types.filter((type) => !existingIds.has(type.id));
-    if (missing.length === 0) return;
+    if (missing.length === 0) return 0;
     await tx.insert(leaveBalances).values(
       missing.map((type) => ({
         orgId,
@@ -150,6 +151,7 @@ export class OnboardingSubmissionService {
         year,
       })),
     );
+    return missing.length;
   }
 
   private async completeFlowSession(

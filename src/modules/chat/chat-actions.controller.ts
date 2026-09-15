@@ -8,7 +8,7 @@ import {
   type CreateTaskFromMessageInput,
 } from "./dto/chat.schemas";
 import { ChatMessagesService } from "./chat-messages.service";
-import { ChatChannelMembersService } from "./chat-channel-members.service";
+import { ChatChannelMembersImplementation } from "./chat-channel-members-implementation";
 import {
   ChatActionForbiddenException,
   ChatActionTicketStatusFailedException,
@@ -29,14 +29,14 @@ export class ChatActionsController {
 
   constructor(
     private readonly entities: EntityReferenceService,
-    private readonly members: ChatChannelMembersService,
+    private readonly members: ChatChannelMembersImplementation,
     private readonly chatMessages: ChatMessagesService,
   ) {}
 
   @Post("create-task-from-message")
   @ResponseSchema(chatCreateTaskSchema)
   @Idempotent("chat.action.create-task-from-message")
-  @AuthorizedInService("ChatChannelMembersService.assertChannelMembership, then EntityReferenceService resolves the actor's own access to the target")
+  @AuthorizedInService("ChatChannelMembersImplementation.assertChannelMembership, then EntityReferenceService resolves the actor's own access to the target")
   @Validate({ body: createTaskFromMessageSchema })
   async createTaskFromMessage(
     @Body()

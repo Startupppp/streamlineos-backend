@@ -120,6 +120,7 @@ export type UpdateCouponInput = z.infer<typeof updateCouponSchema>;
 export const validateCouponQuerySchema = z.object({
   code: z.string().min(1).max(100),
   plan: planSchema,
+  billingCycle: billingCycleSchema.optional(),
 }).strict();
 export type ValidateCouponQueryInput = z.infer<typeof validateCouponQuerySchema>;
 

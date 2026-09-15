@@ -1,7 +1,7 @@
 import { Inject, Injectable, Logger, type OnModuleInit } from "@nestjs/common";
 import { withSpan } from "../../../common/observability";
 import { and, eq } from "drizzle-orm";
-import { organizationMembers, users } from "../../../db/schema";
+import { organizationMembers, roles, users } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { InboxConsumer } from "../../../common/outbox/inbox-consumer";
@@ -236,9 +236,16 @@ export class OrgSetupCompletedConsumerService
 
     try {
       await runInConsumerSavepoint(async () => {
-        await withSpan("org-setup.seedRoles", () =>
-          seedSystemRolesForOrg(this.db, orgId),
-        );
+        const [existingRole] = await this.db
+          .select({ id: roles.id })
+          .from(roles)
+          .where(eq(roles.orgId, orgId))
+          .limit(1);
+        if (!existingRole) {
+          await withSpan("org-setup.seedRoles", () =>
+            seedSystemRolesForOrg(this.db, orgId),
+          );
+        }
         await withSpan("org-setup.ensureChecklists", () =>
           this.checklists.ensureChecklistsForModules(orgId, moduleKeys),
         );

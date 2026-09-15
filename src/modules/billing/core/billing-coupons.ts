@@ -1,6 +1,7 @@
-import { ConflictException, NotFoundException } from "@nestjs/common";
+import { ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, asc, eq, isNull, or, sql } from "drizzle-orm";
 import { coupons, couponRedemptions } from "../../../db/schema";
+import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { type DbOrTx } from "../../../common/rbac/access-invalidate";
 import {
@@ -28,9 +29,9 @@ function redeemableBy(orgId: string) {
   return or(isNull(coupons.orgId), eq(coupons.orgId, orgId));
 }
 
-// Every read goes through `evaluate`, so checkout, validation and redemption cannot disagree.
+@Injectable()
 export class BillingCoupons {
-  constructor(private readonly db: Db) {}
+  constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
   // Advisory only: the count and redemption row are written under FOR UPDATE in verifyAndActivate.
   async evaluate(

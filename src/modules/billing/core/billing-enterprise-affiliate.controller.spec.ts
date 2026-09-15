@@ -4,7 +4,7 @@ import { APP_INTERCEPTOR } from "@nestjs/core";
 import request from "supertest";
 import type { Request } from "express";
 import { BillingEnterpriseController } from "./billing-enterprise.controller";
-import { BillingService } from "./billing.service";
+import { BillingAccountOverview } from "./billing-account-overview";
 import { AffiliateService } from "./affiliate.service";
 import { ReferralService } from "./referral.service";
 import { RevenueAnalyticsService } from "./revenue-analytics.service";
@@ -97,7 +97,7 @@ async function buildApp(
     providers: [
       { provide: APP_INTERCEPTOR, useClass: ResponseContractInterceptor },
       { provide: APP_CONFIG, useValue: { NODE_ENV: "test" } },
-      { provide: BillingService, useValue: billingVal },
+      { provide: BillingAccountOverview, useValue: billingVal },
       { provide: AffiliateService, useValue: affiliateVal },
       { provide: ReferralService, useValue: referralVal },
       { provide: RevenueAnalyticsService, useValue: {} },

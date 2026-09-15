@@ -2,14 +2,12 @@ import { Module } from "@nestjs/common";
 import { WorkflowModule } from "../../../common/workflow/workflow.module";
 import { IntegrationsModule } from "../../integrations/core/integrations.module";
 import { CrmImportController } from "./crm-import.controller";
-import { CrmImportService } from "./crm-import.service";
 import { CrmImportCommitService } from "./crm-import-commit.service";
 import { CrmImportPreviewService } from "./crm-import-preview.service";
 import { CrmImportRevertService } from "./crm-import-revert.service";
 import { CrmExportService } from "./crm-export.service";
 import { CrmImportWorkflow } from "./crm-import.workflow";
 import { ImportPump } from "./import-pump";
-import { CrmConnectorService } from "./crm-connector.service";
 import { CrmConnectorWalkService } from "./crm-connector-walk.service";
 import { CrmConnectorLifecycleService } from "./crm-connector-lifecycle.service";
 import { CrmConnectorWorkflow } from "./crm-connector.workflow";
@@ -29,18 +27,16 @@ import { BillingModule } from "../../billing/core/billing.module";
   imports: [WorkflowModule, IntegrationsModule, BillingModule],
   controllers: [CrmImportController],
   providers: [
-    CrmImportService,
     CrmImportCommitService,
     CrmImportPreviewService,
     CrmImportRevertService,
     CrmExportService,
     CrmImportWorkflow,
-    CrmConnectorService,
     CrmConnectorWalkService,
     CrmConnectorLifecycleService,
     CrmConnectorWorkflow,
     ImportPump,
   ],
-  exports: [CrmImportService, CrmImportCommitService, CrmImportPreviewService, CrmImportRevertService, CrmExportService, CrmConnectorService],
+  exports: [CrmImportCommitService, CrmImportPreviewService, CrmImportRevertService, CrmExportService, CrmConnectorLifecycleService],
 })
 export class CrmImportModule {}

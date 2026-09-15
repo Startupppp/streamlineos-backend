@@ -118,6 +118,7 @@ import { DataQualityModule } from "./modules/data-quality/data-quality.module";
 import { IssuesModule } from "./modules/issues/issues.module";
 import { RecordLayoutsModule } from "./modules/record-layouts/record-layouts.module";
 import { EmploymentFactsModule } from "./modules/directory/employment-facts.module";
+import { ImpersonationModule } from "./modules/impersonation/impersonation.module";
 
 @Module({
   imports: [
@@ -232,6 +233,7 @@ import { EmploymentFactsModule } from "./modules/directory/employment-facts.modu
     AgentAccessModule,
     MailModule,
     GdprModule,
+    ImpersonationModule,
   ],
   controllers: [HealthController, MeController, InboxController],
   providers: [

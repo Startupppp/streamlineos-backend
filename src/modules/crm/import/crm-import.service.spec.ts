@@ -10,7 +10,7 @@ import {
   dataQualityFindings,
   partyIdentifiers,
 } from "../../../db/schema";
-import { CrmImportService, REVERT_WINDOW_DAYS } from "./crm-import.service";
+import { REVERT_WINDOW_DAYS } from "./crm-import-internals";
 import { CrmImportPreviewService } from "./crm-import-preview.service";
 import { CrmImportCommitService } from "./crm-import-commit.service";
 import { CrmImportRevertService } from "./crm-import-revert.service";
@@ -309,17 +309,28 @@ const workflows = { start: jest.fn(() => Promise.resolve("run-1")) };
   coverage in `party-creation-invariant.spec.ts`.
 */
 const planLimits = { assertWithinLimit: jest.fn().mockResolvedValue(undefined) };
-const service = (fake: FakeDb) =>
-  new CrmImportService(
+function service(fake: FakeDb) {
+  const previewSvc = new CrmImportPreviewService(fake.db);
+  const commitSvc = new CrmImportCommitService(
     fake.db,
-    new CrmImportPreviewService(fake.db),
-    new CrmImportCommitService(
-      fake.db,
-      workflows as unknown as WorkflowRunnerService,
-      planLimits as unknown as PlanLimitsService,
-    ),
-    new CrmImportRevertService(fake.db, workflows as unknown as WorkflowRunnerService),
+    workflows as unknown as WorkflowRunnerService,
+    planLimits as unknown as PlanLimitsService,
   );
+  const revertSvc = new CrmImportRevertService(fake.db, workflows as unknown as WorkflowRunnerService);
+  return {
+    preview: (input: Parameters<CrmImportPreviewService["preview"]>[0]) => previewSvc.preview(input),
+    getImport: (organizationId: string, crmImportId: string) => previewSvc.getImport(organizationId, crmImportId),
+    targetEntityOf: (organizationId: string, crmImportId: string) => previewSvc.targetEntityOf(organizationId, crmImportId),
+    startCommit: (organizationId: string, crmImportId: string) => commitSvc.startCommit(organizationId, crmImportId),
+    beginCommit: (organizationId: string, crmImportId: string) => commitSvc.beginCommit(organizationId, crmImportId),
+    commitBatch: (organizationId: string, crmImportId: string, window: { fromRow: number; toRow: number }) => commitSvc.commitBatch(organizationId, crmImportId, window),
+    finishCommit: (organizationId: string, crmImportId: string) => commitSvc.finishCommit(organizationId, crmImportId),
+    startRevert: (organizationId: string, userId: string, crmImportId: string) => revertSvc.startRevert(organizationId, userId, crmImportId),
+    beginRevert: (organizationId: string, crmImportId: string) => revertSvc.beginRevert(organizationId, crmImportId),
+    revertBatch: (organizationId: string, crmImportId: string, window: { fromRow: number; toRow: number }) => revertSvc.revertBatch(organizationId, crmImportId, window),
+    finishRevert: (organizationId: string, crmImportId: string, userId: string) => revertSvc.finishRevert(organizationId, crmImportId, userId),
+  };
+}
 
 beforeAll(() => {
   // The per-row failure is logged on purpose; the test output is not the place.

@@ -1,7 +1,7 @@
 import { Injectable, Logger } from "@nestjs/common";
 import { importJWK, exportJWK, SignJWT, jwtVerify, type JWTPayload, type JWK } from "jose";
 import { randomUUID } from "node:crypto";
-import { INTERNAL_TOKEN_AUDIENCE, INTERNAL_TOKEN_ISSUER, type BackendClaims } from "./backend-claims";
+import { INTERNAL_TOKEN_AUDIENCE, INTERNAL_TOKEN_ISSUER, type BackendClaims, type ImpersonationClaims } from "./backend-claims";
 
 interface SerializedKeyEntry {
   kid: string;
@@ -17,6 +17,7 @@ interface KeyEntry {
 }
 
 const TOKEN_TTL = "10m";
+const IMPERSONATION_TOKEN_TTL = "30m";
 const TOKEN_CLOCK_SKEW_SECS = 30;
 
 /**
@@ -113,7 +114,29 @@ export class JwtKeyringService {
       .sign(current.privateKey);
   }
 
-  async verifyToken(token: string): Promise<(JWTPayload & { sub: string; sessionId: string; orgId: string | null }) | null> {
+  async signImpersonationToken(claims: BackendClaims & { impersonation: ImpersonationClaims }): Promise<string> {
+    if (!this.isReady()) {
+      throw new Error("JWT keyring has no keys loaded");
+    }
+    const current = this.keys[this.keys.length - 1];
+    return new SignJWT({
+      orgId: claims.orgId ?? null,
+      sessionId: claims.sessionId,
+      impersonation: claims.impersonation,
+    })
+      .setProtectedHeader({ alg: "EdDSA", kid: current.kid })
+      .setSubject(claims.sub)
+      .setIssuer(INTERNAL_TOKEN_ISSUER)
+      .setAudience(INTERNAL_TOKEN_AUDIENCE)
+      .setIssuedAt()
+      .setExpirationTime(IMPERSONATION_TOKEN_TTL)
+      .setJti(randomUUID())
+      .sign(current.privateKey);
+  }
+
+  async verifyToken(
+    token: string,
+  ): Promise<(JWTPayload & { sub: string; sessionId: string; orgId: string | null; impersonation?: ImpersonationClaims }) | null> {
     if (!this.initialized) return null;
 
     for (const key of this.keys) {
@@ -129,7 +152,24 @@ export class JwtKeyringService {
         const rawOrgId = payload["orgId"];
         const orgId = typeof rawOrgId === "string" && rawOrgId.length > 0 ? rawOrgId : null;
         if (!sub || !sessionId) return null;
-        return { ...payload, sub, sessionId, orgId };
+        const rawImpersonation = payload["impersonation"];
+        let impersonation: ImpersonationClaims | undefined;
+        if (
+          rawImpersonation !== null &&
+          typeof rawImpersonation === "object" &&
+          !Array.isArray(rawImpersonation) &&
+          typeof (rawImpersonation as Record<string, unknown>)["realActorUserId"] === "string" &&
+          typeof (rawImpersonation as Record<string, unknown>)["realSessionId"] === "string" &&
+          typeof (rawImpersonation as Record<string, unknown>)["impersonationSessionId"] === "string"
+        ) {
+          const raw = rawImpersonation as Record<string, unknown>;
+          impersonation = {
+            realActorUserId: raw["realActorUserId"] as string,
+            realSessionId: raw["realSessionId"] as string,
+            impersonationSessionId: raw["impersonationSessionId"] as string,
+          };
+        }
+        return { ...payload, sub, sessionId, orgId, impersonation };
       } catch {
         // Try next key — handles wrong-kid or expiry per-key
       }

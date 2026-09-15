@@ -8,8 +8,8 @@
  * refunded charge whose `status` is still `"succeeded"`, and `latest_charge`
  * arriving as an id because webhook deliveries are never expanded.
  *
- * The metadata is what `BillingService.createOrder` stamps on an intent, so
- * these bodies round-trip the terms of a real sale rather than a made-up one.
+ * The metadata matches what `createOrder` stamps on an intent, so these bodies
+ * round-trip the terms of a real sale rather than a made-up one.
  */
 
 const INTENT_ID = "pi_3MtwBwLkdIwHu7ix28a3tqPa";

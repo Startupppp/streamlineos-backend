@@ -2,6 +2,7 @@ import { ForbiddenException, UnauthorizedException, CanActivate, ExecutionContex
 import { Reflector } from "@nestjs/core";
 import type { Request } from "express";
 import type { AuthContext } from "../../common/auth/auth-context";
+import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { IS_PUBLIC } from "../../common/auth/public.decorator";
 import { logger } from "../../common/logger/logger.service";
 import { ModuleDisabledException } from "../../common/http/api-exceptions";
@@ -34,7 +35,7 @@ export class PermissionGuard implements CanActivate {
 
     const req = context
       .switchToHttp()
-      .getRequest<Request & { authContext?: AuthContext; rbacScope?: AuthResult["scope"] }>();
+      .getRequest<Request & { authContext?: AuthContext; rbacScope?: AuthResult["scope"]; user?: CurrentUserContext }>();
 
     let result: AuthResult;
     try {
@@ -56,6 +57,10 @@ export class PermissionGuard implements CanActivate {
       // namespaceOf, never administeringModuleOf, or a disabled Chat offers to enable Home.
       if (result.reason === "NO_MODULE") throw new ModuleDisabledException(namespaceOf(permissionKey));
       throw new ForbiddenException("Permission denied");
+    }
+
+    if (permissionKey.startsWith("billing:") && req.user?.impersonation) {
+      throw new ForbiddenException("Billing actions are not available during impersonation");
     }
 
     req.rbacScope = result.scope;

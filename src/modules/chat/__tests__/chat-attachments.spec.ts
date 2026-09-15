@@ -3,7 +3,7 @@ import { PgDialect } from "drizzle-orm/pg-core";
 import type { SQL } from "drizzle-orm";
 import type { Db } from "../../../db/drizzle.module";
 import { ChatAttachmentsService } from "../chat-attachments.service";
-import { ChatChannelMembersService } from "../chat-channel-members.service";
+import { ChatChannelMembersImplementation } from "../chat-channel-members-implementation";
 import type { StorageService } from "../../storage/storage.service";
 import { validateMagicBytes } from "../../storage/file-signatures";
 import { StorageMultipartService } from "../../storage/storage-multipart.service";
@@ -135,11 +135,9 @@ function makeHarness(opts: {
       },
     );
 
-  const members = new ChatChannelMembersService(
+  const members = new ChatChannelMembersImplementation(
     db,
-    unusedCollaborator("CacheService") as never,
     unusedCollaborator("EntityReferenceService") as never,
-    unusedCollaborator("AblyService") as never,
   );
 
   const storage = {

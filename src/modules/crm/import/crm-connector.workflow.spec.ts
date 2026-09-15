@@ -23,12 +23,9 @@ import {
   type RecordedStep,
   type WorkflowStepStore,
 } from "../../../common/workflow/workflow.types";
-import type {
-  CrmConnectorService,
-  PageOutcome,
-  WalkExtent,
-  WalkResult,
-} from "./crm-connector.service";
+import type { PageOutcome, WalkExtent, WalkResult } from "./crm-connector-internals";
+import type { CrmConnectorWalkService } from "./crm-connector-walk.service";
+import type { CrmConnectorLifecycleService } from "./crm-connector-lifecycle.service";
 import { CrmConnectorWorkflow } from "./crm-connector.workflow";
 import { CONNECTOR_SYNC_WORKFLOW } from "./import-workflow-names";
 import { ATTEMPT_BUDGET_MS } from "./import-batches";
@@ -138,8 +135,12 @@ class FakeConnectors {
     return Promise.resolve();
   }
 
-  asService(): CrmConnectorService {
-    return this as unknown as CrmConnectorService;
+  asWalkService(): CrmConnectorWalkService {
+    return this as unknown as CrmConnectorWalkService;
+  }
+
+  asLifecycleService(): CrmConnectorLifecycleService {
+    return this as unknown as CrmConnectorLifecycleService;
   }
 }
 
@@ -191,7 +192,7 @@ async function attempt(
 
 function build(connectors: FakeConnectors): { registry: WorkflowRegistry; store: FakeStepStore } {
   const registry = new WorkflowRegistry();
-  const workflow = new CrmConnectorWorkflow(registry, connectors.asService());
+  const workflow = new CrmConnectorWorkflow(registry, connectors.asWalkService(), connectors.asLifecycleService());
   workflow.onModuleInit();
   return { registry, store: new FakeStepStore() };
 }

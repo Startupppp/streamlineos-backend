@@ -63,11 +63,11 @@ describe("ProjectsTicketCommentsService.getComment — ROW-76 historical identit
 
     const commentRow = {
       id: COMMENT_ID,
-      content: "Hello",
+      body: "Hello",
       createdAt: new Date(),
       updatedAt: new Date(),
       parentCommentId: null,
-      authorUserId: "u1",
+      authorId: "u1",
       authorDisplayName: "Alice Chen",
       authorFirstName: null,
       authorLastName: null,
@@ -100,11 +100,11 @@ describe("ProjectsTicketCommentsService.getComment — ROW-76 historical identit
 
     const commentRow = {
       id: COMMENT_ID,
-      content: "Old comment",
+      body: "Old comment",
       createdAt: new Date(),
       updatedAt: new Date(),
       parentCommentId: null,
-      authorUserId: "departed-user",
+      authorId: "departed-user",
       authorDisplayName: null,
       authorFirstName: null,
       authorLastName: null,
@@ -167,11 +167,11 @@ describe("ProjectsTicketCommentsService.getComment — ROW-76 historical identit
 
     const commentRow = {
       id: COMMENT_ID,
-      content: "Hi",
+      body: "Hi",
       createdAt: new Date(),
       updatedAt: new Date(),
       parentCommentId: null,
-      authorUserId: "u1",
+      authorId: "u1",
       authorDisplayName: null,
       authorFirstName: "Bob",
       authorLastName: "Smith",

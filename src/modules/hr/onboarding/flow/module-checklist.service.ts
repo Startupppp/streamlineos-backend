@@ -171,30 +171,32 @@ export class ModuleChecklistService {
     const existingKeys = new Set(existing.map((c) => c.moduleKey));
 
     const missingKeys = seedableKeys.filter((k) => !existingKeys.has(k));
-    for (const moduleKey of missingKeys) {
-      const seeds = CHECKLIST_SEEDS[moduleKey]!;
-      await this.db.transaction(async (tx) => {
-        const [checklist] = await tx
-          .insert(moduleSetupChecklists)
-          .values({ orgId, moduleKey, status: "not_started", progress: 0 })
-          .returning();
+    if (missingKeys.length === 0) return;
 
-        if (checklist && seeds.length > 0) {
-          await tx.insert(moduleSetupChecklistItems).values(
-            seeds.map((seed, index) => ({
-              orgId,
-              checklistId: checklist.id,
-              itemKey: seed.itemKey,
-              title: seed.title,
-              description: seed.description,
-              actionHref: seed.actionHref,
-              required: seed.required,
-              sortOrder: index,
-            })),
-          );
-        }
+    await this.db.transaction(async (tx) => {
+      const inserted = await tx
+        .insert(moduleSetupChecklists)
+        .values(missingKeys.map((moduleKey) => ({ orgId, moduleKey, status: "not_started" as const, progress: 0 })))
+        .returning({ id: moduleSetupChecklists.id, moduleKey: moduleSetupChecklists.moduleKey });
+
+      const allItems = inserted.flatMap(({ id, moduleKey }) => {
+        const seeds = CHECKLIST_SEEDS[moduleKey] ?? [];
+        return seeds.map((seed, index) => ({
+          orgId,
+          checklistId: id,
+          itemKey: seed.itemKey,
+          title: seed.title,
+          description: seed.description,
+          actionHref: seed.actionHref,
+          required: seed.required,
+          sortOrder: index,
+        }));
       });
-    }
+
+      if (allItems.length > 0) {
+        await tx.insert(moduleSetupChecklistItems).values(allItems);
+      }
+    });
   }
 
   /**

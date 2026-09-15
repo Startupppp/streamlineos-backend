@@ -16,7 +16,9 @@ import {
 } from "../../../db/schema";
 import type { SubscriptionPurchase } from "../../../db/schema/billing/subscription-purchases";
 import { ANNUAL_DISCOUNT_PCT } from "./plan-entitlements.constants";
-import { BillingService } from "./billing.service";
+import { BillingPaymentActivation } from "./billing-payment-activation";
+import { BillingCoupons } from "./billing-coupons";
+import { BillingAccountOverview } from "./billing-account-overview";
 import { AiCreditsService } from "./ai-credits.service";
 import { AuditService } from "../../../common/audit/audit.service";
 import { PlanLimitsService } from "./plan-limits.service";
@@ -347,10 +349,11 @@ async function buildService(
   providers: PaymentProviderResolver,
   aiCredits?: Record<string, jest.Mock>,
   merchant: PlatformMerchantService = makePlatformMerchant(),
-): Promise<BillingService> {
+): Promise<BillingPaymentActivation> {
   const module = await Test.createTestingModule({
     providers: [
-      BillingService,
+      BillingPaymentActivation,
+      BillingCoupons,
       RevenueAnalyticsService,
       { provide: DRIZZLE, useValue: db },
       { provide: OutboxConsumerRegistry, useValue: { register: jest.fn(), get: jest.fn() } },
@@ -363,9 +366,7 @@ async function buildService(
       },
       { provide: AuditService, useValue: { log: jest.fn(), logCritical: jest.fn() } },
       { provide: PlanLimitsService, useValue: { bust: jest.fn(), resolveTier: jest.fn().mockResolvedValue({ plan: "STARTER" }) } },
-
       { provide: ProrationLedgerService, useValue: { recordPlanChange: jest.fn().mockResolvedValue(undefined) } },
-
       { provide: VersionedCatalogService, useValue: { getActivePriceForPlanTier: jest.fn().mockResolvedValue(null) } },
       { provide: PaymentProviderResolver, useValue: providers },
       {
@@ -392,10 +393,35 @@ async function buildService(
       },
     ],
   }).compile();
-  return module.get(BillingService);
+  return module.get(BillingPaymentActivation);
 }
 
-describe("BillingService.verifyAndActivate — binds the confirmation to the stored purchase", () => {
+async function buildAccountOverview(
+  db: unknown,
+  merchant: PlatformMerchantService = makePlatformMerchant(),
+): Promise<BillingAccountOverview> {
+  const module = await Test.createTestingModule({
+    providers: [
+      BillingAccountOverview,
+      { provide: DRIZZLE, useValue: db },
+      { provide: PlanLimitsService, useValue: { bust: jest.fn(), getEntitlements: jest.fn().mockResolvedValue({ seatLimit: null }) } },
+      { provide: PlatformMerchantService, useValue: merchant },
+    ],
+  }).compile();
+  return module.get(BillingAccountOverview);
+}
+
+async function buildCoupons(db: unknown): Promise<BillingCoupons> {
+  const module = await Test.createTestingModule({
+    providers: [
+      BillingCoupons,
+      { provide: DRIZZLE, useValue: db },
+    ],
+  }).compile();
+  return module.get(BillingCoupons);
+}
+
+describe("BillingPaymentActivation.verifyAndActivate — binds the confirmation to the stored purchase", () => {
   it("happy path — returns the plan and cycle recorded on the purchase, not one the caller chose", async () => {
     const svc = await buildService(makeDb(), makeResolver());
     await expect(svc.verifyAndActivate("org1", "user1", VALID_INPUT)).resolves.toMatchObject({
@@ -458,7 +484,7 @@ describe("BillingService.verifyAndActivate — binds the confirmation to the sto
   });
 });
 
-describe("BillingService.verifyAndActivate — cross-tenant and merchant substitution", () => {
+describe("BillingPaymentActivation.verifyAndActivate — cross-tenant and merchant substitution", () => {
   it("another organisation's order id returns 404, not 403, and writes nothing", async () => {
     const db = makeDb({ purchase: makePurchase({ orgId: "org_other" }) });
     const svc = await buildService(db, makeResolver());
@@ -486,7 +512,7 @@ describe("BillingService.verifyAndActivate — cross-tenant and merchant substit
   });
 });
 
-describe("BillingService.verifyAndActivate — the provider's own view of the payment decides", () => {
+describe("BillingPaymentActivation.verifyAndActivate — the provider's own view of the payment decides", () => {
   it("a payment the provider does not know is refused", async () => {
     const db = makeDb();
     const svc = await buildService(db, makeResolver(), undefined, makePlatformMerchant({ snapshot: null }));
@@ -551,7 +577,7 @@ describe("BillingService.verifyAndActivate — the provider's own view of the pa
   });
 });
 
-describe("BillingService.verifyAndActivate — activation happens once", () => {
+describe("BillingPaymentActivation.verifyAndActivate — activation happens once", () => {
   it("a purchase already ACTIVATED returns the stored outcome and grants no further credits", async () => {
     const aiCredits = {
       grantPlanCredits: jest.fn().mockResolvedValue(undefined),
@@ -604,7 +630,7 @@ describe("BillingService.verifyAndActivate — activation happens once", () => {
   });
 });
 
-describe("BillingService cross-tenant isolation", () => {
+describe("BillingAccountOverview cross-tenant isolation", () => {
   it("does not return another organization's subscription", async () => {
     const db = makeDb({ subscription: null });
     const findSubscription = db.query.subscriptions.findFirst as jest.Mock;
@@ -613,9 +639,9 @@ describe("BillingService cross-tenant isolation", () => {
         return { id: 1, orgId: "org_a", plan: "STARTER", status: "ACTIVE" };
       return null;
     });
-    const svc = await buildService(db, makeResolver());
+    const overview = await buildAccountOverview(db);
 
-    const result = await svc.getSubscription("org_b");
+    const result = await overview.getSubscription("org_b");
 
     expect(result.subscription).toBeNull();
     expect(findSubscription).toHaveBeenCalledTimes(1);
@@ -722,7 +748,7 @@ describe("c17-05 — an activation enqueues its revenue event in the activating 
   });
 });
 
-describe("BillingService.createOrder — records an authoritative purchase", () => {
+describe("BillingPaymentActivation.createOrder — records an authoritative purchase", () => {
   it("configured merchant — creates an order and returns providerOrderId and publicKeyId", async () => {
     const svc = await buildService(makeDb(), makeResolver());
     const result = await svc.createOrder("org1", "user1", "STARTER");
@@ -873,11 +899,11 @@ describe("c17-03 — the checkout prices a coupon under the rules redemption enf
     expect(db._store.allInserts.find((i) => i.table === subscriptionPurchases)).toBeUndefined();
   });
 
-  it("validateCoupon reports the same refusal the checkout would raise", async () => {
+  it("validate reports the same refusal the checkout would raise", async () => {
     const db = makeDb({ coupon: makeCoupon({ maxUses: 2, usedCount: 2 }) });
-    const svc = await buildService(db, makeResolver());
+    const coupons = await buildCoupons(db);
 
-    await expect(svc.validateCoupon("SAVE10", "org1", "STARTER")).resolves.toMatchObject({
+    await expect(coupons.validate("SAVE10", "org1", "STARTER")).resolves.toMatchObject({
       valid: false,
       message: COUPON_EXHAUSTED,
     });
@@ -920,27 +946,27 @@ describe("c17-03 — a coupon reserved at order time is redeemed at activation",
   });
 });
 
-describe("BillingService.getSubscription — readiness comes from the platform merchant", () => {
+describe("BillingAccountOverview.getSubscription — readiness comes from the platform merchant", () => {
   it("configured merchant — returns isConfigured true and the public key id", async () => {
     const db = { query: { subscriptions: { findFirst: jest.fn().mockResolvedValue(null) } } };
-    const svc = await buildService(db, makeResolver());
-    const result = await svc.getSubscription("org1");
+    const overview = await buildAccountOverview(db);
+    const result = await overview.getSubscription("org1");
     expect(result.isConfigured).toBe(true);
     expect(result.publicKeyId).toBe(FAKE_PUBLIC_KEY_ID);
   });
 
   it("a tenant with no payment_providers row of its own can still check out", async () => {
     const db = { query: { subscriptions: { findFirst: jest.fn().mockResolvedValue(null) } } };
-    const svc = await buildService(db, makeResolver(false));
-    const result = await svc.getSubscription("brand-new-org");
+    const overview = await buildAccountOverview(db);
+    const result = await overview.getSubscription("brand-new-org");
     expect(result.isConfigured).toBe(true);
     expect(result.platformCheckout).toMatchObject({ configured: true, unavailableReason: null });
   });
 
   it("no platform merchant — returns isConfigured false, a null key id and a reason", async () => {
     const db = { query: { subscriptions: { findFirst: jest.fn().mockResolvedValue(null) } } };
-    const svc = await buildService(db, makeResolver(), undefined, makePlatformMerchant({ configured: false }));
-    const result = await svc.getSubscription("org1");
+    const overview = await buildAccountOverview(db, makePlatformMerchant({ configured: false }));
+    const result = await overview.getSubscription("org1");
     expect(result.isConfigured).toBe(false);
     expect(result.publicKeyId).toBeNull();
     expect(result.platformCheckout).toMatchObject({ unavailableReason: "no_credentials" });
@@ -948,36 +974,34 @@ describe("BillingService.getSubscription — readiness comes from the platform m
 
   it("the readiness payload never carries a secret", async () => {
     const db = { query: { subscriptions: { findFirst: jest.fn().mockResolvedValue(null) } } };
-    const svc = await buildService(db, makeResolver());
-    const result = await svc.getSubscription("org1");
+    const overview = await buildAccountOverview(db);
+    const result = await overview.getSubscription("org1");
     const serialized = JSON.stringify(result.platformCheckout);
     expect(serialized).not.toContain("fake-private");
     expect(serialized).not.toContain("secret");
   });
 });
 
-describe("BillingService.getSummary — isConfigured reads the platform merchant", () => {
+describe("BillingAccountOverview.getSummary — isConfigured reads the platform merchant", () => {
   it("configured platform merchant — isConfigured is true", async () => {
-    const svc = await buildService(makeDb({ subscription: null }), makeResolver());
-    await expect(svc.getSummary("org1")).resolves.toMatchObject({ isConfigured: true });
+    const overview = await buildAccountOverview(makeDb({ subscription: null }));
+    await expect(overview.getSummary("org1")).resolves.toMatchObject({ isConfigured: true });
   });
 
   it("unconfigured platform merchant — isConfigured is false", async () => {
-    const svc = await buildService(
+    const overview = await buildAccountOverview(
       makeDb({ subscription: null }),
-      makeResolver(),
-      undefined,
       makePlatformMerchant({ configured: false }),
     );
-    await expect(svc.getSummary("org1")).resolves.toMatchObject({ isConfigured: false });
+    await expect(overview.getSummary("org1")).resolves.toMatchObject({ isConfigured: false });
   });
 
   it("agrees with getSubscription for a tenant that has no payment_providers row", async () => {
     const db = makeDb({ subscription: null });
-    const svc = await buildService(db, makeResolver(false));
+    const overview = await buildAccountOverview(db);
     const [summary, subscription] = await Promise.all([
-      svc.getSummary("org1"),
-      svc.getSubscription("org1"),
+      overview.getSummary("org1"),
+      overview.getSubscription("org1"),
     ]);
     expect(summary.isConfigured).toBe(subscription.isConfigured);
   });
@@ -1074,7 +1098,7 @@ describe("billing-cycle — the purchase decides the term, not the caller", () =
   });
 });
 
-describe("BillingService — provider-substitution seam proof", () => {
+describe("BillingPaymentActivation — provider-substitution seam proof", () => {
   it("'razorpay' fake produces a successful order with its provider identifier", async () => {
     const svc = await buildService(makeDb(), makeResolver(), undefined, makePlatformMerchant({ providerKey: "razorpay" }));
     const result = await svc.createOrder("org1", "user1", "STARTER");

@@ -10,6 +10,7 @@ import {
 } from "../tenant";
 import { logger } from "../logger/logger.service";
 import { reportError } from "../observability/error-reporter";
+import { getImpersonationContext } from "../impersonation/impersonation-context";
 
 interface AuditEntryFields {
   action: string;
@@ -170,6 +171,11 @@ export class AuditService {
     if (entry.userAgent) enrichedMetadata.userAgent = entry.userAgent;
     if (entry.before) enrichedMetadata.before = entry.before;
     if (entry.after) enrichedMetadata.after = entry.after;
+    const impersonation = getImpersonationContext();
+    if (impersonation) {
+      enrichedMetadata.impersonatedBy = impersonation.realActorUserId;
+      enrichedMetadata.impersonationSessionId = impersonation.impersonationSessionId;
+    }
     return enrichedMetadata;
   }
 }

@@ -64,6 +64,7 @@ import {
   onboardingStatusSchema,
   countryRequirementsSchema,
   onboardingTaskListSchema,
+  onboardingCompletionSchema,
   successSchema,
 } from "./dto/onboarding-response.schemas";
 
@@ -353,13 +354,13 @@ export class OnboardingController {
     return this.details.getBankDetails(u.orgId, u.userId);
   }
 
-  @Post("submit")
-  @ResponseSchema(successSchema)
+  @Post("complete")
+  @ResponseSchema(onboardingCompletionSchema)
   @BodylessAction()
-  @Idempotent("hr.onboarding.submit")
+  @Idempotent("hr.onboarding.complete")
   @Universal()
-  submit(@CurrentUser() u: CurrentUserContext) {
-    return this.submission.submit(u.orgId, u.userId);
+  complete(@CurrentUser() u: CurrentUserContext) {
+    return this.submission.complete(u.orgId, u.userId);
   }
 
   @Patch("tasks/:taskId")

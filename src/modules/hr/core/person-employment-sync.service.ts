@@ -118,6 +118,30 @@ export class PersonEmploymentSyncService {
     return row?.organizationPersonId ?? null;
   }
 
+  private async restoreDeletedPerson(
+    db: Db,
+    orgId: string,
+    userId: string,
+    organizationPersonId: string,
+  ): Promise<number | null> {
+    const deleted = await db.query.hrPeople.findFirst({
+      where: and(
+        eq(hrPeople.orgId, orgId),
+        eq(hrPeople.organizationPersonId, organizationPersonId),
+        isNotNull(hrPeople.deletedAt),
+      ),
+      columns: { id: true },
+    });
+    if (!deleted) return null;
+
+    const [row] = await db
+      .update(hrPeople)
+      .set({ deletedAt: null, userId })
+      .where(and(eq(hrPeople.id, deleted.id), eq(hrPeople.orgId, orgId)))
+      .returning({ id: hrPeople.id });
+    return row?.id ?? null;
+  }
+
   /**
    * Batched `ensureFromUser` for an import: fixed statement count for any batch
    * size, and one audit INSERT instead of one per person.
@@ -192,28 +216,35 @@ export class PersonEmploymentSyncService {
         const organizationPersonId = await this.resolveOrgPersonId(
           db, orgId, input.userId, email, input.firstName, input.lastName,
         );
-        const [created] = await db
-          .insert(hrPeople)
-          .values({
-            orgId,
-            userId: input.userId,
-            organizationPersonId,
-          })
-          .returning({ id: hrPeople.id });
-        if (!created) throw new Error("Failed to create person record");
-        personId = created.id;
-        createdPerson = true;
-        await this.audit.log(
-          {
-            orgId,
-            actorId,
-            entityType: "hr_people",
-            entityId: String(personId),
-            action: "synced_from_user",
-            after: { userId: input.userId, workEmail: email },
-          },
-          tx,
+        const restoredPersonId = await this.restoreDeletedPerson(
+          db, orgId, input.userId, organizationPersonId,
         );
+        if (restoredPersonId !== null) {
+          personId = restoredPersonId;
+        } else {
+          const [created] = await db
+            .insert(hrPeople)
+            .values({
+              orgId,
+              userId: input.userId,
+              organizationPersonId,
+            })
+            .returning({ id: hrPeople.id });
+          if (!created) throw new Error("Failed to create person record");
+          personId = created.id;
+          createdPerson = true;
+          await this.audit.log(
+            {
+              orgId,
+              actorId,
+              entityType: "hr_people",
+              entityId: String(personId),
+              action: "synced_from_user",
+              after: { userId: input.userId, workEmail: email },
+            },
+            tx,
+          );
+        }
       }
     }
 
@@ -235,63 +266,86 @@ export class PersonEmploymentSyncService {
       };
     }
 
-    const byNumber = await db.query.hrEmployments.findFirst({
+    const suffix = input.userId.slice(0, 6).toUpperCase();
+    const claimed =
+      (await this.claimEmploymentNumber(db, orgId, personId, input.employeeNumber, input)) ??
+      (await this.claimEmploymentNumber(
+        db,
+        orgId,
+        personId,
+        `${input.employeeNumber}-${suffix}`,
+        input,
+      ));
+
+    if (!claimed) throw new Error("Failed to create employment record");
+
+    if (claimed.createdEmployment)
+      await this.audit.log(
+        {
+          orgId,
+          actorId,
+          entityType: "hr_employments",
+          entityId: String(claimed.employmentId),
+          action: "synced_from_user",
+          after: { personId, employeeNumber: claimed.employeeNumber },
+        },
+        tx,
+      );
+
+    return {
+      personId,
+      employmentId: claimed.employmentId,
+      createdPerson,
+      createdEmployment: claimed.createdEmployment,
+    };
+  }
+
+  private async claimEmploymentNumber(
+    db: Db,
+    orgId: string,
+    personId: number,
+    employeeNumber: string,
+    input: EnsurePersonEmploymentInput,
+  ): Promise<
+    { employmentId: number; employeeNumber: string; createdEmployment: boolean } | null
+  > {
+    const existing = await db.query.hrEmployments.findFirst({
       where: and(
         eq(hrEmployments.orgId, orgId),
-        eq(hrEmployments.employeeNumber, input.employeeNumber),
-        isNull(hrEmployments.deletedAt),
+        eq(hrEmployments.employeeNumber, employeeNumber),
       ),
     });
 
-    if (byNumber) {
-      if (byNumber.personId !== personId) {
-        const suffix = input.userId.slice(0, 6).toUpperCase();
-        const [created] = await db
-          .insert(hrEmployments)
-          .values({
-            orgId,
-            personId,
-            employeeNumber: `${input.employeeNumber}-${suffix}`,
-            lifecycleStatus: input.lifecycleStatus ?? "ONBOARDING",
-            workerType: input.workerType ?? "FULL_TIME",
-            designation: input.designation ?? null,
-            joiningDate: input.joiningDate ?? null,
-            isPrimary: true,
-          })
-          .returning({ id: hrEmployments.id });
-        if (!created) throw new Error("Failed to create employment record");
-        await this.audit.log(
-          {
-            orgId,
-            actorId,
-            entityType: "hr_employments",
-            entityId: String(created.id),
-            action: "synced_from_user",
-            after: { personId, employeeNumber: `${input.employeeNumber}-${suffix}` },
-          },
-          tx,
-        );
-        return {
-          personId,
-          employmentId: created.id,
-          createdPerson,
-          createdEmployment: true,
-        };
-      }
-      return {
-        personId,
-        employmentId: byNumber.id,
-        createdPerson,
-        createdEmployment: false,
-      };
+    if (existing) {
+      if (existing.personId !== personId) return null;
+      if (existing.deletedAt === null)
+        return { employmentId: existing.id, employeeNumber, createdEmployment: false };
+
+      const [restored] = await db
+        .update(hrEmployments)
+        .set({
+          deletedAt: null,
+          lifecycleStatus: input.lifecycleStatus ?? "ONBOARDING",
+          isPrimary: true,
+        })
+        .where(
+          and(
+            eq(hrEmployments.id, existing.id),
+            eq(hrEmployments.orgId, orgId),
+            isNotNull(hrEmployments.deletedAt),
+          ),
+        )
+        .returning({ id: hrEmployments.id });
+      if (!restored) return null;
+      return { employmentId: restored.id, employeeNumber, createdEmployment: false };
     }
 
-    const [employment] = await db
+    const [created] = await db
       .insert(hrEmployments)
       .values({
         orgId,
         personId,
-        employeeNumber: input.employeeNumber,
+        employeeNumber,
         lifecycleStatus: input.lifecycleStatus ?? "ONBOARDING",
         workerType: input.workerType ?? "FULL_TIME",
         designation: input.designation ?? null,
@@ -300,26 +354,8 @@ export class PersonEmploymentSyncService {
       })
       .returning({ id: hrEmployments.id });
 
-    if (!employment) throw new Error("Failed to create employment record");
-
-    await this.audit.log(
-      {
-        orgId,
-        actorId,
-        entityType: "hr_employments",
-        entityId: String(employment.id),
-        action: "synced_from_user",
-        after: { personId, employeeNumber: input.employeeNumber },
-      },
-      tx,
-    );
-
-    return {
-      personId,
-      employmentId: employment.id,
-      createdPerson,
-      createdEmployment: true,
-    };
+    if (!created) return null;
+    return { employmentId: created.id, employeeNumber, createdEmployment: true };
   }
 
   async ensureFromUserId(

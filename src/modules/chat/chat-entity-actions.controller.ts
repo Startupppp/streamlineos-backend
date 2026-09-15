@@ -12,7 +12,7 @@ import {
   type EntityActionsAvailableInput,
   type SubmitEntityActionInput,
 } from "./dto/chat.schemas";
-import { ChatChannelMembersService } from "./chat-channel-members.service";
+import { ChatChannelMembersImplementation } from "./chat-channel-members-implementation";
 import { ChatMessagesService } from "./chat-messages.service";
 import { EntityReferenceService } from "../entity-reference/entity-reference.service";
 import { actorOf } from "../entity-reference/entity-actor";
@@ -40,13 +40,13 @@ export class ChatEntityActionsController {
 
   constructor(
     private readonly entities: EntityReferenceService,
-    private readonly members: ChatChannelMembersService,
+    private readonly members: ChatChannelMembersImplementation,
     private readonly chatMessages: ChatMessagesService,
   ) {}
 
   @Post("available")
   @ResponseSchema(chatAvailableActionsSchema)
-  @AuthorizedInService("ChatChannelMembersService.assertChannelMembership, then EntityReferenceService resolves the actor's own access to the target")
+  @AuthorizedInService("ChatChannelMembersImplementation.assertChannelMembership, then EntityReferenceService resolves the actor's own access to the target")
   @Validate({ body: entityActionsAvailableSchema })
   async availableActions(
     @Body()
@@ -69,7 +69,7 @@ export class ChatEntityActionsController {
 
   @Post("options")
   @ResponseSchema(chatActionOptionsSchema)
-  @AuthorizedInService("ChatChannelMembersService.assertChannelMembership, then EntityReferenceService resolves the actor's own access to the target")
+  @AuthorizedInService("ChatChannelMembersImplementation.assertChannelMembership, then EntityReferenceService resolves the actor's own access to the target")
   @Validate({ body: entityActionOptionsSchema })
   async actionOptions(
     @Body()
@@ -84,7 +84,7 @@ export class ChatEntityActionsController {
   @Post("submit")
   @ResponseSchema(chatSubmitActionSchema)
   @Idempotent("chat.action.submit")
-  @AuthorizedInService("ChatChannelMembersService.assertChannelMembership, then EntityReferenceService resolves the actor's own access to the target")
+  @AuthorizedInService("ChatChannelMembersImplementation.assertChannelMembership, then EntityReferenceService resolves the actor's own access to the target")
   @Validate({ body: submitEntityActionSchema })
   async submitAction(
     @Body()

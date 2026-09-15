@@ -226,31 +226,57 @@ export class OrgSetupResolverService {
     }
   }
 
-  private async findActiveSetupTarget(userId: string): Promise<SetupTarget | null> {
-    const rows = await withIdentity(this.db, userId, (tx) =>
-      tx
-        .select({ orgId: organizationMembers.orgId, isOwner: organizationMembers.isOwner })
-        .from(organizationMembers)
-        .innerJoin(
-          organizations,
-          and(
+  private async findSetupContext(userId: string): Promise<{
+    activeTarget: SetupTarget | null;
+    memberships: SetupMembership[];
+  }> {
+    const [activeRows, memberships] = await withIdentity(this.db, userId, (tx) =>
+      Promise.all([
+        tx
+          .select({ orgId: organizationMembers.orgId, isOwner: organizationMembers.isOwner })
+          .from(organizationMembers)
+          .innerJoin(
+            organizations,
+            and(
+              eq(organizations.id, organizationMembers.orgId),
+              eq(organizations.status, "ACTIVE"),
+              isNull(organizations.deletedAt),
+            ),
+          )
+          .where(
+            and(
+              eq(organizationMembers.userId, userId),
+              eq(organizationMembers.status, "ACTIVE"),
+            ),
+          )
+          .orderBy(desc(organizationMembers.joinedAt))
+          .limit(1),
+        tx
+          .select({
+            id: organizationMembers.id,
+            orgId: organizationMembers.orgId,
+            existingOrgId: organizations.id,
+            orgName: organizations.name,
+            orgStatus: organizations.status,
+            orgDeletedAt: organizations.deletedAt,
+            status: organizationMembers.status,
+            isOwner: organizationMembers.isOwner,
+          })
+          .from(organizationMembers)
+          .leftJoin(
+            organizations,
             eq(organizations.id, organizationMembers.orgId),
-            eq(organizations.status, "ACTIVE"),
-            isNull(organizations.deletedAt),
-          ),
-        )
-        .where(
-          and(
-            eq(organizationMembers.userId, userId),
-            eq(organizationMembers.status, "ACTIVE"),
-          ),
-        )
-        .orderBy(desc(organizationMembers.joinedAt))
-        .limit(1),
+          )
+          .where(eq(organizationMembers.userId, userId))
+          .orderBy(desc(organizationMembers.joinedAt))
+          .limit(100),
+      ]),
     );
-    const row = rows[0];
-    if (!row) return null;
-    return { orgId: row.orgId, isOwner: row.isOwner };
+    const activeRow = activeRows[0];
+    return {
+      activeTarget: activeRow ? { orgId: activeRow.orgId, isOwner: activeRow.isOwner } : null,
+      memberships,
+    };
   }
 
   async resolveOrCreateOrg(
@@ -260,10 +286,9 @@ export class OrgSetupResolverService {
     const currentTarget = await this.resolveCurrentSetupTarget(u);
     if (currentTarget) return currentTarget;
 
-    const activeTarget = await this.findActiveSetupTarget(u.userId);
+    const { activeTarget, memberships } = await this.findSetupContext(u.userId);
     if (activeTarget) return activeTarget;
 
-    const memberships = await this.listSetupMemberships(u.userId);
     const existingTarget = this.resolveExistingSetupTarget(u, memberships);
     if (existingTarget) return existingTarget;
 

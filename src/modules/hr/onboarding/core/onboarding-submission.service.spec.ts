@@ -9,7 +9,7 @@ const dialect = new PgDialect();
 
 type PrivateService = {
   completeFinalReview: (tx: unknown, orgId: string, userId: string) => Promise<void>;
-  initializeLeaveBalances: (tx: unknown, orgId: string, userId: string) => Promise<void>;
+  initializeLeaveBalances: (tx: unknown, orgId: string, userId: string) => Promise<number>;
   completeFlowSession: (tx: unknown, orgId: string, userId: string) => Promise<void>;
 };
 
@@ -64,8 +64,8 @@ function makeService(membershipRows: unknown[] = [{ id: "membership-1" }]) {
   };
 
   const db = {
-    transaction: jest.fn().mockImplementation(async (cb: (tx: unknown) => Promise<void>) => {
-      await cb(tx);
+    transaction: jest.fn().mockImplementation(async (cb: (tx: unknown) => Promise<unknown>) => {
+      return cb(tx);
     }),
   };
 
@@ -91,7 +91,7 @@ function stubPrivateMethods(service: OnboardingSubmissionService): void {
     .mockResolvedValue(undefined);
   jest
     .spyOn(service as unknown as PrivateService, "initializeLeaveBalances")
-    .mockResolvedValue(undefined);
+    .mockResolvedValue(0);
   jest
     .spyOn(service as unknown as PrivateService, "completeFlowSession")
     .mockResolvedValue(undefined);
@@ -104,7 +104,7 @@ describe("OnboardingSubmissionService.submit", () => {
     const { service, tx, membersUpdateChain } = makeService();
     stubPrivateMethods(service);
 
-    await service.submit("org-1", "user-1");
+    await service.complete("org-1", "user-1");
 
     expect(tx.update).toHaveBeenCalledWith(organizationMembers);
     expect(membersUpdateChain.set).toHaveBeenCalledWith(
@@ -116,7 +116,7 @@ describe("OnboardingSubmissionService.submit", () => {
     const { service, tx, usersUpdateChain } = makeService();
     stubPrivateMethods(service);
 
-    await service.submit("org-1", "user-1");
+    await service.complete("org-1", "user-1");
 
     expect(tx.update).toHaveBeenCalledWith(users);
     expect(usersUpdateChain.set).toHaveBeenCalledWith(
@@ -128,7 +128,7 @@ describe("OnboardingSubmissionService.submit", () => {
     const { service, selectWheres, membersUpdateChain } = makeService();
     stubPrivateMethods(service);
 
-    await service.submit("org-1", "user-1");
+    await service.complete("org-1", "user-1");
 
     const membershipLookup = selectWheres[0];
     expect(renderSql(membershipLookup)).toContain('"org_id"');
@@ -146,7 +146,7 @@ describe("OnboardingSubmissionService.submit", () => {
     const { service, cache } = makeService();
     stubPrivateMethods(service);
 
-    await service.submit("org-1", "user-1");
+    await service.complete("org-1", "user-1");
 
     expect(cache.invalidate).toHaveBeenCalledWith(CACHE_KEYS.userSession("user-1"));
   });
@@ -155,7 +155,7 @@ describe("OnboardingSubmissionService.submit", () => {
     const { service, usersUpdateChain } = makeService([]);
     stubPrivateMethods(service);
 
-    await expect(service.submit("org-1", "unknown-user")).rejects.toThrow(NotFoundException);
+    await expect(service.complete("org-1", "unknown-user")).rejects.toThrow(NotFoundException);
     expect(usersUpdateChain.set).not.toHaveBeenCalled();
   });
 
@@ -169,7 +169,7 @@ describe("OnboardingSubmissionService.submit", () => {
       return { values: jest.fn().mockResolvedValue([]) };
     });
 
-    await service.submit("org-1", "user-1");
+    await service.complete("org-1", "user-1");
 
     expect(insertedTables).toContain(onboardingAnalyticsEvents);
   });

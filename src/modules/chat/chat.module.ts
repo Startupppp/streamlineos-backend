@@ -19,7 +19,8 @@ import { ChatSummarizeController } from "./chat-summarize.controller";
 import { ChatRealtimeController } from "./chat-realtime.controller";
 import { ChatChannelsService } from "./chat-channels.service";
 import { ChatChannelListService } from "./chat-channel-list.service";
-import { ChatChannelMembersService } from "./chat-channel-members.service";
+import { ChatChannelMembersImplementation } from "./chat-channel-members-implementation";
+import { ChatChannelMemberState } from "./chat-channel-member-state";
 import { ChatMessagesService } from "./chat-messages.service";
 import { ChatMessageModerationService } from "./chat-message-moderation.service";
 import { ChatMessageTimelineService } from "./chat-message-timeline.service";
@@ -72,7 +73,8 @@ import { OutboxBackedMessageFanoutProvider } from "./outbox-backed-message-fanou
     ChatFanoutOutboxConsumer,
     ChatChannelListService,
     ChatChannelsService,
-    ChatChannelMembersService,
+    ChatChannelMembersImplementation,
+    ChatChannelMemberState,
     ChatMessagesService,
     ChatMessageModerationService,
     ChatMessageTimelineService,

@@ -56,13 +56,16 @@ const aiCreditTransactionSchema = z.object({
   id: z.number().int(),
   orgId: z.string(),
   userId: z.string().nullable(),
-  packId: z.number().int().nullable(),
   type: z.string(),
   amount: z.number(),
   balanceAfter: z.number(),
-  description: z.string().nullable(),
+  feature: z.string().nullable(),
+  model: z.string().nullable(),
   referenceId: z.string().nullable(),
-  referenceType: z.string().nullable(),
+  promptTokens: z.number().int().nullable(),
+  completionTokens: z.number().int().nullable(),
+  totalTokens: z.number().int().nullable(),
+  costUsd: z.number().nullable(),
   createdAt: wireDate(),
 });
 
@@ -87,17 +90,47 @@ export const aiCreditsWalletResponseSchema = z.object({
 
 export const aiCreditsTransactionPageSchema = cursorPageSchema(aiCreditTransactionSchema);
 
+const aiCreditUsageTotalsSchema = z.object({
+  requests: z.number().int(),
+  promptTokens: z.number().int(),
+  completionTokens: z.number().int(),
+  totalTokens: z.number().int(),
+  credits: z.number(),
+  costUsd: z.number(),
+});
+
 const aiCreditUsageByFeatureSchema = z.object({
   feature: z.string(),
-  totalCredits: z.number(),
-  requestCount: z.number().int(),
+  requests: z.number().int(),
+  totalTokens: z.number().int(),
+  credits: z.number(),
+  costUsd: z.number(),
+});
+
+const aiCreditUsageByModelSchema = z.object({
+  model: z.string(),
+  requests: z.number().int(),
+  promptTokens: z.number().int(),
+  completionTokens: z.number().int(),
+  totalTokens: z.number().int(),
+  credits: z.number(),
+  costUsd: z.number(),
+});
+
+const aiCreditUsageDailySchema = z.object({
+  date: z.string(),
+  requests: z.number().int(),
+  totalTokens: z.number().int(),
+  credits: z.number(),
 });
 
 export const aiCreditsUsageResponseSchema = z.object({
-  totalCredits: z.number(),
-  requestCount: z.number().int(),
+  lifetimeConsumedCredits: z.number(),
+  lifetimeConsumedMilli: z.number(),
+  totals: aiCreditUsageTotalsSchema,
   byFeature: z.array(aiCreditUsageByFeatureSchema),
-  period: z.object({ days: z.number().int(), from: z.string(), to: z.string() }),
+  byModel: z.array(aiCreditUsageByModelSchema),
+  daily: z.array(aiCreditUsageDailySchema),
 });
 
 export const autoTopUpResponseSchema = orgAiCreditsSchema;

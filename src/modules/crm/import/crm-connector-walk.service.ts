@@ -10,7 +10,7 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.types";
 import { crmConnectorRecords, crmConnectorSyncs } from "../../../db/schema";
 import { ComposioGateway } from "../../integrations/core/composio.gateway";
-import { CrmImportService } from "./crm-import.service";
+import { CrmImportPreviewService } from "./crm-import-preview.service";
 import { MAX_ROWS } from "./crm-import-preview.service";
 import { watermarkAfterWalk } from "./connectors/connector-watermark";
 import {
@@ -37,7 +37,7 @@ export class CrmConnectorWalkService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly composio: ComposioGateway,
-    private readonly imports: CrmImportService,
+    private readonly imports: CrmImportPreviewService,
   ) {}
 
   async beginWalk(organizationId: string, crmConnectorSyncId: string): Promise<WalkExtent> {
