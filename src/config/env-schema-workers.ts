@@ -116,6 +116,10 @@ export const workerEnvShape = {
     ),
     /** `!== "false"` so unset leaves retention ON. Enum prevents `=0` silently disabling it (same shape as OUTBOX_DISPATCH_ENABLED). */
     RETENTION_SCHEDULER_ENABLED: z.preprocess(emptyToUndefined, z.enum(["true", "false"]).optional()),
+    RBAC_GRANT_RECONCILE_ON_BOOT: z.preprocess(
+      emptyToUndefined,
+      z.enum(["true", "false"]).optional(),
+    ),
     /** Milliseconds between retention passes; unset uses 600000ms. Bound prevents a typo from running at an unintended cadence. */
     RETENTION_SCHEDULER_TICK_MS: z.preprocess(emptyToUndefined, z.coerce.number().int().positive().optional()),
     AV_SCANNER: z.preprocess(

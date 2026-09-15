@@ -189,6 +189,7 @@ export class ProjectsTicketsUpdateService {
         priority: true,
         assigneeMembershipId: true,
         sprintId: true,
+        startDate: true,
         dueDate: true,
         projectId: true,
         reporterId: true,
@@ -214,6 +215,11 @@ export class ProjectsTicketsUpdateService {
         throw new ProjectsTicketConflictException();
       }
     }
+
+    const nextStartDate = input.startDate === undefined ? before.startDate : input.startDate;
+    const nextDueDate = input.dueDate === undefined ? before.dueDate : input.dueDate;
+    if (nextStartDate && nextDueDate && nextDueDate < nextStartDate)
+      throw new BadRequestException("Due date must be on or after start date");
 
     const accessResult =
       u.isOrgOwner || systemJobCovers(u.principal, "build:tickets:update")

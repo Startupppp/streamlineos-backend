@@ -4,7 +4,7 @@ import { ScopedRead, type OwnershipScope } from "../../access/scoped-read";
 import { eq, or, sql } from "drizzle-orm";
 import { tickets, ticketAssignees } from "../../../db/schema";
 
-export const TICKETS_PERMISSION = "build:manage";
+export const TICKETS_PERMISSION = "build:tickets:view";
 
 export function ticketScope(orgId: string, userId: string): OwnershipScope {
   return {
@@ -23,12 +23,6 @@ export async function resolveTicketsScope(
   return ScopedRead.for(access, u, TICKETS_PERMISSION);
 }
 
-/**
- * `build-project-aggregate-access.ts` and `projects-reports.service.ts` both need to
- * know whether the caller sees every ticket before running an organisation/project-wide
- * aggregate — a standing check, not a row predicate — so the raw resolution stays
- * private to this file rather than leaking a `DataScope` to either consumer.
- */
 export async function ticketsScopeIsUnrestricted(
   access: Pick<AccessService, "scopeFor">,
   u: CurrentUserContext,

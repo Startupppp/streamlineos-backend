@@ -40,7 +40,8 @@ import { NoContentResponse, ResponseSchema } from "../../../common/openapi/zod-o
 import { successSchema } from "../../../common/openapi/response-envelopes";
 import {
   ticketListRowSchema,
-  watcherSchema,
+  ticketWatcherSchema,
+  watcherMutationSchema,
   ticketRelationSchema,
   gitLinkSchema,
   relatedLinkSchema,
@@ -111,7 +112,7 @@ export class ProjectsTicketAssociationsController {
 
   @Get(":projectId/tickets/:ticketId/watchers")
   @RequirePermission("build:tickets:view")
-  @ResponseSchema(z.array(watcherSchema))
+  @ResponseSchema(z.array(ticketWatcherSchema))
   @Validate({ params: projectIdticketIdParams })
   getWatchers(
     @Param("ticketId", ParseIntPipe) ticketId: number,
@@ -123,7 +124,7 @@ export class ProjectsTicketAssociationsController {
   @Post(":projectId/tickets/:ticketId/watchers")
   @RequirePermission("build:tickets:update")
   @HttpCode(201)
-  @ResponseSchema(watcherSchema)
+  @ResponseSchema(watcherMutationSchema)
   @Validate({ params: projectIdticketIdParams, body: addWatcherSchema })
   addWatcher(
     @Param("ticketId", ParseIntPipe) ticketId: number,

@@ -17,7 +17,7 @@ const PERSONAS: Record<PersonaId, PersonaConfig> = {
   },
   sales: {
     id: "sales",
-    label: "Sales Assistant",
+    label: "CRM",
     preamble:
       "You are the StreamlineOS Sales Copilot. Focus on CRM: leads, contacts, deals, pipeline, and sales activities. Do not discuss HR, support operations, or internal project management.",
     allowedTools: [
@@ -32,7 +32,7 @@ const PERSONAS: Record<PersonaId, PersonaConfig> = {
   },
   "hr-policy": {
     id: "hr-policy",
-    label: "HR Policy",
+    label: "HR",
     preamble:
       "You are the StreamlineOS HR Policy Copilot. Answer questions about HR policies, employee records, leave balances, payroll, and organizational structure. Do not discuss customer data, sales deals, or project details.",
     allowedTools: [
@@ -51,7 +51,7 @@ const PERSONAS: Record<PersonaId, PersonaConfig> = {
   },
   project: {
     id: "project",
-    label: "Project Manager",
+    label: "Build",
     preamble:
       "You are the StreamlineOS Project Copilot. Focus on project and ticket management: creating tasks, tracking progress, updating statuses, assigning work. Do not discuss CRM, HR policies, or finance.",
     allowedTools: [
@@ -70,7 +70,7 @@ const PERSONAS: Record<PersonaId, PersonaConfig> = {
   },
   operations: {
     id: "operations",
-    label: "Operations",
+    label: "Inventory & Ops",
     preamble:
       "You are the StreamlineOS Operations Copilot. Focus on inventory, supply chain, financial reporting, and cross-module operational metrics. Do not discuss individual HR matters or customer support tickets.",
     allowedTools: [

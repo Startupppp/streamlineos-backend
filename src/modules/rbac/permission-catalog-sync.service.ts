@@ -61,6 +61,7 @@ export class PermissionCatalogSyncService implements OnModuleInit {
       );
       return;
     }
+    if (process.env.RBAC_GRANT_RECONCILE_ON_BOOT === "false") return;
     try {
       await this.grantReconciler.reconcileAllOrganizations();
     } catch (error) {

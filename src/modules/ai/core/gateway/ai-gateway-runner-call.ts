@@ -18,11 +18,12 @@ import type {
 } from "./ai-gateway.types";
 
 const MAX_CONTEXT_CHARS_DEFAULT = 200_000;
-const MAX_OUTPUT_TOKENS_DEFAULT = 4_096;
+const MAX_OUTPUT_TOKENS_DEFAULT = 2_048;
 
 export function boundedMaxTokens(requested: number | undefined): number {
   if (requested === undefined) return MAX_OUTPUT_TOKENS_DEFAULT;
-  return Math.min(requested, MAX_OUTPUT_TOKENS_DEFAULT);
+  if (!Number.isFinite(requested)) return MAX_OUTPUT_TOKENS_DEFAULT;
+  return Math.max(1, Math.min(Math.floor(requested), MAX_OUTPUT_TOKENS_DEFAULT));
 }
 
 function contextExceedsLimit(prompt: { system: string; user: string }, max: number): boolean {
