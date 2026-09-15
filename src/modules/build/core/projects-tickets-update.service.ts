@@ -10,8 +10,6 @@ import { randomUUID } from "node:crypto";
 import { and, eq, isNull, sql } from "drizzle-orm";
 import { OutboxWriter } from "../../../common/outbox/outbox-writer";
 import { ticketAssignees, tickets } from "../../../db/schema";
-import { resolveOrganizationActorsByUserIds } from "../../../common/organization/organization-actor";
-import type { OrganizationActor } from "../../../common/organization/organization-actor";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import type { DbOrTx } from "../../../common/rbac/access-invalidate";
@@ -37,6 +35,7 @@ import { reserveTicketCapacity } from "./build-ticket-capacity";
 import { resolveValidTicketStatuses } from "./ticket-status.util";
 import { ProjectsInvalidTicketStatusException } from "../../../common/http/api-exceptions";
 import { AccessService } from "../../access/access.service";
+import { resolveProjectAssignableMemberships } from "./project-access";
 
 @Injectable()
 export class ProjectsTicketsUpdateService {
@@ -148,20 +147,6 @@ export class ProjectsTicketsUpdateService {
     if (resolvedAssignee) pendingActorIds.add(resolvedAssignee);
     if (input.assigneeIds) input.assigneeIds.forEach((uid) => pendingActorIds.add(uid));
 
-    let assigneeActors = new Map<string, OrganizationActor>();
-    if (pendingActorIds.size > 0) {
-      assigneeActors = await resolveOrganizationActorsByUserIds(this.db, orgId, [...pendingActorIds]);
-      for (const uid of pendingActorIds) {
-        if (!assigneeActors.has(uid))
-          throw new NotFoundException("Assignee is not a member of this organization");
-      }
-    }
-
-    if (resolvedAssignee !== undefined) {
-      updateData.assigneeMembershipId = resolvedAssignee !== null
-        ? (assigneeActors.get(resolvedAssignee)?.membershipId ?? null)
-        : null;
-    }
     if (input.sprintId !== undefined) updateData.sprintId = input.sprintId;
     if (input.epicId !== undefined) updateData.epicId = input.epicId;
     if (input.moduleId !== undefined) updateData.moduleId = input.moduleId;
@@ -209,6 +194,21 @@ export class ProjectsTicketsUpdateService {
     if (!before || !before.projectId)
       throw new NotFoundException("Ticket not found");
     const ticketProjectId = before.projectId;
+    const assigneeMemberships = await resolveProjectAssignableMemberships(
+      this.db,
+      orgId,
+      ticketProjectId,
+      [...pendingActorIds],
+    );
+    for (const uid of pendingActorIds) {
+      if (!assigneeMemberships.has(uid))
+        throw new NotFoundException("Assignee is not an active member of this project");
+    }
+    if (resolvedAssignee !== undefined) {
+      updateData.assigneeMembershipId = resolvedAssignee !== null
+        ? (assigneeMemberships.get(resolvedAssignee) ?? null)
+        : null;
+    }
     const beforeAssigneeId: string | null = null;
     const beforeAssigneeMembershipId = before.assigneeMembershipId;
 
@@ -288,7 +288,7 @@ export class ProjectsTicketsUpdateService {
         });
       }
 
-      await this.syncAssignees(tx, orgId, ticketId, actingUserId, input, assigneeActors);
+      await this.syncAssignees(tx, orgId, ticketId, actingUserId, input, assigneeMemberships);
 
       await this.webhooksDispatch.enqueue(tx, orgId, ticketProjectId, "ticket.updated", {
         id: ticketId,
@@ -299,7 +299,7 @@ export class ProjectsTicketsUpdateService {
         actor: actingUserId,
         timestamp: now.toISOString(),
       });
-      if (newAssignee !== undefined && (newAssignee ? assigneeActors.get(newAssignee)?.membershipId ?? null : null) !== beforeAssigneeMembershipId) {
+      if (newAssignee !== undefined && (newAssignee ? assigneeMemberships.get(newAssignee) ?? null : null) !== beforeAssigneeMembershipId) {
         await this.webhooksDispatch.enqueue(tx, orgId, ticketProjectId, "ticket.assigned", {
           id: ticketId,
           projectId: ticketProjectId,
@@ -374,7 +374,7 @@ export class ProjectsTicketsUpdateService {
       this.automationRunner.runForTicketEvent(orgId, ticketProjectId, "ticket.status_changed", afterPayload);
     }
 
-    if (newAssignee !== undefined && (newAssignee ? assigneeActors.get(newAssignee)?.membershipId ?? null : null) !== beforeAssigneeMembershipId) {
+    if (newAssignee !== undefined && (newAssignee ? assigneeMemberships.get(newAssignee) ?? null : null) !== beforeAssigneeMembershipId) {
       this.automationRunner.runForTicketEvent(orgId, ticketProjectId, "ticket.assigned", afterPayload);
     }
 
@@ -391,19 +391,24 @@ export class ProjectsTicketsUpdateService {
     ticketId: number,
     actingUserId: string,
     input: UpdateTicketInput,
-    actorMap: Map<string, OrganizationActor>,
+    membershipByUserId: Map<string, number>,
   ): Promise<void> {
     if (input.assigneeIds !== undefined) {
       await db
         .delete(ticketAssignees)
-        .where(eq(ticketAssignees.ticketId, ticketId));
+        .where(
+          and(
+            eq(ticketAssignees.orgId, orgId),
+            eq(ticketAssignees.ticketId, ticketId),
+          ),
+        );
       const allIds = new Set(input.assigneeIds);
       const primary = resolveAssigneeId(input.assigneeId);
       if (primary) allIds.add(primary);
       if (allIds.size > 0) {
         await db.insert(ticketAssignees).values(
           Array.from(allIds).flatMap((userId) => {
-            const membershipId = actorMap.get(userId)?.membershipId;
+            const membershipId = membershipByUserId.get(userId);
             return membershipId == null ? [] : [{ orgId, ticketId, membershipId, assignedBy: actingUserId }];
           }),
         );
@@ -414,13 +419,18 @@ export class ProjectsTicketsUpdateService {
     if (input.assigneeId !== undefined) {
       await db
         .delete(ticketAssignees)
-        .where(eq(ticketAssignees.ticketId, ticketId));
+        .where(
+          and(
+            eq(ticketAssignees.orgId, orgId),
+            eq(ticketAssignees.ticketId, ticketId),
+          ),
+        );
       const newAssigneeId = resolveAssigneeId(input.assigneeId);
-      if (newAssigneeId && actorMap.get(newAssigneeId)?.membershipId != null) {
+      if (newAssigneeId && membershipByUserId.has(newAssigneeId)) {
         await db.insert(ticketAssignees).values({
           orgId,
           ticketId,
-          membershipId: actorMap.get(newAssigneeId)!.membershipId,
+          membershipId: membershipByUserId.get(newAssigneeId)!,
           assignedBy: actingUserId,
         });
       }

@@ -49,16 +49,39 @@ describe("ProjectsTicketsTransferService — cross-tenant isolation", () => {
     read: Partial<ProjectsTicketsReadService>,
     db: Db,
     scopeFor?: jest.Mock,
+    holds?: jest.Mock,
   ): ProjectsTicketsTransferService {
-    const access = { scopeFor: scopeFor ?? jest.fn().mockResolvedValue("all") } as unknown as AccessService;
+    const access = {
+      scopeFor: scopeFor ?? jest.fn().mockResolvedValue("all"),
+      holds: holds ?? jest.fn().mockResolvedValue(true),
+    } as unknown as AccessService;
     return new ProjectsTicketsTransferService(
       db,
       read as unknown as ProjectsTicketsReadService,
       access,
       {} as unknown as NotificationsService,
       {} as unknown as NotificationDispatchService,
+      { del: jest.fn().mockResolvedValue(undefined) } as unknown as CacheService,
     );
   }
+
+  it("rejects import assignment without build:tickets:assign", async () => {
+    const holds = jest.fn().mockResolvedValue(false);
+    const svc = makeTransferSvc(
+      { checkProjectAccess: jest.fn().mockResolvedValue({ hasAccess: true }) },
+      {} as Db,
+      undefined,
+      holds,
+    );
+    await expect(
+      svc.importTickets(
+        { orgId: OWNER_ORG, userId: "u-owner" } as Parameters<typeof svc.importTickets>[0],
+        42,
+        { rows: [{ title: "Assigned import", assigneeEmail: "member@example.com" }] },
+      ),
+    ).rejects.toThrow("Not authorized to assign tickets");
+    expect(holds).toHaveBeenCalledWith(expect.objectContaining({ orgId: OWNER_ORG }), "build:tickets:assign");
+  });
 
   describe("exportTickets", () => {
     it("throws NotFoundException when project is inaccessible to the caller (DENY)", async () => {

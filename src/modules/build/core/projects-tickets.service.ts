@@ -171,41 +171,43 @@ export class ProjectsTicketsService {
       await tx
         .update(tickets)
         .set({ parentTicketId: null })
-        .where(eq(tickets.parentTicketId, ticketId));
+        .where(and(eq(tickets.orgId, orgId), eq(tickets.parentTicketId, ticketId)));
       await tx
         .update(tickets)
         .set({ epicId: null })
-        .where(eq(tickets.epicId, ticketId));
+        .where(and(eq(tickets.orgId, orgId), eq(tickets.epicId, ticketId)));
 
       await tx
         .delete(ticketAssignees)
-        .where(eq(ticketAssignees.ticketId, ticketId));
+        .where(and(eq(ticketAssignees.orgId, orgId), eq(ticketAssignees.ticketId, ticketId)));
       await tx
         .delete(ticketComments)
-        .where(eq(ticketComments.ticketId, ticketId));
+        .where(and(eq(ticketComments.orgId, orgId), eq(ticketComments.ticketId, ticketId)));
       await tx
         .delete(ticketAttachments)
-        .where(eq(ticketAttachments.ticketId, ticketId));
+        .where(and(eq(ticketAttachments.orgId, orgId), eq(ticketAttachments.ticketId, ticketId)));
       await tx
         .delete(ticketLabelMappings)
-        .where(eq(ticketLabelMappings.ticketId, ticketId));
+        .where(and(eq(ticketLabelMappings.orgId, orgId), eq(ticketLabelMappings.ticketId, ticketId)));
       await tx
         .delete(ticketWatchers)
-        .where(eq(ticketWatchers.ticketId, ticketId));
-      await tx.delete(timesheets).where(eq(timesheets.ticketId, ticketId));
+        .where(and(eq(ticketWatchers.orgId, orgId), eq(ticketWatchers.ticketId, ticketId)));
+      await tx
+        .delete(timesheets)
+        .where(and(eq(timesheets.orgId, orgId), eq(timesheets.ticketId, ticketId)));
       await tx
         .delete(workItemRelations)
         .where(
           or(
-            eq(workItemRelations.workItemId, ticketId),
-            eq(workItemRelations.relatedWorkItemId, ticketId),
+            and(eq(workItemRelations.orgId, orgId), eq(workItemRelations.workItemId, ticketId)),
+            and(eq(workItemRelations.orgId, orgId), eq(workItemRelations.relatedWorkItemId, ticketId)),
           ),
         );
 
       await tx
         .update(tickets)
         .set({ deletedAt: new Date() })
-        .where(eq(tickets.id, ticketId));
+        .where(and(eq(tickets.orgId, orgId), eq(tickets.id, ticketId)));
 
       await this.webhooksDispatch.enqueue(tx, orgId, ticketProjectId, "ticket.deleted", {
         id: ticketId,

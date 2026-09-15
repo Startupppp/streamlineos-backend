@@ -19,6 +19,8 @@ import { resolveValidTicketStatuses } from "../core/ticket-status.util";
 import { isProjectMember, text } from "./build-entity-action-helpers";
 import { createTicketFromAction } from "./build-entity-ticket-create";
 import { reserveTicketCapacity } from "../core/build-ticket-capacity";
+import { CacheService } from "../../../common/cache/cache.service";
+import { logSideEffectFailure } from "../../../common/logger/side-effect";
 
 type TicketActivityAction =
   | "status_changed"
@@ -30,6 +32,7 @@ export class BuildEntityActions {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly audit: AuditService,
+    private readonly cache: CacheService,
   ) {}
 
   async run(
@@ -41,8 +44,14 @@ export class BuildEntityActions {
     const id = Number(reference.id);
     if (!Number.isInteger(id) || id <= 0) return { ok: false, reason: "not-found" };
 
-    if (reference.type === "project" && actionId === "create-ticket")
-      return createTicketFromAction(this.db, this.audit, actor, id, input);
+    if (reference.type === "project" && actionId === "create-ticket") {
+      const result = await createTicketFromAction(this.db, this.audit, actor, id, input);
+      if (result.ok)
+        await this.cache
+          .del(`projects:analytics:${actor.orgId}:${id}`)
+          .catch(logSideEffectFailure("analytics cache eviction", { orgId: actor.orgId, projectId: id }));
+      return result;
+    }
 
     if (reference.type !== "ticket") return { ok: false, reason: "invalid" };
 
@@ -65,14 +74,18 @@ export class BuildEntityActions {
     const allowed = await isProjectMember(this.db, actor, ticket.projectId);
     if (!allowed) return { ok: false, reason: "forbidden" };
 
-    if (actionId === "status")
-      return this.changeStatus(actor, ticket.id, ticket.projectId, ticket.status, input);
-    if (actionId === "assign")
-      return this.assign(actor, ticket.id, ticket.projectId, ticket.assigneeMembershipId, input);
-    if (actionId === "due-date")
-      return this.setDueDate(actor, ticket.id, ticket.projectId, ticket.dueDate, input);
-
-    return { ok: false, reason: "invalid" };
+    const result = actionId === "status"
+      ? await this.changeStatus(actor, ticket.id, ticket.projectId, ticket.status, input)
+      : actionId === "assign"
+        ? await this.assign(actor, ticket.id, ticket.projectId, ticket.assigneeMembershipId, input)
+        : actionId === "due-date"
+          ? await this.setDueDate(actor, ticket.id, ticket.projectId, ticket.dueDate, input)
+          : { ok: false as const, reason: "invalid" as const };
+    if (result.ok)
+      await this.cache
+        .del(`projects:analytics:${actor.orgId}:${ticket.projectId}`)
+        .catch(logSideEffectFailure("analytics cache eviction", { orgId: actor.orgId, projectId: ticket.projectId }));
+    return result;
   }
 
   private async changeStatus(

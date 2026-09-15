@@ -12,6 +12,7 @@ import type { AccessService } from "../../access/access.service";
 import type { Db } from "../../../db/drizzle.module";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
+import * as projectAccessSeam from "./project-access";
 
 jest.mock("../../../common/organization/organization-actor", () => ({
   assertOrganizationActor: jest.fn(),
@@ -28,6 +29,10 @@ jest.mock("../../../common/organization/organization-actor", () => ({
     }
   },
   organizationActorHttpError: jest.fn(),
+}));
+
+jest.mock("./project-access", () => ({
+  resolveProjectAssignableMemberships: jest.fn(),
 }));
 
 const makeUser = (overrides: Partial<CurrentUserContext> = {}): CurrentUserContext => ({
@@ -241,6 +246,7 @@ describe("ProjectsTicketsCreateService.createTicket — actor seam", () => {
   const mockWebhooks = { dispatch: jest.fn(), enqueue: jest.fn() };
   const mockAutomation = { runForTicketEvent: jest.fn() };
   const mockCache = { del: jest.fn().mockResolvedValue(undefined) };
+  const mockAccess = { holds: jest.fn().mockResolvedValue(true) };
 
   const makeSvc = () =>
     new ProjectsTicketsCreateService(
@@ -252,10 +258,31 @@ describe("ProjectsTicketsCreateService.createTicket — actor seam", () => {
       mockWebhooks as never,
       mockAutomation as never,
       mockCache as never,
+      mockAccess as never,
     );
 
+  beforeEach(() => {
+    (projectAccessSeam.resolveProjectAssignableMemberships as jest.Mock).mockResolvedValue(
+      new Map([["user-assignee", 7]]),
+    );
+    mockAccess.holds.mockResolvedValue(true);
+  });
+
+  it("rejects assignment during creation without build:tickets:assign", async () => {
+    mockAccess.holds.mockResolvedValue(false);
+    const svc = makeSvc();
+    await expect(
+      svc.createTicket(makeUser(), 1, {
+        title: "My ticket",
+        type: "TASK",
+        assigneeId: "user-assignee",
+      }),
+    ).rejects.toThrow(ForbiddenException);
+    expect(actorSeam.resolveOrganizationActorsByUserIds).not.toHaveBeenCalled();
+  });
+
   it("rejects an assignee who is not an active org member", async () => {
-    (actorSeam.resolveOrganizationActorsByUserIds as jest.Mock).mockResolvedValue(new Map());
+    (projectAccessSeam.resolveProjectAssignableMemberships as jest.Mock).mockResolvedValue(new Map());
 
     const svc = makeSvc();
     await expect(
@@ -265,6 +292,22 @@ describe("ProjectsTicketsCreateService.createTicket — actor seam", () => {
         assigneeId: "user-outsider",
       }),
     ).rejects.toThrow(NotFoundException);
+  });
+
+  it("rejects a reporter who is not an active org member", async () => {
+    (actorSeam.resolveOrganizationActorsByUserIds as jest.Mock).mockResolvedValue(
+      new Map([
+        ["user-caller", { membershipId: 5, userId: "user-caller" }],
+      ]),
+    );
+    const svc = makeSvc();
+    await expect(
+      svc.createTicket(makeUser(), 1, {
+        title: "My ticket",
+        type: "TASK",
+        reporterId: "inactive-reporter",
+      }),
+    ).rejects.toThrow("Reporter is not an active member of this organization");
   });
 
   it("writes the resolved membership ids, and no legacy assigneeId column", async () => {

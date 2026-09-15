@@ -1,11 +1,12 @@
 import {
   BadRequestException,
+  ForbiddenException,
   Inject,
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
 import { resolveOrganizationActorsByUserIds } from "../../../common/organization/organization-actor";
-import { and, eq, isNull, sql } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import {
   projects,
   ticketActivityLog,
@@ -30,6 +31,8 @@ import { computeNextRunAt } from "./projects-recurrence.util";
 import { normalizeTicketType } from "./tickets-helpers";
 import { allocateTicketNumbers } from "./lib/allocate-ticket-number";
 import { reserveTicketCapacity } from "./build-ticket-capacity";
+import { AccessService } from "../../access/access.service";
+import { resolveProjectAssignableMemberships } from "./project-access";
 
 @Injectable()
 export class ProjectsTicketsCreateService {
@@ -42,6 +45,7 @@ export class ProjectsTicketsCreateService {
     private readonly webhooksDispatch: ProjectsWebhooksDispatchService,
     private readonly automationRunner: BuildAutomationRunnerService,
     private readonly cache: CacheService,
+    private readonly access: AccessService,
   ) {}
 
   async createTicket(
@@ -77,17 +81,30 @@ export class ProjectsTicketsCreateService {
     const allAssigneeIds = new Set<string>();
     if (body.assigneeId) allAssigneeIds.add(body.assigneeId);
     if (body.assigneeIds) body.assigneeIds.forEach((uid) => allAssigneeIds.add(uid));
+    if (
+      allAssigneeIds.size > 0 &&
+      !(await this.access.holds(u, "build:tickets:assign"))
+    )
+      throw new ForbiddenException("Not authorized to assign tickets");
 
-    const batchIds = new Set<string>([u.userId, reporterUserId, ...allAssigneeIds]);
+    const batchIds = new Set<string>([u.userId, reporterUserId]);
     const actorMap = await resolveOrganizationActorsByUserIds(this.db, u.orgId, [...batchIds]);
-
-    for (const uid of allAssigneeIds) {
-      if (!actorMap.has(uid))
-        throw new NotFoundException("Assignee is not a member of this organization");
-    }
+    if (!actorMap.has(u.userId))
+      throw new NotFoundException("Creating member is not active in this organization");
+    if (body.reporterId !== undefined && !actorMap.has(reporterUserId))
+      throw new NotFoundException("Reporter is not an active member of this organization");
+    const assigneeMemberships = await resolveProjectAssignableMemberships(
+      this.db,
+      u.orgId,
+      projectId,
+      [...allAssigneeIds],
+    );
+    for (const uid of allAssigneeIds)
+      if (!assigneeMemberships.has(uid))
+        throw new NotFoundException("Assignee is not an active member of this project");
 
     const assigneeMembershipId = body.assigneeId
-      ? (actorMap.get(body.assigneeId)?.membershipId ?? null)
+      ? (assigneeMemberships.get(body.assigneeId) ?? null)
       : null;
     const reporterMembershipId = actorMap.get(reporterUserId)?.membershipId ?? null;
 
@@ -135,7 +152,7 @@ export class ProjectsTicketsCreateService {
             orgId: u.orgId,
             ticketId: created.id,
             userId,
-            membershipId: actorMap.get(userId)!.membershipId,
+            membershipId: assigneeMemberships.get(userId)!,
             assignedBy: u.userId,
           })),
         );
@@ -147,7 +164,8 @@ export class ProjectsTicketsCreateService {
         Array.from(watcherIds).map((userId) => ({
           orgId: u.orgId,
           ticketId: created.id,
-          membershipId: actorMap.get(userId)!.membershipId,
+          membershipId:
+            assigneeMemberships.get(userId) ?? actorMap.get(userId)!.membershipId,
         })),
       );
 
@@ -274,6 +292,10 @@ export class ProjectsTicketsCreateService {
 
       return [created];
     });
+
+    await this.cache
+      .del(`projects:analytics:${orgId}:${projectId}`)
+      .catch(logSideEffectFailure("analytics cache eviction", { orgId, projectId }));
 
     return ticket;
   }

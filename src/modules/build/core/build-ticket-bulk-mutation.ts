@@ -7,7 +7,6 @@ import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import type { Db } from "../../../db/drizzle.types";
 import {
-  organizationMembers,
   sprints,
   ticketAssignees,
   tickets,
@@ -24,6 +23,7 @@ import {
   validateBatchTransition,
 } from "./build-ticket-batch-workflow";
 import { resolveAssigneeId } from "./tickets-helpers";
+import { resolveProjectAssignableMemberships } from "./project-access";
 
 export async function bulkMutateTickets(
   db: Db,
@@ -48,22 +48,19 @@ export async function bulkMutateTickets(
     const update: Partial<typeof tickets.$inferInsert> = { updatedAt: now };
     const assigneeId = resolveAssigneeId(body.assigneeId);
     if (assigneeId !== undefined) {
-      const assignee =
-        assigneeId === null
-          ? undefined
-          : await tx.query.organizationMembers.findFirst({
-              where: and(
-                eq(organizationMembers.orgId, actor.orgId),
-                eq(organizationMembers.userId, assigneeId),
-                eq(organizationMembers.status, "ACTIVE"),
-              ),
-              columns: { id: true },
-            });
-      if (assigneeId !== null && !assignee)
+      const assigneeMemberships = await resolveProjectAssignableMemberships(
+        tx,
+        actor.orgId,
+        projectId,
+        assigneeId === null ? [] : [assigneeId],
+      );
+      const assigneeMembershipId =
+        assigneeId === null ? undefined : assigneeMemberships.get(assigneeId);
+      if (assigneeId !== null && assigneeMembershipId === undefined)
         throw new NotFoundException(
-          "Assignee is not an active member of this organization",
+          "Assignee is not an active member of this project",
         );
-      update.assigneeMembershipId = assignee?.id ?? null;
+      update.assigneeMembershipId = assigneeMembershipId ?? null;
     }
     if (body.sprintId != null) {
       const sprint = await tx.query.sprints.findFirst({

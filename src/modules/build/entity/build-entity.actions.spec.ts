@@ -4,6 +4,7 @@ import type { SQL } from "drizzle-orm";
 import { BuildEntityActions } from "./build-entity.actions";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { AuditService } from "../../../common/audit/audit.service";
+import { CacheService } from "../../../common/cache/cache.service";
 import { resolveValidTicketStatuses } from "../core/ticket-status.util";
 import type { EntityActor, EntityReference } from "../../entity-reference/entity-reference.types";
 
@@ -87,6 +88,7 @@ describe("BuildEntityActions", () => {
         BuildEntityActions,
         { provide: DRIZZLE, useValue: mockDb },
         { provide: AuditService, useValue: mockAudit },
+        { provide: CacheService, useValue: { del: jest.fn().mockResolvedValue(undefined) } },
       ],
     }).compile();
 

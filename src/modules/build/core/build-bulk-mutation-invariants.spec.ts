@@ -17,7 +17,7 @@ async function harness() {
   const scopeFor = jest.fn().mockResolvedValue("all");
   const rows = [{ id: 10, status: "TODO", version: 1, assigneeMembershipId: null, allowed: true }];
   const chain = {
-    from: jest.fn().mockReturnThis(), where: jest.fn().mockReturnThis(),
+    from: jest.fn().mockReturnThis(), innerJoin: jest.fn().mockReturnThis(), where: jest.fn().mockReturnThis(),
     orderBy: jest.fn().mockReturnThis(), for: jest.fn().mockReturnThis(),
     limit: jest.fn().mockResolvedValue(rows),
     then: (resolve: (value: typeof rows) => unknown) => Promise.resolve(rows).then(resolve),
