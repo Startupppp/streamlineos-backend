@@ -36,6 +36,7 @@ import { assertTransitionAllowed } from "./projects-tickets-workflow-utils";
 import { reserveTicketCapacity } from "./build-ticket-capacity";
 import { resolveValidTicketStatuses } from "./ticket-status.util";
 import { ProjectsInvalidTicketStatusException } from "../../../common/http/api-exceptions";
+import { AccessService } from "../../access/access.service";
 
 @Injectable()
 export class ProjectsTicketsUpdateService {
@@ -49,6 +50,7 @@ export class ProjectsTicketsUpdateService {
     private readonly webhooksDispatch: ProjectsWebhooksDispatchService,
     private readonly automationRunner: BuildAutomationRunnerService,
     private readonly cache: CacheService,
+    private readonly access: AccessService,
   ) {}
 
   private async assertSelfRefChain(
@@ -129,6 +131,10 @@ export class ProjectsTicketsUpdateService {
     const orgId = u.orgId;
     const actingUserId = u.userId;
     const now = new Date();
+    const changesAssignees =
+      input.assigneeId !== undefined || input.assigneeIds !== undefined;
+    if (changesAssignees && !(await this.access.holds(u, "build:tickets:assign")))
+      throw new ForbiddenException("Not authorized to assign this ticket");
     const updateData: Partial<typeof tickets.$inferInsert> = { updatedAt: now };
     if (input.title) updateData.title = input.title;
     if (input.description !== undefined)

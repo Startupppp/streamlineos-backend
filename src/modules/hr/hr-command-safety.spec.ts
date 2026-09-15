@@ -8,6 +8,15 @@ import { EmployeesController } from "./directory/employees.controller";
 import { HrOnboardingAdminController } from "./onboarding/core/hr-onboarding-admin.controller";
 
 describe("HR expensive command safety", () => {
+  it("fences single employee onboarding", () => {
+    expect(
+      Reflect.getMetadata(
+        IDEMPOTENCY_COMMAND,
+        EmployeesController.prototype.onboard,
+      ),
+    ).toBe("hr.employees.onboard");
+  });
+
   it.each([
     {
       name: "member backfill",
