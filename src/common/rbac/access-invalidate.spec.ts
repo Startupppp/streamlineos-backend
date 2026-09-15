@@ -1,6 +1,7 @@
 import { bumpPermissionsVersion } from "./access-invalidate";
 import { accessVersionChannel } from "./access-version-channel";
 import type { DbOrTx } from "./access-invalidate";
+import { runWithTenantContext } from "../tenant/tenant-context";
 
 const ABSENT_ROW_VERSION = 1;
 
@@ -75,5 +76,23 @@ describe("bumpPermissionsVersion", () => {
       expect(current).toBeGreaterThan(previous);
       previous = current;
     }
+  });
+
+  it("publishes again after commit so an in-transaction stale read cannot survive", async () => {
+    const { tx } = makeVersionTable();
+    const afterCommit: Array<() => Promise<unknown>> = [];
+    const publish = jest.spyOn(accessVersionChannel, "publish");
+
+    await runWithTenantContext(
+      { orgId: "org-1", audience: "INTERNAL", tx: tx as never, afterCommit },
+      () => bumpPermissionsVersion(tx, "org-1"),
+    );
+
+    expect(publish).toHaveBeenCalledTimes(1);
+    expect(afterCommit).toHaveLength(1);
+
+    await afterCommit[0]!();
+
+    expect(publish).toHaveBeenCalledTimes(2);
   });
 });

@@ -47,7 +47,7 @@ describe("Build notification context batching", () => {
       expect(result.get(11)?.ticketKey).toBe("SEC-3");
       expect(h.resolve).toHaveBeenCalledTimes(1);
       expect(h.scopeFor).toHaveBeenCalledTimes(1);
-      expect(h.scopeFor).toHaveBeenCalledWith(expect.objectContaining({ orgId: "org-a", userId: "user-a" }), "build:manage");
+      expect(h.scopeFor).toHaveBeenCalledWith(expect.objectContaining({ orgId: "org-a", userId: "user-a" }), "build:tickets:view");
       expect(h.select).toHaveBeenCalledTimes(1);
       expect(h.limit).toHaveBeenCalledWith(2);
       expect(runInTenantTransaction).toHaveBeenCalledWith(expect.anything(), expect.any(Function), { orgId: "org-a" });
@@ -90,7 +90,7 @@ describe("Build notification context batching", () => {
     try {
       expect((await h.service.resolve("org-a", "user-a", [11], principal)).size).toBe(0);
       expect(h.select).not.toHaveBeenCalled();
-      expect(h.scopeFor).toHaveBeenCalledWith(expect.objectContaining({ principal }), "build:manage");
+      expect(h.scopeFor).toHaveBeenCalledWith(expect.objectContaining({ principal }), "build:tickets:view");
     } finally { await h.module.close(); }
   });
 

@@ -5,7 +5,7 @@ import { CacheService } from "../../../common/cache/cache.service";
 import { AccessService } from "../../access/access.service";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { organizationMembers, projectStatuses, tickets, workflowTransitions } from "../../../db/schema";
+import { organizationMembers, projectMembers, projectStatuses, tickets, workflowTransitions } from "../../../db/schema";
 import { ProjectsTicketsQueryService } from "./projects-tickets-query.service";
 
 const actor: CurrentUserContext = {
@@ -28,7 +28,7 @@ async function harness(size = 1, allowed = true, missingProject = false) {
       then: (resolve: (value: unknown) => unknown) => Promise<unknown>;
     } = {
       from: jest.fn((table: unknown) => {
-        data = table === tickets ? ("count" in selection ? [occupancy] : rows) : table === projectStatuses ? statuses : table === workflowTransitions ? transitions : table === organizationMembers ? [{ id: 9 }] : [];
+        data = table === tickets ? ("count" in selection ? [occupancy] : rows) : table === projectStatuses ? statuses : table === workflowTransitions ? transitions : table === organizationMembers || table === projectMembers ? [{ userId: "member", membershipId: 9, id: 9 }] : [];
         return chain;
       }),
       where: jest.fn().mockReturnThis(), orderBy: jest.fn().mockReturnThis(), for: jest.fn().mockReturnThis(),
@@ -86,8 +86,8 @@ describe("Build bulk mutations: fail-whole authorization and fixed query budgets
     try {
       const result = await h.service.bulkUpdate(actor, 1, { ticketIds: h.rows.map((row) => row.id), assigneeId: "member" });
       expect(result.updated).toBe(size);
-      expect(h.db.select).toHaveBeenCalledTimes(1);
-      expect(h.db.query.organizationMembers.findFirst).toHaveBeenCalledTimes(1);
+      expect(h.db.select).toHaveBeenCalledTimes(2);
+      expect(h.db.query.organizationMembers.findFirst).not.toHaveBeenCalled();
       expect(h.set).toHaveBeenCalledTimes(1);
       expect(h.set).toHaveBeenCalledWith(expect.objectContaining({ version: expect.anything(), assigneeMembershipId: 9 }));
       expect(h.db.delete).toHaveBeenCalledTimes(1);

@@ -5,6 +5,7 @@ import {
   accessVersionChannel,
   type AccessVersionListener,
 } from "./access-version-channel";
+import { registerAfterCommit } from "../tenant/tenant-context";
 
 type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
 export type DbOrTx = Db | Tx;
@@ -16,11 +17,6 @@ export function subscribeVersionBump(fn: AccessVersionListener): () => void {
 const ABSENT_ROW_VERSION = 1;
 const FIRST_BUMPED_VERSION = ABSENT_ROW_VERSION + 1;
 
-/**
- * Published before the caller's transaction commits, deliberately. A rolled-back
- * grant change then costs one wasted re-read; publishing after commit would risk
- * missing one, and a missed invalidation honours a revoked grant.
- */
 export async function bumpPermissionsVersion(tx: DbOrTx, orgId: string): Promise<void> {
   await tx
     .insert(accessVersions)
@@ -33,4 +29,5 @@ export async function bumpPermissionsVersion(tx: DbOrTx, orgId: string): Promise
       },
     });
   await accessVersionChannel.publish(orgId);
+  registerAfterCommit(() => accessVersionChannel.publish(orgId));
 }

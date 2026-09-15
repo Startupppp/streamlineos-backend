@@ -11,6 +11,7 @@ import { ProjectsTicketsReadService } from "./projects-tickets-read.service";
 import { ProjectsTicketsTransferService } from "./projects-tickets-transfer.service";
 import { ProjectsWebhooksDispatchService } from "./projects-webhooks-dispatch.service";
 import { BuildAutomationRunnerService } from "./build-automation-runner.service";
+import { AccessService } from "../../access/access.service";
 
 async function createService(ticket: Record<string, unknown>) {
   const transaction = jest.fn();
@@ -19,6 +20,7 @@ async function createService(ticket: Record<string, unknown>) {
     ...[CacheService, NotificationDispatchService, ProjectsActivityService, ProjectsTicketsQueryService,
       ProjectsTicketsReadService, ProjectsTicketsTransferService, ProjectsWebhooksDispatchService,
       BuildAutomationRunnerService].map(provide => ({ provide, useValue: {} })),
+    { provide: AccessService, useValue: { holds: jest.fn().mockResolvedValue(true) } },
   ] }).compile();
   return { module, service: module.get(ProjectsTicketsUpdateService), transaction };
 }

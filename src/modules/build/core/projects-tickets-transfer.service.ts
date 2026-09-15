@@ -23,7 +23,6 @@ import { resolveAssigneeId } from "./tickets-helpers";
 import { allocateTicketNumbers } from "./lib/allocate-ticket-number";
 import { reserveTicketCapacity } from "./build-ticket-capacity";
 import { CacheService } from "../../../common/cache/cache.service";
-import { logSideEffectFailure } from "../../../common/logger/side-effect";
 
 const EXPORT_ROW_CAP = 5_000;
 

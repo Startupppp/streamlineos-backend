@@ -282,6 +282,11 @@ describe("ProjectsTicketsCreateService.createTicket — actor seam", () => {
   });
 
   it("rejects an assignee who is not an active org member", async () => {
+    (actorSeam.resolveOrganizationActorsByUserIds as jest.Mock).mockResolvedValue(
+      new Map([
+        ["user-caller", { membershipId: 5, userId: "user-caller" }],
+      ]),
+    );
     (projectAccessSeam.resolveProjectAssignableMemberships as jest.Mock).mockResolvedValue(new Map());
 
     const svc = makeSvc();
