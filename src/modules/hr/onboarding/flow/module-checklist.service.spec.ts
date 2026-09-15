@@ -70,14 +70,14 @@ describe("ModuleChecklistService — lazy checklist self-heal on read", () => {
   });
 
   it("listChecklists: calls ensureChecklistsForModules with every visible module key before querying", async () => {
-    await service.listChecklists(ORG_ID, true);
+    await service.listChecklists(ORG_ID, new Set(["crm", "hr"]));
     expect(ensureSpy).toHaveBeenCalledWith(ORG_ID, ["crm", "hr"]);
     expect(ensureSpy.mock.invocationCallOrder[0]).toBeLessThan(findMany.mock.invocationCallOrder[0]);
   });
 
   it("listChecklists: still returns results correctly after the self-heal call (no regression)", async () => {
     findMany.mockResolvedValue([{ id: 1, orgId: ORG_ID, moduleKey: "crm", items: [] }]);
-    const result = await service.listChecklists(ORG_ID, false);
+    const result = await service.listChecklists(ORG_ID, new Set(["crm"]));
     expect(result).toHaveLength(1);
     expect(result[0].moduleKey).toBe("crm");
   });

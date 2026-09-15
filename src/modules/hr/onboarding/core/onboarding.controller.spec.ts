@@ -130,9 +130,14 @@ describe("OnboardingController — HR-only module-checklist gating", () => {
     });
 
 
-    it("does not run the HR check at all for other modules (no regression)", async () => {
+    it("rejects a module checklist when the caller has no permission in that module", async () => {
+      await expect(controller.getModuleChecklist("CRM", ctx())).rejects.toBeInstanceOf(ForbiddenException);
+      expect(checklists.getChecklist).not.toHaveBeenCalled();
+    });
+
+    it("allows a module checklist when the caller belongs to that module", async () => {
+      access.resolveUserPermissions.mockResolvedValue(new Map([["crm:leads:view", "all"]]));
       await controller.getModuleChecklist("CRM", ctx());
-      expect(access.resolveUserPermissions).not.toHaveBeenCalled();
       expect(checklists.getChecklist).toHaveBeenCalledWith("org-1", "CRM");
     });
   });
@@ -176,22 +181,33 @@ describe("OnboardingController — HR-only module-checklist gating", () => {
   });
 
   describe("listModuleChecklists", () => {
-    it("passes includeHr=false when the caller lacks hr:employees:* permission", async () => {
+    it("passes no modules when the caller has no module access", async () => {
       access.resolveUserPermissions.mockResolvedValue(new Map());
       await controller.listModuleChecklists(ctx());
-      expect(checklists.listChecklists).toHaveBeenCalledWith("org-1", false);
+      expect(checklists.listChecklists).toHaveBeenCalledWith("org-1", new Set());
     });
 
-    it("passes includeHr=true when the caller has hr:employees:view", async () => {
-      access.resolveUserPermissions.mockResolvedValue(new Map([["hr:employees:view", "all"]]));
+    it("passes only modules in which the caller has access", async () => {
+      access.resolveUserPermissions.mockResolvedValue(new Map([
+        ["hr:employees:view", "all"],
+        ["build:tickets:view", "all"],
+      ]));
       await controller.listModuleChecklists(ctx());
-      expect(checklists.listChecklists).toHaveBeenCalledWith("org-1", true);
+      expect(checklists.listChecklists).toHaveBeenCalledWith(
+        "org-1",
+        new Set(["hr", "build"]),
+      );
+      expect(access.resolveUserPermissions).toHaveBeenCalledTimes(1);
     });
 
-    it("passes includeHr=true for an org owner without hitting the DB", async () => {
+    it("passes every administrable module for an org owner without hitting the DB", async () => {
       await controller.listModuleChecklists(ctx({ isOrgOwner: true }));
       expect(access.resolveUserPermissions).not.toHaveBeenCalled();
-      expect(checklists.listChecklists).toHaveBeenCalledWith("org-1", true);
+      const modules = checklists.listChecklists.mock.calls[0]?.[1] as Set<string>;
+      expect(modules).toEqual(expect.any(Set));
+      expect(modules.has("hr")).toBe(true);
+      expect(modules.has("crm")).toBe(true);
+      expect(modules.has("build")).toBe(true);
     });
   });
 

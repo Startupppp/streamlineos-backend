@@ -86,7 +86,7 @@ describe("ModuleChecklistService — cross-tenant isolation", () => {
     const mockHrReconciliation = { reconcile: jest.fn().mockResolvedValue(false) };
     const mockEntitlements = { listModules: jest.fn().mockResolvedValue([]) };
     const svc = new ModuleChecklistService(db, mockAnalytics as never, mockHrReconciliation as never, mockEntitlements as never);
-    await svc.listChecklists(ATTACKER, false);
+    await svc.listChecklists(ATTACKER, new Set());
     expect(allArgs(where, findFirst, findMany)).toContain(ATTACKER);
   });
 
@@ -96,7 +96,7 @@ describe("ModuleChecklistService — cross-tenant isolation", () => {
     const mockHrReconciliation = { reconcile: jest.fn().mockResolvedValue(false) };
     const mockEntitlements = { listModules: jest.fn().mockResolvedValue([{ moduleKey: "hr", enabled: true }]) };
     const svc = new ModuleChecklistService(db, mockAnalytics as never, mockHrReconciliation as never, mockEntitlements as never);
-    await svc.listChecklists(OWNER, false);
+    await svc.listChecklists(OWNER, new Set(["hr"]));
     expect(allArgs(where, findFirst, findMany)).toContain(OWNER);
   });
 

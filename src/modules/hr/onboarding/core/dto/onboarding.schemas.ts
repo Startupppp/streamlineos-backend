@@ -221,6 +221,13 @@ export const bankDetailsSchema = z
     }
   });
 
+export const onboardingSubmissionSchema = z
+  .object({
+    personal: personalDetailsSchema,
+    bank: bankDetailsSchema,
+  })
+  .strict();
+
 export const onboardingTaskOwnerRoleSchema = z.enum([
   "NEW_HIRE",
   "HR",
@@ -251,6 +258,7 @@ export const updateTaskSchema = z.object({
 export type InitiateInput = z.infer<typeof initiateSchema>;
 export type PersonalDetailsInput = z.infer<typeof personalDetailsSchema>;
 export type BankDetailsInput = z.infer<typeof bankDetailsSchema>;
+export type OnboardingSubmissionInput = z.infer<typeof onboardingSubmissionSchema>;
 export type RequirementsQueryInput = z.infer<typeof requirementsQuerySchema>;
 export type EnsureDocumentsInput = z.infer<typeof ensureDocumentsSchema>;
 export type CreateTemplateInput = z.infer<typeof createTemplateSchema>;

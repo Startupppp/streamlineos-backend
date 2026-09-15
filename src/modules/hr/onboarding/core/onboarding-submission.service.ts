@@ -14,6 +14,8 @@ import {
   organizationMembers,
   users,
 } from "../../../../db/schema";
+import type { OnboardingSubmissionInput } from "./dto/onboarding.schemas";
+import { OnboardingDetailsService } from "./onboarding-details.service";
 
 @Injectable()
 export class OnboardingSubmissionService {
@@ -21,57 +23,76 @@ export class OnboardingSubmissionService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly cache: CacheService,
     private readonly audit: AuditService,
+    private readonly details: OnboardingDetailsService,
   ) {}
 
-  async complete(orgId: string, userId: string): Promise<{ completedAt: Date; leaveBalancesAllocated: number }> {
-    const { completedAt, leaveBalancesAllocated } = await this.db.transaction(async (tx) => {
-      await tx.execute(
-        sql`SELECT pg_advisory_xact_lock(hashtextextended(${`${orgId}:${userId}:onboarding`}, 0))`,
-      );
-      const [membership] = await tx
-        .select({ id: organizationMembers.id })
-        .from(organizationMembers)
-        .where(
-          and(
-            eq(organizationMembers.orgId, orgId),
-            eq(organizationMembers.userId, userId),
-            eq(organizationMembers.status, "ACTIVE"),
-          ),
-        )
-        .limit(1)
-        .for("update");
-      if (!membership)
-        throw new NotFoundException("User not found in this organization.");
+  async complete(
+    orgId: string,
+    userId: string,
+    input: OnboardingSubmissionInput,
+  ): Promise<{ completedAt: Date; leaveBalancesAllocated: number }> {
+    const { completedAt, leaveBalancesAllocated } = await this.db.transaction(
+      async (tx) => {
+        await tx.execute(
+          sql`SELECT pg_advisory_xact_lock(hashtextextended(${`${orgId}:${userId}:onboarding`}, 0))`,
+        );
+        const [membership] = await tx
+          .select({ id: organizationMembers.id })
+          .from(organizationMembers)
+          .where(
+            and(
+              eq(organizationMembers.orgId, orgId),
+              eq(organizationMembers.userId, userId),
+              eq(organizationMembers.status, "ACTIVE"),
+            ),
+          )
+          .limit(1)
+          .for("update");
+        if (!membership)
+          throw new NotFoundException("User not found in this organization.");
 
-      await this.completeFinalReview(tx, orgId, userId);
-      const allocated = await this.initializeLeaveBalances(tx, orgId, userId);
-      await this.completeFlowSession(tx, orgId, userId);
-      const at = new Date();
-      await tx
-        .update(organizationMembers)
-        .set({ onboardingCompletedAt: at })
-        .where(eq(organizationMembers.id, membership.id));
-      await tx
-        .update(users)
-        .set({ onboardingCompletedAt: at })
-        .where(eq(users.id, userId));
-      await tx.insert(onboardingAnalyticsEvents).values({
-        orgId,
-        userId,
-        eventType: "employee_onboarding_completed",
-        source: "session",
-        metadata: {},
-      });
-      await this.audit.logCritical({
-        orgId,
-        userId,
-        action: "hr.onboarding.submitted",
-        targetId: userId,
-        targetType: "organization_member",
-        metadata: { membershipId: membership.id },
-      });
-      return { completedAt: at, leaveBalancesAllocated: allocated };
-    });
+        await this.details.savePersonalDetailsInTransaction(
+          tx,
+          orgId,
+          userId,
+          input.personal,
+        );
+        await this.details.saveBankDetailsInTransaction(
+          tx,
+          orgId,
+          userId,
+          input.bank,
+        );
+        await this.completeFinalReview(tx, orgId, userId);
+        const allocated = await this.initializeLeaveBalances(tx, orgId, userId);
+        await this.completeFlowSession(tx, orgId, userId);
+        const at = new Date();
+        await tx
+          .update(organizationMembers)
+          .set({ onboardingCompletedAt: at })
+          .where(eq(organizationMembers.id, membership.id));
+        await tx
+          .update(users)
+          .set({ onboardingCompletedAt: at })
+          .where(eq(users.id, userId));
+        await tx.insert(onboardingAnalyticsEvents).values({
+          orgId,
+          userId,
+          eventType: "employee_onboarding_completed",
+          source: "session",
+          metadata: {},
+        });
+        await this.audit.logCritical({
+          orgId,
+          userId,
+          action: "hr.onboarding.submitted",
+          targetId: userId,
+          targetType: "organization_member",
+          metadata: { membershipId: membership.id },
+        });
+        return { completedAt: at, leaveBalancesAllocated: allocated };
+      },
+    );
 
     await this.cache.invalidate(CACHE_KEYS.userSession(userId));
     return { completedAt, leaveBalancesAllocated };
