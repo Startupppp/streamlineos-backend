@@ -34,7 +34,7 @@ export class ModuleGuard implements CanActivate {
     );
     for (const moduleKey of moduleKeys) {
       const avail = await authContext.moduleAvailable(moduleKey);
-      if (!avail.available) throw new ModuleDisabledException(moduleKey);
+      if (!avail.available) throw new ModuleDisabledException(moduleKey, avail.reason);
     }
     return true;
   }

@@ -62,7 +62,7 @@ class StubAuthGuard implements CanActivate {
 class StubModuleGuard implements CanActivate {
   canActivate(context: ExecutionContext): boolean {
     if (probeRequest(context).headers["x-test-module-off"] === "1")
-      throw new ModuleDisabledException("inventory");
+      throw new ModuleDisabledException("inventory", "org-disabled");
     return true;
   }
 }

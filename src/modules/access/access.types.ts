@@ -1,7 +1,8 @@
 import type { DataScope, ScopePredicate } from "../../common/rbac/data-scope";
 import type { MfaState } from "../../common/auth/mfa-policy.token";
+import type { ModuleAvailabilityReason } from "../../common/rbac/module-availability";
 
-export type { DataScope, MfaState, ScopePredicate };
+export type { DataScope, MfaState, ScopePredicate, ModuleAvailabilityReason };
 
 export interface VersionEntry {
   version: number;
@@ -24,6 +25,7 @@ export interface AuthResult {
   allow: boolean;
   scope: DataScope;
   reason?: DenyReason;
+  moduleReason?: ModuleAvailabilityReason;
 }
 
 export interface AccessSnapshot {
