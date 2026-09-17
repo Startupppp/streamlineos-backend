@@ -145,7 +145,12 @@ export class ProjectsWriteService {
 
           await tx
             .delete(projectMembers)
-            .where(eq(projectMembers.projectId, projectId));
+            .where(
+              and(
+                eq(projectMembers.orgId, u.orgId),
+                eq(projectMembers.projectId, projectId),
+              ),
+            );
 
           if (memberIds.length > 0) {
             validMembers = await tx
@@ -287,7 +292,12 @@ export class ProjectsWriteService {
         .where(and(eq(sprints.projectId, projectId), eq(sprints.orgId, orgId)));
       await tx
         .delete(projectMembers)
-        .where(eq(projectMembers.projectId, projectId));
+        .where(
+          and(
+            eq(projectMembers.orgId, orgId),
+            eq(projectMembers.projectId, projectId),
+          ),
+        );
       await tx
         .delete(projectStatuses)
         .where(

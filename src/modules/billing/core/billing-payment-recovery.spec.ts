@@ -1,5 +1,5 @@
 import { ExternalEffectLeaseBusyError } from "../../../common/outbox/external-effect-ledger";
-import { BillingWebhookHandler, type BillingWebhookDeps } from "./billing-webhook.handler";
+import { BillingWebhookHandler } from "./billing-webhook.handler";
 import { BillingWebhookEffects } from "./billing-webhook-effects";
 import { SubscriptionPurchaseService } from "./subscription-purchase.service";
 import type { SubscriptionPurchase } from "../../../db/schema/billing/subscription-purchases";
@@ -126,6 +126,7 @@ function makeMinimalDb() {
 function buildHandlerWithMocks(options: {
   findByOrderId?: SubscriptionPurchase | null;
   findById?: SubscriptionPurchase | null;
+  findOrgIdByOrderId?: string | null;
   attachResult?: SubscriptionPurchase | null;
   activationSucceeds?: boolean;
   effectLedgerMode?: "execute" | "busy" | "already-succeeded";
@@ -136,6 +137,7 @@ function buildHandlerWithMocks(options: {
   const purchaseService: SubscriptionPurchaseService = {
     findByOrderId: jest.fn().mockResolvedValue(options.findByOrderId ?? null),
     findById: jest.fn().mockResolvedValue(options.findById ?? null),
+    findOrgIdByOrderId: jest.fn().mockResolvedValue(options.findOrgIdByOrderId !== undefined ? options.findOrgIdByOrderId : ORG),
     attachProviderOrder: jest.fn().mockResolvedValue(options.attachResult ?? null),
     lockForActivation: jest.fn().mockResolvedValue(null),
     markActivated: jest.fn().mockResolvedValue(null),
@@ -186,20 +188,18 @@ function buildHandlerWithMocks(options: {
   const paymentWebhooks = { recordSignatureFailure: jest.fn().mockResolvedValue(undefined) };
   const platformMerchant = options.platformMerchant ?? makePlatformMerchant();
 
-  const deps: BillingWebhookDeps = {
-    db: db as never,
-    aiCredits: aiCredits as never,
-    planLimits: planLimits as never,
-    revenueAnalytics: revenueAnalytics as never,
-    providers: { resolve: jest.fn() } as never,
-    externalEffectLedger: effectLedger as never,
-    paymentWebhooks: paymentWebhooks as never,
-    paymentNotices: notices as never,
+  const handler = new BillingWebhookHandler(
+    db as never,
+    aiCredits as never,
+    planLimits as never,
+    revenueAnalytics as never,
+    { resolve: jest.fn() } as never,
+    effectLedger as never,
+    paymentWebhooks as never,
+    notices as never,
     platformMerchant,
-    activation: activation as never,
-  };
-
-  const handler = new BillingWebhookHandler(deps);
+    activation as never,
+  );
 
   const effectsInstance = new BillingWebhookEffects(
     {

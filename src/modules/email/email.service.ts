@@ -1,9 +1,6 @@
 import { Injectable } from "@nestjs/common";
 import { appUrl } from "./app-url";
-import {
-  EmailSendersBase,
-  invitationEmailOptions,
-} from "./email-senders.base";
+import { EmailSendersBase, invitationEmailOptions } from "./email-senders.base";
 import { EmailProviderService } from "./email.provider";
 import { EmailOutboxService } from "./email-outbox.service";
 import { type EmailOptions } from "./email.provider";
@@ -39,7 +36,7 @@ export class EmailService extends EmailSendersBase {
     token: string,
     organizationName: string,
   ): Promise<void> {
-    await this.outbox.enqueueOnly(
+    await this.outbox.enqueueAndTry(
       invitationEmailOptions(email, token, organizationName),
     );
   }
@@ -76,7 +73,12 @@ export class EmailService extends EmailSendersBase {
     return this.sendEmail({
       to: employeeEmail,
       subject: "Your expense claim was approved",
-      html: getExpenseApprovedEmailTemplate(employeeName, category, amount, approverName),
+      html: getExpenseApprovedEmailTemplate(
+        employeeName,
+        category,
+        amount,
+        approverName,
+      ),
     });
   }
 
@@ -91,7 +93,13 @@ export class EmailService extends EmailSendersBase {
     return this.sendEmail({
       to: employeeEmail,
       subject: "Your expense claim was rejected",
-      html: getExpenseRejectedEmailTemplate(employeeName, category, amount, approverName, reason),
+      html: getExpenseRejectedEmailTemplate(
+        employeeName,
+        category,
+        amount,
+        approverName,
+        reason,
+      ),
     });
   }
 
@@ -105,14 +113,26 @@ export class EmailService extends EmailSendersBase {
     return this.sendEmail({
       to: employeeEmail,
       subject: "Your expense reimbursement was paid",
-      html: getExpensePaidEmailTemplate(employeeName, category, amount, transactionRef),
+      html: getExpensePaidEmailTemplate(
+        employeeName,
+        category,
+        amount,
+        transactionRef,
+      ),
     });
   }
 
   async queueAttendanceReportEmail(
     dateRange: string,
     orgName: string,
-    rows: { department: string; name: string; totalHours: string; autoCheckoutDays: number; overtimeDays: number; daysPresent: number }[],
+    rows: {
+      department: string;
+      name: string;
+      totalHours: string;
+      autoCheckoutDays: number;
+      overtimeDays: number;
+      daysPresent: number;
+    }[],
     recipients: ReadonlyArray<{ email: string; userId: string }>,
     organizationId: string,
   ): Promise<number> {
@@ -134,13 +154,30 @@ export class EmailService extends EmailSendersBase {
     monthLabel: string,
     orgName: string,
     rows: MonthlyExpenseReportRow[],
-    summary: { totalAmount: string; totalCount: number; pendingCount: number; approvedCount: number; paidCount: number; rejectedCount: number },
+    summary: {
+      totalAmount: string;
+      totalCount: number;
+      pendingCount: number;
+      approvedCount: number;
+      paidCount: number;
+      rejectedCount: number;
+    },
     recipientEmails: string[],
   ): Promise<void> {
     if (recipientEmails.length === 0) return;
     const subject = `Expense report — ${monthLabel}`;
-    const html = getMonthlyExpenseReportTemplate(monthLabel, orgName, rows, summary);
-    const xlsxBuffer = await generateMonthlyExpenseReportXlsx(monthLabel, orgName, rows, summary);
+    const html = getMonthlyExpenseReportTemplate(
+      monthLabel,
+      orgName,
+      rows,
+      summary,
+    );
+    const xlsxBuffer = await generateMonthlyExpenseReportXlsx(
+      monthLabel,
+      orgName,
+      rows,
+      summary,
+    );
     const xlsxFilename = `Monthly-Expense-Report-${monthLabel.replace(/\s+/g, "-")}.xlsx`;
     for (const email of recipientEmails) {
       await this.sendEmail({
@@ -168,7 +205,12 @@ export class EmailService extends EmailSendersBase {
     return this.sendEmail({
       to: email,
       subject: `Asset assigned: ${assetName}`,
-      html: getAssetAssignedEmailTemplate(employeeName, assetName, assetType, serialNumber),
+      html: getAssetAssignedEmailTemplate(
+        employeeName,
+        assetName,
+        assetType,
+        serialNumber,
+      ),
     });
   }
 }

@@ -146,7 +146,7 @@ export class OrganizationSagaService {
     actorUserId: string | null,
     fromStatus: string | null,
   ): Promise<SagaWithSteps> {
-    await this.db
+    const initialInsert = await this.db
       .insert(organizationLifecycleSagas)
       .values({
         organizationId,
@@ -157,13 +157,15 @@ export class OrganizationSagaService {
         fromStatus,
         toStatus: TRANSITION_TABLE[kind].resultingStatus,
       })
-      .onConflictDoNothing({ target: organizationLifecycleSagas.requestKey });
+      .onConflictDoNothing({ target: organizationLifecycleSagas.requestKey })
+      .returning();
 
-    const [saga] = await this.db
+    const saga = initialInsert[0] ?? await this.db
       .select()
       .from(organizationLifecycleSagas)
       .where(eq(organizationLifecycleSagas.requestKey, requestKey))
-      .limit(1);
+      .limit(1)
+      .then(([row]) => row);
 
     if (!saga) throw new Error(`Saga not found for requestKey ${requestKey}`);
 

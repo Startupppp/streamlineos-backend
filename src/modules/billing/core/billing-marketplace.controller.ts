@@ -5,7 +5,7 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { BillingService } from "./billing.service";
+import { BillingMarketplace } from "./billing-marketplace";
 import { MarketplaceService } from "./marketplace.service";
 import { AiCreditsService } from "./ai-credits.service";
 import { AiCreditsPacksService } from "./ai-credits-packs.service";
@@ -31,7 +31,7 @@ const appIdParams = z.object({ appId: z.coerce.number().int().positive() }).stri
 @UseGuards(JwtAuthGuard)
 export class BillingMarketplaceController {
   constructor(
-    private readonly billing: BillingService,
+    private readonly billingMarketplace: BillingMarketplace,
     private readonly marketplace: MarketplaceService,
     private readonly aiCredits: AiCreditsService,
     private readonly aiCreditPacks: AiCreditsPacksService,
@@ -164,7 +164,7 @@ export class BillingMarketplaceController {
       return this.aiCredits.purchaseCreditsDirectly(u.orgId, u.userId, body.packId, false, body.paymentId);
     }
     if ((await this.providers.resolveConfigured(u.orgId))?.isReady() ?? false)
-      return this.billing.purchaseAddon(u.orgId, `ai_pack_${body.packId}`, 1);
+      return this.billingMarketplace.purchaseAddon(u.orgId, `ai_pack_${body.packId}`, 1);
     return this.aiCredits.purchaseCreditsDirectly(u.orgId, u.userId, body.packId);
   }
 }

@@ -10,13 +10,14 @@ interface Tier {
 const TIERS: Record<string, Tier> = {
   "api-key-ingest": { limit: 60, windowSecs: 60 },
   "auth:login": { limit: 5, windowSecs: 60 },
-  "auth:register": { limit: 3, windowSecs: 60 },
   "auth:verify-email": { limit: 10, windowSecs: 60 },
   "auth:resend-verification": { limit: 3, windowSecs: 60 },
   "auth:magic-link": { limit: 3, windowSecs: 60 },
   "auth:magic-link-verify": { limit: 60, windowSecs: 60 },
-  "auth:email-otp": { limit: 3, windowSecs: 600 },
-  "auth:email-otp-verify": { limit: 10, windowSecs: 600 },
+  "auth:email-otp": { limit: 20, windowSecs: 600 },
+  "auth:email-otp:email": { limit: 5, windowSecs: 600 },
+  "auth:email-otp-verify": { limit: 40, windowSecs: 600 },
+  "auth:email-otp-verify:email": { limit: 10, windowSecs: 600 },
   // TOTP has a 30s step and otplib accepts one step either side, so a code stays
   // valid long enough for an unthrottled loop to walk a meaningful slice of the
   // 10^6 space. Keyed per user, not per IP.

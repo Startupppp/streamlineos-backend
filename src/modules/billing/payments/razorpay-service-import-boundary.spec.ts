@@ -19,7 +19,7 @@ const REPO_ROOT = join(__dirname, "../../../../");
 const SRC_ROOT = join(REPO_ROOT, "src");
 const ADAPTERS_DIR = join(__dirname, "adapters");
 const RAZORPAY_SERVICE_DEF = join(__dirname, "../core/razorpay.service.ts");
-const BILLING_SERVICE = join(__dirname, "../core/billing.service.ts");
+const BILLING_SERVICE = join(__dirname, "../core/billing-payment-activation.ts");
 
 /**
  * The composition root is allowed to name the adapter — that is where a provider
@@ -103,8 +103,8 @@ describe("Razorpay adapter import boundary", () => {
     expect(allFiles).toContain(join(ADAPTERS_DIR, "razorpay.adapter.ts"));
   });
 
-  it("billing.service.ts does not reach the Razorpay adapter", () => {
-    expect(importers).not.toContain("src/modules/billing/core/billing.service.ts");
+  it("billing-payment-activation.ts does not reach the Razorpay adapter", () => {
+    expect(importers).not.toContain("src/modules/billing/core/billing-payment-activation.ts");
   });
 
   it("no production file outside the adapters directory imports it, bar the composition root", () => {
@@ -123,7 +123,7 @@ describe("Razorpay adapter import boundary", () => {
     expect(verifierImporters).toEqual([]);
   });
 
-  it("keeps provider credential fields out of BillingService", () => {
+  it("keeps provider credential fields out of BillingPaymentActivation", () => {
     const billingSource = readFileSync(BILLING_SERVICE, "utf8");
 
     expect(billingSource).not.toMatch(/\b(?:keySecret|webhookSecret|RAZORPAY_KEY_SECRET)\b/);
@@ -146,8 +146,8 @@ describe("RazorpayService import boundary", () => {
     expect(allFiles).toContain(RAZORPAY_SERVICE_DEF);
   });
 
-  it("billing.service.ts does not import RazorpayService", () => {
-    expect(relativeViolators).not.toContain("src/modules/billing/core/billing.service.ts");
+  it("billing-payment-activation.ts does not import RazorpayService", () => {
+    expect(relativeViolators).not.toContain("src/modules/billing/core/billing-payment-activation.ts");
   });
 
   it("no production file outside billing/payments/adapters/ imports RazorpayService (test files excepted)", () => {

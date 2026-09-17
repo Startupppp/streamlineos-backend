@@ -84,6 +84,7 @@ export class EmployeesController {
   @Post("onboard")
   @ResponseSchema(onboardResponseSchema)
   @RequirePermission("hr:onboarding:manage")
+  @Idempotent("hr.employees.onboard")
   @HttpCode(201)
   @Validate({ body: onboardEmployeeSchema })
   onboard(

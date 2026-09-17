@@ -10,6 +10,7 @@ import { ProjectsTicketsReadService } from "./projects-tickets-read.service";
 import { ProjectsTicketsTransferService } from "./projects-tickets-transfer.service";
 import { ProjectsWebhooksDispatchService } from "./projects-webhooks-dispatch.service";
 import { BuildAutomationRunnerService } from "./build-automation-runner.service";
+import { AccessService } from "../../access/access.service";
 
 it.each(["parentTicketId", "epicId"] as const)("rejects an inverse %s edge committed while the request awaited serialization", async field => {
   const tx = {
@@ -26,6 +27,7 @@ it.each(["parentTicketId", "epicId"] as const)("rejects an inverse %s edge commi
     ...[CacheService, NotificationDispatchService, ProjectsActivityService, ProjectsTicketsQueryService,
       ProjectsTicketsReadService, ProjectsTicketsTransferService, ProjectsWebhooksDispatchService,
       BuildAutomationRunnerService].map(provide => ({ provide, useValue: {} })),
+    { provide: AccessService, useValue: { holds: jest.fn().mockResolvedValue(true) } },
   ] }).compile();
   try {
     await expect(module.get(ProjectsTicketsUpdateService).updateTicket(

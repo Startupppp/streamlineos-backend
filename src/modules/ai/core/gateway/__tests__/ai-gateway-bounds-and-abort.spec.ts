@@ -55,7 +55,7 @@ describe("AiGatewayRunnerHelper — output tokens are bounded at the gateway (12
     await runner.runText(textOpts(), "corr-1");
 
     const passed = llm.invokeTextWithUsage.mock.calls[0]?.[0];
-    expect(passed?.maxTokens).toBe(4096);
+    expect(passed?.maxTokens).toBe(2048);
   });
 
   it("never lets a caller exceed the gateway ceiling", async () => {
@@ -64,7 +64,7 @@ describe("AiGatewayRunnerHelper — output tokens are bounded at the gateway (12
 
     await runner.runText(textOpts({ maxTokens: 1_000_000 }), "corr-2");
 
-    expect(llm.invokeTextWithUsage.mock.calls[0]?.[0]?.maxTokens).toBe(4096);
+    expect(llm.invokeTextWithUsage.mock.calls[0]?.[0]?.maxTokens).toBe(2048);
   });
 
   it("honours a caller cap that is below the ceiling", async () => {
@@ -76,6 +76,15 @@ describe("AiGatewayRunnerHelper — output tokens are bounded at the gateway (12
     expect(llm.invokeTextWithUsage.mock.calls[0]?.[0]?.maxTokens).toBe(512);
   });
 
+  it("normalizes invalid caller caps", async () => {
+    const llm = makeLlm();
+    const runner = new AiGatewayRunnerHelper(llm, makeCredit());
+
+    await runner.runText(textOpts({ maxTokens: -10 }), "corr-invalid");
+
+    expect(llm.invokeTextWithUsage.mock.calls[0]?.[0]?.maxTokens).toBe(1);
+  });
+
   it("bounds the structured path too", async () => {
     const llm = makeLlm();
     const runner = new AiGatewayRunnerHelper(llm, makeCredit());
@@ -85,7 +94,7 @@ describe("AiGatewayRunnerHelper — output tokens are bounded at the gateway (12
       "corr-4",
     );
 
-    expect(llm.invokeStructuredWithUsage.mock.calls[0]?.[0]?.maxTokens).toBe(4096);
+    expect(llm.invokeStructuredWithUsage.mock.calls[0]?.[0]?.maxTokens).toBe(2048);
   });
 
   it("bounds the image path too", async () => {
@@ -97,7 +106,7 @@ describe("AiGatewayRunnerHelper — output tokens are bounded at the gateway (12
       "corr-5",
     );
 
-    expect(llm.invokeStructuredWithImageWithUsage.mock.calls[0]?.[0]?.maxTokens).toBe(4096);
+    expect(llm.invokeStructuredWithImageWithUsage.mock.calls[0]?.[0]?.maxTokens).toBe(2048);
   });
 });
 

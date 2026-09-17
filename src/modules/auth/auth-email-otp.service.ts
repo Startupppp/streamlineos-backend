@@ -94,7 +94,7 @@ export class AuthEmailOtpService {
         isNull(emailOtpCodes.usedAt),
         gt(emailOtpCodes.expiresAt, sql`now()`),
       ),
-      orderBy: [desc(emailOtpCodes.createdAt)],
+      orderBy: [desc(emailOtpCodes.createdAt), desc(emailOtpCodes.id)],
     });
 
     if (!row) throw new UnauthorizedException("Invalid or expired code");

@@ -5,7 +5,6 @@ import type { CacheService } from "../../../common/cache/cache.service";
 import { ORG_MEMBER_ROLES } from "../../../common/rbac/org-roles";
 import { runInNewTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
 import { withMembershipMutations } from "../../../common/org/membership-mutations";
-import { bumpPermissionsVersion } from "../../../common/rbac/access-invalidate";
 import { insertTrialSubscription } from "../../billing/core/trial-subscription";
 import {
   DEFAULT_SKIP_MODULES,
@@ -80,7 +79,6 @@ export async function bootstrapCellOrganization(
       });
       await insertTrialSubscription(tx, orgId);
       await provisionEmployeeSelfService(tx, orgId);
-      await bumpPermissionsVersion(tx, orgId);
       await seedSystemRolesForOrg(db, orgId);
       await provisionOrgModules(tx, orgId, moduleKeys, userId);
       await tx

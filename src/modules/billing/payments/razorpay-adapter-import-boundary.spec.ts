@@ -25,7 +25,7 @@ import { join, relative } from "node:path";
 const REPO_ROOT = join(__dirname, "../../../../");
 const WALK_ROOT = join(REPO_ROOT, "src");
 const ADAPTERS_DIR = join(__dirname, "adapters");
-const BILLING_SERVICE = join(__dirname, "../core/billing.service.ts");
+const BILLING_SERVICE = join(__dirname, "../core/billing-payment-activation.ts");
 
 /**
  * The one production importer outside `adapters/` that must exist: a Nest module
@@ -89,11 +89,11 @@ describe("payment provider import boundary", () => {
     expect(production).toEqual([DI_REGISTRATION, SANDBOX_VERIFIER]);
   });
 
-  it("billing.service.ts does not reach for the provider directly", () => {
-    expect(relativeImporters).not.toContain("src/modules/billing/core/billing.service.ts");
+  it("billing-payment-activation.ts does not reach for the provider directly", () => {
+    expect(relativeImporters).not.toContain("src/modules/billing/core/billing-payment-activation.ts");
   });
 
-  it("keeps provider credential fields out of BillingService", () => {
+  it("keeps provider credential fields out of BillingPaymentActivation", () => {
     const billingSource = readFileSync(BILLING_SERVICE, "utf8");
     expect(billingSource).not.toMatch(/\b(?:keySecret|webhookSecret|RAZORPAY_KEY_SECRET)\b/);
   });

@@ -59,6 +59,62 @@ describe("RateLimitService (in-memory fallback, no redis)", () => {
     expect(results[limit]?.allowed).toBe(false);
   });
 
+  it("per-email OTP request limit allows five requests then blocks — a single account cannot exhaust the budget from many IPs", async () => {
+    const instance = svc();
+    const email = "alice@corp.example";
+    const results: boolean[] = [];
+    for (let i = 0; i < 6; i++) results.push((await instance.check("auth:email-otp:email", email)).allowed);
+    expect(results.slice(0, 5).every((r) => r === true)).toBe(true);
+    expect(results[5]).toBe(false);
+  });
+
+  it("colleagues behind one office IP do not consume each other's per-email OTP request budget", async () => {
+    const instance = svc();
+    const sharedIp = "203.0.113.1";
+    const emails = ["alice@corp.example", "bob@corp.example", "carol@corp.example", "dave@corp.example", "eve@corp.example"];
+    for (const email of emails) {
+      await instance.check("auth:email-otp", sharedIp);
+      const emailResult = await instance.check("auth:email-otp:email", email);
+      expect([email, emailResult.allowed]).toEqual([email, true]);
+    }
+  });
+
+  it("per-IP OTP request ceiling allows up to twenty requests before blocking — a shared office NAT is not locked out by the fourth colleague", async () => {
+    const instance = svc();
+    const officeIp = "203.0.113.1";
+    const results: boolean[] = [];
+    for (let i = 0; i < 20; i++) results.push((await instance.check("auth:email-otp", officeIp)).allowed);
+    expect(results.every((r) => r === true)).toBe(true);
+    expect((await instance.check("auth:email-otp", officeIp)).allowed).toBe(false);
+  });
+
+  it("per-email OTP verify limit allows ten requests then blocks — per-account verify budget is independent of IP", async () => {
+    const instance = svc();
+    const email = "verify@corp.example";
+    const results: boolean[] = [];
+    for (let i = 0; i < 11; i++) results.push((await instance.check("auth:email-otp-verify:email", email)).allowed);
+    expect(results.slice(0, 10).every((r) => r === true)).toBe(true);
+    expect(results[10]).toBe(false);
+  });
+
+  it("per-IP OTP verify ceiling allows up to forty requests before blocking — office colleagues share headroom without locking each other out", async () => {
+    const instance = svc();
+    const officeIp = "203.0.113.1";
+    const results: boolean[] = [];
+    for (let i = 0; i < 40; i++) results.push((await instance.check("auth:email-otp-verify", officeIp)).allowed);
+    expect(results.every((r) => r === true)).toBe(true);
+    expect((await instance.check("auth:email-otp-verify", officeIp)).allowed).toBe(false);
+  });
+
+  it("different email addresses have independent per-email OTP verify budgets", async () => {
+    const instance = svc();
+    const emails = ["alice@corp.example", "bob@corp.example"];
+    for (const email of emails) {
+      const result = await instance.check("auth:email-otp-verify:email", email);
+      expect([email, result.allowed]).toEqual([email, true]);
+    }
+  });
+
   // SEC-004: an unregistered tier must fail closed rather than bypassing limits.
   it("denies an unknown tier rather than failing open", async () => {
     const instance = svc();

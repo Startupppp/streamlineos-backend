@@ -12,6 +12,7 @@ describe("ProjectsTicketCommentsService — cross-tenant isolation", () => {
       ticketComments: { findFirst: jest.Mock };
     };
     insert: jest.Mock;
+    select: jest.Mock;
     execute: jest.Mock;
     transaction: jest.Mock<
       Promise<unknown>,
@@ -19,14 +20,40 @@ describe("ProjectsTicketCommentsService — cross-tenant isolation", () => {
     >;
   }
 
+  function selectChain(rows: unknown[]) {
+    const chain: Record<string, unknown> = {};
+    for (const method of ["from", "leftJoin", "innerJoin", "where", "orderBy", "limit"])
+      chain[method] = jest.fn(() => chain);
+    chain["then"] = (resolve: (value: unknown) => unknown) => resolve(rows);
+    return chain;
+  }
+
   function makeDb(ticketRow: unknown | null) {
-    const fakeComment = { id: 42, orgId: (ticketRow as { orgId?: string } | null)?.orgId ?? "org-owner", ticketId: 1, content: "hello", authorId: "u1", createdAt: new Date() };
+    const orgId = (ticketRow as { orgId?: string } | null)?.orgId ?? "org-owner";
+    const fakeComment = { id: 42, orgId, ticketId: 1, content: "hello", authorId: "u1", createdAt: new Date() };
+    const savedRow = {
+      id: 42,
+      orgId,
+      ticketId: 1,
+      body: "hello",
+      clientVisible: false,
+      isEdited: false,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      authorId: "u1",
+      authorDisplayName: null,
+      authorFirstName: null,
+      authorLastName: null,
+      authorImage: null,
+      authorEmail: null,
+    };
     const db: CommentDbMock = {
       query: {
         tickets: { findFirst: jest.fn().mockResolvedValue(ticketRow) },
         ticketComments: { findFirst: jest.fn().mockResolvedValue(null) },
       },
       insert: jest.fn().mockReturnValue({ values: jest.fn().mockReturnValue({ returning: jest.fn().mockResolvedValue([fakeComment]) }) }),
+      select: jest.fn(() => selectChain([savedRow])),
       execute: jest.fn().mockResolvedValue([]),
       transaction: jest.fn(),
     };
@@ -34,7 +61,7 @@ describe("ProjectsTicketCommentsService — cross-tenant isolation", () => {
     return db as unknown as Db;
   }
 
-  const activity = { logTicketActivity: jest.fn() } as never;
+  const activity = { logTicketActivity: jest.fn(), processCommentMentions: jest.fn() } as never;
   const access = { resolveUserPermissions: jest.fn().mockResolvedValue(new Set(["build:tickets:view"])) } as never;
   const webhooks = { dispatchTicketEvent: jest.fn(), dispatch: jest.fn(), enqueue: jest.fn() } as never;
 

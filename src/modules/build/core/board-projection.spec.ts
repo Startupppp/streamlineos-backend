@@ -51,7 +51,7 @@ describe("board list projection", () => {
 
     const access = {
       resolveUserPermissions: jest.fn().mockResolvedValue(
-        new Map<string, DataScope>([[TICKETS_PERMISSION, "all"]]),
+        new Map<string, DataScope>([["build:manage", "all"], [TICKETS_PERMISSION, "all"]]),
       ),
       scopeFor: jest.fn().mockResolvedValue("all"),
     } as unknown as AccessService;

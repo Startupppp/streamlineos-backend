@@ -4,8 +4,12 @@ import { BillingMarketplaceController } from "./billing-marketplace.controller";
 import { BillingEnterpriseController } from "./billing-enterprise.controller";
 import { RazorpayWebhookController } from "./razorpay-webhook.controller";
 import { PlatformPromotionsController } from "./platform-promotions.controller";
-import { BillingService } from "./billing.service";
 import { BillingProfileService } from "./billing-profile.service";
+import { BillingPaymentActivation } from "./billing-payment-activation";
+import { BillingCoupons } from "./billing-coupons";
+import { BillingWebhookHandler } from "./billing-webhook.handler";
+import { BillingMarketplace } from "./billing-marketplace";
+import { BillingAccountOverview } from "./billing-account-overview";
 import { MarketplaceService } from "./marketplace.service";
 import { AiCreditsUsageService } from "./ai-credits-usage.service";
 import { AffiliateService } from "./affiliate.service";
@@ -54,7 +58,7 @@ const PLATFORM_PAYMENT_PROVIDERS = [
 @Module({
   imports: [AiCreditsModule, PaymentsModule, OutboxModule, NotificationsModule],
   controllers: [BillingController, BillingMarketplaceController, BillingEnterpriseController, RazorpayWebhookController, StripeWebhookController, PlatformPromotionsController],
-  providers: [BillingService, BillingProfileService, MarketplaceService, AiCreditsUsageService, AffiliateService, ReferralService, RevenueAnalyticsService, EnterpriseQuotesService, PlanLimitsService, VersionedCatalogService, SeatLedgerService, ProrationLedgerService, ProrationLedgerReportsService, UsageMeteringService, InvoiceSnapshotService, ...PLATFORM_PAYMENT_PROVIDERS],
-  exports: [AiCreditsModule, BillingService, AiCreditsUsageService, RevenueAnalyticsService, PlanLimitsService, VersionedCatalogService, SeatLedgerService, ProrationLedgerService, ProrationLedgerReportsService, UsageMeteringService, InvoiceSnapshotService],
+  providers: [BillingPaymentActivation, BillingCoupons, BillingWebhookHandler, BillingMarketplace, BillingAccountOverview, BillingProfileService, MarketplaceService, AiCreditsUsageService, AffiliateService, ReferralService, RevenueAnalyticsService, EnterpriseQuotesService, PlanLimitsService, VersionedCatalogService, SeatLedgerService, ProrationLedgerService, ProrationLedgerReportsService, UsageMeteringService, InvoiceSnapshotService, ...PLATFORM_PAYMENT_PROVIDERS],
+  exports: [AiCreditsModule, BillingWebhookHandler, AiCreditsUsageService, RevenueAnalyticsService, PlanLimitsService, VersionedCatalogService, SeatLedgerService, ProrationLedgerService, ProrationLedgerReportsService, UsageMeteringService, InvoiceSnapshotService],
 })
 export class BillingModule {}

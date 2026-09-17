@@ -3,7 +3,11 @@ import request from "supertest";
 import { randomUUID } from "node:crypto";
 import { createE2eApp, accessStub } from "test/helpers/e2e-app";
 import { ALL_MODULES, signToken } from "test/helpers/sign-token";
-import { BillingService } from "./billing.service";
+import { BillingPaymentActivation } from "./billing-payment-activation";
+import { BillingAccountOverview } from "./billing-account-overview";
+import { BillingCoupons } from "./billing-coupons";
+import { BillingWebhookHandler } from "./billing-webhook.handler";
+import { BillingMarketplace } from "./billing-marketplace";
 import { PlanLimitsService } from "./plan-limits.service";
 import { AccessService } from "src/modules/access/access.service";
 import { PaymentProviderSetupService } from "../payments/payment-provider-setup.service";
@@ -15,22 +19,59 @@ import { PaymentManualMethodsService } from "../payments/payment-manual-methods.
 import { BILLING_PERMISSIONS } from "src/modules/rbac/permissions/billing";
 import { PAYMENTS_PERMISSIONS } from "src/modules/rbac/permissions/payments";
 
-const stubBilling = {
-  handlePaymentProviderWebhook: jest.fn().mockResolvedValue({ status: 200, body: { ok: true } }),
+const stubPaymentActivation = {
   createOrder: jest.fn().mockResolvedValue({
     orderId: "order_1",
+    purchaseId: 1,
+    expiresAt: new Date(Date.now() + 30 * 60 * 1000).toISOString(),
     amount: 100,
     currency: "INR",
     keyId: "key_1",
+    environment: "test",
     plan: "STARTER",
     billingCycle: "monthly",
     discountAmount: 0,
   }),
-  verifyAndActivate: jest.fn().mockResolvedValue({ success: true, plan: "STARTER", status: "ACTIVE" }),
-  getSubscription: jest.fn().mockResolvedValue({ subscription: null, publicKeyId: null, isConfigured: false }),
-  getPlans: jest.fn().mockReturnValue({ plans: [] }),
-  getMarketplace: jest.fn().mockReturnValue({}),
+  verifyAndActivate: jest.fn().mockResolvedValue({
+    success: true,
+    plan: "STARTER",
+    billingCycle: "monthly",
+    status: "ACTIVE",
+    currentPeriodEnd: null,
+    alreadyActivated: false,
+  }),
+};
+
+const stubAccountOverview = {
+  getSubscription: jest.fn().mockResolvedValue({
+    subscription: null,
+    publicKeyId: null,
+    isConfigured: false,
+    platformCheckout: {
+      configured: false,
+      providerKey: null,
+      environment: null,
+      publicKeyId: null,
+      webhookConfigured: false,
+      unavailableReason: "no_credentials",
+    },
+  }),
   getSummary: jest.fn().mockResolvedValue({ isConfigured: false }),
+  getSeatInfo: jest.fn().mockResolvedValue({ total: 0, used: 0, available: 0 }),
+};
+
+const stubCoupons = {
+  validate: jest.fn().mockResolvedValue(null),
+  listRedeemable: jest.fn().mockResolvedValue([]),
+};
+
+const stubWebhookHandler = {
+  handle: jest.fn().mockResolvedValue({ status: 200, body: { ok: true } }),
+  listProvisioningFailures: jest.fn().mockResolvedValue([]),
+};
+
+const stubMarketplace = {
+  getMarketplace: jest.fn().mockReturnValue({}),
   purchaseAddon: jest.fn().mockResolvedValue({
     orderId: "order_addon_1",
     amount: 4900,
@@ -47,30 +88,7 @@ const stubBilling = {
       createdAt: new Date("2026-01-01T00:00:00.000Z"),
     },
   }),
-  validateCoupon: jest.fn().mockResolvedValue(null),
-  getBillingProfile: jest.fn().mockResolvedValue(null),
-  updateBillingProfile: jest.fn().mockResolvedValue({
-    id: 1,
-    orgId: "org_1",
-    gstin: null,
-    pan: null,
-    billingName: "Acme Inc",
-    billingEmail: null,
-    addressLine1: null,
-    addressLine2: null,
-    city: null,
-    state: null,
-    pincode: null,
-    country: null,
-    isTaxExempt: false,
-    metadata: null,
-    createdAt: new Date("2026-01-01T00:00:00.000Z"),
-    updatedAt: new Date("2026-01-01T00:00:00.000Z"),
-  }),
-  getSeatInfo: jest.fn().mockResolvedValue({ total: 0, used: 0, available: 0 }),
   listAddons: jest.fn().mockResolvedValue([]),
-  listCoupons: jest.fn().mockResolvedValue([]),
-  listProvisioningFailures: jest.fn().mockResolvedValue([]),
 };
 
 const stubPlanLimits = {
@@ -206,7 +224,11 @@ const stubManualMethods = {
 };
 
 const SERVICE_OVERRIDES = [
-  { provide: BillingService, useValue: stubBilling },
+  { provide: BillingPaymentActivation, useValue: stubPaymentActivation },
+  { provide: BillingAccountOverview, useValue: stubAccountOverview },
+  { provide: BillingCoupons, useValue: stubCoupons },
+  { provide: BillingWebhookHandler, useValue: stubWebhookHandler },
+  { provide: BillingMarketplace, useValue: stubMarketplace },
   { provide: PlanLimitsService, useValue: stubPlanLimits },
   { provide: PaymentProviderSetupService, useValue: stubProviders },
   { provide: PaymentTestTransactionService, useValue: stubTestTransactions },
@@ -223,7 +245,7 @@ type MutationCase = readonly [method: string, path: string, key: string, body: R
 
 const BILLING_MUTATIONS: ReadonlyArray<MutationCase> = [
   ["POST", "/billing/checkout", "billing:subscription:manage", { plan: "STARTER" }, 200],
-  ["PATCH", "/billing/checkout", "billing:subscription:manage", { orderId: "order_1", paymentId: "pay_1", signature: "sig", plan: "STARTER" }, 200],
+  ["PATCH", "/billing/checkout", "billing:subscription:manage", { orderId: "order_1", paymentId: "pay_1", signature: "sig" }, 200],
   ["POST", "/billing/addons/purchase", "billing:subscription:manage", { addonId: "ai_pack_1", quantity: 1 }, 200],
   ["PATCH", "/billing/profile", "billing:profile:update", { billingName: "Acme Inc" }, 200],
 ] as const;
@@ -347,7 +369,7 @@ describe("Billing/payment permission fence — HTTP boundary (PRD 10.10-B)", () 
         .patch("/billing/checkout")
         .set("Authorization", `Bearer ${revokedToken}`)
         .set("Idempotency-Key", randomUUID())
-        .send({ orderId: "order_1", paymentId: "pay_1", signature: "sig", plan: "STARTER" });
+        .send({ orderId: "order_1", paymentId: "pay_1", signature: "sig" });
       expect(confirmRes.status).toBe(403);
       expect(confirmRes.body).toMatchObject({ code: "FORBIDDEN" });
     });
@@ -387,7 +409,7 @@ describe("Bite proof — member denial guard bites (PRD 10.10-B)", () => {
       .patch("/billing/checkout")
       .set("Authorization", `Bearer ${token}`)
       .set("Idempotency-Key", randomUUID())
-      .send({ orderId: "order_1", paymentId: "pay_1", signature: "sig", plan: "STARTER" });
+      .send({ orderId: "order_1", paymentId: "pay_1", signature: "sig" });
     expect(res.status).toBe(200);
   });
 
@@ -396,7 +418,7 @@ describe("Bite proof — member denial guard bites (PRD 10.10-B)", () => {
     const res = await request(fenceApp.getHttpServer())
       .patch("/billing/checkout")
       .set("Authorization", `Bearer ${token}`)
-      .send({ orderId: "order_1", paymentId: "pay_1", signature: "sig", plan: "STARTER" });
+      .send({ orderId: "order_1", paymentId: "pay_1", signature: "sig" });
     expect(res.status).toBe(403);
   });
 });

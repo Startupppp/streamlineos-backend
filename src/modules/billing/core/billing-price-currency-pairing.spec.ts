@@ -28,7 +28,7 @@
  */
 import { ConflictException, ServiceUnavailableException } from "@nestjs/common";
 import type { Db } from "../../../db/drizzle.module";
-import { BillingPaymentActivation, type BillingPaymentActivationDeps } from "./billing-payment-activation";
+import { BillingPaymentActivation } from "./billing-payment-activation";
 import { PlatformMerchantService } from "../payments/platform-merchant.service";
 import { BillingMarketplace } from "./billing-marketplace";
 import { planSchema } from "./dto/billing.schemas";
@@ -116,6 +116,7 @@ function makeAccountingDb(baseCurrency: string, transactionRejects?: unknown) {
     status: "PENDING",
     subscriptionId: null,
     activatedAt: null,
+    expiresAt: new Date(Date.now() + 30 * 60 * 1000),
   };
   const inserts: Array<{ table: unknown; values: Record<string, unknown> }> = [];
   const select = jest.fn(() => {
@@ -179,19 +180,23 @@ function makeActivation(
   sent: GatewayOrder[],
 ) {
   const { db, select } = makeAccountingDb(overrides.baseCurrency ?? "INR");
-  const deps = {
-    db,
-    audit: { log: jest.fn() },
-    aiCredits: { grantPlanCredits: jest.fn() },
-    planLimits: { bust: jest.fn() },
-    prorationLedger: { recordPlanChange: jest.fn() },
-    catalog: makeCatalog(overrides.catalogPrice ?? null),
-    revenueAnalytics: { emit: jest.fn() },
-    providers: makeProvider(sent),
-    platformMerchant: makePlatformMerchant(makeGatewayProvider(sent)),
-    externalEffectLedger: { execute: jest.fn() },
-  } as unknown as BillingPaymentActivationDeps;
-  return { activation: new BillingPaymentActivation(deps), accountingSelect: select };
+  return {
+    activation: new BillingPaymentActivation(
+      db,
+      undefined as never,
+      { log: jest.fn() } as never,
+      { grantPlanCredits: jest.fn() } as never,
+      { bust: jest.fn() } as never,
+      { recordPlanChange: jest.fn() } as never,
+      makeCatalog(overrides.catalogPrice ?? null),
+      { emit: jest.fn() } as never,
+      makeProvider(sent),
+      { execute: jest.fn() } as never,
+      makePlatformMerchant(makeGatewayProvider(sent)),
+      {} as never,
+    ),
+    accountingSelect: select,
+  };
 }
 
 describe("billing checkout — the amount and its currency come from one source", () => {
@@ -279,20 +284,21 @@ describe("activation — the payment row records the currency that was charged",
   it("stamps subscription_payments with the price currency, not the tenant's base currency", async () => {
     const sent: GatewayOrder[] = [];
     const { db, inserts } = makeAccountingDb("USD");
-    const deps = {
-      db,
-      audit: { log: jest.fn() },
-      aiCredits: { grantPlanCredits: jest.fn() },
-      planLimits: { bust: jest.fn() },
-      prorationLedger: { recordPlanChange: jest.fn() },
-      catalog: makeCatalog(null),
-      revenueAnalytics: { emit: jest.fn() },
-      providers: makeProvider(sent),
-      platformMerchant: makePlatformMerchant(makeGatewayProvider(sent)),
-      externalEffectLedger: { execute: jest.fn() },
-    } as unknown as BillingPaymentActivationDeps;
 
-    await new BillingPaymentActivation(deps).verifyAndActivate("org1", "user1", {
+    await new BillingPaymentActivation(
+      db,
+      undefined as never,
+      { log: jest.fn() } as never,
+      { grantPlanCredits: jest.fn() } as never,
+      { bust: jest.fn() } as never,
+      { recordPlanChange: jest.fn() } as never,
+      makeCatalog(null),
+      { emit: jest.fn() } as never,
+      makeProvider(sent),
+      { execute: jest.fn() } as never,
+      makePlatformMerchant(makeGatewayProvider(sent)),
+      {} as never,
+    ).verifyAndActivate("org1", "user1", {
       orderId: FAKE_PROVIDER_ORDER_ID,
       paymentId: "pay_1",
       signature: "sig",
@@ -319,14 +325,21 @@ describe("checkout guards that must survive the change", () => {
 
   it("an unconfigured gateway is still refused before any price is computed", async () => {
     const sent: GatewayOrder[] = [];
-    const deps = {
-      catalog: makeCatalog(null),
-      providers: { resolveConfigured: jest.fn().mockResolvedValue(undefined) },
-      platformMerchant: makePlatformMerchant(undefined),
-    } as unknown as BillingPaymentActivationDeps;
-
     await expect(
-      new BillingPaymentActivation(deps).createOrder("org1", "user1", "STARTER"),
+      new BillingPaymentActivation(
+        undefined as never,
+        undefined as never,
+        undefined as never,
+        undefined as never,
+        undefined as never,
+        undefined as never,
+        makeCatalog(null),
+        undefined as never,
+        { resolveConfigured: jest.fn().mockResolvedValue(undefined) } as never,
+        undefined as never,
+        makePlatformMerchant(undefined),
+        {} as never,
+      ).createOrder("org1", "user1", "STARTER"),
     ).rejects.toBeInstanceOf(ServiceUnavailableException);
     expect(sent).toHaveLength(0);
   });
@@ -339,21 +352,21 @@ describe("checkout guards that must survive the change", () => {
         constraint_name: "uq_coupon_redemptions_coupon_org",
       }),
     });
-    const deps = {
-      db: makeAccountingDb("INR", wrapped).db,
-      audit: { log: jest.fn() },
-      aiCredits: { grantPlanCredits: jest.fn() },
-      planLimits: { bust: jest.fn() },
-      prorationLedger: { recordPlanChange: jest.fn() },
-      catalog: makeCatalog(null),
-      revenueAnalytics: { emit: jest.fn() },
-      providers: makeProvider([]),
-      platformMerchant: makePlatformMerchant(makeGatewayProvider([])),
-      externalEffectLedger: { execute: jest.fn() },
-    } as unknown as BillingPaymentActivationDeps;
-
     await expect(
-      new BillingPaymentActivation(deps).verifyAndActivate("org1", "user1", {
+      new BillingPaymentActivation(
+        makeAccountingDb("INR", wrapped).db,
+        undefined as never,
+        { log: jest.fn() } as never,
+        { grantPlanCredits: jest.fn() } as never,
+        { bust: jest.fn() } as never,
+        { recordPlanChange: jest.fn() } as never,
+        makeCatalog(null),
+        { emit: jest.fn() } as never,
+        makeProvider([]),
+        { execute: jest.fn() } as never,
+        makePlatformMerchant(makeGatewayProvider([])),
+        {} as never,
+      ).verifyAndActivate("org1", "user1", {
         orderId: FAKE_PROVIDER_ORDER_ID,
         paymentId: "pay_1",
         signature: "sig",

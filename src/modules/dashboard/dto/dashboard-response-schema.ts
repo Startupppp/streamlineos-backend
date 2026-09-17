@@ -1,7 +1,7 @@
 import { z } from "zod";
-import { wireDate } from "../../../common/openapi/wire-types";
+import { wireTimestamp } from "../../../common/openapi/wire-types";
 
-const timestamp = z.union([wireDate(), z.iso.datetime()]);
+const timestamp = wireTimestamp();
 const nullableText = z.string().nullable();
 
 export const dashboardStatsResponseSchema = z.object({

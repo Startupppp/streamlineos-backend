@@ -246,7 +246,7 @@ export class UserProfileService {
           lastName: users.lastName,
           phone: users.phone,
           image: users.image,
-          emailVerified: users.emailVerified,
+          emailVerifiedAt: users.emailVerified,
           createdAt: users.createdAt,
         })
         .from(users)
@@ -264,8 +264,9 @@ export class UserProfileService {
       this.activity.getUserAuditLog(orgId, userId, { limit: EXPORT_HISTORY_LIMIT }),
     ]);
 
+    const { emailVerifiedAt, ...identityRest } = identity;
     return {
-      subject: { ...identity, designation: identityFacts.designation },
+      subject: { ...identityRest, emailVerified: emailVerifiedAt !== null, designation: identityFacts.designation },
       membership,
       preferences,
       sessions,

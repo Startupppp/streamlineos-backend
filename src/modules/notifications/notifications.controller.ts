@@ -88,6 +88,7 @@ export class NotificationsController {
   @Header(NO_COMPRESSION_HEADER, "1")
   @UseGuards(RateLimitGuard)
   @UseRateLimit("notifications:stream-token")
+  @NoTenantTransaction()
   @HttpCode(200)
   generateStreamToken(@CurrentUser() u: CurrentUserContext) {
     const token = this.notifEvents.generateToken(u.userId, u.orgId);

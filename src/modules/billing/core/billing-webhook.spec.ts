@@ -8,8 +8,9 @@ jest.mock("../../../common/tenant/run-in-tenant-transaction", () => ({
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { outboxEvents, platformPayments } from "../../../db/schema";
 import { providerWebhookEvents } from "../../../db/schema/billing/provider-webhook-events";
-import { BillingService } from "./billing.service";
-import { BillingProfileService } from "./billing-profile.service";
+import { BillingWebhookHandler } from "./billing-webhook.handler";
+import { BillingPaymentActivation } from "./billing-payment-activation";
+import { BillingCoupons } from "./billing-coupons";
 import { RazorpayWebhookController } from "./razorpay-webhook.controller";
 import { AiCreditsService } from "./ai-credits.service";
 import { AuditService } from "../../../common/audit/audit.service";
@@ -17,13 +18,13 @@ import { PlanLimitsService } from "./plan-limits.service";
 import { ProrationLedgerService } from "./proration-ledger.service";
 import { VersionedCatalogService } from "./versioned-catalog.service";
 import { RevenueAnalyticsService } from "./revenue-analytics.service";
-import { OutboxConsumerRegistry } from "../../../common/outbox/outbox-consumer.registry";
 import { PaymentProviderResolver, type OrganizationPaymentProvider } from "../payments/payment-provider-resolver.service";
 import { PlatformPaymentRegistry } from "./platform-payment-registry";
 import { fakePlatformRegistry } from "./testing/fake-platform-provider";
 import { PaymentWebhookReceiverService } from "../payments/payment-webhook-receiver.service";
 import { PaymentAnalyticsService } from "../payments/payment-analytics.service";
 import { ExternalEffectLedger, ExternalEffectLeaseBusyError } from "../../../common/outbox/external-effect-ledger";
+import { OutboxConsumerRegistry } from "../../../common/outbox/outbox-consumer.registry";
 import { PlatformMerchantService } from "../payments/platform-merchant.service";
 import { CacheService } from "../../../common/cache/cache.service";
 import {
@@ -320,7 +321,7 @@ function makePlatformMerchant(webhookSecret: string = FAKE_WEBHOOK_SECRET, confi
 }
 
 interface Harness {
-  service: BillingService;
+  service: BillingWebhookHandler;
   db: WebhookDb;
   aiCredits: ReturnType<typeof makeAiCredits>;
   ledger: { execute: jest.Mock };
@@ -343,29 +344,39 @@ async function buildHarness(options: {
 
   const module = await Test.createTestingModule({
     providers: [
-      BillingService,
+      BillingWebhookHandler,
+      BillingPaymentActivation,
+      BillingCoupons,
       RevenueAnalyticsService,
+      OutboxConsumerRegistry,
       { provide: DRIZZLE, useValue: db },
-      { provide: OutboxConsumerRegistry, useValue: { register: jest.fn(), get: jest.fn() } },
       { provide: AiCreditsService, useValue: aiCredits },
       { provide: AuditService, useValue: { log: jest.fn(), logCritical: jest.fn() } },
       { provide: PlanLimitsService, useValue: { bust: jest.fn(), resolveTier: jest.fn().mockResolvedValue({ plan: "STARTER" }) } },
-
       { provide: ProrationLedgerService, useValue: { recordPlanChange: jest.fn().mockResolvedValue(undefined) } },
-
       { provide: VersionedCatalogService, useValue: { getActivePriceForPlanTier: jest.fn().mockResolvedValue(null) } },
       { provide: PaymentProviderResolver, useValue: options.providers ?? makeResolver(new FakeProviderAdapter()) },
       { provide: PlatformPaymentRegistry, useValue: fakePlatformRegistry().registry },
       { provide: ExternalEffectLedger, useValue: ledger },
       { provide: PaymentWebhookReceiverService, useValue: webhookHealth },
       { provide: PaymentAnalyticsService, useValue: notices },
-      { provide: BillingProfileService, useValue: { get: jest.fn(), update: jest.fn() } },
       { provide: PlatformMerchantService, useValue: options.platformMerchant ?? makePlatformMerchant() },
-      { provide: CacheService, useValue: { get: jest.fn().mockResolvedValue(null), set: jest.fn().mockResolvedValue(undefined), del: jest.fn().mockResolvedValue(undefined) } },
+      {
+        provide: CacheService,
+        useValue: {
+          get: jest.fn().mockResolvedValue(null),
+          set: jest.fn().mockResolvedValue(undefined),
+          del: jest.fn().mockResolvedValue(undefined),
+          invalidate: jest.fn().mockResolvedValue(undefined),
+          invalidateMany: jest.fn().mockResolvedValue(undefined),
+          invalidateForOrg: jest.fn().mockResolvedValue(undefined),
+          cached: jest.fn().mockImplementation(async (_key: unknown, fn: () => Promise<unknown>) => fn()),
+        },
+      },
     ],
   }).compile();
 
-  return { service: module.get(BillingService), db, aiCredits, ledger, webhookHealth, notices };
+  return { service: module.get(BillingWebhookHandler), db, aiCredits, ledger, webhookHealth, notices };
 }
 
 describe("c17-01 — a provider event is recorded before it is acted on", () => {
@@ -373,7 +384,7 @@ describe("c17-01 — a provider event is recorded before it is acted on", () => 
     it("records nothing at all when the signature does not match", async () => {
       const { service, db, ledger } = await buildHarness();
 
-      const result = await service.handlePaymentProviderWebhook("org1", "razorpay", VALID_PAYMENT_BODY, "forged-signature");
+      const result = await service.handle("org1", "razorpay", VALID_PAYMENT_BODY, "forged-signature");
 
       expect(result.status).toBe(401);
       expect(db._store.recordedEvents).toHaveLength(0);
@@ -388,7 +399,7 @@ describe("c17-01 — a provider event is recorded before it is acted on", () => 
         platformMerchant: makePlatformMerchant("wrong-secret"),
       });
 
-      const result = await service.handlePaymentProviderWebhook("org1", "razorpay", VALID_PAYMENT_BODY, FAKE_VALID_WEBHOOK_SIG);
+      const result = await service.handle("org1", "razorpay", VALID_PAYMENT_BODY, FAKE_VALID_WEBHOOK_SIG);
 
       expect(result.status).toBe(401);
       expect(db._store.recordedEvents).toHaveLength(0);
@@ -397,7 +408,7 @@ describe("c17-01 — a provider event is recorded before it is acted on", () => 
     it("records the event before it persists the payment", async () => {
       const { service, db } = await buildHarness();
 
-      await service.handlePaymentProviderWebhook("org1", "razorpay", VALID_PAYMENT_BODY, FAKE_VALID_WEBHOOK_SIG);
+      await service.handle("org1", "razorpay", VALID_PAYMENT_BODY, FAKE_VALID_WEBHOOK_SIG);
 
       expect(db._store.order.indexOf("record-event")).toBeLessThan(db._store.order.indexOf("persist-payment"));
     });
@@ -407,7 +418,7 @@ describe("c17-01 — a provider event is recorded before it is acted on", () => 
     it("stores the provider, its event id, the event type and the raw payload", async () => {
       const { service, db } = await buildHarness();
 
-      await service.handlePaymentProviderWebhook("org1", "razorpay", VALID_PAYMENT_BODY, FAKE_VALID_WEBHOOK_SIG);
+      await service.handle("org1", "razorpay", VALID_PAYMENT_BODY, FAKE_VALID_WEBHOOK_SIG);
 
       expect(db._store.recordedEvents[0]).toMatchObject({
         orgId: "org1",
@@ -421,7 +432,7 @@ describe("c17-01 — a provider event is recorded before it is acted on", () => 
     it("keys the ledger on the provider's own id, not one this service invents", async () => {
       const { service, db } = await buildHarness();
 
-      await service.handlePaymentProviderWebhook("org1", "razorpay", CAPTURE_EVENT_BODY, FAKE_VALID_WEBHOOK_SIG);
+      await service.handle("org1", "razorpay", CAPTURE_EVENT_BODY, FAKE_VALID_WEBHOOK_SIG);
 
       expect(db._store.recordedEvents[0]?.providerEventId).toBe("pay_test_002");
     });
@@ -432,7 +443,7 @@ describe("c17-01 — a provider event is recorded before it is acted on", () => 
       const db = makeWebhookDb({ providerEvent: { processedAt: new Date(), visible: true } });
       const { service, ledger } = await buildHarness({ db });
 
-      const result = await service.handlePaymentProviderWebhook("org1", "razorpay", CAPTURE_EVENT_BODY, FAKE_VALID_WEBHOOK_SIG);
+      const result = await service.handle("org1", "razorpay", CAPTURE_EVENT_BODY, FAKE_VALID_WEBHOOK_SIG);
 
       expect(result).toEqual({ status: 200, body: { ok: true, duplicate: true } });
       expect(db._store.payments).toHaveLength(0);
@@ -444,8 +455,8 @@ describe("c17-01 — a provider event is recorded before it is acted on", () => 
       const db = makeWebhookDb();
       const { service, aiCredits } = await buildHarness({ db });
 
-      const first = await service.handlePaymentProviderWebhook("org1", "razorpay", CAPTURE_EVENT_BODY, FAKE_VALID_WEBHOOK_SIG);
-      const second = await service.handlePaymentProviderWebhook("org1", "razorpay", CAPTURE_EVENT_BODY, FAKE_VALID_WEBHOOK_SIG);
+      const first = await service.handle("org1", "razorpay", CAPTURE_EVENT_BODY, FAKE_VALID_WEBHOOK_SIG);
+      const second = await service.handle("org1", "razorpay", CAPTURE_EVENT_BODY, FAKE_VALID_WEBHOOK_SIG);
 
       expect(first.status).toBe(200);
       expect(second.body).toMatchObject({ duplicate: true });
@@ -456,7 +467,7 @@ describe("c17-01 — a provider event is recorded before it is acted on", () => 
       const db = makeWebhookDb({ providerEvent: { processedAt: null, visible: false } });
       const { service, ledger } = await buildHarness({ db });
 
-      const result = await service.handlePaymentProviderWebhook("org1", "razorpay", CAPTURE_EVENT_BODY, FAKE_VALID_WEBHOOK_SIG);
+      const result = await service.handle("org1", "razorpay", CAPTURE_EVENT_BODY, FAKE_VALID_WEBHOOK_SIG);
 
       expect(result.status).toBe(409);
       expect(result.body).toMatchObject({ ok: false });
@@ -468,7 +479,7 @@ describe("c17-01 — a provider event is recorded before it is acted on", () => 
     it("reports the rejected signature through the provider's endpoint health", async () => {
       const { service, webhookHealth } = await buildHarness();
 
-      await service.handlePaymentProviderWebhook("org1", "razorpay", CAPTURE_EVENT_BODY, "forged-sig");
+      await service.handle("org1", "razorpay", CAPTURE_EVENT_BODY, "forged-sig");
 
       expect(webhookHealth.recordSignatureFailure).toHaveBeenCalledWith("org1", "razorpay");
     });
@@ -476,7 +487,7 @@ describe("c17-01 — a provider event is recorded before it is acted on", () => 
     it("does not report a rejected signature when the signature was in fact valid", async () => {
       const { service, webhookHealth } = await buildHarness();
 
-      await service.handlePaymentProviderWebhook("org1", "razorpay", CAPTURE_EVENT_BODY, FAKE_VALID_WEBHOOK_SIG);
+      await service.handle("org1", "razorpay", CAPTURE_EVENT_BODY, FAKE_VALID_WEBHOOK_SIG);
 
       expect(webhookHealth.recordSignatureFailure).not.toHaveBeenCalled();
     });
@@ -486,7 +497,7 @@ describe("c17-01 — a provider event is recorded before it is acted on", () => 
         platformMerchant: makePlatformMerchant(FAKE_WEBHOOK_SECRET, false),
       });
 
-      const result = await service.handlePaymentProviderWebhook("org1", "razorpay", VALID_PAYMENT_BODY, FAKE_VALID_WEBHOOK_SIG);
+      const result = await service.handle("org1", "razorpay", VALID_PAYMENT_BODY, FAKE_VALID_WEBHOOK_SIG);
 
       expect(result.status).toBe(503);
       const body = JSON.stringify(result.body);
@@ -499,7 +510,7 @@ describe("c17-01 — a provider event is recorded before it is acted on", () => 
     it("guards the payment upsert so a stale status cannot overwrite a later one", async () => {
       const { service, db } = await buildHarness();
 
-      await service.handlePaymentProviderWebhook("org1", "razorpay", CAPTURE_EVENT_BODY, FAKE_VALID_WEBHOOK_SIG);
+      await service.handle("org1", "razorpay", CAPTURE_EVENT_BODY, FAKE_VALID_WEBHOOK_SIG);
 
       const conflict = db._store.paymentConflicts[0];
       expect(conflict?.setWhere).toBeDefined();
@@ -511,7 +522,7 @@ describe("c17-01 — a provider event is recorded before it is acted on", () => 
     it("carries the stored capture time forward rather than nulling it on a later event", async () => {
       const { service, db } = await buildHarness();
 
-      await service.handlePaymentProviderWebhook("org1", "razorpay", REFUND_EVENT_BODY, FAKE_VALID_WEBHOOK_SIG);
+      await service.handle("org1", "razorpay", REFUND_EVENT_BODY, FAKE_VALID_WEBHOOK_SIG);
 
       const conflict = db._store.paymentConflicts[0];
       const set = conflict?.set as Record<string, unknown>;
@@ -526,7 +537,7 @@ describe("c17-02 — a webhook acknowledges only durable work", () => {
     it("acknowledges the event after the grant, never before", async () => {
       const { service, db } = await buildHarness();
 
-      const result = await service.handlePaymentProviderWebhook("org1", "razorpay", CAPTURE_EVENT_BODY, FAKE_VALID_WEBHOOK_SIG);
+      const result = await service.handle("org1", "razorpay", CAPTURE_EVENT_BODY, FAKE_VALID_WEBHOOK_SIG);
 
       expect(result.status).toBe(200);
       expect(db._store.order.indexOf("acknowledge")).toBe(db._store.order.length - 1);
@@ -540,7 +551,7 @@ describe("c17-02 — a webhook acknowledges only durable work", () => {
       }) as unknown as WebhookDb["update"];
       const { service } = await buildHarness({ db });
 
-      const result = await service.handlePaymentProviderWebhook("org1", "razorpay", CAPTURE_EVENT_BODY, FAKE_VALID_WEBHOOK_SIG);
+      const result = await service.handle("org1", "razorpay", CAPTURE_EVENT_BODY, FAKE_VALID_WEBHOOK_SIG);
 
       expect(result.status).toBe(500);
     });
@@ -552,7 +563,7 @@ describe("c17-02 — a webhook acknowledges only durable work", () => {
       aiCredits.grantAiPackCreditsFromWebhook.mockRejectedValue(new Error("db unavailable"));
       const { service } = await buildHarness({ aiCredits });
 
-      const result = await service.handlePaymentProviderWebhook("org1", "razorpay", CAPTURE_EVENT_BODY, FAKE_VALID_WEBHOOK_SIG);
+      const result = await service.handle("org1", "razorpay", CAPTURE_EVENT_BODY, FAKE_VALID_WEBHOOK_SIG);
 
       expect(result).toEqual({ status: 500, body: { ok: false } });
     });
@@ -561,7 +572,7 @@ describe("c17-02 — a webhook acknowledges only durable work", () => {
       const ledger = { execute: jest.fn().mockRejectedValue(new ExternalEffectLeaseBusyError("pay_test_002:pack-credit-grant")) };
       const { service } = await buildHarness({ ledger });
 
-      const result = await service.handlePaymentProviderWebhook("org1", "razorpay", CAPTURE_EVENT_BODY, FAKE_VALID_WEBHOOK_SIG);
+      const result = await service.handle("org1", "razorpay", CAPTURE_EVENT_BODY, FAKE_VALID_WEBHOOK_SIG);
 
       expect(result.status).toBe(503);
     });
@@ -573,7 +584,7 @@ describe("c17-02 — a webhook acknowledges only durable work", () => {
       aiCredits.grantAiPackCreditsFromWebhook.mockRejectedValue(new Error("db unavailable"));
       const { service, db } = await buildHarness({ aiCredits });
 
-      await service.handlePaymentProviderWebhook("org1", "razorpay", CAPTURE_EVENT_BODY, FAKE_VALID_WEBHOOK_SIG);
+      await service.handle("org1", "razorpay", CAPTURE_EVENT_BODY, FAKE_VALID_WEBHOOK_SIG);
 
       expect(db._store.providerEvent?.processedAt).toBeNull();
       expect(db._store.order).not.toContain("acknowledge");
@@ -584,7 +595,7 @@ describe("c17-02 — a webhook acknowledges only durable work", () => {
       aiCredits.grantAiPackCreditsFromWebhook.mockRejectedValue(new Error("db unavailable"));
       const { service, db } = await buildHarness({ aiCredits });
 
-      await service.handlePaymentProviderWebhook("org1", "razorpay", CAPTURE_EVENT_BODY, FAKE_VALID_WEBHOOK_SIG);
+      await service.handle("org1", "razorpay", CAPTURE_EVENT_BODY, FAKE_VALID_WEBHOOK_SIG);
 
       expect(db._store.outbox).toHaveLength(0);
     });
@@ -595,7 +606,7 @@ describe("c17-02 — a webhook acknowledges only durable work", () => {
       const db = makeWebhookDb({ providerEvent: { processedAt: null, visible: true } });
       const { service, aiCredits } = await buildHarness({ db });
 
-      const result = await service.handlePaymentProviderWebhook("org1", "razorpay", CAPTURE_EVENT_BODY, FAKE_VALID_WEBHOOK_SIG);
+      const result = await service.handle("org1", "razorpay", CAPTURE_EVENT_BODY, FAKE_VALID_WEBHOOK_SIG);
 
       expect(result.body).not.toMatchObject({ duplicate: true });
       expect(aiCredits.grantAiPackCreditsFromWebhook).toHaveBeenCalledTimes(1);
@@ -608,8 +619,8 @@ describe("c17-02 — a webhook acknowledges only durable work", () => {
       const db = makeWebhookDb();
       const { service } = await buildHarness({ db, aiCredits });
 
-      const first = await service.handlePaymentProviderWebhook("org1", "razorpay", CAPTURE_EVENT_BODY, FAKE_VALID_WEBHOOK_SIG);
-      const second = await service.handlePaymentProviderWebhook("org1", "razorpay", CAPTURE_EVENT_BODY, FAKE_VALID_WEBHOOK_SIG);
+      const first = await service.handle("org1", "razorpay", CAPTURE_EVENT_BODY, FAKE_VALID_WEBHOOK_SIG);
+      const second = await service.handle("org1", "razorpay", CAPTURE_EVENT_BODY, FAKE_VALID_WEBHOOK_SIG);
 
       expect(first.status).toBe(500);
       expect(second.status).toBe(200);
@@ -623,7 +634,7 @@ describe("c17-02 — a webhook acknowledges only durable work", () => {
       const ledger = { execute: jest.fn().mockResolvedValue("ALREADY_SUCCEEDED") };
       const { service } = await buildHarness({ db, aiCredits, ledger });
 
-      const result = await service.handlePaymentProviderWebhook("org1", "razorpay", CAPTURE_EVENT_BODY, FAKE_VALID_WEBHOOK_SIG);
+      const result = await service.handle("org1", "razorpay", CAPTURE_EVENT_BODY, FAKE_VALID_WEBHOOK_SIG);
 
       expect(result.status).toBe(200);
       expect(aiCredits.grantAiPackCreditsFromWebhook).not.toHaveBeenCalled();
@@ -658,7 +669,7 @@ describe("c17-02 — a webhook acknowledges only durable work", () => {
       aiCredits.grantAiPackCreditsFromWebhook.mockRejectedValue(new Error("db unavailable"));
       const { service, notices } = await buildHarness({ aiCredits });
 
-      await service.handlePaymentProviderWebhook("org1", "razorpay", CAPTURE_EVENT_BODY, FAKE_VALID_WEBHOOK_SIG);
+      await service.handle("org1", "razorpay", CAPTURE_EVENT_BODY, FAKE_VALID_WEBHOOK_SIG);
 
       expect(notices.notifyOwner).toHaveBeenCalledTimes(1);
       const [orgId, notice] = notices.notifyOwner.mock.calls[0] as [string, { message: string; priority: string }];
@@ -670,7 +681,7 @@ describe("c17-02 — a webhook acknowledges only durable work", () => {
     it("says nothing when provisioning succeeded", async () => {
       const { service, notices } = await buildHarness();
 
-      await service.handlePaymentProviderWebhook("org1", "razorpay", CAPTURE_EVENT_BODY, FAKE_VALID_WEBHOOK_SIG);
+      await service.handle("org1", "razorpay", CAPTURE_EVENT_BODY, FAKE_VALID_WEBHOOK_SIG);
 
       expect(notices.notifyOwner).not.toHaveBeenCalled();
     });
@@ -687,7 +698,7 @@ describe("c17-02 — a webhook acknowledges only durable work", () => {
       };
       const { service } = await buildHarness({ aiCredits, ledger });
 
-      const result = await service.handlePaymentProviderWebhook("org1", "razorpay", CAPTURE_EVENT_BODY, FAKE_VALID_WEBHOOK_SIG);
+      const result = await service.handle("org1", "razorpay", CAPTURE_EVENT_BODY, FAKE_VALID_WEBHOOK_SIG);
 
       expect(result).toEqual({ status: 500, body: { ok: false } });
     });
@@ -698,7 +709,7 @@ describe("c17-05 — the webhook's billing state changes enqueue their revenue e
   it("enqueues an addon purchase for a completed AI pack payment", async () => {
     const { service, db } = await buildHarness();
 
-    await service.handlePaymentProviderWebhook("org1", "razorpay", CAPTURE_EVENT_BODY, FAKE_VALID_WEBHOOK_SIG);
+    await service.handle("org1", "razorpay", CAPTURE_EVENT_BODY, FAKE_VALID_WEBHOOK_SIG);
 
     expect(db._store.outbox).toHaveLength(1);
     const payload = db._store.outbox[0]?.payload as { type: string; amount: number; mrr: number };
@@ -709,7 +720,7 @@ describe("c17-05 — the webhook's billing state changes enqueue their revenue e
   it("enqueues a refund when the provider reports the payment refunded", async () => {
     const { service, db } = await buildHarness();
 
-    await service.handlePaymentProviderWebhook("org1", "razorpay", REFUND_EVENT_BODY, FAKE_VALID_WEBHOOK_SIG);
+    await service.handle("org1", "razorpay", REFUND_EVENT_BODY, FAKE_VALID_WEBHOOK_SIG);
 
     const payload = db._store.outbox[0]?.payload as { type: string; amount: number };
     expect(payload).toMatchObject({ type: "refund", amount: 49900 });
@@ -718,7 +729,7 @@ describe("c17-05 — the webhook's billing state changes enqueue their revenue e
   it("enqueues nothing for an event that moves no money", async () => {
     const { service, db } = await buildHarness();
 
-    await service.handlePaymentProviderWebhook("org1", "razorpay", VALID_PAYMENT_BODY, FAKE_VALID_WEBHOOK_SIG);
+    await service.handle("org1", "razorpay", VALID_PAYMENT_BODY, FAKE_VALID_WEBHOOK_SIG);
 
     expect(db._store.outbox).toHaveLength(0);
   });
@@ -726,7 +737,7 @@ describe("c17-05 — the webhook's billing state changes enqueue their revenue e
   it("enqueues the revenue event in the same commit that acknowledges the webhook", async () => {
     const { service, db } = await buildHarness();
 
-    await service.handlePaymentProviderWebhook("org1", "razorpay", CAPTURE_EVENT_BODY, FAKE_VALID_WEBHOOK_SIG);
+    await service.handle("org1", "razorpay", CAPTURE_EVENT_BODY, FAKE_VALID_WEBHOOK_SIG);
 
     expect(db._store.order.indexOf("outbox")).toBe(db._store.order.indexOf("acknowledge") - 1);
   });
@@ -739,8 +750,8 @@ describe("provider substitution — same billing flow, different adapter", () =>
     const one = await buildHarness({ platformMerchant: merchant1 });
     const two = await buildHarness({ platformMerchant: merchant2 });
 
-    const result1 = await one.service.handlePaymentProviderWebhook("org1", "razorpay", VALID_PAYMENT_BODY, FAKE_VALID_WEBHOOK_SIG);
-    const result2 = await two.service.handlePaymentProviderWebhook("org1", "stripe", VALID_PAYMENT_BODY, FAKE_VALID_WEBHOOK_SIG);
+    const result1 = await one.service.handle("org1", "razorpay", VALID_PAYMENT_BODY, FAKE_VALID_WEBHOOK_SIG);
+    const result2 = await two.service.handle("org1", "stripe", VALID_PAYMENT_BODY, FAKE_VALID_WEBHOOK_SIG);
 
     expect(result1).toEqual(result2);
     expect(merchant1.resolve).toHaveBeenCalled();
@@ -763,7 +774,7 @@ describe("stuck provider events are re-driven after the provider stops retrying"
       },
     ];
 
-    const result = await service.redriveStuckProviderEvents("org1", REDRIVE_WINDOW);
+    const result = await service.redriveUnprocessed("org1", REDRIVE_WINDOW);
 
     expect(result).toEqual({ attempted: 1, recovered: 1, failed: 0 });
     expect(aiCredits.grantAiPackCreditsFromWebhook).toHaveBeenCalledTimes(1);
@@ -785,7 +796,7 @@ describe("stuck provider events are re-driven after the provider stops retrying"
       },
     ];
 
-    const result = await service.redriveStuckProviderEvents("org1", REDRIVE_WINDOW);
+    const result = await service.redriveUnprocessed("org1", REDRIVE_WINDOW);
 
     expect(result.recovered).toBe(1);
     expect(verify).not.toHaveBeenCalled();
@@ -804,7 +815,7 @@ describe("stuck provider events are re-driven after the provider stops retrying"
       },
     ];
 
-    const result = await service.redriveStuckProviderEvents("org1", REDRIVE_WINDOW);
+    const result = await service.redriveUnprocessed("org1", REDRIVE_WINDOW);
 
     expect(result).toEqual({ attempted: 1, recovered: 0, failed: 1 });
   });
@@ -814,7 +825,7 @@ describe("stuck provider events are re-driven after the provider stops retrying"
     const where = jest.fn().mockReturnValue({ orderBy: () => ({ limit: () => Promise.resolve([]) }) });
     db.select = jest.fn().mockReturnValue({ from: () => ({ where, limit: () => Promise.resolve([]) }) });
 
-    await service.redriveStuckProviderEvents("org1", REDRIVE_WINDOW);
+    await service.redriveUnprocessed("org1", REDRIVE_WINDOW);
 
     const rendered = dialect.sqlToQuery(where.mock.calls[0]?.[0] as Parameters<PgDialect["sqlToQuery"]>[0]);
     expect(rendered.sql).toContain('"processed_at" is null');
@@ -824,7 +835,7 @@ describe("stuck provider events are re-driven after the provider stops retrying"
   });
 });
 
-describe("the order-id mismatch guard uses the SECURITY DEFINER lookup after RLS", () => {
+describe("the SECURITY DEFINER lookup routes payment to the purchase's org, not the URL org", () => {
   const ORDER_MISMATCH_BODY = JSON.stringify({
     event: "payment.captured",
     payload: {
@@ -842,17 +853,16 @@ describe("the order-id mismatch guard uses the SECURITY DEFINER lookup after RLS
     },
   });
 
-  it("refuses and returns 400 when the SECURITY DEFINER lookup returns a different org's id", async () => {
+  it("routes payment to the purchase's org when the SECURITY DEFINER lookup returns a different org's id", async () => {
     const db = makeWebhookDb();
     db.execute = jest.fn().mockResolvedValue([{ org_id: "org_b" }]);
     const { service, aiCredits } = await buildHarness({ db });
 
-    const result = await service.handlePaymentProviderWebhook("org_a", "razorpay", ORDER_MISMATCH_BODY, FAKE_VALID_WEBHOOK_SIG);
+    const result = await service.handle("org_a", "razorpay", ORDER_MISMATCH_BODY, FAKE_VALID_WEBHOOK_SIG);
 
-    expect(result.status).toBe(400);
-    expect(result.body).toMatchObject({ error: "organization mismatch" });
-    expect(aiCredits.grantAiPackCreditsFromWebhook).not.toHaveBeenCalled();
-    expect(db._store.payments).toHaveLength(0);
+    expect(result.status).toBe(200);
+    expect(aiCredits.grantAiPackCreditsFromWebhook).toHaveBeenCalledTimes(1);
+    expect(db._store.payments).toHaveLength(1);
   });
 
   it("does not refuse when the SECURITY DEFINER lookup returns the same org's id", async () => {
@@ -860,7 +870,7 @@ describe("the order-id mismatch guard uses the SECURITY DEFINER lookup after RLS
     db.execute = jest.fn().mockResolvedValue([{ org_id: "org_a" }]);
     const { service } = await buildHarness({ db });
 
-    const result = await service.handlePaymentProviderWebhook("org_a", "razorpay", ORDER_MISMATCH_BODY, FAKE_VALID_WEBHOOK_SIG);
+    const result = await service.handle("org_a", "razorpay", ORDER_MISMATCH_BODY, FAKE_VALID_WEBHOOK_SIG);
 
     expect(result.status).toBe(200);
     expect(result.body).not.toMatchObject({ error: "organization mismatch" });
@@ -871,7 +881,7 @@ describe("the order-id mismatch guard uses the SECURITY DEFINER lookup after RLS
     db.execute = jest.fn().mockResolvedValue([{ org_id: null }]);
     const { service } = await buildHarness({ db });
 
-    const result = await service.handlePaymentProviderWebhook("org_a", "razorpay", ORDER_MISMATCH_BODY, FAKE_VALID_WEBHOOK_SIG);
+    const result = await service.handle("org_a", "razorpay", ORDER_MISMATCH_BODY, FAKE_VALID_WEBHOOK_SIG);
 
     expect(result.status).toBe(200);
     expect(result.body).not.toMatchObject({ error: "organization mismatch" });
@@ -880,8 +890,8 @@ describe("the order-id mismatch guard uses the SECURITY DEFINER lookup after RLS
 
 describe("legacy Razorpay webhook compatibility route", () => {
   it("preserves the old URL contract while delegating to the provider-neutral handler", async () => {
-    const handlePaymentProviderWebhook = jest.fn().mockResolvedValue({ status: 200, body: { ok: true } });
-    const controller = new RazorpayWebhookController({ handlePaymentProviderWebhook } as unknown as BillingService);
+    const handle = jest.fn().mockResolvedValue({ status: 200, body: { ok: true } });
+    const controller = new RazorpayWebhookController({ handle } as unknown as BillingWebhookHandler);
     const json = jest.fn();
     const status = jest.fn().mockReturnValue({ json });
 
@@ -892,7 +902,7 @@ describe("legacy Razorpay webhook compatibility route", () => {
       { status } as never,
     );
 
-    expect(handlePaymentProviderWebhook).toHaveBeenCalledWith("org1", "razorpay", VALID_PAYMENT_BODY, FAKE_VALID_WEBHOOK_SIG);
+    expect(handle).toHaveBeenCalledWith("org1", "razorpay", VALID_PAYMENT_BODY, FAKE_VALID_WEBHOOK_SIG);
     expect(status).toHaveBeenCalledWith(200);
     expect(json).toHaveBeenCalledWith({ ok: true });
   });
@@ -923,8 +933,8 @@ describe("c17-04 — delayed arrival cannot regress payment state", () => {
     const db = makeMultiEventDb();
     const { service } = await buildHarness({ db: db as unknown as WebhookDb });
 
-    const first = await service.handlePaymentProviderWebhook("org1", "razorpay", DELAYED_CAPTURED_BODY, FAKE_VALID_WEBHOOK_SIG);
-    const second = await service.handlePaymentProviderWebhook("org1", "razorpay", DELAYED_AUTHORIZED_BODY, FAKE_VALID_WEBHOOK_SIG);
+    const first = await service.handle("org1", "razorpay", DELAYED_CAPTURED_BODY, FAKE_VALID_WEBHOOK_SIG);
+    const second = await service.handle("org1", "razorpay", DELAYED_AUTHORIZED_BODY, FAKE_VALID_WEBHOOK_SIG);
 
     expect(first.status).toBe(200);
     expect(second.status).toBe(200);
@@ -936,21 +946,9 @@ describe("c17-04 — delayed arrival cannot regress payment state", () => {
   });
 });
 
-/**
- * The regression net for the P1: the org-mismatch guard lived on the live entrance only.
- *
- * `handle` refuses a webhook whose `payment.notes` name a DIFFERENT organisation than the
- * endpoint it arrived at — but it refuses AFTER `ledger.claim` has already written the row,
- * and it returns without stamping `processed_at`. `listRedrivable` selects on exactly
- * `processed_at IS NULL` plus an age window, so `minAgeMs` later the cron picked that same
- * row up and `redriveUnprocessed` called `settle` with no notes check at all: the payment
- * was persisted under the endpoint's org and `effects.apply` granted IT the credits from
- * `notes.packId`. The guard that exists to stop precisely this was skipped on the replay.
- */
-describe("the organization-mismatch guard is on the settle path, not on one entrance", () => {
+describe("notes-based org routing: a webhook is settled for the org named in its notes", () => {
   const REDRIVE_WINDOW = { minAgeMs: 5 * 60 * 1000, maxAgeMs: 24 * 60 * 60 * 1000, limit: 100 };
 
-  // Correctly signed for org1's endpoint, but its notes name org2 and buy org2 a credit pack.
   const FOREIGN_NOTES_BODY = JSON.stringify({
     event: "payment.captured",
     payload: {
@@ -973,28 +971,26 @@ describe("the organization-mismatch guard is on the settle path, not on one entr
     return db;
   }
 
-  it("the live entrance still refuses it, and grants nobody anything", async () => {
+  it("the live entrance settles for the org named in notes, not the URL org", async () => {
     const db = foreignOrgHarness();
     const { service, aiCredits } = await buildHarness({ db });
 
-    const result = await service.handlePaymentProviderWebhook("org1", "razorpay", FOREIGN_NOTES_BODY, FAKE_VALID_WEBHOOK_SIG);
+    const result = await service.handle("org1", "razorpay", FOREIGN_NOTES_BODY, FAKE_VALID_WEBHOOK_SIG);
 
-    expect(result.status).toBe(400);
-    expect(result.body).toMatchObject({ error: "organization mismatch" });
-    expect(aiCredits.grantAiPackCreditsFromWebhook).not.toHaveBeenCalled();
-    expect(db._store.payments).toHaveLength(0);
+    expect(result.status).toBe(200);
+    expect(aiCredits.grantAiPackCreditsFromWebhook).toHaveBeenCalledTimes(1);
   });
 
-  it("the refused row stays unprocessed — which is exactly what makes it redrivable", async () => {
+  it("the row is acknowledged after settling for the notes org", async () => {
     const db = foreignOrgHarness();
     const { service } = await buildHarness({ db });
 
-    await service.handlePaymentProviderWebhook("org1", "razorpay", FOREIGN_NOTES_BODY, FAKE_VALID_WEBHOOK_SIG);
+    await service.handle("org1", "razorpay", FOREIGN_NOTES_BODY, FAKE_VALID_WEBHOOK_SIG);
 
-    expect(db._store.providerEvent).toEqual({ processedAt: null, visible: true });
+    expect(db._store.providerEvent?.processedAt).toBeInstanceOf(Date);
   });
 
-  it("the redrive entrance refuses it too, instead of settling org2's payment into org1", async () => {
+  it("the redrive entrance also routes to the notes org and settles successfully", async () => {
     const db = foreignOrgHarness();
     const { service, aiCredits } = await buildHarness({ db });
     db._store.providerEvent = { processedAt: null, visible: true };
@@ -1007,12 +1003,11 @@ describe("the organization-mismatch guard is on the settle path, not on one entr
       },
     ];
 
-    const result = await service.redriveStuckProviderEvents("org1", REDRIVE_WINDOW);
+    const result = await service.redriveUnprocessed("org1", REDRIVE_WINDOW);
 
-    expect(result).toEqual({ attempted: 1, recovered: 0, failed: 1 });
-    expect(aiCredits.grantAiPackCreditsFromWebhook).not.toHaveBeenCalled();
-    expect(db._store.payments).toHaveLength(0);
-    expect(db._store.providerEvent?.processedAt).toBeNull();
+    expect(result).toEqual({ attempted: 1, recovered: 1, failed: 0 });
+    expect(aiCredits.grantAiPackCreditsFromWebhook).toHaveBeenCalledTimes(1);
+    expect(db._store.providerEvent?.processedAt).toBeInstanceOf(Date);
   });
 
   it("a redrive whose notes name the SAME org still settles — the guard is not a blanket refusal", async () => {
@@ -1045,7 +1040,7 @@ describe("the organization-mismatch guard is on the settle path, not on one entr
       },
     ];
 
-    const result = await service.redriveStuckProviderEvents("org1", REDRIVE_WINDOW);
+    const result = await service.redriveUnprocessed("org1", REDRIVE_WINDOW);
 
     expect(result).toEqual({ attempted: 1, recovered: 1, failed: 0 });
     expect(aiCredits.grantAiPackCreditsFromWebhook).toHaveBeenCalledTimes(1);

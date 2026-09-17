@@ -144,10 +144,12 @@ export class AuthMagicLinkService {
       .resolvePreferredOrgId(row.userId)
       .catch(() => null);
 
-    const [membership, sessionId] = await Promise.all([
-      this.membershipResolver.resolveActiveMembership(row.userId, preferredOrgId ?? null),
-      this.membershipResolver.createLoginSession(row.userId, context),
-    ]);
+    const membership = await this.membershipResolver.resolveActiveMembership(row.userId, preferredOrgId ?? null);
+    const sessionId = await this.membershipResolver.createLoginSession(
+      row.userId,
+      context,
+      membership?.maxConcurrentSessions ?? null,
+    );
 
     await Promise.all([
       this.cache.invalidate(CACHE_KEYS.userSession(row.userId)),

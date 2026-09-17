@@ -1,12 +1,9 @@
 import { ConflictException, Inject, Injectable } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
-import { and, eq } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
-import { organizationMembers } from "../../../db/schema";
 import { CacheService } from "../../../common/cache/cache.service";
 import { CACHE_KEYS } from "../../../common/cache/cache-keys";
-import { runInNewTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
 import {
   chooseRegionForNewOrg,
   regionPlacementCoordinates,
@@ -218,37 +215,11 @@ export class OrganizationCreationService {
         );
       }
 
-      if (!done.has("bootstrap-owner-membership"))
-        await this.saga.runStep(
-          saga.sagaId,
-          "bootstrap-owner-membership",
-          async () => {
-            const [owner] = await runInNewTenantTransaction(this.db, orgId, (tx) =>
-              tx
-                .select({ id: organizationMembers.id })
-                .from(organizationMembers)
-                .where(
-                  and(
-                    eq(organizationMembers.orgId, orgId),
-                    eq(organizationMembers.isOwner, true),
-                  ),
-                )
-                .limit(1),
-            );
-            if (!owner)
-              throw new Error(
-                `Organization ${orgId} was created without an owner membership`,
-              );
-          },
-          executionToken,
-        );
-
       if (!done.has("activate-directory-projection"))
         await this.saga.runStep(
           saga.sagaId,
           "activate-directory-projection",
           async () => {
-            await this.indexService.refreshForUser(input.userId);
             const activation = await this.indexService.activate(
               input.userId,
               orgId,

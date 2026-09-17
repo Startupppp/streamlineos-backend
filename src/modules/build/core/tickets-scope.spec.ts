@@ -1,7 +1,7 @@
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
 import type { AccessService } from "../../access/access.service";
-import { resolveTicketsScope, TICKETS_PERMISSION as TICKETS_MANAGE_PERMISSION } from "./tickets-scope";
+import { resolveTicketsScope, TICKETS_PERMISSION } from "./tickets-scope";
 
 const mockAccess = {
   scopeFor: jest.fn(),
@@ -29,14 +29,14 @@ describe("resolveTicketsScope", () => {
     (mockAccess.scopeFor as jest.Mock).mockResolvedValueOnce("all");
     const result = await resolveTicketsScope(mockAccess, makeUser({ isOrgOwner: true }));
     expect(result.rawScope("spec reads the resolved value")).toBe("all");
-    expect(mockAccess.scopeFor).toHaveBeenCalledWith(expect.objectContaining({ isOrgOwner: true }), TICKETS_MANAGE_PERMISSION);
+    expect(mockAccess.scopeFor).toHaveBeenCalledWith(expect.objectContaining({ isOrgOwner: true }), TICKETS_PERMISSION);
   });
 
-  it("confirms the permission is scopable (non-scopable path would return all without a DB call)", async () => {
+  it("uses the non-scopable view permission for project-wide ticket visibility", async () => {
     const { isScopable } = jest.requireActual<typeof import("../../rbac/permissions")>(
       "../../rbac/permissions",
     );
-    expect(isScopable(TICKETS_MANAGE_PERMISSION)).toBe(true);
+    expect(isScopable(TICKETS_PERMISSION)).toBe(false);
   });
 
   it("returns all when the resolved scope is all", async () => {

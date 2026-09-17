@@ -30,7 +30,7 @@ import { seedOrg, type SeededFixture } from "test/helpers/seed-builder";
  *
  * WHAT THIS FILE DOES *NOT* PROVE. The `chat_channels` and `chat_channel_members` tables
  * carry RLS policies. Deleting the `eq(chatChannelMembers.orgId, orgId)` predicate from
- * `ChatChannelMembersService.getChannel` may still leave this file green if the policy
+ * `ChatChannelMembersImplementation.getChannel` may still leave this file green if the policy
  * supplies the tenant predicate independently. The attribution of the channel-read refusal
  * belongs to the service's own SQL — a unit test that compiles the query and asserts the
  * predicate is the right complement. The RBAC leg is what this file can attribute on its

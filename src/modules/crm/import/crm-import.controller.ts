@@ -19,10 +19,13 @@ import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
-import { CrmImportService, type ImportProgress } from "./crm-import.service";
+import type { ImportProgress } from "./crm-import-internals";
 import type { ImportEntity } from "./import-entities";
 import { IMPORT_ENTITY_PERMISSIONS } from "./import-permissions";
-import { CrmConnectorService } from "./crm-connector.service";
+import { CrmImportPreviewService } from "./crm-import-preview.service";
+import { CrmImportCommitService } from "./crm-import-commit.service";
+import { CrmImportRevertService } from "./crm-import-revert.service";
+import { CrmConnectorLifecycleService } from "./crm-connector-lifecycle.service";
 import type { ConnectorProvider, ConnectorStream } from "./connectors/connector-source";
 import { streamFor } from "./connectors/connector-catalog";
 import { ImportPump } from "./import-pump";
@@ -55,9 +58,11 @@ const crmConnectorSyncIdParams = z.object({ crmConnectorSyncId: z.string().min(1
 @UseGuards(JwtAuthGuard, PermissionGuard)
 export class CrmImportController {
   constructor(
-    private readonly imports: CrmImportService,
+    private readonly previews: CrmImportPreviewService,
+    private readonly commits: CrmImportCommitService,
+    private readonly reverts: CrmImportRevertService,
     private readonly exports: CrmExportService,
-    private readonly connectors: CrmConnectorService,
+    private readonly connectors: CrmConnectorLifecycleService,
     private readonly pump: ImportPump,
     private readonly access: AccessService,
   ) {}
@@ -91,7 +96,7 @@ export class CrmImportController {
     const entity = body.entity;
     await this.assertMayWrite(u, entity);
 
-    return this.imports.preview({
+    return this.previews.preview({
       organizationId: u.orgId,
       userId: u.userId,
       filename: body.filename,
@@ -111,7 +116,7 @@ export class CrmImportController {
     @Param("crmImportId") crmImportId: string,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.imports.getImport(u.orgId, crmImportId);
+    return this.previews.getImport(u.orgId, crmImportId);
   }
 
   /**
@@ -140,11 +145,11 @@ export class CrmImportController {
     @Param("crmImportId") crmImportId: string,
     @CurrentUser() u: CurrentUserContext,
   ): Promise<ImportProgress> {
-    await this.assertMayWrite(u, await this.imports.targetEntityOf(u.orgId, crmImportId));
+    await this.assertMayWrite(u, await this.previews.targetEntityOf(u.orgId, crmImportId));
 
-    const runId = await this.imports.startCommit(u.orgId, crmImportId);
+    const runId = await this.commits.startCommit(u.orgId, crmImportId);
     await this.pump.advance(u.orgId, runId);
-    return this.imports.progress(u.orgId, crmImportId);
+    return this.previews.progress(u.orgId, crmImportId);
   }
 
   /**
@@ -166,11 +171,11 @@ export class CrmImportController {
   ): Promise<ImportProgress> {
     // An undo writes too: it soft-deletes what the import created and puts back
     // what it overwrote. Same right, same check.
-    await this.assertMayWrite(u, await this.imports.targetEntityOf(u.orgId, crmImportId));
+    await this.assertMayWrite(u, await this.previews.targetEntityOf(u.orgId, crmImportId));
 
-    const runId = await this.imports.startRevert(u.orgId, u.userId, crmImportId);
+    const runId = await this.reverts.startRevert(u.orgId, u.userId, crmImportId);
     await this.pump.advance(u.orgId, runId);
-    return this.imports.progress(u.orgId, crmImportId);
+    return this.previews.progress(u.orgId, crmImportId);
   }
 
   /**
@@ -187,7 +192,7 @@ export class CrmImportController {
     @Param("crmImportId") crmImportId: string,
     @CurrentUser() u: CurrentUserContext,
   ): Promise<ImportProgress> {
-    return this.imports.progress(u.orgId, crmImportId);
+    return this.previews.progress(u.orgId, crmImportId);
   }
 
   /**

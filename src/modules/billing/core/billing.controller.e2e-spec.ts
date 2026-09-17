@@ -8,27 +8,46 @@ import { runInNewTenantTransaction } from "../../../common/tenant/run-in-tenant-
 import { paymentProviders } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.types";
-import { BillingService } from "./billing.service";
+import { BillingPaymentActivation } from "./billing-payment-activation";
+import { BillingAccountOverview } from "./billing-account-overview";
 
-/**
- * The 200-path cases below assert the response CONTRACT of the checkout and
- * subscription routes, not checkout itself, so those three calls are stubbed
- * on the real `BillingService` instance. The webhook handler is deliberately
- * not stubbed: its case runs the real signature check against the provider
- * row seeded in `beforeAll`.
- */
-const stubBilling = {
+const stubActivation = {
   createOrder: jest.fn().mockResolvedValue({
     orderId: "order_1",
+    purchaseId: 1,
+    expiresAt: new Date(Date.now() + 30 * 60 * 1000).toISOString(),
     amount: 100,
     currency: "INR",
     keyId: "key_1",
+    environment: "test",
     plan: "STARTER",
     billingCycle: "monthly",
     discountAmount: 0,
   }),
-  verifyAndActivate: jest.fn().mockResolvedValue({ success: true, plan: "STARTER", status: "ACTIVE" }),
-  getSubscription: jest.fn().mockResolvedValue({ subscription: null, publicKeyId: null, isConfigured: false }),
+  verifyAndActivate: jest.fn().mockResolvedValue({
+    success: true,
+    plan: "STARTER",
+    billingCycle: "monthly",
+    status: "ACTIVE",
+    currentPeriodEnd: null,
+    alreadyActivated: false,
+  }),
+};
+
+const stubAccountOverview = {
+  getSubscription: jest.fn().mockResolvedValue({
+    subscription: null,
+    publicKeyId: null,
+    isConfigured: false,
+    platformCheckout: {
+      configured: false,
+      providerKey: null,
+      environment: null,
+      publicKeyId: null,
+      webhookConfigured: false,
+      unavailableReason: "no_credentials",
+    },
+  }),
 };
 
 describe("Billing auth/RBAC (e2e)", () => {
@@ -62,7 +81,8 @@ describe("Billing auth/RBAC (e2e)", () => {
         .onConflictDoNothing(),
     );
 
-    Object.assign(app.get(BillingService), stubBilling);
+    Object.assign(app.get(BillingPaymentActivation), stubActivation);
+    Object.assign(app.get(BillingAccountOverview), stubAccountOverview);
   });
 
   afterAll(async () => {
@@ -177,6 +197,8 @@ describe("Billing auth/RBAC (e2e)", () => {
       .set("Idempotency-Key", randomUUID())
       .send({ plan: "STARTER" });
     expect(res.status).toBe(200);
+    expect(typeof res.body.expiresAt).toBe("string");
+    expect(typeof res.body.purchaseId).toBe("number");
     expect(res.body).toMatchObject({ orderId: "order_1", plan: "STARTER", billingCycle: "monthly", discountAmount: 0 });
   });
 
@@ -186,7 +208,7 @@ describe("Billing auth/RBAC (e2e)", () => {
       .patch("/billing/checkout")
       .set("Authorization", `Bearer ${token}`)
       .set("Idempotency-Key", randomUUID())
-      .send({ orderId: "order_1", paymentId: "pay_1", signature: "sig", plan: "STARTER" });
+      .send({ orderId: "order_1", paymentId: "pay_1", signature: "sig" });
     expect(res.status).toBe(200);
     expect(res.body).toMatchObject({ success: true, plan: "STARTER", status: "ACTIVE" });
   });

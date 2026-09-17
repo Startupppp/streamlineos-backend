@@ -297,6 +297,7 @@ export class AuthController {
     @Request() req: { ip?: string; headers: Record<string, string> },
   ) {
     await this.enforceRateLimit("auth:email-otp", this.getIp(req));
+    await this.enforceRateLimit("auth:email-otp:email", body.email.toLowerCase().trim());
     await this.emailOtp.requestEmailOtp(body.email);
     return { message: "We've emailed you a 6-digit sign-in code." };
   }
@@ -316,6 +317,7 @@ export class AuthController {
     @Request() req: { ip?: string; headers: Record<string, string> },
   ) {
     await this.enforceRateLimit("auth:email-otp-verify", this.getIp(req));
+    await this.enforceRateLimit("auth:email-otp-verify:email", body.email.toLowerCase().trim());
     return this.emailOtp.verifyEmailOtp(body.email, body.code);
   }
 

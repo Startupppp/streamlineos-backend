@@ -2,11 +2,10 @@ import { ForbiddenException, NotFoundException } from "@nestjs/common";
 import type { SQL } from "drizzle-orm";
 import { PgDialect } from "drizzle-orm/pg-core";
 import type { Db } from "../../../db/drizzle.module";
-import type { CacheService } from "../../../common/cache/cache.service";
-import type { AblyService } from "../../realtime/ably.service";
 import type { EntityReferenceService } from "../../entity-reference/entity-reference.service";
 import type { EntityActor } from "../../entity-reference/entity-reference.types";
-import { ChatChannelMembersService } from "../chat-channel-members.service";
+import { ChatChannelMembersImplementation } from "../chat-channel-members-implementation";
+import { ChatChannelMemberState } from "../chat-channel-member-state";
 import { ChatChannelListService } from "../chat-channel-list.service";
 
 const ORG = "org-a";
@@ -82,12 +81,7 @@ function build(
 }
 
 function service(db: Db, resolver: EntityReferenceService) {
-  return new ChatChannelMembersService(
-    db,
-    {} as unknown as CacheService,
-    resolver,
-    {} as unknown as AblyService,
-  );
+  return new ChatChannelMembersImplementation(db, resolver);
 }
 
 describe("joinOpenChannel — what 'open' means", () => {
@@ -267,7 +261,7 @@ const LIST_CHANNEL_ROW = {
 };
 
 interface RoundTrip {
-  members: ChatChannelMembersService;
+  state: ChatChannelMemberState;
   list: ChatChannelListService;
   store: MemberRow[];
   deleteCalls: () => number;
@@ -344,12 +338,7 @@ function buildRoundTrip(): RoundTrip {
 
   const resolver = entities(RESOLVED);
   return {
-    members: new ChatChannelMembersService(
-      db,
-      { invalidateNamespace: jest.fn() } as unknown as CacheService,
-      resolver,
-      {} as unknown as AblyService,
-    ),
+    state: new ChatChannelMemberState(db),
     list: new ChatChannelListService(db, resolver),
     store,
     deleteCalls: () => deleteMock.mock.calls.length,
@@ -372,7 +361,7 @@ describe("archive then unarchive returns the channel to the list it came from", 
   it("archiving moves it out of my channels and into archived", async () => {
     const harness = buildRoundTrip();
 
-    await expect(harness.members.archiveChannel(CHANNEL, USER, ORG)).resolves.toEqual({ ok: true });
+    await expect(harness.state.archiveChannel(CHANNEL, USER, ORG)).resolves.toEqual({ ok: true });
 
     expect(await listedIds(harness.list, false)).toEqual([]);
     expect(await listedIds(harness.list, true)).toEqual([CHANNEL]);
@@ -381,8 +370,8 @@ describe("archive then unarchive returns the channel to the list it came from", 
   it("unarchiving puts it back in my channels exactly once and clears it from archived", async () => {
     const harness = buildRoundTrip();
 
-    await harness.members.archiveChannel(CHANNEL, USER, ORG);
-    await expect(harness.members.unarchiveChannel(CHANNEL, USER, ORG)).resolves.toEqual({ ok: true });
+    await harness.state.archiveChannel(CHANNEL, USER, ORG);
+    await expect(harness.state.unarchiveChannel(CHANNEL, USER, ORG)).resolves.toEqual({ ok: true });
 
     expect(await listedIds(harness.list, false)).toEqual([CHANNEL]);
     expect(await listedIds(harness.list, true)).toEqual([]);
@@ -391,8 +380,8 @@ describe("archive then unarchive returns the channel to the list it came from", 
   it("the round trip loses no membership: the same two rows with the same roles survive it", async () => {
     const harness = buildRoundTrip();
 
-    await harness.members.archiveChannel(CHANNEL, USER, ORG);
-    await harness.members.unarchiveChannel(CHANNEL, USER, ORG);
+    await harness.state.archiveChannel(CHANNEL, USER, ORG);
+    await harness.state.unarchiveChannel(CHANNEL, USER, ORG);
 
     expect(harness.store).toHaveLength(2);
     expect(harness.store.map((row) => [row.membershipId, row.role, row.archivedAt])).toEqual([
@@ -405,7 +394,7 @@ describe("archive then unarchive returns the channel to the list it came from", 
   it("archiving is the caller's own view: the other member's row is not stamped", async () => {
     const harness = buildRoundTrip();
 
-    await harness.members.archiveChannel(CHANNEL, USER, ORG);
+    await harness.state.archiveChannel(CHANNEL, USER, ORG);
 
     const mine = harness.store.find((row) => row.membershipId === MEMBERSHIP);
     const theirs = harness.store.find((row) => row.membershipId === TARGET_MEMBERSHIP);
@@ -416,8 +405,8 @@ describe("archive then unarchive returns the channel to the list it came from", 
   it("unarchiving clears archived_at rather than stamping a newer date", async () => {
     const harness = buildRoundTrip();
 
-    await harness.members.archiveChannel(CHANNEL, USER, ORG);
-    await harness.members.unarchiveChannel(CHANNEL, USER, ORG);
+    await harness.state.archiveChannel(CHANNEL, USER, ORG);
+    await harness.state.unarchiveChannel(CHANNEL, USER, ORG);
 
     expect(harness.store.find((row) => row.membershipId === MEMBERSHIP)?.archivedAt).toBeNull();
   });
@@ -426,7 +415,7 @@ describe("archive then unarchive returns the channel to the list it came from", 
     const harness = buildRoundTrip();
     harness.store.splice(0, 1);
 
-    await expect(harness.members.archiveChannel(CHANNEL, USER, ORG)).rejects.toBeInstanceOf(
+    await expect(harness.state.archiveChannel(CHANNEL, USER, ORG)).rejects.toBeInstanceOf(
       NotFoundException,
     );
   });

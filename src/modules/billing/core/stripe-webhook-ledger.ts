@@ -24,10 +24,8 @@ import type { BillingCycle, Plan } from "./dto/billing.schemas";
  * of counting how many times a jest double was invoked -- which is the same
  * assertion the bug would pass.
  *
- * The provider key is fixed to `stripe` throughout. Razorpay's deliveries go
- * through `BillingService.handlePaymentProviderWebhook`, which speaks a
- * different envelope and resolves a different credential; sharing one class
- * between them would mean branching on the provider inside every method.
+ * The provider key is fixed to `stripe` throughout; the two providers share no
+ * envelope, no credential and no ordering assumptions — only the ledger they land in.
  */
 
 export const STRIPE_PROVIDER_KEY = "stripe";

@@ -135,7 +135,7 @@ describe(`${SEEDED_HARNESS} a replayed credit grant is a no-op, not a 500`, () =
    * `uq_ai_credit_txns_plan_grant_ref` — (org_id, reference_id) WHERE
    * type = 'PLAN_GRANT' AND reference_id IS NOT NULL.
    *
-   * No `referenceId` argument on purpose: that is how `billing.service`
+   * No `referenceId` argument on purpose: that is how `BillingPaymentActivation`
    * activates a plan, and it is the shape that skips the `if (referenceId)`
    * pre-check entirely while still writing `referenceId ?? plan` into the row.
    * So the second grant reaches the index rather than the pre-check, and the

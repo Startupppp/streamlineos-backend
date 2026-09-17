@@ -111,19 +111,21 @@ function build(options: {
 
   const transaction = jest.fn(async (callback: (tx: unknown) => Promise<unknown>) => callback({}));
 
-  const activation = new BillingPaymentActivation({
-    db: { transaction } as never,
-    audit: { log: jest.fn() } as never,
-    aiCredits: { grantPlanCredits: jest.fn() } as never,
-    planLimits: { bust: jest.fn() } as never,
-    prorationLedger: {} as never,
-    catalog: { getActivePriceForPlanTier: jest.fn().mockResolvedValue(null) } as never,
-    revenueAnalytics: { emit: jest.fn() } as never,
-    providers: {} as never,
-    externalEffectLedger: { execute: jest.fn() } as never,
-    platformMerchant: platformMerchant as never,
-    purchaseService: purchaseService as never,
-  });
+  const activation = new BillingPaymentActivation(
+    { transaction } as never,
+    undefined as never,
+    { log: jest.fn() } as never,
+    { grantPlanCredits: jest.fn() } as never,
+    { bust: jest.fn() } as never,
+    {} as never,
+    { getActivePriceForPlanTier: jest.fn().mockResolvedValue(null) } as never,
+    { emit: jest.fn() } as never,
+    {} as never,
+    { execute: jest.fn() } as never,
+    platformMerchant as never,
+    {} as never,
+  );
+  Reflect.set(activation, 'purchaseService', purchaseService);
 
   return { activation, purchaseService, fetchPayment, markFailed, lockForActivation };
 }
@@ -296,11 +298,7 @@ describe("createOrder — checkout is refused when the platform merchant is unav
       }),
       environment: () => null,
     };
-    Reflect.set(
-      Reflect.get(activation, "deps") as object,
-      "platformMerchant",
-      unreadyMerchant,
-    );
+    Reflect.set(Reflect.get(activation, "deps") as object, "platformMerchant", unreadyMerchant);
 
     await expect(
       activation.createOrder("org-buyer", "user-1", "STARTER", "monthly"),

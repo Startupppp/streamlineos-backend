@@ -114,7 +114,7 @@ describe("RateLimitService — Redis dead, in-memory fallback is conservative", 
   });
 
   it("allows requests up to (not past) the effective limit", async () => {
-    const tier = "auth:register";
+    const tier = "auth:magic-link";
     const id = `allow-user-${Date.now()}`;
     const limit = effectiveRateLimit(tier);
 

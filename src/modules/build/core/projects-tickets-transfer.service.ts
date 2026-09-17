@@ -1,4 +1,4 @@
-import { Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, eq, isNull } from "drizzle-orm";
 import {
   projectMembers,
@@ -22,6 +22,7 @@ import type { ImportTicketsInput, UpdateTicketInput } from "./dto/projects.schem
 import { resolveAssigneeId } from "./tickets-helpers";
 import { allocateTicketNumbers } from "./lib/allocate-ticket-number";
 import { reserveTicketCapacity } from "./build-ticket-capacity";
+import { CacheService } from "../../../common/cache/cache.service";
 
 const EXPORT_ROW_CAP = 5_000;
 
@@ -33,6 +34,7 @@ export class ProjectsTicketsTransferService {
     private readonly access: AccessService,
     private readonly notifications: NotificationsService,
     private readonly dispatch: NotificationDispatchService,
+    private readonly cache: CacheService,
   ) {}
 
   async exportTickets(u: CurrentUserContext, projectId: number) {
@@ -97,6 +99,11 @@ export class ProjectsTicketsTransferService {
   async importTickets(u: CurrentUserContext, projectId: number, body: ImportTicketsInput) {
     const { hasAccess } = await this.read.checkProjectAccess(u.orgId, u.userId, projectId);
     if (!hasAccess) throw new NotFoundException("Not found");
+    if (
+      body.rows.some((row) => row.assigneeEmail !== undefined) &&
+      !(await this.access.holds(u, "build:tickets:assign"))
+    )
+      throw new ForbiddenException("Not authorized to assign tickets");
 
     const [validStatuses, memberEmails] = await Promise.all([
       this.db
@@ -104,17 +111,23 @@ export class ProjectsTicketsTransferService {
         .from(projectStatuses)
         .where(and(eq(projectStatuses.orgId, u.orgId), eq(projectStatuses.projectId, projectId))),
       this.db
-        .select({ userId: organizationMembers.userId, email: users.email, membershipId: organizationMembers.id, status: organizationMembers.status })
+        .select({ userId: organizationMembers.userId, email: users.email, membershipId: organizationMembers.id })
         .from(projectMembers)
         .innerJoin(organizationMembers, and(eq(organizationMembers.orgId, projectMembers.orgId), eq(organizationMembers.id, projectMembers.membershipId)))
         .innerJoin(users, eq(organizationMembers.userId, users.id))
-        .where(eq(projectMembers.projectId, projectId)),
+        .where(
+          and(
+            eq(projectMembers.orgId, u.orgId),
+            eq(projectMembers.projectId, projectId),
+            eq(organizationMembers.status, "ACTIVE"),
+          ),
+        ),
     ]);
 
     const validStatusSet = new Set(validStatuses.map((s) => s.name));
     const emailToUserId = new Map(memberEmails.map((m) => [m.email, m.userId]));
     const userIdToMembershipId = new Map(
-      memberEmails.filter((m) => m.status === "ACTIVE").map((m) => [m.userId, m.membershipId]),
+      memberEmails.map((m) => [m.userId, m.membershipId]),
     );
     const defaultStatus = validStatuses[0]?.name ?? "TODO";
 
@@ -186,6 +199,10 @@ export class ProjectsTicketsTransferService {
         }
       }
     });
+
+    await this.cache
+      .del(`projects:analytics:${u.orgId}:${projectId}`)
+      .catch(logSideEffectFailure("analytics cache eviction", { orgId: u.orgId, projectId }));
 
     return { created: createdCount, skipped };
   }

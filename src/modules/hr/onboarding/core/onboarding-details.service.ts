@@ -1,4 +1,9 @@
-import { ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import {
+  ConflictException,
+  Inject,
+  Injectable,
+  NotFoundException,
+} from "@nestjs/common";
 import { and, eq, isNull, sql } from "drizzle-orm";
 import {
   documents,
@@ -14,20 +19,23 @@ import { type Db } from "../../../../db/drizzle.module";
 import { CacheService } from "../../../../common/cache/cache.service";
 import { CACHE_KEYS } from "../../../../common/cache/cache-keys";
 import { organizationPeople } from "../../../../db/schema/directory/organization-people";
+import { decrypt, encrypt } from "./crypto.helpers";
 import {
-  decrypt,
-  encrypt,
-} from "./crypto.helpers";
-import { sealSensitiveJson } from "../../../../common/security/sensitive-field";
-import { readBankDetails } from "../../../../common/hr/canonical-bank-details";
+  readBankDetails,
+  sealBankDetails,
+} from "../../../../common/hr/canonical-bank-details";
 import { resolveCountryRequirements } from "./onboarding-requirements.catalog";
-import type { BankDetailsInput, PersonalDetailsInput } from "./dto/onboarding.schemas";
+import type {
+  BankDetailsInput,
+  PersonalDetailsInput,
+} from "./dto/onboarding.schemas";
 import { runInTenantTransaction } from "../../../../common/tenant/run-in-tenant-transaction";
 import {
   livePersonOfUser,
   livePersonOfEmployment,
   primaryEmploymentOfPerson,
 } from "../../../directory/employment-query";
+import { PersonEmploymentSyncService } from "../../core/person-employment-sync.service";
 
 export const BANK_DETAILS_NEED_EMPLOYMENT_MESSAGE =
   "Your employment record is not set up yet, so bank and tax details cannot be saved. Ask your HR administrator to complete your employment record, then finish this step.";
@@ -37,6 +45,7 @@ export class OnboardingDetailsService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly cache: CacheService,
+    private readonly employmentSync: PersonEmploymentSyncService,
   ) {}
 
   async savePersonalDetails(
@@ -44,6 +53,26 @@ export class OnboardingDetailsService {
     userId: string,
     input: PersonalDetailsInput,
   ) {
+    await runInTenantTransaction(
+      this.db,
+      async (tx) => {
+        await this.assertMembership(tx, orgId, userId);
+        await this.savePersonalDetailsInTransaction(tx, orgId, userId, input);
+      },
+      { orgId },
+    );
+
+    return { success: true };
+  }
+
+  async savePersonalDetailsInTransaction(
+    tx: Db,
+    orgId: string,
+    userId: string,
+    input: PersonalDetailsInput,
+  ): Promise<void> {
+    await this.employmentSync.ensureFromUserId(orgId, userId, userId, tx);
+
     const emergencyContact =
       input.emergencyName && input.emergencyRelation && input.emergencyPhone
         ? {
@@ -53,63 +82,48 @@ export class OnboardingDetailsService {
           }
         : undefined;
 
-    await runInTenantTransaction(this.db, async (tx) => {
-      const membership = await tx.query.organizationMembers.findFirst({
-        where: and(
-          eq(organizationMembers.orgId, orgId),
-          eq(organizationMembers.userId, userId),
+    await tx
+      .update(users)
+      .set({
+        phone: input.phone,
+        ...(input.gender ? { gender: input.gender } : {}),
+        ...(input.dateOfBirth ? { dateOfBirth: input.dateOfBirth } : {}),
+        ...(emergencyContact ? { emergencyContact } : {}),
+      })
+      .where(eq(users.id, userId));
+
+    await tx
+      .update(organizationPeople)
+      .set({
+        phone: input.phone,
+        ...(input.gender ? { gender: input.gender } : {}),
+        ...(input.dateOfBirth ? { dateOfBirth: input.dateOfBirth } : {}),
+        address: {
+          line1: input.addressLine1,
+          city: input.addressCity,
+          state: input.addressState,
+          postalCode: input.addressPostalCode,
+          country: input.addressCountry,
+        },
+        ...(emergencyContact
+          ? {
+              emergencyContact: {
+                name: emergencyContact.name,
+                relationship: emergencyContact.relation,
+                phone: emergencyContact.phone,
+              },
+            }
+          : {}),
+      })
+      .where(
+        and(
+          eq(organizationPeople.organizationId, orgId),
+          eq(organizationPeople.userId, userId),
+          isNull(organizationPeople.deletedAt),
         ),
-        columns: { id: true },
-      });
-      if (!membership) {
-        throw new NotFoundException("User not found in this organization");
-      }
+      );
 
-      await tx
-        .update(users)
-        .set({
-          phone: input.phone,
-          ...(input.gender ? { gender: input.gender } : {}),
-          ...(input.dateOfBirth ? { dateOfBirth: input.dateOfBirth } : {}),
-          ...(emergencyContact ? { emergencyContact } : {}),
-        })
-        .where(eq(users.id, userId));
-
-      await tx
-        .update(organizationPeople)
-        .set({
-          phone: input.phone,
-          ...(input.gender ? { gender: input.gender } : {}),
-          ...(input.dateOfBirth ? { dateOfBirth: input.dateOfBirth } : {}),
-          address: {
-            line1: input.addressLine1,
-            city: input.addressCity,
-            state: input.addressState,
-            postalCode: input.addressPostalCode,
-            country: input.addressCountry,
-          },
-          ...(emergencyContact
-            ? {
-                emergencyContact: {
-                  name: emergencyContact.name,
-                  relationship: emergencyContact.relation,
-                  phone: emergencyContact.phone,
-                },
-              }
-            : {}),
-        })
-        .where(
-          and(
-            eq(organizationPeople.organizationId, orgId),
-            eq(organizationPeople.userId, userId),
-            isNull(organizationPeople.deletedAt),
-          ),
-        );
-    }, { orgId });
-
-    await this.upsertOnboardingStep(userId, orgId, "Personal Details");
-
-    return { success: true };
+    await this.upsertOnboardingStep(tx, userId, orgId, "Personal Details");
   }
 
   async getPersonalDetails(orgId: string, userId: string) {
@@ -132,7 +146,10 @@ export class OnboardingDetailsService {
         organizationPeople,
         and(
           eq(organizationPeople.organizationId, hrPeople.orgId),
-          eq(organizationPeople.organizationPersonId, hrPeople.organizationPersonId),
+          eq(
+            organizationPeople.organizationPersonId,
+            hrPeople.organizationPersonId,
+          ),
         ),
       )
       .where(
@@ -157,13 +174,17 @@ export class OnboardingDetailsService {
       addressPostalCode: user.personAddress?.postalCode ?? null,
       addressCountry: user.personAddress?.country ?? null,
       emergencyName:
-        user.userEmergencyContact?.name ?? user.personEmergencyContact?.name ?? null,
+        user.userEmergencyContact?.name ??
+        user.personEmergencyContact?.name ??
+        null,
       emergencyRelation:
         user.userEmergencyContact?.relation ??
         user.personEmergencyContact?.relationship ??
         null,
       emergencyPhone:
-        user.userEmergencyContact?.phone ?? user.personEmergencyContact?.phone ?? null,
+        user.userEmergencyContact?.phone ??
+        user.personEmergencyContact?.phone ??
+        null,
     };
   }
 
@@ -172,6 +193,24 @@ export class OnboardingDetailsService {
     userId: string,
     input: BankDetailsInput,
   ) {
+    await runInTenantTransaction(
+      this.db,
+      async (tx) => {
+        await this.assertMembership(tx, orgId, userId);
+        await this.saveBankDetailsInTransaction(tx, orgId, userId, input);
+      },
+      { orgId },
+    );
+
+    return { success: true };
+  }
+
+  async saveBankDetailsInTransaction(
+    tx: Db,
+    orgId: string,
+    userId: string,
+    input: BankDetailsInput,
+  ): Promise<void> {
     const req = resolveCountryRequirements(input.countryCode);
     const statutory = input.statutory ?? {};
     const primaryKey = req.statutoryFields[0]?.key;
@@ -196,61 +235,48 @@ export class OnboardingDetailsService {
     };
     const encryptedTaxId = primaryTaxId ? encrypt(primaryTaxId) : undefined;
 
-    await runInTenantTransaction(this.db, async (tx) => {
-      const membership = await tx.query.organizationMembers.findFirst({
-        where: and(
-          eq(organizationMembers.orgId, orgId),
-          eq(organizationMembers.userId, userId),
+    const [employment] = await tx
+      .select({ id: hrEmployments.id })
+      .from(hrEmployments)
+      .innerJoin(
+        hrPeople,
+        livePersonOfEmployment(orgId, hrEmployments, hrPeople),
+      )
+      .where(
+        and(
+          primaryEmploymentOfPerson(orgId, hrPeople, hrEmployments),
+          eq(hrPeople.userId, userId),
         ),
-        columns: { id: true },
-      });
-      if (!membership) {
-        throw new NotFoundException("User not found in this organization");
-      }
+      )
+      .limit(1);
 
-      const [employment] = await tx
-        .select({ id: hrEmployments.id })
-        .from(hrEmployments)
-        .innerJoin(hrPeople, livePersonOfEmployment(orgId, hrEmployments, hrPeople))
-        .where(and(primaryEmploymentOfPerson(orgId, hrPeople, hrEmployments), eq(hrPeople.userId, userId)))
-        .limit(1);
+    const employmentId =
+      employment?.id ??
+      (await this.employmentSync.ensureFromUserId(orgId, userId, userId, tx))
+        ?.employmentId;
 
-      if (!employment) throw new ConflictException(BANK_DETAILS_NEED_EMPLOYMENT_MESSAGE);
+    if (!employmentId)
+      throw new ConflictException(BANK_DETAILS_NEED_EMPLOYMENT_MESSAGE);
 
-      const sensitiveBankDetails = {
-        accountNumber: bankDetails.accountNumber,
-        bankName: bankDetails.bankName,
-        branch: bankDetails.branch,
-        ifsc: bankDetails.ifsc,
-        swift: bankDetails.swift,
-        accountHolder: bankDetails.accountHolder,
-        pfUanNumber: bankDetails.pfUanNumber,
-        esiIpNumber: bankDetails.esiIpNumber,
-        iban: bankDetails.iban,
-        routingNumber: bankDetails.routingCode,
-      };
-      const sealedBankDetails = sealSensitiveJson(sensitiveBankDetails);
-      await tx
-        .insert(hrEmployeeSensitiveFields)
-        .values({
-          orgId,
-          employmentId: employment.id,
+    const sealedBankDetails = sealBankDetails(bankDetails);
+    await tx
+      .insert(hrEmployeeSensitiveFields)
+      .values({
+        orgId,
+        employmentId,
+        bankDetails: sealedBankDetails,
+        taxId: encryptedTaxId ?? null,
+      })
+      .onConflictDoUpdate({
+        target: hrEmployeeSensitiveFields.employmentId,
+        set: {
           bankDetails: sealedBankDetails,
-          taxId: encryptedTaxId ?? null,
-        })
-        .onConflictDoUpdate({
-          target: hrEmployeeSensitiveFields.employmentId,
-          set: {
-            bankDetails: sealedBankDetails,
-            ...(encryptedTaxId ? { taxId: encryptedTaxId } : {}),
-            updatedAt: new Date(),
-          },
-        });
-    }, { orgId });
+          ...(encryptedTaxId ? { taxId: encryptedTaxId } : {}),
+          updatedAt: new Date(),
+        },
+      });
 
-    await this.upsertOnboardingStep(userId, orgId, "Bank Details");
-
-    return { success: true };
+    await this.upsertOnboardingStep(tx, userId, orgId, "Bank Details");
   }
 
   async getBankDetails(orgId: string, userId: string) {
@@ -263,7 +289,10 @@ export class OnboardingDetailsService {
       .from(organizationMembers)
       .innerJoin(users, eq(users.id, organizationMembers.userId))
       .leftJoin(hrPeople, livePersonOfUser(orgId, organizationMembers.userId))
-      .leftJoin(hrEmployments, primaryEmploymentOfPerson(orgId, hrPeople, hrEmployments))
+      .leftJoin(
+        hrEmployments,
+        primaryEmploymentOfPerson(orgId, hrPeople, hrEmployments),
+      )
       .leftJoin(
         hrEmployeeSensitiveFields,
         and(
@@ -283,7 +312,9 @@ export class OnboardingDetailsService {
       throw new NotFoundException("User not found in this organization");
     }
 
-    const bank = user.sensitiveBankDetails ? readBankDetails(user.sensitiveBankDetails) : null;
+    const bank = user.sensitiveBankDetails
+      ? readBankDetails(user.sensitiveBankDetails)
+      : null;
     const countryCode = bank?.bankCountry ?? "IN";
     const requirements = resolveCountryRequirements(countryCode);
     const statutory = { ...(bank?.statutory ?? {}) };
@@ -354,12 +385,30 @@ export class OnboardingDetailsService {
     await this.cache.invalidate(CACHE_KEYS.userSession(userId));
   }
 
+  private async assertMembership(
+    tx: Db,
+    orgId: string,
+    userId: string,
+  ): Promise<void> {
+    const membership = await tx.query.organizationMembers.findFirst({
+      where: and(
+        eq(organizationMembers.orgId, orgId),
+        eq(organizationMembers.userId, userId),
+      ),
+      columns: { id: true },
+    });
+    if (!membership) {
+      throw new NotFoundException("User not found in this organization");
+    }
+  }
+
   async upsertOnboardingStep(
+    tx: Db,
     userId: string,
     orgId: string,
     stepName: string,
   ) {
-    const existing = await this.db.query.onboardingSteps.findFirst({
+    const existing = await tx.query.onboardingSteps.findFirst({
       where: and(
         eq(onboardingSteps.userId, userId),
         eq(onboardingSteps.orgId, orgId),
@@ -367,12 +416,12 @@ export class OnboardingDetailsService {
       ),
     });
     if (existing) {
-      await this.db
+      await tx
         .update(onboardingSteps)
         .set({ status: "COMPLETED", completedAt: new Date() })
         .where(eq(onboardingSteps.id, existing.id));
     } else {
-      await this.db.insert(onboardingSteps).values({
+      await tx.insert(onboardingSteps).values({
         userId,
         orgId,
         stepName,

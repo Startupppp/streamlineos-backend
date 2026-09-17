@@ -12,7 +12,7 @@ import { type Db } from "../../db/drizzle.module";
 import { appUrl } from "../email/app-url";
 import { logger } from "../../common/logger/logger.service";
 import { AiCreditsService } from "../billing/core/ai-credits.service";
-import { BillingService } from "../billing/core/billing.service";
+import { BillingWebhookHandler } from "../billing/core/billing-webhook.handler";
 import { PlanLimitsService } from "../billing/core/plan-limits.service";
 import { RevenueAnalyticsService } from "../billing/core/revenue-analytics.service";
 import { type RevenueEventInput } from "../billing/core/revenue-events";
@@ -33,7 +33,7 @@ const REDRIVE_BATCH = 100;
 export class CronBillingService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
-    private readonly billing: BillingService,
+    private readonly webhookHandler: BillingWebhookHandler,
     private readonly aiCredits: AiCreditsService,
     private readonly planLimits: PlanLimitsService,
     private readonly revenue: RevenueAnalyticsService,
@@ -251,7 +251,7 @@ export class CronBillingService {
     let failed = 0;
 
     await forEachOrg(this.db, "billing-provider-event-redrive", async (_tx, orgId) => {
-      const result = await this.billing.redriveStuckProviderEvents(orgId, {
+      const result = await this.webhookHandler.redriveUnprocessed(orgId, {
         minAgeMs: REDRIVE_MIN_AGE_MS,
         maxAgeMs: REDRIVE_MAX_AGE_MS,
         limit: REDRIVE_BATCH,

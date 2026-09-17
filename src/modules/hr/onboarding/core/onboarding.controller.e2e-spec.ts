@@ -33,7 +33,7 @@ describe("Onboarding auth/RBAC (e2e)", () => {
     ["get", "/onboarding/personal-details"],
     ["patch", "/onboarding/bank-details"],
     ["get", "/onboarding/bank-details"],
-    ["post", "/onboarding/submit"],
+    ["post", "/onboarding/complete"],
     ["get", "/onboarding/user_1"],
   ];
 
@@ -65,7 +65,7 @@ describe("Onboarding auth/RBAC (e2e)", () => {
     ["get", "/onboarding/personal-details"],
     ["patch", "/onboarding/bank-details"],
     ["get", "/onboarding/bank-details"],
-    ["post", "/onboarding/submit"],
+    ["post", "/onboarding/complete"],
   ];
 
   it.each(authOnlyRoutes)(

@@ -23,7 +23,7 @@ function build(options: { orderFails?: boolean; claimReturnsNull?: boolean } = {
   });
   const attachProviderOrder = jest.fn().mockImplementation(() => {
     calls.push("purchase.attachProviderOrder");
-    return Promise.resolve(options.claimReturnsNull === true ? null : { id: 7, orgId: ORG });
+    return Promise.resolve(options.claimReturnsNull === true ? null : { id: 7, orgId: ORG, expiresAt: new Date(Date.now() + 30 * 60 * 1000) });
   });
   const markFailed = jest.fn().mockImplementation(() => {
     calls.push("purchase.markFailed");
@@ -48,19 +48,20 @@ function build(options: { orderFails?: boolean; claimReturnsNull?: boolean } = {
     fetchPayment: jest.fn(),
   };
 
-  const activation = new BillingPaymentActivation({
-    db: {
+  const activation = new BillingPaymentActivation(
+    {
       transaction: jest.fn(async (cb: (tx: unknown) => Promise<unknown>) => cb({})),
     } as never,
-    audit: { log: jest.fn() } as never,
-    aiCredits: {} as never,
-    planLimits: {} as never,
-    prorationLedger: {} as never,
-    catalog: { getActivePriceForPlanTier: jest.fn().mockResolvedValue(null) } as never,
-    revenueAnalytics: {} as never,
-    providers: {} as never,
-    externalEffectLedger: {} as never,
-    platformMerchant: {
+    undefined as never,
+    { log: jest.fn() } as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    { getActivePriceForPlanTier: jest.fn().mockResolvedValue(null) } as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    {
       resolve: () => provider,
       readiness: () => ({
         configured: true,
@@ -72,8 +73,11 @@ function build(options: { orderFails?: boolean; claimReturnsNull?: boolean } = {
       }),
       environment: () => "test",
     } as never,
-    purchaseService: { create, attachProviderOrder, markFailed } as never,
-  });
+    {} as never,
+  );
+  const purchaseSvc = { create, attachProviderOrder, markFailed };
+  Reflect.set(activation, 'purchaseService', purchaseSvc);
+  Reflect.set(Reflect.get(activation, 'orderCreation') as object, 'purchaseService', purchaseSvc);
 
   return { activation, calls, create, attachProviderOrder, markFailed, createOrder };
 }

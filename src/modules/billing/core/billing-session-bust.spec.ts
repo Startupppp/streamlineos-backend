@@ -249,31 +249,33 @@ function buildActivation(
   cache: ReturnType<typeof makeCache>,
   purchaseService = makePurchaseService(),
 ): BillingPaymentActivation {
-  return new BillingPaymentActivation({
-    db: db as unknown as import("../../../db/drizzle.module").Db,
-    audit: { log: jest.fn(), logCritical: jest.fn() } as unknown as AuditService,
-    aiCredits: {
+  const activation = new BillingPaymentActivation(
+    db as unknown as import("../../../db/drizzle.module").Db,
+    cache as unknown as CacheService,
+    { log: jest.fn(), logCritical: jest.fn() } as unknown as AuditService,
+    {
       grantPlanCredits: jest.fn().mockResolvedValue(undefined),
     } as unknown as AiCreditsService,
-    planLimits: {
+    {
       bust: jest.fn().mockResolvedValue(undefined),
       resolveTier: jest.fn().mockResolvedValue({ plan: "STARTER" }),
     } as unknown as PlanLimitsService,
-    prorationLedger: {
+    {
       recordPlanChange: jest.fn().mockResolvedValue(undefined),
     } as unknown as ProrationLedgerService,
-    catalog: {
+    {
       getActivePriceForPlanTier: jest.fn().mockResolvedValue(null),
     } as unknown as VersionedCatalogService,
-    revenueAnalytics: {
+    {
       emit: jest.fn().mockResolvedValue(undefined),
     } as unknown as RevenueAnalyticsService,
-    providers: {} as unknown as import("../payments/payment-provider-resolver.service").PaymentProviderResolver,
-    externalEffectLedger: {} as unknown as ExternalEffectLedger,
-    platformMerchant: makeMerchant(),
-    cache: cache as unknown as CacheService,
-    purchaseService: purchaseService as unknown as SubscriptionPurchaseService,
-  });
+    {} as unknown as import("../payments/payment-provider-resolver.service").PaymentProviderResolver,
+    {} as unknown as ExternalEffectLedger,
+    makeMerchant(),
+    {} as never,
+  );
+  Reflect.set(activation, 'purchaseService', purchaseService);
+  return activation;
 }
 
 const VALID_INPUT = {

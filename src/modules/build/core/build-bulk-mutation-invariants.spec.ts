@@ -14,9 +14,10 @@ const actor: CurrentUserContext = {
 };
 
 async function harness() {
+  const scopeFor = jest.fn().mockResolvedValue("all");
   const rows = [{ id: 10, status: "TODO", version: 1, assigneeMembershipId: null, allowed: true }];
   const chain = {
-    from: jest.fn().mockReturnThis(), where: jest.fn().mockReturnThis(),
+    from: jest.fn().mockReturnThis(), innerJoin: jest.fn().mockReturnThis(), where: jest.fn().mockReturnThis(),
     orderBy: jest.fn().mockReturnThis(), for: jest.fn().mockReturnThis(),
     limit: jest.fn().mockResolvedValue(rows),
     then: (resolve: (value: typeof rows) => unknown) => Promise.resolve(rows).then(resolve),
@@ -36,12 +37,24 @@ async function harness() {
     ProjectsTicketsQueryService,
     { provide: DRIZZLE, useValue: db },
     { provide: CacheService, useValue: { del: jest.fn().mockResolvedValue(undefined) } },
-    { provide: AccessService, useValue: { scopeFor: jest.fn().mockResolvedValue("all") } },
+    { provide: AccessService, useValue: { scopeFor } },
   ] }).compile();
-  return { module, db, set, service: module.get(ProjectsTicketsQueryService) };
+  return { module, db, set, scopeFor, service: module.get(ProjectsTicketsQueryService) };
 }
 
 describe("Build bulk assignment invariants", () => {
+  it("requires build:tickets:assign before reading selected tickets", async () => {
+    const h = await harness();
+    h.scopeFor.mockImplementation(async (_actor: CurrentUserContext, key: string) =>
+      key === "build:tickets:assign" ? "none" : "all",
+    );
+    try {
+      await expect(h.service.bulkUpdate(actor, 1, { ticketIds: [10], assigneeId: "member" }))
+        .rejects.toThrow("Not authorized to assign tickets");
+      expect(h.db.transaction).not.toHaveBeenCalled();
+    } finally { await h.module.close(); }
+  });
+
   it("rejects an unknown assignee instead of silently unassigning every selected ticket", async () => {
     const h = await harness();
     try {

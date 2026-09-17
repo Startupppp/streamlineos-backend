@@ -1,15 +1,20 @@
 import { z } from "zod";
-import { wireDate, nullableWireDate } from "../../../../common/openapi/wire-types";
+import {
+  wireDate,
+  nullableWireDate,
+} from "../../../../common/openapi/wire-types";
 import { cursorPageSchema } from "../../../../common/openapi/response-envelopes";
 
-const userSummarySchema = z.object({
-  id: z.string(),
-  name: z.string().nullable(),
-  firstName: z.string().nullable(),
-  lastName: z.string().nullable(),
-  email: z.string(),
-  image: z.string().nullable(),
-}).nullable();
+const userSummarySchema = z
+  .object({
+    id: z.string(),
+    name: z.string().nullable(),
+    firstName: z.string().nullable(),
+    lastName: z.string().nullable(),
+    email: z.string(),
+    image: z.string().nullable(),
+  })
+  .nullable();
 
 export const ticketRowSchema = z.object({
   id: z.number().int(),
@@ -53,35 +58,104 @@ export const ticketRowSchema = z.object({
 });
 
 export const ticketDetailSchema = ticketRowSchema.extend({
-  project: z.object({ id: z.number().int(), name: z.string(), key: z.string(), orgId: z.string() }).nullable(),
+  project: z
+    .object({
+      id: z.number().int(),
+      name: z.string(),
+      key: z.string(),
+      orgId: z.string(),
+    })
+    .nullable(),
   epic: z.object({ id: z.number().int(), name: z.string() }).nullable(),
   assignee: z.object({ user: userSummarySchema }).nullable(),
   reporter: userSummarySchema,
   members: z.array(z.object({ user: z.object({ user: userSummarySchema }) })),
   watchers: z.array(z.object({ user: userSummarySchema })),
-  attachments: z.array(z.object({
-    id: z.number().int(),
-    filename: z.string(),
-    url: z.string(),
-    uploader: userSummarySchema,
-  })),
-  labels: z.array(z.object({ id: z.number().int(), name: z.string(), color: z.string().nullable() })),
+  attachments: z.array(
+    z.object({
+      id: z.number().int(),
+      filename: z.string(),
+      url: z.string(),
+      uploader: userSummarySchema,
+    }),
+  ),
+  labels: z.array(
+    z.object({
+      id: z.number().int(),
+      name: z.string(),
+      color: z.string().nullable(),
+    }),
+  ),
 });
 
-export const ticketListRowSchema = ticketRowSchema.pick({
-  id: true, orgId: true, title: true, type: true, status: true, priority: true,
-  projectId: true, ticketNumber: true, sprintId: true, epicId: true,
-  assigneeMembershipId: true, reporterId: true, points: true, storyPoints: true,
-  link: true, rank: true, parentTicketId: true, originalEstimate: true,
-  timeSpent: true, startDate: true, dueDate: true, moduleId: true, cycleId: true,
-  sequenceId: true, estimate: true, createdAt: true, updatedAt: true,
-}).extend({
-  assigneeId: z.string().nullable(),
-  assignee: userSummarySchema,
-  assignees: z.array(z.object({ id: z.number().int(), ticketId: z.number().int(), assignedAt: wireDate(), assignedBy: z.string().nullable(), userId: z.string(), user: userSummarySchema.unwrap() })),
-  labels: z.array(z.object({ id: z.number().int(), ticketId: z.number().int(), labelId: z.number().int(), createdAt: wireDate(), label: z.object({ id: z.number().int(), orgId: z.string(), name: z.string(), color: z.string().nullable(), createdAt: wireDate() }) })),
-  cycle: z.object({ id: z.number().int(), name: z.string(), status: z.string(), startDate: z.string(), endDate: z.string() }).nullable(),
-});
+export const ticketListRowSchema = ticketRowSchema
+  .pick({
+    id: true,
+    orgId: true,
+    title: true,
+    type: true,
+    status: true,
+    priority: true,
+    projectId: true,
+    ticketNumber: true,
+    sprintId: true,
+    epicId: true,
+    assigneeMembershipId: true,
+    reporterId: true,
+    points: true,
+    storyPoints: true,
+    link: true,
+    rank: true,
+    parentTicketId: true,
+    originalEstimate: true,
+    timeSpent: true,
+    startDate: true,
+    dueDate: true,
+    moduleId: true,
+    cycleId: true,
+    sequenceId: true,
+    estimate: true,
+    createdAt: true,
+    updatedAt: true,
+  })
+  .extend({
+    assigneeId: z.string().nullable(),
+    assignee: userSummarySchema,
+    assignees: z.array(
+      z.object({
+        id: z.number().int(),
+        ticketId: z.number().int(),
+        assignedAt: wireDate(),
+        assignedBy: z.string().nullable(),
+        userId: z.string(),
+        user: userSummarySchema.unwrap(),
+      }),
+    ),
+    labels: z.array(
+      z.object({
+        id: z.number().int(),
+        ticketId: z.number().int(),
+        labelId: z.number().int(),
+        createdAt: wireDate(),
+        label: z.object({
+          id: z.number().int(),
+          orgId: z.string(),
+          name: z.string(),
+          color: z.string().nullable(),
+          createdAt: wireDate(),
+        }),
+      }),
+    ),
+    cycle: z
+      .object({
+        id: z.number().int(),
+        name: z.string(),
+        status: z.string(),
+        startDate: z.string(),
+        endDate: z.string(),
+      })
+      .nullable(),
+  });
 
 export const ticketListPageSchema = z.object({
   data: z.array(ticketListRowSchema),
@@ -92,6 +166,19 @@ export const ticketListPageSchema = z.object({
   }),
 });
 
+export const ticketSearchResultSchema = z.object({
+  id: z.number().int(),
+  title: z.string(),
+  status: z.string(),
+  priority: z.string(),
+  ticketNumber: z.number().int(),
+  projectId: z.number().int(),
+  projectKey: z.string(),
+  projectName: z.string(),
+});
+
+export const ticketSearchResultListSchema = z.array(ticketSearchResultSchema);
+
 const activityItemSchema = z.object({
   id: z.number().int(),
   action: z.string(),
@@ -99,20 +186,30 @@ const activityItemSchema = z.object({
   fromValue: z.string().nullable(),
   toValue: z.string().nullable(),
   createdAt: wireDate(),
-  user: z.object({
-    id: z.string().nullable(),
-    name: z.string().nullable(),
-    image: z.string().nullable(),
-  }).nullable(),
+  user: z
+    .object({
+      id: z.string().nullable(),
+      name: z.string().nullable(),
+      image: z.string().nullable(),
+    })
+    .nullable(),
 });
 
 export const ticketActivityPageSchema = cursorPageSchema(activityItemSchema);
 
-export const watcherSchema = z.object({
+export const watcherMutationSchema = z.object({
   userId: z.string(),
   name: z.string().nullable(),
   image: z.string().nullable(),
-  membershipId: z.number().int().nullable(),
+  membershipId: z.number().int(),
+});
+
+export const ticketWatcherSchema = z.object({
+  id: z.number().int(),
+  ticketId: z.number().int(),
+  createdAt: wireDate(),
+  userId: z.string().nullable(),
+  user: userSummarySchema,
 });
 
 export const ticketRelationSchema = z.object({
@@ -250,8 +347,17 @@ export const allWorkItemSchema = z.object({
   cycleId: z.number().int().nullable(),
   epicId: z.number().int().nullable(),
   assigneeId: z.string().nullable(),
-  assignee: userSummarySchema.unwrap().extend({ email: z.string().nullable() }).nullable(),
-  labels: z.array(z.object({ id: z.number().int(), name: z.string(), color: z.string().nullable() })),
+  assignee: userSummarySchema
+    .unwrap()
+    .extend({ email: z.string().nullable() })
+    .nullable(),
+  labels: z.array(
+    z.object({
+      id: z.number().int(),
+      name: z.string(),
+      color: z.string().nullable(),
+    }),
+  ),
   createdAt: wireDate(),
   updatedAt: wireDate(),
 });

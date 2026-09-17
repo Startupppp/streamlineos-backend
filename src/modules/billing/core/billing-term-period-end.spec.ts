@@ -143,19 +143,21 @@ function buildActivation(options: {
     }),
   };
 
-  const activation = new BillingPaymentActivation({
-    db: db as never,
-    audit: { log: jest.fn() } as never,
-    aiCredits: { grantPlanCredits: jest.fn().mockResolvedValue(undefined) } as never,
-    planLimits: { bust: jest.fn().mockResolvedValue(undefined) } as never,
-    prorationLedger: {} as never,
-    catalog: { getActivePriceForPlanTier: jest.fn().mockResolvedValue(null) } as never,
-    revenueAnalytics: { emit: jest.fn().mockResolvedValue(undefined) } as never,
-    providers: {} as never,
-    externalEffectLedger: externalEffectLedger as never,
-    platformMerchant: platformMerchant as never,
-    purchaseService: purchaseService as never,
-  });
+  const activation = new BillingPaymentActivation(
+    db as never,
+    undefined as never,
+    { log: jest.fn() } as never,
+    { grantPlanCredits: jest.fn().mockResolvedValue(undefined) } as never,
+    { bust: jest.fn().mockResolvedValue(undefined) } as never,
+    {} as never,
+    { getActivePriceForPlanTier: jest.fn().mockResolvedValue(null) } as never,
+    { emit: jest.fn().mockResolvedValue(undefined) } as never,
+    {} as never,
+    externalEffectLedger as never,
+    platformMerchant as never,
+    {} as never,
+  );
+  Reflect.set(activation, 'purchaseService', purchaseService);
 
   return { activation, purchaseService, externalEffectLedger };
 }

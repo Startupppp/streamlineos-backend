@@ -58,6 +58,7 @@ describe("ProjectsTicketsUpdateService — assignee notification settles inside 
   const webhooksDispatch = { enqueue: jest.fn().mockResolvedValue(undefined) } as never;
   const automationRunner = { runForTicketEvent: jest.fn() } as never;
   const cache = { del: jest.fn().mockResolvedValue(undefined) } as never;
+  const access = { holds: jest.fn().mockResolvedValue(true) } as never;
 
   it("has finished notifying the new assignee by the time updateTicket resolves", async () => {
     let settled = false;
@@ -78,6 +79,7 @@ describe("ProjectsTicketsUpdateService — assignee notification settles inside 
       webhooksDispatch,
       automationRunner,
       cache,
+      access,
     );
     const u = { orgId: ORG, userId: "u1", isOrgOwner: true, principal: { kind: "human-session", membershipId: 1, isOrgOwner: true } } as never;
 

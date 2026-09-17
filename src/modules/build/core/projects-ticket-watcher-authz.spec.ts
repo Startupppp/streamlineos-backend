@@ -76,7 +76,7 @@ describe("ProjectsTicketSubresourcesService — addWatcher", () => {
 
     const result = await makeSvc(db).addWatcher(makeUser(), 1, {});
 
-    expect(result).toEqual({ success: true });
+    expect(result).toEqual({ userId: CALLER_ID, name: null, image: null, membershipId: 42 });
     expect(boundParams(lookups)).toContain(CALLER_ID);
   });
 
@@ -85,7 +85,7 @@ describe("ProjectsTicketSubresourcesService — addWatcher", () => {
 
     const result = await makeSvc(db).addWatcher(makeUser(), 1, { userId: OTHER_MEMBER_ID });
 
-    expect(result).toEqual({ success: true });
+    expect(result).toEqual({ userId: OTHER_MEMBER_ID, name: null, image: null, membershipId: 43 });
     const params = boundParams(lookups);
     expect(params).toContain(OTHER_MEMBER_ID);
     expect(params).not.toContain(CALLER_ID);
@@ -121,7 +121,7 @@ describe("ProjectsTicketSubresourcesService — addWatcher bite proof", () => {
     const withTicket = makeDb({ ticket: { id: 99 }, member: { id: 42 } });
     await expect(
       makeSvc(withTicket.db).addWatcher(makeUser("org-attacker"), 99, {}),
-    ).resolves.toEqual({ success: true });
+    ).resolves.toEqual({ userId: CALLER_ID, name: null, image: null, membershipId: 42 });
 
     const withoutTicket = makeDb({ ticket: null, member: { id: 42 } });
     await expect(

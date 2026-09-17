@@ -138,11 +138,11 @@ export class OrganizationUsersReader {
           isOwner: organizationMembers.isOwner,
           membershipStatus: organizationMembers.status,
           membershipLeftAt: organizationMembers.leftAt,
-          emailVerified: users.emailVerified,
+          emailVerifiedAt: users.emailVerified,
           phone: users.phone,
           createdAt: users.createdAt,
           joinedAt: organizationMembers.joinedAt,
-          lastSeenAt: sql<Date | null>`(
+          lastSeenAt: sql<Date | string | null>`(
             SELECT MAX(${userSessions.lastActive})
             FROM ${userSessions}
             WHERE ${userSessions.userId} = ${users.id}
@@ -172,11 +172,12 @@ export class OrganizationUsersReader {
     return {
       ...page,
       data: page.data.map((row) => {
-        const { membershipStatus, membershipLeftAt, teamNames, ...rest } = row;
+        const { membershipStatus, membershipLeftAt, teamNames, emailVerifiedAt, ...rest } = row;
         const userStatus = membershipStatusToUserStatus(membershipStatus);
         const facts = factsMap.get(row.id);
         return {
           ...rest,
+          emailVerified: emailVerifiedAt !== null,
           departmentId: facts?.departmentId ?? null,
           branchId: facts?.locationId ?? null,
           designation: facts?.designation ?? null,
@@ -196,7 +197,7 @@ export class OrganizationUsersReader {
         id: users.id,
         name: users.name,
         email: users.email,
-        emailVerified: users.emailVerified,
+        emailVerifiedAt: users.emailVerified,
         firstName: users.firstName,
         lastName: users.lastName,
         image: users.image,
@@ -249,11 +250,12 @@ export class OrganizationUsersReader {
     if (rows.length === 0)
       throw new NotFoundException("User not found in this organization");
     const row = rows[0]!;
-    const { membershipStatus, membershipLeftAt, ...rest } = row;
+    const { membershipStatus, membershipLeftAt, emailVerifiedAt, ...rest } = row;
     const userStatus = membershipStatusToUserStatus(membershipStatus);
     const facts = await this.employment.getFacts(orgId, userId);
     return {
       ...rest,
+      emailVerified: emailVerifiedAt !== null,
       departmentId: facts.departmentId,
       designation: facts.designation,
       employeeId: facts.employeeNumber,

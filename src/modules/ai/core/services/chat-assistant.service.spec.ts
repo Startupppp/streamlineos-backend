@@ -478,7 +478,7 @@ describe("ChatAssistantService — settle/release determinism (item 1)", () => {
 describe("ChatAssistantService — output token cap and history bound (12.3 criterion 4)", () => {
   beforeEach(() => jest.clearAllMocks());
 
-  it("passes maxOutputTokens: 4096 to streamText", async () => {
+  it("passes maxOutputTokens: 2048 to streamText", async () => {
     let capturedMaxOutputTokens: number | undefined;
     (streamText as jest.Mock).mockImplementation((opts: { maxOutputTokens?: number }) => {
       capturedMaxOutputTokens = opts.maxOutputTokens;
@@ -486,10 +486,10 @@ describe("ChatAssistantService — output token cap and history bound (12.3 crit
     });
     const { svc } = buildService(makeLedger());
     await svc.processChat([{ role: "user", content: "hello" }], ACTOR);
-    expect(capturedMaxOutputTokens).toBe(4096);
+    expect(capturedMaxOutputTokens).toBe(2048);
   });
 
-  it("passes only the last 40 messages to the model when history is longer than 40", async () => {
+  it("passes only the last 20 messages to the model when history is longer than 20", async () => {
     const messages = Array.from({ length: 50 }, (_, i) => ({
       role: "user" as const,
       content: `q${i}`,
@@ -501,12 +501,12 @@ describe("ChatAssistantService — output token cap and history bound (12.3 crit
     });
     const { svc } = buildService(makeLedger());
     await svc.processChat(messages, ACTOR);
-    expect(capturedMessages).toHaveLength(40);
-    expect(capturedMessages[0]).toEqual({ role: "user", content: "q10" });
-    expect(capturedMessages[39]).toEqual({ role: "user", content: "q49" });
+    expect(capturedMessages).toHaveLength(20);
+    expect(capturedMessages[0]).toEqual({ role: "user", content: "q30" });
+    expect(capturedMessages[19]).toEqual({ role: "user", content: "q49" });
   });
 
-  it("passes all messages unchanged when history is at or below the 40-message cap", async () => {
+  it("passes all messages unchanged when history is at or below the 20-message cap", async () => {
     const messages = Array.from({ length: 10 }, (_, i) => ({
       role: "user" as const,
       content: `q${i}`,
@@ -519,6 +519,21 @@ describe("ChatAssistantService — output token cap and history bound (12.3 crit
     const { svc } = buildService(makeLedger());
     await svc.processChat(messages, ACTOR);
     expect(capturedMessages).toHaveLength(10);
+  });
+
+  it("caps the combined history payload", async () => {
+    const messages = Array.from({ length: 10 }, () => ({
+      role: "user" as const,
+      content: "x".repeat(5_000),
+    }));
+    let capturedMessages: { role: string; content: string }[] = [];
+    (streamText as jest.Mock).mockImplementation((opts: { messages?: typeof capturedMessages }) => {
+      capturedMessages = opts.messages ?? [];
+      return {};
+    });
+    const { svc } = buildService(makeLedger());
+    await svc.processChat(messages, ACTOR);
+    expect(capturedMessages.reduce((total, message) => total + message.content.length, 0)).toBe(24_000);
   });
 });
 

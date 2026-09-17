@@ -1,16 +1,17 @@
+import { Inject, Injectable } from "@nestjs/common";
 import { and, desc, eq, sql } from "drizzle-orm";
 import { chatChannelMembers, chatChannels, chatMessages } from "../../db/schema";
 import type { Db } from "../../db/drizzle.module";
-import type { CacheService } from "../../common/cache/cache.service";
+import { DRIZZLE } from "../../db/drizzle.constants";
 import { assertChannelMember } from "./chat-channel-authorization";
 
 export function channelHighWaterMark(channelId: number, orgId: string) {
   return sql<number>`COALESCE((SELECT ${chatChannels.messageCount} FROM ${chatChannels} WHERE ${chatChannels.id} = ${channelId} AND ${chatChannels.orgId} = ${orgId}), 0)`;
 }
 
-/** Owns a member's read cursor and personal channel preferences, never channel membership. */
+@Injectable()
 export class ChatChannelMemberState {
-  constructor(private readonly db: Db, private readonly cache: CacheService) {}
+  constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
   async archiveChannel(channelId: number, userId: string, orgId: string) {
     const { membershipId } = await assertChannelMember(this.db, channelId, userId, orgId);

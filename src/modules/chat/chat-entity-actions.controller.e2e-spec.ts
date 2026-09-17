@@ -2,7 +2,7 @@ import { ForbiddenException, type INestApplication } from "@nestjs/common";
 import request from "supertest";
 import { createE2eApp } from "test/helpers/e2e-app";
 import { ALL_MODULES, signToken } from "test/helpers/sign-token";
-import { ChatChannelMembersService } from "./chat-channel-members.service";
+import { ChatChannelMembersImplementation } from "./chat-channel-members-implementation";
 import { ChatMessagesService } from "./chat-messages.service";
 import { EntityReferenceService } from "../entity-reference/entity-reference.service";
 
@@ -45,7 +45,7 @@ describe("Chat entity actions (e2e, no DB required)", () => {
   beforeAll(async () => {
     app = await createE2eApp({
       overrides: [
-        { provide: ChatChannelMembersService, useValue: members },
+        { provide: ChatChannelMembersImplementation, useValue: members },
         { provide: EntityReferenceService, useValue: entities },
         { provide: ChatMessagesService, useValue: messages },
       ],

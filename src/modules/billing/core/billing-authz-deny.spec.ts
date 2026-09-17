@@ -5,7 +5,12 @@ import { Reflector } from "@nestjs/core";
 import { BillingController } from "./billing.controller";
 import { BillingEnterpriseController } from "./billing-enterprise.controller";
 import { BillingMarketplaceController } from "./billing-marketplace.controller";
-import { BillingService } from "./billing.service";
+import { BillingPaymentActivation } from "./billing-payment-activation";
+import { BillingCoupons } from "./billing-coupons";
+import { BillingWebhookHandler } from "./billing-webhook.handler";
+import { BillingMarketplace } from "./billing-marketplace";
+import { BillingAccountOverview } from "./billing-account-overview";
+import { BillingProfileService } from "./billing-profile.service";
 import { PlanLimitsService } from "./plan-limits.service";
 import { AffiliateService } from "./affiliate.service";
 import { ReferralService } from "./referral.service";
@@ -42,13 +47,13 @@ class HeaderAuthGuard implements CanActivate {
   }
 }
 
-const billing = {
-  getSubscription: jest.fn(), getSummary: jest.fn(), purchaseAddon: jest.fn(),
-  getBillingProfile: jest.fn(), updateBillingProfile: jest.fn(), getSeatInfo: jest.fn(),
-  listAddons: jest.fn(), listCoupons: jest.fn(), validateCoupon: jest.fn(),
-  listProvisioningFailures: jest.fn(), requestAffiliatePayoutRequest: jest.fn(),
-  createOrder: jest.fn(), verifyAndActivate: jest.fn(), getPlans: jest.fn(),
-  getMarketplace: jest.fn(), handlePaymentProviderWebhook: jest.fn(),
+const billingActivation = { createOrder: jest.fn(), verifyAndActivate: jest.fn() };
+const billingCoupons = { validate: jest.fn(), listRedeemable: jest.fn() };
+const billingWebhook = { handle: jest.fn(), listProvisioningFailures: jest.fn() };
+const billingMarketplace = { getMarketplace: jest.fn(), purchaseAddon: jest.fn(), listAddons: jest.fn() };
+const billingOverview = {
+  getSubscription: jest.fn(), getSummary: jest.fn(), getSeatInfo: jest.fn(),
+  requestAffiliatePayoutRequest: jest.fn(),
 };
 
 const denyAll = {
@@ -65,7 +70,12 @@ async function buildApp(): Promise<INestApplication> {
   const moduleRef: TestingModule = await Test.createTestingModule({
     controllers: [BillingController, BillingEnterpriseController, BillingMarketplaceController],
     providers: [
-      { provide: BillingService, useValue: billing },
+      { provide: BillingPaymentActivation, useValue: billingActivation },
+      { provide: BillingCoupons, useValue: billingCoupons },
+      { provide: BillingWebhookHandler, useValue: billingWebhook },
+      { provide: BillingMarketplace, useValue: billingMarketplace },
+      { provide: BillingAccountOverview, useValue: billingOverview },
+      { provide: BillingProfileService, useValue: { get: jest.fn(), update: jest.fn() } },
       { provide: PlanLimitsService, useValue: { getEntitlements: jest.fn() } },
       { provide: AffiliateService, useValue: { register: jest.fn(), getDashboard: jest.fn() } },
       { provide: ReferralService, useValue: { createReferral: jest.fn(), listReferrals: jest.fn() } },

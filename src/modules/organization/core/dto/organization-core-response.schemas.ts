@@ -1,5 +1,10 @@
 import { z } from "zod";
-import { wireDate, nullableWireDate } from "../../../../common/openapi/wire-types";
+import {
+  wireDate,
+  nullableWireDate,
+  wireTimestamp,
+  nullableWireTimestamp,
+} from "../../../../common/openapi/wire-types";
 import { cursorPageSchema } from "../../../../common/openapi/response-envelopes";
 
 /**
@@ -71,11 +76,7 @@ export const updateMemberRoleResponseSchema = successResponseSchema;
 /** `OrgMembershipStatusService.suspendMember` / `reactivateMember` */
 export const memberStatusMutationResponseSchema = successResponseSchema;
 
-/**
- * `OrganizationSettingsService.getSettings` — org row spread with computed
- * extras. Timestamp columns are Date at runtime; nullable timestamps use
- * `nullableWireDate()`.
- */
+/** `OrganizationSettingsService.getSettings` — org row spread with computed extras. */
 export const orgSettingsResponseSchema = z.object({
   id: z.string(),
   name: z.string(),
@@ -100,15 +101,15 @@ export const orgSettingsResponseSchema = z.object({
   mfaEnforced: z.boolean(),
   maxConcurrentSessions: z.number().int().nullable(),
   ownerMembershipId: z.number().int(),
-  onboardingCompletedAt: nullableWireDate(),
+  onboardingCompletedAt: nullableWireTimestamp(),
   status: z.string(),
   statusV2: z.string().nullable(),
-  purgeScheduledAt: nullableWireDate(),
+  purgeScheduledAt: nullableWireTimestamp(),
   purgeScheduledBy: z.string().nullable(),
   purgeJobId: z.string().nullable(),
-  purgedAt: nullableWireDate(),
+  purgedAt: nullableWireTimestamp(),
   purgeReason: z.string().nullable(),
-  deletedAt: nullableWireDate(),
+  deletedAt: nullableWireTimestamp(),
   companySize: z.string().nullable(),
   country: z.string().nullable(),
   legalName: z.string().nullable(),
@@ -124,8 +125,8 @@ export const orgSettingsResponseSchema = z.object({
     close: z.string(),
     enabled: z.boolean(),
   })).nullable(),
-  createdAt: wireDate(),
-  updatedAt: wireDate(),
+  createdAt: wireTimestamp(),
+  updatedAt: wireTimestamp(),
   allowedEmailDomains: z.array(z.string()),
   primaryColor: z.string().nullable(),
   loginBgUrl: z.string().nullable(),

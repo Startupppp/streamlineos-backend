@@ -7,7 +7,8 @@ import {
   type RecordedStep,
   type WorkflowStepStore,
 } from "../../../common/workflow/workflow.types";
-import type { CrmImportService } from "./crm-import.service";
+import type { CrmImportCommitService } from "./crm-import-commit.service";
+import type { CrmImportRevertService } from "./crm-import-revert.service";
 import { CrmImportWorkflow } from "./crm-import.workflow";
 import { COMMIT_WORKFLOW, REVERT_WORKFLOW } from "./import-workflow-names";
 import { ATTEMPT_BUDGET_MS, BATCH_ROWS } from "./import-batches";
@@ -94,7 +95,8 @@ async function attempt(
 }
 
 interface FakeService {
-  service: CrmImportService;
+  commitSvc: CrmImportCommitService;
+  revertSvc: CrmImportRevertService;
   /** The windows `commitBatch` was actually asked to do work for. */
   committed: number[];
   reverted: number[];
@@ -117,19 +119,16 @@ function fakeImports(
     reverted: [],
     finished: 0,
     revertFinished: 0,
-    service: undefined as unknown as CrmImportService,
+    commitSvc: undefined as unknown as CrmImportCommitService,
+    revertSvc: undefined as unknown as CrmImportRevertService,
   };
 
-  state.service = {
+  state.commitSvc = {
     beginCommit: () =>
-      Promise.resolve({ settled: options.settled ?? false, total: maxRowNumber, maxRowNumber }),
-    beginRevert: () =>
       Promise.resolve({ settled: options.settled ?? false, total: maxRowNumber, maxRowNumber }),
 
     commitBatch: (_org: string, _id: string, window: { fromRow: number }) => {
       if (failsAt.has(window.fromRow)) {
-        // Once. A step whose attempt failed is re-run, and the second time it
-        // has to be allowed to succeed or nothing would ever finish.
         failsAt.delete(window.fromRow);
         return Promise.reject(new Error(`window ${String(window.fromRow)} died`));
       }
@@ -144,27 +143,33 @@ function fakeImports(
       });
     },
 
+    finishCommit: () => {
+      state.finished += 1;
+      return Promise.resolve();
+    },
+  } as unknown as CrmImportCommitService;
+
+  state.revertSvc = {
+    beginRevert: () =>
+      Promise.resolve({ settled: options.settled ?? false, total: maxRowNumber, maxRowNumber }),
+
     revertBatch: (_org: string, _id: string, window: { fromRow: number }) => {
       state.reverted.push(window.fromRow);
       return Promise.resolve({ deleted: 1, restored: 0, dismissed: 0, failed: 0 });
     },
 
-    finishCommit: () => {
-      state.finished += 1;
-      return Promise.resolve();
-    },
     finishRevert: () => {
       state.revertFinished += 1;
       return Promise.resolve();
     },
-  } as unknown as CrmImportService;
+  } as unknown as CrmImportRevertService;
 
   return state;
 }
 
-function build(imports: CrmImportService) {
+function build(fake: FakeService) {
   const registry = new WorkflowRegistry();
-  const workflow = new CrmImportWorkflow(registry, imports);
+  const workflow = new CrmImportWorkflow(registry, fake.commitSvc, fake.revertSvc);
   workflow.onModuleInit();
   return { registry, workflow, store: new FakeStepStore() };
 }
@@ -179,8 +184,8 @@ describe("committing an import durably", () => {
     // The defect the previous version of this file described and declined to
     // fix: one step is one transaction, so a timeout rolls back every
     // `committed_at` it wrote and all five attempts hit the same ceiling.
-    const { service } = fakeImports({ maxRowNumber: 500 });
-    const { registry, workflow, store } = build(service);
+    const fake = fakeImports({ maxRowNumber: 500 });
+    const { registry, workflow, store } = build(fake);
 
     return attempt(workflow, registry, store, COMMIT_WORKFLOW, { crmImportId: IMPORT }, 1).then(
       (result) => {
@@ -202,7 +207,7 @@ describe("committing an import durably", () => {
    */
   it("resumes where it died, without redoing a batch that finished", async () => {
     const fake = fakeImports({ maxRowNumber: 500, failsAt: [201] });
-    const { registry, workflow, store } = build(fake.service);
+    const { registry, workflow, store } = build(fake);
 
     const first = await attempt(
       workflow,
@@ -238,7 +243,7 @@ describe("committing an import durably", () => {
     // A resumed run reaches the finish with the tallies of the work it did not
     // do, because each batch's counts are its memo rather than a recount.
     const fake = fakeImports({ maxRowNumber: 500, failsAt: [401] });
-    const { registry, workflow, store } = build(fake.service);
+    const { registry, workflow, store } = build(fake);
 
     await attempt(workflow, registry, store, COMMIT_WORKFLOW, { crmImportId: IMPORT }, 1);
     const second = await attempt(
@@ -257,7 +262,7 @@ describe("committing an import durably", () => {
     // Settled rather than thrown: throwing would burn five attempts and
     // dead-letter a run whose work somebody else finished.
     const fake = fakeImports({ settled: true });
-    const { registry, workflow, store } = build(fake.service);
+    const { registry, workflow, store } = build(fake);
 
     const result = await attempt(
       workflow,
@@ -274,7 +279,7 @@ describe("committing an import durably", () => {
   });
 
   it("refuses to run without knowing which import it is for", async () => {
-    const { registry, workflow, store } = build(fakeImports().service);
+    const { registry, workflow, store } = build(fakeImports());
     const result = await attempt(workflow, registry, store, COMMIT_WORKFLOW, {}, 1);
     expect(result.outcome).toBe("failed");
   });
@@ -297,7 +302,7 @@ describe("releasing the run when an attempt has done enough", () => {
 
   it("suspends part-way through, and picks up at the next window", async () => {
     const fake = fakeImports({ maxRowNumber: 500 });
-    const { registry, workflow, store } = build(fake.service);
+    const { registry, workflow, store } = build(fake);
 
     // Readings: one for `startedAt`, one for the first window's check.
     const clock = spendBudgetAfter(2);
@@ -340,7 +345,7 @@ describe("releasing the run when an attempt has done enough", () => {
     // SELECT. If replay were charged, a long import would suspend earlier and
     // earlier and eventually never reach its own frontier.
     const fake = fakeImports({ maxRowNumber: 5 * BATCH_ROWS });
-    const { registry, workflow, store } = build(fake.service);
+    const { registry, workflow, store } = build(fake);
 
     await attempt(workflow, registry, store, COMMIT_WORKFLOW, { crmImportId: IMPORT }, 1);
     expect(fake.committed).toHaveLength(5);
@@ -350,7 +355,7 @@ describe("releasing the run when an attempt has done enough", () => {
 describe("taking it back", () => {
   it("walks the file backwards, so a party is not deleted before its update is undone", async () => {
     const fake = fakeImports({ maxRowNumber: 500 });
-    const { registry, workflow, store } = build(fake.service);
+    const { registry, workflow, store } = build(fake);
 
     const result = await attempt(
       workflow,
@@ -370,7 +375,7 @@ describe("taking it back", () => {
     // Two runs walk the same file. A shared step name would let the undo read
     // the commit's memo and skip windows it never touched.
     const fake = fakeImports({ maxRowNumber: 200 });
-    const { registry, workflow, store } = build(fake.service);
+    const { registry, workflow, store } = build(fake);
 
     await attempt(workflow, registry, store, REVERT_WORKFLOW, { crmImportId: IMPORT }, 1);
 

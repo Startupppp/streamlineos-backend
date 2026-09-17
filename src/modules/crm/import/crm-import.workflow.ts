@@ -1,7 +1,9 @@
 import { Injectable, Logger, type OnModuleInit } from "@nestjs/common";
 import { WorkflowRegistry } from "../../../common/workflow";
 import type { JsonValue, StepContext, WorkflowRunContext } from "../../../common/workflow";
-import { CrmImportService, type BatchOutcome, type PhaseExtent } from "./crm-import.service";
+import type { BatchOutcome, PhaseExtent } from "./crm-import-internals";
+import { CrmImportCommitService } from "./crm-import-commit.service";
+import { CrmImportRevertService } from "./crm-import-revert.service";
 import { ATTEMPT_BUDGET_MS, batchStepName, pauseStepName, rowWindows } from "./import-batches";
 import { COMMIT_WORKFLOW, REVERT_WORKFLOW } from "./import-workflow-names";
 
@@ -51,7 +53,8 @@ export class CrmImportWorkflow implements OnModuleInit {
 
   constructor(
     private readonly registry: WorkflowRegistry,
-    private readonly imports: CrmImportService,
+    private readonly commitSvc: CrmImportCommitService,
+    private readonly revertSvc: CrmImportRevertService,
   ) {}
 
   onModuleInit(): void {
@@ -82,17 +85,17 @@ export class CrmImportWorkflow implements OnModuleInit {
     const startedAt = Date.now();
 
     const extent = await step.run("commit-begin", () =>
-      this.imports.beginCommit(context.organizationId, crmImportId),
+      this.commitSvc.beginCommit(context.organizationId, crmImportId),
     );
 
     if (extent.settled) return { crmImportId, settled: true };
 
     const total = await this.walk(step, extent, startedAt, (window) =>
-      this.imports.commitBatch(context.organizationId, crmImportId, window),
+      this.commitSvc.commitBatch(context.organizationId, crmImportId, window),
     );
 
     await step.run("commit-finish", async () => {
-      await this.imports.finishCommit(context.organizationId, crmImportId);
+      await this.commitSvc.finishCommit(context.organizationId, crmImportId);
       this.logger.log(
         `import ${crmImportId}: ${String(total.created)} created, ${String(total.updated)} updated, ` +
           `${String(total.merged)} merged, ${String(total.review)} held for review, ` +
@@ -109,7 +112,7 @@ export class CrmImportWorkflow implements OnModuleInit {
     const startedAt = Date.now();
 
     const extent = await step.run("revert-begin", () =>
-      this.imports.beginRevert(context.organizationId, crmImportId),
+      this.revertSvc.beginRevert(context.organizationId, crmImportId),
     );
 
     if (extent.settled) return { crmImportId, settled: true };
@@ -129,7 +132,7 @@ export class CrmImportWorkflow implements OnModuleInit {
       if (await pauseIfSpent(step, "revert", window.index, startedAt)) continue;
 
       const outcome = await step.run(batchStepName("revert", window.index), () =>
-        this.imports.revertBatch(context.organizationId, crmImportId, window),
+        this.revertSvc.revertBatch(context.organizationId, crmImportId, window),
       );
 
       deleted += outcome.deleted;
@@ -139,7 +142,7 @@ export class CrmImportWorkflow implements OnModuleInit {
     }
 
     await step.run("revert-finish", async () => {
-      await this.imports.finishRevert(context.organizationId, crmImportId, userId);
+      await this.revertSvc.finishRevert(context.organizationId, crmImportId, userId);
       this.logger.log(
         `import ${crmImportId} taken back: ${String(deleted)} deleted, ${String(restored)} restored, ` +
           `${String(dismissed)} questions closed, ${String(failed)} failed`,

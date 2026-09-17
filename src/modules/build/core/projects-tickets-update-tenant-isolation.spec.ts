@@ -20,10 +20,11 @@ describe("ProjectsTicketsUpdateService — cross-tenant isolation", () => {
   const webhooksDispatch = { dispatchTicketEvent: jest.fn(), dispatch: jest.fn().mockResolvedValue(undefined), enqueue: jest.fn().mockResolvedValue(undefined) } as never;
   const automationRunner = { run: jest.fn(), runForTicketEvent: jest.fn().mockResolvedValue(undefined) } as never;
   const cache = { invalidateNamespace: jest.fn(), del: jest.fn().mockResolvedValue(undefined) } as never;
+  const access = { holds: jest.fn().mockResolvedValue(true) } as never;
 
   it("throws NotFoundException when ticket belongs to a different org (cross-tenant isolation)", async () => {
     const db = makeDb(null);
-    const svc = new ProjectsTicketsUpdateService(db, dispatch, activity, query, read, transfer, webhooksDispatch, automationRunner, cache);
+    const svc = new ProjectsTicketsUpdateService(db, dispatch, activity, query, read, transfer, webhooksDispatch, automationRunner, cache, access);
     const u = { orgId: ATTACKER_ORG, userId: "u1", isOrgOwner: false } as never;
     await expect(svc.updateTicket(u, 99, {})).rejects.toThrow(NotFoundException);
   });
@@ -37,8 +38,28 @@ describe("ProjectsTicketsUpdateService — cross-tenant isolation", () => {
       select: jest.fn().mockReturnValue({ from: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue([]) }) }),
     }));
     const db = { query: { tickets: { findFirst: jest.fn().mockResolvedValue(ticket) } }, transaction: txFn } as unknown as Db;
-    const svc = new ProjectsTicketsUpdateService(db, dispatch, activity, query, read, transfer, webhooksDispatch, automationRunner, cache);
+    const svc = new ProjectsTicketsUpdateService(db, dispatch, activity, query, read, transfer, webhooksDispatch, automationRunner, cache, access);
     const u = { orgId: OWNER_ORG, userId: "u1", isOrgOwner: true, principal: { kind: "human-session", membershipId: 1, isOrgOwner: true } } as never;
     await expect(svc.updateTicket(u, 1, {})).resolves.not.toThrow();
+  });
+
+  it("rejects assignee changes without build:tickets:assign", async () => {
+    const db = makeDb(null);
+    const deniedAccess = { holds: jest.fn().mockResolvedValue(false) } as never;
+    const svc = new ProjectsTicketsUpdateService(db, dispatch, activity, query, read, transfer, webhooksDispatch, automationRunner, cache, deniedAccess);
+    const u = { orgId: OWNER_ORG, userId: "u1", isOrgOwner: false } as never;
+
+    await expect(svc.updateTicket(u, 1, { assigneeIds: ["u2"] })).rejects.toThrow("Not authorized to assign this ticket");
+    expect(db.query.tickets.findFirst).not.toHaveBeenCalled();
+  });
+
+  it("does not require build:tickets:assign for other ticket updates", async () => {
+    const db = makeDb(null);
+    const deniedAccess = { holds: jest.fn().mockResolvedValue(false) } as never;
+    const svc = new ProjectsTicketsUpdateService(db, dispatch, activity, query, read, transfer, webhooksDispatch, automationRunner, cache, deniedAccess);
+    const u = { orgId: OWNER_ORG, userId: "u1", isOrgOwner: false } as never;
+
+    await expect(svc.updateTicket(u, 1, { title: "Renamed" })).rejects.toThrow(NotFoundException);
+    expect(deniedAccess.holds).not.toHaveBeenCalled();
   });
 });

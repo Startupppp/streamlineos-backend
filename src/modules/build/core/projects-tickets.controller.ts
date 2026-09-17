@@ -55,6 +55,7 @@ import {
   bulkUpdateResultSchema,
   rankTicketResultSchema,
   ticketUpdateResultSchema,
+  ticketSearchResultListSchema,
 } from "./dto/build-tickets-response.schemas";
 
 const projectIdParams = z.object({ projectId: z.coerce.number().int().positive() }).strict();
@@ -84,7 +85,7 @@ export class ProjectsTicketsController {
 
   @Get("search/tickets")
   @RequirePermission("build:tickets:view")
-  @ResponseSchema(z.array(ticketRowSchema))
+  @ResponseSchema(ticketSearchResultListSchema)
   @Validate({ query: searchTicketsQuerySchema })
   searchTickets(
     @Query() query: SearchTicketsQuery,

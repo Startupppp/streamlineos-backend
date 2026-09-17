@@ -1,5 +1,9 @@
 import { z } from "zod";
-import { wireDate, nullableWireDate } from "../../../common/openapi/wire-types";
+import {
+  wireDate,
+  nullableWireDate,
+  nullableWireTimestamp,
+} from "../../../common/openapi/wire-types";
 
 export const birthdayEntrySchema = z.array(
   z.object({
@@ -74,13 +78,30 @@ export const teamAvailabilitySchema = z.array(
     userId: z.string(),
     name: z.string(),
     image: z.string().nullable(),
-    checkIn: z.string().nullable(),
-    checkOut: z.string().nullable(),
+    checkIn: nullableWireTimestamp(),
+    checkOut: nullableWireTimestamp(),
     isOnline: z.boolean(),
   }),
 );
 
-export const teamAttendanceSchema = teamAvailabilitySchema;
+export const teamAttendanceSchema = z.object({
+  total: z.number().int(),
+  present: z.number().int(),
+  clockedIn: z.number().int(),
+  absent: z.number().int(),
+  records: z.array(
+    z.object({
+      userId: z.string(),
+      userName: z.string().nullable(),
+      userImage: z.string().nullable(),
+      userDesignation: z.string().nullable(),
+      checkIn: nullableWireTimestamp(),
+      checkOut: nullableWireTimestamp(),
+      status: z.string(),
+    }),
+  ),
+  hasMore: z.boolean(),
+});
 
 export const todayActivitiesSchema = z.array(
   z.object({

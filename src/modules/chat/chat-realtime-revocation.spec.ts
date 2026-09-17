@@ -1,4 +1,4 @@
-import { ChatChannelMembersService } from "./chat-channel-members.service";
+import { ChatChannelMembersImplementation } from "./chat-channel-members-implementation";
 import { RealtimeTokenRevocationConsumer, REALTIME_TOKEN_REVOCATION_EVENT } from "../realtime/realtime-token-revocation";
 import { OutboxConsumerRegistry, type OutboxEventRow } from "../../common/outbox/outbox-consumer.registry";
 import { OutboxWriter } from "../../common/outbox/outbox-writer";
@@ -34,10 +34,8 @@ describe("chat channel removal realtime durability", () => {
 
   it("writes token revocation and capability refresh to the same post-commit outbox transaction", async () => {
     const db = makeMemberDb();
-    const service = new ChatChannelMembersService(
+    const service = new ChatChannelMembersImplementation(
       db as never,
-      {} as never,
-      {} as never,
       {} as never,
     );
 

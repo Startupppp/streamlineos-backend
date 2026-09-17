@@ -1,5 +1,5 @@
 import { ForbiddenException, NotFoundException } from "@nestjs/common";
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq, inArray, isNull } from "drizzle-orm";
 import {
   organizationMembers,
   projectMembers,
@@ -12,6 +12,7 @@ import type { Db } from "../../../db/drizzle.types";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { actingMembershipId } from "../../../common/auth/principal";
 import type { AccessService } from "../../access/access.service";
+import type { DbOrTx } from "../../../common/rbac/access-invalidate";
 
 export async function assertProjectInOrg(
   db: Db,
@@ -43,6 +44,38 @@ export async function assertTicketInOrg(
     columns: { id: true },
   });
   if (!ticket) throw new NotFoundException("Ticket not found");
+}
+
+export async function resolveProjectAssignableMemberships(
+  db: DbOrTx,
+  orgId: string,
+  projectId: number,
+  userIds: readonly string[],
+): Promise<Map<string, number>> {
+  const uniqueUserIds = [...new Set(userIds)];
+  if (uniqueUserIds.length === 0) return new Map();
+  const rows = await db
+    .select({
+      userId: organizationMembers.userId,
+      membershipId: organizationMembers.id,
+    })
+    .from(projectMembers)
+    .innerJoin(
+      organizationMembers,
+      and(
+        eq(organizationMembers.id, projectMembers.membershipId),
+        eq(organizationMembers.orgId, projectMembers.orgId),
+        eq(organizationMembers.status, "ACTIVE"),
+      ),
+    )
+    .where(
+      and(
+        eq(projectMembers.orgId, orgId),
+        eq(projectMembers.projectId, projectId),
+        inArray(organizationMembers.userId, uniqueUserIds),
+      ),
+    );
+  return new Map(rows.map((row) => [row.userId, row.membershipId]));
 }
 
 export async function resolveProjectAccess(

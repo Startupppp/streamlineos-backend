@@ -1,13 +1,11 @@
 import { ForbiddenException, NotFoundException } from "@nestjs/common";
 import type { Db } from "../../../db/drizzle.module";
-import type { CacheService } from "../../../common/cache/cache.service";
-import type { AblyService } from "../../realtime/ably.service";
 import type { StorageService } from "../../storage/storage.service";
 import type { EntityReferenceService } from "../../entity-reference/entity-reference.service";
 import type { EntityActor } from "../../entity-reference/entity-reference.types";
 import { ChatAttachmentsService } from "../chat-attachments.service";
 import { ChatChannelListService } from "../chat-channel-list.service";
-import { ChatChannelMembersService } from "../chat-channel-members.service";
+import { ChatChannelMembersImplementation } from "../chat-channel-members-implementation";
 import { ChatPinsService } from "../chat-pins.service";
 import { ChatPresenceService } from "../chat-presence.service";
 import { ChatSavedService } from "../chat-saved.service";
@@ -113,12 +111,7 @@ function memberDb(
 }
 
 function members(db: Db, entities: EntityReferenceService) {
-  return new ChatChannelMembersService(
-    db,
-    {} as unknown as CacheService,
-    entities,
-    {} as unknown as AblyService,
-  );
+  return new ChatChannelMembersImplementation(db, entities);
 }
 
 describe("record channel — a retained membership does not survive losing the record", () => {

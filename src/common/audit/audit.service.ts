@@ -11,6 +11,7 @@ import {
 import { logger } from "../logger/logger.service";
 import { reportError } from "../observability/error-reporter";
 import { getObservabilityContext } from "../observability/observability-context";
+import { getImpersonationContext } from "../impersonation/impersonation-context";
 
 interface AuditEntryFields {
   action: string;
@@ -166,12 +167,17 @@ export class AuditService {
       );
     }
 
+    // Many CRM/build callers only set resourceType/resourceId. The settings
+    // Audit Log "Entity" column reads targetType, so mirror when omitted.
+    const targetType = entry.targetType ?? entry.resourceType ?? null;
+    const targetId = entry.targetId ?? entry.resourceId ?? null;
+
     return {
       action: entry.action,
       userId,
       orgId,
-      targetId: entry.targetId ?? null,
-      targetType: entry.targetType ?? null,
+      targetId,
+      targetType,
       actorUserId: entry.actorUserId ?? null,
       actorMembershipId: entry.actorMembershipId ?? null,
       resourceType: entry.resourceType ?? null,
@@ -191,6 +197,11 @@ export class AuditService {
     if (entry.userAgent) enrichedMetadata.userAgent = entry.userAgent;
     if (entry.before) enrichedMetadata.before = entry.before;
     if (entry.after) enrichedMetadata.after = entry.after;
+    const impersonation = getImpersonationContext();
+    if (impersonation) {
+      enrichedMetadata.impersonatedBy = impersonation.realActorUserId;
+      enrichedMetadata.impersonationSessionId = impersonation.impersonationSessionId;
+    }
     return enrichedMetadata;
   }
 }

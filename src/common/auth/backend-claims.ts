@@ -6,10 +6,17 @@ export const INTERNAL_TOKEN_ISSUER = "streamlineos-web" as const;
 export const SESSION_PROOF_ISSUER = "streamlineos-web-session-proof" as const;
 export const SESSION_PROOF_AUDIENCE = "streamlineos-api-exchange" as const;
 
+export interface ImpersonationClaims {
+  realActorUserId: string;
+  realSessionId: string;
+  impersonationSessionId: string;
+}
+
 export interface BackendClaims {
   sub: string;
   orgId: string | null;
   sessionId: string;
+  impersonation?: ImpersonationClaims;
 }
 
 export interface CurrentUserContext {
@@ -20,4 +27,5 @@ export interface CurrentUserContext {
   sessionId: string;
   tokenScopes: string[] | null;
   principal: Principal;
+  impersonation?: ImpersonationClaims;
 }

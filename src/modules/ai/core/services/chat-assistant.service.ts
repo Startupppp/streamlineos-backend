@@ -1,4 +1,4 @@
-import { Inject, Injectable, Optional, ServiceUnavailableException } from "@nestjs/common";
+import { Inject, Injectable, Optional } from "@nestjs/common";
 import { Redis } from "@upstash/redis";
 import { filterToolsByPersona, getPersona } from "../persona-registry";
 import { ModuleRef } from "@nestjs/core";
@@ -49,12 +49,35 @@ import { AiConcurrencyLimiter } from "../gateway/ai-concurrency-limiter";
 import { AiStreamBreaker } from "../streaming/ai-stream-breaker";
 import { aiReservationIdempotencyKey } from "../streaming/ai-request-abort";
 
-const MAX_HISTORY_MESSAGES = 40;
-const MAX_OUTPUT_TOKENS = 4_096;
+const MAX_HISTORY_MESSAGES = 20;
+const MAX_HISTORY_CHARS = 24_000;
+const MAX_OUTPUT_TOKENS = 2_048;
 const CHAT_BREAKER_MESSAGE = "AI chat provider is temporarily unavailable";
 
 function isAbortError(error: unknown): boolean {
-  return error instanceof Error && (error.name === "AbortError" || error.name === "TimeoutError");
+  return (
+    error instanceof Error &&
+    (error.name === "AbortError" || error.name === "TimeoutError")
+  );
+}
+
+function boundedChatHistory(messages: ChatMessage[]): ModelMessage[] {
+  const selected: ModelMessage[] = [];
+  let remaining = MAX_HISTORY_CHARS;
+
+  for (
+    let index = messages.length - 1;
+    index >= 0 && selected.length < MAX_HISTORY_MESSAGES;
+    index -= 1
+  ) {
+    const message = messages[index];
+    if (!message || remaining === 0) break;
+    const content = message.content.slice(0, remaining);
+    remaining -= content.length;
+    selected.push({ role: message.role, content });
+  }
+
+  return selected.reverse();
 }
 
 @Injectable()
@@ -102,12 +125,18 @@ export class ChatAssistantService {
     signal?: AbortSignal,
   ) {
     const { userId, orgId } = actor;
-    const call = AiCallMetrics.begin({ feature: CHAT_FEATURE, tier: "chat", orgId });
+    const call = AiCallMetrics.begin({
+      feature: CHAT_FEATURE,
+      tier: "chat",
+      orgId,
+    });
     const membershipId = actingMembershipId(actor.principal) ?? 0;
 
     await this.breaker.assertClosed();
 
-    const acquired = await call.queue(() => this.concurrencyLimiter.acquire(orgId));
+    const acquired = await call.queue(() =>
+      this.concurrencyLimiter.acquire(orgId),
+    );
     if (!acquired) {
       call.finish("concurrency_exceeded");
       throw new AiConcurrencyLimitException();
@@ -123,7 +152,10 @@ export class ChatAssistantService {
     let reservationId = 0;
     try {
       const reserveMilli = getReserveEstimateMilli(CHAT_FEATURE);
-      const idempotencyKey = aiReservationIdempotencyKey(CHAT_FEATURE, { orgId, userId });
+      const idempotencyKey = aiReservationIdempotencyKey(CHAT_FEATURE, {
+        orgId,
+        userId,
+      });
       const reserved = await this.ledger.reserve({
         orgId,
         userId,
@@ -142,13 +174,12 @@ export class ChatAssistantService {
     const releaseReservation = (reason: string) => {
       if (resolved) return;
       resolved = true;
-      void this.ledger.release(reservationId, reason, orgId).catch(() => undefined);
+      void this.ledger
+        .release(reservationId, reason, orgId)
+        .catch(() => undefined);
     };
 
     try {
-      // Both pre-stream database seams go inside ONE short tenant transaction
-      // that COMMITS before `streamText` opens the provider connection.
-      //
       // The handler is `@NoTenantTransaction()` (chat-assistant.controller.ts),
       // so `TenantContextInterceptor` never opens one and the DRIZZLE proxy
       // falls through to the bare pool with no `app.organization_id`. Every
@@ -186,7 +217,13 @@ export class ChatAssistantService {
                 latest.content,
               );
             } else {
-              await this.history.append(orgId, userId, membershipId, "user", latest.content);
+              await this.history.append(
+                orgId,
+                userId,
+                membershipId,
+                "user",
+                latest.content,
+              );
             }
           }
 
@@ -201,11 +238,7 @@ export class ChatAssistantService {
         ? `${personaConfig.preamble}\n\n${basePrompt}`
         : basePrompt;
 
-      const modelMessages: ModelMessage[] = messages.slice(-MAX_HISTORY_MESSAGES).map((m) =>
-        m.role === "user"
-          ? { role: "user", content: m.content }
-          : { role: "assistant", content: m.content },
-      );
+      const modelMessages = boundedChatHistory(messages);
 
       const modelId = resolveChatModelId();
 
@@ -316,7 +349,13 @@ export class ChatAssistantService {
                     text,
                   );
                 } else {
-                  await this.history.append(orgId, userId, membershipId, "assistant", text);
+                  await this.history.append(
+                    orgId,
+                    userId,
+                    membershipId,
+                    "assistant",
+                    text,
+                  );
                 }
               });
             } catch (error) {
@@ -339,7 +378,9 @@ export class ChatAssistantService {
         void Promise.resolve(stream.finishReason).catch(() => {
           releaseConcurrency();
           releaseReservation("stream_aborted_no_settle");
-          call.finish(signal?.aborted === true ? "cancelled" : "provider_unavailable");
+          call.finish(
+            signal?.aborted === true ? "cancelled" : "provider_unavailable",
+          );
         });
         return stream;
       } catch (error) {

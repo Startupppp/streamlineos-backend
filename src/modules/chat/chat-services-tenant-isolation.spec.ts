@@ -10,13 +10,12 @@ import type { Db } from "../../db/drizzle.module";
 import { ChatPresenceService } from "./chat-presence.service";
 import { ChatSearchService } from "./chat-search.service";
 import { ChatSummarizeService } from "./chat-summarize.service";
-import { ChatChannelMembersService } from "./chat-channel-members.service";
+import { ChatChannelMembersImplementation } from "./chat-channel-members-implementation";
+import type { AblyService } from "../realtime/ably.service";
 import { ChatNotificationsService } from "./chat-notifications.service";
 import { ChatReplyRemindersService } from "./chat-reply-reminders.service";
 import type { EntityReferenceService } from "../entity-reference/entity-reference.service";
 import type { EntityActor } from "../entity-reference/entity-reference.types";
-import type { CacheService } from "../../common/cache/cache.service";
-import type { AblyService } from "../realtime/ably.service";
 import { ChatOrgSettingsService } from "./chat-org-settings.service";
 import type { ExternalEffectLedger } from "../../common/outbox/external-effect-ledger";
 import type { NotificationDispatchService } from "../notifications/notification-dispatch.service";
@@ -224,10 +223,10 @@ describe("ChatSummarizeService — tenant isolation", () => {
 });
 
 // ---------------------------------------------------------------------------
-// ChatChannelMembersService
+// ChatChannelMembersImplementation
 // ---------------------------------------------------------------------------
 
-describe("ChatChannelMembersService — tenant isolation", () => {
+describe("ChatChannelMembersImplementation — tenant isolation", () => {
   const attackerActor: EntityActor = {
     orgId: ATTACKER_ORG,
     userId: "user-attacker",
@@ -252,10 +251,8 @@ describe("ChatChannelMembersService — tenant isolation", () => {
         organizationMembers: { findFirst: jest.fn().mockResolvedValue({ id: 99 }) },
       },
     } as unknown as Db;
-    const cache = { invalidateNamespace: jest.fn() } as unknown as CacheService;
     const entities = noRecords();
-    const ably = {} as unknown as AblyService;
-    const service = new ChatChannelMembersService(db, cache, entities, ably);
+    const service = new ChatChannelMembersImplementation(db, entities);
     return { service, db };
   }
 

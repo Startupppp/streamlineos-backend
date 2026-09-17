@@ -251,4 +251,9 @@ export const countryRequirementsSchema = z.object({
   })),
 });
 
+export const onboardingCompletionSchema = z.object({
+  completedAt: wireDate(),
+  leaveBalancesAllocated: z.number().int(),
+});
+
 export { successSchema };

@@ -8,6 +8,7 @@ const getTenantContext = jest.fn();
 const withTenant = jest.fn();
 const reportError = jest.fn();
 const getObservabilityContext = jest.fn();
+const getImpersonationContext = jest.fn();
 
 jest.mock("../tenant", () => ({
   getTenantContext: (...args: unknown[]) => getTenantContext(...args),
@@ -25,6 +26,10 @@ jest.mock("../observability/observability-context", () => ({
   getObservabilityContext: (...args: unknown[]) => getObservabilityContext(...args),
 }));
 
+jest.mock("../impersonation/impersonation-context", () => ({
+  getImpersonationContext: (...args: unknown[]) => getImpersonationContext(...args),
+}));
+
 function makeDb() {
   const values = jest.fn().mockResolvedValue(undefined);
   return {
@@ -40,6 +45,7 @@ describe("AuditService dispatch", () => {
     registerAfterCommit.mockReturnValue(false);
     reportError.mockReturnValue(undefined);
     getObservabilityContext.mockReturnValue(undefined);
+    getImpersonationContext.mockReturnValue(undefined);
     withTenant.mockImplementation(
       async (
         db: unknown,
@@ -192,6 +198,29 @@ describe("AuditService dispatch", () => {
 
     expect(values).toHaveBeenCalledWith(
       expect.objectContaining({ ipAddress: "198.51.100.20" }),
+    );
+  });
+
+  it("mirrors resourceType into targetType when callers only set the resource fields", async () => {
+    const { db, values } = makeDb();
+    getTenantContext.mockReturnValue({ orgId: "org-1" });
+    const service = new AuditService(db as never);
+
+    await service.logCritical({
+      action: "deal.updated",
+      userId: "user-1",
+      orgId: "org-1",
+      resourceType: "deal",
+      resourceId: "deal-9",
+    });
+
+    expect(values).toHaveBeenCalledWith(
+      expect.objectContaining({
+        targetType: "deal",
+        targetId: "deal-9",
+        resourceType: "deal",
+        resourceId: "deal-9",
+      }),
     );
   });
 });

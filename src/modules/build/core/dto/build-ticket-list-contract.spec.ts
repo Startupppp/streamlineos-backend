@@ -1,4 +1,9 @@
-import { allWorkPageSchema, ticketListPageSchema, ticketRowSchema } from "./build-tickets-response.schemas";
+import {
+  allWorkPageSchema,
+  ticketListPageSchema,
+  ticketRowSchema,
+  ticketSearchResultListSchema,
+} from "./build-tickets-response.schemas";
 
 const user = { id: "user-1", name: "Member", firstName: "Member", lastName: null, email: "member@example.test", image: null };
 const row = {
@@ -12,6 +17,23 @@ const row = {
 };
 
 describe("Build ticket list projection contract", () => {
+  it("accepts the bounded ticket search projection", () => {
+    const result = ticketSearchResultListSchema.parse([
+      {
+        id: 2,
+        title: "Regression Epic",
+        status: "TODO",
+        priority: "MEDIUM",
+        ticketNumber: 2,
+        projectId: 5,
+        projectKey: "LBR",
+        projectName: "Local Build Regression",
+      },
+    ]);
+
+    expect(result).toHaveLength(1);
+  });
+
   it("accepts the actual cross-project work projection and requires rendered fields", () => {
     const work = { id: 1, title: "Ticket", type: "BUG", status: "OPEN", priority: "HIGH", projectId: 42, projectKey: "BUILD", projectName: "Project", ticketNumber: 1, dueDate: null, startDate: null, points: null, estimate: null, rank: "a0", sprintId: null, cycleId: null, epicId: null, assigneeId: user.id, assignee: user, labels: [], createdAt: new Date(), updatedAt: new Date() };
     const page = { data: [work], limit: 25, nextCursor: null, hasMore: false };

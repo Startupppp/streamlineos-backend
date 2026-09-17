@@ -1,10 +1,9 @@
 import { PgDialect } from "drizzle-orm/pg-core";
 import { SQL, sql } from "drizzle-orm";
 import type { Db } from "../../../db/drizzle.module";
-import { CacheService } from "../../../common/cache/cache.service";
 import type { EntityReferenceService } from "../../entity-reference/entity-reference.service";
 import type { EntityActor } from "../../entity-reference/entity-reference.types";
-import { ChatChannelMembersService } from "../chat-channel-members.service";
+import { ChatChannelMemberState } from "../chat-channel-member-state";
 import { ChatChannelListService } from "../chat-channel-list.service";
 import { ChatPresenceService } from "../chat-presence.service";
 
@@ -60,23 +59,8 @@ function harness() {
     orderBy: jest.fn().mockReturnThis(),
     limit: jest.fn().mockResolvedValue([]),
   };
-  const cache = { invalidateNamespace: jest.fn().mockResolvedValue(undefined) };
-  const unusedCollaborator = (name: string) =>
-    new Proxy(
-      {},
-      {
-        get() {
-          throw new Error(`${name} must not be reached while marking a channel read`);
-        },
-      },
-    );
-  const impl = new ChatChannelMembersService(
-    db as unknown as Db,
-    cache as unknown as CacheService,
-    unusedCollaborator("EntityReferenceService") as never,
-    unusedCollaborator("AblyService") as never,
-  );
-  return { impl, setCalls, whereCalls, cache };
+  const state = new ChatChannelMemberState(db as unknown as Db);
+  return { state, setCalls, whereCalls };
 }
 
 const CHAIN_METHODS = new Set([
@@ -147,9 +131,9 @@ function renderedConditions(conditions: SQL[]): string[] {
 
 describe("chat read cursor advances monotonically", () => {
   it("markRead writes GREATEST(last_read_at, <now>) rather than assigning", async () => {
-    const { impl, setCalls } = harness();
+    const { state, setCalls } = harness();
 
-    await impl.markRead(CHANNEL_ID, USER, ORG);
+    await state.markRead(CHANNEL_ID, USER, ORG);
 
     expect(setCalls).toHaveLength(1);
     const rendered = render(setCalls[0]?.["lastReadAt"]);
@@ -164,9 +148,9 @@ describe("chat read cursor advances monotonically", () => {
   });
 
   it("markRead advances last_read_position with GREATEST in the database", async () => {
-    const { impl, setCalls } = harness();
+    const { state, setCalls } = harness();
 
-    await impl.markRead(CHANNEL_ID, USER, ORG);
+    await state.markRead(CHANNEL_ID, USER, ORG);
 
     const rendered = render(setCalls[0]?.["lastReadPosition"]);
     expect(rendered.sql).toMatch(/GREATEST\("chat_channel_members"\."last_read_position"/);
@@ -174,9 +158,9 @@ describe("chat read cursor advances monotonically", () => {
   });
 
   it("markRead derives the target position from the channel counter, never from the caller", async () => {
-    const { impl, setCalls } = harness();
+    const { state, setCalls } = harness();
 
-    await impl.markRead(CHANNEL_ID, USER, ORG);
+    await state.markRead(CHANNEL_ID, USER, ORG);
 
     const rendered = render(setCalls[0]?.["lastReadPosition"]);
     expect(rendered.sql).toContain('"chat_channels"."message_count"');
@@ -184,9 +168,9 @@ describe("chat read cursor advances monotonically", () => {
   });
 
   it("markRead scopes the write to org, channel and the caller's own membership", async () => {
-    const { impl, whereCalls, cache } = harness();
+    const { state, whereCalls } = harness();
 
-    await impl.markRead(CHANNEL_ID, USER, ORG);
+    await state.markRead(CHANNEL_ID, USER, ORG);
 
     expect(whereCalls).toHaveLength(1);
     const rendered = render(whereCalls[0]);
@@ -197,9 +181,9 @@ describe("chat read cursor advances monotonically", () => {
   });
 
   it("markChannelUnread deliberately moves both cursors back, so neither may be guarded", async () => {
-    const { impl, setCalls } = harness();
+    const { state, setCalls } = harness();
 
-    await impl.markChannelUnread(CHANNEL_ID, USER, ORG);
+    await state.markChannelUnread(CHANNEL_ID, USER, ORG);
 
     expect(setCalls).toHaveLength(1);
     expect(setCalls[0]?.["lastReadAt"]).toBeInstanceOf(Date);

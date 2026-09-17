@@ -20,7 +20,8 @@ import { RequirePermission } from "../access/require-permission.decorator";
 import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ChatChannelsService } from "./chat-channels.service";
-import { ChatChannelMembersService } from "./chat-channel-members.service";
+import { ChatChannelMembersImplementation } from "./chat-channel-members-implementation";
+import { ChatChannelMemberState } from "./chat-channel-member-state";
 import { ChatTypingService } from "./chat-typing.service";
 import {
   addMemberSchema,
@@ -66,7 +67,8 @@ const channelIduserIdParams = z.object({ channelId: z.coerce.number().int().posi
 export class ChatChannelsController {
   constructor(
     private readonly channels: ChatChannelsService,
-    private readonly members: ChatChannelMembersService,
+    private readonly membersImpl: ChatChannelMembersImplementation,
+    private readonly memberState: ChatChannelMemberState,
     private readonly typing: ChatTypingService,
   ) {}
 
@@ -165,7 +167,7 @@ export class ChatChannelsController {
     @Param("channelId", ParseIntPipe) channelId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    const channel = await this.members.getChannel(channelId, actorOf(u));
+    const channel = await this.membersImpl.getChannel(channelId, actorOf(u));
     if (!channel) throw new NotFoundException("Channel not found");
     return channel;
   }
@@ -181,7 +183,7 @@ export class ChatChannelsController {
     @Body() body: UpdateChannelInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.members.updateChannel(channelId, u.userId, body, u.orgId);
+    return this.membersImpl.updateChannel(channelId, u.userId, body, u.orgId);
   }
 
   @ApiOperation({ summary: "List members of a channel with keyset pagination" })
@@ -197,7 +199,7 @@ export class ChatChannelsController {
   ) {
     const raw = query.cursor !== undefined ? parseInt(query.cursor, 10) : undefined;
     const cursor = typeof raw === "number" && !Number.isNaN(raw) ? raw : undefined;
-    return this.members.listMembers(channelId, actorOf(u), cursor, query.limit);
+    return this.membersImpl.listMembers(channelId, actorOf(u), cursor, query.limit);
   }
 
   @ApiOperation({ summary: "Add a member to a channel" })
@@ -212,7 +214,7 @@ export class ChatChannelsController {
     @Body() body: AddMemberInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.members.addMember(channelId, body.userId, u.userId, u.orgId);
+    return this.membersImpl.addMember(channelId, body.userId, u.userId, u.orgId);
   }
 
   @ApiOperation({ summary: "Recompute an entity channel's display name" })
@@ -243,7 +245,7 @@ export class ChatChannelsController {
     @Param("userId") targetUserId: string,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.members.removeMember(channelId, targetUserId, u.userId, u.orgId);
+    return this.membersImpl.removeMember(channelId, targetUserId, u.userId, u.orgId);
   }
 
   @ApiOperation({
@@ -260,7 +262,7 @@ export class ChatChannelsController {
     @Param("channelId", ParseIntPipe) channelId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.members.joinOpenChannel(channelId, actorOf(u));
+    return this.membersImpl.joinOpenChannel(channelId, actorOf(u));
   }
 
   @ApiOperation({ summary: "Leave a channel" })
@@ -275,7 +277,7 @@ export class ChatChannelsController {
     @Param("channelId", ParseIntPipe) channelId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.members.leaveChannel(channelId, u.userId, u.orgId);
+    return this.membersImpl.leaveChannel(channelId, u.userId, u.orgId);
   }
 
   @ApiOperation({ summary: "Archive a channel for the current user" })
@@ -287,7 +289,7 @@ export class ChatChannelsController {
   @RequirePermission("chat:channels:write")
   @Validate({ params: channelIdParams })
   archive(@Param("channelId", ParseIntPipe) channelId: number, @CurrentUser() u: CurrentUserContext) {
-    return this.members.archiveChannel(channelId, u.userId, u.orgId);
+    return this.memberState.archiveChannel(channelId, u.userId, u.orgId);
   }
 
   @ApiOperation({ summary: "Unarchive a channel for the current user" })
@@ -299,7 +301,7 @@ export class ChatChannelsController {
   @RequirePermission("chat:channels:write")
   @Validate({ params: channelIdParams })
   unarchive(@Param("channelId", ParseIntPipe) channelId: number, @CurrentUser() u: CurrentUserContext) {
-    return this.members.unarchiveChannel(channelId, u.userId, u.orgId);
+    return this.memberState.unarchiveChannel(channelId, u.userId, u.orgId);
   }
 
   @ApiOperation({ summary: "Mark a channel as read up to now" })
@@ -314,7 +316,7 @@ export class ChatChannelsController {
     @Param("channelId", ParseIntPipe) channelId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.members.markRead(channelId, u.userId, u.orgId);
+    return this.memberState.markRead(channelId, u.userId, u.orgId);
   }
 
   @ApiOperation({ summary: "Mark a channel as unread" })
@@ -326,7 +328,7 @@ export class ChatChannelsController {
   @RequirePermission("chat:messages:write")
   @Validate({ params: channelIdParams })
   markUnread(@Param("channelId", ParseIntPipe) channelId: number, @CurrentUser() u: CurrentUserContext) {
-    return this.members.markChannelUnread(channelId, u.userId, u.orgId);
+    return this.memberState.markChannelUnread(channelId, u.userId, u.orgId);
   }
 
   @ApiOperation({ summary: "Mute a channel for the current user" })
@@ -341,7 +343,7 @@ export class ChatChannelsController {
     @Body() body: MuteChannelInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.members.muteChannel(channelId, u.userId, body.duration, u.orgId);
+    return this.memberState.muteChannel(channelId, u.userId, body.duration, u.orgId);
   }
 
   @ApiOperation({ summary: "Unmute a channel for the current user" })
@@ -356,7 +358,7 @@ export class ChatChannelsController {
     @Param("channelId", ParseIntPipe) channelId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.members.unmuteChannel(channelId, u.userId, u.orgId);
+    return this.memberState.unmuteChannel(channelId, u.userId, u.orgId);
   }
 
   @ApiOperation({ summary: "Add a channel to the current user's favorites" })
@@ -368,7 +370,7 @@ export class ChatChannelsController {
   @RequirePermission("chat:channels:write")
   @Validate({ params: channelIdParams })
   favorite(@Param("channelId", ParseIntPipe) channelId: number, @CurrentUser() u: CurrentUserContext) {
-    return this.members.favoriteChannel(channelId, u.userId, u.orgId);
+    return this.memberState.favoriteChannel(channelId, u.userId, u.orgId);
   }
 
   @ApiOperation({ summary: "Remove a channel from the current user's favorites" })
@@ -380,7 +382,7 @@ export class ChatChannelsController {
   @RequirePermission("chat:channels:write")
   @Validate({ params: channelIdParams })
   unfavorite(@Param("channelId", ParseIntPipe) channelId: number, @CurrentUser() u: CurrentUserContext) {
-    return this.members.unfavoriteChannel(channelId, u.userId, u.orgId);
+    return this.memberState.unfavoriteChannel(channelId, u.userId, u.orgId);
   }
 
   @ApiOperation({ summary: "Set the current user's notification preference for a channel" })
@@ -395,7 +397,7 @@ export class ChatChannelsController {
     @Body() body: NotificationPreferenceInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.members.setNotificationPreference(channelId, u.userId, body.preference, u.orgId);
+    return this.memberState.setNotificationPreference(channelId, u.userId, body.preference, u.orgId);
   }
 
   @ApiOperation({ summary: "List files shared in a channel with cursor pagination" })
@@ -409,7 +411,7 @@ export class ChatChannelsController {
     @Query("cursor") cursor: string | undefined,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.members.listChannelFiles(
+    return this.membersImpl.listChannelFiles(
       channelId,
       actorOf(u),
       cursor !== undefined ? parseInt(cursor, 10) : undefined,
@@ -457,6 +459,6 @@ export class ChatChannelsController {
     @Body() body: z.infer<typeof memberRoleSchema>,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.members.updateMemberRole(channelId, targetUserId, u.userId, u.orgId, body.role);
+    return this.membersImpl.updateMemberRole(channelId, targetUserId, u.userId, u.orgId, body.role);
   }
 }

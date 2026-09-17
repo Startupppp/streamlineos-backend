@@ -1,6 +1,7 @@
 import { Test } from "@nestjs/testing";
 import { DRIZZLE } from "../../../../db/drizzle.constants";
-import { BillingService } from "../billing.service";
+import { BillingPaymentActivation } from "../billing-payment-activation";
+import { BillingCoupons } from "../billing-coupons";
 import { AiCreditsService } from "../ai-credits.service";
 import { AiCreditsReservationService } from "../ai-credits-reservation.service";
 import { AiCreditsPacksService } from "../ai-credits-packs.service";
@@ -8,15 +9,13 @@ import { AuditService } from "../../../../common/audit/audit.service";
 import { PlanLimitsService } from "../plan-limits.service";
 import { ProrationLedgerService } from "../proration-ledger.service";
 import { VersionedCatalogService } from "../versioned-catalog.service";
-import { APP_CONFIG } from "../../../../config/config.module";
-import { PaymentProviderAdapterRegistry } from "../../payments/payment-provider-adapter.interface";
 import { PaymentProviderResolver, type OrganizationPaymentProvider } from "../../payments/payment-provider-resolver.service";
 import { PlatformMerchantService } from "../../payments/platform-merchant.service";
 import { PaymentWebhookReceiverService } from "../../payments/payment-webhook-receiver.service";
 import { PaymentAnalyticsService } from "../../payments/payment-analytics.service";
-import { BillingProfileService } from "../billing-profile.service";
 import { RevenueAnalyticsService } from "../revenue-analytics.service";
 import { ExternalEffectLedger } from "../../../../common/outbox/external-effect-ledger";
+import { CacheService } from "../../../../common/cache/cache.service";
 import { FakeProviderAdapter, FAKE_VALID_PAYMENT_SIG } from "../../payments/testing/fake-provider-adapter";
 import { creditsToMilli, milliToCredits } from "../../../ai/core/billing/ai-model-pricing.constants";
 import { planGrantMilli } from "../ai-credit-units";
@@ -99,12 +98,6 @@ function purchaseSelect(orgId: string) {
   });
 }
 
-function makeRegistry(withAdapter = true) {
-  const registry = new PaymentProviderAdapterRegistry();
-  if (withAdapter) registry.register(new FakeProviderAdapter());
-  return registry;
-}
-
 function makePlanLimits() {
   return { bust: jest.fn(), resolveTier: jest.fn().mockResolvedValue({ plan: "STARTER" }) };
 }
@@ -176,31 +169,38 @@ function makePlatformMerchant() {
   } as unknown as PlatformMerchantService;
 }
 
-describe("BillingService.verifyAndActivate — idempotency", () => {
-  async function buildBilling(db: unknown, registry = makeRegistry()): Promise<BillingService> {
+describe("BillingPaymentActivation.verifyAndActivate — idempotency", () => {
+  async function buildBilling(db: unknown): Promise<BillingPaymentActivation> {
     const module = await Test.createTestingModule({
       providers: [
-        BillingService,
+        BillingPaymentActivation,
+        BillingCoupons,
         { provide: DRIZZLE, useValue: db },
         { provide: AiCreditsService, useValue: makeMockAiCreditsForBilling() },
         { provide: AuditService, useValue: makeAuditService() },
         { provide: PlanLimitsService, useValue: makePlanLimits() },
-
         { provide: ProrationLedgerService, useValue: { recordPlanChange: jest.fn().mockResolvedValue(undefined) } },
-
         { provide: VersionedCatalogService, useValue: { getActivePriceForPlanTier: jest.fn().mockResolvedValue(null) } },
         { provide: RevenueAnalyticsService, useValue: { emit: jest.fn().mockResolvedValue(undefined) } },
         { provide: PaymentProviderResolver, useValue: makeResolver() },
-        { provide: PaymentProviderAdapterRegistry, useValue: registry },
         { provide: ExternalEffectLedger, useValue: makeEffectLedger() },
         { provide: PaymentWebhookReceiverService, useValue: { recordSignatureFailure: jest.fn() } },
         { provide: PaymentAnalyticsService, useValue: { notifyOwner: jest.fn(), track: jest.fn() } },
-        { provide: BillingProfileService, useValue: { get: jest.fn(), update: jest.fn() } },
         { provide: PlatformMerchantService, useValue: makePlatformMerchant() },
-        { provide: APP_CONFIG, useValue: { RAZORPAY_WEBHOOK_SECRET: "test-secret" } },
+        {
+          provide: CacheService,
+          useValue: {
+            invalidate: jest.fn().mockResolvedValue(undefined),
+            invalidateMany: jest.fn().mockResolvedValue(undefined),
+            invalidateForOrg: jest.fn().mockResolvedValue(undefined),
+            cached: jest
+              .fn()
+              .mockImplementation(async (_key: unknown, fn: () => Promise<unknown>) => fn()),
+          },
+        },
       ],
     }).compile();
-    return module.get(BillingService);
+    return module.get(BillingPaymentActivation);
   }
 
   it("an unrelated 23505 propagates instead of being reported as a successful activation", async () => {

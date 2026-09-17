@@ -34,7 +34,7 @@ export class ChatTypingService {
    * existence oracle backend/CLAUDE.md §4 forbids, and the one status a cross-tenant miss may
    * never return.
    *
-   * The order and the two refusals mirror `ChatChannelMembersService.assertMember` and
+   * The order and the two refusals mirror `ChatChannelMembersImplementation.assertChannelMembership` and
    * `ChatReactionsService.assertChannelMember`, which the module already had right: 404 when the
    * caller's organization holds no such channel, 404 when it is private and the caller is not in
    * it (a private channel must not confirm its own existence), and 403 only for a genuine same-org

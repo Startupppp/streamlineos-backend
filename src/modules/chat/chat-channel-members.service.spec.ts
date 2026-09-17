@@ -1,10 +1,9 @@
 import { Test } from "@nestjs/testing";
 import { ConflictException, ForbiddenException, NotFoundException } from "@nestjs/common";
-import { ChatChannelMembersService } from "./chat-channel-members.service";
+import { ChatChannelMembersImplementation } from "./chat-channel-members-implementation";
+import { ChatChannelMemberState } from "./chat-channel-member-state";
 import { DRIZZLE } from "../../db/drizzle.constants";
-import { CacheService } from "../../common/cache/cache.service";
 import { EntityReferenceService } from "../entity-reference/entity-reference.service";
-import { AblyService } from "../realtime/ably.service";
 import { PAGE_SIZE_CAP } from "../../common/pagination/list-query.schema";
 import type { EntityActor } from "../entity-reference/entity-reference.types";
 
@@ -19,22 +18,12 @@ const ADMIN_ROW = { userId: ADMIN_ID, role: "ADMIN", channelId: CH, orgId: ORG }
 const MEMBER_ROW = { userId: MEMBER_ID, role: "MEMBER", channelId: CH, orgId: ORG };
 const CHANNEL_ROW = { id: CH, orgId: ORG, isArchived: false };
 
-const stubCache = {
-  cached: jest.fn().mockImplementation((_k: string, fn: () => Promise<unknown>) => fn()),
-  invalidate: jest.fn().mockResolvedValue(undefined),
-  invalidateNamespace: jest.fn().mockResolvedValue(undefined),
-  set: jest.fn().mockResolvedValue(undefined),
-  get: jest.fn().mockResolvedValue(null),
-};
-
 const stubEntities = {
   resolve: jest.fn().mockResolvedValue([{ status: "resolved" }]),
   actionsFor: jest.fn().mockResolvedValue([[]]),
   submitAction: jest.fn(),
   isKnownType: jest.fn().mockReturnValue(true),
 } as unknown as EntityReferenceService;
-
-const stubAbly = { publishToUser: jest.fn().mockResolvedValue(undefined) };
 
 function makeDb(opts: {
   channelRow?: object | null;
@@ -124,41 +113,49 @@ function extractSqlValues(value: unknown, seen = new Set<object>()): unknown[] {
   ];
 }
 
-async function build(db: ReturnType<typeof makeDb>) {
+async function buildImpl(db: ReturnType<typeof makeDb>) {
   const module = await Test.createTestingModule({
     providers: [
-      ChatChannelMembersService,
+      ChatChannelMembersImplementation,
       { provide: DRIZZLE, useValue: db },
-      { provide: CacheService, useValue: stubCache },
       { provide: EntityReferenceService, useValue: stubEntities },
-      { provide: AblyService, useValue: stubAbly },
     ],
   }).compile();
-  return module.get(ChatChannelMembersService);
+  return module.get(ChatChannelMembersImplementation);
+}
+
+async function buildState(db: ReturnType<typeof makeDb>) {
+  const module = await Test.createTestingModule({
+    providers: [
+      ChatChannelMemberState,
+      { provide: DRIZZLE, useValue: db },
+    ],
+  }).compile();
+  return module.get(ChatChannelMemberState);
 }
 
 beforeEach(() => jest.clearAllMocks());
 
-describe("ChatChannelMembersService", () => {
+describe("ChatChannelMembersImplementation", () => {
   describe("addMember", () => {
     it("throws ConflictException if user is already a member", async () => {
       const db = makeDb({
         memberRows: [ADMIN_ROW, MEMBER_ROW],
         selectRows: [{ userId: MEMBER_ID }],
       });
-      const service = await build(db);
+      const service = await buildImpl(db);
       await expect(service.addMember(CH, MEMBER_ID, ADMIN_ID, ORG)).rejects.toThrow(ConflictException);
     });
 
     it("throws NotFoundException if requester is not an admin (no channel found in org)", async () => {
       const db = makeDb({ channelRow: null });
-      const service = await build(db);
+      const service = await buildImpl(db);
       await expect(service.addMember(CH, TARGET_ID, ADMIN_ID, ORG)).rejects.toThrow(NotFoundException);
     });
 
     it("throws ForbiddenException if requester is a MEMBER not an ADMIN", async () => {
       const db = makeDb({ memberRows: [MEMBER_ROW] });
-      const service = await build(db);
+      const service = await buildImpl(db);
       await expect(service.addMember(CH, TARGET_ID, MEMBER_ID, ORG)).rejects.toThrow(ForbiddenException);
     });
 
@@ -167,7 +164,7 @@ describe("ChatChannelMembersService", () => {
         memberRows: [ADMIN_ROW, null],
         selectRows: [{ userId: TARGET_ID }],
       });
-      const service = await build(db);
+      const service = await buildImpl(db);
       const result = await service.addMember(CH, TARGET_ID, ADMIN_ID, ORG);
       expect(db.insert).toHaveBeenCalled();
       expect(result).toEqual({ ok: true });
@@ -177,74 +174,16 @@ describe("ChatChannelMembersService", () => {
   describe("updateMemberRole", () => {
     it("throws ForbiddenException if requester is not ADMIN", async () => {
       const db = makeDb({ memberRows: [MEMBER_ROW] });
-      const service = await build(db);
+      const service = await buildImpl(db);
       await expect(service.updateMemberRole(CH, TARGET_ID, MEMBER_ID, ORG, "ADMIN")).rejects.toThrow(ForbiddenException);
     });
 
     it("updates role when requester is ADMIN", async () => {
       const db = makeDb({ memberRows: [ADMIN_ROW, { id: 10, membershipId: 55 }] });
-      const service = await build(db);
+      const service = await buildImpl(db);
       const result = await service.updateMemberRole(CH, TARGET_ID, ADMIN_ID, ORG, "ADMIN");
       expect(db.update).toHaveBeenCalled();
       expect(result).toEqual({ ok: true });
-    });
-  });
-
-  describe("archiveChannel", () => {
-    it("throws NotFoundException when channel is not in caller's org", async () => {
-      const db = makeDb({ channelRow: null });
-      const service = await build(db);
-      await expect(service.archiveChannel(CH, ADMIN_ID, ORG)).rejects.toThrow(NotFoundException);
-    });
-
-    it("archives the channel membership for the current user", async () => {
-      const db = makeDb({ memberRows: [ADMIN_ROW] });
-      const service = await build(db);
-      const result = await service.archiveChannel(CH, ADMIN_ID, ORG);
-      expect(db.update).toHaveBeenCalled();
-      expect(result).toEqual({ ok: true });
-    });
-  });
-
-  describe("favoriteChannel", () => {
-    it("throws ForbiddenException if requester is not a member", async () => {
-      const db = makeDb({ channelRow: CHANNEL_ROW, memberRows: [null] });
-      const service = await build(db);
-      await expect(service.favoriteChannel(CH, ADMIN_ID, ORG)).rejects.toThrow(ForbiddenException);
-    });
-
-    it("marks the channel as favorite for the current user", async () => {
-      const db = makeDb({ memberRows: [ADMIN_ROW] });
-      const service = await build(db);
-      const result = await service.favoriteChannel(CH, ADMIN_ID, ORG);
-      expect(db.update).toHaveBeenCalled();
-      expect(result).toEqual({ ok: true });
-    });
-  });
-
-  describe("unfavoriteChannel", () => {
-    it("unmarks the channel as favorite for the current user", async () => {
-      const db = makeDb({ memberRows: [ADMIN_ROW] });
-      const service = await build(db);
-      const result = await service.unfavoriteChannel(CH, ADMIN_ID, ORG);
-      expect(db.update).toHaveBeenCalled();
-      expect(result).toEqual({ ok: true });
-    });
-  });
-
-  describe("setNotificationPreference", () => {
-    it("throws ForbiddenException if requester is not a member", async () => {
-      const db = makeDb({ channelRow: CHANNEL_ROW, memberRows: [null] });
-      const service = await build(db);
-      await expect(service.setNotificationPreference(CH, ADMIN_ID, "MENTIONS", ORG)).rejects.toThrow(ForbiddenException);
-    });
-
-    it("updates the notification preference for the current user", async () => {
-      const db = makeDb({ memberRows: [ADMIN_ROW] });
-      const service = await build(db);
-      const result = await service.setNotificationPreference(CH, ADMIN_ID, "MENTIONS", ORG);
-      expect(db.update).toHaveBeenCalled();
-      expect(result).toEqual({ ok: true, notificationPreference: "MENTIONS" });
     });
   });
 
@@ -256,7 +195,7 @@ describe("ChatChannelMembersService", () => {
         .mockResolvedValueOnce([rows[2]]);
 
       const db = makeAlwaysAdminDb(findMany);
-      const service = await build(db);
+      const service = await buildImpl(db);
 
       const p1 = await service.listMembers(CH, adminActor, undefined, 2);
       expect(p1.members).toHaveLength(2);
@@ -274,7 +213,7 @@ describe("ChatChannelMembersService", () => {
     it("passes PAGE_SIZE + 1 to findMany so hasMore is detectable", async () => {
       const findMany = jest.fn().mockResolvedValue([makeChannelMemberRow(1)]);
       const db = makeAlwaysAdminDb(findMany);
-      const service = await build(db);
+      const service = await buildImpl(db);
 
       await service.listMembers(CH, adminActor, undefined, 2);
 
@@ -286,7 +225,7 @@ describe("ChatChannelMembersService", () => {
     it("caps page size to PAGE_SIZE_CAP regardless of caller input", async () => {
       const findMany = jest.fn().mockResolvedValue([]);
       const db = makeAlwaysAdminDb(findMany);
-      const service = await build(db);
+      const service = await buildImpl(db);
 
       await service.listMembers(CH, adminActor, undefined, PAGE_SIZE_CAP + 999);
 
@@ -298,7 +237,7 @@ describe("ChatChannelMembersService", () => {
     it("scopes read to the caller orgId and channelId (findMany called once per request)", async () => {
       const findMany = jest.fn().mockResolvedValue([makeChannelMemberRow(1)]);
       const db = makeAlwaysAdminDb(findMany);
-      const service = await build(db);
+      const service = await buildImpl(db);
 
       const result = await service.listMembers(CH, adminActor);
 
@@ -309,12 +248,72 @@ describe("ChatChannelMembersService", () => {
     it("embeds cursor value in the findMany where clause (gt predicate)", async () => {
       const findMany = jest.fn().mockResolvedValue([]);
       const db = makeAlwaysAdminDb(findMany);
-      const service = await build(db);
+      const service = await buildImpl(db);
 
       await service.listMembers(CH, adminActor, 42);
 
       const [opts] = findMany.mock.calls[0] as [{ where?: unknown }];
       expect(extractSqlValues(opts?.where)).toContain(42);
+    });
+  });
+});
+
+describe("ChatChannelMemberState", () => {
+  describe("archiveChannel", () => {
+    it("throws NotFoundException when channel is not in caller's org", async () => {
+      const db = makeDb({ channelRow: null });
+      const service = await buildState(db);
+      await expect(service.archiveChannel(CH, ADMIN_ID, ORG)).rejects.toThrow(NotFoundException);
+    });
+
+    it("archives the channel membership for the current user", async () => {
+      const db = makeDb({ memberRows: [ADMIN_ROW] });
+      const service = await buildState(db);
+      const result = await service.archiveChannel(CH, ADMIN_ID, ORG);
+      expect(db.update).toHaveBeenCalled();
+      expect(result).toEqual({ ok: true });
+    });
+  });
+
+  describe("favoriteChannel", () => {
+    it("throws ForbiddenException if requester is not a member", async () => {
+      const db = makeDb({ channelRow: CHANNEL_ROW, memberRows: [null] });
+      const service = await buildState(db);
+      await expect(service.favoriteChannel(CH, ADMIN_ID, ORG)).rejects.toThrow(ForbiddenException);
+    });
+
+    it("marks the channel as favorite for the current user", async () => {
+      const db = makeDb({ memberRows: [ADMIN_ROW] });
+      const service = await buildState(db);
+      const result = await service.favoriteChannel(CH, ADMIN_ID, ORG);
+      expect(db.update).toHaveBeenCalled();
+      expect(result).toEqual({ ok: true });
+    });
+  });
+
+  describe("unfavoriteChannel", () => {
+    it("unmarks the channel as favorite for the current user", async () => {
+      const db = makeDb({ memberRows: [ADMIN_ROW] });
+      const service = await buildState(db);
+      const result = await service.unfavoriteChannel(CH, ADMIN_ID, ORG);
+      expect(db.update).toHaveBeenCalled();
+      expect(result).toEqual({ ok: true });
+    });
+  });
+
+  describe("setNotificationPreference", () => {
+    it("throws ForbiddenException if requester is not a member", async () => {
+      const db = makeDb({ channelRow: CHANNEL_ROW, memberRows: [null] });
+      const service = await buildState(db);
+      await expect(service.setNotificationPreference(CH, ADMIN_ID, "MENTIONS", ORG)).rejects.toThrow(ForbiddenException);
+    });
+
+    it("updates the notification preference for the current user", async () => {
+      const db = makeDb({ memberRows: [ADMIN_ROW] });
+      const service = await buildState(db);
+      const result = await service.setNotificationPreference(CH, ADMIN_ID, "MENTIONS", ORG);
+      expect(db.update).toHaveBeenCalled();
+      expect(result).toEqual({ ok: true, notificationPreference: "MENTIONS" });
     });
   });
 });

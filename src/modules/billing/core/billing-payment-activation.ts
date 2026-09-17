@@ -1,6 +1,8 @@
 import {
   BadRequestException,
   ConflictException,
+  Inject,
+  Injectable,
   Logger,
   NotFoundException,
   ServiceUnavailableException,
@@ -10,8 +12,9 @@ import { organizationMembers, subscriptionPayments, subscriptions } from "../../
 import { type Db } from "../../../db/drizzle.module";
 import { registerAfterCommit } from "../../../common/tenant/tenant-context";
 import { runInNewTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
-import type { CacheService } from "../../../common/cache/cache.service";
+import { CacheService } from "../../../common/cache/cache.service";
 import { CACHE_KEYS } from "../../../common/cache/cache-keys";
+import { DRIZZLE } from "../../../db/drizzle.constants";
 import { AuditService } from "../../../common/audit/audit.service";
 import { ExternalEffectLedger } from "../../../common/outbox/external-effect-ledger";
 import { PaymentProviderResolver } from "../payments/payment-provider-resolver.service";
@@ -32,7 +35,7 @@ import { addClampedMonths } from "./trial-subscription";
 import { isUniqueViolation, isUniqueViolationOn } from "../../../common/db/postgres-error";
 import { SubscriptionPurchaseService } from "./subscription-purchase.service";
 import type { SubscriptionPurchase } from "../../../db/schema/billing/subscription-purchases";
-import type { PlatformMerchantService } from "../payments/platform-merchant.service";
+import { PlatformMerchantService } from "../payments/platform-merchant.service";
 import { BillingOrderCreation } from "./billing-order-creation";
 
 export interface BillingPaymentActivationDeps {
@@ -50,19 +53,46 @@ export interface BillingPaymentActivationDeps {
   purchaseService?: SubscriptionPurchaseService;
 }
 
+@Injectable()
 export class BillingPaymentActivation {
-  private readonly couponAdmin: BillingCoupons;
   private readonly logger = new Logger(BillingPaymentActivation.name);
   private readonly purchaseService: SubscriptionPurchaseService;
   private readonly orderCreation: BillingOrderCreation;
+  private readonly deps: BillingPaymentActivationDeps;
 
-  constructor(private readonly deps: BillingPaymentActivationDeps) {
-    this.couponAdmin = new BillingCoupons(deps.db);
-    this.purchaseService = deps.purchaseService ?? new SubscriptionPurchaseService(deps.db);
+  constructor(
+    @Inject(DRIZZLE) db: Db,
+    cache: CacheService,
+    audit: AuditService,
+    aiCredits: AiCreditsService,
+    planLimits: PlanLimitsService,
+    prorationLedger: ProrationLedgerService,
+    catalog: VersionedCatalogService,
+    revenueAnalytics: RevenueAnalyticsService,
+    providers: PaymentProviderResolver,
+    externalEffectLedger: ExternalEffectLedger,
+    platformMerchant: PlatformMerchantService,
+    private readonly couponAdmin: BillingCoupons,
+  ) {
+    this.purchaseService = new SubscriptionPurchaseService(db);
+    this.deps = {
+      db,
+      cache,
+      audit,
+      aiCredits,
+      planLimits,
+      prorationLedger,
+      catalog,
+      revenueAnalytics,
+      providers,
+      externalEffectLedger,
+      platformMerchant,
+      purchaseService: this.purchaseService,
+    };
     this.orderCreation = new BillingOrderCreation({
-      db: deps.db,
-      catalog: deps.catalog,
-      platformMerchant: deps.platformMerchant,
+      db,
+      catalog,
+      platformMerchant,
       purchaseService: this.purchaseService,
     });
   }

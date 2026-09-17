@@ -8,8 +8,7 @@ import { ChatReactionsService } from "../chat-reactions.service";
 import { ChatSummarizeService } from "../chat-summarize.service";
 import { ChatMessagesService } from "../chat-messages.service";
 import { ChatMessageModerationService } from "../chat-message-moderation.service";
-import { ChatChannelMembersService } from "../chat-channel-members.service";
-import { CacheService } from "../../../common/cache/cache.service";
+import { ChatChannelMembersImplementation } from "../chat-channel-members-implementation";
 import type { EntityActor } from "../../entity-reference/entity-reference.types";
 
 /**
@@ -94,11 +93,9 @@ function moderation(db: ReturnType<typeof dbWithChannel>) {
 }
 
 function channelMembers(db: ReturnType<typeof dbWithChannel>) {
-  return new ChatChannelMembersService(
+  return new ChatChannelMembersImplementation(
     db as unknown as Db,
-    {} as unknown as CacheService,
     {} as unknown as EntityReferenceService,
-    {} as unknown as AblyService,
   );
 }
 
@@ -233,7 +230,7 @@ describe("private-channel denial does not disclose existence", () => {
     });
   });
 
-  describe("ChatChannelMembersService admin routes", () => {
+  describe("ChatChannelMembersImplementation admin routes", () => {
     it("DENY: updateChannel by a non-member of a PRIVATE channel is 404, not 403", async () => {
       const db = dbWithChannel(true);
       await expect(
