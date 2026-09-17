@@ -167,7 +167,13 @@ export class OrgProfileService {
       await this.cache.invalidate(CACHE_KEYS.accessVersion(outgoingOrgId));
     }
 
-    this.audit.log({ action: "org.switched", userId, orgId: targetOrgId });
+    this.audit.log({
+      action: "org.switched",
+      userId,
+      orgId: targetOrgId,
+      targetType: "organization",
+      targetId: targetOrgId,
+    });
     void this.indexService
       .refreshForUser(userId)
       .catch((error: unknown) => {
