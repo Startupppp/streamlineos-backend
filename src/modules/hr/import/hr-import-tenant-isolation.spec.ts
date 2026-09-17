@@ -96,7 +96,7 @@ describe("HrExportJobsService — cross-tenant isolation", () => {
     const mockStorage = { getFileStream: jest.fn(), storeFile: jest.fn() };
     const mockAuditSvc = { log: jest.fn() };
     const mockAccess = { resolveUserPermissions: jest.fn().mockResolvedValue(new Set<string>()) };
-    const svc = new HrExportJobsService(db, mockStorage as never, mockAuditSvc as never, mockAccess as never, liveMembership(), stubAuthContexts());
+    const svc = new HrExportJobsService(db, mockStorage as never, mockAuditSvc as never, mockAccess as never, liveMembership(), stubAuthContexts(), {} as never);
     const result = await svc.claimForOrg(ATTACKER);
     expect(sqlValues(isolationArg(where, findMany))).toContain(ATTACKER);
     expect(result).toBeNull();
@@ -117,7 +117,7 @@ describe("HrExportJobsService — cross-tenant isolation", () => {
     const mockStorage = { getFileStream: jest.fn(), storeFile: jest.fn() };
     const mockAuditSvc = { log: jest.fn() };
     const mockAccess = { resolveUserPermissions: jest.fn().mockResolvedValue(new Set<string>()) };
-    const svc = new HrExportJobsService(db, mockStorage as never, mockAuditSvc as never, mockAccess as never, liveMembership(), stubAuthContexts());
+    const svc = new HrExportJobsService(db, mockStorage as never, mockAuditSvc as never, mockAccess as never, liveMembership(), stubAuthContexts(), {} as never);
     await svc.claimForOrg(OWNER);
     expect(sqlValues(where.mock.calls[0]?.[0])).toContain(OWNER);
   });
