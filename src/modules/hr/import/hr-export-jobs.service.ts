@@ -32,7 +32,6 @@ import type { GeneratedEmployeeExport } from "./hr-export-file.service";
 import {
   HrExportProcessingError,
   isExportScopeStillAllowed,
-  isHrExportWorkerEnabled,
   narrowestExportScope,
   type HrExportJobRow,
   type HrExportJobView,
@@ -61,7 +60,9 @@ export class HrExportJobsService {
         "Employee view permission is required to export employees",
       );
     }
-    if (!isHrExportWorkerEnabled() || !this.storage.isConfigured()) {
+    // Private object storage holds the CSV artifact. The worker env flag only
+    // starts/stops the in-process poller (same shape as payroll/expense exports).
+    if (!this.storage.isConfigured()) {
       throw hrExportUnavailable();
     }
 
