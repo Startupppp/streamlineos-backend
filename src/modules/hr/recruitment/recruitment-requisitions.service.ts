@@ -1,7 +1,7 @@
 import { Inject, Injectable, NotFoundException, BadRequestException, ConflictException } from "@nestjs/common";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
-import { jobRequisitions, jobPostings } from "../../../db/schema";
+import { jobRequisitions, jobPostings, headcountRequests } from "../../../db/schema";
 import { eq, and, desc } from "drizzle-orm";
 import type { CreateRequisitionInput, UpdateRequisitionInput } from "./dto/requisitions.schemas";
 
@@ -12,13 +12,42 @@ export class RecruitmentRequisitionsService {
   async list(orgId: string, status?: string) {
     const conditions = [eq(jobRequisitions.orgId, orgId)];
     if (status) conditions.push(eq(jobRequisitions.status, status));
-    return this.db.select().from(jobRequisitions)
+    return this.db.select({
+      id: jobRequisitions.id,
+      orgId: jobRequisitions.orgId,
+      title: jobRequisitions.title,
+      department: jobRequisitions.department,
+      location: jobRequisitions.location,
+      headcount: jobRequisitions.headcount,
+      status: jobRequisitions.status,
+      createdAt: jobRequisitions.createdAt,
+    })
+      .from(jobRequisitions)
       .where(and(...conditions))
       .orderBy(desc(jobRequisitions.createdAt))
       .limit(100);
   }
 
+  private async validateHeadcountLink(orgId: string, headcountId?: number) {
+    if (!headcountId) return;
+    const [headcount] = await this.db.select({
+      id: headcountRequests.id,
+      orgId: headcountRequests.orgId,
+      status: headcountRequests.status,
+    }).from(headcountRequests)
+      .where(and(eq(headcountRequests.id, headcountId), eq(headcountRequests.orgId, orgId)))
+      .limit(1);
+    if (!headcount) {
+      throw new NotFoundException("Headcount request not found");
+    }
+    if (headcount.status !== "APPROVED") {
+      throw new BadRequestException("Only APPROVED headcount requests can be linked to a requisition");
+    }
+  }
+
   async create(orgId: string, requestedBy: string, data: CreateRequisitionInput) {
+    await this.validateHeadcountLink(orgId, data.headcountId);
+
     const [req] = await this.db.insert(jobRequisitions)
       .values({
         ...data,
@@ -32,7 +61,19 @@ export class RecruitmentRequisitionsService {
   }
 
   private async findOrThrow(orgId: string, id: number) {
-    const [req] = await this.db.select().from(jobRequisitions)
+    const [req] = await this.db.select({
+      id: jobRequisitions.id,
+      orgId: jobRequisitions.orgId,
+      status: jobRequisitions.status,
+      linkedJobId: jobRequisitions.linkedJobId,
+      headcount: jobRequisitions.headcount,
+      headcountId: jobRequisitions.headcountId,
+      title: jobRequisitions.title,
+      type: jobRequisitions.type,
+      budgetMin: jobRequisitions.budgetMin,
+      budgetMax: jobRequisitions.budgetMax,
+      location: jobRequisitions.location,
+    }).from(jobRequisitions)
       .where(and(eq(jobRequisitions.id, id), eq(jobRequisitions.orgId, orgId)))
       .limit(1);
     if (!req) throw new NotFoundException("Requisition not found");
@@ -65,6 +106,12 @@ export class RecruitmentRequisitionsService {
         .set({ linkedJobId: created.id, updatedAt: new Date() })
         .where(and(eq(jobRequisitions.id, id), eq(jobRequisitions.orgId, orgId)));
 
+      if (requisition.headcountId) {
+        await tx.update(headcountRequests)
+          .set({ status: "JOB_CREATED", linkedJobPostingId: created.id, updatedAt: new Date() })
+          .where(and(eq(headcountRequests.id, requisition.headcountId), eq(headcountRequests.orgId, orgId)));
+      }
+
       return created;
     });
 
@@ -96,6 +143,8 @@ export class RecruitmentRequisitionsService {
   }
 
   async update(orgId: string, id: number, data: UpdateRequisitionInput) {
+    await this.validateHeadcountLink(orgId, data.headcountId);
+
     const [req] = await this.db.update(jobRequisitions)
       .set({
         ...data,

@@ -113,6 +113,8 @@ export class KbPageAiService {
       action: `ai.kb.page-${action}`,
       userId: user.userId,
       orgId: user.orgId,
+      targetType: "kb_page",
+      targetId: String(pageId),
       resourceType: "kb_page",
       resourceId: String(pageId),
     });

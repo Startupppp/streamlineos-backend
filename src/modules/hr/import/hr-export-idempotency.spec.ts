@@ -85,22 +85,12 @@ function serviceWith(existing: HrExportJobRow) {
     {} as never,
     {} as never,
     {} as never,
+    {} as never,
   );
   return { service, audit };
 }
 
 describe("HR employee export — idempotency key ownership", () => {
-  const previous = process.env.HR_EXPORT_WORKER_ENABLED;
-
-  beforeAll(() => {
-    process.env.HR_EXPORT_WORKER_ENABLED = "true";
-  });
-
-  afterAll(() => {
-    if (previous === undefined) delete process.env.HR_EXPORT_WORKER_ENABLED;
-    else process.env.HR_EXPORT_WORKER_ENABLED = previous;
-  });
-
   it("refuses a key already used by a different member of the same organization", async () => {
     const { service, audit } = serviceWith(
       storedJob({ requestedBy: REQUESTER, requestHash: hashOf(FILTERS) }),

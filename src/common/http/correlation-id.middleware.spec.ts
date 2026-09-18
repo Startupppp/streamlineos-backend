@@ -6,7 +6,12 @@ import {
   type FinishedSpan,
 } from "../observability/tracing";
 
-type Req = { headers: Record<string, string | undefined>; method: string; path: string };
+type Req = {
+  headers: Record<string, string | undefined>;
+  method: string;
+  path: string;
+  ip?: string;
+};
 
 type StampedReq = Req & { correlationId?: string; requestId?: string };
 
@@ -18,14 +23,22 @@ type ResDouble = {
   emit: (event: string) => void;
 };
 
-function run(headers: Record<string, string | undefined> = {}): {
+function run(
+  headers: Record<string, string | undefined> = {},
+  extras: { ip?: string } = {},
+): {
   seen: ReturnType<typeof getObservabilityContext>;
   responseHeader: string | undefined;
   headersSet: Record<string, string>;
   res: ResDouble;
   req: StampedReq;
 } {
-  const req = { headers, method: "GET", path: "/crm/parties" } as Req;
+  const req = {
+    headers,
+    method: "GET",
+    path: "/crm/parties",
+    ...(extras.ip !== undefined ? { ip: extras.ip } : {}),
+  } as Req;
   let responseHeader: string | undefined;
   const headersSet: Record<string, string> = {};
   // A real express response emits `finish`/`close` and carries a status; the
@@ -60,6 +73,21 @@ describe("correlationIdMiddleware", () => {
   it("records the method and path so a log line identifies the request", () => {
     const { seen } = run();
     expect(seen).toMatchObject({ method: "GET", route: "/crm/parties" });
+  });
+
+  it("carries Express-resolved req.ip into the ambient context for audit writers", () => {
+    const { seen } = run({}, { ip: "203.0.113.9" });
+    expect(seen?.clientIp).toBe("203.0.113.9");
+  });
+
+  it("carries the User-Agent header into the ambient context", () => {
+    const { seen } = run({ "user-agent": "StreamlineTest/1.0" });
+    expect(seen?.userAgent).toBe("StreamlineTest/1.0");
+  });
+
+  it("does not invent a client IP when Express has none", () => {
+    const { seen } = run();
+    expect(seen?.clientIp).toBeUndefined();
   });
 
   it("returns the correlation id to the caller so they can quote it in a support request", () => {

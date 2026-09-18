@@ -79,6 +79,7 @@ export const SYSTEM_TAG_ACCOUNT_TYPES: Record<GlSystemTag, readonly GlAccountTyp
     recoverable only by a report that added them back.
   */
   inventory_adjustment: ["EXPENSE"],
+  landed_cost: ["ASSET"],
 };
 
 /**
@@ -101,6 +102,7 @@ export const INVENTORY_SEAM_ROLES = [
   "grni",
   "inventory_write_off",
   "inventory_adjustment",
+  "landed_cost",
 ] as const satisfies readonly GlSystemTag[];
 
 /**

@@ -46,6 +46,12 @@ export function isExportScopeStillAllowed(
   return SCOPE_RANK[exportedScope] <= SCOPE_RANK[currentScope];
 }
 
+/**
+ * Defaults on (like payroll/expense export workers). Set
+ * `HR_EXPORT_WORKER_ENABLED=false` to pause the poller during ops work.
+ * When private object storage is unset, `HrExportJobsService.create` generates
+ * the CSV in-process; the worker only processes jobs that need object storage.
+ */
 export function isHrExportWorkerEnabled(): boolean {
-  return process.env.HR_EXPORT_WORKER_ENABLED === "true";
+  return process.env.HR_EXPORT_WORKER_ENABLED !== "false";
 }
