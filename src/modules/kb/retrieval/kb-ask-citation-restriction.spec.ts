@@ -177,7 +177,7 @@ describe("KbAskService — citation re-verification re-applies the article-restr
     }));
     jest.spyOn(search, "retrieveTopArticles").mockResolvedValue(retrieved);
     jest.spyOn(search, "retrieveTopSources").mockResolvedValue([]);
-    jest.spyOn(search, "retrieveAttachmentSnippets").mockResolvedValue("");
+    jest.spyOn(search, "retrieveDocumentPassages").mockResolvedValue([]);
     jest.spyOn(search, "articleOwnerFilterFor").mockResolvedValue(sql`true`);
 
     const ask = new KbAskService(

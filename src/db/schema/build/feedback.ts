@@ -71,6 +71,10 @@ export interface FeedbucketWidgetTheme {
   label?: string;
 }
 
+export type FeedbucketAssigneeRules = Partial<
+  Record<"bug" | "idea" | "feature" | "question" | "praise" | "other", number>
+>;
+
 export const feedbucketSubmissionTypeEnum = pgEnum("feedbucket_submission_type", [
   "bug",
   "idea",
@@ -103,6 +107,8 @@ export const feedbucketWidgets = build.table(
       .notNull(),
     projectId: integer("project_id"),
     managedProductId: integer("managed_product_id"),
+    defaultProjectId: integer("default_project_id"),
+    defaultAssigneeMembershipId: integer("default_assignee_membership_id"),
     name: text("name").notNull(),
     publicKey: text("public_key").notNull(),
     allowedDomains: text("allowed_domains")
@@ -114,6 +120,7 @@ export const feedbucketWidgets = build.table(
     isActive: boolean("is_active").notNull().default(true),
     aiAssistEnabled: boolean("ai_assist_enabled").notNull().default(false),
     theme: jsonb("theme").$type<FeedbucketWidgetTheme>(),
+    assigneeRules: jsonb("assignee_rules").$type<FeedbucketAssigneeRules>(),
     createdBy: text("created_by").references(() => users.id, { onDelete: "set null" }),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),

@@ -20,6 +20,7 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { actingMembershipId } from "../../../common/auth/principal";
 import { ApprovalsService } from "./approvals.service";
 import { ApprovalsReadService } from "./approvals-read.service";
+import { BuildInboxCountService } from "./build-inbox-count.service";
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import {
   createApprovalSchema,
@@ -38,12 +39,25 @@ import { approvalInboxItemSchema, approvalRowSchema } from "./dto/approvals-resp
 
 const projectIdParams = z.object({ projectId: z.coerce.number().int().positive() }).strict();
 const projectAndApprovalIdParams = z.object({ projectId: z.coerce.number().int().positive(), approvalId: z.coerce.number().int().positive() }).strict();
+const approvalInboxCountSchema = z.object({ count: z.number().int().nonnegative() });
 
 @RequireModule("build")
 @Controller("build/approvals")
 @UseGuards(JwtAuthGuard, PermissionGuard)
 export class ApprovalsInboxController {
-  constructor(private readonly reads: ApprovalsReadService) {}
+  constructor(
+    private readonly reads: ApprovalsReadService,
+    private readonly counts: BuildInboxCountService,
+  ) {}
+
+  @Get("inbox/count")
+  @RequirePermission("build:approvals:view")
+  @ResponseSchema(approvalInboxCountSchema)
+  async getInboxCount(@CurrentUser() u: CurrentUserContext) {
+    const mid = actingMembershipId(u.principal);
+    const count = await this.counts.countPending(u.orgId, mid);
+    return { count };
+  }
 
   @Get("inbox")
   @RequirePermission("build:approvals:view")

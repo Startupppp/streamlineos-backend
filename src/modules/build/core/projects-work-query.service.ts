@@ -82,40 +82,49 @@ export class ProjectsWorkQueryService {
     } = query;
     const limit = Math.min(rawLimit, PAGE_SIZE_CAP);
 
-    const memberRows = await this.db
-      .select({ projectId: projectMembers.projectId })
-      .from(projectMembers)
-      .innerJoin(
-        organizationMembers,
-        and(
-          eq(organizationMembers.id, projectMembers.membershipId),
-          eq(organizationMembers.orgId, projectMembers.orgId),
-          eq(organizationMembers.userId, u.userId),
-          eq(organizationMembers.status, "ACTIVE"),
-        ),
-      )
-      .where(eq(projectMembers.orgId, u.orgId));
-
-    const memberProjectIds = memberRows.map((r) => r.projectId);
-    if (memberProjectIds.length === 0) {
-      return { data: [], limit, nextCursor: null, hasMore: false, total: 0 };
-    }
-
-    const allowedProjectIds =
-      filterProjectIds && filterProjectIds.length > 0
-        ? filterProjectIds.filter((id) => memberProjectIds.includes(id))
-        : memberProjectIds;
-
-    if (allowedProjectIds.length === 0) {
-      return { data: [], limit, nextCursor: null, hasMore: false, total: 0 };
-    }
+    const isSelfScoped = scope === "created" || scope === "subscribed";
 
     const conditions: SQL<unknown>[] = [
       eq(tickets.orgId, u.orgId),
-      inArray(tickets.projectId, allowedProjectIds),
       ne(projects.status, "ARCHIVED"),
       isNull(tickets.deletedAt),
     ];
+
+    if (isSelfScoped) {
+      if (filterProjectIds && filterProjectIds.length > 0) {
+        conditions.push(inArray(tickets.projectId, filterProjectIds));
+      }
+    } else {
+      const memberRows = await this.db
+        .select({ projectId: projectMembers.projectId })
+        .from(projectMembers)
+        .innerJoin(
+          organizationMembers,
+          and(
+            eq(organizationMembers.id, projectMembers.membershipId),
+            eq(organizationMembers.orgId, projectMembers.orgId),
+            eq(organizationMembers.userId, u.userId),
+            eq(organizationMembers.status, "ACTIVE"),
+          ),
+        )
+        .where(eq(projectMembers.orgId, u.orgId));
+
+      const memberProjectIds = memberRows.map((r) => r.projectId);
+      if (memberProjectIds.length === 0) {
+        return { data: [], limit, nextCursor: null, hasMore: false, total: 0 };
+      }
+
+      const allowedProjectIds =
+        filterProjectIds && filterProjectIds.length > 0
+          ? filterProjectIds.filter((id) => memberProjectIds.includes(id))
+          : memberProjectIds;
+
+      if (allowedProjectIds.length === 0) {
+        return { data: [], limit, nextCursor: null, hasMore: false, total: 0 };
+      }
+
+      conditions.push(inArray(tickets.projectId, allowedProjectIds));
+    }
 
     if (pmWorkspaceId) {
       conditions.push(eq(projects.pmWorkspaceId, pmWorkspaceId));
@@ -131,13 +140,18 @@ export class ProjectsWorkQueryService {
 
     if (search && search.trim()) {
       const term = search.trim();
-      const isTicketRef = /^[A-Za-z]+-\d+$/.test(term) || /^#?\d+$/.test(term);
+      const prefixedRef = /^([A-Za-z]+)-(\d+)$/.exec(term);
+      const isTicketRef = prefixedRef !== null || /^#?\d+$/.test(term);
       if (isTicketRef) {
         const numStr = term.replace(/^#/, "").replace(/^[A-Za-z]+-/, "");
         const num = parseInt(numStr, 10);
+        const numCondition: SQL<unknown> = isNaN(num) ? sql`false` : eq(tickets.ticketNumber, num);
+        const keyBranch: SQL<unknown> = prefixedRef
+          ? (and(sql`UPPER(${projects.key}) = UPPER(${prefixedRef[1]})`, numCondition) ?? sql`false`)
+          : numCondition;
         const searchCondition = or(
           sql`${tickets.title} ILIKE ${"%" + term + "%"}`,
-          isNaN(num) ? sql`false` : eq(tickets.ticketNumber, num),
+          keyBranch,
         );
         if (searchCondition) conditions.push(searchCondition);
       } else {

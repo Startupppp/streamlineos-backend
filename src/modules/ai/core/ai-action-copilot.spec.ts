@@ -1,11 +1,29 @@
 import { ForbiddenException } from "@nestjs/common";
 import { ProjectsCopilotTools } from "./projects-copilot-tools";
-import { ToolAccessService } from "./tool-access.service";
 import { AiConfirmationService } from "../confirmation/ai-confirmation.service";
+import type { AskOsActor } from "./services/ask-os-actor";
+import type { AskOsToolDefinition, AskOsToolRunContext } from "./registry/ask-os-tool.types";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
 
-const mockActor: CurrentUserContext = {
+const mockActor: AskOsActor = {
+  userId: "user-1",
+  orgId: "org-1",
+  membershipId: 1,
+  displayName: "Test User",
+  email: "test@org.com",
+  orgName: "Test Org",
+  role: "MEMBER",
+  isOrgOwner: false,
+  timezone: "UTC",
+  today: "2026-09-18",
+  monthStart: "2026-09-01",
+  monthEnd: "2026-09-30",
+  currentYear: 2026,
+  currentMonth: 9,
+};
+
+const mockCaller: CurrentUserContext = {
   userId: "user-1",
   orgId: "org-1",
   role: "member",
@@ -15,16 +33,26 @@ const mockActor: CurrentUserContext = {
   principal: humanSessionPrincipal(1, false),
 };
 
-type BuiltTools = ReturnType<ProjectsCopilotTools["buildTools"]>;
-type ToolCallOptions = Parameters<NonNullable<BuiltTools["readTicket"]["execute"]>>[1];
-
-const toolOpts: ToolCallOptions = { toolCallId: "test-call", messages: [], context: {} };
+function makeCtx(scope: AskOsToolRunContext["scope"] = "all"): AskOsToolRunContext {
+  return {
+    actor: mockActor,
+    caller: mockCaller,
+    scope,
+    scopes: { "build:tickets:view": scope, "build:tickets:create": scope, "build:tickets:update": scope, "calendar:write": scope },
+    modules: {},
+  };
+}
 
 function buildMocks() {
   const db = { select: jest.fn(), update: jest.fn(), insert: jest.fn() } as unknown as import("../../../db/drizzle.module").Db;
-  const toolAccess = { denyReason: jest.fn(), scope: jest.fn() } as unknown as ToolAccessService;
   const confirmation = { propose: jest.fn(), confirm: jest.fn(), markExecuted: jest.fn(), cancel: jest.fn() } as unknown as AiConfirmationService;
-  return { db, toolAccess, confirmation };
+  return { db, confirmation };
+}
+
+function findTool(defs: AskOsToolDefinition[], key: string): AskOsToolDefinition {
+  const def = defs.find((d) => d.key === key);
+  if (!def) throw new Error(`Tool "${key}" not found`);
+  return def;
 }
 
 function buildTicketsDb(found: boolean) {
@@ -36,64 +64,62 @@ function buildTicketsDb(found: boolean) {
 describe("ProjectsCopilotTools", () => {
   describe("createTicket tool", () => {
     it("calls propose and does NOT call ProjectsTicketsService when tool executes", async () => {
-      const { toolAccess, confirmation, db } = buildMocks();
-      jest.mocked(toolAccess.denyReason).mockResolvedValue(null);
+      const { db, confirmation } = buildMocks();
       jest.mocked(confirmation.propose).mockResolvedValue({ proposalId: 1, token: "tok", expiresAt: new Date() });
 
-      const tools = new ProjectsCopilotTools(db, toolAccess, confirmation);
-      const built = tools.buildTools({ actor: mockActor });
+      const tools = new ProjectsCopilotTools(db, confirmation);
+      const def = findTool(tools.tools(), "createTicket");
+      const result = await def.run({ projectId: 10, title: "Fix bug", type: "BUG", priority: "HIGH" }, makeCtx());
 
-      const execFn = built.createTicket.execute;
-      if (!execFn) throw new Error("execute not defined");
-      const result = await execFn({ projectId: 10, title: "Fix bug", type: "BUG", priority: "HIGH" }, toolOpts);
-
-      expect(result).toMatchObject({ requiresConfirmation: true, action: "ticket.create" });
+      expect(result).toMatchObject({ kind: "needs-confirmation", action: "ticket.create" });
       expect(confirmation.propose).toHaveBeenCalledWith(expect.objectContaining({ action: "ticket.create" }));
     });
 
-    it("returns denied when toolAccess.denyReason returns a reason", async () => {
-      const { toolAccess, confirmation, db } = buildMocks();
-      jest.mocked(toolAccess.denyReason).mockResolvedValue("No permission");
-
-      const tools = new ProjectsCopilotTools(db, toolAccess, confirmation);
-      const built = tools.buildTools({ actor: mockActor });
-
-      const execFn2 = built.createTicket.execute;
-      if (!execFn2) throw new Error("execute not defined");
-      const result = await execFn2({ projectId: 10, title: "Fix bug", type: "BUG", priority: "HIGH" }, toolOpts);
-
-      expect(result).toEqual({ denied: true, reason: "No permission" });
+    it("exposes the build:tickets:create permission key so the registry can gate it", () => {
+      const { db, confirmation } = buildMocks();
+      const tools = new ProjectsCopilotTools(db, confirmation);
+      const def = findTool(tools.tools(), "createTicket");
+      expect(def.permission).toBe("build:tickets:create");
       expect(confirmation.propose).not.toHaveBeenCalled();
     });
   });
 
   describe("readTicket tool", () => {
     it("returns ticket data when found", async () => {
-      const { toolAccess, confirmation } = buildMocks();
-      jest.mocked(toolAccess.denyReason).mockResolvedValue(null);
-
+      const { confirmation } = buildMocks();
       const db = buildTicketsDb(true) as unknown as import("../../../db/drizzle.module").Db;
-      const tools = new ProjectsCopilotTools(db, toolAccess, confirmation);
-      const built = tools.buildTools({ actor: mockActor });
-
-      const execRead = built.readTicket.execute;
-      if (!execRead) throw new Error("execute not defined");
-      const result = await execRead({ ticketId: 42 }, toolOpts);
-      expect(result).toMatchObject({ found: true });
+      const tools = new ProjectsCopilotTools(db, confirmation);
+      const def = findTool(tools.tools(), "readTicket");
+      const result = await def.run({ ticketId: 42 }, makeCtx("all"));
+      expect(result).toMatchObject({ kind: "data" });
     });
 
-    it("returns { found: false } when ticket not in org", async () => {
-      const { toolAccess, confirmation } = buildMocks();
-      jest.mocked(toolAccess.denyReason).mockResolvedValue(null);
-
+    it("returns not-found shape when ticket is not in org", async () => {
+      const { confirmation } = buildMocks();
       const db = buildTicketsDb(false) as unknown as import("../../../db/drizzle.module").Db;
-      const tools = new ProjectsCopilotTools(db, toolAccess, confirmation);
-      const built = tools.buildTools({ actor: mockActor });
+      const tools = new ProjectsCopilotTools(db, confirmation);
+      const def = findTool(tools.tools(), "readTicket");
+      const result = await def.run({ ticketId: 999 }, makeCtx("all"));
+      expect(result).toEqual({ kind: "empty", subject: "ticket", hint: "Ticket not found in this org." });
+    });
 
-      const execRead2 = built.readTicket.execute;
-      if (!execRead2) throw new Error("execute not defined");
-      const result = await execRead2({ ticketId: 999 }, toolOpts);
-      expect(result).toEqual({ found: false });
+    it("returns not-found shape for a ticket in a project the actor cannot access", async () => {
+      const { confirmation } = buildMocks();
+      const db = buildTicketsDb(false) as unknown as import("../../../db/drizzle.module").Db;
+      const tools = new ProjectsCopilotTools(db, confirmation);
+      const def = findTool(tools.tools(), "readTicket");
+      const result = await def.run({ ticketId: 77 }, makeCtx("own"));
+      expect(result).toEqual({ kind: "empty", subject: "ticket", hint: "Ticket not found in this org." });
+    });
+
+    it("own-scoped member cannot read another member's ticket body", async () => {
+      const { confirmation } = buildMocks();
+      const db = buildTicketsDb(false) as unknown as import("../../../db/drizzle.module").Db;
+      const tools = new ProjectsCopilotTools(db, confirmation);
+      const def = findTool(tools.tools(), "readTicket");
+      const result = await def.run({ ticketId: 55 }, makeCtx("own"));
+      expect(result).toEqual({ kind: "empty", subject: "ticket", hint: "Ticket not found in this org." });
+      expect(def.permission).toBe("build:tickets:view");
     });
   });
 });
@@ -118,11 +144,10 @@ describe("confirmAction controller logic", () => {
     expect(confirmation.markExecuted).not.toHaveBeenCalled();
   });
 
-  it("re-asserts permission and returns a reason when denied", async () => {
-    const { toolAccess } = buildMocks();
-    jest.mocked(toolAccess.denyReason).mockResolvedValue("No engagement access");
-
-    const reason = await toolAccess.denyReason("org-1", "user-1", "hr:engagement:manage");
-    expect(reason).toBe("No engagement access");
+  it("the tool definition carries build:tickets:view so the registry re-checks it on every call", () => {
+    const { db, confirmation } = buildMocks();
+    const tools = new ProjectsCopilotTools(db, confirmation);
+    const def = findTool(tools.tools(), "readTicket");
+    expect(def.permission).toBe("build:tickets:view");
   });
 });

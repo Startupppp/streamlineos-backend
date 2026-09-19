@@ -190,6 +190,9 @@ export class KbImportExportService {
         processedItems: items.length,
         succeededItems: succeeded,
         failedItems: failed,
+        errorReport: {
+          itemTitles: items.map((item) => item.title),
+        },
         createdById: user.userId,
       })
       .returning();

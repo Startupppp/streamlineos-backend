@@ -29,9 +29,27 @@ export interface ConfirmResult {
 export const MAX_TTL = 300;
 export const DEFAULT_TTL = 120;
 
+export const MAX_IDEMPOTENCY_KEY_LENGTH = 120;
+
+export const MIN_CONFIRMATION_SECRET_LENGTH = 32;
+
+function canonicalize(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(canonicalize);
+  if (value === null || typeof value !== "object") return value;
+  const source = value as Record<string, unknown>;
+  const ordered: Record<string, unknown> = {};
+  for (const key of Object.keys(source).sort()) ordered[key] = canonicalize(source[key]);
+  return ordered;
+}
+
 export function stableHash(payload: Record<string, unknown>): string {
-  const sorted = JSON.stringify(payload, Object.keys(payload).sort());
-  return createHash("sha256").update(sorted).digest("hex");
+  return createHash("sha256").update(JSON.stringify(canonicalize(payload))).digest("hex");
+}
+
+export function boundedIdempotencyKey(key: string): string {
+  return key.length <= MAX_IDEMPOTENCY_KEY_LENGTH
+    ? key
+    : createHash("sha256").update(key).digest("hex");
 }
 
 export function computeHmac(
@@ -48,5 +66,14 @@ export function computeHmac(
 }
 
 export function getSecret(): string {
-  return process.env.AI_CONFIRMATION_SECRET ?? process.env.BACKEND_JWT_SECRET ?? "";
+  const configured = process.env.AI_CONFIRMATION_SECRET?.trim();
+  const secret = configured && configured.length > 0
+    ? configured
+    : (process.env.BACKEND_JWT_SECRET?.trim() ?? "");
+  if (secret.length < MIN_CONFIRMATION_SECRET_LENGTH) {
+    throw new Error(
+      "AI confirmation secret is missing or too short; refusing to sign a confirmable action token.",
+    );
+  }
+  return secret;
 }

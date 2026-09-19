@@ -7,7 +7,7 @@ import {
   NotFoundException,
   UnprocessableEntityException,
 } from "@nestjs/common";
-import { and, eq, isNull, sql } from "drizzle-orm";
+import { and, eq, isNull, ne, sql } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { timesheets, projects, tickets } from "../../../db/schema";
@@ -71,6 +71,29 @@ export class EntriesService {
     if (!row) throw new NotFoundException("Project not found");
   }
 
+  private async dailyHoursTotal(
+    orgId: string,
+    membershipId: number,
+    date: string,
+    excludeEntryId?: number,
+  ): Promise<number> {
+    const conditions = [
+      eq(timesheets.orgId, orgId),
+      eq(timesheets.userMembershipId, membershipId),
+      eq(timesheets.date, date),
+      isNull(timesheets.voidedAt),
+    ];
+    if (excludeEntryId !== undefined)
+      conditions.push(ne(timesheets.id, excludeEntryId));
+
+    const [row] = await this.db
+      .select({ total: sql<string>`COALESCE(SUM(hours::numeric), 0)::text` })
+      .from(timesheets)
+      .where(and(...conditions));
+
+    return parseFloat(row?.total ?? "0");
+  }
+
   async createEntry(u: CurrentUserContext, input: CreateEntryInput) {
     const membershipId = actingMembershipId(u.principal);
     if (membershipId === null)
@@ -115,21 +138,11 @@ export class EntriesService {
       throw new BadRequestException("Field 'ticket' is required");
     }
 
-    const [dailyHours] = await this.db
-      .select({
-        total: sql<string>`COALESCE(SUM(hours::numeric), 0)::text`,
-      })
-      .from(timesheets)
-      .where(
-        and(
-          eq(timesheets.orgId, u.orgId),
-          eq(timesheets.userMembershipId, membershipId),
-          eq(timesheets.date, input.date),
-          isNull(timesheets.voidedAt),
-        ),
-      );
-
-    const currentTotal = parseFloat(dailyHours?.total ?? "0");
+    const currentTotal = await this.dailyHoursTotal(
+      u.orgId,
+      membershipId,
+      input.date,
+    );
     if (!(settings?.allowOverlappingEntries ?? true) && currentTotal > 0) {
       throw new ConflictException(
         "An entry already exists for this day. Overlapping entries are disabled.",
@@ -280,10 +293,24 @@ export class EntriesService {
     const updateData: Record<string, unknown> = { updatedAt: new Date() };
     if (input.hours !== undefined) {
       const settings = await this.periodService.loadSettings(u.orgId);
-      updateData.hours = roundHours(
-        input.hours,
-        settings?.roundingRule,
-      ).toString();
+      const nextHours = roundHours(input.hours, settings?.roundingRule);
+
+      if (entry.userMembershipId !== null) {
+        const maxHoursPerDay = parseFloat(settings?.maxHoursPerDay ?? "24");
+        const otherHours = await this.dailyHoursTotal(
+          u.orgId,
+          entry.userMembershipId,
+          entry.date,
+          entryId,
+        );
+        if (otherHours + nextHours > maxHoursPerDay) {
+          throw new BadRequestException(
+            `Logging ${nextHours}h would exceed the daily limit of ${maxHoursPerDay}h`,
+          );
+        }
+      }
+
+      updateData.hours = nextHours.toString();
     }
     if (input.description !== undefined)
       updateData.description = input.description;

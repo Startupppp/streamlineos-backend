@@ -1,5 +1,4 @@
 import { Injectable, Inject } from "@nestjs/common";
-import { tool } from "ai";
 import { z } from "zod";
 import { and, eq, ilike, inArray, isNull, sql } from "drizzle-orm";
 import {
@@ -17,26 +16,22 @@ import {
   WarehouseScopeService,
   type ResolvedWarehouseScope,
 } from "../../inventory/stock-engine/warehouse-scope.service";
-import { ToolAccessService } from "./tool-access.service";
-import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import type { DataScope } from "../../access/access.types";
+import {
+  defineTool,
+  data,
+  denied,
+  empty,
+  type AskOsToolDefinition,
+  type AskOsToolProvider,
+} from "./registry/ask-os-tool.types";
 
 export function shouldDenyTeamPayrollCopilot(scope: DataScope): boolean {
   return scope === "team";
 }
 
-const PAYROLL_COPILOT_BRANCH =
-  "the payroll copilot answers a different shape per scope — self rows, a team refusal, or an org summary — rather than filtering one query";
+const LEAVE_BALANCE_CAP = 50;
 
-export interface OpsCopilotContext {
-  actor: CurrentUserContext;
-}
-
-/**
- * Caps on what one lookup may pull into a context window. `variantScan` bounds
- * the single batched variant read across every matched product; `variants` is
- * what each product then shows.
- */
 const STOCK_LOOKUP_CAPS = { products: 5, variants: 10, variantScan: 500 } as const;
 
 export interface CopilotStockRow {
@@ -46,28 +41,6 @@ export interface CopilotStockRow {
   available: number;
 }
 
-/**
- * F2 — stock quantities for a set of variants, scoped to the asker's warehouses.
- *
- * Two rules from backend/CLAUDE.md §4 meet in this one query, and both used to
- * be missing here.
- *
- * The first is that a chunk is disclosed the moment it enters the context
- * window, so the copilot must bind **the same object-level visibility the direct
- * read endpoint enforces**, in the SQL predicate. `inv-stock.service`,
- * `inv-stock-reservations.service` and the inventory reports all resolve
- * `WarehouseScopeService` and put it in their `WHERE`; this tool did not, so an
- * operator assigned to one warehouse could read every site's stock by asking the
- * assistant instead of opening the screen it is a second door onto. The scope is
- * now the same service's predicate, not a paraphrase of it.
- *
- * The second is that `available` has exactly one definition. A1 collapsed eight
- * hand-written copies of the subtraction, one of them here, where it read
- * `onHand - committed` — two terms of five, quietly offering blocked stock,
- * quality-held stock, picked-and-waiting stock, and goods standing in a van at a
- * transit location. A copilot states its number to a human as fact, so it uses
- * `availableQtySumSql` and nothing else.
- */
 export async function readCopilotVariantStock(
   db: Db,
   orgId: string,
@@ -106,10 +79,9 @@ export async function readCopilotVariantStock(
 }
 
 @Injectable()
-export class OpsCopilotTools {
+export class OpsCopilotTools implements AskOsToolProvider {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
-    private readonly toolAccess: ToolAccessService,
     private readonly warehouseScope: WarehouseScopeService,
   ) {}
 
@@ -138,38 +110,25 @@ export class OpsCopilotTools {
       .limit(12);
   }
 
-  buildTools(ctx: OpsCopilotContext) {
-    const { actor } = ctx;
-    const { orgId, userId } = actor;
-
-    return {
-      getInventoryStock: tool({
+  tools(): AskOsToolDefinition[] {
+    return [
+      defineTool({
+        key: "getInventoryStock",
         description:
           "Search for inventory products by name and show their current stock availability. Returns up to 5 matching products with on-hand, committed, and available quantities.",
-        inputSchema: z.object({
+        input: z.object({
           productQuery: z.string().min(1).max(120).describe("Partial product name to search for"),
         }),
-        execute: async ({ productQuery }) => {
-          const deny = await this.toolAccess.denyReason(
-            orgId,
-            userId,
-            "inventory:products:read",
-          );
-          if (deny) return { denied: true, reason: deny };
+        permission: "inventory:products:read",
+        module: "inventory",
+        run: async ({ productQuery }, ctx) => {
+          const stockScope = ctx.scopes["inventory:stock:read"];
+          if (!stockScope || stockScope === "none")
+            return denied("inventory:stock:read");
 
-          const stockDeny = await this.toolAccess.denyReason(
-            orgId,
-            userId,
-            "inventory:stock:read",
-          );
-          if (stockDeny) return { denied: true, reason: stockDeny };
-
-          const scope = await this.warehouseScope.forUser(orgId, userId);
+          const scope = await this.warehouseScope.forUser(ctx.actor.orgId, ctx.actor.userId);
 
           const q = `%${productQuery.trim()}%`;
-          // Soft-deleted products are withdrawn from the catalogue, and §3's rule
-          // is that every read filters them: without this the assistant happily
-          // quotes stock for a SKU the product screens no longer show.
           const matched = await this.db
             .select({
               id: invProducts.id,
@@ -180,23 +139,16 @@ export class OpsCopilotTools {
             .from(invProducts)
             .where(
               and(
-                eq(invProducts.orgId, orgId),
+                eq(invProducts.orgId, ctx.actor.orgId),
                 isNull(invProducts.deletedAt),
                 ilike(invProducts.name, q),
               ),
             )
             .limit(STOCK_LOOKUP_CAPS.products);
 
-          if (matched.length === 0) {
-            return {
-              results: [],
-              message: `No products found matching "${productQuery}".`,
-            };
-          }
+          if (matched.length === 0)
+            return empty("products", `No product matches "${productQuery}".`);
 
-          // One read for every matched product's variants rather than one per
-          // product: the lookup is bounded by the product cap either way, but a
-          // query inside the map is the N+1 shape the growing-loop gate refuses.
           const productIds = matched.map((p) => p.id);
           const allVariants = await this.db
             .select({
@@ -207,7 +159,7 @@ export class OpsCopilotTools {
             .from(invProductVariants)
             .where(
               and(
-                eq(invProductVariants.orgId, orgId),
+                eq(invProductVariants.orgId, ctx.actor.orgId),
                 inArray(invProductVariants.productId, productIds),
                 isNull(invProductVariants.deletedAt),
               ),
@@ -215,10 +167,7 @@ export class OpsCopilotTools {
             .orderBy(invProductVariants.productId, invProductVariants.id)
             .limit(STOCK_LOOKUP_CAPS.variantScan);
 
-          const variantsByProduct = new Map<
-            number,
-            Array<{ id: number; name: string }>
-          >();
+          const variantsByProduct = new Map<number, Array<{ id: number; name: string }>>();
           for (const v of allVariants) {
             const list = variantsByProduct.get(v.productId) ?? [];
             list.push({ id: v.id, name: v.name });
@@ -231,7 +180,7 @@ export class OpsCopilotTools {
           }));
           const stockRows = await readCopilotVariantStock(
             this.db,
-            orgId,
+            ctx.actor.orgId,
             scope,
             shown.flatMap((entry) => entry.variants.map((v) => v.id)),
           );
@@ -254,97 +203,88 @@ export class OpsCopilotTools {
             };
           });
 
-          return { results };
+          return data({ results });
         },
       }),
 
-      getPayrollSummary: tool({
+      defineTool({
+        key: "getPayrollSummary",
         description:
           "Get a payroll summary (counts and net totals by status). Never returns bank details or individual salaries when the user only has own-scope access. Use month (YYYY-MM) and/or year (YYYY) to filter.",
-        inputSchema: z.object({
-          month: z
-            .string()
-            .optional()
-            .describe("Filter to a specific month, format YYYY-MM"),
-          year: z
-            .string()
-            .optional()
-            .describe("Filter to a specific year, format YYYY"),
+        input: z.object({
+          month: z.string().optional().describe("Filter to a specific month, format YYYY-MM"),
+          year: z.string().optional().describe("Filter to a specific year, format YYYY"),
         }),
-        execute: async ({ month, year }) => {
-          const read = await this.toolAccess.scope(
-            orgId,
-            userId,
-            "hr:payroll:view",
-          );
-          const scope = read.rawScope(PAYROLL_COPILOT_BRANCH);
+        permission: "self:payslips",
+        module: "payroll",
+        run: async ({ month, year }, ctx) => {
+          const hrPayrollScope = ctx.scopes["hr:payroll:view"];
 
-          if (read.denied) {
-            const selfDeny = await this.toolAccess.denyReason(
-              orgId,
-              userId,
-              "self:payslips",
+          if (hrPayrollScope === "all") {
+            const summaryRows = await this.db.execute<{
+              status: string;
+              count: string;
+              total_net: string;
+            }>(sql`
+              SELECT
+                pr.status,
+                COUNT(pre.id) AS count,
+                SUM(pre.net::numeric) AS total_net
+              FROM payroll_run_employees pre
+              JOIN payroll_runs pr ON pr.id = pre.run_id
+              WHERE pr.org_id = ${ctx.actor.orgId}
+                ${month ? sql`AND pr.month = ${month}` : sql``}
+                ${year && !month ? sql`AND pr.month LIKE ${year + "-%"}` : sql``}
+              GROUP BY pr.status
+              ORDER BY pr.status
+            `);
+            return data({
+              scope: hrPayrollScope,
+              byStatus: summaryRows.map((r) => ({
+                status: String(r.status),
+                count: Number(r.count),
+                totalNet: Number(r.total_net ?? 0),
+              })),
+            });
+          }
+
+          if (shouldDenyTeamPayrollCopilot(hrPayrollScope)) {
+            return empty(
+              "team payroll summary",
+              "Team-scoped payroll summaries are not available in Ask OS. Open payroll reports for team totals.",
             );
-            if (selfDeny) return { denied: true, reason: selfDeny };
-            return {
+          }
+
+          if (hrPayrollScope === "own") {
+            return data({
               scope: "self",
-              records: await this.selfPayrollRows(orgId, userId, month, year),
-            };
+              records: await this.selfPayrollRows(ctx.actor.orgId, ctx.actor.userId, month, year),
+            });
           }
 
-          if (scope === "own") {
-            return {
-              scope: "self",
-              records: await this.selfPayrollRows(orgId, userId, month, year),
-            };
-          }
+          const selfScope = ctx.scopes["self:payslips"];
+          if (!selfScope || selfScope === "none")
+            return denied("self:payslips");
 
-          if (shouldDenyTeamPayrollCopilot(scope)) {
-            return {
-              denied: true,
-              reason:
-                "Team-scoped payroll summaries are not available in Ask OS yet. Open payroll reports for team totals.",
-            };
-          }
-
-          const summaryRows = await this.db.execute<{
-            status: string;
-            count: string;
-            total_net: string;
-          }>(sql`
-            SELECT
-              pr.status,
-              COUNT(pre.id) AS count,
-              SUM(pre.net::numeric) AS total_net
-            FROM payroll_run_employees pre
-            JOIN payroll_runs pr ON pr.id = pre.run_id
-            WHERE pr.org_id = ${orgId}
-              ${month ? sql`AND pr.month = ${month}` : sql``}
-              ${year && !month ? sql`AND pr.month LIKE ${year + "-%"}` : sql``}
-            GROUP BY pr.status
-            ORDER BY pr.status
-          `);
-
-          return {
-            scope,
-            byStatus: summaryRows.map((r) => ({
-              status: String(r.status),
-              count: Number(r.count),
-              totalNet: Number(r.total_net ?? 0),
-            })),
-          };
+          return data({
+            scope: "self",
+            records: await this.selfPayrollRows(ctx.actor.orgId, ctx.actor.userId, month, year),
+          });
         },
       }),
 
-      getMyLeaveBalances: tool({
+      defineTool({
+        key: "getMyLeaveBalances",
         description:
           "Get the current user's own leave balances for the current year, broken down by leave type.",
-        inputSchema: z.object({}),
-        execute: async () => {
+        input: z.object({}),
+        permission: "self:leaves",
+        run: async (_input, ctx) => {
           const currentYear = new Date().getFullYear();
 
           const rows = await this.db
             .select({
+              leaveTypeId: leaveTypes.id,
               leaveTypeName: leaveTypes.name,
               balance: leaveBalances.balance,
               daysPerYear: leaveTypes.daysPerYear,
@@ -353,29 +293,26 @@ export class OpsCopilotTools {
             .innerJoin(leaveTypes, eq(leaveBalances.leaveTypeId, leaveTypes.id))
             .where(
               and(
-                eq(leaveBalances.orgId, orgId),
-                eq(leaveBalances.userId, userId),
+                eq(leaveBalances.orgId, ctx.actor.orgId),
+                eq(leaveBalances.userId, ctx.actor.userId),
                 eq(leaveBalances.year, currentYear),
               ),
-            );
+            )
+            .limit(LEAVE_BALANCE_CAP);
 
-          if (rows.length === 0) {
-            return {
-              balances: [],
-              message: "No leave balances found for the current year.",
-            };
-          }
+          if (rows.length === 0) return empty("leave balances");
 
-          return {
+          return data({
             year: currentYear,
             balances: rows.map((r) => ({
+              leaveTypeId: r.leaveTypeId,
               leaveType: r.leaveTypeName,
               balance: Number(r.balance),
               daysPerYear: r.daysPerYear,
             })),
-          };
+          });
         },
       }),
-    };
+    ];
   }
 }

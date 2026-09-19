@@ -2,6 +2,10 @@
 import { PgDialect } from "drizzle-orm/pg-core";
 import type { SQL } from "drizzle-orm";
 import { AiConfirmationService } from "./ai-confirmation.service";
+import {
+  boundedIdempotencyKey,
+  MAX_IDEMPOTENCY_KEY_LENGTH,
+} from "./ai-confirmation.helpers";
 
 const dialect = new PgDialect();
 
@@ -823,5 +827,35 @@ describe("AiConfirmationService — ORACLE-1 existence oracle fix", () => {
     const { sql: compiledSql, params } = dialect.sqlToQuery(capturedCondition as SQL);
     expect(compiledSql).toMatch(/org_id/);
     expect(params).toContain("org-ATTACKER");
+  });
+});
+describe("a long idempotency key is bounded to the column width before it reaches Postgres", () => {
+  it("passes a key that already fits through untouched, so existing keys keep matching", () => {
+    const key = `${"a".repeat(60)}:${"b".repeat(59)}`;
+
+    expect(key).toHaveLength(MAX_IDEMPOTENCY_KEY_LENGTH);
+    expect(boundedIdempotencyKey(key)).toBe(key);
+  });
+
+  it("digests a key wider than the column, because Ask OS builds 125-character keys that fail 22001", () => {
+    const orgId = "871a5fd2-df81-4e79-a097-9910d6640a01";
+    const userId = "3a99283a-40be-4758-953b-458548e064fa";
+    const key = `${orgId}:${userId}:self.applyLeave:2026-09-19:16:2026-12-24:2026-12-24`;
+
+    expect(key.length).toBeGreaterThan(MAX_IDEMPOTENCY_KEY_LENGTH);
+    expect(boundedIdempotencyKey(key)).toHaveLength(64);
+    expect(boundedIdempotencyKey(key).length).toBeLessThanOrEqual(MAX_IDEMPOTENCY_KEY_LENGTH);
+  });
+
+  it("is deterministic, so a retry of the same action still finds the first proposal", () => {
+    const key = `${"z".repeat(200)}`;
+
+    expect(boundedIdempotencyKey(key)).toBe(boundedIdempotencyKey(key));
+  });
+
+  it("separates two distinct over-long keys, so two different actions never share a proposal", () => {
+    const base = `${"q".repeat(130)}`;
+
+    expect(boundedIdempotencyKey(`${base}:a`)).not.toBe(boundedIdempotencyKey(`${base}:b`));
   });
 });

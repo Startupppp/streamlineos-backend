@@ -238,6 +238,10 @@ import type { AiCreditLedger } from "../gateway/credit-ledger.interface";
 import type { AiUsageService } from "./ai-usage.service";
 import { humanSessionPrincipal } from "../../../../common/auth/principal";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
+import { AiGatewayService } from "../gateway/ai-gateway.service";
+import { AiGatewayStreamHelper, type AiStreamTextOpts } from "../gateway/ai-gateway-stream.helper";
+import { AiConcurrencyLimiter } from "../gateway/ai-concurrency-limiter";
+import { AccessService } from "../../../access/access.service";
 
 // Annotated, deliberately. Without the annotation tsc never excess-property-checks
 // this literal, which is how `permissions: []` -- a shape §5 bans and
@@ -254,15 +258,19 @@ const ACTOR: CurrentUserContext = {
 };
 
 const STUB_CONTEXT = {
-  projectCount: 0,
-  ticketCount: 0,
   todayAttendance: null,
   pendingLeaves: 0,
   recentPayrolls: [],
   myLeadsCount: 0,
-  hotLeadsCount: 0,
   myOpenDealsCount: 0,
   topLeads: [],
+};
+
+const STUB_ASK_OS_ACTOR = {
+  userId: "user_1", orgId: "org_1", membershipId: 1, displayName: "Test Member",
+  email: "member@example.com", orgName: "Acme", role: "MEMBER", isOrgOwner: false,
+  timezone: "UTC", today: "2026-09-19", monthStart: "2026-09-01",
+  monthEnd: "2026-09-30", currentYear: 2026, currentMonth: 9,
 };
 
 interface StreamTextOpts {
@@ -286,30 +294,40 @@ function buildService(ledger: jest.Mocked<AiCreditLedger>) {
     append: jest.fn().mockResolvedValue(undefined),
     appendToConversation: jest.fn().mockResolvedValue(undefined),
   };
-  const noop = { buildTools: jest.fn().mockReturnValue({}) };
   const usageSvc = { track: jest.fn().mockResolvedValue(undefined) } as unknown as jest.Mocked<AiUsageService>;
+  const limiterStub = { acquire: jest.fn().mockResolvedValue(true), release: jest.fn() };
+
+  const streamHelper = new AiGatewayStreamHelper(
+    ledger,
+    usageSvc,
+    limiterStub as unknown as AiConcurrencyLimiter,
+    null,
+  );
+  const gateway = Object.assign(Object.create(AiGatewayService.prototype), {
+    streamAgenticTurn: (opts: AiStreamTextOpts) => streamHelper.run(opts),
+  }) as unknown as AiGatewayService;
+
+  const access = {
+    getAccessSnapshot: jest.fn().mockResolvedValue({
+      membershipId: 1,
+      scopes: {},
+      modules: {},
+      isOrgOwner: false,
+      canManageOrganizationMembership: false,
+      mfa: { enforced: false, satisfied: true },
+      version: 0,
+    }),
+  };
 
   const svc = new ChatAssistantService(
     {} as never,
-    { ask: jest.fn(), summarize: jest.fn() } as never,
+    gateway,
     history as never,
-    noop as never,
-    noop as never,
-    noop as never,
-    noop as never,
-    noop as never,
-    noop as never,
-    noop as never,
-    noop as never,
-    { denyReason: jest.fn().mockResolvedValue(null) } as never,
-    { get: jest.fn().mockReturnValue({ ask: jest.fn() }) } as never,
-    usageSvc,
-    ledger,
-    null,
-    { acquire: jest.fn().mockResolvedValue(true), release: jest.fn() } as never,
+    access as unknown as AccessService,
+    [],
   );
 
-  jest.spyOn(svc as never, "fetchContext").mockResolvedValue(STUB_CONTEXT as never);
+  jest.spyOn(svc as never, "fetchContext").mockResolvedValue({ context: STUB_CONTEXT, actor: STUB_ASK_OS_ACTOR } as never);
   return svc;
 }
 

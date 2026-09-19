@@ -170,7 +170,12 @@ export class SurveyResponseService {
     return runInTenantTransaction(
       this.db,
       async (tx) => {
-        const session = await this.getSession(sessionId);
+        const [session] = await tx
+          .select()
+          .from(surveyResponseSessions)
+          .where(eq(surveyResponseSessions.id, sessionId))
+          .for("update");
+        if (!session) throw new NotFoundException("Response session not found");
         if (session.status !== "in_progress") throw new BadRequestException("This response has already been submitted");
 
         if (answers?.length) {

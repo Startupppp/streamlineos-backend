@@ -1,7 +1,12 @@
 import { NotFoundException } from "@nestjs/common";
 import type { Db } from "../../db/drizzle.module";
+import type { FeedbucketMediaStorage } from "./feedbucket-submissions.service";
 import { FeedbucketSubmissionsService } from "./feedbucket-submissions.service";
 import { FeedbucketWidgetsService } from "./feedbucket-widgets.service";
+
+const mockStorage: jest.Mocked<FeedbucketMediaStorage> = {
+  deleteFileIfPresent: jest.fn(),
+};
 
 function sqlValues(value: unknown, seen = new Set<object>()): unknown[] {
   if (
@@ -42,7 +47,7 @@ describe("FeedbucketSubmissionsService — cross-tenant isolation", () => {
   describe("findOne", () => {
     it("throws NotFoundException when submission belongs to a different org (cross-tenant DENY)", async () => {
       const { db, findFirst } = makeSubmissionDb(undefined);
-      const svc = new FeedbucketSubmissionsService(db);
+      const svc = new FeedbucketSubmissionsService(db, mockStorage);
 
       await expect(svc.findOne(ATTACKER_ORG, 77)).rejects.toThrow(NotFoundException);
 
@@ -54,7 +59,7 @@ describe("FeedbucketSubmissionsService — cross-tenant isolation", () => {
     it("returns the submission for the owning org (same-tenant CONTROL)", async () => {
       const row = { id: 77, orgId: OWNER_ORG, message: "Bug found", deletedAt: null };
       const { db } = makeSubmissionDb(row);
-      const svc = new FeedbucketSubmissionsService(db);
+      const svc = new FeedbucketSubmissionsService(db, mockStorage);
 
       const result = await svc.findOne(OWNER_ORG, 77);
 

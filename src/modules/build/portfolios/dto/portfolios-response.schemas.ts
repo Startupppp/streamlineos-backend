@@ -17,7 +17,7 @@ export const portfolioRowSchema = z.object({
   deletedAt: nullableWireDate(),
 });
 
-const portfolioListItemSchema = portfolioRowSchema.extend({
+const portfolioListItemSchema = portfolioRowSchema.omit({ deletedAt: true }).extend({
   projectCount: z.number().int(),
 });
 
@@ -64,6 +64,8 @@ export const programDetailSchema = programRowSchema.extend({
   })),
 });
 
-export const programPageSchema = cursorPageSchema(programRowSchema);
+export const programListSchema = z.array(
+  programRowSchema.omit({ deletedAt: true }).extend({ projectCount: z.number().int() }),
+);
 
 export { successSchema };

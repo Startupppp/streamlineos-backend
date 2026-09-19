@@ -58,7 +58,7 @@ const articleResult = {
 const mockSearch = {
   retrieveTopArticles: jest.fn().mockResolvedValue([articleResult]),
   retrieveTopSources: jest.fn().mockResolvedValue([]),
-  retrieveAttachmentSnippets: jest.fn().mockResolvedValue(null),
+  retrieveDocumentPassages: jest.fn().mockResolvedValue([]),
   articleOwnerFilterFor: jest.fn().mockResolvedValue(null),
   articleRestrictionFilterFor: jest.fn().mockResolvedValue(null),
 };
@@ -101,7 +101,7 @@ describe("KbAskService", () => {
     jest.clearAllMocks();
     mockSearch.retrieveTopArticles.mockResolvedValue([articleResult]);
     mockSearch.retrieveTopSources.mockResolvedValue([]);
-    mockSearch.retrieveAttachmentSnippets.mockResolvedValue(null);
+    mockSearch.retrieveDocumentPassages.mockResolvedValue([]);
     mockEvents.record.mockResolvedValue(undefined);
     mockDb.execute.mockResolvedValue([{ one: 1 }]);
 

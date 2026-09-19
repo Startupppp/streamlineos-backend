@@ -56,6 +56,15 @@ const COMPRESSIBLE_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
  */
 const MAX_IMAGE_PIXELS = 50_000_000;
 
+const MAX_IMAGE_MEGAPIXELS = MAX_IMAGE_PIXELS / 1_000_000;
+
+function imageTransformRefusal(error: unknown): string {
+  const reason = error instanceof Error ? error.message : String(error);
+  return reason.includes("pixel limit")
+    ? `Image is larger than the ${MAX_IMAGE_MEGAPIXELS} megapixel processing limit`
+    : "Invalid image file";
+}
+
 function sizeCap(mimeType: string): number {
   if (IMAGE_TYPES.has(mimeType)) return IMAGE_CAP;
   if (VIDEO_TYPES.has(mimeType)) return VIDEO_CAP;
@@ -121,8 +130,11 @@ export class KbMediaService {
           .toBuffer();
         uploadMime = "image/webp";
         uploadName = originalname.replace(/\.[^.]+$/, "") + ".webp";
-      } catch {
-        throw new BadRequestException("Invalid image file");
+      } catch (error) {
+        this.logger.error(
+          `KB image transform failed (${mimetype}, ${buffer.length} bytes, "${originalname}"): ${String(error)}`,
+        );
+        throw new BadRequestException(imageTransformRefusal(error));
       }
     }
 

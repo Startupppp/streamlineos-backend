@@ -57,6 +57,31 @@ import { BlogAiService } from "./services/blog-ai.service";
 import { SurveyAiController } from "./controllers/survey-ai.controller";
 import { SurveyAiService } from "./services/survey-ai.service";
 import { AiRequestAbortInterceptor } from "./streaming";
+import { WorkspaceInlineTools } from "./services/chat-assistant-inline-tools";
+import { SelfHrTools } from "./self/self-hr-tools";
+import { SelfPayrollTools } from "./self/self-payroll-tools";
+import { SelfWorkTools } from "./self/self-work-tools";
+import { SelfActionsTools } from "./actions/self-actions-tools";
+import { WorkActionsTools } from "./actions/work-actions-tools";
+import { ASK_OS_TOOL_PROVIDERS } from "./registry/ask-os-tool-providers";
+import type { AskOsToolProvider } from "./registry/ask-os-tool.types";
+
+const ASK_OS_PROVIDER_CLASSES = [
+  HrCopilotTools,
+  WorkspaceCopilotTools,
+  OpsCopilotTools,
+  CrmCopilotTools,
+  CommsCopilotTools,
+  ProjectsCopilotTools,
+  CommsActionsTools,
+  MailCopilotTools,
+  WorkspaceInlineTools,
+  SelfHrTools,
+  SelfPayrollTools,
+  SelfWorkTools,
+  SelfActionsTools,
+  WorkActionsTools,
+] as const;
 
 @Module({
   imports: [CalendarModule, ChatModule, BillingModule, AiConfirmationModule, ProjectsModule, IntegrationsModule, ExecutiveBriefModule, AiJobsModule, MailModule, AiGatewayModule],
@@ -85,20 +110,18 @@ import { AiRequestAbortInterceptor } from "./streaming";
     TicketTriageAiService,
     TicketDraftAiService,
     MeetingActionAiService,
-    HrCopilotTools,
-    WorkspaceCopilotTools,
-    OpsCopilotTools,
+    ...ASK_OS_PROVIDER_CLASSES,
     // F2. The copilot's inventory reads apply the same warehouse scope the stock,
     // reservation and report endpoints apply, so they use the same service. It is
     // provided here rather than by importing InvStockEngineModule: both of its
     // dependencies are global, it holds no state, and importing that module would
     // drag the accounting posting graph into AiModule for one predicate builder.
     WarehouseScopeService,
-    CrmCopilotTools,
-    CommsCopilotTools,
-    ProjectsCopilotTools,
-    CommsActionsTools,
-    MailCopilotTools,
+    {
+      provide: ASK_OS_TOOL_PROVIDERS,
+      useFactory: (...providers: AskOsToolProvider[]) => providers,
+      inject: [...ASK_OS_PROVIDER_CLASSES],
+    },
     ToolAccessService,
     AiFeedbackService,
     MeetingsPrepService,

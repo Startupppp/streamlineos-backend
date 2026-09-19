@@ -1,0 +1,347 @@
+import { Inject, Injectable } from "@nestjs/common";
+import { z } from "zod";
+import { and, eq, ilike, isNull } from "drizzle-orm";
+import { organizationMembers, sprints, tickets, users } from "../../../../db/schema";
+import { DRIZZLE } from "../../../../db/drizzle.constants";
+import { type Db } from "../../../../db/drizzle.module";
+import { AiConfirmationService } from "../../confirmation/ai-confirmation.service";
+import { resolveAnyMailConnection } from "../mail-copilot-tools";
+import { displayNameFrom } from "../services/ask-os-actor";
+import { businessParties, leadPartyMap } from "../../../../db/schema/party";
+import { LEAD_PARTY_COLUMNS, LEAD_PARTY_JOIN, leadIdIs } from "../../../leads/lead-party-reader";
+import { ticketScopePredicate } from "../../../build/core/tickets-scope";
+import {
+  defineTool,
+  data,
+  empty,
+  needsConfirmation,
+  needsConnection,
+  type AskOsToolDefinition,
+  type AskOsToolProvider,
+} from "../registry/ask-os-tool.types";
+
+@Injectable()
+export class WorkActionsTools implements AskOsToolProvider {
+  constructor(
+    @Inject(DRIZZLE) private readonly db: Db,
+    private readonly confirmation: AiConfirmationService,
+  ) {}
+
+  tools(): AskOsToolDefinition[] {
+    return [
+      defineTool({
+        key: "createLead",
+        description:
+          "Create a new CRM lead. Returns a confirmation card — the user must confirm before the lead is created.",
+        input: z.object({
+          name: z.string().min(1).max(200).describe("Lead's full name"),
+          email: z.string().email().optional().describe("Lead email address"),
+          phone: z.string().max(50).optional().describe("Lead phone number"),
+          company: z.string().max(200).optional().describe("Lead company name"),
+          notes: z.string().max(2000).optional().describe("Initial notes about the lead"),
+        }),
+        permission: "crm:leads:create",
+        module: "crm",
+        run: async ({ name, email, phone, company, notes }, ctx) => {
+          const { orgId, userId } = ctx.actor;
+          const payload: Record<string, unknown> = { name };
+          if (email !== undefined) payload.email = email;
+          if (phone !== undefined) payload.phone = phone;
+          if (company !== undefined) payload.company = company;
+          if (notes !== undefined) payload.notes = notes;
+
+          const proposal = await this.confirmation.propose({ orgId, userId, action: "crm.createLead", payload });
+          return needsConfirmation({
+            proposalId: proposal.proposalId,
+            token: proposal.token,
+            expiresAt: proposal.expiresAt,
+            action: "crm.createLead",
+            summary: `Create lead: ${name}${company !== undefined ? ` at ${company}` : ""}`,
+            preview: payload,
+          });
+        },
+      }),
+
+      defineTool({
+        key: "logCrmActivity",
+        description:
+          "Log a CRM activity (call, email, meeting, note, task) on a lead. Returns a confirmation card — the user must confirm before the activity is logged.",
+        input: z.object({
+          leadIdentifier: z.string().min(1).describe("Lead name, email, or numeric ID string"),
+          type: z.enum(["call", "email", "meeting", "note", "task"]).describe("Activity type"),
+          notes: z.string().min(1).max(5000).describe("Activity notes or summary"),
+          dueDate: z.string().optional().describe("Optional due date (ISO 8601)"),
+        }),
+        permission: "crm:activities:manage",
+        module: "crm",
+        run: async ({ leadIdentifier, type, notes, dueDate }, ctx) => {
+          const { orgId, userId } = ctx.actor;
+
+          const isNumeric = /^\d+$/.test(leadIdentifier.trim());
+          const matches = await this.db
+            .select({ id: LEAD_PARTY_COLUMNS.id, name: LEAD_PARTY_COLUMNS.name })
+            .from(leadPartyMap)
+            .innerJoin(businessParties, LEAD_PARTY_JOIN)
+            .where(
+              and(
+                eq(leadPartyMap.organizationId, orgId),
+                isNull(businessParties.deletedAt),
+                ctx.scope === "own" || ctx.scope === "team"
+                  ? eq(businessParties.ownerUserId, userId)
+                  : undefined,
+                isNumeric
+                  ? leadIdIs(Number(leadIdentifier.trim()))
+                  : ilike(LEAD_PARTY_COLUMNS.name, `%${leadIdentifier.trim()}%`),
+              ),
+            )
+            .limit(5);
+
+          if (matches.length === 0) return empty("lead", `No lead matches "${leadIdentifier}".`);
+          if (matches.length > 1) {
+            return empty(
+              "lead",
+              `"${leadIdentifier}" matches ${matches.length} leads: ${matches.map((m) => m.name).join(", ")}. Ask which one.`,
+            );
+          }
+
+          const lead = matches[0];
+          if (!lead) return empty("lead", `No lead matches "${leadIdentifier}".`);
+
+          const payload: Record<string, unknown> = { leadIdentifier: lead.id, leadName: lead.name, type, notes };
+          if (dueDate !== undefined) payload.dueDate = dueDate;
+
+          const proposal = await this.confirmation.propose({ orgId, userId, action: "crm.logActivity", payload });
+          return needsConfirmation({
+            proposalId: proposal.proposalId,
+            token: proposal.token,
+            expiresAt: proposal.expiresAt,
+            action: "crm.logActivity",
+            summary: `Log ${type} on lead: ${lead.name}`,
+            preview: payload,
+          });
+        },
+      }),
+
+      defineTool({
+        key: "assignTicket",
+        description:
+          "Assign a ticket to a team member by name. Returns a confirmation card on a unique match. Returns empty if no member matches; reports ambiguity when multiple members match.",
+        input: z.object({
+          ticketId: z.number().int().positive().describe("Numeric ticket ID"),
+          assigneeName: z.string().min(1).describe("Display name (or partial) of the member to assign"),
+        }),
+        permission: "build:tickets:update",
+        module: "build",
+        run: async ({ ticketId, assigneeName }, ctx) => {
+          const { orgId, userId } = ctx.actor;
+
+          const ticketRows = await this.db
+            .select({ id: tickets.id, title: tickets.title })
+            .from(tickets)
+            .where(
+              and(
+                eq(tickets.orgId, orgId),
+                ticketScopePredicate(ctx.scope, orgId, userId),
+                eq(tickets.id, ticketId),
+                isNull(tickets.deletedAt),
+              ),
+            )
+            .limit(1);
+
+          if (!ticketRows[0]) return empty("ticket", "Ticket not found in this org.");
+
+          const memberRows = await this.db
+            .select({
+              userId: users.id,
+              name: users.name,
+              firstName: users.firstName,
+              lastName: users.lastName,
+              email: users.email,
+              membershipId: organizationMembers.id,
+            })
+            .from(organizationMembers)
+            .innerJoin(users, eq(users.id, organizationMembers.userId))
+            .where(
+              and(
+                eq(organizationMembers.orgId, orgId),
+                eq(organizationMembers.status, "ACTIVE"),
+                eq(users.isActive, true),
+                isNull(users.deletedAt),
+                ilike(users.name, `%${assigneeName}%`),
+              ),
+            )
+            .limit(11);
+
+          if (memberRows.length === 0) return empty("member", `No active member found matching "${assigneeName}".`);
+
+          if (memberRows.length > 10) {
+            return data({
+              ambiguous: true,
+              reason: `"${assigneeName}" matches too many members. Provide a more specific name.`,
+            });
+          }
+
+          if (memberRows.length > 1) {
+            return data({
+              ambiguous: true,
+              reason: `"${assigneeName}" matches ${memberRows.length} members. Which did you mean?`,
+              candidates: memberRows.map((m) => ({
+                name: displayNameFrom({ name: m.name, firstName: m.firstName, lastName: m.lastName, email: m.email }),
+                email: m.email,
+              })),
+            });
+          }
+
+          const member = memberRows[0]!;
+          const resolvedName = displayNameFrom({ name: member.name, firstName: member.firstName, lastName: member.lastName, email: member.email });
+          const ticketTitle = ticketRows[0].title;
+          const payload: Record<string, unknown> = { ticketId, assigneeId: member.userId, assigneeName: resolvedName, ticketTitle };
+
+          const proposal = await this.confirmation.propose({ orgId, userId, action: "ticket.assign", payload });
+          return needsConfirmation({
+            proposalId: proposal.proposalId,
+            token: proposal.token,
+            expiresAt: proposal.expiresAt,
+            action: "ticket.assign",
+            summary: `Assign ticket #${ticketId} to ${resolvedName}`,
+            preview: { ticketId, ticketTitle, assigneeName: resolvedName },
+          });
+        },
+      }),
+
+      defineTool({
+        key: "moveTicketToSprint",
+        description:
+          "Move a ticket into a sprint by sprint name. Returns a confirmation card — the user must confirm before the ticket is moved.",
+        input: z.object({
+          ticketId: z.number().int().positive().describe("Numeric ticket ID"),
+          sprintName: z.string().min(1).describe("Name (or partial) of the sprint to move the ticket into"),
+        }),
+        permission: "build:tickets:update",
+        module: "build",
+        run: async ({ ticketId, sprintName }, ctx) => {
+          const { orgId, userId } = ctx.actor;
+
+          const ticketRows = await this.db
+            .select({ id: tickets.id, title: tickets.title })
+            .from(tickets)
+            .where(
+              and(
+                eq(tickets.orgId, orgId),
+                ticketScopePredicate(ctx.scope, orgId, userId),
+                eq(tickets.id, ticketId),
+                isNull(tickets.deletedAt),
+              ),
+            )
+            .limit(1);
+
+          if (!ticketRows[0]) return empty("ticket", "Ticket not found in this org.");
+
+          const sprintRows = await this.db
+            .select({ id: sprints.id, name: sprints.name })
+            .from(sprints)
+            .where(and(eq(sprints.orgId, orgId), ilike(sprints.name, `%${sprintName}%`), isNull(sprints.deletedAt)))
+            .limit(11);
+
+          if (sprintRows.length === 0) return empty("sprint", `No sprint found matching "${sprintName}".`);
+
+          if (sprintRows.length > 10) {
+            return data({ ambiguous: true, reason: `"${sprintName}" matches too many sprints. Provide a more specific name.` });
+          }
+
+          if (sprintRows.length > 1) {
+            return data({
+              ambiguous: true,
+              reason: `"${sprintName}" matches ${sprintRows.length} sprints. Which did you mean?`,
+              candidates: sprintRows.map((s) => ({ id: s.id, name: s.name })),
+            });
+          }
+
+          const sprint = sprintRows[0]!;
+          const ticketTitle = ticketRows[0].title;
+          const payload: Record<string, unknown> = { ticketId, sprintId: sprint.id, sprintName: sprint.name, ticketTitle };
+
+          const proposal = await this.confirmation.propose({ orgId, userId, action: "ticket.moveToSprint", payload });
+          return needsConfirmation({
+            proposalId: proposal.proposalId,
+            token: proposal.token,
+            expiresAt: proposal.expiresAt,
+            action: "ticket.moveToSprint",
+            summary: `Move ticket #${ticketId} to sprint "${sprint.name}"`,
+            preview: { ticketId, ticketTitle, sprintId: sprint.id, sprintName: sprint.name },
+          });
+        },
+      }),
+
+      defineTool({
+        key: "createCalendarEvent",
+        description:
+          "Create a calendar event. Returns a confirmation card — the user must confirm before the event is created.",
+        input: z.object({
+          title: z.string().min(1).max(200).describe("Event title"),
+          startDate: z.string().describe("ISO 8601 start datetime"),
+          endDate: z.string().describe("ISO 8601 end datetime"),
+          attendeeNames: z.array(z.string()).max(50).optional().describe("Optional attendee names"),
+          location: z.string().max(500).optional().describe("Optional location"),
+          description: z.string().max(5000).optional().describe("Optional event description"),
+        }),
+        permission: "calendar:write",
+        module: "calendar",
+        run: async ({ title, startDate, endDate, attendeeNames, location, description }, ctx) => {
+          const { orgId, userId, timezone } = ctx.actor;
+          const payload: Record<string, unknown> = { title, startDate, endDate, timezone };
+          if (attendeeNames !== undefined && attendeeNames.length > 0) payload.attendeeNames = attendeeNames;
+          if (location !== undefined) payload.location = location;
+          if (description !== undefined) payload.description = description;
+
+          const proposal = await this.confirmation.propose({ orgId, userId, action: "calendar.createEvent", payload });
+          return needsConfirmation({
+            proposalId: proposal.proposalId,
+            token: proposal.token,
+            expiresAt: proposal.expiresAt,
+            action: "calendar.createEvent",
+            summary: `Create event: ${title}`,
+            preview: payload,
+          });
+        },
+      }),
+
+      defineTool({
+        key: "replyToMailThread",
+        description:
+          "Reply to an email thread from the user's connected mail account. Requires a connected mail account. Returns a confirmation card — the user must confirm before the reply is sent.",
+        input: z.object({
+          threadId: z.string().min(1).describe("The thread ID to reply to"),
+          body: z.string().min(1).max(10000).describe("Reply body text"),
+          accountEmail: z.string().email().optional().describe("The connected email account to reply from (uses primary if omitted)"),
+        }),
+        permission: "mail:messages:send",
+        module: "mail",
+        run: async ({ threadId, body, accountEmail }, ctx) => {
+          const { orgId, userId, membershipId } = ctx.actor;
+          const connection = await resolveAnyMailConnection(this.db, { orgId, userId, membershipId });
+          if (!connection.connected) {
+            return needsConnection(connection.toolkit, connection.reason, "Connect a mail account to reply to threads.");
+          }
+
+          const payload: Record<string, unknown> = { threadId, body };
+          if (accountEmail !== undefined) payload.accountEmail = accountEmail;
+
+          const proposal = await this.confirmation.propose({ orgId, userId, action: "mail.reply", payload });
+          return needsConfirmation({
+            proposalId: proposal.proposalId,
+            token: proposal.token,
+            expiresAt: proposal.expiresAt,
+            action: "mail.reply",
+            summary: `Reply to thread ${threadId}`,
+            preview: {
+              threadId,
+              bodyPreview: body.length > 100 ? `${body.slice(0, 100)}…` : body,
+              accountEmail: accountEmail ?? "primary",
+            },
+          });
+        },
+      }),
+    ];
+  }
+}

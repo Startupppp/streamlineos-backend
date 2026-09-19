@@ -43,7 +43,7 @@ export class HrInterviewQuestionsController {
 
   @Get()
   @ResponseSchema(z.array(interviewQuestionRowSchema))
-  @RequirePermission("hr:employees:view")
+  @RequirePermission("hr:interviews:view")
   @Validate({ query: interviewQuestionListQuerySchema })
   list(
     @Query() query: InterviewQuestionListQuery,
@@ -54,7 +54,7 @@ export class HrInterviewQuestionsController {
 
   @Post()
   @ResponseSchema(interviewQuestionRowSchema)
-  @RequirePermission("hr:employees:manage")
+  @RequirePermission("hr:interviews:manage")
   @HttpCode(201)
   @Validate({ body: createInterviewQuestionSchema })
   create(
@@ -66,7 +66,7 @@ export class HrInterviewQuestionsController {
 
   @Patch(":questionId")
   @ResponseSchema(successSchema)
-  @RequirePermission("hr:employees:manage")
+  @RequirePermission("hr:interviews:manage")
   @Validate({ params: questionIdParams, body: updateInterviewQuestionSchema })
   async update(
     @Param("questionId", ParseIntPipe) questionId: number,
@@ -81,7 +81,7 @@ export class HrInterviewQuestionsController {
   @Delete(":questionId")
   @NoContentResponse()
   @HttpCode(204)
-  @RequirePermission("hr:employees:manage")
+  @RequirePermission("hr:interviews:manage")
   @Validate({ params: questionIdParams })
   async remove(
     @Param("questionId", ParseIntPipe) questionId: number,

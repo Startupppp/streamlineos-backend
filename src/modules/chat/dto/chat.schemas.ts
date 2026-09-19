@@ -1,4 +1,9 @@
 import { z } from "zod";
+import {
+  PRESENCE_CLEAR_AFTER_OPTIONS,
+  PRESENCE_STATUSES,
+  PRESENCE_STATUS_MESSAGE_MAX_LENGTH,
+} from "../chat-presence-status";
 
 import { idCursorSchema } from "../../../common/pagination/cursor.schema";
 import { pageSizeField } from "../../../common/pagination/list-query.schema";
@@ -85,7 +90,9 @@ export const reactionSchema = z.object({
 }).strict();
 
 export const statusSchema = z.object({
-  status: z.enum(["ONLINE", "AWAY", "OFFLINE"]),
+  status: z.enum(PRESENCE_STATUSES),
+  statusMessage: z.string().trim().max(PRESENCE_STATUS_MESSAGE_MAX_LENGTH).optional(),
+  clearAfter: z.enum(PRESENCE_CLEAR_AFTER_OPTIONS).optional(),
 }).strict();
 
 export const listMessagesQuerySchema = z.object({

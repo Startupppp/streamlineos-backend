@@ -1,9 +1,14 @@
 import { PgDialect } from "drizzle-orm/pg-core";
 import type { SQL } from "drizzle-orm";
-import { readCopilotVariantStock, shouldDenyTeamPayrollCopilot } from "./ops-copilot-tools";
+import { z } from "zod";
+import { readCopilotVariantStock, shouldDenyTeamPayrollCopilot, OpsCopilotTools } from "./ops-copilot-tools";
 import { SCOPE_ALL_PERMISSION, WarehouseScopeService } from "../../inventory/stock-engine/warehouse-scope.service";
 import type { DataScope } from "../../access/access.types";
 import type { Db } from "../../../db/drizzle.module";
+import type { AskOsActor } from "./services/ask-os-actor";
+import type { AskOsToolRunContext } from "./registry/ask-os-tool.types";
+import { humanSessionPrincipal } from "../../../common/auth/principal";
+import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 
 describe("shouldDenyTeamPayrollCopilot", () => {
   it("denies team scope instead of silently narrowing to self", () => {
@@ -19,12 +24,6 @@ describe("shouldDenyTeamPayrollCopilot", () => {
   });
 });
 
-/**
- * The real scope service, given a fake permission set and a fake assignment
- * table. Using the production class rather than a stand-in is the point: the
- * assertion below is that the copilot binds *that* predicate, so a stub of it
- * would prove nothing.
- */
 function scopeServiceFor(permissions: string[], assignedWarehouseIds: number[]) {
   const perms = new Map<string, DataScope>(permissions.map((key) => [key, "all"]));
   const db = {
@@ -38,7 +37,6 @@ function scopeServiceFor(permissions: string[], assignedWarehouseIds: number[]) 
   return new WarehouseScopeService(db as never, access as never);
 }
 
-/** A `Db` that records the statements handed to `execute` and returns nothing. */
 function recordingDb() {
   const executed: SQL[] = [];
   const db = {
@@ -63,12 +61,8 @@ describe("F2 — the copilot's stock read is access-scoped in SQL", () => {
 
     expect(executed).toHaveLength(1);
     const query = render(executed[0] as SQL);
-    // The asker's org is a bound parameter of the statement, not an instruction
-    // the model is trusted to respect.
     expect(query.params).toContain("org-1");
     expect(query.sql).toContain("org_id =");
-    // And the warehouse gate is the scope service's own subquery, on the
-    // location column, with the assigned ids bound.
     expect(query.sql).toContain("inv_stock_levels.location_id IN");
     expect(query.sql).toContain("SELECT id FROM inv_locations");
     expect(query.params).toEqual(expect.arrayContaining([7, 9]));
@@ -80,7 +74,6 @@ describe("F2 — the copilot's stock read is access-scoped in SQL", () => {
 
     const rows = await readCopilotVariantStock(db, "org-1", scope, [11]);
 
-    // Deny by default: no assignment means no stock, and it costs no query.
     expect(rows).toEqual([]);
     expect(executed).toHaveLength(0);
   });
@@ -103,11 +96,9 @@ describe("F2 — the copilot's stock read is access-scoped in SQL", () => {
     await readCopilotVariantStock(db, "org-1", scope, [11]);
 
     const { sql: text } = render(executed[0] as SQL);
-    // A1's five terms — this read once subtracted only the first two.
     for (const term of ["on_hand", "committed", "blocked_qty", "quality_hold_qty", "outgoing_qty"]) {
       expect(text).toContain(`inv_stock_levels.${term}`);
     }
-    // A2's gate: stock standing at a non-sellable location is not available.
     expect(text).toContain("is_sellable IS FALSE");
   });
 
@@ -117,5 +108,92 @@ describe("F2 — the copilot's stock read is access-scoped in SQL", () => {
 
     expect(await readCopilotVariantStock(db, "org-1", scope, [])).toEqual([]);
     expect(executed).toHaveLength(0);
+  });
+});
+
+const mockCaller: CurrentUserContext = {
+  userId: "user-1",
+  orgId: "org-1",
+  role: "member",
+  isOrgOwner: false,
+  sessionId: "sess-1",
+  tokenScopes: null,
+  principal: humanSessionPrincipal(1, false),
+};
+
+const mockActor: AskOsActor = {
+  userId: "user-1",
+  orgId: "org-1",
+  membershipId: 1,
+  displayName: "Test User",
+  email: "test@example.com",
+  orgName: "Test Org",
+  role: "member",
+  isOrgOwner: false,
+  timezone: "UTC",
+  today: "2026-09-19",
+  monthStart: "2026-09-01",
+  monthEnd: "2026-09-30",
+  currentYear: 2026,
+  currentMonth: 9,
+};
+
+function makeLeaveCtx(scope: DataScope = "own"): AskOsToolRunContext {
+  return {
+    actor: mockActor,
+    caller: mockCaller,
+    scope,
+    scopes: { "self:leaves": scope },
+    modules: {},
+  };
+}
+
+function buildLeaveOps(dbSelectResult: unknown[] = []) {
+  const selectSpy = jest.fn().mockReturnValue({
+    from: jest.fn().mockReturnValue({
+      innerJoin: jest.fn().mockReturnValue({
+        where: jest.fn().mockResolvedValue(dbSelectResult),
+      }),
+    }),
+  });
+  const db = { select: selectSpy } as unknown as Db;
+  const ops = new OpsCopilotTools(db, {} as never);
+  return { ops, selectSpy };
+}
+
+describe("getMyLeaveBalances — self:leaves gate and caller binding", () => {
+  it("has permission self:leaves so the registry denies callers without it", () => {
+    const { ops } = buildLeaveOps();
+    const def = ops.tools().find((d) => d.key === "getMyLeaveBalances")!;
+    expect(def.permission).toBe("self:leaves");
+  });
+
+  it("returns leave balance data for a caller who holds self:leaves", async () => {
+    const { ops } = buildLeaveOps([]);
+    const def = ops.tools().find((d) => d.key === "getMyLeaveBalances")!;
+    const result = await def.run({}, makeLeaveCtx("own"));
+    expect(result).not.toMatchObject({ kind: "failed" });
+    expect(result).toMatchObject({ kind: "data", data: { balances: [] } });
+  });
+
+  it("accepts no subject identifier in the tool input — caller identity comes from the run context", () => {
+    const { ops } = buildLeaveOps();
+    const def = ops.tools().find((d) => d.key === "getMyLeaveBalances")!;
+    const schema = def.input as z.ZodObject<z.ZodRawShape>;
+    expect(Object.keys(schema.shape)).toEqual([]);
+  });
+
+  it("reports each leave type's real id, because without it the model invents one to apply for leave with", async () => {
+    const { ops } = buildLeaveOps([
+      { leaveTypeId: 42, leaveTypeName: "Casual Leave", balance: "12.00", daysPerYear: 12 },
+    ]);
+    const def = ops.tools().find((d) => d.key === "getMyLeaveBalances")!;
+
+    const result = await def.run({}, makeLeaveCtx("own"));
+
+    expect(result).toMatchObject({
+      kind: "data",
+      data: { balances: [{ leaveTypeId: 42, leaveType: "Casual Leave" }] },
+    });
   });
 });

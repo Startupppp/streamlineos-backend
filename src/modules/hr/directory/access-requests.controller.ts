@@ -19,8 +19,10 @@ import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { AccessRequestsService } from "./access-requests.service";
 import {
   createAccessRequestSchema,
+  listAccessRequestsQuerySchema,
   patchAccessRequestSchema,
   type CreateAccessRequestInput,
+  type ListAccessRequestsQueryInput,
   type PatchAccessRequestInput,
 } from "./dto/hr-directory.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
@@ -39,11 +41,12 @@ export class AccessRequestsController {
   @Get()
   @ResponseSchema(z.array(accessRequestRowSchema))
   @RequirePermission("hr:assets:view")
+  @Validate({ query: listAccessRequestsQuerySchema })
   list(
-    @Query("employeeId") employeeId: string | undefined,
+    @Query() query: ListAccessRequestsQueryInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.service.list(u.orgId, employeeId);
+    return this.service.list(u.orgId, query.employeeId);
   }
 
   @Post()

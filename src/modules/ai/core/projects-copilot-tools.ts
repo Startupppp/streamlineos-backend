@@ -1,39 +1,40 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { tool } from "ai";
 import { z } from "zod";
 import { and, eq, ilike, isNull } from "drizzle-orm";
 import { tickets } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
-import { ToolAccessService } from "./tool-access.service";
 import { AiConfirmationService } from "../confirmation/ai-confirmation.service";
-import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-
-export interface ProjectsCopilotContext {
-  actor: CurrentUserContext;
-}
+import { ticketScopePredicate } from "../../build/core/tickets-scope";
+import {
+  type AskOsToolDefinition,
+  type AskOsToolProvider,
+  defineTool,
+  data,
+  empty,
+  needsConfirmation,
+} from "./registry/ask-os-tool.types";
 
 @Injectable()
-export class ProjectsCopilotTools {
+export class ProjectsCopilotTools implements AskOsToolProvider {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
-    private readonly toolAccess: ToolAccessService,
     private readonly confirmation: AiConfirmationService,
   ) {}
 
-  buildTools(ctx: ProjectsCopilotContext) {
-    const { orgId, userId } = ctx.actor;
-
-    return {
-      readTicket: tool({
+  tools(): AskOsToolDefinition[] {
+    return [
+      defineTool({
+        key: "readTicket",
         description: "Read a specific ticket by its numeric ID. Returns ticket details if found within the org.",
-        inputSchema: z.object({
+        input: z.object({
           ticketId: z.number().int().positive().describe("Numeric ticket ID"),
         }),
-        execute: async ({ ticketId }) => {
-          const deny = await this.toolAccess.denyReason(orgId, userId, "build:tickets:view");
-          if (deny) return { denied: true, reason: deny };
-
+        permission: "build:tickets:view",
+        module: "build",
+        run: async ({ ticketId }, ctx) => {
+          const { orgId, userId } = ctx.actor;
+          const scopePred = ticketScopePredicate(ctx.scope, orgId, userId);
           const rows = await this.db
             .select({
               id: tickets.id,
@@ -47,31 +48,28 @@ export class ProjectsCopilotTools {
               createdAt: tickets.createdAt,
             })
             .from(tickets)
-            .where(and(eq(tickets.id, ticketId), eq(tickets.orgId, orgId), isNull(tickets.deletedAt)))
+            .where(and(eq(tickets.orgId, orgId), scopePred, eq(tickets.id, ticketId), isNull(tickets.deletedAt)))
             .limit(1);
-
           const ticket = rows[0];
-          if (!ticket) return { found: false };
-          return { found: true, ticket };
+          if (!ticket) return empty("ticket", "Ticket not found in this org.");
+          return data({ found: true, ticket });
         },
       }),
 
-      searchTickets: tool({
+      defineTool({
+        key: "searchTickets",
         description: "Search tickets by title within the org. Optionally filter by projectId or status.",
-        inputSchema: z.object({
+        input: z.object({
           query: z.string().min(1).describe("Search query for ticket title"),
           projectId: z.number().int().positive().optional().describe("Filter by project ID"),
           status: z.string().optional().describe("Filter by status (e.g. OPEN, IN_PROGRESS, DONE)"),
           limit: z.number().int().min(1).max(10).default(5).describe("Max results to return"),
         }),
-        execute: async ({ query, projectId, status, limit }) => {
-          const deny = await this.toolAccess.denyReason(orgId, userId, "build:tickets:view");
-          if (deny) return { denied: true, reason: deny };
-
-          const conditions = [eq(tickets.orgId, orgId), ilike(tickets.title, `%${query}%`), isNull(tickets.deletedAt)];
-          if (projectId !== undefined) conditions.push(eq(tickets.projectId, projectId));
-          if (status !== undefined) conditions.push(eq(tickets.status, status));
-
+        permission: "build:tickets:view",
+        module: "build",
+        run: async ({ query, projectId, status, limit }, ctx) => {
+          const { orgId, userId } = ctx.actor;
+          const scopePred = ticketScopePredicate(ctx.scope, orgId, userId);
           const results = await this.db
             .select({
               id: tickets.id,
@@ -82,16 +80,26 @@ export class ProjectsCopilotTools {
               projectId: tickets.projectId,
             })
             .from(tickets)
-            .where(and(...conditions))
+            .where(
+              and(
+                eq(tickets.orgId, orgId),
+                scopePred,
+                ilike(tickets.title, `%${query}%`),
+                isNull(tickets.deletedAt),
+                projectId !== undefined ? eq(tickets.projectId, projectId) : undefined,
+                status !== undefined ? eq(tickets.status, status) : undefined,
+              ),
+            )
             .limit(limit);
-
-          return { results, total: results.length };
+          return data({ results, returned: results.length, truncated: results.length === limit });
         },
       }),
 
-      createTicket: tool({
-        description: "Create a new ticket in a project. Returns a confirmation card — the user must confirm before the ticket is created.",
-        inputSchema: z.object({
+      defineTool({
+        key: "createTicket",
+        description:
+          "Create a new ticket in a project. Returns a confirmation card — the user must confirm before the ticket is created.",
+        input: z.object({
           projectId: z.number().int().positive().describe("Project ID to create the ticket in"),
           title: z.string().min(1).max(300).describe("Ticket title"),
           description: z.string().optional().describe("Ticket description"),
@@ -99,10 +107,10 @@ export class ProjectsCopilotTools {
           priority: z.enum(["LOW", "MEDIUM", "HIGH", "URGENT"]).default("MEDIUM").describe("Ticket priority"),
           assigneeId: z.string().optional().describe("User ID to assign the ticket to"),
         }),
-        execute: async ({ projectId, title, description, type, priority, assigneeId }) => {
-          const deny = await this.toolAccess.denyReason(orgId, userId, "build:tickets:create");
-          if (deny) return { denied: true, reason: deny };
-
+        permission: "build:tickets:create",
+        module: "build",
+        run: async ({ projectId, title, description, type, priority, assigneeId }, ctx) => {
+          const { orgId, userId } = ctx.actor;
           const payload: Record<string, unknown> = { projectId, title, type, priority };
           if (description !== undefined) payload.description = description;
           if (assigneeId !== undefined) payload.assigneeId = assigneeId;
@@ -114,36 +122,44 @@ export class ProjectsCopilotTools {
             payload,
           });
 
-          return {
-            requiresConfirmation: true,
+          return needsConfirmation({
             proposalId,
             token,
             expiresAt,
             action: "ticket.create",
             summary: `Create ticket: ${title}`,
             preview: { projectId, title, type, priority, assigneeId },
-          };
+          });
         },
       }),
 
-      updateTicketStatus: tool({
-        description: "Update a ticket's status. Returns a confirmation card — the user must confirm before the status is changed.",
-        inputSchema: z.object({
+      defineTool({
+        key: "updateTicketStatus",
+        description:
+          "Update a ticket's status. Returns a confirmation card — the user must confirm before the status is changed.",
+        input: z.object({
           ticketId: z.number().int().positive().describe("Numeric ticket ID"),
           status: z.string().min(1).describe("New status value"),
           reason: z.string().optional().describe("Reason for the status change"),
         }),
-        execute: async ({ ticketId, status, reason }) => {
-          const deny = await this.toolAccess.denyReason(orgId, userId, "build:tickets:update");
-          if (deny) return { denied: true, reason: deny };
-
+        permission: "build:tickets:update",
+        module: "build",
+        run: async ({ ticketId, status, reason }, ctx) => {
+          const { orgId, userId } = ctx.actor;
           const existing = await this.db
             .select({ id: tickets.id, title: tickets.title })
             .from(tickets)
-            .where(and(eq(tickets.id, ticketId), eq(tickets.orgId, orgId), isNull(tickets.deletedAt)))
+            .where(
+              and(
+                eq(tickets.id, ticketId),
+                eq(tickets.orgId, orgId),
+                ticketScopePredicate(ctx.scope, orgId, userId),
+                isNull(tickets.deletedAt),
+              ),
+            )
             .limit(1);
 
-          if (!existing[0]) return { denied: false, found: false, message: "Ticket not found in this org." };
+          if (!existing[0]) return empty("ticket", "Ticket not found in this org.");
 
           const payload: Record<string, unknown> = { ticketId, status, title: existing[0].title };
           if (reason !== undefined) payload.reason = reason;
@@ -155,35 +171,43 @@ export class ProjectsCopilotTools {
             payload,
           });
 
-          return {
-            requiresConfirmation: true,
+          return needsConfirmation({
             proposalId,
             token,
             expiresAt,
             action: "ticket.updateStatus",
             summary: `Update ticket #${ticketId} status to ${status}`,
             preview: { ticketId, title: existing[0].title, newStatus: status, reason },
-          };
+          });
         },
       }),
 
-      addTicketComment: tool({
-        description: "Add a comment to a ticket. Returns a confirmation card — the user must confirm before the comment is posted.",
-        inputSchema: z.object({
+      defineTool({
+        key: "addTicketComment",
+        description:
+          "Add a comment to a ticket. Returns a confirmation card — the user must confirm before the comment is posted.",
+        input: z.object({
           ticketId: z.number().int().positive().describe("Numeric ticket ID"),
           comment: z.string().min(1).max(5000).describe("Comment text to add"),
         }),
-        execute: async ({ ticketId, comment }) => {
-          const deny = await this.toolAccess.denyReason(orgId, userId, "build:tickets:update");
-          if (deny) return { denied: true, reason: deny };
-
+        permission: "build:tickets:update",
+        module: "build",
+        run: async ({ ticketId, comment }, ctx) => {
+          const { orgId, userId } = ctx.actor;
           const existing = await this.db
             .select({ id: tickets.id, title: tickets.title })
             .from(tickets)
-            .where(and(eq(tickets.id, ticketId), eq(tickets.orgId, orgId), isNull(tickets.deletedAt)))
+            .where(
+              and(
+                eq(tickets.id, ticketId),
+                eq(tickets.orgId, orgId),
+                ticketScopePredicate(ctx.scope, orgId, userId),
+                isNull(tickets.deletedAt),
+              ),
+            )
             .limit(1);
 
-          if (!existing[0]) return { denied: false, found: false, message: "Ticket not found in this org." };
+          if (!existing[0]) return empty("ticket", "Ticket not found in this org.");
 
           const { proposalId, token, expiresAt } = await this.confirmation.propose({
             orgId,
@@ -192,32 +216,33 @@ export class ProjectsCopilotTools {
             payload: { ticketId, comment, title: existing[0].title },
           });
 
-          return {
-            requiresConfirmation: true,
+          return needsConfirmation({
             proposalId,
             token,
             expiresAt,
             action: "ticket.addComment",
             summary: `Add comment to ticket #${ticketId}`,
             preview: { ticketId, title: existing[0].title, comment },
-          };
+          });
         },
       }),
 
-      createCalendarReminder: tool({
-        description: "Create a calendar reminder event. Returns a confirmation card — the user must confirm before the event is created.",
-        inputSchema: z.object({
+      defineTool({
+        key: "createCalendarReminder",
+        description:
+          "Create a calendar reminder event. Returns a confirmation card — the user must confirm before the event is created.",
+        input: z.object({
           title: z.string().min(1).max(200).describe("Reminder title"),
           startDate: z.string().describe("ISO 8601 start datetime"),
           endDate: z.string().describe("ISO 8601 end datetime"),
           description: z.string().optional().describe("Reminder description or notes"),
           fromTicketId: z.number().int().positive().optional().describe("Optional ticket ID this reminder is linked to"),
         }),
-        execute: async ({ title, startDate, endDate, description, fromTicketId }) => {
-          const deny = await this.toolAccess.denyReason(orgId, userId, "calendar:write");
-          if (deny) return { denied: true, reason: deny };
-
-          const payload: Record<string, unknown> = { title, startDate, endDate };
+        permission: "calendar:write",
+        module: "calendar",
+        run: async ({ title, startDate, endDate, description, fromTicketId }, ctx) => {
+          const { orgId, userId, timezone } = ctx.actor;
+          const payload: Record<string, unknown> = { title, startDate, endDate, timezone };
           if (description !== undefined) payload.description = description;
           if (fromTicketId !== undefined) payload.fromTicketId = fromTicketId;
 
@@ -228,17 +253,16 @@ export class ProjectsCopilotTools {
             payload,
           });
 
-          return {
-            requiresConfirmation: true,
+          return needsConfirmation({
             proposalId,
             token,
             expiresAt,
             action: "calendar.createReminder",
             summary: `Create reminder: ${title}`,
-            preview: { title, startDate, endDate, description, fromTicketId },
-          };
+            preview: { title, startDate, endDate, description, fromTicketId, timezone },
+          });
         },
       }),
-    };
+    ];
   }
 }

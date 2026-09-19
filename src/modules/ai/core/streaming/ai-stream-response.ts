@@ -1,7 +1,10 @@
 import { HttpException, InternalServerErrorException } from "@nestjs/common";
 import type { ServerResponse } from "http";
+import { createUIMessageStream, pipeUIMessageStreamToResponse as sdkPipeUIMessageStreamToResponse } from "ai";
+import type { UIMessageChunk } from "ai";
 import { logger } from "../../../../common/logger/logger.service";
 import { pipeRawAiTextStream } from "./raw-ai-text-stream";
+import type { AskOsDirective } from "./ask-os-directive";
 
 export interface PipeableAiTextStream {
   readonly textStream?: ReadableStream<string>;
@@ -127,6 +130,42 @@ export function rethrowStreamRouteError(
     route: context.route,
   });
   throw new InternalServerErrorException("Internal server error");
+}
+
+export interface ModelStreamSource {
+  toUIMessageStream(): ReadableStream<UIMessageChunk>;
+}
+
+export function makeAskOsDirectivePipe(
+  modelStream: ModelStreamSource,
+  directives: AskOsDirective[],
+): PipeableAiUiStream {
+  return {
+    pipeUIMessageStreamToResponse: async (res, init) => {
+      const uiStream = createUIMessageStream({
+        execute: async ({ writer }) => {
+          const reader = modelStream.toUIMessageStream().getReader();
+          try {
+            for (;;) {
+              const chunk = await reader.read();
+              if (chunk.done) break;
+              writer.write(chunk.value);
+            }
+          } finally {
+            reader.releaseLock();
+          }
+          for (const directive of directives) {
+            writer.write({ type: "data-askos-directive", data: directive, transient: true });
+          }
+        },
+      });
+      await sdkPipeUIMessageStreamToResponse({
+        response: res,
+        stream: uiStream,
+        ...(init?.headers !== undefined ? { headers: init.headers } : {}),
+      });
+    },
+  };
 }
 
 const MAX_SOURCE_HEADER_BYTES = 4_096;

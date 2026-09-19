@@ -85,7 +85,7 @@ export class ProjectsTicketsService {
     orgId: string,
     actingUserId: string,
     projectId: number,
-    input: { title: string; description: string; type?: string },
+    input: { title: string; description: string; type?: string; assigneeMembershipId?: number | null },
   ): Promise<{ id: number }> {
     return this.create.createFromFeedback(orgId, actingUserId, projectId, input);
   }

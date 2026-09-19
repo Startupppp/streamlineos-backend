@@ -162,10 +162,12 @@ export const kbPageTreeItemSchema = z.object({
   projectId: z.number().int().nullable(),
   title: z.string(),
   icon: z.string().nullable(),
+  coverImage: z.string().nullable(),
   sortOrder: z.number().int().nullable(),
   visibility: z.string(),
   createdById: z.string().nullable(),
   status: z.string(),
+  updatedAt: wireDate(),
   hasChildren: z.boolean(),
 });
 

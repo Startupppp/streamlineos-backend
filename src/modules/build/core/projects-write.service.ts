@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ForbiddenException,
   Inject,
   Injectable,
@@ -333,13 +334,16 @@ export class ProjectsWriteService {
 
     const project = await this.db.query.projects.findFirst({
       where: and(eq(projects.id, projectId), eq(projects.orgId, orgId), isNull(projects.deletedAt)),
-      columns: { id: true },
+      columns: { id: true, pmWorkspaceId: true },
     });
     if (!project) throw new ProjectsNotFoundException();
 
     if (input.managedProductId !== null) {
       const [product] = await this.db
-        .select({ managedProductId: managedProducts.id })
+        .select({
+          managedProductId: managedProducts.id,
+          pmWorkspaceId: managedProducts.pmWorkspaceId,
+        })
         .from(managedProducts)
         .where(
           and(
@@ -351,6 +355,11 @@ export class ProjectsWriteService {
         .limit(1);
       if (!product) {
         throw new NotFoundException("Managed product not found");
+      }
+      if (product.pmWorkspaceId !== project.pmWorkspaceId) {
+        throw new BadRequestException(
+          "Managed product belongs to a different PM workspace",
+        );
       }
     }
 

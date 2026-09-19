@@ -100,6 +100,10 @@ export class AiGatewayService {
     return this.streamer.run({ ...opts, ...(signal !== undefined ? { signal } : {}) });
   }
 
+  async streamAgenticTurn(opts: AiStreamTextOpts): Promise<AiTextStream> {
+    return this.streamTextWithUsage(opts);
+  }
+
   /**
    * Every entry point opens exactly one of these, and the correlation id comes
    * off it. It is what joins the call, its `ai_usage_logs` row and its audit

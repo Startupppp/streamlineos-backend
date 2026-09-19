@@ -20,6 +20,7 @@ export interface ObservabilityContext {
   cellId?: string;
   /** Build identifier stamped at the edge from APP_RELEASE so a deploy can be implicated in a spike. */
   release?: string;
+  ipAddress?: string;
 }
 
 /** Everything callers may fill in later; the correlation id is fixed at entry. */
@@ -55,6 +56,7 @@ export function enrichObservabilityContext(patch: ObservabilityEnrichment): bool
   if (patch.route) context.route = patch.route;
   if (patch.cellId) context.cellId = patch.cellId;
   if (patch.release) context.release = patch.release;
+  if (patch.ipAddress) context.ipAddress = patch.ipAddress;
   return true;
 }
 

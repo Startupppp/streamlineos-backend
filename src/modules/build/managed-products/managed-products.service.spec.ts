@@ -56,7 +56,10 @@ describe("ManagedProductsService", () => {
         { provide: AuditService, useValue: mockAudit },
         {
           provide: PmWorkspacesService,
-          useValue: { resolveDefaultWorkspaceId: jest.fn().mockResolvedValue("ws_default") },
+          useValue: {
+            resolveDefaultWorkspaceId: jest.fn().mockResolvedValue("ws_default"),
+            resolveWorkspaceIdForWrite: jest.fn().mockResolvedValue("ws_default"),
+          },
         },
       ],
     }).compile();

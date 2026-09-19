@@ -25,6 +25,9 @@ const MODEL_TOKEN_PRICING_RAW: Record<string, ModelTokenPricing> = {
   "gemini-1.5-pro-latest": { inputUsdPer1M: 1.25, outputUsdPer1M: 5.0 },
   "gemini-1.5-flash": { inputUsdPer1M: 0.075, outputUsdPer1M: 0.3 },
   "gemini-1.5-flash-latest": { inputUsdPer1M: 0.075, outputUsdPer1M: 0.3 },
+  "gemini-2.5-pro": { inputUsdPer1M: 1.25, outputUsdPer1M: 10.0 },
+  "gemini-2.5-flash": { inputUsdPer1M: 0.3, outputUsdPer1M: 2.5 },
+  "gemini-2.0-flash": { inputUsdPer1M: 0.1, outputUsdPer1M: 0.4 },
 };
 
 function lookupPricing(model: string): ModelTokenPricing {

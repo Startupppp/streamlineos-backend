@@ -1,6 +1,6 @@
 import {
+  BadRequestException,
   ConflictException,
-  ForbiddenException,
   HttpException,
   HttpStatus,
   Inject,
@@ -19,6 +19,10 @@ import { sanitizeHtml } from "../hr/templates/html-sanitizer";
 import { ProjectsTicketsService } from "../build/core/projects-tickets.service";
 import { PlanLimitsService } from "../billing/core/plan-limits.service";
 import { StorageService } from "../storage/storage.service";
+import { resolveOrganizationActorsByUserIds } from "../../common/organization/organization-actor";
+import { assertProjectInOrg } from "../build/core/project-access";
+import { resolveFeedbucketTicketTarget } from "./feedbucket-ticket-routing";
+import type { ConvertToTicketInput } from "./feedbucket.schemas";
 import {
   FeedbackAnalysisSchema,
   type FeedbackAnalysis,
@@ -109,24 +113,36 @@ export class FeedbucketAiService {
         eq(feedbucketSubmissions.orgId, orgId),
         isNull(feedbucketSubmissions.deletedAt),
       ),
-      with: {
-        widget: {
-          columns: { id: true, projectId: true },
-          with: { project: { columns: { id: true, orgId: true } } },
-        },
-      },
+      with: { widget: true },
     });
     if (!row) throw new NotFoundException("Submission not found");
     return row;
   }
 
-  private assertProjectAccess(submission: Awaited<ReturnType<typeof this.loadSubmission>>, orgId: string): number {
+  private async resolveTicketTarget(
+    submission: Awaited<ReturnType<typeof this.loadSubmission>>,
+    orgId: string,
+    override?: ConvertToTicketInput,
+  ): Promise<{ projectId: number; assigneeMembershipId: number | null }> {
     const widget = submission.widget;
     if (!widget) throw new NotFoundException("Submission has no associated widget");
-    const project = widget.project;
-    if (!project || !widget.projectId) throw new NotFoundException("Widget has no linked project");
-    if (project.orgId !== orgId) throw new ForbiddenException("Project does not belong to your organisation");
-    return widget.projectId;
+
+    let overrideAssigneeMembershipId: number | undefined;
+    if (override?.assigneeId !== undefined) {
+      const actorMap = await resolveOrganizationActorsByUserIds(this.db, orgId, [override.assigneeId]);
+      const actor = actorMap.get(override.assigneeId);
+      if (!actor)
+        throw new BadRequestException(`${override.assigneeId} is not an active member of this organization`);
+      overrideAssigneeMembershipId = actor.membershipId;
+    }
+
+    const { projectId, assigneeMembershipId } = resolveFeedbucketTicketTarget(widget, submission.type, {
+      projectId: override?.projectId,
+      assigneeMembershipId: overrideAssigneeMembershipId,
+    });
+    if (!projectId) throw new NotFoundException("Widget has no linked project");
+    await assertProjectInOrg(this.db, orgId, projectId);
+    return { projectId, assigneeMembershipId };
   }
 
   /**
@@ -288,7 +304,7 @@ export class FeedbucketAiService {
     await this.planLimits.assertFeature(u.orgId, "ai.feedbucket");
 
     const submission = await this.loadSubmission(u.orgId, submissionId);
-    this.assertProjectAccess(submission, u.orgId);
+    await this.resolveTicketTarget(submission, u.orgId);
 
     if (submission.aiProcessedAt && !force) {
       const stored = submission.aiAnalysis;
@@ -347,11 +363,12 @@ export class FeedbucketAiService {
   async createTicketFromAnalysis(
     u: CurrentUserContext,
     submissionId: number,
+    override?: ConvertToTicketInput,
   ): Promise<{ ticketId: number; ticketType: FeedbackAnalysis["suggestedTicketType"] }> {
     await this.planLimits.assertFeature(u.orgId, "ai.feedbucket");
 
     const submission = await this.loadSubmission(u.orgId, submissionId);
-    const projectId = this.assertProjectAccess(submission, u.orgId);
+    const { projectId, assigneeMembershipId } = await this.resolveTicketTarget(submission, u.orgId, override);
 
     if (submission.linkedTicketId) {
       throw new ConflictException("Submission is already linked to a ticket");
@@ -372,6 +389,7 @@ export class FeedbucketAiService {
       title: analysis.title.slice(0, 255),
       description,
       type: ticketType,
+      assigneeMembershipId,
     });
 
     await this.db

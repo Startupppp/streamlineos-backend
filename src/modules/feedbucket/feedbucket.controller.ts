@@ -26,11 +26,15 @@ import { ProjectsTicketsService } from "../build/core/projects-tickets.service";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { actingMembershipId } from "../../common/auth/principal";
 import {
+  convertToTicketSchema,
   createWidgetSchema,
+  feedbucketMediaKindSchema,
   listSubmissionsQuerySchema,
   updateSubmissionSchema,
   updateWidgetSchema,
+  type ConvertToTicketInput,
   type CreateWidgetInput,
+  type FeedbucketMediaKind,
   type ListSubmissionsQuery,
   type UpdateSubmissionInput,
   type UpdateWidgetInput,
@@ -42,7 +46,6 @@ import { BodylessAction, ResponseSchema } from "../../common/openapi/zod-operati
 import {
   feedbucketWidgetListSchema,
   feedbucketWidgetWithProjectSchema,
-  feedbucketWidgetRowSchema,
   feedbucketRotateKeySchema,
   feedbucketSubmissionListSchema,
   feedbucketSubmissionDetailSchema,
@@ -56,6 +59,7 @@ import {
 
 const widgetIdParams = z.object({ widgetId: z.coerce.number().int().positive() }).strict();
 const submissionIdParams = z.object({ submissionId: z.coerce.number().int().positive() }).strict();
+const submissionMediaParams = submissionIdParams.extend({ mediaKind: feedbucketMediaKindSchema }).strict();
 
 @RequireModule("feedbucket")
 @Controller("feedbucket")
@@ -101,7 +105,7 @@ export class FeedbucketController {
   @Patch("widgets/:widgetId")
   @RequirePermission("feedbucket:widgets:update")
   @Validate({ params: widgetIdParams, body: updateWidgetSchema })
-  @ResponseSchema(feedbucketWidgetRowSchema)
+  @ResponseSchema(feedbucketWidgetWithProjectSchema)
   updateWidget(
     @CurrentUser() user: CurrentUserContext,
     @Param("widgetId", ParseIntPipe) widgetId: number,
@@ -183,17 +187,30 @@ export class FeedbucketController {
     return { success: true as const };
   }
 
+  @Delete("submissions/:submissionId/media/:mediaKind")
+  @RequirePermission("feedbucket:submissions:delete")
+  @Validate({ params: submissionMediaParams })
+  @ResponseSchema(successSchema)
+  async deleteSubmissionMedia(
+    @CurrentUser() user: CurrentUserContext,
+    @Param("submissionId", ParseIntPipe) submissionId: number,
+    @Param("mediaKind") mediaKind: FeedbucketMediaKind,
+  ) {
+    await this.submissions.deleteMedia(user.orgId, submissionId, mediaKind);
+    return { success: true as const };
+  }
+
   @Post("submissions/:submissionId/convert-to-ticket")
-  @BodylessAction()
   @RequirePermission("feedbucket:submissions:manage")
   @HttpCode(201)
-  @Validate({ params: submissionIdParams })
+  @Validate({ params: submissionIdParams, body: convertToTicketSchema })
   @ResponseSchema(feedbucketConvertTicketSchema)
   convertToTicket(
     @CurrentUser() user: CurrentUserContext,
     @Param("submissionId", ParseIntPipe) submissionId: number,
+    @Body() body: ConvertToTicketInput,
   ) {
-    return this.submissions.convertToTicket(user.orgId, user.userId, submissionId, this.tickets);
+    return this.submissions.convertToTicket(user.orgId, user.userId, submissionId, this.tickets, body);
   }
 
   @Post("submissions/:submissionId/ai-analyze")
@@ -210,16 +227,16 @@ export class FeedbucketController {
   }
 
   @Post("submissions/:submissionId/ai-create-ticket")
-  @BodylessAction()
   @RequirePermission("feedbucket:submissions:manage")
   @HttpCode(201)
-  @Validate({ params: submissionIdParams })
+  @Validate({ params: submissionIdParams, body: convertToTicketSchema })
   @ResponseSchema(feedbucketCreateTicketFromAnalysisSchema)
   createTicketFromAnalysis(
     @CurrentUser() user: CurrentUserContext,
     @Param("submissionId", ParseIntPipe) submissionId: number,
+    @Body() body: ConvertToTicketInput,
   ) {
-    return this.feedbucketAi.createTicketFromAnalysis(user, submissionId);
+    return this.feedbucketAi.createTicketFromAnalysis(user, submissionId, body);
   }
 
   @Get("stats")

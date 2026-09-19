@@ -5,8 +5,6 @@ import {
   leaveRequests,
   payrollRuns,
   payrollRunEmployees,
-  projects,
-  tickets,
 } from "../../../../db/schema";
 import { businessParties, leadPartyMap } from "../../../../db/schema/party";
 import { getTodayString } from "../../../../common/date";
@@ -18,9 +16,17 @@ import {
   leadPartyScope,
 } from "../../../leads/lead-party-reader";
 import type { ChatContext } from "./chat-assistant-model";
+import { resolveAskOsActor, type AskOsActor } from "./ask-os-actor";
+import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
+
+export interface ChatTurnContext {
+  context: ChatContext;
+  actor: AskOsActor;
+}
 
 /**
- * The three lead figures the assistant quotes come through `lead_party_map`.
+ * The two caller-scoped lead figures the assistant quotes come through
+ * `lead_party_map`.
  *
  * `INCLUDE_DELETED` on all three because none of them filtered `deleted_at`
  * before, and a count that silently drops by a few the day this lands is a
@@ -32,28 +38,20 @@ export async function fetchChatContext(
   db: Db,
   userId: string,
   orgId: string,
-): Promise<ChatContext> {
+  caller: CurrentUserContext,
+): Promise<ChatTurnContext> {
   const today = getTodayString();
 
   const [
-    projectCount,
-    ticketCount,
+    askOsActor,
     todayAttendance,
     pendingLeaves,
     recentPayrolls,
     myLeadsResult,
-    hotLeadsResult,
     myOpenDealsResult,
     topLeads,
   ] = await Promise.all([
-    db
-      .select({ count: sql<number>`count(*)` })
-      .from(projects)
-      .where(and(eq(projects.orgId, orgId), isNull(projects.deletedAt))),
-    db
-      .select({ count: sql<number>`count(*)` })
-      .from(tickets)
-      .where(and(eq(tickets.orgId, orgId), isNull(tickets.deletedAt))),
+    resolveAskOsActor(db, caller),
     db.query.attendance.findFirst({
       where: and(
         eq(attendance.userId, userId),
@@ -97,13 +95,6 @@ export async function fetchChatContext(
       ),
     db
       .select({ count: count() })
-      .from(leadPartyMap)
-      .innerJoin(businessParties, LEAD_PARTY_JOIN)
-      .where(
-        and(...leadPartyScope(orgId, INCLUDE_DELETED), eq(LEAD_PARTY_COLUMNS.priority, "HOT")),
-      ),
-    db
-      .select({ count: count() })
       .from(deals)
       .where(
         and(
@@ -133,8 +124,8 @@ export async function fetchChatContext(
   ]);
 
   return {
-    projectCount: projectCount[0]?.count || 0,
-    ticketCount: ticketCount[0]?.count || 0,
+    actor: askOsActor,
+    context: {
     todayAttendance: todayAttendance
       ? {
           checkedIn: Boolean(todayAttendance.checkIn),
@@ -149,8 +140,8 @@ export async function fetchChatContext(
       status: p.status || "UNKNOWN",
     })),
     myLeadsCount: myLeadsResult[0]?.count ?? 0,
-    hotLeadsCount: hotLeadsResult[0]?.count ?? 0,
     myOpenDealsCount: myOpenDealsResult[0]?.count ?? 0,
     topLeads,
+    },
   };
 }

@@ -5,6 +5,7 @@ export const listWorkspacesQuerySchema = z.object({
   cursor: z.string().optional(),
   limit: pageSizeField(20),
   status: z.enum(["active", "archived"]).optional(),
+  search: z.string().optional(),
 }).strict();
 
 export const listMembersQuerySchema = z.object({

@@ -1,34 +1,61 @@
-import { Injectable } from "@nestjs/common";
-import { tool } from "ai";
+import { Injectable, Inject } from "@nestjs/common";
 import { z } from "zod";
-import { ToolAccessService } from "./tool-access.service";
-import { AiConfirmationService } from "../confirmation/ai-confirmation.service";
+import { DRIZZLE } from "../../../db/drizzle.constants";
+import { type Db } from "../../../db/drizzle.module";
+import { type IntegrationToolkit } from "../../../db/schema";
+import { resolveToolkitConnection } from "../../integrations/core/connection-resolution";
 import { MailService } from "../../mail/mail.service";
 import { MailAiService } from "../../mail/mail-ai.service";
-import { actingMembershipId } from "../../../common/auth/principal";
-import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { AiConfirmationService } from "../confirmation/ai-confirmation.service";
+import {
+  defineTool,
+  data,
+  empty,
+  failed,
+  needsConnection,
+  needsConfirmation,
+  type AskOsToolDefinition,
+  type AskOsToolProvider,
+} from "./registry/ask-os-tool.types";
 
-export interface MailCopilotContext {
-  actor: CurrentUserContext;
+type MailConnectionOutcome =
+  | { connected: true }
+  | { connected: false; toolkit: IntegrationToolkit; reason: "no-connection" | "needs-reauth" };
+
+export async function resolveAnyMailConnection(
+  db: Db,
+  subject: { orgId: string; userId: string; membershipId: number },
+): Promise<MailConnectionOutcome> {
+  const [gmail, outlook] = await Promise.all([
+    resolveToolkitConnection(db, { ...subject, toolkit: "gmail" }),
+    resolveToolkitConnection(db, { ...subject, toolkit: "outlook" }),
+  ]);
+  if (gmail.status === "resolved" || outlook.status === "resolved") return { connected: true };
+  if (gmail.status === "unresolved" && gmail.reason === "needs-reauth") {
+    return { connected: false, toolkit: "gmail", reason: "needs-reauth" };
+  }
+  if (outlook.status === "unresolved" && outlook.reason === "needs-reauth") {
+    return { connected: false, toolkit: "outlook", reason: "needs-reauth" };
+  }
+  return { connected: false, toolkit: "gmail", reason: "no-connection" };
 }
 
 @Injectable()
-export class MailCopilotTools {
+export class MailCopilotTools implements AskOsToolProvider {
   constructor(
+    @Inject(DRIZZLE) private readonly db: Db,
     private readonly mail: MailService,
     private readonly mailAi: MailAiService,
-    private readonly toolAccess: ToolAccessService,
     private readonly confirmation: AiConfirmationService,
   ) {}
 
-  buildTools(ctx: MailCopilotContext) {
-    const { orgId, userId, principal } = ctx.actor;
-
-    return {
-      listRecentEmails: tool({
+  tools(): AskOsToolDefinition[] {
+    return [
+      defineTool({
+        key: "listRecentEmails",
         description:
           "List recent emails from the user's inbox. Returns up to 10 message summaries including subject, sender, date, snippet, and read status.",
-        inputSchema: z.object({
+        input: z.object({
           accountEmail: z
             .string()
             .email()
@@ -40,36 +67,30 @@ export class MailCopilotTools {
             .default("inbox")
             .describe("Folder to list messages from"),
         }),
-        execute: async ({ accountEmail, folder }) => {
-          const deny = await this.toolAccess.denyReason(
-            orgId,
-            userId,
-            "mail:inbox:view",
-          );
-          if (deny) return { denied: true, reason: deny };
-
+        permission: "mail:inbox:view",
+        module: "mail",
+        run: async ({ accountEmail, folder }, ctx) => {
+          const { orgId, userId, membershipId } = ctx.actor;
+          const connection = await resolveAnyMailConnection(this.db, { orgId, userId, membershipId });
+          if (!connection.connected) {
+            return needsConnection(
+              connection.toolkit,
+              connection.reason,
+              "Connect a mail account to read your inbox.",
+            );
+          }
           try {
             const accounts = await this.mail.listAccounts(orgId, userId);
-            if (accounts.length === 0)
-              return { success: false, message: "No mail accounts connected." };
-
             let accountIdParam = "all";
             if (accountEmail) {
-              const match = accounts.find(
-                (a) => a.accountEmail === accountEmail,
-              );
-              if (!match)
-                return {
-                  success: false,
-                  message: `No connected account found for ${accountEmail}.`,
-                };
+              const match = accounts.find((a) => a.accountEmail === accountEmail);
+              if (!match) return failed(`No connected account found for ${accountEmail}.`);
               accountIdParam = String(match.id);
             }
-
             const result = await this.mail.listMessages(
               orgId,
               userId,
-              actingMembershipId(principal),
+              membershipId,
               folder ?? "inbox",
               accountIdParam,
               10,
@@ -81,20 +102,18 @@ export class MailCopilotTools {
               snippet: m.snippet,
               isRead: m.isRead,
             }));
-            return { success: true, messages, total: messages.length };
+            if (messages.length === 0) return empty("emails");
+            return data({ messages, total: messages.length });
           } catch {
-            return {
-              success: false,
-              message: "Failed to list emails. Please try again.",
-            };
+            return failed("Failed to list emails. Please try again.");
           }
         },
       }),
 
-      summarizeMailThread: tool({
-        description:
-          "Summarize an email thread, extract action items, and suggest a reply.",
-        inputSchema: z.object({
+      defineTool({
+        key: "summarizeMailThread",
+        description: "Summarize an email thread, extract action items, and suggest a reply.",
+        input: z.object({
           accountEmail: z
             .string()
             .email()
@@ -102,59 +121,43 @@ export class MailCopilotTools {
             .describe("The connected email account owning the thread"),
           threadId: z.string().min(1).describe("The thread ID to summarize"),
         }),
-        execute: async ({ accountEmail, threadId }) => {
-          const deny = await this.toolAccess.denyReason(
-            orgId,
-            userId,
-            "mail:ai:use",
-          );
-          if (deny) return { denied: true, reason: deny };
-
+        permission: "mail:ai:use",
+        module: "mail",
+        run: async ({ accountEmail, threadId }, ctx) => {
+          const { orgId, userId, membershipId } = ctx.actor;
+          const connection = await resolveAnyMailConnection(this.db, { orgId, userId, membershipId });
+          if (!connection.connected) {
+            return needsConnection(
+              connection.toolkit,
+              connection.reason,
+              "Connect a mail account to summarize threads.",
+            );
+          }
           try {
             const accounts = await this.mail.listAccounts(orgId, userId);
-            if (accounts.length === 0)
-              return { success: false, message: "No mail accounts connected." };
-
             let accountId: number;
             if (accountEmail) {
-              const match = accounts.find(
-                (a) => a.accountEmail === accountEmail,
-              );
-              if (!match)
-                return {
-                  success: false,
-                  message: `No connected account found for ${accountEmail}.`,
-                };
+              const match = accounts.find((a) => a.accountEmail === accountEmail);
+              if (!match) return failed(`No connected account found for ${accountEmail}.`);
               accountId = match.id;
             } else {
               const primary = accounts.find((a) => a.isPrimary) ?? accounts[0];
-              if (!primary)
-                return {
-                  success: false,
-                  message: "No mail accounts connected.",
-                };
+              if (!primary) return failed("No mail accounts found.");
               accountId = primary.id;
             }
-
-            const summary = await this.mailAi.threadSummary(
-              ctx.actor,
-              accountId,
-              threadId,
-            );
-            return { success: true, ...summary };
+            const summary = await this.mailAi.threadSummary(ctx.caller, accountId, threadId);
+            return data(summary);
           } catch {
-            return {
-              success: false,
-              message: "Failed to summarize thread. Please try again.",
-            };
+            return failed("Failed to summarize thread. Please try again.");
           }
         },
       }),
 
-      sendMailFromAccount: tool({
+      defineTool({
+        key: "sendMailFromAccount",
         description:
           "Send an email from the user's connected mail account. Returns a confirmation card — the user must confirm before the email is sent.",
-        inputSchema: z.object({
+        input: z.object({
           toEmail: z.string().email().describe("Recipient email address"),
           subject: z.string().min(1).max(500).describe("Email subject"),
           body: z.string().min(1).max(10000).describe("Email body text"),
@@ -162,79 +165,55 @@ export class MailCopilotTools {
             .string()
             .email()
             .optional()
-            .describe(
-              "The connected email account to send from (uses primary if omitted)",
-            ),
+            .describe("The connected email account to send from (uses primary if omitted)"),
         }),
-        execute: async ({ toEmail, subject, body, accountEmail }) => {
-          const deny = await this.toolAccess.denyReason(
-            orgId,
-            userId,
-            "mail:messages:send",
-          );
-          if (deny) return { denied: true, reason: deny };
-
+        permission: "mail:messages:send",
+        module: "mail",
+        run: async ({ toEmail, subject, body, accountEmail }, ctx) => {
+          const { orgId, userId, membershipId } = ctx.actor;
+          const connection = await resolveAnyMailConnection(this.db, { orgId, userId, membershipId });
+          if (!connection.connected) {
+            return needsConnection(
+              connection.toolkit,
+              connection.reason,
+              "Connect a mail account to send emails.",
+            );
+          }
           try {
             const accounts = await this.mail.listAccounts(orgId, userId);
-            const activeAccounts = accounts.filter(
-              (a) => a.status === "active",
-            );
-            if (activeAccounts.length === 0)
-              return {
-                success: false,
-                message: "No active mail accounts connected.",
-              };
-
+            const activeAccounts = accounts.filter((a) => a.status === "active");
+            if (activeAccounts.length === 0) return failed("No active mail accounts found.");
             const resolvedAccount = accountEmail
               ? activeAccounts.find((a) => a.accountEmail === accountEmail)
-              : (activeAccounts.find((a) => a.isPrimary) ??
-                activeAccounts[activeAccounts.length - 1]);
-
-            if (!resolvedAccount)
-              return {
-                success: false,
-                message: `No active connected account found${accountEmail ? ` for ${accountEmail}` : ""}.`,
-              };
-
-            const fromEmail =
-              resolvedAccount.accountEmail ?? resolvedAccount.id.toString();
-
-            const { proposalId, token, expiresAt } =
-              await this.confirmation.propose({
-                orgId,
-                userId,
-                action: "mail.send",
-                payload: {
-                  accountId: resolvedAccount.id,
-                  toEmail,
-                  subject,
-                  body,
-                },
-              });
-
-            return {
-              requiresConfirmation: true,
+              : (activeAccounts.find((a) => a.isPrimary) ?? activeAccounts[activeAccounts.length - 1]);
+            if (!resolvedAccount) {
+              return failed(`No active account found${accountEmail ? ` for ${accountEmail}` : ""}.`);
+            }
+            const fromEmail = resolvedAccount.accountEmail ?? resolvedAccount.id.toString();
+            const { proposalId, token, expiresAt } = await this.confirmation.propose({
+              orgId,
+              userId,
+              action: "mail.send",
+              payload: { accountId: resolvedAccount.id, toEmail, subject, body },
+            });
+            return needsConfirmation({
               proposalId,
               token,
-              expiresAt,
               action: "mail.send",
               summary: `Send email from ${fromEmail} to ${toEmail}: ${subject}`,
               preview: {
                 fromEmail,
                 toEmail,
                 subject,
-                bodyPreview:
-                  body.slice(0, 100) + (body.length > 100 ? "…" : ""),
+                bodyPreview: body.slice(0, 100) + (body.length > 100 ? "…" : ""),
               },
-            };
+              expiresAt,
+            });
           } catch {
-            return {
-              success: false,
-              message: "Failed to prepare email. Please try again.",
-            };
+            return failed("Failed to prepare email. Please try again.");
           }
         },
       }),
-    };
+    ];
   }
 }

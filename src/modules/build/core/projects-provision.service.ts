@@ -1,6 +1,18 @@
-import { ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import {
+  BadRequestException,
+  ConflictException,
+  Inject,
+  Injectable,
+  NotFoundException,
+} from "@nestjs/common";
 import { and, eq, isNull } from "drizzle-orm";
-import { deals, projectMembers, projects, projectStatuses } from "../../../db/schema";
+import {
+  deals,
+  managedProducts,
+  projectMembers,
+  projects,
+  projectStatuses,
+} from "../../../db/schema";
 import { resolveOrganizationActorsByUserIds } from "../../../common/organization/organization-actor";
 import { DEFAULT_PROJECT_STATUSES } from "./lib/default-statuses";
 import { DRIZZLE } from "../../../db/drizzle.constants";
@@ -13,6 +25,7 @@ import { PmWorkspacesService } from "../pm-workspaces/pm-workspaces.service";
 import { logSideEffectFailure } from "../../../common/logger/side-effect";
 import { isUniqueViolation } from "../../../common/db/postgres-error";
 import { lockQuota } from "../../billing/core/seat-definition";
+import { buildProjectHref } from "./build-app-paths";
 
 function generateProjectKey(name: string): string {
   const namePart = name.replace(/[^a-zA-Z]/g, "").substring(0, 3).toUpperCase();
@@ -30,10 +43,43 @@ export class ProjectsProvisionService {
     private readonly pmWorkspaces: PmWorkspacesService,
   ) {}
 
+  private async resolveManagedProductForWorkspace(
+    orgId: string,
+    pmWorkspaceId: string,
+    managedProductId: number | undefined,
+  ): Promise<number | null> {
+    if (managedProductId === undefined) return null;
+    const [product] = await this.db
+      .select({ pmWorkspaceId: managedProducts.pmWorkspaceId })
+      .from(managedProducts)
+      .where(
+        and(
+          eq(managedProducts.id, managedProductId),
+          eq(managedProducts.orgId, orgId),
+          isNull(managedProducts.deletedAt),
+        ),
+      )
+      .limit(1);
+    if (!product) throw new NotFoundException("Managed product not found");
+    if (product.pmWorkspaceId !== pmWorkspaceId)
+      throw new BadRequestException(
+        "Managed product belongs to a different PM workspace",
+      );
+    return managedProductId;
+  }
+
   async createProject(orgId: string, creatorUserId: string, input: CreateProjectInput) {
     const projectKey = input.key ?? generateProjectKey(input.name);
 
-    const pmWorkspaceId = await this.pmWorkspaces.resolveDefaultWorkspaceId(orgId);
+    const pmWorkspaceId = await this.pmWorkspaces.resolveWorkspaceIdForWrite(
+      orgId,
+      input.pmWorkspaceId,
+    );
+    const managedProductId = await this.resolveManagedProductForWorkspace(
+      orgId,
+      pmWorkspaceId,
+      input.managedProductId,
+    );
     const additionalMembers = (input.memberIds ?? []).filter((id) => id !== creatorUserId);
     const requestedManagerId = input.managerId ?? creatorUserId;
     const actors = await resolveOrganizationActorsByUserIds(this.db, orgId, [creatorUserId, requestedManagerId, ...additionalMembers]);
@@ -41,6 +87,8 @@ export class ProjectsProvisionService {
     const manager = actors.get(requestedManagerId);
     if (!creator || !manager || additionalMembers.some((id) => !actors.has(id)))
       throw new NotFoundException("Project actors must be active members of this organization");
+
+    await this.pmWorkspaces.assertMemberOfWorkspace(orgId, pmWorkspaceId, creator.membershipId);
 
     const project = await this.db.transaction(async (tx) => {
       await tx.execute(lockQuota(orgId, "projects"));
@@ -51,6 +99,7 @@ export class ProjectsProvisionService {
         .values({
           orgId,
           pmWorkspaceId,
+          managedProductId,
           key: projectKey,
           name: input.name,
           description: input.description,
@@ -110,7 +159,7 @@ export class ProjectsProvisionService {
         entityId: String(project.id),
         title: "You were added to a project",
         message: `You were added to project "${input.name}" (${projectKey}).`,
-        link: `/projects/${project.id}`,
+        link: buildProjectHref(project.id),
         variables: { projectName: input.name, projectKey, projectId: project.id },
       }).catch(logSideEffectFailure("project member notification", { orgId }));
     }

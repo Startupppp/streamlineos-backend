@@ -8,11 +8,23 @@ const feedbucketWidgetThemeSchema = z.object({
   label: z.string().optional(),
 });
 
+const feedbucketAssigneeRulesSchema = z.object({
+  bug: z.number().int().optional(),
+  idea: z.number().int().optional(),
+  feature: z.number().int().optional(),
+  question: z.number().int().optional(),
+  praise: z.number().int().optional(),
+  other: z.number().int().optional(),
+});
+
 export const feedbucketWidgetRowSchema = z.object({
   id: z.number().int(),
   orgId: z.string(),
   projectId: z.number().int().nullable(),
   managedProductId: z.number().int().nullable(),
+  defaultProjectId: z.number().int().nullable(),
+  defaultAssigneeMembershipId: z.number().int().nullable(),
+  assigneeRules: feedbucketAssigneeRulesSchema.nullable(),
   name: z.string(),
   publicKey: z.string(),
   allowedDomains: z.array(z.string()),

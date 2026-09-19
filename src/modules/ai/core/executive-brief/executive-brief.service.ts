@@ -219,7 +219,7 @@ export class ExecutiveBriefService {
 
   private resolveCitations(sources: Record<string, unknown>): BriefCitation[] {
     const moduleMap: Record<string, { title: string; href: string }> = {
-      projects: { title: "Project Health", href: "/projects" },
+      projects: { title: "Project Health", href: "/build" },
       crm: { title: "CRM Sales Dashboard", href: "/crm" },
       support: { title: "Support Overview", href: "/support" },
     };
@@ -389,7 +389,7 @@ function buildBriefPrompt(
   if (sources.projects && isProjectHealthSummary(sources.projects)) {
     const p = sources.projects;
     parts.push(
-      `**Projects (source: /projects):** ${p.total} total projects. Healthy: ${p.healthy}, At Risk: ${p.atRisk}, Critical: ${p.critical}. Average health score: ${p.avgScore}/100.`,
+      `**Projects (source: /build):** ${p.total} total projects. Healthy: ${p.healthy}, At Risk: ${p.atRisk}, Critical: ${p.critical}. Average health score: ${p.avgScore}/100.`,
     );
   }
 

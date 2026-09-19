@@ -77,6 +77,8 @@ describe("ProjectsProvisionService.createProject — atomic quota admission", ()
           provide: PmWorkspacesService,
           useValue: {
             resolveDefaultWorkspaceId: jest.fn().mockResolvedValue("ws-default"),
+            resolveWorkspaceIdForWrite: jest.fn().mockResolvedValue("ws-default"),
+            assertMemberOfWorkspace: jest.fn().mockResolvedValue(undefined),
           },
         },
       ],

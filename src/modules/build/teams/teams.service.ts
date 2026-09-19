@@ -57,6 +57,9 @@ export class TeamsService {
       eq(projectTeams.orgId, orgId),
       isNull(projectTeams.deletedAt),
       query.search ? ilike(projectTeams.name, `%${query.search}%`) : undefined,
+      query.pmWorkspaceId
+        ? eq(projectTeams.pmWorkspaceId, query.pmWorkspaceId)
+        : undefined,
     ];
     if (pos) conds.push(keysetBeforeId(projectTeams.createdAt, projectTeams.id, pos));
 
@@ -120,7 +123,10 @@ export class TeamsService {
   }
 
   async createTeam(orgId: string, userId: string, input: CreateTeamInput) {
-    const pmWorkspaceId = await this.pmWorkspaces.resolveDefaultWorkspaceId(orgId);
+    const pmWorkspaceId = await this.pmWorkspaces.resolveWorkspaceIdForWrite(
+      orgId,
+      input.pmWorkspaceId,
+    );
     try {
       const [row] = await this.db
         .insert(projectTeams)

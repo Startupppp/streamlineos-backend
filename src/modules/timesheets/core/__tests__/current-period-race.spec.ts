@@ -52,6 +52,7 @@ function harness(opts: { existsOnFirstRead: boolean; insertWins: boolean }) {
   const reader = {
     getSettings: async () => ({ workWeekStart: 1 }),
     getPeriodWithUser: async (_org: string, id: number) => ({ id, userMembershipId: 5, status: "OPEN" }),
+    listPeriodEntries: async () => [],
     mapPeriod: (row: unknown) => row,
   };
   const service = new PeriodsService(db, reader as never, {} as never, {} as never, {} as never);

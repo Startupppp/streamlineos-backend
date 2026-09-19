@@ -64,9 +64,12 @@ export const loanRowSchema = z.object({
   updatedAt: wireDate(),
 });
 
-export const loanRowWithUserAndBalanceSchema = loanRowSchema.extend({
-  user: relatedUserSchema,
+export const loanRowWithBalanceSchema = loanRowSchema.extend({
   balance: z.string(),
+});
+
+export const loanRowWithUserAndBalanceSchema = loanRowWithBalanceSchema.extend({
+  user: relatedUserSchema,
 });
 
 export const essLoansListSchema = z.array(loanRowWithUserAndBalanceSchema);

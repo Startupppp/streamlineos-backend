@@ -1,68 +1,109 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { tool } from "ai";
 import { z } from "zod";
-import { and, eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { organizationMembers, users } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
-import { ToolAccessService } from "./tool-access.service";
-import { CalendarService } from "../../calendar/calendar.service";
-import { ChatChannelsService } from "../../chat/chat-channels.service";
-import { ChatMessagesService } from "../../chat/chat-messages.service";
-import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { AI_EVENT_TIMEZONE } from "./ai-event-timezone";
+import { AiConfirmationService } from "../confirmation/ai-confirmation.service";
+import { displayNameFrom } from "./services/ask-os-actor";
+import {
+  defineTool,
+  data,
+  empty,
+  needsConfirmation,
+  type AskOsToolDefinition,
+  type AskOsToolProvider,
+} from "./registry/ask-os-tool.types";
 
-export interface CommsCopilotContext {
-  actor: CurrentUserContext;
+export const MIN_NAME_MATCH_CHARS = 2;
+export const MEMBER_SCAN_CAP = 500;
+
+interface ResolvedAttendees {
+  resolved: string[];
+  unresolved: string[];
+  ambiguous: string[];
 }
 
 @Injectable()
-export class CommsCopilotTools {
+export class CommsCopilotTools implements AskOsToolProvider {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
-    private readonly toolAccess: ToolAccessService,
-    private readonly calendar: CalendarService,
-    private readonly chatChannels: ChatChannelsService,
-    private readonly chatMessages: ChatMessagesService,
+    private readonly confirmation: AiConfirmationService,
   ) {}
 
-  private async resolveAttendeeIds(orgId: string, names: string[]): Promise<{ resolved: string[]; unresolved: string[] }> {
-    if (names.length === 0) return { resolved: [], unresolved: [] };
-
+  private async resolveMemberName(orgId: string, userId: string): Promise<string> {
     const rows = await this.db
-      .select({ id: users.id, firstName: users.firstName, lastName: users.lastName, name: users.name })
+      .select({
+        name: users.name,
+        firstName: users.firstName,
+        lastName: users.lastName,
+        email: users.email,
+      })
       .from(organizationMembers)
       .innerJoin(users, eq(organizationMembers.userId, users.id))
-      .where(and(eq(organizationMembers.orgId, orgId), eq(users.isActive, true)));
+      .where(and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.userId, userId)))
+      .limit(1);
+    const row = rows[0];
+    return row ? displayNameFrom(row) : userId;
+  }
+
+  private async resolveAttendeeIds(orgId: string, names: string[]): Promise<ResolvedAttendees> {
+    const needles = names
+      .map((name) => name.trim().toLowerCase())
+      .filter((name) => name.length >= MIN_NAME_MATCH_CHARS);
+    if (needles.length === 0)
+      return { resolved: [], unresolved: names.map((name) => name.trim()).filter(Boolean), ambiguous: [] };
+
+    const rows = await this.db
+      .select({
+        id: users.id,
+        firstName: users.firstName,
+        lastName: users.lastName,
+        name: users.name,
+        email: users.email,
+      })
+      .from(organizationMembers)
+      .innerJoin(users, eq(organizationMembers.userId, users.id))
+      .where(
+        and(
+          eq(organizationMembers.orgId, orgId),
+          eq(organizationMembers.status, "ACTIVE"),
+          eq(users.isActive, true),
+          isNull(users.deletedAt),
+        ),
+      )
+      .limit(MEMBER_SCAN_CAP);
 
     const resolved: string[] = [];
     const unresolved: string[] = [];
+    const ambiguous: string[] = [];
 
-    for (const name of names) {
-      const lower = name.toLowerCase();
-      const match = rows.find((r) => {
-        const full = `${r.firstName ?? ""} ${r.lastName ?? ""}`.toLowerCase().trim();
-        const display = (r.name ?? "").toLowerCase();
-        return full.includes(lower) || display.includes(lower) || lower.includes((r.firstName ?? "").toLowerCase());
-      });
-      if (match) {
-        resolved.push(match.id);
-      } else {
-        unresolved.push(name);
+    for (const needle of needles) {
+      const matches = rows.filter((row) =>
+        displayNameFrom(row).toLowerCase().includes(needle),
+      );
+      if (matches.length === 0) {
+        unresolved.push(needle);
+        continue;
       }
+      const only = matches[0];
+      if (matches.length > 1 || !only) {
+        ambiguous.push(needle);
+        continue;
+      }
+      resolved.push(only.id);
     }
 
-    return { resolved, unresolved };
+    return { resolved, unresolved, ambiguous };
   }
 
-  buildTools(ctx: CommsCopilotContext) {
-    const { orgId, userId } = ctx.actor;
-
-    return {
-      scheduleEvent: tool({
+  tools(): AskOsToolDefinition[] {
+    return [
+      defineTool({
+        key: "scheduleEvent",
         description:
           "Schedule a calendar event or meeting. Only call this after confirming the event title, date, time, and attendees with the user.",
-        inputSchema: z.object({
+        input: z.object({
           title: z.string().min(2).max(100).describe("Event title"),
           startDate: z.string().describe("ISO 8601 start datetime, e.g. 2026-07-10T10:00:00.000Z"),
           endDate: z.string().describe("ISO 8601 end datetime, e.g. 2026-07-10T11:00:00.000Z"),
@@ -70,82 +111,94 @@ export class CommsCopilotTools {
           location: z.string().optional().describe("Event location or meeting link"),
           description: z.string().optional().describe("Event description or agenda"),
         }),
-        execute: async ({ title, startDate, endDate, attendeeNames, location, description }) => {
-          const deny = await this.toolAccess.denyReason(orgId, userId, "calendar:write");
-          if (deny) return { denied: true, reason: deny };
+        permission: "calendar:write",
+        module: "calendar",
+        run: async ({ title, startDate, endDate, attendeeNames, location, description }, ctx) => {
+          const { orgId, userId, timezone } = ctx.actor;
+          const { resolved, unresolved, ambiguous } = await this.resolveAttendeeIds(orgId, attendeeNames ?? []);
 
-          const { resolved, unresolved } = await this.resolveAttendeeIds(orgId, attendeeNames ?? []);
+          if (ambiguous.length > 0)
+            return data({
+              ambiguous: true,
+              reason: `"${ambiguous.join('", "')}" matches more than one member. Ask which was meant.`,
+            });
 
-          const { event } = await this.calendar.createEvent(orgId, userId, {
+          const payload: Record<string, unknown> = {
             title,
             startDate,
             endDate,
-            timezone: AI_EVENT_TIMEZONE,
+            timezone,
             attendeeIds: resolved,
-            location,
-            description,
-            category: "meeting",
-            color: "blue",
+          };
+          if (location !== undefined) payload.location = location;
+          if (description !== undefined) payload.description = description;
+
+          const proposal = await this.confirmation.propose({
+            orgId,
+            userId,
+            action: "calendar.scheduleMeeting",
+            payload,
           });
 
-          const start = new Date(startDate);
-          const dateStr = start.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric", year: "numeric" });
-          const timeStr = `${start.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })} – ${new Date(endDate).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}`;
+          const note =
+            unresolved.length > 0 ? ` Could not match: ${unresolved.join(", ")}.` : "";
 
-          const note = unresolved.length > 0
-            ? ` Note: could not find org members matching: ${unresolved.join(", ")}.`
-            : "";
-
-          return {
-            success: true,
-            eventId: event?.id,
-            message: `Event "${title}" scheduled for ${dateStr} at ${timeStr}${resolved.length > 0 ? ` with ${resolved.length} attendee(s)` : ""}.${note}`,
-          };
+          return needsConfirmation({
+            proposalId: proposal.proposalId,
+            token: proposal.token,
+            expiresAt: proposal.expiresAt,
+            action: "calendar.scheduleMeeting",
+            summary: `Schedule "${title}" with ${resolved.length} attendee(s).${note}`,
+            preview: { title, startDate, endDate, timezone, attendees: resolved.length, location },
+          });
         },
       }),
 
-      sendDirectMessage: tool({
+      defineTool({
+        key: "sendDirectMessage",
         description:
           "Send a direct message to a team member by name on the user's behalf. Only call this after confirming the recipient name and message content with the user.",
-        inputSchema: z.object({
+        input: z.object({
           recipientName: z.string().describe("The name (or partial name) of the team member to message"),
           message: z.string().min(1).max(5000).describe("The message content to send"),
         }),
-        execute: async ({ recipientName, message }) => {
-          const deny = await this.toolAccess.denyReason(orgId, userId, "chat:messages:write");
-          if (deny) return { denied: true, reason: deny };
+        permission: "chat:messages:write",
+        module: "chat",
+        run: async ({ recipientName, message }, ctx) => {
+          const { orgId, userId } = ctx.actor;
+          const { resolved, unresolved, ambiguous } = await this.resolveAttendeeIds(orgId, [recipientName]);
 
-          const { resolved, unresolved } = await this.resolveAttendeeIds(orgId, [recipientName]);
-
-          if (unresolved.length > 0) {
-            return {
-              success: false,
-              message: `Could not find a team member matching "${recipientName}". Please check the name and try again.`,
-            };
-          }
-
-          const targetUserId = resolved[0];
-
-          try {
-            const { channel } = await this.chatChannels.createChannel(orgId, userId, {
-              type: "DIRECT",
-              targetUserId,
+          if (ambiguous.length > 0)
+            return data({
+              ambiguous: true,
+              reason: `"${recipientName}" matches more than one member. Ask which was meant.`,
             });
 
-            await this.chatMessages.send(channel.id, userId, orgId, { content: message });
+          if (unresolved.length > 0) return empty("recipient", `No member found matching "${recipientName}".`);
 
-            return {
-              success: true,
-              message: `Message sent to ${recipientName} successfully.`,
-            };
-          } catch {
-            return {
-              success: false,
-              message: `Failed to send the message. Please try again later.`,
-            };
-          }
+          const targetUserId = resolved[0];
+          if (targetUserId === undefined)
+            return empty("recipient", `No member found matching "${recipientName}".`);
+
+          const recipient = await this.resolveMemberName(orgId, targetUserId);
+
+          const proposal = await this.confirmation.propose({
+            orgId,
+            userId,
+            action: "chat.sendDirect",
+            payload: { targetUserId, message },
+          });
+
+          return needsConfirmation({
+            proposalId: proposal.proposalId,
+            token: proposal.token,
+            expiresAt: proposal.expiresAt,
+            action: "chat.sendDirect",
+            summary: `Send a direct message to ${recipient}`,
+            preview: { recipient, message },
+          });
         },
       }),
-    };
+    ];
   }
 }

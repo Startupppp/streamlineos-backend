@@ -19,7 +19,12 @@ const row = {
   version: 1, deletedAt: null, createdAt: new Date(), updatedAt: new Date(),
   project: { id: 42, orgId: "org-1", name: "Project", key: "BUILD" }, sprint: null,
   assignee: { user }, reporter: null, assignees: [{ user: { user } }],
-  watchers: [{ user: { user } }], comments: [],
+  watchers: [{ user: { user } }],
+  comments: [{
+    id: 9, orgId: "org-1", ticketId: 1, userId: "user-1", content: "hi",
+    parentCommentId: null, createdAt: new Date(), updatedAt: new Date(),
+    user, reactions: [{ emoji: "👍", membership: { userId: "user-1" } }],
+  }],
   attachments: [{ id: 3, fileName: "notes.txt", fileUrl: "https://example.test/notes", uploader: user }],
   labels: [{ label: { id: 4, name: "Bug", color: null } }],
 };
@@ -41,6 +46,7 @@ it.each(["id", "key"])("returns the complete existing detail contract for %s loo
     expect(parsed.watchers[0]?.user).toEqual(user);
     expect(parsed.attachments[0]).toMatchObject({ filename: "notes.txt", url: "https://example.test/notes" });
     expect(parsed.labels[0]?.name).toBe("Bug");
+    expect(parsed.comments[0]?.reactions).toEqual([{ emoji: "👍", userId: "user-1" }]);
     expect(findFirst).toHaveBeenCalledTimes(2);
   } finally { await module.close(); }
 });

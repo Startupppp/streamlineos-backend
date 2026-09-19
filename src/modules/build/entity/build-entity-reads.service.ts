@@ -22,6 +22,14 @@ import {
   type EntityReference,
   type EntityResolution,
 } from "../../entity-reference/entity-reference.types";
+import {
+  buildIncidentHref,
+  buildProjectHref,
+  buildReleaseListHref,
+  buildSprintListHref,
+  buildTicketHref,
+  buildTicketKey,
+} from "../core/build-app-paths";
 
 const READ_KEY: Record<string, string> = {
   ticket: "build:tickets:view",
@@ -265,6 +273,7 @@ export class BuildEntityReadsService {
             title: tickets.title,
             status: tickets.status,
             ticketNumber: tickets.ticketNumber,
+            projectId: tickets.projectId,
             projectKey: projects.key,
           })
           .from(tickets)
@@ -278,7 +287,10 @@ export class BuildEntityReadsService {
           title: row.title,
           subtitle: `${row.projectKey}-${row.ticketNumber}`,
           status: row.status,
-          href: `/build/tickets/${row.id}`,
+          href: buildTicketHref(
+            row.projectId,
+            buildTicketKey(row.projectKey, row.ticketNumber),
+          ),
         }));
       },
       () => new Map<number, EntityCard>(),
@@ -321,7 +333,7 @@ export class BuildEntityReadsService {
           title: row.name,
           subtitle: row.key,
           status: row.status,
-          href: `/build/projects/${row.id}`,
+          href: buildProjectHref(row.id),
         }));
       },
       () => new Map<number, EntityCard>(),
@@ -357,7 +369,7 @@ export class BuildEntityReadsService {
       title: row.name,
       subtitle: null,
       status: row.status,
-      href: `/build/projects/${row.projectId}/sprints`,
+      href: buildSprintListHref(row.projectId),
     }));
   }
 
@@ -391,7 +403,7 @@ export class BuildEntityReadsService {
       title: row.name,
       subtitle: row.version,
       status: row.status,
-      href: `/build/projects/${row.projectId}/releases`,
+      href: buildReleaseListHref(row.projectId),
     }));
   }
 
@@ -426,7 +438,7 @@ export class BuildEntityReadsService {
       title: row.title,
       subtitle: `#${row.incidentNumber} · ${row.severity}`,
       status: row.status,
-      href: `/build/incidents/${row.id}`,
+      href: buildIncidentHref(row.projectId, row.id),
     }));
   }
 

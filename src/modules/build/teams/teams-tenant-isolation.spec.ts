@@ -19,7 +19,10 @@ describe("TeamsService — cross-tenant isolation", () => {
   const ATTACKER_ORG = "org-attacker";
 
   const audit = { log: jest.fn() } as never;
-  const pmWorkspaces = { resolveDefaultWorkspaceId: jest.fn().mockResolvedValue(1) } as never;
+  const pmWorkspaces = {
+    resolveDefaultWorkspaceId: jest.fn().mockResolvedValue(1),
+    resolveWorkspaceIdForWrite: jest.fn().mockResolvedValue(1),
+  } as never;
 
   function makeSelectDb(firstCallRows: unknown[], subsequentRows: unknown[] = []) {
     const limit = jest.fn()

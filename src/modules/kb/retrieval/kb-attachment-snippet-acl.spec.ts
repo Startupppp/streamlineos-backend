@@ -76,11 +76,11 @@ function makeHarness(options: { scope?: string; isAdmin?: boolean } = {}) {
   return { service, wheres };
 }
 
-describe("retrieveAttachmentSnippets applies the article ACL itself", () => {
+describe("retrieveDocumentPassages applies the article ACL itself", () => {
   it("binds the caller's org and the published status to kb_articles, not just the id list", async () => {
     const { service, wheres } = makeHarness();
 
-    await service.retrieveAttachmentSnippets(makeUser(), "expense policy", ARTICLE_IDS);
+    await service.retrieveDocumentPassages(makeUser(), "expense policy", ARTICLE_IDS);
 
     expect(wheres).toHaveLength(1);
     const where = wheres[0];
@@ -95,7 +95,7 @@ describe("retrieveAttachmentSnippets applies the article ACL itself", () => {
   it("pushes the per-article restriction subquery for a non-admin reader", async () => {
     const { service, wheres } = makeHarness();
 
-    await service.retrieveAttachmentSnippets(makeUser(), "expense policy", ARTICLE_IDS);
+    await service.retrieveDocumentPassages(makeUser(), "expense policy", ARTICLE_IDS);
 
     const { text } = render(wheres[0]);
     expect(text).toContain("kb_article_restrictions");
@@ -105,7 +105,7 @@ describe("retrieveAttachmentSnippets applies the article ACL itself", () => {
   it("narrows an own-scoped reader to their own articles", async () => {
     const { service, wheres } = makeHarness({ scope: "own" });
 
-    await service.retrieveAttachmentSnippets(makeUser(), "expense policy", ARTICLE_IDS);
+    await service.retrieveDocumentPassages(makeUser(), "expense policy", ARTICLE_IDS);
 
     const { text, params } = render(wheres[0]);
     const owner = /"kb_articles"\."owner_membership_id"\s*=\s*\$(\d+)/.exec(text);
@@ -116,7 +116,7 @@ describe("retrieveAttachmentSnippets applies the article ACL itself", () => {
   it("denies outright when the reader holds no scope for kb:articles:view", async () => {
     const { service, wheres } = makeHarness({ scope: "none" });
 
-    await service.retrieveAttachmentSnippets(makeUser(), "expense policy", ARTICLE_IDS);
+    await service.retrieveDocumentPassages(makeUser(), "expense policy", ARTICLE_IDS);
 
     expect(render(wheres[0]).text).toContain("false");
   });
@@ -124,7 +124,7 @@ describe("retrieveAttachmentSnippets applies the article ACL itself", () => {
   it("leaves a kb:spaces:manage holder unrestricted, matching the direct read path", async () => {
     const { service, wheres } = makeHarness({ isAdmin: true });
 
-    await service.retrieveAttachmentSnippets(makeUser(), "expense policy", ARTICLE_IDS);
+    await service.retrieveDocumentPassages(makeUser(), "expense policy", ARTICLE_IDS);
 
     const { text } = render(wheres[0]);
     expect(text).not.toContain("kb_article_restrictions");

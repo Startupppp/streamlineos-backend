@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { NextFunction, Request, Response } from "express";
 import { runWithObservabilityContext } from "../observability/observability-context";
+import { resolveClientIp } from "./client-ip";
 import {
   formatTraceparent,
   parseTraceparent,
@@ -73,7 +74,14 @@ export function correlationIdMiddleware(
    * appearing as an orphan trace.
    */
   runWithObservabilityContext(
-    { correlationId, method: req.method, route: req.path, cellId: PROCESS_CELL_ID, release: currentRelease() },
+    {
+      correlationId,
+      method: req.method,
+      route: req.path,
+      cellId: PROCESS_CELL_ID,
+      release: currentRelease(),
+      ipAddress: resolveClientIp(req),
+    },
     () => {
       const open = startSpan(`${req.method} ${req.path}`, {
         parent: parseTraceparent(req.headers[TRACEPARENT_HEADER] as string | undefined),

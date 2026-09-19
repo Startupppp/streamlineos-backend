@@ -106,7 +106,7 @@ describe("BuildEntityAdapter", () => {
 
     const allowed = makeAdapter(
       ["build:tickets:view"],
-      [{ id: 1, title: "T", status: "TODO", ticketNumber: 3, projectKey: "W" }],
+      [{ id: 1, title: "T", status: "TODO", ticketNumber: 3, projectId: 1, projectKey: "W" }],
     );
     const [result] = await allowed.adapter.resolve(ACTOR, [
       { type: "task", id: "1" },
@@ -120,7 +120,7 @@ describe("BuildEntityAdapter", () => {
         title: "T",
         subtitle: "W-3",
         status: "TODO",
-        href: "/build/tickets/1",
+        href: "/build/1/tickets/W-3",
       },
     });
   });
@@ -194,6 +194,7 @@ describe("BuildEntityAdapter", () => {
           title: "Login is broken",
           status: "IN_PROGRESS",
           ticketNumber: 42,
+          projectId: 1,
           projectKey: "WEB",
         },
       ],
@@ -211,7 +212,7 @@ describe("BuildEntityAdapter", () => {
         title: "Login is broken",
         subtitle: "WEB-42",
         status: "IN_PROGRESS",
-        href: "/build/tickets/12",
+        href: "/build/1/tickets/WEB-42",
       },
     });
   });

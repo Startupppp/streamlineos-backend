@@ -1,62 +1,85 @@
 import { Injectable, Inject } from "@nestjs/common";
-import { tool } from "ai";
 import { z } from "zod";
 import { sql } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
-import { ToolAccessService } from "./tool-access.service";
 import { AiGatewayService } from "./gateway/ai-gateway.service";
+import {
+  type AskOsToolDefinition,
+  type AskOsToolProvider,
+  defineTool,
+  data,
+  empty,
+  failed,
+} from "./registry/ask-os-tool.types";
 
-export interface HrToolContext {
-  orgId: string;
-  userId: string;
+const HR_POLICY_CAP = 10;
+const MAX_POLICY_DESCRIPTION_CHARS = 1_000;
+const MAX_POLICY_RULES_CHARS = 1_500;
+
+function policyTitle(policy: Record<string, unknown>): string {
+  const name = typeof policy.name === "string" ? policy.name.trim() : "";
+  return name || `Untitled ${String(policy.policy_type)} policy`;
+}
+
+function renderPolicyForPrompt(policy: Record<string, unknown>): string {
+  const description =
+    typeof policy.description === "string" && policy.description.trim()
+      ? policy.description.trim().slice(0, MAX_POLICY_DESCRIPTION_CHARS)
+      : "(no description recorded)";
+  const rules =
+    policy.rules === null || policy.rules === undefined
+      ? "(no rules recorded)"
+      : JSON.stringify(policy.rules).slice(0, MAX_POLICY_RULES_CHARS);
+  return [
+    `Policy: ${policyTitle(policy)}`,
+    `Type: ${String(policy.policy_type)}`,
+    `Description: ${description}`,
+    `Rules: ${rules}`,
+  ].join("\n");
 }
 
 @Injectable()
-export class HrCopilotTools {
+export class HrCopilotTools implements AskOsToolProvider {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
-    private readonly toolAccess: ToolAccessService,
     private readonly gateway: AiGatewayService,
   ) {}
 
-  buildTools(ctx: HrToolContext) {
-    const { orgId, userId } = ctx;
-
-    return {
-      askHrPolicy: tool({
+  tools(): AskOsToolDefinition[] {
+    return [
+      defineTool({
+        key: "askHrPolicy",
         description:
           "Answer questions about HR policies, company rules, leave entitlements, attendance rules, code of conduct, or any policy-related question. Searches active HR policies and returns an answer with source citations.",
-        inputSchema: z.object({
+        input: z.object({
           question: z.string().min(1).describe("The HR policy question to answer"),
         }),
-        execute: async ({ question }) => {
-          const deny = await this.toolAccess.denyReason(orgId, userId, "hr:policies:view");
-          if (deny) return { denied: true, reason: deny };
+        permission: "hr:policies:view",
+        module: "hr",
+        run: async ({ question }, ctx) => {
+          const { orgId, userId } = ctx.actor;
 
           const policies = await this.db.execute(sql`
-            SELECT id, policy_type, status, created_at
+            SELECT id, policy_type, name, description, rules, status, created_at
             FROM hr_policies
             WHERE org_id = ${orgId}
               AND status = 'active'
+              AND deleted_at IS NULL
+              AND effective_from <= CURRENT_DATE
+              AND (effective_to IS NULL OR effective_to >= CURRENT_DATE)
             ORDER BY created_at DESC
-            LIMIT 10
+            LIMIT ${HR_POLICY_CAP}
           `);
 
           if (!policies || policies.length === 0) {
-            return {
-              answer:
-                "No active HR policies found for your organization. Please contact HR to set up policies.",
-              sources: [],
-            };
+            return empty(
+              "hr policies",
+              "No active HR policies found for your organization. Please contact HR to set up policies.",
+            );
           }
 
-          const policyList = policies
-            .map(
-              (p: Record<string, unknown>) =>
-                `Policy type: ${String(p.policy_type)}`,
-            )
-            .join("\n");
+          const policyList = policies.map(renderPolicyForPrompt).join("\n\n");
 
           const result = await this.gateway.invokeText({
             actor: { orgId, userId },
@@ -70,32 +93,32 @@ export class HrCopilotTools {
           });
 
           if (!result.ok) {
-            if (result.kind === "quota_exceeded") {
-              return { answer: "AI credits exhausted. Please top up your AI credits and try again.", sources: [] };
-            }
-            return {
-              answer: `Your organization has ${policies.length} active policies covering: ${policies.map((p: Record<string, unknown>) => String(p.policy_type)).join(", ")}. For specific details, please contact HR.`,
-              sources: [],
-            };
+            return failed(
+              result.kind === "quota_exceeded"
+                ? "AI credits exhausted. Please top up your AI credits and try again."
+                : "AI gateway failed. No content was generated. Please try again later.",
+            );
           }
 
-          return {
+          return data({
             answer: result.data,
             sources: policies.map((p: Record<string, unknown>) => ({
+              policyId: Number(p.id),
               policyType: String(p.policy_type),
               status: String(p.status),
-              citation: `HR Policy: ${String(p.policy_type)} (active)`,
+              citation: `${policyTitle(p)} (${String(p.policy_type)}, active)`,
             })),
             disclaimer:
               "AI-generated response based on your organization's active HR policies. For official decisions, consult your HR department.",
-          };
+          });
         },
       }),
 
-      getHeadcountSummary: tool({
+      defineTool({
+        key: "getHeadcountSummary",
         description:
           "Get a summary of current headcount: total employees, active count, employees on probation, employees serving notice. Use when asked about employee numbers or workforce size.",
-        inputSchema: z.object({
+        input: z.object({
           departmentId: z
             .number()
             .int()
@@ -103,9 +126,10 @@ export class HrCopilotTools {
             .optional()
             .describe("Optional department ID to filter by"),
         }),
-        execute: async ({ departmentId }) => {
-          const deny = await this.toolAccess.denyReason(orgId, userId, "hr:analytics:read");
-          if (deny) return { denied: true, reason: deny };
+        permission: "hr:analytics:read",
+        module: "hr",
+        run: async ({ departmentId }, ctx) => {
+          const { orgId } = ctx.actor;
 
           const rows = await this.db.execute(sql`
             SELECT
@@ -120,23 +144,25 @@ export class HrCopilotTools {
           `);
 
           const row = rows[0];
-          return {
+          return data({
             total: Number(row?.total ?? 0),
             active: Number(row?.active ?? 0),
             probation: Number(row?.probation ?? 0),
             notice: Number(row?.notice ?? 0),
             scope: departmentId !== undefined ? `Department ${departmentId}` : "All departments",
-          };
+          });
         },
       }),
 
-      getAttritionSummary: tool({
+      defineTool({
+        key: "getAttritionSummary",
         description:
           "Get attrition statistics: number of exits in the past 12 months and attrition rate. Use when asked about turnover, attrition, or how many people left.",
-        inputSchema: z.object({}),
-        execute: async () => {
-          const deny = await this.toolAccess.denyReason(orgId, userId, "hr:analytics:read");
-          if (deny) return { denied: true, reason: deny };
+        input: z.object({}),
+        permission: "hr:analytics:read",
+        module: "hr",
+        run: async (_input, ctx) => {
+          const { orgId } = ctx.actor;
 
           const twelveMonthsAgo = new Date();
           twelveMonthsAgo.setMonth(twelveMonthsAgo.getMonth() - 12);
@@ -156,34 +182,33 @@ export class HrCopilotTools {
           const total = Number(row?.total_headcount ?? 0);
           const rate = total > 0 ? ((exits / total) * 100).toFixed(1) : "0.0";
 
-          return {
+          return data({
             exitsLast12Months: exits,
             totalHeadcount: total,
             attritionRatePercent: rate,
             period: "Last 12 months",
-          };
+          });
         },
       }),
 
-      draftPerformanceReviewNote: tool({
+      defineTool({
+        key: "draftPerformanceReviewNote",
         description:
           "Draft a performance review note for a specific employee. Returns a DRAFT only -- requires human review and approval before use. Never auto-saves or sends anything.",
-        inputSchema: z.object({
+        input: z.object({
           employeeId: z.string().describe("The user ID of the employee being reviewed"),
           reviewPeriod: z.string().describe("The review period (e.g. Q2 2026, Annual 2025)"),
           keyAchievements: z.string().optional().describe("Key achievements to highlight"),
           areasForImprovement: z.string().optional().describe("Areas for development"),
           overallRating: z.number().min(1).max(5).optional().describe("Rating from 1 to 5"),
         }),
-        execute: async ({
-          employeeId,
-          reviewPeriod,
-          keyAchievements,
-          areasForImprovement,
-          overallRating,
-        }) => {
-          const deny = await this.toolAccess.denyReason(orgId, userId, "hr:performance:manage");
-          if (deny) return { denied: true, reason: deny };
+        permission: "hr:performance:manage",
+        module: "hr",
+        run: async (
+          { employeeId, reviewPeriod, keyAchievements, areasForImprovement, overallRating },
+          ctx,
+        ) => {
+          const { orgId, userId } = ctx.actor;
 
           const empRows = await this.db.execute(sql`
             SELECT p.first_name, p.last_name
@@ -192,11 +217,14 @@ export class HrCopilotTools {
             WHERE e.org_id = ${orgId}
               AND p.user_id = ${employeeId}
               AND e.deleted_at IS NULL
+              AND p.deleted_at IS NULL
             LIMIT 1
           `);
 
           const emp = empRows[0];
-          const empName = emp ? `${emp.first_name} ${emp.last_name}` : employeeId;
+          const empName = emp
+            ? `${String(emp.first_name)} ${String(emp.last_name)}`
+            : employeeId;
 
           const result = await this.gateway.invokeText({
             actor: { orgId, userId },
@@ -217,21 +245,14 @@ export class HrCopilotTools {
           });
 
           if (!result.ok) {
-            if (result.kind === "quota_exceeded") {
-              return {
-                draft: "AI credits exhausted. Please top up your AI credits and try again.",
-                disclaimer: "DRAFT -- Requires human review and approval.",
-                requiresApproval: true,
-              };
-            }
-            return {
-              draft: `Performance review draft for ${empName} (${reviewPeriod}):\n\nUnable to generate draft at this time. Please write the review manually based on the provided inputs.`,
-              disclaimer: "DRAFT -- Requires human review and approval.",
-              requiresApproval: true,
-            };
+            return failed(
+              result.kind === "quota_exceeded"
+                ? "AI credits exhausted. Please top up your AI credits and try again."
+                : "AI gateway failed. No content was generated. Please try again later.",
+            );
           }
 
-          return {
+          return data({
             draft: result.data,
             employee: empName,
             period: reviewPeriod,
@@ -239,23 +260,25 @@ export class HrCopilotTools {
             disclaimer:
               "DRAFT -- AI-generated suggestion. Requires human review, editing, and approval before any official use. Do not share with the employee until reviewed.",
             requiresApproval: true,
-          };
+          });
         },
       }),
 
-      draftPromotionLetter: tool({
+      defineTool({
+        key: "draftPromotionLetter",
         description:
           "Draft a promotion letter for an employee. Returns a DRAFT only -- does not save or send anything. Requires explicit human approval before any official use.",
-        inputSchema: z.object({
+        input: z.object({
           employeeId: z.string().describe("User ID of the employee being promoted"),
           newTitle: z.string().describe("The new job title"),
           newGrade: z.string().optional().describe("New grade or level"),
           effectiveDate: z.string().describe("Effective date of promotion (YYYY-MM-DD)"),
           additionalContext: z.string().optional().describe("Additional context for the letter"),
         }),
-        execute: async ({ employeeId, newTitle, newGrade, effectiveDate, additionalContext }) => {
-          const deny = await this.toolAccess.denyReason(orgId, userId, "hr:employees:update");
-          if (deny) return { denied: true, reason: deny };
+        permission: "hr:employees:update",
+        module: "hr",
+        run: async ({ employeeId, newTitle, newGrade, effectiveDate, additionalContext }, ctx) => {
+          const { orgId, userId } = ctx.actor;
 
           const empRows = await this.db.execute(sql`
             SELECT p.first_name, p.last_name, e.designation
@@ -264,12 +287,16 @@ export class HrCopilotTools {
             WHERE e.org_id = ${orgId}
               AND p.user_id = ${employeeId}
               AND e.deleted_at IS NULL
+              AND p.deleted_at IS NULL
             LIMIT 1
           `);
 
           const emp = empRows[0];
-          const empName = emp ? `${emp.first_name} ${emp.last_name}` : employeeId;
-          const currentTitle = emp?.designation ?? "current role";
+          const empName = emp
+            ? `${String(emp.first_name)} ${String(emp.last_name)}`
+            : employeeId;
+          const currentTitle =
+            emp?.designation != null ? String(emp.designation) : "current role";
 
           const result = await this.gateway.invokeText({
             actor: { orgId, userId },
@@ -292,23 +319,14 @@ export class HrCopilotTools {
           });
 
           if (!result.ok) {
-            if (result.kind === "quota_exceeded") {
-              return {
-                draft: "AI credits exhausted. Please top up your AI credits and try again.",
-                disclaimer: "DRAFT -- Requires human review and approval.",
-                requiresApproval: true,
-                autoSaved: false,
-              };
-            }
-            return {
-              draft: `Dear ${empName},\n\nWe are pleased to inform you of your promotion to ${newTitle} effective ${effectiveDate}.\n\n[Please complete this letter with specific achievements and expectations.]\n\nCongratulations,\nHR Department`,
-              disclaimer: "DRAFT -- Requires human review and approval.",
-              requiresApproval: true,
-              autoSaved: false,
-            };
+            return failed(
+              result.kind === "quota_exceeded"
+                ? "AI credits exhausted. Please top up your AI credits and try again."
+                : "AI gateway failed. No content was generated. Please try again later.",
+            );
           }
 
-          return {
+          return data({
             draft: result.data,
             employee: empName,
             newTitle,
@@ -317,17 +335,19 @@ export class HrCopilotTools {
               "DRAFT -- AI-generated promotion letter. Must be reviewed and approved by HR leadership, then signed by an authorized representative before delivery. Do NOT send to the employee without authorization.",
             requiresApproval: true,
             autoSaved: false,
-          };
+          });
         },
       }),
 
-      getMoodTrend: tool({
+      defineTool({
+        key: "getMoodTrend",
         description:
           "Get the mood check-in trend for the organization over the past 30 days, broken down by week. Use when asked about team morale, mood, or wellbeing trends.",
-        inputSchema: z.object({}),
-        execute: async () => {
-          const deny = await this.toolAccess.denyReason(orgId, userId, "hr:engagement:view");
-          if (deny) return { denied: true, reason: deny };
+        input: z.object({}),
+        permission: "hr:engagement:view",
+        module: "hr",
+        run: async (_input, ctx) => {
+          const { orgId } = ctx.actor;
 
           const thirtyDaysAgo = new Date();
           thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
@@ -345,42 +365,43 @@ export class HrCopilotTools {
             ORDER BY week_start ASC
           `);
 
-          const weeks = rows;
-
-          if (weeks.length === 0) {
-            return {
+          if (rows.length === 0) {
+            return data({
               trend: [],
               summary: "No mood check-in data available for the past 30 days.",
               period: "Last 30 days",
-            };
+            });
           }
 
-          const latest = weeks[weeks.length - 1];
-          const oldest = weeks[0];
+          const latest = rows[rows.length - 1];
+          const oldest = rows[0];
           const latestAvg = Number(latest?.avg_mood ?? 0);
           const oldestAvg = Number(oldest?.avg_mood ?? 0);
           const direction =
             latestAvg > oldestAvg ? "improving" : latestAvg < oldestAvg ? "declining" : "stable";
 
-          return {
-            trend: weeks.map((w) => ({
+          return data({
+            trend: rows.map((w: Record<string, unknown>) => ({
               weekStart: String(w.week_start).split("T")[0],
               averageMood: Number(w.avg_mood),
               checkInCount: Number(w.checkin_count),
             })),
             summary: `Team mood is ${direction}. Latest week average: ${latestAvg.toFixed(1)}/5 from ${Number(latest?.checkin_count ?? 0)} check-ins.`,
             period: "Last 30 days",
-          };
+          });
         },
       }),
 
-      getLeaveUtilization: tool({
+      defineTool({
+        key: "getLeaveUtilization",
         description:
           "Get leave utilization statistics: how many employees are currently on leave, pending leave requests, and leave approved this month. Use when asked about leave usage or who is out.",
-        inputSchema: z.object({}),
-        execute: async () => {
-          const deny = await this.toolAccess.denyReason(orgId, userId, "hr:leaves:view");
-          if (deny) return { denied: true, reason: deny };
+        input: z.object({}),
+        permission: "hr:leaves:view",
+        module: "hr",
+        run: async (_input, ctx) => {
+          const { orgId, userId } = ctx.actor;
+          const selfFilter = ctx.scope === "all" ? sql`` : sql`AND user_id = ${userId}`;
 
           const today = new Date().toISOString().split("T")[0];
           const monthStart = new Date();
@@ -401,17 +422,18 @@ export class HrCopilotTools {
               ) AS approved_this_month
             FROM leave_requests
             WHERE org_id = ${orgId}
+            ${selfFilter}
           `);
 
           const row = rows[0];
-          return {
+          return data({
             currentlyOnLeave: Number(row?.currently_on_leave ?? 0),
             pendingRequests: Number(row?.pending_requests ?? 0),
             approvedThisMonth: Number(row?.approved_this_month ?? 0),
             asOf: today,
-          };
+          });
         },
       }),
-    };
+    ];
   }
 }

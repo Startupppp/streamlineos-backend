@@ -77,6 +77,7 @@ function makeController(payload: Record<string, unknown>) {
     {} as never,
     {} as never,
     {} as never,
+    {} as never,
     confirmation as never,
     { denyReason: jest.fn().mockResolvedValue(null) } as never,
     moduleRef as never,

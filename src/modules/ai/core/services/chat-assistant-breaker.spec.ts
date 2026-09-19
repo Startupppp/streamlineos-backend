@@ -21,6 +21,10 @@ import { ChatAssistantService } from "./chat-assistant.service";
 import { type AiCreditLedger } from "../gateway/credit-ledger.interface";
 import type { AiUsageService } from "./ai-usage.service";
 import { humanSessionPrincipal } from "../../../../common/auth/principal";
+import { AiGatewayService } from "../gateway/ai-gateway.service";
+import { AiGatewayStreamHelper, type AiStreamTextOpts } from "../gateway/ai-gateway-stream.helper";
+import { AiConcurrencyLimiter } from "../gateway/ai-concurrency-limiter";
+import { AccessService } from "../../../access/access.service";
 
 const ACTOR = {
   userId: "user_1",
@@ -34,15 +38,19 @@ const ACTOR = {
 };
 
 const STUB_CONTEXT = {
-  projectCount: 0,
-  ticketCount: 0,
   todayAttendance: null,
   pendingLeaves: 0,
   recentPayrolls: [],
   myLeadsCount: 0,
-  hotLeadsCount: 0,
   myOpenDealsCount: 0,
   topLeads: [],
+};
+
+const STUB_ASK_OS_ACTOR = {
+  userId: "user_1", orgId: "org_1", membershipId: 1, displayName: "Test Member",
+  email: "member@example.com", orgName: "Acme", role: "MEMBER", isOrgOwner: false,
+  timezone: "UTC", today: "2026-09-19", monthStart: "2026-09-01",
+  monthEnd: "2026-09-30", currentYear: 2026, currentMonth: 9,
 };
 
 function makeLedger(): jest.Mocked<AiCreditLedger> {
@@ -58,31 +66,40 @@ function buildService() {
     append: jest.fn().mockResolvedValue(undefined),
     appendToConversation: jest.fn().mockResolvedValue(undefined),
   };
-  const noop = { buildTools: jest.fn().mockReturnValue({}) };
   const usageSvc = { track: jest.fn().mockResolvedValue(undefined) } as unknown as jest.Mocked<AiUsageService>;
   const limiterStub = { acquire: jest.fn().mockResolvedValue(true), release: jest.fn() };
 
+  const streamHelper = new AiGatewayStreamHelper(
+    makeLedger(),
+    usageSvc,
+    limiterStub as unknown as AiConcurrencyLimiter,
+    null,
+  );
+  const gateway = Object.assign(Object.create(AiGatewayService.prototype), {
+    streamAgenticTurn: (opts: AiStreamTextOpts) => streamHelper.run(opts),
+  }) as unknown as AiGatewayService;
+
+  const access = {
+    getAccessSnapshot: jest.fn().mockResolvedValue({
+      membershipId: 1,
+      scopes: {},
+      modules: {},
+      isOrgOwner: false,
+      canManageOrganizationMembership: false,
+      mfa: { enforced: false, satisfied: true },
+      version: 0,
+    }),
+  };
+
   const svc = new ChatAssistantService(
     {} as never,
-    { ask: jest.fn(), summarize: jest.fn() } as never,
+    gateway,
     history as never,
-    noop as never,
-    noop as never,
-    noop as never,
-    noop as never,
-    noop as never,
-    noop as never,
-    noop as never,
-    noop as never,
-    { denyReason: jest.fn().mockResolvedValue(null) } as never,
-    { get: jest.fn().mockReturnValue({ ask: jest.fn() }) } as never,
-    usageSvc,
-    makeLedger(),
-    null,
-    limiterStub as never,
+    access as unknown as AccessService,
+    [],
   );
 
-  jest.spyOn(svc as never, "fetchContext").mockResolvedValue(STUB_CONTEXT as never);
+  jest.spyOn(svc as never, "fetchContext").mockResolvedValue({ context: STUB_CONTEXT, actor: STUB_ASK_OS_ACTOR } as never);
   return svc;
 }
 
@@ -173,37 +190,45 @@ describe("ChatAssistantService — circuit breaker Redis integration (item 2)", 
       append: jest.fn().mockResolvedValue(undefined),
       appendToConversation: jest.fn().mockResolvedValue(undefined),
     };
-    const noop = { buildTools: jest.fn().mockReturnValue({}) };
     const usageSvc = { track: jest.fn().mockResolvedValue(undefined) } as unknown as jest.Mocked<AiUsageService>;
-    const ledger = {
+    const ledger: jest.Mocked<AiCreditLedger> = {
       reserve: jest.fn().mockResolvedValue({ reservationId: 42 }),
       settle: jest.fn().mockResolvedValue(undefined),
       release: jest.fn().mockResolvedValue(undefined),
     };
-
     const limiterStub = { acquire: jest.fn().mockResolvedValue(true), release: jest.fn() };
+
+    const streamHelper = new AiGatewayStreamHelper(
+      ledger,
+      usageSvc,
+      limiterStub as unknown as AiConcurrencyLimiter,
+      redis as never,
+    );
+    const gateway = Object.assign(Object.create(AiGatewayService.prototype), {
+      streamAgenticTurn: (opts: AiStreamTextOpts) => streamHelper.run(opts),
+    }) as unknown as AiGatewayService;
+
+    const access = {
+      getAccessSnapshot: jest.fn().mockResolvedValue({
+        membershipId: 1,
+        scopes: {},
+        modules: {},
+        isOrgOwner: false,
+        canManageOrganizationMembership: false,
+        mfa: { enforced: false, satisfied: true },
+        version: 0,
+      }),
+    };
 
     const svc = new ChatAssistantService(
       {} as never,
-      { ask: jest.fn(), summarize: jest.fn() } as never,
+      gateway,
       history as never,
-      noop as never,
-      noop as never,
-      noop as never,
-      noop as never,
-      noop as never,
-      noop as never,
-      noop as never,
-      noop as never,
-      { denyReason: jest.fn().mockResolvedValue(null) } as never,
-      { get: jest.fn().mockReturnValue({ ask: jest.fn() }) } as never,
-      usageSvc,
-      ledger as never,
-      redis as never,
-      limiterStub as never,
+      access as unknown as AccessService,
+      [],
     );
 
-    jest.spyOn(svc as never, "fetchContext").mockResolvedValue(STUB_CONTEXT as never);
+    jest.spyOn(svc as never, "fetchContext").mockResolvedValue({ context: STUB_CONTEXT, actor: STUB_ASK_OS_ACTOR } as never);
     return svc;
   }
 

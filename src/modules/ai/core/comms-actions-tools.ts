@@ -1,41 +1,45 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { tool } from "ai";
 import { z } from "zod";
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, ilike, inArray } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
-import { users, organizationMembers } from "../../../db/schema";
-import { ToolAccessService } from "./tool-access.service";
+import { users, organizationMembers, chatChannels } from "../../../db/schema";
 import { AiConfirmationService } from "../confirmation/ai-confirmation.service";
-import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { ChatChannelsService } from "../../chat/chat-channels.service";
+import {
+  type AskOsToolDefinition,
+  type AskOsToolProvider,
+  defineTool,
+  data,
+  empty,
+  needsConfirmation,
+} from "./registry/ask-os-tool.types";
 
-export interface CommsActionsContext {
-  actor: CurrentUserContext;
-}
+const CHANNEL_NOT_FOUND_HINT = "Channel not found or not accessible." as const;
 
 @Injectable()
-export class CommsActionsTools {
+export class CommsActionsTools implements AskOsToolProvider {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
-    private readonly toolAccess: ToolAccessService,
     private readonly confirmation: AiConfirmationService,
+    private readonly channels: ChatChannelsService,
   ) {}
 
-  buildTools(ctx: CommsActionsContext) {
-    const { orgId, userId } = ctx.actor;
-
-    return {
-      sendEmail: tool({
-        description: "Send an email on behalf of the user. Returns a confirmation card — the user must confirm before the email is sent.",
-        inputSchema: z.object({
+  tools(): AskOsToolDefinition[] {
+    return [
+      defineTool({
+        key: "sendEmail",
+        description:
+          "Send an email on behalf of the user. Returns a confirmation card — the user must confirm before the email is sent.",
+        input: z.object({
           toEmail: z.string().email().describe("Recipient email address"),
           subject: z.string().min(1).max(200).describe("Email subject"),
           body: z.string().min(1).max(5000).describe("Email body text"),
         }),
-        execute: async ({ toEmail, subject, body }) => {
-          const deny = await this.toolAccess.denyReason(orgId, userId, "chat:messages:write");
-          if (deny) return { denied: true, reason: deny };
-
+        permission: "chat:messages:write",
+        module: "chat",
+        run: async ({ toEmail, subject, body }, ctx) => {
+          const { orgId, userId } = ctx.actor;
           const { proposalId, token, expiresAt } = await this.confirmation.propose({
             orgId,
             userId,
@@ -43,61 +47,70 @@ export class CommsActionsTools {
             payload: { toEmail, subject, body },
           });
 
-          return {
-            requiresConfirmation: true,
+          return needsConfirmation({
             proposalId,
             token,
             expiresAt,
             action: "email.send",
             summary: `Send email to ${toEmail}: ${subject}`,
             preview: { toEmail, subject, bodyPreview: body.slice(0, 100) + (body.length > 100 ? "…" : "") },
-          };
+          });
         },
       }),
 
-      postChannelMessage: tool({
-        description: "Post a message to a named chat channel. Returns a confirmation card — the user must confirm before the message is posted.",
-        inputSchema: z.object({
+      defineTool({
+        key: "postChannelMessage",
+        description:
+          "Post a message to a named chat channel. Returns a confirmation card — the user must confirm before the message is posted.",
+        input: z.object({
           channelName: z.string().min(1).describe("Name of the channel to post to"),
           message: z.string().min(1).max(5000).describe("Message content to post"),
         }),
-        execute: async ({ channelName, message }) => {
-          const deny = await this.toolAccess.denyReason(orgId, userId, "chat:messages:write");
-          if (deny) return { denied: true, reason: deny };
+        permission: "chat:messages:write",
+        module: "chat",
+        run: async ({ channelName, message }, ctx) => {
+          const { orgId, userId } = ctx.actor;
+          const memberChannelIds = await this.channels.listMemberChannelIds(ctx.actor);
+          if (memberChannelIds.length === 0) return empty("channel", CHANNEL_NOT_FOUND_HINT);
 
-          const rows = await this.db.execute(
-            sql`SELECT id, name FROM chat_channels WHERE org_id = ${orgId} AND name ILIKE ${"%" + channelName + "%"} AND is_archived = false LIMIT 1`,
-          );
+          const [channel] = await this.db
+            .select({ id: chatChannels.id, name: chatChannels.name })
+            .from(chatChannels)
+            .where(
+              and(
+                eq(chatChannels.orgId, orgId),
+                inArray(chatChannels.id, memberChannelIds),
+                ilike(chatChannels.name, `%${channelName}%`),
+                eq(chatChannels.isArchived, false),
+              ),
+            )
+            .limit(1);
 
-          const row = rows[0];
-          if (!row) {
-            return { success: false, message: `Channel matching "${channelName}" not found in this org.` };
-          }
-
-          const channelId = Number(row["id"]);
+          if (!channel) return empty("channel", CHANNEL_NOT_FOUND_HINT);
 
           const { proposalId, token, expiresAt } = await this.confirmation.propose({
             orgId,
             userId,
             action: "chat.postChannel",
-            payload: { channelId, channelName: String(row["name"]), message },
+            payload: { channelId: channel.id, channelName: channel.name, message },
           });
 
-          return {
-            requiresConfirmation: true,
+          return needsConfirmation({
             proposalId,
             token,
             expiresAt,
             action: "chat.postChannel",
-            summary: `Post to #${String(row["name"])}`,
-            preview: { channelName: String(row["name"]), message },
-          };
+            summary: `Post to #${channel.name}`,
+            preview: { channelName: channel.name, message },
+          });
         },
       }),
 
-      grantRecognition: tool({
-        description: "Send a recognition/kudos badge to a team member. Returns a confirmation card — the user must confirm before the recognition is sent.",
-        inputSchema: z.object({
+      defineTool({
+        key: "grantRecognition",
+        description:
+          "Send a recognition/kudos badge to a team member. Returns a confirmation card — the user must confirm before the recognition is sent.",
+        input: z.object({
           toUserId: z.string().describe("User ID of the recipient"),
           message: z.string().min(10).max(500).describe("Recognition message"),
           category: z
@@ -105,10 +118,10 @@ export class CommsActionsTools {
             .default("KUDOS")
             .describe("Recognition category"),
         }),
-        execute: async ({ toUserId, message, category }) => {
-          const deny = await this.toolAccess.denyReason(orgId, userId, "hr:engagement:manage");
-          if (deny) return { denied: true, reason: deny };
-
+        permission: "hr:engagement:manage",
+        module: "hr",
+        run: async ({ toUserId, message, category }, ctx) => {
+          const { orgId, userId } = ctx.actor;
           const { proposalId, token, expiresAt } = await this.confirmation.propose({
             orgId,
             userId,
@@ -116,24 +129,35 @@ export class CommsActionsTools {
             payload: { toUserId, message, category },
           });
 
-          return {
-            requiresConfirmation: true,
+          return needsConfirmation({
             proposalId,
             token,
             expiresAt,
             action: "hr.grantRecognition",
             summary: `Send ${category} recognition`,
             preview: { toUserId, category, messagePreview: message.slice(0, 80) + (message.length > 80 ? "…" : "") },
-          };
+          });
         },
       }),
 
-      grantBonus: tool({
-        description: "Grant a bonus to an employee. Creates a PENDING bonus that a payroll admin approves before payout. Returns a confirmation card — the user must confirm before the bonus is created.",
-        inputSchema: z.object({
+      defineTool({
+        key: "grantBonus",
+        description:
+          "Grant a bonus to an employee. Creates a PENDING bonus that a payroll admin approves before payout. Returns a confirmation card — the user must confirm before the bonus is created.",
+        input: z.object({
           employeeId: z.string().min(1).describe("Employee user ID"),
           type: z
-            .enum(["PERFORMANCE", "FESTIVAL", "REFERRAL", "SPOT", "ANNUAL", "JOINING", "RETENTION", "COMMISSION", "ADJUSTMENT"])
+            .enum([
+              "PERFORMANCE",
+              "FESTIVAL",
+              "REFERRAL",
+              "SPOT",
+              "ANNUAL",
+              "JOINING",
+              "RETENTION",
+              "COMMISSION",
+              "ADJUSTMENT",
+            ])
             .default("SPOT")
             .describe("Bonus type"),
           amount: z.number().positive().describe("Bonus amount"),
@@ -141,22 +165,20 @@ export class CommsActionsTools {
           month: z.string().regex(/^\d{4}-\d{2}$/).describe("Pay month in YYYY-MM format"),
           taxable: z.boolean().default(true).describe("Whether the bonus is taxable"),
         }),
-        execute: async ({ employeeId, type, amount, reason, month, taxable }) => {
-          const deny = await this.toolAccess.denyReason(orgId, userId, "hr:bonuses:manage");
-          if (deny) return { denied: true, reason: deny };
-
+        permission: "hr:bonuses:manage",
+        module: "hr",
+        run: async ({ employeeId, type, amount, reason, month, taxable }, ctx) => {
+          const { orgId, userId } = ctx.actor;
           const [employee] = await this.db
             .select({ id: users.id, name: users.name })
             .from(users)
             .innerJoin(organizationMembers, eq(organizationMembers.userId, users.id))
             .where(and(eq(users.id, employeeId), eq(organizationMembers.orgId, orgId)))
             .limit(1);
-          if (!employee) {
-            return { success: false, message: "Employee not found in this organization." };
-          }
+
+          if (!employee) return empty("employee", "Employee not found in this organization.");
 
           const employeeName = employee.name ?? employeeId;
-
           const { proposalId, token, expiresAt } = await this.confirmation.propose({
             orgId,
             userId,
@@ -164,17 +186,23 @@ export class CommsActionsTools {
             payload: { employeeId, type, amount, reason, month, taxable },
           });
 
-          return {
-            requiresConfirmation: true,
+          return needsConfirmation({
             proposalId,
             token,
             expiresAt,
             action: "hr.grantBonus",
             summary: `Grant ${type} bonus of ${amount} to ${employeeName} (${month})`,
-            preview: { employee: employeeName, type, amount, month, reason, status: "Creates a PENDING bonus for payroll approval" },
-          };
+            preview: {
+              employee: employeeName,
+              type,
+              amount,
+              month,
+              reason,
+              status: "Creates a PENDING bonus for payroll approval",
+            },
+          });
         },
       }),
-    };
+    ];
   }
 }

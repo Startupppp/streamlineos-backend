@@ -69,10 +69,12 @@ export class KbPageTreeService {
     projectId: number | null;
     title: string;
     icon: string | null;
+    coverImage: string | null;
     sortOrder: number;
     visibility: string;
     createdById: string | null;
     status: string;
+    updatedAt: Date;
     hasChildren: boolean;
   }[]> {
     const orgId = user.orgId;
@@ -89,10 +91,12 @@ export class KbPageTreeService {
         projectId: kbPages.projectId,
         title: kbPages.title,
         icon: kbPages.icon,
+        coverImage: kbPages.coverImage,
         sortOrder: kbPages.sortOrder,
         visibility: kbPages.visibility,
         createdById: kbPages.createdById,
         status: kbPages.status,
+        updatedAt: kbPages.updatedAt,
       })
       .from(kbPages)
       .where(and(...filters))

@@ -33,7 +33,7 @@ export const appEnvShape = {
     ENCRYPTION_KEY: z
       .string()
       .min(32, "ENCRYPTION_KEY must be at least 32 characters — it protects PII at rest"),
-    AI_CONFIRMATION_SECRET: z.string().optional(),
+    AI_CONFIRMATION_SECRET: deploymentSecret,
     COMPOSIO_API_KEY: z.string().optional(),
     COMPOSIO_AUTH_CONFIG_GOOGLE_CALENDAR: z.string().optional(),
     COMPOSIO_AUTH_CONFIG_OUTLOOK: z.string().optional(),

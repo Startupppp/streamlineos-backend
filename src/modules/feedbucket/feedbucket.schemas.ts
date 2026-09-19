@@ -35,9 +35,21 @@ const feedbucketNetworkEntrySchema = z.object({
   error: z.string().max(500).optional(),
 });
 
+const feedbucketAssigneeRulesSchema = z.object({
+  bug: z.string().min(1).optional(),
+  idea: z.string().min(1).optional(),
+  feature: z.string().min(1).optional(),
+  question: z.string().min(1).optional(),
+  praise: z.string().min(1).optional(),
+  other: z.string().min(1).optional(),
+}).strict();
+
 export const createWidgetSchema = z.object({
   name: z.string().min(1).max(100),
   projectId: z.number().int().positive().nullable().optional(),
+  defaultProjectId: z.number().int().positive().nullable().optional(),
+  defaultAssigneeId: z.string().min(1).nullable().optional(),
+  assigneeRules: feedbucketAssigneeRulesSchema.nullable().optional(),
   allowedDomains: z.array(z.string()).optional(),
   autoCreateTicket: z.boolean().optional(),
   aiAssistEnabled: z.boolean().optional(),
@@ -55,6 +67,13 @@ export const updateWidgetSchema = createWidgetSchema.partial().extend({
   isActive: z.boolean().optional(),
 }).strict();
 
+export const convertToTicketSchema = z.object({
+  projectId: z.number().int().positive().optional(),
+  assigneeId: z.string().min(1).optional(),
+}).strict();
+
+export type ConvertToTicketInput = z.infer<typeof convertToTicketSchema>;
+
 export const listSubmissionsQuerySchema = z.object({
   page: pageNumberField,
   limit: pageSizeField(20, 100),
@@ -70,6 +89,8 @@ export const updateSubmissionSchema = z.object({
   priority: z.enum(["low", "medium", "high", "urgent"]).optional(),
   assigneeId: z.string().nullable().optional(),
 }).strict();
+
+export const feedbucketMediaKindSchema = z.enum(["screenshot", "recording"]);
 
 export const publicSubmitSchema = z.object({
   type: z.enum(["bug", "idea", "feature", "question", "praise", "other"]),
@@ -96,4 +117,5 @@ export type CreateWidgetInput = z.infer<typeof createWidgetSchema>;
 export type UpdateWidgetInput = z.infer<typeof updateWidgetSchema>;
 export type ListSubmissionsQuery = z.infer<typeof listSubmissionsQuerySchema>;
 export type UpdateSubmissionInput = z.infer<typeof updateSubmissionSchema>;
+export type FeedbucketMediaKind = z.infer<typeof feedbucketMediaKindSchema>;
 export type PublicSubmitInput = z.infer<typeof publicSubmitSchema>;

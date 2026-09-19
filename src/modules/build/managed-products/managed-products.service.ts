@@ -1,5 +1,5 @@
 import { ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, desc, eq, isNull } from "drizzle-orm";
+import { and, desc, eq, ilike, isNull } from "drizzle-orm";
 import { managedProducts } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
@@ -48,6 +48,10 @@ export class ManagedProductsService {
       eq(managedProducts.orgId, orgId),
       isNull(managedProducts.deletedAt),
       status ? eq(managedProducts.status, status) : undefined,
+      query.pmWorkspaceId
+        ? eq(managedProducts.pmWorkspaceId, query.pmWorkspaceId)
+        : undefined,
+      query.search ? ilike(managedProducts.name, `%${query.search}%`) : undefined,
     ];
     if (pos) conds.push(keysetBeforeId(managedProducts.createdAt, managedProducts.id, pos));
 
@@ -69,7 +73,10 @@ export class ManagedProductsService {
   }
 
   async createManagedProduct(orgId: string, userId: string, input: CreateManagedProductInput) {
-    const pmWorkspaceId = await this.pmWorkspaces.resolveDefaultWorkspaceId(orgId);
+    const pmWorkspaceId = await this.pmWorkspaces.resolveWorkspaceIdForWrite(
+      orgId,
+      input.pmWorkspaceId,
+    );
     const [row] = await this.db
       .insert(managedProducts)
       .values({

@@ -111,10 +111,11 @@ export const ticketAssigneesRelations = relations(ticketAssignees, ({ one }) => 
   assigner: one(users, { fields: [ticketAssignees.assignedBy], references: [users.id], relationName: "assigner" }),
 }));
 
-export const ticketCommentsRelations = relations(ticketComments, ({ one }) => ({
+export const ticketCommentsRelations = relations(ticketComments, ({ one, many }) => ({
   ticket: one(tickets, { fields: [ticketComments.ticketId], references: [tickets.id] }),
   user: one(users, { fields: [ticketComments.userId], references: [users.id] }),
   parent: one(ticketComments, { fields: [ticketComments.parentCommentId], references: [ticketComments.id], relationName: "parentComment" }),
+  reactions: many(ticketCommentReactions),
 }));
 
 export const ticketAttachmentsRelations = relations(ticketAttachments, ({ one }) => ({
@@ -218,6 +219,10 @@ export const webhookDeliveriesRelations = relations(webhookDeliveries, ({ one })
 
 export const ticketCommentReactionsRelations = relations(ticketCommentReactions, ({ one }) => ({
   comment: one(ticketComments, { fields: [ticketCommentReactions.commentId], references: [ticketComments.id] }),
+  membership: one(organizationMembers, {
+    fields: [ticketCommentReactions.membershipId],
+    references: [organizationMembers.id],
+  }),
 }));
 
 export const projectAutomationsRelations = relations(projectAutomations, ({ one }) => ({

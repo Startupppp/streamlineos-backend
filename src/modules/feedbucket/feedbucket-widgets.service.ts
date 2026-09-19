@@ -1,18 +1,57 @@
-import { ConflictException, Inject, Injectable, InternalServerErrorException, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ConflictException, Inject, Injectable, InternalServerErrorException, NotFoundException } from "@nestjs/common";
 import { and, count, eq, inArray, isNull, sql } from "drizzle-orm";
 import { randomBytes } from "node:crypto";
-import { feedbucketSubmissions, feedbucketWidgets } from "../../db/schema";
+import { feedbucketSubmissions, feedbucketWidgets, type FeedbucketAssigneeRules } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
 import type { CreateWidgetInput, UpdateWidgetInput } from "./feedbucket.schemas";
 import { isUniqueViolation } from "../../common/db/postgres-error";
+import { resolveOrganizationActorsByUserIds } from "../../common/organization/organization-actor";
+
+const ASSIGNEE_RULE_TYPES = ["bug", "idea", "feature", "question", "praise", "other"] as const;
 
 @Injectable()
 export class FeedbucketWidgetsService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
+  private async resolveAssigneeIds(
+    orgId: string,
+    defaultAssigneeId: string | null | undefined,
+    assigneeRules: Partial<Record<(typeof ASSIGNEE_RULE_TYPES)[number], string>> | null | undefined,
+  ): Promise<{ defaultAssigneeMembershipId: number | null; assigneeRules: FeedbucketAssigneeRules | null }> {
+    const ruleEntries: [(typeof ASSIGNEE_RULE_TYPES)[number], string][] = [];
+    for (const type of ASSIGNEE_RULE_TYPES) {
+      const userId = assigneeRules?.[type];
+      if (userId) ruleEntries.push([type, userId]);
+    }
+    const userIds = [
+      ...(defaultAssigneeId ? [defaultAssigneeId] : []),
+      ...ruleEntries.map(([, userId]) => userId),
+    ];
+    const actorMap = await resolveOrganizationActorsByUserIds(this.db, orgId, userIds);
+    for (const userId of userIds) {
+      if (!actorMap.has(userId))
+        throw new BadRequestException(`${userId} is not an active member of this organization`);
+    }
+    const resolvedRules: FeedbucketAssigneeRules = {};
+    for (const [type, userId] of ruleEntries) {
+      const actor = actorMap.get(userId);
+      if (actor) resolvedRules[type] = actor.membershipId;
+    }
+    const defaultActor = defaultAssigneeId ? actorMap.get(defaultAssigneeId) : undefined;
+    return {
+      defaultAssigneeMembershipId: defaultActor ? defaultActor.membershipId : null,
+      assigneeRules: ruleEntries.length > 0 ? resolvedRules : null,
+    };
+  }
+
   async create(orgId: string, userId: string, dto: CreateWidgetInput) {
     const publicKey = "fb_" + randomBytes(24).toString("base64url");
+    const { defaultAssigneeMembershipId, assigneeRules } = await this.resolveAssigneeIds(
+      orgId,
+      dto.defaultAssigneeId,
+      dto.assigneeRules,
+    );
     try {
       const [widget] = await this.db
         .insert(feedbucketWidgets)
@@ -21,6 +60,9 @@ export class FeedbucketWidgetsService {
           name: dto.name,
           publicKey,
           projectId: dto.projectId ?? null,
+          defaultProjectId: dto.defaultProjectId ?? null,
+          defaultAssigneeMembershipId,
+          assigneeRules,
           allowedDomains: dto.allowedDomains ?? [],
           autoCreateTicket: dto.autoCreateTicket ?? false,
           aiAssistEnabled: dto.aiAssistEnabled ?? false,
@@ -88,10 +130,15 @@ export class FeedbucketWidgetsService {
   }
 
   async update(orgId: string, widgetId: number, dto: UpdateWidgetInput) {
-    await this.findOne(orgId, widgetId);
     const patch: Partial<typeof feedbucketWidgets.$inferInsert> = { updatedAt: new Date() };
     if (dto.name !== undefined) patch.name = dto.name;
     if (dto.projectId !== undefined) patch.projectId = dto.projectId;
+    if (dto.defaultProjectId !== undefined) patch.defaultProjectId = dto.defaultProjectId;
+    if (dto.defaultAssigneeId !== undefined || dto.assigneeRules !== undefined) {
+      const resolved = await this.resolveAssigneeIds(orgId, dto.defaultAssigneeId, dto.assigneeRules);
+      if (dto.defaultAssigneeId !== undefined) patch.defaultAssigneeMembershipId = resolved.defaultAssigneeMembershipId;
+      if (dto.assigneeRules !== undefined) patch.assigneeRules = resolved.assigneeRules;
+    }
     if (dto.allowedDomains !== undefined) patch.allowedDomains = dto.allowedDomains;
     if (dto.autoCreateTicket !== undefined) patch.autoCreateTicket = dto.autoCreateTicket;
     if (dto.aiAssistEnabled !== undefined) patch.aiAssistEnabled = dto.aiAssistEnabled;
@@ -102,9 +149,16 @@ export class FeedbucketWidgetsService {
     const [updated] = await this.db
       .update(feedbucketWidgets)
       .set(patch)
-      .where(and(eq(feedbucketWidgets.id, widgetId), eq(feedbucketWidgets.orgId, orgId)))
-      .returning();
-    return updated;
+      .where(
+        and(
+          eq(feedbucketWidgets.id, widgetId),
+          eq(feedbucketWidgets.orgId, orgId),
+          isNull(feedbucketWidgets.deletedAt),
+        ),
+      )
+      .returning({ id: feedbucketWidgets.id });
+    if (!updated) throw new NotFoundException("Widget not found");
+    return this.findOne(orgId, widgetId);
   }
 
   async softDelete(orgId: string, widgetId: number) {

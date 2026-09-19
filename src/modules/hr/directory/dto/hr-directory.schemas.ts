@@ -311,6 +311,10 @@ export const patchAccessRequestSchema = z.object({
   grantedBy: z.string().optional(),
 }).strict();
 
+export const listAccessRequestsQuerySchema = z.object({
+  employeeId: z.string().min(1).max(128).optional(),
+}).strict();
+
 /** Row shape for spreadsheet bulk onboard — department can be an org department id or a name. */
 export const bulkOnboardEmployeeRowSchema = onboardEmployeeSchema
   .omit({ attachToExistingMember: true })
@@ -357,6 +361,7 @@ export type AssignAssetInput = z.infer<typeof assignAssetSchema>;
 export type PatchAssetInput = z.infer<typeof patchAssetSchema>;
 export type CreateAccessRequestInput = z.infer<typeof createAccessRequestSchema>;
 export type PatchAccessRequestInput = z.infer<typeof patchAccessRequestSchema>;
+export type ListAccessRequestsQueryInput = z.infer<typeof listAccessRequestsQuerySchema>;
 
 export const employeeUserQuerySchema = z.object({
   userId: z.string().min(1).optional(),

@@ -15,6 +15,7 @@ import { logger } from "../../../common/logger/logger.service";
 import { NotificationsService } from "../../notifications/notifications.service";
 import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
 import { resolvePersonDisplayName } from "../../../common/organization/person-display-name";
+import { buildTicketHref, buildTicketKey } from "./build-app-paths";
 
 type TicketActivityAction =
   (typeof ticketActivityLog.action.enumValues)[number];
@@ -444,11 +445,8 @@ export class ProjectsActivityService {
         )
         .limit(1);
 
-      ticketKey = projectRow?.key
-        ? `${projectRow.key}-${input.ticketNumber}`
-        : String(input.ticketNumber);
-      const base = `/projects/${input.projectId}/tickets/${encodeURIComponent(ticketKey)}`;
-      ticketLink = `${base}?comment=${input.commentId}`;
+      ticketKey = buildTicketKey(projectRow?.key, input.ticketNumber);
+      ticketLink = buildTicketHref(input.projectId, ticketKey, input.commentId);
     }
 
     // REG-004: see projects-tickets-create.service.ts.

@@ -16,10 +16,12 @@ import { BuildQaModule } from "./qa/build-qa.module";
 import { BuildTeamsModule } from "./teams/build-teams.module";
 import { BuildWorkflowModule } from "./workflow/build-workflow.module";
 import { BuildCalendarModule } from "./build-calendar.module";
+import { ScopeDirectoryModule } from "./scope-directory/scope-directory.module";
 
-const BUILD_MODULES = [
+export const BUILD_MODULES = [
   BuildCalendarModule,
   ProjectsModule,
+  ScopeDirectoryModule,
   BuildApprovalsModule,
   BuildClientPortalModule,
   BuildCommentDraftsModule,

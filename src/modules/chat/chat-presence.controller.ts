@@ -64,7 +64,7 @@ export class ChatPresenceController {
   @ApiResponse({ status: 200, description: "OK" })
   @Put("status")
   @ResponseSchema(chatPresenceAckResponseSchema)
-  @RequirePermission("chat:messages:write")
+  @RequirePermission("chat:messages:read")
   @Validate({ body: statusSchema })
   setStatus(
     @Body() body: StatusInput,

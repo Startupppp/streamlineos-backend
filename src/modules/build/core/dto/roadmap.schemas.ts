@@ -9,6 +9,8 @@ export const roadmapListQuerySchema = z.object({
   search: z.string().trim().min(1).optional(),
   cursor: z.string().optional(),
   limit: pageSizeField(50),
+  pmWorkspaceId: z.string().optional(),
+  managedProductId: z.coerce.number().int().positive().optional(),
 }).strict();
 
 export const createRoadmapSchema = z.object({

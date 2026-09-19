@@ -2,9 +2,27 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { AccessService } from "../../access/access.service";
 import { ScopedRead, type OwnershipScope } from "../../access/scoped-read";
 import { eq, or, sql } from "drizzle-orm";
+import type { SQL } from "drizzle-orm";
 import { tickets, ticketAssignees } from "../../../db/schema";
+import type { DataScope } from "../../access/access.types";
 
 export const TICKETS_PERMISSION = "build:tickets:view";
+
+export function ticketScopePredicate(
+  scope: DataScope,
+  orgId: string,
+  userId: string,
+): SQL {
+  switch (scope) {
+    case "all":
+      return sql`true`;
+    case "team":
+    case "own":
+      return ticketScope(orgId, userId).own;
+    default:
+      return sql`false`;
+  }
+}
 
 export function ticketScope(orgId: string, userId: string): OwnershipScope {
   return {

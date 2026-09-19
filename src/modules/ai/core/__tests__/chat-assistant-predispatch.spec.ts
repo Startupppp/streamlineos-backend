@@ -29,22 +29,31 @@ import type { AiCreditLedger } from "../gateway/credit-ledger.interface";
 import type { AiUsageService } from "../services/ai-usage.service";
 import { humanSessionPrincipal } from "../../../../common/auth/principal";
 import type { ChatContext } from "../services/chat-assistant-model";
+import type { AskOsActor } from "../services/ask-os-actor";
 import {
   getAiStreamBudget,
   CHAT_PREDISPATCH_IO_ALLOWANCE_MS,
 } from "../telemetry/ai-stream-budgets";
+import { AiGatewayService } from "../gateway/ai-gateway.service";
+import { AiGatewayStreamHelper, type AiStreamTextOpts } from "../gateway/ai-gateway-stream.helper";
+import { AiConcurrencyLimiter } from "../gateway/ai-concurrency-limiter";
+import { AccessService } from "../../../access/access.service";
 
 const BUDGET = getAiStreamBudget("ai.stream.chat.predispatch");
 const SAMPLES = 30;
 
+const STUB_ACTOR: AskOsActor = {
+  userId: "u1", orgId: "o1", membershipId: 1, displayName: "Test Member",
+  email: "t@example.com", orgName: "Acme", role: "MEMBER", isOrgOwner: false,
+  timezone: "UTC", today: "2026-09-19", monthStart: "2026-09-01",
+  monthEnd: "2026-09-30", currentYear: 2026, currentMonth: 9,
+};
+
 const STUB_CONTEXT: ChatContext = {
-  projectCount: 3,
-  ticketCount: 12,
   todayAttendance: null,
   pendingLeaves: 0,
   recentPayrolls: [],
   myLeadsCount: 0,
-  hotLeadsCount: 0,
   myOpenDealsCount: 0,
   topLeads: [],
 };
@@ -77,32 +86,40 @@ function buildService(ledger: jest.Mocked<AiCreditLedger>) {
     append: jest.fn().mockResolvedValue(undefined),
     appendToConversation: jest.fn().mockResolvedValue(undefined),
   };
-  const toolAccess = { denyReason: jest.fn().mockResolvedValue(null) };
-  const moduleRef = { get: jest.fn().mockReturnValue({ ask: jest.fn() }) };
-  const noop = { buildTools: jest.fn().mockReturnValue({}) };
+  const fakeProvider = { tools: jest.fn().mockReturnValue([]) };
   const limiter = { acquire: jest.fn().mockResolvedValue(true), release: jest.fn() };
+
+  const streamHelper = new AiGatewayStreamHelper(
+    ledger,
+    makeUsageSvc(),
+    limiter as unknown as AiConcurrencyLimiter,
+    null,
+  );
+  const gateway = Object.assign(Object.create(AiGatewayService.prototype), {
+    streamAgenticTurn: (opts: AiStreamTextOpts) => streamHelper.run(opts),
+  }) as unknown as AiGatewayService;
+
+  const access = {
+    getAccessSnapshot: jest.fn().mockResolvedValue({
+      membershipId: 1,
+      scopes: {},
+      modules: {},
+      isOrgOwner: false,
+      canManageOrganizationMembership: false,
+      mfa: { enforced: false, satisfied: true },
+      version: 0,
+    }),
+  };
 
   const svc = new ChatAssistantService(
     {} as never,
-    { ask: jest.fn(), summarize: jest.fn() } as never,
+    gateway,
     history as never,
-    noop as never,
-    noop as never,
-    noop as never,
-    noop as never,
-    noop as never,
-    noop as never,
-    noop as never,
-    noop as never,
-    toolAccess as never,
-    moduleRef as never,
-    makeUsageSvc(),
-    ledger,
-    null,
-    limiter as never,
+    access as unknown as AccessService,
+    [fakeProvider],
   );
 
-  return { svc, history, noop, limiter };
+  return { svc, history, fakeProvider, limiter };
 }
 
 function percentile(values: readonly number[], p: number): number {
@@ -114,7 +131,7 @@ function percentile(values: readonly number[], p: number): number {
 describe("processChat pre-dispatch structural invariants — PRD-C152", () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    jest.mocked(fetchChatContext).mockResolvedValue(STUB_CONTEXT);
+    jest.mocked(fetchChatContext).mockResolvedValue({ context: STUB_CONTEXT, actor: STUB_ACTOR });
     (streamText as jest.Mock).mockReturnValue({ finishReason: Promise.resolve("stop") });
   });
 
@@ -127,6 +144,7 @@ describe("processChat pre-dispatch structural invariants — PRD-C152", () => {
       expect.anything(),
       ACTOR.userId,
       ACTOR.orgId,
+      expect.objectContaining({ userId: ACTOR.userId, orgId: ACTOR.orgId }),
     );
   });
 
@@ -153,11 +171,11 @@ describe("processChat pre-dispatch structural invariants — PRD-C152", () => {
     expect(txOrder).toBeLessThan(streamOrder ?? Infinity);
   });
 
-  it("assembles all 8 copilot tool suites exactly once — no redundant build pass", async () => {
-    const { svc, noop } = buildService(makeLedger());
+  it("collectToolDefinitions called once per turn — toolset assembled without redundant provider passes", async () => {
+    const { svc, fakeProvider } = buildService(makeLedger());
     await svc.processChat([{ role: "user", content: "hello" }], ACTOR);
 
-    expect(noop.buildTools).toHaveBeenCalledTimes(8);
+    expect(fakeProvider.tools).toHaveBeenCalledTimes(1);
   });
 
   it("(anti-vacuous) the fetchChatContext count assertion fails when processChat fetches context twice", async () => {
@@ -173,7 +191,7 @@ describe("processChat pre-dispatch structural invariants — PRD-C152", () => {
 describe("processChat pre-dispatch overhead budget — PRD-C152", () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    jest.mocked(fetchChatContext).mockResolvedValue(STUB_CONTEXT);
+    jest.mocked(fetchChatContext).mockResolvedValue({ context: STUB_CONTEXT, actor: STUB_ACTOR });
   });
 
   it(`p95 of ${SAMPLES} turns plus the declared I/O allowance is within ${BUDGET.budgetMs} ms`, async () => {

@@ -11,6 +11,7 @@ import { RecruitmentOffersController } from "./recruitment-offers.controller";
 import { RecruitmentOffersListController } from "./recruitment-offers-list.controller";
 import { RecruitmentJobsController } from "./recruitment-jobs.controller";
 import { RecruitmentRecruitersController } from "./recruitment-recruiters.controller";
+import { RecruitmentSelfController } from "./recruitment-self.controller";
 import { RecruitmentSourcingController } from "./recruitment-sourcing.controller";
 import { RecruitmentHeadcountController } from "./recruitment-headcount.controller";
 import { RecruitmentAutomationController } from "./recruitment-automation.controller";
@@ -47,6 +48,7 @@ import { RecruitmentHandoffService } from "./recruitment-handoff.service";
     RecruitmentJobsController,
     RecruitmentRecruitersController,
     RecruitmentSourcingController,
+    RecruitmentSelfController,
     RecruitmentHeadcountController,
     RecruitmentAutomationController,
     RecruitmentRequisitionsController,

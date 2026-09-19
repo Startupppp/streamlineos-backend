@@ -51,7 +51,14 @@ const sourceA = {
   sourceId: 10,
   title: "Source Doc",
   spaceId: null,
-  snippet: "Source snippet text",
+  passages: [
+    {
+      documentKey: "source:10",
+      documentTitle: "Source Doc",
+      passageIndex: 0,
+      text: "Source snippet text",
+    },
+  ],
   updatedAt: new Date("2024-03-01"),
 };
 
@@ -74,10 +81,18 @@ function makeGateway(overrides: Partial<{ invokeText: jest.Mock; invokeStructure
   };
 }
 
-function makeSearch(overrides: Partial<{ retrieveTopArticles: jest.Mock; retrieveTopSources: jest.Mock }> = {}) {
+function makeSearch(
+  overrides: Partial<{
+    retrieveTopArticles: jest.Mock;
+    retrieveTopSources: jest.Mock;
+    retrieveDocumentPassages: jest.Mock;
+  }> = {},
+) {
   return {
     retrieveTopArticles: overrides.retrieveTopArticles ?? jest.fn().mockResolvedValue([articleA]),
     retrieveTopSources: overrides.retrieveTopSources ?? jest.fn().mockResolvedValue([sourceA]),
+    retrieveDocumentPassages:
+      overrides.retrieveDocumentPassages ?? jest.fn().mockResolvedValue([]),
   };
 }
 
@@ -118,7 +133,7 @@ describe("buildResearchBriefGraph", () => {
 
       const graph = buildResearchBriefGraph({
         gateway: gateway as never,
-        search: { retrieveTopArticles, retrieveTopSources } as never,
+        search: { retrieveTopArticles, retrieveTopSources, retrieveDocumentPassages: jest.fn().mockResolvedValue([]) } as never,
       });
       await runResearchBrief(graph, { topic: "access control", userCtx, actor });
 
@@ -139,7 +154,7 @@ describe("buildResearchBriefGraph", () => {
 
       const graph = buildResearchBriefGraph({
         gateway: gateway as never,
-        search: { retrieveTopArticles, retrieveTopSources } as never,
+        search: { retrieveTopArticles, retrieveTopSources, retrieveDocumentPassages: jest.fn().mockResolvedValue([]) } as never,
       });
       const result = await runResearchBrief(graph, { topic: "dedupe", userCtx, actor });
 
@@ -161,7 +176,7 @@ describe("buildResearchBriefGraph", () => {
 
       const graph = buildResearchBriefGraph({
         gateway: gateway as never,
-        search: { retrieveTopArticles, retrieveTopSources } as never,
+        search: { retrieveTopArticles, retrieveTopSources, retrieveDocumentPassages: jest.fn().mockResolvedValue([]) } as never,
       });
       await runResearchBrief(graph, { topic: "scoped", spaceId: 42, userCtx, actor });
 
@@ -256,7 +271,7 @@ describe("buildResearchBriefGraph", () => {
 
       const graph = buildResearchBriefGraph({
         gateway: gateway as never,
-        search: { retrieveTopArticles, retrieveTopSources } as never,
+        search: { retrieveTopArticles, retrieveTopSources, retrieveDocumentPassages: jest.fn().mockResolvedValue([]) } as never,
       });
       const result = await runResearchBrief(graph, { topic: "citations", userCtx, actor });
 

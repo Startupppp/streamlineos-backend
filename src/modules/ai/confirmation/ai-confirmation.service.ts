@@ -10,6 +10,8 @@ import { and, eq } from "drizzle-orm";
 import { timingSafeEqual } from "node:crypto";
 import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
 import { aiActionProposals } from "../../../db/schema/ai/ai-confirmation";
+import { organizationMembers } from "../../../db/schema";
+import { isUniqueViolation } from "../../../common/db/postgres-error";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { AuditService } from "../../../common/audit/audit.service";
@@ -20,7 +22,7 @@ import {
   sweepExpiredProposals,
   type ProposalLifecycleDeps,
 } from "./lib/proposal-lifecycle";
-import { computeHmac, DEFAULT_TTL, getSecret, MAX_TTL, stableHash, type ConfirmInput, type ConfirmResult, type ProposeInput, type ProposeResult } from "./ai-confirmation.helpers";
+import { boundedIdempotencyKey, computeHmac, DEFAULT_TTL, getSecret, MAX_TTL, stableHash, type ConfirmInput, type ConfirmResult, type ProposeInput, type ProposeResult } from "./ai-confirmation.helpers";
 
 /**
  * The token protocol for AI-proposed actions: `propose` mints a token bound by
@@ -36,12 +38,33 @@ export class AiConfirmationService {
     private readonly audit: AuditService,
   ) {}
 
+  private async resolveMembershipId(orgId: string, userId: string): Promise<number | null> {
+    const rows = await runInTenantTransaction(
+      this.db,
+      (tx) =>
+        tx
+          .select({ id: organizationMembers.id })
+          .from(organizationMembers)
+          .where(
+            and(
+              eq(organizationMembers.orgId, orgId),
+              eq(organizationMembers.userId, userId),
+            ),
+          )
+          .limit(1),
+      { orgId },
+    );
+    return rows[0]?.id ?? null;
+  }
+
   async propose(input: ProposeInput): Promise<ProposeResult> {
     const ttl = Math.min(input.ttlSeconds ?? DEFAULT_TTL, MAX_TTL);
     const payloadHash = stableHash(input.payload);
     const expiresAt = new Date(Date.now() + ttl * 1000);
 
-    const idempotencyKey = input.idempotencyKey;
+    const idempotencyKey = input.idempotencyKey
+      ? boundedIdempotencyKey(input.idempotencyKey)
+      : undefined;
     if (idempotencyKey) {
       const existing = await runInTenantTransaction(
         this.db,
@@ -70,21 +93,45 @@ export class AiConfirmationService {
       }
     }
 
-    const [inserted] = await runInTenantTransaction(
+    const userMembershipId = await this.resolveMembershipId(input.orgId, input.userId);
+
+    const inserted = await runInTenantTransaction(
       this.db,
-      (tx) =>
-        tx
-          .insert(aiActionProposals)
-          .values({
-            orgId: input.orgId,
-            userId: input.userId,
-            action: input.action,
-            payload: input.payload,
-            payloadHash,
-            idempotencyKey: input.idempotencyKey ?? null,
-            expiresAt,
-          })
-          .returning(),
+      async (tx) => {
+        try {
+          const [row] = await tx
+            .insert(aiActionProposals)
+            .values({
+              orgId: input.orgId,
+              userId: input.userId,
+              userMembershipId,
+              action: input.action,
+              payload: input.payload,
+              payloadHash,
+              idempotencyKey: idempotencyKey ?? null,
+              expiresAt,
+            })
+            .returning();
+          return row;
+        } catch (error) {
+          if (!isUniqueViolation(error) || idempotencyKey === undefined) throw error;
+          const [existing] = await tx
+            .select()
+            .from(aiActionProposals)
+            .where(
+              and(
+                eq(aiActionProposals.orgId, input.orgId),
+                eq(aiActionProposals.idempotencyKey, idempotencyKey),
+              ),
+            )
+            .limit(1);
+          if (!existing || existing.status !== "PROPOSED" || existing.expiresAt <= new Date())
+            throw new ConflictException(
+              "That action was already proposed. Ask again in a moment or confirm the pending card.",
+            );
+          return existing;
+        }
+      },
       { orgId: input.orgId },
     );
 
@@ -130,6 +177,10 @@ export class AiConfirmationService {
       const row = rows[0];
       if (!row) throw new NotFoundException("Proposal not found");
 
+      if (row.orgId !== input.actor.orgId || row.userId !== input.actor.userId) {
+        throw new NotFoundException("Proposal not found");
+      }
+
       if (row.status === "CONFIRMED" || row.status === "EXECUTED") {
         throw new ConflictException("Proposal already confirmed or executed");
       }
@@ -144,13 +195,19 @@ export class AiConfirmationService {
           await tx
             .update(aiActionProposals)
             .set({ status: "EXPIRED", updatedAt: now })
-            .where(eq(aiActionProposals.id, proposalId));
+            .where(
+              and(
+                eq(aiActionProposals.id, proposalId),
+                eq(aiActionProposals.orgId, input.actor.orgId),
+                eq(aiActionProposals.status, "PROPOSED"),
+              ),
+            );
         }
         throw new BadRequestException("Proposal has expired");
       }
 
-      if (row.orgId !== input.actor.orgId || row.userId !== input.actor.userId) {
-        throw new ForbiddenException("Actor mismatch");
+      if (stableHash(row.payload ?? {}) !== row.payloadHash) {
+        throw new ForbiddenException("Proposal payload does not match its signature");
       }
 
       const secret = getSecret();
@@ -163,10 +220,21 @@ export class AiConfirmationService {
         throw new ForbiddenException("Token signature mismatch");
       }
 
-      await tx
+      const redeemed = await tx
         .update(aiActionProposals)
         .set({ status: "CONFIRMED", updatedAt: now })
-        .where(eq(aiActionProposals.id, proposalId));
+        .where(
+          and(
+            eq(aiActionProposals.id, proposalId),
+            eq(aiActionProposals.orgId, input.actor.orgId),
+            eq(aiActionProposals.status, "PROPOSED"),
+          ),
+        )
+        .returning({ id: aiActionProposals.id });
+
+      if (redeemed.length !== 1) {
+        throw new ConflictException("Proposal already confirmed or executed");
+      }
 
       this.audit.log({
         action: "ai.proposal.confirmed",

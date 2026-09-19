@@ -134,7 +134,7 @@ describe("the ask path caps what it can ever hand the visibility reader", () => 
       ...mockSearch,
       retrieveTopArticles: jest.fn().mockResolvedValue([]),
       retrieveTopSources: jest.fn().mockResolvedValue([]),
-      retrieveAttachmentSnippets: jest.fn().mockResolvedValue(null),
+      retrieveDocumentPassages: jest.fn().mockResolvedValue([]),
     };
     const module: TestingModule = await Test.createTestingModule({
       providers: [

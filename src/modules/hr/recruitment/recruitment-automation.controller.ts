@@ -62,7 +62,7 @@ export class RecruitmentAutomationController {
 
   @Get("automations")
   @ResponseSchema(z.array(pipelineAutomationWithCreatorSchema))
-  @RequirePermission("hr:employees:view")
+  @RequirePermission("hr:requisitions:view")
   listAutomations(@CurrentUser() u: CurrentUserContext) {
     return this.automation.listAutomations(u.orgId);
   }
@@ -70,7 +70,7 @@ export class RecruitmentAutomationController {
   @Post("automations")
   @HttpCode(201)
   @ResponseSchema(pipelineAutomationSchema)
-  @RequirePermission("hr:employees:manage")
+  @RequirePermission("hr:requisitions:manage")
   @Validate({ body: createAutomationSchema })
   createAutomation(
     @Body() body: CreateAutomationInput,
@@ -81,7 +81,7 @@ export class RecruitmentAutomationController {
 
   @Patch("automations/:automationId")
   @ResponseSchema(pipelineAutomationSchema)
-  @RequirePermission("hr:employees:manage")
+  @RequirePermission("hr:requisitions:manage")
   @Validate({ params: automationIdParams, body: updateAutomationSchema })
   updateAutomation(
     @Param("automationId", ParseIntPipe) automationId: number,
@@ -93,7 +93,7 @@ export class RecruitmentAutomationController {
 
   @Delete("automations/:automationId")
   @ResponseSchema(successSchema)
-  @RequirePermission("hr:employees:manage")
+  @RequirePermission("hr:requisitions:manage")
   @Validate({ params: automationIdParams })
   deleteAutomation(
     @Param("automationId", ParseIntPipe) automationId: number,
@@ -104,7 +104,7 @@ export class RecruitmentAutomationController {
 
   @Get("messages")
   @ResponseSchema(z.array(candidateMessageSchema))
-  @RequirePermission("hr:employees:view")
+  @RequirePermission("hr:requisitions:view")
   @Validate({ query: messageListSchema })
   listMessages(
     @Query() query: MessageListInput,
@@ -116,7 +116,7 @@ export class RecruitmentAutomationController {
   @Post("messages")
   @HttpCode(201)
   @ResponseSchema(candidateMessageRawSchema)
-  @RequirePermission("hr:employees:manage")
+  @RequirePermission("hr:requisitions:manage")
   @Validate({ body: sendMessageSchema })
   sendMessage(
     @Body() body: SendMessageInput,
@@ -127,7 +127,7 @@ export class RecruitmentAutomationController {
 
   @Get("messages/threads")
   @ResponseSchema(z.array(messageThreadItemSchema))
-  @RequirePermission("hr:employees:view")
+  @RequirePermission("hr:requisitions:view")
   listMessageThreads(@CurrentUser() u: CurrentUserContext) {
     return this.automation.listMessageThreads(u.orgId);
   }
@@ -135,7 +135,7 @@ export class RecruitmentAutomationController {
   @Patch("messages/:messageId")
   @BodylessAction()
   @ResponseSchema(candidateMessageRawSchema)
-  @RequirePermission("hr:employees:view")
+  @RequirePermission("hr:requisitions:view")
   @Validate({ params: messageIdParams })
   markMessageRead(
     @Param("messageId", ParseIntPipe) messageId: number,
@@ -146,7 +146,7 @@ export class RecruitmentAutomationController {
 
   @Get("email-sequences")
   @ResponseSchema(z.array(emailSequenceListItemSchema))
-  @RequirePermission("hr:employees:view")
+  @RequirePermission("hr:requisitions:view")
   listSequences(@CurrentUser() u: CurrentUserContext) {
     return this.automation.listSequences(u.orgId);
   }
@@ -154,7 +154,7 @@ export class RecruitmentAutomationController {
   @Post("email-sequences")
   @HttpCode(201)
   @ResponseSchema(emailSequenceWithStepsSchema)
-  @RequirePermission("hr:employees:manage")
+  @RequirePermission("hr:requisitions:manage")
   @Validate({ body: createSequenceSchema })
   createSequence(
     @Body() body: CreateSequenceInput,
@@ -165,7 +165,7 @@ export class RecruitmentAutomationController {
 
   @Get("email-sequences/:sequenceId")
   @ResponseSchema(emailSequenceDetailSchema)
-  @RequirePermission("hr:employees:view")
+  @RequirePermission("hr:requisitions:view")
   @Validate({ params: sequenceIdParams })
   getSequence(
     @Param("sequenceId", ParseIntPipe) sequenceId: number,
@@ -176,7 +176,7 @@ export class RecruitmentAutomationController {
 
   @Patch("email-sequences/:sequenceId")
   @ResponseSchema(emailSequenceWithStepsSchema)
-  @RequirePermission("hr:employees:manage")
+  @RequirePermission("hr:requisitions:manage")
   @Validate({ params: sequenceIdParams, body: updateSequenceSchema })
   updateSequence(
     @Param("sequenceId", ParseIntPipe) sequenceId: number,
@@ -188,7 +188,7 @@ export class RecruitmentAutomationController {
 
   @Delete("email-sequences/:sequenceId")
   @ResponseSchema(successSchema)
-  @RequirePermission("hr:employees:manage")
+  @RequirePermission("hr:requisitions:manage")
   @Validate({ params: sequenceIdParams })
   deleteSequence(
     @Param("sequenceId", ParseIntPipe) sequenceId: number,
@@ -199,7 +199,7 @@ export class RecruitmentAutomationController {
 
   @Post("email-sequences/:sequenceId/enroll")
   @ResponseSchema(enrollSequenceResponseSchema)
-  @RequirePermission("hr:employees:manage")
+  @RequirePermission("hr:requisitions:manage")
   @Validate({ params: sequenceIdParams, body: enrollSequenceSchema })
   enrollSequence(
     @Param("sequenceId", ParseIntPipe) sequenceId: number,

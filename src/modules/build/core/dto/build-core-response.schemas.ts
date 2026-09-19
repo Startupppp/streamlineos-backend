@@ -76,6 +76,12 @@ export const bulkReorderStatesResultSchema = z.object({
   })),
 });
 
+export const orgCustomStateSchema = z.object({
+  name: z.string(),
+  color: z.string().nullable(),
+  type: z.string().nullable(),
+});
+
 export const buildCustomFieldSchema = z.object({
   id: z.number().int(),
   orgId: z.string(),
@@ -249,6 +255,7 @@ export const projectListItemSchema = z.object({
   startDate: wireDate().nullable(),
   endDate: wireDate().nullable(),
   managedProductId: z.number().int().nullable(),
+  pmWorkspaceId: z.string(),
   manager: projectManagerSchema.nullable(),
   progress: z.object({
     total: z.number().int(),

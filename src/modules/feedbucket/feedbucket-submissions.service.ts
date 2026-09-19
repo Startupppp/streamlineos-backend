@@ -1,16 +1,35 @@
-import { Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, count, desc, eq, ilike, isNull, like } from "drizzle-orm";
+import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { and, count, desc, eq, ilike, inArray, isNull, like } from "drizzle-orm";
 import { feedbucketAttachments, feedbucketSubmissions, organizationMembers } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
+import { runInTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
+import { registerAfterCommit } from "../../common/tenant/tenant-context";
+import { StorageService } from "../storage/storage.service";
 import type { ScopedRead } from "../access/scoped-read";
 import { feedbucketScope } from "./feedbucket-scope";
-import type { ListSubmissionsQuery, UpdateSubmissionInput } from "./feedbucket.schemas";
+import { type ConvertToTicketInput, type FeedbucketMediaKind, type ListSubmissionsQuery, type UpdateSubmissionInput } from "./feedbucket.schemas";
 import type { ProjectsTicketsService } from "../build/core/projects-tickets.service";
+import { resolveOrganizationActorsByUserIds } from "../../common/organization/organization-actor";
+import {
+  deriveFeedbackTicketTitle,
+  resolveFeedbucketTicketTarget,
+} from "./feedbucket-ticket-routing";
+import { assertProjectInOrg } from "../build/core/project-access";
+
+const FEEDBUCKET_MEDIA_MIME_PREFIX: Record<FeedbucketMediaKind, string> = {
+  screenshot: "image/%",
+  recording: "video/%",
+};
+
+export type FeedbucketMediaStorage = Pick<StorageService, "deleteFileIfPresent">;
 
 @Injectable()
 export class FeedbucketSubmissionsService {
-  constructor(@Inject(DRIZZLE) private readonly db: Db) {}
+  constructor(
+    @Inject(DRIZZLE) private readonly db: Db,
+    @Inject(StorageService) private readonly storage: FeedbucketMediaStorage,
+  ) {}
 
   async list(read: ScopedRead, query: ListSubmissionsQuery, membershipId: number | null) {
     const orgId = read.orgId;
@@ -115,6 +134,72 @@ export class FeedbucketSubmissionsService {
       .where(and(eq(feedbucketSubmissions.id, submissionId), eq(feedbucketSubmissions.orgId, orgId)));
   }
 
+  async deleteMedia(orgId: string, submissionId: number, mediaKind: FeedbucketMediaKind) {
+    const submission = await this.findOne(orgId, submissionId);
+
+    const attachments = await this.db
+      .select({
+        id: feedbucketAttachments.id,
+        fileUrl: feedbucketAttachments.fileUrl,
+        fileKey: feedbucketAttachments.fileKey,
+      })
+      .from(feedbucketAttachments)
+      .where(
+        and(
+          eq(feedbucketAttachments.submissionId, submissionId),
+          eq(feedbucketAttachments.orgId, orgId),
+          like(feedbucketAttachments.mimeType, FEEDBUCKET_MEDIA_MIME_PREFIX[mediaKind]),
+        ),
+      );
+
+    const keys = new Set<string>();
+    for (const attachment of attachments) {
+      if (attachment.fileKey) keys.add(attachment.fileKey);
+      else if (attachment.fileUrl) keys.add(attachment.fileUrl);
+    }
+    if (mediaKind === "screenshot") {
+      if (submission.screenshotKey) keys.add(submission.screenshotKey);
+      else if (submission.screenshotUrl) keys.add(submission.screenshotUrl);
+    }
+
+    if (keys.size === 0 && attachments.length === 0)
+      throw new NotFoundException(
+        mediaKind === "recording" ? "Submission has no recording" : "Submission has no screenshot",
+      );
+
+    await runInTenantTransaction(
+      this.db,
+      async (tx) => {
+        if (attachments.length > 0)
+          await tx
+            .delete(feedbucketAttachments)
+            .where(
+              and(
+                eq(feedbucketAttachments.orgId, orgId),
+                inArray(
+                  feedbucketAttachments.id,
+                  attachments.map((attachment) => attachment.id),
+                ),
+              ),
+            );
+
+        if (mediaKind === "screenshot")
+          await tx
+            .update(feedbucketSubmissions)
+            .set({ screenshotUrl: null, screenshotKey: null, updatedAt: new Date() })
+            .where(
+              and(eq(feedbucketSubmissions.id, submissionId), eq(feedbucketSubmissions.orgId, orgId)),
+            );
+
+        const purge = async (): Promise<void> => {
+          for (const key of keys) await this.storage.deleteFileIfPresent(orgId, key);
+        };
+        if (!registerAfterCommit(purge)) await purge();
+      },
+      { orgId },
+    );
+  }
+
   async stats(read: ScopedRead, membershipId: number | null) {
     return read.read(
       {
@@ -152,17 +237,26 @@ export class FeedbucketSubmissionsService {
     actingUserId: string,
     submissionId: number,
     ticketsService: ProjectsTicketsService,
+    override?: ConvertToTicketInput,
   ) {
     const submission = await this.findOne(orgId, submissionId);
     const widget = submission.widget;
     if (!widget) throw new NotFoundException("Submission has no associated widget");
-    const projectId = widget.projectId;
+
+    if (override?.projectId !== undefined) await assertProjectInOrg(this.db, orgId, override.projectId);
+    const assigneeMembershipId = await this.resolveOverrideAssignee(orgId, override?.assigneeId);
+    const { projectId, assigneeMembershipId: resolvedAssignee } = resolveFeedbucketTicketTarget(
+      widget,
+      submission.type,
+      { projectId: override?.projectId, assigneeMembershipId: assigneeMembershipId ?? undefined },
+    );
     if (!projectId) throw new NotFoundException("Widget has no project linked");
 
     const ticket = await ticketsService.createFromFeedback(orgId, actingUserId, projectId, {
-      title: submission.message.slice(0, 255),
+      title: deriveFeedbackTicketTitle(submission.message, submission.type),
       description: `**Feedback type:** ${submission.type}\n\n${submission.message}`,
       type: widget.defaultTicketType,
+      assigneeMembershipId: resolvedAssignee,
     });
 
     await this.db
@@ -171,5 +265,13 @@ export class FeedbucketSubmissionsService {
       .where(and(eq(feedbucketSubmissions.id, submissionId), eq(feedbucketSubmissions.orgId, orgId)));
 
     return { ticketId: ticket.id };
+  }
+
+  private async resolveOverrideAssignee(orgId: string, assigneeId: string | undefined): Promise<number | null> {
+    if (!assigneeId) return null;
+    const actorMap = await resolveOrganizationActorsByUserIds(this.db, orgId, [assigneeId]);
+    const actor = actorMap.get(assigneeId);
+    if (!actor) throw new BadRequestException(`${assigneeId} is not an active member of this organization`);
+    return actor.membershipId;
   }
 }

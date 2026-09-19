@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { pageSizeField } from "../../../../common/pagination/list-query.schema";
+import { PERSONA_IDS } from "../persona-registry";
 
 export const scoreLeadSingleSchema = z.object({
   leadId: z.number().int().positive(),
@@ -145,7 +146,7 @@ export const chatRequestSchema = z.object({
     .min(1)
     .max(50),
   conversationId: z.number().int().positive().optional(),
-  persona: z.string().optional(),
+  persona: z.enum(PERSONA_IDS).optional(),
 }).strict();
 
 export const chatHistoryQuerySchema = z.object({
@@ -254,6 +255,21 @@ export const mailSendPayloadSchema = z.object({
   toEmail: z.string().email(),
   subject: z.string().min(1).max(500),
   body: z.string().min(1),
+});
+
+export const scheduleMeetingPayloadSchema = z.object({
+  title: z.string().min(1).max(200),
+  startDate: z.string().min(1).max(60),
+  endDate: z.string().min(1).max(60),
+  timezone: z.string().min(1).max(100),
+  attendeeIds: z.array(z.string().min(1).max(120)).max(50).default([]),
+  location: z.string().max(500).optional(),
+  description: z.string().max(5000).optional(),
+});
+
+export const sendDirectMessagePayloadSchema = z.object({
+  targetUserId: z.string().min(1).max(120),
+  message: z.string().min(1).max(5000),
 });
 
 export const blogImproveWritingSchema = z.object({ content: z.string().min(1).max(10000) });

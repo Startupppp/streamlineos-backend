@@ -1,40 +1,43 @@
 import { Injectable, Inject } from "@nestjs/common";
-import { tool } from "ai";
 import { z } from "zod";
-import { and, eq, sql } from "drizzle-orm";
-import { organizationMembers, tickets, users } from "../../../db/schema";
+import { and, eq, isNull, sql } from "drizzle-orm";
+import { organizationMembers, users } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
-import { ToolAccessService } from "./tool-access.service";
 import { CalendarService } from "../../calendar/calendar.service";
 import { ChatSearchService } from "../../chat/chat-search.service";
-import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-
-export interface WorkspaceCopilotContext {
-  actor: CurrentUserContext;
-}
+import { ProjectsWorkQueryService } from "../../build/core/projects-work-query.service";
+import { PAGE_SIZE_CAP } from "../../../common/pagination/list-query.schema";
+import {
+  defineTool,
+  data,
+  denied,
+  empty,
+  failed,
+  type AskOsToolDefinition,
+  type AskOsToolProvider,
+} from "./registry/ask-os-tool.types";
 
 @Injectable()
-export class WorkspaceCopilotTools {
+export class WorkspaceCopilotTools implements AskOsToolProvider {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
-    private readonly toolAccess: ToolAccessService,
     private readonly calendar: CalendarService,
     private readonly chatSearch: ChatSearchService,
+    private readonly workQuery: ProjectsWorkQueryService,
   ) {}
 
-  buildTools(ctx: WorkspaceCopilotContext) {
-    const { actor } = ctx;
-    const { orgId, userId } = actor;
-
-    return {
-      findPerson: tool({
+  tools(): AskOsToolDefinition[] {
+    return [
+      defineTool({
+        key: "findPerson",
         description:
           "Resolve a person's name to org members matching that name. Returns up to 5 matches with id, name, email. Call this first before getPersonTicketStats when the user mentions someone by name.",
-        inputSchema: z.object({
+        input: z.object({
           name: z.string().min(1).describe("Full or partial name to search"),
         }),
-        execute: async ({ name }) => {
+        permission: "directory:people:view",
+        run: async ({ name }, ctx) => {
           const q = `%${name.trim()}%`;
           const rows = await this.db
             .select({
@@ -48,8 +51,10 @@ export class WorkspaceCopilotTools {
             .innerJoin(users, eq(organizationMembers.userId, users.id))
             .where(
               and(
-                eq(organizationMembers.orgId, orgId),
+                eq(organizationMembers.orgId, ctx.actor.orgId),
+                eq(organizationMembers.status, "ACTIVE"),
                 eq(users.isActive, true),
+                isNull(users.deletedAt),
                 sql`(
                   ${users.name} ILIKE ${q}
                   OR CONCAT(${users.firstName}, ' ', ${users.lastName}) ILIKE ${q}
@@ -59,82 +64,69 @@ export class WorkspaceCopilotTools {
             )
             .limit(5);
 
-          if (rows.length === 0) return { results: [], message: `No org members found matching "${name}".` };
+          if (rows.length === 0) return empty("people", `No org member matches "${name}".`);
 
-          return {
+          return data({
             results: rows.map((r) => ({
               id: r.id,
               name: r.name ?? `${r.firstName ?? ""} ${r.lastName ?? ""}`.trim(),
               email: r.email ?? "",
             })),
             message: `Found ${rows.length} member(s).`,
-          };
+          });
         },
       }),
 
-      getPersonTicketStats: tool({
+      defineTool({
+        key: "getPersonTicketStats",
         description:
           "Get ticket statistics for a specific org member. ALWAYS call findPerson first to get the userId from their name. Returns per-project totals (total, done, inProgress) plus cross-project summary.",
-        inputSchema: z.object({
+        input: z.object({
           userId: z.string().describe("The user ID obtained from findPerson"),
           projectId: z.number().int().positive().optional().describe("Filter to a specific project ID"),
         }),
-        execute: async ({ userId: targetUserId, projectId }) => {
-          const deny = await this.toolAccess.denyReason(orgId, userId, "build:tickets:view");
-          if (deny) return { denied: true, reason: deny };
+        permission: "build:tickets:view",
+        module: "build",
+        run: async ({ userId: targetUserId, projectId }, ctx) => {
+          if (ctx.scope !== "all" && targetUserId !== ctx.actor.userId)
+            return denied("build:tickets:view");
 
-          const read = await this.toolAccess.scope(orgId, userId, "build:tickets:view");
-          const scope = read.rawScope(
-            "an own-scoped member asking about another member's ticket stats is refused with a message, not narrowed to an empty result",
-          );
-          if (scope === "own" && targetUserId !== userId) {
-            return { denied: true, reason: "Permission denied: you can only view your own ticket stats." };
+          const result = await this.workQuery.getAllWork(ctx.caller, {
+            limit: PAGE_SIZE_CAP,
+            scope: "all",
+            orderBy: "created",
+            assigneeId: [targetUserId],
+            projectIds: projectId !== undefined ? [projectId] : undefined,
+            status: undefined,
+            priority: undefined,
+            type: undefined,
+            labelIds: undefined,
+            cycleId: undefined,
+            excludeStatus: undefined,
+          });
+
+          const byProjectMap = new Map<
+            number,
+            { projectId: number; projectName: string; total: number; done: number; inProgress: number }
+          >();
+          for (const ticket of result.data) {
+            const pid = ticket.projectId;
+            const entry = byProjectMap.get(pid) ?? {
+              projectId: pid,
+              projectName: ticket.projectName,
+              total: 0,
+              done: 0,
+              inProgress: 0,
+            };
+            entry.total++;
+            if (ticket.status === "DONE") entry.done++;
+            if (ticket.status === "IN_PROGRESS" || ticket.status === "IN_REVIEW") entry.inProgress++;
+            byProjectMap.set(pid, entry);
           }
 
-          const conditions = [
-            eq(tickets.orgId, orgId),
-            sql`${tickets.assigneeMembershipId} IN (SELECT id FROM organization_members WHERE org_id = ${orgId} AND user_id = ${targetUserId} AND status = 'ACTIVE')`,
-          ];
-          if (projectId !== undefined) conditions.push(eq(tickets.projectId, projectId));
-
-          const rows = await this.db.execute<{
-            project_id: number | null;
-            project_name: string | null;
-            total: string;
-            done: string;
-            in_progress: string;
-          }>(sql`
-            SELECT
-              t.project_id,
-              p.name AS project_name,
-              COUNT(*) AS total,
-              COUNT(*) FILTER (WHERE t.status = 'DONE') AS done,
-              COUNT(*) FILTER (WHERE t.status IN ('IN_PROGRESS','IN_REVIEW')) AS in_progress
-            FROM build.tickets t
-            LEFT JOIN build.projects p ON p.id = t.project_id
-            WHERE t.org_id = ${orgId}
-              AND t.assignee_membership_id IN (
-                SELECT om.id
-                FROM organization_members om
-                WHERE om.org_id = ${orgId}
-                  AND om.user_id = ${targetUserId}
-                  AND om.status = 'ACTIVE'
-              )
-              ${projectId !== undefined ? sql`AND t.project_id = ${projectId}` : sql``}
-            GROUP BY t.project_id, p.name
-            ORDER BY COUNT(*) DESC
-            LIMIT 50
-          `);
-
-          const byProject = rows.map((r) => ({
-            projectId: r.project_id,
-            projectName: r.project_name ?? "Unassigned",
-            total: Number(r.total),
-            done: Number(r.done),
-            inProgress: Number(r.in_progress),
-          }));
-
-          const totals = byProject.reduce(
+          const byProject = Array.from(byProjectMap.values()).sort((a, b) => b.total - a.total);
+          const realTotal = result.total ?? result.data.length;
+          const firstPageTotals = byProject.reduce(
             (acc, r) => ({
               total: acc.total + r.total,
               done: acc.done + r.done,
@@ -143,60 +135,93 @@ export class WorkspaceCopilotTools {
             { total: 0, done: 0, inProgress: 0 },
           );
 
-          return { byProject, totals };
+          if (result.hasMore) {
+            return data({
+              byProject,
+              totals: { ...firstPageTotals, total: realTotal },
+              partial: true,
+              note: `Showing first ${result.data.length} of ${realTotal} tickets; per-project breakdown and done/in-progress counts cover first page only.`,
+            });
+          }
+
+          return data({ byProject, totals: { ...firstPageTotals, total: realTotal } });
         },
       }),
 
-      getMyCalendarEvents: tool({
+      defineTool({
+        key: "getMyCalendarEvents",
         description:
           "Get the current user's own calendar events for a date range. Use when asked about your schedule, upcoming meetings, or events. The range must be at most 62 days.",
-        inputSchema: z.object({
+        input: z.object({
           from: z.string().describe("ISO date string start of range, e.g. 2026-07-15"),
           to: z.string().describe("ISO date string end of range, e.g. 2026-07-30"),
         }),
-        execute: async ({ from, to }) => {
-          const deny = await this.toolAccess.denyReason(orgId, userId, "calendar:read");
-          if (deny) return { denied: true, reason: deny };
-
+        permission: "calendar:read",
+        module: "calendar",
+        run: async ({ from, to }, ctx) => {
           const start = new Date(from);
           const end = new Date(to);
-          const diffMs = end.getTime() - start.getTime();
-          const diffDays = diffMs / (1000 * 60 * 60 * 24);
-          if (diffDays > 62) {
-            return { error: "Date range too large. Please request at most 62 days at a time." };
-          }
+          const diffDays = (end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24);
+          if (diffDays > 62)
+            return failed("Date range too large. Please request at most 62 days at a time.");
 
-          const { events } = await this.calendar.getEvents(orgId, userId, start, end);
+          const { events } = await this.calendar.getEvents(ctx.actor.orgId, ctx.actor.userId, start, end);
           const capped = events.slice(0, 100);
 
-          return {
+          if (capped.length === 0) return empty("calendar events");
+
+          return data({
             count: capped.length,
-            events: capped,
+            events: capped.map((event) => ({
+              title: event.title,
+              start: event.start.toISOString(),
+              end: event.end.toISOString(),
+              allDay: event.allDay ?? false,
+              source: event.source,
+              location: event.location ?? null,
+              rsvp: event.myRsvpStatus ?? null,
+            })),
             truncated: events.length > 100,
-          };
+          });
         },
       }),
 
-      searchChatMessages: tool({
+      defineTool({
+        key: "searchChatMessages",
         description:
           "Search the user's chat messages across channels they are a member of. Only returns messages from channels the user belongs to.",
-        inputSchema: z.object({
+        input: z.object({
           query: z.string().min(1).describe("Text to search for in messages"),
           limit: z.number().int().min(1).max(10).default(10).describe("Maximum results to return (max 10)"),
         }),
-        execute: async ({ query, limit }) => {
-          const deny = await this.toolAccess.denyReason(orgId, userId, "chat:messages:read");
-          if (deny) return { denied: true, reason: deny };
-
+        permission: "chat:messages:read",
+        module: "chat",
+        run: async ({ query, limit }, ctx) => {
           const safeLimit = Math.min(limit, 10);
           const result = await this.chatSearch.searchMessages(
-            { orgId, userId, isOrgOwner: actor.isOrgOwner },
+            {
+              orgId: ctx.actor.orgId,
+              userId: ctx.actor.userId,
+              membershipId: ctx.actor.membershipId,
+              isOrgOwner: ctx.actor.isOrgOwner,
+            },
             query,
             safeLimit,
           );
-          return result;
+
+          if (result.results.length === 0) return empty("chat messages");
+
+          return data({
+            count: result.results.length,
+            messages: result.results.map((row) => ({
+              channelId: row.channelId,
+              sender: row.sender?.name ?? null,
+              content: row.content,
+              createdAt: row.createdAt,
+            })),
+          });
         },
       }),
-    };
+    ];
   }
 }

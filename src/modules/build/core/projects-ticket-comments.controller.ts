@@ -102,11 +102,12 @@ export class ProjectsTicketCommentsController {
   @ResponseSchema(reactionSchema)
   @Validate({ params: projectIdticketIdcommentIdParams_, body: addReactionSchema })
   addReaction(
+    @Param("ticketId", ParseIntPipe) ticketId: number,
     @Param("commentId", ParseIntPipe) commentId: number,
     @Body() body: AddReactionInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.subresources.addReaction(commentId, u.userId, u.orgId, body.emoji, actingMembershipId(u.principal));
+    return this.subresources.addReaction(commentId, u.userId, u.orgId, body.emoji, actingMembershipId(u.principal), ticketId);
   }
 
   @Delete(":projectId/tickets/:ticketId/comments/:commentId/reactions/:emoji")
@@ -115,10 +116,11 @@ export class ProjectsTicketCommentsController {
   @NoContentResponse()
   @Validate({ params: projectIdticketIdcommentIdemojiParams })
   removeReaction(
+    @Param("ticketId", ParseIntPipe) ticketId: number,
     @Param("commentId", ParseIntPipe) commentId: number,
     @Param("emoji") emoji: string,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.subresources.removeReaction(commentId, u.userId, u.orgId, emoji, actingMembershipId(u.principal));
+    return this.subresources.removeReaction(commentId, u.userId, u.orgId, decodeURIComponent(emoji), actingMembershipId(u.principal), ticketId);
   }
 }

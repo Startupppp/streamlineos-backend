@@ -160,10 +160,7 @@ export class PeriodsService {
 
     const [row, periodEntries] = await Promise.all([
       this.reader.getPeriodWithUser(u.orgId, periodId),
-      this.db.query.timesheets.findMany({
-        where: and(eq(timesheets.timesheetPeriodId, periodId), eq(timesheets.orgId, u.orgId)),
-        orderBy: [desc(timesheets.date)],
-      }),
+      this.reader.listPeriodEntries(u.orgId, periodId),
     ]);
 
     if (!row) throw new NotFoundException("Period not found");

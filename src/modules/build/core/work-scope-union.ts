@@ -111,13 +111,3 @@ export function readIds(rows: Record<string, unknown>[]): number[] {
   return rows.map((row) => Number(row["id"]));
 }
 
-function readIdsAndTotal(rows: Record<string, unknown>[]): {
-  ids: number[];
-  total: number;
-} {
-  const first = rows[0];
-  return {
-    ids: rows.map((row) => Number(row["id"])),
-    total: first ? Number(first["total"]) : 0,
-  };
-}

@@ -40,8 +40,13 @@ export class AiCreditsReservationService {
     const { orgId, userId, feature, credits, idempotencyKey } = input;
 
     if (idempotencyKey) {
-      const existingId = await this.findByIdempotencyKey(orgId, idempotencyKey);
-      if (existingId !== null) return { reservationId: existingId };
+      const existing = await this.findByIdempotencyKey(orgId, idempotencyKey);
+      if (existing !== null && existing.status === "RESERVED")
+        return { reservationId: existing.id };
+      if (existing !== null)
+        throw new ConflictException(
+          `AI reservation ${existing.id} for this idempotency key is already ${existing.status.toLowerCase()}.`,
+        );
     }
 
     try {
@@ -189,12 +194,15 @@ export class AiCreditsReservationService {
   private async findByIdempotencyKey(
     orgId: string,
     idempotencyKey: string,
-  ): Promise<number | null> {
+  ): Promise<{ id: number; status: string } | null> {
     return runInTenantTransaction(
       this.db,
       async (tx) => {
         const [existing] = await tx
-          .select({ id: aiCreditReservations.id })
+          .select({
+            id: aiCreditReservations.id,
+            status: aiCreditReservations.status,
+          })
           .from(aiCreditReservations)
           .where(
             and(
@@ -203,7 +211,7 @@ export class AiCreditsReservationService {
             ),
           )
           .limit(1);
-        return existing?.id ?? null;
+        return existing ?? null;
       },
       { orgId },
     );

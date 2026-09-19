@@ -1,4 +1,10 @@
-import { streamText, type ToolSet } from "ai";
+import {
+  streamText,
+  type LanguageModel,
+  type ModelMessage,
+  type StopCondition,
+  type ToolSet,
+} from "ai";
 import { logger } from "../../../../common/logger/logger.service";
 import { resolveAiStreamModel } from "./ai-stream-model";
 import { classifyLlmError, resolveLlmRetryPolicy } from "../providers/llm-retry";
@@ -28,6 +34,13 @@ export interface AiStreamTextOpts {
   signal?: AbortSignal;
   /** Groups surfaces that share a provider fate; defaults to one breaker for all streaming. */
   breakerKey?: string;
+  messages?: ModelMessage[];
+  tools?: ToolSet;
+  stopWhen?: StopCondition<ToolSet>;
+  temperature?: number;
+  model?: LanguageModel;
+  modelId?: string;
+  onCompleted?: (result: { text: string; promptTokens: number; completionTokens: number }) => Promise<void>;
 }
 
 export interface AiTextStream {
@@ -41,6 +54,22 @@ const DEFAULT_BREAKER_KEY = "stream";
 const BREAKER_MESSAGE = "AI assistant is temporarily unavailable";
 const TENANT_BREAKER_MESSAGE =
   "This organization has exceeded its AI rate limit — try again shortly";
+
+interface StepUsageCarrier {
+  usage?: { inputTokens?: number | undefined; outputTokens?: number | undefined } | undefined;
+}
+
+export function sumStepUsage(
+  steps: readonly StepUsageCarrier[] | undefined,
+): { promptTokens: number; completionTokens: number } {
+  let promptTokens = 0;
+  let completionTokens = 0;
+  for (const step of steps ?? []) {
+    promptTokens += step.usage?.inputTokens ?? 0;
+    completionTokens += step.usage?.outputTokens ?? 0;
+  }
+  return { promptTokens, completionTokens };
+}
 
 function isAbortError(error: unknown): boolean {
   return error instanceof Error && (error.name === "AbortError" || error.name === "TimeoutError");
@@ -182,14 +211,19 @@ export class AiGatewayStreamHelper {
     };
 
     try {
-      const { modelId, model } = resolveAiStreamModel(opts.tier);
+      const selection = resolveAiStreamModel(opts.tier);
+      const model = opts.model ?? selection.model;
+      const modelId = opts.modelId ?? selection.modelId;
       call.providerOpened();
       const stream = streamText({
         model,
-        messages: [{ role: "user", content: prompt.user }],
+        messages: opts.messages ?? [{ role: "user", content: prompt.user }],
         system: prompt.system,
         maxOutputTokens: opts.maxTokens ?? DEFAULT_STREAM_MAX_TOKENS,
         maxRetries: resolveLlmRetryPolicy().maxRetriesPerModel,
+        ...(opts.tools !== undefined ? { tools: opts.tools } : {}),
+        ...(opts.stopWhen !== undefined ? { stopWhen: opts.stopWhen } : {}),
+        ...(opts.temperature !== undefined ? { temperature: opts.temperature } : {}),
         ...(signal !== undefined ? { abortSignal: signal } : {}),
         onChunk: () => call.firstToken(),
         /**
@@ -203,10 +237,41 @@ export class AiGatewayStreamHelper {
          * settle at zero. Both paths are idempotent, so a double notify is a
          * no-op.
          */
-        onAbort: () => {
+        onAbort: ({ steps }) => {
+          if (resolved) return;
+          resolved = true;
           releaseConcurrency();
-          releaseReservation("stream_aborted_no_settle");
-          call.finish("cancelled");
+          const partial = sumStepUsage(steps);
+          call.finish("cancelled", {
+            model: modelId,
+            promptTokens: partial.promptTokens,
+            completionTokens: partial.completionTokens,
+          });
+          if (partial.promptTokens === 0 && partial.completionTokens === 0) {
+            if (reservationId !== 0)
+              void this.ledger
+                .release(reservationId, "stream_aborted_no_usage", actor.orgId)
+                .catch(() => undefined);
+            return;
+          }
+          void settleStream(this.ledger, this.usageSvc, {
+            reservationId,
+            model: modelId,
+            promptTokens: partial.promptTokens,
+            completionTokens: partial.completionTokens,
+            orgId: actor.orgId,
+            userId: actor.userId,
+            feature,
+            appOverheadMs: 0,
+            outcome: "cancelled",
+          }).catch((err: unknown) => {
+            logger.error("Failed to settle a cancelled AI stream", {
+              error: err instanceof Error ? (err.stack ?? err.message) : String(err),
+              feature,
+              orgId: actor.orgId,
+              reservationId,
+            });
+          });
         },
         onError: ({ error }) => {
           if (signal?.aborted === true || isAbortError(error)) return;
@@ -218,7 +283,7 @@ export class AiGatewayStreamHelper {
             orgId: actor.orgId,
           });
         },
-        onFinish: async ({ usage }) => {
+        onFinish: async ({ text, usage }) => {
           if (resolved) return;
           resolved = true;
           releaseConcurrency();
@@ -250,6 +315,16 @@ export class AiGatewayStreamHelper {
               feature,
               orgId: actor.orgId,
               reservationId,
+            });
+          }
+          if (!opts.onCompleted) return;
+          try {
+            await opts.onCompleted({ text, promptTokens, completionTokens });
+          } catch (err) {
+            logger.error("AI stream completion hook failed", {
+              error: err instanceof Error ? (err.stack ?? err.message) : String(err),
+              feature,
+              orgId: actor.orgId,
             });
           }
         },

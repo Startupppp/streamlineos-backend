@@ -12,6 +12,7 @@ const row = {
   reporterId: null, points: null, storyPoints: null, link: null, rank: "a0", parentTicketId: null,
   originalEstimate: null, timeSpent: "0", startDate: null, dueDate: null, moduleId: null,
   cycleId: null, sequenceId: null, estimate: null, createdAt: new Date(), updatedAt: new Date(),
+  descriptionExcerpt: "A short plain-text excerpt of the ticket body",
   assigneeId: user.id, assignee: user, assignees: [{ id: 1, ticketId: 1, assignedAt: new Date(), assignedBy: null, userId: user.id, user }],
   labels: [{ id: 1, ticketId: 1, labelId: 3, createdAt: new Date(), label: { id: 3, orgId: "org-1", createdAt: new Date(), name: "Bug", color: null } }], cycle: null,
 };

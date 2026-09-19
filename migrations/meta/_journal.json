@@ -6161,6 +6161,27 @@
       "when": 1803000010334,
       "tag": "1119_impersonation_sessions",
       "breakpoints": true
+    },
+    {
+      "idx": 1008,
+      "version": "7",
+      "when": 1803000010335,
+      "tag": "1120_feedbucket_widget_defaults",
+      "breakpoints": true
+    },
+    {
+      "idx": 1009,
+      "version": "7",
+      "when": 1803000010336,
+      "tag": "1121_chat_presence_custom_status",
+      "breakpoints": true
+    },
+    {
+      "idx": 1010,
+      "version": "7",
+      "when": 1803000010337,
+      "tag": "1122_build_workspace_scope_indexes",
+      "breakpoints": true
     }
   ]
 }

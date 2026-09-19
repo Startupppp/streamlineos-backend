@@ -13,6 +13,10 @@ import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { actingMembershipId } from "../../common/auth/principal";
 import { AccessService } from "../access/access.service";
 import { resolveGoalsScope } from "./goals-scope";
+import {
+  goalsInManagedProductCondition,
+  goalsInPmWorkspaceCondition,
+} from "./goals-project-scope";
 import type {
   CheckInInput,
   CreateInput,
@@ -177,6 +181,12 @@ export class GoalsService {
             ? sql`EXISTS (SELECT 1 FROM organization_members om WHERE om.org_id = ${orgId} AND om.user_id = ${filters.ownerId} AND om.id = ${okrGoals.ownerMembershipId})`
             : undefined,
           filters.projectId !== undefined ? eq(okrGoals.projectId, filters.projectId) : undefined,
+          filters.pmWorkspaceId !== undefined
+            ? goalsInPmWorkspaceCondition(orgId, filters.pmWorkspaceId)
+            : undefined,
+          filters.managedProductId !== undefined
+            ? goalsInManagedProductCondition(orgId, filters.managedProductId)
+            : undefined,
           filters.search ? ilike(okrGoals.title, `%${filters.search}%`) : undefined,
         ],
       },

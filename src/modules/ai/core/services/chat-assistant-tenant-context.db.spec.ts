@@ -146,14 +146,14 @@ describe("Ask-OS chat against a live Postgres as the app role (CATALOG)", () => 
 
   it("REFUSES fetchChatContext on the bare pool and ALLOWS it inside a tenant transaction", async () => {
     await expect(
-      sqlstateOfRejection(() => fetchChatContext(appDb, DB_USER, DB_ORG)),
+      sqlstateOfRejection(() => fetchChatContext(appDb, DB_USER, DB_ORG, actorFor(DB_ORG, DB_USER, 1))),
     ).resolves.toBe(INSUFFICIENT_PRIVILEGE);
 
     await expect(
       runInNewTenantTransaction(appDb, DB_ORG, async () =>
-        fetchChatContext(appDb, DB_USER, DB_ORG),
+        fetchChatContext(appDb, DB_USER, DB_ORG, actorFor(DB_ORG, DB_USER, 1)),
       ),
-    ).resolves.toMatchObject({ pendingLeaves: 0, recentPayrolls: [], topLeads: [] });
+    ).resolves.toMatchObject({ context: { pendingLeaves: 0, recentPayrolls: [], topLeads: [] } });
   }, 60_000);
 
   it("REFUSES the chat-history INSERT on the bare pool and ALLOWS it inside one", async () => {

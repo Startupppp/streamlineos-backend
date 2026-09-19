@@ -54,7 +54,11 @@ function makeServices() {
   const audit = { log: jest.fn() };
   const planLimits = { assertWithinLimit: jest.fn().mockResolvedValue(undefined) };
   const dispatch = { emit: jest.fn().mockResolvedValue(undefined) };
-  const pmWorkspaces = { resolveDefaultWorkspaceId: jest.fn().mockResolvedValue("ws-1") };
+  const pmWorkspaces = {
+    resolveDefaultWorkspaceId: jest.fn().mockResolvedValue("ws-1"),
+    resolveWorkspaceIdForWrite: jest.fn().mockResolvedValue("ws-1"),
+    assertMemberOfWorkspace: jest.fn().mockResolvedValue(undefined),
+  };
   return { audit, planLimits, dispatch, pmWorkspaces };
 }
 

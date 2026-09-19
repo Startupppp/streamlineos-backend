@@ -1,26 +1,32 @@
 import { Injectable } from "@nestjs/common";
 import { AccessService } from "../../access/access.service";
-import { permissionAreaLabel } from "../../../common/rbac/module-vocabulary";
-import type { ScopedRead } from "../../access/scoped-read";
-import { resolveToolScope } from "./ai-tool-scope";
+import { ScopedRead } from "../../access/scoped-read";
+import { toolDenialReason } from "./registry/ask-os-tool.types";
+import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import type { AuthContext } from "../../../common/auth/auth-context";
 
 @Injectable()
 export class ToolAccessService {
   constructor(private readonly access: AccessService) {}
 
-  async scope(orgId: string, userId: string, key: string): Promise<ScopedRead> {
-    return resolveToolScope(this.access, { orgId, userId }, key);
+  async scope(
+    actor: CurrentUserContext,
+    key: string,
+    authContext?: AuthContext,
+  ): Promise<ScopedRead> {
+    return ScopedRead.of(
+      actor.orgId,
+      actor.userId,
+      await this.access.scopeFor(actor, key, authContext),
+    );
   }
 
   async denyReason(
-    orgId: string,
-    userId: string,
+    actor: CurrentUserContext,
     key: string,
+    authContext?: AuthContext,
   ): Promise<string | null> {
-    const read = await this.scope(orgId, userId, key);
-    if (read.denied) {
-      return `Permission denied: you do not have access to ${permissionAreaLabel(key)} data.`;
-    }
-    return null;
+    const read = await this.scope(actor, key, authContext);
+    return read.denied ? toolDenialReason(key) : null;
   }
 }

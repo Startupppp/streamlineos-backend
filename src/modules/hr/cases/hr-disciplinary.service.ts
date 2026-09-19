@@ -22,6 +22,8 @@ import type {
 } from "./dto/hr-cases.schemas";
 import { checkProgressiveDiscipline } from "./lib/progressive-discipline";
 
+const MY_DISCIPLINARY_ACTIONS_LIMIT = 50;
+
 @Injectable()
 export class HrDisciplinaryService {
   constructor(
@@ -57,7 +59,7 @@ export class HrDisciplinaryService {
     const membershipId = actingMembershipId(u.principal);
     if (membershipId == null) throw new ForbiddenException("Organization membership required");
     const employeePredicate = eq(hrDisciplinaryActions.employeeMembershipId, membershipId);
-    return this.db
+    const rows = await this.db
       .select({
         id: hrDisciplinaryActions.id,
         orgId: hrDisciplinaryActions.orgId,
@@ -77,7 +79,16 @@ export class HrDisciplinaryService {
       .from(hrDisciplinaryActions)
       .where(and(eq(hrDisciplinaryActions.orgId, u.orgId), employeePredicate))
       .orderBy(desc(hrDisciplinaryActions.createdAt))
-      .limit(50);
+      .limit(MY_DISCIPLINARY_ACTIONS_LIMIT);
+
+    return {
+      data: rows,
+      pagination: {
+        limit: MY_DISCIPLINARY_ACTIONS_LIMIT,
+        hasMore: rows.length === MY_DISCIPLINARY_ACTIONS_LIMIT,
+        nextCursor: null,
+      },
+    };
   }
 
   async getById(orgId: string, id: number) {

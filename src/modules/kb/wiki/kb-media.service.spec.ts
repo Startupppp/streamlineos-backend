@@ -1,6 +1,6 @@
 jest.mock("sharp", () => ({ __esModule: true, default: jest.fn() }));
 
-import { BadRequestException, NotFoundException, ServiceUnavailableException, UnprocessableEntityException } from "@nestjs/common";
+import { BadRequestException, Logger, NotFoundException, ServiceUnavailableException, UnprocessableEntityException } from "@nestjs/common";
 import { KbMediaService } from "./kb-media.service";
 import type { StorageService, UploadResult } from "../../storage/storage.service";
 import type { AuditService } from "../../../common/audit/audit.service";
@@ -253,6 +253,41 @@ describe("KbMediaService", () => {
       await expect(
         service.upload(makeFile("image/jpeg", JPEG_BUF), makeUser()),
       ).rejects.toBeInstanceOf(BadRequestException);
+    });
+
+    it("logs the decoder's own reason, so a 400 on a valid-looking image is diagnosable at all", async () => {
+      const logged = jest.spyOn(Logger.prototype, "error").mockImplementation(() => undefined);
+      mockChain.toBuffer.mockRejectedValue(new Error("VipsJpeg: Premature end of input file"));
+
+      await expect(
+        service.upload(makeFile("image/jpeg", JPEG_BUF, "holiday.jpg"), makeUser()),
+      ).rejects.toBeInstanceOf(BadRequestException);
+
+      expect(logged).toHaveBeenCalledWith(
+        expect.stringContaining("VipsJpeg: Premature end of input file"),
+      );
+      expect(logged).toHaveBeenCalledWith(expect.stringContaining("holiday.jpg"));
+      logged.mockRestore();
+    });
+
+    it("names the megapixel ceiling rather than calling an oversized but valid photo invalid", async () => {
+      jest.spyOn(Logger.prototype, "error").mockImplementation(() => undefined);
+      mockChain.toBuffer.mockRejectedValue(new Error("Input image exceeds pixel limit"));
+
+      await expect(
+        service.upload(makeFile("image/jpeg", JPEG_BUF, "panorama.jpg"), makeUser()),
+      ).rejects.toMatchObject({
+        message: "Image is larger than the 50 megapixel processing limit",
+      });
+    });
+
+    it("still calls a genuinely undecodable file invalid", async () => {
+      jest.spyOn(Logger.prototype, "error").mockImplementation(() => undefined);
+      mockChain.toBuffer.mockRejectedValue(new Error("unsupported image format"));
+
+      await expect(
+        service.upload(makeFile("image/jpeg", JPEG_BUF), makeUser()),
+      ).rejects.toMatchObject({ message: "Invalid image file" });
     });
   });
 

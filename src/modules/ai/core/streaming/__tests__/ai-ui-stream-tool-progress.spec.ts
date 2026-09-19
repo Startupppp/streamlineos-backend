@@ -33,10 +33,11 @@ import { AiConcurrencyLimiter } from "../../gateway/ai-concurrency-limiter";
 import type { AiCreditLedger } from "../../gateway/credit-ledger.interface";
 import type { AiUsageService } from "../../services/ai-usage.service";
 
-jest.mock("../../services/chat-assistant-model", () => ({
-  CHAT_FEATURE: "chat.message",
-  resolveChatModelId: () => "gemini-1.5-pro-latest",
-  resolveChatModel: () => activeModel,
+jest.mock("../../gateway/ai-stream-model", () => ({
+  ...jest.requireActual("../../gateway/ai-stream-model"),
+  resolveDefaultStreamModelId: () => "gemini-1.5-pro-latest",
+  resolveDefaultStreamModel: () => activeModel,
+  resolveAiStreamModel: () => ({ modelId: "gemini-1.5-pro-latest", model: activeModel }),
 }));
 
 const ORG_ID = "org_ui_probe";

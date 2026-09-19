@@ -46,14 +46,14 @@ export class RecruitmentRecruitersController {
 
   @Get("portals")
   @ResponseSchema(z.array(recruiterPortalSchema))
-  @RequirePermission("hr:employees:manage")
+  @RequirePermission("hr:requisitions:manage")
   listPortals(@CurrentUser() u: CurrentUserContext) {
     return this.recruiters.listPortals(u.orgId);
   }
 
   @Post("portals")
   @ResponseSchema(recruiterPortalSchema)
-  @RequirePermission("hr:employees:manage")
+  @RequirePermission("hr:requisitions:manage")
   @Validate({ body: upsertPortalSchema })
   async upsertPortal(
     @Body() body: UpsertPortalInput,
@@ -68,7 +68,7 @@ export class RecruitmentRecruitersController {
   @Post("portals/:platform/sync")
   @BodylessAction()
   @ResponseSchema(syncPortalResponseSchema)
-  @RequirePermission("hr:employees:manage")
+  @RequirePermission("hr:requisitions:manage")
   @Validate({ params: platformParams })
   syncPortal(
     @Param("platform") platform: string,
@@ -79,14 +79,14 @@ export class RecruitmentRecruitersController {
 
   @Get("recruiters")
   @ResponseSchema(z.array(recruiterDirectoryItemSchema))
-  @RequirePermission("hr:employees:view")
+  @RequirePermission("hr:requisitions:view")
   recruiterDirectory(@CurrentUser() u: CurrentUserContext) {
     return this.recruiters.recruiterDirectory(u.orgId);
   }
 
   @Get("recruiters/activity")
   @ResponseSchema(z.array(recruiterActivityItemSchema))
-  @RequirePermission("hr:employees:view")
+  @RequirePermission("hr:requisitions:view")
   @Validate({ query: recruiterActivityQuerySchema })
   listActivity(
     @Query() query: RecruiterActivityQueryInput,
@@ -98,7 +98,7 @@ export class RecruitmentRecruitersController {
   @Post("recruiters/activity")
   @HttpCode(201)
   @ResponseSchema(recruiterActivityLogRowSchema)
-  @RequirePermission("hr:employees:view")
+  @RequirePermission("hr:requisitions:view")
   @Validate({ body: recruiterActivitySchema })
   logActivity(
     @Body() body: RecruiterActivityInput,

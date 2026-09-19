@@ -20,6 +20,8 @@ export const listSchema = z.object({
   level: goalLevelEnum.optional(),
   ownerId: z.string().optional(),
   projectId: z.coerce.number().int().optional(),
+  pmWorkspaceId: z.string().optional(),
+  managedProductId: z.coerce.number().int().positive().optional(),
   search: z.string().optional(),
   page: pageNumberField,
   limit: pageSizeField(20, 100),

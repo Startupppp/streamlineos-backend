@@ -10,6 +10,7 @@ import {
 } from "../tenant";
 import { logger } from "../logger/logger.service";
 import { reportError } from "../observability/error-reporter";
+import { getObservabilityContext } from "../observability/observability-context";
 import { getImpersonationContext } from "../impersonation/impersonation-context";
 
 interface AuditEntryFields {
@@ -157,7 +158,7 @@ export class AuditService {
       resourceType: entry.resourceType ?? null,
       resourceId: entry.resourceId ?? null,
       metadata: this.buildMetadata(entry),
-      ipAddress: entry.ipAddress ?? null,
+      ipAddress: entry.ipAddress ?? getObservabilityContext()?.ipAddress ?? null,
       isPlatformEvent: orgId === null,
     };
   }

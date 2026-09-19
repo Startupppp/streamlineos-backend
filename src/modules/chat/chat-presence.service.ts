@@ -12,11 +12,30 @@ import { type Db } from "../../db/drizzle.module";
 import { logger } from "../../common/logger/logger.service";
 import type { StatusInput } from "./dto/chat.schemas";
 import { chatMessageContentMatch } from "./chat-message-content-match";
+import {
+  ACTIVE_PRESENCE_STATUS,
+  AUTO_PRESENCE_STATUSES,
+  presenceStatusExpiry,
+} from "./chat-presence-status";
 import { EntityReferenceService } from "../entity-reference/entity-reference.service";
 import type { EntityActor } from "../entity-reference/entity-reference.types";
 import { filterByEntityAccess } from "./chat-channel-authorization";
 
 const PRESENCE_WINDOW_MS = 90 * 1000;
+
+function expiredManualStatus(now: Date) {
+  return sql`${chatUserPresence.statusExpiresAt} IS NOT NULL AND ${chatUserPresence.statusExpiresAt} <= ${now.toISOString()}::timestamp`;
+}
+
+function asDate(value: unknown): Date | null {
+  if (value == null) return null;
+  if (value instanceof Date) return Number.isNaN(value.getTime()) ? null : value;
+  if (typeof value === "string" || typeof value === "number") {
+    const parsed = new Date(value);
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+  }
+  return null;
+}
 
 /**
  * The ceiling on `GET /chat/unread`. 100, not 99: the one consumer renders "99+" above 99,
@@ -47,24 +66,42 @@ export class ChatPresenceService {
   async heartbeat(userId: string, orgId: string) {
     const membershipId = await this.resolveMembershipId(orgId, userId);
     if (!membershipId) return { ok: true };
+    const now = new Date();
+    const expired = expiredManualStatus(now);
     await this.db
       .insert(chatUserPresence)
-      .values({ orgId, membershipId, status: "ONLINE", lastSeenAt: new Date() })
+      .values({ orgId, membershipId, status: ACTIVE_PRESENCE_STATUS, lastSeenAt: now })
       .onConflictDoUpdate({
         target: [chatUserPresence.orgId, chatUserPresence.membershipId],
-        set: { status: "ONLINE", lastSeenAt: new Date() },
+        set: {
+          status: sql`CASE WHEN ${chatUserPresence.status} IN (${sql.join(
+            AUTO_PRESENCE_STATUSES.map((value) => sql`${value}`),
+            sql`, `,
+          )}) OR (${expired}) THEN ${ACTIVE_PRESENCE_STATUS}::text ELSE ${chatUserPresence.status} END`,
+          statusMessage: sql`CASE WHEN ${expired} THEN NULL ELSE ${chatUserPresence.statusMessage} END`,
+          statusExpiresAt: sql`CASE WHEN ${expired} THEN NULL ELSE ${chatUserPresence.statusExpiresAt} END`,
+          lastSeenAt: now,
+        },
       });
 
     return { ok: true };
   }
 
-  getOnlineUsers(orgId: string) {
-    const cutoff = new Date(Date.now() - PRESENCE_WINDOW_MS);
+  selectOnlineUsers(orgId: string) {
+    const now = new Date();
+    const cutoff = new Date(now.getTime() - PRESENCE_WINDOW_MS);
+    const expired = expiredManualStatus(now);
 
     return this.db
       .select({
         userId: organizationMembers.userId,
-        status: chatUserPresence.status,
+        status: sql<string>`CASE WHEN ${expired} THEN ${ACTIVE_PRESENCE_STATUS}::text ELSE ${chatUserPresence.status} END`,
+        statusMessage: sql<
+          string | null
+        >`CASE WHEN ${expired} THEN NULL ELSE ${chatUserPresence.statusMessage} END`,
+        statusExpiresAt: sql<
+          Date | string | null
+        >`CASE WHEN ${expired} THEN NULL ELSE ${chatUserPresence.statusExpiresAt} END`,
         lastSeenAt: chatUserPresence.lastSeenAt,
         userName: users.name,
         userImage: users.image,
@@ -76,15 +113,40 @@ export class ChatPresenceService {
       .limit(500);
   }
 
+  async getOnlineUsers(orgId: string) {
+    const rows = await this.selectOnlineUsers(orgId);
+    return rows.flatMap((row) => {
+      const lastSeenAt = asDate(row.lastSeenAt);
+      if (!lastSeenAt) return [];
+      return [
+        {
+          ...row,
+          lastSeenAt,
+          statusExpiresAt: asDate(row.statusExpiresAt),
+        },
+      ];
+    });
+  }
+
   async setStatus(userId: string, orgId: string, body: StatusInput) {
     const membershipId = await this.resolveMembershipId(orgId, userId);
     if (!membershipId) return { ok: true };
+    const now = new Date();
+    const statusMessage = body.statusMessage ? body.statusMessage : null;
+    const statusExpiresAt = presenceStatusExpiry(body.clearAfter ?? "never", now);
     await this.db
       .insert(chatUserPresence)
-      .values({ orgId, membershipId, status: body.status, lastSeenAt: new Date() })
+      .values({
+        orgId,
+        membershipId,
+        status: body.status,
+        statusMessage,
+        statusExpiresAt,
+        lastSeenAt: now,
+      })
       .onConflictDoUpdate({
         target: [chatUserPresence.orgId, chatUserPresence.membershipId],
-        set: { status: body.status, lastSeenAt: new Date() },
+        set: { status: body.status, statusMessage, statusExpiresAt, lastSeenAt: now },
       });
 
     return { ok: true };

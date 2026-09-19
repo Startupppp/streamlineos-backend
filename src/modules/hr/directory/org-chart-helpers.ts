@@ -1,4 +1,5 @@
-import { alias } from "drizzle-orm/pg-core";
+import { alias, type PgTable } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 import {
   hrEmployments,
   hrPeople,
@@ -6,6 +7,10 @@ import {
   organizationMembers,
   users,
 } from "../../../db/schema";
+
+function aliasWithSource<T extends PgTable, A extends string>(base: T, aliasName: A) {
+  return [alias(base, aliasName), sql`${base} ${sql.identifier(aliasName)}`] as const;
+}
 
 export interface OrgChartNode {
   id: string;
@@ -27,22 +32,22 @@ export interface OrgChartPage {
   };
 }
 
-export const orgChartChildUsers = alias(users, "org_chart_child_users");
-export const orgChartChildMembers = alias(organizationMembers, "org_chart_child_members");
-export const orgChartManagerUsers = alias(users, "org_chart_manager_users");
-export const orgChartManagerMembers = alias(organizationMembers, "org_chart_manager_members");
+export const [orgChartChildUsers, orgChartChildUsersSource] = aliasWithSource(users, "org_chart_child_users");
+export const [orgChartChildMembers, orgChartChildMembersSource] = aliasWithSource(organizationMembers, "org_chart_child_members");
+export const [orgChartManagerUsers, orgChartManagerUsersSource] = aliasWithSource(users, "org_chart_manager_users");
+export const [orgChartManagerMembers, orgChartManagerMembersSource] = aliasWithSource(organizationMembers, "org_chart_manager_members");
 
-export const rlVis = alias(hrReportingLines, "rl_vis");
-export const rlVisEmpEmp = alias(hrEmployments, "rl_vis_emp_emp");
-export const rlVisEmpPpl = alias(hrPeople, "rl_vis_emp_ppl");
-export const rlVisMgrEmp = alias(hrEmployments, "rl_vis_mgr_emp");
-export const rlVisMgrPpl = alias(hrPeople, "rl_vis_mgr_ppl");
+export const [rlVis, rlVisSource] = aliasWithSource(hrReportingLines, "rl_vis");
+export const [rlVisEmpEmp, rlVisEmpEmpSource] = aliasWithSource(hrEmployments, "rl_vis_emp_emp");
+export const [rlVisEmpPpl, rlVisEmpPplSource] = aliasWithSource(hrPeople, "rl_vis_emp_ppl");
+export const [rlVisMgrEmp, rlVisMgrEmpSource] = aliasWithSource(hrEmployments, "rl_vis_mgr_emp");
+export const [rlVisMgrPpl, rlVisMgrPplSource] = aliasWithSource(hrPeople, "rl_vis_mgr_ppl");
 
-export const rlChild = alias(hrReportingLines, "rl_child");
-export const rlChildMgrEmp = alias(hrEmployments, "rl_child_mgr_emp");
-export const rlChildMgrPpl = alias(hrPeople, "rl_child_mgr_ppl");
-export const rlChildEmpEmp = alias(hrEmployments, "rl_child_emp_emp");
-export const rlChildEmpPpl = alias(hrPeople, "rl_child_emp_ppl");
+export const [rlChild, rlChildSource] = aliasWithSource(hrReportingLines, "rl_child");
+export const [rlChildMgrEmp, rlChildMgrEmpSource] = aliasWithSource(hrEmployments, "rl_child_mgr_emp");
+export const [rlChildMgrPpl, rlChildMgrPplSource] = aliasWithSource(hrPeople, "rl_child_mgr_ppl");
+export const [rlChildEmpEmp, rlChildEmpEmpSource] = aliasWithSource(hrEmployments, "rl_child_emp_emp");
+export const [rlChildEmpPpl, rlChildEmpPplSource] = aliasWithSource(hrPeople, "rl_child_emp_ppl");
 
 export function toTitleCase(str: string): string {
   return str

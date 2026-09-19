@@ -186,6 +186,8 @@
     "check:query-projections": "node src/scripts/check-query-projections.mjs",
     "check:query-projections:self-test": "node src/scripts/check-query-projections.mjs --self-test",
     "check:query-projections:emit": "node src/scripts/check-query-projections.mjs --emit",
+    "check:list-projections": "node scripts/check-list-response-projections.mjs",
+    "check:list-projections:self-test": "node scripts/check-list-response-projections.mjs --self-test",
     "check:distinct-order-by": "node src/scripts/check-distinct-order-by.mjs",
     "check:distinct-order-by:self-test": "node src/scripts/check-distinct-order-by.mjs --self-test",
     "check:relation-hydration": "node src/scripts/check-relation-hydration.mjs",
@@ -429,7 +431,8 @@
     "check:baseline-integrity:emit": "node src/scripts/check-baseline-integrity.mjs --emit",
     "check:gate-wiring": "node src/scripts/check-gate-wiring.mjs",
     "check:gate-wiring:self-test": "node src/scripts/check-gate-wiring.mjs --self-test",
-    "test:db-specs": "node --max-old-space-size=8192 ./node_modules/jest/bin/jest.js --config ./jest-db.json --runInBand --forceExit"
+    "test:db-specs": "node --max-old-space-size=8192 ./node_modules/jest/bin/jest.js --config ./jest-db.json --runInBand --forceExit",
+    "audit:build-workspace-orphans": "node --env-file-if-exists=.env scripts/audit-build-pm-workspace-orphans.mjs"
   },
   "dependencies": {
     "@ai-sdk/google": "^4.0.33",

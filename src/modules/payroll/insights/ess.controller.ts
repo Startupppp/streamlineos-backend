@@ -34,7 +34,7 @@ import {
   ownFnfSchema,
   totalRewardsStatementSchema,
   reimbursementRowSchema,
-  loanRowSchema,
+  loanRowWithBalanceSchema,
   taxDeclarationRowSchema,
   investmentProofRowSchema,
 } from "./dto/ess-response.schemas";
@@ -99,7 +99,7 @@ export class EssController {
   @HttpCode(201)
   @RequirePermission("self:payroll")
   @Validate({ body: essCreateLoanSchema })
-  @ResponseSchema(loanRowSchema)
+  @ResponseSchema(loanRowWithBalanceSchema)
   createLoan(
     @CurrentUser() u: CurrentUserContext,
     @Body() body: EssCreateLoan,
