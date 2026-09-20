@@ -17,8 +17,22 @@
  */
 import { BillingOrderCreation } from "./billing-order-creation";
 import { BillingCoupons } from "./billing-coupons";
+import { runInNewTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
 
 jest.mock("./billing-coupons");
+jest.mock("../../../common/tenant/run-in-tenant-transaction", () => ({
+  runInNewTenantTransaction: jest.fn(
+    async (
+      db: { transaction: (fn: (tx: unknown) => Promise<unknown>) => Promise<unknown> },
+      _orgId: string,
+      fn: (tx: unknown) => Promise<unknown>,
+    ) => db.transaction(fn),
+  ),
+}));
+
+const openedTransaction = runInNewTenantTransaction as jest.MockedFunction<
+  typeof runInNewTenantTransaction
+>;
 
 const MockedCoupons = BillingCoupons as jest.MockedClass<typeof BillingCoupons>;
 
@@ -144,11 +158,21 @@ describe("billing order creation — compensation when the payment provider fail
 
   it("the transaction mock really invokes its callback, or every assertion above would be vacuous", async () => {
     const createOrder = jest.fn().mockResolvedValue({ providerOrderId: "order_live_2" });
-    const { deps, db, create } = makeDeps({ createOrder });
+    const { deps, create } = makeDeps({ createOrder });
 
     await new BillingOrderCreation(deps).createOrder(ORG_ID, USER_ID, "STARTER", "monthly");
 
-    expect(db.transaction).toHaveBeenCalled();
+    expect(openedTransaction).toHaveBeenCalled();
     expect(create).toHaveBeenCalledTimes(1);
+  });
+
+  it("opens its own tenant transactions rather than joining the request's, so no connection is held across the provider call", async () => {
+    const createOrder = jest.fn().mockResolvedValue({ providerOrderId: "order_live_3" });
+    const { deps } = makeDeps({ createOrder });
+
+    await new BillingOrderCreation(deps).createOrder(ORG_ID, USER_ID, "STARTER", "monthly");
+
+    expect(openedTransaction.mock.calls.length).toBeGreaterThanOrEqual(2);
+    for (const call of openedTransaction.mock.calls) expect(call[1]).toBe(ORG_ID);
   });
 });

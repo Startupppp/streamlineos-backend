@@ -23,6 +23,16 @@ import {
   FAKE_PROVIDER_ORDER_ID,
 } from "../payments/testing/fake-provider-adapter";
 
+jest.mock("../../../common/tenant/run-in-tenant-transaction", () => ({
+  runInNewTenantTransaction: jest.fn(
+    async (
+      db: { transaction: (fn: (tx: unknown) => Promise<unknown>) => Promise<unknown> },
+      _orgId: string,
+      fn: (tx: unknown) => Promise<unknown>,
+    ) => db.transaction(fn),
+  ),
+}));
+
 function makeProvider(): OrganizationPaymentProvider {
   const adapter = new FakeProviderAdapter("razorpay");
   return {

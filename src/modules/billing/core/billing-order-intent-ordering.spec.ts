@@ -10,6 +10,16 @@
  */
 import { BillingPaymentActivation } from "./billing-payment-activation";
 
+jest.mock("../../../common/tenant/run-in-tenant-transaction", () => ({
+  runInNewTenantTransaction: jest.fn(
+    async (
+      db: { transaction: (fn: (tx: unknown) => Promise<unknown>) => Promise<unknown> },
+      _orgId: string,
+      fn: (tx: unknown) => Promise<unknown>,
+    ) => db.transaction(fn),
+  ),
+}));
+
 const ORG = "org-intent";
 const USER = "user-intent";
 const MERCHANT_KEY_ID = "rzp_test_intent";
