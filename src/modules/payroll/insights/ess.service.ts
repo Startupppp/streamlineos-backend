@@ -246,7 +246,14 @@ export class EssService {
       ),
       orderBy: (fields, { desc: d }) => [d(fields.effectiveFrom)],
     });
-    if (!profile) throw new NotFoundException("No active salary profile found");
+    if (!profile) {
+      return {
+        profile: null,
+        components: [],
+        setupRequired: true,
+        message: "Your salary structure has not been set up yet. Please contact HR to configure your compensation details.",
+      };
+    }
 
     const components = await this.db
       .select({
@@ -270,6 +277,7 @@ export class EssService {
         effectiveFrom: profile.effectiveFrom,
       },
       components,
+      setupRequired: false,
     };
   }
 
