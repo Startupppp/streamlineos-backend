@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { wireDate, nullableWireDate } from "../../../../common/openapi/wire-types";
+import { changeRequestStatusEnum } from "../../../../db/schema";
 
 export const changeRequestRowSchema = z.object({
   id: z.number().int(),
@@ -12,7 +13,7 @@ export const changeRequestRowSchema = z.object({
   estimateMinutes: z.number().int().nullable(),
   budgetImpactCents: z.number().int().nullable(),
   timelineImpactDays: z.number().int().nullable(),
-  status: z.string(),
+  status: z.enum(changeRequestStatusEnum.enumValues),
   requestedById: z.string().nullable(),
   approvalOwnerId: z.string().nullable(),
   approvalOwnerMembershipId: z.number().int().nullable(),

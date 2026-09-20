@@ -24,6 +24,7 @@ type MockDb = {
   query: {
     bugs: { findFirst: jest.Mock };
     projects: { findFirst: jest.Mock };
+    organizationMembers: { findFirst: jest.Mock };
   };
   select: jest.Mock;
   transaction: jest.Mock;
@@ -47,11 +48,22 @@ function makeMockDb(): MockDb {
     query: {
       bugs: { findFirst: jest.fn() },
       projects: { findFirst: jest.fn() },
+      organizationMembers: { findFirst: jest.fn() },
     },
     select: jest.fn(),
     transaction: jest.fn(),
     update: jest.fn(),
   };
+}
+
+function makeUpdateChain(returning: unknown[]) {
+  return jest.fn().mockReturnValue({
+    set: jest.fn().mockReturnValue({
+      where: jest.fn().mockReturnValue({
+        returning: jest.fn().mockResolvedValue(returning),
+      }),
+    }),
+  });
 }
 
 function makeAccessGranted() {
@@ -207,13 +219,89 @@ describe("BugsService.createBug — bugNumber sequencing", () => {
 });
 
 describe("BugsService.getBug — cross-tenant isolation", () => {
-  it("throws NotFoundException when bug belongs to a different org", async () => {
+  it("throws NotFoundException when the caller's org has no project matching the id (cross-tenant isolation)", async () => {
+    const mockDb = makeMockDb();
+    const mockAccess = { resolveUserPermissions: jest.fn().mockResolvedValue(new Set()) } as unknown as AccessService;
+    const svc = new BugsService(mockDb as unknown as Db, mockAccess, mockAudit);
+    mockDb.query.projects.findFirst.mockResolvedValue(undefined);
+
+    await expect(svc.getBug(makeU("org-attacker"), 1, 99)).rejects.toThrow(NotFoundException);
+  });
+
+  it("throws NotFoundException when bug id does not exist within the project and org", async () => {
     const mockDb = makeMockDb();
     const mockAccess = makeAccessGranted();
     const svc = new BugsService(mockDb as unknown as Db, mockAccess, mockAudit);
+    mockDb.query.projects.findFirst.mockResolvedValue({ managerMembershipId: null });
     mockDb.query.bugs.findFirst.mockResolvedValue(undefined);
 
-    await expect(svc.getBug("org-attacker", 1, 99)).rejects.toThrow(NotFoundException);
+    await expect(svc.getBug(makeU("org-1"), 1, 99)).rejects.toThrow(NotFoundException);
+  });
+});
+
+describe("BugsService.updateBug — assignee resolution", () => {
+  it("resolves input.assigneeId to assigneeMembershipId before updating the row", async () => {
+    const mockDb = makeMockDb();
+    const mockAccess = makeAccessGranted();
+    const svc = new BugsService(mockDb as unknown as Db, mockAccess, mockAudit);
+    mockDb.query.projects.findFirst.mockResolvedValue({ managerMembershipId: null });
+    mockDb.query.bugs.findFirst.mockResolvedValue({ id: 1, status: "new", reopenCount: 0 });
+    mockDb.query.organizationMembers.findFirst.mockResolvedValue({ id: 42 });
+
+    const capturedSet: Record<string, unknown>[] = [];
+    mockDb.update = jest.fn().mockReturnValue({
+      set: jest.fn().mockImplementation((setObj: Record<string, unknown>) => {
+        capturedSet.push(setObj);
+        return {
+          where: jest.fn().mockReturnValue({
+            returning: jest.fn().mockResolvedValue([{ id: 1, status: "new" }]),
+          }),
+        };
+      }),
+    });
+
+    await svc.updateBug(makeU("org-1"), 1, 1, { assigneeId: "user-42" });
+    expect(capturedSet[0]).toMatchObject({ assigneeMembershipId: 42 });
+    expect(capturedSet[0]).not.toHaveProperty("assigneeId");
+  });
+
+  it("sets assigneeMembershipId to null when the userId is not an active project member", async () => {
+    const mockDb = makeMockDb();
+    const mockAccess = makeAccessGranted();
+    const svc = new BugsService(mockDb as unknown as Db, mockAccess, mockAudit);
+    mockDb.query.projects.findFirst.mockResolvedValue({ managerMembershipId: null });
+    mockDb.query.bugs.findFirst.mockResolvedValue({ id: 1, status: "new", reopenCount: 0 });
+    mockDb.query.organizationMembers.findFirst.mockResolvedValue(undefined);
+
+    const capturedSet: Record<string, unknown>[] = [];
+    mockDb.update = jest.fn().mockReturnValue({
+      set: jest.fn().mockImplementation((setObj: Record<string, unknown>) => {
+        capturedSet.push(setObj);
+        return {
+          where: jest.fn().mockReturnValue({
+            returning: jest.fn().mockResolvedValue([{ id: 1, status: "new" }]),
+          }),
+        };
+      }),
+    });
+
+    await svc.updateBug(makeU("org-1"), 1, 1, { assigneeId: "user-unknown" });
+    expect(capturedSet[0]).toMatchObject({ assigneeMembershipId: null });
+  });
+});
+
+describe("BugsService.updateBug — soft-delete TOCTOU guard", () => {
+  it("throws NotFoundException when the row is concurrently soft-deleted before the UPDATE completes", async () => {
+    const mockDb = makeMockDb();
+    const mockAccess = makeAccessGranted();
+    const svc = new BugsService(mockDb as unknown as Db, mockAccess, mockAudit);
+    mockDb.query.projects.findFirst.mockResolvedValue({ managerMembershipId: null });
+    mockDb.query.bugs.findFirst.mockResolvedValue({ id: 1, status: "new", reopenCount: 0 });
+    mockDb.update = makeUpdateChain([]);
+
+    await expect(svc.updateBug(makeU("org-1"), 1, 1, { title: "updated" })).rejects.toThrow(
+      NotFoundException,
+    );
   });
 });
 
@@ -227,6 +315,7 @@ describe("BugsService — project membership gate (assertProjectAccess)", () => 
       query: {
         projects: { findFirst: jest.fn().mockResolvedValue({ managerMembershipId: 999 }) },
         bugs: { findFirst: jest.fn() },
+        organizationMembers: { findFirst: jest.fn() },
       },
       select: jest.fn().mockReturnValue({ from }),
       transaction: jest.fn(),
@@ -253,6 +342,7 @@ describe("BugsService — project membership gate (assertProjectAccess)", () => 
       query: {
         projects: { findFirst: jest.fn().mockResolvedValue({ managerMembershipId: 999 }) },
         bugs: { findFirst: jest.fn() },
+        organizationMembers: { findFirst: jest.fn() },
       },
       select: jest.fn().mockImplementation(() => {
         callCount++;
@@ -277,5 +367,26 @@ describe("BugsService — project membership gate (assertProjectAccess)", () => 
     const svc = new BugsService(db, access, mockAudit);
     const u = makeU("org-1");
     await expect(svc.listBugs(u, 1, {})).resolves.toEqual([]);
+  });
+
+  it("getBug rejects a non-member of the project with ForbiddenException (BOLA gate)", async () => {
+    const db = makeNonMemberDb();
+    const access = { resolveUserPermissions: jest.fn().mockResolvedValue(new Set()) } as unknown as AccessService;
+    const svc = new BugsService(db, access, mockAudit);
+    await expect(svc.getBug(makeU("org-1"), 1, 1)).rejects.toThrow(ForbiddenException);
+  });
+
+  it("updateBug rejects a non-member of the project with ForbiddenException (BOLA gate)", async () => {
+    const db = makeNonMemberDb();
+    const access = { resolveUserPermissions: jest.fn().mockResolvedValue(new Set()) } as unknown as AccessService;
+    const svc = new BugsService(db, access, mockAudit);
+    await expect(svc.updateBug(makeU("org-1"), 1, 1, { title: "x" })).rejects.toThrow(ForbiddenException);
+  });
+
+  it("deleteBug rejects a non-member of the project with ForbiddenException (BOLA gate)", async () => {
+    const db = makeNonMemberDb();
+    const access = { resolveUserPermissions: jest.fn().mockResolvedValue(new Set()) } as unknown as AccessService;
+    const svc = new BugsService(db, access, mockAudit);
+    await expect(svc.deleteBug(makeU("org-1"), 1, 1)).rejects.toThrow(ForbiddenException);
   });
 });

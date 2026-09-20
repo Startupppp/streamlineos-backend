@@ -1,5 +1,10 @@
-import { Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, eq, isNull, sql } from "drizzle-orm";
+import {
+  BadRequestException,
+  Inject,
+  Injectable,
+  NotFoundException,
+} from "@nestjs/common";
+import { and, desc, eq, isNull, lt, or, sql } from "drizzle-orm";
 import { changeRequests } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
@@ -7,7 +12,45 @@ import { AuditService } from "../../../common/audit/audit.service";
 import { AccessService } from "../../access/access.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { assertProjectAccess } from "../core/project-access";
-import type { CreateChangeRequestInput, ListCrQuery, UpdateChangeRequestInput } from "./dto/change-requests.schemas";
+import type {
+  CreateChangeRequestInput,
+  ListCrQuery,
+  UpdateChangeRequestInput,
+} from "./dto/change-requests.schemas";
+
+const ALLOWED_TRANSITIONS: Readonly<Record<string, ReadonlyArray<string>>> = {
+  submitted: ["under_review", "rejected"],
+  under_review: ["estimated", "rejected", "submitted"],
+  estimated: ["awaiting_approval", "rejected", "under_review"],
+  awaiting_approval: ["approved", "rejected"],
+  approved: ["in_progress"],
+  in_progress: ["completed"],
+  completed: [],
+  rejected: ["submitted"],
+};
+
+const crColumns = {
+  id: changeRequests.id,
+  orgId: changeRequests.orgId,
+  projectId: changeRequests.projectId,
+  crNumber: changeRequests.crNumber,
+  title: changeRequests.title,
+  description: changeRequests.description,
+  impact: changeRequests.impact,
+  estimateMinutes: changeRequests.estimateMinutes,
+  budgetImpactCents: changeRequests.budgetImpactCents,
+  timelineImpactDays: changeRequests.timelineImpactDays,
+  status: changeRequests.status,
+  requestedById: changeRequests.requestedById,
+  approvalOwnerId: changeRequests.approvalOwnerId,
+  approvalOwnerMembershipId: changeRequests.approvalOwnerMembershipId,
+  decisionComment: changeRequests.decisionComment,
+  decidedAt: changeRequests.decidedAt,
+  createdBy: changeRequests.createdBy,
+  createdAt: changeRequests.createdAt,
+  updatedAt: changeRequests.updatedAt,
+  deletedAt: changeRequests.deletedAt,
+};
 
 @Injectable()
 export class ChangeRequestsService {
@@ -20,34 +63,58 @@ export class ChangeRequestsService {
   async listChangeRequests(u: CurrentUserContext, projectId: number, query: ListCrQuery) {
     const { orgId } = u;
     await assertProjectAccess(this.db, this.access, u, projectId);
-    const conditions = [
-      eq(changeRequests.orgId, orgId),
-      eq(changeRequests.projectId, projectId),
-      isNull(changeRequests.deletedAt),
-    ];
-    if (query.status) conditions.push(eq(changeRequests.status, query.status));
+    const cursorDate =
+      query.afterCreatedAt !== undefined ? new Date(query.afterCreatedAt) : undefined;
+    const cursorCondition =
+      cursorDate !== undefined && query.afterId !== undefined
+        ? or(
+            lt(changeRequests.createdAt, cursorDate),
+            and(
+              eq(changeRequests.createdAt, cursorDate),
+              lt(changeRequests.id, query.afterId),
+            ),
+          )
+        : undefined;
     return this.db
-      .select()
+      .select(crColumns)
       .from(changeRequests)
-      .where(and(...conditions))
-      .orderBy(changeRequests.crNumber)
+      .where(
+        and(
+          eq(changeRequests.orgId, orgId),
+          eq(changeRequests.projectId, projectId),
+          isNull(changeRequests.deletedAt),
+          query.status !== undefined ? eq(changeRequests.status, query.status) : undefined,
+          query.impact !== undefined ? eq(changeRequests.impact, query.impact) : undefined,
+          cursorCondition,
+        ),
+      )
+      .orderBy(desc(changeRequests.createdAt), desc(changeRequests.id))
       .limit(100);
   }
 
-  async getChangeRequest(orgId: string, projectId: number, crId: number) {
-    const cr = await this.db.query.changeRequests.findFirst({
-      where: and(
-        eq(changeRequests.id, crId),
-        eq(changeRequests.orgId, orgId),
-        eq(changeRequests.projectId, projectId),
-        isNull(changeRequests.deletedAt),
-      ),
-    });
+  async getChangeRequest(u: CurrentUserContext, projectId: number, crId: number) {
+    await assertProjectAccess(this.db, this.access, u, projectId);
+    const [cr] = await this.db
+      .select(crColumns)
+      .from(changeRequests)
+      .where(
+        and(
+          eq(changeRequests.id, crId),
+          eq(changeRequests.orgId, u.orgId),
+          eq(changeRequests.projectId, projectId),
+          isNull(changeRequests.deletedAt),
+        ),
+      )
+      .limit(1);
     if (!cr) throw new NotFoundException("Change request not found");
     return cr;
   }
 
-  async createChangeRequest(u: CurrentUserContext, projectId: number, input: CreateChangeRequestInput) {
+  async createChangeRequest(
+    u: CurrentUserContext,
+    projectId: number,
+    input: CreateChangeRequestInput,
+  ) {
     const { orgId, userId } = u;
     await assertProjectAccess(this.db, this.access, u, projectId);
     const [cr] = await this.db.transaction(async (tx) => {
@@ -55,7 +122,12 @@ export class ChangeRequestsService {
       const [maxRow] = await tx
         .select({ maxNum: sql<number>`COALESCE(MAX(${changeRequests.crNumber}), 0)` })
         .from(changeRequests)
-        .where(and(eq(changeRequests.projectId, projectId), eq(changeRequests.orgId, orgId)));
+        .where(
+          and(
+            eq(changeRequests.projectId, projectId),
+            eq(changeRequests.orgId, orgId),
+          ),
+        );
       const nextNumber = (maxRow?.maxNum ?? 0) + 1;
       return tx
         .insert(changeRequests)
@@ -73,7 +145,7 @@ export class ChangeRequestsService {
           requestedById: userId,
           createdBy: userId,
         })
-        .returning();
+        .returning(crColumns);
     });
     this.audit.log({
       action: "change_request.created",
@@ -81,28 +153,49 @@ export class ChangeRequestsService {
       orgId,
       resourceType: "change_request",
       resourceId: String(cr.id),
-      metadata: { crId: cr.id, projectId, crNumber: cr.crNumber, title: cr.title },
+      metadata: {
+        crId: cr.id,
+        projectId,
+        crNumber: cr.crNumber,
+        title: cr.title,
+      },
     });
     return cr;
   }
 
   async updateChangeRequest(
-    orgId: string,
-    userId: string,
+    u: CurrentUserContext,
     projectId: number,
     crId: number,
     input: UpdateChangeRequestInput,
   ) {
-    const existing = await this.db.query.changeRequests.findFirst({
-      where: and(
-        eq(changeRequests.id, crId),
-        eq(changeRequests.orgId, orgId),
-        eq(changeRequests.projectId, projectId),
-        isNull(changeRequests.deletedAt),
-      ),
-      columns: { id: true, status: true },
-    });
+    const { orgId, userId } = u;
+    await assertProjectAccess(this.db, this.access, u, projectId);
+    const [existing] = await this.db
+      .select({
+        id: changeRequests.id,
+        status: changeRequests.status,
+        requestedById: changeRequests.requestedById,
+      })
+      .from(changeRequests)
+      .where(
+        and(
+          eq(changeRequests.id, crId),
+          eq(changeRequests.orgId, orgId),
+          eq(changeRequests.projectId, projectId),
+          isNull(changeRequests.deletedAt),
+        ),
+      )
+      .limit(1);
     if (!existing) throw new NotFoundException("Change request not found");
+
+    if (input.status !== undefined && input.status !== existing.status) {
+      const allowed = ALLOWED_TRANSITIONS[existing.status] ?? [];
+      if (!allowed.includes(input.status))
+        throw new BadRequestException(
+          `Status transition from '${existing.status}' to '${input.status}' is not permitted`,
+        );
+    }
 
     const isDecision = input.status === "approved" || input.status === "rejected";
     const [updated] = await this.db
@@ -111,17 +204,38 @@ export class ChangeRequestsService {
         ...(input.title !== undefined && { title: input.title }),
         ...(input.description !== undefined && { description: input.description }),
         ...(input.impact !== undefined && { impact: input.impact }),
-        ...(input.estimateMinutes !== undefined && { estimateMinutes: input.estimateMinutes }),
-        ...(input.budgetImpactCents !== undefined && { budgetImpactCents: input.budgetImpactCents }),
-        ...(input.timelineImpactDays !== undefined && { timelineImpactDays: input.timelineImpactDays }),
+        ...(input.estimateMinutes !== undefined && {
+          estimateMinutes: input.estimateMinutes,
+        }),
+        ...(input.budgetImpactCents !== undefined && {
+          budgetImpactCents: input.budgetImpactCents,
+        }),
+        ...(input.timelineImpactDays !== undefined && {
+          timelineImpactDays: input.timelineImpactDays,
+        }),
         ...(input.status !== undefined && { status: input.status }),
-        ...(input.approvalOwnerId !== undefined && { approvalOwnerId: input.approvalOwnerId }),
-        ...(input.decisionComment !== undefined && { decisionComment: input.decisionComment }),
-        ...(isDecision && { decidedAt: new Date(), approvalOwnerId: input.approvalOwnerId ?? userId }),
+        ...(input.approvalOwnerId !== undefined && {
+          approvalOwnerId: input.approvalOwnerId,
+        }),
+        ...(input.decisionComment !== undefined && {
+          decisionComment: input.decisionComment,
+        }),
+        ...(isDecision && {
+          decidedAt: new Date(),
+          approvalOwnerId: input.approvalOwnerId ?? userId,
+        }),
         updatedAt: new Date(),
       })
-      .where(and(eq(changeRequests.id, crId), eq(changeRequests.orgId, orgId)))
-      .returning();
+      .where(
+        and(
+          eq(changeRequests.id, crId),
+          eq(changeRequests.orgId, orgId),
+          eq(changeRequests.projectId, projectId),
+          isNull(changeRequests.deletedAt),
+        ),
+      )
+      .returning(crColumns);
+    if (!updated) throw new NotFoundException("Change request not found");
     if (input.status !== undefined && input.status !== existing.status) {
       this.audit.log({
         action: "change_request.status_changed",
@@ -129,27 +243,55 @@ export class ChangeRequestsService {
         orgId,
         resourceType: "change_request",
         resourceId: String(crId),
-        metadata: { crId, projectId, from: existing.status, to: input.status },
+        metadata: {
+          crId,
+          projectId,
+          from: existing.status,
+          to: input.status,
+        },
       });
     }
     return updated;
   }
 
-  async deleteChangeRequest(orgId: string, projectId: number, crId: number) {
-    const existing = await this.db.query.changeRequests.findFirst({
-      where: and(
-        eq(changeRequests.id, crId),
-        eq(changeRequests.orgId, orgId),
-        eq(changeRequests.projectId, projectId),
-        isNull(changeRequests.deletedAt),
-      ),
-      columns: { id: true },
-    });
+  async deleteChangeRequest(
+    u: CurrentUserContext,
+    projectId: number,
+    crId: number,
+  ): Promise<void> {
+    const { orgId, userId } = u;
+    await assertProjectAccess(this.db, this.access, u, projectId);
+    const [existing] = await this.db
+      .select({ id: changeRequests.id })
+      .from(changeRequests)
+      .where(
+        and(
+          eq(changeRequests.id, crId),
+          eq(changeRequests.orgId, orgId),
+          eq(changeRequests.projectId, projectId),
+          isNull(changeRequests.deletedAt),
+        ),
+      )
+      .limit(1);
     if (!existing) throw new NotFoundException("Change request not found");
     await this.db
       .update(changeRequests)
       .set({ deletedAt: new Date() })
-      .where(and(eq(changeRequests.id, crId), eq(changeRequests.orgId, orgId)));
-    return { success: true };
+      .where(
+        and(
+          eq(changeRequests.id, crId),
+          eq(changeRequests.orgId, orgId),
+          eq(changeRequests.projectId, projectId),
+          isNull(changeRequests.deletedAt),
+        ),
+      );
+    this.audit.log({
+      action: "change_request.deleted",
+      userId,
+      orgId,
+      resourceType: "change_request",
+      resourceId: String(crId),
+      metadata: { crId, projectId },
+    });
   }
 }

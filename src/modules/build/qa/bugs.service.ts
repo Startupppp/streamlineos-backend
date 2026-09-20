@@ -26,7 +26,10 @@ export class BugsService {
     ];
     if (query.status) conditions.push(eq(bugs.status, query.status));
     if (query.severity) conditions.push(eq(bugs.severity, query.severity));
-    if (query.assigneeId) conditions.push(sql`${bugs.assigneeMembershipId} IN (SELECT id FROM organization_members WHERE org_id = ${u.orgId} AND user_id = ${query.assigneeId} AND status = 'ACTIVE')`);
+    if (query.assigneeId)
+      conditions.push(
+        sql`${bugs.assigneeMembershipId} IN (SELECT id FROM organization_members WHERE org_id = ${u.orgId} AND user_id = ${query.assigneeId} AND status = 'ACTIVE')`,
+      );
     if (query.q) conditions.push(ilike(bugs.title, `%${query.q}%`));
     return this.db
       .select()
@@ -36,11 +39,12 @@ export class BugsService {
       .limit(100);
   }
 
-  async getBug(orgId: string, projectId: number, bugId: number) {
+  async getBug(u: CurrentUserContext, projectId: number, bugId: number) {
+    await assertProjectAccess(this.db, this.access, u, projectId);
     const bug = await this.db.query.bugs.findFirst({
       where: and(
         eq(bugs.id, bugId),
-        eq(bugs.orgId, orgId),
+        eq(bugs.orgId, u.orgId),
         eq(bugs.projectId, projectId),
         isNull(bugs.deletedAt),
       ),
@@ -60,7 +64,11 @@ export class BugsService {
       const nextNumber = (maxRow?.maxNum ?? 0) + 1;
       const assigneeMembershipId = input.assigneeId
         ? (await tx.query.organizationMembers.findFirst({
-            where: and(eq(organizationMembers.orgId, u.orgId), eq(organizationMembers.userId, input.assigneeId), eq(organizationMembers.status, "ACTIVE")),
+            where: and(
+              eq(organizationMembers.orgId, u.orgId),
+              eq(organizationMembers.userId, input.assigneeId),
+              eq(organizationMembers.status, "ACTIVE"),
+            ),
             columns: { id: true },
           }))?.id ?? null
         : null;
@@ -102,11 +110,17 @@ export class BugsService {
     return bug;
   }
 
-  async updateBug(orgId: string, userId: string, projectId: number, bugId: number, input: UpdateBugInput) {
+  async updateBug(
+    u: CurrentUserContext,
+    projectId: number,
+    bugId: number,
+    input: UpdateBugInput,
+  ) {
+    await assertProjectAccess(this.db, this.access, u, projectId);
     const existing = await this.db.query.bugs.findFirst({
       where: and(
         eq(bugs.id, bugId),
-        eq(bugs.orgId, orgId),
+        eq(bugs.orgId, u.orgId),
         eq(bugs.projectId, projectId),
         isNull(bugs.deletedAt),
       ),
@@ -114,6 +128,18 @@ export class BugsService {
     });
     if (!existing) throw new NotFoundException("Bug not found");
     const isReopening = input.status === "reopened" && existing.status !== "reopened";
+    let resolvedAssigneeMembershipId: number | null | undefined;
+    if (input.assigneeId !== undefined) {
+      const member = await this.db.query.organizationMembers.findFirst({
+        where: and(
+          eq(organizationMembers.orgId, u.orgId),
+          eq(organizationMembers.userId, input.assigneeId),
+          eq(organizationMembers.status, "ACTIVE"),
+        ),
+        columns: { id: true },
+      });
+      resolvedAssigneeMembershipId = member?.id ?? null;
+    }
     const [updated] = await this.db
       .update(bugs)
       .set({
@@ -129,20 +155,23 @@ export class BugsService {
         ...(input.browserDevice !== undefined && { browserDevice: input.browserDevice }),
         ...(input.affectedReleaseId !== undefined && { affectedReleaseId: input.affectedReleaseId }),
         ...(input.fixedReleaseId !== undefined && { fixedReleaseId: input.fixedReleaseId }),
-        ...(input.assigneeId !== undefined && { assigneeId: input.assigneeId }),
+        ...(resolvedAssigneeMembershipId !== undefined && {
+          assigneeMembershipId: resolvedAssigneeMembershipId,
+        }),
         ...(input.qaOwnerId !== undefined && { qaOwnerId: input.qaOwnerId }),
         ...(input.linkedTicketId !== undefined && { linkedTicketId: input.linkedTicketId }),
         ...(input.linkedTestCaseId !== undefined && { linkedTestCaseId: input.linkedTestCaseId }),
         ...(isReopening && { reopenCount: existing.reopenCount + 1 }),
         updatedAt: new Date(),
       })
-      .where(and(eq(bugs.id, bugId), eq(bugs.orgId, orgId)))
+      .where(and(eq(bugs.id, bugId), eq(bugs.orgId, u.orgId), isNull(bugs.deletedAt)))
       .returning();
+    if (!updated) throw new NotFoundException("Bug not found");
     if (input.status !== undefined) {
       this.audit.log({
         action: "bug.status_changed",
-        userId,
-        orgId,
+        userId: u.userId,
+        orgId: u.orgId,
         resourceType: "bug",
         resourceId: String(bugId),
         metadata: { bugId, projectId, from: existing.status, to: input.status },
@@ -151,11 +180,12 @@ export class BugsService {
     return updated;
   }
 
-  async deleteBug(orgId: string, projectId: number, bugId: number) {
+  async deleteBug(u: CurrentUserContext, projectId: number, bugId: number) {
+    await assertProjectAccess(this.db, this.access, u, projectId);
     const existing = await this.db.query.bugs.findFirst({
       where: and(
         eq(bugs.id, bugId),
-        eq(bugs.orgId, orgId),
+        eq(bugs.orgId, u.orgId),
         eq(bugs.projectId, projectId),
         isNull(bugs.deletedAt),
       ),
@@ -165,7 +195,7 @@ export class BugsService {
     await this.db
       .update(bugs)
       .set({ deletedAt: new Date() })
-      .where(and(eq(bugs.id, bugId), eq(bugs.orgId, orgId)));
+      .where(and(eq(bugs.id, bugId), eq(bugs.orgId, u.orgId), isNull(bugs.deletedAt)));
     return { success: true };
   }
 }

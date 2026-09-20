@@ -6,7 +6,7 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { and, eq, gt, inArray, isNull, or, sql } from "drizzle-orm";
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import {
   organizationMembers,
   projectWhiteboardShares,
@@ -26,6 +26,10 @@ import type {
 } from "./dto/workspace.schemas";
 import { requireWhiteboardManageAccess } from "./whiteboard-board-helpers";
 
+function hashShareToken(raw: string): string {
+  return createHash("sha256").update(raw).digest("hex");
+}
+
 @Injectable()
 export class WhiteboardSharingService {
   constructor(
@@ -44,7 +48,7 @@ export class WhiteboardSharingService {
     const newVisibility = input.visibility ?? board.visibility;
     const willBePublic = newVisibility === "public";
     const needsToken = willBePublic && board.shareToken === null;
-    const newToken = needsToken ? randomBytes(24).toString("base64url") : undefined;
+    const rawToken = needsToken ? randomBytes(24).toString("base64url") : undefined;
 
     const setValues: Partial<typeof projectWhiteboards.$inferInsert> = {
       updatedAt: new Date(),
@@ -55,7 +59,7 @@ export class WhiteboardSharingService {
       setValues.linkExpiresAt = input.linkExpiresAt === null ? null : new Date(input.linkExpiresAt);
     }
     if (input.allowExport !== undefined) setValues.allowExport = input.allowExport;
-    if (newToken) setValues.shareToken = newToken;
+    if (rawToken) setValues.shareToken = hashShareToken(rawToken);
 
     const [updated] = await this.db
       .update(projectWhiteboards)
@@ -66,7 +70,7 @@ export class WhiteboardSharingService {
     return {
       visibility: updated.visibility,
       publicAccess: updated.publicAccess,
-      shareToken: updated.shareToken,
+      shareToken: rawToken ?? null,
       linkExpiresAt: updated.linkExpiresAt,
       allowExport: updated.allowExport,
     };
@@ -78,18 +82,18 @@ export class WhiteboardSharingService {
     whiteboardId: number,
   ) {
     await requireWhiteboardManageAccess(this.db, this.access, u, projectId, whiteboardId);
-    const newToken = randomBytes(24).toString("base64url");
+    const rawToken = randomBytes(24).toString("base64url");
 
     const [updated] = await this.db
       .update(projectWhiteboards)
-      .set({ shareToken: newToken, updatedAt: new Date() })
+      .set({ shareToken: hashShareToken(rawToken), updatedAt: new Date() })
       .where(and(eq(projectWhiteboards.id, whiteboardId), eq(projectWhiteboards.orgId, u.orgId), isNull(projectWhiteboards.deletedAt)))
       .returning();
 
     return {
       visibility: updated.visibility,
       publicAccess: updated.publicAccess,
-      shareToken: updated.shareToken,
+      shareToken: rawToken,
       linkExpiresAt: updated.linkExpiresAt,
       allowExport: updated.allowExport,
     };
@@ -180,9 +184,10 @@ export class WhiteboardSharingService {
   }
 
   async getPublicByToken(token: string) {
+    const tokenHash = hashShareToken(token);
     const board = await withPublicToken(this.db, token, (tx) =>
       tx.query.projectWhiteboards.findFirst({
-        where: and(eq(projectWhiteboards.shareToken, token), isNull(projectWhiteboards.deletedAt)),
+        where: and(eq(projectWhiteboards.shareToken, tokenHash), isNull(projectWhiteboards.deletedAt)),
         columns: {
           name: true,
           data: true,
@@ -213,9 +218,10 @@ export class WhiteboardSharingService {
   }
 
   async updatePublicByToken(token: string, data: ExcalidrawSceneInput) {
+    const tokenHash = hashShareToken(token);
     const board = await withPublicToken(this.db, token, (tx) =>
       tx.query.projectWhiteboards.findFirst({
-        where: and(eq(projectWhiteboards.shareToken, token), isNull(projectWhiteboards.deletedAt)),
+        where: and(eq(projectWhiteboards.shareToken, tokenHash), isNull(projectWhiteboards.deletedAt)),
         columns: { id: true, orgId: true, visibility: true, publicAccess: true, linkExpiresAt: true },
       }),
     );
@@ -242,9 +248,10 @@ export class WhiteboardSharingService {
           .where(
             and(
               eq(projectWhiteboards.id, board.id),
-              eq(projectWhiteboards.shareToken, token),
+              eq(projectWhiteboards.shareToken, tokenHash),
               eq(projectWhiteboards.visibility, "public"),
               eq(projectWhiteboards.publicAccess, "editor"),
+              isNull(projectWhiteboards.deletedAt),
               or(
                 isNull(projectWhiteboards.linkExpiresAt),
                 gt(projectWhiteboards.linkExpiresAt, now),

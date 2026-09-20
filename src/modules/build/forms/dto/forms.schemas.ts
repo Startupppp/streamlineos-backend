@@ -133,6 +133,13 @@ export const updateFormSchema = z
   })
   .strict();
 
+export const listSubmissionsQuerySchema = z
+  .object({
+    status: z.enum(formSubmissionStatusEnum.enumValues).optional(),
+    cursor: z.string().datetime().optional(),
+  })
+  .strict();
+
 export const createSubmissionSchema = z
   .object({
     values: z.record(z.string(), z.unknown()),
@@ -147,6 +154,7 @@ export const updateSubmissionSchema = z
   .strict();
 
 export type ListFormsQuery = z.infer<typeof listFormsQuerySchema>;
+export type ListSubmissionsQuery = z.infer<typeof listSubmissionsQuerySchema>;
 export type CreateFormInput = z.infer<typeof createFormSchema>;
 export type UpdateFormInput = z.infer<typeof updateFormSchema>;
 export type CreateSubmissionInput = z.infer<typeof createSubmissionSchema>;

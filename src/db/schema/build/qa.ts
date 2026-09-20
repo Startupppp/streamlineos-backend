@@ -29,6 +29,7 @@ export const testSuites = build.table("test_suites", {
   parentId: integer("parent_id"),
   position: integer("position").default(0).notNull(),
   createdBy: text("created_by").references(() => users.id, { onDelete: "set null" }),
+  version: integer("version").notNull().default(1),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
   deletedAt: timestamp("deleted_at"),
@@ -55,6 +56,7 @@ export const testCases = build.table("test_cases", {
   linkedTicketId: integer("linked_ticket_id"),
   automationStatus: testCaseAutomationStatusEnum("automation_status").default("manual").notNull(),
   createdBy: text("created_by").references(() => users.id, { onDelete: "set null" }),
+  version: integer("version").notNull().default(1),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
   deletedAt: timestamp("deleted_at"),
@@ -83,6 +85,7 @@ export const testRuns = build.table("test_runs", {
   startedAt: timestamp("started_at"),
   completedAt: timestamp("completed_at"),
   createdBy: text("created_by").references(() => users.id, { onDelete: "set null" }),
+  version: integer("version").notNull().default(1),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
   deletedAt: timestamp("deleted_at"),
@@ -114,6 +117,7 @@ export const testRunResults = build.table("test_run_results", {
   executedBy: text("executed_by").references(() => users.id, { onDelete: "set null" }),
   executedAt: timestamp("executed_at"),
   linkedBugId: integer("linked_bug_id"),
+  version: integer("version").notNull().default(1),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
@@ -123,6 +127,7 @@ export const testRunResults = build.table("test_run_results", {
   foreignKey({ columns: [table.orgId, table.runId], foreignColumns: [testRuns.orgId, testRuns.id], name: "fk_test_run_results_org_run" }).onDelete("cascade"),
   uniqueIndex("uq_test_run_results_run_case").on(table.runId, table.testCaseId),
   index("idx_test_run_results_org_project").on(table.orgId, table.projectId),
+  index("idx_test_run_results_org_run_id").on(table.orgId, table.runId, table.id),
   unique("uniq_test_run_results_org_id").on(table.orgId, table.id),
 ]);
 

@@ -5,7 +5,7 @@ import { z } from "zod";
 import { buildAskOsToolset } from "../registry/ask-os-tool-registry";
 import { defineTool, data, type AskOsToolDefinition, type AskOsToolProvider } from "../registry/ask-os-tool.types";
 import type { AskOsActor } from "../services/ask-os-actor";
-import type { AccessSnapshot } from "../../../access/access-snapshot";
+import type { AccessSnapshot } from "../../../access/access.types";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../../common/auth/principal";
 import type { Db } from "../../../../db/drizzle.module";

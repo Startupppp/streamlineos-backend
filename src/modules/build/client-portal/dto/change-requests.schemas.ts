@@ -1,15 +1,5 @@
 import { z } from "zod";
-
-const crStatusValues = [
-  "submitted",
-  "under_review",
-  "estimated",
-  "awaiting_approval",
-  "approved",
-  "rejected",
-  "in_progress",
-  "completed",
-] as const;
+import { changeRequestStatusEnum } from "../../../../db/schema";
 
 export const createChangeRequestSchema = z.object({
   title: z.string().min(1).max(500),
@@ -27,13 +17,16 @@ export const updateChangeRequestSchema = z.object({
   estimateMinutes: z.number().int().nonnegative().optional(),
   budgetImpactCents: z.number().int().optional(),
   timelineImpactDays: z.number().int().optional(),
-  status: z.enum(crStatusValues).optional(),
+  status: z.enum(changeRequestStatusEnum.enumValues).optional(),
   approvalOwnerId: z.string().optional(),
   decisionComment: z.string().optional(),
 }).strict();
 
 export const listCrQuerySchema = z.object({
-  status: z.enum(crStatusValues).optional(),
+  status: z.enum(changeRequestStatusEnum.enumValues).optional(),
+  impact: z.string().optional(),
+  afterCreatedAt: z.iso.datetime().optional(),
+  afterId: z.coerce.number().int().positive().optional(),
 }).strict();
 
 export type CreateChangeRequestInput = z.infer<typeof createChangeRequestSchema>;

@@ -155,3 +155,41 @@ describe("a tool's serialised manifest is converted once per definition rather t
   });
 });
 
+
+describe("a self question must never make the assistant ask the caller who they are (PRD P2-4)", () => {
+  it("names the caller in the prompt, so the model has no reason to ask", () => {
+    const prompt = buildContextPrompt(context(), actor());
+
+    expect(prompt).toContain("You are speaking with Priya Raman");
+    expect(prompt).toContain("priya@acme.test");
+  });
+
+  it("binds the first person to the caller, so 'my tickets' cannot resolve to anyone else", () => {
+    const prompt = buildContextPrompt(context(), actor());
+
+    expect(prompt).toContain(
+      '"I", "me", "my" and "mine" ALWAYS mean Priya Raman, the person you are speaking with.',
+    );
+  });
+
+  it("carries the standing rule forbidding an identity question, because deleting that line is invisible without this assertion", () => {
+    const prompt = buildContextPrompt(context(), actor());
+
+    expect(prompt).toContain(
+      "NEVER ask the user who they are, for their name, or for their user id",
+    );
+  });
+
+  it("reserves findPerson for a DIFFERENT person, so it is not the reflex for a self question", () => {
+    const prompt = buildContextPrompt(context(), actor());
+
+    expect(prompt).toContain("Only call\nfindPerson when the user names a DIFFERENT person.");
+  });
+
+  it("still names a caller whose users.name is null, because an unnamed caller is the case that provokes the question", () => {
+    const prompt = buildContextPrompt(context(), actor({ displayName: "priya@acme.test" }));
+
+    expect(prompt).toContain("You are speaking with priya@acme.test");
+    expect(prompt).not.toContain("You are speaking with .");
+  });
+});

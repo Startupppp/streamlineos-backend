@@ -1,4 +1,4 @@
-import { NotFoundException } from "@nestjs/common";
+import { ForbiddenException, NotFoundException } from "@nestjs/common";
 import type { Db } from "../../../db/drizzle.module";
 import { WhiteboardsService } from "./whiteboards.service";
 
@@ -39,5 +39,62 @@ describe("WhiteboardsService — cross-tenant isolation", () => {
     const u = { orgId: OWNER_ORG, userId: "u1", isOrgOwner: true } as never;
     const result = await svc.getWhiteboard(u, 1, 1);
     expect(result).toBeDefined();
+  });
+
+  it("shareToken is null in getWhiteboard response — hash must not be exposed to manage-access users (D1/D6)", async () => {
+    const project = { id: 1 };
+    const board = { id: 1, orgId: OWNER_ORG, projectId: 1, name: "B", visibility: "private", createdBy: "u1", deletedAt: null, data: { elements: [] }, shareToken: "abc123hash", publicAccess: "viewer", linkExpiresAt: null, allowExport: true, createdAt: new Date(), updatedAt: new Date() };
+    const db = makeDb(project, [{ board, shareRole: null }]);
+    const svc = new WhiteboardsService(db, access);
+    const u = { orgId: OWNER_ORG, userId: "u1", isOrgOwner: true } as never;
+    const result = await svc.getWhiteboard(u, 1, 1);
+    expect(result.sharing).not.toBeNull();
+    expect((result.sharing as Record<string, unknown>)["shareToken"]).toBeNull();
+  });
+
+  it("updateWhiteboard: includes isNull(deletedAt) guard to prevent TOCTOU resurrection (D3)", async () => {
+    const project = { id: 1 };
+    const board = { id: 1, orgId: OWNER_ORG, projectId: 1, name: "B", visibility: "private", createdBy: "u1", deletedAt: null, data: { elements: [] }, shareToken: null, publicAccess: "viewer", linkExpiresAt: null, allowExport: true, createdAt: new Date(), updatedAt: new Date() };
+
+    const returning = jest.fn().mockResolvedValue([]);
+    const updateWhere = jest.fn().mockReturnValue({ returning });
+    const updateSet = jest.fn().mockReturnValue({ where: updateWhere });
+    const dbUpdate = jest.fn().mockReturnValue({ set: updateSet });
+
+    const db = {
+      ...makeDb(project, [{ board, shareRole: null }]),
+      update: dbUpdate,
+    } as unknown as Db;
+
+    const svc = new WhiteboardsService(db, access);
+    const u = { orgId: OWNER_ORG, userId: "u1", isOrgOwner: true } as never;
+    await expect(
+      svc.updateWhiteboard(u, 1, 1, { name: "New Name" }),
+    ).rejects.toThrow(NotFoundException);
+
+    expect(returning).toHaveBeenCalledTimes(1);
+  });
+
+  it("listWhiteboards response is bounded at 100 items (D5)", async () => {
+    const project = { id: 1 };
+    const db = makeDb(project, []);
+
+    let capturedLimit: number | undefined;
+    const originalSelect = (db as unknown as { select: jest.Mock }).select;
+    const limitMock = jest.fn().mockImplementation((n: number) => {
+      capturedLimit = n;
+      return Promise.resolve([]);
+    });
+    const orderByMock = jest.fn().mockReturnValue({ limit: limitMock });
+    const whereMock = jest.fn().mockReturnValue({ orderBy: orderByMock });
+    const leftJoinMock = jest.fn().mockReturnValue({ where: whereMock });
+    const fromMock = jest.fn().mockReturnValue({ leftJoin: leftJoinMock });
+    (db as unknown as { select: jest.Mock }).select = jest.fn().mockReturnValue({ from: fromMock });
+    void originalSelect;
+
+    const svc = new WhiteboardsService(db, access);
+    const u = { orgId: OWNER_ORG, userId: "u1", isOrgOwner: true } as never;
+    await svc.listWhiteboards(u, 1);
+    expect(capturedLimit).toBe(100);
   });
 });

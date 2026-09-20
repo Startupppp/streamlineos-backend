@@ -1,4 +1,4 @@
-import { foreignKey, index, integer, pgEnum, text, timestamp, unique, uniqueIndex } from "drizzle-orm/pg-core";
+import { check, foreignKey, index, integer, pgEnum, text, timestamp, unique, uniqueIndex } from "drizzle-orm/pg-core";
 import { build } from "./namespaces";
 import { sql } from "drizzle-orm";
 import { organizations, users } from "../common/auth";
@@ -22,8 +22,11 @@ export const projectRisks = build.table("project_risks", {
   status: riskStatusEnum("status").notNull().default("open"),
   ownerId: text("owner_id").references(() => users.id, { onDelete: "set null" }),
   mitigation: text("mitigation"),
+  category: text("category"),
+  reviewDate: timestamp("review_date"),
   linkedTicketId: integer("linked_ticket_id"),
   createdBy: text("created_by").references(() => users.id, { onDelete: "set null" }),
+  version: integer("version").notNull().default(1),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
   deletedAt: timestamp("deleted_at"),
@@ -33,6 +36,7 @@ export const projectRisks = build.table("project_risks", {
   index("idx_project_risks_org_project_status").on(t.orgId, t.projectId, t.status).where(sql`deleted_at IS NULL`),
   uniqueIndex("uq_project_risks_project_number").on(t.projectId, t.riskNumber),
   index("idx_project_risks_owner").on(t.ownerId),
+  index("idx_project_risks_org_project_review_date").on(t.orgId, t.projectId, t.reviewDate).where(sql`deleted_at IS NULL`),
   unique("uniq_project_risks_org_id").on(t.orgId, t.id),
 ]);
 
@@ -49,8 +53,10 @@ export const projectDecisions = build.table("project_decisions", {
   ownerId: text("owner_id").references(() => users.id, { onDelete: "set null" }),
   decidedAt: timestamp("decided_at"),
   revisitAt: timestamp("revisit_at"),
+  supersededById: integer("superseded_by_id"),
   linkedTicketId: integer("linked_ticket_id"),
   createdBy: text("created_by").references(() => users.id, { onDelete: "set null" }),
+  version: integer("version").notNull().default(1),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
   deletedAt: timestamp("deleted_at"),
@@ -59,5 +65,8 @@ export const projectDecisions = build.table("project_decisions", {
   foreignKey({ columns: [t.orgId, t.linkedTicketId], foreignColumns: [tickets.orgId, tickets.id], name: "fk_project_decisions_org_ticket" }).onDelete("set null"),
   index("idx_project_decisions_org_project_status").on(t.orgId, t.projectId, t.status).where(sql`deleted_at IS NULL`),
   uniqueIndex("uq_project_decisions_project_number").on(t.projectId, t.decisionNumber),
+  foreignKey({ columns: [t.orgId, t.supersededById], foreignColumns: [t.orgId, t.id], name: "fk_project_decisions_org_superseded_by" }).onDelete("set null"),
+  index("idx_project_decisions_org_superseded_by").on(t.orgId, t.supersededById).where(sql`superseded_by_id IS NOT NULL`),
+  check("chk_project_decisions_not_self_superseded", sql`${t.supersededById} IS NULL OR ${t.supersededById} <> ${t.id}`),
   unique("uniq_project_decisions_org_id").on(t.orgId, t.id),
 ]);

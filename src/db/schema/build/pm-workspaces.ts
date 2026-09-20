@@ -1,4 +1,4 @@
-import { text, boolean, timestamp, index, unique, uniqueIndex, check } from "drizzle-orm/pg-core";
+import { text, boolean, integer, timestamp, index, unique, uniqueIndex, check } from "drizzle-orm/pg-core";
 import { build } from "./namespaces";
 import { sql } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
@@ -25,6 +25,7 @@ export const pmWorkspaces = build.table(
       .$type<"active" | "archived">()
       .default("active")
       .notNull(),
+    version: integer("version").notNull().default(1),
     deletedAt: timestamp("deleted_at"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at")

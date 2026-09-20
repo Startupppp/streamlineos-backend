@@ -6189,6 +6189,41 @@
       "when": 1803000010338,
       "tag": "1123_ai_action_proposals_rls",
       "breakpoints": true
+    },
+    {
+      "idx": 1012,
+      "version": "7",
+      "when": 1803000010339,
+      "tag": "1124_build_comment_draft_evidence",
+      "breakpoints": true
+    },
+    {
+      "idx": 1013,
+      "version": "7",
+      "when": 1803000010340,
+      "tag": "1125_build_managed_product_memberships",
+      "breakpoints": true
+    },
+    {
+      "idx": 1014,
+      "version": "7",
+      "when": 1803000010341,
+      "tag": "1126_build_project_updates",
+      "breakpoints": true
+    },
+    {
+      "idx": 1015,
+      "version": "7",
+      "when": 1803000010342,
+      "tag": "1127_build_project_attachments",
+      "breakpoints": true
+    },
+    {
+      "idx": 1016,
+      "version": "7",
+      "when": 1803000010343,
+      "tag": "1128_build_optimistic_concurrency_and_update_publication",
+      "breakpoints": true
     }
   ]
 }

@@ -1,15 +1,22 @@
 import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, desc, eq, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, isNull, lt, sql } from "drizzle-orm";
 import { formSubmissions, projectForms, tickets } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { AuditService } from "../../../common/audit/audit.service";
-import type { CreateSubmissionInput, UpdateSubmissionInput } from "./dto/forms.schemas";
+import type { CreateSubmissionInput, ListSubmissionsQuery, UpdateSubmissionInput } from "./dto/forms.schemas";
 import { allocateTicketNumbers } from "../core/lib/allocate-ticket-number";
 import { reserveTicketCapacity } from "../core/build-ticket-capacity";
 
 type FormRow = typeof projectForms.$inferSelect;
 type SubmissionRow = typeof formSubmissions.$inferSelect;
+
+type SubmissionRunResult = {
+  submission: SubmissionRow;
+  createdTicketIds: number[];
+  executedActionTypes: string[];
+  skippedActionTypes: string[];
+};
 
 @Injectable()
 export class SubmissionsService {
@@ -31,6 +38,19 @@ export class SubmissionsService {
     return row;
   }
 
+  private async loadPublicForm(publicToken: string): Promise<FormRow> {
+    const row = await this.db.query.projectForms.findFirst({
+      where: and(
+        eq(projectForms.publicToken, publicToken),
+        eq(projectForms.isPublic, true),
+        isNull(projectForms.deletedAt),
+      ),
+    });
+    if (!row) throw new NotFoundException("Form not found");
+    if (!row.isActive) throw new BadRequestException("Form is not active");
+    return row;
+  }
+
   private async loadSubmission(orgId: string, formId: number, submissionId: number): Promise<SubmissionRow> {
     const row = await this.db.query.formSubmissions.findFirst({
       where: and(
@@ -43,25 +63,12 @@ export class SubmissionsService {
     return row;
   }
 
-  async listSubmissions(orgId: string, projectId: number, formId: number) {
-    await this.loadForm(orgId, projectId, formId);
-    return this.db
-      .select()
-      .from(formSubmissions)
-      .where(and(eq(formSubmissions.orgId, orgId), eq(formSubmissions.formId, formId)))
-      .orderBy(desc(formSubmissions.createdAt))
-      .limit(100);
-  }
-
-  async createSubmission(
-    orgId: string,
-    userId: string,
-    projectId: number,
-    formId: number,
+  private async runSubmission(
+    form: FormRow,
     input: CreateSubmissionInput,
-  ) {
-    const form = await this.loadForm(orgId, projectId, formId);
-    if (!form.isActive) throw new BadRequestException("Form is not active");
+    userId: string | null,
+  ): Promise<SubmissionRunResult> {
+    const { orgId, id: formId, projectId } = form;
 
     const executedActionTypes: string[] = [];
     const skippedActionTypes: string[] = [];
@@ -128,6 +135,49 @@ export class SubmissionsService {
     });
 
     if (!submission) throw new NotFoundException("Failed to create submission");
+    return { submission, createdTicketIds, executedActionTypes, skippedActionTypes };
+  }
+
+  async listSubmissions(orgId: string, projectId: number, formId: number, query: ListSubmissionsQuery) {
+    await this.loadForm(orgId, projectId, formId);
+    const cursorDate = query.cursor ? new Date(query.cursor) : undefined;
+    return this.db
+      .select({
+        id: formSubmissions.id,
+        orgId: formSubmissions.orgId,
+        formId: formSubmissions.formId,
+        projectId: formSubmissions.projectId,
+        values: formSubmissions.values,
+        status: formSubmissions.status,
+        submittedByName: formSubmissions.submittedByName,
+        submittedById: formSubmissions.submittedById,
+        convertedTicketId: formSubmissions.convertedTicketId,
+        createdAt: formSubmissions.createdAt,
+      })
+      .from(formSubmissions)
+      .where(and(
+        eq(formSubmissions.orgId, orgId),
+        eq(formSubmissions.formId, formId),
+        query.status ? eq(formSubmissions.status, query.status) : undefined,
+        cursorDate ? lt(formSubmissions.createdAt, cursorDate) : undefined,
+      ))
+      .orderBy(desc(formSubmissions.createdAt))
+      .limit(100);
+  }
+
+  async createSubmission(
+    orgId: string,
+    userId: string,
+    projectId: number,
+    formId: number,
+    input: CreateSubmissionInput,
+  ) {
+    const form = await this.loadForm(orgId, projectId, formId);
+    if (!form.isActive) throw new BadRequestException("Form is not active");
+
+    const { submission, createdTicketIds, executedActionTypes, skippedActionTypes } =
+      await this.runSubmission(form, input, userId);
+
     this.audit.log({
       action: "form.submitted",
       userId,
@@ -137,6 +187,31 @@ export class SubmissionsService {
       metadata: { projectId, formId, submissionId: submission.id, createdTicketIds },
     });
     return { ...submission, createdTicketIds, executedActionTypes, skippedActionTypes };
+  }
+
+  async submitPublicForm(publicToken: string, input: CreateSubmissionInput) {
+    const form = await this.loadPublicForm(publicToken);
+
+    const { submission, executedActionTypes, skippedActionTypes } =
+      await this.runSubmission(form, input, null);
+
+    this.audit.log({
+      action: "form.public_submitted",
+      systemActor: "public-form-submit",
+      orgId: form.orgId,
+      resourceType: "form_submission",
+      resourceId: String(submission.id),
+      metadata: { projectId: form.projectId, formId: form.id, submissionId: submission.id },
+    });
+    return {
+      id: submission.id,
+      status: submission.status,
+      submittedByName: submission.submittedByName,
+      values: submission.values,
+      createdAt: submission.createdAt,
+      executedActionTypes,
+      skippedActionTypes,
+    };
   }
 
   async updateSubmission(
@@ -152,7 +227,11 @@ export class SubmissionsService {
     const [updated] = await this.db
       .update(formSubmissions)
       .set({ status: input.status })
-      .where(and(eq(formSubmissions.id, submissionId), eq(formSubmissions.orgId, orgId)))
+      .where(and(
+        eq(formSubmissions.id, submissionId),
+        eq(formSubmissions.orgId, orgId),
+        eq(formSubmissions.formId, formId),
+      ))
       .returning();
     if (!updated) throw new NotFoundException("Submission not found");
     this.audit.log({

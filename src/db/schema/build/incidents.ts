@@ -28,6 +28,7 @@ export const projectIncidents = build.table("project_incidents", {
   resolutionDueAt: timestamp("resolution_due_at"),
   linkedTicketId: integer("linked_ticket_id"),
   createdBy: text("created_by").references(() => users.id, { onDelete: "set null" }),
+  version: integer("version").notNull().default(1),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
   deletedAt: timestamp("deleted_at"),
