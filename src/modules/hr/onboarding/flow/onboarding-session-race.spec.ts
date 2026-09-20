@@ -61,7 +61,7 @@ describe("getOrCreateSession concurrent-insert race (W1 fix)", () => {
       membershipId: MEMBERSHIP_ID,
       type: "employee_onboarding",
       status: "not_started",
-      data: {},
+      data: { fullName: "Priya", bankDetails: { accountNumber: "9988776655" } },
       completedSteps: [],
       skippedSteps: [],
       currentStep: null,
@@ -80,10 +80,62 @@ describe("getOrCreateSession concurrent-insert race (W1 fix)", () => {
 
     const result = await service.getOrCreateSession(ORG_ID, USER_ID, "employee_onboarding", MEMBERSHIP_ID);
 
-    expect(result).toBe(winnerRow);
+    expect(result.id).toBe(winnerRow.id);
     expect(db.insert).toHaveBeenCalledTimes(1);
     expect(db.query.onboardingFlowSessions.findFirst).toHaveBeenCalledTimes(2);
     expect(analytics.track).not.toHaveBeenCalled();
+  });
+
+  it("the loser of the race receives the winner row with bank secrets stripped, exactly as the already-existing-session path returns it", async () => {
+    const winnerRow: PartialSession = {
+      id: 7,
+      orgId: ORG_ID,
+      userId: USER_ID,
+      membershipId: MEMBERSHIP_ID,
+      type: "employee_onboarding",
+      status: "not_started",
+      data: { fullName: "Priya", bankDetails: { accountNumber: "9988776655" } },
+      completedSteps: [],
+      skippedSteps: [],
+      currentStep: null,
+      source: null,
+      startedAt: new Date(),
+      completedAt: null,
+      lastSeenAt: new Date(),
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+
+    const { service } = makeService([undefined, winnerRow], []);
+
+    const result = await service.getOrCreateSession(ORG_ID, USER_ID, "employee_onboarding", MEMBERSHIP_ID);
+
+    expect(result.data).toEqual({ fullName: "Priya" });
+  });
+
+  it("the race re-read narrows further than the first read, because the partial unique index that raised the conflict excludes abandoned rows", async () => {
+    const { service, db } = makeService([undefined, undefined], []);
+
+    await expect(
+      service.getOrCreateSession(ORG_ID, USER_ID, "employee_onboarding", MEMBERSHIP_ID),
+    ).rejects.toThrow(InternalServerErrorException);
+
+    const chunkLeaves = (node: unknown): number => {
+      if (Array.isArray(node))
+        return node.reduce<number>((sum, item) => sum + chunkLeaves(item), 0);
+      if (typeof node === "object" && node !== null) {
+        const chunks: unknown = Reflect.get(node, "queryChunks");
+        if (chunks !== undefined) return chunkLeaves(chunks);
+      }
+      return 1;
+    };
+    const whereOf = (call: number): unknown => {
+      const args: unknown = db.query.onboardingFlowSessions.findFirst.mock.calls[call]?.[0];
+      return typeof args === "object" && args !== null ? Reflect.get(args, "where") : undefined;
+    };
+
+    expect(chunkLeaves(whereOf(0))).toBeGreaterThan(1);
+    expect(chunkLeaves(whereOf(1))).toBeGreaterThan(chunkLeaves(whereOf(0)));
   });
 
   it("a successful first insert returns the new session and emits the started analytics event", async () => {

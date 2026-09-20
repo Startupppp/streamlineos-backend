@@ -1,5 +1,5 @@
 import { Inject, Injectable, InternalServerErrorException } from "@nestjs/common";
-import { and, desc, eq, isNull, or } from "drizzle-orm";
+import { and, desc, eq, isNull, ne, or } from "drizzle-orm";
 import { DRIZZLE } from "../../../../db/drizzle.constants";
 import type { Db } from "../../../../db/drizzle.module";
 import { onboardingFlowSessions } from "../../../../db/schema";
@@ -69,12 +69,13 @@ export class OnboardingSessionService {
         eq(onboardingFlowSessions.orgId, orgId),
         this.sessionOwnerPredicate(userId, membershipId),
         eq(onboardingFlowSessions.type, type),
+        ne(onboardingFlowSessions.status, "abandoned"),
       ),
       orderBy: desc(onboardingFlowSessions.createdAt),
     });
 
     if (!raced) throw new InternalServerErrorException("onboarding session not found after conflict");
-    return raced;
+    return { ...raced, data: stripOnboardingDraftSecrets(raced.data) };
   }
 
   async getOrCreateSessionInNewTransaction(orgId: string, userId: string, type: OnboardingFlowType, membershipId?: number | null) {

@@ -35,8 +35,8 @@ export const onboardingFlowSessions = pgTable("onboarding_flow_sessions", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
-  uniqueIndex("uq_onb_flow_sessions_membership_type").on(table.orgId, table.membershipId, table.type).where(sql`${table.membershipId} IS NOT NULL`),
-  uniqueIndex("uq_onb_flow_sessions_user_type").on(table.orgId, table.userId, table.type).where(sql`${table.membershipId} IS NULL`),
+  uniqueIndex("uq_onb_flow_sessions_membership_type").on(table.orgId, table.membershipId, table.type).where(sql`${table.membershipId} IS NOT NULL AND ${table.status} != 'abandoned'`),
+  uniqueIndex("uq_onb_flow_sessions_user_type").on(table.orgId, table.userId, table.type).where(sql`${table.membershipId} IS NULL AND ${table.status} != 'abandoned'`),
   index("idx_onb_flow_sessions_status").on(table.orgId, table.status),
   unique("uniq_onb_flow_sessions_org_id").on(table.orgId, table.id),
   foreignKey({
