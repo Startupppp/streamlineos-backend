@@ -3,7 +3,7 @@ import { TimesheetsService } from "./timesheets.service";
 import type { AccessService } from "../../access/access.service";
 import type { CacheService } from "../../../common/cache/cache.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import { humanSessionPrincipal } from "../../../common/auth/principal";
+import { ACCOUNT_ONLY_PRINCIPAL, humanSessionPrincipal } from "../../../common/auth/principal";
 import type { Db } from "../../../db/drizzle.module";
 import type { EntriesPeriodService } from "../../timesheets/core/entries-period.service";
 
@@ -76,6 +76,20 @@ describe("TimesheetsService — approver cannot action their own entry", () => {
       svc.rejectEntry(makeUser(), 1, { reason: "no" } as never),
     ).rejects.toThrow(ForbiddenException);
     expect(updateWhere).not.toHaveBeenCalled();
+  });
+
+  it("rejects approving when the actor has no membership identity — fails closed", async () => {
+    findFirst.mockResolvedValueOnce({ id: 1, orgId: ORG_ID, userMembershipId: 2, status: "PENDING", payrollStatus: null });
+    await expect(svc.approveEntry(makeUser({ principal: ACCOUNT_ONLY_PRINCIPAL }), 1)).rejects.toThrow(ForbiddenException);
+    expect(findFirst).not.toHaveBeenCalled();
+  });
+
+  it("rejects rejecting when the actor has no membership identity — fails closed", async () => {
+    findFirst.mockResolvedValueOnce({ id: 1, orgId: ORG_ID, userMembershipId: 2, status: "PENDING", payrollStatus: null });
+    await expect(
+      svc.rejectEntry(makeUser({ principal: ACCOUNT_ONLY_PRINCIPAL }), 1, { reason: "no" } as never),
+    ).rejects.toThrow(ForbiddenException);
+    expect(findFirst).not.toHaveBeenCalled();
   });
 
   it("allows approving another person's entry", async () => {

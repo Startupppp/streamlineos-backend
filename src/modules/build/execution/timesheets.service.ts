@@ -22,7 +22,6 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { actingMembershipId } from "../../../common/auth/principal";
 import { membershipScope } from "../../timesheets/core/timesheets-core-scope";
 import { canActOnPeriod } from "../../timesheets/core/lib/approval-guard";
-import { assertOrganizationActor } from "../../../common/organization/organization-actor";
 import { resolveTimesheetsScope } from "./timesheets-scope";
 import { formatDateOnly } from "../../../common/date";
 import { timeEntryCursorPredicate, timeEntryPage } from "./timesheets-pagination";
@@ -85,7 +84,7 @@ export class TimesheetsService {
     const read = await resolveTimesheetsScope(this.access, user);
     const membershipId = actingMembershipId(user.principal);
 
-    const conditions = [eq(timesheets.orgId, user.orgId)];
+    const conditions = [eq(timesheets.orgId, user.orgId), isNull(timesheets.voidedAt)];
     if (query.ticketId)
       conditions.push(eq(timesheets.ticketId, query.ticketId));
     conditions.push(
@@ -134,7 +133,7 @@ export class TimesheetsService {
     input: UpdateEntryInput,
   ) {
     const entry = await this.db.query.timesheets.findFirst({
-      where: and(eq(timesheets.id, entryId), eq(timesheets.orgId, user.orgId)),
+      where: and(eq(timesheets.id, entryId), eq(timesheets.orgId, user.orgId), isNull(timesheets.voidedAt)),
       columns: {
         id: true,
         payrollStatus: true,
@@ -180,8 +179,10 @@ export class TimesheetsService {
       .where(and(eq(timesheets.id, entryId), eq(timesheets.orgId, user.orgId)))
       .returning();
 
-    if (input.hours !== undefined && entry.ticketId) {
-      await this.recomputeTimeSpent(user.orgId, entry.ticketId);
+    if (input.hours !== undefined) {
+      if (entry.ticketId)
+        await this.recomputeTimeSpent(user.orgId, entry.ticketId);
+      await this.cache.invalidateNamespace(`build:billing-summary:${user.orgId}`);
     }
 
     return updated;
@@ -189,7 +190,7 @@ export class TimesheetsService {
 
   async deleteEntry(user: CurrentUserContext, entryId: number) {
     const entry = await this.db.query.timesheets.findFirst({
-      where: and(eq(timesheets.id, entryId), eq(timesheets.orgId, user.orgId)),
+      where: and(eq(timesheets.id, entryId), eq(timesheets.orgId, user.orgId), isNull(timesheets.voidedAt)),
     });
     if (!entry) throw new NotFoundException("Time entry not found");
     if (entry.payrollStatus === "EXPORTED") {
@@ -217,6 +218,7 @@ export class TimesheetsService {
       .where(and(eq(timesheets.id, entryId), eq(timesheets.orgId, user.orgId)));
 
     if (ticketId) await this.recomputeTimeSpent(user.orgId, ticketId);
+    await this.cache.invalidateNamespace(`build:billing-summary:${user.orgId}`);
 
     return { success: true };
   }
@@ -226,12 +228,15 @@ export class TimesheetsService {
       throw new ForbiddenException("Only admins can approve timesheets");
     }
 
+    const actorMembId = actingMembershipId(user.principal);
+    if (actorMembId === null)
+      throw new ForbiddenException("Approval requires a personal session");
+
     const entry = await this.db.query.timesheets.findFirst({
-      where: and(eq(timesheets.id, entryId), eq(timesheets.orgId, user.orgId)),
+      where: and(eq(timesheets.id, entryId), eq(timesheets.orgId, user.orgId), isNull(timesheets.voidedAt)),
     });
     if (!entry) throw new NotFoundException("Time entry not found");
 
-    const actorMembId = actingMembershipId(user.principal);
     const decision = canActOnPeriod(
       { membershipId: actorMembId, isOrgOwner: !!user.isOrgOwner },
       { userMembershipId: entry.userMembershipId, currentApproverMembershipId: null },
@@ -245,13 +250,6 @@ export class TimesheetsService {
 
     if (entry.status !== "PENDING")
       throw new BadRequestException("Only pending entries can be approved");
-
-    // `approved_by` was contracted onto the membership actor; the user id is no
-    // longer a column on this table.
-    const approver = await assertOrganizationActor(this.db, user.orgId, {
-      kind: "user",
-      userId: user.userId,
-    });
 
     await this.db
       .update(timesheets)
@@ -275,12 +273,15 @@ export class TimesheetsService {
       throw new ForbiddenException("Only admins can reject timesheets");
     }
 
+    const actorMembId = actingMembershipId(user.principal);
+    if (actorMembId === null)
+      throw new ForbiddenException("Rejection requires a personal session");
+
     const entry = await this.db.query.timesheets.findFirst({
-      where: and(eq(timesheets.id, entryId), eq(timesheets.orgId, user.orgId)),
+      where: and(eq(timesheets.id, entryId), eq(timesheets.orgId, user.orgId), isNull(timesheets.voidedAt)),
     });
     if (!entry) throw new NotFoundException("Time entry not found");
 
-    const actorMembId = actingMembershipId(user.principal);
     const decision = canActOnPeriod(
       { membershipId: actorMembId, isOrgOwner: !!user.isOrgOwner },
       { userMembershipId: entry.userMembershipId, currentApproverMembershipId: null },
@@ -321,6 +322,7 @@ export class TimesheetsService {
     const membershipId = actingMembershipId(user.principal);
     const conditions = [
       eq(timesheets.orgId, user.orgId),
+      isNull(timesheets.voidedAt),
       read.compose(
         { tenant: timesheets.orgId, scope: membershipScope(membershipId, timesheets.userMembershipId) },
         ({ sql: w }) => w,
@@ -367,10 +369,12 @@ export class TimesheetsService {
     const startDate = query.startDate;
     const endDate = query.endDate;
 
-    const key = `projects:billing-summary:${orgId}:${userId}:${isAdmin ? "all" : "self"}:${startDate ?? ""}:${endDate ?? ""}`;
+    const billingSummaryNs = `build:billing-summary:${orgId}`;
+    const subKey = `${userId}:${isAdmin ? "all" : "self"}:${startDate ?? ""}:${endDate ?? ""}`;
 
-    return this.cache.cached(
-      key,
+    return this.cache.cachedVersioned(
+      billingSummaryNs,
+      subKey,
       async () => {
         const conditions = [
           eq(timesheets.orgId, orgId),
@@ -484,6 +488,7 @@ export class TimesheetsService {
     });
 
     await this.recomputeTimeSpent(user.orgId, ticketId);
+    await this.cache.invalidateNamespace(`build:billing-summary:${user.orgId}`);
 
     return entry;
   }

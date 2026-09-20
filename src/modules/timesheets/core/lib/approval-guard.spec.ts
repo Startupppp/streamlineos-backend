@@ -52,4 +52,17 @@ describe("canActOnPeriod", () => {
     const d = canActOnPeriod(manager, { userMembershipId: 2, currentApproverMembershipId: 2 });
     expect(d.allowed).toBe(false);
   });
+
+  it("blocks a principal with no membership, because the self-approval check silently skipped it and fell through to allowed", () => {
+    const agentToken = { membershipId: null, isOrgOwner: false };
+    const d = canActOnPeriod(agentToken, { userMembershipId: 1, currentApproverMembershipId: null });
+    expect(d.allowed).toBe(false);
+    expect(d.reason).toMatch(/personal session/i);
+  });
+
+  it("blocks a membership-less principal even when it is the assigned approver slot that is empty and the period is unowned", () => {
+    const systemJob = { membershipId: null, isOrgOwner: false };
+    const d = canActOnPeriod(systemJob, { userMembershipId: null, currentApproverMembershipId: null });
+    expect(d.allowed).toBe(false);
+  });
 });
