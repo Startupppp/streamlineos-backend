@@ -395,7 +395,7 @@ export class ComplianceService {
    * and its deprecation is the subject of `docs/adr-legacy-invoices-vs-ar.md`;
    * offering to file from it would deepen a dependency that is being retired.
    */
-  async payloadForDocument(
+  private async payloadForDocument(
     orgId: string,
     bookId: string,
     documentType: string,

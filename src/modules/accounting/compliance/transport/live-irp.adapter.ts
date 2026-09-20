@@ -264,7 +264,7 @@ export class LiveIrpAdapter implements ComplianceTransportAdapter {
  * weakest — a GSP that ignores the header loses nothing, because the other two
  * do not depend on it:
  *
- *  1. `ComplianceService.submitToTransport` will not call an adapter for a
+ *  1. `ComplianceService.fileDocument` will not call an adapter for a
  *     document that already holds an acknowledgement from that transport.
  *  2. The IRP derives an IRN from the seller's GSTIN, the document number and
  *     the financial year, so a second registration of the same document returns
