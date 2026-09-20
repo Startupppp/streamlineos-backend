@@ -342,7 +342,7 @@ export class ProjectsQueryService {
             .from(projectTeamAssignments)
             .innerJoin(
               projectTeamMembers,
-              eq(projectTeamMembers.teamId, projectTeamAssignments.teamId),
+              and(eq(projectTeamMembers.orgId, projectTeamAssignments.orgId), eq(projectTeamMembers.teamId, projectTeamAssignments.teamId)),
             )
             .where(
               and(

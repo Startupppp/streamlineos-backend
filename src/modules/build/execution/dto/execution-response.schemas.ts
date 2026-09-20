@@ -193,4 +193,5 @@ export const epicRowSchema = z.object({
   deletedAt: nullableWireDate(),
   createdAt: wireDate(),
   updatedAt: wireDate(),
+  assignee: z.object({ user: userColsSchema }).nullable().optional(),
 });

@@ -82,7 +82,12 @@ export class ProjectsProvisionService {
     );
     const additionalMembers = (input.memberIds ?? []).filter((id) => id !== creatorUserId);
     const requestedManagerId = input.managerId ?? creatorUserId;
-    const actors = await resolveOrganizationActorsByUserIds(this.db, orgId, [creatorUserId, requestedManagerId, ...additionalMembers]);
+    const actors = await resolveOrganizationActorsByUserIds(this.db, orgId, [
+      creatorUserId,
+      requestedManagerId,
+      ...additionalMembers,
+      ...(input.clientId !== undefined ? [input.clientId] : []),
+    ]);
     const creator = actors.get(creatorUserId);
     const manager = actors.get(requestedManagerId);
     if (!creator || !manager || additionalMembers.some((id) => !actors.has(id)))
@@ -104,7 +109,7 @@ export class ProjectsProvisionService {
           name: input.name,
           description: input.description,
           managerMembershipId: manager.membershipId,
-          clientMembershipId: input.clientId ? undefined : undefined,
+          clientMembershipId: input.clientId !== undefined ? (actors.get(input.clientId)?.membershipId ?? null) : undefined,
           startDate: input.startDate ? new Date(input.startDate) : undefined,
           endDate: input.endDate ? new Date(input.endDate) : undefined,
           status: "ACTIVE",
