@@ -72,6 +72,17 @@ describe("ProjectsWebhooksDispatchService interactive test delivery", () => {
     expect(result.success).toBe(false);
   }, 20_000);
 
+  it("waits half as long as a background delivery, because a user is holding the connection open", async () => {
+    const { service } = dispatchServiceWithOneEndpoint();
+    post.mockResolvedValue({ statusCode: 204, responseBody: "" });
+
+    await service.sendTest("org-1", 9, 5);
+
+    const timeoutMs = post.mock.calls[0]![3];
+    expect(timeoutMs).toBe(5_000);
+    expect(timeoutMs).toBeLessThan(10_000);
+  });
+
   it("still returns the response code on the happy path, so the interactive contract is unchanged", async () => {
     const { service } = dispatchServiceWithOneEndpoint();
     post.mockResolvedValue({ statusCode: 204, responseBody: "" });

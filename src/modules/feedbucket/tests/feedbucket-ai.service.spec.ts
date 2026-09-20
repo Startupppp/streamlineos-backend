@@ -222,6 +222,15 @@ describe("FeedbucketAiService", () => {
       );
     });
 
+    it("bounds the provider call below the standard tier's 60s, because the request transaction is held across it", async () => {
+      const { service, gateway } = buildService({});
+      await service.analyze(makeUser(), SUB_ID);
+
+      const [opts] = gateway.invokeStructuredWithImageWithUsage.mock.calls[0]!;
+      expect(opts.signal).toBeInstanceOf(AbortSignal);
+      expect(opts.signal?.aborted).toBe(false);
+    });
+
     it("throws 402 when gateway returns quota_exceeded", async () => {
       const failure: AiInvokeWithUsageResult<FeedbackAnalysis> = {
         ok: false,

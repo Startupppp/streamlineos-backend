@@ -25,8 +25,14 @@ import { ProviderCircuitBreaker } from "../../../common/outbound/provider-circui
 
 const WEBHOOK_TIMEOUT_MS = 10_000;
 const RESPONSE_BODY_LIMIT = 2000;
-const WEBHOOK_MAX_ATTEMPTS = 5;
-const INTERACTIVE_TEST_MAX_ATTEMPTS = 1;
+
+interface DeliveryBudget {
+  readonly maxAttempts: number;
+  readonly timeoutMs: number;
+}
+
+const BACKGROUND_DELIVERY_BUDGET: DeliveryBudget = { maxAttempts: 5, timeoutMs: WEBHOOK_TIMEOUT_MS };
+const INTERACTIVE_TEST_BUDGET: DeliveryBudget = { maxAttempts: 1, timeoutMs: 5_000 };
 const WEBHOOK_BASE_DELAY_MS = 1_000;
 const WEBHOOK_MAX_DELAY_MS = 30_000;
 const WEBHOOK_OUTBOX_EVENT = "build.project-webhook.delivery.requested";
@@ -203,7 +209,7 @@ export class ProjectsWebhooksDispatchService implements OutboxEventConsumer, OnM
     orgId: string,
     deliveryId: number,
     throwRetryable = true,
-    maxAttempts = WEBHOOK_MAX_ATTEMPTS,
+    budget: DeliveryBudget = BACKGROUND_DELIVERY_BUDGET,
   ): Promise<DeliveryOutcome | null> {
     const row = await this.db
       .select({
@@ -231,7 +237,7 @@ export class ProjectsWebhooksDispatchService implements OutboxEventConsumer, OnM
       row.event,
       (row.payload ?? {}) as WebhookPayload,
       deliveryId,
-      maxAttempts,
+      budget,
     );
     await this.updateDelivery(orgId, deliveryId, outcome);
     if (!outcome.success && outcome.lastError && outcome.responseCode !== null) {
@@ -248,15 +254,15 @@ export class ProjectsWebhooksDispatchService implements OutboxEventConsumer, OnM
     eventName: string,
     payload: WebhookPayload,
     deliveryId: number,
-    maxAttempts: number,
+    budget: DeliveryBudget,
   ): Promise<DeliveryOutcome> {
     const body = JSON.stringify({ event: eventName, data: payload, timestamp: new Date().toISOString() });
     const signature = createHmac("sha256", endpoint.secret || "").update(body).digest("hex");
 
     const descriptor: ProviderDescriptor = {
       provider: `build-webhook:${endpoint.id}`,
-      timeoutMs: WEBHOOK_TIMEOUT_MS,
-      maxAttempts,
+      timeoutMs: budget.timeoutMs,
+      maxAttempts: budget.maxAttempts,
       baseDelayMs: WEBHOOK_BASE_DELAY_MS,
       maxDelayMs: WEBHOOK_MAX_DELAY_MS,
       classify: classifyProjectWebhookError,
@@ -270,7 +276,7 @@ export class ProjectsWebhooksDispatchService implements OutboxEventConsumer, OnM
             "X-StreamlineOS-Signature": `sha256=${signature}`,
             "X-Webhook-Event": eventName,
             "X-StreamlineOS-Delivery-Id": String(deliveryId),
-          }, WEBHOOK_TIMEOUT_MS, RESPONSE_BODY_LIMIT);
+          }, budget.timeoutMs, RESPONSE_BODY_LIMIT);
           if (response.statusCode < 200 || response.statusCode >= 300)
             throw new ProjectWebhookResponseError(response.statusCode, response.responseBody);
           return response;
@@ -359,7 +365,7 @@ export class ProjectsWebhooksDispatchService implements OutboxEventConsumer, OnM
       });
       return delivery.id;
     }, { orgId });
-    const outcome = await this.processDelivery(orgId, deliveryId, false, INTERACTIVE_TEST_MAX_ATTEMPTS);
+    const outcome = await this.processDelivery(orgId, deliveryId, false, INTERACTIVE_TEST_BUDGET);
     if (!outcome) return { success: true, responseCode: null };
     return { success: outcome.success, responseCode: outcome.responseCode };
   }

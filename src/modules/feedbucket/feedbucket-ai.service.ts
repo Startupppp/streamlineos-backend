@@ -69,6 +69,7 @@ function buildPlaintextDescription(analysis: FeedbackAnalysis): string {
 
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
 const IMAGE_FETCH_TIMEOUT_MS = 8000;
+const INTERACTIVE_ANALYSIS_BUDGET_MS = 25_000;
 
 const IMAGE_MIME_SIGNATURES: Array<{ mime: string; bytes: number[] }> = [
   { mime: "image/jpeg", bytes: [0xff, 0xd8, 0xff] },
@@ -247,6 +248,7 @@ export class FeedbucketAiService {
       images: opts.imageDataUrls,
       charge: true,
       redact: false,
+      signal: AbortSignal.timeout(INTERACTIVE_ANALYSIS_BUDGET_MS),
     });
 
     if (!result.ok) {
