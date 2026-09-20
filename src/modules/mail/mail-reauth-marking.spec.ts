@@ -3,11 +3,20 @@ import { MailAccountsService, type MailAccount } from "./mail-accounts.service";
 import { MailService } from "./mail.service";
 import { ComposioToolError } from "../integrations/core/composio.gateway";
 import type { Db } from "../../db/drizzle.module";
+import { runInNewTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
 import type { GmailMailProvider } from "./providers/gmail-mail.provider";
 import type { OutlookMailProvider } from "./providers/outlook-mail.provider";
 import type { CacheService } from "../../common/cache/cache.service";
 import type { MailMetadataService } from "./mail-metadata.service";
 import type { MailSyncCheckpointService } from "./mail-sync-checkpoint.service";
+
+jest.mock("../../common/tenant/run-in-tenant-transaction", () => ({
+  runInNewTenantTransaction: jest.fn().mockImplementation(
+    (_db: unknown, _orgId: string, fn: (_tx: unknown) => Promise<unknown>) => fn(_db),
+  ),
+}));
+
+const mockedRunInNew = runInNewTenantTransaction as jest.MockedFunction<typeof runInNewTenantTransaction>;
 
 const ORG = "org-1";
 
@@ -89,6 +98,17 @@ describe("mail reauth marking — one bulk write, and never a silent one", () =>
 
     expect(errorSpy).toHaveBeenCalledTimes(1);
     expect(String(errorSpy.mock.calls[0]?.[0])).toContain("needs_reauth");
+  });
+
+  it("runs the reauth flag write in a fresh independent transaction, not the ambient request transaction, so a GET handler's read-only transaction (SQLSTATE 25006) cannot abort the status update", async () => {
+    mockedRunInNew.mockClear();
+    const wheres: unknown[] = [];
+    const { db } = makeDb(wheres);
+
+    await new MailAccountsService(db).markNeedsReauthMany([42], ORG);
+
+    expect(mockedRunInNew).toHaveBeenCalledTimes(1);
+    expect(mockedRunInNew.mock.calls[0]?.[1]).toBe(ORG);
   });
 
   it("listMessages flags both expired mailboxes in one awaited write", async () => {

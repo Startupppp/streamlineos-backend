@@ -87,3 +87,39 @@ describe("BuildInboxCountService.countPending", () => {
     );
   });
 });
+
+describe("BSN-03-024 — badge lifecycle and cross-tenant isolation", () => {
+  it("acknowledgement: the predicate omits all decided statuses so deciding an approval immediately removes it from the badge without a cache flush", () => {
+    const params = renderParams(pendingApprovalsForActorCondition(ORG, MEMBERSHIP));
+    for (const decided of ["approved", "rejected", "cancelled", "changes_requested"]) {
+      expect(params).not.toContain(decided);
+    }
+  });
+
+  it("new-event (pending): a newly requested approval with status 'pending' falls inside the count predicate and appears in the badge", () => {
+    expect(renderParams(pendingApprovalsForActorCondition(ORG, MEMBERSHIP))).toContain("pending");
+  });
+
+  it("new-event (escalated): an escalated approval remains in the count predicate so escalation does not make the badge disappear", () => {
+    expect(renderParams(pendingApprovalsForActorCondition(ORG, MEMBERSHIP))).toContain("escalated");
+  });
+
+  it("permission-revocation: a caller whose build membership was revoked has no acting membershipId and receives zero without querying the database", async () => {
+    const { db, where } = makeCountDb([{ total: 7 }]);
+    expect(await new BuildInboxCountService(db).countPending(ORG, null)).toBe(0);
+    expect(where).not.toHaveBeenCalled();
+  });
+
+  it("cross-tenant isolation: the same numeric membershipId in two orgs produces independent counts because orgId is always bound in the WHERE predicate", async () => {
+    const { db: dbOrg1, where: whereOrg1 } = makeCountDb([{ total: 3 }]);
+    const { db: dbOrg2, where: whereOrg2 } = makeCountDb([{ total: 0 }]);
+    await new BuildInboxCountService(dbOrg1).countPending(ORG, MEMBERSHIP);
+    await new BuildInboxCountService(dbOrg2).countPending(OTHER_ORG, MEMBERSHIP);
+    const paramsOrg1 = renderParams(whereOrg1.mock.calls[0]?.[0]);
+    const paramsOrg2 = renderParams(whereOrg2.mock.calls[0]?.[0]);
+    expect(paramsOrg1).toContain(ORG);
+    expect(paramsOrg1).not.toContain(OTHER_ORG);
+    expect(paramsOrg2).toContain(OTHER_ORG);
+    expect(paramsOrg2).not.toContain(ORG);
+  });
+});

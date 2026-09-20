@@ -50,7 +50,7 @@ export class SignAdminController {
   @RequirePermission("sign:admin:manage")
   @ResponseSchema(signSettingsResponseSchema)
   getSettings(@CurrentUser() u: CurrentUserContext) {
-    return this.settings.getOrCreate(u.orgId);
+    return this.settings.get(u.orgId);
   }
 
   @Patch("settings")

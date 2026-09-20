@@ -1,5 +1,45 @@
-import { resolveTransactionGuards } from "../../db/pool.config";
+import { resolvePoolMax, resolveTransactionGuards } from "../../db/pool.config";
+import { DEFAULT_QUEUE_DEPTH_FACTOR } from "../../db/pool-admission";
 import { resolveAdmissionConfig } from "./admission.config";
+
+describe("admission is sized from the database it fronts", () => {
+  it("admits no more than the pool can hold active plus queued", () => {
+    const env = { DB_POOL_MAX: "15" };
+
+    const config = resolveAdmissionConfig(env);
+
+    expect(config.maxConcurrent).toBe(15 * (1 + DEFAULT_QUEUE_DEPTH_FACTOR));
+  });
+
+  it("follows DB_POOL_MAX so the two gates cannot drift apart", () => {
+    expect(resolveAdmissionConfig({ DB_POOL_MAX: "10" }).maxConcurrent).toBe(
+      10 * (1 + DEFAULT_QUEUE_DEPTH_FACTOR),
+    );
+    expect(resolveAdmissionConfig({ DB_POOL_MAX: "40" }).maxConcurrent).toBe(
+      40 * (1 + DEFAULT_QUEUE_DEPTH_FACTOR),
+    );
+  });
+
+  it("keeps one organization's ceiling below the global one at every pool size", () => {
+    for (const DB_POOL_MAX of ["1", "5", "10", "15", "40"]) {
+      const config = resolveAdmissionConfig({ DB_POOL_MAX });
+      expect(config.orgMaxConcurrent).toBeLessThan(config.maxConcurrent);
+      expect(config.orgMaxConcurrent).toBeGreaterThan(0);
+    }
+  });
+
+  it("still lets an operator pin the concurrency explicitly", () => {
+    expect(
+      resolveAdmissionConfig({ DB_POOL_MAX: "15", ADMISSION_MAX_CONCURRENT: "500" })
+        .maxConcurrent,
+    ).toBe(500);
+  });
+
+  it("resolves a pool size with no database url, because it is read at import time", () => {
+    expect(resolvePoolMax({})).toBeGreaterThan(0);
+    expect(resolvePoolMax({ NODE_ENV: "development" })).toBe(5);
+  });
+});
 
 describe("admission limits are real numbers, not defaults nobody set", () => {
   it("is enabled unless explicitly turned off", () => {

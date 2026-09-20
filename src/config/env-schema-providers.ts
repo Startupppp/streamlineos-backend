@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { emptyToUndefined, optionalUrl } from "./env-schema-helpers";
+import { KNOWN_CHAT_MODEL_IDS, isKnownChatModelId } from "../modules/ai/core/billing/ai-model-pricing.constants";
 
 export const providerEnvShape = {
     OPENAI_API_KEY: z.preprocess(emptyToUndefined, z.string().optional()),
@@ -15,6 +16,13 @@ export const providerEnvShape = {
     AI_CHAT_PROVIDER: z.preprocess(
       emptyToUndefined,
       z.enum(["google", "openrouter"]).optional(),
+    ),
+    AI_CHAT_MODEL: z.preprocess(
+      emptyToUndefined,
+      z.string().refine(
+        (v) => isKnownChatModelId(v),
+        { message: `AI_CHAT_MODEL must be one of: ${[...KNOWN_CHAT_MODEL_IDS].join(", ")}` },
+      ).optional(),
     ),
     AI_FAST_FALLBACK_MODELS: z.preprocess(
       emptyToUndefined,

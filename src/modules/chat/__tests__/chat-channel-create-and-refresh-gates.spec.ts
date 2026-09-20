@@ -306,9 +306,9 @@ function membersOf(existingDMs: readonly ExistingDm[], channelId: number): { mem
   return existingDMs.find((dm) => dm.id === channelId)?.members ?? [{ membershipId: ACTOR_MEMBERSHIP }];
 }
 
-async function buildDmHarness(existingDMs: readonly ExistingDm[]): Promise<DmHarness> {
+async function buildDmHarness(existingDMs: readonly ExistingDm[], dmLookupResult?: ExistingDm): Promise<DmHarness> {
   const inserts: InsertCall[] = [];
-  let lookupWhere: SQL | undefined;
+  let dmLookupWhere: SQL | undefined;
 
   const detailFindFirst = (config: { where?: SQL }) => {
     if (!config.where) throw new Error("the channel detail read ran with no predicate");
@@ -333,11 +333,6 @@ async function buildDmHarness(existingDMs: readonly ExistingDm[]): Promise<DmHar
   const query = {
     chatChannels: {
       findFirst: jest.fn(detailFindFirst),
-      findMany: jest.fn((config: { where?: SQL }) => {
-        if (!config.where) throw new Error("the existing-DM lookup ran with no predicate");
-        lookupWhere = config.where;
-        return Promise.resolve(existingDMs.map((dm) => ({ id: dm.id, members: dm.members })));
-      }),
     },
     users: {
       findFirst: jest.fn(({ where }: { where?: SQL }) => {
@@ -359,13 +354,33 @@ async function buildDmHarness(existingDMs: readonly ExistingDm[]): Promise<DmHar
   });
 
   let selectCall = 0;
-  const selectResults: unknown[][] = [
-    [{ userId: ACTOR_USER }, { userId: OTHER_USER }, { userId: THIRD_USER }],
-    existingDMs.map((dm) => ({ channelId: dm.id })),
-  ];
   const select = () => {
     const index = selectCall++;
-    return { from: () => ({ where: () => Promise.resolve(selectResults[index] ?? []) }) };
+
+    if (index === 0) {
+      return {
+        from: () => ({
+          where: () =>
+            Promise.resolve([
+              { userId: ACTOR_USER },
+              { userId: OTHER_USER },
+              { userId: THIRD_USER },
+            ]),
+        }),
+      };
+    }
+
+    const lookupChain: Record<string, unknown> = {};
+    lookupChain.innerJoin = jest.fn(() => lookupChain);
+    lookupChain.where = jest.fn((w: SQL) => {
+      dmLookupWhere = w;
+      return {
+        limit: jest.fn(() =>
+          Promise.resolve(dmLookupResult ? [{ id: dmLookupResult.id }] : []),
+        ),
+      };
+    });
+    return { from: jest.fn(() => lookupChain) };
   };
 
   const db = {
@@ -399,8 +414,8 @@ async function buildDmHarness(existingDMs: readonly ExistingDm[]): Promise<DmHar
     service: module.get(ChatChannelsService),
     inserts,
     existingDmLookup: () => {
-      if (!lookupWhere) throw new Error("the existing-DM lookup never ran");
-      return lookupWhere;
+      if (!dmLookupWhere) throw new Error("the existing-DM lookup never ran");
+      return dmLookupWhere;
     },
   };
 }
@@ -421,7 +436,7 @@ function directBody(targetUserId: string) {
 
 describe("POST /chat/channels type=DIRECT — a second conversation with the same person is never created", () => {
   it("returns the DM that already exists with that person and writes nothing", async () => {
-    const harness = await buildDmHarness([PAIR_DM]);
+    const harness = await buildDmHarness([PAIR_DM], PAIR_DM);
 
     const result = await harness.service.createChannel(ORG, ACTOR_USER, directBody(OTHER_USER));
 
@@ -464,7 +479,7 @@ describe("POST /chat/channels type=DIRECT — a second conversation with the sam
   });
 
   it("the existing-DM lookup binds type = DIRECT and the caller's org, so a GROUP is never reused", async () => {
-    const harness = await buildDmHarness([PAIR_DM]);
+    const harness = await buildDmHarness([PAIR_DM], PAIR_DM);
 
     await harness.service.createChannel(ORG, ACTOR_USER, directBody(OTHER_USER));
 
@@ -474,11 +489,20 @@ describe("POST /chat/channels type=DIRECT — a second conversation with the sam
     expect(params).toContain("DIRECT");
     expect(params).toContain(ORG);
   });
+
+  it("bounded self-join on membership tables replaces loading all creator channel-memberships then all their DIRECT channels", async () => {
+    const harness = await buildDmHarness([PAIR_DM], PAIR_DM);
+
+    const result = await harness.service.createChannel(ORG, ACTOR_USER, directBody(OTHER_USER));
+
+    expect(result.created).toBe(false);
+    expect(result.channel.id).toBe(PAIR_DM.id);
+  });
 });
 
 describe("POST /chat/channels type=DIRECT — a self-DM dedupes on the single-member shape", () => {
   it("returns the existing one-member channel instead of a second note to self", async () => {
-    const harness = await buildDmHarness([SELF_DM]);
+    const harness = await buildDmHarness([SELF_DM], SELF_DM);
 
     const result = await harness.service.createChannel(ORG, ACTOR_USER, directBody(ACTOR_USER));
 
@@ -506,5 +530,14 @@ describe("POST /chat/channels type=DIRECT — a self-DM dedupes on the single-me
     expect(harness.inserts.find((entry) => entry.table !== chatChannels)?.values).toEqual([
       { orgId: ORG, channelId: NEW_DM_ID, membershipId: ACTOR_MEMBERSHIP, role: "MEMBER" },
     ]);
+  });
+
+  it("NOT EXISTS guard on the member table prevents mistaking a two-member DM for the self-DM, replacing a JS member-count check", async () => {
+    const harness = await buildDmHarness([PAIR_DM]);
+
+    const result = await harness.service.createChannel(ORG, ACTOR_USER, directBody(ACTOR_USER));
+
+    expect(result.created).toBe(true);
+    expect(result.channel.id).toBe(NEW_DM_ID);
   });
 });

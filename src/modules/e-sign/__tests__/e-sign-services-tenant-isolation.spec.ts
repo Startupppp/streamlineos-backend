@@ -151,7 +151,7 @@ describe("SignTemplatesService — cross-tenant isolation", () => {
 describe("SignReportsService — cross-tenant isolation", () => {
   it("getSummary: WHERE includes attacker orgId (deny — different org isolation)", async () => {
     const { db, where } = makeDb([{ value: 0, status: "draft", avgHours: null, totalJobs: 0, totalRows: 0, successRows: 0, failedRows: 0, watermarked: false }]);
-    const mockSettings = stubService<SignSettingsService>({ getOrCreate: jest.fn().mockResolvedValue({ orgId: ATTACKER_ORG, expirationWarningDays: 3 }) });
+    const mockSettings = stubService<SignSettingsService>({ get: jest.fn().mockResolvedValue({ orgId: ATTACKER_ORG, expirationWarningDays: 3 }) });
     const svc = new SignReportsService(db, mockSettings);
     try { await svc.getSummary(ATTACKER_ORG); } catch { /* may throw on undefined rows */ }
     expect(where).toHaveBeenCalled();
@@ -161,7 +161,7 @@ describe("SignReportsService — cross-tenant isolation", () => {
 
   it("getSummary: resolves with own org scoped queries (control)", async () => {
     const { db, where } = makeDb([{ value: 0, status: "draft", avgHours: null, totalJobs: 0, totalRows: 0, successRows: 0, failedRows: 0, watermarked: false }]);
-    const mockSettings = stubService<SignSettingsService>({ getOrCreate: jest.fn().mockResolvedValue({ orgId: OWNER_ORG, expirationWarningDays: 3 }) });
+    const mockSettings = stubService<SignSettingsService>({ get: jest.fn().mockResolvedValue({ orgId: OWNER_ORG, expirationWarningDays: 3 }) });
     const svc = new SignReportsService(db, mockSettings);
     try { await svc.getSummary(OWNER_ORG); } catch { /* may throw on undefined rows */ }
     expect(where).toHaveBeenCalled();
@@ -246,7 +246,7 @@ describe("SignBulkSendService — cross-tenant isolation", () => {
     return new SignBulkSendService(
       db,
       stubService<SignAuditService>({ record: jest.fn() }),
-      stubService<SignSettingsService>({ getOrCreate: jest.fn().mockResolvedValue({}) }),
+      stubService<SignSettingsService>({ get: jest.fn().mockResolvedValue({}) }),
       stubService<SignNotificationsService>({}),
       stubService<SignTemplatesService>({ createFromEnvelope: jest.fn() }),
       stubService<SignEnvelopesService>({ create: jest.fn() }),
@@ -286,7 +286,7 @@ describe("SignEnvelopeDispatchService — cross-tenant isolation", () => {
       db,
       stubService<SignAuditService>({ record: jest.fn() }),
       stubService<SignTokensService>({ generateSigningToken: jest.fn().mockReturnValue("tok") }),
-      stubService<SignSettingsService>({ getOrCreate: jest.fn().mockResolvedValue({}) }),
+      stubService<SignSettingsService>({ get: jest.fn().mockResolvedValue({}) }),
       stubService<SignNotificationsService>({}),
       stubService<SignRecipientsService>({ listForEnvelope: jest.fn().mockResolvedValue([]) }),
       stubService<SignIntegrationsService>({}),

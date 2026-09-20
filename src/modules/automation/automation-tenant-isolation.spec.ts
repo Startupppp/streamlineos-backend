@@ -4,7 +4,7 @@ import { AutomationActionExecutor } from "./automation-action-executor.service";
 import { AutomationService } from "./automation.service";
 import { NotificationsService } from "../notifications/notifications.service";
 import { AutomationEmailService } from "./automation-email.service";
-import { AutomationWebhookService } from "./automation-webhook.service";
+import { WebhooksDispatchService } from "../webhooks/webhooks-dispatch.service";
 import { PlanLimitsService } from "../billing/core/plan-limits.service";
 import { AiNodeExecutorService } from "./ai-workflow-nodes/ai-node-executor.service";
 import { DRIZZLE } from "../../db/drizzle.constants";
@@ -39,7 +39,7 @@ describe("AutomationService — cross-tenant isolation", () => {
         { provide: DRIZZLE, useValue: mockDb },
         { provide: NotificationsService, useValue: { create: jest.fn() } },
         { provide: AutomationEmailService, useValue: { send: jest.fn() } },
-        { provide: AutomationWebhookService, useValue: { dispatchWebhook: jest.fn().mockResolvedValue(undefined) } },
+        { provide: WebhooksDispatchService, useValue: { dispatch: jest.fn() } },
         { provide: PlanLimitsService, useValue: { assertWithinLimit: jest.fn().mockResolvedValue(undefined) } },
         { provide: AiNodeExecutorService, useValue: { executeNode: jest.fn().mockResolvedValue({ ok: true }) } },
       ],

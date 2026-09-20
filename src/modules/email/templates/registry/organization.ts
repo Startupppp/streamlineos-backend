@@ -2,7 +2,7 @@ import {
   getInvitationEmailTemplate,
   getHolidayAnnouncementEmailTemplate,
   getCompanyAnnouncementEmailTemplate,
-} from "../index";
+} from "..";
 import { BASE_URL, EMAIL_TEMPLATE_VERSION, defineTemplateFamily } from "./_shared";
 
 export const organizationTemplates = defineTemplateFamily({

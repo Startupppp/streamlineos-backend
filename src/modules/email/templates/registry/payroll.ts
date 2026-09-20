@@ -1,4 +1,4 @@
-import { getPayslipEmailTemplate } from "../index";
+import { getPayslipEmailTemplate } from "..";
 import { EMAIL_TEMPLATE_VERSION, defineTemplateFamily } from "./_shared";
 import { PAYSLIP_TEMPLATE_LOCALES } from "../payroll";
 

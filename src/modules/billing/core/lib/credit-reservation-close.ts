@@ -72,7 +72,7 @@ export async function settle(
             `refusing to settle reservation ${reservationId} against a balance that does not exist`,
         );
 
-      const newBalance = Math.max(0, wallet.balance + delta);
+      const newBalance = wallet.balance + delta;
 
       await tx
         .update(orgAiCredits)

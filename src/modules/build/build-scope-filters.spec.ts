@@ -13,6 +13,10 @@ function renderParams(condition: unknown): unknown[] {
 
 const audit = { log: jest.fn() } as never;
 const ORG = "org-1";
+const MEMBER = 4101;
+const memberOfEveryWorkspace = {
+  assertMemberOfWorkspace: jest.fn().mockResolvedValue(undefined),
+} as unknown as PmWorkspacesService;
 
 function makeListDb() {
   const limit = jest.fn().mockResolvedValue([]);
@@ -26,28 +30,30 @@ function makeListDb() {
 describe("Build scope filters reach the WHERE clause", () => {
   it("filters managed products by pmWorkspaceId", async () => {
     const { db, where } = makeListDb();
-    await new ManagedProductsService(db, audit, {} as never).listManagedProducts(
+    await new ManagedProductsService(db, audit, memberOfEveryWorkspace).listManagedProducts(
       ORG,
       { limit: 20, pmWorkspaceId: "ws-7" } as never,
+      MEMBER,
     );
     expect(renderParams(where.mock.calls[0]?.[0])).toContain("ws-7");
   });
 
   it("filters managed products by search term", async () => {
     const { db, where } = makeListDb();
-    await new ManagedProductsService(db, audit, {} as never).listManagedProducts(
+    await new ManagedProductsService(db, audit, memberOfEveryWorkspace).listManagedProducts(
       ORG,
       { limit: 20, search: "atlas" } as never,
+      MEMBER,
     );
     expect(renderParams(where.mock.calls[0]?.[0])).toContain("%atlas%");
   });
 
   it("filters teams by pmWorkspaceId", async () => {
     const { db, where } = makeListDb();
-    await new TeamsService(db, audit, {} as never).listTeams(ORG, {
+    await new TeamsService(db, audit, memberOfEveryWorkspace).listTeams(ORG, {
       pageSize: 50,
       pmWorkspaceId: "ws-7",
-    } as never);
+    } as never, MEMBER);
     expect(renderParams(where.mock.calls[0]?.[0])).toContain("ws-7");
   });
 
@@ -62,18 +68,20 @@ describe("Build scope filters reach the WHERE clause", () => {
 
   it("keeps every scoped list bound to the caller's organization", async () => {
     const { db, where } = makeListDb();
-    await new ManagedProductsService(db, audit, {} as never).listManagedProducts(
+    await new ManagedProductsService(db, audit, memberOfEveryWorkspace).listManagedProducts(
       ORG,
       { limit: 20, pmWorkspaceId: "ws-7" } as never,
+      MEMBER,
     );
     expect(renderParams(where.mock.calls[0]?.[0])).toContain(ORG);
   });
 
   it("does not constrain by workspace when no workspace is requested", async () => {
     const { db, where } = makeListDb();
-    await new ManagedProductsService(db, audit, {} as never).listManagedProducts(
+    await new ManagedProductsService(db, audit, memberOfEveryWorkspace).listManagedProducts(
       ORG,
       { limit: 20 } as never,
+      MEMBER,
     );
     expect(renderParams(where.mock.calls[0]?.[0])).not.toContain("ws-7");
   });

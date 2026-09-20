@@ -17,7 +17,7 @@ export const teamRowSchema = z.object({
 });
 
 export const teamListItemSchema = teamRowSchema
-  .omit({ pmWorkspaceId: true, deletedAt: true })
+  .omit({ deletedAt: true })
   .extend({ memberCount: z.number().int() });
 
 export const teamPageSchema = cursorPageSchema(teamListItemSchema);

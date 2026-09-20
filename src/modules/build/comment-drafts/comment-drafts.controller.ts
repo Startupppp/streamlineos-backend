@@ -6,6 +6,7 @@ import {
   HttpCode,
   Param,
   ParseIntPipe,
+  Post,
   Put,
   UseGuards,
 } from "@nestjs/common";
@@ -16,12 +17,23 @@ import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { CommentDraftsService } from "./comment-drafts.service";
-import { upsertCommentDraftSchema, type UpsertCommentDraftInput } from "./dto/comment-drafts.schemas";
+import { CommentDraftGeneratorService } from "./comment-draft-generator.service";
+import {
+  recordDraftFailureSchema,
+  upsertCommentDraftSchema,
+  type RecordDraftFailureInput,
+  type UpsertCommentDraftInput,
+} from "./dto/comment-drafts.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { actingMembershipId } from "../../../common/auth/principal";
 import { z } from "zod";
 import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
-import { commentDraftSchema, deletedSchema } from "./dto/comment-drafts-response.schemas";
+import {
+  commentDraftSchema,
+  deletedSchema,
+  draftFailureSchema,
+  generatedCommentDraftSchema,
+} from "./dto/comment-drafts-response.schemas";
 
 const ticketIdParams = z.object({ ticketId: z.coerce.number().int().positive() }).strict();
 const draftIdParams = z.object({ draftId: z.coerce.number().int().positive() }).strict();
@@ -30,7 +42,10 @@ const draftIdParams = z.object({ draftId: z.coerce.number().int().positive() }).
 @Controller("build/comment-drafts")
 @UseGuards(JwtAuthGuard, PermissionGuard)
 export class CommentDraftsController {
-  constructor(private readonly svc: CommentDraftsService) {}
+  constructor(
+    private readonly svc: CommentDraftsService,
+    private readonly generator: CommentDraftGeneratorService,
+  ) {}
 
   @Get("mine")
   @RequirePermission("build:tickets:view")
@@ -49,6 +64,41 @@ export class CommentDraftsController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.upsert(u.orgId, actingMembershipId(u.principal), u.userId, ticketId, body);
+  }
+
+  @Post("tickets/:ticketId/generate-draft")
+  @HttpCode(200)
+  @RequirePermission("build:ai:use")
+  @ResponseSchema(generatedCommentDraftSchema)
+  @Validate({ params: ticketIdParams })
+  generateDraft(
+    @Param("ticketId", ParseIntPipe) ticketId: number,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.generator.generate(
+      u.orgId,
+      actingMembershipId(u.principal),
+      u.userId,
+      ticketId,
+    );
+  }
+
+  @Post(":draftId/failures")
+  @HttpCode(200)
+  @RequirePermission("build:tickets:view")
+  @ResponseSchema(draftFailureSchema)
+  @Validate({ params: draftIdParams, body: recordDraftFailureSchema })
+  recordFailure(
+    @Param("draftId", ParseIntPipe) draftId: number,
+    @Body() body: RecordDraftFailureInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.svc.recordDraftFailure(
+      u.orgId,
+      actingMembershipId(u.principal),
+      draftId,
+      body.error,
+    );
   }
 
   @Delete("mine")

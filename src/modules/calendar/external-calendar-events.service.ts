@@ -5,6 +5,7 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { CacheService } from "../../common/cache/cache.service";
 import { CACHE_KEYS } from "../../common/cache/cache-keys";
+import { runInNewTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
 import { ComposioGateway, ComposioToolError } from "../integrations/core/composio.gateway";
 import {
   TOOL_SLUGS,
@@ -89,11 +90,12 @@ export class ExternalCalendarEventsService {
       }
     });
     if (reauthIds.length > 0) {
-      await this.db
-        .update(userIntegrationConnections)
-        .set({ status: "needs_reauth" })
-        .where(inArray(userIntegrationConnections.id, reauthIds))
-        .catch(() => undefined);
+      await runInNewTenantTransaction(this.db, orgId, (tx) =>
+        tx
+          .update(userIntegrationConnections)
+          .set({ status: "needs_reauth" })
+          .where(inArray(userIntegrationConnections.id, reauthIds)),
+      ).catch(() => undefined);
     }
     events.sort((a, b) => a.start.localeCompare(b.start));
     return { events, errors };

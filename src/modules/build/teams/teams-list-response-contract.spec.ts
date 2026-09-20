@@ -42,7 +42,7 @@ function dbReturning(rows: unknown[]): Db {
 
 async function listOneTeam() {
   const svc = new TeamsService(dbReturning([STORED_ROW]), {} as AuditService, {} as PmWorkspacesService);
-  return svc.listTeams("org-1", { cursor: undefined, pageSize: 50, search: undefined });
+  return svc.listTeams("org-1", { cursor: undefined, pageSize: 50, search: undefined }, 1);
 }
 
 describe("GET /build/teams — the page the handler returns is the page its contract promises", () => {

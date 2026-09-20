@@ -27,7 +27,7 @@ function serviceWith(db: Db) {
       db,
       { create: jest.fn() } as never,
       { send: jest.fn() } as never,
-      { dispatchWebhook: jest.fn() } as never,
+      { dispatch: jest.fn() } as never,
       { executeNode: jest.fn() } as never,
     ),
     { assertWithinLimit: jest.fn() } as never,

@@ -7,7 +7,7 @@ import {
 } from "../../../../db/schema";
 import { type Db } from "../../../../db/drizzle.module";
 import { addDec } from "../../stock-engine/decimal";
-import { fromExact } from "./../forecast/exact";
+import { fromExact } from "../forecast/exact";
 import type { ForecastingInput } from "../dto/replenishment.schemas";
 
 /**

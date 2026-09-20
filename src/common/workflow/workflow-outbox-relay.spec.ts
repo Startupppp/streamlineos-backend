@@ -109,6 +109,40 @@ describe("WorkflowOutboxRelayService", () => {
     expect(mockForEachOrg.mock.calls[0]?.[1]).toBe("workflow-outbox-relay");
   });
 
+  function budgetOf(call: number): (() => boolean) | undefined {
+    const options = mockForEachOrg.mock.calls[call]?.[4] as
+      | { stopWhen?: () => boolean }
+      | undefined;
+    return options?.stopWhen;
+  }
+
+  it("stops opening tenant transactions once the tick's budget is full", async () => {
+    const registry = new WorkflowRegistry();
+    const relay = new WorkflowOutboxRelayService(
+      dbReturning([[event()]]),
+      registry,
+      runnerSpy().service,
+    );
+
+    await relay.relay(1);
+
+    expect(typeof budgetOf(0)).toBe("function");
+    expect(budgetOf(0)?.()).toBe(true);
+  });
+
+  it("keeps sweeping while the tick still has budget left", async () => {
+    const registry = new WorkflowRegistry();
+    const relay = new WorkflowOutboxRelayService(
+      dbReturning([[event()]]),
+      registry,
+      runnerSpy().service,
+    );
+
+    await relay.relay(5);
+
+    expect(budgetOf(0)?.()).toBe(false);
+  });
+
   it("starts a run for an event a workflow listens to", async () => {
     const registry = new WorkflowRegistry();
     registry.register({ name: "onboard", triggers: ["party.created"], handler: async () => null });

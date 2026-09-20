@@ -47,6 +47,8 @@ export class PayrollAiExplainController {
   @Post(":publicationId/ai/explain")
   @BodylessAction()
   @HttpCode(200)
+  @NoTenantTransaction()
+  @UseInterceptors(AiRequestAbortInterceptor)
   @UseGuards(PermissionGuard, RateLimitGuard)
   @UseRateLimit("ai:invoke")
   @RequirePermission("self:payslips")

@@ -1,5 +1,6 @@
 import { z } from "zod";
-import { resolveTransactionGuards } from "../../db/pool.config";
+import { DEFAULT_QUEUE_DEPTH_FACTOR } from "../../db/pool-admission";
+import { resolvePoolMax, resolveTransactionGuards } from "../../db/pool.config";
 
 const emptyToUndefined = (value: unknown) =>
   typeof value === "string" && value.trim() === "" ? undefined : value;
@@ -54,13 +55,17 @@ function parseAdmissionEnv(env: NodeJS.ProcessEnv): z.infer<typeof admissionEnvS
 
 export function resolveAdmissionConfig(env: NodeJS.ProcessEnv = process.env): AdmissionConfig {
   const parsed = parseAdmissionEnv(env);
+  const servable = resolvePoolMax(env) * (1 + DEFAULT_QUEUE_DEPTH_FACTOR);
+  const maxConcurrent = parsed.ADMISSION_MAX_CONCURRENT ?? servable;
+
   return {
-    maxConcurrent: parsed.ADMISSION_MAX_CONCURRENT ?? 200,
-    maxQueueDepth: parsed.ADMISSION_MAX_QUEUE_DEPTH ?? 400,
+    maxConcurrent,
+    maxQueueDepth: parsed.ADMISSION_MAX_QUEUE_DEPTH ?? maxConcurrent * 2,
     maxExecutionMs:
       parsed.ADMISSION_MAX_EXECUTION_MS ?? resolveTransactionGuards(env).statementTimeoutMs,
     maxBodyBytes: parsed.ADMISSION_MAX_BODY_BYTES ?? 3_145_728,
-    orgMaxConcurrent: parsed.ADMISSION_ORG_MAX_CONCURRENT ?? 50,
+    orgMaxConcurrent:
+      parsed.ADMISSION_ORG_MAX_CONCURRENT ?? Math.max(1, Math.floor(maxConcurrent / 2)),
     reservedFraction: parsed.ADMISSION_RESERVED_FRACTION ?? 0.2,
     enabled: parsed.ADMISSION_ENABLED ?? true,
   };

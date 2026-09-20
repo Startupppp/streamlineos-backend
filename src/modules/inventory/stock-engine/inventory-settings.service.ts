@@ -110,11 +110,7 @@ export class InventorySettingsService {
       const existing = await this.db.query.invSettings.findFirst({
         where: eq(invSettings.orgId, orgId),
       });
-      if (existing) return toSettingsRow(existing);
-
-      await this.db.insert(invSettings).values(buildDefaults(orgId)).onConflictDoNothing();
-      const seeded = await this.db.query.invSettings.findFirst({ where: eq(invSettings.orgId, orgId) });
-      return toSettingsRow(seeded ?? buildDefaults(orgId));
+      return toSettingsRow(existing ?? buildDefaults(orgId));
     }, CACHE_TTL.MEDIUM);
   }
 

@@ -9,7 +9,7 @@ import {
   Res,
   UseGuards,
 } from "@nestjs/common";
-import { once } from "node:events";
+import { writeChunk } from "../../../common/http/stream-abort";
 import type { Response } from "express";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
 import { AccessService } from "../../access/access.service";
@@ -334,8 +334,7 @@ async function* envelope(body: AsyncGenerator<string>): AsyncGenerator<string> {
  */
 async function writeAll(res: Response, chunks: AsyncGenerator<string>): Promise<void> {
   for await (const chunk of chunks) {
-    if (res.destroyed) return;
-    if (!res.write(chunk)) await once(res, "drain");
+    if (!(await writeChunk(res, chunk))) return;
   }
   res.end();
 }

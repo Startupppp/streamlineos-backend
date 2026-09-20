@@ -1,4 +1,9 @@
 jest.mock("sharp", () => ({ __esModule: true, default: jest.fn() }));
+jest.mock("../../../common/tenant/run-in-tenant-transaction", () => ({
+  runInTenantTransaction: jest.fn().mockImplementation(
+    async (_db: unknown, fn: () => Promise<unknown>) => fn(),
+  ),
+}));
 
 import { Logger } from "@nestjs/common";
 import { KbMediaService } from "./kb-media.service";

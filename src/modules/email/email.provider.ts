@@ -288,13 +288,18 @@ export class EmailProviderService {
     return this.activeProvider;
   }
 
-  async sendEmailOnceDirect(options: EmailOptions): Promise<void> {
+  async sendEmailOnceDirect(options: EmailOptions, budgetMs?: number): Promise<void> {
   const recipients = normalizeRecipients(options.to);
   if (recipients.length === 0) {
     logger.warn("EMAIL_SKIPPED: no recipients", { subject: options.subject });
     return;
   }
-    await sendWithProvider(this.clients, this.activeProvider, { ...options, to: recipients });
+    const send = sendWithProvider(this.clients, this.activeProvider, { ...options, to: recipients });
+    if (budgetMs === undefined) {
+      await send;
+      return;
+    }
+    await withTimeout(send, budgetMs, "Inline email send");
   }
 
   async dispatchEmail(options: EmailOptions): Promise<void> {

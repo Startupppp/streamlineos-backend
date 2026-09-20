@@ -4,6 +4,7 @@ import { invAiInsights } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import { AiGatewayService } from "../../ai/core/gateway/ai-gateway.service";
+import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
 import {
   VendorScorecardService,
   type VendorScorecard,
@@ -212,9 +213,14 @@ export class InvAiExplainService {
   }
 
   async explainInsight(orgId: string, userId: string, insightId: number): Promise<InsightNarration> {
-    const insight = await this.db.query.invAiInsights.findFirst({
-      where: and(eq(invAiInsights.id, insightId), eq(invAiInsights.orgId, orgId)),
-    });
+    const insight = await runInTenantTransaction(
+      this.db,
+      () =>
+        this.db.query.invAiInsights.findFirst({
+          where: and(eq(invAiInsights.id, insightId), eq(invAiInsights.orgId, orgId)),
+        }),
+      { orgId },
+    );
 
     if (!insight) throw new NotFoundException("Insight not found");
 

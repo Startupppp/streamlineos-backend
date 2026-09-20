@@ -17,6 +17,7 @@ import { KbMediaService, type KbMediaUploadResult } from "./kb-media.service";
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import { MultipartAction, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
 import { kbMediaUploadSchema } from "./dto/kb-space-response.schemas";
+import { NoTenantTransaction } from "../../../common/tenant/no-tenant-transaction.decorator";
 
 const MAX_FILE_SIZE = 100 * 1024 * 1024;
 
@@ -44,6 +45,7 @@ export class KbMediaController {
    * fencing the route is.
    */
   @Post("media")
+  @NoTenantTransaction()
   @MultipartAction({ file: "file", fields: { pageId: "string" } })
   @Idempotent("kb.media.upload")
   @RequirePermission("kb:pages:update")

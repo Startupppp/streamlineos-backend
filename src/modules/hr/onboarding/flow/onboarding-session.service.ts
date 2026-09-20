@@ -5,6 +5,7 @@ import type { Db } from "../../../../db/drizzle.module";
 import { onboardingFlowSessions } from "../../../../db/schema";
 import { OnboardingAnalyticsService } from "./onboarding-analytics.service";
 import { stripOnboardingDraftSecrets } from "./onboarding-session-privacy";
+import { runInNewTenantTransaction } from "../../../../common/tenant/run-in-tenant-transaction";
 
 type OnboardingFlowType =
   | "org_setup"
@@ -58,6 +59,12 @@ export class OnboardingSessionService {
 
     await this.analytics.track(orgId, userId, `${type}_started`, { source: "session" });
     return created;
+  }
+
+  async getOrCreateSessionInNewTransaction(orgId: string, userId: string, type: OnboardingFlowType, membershipId?: number | null) {
+    return runInNewTenantTransaction(this.db, orgId, () =>
+      this.getOrCreateSession(orgId, userId, type, membershipId),
+    );
   }
 
   async patchSession(orgId: string, userId: string, type: OnboardingFlowType, patch: SessionPatch, membershipId?: number | null) {

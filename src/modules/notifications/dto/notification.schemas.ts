@@ -23,10 +23,15 @@ export const snoozeSchema = z.object({
   snoozedUntil: z.string().datetime(),
 }).strict();
 
+export const unreadCountSchema = z.object({
+  sourceModule: z.string().optional(),
+}).strict();
+
 export const bulkActionSchema = z.object({
   ids: z.array(z.number().int().positive()).min(1).max(100),
 }).strict();
 
 export type ListInput = z.infer<typeof listSchema>;
 export type SnoozeInput = z.infer<typeof snoozeSchema>;
+export type UnreadCountInput = z.infer<typeof unreadCountSchema>;
 export type BulkActionInput = z.infer<typeof bulkActionSchema>;

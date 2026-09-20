@@ -3,7 +3,7 @@ import {
   getTicketAssignmentEmailTemplate,
   getTicketReviewRequestEmailTemplate,
   getTicketChangesRequestedEmailTemplate,
-} from "../index";
+} from "..";
 import { BASE_URL, EMAIL_TEMPLATE_VERSION, defineTemplateFamily } from "./_shared";
 
 export const projectsTemplates = defineTemplateFamily({

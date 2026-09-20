@@ -22,7 +22,7 @@ import {
   sweepExpiredReservations,
   type ReservationCloseDeps,
 } from "./lib/credit-reservation-close";
-import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
+import { runInNewTenantTransaction, runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
 import { isUniqueViolation } from "../../../common/db/postgres-error";
 import type {
   AiCreditReserveInput,
@@ -96,11 +96,11 @@ export class AiCreditsReservationService {
       // writes ran inside `outer.transaction` — a savepoint — so the handle the
       // lookup below reuses is still live.
       if (isUniqueViolation(err) && idempotencyKey) {
-        const existingId = await this.findByIdempotencyKey(
+        const existing = await this.findByIdempotencyKey(
           orgId,
           idempotencyKey,
         );
-        if (existingId !== null) return { reservationId: existingId };
+        if (existing !== null) return { reservationId: existing.id };
       }
       throw err;
     }
@@ -138,11 +138,7 @@ export class AiCreditsReservationService {
    * deduction behind the winner's.
    */
   async ensureWalletForOrg(orgId: string): Promise<typeof orgAiCredits.$inferSelect> {
-    return runInTenantTransaction(
-      this.db,
-      (outer) => outer.transaction((tx) => this.ensureWallet(tx, orgId)),
-      { orgId },
-    );
+    return runInNewTenantTransaction(this.db, orgId, (tx) => this.ensureWallet(tx, orgId));
   }
 
   private async ensureWallet(

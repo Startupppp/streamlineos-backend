@@ -1,4 +1,4 @@
-import { Controller, Get, UseGuards } from "@nestjs/common";
+import { Controller, Get, Query, UseGuards } from "@nestjs/common";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
@@ -8,7 +8,8 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { actingMembershipId } from "../../../common/auth/principal";
 import { AgentPulseService } from "./agent-pulse.service";
 import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
-import { agentPulseResponseSchema } from "./dto/agent-pulse.schema";
+import { agentPulseQuerySchema, agentPulseResponseSchema, type AgentPulseQuery } from "./dto/agent-pulse.schema";
+import { Validate } from "../../../common/validation/validate.decorator";
 
 @RequireModule("build")
 @Controller("build/agent-pulse")
@@ -19,8 +20,9 @@ export class AgentPulseController {
   @Get("top-signal")
   @RequirePermission("build:approvals:view")
   @ResponseSchema(agentPulseResponseSchema)
-  getTopSignal(@CurrentUser() u: CurrentUserContext) {
+  @Validate({ query: agentPulseQuerySchema })
+  getTopSignal(@CurrentUser() u: CurrentUserContext, @Query() query: AgentPulseQuery) {
     const mid = actingMembershipId(u.principal);
-    return this.svc.getTopSignal(u.orgId, u.userId, mid);
+    return this.svc.getTopSignal(u.orgId, u.userId, mid, query);
   }
 }

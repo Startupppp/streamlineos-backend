@@ -17,6 +17,7 @@ import { RequirePermission } from "../../access/require-permission.decorator";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { actingMembershipId } from "../../../common/auth/principal";
 import { ManagedProductsService } from "./managed-products.service";
 import {
   createManagedProductSchema,
@@ -29,7 +30,7 @@ import {
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
 import { NoContentResponse, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
-import { managedProductRowSchema, managedProductPageSchema } from "./dto/managed-products-response.schemas";
+import { managedProductInsightsSchema, managedProductRowSchema, managedProductPageSchema } from "./dto/managed-products-response.schemas";
 
 const managedProductIdParams = z.object({ managedProductId: z.coerce.number().int().positive() }).strict();
 
@@ -47,7 +48,7 @@ export class ManagedProductsController {
     @Query() query: ListManagedProductsQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.listManagedProducts(u.orgId, query);
+    return this.svc.listManagedProducts(u.orgId, query, actingMembershipId(u.principal));
   }
 
   @Get(":managedProductId")
@@ -70,7 +71,7 @@ export class ManagedProductsController {
     @Body() body: CreateManagedProductInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.createManagedProduct(u.orgId, u.userId, body);
+    return this.svc.createManagedProduct(u.orgId, u.userId, actingMembershipId(u.principal), body);
   }
 
   @Patch(":managedProductId")
@@ -83,6 +84,17 @@ export class ManagedProductsController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.updateManagedProduct(u.orgId, u.userId, managedProductId, body);
+  }
+
+  @Get(":managedProductId/insights")
+  @RequirePermission("build:managed-products:view")
+  @ResponseSchema(managedProductInsightsSchema)
+  @Validate({ params: managedProductIdParams })
+  getProductInsights(
+    @Param("managedProductId", ParseIntPipe) managedProductId: number,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.svc.getProductInsights(u.orgId, managedProductId);
   }
 
   @Delete(":managedProductId")

@@ -1,0 +1,1 @@
+export const COMMENT_DRAFT_MAX_RETRIES = 3;

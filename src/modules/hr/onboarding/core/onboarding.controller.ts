@@ -152,7 +152,7 @@ export class OnboardingController {
   @ResponseSchema(onboardingFlowSessionSchema)
   @Universal()
   getOnboardingSession(@CurrentUser() u: CurrentUserContext) {
-    return this.sessions.getOrCreateSession(
+    return this.sessions.getOrCreateSessionInNewTransaction(
       u.orgId,
       u.userId,
       "employee_onboarding",

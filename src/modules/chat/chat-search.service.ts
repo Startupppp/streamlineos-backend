@@ -11,12 +11,14 @@ import {
 } from "./chat-message-sender-shape";
 import { chatMessageContentMatch } from "./chat-message-content-match";
 import { filterByEntityAccess } from "./chat-channel-authorization";
+import { ChatChannelListService } from "./chat-channel-list.service";
 
 @Injectable()
 export class ChatSearchService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly entities: EntityReferenceService,
+    private readonly channelList: ChatChannelListService,
   ) {}
 
   async searchMessages(actor: EntityActor, query: string, limit = 20, cursor?: number, from?: string, to?: string, sender?: string) {
@@ -83,24 +85,14 @@ export class ChatSearchService {
   }
 
   async searchChannels(actor: EntityActor, query: string) {
-    const { orgId, userId } = actor;
+    const { orgId } = actor;
     if (!query.trim()) return [];
     const q = `%${query.trim()}%`;
 
-    const memberChannels = await this.db
-      .select({ channelId: chatChannelMembers.channelId })
-      .from(chatChannelMembers)
-      .innerJoin(
-        organizationMembers,
-        and(
-          eq(organizationMembers.id, chatChannelMembers.membershipId),
-          eq(organizationMembers.orgId, orgId),
-          eq(organizationMembers.userId, userId),
-        ),
-      )
-      .where(eq(chatChannelMembers.orgId, orgId));
-
-    const memberChannelIds = new Set(memberChannels.map(m => m.channelId));
+    const memberChannelIdList = await this.channelList.listMemberChannelIds(actor, {
+      includeArchived: true,
+    });
+    const memberChannelIds = new Set(memberChannelIdList);
 
     // Discoverability, not just tenancy. Without the `is_private` arm this read matched
     // every channel in the org: DIRECT channels are named `${creator} & ${target}`
@@ -119,7 +111,7 @@ export class ChatSearchService {
         ilike(chatChannels.name, q),
         or(
           eq(chatChannels.isPrivate, false),
-          inArray(chatChannels.id, [...memberChannelIds]),
+          inArray(chatChannels.id, memberChannelIdList),
         ),
       ),
       columns: {

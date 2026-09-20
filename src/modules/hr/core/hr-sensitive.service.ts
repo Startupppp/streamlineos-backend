@@ -8,6 +8,7 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import type { UpdateSensitiveInput } from "./dto/hr-core.schemas";
 import { HrAuditService } from "./hr-audit.service";
+import { runInNewTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
 import { encrypt, decrypt } from "../onboarding/core/crypto.helpers";
 import { resolveCompatibleList } from "../../../common/db/expand-contract-compat";
 import { loadSensitiveRecordCollections } from "./hr-sensitive-record-compat";
@@ -103,15 +104,17 @@ export class HrSensitiveService {
       )
       .limit(1);
 
-    await this.audit.log({
-      orgId,
-      actorId,
-      actorMembershipId,
-      entityType: "hr_employee_sensitive_fields",
-      entityId: String(employmentId),
-      action: "sensitive.viewed",
-      ipAddress,
-    });
+    await runInNewTenantTransaction(this.db, orgId, () =>
+      this.audit.log({
+        orgId,
+        actorId,
+        actorMembershipId,
+        entityType: "hr_employee_sensitive_fields",
+        entityId: String(employmentId),
+        action: "sensitive.viewed",
+        ipAddress,
+      }),
+    );
 
     return row ? this.resolveSensitiveRecordCollections(orgId, decryptRow(row)) : null;
   }

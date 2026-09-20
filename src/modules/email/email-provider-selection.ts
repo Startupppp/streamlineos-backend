@@ -27,7 +27,7 @@ export function fallbackProvider(
 /** What a consumer actually needs from the provider; lets a spec pass a plain object. */
 export interface EmailDispatcher {
   getEmailProvider(): Provider;
-  sendEmailOnceDirect(options: EmailOptions): Promise<void>;
+  sendEmailOnceDirect(options: EmailOptions, budgetMs?: number): Promise<void>;
   dispatchEmail(options: EmailOptions): Promise<void>;
 }
 

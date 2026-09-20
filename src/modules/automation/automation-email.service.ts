@@ -1,6 +1,7 @@
-import { Injectable } from "@nestjs/common";
+import { Inject, Injectable } from "@nestjs/common";
 import { logger } from "../../common/logger/logger.service";
 import { EmailProviderService } from "../email/email.provider";
+import { EmailOutboxService } from "../email/email-outbox.service";
 
 export interface AutomationEmailOptions {
   to: string | string[];
@@ -18,7 +19,12 @@ export interface AutomationEmailOptions {
 
 @Injectable()
 export class AutomationEmailService {
-  constructor(private readonly emailProvider: EmailProviderService) {}
+  constructor(
+    @Inject(EmailProviderService)
+    private readonly emailProvider: Pick<EmailProviderService, "getEmailProvider">,
+    @Inject(EmailOutboxService)
+    private readonly outbox: Pick<EmailOutboxService, "enqueueAndTry">,
+  ) {}
 
   async send(options: AutomationEmailOptions): Promise<void> {
     if (this.emailProvider.getEmailProvider() === "none") {
@@ -28,6 +34,6 @@ export class AutomationEmailService {
       });
       return;
     }
-    await this.emailProvider.dispatchEmail(options);
+    await this.outbox.enqueueAndTry(options);
   }
 }

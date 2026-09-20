@@ -9,7 +9,7 @@ import { AutomationActionExecutor } from "../../automation/automation-action-exe
 import { AutomationService } from "../../automation/automation.service";
 import type { AutomationAction } from "../../automation/dto/automation.schemas";
 import { AutomationEmailService } from "../../automation/automation-email.service";
-import { AutomationWebhookService } from "../../automation/automation-webhook.service";
+import { WebhooksDispatchService } from "../../webhooks/webhooks-dispatch.service";
 import { AiNodeExecutorService } from "../../automation/ai-workflow-nodes/ai-node-executor.service";
 import { PlanLimitsService } from "../../billing/core/plan-limits.service";
 import { NotificationsService } from "../../notifications/notifications.service";
@@ -94,7 +94,7 @@ async function harness(actions: AutomationAction[] = []) {
       { provide: SupportSettingsAuditService, useValue: audit },
       { provide: NotificationsService, useValue: { create: jest.fn() } },
       { provide: AutomationEmailService, useValue: { send: jest.fn() } },
-      { provide: AutomationWebhookService, useValue: { dispatchWebhook: jest.fn() } },
+      { provide: WebhooksDispatchService, useValue: { dispatch: jest.fn() } },
       { provide: PlanLimitsService, useValue: { assertWithinLimit: jest.fn() } },
       { provide: AiNodeExecutorService, useValue: { executeNode: jest.fn() } },
     ],

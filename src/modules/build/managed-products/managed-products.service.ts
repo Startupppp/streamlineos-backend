@@ -1,6 +1,6 @@
 import { ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, desc, eq, ilike, isNull } from "drizzle-orm";
-import { managedProducts } from "../../../db/schema";
+import { and, count, desc, eq, ilike, isNull } from "drizzle-orm";
+import { feedbucketSubmissions, feedbucketWidgets, managedProducts, projects } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { AuditService } from "../../../common/audit/audit.service";
@@ -41,7 +41,13 @@ export class ManagedProductsService {
     return row;
   }
 
-  async listManagedProducts(orgId: string, query: ListManagedProductsQuery) {
+  async listManagedProducts(
+    orgId: string,
+    query: ListManagedProductsQuery,
+    callerMembershipId: number | null,
+  ) {
+    if (query.pmWorkspaceId)
+      await this.pmWorkspaces.assertMemberOfWorkspace(orgId, query.pmWorkspaceId, callerMembershipId);
     const { cursor, limit, status } = query;
     const pos = decodeCursor(cursor);
     const conds = [
@@ -72,11 +78,17 @@ export class ManagedProductsService {
     return this.loadProduct(orgId, managedProductId);
   }
 
-  async createManagedProduct(orgId: string, userId: string, input: CreateManagedProductInput) {
+  async createManagedProduct(
+    orgId: string,
+    userId: string,
+    callerMembershipId: number | null,
+    input: CreateManagedProductInput,
+  ) {
     const pmWorkspaceId = await this.pmWorkspaces.resolveWorkspaceIdForWrite(
       orgId,
       input.pmWorkspaceId,
     );
+    await this.pmWorkspaces.assertMemberOfWorkspace(orgId, pmWorkspaceId, callerMembershipId);
     const [row] = await this.db
       .insert(managedProducts)
       .values({
@@ -141,6 +153,65 @@ export class ManagedProductsService {
       metadata: { managedProductId },
     });
     return updated;
+  }
+
+  async getProductInsights(orgId: string, managedProductId: number) {
+    await this.loadProduct(orgId, managedProductId);
+
+    const [projectRows, submissionRows] = await Promise.all([
+      this.db
+        .select({ status: projects.status, tally: count() })
+        .from(projects)
+        .where(
+          and(
+            eq(projects.orgId, orgId),
+            eq(projects.managedProductId, managedProductId),
+            isNull(projects.deletedAt),
+          ),
+        )
+        .groupBy(projects.status),
+
+      this.db
+        .select({ status: feedbucketSubmissions.status, tally: count() })
+        .from(feedbucketSubmissions)
+        .innerJoin(
+          feedbucketWidgets,
+          and(
+            eq(feedbucketSubmissions.widgetId, feedbucketWidgets.id),
+            eq(feedbucketSubmissions.orgId, feedbucketWidgets.orgId),
+          ),
+        )
+        .where(
+          and(
+            eq(feedbucketSubmissions.orgId, orgId),
+            eq(feedbucketWidgets.managedProductId, managedProductId),
+            isNull(feedbucketSubmissions.deletedAt),
+            isNull(feedbucketWidgets.deletedAt),
+          ),
+        )
+        .groupBy(feedbucketSubmissions.status),
+    ]);
+
+    const projectsByStatus = { active: 0, completed: 0, archived: 0 };
+    for (const row of projectRows) {
+      const n = Number(row.tally);
+      if (row.status === "ACTIVE") projectsByStatus.active = n;
+      else if (row.status === "COMPLETED") projectsByStatus.completed = n;
+      else if (row.status === "ARCHIVED") projectsByStatus.archived = n;
+    }
+
+    const submissionsByStatus = { open: 0, in_progress: 0, resolved: 0, archived: 0 };
+    for (const row of submissionRows) {
+      const n = Number(row.tally);
+      const key = row.status as keyof typeof submissionsByStatus;
+      if (key in submissionsByStatus) submissionsByStatus[key] = n;
+    }
+
+    return {
+      linkedProjectCount: projectsByStatus.active + projectsByStatus.completed + projectsByStatus.archived,
+      projectsByStatus,
+      submissionsByStatus,
+    };
   }
 
   async deleteManagedProduct(orgId: string, userId: string, managedProductId: number) {

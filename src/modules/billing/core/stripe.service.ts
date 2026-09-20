@@ -6,11 +6,12 @@ import {
   stripeFetchedIntentSchema,
   stripePaymentIntentSchema,
 } from "./dto/billing.schemas";
-import type {
-  CreatePlatformOrderParams,
-  PlatformOrder,
-  PlatformOrderRecord,
-  PlatformPaymentProvider,
+import {
+  PLATFORM_PAYMENT_TIMEOUT_MS,
+  type CreatePlatformOrderParams,
+  type PlatformOrder,
+  type PlatformOrderRecord,
+  type PlatformPaymentProvider,
 } from "./platform-payment-provider";
 import { verifyStripeWebhook } from "./stripe-signature";
 
@@ -93,6 +94,7 @@ export class StripeService implements PlatformPaymentProvider {
         "Idempotency-Key": params.receipt,
       },
       body,
+      signal: AbortSignal.timeout(PLATFORM_PAYMENT_TIMEOUT_MS),
     });
 
     if (!response.ok) {
@@ -150,7 +152,10 @@ export class StripeService implements PlatformPaymentProvider {
 
     const response = await fetch(
       `https://api.stripe.com/v1/payment_intents/${encodeURIComponent(orderId)}`,
-      { headers: { Authorization: `Bearer ${this.secretKey}` } },
+      {
+        headers: { Authorization: `Bearer ${this.secretKey}` },
+        signal: AbortSignal.timeout(PLATFORM_PAYMENT_TIMEOUT_MS),
+      },
     );
 
     if (!response.ok) {

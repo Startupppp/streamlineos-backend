@@ -14,7 +14,7 @@ import { TaxService } from "../hr-payroll/tax.service";
 import { EmploymentFactsService } from "../../directory/employment-facts.service";
 import { type BankDetails } from "../../hr/onboarding/core/crypto.helpers";
 import { upsertCanonicalSensitiveFields } from "../../../common/hr/sync-canonical-sensitive-fields";
-import { detectScheme, validateSchemeCode } from "../../payroll/payout/lib/bank-validation";
+import { detectScheme, validateSchemeCode } from "../payout/lib/bank-validation";
 import type { EssBank } from "./dto/insights.schemas";
 import { EssService } from "./ess.service";
 import { multiplyDecimals, roundDecimal, toDecimal } from "../../accounting/core/money.util";

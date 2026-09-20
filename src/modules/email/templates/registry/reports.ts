@@ -2,7 +2,7 @@ import {
   getAttendanceReportTemplate,
   getMonthlyExpenseReportTemplate,
   getWeeklyRecapEmailTemplate,
-} from "../index";
+} from "..";
 import { EMAIL_TEMPLATE_VERSION, defineTemplateFamily } from "./_shared";
 
 export const reportsTemplates = defineTemplateFamily({

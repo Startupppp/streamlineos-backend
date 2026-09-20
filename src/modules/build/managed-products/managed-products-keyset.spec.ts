@@ -36,7 +36,7 @@ function buildDb(captured: Captured) {
 async function capture(cursor: string | undefined): Promise<Captured> {
   const captured: Captured = { where: undefined, orderBy: [] };
   const svc = new ManagedProductsService(buildDb(captured), {} as AuditService, {} as PmWorkspacesService);
-  await svc.listManagedProducts("org-1", { cursor, limit: 20 });
+  await svc.listManagedProducts("org-1", { cursor, limit: 20 }, 1);
   return captured;
 }
 

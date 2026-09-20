@@ -31,7 +31,7 @@ import {
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { withIdentity } from "../tenant/with-identity";
-import { REDIS } from "../../common/cache/cache.service";
+import { REDIS } from "../cache/cache.service";
 import {
   hashApiToken,
   isModernApiToken,

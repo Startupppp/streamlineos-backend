@@ -22,6 +22,7 @@ import { SignIntegrationsService } from "./sign-integrations.service";
 import { mustGetVisibleEnvelope, systemEnvelopeScope } from "./sign-envelope-scope";
 import type { ScopedRead } from "../access/scoped-read";
 import { registerAfterCommit } from "../../common/tenant/tenant-context";
+import { runInNewTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
 
 const SIGNING_RECIPIENT_TYPES = ["signer", "approver", "in_person_host", "internal_reviewer"];
 const SIGNED_URL_EXPIRY_SECONDS = 900;
@@ -320,14 +321,16 @@ export class SignFinalizationService {
     const url = await this.storage.getFileUrl(orgId, envelope.finalPdfFileKey, SIGNED_URL_EXPIRY_SECONDS, undefined, {
       preauthorized: true,
     });
-    await this.audit.record({
-      orgId,
-      envelopeId,
-      actorType: actor.userId ? "internal_user" : "external_signer",
-      actorUserId: actor.userId,
-      eventType: "document_downloaded",
-      eventMessage: "Final signed PDF downloaded",
-      ipAddress: actor.ipAddress,
+    await runInNewTenantTransaction(this.db, orgId, async () => {
+      await this.audit.record({
+        orgId,
+        envelopeId,
+        actorType: actor.userId ? "internal_user" : "external_signer",
+        actorUserId: actor.userId,
+        eventType: "document_downloaded",
+        eventMessage: "Final signed PDF downloaded",
+        ipAddress: actor.ipAddress,
+      });
     });
     return { url, expiresInSeconds: SIGNED_URL_EXPIRY_SECONDS, hash: envelope.finalPdfHash };
   }

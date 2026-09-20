@@ -3,7 +3,7 @@ import { pgEnum } from "drizzle-orm/pg-core";
 
 /**
  * `enums.ts` is the contract, not the file layout: every pgEnum in the schema is
- * importable from here, and 100+ call sites say `from "../common/enums"`. The four
+ * importable from here, and 100+ call sites say `from "./enums"`. The four
  * domain files below hold the declarations verbatim; what stays in this file is the
  * platform and cross-module set — work items, CRM, notifications, billing, support,
  * knowledge, accounting, onboarding, payments, party and portal — which has no

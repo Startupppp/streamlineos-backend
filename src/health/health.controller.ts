@@ -9,7 +9,7 @@ import {
 } from "@nestjs/common";
 import { sql } from "drizzle-orm";
 import type { Redis } from "@upstash/redis";
-import { DB_POOL_CONFIG, DRIZZLE } from "../db/drizzle.constants";
+import { DB_POOL_CONFIG, DRIZZLE, DRIZZLE_REPLICA } from "../db/drizzle.constants";
 import { type Db } from "../db/drizzle.module";
 import { poolTelemetry, type PoolTelemetrySnapshot } from "../db/pool-telemetry";
 import {
@@ -80,13 +80,14 @@ export class HealthController implements BeforeApplicationShutdown {
 
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
+    @Inject(DRIZZLE_REPLICA) private readonly probeDb: Db,
     @Inject(DB_POOL_CONFIG) private readonly poolConfig: ResolvedPoolConfig,
     @Inject(REDIS) redis: Redis | null,
     private readonly cache: CacheService,
   ) {
     this.readiness = new ReadinessService(
       [
-        databaseCheck(() => this.db.execute(sql`select 1`)),
+        databaseCheck(() => this.probeDb.execute(sql`select 1`)),
         cacheCheck(redis, () => this.cache.droppedInvalidationCount),
         queueCheck(redis, this.config.queueHeartbeatJobs, this.config.queueStallSeconds, () =>
           Date.now(),

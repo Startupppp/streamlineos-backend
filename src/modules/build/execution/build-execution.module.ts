@@ -1,5 +1,5 @@
 import { Module } from "@nestjs/common";
-import { ProjectsModule } from "../../build/core/projects.module";
+import { ProjectsModule } from "../core/projects.module";
 import { TimesheetsCoreModule } from "../../timesheets/core/timesheets-core.module";
 import { NotificationsModule } from "../../notifications/notifications.module";
 import { OutboxModule } from "../../../common/outbox/outbox.module";

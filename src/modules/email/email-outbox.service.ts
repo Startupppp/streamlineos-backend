@@ -36,6 +36,22 @@ type DurableEmailOptions = Pick<
   "to" | "subject" | "html" | "text" | "organizationId" | "recipientUserId"
 >;
 
+export const INLINE_SEND_BUDGET_MS = 5_000;
+
+function isPresent(value: string | string[] | undefined): boolean {
+  if (value === undefined) return false;
+  return Array.isArray(value)
+    ? value.some((entry) => entry.trim().length > 0)
+    : value.trim().length > 0;
+}
+
+function rowReproducesSend(options: EmailOptions): boolean {
+  if ((options.attachments?.length ?? 0) > 0) return false;
+  if (options.headers !== undefined && Object.keys(options.headers).length > 0)
+    return false;
+  return !isPresent(options.cc) && !isPresent(options.bcc) && !isPresent(options.replyTo);
+}
+
 @Injectable()
 export class EmailOutboxService {
   private readonly logger = new Logger(EmailOutboxService.name);
@@ -171,16 +187,20 @@ export class EmailOutboxService {
       throw new Error("No email provider configured");
     }
 
+    const reproducible = rowReproducesSend(options);
+
     try {
-      await this.emailProvider.sendEmailOnceDirect(options);
+      await this.emailProvider.sendEmailOnceDirect(
+        options,
+        reproducible ? INLINE_SEND_BUDGET_MS : undefined,
+      );
       await this.db
         .update(emailOutbox)
         .set({ status: "SENT", sentAt: new Date(), attempts: 1 })
         .where(eq(emailOutbox.id, row.id));
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : String(err);
-      const hasAttachments = (options.attachments?.length ?? 0) > 0;
-      const retryable = !hasAttachments && isTransientError(err);
+      const retryable = reproducible && isTransientError(err);
 
       if (retryable) {
         const nextAttemptAt = new Date(Date.now() + 60_000);
@@ -198,7 +218,9 @@ export class EmailOutboxService {
         return;
       }
 
-      const reason = hasAttachments ? "has-attachments" : "non-retryable-error";
+      const reason = reproducible
+        ? "non-retryable-error"
+        : "not-reproducible-from-outbox-row";
       await this.db
         .update(emailOutbox)
         .set({ status: "FAILED", attempts: 1, lastError: `${reason}: ${errorMessage}` })

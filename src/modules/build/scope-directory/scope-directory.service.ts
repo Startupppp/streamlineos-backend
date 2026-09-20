@@ -1,7 +1,9 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { and, eq, inArray, isNull, or, type SQL } from "drizzle-orm";
 import {
+  managedProductMemberships,
   managedProducts,
+  pmWorkspaceMemberships,
   pmWorkspaces,
   projectMembers,
   projectTeamAssignments,
@@ -54,53 +56,122 @@ export class ScopeDirectoryService {
     const projectEntries = parsed.filter((e) => e.type === "project");
     const requestedProjectIds = projectEntries.map((e) => Number(e.rawId));
 
+    const hasWorkspaceKeys = workspaceEntries.length > 0;
+    const hasProductKeys = productEntries.length > 0;
     const hasProjectKeys = projectEntries.length > 0;
-    const perms = hasProjectKeys
-      ? await this.access.resolveUserPermissions(orgId, userId)
-      : new Map<string, string>();
-    const projectAccessIsUnrestricted = perms.get("build:manage") === "all";
+
+    const perms =
+      hasWorkspaceKeys || hasProductKeys || hasProjectKeys
+        ? await this.access.resolveUserPermissions(orgId, userId)
+        : new Map<string, string>();
+    const buildManageIsAll = perms.get("build:manage") === "all";
 
     let accessibleProjectIds: number[] | null = null;
-    if (hasProjectKeys && !projectAccessIsUnrestricted) {
-      if (membershipId === null) {
-        accessibleProjectIds = [];
-      } else {
-        const [directRows, teamRows] = await Promise.all([
-          this.db
-            .select({ projectId: projectMembers.projectId })
-            .from(projectMembers)
-            .where(
-              and(
-                eq(projectMembers.orgId, orgId),
-                inArray(projectMembers.projectId, requestedProjectIds),
-                eq(projectMembers.membershipId, membershipId),
-              ),
-            ),
-          this.db
-            .select({ projectId: projectTeamAssignments.projectId })
-            .from(projectTeamAssignments)
-            .innerJoin(
-              projectTeamMembers,
-              and(
-                eq(projectTeamMembers.orgId, projectTeamAssignments.orgId),
-                eq(projectTeamMembers.teamId, projectTeamAssignments.teamId),
-                eq(projectTeamMembers.membershipId, membershipId),
-              ),
-            )
-            .where(
-              and(
-                eq(projectTeamAssignments.orgId, orgId),
-                inArray(projectTeamAssignments.projectId, requestedProjectIds),
-              ),
-            ),
-        ]);
-        const idSet = new Set<number>([
-          ...directRows.map((r) => r.projectId),
-          ...teamRows.map((r) => r.projectId),
-        ]);
-        accessibleProjectIds = [...idSet];
-      }
+    let accessibleWorkspaceIds: string[] | null = null;
+    let accessibleProductIds: number[] | null = null;
+
+    if (!buildManageIsAll && (hasProjectKeys || hasWorkspaceKeys || hasProductKeys)) {
+      const projectTask: Promise<void> = hasProjectKeys
+        ? (async () => {
+            if (membershipId === null) {
+              accessibleProjectIds = [];
+              return;
+            }
+            const [directRows, teamRows] = await Promise.all([
+              this.db
+                .select({ projectId: projectMembers.projectId })
+                .from(projectMembers)
+                .where(
+                  and(
+                    eq(projectMembers.orgId, orgId),
+                    inArray(projectMembers.projectId, requestedProjectIds),
+                    eq(projectMembers.membershipId, membershipId),
+                  ),
+                ),
+              this.db
+                .select({ projectId: projectTeamAssignments.projectId })
+                .from(projectTeamAssignments)
+                .innerJoin(
+                  projectTeamMembers,
+                  and(
+                    eq(projectTeamMembers.orgId, projectTeamAssignments.orgId),
+                    eq(projectTeamMembers.teamId, projectTeamAssignments.teamId),
+                    eq(projectTeamMembers.membershipId, membershipId),
+                  ),
+                )
+                .where(
+                  and(
+                    eq(projectTeamAssignments.orgId, orgId),
+                    inArray(projectTeamAssignments.projectId, requestedProjectIds),
+                  ),
+                ),
+            ]);
+            const idSet = new Set<number>([
+              ...directRows.map((r) => r.projectId),
+              ...teamRows.map((r) => r.projectId),
+            ]);
+            accessibleProjectIds = [...idSet];
+          })()
+        : Promise.resolve();
+
+      const workspaceTask: Promise<void> = hasWorkspaceKeys
+        ? (async () => {
+            if (membershipId === null) {
+              accessibleWorkspaceIds = [];
+              return;
+            }
+            const wsRows = await this.db
+              .select({ pmWorkspaceId: pmWorkspaceMemberships.pmWorkspaceId })
+              .from(pmWorkspaceMemberships)
+              .where(
+                and(
+                  eq(pmWorkspaceMemberships.orgId, orgId),
+                  inArray(
+                    pmWorkspaceMemberships.pmWorkspaceId,
+                    workspaceEntries.map((e) => e.rawId),
+                  ),
+                  eq(pmWorkspaceMemberships.organizationMembershipId, membershipId),
+                ),
+              );
+            accessibleWorkspaceIds = wsRows.map((r) => r.pmWorkspaceId);
+          })()
+        : Promise.resolve();
+
+      const productTask: Promise<void> = hasProductKeys
+        ? (async () => {
+            if (membershipId === null) {
+              accessibleProductIds = [];
+              return;
+            }
+            const prodRows = await this.db
+              .select({ managedProductId: managedProductMemberships.managedProductId })
+              .from(managedProductMemberships)
+              .where(
+                and(
+                  eq(managedProductMemberships.orgId, orgId),
+                  inArray(
+                    managedProductMemberships.managedProductId,
+                    productEntries.map((e) => Number(e.rawId)),
+                  ),
+                  eq(managedProductMemberships.organizationMembershipId, membershipId),
+                ),
+              );
+            accessibleProductIds = prodRows.map((r) => r.managedProductId);
+          })()
+        : Promise.resolve();
+
+      await Promise.all([projectTask, workspaceTask, productTask]);
     }
+
+    const wsIdsToFetch: string[] =
+      accessibleWorkspaceIds !== null
+        ? accessibleWorkspaceIds
+        : workspaceEntries.map((e) => e.rawId);
+
+    const productIdsToFetch: number[] =
+      accessibleProductIds !== null
+        ? accessibleProductIds
+        : productEntries.map((e) => Number(e.rawId));
 
     const buildProjectWhere = (): SQL<unknown> | null => {
       if (!hasProjectKeys) return null;
@@ -113,13 +184,17 @@ export class ScopeDirectoryService {
         const hasDirectAccess = accessibleProjectIds.length > 0;
         const hasManagerAccess = membershipId !== null;
         if (!hasDirectAccess && !hasManagerAccess) return null;
-        const memberFilter = hasDirectAccess && hasManagerAccess && membershipId !== null
-          ? or(inArray(projects.id, accessibleProjectIds), eq(projects.managerMembershipId, membershipId))
-          : hasDirectAccess
-            ? inArray(projects.id, accessibleProjectIds)
-            : membershipId !== null
-              ? eq(projects.managerMembershipId, membershipId)
-              : null;
+        const memberFilter =
+          hasDirectAccess && hasManagerAccess && membershipId !== null
+            ? or(
+                inArray(projects.id, accessibleProjectIds),
+                eq(projects.managerMembershipId, membershipId),
+              )
+            : hasDirectAccess
+              ? inArray(projects.id, accessibleProjectIds)
+              : membershipId !== null
+                ? eq(projects.managerMembershipId, membershipId)
+                : null;
         if (memberFilter) base.push(memberFilter);
       }
       return and(...base) ?? null;
@@ -128,7 +203,7 @@ export class ScopeDirectoryService {
     const projectWhere = buildProjectWhere();
 
     const [workspaceRows, productRows, projectRows] = await Promise.all([
-      workspaceEntries.length
+      wsIdsToFetch.length > 0
         ? this.db
             .select({
               pmWorkspaceId: pmWorkspaces.pmWorkspaceId,
@@ -139,12 +214,12 @@ export class ScopeDirectoryService {
             .where(
               and(
                 eq(pmWorkspaces.orgId, orgId),
-                inArray(pmWorkspaces.pmWorkspaceId, workspaceEntries.map((e) => e.rawId)),
+                inArray(pmWorkspaces.pmWorkspaceId, wsIdsToFetch),
                 isNull(pmWorkspaces.deletedAt),
               ),
             )
         : Promise.resolve([]),
-      productEntries.length
+      productIdsToFetch.length > 0
         ? this.db
             .select({
               id: managedProducts.id,
@@ -157,7 +232,7 @@ export class ScopeDirectoryService {
             .where(
               and(
                 eq(managedProducts.orgId, orgId),
-                inArray(managedProducts.id, productEntries.map((e) => Number(e.rawId))),
+                inArray(managedProducts.id, productIdsToFetch),
                 isNull(managedProducts.deletedAt),
               ),
             )
@@ -287,7 +362,8 @@ export class ScopeDirectoryService {
         type: "project",
         id: String(row.id),
         name: row.name,
-        parentKey: row.managedProductId !== null ? `product:${row.managedProductId}` : null,
+        parentKey:
+          row.managedProductId !== null ? `product:${row.managedProductId}` : null,
         projectKey: row.key,
         isArchived: row.status === "ARCHIVED",
         parentPath,

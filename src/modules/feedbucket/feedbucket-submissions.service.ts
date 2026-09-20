@@ -1,6 +1,6 @@
 import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, count, desc, eq, ilike, inArray, isNull, like } from "drizzle-orm";
-import { feedbucketAttachments, feedbucketSubmissions, organizationMembers } from "../../db/schema";
+import { and, count, desc, eq, ilike, inArray, isNull, like, sql, type SQL } from "drizzle-orm";
+import { feedbucketAttachments, feedbucketSubmissions, feedbucketWidgets, organizationMembers } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
 import { runInTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
@@ -16,6 +16,20 @@ import {
   resolveFeedbucketTicketTarget,
 } from "./feedbucket-ticket-routing";
 import { assertProjectInOrg } from "../build/core/project-access";
+
+function submissionsInWidgetsMatching(condition: SQL | undefined): SQL {
+  return sql`${feedbucketSubmissions.widgetId} IN (SELECT ${feedbucketWidgets.id} FROM ${feedbucketWidgets} WHERE ${condition})`;
+}
+
+function submissionsInManagedProductCondition(orgId: string, managedProductId: number): SQL {
+  return submissionsInWidgetsMatching(
+    and(
+      eq(feedbucketWidgets.orgId, orgId),
+      eq(feedbucketWidgets.managedProductId, managedProductId),
+      isNull(feedbucketWidgets.deletedAt),
+    ),
+  );
+}
 
 const FEEDBUCKET_MEDIA_MIME_PREFIX: Record<FeedbucketMediaKind, string> = {
   screenshot: "image/%",
@@ -33,11 +47,12 @@ export class FeedbucketSubmissionsService {
 
   async list(read: ScopedRead, query: ListSubmissionsQuery, membershipId: number | null) {
     const orgId = read.orgId;
-    const { page, limit, widgetId, type, status, assigneeId, search } = query;
+    const { page, limit, widgetId, managedProductId, type, status, assigneeId, search } = query;
     const offset = (page - 1) * limit;
 
     const domain = [
       widgetId !== undefined ? eq(feedbucketSubmissions.widgetId, widgetId) : undefined,
+      managedProductId !== undefined ? submissionsInManagedProductCondition(orgId, managedProductId) : undefined,
       type !== undefined ? eq(feedbucketSubmissions.type, type) : undefined,
       status !== undefined ? eq(feedbucketSubmissions.status, status) : undefined,
       isNull(feedbucketSubmissions.deletedAt),

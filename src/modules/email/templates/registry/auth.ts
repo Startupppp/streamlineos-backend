@@ -6,7 +6,7 @@ import {
   getAccountDeactivationEmailTemplate,
   getAccountLockedEmailTemplate,
   getEmailOtpTemplate,
-} from "../index";
+} from "..";
 import { BASE_URL, BRAND, EMAIL_TEMPLATE_VERSION, defineTemplateFamily } from "./_shared";
 import { AUTH_TEMPLATE_LOCALES } from "../auth";
 

@@ -78,6 +78,7 @@ export const listSubmissionsQuerySchema = z.object({
   page: pageNumberField,
   limit: pageSizeField(20, 100),
   widgetId: z.coerce.number().int().positive().optional(),
+  managedProductId: z.coerce.number().int().positive().optional(),
   type: z.enum(["bug", "idea", "feature", "question", "praise", "other"]).optional(),
   status: z.enum(["open", "in_progress", "resolved", "archived"]).optional(),
   assigneeId: z.string().optional(),

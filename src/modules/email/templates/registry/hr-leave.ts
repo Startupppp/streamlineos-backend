@@ -6,7 +6,7 @@ import {
   getResignationSubmittedEmailTemplate,
   getResignationApprovedEmailTemplate,
   getTerminationEmailTemplate,
-} from "../index";
+} from "..";
 import { BASE_URL, EMAIL_TEMPLATE_VERSION, defineTemplateFamily } from "./_shared";
 
 export const hrLeaveTemplates = defineTemplateFamily({

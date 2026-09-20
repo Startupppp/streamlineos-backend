@@ -21,7 +21,7 @@
  *     npx jest src/db/schema/set-null-column-lists.db.spec.ts --maxWorkers=1
  */
 import postgres from "postgres";
-import * as schema from "./index";
+import * as schema from ".";
 import {
   deriveSetNullDeclarations,
   SET_NULL_COLUMN_SETS_QUERY,

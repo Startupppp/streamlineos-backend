@@ -17,6 +17,40 @@ export interface EndableResponse {
   off(event: "close", listener: () => void): unknown;
 }
 
+export interface BackpressuredResponse {
+  readonly destroyed: boolean;
+  write(chunk: string | Uint8Array): boolean;
+  once(event: "drain" | "close" | "error", listener: () => void): unknown;
+  off(event: "drain" | "close" | "error", listener: () => void): unknown;
+}
+
+export async function writeChunk(
+  res: BackpressuredResponse,
+  chunk: string | Uint8Array,
+): Promise<boolean> {
+  if (res.destroyed) return false;
+  if (res.write(chunk)) return true;
+
+  return new Promise<boolean>((resolve) => {
+    function cleanup(): void {
+      res.off("drain", onDrain);
+      res.off("close", onEnd);
+      res.off("error", onEnd);
+    }
+    function onDrain(): void {
+      cleanup();
+      resolve(true);
+    }
+    function onEnd(): void {
+      cleanup();
+      resolve(false);
+    }
+    res.once("drain", onDrain);
+    res.once("close", onEnd);
+    res.once("error", onEnd);
+  });
+}
+
 export interface StreamAbortHandle {
   readonly signal: AbortSignal;
   reason(): StreamAbortReason | null;

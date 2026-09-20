@@ -290,16 +290,16 @@ export class NotificationsReadService {
     });
   }
 
-  unreadCount(orgId: string, userId: string) {
+  unreadCount(orgId: string, userId: string, sourceModule?: string) {
     return this.cache.cachedVersioned(
       `notifications:${userId}:${orgId}`,
-      "unread-count",
-      () => this.queryUnreadCount(orgId, userId),
+      sourceModule ? `unread-count:${sourceModule}` : "unread-count",
+      () => this.queryUnreadCount(orgId, userId, sourceModule),
       CACHE_TTL.SHORT,
     );
   }
 
-  private async queryUnreadCount(orgId: string, userId: string) {
+  private async queryUnreadCount(orgId: string, userId: string, sourceModule?: string) {
     const { membershipId, lastReadId } = await this.resolveRecipient(orgId, userId);
     const now = new Date();
     const window = this.retentionWindow(now);
@@ -315,6 +315,7 @@ export class NotificationsReadService {
     const notSnoozed = notificationNotSnoozed(now);
     if (notSnoozed) conditions.push(notSnoozed);
     if (lastReadId > 0) conditions.push(gt(notifications.id, lastReadId));
+    if (sourceModule) conditions.push(eq(notifications.sourceModule, sourceModule));
     const [result] = await this.db
       .select({ count: sql<number>`count(*)::int` })
       .from(notifications)
