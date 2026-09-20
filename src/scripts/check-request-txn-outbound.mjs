@@ -23,15 +23,45 @@ const MAX_HOPS = 3;
 const MIN_CONTROLLERS = 200;
 const MIN_ROUTES = 1500;
 
-const FROZEN = new Set([
-  "modules/build/core/projects-webhooks.controller.ts#sendTest",
-  "modules/email/controllers/notifications-dispatch.controller.ts#dispatch",
-  "modules/feedbucket/feedbucket.controller.ts#analyzeSubmission",
-  "modules/feedbucket/feedbucket.controller.ts#createTicketFromAnalysis",
-  "modules/hr/automations/hr-webhooks.controller.ts#redeliver",
-  "modules/hr/automations/hr-webhooks.controller.ts#test",
-  "modules/support/core/support-reports.controller.ts#getOverview",
-  "modules/webhooks/webhooks.controller.ts#retryLog",
+/*
+  Each entry carries the decision that put it here. A bare list turns into a
+  place to drop a route nobody wanted to think about; a reason has to be written
+  by someone who looked. "HOLDS" means the connection really is held and the
+  cost was accepted or deferred — those are work, not settled.
+*/
+const FROZEN = new Map([
+  [
+    "modules/build/core/projects-webhooks.controller.ts#sendTest",
+    "HOLDS. Awaited so the user is shown the delivery result. 10s x 5 attempts with 1-30s backoff, so the worst case is minutes on one connection. Needs the dispatch service to own its transactions before it can opt out.",
+  ],
+  [
+    "modules/email/controllers/notifications-dispatch.controller.ts#dispatch",
+    "HOLDS. Awaited; the send outcome per channel is the response body. Email writes outbox status after the provider call, so an opt-out alone would leave those writes with no tenant context. Budgets 5s inline email, 15s Twilio.",
+  ],
+  [
+    "modules/feedbucket/feedbucket.controller.ts#analyzeSubmission",
+    "HOLDS, and the longest of the eight: a 60s standard-tier LLM call with the submission update after it. Opt-out needs the service to own its read and write transactions.",
+  ],
+  [
+    "modules/feedbucket/feedbucket.controller.ts#createTicketFromAnalysis",
+    "HOLDS, same 60s call, and only when the submission has no analysis yet. Also writes a ticket through ProjectsTicketsService, whose atomicity has to be settled before this one is split.",
+  ],
+  [
+    "modules/hr/automations/hr-webhooks.controller.ts#redeliver",
+    "Detached: the fetch is fired through detachDelivery, outside the tenant context, and the status write opens its own transaction. No connection is held. Frozen because the scan cannot tell an awaited call from a detached one.",
+  ],
+  [
+    "modules/hr/automations/hr-webhooks.controller.ts#test",
+    "Detached, exactly as redeliver above. No connection is held.",
+  ],
+  [
+    "modules/support/core/support-reports.controller.ts#getOverview",
+    "Redis, not a third-party provider, and only on the default unscoped filters. Read-only: nothing is written anywhere in the path, and each Redis op is capped at 3s with a direct-query fallback. Accepted.",
+  ],
+  [
+    "modules/webhooks/webhooks.controller.ts#retryLog",
+    "HOLDS, deliberately. webhooks-dispatch.service.ts:61-66 documents that retryLog calls deliver from inside the live request transaction and that reusing it is correct, because the log insert must commit with the retry.",
+  ],
 ]);
 
 function callsOutbound(body) {
@@ -157,6 +187,16 @@ function main() {
   }
 
   const unfrozen = holding.filter((entry) => !FROZEN.has(entry));
+  const departed = [...FROZEN.keys()].filter((entry) => !holding.includes(entry));
+
+  if (departed.length > 0) {
+    console.error(
+      `check-request-txn-outbound: ${departed.length} frozen route(s) no longer reach an outbound ` +
+        `call. Remove them from FROZEN — a stale entry silently re-freezes the route if it regresses.`,
+    );
+    for (const entry of departed) console.error(`  ${entry}`);
+    process.exit(1);
+  }
 
   if (unfrozen.length > 0) {
     console.error(
