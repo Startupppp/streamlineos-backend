@@ -9,19 +9,7 @@ const SELF_TEST = IS_ENTRY && process.argv.includes("--self-test");
 const BACKEND_ROOT = resolve(fileURLToPath(new URL(".", import.meta.url)), "../..");
 const MODULES_SRC = join(BACKEND_ROOT, "src", "modules");
 
-const EXCLUDED_FILE_PATTERNS = [
-  /[/\\]execution[/\\]timesheets\.controller\.ts$/,
-  /[/\\]execution[/\\]timesheets-[^/\\]*\.ts$/,
-  /[/\\]execution[/\\]timesheet-[^/\\]*\.ts$/,
-  /[/\\]execution[/\\]dto[/\\]timesheets[^/\\]*\.ts$/,
-];
-
 const MIN_ROUTES = 30;
-
-function isExcluded(filePath) {
-  const normalized = filePath.replace(/\\/g, "/");
-  return EXCLUDED_FILE_PATTERNS.some((p) => p.test(normalized));
-}
 
 export function extractRouteParams(path) {
   return [...path.matchAll(/:(\w+)/g)].map((m) => m[1]);
@@ -140,7 +128,7 @@ function findControllerFiles(dir) {
     const stat = statSync(full);
     if (stat.isDirectory()) {
       files.push(...findControllerFiles(full));
-    } else if (entry.endsWith(".controller.ts") && !isExcluded(full)) {
+    } else if (entry.endsWith(".controller.ts")) {
       files.push(full);
     }
   }
@@ -325,6 +313,58 @@ export class FeedbucketController {
     if (result.unresolved.length !== 1)
       fail("extend-unresolvable-base", `expected 1 unresolved when the base cannot be found, got ${result.unresolved.length}`);
     else pass("an .extend() on a base the gate cannot find stays unresolved rather than passing on partial keys");
+  }
+
+  {
+    const content = `
+const entryIdParams = z.object({ entryId: z.coerce.number().int().positive() }).strict();
+const projectAndTicketIdParams = z.object({ projectId: z.coerce.number().int().positive(), ticketId: z.coerce.number().int().positive() }).strict();
+
+@Controller("build/time-entries")
+export class TimeEntriesController {
+  @Patch(":entryId/approve")
+  @Validate({ params: entryIdParams })
+  approve() {}
+}
+
+@Controller("build/:projectId/tickets/:ticketId/time-entries")
+export class TicketTimeEntriesController {
+  @Get()
+  @Validate({ params: projectAndTicketIdParams })
+  list() {}
+}
+`;
+    const result = analyzeControllerContent("fake.ts", content);
+    if (result.violations.length !== 0)
+      fail("multi-controller", `expected 0 violations across two controllers in one file, got ${JSON.stringify(result.violations)}`);
+    else if (result.routeCount !== 2)
+      fail("multi-controller-count", `expected routeCount 2, got ${result.routeCount}`);
+    else pass("a file declaring two controllers resolves each route against its own nearest prefix, not the first one in the file");
+  }
+
+  {
+    const content = `
+const entryIdParams = z.object({ entryId: z.coerce.number().int().positive() }).strict();
+
+@Controller("build/time-entries")
+export class TimeEntriesController {
+  @Patch(":entryId/approve")
+  @Validate({ params: entryIdParams })
+  approve() {}
+}
+
+@Controller("build/:projectId/tickets/:ticketId/time-entries")
+export class TicketTimeEntriesController {
+  @Get(":entryId")
+  @Validate({ params: entryIdParams })
+  get() {}
+}
+`;
+    const result = analyzeControllerContent("fake.ts", content);
+    const missing = result.violations[0]?.missing ?? [];
+    if (result.violations.length !== 1 || !missing.includes("projectId") || !missing.includes("ticketId"))
+      fail("multi-controller-defect", `expected the second controller's route flagged for projectId and ticketId, got ${JSON.stringify(result.violations)}`);
+    else pass("a schema reused under a second controller with a richer prefix is flagged there — the multi-controller walk is not vacuous");
   }
 
   {
