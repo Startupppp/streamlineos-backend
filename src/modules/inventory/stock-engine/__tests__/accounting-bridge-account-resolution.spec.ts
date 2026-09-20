@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { ConflictException } from "@nestjs/common";
 import { AdapterRejection } from "../../../accounting/adapters/posting-command.types";
+import { INVENTORY_SEAM_ROLES } from "../../../accounting/kernel/system-tag-roles";
 import { sqlValues } from "../../__tests__/isolation-harness";
 import {
   InventoryAccountingBridge,
@@ -252,6 +253,15 @@ describe("InventoryAccountingBridge on the accounting kernel", () => {
       expect(INVENTORY_JOURNAL_PURPOSES).not.toContain("INVENTORY_ADJUSTMENT_GAIN_LOSS");
       expect(INVENTORY_JOURNAL_PURPOSES).not.toContain("INVENTORY_LANDED_COST_CLEARING");
       expect(Object.keys(INVENTORY_PURPOSE_TAG).sort()).toEqual([...INVENTORY_JOURNAL_PURPOSES].sort());
+    });
+
+    it("resolves no role the seam does not require, so a purpose cannot demand an unseeded account", () => {
+      const required = new Set<string>(INVENTORY_SEAM_ROLES);
+      const unseeded = [...INVENTORY_JOURNAL_PURPOSES]
+        .filter((purpose) => !required.has(INVENTORY_PURPOSE_TAG[purpose]))
+        .map((purpose) => `${purpose} → "${INVENTORY_PURPOSE_TAG[purpose]}"`);
+      expect(unseeded).toEqual([]);
+      expect(INVENTORY_JOURNAL_PURPOSES.length).toBeGreaterThan(4);
     });
 
     it("credits the receipt to the same role on both receipt paths", () => {

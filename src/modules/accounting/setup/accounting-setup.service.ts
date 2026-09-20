@@ -17,7 +17,6 @@ import { PackRegistry } from "../packs/pack.registry";
 import { PeriodsService } from "../kernel/periods.service";
 import { INVENTORY_SEAM_ROLES } from "../kernel/system-tag-roles";
 
-export { INVENTORY_SEAM_ROLES };
 
 /**
  * Whether this organisation's accounting is actually able to receive a posting.

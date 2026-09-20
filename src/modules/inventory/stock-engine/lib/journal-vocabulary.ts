@@ -30,7 +30,6 @@ export const INVENTORY_JOURNAL_PURPOSES = [
   "AP",
   "AR",
   "SALES_INCOME",
-  "INVENTORY_LANDED_COST",
 ] as const;
 
 export type InventoryJournalPurpose = (typeof INVENTORY_JOURNAL_PURPOSES)[number];
@@ -55,7 +54,6 @@ export const INVENTORY_PURPOSE_TAG: Readonly<Record<InventoryJournalPurpose, GlS
   AP: "ap_control",
   AR: "ar_control",
   SALES_INCOME: "sales",
-  INVENTORY_LANDED_COST: "landed_cost",
 };
 
 /**
