@@ -112,10 +112,6 @@ export const DECLARED_RAW_SCOPE = new Map([
     "src/modules/expenses/expenses.controller.ts",
     "Export filters are persisted on the job row for a background worker to replay outside the request.",
   ],
-  [
-    "src/modules/ai/core/tools/ops-copilot-tools.ts",
-    "The payroll copilot answers a different shape per scope — self rows, a team refusal, or an org summary — rather than filtering one query.",
-  ],
 ]);
 
 // -- scanning ----------------------------------------------------------------

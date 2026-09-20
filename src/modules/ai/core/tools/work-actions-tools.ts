@@ -171,7 +171,7 @@ export class WorkActionsTools implements AskOsToolProvider {
 
           const resolvedName = resolution.displayName ?? assigneeName;
           const ticketTitle = ticket.title;
-          const payload: Record<string, unknown> = { ticketId, assigneeId: resolution.userId, assigneeName: resolvedName, ticketTitle };
+          const payload: Record<string, unknown> = { ticketId, assigneeId: resolution.userId, assigneeName: resolvedName };
 
           const proposal = await this.confirmation.propose({ orgId, userId, action: "ticket.assign", payload });
           return needsConfirmation({
@@ -234,7 +234,7 @@ export class WorkActionsTools implements AskOsToolProvider {
 
           const sprint = sprintRows[0]!;
           const ticketTitle = ticketRows[0].title;
-          const payload: Record<string, unknown> = { ticketId, sprintId: sprint.id, sprintName: sprint.name, ticketTitle };
+          const payload: Record<string, unknown> = { ticketId, sprintId: sprint.id, sprintName: sprint.name };
 
           const proposal = await this.confirmation.propose({ orgId, userId, action: "ticket.moveToSprint", payload });
           return needsConfirmation({

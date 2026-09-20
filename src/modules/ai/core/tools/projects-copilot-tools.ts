@@ -228,7 +228,7 @@ export class ProjectsCopilotTools implements AskOsToolProvider {
             orgId,
             userId,
             action: "ticket.addComment",
-            payload: { ticketId, comment, title: existing[0].title },
+            payload: { ticketId, comment },
           });
 
           return needsConfirmation({
