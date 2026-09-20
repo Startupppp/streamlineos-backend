@@ -200,7 +200,6 @@ export class CrmMailboxService {
       () => this.prepareSweep(organizationId, crmMailboxSyncId),
       { orgId: organizationId },
     );
-    console.error("PREPARED", JSON.stringify(prepared));
     if (prepared.step !== "fetch") return prepared.outcome;
 
     const { row, connection, plan } = prepared;
@@ -219,7 +218,6 @@ export class CrmMailboxService {
       );
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      console.error("SWEEP_ERR", error);
       logger.warn("crm mailbox sweep failed", {
         organizationId,
         crmMailboxSyncId,
