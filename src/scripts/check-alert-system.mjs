@@ -24,6 +24,7 @@ const ALERT_SCRIPTS = [
   "alert-workflow-stranded.mjs",
   "alert-retention-dead-man.mjs",
   "alert-response-contract-violations.mjs",
+  "alert-sign-sweep-stale.mjs",
 ];
 
 function runSelfTest(script) {
