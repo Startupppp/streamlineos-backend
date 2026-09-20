@@ -3,9 +3,11 @@ import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join, resolve, dirname, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const SELF_TEST = process.argv.includes("--self-test");
+const IS_ENTRY = process.argv[1] !== undefined
+  && resolve(process.argv[1]) === resolve(fileURLToPath(import.meta.url));
+const SELF_TEST = IS_ENTRY && process.argv.includes("--self-test");
 const BACKEND_ROOT = resolve(fileURLToPath(new URL(".", import.meta.url)), "../..");
-const BUILD_SRC = join(BACKEND_ROOT, "src", "modules", "build");
+const MODULES_SRC = join(BACKEND_ROOT, "src", "modules");
 
 const EXCLUDED_FILE_PATTERNS = [
   /[/\\]execution[/\\]timesheets\.controller\.ts$/,
@@ -34,9 +36,31 @@ export function extractSchemaKeys(content, schemaName) {
   return [...m[1].matchAll(/(\w+)\s*:/g)].map((km) => km[1]);
 }
 
-export function resolveSchemaKeys(filePath, content, schemaName) {
+export function extractExtendedSchema(content, schemaName) {
+  const re = new RegExp(
+    `(?:export\\s+)?const\\s+${schemaName}\\s*=\\s*(\\w+)\\s*\\.\\s*(?:extend|merge)\\s*\\(\\s*\\{([^}]*)\\}`,
+  );
+  const m = content.match(re);
+  if (!m) return null;
+  return {
+    base: m[1],
+    ownKeys: [...m[2].matchAll(/(\w+)\s*:/g)].map((km) => km[1]),
+  };
+}
+
+export function resolveSchemaKeys(filePath, content, schemaName, seen = new Set()) {
+  if (seen.has(schemaName)) return null;
+  seen.add(schemaName);
+
   const inFile = extractSchemaKeys(content, schemaName);
   if (inFile !== null) return inFile;
+
+  const extended = extractExtendedSchema(content, schemaName);
+  if (extended !== null) {
+    const baseKeys = resolveSchemaKeys(filePath, content, extended.base, seen);
+    if (baseKeys === null) return null;
+    return [...new Set([...baseKeys, ...extended.ownKeys])];
+  }
 
   const importRe = new RegExp(
     `import\\s*\\{[^}]*\\b${schemaName}\\b[^}]*\\}\\s*from\\s*['"\`]([^'"\`]*)['"\`]`,
@@ -249,6 +273,61 @@ export class ThingsController {
   }
 
   {
+    const content = `
+const submissionIdParams = z.object({ submissionId: z.coerce.number().int().positive() }).strict();
+const submissionMediaParams = submissionIdParams.extend({ mediaKind: mediaKindSchema }).strict();
+
+@Controller("feedbucket")
+export class FeedbucketController {
+  @Delete("submissions/:submissionId/media/:mediaKind")
+  @Validate({ params: submissionMediaParams })
+  remove() {}
+}
+`;
+    const result = analyzeControllerContent("fake.ts", content);
+    if (result.unresolved.length !== 0)
+      fail("extend-resolved", `expected extend() chain to resolve, got ${result.unresolved.length} unresolved`);
+    else if (result.violations.length !== 0)
+      fail("extend-clean", `expected 0 violations, got ${JSON.stringify(result.violations)}`);
+    else pass("a params schema built with .extend() resolves through its base instead of reporting unresolved");
+  }
+
+  {
+    const content = `
+const submissionIdParams = z.object({ submissionId: z.coerce.number().int().positive() }).strict();
+const submissionMediaParams = submissionIdParams.extend({ mediaKind: mediaKindSchema }).strict();
+
+@Controller("feedbucket/:widgetId")
+export class FeedbucketController {
+  @Delete("submissions/:submissionId/media/:mediaKind")
+  @Validate({ params: submissionMediaParams })
+  remove() {}
+}
+`;
+    const result = analyzeControllerContent("fake.ts", content);
+    if (result.violations.length !== 1 || !result.violations[0].missing.includes("widgetId"))
+      fail("extend-defect", `expected widgetId flagged through the extend chain, got ${JSON.stringify(result.violations)}`);
+    else pass("an .extend() chain still missing a prefix param is flagged — resolving the base did not make the check vacuous");
+  }
+
+  {
+    const content = `
+const orphanParams = unknownBase.extend({ mediaKind: mediaKindSchema }).strict();
+
+@Controller("feedbucket")
+export class FeedbucketController {
+  @Delete("submissions/:submissionId/media/:mediaKind")
+  @Validate({ params: orphanParams })
+  remove() {}
+}
+`;
+    const result = analyzeControllerContent("fake.ts", content);
+    if (result.unresolved.length !== 1)
+      fail("extend-unresolvable-base", `expected 1 unresolved when the base cannot be found, got ${result.unresolved.length}`);
+    else pass("an .extend() on a base the gate cannot find stays unresolved rather than passing on partial keys");
+  }
+
+  {
     if (MIN_ROUTES <= 0)
       fail("vacuity-const", "MIN_ROUTES must be positive");
     else pass(`vacuity guard constant MIN_ROUTES = ${MIN_ROUTES} is positive`);
@@ -262,49 +341,53 @@ export class ThingsController {
   process.exit(0);
 }
 
-const files = findControllerFiles(BUILD_SRC);
-const allViolations = [];
-const allUnresolved = [];
-let totalRoutes = 0;
+function runScan() {
+  const files = findControllerFiles(MODULES_SRC);
+  const allViolations = [];
+  const allUnresolved = [];
+  let totalRoutes = 0;
 
-for (const filePath of files) {
-  const content = readFileSync(filePath, "utf8");
-  const { violations, unresolved, routeCount } = analyzeControllerContent(filePath, content);
-  allViolations.push(...violations);
-  allUnresolved.push(...unresolved);
-  totalRoutes += routeCount;
-}
-
-if (totalRoutes < MIN_ROUTES) {
-  process.stderr.write(
-    `check-params-schema-completeness: resolved only ${totalRoutes} parameterised routes — expected at least ${MIN_ROUTES}.\n` +
-    `The scan is likely broken or no controller files were found under ${BUILD_SRC}.\n`,
-  );
-  process.exit(2);
-}
-
-if (allViolations.length === 0 && allUnresolved.length === 0) {
-  process.stdout.write(
-    `check-params-schema-completeness: OK — ${files.length} controllers, ${totalRoutes} parameterised routes checked, all strict schemas include every route param\n`,
-  );
-  process.exit(0);
-}
-
-if (allUnresolved.length > 0) {
-  process.stderr.write(`check-params-schema-completeness: ${allUnresolved.length} schema(s) could not be resolved:\n\n`);
-  for (const { filePath, schemaName, fullPath } of allUnresolved) {
-    const rel = relative(BACKEND_ROOT, filePath).replace(/\\/g, "/");
-    process.stderr.write(`  ${rel}\n    schema: ${schemaName}  route: ${fullPath}\n`);
+  for (const filePath of files) {
+    const content = readFileSync(filePath, "utf8");
+    const { violations, unresolved, routeCount } = analyzeControllerContent(filePath, content);
+    allViolations.push(...violations);
+    allUnresolved.push(...unresolved);
+    totalRoutes += routeCount;
   }
-  process.stderr.write("\n");
-}
 
-if (allViolations.length > 0) {
-  process.stderr.write(`check-params-schema-completeness: FAIL — ${allViolations.length} strict params schema(s) omit route param(s)\n\n`);
-  for (const { filePath, schemaName, fullPath, missing } of allViolations) {
-    const rel = relative(BACKEND_ROOT, filePath).replace(/\\/g, "/");
-    process.stderr.write(`  ${rel}\n    schema: ${schemaName}  route: ${fullPath}\n    missing: ${missing.join(", ")}\n\n`);
+  if (totalRoutes < MIN_ROUTES) {
+    process.stderr.write(
+      `check-params-schema-completeness: resolved only ${totalRoutes} parameterised routes — expected at least ${MIN_ROUTES}.\n` +
+      `The scan is likely broken or no controller files were found under ${MODULES_SRC}.\n`,
+    );
+    process.exit(2);
   }
+
+  if (allViolations.length === 0 && allUnresolved.length === 0) {
+    process.stdout.write(
+      `check-params-schema-completeness: OK — ${files.length} controllers, ${totalRoutes} parameterised routes checked, all strict schemas include every route param\n`,
+    );
+    process.exit(0);
+  }
+
+  if (allUnresolved.length > 0) {
+    process.stderr.write(`check-params-schema-completeness: ${allUnresolved.length} schema(s) could not be resolved:\n\n`);
+    for (const { filePath, schemaName, fullPath } of allUnresolved) {
+      const rel = relative(BACKEND_ROOT, filePath).replace(/\\/g, "/");
+      process.stderr.write(`  ${rel}\n    schema: ${schemaName}  route: ${fullPath}\n`);
+    }
+    process.stderr.write("\n");
+  }
+
+  if (allViolations.length > 0) {
+    process.stderr.write(`check-params-schema-completeness: FAIL — ${allViolations.length} strict params schema(s) omit route param(s)\n\n`);
+    for (const { filePath, schemaName, fullPath, missing } of allViolations) {
+      const rel = relative(BACKEND_ROOT, filePath).replace(/\\/g, "/");
+      process.stderr.write(`  ${rel}\n    schema: ${schemaName}  route: ${fullPath}\n    missing: ${missing.join(", ")}\n\n`);
+    }
+  }
+
+  process.exit(allViolations.length > 0 || allUnresolved.length > 0 ? 1 : 0);
 }
 
-process.exit(allViolations.length > 0 || allUnresolved.length > 0 ? 1 : 0);
+if (IS_ENTRY) runScan();
