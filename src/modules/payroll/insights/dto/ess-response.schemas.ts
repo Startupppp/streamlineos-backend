@@ -155,7 +155,7 @@ export const essPayslipsListSchema = z.array(essPayslipItemSchema);
 const essSalaryComponentSchema = z.object({
   code: z.string(),
   name: z.string(),
-  type: z.string(),
+  type: z.enum(["EARNING", "DEDUCTION", "EMPLOYER_CONTRIBUTION", "REIMBURSEMENT", "TAX", "ADJUSTMENT"]),
   amount: z.string().nullable(),
   percent: z.string().nullable(),
 });
@@ -163,9 +163,9 @@ const essSalaryComponentSchema = z.object({
 export const essSalaryStructureSchema = z.union([
   z.object({
     profile: z.object({
-      annualCtc: z.string().nullable(),
+      annualCtc: z.string(),
       workerType: z.string(),
-      taxRegime: z.string().nullable(),
+      taxRegime: z.enum(["OLD", "NEW"]).nullable(),
       costCenter: z.string().nullable(),
       effectiveFrom: z.string(),
     }),
