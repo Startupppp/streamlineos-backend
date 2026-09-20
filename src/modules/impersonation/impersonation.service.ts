@@ -141,20 +141,20 @@ export class ImpersonationService {
     const [session] = await this.db
       .select({
         id: impersonationSessions.id,
-        actorUserId: impersonationSessions.actorUserId,
-        orgId: impersonationSessions.orgId,
         isRevoked: impersonationSessions.isRevoked,
       })
       .from(impersonationSessions)
-      .where(eq(impersonationSessions.id, impersonationSessionId))
+      .where(
+        and(
+          eq(impersonationSessions.id, impersonationSessionId),
+          eq(impersonationSessions.orgId, actor.orgId),
+          eq(impersonationSessions.actorUserId, actor.userId),
+        ),
+      )
       .limit(1);
 
     if (!session) {
       throw new NotFoundException("Impersonation session not found");
-    }
-
-    if (session.actorUserId !== actor.userId || session.orgId !== actor.orgId) {
-      throw new ForbiddenException("Cannot end this impersonation session");
     }
 
     if (!session.isRevoked) {

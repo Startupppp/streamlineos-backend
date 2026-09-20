@@ -64,6 +64,40 @@ function buildDb(selectResponses: unknown[][], insertResolves = true) {
   return { select: selectFn, insert: insertFn, update: updateFn };
 }
 
+function collectColumnNames(root: unknown): string[] {
+  const found: string[] = [];
+  const seen = new WeakSet<object>();
+  const stack: unknown[] = [root];
+  while (stack.length > 0) {
+    const node = stack.pop();
+    if (node === null || typeof node !== "object") continue;
+    if (seen.has(node)) continue;
+    seen.add(node);
+    const record = node as Record<string, unknown>;
+    if (typeof record.name === "string" && "columnType" in record)
+      found.push(record.name);
+    for (const value of Object.values(record)) stack.push(value);
+  }
+  return found;
+}
+
+function captureWhere() {
+  const seen: unknown[] = [];
+  const db = {
+    select: jest.fn().mockReturnValue({
+      from: jest.fn().mockReturnThis(),
+      where: jest.fn().mockImplementation(function whereSpy(this: unknown, condition: unknown) {
+        seen.push(condition);
+        return this;
+      }),
+      limit: jest.fn().mockResolvedValue([{ id: "ims-uuid", isRevoked: true }]),
+    }),
+    insert: jest.fn(),
+    update: jest.fn(),
+  };
+  return { db, columns: () => collectColumnNames(seen) };
+}
+
 describe("ImpersonationService", () => {
   let keyring: { signImpersonationToken: jest.Mock };
   let audit: { logCriticalOutsideTransaction: jest.Mock };
@@ -171,11 +205,20 @@ describe("ImpersonationService", () => {
       await expect(svc.stop(makeActor(), "ims-uuid")).rejects.toBeInstanceOf(NotFoundException);
     });
 
-    it("throws Forbidden when actor does not own the impersonation session", async () => {
-      const sessionRow = { id: "ims-uuid", actorUserId: "different-actor", orgId: "org-uuid", isRevoked: false };
-      const db = buildDb([[sessionRow]]);
+    it("answers another org's impersonation session id with NotFound, so it cannot be used as an existence oracle", async () => {
+      const db = buildDb([[]]);
       const svc = makeService(db);
-      await expect(svc.stop(makeActor(), "ims-uuid")).rejects.toBeInstanceOf(ForbiddenException);
+      await expect(svc.stop(makeActor(), "ims-uuid")).rejects.toBeInstanceOf(NotFoundException);
+      await expect(svc.stop(makeActor(), "ims-uuid")).rejects.not.toBeInstanceOf(ForbiddenException);
+    });
+
+    it("filters the lookup on org and actor in SQL, because impersonation_sessions carries no RLS policy", async () => {
+      const where = captureWhere();
+      const svc = makeService(where.db);
+      await svc.stop(makeActor(), "ims-uuid");
+      expect(where.columns()).toEqual(
+        expect.arrayContaining(["id", "org_id", "actor_user_id"]),
+      );
     });
 
     it("revokes the impersonation session", async () => {
