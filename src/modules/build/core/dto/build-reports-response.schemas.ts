@@ -60,12 +60,22 @@ export const analyticsSchema = z.object({
 });
 
 export const resourceAllocationItemSchema = z.object({
-  userId: z.string().optional(),
-  name: z.string().optional(),
-  projectId: z.number().int().optional(),
-  projectName: z.string().optional(),
-  assignedTickets: z.number().int().optional(),
-}).passthrough();
+  user: z.object({
+    id: z.string(),
+    name: z.string().nullable(),
+    email: z.string(),
+    image: z.string().nullable(),
+  }),
+  totalOpen: z.number().int(),
+  byProject: z.array(
+    z.object({
+      projectId: z.number().int(),
+      projectName: z.string(),
+      projectKey: z.string(),
+      open: z.number().int(),
+    }),
+  ),
+});
 
 export const burnupDataSchema = z.array(z.object({
   date: z.string(),
