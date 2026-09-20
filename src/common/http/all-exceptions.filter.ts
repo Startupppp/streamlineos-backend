@@ -124,6 +124,14 @@ function describeUnhandled(exception: unknown): Record<string, unknown> {
   };
 }
 
+function writeEnvelope(res: Response, status: number, body: ApiErrorEnvelope): void {
+  if (res.headersSent) {
+    if (!res.writableEnded) res.end();
+    return;
+  }
+  res.status(status).json(body);
+}
+
 function correlationIdOf(host: ArgumentsHost): string | undefined {
   try {
     return host.switchToHttp().getRequest<RequestWithCorrelation>().correlationId;
@@ -172,12 +180,12 @@ export class AllExceptionsFilter implements ExceptionFilter {
         path: issue.path.length ? issue.path.join(".") : "body",
         message: issue.message,
       }));
-      res.status(HttpStatus.BAD_REQUEST).json({
+      writeEnvelope(res, HttpStatus.BAD_REQUEST, {
         code: "VALIDATION_FAILED",
         message: "Validation failed.",
         details,
         ...cid,
-      } satisfies ApiErrorEnvelope);
+      });
       return;
     }
 
@@ -208,9 +216,10 @@ export class AllExceptionsFilter implements ExceptionFilter {
         if (!isHealthProbe(request)) reportError(exception, request);
       }
 
-      res
-        .status(status)
-        .json({ ...httpErrorEnvelope(status, body as string | Record<string, unknown>), ...cid });
+      writeEnvelope(res, status, {
+        ...httpErrorEnvelope(status, body as string | Record<string, unknown>),
+        ...cid,
+      });
       return;
     }
 
@@ -221,7 +230,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
         code: envelope.code,
         request: describeRequest(host),
       });
-      res.status(status).json({ ...envelope, ...cid } satisfies ApiErrorEnvelope);
+      writeEnvelope(res, status, { ...envelope, ...cid });
       return;
     }
 
@@ -229,11 +238,11 @@ export class AllExceptionsFilter implements ExceptionFilter {
       logger.warn("Transient database connection error — returning 503", {
         error: exception instanceof Error ? exception.message : String(exception),
       });
-      res.status(HttpStatus.SERVICE_UNAVAILABLE).json({
+      writeEnvelope(res, HttpStatus.SERVICE_UNAVAILABLE, {
         code: "SERVICE_UNAVAILABLE",
         message: "The service is temporarily unavailable. Please try again.",
         ...cid,
-      } satisfies ApiErrorEnvelope);
+      });
       return;
     }
 
@@ -245,11 +254,11 @@ export class AllExceptionsFilter implements ExceptionFilter {
     });
 
     if (!isHealthProbe(request)) reportError(exception, request);
-    res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({
+    writeEnvelope(res, HttpStatus.INTERNAL_SERVER_ERROR, {
       code: "INTERNAL_ERROR",
       message: "An unexpected error occurred",
       ...cid,
-    } satisfies ApiErrorEnvelope);
+    });
   }
 }
 
