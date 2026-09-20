@@ -11,6 +11,7 @@ export const listWorkspacesQuerySchema = z.object({
 export const listMembersQuerySchema = z.object({
   cursor: z.string().optional(),
   limit: pageSizeField(20),
+  userId: z.string().uuid().optional(),
 }).strict();
 
 export const createWorkspaceSchema = z.object({
@@ -32,8 +33,13 @@ export const addWorkspaceMemberSchema = z.object({
   role: z.enum(["member", "admin"]).default("member"),
 }).strict();
 
+export const updateMemberRoleSchema = z.object({
+  role: z.enum(["member", "admin"]),
+}).strict();
+
 export type ListWorkspacesQuery = z.infer<typeof listWorkspacesQuerySchema>;
 export type ListMembersQuery = z.infer<typeof listMembersQuerySchema>;
 export type CreateWorkspaceInput = z.infer<typeof createWorkspaceSchema>;
 export type UpdateWorkspaceInput = z.infer<typeof updateWorkspaceSchema>;
 export type AddWorkspaceMemberInput = z.infer<typeof addWorkspaceMemberSchema>;
+export type UpdateMemberRoleInput = z.infer<typeof updateMemberRoleSchema>;

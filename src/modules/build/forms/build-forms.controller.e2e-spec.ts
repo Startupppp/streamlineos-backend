@@ -89,4 +89,54 @@ describe("ProjectsForms auth/RBAC (e2e)", () => {
     expect(res.status).not.toBe(401);
     expect(res.status).not.toBe(403);
   });
+
+  it("400 on POST /build/1/forms with a direct cycle in conditional logic (A depends on B, B depends on A)", async () => {
+    const token = await signToken({ permissions: ["build:forms:manage"], enabledModules: ["build"] });
+    const res = await request(app.getHttpServer())
+      .post("/build/1/forms")
+      .set("Authorization", `Bearer ${token}`)
+      .send({
+        name: "Cyclic Form",
+        fields: [
+          {
+            key: "a",
+            label: "Field A",
+            type: "text",
+            required: false,
+            conditionalLogic: { action: "show", match: "all", conditions: [{ fieldKey: "b", operator: "eq", value: "yes" }] },
+          },
+          {
+            key: "b",
+            label: "Field B",
+            type: "text",
+            required: false,
+            conditionalLogic: { action: "show", match: "all", conditions: [{ fieldKey: "a", operator: "eq", value: "yes" }] },
+          },
+        ],
+        actions: [],
+      });
+    expect(res.status).toBe(400);
+  });
+
+  it("400 on POST /build/1/forms when a numeric operator is applied to a non-numeric field", async () => {
+    const token = await signToken({ permissions: ["build:forms:manage"], enabledModules: ["build"] });
+    const res = await request(app.getHttpServer())
+      .post("/build/1/forms")
+      .set("Authorization", `Bearer ${token}`)
+      .send({
+        name: "Type Mismatch Form",
+        fields: [
+          { key: "name", label: "Name", type: "text", required: true },
+          {
+            key: "extra",
+            label: "Extra",
+            type: "text",
+            required: false,
+            conditionalLogic: { action: "show", match: "all", conditions: [{ fieldKey: "name", operator: "gt", value: 5 }] },
+          },
+        ],
+        actions: [],
+      });
+    expect(res.status).toBe(400);
+  });
 });

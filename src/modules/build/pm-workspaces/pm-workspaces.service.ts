@@ -72,7 +72,17 @@ export class PmWorkspacesService {
     if (pos) conds.push(keysetAfter(pmWorkspaces.createdAt, pmWorkspaces.slug, pos));
 
     const rows = await this.db
-      .select()
+      .select({
+        pmWorkspaceId: pmWorkspaces.pmWorkspaceId,
+        orgId: pmWorkspaces.orgId,
+        name: pmWorkspaces.name,
+        slug: pmWorkspaces.slug,
+        isDefault: pmWorkspaces.isDefault,
+        status: pmWorkspaces.status,
+        deletedAt: pmWorkspaces.deletedAt,
+        createdAt: pmWorkspaces.createdAt,
+        updatedAt: pmWorkspaces.updatedAt,
+      })
       .from(pmWorkspaces)
       .where(and(...conds))
       .orderBy(asc(pmWorkspaces.createdAt), asc(pmWorkspaces.slug))

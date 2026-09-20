@@ -1,5 +1,6 @@
-import { Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, desc, eq, isNull, sql } from "drizzle-orm";
+import { randomUUID } from "node:crypto";
 import { incidentUpdates, projectIncidents, users } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
@@ -7,12 +8,15 @@ import { AuditService } from "../../../common/audit/audit.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { AccessService } from "../../access/access.service";
 import { assertProjectAccess } from "../core/project-access";
+import { OutboxWriter } from "../../../common/outbox/outbox-writer";
 import type {
   AddIncidentUpdateInput,
   CreateIncidentInput,
   ListIncidentsQuery,
   UpdateIncidentInput,
 } from "./dto/incidents.schemas";
+
+const SEVERITY_RANK: Record<string, number> = { critical: 0, high: 1, medium: 2, low: 3 };
 
 type IncidentRow = typeof projectIncidents.$inferSelect;
 type IncidentPatch = Partial<typeof projectIncidents.$inferInsert>;
@@ -66,6 +70,7 @@ export class IncidentsService {
   }
 
   async getIncident(u: CurrentUserContext, projectId: number, incidentId: number) {
+    await assertProjectAccess(this.db, this.access, u, projectId);
     const incident = await this.loadIncident(u.orgId, projectId, incidentId);
     const updates = await this.db
       .select({
@@ -149,11 +154,64 @@ export class IncidentsService {
       patch.status = input.status;
       Object.assign(patch, this.computeSla(current, input.status));
     }
-    const [updated] = await this.db
-      .update(projectIncidents)
-      .set(patch)
-      .where(and(eq(projectIncidents.id, incidentId), eq(projectIncidents.orgId, u.orgId)))
-      .returning();
+
+    const now = new Date();
+
+    const [updated] = await this.db.transaction(async (tx) => {
+      const rows = await tx
+        .update(projectIncidents)
+        .set(patch)
+        .where(
+          and(
+            eq(projectIncidents.id, incidentId),
+            eq(projectIncidents.orgId, u.orgId),
+            eq(projectIncidents.projectId, projectId),
+          ),
+        )
+        .returning();
+
+      if (input.status !== undefined && input.status !== current.status) {
+        await tx.insert(incidentUpdates).values({
+          orgId: u.orgId,
+          incidentId,
+          message: `Status changed to ${input.status}`,
+          newStatus: input.status,
+          createdBy: u.userId,
+        });
+        await OutboxWriter.emit(tx, {
+          eventId: randomUUID(),
+          organizationId: u.orgId,
+          aggregateType: "incident",
+          aggregateId: String(incidentId),
+          aggregateVersion: now.getTime(),
+          eventType: "build.incident.status_changed",
+          payload: {
+            incidentId,
+            projectId,
+            orgId: u.orgId,
+            oldStatus: current.status,
+            newStatus: input.status,
+          },
+          occurredAt: now,
+        });
+      }
+
+      if (
+        input.severity !== undefined &&
+        (SEVERITY_RANK[input.severity] ?? 2) < (SEVERITY_RANK[current.severity] ?? 2)
+      ) {
+        await tx.insert(incidentUpdates).values({
+          orgId: u.orgId,
+          incidentId,
+          message: `Severity escalated to ${input.severity}`,
+          newStatus: null,
+          createdBy: u.userId,
+        });
+      }
+
+      return rows;
+    });
+
     if (!updated) throw new NotFoundException("Incident not found");
     this.audit.log({
       action: "incident.updated",
@@ -171,7 +229,13 @@ export class IncidentsService {
     await this.db
       .update(projectIncidents)
       .set({ deletedAt: new Date() })
-      .where(and(eq(projectIncidents.id, incidentId), eq(projectIncidents.orgId, u.orgId)));
+      .where(
+        and(
+          eq(projectIncidents.id, incidentId),
+          eq(projectIncidents.orgId, u.orgId),
+          eq(projectIncidents.projectId, projectId),
+        ),
+      );
     this.audit.log({
       action: "incident.deleted",
       userId: u.userId,
@@ -188,7 +252,15 @@ export class IncidentsService {
     incidentId: number,
     input: AddIncidentUpdateInput,
   ) {
+    await assertProjectAccess(this.db, this.access, u, projectId);
     const current = await this.loadIncident(u.orgId, projectId, incidentId);
+
+    if (current.status === "closed" && input.newStatus !== undefined && input.newStatus !== "closed") {
+      throw new ConflictException("Cannot transition a closed incident");
+    }
+
+    const now = new Date();
+
     const [update] = await this.db.transaction(async (tx) => {
       const rows = await tx.insert(incidentUpdates).values({
         orgId: u.orgId,
@@ -197,15 +269,40 @@ export class IncidentsService {
         newStatus: input.newStatus ?? null,
         createdBy: u.userId,
       }).returning();
-      if (input.newStatus) {
+
+      if (input.newStatus !== undefined && input.newStatus !== current.status) {
         const sla = this.computeSla(current, input.newStatus);
         await tx
           .update(projectIncidents)
           .set({ status: input.newStatus, ...sla })
-          .where(and(eq(projectIncidents.id, incidentId), eq(projectIncidents.orgId, u.orgId)));
+          .where(
+            and(
+              eq(projectIncidents.id, incidentId),
+              eq(projectIncidents.orgId, u.orgId),
+              eq(projectIncidents.projectId, projectId),
+            ),
+          );
+        await OutboxWriter.emit(tx, {
+          eventId: randomUUID(),
+          organizationId: u.orgId,
+          aggregateType: "incident",
+          aggregateId: String(incidentId),
+          aggregateVersion: now.getTime(),
+          eventType: "build.incident.status_changed",
+          payload: {
+            incidentId,
+            projectId,
+            orgId: u.orgId,
+            oldStatus: current.status,
+            newStatus: input.newStatus,
+          },
+          occurredAt: now,
+        });
       }
+
       return rows;
     });
+
     this.audit.log({
       action: "incident.update_added",
       userId: u.userId,

@@ -16,6 +16,7 @@ import { RequirePermission } from "../../access/require-permission.decorator";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { actingMembershipId } from "../../../common/auth/principal";
 import { PmWorkspacesService } from "./pm-workspaces.service";
 import { PmWorkspaceMembershipsService } from "./pm-workspace-memberships.service";
 import {
@@ -24,11 +25,13 @@ import {
   listMembersQuerySchema,
   listWorkspacesQuerySchema,
   updateWorkspaceSchema,
+  updateMemberRoleSchema,
   type AddWorkspaceMemberInput,
   type CreateWorkspaceInput,
   type ListMembersQuery,
   type ListWorkspacesQuery,
   type UpdateWorkspaceInput,
+  type UpdateMemberRoleInput,
 } from "./dto/pm-workspaces.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
@@ -134,6 +137,26 @@ export class PmWorkspacesController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.memberships.addMember(u.orgId, u.userId, pmWorkspaceId, body);
+  }
+
+  @Patch(":pmWorkspaceId/members/:pmWorkspaceMembershipId")
+  @RequirePermission("build:workspaces:members:manage")
+  @ResponseSchema(pmWorkspaceMemberRowSchema)
+  @Validate({ params: pmWorkspaceIdpmWorkspaceMembershipIdParams, body: updateMemberRoleSchema })
+  updateMemberRole(
+    @Param("pmWorkspaceId") pmWorkspaceId: string,
+    @Param("pmWorkspaceMembershipId") pmWorkspaceMembershipId: string,
+    @Body() body: UpdateMemberRoleInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.memberships.updateMemberRole(
+      u.orgId,
+      u.userId,
+      pmWorkspaceId,
+      pmWorkspaceMembershipId,
+      body,
+      actingMembershipId(u.principal),
+    );
   }
 
   @Delete(":pmWorkspaceId/members/:pmWorkspaceMembershipId")
