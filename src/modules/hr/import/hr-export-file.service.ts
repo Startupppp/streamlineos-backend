@@ -22,6 +22,11 @@ import {
   serializeEmployeeExportRow,
   type EmployeeExportCsvRow,
 } from "./hr-export-csv";
+import {
+  ephemeralJobIdFromFileKey,
+  hrExportEphemeralStore,
+  isEphemeralFileKey,
+} from "./hr-export-ephemeral-store";
 import { livePersonOfUser, primaryEmploymentOfPerson } from "../../directory/employment-query";
 
 interface EmployeeExportCursor {
@@ -42,7 +47,24 @@ export interface GeneratedEmployeeExport {
   rowCount: number;
 }
 
+/** Local CSV only — no object-storage upload. Caller owns cleanup of `tempPath`. */
+export interface LocalEmployeeExport {
+  tempPath: string;
+  fileName: string;
+  mimeType: string;
+  fileSizeBytes: number;
+  rowCount: number;
+}
+
 const BATCH_SIZE = 500;
+const CSV_MIME = "text/csv; charset=utf-8";
+
+type GenerateInput = {
+  exportJobId: string;
+  read: ScopedRead;
+  filters: HrEmployeeExportFilters;
+  createdAt: Date;
+};
 
 @Injectable()
 export class HrExportFileService {
@@ -51,16 +73,14 @@ export class HrExportFileService {
     private readonly storage: StorageService,
   ) {}
 
-  async generate(
-    input: {
-      exportJobId: string;
-      read: ScopedRead;
-      filters: HrEmployeeExportFilters;
-      createdAt: Date;
-    },
+  /**
+   * Writes the employee CSV to a temp file without uploading. Used when private
+   * object storage is unset (in-process ephemeral download path).
+   */
+  async generateLocal(
+    input: GenerateInput,
     onProgress: (processedRows: number) => Promise<void>,
-  ): Promise<GeneratedEmployeeExport> {
-    const orgId = input.read.orgId;
+  ): Promise<LocalEmployeeExport> {
     const fileName = `employee-directory-${input.createdAt.toISOString().slice(0, 10)}-${input.exportJobId.slice(0, 8)}.csv`;
     const tempPath = join(
       tmpdir(),
@@ -68,6 +88,7 @@ export class HrExportFileService {
     );
     const file = await open(tempPath, "w", 0o600);
     let rowCount = 0;
+    let closed = false;
 
     try {
       await file.write(serializeEmployeeExportHeader());
@@ -84,29 +105,56 @@ export class HrExportFileService {
       } while (cursor);
 
       await file.close();
+      closed = true;
       const fileStat = await stat(tempPath);
+      return {
+        tempPath,
+        fileName,
+        mimeType: CSV_MIME,
+        fileSizeBytes: fileStat.size,
+        rowCount,
+      };
+    } catch (error) {
+      if (!closed) await file.close().catch(() => undefined);
+      await unlink(tempPath).catch(() => undefined);
+      throw error;
+    }
+  }
+
+  async generate(
+    input: GenerateInput,
+    onProgress: (processedRows: number) => Promise<void>,
+  ): Promise<GeneratedEmployeeExport> {
+    const orgId = input.read.orgId;
+    const local = await this.generateLocal(input, onProgress);
+    try {
       const uploaded = await this.storage.uploadFileStream(
         orgId,
-        createReadStream(tempPath),
-        fileStat.size,
+        createReadStream(local.tempPath),
+        local.fileSizeBytes,
         `hr-exports/${orgId}`,
-        fileName,
-        "text/csv; charset=utf-8",
+        local.fileName,
+        local.mimeType,
       );
       return {
         fileKey: uploaded.key,
-        fileName,
+        fileName: local.fileName,
         mimeType: uploaded.mimeType,
         fileSizeBytes: uploaded.size,
-        rowCount,
+        rowCount: local.rowCount,
       };
     } finally {
-      await file.close().catch(() => undefined);
-      await unlink(tempPath).catch(() => undefined);
+      await unlink(local.tempPath).catch(() => undefined);
     }
   }
 
   delete(orgId: string, fileKey: string): Promise<void> {
+    if (isEphemeralFileKey(fileKey)) {
+      return hrExportEphemeralStore.delete(
+        orgId,
+        ephemeralJobIdFromFileKey(fileKey),
+      );
+    }
     return this.storage.deleteFile(orgId, fileKey);
   }
 

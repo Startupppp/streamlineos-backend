@@ -40,7 +40,13 @@ export class AuditLogService {
     const conditions = [eq(auditLogs.orgId, orgId)];
     if (action) conditions.push(eq(auditLogs.action, action));
     if (actions?.length) conditions.push(inArray(auditLogs.action, actions));
-    if (targetType) conditions.push(eq(auditLogs.targetType, targetType));
+    if (targetType) {
+      const match = or(
+        eq(auditLogs.targetType, targetType),
+        eq(auditLogs.resourceType, targetType),
+      );
+      if (match) conditions.push(match);
+    }
     if (dateFrom) conditions.push(gte(auditLogs.createdAt, new Date(dateFrom)));
     if (dateTo) {
       const end = new Date(dateTo);
@@ -54,6 +60,9 @@ export class AuditLogService {
     }
     if (position) conditions.push(keysetBeforeId(auditLogs.createdAt, auditLogs.id, position));
 
+    const resolvedTargetType = sql<string | null>`coalesce(${auditLogs.targetType}, ${auditLogs.resourceType})`;
+    const resolvedTargetId = sql<string | null>`coalesce(${auditLogs.targetId}, ${auditLogs.resourceId})`;
+
     const rows = await this.db
       .select({
         id: auditLogs.id,
@@ -62,8 +71,8 @@ export class AuditLogService {
         userName: users.name,
         userEmail: users.email,
         userImage: users.image,
-        targetId: auditLogs.targetId,
-        targetType: auditLogs.targetType,
+        targetId: resolvedTargetId,
+        targetType: resolvedTargetType,
         metadata: auditLogs.metadata,
         ipAddress: auditLogs.ipAddress,
         createdAt: auditLogs.createdAt,
@@ -111,7 +120,13 @@ export class AuditLogService {
       ];
       if (action) conditions.push(eq(auditLogs.action, action));
       if (actions?.length) conditions.push(inArray(auditLogs.action, actions));
-      if (targetType) conditions.push(eq(auditLogs.targetType, targetType));
+      if (targetType) {
+        const match = or(
+          eq(auditLogs.targetType, targetType),
+          eq(auditLogs.resourceType, targetType),
+        );
+        if (match) conditions.push(match);
+      }
       if (dateFrom) conditions.push(gte(auditLogs.createdAt, new Date(dateFrom)));
       if (dateTo) {
         const end = new Date(dateTo);
@@ -137,8 +152,8 @@ export class AuditLogService {
               action: auditLogs.action,
               userName: users.name,
               userEmail: users.email,
-              targetType: auditLogs.targetType,
-              targetId: auditLogs.targetId,
+              targetType: sql<string | null>`coalesce(${auditLogs.targetType}, ${auditLogs.resourceType})`,
+              targetId: sql<string | null>`coalesce(${auditLogs.targetId}, ${auditLogs.resourceId})`,
               ipAddress: auditLogs.ipAddress,
               createdAt: auditLogs.createdAt,
             })
@@ -185,11 +200,12 @@ export class AuditLogService {
 
   async listTargetTypes(orgId: string): Promise<string[]> {
     return this.cache.cached(auditTargetTypesKey(orgId), async () => {
+      const resolved = sql<string | null>`coalesce(${auditLogs.targetType}, ${auditLogs.resourceType})`;
       const rows = await this.db
-        .selectDistinct({ targetType: auditLogs.targetType })
+        .selectDistinct({ targetType: resolved })
         .from(auditLogs)
         .where(eq(auditLogs.orgId, orgId))
-        .orderBy(auditLogs.targetType);
+        .orderBy(resolved);
       const result: string[] = [];
       for (const r of rows) {
         if (r.targetType !== null) result.push(r.targetType);
