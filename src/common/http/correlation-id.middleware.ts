@@ -15,7 +15,9 @@ import { currentRelease } from "../observability/release";
 const READ_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
 
 function routeSeamFor(method: string): SeamKey {
-  return READ_METHODS.has(method.toUpperCase()) ? "route.cached.read" : "route.write";
+  return READ_METHODS.has(method.toUpperCase())
+    ? "route.cached.read"
+    : "route.write";
 }
 
 const CORRELATION_HEADER = "x-correlation-id";
@@ -28,16 +30,6 @@ export type RequestWithCorrelation = Request & {
   requestId?: string;
 };
 
-/**
- * A caller-supplied correlation id is untrusted input that ends up on every log
- * line for the request, so it is treated as hostile.
- *
- * Two steps. Take only the leading run up to the first whitespace, which stops a
- * value carrying a newline and a JSON fragment from fabricating what looks like a
- * separate, entirely convincing log record. Then keep only characters that cannot
- * forge log structure at all, and cap the length so one header cannot bloat every
- * line a request produces.
- */
 function sanitise(raw: unknown): string | undefined {
   if (typeof raw !== "string") return undefined;
   const leading = raw.split(/\s/)[0] ?? "";
@@ -60,19 +52,6 @@ export function correlationIdMiddleware(
   res.setHeader(CORRELATION_HEADER, correlationId);
   res.setHeader(REQUEST_ID_HEADER, correlationId);
 
-  /**
-   * The request's span starts here and ends when the response does.
-   *
-   * An inbound `traceparent` is joined rather than replaced, so a request
-   * arriving from another service continues that service's trace instead of
-   * starting an unrelated one. The header is echoed back with this span's id,
-   * which is what lets a caller stitch the two halves together.
-   *
-   * Started inside the observability context so the span carries the same
-   * correlation id as every log line about the same request — and so deferred
-   * work, which runs inside this context, nests under this span rather than
-   * appearing as an orphan trace.
-   */
   runWithObservabilityContext(
     {
       correlationId,
@@ -84,8 +63,13 @@ export function correlationIdMiddleware(
     },
     () => {
       const open = startSpan(`${req.method} ${req.path}`, {
-        parent: parseTraceparent(req.headers[TRACEPARENT_HEADER] as string | undefined),
-        attributes: { "http.method": req.method, seam: routeSeamFor(req.method) },
+        parent: parseTraceparent(
+          req.headers[TRACEPARENT_HEADER] as string | undefined,
+        ),
+        attributes: {
+          "http.method": req.method,
+          seam: routeSeamFor(req.method),
+        },
       });
 
       res.setHeader(TRACEPARENT_HEADER, formatTraceparent(open.span));

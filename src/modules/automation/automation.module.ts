@@ -29,6 +29,10 @@ import { WorkflowAiNodeHandler } from "./ai-workflow-nodes/ai-job-handlers/workf
     AiNodeExecutorService,
     WorkflowAiNodeHandler,
   ],
-  exports: [AutomationService, AutomationEmailService, AutomationActionExecutor],
+  exports: [
+    AutomationService,
+    AutomationEmailService,
+    AutomationActionExecutor,
+  ],
 })
 export class AutomationModule {}

@@ -7,6 +7,7 @@ const registerAfterCommit = jest.fn();
 const getTenantContext = jest.fn();
 const withTenant = jest.fn();
 const reportError = jest.fn();
+const getObservabilityContext = jest.fn();
 
 jest.mock("../tenant", () => ({
   getTenantContext: (...args: unknown[]) => getTenantContext(...args),
@@ -18,6 +19,10 @@ jest.mock("../tenant", () => ({
 
 jest.mock("../observability/error-reporter", () => ({
   reportError: (...args: unknown[]) => reportError(...args),
+}));
+
+jest.mock("../observability/observability-context", () => ({
+  getObservabilityContext: (...args: unknown[]) => getObservabilityContext(...args),
 }));
 
 function makeDb() {
@@ -34,6 +39,7 @@ describe("AuditService dispatch", () => {
     getTenantContext.mockReturnValue(undefined);
     registerAfterCommit.mockReturnValue(false);
     reportError.mockReturnValue(undefined);
+    getObservabilityContext.mockReturnValue(undefined);
     withTenant.mockImplementation(
       async (
         db: unknown,
@@ -111,5 +117,81 @@ describe("AuditService dispatch", () => {
     await new Promise<void>((resolve) => process.nextTick(resolve));
 
     expect(reportError).toHaveBeenCalledWith(writeError, { action: "ai.invoke" });
+  });
+
+  it("stamps the Express-resolved client IP from the ambient request context", async () => {
+    const { db, values } = makeDb();
+    getTenantContext.mockReturnValue({ orgId: "org-1" });
+    getObservabilityContext.mockReturnValue({
+      correlationId: "corr-1",
+      clientIp: "203.0.113.50",
+      userAgent: "Mozilla/5.0",
+    });
+    const service = new AuditService(db as never);
+
+    await service.logCritical({
+      action: "org.created",
+      userId: "user-1",
+      orgId: "org-1",
+    });
+
+    expect(values).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "org.created",
+        ipAddress: "203.0.113.50",
+        metadata: expect.objectContaining({
+          requestId: "corr-1",
+          userAgent: "Mozilla/5.0",
+        }),
+      }),
+    );
+  });
+
+  it("does not overwrite an explicit ipAddress the caller already resolved", async () => {
+    const { db, values } = makeDb();
+    getTenantContext.mockReturnValue({ orgId: "org-1" });
+    getObservabilityContext.mockReturnValue({
+      correlationId: "corr-1",
+      clientIp: "203.0.113.50",
+    });
+    const service = new AuditService(db as never);
+
+    await service.logCritical({
+      action: "platform.grant",
+      userId: "user-1",
+      orgId: "org-1",
+      ipAddress: "198.51.100.9",
+    });
+
+    expect(values).toHaveBeenCalledWith(
+      expect.objectContaining({ ipAddress: "198.51.100.9" }),
+    );
+  });
+
+  it("snapshots ambient IP before after-commit dispatch so a cleared ALS still writes it", async () => {
+    const { db, values } = makeDb();
+    getObservabilityContext.mockReturnValue({
+      correlationId: "corr-deferred",
+      clientIp: "198.51.100.20",
+    });
+    let hook: (() => Promise<void>) | undefined;
+    registerAfterCommit.mockImplementation((candidate) => {
+      hook = candidate as () => Promise<void>;
+      return true;
+    });
+    const service = new AuditService(db as never);
+
+    service.log({
+      action: "project.created",
+      userId: "user-1",
+      orgId: "org-1",
+    });
+
+    getObservabilityContext.mockReturnValue(undefined);
+    await hook?.();
+
+    expect(values).toHaveBeenCalledWith(
+      expect.objectContaining({ ipAddress: "198.51.100.20" }),
+    );
   });
 });

@@ -14,11 +14,24 @@ import {
 } from "./hr-export-csv";
 import {
   isExportScopeStillAllowed,
+  isHrExportWorkerEnabled,
   narrowestExportScope,
   type HrExportJobView,
 } from "./hr-export-jobs.types";
 
 describe("HR employee export", () => {
+  it("enables the export worker by default (opt-out, matching payroll/expense)", () => {
+    const previous = process.env.HR_EXPORT_WORKER_ENABLED;
+    delete process.env.HR_EXPORT_WORKER_ENABLED;
+    expect(isHrExportWorkerEnabled()).toBe(true);
+    process.env.HR_EXPORT_WORKER_ENABLED = "false";
+    expect(isHrExportWorkerEnabled()).toBe(false);
+    process.env.HR_EXPORT_WORKER_ENABLED = "true";
+    expect(isHrExportWorkerEnabled()).toBe(true);
+    if (previous === undefined) delete process.env.HR_EXPORT_WORKER_ENABLED;
+    else process.env.HR_EXPORT_WORKER_ENABLED = previous;
+  });
+
   it("validates and normalizes bounded employee filters", () => {
     expect(
       createEmployeeExportJobSchema.parse({

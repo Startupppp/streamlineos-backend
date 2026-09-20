@@ -130,6 +130,8 @@ describe("OrgProfileService identity-scoped organization recovery", () => {
       action: "org.switched",
       userId: "user-1",
       orgId: "org-2",
+      targetType: "organization",
+      targetId: "org-2",
     });
   });
 
