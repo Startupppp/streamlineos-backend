@@ -27,8 +27,15 @@ function resolveScope(explicitOrgId: string | null | undefined): {
   organizationId: string | null;
   scope: "PLATFORM" | "TENANT";
 } {
-  const orgId = explicitOrgId ?? getTenantContext()?.orgId ?? null;
-  return orgId ? { organizationId: orgId, scope: "TENANT" } : { organizationId: null, scope: "PLATFORM" };
+  if (explicitOrgId) return { organizationId: explicitOrgId, scope: "TENANT" };
+  if (explicitOrgId === null) return { organizationId: null, scope: "PLATFORM" };
+
+  const ambient = getTenantContext()?.orgId ?? null;
+  if (ambient) return { organizationId: ambient, scope: "TENANT" };
+
+  throw new Error(
+    "email outbox: no organization to attribute this send to. Pass organizationId: null for mail that genuinely has no tenant (verification, password reset), or send inside a tenant context.",
+  );
 }
 
 type DurableEmailOptions = Pick<

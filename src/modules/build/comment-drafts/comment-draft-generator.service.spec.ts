@@ -9,6 +9,8 @@ import { CommentDraftsService } from "./comment-drafts.service";
 import { AiGatewayService } from "../../ai/core/gateway/ai-gateway.service";
 import type { Db } from "../../../db/drizzle.module";
 import { AI_FEATURE_COSTS } from "../../ai/core/billing/ai-cost-catalog";
+import { primeRelocationTrafficTracker } from "../../../common/relocation/relocation-traffic-tracker";
+import { withDelegatingTransaction } from "../../../test/delegating-transaction";
 
 const ORG_ID = "org-1";
 const USER_ID = "user-1";
@@ -83,11 +85,11 @@ function makeCommentsChain(rows: { content: string }[]) {
 }
 
 function makeDb(ticketRows: typeof ticketRow[] | [], commentRows: { content: string }[] = []) {
-  return {
+  return withDelegatingTransaction({
     select: jest.fn()
       .mockReturnValueOnce(makeTicketChain(ticketRows))
       .mockReturnValueOnce(makeCommentsChain(commentRows)),
-  } as unknown as Db;
+  }) as unknown as Db;
 }
 
 const upsertedDraftRow = {
@@ -109,6 +111,7 @@ const upsertedDraftRow = {
 
 beforeEach(() => {
   jest.clearAllMocks();
+  primeRelocationTrafficTracker([], Date.now());
 });
 
 describe("CommentDraftGeneratorService — membership guard", () => {
@@ -306,14 +309,14 @@ describe("BSN-03-A06 — generator writes only to commentDrafts; db.update and d
     const trackedUpdate = jest.fn();
     const trackedDelete = jest.fn();
     const trackedInsert = jest.fn();
-    const db = {
+    const db = withDelegatingTransaction({
       select: jest.fn()
         .mockReturnValueOnce(makeTicketChain([ticketRow]))
         .mockReturnValueOnce(makeCommentsChain([])),
       update: trackedUpdate,
       delete: trackedDelete,
       insert: trackedInsert,
-    } as unknown as Db;
+    }) as unknown as Db;
     const gateway = {
       invokeStructuredWithUsage: jest.fn().mockResolvedValue(makeGatewayOk()),
     } as unknown as AiGatewayService;

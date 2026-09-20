@@ -67,7 +67,7 @@ function makeDb(rows: unknown[], visibleRows = rows): { db: Db; where: jest.Mock
   const { builder, where } = makeChainBuilder(rows, visibleRows);
   const findMany = jest.fn().mockResolvedValue(rows);
   const findFirst = jest.fn().mockResolvedValue(rows[0] ?? null);
-  const db = {
+  const core = {
     select: jest.fn().mockReturnValue(builder),
     selectDistinct: jest.fn().mockReturnValue(builder),
     execute: jest.fn().mockResolvedValue([]),
@@ -79,7 +79,6 @@ function makeDb(rows: unknown[], visibleRows = rows): { db: Db; where: jest.Mock
         where: jest.fn().mockReturnValue({ returning: jest.fn().mockResolvedValue([]) }),
       }),
     }),
-    transaction: jest.fn().mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => fn({})),
     query: {
       pipelineAutomations: { findMany, findFirst },
       emailSequences: { findMany, findFirst },
@@ -105,7 +104,12 @@ function makeDb(rows: unknown[], visibleRows = rows): { db: Db; where: jest.Mock
       externalReferrals: { findMany, findFirst },
       recruitmentVendors: { findMany, findFirst },
     },
-  } as unknown as Db;
+  };
+  const db = Object.assign(core, {
+    transaction: jest.fn().mockImplementation(
+      async (fn: (tx: unknown) => Promise<unknown>) => fn(core),
+    ),
+  }) as unknown as Db;
   return { db, where, findMany, findFirst };
 }
 

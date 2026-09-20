@@ -4,6 +4,8 @@ import { ChatSummarizeService } from "./chat-summarize.service";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { ModuleRef } from "@nestjs/core";
 import { EntityReferenceService } from "../entity-reference/entity-reference.service";
+import { withDelegatingTransaction } from "../../test/delegating-transaction";
+import { primeRelocationTrafficTracker } from "../../common/relocation/relocation-traffic-tracker";
 
 const ACTOR = { orgId: "org-1", userId: "user-1" };
 const CHANNEL_ID = 42;
@@ -37,7 +39,7 @@ function buildDb(
     orderBy: jest.fn(() => chain),
     limit: jest.fn().mockResolvedValue(messagesResult),
   };
-  return {
+  return withDelegatingTransaction({
     query: {
       organizationMembers: {
         findFirst: jest.fn().mockResolvedValue({ id: 1 }),
@@ -52,13 +54,15 @@ function buildDb(
     select: jest.fn().mockReturnValue({
       from: jest.fn().mockReturnValue(chain),
     }),
-  };
+  });
 }
 
 describe("ChatSummarizeService", () => {
   let service: ChatSummarizeService;
   let db: ReturnType<typeof buildDb>;
   let aiGateway: { invokeText: jest.Mock };
+
+  beforeEach(() => primeRelocationTrafficTracker([], Date.now()));
 
   async function init(
     memberResult: unknown,
@@ -86,11 +90,13 @@ describe("ChatSummarizeService", () => {
   it("throws ForbiddenException when user is not a member", async () => {
     await init(null, []);
     await expect(service.summarize(CHANNEL_ID, ACTOR)).rejects.toThrow(ForbiddenException);
+    expect(aiGateway.invokeText).not.toHaveBeenCalled();
   });
 
   it("throws BadRequestException when channel has no messages", async () => {
     await init(makeMember(), []);
     await expect(service.summarize(CHANNEL_ID, ACTOR)).rejects.toThrow(BadRequestException);
+    expect(aiGateway.invokeText).not.toHaveBeenCalled();
   });
 
   it("returns summary on success", async () => {

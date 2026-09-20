@@ -31,28 +31,38 @@ export class SupportAiTriageService {
   ) {}
 
   async suggestReply(user: CurrentUserContext, ticketId: number) {
-    if (!(await this.data.isAvailable(user.orgId))) return null;
-    const ticket = await this.data.getTicketOrThrow(user.orgId, ticketId);
-    const [messages, sources, confidence, { confidenceThreshold }] =
-      await Promise.all([
-        this.db.query.supportTicketMessages.findMany({
-          where: and(
-            eq(supportTicketMessages.ticketId, ticketId),
-            eq(supportTicketMessages.isInternal, false),
-          ),
-          orderBy: [supportTicketMessages.createdAt],
-          limit: 20,
-          columns: { body: true, authorId: true },
-        }),
-        this.data.searchKbForTicket(
-          user,
-          redactSensitiveData(
-            `${ticket.title}\n${ticket.description ?? ""}`.trim(),
-          ),
-        ),
-        this.data.getTicketConfidence(user.orgId, ticketId),
-        this.aiSettings.getSettings(user.orgId),
-      ]);
+    const prepared = await runInTenantTransaction(
+      this.db,
+      async () => {
+        if (!(await this.data.isAvailable(user.orgId))) return null;
+        const ticket = await this.data.getTicketOrThrow(user.orgId, ticketId);
+        const [messages, confidence, { confidenceThreshold }] =
+          await Promise.all([
+            this.db.query.supportTicketMessages.findMany({
+              where: and(
+                eq(supportTicketMessages.ticketId, ticketId),
+                eq(supportTicketMessages.orgId, user.orgId),
+                eq(supportTicketMessages.isInternal, false),
+              ),
+              orderBy: [supportTicketMessages.createdAt],
+              limit: 20,
+              columns: { body: true, authorId: true },
+            }),
+            this.data.getTicketConfidence(user.orgId, ticketId),
+            this.aiSettings.getSettings(user.orgId),
+          ]);
+        return { ticket, messages, confidence, confidenceThreshold };
+      },
+      { orgId: user.orgId },
+    );
+    if (!prepared) return null;
+    const { ticket, messages, confidence, confidenceThreshold } = prepared;
+    const sources = await this.data.searchKbForTicket(
+      user,
+      redactSensitiveData(
+        `${ticket.title}\n${ticket.description ?? ""}`.trim(),
+      ),
+    );
     const thread = messages
       .map(
         (m) =>
@@ -84,17 +94,25 @@ export class SupportAiTriageService {
         "AI assistant is temporarily unavailable",
       );
     }
-    await this.data.replacePendingSuggestions(user.orgId, ticketId, ["reply"]);
-    return this.data.insertSuggestion(
-      user.orgId,
-      ticketId,
-      "reply",
-      {
-        body: gatewayResult.data.trim(),
-        sources,
-        escalated: confidence < confidenceThreshold,
+    return runInTenantTransaction(
+      this.db,
+      async () => {
+        await this.data.replacePendingSuggestions(user.orgId, ticketId, [
+          "reply",
+        ]);
+        return this.data.insertSuggestion(
+          user.orgId,
+          ticketId,
+          "reply",
+          {
+            body: gatewayResult.data.trim(),
+            sources,
+            escalated: confidence < confidenceThreshold,
+          },
+          null,
+        );
       },
-      null,
+      { orgId: user.orgId },
     );
   }
 
@@ -179,9 +197,18 @@ export class SupportAiTriageService {
   }
 
   async suggestKbArticles(user: CurrentUserContext, ticketId: number) {
-    const ticket = await this.data.getTicketOrThrow(user.orgId, ticketId);
+    const prepared = await runInTenantTransaction(
+      this.db,
+      async () => {
+        const ticket = await this.data.getTicketOrThrow(user.orgId, ticketId);
+        const available = await this.data.isAvailable(user.orgId);
+        return { ticket, available };
+      },
+      { orgId: user.orgId },
+    );
     if (!this.data.isEmbeddingsConfigured()) return null;
-    if (!(await this.data.isAvailable(user.orgId))) return null;
+    if (!prepared.available) return null;
+    const { ticket } = prepared;
     const articles = await this.data.searchKbForTicket(
       user,
       redactSensitiveData(
@@ -189,35 +216,51 @@ export class SupportAiTriageService {
       ),
     );
     if (articles.length === 0) return null;
-    await this.data.replacePendingSuggestions(user.orgId, ticketId, [
-      "kb_article",
-    ]);
-    return this.data.insertSuggestion(
-      user.orgId,
-      ticketId,
-      "kb_article",
-      { articles },
-      null,
+    return runInTenantTransaction(
+      this.db,
+      async () => {
+        await this.data.replacePendingSuggestions(user.orgId, ticketId, [
+          "kb_article",
+        ]);
+        return this.data.insertSuggestion(
+          user.orgId,
+          ticketId,
+          "kb_article",
+          { articles },
+          null,
+        );
+      },
+      { orgId: user.orgId },
     );
   }
 
   async generateHandoffSummary(user: CurrentUserContext, ticketId: number) {
-    if (!(await this.data.isAvailable(user.orgId))) return null;
-    const ticket = await this.data.getTicketOrThrow(user.orgId, ticketId);
-    const [messages, sources] = await Promise.all([
-      this.db.query.supportTicketMessages.findMany({
-        where: eq(supportTicketMessages.ticketId, ticketId),
-        orderBy: [supportTicketMessages.createdAt],
-        limit: 40,
-        columns: { body: true, isInternal: true, authorId: true },
-      }),
-      this.data.searchKbForTicket(
-        user,
-        redactSensitiveData(
-          `${ticket.title}\n${ticket.description ?? ""}`.trim(),
-        ),
+    const prepared = await runInTenantTransaction(
+      this.db,
+      async () => {
+        if (!(await this.data.isAvailable(user.orgId))) return null;
+        const ticket = await this.data.getTicketOrThrow(user.orgId, ticketId);
+        const messages = await this.db.query.supportTicketMessages.findMany({
+          where: and(
+            eq(supportTicketMessages.ticketId, ticketId),
+            eq(supportTicketMessages.orgId, user.orgId),
+          ),
+          orderBy: [supportTicketMessages.createdAt],
+          limit: 40,
+          columns: { body: true, isInternal: true, authorId: true },
+        });
+        return { ticket, messages };
+      },
+      { orgId: user.orgId },
+    );
+    if (!prepared) return null;
+    const { ticket, messages } = prepared;
+    const sources = await this.data.searchKbForTicket(
+      user,
+      redactSensitiveData(
+        `${ticket.title}\n${ticket.description ?? ""}`.trim(),
       ),
-    ]);
+    );
     const thread = messages
       .map(
         (m) =>
@@ -248,15 +291,21 @@ export class SupportAiTriageService {
       });
       return null;
     }
-    await this.data.replacePendingSuggestions(user.orgId, ticketId, [
-      "handoff_summary",
-    ]);
-    return this.data.insertSuggestion(
-      user.orgId,
-      ticketId,
-      "handoff_summary",
-      { ...gatewayResult.data, sources },
-      null,
+    return runInTenantTransaction(
+      this.db,
+      async () => {
+        await this.data.replacePendingSuggestions(user.orgId, ticketId, [
+          "handoff_summary",
+        ]);
+        return this.data.insertSuggestion(
+          user.orgId,
+          ticketId,
+          "handoff_summary",
+          { ...gatewayResult.data, sources },
+          null,
+        );
+      },
+      { orgId: user.orgId },
     );
   }
 }

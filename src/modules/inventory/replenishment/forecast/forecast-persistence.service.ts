@@ -4,6 +4,7 @@ import { and, desc, eq, sql } from "drizzle-orm";
 import { invDemandForecasts } from "../../../../db/schema";
 import { DRIZZLE } from "../../../../db/drizzle.constants";
 import type { Db } from "../../../../db/drizzle.module";
+import { runInTenantTransaction } from "../../../../common/tenant/run-in-tenant-transaction";
 import { DemandBaselineService } from "./demand-baseline.service";
 import { SafetyStockPolicyService } from "./safety-stock-policy.service";
 import { toExact } from "./exact";
@@ -321,19 +322,25 @@ export class ForecastPersistenceService {
     productVariantId: number,
     warehouseId: number | null,
   ): Promise<ForecastVersion | null> {
-    const [row] = await this.db
-      .select()
-      .from(invDemandForecasts)
-      .where(
-        and(
-          eq(invDemandForecasts.orgId, orgId),
-          eq(invDemandForecasts.productVariantId, productVariantId),
-          sql`${invDemandForecasts.warehouseId} IS NOT DISTINCT FROM ${warehouseId}`,
-        ),
-      )
-      .orderBy(desc(invDemandForecasts.generatedAt), desc(invDemandForecasts.id))
-      .limit(1);
-    return row ? toVersion(row) : null;
+    return runInTenantTransaction(
+      this.db,
+      async (tx) => {
+        const [row] = await tx
+          .select()
+          .from(invDemandForecasts)
+          .where(
+            and(
+              eq(invDemandForecasts.orgId, orgId),
+              eq(invDemandForecasts.productVariantId, productVariantId),
+              sql`${invDemandForecasts.warehouseId} IS NOT DISTINCT FROM ${warehouseId}`,
+            ),
+          )
+          .orderBy(desc(invDemandForecasts.generatedAt), desc(invDemandForecasts.id))
+          .limit(1);
+        return row ? toVersion(row) : null;
+      },
+      { orgId },
+    );
   }
 
   /**

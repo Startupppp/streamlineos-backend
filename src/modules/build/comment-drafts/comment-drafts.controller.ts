@@ -26,6 +26,7 @@ import {
 } from "./dto/comment-drafts.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { actingMembershipId } from "../../../common/auth/principal";
+import { NoTenantTransaction } from "../../../common/tenant";
 import { z } from "zod";
 import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
 import {
@@ -72,6 +73,7 @@ export class CommentDraftsController {
   @RequirePermission("build:ai:use")
   @ResponseSchema(generatedCommentDraftSchema)
   @Validate({ params: ticketIdParams })
+  @NoTenantTransaction()
   generateDraft(
     @Param("ticketId", ParseIntPipe) ticketId: number,
     @CurrentUser() u: CurrentUserContext,

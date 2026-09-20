@@ -1,4 +1,9 @@
-import { Inject, Injectable, ServiceUnavailableException } from "@nestjs/common";
+import {
+  Inject,
+  Injectable,
+  NotFoundException,
+  ServiceUnavailableException,
+} from "@nestjs/common";
 import { and, eq, ne, or, sql, type SQL } from "drizzle-orm";
 import { supportTicketEmbeddings, supportTickets } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
@@ -7,6 +12,7 @@ import { EMBEDDING_MODEL } from "../../ai/core/providers/embeddings.service";
 import { AiGatewayService } from "../../ai/core/gateway/ai-gateway.service";
 import { InsufficientAiCreditsException } from "../../../common/http/api-exceptions";
 import { redactSensitiveData } from "../../ai/core/redaction.util";
+import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
 
 const SUPPORT_EMBEDDING_FEATURE = "support.embedding";
 const DUPLICATE_SIMILARITY_THRESHOLD = 0.86;
@@ -28,11 +34,24 @@ export class SupportAiEmbeddingsHelper {
   async upsertAndSearchSimilar(
     orgId: string,
     ticketId: number,
-    title: string,
-    description: string | null,
     limit: number,
   ): Promise<EmbeddingCandidate[]> {
-    const text = redactSensitiveData(`${title}\n${description ?? ""}`.trim());
+    const ticket = await runInTenantTransaction(
+      this.db,
+      () =>
+        this.db.query.supportTickets.findFirst({
+          where: and(
+            eq(supportTickets.id, ticketId),
+            eq(supportTickets.orgId, orgId),
+          ),
+          columns: { title: true, description: true },
+        }),
+      { orgId },
+    );
+    if (!ticket) throw new NotFoundException("Ticket not found");
+    const text = redactSensitiveData(
+      `${ticket.title}\n${ticket.description ?? ""}`.trim(),
+    );
     const embedResult = await this.aiGateway.embedQueryWithCredit({
       text,
       orgId,
@@ -46,47 +65,54 @@ export class SupportAiEmbeddingsHelper {
     }
     const { vector, vectorLiteral } = embedResult;
 
-    await this.db
-      .insert(supportTicketEmbeddings)
-      .values({
-        orgId,
-        ticketId,
-        embedding: vector,
-        embeddingModel: EMBEDDING_MODEL,
-      })
-      .onConflictDoUpdate({
-        target: supportTicketEmbeddings.ticketId,
-        set: {
-          embedding: vector,
-          embeddingModel: EMBEDDING_MODEL,
-          updatedAt: new Date(),
-        },
-      });
+    return runInTenantTransaction(
+      this.db,
+      async () => {
+        await this.db
+          .insert(supportTicketEmbeddings)
+          .values({
+            orgId,
+            ticketId,
+            embedding: vector,
+            embeddingModel: EMBEDDING_MODEL,
+          })
+          .onConflictDoUpdate({
+            target: supportTicketEmbeddings.ticketId,
+            set: {
+              embedding: vector,
+              embeddingModel: EMBEDDING_MODEL,
+              updatedAt: new Date(),
+            },
+          });
 
-    const distance = sql`${supportTicketEmbeddings.embedding} <=> ${vectorLiteral}::vector`;
-    const conditions: SQL[] = [
-      eq(supportTicketEmbeddings.orgId, orgId),
-      ne(supportTicketEmbeddings.ticketId, ticketId),
-      or(
-        eq(supportTickets.status, "OPEN"),
-        eq(supportTickets.status, "IN_PROGRESS"),
-      ) ?? sql`false`,
-    ];
+        const distance = sql`${supportTicketEmbeddings.embedding} <=> ${vectorLiteral}::vector`;
+        const conditions: SQL[] = [
+          eq(supportTicketEmbeddings.orgId, orgId),
+          eq(supportTickets.orgId, orgId),
+          ne(supportTicketEmbeddings.ticketId, ticketId),
+          or(
+            eq(supportTickets.status, "OPEN"),
+            eq(supportTickets.status, "IN_PROGRESS"),
+          ) ?? sql`false`,
+        ];
 
-    return this.db
-      .select({
-        candidateTicketId: supportTicketEmbeddings.ticketId,
-        title: supportTickets.title,
-        similarity: sql<number>`(1 - (${distance}))::float8`,
-      })
-      .from(supportTicketEmbeddings)
-      .innerJoin(
-        supportTickets,
-        eq(supportTickets.id, supportTicketEmbeddings.ticketId),
-      )
-      .where(and(...conditions))
-      .orderBy(distance)
-      .limit(limit);
+        return this.db
+          .select({
+            candidateTicketId: supportTicketEmbeddings.ticketId,
+            title: supportTickets.title,
+            similarity: sql<number>`(1 - (${distance}))::float8`,
+          })
+          .from(supportTicketEmbeddings)
+          .innerJoin(
+            supportTickets,
+            eq(supportTickets.id, supportTicketEmbeddings.ticketId),
+          )
+          .where(and(...conditions))
+          .orderBy(distance)
+          .limit(limit);
+      },
+      { orgId },
+    );
   }
 
   getDuplicateThreshold(): number {

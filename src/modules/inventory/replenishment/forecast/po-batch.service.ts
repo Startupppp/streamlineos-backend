@@ -3,6 +3,7 @@ import { sql } from "drizzle-orm";
 import { invPoLines, invProposalOverrides, invPurchaseOrders } from "../../../../db/schema";
 import { DRIZZLE } from "../../../../db/drizzle.constants";
 import type { Db } from "../../../../db/drizzle.module";
+import { runInTenantTransaction } from "../../../../common/tenant/run-in-tenant-transaction";
 import { AccessService } from "../../../access/access.service";
 import { addDec } from "../../stock-engine/decimal";
 import { InventorySettingsService } from "../../stock-engine/inventory-settings.service";
@@ -114,13 +115,16 @@ export class PoBatchService {
     userId: string,
     proposalId: number,
   ): Promise<BatchableProposal | null> {
-    const [row] = await resolve(this.db, orgId, [proposalId]);
-    if (!row) return null;
-    // The same warehouse gate `resolveForBatching` applies before an order is
-    // raised. Reading a proposal for a site the caller cannot open would be a
-    // way to read that site's position by asking the AI about it.
-    await this.warehouseScope.assertWarehouseVisible(orgId, userId, row.warehouseId);
-    return toBatchableProposal(row);
+    return runInTenantTransaction(
+      this.db,
+      async (tx) => {
+        const [row] = await resolve(this.db, orgId, [proposalId], tx);
+        if (!row) return null;
+        await this.warehouseScope.assertWarehouseVisible(orgId, userId, row.warehouseId);
+        return toBatchableProposal(row);
+      },
+      { orgId },
+    );
   }
 
   /** The persisted proposals a buyer could act on, newest version per site. */

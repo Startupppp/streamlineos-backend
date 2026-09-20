@@ -56,6 +56,7 @@ const PLAIN_SEND: EmailOptions = {
   to: "person@example.com",
   subject: "Approval needed",
   html: "<p>approve</p>",
+  organizationId: "org-1",
 };
 
 describe("EmailOutboxService.enqueueAndTry — the inline attempt holds a pooled connection", () => {
@@ -193,8 +194,8 @@ describe("EmailOutboxService.enqueueForDelivery", () => {
 
     await expect(
       service.enqueueForDelivery([
-        { to: "one@example.com", subject: "One", html: "one" },
-        { to: "two@example.com", subject: "Two", html: "two" },
+        { to: "one@example.com", subject: "One", html: "one", organizationId: "org-1" },
+        { to: "two@example.com", subject: "Two", html: "two", organizationId: "org-1" },
       ]),
     ).rejects.toThrow("Failed to enqueue all emails");
   });
@@ -218,6 +219,7 @@ describe("EmailOutboxService.enqueueOnly", () => {
       to: "blocked@example.com",
       subject: "Invitation",
       html: "invite",
+      organizationId: null,
     });
 
     expect(suppression.findSuppressed).toHaveBeenCalledWith(
@@ -231,5 +233,42 @@ describe("EmailOutboxService.enqueueOnly", () => {
         status: "SUPPRESSED",
       }),
     );
+  });
+});
+
+describe("EmailOutboxService and the organization a send belongs to", () => {
+  function serviceThatRecords(rows: Record<string, unknown>[]) {
+    const values = jest.fn().mockImplementation((row: Record<string, unknown>) => {
+      rows.push(row);
+      return Promise.resolve();
+    });
+    return new EmailOutboxService(
+      { insert: jest.fn().mockReturnValue({ values }) } as never,
+      { findSuppressed: jest.fn().mockResolvedValue(new Set(["blocked@example.com"])) } as never,
+      { sendEmailOnceDirect: jest.fn().mockResolvedValue(undefined) } as never,
+    );
+  }
+
+  it("refuses a send with neither an organization nor a tenant context, rather than attributing it to no tenant", async () => {
+    await expect(
+      serviceThatRecords([]).enqueueOnly({
+        to: "blocked@example.com",
+        subject: "Approval needed",
+        html: "<p>approve</p>",
+      }),
+    ).rejects.toThrow(/no organization to attribute this send to/);
+  });
+
+  it("accepts mail that says it has no tenant, so verification and password-reset still send", async () => {
+    const rows: Record<string, unknown>[] = [];
+    await serviceThatRecords(rows).enqueueOnly({
+      to: "blocked@example.com",
+      subject: "Verify your email",
+      html: "<p>verify</p>",
+      organizationId: null,
+    });
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ organizationId: null, scope: "PLATFORM" });
   });
 });

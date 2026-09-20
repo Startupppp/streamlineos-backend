@@ -128,40 +128,58 @@ export class SupportAiTriageAnalysisService {
   }
 
   async findDuplicates(orgId: string, ticketId: number) {
-    const ticket = await this.data.getTicketOrThrow(orgId, ticketId);
-    if (!this.aiGateway.isEmbeddingConfigured()) return null;
-    const flags = await this.orgFeatures.getFlags(orgId);
-    if (!flags.supportAi) return null;
+    const available = await runInTenantTransaction(
+      this.db,
+      async () => {
+        await this.data.getTicketOrThrow(orgId, ticketId);
+        if (!this.aiGateway.isEmbeddingConfigured()) return false;
+        const flags = await this.orgFeatures.getFlags(orgId);
+        return flags.supportAi;
+      },
+      { orgId },
+    );
+    if (!available) return null;
     const candidates = await this.embHelper.upsertAndSearchSimilar(
       orgId,
       ticketId,
-      ticket.title,
-      ticket.description,
       1,
     );
     const best = candidates[0];
     if (!best || best.similarity < this.embHelper.getDuplicateThreshold())
       return null;
-    await this.data.replacePendingSuggestions(orgId, ticketId, ["duplicate"]);
-    return this.data.insertSuggestion(
-      orgId,
-      ticketId,
-      "duplicate",
-      { candidateTicketId: best.candidateTicketId, title: best.title },
-      best.similarity,
+    return runInTenantTransaction(
+      this.db,
+      async () => {
+        await this.data.replacePendingSuggestions(orgId, ticketId, [
+          "duplicate",
+        ]);
+        return this.data.insertSuggestion(
+          orgId,
+          ticketId,
+          "duplicate",
+          { candidateTicketId: best.candidateTicketId, title: best.title },
+          best.similarity,
+        );
+      },
+      { orgId },
     );
   }
 
   async findRootCauseCluster(orgId: string, ticketId: number, userId?: string) {
-    const ticket = await this.data.getTicketOrThrow(orgId, ticketId);
-    if (!this.aiGateway.isEmbeddingConfigured()) return null;
-    const flags = await this.orgFeatures.getFlags(orgId);
-    if (!flags.supportAi) return null;
+    const ticket = await runInTenantTransaction(
+      this.db,
+      async () => {
+        const found = await this.data.getTicketOrThrow(orgId, ticketId);
+        if (!this.aiGateway.isEmbeddingConfigured()) return null;
+        const flags = await this.orgFeatures.getFlags(orgId);
+        return flags.supportAi ? found : null;
+      },
+      { orgId },
+    );
+    if (!ticket) return null;
     const candidates = await this.embHelper.upsertAndSearchSimilar(
       orgId,
       ticketId,
-      ticket.title,
-      ticket.description,
       5,
     );
     const related = candidates.filter(
@@ -198,19 +216,25 @@ export class SupportAiTriageAnalysisService {
       });
       return null;
     }
-    await this.data.replacePendingSuggestions(orgId, ticketId, [
-      "root_cause_cluster",
-    ]);
-    return this.data.insertSuggestion(
-      orgId,
-      ticketId,
-      "root_cause_cluster",
-      {
-        relatedTicketIds: related.map((r) => r.candidateTicketId),
-        rootCause: gatewayResult.data.rootCause,
-        summary: gatewayResult.data.summary,
+    return runInTenantTransaction(
+      this.db,
+      async () => {
+        await this.data.replacePendingSuggestions(orgId, ticketId, [
+          "root_cause_cluster",
+        ]);
+        return this.data.insertSuggestion(
+          orgId,
+          ticketId,
+          "root_cause_cluster",
+          {
+            relatedTicketIds: related.map((r) => r.candidateTicketId),
+            rootCause: gatewayResult.data.rootCause,
+            summary: gatewayResult.data.summary,
+          },
+          related[0].similarity,
+        );
       },
-      related[0].similarity,
+      { orgId },
     );
   }
 }

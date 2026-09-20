@@ -1,6 +1,8 @@
 import { ForbiddenException, NotFoundException } from "@nestjs/common";
 import { ModuleRef } from "@nestjs/core";
 import type { Db } from "../../../db/drizzle.module";
+import { withDelegatingTransaction } from "../../../test/delegating-transaction";
+import { primeRelocationTrafficTracker } from "../../../common/relocation/relocation-traffic-tracker";
 import { AblyService } from "../../realtime/ably.service";
 import { EntityReferenceService } from "../../entity-reference/entity-reference.service";
 import { ChatPinsService } from "../chat-pins.service";
@@ -10,6 +12,8 @@ import { ChatMessagesService } from "../chat-messages.service";
 import { ChatMessageModerationService } from "../chat-message-moderation.service";
 import { ChatChannelMembersImplementation } from "../chat-channel-members-implementation";
 import type { EntityActor } from "../../entity-reference/entity-reference.types";
+
+beforeEach(() => primeRelocationTrafficTracker([], Date.now()));
 
 /**
  * A 403 on a private channel answers "this channel exists"; a 404 answers nothing.
@@ -32,7 +36,7 @@ const actor: EntityActor = {
 function dbWithChannel(isPrivate: boolean, opts: { member?: unknown; message?: unknown } = {}) {
   const member = "member" in opts ? opts.member : null;
   const message = "message" in opts ? opts.message : null;
-  return {
+  const base = {
     query: {
       chatChannels: { findFirst: jest.fn().mockResolvedValue({ id: CHANNEL_ID, isPrivate }) },
       chatChannelMembers: { findFirst: jest.fn().mockResolvedValue(member) },
@@ -52,6 +56,9 @@ function dbWithChannel(isPrivate: boolean, opts: { member?: unknown; message?: u
     set: jest.fn().mockReturnThis(),
     transaction: jest.fn(),
   };
+  const dbl = withDelegatingTransaction(base);
+  dbl.transaction = jest.fn().mockImplementation((fn) => fn(dbl));
+  return dbl;
 }
 
 const AUTHORED_MESSAGE = {

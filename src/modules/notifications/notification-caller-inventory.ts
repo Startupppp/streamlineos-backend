@@ -26,8 +26,49 @@ const EXEMPT = (
   blockerNote,
 });
 
+const PENDING = (
+  file: string,
+  deliveryClass: DeliveryClass,
+  blockerNote: string,
+): DirectEmailCallerInventoryEntry => ({
+  file,
+  deliveryClass,
+  migrationStatus: MigrationStatus.PENDING_MIGRATION,
+  blockerNote,
+});
+
 export const DIRECT_EMAIL_CALLER_INVENTORY: DirectEmailCallerInventoryEntry[] =
   [
+    PENDING(
+      "modules/ai/core/confirm-actions/comms-confirm-actions.ts",
+      DeliveryClass.PRODUCT_EVENT,
+      "sends through outbox.enqueueAndTry; delivery class assigned from the call site, not reviewed by the notifications owner",
+    ),
+    PENDING(
+      "modules/reporting/report-schedule.consumer.ts",
+      DeliveryClass.PRODUCT_EVENT,
+      "scheduled report delivery through this.email.enqueueAndTry; delivery class assigned from the call site, not reviewed by the notifications owner",
+    ),
+    EXEMPT(
+      "modules/cron/cron-email-outbox.service.ts",
+      DeliveryClass.OPERATOR_ALERT,
+      "drains the outbox through processRetries and originates no mail of its own, so it re-sends what the seam already accepted",
+    ),
+    EXEMPT(
+      "modules/autonomy/lib/outbound-send.types.ts",
+      DeliveryClass.WORKFLOW_EXTERNAL,
+      "declares the Pick<EmailOutboxService> port and issues no send",
+    ),
+    EXEMPT(
+      "modules/autonomy/outbound.workflow.ts",
+      DeliveryClass.WORKFLOW_EXTERNAL,
+      "names the port type and issues no send; the sending caller is outbound.service.ts",
+    ),
+    EXEMPT(
+      "modules/hr/onboarding/core/onboarding-admin.service.ts",
+      DeliveryClass.WORKFLOW_EXTERNAL,
+      "names the port type and issues no send",
+    ),
     EXEMPT(
       "modules/auth/auth-email-verification.service.ts",
       DeliveryClass.OPERATOR_ALERT,

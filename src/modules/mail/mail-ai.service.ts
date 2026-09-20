@@ -1,4 +1,4 @@
-import { Injectable } from "@nestjs/common";
+import { Inject, Injectable } from "@nestjs/common";
 import { AiGatewayService } from "../ai/core/gateway/ai-gateway.service";
 import { throwOnAiFailure, unwrapAiResult } from "../ai/core/services/gateway-result.util";
 import { actingMembershipId } from "../../common/auth/principal";
@@ -13,6 +13,9 @@ import {
 } from "./dto/mail-ai-schemas";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import type { AiUsageMeta } from "../ai/core/gateway/ai-gateway.types";
+import { DRIZZLE } from "../../db/drizzle.constants";
+import type { Db } from "../../db/drizzle.module";
+import { runInTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
 
 const SNIPPET_MAX = 160;
 const BODY_CHAR_MAX = 1500;
@@ -37,6 +40,7 @@ function stripHtml(html: string | null): string {
 @Injectable()
 export class MailAiService {
   constructor(
+    @Inject(DRIZZLE) private readonly db: Db,
     private readonly mail: MailService,
     private readonly gateway: AiGatewayService,
   ) {}
@@ -87,7 +91,11 @@ export class MailAiService {
     accountId: number,
     threadId: string,
   ): Promise<MailThreadSummaryOutput> {
-    const messages = await this.mail.getThread(actor.orgId, actor.userId, threadId, accountId);
+    const messages = await runInTenantTransaction(
+      this.db,
+      () => this.mail.getThread(actor.orgId, actor.userId, threadId, accountId),
+      { orgId: actor.orgId },
+    );
 
     if (messages.length === 0) {
       return { summary: "This thread has no messages.", actionItems: [], suggestedReply: "" };
@@ -125,13 +133,20 @@ export class MailAiService {
     },
   ): Promise<MailDraftOutput> {
     let threadContext = "";
+    const accountId = input.accountId;
+    const threadId = input.threadId;
 
-    if (input.mode === "reply" && input.accountId !== undefined && input.threadId !== undefined) {
-      const messages = await this.mail.getThread(
-        actor.orgId,
-        actor.userId,
-        input.threadId,
-        input.accountId,
+    if (input.mode === "reply" && accountId !== undefined && threadId !== undefined) {
+      const messages = await runInTenantTransaction(
+        this.db,
+        () =>
+          this.mail.getThread(
+            actor.orgId,
+            actor.userId,
+            threadId,
+            accountId,
+          ),
+        { orgId: actor.orgId },
       );
       const capped = messages.slice(0, THREAD_MSG_MAX);
       threadContext = capped

@@ -7,6 +7,8 @@ import type { MailService } from "./mail.service";
 import type { AiInvokeResult, AiInvokeWithUsageResult, AiUsageMeta } from "../ai/core/gateway/ai-gateway.types";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../common/auth/principal";
+import type { Db } from "../../db/drizzle.module";
+import { primeRelocationTrafficTracker } from "../../common/relocation/relocation-traffic-tracker";
 
 const ACTOR: CurrentUserContext = {
   userId: "user-1",
@@ -71,6 +73,11 @@ const MOCK_AI_USAGE: AiUsageMeta = {
   costUsd: 0.001,
 };
 
+const MOCK_DB = {
+  execute: async () => [],
+  transaction: async <T>(run: (tx: Db) => Promise<T>): Promise<T> => run(MOCK_DB as unknown as Db),
+} as unknown as Db;
+
 function makeGatewaySuccess(data: unknown): AiInvokeResult<unknown> {
   return {
     ok: true,
@@ -113,10 +120,12 @@ function makeMailService(overrides: Partial<{
 }
 
 function makeService(gateway: jest.Mocked<AiGatewayService>, mailSvc: jest.Mocked<MailService>): MailAiService {
-  return new MailAiService(mailSvc, gateway);
+  return new MailAiService(MOCK_DB, mailSvc, gateway);
 }
 
 describe("MailAiService", () => {
+  beforeEach(() => primeRelocationTrafficTracker([], Date.now()));
+
   describe("inboxSummary", () => {
     it("returns empty result without calling gateway when inbox has zero messages", async () => {
       const gateway = makeGateway(makeGatewaySuccess(INBOX_SUMMARY_RESULT));

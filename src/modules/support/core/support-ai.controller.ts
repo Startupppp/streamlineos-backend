@@ -97,6 +97,7 @@ export class SupportAiController {
   }
 
   @Post(":ticketId/ai/find-duplicates")
+  @NoTenantTransaction()
   @BodylessAction()
   @RequirePermission("support:tickets:view")
   @UseGuards(RateLimitGuard)
@@ -110,6 +111,7 @@ export class SupportAiController {
   }
 
   @Post(":ticketId/ai/suggest-kb-articles")
+  @NoTenantTransaction()
   @BodylessAction()
   @RequirePermission("support:tickets:view")
   @UseGuards(RateLimitGuard)
@@ -123,6 +125,7 @@ export class SupportAiController {
   }
 
   @Post(":ticketId/ai/suggest-reply")
+  @NoTenantTransaction()
   @BodylessAction()
   @RequirePermission("support:tickets:reply")
   @UseGuards(RateLimitGuard)
@@ -172,6 +175,7 @@ export class SupportAiController {
   }
 
   @Post(":ticketId/ai/handoff-summary")
+  @NoTenantTransaction()
   @BodylessAction()
   @RequirePermission("support:tickets:view")
   @UseGuards(RateLimitGuard)
@@ -185,6 +189,7 @@ export class SupportAiController {
   }
 
   @Post(":ticketId/ai/root-cause-cluster")
+  @NoTenantTransaction()
   @BodylessAction()
   @RequirePermission("support:tickets:view")
   @UseGuards(RateLimitGuard)

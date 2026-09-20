@@ -16,6 +16,7 @@ import {
   assertChannelMember,
   assertEntityAccess,
 } from "./chat-channel-authorization";
+import { runInTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
 
 const SUMMARIZE_LIMIT = 50;
 
@@ -31,34 +32,48 @@ export class ChatSummarizeService {
     channelId: number,
     actor: { orgId: string; userId: string },
   ): Promise<{ summary: string }> {
-    const standing = await assertChannelMember(this.db, channelId, actor.userId, actor.orgId);
-    await assertEntityAccess(
-      this.entities,
-      standing,
-      actorFromStanding(actor.orgId, actor.userId, standing),
-      "Channel not found",
-    );
+    const rows = await runInTenantTransaction(
+      this.db,
+      async (tx) => {
+        const standing = await assertChannelMember(
+          tx,
+          channelId,
+          actor.userId,
+          actor.orgId,
+        );
+        await assertEntityAccess(
+          this.entities,
+          standing,
+          actorFromStanding(actor.orgId, actor.userId, standing),
+          "Channel not found",
+        );
 
-    const rows = await this.db
-      .select({
-        id: chatMessages.id,
-        content: chatMessages.content,
-        createdAt: chatMessages.createdAt,
-        senderName: users.name,
-        senderEmail: users.email,
-      })
-      .from(chatMessages)
-      .leftJoin(organizationMembers, eq(organizationMembers.id, chatMessages.senderMembershipId))
-      .leftJoin(users, eq(users.id, organizationMembers.userId))
-      .where(
-        and(
-          eq(chatMessages.orgId, actor.orgId),
-          eq(chatMessages.channelId, channelId),
-          eq(chatMessages.isDeleted, false),
-        ),
-      )
-      .orderBy(desc(chatMessages.createdAt))
-      .limit(SUMMARIZE_LIMIT);
+        return tx
+          .select({
+            id: chatMessages.id,
+            content: chatMessages.content,
+            createdAt: chatMessages.createdAt,
+            senderName: users.name,
+            senderEmail: users.email,
+          })
+          .from(chatMessages)
+          .leftJoin(
+            organizationMembers,
+            eq(organizationMembers.id, chatMessages.senderMembershipId),
+          )
+          .leftJoin(users, eq(users.id, organizationMembers.userId))
+          .where(
+            and(
+              eq(chatMessages.orgId, actor.orgId),
+              eq(chatMessages.channelId, channelId),
+              eq(chatMessages.isDeleted, false),
+            ),
+          )
+          .orderBy(desc(chatMessages.createdAt))
+          .limit(SUMMARIZE_LIMIT);
+      },
+      { orgId: actor.orgId },
+    );
 
     if (rows.length === 0) throw new BadRequestException("No messages to summarize");
 
