@@ -28,10 +28,11 @@ import {
 import { AskOsTools } from "../registry/ask-os-tools.decorator";
 import { readCopilotVariantStock } from "./lib/ops-copilot-reads";
 import { shouldDenyTeamPayrollCopilot } from "./lib/payroll-copilot-scope";
+import { VARIANT_SCAN_CAP } from "./lib/tool-read-caps";
 
 const LEAVE_BALANCE_CAP = 50;
 
-const STOCK_LOOKUP_CAPS = { products: 5, variants: 10, variantScan: 100 } as const;
+const STOCK_LOOKUP_CAPS = { products: 5, variants: 10, variantScan: VARIANT_SCAN_CAP } as const;
 
 @AskOsTools()
 @Injectable()

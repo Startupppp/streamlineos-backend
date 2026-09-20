@@ -47,6 +47,31 @@ import {
 } from "./projects-work-query.cursor";
 import { WORK_ROW_SELECTION } from "./projects-work-query-helpers";
 
+export function memberProjectIdsQuery(db: Db, orgId: string, userId: string) {
+  return db
+    .select({ projectId: projectMembers.projectId })
+    .from(projectMembers)
+    .innerJoin(
+      organizationMembers,
+      and(
+        eq(organizationMembers.id, projectMembers.membershipId),
+        eq(organizationMembers.orgId, projectMembers.orgId),
+        eq(organizationMembers.userId, userId),
+        eq(organizationMembers.status, "ACTIVE"),
+      ),
+    )
+    .where(eq(projectMembers.orgId, orgId));
+}
+
+export function allCountByStatusQuery(db: Db, where: SQL<unknown> | undefined) {
+  return db
+    .select({ status: tickets.status, cnt: sql<string>`count(*)` })
+    .from(tickets)
+    .innerJoin(projects, eq(tickets.projectId, projects.id))
+    .where(where)
+    .groupBy(tickets.status);
+}
+
 @Injectable()
 export class ProjectsWorkQueryService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
@@ -96,20 +121,7 @@ export class ProjectsWorkQueryService {
         conditions.push(inArray(tickets.projectId, filterProjectIds));
       }
     } else {
-      const memberRows = await this.db
-        .select({ projectId: projectMembers.projectId })
-        .from(projectMembers)
-        .innerJoin(
-          organizationMembers,
-          and(
-            eq(organizationMembers.id, projectMembers.membershipId),
-            eq(organizationMembers.orgId, projectMembers.orgId),
-            eq(organizationMembers.userId, u.userId),
-            eq(organizationMembers.status, "ACTIVE"),
-          ),
-        )
-        .where(eq(projectMembers.orgId, u.orgId));
-
+      const memberRows = await memberProjectIdsQuery(this.db, u.orgId, u.userId);
       const memberProjectIds = memberRows.map((r) => r.projectId);
       if (memberProjectIds.length === 0) {
         return { data: [], limit, nextCursor: null, hasMore: false, total: 0 };
@@ -297,20 +309,7 @@ export class ProjectsWorkQueryService {
       isNull(tickets.deletedAt),
     ];
 
-    const memberRows = await this.db
-      .select({ projectId: projectMembers.projectId })
-      .from(projectMembers)
-      .innerJoin(
-        organizationMembers,
-        and(
-          eq(organizationMembers.id, projectMembers.membershipId),
-          eq(organizationMembers.orgId, projectMembers.orgId),
-          eq(organizationMembers.userId, u.userId),
-          eq(organizationMembers.status, "ACTIVE"),
-        ),
-      )
-      .where(eq(projectMembers.orgId, u.orgId));
-
+    const memberRows = await memberProjectIdsQuery(this.db, u.orgId, u.userId);
     const memberProjectIds = memberRows.map((r) => r.projectId);
     if (memberProjectIds.length === 0) return { byProject: [], totals: { total: 0, done: 0, inProgress: 0 } };
 
@@ -384,33 +383,20 @@ export class ProjectsWorkQueryService {
       isNull(tickets.deletedAt),
     ];
 
+    const memberRows = await memberProjectIdsQuery(this.db, u.orgId, u.userId);
+    const memberProjectIds = memberRows.map((r) => r.projectId);
+    if (memberProjectIds.length === 0) return { byStatus: {}, total: 0 };
+
+    const allowedProjectIds =
+      opts.projectIds && opts.projectIds.length > 0
+        ? opts.projectIds.filter((id) => memberProjectIds.includes(id))
+        : memberProjectIds;
+
+    if (allowedProjectIds.length === 0) return { byStatus: {}, total: 0 };
+
+    baseConditions.push(inArray(tickets.projectId, allowedProjectIds));
+
     if (opts.scope === "all") {
-      const memberRows = await this.db
-        .select({ projectId: projectMembers.projectId })
-        .from(projectMembers)
-        .innerJoin(
-          organizationMembers,
-          and(
-            eq(organizationMembers.id, projectMembers.membershipId),
-            eq(organizationMembers.orgId, projectMembers.orgId),
-            eq(organizationMembers.userId, u.userId),
-            eq(organizationMembers.status, "ACTIVE"),
-          ),
-        )
-        .where(eq(projectMembers.orgId, u.orgId));
-
-      const memberProjectIds = memberRows.map((r) => r.projectId);
-      if (memberProjectIds.length === 0) return { byStatus: {}, total: 0 };
-
-      const allowedProjectIds =
-        opts.projectIds && opts.projectIds.length > 0
-          ? opts.projectIds.filter((id) => memberProjectIds.includes(id))
-          : memberProjectIds;
-
-      if (allowedProjectIds.length === 0) return { byStatus: {}, total: 0 };
-
-      baseConditions.push(inArray(tickets.projectId, allowedProjectIds));
-
       if (opts.assigneeId !== undefined) {
         baseConditions.push(
           sql`${tickets.assigneeMembershipId} IN (SELECT id FROM organization_members WHERE org_id = ${u.orgId} AND user_id = ${opts.assigneeId})`,
@@ -418,12 +404,7 @@ export class ProjectsWorkQueryService {
       }
 
       const where = and(...baseConditions);
-      const statusRows = await this.db
-        .select({ status: tickets.status, cnt: sql<string>`count(*)` })
-        .from(tickets)
-        .innerJoin(projects, eq(tickets.projectId, projects.id))
-        .where(where)
-        .groupBy(tickets.status);
+      const statusRows = await allCountByStatusQuery(this.db, where);
 
       const byStatus: Record<string, number> = {};
       let total = 0;

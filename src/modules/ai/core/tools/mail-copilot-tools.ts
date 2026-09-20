@@ -2,6 +2,7 @@ import { Injectable, Inject } from "@nestjs/common";
 import { z } from "zod";
 import { DRIZZLE } from "../../../../db/drizzle.constants";
 import { type Db } from "../../../../db/drizzle.module";
+import { runInNewTenantTransaction } from "../../../../common/tenant/run-in-tenant-transaction";
 import { MailService } from "../../../mail/mail.service";
 import { MailAiService } from "../../../mail/mail-ai.service";
 import { AiConfirmationService } from "../../confirmation/ai-confirmation.service";
@@ -48,9 +49,12 @@ export class MailCopilotTools implements AskOsToolProvider {
         }),
         permission: "mail:inbox:view",
         module: "mail",
+        ownsTransaction: true,
         run: async ({ accountEmail, folder }, ctx) => {
           const { orgId, userId, membershipId } = ctx.actor;
-          const connection = await resolveAnyMailConnection(this.db, { orgId, userId, membershipId });
+          const connection = await runInNewTenantTransaction(this.db, orgId, () =>
+            resolveAnyMailConnection(this.db, { orgId, userId, membershipId }),
+          );
           if (!connection.connected) {
             return needsConnection(
               connection.toolkit,
@@ -59,7 +63,9 @@ export class MailCopilotTools implements AskOsToolProvider {
             );
           }
           try {
-            const accounts = await this.mail.listAccounts(orgId, userId);
+            const accounts = await runInNewTenantTransaction(this.db, orgId, () =>
+              this.mail.listAccounts(orgId, userId),
+            );
             let accountIdParam = "all";
             if (accountEmail) {
               const match = accounts.find((a) => a.accountEmail === accountEmail);
@@ -102,9 +108,12 @@ export class MailCopilotTools implements AskOsToolProvider {
         }),
         permission: "mail:ai:use",
         module: "mail",
+        ownsTransaction: true,
         run: async ({ accountEmail, threadId }, ctx) => {
           const { orgId, userId, membershipId } = ctx.actor;
-          const connection = await resolveAnyMailConnection(this.db, { orgId, userId, membershipId });
+          const connection = await runInNewTenantTransaction(this.db, orgId, () =>
+            resolveAnyMailConnection(this.db, { orgId, userId, membershipId }),
+          );
           if (!connection.connected) {
             return needsConnection(
               connection.toolkit,
@@ -113,7 +122,9 @@ export class MailCopilotTools implements AskOsToolProvider {
             );
           }
           try {
-            const accounts = await this.mail.listAccounts(orgId, userId);
+            const accounts = await runInNewTenantTransaction(this.db, orgId, () =>
+              this.mail.listAccounts(orgId, userId),
+            );
             let accountId: number;
             if (accountEmail) {
               const match = accounts.find((a) => a.accountEmail === accountEmail);
@@ -148,9 +159,12 @@ export class MailCopilotTools implements AskOsToolProvider {
         }),
         confirms: "mail.send",
         module: "mail",
+        ownsTransaction: true,
         run: async ({ toEmail, subject, body, accountEmail }, ctx) => {
           const { orgId, userId, membershipId } = ctx.actor;
-          const connection = await resolveAnyMailConnection(this.db, { orgId, userId, membershipId });
+          const connection = await runInNewTenantTransaction(this.db, orgId, () =>
+            resolveAnyMailConnection(this.db, { orgId, userId, membershipId }),
+          );
           if (!connection.connected) {
             return needsConnection(
               connection.toolkit,
@@ -159,7 +173,9 @@ export class MailCopilotTools implements AskOsToolProvider {
             );
           }
           try {
-            const accounts = await this.mail.listAccounts(orgId, userId);
+            const accounts = await runInNewTenantTransaction(this.db, orgId, () =>
+              this.mail.listAccounts(orgId, userId),
+            );
             const activeAccounts = accounts.filter((a) => a.status === "active");
             if (activeAccounts.length === 0) return failed("No active mail accounts found.");
             const resolvedAccount = accountEmail

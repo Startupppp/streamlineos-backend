@@ -1,3 +1,8 @@
+jest.mock("../../../../common/tenant/run-in-tenant-transaction", () => ({
+  runInTenantTransaction: <T,>(_db: unknown, fn: () => Promise<T>) => fn(),
+  runInNewTenantTransaction: <T,>(_db: unknown, _orgId: string, fn: () => Promise<T>) => fn(),
+}));
+
 import { MailCopilotTools } from "./mail-copilot-tools";
 import { resolveAnyMailConnection } from "./lib/mail-connection";
 import { resolveToolkitConnection } from "../../../integrations/core/connection-resolution";

@@ -4,6 +4,7 @@ import { z } from "zod";
 import { OpsCopilotTools } from "./ops-copilot-tools";
 import { readCopilotVariantStock } from "./lib/ops-copilot-reads";
 import { shouldDenyTeamPayrollCopilot } from "./lib/payroll-copilot-scope";
+import { VARIANT_SCAN_CAP } from "./lib/tool-read-caps";
 import { SCOPE_ALL_PERMISSION, WarehouseScopeService } from "../../../inventory/stock-engine/warehouse-scope.service";
 import type { DataScope } from "../../../access/access.types";
 import type { Db } from "../../../../db/drizzle.module";
@@ -12,6 +13,12 @@ import type { AskOsToolRunContext } from "../registry/ask-os-tool.types";
 import { ScopedRead } from "../../../access/scoped-read";
 import { humanSessionPrincipal } from "../../../../common/auth/principal";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
+
+describe("every ops-copilot read stays inside the 100-row page cap", () => {
+  it("keeps VARIANT_SCAN_CAP at or under 100, because an unbounded variant scan bills every token against the model on every inventory lookup", () => {
+    expect(VARIANT_SCAN_CAP).toBeLessThanOrEqual(100);
+  });
+});
 
 describe("shouldDenyTeamPayrollCopilot", () => {
   it("denies team scope instead of silently narrowing to self", () => {
