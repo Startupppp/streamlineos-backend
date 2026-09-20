@@ -8,7 +8,10 @@
  * whose permission key is new in this release violates the foreign key to
  * `permissions.name` until the catalog carries it. Only the waiting is gone.
  */
-import { PermissionCatalogSyncService } from "../permission-catalog-sync.service";
+import {
+  GRANT_RECONCILE_JOB_KEY,
+  PermissionCatalogSyncService,
+} from "../permission-catalog-sync.service";
 
 const EMPTY_SYNC = {
   catalogSize: 0,
@@ -17,14 +20,28 @@ const EMPTY_SYNC = {
   retainedKeys: [],
 };
 
-function makeService(reconcile: jest.Mock): {
+function makeService(
+  reconcile: jest.Mock,
+  withLease?: jest.Mock,
+): {
   service: PermissionCatalogSyncService;
   syncSpy: jest.SpyInstance;
+  withLease: jest.Mock;
 } {
   const reconciler = { reconcileAllOrganizations: reconcile };
-  const service = new PermissionCatalogSyncService({} as never, reconciler as never);
+  const lease =
+    withLease ??
+    jest.fn(async (_key: string, _window: number, fn: () => Promise<unknown>) => ({
+      ran: true,
+      result: await fn(),
+    }));
+  const service = new PermissionCatalogSyncService(
+    {} as never,
+    reconciler as never,
+    { withLease: lease } as never,
+  );
   const syncSpy = jest.spyOn(service, "sync").mockResolvedValue(EMPTY_SYNC);
-  return { service, syncSpy };
+  return { service, syncSpy, withLease: lease };
 }
 
 describe("permission catalog sync — boot path", () => {
@@ -80,6 +97,31 @@ describe("permission catalog sync — boot path", () => {
     await Promise.resolve();
 
     expect(reconcile).toHaveBeenCalledTimes(1);
+  });
+
+  it("takes a cron lease so one replica sweeps rather than every replica repeating it", async () => {
+    delete process.env.RBAC_GRANT_RECONCILE_ON_BOOT;
+    const reconcile = jest.fn().mockResolvedValue(undefined);
+    const { service, withLease } = makeService(reconcile);
+
+    await service.onModuleInit();
+
+    expect(withLease).toHaveBeenCalledTimes(1);
+    expect(withLease.mock.calls[0]?.[0]).toBe(GRANT_RECONCILE_JOB_KEY);
+    expect(reconcile).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not sweep when another replica already holds the lease", async () => {
+    delete process.env.RBAC_GRANT_RECONCILE_ON_BOOT;
+    const reconcile = jest.fn().mockResolvedValue(undefined);
+    const held = jest.fn().mockResolvedValue({ ran: false });
+    const { service } = makeService(reconcile, held);
+
+    await service.onModuleInit();
+    await Promise.resolve();
+
+    expect(held).toHaveBeenCalledTimes(1);
+    expect(reconcile).not.toHaveBeenCalled();
   });
 
   it("skips the sweep entirely when RBAC_GRANT_RECONCILE_ON_BOOT is false", async () => {

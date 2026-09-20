@@ -13,6 +13,7 @@ import { RoleMemberService } from "./role-member.service";
 import { PrincipalGroupsService } from "./principal-groups.service";
 import { PermissionCatalogSyncService } from "./permission-catalog-sync.service";
 import { RoleGrantReconcilerService } from "./role-grant-reconciler.service";
+import { CronLeaseService } from "../cron/cron-lease.service";
 
 @Module({
   imports: [AccessModule, NotificationsModule],
@@ -27,6 +28,7 @@ import { RoleGrantReconcilerService } from "./role-grant-reconciler.service";
     PrincipalGroupsService,
     PermissionCatalogSyncService,
     RoleGrantReconcilerService,
+    CronLeaseService,
   ],
 })
 export class RbacModule {}

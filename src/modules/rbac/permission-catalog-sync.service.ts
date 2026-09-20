@@ -13,6 +13,10 @@ import { PERMISSIONS } from "./permissions";
 import { buildPermissionCatalogRows } from "./permission-catalog-rows";
 import { buildModulesCatalogRows } from "../../common/rbac/modules-catalog-rows";
 import { RoleGrantReconcilerService } from "./role-grant-reconciler.service";
+import { CronLeaseService } from "../cron/cron-lease.service";
+
+export const GRANT_RECONCILE_JOB_KEY = "rbac-grant-reconcile";
+export const GRANT_RECONCILE_WINDOW_SECONDS = 600;
 
 type SupportedScope = "all" | "team" | "own";
 
@@ -41,6 +45,7 @@ export class PermissionCatalogSyncService implements OnModuleInit {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly grantReconciler: RoleGrantReconcilerService,
+    private readonly cronLease: CronLeaseService,
   ) {}
 
   /**
@@ -66,13 +71,17 @@ export class PermissionCatalogSyncService implements OnModuleInit {
   }
 
   reconcileDetached(): void {
-    void this.grantReconciler.reconcileAllOrganizations().catch((error: unknown) => {
-      this.logger.error(
-        `Role grant reconcile failed — organisations seeded before the current role definitions keep the permissions they have: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-      );
-    });
+    void this.cronLease
+      .withLease(GRANT_RECONCILE_JOB_KEY, GRANT_RECONCILE_WINDOW_SECONDS, () =>
+        this.grantReconciler.reconcileAllOrganizations(),
+      )
+      .catch((error: unknown) => {
+        this.logger.error(
+          `Role grant reconcile failed — organisations seeded before the current role definitions keep the permissions they have: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+      });
   }
 
   async sync(options?: { cleanupRetired?: boolean }): Promise<{
