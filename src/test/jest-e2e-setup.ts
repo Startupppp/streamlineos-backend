@@ -1,3 +1,5 @@
+import { assertE2eDatabaseApproved } from "./db-spec-guard";
+
 process.env.NODE_ENV = "test";
 
 for (const key of [
@@ -8,3 +10,5 @@ for (const key of [
 ]) {
   delete process.env[key];
 }
+
+assertE2eDatabaseApproved();

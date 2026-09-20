@@ -41,7 +41,7 @@ function hostList(env: NodeJS.ProcessEnv): string {
   return [...allowedHosts(env)].join(", ");
 }
 
-export function checkDatabaseUrl(raw: string, env: NodeJS.ProcessEnv = process.env): UrlVerdict {
+export function checkDatabaseHost(raw: string, env: NodeJS.ProcessEnv = process.env): UrlVerdict {
   const target = describeTarget(raw);
 
   let url: URL;
@@ -60,6 +60,14 @@ export function checkDatabaseUrl(raw: string, env: NodeJS.ProcessEnv = process.e
         `host "${host}" is not approved for destructive testing ` +
         `(approved: ${hostList(env)})`,
     };
+
+  return { ok: true, url: raw, target };
+}
+
+export function checkDatabaseUrl(raw: string, env: NodeJS.ProcessEnv = process.env): UrlVerdict {
+  const hostVerdict = checkDatabaseHost(raw, env);
+  if (!hostVerdict.ok) return hostVerdict;
+  const target = hostVerdict.target;
 
   if (env[OPT_IN_VAR] !== "1")
     return {
@@ -120,6 +128,35 @@ export function requireApprovedDatabaseUrl(options: {
       "  refused: none of them is set",
     ],
     env,
+  );
+}
+
+export const E2E_DATABASE_VARS = ["DATABASE_URL", "APP_DATABASE_URL"] as const;
+
+export function assertE2eDatabaseApproved(env: NodeJS.ProcessEnv = process.env): void {
+  const refused: string[] = [];
+  for (const name of E2E_DATABASE_VARS) {
+    const raw = env[name]?.trim();
+    if (!raw) continue;
+    const verdict = checkDatabaseHost(raw, env);
+    if (!verdict.ok) refused.push(`  ${name} -> ${verdict.target}\n  refused: ${verdict.because}`);
+  }
+  if (refused.length === 0) return;
+
+  throw new Error(
+    [
+      "",
+      "REFUSED: the controller e2e tier boots the real AppModule and seeds a fixture",
+      "organisation, user and owner membership through test/helpers/e2e-seed.ts.",
+      "jest-e2e.json loads dotenv/config, so an unapproved .env writes those rows",
+      "into whatever database .env names.",
+      "",
+      ...refused,
+      "",
+      "Point DATABASE_URL and APP_DATABASE_URL at a database you are willing to lose,",
+      `or widen the allowlist with ${ALLOWED_HOSTS_VAR}=host,host — never a production hostname.`,
+      "",
+    ].join("\n"),
   );
 }
 
