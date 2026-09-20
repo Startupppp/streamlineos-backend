@@ -55,6 +55,7 @@ export class RisksService {
   }
 
   async getRisk(u: CurrentUserContext, projectId: number, riskId: number) {
+    await assertProjectAccess(this.db, this.access, u, projectId);
     return this.loadRisk(u.orgId, projectId, riskId);
   }
 
@@ -103,6 +104,7 @@ export class RisksService {
     riskId: number,
     input: UpdateRiskInput,
   ) {
+    await assertProjectAccess(this.db, this.access, u, projectId);
     await this.loadRisk(u.orgId, projectId, riskId);
     const patch: RiskPatch = {};
     if (input.title !== undefined) patch.title = input.title;
@@ -117,7 +119,7 @@ export class RisksService {
     const [updated] = await this.db
       .update(projectRisks)
       .set(patch)
-      .where(and(eq(projectRisks.id, riskId), eq(projectRisks.orgId, u.orgId)))
+      .where(and(eq(projectRisks.id, riskId), eq(projectRisks.orgId, u.orgId), eq(projectRisks.projectId, projectId)))
       .returning();
     if (!updated) throw new NotFoundException("Risk not found");
 
@@ -133,11 +135,12 @@ export class RisksService {
   }
 
   async softDeleteRisk(u: CurrentUserContext, projectId: number, riskId: number) {
+    await assertProjectAccess(this.db, this.access, u, projectId);
     await this.loadRisk(u.orgId, projectId, riskId);
     await this.db
       .update(projectRisks)
       .set({ deletedAt: new Date() })
-      .where(and(eq(projectRisks.id, riskId), eq(projectRisks.orgId, u.orgId)));
+      .where(and(eq(projectRisks.id, riskId), eq(projectRisks.orgId, u.orgId), eq(projectRisks.projectId, projectId)));
     this.audit.log({
       action: "risk.deleted",
       userId: u.userId,

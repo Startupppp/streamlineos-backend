@@ -63,6 +63,7 @@ export class DecisionsService {
   }
 
   async getDecision(u: CurrentUserContext, projectId: number, decisionId: number) {
+    await assertProjectAccess(this.db, this.access, u, projectId);
     return this.loadDecision(u.orgId, projectId, decisionId);
   }
 
@@ -112,6 +113,7 @@ export class DecisionsService {
     decisionId: number,
     input: UpdateDecisionInput,
   ) {
+    await assertProjectAccess(this.db, this.access, u, projectId);
     await this.loadDecision(u.orgId, projectId, decisionId);
     const patch: DecisionPatch = {};
     if (input.title !== undefined) patch.title = input.title;
@@ -127,7 +129,7 @@ export class DecisionsService {
     const [updated] = await this.db
       .update(projectDecisions)
       .set(patch)
-      .where(and(eq(projectDecisions.id, decisionId), eq(projectDecisions.orgId, u.orgId)))
+      .where(and(eq(projectDecisions.id, decisionId), eq(projectDecisions.orgId, u.orgId), eq(projectDecisions.projectId, projectId)))
       .returning();
     if (!updated) throw new NotFoundException("Decision not found");
 
@@ -143,11 +145,12 @@ export class DecisionsService {
   }
 
   async softDeleteDecision(u: CurrentUserContext, projectId: number, decisionId: number) {
+    await assertProjectAccess(this.db, this.access, u, projectId);
     await this.loadDecision(u.orgId, projectId, decisionId);
     await this.db
       .update(projectDecisions)
       .set({ deletedAt: new Date() })
-      .where(and(eq(projectDecisions.id, decisionId), eq(projectDecisions.orgId, u.orgId)));
+      .where(and(eq(projectDecisions.id, decisionId), eq(projectDecisions.orgId, u.orgId), eq(projectDecisions.projectId, projectId)));
     this.audit.log({
       action: "decision.deleted",
       userId: u.userId,

@@ -246,6 +246,24 @@ describe("ActionItemsService.convertToTask", () => {
     const svc = new ActionItemsService(mockDb, mockAudit);
     await expect(svc.convertToTask("org-1", "user-1", 1, 999, 1)).rejects.toThrow(NotFoundException);
   });
+
+  it("throws ConflictException when UPDATE WHERE converted_ticket_id IS NULL returns 0 rows (concurrent conversion race)", async () => {
+    const baseTx = makeTx({ convertedTicketId: null });
+    const tx = {
+      ...baseTx,
+      update: jest.fn().mockReturnValue({
+        set: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        returning: jest.fn().mockResolvedValue([]),
+      }),
+    };
+    const mockDb = {
+      transaction: jest.fn().mockImplementation(async (fn: (txArg: unknown) => Promise<unknown>) => fn(tx)),
+    } as unknown as Db;
+
+    const svc = new ActionItemsService(mockDb, mockAudit);
+    await expect(svc.convertToTask("org-1", "user-1", 1, 2, 1)).rejects.toThrow(ConflictException);
+  });
 });
 
 describe("MeetingsService — project membership gate (assertProjectAccess)", () => {

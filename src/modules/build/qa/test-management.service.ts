@@ -1,5 +1,5 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, eq, ilike, isNull, sql } from "drizzle-orm";
+import { and, count, eq, gt, ilike, inArray, isNull, sql } from "drizzle-orm";
 import { testCases, testSuites } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
@@ -10,9 +10,13 @@ import type {
   CreateTestCaseInput,
   CreateTestSuiteInput,
   TestCaseListQuery,
+  TestSuiteListQuery,
   UpdateTestCaseInput,
   UpdateTestSuiteInput,
 } from "./dto/qa.schemas";
+
+const SUITE_PAGE = 50;
+const CASE_PAGE = 50;
 
 @Injectable()
 export class TestManagementService {
@@ -21,20 +25,49 @@ export class TestManagementService {
     private readonly access: AccessService,
   ) {}
 
-  async listSuites(u: CurrentUserContext, projectId: number) {
+  async listSuites(u: CurrentUserContext, projectId: number, query: TestSuiteListQuery = {}) {
     await assertProjectAccess(this.db, this.access, u, projectId);
-    return this.db
+
+    const conditions = [
+      eq(testSuites.orgId, u.orgId),
+      eq(testSuites.projectId, projectId),
+      isNull(testSuites.deletedAt),
+    ];
+    if (query.cursor !== undefined) conditions.push(gt(testSuites.id, query.cursor));
+
+    const rows = await this.db
       .select()
       .from(testSuites)
+      .where(and(...conditions))
+      .orderBy(testSuites.position, testSuites.id)
+      .limit(SUITE_PAGE);
+
+    if (rows.length === 0) return [];
+
+    const suiteIds = rows.map((s) => s.id);
+    const countRows = await this.db
+      .select({
+        suiteId: testCases.suiteId,
+        caseCount: count(),
+      })
+      .from(testCases)
       .where(
         and(
-          eq(testSuites.orgId, u.orgId),
-          eq(testSuites.projectId, projectId),
-          isNull(testSuites.deletedAt),
+          eq(testCases.orgId, u.orgId),
+          eq(testCases.projectId, projectId),
+          isNull(testCases.deletedAt),
+          inArray(testCases.suiteId, suiteIds),
         ),
       )
-      .orderBy(testSuites.position, testSuites.id)
-      .limit(100);
+      .groupBy(testCases.suiteId);
+
+    const countMap = new Map<number, number>(
+      countRows
+        .filter((r): r is { suiteId: number; caseCount: number } => r.suiteId !== null)
+        .map((r) => [r.suiteId, Number(r.caseCount)]),
+    );
+
+    return rows.map((s) => ({ ...s, caseCount: countMap.get(s.id) ?? 0 }));
   }
 
   async createSuite(u: CurrentUserContext, projectId: number, input: CreateTestSuiteInput) {
@@ -84,7 +117,7 @@ export class TestManagementService {
         ...(input.parentId !== undefined && { parentId: input.parentId }),
         updatedAt: new Date(),
       })
-      .where(and(eq(testSuites.id, suiteId), eq(testSuites.orgId, orgId)))
+      .where(and(eq(testSuites.id, suiteId), eq(testSuites.orgId, orgId), eq(testSuites.projectId, projectId)))
       .returning();
     return updated;
   }
@@ -103,7 +136,7 @@ export class TestManagementService {
     await this.db
       .update(testSuites)
       .set({ deletedAt: new Date() })
-      .where(and(eq(testSuites.id, suiteId), eq(testSuites.orgId, orgId)));
+      .where(and(eq(testSuites.id, suiteId), eq(testSuites.orgId, orgId), eq(testSuites.projectId, projectId)));
     return { success: true };
   }
 
@@ -118,12 +151,13 @@ export class TestManagementService {
     if (query.priority) conditions.push(eq(testCases.priority, query.priority));
     if (query.automationStatus) conditions.push(eq(testCases.automationStatus, query.automationStatus));
     if (query.q) conditions.push(ilike(testCases.title, `%${query.q}%`));
+    if (query.cursor !== undefined) conditions.push(gt(testCases.id, query.cursor));
     return this.db
       .select()
       .from(testCases)
       .where(and(...conditions))
       .orderBy(testCases.caseNumber)
-      .limit(100);
+      .limit(CASE_PAGE);
   }
 
   async getCase(orgId: string, projectId: number, caseId: number) {
@@ -195,7 +229,7 @@ export class TestManagementService {
         ...(input.automationStatus !== undefined && { automationStatus: input.automationStatus }),
         updatedAt: new Date(),
       })
-      .where(and(eq(testCases.id, caseId), eq(testCases.orgId, orgId)))
+      .where(and(eq(testCases.id, caseId), eq(testCases.orgId, orgId), eq(testCases.projectId, projectId)))
       .returning();
     return updated;
   }
@@ -214,7 +248,7 @@ export class TestManagementService {
     await this.db
       .update(testCases)
       .set({ deletedAt: new Date() })
-      .where(and(eq(testCases.id, caseId), eq(testCases.orgId, orgId)));
+      .where(and(eq(testCases.id, caseId), eq(testCases.orgId, orgId), eq(testCases.projectId, projectId)));
     return { success: true };
   }
 }

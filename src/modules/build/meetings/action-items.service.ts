@@ -1,5 +1,5 @@
 import { ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, eq, isNull, sql } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import {
   meetingActionItems,
   projectMeetings,
@@ -182,9 +182,16 @@ export class ActionItemsService {
       const [updatedItem] = await tx
         .update(meetingActionItems)
         .set({ convertedTicketId: ticket.id, status: "converted" })
-        .where(and(eq(meetingActionItems.id, itemId), eq(meetingActionItems.orgId, orgId)))
+        .where(
+          and(
+            eq(meetingActionItems.id, itemId),
+            eq(meetingActionItems.orgId, orgId),
+            isNull(meetingActionItems.convertedTicketId),
+          ),
+        )
         .returning();
 
+      if (!updatedItem) throw new ConflictException("Action item was already converted by a concurrent request");
       return { actionItem: updatedItem, ticketId: ticket.id };
     });
 
