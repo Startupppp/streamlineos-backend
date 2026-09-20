@@ -1,20 +1,23 @@
-import { readFileSync, readdirSync, statSync } from "node:fs";
-import { extname, join, relative, resolve } from "node:path";
+import { readFileSync } from "node:fs";
+import { join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import {
+  READ_DECORATOR,
+  blockAfter,
+  buildClassIndex,
+  findRoutes,
+  injectedTypes,
+  isSpec,
+  makeReaches,
+  makeStripEscapedRegions,
+  walk,
+} from "./lib/route-scan.mjs";
 
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
 const ROOT = resolve(__dirname, "../..");
 const SRC = join(ROOT, "src");
 const MODULES = join(SRC, "modules");
 
-const READ_DECORATOR = /^\s*@(Get|Head|Options)\s*\(/;
-const WRITE_DECORATOR = /^\s*@(Post|Put|Patch|Delete|All|Sse)\s*\(/;
-const OPT_OUT = /^\s*@NoTenantTransaction\s*\(/;
-const PUBLIC_ROUTE = /^\s*@Public\s*\(/;
-const HANDLER = /^\s*(?:public\s+|private\s+|protected\s+)?(?:async\s+)?([A-Za-z_$][\w$]*)\s*\(/;
-const CONSTRUCTOR_PARAM =
-  /(?:private|public|protected|readonly)\s+(?:readonly\s+)?([A-Za-z_$][\w$]*)\s*:\s*([A-Za-z_$][\w$]*)/;
-const METHOD_CALL = /this\.([A-Za-z_$][\w$]*)\.([A-Za-z_$][\w$]*)\s*\(/g;
 const DB_WRITE =
   /\b(?:this\.db|db|tx|trx|executor|outer)\s*\.\s*(?:insert|update|delete)\s*\(|onConflictDo(?:Update|Nothing)\s*\(/;
 const RAW_DML = /sql\s*`[^`]*\b(?:INSERT\s+INTO|UPDATE\s+\w|DELETE\s+FROM)/i;
@@ -28,229 +31,24 @@ const FROZEN = new Set([
   "modules/payroll/insights/journal-outbox.controller.ts#exportCsv",
 ]);
 
-function walk(dir) {
-  const out = [];
-  for (const entry of readdirSync(dir)) {
-    const full = join(dir, entry);
-    if (statSync(full).isDirectory()) {
-      out.push(...walk(full));
-      continue;
-    }
-    if (extname(full) === ".ts") out.push(full);
-  }
-  return out;
-}
-
-function isSpec(file) {
-  return /\.(spec|e2e-spec)\.ts$/.test(file);
-}
-
-export function stripEscapedRegions(body) {
-  let out = "";
-  let index = 0;
-  while (index < body.length) {
-    const at = body.indexOf(ESCAPE_HATCH, index);
-    if (at === -1) {
-      out += body.slice(index);
-      break;
-    }
-    out += body.slice(index, at);
-    let cursor = body.indexOf("(", at);
-    if (cursor === -1) break;
-    let depth = 0;
-    while (cursor < body.length) {
-      if (body[cursor] === "(") depth++;
-      else if (body[cursor] === ")") {
-        depth--;
-        if (depth === 0) break;
-      }
-      cursor++;
-    }
-    index = cursor + 1;
-  }
-  return out;
-}
+const stripEscapedRegions = makeStripEscapedRegions(ESCAPE_HATCH);
 
 export function writesDirectly(body) {
   const visible = stripEscapedRegions(body);
   return DB_WRITE.test(visible) || RAW_DML.test(visible);
 }
 
-export function blockAfter(lines, start) {
-  const text = lines.slice(start).join("\n");
-  let cursor = 0;
-  let paren = 0;
-  let opened = false;
-
-  while (cursor < text.length) {
-    const char = text[cursor];
-    if (char === "(") {
-      paren++;
-      opened = true;
-    } else if (char === ")") {
-      paren--;
-      if (opened && paren === 0) {
-        cursor++;
-        break;
-      }
-    }
-    cursor++;
-  }
-
-  let angle = 0;
-  let bodyStart = -1;
-  for (; cursor < text.length; cursor++) {
-    const char = text[cursor];
-    if (char === "<") angle++;
-    else if (char === ">") {
-      if (angle > 0) angle--;
-    } else if (char === ";" && angle === 0) return "";
-    else if (char === "{" && angle === 0) {
-      bodyStart = cursor;
-      break;
-    }
-  }
-  if (bodyStart === -1) return "";
-
-  let depth = 0;
-  let end = bodyStart;
-  for (; end < text.length; end++) {
-    if (text[end] === "{") depth++;
-    else if (text[end] === "}") {
-      depth--;
-      if (depth === 0) {
-        end++;
-        break;
-      }
-    }
-  }
-  return text.slice(bodyStart, end);
-}
-
 export function findReadRoutes(source) {
-  const lines = source.split("\n");
-  const classLine = lines.findIndex((line) => /^export (?:abstract )?class /.test(line));
-  if (classLine !== -1) {
-    const preamble = lines.slice(0, classLine);
-    if (preamble.some((line) => OPT_OUT.test(line) || PUBLIC_ROUTE.test(line))) return [];
-  }
-
-  const routes = [];
-  let pendingRead = false;
-  let pendingWrite = false;
-  let pendingOptOut = false;
-  let pendingPublic = false;
-
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-    if (READ_DECORATOR.test(line)) {
-      pendingRead = true;
-      continue;
-    }
-    if (WRITE_DECORATOR.test(line)) {
-      pendingWrite = true;
-      continue;
-    }
-    if (OPT_OUT.test(line)) {
-      pendingOptOut = true;
-      continue;
-    }
-    if (PUBLIC_ROUTE.test(line)) {
-      pendingPublic = true;
-      continue;
-    }
-    if (/^\s*@/.test(line) || line.trim() === "") continue;
-
-    if (pendingRead || pendingWrite) {
-      const handler = HANDLER.exec(line);
-      if (handler) {
-        if (pendingRead && !pendingWrite && !pendingOptOut && !pendingPublic)
-          routes.push({ handler: handler[1], body: blockAfter(lines, i) });
-        pendingRead = false;
-        pendingWrite = false;
-        pendingOptOut = false;
-        pendingPublic = false;
-      }
-    }
-  }
-
-  return routes;
+  return findRoutes(source, { collect: READ_DECORATOR });
 }
 
-export function injectedTypes(source) {
-  const map = new Map();
-  const start = source.indexOf("constructor(");
-  if (start === -1) return map;
-  const slice = source.slice(start, source.indexOf(")", start) === -1 ? undefined : undefined);
-  const lines = source.slice(start).split("\n");
-  let depth = 0;
-  let seen = false;
-  for (const line of lines) {
-    const found = CONSTRUCTOR_PARAM.exec(line);
-    if (found) map.set(found[1], found[2]);
-    for (const char of line) {
-      if (char === "(") {
-        depth++;
-        seen = true;
-      } else if (char === ")") depth--;
-    }
-    if (seen && depth <= 0) break;
-  }
-  void slice;
-  return map;
-}
+const reaches = makeReaches({
+  directly: writesDirectly,
+  maxHops: MAX_HOPS,
+  strip: stripEscapedRegions,
+});
 
-function buildClassIndex(files) {
-  const index = new Map();
-  for (const file of files) {
-    if (isSpec(file)) continue;
-    const source = readFileSync(file, "utf8");
-    for (const match of source.matchAll(/^export (?:abstract )?class ([A-Za-z_$][\w$]*)/gm))
-      if (!index.has(match[1])) index.set(match[1], file);
-  }
-  return index;
-}
-
-function methodBody(source, name) {
-  const lines = source.split("\n");
-  const pattern = new RegExp(
-    `^\\s*(?:public\\s+|private\\s+|protected\\s+)?(?:async\\s+)?${name}\\s*\\(`,
-  );
-  for (let i = 0; i < lines.length; i++)
-    if (pattern.test(lines[i])) return blockAfter(lines, i);
-  return null;
-}
-
-function reaches(body, classIndex, sourceOf, hops, seen) {
-  if (writesDirectly(body)) return true;
-  if (hops >= MAX_HOPS) return false;
-
-  const visible = stripEscapedRegions(body);
-  for (const call of visible.matchAll(METHOD_CALL)) {
-    const [, prop, method] = call;
-    const owner = sourceOf.types.get(prop);
-    if (!owner) continue;
-    const file = classIndex.get(owner);
-    if (!file) continue;
-    const key = `${owner}#${method}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    const source = readFileSync(file, "utf8");
-    const nested = methodBody(source, method);
-    if (nested === null) continue;
-    if (
-      reaches(
-        nested,
-        classIndex,
-        { types: injectedTypes(source) },
-        hops + 1,
-        seen,
-      )
-    )
-      return true;
-  }
-  return false;
-}
+export { blockAfter, injectedTypes };
 
 function scan() {
   const all = walk(SRC);

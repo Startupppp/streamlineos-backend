@@ -933,6 +933,10 @@ jobs:
       - name: A read route does not write inside the request transaction
         if: ${{ !cancelled() }}
         run: pnpm check:get-route-writes:self-test && pnpm check:get-route-writes
+
+      - name: A route does not call out over the network holding a pooled connection
+        if: ${{ !cancelled() }}
+        run: pnpm check:request-txn-outbound:self-test && pnpm check:request-txn-outbound
   # The golden path, on every pull request.
   #
   # It proves the one thing no unit test can: that buy -> receive -> put away ->
