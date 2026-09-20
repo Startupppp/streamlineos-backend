@@ -126,7 +126,7 @@ describe("MARKETING consent requirement", () => {
 const executable = (source: string): string =>
   source
     .replace(/\/\*[\s\S]*?\*\//g, " ")
-    .split("\n")
+    .split(/\r?\n/)
     .map((line) => line.replace(/\/\/.*$/, ""))
     .join("\n");
 
@@ -146,7 +146,8 @@ function directEmailCallersOnDisk(): string[] {
       const rel = relative(srcRoot, p).split(sep).join("/");
       if (rel.includes("/dto/") || rel.startsWith("modules/email/")) continue;
       if (rel === "modules/notifications/notification-caller-inventory.ts") continue;
-      if (/\b[A-Za-z]*EmailService\b/.test(executable(readFileSync(p, "utf8")))) found.push(rel);
+      if (/\b(?:[A-Za-z]*EmailService|EmailSignService)\b/.test(executable(readFileSync(p, "utf8"))))
+        found.push(rel);
     }
   };
 
