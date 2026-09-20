@@ -60,6 +60,11 @@ const EMPLOYMENT_VIEW_COLUMNS = {
   expectedLastDay: hrEmployments.expectedLastDay,
   lastWorkingDay: hrEmployments.lastWorkingDay,
   isPrimary: hrEmployments.isPrimary,
+  rowVersion: hrEmployments.rowVersion,
+  archivedAt: hrEmployments.archivedAt,
+  archivedByMembershipId: hrEmployments.archivedByMembershipId,
+  updatedByMembershipId: hrEmployments.updatedByMembershipId,
+  deletedAt: hrEmployments.deletedAt,
   createdAt: hrEmployments.createdAt,
   updatedAt: hrEmployments.updatedAt,
 };

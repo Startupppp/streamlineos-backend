@@ -1,3 +1,4 @@
+import { InternalServerErrorException } from "@nestjs/common";
 import { and, asc, eq } from "drizzle-orm";
 import {
   employeeSalaryProfileComponents,
@@ -155,7 +156,7 @@ export async function seedEmployeeSalaryProfile(
     })
     .returning({ id: employeeSalaryProfiles.id });
 
-  if (!profile) throw new Error("Failed to create salary profile");
+  if (!profile) throw new InternalServerErrorException("Failed to create salary profile");
 
   const components = await tx
     .select({
