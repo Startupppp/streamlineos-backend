@@ -58,14 +58,18 @@ function isProviderClass(candidate: unknown): candidate is ProviderClass {
   );
 }
 
-function selfToolFiles(): string[] {
+function toolFiles(): string[] {
   return fs
     .readdirSync(TOOLS_DIR)
-    .filter((name) => name.startsWith("self-") && name.endsWith("-tools.ts") && !name.includes(".spec."));
+    .filter((name) => name.endsWith("-tools.ts") && !name.includes(".spec."));
 }
 
-function selfToolDefinitions(): { file: string; definition: AskOsToolDefinition }[] {
-  return selfToolFiles().flatMap((file) => {
+function selfToolFiles(): string[] {
+  return toolFiles().filter((name) => name.startsWith("self-"));
+}
+
+function allToolDefinitions(): { file: string; definition: AskOsToolDefinition }[] {
+  return toolFiles().flatMap((file) => {
     const loaded: unknown = require(path.join(TOOLS_DIR, file));
     if (loaded === null || typeof loaded !== "object") return [];
     return Object.values(loaded)
@@ -75,6 +79,20 @@ function selfToolDefinitions(): { file: string; definition: AskOsToolDefinition 
         return stub.tools().map((definition) => ({ file, definition }));
       });
   });
+}
+
+function answersForTheCallerThemselves(entry: {
+  file: string;
+  definition: AskOsToolDefinition;
+}): boolean {
+  return (
+    entry.file.startsWith("self-") ||
+    (entry.definition.permission !== undefined && entry.definition.permission.startsWith("self:"))
+  );
+}
+
+function selfToolDefinitions(): { file: string; definition: AskOsToolDefinition }[] {
+  return allToolDefinitions().filter(answersForTheCallerThemselves);
 }
 
 function subjectKeysIn(schema: z.ZodType, seen = new Set<z.ZodType>()): string[] {
@@ -119,6 +137,35 @@ describe("a self-service tool that accepts a subject identifier lets the model r
     );
 
     expect(offenders).toEqual([]);
+  });
+
+  it("selects a self: tool declared outside a self-*-tools.ts file, because globbing filenames let one hide here forever", () => {
+    const identify = (entry: { file: string; definition: AskOsToolDefinition }): string =>
+      `${entry.file}:${entry.definition.key}`;
+    const strays = allToolDefinitions()
+      .filter((entry) => !entry.file.startsWith("self-"))
+      .filter((entry) => entry.definition.permission?.startsWith("self:") === true)
+      .map(identify);
+    const covered = new Set(selfToolDefinitions().map(identify));
+
+    expect(strays.length).toBeGreaterThan(0);
+    expect(strays.filter((stray) => !covered.has(stray))).toEqual([]);
+
+    expect(
+      answersForTheCallerThemselves({
+        file: "ops-copilot-tools.ts",
+        definition: { ...SELF_DEFINITIONS[0]!.definition, permission: "self:payslips" },
+      }),
+    ).toBe(true);
+  });
+
+  it("does not sweep in an ordinary org-scoped tool, so the assertion above is a filter and not a pass-through", () => {
+    expect(
+      answersForTheCallerThemselves({
+        file: "ops-copilot-tools.ts",
+        definition: { ...SELF_DEFINITIONS[0]!.definition, permission: "hr:payroll:view" },
+      }),
+    ).toBe(false);
   });
 
   it("catches a planted subject identifier, so the walker is not merely returning an empty list", () => {
