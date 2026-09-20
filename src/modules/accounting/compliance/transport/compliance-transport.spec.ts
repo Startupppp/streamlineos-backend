@@ -189,7 +189,7 @@ describe("the submit path is reachable", () => {
 
   it("has a route that offers a document to the transport", () => {
     expect(CONTROLLER).toContain('@Post("documents/:documentType/:documentId/submit")');
-    expect(CONTROLLER).toContain("this.compliance.submitToTransport(");
+    expect(CONTROLLER).toContain("this.compliance.fileDocument(");
   });
 
   it("gates filing behind manage, not read", () => {
@@ -210,7 +210,9 @@ describe("the submit path is reachable", () => {
       would surface months later as a notice with this product's own
       submission as the evidence against the tenant.
     */
-    expect(CONTROLLER).toContain("this.compliance.payloadForDocument(");
+    const service = readFileSync(join(__dirname, "../compliance.service.ts"), "utf8");
+    const filing = service.slice(service.indexOf("async fileDocument"));
+    expect(filing).toContain("this.payloadForDocument(");
     const route = CONTROLLER.slice(CONTROLLER.indexOf("async submitDocument"));
     expect(route.slice(0, 900)).not.toContain("@Body");
   });
@@ -244,9 +246,19 @@ describe("the submit path is reachable", () => {
     expect(service).toContain("postDocumentInTx(");
     expect(posting).toContain("recordForDocument");
     expect(pieces).toContain("ar-document-posting.ts");
-    expect(service).not.toContain("submitToTransport");
+
+    /*
+      Named against the live entry point. A negative scan for a method that no
+      longer exists passes whatever posting does, so the name below is asserted
+      to be real before it is asserted to be absent.
+    */
+    const FILING_ENTRY_POINT = "fileDocument";
+    const complianceService = readFileSync(join(__dirname, "../compliance.service.ts"), "utf8");
+    expect(complianceService).toContain(`async ${FILING_ENTRY_POINT}(`);
+
+    expect(service).not.toContain(FILING_ENTRY_POINT);
     for (const piece of pieces) {
-      expect(readFileSync(join(AR, "lib", piece), "utf8")).not.toContain("submitToTransport");
+      expect(readFileSync(join(AR, "lib", piece), "utf8")).not.toContain(FILING_ENTRY_POINT);
     }
   });
 });
