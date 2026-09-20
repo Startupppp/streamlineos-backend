@@ -16,6 +16,7 @@ import {
   projectMembers,
   organizationMembers,
   projects,
+  ticketAssignees,
   ticketLabelMappings,
   ticketLabels,
   ticketWatchers,
@@ -47,6 +48,13 @@ import {
 } from "./projects-work-query.cursor";
 import { WORK_ROW_SELECTION } from "./projects-work-query-helpers";
 
+type ProjectStatusCount = {
+  projectId: number | null;
+  projectName: string;
+  status: string;
+  count: number;
+};
+
 export function memberProjectIdsQuery(db: Db, orgId: string, userId: string) {
   return db
     .select({ projectId: projectMembers.projectId })
@@ -70,6 +78,34 @@ export function allCountByStatusQuery(db: Db, where: SQL<unknown> | undefined) {
     .innerJoin(projects, eq(tickets.projectId, projects.id))
     .where(where)
     .groupBy(tickets.status);
+}
+
+function personCountByProjectAndStatusSql(
+  where: SQL<unknown> | undefined,
+  orgId: string,
+  subjectUserId: string,
+): SQL<unknown> {
+  const scoped = where ?? sql`true`;
+  const subjectMemberships = sql`SELECT id FROM organization_members WHERE org_id = ${orgId} AND user_id = ${subjectUserId}`;
+  const branchColumns = sql`${tickets.id} AS id, ${tickets.projectId} AS project_id, ${projects.name} AS project_name, ${tickets.status} AS status`;
+  return sql`
+    SELECT u.project_id AS project_id, u.project_name AS project_name, u.status AS status, count(*) AS cnt
+    FROM (
+      (SELECT ${branchColumns}
+       FROM ${tickets}
+       INNER JOIN ${projects} ON ${projects.id} = ${tickets.projectId}
+       WHERE ${scoped} AND ${tickets.assigneeMembershipId} IN (${subjectMemberships}))
+      UNION
+      (SELECT ${branchColumns}
+       FROM ${tickets}
+       INNER JOIN ${projects} ON ${projects.id} = ${tickets.projectId}
+       INNER JOIN ${ticketAssignees} ta
+         ON ta.ticket_id = ${tickets.id}
+        AND ta.org_id = ${orgId}
+        AND ta.membership_id IN (${subjectMemberships})
+       WHERE ${scoped})
+    ) u
+    GROUP BY u.project_id, u.project_name, u.status`;
 }
 
 @Injectable()
@@ -322,24 +358,11 @@ export class ProjectsWorkQueryService {
 
     baseConditions.push(inArray(tickets.projectId, allowedProjectIds));
 
-    if (opts.assigneeId !== undefined) {
-      baseConditions.push(
-        sql`${tickets.assigneeMembershipId} IN (SELECT id FROM organization_members WHERE org_id = ${u.orgId} AND user_id = ${opts.assigneeId})`,
-      );
-    }
-
     const where = and(...baseConditions);
-    const statusRows = await this.db
-      .select({
-        projectId: tickets.projectId,
-        projectName: projects.name,
-        status: tickets.status,
-        cnt: sql<string>`count(*)`,
-      })
-      .from(tickets)
-      .innerJoin(projects, eq(tickets.projectId, projects.id))
-      .where(where)
-      .groupBy(tickets.projectId, projects.name, tickets.status);
+    const statusRows =
+      opts.assigneeId === undefined
+        ? await this.groupedCountByProjectAndStatus(where)
+        : await this.personGroupedCountByProjectAndStatus(where, u.orgId, opts.assigneeId);
 
     const byProjectMap = new Map<
       number,
@@ -354,10 +377,9 @@ export class ProjectsWorkQueryService {
         done: 0,
         inProgress: 0,
       };
-      const cnt = Number(row.cnt);
-      entry.total += cnt;
-      if (row.status === "DONE") entry.done += cnt;
-      if (row.status === "IN_PROGRESS" || row.status === "IN_REVIEW") entry.inProgress += cnt;
+      entry.total += row.count;
+      if (row.status === "DONE") entry.done += row.count;
+      if (row.status === "IN_PROGRESS" || row.status === "IN_REVIEW") entry.inProgress += row.count;
       byProjectMap.set(row.projectId, entry);
     }
 
@@ -367,6 +389,52 @@ export class ProjectsWorkQueryService {
       { total: 0, done: 0, inProgress: 0 },
     );
     return { byProject, totals };
+  }
+
+  private async groupedCountByProjectAndStatus(
+    where: SQL<unknown> | undefined,
+  ): Promise<ProjectStatusCount[]> {
+    const rows = await this.db
+      .select({
+        projectId: tickets.projectId,
+        projectName: projects.name,
+        status: tickets.status,
+        cnt: sql<string>`count(*)`,
+      })
+      .from(tickets)
+      .innerJoin(projects, eq(tickets.projectId, projects.id))
+      .where(where)
+      .groupBy(tickets.projectId, projects.name, tickets.status);
+
+    return rows.map((row) => ({
+      projectId: row.projectId,
+      projectName: row.projectName,
+      status: row.status,
+      count: Number(row.cnt),
+    }));
+  }
+
+  private async personGroupedCountByProjectAndStatus(
+    where: SQL<unknown> | undefined,
+    orgId: string,
+    subjectUserId: string,
+  ): Promise<ProjectStatusCount[]> {
+    const rows = await this.db.execute(
+      personCountByProjectAndStatusSql(where, orgId, subjectUserId),
+    );
+
+    const counts: ProjectStatusCount[] = [];
+    for (const row of rows) {
+      const projectId = row["project_id"];
+      if (projectId === null || projectId === undefined) continue;
+      counts.push({
+        projectId: Number(projectId),
+        projectName: String(row["project_name"]),
+        status: String(row["status"]),
+        count: Number(row["cnt"]),
+      });
+    }
+    return counts;
   }
 
   async countTicketsByStatus(
