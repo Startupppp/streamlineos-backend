@@ -37,7 +37,7 @@ describe("self.applyToJobOpening — confirmable action executor", () => {
 
     await definition?.execute(
       { jobId: 5, coverLetter: "I am interested", notes: null },
-      { actor: mockActor, db: {} as Db, moduleRef },
+      { actor: mockActor, db: {} as Db, moduleRef, proposalId: 1 },
     );
 
     expect(mockInternalApply).toHaveBeenCalledTimes(1);
@@ -55,7 +55,7 @@ describe("self.applyToJobOpening — confirmable action executor", () => {
 
     await definition?.execute(
       { jobId: 3, coverLetter: null, notes: null },
-      { actor: mockActor, db: {} as Db, moduleRef },
+      { actor: mockActor, db: {} as Db, moduleRef, proposalId: 1 },
     );
 
     const [calledOrgId, calledUserId] = mockInternalApply.mock.calls[0] as [string, string, ...unknown[]];
@@ -69,7 +69,7 @@ describe("self.applyToJobOpening — confirmable action executor", () => {
 
     await definition?.execute(
       { jobId: 7, coverLetter: null, notes: null },
-      { actor: mockActor, db: {} as Db, moduleRef },
+      { actor: mockActor, db: {} as Db, moduleRef, proposalId: 1 },
     );
 
     const callArg = mockInternalApply.mock.calls[0]?.[3] as Record<string, unknown>;
@@ -83,7 +83,7 @@ describe("self.applyToJobOpening — confirmable action executor", () => {
 
     const outcome = await definition?.execute(
       { jobId: 9, coverLetter: null, notes: null },
-      { actor: mockActor, db: {} as Db, moduleRef },
+      { actor: mockActor, db: {} as Db, moduleRef, proposalId: 1 },
     );
 
     expect(outcome?.result["applicationId"]).toBe(202);
@@ -95,7 +95,7 @@ describe("self.applyToJobOpening — confirmable action executor", () => {
 
     const outcome = await definition?.execute(
       { jobId: 12, coverLetter: null, notes: null },
-      { actor: mockActor, db: {} as Db, moduleRef },
+      { actor: mockActor, db: {} as Db, moduleRef, proposalId: 1 },
     );
 
     expect(outcome?.summary).toContain("12");

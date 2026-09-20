@@ -422,7 +422,7 @@ describe("ticket.updateStatus executor persists reason as a comment", () => {
 
     await definition?.execute(
       { ticketId: 41, status: "IN_REVIEW", title: "Fix it", reason: "Ready for QA" },
-      { actor: mockActor, db: {} as Db, moduleRef },
+      { actor: mockActor, db: {} as Db, moduleRef, proposalId: 1 },
     );
 
     expect(mockAddComment).toHaveBeenCalledWith(mockActor, 41, { content: "Ready for QA" });
@@ -439,7 +439,7 @@ describe("ticket.updateStatus executor persists reason as a comment", () => {
 
     await definition?.execute(
       { ticketId: 41, status: "IN_REVIEW", title: "Fix it", reason: undefined },
-      { actor: mockActor, db: {} as Db, moduleRef },
+      { actor: mockActor, db: {} as Db, moduleRef, proposalId: 1 },
     );
 
     expect(mockAddComment).not.toHaveBeenCalled();
@@ -456,7 +456,7 @@ describe("ticket.updateStatus executor persists reason as a comment", () => {
 
     await definition?.execute(
       { ticketId: 41, status: "IN_REVIEW", title: "Fix it", reason: "   " },
-      { actor: mockActor, db: {} as Db, moduleRef },
+      { actor: mockActor, db: {} as Db, moduleRef, proposalId: 1 },
     );
 
     expect(mockAddComment).not.toHaveBeenCalled();
@@ -473,7 +473,7 @@ describe("ticket.updateStatus executor persists reason as a comment", () => {
 
     const outcome = await definition?.execute(
       { ticketId: 41, status: "DONE", title: "Ship it", reason: "All tests passed" },
-      { actor: mockActor, db: {} as Db, moduleRef },
+      { actor: mockActor, db: {} as Db, moduleRef, proposalId: 1 },
     );
 
     expect(outcome?.summary).not.toContain("All tests passed");
@@ -521,7 +521,7 @@ describe("calendar.createEvent executor resolves attendee names before inviting"
     await expect(
       definition?.execute(
         { ...basePayload, attendeeNames: ["Jordan Lee"] },
-        { actor: mockActor, db: {} as Db, moduleRef: mockModuleRef },
+        { actor: mockActor, db: {} as Db, moduleRef: mockModuleRef, proposalId: 1 },
       ),
     ).rejects.toThrow(/"Jordan Lee" matches nobody in this organization/);
     expect(mockCalendar.createEvent).not.toHaveBeenCalled();
@@ -547,7 +547,7 @@ describe("calendar.createEvent executor resolves attendee names before inviting"
 
     const failure = definition?.execute(
       { ...basePayload, attendeeNames: ["Jordan Lee", "Sam Patel"] },
-      { actor: mockActor, db: {} as Db, moduleRef: mockModuleRef },
+      { actor: mockActor, db: {} as Db, moduleRef: mockModuleRef, proposalId: 1 },
     );
 
     await expect(failure).rejects.toThrow(/"Jordan Lee" matches nobody/);
@@ -565,7 +565,7 @@ describe("calendar.createEvent executor resolves attendee names before inviting"
 
     await definition?.execute(
       { ...basePayload, attendeeNames: ["Jordan Lee", "Sam Patel"] },
-      { actor: mockActor, db: {} as Db, moduleRef: mockModuleRef },
+      { actor: mockActor, db: {} as Db, moduleRef: mockModuleRef, proposalId: 1 },
     );
 
     expect(resolveNames).toHaveBeenCalledTimes(1);
@@ -581,7 +581,7 @@ describe("calendar.createEvent executor resolves attendee names before inviting"
 
     await definition?.execute(
       { ...basePayload, attendeeNames: undefined },
-      { actor: mockActor, db: {} as Db, moduleRef: mockModuleRef },
+      { actor: mockActor, db: {} as Db, moduleRef: mockModuleRef, proposalId: 1 },
     );
 
     expect(resolveNames).toHaveBeenCalledWith({}, "org-1", []);
