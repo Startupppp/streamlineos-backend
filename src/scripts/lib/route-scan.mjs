@@ -145,9 +145,45 @@ export function findRoutes(source, options) {
   let pendingOther = false;
   let pendingOptOut = false;
   let pendingPublic = false;
+  /*
+    A decorator's argument list can span lines:
+
+      @UseInterceptors(
+        FileInterceptor("file", { limits: … }),
+      )
+      resumeParse(…)
+
+    Without tracking depth, `FileInterceptor(` matches the handler pattern, so the
+    scan names the interceptor as the route AND consumes the pending decorators —
+    the real handler is then never collected at all. That is a false name and a
+    missing route from one bug.
+  */
+  let decoratorDepth = 0;
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
+    if (decoratorDepth > 0) {
+      for (const char of line) {
+        if (char === "(") decoratorDepth++;
+        else if (char === ")") decoratorDepth--;
+      }
+      continue;
+    }
+    if (/^\s*@/.test(line)) {
+      let depth = 0;
+      for (const char of line) {
+        if (char === "(") depth++;
+        else if (char === ")") depth--;
+      }
+      if (depth > 0) {
+        if (collect.test(line)) pendingCollect = true;
+        else if (ANY_ROUTE_DECORATOR.test(line)) pendingOther = true;
+        else if (OPT_OUT.test(line)) pendingOptOut = true;
+        else if (PUBLIC_ROUTE.test(line)) pendingPublic = true;
+        decoratorDepth = depth;
+        continue;
+      }
+    }
     if (collect.test(line)) {
       pendingCollect = true;
       continue;

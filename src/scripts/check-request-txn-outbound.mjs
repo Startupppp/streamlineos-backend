@@ -181,6 +181,24 @@ export class StreamController {
   if (classOptOut.length !== 0)
     failures.push("class-level @NoTenantTransaction was not honoured");
 
+  const multiLineDecorator = findRoutes(
+    `
+  @Post("upload")
+  @UseInterceptors(
+    FileInterceptor("file", { limits: { fileSize: 10 } }),
+  )
+  resumeParse() {
+    await fetch(url);
+  }
+`,
+    { collect: ANY_ROUTE_DECORATOR },
+  );
+  if (multiLineDecorator[0]?.handler !== "resumeParse")
+    failures.push(
+      `a decorator spanning lines named ${multiLineDecorator[0]?.handler ?? "nothing"} as the handler, ` +
+        `which also drops the real route from the scan`,
+    );
+
   /*
     The two resolution paths that exist for receivers the `this.<prop>` walk
     cannot see. Both found nothing on the current tree, so without these they
