@@ -4,10 +4,15 @@ import { fileURLToPath } from "node:url";
 import {
   ANY_ROUTE_DECORATOR,
   buildClassIndex,
+  buildFunctionIndex,
   findRoutes,
   injectedTypes,
   isSpec,
   makeReaches,
+  makeStripEscapedRegions,
+  methodBody,
+  parameterTypes,
+  signatureOf,
   walk,
 } from "./lib/route-scan.mjs";
 
@@ -19,7 +24,7 @@ const MODULES = join(SRC, "modules");
 const OUTBOUND =
   /(?<![.\w])fetch\s*\(|(?<![.\w])postSafeWebhook\s*\(|(?<![.\w])callProvider\s*\(|(?<![.\w])outboundRequest\s*\(|\baxios\s*\.\s*(?:get|post|put|patch|delete|request)\s*\(|\bsendEmailOnceDirect\s*\(/;
 
-const MAX_HOPS = 3;
+const MAX_HOPS = 6;
 const MIN_CONTROLLERS = 200;
 const MIN_ROUTES = 1500;
 
@@ -31,28 +36,28 @@ const MIN_ROUTES = 1500;
 */
 const FROZEN = new Map([
   [
+    "modules/automation/automation.controller.ts#testAutomation",
+    "HOLDS. Testing a rule whose action is an email awaits sendEmailOnceDirect six hops down, inside the request transaction. Budget is 5s only when the row reproduces the send; with cc/bcc/replyTo/attachments it is unbounded. Verified by reading every hop.",
+  ],
+  [
+    "modules/support/core/support-automations.controller.ts#testAutomation",
+    "HOLDS, the same six-hop chain through AutomationService.testRule. Both rule-test routes were invisible to this gate until it learned to unwrap Pick<EmailOutboxService, ...>.",
+  ],
+  [
     "modules/build/core/projects-webhooks.controller.ts#sendTest",
     "HOLDS. Awaited so the user is shown the delivery result. 10s x 5 attempts with 1-30s backoff, so the worst case is minutes on one connection. Needs the dispatch service to own its transactions before it can opt out.",
   ],
   [
     "modules/email/controllers/notifications-dispatch.controller.ts#dispatch",
-    "HOLDS. Awaited; the send outcome per channel is the response body. Email writes outbox status after the provider call, so an opt-out alone would leave those writes with no tenant context. Budgets 5s inline email, 15s Twilio.",
+    "HOLDS, and an opt-out here would be WORSE than the hold. email_outbox and email_suppressions carry nullable-aware RLS, and the outbox row takes its org from the ambient context — with no context it is written as a PLATFORM row instead of failing, so the send silently loses tenant attribution and the suppression read silently misses org-specific entries. Fix the scope resolution before touching the decorator.",
   ],
   [
     "modules/feedbucket/feedbucket.controller.ts#analyzeSubmission",
-    "HOLDS, and the longest of the eight: a 60s standard-tier LLM call with the submission update after it. Opt-out needs the service to own its read and write transactions.",
+    "HOLDS, and the longest of the six: a 60s standard-tier LLM call with the submission update after it. AI credits are reserved before the provider call and settled after, both on the ambient transaction, so the org_ai_credits row stays locked for the whole 60s.",
   ],
   [
     "modules/feedbucket/feedbucket.controller.ts#createTicketFromAnalysis",
-    "HOLDS, same 60s call, and only when the submission has no analysis yet. Also writes a ticket through ProjectsTicketsService, whose atomicity has to be settled before this one is split.",
-  ],
-  [
-    "modules/hr/automations/hr-webhooks.controller.ts#redeliver",
-    "Detached: the fetch is fired through detachDelivery, outside the tenant context, and the status write opens its own transaction. No connection is held. Frozen because the scan cannot tell an awaited call from a detached one.",
-  ],
-  [
-    "modules/hr/automations/hr-webhooks.controller.ts#test",
-    "Detached, exactly as redeliver above. No connection is held.",
+    "HOLDS, same 60s call, and splitting it naively creates DUPLICATE TICKETS. The only guard against a second ticket is submission.linkedTicketId, which is written after createFromFeedback commits; today one ambient transaction makes them atomic. Split them and a failure between the two leaves a ticket with no link, and the retry — the route has no @Idempotent and no unique constraint — makes another. Needs an idempotency fence first.",
   ],
   [
     "modules/support/core/support-reports.controller.ts#getOverview",
@@ -64,20 +69,39 @@ const FROZEN = new Map([
   ],
 ]);
 
-function callsOutbound(body) {
-  return OUTBOUND.test(body);
+/*
+  Work that has left the request. `registerAfterCommit` runs its hook in a fresh
+  transaction once this one has committed, `runOutsideTenantContext` exits the
+  async-local context so the continuation cannot inherit the request's tx, and a
+  `void`-ed call is not awaited at all. In none of those does the outbound call
+  happen while the connection is still borrowed — so a scan that counted them
+  reported a hold that does not exist. Measured: without this, four of the
+  e-sign and leads routes read as holds and were provably not.
+*/
+const DETACHERS = ["registerAfterCommit", "runOutsideTenantContext", "drainAfterCommitHooks"];
+const stripDetachers = DETACHERS.map((name) => makeStripEscapedRegions(name));
+const VOIDED = /\bvoid\s+[^;]*;/g;
+
+function stripDetached(body) {
+  let out = body.replace(VOIDED, " ");
+  for (const strip of stripDetachers) out = strip(out);
+  return out;
 }
 
-const reaches = makeReaches({
-  directly: callsOutbound,
-  maxHops: MAX_HOPS,
-  strip: (body) => body,
-  followSameClass: true,
-});
+function callsOutbound(body) {
+  return OUTBOUND.test(stripDetached(body));
+}
 
 function scan() {
   const all = walk(SRC);
   const classIndex = buildClassIndex(all);
+  const reaches = makeReaches({
+    directly: callsOutbound,
+    maxHops: MAX_HOPS,
+    strip: stripDetached,
+    followSameClass: true,
+    functionIndex: buildFunctionIndex(all),
+  });
   const controllers = walk(MODULES).filter(
     (file) => /\.controller\.ts$/.test(file) && !isSpec(file),
   );
@@ -156,6 +180,53 @@ export class StreamController {
   );
   if (classOptOut.length !== 0)
     failures.push("class-level @NoTenantTransaction was not honoured");
+
+  /*
+    The two resolution paths that exist for receivers the `this.<prop>` walk
+    cannot see. Both found nothing on the current tree, so without these they
+    would be machinery nobody had ever watched work.
+  */
+  if (parameterTypes("(gmail: GmailMailProvider, userId: string)").get("gmail") !== "GmailMailProvider")
+    failures.push("a declared parameter type was not resolved");
+
+  /*
+    The three findings this gate reported wrongly before, each pinned to the
+    construct that caused it.
+  */
+  if (
+    injectedTypes('constructor(\n  private readonly outbox: Pick<EmailOutboxService, "enqueueAndTry">,\n) {}').get(
+      "outbox",
+    ) !== "EmailOutboxService"
+  )
+    failures.push("Pick<Owner, …> was not unwrapped, so the walk stops one hop short of the provider");
+  if (injectedTypes("constructor(\n  private readonly db: Db,\n) {}").get("db") !== "Db")
+    failures.push("a plain injected type was broken by the unwrapping");
+  if (callsOutbound("if (!registerAfterCommit(() => this.deliver(u))) return;"))
+    failures.push("an after-commit hook was counted as a hold");
+  if (callsOutbound("void this.attemptDelivery(a, b, c);"))
+    failures.push("a voided call was counted as a hold");
+  if (!callsOutbound("registerAfterCommit(noop);\n await fetch(url);"))
+    failures.push("the detach strip swallowed an awaited call beside it");
+  if (signatureOf("export async function send(client: Wire, body: string) {\n", "send") === "")
+    failures.push("an exported function signature was not extracted");
+  if (methodBody("export async function ping(c: Wire) {\n  await fetch(u);\n}\n", "ping") === null)
+    failures.push("an exported function body was not extracted");
+
+  const paramWalk = makeReaches({
+    directly: callsOutbound,
+    maxHops: 2,
+    strip: (body) => body,
+  });
+  const wireFile = join(SRC, "__self_test__", "wire.ts");
+  const paramReached = paramWalk(
+    "await client.deliver(payload);",
+    new Map([["Wire", wireFile]]),
+    { types: new Map([["client", "Wire"]]), source: "", file: wireFile },
+    0,
+    new Set(),
+  );
+  if (paramReached)
+    failures.push("resolved a class file that does not exist, so the walk is not reading source");
 
   if (failures.length > 0) {
     for (const failure of failures) console.error(`  ${failure}`);

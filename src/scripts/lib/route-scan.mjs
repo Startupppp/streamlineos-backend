@@ -8,9 +8,29 @@ export const OPT_OUT = /^\s*@NoTenantTransaction\s*\(/;
 export const PUBLIC_ROUTE = /^\s*@Public\s*\(/;
 
 const HANDLER = /^\s*(?:public\s+|private\s+|protected\s+)?(?:async\s+)?([A-Za-z_$][\w$]*)\s*\(/;
+/*
+  `outbox: Pick<EmailOutboxService, "enqueueAndTry">` names its owner INSIDE the
+  type argument. Capturing only the outer name yields `Pick`, which is in no
+  class index, so the walk stopped dead one hop short of the provider call — the
+  two automation rule-test routes reach `sendEmailOnceDirect` through exactly
+  this shape and read as clean because of it.
+*/
+const TYPE_WRAPPERS = new Set(["Pick", "Omit", "Partial", "Readonly", "Required", "Promise"]);
 const CONSTRUCTOR_PARAM =
-  /(?:private|public|protected|readonly)\s+(?:readonly\s+)?([A-Za-z_$][\w$]*)\s*:\s*([A-Za-z_$][\w$]*)/;
+  /(?:private|public|protected|readonly)\s+(?:readonly\s+)?([A-Za-z_$][\w$]*)\s*:\s*([A-Za-z_$][\w$]*)(?:\s*<\s*([A-Za-z_$][\w$]*))?/;
+
+function unwrapType(outer, inner) {
+  return inner && TYPE_WRAPPERS.has(outer) ? inner : outer;
+}
 const METHOD_CALL = /this\.([A-Za-z_$][\w$]*)\.([A-Za-z_$][\w$]*)\s*\(/g;
+
+function readSource(file) {
+  try {
+    return readFileSync(file, "utf8");
+  } catch {
+    return null;
+  }
+}
 
 export function walk(dir) {
   const out = [];
@@ -163,6 +183,42 @@ export function findRoutes(source, options) {
   return routes;
 }
 
+/*
+  The declared types of a function's own parameters, so a call on a receiver
+  that arrived as an argument can still be resolved. `fetchGmailMessages(gmail:
+  GmailMailProvider, …)` reaches the network through `gmail.listMessages(…)`,
+  which no amount of `this.`-following will ever see.
+*/
+export function parameterTypes(signature) {
+  const map = new Map();
+  for (const match of signature.matchAll(
+    /(?:^|[(,])\s*([A-Za-z_$][\w$]*)\s*:\s*([A-Za-z_$][\w$]*)(?:\s*<\s*([A-Za-z_$][\w$]*))?/g,
+  ))
+    map.set(match[1], unwrapType(match[2], match[3]));
+  return map;
+}
+
+export function signatureOf(source, name) {
+  const lines = source.split("\n");
+  const pattern = new RegExp(
+    `^\\s*(?:export\\s+)?(?:public\\s+|private\\s+|protected\\s+)?(?:async\\s+)?(?:function\\s+)?${name}\\s*\\(`,
+  );
+  for (let i = 0; i < lines.length; i++) {
+    if (!pattern.test(lines[i])) continue;
+    const text = lines.slice(i).join("\n");
+    let depth = 0;
+    for (let cursor = 0; cursor < text.length; cursor++) {
+      if (text[cursor] === "(") depth++;
+      else if (text[cursor] === ")") {
+        depth--;
+        if (depth === 0) return text.slice(0, cursor + 1);
+      }
+    }
+    return "";
+  }
+  return "";
+}
+
 export function injectedTypes(source) {
   const map = new Map();
   const start = source.indexOf("constructor(");
@@ -172,7 +228,7 @@ export function injectedTypes(source) {
   let seen = false;
   for (const line of lines) {
     const found = CONSTRUCTOR_PARAM.exec(line);
-    if (found) map.set(found[1], found[2]);
+    if (found) map.set(found[1], unwrapType(found[2], found[3]));
     for (const char of line) {
       if (char === "(") {
         depth++;
@@ -195,10 +251,30 @@ export function buildClassIndex(files) {
   return index;
 }
 
+/*
+  Exported free functions, by name. A service that reaches the network through a
+  helper — `fetchGmailMessages(this.gmail, …)` — is invisible to a scan that only
+  follows `this.<prop>.<method>()`, because the receiver is an argument rather
+  than an injected property. Indexing the functions themselves is what lets the
+  walk cross that hop.
+*/
+export function buildFunctionIndex(files) {
+  const index = new Map();
+  for (const file of files) {
+    if (isSpec(file)) continue;
+    const source = readFileSync(file, "utf8");
+    for (const match of source.matchAll(
+      /^export (?:async )?function ([A-Za-z_$][\w$]*)/gm,
+    ))
+      if (!index.has(match[1])) index.set(match[1], file);
+  }
+  return index;
+}
+
 export function methodBody(source, name) {
   const lines = source.split("\n");
   const pattern = new RegExp(
-    `^\\s*(?:public\\s+|private\\s+|protected\\s+)?(?:async\\s+)?${name}\\s*\\(`,
+    `^\\s*(?:export\\s+)?(?:public\\s+|private\\s+|protected\\s+)?(?:async\\s+)?(?:function\\s+)?${name}\\s*\\(`,
   );
   for (let i = 0; i < lines.length; i++)
     if (pattern.test(lines[i])) return blockAfter(lines, i);
@@ -206,13 +282,70 @@ export function methodBody(source, name) {
 }
 
 const SELF_CALL = /this\.([A-Za-z_$][\w$]*)\s*\(/g;
+const FREE_CALL = /(?<![.\w])([a-z][\w$]*)\s*\(/g;
+const LOCAL_CALL = /(?<![.\w])([a-z][\w$]*)\s*\.\s*([A-Za-z_$][\w$]*)\s*\(/g;
 
-export function makeReaches({ directly, maxHops, strip, followSameClass = false }) {
+export function makeReaches({
+  directly,
+  maxHops,
+  strip,
+  followSameClass = false,
+  functionIndex = null,
+}) {
   return function reaches(body, classIndex, sourceOf, hops, seen) {
     if (directly(body)) return true;
     if (hops >= maxHops) return false;
 
     const visible = strip(body);
+
+    if (functionIndex) {
+      for (const call of visible.matchAll(FREE_CALL)) {
+        const name = call[1];
+        const file = functionIndex.get(name);
+        if (!file) continue;
+        const key = `fn#${name}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        const source = readSource(file);
+        if (source === null) continue;
+        const nested = methodBody(source, name);
+        if (nested === null) continue;
+        const types = new Map([
+          ...injectedTypes(source),
+          ...parameterTypes(signatureOf(source, name)),
+        ]);
+        if (reaches(nested, classIndex, { types, source, file }, hops + 1, seen)) return true;
+        seen.delete(key);
+      }
+    }
+
+    if (sourceOf.types.size > 0) {
+      for (const call of visible.matchAll(LOCAL_CALL)) {
+        const [, receiver, method] = call;
+        const owner = sourceOf.types.get(receiver);
+        if (!owner) continue;
+        const file = classIndex.get(owner);
+        if (!file) continue;
+        const key = `${owner}#${method}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        const source = readSource(file);
+        if (source === null) continue;
+        const nested = methodBody(source, method);
+        if (nested === null) continue;
+        if (
+          reaches(
+            nested,
+            classIndex,
+            { types: injectedTypes(source), source, file },
+            hops + 1,
+            seen,
+          )
+        )
+          return true;
+        seen.delete(key);
+      }
+    }
 
     if (followSameClass && typeof sourceOf.source === "string") {
       for (const call of visible.matchAll(SELF_CALL)) {
@@ -223,6 +356,7 @@ export function makeReaches({ directly, maxHops, strip, followSameClass = false 
         const nested = methodBody(sourceOf.source, method);
         if (nested === null) continue;
         if (reaches(nested, classIndex, sourceOf, hops + 1, seen)) return true;
+        seen.delete(key);
       }
     }
 
@@ -235,7 +369,8 @@ export function makeReaches({ directly, maxHops, strip, followSameClass = false 
       const key = `${owner}#${method}`;
       if (seen.has(key)) continue;
       seen.add(key);
-      const source = readFileSync(file, "utf8");
+      const source = readSource(file);
+      if (source === null) continue;
       const nested = methodBody(source, method);
       if (nested === null) continue;
       if (
@@ -248,6 +383,7 @@ export function makeReaches({ directly, maxHops, strip, followSameClass = false 
         )
       )
         return true;
+      seen.delete(key);
     }
     return false;
   };
