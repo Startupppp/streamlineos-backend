@@ -3,6 +3,7 @@ import { and, desc, eq, gte, ilike, inArray, lt, lte, or, sql } from "drizzle-or
 import { chatChannelMembers, chatChannels, chatMessages, organizationMembers, users } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
+import { logger } from "../../common/logger/logger.service";
 import { EntityReferenceService } from "../entity-reference/entity-reference.service";
 import type { EntityActor } from "../entity-reference/entity-reference.types";
 import {
