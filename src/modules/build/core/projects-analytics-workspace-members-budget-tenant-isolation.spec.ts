@@ -27,14 +27,16 @@ function makeCtx(orgId: string): CurrentUserContext {
   return { userId: "u1", orgId, isOrgOwner: false, sessionId: "s1", principal: { kind: "human-session", membershipId: 1, isOrgOwner: false } } as unknown as CurrentUserContext;
 }
 
-function makeAnalyticsDb(): { db: Db; capturedWheres: unknown[]; projectFindFirst: jest.Mock } {
+function makeAnalyticsDb(): { db: Db; capturedWheres: unknown[]; capturedJoins: unknown[]; projectFindFirst: jest.Mock; execute: jest.Mock } {
   const capturedWheres: unknown[] = [];
+  const capturedJoins: unknown[] = [];
   const chain: Record<string, unknown> = {};
   const resolved = Promise.resolve([]);
   const chainMethods = ["from", "where", "leftJoin", "innerJoin", "groupBy", "orderBy", "limit", "offset", "having"];
   for (const m of chainMethods) {
-    chain[m] = jest.fn().mockImplementation((arg: unknown) => {
+    chain[m] = jest.fn().mockImplementation((arg: unknown, condArg?: unknown) => {
       if (m === "where") capturedWheres.push(arg);
+      if ((m === "leftJoin" || m === "innerJoin") && condArg !== undefined) capturedJoins.push(condArg);
       return chain;
     });
   }
@@ -42,11 +44,13 @@ function makeAnalyticsDb(): { db: Db; capturedWheres: unknown[]; projectFindFirs
   chain.catch = (fn: (e: unknown) => unknown) => resolved.catch(fn);
   chain.finally = (fn: () => void) => resolved.finally(fn);
   const projectFindFirst = jest.fn().mockResolvedValue({ id: 1 });
+  const execute = jest.fn().mockResolvedValue([]);
   const db = {
     query: { projects: { findFirst: projectFindFirst } },
     select: jest.fn().mockReturnValue(chain),
+    execute,
   } as unknown as Db;
-  return { db, capturedWheres, projectFindFirst };
+  return { db, capturedWheres, capturedJoins, projectFindFirst, execute };
 }
 
 describe("ProjectsAnalyticsService — cross-tenant isolation", () => {
@@ -76,6 +80,109 @@ describe("ProjectsAnalyticsService — cross-tenant isolation", () => {
 
     const result = await svc.getProjectAnalytics(OWNER_ORG, 1);
     expect(result).toBeDefined();
+  });
+
+  it("getProjectAnalytics cycleVelocity LEFT JOIN binds org_id on tickets so a ticket whose cycleId matches a cross-org cycle is never joined", async () => {
+    const { db, capturedJoins } = makeAnalyticsDb();
+    const svc = new ProjectsAnalyticsService(db);
+
+    await svc.getProjectAnalytics(ATTACKER_ORG, 1);
+
+    const allJoinValues = capturedJoins.flatMap((j) => sqlValues(j));
+    expect(allJoinValues).toContain(ATTACKER_ORG);
+    expect(allJoinValues).not.toContain(OWNER_ORG);
+  });
+
+  it("getOrgProjectHealthSummary cycleStats LEFT JOIN binds org_id on tickets so soft-deleted and cross-org tickets never inflate cycle velocity", async () => {
+    const { db, capturedJoins } = makeAnalyticsDb();
+    const svc = new ProjectsAnalyticsService(db);
+
+    await svc.getOrgProjectHealthSummary(ATTACKER_ORG);
+
+    const allJoinValues = capturedJoins.flatMap((j) => sqlValues(j));
+    expect(allJoinValues).toContain(ATTACKER_ORG);
+    expect(allJoinValues).not.toContain(OWNER_ORG);
+    expect(allJoinValues.some((value) => typeof value === "string" && /is null/i.test(value))).toBe(true);
+  });
+
+  it("getProjectAnalytics assigneeCompletion queries build.ticket_assignees via db.execute so multi-assigned users are not invisible in completion stats", async () => {
+    const { db, execute } = makeAnalyticsDb();
+    const svc = new ProjectsAnalyticsService(db);
+
+    await svc.getProjectAnalytics(ATTACKER_ORG, 1);
+
+    expect(execute).toHaveBeenCalled();
+    const sqlArg = execute.mock.calls[0]?.[0];
+    const paramValues = sqlValues(sqlArg);
+    expect(paramValues).toContain(ATTACKER_ORG);
+    expect(paramValues).not.toContain(OWNER_ORG);
+    const sqlText = paramValues.filter((value): value is string => typeof value === "string").join(" ");
+    expect(sqlText).toContain("build.ticket_assignees");
+    expect(sqlText).toContain("assignee_membership_id");
+  });
+});
+
+describe("ProjectsAnalyticsService — resourceAllocation counts each open ticket once", () => {
+  function makeAllocationDb(rows: Record<string, unknown>[]): { db: Db; execute: jest.Mock } {
+    const execute = jest.fn().mockResolvedValue(rows);
+    const db = {
+      execute,
+      query: {
+        projects: {
+          findMany: jest.fn().mockResolvedValue([
+            { id: 1, name: "Payments", key: "PAY" },
+            { id: 2, name: "Ledger", key: "LED" },
+          ]),
+        },
+        users: {
+          findMany: jest.fn().mockResolvedValue([
+            { id: "user-1", name: "Priya", email: "priya@example.com", image: null },
+          ]),
+        },
+      },
+    } as unknown as Db;
+    return { db, execute };
+  }
+
+  it("counts a ticket held both as primary assignee and as co-assignee once, which neither a sum nor a per-source maximum can do", async () => {
+    const { db, execute } = makeAllocationDb([]);
+    const svc = new ProjectsAnalyticsService(db);
+
+    await svc.resourceAllocation(ATTACKER_ORG);
+
+    expect(execute).toHaveBeenCalledTimes(1);
+    const sqlText = sqlValues(execute.mock.calls[0]?.[0])
+      .filter((value): value is string => typeof value === "string")
+      .join(" ");
+    expect(sqlText).toContain("COUNT(DISTINCT");
+    expect(sqlText).toContain("UNION");
+    expect(sqlText).toContain("build.ticket_assignees");
+  });
+
+  it("sums a person's open tickets across projects rather than reporting the largest single project", async () => {
+    const { db } = makeAllocationDb([
+      { assigneeId: "user-1", projectId: 1, open: "3" },
+      { assigneeId: "user-1", projectId: 2, open: "5" },
+    ]);
+    const svc = new ProjectsAnalyticsService(db);
+
+    const result = await svc.resourceAllocation(ATTACKER_ORG);
+
+    expect(result).toHaveLength(1);
+    expect(result[0]?.totalOpen).toBe(8);
+    expect(result[0]?.byProject.map((p) => p.open).sort()).toEqual([3, 5]);
+  });
+
+  it("scopes both assignment sources and the membership join to the requesting org", async () => {
+    const { db, execute } = makeAllocationDb([]);
+    const svc = new ProjectsAnalyticsService(db);
+
+    await svc.resourceAllocation(ATTACKER_ORG);
+
+    const values = sqlValues(execute.mock.calls[0]?.[0]);
+    expect(values).toContain(ATTACKER_ORG);
+    expect(values).not.toContain(OWNER_ORG);
+    expect(values.filter((value) => value === ATTACKER_ORG).length).toBeGreaterThanOrEqual(3);
   });
 });
 
