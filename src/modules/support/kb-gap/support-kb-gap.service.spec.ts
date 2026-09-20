@@ -10,6 +10,7 @@ import { NotificationDispatchService } from "../../notifications/notification-di
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { SupportKnowledgeGapStatus } from "../../../db/schema/support/support-kb-gap";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
+import { withDelegatingTransaction } from "../../../test/delegating-transaction";
 
 const makeGatewayOk = <T>(data: T) => ({
   ok: true as const,
@@ -45,7 +46,7 @@ const baseGap = {
   updatedAt: new Date(),
 };
 
-const makeDb = () => ({
+const makeDb = () => withDelegatingTransaction({
   query: {
     // `findMany` is the pre-read `upsertGaps` uses to learn which cluster keys
     // already exist and at what status; `findFirst` is still the single-gap
@@ -72,6 +73,7 @@ const makeDb = () => ({
     { ...baseGap, status: SupportKnowledgeGapStatus.ROUTED, proposedArticleId: 99, draftedBy: "user1" },
   ]),
 });
+
 
 const mockGateway = { invokeStructuredWithUsage: jest.fn() };
 const mockKbArticles = { create: jest.fn() };

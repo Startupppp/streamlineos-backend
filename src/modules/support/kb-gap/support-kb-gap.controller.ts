@@ -36,6 +36,7 @@ import {
   type ListGapsQuery,
   type DismissGapPatchInput,
 } from "./dto/support-kb-gap.schemas";
+import { NoTenantTransaction } from "../../../common/tenant";
 
 const gapIdParams = z.object({ gapId: z.coerce.number().int().positive() }).strict();
 
@@ -78,6 +79,7 @@ export class SupportKbGapController {
   @Post(":gapId/draft")
   @BodylessAction()
   @HttpCode(200)
+  @NoTenantTransaction()
   @UseGuards(RateLimitGuard)
   @UseRateLimit("ai:invoke")
   @RequirePermission("support:knowledge-gaps:manage")

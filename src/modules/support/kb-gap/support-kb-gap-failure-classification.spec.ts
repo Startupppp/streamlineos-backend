@@ -44,6 +44,13 @@ function dbStub(): Db {
     },
     select: () => chain(),
     selectDistinct: () => chain(),
+    execute: async () => [],
+    /*
+      The read phase now opens a tenant transaction of its own, so the stub has
+      to hand one back. It delegates to itself: a transaction that never runs
+      its callback would make every assertion below pass on an empty path.
+    */
+    transaction: (fn: (tx: unknown) => unknown) => fn(stub),
   };
   return stub as unknown as Db;
 }

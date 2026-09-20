@@ -126,6 +126,7 @@ export class InvAiExplainController {
 
   @Get("digest")
   @ResponseSchema(digestResponseSchema)
+  @NoTenantTransaction()
   @UseGuards(PermissionGuard, RateLimitGuard)
   @UseRateLimit("ai:invoke")
   @RequirePermission("inventory:reports:read")
@@ -144,6 +145,7 @@ export class InvAiExplainController {
    */
   @Post("reorder-proposal")
   @ResponseSchema(reorderProposalResponseSchema)
+  @NoTenantTransaction()
   @UseGuards(PermissionGuard, RateLimitGuard)
   @UseRateLimit("ai:invoke")
   @RequirePermission("inventory:ai:propose")
@@ -180,6 +182,7 @@ export class InvAiExplainController {
 
   @Get("supplier-delay")
   @ResponseSchema(supplierDelayBriefingResponseSchema)
+  @NoTenantTransaction()
   @UseGuards(PermissionGuard, RateLimitGuard)
   @UseRateLimit("ai:invoke")
   @RequirePermission("inventory:reports:read")
