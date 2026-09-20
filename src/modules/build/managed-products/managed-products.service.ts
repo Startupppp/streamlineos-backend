@@ -140,6 +140,7 @@ export class ManagedProductsService {
         and(
           eq(managedProducts.id, managedProductId),
           eq(managedProducts.orgId, orgId),
+          isNull(managedProducts.deletedAt),
         ),
       )
       .returning();
@@ -223,6 +224,7 @@ export class ManagedProductsService {
         and(
           eq(managedProducts.id, managedProductId),
           eq(managedProducts.orgId, orgId),
+          isNull(managedProducts.deletedAt),
         ),
       );
     this.audit.log({

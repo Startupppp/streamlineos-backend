@@ -1,4 +1,11 @@
+jest.mock("../../../common/organization/organization-actor", () => ({
+  assertOrganizationActor: jest.fn(),
+}));
+
 import { NotFoundException } from "@nestjs/common";
+import { PgDialect } from "drizzle-orm/pg-core";
+import { assertOrganizationActor } from "../../../common/organization/organization-actor";
+import type { OrganizationActor } from "../../../common/organization/organization-actor";
 import { TeamMembersService } from "./team-members.service";
 import type { TeamsService } from "./teams.service";
 import type { AuditService } from "../../../common/audit/audit.service";
@@ -7,6 +14,23 @@ import type { Db } from "../../../db/drizzle.module";
 const ATTACKER_ORG = "org-attacker";
 const OWNER_ORG = "org-owner";
 const TEAM_ID = 1;
+const TEAM_PM_WORKSPACE = "ws-team-1";
+
+const dialect = new PgDialect();
+
+function render(value: unknown): string {
+  return dialect.sqlToQuery(value as Parameters<PgDialect["sqlToQuery"]>[0]).sql;
+}
+
+const mockActor: OrganizationActor = {
+  orgId: OWNER_ORG,
+  membershipId: 42,
+  userId: "user-target",
+  organizationPersonId: null,
+  role: "MEMBER",
+  isOwner: false,
+  resolvedVia: "user",
+};
 
 function makeDb(rows: unknown[] = [], whereCalls?: unknown[]): Db {
   const countLimit = jest.fn().mockResolvedValue([{ total: 0 }]);
@@ -90,5 +114,102 @@ describe("TeamMembersService — cross-tenant isolation (BOLA)", () => {
     await expect(
       svc.updateMemberRole(ATTACKER_ORG, "actor-1", TEAM_ID, "member-1", { role: "lead" }),
     ).rejects.toThrow(NotFoundException);
+  });
+});
+
+function makeTeamsWithWorkspace(): TeamsService {
+  return {
+    loadTeam: jest.fn().mockResolvedValue({
+      id: TEAM_ID,
+      orgId: OWNER_ORG,
+      name: "Alpha Team",
+      pmWorkspaceId: TEAM_PM_WORKSPACE,
+    }),
+  } as unknown as TeamsService;
+}
+
+function makeAddMemberDb(workspaceMemberFound: boolean, insertedRow: unknown): Db {
+  const limit = jest.fn().mockResolvedValue(workspaceMemberFound ? [{ id: 99 }] : []);
+  const where = jest.fn().mockReturnValue({ limit });
+  const from = jest.fn().mockReturnValue({ where });
+  const returning = jest.fn().mockResolvedValue(insertedRow ? [insertedRow] : []);
+  const values = jest.fn().mockReturnValue({ returning });
+  return {
+    select: jest.fn().mockReturnValue({ from }),
+    insert: jest.fn().mockReturnValue({ values }),
+  } as unknown as Db;
+}
+
+function makeCaptureWhereDb(capture: { value: unknown }, workspaceMemberFound: boolean, insertedRow: unknown): Db {
+  const limit = jest.fn().mockResolvedValue(workspaceMemberFound ? [{ id: 99 }] : []);
+  const where = jest.fn().mockImplementation((cond: unknown) => {
+    capture.value = cond;
+    return { limit };
+  });
+  const from = jest.fn().mockReturnValue({ where });
+  const returning = jest.fn().mockResolvedValue(insertedRow ? [insertedRow] : []);
+  const values = jest.fn().mockReturnValue({ returning });
+  return {
+    select: jest.fn().mockReturnValue({ from }),
+    insert: jest.fn().mockReturnValue({ values }),
+  } as unknown as Db;
+}
+
+const insertedMemberRow = {
+  id: 1,
+  orgId: OWNER_ORG,
+  teamId: TEAM_ID,
+  membershipId: 42,
+  role: "member",
+  joinedAt: new Date(),
+};
+
+describe("TeamMembersService.addMember — single actor resolution", () => {
+  beforeEach(() => {
+    jest.mocked(assertOrganizationActor).mockResolvedValue(mockActor);
+  });
+
+  it("resolves assertOrganizationActor exactly once for the target userId (failing before fix: called twice)", async () => {
+    const db = makeAddMemberDb(true, insertedMemberRow);
+    const svc = new TeamMembersService(db, makeTeamsWithWorkspace(), mockAudit);
+    await svc.addMember(OWNER_ORG, "actor-user", TEAM_ID, { userId: "user-target" });
+    expect(jest.mocked(assertOrganizationActor)).toHaveBeenCalledTimes(1);
+  });
+
+  it("passes the caller-supplied userId to assertOrganizationActor with the correct orgId", async () => {
+    const db = makeAddMemberDb(true, insertedMemberRow);
+    const svc = new TeamMembersService(db, makeTeamsWithWorkspace(), mockAudit);
+    await svc.addMember(OWNER_ORG, "actor-user", TEAM_ID, { userId: "user-target" });
+    expect(jest.mocked(assertOrganizationActor)).toHaveBeenCalledWith(
+      expect.anything(),
+      OWNER_ORG,
+      { kind: "user", userId: "user-target" },
+    );
+  });
+});
+
+describe("TeamMembersService.addMember — workspace scoped to team's pmWorkspaceId", () => {
+  beforeEach(() => {
+    jest.mocked(assertOrganizationActor).mockResolvedValue(mockActor);
+  });
+
+  it("workspace membership WHERE includes pm_workspace_id matching the team's workspace (failing before fix: no pmWorkspaceId filter)", async () => {
+    const capture: { value: unknown } = { value: undefined };
+    const db = makeCaptureWhereDb(capture, true, insertedMemberRow);
+    const svc = new TeamMembersService(db, makeTeamsWithWorkspace(), mockAudit);
+    await svc.addMember(OWNER_ORG, "actor-user", TEAM_ID, { userId: "user-target" });
+
+    const rendered = render(capture.value);
+    expect(rendered).toContain("pm_workspace_id");
+  });
+
+  it("the workspace check binds the team's pmWorkspaceId value as a parameter (failing before fix: param absent)", async () => {
+    const capture: { value: unknown } = { value: undefined };
+    const db = makeCaptureWhereDb(capture, true, insertedMemberRow);
+    const svc = new TeamMembersService(db, makeTeamsWithWorkspace(), mockAudit);
+    await svc.addMember(OWNER_ORG, "actor-user", TEAM_ID, { userId: "user-target" });
+
+    const query = dialect.sqlToQuery(capture.value as Parameters<PgDialect["sqlToQuery"]>[0]);
+    expect(query.params).toContain(TEAM_PM_WORKSPACE);
   });
 });

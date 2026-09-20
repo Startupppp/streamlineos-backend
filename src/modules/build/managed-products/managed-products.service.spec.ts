@@ -1,9 +1,16 @@
 import { ConflictException, NotFoundException } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
+import { PgDialect } from "drizzle-orm/pg-core";
 import { ManagedProductsService } from "./managed-products.service";
 import { AuditService } from "../../../common/audit/audit.service";
 import { PmWorkspacesService } from "../pm-workspaces/pm-workspaces.service";
 import { DRIZZLE } from "../../../db/drizzle.constants";
+
+const pgDialect = new PgDialect();
+
+function renderSql(value: unknown): string {
+  return pgDialect.sqlToQuery(value as Parameters<PgDialect["sqlToQuery"]>[0]).sql;
+}
 
 const ORG_ID = "org-1";
 const OTHER_ORG = "org-9";
@@ -171,6 +178,27 @@ describe("ManagedProductsService", () => {
         expect.objectContaining({ action: "managed_product.updated", orgId: ORG_ID }),
       );
     });
+
+    it("UPDATE WHERE includes isNull(deletedAt) so a concurrently soft-deleted row cannot be overwritten", async () => {
+      const existing = makeProduct();
+      const { selectChain } = makeSelectChain([existing]);
+      (mockDb as { select: jest.Mock }).select.mockReturnValue(selectChain);
+      let capturedWhere: unknown;
+      (mockDb as { update: jest.Mock }).update.mockReturnValue({
+        set: jest.fn().mockReturnValue({
+          where: jest.fn().mockImplementation((cond: unknown) => {
+            capturedWhere = cond;
+            return { returning: jest.fn().mockResolvedValue([existing]) };
+          }),
+        }),
+      });
+
+      await svc.updateManagedProduct(ORG_ID, USER_ID, 1, { name: "safe" });
+
+      const sql = renderSql(capturedWhere);
+      expect(sql).toMatch(/deleted_at/);
+      expect(sql).toMatch(/is null/i);
+    });
   });
 
   describe("deleteManagedProduct — soft delete", () => {
@@ -201,6 +229,26 @@ describe("ManagedProductsService", () => {
       expect(mockAudit.log).toHaveBeenCalledWith(
         expect.objectContaining({ action: "managed_product.deleted", orgId: ORG_ID }),
       );
+    });
+
+    it("soft-delete WHERE includes isNull(deletedAt) so a concurrently double-deleted row is not touched", async () => {
+      const existing = makeProduct();
+      const { selectChain } = makeSelectChain([existing]);
+      (mockDb as { select: jest.Mock }).select.mockReturnValue(selectChain);
+      let capturedWhere: unknown;
+      const setSpy = jest.fn().mockReturnValue({
+        where: jest.fn().mockImplementation((cond: unknown) => {
+          capturedWhere = cond;
+          return Promise.resolve(undefined);
+        }),
+      });
+      (mockDb as { update: jest.Mock }).update.mockReturnValue({ set: setSpy });
+
+      await svc.deleteManagedProduct(ORG_ID, USER_ID, 1);
+
+      const sql = renderSql(capturedWhere);
+      expect(sql).toMatch(/deleted_at/);
+      expect(sql).toMatch(/is null/i);
     });
   });
 

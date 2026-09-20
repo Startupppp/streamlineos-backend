@@ -1,4 +1,4 @@
-import { Controller, Get, Query, UseGuards } from "@nestjs/common";
+import { Controller, Get, HttpCode, Param, ParseIntPipe, Post, Query, UseGuards } from "@nestjs/common";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
@@ -8,7 +8,14 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { actingMembershipId } from "../../../common/auth/principal";
 import { AgentPulseService } from "./agent-pulse.service";
 import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
-import { agentPulseQuerySchema, agentPulseResponseSchema, type AgentPulseQuery } from "./dto/agent-pulse.schema";
+import {
+  agentPulseBadgeSchema,
+  agentPulseQuerySchema,
+  agentPulseResponseSchema,
+  applyDraftParamsSchema,
+  applyDraftResponseSchema,
+  type AgentPulseQuery,
+} from "./dto/agent-pulse.schema";
 import { Validate } from "../../../common/validation/validate.decorator";
 
 @RequireModule("build")
@@ -24,5 +31,22 @@ export class AgentPulseController {
   getTopSignal(@CurrentUser() u: CurrentUserContext, @Query() query: AgentPulseQuery) {
     const mid = actingMembershipId(u.principal);
     return this.svc.getTopSignal(u.orgId, u.userId, mid, query);
+  }
+
+  @Get("badge")
+  @RequirePermission("build:approvals:view")
+  @ResponseSchema(agentPulseBadgeSchema)
+  async badge(@CurrentUser() u: CurrentUserContext) {
+    const pending = await this.svc.countPendingSignals(u.orgId, actingMembershipId(u.principal));
+    return { pending };
+  }
+
+  @Post("proposals/:draftId/apply")
+  @HttpCode(200)
+  @RequirePermission("build:tickets:view")
+  @ResponseSchema(applyDraftResponseSchema)
+  @Validate({ params: applyDraftParamsSchema })
+  applyDraft(@Param("draftId", ParseIntPipe) draftId: number, @CurrentUser() u: CurrentUserContext) {
+    return this.svc.applyDraft(u.orgId, u.userId, actingMembershipId(u.principal), draftId);
   }
 }

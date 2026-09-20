@@ -84,6 +84,7 @@ export class TeamsService {
         memberCount: sql<number>`(
           SELECT CAST(COUNT(*) AS INT) FROM ${projectTeamMembers}
           WHERE ${projectTeamMembers.teamId} = ${projectTeams.id}
+          AND ${projectTeamMembers.orgId} = ${projectTeams.orgId}
         )`,
       })
       .from(projectTeams)

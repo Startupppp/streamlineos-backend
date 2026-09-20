@@ -1,5 +1,5 @@
-import { Inject, Injectable } from "@nestjs/common";
-import { and, asc, eq, gt, gte, inArray, isNotNull, isNull, lt, or } from "drizzle-orm";
+import { ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { and, asc, count, eq, gt, gte, inArray, isNotNull, isNull, lt, or } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import { pendingApprovalsForActorCondition } from "../approvals/build-inbox-count.service";
@@ -9,6 +9,7 @@ import {
   projectMilestones,
   projectRisks,
   projects,
+  ticketComments,
   tickets,
   workItemRelations,
 } from "../../../db/schema";
@@ -226,6 +227,67 @@ export class AgentPulseService {
       .where(relCond).orderBy(asc(workItemRelations.createdAt), asc(workItemRelations.id)).limit(1);
     if (!row) return null;
     return { type: "dependency_change", entityId: row.entityId, projectId: row.projectId ?? 0, title: row.title, dueAt: null };
+  }
+
+  async applyDraft(
+    orgId: string,
+    userId: string,
+    membershipId: number | null,
+    draftId: number,
+  ): Promise<{ commentId: number; ticketId: number }> {
+    if (membershipId === null) throw new ForbiddenException("Organization membership required");
+
+    const [draft] = await this.db
+      .select({ id: commentDrafts.id, ticketId: commentDrafts.ticketId, body: commentDrafts.body })
+      .from(commentDrafts)
+      .where(and(
+        eq(commentDrafts.id, draftId),
+        eq(commentDrafts.orgId, orgId),
+        eq(commentDrafts.membershipId, membershipId),
+      ))
+      .limit(1);
+
+    if (!draft) throw new NotFoundException("Draft not found");
+
+    const [ticket] = await this.db
+      .select({ id: tickets.id })
+      .from(tickets)
+      .where(and(eq(tickets.id, draft.ticketId), eq(tickets.orgId, orgId), isNull(tickets.deletedAt)))
+      .limit(1);
+
+    if (!ticket) throw new NotFoundException("Ticket not found");
+
+    const commentId = await this.db.transaction(async (tx) => {
+      const [comment] = await tx
+        .insert(ticketComments)
+        .values({ orgId, ticketId: draft.ticketId, userId, content: draft.body })
+        .returning({ id: ticketComments.id });
+      if (!comment) throw new Error("Comment insert returned no rows");
+      await tx
+        .delete(commentDrafts)
+        .where(and(
+          eq(commentDrafts.id, draftId),
+          eq(commentDrafts.orgId, orgId),
+          eq(commentDrafts.membershipId, membershipId),
+        ));
+      return comment.id;
+    });
+
+    return { commentId, ticketId: draft.ticketId };
+  }
+
+  async countPendingSignals(orgId: string, membershipId: number | null): Promise<number> {
+    if (membershipId === null) return 0;
+    const [row] = await this.db
+      .select({ total: count() })
+      .from(commentDrafts)
+      .where(and(
+        eq(commentDrafts.orgId, orgId),
+        eq(commentDrafts.membershipId, membershipId),
+        or(isNull(commentDrafts.confidence), gte(commentDrafts.confidence, COMMENT_DRAFT_MIN_CONFIDENCE)),
+        or(isNull(commentDrafts.retryCount), lt(commentDrafts.retryCount, COMMENT_DRAFT_MAX_RETRIES)),
+      ));
+    return row?.total ?? 0;
   }
 
   private async findCommentDraft(

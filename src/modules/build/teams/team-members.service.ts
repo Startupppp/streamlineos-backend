@@ -83,7 +83,8 @@ export class TeamMembersService {
     teamId: number,
     input: AddTeamMemberInput,
   ) {
-    await this.teams.loadTeam(orgId, teamId);
+    const team = await this.teams.loadTeam(orgId, teamId);
+    const actor = await assertOrganizationActor(this.db, orgId, { kind: "user", userId: input.userId });
 
     const [workspaceMember] = await this.db
       .select({ id: projectWorkspaceMembers.id })
@@ -91,10 +92,8 @@ export class TeamMembersService {
       .where(
         and(
           eq(projectWorkspaceMembers.orgId, orgId),
-          eq(
-            projectWorkspaceMembers.membershipId,
-            (await assertOrganizationActor(this.db, orgId, { kind: "user", userId: input.userId })).membershipId,
-          ),
+          eq(projectWorkspaceMembers.membershipId, actor.membershipId),
+          eq(projectWorkspaceMembers.pmWorkspaceId, team.pmWorkspaceId),
         ),
       )
       .limit(1);
@@ -110,7 +109,7 @@ export class TeamMembersService {
         .values({
           orgId,
           teamId,
-          membershipId: (await assertOrganizationActor(this.db, orgId, { kind: "user", userId: input.userId })).membershipId,
+          membershipId: actor.membershipId,
           role: input.role ?? "member",
         })
         .returning();

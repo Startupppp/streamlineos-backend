@@ -1,5 +1,8 @@
 import { NotFoundException } from "@nestjs/common";
+import { PgDialect } from "drizzle-orm/pg-core";
 import type { Db } from "../../../db/drizzle.module";
+import type { AuditService } from "../../../common/audit/audit.service";
+import type { PmWorkspacesService } from "../pm-workspaces/pm-workspaces.service";
 import { TeamsService } from "./teams.service";
 
 function sqlValues(value: unknown, seen = new Set<object>()): unknown[] {
@@ -12,6 +15,12 @@ function sqlValues(value: unknown, seen = new Set<object>()): unknown[] {
     ...(record.queryChunks ? sqlValues(record.queryChunks, seen) : []),
     ...(Object.prototype.hasOwnProperty.call(record, "value") ? sqlValues(record.value, seen) : []),
   ];
+}
+
+const dialect = new PgDialect();
+
+function render(value: unknown): string {
+  return dialect.sqlToQuery(value as Parameters<PgDialect["sqlToQuery"]>[0]).sql;
 }
 
 describe("TeamsService — cross-tenant isolation", () => {
@@ -48,5 +57,39 @@ describe("TeamsService — cross-tenant isolation", () => {
     const svc = new TeamsService(db, audit, pmWorkspaces);
     const result = await svc.getTeam(OWNER_ORG, 10);
     expect(result).toMatchObject({ id: 10 });
+  });
+});
+
+describe("TeamsService.listTeams — memberCount subquery orgId scope", () => {
+  it("memberCount correlated subquery includes orgId so team-member counts are tenant-scoped (failing before fix)", async () => {
+    let capturedProjection: Record<string, unknown> | undefined;
+
+    const builder = {
+      from: jest.fn().mockReturnThis(),
+      where: jest.fn().mockReturnThis(),
+      orderBy: jest.fn().mockReturnThis(),
+      limit: jest.fn().mockResolvedValue([]),
+    };
+
+    const db = {
+      select: jest.fn().mockImplementation((projection: Record<string, unknown>) => {
+        capturedProjection = projection;
+        return builder;
+      }),
+    } as unknown as Db;
+
+    const pmWorkspaces = {
+      assertMemberOfWorkspace: jest.fn().mockResolvedValue(undefined),
+    } as unknown as PmWorkspacesService;
+
+    const svc = new TeamsService(db, {} as AuditService, pmWorkspaces);
+    await svc.listTeams("org-1", { pageSize: 20 }, null);
+
+    expect(capturedProjection).toBeDefined();
+    const memberCountExpr = capturedProjection?.memberCount;
+    expect(memberCountExpr).toBeDefined();
+
+    const rendered = render(memberCountExpr);
+    expect(rendered).toContain("org_id");
   });
 });

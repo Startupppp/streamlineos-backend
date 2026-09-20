@@ -39,9 +39,9 @@ describe("ManagedProducts insights auth/RBAC (e2e)", () => {
 
   it("does NOT block GET /build/managed-products/1/insights with build:managed-products:view", async () => {
     managedProductsMock.getProductInsights.mockResolvedValue({
-      openTickets: 0,
-      closedTickets: 0,
-      bugs: 0,
+      linkedProjectCount: 0,
+      projectsByStatus: { active: 0, completed: 0, archived: 0 },
+      submissionsByStatus: { open: 0, in_progress: 0, resolved: 0, archived: 0 },
     });
     const token = await signToken({
       permissions: ["build:managed-products:view"],
@@ -50,8 +50,12 @@ describe("ManagedProducts insights auth/RBAC (e2e)", () => {
     const res = await request(app.getHttpServer())
       .get("/build/managed-products/1/insights")
       .set("Authorization", `Bearer ${token}`);
-    expect(res.status).not.toBe(401);
-    expect(res.status).not.toBe(403);
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({
+      linkedProjectCount: 0,
+      projectsByStatus: { active: 0, completed: 0, archived: 0 },
+      submissionsByStatus: { open: 0, in_progress: 0, resolved: 0, archived: 0 },
+    });
   });
 
   it("GET /build/managed-products/1/insights from a caller in a different tenant yields 404 not 403", async () => {

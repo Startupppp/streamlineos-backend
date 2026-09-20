@@ -34,5 +34,19 @@ export const agentPulseSignalSchema = z.object({
 
 export const agentPulseResponseSchema = agentPulseSignalSchema.nullable();
 
+export const applyDraftParamsSchema = z
+  .object({ draftId: z.coerce.number().int().positive() })
+  .strict();
+
+export const applyDraftResponseSchema = z.object({
+  commentId: z.number().int().positive(),
+  ticketId: z.number().int().positive(),
+});
+
+export const agentPulseBadgeSchema = z.object({
+  pending: z.number().int().nonnegative(),
+});
+
 export type AgentPulseSignal = z.infer<typeof agentPulseSignalSchema>;
 export type AgentPulseSignalType = z.infer<typeof agentPulseSignalTypeSchema>;
+export type ApplyDraftParams = z.infer<typeof applyDraftParamsSchema>;

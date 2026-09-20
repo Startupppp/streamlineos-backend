@@ -1,3 +1,4 @@
+import { ForbiddenException, NotFoundException } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
 import { AgentPulseService } from "./agent-pulse.service";
 import { DRIZZLE } from "../../../db/drizzle.constants";
@@ -10,7 +11,7 @@ function makeSelectChain(rows: unknown[]) {
   const limitFn = jest.fn().mockResolvedValue(rows);
   const orderByResult = { limit: limitFn };
   const orderByFn = jest.fn().mockReturnValue(orderByResult);
-  const whereResult = { orderBy: orderByFn };
+  const whereResult = { orderBy: orderByFn, limit: limitFn };
   const whereFn = jest.fn().mockReturnValue(whereResult);
   const innerJoinFn: jest.Mock = jest.fn();
   const joinAndFrom = { where: whereFn, innerJoin: innerJoinFn };
@@ -19,17 +20,25 @@ function makeSelectChain(rows: unknown[]) {
   return { from: fromFn };
 }
 
+function makeCountChain(rows: unknown[]) {
+  const whereFn = jest.fn().mockResolvedValue(rows);
+  const fromFn = jest.fn().mockReturnValue({ where: whereFn });
+  return { from: fromFn };
+}
+
 describe("AgentPulseService", () => {
   let svc: AgentPulseService;
   let selectMock: jest.Mock;
+  let transactionMock: jest.Mock;
 
   beforeEach(async () => {
     jest.resetAllMocks();
     selectMock = jest.fn();
+    transactionMock = jest.fn();
     const module = await Test.createTestingModule({
       providers: [
         AgentPulseService,
-        { provide: DRIZZLE, useValue: { select: selectMock } },
+        { provide: DRIZZLE, useValue: { select: selectMock, transaction: transactionMock } },
       ],
     }).compile();
     svc = module.get(AgentPulseService);
@@ -396,6 +405,124 @@ describe("AgentPulseService", () => {
     expect(result?.type).toBe("blocked_milestone");
     expect(result?.projectId).toBe(7);
     expect(selectMock).toHaveBeenCalledTimes(2);
+  });
+  });
+
+  describe("applyDraft — re-authorization and ownership", () => {
+  it("re-authorization defect proof: throws NotFoundException when the draft does not exist for the calling actor — stored creation access is not replayed at approve time", async () => {
+    selectMock.mockImplementationOnce(() => makeSelectChain([]));
+
+    await expect(svc.applyDraft(ORG, USER, MID, 99)).rejects.toThrow(NotFoundException);
+    expect(transactionMock).not.toHaveBeenCalled();
+  });
+
+  it("throws ForbiddenException when membershipId is null — account-only and system principals cannot approve proposals", async () => {
+    await expect(svc.applyDraft(ORG, USER, null, 99)).rejects.toThrow(ForbiddenException);
+    expect(selectMock).not.toHaveBeenCalled();
+    expect(transactionMock).not.toHaveBeenCalled();
+  });
+
+  it("cross-tenant isolation: draft that exists in a different org returns NotFoundException when called with the attacker org — orgId is always re-asserted against the stored row", async () => {
+    selectMock.mockImplementationOnce(() => makeSelectChain([]));
+
+    await expect(svc.applyDraft("org-attacker", USER, MID, 1)).rejects.toThrow(NotFoundException);
+    expect(transactionMock).not.toHaveBeenCalled();
+  });
+
+  it("actor isolation: draft owned by membershipId=100 returns NotFoundException when called with membershipId=999 — another actor cannot approve a draft they do not own", async () => {
+    selectMock.mockImplementationOnce(() => makeSelectChain([]));
+
+    await expect(svc.applyDraft(ORG, USER, 999, 1)).rejects.toThrow(NotFoundException);
+    expect(transactionMock).not.toHaveBeenCalled();
+  });
+
+  it("throws NotFoundException when the ticket no longer exists after the draft was created — re-authorization checks current resource state, not proposal-creation state", async () => {
+    const draftRow = { id: 7, ticketId: 55, body: "Apply this fix" };
+    selectMock
+      .mockImplementationOnce(() => makeSelectChain([draftRow]))
+      .mockImplementationOnce(() => makeSelectChain([]));
+
+    await expect(svc.applyDraft(ORG, USER, MID, 7)).rejects.toThrow(NotFoundException);
+    expect(transactionMock).not.toHaveBeenCalled();
+  });
+
+  it("happy path: posts the draft body as a comment and deletes the draft atomically — returns commentId and ticketId", async () => {
+    const draftRow = { id: 7, ticketId: 55, body: "Apply this fix" };
+    const ticketRow = { id: 55 };
+    const returningFn = jest.fn().mockResolvedValue([{ id: 101 }]);
+    const valuesFn = jest.fn().mockReturnValue({ returning: returningFn });
+    const insertFn = jest.fn().mockReturnValue({ values: valuesFn });
+    const deleteWhereFn = jest.fn().mockResolvedValue(undefined);
+    const deleteFn = jest.fn().mockReturnValue({ where: deleteWhereFn });
+    const txMock = { insert: insertFn, delete: deleteFn };
+    transactionMock.mockImplementation(
+      (callback: (tx: typeof txMock) => Promise<number>) => callback(txMock),
+    );
+    selectMock
+      .mockImplementationOnce(() => makeSelectChain([draftRow]))
+      .mockImplementationOnce(() => makeSelectChain([ticketRow]));
+
+    const result = await svc.applyDraft(ORG, USER, MID, 7);
+
+    expect(result).toEqual({ commentId: 101, ticketId: 55 });
+    expect(transactionMock).toHaveBeenCalledTimes(1);
+    expect(insertFn).toHaveBeenCalledTimes(1);
+    expect(deleteFn).toHaveBeenCalledTimes(1);
+  });
+
+  it("transaction is invoked — the callback is called so the comment insert and draft delete actually run", async () => {
+    const draftRow = { id: 3, ticketId: 20, body: "Proposed fix" };
+    const ticketRow = { id: 20 };
+    const returningFn = jest.fn().mockResolvedValue([{ id: 77 }]);
+    const valuesFn = jest.fn().mockReturnValue({ returning: returningFn });
+    const insertFn = jest.fn().mockReturnValue({ values: valuesFn });
+    const innerDeleteWhereFn = jest.fn().mockResolvedValue(undefined);
+    const deleteFn = jest.fn().mockReturnValue({ where: innerDeleteWhereFn });
+    const txMock = { insert: insertFn, delete: deleteFn };
+    transactionMock.mockImplementation(
+      (callback: (tx: typeof txMock) => Promise<number>) => callback(txMock),
+    );
+    selectMock
+      .mockImplementationOnce(() => makeSelectChain([draftRow]))
+      .mockImplementationOnce(() => makeSelectChain([ticketRow]));
+
+    await svc.applyDraft(ORG, USER, MID, 3);
+
+    expect(returningFn).toHaveBeenCalledTimes(1);
+    expect(innerDeleteWhereFn).toHaveBeenCalledTimes(1);
+  });
+  });
+
+  describe("countPendingSignals — badge accuracy and actor scoping", () => {
+  it("returns 0 when membershipId is null — badge for non-member is always zero", async () => {
+    const result = await svc.countPendingSignals(ORG, null);
+    expect(result).toBe(0);
+    expect(selectMock).not.toHaveBeenCalled();
+  });
+
+  it("returns the count from the DB query — uses same predicate as the comment_draft tier in getTopSignal", async () => {
+    selectMock.mockImplementationOnce(() => makeCountChain([{ total: 4 }]));
+
+    const result = await svc.countPendingSignals(ORG, MID);
+
+    expect(result).toBe(4);
+    expect(selectMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("returns 0 when the query returns no rows — empty state does not throw", async () => {
+    selectMock.mockImplementationOnce(() => makeCountChain([]));
+
+    const result = await svc.countPendingSignals(ORG, MID);
+
+    expect(result).toBe(0);
+  });
+
+  it("actor isolation: a different actor's count is independent — MID and a different id do not share results", async () => {
+    selectMock.mockImplementationOnce(() => makeCountChain([{ total: 0 }]));
+
+    const result = await svc.countPendingSignals(ORG, 9999);
+
+    expect(result).toBe(0);
   });
   });
 });
