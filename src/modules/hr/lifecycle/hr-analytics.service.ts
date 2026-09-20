@@ -72,7 +72,7 @@ export class HrAnalyticsService {
         .select({ count: count() })
         .from(organizationMembers)
         .innerJoin(users, eq(organizationMembers.userId, users.id))
-        .where(and(eq(organizationMembers.orgId, orgId), eq(users.isActive, true))),
+        .where(and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.status, "ACTIVE"), eq(users.isActive, true))),
 
       this.db
         .select({ departmentId: hrEmployments.departmentId, count: count() })
@@ -80,21 +80,21 @@ export class HrAnalyticsService {
         .innerJoin(users, eq(organizationMembers.userId, users.id))
         .leftJoin(hrPeople, livePersonOfUser(orgId, users.id))
         .leftJoin(hrEmployments, primaryEmploymentOfPerson(orgId))
-        .where(and(eq(organizationMembers.orgId, orgId), eq(users.isActive, true)))
+        .where(and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.status, "ACTIVE"), eq(users.isActive, true)))
         .groupBy(hrEmployments.departmentId),
 
       this.db
         .select({ gender: users.gender, count: count() })
         .from(organizationMembers)
         .innerJoin(users, eq(organizationMembers.userId, users.id))
-        .where(and(eq(organizationMembers.orgId, orgId), eq(users.isActive, true)))
+        .where(and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.status, "ACTIVE"), eq(users.isActive, true)))
         .groupBy(users.gender),
 
       this.db
         .select({ role: organizationMembers.role, count: count() })
         .from(organizationMembers)
         .innerJoin(users, eq(organizationMembers.userId, users.id))
-        .where(and(eq(organizationMembers.orgId, orgId), eq(users.isActive, true)))
+        .where(and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.status, "ACTIVE"), eq(users.isActive, true)))
         .groupBy(organizationMembers.role),
 
       this.db

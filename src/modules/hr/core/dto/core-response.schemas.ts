@@ -116,6 +116,11 @@ export const jobRoleRowSchema = z.object({
   updatedAt: wireDate(),
 });
 
+export const jobRoleListSchema = z.object({
+  data: z.array(jobRoleRowSchema),
+  total: z.number().int(),
+});
+
 export const jobLevelRowSchema = z.object({
   id: z.number().int(),
   orgId: z.string(),
@@ -127,6 +132,11 @@ export const jobLevelRowSchema = z.object({
   isActive: z.boolean(),
   createdAt: wireDate(),
   updatedAt: wireDate(),
+});
+
+export const jobLevelListSchema = z.object({
+  data: z.array(jobLevelRowSchema),
+  total: z.number().int(),
 });
 
 export const headcountItemSchema = z.object({

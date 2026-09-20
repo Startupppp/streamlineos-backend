@@ -27,6 +27,8 @@ import {
   jobRoleRowSchema,
   jobLevelRowSchema,
   headcountItemSchema,
+  jobRoleListSchema,
+  jobLevelListSchema,
 } from "./dto/core-response.schemas";
 import {
   createCatalogSchema,
@@ -45,7 +47,7 @@ export class HrOrgCatalogController {
   constructor(private readonly catalog: HrOrgCatalogService) {}
 
   @Get("roles")
-  @ResponseSchema(z.array(jobRoleRowSchema))
+  @ResponseSchema(jobRoleListSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:employees:view")
   listJobRoles(@CurrentUser() u: CurrentUserContext) {
@@ -92,7 +94,7 @@ export class HrOrgCatalogController {
   }
 
   @Get("levels")
-  @ResponseSchema(z.array(jobLevelRowSchema))
+  @ResponseSchema(jobLevelListSchema)
   @UseGuards(PermissionGuard)
   @RequirePermission("hr:employees:view")
   listJobLevels(@CurrentUser() u: CurrentUserContext) {

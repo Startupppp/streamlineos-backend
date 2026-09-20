@@ -51,12 +51,19 @@ export class HrOrgCatalogService {
     return this.hierarchy.updateLocation(orgId, userId, locationId, input);
   }
 
-  listJobRoles(orgId: string) {
-    return this.db.query.hrJobRoles.findMany({
-      where: and(eq(hrJobRoles.orgId, orgId), eq(hrJobRoles.isActive, true)),
-      orderBy: hrJobRoles.name,
-      limit: 500,
-    });
+  async listJobRoles(orgId: string) {
+    const [data, countResult] = await Promise.all([
+      this.db.query.hrJobRoles.findMany({
+        where: and(eq(hrJobRoles.orgId, orgId), eq(hrJobRoles.isActive, true)),
+        orderBy: hrJobRoles.name,
+        limit: 500,
+      }),
+      this.db
+        .select({ count: count() })
+        .from(hrJobRoles)
+        .where(and(eq(hrJobRoles.orgId, orgId), eq(hrJobRoles.isActive, true))),
+    ]);
+    return { data, total: Number(countResult[0]?.count ?? 0) };
   }
 
   async createJobRole(orgId: string, input: CatalogInput) {
@@ -89,12 +96,19 @@ export class HrOrgCatalogService {
     return jobRole;
   }
 
-  listJobLevels(orgId: string) {
-    return this.db.query.hrJobLevels.findMany({
-      where: and(eq(hrJobLevels.orgId, orgId), eq(hrJobLevels.isActive, true)),
-      orderBy: hrJobLevels.rank,
-      limit: 500,
-    });
+  async listJobLevels(orgId: string) {
+    const [data, countResult] = await Promise.all([
+      this.db.query.hrJobLevels.findMany({
+        where: and(eq(hrJobLevels.orgId, orgId), eq(hrJobLevels.isActive, true)),
+        orderBy: hrJobLevels.rank,
+        limit: 500,
+      }),
+      this.db
+        .select({ count: count() })
+        .from(hrJobLevels)
+        .where(and(eq(hrJobLevels.orgId, orgId), eq(hrJobLevels.isActive, true))),
+    ]);
+    return { data, total: Number(countResult[0]?.count ?? 0) };
   }
 
   async createJobLevel(orgId: string, input: CatalogInput) {

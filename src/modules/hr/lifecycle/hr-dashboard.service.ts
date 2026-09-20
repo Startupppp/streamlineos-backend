@@ -59,7 +59,7 @@ export class HrDashboardService {
         .select({ count: count() })
         .from(organizationMembers)
         .innerJoin(users, eq(organizationMembers.userId, users.id))
-        .where(and(eq(organizationMembers.orgId, orgId), eq(users.isActive, true))),
+        .where(and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.status, "ACTIVE"), eq(users.isActive, true))),
 
       this.db
         .select({ count: count() })
@@ -114,6 +114,7 @@ export class HrDashboardService {
       .where(
         and(
           eq(organizationMembers.orgId, orgId),
+          eq(organizationMembers.status, "ACTIVE"),
           eq(users.isActive, true),
           isNotNull(users.dateOfBirth),
           sql`to_char(${users.dateOfBirth}::date, 'MM-DD') IN (${mmddValues})`,
@@ -249,7 +250,7 @@ export class HrDashboardService {
         .select({ gender: users.gender, count: count() })
         .from(organizationMembers)
         .innerJoin(users, eq(organizationMembers.userId, users.id))
-        .where(and(eq(organizationMembers.orgId, orgId), eq(users.isActive, true)))
+        .where(and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.status, "ACTIVE"), eq(users.isActive, true)))
         .groupBy(users.gender),
 
       this.db
@@ -270,6 +271,7 @@ export class HrDashboardService {
         .where(
           and(
             eq(organizationMembers.orgId, orgId),
+            eq(organizationMembers.status, "ACTIVE"),
             eq(users.isActive, true),
             isNotNull(users.dateOfBirth),
           ),
