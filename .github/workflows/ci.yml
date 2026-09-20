@@ -476,6 +476,10 @@ jobs:
         if: ${{ !cancelled() }}
         run: pnpm check:route-duplicates:self-test && pnpm check:route-duplicates
 
+      - name: Strict params schemas declare every route param
+        if: ${{ !cancelled() }}
+        run: pnpm check:params-schema-completeness:self-test && pnpm check:params-schema-completeness
+
       - name: Published operations are registered and versioned
         if: ${{ !cancelled() }}
         run: pnpm check:contract-registry:self-test && pnpm check:contract-registry
