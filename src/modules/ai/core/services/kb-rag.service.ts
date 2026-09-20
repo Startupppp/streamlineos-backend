@@ -5,7 +5,11 @@ import { streamText, type ToolSet } from "ai";
 import { AiGatewayService } from "../gateway/ai-gateway.service";
 import { AI_CREDIT_LEDGER, type AiCreditLedger } from "../gateway/credit-ledger.interface";
 import { AiUsageService } from "./ai-usage.service";
-import { settleStream } from "../gateway/ai-gateway-stream-credit";
+import {
+  makeReservationHandle,
+  settleStream,
+  type ReservationHandle,
+} from "../gateway/ai-gateway-stream-credit";
 import { getReserveEstimateMilli } from "../billing/ai-cost-catalog";
 import { resolveChatModel, resolveChatModelId } from "./chat-assistant-model";
 import { logger } from "../../../../common/logger/logger.service";
@@ -159,7 +163,7 @@ export class KbRagService {
       this.concurrencyLimiter.release(opts.orgId);
     };
 
-    let reservationId = 0;
+    let reservation: ReservationHandle;
     try {
       const reserveMilli = getReserveEstimateMilli(KB_RAG_STREAM_FEATURE);
       const idempotencyKey = aiReservationIdempotencyKey(KB_RAG_STREAM_FEATURE, {
@@ -173,19 +177,17 @@ export class KbRagService {
         credits: reserveMilli,
         ...(idempotencyKey !== undefined ? { idempotencyKey } : {}),
       });
-      reservationId = reserved.reservationId;
+      reservation = makeReservationHandle(
+        reserved.reservationId,
+        opts.orgId,
+        this.ledger,
+        KB_RAG_STREAM_FEATURE,
+      );
     } catch (error) {
       releaseConcurrency();
       call.finish("quota_exceeded");
       throw error;
     }
-
-    let resolved = false;
-    const releaseReservation = (reason: string) => {
-      if (resolved) return;
-      resolved = true;
-      void this.ledger.release(reservationId, reason, opts.orgId).catch(() => undefined);
-    };
 
     try {
       const modelId = resolveChatModelId();
@@ -207,8 +209,7 @@ export class KbRagService {
           });
         },
         onFinish: async ({ usage }) => {
-          if (resolved) return;
-          resolved = true;
+          if (!reservation.markSettled()) return;
           releaseConcurrency();
           this.breaker.recordSuccess();
           const promptTokens = usage?.inputTokens ?? 0;
@@ -220,7 +221,7 @@ export class KbRagService {
           });
           try {
             await settleStream(this.ledger, this.usageSvc, {
-              reservationId,
+              reservationId: reservation.reservationId,
               model: modelId,
               promptTokens,
               completionTokens,
@@ -235,7 +236,7 @@ export class KbRagService {
             logger.error("Failed to settle KB RAG stream", {
               error: err instanceof Error ? (err.stack ?? err.message) : String(err),
               orgId: opts.orgId,
-              reservationId,
+              reservationId: reservation.reservationId,
             });
           }
         },
@@ -243,7 +244,7 @@ export class KbRagService {
 
       void Promise.resolve(stream.finishReason).catch(() => {
         releaseConcurrency();
-        releaseReservation("stream_aborted_no_settle");
+        reservation.release("stream_aborted_no_settle");
         call.finish(signal?.aborted === true ? "cancelled" : "provider_unavailable");
       });
 
@@ -251,7 +252,7 @@ export class KbRagService {
     } catch (error) {
       this.breaker.recordFailure();
       releaseConcurrency();
-      releaseReservation("stream_setup_error");
+      reservation.release("stream_setup_error");
       call.finish("error");
       throw error;
     }

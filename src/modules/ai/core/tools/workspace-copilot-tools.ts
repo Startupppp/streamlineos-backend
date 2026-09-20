@@ -1,14 +1,14 @@
 import { Injectable, Inject } from "@nestjs/common";
 import { z } from "zod";
-import { and, eq, isNull, sql } from "drizzle-orm";
-import { organizationMembers, users } from "../../../../db/schema";
 import { DRIZZLE } from "../../../../db/drizzle.constants";
 import { type Db } from "../../../../db/drizzle.module";
 import { CalendarService } from "../../../calendar/calendar.service";
 import { ChatSearchService } from "../../../chat/chat-search.service";
 import { ProjectsWorkQueryService } from "../../../build/core/projects-work-query.service";
+import { resolvePeopleByName } from "../../../directory/person-seam";
 import {
   defineTool,
+  ambiguous,
   data,
   denied,
   empty,
@@ -33,47 +33,36 @@ export class WorkspaceCopilotTools implements AskOsToolProvider {
       defineTool({
         key: "findPerson",
         description:
-          "Resolve a person's name to org members matching that name. Returns up to 5 matches with id, name, email. Call this first before getPersonTicketStats when the user mentions someone by name.",
+          "Resolve a person's name or exact email address to a single active org member. Returns that member's id, name and email on a unique match, reports ambiguity when several members share the name, and returns empty when none match. Call this first before getPersonTicketStats when the user mentions someone by name.",
         input: z.object({
           name: z.string().min(1).describe("Full or partial name to search"),
         }),
         permission: "directory:people:view",
         run: async ({ name }, ctx) => {
-          const q = `%${name.trim()}%`;
-          const rows = await this.db
-            .select({
-              id: users.id,
-              name: users.name,
-              firstName: users.firstName,
-              lastName: users.lastName,
-              email: users.email,
-            })
-            .from(organizationMembers)
-            .innerJoin(users, eq(organizationMembers.userId, users.id))
-            .where(
-              and(
-                eq(organizationMembers.orgId, ctx.actor.orgId),
-                eq(organizationMembers.status, "ACTIVE"),
-                eq(users.isActive, true),
-                isNull(users.deletedAt),
-                sql`(
-                  ${users.name} ILIKE ${q}
-                  OR CONCAT(${users.firstName}, ' ', ${users.lastName}) ILIKE ${q}
-                  OR ${users.email} ILIKE ${q}
-                )`,
-              ),
-            )
-            .limit(5);
+          const needle = name.trim();
+          const resolutions = await resolvePeopleByName(this.db, ctx.actor.orgId, [needle]);
+          const resolution = resolutions.get(needle);
 
-          if (rows.length === 0) return empty("people", `No org member matches "${name}".`);
+          if (!resolution || resolution.status === "unresolved")
+            return empty("people", `No org member matches "${name}".`);
 
+          if (resolution.status === "ambiguous") {
+            return ambiguous(
+              `"${name}" matches ${resolution.candidates.length} members. Which did you mean?`,
+              [...resolution.candidates],
+            );
+          }
+
+          const resolvedName = resolution.displayName ?? needle;
           return data({
-            results: rows.map((r) => ({
-              id: r.id,
-              name: r.name ?? `${r.firstName ?? ""} ${r.lastName ?? ""}`.trim(),
-              email: r.email ?? "",
-            })),
-            message: `Found ${rows.length} member(s).`,
+            results: [
+              {
+                id: resolution.userId,
+                name: resolvedName,
+                ...(resolution.email !== undefined ? { email: resolution.email } : {}),
+              },
+            ],
+            message: `Found ${resolvedName}.`,
           });
         },
       }),

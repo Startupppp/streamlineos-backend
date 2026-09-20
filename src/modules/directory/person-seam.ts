@@ -421,7 +421,7 @@ export interface NameResolutionCandidate {
 }
 
 export type PersonNameResolution =
-  | { status: "resolved"; userId: string; displayName?: string }
+  | { status: "resolved"; userId: string; displayName?: string; email?: string }
   | { status: "unresolved" }
   | { status: "ambiguous"; candidates: readonly NameResolutionCandidate[] };
 
@@ -431,6 +431,7 @@ export const NAME_RESOLUTION_MIN_PARTIAL_CHARS = 3;
 
 const displayKey = sql<string>`lower(coalesce(${organizationPeople.displayName}, ${users.name}, ''))`;
 const fullNameKey = sql<string>`lower(trim(coalesce(${organizationPeople.firstName}, ${users.firstName}, '') || ' ' || coalesce(${organizationPeople.lastName}, ${users.lastName}, '')))`;
+const emailKey = sql<string>`lower(coalesce(${organizationPeople.workEmail}, ${users.email}, ''))`;
 
 function likePattern(needle: string): string {
   return `%${needle.replace(/[\\%_]/g, (character) => `\\${character}`)}%`;
@@ -441,6 +442,7 @@ export function peopleByNameQuery(db: Db, orgId: string, needleKeys: readonly st
   for (const needle of needleKeys) {
     matches.push(sql`${displayKey} = ${needle}`);
     matches.push(sql`${fullNameKey} = ${needle}`);
+    matches.push(sql`${emailKey} = ${needle}`);
     if (needle.length < NAME_RESOLUTION_MIN_PARTIAL_CHARS) continue;
     matches.push(sql`${displayKey} like ${likePattern(needle)}`);
     matches.push(sql`${fullNameKey} like ${likePattern(needle)}`);
@@ -455,6 +457,7 @@ export function peopleByNameQuery(db: Db, orgId: string, needleKeys: readonly st
       workEmail: sql<string | null>`coalesce(${organizationPeople.workEmail}, ${users.email})`,
       displayKey,
       fullNameKey,
+      emailKey,
     })
     .from(organizationMembers)
     .innerJoin(
@@ -501,7 +504,12 @@ export async function resolvePeopleByName(
   for (const row of rows) {
     const keys = [row.displayKey, row.fullNameKey];
     for (const [key, needle] of needles) {
-      const bucket = keys.includes(key) ? exact : keys.some((k) => k.includes(key)) ? partial : undefined;
+      const bucket =
+        keys.includes(key) || row.emailKey === key
+          ? exact
+          : keys.some((k) => k.includes(key))
+            ? partial
+            : undefined;
       if (bucket === undefined) continue;
       const found = bucket.get(needle) ?? [];
       if (!found.includes(row)) found.push(row);
@@ -530,7 +538,12 @@ export async function resolvePeopleByName(
     if (row?.userId) {
       const nameText = row.displayName ?? `${row.firstName ?? ""} ${row.lastName ?? ""}`.trim();
       const displayName = nameText !== "" ? nameText : undefined;
-      resolutions.set(needle, { status: "resolved", userId: row.userId, displayName });
+      resolutions.set(needle, {
+        status: "resolved",
+        userId: row.userId,
+        displayName,
+        ...(row.workEmail !== null ? { email: row.workEmail } : {}),
+      });
     }
   }
 

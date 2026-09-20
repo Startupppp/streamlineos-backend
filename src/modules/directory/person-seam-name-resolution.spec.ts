@@ -222,3 +222,75 @@ describe("a member the HR and directory paths never touched is still resolvable"
     expect(lowered).toContain('"users"."name"');
   });
 });
+
+describe("a person is resolvable by their email address, not only by their name", () => {
+  function dbReturning(rows: readonly Record<string, unknown>[]): Db {
+    const query = Promise.resolve(rows);
+    const chain = {
+      select: () => chain,
+      from: () => chain,
+      innerJoin: () => chain,
+      leftJoin: () => chain,
+      where: () => chain,
+      limit: () => query,
+    };
+    return chain as unknown as Db;
+  }
+
+  const BOB = {
+    userId: "user-bob",
+    displayName: "Bob Kaur",
+    firstName: "Bob",
+    lastName: "Kaur",
+    workEmail: "bob@acme.test",
+    displayKey: "bob kaur",
+    fullNameKey: "bob kaur",
+    emailKey: "bob@acme.test",
+  };
+
+  it("resolves an exact email address, because asking Ask OS to find bob@acme.test used to return nobody", async () => {
+    const resolved = await resolvePeopleByName(dbReturning([BOB]), "org-1", ["bob@acme.test"]);
+
+    expect(resolved.get("bob@acme.test")).toEqual({
+      status: "resolved",
+      userId: "user-bob",
+      displayName: "Bob Kaur",
+      email: "bob@acme.test",
+    });
+  });
+
+  it("matches an email case-insensitively, because a pasted address often carries the sender's capitalisation", async () => {
+    const resolved = await resolvePeopleByName(dbReturning([BOB]), "org-1", ["Bob@Acme.test"]);
+
+    expect(resolved.get("Bob@Acme.test")).toMatchObject({ status: "resolved", userId: "user-bob" });
+  });
+
+  it("never partial-matches an email, because a needle like \"acme.test\" would otherwise resolve the whole company", async () => {
+    const resolved = await resolvePeopleByName(dbReturning([BOB]), "org-1", ["acme.test"]);
+
+    expect(resolved.get("acme.test")).toEqual({ status: "unresolved" });
+  });
+
+  it("carries the email on a name-resolved person too, so a caller does not need a second lookup to address them", async () => {
+    const resolved = await resolvePeopleByName(dbReturning([BOB]), "org-1", ["Bob Kaur"]);
+
+    expect(resolved.get("Bob Kaur")).toMatchObject({ email: "bob@acme.test" });
+  });
+
+  it("omits email entirely when the person has none, rather than emitting an empty string a caller would send mail to", async () => {
+    const resolved = await resolvePeopleByName(
+      dbReturning([{ ...BOB, workEmail: null, emailKey: "" }]),
+      "org-1",
+      ["Bob Kaur"],
+    );
+
+    expect(resolved.get("Bob Kaur")).not.toHaveProperty("email");
+  });
+
+  it("prefers an exact email hit over a partial name hit, so an address never loses to a substring", async () => {
+    const bobby = { ...BOB, userId: "user-bobby", displayName: "Bobby Singh", displayKey: "bobby singh", fullNameKey: "bobby singh", emailKey: "bobby@acme.test" };
+    const resolved = await resolvePeopleByName(dbReturning([BOB, bobby]), "org-1", ["bob@acme.test"]);
+
+    expect(resolved.get("bob@acme.test")).toMatchObject({ status: "resolved", userId: "user-bob" });
+  });
+});

@@ -16,6 +16,7 @@ import { KbFromTicketService } from "./kb-from-ticket.service";
 import { fromTicketSchema, type FromTicketInput } from "./dto/kb-from-ticket.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import { NoTenantTransaction } from "../../../common/tenant";
 import { kbArticleWithTagsSchema } from "./dto/kb-helpcenter-response.schemas";
 import { z } from "zod";
 
@@ -28,6 +29,7 @@ export class KbFromTicketController {
 
   @Post("articles/from-ticket/:ticketId")
   @HttpCode(200)
+  @NoTenantTransaction()
   @RequirePermission("kb:articles:create")
   @Validate({ params: ticketIdParams, body: fromTicketSchema })
   @ResponseSchema(kbArticleWithTagsSchema)

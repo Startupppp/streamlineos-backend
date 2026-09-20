@@ -15,6 +15,7 @@ jest.mock("./chat-assistant-model", () => ({
 import { ServiceUnavailableException } from "@nestjs/common";
 import { streamText } from "ai";
 import { InsufficientAiCreditsException } from "../../../../common/http/api-exceptions";
+import { logger } from "../../../../common/logger/logger.service";
 import { Test, type TestingModule } from "@nestjs/testing";
 import { KbRagService } from "./kb-rag.service";
 import { KbRagRetrievalService } from "./kb-rag-retrieval.service";
@@ -558,5 +559,57 @@ describe("KbRagService — streamAnswer: per-org concurrency cap", () => {
 
     expect(mockConcurrencyLimiter.release).toHaveBeenCalledWith(ORG_ID);
     expect(mockLedger.release).toHaveBeenCalledWith(12, "stream_aborted_no_settle", ORG_ID);
+  });
+});
+
+describe("KbRagService — streamAnswer: releasing a reservation is not fire-and-forget", () => {
+  const mockedStreamText = jest.mocked(streamText);
+
+  beforeEach(() => jest.clearAllMocks());
+
+  afterEach(() => jest.restoreAllMocks());
+
+  it("logs a failed credit release instead of discarding it, because a silently lost release leaks the reservation", async () => {
+    const errorSpy = jest.spyOn(logger, "error").mockImplementation(() => undefined);
+    const mockConcurrencyLimiter = {
+      acquire: jest.fn().mockResolvedValue(true),
+      release: jest.fn(),
+    };
+    mockDb.limit.mockResolvedValueOnce([{ id: 99 }]).mockResolvedValue([chunkRow]);
+    mockGateway.embedQueryWithCredit.mockResolvedValue(makeEmbedOk());
+    mockLedger.reserve.mockResolvedValue({ reservationId: 31 });
+    mockLedger.release.mockRejectedValue(new Error("credit ledger unreachable"));
+
+    mockedStreamText.mockImplementationOnce(
+      (() => ({ finishReason: Promise.reject(new Error("aborted")) })) as unknown as typeof streamText,
+    );
+
+    const module = await Test.createTestingModule({
+      providers: [
+        KbRagRetrievalService,
+        KbRagService,
+        { provide: DRIZZLE, useValue: mockDb },
+        { provide: AiGatewayService, useValue: mockGateway },
+        { provide: AI_CREDIT_LEDGER, useValue: mockLedger },
+        { provide: AiUsageService, useValue: mockUsageSvc },
+        { provide: AiConcurrencyLimiter, useValue: mockConcurrencyLimiter },
+      ],
+    }).compile();
+
+    const svc = module.get(KbRagService);
+
+    await svc.streamAnswer({ orgId: ORG_ID, question: QUESTION });
+    await new Promise((r) => setTimeout(r, 10));
+
+    expect(mockLedger.release).toHaveBeenCalledWith(31, "stream_aborted_no_settle", ORG_ID);
+    expect(errorSpy).toHaveBeenCalledWith(
+      "Failed to release AI credit reservation",
+      expect.objectContaining({
+        orgId: ORG_ID,
+        reservationId: 31,
+        reason: "stream_aborted_no_settle",
+        feature: "kb.public-ask",
+      }),
+    );
   });
 });

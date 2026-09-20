@@ -31,7 +31,7 @@ import { z } from "zod";
 import { NoContentResponse, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
 import { decisionRowSchema } from "./dto/governance-response.schemas";
 
-const decisionIdParams = z.object({ decisionId: z.coerce.number().int().positive() }).strict();
+export const decisionIdParams = z.object({ projectId: z.coerce.number().int().positive(), decisionId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("build")
 @Controller("build/:projectId/decisions")

@@ -1,10 +1,16 @@
-import { and, eq } from "drizzle-orm";
+import { ForbiddenException } from "@nestjs/common";
+import { and, eq, isNull } from "drizzle-orm";
 import { organizationMembers, organizations, users } from "../../../../db/schema";
 import { type Db } from "../../../../db/drizzle.module";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
-import { actingMembershipId } from "../../../../common/auth/principal";
 
 export const FALLBACK_TIMEZONE = "UTC";
+
+export const INACTIVE_MEMBERSHIP_REFUSAL = {
+  code: "ORG_MEMBERSHIP_INACTIVE",
+  message:
+    "Your access to this organization is no longer active. Refresh to continue with an available organization.",
+} as const;
 
 export interface AskOsActor {
   userId: string;
@@ -86,24 +92,30 @@ export async function resolveAskOsActor(
       and(
         eq(organizationMembers.orgId, caller.orgId),
         eq(organizationMembers.userId, caller.userId),
+        eq(organizationMembers.status, "ACTIVE"),
+        eq(users.isActive, true),
+        isNull(users.deletedAt),
+        eq(organizations.status, "ACTIVE"),
+        isNull(organizations.deletedAt),
       ),
     )
     .limit(1);
 
   const row = rows[0];
-  const timezone = row?.timezone ?? FALLBACK_TIMEZONE;
+  if (!row) throw new ForbiddenException(INACTIVE_MEMBERSHIP_REFUSAL);
+
+  const timezone = row.timezone;
   const calendar = zonedCalendarFacts(timezone, now);
 
   return {
     userId: caller.userId,
     orgId: caller.orgId,
-    membershipId:
-      row?.membershipId ?? actingMembershipId(caller.principal) ?? 0,
-    displayName: row ? displayNameFrom(row) : caller.userId,
-    email: row?.email ?? "",
-    orgName: row?.orgName ?? "",
-    role: row?.role ?? caller.role,
-    isOrgOwner: row?.isOwner ?? caller.isOrgOwner,
+    membershipId: row.membershipId,
+    displayName: displayNameFrom(row),
+    email: row.email,
+    orgName: row.orgName,
+    role: row.role,
+    isOrgOwner: row.isOwner,
     timezone,
     ...calendar,
   };

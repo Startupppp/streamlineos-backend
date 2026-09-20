@@ -30,10 +30,22 @@ import {
 } from "./dto/incidents.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
-import { NoContentResponse, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
-import { incidentRowSchema, incidentDetailSchema, incidentUpdateRowSchema } from "./dto/incidents-response.schemas";
+import {
+  NoContentResponse,
+  ResponseSchema,
+} from "../../../common/openapi/zod-operation-contracts";
+import {
+  incidentRowSchema,
+  incidentDetailSchema,
+  incidentUpdateRowSchema,
+} from "./dto/incidents-response.schemas";
 
-const incidentIdParams = z.object({ incidentId: z.coerce.number().int().positive() }).strict();
+export const incidentIdParams = z
+  .object({
+    projectId: z.coerce.number().int().positive(),
+    incidentId: z.coerce.number().int().positive(),
+  })
+  .strict();
 
 @RequireModule("build")
 @Controller("build/:projectId/incidents")

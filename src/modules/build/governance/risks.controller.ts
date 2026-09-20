@@ -28,10 +28,18 @@ import {
 } from "./dto/governance.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
-import { NoContentResponse, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  NoContentResponse,
+  ResponseSchema,
+} from "../../../common/openapi/zod-operation-contracts";
 import { riskRowSchema } from "./dto/governance-response.schemas";
 
-const riskIdParams = z.object({ riskId: z.coerce.number().int().positive() }).strict();
+export const riskIdParams = z
+  .object({
+    projectId: z.coerce.number().int().positive(),
+    riskId: z.coerce.number().int().positive(),
+  })
+  .strict();
 
 @RequireModule("build")
 @Controller("build/:projectId/risks")

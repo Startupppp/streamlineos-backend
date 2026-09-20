@@ -32,8 +32,8 @@ import { z } from "zod";
 import { NoContentResponse, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
 import { updateRowSchema, updateListPageSchema } from "./dto/updates-response.schemas";
 
-const updateIdParams = z
-  .object({ updateId: z.coerce.number().int().positive() })
+export const updateIdParams = z
+  .object({ projectId: z.coerce.number().int().positive(), updateId: z.coerce.number().int().positive() })
   .strict();
 
 @RequireModule("build")

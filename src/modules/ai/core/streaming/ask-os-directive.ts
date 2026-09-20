@@ -40,7 +40,7 @@ export function stripDirectives(content: string): string {
 export function serializeDirective(directive: AskOsDirective): string {
   switch (directive.kind) {
     case "confirm-action": {
-      const { kind: _kind, ...body } = directive;
+      const { kind: _kind, token: _token, ...body } = directive;
       return `${CONFIRM_ACTION_PREFIX}${JSON.stringify(body)}`;
     }
     case "connect-integration": {

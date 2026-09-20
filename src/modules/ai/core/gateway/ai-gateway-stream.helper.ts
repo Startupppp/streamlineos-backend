@@ -17,7 +17,11 @@ import { AiConcurrencyLimiter } from "./ai-concurrency-limiter";
 import { aiReservationIdempotencyKey } from "../streaming/ai-request-abort";
 import { AiUsageService } from "../services/ai-usage.service";
 import type { AuditService } from "../../../../common/audit/audit.service";
-import { settleStream } from "./ai-gateway-stream-credit";
+import {
+  makeReservationHandle,
+  settleStream,
+  type ReservationHandle,
+} from "./ai-gateway-stream-credit";
 import { type AiCreditLedger } from "./credit-ledger.interface";
 import type { AiInvokeActor, AiInvokePrompt } from "./ai-gateway.types";
 import {
@@ -90,42 +94,6 @@ export function breakerAttribution(error: unknown): BreakerAttribution {
   if (kind === "fatal") return "request";
   if (kind === "rate_limit") return "tenant";
   return "provider";
-}
-
-interface ReservationHandle {
-  readonly reservationId: number;
-  release: (reason: string) => void;
-  markSettled: () => boolean;
-}
-
-function makeReservationHandle(
-  id: number,
-  orgId: string,
-  ledger: AiCreditLedger,
-  feature: string,
-): ReservationHandle {
-  let disposed = false;
-  return {
-    reservationId: id,
-    release(reason: string): void {
-      if (disposed || id === 0) return;
-      disposed = true;
-      void ledger.release(id, reason, orgId).catch((err: unknown) => {
-        logger.error("Failed to release AI credit reservation", {
-          error: err instanceof Error ? (err.stack ?? err.message) : String(err),
-          reason,
-          reservationId: id,
-          feature,
-          orgId,
-        });
-      });
-    },
-    markSettled(): boolean {
-      if (disposed) return false;
-      disposed = true;
-      return true;
-    },
-  };
 }
 
 export class AiGatewayStreamHelper {

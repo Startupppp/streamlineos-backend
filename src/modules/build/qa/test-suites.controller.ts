@@ -31,7 +31,7 @@ import { z } from "zod";
 import { NoContentResponse, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
 import { testSuiteWithCaseCountSchema } from "./dto/qa-response.schemas";
 
-const suiteIdParams = z.object({ suiteId: z.coerce.number().int().positive() }).strict();
+export const suiteIdParams = z.object({ projectId: z.coerce.number().int().positive(), suiteId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("build")
 @Controller("build/:projectId/test-suites")

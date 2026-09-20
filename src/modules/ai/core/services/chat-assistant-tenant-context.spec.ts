@@ -91,6 +91,18 @@ interface DenyingHandle {
  * statement `withTenant` runs first is `SELECT set_config(…)`, which touches no
  * policy — that is what establishes the context for everything after it.
  */
+const LIVE_ACTOR_ROW = {
+  name: "Chat User",
+  firstName: null,
+  lastName: null,
+  email: "chat@example.com",
+  role: "ADMIN",
+  isOwner: false,
+  membershipId: 11,
+  orgName: "Acme",
+  timezone: "UTC",
+};
+
 function denyingHandle(): DenyingHandle {
   const log: string[] = [];
 
@@ -105,8 +117,15 @@ function denyingHandle(): DenyingHandle {
     return thenableChain([]);
   };
 
+  const select = (projection?: Record<string, unknown>): object => {
+    guard();
+    const isActorRead =
+      projection !== undefined && "membershipId" in projection && "orgName" in projection;
+    return thenableChain(isActorRead ? [LIVE_ACTOR_ROW] : []);
+  };
+
   const handle = {
-    select: statement,
+    select,
     insert: statement,
     update: statement,
     delete: statement,

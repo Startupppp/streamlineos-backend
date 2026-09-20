@@ -34,7 +34,10 @@ import {
 } from "./dto/qa.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
-import { NoContentResponse, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
+import {
+  NoContentResponse,
+  ResponseSchema,
+} from "../../../common/openapi/zod-operation-contracts";
 import {
   testRunListItemSchema,
   testRunDetailSchema,
@@ -44,8 +47,19 @@ import {
   bugRowSchema,
 } from "./dto/qa-response.schemas";
 
-const runIdParams = z.object({ runId: z.coerce.number().int().positive() }).strict();
-const runIdresultIdParams = z.object({ runId: z.coerce.number().int().positive(), resultId: z.coerce.number().int().positive() }).strict();
+export const runIdParams = z
+  .object({
+    projectId: z.coerce.number().int().positive(),
+    runId: z.coerce.number().int().positive(),
+  })
+  .strict();
+export const runIdresultIdParams = z
+  .object({
+    projectId: z.coerce.number().int().positive(),
+    runId: z.coerce.number().int().positive(),
+    resultId: z.coerce.number().int().positive(),
+  })
+  .strict();
 
 @RequireModule("build")
 @Controller("build/:projectId/test-runs")
@@ -140,7 +154,14 @@ export class TestRunsController {
     @Body() body: UpdateTestResultInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.updateResult(u.orgId, projectId, runId, resultId, body, u.userId);
+    return this.svc.updateResult(
+      u.orgId,
+      projectId,
+      runId,
+      resultId,
+      body,
+      u.userId,
+    );
   }
 
   @Post(":runId/results/:resultId/bug")
@@ -155,6 +176,13 @@ export class TestRunsController {
     @Body() body: CreateBugFromResultInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.createBugFromResult(u.orgId, u.userId, projectId, runId, resultId, body);
+    return this.svc.createBugFromResult(
+      u.orgId,
+      u.userId,
+      projectId,
+      runId,
+      resultId,
+      body,
+    );
   }
 }
