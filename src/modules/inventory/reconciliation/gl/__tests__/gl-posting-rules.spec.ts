@@ -159,10 +159,10 @@ describe("inventory GL posting rules", () => {
     const commandSites = SOURCES.filter(({ source }) =>
       stockMoveCommands(source).some((command) => command.includes('purpose: "receive"')),
     );
-    expect(draftSites.map(({ path }) => path.split("inventory/")[1])).toEqual([
+    expect(draftSites.map(({ path }) => path.replaceAll("\\", "/").split("inventory/")[1])).toEqual([
       "purchase-orders/lib/receipt-journal.ts",
     ]);
-    expect(commandSites.map(({ path }) => path.split("inventory/")[1])).toEqual([
+    expect(commandSites.map(({ path }) => path.replaceAll("\\", "/").split("inventory/")[1])).toEqual([
       "purchase-orders/grn-receive.service.ts",
     ]);
   });
