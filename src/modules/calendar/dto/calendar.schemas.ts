@@ -31,8 +31,8 @@ const titleSchema = z
   .min(2, "Event title must be at least 2 characters")
   .max(100, "Event title must be at most 100 characters")
   .refine(
-    (v) => /^[a-zA-Z0-9]/.test(v.trim()),
-    "Event title must start with a letter or number",
+    (v) => /[a-zA-Z0-9]/.test(v.trim()),
+    "Event title must contain at least one letter or number",
   )
   .refine(
     (v) => !/\s{2,}/.test(v),
