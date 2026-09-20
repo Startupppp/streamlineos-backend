@@ -53,6 +53,7 @@ import { ExecutiveBriefModule } from "./executive-brief/executive-brief.module";
 import { AiJobsModule } from "../jobs/ai-jobs.module";
 import { MailModule } from "../../mail/mail.module";
 import { AiGatewayModule } from "./gateway/ai-gateway.module";
+import { KbDocumentQueryModule } from "../../kb/document-query/kb-document-query.module";
 import { BlogAiController } from "./controllers/blog-ai.controller";
 import { BlogAiService } from "./services/blog-ai.service";
 import { SurveyAiController } from "./controllers/survey-ai.controller";
@@ -62,6 +63,9 @@ import { WorkspaceInlineTools } from "./services/chat-assistant-inline-tools";
 import { SelfHrTools } from "./tools/self-hr-tools";
 import { SelfPayrollTools } from "./tools/self-payroll-tools";
 import { SelfWorkTools } from "./tools/self-work-tools";
+import { SelfCommsTools } from "./tools/self-comms-tools";
+import { SelfGrowthTools } from "./tools/self-growth-tools";
+import { SelfDigestTools } from "./tools/self-digest-tools";
 import { SelfActionsTools } from "./tools/self-actions-tools";
 import { WorkActionsTools } from "./tools/work-actions-tools";
 import { ASK_OS_TOOL_PROVIDERS } from "./registry/ask-os-tool-providers";
@@ -69,7 +73,7 @@ import { AskOsToolDiscoveryService } from "./registry/ask-os-tool-discovery.serv
 import { ConfirmableActionServicesCheck } from "./confirm-actions";
 
 @Module({
-  imports: [DiscoveryModule, CalendarModule, ChatModule, BillingModule, AiConfirmationModule, ProjectsModule, IntegrationsModule, ExecutiveBriefModule, AiJobsModule, MailModule, AiGatewayModule],
+  imports: [DiscoveryModule, CalendarModule, ChatModule, BillingModule, AiConfirmationModule, ProjectsModule, IntegrationsModule, ExecutiveBriefModule, AiJobsModule, MailModule, AiGatewayModule, KbDocumentQueryModule],
   controllers: [CrmAiController, CrmCopilotController, HrAiController, KbRagController, ChatAssistantController, ProjectsAiController, AiFeedbackController, MeetingsAiController, BlogAiController, SurveyAiController],
   providers: [
     CrmScoringService,
@@ -107,6 +111,9 @@ import { ConfirmableActionServicesCheck } from "./confirm-actions";
     SelfHrTools,
     SelfPayrollTools,
     SelfWorkTools,
+    SelfCommsTools,
+    SelfGrowthTools,
+    SelfDigestTools,
     SelfActionsTools,
     WorkActionsTools,
     // F2. The copilot's inventory reads apply the same warehouse scope the stock,

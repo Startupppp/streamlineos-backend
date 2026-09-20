@@ -12,6 +12,7 @@ export interface ObservabilityContext {
   /** Build identifier stamped at the edge from APP_RELEASE so a deploy can be implicated in a spike. */
   release?: string;
   ipAddress?: string;
+  userAgent?: string;
 }
 
 /** Everything callers may fill in later; the correlation id is fixed at entry. */
@@ -56,6 +57,7 @@ export function enrichObservabilityContext(
   if (patch.cellId) context.cellId = patch.cellId;
   if (patch.release) context.release = patch.release;
   if (patch.ipAddress) context.ipAddress = patch.ipAddress;
+  if (patch.userAgent) context.userAgent = patch.userAgent;
   return true;
 }
 

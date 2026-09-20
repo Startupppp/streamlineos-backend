@@ -1,4 +1,12 @@
-import { managedProducts, pmWorkspaceMemberships, pmWorkspaces, projects } from "../../../db/schema";
+import {
+  managedProductMemberships,
+  managedProducts,
+  pmWorkspaceMemberships,
+  pmWorkspaces,
+  projectMembers,
+  projectTeamAssignments,
+  projects,
+} from "../../../db/schema";
 import { resolveScopeDirectorySchema } from "./dto/scope-directory.schemas";
 import {
   MEMBERSHIP_ID,
@@ -264,5 +272,167 @@ describe("ScopeDirectoryService — archived scopes", () => {
     const [ref] = await makeSvc(db).resolveScopeDirectory(ORG, USER, MEMBERSHIP_ID, ["project:20"]);
 
     expect(ref?.isArchived).toBe(true);
+  });
+});
+
+describe("ScopeDirectoryService.searchScopeDirectory — search predicate in SQL WHERE, not post-query JS filter (BSN-02-010)", () => {
+  it("search term is bound as a SQL parameter in the pmWorkspaces WHERE, proving the filter is in SQL not applied to the query result in JS", async () => {
+    const { db, calls } = makeDb(makeResponses([
+      [pmWorkspaceMemberships, [[{ pmWorkspaceId: "ws-1" }]]],
+      [pmWorkspaces, [[WS_ROW]]],
+    ]));
+
+    await makeSvc(db, makeAccess(null)).searchScopeDirectory(ORG, USER, MEMBERSHIP_ID, "Delivery", 25, undefined);
+
+    const wsCall = calls.find((c) => c.table === pmWorkspaces);
+    expect(wsCall).toBeDefined();
+    const params = renderParams(wsCall?.condition);
+    expect(params).toContain("Delivery");
+    expect(params).toContain("Delivery%");
+  });
+
+  it("auth inArray is bound in the workspace WHERE — the accessible IDs reach the SQL predicate, not a JS result filter", async () => {
+    const { db, calls } = makeDb(makeResponses([
+      [pmWorkspaceMemberships, [[{ pmWorkspaceId: "ws-1" }, { pmWorkspaceId: "ws-2" }]]],
+      [pmWorkspaces, [[WS_ROW]]],
+    ]));
+
+    await makeSvc(db, makeAccess(null)).searchScopeDirectory(ORG, USER, MEMBERSHIP_ID, "Del", 25, undefined);
+
+    const wsCall = calls.find((c) => c.table === pmWorkspaces);
+    expect(wsCall).toBeDefined();
+    const params = renderParams(wsCall?.condition);
+    expect(params).toContain("ws-1");
+    expect(params).toContain("ws-2");
+  });
+
+  it("build:manage all bypasses workspace membership lookup in search", async () => {
+    const { db, calls } = makeDb(makeResponses([
+      [pmWorkspaces, [[WS_ROW]]],
+    ]));
+
+    const result = await makeSvc(db, makeAccess("all")).searchScopeDirectory(ORG, USER, null, "Delivery", 25, undefined);
+
+    expect(result.data).toHaveLength(1);
+    expect(calls.find((c) => c.table === pmWorkspaceMemberships)).toBeUndefined();
+  });
+
+  it("returns empty data and no nextCursor when membershipId is null and build:manage is not all", async () => {
+    const { db } = makeDb(makeResponses());
+
+    const result = await makeSvc(db, makeAccess(null)).searchScopeDirectory(ORG, USER, null, "x", 25, undefined);
+
+    expect(result.data).toEqual([]);
+    expect(result.nextCursor).toBeNull();
+  });
+
+  it("returns workspace ref with correct shape from search", async () => {
+    const { db } = makeDb(makeResponses([
+      [pmWorkspaceMemberships, [[{ pmWorkspaceId: "ws-1" }]]],
+      [pmWorkspaces, [[WS_ROW]]],
+    ]));
+
+    const result = await makeSvc(db, makeAccess(null)).searchScopeDirectory(ORG, USER, MEMBERSHIP_ID, "Delivery", 25, undefined);
+
+    expect(result.data).toHaveLength(1);
+    expect(result.data[0]).toMatchObject({
+      key: "workspace:ws-1",
+      type: "workspace",
+      id: "ws-1",
+      name: "Delivery",
+      parentKey: null,
+      projectKey: null,
+      isArchived: false,
+      parentPath: null,
+      clientPortalEnabled: null,
+    });
+  });
+
+  it("skips the pmWorkspaces data query when accessible workspace list is empty, so no phantom rows can appear", async () => {
+    const { db, calls } = makeDb(makeResponses([
+      [pmWorkspaceMemberships, [[]]],
+    ]));
+
+    const result = await makeSvc(db, makeAccess(null)).searchScopeDirectory(ORG, USER, MEMBERSHIP_ID, "Nope", 25, undefined);
+
+    expect(result.data).toEqual([]);
+    expect(calls.find((c) => c.table === pmWorkspaces)).toBeUndefined();
+  });
+
+  it("search includes product results with correct parentPath derived from workspace ancestor", async () => {
+    const { db } = makeDb(makeResponses([
+      [managedProductMemberships, [[{ managedProductId: 10 }]]],
+      [managedProducts, [[PROD_ROW]]],
+      [pmWorkspaces, [[WS_ROW]]],
+    ]));
+
+    const result = await makeSvc(db, makeAccess(null)).searchScopeDirectory(ORG, USER, MEMBERSHIP_ID, "Atl", 25, undefined);
+
+    expect(result.data).toHaveLength(1);
+    expect(result.data[0]).toMatchObject({
+      key: "product:10",
+      type: "product",
+      parentPath: "Delivery",
+    });
+  });
+
+  it("search product results require auth: product membership table is queried when build:manage is not all", async () => {
+    const { db, calls } = makeDb(makeResponses([
+      [managedProductMemberships, [[{ managedProductId: 10 }]]],
+      [managedProducts, [[PROD_ROW]]],
+      [pmWorkspaces, [[WS_ROW]]],
+    ]));
+
+    await makeSvc(db, makeAccess(null)).searchScopeDirectory(ORG, USER, MEMBERSHIP_ID, "Atl", 25, undefined);
+
+    const membershipCall = calls.find((c) => c.table === managedProductMemberships);
+    expect(membershipCall).toBeDefined();
+    expect(renderParams(membershipCall?.condition)).toContain(MEMBERSHIP_ID);
+  });
+
+  it("nextCursor is null when results fit on one page", async () => {
+    const { db } = makeDb(makeResponses([
+      [pmWorkspaceMemberships, [[{ pmWorkspaceId: "ws-1" }]]],
+      [pmWorkspaces, [[WS_ROW]]],
+    ]));
+
+    const result = await makeSvc(db, makeAccess(null)).searchScopeDirectory(ORG, USER, MEMBERSHIP_ID, "Delivery", 25, undefined);
+
+    expect(result.nextCursor).toBeNull();
+  });
+
+  it("nextCursor is a non-empty string when results exceed the page limit", async () => {
+    const extraWsRows = Array.from({ length: 26 }, (_, i) => ({
+      pmWorkspaceId: `ws-extra-${i}`,
+      name: `Workspace ${i}`,
+      status: "active" as const,
+    }));
+    const { db } = makeDb(makeResponses([
+      [pmWorkspaceMemberships, [extraWsRows.map((r) => ({ pmWorkspaceId: r.pmWorkspaceId }))]],
+      [pmWorkspaces, [extraWsRows]],
+    ]));
+
+    const result = await makeSvc(db, makeAccess(null)).searchScopeDirectory(ORG, USER, MEMBERSHIP_ID, "Work", 25, undefined);
+
+    expect(result.nextCursor).not.toBeNull();
+    expect(result.data).toHaveLength(25);
+  });
+
+  it("orgId is bound in ALL membership and data queries issued by search", async () => {
+    const { db, calls } = makeDb(makeResponses([
+      [pmWorkspaceMemberships, [[{ pmWorkspaceId: "ws-1" }]]],
+      [managedProductMemberships, [[{ managedProductId: 10 }]]],
+      [projectMembers, [[{ projectId: 20 }]]],
+      [projectTeamAssignments, [[]]],
+      [pmWorkspaces, [[WS_ROW]]],
+      [managedProducts, [[PROD_ROW]]],
+      [projects, [[PROJ_ROW]]],
+      [pmWorkspaces, [[WS_ROW]]],
+    ]));
+
+    await makeSvc(db, makeAccess(null)).searchScopeDirectory(ORG, USER, MEMBERSHIP_ID, "a", 25, undefined);
+
+    for (const call of calls)
+      expect(renderParams(call.condition)).toContain(ORG);
   });
 });

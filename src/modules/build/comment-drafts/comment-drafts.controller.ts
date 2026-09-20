@@ -30,6 +30,7 @@ import { z } from "zod";
 import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
 import {
   commentDraftSchema,
+  commentDraftWithTicketSchema,
   deletedSchema,
   draftFailureSchema,
   generatedCommentDraftSchema,
@@ -49,7 +50,7 @@ export class CommentDraftsController {
 
   @Get("mine")
   @RequirePermission("build:tickets:view")
-  @ResponseSchema(z.array(commentDraftSchema))
+  @ResponseSchema(z.array(commentDraftWithTicketSchema))
   listMine(@CurrentUser() u: CurrentUserContext) {
     return this.svc.listMine(u.orgId, actingMembershipId(u.principal), u.userId);
   }

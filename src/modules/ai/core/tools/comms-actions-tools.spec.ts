@@ -1,7 +1,15 @@
+jest.mock("./lib/mail-connection", () => ({
+  requireMailConnection: jest.fn(),
+}));
+jest.mock("../../../../common/tenant/run-in-tenant-transaction", () => ({
+  runInNewTenantTransaction: jest.fn(),
+}));
+
 import { CommsActionsTools } from "./comms-actions-tools";
 import type { Db } from "../../../../db/drizzle.module";
 import type { ChatChannelsService } from "../../../chat/chat-channels.service";
 import type { AiConfirmationService } from "../../confirmation/ai-confirmation.service";
+import type { MailService } from "../../../mail/mail.service";
 import type { AskOsActor } from "../services/ask-os-actor";
 import type { AskOsToolDefinition, AskOsToolRunContext } from "../registry/ask-os-tool.types";
 import type { DataScope } from "../../../access/access.types";
@@ -10,6 +18,11 @@ import type { CurrentUserContext } from "../../../../common/auth/backend-claims"
 import { humanSessionPrincipal } from "../../../../common/auth/principal";
 import { PgDialect } from "drizzle-orm/pg-core";
 import type { SQL } from "drizzle-orm";
+import { requireMailConnection } from "./lib/mail-connection";
+import { runInNewTenantTransaction } from "../../../../common/tenant/run-in-tenant-transaction";
+
+const mockedRequireMailConnection = jest.mocked(requireMailConnection);
+const mockedRunInNewTenantTransaction = jest.mocked(runInNewTenantTransaction);
 
 function makeActor(): AskOsActor {
   return {
@@ -63,9 +76,11 @@ function findTool(defs: AskOsToolDefinition[], key: string): AskOsToolDefinition
 function buildInstance({
   memberChannelIds,
   dbChannelResult,
+  mail,
 }: {
   memberChannelIds: number[];
   dbChannelResult: Array<{ id: number; name: string }>;
+  mail?: Partial<MailService>;
 }): CommsActionsTools {
   const limitFn = jest.fn().mockResolvedValue(dbChannelResult);
   const whereFn = jest.fn().mockReturnValue({ limit: limitFn });
@@ -84,7 +99,9 @@ function buildInstance({
     listMemberChannelIds: jest.fn().mockResolvedValue(memberChannelIds),
   } as unknown as ChatChannelsService;
 
-  return new CommsActionsTools(db, confirmation, channels);
+  const mailService = (mail ?? {}) as unknown as MailService;
+
+  return new CommsActionsTools(db, confirmation, channels, mailService);
 }
 
 describe("CommsActionsTools.postChannelMessage — membership-gated channel resolution", () => {
@@ -182,7 +199,7 @@ describe("CommsActionsTools.grantBonus — soft-delete safety", () => {
     const channels = {
       listMemberChannelIds: jest.fn().mockResolvedValue([]),
     } as unknown as ChatChannelsService;
-    return new CommsActionsTools(db, confirmation, channels);
+    return new CommsActionsTools(db, confirmation, channels, {} as unknown as MailService);
   }
 
   it("excludes deleted users from the employee lookup: deleted_at is null is in the predicate", async () => {
@@ -212,5 +229,82 @@ describe("CommsActionsTools.grantBonus — soft-delete safety", () => {
     );
 
     expect(result).toMatchObject({ kind: "empty", subject: "employee" });
+  });
+});
+
+describe("CommsActionsTools.archiveMailMessage — tool registration and connection gate", () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it("registers with confirms: mail.archive and derives its permission from the confirmable-action registry, so the tool source never hand-codes a permission key", () => {
+    const instance = buildInstance({ memberChannelIds: [], dbChannelResult: [] });
+    const tool = findTool(instance.tools(), "archiveMailMessage");
+
+    expect(tool.confirms).toBe("mail.archive");
+    expect(tool.permission).toBe("mail:messages:manage");
+  });
+
+  it("returns needs-connection when the actor has no connected mailbox, so no proposal is minted for an impossible action", async () => {
+    const needsConnectionOutcome = {
+      kind: "needs-connection" as const,
+      toolkit: "gmail" as const,
+      reason: "no-connection" as const,
+      summary: "Connect a mail account to archive messages.",
+    };
+    mockedRequireMailConnection.mockResolvedValueOnce({
+      connected: false,
+      outcome: needsConnectionOutcome,
+    });
+    const instance = buildInstance({ memberChannelIds: [], dbChannelResult: [] });
+    const tool = findTool(instance.tools(), "archiveMailMessage");
+
+    const result = await tool.run({ messageId: "msg-1" }, makeCtx());
+
+    expect(result).toMatchObject({ kind: "needs-connection" });
+  });
+
+  it("strips a userId field from its input schema, so a caller cannot substitute the actor subject via tool arguments", () => {
+    const instance = buildInstance({ memberChannelIds: [], dbChannelResult: [] });
+    const tool = findTool(instance.tools(), "archiveMailMessage");
+    const parsed = tool.input.safeParse({ messageId: "msg-1", userId: "attacker-id" });
+
+    expect(parsed.success).toBe(true);
+    expect(parsed.data).not.toHaveProperty("userId");
+  });
+
+  it("calls confirmation.propose only after runInNewTenantTransaction resolves, so the provider call is never awaited inside a tenant transaction", async () => {
+    const callOrder: string[] = [];
+
+    mockedRequireMailConnection.mockResolvedValueOnce({ connected: true });
+    mockedRunInNewTenantTransaction.mockImplementation(async (_db: unknown, _orgId: unknown, fn: () => unknown) => {
+      callOrder.push("txn-start");
+      const result = await (fn as () => Promise<unknown>)();
+      callOrder.push("txn-end");
+      return result;
+    });
+
+    const mockPropose = jest.fn().mockImplementation(async () => {
+      callOrder.push("propose");
+      return { proposalId: 1, token: "tok-1", expiresAt: new Date() };
+    });
+    const confirmation = { propose: mockPropose } as unknown as AiConfirmationService;
+    const mailSvc = {
+      listAccounts: jest.fn().mockResolvedValue([
+        { id: 3, status: "active", accountEmail: "me@example.com", isPrimary: true },
+      ]),
+    } as unknown as MailService;
+
+    const limitFn = jest.fn().mockResolvedValue([]);
+    const db = {
+      select: jest.fn().mockReturnValue({ from: jest.fn().mockReturnValue({ where: jest.fn().mockReturnValue({ limit: limitFn }) }) }),
+    } as unknown as Db;
+    const channels = { listMemberChannelIds: jest.fn().mockResolvedValue([]) } as unknown as ChatChannelsService;
+    const instance = new CommsActionsTools(db, confirmation, channels, mailSvc);
+    const tool = findTool(instance.tools(), "archiveMailMessage");
+
+    await tool.run({ messageId: "msg-1" }, makeCtx());
+
+    expect(callOrder).toEqual(["txn-start", "txn-end", "propose"]);
   });
 });

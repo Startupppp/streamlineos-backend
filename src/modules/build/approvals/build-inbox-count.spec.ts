@@ -73,7 +73,7 @@ describe("BuildInboxCountService.countPending", () => {
     await new BuildInboxCountService(countDb).countPending(ORG, MEMBERSHIP);
 
     const { db: listDb, where: listWhere } = makeListDb([]);
-    await new ApprovalsReadService(listDb, {} as unknown as AccessService).getInbox(ORG, MEMBERSHIP);
+    await new ApprovalsReadService(listDb, {} as unknown as AccessService).getInbox(ORG, MEMBERSHIP, {});
 
     const countParams = [...renderParams(countWhere.mock.calls[0]?.[0])].sort();
     const listParams = [...renderParams(listWhere.mock.calls[0]?.[0])].sort();

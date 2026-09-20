@@ -226,6 +226,45 @@ describe("FilesService.softDeleteFile — soft-delete and author ownership", () 
   });
 });
 
+describe("FilesService.softDeleteFile — UPDATE WHERE guards isNull(deletedAt) and projectId", () => {
+  it("second soft-delete call throws NotFoundException because loadFile filters deletedAt=null — loadFile and UPDATE share the isNull invariant", async () => {
+    const db = makeMockDb();
+    db.query.projects.findFirst.mockResolvedValue({ managerMembershipId: 999 });
+    db.select
+      .mockReturnValueOnce(makeSelectChain([{ role: "MEMBER" }]))
+      .mockReturnValueOnce(makeSelectChain([{ id: 5, uploadedByMembershipId: 7, storageKey: "build/1/files/f.pdf" }]));
+    const updateChain = { set: jest.fn().mockReturnThis(), where: jest.fn().mockResolvedValue(undefined) };
+    db.update.mockReturnValue(updateChain);
+
+    const svc = new FilesService(db as unknown as Db, makeAccess(), mockAudit, makeStorage());
+    await svc.softDeleteFile(makeUser("org-1", 7), 1, 5);
+
+    db.query.projects.findFirst.mockResolvedValue({ managerMembershipId: 999 });
+    db.select
+      .mockReturnValueOnce(makeSelectChain([{ role: "MEMBER" }]))
+      .mockReturnValueOnce(makeSelectChain([]));
+
+    await expect(svc.softDeleteFile(makeUser("org-1", 7), 1, 5)).rejects.toThrow(NotFoundException);
+    expect(db.update).toHaveBeenCalledTimes(1);
+  });
+
+  it("UPDATE is called exactly once — not a no-op before and after the ownership check", async () => {
+    const db = makeMockDb();
+    db.query.projects.findFirst.mockResolvedValue({ managerMembershipId: 999 });
+    db.select
+      .mockReturnValueOnce(makeSelectChain([{ role: "MEMBER" }]))
+      .mockReturnValueOnce(makeSelectChain([{ id: 5, uploadedByMembershipId: 7, storageKey: "build/1/files/f.pdf" }]));
+    const updateChain = { set: jest.fn().mockReturnThis(), where: jest.fn().mockResolvedValue(undefined) };
+    db.update.mockReturnValue(updateChain);
+
+    const svc = new FilesService(db as unknown as Db, makeAccess(), mockAudit, makeStorage());
+    await svc.softDeleteFile(makeUser("org-1", 7), 1, 5);
+
+    expect(db.update).toHaveBeenCalledTimes(1);
+    expect(updateChain.where).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe("FilesService.getSignedUrl — access gate", () => {
   it("returns a signed URL for a file the caller can access", async () => {
     const db = makeMockDb();

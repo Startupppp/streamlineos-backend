@@ -11,13 +11,12 @@ import {
   data,
   empty,
   failed,
-  needsConnection,
   needsConfirmation,
   type AskOsToolDefinition,
   type AskOsToolProvider,
 } from "../registry/ask-os-tool.types";
 import { AskOsTools } from "../registry/ask-os-tools.decorator";
-import { resolveAnyMailConnection } from "./lib/mail-connection";
+import { requireMailConnection } from "./lib/mail-connection";
 
 @AskOsTools()
 @Injectable()
@@ -52,16 +51,12 @@ export class MailCopilotTools implements AskOsToolProvider {
         ownsTransaction: true,
         run: async ({ accountEmail, folder }, ctx) => {
           const { orgId, userId, membershipId } = ctx.actor;
-          const connection = await runInNewTenantTransaction(this.db, orgId, () =>
-            resolveAnyMailConnection(this.db, { orgId, userId, membershipId }),
+          const gate = await requireMailConnection(
+            this.db,
+            { orgId, userId, membershipId },
+            "Connect a mail account to read your inbox.",
           );
-          if (!connection.connected) {
-            return needsConnection(
-              connection.toolkit,
-              connection.reason,
-              "Connect a mail account to read your inbox.",
-            );
-          }
+          if (!gate.connected) return gate.outcome;
           try {
             const accounts = await runInNewTenantTransaction(this.db, orgId, () =>
               this.mail.listAccounts(orgId, userId),
@@ -111,16 +106,12 @@ export class MailCopilotTools implements AskOsToolProvider {
         ownsTransaction: true,
         run: async ({ accountEmail, threadId }, ctx) => {
           const { orgId, userId, membershipId } = ctx.actor;
-          const connection = await runInNewTenantTransaction(this.db, orgId, () =>
-            resolveAnyMailConnection(this.db, { orgId, userId, membershipId }),
+          const gate = await requireMailConnection(
+            this.db,
+            { orgId, userId, membershipId },
+            "Connect a mail account to summarize threads.",
           );
-          if (!connection.connected) {
-            return needsConnection(
-              connection.toolkit,
-              connection.reason,
-              "Connect a mail account to summarize threads.",
-            );
-          }
+          if (!gate.connected) return gate.outcome;
           try {
             const accounts = await runInNewTenantTransaction(this.db, orgId, () =>
               this.mail.listAccounts(orgId, userId),
@@ -162,16 +153,12 @@ export class MailCopilotTools implements AskOsToolProvider {
         ownsTransaction: true,
         run: async ({ toEmail, subject, body, accountEmail }, ctx) => {
           const { orgId, userId, membershipId } = ctx.actor;
-          const connection = await runInNewTenantTransaction(this.db, orgId, () =>
-            resolveAnyMailConnection(this.db, { orgId, userId, membershipId }),
+          const gate = await requireMailConnection(
+            this.db,
+            { orgId, userId, membershipId },
+            "Connect a mail account to send emails.",
           );
-          if (!connection.connected) {
-            return needsConnection(
-              connection.toolkit,
-              connection.reason,
-              "Connect a mail account to send emails.",
-            );
-          }
+          if (!gate.connected) return gate.outcome;
           try {
             const accounts = await runInNewTenantTransaction(this.db, orgId, () =>
               this.mail.listAccounts(orgId, userId),

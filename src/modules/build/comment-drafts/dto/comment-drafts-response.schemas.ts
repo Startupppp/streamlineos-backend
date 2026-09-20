@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { wireDate } from "../../../../common/openapi/wire-types";
+import { ticketPriorityEnum, ticketTypeEnum } from "../../../../db/schema/common/enums";
 
 export const commentDraftSchema = z.object({
   id: z.number().int(),
@@ -9,6 +10,31 @@ export const commentDraftSchema = z.object({
   body: z.string(),
   createdAt: wireDate(),
   updatedAt: wireDate(),
+});
+
+const assigneeSchema = z.object({
+  id: z.string(),
+  name: z.string().nullable(),
+  image: z.string().nullable(),
+  lastName: z.string().nullable(),
+  firstName: z.string().nullable(),
+});
+
+const ticketSummarySchema = z.object({
+  id: z.number().int(),
+  type: z.enum(ticketTypeEnum.enumValues),
+  title: z.string(),
+  projectId: z.number().int().nullable(),
+  status: z.string(),
+  ticketNumber: z.number().int(),
+  projectKey: z.string().nullable(),
+  priority: z.enum(ticketPriorityEnum.enumValues).nullable(),
+  projectName: z.string().nullable(),
+  assignee: assigneeSchema.nullable(),
+});
+
+export const commentDraftWithTicketSchema = commentDraftSchema.extend({
+  ticket: ticketSummarySchema,
 });
 
 export const deletedSchema = z.object({ deleted: z.boolean() });

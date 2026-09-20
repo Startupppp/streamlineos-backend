@@ -25,10 +25,12 @@ import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import {
   createApprovalSchema,
   decideApprovalSchema,
+  inboxQuerySchema,
   listApprovalsQuerySchema,
   updateApprovalSchema,
   type CreateApprovalInput,
   type DecideApprovalInput,
+  type InboxQuery,
   type ListApprovalsQuery,
   type UpdateApprovalInput,
 } from "./dto/approvals.schemas";
@@ -62,10 +64,11 @@ export class ApprovalsInboxController {
   @Get("inbox")
   @RequirePermission("build:approvals:view")
   @ResponseSchema(z.array(approvalInboxItemSchema))
-  getInbox(@CurrentUser() u: CurrentUserContext) {
+  @Validate({ query: inboxQuerySchema })
+  getInbox(@CurrentUser() u: CurrentUserContext, @Query() query: InboxQuery) {
     const mid = actingMembershipId(u.principal);
     if (mid === null) return Promise.resolve([]);
-    return this.reads.getInbox(u.orgId, mid);
+    return this.reads.getInbox(u.orgId, mid, query);
   }
 }
 
@@ -99,7 +102,7 @@ export class BuildApprovalsController {
     @Param("approvalId", ParseIntPipe) approvalId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.reads.getApproval(u.orgId, projectId, approvalId);
+    return this.reads.getApproval(u, projectId, approvalId);
   }
 
   @Post()

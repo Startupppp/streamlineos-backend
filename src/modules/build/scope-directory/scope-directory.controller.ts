@@ -1,4 +1,4 @@
-import { Body, Controller, HttpCode, Post, UseGuards } from "@nestjs/common";
+import { Body, Controller, Get, HttpCode, Post, Query, UseGuards } from "@nestjs/common";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
@@ -12,7 +12,10 @@ import { ScopeDirectoryService } from "./scope-directory.service";
 import {
   resolveScopeDirectorySchema,
   scopeDirectoryResponseSchema,
+  searchScopeDirectoryQuerySchema,
+  searchScopeDirectoryResponseSchema,
   type ResolveScopeDirectoryInput,
+  type SearchScopeDirectoryQuery,
 } from "./dto/scope-directory.schemas";
 
 @RequireModule("build")
@@ -37,5 +40,23 @@ export class ScopeDirectoryController {
       body.keys,
     );
     return { data };
+  }
+
+  @Get("search")
+  @RequirePermission("build:view")
+  @ResponseSchema(searchScopeDirectoryResponseSchema)
+  @Validate({ query: searchScopeDirectoryQuerySchema })
+  async search(
+    @Query() query: SearchScopeDirectoryQuery,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.svc.searchScopeDirectory(
+      u.orgId,
+      u.userId,
+      actingMembershipId(u.principal),
+      query.q,
+      query.limit,
+      query.cursor,
+    );
   }
 }

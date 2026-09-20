@@ -9,11 +9,14 @@ function prune(node: unknown): unknown {
   if (Array.isArray(node)) return node.map(prune);
   if (!isRecord(node)) return node;
 
+  const hasFormat = "format" in node;
   const pruned: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(node)) {
     if (key === "$schema") continue;
     if (key === "maximum" && value === SAFE_INTEGER) continue;
     if (key === "minimum" && value === -SAFE_INTEGER) continue;
+    if (key === "additionalProperties" && value === false) continue;
+    if (key === "pattern" && hasFormat) continue;
     pruned[key] = prune(value);
   }
   return pruned;

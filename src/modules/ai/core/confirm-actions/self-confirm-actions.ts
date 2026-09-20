@@ -4,9 +4,11 @@ import { ExpensesWriteService } from "../../../expenses/expenses-write.service";
 import { createExpenseSchema } from "../../../expenses/dto/expense.schemas";
 import { EntriesService } from "../../../timesheets/core/entries.service";
 import { RecruitmentSourcingService } from "../../../hr/recruitment/recruitment-sourcing.service";
+import { RecruitmentJobsService } from "../../../hr/recruitment/recruitment-jobs.service";
 import { actingMembershipId } from "../../../../common/auth/principal";
 import {
   applyLeavePayloadSchema,
+  applyToJobOpeningPayloadSchema,
   logTimesheetPayloadSchema,
   submitExpensePayloadSchema,
   submitReferralPayloadSchema,
@@ -104,6 +106,23 @@ export const SELF_CONFIRM_ACTIONS = [
       return {
         result: { referralId: referral?.id },
         summary: `Referral submitted for ${payload.candidateName}`,
+      };
+    },
+  }),
+
+  defineConfirmableAction({
+    action: "self.applyToJobOpening",
+    permission: "self:job-openings",
+    payload: applyToJobOpeningPayloadSchema,
+    resolve: (moduleRef) => moduleRef.get(RecruitmentJobsService, { strict: false }),
+    execute: async (payload, { actor }, jobs) => {
+      const application = await jobs.internalApply(actor.orgId, actor.userId, payload.jobId, {
+        coverLetter: payload.coverLetter ?? undefined,
+        notes: payload.notes ?? undefined,
+      });
+      return {
+        result: { applicationId: application?.id },
+        summary: `Applied for job opening #${payload.jobId}`,
       };
     },
   }),

@@ -24,6 +24,21 @@ const CORRELATION_HEADER = "x-correlation-id";
 const REQUEST_ID_HEADER = "x-request-id";
 const TRACEPARENT_HEADER = "traceparent";
 const MAX_LENGTH = 64;
+const MAX_USER_AGENT_LENGTH = 512;
+
+function userAgentOf(raw: unknown): string | undefined {
+  if (typeof raw !== "string") return undefined;
+  const printable = Array.from(raw)
+    .filter((character) => {
+      const code = character.codePointAt(0) ?? 0;
+      return code > 31 && code !== 127;
+    })
+    .join("")
+    .trim();
+  return printable.length > 0
+    ? printable.slice(0, MAX_USER_AGENT_LENGTH)
+    : undefined;
+}
 
 export type RequestWithCorrelation = Request & {
   correlationId?: string;
@@ -60,6 +75,7 @@ export function correlationIdMiddleware(
       cellId: PROCESS_CELL_ID,
       release: currentRelease(),
       ipAddress: resolveClientIp(req),
+      userAgent: userAgentOf(req.headers["user-agent"]),
     },
     () => {
       const open = startSpan(`${req.method} ${req.path}`, {

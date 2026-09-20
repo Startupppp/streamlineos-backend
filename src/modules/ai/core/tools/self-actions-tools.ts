@@ -283,6 +283,57 @@ export class SelfActionsTools implements AskOsToolProvider {
       }),
 
       defineTool({
+        key: "applyToJobOpening",
+        description:
+          "Apply for an internal job opening on behalf of the caller. Requires user confirmation before the application is submitted. Use when the user wants to apply for an internal role or job posting.",
+        input: z.object({
+          jobId: z
+            .number()
+            .int()
+            .positive()
+            .describe("The numeric ID of the internal job opening to apply for"),
+          coverLetter: z
+            .string()
+            .max(5000)
+            .optional()
+            .describe("Optional cover letter for the application"),
+          notes: z
+            .string()
+            .max(2000)
+            .optional()
+            .describe("Optional notes or remarks to include with the application"),
+        }),
+        confirms: "self.applyToJobOpening",
+        module: "hr",
+        run: async (input, ctx) => {
+          const { orgId, userId, today } = ctx.actor;
+          const proposal = await this.confirmation.propose({
+            orgId,
+            userId,
+            action: "self.applyToJobOpening",
+            payload: {
+              jobId: input.jobId,
+              coverLetter: input.coverLetter ?? null,
+              notes: input.notes ?? null,
+            },
+            idempotencyKey: `${orgId}:${userId}:self.applyToJobOpening:${today}:${input.jobId}`,
+          });
+          return needsConfirmation({
+            proposalId: proposal.proposalId,
+            token: proposal.token,
+            action: "self.applyToJobOpening",
+            summary: `Apply for job opening #${input.jobId}`,
+            preview: {
+              jobId: input.jobId,
+              coverLetter: input.coverLetter ?? null,
+              notes: input.notes ?? null,
+            },
+            expiresAt: proposal.expiresAt,
+          });
+        },
+      }),
+
+      defineTool({
         key: "submitReferral",
         description:
           "Submit a candidate referral on behalf of the caller. Requires user confirmation before the referral is created. Use when the user wants to refer someone for a job.",

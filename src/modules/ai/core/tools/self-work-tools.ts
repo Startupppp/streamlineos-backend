@@ -1,7 +1,15 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { z } from "zod";
 import { and, asc, desc, eq, gte, isNull, lte, sql } from "drizzle-orm";
-import { activities, candidateReferrals, timesheets } from "../../../../db/schema";
+import {
+  activities,
+  candidateApplications,
+  candidateReferrals,
+  candidates,
+  interviews,
+  jobPostings,
+  timesheets,
+} from "../../../../db/schema";
 import { DRIZZLE } from "../../../../db/drizzle.constants";
 import { type Db } from "../../../../db/drizzle.module";
 import { ProjectsWorkQueryService } from "../../../build/core/projects-work-query.service";
@@ -52,6 +60,8 @@ export class SelfWorkTools implements AskOsToolProvider {
       this.buildGetMyReferrals(),
       this.buildGetMyTasks(),
       this.buildGetMyTimesheets(),
+      this.buildGetMyJobApplications(),
+      this.buildGetMyInterviews(),
     ];
   }
 
@@ -256,6 +266,107 @@ export class SelfWorkTools implements AskOsToolProvider {
           .limit(100);
         if (rows.length === 0) return empty("timesheet entries", `No entries found between ${from} and ${to}.`);
         return data({ entries: rows, from, to });
+      },
+    });
+  }
+
+  private buildGetMyJobApplications(): AskOsToolDefinition {
+    return defineTool({
+      key: "getMyJobApplications",
+      description:
+        "Lists the caller's own applications to internal job openings, most recent first. Returns up to 20 records; capped is true when more may exist.",
+      input: z.object({}),
+      permission: "self:job-openings",
+      module: "hr",
+      run: async (_input, ctx) => {
+        const { orgId, email } = ctx.actor;
+        const rows = await this.db
+          .select({
+            applicationId: candidateApplications.id,
+            status: candidateApplications.status,
+            appliedAt: candidateApplications.appliedAt,
+            jobTitle: jobPostings.title,
+            jobType: jobPostings.type,
+            jobLocation: jobPostings.location,
+          })
+          .from(candidates)
+          .innerJoin(
+            candidateApplications,
+            and(
+              eq(candidateApplications.orgId, candidates.orgId),
+              eq(candidateApplications.candidateId, candidates.id),
+            ),
+          )
+          .innerJoin(
+            jobPostings,
+            and(
+              eq(jobPostings.orgId, candidateApplications.orgId),
+              eq(jobPostings.id, candidateApplications.jobPostingId),
+              eq(jobPostings.isInternal, true),
+            ),
+          )
+          .where(
+            and(
+              eq(candidates.orgId, orgId),
+              eq(candidates.email, email),
+            ),
+          )
+          .orderBy(desc(candidateApplications.appliedAt))
+          .limit(20);
+
+        if (rows.length === 0) return empty("job applications");
+        return data({ applications: rows, total: rows.length, capped: rows.length === 20 });
+      },
+    });
+  }
+
+  private buildGetMyInterviews(): AskOsToolDefinition {
+    return defineTool({
+      key: "getMyInterviews",
+      description:
+        "Lists the caller's own scheduled interviews as the interviewee (candidate) in internal job openings, most recent first. Never returns other candidates' interviews or the hiring pipeline.",
+      input: z.object({}),
+      permission: "self:recruitment",
+      module: "hr",
+      run: async (_input, ctx) => {
+        const { orgId, email } = ctx.actor;
+        const rows = await this.db
+          .select({
+            interviewId: interviews.id,
+            type: interviews.type,
+            scheduledAt: interviews.scheduledAt,
+            durationMinutes: interviews.duration,
+            meetingLink: interviews.meetingLink,
+            location: interviews.location,
+            result: interviews.result,
+            jobTitle: jobPostings.title,
+          })
+          .from(candidates)
+          .innerJoin(
+            interviews,
+            and(
+              eq(interviews.orgId, candidates.orgId),
+              eq(interviews.candidateId, candidates.id),
+            ),
+          )
+          .leftJoin(
+            jobPostings,
+            and(
+              eq(jobPostings.orgId, interviews.orgId),
+              eq(jobPostings.id, interviews.jobPostingId),
+            ),
+          )
+          .where(
+            and(
+              eq(candidates.orgId, orgId),
+              eq(candidates.email, email),
+            ),
+          )
+          .orderBy(desc(interviews.scheduledAt))
+          .limit(20);
+
+        if (rows.length === 0) return empty("interviews");
+        return data({ interviews: rows, total: rows.length, capped: rows.length === 20 });
       },
     });
   }

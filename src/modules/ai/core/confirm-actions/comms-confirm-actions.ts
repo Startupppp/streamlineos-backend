@@ -5,8 +5,10 @@ import { ChatMessagesService } from "../../../chat/chat-messages.service";
 import { ChatChannelsService } from "../../../chat/chat-channels.service";
 import { MailComposeService } from "../../../mail/mail-compose.service";
 import { MailAccountsService } from "../../../mail/mail-accounts.service";
+import { actingMembershipId } from "../../../../common/auth/principal";
 import {
   chatChannelPostPayloadSchema,
+  mailArchivePayloadSchema,
   mailReplyPayloadSchema,
   mailSendPayloadSchema,
   outboundEmailPayloadSchema,
@@ -108,6 +110,25 @@ export const COMMS_CONFIRM_ACTIONS = [
         `<p>${escapeHtml(body)}</p>`,
       );
       return { result: { sent: true }, summary: `Reply sent to thread ${threadId}` };
+    },
+  }),
+
+  defineConfirmableAction({
+    action: "mail.archive",
+    permission: "mail:messages:manage",
+    payload: mailArchivePayloadSchema,
+    resolve: (moduleRef) => moduleRef.get(MailComposeService, { strict: false }),
+    execute: async ({ accountId, messageId, threadId }, { actor }, compose) => {
+      await compose.performAction(
+        actor.orgId,
+        actor.userId,
+        actingMembershipId(actor.principal),
+        messageId,
+        accountId,
+        "archive",
+        threadId,
+      );
+      return { result: { archived: true }, summary: `Archived message ${messageId}` };
     },
   }),
 ] as const;

@@ -32,7 +32,9 @@ describe("resolving an attendee name never reaches outside the tenant or past a 
   });
 
   it("re-asserts the org on both sides of the join, so a foreign membership row cannot carry a foreign person in", () => {
-    expect(lowered).toContain('"organization_members"."org_id" = "organization_people"."organization_id"');
+    expect(lowered).toMatch(
+      /"organization_members"\."org_id" = "organization_people"\."organization_id"|"organization_people"\."organization_id" = "organization_members"\."org_id"/,
+    );
   });
 
   it("excludes soft-deleted people, because a deleted_at column reads ignore resurrects deleted rows", () => {
@@ -67,6 +69,7 @@ describe("a batch name resolution answers for every name it was given", () => {
       select: () => chain,
       from: () => chain,
       innerJoin: () => chain,
+      leftJoin: () => chain,
       where: () => chain,
       limit: () => query,
     };
@@ -139,7 +142,7 @@ describe("a batch name resolution answers for every name it was given", () => {
       ["  JORDAN lee  "],
     );
 
-    expect(resolved.get("JORDAN lee")).toEqual({ status: "resolved", userId: "u-1" });
+    expect(resolved.get("JORDAN lee")).toEqual({ status: "resolved", userId: "u-1", displayName: "Jordan Lee" });
   });
 
   it("resolves a first name to the one person it partially matches, which is how a model actually refers to people", async () => {
@@ -159,7 +162,7 @@ describe("a batch name resolution answers for every name it was given", () => {
       ["jordan"],
     );
 
-    expect(resolved.get("jordan")).toEqual({ status: "resolved", userId: "u-1" });
+    expect(resolved.get("jordan")).toEqual({ status: "resolved", userId: "u-1", displayName: "Jordan Lee" });
   });
 
   it("prefers the exact match over the people who merely contain it, so 'Sam' resolves to Sam rather than going ambiguous against Samantha", async () => {
@@ -188,7 +191,7 @@ describe("a batch name resolution answers for every name it was given", () => {
       ["Sam"],
     );
 
-    expect(resolved.get("Sam")).toEqual({ status: "resolved", userId: "u-1" });
+    expect(resolved.get("Sam")).toEqual({ status: "resolved", userId: "u-1", displayName: "Sam" });
   });
 
   it("caps the names it will look up, so a model emitting hundreds of attendees cannot widen the statement without bound", async () => {
@@ -196,5 +199,26 @@ describe("a batch name resolution answers for every name it was given", () => {
     const resolved = await resolvePeopleByName(dbReturning([]), "org-1", names);
 
     expect(resolved.size).toBe(NAME_RESOLUTION_MAX_NAMES);
+  });
+});
+
+describe("a member the HR and directory paths never touched is still resolvable", () => {
+  const compiled = compile("org-1", ["asha"]);
+  const lowered = compiled.sql.toLowerCase();
+
+  it("drives the search from organization_members, because an organization_people row is created only by the directory, HR, import, recruitment and seed paths", () => {
+    expect(lowered).toMatch(/from\s+"organization_members"/);
+  });
+
+  it("reaches organization_people through a left join, so a member without one is a candidate rather than invisible", () => {
+    expect(lowered).toContain('left join "organization_people"');
+  });
+
+  it("still inner joins users, so the left join above cannot smuggle in a deactivated account", () => {
+    expect(lowered).toContain('inner join "users"');
+  });
+
+  it("ladders the display key down to the user record, so a person row that never existed does not blank the name it matches on", () => {
+    expect(lowered).toContain('"users"."name"');
   });
 });

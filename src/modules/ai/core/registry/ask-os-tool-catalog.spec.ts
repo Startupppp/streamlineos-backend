@@ -1,47 +1,67 @@
 import "reflect-metadata";
+import fs from "node:fs";
+import path from "node:path";
 import { z } from "zod";
-import { HrCopilotTools } from "../tools/hr-copilot-tools";
-import { WorkspaceCopilotTools } from "../tools/workspace-copilot-tools";
-import { OpsCopilotTools } from "../tools/ops-copilot-tools";
-import { CrmCopilotTools } from "../tools/crm-copilot-tools";
-import { CommsCopilotTools } from "../tools/comms-copilot-tools";
-import { ProjectsCopilotTools } from "../tools/projects-copilot-tools";
-import { CommsActionsTools } from "../tools/comms-actions-tools";
-import { MailCopilotTools } from "../tools/mail-copilot-tools";
 import { WorkspaceInlineTools } from "../services/chat-assistant-inline-tools";
-import { SelfHrTools } from "../tools/self-hr-tools";
-import { SelfPayrollTools } from "../tools/self-payroll-tools";
-import { SelfWorkTools } from "../tools/self-work-tools";
-import { SelfActionsTools } from "../tools/self-actions-tools";
-import { WorkActionsTools } from "../tools/work-actions-tools";
 import { ALL_PERMISSION_NAMES } from "../../../rbac/permissions";
 import { CATALOG_MODULES } from "../../../access/access-policy";
 import { needsConfirmation, defineTool, data, type AskOsToolProvider } from "./ask-os-tool.types";
 import { ACTION_LABELS } from "./ask-os-tool-registry";
 import { CONFIRMABLE_ACTION_DEFINITIONS } from "../confirm-actions";
 
-const PROVIDER_CLASSES = [
-  HrCopilotTools,
-  WorkspaceCopilotTools,
-  OpsCopilotTools,
-  CrmCopilotTools,
-  CommsCopilotTools,
-  ProjectsCopilotTools,
-  CommsActionsTools,
-  MailCopilotTools,
+type ProviderClass = new (...args: never[]) => AskOsToolProvider;
+
+const TOOLS_DIR = path.join(__dirname, "..", "tools");
+
+function isProviderClass(candidate: unknown): candidate is ProviderClass {
+  return (
+    typeof candidate === "function" &&
+    typeof (candidate as { prototype?: { tools?: unknown } }).prototype?.tools === "function"
+  );
+}
+
+function discoverProviderClasses(): { file: string; klass: ProviderClass }[] {
+  const files = fs
+    .readdirSync(TOOLS_DIR)
+    .filter((name) => name.endsWith("-tools.ts") && !name.includes(".spec."));
+
+  return files.flatMap((file) => {
+    const loaded: unknown = require(path.join(TOOLS_DIR, file));
+    if (loaded === null || typeof loaded !== "object") return [];
+    return Object.values(loaded)
+      .filter(isProviderClass)
+      .map((klass) => ({ file, klass }));
+  });
+}
+
+const DISCOVERED = discoverProviderClasses();
+
+const PROVIDER_CLASSES: ProviderClass[] = [
+  ...DISCOVERED.map((entry) => entry.klass),
   WorkspaceInlineTools,
-  SelfHrTools,
-  SelfPayrollTools,
-  SelfWorkTools,
-  SelfActionsTools,
-  WorkActionsTools,
 ];
 
-function stubProvider(klass: new (...args: never[]) => AskOsToolProvider): AskOsToolProvider {
+function stubProvider(klass: ProviderClass): AskOsToolProvider {
   return Object.create(klass.prototype) as AskOsToolProvider;
 }
 
 const ALL_DEFINITIONS = PROVIDER_CLASSES.flatMap((klass) => stubProvider(klass).tools());
+
+describe("the catalog gate sees every tool file, so adding one cannot escape the checks below", () => {
+  it("discovers a provider class in every -tools.ts file, because a hand-maintained list silently stops covering the next one", () => {
+    const files = fs
+      .readdirSync(TOOLS_DIR)
+      .filter((name) => name.endsWith("-tools.ts") && !name.includes(".spec."));
+    const covered = new Set(DISCOVERED.map((entry) => entry.file));
+
+    expect(files.filter((file) => !covered.has(file))).toEqual([]);
+  });
+
+  it("collects tools from those providers, so an empty discovery cannot make every other assertion vacuous", () => {
+    expect(DISCOVERED.length).toBeGreaterThan(10);
+    expect(ALL_DEFINITIONS.length).toBeGreaterThan(40);
+  });
+});
 
 describe("a typo in a tool's permission key silently removes it from every user's toolset forever", () => {
   it("every declared permission exists verbatim in the backend catalog", () => {
@@ -103,6 +123,21 @@ describe("a confirmable action with no ACTION_LABELS entry silently renders its 
   it("the parity spec is wired: an action absent from ACTION_LABELS is caught", () => {
     const sentinel = "not.registered.in.labels";
     expect(sentinel in ACTION_LABELS).toBe(false);
+  });
+
+  it("carries no label for an action nobody can propose, because an orphan entry is a rename the map did not follow", () => {
+    const registered = new Set(CONFIRMABLE_ACTION_DEFINITIONS.map((def) => def.action));
+    const orphaned = Object.keys(ACTION_LABELS).filter((action) => !registered.has(action));
+
+    expect(orphaned).toEqual([]);
+  });
+
+  it("gives every label a non-empty title and confirm label, so a blank string cannot satisfy the parity check above", () => {
+    const blank = Object.entries(ACTION_LABELS)
+      .filter(([, label]) => label.title.trim().length === 0 || label.confirmLabel.trim().length === 0)
+      .map(([action]) => action);
+
+    expect(blank).toEqual([]);
   });
 });
 

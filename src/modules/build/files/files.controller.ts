@@ -33,7 +33,10 @@ import {
 } from "./dto/files-response.schemas";
 
 const fileIdParams = z
-  .object({ fileId: z.coerce.number().int().positive() })
+  .object({
+    projectId: z.coerce.number().int().positive(),
+    fileId: z.coerce.number().int().positive(),
+  })
   .strict();
 
 @RequireModule("build")

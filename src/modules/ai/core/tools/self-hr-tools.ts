@@ -1,12 +1,17 @@
 import { Injectable, Inject } from "@nestjs/common";
-import { and, count, desc, eq, gte, lte, sql } from "drizzle-orm";
+import { and, count, desc, eq, gte, isNull, lte, sql } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
 import { z } from "zod";
 import {
   attendance,
   expenses,
+  hrEmployments,
+  hrPeople,
+  hrReportingLines,
   leaveBalances,
   leaveRequests,
   leaveTypes,
+  orgUnits,
   users,
 } from "../../../../db/schema";
 import { DRIZZLE } from "../../../../db/drizzle.constants";
@@ -29,6 +34,125 @@ export class SelfHrTools implements AskOsToolProvider {
 
   tools(): AskOsToolDefinition[] {
     return [
+      defineTool({
+        key: "getMyEmployment",
+        description:
+          "Get the caller's own employment facts: job title/designation, department, employment type, lifecycle status, manager, joining date, and work location. Never returns compensation, tax, or bank data.",
+        input: z.object({}),
+        run: async (_input, ctx) => {
+          const { userId, orgId, today } = ctx.actor;
+          const deptUnit = alias(orgUnits, "dept_unit");
+          const locUnit = alias(orgUnits, "loc_unit");
+
+          const empRows = await this.db
+            .select({
+              employmentId: hrEmployments.id,
+              employeeNumber: hrEmployments.employeeNumber,
+              designation: hrEmployments.designation,
+              workerType: hrEmployments.workerType,
+              lifecycleStatus: hrEmployments.lifecycleStatus,
+              joiningDate: hrEmployments.joiningDate,
+              departmentName: deptUnit.name,
+              locationName: locUnit.name,
+            })
+            .from(hrPeople)
+            .innerJoin(
+              hrEmployments,
+              and(
+                eq(hrEmployments.orgId, hrPeople.orgId),
+                eq(hrEmployments.personId, hrPeople.id),
+                isNull(hrEmployments.deletedAt),
+              ),
+            )
+            .leftJoin(
+              deptUnit,
+              and(
+                eq(deptUnit.orgId, hrEmployments.orgId),
+                eq(deptUnit.id, hrEmployments.departmentId),
+              ),
+            )
+            .leftJoin(
+              locUnit,
+              and(
+                eq(locUnit.orgId, hrEmployments.orgId),
+                eq(locUnit.id, hrEmployments.locationId),
+              ),
+            )
+            .where(
+              and(
+                eq(hrPeople.orgId, orgId),
+                eq(hrPeople.userId, userId),
+                isNull(hrPeople.deletedAt),
+              ),
+            )
+            .orderBy(sql`${hrEmployments.isPrimary} DESC`, desc(hrEmployments.id))
+            .limit(1);
+
+          const emp = empRows[0];
+          if (!emp) return empty("employment", "No employment record found.");
+
+          const managerEmp = alias(hrEmployments, "mgr_emp");
+          const managerPerson = alias(hrPeople, "mgr_person");
+
+          const managerRows = await this.db
+            .select({
+              name: users.name,
+              firstName: users.firstName,
+              lastName: users.lastName,
+              email: users.email,
+            })
+            .from(hrReportingLines)
+            .innerJoin(
+              managerEmp,
+              and(
+                eq(managerEmp.orgId, hrReportingLines.orgId),
+                eq(managerEmp.id, hrReportingLines.managerEmploymentId),
+              ),
+            )
+            .innerJoin(
+              managerPerson,
+              and(
+                eq(managerPerson.orgId, managerEmp.orgId),
+                eq(managerPerson.id, managerEmp.personId),
+              ),
+            )
+            .leftJoin(users, eq(users.id, managerPerson.userId))
+            .where(
+              and(
+                eq(hrReportingLines.orgId, orgId),
+                eq(hrReportingLines.employmentId, emp.employmentId),
+                eq(hrReportingLines.lineType, "primary"),
+                gte(hrReportingLines.effectiveTo, today),
+              ),
+            )
+            .limit(1);
+
+          const mgr = managerRows[0];
+          let managerName: string | null = null;
+          if (mgr) {
+            const fullName = `${mgr.firstName ?? ""} ${mgr.lastName ?? ""}`.trim();
+            if (mgr.name?.trim()) {
+              managerName = mgr.name.trim();
+            } else if (fullName) {
+              managerName = fullName;
+            } else {
+              managerName = mgr.email?.split("@")[0] ?? null;
+            }
+          }
+
+          return data({
+            employeeNumber: emp.employeeNumber,
+            designation: emp.designation,
+            employmentType: emp.workerType,
+            status: emp.lifecycleStatus,
+            department: emp.departmentName ?? null,
+            workLocation: emp.locationName ?? null,
+            joiningDate: emp.joiningDate,
+            manager: managerName,
+          });
+        },
+      }),
+
       defineTool({
         key: "getMyProfile",
         description:

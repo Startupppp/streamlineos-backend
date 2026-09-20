@@ -114,6 +114,12 @@ export const mailReplyPayloadSchema = z.object({
   accountEmail: z.string().email().max(320).optional(),
 });
 
+export const mailArchivePayloadSchema = z.object({
+  accountId: z.coerce.number().int().positive(),
+  messageId: z.string().min(1).max(500),
+  threadId: z.string().min(1).max(500).optional(),
+});
+
 export const applyLeavePayloadSchema = z.object({
   leaveTypeId: z.coerce.number().int().positive(),
   startDate: isoDate,
@@ -140,6 +146,12 @@ export const submitReferralPayloadSchema = z.object({
   candidateEmail: z.string().email().max(320),
   jobPostingId: z.coerce.number().int().positive().nullish(),
   notes: z.string().max(2_000).nullish(),
+});
+
+export const applyToJobOpeningPayloadSchema = z.object({
+  jobId: z.coerce.number().int().positive(),
+  coverLetter: z.string().max(5000).nullish(),
+  notes: z.string().max(2000).nullish(),
 });
 
 export const createLeadPayloadSchema = z.object({

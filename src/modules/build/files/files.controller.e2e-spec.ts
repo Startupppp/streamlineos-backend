@@ -78,7 +78,7 @@ describe("Files auth/RBAC (e2e)", () => {
     const res = await request(app.getHttpServer())
       .post("/build/1/files")
       .set("Authorization", `Bearer ${token}`)
-      .send({ name: "design.png", url: "https://cdn.example.com/file.png" });
+      .send({ fileName: "design.png", mimeType: "image/png", contentBase64: "AAAA" });
     expect(res.status).toBe(403);
     expect(res.body).toMatchObject({ code: "FORBIDDEN" });
   });
@@ -95,8 +95,11 @@ describe("Files auth/RBAC (e2e)", () => {
     expect(res.body).toMatchObject({ code: "FORBIDDEN" });
   });
 
-  it("does NOT block GET /build/1/files with build:files:view", async () => {
-    filesMock.listFiles.mockResolvedValue({ data: [], hasMore: false, total: 0 });
+  it("200 on GET /build/1/files with build:files:view — contract-conforming list page", async () => {
+    filesMock.listFiles.mockResolvedValue({
+      data: [],
+      pagination: { limit: 25, hasMore: false, nextCursor: null },
+    });
     const token = await signToken({
       permissions: ["build:files:view"],
       enabledModules: ALL_MODULES,
@@ -104,12 +107,21 @@ describe("Files auth/RBAC (e2e)", () => {
     const res = await request(app.getHttpServer())
       .get("/build/1/files")
       .set("Authorization", `Bearer ${token}`);
-    expect(res.status).not.toBe(401);
-    expect(res.status).not.toBe(403);
+    expect(res.status).toBe(200);
   });
 
-  it("does NOT block POST /build/1/files with build:files:manage", async () => {
-    filesMock.uploadFile.mockResolvedValue({ id: 1, name: "file.png" });
+  it("201 on POST /build/1/files with build:files:manage — valid body reaches the service", async () => {
+    filesMock.uploadFile.mockResolvedValue({
+      id: 1,
+      orgId: "test-org",
+      projectId: 1,
+      uploadedByMembershipId: 7,
+      fileName: "file.png",
+      mimeType: "image/png",
+      sizeBytes: 1024,
+      createdAt: new Date(),
+      deletedAt: null,
+    });
     const token = await signToken({
       permissions: ["build:files:manage"],
       enabledModules: ALL_MODULES,
@@ -117,9 +129,35 @@ describe("Files auth/RBAC (e2e)", () => {
     const res = await request(app.getHttpServer())
       .post("/build/1/files")
       .set("Authorization", `Bearer ${token}`)
-      .send({ name: "file.png", url: "https://cdn.example.com/file.png" });
-    expect(res.status).not.toBe(401);
-    expect(res.status).not.toBe(403);
+      .send({ fileName: "file.png", mimeType: "image/png", contentBase64: "AAAA" });
+    expect(res.status).toBe(201);
+  });
+
+  it("200 on GET /build/1/files/2/url with build:files:view — fileIdParams includes projectId so params validation passes", async () => {
+    filesMock.getSignedUrl.mockResolvedValue({
+      url: "https://cdn.example.com/signed",
+      expiresIn: 3600,
+    });
+    const token = await signToken({
+      permissions: ["build:files:view"],
+      enabledModules: ALL_MODULES,
+    });
+    const res = await request(app.getHttpServer())
+      .get("/build/1/files/2/url")
+      .set("Authorization", `Bearer ${token}`);
+    expect(res.status).toBe(200);
+  });
+
+  it("204 on DELETE /build/1/files/2 with build:files:manage — fileIdParams includes projectId so params validation passes", async () => {
+    filesMock.softDeleteFile.mockResolvedValue(undefined);
+    const token = await signToken({
+      permissions: ["build:files:manage"],
+      enabledModules: ALL_MODULES,
+    });
+    const res = await request(app.getHttpServer())
+      .delete("/build/1/files/2")
+      .set("Authorization", `Bearer ${token}`);
+    expect(res.status).toBe(204);
   });
 
   it("GET /build/1/files from a caller in a different tenant yields 404 not 403", async () => {
@@ -133,7 +171,6 @@ describe("Files auth/RBAC (e2e)", () => {
       .get("/build/1/files")
       .set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(404);
-    expect(res.status).not.toBe(403);
   });
 
   describe("when the caller's org membership is inactive", () => {

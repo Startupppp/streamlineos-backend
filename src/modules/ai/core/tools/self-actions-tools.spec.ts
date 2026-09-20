@@ -307,6 +307,60 @@ describe("SelfActionsTools — Group B: submitReferral", () => {
   });
 });
 
+describe("SelfActionsTools — Group B: applyToJobOpening", () => {
+  it("is registered as a confirmable-write tool that requires user confirmation", () => {
+    const service = new SelfActionsTools(makeMockDb(), makeMockConfirmation(), makeMockModuleRef());
+    const tool = service.tools().find((t) => t.key === "applyToJobOpening");
+
+    expect(tool).toBeDefined();
+    expect(tool?.confirms).toBe("self.applyToJobOpening");
+  });
+
+  it("returns needs-confirmation and does not execute the write directly", async () => {
+    const confirmation = makeMockConfirmation();
+    const service = new SelfActionsTools(makeMockDb(), confirmation, makeMockModuleRef());
+    const tool = service.tools().find((t) => t.key === "applyToJobOpening");
+    if (!tool) throw new Error("applyToJobOpening tool not found");
+
+    const outcome = await tool.run({ jobId: 5 }, makeCtx());
+
+    expect(outcome.kind).toBe("needs-confirmation");
+    if (outcome.kind === "needs-confirmation") {
+      expect(outcome.action).toBe("self.applyToJobOpening");
+      expect(outcome.proposalId).toBe(99);
+    }
+    expect(confirmation.propose).toHaveBeenCalledWith(
+      expect.objectContaining({ action: "self.applyToJobOpening" }),
+    );
+  });
+
+  it("derives orgId and userId from ctx.actor so an employee cannot apply as another", async () => {
+    const confirmation = makeMockConfirmation();
+    const service = new SelfActionsTools(makeMockDb(), confirmation, makeMockModuleRef());
+    const tool = service.tools().find((t) => t.key === "applyToJobOpening")!;
+    const ctx = makeCtx();
+
+    await tool.run({ jobId: 3 }, ctx);
+
+    const call = (confirmation.propose as jest.Mock).mock.calls[0]?.[0] as { orgId: string; userId: string };
+    expect(call.orgId).toBe(ctx.actor.orgId);
+    expect(call.userId).toBe(ctx.actor.userId);
+  });
+
+  it("includes jobId in the idempotency key so duplicate proposals for the same opening are deduplicated", async () => {
+    const confirmation = makeMockConfirmation();
+    const service = new SelfActionsTools(makeMockDb(), confirmation, makeMockModuleRef());
+    const tool = service.tools().find((t) => t.key === "applyToJobOpening")!;
+
+    await tool.run({ jobId: 42 }, makeCtx());
+
+    const call = (confirmation.propose as jest.Mock).mock.calls[0]?.[0] as { idempotencyKey: string };
+    expect(call.idempotencyKey).toContain("42");
+    expect(call.idempotencyKey).toContain("org-xyz");
+    expect(call.idempotencyKey).toContain("user-abc");
+  });
+});
+
 describe("clocking is command-driven and applies immediately", () => {
   function clockCtx() {
     return makeCtx();

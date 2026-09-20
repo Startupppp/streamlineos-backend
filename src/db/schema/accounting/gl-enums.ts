@@ -117,6 +117,7 @@ export const glSystemTagEnum = pgEnum("gl_system_tag", [
    * rather than two figures that must be added back to mean anything (0672).
    */
   "inventory_adjustment",
+  "landed_cost",
 ]);
 
 /* ----------------------------------------------------------------- types */

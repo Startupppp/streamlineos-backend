@@ -109,6 +109,22 @@ function findTool(tools: AskOsToolDefinition[], key: string): AskOsToolDefinitio
   return tool;
 }
 
+function stubSelectChainWith(resolvedValue: unknown[]): unknown {
+  const chain: Record<string, unknown> = {};
+  const terminal = (): unknown => Promise.resolve(resolvedValue);
+  chain.from = () => chain;
+  chain.innerJoin = () => chain;
+  chain.leftJoin = () => chain;
+  chain.where = () => chain;
+  chain.orderBy = () => chain;
+  chain.limit = terminal;
+  chain.then = (
+    resolve: (v: unknown) => unknown,
+    reject: (e: unknown) => unknown,
+  ) => Promise.resolve(resolvedValue).then(resolve, reject);
+  return chain;
+}
+
 describe("SelfHrTools and SelfPayrollTools — no tool accepts a subject identifier in its input schema", () => {
   it("every tool's inputSchema.shape contains no user/subject key", () => {
     const hrSut = new SelfHrTools(buildDb());
@@ -383,5 +399,134 @@ describe("getMyTotalRewards — total rewards bound to caller", () => {
     expect(capturedOpts?.where).toBeDefined();
     const { params } = renderSql(capturedOpts!.where!);
     expect(params).toContain(77);
+  });
+});
+
+describe("getMyEmployment — registered under expected key with no subject identifier in input", () => {
+  it("is registered under the key 'getMyEmployment'", () => {
+    const sut = new SelfHrTools(buildDb());
+    const tool = sut.tools().find((t) => t.key === "getMyEmployment");
+    expect(tool).toBeDefined();
+  });
+
+  it("input schema has no userId, actorId, employeeId or any other subject-identifying field", () => {
+    const sut = new SelfHrTools(buildDb());
+    const tool = sut.tools().find((t) => t.key === "getMyEmployment");
+    expect(tool).toBeDefined();
+    const schema = tool!.input as z.ZodObject<z.ZodRawShape>;
+    assertNoSubjectIdentifier(schema.shape);
+    expect(Object.keys(schema.shape)).toHaveLength(0);
+  });
+});
+
+describe("getMyEmployment — read is org-scoped, bounded and subjects derive from actor only", () => {
+  it("binds the people query to ctx.actor.orgId and ctx.actor.userId — both appear as SQL parameters", async () => {
+    expect.hasAssertions();
+    let capturedWhere: SQL | undefined;
+    const chain = {
+      from: jest.fn().mockReturnThis(),
+      innerJoin: jest.fn().mockReturnThis(),
+      leftJoin: jest.fn().mockReturnThis(),
+      where: jest.fn().mockImplementation((condition: SQL) => {
+        capturedWhere = condition;
+        return chain;
+      }),
+      orderBy: jest.fn().mockReturnThis(),
+      limit: jest.fn().mockResolvedValue([]),
+    };
+
+    const db = buildDb({ select: jest.fn().mockReturnValue(chain) });
+
+    const sut = new SelfHrTools(db);
+    await findTool(sut.tools(), "getMyEmployment").run(
+      {},
+      buildCtx({ orgId: "scope-org-789", userId: "scope-user-456" }),
+    );
+
+    expect(capturedWhere).toBeDefined();
+    const { params } = renderSql(capturedWhere!);
+    expect(params).toContain("scope-org-789");
+    expect(params).toContain("scope-user-456");
+  });
+
+  it("applies LIMIT 1 to the employment query because a caller has one primary employment at a time", async () => {
+    expect.hasAssertions();
+    let capturedLimit: number | undefined;
+    const chain = {
+      from: jest.fn().mockReturnThis(),
+      innerJoin: jest.fn().mockReturnThis(),
+      leftJoin: jest.fn().mockReturnThis(),
+      where: jest.fn().mockReturnThis(),
+      orderBy: jest.fn().mockReturnThis(),
+      limit: jest.fn().mockImplementation((n: number) => {
+        capturedLimit = n;
+        return Promise.resolve([]);
+      }),
+    };
+
+    const db = buildDb({ select: jest.fn().mockReturnValue(chain) });
+
+    const sut = new SelfHrTools(db);
+    await findTool(sut.tools(), "getMyEmployment").run({}, buildCtx());
+
+    expect(capturedLimit).toBe(1);
+  });
+
+  it("returns empty when no hr_people record exists for the caller — org has not used HR onboarding yet", async () => {
+    expect.hasAssertions();
+    const db = buildDb({ select: jest.fn().mockReturnValue(stubSelectChain([])) });
+
+    const sut = new SelfHrTools(db);
+    const outcome = await findTool(sut.tools(), "getMyEmployment").run({}, buildCtx());
+
+    expect(outcome.kind).toBe("empty");
+  });
+});
+
+describe("getMyEmployment — projection excludes compensation, tax and bank columns", () => {
+  it("returns no salary, taxId, bankDetails or payroll columns because those live in hr_employee_sensitive_fields which is a deliberate separate table requiring its own gated query", async () => {
+    expect.hasAssertions();
+
+    const empRow = {
+      employmentId: 1,
+      employeeNumber: "EMP001",
+      designation: "Senior Engineer",
+      workerType: "FULL_TIME",
+      lifecycleStatus: "ACTIVE",
+      joiningDate: "2024-01-15",
+      departmentName: "Engineering",
+      locationName: "Head Office",
+    };
+
+    const empChain = {
+      from: jest.fn().mockReturnThis(),
+      innerJoin: jest.fn().mockReturnThis(),
+      leftJoin: jest.fn().mockReturnThis(),
+      where: jest.fn().mockReturnThis(),
+      orderBy: jest.fn().mockReturnThis(),
+      limit: jest.fn().mockResolvedValue([empRow]),
+    };
+
+    const db = buildDb({
+      select: jest.fn()
+        .mockReturnValueOnce(empChain)
+        .mockReturnValue(stubSelectChain([])),
+    });
+
+    const sut = new SelfHrTools(db);
+    const outcome = await findTool(sut.tools(), "getMyEmployment").run({}, buildCtx());
+
+    expect(outcome.kind).toBe("data");
+    if (outcome.kind === "data") {
+      const d = outcome.data as Record<string, unknown>;
+      expect(d).not.toHaveProperty("salary");
+      expect(d).not.toHaveProperty("salaryAmountCents");
+      expect(d).not.toHaveProperty("salaryCurrency");
+      expect(d).not.toHaveProperty("taxId");
+      expect(d).not.toHaveProperty("bankDetails");
+      expect(d).not.toHaveProperty("panNumber");
+      expect(d).not.toHaveProperty("nationalId");
+      expect(d).not.toHaveProperty("passportNumber");
+    }
   });
 });

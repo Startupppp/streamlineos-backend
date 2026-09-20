@@ -18,6 +18,7 @@ export const ACTION_LABELS: Record<string, { title: string; confirmLabel: string
   "email.send": { title: "Send email", confirmLabel: "Send" },
   "mail.send": { title: "Send email", confirmLabel: "Send" },
   "mail.reply": { title: "Reply to email", confirmLabel: "Reply" },
+  "mail.archive": { title: "Archive email", confirmLabel: "Archive" },
   "chat.postChannel": { title: "Post to channel", confirmLabel: "Post" },
   "chat.sendDirect": { title: "Send direct message", confirmLabel: "Send" },
   "hr.grantRecognition": { title: "Send kudos", confirmLabel: "Send" },
@@ -37,6 +38,7 @@ export const ACTION_LABELS: Record<string, { title: string; confirmLabel: string
   "self.submitExpense": { title: "Submit expense", confirmLabel: "Submit" },
   "self.logTimesheet": { title: "Log time", confirmLabel: "Log" },
   "self.submitReferral": { title: "Submit referral", confirmLabel: "Submit" },
+  "self.applyToJobOpening": { title: "Apply for job opening", confirmLabel: "Submit" },
 };
 
 export interface AskOsToolsetInput {

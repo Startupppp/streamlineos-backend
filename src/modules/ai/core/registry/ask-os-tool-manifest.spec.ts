@@ -47,4 +47,34 @@ describe("the tool manifest carries nothing the model does not read", () => {
     expect(schema.required).toEqual(["ticketId"]);
     expect(Object.keys(schema.properties ?? {})).toEqual(["ticketId", "note"]);
   });
+
+  it("drops additionalProperties:false which zod emits on every object and adds 26 chars of noise the model ignores", () => {
+    const schema = toModelSchema(z.object({ name: z.string() }));
+
+    expect(schema).not.toHaveProperty("additionalProperties");
+  });
+
+  it("drops additionalProperties:false from nested objects too", () => {
+    const schema = toModelSchema(
+      z.object({ inner: z.object({ value: z.string() }) }),
+    );
+    const innerProp = (schema.properties as Record<string, unknown> | undefined)?.inner;
+
+    expect(innerProp).not.toHaveProperty("additionalProperties");
+  });
+
+  it("drops the verbose zod-generated regex pattern when a format hint is already present, keeping format for the model", () => {
+    const schema = toModelSchema(z.object({ email: z.string().email() }));
+    const emailProp = (schema.properties as Record<string, unknown> | undefined)?.email;
+
+    expect(emailProp).toHaveProperty("format", "email");
+    expect(emailProp).not.toHaveProperty("pattern");
+  });
+
+  it("keeps a caller-declared regex pattern on a plain string that has no format", () => {
+    const schema = toModelSchema(z.object({ date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/) }));
+    const dateProp = (schema.properties as Record<string, unknown> | undefined)?.date;
+
+    expect(dateProp).toHaveProperty("pattern");
+  });
 });

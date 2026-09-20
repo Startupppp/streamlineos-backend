@@ -421,7 +421,7 @@ export interface NameResolutionCandidate {
 }
 
 export type PersonNameResolution =
-  | { status: "resolved"; userId: string }
+  | { status: "resolved"; userId: string; displayName?: string }
   | { status: "unresolved" }
   | { status: "ambiguous"; candidates: readonly NameResolutionCandidate[] };
 
@@ -429,8 +429,8 @@ export const NAME_RESOLUTION_MAX_NAMES = 20;
 export const NAME_RESOLUTION_MAX_CANDIDATES = 10;
 export const NAME_RESOLUTION_MIN_PARTIAL_CHARS = 3;
 
-const displayKey = sql<string>`lower(coalesce(${organizationPeople.displayName}, ''))`;
-const fullNameKey = sql<string>`lower(trim(coalesce(${organizationPeople.firstName}, '') || ' ' || coalesce(${organizationPeople.lastName}, '')))`;
+const displayKey = sql<string>`lower(coalesce(${organizationPeople.displayName}, ${users.name}, ''))`;
+const fullNameKey = sql<string>`lower(trim(coalesce(${organizationPeople.firstName}, ${users.firstName}, '') || ' ' || coalesce(${organizationPeople.lastName}, ${users.lastName}, '')))`;
 
 function likePattern(needle: string): string {
   return `%${needle.replace(/[\\%_]/g, (character) => `\\${character}`)}%`;
@@ -448,31 +448,31 @@ export function peopleByNameQuery(db: Db, orgId: string, needleKeys: readonly st
 
   return db
     .select({
-      userId: organizationPeople.userId,
-      displayName: organizationPeople.displayName,
-      firstName: organizationPeople.firstName,
-      lastName: organizationPeople.lastName,
-      workEmail: organizationPeople.workEmail,
+      userId: organizationMembers.userId,
+      displayName: sql<string | null>`coalesce(${organizationPeople.displayName}, ${users.name})`,
+      firstName: sql<string | null>`coalesce(${organizationPeople.firstName}, ${users.firstName})`,
+      lastName: sql<string | null>`coalesce(${organizationPeople.lastName}, ${users.lastName})`,
+      workEmail: sql<string | null>`coalesce(${organizationPeople.workEmail}, ${users.email})`,
       displayKey,
       fullNameKey,
     })
-    .from(organizationPeople)
-    .innerJoin(
-      organizationMembers,
-      and(
-        eq(organizationMembers.userId, organizationPeople.userId),
-        eq(organizationMembers.orgId, organizationPeople.organizationId),
-        eq(organizationMembers.status, "ACTIVE"),
-      ),
-    )
+    .from(organizationMembers)
     .innerJoin(
       users,
-      and(eq(users.id, organizationPeople.userId), eq(users.isActive, true), isNull(users.deletedAt)),
+      and(eq(users.id, organizationMembers.userId), eq(users.isActive, true), isNull(users.deletedAt)),
+    )
+    .leftJoin(
+      organizationPeople,
+      and(
+        eq(organizationPeople.userId, organizationMembers.userId),
+        eq(organizationPeople.organizationId, organizationMembers.orgId),
+        isNull(organizationPeople.deletedAt),
+      ),
     )
     .where(
       and(
-        eq(organizationPeople.organizationId, orgId),
-        isNull(organizationPeople.deletedAt),
+        eq(organizationMembers.orgId, orgId),
+        eq(organizationMembers.status, "ACTIVE"),
         or(...matches),
       ),
     )
@@ -527,7 +527,11 @@ export async function resolvePeopleByName(
       continue;
     }
     const [row] = bucket;
-    if (row?.userId) resolutions.set(needle, { status: "resolved", userId: row.userId });
+    if (row?.userId) {
+      const nameText = row.displayName ?? `${row.firstName ?? ""} ${row.lastName ?? ""}`.trim();
+      const displayName = nameText !== "" ? nameText : undefined;
+      resolutions.set(needle, { status: "resolved", userId: row.userId, displayName });
+    }
   }
 
   return resolutions;

@@ -6182,6 +6182,13 @@
       "when": 1803000010337,
       "tag": "1122_build_workspace_scope_indexes",
       "breakpoints": true
+    },
+    {
+      "idx": 1011,
+      "version": "7",
+      "when": 1803000010338,
+      "tag": "1123_ai_action_proposals_rls",
+      "breakpoints": true
     }
   ]
 }

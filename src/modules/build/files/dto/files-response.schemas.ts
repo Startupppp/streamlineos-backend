@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { wireDate, nullableWireDate } from "../../../../common/openapi/wire-types";
+import { nullableWireDate, wireTimestamp } from "../../../../common/openapi/wire-types";
 
 export const fileRowSchema = z.object({
   id: z.number().int(),
@@ -9,7 +9,7 @@ export const fileRowSchema = z.object({
   fileName: z.string(),
   mimeType: z.string(),
   sizeBytes: z.number().int(),
-  createdAt: wireDate(),
+  createdAt: wireTimestamp(),
   deletedAt: nullableWireDate(),
 });
 

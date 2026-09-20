@@ -77,7 +77,7 @@ describe("correlationIdMiddleware", () => {
 
   it("carries Express-resolved req.ip into the ambient context for audit writers", () => {
     const { seen } = run({}, { ip: "203.0.113.9" });
-    expect(seen?.clientIp).toBe("203.0.113.9");
+    expect(seen?.ipAddress).toBe("203.0.113.9");
   });
 
   it("carries the User-Agent header into the ambient context", () => {
@@ -87,7 +87,7 @@ describe("correlationIdMiddleware", () => {
 
   it("does not invent a client IP when Express has none", () => {
     const { seen } = run();
-    expect(seen?.clientIp).toBeUndefined();
+    expect(seen?.ipAddress).toBeUndefined();
   });
 
   it("returns the correlation id to the caller so they can quote it in a support request", () => {

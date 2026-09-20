@@ -4,17 +4,21 @@ import { and, eq, ilike, inArray, isNull } from "drizzle-orm";
 import { DRIZZLE } from "../../../../db/drizzle.constants";
 import { type Db } from "../../../../db/drizzle.module";
 import { users, organizationMembers, chatChannels } from "../../../../db/schema";
+import { runInNewTenantTransaction } from "../../../../common/tenant/run-in-tenant-transaction";
 import { AiConfirmationService } from "../../confirmation/ai-confirmation.service";
 import { ChatChannelsService } from "../../../chat/chat-channels.service";
+import { MailService } from "../../../mail/mail.service";
 import {
   type AskOsToolDefinition,
   type AskOsToolProvider,
   defineTool,
   data,
   empty,
+  failed,
   needsConfirmation,
 } from "../registry/ask-os-tool.types";
 import { AskOsTools } from "../registry/ask-os-tools.decorator";
+import { requireMailConnection } from "./lib/mail-connection";
 
 const CHANNEL_NOT_FOUND_HINT = "Channel not found or not accessible." as const;
 
@@ -25,6 +29,7 @@ export class CommsActionsTools implements AskOsToolProvider {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly confirmation: AiConfirmationService,
     private readonly channels: ChatChannelsService,
+    private readonly mail: MailService,
   ) {}
 
   tools(): AskOsToolDefinition[] {
@@ -208,6 +213,66 @@ export class CommsActionsTools implements AskOsToolProvider {
               status: "Creates a PENDING bonus for payroll approval",
             },
           });
+        },
+      }),
+
+      defineTool({
+        key: "archiveMailMessage",
+        description: "Archive an email message from the user's connected mail account.",
+        input: z.object({
+          messageId: z.string().min(1).describe("The message ID to archive"),
+          threadId: z
+            .string()
+            .min(1)
+            .optional()
+            .describe("The thread ID (required for Gmail archive)"),
+          accountEmail: z
+            .string()
+            .email()
+            .optional()
+            .describe("Connected email account to use (uses primary if omitted)"),
+        }),
+        confirms: "mail.archive",
+        module: "mail",
+        ownsTransaction: true,
+        run: async ({ messageId, threadId, accountEmail }, ctx) => {
+          const { orgId, userId, membershipId } = ctx.actor;
+          const gate = await requireMailConnection(
+            this.db,
+            { orgId, userId, membershipId },
+            "Connect a mail account to archive messages.",
+          );
+          if (!gate.connected) return gate.outcome;
+          try {
+            const accounts = await runInNewTenantTransaction(this.db, orgId, () =>
+              this.mail.listAccounts(orgId, userId),
+            );
+            const activeAccounts = accounts.filter((a) => a.status === "active");
+            if (activeAccounts.length === 0) return failed("No active mail accounts found.");
+            const resolvedAccount = accountEmail
+              ? activeAccounts.find((a) => a.accountEmail === accountEmail)
+              : (activeAccounts.find((a) => a.isPrimary) ?? activeAccounts[activeAccounts.length - 1]);
+            if (!resolvedAccount)
+              return failed(
+                `No active account found${accountEmail ? ` for ${accountEmail}` : ""}.`,
+              );
+            const { proposalId, token, expiresAt } = await this.confirmation.propose({
+              orgId,
+              userId,
+              action: "mail.archive",
+              payload: { accountId: resolvedAccount.id, messageId, threadId },
+            });
+            return needsConfirmation({
+              proposalId,
+              token,
+              action: "mail.archive",
+              summary: `Archive message ${messageId}`,
+              preview: { accountEmail: resolvedAccount.accountEmail, messageId, threadId },
+              expiresAt,
+            });
+          } catch {
+            return failed("Failed to prepare archive action. Please try again.");
+          }
         },
       }),
     ];

@@ -27,6 +27,13 @@ export function makeResponses(
   return new Map<unknown, unknown[][]>(entries);
 }
 
+function makeChainable(p: Promise<unknown[]>) {
+  return Object.assign(p, {
+    orderBy: (..._args: unknown[]) => makeChainable(p),
+    limit: (..._args: unknown[]) => makeChainable(p),
+  });
+}
+
 export function makeDb(responses: TableResponses) {
   const callCounts = new Map<unknown, number>();
   const calls: RecordedCall[] = [];
@@ -42,11 +49,11 @@ export function makeDb(responses: TableResponses) {
   const select = jest.fn().mockImplementation(() => ({
     from: jest.fn().mockImplementation((table: unknown) => ({
       where: jest.fn().mockImplementation((condition: unknown) =>
-        recordAndResolve(table, condition),
+        makeChainable(recordAndResolve(table, condition)),
       ),
       innerJoin: jest.fn().mockImplementation(() => ({
         where: jest.fn().mockImplementation((condition: unknown) =>
-          recordAndResolve(table, condition),
+          makeChainable(recordAndResolve(table, condition)),
         ),
       })),
     })),

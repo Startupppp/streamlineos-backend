@@ -7,7 +7,6 @@ import {
   payrollRunEmployees,
 } from "../../../../db/schema";
 import { businessParties, leadPartyMap } from "../../../../db/schema/party";
-import { getTodayString } from "../../../../common/date";
 import { type Db } from "../../../../db/drizzle.module";
 import {
   LEAD_PARTY_COLUMNS,
@@ -29,10 +28,10 @@ export async function fetchChatContext(
   orgId: string,
   caller: CurrentUserContext,
 ): Promise<ChatTurnContext> {
-  const today = getTodayString();
+  const askOsActor = await resolveAskOsActor(db, caller);
+  const today = askOsActor.today;
 
   const [
-    askOsActor,
     todayAttendance,
     pendingLeaves,
     recentPayrolls,
@@ -40,7 +39,6 @@ export async function fetchChatContext(
     myOpenDealsResult,
     topLeads,
   ] = await Promise.all([
-    resolveAskOsActor(db, caller),
     db.query.attendance.findFirst({
       columns: { checkIn: true, checkOut: true, workHours: true },
       where: and(

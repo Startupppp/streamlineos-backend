@@ -1,6 +1,8 @@
 import "reflect-metadata";
 import { Test } from "@nestjs/testing";
 import { z } from "zod";
+import { PgDialect } from "drizzle-orm/pg-core";
+import type { SQL } from "drizzle-orm";
 import { SelfWorkTools } from "./self-work-tools";
 import { REFERRAL_CAP } from "./lib/tool-read-caps";
 import { DRIZZLE } from "../../../../db/drizzle.constants";
@@ -83,9 +85,15 @@ function workResultWithRows(count: number, hasMore = false): AllWorkResult {
   return { data, limit: count, nextCursor: null, hasMore, total: count };
 }
 
+function renderSql(condition: SQL): { sql: string; params: unknown[] } {
+  return new PgDialect().sqlToQuery(condition);
+}
+
 function makeSelectChain(rows: unknown[]) {
   const chain = {
     from: jest.fn().mockReturnThis(),
+    innerJoin: jest.fn().mockReturnThis(),
+    leftJoin: jest.fn().mockReturnThis(),
     where: jest.fn().mockReturnThis(),
     orderBy: jest.fn().mockReturnThis(),
     limit: jest.fn().mockResolvedValue(rows),
@@ -431,5 +439,167 @@ describe("SelfWorkTools.getMyTimesheets — defaults to actor.monthStart / month
       expect(payload.to).toBe(ACTOR.monthEnd);
     }
     expect(chain.where).toHaveBeenCalled();
+  });
+});
+
+describe("SelfWorkTools.getMyJobApplications — registered under expected key with no subject identifier", () => {
+  it("is registered under the key 'getMyJobApplications'", async () => {
+    expect.hasAssertions();
+    const { tools } = await buildSut();
+    const tool = tools.find((t) => t.key === "getMyJobApplications");
+    expect(tool).toBeDefined();
+  });
+
+  it("input schema has no userId or any subject-identifying field", async () => {
+    expect.hasAssertions();
+    const { tools } = await buildSut();
+    const tool = tools.find((t) => t.key === "getMyJobApplications");
+    expect(tool).toBeDefined();
+    if (tool && tool.input instanceof z.ZodObject) {
+      expect(Object.keys(tool.input.shape)).toHaveLength(0);
+    }
+  });
+});
+
+describe("SelfWorkTools.getMyJobApplications — read is org-scoped and bounded", () => {
+  it("returns empty() rather than failed() when the caller has no internal applications", async () => {
+    expect.hasAssertions();
+    const { tools } = await buildSut(emptyWorkResult(), []);
+    const tool = findTool(tools, "getMyJobApplications");
+
+    const result = await tool.run({}, makeCtx());
+
+    expect(result.kind).toBe("empty");
+  });
+
+  it("returns data when applications exist", async () => {
+    expect.hasAssertions();
+    const appRows = [{ applicationId: 1, status: "APPLIED", appliedAt: new Date("2026-09-01"), jobTitle: "Senior Engineer", jobType: "FULL_TIME", jobLocation: "Remote" }];
+    const { tools } = await buildSut(emptyWorkResult(), appRows);
+    const tool = findTool(tools, "getMyJobApplications");
+
+    const result = await tool.run({}, makeCtx());
+
+    expect(result.kind).toBe("data");
+  });
+
+  it("binds the query to ctx.actor.orgId and ctx.actor.email — both appear as SQL parameters, no userId from input", async () => {
+    expect.hasAssertions();
+    let capturedWhere: SQL | undefined;
+    const captureChain = {
+      from: jest.fn().mockReturnThis(),
+      innerJoin: jest.fn().mockReturnThis(),
+      leftJoin: jest.fn().mockReturnThis(),
+      where: jest.fn().mockImplementation((condition: SQL) => {
+        capturedWhere = condition;
+        return captureChain;
+      }),
+      orderBy: jest.fn().mockReturnThis(),
+      limit: jest.fn().mockResolvedValue([]),
+    };
+
+    const getAllWorkMock = jest.fn().mockResolvedValue(emptyWorkResult());
+    const countMock = jest.fn().mockResolvedValue({ byStatus: {}, total: 0 });
+    const dbMock = { select: jest.fn().mockReturnValue(captureChain) };
+
+    const moduleRef = await Test.createTestingModule({
+      providers: [
+        SelfWorkTools,
+        { provide: DRIZZLE, useValue: dbMock },
+        { provide: ProjectsWorkQueryService, useValue: { getAllWork: getAllWorkMock, countTicketsByStatus: countMock } },
+      ],
+    }).compile();
+
+    const sut = moduleRef.get(SelfWorkTools);
+    const tools = sut.tools();
+    const tool = findTool(tools, "getMyJobApplications");
+
+    await tool.run({}, makeCtx({ actor: { ...ACTOR, orgId: "app-org-999", email: "employee@test.example" } }));
+
+    expect(capturedWhere).toBeDefined();
+    const { params } = renderSql(capturedWhere!);
+    expect(params).toContain("app-org-999");
+    expect(params).toContain("employee@test.example");
+  });
+});
+
+describe("SelfWorkTools.getMyInterviews — registered under expected key with no subject identifier", () => {
+  it("is registered under the key 'getMyInterviews'", async () => {
+    expect.hasAssertions();
+    const { tools } = await buildSut();
+    const tool = tools.find((t) => t.key === "getMyInterviews");
+    expect(tool).toBeDefined();
+  });
+
+  it("input schema has no userId or any subject-identifying field", async () => {
+    expect.hasAssertions();
+    const { tools } = await buildSut();
+    const tool = tools.find((t) => t.key === "getMyInterviews");
+    expect(tool).toBeDefined();
+    if (tool && tool.input instanceof z.ZodObject) {
+      expect(Object.keys(tool.input.shape)).toHaveLength(0);
+    }
+  });
+});
+
+describe("SelfWorkTools.getMyInterviews — read is org-scoped and bounded to caller as interviewee only", () => {
+  it("returns empty() rather than failed() when the caller has no scheduled interviews", async () => {
+    expect.hasAssertions();
+    const { tools } = await buildSut(emptyWorkResult(), []);
+    const tool = findTool(tools, "getMyInterviews");
+
+    const result = await tool.run({}, makeCtx());
+
+    expect(result.kind).toBe("empty");
+  });
+
+  it("returns data when interviews exist", async () => {
+    expect.hasAssertions();
+    const interviewRows = [{ interviewId: 1, type: "VIDEO", scheduledAt: new Date("2026-09-25T10:00:00Z"), durationMinutes: 60, meetingLink: "https://meet.example.com/1", location: null, result: "PENDING", jobTitle: "Senior Engineer" }];
+    const { tools } = await buildSut(emptyWorkResult(), interviewRows);
+    const tool = findTool(tools, "getMyInterviews");
+
+    const result = await tool.run({}, makeCtx());
+
+    expect(result.kind).toBe("data");
+  });
+
+  it("binds the query to ctx.actor.orgId and ctx.actor.email — both appear as SQL parameters, never a userId passed in input", async () => {
+    expect.hasAssertions();
+    let capturedWhere: SQL | undefined;
+    const captureChain = {
+      from: jest.fn().mockReturnThis(),
+      innerJoin: jest.fn().mockReturnThis(),
+      leftJoin: jest.fn().mockReturnThis(),
+      where: jest.fn().mockImplementation((condition: SQL) => {
+        capturedWhere = condition;
+        return captureChain;
+      }),
+      orderBy: jest.fn().mockReturnThis(),
+      limit: jest.fn().mockResolvedValue([]),
+    };
+
+    const getAllWorkMock = jest.fn().mockResolvedValue(emptyWorkResult());
+    const countMock = jest.fn().mockResolvedValue({ byStatus: {}, total: 0 });
+    const dbMock = { select: jest.fn().mockReturnValue(captureChain) };
+
+    const moduleRef = await Test.createTestingModule({
+      providers: [
+        SelfWorkTools,
+        { provide: DRIZZLE, useValue: dbMock },
+        { provide: ProjectsWorkQueryService, useValue: { getAllWork: getAllWorkMock, countTicketsByStatus: countMock } },
+      ],
+    }).compile();
+
+    const sut = moduleRef.get(SelfWorkTools);
+    const tools = sut.tools();
+    const tool = findTool(tools, "getMyInterviews");
+
+    await tool.run({}, makeCtx({ actor: { ...ACTOR, orgId: "int-org-555", email: "interviewer@test.example" } }));
+
+    expect(capturedWhere).toBeDefined();
+    const { params } = renderSql(capturedWhere!);
+    expect(params).toContain("int-org-555");
+    expect(params).toContain("interviewer@test.example");
   });
 });

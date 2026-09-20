@@ -183,7 +183,14 @@ export class FilesService {
     await this.db
       .update(projectAttachments)
       .set({ deletedAt: new Date() })
-      .where(and(eq(projectAttachments.id, fileId), eq(projectAttachments.orgId, u.orgId)));
+      .where(
+        and(
+          eq(projectAttachments.id, fileId),
+          eq(projectAttachments.orgId, u.orgId),
+          eq(projectAttachments.projectId, projectId),
+          isNull(projectAttachments.deletedAt),
+        ),
+      );
     this.audit.log({
       action: "project_file.deleted",
       userId: u.userId,

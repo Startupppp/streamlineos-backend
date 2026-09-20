@@ -11,7 +11,12 @@ jest.mock("./lib/mail-connection", () => ({
   resolveAnyMailConnection: jest.fn(),
 }));
 
+jest.mock("../../../directory/person-seam", () => ({
+  resolvePeopleByName: jest.fn(),
+}));
+
 import { resolveAnyMailConnection } from "./lib/mail-connection";
+import { resolvePeopleByName } from "../../../directory/person-seam";
 
 const MOCK_PROPOSAL = { proposalId: 1, token: "tok.epoch.hmac", expiresAt: new Date("2026-09-20T00:00:00Z") };
 
@@ -192,11 +197,15 @@ describe("WorkActionsTools — logCrmActivity", () => {
 });
 
 describe("WorkActionsTools — assignTicket", () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
   it("returns empty when no member matches the name", async () => {
-    const instance = makeInstance([
-      [{ id: 42, title: "Fix bug" }],
-      [],
-    ]);
+    (resolvePeopleByName as jest.Mock).mockResolvedValue(
+      new Map([["Nobody Known", { status: "unresolved" }]]),
+    );
+    const instance = makeInstance([[{ id: 42, title: "Fix bug" }]]);
     const tool = findTool(instance.tools(), "assignTicket");
 
     const outcome = await tool.run({ ticketId: 42, assigneeName: "Nobody Known" }, makeCtx());
@@ -213,14 +222,22 @@ describe("WorkActionsTools — assignTicket", () => {
     expect(outcome.kind).toBe("empty");
   });
 
-  it("returns ambiguous with candidate list when multiple members match the name", async () => {
-    const instance = makeInstance([
-      [{ id: 1, title: "Sprint task" }],
-      [
-        { userId: "u1", name: "Bob Smith", firstName: null, lastName: null, email: "bob1@x.com", membershipId: 1 },
-        { userId: "u2", name: "Bob Jones", firstName: null, lastName: null, email: "bob2@x.com", membershipId: 2 },
-      ],
-    ]);
+  it("returns ambiguous outcome with typed candidates when multiple members share the name", async () => {
+    (resolvePeopleByName as jest.Mock).mockResolvedValue(
+      new Map([
+        [
+          "Bob",
+          {
+            status: "ambiguous",
+            candidates: [
+              { label: "Bob Smith", hint: "bob1@x.com" },
+              { label: "Bob Jones", hint: "bob2@x.com" },
+            ],
+          },
+        ],
+      ]),
+    );
+    const instance = makeInstance([[{ id: 1, title: "Sprint task" }]]);
     const tool = findTool(instance.tools(), "assignTicket");
 
     const outcome = await tool.run({ ticketId: 1, assigneeName: "Bob" }, makeCtx());
@@ -234,10 +251,10 @@ describe("WorkActionsTools — assignTicket", () => {
 
   it("returns needs-confirmation and does not execute a write when exactly one member matches", async () => {
     const confirmation = makeConfirmation();
-    const db = makeDbFluentChain([
-      [{ id: 5, title: "My ticket" }],
-      [{ userId: "u-bob", name: "Bob", firstName: null, lastName: null, email: "bob@x.com", membershipId: 3 }],
-    ]);
+    (resolvePeopleByName as jest.Mock).mockResolvedValue(
+      new Map([["Bob", { status: "resolved", userId: "u-bob", displayName: "Bob" }]]),
+    );
+    const db = makeDbFluentChain([[{ id: 5, title: "My ticket" }]]);
     const instance = new WorkActionsTools(db, confirmation);
     const tool = findTool(instance.tools(), "assignTicket");
 
@@ -246,6 +263,26 @@ describe("WorkActionsTools — assignTicket", () => {
     expect(outcome.kind).toBe("needs-confirmation");
     expect(confirmation.propose).toHaveBeenCalledWith(
       expect.objectContaining({ action: "ticket.assign", payload: expect.objectContaining({ assigneeId: "u-bob" }) }),
+    );
+  });
+
+  it("resolves a ticket assignment for a member whose org never used the HR or directory paths, because the seam drives from members not people", async () => {
+    const confirmation = makeConfirmation();
+    (resolvePeopleByName as jest.Mock).mockResolvedValue(
+      new Map([["Priya", { status: "resolved", userId: "u-priya", displayName: "Priya Sharma" }]]),
+    );
+    const db = makeDbFluentChain([[{ id: 10, title: "Deploy task" }]]);
+    const instance = new WorkActionsTools(db, confirmation);
+    const tool = findTool(instance.tools(), "assignTicket");
+
+    const outcome = await tool.run({ ticketId: 10, assigneeName: "Priya" }, makeCtx());
+
+    expect(outcome.kind).toBe("needs-confirmation");
+    expect(confirmation.propose).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "ticket.assign",
+        payload: expect.objectContaining({ assigneeId: "u-priya", assigneeName: "Priya Sharma" }),
+      }),
     );
   });
 });

@@ -1,12 +1,12 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { z } from "zod";
 import { and, eq, ilike, isNull } from "drizzle-orm";
-import { organizationMembers, sprints, tickets, users } from "../../../../db/schema";
+import { sprints, tickets } from "../../../../db/schema";
 import { DRIZZLE } from "../../../../db/drizzle.constants";
 import { type Db } from "../../../../db/drizzle.module";
 import { AiConfirmationService } from "../../confirmation/ai-confirmation.service";
 import { resolveAnyMailConnection } from "./lib/mail-connection";
-import { displayNameFrom } from "../services/ask-os-actor";
+import { resolvePeopleByName } from "../../../directory/person-seam";
 import { businessParties, leadPartyMap } from "../../../../db/schema/party";
 import { LEAD_PARTY_COLUMNS, LEAD_PARTY_JOIN, leadIdIs } from "../../../leads/lead-party-reader";
 import { ticketScope } from "../../../build/core/tickets-scope";
@@ -153,49 +153,25 @@ export class WorkActionsTools implements AskOsToolProvider {
             () => [],
           );
 
-          if (!ticketRows[0]) return empty("ticket", "Ticket not found in this org.");
+          const [ticket] = ticketRows;
+          if (!ticket) return empty("ticket", "Ticket not found in this org.");
 
-          const memberRows = await this.db
-            .select({
-              userId: users.id,
-              name: users.name,
-              firstName: users.firstName,
-              lastName: users.lastName,
-              email: users.email,
-              membershipId: organizationMembers.id,
-            })
-            .from(organizationMembers)
-            .innerJoin(users, eq(users.id, organizationMembers.userId))
-            .where(
-              and(
-                eq(organizationMembers.orgId, orgId),
-                eq(organizationMembers.status, "ACTIVE"),
-                eq(users.isActive, true),
-                isNull(users.deletedAt),
-                ilike(users.name, `%${assigneeName}%`),
-              ),
-            )
-            .limit(11);
+          const resolutions = await resolvePeopleByName(this.db, orgId, [assigneeName]);
+          const resolution = resolutions.get(assigneeName.trim());
 
-          if (memberRows.length === 0) return empty("member", `No active member found matching "${assigneeName}".`);
+          if (!resolution || resolution.status === "unresolved")
+            return empty("member", `No active member found matching "${assigneeName}".`);
 
-          if (memberRows.length > 10)
-            return empty("member", `"${assigneeName}" matches too many members. Provide a more specific name.`);
-
-          if (memberRows.length > 1) {
+          if (resolution.status === "ambiguous") {
             return ambiguous(
-              `"${assigneeName}" matches ${memberRows.length} members. Which did you mean?`,
-              memberRows.map((m) => ({
-                label: displayNameFrom({ name: m.name, firstName: m.firstName, lastName: m.lastName, email: m.email }),
-                hint: m.email ?? undefined,
-              })),
+              `"${assigneeName}" matches ${resolution.candidates.length} members. Which did you mean?`,
+              [...resolution.candidates],
             );
           }
 
-          const member = memberRows[0]!;
-          const resolvedName = displayNameFrom({ name: member.name, firstName: member.firstName, lastName: member.lastName, email: member.email });
-          const ticketTitle = ticketRows[0].title;
-          const payload: Record<string, unknown> = { ticketId, assigneeId: member.userId, assigneeName: resolvedName, ticketTitle };
+          const resolvedName = resolution.displayName ?? assigneeName;
+          const ticketTitle = ticket.title;
+          const payload: Record<string, unknown> = { ticketId, assigneeId: resolution.userId, assigneeName: resolvedName, ticketTitle };
 
           const proposal = await this.confirmation.propose({ orgId, userId, action: "ticket.assign", payload });
           return needsConfirmation({

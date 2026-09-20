@@ -3,6 +3,10 @@ import { CommentDraftsService } from "./comment-drafts.service";
 import type { Db } from "../../../db/drizzle.module";
 import { commentDrafts } from "../../../db/schema/build/comment-drafts";
 import { COMMENT_DRAFT_MAX_RETRIES } from "./comment-drafts.constants";
+import {
+  commentDraftSchema,
+  commentDraftWithTicketSchema,
+} from "./dto/comment-drafts-response.schemas";
 
 function makeEmptySelect(): jest.Mock {
   return jest.fn().mockReturnValue({
@@ -293,5 +297,66 @@ describe("CommentDraftsService — BSN-03-045: bounded retry path", () => {
 
     expect(selectFn).not.toHaveBeenCalled();
     expect(updateFn).not.toHaveBeenCalled();
+  });
+});
+
+describe("Response contract — D1: commentDraftSchema silently strips ticket; commentDraftWithTicketSchema preserves it", () => {
+  const rawListItem = {
+    id: 1,
+    orgId: "org-1",
+    membershipId: 42,
+    ticketId: 99,
+    body: "draft body",
+    createdAt: new Date(),
+    updatedAt: new Date(),
+    ticket: {
+      id: 99,
+      type: "BUG",
+      title: "Fix crash",
+      projectId: 1,
+      status: "IN_PROGRESS",
+      ticketNumber: 5,
+      projectKey: "BLD",
+      priority: "HIGH",
+      projectName: "BuildOS",
+      assignee: null,
+    },
+  };
+
+  it("commentDraftSchema.parse strips the ticket field — this was the bug causing listMine to return items with no ticket info", () => {
+    const parsed = commentDraftSchema.parse(rawListItem);
+    expect(parsed).not.toHaveProperty("ticket");
+  });
+
+  it("commentDraftWithTicketSchema.parse preserves the ticket field — listMine response now carries ticket details", () => {
+    const result = commentDraftWithTicketSchema.safeParse(rawListItem);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data).toHaveProperty("ticket");
+      expect(result.data.ticket.title).toBe("Fix crash");
+      expect(result.data.ticket.type).toBe("BUG");
+      expect(result.data.ticket.ticketNumber).toBe(5);
+    }
+  });
+
+  it("commentDraftWithTicketSchema accepts a null assignee — roster is optional in the projection", () => {
+    const result = commentDraftWithTicketSchema.safeParse(rawListItem);
+    expect(result.success).toBe(true);
+    if (result.success) expect(result.data.ticket.assignee).toBeNull();
+  });
+
+  it("commentDraftWithTicketSchema accepts a populated assignee with nullable name fields", () => {
+    const withAssignee = {
+      ...rawListItem,
+      ticket: {
+        ...rawListItem.ticket,
+        assignee: { id: "user-1", name: "Alice", image: null, lastName: "Smith", firstName: "Alice" },
+      },
+    };
+    const result = commentDraftWithTicketSchema.safeParse(withAssignee);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.ticket.assignee?.id).toBe("user-1");
+    }
   });
 });

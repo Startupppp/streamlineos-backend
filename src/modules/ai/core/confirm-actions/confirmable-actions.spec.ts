@@ -122,6 +122,11 @@ const PROPOSE_FIXTURES: Readonly<Record<string, Record<string, unknown>>> = {
     body: "Body",
     accountEmail: "me@example.com",
   },
+  "mail.archive": {
+    accountId: 3,
+    messageId: "msg-1",
+    threadId: "thread-1",
+  },
   "crm.createLead": {
     name: "Acme",
     email: "buyer@example.com",
@@ -165,6 +170,11 @@ const PROPOSE_FIXTURES: Readonly<Record<string, Record<string, unknown>>> = {
     candidateEmail: "jordan@example.com",
     jobPostingId: 4,
     notes: "Strong fit",
+  },
+  "self.applyToJobOpening": {
+    jobId: 5,
+    coverLetter: "Excited to apply for this role",
+    notes: "Available from next month",
   },
   "calendar.createReminder": {
     title: "Follow up",
