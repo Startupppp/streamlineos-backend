@@ -37,7 +37,7 @@ const CALL_SITES: ReadonlyArray<{ file: string; kind: string; via?: string }> = 
 const BRIDGE_POST = /\b(?:this\.|deps\.)?glBridge\.post\(/;
 
 function source(file: string): string {
-  return readFileSync(join(INVENTORY, file), "utf8");
+  return readFileSync(join(INVENTORY, file), "utf8").replace(/\r\n/g, "\n");
 }
 
 describe("the bridge is actually reached", () => {
@@ -159,7 +159,7 @@ describe("the bridge is actually reached", () => {
             the engine as `stockEngine`; the split layout passes it as `deps.engine`
             or a bare `engine` parameter.
           */
-          if (ENGINE_CALL.test(readFileSync(join(INVENTORY, dir, entry.name), "utf8"))) found.push(rel);
+          if (ENGINE_CALL.test(readFileSync(join(INVENTORY, dir, entry.name), "utf8").replace(/\r\n/g, "\n"))) found.push(rel);
         }
       };
       walk(".");

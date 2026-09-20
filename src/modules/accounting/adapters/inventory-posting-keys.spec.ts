@@ -99,7 +99,7 @@ const POSTS: Post[] = [
 ];
 
 describe.each(POSTS)("$file", ({ file, call, sourceType, purpose, sourceId, wrongIds }) => {
-  const source = readFileSync(join(MODULES, file), "utf8");
+  const source = readFileSync(join(MODULES, file), "utf8").replace(/\r\n/g, "\n");
   const command = postingCommand(source, call);
 
   it("declares the source type and purpose the ledger will key on", () => {
@@ -127,7 +127,7 @@ describe.each(POSTS)("$file", ({ file, call, sourceType, purpose, sourceId, wron
 
 describe("the posts through InventoryAccountingBridge", () => {
   const INVENTORY = join(MODULES, "inventory");
-  const read = (file: string) => readFileSync(join(INVENTORY, file), "utf8");
+  const read = (file: string) => readFileSync(join(INVENTORY, file), "utf8").replace(/\r\n/g, "\n");
   const bridge = read("stock-engine/accounting-bridge.ts");
 
   it("hands the ledger stock_move with the draft's event as the purpose", () => {
@@ -185,8 +185,8 @@ describe("the inventory posts as a set", () => {
         return path.endsWith(".ts") && !path.endsWith(".spec.ts") ? [path] : [];
       });
     const posting = walk(root)
-      .filter((path) => readFileSync(path, "utf8").includes("posting-command"))
-      .map((path) => path.slice(root.length + 1))
+      .filter((path) => readFileSync(path, "utf8").replace(/\r\n/g, "\n").includes("posting-command"))
+      .map((path) => path.slice(root.length + 1).replaceAll("\\", "/"))
       .sort();
     expect(posting).toEqual([
       "purchase-orders/grn-receive.service.ts",
@@ -215,7 +215,7 @@ describe("every writer into the legacy invoices table shares one key", () => {
   it("uses exactly one purpose across every writer", () => {
     const purposes = new Set<string>();
     for (const file of LEGACY_INVOICE_WRITERS) {
-      const source = readFileSync(join(MODULES, file), "utf8");
+      const source = readFileSync(join(MODULES, file), "utf8").replace(/\r\n/g, "\n");
       const at = source.indexOf('sourceType: "sales_invoice"');
       expect(at).toBeGreaterThan(-1);
       const nearby = source.slice(Math.max(0, at - 1200), at + 2400);

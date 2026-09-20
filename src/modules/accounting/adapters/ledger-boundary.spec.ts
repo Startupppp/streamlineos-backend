@@ -1,5 +1,5 @@
-import { execSync } from "node:child_process";
-import { resolve } from "node:path";
+import { readFileSync, readdirSync, statSync } from "node:fs";
+import { join, resolve } from "node:path";
 
 /**
  * PRD 07 acceptance 1 — nothing outside accounting writes the ledger.
@@ -41,20 +41,21 @@ const READ_ONLY_REFERENCES = [
   "modules/organization/hierarchy/lib/org-unit-kind-dependencies.ts",
 ];
 
-function grep(pattern: string): string[] {
-  try {
-    const out = execSync(
-      `grep -rlE ${JSON.stringify(pattern)} ${JSON.stringify(SRC)} --include=*.ts || true`,
-      { encoding: "utf8", maxBuffer: 16 * 1024 * 1024 },
-    );
-    return out
-      .split("\n")
-      .map((line) => line.trim())
-      .filter(Boolean)
-      .map((abs) => abs.slice(SRC.length + 1));
-  } catch {
-    return [];
+function sourceFiles(dir: string, out: string[] = []): string[] {
+  for (const entry of readdirSync(dir)) {
+    const path = join(dir, entry);
+    if (statSync(path).isDirectory()) sourceFiles(path, out);
+    else if (path.endsWith(".ts")) out.push(path);
   }
+  return out;
+}
+
+function grep(pattern: string): string[] {
+  const matcher = new RegExp(pattern);
+  return sourceFiles(SRC)
+    .filter((path) => matcher.test(readFileSync(path, "utf8")))
+    .map((path) => path.slice(SRC.length + 1).replaceAll("\\", "/"))
+    .sort();
 }
 
 describe("ledger boundary", () => {

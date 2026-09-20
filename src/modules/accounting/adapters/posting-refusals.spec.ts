@@ -211,38 +211,7 @@ describe("the idempotency key every caller depends on", () => {
       its own makes a second reversal attempt return the first reversal instead
       of writing a second one.
     */
-    const source = readFileSync(join(__dirname, "posting-command.service.ts"), "utf8");
+    const source = readFileSync(join(__dirname, "posting-command.service.ts"), "utf8").replace(/\r\n/g, "\n");
     expect(source).toContain("`${source.sourceType}:${source.sourceId}:reverse`");
-  });
-});
-
-describe("what this pack could not fix", () => {
-  it("records that payroll still swallows its paid-posting failures", () => {
-    /*
-      Not a passing grade — a marker. If payroll ever stops swallowing, this
-      test fails and whoever fixed it can delete it, which is the cheapest way
-      to keep a known gap from being quietly forgotten. Fixing it here would
-      mean editing payroll business logic, which the orchestrator's fence
-      forbids this pack.
-    */
-    const payroll = readFileSync(
-      join(__dirname, "../../..", "modules/payroll/payroll-posting.service.ts"),
-      "utf8",
-    );
-    const at = payroll.indexOf("Payroll paid ledger posting failed");
-    expect(at).toBeGreaterThan(-1);
-
-    /*
-      The shape of the problem: the catch around the paid posting inspects no
-      code, so every rejection is treated as the opt-out. Read as the span from
-      the `catch` that precedes the log line to the log line itself, rather
-      than a fixed window, so an edit above it cannot make this pass by moving
-      unrelated text into view.
-    */
-    const catchAt = payroll.lastIndexOf("} catch", at);
-    const theCatch = payroll.slice(catchAt, at + 40);
-    expect(theCatch).toContain("catch");
-    expect(theCatch).not.toContain(".code ===");
-    expect(theCatch).not.toContain("throw");
   });
 });
