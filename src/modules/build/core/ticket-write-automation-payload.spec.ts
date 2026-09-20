@@ -59,7 +59,8 @@ describe("ProjectsTicketsUpdateService — automation payload reflects current a
   const access = { holds: jest.fn().mockResolvedValue(true) } as never;
 
   it("ticket.updated payload carries the current assignee userId when the update does not change the assignee", async () => {
-    const automationRunner = { runForTicketEvent: jest.fn() } as never;
+    const runForTicketEvent = jest.fn();
+    const automationRunner = { runForTicketEvent };
     const svc = new ProjectsTicketsUpdateService(
       makeDb(makeTicket()),
       dispatch,
@@ -68,7 +69,7 @@ describe("ProjectsTicketsUpdateService — automation payload reflects current a
       read,
       transfer,
       webhooksDispatch,
-      automationRunner,
+      automationRunner as never,
       cache,
       access,
     );
@@ -81,14 +82,15 @@ describe("ProjectsTicketsUpdateService — automation payload reflects current a
 
     await svc.updateTicket(u, 1, { title: "Updated Title" });
 
-    const calls = (automationRunner.runForTicketEvent as jest.Mock).mock.calls;
+    const calls = runForTicketEvent.mock.calls;
     const updatedCall = calls.find((c: unknown[]) => c[2] === "ticket.updated");
     expect(updatedCall).toBeDefined();
     expect(updatedCall?.[3]?.assigneeId).toBe("alice");
   });
 
   it("ticket.updated payload carries null assigneeId when the ticket has no assignee and the update does not touch assignees", async () => {
-    const automationRunner = { runForTicketEvent: jest.fn() } as never;
+    const runForTicketEvent = jest.fn();
+    const automationRunner = { runForTicketEvent };
     const svc = new ProjectsTicketsUpdateService(
       makeDb(makeTicket({ assigneeMembershipId: null, assignee: null })),
       dispatch,
@@ -97,7 +99,7 @@ describe("ProjectsTicketsUpdateService — automation payload reflects current a
       read,
       transfer,
       webhooksDispatch,
-      automationRunner,
+      automationRunner as never,
       cache,
       access,
     );
@@ -110,7 +112,7 @@ describe("ProjectsTicketsUpdateService — automation payload reflects current a
 
     await svc.updateTicket(u, 1, { title: "Updated Title" });
 
-    const calls = (automationRunner.runForTicketEvent as jest.Mock).mock.calls;
+    const calls = runForTicketEvent.mock.calls;
     const updatedCall = calls.find((c: unknown[]) => c[2] === "ticket.updated");
     expect(updatedCall).toBeDefined();
     expect(updatedCall?.[3]?.assigneeId).toBeNull();

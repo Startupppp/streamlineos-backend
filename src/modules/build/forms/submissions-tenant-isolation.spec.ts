@@ -16,12 +16,14 @@ describe("SubmissionsService — cross-tenant isolation", () => {
       projectForms: { findFirst: jest.fn().mockResolvedValue(formRow) },
       formSubmissions: { findFirst: jest.fn().mockResolvedValue(submissionRow) },
     };
+    const transaction = jest.fn();
     const db = {
       query,
       select: jest.fn().mockReturnValue({ from: mockFrom }),
       execute: jest.fn().mockResolvedValue(undefined),
-      transaction: jest.fn((callback: (tx: unknown) => Promise<unknown>) => callback(db)),
+      transaction,
     };
+    transaction.mockImplementation((callback: (tx: unknown) => Promise<unknown>) => callback(db));
     return db as unknown as Db;
   }
 

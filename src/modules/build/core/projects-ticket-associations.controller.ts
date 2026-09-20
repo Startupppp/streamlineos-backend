@@ -43,6 +43,7 @@ import {
   ticketWatcherSchema,
   watcherMutationSchema,
   ticketRelationSchema,
+  ticketRelationListItemSchema,
   gitLinkSchema,
   relatedLinkSchema,
   attachmentCreateResultSchema,
@@ -72,7 +73,7 @@ export class ProjectsTicketAssociationsController {
 
   @Get(":projectId/tickets/:ticketId/relations")
   @RequirePermission("build:tickets:view")
-  @ResponseSchema(z.array(ticketRelationSchema))
+  @ResponseSchema(z.array(ticketRelationListItemSchema))
   @Validate({ params: projectIdticketIdParams_ })
   listRelations(
     @Param("projectId", ParseIntPipe) projectId: number,

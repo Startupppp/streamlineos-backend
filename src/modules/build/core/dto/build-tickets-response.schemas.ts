@@ -234,18 +234,37 @@ export const ticketRelationSchema = z.object({
   orgId: z.string(),
   workItemId: z.number().int(),
   relatedWorkItemId: z.number().int(),
+  relationType: z.enum(["blocks", "blocked_by", "duplicate_of", "relates_to"]),
   createdAt: wireDate(),
+});
+
+export const ticketRelationListItemSchema = z.object({
+  id: z.number().int(),
+  relationType: z.enum(["blocks", "blocked_by", "duplicate_of", "relates_to"]),
+  direction: z.enum(["outgoing", "incoming"]),
+  relatedTicket: z.object({
+    id: z.number().int(),
+    title: z.string(),
+    ticketNumber: z.number().int(),
+    status: z.string(),
+    priority: z.enum(["LOW", "MEDIUM", "HIGH", "URGENT"]),
+    type: z.enum(["EPIC", "STORY", "TASK", "BUG"]),
+    points: z.number().int().nullable(),
+    assigneeMembershipId: z.number().int().nullable(),
+    projectId: z.number().int().nullable(),
+    project: z.object({ key: z.string() }).nullable(),
+    assignee: userSummarySchema,
+  }),
 });
 
 export const gitLinkSchema = z.object({
   id: z.number().int(),
-  orgId: z.string(),
-  projectId: z.number().int(),
-  ticketId: z.number().int(),
-  repoUrl: z.string(),
-  branch: z.string().nullable(),
-  prUrl: z.string().nullable(),
-  commitSha: z.string().nullable(),
+  provider: z.enum(["github", "gitlab", "bitbucket"]),
+  refType: z.enum(["commit", "pull_request", "branch"]),
+  externalId: z.string(),
+  title: z.string().nullable(),
+  url: z.string().nullable(),
+  author: z.string().nullable(),
   status: z.string().nullable(),
   createdAt: wireDate(),
 });
