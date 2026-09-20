@@ -27,7 +27,7 @@ import type { AiUsageMeta } from "../../ai/core/gateway/ai-gateway.types";
 import { assertOrganizationActor } from "../../../common/organization/organization-actor";
 import { buildEvidenceText, findKbOwners, type GapRow } from "./lib/gap-detection";
 import { gapDraftSchema } from "./support-kb-gap.schemas";
-import { runInNewTenantTransaction } from "../../../common/tenant";
+import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
 
 /*
   Detection (clustering, search gaps, the all-orgs sweep) is
@@ -53,9 +53,8 @@ export class SupportKbGapService {
   ) {}
 
   async proposeDraft(orgId: string, gapId: number, actorUserId: string, userCtx?: CurrentUserContext): Promise<GapRow & { aiUsage?: AiUsageMeta }> {
-    const { gap, actorMembershipId, spaceId, kbOwnerIds } = await runInNewTenantTransaction(
+    const { gap, actorMembershipId, spaceId, kbOwnerIds } = await runInTenantTransaction(
       this.db,
-      orgId,
       async (tx) => {
         const found = await tx.query.supportKnowledgeGaps.findFirst({
           where: and(eq(supportKnowledgeGaps.id, gapId), eq(supportKnowledgeGaps.orgId, orgId)),
@@ -89,6 +88,7 @@ export class SupportKbGapService {
           kbOwnerIds: await findKbOwners(this.db, orgId),
         };
       },
+      { orgId },
     );
 
     const evidenceText = buildEvidenceText(gap);
@@ -128,7 +128,7 @@ export class SupportKbGapService {
       sessionId: "",
       principal: ACCOUNT_ONLY_PRINCIPAL,
     };
-    const updated = await runInNewTenantTransaction(this.db, orgId, async (tx) => {
+    const updated = await runInTenantTransaction(this.db, async (tx) => {
       const article = await this.kbArticles.create(ctx, {
         spaceId,
         title,
@@ -160,7 +160,7 @@ export class SupportKbGapService {
         .where(and(eq(supportKnowledgeGaps.id, gapId), eq(supportKnowledgeGaps.orgId, orgId)))
         .returning();
       return row;
-    });
+    }, { orgId });
 
     if (kbOwnerIds.length > 0) {
       await this.notificationDispatch

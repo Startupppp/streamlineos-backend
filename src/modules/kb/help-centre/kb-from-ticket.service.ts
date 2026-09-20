@@ -4,7 +4,7 @@ import { supportTickets, supportTicketMessages } from "../../../db/schema";
 import { type KbArticleRow } from "./kb-article-columns";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
-import { runInNewTenantTransaction } from "../../../common/tenant";
+import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
 import { AiGatewayService } from "../../ai/core/gateway/ai-gateway.service";
 import { throwOnAiFailure } from "../../ai/core/services/gateway-result.util";
 import { KbEventsService } from "../core/kb-events.service";
@@ -30,7 +30,7 @@ export class KbFromTicketService {
   ): Promise<KbArticleRow> {
     const orgId = user.orgId;
 
-    const ticketContent = await runInNewTenantTransaction(this.db, orgId, async (tx) => {
+    const ticketContent = await runInTenantTransaction(this.db, async (tx) => {
       const ticket = await tx.query.supportTickets.findFirst({
         where: and(eq(supportTickets.id, ticketId), eq(supportTickets.orgId, orgId)),
       });
@@ -51,7 +51,7 @@ export class KbFromTicketService {
       ]
         .filter(Boolean)
         .join("\n\n");
-    });
+    }, { orgId });
 
     const result = await this.gateway.invokeStructuredWithUsage({
       actor: { orgId, userId: user.userId },
@@ -71,7 +71,7 @@ export class KbFromTicketService {
 
     const contentText = draft.content.replace(/[#*_`[\]()]/g, "").slice(0, 500);
 
-    return runInNewTenantTransaction(this.db, orgId, async () => {
+    return runInTenantTransaction(this.db, async () => {
       const article = await this.articles.create(user, {
         spaceId: input.spaceId,
         title: draft.title,
@@ -88,6 +88,6 @@ export class KbFromTicketService {
       });
 
       return article;
-    });
+    }, { orgId });
   }
 }

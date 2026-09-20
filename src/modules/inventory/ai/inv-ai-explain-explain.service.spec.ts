@@ -2,6 +2,7 @@ import { NotFoundException, ServiceUnavailableException } from "@nestjs/common";
 import { InvAiExplainService } from "./inv-ai-explain.service";
 import type { AiGatewayService } from "../../ai/core/gateway/ai-gateway.service";
 import type { VendorScorecardService } from "../vendors/vendor-scorecard.service";
+import { withDelegatingTransaction } from "../../../test/delegating-transaction";
 
 const MOCK_INSIGHT = {
   id: 1,
@@ -74,7 +75,7 @@ function buildService(
   insights?: { getOpsBrief?: unknown },
 ) {
   return new InvAiExplainService(
-    db as never,
+    withDelegatingTransaction(db as object) as never,
     gateway as AiGatewayService,
     (scorecards ?? {}) as VendorScorecardService,
     (insights ?? {}) as never,

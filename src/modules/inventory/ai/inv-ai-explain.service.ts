@@ -16,7 +16,6 @@ import {
 } from "../vendors/vendor-scorecard.service";
 import { InvAiService, type InventoryOpsBrief } from "./inv-ai.service";
 import { readEvidence } from "./lib/inv-ai-read-evidence";
-import { runInNewTenantTransaction } from "../../../common/tenant";
 import {
   INV_AI_CONTRACT_VERSION,
   invAiNarrativeResponseSchema,
@@ -308,8 +307,8 @@ export class InvAiExplainService {
     userId: string,
     narrate: boolean,
   ): Promise<InventoryDigest> {
-    const rows = await runInNewTenantTransaction(this.db, orgId, (tx) =>
-      tx.query.invAiInsights.findMany({
+    const rows = await readEvidence(this.db, orgId, () =>
+      this.db.query.invAiInsights.findMany({
         where: and(
           eq(invAiInsights.orgId, orgId),
           eq(invAiInsights.status, "NEW"),
@@ -381,8 +380,8 @@ export class InvAiExplainService {
     userId: string,
     vendorId?: number,
   ): Promise<SupplierDelayBriefingResult> {
-    const insightRows = await runInNewTenantTransaction(this.db, orgId, (tx) =>
-      tx.query.invAiInsights.findMany({
+    const insightRows = await readEvidence(this.db, orgId, () =>
+      this.db.query.invAiInsights.findMany({
         where: and(
           eq(invAiInsights.orgId, orgId),
           eq(invAiInsights.insightType, "vendor_delay"),
@@ -422,7 +421,7 @@ export class InvAiExplainService {
 
     // C4. One batched read rather than a scorecard per vendor: the old shape ran
     // seven queries for every delayed supplier in the briefing.
-    const scorecards = await runInNewTenantTransaction(this.db, orgId, () =>
+    const scorecards = await readEvidence(this.db, orgId, () =>
       this.scorecards.scorecardsFor(orgId, Array.from(vendorMap.keys())),
     );
     const vendors = Array.from(vendorMap.entries()).flatMap(([vId, entry]) => {

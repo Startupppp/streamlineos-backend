@@ -145,7 +145,6 @@ export class InvAiExplainController {
    */
   @Post("reorder-proposal")
   @ResponseSchema(reorderProposalResponseSchema)
-  @NoTenantTransaction()
   @UseGuards(PermissionGuard, RateLimitGuard)
   @UseRateLimit("ai:invoke")
   @RequirePermission("inventory:ai:propose")
