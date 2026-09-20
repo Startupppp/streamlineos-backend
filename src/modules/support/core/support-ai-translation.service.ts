@@ -18,6 +18,7 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { AiGatewayService } from "../../ai/core/gateway/ai-gateway.service";
 import { OrgFeaturesService } from "../../ai/core/services/org-features.service";
+import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
 import { redactSensitiveData } from "../../ai/core/redaction.util";
 import { logger } from "../../../common/logger/logger.service";
 
@@ -62,16 +63,24 @@ export class SupportAiTranslationService {
     targetLanguage: string,
     userId?: string,
   ) {
-    if (!(await this.isAvailable(orgId))) return null;
-    await this.getTicketOrThrow(orgId, ticketId);
-    const message = await this.db.query.supportTicketMessages.findFirst({
-      where: and(
-        eq(supportTicketMessages.id, messageId),
-        eq(supportTicketMessages.ticketId, ticketId),
-      ),
-      columns: { body: true },
-    });
-    if (!message) throw new NotFoundException("Message not found");
+    const message = await runInTenantTransaction(
+      this.db,
+      async () => {
+        if (!(await this.isAvailable(orgId))) return null;
+        await this.getTicketOrThrow(orgId, ticketId);
+        const found = await this.db.query.supportTicketMessages.findFirst({
+          where: and(
+            eq(supportTicketMessages.id, messageId),
+            eq(supportTicketMessages.ticketId, ticketId),
+          ),
+          columns: { body: true },
+        });
+        if (!found) throw new NotFoundException("Message not found");
+        return found;
+      },
+      { orgId },
+    );
+    if (!message) return null;
     const gatewayResult = await this.aiGateway.invokeStructured({
       actor: { orgId, userId: userId ?? null },
       feature: "support.translate",
@@ -108,21 +117,28 @@ export class SupportAiTranslationService {
     userId?: string,
     membershipId?: number | null,
   ) {
-    if (!(await this.isAvailable(orgId))) return null;
-    await this.getTicketOrThrow(orgId, ticketId);
-    let body = content;
-    if (!body && userId) {
-      if (membershipId == null) throw new BadRequestException("Organization membership required");
-      const draft = await this.db.query.supportTicketDrafts.findFirst({
-        where: and(
-          eq(supportTicketDrafts.orgId, orgId),
-          eq(supportTicketDrafts.ticketId, ticketId),
-          eq(supportTicketDrafts.userMembershipId, membershipId),
-        ),
-        columns: { body: true },
-      });
-      body = draft?.body;
-    }
+    const body = await runInTenantTransaction(
+      this.db,
+      async () => {
+        if (!(await this.isAvailable(orgId))) return null;
+        await this.getTicketOrThrow(orgId, ticketId);
+        if (content) return content;
+        if (!userId) return undefined;
+        if (membershipId == null)
+          throw new BadRequestException("Organization membership required");
+        const draft = await this.db.query.supportTicketDrafts.findFirst({
+          where: and(
+            eq(supportTicketDrafts.orgId, orgId),
+            eq(supportTicketDrafts.ticketId, ticketId),
+            eq(supportTicketDrafts.userMembershipId, membershipId),
+          ),
+          columns: { body: true },
+        });
+        return draft?.body;
+      },
+      { orgId },
+    );
+    if (body === null) return null;
     if (!body) throw new BadRequestException("No content to translate");
     const gatewayResult = await this.aiGateway.invokeStructured({
       actor: { orgId, userId: userId ?? null },
@@ -155,20 +171,30 @@ export class SupportAiTranslationService {
     userId?: string,
     macroId?: number,
   ) {
-    if (!(await this.isAvailable(orgId))) return null;
-    const ticket = await this.getTicketOrThrow(orgId, ticketId);
-    let macroCtx = "";
-    if (macroId) {
-      const macro = await this.db.query.supportMacros.findFirst({
-        where: and(
-          eq(supportMacros.id, macroId),
-          eq(supportMacros.orgId, orgId),
-        ),
-        columns: { title: true, body: true },
-      });
-      if (macro)
-        macroCtx = `\n\nMacro to incorporate: "${macro.title}"\n${macro.body}`;
-    }
+    const context = await runInTenantTransaction(
+      this.db,
+      async () => {
+        if (!(await this.isAvailable(orgId))) return null;
+        const found = await this.getTicketOrThrow(orgId, ticketId);
+        if (!macroId) return { ticket: found, macroCtx: "" };
+        const macro = await this.db.query.supportMacros.findFirst({
+          where: and(
+            eq(supportMacros.id, macroId),
+            eq(supportMacros.orgId, orgId),
+          ),
+          columns: { title: true, body: true },
+        });
+        return {
+          ticket: found,
+          macroCtx: macro
+            ? `\n\nMacro to incorporate: "${macro.title}"\n${macro.body}`
+            : "",
+        };
+      },
+      { orgId },
+    );
+    if (!context) return null;
+    const { ticket, macroCtx } = context;
     const gatewayResult = await this.aiGateway.invokeStructured({
       actor: { orgId, userId: userId ?? null },
       feature: "support.reply",

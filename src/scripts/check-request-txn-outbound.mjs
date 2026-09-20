@@ -26,7 +26,7 @@ const OUTBOUND =
   /(?<![.\w])fetch\s*\(|(?<![.\w])postSafeWebhook\s*\(|(?<![.\w])callProvider\s*\(|(?<![.\w])outboundRequest\s*\(|\baxios\s*\.\s*(?:get|post|put|patch|delete|request)\s*\(|\bsendEmailOnceDirect\s*\(/;
 
 const AI_OUTBOUND = /\binvoke(?:Text|Structured|Chat)[A-Za-z]*\s*\(/;
-const AI_CEILING = 18;
+const AI_CEILING = 13;
 
 const MAX_HOPS = 8;
 const MIN_CONTROLLERS = 200;

@@ -15,7 +15,11 @@ import { redactSensitiveData } from "../../ai/core/redaction.util";
 import { logger } from "../../../common/logger/logger.service";
 import { SupportAiSettingsService } from "./support-ai-settings.service";
 import { SupportAiTriageDataService } from "./support-ai-triage-data.service";
-import { macroPickSchema, handoffSummarySchema } from "./support-ai-triage.schemas";
+import {
+  macroPickSchema,
+  handoffSummarySchema,
+} from "./support-ai-triage.schemas";
+import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
 
 @Injectable()
 export class SupportAiTriageService {
@@ -100,21 +104,30 @@ export class SupportAiTriageService {
     ticketId: number,
     membershipId?: number | null,
   ) {
-    if (!(await this.data.isAvailable(orgId))) return null;
-    if (membershipId == null)
-      throw new ForbiddenException("Organization membership required");
-    const ticket = await this.data.getTicketOrThrow(orgId, ticketId);
-    const macros = await this.db.query.supportMacros.findMany({
-      where: and(
-        eq(supportMacros.orgId, orgId),
-        or(
-          sql`${supportMacros.visibility} != 'private'`,
-          eq(supportMacros.createdByMembershipId, membershipId),
-        ) ?? sql`false`,
-      ),
-      columns: { id: true, title: true, body: true },
-      limit: 100,
-    });
+    const prepared = await runInTenantTransaction(
+      this.db,
+      async () => {
+        if (!(await this.data.isAvailable(orgId))) return null;
+        if (membershipId == null)
+          throw new ForbiddenException("Organization membership required");
+        const found = await this.data.getTicketOrThrow(orgId, ticketId);
+        const available = await this.db.query.supportMacros.findMany({
+          where: and(
+            eq(supportMacros.orgId, orgId),
+            or(
+              sql`${supportMacros.visibility} != 'private'`,
+              eq(supportMacros.createdByMembershipId, membershipId),
+            ) ?? sql`false`,
+          ),
+          columns: { id: true, title: true, body: true },
+          limit: 100,
+        });
+        return { ticket: found, macros: available };
+      },
+      { orgId },
+    );
+    if (!prepared) return null;
+    const { ticket, macros } = prepared;
     if (macros.length === 0) return null;
     const catalog = macros
       .map(
@@ -149,13 +162,19 @@ export class SupportAiTriageService {
     const result = gatewayResult.data;
     if (result.macroId === null || !macros.some((m) => m.id === result.macroId))
       return null;
-    await this.data.replacePendingSuggestions(orgId, ticketId, ["macro"]);
-    return this.data.insertSuggestion(
-      orgId,
-      ticketId,
-      "macro",
-      { macroId: result.macroId, reason: result.reason },
-      result.confidence,
+    return runInTenantTransaction(
+      this.db,
+      async () => {
+        await this.data.replacePendingSuggestions(orgId, ticketId, ["macro"]);
+        return this.data.insertSuggestion(
+          orgId,
+          ticketId,
+          "macro",
+          { macroId: result.macroId, reason: result.reason },
+          result.confidence,
+        );
+      },
+      { orgId },
     );
   }
 
@@ -170,7 +189,9 @@ export class SupportAiTriageService {
       ),
     );
     if (articles.length === 0) return null;
-    await this.data.replacePendingSuggestions(user.orgId, ticketId, ["kb_article"]);
+    await this.data.replacePendingSuggestions(user.orgId, ticketId, [
+      "kb_article",
+    ]);
     return this.data.insertSuggestion(
       user.orgId,
       ticketId,

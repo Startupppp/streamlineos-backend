@@ -27,6 +27,7 @@ import {
   type ImproveReplyBody,
   type TranslateDraftBody,
 } from "./dto/support.schemas";
+import { NoTenantTransaction } from "../../../common/tenant/no-tenant-transaction.decorator";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { BodylessAction, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
 import {
@@ -82,6 +83,7 @@ export class SupportAiController {
   }
 
   @Post(":ticketId/ai/analyze")
+  @NoTenantTransaction()
   @BodylessAction()
   @RequirePermission("support:tickets:view")
   @UseGuards(RateLimitGuard)
@@ -134,6 +136,7 @@ export class SupportAiController {
   }
 
   @Post(":ticketId/ai/suggest-macro")
+  @NoTenantTransaction()
   @BodylessAction()
   @RequirePermission("support:tickets:reply")
   @UseGuards(RateLimitGuard)
@@ -152,6 +155,7 @@ export class SupportAiController {
   }
 
   @Post(":ticketId/ai/translate")
+  @NoTenantTransaction()
   @RequirePermission("support:tickets:view")
   @UseGuards(RateLimitGuard)
   @UseRateLimit("ai:invoke")
@@ -194,6 +198,7 @@ export class SupportAiController {
   }
 
   @Post("ai/improve-reply")
+  @NoTenantTransaction()
   @RequirePermission("support:ai:invoke")
   @UseGuards(RateLimitGuard)
   @UseRateLimit("ai:invoke")
@@ -209,6 +214,7 @@ export class SupportAiController {
   }
 
   @Post("ai/translate-draft")
+  @NoTenantTransaction()
   @RequirePermission("support:ai:invoke")
   @UseGuards(RateLimitGuard)
   @UseRateLimit("ai:invoke")
