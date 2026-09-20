@@ -8,9 +8,9 @@ import { WORKSPACE_CONFIRM_ACTIONS } from "./workspace-confirm-actions";
 import {
   assertResolvableActionServices,
   assertUniqueActions,
+  registerProposeParsers,
   type ConfirmableActionDefinition,
 } from "./confirmable-action.types";
-import { isRecord } from "../../../../common/types/is-record";
 
 export const CONFIRMABLE_ACTION_DEFINITIONS: readonly ConfirmableActionDefinition[] = [
   ...BUILD_CONFIRM_ACTIONS,
@@ -21,6 +21,7 @@ export const CONFIRMABLE_ACTION_DEFINITIONS: readonly ConfirmableActionDefinitio
 ];
 
 assertUniqueActions(CONFIRMABLE_ACTION_DEFINITIONS);
+registerProposeParsers(CONFIRMABLE_ACTION_DEFINITIONS);
 
 const BY_ACTION = new Map<string, ConfirmableActionDefinition>(
   CONFIRMABLE_ACTION_DEFINITIONS.map((definition) => [definition.action, definition]),
@@ -42,19 +43,6 @@ export function findConfirmableAction(
   action: string,
 ): ConfirmableActionDefinition | undefined {
   return BY_ACTION.get(action);
-}
-
-export function parseProposedPayload(
-  action: string,
-  input: Record<string, unknown>,
-): Record<string, unknown> {
-  const definition = BY_ACTION.get(action);
-  if (definition === undefined)
-    throw new Error(`Unknown confirmable action: ${action}`);
-  const parsed: unknown = definition.propose(input);
-  if (!isRecord(parsed))
-    throw new Error(`Confirmable action "${action}" does not parse to an object payload`);
-  return parsed;
 }
 
 @Injectable()

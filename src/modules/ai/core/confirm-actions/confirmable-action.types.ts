@@ -67,6 +67,35 @@ export function defineConfirmableAction<TPayload extends z.ZodTypeAny, TServices
   };
 }
 
+const PROPOSE_PARSERS = new Map<string, (input: unknown) => unknown>();
+
+export function registerProposeParsers(
+  definitions: readonly ConfirmableActionDefinition[],
+): void {
+  PROPOSE_PARSERS.clear();
+  for (const definition of definitions)
+    PROPOSE_PARSERS.set(definition.action, definition.propose);
+}
+
+export function assertProposeParsersRegistered(): void {
+  if (PROPOSE_PARSERS.size === 0)
+    throw new Error(
+      "Confirmable action parsers are not registered; nothing loaded confirm-actions/index.ts, so every propose would skip its payload schema.",
+    );
+}
+
+export function parseProposedPayload(
+  action: string,
+  input: Record<string, unknown>,
+): Record<string, unknown> {
+  const propose = PROPOSE_PARSERS.get(action);
+  if (propose === undefined) return input;
+  const parsed: unknown = propose(input);
+  if (!isRecord(parsed))
+    throw new Error(`Confirmable action "${action}" does not parse to an object payload`);
+  return parsed;
+}
+
 export function assertUniqueActions(
   definitions: readonly ConfirmableActionDefinition[],
 ): void {

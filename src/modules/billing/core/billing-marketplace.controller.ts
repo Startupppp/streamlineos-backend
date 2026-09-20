@@ -4,6 +4,7 @@ import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
+import { NoTenantTransaction } from "../../../common/tenant";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { BillingMarketplace } from "./billing-marketplace";
 import { MarketplaceService } from "./marketplace.service";
@@ -142,6 +143,7 @@ export class BillingMarketplaceController {
   }
 
   @Post("ai-credits/purchase")
+  @NoTenantTransaction()
   @Idempotent("billing.ai-credits.purchase")
   @HttpCode(200)
   @UseGuards(PermissionGuard)
@@ -161,10 +163,10 @@ export class BillingMarketplaceController {
           signature: body.signature ?? "",
         }) ?? false;
       if (!valid) throw new BadRequestException("Invalid payment signature");
-      return this.aiCredits.purchaseCreditsDirectly(u.orgId, u.userId, body.packId, false, body.paymentId);
+      return this.aiCredits.purchaseCreditsInTenantTransaction(u.orgId, u.userId, body.packId, body.paymentId);
     }
     if ((await this.providers.resolveConfigured(u.orgId))?.isReady() ?? false)
       return this.billingMarketplace.purchaseAddon(u.orgId, `ai_pack_${body.packId}`, 1);
-    return this.aiCredits.purchaseCreditsDirectly(u.orgId, u.userId, body.packId);
+    return this.aiCredits.purchaseCreditsInTenantTransaction(u.orgId, u.userId, body.packId);
   }
 }

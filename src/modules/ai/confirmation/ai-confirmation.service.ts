@@ -5,6 +5,7 @@
   Inject,
   Injectable,
   NotFoundException,
+  type OnModuleInit,
 } from "@nestjs/common";
 import { and, eq } from "drizzle-orm";
 import { timingSafeEqual } from "node:crypto";
@@ -14,6 +15,10 @@ import { organizationMembers } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { AuditService } from "../../../common/audit/audit.service";
+import {
+  assertProposeParsersRegistered,
+  parseProposedPayload,
+} from "../core/confirm-actions/confirmable-action.types";
 import {
   markProposalExecuted,
   type ProposalLifecycleDeps,
@@ -34,11 +39,15 @@ function isLiveProposal(row: ProposalRow): boolean {
  * `lib/proposal-lifecycle.ts`.
  */
 @Injectable()
-export class AiConfirmationService {
+export class AiConfirmationService implements OnModuleInit {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly audit: AuditService,
   ) {}
+
+  onModuleInit(): void {
+    assertProposeParsersRegistered();
+  }
 
   private async resolveMembershipId(orgId: string, userId: string): Promise<number | null> {
     const rows = await runInTenantTransaction(
@@ -83,7 +92,8 @@ export class AiConfirmationService {
 
   async propose(input: ProposeInput): Promise<ProposeResult> {
     const ttl = Math.min(input.ttlSeconds ?? DEFAULT_TTL, MAX_TTL);
-    const payloadHash = stableHash(input.payload);
+    const payload = parseProposedPayload(input.action, input.payload);
+    const payloadHash = stableHash(payload);
     const expiresAt = new Date(Date.now() + ttl * 1000);
 
     const idempotencyKey = input.idempotencyKey
@@ -118,7 +128,7 @@ export class AiConfirmationService {
             userId: input.userId,
             userMembershipId,
             action: input.action,
-            payload: input.payload,
+            payload,
             payloadHash,
             idempotencyKey,
             expiresAt,

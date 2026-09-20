@@ -8,12 +8,12 @@ import {
   CONFIRMABLE_ACTION_DEFINITIONS,
   CONFIRM_ACTION_PERMISSION,
   findConfirmableAction,
-  parseProposedPayload,
 } from ".";
 import {
   assertResolvableActionServices,
   assertUniqueActions,
   defineConfirmableAction,
+  parseProposedPayload,
 } from "./confirmable-action.types";
 import { PERMISSIONS } from "../../../rbac/permissions";
 import { ProjectsTicketsService } from "../../../build/core/projects-tickets.service";
@@ -336,10 +336,11 @@ describe("the payload schema is one contract for the card and the executor", () 
     ).toThrow('would drop payload field(s) the card shows: notifyEveryone');
   });
 
-  it("refuses to parse a payload for an action no definition owns", () => {
-    expect(() => parseProposedPayload("ticket.teleport", { ticketId: 1 })).toThrow(
-      "Unknown confirmable action: ticket.teleport",
-    );
+  it("passes an action no definition owns through untouched, because propose is now the shared seam and the self-redeemed actions have no schema here", () => {
+    const payload = { eventId: 7, followUpSubject: "Recap" };
+
+    for (const action of SELF_REDEEMED_ACTIONS)
+      expect(parseProposedPayload(action, payload)).toBe(payload);
   });
 
   it("returns the parsed payload a tool should hand to propose", () => {

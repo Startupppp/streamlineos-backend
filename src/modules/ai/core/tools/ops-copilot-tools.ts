@@ -6,17 +6,10 @@ import {
   invProductVariants,
   leaveBalances,
   leaveTypes,
-  payrollRuns,
-  payrollRunEmployees,
 } from "../../../../db/schema";
 import { DRIZZLE } from "../../../../db/drizzle.constants";
 import { type Db } from "../../../../db/drizzle.module";
-import { availableQtySumSql } from "../../../inventory/stock-engine/available-sql";
-import {
-  WarehouseScopeService,
-  type ResolvedWarehouseScope,
-} from "../../../inventory/stock-engine/warehouse-scope.service";
-import type { DataScope } from "../../../access/access.types";
+import { WarehouseScopeService } from "../../../inventory/stock-engine/warehouse-scope.service";
 import {
   defineTool,
   data,
@@ -27,7 +20,6 @@ import {
 } from "../registry/ask-os-tool.types";
 import { AskOsTools } from "../registry/ask-os-tools.decorator";
 import { readCopilotVariantStock } from "./lib/ops-copilot-reads";
-import { shouldDenyTeamPayrollCopilot } from "./lib/payroll-copilot-scope";
 import { VARIANT_SCAN_CAP } from "./lib/tool-read-caps";
 
 const LEAVE_BALANCE_CAP = 50;
@@ -41,31 +33,6 @@ export class OpsCopilotTools implements AskOsToolProvider {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly warehouseScope: WarehouseScopeService,
   ) {}
-
-  private async selfPayrollRows(
-    orgId: string,
-    userId: string,
-    month?: string,
-    year?: string,
-  ) {
-    return this.db
-      .select({
-        month: payrollRuns.month,
-        status: payrollRunEmployees.status,
-        netSalary: payrollRunEmployees.net,
-      })
-      .from(payrollRunEmployees)
-      .innerJoin(payrollRuns, eq(payrollRunEmployees.runId, payrollRuns.id))
-      .where(
-        and(
-          eq(payrollRuns.orgId, orgId),
-          eq(payrollRunEmployees.userId, userId),
-          month ? eq(payrollRuns.month, month) : undefined,
-          year ? sql`${payrollRuns.month} LIKE ${year + "-%"}` : undefined,
-        ),
-      )
-      .limit(12);
-  }
 
   tools(): AskOsToolDefinition[] {
     return [
@@ -164,61 +131,43 @@ export class OpsCopilotTools implements AskOsToolProvider {
       }),
 
       defineTool({
-        key: "getPayrollSummary",
+        key: "getOrgPayrollSummary",
         description:
-          "Get a payroll summary (counts and net totals by status). Never returns bank details or individual salaries when the user only has own-scope access. Use month (YYYY-MM) and/or year (YYYY) to filter.",
+          "Get the organisation-wide payroll summary: run counts and net totals grouped by run status. Requires organisation-wide payroll visibility, and returns no bank details or individual salaries. Use month (YYYY-MM) and/or year (YYYY) to filter. For the caller's own pay history use getMyPayslips instead.",
         input: z.object({
           month: z.string().optional().describe("Filter to a specific month, format YYYY-MM"),
           year: z.string().optional().describe("Filter to a specific year, format YYYY"),
         }),
-        permission: "self:payslips",
+        permission: "hr:payroll:view",
         module: "payroll",
         run: async ({ month, year }, ctx) => {
-          const hrPayrollScope = ctx
-            .readFor("hr:payroll:view")
-            .rawScope(
-              "The payroll copilot answers a different shape per scope — self rows, a team refusal, or an org summary — rather than filtering one query.",
-            );
+          if (!ctx.read.unrestricted) return denied("hr:payroll:view");
 
-          if (hrPayrollScope === "all") {
-            const summaryRows = await this.db.execute<{
-              status: string;
-              count: string;
-              total_net: string;
-            }>(sql`
-              SELECT
-                pr.status,
-                COUNT(pre.id) AS count,
-                SUM(pre.net::numeric) AS total_net
-              FROM payroll_run_employees pre
-              JOIN payroll_runs pr ON pr.id = pre.run_id
-              WHERE pr.org_id = ${ctx.actor.orgId}
-                ${month ? sql`AND pr.month = ${month}` : sql``}
-                ${year && !month ? sql`AND pr.month LIKE ${year + "-%"}` : sql``}
-              GROUP BY pr.status
-              ORDER BY pr.status
-            `);
-            return data({
-              scope: hrPayrollScope,
-              byStatus: summaryRows.map((r) => ({
-                status: String(r.status),
-                count: Number(r.count),
-                totalNet: Number(r.total_net ?? 0),
-              })),
-            });
-          }
-
-          if (shouldDenyTeamPayrollCopilot(hrPayrollScope)) {
-            return denied("hr:payroll:view");
-          }
-
-          if (hrPayrollScope !== "own" && ctx.readFor("self:payslips").denied) {
-            return denied("self:payslips");
-          }
+          const summaryRows = await this.db.execute<{
+            status: string;
+            count: string;
+            total_net: string;
+          }>(sql`
+            SELECT
+              pr.status,
+              COUNT(pre.id) AS count,
+              SUM(pre.net::numeric) AS total_net
+            FROM payroll_run_employees pre
+            JOIN payroll_runs pr ON pr.id = pre.run_id
+            WHERE pr.org_id = ${ctx.actor.orgId}
+              ${month ? sql`AND pr.month = ${month}` : sql``}
+              ${year && !month ? sql`AND pr.month LIKE ${year + "-%"}` : sql``}
+            GROUP BY pr.status
+            ORDER BY pr.status
+          `);
 
           return data({
-            scope: "self",
-            records: await this.selfPayrollRows(ctx.actor.orgId, ctx.actor.userId, month, year),
+            scope: "organization",
+            byStatus: summaryRows.map((r) => ({
+              status: String(r.status),
+              count: Number(r.count),
+              totalNet: Number(r.total_net ?? 0),
+            })),
           });
         },
       }),

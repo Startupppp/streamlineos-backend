@@ -253,6 +253,19 @@ export class AiCreditsService {
     }
   }
 
+  async purchaseCreditsInTenantTransaction(
+    orgId: string,
+    userId: string | null,
+    packId: number,
+    paymentReferenceId?: string,
+  ) {
+    return runInTenantTransaction(
+      this.db,
+      () => this.purchaseCreditsDirectly(orgId, userId, packId, false, paymentReferenceId),
+      { orgId },
+    );
+  }
+
   async listTransactions(orgId: string, query: { cursor?: string; limit: number }) {
     return this.packs.listTransactions(orgId, query);
   }

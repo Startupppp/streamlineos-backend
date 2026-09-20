@@ -191,6 +191,9 @@ export class ProjectsTicketsUpdateService {
         cycleId: true,
         version: true,
       },
+      with: {
+        assignee: { columns: { userId: true } },
+      },
     });
     if (!before || !before.projectId)
       throw new NotFoundException("Ticket not found");
@@ -210,7 +213,7 @@ export class ProjectsTicketsUpdateService {
         ? (assigneeMemberships.get(resolvedAssignee) ?? null)
         : null;
     }
-    const beforeAssigneeId: string | null = null;
+    const beforeAssigneeId = before.assignee?.userId ?? null;
     const beforeAssigneeMembershipId = before.assigneeMembershipId;
 
     if (input.version !== undefined && input.version !== before.version)
@@ -243,8 +246,11 @@ export class ProjectsTicketsUpdateService {
     await this.db.transaction(async (tx) => {
       if (systemJobCovers(u.principal, "build:tickets:update"))
         await lockProjectTicketMutation(tx, orgId, ticketProjectId);
-      else
+      else {
         await this.query.authorizeMutation(tx, u, ticketProjectId, [ticketId]);
+        if (input.parentTicketId != null || input.epicId != null)
+          await lockProjectTicketMutation(tx, orgId, ticketProjectId);
+      }
       if (input.parentTicketId != null)
         await this.assertSelfRefChain(tx, orgId, ticketId, input.parentTicketId, "parentTicketId", ticketProjectId);
       if (input.epicId != null)
