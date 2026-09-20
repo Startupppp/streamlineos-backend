@@ -24,6 +24,20 @@ const MODULES = join(SRC, "modules");
 const OUTBOUND =
   /(?<![.\w])fetch\s*\(|(?<![.\w])postSafeWebhook\s*\(|(?<![.\w])callProvider\s*\(|(?<![.\w])outboundRequest\s*\(|\baxios\s*\.\s*(?:get|post|put|patch|delete|request)\s*\(|\bsendEmailOnceDirect\s*\(/;
 
+/*
+  The LLM leaves the process through `ChatOpenAI` (`@langchain/openai`), not
+  `fetch` or `axios`, so none of the patterns above can see an AI call — every
+  route awaiting a 30-60s provider round trip inside the request transaction was
+  invisible here until this was added.
+
+  These are counted against a CEILING rather than a frozen list, because a
+  frozen entry is supposed to carry the decision that put it there and 24 of
+  these have not been read hop by hop yet. A ceiling claims only what is true:
+  the number may fall, never rise.
+*/
+const AI_OUTBOUND = /\binvoke(?:Text|Structured|Chat)[A-Za-z]*\s*\(/;
+const AI_CEILING = 24;
+
 const MAX_HOPS = 6;
 const MIN_CONTROLLERS = 200;
 const MIN_ROUTES = 1500;
@@ -92,21 +106,29 @@ function callsOutbound(body) {
   return OUTBOUND.test(stripDetached(body));
 }
 
+function callsAnyProvider(body) {
+  const visible = stripDetached(body);
+  return OUTBOUND.test(visible) || AI_OUTBOUND.test(visible);
+}
+
 function scan() {
   const all = walk(SRC);
   const classIndex = buildClassIndex(all);
-  const reaches = makeReaches({
-    directly: callsOutbound,
+  const functionIndex = buildFunctionIndex(all);
+  const walkOptions = {
     maxHops: MAX_HOPS,
     strip: stripDetached,
     followSameClass: true,
-    functionIndex: buildFunctionIndex(all),
-  });
+    functionIndex,
+  };
+  const reachesAny = makeReaches({ ...walkOptions, directly: callsAnyProvider });
+  const reaches = makeReaches({ ...walkOptions, directly: callsOutbound });
   const controllers = walk(MODULES).filter(
     (file) => /\.controller\.ts$/.test(file) && !isSpec(file),
   );
 
   const holding = [];
+  const aiHolding = [];
   let routes = 0;
 
   for (const file of controllers) {
@@ -118,8 +140,15 @@ function scan() {
 
     for (const route of found) {
       routes++;
-      if (reaches(route.body, classIndex, { types, source, file }, 0, new Set()))
+      const where = { types, source, file };
+      if (!reachesAny(route.body, classIndex, where, 0, new Set())) continue;
+      /*
+        Re-walked with the non-AI predicate only, so a route reaching both is
+        reported where the stricter rule applies rather than counted twice.
+      */
+      if (reaches(route.body, classIndex, where, 0, new Set()))
         holding.push(`${rel}#${route.handler}`);
+      else aiHolding.push(`${rel}#${route.handler}`);
     }
   }
 
@@ -127,6 +156,7 @@ function scan() {
     controllers: controllers.length,
     routes,
     holding: [...new Set(holding)].sort(),
+    aiHolding: [...new Set(aiHolding)].sort(),
   };
 }
 
@@ -165,6 +195,15 @@ function selfTest() {
   if (callsOutbound("const read = await this.fetch(a, b);"))
     failures.push("a private method named fetch was misread as the global fetch");
   if (!callsOutbound("const r = await fetch(url);")) failures.push("bare fetch( not detected");
+
+  if (callsOutbound("await this.gateway.invokeTextWithUsage(opts);"))
+    failures.push("an AI call was counted against the frozen list instead of the ceiling");
+  if (!callsAnyProvider("await this.gateway.invokeTextWithUsage(opts);"))
+    failures.push("invokeTextWithUsage( not detected as a provider call");
+  if (!callsAnyProvider("await this.gateway.invokeStructured(opts);"))
+    failures.push("invokeStructured( not detected as a provider call");
+  if (callsAnyProvider("const ok = invoker.check(value);"))
+    failures.push("a name merely starting with invoke was read as a gateway call");
 
   const classOptOut = findRoutes(
     `
@@ -260,7 +299,7 @@ function main() {
     return;
   }
 
-  const { controllers, routes, holding } = scan();
+  const { controllers, routes, holding, aiHolding } = scan();
 
   if (controllers < MIN_CONTROLLERS || routes < MIN_ROUTES) {
     console.error(
@@ -271,7 +310,7 @@ function main() {
   }
 
   if (process.argv.includes("--json")) {
-    console.log(JSON.stringify({ controllers, routes, holding }, null, 2));
+    console.log(JSON.stringify({ controllers, routes, holding, aiHolding }, null, 2));
     return;
   }
 
@@ -298,9 +337,29 @@ function main() {
     process.exit(1);
   }
 
+  if (aiHolding.length > AI_CEILING) {
+    console.error(
+      `check-request-txn-outbound: ${aiHolding.length} route(s) await an AI provider while the request's ` +
+        `tenant transaction is held, above the ceiling of ${AI_CEILING}. The fast tier is 30s and the ` +
+        `standard tier 60s, on a pool of 10. Give the service three phases — read in a short ` +
+        `runInTenantTransaction with an explicit orgId, call the provider in none, write in another — ` +
+        `then add @NoTenantTransaction().`,
+    );
+    for (const entry of aiHolding) console.error(`  ${entry}`);
+    process.exit(1);
+  }
+
+  if (aiHolding.length < AI_CEILING) {
+    console.log(
+      `check-request-txn-outbound: ${aiHolding.length} AI hold(s), below the ceiling of ${AI_CEILING}. ` +
+        `Lower AI_CEILING to ${aiHolding.length} to hold the ground.`,
+    );
+  }
+
   console.log(
     `check-request-txn-outbound: ${routes} route(s) across ${controllers} controller(s); ` +
-      `${holding.length} holding a connection across an outbound call (frozen).`,
+      `${holding.length} holding across an outbound call (frozen), ` +
+      `${aiHolding.length} across an AI call (ceiling ${AI_CEILING}).`,
   );
 }
 
