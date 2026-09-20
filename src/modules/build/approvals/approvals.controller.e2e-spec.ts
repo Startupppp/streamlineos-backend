@@ -128,8 +128,21 @@ describe("ProjectsApprovals auth/RBAC (e2e)", () => {
     const res = await request(app.getHttpServer())
       .post("/build/1/approvals")
       .set("Authorization", `Bearer ${token}`)
+      .set("Idempotency-Key", "e2e-approval-create-1")
       .send({ entityType: "task", entityId: 1, title: "Review", approverId: "user-2" });
     expect(res.status).toBe(404);
+  });
+
+  it("rejects a create without an Idempotency-Key with 400 because build.approval.create is a required fence", async () => {
+    const token = await signToken({
+      permissions: ["build:approvals:request"],
+      enabledModules: ["build"],
+    });
+    const res = await request(app.getHttpServer())
+      .post("/build/1/approvals")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ entityType: "task", entityId: 1, title: "Review", approverId: "user-2" });
+    expect(res.status).toBe(400);
   });
 
   it("rejects an entityType outside approval_entity_type with 400 before reaching the project lookup", async () => {
