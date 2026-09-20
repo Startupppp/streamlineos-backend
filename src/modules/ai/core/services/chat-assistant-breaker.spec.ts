@@ -4,8 +4,8 @@ jest.mock("ai", () => ({
   stepCountIs: jest.fn(() => () => false),
 }));
 jest.mock("@composio/core", () => ({ Composio: jest.fn() }));
-jest.mock("../workspace-copilot-tools", () => ({ WorkspaceCopilotTools: jest.fn() }));
-jest.mock("../comms-copilot-tools", () => ({ CommsCopilotTools: jest.fn() }));
+jest.mock("../tools/workspace-copilot-tools", () => ({ WorkspaceCopilotTools: jest.fn() }));
+jest.mock("../tools/comms-copilot-tools", () => ({ CommsCopilotTools: jest.fn() }));
 jest.mock("../../../calendar/calendar.service", () => ({ CalendarService: jest.fn() }));
 jest.mock("../../../integrations/core/composio.gateway", () => ({ ComposioGateway: jest.fn() }));
 jest.mock("../../../../common/ratelimit/rate-limit.service", () => ({ RateLimitService: jest.fn() }));

@@ -3,10 +3,11 @@ import { createOpenRouter } from "@openrouter/ai-sdk-provider";
 import { google } from "@ai-sdk/google";
 import type { LanguageModel } from "ai";
 import { resolveLlmProvider, type LlmProviderConfig } from "../providers/llm-provider.config";
+import type { ProviderModelId } from "../billing/ai-model-pricing.constants";
 import type { AiInvokeBaseOpts } from "./ai-gateway.types";
 
-export const DEFAULT_STREAM_GOOGLE_MODEL = "gemini-1.5-pro-latest";
-export const DEFAULT_STREAM_OPENROUTER_MODEL = "openai/gpt-4o";
+export const DEFAULT_STREAM_GOOGLE_MODEL: ProviderModelId = "gemini-1.5-pro-latest";
+export const DEFAULT_STREAM_OPENROUTER_MODEL: ProviderModelId = "openai/gpt-4o";
 
 export function resolveDefaultStreamModelId(): string {
   return process.env.AI_CHAT_PROVIDER === "openrouter"

@@ -17,7 +17,6 @@ import { AiCallMetrics } from "../telemetry/ai-call-metrics";
 import { AiGatewayCreditHelper } from "./ai-gateway-credit.helper";
 import { AiGatewayRunnerHelper } from "./ai-gateway-runner.helper";
 import { AiGatewayEmbedHelper } from "./ai-gateway-embed.helper";
-import { AiResponseCacheService } from "./ai-response-cache.service";
 import { AiConcurrencyLimiter } from "./ai-concurrency-limiter";
 import {
   getAiRequestAbortSignal,
@@ -34,7 +33,6 @@ import type {
   AiInvokeWithUsageResult,
   AiUsageMeta,
   AiInvokeBaseOpts,
-  AiResponseCacheOpts,
   InvokeStructuredOpts,
   InvokeStructuredWithImageOpts,
   InvokeTextOpts,
@@ -60,10 +58,6 @@ const CONCURRENCY_EXCEEDED_MESSAGE = "Too many concurrent AI requests for this o
 const CANCELLED_MESSAGE = "AI request was cancelled before it completed";
 const EMBEDDING_TIER = "embedding";
 
-function resolveCacheOpts(cache: AiResponseCacheOpts | undefined): AiResponseCacheOpts | null {
-  return cache ?? null;
-}
-
 @Injectable()
 export class AiGatewayService {
   private readonly inflightMap = new Map<
@@ -80,21 +74,15 @@ export class AiGatewayService {
     private readonly usageSvc: AiUsageService,
     private readonly audit: AuditService,
     @Inject(AI_CREDIT_LEDGER) private readonly ledger: AiCreditLedger,
-    private readonly responseCache: AiResponseCacheService,
     private readonly concurrencyLimiter: AiConcurrencyLimiter,
     @Optional() @Inject(REDIS) redis: Redis | null = null,
   ) {
     const credit = new AiGatewayCreditHelper(ledger, usageSvc, audit);
     this.runner = new AiGatewayRunnerHelper(llm, credit);
     this.embedder = new AiGatewayEmbedHelper(embeddings, ledger, usageSvc);
-    this.streamer = new AiGatewayStreamHelper(ledger, usageSvc, concurrencyLimiter, redis);
+    this.streamer = new AiGatewayStreamHelper(ledger, usageSvc, concurrencyLimiter, redis, audit);
   }
 
-  /**
-   * The streaming sibling of `invokeText`. Reserves before the paid call and
-   * settles token-metered after it, so a streamed surface bills the same way a
-   * buffered one does — and a cancelled stream releases instead of settling.
-   */
   async streamTextWithUsage(opts: AiStreamTextOpts): Promise<AiTextStream> {
     const signal = opts.signal ?? getAmbientAiAbortSignal();
     return this.streamer.run({ ...opts, ...(signal !== undefined ? { signal } : {}) });
@@ -104,12 +92,6 @@ export class AiGatewayService {
     return this.streamTextWithUsage(opts);
   }
 
-  /**
-   * Every entry point opens exactly one of these, and the correlation id comes
-   * off it. It is what joins the call, its `ai_usage_logs` row and its audit
-   * entry back to the request that caused them; before it, each of these methods
-   * minted a fresh `randomUUID()` and every AI call was an orphan trace.
-   */
   private beginCall(opts: {
     feature: string;
     tier?: string;
@@ -150,11 +132,6 @@ export class AiGatewayService {
     }
   }
 
-  /**
-   * Deliberately NOT on the ambient tenant signal: its product is a durable
-   * index, not an answer the caller is waiting for, so a hang-up that cancels it
-   * mid-batch leaves a half-indexed document behind.
-   */
   async embedBatchWithCredit(opts: EmbedBatchOpts): Promise<EmbedBatchResult> {
     const call = this.beginCall({ feature: opts.feature, tier: EMBEDDING_TIER, orgId: opts.orgId });
     const correlationId = call.correlationId;
@@ -190,20 +167,19 @@ export class AiGatewayService {
     const call = this.beginCall({ feature: opts.feature, ...(opts.tier !== undefined ? { tier: opts.tier } : {}), orgId: opts.actor.orgId });
     const correlationId = call.correlationId;
     const dedupeKey = opts.dedupe ? buildDedupeKey(opts) : null;
-    const cacheOpts = resolveCacheOpts(opts.cache);
 
     if (dedupeKey) {
       const inflight = this.inflightMap.get(dedupeKey);
       if (inflight) {
         call.served();
         call.finish("dedupe_hit");
-        return inflight as Promise<AiInvokeResult<T>>;
+        const result = await inflight;
+        if (!result.ok) return result;
+        return { ...result, data: opts.schema.parse(result.data) };
       }
     }
 
-    let invoked = false;
     const runLimited = async (): Promise<AiInvokeResult<T>> => {
-      invoked = true;
       const allowed = await call.queue(() => this.concurrencyLimiter.acquire(opts.actor.orgId));
       if (!allowed) {
         call.finish("concurrency_exceeded");
@@ -216,38 +192,12 @@ export class AiGatewayService {
       }
     };
 
-    const throughCache = async (
-      cache: AiResponseCacheOpts,
-      fetcher: () => Promise<AiInvokeResult<T>>,
-    ): Promise<AiInvokeResult<T>> => {
-      const outcome = await this.responseCache.cachedInvoke<T>(opts.actor.orgId, {
-        feature: opts.feature, tier: opts.tier,
-        promptSystem: opts.prompt.system, promptUser: opts.prompt.user, ...cache,
-      }, fetcher);
-      if (!invoked) {
-        call.served();
-        call.finish("cache_hit");
-      }
-      return outcome;
-    };
-
-    if (dedupeKey && cacheOpts) {
-      return throughCache(cacheOpts, async () => {
-        const promise = runLimited();
-        this.inflightMap.set(dedupeKey, promise);
-        promise.finally(() => this.inflightMap.delete(dedupeKey)).catch(() => undefined);
-        return promise;
-      });
-    }
-
     if (dedupeKey) {
       const promise = runLimited();
       this.inflightMap.set(dedupeKey, promise);
       promise.finally(() => this.inflightMap.delete(dedupeKey)).catch(() => undefined);
       return promise;
     }
-
-    if (cacheOpts) return throughCache(cacheOpts, runLimited);
 
     return runLimited();
   }
@@ -322,20 +272,19 @@ export class AiGatewayService {
     const call = this.beginCall({ feature: opts.feature, ...(opts.tier !== undefined ? { tier: opts.tier } : {}), orgId: opts.actor.orgId });
     const correlationId = call.correlationId;
     const dedupeKey = opts.dedupe ? buildDedupeKey(opts) : null;
-    const cacheOpts = resolveCacheOpts(opts.cache);
 
     if (dedupeKey) {
       const inflight = this.inflightMap.get(dedupeKey);
       if (inflight) {
         call.served();
         call.finish("dedupe_hit");
-        return inflight as Promise<AiInvokeResult<string>>;
+        const result = await inflight;
+        if (!result.ok) return result;
+        return { ...result, data: String(result.data) };
       }
     }
 
-    let invoked = false;
     const runLimited = async (): Promise<AiInvokeResult<string>> => {
-      invoked = true;
       const allowed = await call.queue(() => this.concurrencyLimiter.acquire(opts.actor.orgId));
       if (!allowed) {
         call.finish("concurrency_exceeded");
@@ -348,38 +297,12 @@ export class AiGatewayService {
       }
     };
 
-    const throughCache = async (
-      cache: AiResponseCacheOpts,
-      fetcher: () => Promise<AiInvokeResult<string>>,
-    ): Promise<AiInvokeResult<string>> => {
-      const outcome = await this.responseCache.cachedInvoke<string>(opts.actor.orgId, {
-        feature: opts.feature, tier: opts.tier,
-        promptSystem: opts.prompt.system, promptUser: opts.prompt.user, ...cache,
-      }, fetcher);
-      if (!invoked) {
-        call.served();
-        call.finish("cache_hit");
-      }
-      return outcome;
-    };
-
-    if (dedupeKey && cacheOpts) {
-      return throughCache(cacheOpts, async () => {
-        const promise = runLimited();
-        this.inflightMap.set(dedupeKey, promise);
-        promise.finally(() => this.inflightMap.delete(dedupeKey)).catch(() => undefined);
-        return promise;
-      });
-    }
-
     if (dedupeKey) {
       const promise = runLimited();
       this.inflightMap.set(dedupeKey, promise);
       promise.finally(() => this.inflightMap.delete(dedupeKey)).catch(() => undefined);
       return promise;
     }
-
-    if (cacheOpts) return throughCache(cacheOpts, runLimited);
 
     return runLimited();
   }

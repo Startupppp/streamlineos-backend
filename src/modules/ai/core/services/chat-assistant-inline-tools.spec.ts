@@ -1,6 +1,7 @@
 import { WorkspaceInlineTools } from "./chat-assistant-inline-tools";
 import type { Db } from "../../../../db/drizzle.module";
 import type { AskOsToolRunContext } from "../registry/ask-os-tool.types";
+import { ScopedRead } from "../../../access/scoped-read";
 import type { AskOsActor } from "./ask-os-actor";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
 
@@ -51,8 +52,8 @@ const caller: CurrentUserContext = {
 const ctx: AskOsToolRunContext = {
   actor,
   caller,
-  scope: "all",
-  scopes: {},
+  read: ScopedRead.of(actor.orgId, actor.userId, "all"),
+  readFor: () => ScopedRead.of(actor.orgId, actor.userId, "all"),
   modules: {},
 };
 

@@ -1,4 +1,7 @@
+import { z } from "zod";
 import { asPromptData, buildContextPrompt } from "./chat-assistant-prompt";
+import { manifestSchema } from "../registry/ask-os-tool-manifest";
+import { defineTool } from "../registry/ask-os-tool.types";
 import type { ChatContext } from "./chat-assistant-model";
 import type { AskOsActor } from "./ask-os-actor";
 
@@ -112,3 +115,43 @@ describe("asPromptData", () => {
     expect(asPromptData("a\u0000b", 100)).toBe("a b");
   });
 });
+
+describe("the invariant prefix a provider could cache is byte-identical across the steps of one turn", () => {
+  it("returns the same string for the same context and actor, because a prefix that differs per step is a prefix no provider can reuse", () => {
+    expect(buildContextPrompt(context(), actor())).toBe(buildContextPrompt(context(), actor()));
+  });
+
+  it("returns a different string when the actor differs, so the equality above is a real result rather than a constant", () => {
+    expect(buildContextPrompt(context(), actor())).not.toBe(
+      buildContextPrompt(context(), actor({ displayName: "Charles Babbage" })),
+    );
+  });
+
+  it("returns a different string when the workspace data differs, so the equality above is not hiding an ignored argument", () => {
+    expect(buildContextPrompt(context(), actor())).not.toBe(
+      buildContextPrompt(context({ pendingLeaves: 3 }), actor()),
+    );
+  });
+});
+
+describe("a tool's serialised manifest is converted once per definition rather than once per step", () => {
+  function probe() {
+    return defineTool({
+      key: "probe",
+      description: "probe",
+      input: z.object({ query: z.string() }),
+      run: async () => ({ kind: "data" as const, data: {} }),
+    });
+  }
+
+  it("hands back the same Schema object for a repeated definition, so ten tool steps do not pay ten conversions", () => {
+    const definition = probe();
+
+    expect(manifestSchema(definition)).toBe(manifestSchema(definition));
+  });
+
+  it("hands back a different Schema object for a different definition, proving the memo is keyed on the definition and not returning one shared value", () => {
+    expect(manifestSchema(probe())).not.toBe(manifestSchema(probe()));
+  });
+});
+

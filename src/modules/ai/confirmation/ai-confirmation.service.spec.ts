@@ -148,10 +148,12 @@ function makeFakeDb(store: ReturnType<typeof makeStore>) {
 
     insert: (_table: unknown) => ({
       values: (vals: Omit<FakeRow, "id" | "createdAt" | "updatedAt"> & { idempotencyKey?: string | null }) => ({
-        returning: () => {
-          const row = store.insert(vals);
-          return Promise.resolve([row]);
-        },
+        onConflictDoNothing: () => ({
+          returning: () => {
+            const row = store.insert(vals);
+            return Promise.resolve([row]);
+          },
+        }),
       }),
     }),
 
@@ -452,7 +454,7 @@ describe("AiConfirmationService — isolated unit tests", () => {
     expect(store.rows.get(proposed.proposalId)?.status).toBe("EXPIRED");
   });
 
-  it("wrong actor orgId throws ForbiddenException", async () => {
+  it("wrong actor orgId reads as not-found, so another tenant's proposal id is not confirmed to exist", async () => {
     const { svc, store } = setup();
     const proposed = await svc.propose({ orgId: "org1", userId: "user1", action: "transfer", payload: {} });
     const row = store.rows.get(proposed.proposalId)!;
@@ -462,10 +464,10 @@ describe("AiConfirmationService — isolated unit tests", () => {
 
     await expect(
       svc2.confirm({ token: proposed.token, actor: { orgId: "org-WRONG", userId: "user1" } }),
-    ).rejects.toBeInstanceOf(ForbiddenException);
+    ).rejects.toBeInstanceOf(NotFoundException);
   });
 
-  it("wrong actor userId throws ForbiddenException", async () => {
+  it("wrong actor userId reads as not-found, so a colleague's proposal id is not confirmed to exist", async () => {
     const { svc, store } = setup();
     const proposed = await svc.propose({ orgId: "org1", userId: "user1", action: "purge", payload: { target: "all" } });
     const row = store.rows.get(proposed.proposalId)!;
@@ -475,7 +477,7 @@ describe("AiConfirmationService — isolated unit tests", () => {
 
     await expect(
       svc2.confirm({ token: proposed.token, actor: { orgId: "org1", userId: "user-WRONG" } }),
-    ).rejects.toBeInstanceOf(ForbiddenException);
+    ).rejects.toBeInstanceOf(NotFoundException);
   });
 
   it("double confirm throws ConflictException on second call", async () => {
@@ -513,24 +515,6 @@ describe("AiConfirmationService — isolated unit tests", () => {
     expect(store.rows.get(proposed.proposalId)?.status).toBe("EXECUTED");
   });
 
-  it("sweepExpired returns count of rows marked EXPIRED", async () => {
-    const { svc, store } = setup();
-    await svc.propose({ orgId: "org1", userId: "u1", action: "a1", payload: {} });
-    await svc.propose({ orgId: "org1", userId: "u1", action: "a2", payload: {} });
-
-    const r1 = store.rows.get(1);
-    const r2 = store.rows.get(2);
-    if (r1) store.rows.set(1, { ...r1, expiresAt: new Date(Date.now() - 10000) });
-    if (r2) store.rows.set(2, { ...r2, expiresAt: new Date(Date.now() - 10000) });
-
-    const sweepDb = buildSweepDb(store);
-    const svc2 = new AiConfirmationService(sweepDb, { log: jest.fn() } as never);
-    const count = await svc2.sweepExpired();
-
-    expect(count).toBe(2);
-    expect(store.rows.get(1)?.status).toBe("EXPIRED");
-    expect(store.rows.get(2)?.status).toBe("EXPIRED");
-  });
 });
 
 function buildConfirmDb(
@@ -617,32 +601,6 @@ function buildSimpleSelectDb(
   return db as never;
 }
 
-function buildSweepDb(store: ReturnType<typeof makeStore>): never {
-  const db: Record<string, unknown> = {};
-
-  db.update = () => ({
-    set: (patch: Partial<FakeRow>) => ({
-      where: () => {
-        const updated = store.patchWhere(
-          (r) => r.status === "PROPOSED" && r.expiresAt < new Date(),
-          patch,
-        );
-        return {
-          then(resolve: (v: unknown) => void, reject: (e: unknown) => void) {
-            return Promise.resolve([]).then(resolve, reject);
-          },
-          returning: () => Promise.resolve(updated.map((r) => ({ id: r.id }))),
-        };
-      },
-    }),
-  });
-
-  db.execute = jest.fn().mockResolvedValue([]);
-  db.transaction = async <T>(cb: (tx: typeof db) => Promise<T>): Promise<T> => cb(db);
-
-  return db as never;
-}
-
 function buildEmptySelectConfirmDb(): never {
   const db: Record<string, unknown> = {};
 
@@ -689,7 +647,7 @@ describe("AiConfirmationService — ORACLE-1 existence oracle fix", () => {
     expect((err as NotFoundException).message).not.toMatch(/forbidden|access|exist|found.*another|tenant/i);
   });
 
-  it("proof — bypassing the orgId filter exposes the oracle: a cross-tenant hit returns ForbiddenException (actor mismatch)", async () => {
+  it("proof — even with the orgId filter bypassed, a cross-tenant hit still reads as not-found", async () => {
     const store = makeStore();
     const auditMock = { log: jest.fn() };
 
@@ -733,7 +691,7 @@ describe("AiConfirmationService — ORACLE-1 existence oracle fix", () => {
       actor: { orgId: "org-ATTACKER", userId: "user1" },
     }).catch((e) => e);
 
-    expect(err).toBeInstanceOf(ForbiddenException);
+    expect(err).toBeInstanceOf(NotFoundException);
   });
 
   it("cross-tenant probe with filtered db returns NotFoundException (no oracle)", async () => {

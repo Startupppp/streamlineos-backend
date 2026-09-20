@@ -1,12 +1,13 @@
 jest.mock("@composio/core", () => ({ Composio: jest.fn() }));
-jest.mock("../workspace-copilot-tools", () => ({ WorkspaceCopilotTools: jest.fn() }));
-jest.mock("../comms-copilot-tools", () => ({ CommsCopilotTools: jest.fn() }));
+jest.mock("../tools/workspace-copilot-tools", () => ({ WorkspaceCopilotTools: jest.fn() }));
+jest.mock("../tools/comms-copilot-tools", () => ({ CommsCopilotTools: jest.fn() }));
 jest.mock("../../../calendar/calendar.service", () => ({ CalendarService: jest.fn() }));
 jest.mock("../../../integrations/core/composio.gateway", () => ({ ComposioGateway: jest.fn() }));
 jest.mock("../../../../common/ratelimit/rate-limit.service", () => ({ RateLimitService: jest.fn() }));
 
 import { ForbiddenException } from "@nestjs/common";
-import { ChatAssistantController, CONFIRMABLE_ACTIONS, CONFIRM_ACTION_PERMISSION } from "./chat-assistant.controller";
+import { ChatAssistantController } from "./chat-assistant.controller";
+import { CONFIRMABLE_ACTIONS, CONFIRM_ACTION_PERMISSION } from "../confirm-actions";
 import { humanSessionPrincipal } from "../../../../common/auth/principal";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
 
@@ -52,7 +53,7 @@ function makeController(action: string, payload: Record<string, unknown>, denyRe
     {} as never,
     {} as never,
     {} as never,
-    {} as never,
+    { getFlags: jest.fn().mockResolvedValue({ aiChat: true }) } as never,
     confirmation as never,
     { denyReason: jest.fn().mockResolvedValue(denyReason) } as never,
     moduleRef as never,
@@ -142,7 +143,7 @@ describe("POST /chat/confirm — actor identity never sourced from payload", () 
       {} as never,
       {} as never,
       {} as never,
-      {} as never,
+      { getFlags: jest.fn().mockResolvedValue({ aiChat: true }) } as never,
       confirmation as never,
       { denyReason: jest.fn().mockResolvedValue(null) } as never,
       moduleRef as never,
@@ -178,7 +179,7 @@ describe("POST /chat/confirm — actor identity never sourced from payload", () 
       {} as never,
       {} as never,
       {} as never,
-      {} as never,
+      { getFlags: jest.fn().mockResolvedValue({ aiChat: true }) } as never,
       confirmation as never,
       { denyReason: jest.fn().mockResolvedValue(null) } as never,
       moduleRef as never,
@@ -218,7 +219,7 @@ describe("POST /chat/confirm — actor identity never sourced from payload", () 
       {} as never,
       {} as never,
       {} as never,
-      {} as never,
+      { getFlags: jest.fn().mockResolvedValue({ aiChat: true }) } as never,
       confirmation as never,
       { denyReason: jest.fn().mockResolvedValue(null) } as never,
       moduleRef as never,

@@ -5,6 +5,7 @@ import type { UIMessageChunk } from "ai";
 import { logger } from "../../../../common/logger/logger.service";
 import { pipeRawAiTextStream } from "./raw-ai-text-stream";
 import type { AskOsDirective } from "./ask-os-directive";
+import { isRecord } from "../../../../common/types/is-record";
 
 export interface PipeableAiTextStream {
   readonly textStream?: ReadableStream<string>;
@@ -136,32 +137,48 @@ export interface ModelStreamSource {
   toUIMessageStream(): ReadableStream<UIMessageChunk>;
 }
 
+export function buildAskOsDirectiveStream(
+  modelStream: ModelStreamSource,
+  directives: AskOsDirective[],
+): ReadableStream<UIMessageChunk> {
+  return createUIMessageStream({
+    execute: async ({ writer }) => {
+      const reader = modelStream.toUIMessageStream().getReader();
+      let emitted = 0;
+      const flushDirectives = (): void => {
+        while (emitted < directives.length) {
+          writer.write({
+            type: "data-askos-directive",
+            data: directives[emitted],
+            transient: true,
+          });
+          emitted += 1;
+        }
+      };
+      try {
+        for (;;) {
+          const chunk = await reader.read();
+          if (chunk.done) break;
+          writer.write(chunk.value);
+          flushDirectives();
+        }
+      } finally {
+        reader.releaseLock();
+      }
+      flushDirectives();
+    },
+  });
+}
+
 export function makeAskOsDirectivePipe(
   modelStream: ModelStreamSource,
   directives: AskOsDirective[],
 ): PipeableAiUiStream {
   return {
     pipeUIMessageStreamToResponse: async (res, init) => {
-      const uiStream = createUIMessageStream({
-        execute: async ({ writer }) => {
-          const reader = modelStream.toUIMessageStream().getReader();
-          try {
-            for (;;) {
-              const chunk = await reader.read();
-              if (chunk.done) break;
-              writer.write(chunk.value);
-            }
-          } finally {
-            reader.releaseLock();
-          }
-          for (const directive of directives) {
-            writer.write({ type: "data-askos-directive", data: directive, transient: true });
-          }
-        },
-      });
       await sdkPipeUIMessageStreamToResponse({
         response: res,
-        stream: uiStream,
+        stream: buildAskOsDirectiveStream(modelStream, directives),
         ...(init?.headers !== undefined ? { headers: init.headers } : {}),
       });
     },
@@ -182,10 +199,6 @@ export interface EncodedStreamSources {
   readonly included: number;
   /** How many citations the header could not carry. Zero means complete. */
   readonly dropped: number;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 /**

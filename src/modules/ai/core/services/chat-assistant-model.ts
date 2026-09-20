@@ -19,7 +19,7 @@ export interface ChatContext {
     workHours: string | null;
   } | null;
   pendingLeaves: number;
-  recentPayrolls: Array<{ month: string; netSalary: string; status: string }>;
+  recentPayrolls: Array<{ month: string; status: string }>;
   myLeadsCount: number;
   myOpenDealsCount: number;
   topLeads: Array<{ name: string; status: string; priority: string | null }>;

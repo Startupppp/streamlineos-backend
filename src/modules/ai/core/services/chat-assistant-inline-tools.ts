@@ -15,7 +15,9 @@ import {
   type AskOsToolDefinition,
   type AskOsToolProvider,
 } from "../registry/ask-os-tool.types";
+import { AskOsTools } from "../registry/ask-os-tools.decorator";
 
+@AskOsTools()
 @Injectable()
 export class WorkspaceInlineTools implements AskOsToolProvider {
   constructor(

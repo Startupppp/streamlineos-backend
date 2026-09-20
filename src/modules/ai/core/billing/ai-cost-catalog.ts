@@ -46,6 +46,7 @@ export const AI_FEATURE_COSTS: Readonly<Record<string, number>> = {
   "ticket.suggest-subtasks": 1,
   "ticket.generate-checklist": 1,
   "ticket.suggest-title": 1,
+  "ticket.generate-comment-draft": 2,
   "ticket.suggest-fields": 1,
   "support.analysis": 1,
   "support.reply": 1,

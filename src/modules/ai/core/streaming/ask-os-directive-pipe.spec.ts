@@ -1,6 +1,9 @@
-import { createUIMessageStream } from "ai";
 import type { UIMessageChunk } from "ai";
-import { makeAskOsDirectivePipe, type ModelStreamSource } from "./ai-stream-response";
+import {
+  buildAskOsDirectiveStream,
+  makeAskOsDirectivePipe,
+  type ModelStreamSource,
+} from "./ai-stream-response";
 import { buildContextPrompt } from "../services/chat-assistant-prompt";
 import type { AskOsDirective } from "./ask-os-directive";
 import type { AskOsActor } from "../services/ask-os-actor";
@@ -27,23 +30,7 @@ async function collectDirectiveChunks(
   modelStream: ModelStreamSource,
   directives: AskOsDirective[],
 ): Promise<UIMessageChunk[]> {
-  const stream = createUIMessageStream({
-    execute: async ({ writer }) => {
-      const reader = modelStream.toUIMessageStream().getReader();
-      try {
-        for (;;) {
-          const chunk = await reader.read();
-          if (chunk.done) break;
-          writer.write(chunk.value);
-        }
-      } finally {
-        reader.releaseLock();
-      }
-      for (const directive of directives) {
-        writer.write({ type: "data-askos-directive", data: directive, transient: true });
-      }
-    },
-  });
+  const stream = buildAskOsDirectiveStream(modelStream, directives);
 
   const chunks: UIMessageChunk[] = [];
   const reader = stream.getReader();
@@ -203,5 +190,69 @@ describe("makeAskOsDirectivePipe emits typed stream parts for Ask OS directives"
   it("makeAskOsDirectivePipe returns a PipeableAiUiStream with pipeUIMessageStreamToResponse", () => {
     const pipe = makeAskOsDirectivePipe(makeModelStream("hello"), []);
     expect(typeof pipe.pipeUIMessageStreamToResponse).toBe("function");
+  });
+});
+
+describe("a directive reaches the client before the stream ends, so the card has a frame to render in", () => {
+  function streamPushingDirectiveMidway(
+    directives: AskOsDirective[],
+    directive: AskOsDirective,
+  ): ModelStreamSource {
+    return {
+      toUIMessageStream: () =>
+        new ReadableStream<UIMessageChunk>({
+          start(controller) {
+            controller.enqueue({ type: "text-start", id: "t1" });
+            controller.enqueue({ type: "text-delta", id: "t1", delta: "Scheduling" });
+            directives.push(directive);
+            controller.enqueue({ type: "text-delta", id: "t1", delta: " the reminder." });
+            controller.enqueue({ type: "text-end", id: "t1" });
+            controller.close();
+          },
+        }),
+    };
+  }
+
+  const reminderDirective: AskOsDirective = {
+    kind: "confirm-action",
+    proposalId: 7,
+    token: "7.1700000000.abc",
+    action: "calendar.createReminder",
+    summary: "Create reminder: Reminder for STRE-42",
+    preview: { title: "Reminder for STRE-42" },
+  };
+
+  it("emits the directive once the tool has resolved rather than holding it until after the last chunk", async () => {
+    const directives: AskOsDirective[] = [];
+
+    const chunks = await collectDirectiveChunks(
+      streamPushingDirectiveMidway(directives, reminderDirective),
+      directives,
+    );
+
+    const directiveIndex = chunks.findIndex((c) => c.type === "data-askos-directive");
+    const textEndIndex = chunks.findIndex((c) => c.type === "text-end");
+
+    expect(directiveIndex).toBeGreaterThanOrEqual(0);
+    expect(directiveIndex).toBeLessThan(textEndIndex);
+  });
+
+  it("still emits a directive pushed after the final chunk, so nothing is dropped on the last step", async () => {
+    const directives: AskOsDirective[] = [reminderDirective];
+
+    const chunks = await collectDirectiveChunks(makeModelStream("done"), directives);
+
+    expect(chunks.filter((c) => c.type === "data-askos-directive")).toHaveLength(1);
+  });
+
+  it("emits each directive exactly once even though the flush runs after every chunk", async () => {
+    const directives: AskOsDirective[] = [];
+
+    const chunks = await collectDirectiveChunks(
+      streamPushingDirectiveMidway(directives, reminderDirective),
+      directives,
+    );
+
+    expect(chunks.filter((c) => c.type === "data-askos-directive")).toHaveLength(1);
   });
 });

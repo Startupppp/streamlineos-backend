@@ -1,3 +1,5 @@
+import type { ProviderModelId } from "../billing/ai-model-pricing.constants";
+
 export type LlmProviderName = "openai" | "openrouter";
 
 export interface LlmProviderConfig {
@@ -6,7 +8,6 @@ export interface LlmProviderConfig {
   baseURL: string | undefined;
   fastModel: string;
   standardModel: string;
-  /** Ordered attempt chain per tier: the primary model first, then fallbacks. */
   fastChain: string[];
   standardChain: string[];
 }
@@ -21,10 +22,6 @@ function parseModelList(raw: string | undefined): string[] {
     .filter((entry) => entry.length > 0);
 }
 
-/**
- * Defaults fall back to the other tier's configured model rather than a guessed
- * id, so the chain only ever contains models this deployment is known to have.
- */
 function buildChain(primary: string, override: string | undefined, lastResort: string): string[] {
   const configured = parseModelList(override);
   const candidates = configured.length > 0 ? [primary, ...configured] : [primary, lastResort];
@@ -34,8 +31,8 @@ function buildChain(primary: string, override: string | undefined, lastResort: s
 export function resolveLlmProvider(env: NodeJS.ProcessEnv = process.env): LlmProviderConfig {
   const isOpenRouter = env.AI_LLM_PROVIDER === "openrouter";
 
-  const fastModel = isOpenRouter ? "openai/gpt-4o-mini" : "gpt-4o-mini";
-  const standardModel = isOpenRouter ? "openai/gpt-4o" : "gpt-4o";
+  const fastModel: ProviderModelId = isOpenRouter ? "openai/gpt-4o-mini" : "gpt-4o-mini";
+  const standardModel: ProviderModelId = isOpenRouter ? "openai/gpt-4o" : "gpt-4o";
 
   return {
     provider: isOpenRouter ? "openrouter" : "openai",

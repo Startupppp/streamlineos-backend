@@ -5,6 +5,7 @@ import {
   type StopCondition,
   type ToolSet,
 } from "ai";
+import { HttpException } from "@nestjs/common";
 import { logger } from "../../../../common/logger/logger.service";
 import { resolveAiStreamModel } from "./ai-stream-model";
 import { classifyLlmError, resolveLlmRetryPolicy } from "../providers/llm-retry";
@@ -15,6 +16,7 @@ import { AiStreamBreaker, type AiStreamBreakerRedis } from "../streaming/ai-stre
 import { AiConcurrencyLimiter } from "./ai-concurrency-limiter";
 import { aiReservationIdempotencyKey } from "../streaming/ai-request-abort";
 import { AiUsageService } from "../services/ai-usage.service";
+import type { AuditService } from "../../../../common/audit/audit.service";
 import { settleStream } from "./ai-gateway-stream-credit";
 import { type AiCreditLedger } from "./credit-ledger.interface";
 import type { AiInvokeActor, AiInvokePrompt } from "./ai-gateway.types";
@@ -82,34 +84,50 @@ export function tenantBreakerKey(key: string, orgId: string): string {
 
 export type BreakerAttribution = "provider" | "tenant" | "request";
 
-/**
- * Who a failed stream is EVIDENCE against.
- *
- * The breaker used to count every non-abort error as provider ill-health on one
- * globally shared key, which made it two things it should never be. A 400 —
- * a malformed prompt, an over-length context, a content-policy refusal — is a
- * verdict on the REQUEST: it will fail identically on a fallback model, so
- * `llm-retry` already refuses to retry it, and counting it as provider illness
- * meant five bad prompts from one tenant denied AI to every other tenant in the
- * deployment for 30 s. A 429 is a verdict on the TENANT's burn rate, not on the
- * provider's health, so it opens that tenant's breaker alone. Only 5xx and
- * unclassifiable faults are evidence the provider itself is unwell.
- */
 export function breakerAttribution(error: unknown): BreakerAttribution {
+  if (error instanceof HttpException) return "request";
   const kind = classifyLlmError(error);
   if (kind === "fatal") return "request";
   if (kind === "rate_limit") return "tenant";
   return "provider";
 }
 
-/**
- * The streaming sibling of `invokeText`. A streamed turn has the same
- * obligations as a buffered one — breaker, concurrency slot, atomic reservation
- * before the paid call, token-metered settlement after — but they land on
- * different callbacks, so hand-rolling them per surface is how one route ends up
- * settling twice and another leaves a reservation stranded. Every non-chat
- * streaming surface goes through here.
- */
+interface ReservationHandle {
+  readonly reservationId: number;
+  release: (reason: string) => void;
+  markSettled: () => boolean;
+}
+
+function makeReservationHandle(
+  id: number,
+  orgId: string,
+  ledger: AiCreditLedger,
+  feature: string,
+): ReservationHandle {
+  let disposed = false;
+  return {
+    reservationId: id,
+    release(reason: string): void {
+      if (disposed || id === 0) return;
+      disposed = true;
+      void ledger.release(id, reason, orgId).catch((err: unknown) => {
+        logger.error("Failed to release AI credit reservation", {
+          error: err instanceof Error ? (err.stack ?? err.message) : String(err),
+          reason,
+          reservationId: id,
+          feature,
+          orgId,
+        });
+      });
+    },
+    markSettled(): boolean {
+      if (disposed) return false;
+      disposed = true;
+      return true;
+    },
+  };
+}
+
 export class AiGatewayStreamHelper {
   private readonly breakers = new Map<string, AiStreamBreaker>();
 
@@ -118,14 +136,9 @@ export class AiGatewayStreamHelper {
     private readonly usageSvc: AiUsageService,
     private readonly concurrencyLimiter: AiConcurrencyLimiter,
     private readonly redis: AiStreamBreakerRedis | null = null,
+    private readonly audit: Pick<AuditService, "log"> | null = null,
   ) {}
 
-  /**
-   * One instance per key per process. Two instances sharing a Redis key would
-   * each keep their own local counter, so the breaker would need twice the
-   * failures to trip whenever Redis is unavailable — which is exactly when it
-   * matters.
-   */
   breakerFor(key: string, unavailableMessage: string = BREAKER_MESSAGE): AiStreamBreaker {
     const existing = this.breakers.get(key);
     if (existing) return existing;
@@ -183,7 +196,7 @@ export class AiGatewayStreamHelper {
       this.concurrencyLimiter.release(actor.orgId);
     };
 
-    let reservationId = 0;
+    let reservation: ReservationHandle;
     if (charge) {
       try {
         const idempotencyKey = aiReservationIdempotencyKey(feature, actor);
@@ -194,26 +207,45 @@ export class AiGatewayStreamHelper {
           credits: getReserveEstimateMilli(feature),
           ...(idempotencyKey !== undefined ? { idempotencyKey } : {}),
         });
-        reservationId = reserved.reservationId;
+        reservation = makeReservationHandle(reserved.reservationId, actor.orgId, this.ledger, feature);
       } catch (error) {
         releaseConcurrency();
         call.finish("quota_exceeded");
         throw error;
       }
+    } else {
+      reservation = makeReservationHandle(0, actor.orgId, this.ledger, feature);
     }
 
-    let resolved = false;
-    const releaseReservation = (reason: string): void => {
-      if (resolved) return;
-      resolved = true;
-      if (reservationId === 0) return;
-      void this.ledger.release(reservationId, reason, actor.orgId).catch(() => undefined);
-    };
+    let streamCompleted = false;
 
     try {
       const selection = resolveAiStreamModel(opts.tier);
       const model = opts.model ?? selection.model;
       const modelId = opts.modelId ?? selection.modelId;
+
+      const auditSettlement = (
+        outcome: "ok" | "cancelled",
+        promptTokens: number,
+        completionTokens: number,
+      ): void => {
+        this.audit?.log({
+          action: "ai.stream",
+          ...(actor.userId
+            ? { userId: actor.userId }
+            : { systemActor: "ai.gateway.unattended-stream" }),
+          orgId: actor.orgId,
+          metadata: {
+            feature,
+            model: modelId,
+            correlationId: call.correlationId,
+            promptTokens,
+            completionTokens,
+            outcome,
+          },
+        });
+      };
+
       call.providerOpened();
       const stream = streamText({
         model,
@@ -226,36 +258,23 @@ export class AiGatewayStreamHelper {
         ...(opts.temperature !== undefined ? { temperature: opts.temperature } : {}),
         ...(signal !== undefined ? { abortSignal: signal } : {}),
         onChunk: () => call.firstToken(),
-        /**
-         * These streams pass no tools, so ai@7.0.51 has no recorded step when a
-         * client aborts and `finishReason` REJECTS into the `.catch` below —
-         * which is why this surface was never mis-settled. `onAbort` is wired
-         * anyway so the two branches of the SDK's `flush`
-         * (dist/index.js:9209-9221) have the same handler here as they do in
-         * `ChatAssistantService`: the day a tool set is added to a gateway
-         * stream, cancellation keeps working instead of silently starting to
-         * settle at zero. Both paths are idempotent, so a double notify is a
-         * no-op.
-         */
-        onAbort: ({ steps }) => {
-          if (resolved) return;
-          resolved = true;
+        onAbort: (event?: { steps?: readonly StepUsageCarrier[] }) => {
+          if (streamCompleted) return;
+          streamCompleted = true;
           releaseConcurrency();
-          const partial = sumStepUsage(steps);
+          const partial = sumStepUsage(event?.steps);
           call.finish("cancelled", {
             model: modelId,
             promptTokens: partial.promptTokens,
             completionTokens: partial.completionTokens,
           });
           if (partial.promptTokens === 0 && partial.completionTokens === 0) {
-            if (reservationId !== 0)
-              void this.ledger
-                .release(reservationId, "stream_aborted_no_usage", actor.orgId)
-                .catch(() => undefined);
+            reservation.release("stream_aborted_no_settle");
             return;
           }
+          if (!reservation.markSettled()) return;
           void settleStream(this.ledger, this.usageSvc, {
-            reservationId,
+            reservationId: reservation.reservationId,
             model: modelId,
             promptTokens: partial.promptTokens,
             completionTokens: partial.completionTokens,
@@ -264,12 +283,16 @@ export class AiGatewayStreamHelper {
             feature,
             appOverheadMs: 0,
             outcome: "cancelled",
-          }).catch((err: unknown) => {
+          })
+            .then(() =>
+              auditSettlement("cancelled", partial.promptTokens, partial.completionTokens),
+            )
+            .catch((err: unknown) => {
             logger.error("Failed to settle a cancelled AI stream", {
               error: err instanceof Error ? (err.stack ?? err.message) : String(err),
               feature,
               orgId: actor.orgId,
-              reservationId,
+              reservationId: reservation.reservationId,
             });
           });
         },
@@ -282,10 +305,11 @@ export class AiGatewayStreamHelper {
             feature,
             orgId: actor.orgId,
           });
+          reservation.release("stream_error");
         },
         onFinish: async ({ text, usage }) => {
-          if (resolved) return;
-          resolved = true;
+          if (streamCompleted) return;
+          streamCompleted = true;
           releaseConcurrency();
           breaker.recordSuccess();
           tenantBreaker.recordSuccess();
@@ -296,9 +320,10 @@ export class AiGatewayStreamHelper {
             promptTokens,
             completionTokens,
           });
+          if (!reservation.markSettled()) return;
           try {
             await settleStream(this.ledger, this.usageSvc, {
-              reservationId,
+              reservationId: reservation.reservationId,
               model: modelId,
               promptTokens,
               completionTokens,
@@ -309,12 +334,13 @@ export class AiGatewayStreamHelper {
               appOverheadMs: timings.overheadMs,
               timings,
             });
+            auditSettlement("ok", promptTokens, completionTokens);
           } catch (err) {
             logger.error("Failed to settle AI text stream", {
               error: err instanceof Error ? (err.stack ?? err.message) : String(err),
               feature,
               orgId: actor.orgId,
-              reservationId,
+              reservationId: reservation.reservationId,
             });
           }
           if (!opts.onCompleted) return;
@@ -332,7 +358,7 @@ export class AiGatewayStreamHelper {
 
       void Promise.resolve(stream.finishReason).catch(() => {
         releaseConcurrency();
-        releaseReservation("stream_aborted_no_settle");
+        reservation.release("stream_aborted_no_settle");
         call.finish(signal?.aborted === true ? "cancelled" : "provider_unavailable");
       });
 
@@ -340,7 +366,7 @@ export class AiGatewayStreamHelper {
     } catch (error) {
       recordProviderFailure(error);
       releaseConcurrency();
-      releaseReservation("stream_setup_error");
+      reservation.release("stream_setup_error");
       call.finish("error");
       throw error;
     }

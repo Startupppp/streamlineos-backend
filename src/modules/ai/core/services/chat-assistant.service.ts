@@ -27,17 +27,30 @@ import {
 import { buildContextPrompt } from "./chat-assistant-prompt";
 import { fetchChatContext, type ChatTurnContext } from "./chat-assistant-context";
 import { makeAskOsDirectivePipe, type PipeableAiUiStream } from "../streaming/ai-stream-response";
-import type { AskOsDirective } from "../streaming/ask-os-directive";
+import { serializeDirective, stripDirectives, type AskOsDirective } from "../streaming/ask-os-directive";
 
 const MAX_HISTORY_MESSAGES = 20;
-const MAX_HISTORY_CHARS = 24_000;
+const MAX_CONTEXT_CHARS = 48_000;
+const MANIFEST_CHARS_ESTIMATE = 20_000;
 const MAX_OUTPUT_TOKENS = 2_048;
 const CHAT_BREAKER_KEY = "chat";
 const MAX_TOOL_STEPS = 10;
 
-function boundedChatHistory(messages: ChatMessage[]): ModelMessage[] {
+function historyOmissionMarker(count: number): string {
+  return `[${count} earlier message${count === 1 ? "" : "s"} omitted from context]`;
+}
+
+function truncatedToBudget(content: string, budget: number): string {
+  return `${content.slice(0, Math.max(0, budget))}\n[message truncated to fit the context budget]`;
+}
+
+function boundedChatHistory(
+  messages: ChatMessage[],
+  promptOverhead: number,
+): ModelMessage[] {
+  const budget = Math.max(0, MAX_CONTEXT_CHARS - promptOverhead - MANIFEST_CHARS_ESTIMATE);
   const selected: ModelMessage[] = [];
-  let remaining = MAX_HISTORY_CHARS;
+  let remaining = budget;
 
   for (
     let index = messages.length - 1;
@@ -45,13 +58,24 @@ function boundedChatHistory(messages: ChatMessage[]): ModelMessage[] {
     index -= 1
   ) {
     const message = messages[index];
-    if (!message || remaining === 0) break;
-    const content = message.content.slice(0, remaining);
-    remaining -= content.length;
-    selected.push({ role: message.role, content });
+    if (!message) break;
+    if (message.content.length > remaining) {
+      if (selected.length > 0) break;
+      selected.push({ role: message.role, content: truncatedToBudget(message.content, budget) });
+      remaining = 0;
+      break;
+    }
+    remaining -= message.content.length;
+    selected.push({ role: message.role, content: message.content });
   }
 
-  return selected.reverse();
+  const omittedCount = messages.length - selected.length;
+  const ordered = selected.reverse();
+
+  if (omittedCount > 0)
+    ordered.unshift({ role: "user", content: historyOmissionMarker(omittedCount) });
+
+  return ordered;
 }
 
 @Injectable()
@@ -119,11 +143,31 @@ export class ChatAssistantService {
     // `@NoTenantTransaction()` exists to prevent (PRD-C078). The context reads
     // stay inside `fetchChatContext`'s single `Promise.all` so postgres.js
     // pipelines them onto the one connection this transaction holds.
+    const latest = messages.at(-1);
+    const prior: ChatMessage[] = [];
+
     const turn = await runInTenantTransaction(
       this.db,
       async (): Promise<ChatTurnContext> => {
         const loaded = await this.fetchContext(userId, orgId, actor);
-        const latest = messages.at(-1);
+        if (conversationId !== undefined) {
+          const stored = await this.history.listMessages(
+            orgId,
+            userId,
+            membershipId,
+            conversationId,
+            { limit: MAX_HISTORY_MESSAGES },
+          );
+          for (const message of [...stored.messages].reverse())
+            if (message.role === "user" || message.role === "assistant")
+              prior.push({
+                role: message.role,
+                content:
+                  message.role === "assistant"
+                    ? stripDirectives(message.content)
+                    : message.content,
+              });
+        }
         if (latest?.role === "user") {
           await this.appendTurn(
             orgId,
@@ -138,6 +182,9 @@ export class ChatAssistantService {
       },
       { orgId },
     );
+
+    const turnMessages: ChatMessage[] =
+      latest?.role === "user" ? [...prior, latest] : prior;
 
     const snapshot = await this.access.getAccessSnapshot(orgId, userId, actor);
 
@@ -163,7 +210,7 @@ export class ChatAssistantService {
       feature: CHAT_FEATURE,
       breakerKey: CHAT_BREAKER_KEY,
       prompt: { system: contextPrompt, user: "" },
-      messages: boundedChatHistory(messages),
+      messages: boundedChatHistory(turnMessages, contextPrompt.length),
       tools: effectiveTools,
       stopWhen: stepCountIs(MAX_TOOL_STEPS),
       temperature: 0.7,
@@ -175,13 +222,23 @@ export class ChatAssistantService {
       ...(signal !== undefined ? { signal } : {}),
       onCompleted: async ({ text }) => {
         await runInNewTenantTransaction(this.db, orgId, async () => {
+          const trailing =
+            directives.length > 0
+              ? directives.map(serializeDirective).join("\n")
+              : null;
+          const stored =
+            trailing !== null
+              ? text.trimEnd().length > 0
+                ? `${text.trimEnd()}\n${trailing}`
+                : trailing
+              : text;
           await this.appendTurn(
             orgId,
             userId,
             membershipId,
             conversationId,
             "assistant",
-            text,
+            stored,
           );
         });
       },

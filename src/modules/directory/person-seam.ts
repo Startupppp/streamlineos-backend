@@ -1,9 +1,10 @@
-import { and, eq, inArray, isNull, or, type SQL } from "drizzle-orm";
+import { and, eq, inArray, isNull, or, sql, type SQL } from "drizzle-orm";
 import {
   hrEmployments,
   hrPeople,
   organizationMembers,
   organizationPeople,
+  users,
   workers,
 } from "../../db/schema";
 import type { Db } from "../../db/drizzle.module";
@@ -412,4 +413,122 @@ export async function resolvePeopleIdentities(
     if (!requested.has(key)) identities.delete(key);
 
   return identities;
+}
+
+export interface NameResolutionCandidate {
+  label: string;
+  hint?: string;
+}
+
+export type PersonNameResolution =
+  | { status: "resolved"; userId: string }
+  | { status: "unresolved" }
+  | { status: "ambiguous"; candidates: readonly NameResolutionCandidate[] };
+
+export const NAME_RESOLUTION_MAX_NAMES = 20;
+export const NAME_RESOLUTION_MAX_CANDIDATES = 10;
+export const NAME_RESOLUTION_MIN_PARTIAL_CHARS = 3;
+
+const displayKey = sql<string>`lower(coalesce(${organizationPeople.displayName}, ''))`;
+const fullNameKey = sql<string>`lower(trim(coalesce(${organizationPeople.firstName}, '') || ' ' || coalesce(${organizationPeople.lastName}, '')))`;
+
+function likePattern(needle: string): string {
+  return `%${needle.replace(/[\\%_]/g, (character) => `\\${character}`)}%`;
+}
+
+export function peopleByNameQuery(db: Db, orgId: string, needleKeys: readonly string[]) {
+  const matches: SQL[] = [];
+  for (const needle of needleKeys) {
+    matches.push(sql`${displayKey} = ${needle}`);
+    matches.push(sql`${fullNameKey} = ${needle}`);
+    if (needle.length < NAME_RESOLUTION_MIN_PARTIAL_CHARS) continue;
+    matches.push(sql`${displayKey} like ${likePattern(needle)}`);
+    matches.push(sql`${fullNameKey} like ${likePattern(needle)}`);
+  }
+
+  return db
+    .select({
+      userId: organizationPeople.userId,
+      displayName: organizationPeople.displayName,
+      firstName: organizationPeople.firstName,
+      lastName: organizationPeople.lastName,
+      workEmail: organizationPeople.workEmail,
+      displayKey,
+      fullNameKey,
+    })
+    .from(organizationPeople)
+    .innerJoin(
+      organizationMembers,
+      and(
+        eq(organizationMembers.userId, organizationPeople.userId),
+        eq(organizationMembers.orgId, organizationPeople.organizationId),
+        eq(organizationMembers.status, "ACTIVE"),
+      ),
+    )
+    .innerJoin(
+      users,
+      and(eq(users.id, organizationPeople.userId), eq(users.isActive, true), isNull(users.deletedAt)),
+    )
+    .where(
+      and(
+        eq(organizationPeople.organizationId, orgId),
+        isNull(organizationPeople.deletedAt),
+        or(...matches),
+      ),
+    )
+    .limit(NAME_RESOLUTION_MAX_NAMES * (NAME_RESOLUTION_MAX_CANDIDATES + 1));
+}
+
+export async function resolvePeopleByName(
+  db: Db,
+  orgId: string,
+  names: readonly string[],
+): Promise<Map<string, PersonNameResolution>> {
+  const resolutions = new Map<string, PersonNameResolution>();
+  const needles = new Map<string, string>();
+  for (const name of names.slice(0, NAME_RESOLUTION_MAX_NAMES)) {
+    const trimmed = name.trim();
+    if (trimmed.length === 0) continue;
+    resolutions.set(trimmed, { status: "unresolved" });
+    needles.set(trimmed.toLowerCase(), trimmed);
+  }
+  if (needles.size === 0) return resolutions;
+
+  const rows = await peopleByNameQuery(db, orgId, [...needles.keys()]);
+
+  const exact = new Map<string, typeof rows>();
+  const partial = new Map<string, typeof rows>();
+  for (const row of rows) {
+    const keys = [row.displayKey, row.fullNameKey];
+    for (const [key, needle] of needles) {
+      const bucket = keys.includes(key) ? exact : keys.some((k) => k.includes(key)) ? partial : undefined;
+      if (bucket === undefined) continue;
+      const found = bucket.get(needle) ?? [];
+      if (!found.includes(row)) found.push(row);
+      bucket.set(needle, found);
+    }
+  }
+
+  const byNeedle = new Map<string, typeof rows>();
+  for (const needle of needles.values()) {
+    const chosen = exact.get(needle) ?? partial.get(needle);
+    if (chosen !== undefined) byNeedle.set(needle, chosen);
+  }
+
+  for (const [needle, bucket] of byNeedle) {
+    if (bucket.length > 1) {
+      resolutions.set(needle, {
+        status: "ambiguous",
+        candidates: bucket.slice(0, NAME_RESOLUTION_MAX_CANDIDATES).map((row) => ({
+          label: row.displayName ?? `${row.firstName ?? ""} ${row.lastName ?? ""}`.trim(),
+          ...(row.workEmail !== null ? { hint: row.workEmail } : {}),
+        })),
+      });
+      continue;
+    }
+    const [row] = bucket;
+    if (row?.userId) resolutions.set(needle, { status: "resolved", userId: row.userId });
+  }
+
+  return resolutions;
 }

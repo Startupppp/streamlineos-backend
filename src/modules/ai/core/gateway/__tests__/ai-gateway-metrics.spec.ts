@@ -13,14 +13,12 @@ import { AI_CREDIT_LEDGER, type AiCreditLedger } from "../credit-ledger.interfac
 import { LlmService } from "../../providers/llm.service";
 import { EmbeddingsService } from "../../providers/embeddings.service";
 import { AiUsageService } from "../../services/ai-usage.service";
-import { AiResponseCacheService } from "../ai-response-cache.service";
 import { AiConcurrencyLimiter } from "../ai-concurrency-limiter";
 import { AI_CALL_SPAN_NAME } from "../../telemetry/ai-call-metrics";
 
 const ACTOR = { orgId: "org_1", userId: "user_1" };
 const PROMPT = { system: "You are helpful.", user: "Say hello" };
 const FEATURE = "test.feature";
-const CACHE = { aclVersion: "v1" };
 const Greeting = z.object({ message: z.string() });
 
 function sleep(ms: number): Promise<void> {
@@ -29,7 +27,6 @@ function sleep(ms: number): Promise<void> {
 
 interface Options {
   acquire?: jest.Mock;
-  cachedInvoke?: jest.Mock;
   reserve?: jest.Mock;
   invokeTextWithUsage?: jest.Mock;
 }
@@ -60,14 +57,6 @@ async function build(options: Options = {}) {
     acquire: options.acquire ?? jest.fn().mockResolvedValue(true),
     release: jest.fn(),
   };
-  const responseCache = {
-    cachedInvoke:
-      options.cachedInvoke ??
-      jest
-        .fn()
-        .mockImplementation((_org: string, _params: unknown, fetcher: () => unknown) => fetcher()),
-    invalidate: jest.fn().mockResolvedValue(undefined),
-  };
   const embeddings = {
     isConfigured: jest.fn().mockReturnValue(true),
     embedQueryRaw: jest.fn().mockResolvedValue([0.1, 0.2]),
@@ -83,12 +72,11 @@ async function build(options: Options = {}) {
       { provide: AiUsageService, useValue: usage },
       { provide: AuditService, useValue: { log: jest.fn() } },
       { provide: AI_CREDIT_LEDGER, useValue: ledger },
-      { provide: AiResponseCacheService, useValue: responseCache },
       { provide: AiConcurrencyLimiter, useValue: limiter },
     ],
   }).compile();
 
-  return { svc: module.get(AiGatewayService), usage, llm, ledger, limiter, responseCache };
+  return { svc: module.get(AiGatewayService), usage, llm, ledger, limiter };
 }
 
 function capture(): FinishedSpan[] {
@@ -266,36 +254,6 @@ describe("outcomes an operator must see, none of which produced a record before"
 
     expect(ledger.reserve).not.toHaveBeenCalled();
     expect(aiSpans(spans)[0]?.attributes["ai.outcome"]).toBe("context_too_large");
-  });
-
-  it("a cache hit is recorded — the call the cache saved was previously invisible", async () => {
-    const spans = capture();
-    const { svc, llm } = await build({
-      cachedInvoke: jest.fn().mockResolvedValue({
-        ok: true,
-        data: "cached",
-        model: "gpt-4o-mini",
-        latencyMs: 1,
-        correlationId: "prior",
-        usage: { promptTokens: 1, completionTokens: 1, totalTokens: 2 },
-      }),
-    });
-
-    await svc.invokeText({ actor: ACTOR, feature: FEATURE, prompt: PROMPT, cache: CACHE });
-
-    expect(llm.invokeTextWithUsage).not.toHaveBeenCalled();
-    const span = aiSpans(spans)[0];
-    expect(span?.attributes["ai.outcome"]).toBe("cache_hit");
-    expect(span?.attributes["ai.cache_hit"]).toBe(true);
-    expect(span?.status).toBe("ok");
-  });
-
-  it("BITE — a cache MISS is not recorded as a hit", async () => {
-    const spans = capture();
-    const { svc } = await build();
-    await svc.invokeText({ actor: ACTOR, feature: FEATURE, prompt: PROMPT, cache: CACHE });
-    expect(aiSpans(spans)[0]?.attributes["ai.outcome"]).toBe("ok");
-    expect(aiSpans(spans)[0]?.attributes["ai.cache_hit"]).toBe(false);
   });
 
   it("an in-flight dedupe hit is recorded as its own outcome", async () => {

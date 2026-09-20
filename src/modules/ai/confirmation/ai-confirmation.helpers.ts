@@ -1,4 +1,5 @@
 import { createHash, createHmac } from "node:crypto";
+import { isRecord } from "../../../common/types/is-record";
 
 export interface ProposeInput {
   orgId: string;
@@ -35,10 +36,9 @@ export const MIN_CONFIRMATION_SECRET_LENGTH = 32;
 
 function canonicalize(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(canonicalize);
-  if (value === null || typeof value !== "object") return value;
-  const source = value as Record<string, unknown>;
+  if (!isRecord(value)) return value;
   const ordered: Record<string, unknown> = {};
-  for (const key of Object.keys(source).sort()) ordered[key] = canonicalize(source[key]);
+  for (const key of Object.keys(value).sort()) ordered[key] = canonicalize(value[key]);
   return ordered;
 }
 
@@ -52,6 +52,15 @@ export function boundedIdempotencyKey(key: string): string {
     : createHash("sha256").update(key).digest("hex");
 }
 
+export function derivedIdempotencyKey(
+  orgId: string,
+  userId: string,
+  action: string,
+  payloadHash: string,
+): string {
+  return `derived:${stableHash({ orgId, userId, action, payloadHash })}`;
+}
+
 export function computeHmac(
   secret: string,
   proposalId: number,
@@ -63,6 +72,33 @@ export function computeHmac(
 ): string {
   const data = `${proposalId}:${orgId}:${userId}:${action}:${payloadHash}:${expiresAtEpoch}`;
   return createHmac("sha256", secret).update(data).digest("hex");
+}
+
+export interface ProposalTokenSubject {
+  id: number;
+  orgId: string;
+  userId: string;
+  action: string;
+  payloadHash: string;
+  expiresAt: Date;
+}
+
+export function mintProposalToken(proposal: ProposalTokenSubject): ProposeResult {
+  const epoch = Math.floor(proposal.expiresAt.getTime() / 1000);
+  const hmac = computeHmac(
+    getSecret(),
+    proposal.id,
+    proposal.orgId,
+    proposal.userId,
+    proposal.action,
+    proposal.payloadHash,
+    epoch,
+  );
+  return {
+    proposalId: proposal.id,
+    token: `${proposal.id}.${epoch}.${hmac}`,
+    expiresAt: proposal.expiresAt,
+  };
 }
 
 export function getSecret(): string {

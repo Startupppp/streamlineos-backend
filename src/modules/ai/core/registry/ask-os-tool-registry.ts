@@ -1,17 +1,43 @@
 import { tool, type ToolSet } from "ai";
 import { runInNewTenantTransaction } from "../../../../common/tenant/run-in-tenant-transaction";
 import type { Db } from "../../../../db/drizzle.module";
-import type { DataScope } from "../../../access/access.types";
 import type { AccessSnapshot } from "../../../access/access.types";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
 import type { AskOsActor } from "../services/ask-os-actor";
+import { askOsToolRead, askOsToolReader } from "../ask-os-tool-scope";
 import { denied } from "./ask-os-tool.types";
+import { manifestSchema } from "./ask-os-tool-manifest";
 import type {
   AskOsToolDefinition,
   AskOsToolRunContext,
   ToolOutcome,
 } from "./ask-os-tool.types";
 import type { AskOsDirective } from "../streaming/ask-os-directive";
+
+export const ACTION_LABELS: Record<string, { title: string; confirmLabel: string }> = {
+  "email.send": { title: "Send email", confirmLabel: "Send" },
+  "mail.send": { title: "Send email", confirmLabel: "Send" },
+  "mail.reply": { title: "Reply to email", confirmLabel: "Reply" },
+  "chat.postChannel": { title: "Post to channel", confirmLabel: "Post" },
+  "chat.sendDirect": { title: "Send direct message", confirmLabel: "Send" },
+  "hr.grantRecognition": { title: "Send kudos", confirmLabel: "Send" },
+  "hr.grantBonus": { title: "Grant bonus", confirmLabel: "Grant" },
+  "crm.createLead": { title: "Create lead", confirmLabel: "Create" },
+  "crm.logActivity": { title: "Log activity", confirmLabel: "Log" },
+  "crm.updateLeadStatus": { title: "Update lead status", confirmLabel: "Update" },
+  "ticket.assign": { title: "Assign ticket", confirmLabel: "Assign" },
+  "ticket.moveToSprint": { title: "Move to sprint", confirmLabel: "Move" },
+  "calendar.createEvent": { title: "Create event", confirmLabel: "Create" },
+  "ticket.create": { title: "Create ticket", confirmLabel: "Create" },
+  "ticket.updateStatus": { title: "Update status", confirmLabel: "Update" },
+  "ticket.addComment": { title: "Add comment", confirmLabel: "Comment" },
+  "calendar.createReminder": { title: "Set reminder", confirmLabel: "Remind" },
+  "calendar.scheduleMeeting": { title: "Schedule meeting", confirmLabel: "Schedule" },
+  "self.applyLeave": { title: "Request leave", confirmLabel: "Submit" },
+  "self.submitExpense": { title: "Submit expense", confirmLabel: "Submit" },
+  "self.logTimesheet": { title: "Log time", confirmLabel: "Log" },
+  "self.submitReferral": { title: "Submit referral", confirmLabel: "Submit" },
+};
 
 export interface AskOsToolsetInput {
   db: Db;
@@ -26,7 +52,7 @@ export function isToolAvailable(
   definition: AskOsToolDefinition,
   snapshot: AccessSnapshot,
 ): boolean {
-  if (definition.module && snapshot.modules[definition.module] === false) return false;
+  if (definition.module && !snapshot.modules[definition.module]) return false;
   if (!definition.permission) return true;
   const scope = snapshot.scopes[definition.permission];
   return scope !== undefined && scope !== "none";
@@ -49,11 +75,6 @@ export function assertUniqueKeys(definitions: readonly AskOsToolDefinition[]): v
   if (duplicates.size > 0) {
     throw new Error(`Duplicate Ask OS tool keys: ${[...duplicates].sort().join(", ")}`);
   }
-}
-
-function scopeFor(definition: AskOsToolDefinition, snapshot: AccessSnapshot): DataScope {
-  if (!definition.permission) return "all";
-  return snapshot.scopes[definition.permission] ?? "none";
 }
 
 export function toJsonSafe(value: Record<string, unknown>): Record<string, unknown> {
@@ -95,6 +116,13 @@ export function renderOutcome(outcome: ToolOutcome): Record<string, unknown> {
         preview: outcome.preview,
         ...(outcome.expiresAt !== undefined ? { expiresAt: outcome.expiresAt } : {}),
       };
+    case "ambiguous":
+      return {
+        ok: false,
+        ambiguous: true,
+        reason: outcome.reason,
+        candidates: outcome.candidates,
+      };
     case "failed":
       return { ok: false, failed: true, reason: outcome.reason };
     default: {
@@ -109,29 +137,36 @@ export function buildAskOsToolset(input: AskOsToolsetInput): ToolSet {
   assertUniqueKeys(definitions);
 
   const toolset: ToolSet = {};
+  const readFor = askOsToolReader(actor, snapshot);
   for (const definition of availableDefinitions(definitions, snapshot)) {
     const runContext: AskOsToolRunContext = {
       actor,
       caller,
-      scope: scopeFor(definition, snapshot),
-      scopes: snapshot.scopes,
+      read: askOsToolRead(actor, snapshot, definition.permission),
+      readFor,
       modules: snapshot.modules,
     };
 
     toolset[definition.key] = tool({
       description: definition.description,
-      inputSchema: definition.input,
+      inputSchema: manifestSchema(definition),
       execute: async (rawInput: unknown) => {
+        const inTenantScope = async <T>(body: () => Promise<T>): Promise<T> =>
+          definition.ownsTransaction === true
+            ? body()
+            : runInNewTenantTransaction(db, actor.orgId, body);
+
         try {
           return toJsonSafe(
-            await runInNewTenantTransaction(db, actor.orgId, async () => {
-              if (runContext.scope === "none" && definition.permission) {
+            await inTenantScope(async () => {
+              if (runContext.read.denied && definition.permission) {
                 return renderOutcome(denied(definition.permission));
               }
               const parsed: unknown = definition.input.parse(rawInput);
               const outcome = await definition.run(parsed, runContext);
               if (onDirective !== undefined) {
                 if (outcome.kind === "needs-confirmation") {
+                  const labels = ACTION_LABELS[outcome.action];
                   onDirective({
                     kind: "confirm-action",
                     proposalId: outcome.proposalId,
@@ -139,6 +174,12 @@ export function buildAskOsToolset(input: AskOsToolsetInput): ToolSet {
                     action: outcome.action,
                     summary: outcome.summary,
                     preview: outcome.preview,
+                    ...(outcome.expiresAt !== undefined
+                      ? { expiresAt: outcome.expiresAt.toISOString() }
+                      : {}),
+                    ...(labels !== undefined
+                      ? { title: labels.title, confirmLabel: labels.confirmLabel }
+                      : {}),
                   });
                   return { status: "pending_confirmation", summary: outcome.summary };
                 }

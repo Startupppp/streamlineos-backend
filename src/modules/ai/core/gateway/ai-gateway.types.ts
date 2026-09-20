@@ -71,12 +71,6 @@ export interface AiInvokePrompt {
   promptVersion?: number;
 }
 
-export interface AiResponseCacheOpts {
-  aclVersion: string;
-  sourceRevision?: string;
-  policy?: string;
-}
-
 export interface AiInvokeBaseOpts {
   actor: AiInvokeActor;
   feature: string;
@@ -88,7 +82,6 @@ export interface AiInvokeBaseOpts {
   redact?: boolean;
   dedupe?: boolean;
   signal?: AbortSignal;
-  cache?: AiResponseCacheOpts;
 }
 
 export interface InvokeStructuredOpts<T> extends AiInvokeBaseOpts {

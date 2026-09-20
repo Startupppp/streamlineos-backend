@@ -1,8 +1,10 @@
 import { ForbiddenException } from "@nestjs/common";
-import { ProjectsCopilotTools } from "./projects-copilot-tools";
+import { ProjectsCopilotTools } from "./tools/projects-copilot-tools";
 import { AiConfirmationService } from "../confirmation/ai-confirmation.service";
 import type { AskOsActor } from "./services/ask-os-actor";
 import type { AskOsToolDefinition, AskOsToolRunContext } from "./registry/ask-os-tool.types";
+import type { DataScope } from "../../access/access.types";
+import { ScopedRead } from "../../access/scoped-read";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
 
@@ -33,12 +35,13 @@ const mockCaller: CurrentUserContext = {
   principal: humanSessionPrincipal(1, false),
 };
 
-function makeCtx(scope: AskOsToolRunContext["scope"] = "all"): AskOsToolRunContext {
+function makeCtx(scope: DataScope = "all"): AskOsToolRunContext {
+  const read = ScopedRead.of(mockActor.orgId, mockActor.userId, scope);
   return {
     actor: mockActor,
     caller: mockCaller,
-    scope,
-    scopes: { "build:tickets:view": scope, "build:tickets:create": scope, "build:tickets:update": scope, "calendar:write": scope },
+    read,
+    readFor: () => read,
     modules: {},
   };
 }

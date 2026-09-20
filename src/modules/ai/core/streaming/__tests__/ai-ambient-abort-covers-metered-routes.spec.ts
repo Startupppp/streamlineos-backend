@@ -18,7 +18,6 @@ import { primeRelocationTrafficTracker } from "../../../../../common/relocation/
 import { AuditService } from "../../../../../common/audit/audit.service";
 import { AiGatewayService } from "../../gateway/ai-gateway.service";
 import { AiConcurrencyLimiter } from "../../gateway/ai-concurrency-limiter";
-import { AiResponseCacheService } from "../../gateway/ai-response-cache.service";
 import { LlmService } from "../../providers/llm.service";
 import { EmbeddingsService } from "../../providers/embeddings.service";
 import { AiUsageService } from "../../services/ai-usage.service";
@@ -146,10 +145,6 @@ describe("a metered route outside the AI module still stops the spend when the c
               { track: jest.fn().mockResolvedValue(undefined) } as unknown as AiUsageService,
               { log: jest.fn() } as unknown as AuditService,
               ledger,
-              {
-                cachedInvoke: jest.fn(),
-                invalidate: jest.fn(),
-              } as unknown as AiResponseCacheService,
               new AiConcurrencyLimiter(),
             ),
         },

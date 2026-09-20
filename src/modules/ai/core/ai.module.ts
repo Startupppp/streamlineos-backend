@@ -1,4 +1,5 @@
 import { Module } from "@nestjs/common";
+import { DiscoveryModule } from "@nestjs/core";
 import { CrmAiController } from "./controllers/crm-ai.controller";
 import { CrmCopilotController } from "./controllers/crm-copilot.controller";
 import { HrAiController } from "./controllers/hr-ai.controller";
@@ -29,15 +30,15 @@ import { TicketInsightsAiService } from "./services/ticket-insights-ai.service";
 import { TicketTriageAiService } from "./services/ticket-triage-ai.service";
 import { TicketDraftAiService } from "./services/ticket-draft-ai.service";
 import { MeetingActionAiService } from "./services/meeting-action-ai.service";
-import { HrCopilotTools } from "./hr-copilot-tools";
-import { WorkspaceCopilotTools } from "./workspace-copilot-tools";
-import { OpsCopilotTools } from "./ops-copilot-tools";
+import { HrCopilotTools } from "./tools/hr-copilot-tools";
+import { WorkspaceCopilotTools } from "./tools/workspace-copilot-tools";
+import { OpsCopilotTools } from "./tools/ops-copilot-tools";
 import { WarehouseScopeService } from "../../inventory/stock-engine/warehouse-scope.service";
-import { CrmCopilotTools } from "./crm-copilot-tools";
-import { CommsCopilotTools } from "./comms-copilot-tools";
-import { ProjectsCopilotTools } from "./projects-copilot-tools";
-import { CommsActionsTools } from "./comms-actions-tools";
-import { MailCopilotTools } from "./mail-copilot-tools";
+import { CrmCopilotTools } from "./tools/crm-copilot-tools";
+import { CommsCopilotTools } from "./tools/comms-copilot-tools";
+import { ProjectsCopilotTools } from "./tools/projects-copilot-tools";
+import { CommsActionsTools } from "./tools/comms-actions-tools";
+import { MailCopilotTools } from "./tools/mail-copilot-tools";
 import { ToolAccessService } from "./tool-access.service";
 import { AiFeedbackService } from "./services/ai-feedback.service";
 import { CalendarModule } from "../../calendar/calendar.module";
@@ -58,33 +59,17 @@ import { SurveyAiController } from "./controllers/survey-ai.controller";
 import { SurveyAiService } from "./services/survey-ai.service";
 import { AiRequestAbortInterceptor } from "./streaming";
 import { WorkspaceInlineTools } from "./services/chat-assistant-inline-tools";
-import { SelfHrTools } from "./self/self-hr-tools";
-import { SelfPayrollTools } from "./self/self-payroll-tools";
-import { SelfWorkTools } from "./self/self-work-tools";
-import { SelfActionsTools } from "./actions/self-actions-tools";
-import { WorkActionsTools } from "./actions/work-actions-tools";
+import { SelfHrTools } from "./tools/self-hr-tools";
+import { SelfPayrollTools } from "./tools/self-payroll-tools";
+import { SelfWorkTools } from "./tools/self-work-tools";
+import { SelfActionsTools } from "./tools/self-actions-tools";
+import { WorkActionsTools } from "./tools/work-actions-tools";
 import { ASK_OS_TOOL_PROVIDERS } from "./registry/ask-os-tool-providers";
-import type { AskOsToolProvider } from "./registry/ask-os-tool.types";
-
-const ASK_OS_PROVIDER_CLASSES = [
-  HrCopilotTools,
-  WorkspaceCopilotTools,
-  OpsCopilotTools,
-  CrmCopilotTools,
-  CommsCopilotTools,
-  ProjectsCopilotTools,
-  CommsActionsTools,
-  MailCopilotTools,
-  WorkspaceInlineTools,
-  SelfHrTools,
-  SelfPayrollTools,
-  SelfWorkTools,
-  SelfActionsTools,
-  WorkActionsTools,
-] as const;
+import { AskOsToolDiscoveryService } from "./registry/ask-os-tool-discovery.service";
+import { ConfirmableActionServicesCheck } from "./confirm-actions";
 
 @Module({
-  imports: [CalendarModule, ChatModule, BillingModule, AiConfirmationModule, ProjectsModule, IntegrationsModule, ExecutiveBriefModule, AiJobsModule, MailModule, AiGatewayModule],
+  imports: [DiscoveryModule, CalendarModule, ChatModule, BillingModule, AiConfirmationModule, ProjectsModule, IntegrationsModule, ExecutiveBriefModule, AiJobsModule, MailModule, AiGatewayModule],
   controllers: [CrmAiController, CrmCopilotController, HrAiController, KbRagController, ChatAssistantController, ProjectsAiController, AiFeedbackController, MeetingsAiController, BlogAiController, SurveyAiController],
   providers: [
     CrmScoringService,
@@ -110,19 +95,30 @@ const ASK_OS_PROVIDER_CLASSES = [
     TicketTriageAiService,
     TicketDraftAiService,
     MeetingActionAiService,
-    ...ASK_OS_PROVIDER_CLASSES,
+    HrCopilotTools,
+    WorkspaceCopilotTools,
+    OpsCopilotTools,
+    CrmCopilotTools,
+    CommsCopilotTools,
+    ProjectsCopilotTools,
+    CommsActionsTools,
+    MailCopilotTools,
+    WorkspaceInlineTools,
+    SelfHrTools,
+    SelfPayrollTools,
+    SelfWorkTools,
+    SelfActionsTools,
+    WorkActionsTools,
     // F2. The copilot's inventory reads apply the same warehouse scope the stock,
     // reservation and report endpoints apply, so they use the same service. It is
     // provided here rather than by importing InvStockEngineModule: both of its
     // dependencies are global, it holds no state, and importing that module would
     // drag the accounting posting graph into AiModule for one predicate builder.
     WarehouseScopeService,
-    {
-      provide: ASK_OS_TOOL_PROVIDERS,
-      useFactory: (...providers: AskOsToolProvider[]) => providers,
-      inject: [...ASK_OS_PROVIDER_CLASSES],
-    },
+    { provide: ASK_OS_TOOL_PROVIDERS, useValue: [] },
+    AskOsToolDiscoveryService,
     ToolAccessService,
+    ConfirmableActionServicesCheck,
     AiFeedbackService,
     MeetingsPrepService,
     BlogAiService,

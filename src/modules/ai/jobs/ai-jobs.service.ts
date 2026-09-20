@@ -4,6 +4,7 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import { aiJobs } from "../../../db/schema";
 import type { AiJob } from "../../../db/schema";
+import { isRecord } from "../../../common/types/is-record";
 
 export interface EnqueueInput {
   orgId: string;
@@ -21,10 +22,6 @@ export interface ListJobsOptions {
   status?: AiJob["status"];
   cursor?: number;
   limit?: number;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 @Injectable()

@@ -70,8 +70,8 @@ import {
 } from "../dto/ai-response.schemas";
 
 const projectIdParams = z.object({ projectId: z.string().min(1) }).strict();
-const projectIdticketIdParams = z.object({ projectId: z.string().min(1), ticketId: z.string().min(1) }).strict();
-const projectIdmeetingIdParams = z.object({ projectId: z.string().min(1), meetingId: z.string().min(1) }).strict();
+const projectAndTicketIdParams = z.object({ projectId: z.string().min(1), ticketId: z.string().min(1) }).strict();
+const projectAndMeetingIdParams = z.object({ projectId: z.string().min(1), meetingId: z.string().min(1) }).strict();
 
 function parsePositiveInt(raw: string, label: string): number {
   const id = Number(raw);
@@ -260,7 +260,7 @@ export class ProjectsAiController {
   }
 
   @Post("tickets/:projectId/:ticketId/summarize")
-  @Validate({ params: projectIdticketIdParams })
+  @Validate({ params: projectAndTicketIdParams })
   @BodylessAction()
   @ResponseSchema(summarizeTicketResponseSchema)
   async summarizeTicket(
@@ -274,7 +274,7 @@ export class ProjectsAiController {
   }
 
   @Post("tickets/:projectId/:ticketId/summarize-comments")
-  @Validate({ params: projectIdticketIdParams })
+  @Validate({ params: projectAndTicketIdParams })
   @BodylessAction()
   @ResponseSchema(summarizeCommentsResponseSchema)
   async summarizeTicketComments(
@@ -294,7 +294,7 @@ export class ProjectsAiController {
 
   @Post("tickets/:projectId/:ticketId/improve-description")
   @ResponseSchema(improveTicketDescriptionResponseSchema)
-  @Validate({ params: projectIdticketIdParams, body: improveDescriptionBodySchema })
+  @Validate({ params: projectAndTicketIdParams, body: improveDescriptionBodySchema })
   async improveTicketDescription(
     @Param("projectId") rawPid: string,
     @Param("ticketId") rawTid: string,
@@ -309,7 +309,7 @@ export class ProjectsAiController {
   @Post("tickets/:projectId/:ticketId/improve-description/stream")
   @HttpCode(200)
   @ApiAiTextStream("Plain-text improved description for the authorized ticket, streamed incrementally. No ticket mutation is performed; a transport failure before clean EOF leaves an incomplete suggestion.")
-  @Validate({ params: projectIdticketIdParams, body: improveDescriptionBodySchema })
+  @Validate({ params: projectAndTicketIdParams, body: improveDescriptionBodySchema })
   async improveTicketDescriptionStream(
     @Req() req: Request,
     @Param("projectId") rawPid: string,
@@ -341,7 +341,7 @@ export class ProjectsAiController {
   }
 
   @Post("tickets/:projectId/:ticketId/suggest-subtasks")
-  @Validate({ params: projectIdticketIdParams })
+  @Validate({ params: projectAndTicketIdParams })
   @BodylessAction()
   @ResponseSchema(suggestSubtasksResponseSchema)
   async suggestTicketSubtasks(
@@ -355,7 +355,7 @@ export class ProjectsAiController {
   }
 
   @Post("tickets/:projectId/:ticketId/generate-checklist")
-  @Validate({ params: projectIdticketIdParams })
+  @Validate({ params: projectAndTicketIdParams })
   @BodylessAction()
   @ResponseSchema(generateChecklistResponseSchema)
   async generateTicketChecklist(
@@ -387,7 +387,7 @@ export class ProjectsAiController {
   }
 
   @Post("projects/:projectId/meetings/:meetingId/extract-actions")
-  @Validate({ params: projectIdmeetingIdParams })
+  @Validate({ params: projectAndMeetingIdParams })
   @BodylessAction()
   @ResponseSchema(extractMeetingActionsResponseSchema)
   async extractMeetingActions(
@@ -414,7 +414,7 @@ export class ProjectsAiController {
   }
 
   @Post("tickets/:projectId/:ticketId/handoff")
-  @Validate({ params: projectIdticketIdParams })
+  @Validate({ params: projectAndTicketIdParams })
   @BodylessAction()
   @ResponseSchema(ticketHandoffResponseSchema)
   async ticketHandoff(

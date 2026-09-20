@@ -18,7 +18,8 @@ import {
   type NextActionWithEvidenceResult,
 } from "../../dto/output.schemas";
 import { throwOnAiFailure } from "../gateway-result.util";
-import { trunc, type LeadScoringDeps } from "./crm-lead-scoring";
+import { trunc } from "./prompt-text";
+import { type LeadScoringDeps } from "./crm-lead-scoring";
 
 /**
  * What to do about a lead next — advice that is returned and then forgotten.
@@ -35,9 +36,6 @@ import { trunc, type LeadScoringDeps } from "./crm-lead-scoring";
  * the recommendation; they share `nextActionPrompt` and differ only in what they
  * add to its user turn, so they belong together and nowhere else.
  *
- * `LeadScoringDeps` and `trunc` come from `crm-lead-scoring.ts`: the deps are the
- * same two, and duplicating the prompt budget is how two callers quietly end up
- * spending different amounts.
  */
 
 export async function nextBestAction(

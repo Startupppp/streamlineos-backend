@@ -28,6 +28,7 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import type { AllWorkQuery } from "./dto/projects.schemas";
 import {
   assignedOrParticipatingIds,
+  mineCountByStatusSql,
   mineCountSql,
   readIds,
   resolveWorkSort,
@@ -278,6 +279,173 @@ export class ProjectsWorkQueryService {
     }));
 
     return { data, limit, nextCursor, hasMore, ...(total !== undefined ? { total } : {}) };
+  }
+
+  async countTicketsByProjectAndStatus(
+    u: CurrentUserContext,
+    opts: {
+      assigneeId?: string;
+      projectIds?: number[];
+    },
+  ): Promise<{
+    byProject: { projectId: number; projectName: string; total: number; done: number; inProgress: number }[];
+    totals: { total: number; done: number; inProgress: number };
+  }> {
+    const baseConditions: SQL<unknown>[] = [
+      eq(tickets.orgId, u.orgId),
+      ne(projects.status, "ARCHIVED"),
+      isNull(tickets.deletedAt),
+    ];
+
+    const memberRows = await this.db
+      .select({ projectId: projectMembers.projectId })
+      .from(projectMembers)
+      .innerJoin(
+        organizationMembers,
+        and(
+          eq(organizationMembers.id, projectMembers.membershipId),
+          eq(organizationMembers.orgId, projectMembers.orgId),
+          eq(organizationMembers.userId, u.userId),
+          eq(organizationMembers.status, "ACTIVE"),
+        ),
+      )
+      .where(eq(projectMembers.orgId, u.orgId));
+
+    const memberProjectIds = memberRows.map((r) => r.projectId);
+    if (memberProjectIds.length === 0) return { byProject: [], totals: { total: 0, done: 0, inProgress: 0 } };
+
+    const allowedProjectIds =
+      opts.projectIds && opts.projectIds.length > 0
+        ? opts.projectIds.filter((id) => memberProjectIds.includes(id))
+        : memberProjectIds;
+
+    if (allowedProjectIds.length === 0) return { byProject: [], totals: { total: 0, done: 0, inProgress: 0 } };
+
+    baseConditions.push(inArray(tickets.projectId, allowedProjectIds));
+
+    if (opts.assigneeId !== undefined) {
+      baseConditions.push(
+        sql`${tickets.assigneeMembershipId} IN (SELECT id FROM organization_members WHERE org_id = ${u.orgId} AND user_id = ${opts.assigneeId})`,
+      );
+    }
+
+    const where = and(...baseConditions);
+    const statusRows = await this.db
+      .select({
+        projectId: tickets.projectId,
+        projectName: projects.name,
+        status: tickets.status,
+        cnt: sql<string>`count(*)`,
+      })
+      .from(tickets)
+      .innerJoin(projects, eq(tickets.projectId, projects.id))
+      .where(where)
+      .groupBy(tickets.projectId, projects.name, tickets.status);
+
+    const byProjectMap = new Map<
+      number,
+      { projectId: number; projectName: string; total: number; done: number; inProgress: number }
+    >();
+    for (const row of statusRows) {
+      if (row.projectId === null) continue;
+      const entry = byProjectMap.get(row.projectId) ?? {
+        projectId: row.projectId,
+        projectName: row.projectName,
+        total: 0,
+        done: 0,
+        inProgress: 0,
+      };
+      const cnt = Number(row.cnt);
+      entry.total += cnt;
+      if (row.status === "DONE") entry.done += cnt;
+      if (row.status === "IN_PROGRESS" || row.status === "IN_REVIEW") entry.inProgress += cnt;
+      byProjectMap.set(row.projectId, entry);
+    }
+
+    const byProject = Array.from(byProjectMap.values()).sort((a, b) => b.total - a.total);
+    const totals = byProject.reduce(
+      (acc, r) => ({ total: acc.total + r.total, done: acc.done + r.done, inProgress: acc.inProgress + r.inProgress }),
+      { total: 0, done: 0, inProgress: 0 },
+    );
+    return { byProject, totals };
+  }
+
+  async countTicketsByStatus(
+    u: CurrentUserContext,
+    opts: {
+      scope: "all" | "mine";
+      assigneeId?: string;
+      projectIds?: number[];
+    },
+  ): Promise<{ byStatus: Record<string, number>; total: number }> {
+    const baseConditions: SQL<unknown>[] = [
+      eq(tickets.orgId, u.orgId),
+      ne(projects.status, "ARCHIVED"),
+      isNull(tickets.deletedAt),
+    ];
+
+    if (opts.scope === "all") {
+      const memberRows = await this.db
+        .select({ projectId: projectMembers.projectId })
+        .from(projectMembers)
+        .innerJoin(
+          organizationMembers,
+          and(
+            eq(organizationMembers.id, projectMembers.membershipId),
+            eq(organizationMembers.orgId, projectMembers.orgId),
+            eq(organizationMembers.userId, u.userId),
+            eq(organizationMembers.status, "ACTIVE"),
+          ),
+        )
+        .where(eq(projectMembers.orgId, u.orgId));
+
+      const memberProjectIds = memberRows.map((r) => r.projectId);
+      if (memberProjectIds.length === 0) return { byStatus: {}, total: 0 };
+
+      const allowedProjectIds =
+        opts.projectIds && opts.projectIds.length > 0
+          ? opts.projectIds.filter((id) => memberProjectIds.includes(id))
+          : memberProjectIds;
+
+      if (allowedProjectIds.length === 0) return { byStatus: {}, total: 0 };
+
+      baseConditions.push(inArray(tickets.projectId, allowedProjectIds));
+
+      if (opts.assigneeId !== undefined) {
+        baseConditions.push(
+          sql`${tickets.assigneeMembershipId} IN (SELECT id FROM organization_members WHERE org_id = ${u.orgId} AND user_id = ${opts.assigneeId})`,
+        );
+      }
+
+      const where = and(...baseConditions);
+      const statusRows = await this.db
+        .select({ status: tickets.status, cnt: sql<string>`count(*)` })
+        .from(tickets)
+        .innerJoin(projects, eq(tickets.projectId, projects.id))
+        .where(where)
+        .groupBy(tickets.status);
+
+      const byStatus: Record<string, number> = {};
+      let total = 0;
+      for (const row of statusRows) {
+        const cnt = Number(row.cnt);
+        byStatus[row.status] = cnt;
+        total += cnt;
+      }
+      return { byStatus, total };
+    }
+
+    const where = and(...baseConditions);
+    const rawRows = await this.db.execute(mineCountByStatusSql(where, u.orgId, u.userId));
+    const byStatus: Record<string, number> = {};
+    let total = 0;
+    for (const row of rawRows) {
+      const status = String(row["status"]);
+      const cnt = Number(row["cnt"]);
+      byStatus[status] = cnt;
+      total += cnt;
+    }
+    return { byStatus, total };
   }
 
   private async pageFilteredWork(

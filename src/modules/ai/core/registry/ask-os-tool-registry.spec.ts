@@ -16,6 +16,9 @@ import {
   toolDenialReason,
 } from "./ask-os-tool.types";
 import type { AccessSnapshot } from "../../../access/access.types";
+import { askOsToolRead, askOsToolReader } from "../ask-os-tool-scope";
+
+const ACTOR = { orgId: "org-1", userId: "user-1" };
 
 function snapshot(overrides: Partial<AccessSnapshot> = {}): AccessSnapshot {
   return {
@@ -56,7 +59,7 @@ describe("a tool the caller cannot use is never offered to the model", () => {
   });
 
   it("offers it once the caller holds the key at any usable scope", () => {
-    expect(isToolAvailable(gated, snapshot({ scopes: { "build:tickets:view": "own" } }))).toBe(true);
+    expect(isToolAvailable(gated, snapshot({ scopes: { "build:tickets:view": "own" }, modules: { build: true } }))).toBe(true);
   });
 
   it("hides a tool whose module is disabled even when the permission is held", () => {
@@ -69,9 +72,60 @@ describe("a tool the caller cannot use is never offered to the model", () => {
     expect(isToolAvailable(ungated, snapshot())).toBe(true);
   });
 
+  it("treats an unrecognised module key as unavailable, so a typo cannot expose a tool for a module the org has not enabled", () => {
+    const typoModule = defineTool({
+      key: "typoModuleKey",
+      description: "d",
+      input: z.object({}),
+      module: "definitely-not-a-real-module",
+      run: async () => data({ ok: 1 }),
+    });
+    expect(isToolAvailable(typoModule, snapshot({ modules: {} }))).toBe(false);
+    expect(isToolAvailable(typoModule, snapshot({ modules: { "definitely-not-a-real-module": true } }))).toBe(true);
+  });
+
   it("filters the set rather than the caller having to know which are safe", () => {
     const available = availableDefinitions([ungated, gated], snapshot());
     expect(available.map((definition) => definition.key)).toEqual(["getMyThing"]);
+  });
+});
+
+describe("a tool handler receives a ScopedRead, never the DataScope behind it", () => {
+  it("gives an ungated self tool an unrestricted read, matching the availability answer", () => {
+    const read = askOsToolRead(ACTOR, snapshot(), ungated.permission);
+
+    expect(read.unrestricted).toBe(true);
+    expect(read.denied).toBe(false);
+  });
+
+  it("keeps an own-scoped read usable but not unrestricted, so a widening filter stays shut", () => {
+    const read = askOsToolRead(ACTOR, snapshot({ scopes: { "build:tickets:view": "own" } }), gated.permission);
+
+    expect(read.denied).toBe(false);
+    expect(read.unrestricted).toBe(false);
+  });
+
+  it("treats a key the snapshot never resolved as denied rather than as absent", () => {
+    expect(askOsToolRead(ACTOR, snapshot(), gated.permission).denied).toBe(true);
+  });
+
+  it("resolves a second permission the handler checks itself without exposing the map", () => {
+    const readFor = askOsToolReader(
+      ACTOR,
+      snapshot({ scopes: { "inventory:stock:read": "all", "hr:payroll:view": "none" } }),
+    );
+
+    expect(readFor("inventory:stock:read").unrestricted).toBe(true);
+    expect(readFor("hr:payroll:view").denied).toBe(true);
+    expect(readFor("self:payslips").denied).toBe(true);
+  });
+
+  it("carries the actor on a scoped read, because own and team select different rows per person", () => {
+    const read = askOsToolRead(ACTOR, snapshot({ scopes: { "build:tickets:view": "own" } }), gated.permission);
+
+    expect(read.orgId).toBe("org-1");
+    expect(read.actorId).toBe("user-1");
+    expect(read.discriminator).toBe("own:user-1");
   });
 });
 

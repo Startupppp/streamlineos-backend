@@ -7,7 +7,8 @@ import { runInTenantTransaction } from "../../../../common/tenant/run-in-tenant-
 import { AiGatewayService } from "../gateway/ai-gateway.service";
 import { OrgFeaturesService } from "./org-features.service";
 import { throwOnAiFailure } from "./gateway-result.util";
-import { loadLeadContext, trunc } from "./crm-brief-loaders";
+import { loadLeadContext } from "./crm-brief-loaders";
+import { trunc } from "./lib/prompt-text";
 import type { AiInvokePrompt } from "../gateway/ai-gateway.types";
 import type { AiTextStream } from "../gateway/ai-gateway-stream.helper";
 

@@ -11,25 +11,27 @@ import { timingSafeEqual } from "node:crypto";
 import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
 import { aiActionProposals } from "../../../db/schema/ai/ai-confirmation";
 import { organizationMembers } from "../../../db/schema";
-import { isUniqueViolation } from "../../../common/db/postgres-error";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { AuditService } from "../../../common/audit/audit.service";
 import {
-  cancelProposal,
-  getProposalExecutedResult,
   markProposalExecuted,
-  sweepExpiredProposals,
   type ProposalLifecycleDeps,
 } from "./lib/proposal-lifecycle";
-import { boundedIdempotencyKey, computeHmac, DEFAULT_TTL, getSecret, MAX_TTL, stableHash, type ConfirmInput, type ConfirmResult, type ProposeInput, type ProposeResult } from "./ai-confirmation.helpers";
+import { boundedIdempotencyKey, computeHmac, DEFAULT_TTL, derivedIdempotencyKey, getSecret, MAX_TTL, mintProposalToken, stableHash, type ConfirmInput, type ConfirmResult, type ProposeInput, type ProposeResult } from "./ai-confirmation.helpers";
+
+type ProposalRow = typeof aiActionProposals.$inferSelect;
+
+function isLiveProposal(row: ProposalRow): boolean {
+  return row.status === "PROPOSED" && row.expiresAt > new Date();
+}
 
 /**
  * The token protocol for AI-proposed actions: `propose` mints a token bound by
  * HMAC to the proposal, org, user, action, payload hash and expiry, and
  * `confirm` is the only place one is ever verified. What happens to a proposal
- * afterwards (execution bookkeeping, result lookup, cancellation, the expiry
- * sweep) never touches a token and lives in `lib/proposal-lifecycle.ts`.
+ * afterwards (execution bookkeeping) never touches a token and lives in
+ * `lib/proposal-lifecycle.ts`.
  */
 @Injectable()
 export class AiConfirmationService {
@@ -57,6 +59,28 @@ export class AiConfirmationService {
     return rows[0]?.id ?? null;
   }
 
+  private async findByIdempotencyKey(
+    orgId: string,
+    idempotencyKey: string,
+  ): Promise<ProposalRow | undefined> {
+    const rows = await runInTenantTransaction(
+      this.db,
+      (tx) =>
+        tx
+          .select()
+          .from(aiActionProposals)
+          .where(
+            and(
+              eq(aiActionProposals.orgId, orgId),
+              eq(aiActionProposals.idempotencyKey, idempotencyKey),
+            ),
+          )
+          .limit(1),
+      { orgId },
+    );
+    return rows[0];
+  }
+
   async propose(input: ProposeInput): Promise<ProposeResult> {
     const ttl = Math.min(input.ttlSeconds ?? DEFAULT_TTL, MAX_TTL);
     const payloadHash = stableHash(input.payload);
@@ -64,94 +88,78 @@ export class AiConfirmationService {
 
     const idempotencyKey = input.idempotencyKey
       ? boundedIdempotencyKey(input.idempotencyKey)
-      : undefined;
-    if (idempotencyKey) {
-      const existing = await runInTenantTransaction(
-        this.db,
-        (tx) =>
-          tx
-            .select()
-            .from(aiActionProposals)
-            .where(
-              and(
-                eq(aiActionProposals.orgId, input.orgId),
-                eq(aiActionProposals.idempotencyKey, idempotencyKey),
-                eq(aiActionProposals.status, "PROPOSED"),
-              ),
-            )
-            .limit(1),
-        { orgId: input.orgId },
-      );
+      : derivedIdempotencyKey(input.orgId, input.userId, input.action, payloadHash);
 
-      const row = existing[0];
-      if (row && row.expiresAt > new Date()) {
-        const secret = getSecret();
-        const epoch = Math.floor(row.expiresAt.getTime() / 1000);
-        const hmac = computeHmac(secret, row.id, row.orgId, row.userId, row.action, row.payloadHash, epoch);
-        const token = `${row.id}.${epoch}.${hmac}`;
-        return { proposalId: row.id, token, expiresAt: row.expiresAt };
-      }
-    }
+    const existing = await this.findByIdempotencyKey(input.orgId, idempotencyKey);
+    if (existing && isLiveProposal(existing)) return mintProposalToken(existing);
 
     const userMembershipId = await this.resolveMembershipId(input.orgId, input.userId);
 
     const inserted = await runInTenantTransaction(
       this.db,
       async (tx) => {
-        try {
-          const [row] = await tx
-            .insert(aiActionProposals)
-            .values({
-              orgId: input.orgId,
-              userId: input.userId,
-              userMembershipId,
-              action: input.action,
-              payload: input.payload,
-              payloadHash,
-              idempotencyKey: idempotencyKey ?? null,
-              expiresAt,
-            })
-            .returning();
-          return row;
-        } catch (error) {
-          if (!isUniqueViolation(error) || idempotencyKey === undefined) throw error;
-          const [existing] = await tx
-            .select()
-            .from(aiActionProposals)
+        if (existing) {
+          await tx
+            .update(aiActionProposals)
+            .set({ idempotencyKey: null })
             .where(
               and(
                 eq(aiActionProposals.orgId, input.orgId),
+                eq(aiActionProposals.id, existing.id),
                 eq(aiActionProposals.idempotencyKey, idempotencyKey),
               ),
-            )
-            .limit(1);
-          if (!existing || existing.status !== "PROPOSED" || existing.expiresAt <= new Date())
-            throw new ConflictException(
-              "That action was already proposed. Ask again in a moment or confirm the pending card.",
             );
-          return existing;
         }
+
+        const [row] = await tx
+          .insert(aiActionProposals)
+          .values({
+            orgId: input.orgId,
+            userId: input.userId,
+            userMembershipId,
+            action: input.action,
+            payload: input.payload,
+            payloadHash,
+            idempotencyKey,
+            expiresAt,
+          })
+          .onConflictDoNothing()
+          .returning();
+        if (row) return { proposal: row, minted: true };
+
+        const [conflicting] = await tx
+          .select()
+          .from(aiActionProposals)
+          .where(
+            and(
+              eq(aiActionProposals.orgId, input.orgId),
+              eq(aiActionProposals.idempotencyKey, idempotencyKey),
+            ),
+          )
+          .limit(1);
+        if (!conflicting || !isLiveProposal(conflicting))
+          throw new ConflictException(
+            "That action was already proposed. Ask again in a moment or confirm the pending card.",
+          );
+        return { proposal: conflicting, minted: false };
       },
       { orgId: input.orgId },
     );
 
     if (!inserted) throw new BadRequestException("Failed to create proposal");
 
-    const secret = getSecret();
-    const epoch = Math.floor(inserted.expiresAt.getTime() / 1000);
-    const hmac = computeHmac(secret, inserted.id, inserted.orgId, inserted.userId, inserted.action, inserted.payloadHash, epoch);
-    const token = `${inserted.id}.${epoch}.${hmac}`;
+    if (inserted.minted) {
+      this.audit.log({
+        action: "ai.proposal.proposed",
+        userId: input.userId,
+        orgId: input.orgId,
+        resourceType: "ai_action_proposal",
+        resourceId: String(inserted.proposal.id),
+        metadata: { action: input.action, ttl },
+      });
+    }
 
-    this.audit.log({
-      action: "ai.proposal.proposed",
-      userId: input.userId,
-      orgId: input.orgId,
-      resourceType: "ai_action_proposal",
-      resourceId: String(inserted.id),
-      metadata: { action: input.action, ttl },
-    });
-
-    return { proposalId: inserted.id, token, expiresAt: inserted.expiresAt };
+    return mintProposalToken(inserted.proposal);
   }
 
   async confirm(input: ConfirmInput): Promise<ConfirmResult> {
@@ -263,20 +271,5 @@ export class AiConfirmationService {
     orgId: string,
   ): Promise<void> {
     return markProposalExecuted(this.lifecycleDeps, proposalId, result, orgId);
-  }
-
-  async getExecutedResult(
-    proposalId: number,
-    orgId: string,
-  ): Promise<Record<string, unknown> | null> {
-    return getProposalExecutedResult(this.lifecycleDeps, proposalId, orgId);
-  }
-
-  async cancel(proposalId: number, actor: { orgId: string; userId: string }): Promise<void> {
-    return cancelProposal(this.lifecycleDeps, proposalId, actor);
-  }
-
-  async sweepExpired(): Promise<number> {
-    return sweepExpiredProposals(this.lifecycleDeps);
   }
 }

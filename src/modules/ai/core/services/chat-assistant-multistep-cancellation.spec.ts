@@ -218,8 +218,8 @@ jest.mock("ai", () => ({
   stepCountIs: jest.fn(() => () => false),
 }));
 jest.mock("@composio/core", () => ({ Composio: jest.fn() }));
-jest.mock("../workspace-copilot-tools", () => ({ WorkspaceCopilotTools: jest.fn() }));
-jest.mock("../comms-copilot-tools", () => ({ CommsCopilotTools: jest.fn() }));
+jest.mock("../tools/workspace-copilot-tools", () => ({ WorkspaceCopilotTools: jest.fn() }));
+jest.mock("../tools/comms-copilot-tools", () => ({ CommsCopilotTools: jest.fn() }));
 jest.mock("../../../calendar/calendar.service", () => ({ CalendarService: jest.fn() }));
 jest.mock("../../../integrations/core/composio.gateway", () => ({ ComposioGateway: jest.fn() }));
 jest.mock("../../../../common/ratelimit/rate-limit.service", () => ({ RateLimitService: jest.fn() }));
@@ -274,7 +274,9 @@ const STUB_ASK_OS_ACTOR = {
 };
 
 interface StreamTextOpts {
-  onAbort?: () => void;
+  onAbort?: (event?: {
+    steps?: ReadonlyArray<{ usage?: { inputTokens?: number; outputTokens?: number } }>;
+  }) => void;
   onFinish?: (opts: {
     text: string;
     usage?: { inputTokens?: number; outputTokens?: number };
@@ -346,7 +348,7 @@ describe("ChatAssistantService — cancelling a tool-using turn", () => {
     expect(typeof opts.onAbort).toBe("function");
   });
 
-  it("releases the reservation and never settles when the turn is aborted mid-step-two", async () => {
+  it("settles the tokens the completed steps already burned when the turn is aborted mid-step-two", async () => {
     const ledger = makeLedger();
     let opts: StreamTextOpts = {};
     (streamText as jest.Mock).mockImplementation((o: StreamTextOpts) => {
@@ -367,15 +369,24 @@ describe("ChatAssistantService — cancelling a tool-using turn", () => {
     // Exactly the order the SDK uses: notify onAbort, close the controller,
     // then flush notifies onEnd (= onFinish) with the null usage it substitutes.
     controller.abort();
-    opts.onAbort?.();
+    opts.onAbort?.({
+      steps: [
+        { usage: { inputTokens: 900, outputTokens: 120 } },
+        { usage: { inputTokens: 1_100, outputTokens: 80 } },
+      ],
+    });
     await opts.onFinish?.({ text: "", usage: {} });
     await new Promise((r) => setTimeout(r, 10));
 
-    expect(ledger.release).toHaveBeenCalledWith(42, "stream_aborted_no_settle", "org_1");
-    expect(ledger.settle).not.toHaveBeenCalled();
+    expect(ledger.settle).toHaveBeenCalledTimes(1);
+    expect(ledger.settle).toHaveBeenCalledWith(
+      42,
+      expect.objectContaining({ promptTokens: 2_000, completionTokens: 200 }),
+    );
+    expect(ledger.release).not.toHaveBeenCalled();
   });
 
-  it("releases once, however many times the SDK notifies", async () => {
+  it("releases rather than settling when the client leaves before any step completed", async () => {
     const ledger = makeLedger();
     let opts: StreamTextOpts = {};
     (streamText as jest.Mock).mockImplementation((o: StreamTextOpts) => {
@@ -393,13 +404,38 @@ describe("ChatAssistantService — cancelling a tool-using turn", () => {
     );
 
     controller.abort();
-    opts.onAbort?.();
-    opts.onAbort?.();
+    opts.onAbort?.({ steps: [] });
+    await new Promise((r) => setTimeout(r, 10));
+
+    expect(ledger.settle).not.toHaveBeenCalled();
+    expect(ledger.release).toHaveBeenCalledWith(42, "stream_aborted_no_settle", "org_1");
+  });
+
+  it("resolves the reservation exactly once, however many times the SDK notifies", async () => {
+    const ledger = makeLedger();
+    let opts: StreamTextOpts = {};
+    (streamText as jest.Mock).mockImplementation((o: StreamTextOpts) => {
+      opts = o;
+      return { finishReason: Promise.resolve("other") };
+    });
+
+    const controller = new AbortController();
+    await buildService(ledger).processChat(
+      [{ role: "user", content: "hi" }],
+      ACTOR,
+      undefined,
+      undefined,
+      controller.signal,
+    );
+
+    controller.abort();
+    opts.onAbort?.({ steps: [{ usage: { inputTokens: 30, outputTokens: 10 } }] });
+    opts.onAbort?.({ steps: [{ usage: { inputTokens: 30, outputTokens: 10 } }] });
     await opts.onFinish?.({ text: "partial", usage: { inputTokens: 30, outputTokens: 10 } });
     await new Promise((r) => setTimeout(r, 10));
 
-    expect(ledger.release).toHaveBeenCalledTimes(1);
-    expect(ledger.settle).not.toHaveBeenCalled();
+    expect(ledger.settle).toHaveBeenCalledTimes(1);
+    expect(ledger.release).not.toHaveBeenCalled();
   });
 
   /**

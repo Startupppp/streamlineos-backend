@@ -1,6 +1,7 @@
 import { Injectable } from "@nestjs/common";
 import { AccessService } from "../../access/access.service";
-import { ScopedRead } from "../../access/scoped-read";
+import type { ScopedRead } from "../../access/scoped-read";
+import { resolveAskOsToolRead } from "./ask-os-tool-scope";
 import { toolDenialReason } from "./registry/ask-os-tool.types";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import type { AuthContext } from "../../../common/auth/auth-context";
@@ -14,11 +15,7 @@ export class ToolAccessService {
     key: string,
     authContext?: AuthContext,
   ): Promise<ScopedRead> {
-    return ScopedRead.of(
-      actor.orgId,
-      actor.userId,
-      await this.access.scopeFor(actor, key, authContext),
-    );
+    return resolveAskOsToolRead(this.access, actor, key, authContext);
   }
 
   async denyReason(
