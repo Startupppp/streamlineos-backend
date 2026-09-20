@@ -13,6 +13,19 @@ const LOOPBACK_HOSTS: ReadonlySet<string> = new Set([
 
 const URL_VAR_PATTERN = /(?:DATABASE_URL|POSTGRES_URL|DB_URL)$/;
 
+const MANAGED_PROVIDER_HOST =
+  /\.(?:rds\.amazonaws\.com|neon\.tech|supabase\.(?:co|com)|postgres\.database\.azure\.com|render\.com|db\.ondigitalocean\.com|aivencloud\.com|tsdb\.cloud\.timescale\.com)$/i;
+
+const DISPOSABLE_DATABASE = /(?:scratch|disposable|sandbox|ephemeral)/i;
+
+function isManagedProviderHost(host: string): boolean {
+  return MANAGED_PROVIDER_HOST.test(host);
+}
+
+function databaseNameOf(url: URL): string {
+  return url.pathname.replace(/^\//, "").split("?")[0] ?? "";
+}
+
 export type UrlVerdict =
   | { readonly ok: true; readonly url: string; readonly target: string }
   | { readonly ok: false; readonly target: string; readonly because: string };
@@ -52,6 +65,17 @@ export function checkDatabaseHost(raw: string, env: NodeJS.ProcessEnv = process.
   }
 
   const host = url.hostname.replace(/^\[|\]$/g, "").toLowerCase();
+
+  if (isManagedProviderHost(host) && !DISPOSABLE_DATABASE.test(databaseNameOf(url)))
+    return {
+      ok: false,
+      target,
+      because:
+        `host "${host}" is a managed database provider and database ` +
+        `"${databaseNameOf(url)}" is not named as disposable, so ${ALLOWED_HOSTS_VAR} cannot ` +
+        `approve it — name the database with "scratch" to run against a throwaway branch`,
+    };
+
   if (!allowedHosts(env).has(host))
     return {
       ok: false,
@@ -135,6 +159,12 @@ export const E2E_DATABASE_VARS = ["DATABASE_URL", "APP_DATABASE_URL"] as const;
 
 export function assertE2eDatabaseApproved(env: NodeJS.ProcessEnv = process.env): void {
   const refused: string[] = [];
+  if (env.NODE_ENV === "production")
+    refused.push(
+      "  NODE_ENV=production\n" +
+        "  refused: this process loaded a production environment file, so every secret and\n" +
+        "  connection string in it is live regardless of which database the suite targets",
+    );
   for (const name of E2E_DATABASE_VARS) {
     const raw = env[name]?.trim();
     if (!raw) continue;

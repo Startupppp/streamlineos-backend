@@ -19,7 +19,7 @@ describe("db-spec-guard", () => {
       const verdict = checkDatabaseUrl(REMOTE, optedIn);
       expect(verdict.ok).toBe(false);
       if (verdict.ok) throw new Error("unreachable");
-      expect(verdict.because).toContain("not approved for destructive testing");
+      expect(verdict.because).toContain("managed database provider");
       expect(verdict.target).toBe(
         "ep-orange-mode-azxn5hbr-pooler.c-3.ap-southeast-1.aws.neon.tech:5432/neondb",
       );
