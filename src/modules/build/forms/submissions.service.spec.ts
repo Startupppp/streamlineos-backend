@@ -52,7 +52,9 @@ describe("SubmissionsService.createSubmission", () => {
         projectForms: { findFirst: jest.fn() },
         formSubmissions: { findFirst: jest.fn() },
       },
-      transaction: jest.fn(),
+      transaction: jest.fn(async (fn: (tx: unknown) => Promise<unknown>) =>
+        fn({ execute: jest.fn().mockResolvedValue(undefined), query: mockDb["query"] }),
+      ),
     };
 
     const module = await Test.createTestingModule({
@@ -134,6 +136,7 @@ describe("SubmissionsService.createSubmission", () => {
           execute: mockExecute,
           select: mockSelect,
           insert: mockInsert,
+          query: mockDb["query"],
         };
         return fn(tx);
       },
@@ -197,7 +200,7 @@ describe("SubmissionsService.createSubmission", () => {
 
     (mockDb as { transaction: jest.Mock }).transaction.mockImplementation(
       async (fn: (tx: unknown) => Promise<unknown>) => {
-        const tx = { execute: mockExecute, select: mockSelect, insert: mockInsert };
+        const tx = { execute: mockExecute, select: mockSelect, insert: mockInsert, query: mockDb["query"] };
         return fn(tx);
       },
     );
@@ -236,7 +239,7 @@ describe("SubmissionsService.createSubmission", () => {
 
     (mockDb as { transaction: jest.Mock }).transaction.mockImplementation(
       async (fn: (tx: unknown) => Promise<unknown>) => {
-        const tx = { execute: mockExecute, select: jest.fn(), insert: mockInsert };
+        const tx = { execute: mockExecute, select: jest.fn(), insert: mockInsert, query: mockDb["query"] };
         return fn(tx);
       },
     );
@@ -274,7 +277,7 @@ describe("SubmissionsService.createSubmission", () => {
 
     (mockDb as { transaction: jest.Mock }).transaction.mockImplementation(
       async (fn: (tx: unknown) => Promise<unknown>) => {
-        const tx = { execute: mockExecute, select: jest.fn(), insert: mockInsert };
+        const tx = { execute: mockExecute, select: jest.fn(), insert: mockInsert, query: mockDb["query"] };
         return fn(tx);
       },
     );
@@ -322,7 +325,7 @@ describe("SubmissionsService.createSubmission", () => {
 
     (mockDb as { transaction: jest.Mock }).transaction.mockImplementation(
       async (fn: (tx: unknown) => Promise<unknown>) => {
-        const tx = { execute: executeSpy, select: mockSelect, insert: mockInsert };
+        const tx = { execute: executeSpy, select: mockSelect, insert: mockInsert, query: mockDb["query"] };
         return fn(tx);
       },
     );
@@ -350,7 +353,7 @@ describe("SubmissionsService.createSubmission", () => {
 
     (mockDb as { transaction: jest.Mock }).transaction.mockImplementation(
       async (fn: (tx: unknown) => Promise<unknown>) => {
-        const tx = { execute: executeSpy, select: jest.fn(), insert: mockInsert };
+        const tx = { execute: executeSpy, select: jest.fn(), insert: mockInsert, query: mockDb["query"] };
         return fn(tx);
       },
     );
@@ -373,7 +376,9 @@ describe("SubmissionsService.updateSubmission", () => {
         projectForms: { findFirst: jest.fn() },
         formSubmissions: { findFirst: jest.fn() },
       },
-      transaction: jest.fn(),
+      transaction: jest.fn(async (fn: (tx: unknown) => Promise<unknown>) =>
+        fn({ execute: jest.fn().mockResolvedValue(undefined), query: mockDb["query"] }),
+      ),
     };
 
     const module = await Test.createTestingModule({
@@ -454,7 +459,9 @@ describe("SubmissionsService.submitPublicForm", () => {
         projectForms: { findFirst: jest.fn() },
         formSubmissions: { findFirst: jest.fn() },
       },
-      transaction: jest.fn(),
+      transaction: jest.fn(async (fn: (tx: unknown) => Promise<unknown>) =>
+        fn({ execute: jest.fn().mockResolvedValue(undefined), query: mockDb["query"] }),
+      ),
     };
 
     const module = await Test.createTestingModule({
@@ -507,7 +514,7 @@ describe("SubmissionsService.submitPublicForm", () => {
 
     (mockDb as { transaction: jest.Mock }).transaction.mockImplementation(
       async (fn: (tx: unknown) => Promise<unknown>) => {
-        const tx = { execute: mockExecute, select: jest.fn(), insert: mockInsert };
+        const tx = { execute: mockExecute, select: jest.fn(), insert: mockInsert, query: mockDb["query"] };
         return fn(tx);
       },
     );
@@ -545,7 +552,7 @@ describe("SubmissionsService.submitPublicForm", () => {
 
     (mockDb as { transaction: jest.Mock }).transaction.mockImplementation(
       async (fn: (tx: unknown) => Promise<unknown>) => {
-        const tx = { execute: mockExecute, select: jest.fn(), insert: mockInsert };
+        const tx = { execute: mockExecute, select: jest.fn(), insert: mockInsert, query: mockDb["query"] };
         return fn(tx);
       },
     );
@@ -572,7 +579,9 @@ describe("SubmissionsService.listSubmissions", () => {
         projectForms: { findFirst: jest.fn() },
         formSubmissions: { findFirst: jest.fn() },
       },
-      transaction: jest.fn(),
+      transaction: jest.fn(async (fn: (tx: unknown) => Promise<unknown>) =>
+        fn({ execute: jest.fn().mockResolvedValue(undefined), query: mockDb["query"] }),
+      ),
     };
 
     const module = await Test.createTestingModule({

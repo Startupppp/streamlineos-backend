@@ -12,13 +12,17 @@ describe("SubmissionsService — cross-tenant isolation", () => {
     const mockOrderBy = jest.fn().mockReturnValue({ limit: mockLimit });
     const mockWhere = jest.fn().mockReturnValue({ orderBy: mockOrderBy });
     const mockFrom = jest.fn().mockReturnValue({ where: mockWhere });
-    return {
-      query: {
-        projectForms: { findFirst: jest.fn().mockResolvedValue(formRow) },
-        formSubmissions: { findFirst: jest.fn().mockResolvedValue(submissionRow) },
-      },
+    const query = {
+      projectForms: { findFirst: jest.fn().mockResolvedValue(formRow) },
+      formSubmissions: { findFirst: jest.fn().mockResolvedValue(submissionRow) },
+    };
+    const db = {
+      query,
       select: jest.fn().mockReturnValue({ from: mockFrom }),
-    } as unknown as Db;
+      execute: jest.fn().mockResolvedValue(undefined),
+      transaction: jest.fn((callback: (tx: unknown) => Promise<unknown>) => callback(db)),
+    };
+    return db as unknown as Db;
   }
 
   it("throws NotFoundException for listSubmissions when form not in org (cross-tenant isolation)", async () => {
@@ -85,7 +89,15 @@ describe("SubmissionsService — cross-tenant isolation", () => {
       select: jest.fn(),
       insert: mockInsert,
       transaction: jest.fn().mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => {
-        const tx = { execute: jest.fn().mockResolvedValue(undefined), select: jest.fn(), insert: mockInsert };
+        const tx = {
+          execute: jest.fn().mockResolvedValue(undefined),
+          select: jest.fn(),
+          insert: mockInsert,
+          query: {
+            projectForms: { findFirst: jest.fn().mockResolvedValue(form) },
+            formSubmissions: { findFirst: jest.fn().mockResolvedValue(null) },
+          },
+        };
         return fn(tx);
       }),
     } as unknown as Db;

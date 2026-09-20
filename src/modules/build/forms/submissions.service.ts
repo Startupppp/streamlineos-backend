@@ -4,6 +4,7 @@ import { formSubmissions, projectForms, tickets } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { AuditService } from "../../../common/audit/audit.service";
+import { withPublicToken } from "../../../common/tenant/with-public-token";
 import type { CreateSubmissionInput, ListSubmissionsQuery, UpdateSubmissionInput } from "./dto/forms.schemas";
 import { allocateTicketNumbers } from "../core/lib/allocate-ticket-number";
 import { reserveTicketCapacity } from "../core/build-ticket-capacity";
@@ -39,13 +40,15 @@ export class SubmissionsService {
   }
 
   private async loadPublicForm(publicToken: string): Promise<FormRow> {
-    const row = await this.db.query.projectForms.findFirst({
-      where: and(
-        eq(projectForms.publicToken, publicToken),
-        eq(projectForms.isPublic, true),
-        isNull(projectForms.deletedAt),
-      ),
-    });
+    const row = await withPublicToken(this.db, publicToken, (tx) =>
+      tx.query.projectForms.findFirst({
+        where: and(
+          eq(projectForms.publicToken, publicToken),
+          eq(projectForms.isPublic, true),
+          isNull(projectForms.deletedAt),
+        ),
+      }),
+    );
     if (!row) throw new NotFoundException("Form not found");
     if (!row.isActive) throw new BadRequestException("Form is not active");
     return row;

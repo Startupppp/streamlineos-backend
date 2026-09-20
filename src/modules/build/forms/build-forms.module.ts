@@ -7,5 +7,6 @@ import { SubmissionsService } from "./submissions.service";
 @Module({
   controllers: [FormsController, SubmissionsController],
   providers: [FormsService, SubmissionsService],
+  exports: [SubmissionsService],
 })
 export class BuildFormsModule {}
