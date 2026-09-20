@@ -87,7 +87,7 @@ export class ProjectsAnalyticsService {
         .select({
           cycleId: cycles.id,
           cycleName: cycles.name,
-          completedPoints: sql<number>`COALESCE(SUM(CASE WHEN ${tickets.status} = 'DONE' THEN COALESCE(${tickets.storyPoints}, ${tickets.estimate}, 0) ELSE 0 END), 0)`,
+          completedPoints: sql<number>`COALESCE(SUM(CASE WHEN ${tickets.status} = 'DONE' THEN COALESCE(${tickets.storyPoints}, ${tickets.estimate}, 0) ELSE 0 END), 0)`.mapWith(Number),
         })
         .from(cycles)
         .leftJoin(tickets, and(eq(tickets.cycleId, cycles.id), eq(tickets.orgId, orgId), isNull(tickets.deletedAt)))
@@ -99,7 +99,7 @@ export class ProjectsAnalyticsService {
           ticketId: tickets.id,
           title: tickets.title,
           estimated: tickets.originalEstimate,
-          actual: sql<number>`COALESCE(SUM(${timesheets.hours}), 0)`,
+          actual: sql<number>`COALESCE(SUM(${timesheets.hours}), 0)`.mapWith(Number),
         })
         .from(tickets)
         .leftJoin(timesheets, eq(timesheets.ticketId, tickets.id))
@@ -188,7 +188,7 @@ export class ProjectsAnalyticsService {
       this.db
         .select({
           projectId: cycles.projectId,
-          completedPoints: sql<number>`COALESCE(SUM(CASE WHEN ${tickets.status} = 'DONE' THEN COALESCE(${tickets.storyPoints}, ${tickets.estimate}, 0) ELSE 0 END), 0)`,
+          completedPoints: sql<number>`COALESCE(SUM(CASE WHEN ${tickets.status} = 'DONE' THEN COALESCE(${tickets.storyPoints}, ${tickets.estimate}, 0) ELSE 0 END), 0)`.mapWith(Number),
         })
         .from(cycles)
         .leftJoin(tickets, and(eq(tickets.cycleId, cycles.id), eq(tickets.orgId, orgId), isNull(tickets.deletedAt)))
