@@ -475,7 +475,11 @@ export class JournalOutboxService {
 
   private async requireBatch(orgId: string, batchId: number) {
     const rows = await this.db
-      .select()
+      .select({
+        ...journalBatchSummarySelection,
+        entityId: payrollJournalBatches.entityId,
+        sourceHash: payrollJournalBatches.sourceHash,
+      })
       .from(payrollJournalBatches)
       .where(
         and(eq(payrollJournalBatches.orgId, orgId), eq(payrollJournalBatches.id, batchId)),
