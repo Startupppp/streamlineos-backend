@@ -42,6 +42,7 @@ describe("PermissionCatalogSyncService.sync — administering module column", ()
       await import("./permission-catalog-sync.service");
     const { RoleGrantReconcilerService } =
       await import("./role-grant-reconciler.service");
+    const { CronLeaseService } = await import("../cron/cron-lease.service");
     let inserted: Array<Record<string, unknown>> = [];
     let conflictSet: Record<string, unknown> = {};
 
@@ -76,6 +77,7 @@ describe("PermissionCatalogSyncService.sync — administering module column", ()
     const service = new PermissionCatalogSyncService(
       db as never,
       new RoleGrantReconcilerService(db as never),
+      new CronLeaseService(null),
     );
     await service.sync().catch(() => undefined);
     return { inserted, conflictSet };
