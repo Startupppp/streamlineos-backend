@@ -69,6 +69,7 @@ export class CyclesService {
   }
 
   async createCycle(orgId: string, userId: string, projectId: number, input: CreateCycleInput) {
+    await assertProjectInOrg(this.db, orgId, projectId);
     const overlapping = await this.db
       .select({ id: cycles.id })
       .from(cycles)

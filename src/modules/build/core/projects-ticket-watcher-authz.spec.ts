@@ -129,3 +129,42 @@ describe("ProjectsTicketSubresourcesService — addWatcher bite proof", () => {
     ).rejects.toThrow(NotFoundException);
   });
 });
+
+describe("ProjectsTicketSubresourcesService — removeWatcher", () => {
+  function makeRemoveDb(opts: { ticket: object | null; member: { id: number } | null }) {
+    const selectChain = {
+      from: jest.fn(),
+      where: jest.fn(),
+      limit: jest.fn().mockResolvedValue(opts.member ? [opts.member] : []),
+    };
+    selectChain.from.mockReturnValue(selectChain);
+    selectChain.where.mockReturnValue(selectChain);
+    const deleteChain = { where: jest.fn().mockResolvedValue([]) };
+    return {
+      query: {
+        tickets: { findFirst: jest.fn().mockResolvedValue(opts.ticket) },
+        ticketWatchers: { findMany: jest.fn().mockResolvedValue([]) },
+      },
+      select: jest.fn().mockReturnValue(selectChain),
+      delete: jest.fn().mockReturnValue(deleteChain),
+    } as unknown as Db;
+  }
+
+  it("throws NotFoundException for a ticket not in the caller's org, rather than silently deleting from another tenant", async () => {
+    const db = makeRemoveDb({ ticket: null, member: { id: 42 } });
+    await expect(makeSvc(db).removeWatcher(makeUser("org-attacker"), 99)).rejects.toThrow(NotFoundException);
+  });
+
+  it("succeeds when the ticket is in the caller's org", async () => {
+    const db = makeRemoveDb({ ticket: { id: 7 }, member: { id: 42 } });
+    const result = await makeSvc(db).removeWatcher(makeUser(), 7);
+    expect(result).toEqual({ success: true });
+  });
+
+  it("succeeds when the caller has no membership row, without touching the delete path", async () => {
+    const db = makeRemoveDb({ ticket: { id: 7 }, member: null });
+    const result = await makeSvc(db).removeWatcher(makeUser(), 7);
+    expect(result).toEqual({ success: true });
+    expect(db.delete).not.toHaveBeenCalled();
+  });
+});

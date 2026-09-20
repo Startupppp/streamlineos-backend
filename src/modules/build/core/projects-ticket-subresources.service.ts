@@ -346,6 +346,7 @@ export class ProjectsTicketSubresourcesService {
   }
 
   async removeWatcher(u: CurrentUserContext, ticketId: number) {
+    await this.requireTicket(u.orgId, ticketId);
     const [member] = await this.db
       .select({ id: organizationMembers.id })
       .from(organizationMembers)
@@ -361,6 +362,7 @@ export class ProjectsTicketSubresourcesService {
       .delete(ticketWatchers)
       .where(
         and(
+          eq(ticketWatchers.orgId, u.orgId),
           eq(ticketWatchers.ticketId, ticketId),
           eq(ticketWatchers.membershipId, member.id),
         ),

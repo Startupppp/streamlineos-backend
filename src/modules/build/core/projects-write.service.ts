@@ -59,9 +59,7 @@ export class ProjectsWriteService {
           columns: { managerMembershipId: true },
         });
         if (!project) {
-          throw new ForbiddenException(
-            "Only project managers or admins can update project settings.",
-          );
+          throw new NotFoundException("Project not found");
         }
         const callerMembershipId = u.principal.kind === "human-session" || u.principal.kind === "personal-token"
           ? u.principal.membershipId
