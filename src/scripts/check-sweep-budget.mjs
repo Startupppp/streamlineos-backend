@@ -7,27 +7,8 @@ const __dirname = fileURLToPath(new URL(".", import.meta.url));
 const ROOT = resolve(__dirname, "../..");
 const SRC = join(ROOT, "src");
 
-/*
-  `forEachOrg` opens one tenant transaction per organisation, sequentially, and
-  the pool is 10. A periodic sweep with no budget borrows a connection for every
-  tenant on every tick, competing with live traffic for the same slots.
-
-  It already exposes `stopWhen`, consulted BEFORE each transaction is opened, and
-  `startAfterOrgId` to resume where the budget ran out. Today no periodic sweep
-  uses either.
-
-  This does NOT claim the frozen sweeps are safe. It is a ceiling: the count may
-  fall, never rise. Lowering it is per-caller work, because a budget without a
-  durable cursor is worse than none — a truncated sweep restarts from the first
-  organisation next tick and the tail is never reached.
-*/
 const BUDGET = "stopWhen";
 const SWEEP = "forEachOrg";
-/*
-  A call, not a mention. `calendar-reminder-sweep.schemas.ts` names the sweep in
-  prose and opens no transaction; counting it would inflate the ceiling with
-  files that can never be fixed.
-*/
 const SWEEP_CALL = /\bforEachOrg\s*(?:<[^>]*>)?\s*\(/;
 
 const PERIODIC = /[\\/]cron[\\/]|worker|relay|sweep|retention|reconcil/i;

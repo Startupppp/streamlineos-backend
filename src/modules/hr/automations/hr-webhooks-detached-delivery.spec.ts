@@ -1,24 +1,3 @@
-/**
- * `testSubscription` and `redeliver` fire their HTTP delivery without awaiting
- * it, so the handler returns and `TenantContextInterceptor` commits the request
- * transaction while `fetch` is still in flight.
- *
- * The continuation then ran `this.db.update(hrWebhookDeliveries)`. `this.db` is
- * the tenant-aware proxy (`common/tenant/tenant-db.ts:16`), and the async-local
- * context survives into the continuation — so that update resolved onto the
- * request's `tx` object after its transaction had committed and its connection
- * had gone back to the pool. `hr_webhook_deliveries` carries no RLS policy, so
- * this never produced the `42501` that makes the same mistake loud elsewhere:
- * it either threw into a `void`, or issued a statement on a pooled connection
- * another request had since borrowed.
- *
- * Either way the delivery row was never stamped, so a webhook that really was
- * delivered sat at `pending` until the retry sweep sent it a second time.
- *
- * The fix is the pattern `webhooks-dispatch.service.ts:61-66` already
- * documents: leave the tenant context before detaching, and let the status
- * write open a transaction of its own once the round trip is done.
- */
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 

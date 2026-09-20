@@ -8,13 +8,6 @@ export const OPT_OUT = /^\s*@NoTenantTransaction\s*\(/;
 export const PUBLIC_ROUTE = /^\s*@Public\s*\(/;
 
 const HANDLER = /^\s*(?:public\s+|private\s+|protected\s+)?(?:async\s+)?([A-Za-z_$][\w$]*)\s*\(/;
-/*
-  `outbox: Pick<EmailOutboxService, "enqueueAndTry">` names its owner INSIDE the
-  type argument. Capturing only the outer name yields `Pick`, which is in no
-  class index, so the walk stopped dead one hop short of the provider call — the
-  two automation rule-test routes reach `sendEmailOnceDirect` through exactly
-  this shape and read as clean because of it.
-*/
 const TYPE_WRAPPERS = new Set(["Pick", "Omit", "Partial", "Readonly", "Required", "Promise"]);
 const CONSTRUCTOR_PARAM =
   /(?:private|public|protected|readonly)\s+(?:readonly\s+)?([A-Za-z_$][\w$]*)\s*:\s*([A-Za-z_$][\w$]*)(?:\s*<\s*([A-Za-z_$][\w$]*))?/;
@@ -145,19 +138,6 @@ export function findRoutes(source, options) {
   let pendingOther = false;
   let pendingOptOut = false;
   let pendingPublic = false;
-  /*
-    A decorator's argument list can span lines:
-
-      @UseInterceptors(
-        FileInterceptor("file", { limits: … }),
-      )
-      resumeParse(…)
-
-    Without tracking depth, `FileInterceptor(` matches the handler pattern, so the
-    scan names the interceptor as the route AND consumes the pending decorators —
-    the real handler is then never collected at all. That is a false name and a
-    missing route from one bug.
-  */
   let decoratorDepth = 0;
 
   for (let i = 0; i < lines.length; i++) {
@@ -219,12 +199,6 @@ export function findRoutes(source, options) {
   return routes;
 }
 
-/*
-  The declared types of a function's own parameters, so a call on a receiver
-  that arrived as an argument can still be resolved. `fetchGmailMessages(gmail:
-  GmailMailProvider, …)` reaches the network through `gmail.listMessages(…)`,
-  which no amount of `this.`-following will ever see.
-*/
 export function parameterTypes(signature) {
   const map = new Map();
   for (const match of signature.matchAll(
@@ -287,13 +261,6 @@ export function buildClassIndex(files) {
   return index;
 }
 
-/*
-  Exported free functions, by name. A service that reaches the network through a
-  helper — `fetchGmailMessages(this.gmail, …)` — is invisible to a scan that only
-  follows `this.<prop>.<method>()`, because the receiver is an argument rather
-  than an injected property. Indexing the functions themselves is what lets the
-  walk cross that hop.
-*/
 export function buildFunctionIndex(files) {
   const index = new Map();
   for (const file of files) {

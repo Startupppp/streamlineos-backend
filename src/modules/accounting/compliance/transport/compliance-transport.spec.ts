@@ -246,12 +246,6 @@ describe("the submit path is reachable", () => {
     expect(service).toContain("postDocumentInTx(");
     expect(posting).toContain("recordForDocument");
     expect(pieces).toContain("ar-document-posting.ts");
-
-    /*
-      Named against the live entry point. A negative scan for a method that no
-      longer exists passes whatever posting does, so the name below is asserted
-      to be real before it is asserted to be absent.
-    */
     const FILING_ENTRY_POINT = "fileDocument";
     const complianceService = readFileSync(join(__dirname, "../compliance.service.ts"), "utf8");
     expect(complianceService).toContain(`async ${FILING_ENTRY_POINT}(`);

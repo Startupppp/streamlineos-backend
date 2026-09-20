@@ -1,19 +1,3 @@
-/**
- * An LLM call inside the request's tenant transaction pins a pooled connection
- * for the whole round trip — 30s on the fast tier, 60s on standard — and the
- * pool is 10 on RDS. Six routes did that until this change.
- *
- * The gate that should have caught them could not: the provider is reached
- * through `ChatOpenAI` (`@langchain/openai`), not `fetch` or `axios`, so
- * nothing in `check-request-txn-outbound`'s OUTBOUND pattern matches an AI
- * call. These routes were found by widening that pattern by hand and verifying
- * every hop, which is why the pairing is pinned here instead.
- *
- * Both halves are load-bearing and neither is safe alone. Without the
- * decorator the service's own transactions open a SECOND connection while the
- * request still holds the first. Without the service change the handler runs
- * with no ambient context and the next `this.db` call has no tenant GUC.
- */
 import { NO_TENANT_TRANSACTION } from "../../../../common/tenant/no-tenant-transaction.decorator";
 import { InvAiExplainController } from "../../../inventory/ai/inv-ai-explain.controller";
 import { KbFromTicketController } from "../../../kb/help-centre/kb-from-ticket.controller";
@@ -49,13 +33,6 @@ describe("a route that awaits an LLM does not hold a pooled connection across it
   it("ANTI-VACUITY: a route beside them that reaches no provider is NOT opted out", () => {
     expect(optedOut(InvAiExplainController, "getOpsBrief")).toBe(false);
     expect(optedOut(InvAiExplainController, "confirmReorderProposal")).toBe(false);
-    /*
-      getReorderProposal reaches an LLM and is deliberately NOT opted out.
-      inv-ai-proposal.spec.ts pins that InvAiProposalService injects no DRIZZLE
-      and imports no schema table, so there is no handle a write could be issued
-      on. Splitting its read phase would need that handle, so the hold stays
-      until the read moves into a service that already owns one.
-    */
     expect(optedOut(InvAiExplainController, "getReorderProposal")).toBe(false);
   });
 });

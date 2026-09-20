@@ -24,17 +24,6 @@ const MODULES = join(SRC, "modules");
 const OUTBOUND =
   /(?<![.\w])fetch\s*\(|(?<![.\w])postSafeWebhook\s*\(|(?<![.\w])callProvider\s*\(|(?<![.\w])outboundRequest\s*\(|\baxios\s*\.\s*(?:get|post|put|patch|delete|request)\s*\(|\bsendEmailOnceDirect\s*\(/;
 
-/*
-  The LLM leaves the process through `ChatOpenAI` (`@langchain/openai`), not
-  `fetch` or `axios`, so none of the patterns above can see an AI call — every
-  route awaiting a 30-60s provider round trip inside the request transaction was
-  invisible here until this was added.
-
-  These are counted against a CEILING rather than a frozen list, because a
-  frozen entry is supposed to carry the decision that put it there and 24 of
-  these have not been read hop by hop yet. A ceiling claims only what is true:
-  the number may fall, never rise.
-*/
 const AI_OUTBOUND = /\binvoke(?:Text|Structured|Chat)[A-Za-z]*\s*\(/;
 const AI_CEILING = 24;
 
@@ -42,12 +31,6 @@ const MAX_HOPS = 6;
 const MIN_CONTROLLERS = 200;
 const MIN_ROUTES = 1500;
 
-/*
-  Each entry carries the decision that put it here. A bare list turns into a
-  place to drop a route nobody wanted to think about; a reason has to be written
-  by someone who looked. "HOLDS" means the connection really is held and the
-  cost was accepted or deferred — those are work, not settled.
-*/
 const FROZEN = new Map([
   [
     "modules/automation/automation.controller.ts#testAutomation",
@@ -83,15 +66,6 @@ const FROZEN = new Map([
   ],
 ]);
 
-/*
-  Work that has left the request. `registerAfterCommit` runs its hook in a fresh
-  transaction once this one has committed, `runOutsideTenantContext` exits the
-  async-local context so the continuation cannot inherit the request's tx, and a
-  `void`-ed call is not awaited at all. In none of those does the outbound call
-  happen while the connection is still borrowed — so a scan that counted them
-  reported a hold that does not exist. Measured: without this, four of the
-  e-sign and leads routes read as holds and were provably not.
-*/
 const DETACHERS = ["registerAfterCommit", "runOutsideTenantContext", "drainAfterCommitHooks"];
 const stripDetachers = DETACHERS.map((name) => makeStripEscapedRegions(name));
 const VOIDED = /\bvoid\s+[^;]*;/g;
@@ -142,10 +116,6 @@ function scan() {
       routes++;
       const where = { types, source, file };
       if (!reachesAny(route.body, classIndex, where, 0, new Set())) continue;
-      /*
-        Re-walked with the non-AI predicate only, so a route reaching both is
-        reported where the stricter rule applies rather than counted twice.
-      */
       if (reaches(route.body, classIndex, where, 0, new Set()))
         holding.push(`${rel}#${route.handler}`);
       else aiHolding.push(`${rel}#${route.handler}`);
@@ -238,18 +208,9 @@ export class StreamController {
         `which also drops the real route from the scan`,
     );
 
-  /*
-    The two resolution paths that exist for receivers the `this.<prop>` walk
-    cannot see. Both found nothing on the current tree, so without these they
-    would be machinery nobody had ever watched work.
-  */
   if (parameterTypes("(gmail: GmailMailProvider, userId: string)").get("gmail") !== "GmailMailProvider")
     failures.push("a declared parameter type was not resolved");
 
-  /*
-    The three findings this gate reported wrongly before, each pinned to the
-    construct that caused it.
-  */
   if (
     injectedTypes('constructor(\n  private readonly outbox: Pick<EmailOutboxService, "enqueueAndTry">,\n) {}').get(
       "outbox",

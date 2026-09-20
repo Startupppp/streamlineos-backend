@@ -1,23 +1,3 @@
-/**
- * Filing an e-invoice reaches a government IRP with a 15s budget
- * (`live-irp.adapter.ts`). `TenantContextInterceptor` wraps every authenticated
- * request in one Postgres transaction held for the request's whole lifetime,
- * and the pool is 10 on RDS — so before this change a single filing pinned a
- * tenth of an instance's concurrency for the length of a government outage,
- * idle in transaction, where `statement_timeout` cannot reach it.
- *
- * The opt-out alone would have been worse than the hold. `gl_books` and
- * `gl_document_compliance` are both RLS-enabled
- * (`0591_tenant_isolation_for_unprotected_tables.sql:742,768`) and
- * `app.current_org_id()` RAISES `42501` when the GUC is unset, so a handler
- * that merely dropped the request transaction would have failed every filing on
- * its first statement.
- *
- * These run the REAL `runInNewTenantTransaction` against a recording double, so
- * they read the property that matters rather than asserting the shape of the
- * code: every statement runs inside a transaction that set
- * `app.organization_id` first, and the adapter round trip runs inside none.
- */
 import { NO_TENANT_TRANSACTION } from "../../../common/tenant/no-tenant-transaction.decorator";
 import { getTenantContext } from "../../../common/tenant/tenant-context";
 import { primeRelocationTrafficTracker } from "../../../common/relocation/relocation-traffic-tracker";
