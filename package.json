@@ -440,7 +440,9 @@
     "check:get-route-writes": "node src/scripts/check-get-route-writes.mjs",
     "check:get-route-writes:self-test": "node src/scripts/check-get-route-writes.mjs --self-test",
     "check:request-txn-outbound": "node src/scripts/check-request-txn-outbound.mjs",
-    "check:request-txn-outbound:self-test": "node src/scripts/check-request-txn-outbound.mjs --self-test"
+    "check:request-txn-outbound:self-test": "node src/scripts/check-request-txn-outbound.mjs --self-test",
+    "check:sweep-budget": "node src/scripts/check-sweep-budget.mjs",
+    "check:sweep-budget:self-test": "node src/scripts/check-sweep-budget.mjs --self-test"
   },
   "dependencies": {
     "@ai-sdk/google": "^4.0.33",
