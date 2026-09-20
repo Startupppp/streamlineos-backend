@@ -228,6 +228,7 @@ export class ChatAssistantController {
       actor: u,
       db: this.db,
       moduleRef: this.moduleRef,
+      proposalId,
     });
 
     await this.confirmation.markExecuted(proposalId, result, u.orgId);

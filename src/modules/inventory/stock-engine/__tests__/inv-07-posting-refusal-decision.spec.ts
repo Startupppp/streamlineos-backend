@@ -1,10 +1,28 @@
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
+import { readdirSync, readFileSync, statSync } from "node:fs";
+import { join, relative, sep } from "node:path";
 import { isCoreModuleKey } from "../../../../common/rbac/module-registry";
 import { AdapterRejection } from "../../../accounting/adapters/posting-command.types";
 
 const repoSrc = join(__dirname, "..", "..", "..", "..");
 const read = (...parts: string[]) => readFileSync(join(repoSrc, ...parts), "utf8");
+
+function provisioningCallers(): string[] {
+  const found: string[] = [];
+  const walk = (dir: string): void => {
+    for (const entry of readdirSync(dir)) {
+      const path = join(dir, entry);
+      if (statSync(path).isDirectory()) {
+        walk(path);
+        continue;
+      }
+      if (!path.endsWith(".ts") || /\.(spec|e2e-spec)\.ts$/.test(path)) continue;
+      if (!/\bprovisionOrgModules\s*\(/.test(readFileSync(path, "utf8"))) continue;
+      found.push(relative(repoSrc, path).split(sep).join("/"));
+    }
+  };
+  walk(join(repoSrc, "modules"));
+  return found.sort();
+}
 
 /**
  * INV-07 — the decision, and the facts it rests on, as they stand on the
@@ -100,12 +118,10 @@ describe("INV-07 — inventory posting with an unmapped role", () => {
       expect(provision).toContain("insert(orgModules)");
       expect(provision).not.toContain("setModuleEnabled");
 
-      for (const parts of [
-        ["modules", "organization", "setup", "org-setup.service.ts"],
-        ["modules", "auth", "auth.service.ts"],
-      ]) {
-        expect(read(...parts)).toContain("provisionOrgModules");
-      }
+      expect(provisioningCallers()).toEqual([
+        "modules/organization/core/bootstrap-cell-organization.ts",
+        "modules/organization/setup/org-setup.service.ts",
+      ]);
     });
   });
 });

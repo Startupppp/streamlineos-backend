@@ -3,6 +3,7 @@ import { findConfirmableAction } from ".";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
 import type { Db } from "../../../../db/drizzle.module";
 import type { MailComposeService } from "../../../mail/mail-compose.service";
+import { ExternalEffectLedger } from "../../../../common/outbox/external-effect-ledger";
 
 const mockActor: CurrentUserContext = {
   userId: "user-1",
@@ -14,9 +15,18 @@ const mockActor: CurrentUserContext = {
   principal: { kind: "human-session", membershipId: 42, isOrgOwner: false },
 };
 
+const passThroughLedger = {
+  execute: async (_effect: unknown, send: () => Promise<void>) => {
+    await send();
+    return "EXECUTED" as const;
+  },
+};
+
 function makeModuleRef(compose: Partial<MailComposeService>): ModuleRef {
   return {
-    get: jest.fn().mockReturnValue(compose),
+    get: jest.fn((token: unknown) =>
+      token === ExternalEffectLedger ? passThroughLedger : compose,
+    ),
   } as unknown as ModuleRef;
 }
 

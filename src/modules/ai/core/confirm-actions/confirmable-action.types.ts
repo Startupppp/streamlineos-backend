@@ -3,11 +3,16 @@ import type { ModuleRef } from "@nestjs/core";
 import type { Db } from "../../../../db/drizzle.module";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
 import { isRecord } from "../../../../common/types/is-record";
+import {
+  ExternalEffectLedger,
+  type ProviderIdempotencyGuarantee,
+} from "../../../../common/outbox/external-effect-ledger";
 
 export interface ConfirmableActionContext {
   actor: CurrentUserContext;
   db: Db;
   moduleRef: ModuleRef;
+  proposalId: number;
 }
 
 export interface ConfirmableActionOutcome {
@@ -15,10 +20,16 @@ export interface ConfirmableActionOutcome {
   summary: string;
 }
 
+export interface ExternalEffectDeclaration {
+  effectType: string;
+  providerIdempotency: ProviderIdempotencyGuarantee;
+}
+
 export interface ConfirmableActionSpec<TPayload extends z.ZodTypeAny, TServices> {
   action: string;
   permission: string;
   payload: TPayload;
+  external?: ExternalEffectDeclaration;
   resolve: (moduleRef: ModuleRef) => TServices;
   execute: (
     payload: z.infer<TPayload>,
@@ -27,10 +38,15 @@ export interface ConfirmableActionSpec<TPayload extends z.ZodTypeAny, TServices>
   ) => Promise<ConfirmableActionOutcome>;
 }
 
+export function externalEffectKeyFor(action: string, proposalId: number): string {
+  return `ai-proposal:${proposalId}:${action}`;
+}
+
 export interface ConfirmableActionDefinition<TPayload extends z.ZodTypeAny = z.ZodTypeAny> {
   action: string;
   permission: string;
   payload: TPayload;
+  external?: ExternalEffectDeclaration;
   propose: (input: unknown) => z.infer<TPayload>;
   resolve: (moduleRef: ModuleRef) => unknown;
   execute: (
@@ -62,8 +78,38 @@ export function defineConfirmableAction<TPayload extends z.ZodTypeAny, TServices
         );
       return parsed;
     },
+    external: spec.external,
     resolve: spec.resolve,
-    execute: (payload, ctx) => spec.execute(payload, ctx, spec.resolve(ctx.moduleRef)),
+    execute: async (payload, ctx) => {
+      const services = spec.resolve(ctx.moduleRef);
+      const external = spec.external;
+      if (external === undefined) return spec.execute(payload, ctx, services);
+
+      const ledger = ctx.moduleRef.get(ExternalEffectLedger, { strict: false });
+      const effectKey = externalEffectKeyFor(spec.action, ctx.proposalId);
+      let outcome: ConfirmableActionOutcome | undefined;
+
+      const state = await ledger.execute(
+        {
+          organizationId: ctx.actor.orgId,
+          producerEventId: `ai-proposal:${ctx.proposalId}`,
+          effectKey,
+          effectType: external.effectType,
+          providerIdempotency: external.providerIdempotency,
+        },
+        async () => {
+          outcome = await spec.execute(payload, ctx, services);
+        },
+      );
+
+      if (outcome !== undefined) return outcome;
+      if (state === "ALREADY_SUCCEEDED")
+        return {
+          result: { alreadyDelivered: true },
+          summary: `Already delivered — ${spec.action} ran for this confirmation before.`,
+        };
+      throw new Error(`Confirmable action "${spec.action}" produced no outcome`);
+    },
   };
 }
 

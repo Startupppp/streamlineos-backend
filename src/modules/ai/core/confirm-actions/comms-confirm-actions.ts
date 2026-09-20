@@ -69,6 +69,7 @@ export const COMMS_CONFIRM_ACTIONS = [
     action: "mail.send",
     permission: "mail:messages:send",
     payload: mailSendPayloadSchema,
+    external: { effectType: "ai.mail.send", providerIdempotency: "NONE" },
     resolve: (moduleRef) => ({
       accounts: moduleRef.get(MailAccountsService, { strict: false }),
       compose: moduleRef.get(MailComposeService, { strict: false }),
@@ -91,6 +92,7 @@ export const COMMS_CONFIRM_ACTIONS = [
     action: "mail.reply",
     permission: "mail:messages:send",
     payload: mailReplyPayloadSchema,
+    external: { effectType: "ai.mail.reply", providerIdempotency: "NONE" },
     resolve: (moduleRef) => ({
       accounts: moduleRef.get(MailAccountsService, { strict: false }),
       compose: moduleRef.get(MailComposeService, { strict: false }),
@@ -117,6 +119,7 @@ export const COMMS_CONFIRM_ACTIONS = [
     action: "mail.archive",
     permission: "mail:messages:manage",
     payload: mailArchivePayloadSchema,
+    external: { effectType: "ai.mail.archive", providerIdempotency: "PROVIDER_ENFORCED" },
     resolve: (moduleRef) => moduleRef.get(MailComposeService, { strict: false }),
     execute: async ({ accountId, messageId, threadId }, { actor }, compose) => {
       await compose.performAction(
