@@ -23,6 +23,7 @@ import { resolveAssigneeId } from "./tickets-helpers";
 import { allocateTicketNumbers } from "./lib/allocate-ticket-number";
 import { reserveTicketCapacity } from "./build-ticket-capacity";
 import { CacheService } from "../../../common/cache/cache.service";
+import { buildTicketHref, buildTicketKey } from "./build-app-paths";
 
 const EXPORT_ROW_CAP = 5_000;
 
@@ -246,10 +247,8 @@ export class ProjectsTicketsTransferService {
         .where(and(eq(projects.id, ticketData.projectId), eq(projects.orgId, orgId), isNull(projects.deletedAt)))
         .limit(1);
 
-      ticketKey = projectRow?.key
-        ? `${projectRow.key}-${ticketData.ticketNumber}`
-        : String(ticketData.ticketNumber);
-      ticketLink = `/projects/${ticketData.projectId}/tickets/${encodeURIComponent(ticketKey)}`;
+      ticketKey = buildTicketKey(projectRow?.key, ticketData.ticketNumber);
+      ticketLink = buildTicketHref(ticketData.projectId, ticketKey);
     }
 
     // REG-004: see projects-tickets-create.service.ts — one engine emit for the

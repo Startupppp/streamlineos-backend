@@ -26,7 +26,11 @@ describe("KbImportExportService — cross-tenant isolation", () => {
             where: jest.fn().mockImplementation((w: unknown) => {
               wheres.push(w);
               return Object.assign(Promise.resolve([]), {
-                orderBy: jest.fn().mockReturnValue(Object.assign(Promise.resolve([]), { limit: jest.fn().mockResolvedValue([]) })),
+                orderBy: jest.fn().mockReturnValue(
+                  Object.assign(Promise.resolve([]), {
+                    limit: jest.fn().mockResolvedValue([]),
+                  }),
+                ),
               });
             }),
           }),

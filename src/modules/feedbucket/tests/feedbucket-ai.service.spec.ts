@@ -1,7 +1,7 @@
 jest.mock("../../email/app-url", () => ({ appUrl: "https://test.example.com" }));
 jest.mock("../../build/core/projects-tickets.service");
 
-import { ConflictException, ForbiddenException, HttpException, NotFoundException, ServiceUnavailableException } from "@nestjs/common";
+import { ConflictException, HttpException, NotFoundException, ServiceUnavailableException } from "@nestjs/common";
 import { InsufficientAiCreditsException } from "../../../common/http/api-exceptions";
 import { FeedbucketAiService } from "../feedbucket-ai.service";
 import type { Db } from "../../../db/drizzle.module";
@@ -111,7 +111,7 @@ function makeUser(orgId = ORG_A) {
   };
 }
 
-function makeDb(submission: unknown, updateResult?: unknown): Db {
+function makeDb(submission: unknown, updateResult?: unknown, projectFound = true): Db {
   const updateChain = {
     set: jest.fn().mockReturnThis(),
     where: jest.fn().mockResolvedValue(updateResult ?? []),
@@ -120,6 +120,9 @@ function makeDb(submission: unknown, updateResult?: unknown): Db {
     query: {
       feedbucketSubmissions: {
         findFirst: jest.fn().mockResolvedValue(submission),
+      },
+      projects: {
+        findFirst: jest.fn().mockResolvedValue(projectFound ? { id: 99 } : undefined),
       },
     },
     update: jest.fn().mockReturnValue(updateChain),
@@ -157,11 +160,16 @@ function makePlanLimits(): jest.Mocked<PlanLimitsService> {
 function buildService(opts: {
   submission?: unknown;
   notFound?: boolean;
+  projectFound?: boolean;
   gateway?: ReturnType<typeof makeGateway>;
   rateLimit?: jest.Mocked<RateLimitService>;
   tickets?: jest.Mocked<ProjectsTicketsService>;
 }) {
-  const db = makeDb(opts.notFound ? undefined : (opts.submission ?? makeSubmission()));
+  const db = makeDb(
+    opts.notFound ? undefined : (opts.submission ?? makeSubmission()),
+    undefined,
+    opts.projectFound ?? true,
+  );
   const gateway = opts.gateway ?? makeGateway();
   const audit = makeAudit();
   const rateLimiter = opts.rateLimit ?? makeRateLimit();
@@ -290,12 +298,10 @@ describe("FeedbucketAiService", () => {
       await expect(service.analyze(makeUser(ORG_B), SUB_ID)).rejects.toBeInstanceOf(NotFoundException);
     });
 
-    it("throws ForbiddenException when project belongs to a different org", async () => {
-      const foreignProjectWidget = { ...baseWidget, project: { id: 99, orgId: ORG_B } };
-      const submission = makeSubmission({ widget: foreignProjectWidget });
-      const { service } = buildService({ submission });
+    it("throws NotFoundException when the resolved project does not belong to this org (cross-tenant returns 404, never 403)", async () => {
+      const { service } = buildService({ projectFound: false });
 
-      await expect(service.analyze(makeUser(ORG_A), SUB_ID)).rejects.toBeInstanceOf(ForbiddenException);
+      await expect(service.analyze(makeUser(ORG_A), SUB_ID)).rejects.toBeInstanceOf(NotFoundException);
     });
   });
 

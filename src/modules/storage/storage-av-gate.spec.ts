@@ -1,5 +1,6 @@
 import { BadRequestException, PayloadTooLargeException, ServiceUnavailableException, UnprocessableEntityException } from "@nestjs/common";
 import { StorageController } from "./storage.controller";
+import { OnboardingDocumentsController } from "./storage-onboarding.controller";
 import type { StorageService } from "./storage.service";
 import type { AuditService } from "../../common/audit/audit.service";
 import type { AccessService } from "../access/access.service";
@@ -7,6 +8,7 @@ import type { AvScanner } from "../../common/security/av-scan";
 import { MediaTransformRunner } from "./media-transform.runner";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../common/auth/principal";
+import { NO_TENANT_TRANSACTION } from "../../common/tenant/no-tenant-transaction.decorator";
 
 function buildTenantDb() {
   const tx = { query: {}, execute: jest.fn().mockResolvedValue([]) };
@@ -216,5 +218,27 @@ describe("StorageController — malware scan gate", () => {
       BadRequestException,
     );
     expect(mockScanner.scan).not.toHaveBeenCalled();
+  });
+});
+
+describe("AV scan upload handlers — @NoTenantTransaction prevents holding a pooled connection during scanning", () => {
+  it("StorageController.upload opts out of the ambient tenant transaction so a slow ClamAV scan (up to 35 s) does not hold one of the 15 pooled connections", () => {
+    const meta = Reflect.getMetadata(NO_TENANT_TRANSACTION, StorageController.prototype.upload);
+    expect(meta).toBe(true);
+  });
+
+  it("OnboardingDocumentsController.upload opts out of the ambient tenant transaction so a slow AV scan does not hold one of the 15 pooled connections", () => {
+    const meta = Reflect.getMetadata(NO_TENANT_TRANSACTION, OnboardingDocumentsController.prototype.upload);
+    expect(meta).toBe(true);
+  });
+
+  it("download opts out too, because opting one route out of a controller and leaving its siblings behind is what the tenant-optout ratchet fails on", () => {
+    const meta = Reflect.getMetadata(NO_TENANT_TRANSACTION, StorageController.prototype.download);
+    expect(meta).toBe(true);
+  });
+
+  it("image opts out too, so serving a file never holds a pooled connection across the object-store round trip", () => {
+    const meta = Reflect.getMetadata(NO_TENANT_TRANSACTION, StorageController.prototype.image);
+    expect(meta).toBe(true);
   });
 });

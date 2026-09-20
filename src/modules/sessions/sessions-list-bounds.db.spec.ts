@@ -32,7 +32,7 @@ import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 // eslint-disable-next-line no-restricted-imports -- namespace needed for the Db type; no CRM identity table is referenced here
 import * as schema from "../../db/schema";
-import { userSessions, users } from "../../db/schema";
+import { organizations, userSessions, users } from "../../db/schema";
 import { SESSION_LIST_CAP, SessionsService } from "./sessions.service";
 import { MeService } from "../../me/me.service";
 import { EmploymentFactsService } from "../../modules/directory/employment-facts.service";
@@ -54,6 +54,7 @@ describe("SessionsService.list — expiry and bound, against a real database", (
   let client: postgres.Sql;
   let db: ReturnType<typeof drizzle<typeof schema>>;
   let userId: string;
+  let orgId: string;
 
   beforeAll(async () => {
     client = postgres(DB_URL, {
@@ -65,6 +66,9 @@ describe("SessionsService.list — expiry and bound, against a real database", (
     const [subject] = await db.select({ id: users.id }).from(users).limit(1);
     if (!subject) throw new Error("probe needs at least one users row");
     userId = subject.id;
+    const [org] = await db.select({ id: organizations.id }).from(organizations).limit(1);
+    if (!org) throw new Error("probe needs at least one organizations row");
+    orgId = org.id;
   });
 
   afterAll(async () => {
@@ -105,7 +109,7 @@ describe("SessionsService.list — expiry and bound, against a real database", (
       { suffix: "forever", expiresAt: null, lastActive: new Date(now - HOUR) },
     ]);
 
-    const listed = await service().list(userId, `${ID_PREFIX}live`, "probe", undefined);
+    const listed = await service().list(userId, orgId, `${ID_PREFIX}live`, "probe", undefined);
     const ids = listed.map((s) => s.id);
 
     expect(ids).toContain(`${ID_PREFIX}live`);
@@ -124,7 +128,7 @@ describe("SessionsService.list — expiry and bound, against a real database", (
       .where(eq(userSessions.id, `${ID_PREFIX}expired`));
     expect(stored).toHaveLength(1);
 
-    const listed = await service().list(userId, `${ID_PREFIX}expired`, "probe", undefined);
+    const listed = await service().list(userId, orgId, `${ID_PREFIX}expired`, "probe", undefined);
     expect(listed.map((s) => s.id)).not.toContain(`${ID_PREFIX}expired`);
   });
 
@@ -139,7 +143,7 @@ describe("SessionsService.list — expiry and bound, against a real database", (
       })),
     );
 
-    const listed = await service().list(userId, `${ID_PREFIX}bulk-0000`, "probe", undefined);
+    const listed = await service().list(userId, orgId, `${ID_PREFIX}bulk-0000`, "probe", undefined);
 
     expect(overCap).toBeGreaterThan(SESSION_LIST_CAP);
     expect(listed).toHaveLength(SESSION_LIST_CAP);
@@ -158,8 +162,8 @@ describe("SessionsService.list — expiry and bound, against a real database", (
       })),
     );
 
-    const first = await service().list(userId, "", undefined, undefined);
-    const second = await service().list(userId, "", undefined, undefined);
+    const first = await service().list(userId, orgId, "", undefined, undefined);
+    const second = await service().list(userId, orgId, "", undefined, undefined);
 
     expect(first).toHaveLength(SESSION_LIST_CAP);
     expect(second.map((s) => s.id)).toEqual(first.map((s) => s.id));
@@ -174,7 +178,7 @@ describe("SessionsService.list — expiry and bound, against a real database", (
       { suffix: "forever", expiresAt: null, lastActive: new Date(now - 2 * HOUR) },
     ]);
 
-    const listed = await service().list(userId, `${ID_PREFIX}live`, "probe", undefined);
+    const listed = await service().list(userId, orgId, `${ID_PREFIX}live`, "probe", undefined);
     const { activeSessions } = await new MeService(
       db,
       new EmploymentFactsService(db),

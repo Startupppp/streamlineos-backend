@@ -33,7 +33,7 @@ import { z } from "zod";
 import { NoContentResponse, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
 import {
   programRowSchema,
-  programPageSchema,
+  programListSchema,
   programDetailSchema,
   successSchema,
 } from "./dto/portfolios-response.schemas";
@@ -49,7 +49,7 @@ export class ProgramsController {
 
   @Get("programs")
   @RequirePermission("build:programs:view")
-  @ResponseSchema(programPageSchema)
+  @ResponseSchema(programListSchema)
   @Validate({ query: listProgramsQuerySchema })
   listPrograms(
     @Query() query: ListProgramsQuery,

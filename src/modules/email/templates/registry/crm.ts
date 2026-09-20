@@ -2,7 +2,7 @@ import {
   getClientInvestmentEmailTemplate,
   getLeadStatusChangeEmailTemplate,
   getLeadDistributionEmailTemplate,
-} from "../index";
+} from "..";
 import { BASE_URL, EMAIL_TEMPLATE_VERSION, defineTemplateFamily } from "./_shared";
 
 export const crmTemplates = defineTemplateFamily({

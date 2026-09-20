@@ -6,7 +6,7 @@ const gitProvider = z.enum(["github", "gitlab", "bitbucket"]);
 const gitConnectionRowSchema = z.object({
   id: z.number().int().positive(),
   provider: gitProvider,
-  projectId: z.string().nullable(),
+  projectId: z.number().int().nullable(),
   repoUrl: z.string(),
   repoName: z.string().nullable(),
   isActive: z.boolean(),
@@ -35,7 +35,7 @@ export const gitConnectionCreateResponseSchema = gitConnectionRowSchema.extend({
 export const gitConnectionUpdateResponseSchema = z.object({
   id: z.number().int().positive(),
   provider: gitProvider,
-  projectId: z.string().nullable(),
+  projectId: z.number().int().nullable(),
   repoUrl: z.string(),
   repoName: z.string().nullable(),
   isActive: z.boolean(),

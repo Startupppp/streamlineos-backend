@@ -46,7 +46,14 @@ export class ProjectsTicketsDetailService {
         watchers: { with: { user: { with: { user: { columns: USER_COLS } } } } },
         comments: {
           where: isNull(ticketComments.deletedAt),
-          with: { user: { columns: USER_COLS } },
+          with: {
+            user: { columns: USER_COLS },
+            reactions: {
+              columns: { emoji: true },
+              with: { membership: { columns: { userId: true } } },
+              limit: 100,
+            },
+          },
           orderBy: [desc(ticketComments.createdAt)],
           limit: 50,
         },
@@ -80,6 +87,14 @@ export class ProjectsTicketsDetailService {
       watchers: (ticket.watchers ?? []).map((watcher) => ({ ...watcher, user: watcher.user?.user ?? null })),
       attachments: ticket.attachments.map((attachment) => ({ ...attachment, filename: attachment.fileName, url: attachment.fileUrl })),
       labels: ticket.labels.flatMap((mapping) => mapping.label ? [mapping.label] : []),
+      comments: (ticket.comments ?? []).map((comment) => ({
+        ...comment,
+        reactions: (comment.reactions ?? []).flatMap((reaction) => {
+          const userId = reaction.membership?.userId;
+          if (!userId) return [];
+          return [{ emoji: reaction.emoji, userId }];
+        }),
+      })),
     };
   }
 }

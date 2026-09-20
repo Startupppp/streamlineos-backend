@@ -9,6 +9,7 @@ import type { ModuleAvailabilityLookup } from "../auth/auth-context";
 import { humanSessionPrincipal } from "../auth/principal";
 import type { CurrentUserContext } from "../auth/backend-claims";
 import type { EntitlementsService } from "../../modules/access/entitlements.service";
+import type { ModuleAvailabilityResult } from "./module-availability";
 
 const entitlements: jest.Mocked<
   Pick<
@@ -175,5 +176,80 @@ describe("ModuleGuard", () => {
     entitlements.isCoreModule.mockReturnValue(true);
     entitlements.getModuleMap.mockResolvedValue({});
     expect(await guard.canActivate(ctx({}))).toBe(true);
+  });
+
+  const requiredModuleAvailability = new Map<string, ModuleAvailabilityResult>();
+
+  function buildGuardForRequiredModule(
+    moduleKey: string,
+    availability: ModuleAvailabilityResult,
+  ): ModuleGuard {
+    setMetadata(moduleKey);
+    requiredModuleAvailability.set(moduleKey, availability);
+    return guard;
+  }
+
+  function contextFor(moduleKey: string): ExecutionContext {
+    const actor: CurrentUserContext = {
+      userId: "user-1",
+      orgId: "org-1",
+      role: "MEMBER",
+      isOrgOwner: false,
+      sessionId: "session-1",
+      tokenScopes: null,
+      principal: humanSessionPrincipal(1, false),
+    };
+    const req = {
+      user: actor,
+      authContext: testAuthContext(actor, {
+        moduleAvailability: async (_user, key) =>
+          requiredModuleAvailability.get(key) ?? { available: true },
+      }),
+    };
+    return {
+      switchToHttp: () => ({ getRequest: () => req }),
+      getHandler: () => ({}),
+      getClass: () => ({}),
+    } as Partial<ExecutionContext> as ExecutionContext;
+  }
+
+  describe("ModuleGuard denial reason reaches the wire", () => {
+    it("reports org-disabled as enable, not as upgrade, so a free module is never sold", async () => {
+      const guard = buildGuardForRequiredModule("feedbucket", {
+        available: false,
+        reason: "org-disabled",
+      });
+
+      await expect(guard.canActivate(contextFor("feedbucket"))).rejects.toMatchObject({
+        response: {
+          code: "MODULE_NOT_ENABLED",
+          details: { moduleKey: "feedbucket", reason: "org-disabled", upgradePath: null },
+        },
+      });
+    });
+
+    it("offers an upgrade path only when the plan is the actual blocker", async () => {
+      const guard = buildGuardForRequiredModule("payroll", {
+        available: false,
+        reason: "not-in-plan",
+      });
+
+      await expect(guard.canActivate(contextFor("payroll"))).rejects.toMatchObject({
+        response: {
+          details: { moduleKey: "payroll", reason: "not-in-plan", upgradePath: "/settings/billing" },
+        },
+      });
+    });
+
+    it("does not tell an individually denied user to enable a module that is already on", async () => {
+      const guard = buildGuardForRequiredModule("hr", {
+        available: false,
+        reason: "user-denied",
+      });
+
+      await expect(guard.canActivate(contextFor("hr"))).rejects.toMatchObject({
+        response: { details: { reason: "user-denied", upgradePath: null } },
+      });
+    });
   });
 });

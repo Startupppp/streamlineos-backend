@@ -32,8 +32,8 @@
  * true if the branch is later moved into a runner service.
  */
 jest.mock("@composio/core", () => ({ Composio: jest.fn() }));
-jest.mock("../workspace-copilot-tools", () => ({ WorkspaceCopilotTools: jest.fn() }));
-jest.mock("../comms-copilot-tools", () => ({ CommsCopilotTools: jest.fn() }));
+jest.mock("../tools/workspace-copilot-tools", () => ({ WorkspaceCopilotTools: jest.fn() }));
+jest.mock("../tools/comms-copilot-tools", () => ({ CommsCopilotTools: jest.fn() }));
 jest.mock("../../../calendar/calendar.service", () => ({ CalendarService: jest.fn() }));
 jest.mock("../../../integrations/core/composio.gateway", () => ({ ComposioGateway: jest.fn() }));
 jest.mock("../../../../common/ratelimit/rate-limit.service", () => ({ RateLimitService: jest.fn() }));
@@ -77,6 +77,7 @@ function makeController(payload: Record<string, unknown>) {
     {} as never,
     {} as never,
     {} as never,
+    { getFlags: jest.fn().mockResolvedValue({ aiChat: true }) } as never,
     confirmation as never,
     { denyReason: jest.fn().mockResolvedValue(null) } as never,
     moduleRef as never,

@@ -15,14 +15,14 @@ function sqlValues(value: unknown, seen = new Set<object>()): unknown[] {
   ];
 }
 
-function makeDb(rows: unknown[]) {
+function makeDb(rows: unknown[], selectRows: unknown[] = rows) {
   const where = jest.fn();
   const findMany = jest.fn().mockResolvedValue(rows);
   const findFirst = jest.fn().mockResolvedValue(rows[0] ?? null);
   const builder = {
     from: jest.fn(), where, orderBy: jest.fn(), limit: jest.fn(), offset: jest.fn(),
     leftJoin: jest.fn(), innerJoin: jest.fn(), groupBy: jest.fn(),
-    then: (resolve: (v: unknown) => unknown) => Promise.resolve(rows).then(resolve),
+    then: (resolve: (v: unknown) => unknown) => Promise.resolve(selectRows).then(resolve),
   };
   builder.from.mockReturnValue(builder);
   builder.where.mockReturnValue(builder);
@@ -40,6 +40,7 @@ function makeDb(rows: unknown[]) {
       values: jest.fn().mockReturnValue({
         returning: jest.fn().mockResolvedValue(rows.length > 0 ? rows : [{ id: 1 }]),
         onConflictDoNothing: jest.fn().mockReturnValue({ returning: jest.fn().mockResolvedValue([]) }),
+        onConflictDoUpdate: jest.fn().mockResolvedValue([{ id: 1 }]),
       }),
     }),
     update: jest.fn().mockReturnValue({
@@ -152,7 +153,7 @@ describe("EssSelfServiceService — cross-tenant isolation", () => {
   const OWNER = "org-owner";
 
   it("scopes payroll run check to org when updating bank details (cross-tenant isolation)", async () => {
-    const { db, where, findFirst, findMany } = makeDb([]);
+    const { db, where, findFirst, findMany } = makeDb([], [{ id: 1 }]);
     const mockEss = { getActiveToggles: jest.fn().mockResolvedValue({ essAllowBankUpdate: true, essAllowReimbursements: true, essAllowLoanRequests: true, essAllowTaxDeclarations: true }), getActiveWindow: jest.fn().mockResolvedValue(null) };
     const mockLoans = { listLoans: jest.fn().mockResolvedValue([]), createLoan: jest.fn().mockResolvedValue({}) };
     const mockReimbursements = { createReimbursement: jest.fn().mockResolvedValue({}), listReimbursements: jest.fn().mockResolvedValue([]) };
@@ -168,7 +169,7 @@ describe("EssSelfServiceService — cross-tenant isolation", () => {
   });
 
   it("scopes payroll run check to owner org (control — same-tenant access works)", async () => {
-    const { db, where, findFirst, findMany } = makeDb([]);
+    const { db, where, findFirst, findMany } = makeDb([], [{ id: 1 }]);
     const mockEss = { getActiveToggles: jest.fn().mockResolvedValue({ essAllowBankUpdate: true, essAllowReimbursements: true, essAllowLoanRequests: true, essAllowTaxDeclarations: true }), getActiveWindow: jest.fn().mockResolvedValue(null) };
     const mockLoans = { listLoans: jest.fn().mockResolvedValue([]), createLoan: jest.fn().mockResolvedValue({}) };
     const mockReimbursements = { createReimbursement: jest.fn().mockResolvedValue({}), listReimbursements: jest.fn().mockResolvedValue([]) };

@@ -189,12 +189,6 @@ export class TimesheetsAuditService {
    * check is worse than no check, because it is believed.
    */
   async verifyChain(orgId: string, limit = 10_000): Promise<AuditVerifyResult> {
-    const [counted] = await this.db
-      .select({ n: sql<string>`count(*)` })
-      .from(timesheetAuditEvents)
-      .where(eq(timesheetAuditEvents.orgId, orgId));
-    const total = Number(counted?.n ?? 0);
-
     const rows = await this.db
       .select({
         id: timesheetAuditEvents.id,
@@ -208,11 +202,14 @@ export class TimesheetsAuditService {
         reason: timesheetAuditEvents.reason,
         prevHash: timesheetAuditEvents.prevHash,
         rowHash: timesheetAuditEvents.rowHash,
+        windowTotal: sql<string>`count(*) OVER ()`,
       })
       .from(timesheetAuditEvents)
       .where(eq(timesheetAuditEvents.orgId, orgId))
       .orderBy(asc(timesheetAuditEvents.id))
       .limit(limit);
+
+    const total = Number(rows[0]?.windowTotal ?? 0);
 
     let prevHash: string | null = null;
     let legacyRows = 0;

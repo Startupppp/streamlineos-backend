@@ -35,7 +35,7 @@ export class SignReportsService {
     }
     const now = new Date();
     const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-    const orgSettings = await this.settings.getOrCreate(orgId);
+    const orgSettings = await this.settings.get(orgId);
     const expiringBefore = new Date(now.getTime() + orgSettings.expirationWarningDays * 24 * 60 * 60 * 1000);
 
     const [
@@ -125,82 +125,86 @@ export class SignReportsService {
   }
 
   async getSummary(orgId: string) {
-    const orgSettings = await this.settings.getOrCreate(orgId);
+    const orgSettings = await this.settings.get(orgId);
     const expiringBefore = new Date(Date.now() + orgSettings.expirationWarningDays * 24 * 60 * 60 * 1000);
 
-    const byStatusRows = await this.db
-      .select({ status: signEnvelopes.status, value: count() })
-      .from(signEnvelopes)
-      .where(eq(signEnvelopes.orgId, orgId))
-      .groupBy(signEnvelopes.status);
-    const byStatus = Object.fromEntries(byStatusRows.map((r) => [r.status, r.value]));
-
-    const [expiringSoonRow] = await this.db
-      .select({ value: count() })
-      .from(signEnvelopes)
-      .where(
-        and(
-          eq(signEnvelopes.orgId, orgId),
-          inArray(signEnvelopes.status, [...OPEN_STATUSES]),
-          isNotNull(signEnvelopes.expiresAt),
-          lte(signEnvelopes.expiresAt, expiringBefore),
+    const [
+      byStatusRows,
+      [expiringSoonRow],
+      [avgTimeRow],
+      senderRows,
+      templateRows,
+      [bulkStatsRow],
+      [authFailuresRow],
+      [watermarkUsageRow],
+    ] = await Promise.all([
+      this.db
+        .select({ status: signEnvelopes.status, value: count() })
+        .from(signEnvelopes)
+        .where(eq(signEnvelopes.orgId, orgId))
+        .groupBy(signEnvelopes.status),
+      this.db
+        .select({ value: count() })
+        .from(signEnvelopes)
+        .where(
+          and(
+            eq(signEnvelopes.orgId, orgId),
+            inArray(signEnvelopes.status, [...OPEN_STATUSES]),
+            isNotNull(signEnvelopes.expiresAt),
+            lte(signEnvelopes.expiresAt, expiringBefore),
+          ),
         ),
-      );
+      this.db
+        .select({ avgHours: avg(sql<number>`EXTRACT(EPOCH FROM (${signEnvelopes.completedAt} - ${signEnvelopes.sentAt})) / 3600`) })
+        .from(signEnvelopes)
+        .where(and(eq(signEnvelopes.orgId, orgId), eq(signEnvelopes.status, "completed"), isNotNull(signEnvelopes.sentAt))),
+      this.db
+        .select({
+          senderMembershipId: signEnvelopes.senderMembershipId,
+          senderName: users.name,
+          sentCount: count(signEnvelopes.id),
+        })
+        .from(signEnvelopes)
+        .innerJoin(
+          organizationMembers,
+          and(eq(organizationMembers.orgId, signEnvelopes.orgId), eq(organizationMembers.id, signEnvelopes.senderMembershipId)),
+        )
+        .innerJoin(users, eq(users.id, organizationMembers.userId))
+        .where(eq(signEnvelopes.orgId, orgId))
+        .groupBy(signEnvelopes.senderMembershipId, users.name)
+        .orderBy(sql`COUNT(${signEnvelopes.id}) DESC`)
+        .limit(10),
+      this.db
+        .select({ templateId: signEnvelopes.templateId, templateName: signTemplates.name, value: count() })
+        .from(signEnvelopes)
+        .innerJoin(signTemplates, eq(signEnvelopes.templateId, signTemplates.id))
+        .where(and(eq(signEnvelopes.orgId, orgId), isNotNull(signEnvelopes.templateId)))
+        .groupBy(signEnvelopes.templateId, signTemplates.name)
+        .orderBy(sql`COUNT(*) DESC`)
+        .limit(10),
+      this.db
+        .select({
+          totalJobs: count(),
+          totalRows: sql<number>`COALESCE(SUM(${signBulkSendJobs.totalCount}), 0)`,
+          successRows: sql<number>`COALESCE(SUM(${signBulkSendJobs.successCount}), 0)`,
+          failedRows: sql<number>`COALESCE(SUM(${signBulkSendJobs.failedCount}), 0)`,
+        })
+        .from(signBulkSendJobs)
+        .where(eq(signBulkSendJobs.orgId, orgId)),
+      this.db
+        .select({ value: count() })
+        .from(signAuditEvents)
+        .where(and(eq(signAuditEvents.orgId, orgId), eq(signAuditEvents.eventType, "authentication_failed"))),
+      this.db
+        .select({ value: count() })
+        .from(signCertificates)
+        .where(and(eq(signCertificates.orgId, orgId), eq(signCertificates.watermarked, true))),
+    ]);
 
-    const [avgTimeRow] = await this.db
-      .select({ avgHours: avg(sql<number>`EXTRACT(EPOCH FROM (${signEnvelopes.completedAt} - ${signEnvelopes.sentAt})) / 3600`) })
-      .from(signEnvelopes)
-      .where(and(eq(signEnvelopes.orgId, orgId), eq(signEnvelopes.status, "completed"), isNotNull(signEnvelopes.sentAt)));
-
+    const byStatus = Object.fromEntries(byStatusRows.map((r) => [r.status, r.value]));
     const totalSent = byStatusRows.filter((r) => r.status !== "draft" && r.status !== "ready_to_send").reduce((sum, r) => sum + r.value, 0);
     const completedCount = byStatus.completed ?? 0;
     const declinedCount = byStatus.declined ?? 0;
-
-    const senderRows = await this.db
-      .select({
-        senderMembershipId: signEnvelopes.senderMembershipId,
-        senderName: users.name,
-        sentCount: count(signEnvelopes.id),
-      })
-      .from(signEnvelopes)
-      .innerJoin(
-        organizationMembers,
-        and(eq(organizationMembers.orgId, signEnvelopes.orgId), eq(organizationMembers.id, signEnvelopes.senderMembershipId)),
-      )
-      .innerJoin(users, eq(users.id, organizationMembers.userId))
-      .where(eq(signEnvelopes.orgId, orgId))
-      .groupBy(signEnvelopes.senderMembershipId, users.name)
-      .orderBy(sql`COUNT(${signEnvelopes.id}) DESC`)
-      .limit(10);
-
-    const templateRows = await this.db
-      .select({ templateId: signEnvelopes.templateId, templateName: signTemplates.name, value: count() })
-      .from(signEnvelopes)
-      .innerJoin(signTemplates, eq(signEnvelopes.templateId, signTemplates.id))
-      .where(and(eq(signEnvelopes.orgId, orgId), isNotNull(signEnvelopes.templateId)))
-      .groupBy(signEnvelopes.templateId, signTemplates.name)
-      .orderBy(sql`COUNT(*) DESC`)
-      .limit(10);
-
-    const [bulkStatsRow] = await this.db
-      .select({
-        totalJobs: count(),
-        totalRows: sql<number>`COALESCE(SUM(${signBulkSendJobs.totalCount}), 0)`,
-        successRows: sql<number>`COALESCE(SUM(${signBulkSendJobs.successCount}), 0)`,
-        failedRows: sql<number>`COALESCE(SUM(${signBulkSendJobs.failedCount}), 0)`,
-      })
-      .from(signBulkSendJobs)
-      .where(eq(signBulkSendJobs.orgId, orgId));
-
-    const [authFailuresRow] = await this.db
-      .select({ value: count() })
-      .from(signAuditEvents)
-      .where(and(eq(signAuditEvents.orgId, orgId), eq(signAuditEvents.eventType, "authentication_failed")));
-
-    const [watermarkUsageRow] = await this.db
-      .select({ value: count() })
-      .from(signCertificates)
-      .where(and(eq(signCertificates.orgId, orgId), eq(signCertificates.watermarked, true)));
 
     return {
       byStatus,

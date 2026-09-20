@@ -9,6 +9,13 @@ export const commentDrafts = build.table("comment_drafts", {
   membershipId: integer("membership_id").notNull(),
   ticketId: integer("ticket_id").notNull(),
   body: text("body").notNull(),
+  evidence: text("evidence"),
+  proposedChange: text("proposed_change"),
+  impact: text("impact"),
+  confidence: integer("confidence"),
+  affectedRecordIds: text("affected_record_ids"),
+  retryCount: integer("retry_count"),
+  lastError: text("last_error"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [

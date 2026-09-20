@@ -53,11 +53,17 @@ export class PayrollJobsWorkerService implements OnModuleInit, OnModuleDestroy {
     await this.reclaimStale();
 
     const claimed: ClaimedPayrollJob[] = [];
-    await forEachOrg(this.db, "payroll-jobs-claim", async () => {
-      const remaining = limit - claimed.length;
-      if (remaining <= 0) return;
-      claimed.push(...(await this.jobs.claimPending(remaining)));
-    });
+    await forEachOrg(
+      this.db,
+      "payroll-jobs-claim",
+      async () => {
+        const remaining = limit - claimed.length;
+        if (remaining <= 0) return;
+        claimed.push(...(await this.jobs.claimPending(remaining)));
+      },
+      "write",
+      { stopWhen: () => claimed.length >= limit },
+    );
 
     let completed = 0;
     let failed = 0;

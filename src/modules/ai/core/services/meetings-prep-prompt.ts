@@ -1,9 +1,4 @@
-const MAX_NOTES = 2000;
-
-export function trunc(s: string | null | undefined): string {
-  if (!s) return "";
-  return s.length > MAX_NOTES ? s.slice(0, MAX_NOTES) + "…" : s;
-}
+import { trunc } from "./lib/prompt-text";
 
 export interface MeetingAttendeeContext {
   userId: string;

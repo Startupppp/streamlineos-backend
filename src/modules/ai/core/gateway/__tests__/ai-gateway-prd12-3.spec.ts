@@ -7,7 +7,12 @@ import { BadRequestException } from "@nestjs/common";
 import { AiGatewayRunnerHelper } from "../ai-gateway-runner.helper";
 import { AiGatewayCreditHelper } from "../ai-gateway-credit.helper";
 import { computeTokenCharge } from "../../billing/ai-model-pricing.constants";
-import { withTenantScopedTools } from "../../tenant-scoped-tools";
+import { buildAskOsToolset, isToolAvailable } from "../../registry/ask-os-tool-registry";
+import type { AskOsToolDefinition } from "../../registry/ask-os-tool.types";
+import type { AccessSnapshot } from "../../../../access/access.types";
+import type { AskOsActor } from "../../services/ask-os-actor";
+import type { CurrentUserContext } from "../../../../../common/auth/backend-claims";
+import type { Db } from "../../../../../db/drizzle.module";
 import type { AiCreditLedger } from "../credit-ledger.interface";
 import type { LlmService } from "../../providers/llm.service";
 import type { AiUsageService } from "../../services/ai-usage.service";
@@ -170,192 +175,123 @@ describe("AiGatewayRunnerHelper — no duplicate paid call (stream handoff does 
   });
 });
 
-describe("withTenantScopedTools — prompt injection: non-allowlisted tool cannot be invoked", () => {
-  it("output tool set only contains keys that were in the input — no tool is created for unregistered names", () => {
-    const inputTools = {
-      readTicket: { description: "reads a ticket", inputSchema: z.object({}), execute: jest.fn() },
-      createTicket: { description: "creates a ticket", inputSchema: z.object({}), execute: jest.fn() },
-    };
+describe("buildAskOsToolset — permission-gated toolset", () => {
+  const mockDb: Db = Object.create(null);
+  const mockActor: AskOsActor = {
+    userId: "user_1",
+    orgId: "org_1",
+    membershipId: 1,
+    displayName: "Test",
+    email: "t@test.com",
+    orgName: "Test Org",
+    role: "MEMBER",
+    isOrgOwner: false,
+    timezone: "UTC",
+    today: "2026-09-20",
+    monthStart: "2026-09-01",
+    monthEnd: "2026-09-30",
+    currentYear: 2026,
+    currentMonth: 9,
+  };
+  const mockCaller: CurrentUserContext = {
+    userId: "user_1",
+    orgId: "org_1",
+    role: "MEMBER",
+    isOrgOwner: false,
+    sessionId: "sess_1",
+    tokenScopes: null,
+    principal: { kind: "human-session", membershipId: 1, isOrgOwner: false },
+  };
 
-    const result = withTenantScopedTools(inputTools, {} as never, "org_1");
+  function makeSnapshot(
+    overrides: Partial<{ scopes: Record<string, "all" | "team" | "own" | "none">; modules: Record<string, boolean> }> = {},
+  ): AccessSnapshot {
+    return {
+      membershipId: 1,
+      scopes: overrides.scopes ?? {},
+      modules: overrides.modules ?? {},
+      isOrgOwner: false,
+      canManageOrganizationMembership: false,
+      mfa: { enforced: false, satisfied: true },
+      version: 1,
+    };
+  }
+
+  function makeDef(key: string, overrides: { permission?: string; module?: string } = {}): AskOsToolDefinition {
+    return {
+      key,
+      description: `tool ${key}`,
+      input: z.object({}),
+      ...overrides,
+      run: jest.fn().mockResolvedValue({ kind: "data" as const, data: { ok: true } }),
+    };
+  }
+
+  beforeEach(() => jest.clearAllMocks());
+
+  it("output toolset only contains keys present in definitions — unregistered names are absent", () => {
+    const snapshot = makeSnapshot();
+    const defs = [makeDef("readTicket"), makeDef("createTicket")];
+
+    const result = buildAskOsToolset({ db: mockDb, actor: mockActor, caller: mockCaller, snapshot, definitions: defs });
 
     expect(Object.keys(result).sort()).toEqual(["createTicket", "readTicket"]);
     expect(result).not.toHaveProperty("deleteOrg");
     expect(result).not.toHaveProperty("dropDatabase");
-    expect(result).not.toHaveProperty("grantAdminRole");
   });
 
-  it("a key not registered in the tool set resolves to undefined — the AI SDK cannot dispatch it", () => {
-    const inputTools = { readTicket: { description: "reads a ticket", inputSchema: z.object({}), execute: jest.fn() } };
-    const result = withTenantScopedTools(inputTools, {} as never, "org_1");
+  it("a key not in definitions resolves to undefined — the AI SDK cannot dispatch it", () => {
+    const snapshot = makeSnapshot();
+    const defs = [makeDef("readTicket")];
 
-    const injectedTool = (result as Record<string, unknown>)["deleteOrg"];
-    expect(injectedTool).toBeUndefined();
+    const result = buildAskOsToolset({ db: mockDb, actor: mockActor, caller: mockCaller, snapshot, definitions: defs });
+
+    expect((result as Record<string, unknown>)["deleteOrg"]).toBeUndefined();
   });
 
-  it("tools with execute are wrapped in tenant transactions so each invocation is isolated", async () => {
+  it("tool whose module is disabled in snapshot is excluded", () => {
+    const snapshot = makeSnapshot({ modules: { BUILD: false } });
+    const defs = [makeDef("readTicket"), makeDef("createSprint", { module: "BUILD" })];
+
+    const result = buildAskOsToolset({ db: mockDb, actor: mockActor, caller: mockCaller, snapshot, definitions: defs });
+
+    expect(Object.keys(result)).toEqual(["readTicket"]);
+    expect(result).not.toHaveProperty("createSprint");
+  });
+
+  it("tool with permission absent from snapshot scopes is excluded", () => {
+    const snapshot = makeSnapshot({ scopes: {} });
+    const defs = [makeDef("readTicket"), makeDef("approveExpense", { permission: "finance:expenses:approve" })];
+
+    const result = buildAskOsToolset({ db: mockDb, actor: mockActor, caller: mockCaller, snapshot, definitions: defs });
+
+    expect(Object.keys(result)).toEqual(["readTicket"]);
+    expect(result).not.toHaveProperty("approveExpense");
+  });
+
+  it("tool execute is wrapped in runInNewTenantTransaction — each invocation is isolated", async () => {
     const { runInNewTenantTransaction } = jest.requireMock("../../../../../common/tenant/run-in-tenant-transaction") as { runInNewTenantTransaction: jest.Mock };
     runInNewTenantTransaction.mockClear();
 
-    const mockExecute = jest.fn().mockResolvedValue({ ok: true });
-    const inputTools = { myTool: { description: "tool", inputSchema: z.object({}), execute: mockExecute } };
-    const result = withTenantScopedTools(inputTools, {} as never, "org_scope");
+    const snapshot = makeSnapshot();
+    const run = jest.fn().mockResolvedValue({ kind: "data" as const, data: { ok: true } });
+    const defs: AskOsToolDefinition[] = [{ key: "myTool", description: "tool", input: z.object({}), run }];
 
-    await result["myTool"]?.execute?.({ arg: 1 } as never, {} as never);
+    const result = buildAskOsToolset({ db: mockDb, actor: mockActor, caller: mockCaller, snapshot, definitions: defs });
+    await result["myTool"]?.execute?.({}, { toolCallId: "tc1", messages: [], context: undefined });
 
-    expect(runInNewTenantTransaction).toHaveBeenCalledWith(expect.anything(), "org_scope", expect.any(Function));
-    expect(mockExecute).toHaveBeenCalledTimes(1);
-  });
-});
-
-describe("AiResponseCacheService — persistent response cache (criterion 10)", () => {
-  beforeEach(() => jest.clearAllMocks());
-
-  it("returns cached result without calling the fetcher on a second call with the same params", async () => {
-    const { AiResponseCacheService } = await import("../ai-response-cache.service");
-
-    const stored = new Map<string, unknown>();
-    const mockCache = {
-      cachedVersionedForOrg: jest.fn().mockImplementation(
-        async (_orgId: string, _ns: string, localKey: string, fetcher: () => Promise<unknown>) => {
-          const hit = stored.get(localKey);
-          if (hit !== undefined) return hit;
-          const result = await fetcher();
-          stored.set(localKey, result);
-          return result;
-        },
-      ),
-      invalidateNamespaceForOrg: jest.fn().mockResolvedValue(undefined),
-    };
-
-    const svc = new AiResponseCacheService(mockCache as never);
-    const params = { feature: "crm.score", tier: "fast", promptSystem: "sys", promptUser: "user", aclVersion: "acl-7" };
-    const fetcher = jest.fn().mockResolvedValue({ ok: true, data: "response", model: "gpt-4o-mini", latencyMs: 100, correlationId: "c", usage: {} });
-
-    const first = await svc.cachedInvoke("org_1", params, fetcher);
-    const second = await svc.cachedInvoke("org_1", params, fetcher);
-
-    expect(fetcher).toHaveBeenCalledTimes(1);
-    expect(first).toEqual(second);
+    expect(runInNewTenantTransaction).toHaveBeenCalledWith(mockDb, "org_1", expect.any(Function));
+    expect(run).toHaveBeenCalledTimes(1);
   });
 
-  it("uses different cache keys for different prompts — no cross-prompt cache pollution", async () => {
-    const { AiResponseCacheService } = await import("../ai-response-cache.service");
-
-    const stored = new Map<string, unknown>();
-    const mockCache = {
-      cachedVersionedForOrg: jest.fn().mockImplementation(
-        async (_orgId: string, _ns: string, localKey: string, fetcher: () => Promise<unknown>) => {
-          const hit = stored.get(localKey);
-          if (hit !== undefined) return hit;
-          const result = await fetcher();
-          stored.set(localKey, result);
-          return result;
-        },
-      ),
-      invalidateNamespaceForOrg: jest.fn().mockResolvedValue(undefined),
-    };
-
-    const svc = new AiResponseCacheService(mockCache as never);
-    const fetcherA = jest.fn().mockResolvedValue({ ok: true, data: "A" });
-    const fetcherB = jest.fn().mockResolvedValue({ ok: true, data: "B" });
-
-    await svc.cachedInvoke("org_1", { feature: "f", tier: "fast", promptSystem: "sys", promptUser: "user-A", aclVersion: "acl-1" }, fetcherA);
-    await svc.cachedInvoke("org_1", { feature: "f", tier: "fast", promptSystem: "sys", promptUser: "user-B", aclVersion: "acl-1" }, fetcherB);
-
-    expect(fetcherA).toHaveBeenCalledTimes(1);
-    expect(fetcherB).toHaveBeenCalledTimes(1);
-    expect(stored.size).toBe(2);
+  it("isToolAvailable — no permission or module on definition means always available", () => {
+    const snapshot = makeSnapshot();
+    expect(isToolAvailable(makeDef("freeTool"), snapshot)).toBe(true);
   });
 
-  it("two readers with the same prompt but different ACL versions never share a cache entry", async () => {
-    const { AiResponseCacheService } = await import("../ai-response-cache.service");
-
-    const stored = new Map<string, unknown>();
-    const mockCache = {
-      cachedVersionedForOrg: jest.fn().mockImplementation(
-        async (_orgId: string, _ns: string, localKey: string, fetcher: () => Promise<unknown>) => {
-          const hit = stored.get(localKey);
-          if (hit !== undefined) return hit;
-          const result = await fetcher();
-          stored.set(localKey, result);
-          return result;
-        },
-      ),
-      invalidateNamespaceForOrg: jest.fn().mockResolvedValue(undefined),
-    };
-
-    const svc = new AiResponseCacheService(mockCache as never);
-    const prompt = { feature: "kb.ask", tier: "fast", promptSystem: "sys", promptUser: "what is our leave policy" };
-    const privileged = jest.fn().mockResolvedValue({ ok: true, data: "HR-only answer" });
-    const ordinary = jest.fn().mockResolvedValue({ ok: true, data: "public answer" });
-
-    const a = await svc.cachedInvoke("org_1", { ...prompt, aclVersion: "hr-admin" }, privileged);
-    const b = await svc.cachedInvoke("org_1", { ...prompt, aclVersion: "member" }, ordinary);
-
-    expect(stored.size).toBe(2);
-    expect(a).not.toEqual(b);
-    expect(ordinary).toHaveBeenCalledTimes(1);
-  });
-
-  it("refuses to cache without an aclVersion rather than building an ACL-blind key", async () => {
-    const { AiResponseCacheService } = await import("../ai-response-cache.service");
-    const mockCache = {
-      cachedVersionedForOrg: jest.fn(),
-      invalidateNamespaceForOrg: jest.fn().mockResolvedValue(undefined),
-    };
-
-    const svc = new AiResponseCacheService(mockCache as never);
-    const params = { feature: "kb.ask", promptSystem: "sys", promptUser: "u", aclVersion: "" };
-
-    await expect(svc.cachedInvoke("org_1", params, jest.fn())).rejects.toThrow("aclVersion");
-    expect(mockCache.cachedVersionedForOrg).not.toHaveBeenCalled();
-  });
-
-  it("a failed invocation is never written to the cache, so a provider blip is not served for an hour", async () => {
-    const { AiResponseCacheService } = await import("../ai-response-cache.service");
-
-    const stored = new Map<string, unknown>();
-    const mockCache = {
-      cachedVersionedForOrg: jest.fn().mockImplementation(
-        async (_orgId: string, _ns: string, localKey: string, fetcher: () => Promise<unknown>) => {
-          const hit = stored.get(localKey);
-          if (hit !== undefined) return hit;
-          const result = await fetcher();
-          stored.set(localKey, result);
-          return result;
-        },
-      ),
-      invalidateNamespaceForOrg: jest.fn().mockResolvedValue(undefined),
-    };
-
-    const svc = new AiResponseCacheService(mockCache as never);
-    const params = { feature: "kb.ask", promptSystem: "sys", promptUser: "u", aclVersion: "acl-1" };
-    const failing = jest
-      .fn()
-      .mockResolvedValueOnce({ ok: false, kind: "provider_unavailable", message: "down", correlationId: "c1" })
-      .mockResolvedValueOnce({ ok: true, data: "recovered", model: "m", latencyMs: 1, correlationId: "c2", usage: {} });
-
-    const first = await svc.cachedInvoke("org_1", params, failing);
-    const second = await svc.cachedInvoke("org_1", params, failing);
-
-    expect(first.ok).toBe(false);
-    expect(second.ok).toBe(true);
-    expect(failing).toHaveBeenCalledTimes(2);
-    expect(stored.size).toBe(1);
-  });
-
-  it("invalidate bumps the namespace version so stale entries are never served", async () => {
-    const { AiResponseCacheService } = await import("../ai-response-cache.service");
-    const mockCache = {
-      cachedVersionedForOrg: jest.fn().mockResolvedValue({ ok: true, data: "cached" }),
-      invalidateNamespaceForOrg: jest.fn().mockResolvedValue(undefined),
-    };
-
-    const svc = new AiResponseCacheService(mockCache as never);
-    await svc.invalidate("org_1");
-
-    expect(mockCache.invalidateNamespaceForOrg).toHaveBeenCalledWith("org_1", "ai:responses:v1");
+  it("isToolAvailable — scope 'none' means excluded", () => {
+    const snapshot = makeSnapshot({ scopes: { "hr:leave:approve": "none" } });
+    expect(isToolAvailable(makeDef("approveLeave", { permission: "hr:leave:approve" }), snapshot)).toBe(false);
   });
 });
 

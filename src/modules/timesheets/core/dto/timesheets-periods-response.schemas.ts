@@ -29,6 +29,7 @@ export const periodDetailResponseSchema = z.object({
     timesheetPeriodId: z.number().int().nullable(),
     createdAt: wireDate(),
     updatedAt: wireDate(),
+    project: z.object({ id: z.number().int(), name: z.string() }).nullable(),
   })),
 });
 

@@ -51,6 +51,9 @@ export const managedProducts = build.table(
   (table) => [
     uniqueIndex("uniq_managed_products_org_key").on(table.orgId, table.key),
     index("idx_managed_products_org_status").on(table.orgId, table.status).where(sql`deleted_at IS NULL`),
+    index("idx_managed_products_org_workspace")
+      .on(table.orgId, table.pmWorkspaceId)
+      .where(sql`deleted_at IS NULL`),
     unique("uniq_managed_products_org_pk").on(table.orgId, table.id),
     foreignKey({
       columns: [table.orgId, table.ownerMembershipId],

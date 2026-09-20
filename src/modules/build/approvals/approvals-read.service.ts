@@ -1,5 +1,6 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, eq, isNull, or, sql } from "drizzle-orm";
+import { and, eq, isNull, sql } from "drizzle-orm";
+import { pendingApprovalsForActorCondition } from "./build-inbox-count.service";
 import { projectApprovals, projects } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
@@ -34,17 +35,7 @@ export class ApprovalsReadService {
       })
       .from(projectApprovals)
       .innerJoin(projects, eq(projects.id, projectApprovals.projectId))
-      .where(
-        and(
-          eq(projectApprovals.orgId, orgId),
-          eq(projectApprovals.approverMembershipId, membershipId),
-          or(
-            eq(projectApprovals.status, "pending"),
-            eq(projectApprovals.status, "escalated"),
-          ),
-          isNull(projectApprovals.deletedAt),
-        ),
-      )
+      .where(pendingApprovalsForActorCondition(orgId, membershipId))
       .orderBy(sql`${projectApprovals.dueAt} ASC NULLS LAST`)
       .limit(100);
   }

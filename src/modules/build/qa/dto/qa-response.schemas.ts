@@ -15,6 +15,10 @@ export const testSuiteRowSchema = z.object({
   deletedAt: nullableWireDate(),
 });
 
+export const testSuiteWithCaseCountSchema = testSuiteRowSchema.extend({
+  caseCount: z.number().int(),
+});
+
 export const testCaseRowSchema = z.object({
   id: z.number().int(),
   orgId: z.string(),
@@ -79,6 +83,12 @@ export const testRunResultRowSchema = z.object({
   updatedAt: wireDate(),
 });
 
+export const testRunResultPageSchema = z.object({
+  data: z.array(testRunResultRowSchema),
+  hasMore: z.boolean(),
+  nextCursor: z.number().int().nullable(),
+});
+
 export const testRunDetailSchema = testRunRowSchema.extend({
   results: z.array(testRunResultRowSchema),
 });
@@ -112,4 +122,3 @@ export const bugRowSchema = z.object({
   updatedAt: wireDate(),
   deletedAt: nullableWireDate(),
 });
-

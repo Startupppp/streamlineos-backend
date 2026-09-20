@@ -7,6 +7,7 @@ import { RATE_LIMIT_TIER } from "../../../common/ratelimit/use-rate-limit.decora
 import { REQUIRE_PERMISSION } from "../../access/require-permission.decorator";
 import { createEmployeeExportJobSchema } from "./dto/export-job.dto";
 import { HrExportController } from "./hr-export.controller";
+import { HrExportJobsService } from "./hr-export-jobs.service";
 import {
   serializeEmployeeExportHeader,
   serializeEmployeeExportRow,
@@ -15,6 +16,7 @@ import {
   isExportScopeStillAllowed,
   isHrExportWorkerEnabled,
   narrowestExportScope,
+  type HrExportJobView,
 } from "./hr-export-jobs.types";
 
 describe("HR employee export", () => {
@@ -93,6 +95,48 @@ describe("HR employee export", () => {
     );
     expect(legacyService).toContain("HR_EMPLOYEE_EXPORT_ASYNC_REQUIRED");
     expect(legacyService).not.toContain("if (entity === \"employees\") {\n      return this.db");
+  });
+
+  describe("HrExportJobsService.recordDownload — audit on a GET download path", () => {
+    it("records the export download outside the request transaction, because the download route is a GET that holds no mutation and a read-intent transaction must not write", async () => {
+      const audit = {
+        logCriticalOutsideTransaction: jest.fn().mockResolvedValue(undefined),
+        logCritical: jest.fn(),
+      };
+      const service = new HrExportJobsService(
+        undefined as never,
+        undefined as never,
+        audit as never,
+        undefined as never,
+        undefined as never,
+        undefined as never,
+      );
+      const job: HrExportJobView = {
+        id: "job-1",
+        entity: "employees",
+        status: "completed",
+        processedRows: 5,
+        rowCount: 5,
+        fileName: "employees.csv",
+        errorCode: null,
+        errorMessage: null,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        completedAt: new Date(),
+        expiresAt: null,
+      };
+
+      await service.recordDownload("org-1", "user-1", job);
+
+      expect(audit.logCriticalOutsideTransaction).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: "hr.employee_export.downloaded",
+          userId: "user-1",
+          orgId: "org-1",
+        }),
+      );
+      expect(audit.logCritical).not.toHaveBeenCalled();
+    });
   });
 
   it("keeps the deployment-gated migration reversible and verifiable", () => {

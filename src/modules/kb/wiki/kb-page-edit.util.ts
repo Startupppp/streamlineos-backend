@@ -1,9 +1,38 @@
+import { HttpException, HttpStatus } from "@nestjs/common";
 import { and, desc, eq, isNull, sql } from "drizzle-orm";
 import { kbPages, kbPageLinks, kbPageVersions } from "../../../db/schema";
 import { type Db } from "../../../db/drizzle.module";
+import { isUniqueViolationOn } from "../../../common/db/postgres-error";
 import { extractPageLinkIds } from "./kb-page-content.util";
 
 const VERSION_WINDOW_MS = 10 * 60 * 1000;
+
+const VERSION_NUMBER_INDEX = "uniq_kb_page_versions_page_version";
+
+export const STALE_REVISION_CODE = "STALE_REVISION";
+
+export interface KbPageConflictDetails {
+  currentContentRevision: number | null;
+  lastEditedByName: string | null;
+  lastEditedAt: string | null;
+}
+
+export const NO_KB_PAGE_CONFLICT_DETAILS: KbPageConflictDetails = {
+  currentContentRevision: null,
+  lastEditedByName: null,
+  lastEditedAt: null,
+};
+
+export function staleRevisionConflict(details: KbPageConflictDetails): HttpException {
+  return new HttpException(
+    {
+      message: "Page was modified by another editor. Reload to see the latest version.",
+      code: STALE_REVISION_CODE,
+      details,
+    },
+    HttpStatus.CONFLICT,
+  );
+}
 
 export type KbTransaction = Parameters<Parameters<Db["transaction"]>[0]>[0];
 
@@ -35,17 +64,22 @@ export async function snapshotIfNeeded(
   if (!windowPassed) return;
 
   const nextVer = (newest?.versionNumber ?? 0) + 1;
-  await tx.insert(kbPageVersions).values({
-    orgId,
-    pageId: page.id,
-    versionNumber: nextVer,
-    title: page.title,
-    content: page.content,
-    contentText: page.contentText ?? null,
-    changeSummary,
-    authorId,
-    authorMembershipId,
-  });
+  try {
+    await tx.insert(kbPageVersions).values({
+      orgId,
+      pageId: page.id,
+      versionNumber: nextVer,
+      title: page.title,
+      content: page.content,
+      contentText: page.contentText ?? null,
+      changeSummary,
+      authorId,
+      authorMembershipId,
+    });
+  } catch (error) {
+    if (!isUniqueViolationOn(error, VERSION_NUMBER_INDEX)) throw error;
+    throw staleRevisionConflict(NO_KB_PAGE_CONFLICT_DETAILS);
+  }
 }
 
 export async function resyncPageLinks(

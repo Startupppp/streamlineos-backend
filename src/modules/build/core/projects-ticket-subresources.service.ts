@@ -1,11 +1,10 @@
-import {
-  Inject,
-  Injectable,
-  NotFoundException,
-} from "@nestjs/common";
+import { Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, asc, desc, eq, isNull, lt } from "drizzle-orm";
 import { queryTickets } from "./projects-tickets-read.query";
-import { buildCursorPage, decodeCursor } from "../../../common/pagination/cursor";
+import {
+  buildCursorPage,
+  decodeCursor,
+} from "../../../common/pagination/cursor";
 import {
   organizationPeople,
   organizationMembers,
@@ -14,6 +13,7 @@ import {
   ticketLabelMappings,
   tickets,
   ticketWatchers,
+  users,
 } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
@@ -35,7 +35,14 @@ import type {
 } from "./dto/projects.schemas";
 import { assertTicketInOrg } from "./project-access";
 import { AccessService } from "../../access/access.service";
-import { assertTicketReadAccess, type TicketReadAccess } from "./build-ticket-read-access";
+import {
+  assertTicketReadAccess,
+  type TicketReadAccess,
+} from "./build-ticket-read-access";
+import {
+  resolvePersonDisplayName,
+  UNRESOLVED_MEMBER_NAME,
+} from "../../../common/organization/person-display-name";
 
 const ACTION_LABELS: Record<string, string> = {
   created: "created this ticket",
@@ -87,7 +94,13 @@ export class ProjectsTicketSubresourcesService {
     commentId: number,
     content: string,
   ) {
-    return this.comments.editComment(u, projectId, ticketId, commentId, content);
+    return this.comments.editComment(
+      u,
+      projectId,
+      ticketId,
+      commentId,
+      content,
+    );
   }
 
   deleteComment(
@@ -105,8 +118,16 @@ export class ProjectsTicketSubresourcesService {
     orgId: string,
     emoji: string,
     membershipId: number | null,
+    ticketId: number,
   ) {
-    return this.comments.addReaction(commentId, userId, orgId, emoji, membershipId);
+    return this.comments.addReaction(
+      commentId,
+      userId,
+      orgId,
+      emoji,
+      membershipId,
+      ticketId,
+    );
   }
 
   removeReaction(
@@ -115,8 +136,16 @@ export class ProjectsTicketSubresourcesService {
     orgId: string,
     emoji: string,
     membershipId: number | null,
+    ticketId: number,
   ) {
-    return this.comments.removeReaction(commentId, userId, orgId, emoji, membershipId);
+    return this.comments.removeReaction(
+      commentId,
+      userId,
+      orgId,
+      emoji,
+      membershipId,
+      ticketId,
+    );
   }
 
   getCommentReactions(commentId: number, orgId: string) {
@@ -129,7 +158,13 @@ export class ProjectsTicketSubresourcesService {
     ticketId: number,
     opts: { limit: number; cursor?: string },
   ) {
-    await assertTicketReadAccess(this.db, this.access, actor, projectId, ticketId);
+    await assertTicketReadAccess(
+      this.db,
+      this.access,
+      actor,
+      projectId,
+      ticketId,
+    );
     const orgId = actor.orgId;
 
     const position = decodeCursor(opts.cursor);
@@ -151,36 +186,53 @@ export class ProjectsTicketSubresourcesService {
         toValue: ticketActivityLog.toValue,
         createdAt: ticketActivityLog.createdAt,
         userMembershipId: ticketActivityLog.userMembershipId,
-        actorUserId: organizationPeople.userId,
+        personUserId: organizationPeople.userId,
+        memberUserId: organizationMembers.userId,
         displayName: organizationPeople.displayName,
         firstName: organizationPeople.firstName,
         lastName: organizationPeople.lastName,
         avatarUrl: organizationPeople.avatarUrl,
+        accountName: users.name,
+        email: users.email,
+        userImage: users.image,
       })
       .from(ticketActivityLog)
-      .leftJoin(organizationPeople, and(
-        eq(organizationPeople.organizationId, ticketActivityLog.orgId),
-        eq(organizationPeople.organizationMembershipId, ticketActivityLog.userMembershipId),
-      ))
+      .leftJoin(
+        organizationMembers,
+        and(
+          eq(organizationMembers.orgId, ticketActivityLog.orgId),
+          eq(organizationMembers.id, ticketActivityLog.userMembershipId),
+        ),
+      )
+      .leftJoin(users, eq(users.id, organizationMembers.userId))
+      .leftJoin(
+        organizationPeople,
+        and(
+          eq(organizationPeople.organizationId, ticketActivityLog.orgId),
+          isNull(organizationPeople.deletedAt),
+          eq(organizationPeople.userId, organizationMembers.userId),
+        ),
+      )
       .where(and(...conditions))
       .orderBy(desc(ticketActivityLog.id))
       .limit(opts.limit + 1);
 
-    const mapped = rows.map((row) => {
-      const fallbackName = `${row.firstName ?? ""} ${row.lastName ?? ""}`.trim();
-      const resolvedName = row.displayName ?? (fallbackName.length > 0 ? fallbackName : null);
-      return {
-        id: row.id,
-        action: row.action,
-        label: actionLabel(row.action),
-        fromValue: row.fromValue,
-        toValue: row.toValue,
-        createdAt: row.createdAt,
-        user: row.userMembershipId !== null && row.userMembershipId !== undefined
-          ? { id: row.actorUserId ?? null, name: resolvedName ?? "Former Member", image: row.avatarUrl ?? null }
+    const mapped = rows.map((row) => ({
+      id: row.id,
+      action: row.action,
+      label: actionLabel(row.action),
+      fromValue: row.fromValue,
+      toValue: row.toValue,
+      createdAt: row.createdAt,
+      user:
+        row.userMembershipId !== null && row.userMembershipId !== undefined
+          ? {
+              id: row.personUserId ?? row.memberUserId ?? null,
+              name: resolvePersonDisplayName(row) ?? UNRESOLVED_MEMBER_NAME,
+              image: row.avatarUrl ?? row.userImage ?? null,
+            }
           : null,
-      };
-    });
+    }));
 
     return buildCursorPage(mapped, opts.limit, (r) => ({
       sortValue: String(r.id),
@@ -192,7 +244,11 @@ export class ProjectsTicketSubresourcesService {
     await assertTicketInOrg(this.db, orgId, ticketId);
     return queryTickets(
       this.db,
-      and(eq(tickets.parentTicketId, ticketId), eq(tickets.orgId, orgId), isNull(tickets.deletedAt)),
+      and(
+        eq(tickets.parentTicketId, ticketId),
+        eq(tickets.orgId, orgId),
+        isNull(tickets.deletedAt),
+      ),
       [asc(tickets.rank), asc(tickets.id)],
       200,
     );
@@ -200,20 +256,16 @@ export class ProjectsTicketSubresourcesService {
 
   private async requireTicket(orgId: string, ticketId: number): Promise<void> {
     const ticket = await this.db.query.tickets.findFirst({
-      where: and(eq(tickets.id, ticketId), eq(tickets.orgId, orgId), isNull(tickets.deletedAt)),
+      where: and(
+        eq(tickets.id, ticketId),
+        eq(tickets.orgId, orgId),
+        isNull(tickets.deletedAt),
+      ),
       columns: { id: true },
     });
     if (!ticket) throw new NotFoundException("Ticket not found");
   }
 
-  /**
-   * The `user` relation on `ticket_watchers` points at `organization_members`, not at a person, so
-   * this read shipped the membership row where the client's `TicketWatcher.user` declares a
-   * `TicketUser` and `w.userId` where the row only carries `membershipId`. `apiClient.get` is a
-   * cast, so both typechecks passed: every avatar in `watcher-list.tsx` fell back to "?" with the
-   * tooltip "Unknown", every `key={w.userId}` was `undefined`, and `isWatching` was permanently
-   * false — so the toggle could only ever add a watcher and un-watching was unreachable.
-   */
   async getWatchers(orgId: string, ticketId: number) {
     await this.requireTicket(orgId, ticketId);
     const rows = await this.db.query.ticketWatchers.findMany({
@@ -222,7 +274,18 @@ export class ProjectsTicketSubresourcesService {
       with: {
         user: {
           columns: { userId: true },
-          with: { user: { columns: { id: true, name: true, firstName: true, lastName: true, image: true, email: true } } },
+          with: {
+            user: {
+              columns: {
+                id: true,
+                name: true,
+                firstName: true,
+                lastName: true,
+                image: true,
+                email: true,
+              },
+            },
+          },
         },
       },
       limit: 100,
@@ -244,9 +307,16 @@ export class ProjectsTicketSubresourcesService {
     const [member] = await this.db
       .select({ id: organizationMembers.id })
       .from(organizationMembers)
-      .where(and(eq(organizationMembers.orgId, u.orgId), eq(organizationMembers.userId, userId), eq(organizationMembers.status, "ACTIVE")))
+      .where(
+        and(
+          eq(organizationMembers.orgId, u.orgId),
+          eq(organizationMembers.userId, userId),
+          eq(organizationMembers.status, "ACTIVE"),
+        ),
+      )
       .limit(1);
-    if (!member) throw new NotFoundException("Watcher is not an organization member");
+    if (!member)
+      throw new NotFoundException("Watcher is not an organization member");
     await this.db
       .insert(ticketWatchers)
       .values({ orgId: u.orgId, ticketId, membershipId: member.id })
@@ -259,10 +329,14 @@ export class ProjectsTicketSubresourcesService {
         image: organizationPeople.avatarUrl,
       })
       .from(organizationPeople)
-      .where(and(eq(organizationPeople.userId, userId), eq(organizationPeople.organizationId, u.orgId)))
+      .where(
+        and(
+          eq(organizationPeople.userId, userId),
+          eq(organizationPeople.organizationId, u.orgId),
+        ),
+      )
       .limit(1);
-    const fallbackName = `${person?.firstName ?? ""} ${person?.lastName ?? ""}`.trim();
-    const name = person?.displayName ?? (fallbackName.length > 0 ? fallbackName : null);
+    const name = resolvePersonDisplayName(person ?? {});
     return {
       userId,
       name,
@@ -275,7 +349,12 @@ export class ProjectsTicketSubresourcesService {
     const [member] = await this.db
       .select({ id: organizationMembers.id })
       .from(organizationMembers)
-      .where(and(eq(organizationMembers.orgId, u.orgId), eq(organizationMembers.userId, u.userId)))
+      .where(
+        and(
+          eq(organizationMembers.orgId, u.orgId),
+          eq(organizationMembers.userId, u.userId),
+        ),
+      )
       .limit(1);
     if (!member) return { success: true };
     await this.db
@@ -331,7 +410,12 @@ export class ProjectsTicketSubresourcesService {
     userId: string,
   ): Promise<void> {
     try {
-      await this.activity.logTicketActivity(orgId, ticketId, userId, "label_changed");
+      await this.activity.logTicketActivity(
+        orgId,
+        ticketId,
+        userId,
+        "label_changed",
+      );
     } catch (error) {
       logger.error("Failed to log label activity", { error });
     }
@@ -377,7 +461,12 @@ export class ProjectsTicketSubresourcesService {
     ticketId: number,
     relatedId: number,
   ) {
-    return this.relationsService.removeRelation(u, projectId, ticketId, relatedId);
+    return this.relationsService.removeRelation(
+      u,
+      projectId,
+      ticketId,
+      relatedId,
+    );
   }
 
   getChecklists(orgId: string, projectId: number, ticketId: number) {
@@ -390,7 +479,12 @@ export class ProjectsTicketSubresourcesService {
     ticketId: number,
     data: { title: string },
   ) {
-    return this.checklistsService.createChecklist(orgId, projectId, ticketId, data);
+    return this.checklistsService.createChecklist(
+      orgId,
+      projectId,
+      ticketId,
+      data,
+    );
   }
 
   updateChecklist(orgId: string, checklistId: number, data: { title: string }) {
@@ -436,11 +530,7 @@ export class ProjectsTicketSubresourcesService {
     return this.linksService.getGitLinks(orgId, projectId, ticketId);
   }
 
-  listRelatedLinks(
-    u: CurrentUserContext,
-    projectId: number,
-    ticketId: number,
-  ) {
+  listRelatedLinks(u: CurrentUserContext, projectId: number, ticketId: number) {
     return this.linksService.listRelatedLinks(u, projectId, ticketId);
   }
 
@@ -460,7 +550,13 @@ export class ProjectsTicketSubresourcesService {
     linkId: number,
     body: UpdateRelatedLinkInput,
   ) {
-    return this.linksService.updateRelatedLink(u, projectId, ticketId, linkId, body);
+    return this.linksService.updateRelatedLink(
+      u,
+      projectId,
+      ticketId,
+      linkId,
+      body,
+    );
   }
 
   deleteRelatedLink(

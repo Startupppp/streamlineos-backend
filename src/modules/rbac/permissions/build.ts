@@ -365,3 +365,33 @@ export const PROJECT_GOVERNANCE_PERMISSIONS: Permission[] = [
     description: "Create, update, and delete project decisions",
   },
 ];
+
+export const PROJECT_UPDATES_PERMISSIONS: Permission[] = [
+  {
+    name: "build:updates:view",
+    resource: "build:updates",
+    action: "view",
+    description: "View project status updates",
+  },
+  {
+    name: "build:updates:manage",
+    resource: "build:updates",
+    action: "manage",
+    description: "Post and delete project status updates",
+  },
+];
+
+export const PROJECT_FILES_PERMISSIONS: Permission[] = [
+  {
+    name: "build:files:view",
+    resource: "build:files",
+    action: "view",
+    description: "View project files",
+  },
+  {
+    name: "build:files:manage",
+    resource: "build:files",
+    action: "manage",
+    description: "Upload and delete project files",
+  },
+];

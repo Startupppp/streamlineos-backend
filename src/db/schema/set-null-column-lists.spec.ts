@@ -1,4 +1,4 @@
-import * as schema from "./index";
+import * as schema from ".";
 import { deriveSetNullDeclarations } from "./set-null-column-lists";
 
 const declarations = () => deriveSetNullDeclarations(schema as Record<string, unknown>);

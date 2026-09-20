@@ -8,6 +8,7 @@ jest.mock("../retrieval/kb-page-access.util", () => ({
 }));
 
 jest.mock("./kb-page-edit.util", () => ({
+  ...jest.requireActual("./kb-page-edit.util"),
   snapshotIfNeeded: jest.fn().mockResolvedValue(undefined),
   resyncPageLinks: jest.fn().mockResolvedValue(undefined),
 }));
@@ -40,7 +41,7 @@ function makeUser() {
   } as never;
 }
 
-function makePageRow(contentRevision: number) {
+function makePageRow(contentRevision: number, over: Record<string, unknown> = {}) {
   return {
     id: PAGE_ID,
     orgId: ORG_ID,
@@ -56,10 +57,17 @@ function makePageRow(contentRevision: number) {
     isLocked: false,
     trustState: "unverified",
     status: "draft",
+    ...over,
   };
 }
 
-function makeDb(pageRow: unknown, updateResult: unknown[]) {
+const LATEST_EDIT = {
+  contentRevision: 12,
+  updatedAt: new Date("2026-03-04T10:15:00.000Z"),
+  editorName: "Priya Raman",
+};
+
+function makeDb(pageRow: unknown, updateResult: unknown[], latestEdit: unknown[] = [LATEST_EDIT]) {
   const capturedWheres: unknown[] = [];
 
   const returningFn = jest.fn().mockResolvedValue(updateResult);
@@ -70,8 +78,20 @@ function makeDb(pageRow: unknown, updateResult: unknown[]) {
   const setFn = jest.fn().mockReturnValue({ where: whereFn });
   const updateFn = jest.fn().mockReturnValue({ set: setFn });
 
+  const selectFn = jest.fn().mockReturnValue({
+    from: jest.fn().mockReturnValue({
+      leftJoin: jest.fn().mockReturnValue({
+        where: jest.fn().mockImplementation((w: unknown) => {
+          capturedWheres.push(w);
+          return { limit: jest.fn().mockResolvedValue(latestEdit) };
+        }),
+      }),
+    }),
+  });
+
   const tx = {
     update: updateFn,
+    select: selectFn,
     query: {
       kbPages: { findFirst: jest.fn().mockResolvedValue(undefined) },
     },
@@ -191,6 +211,93 @@ describe("KbPagesService — optimistic concurrency control", () => {
     expect(typeof err.getResponse === "function" ? err.getResponse() : undefined).toMatchObject({
       code: "STALE_REVISION",
     });
+  });
+
+  it("(c) a conflict names who holds the page now, when they saved it, and the revision to rebase on", async () => {
+    const pageRow = makePageRow(1);
+    const { db } = makeDb(pageRow, []);
+    const svc = new KbPagesService(db, notifications, planLimits);
+
+    let caught: unknown;
+    try {
+      await svc.update(
+        makeUser(),
+        PAGE_ID,
+        { content: { type: "doc", content: [] }, expectedContentRevision: 1 },
+        false,
+      );
+    } catch (e) {
+      caught = e;
+    }
+
+    const err = caught as { getResponse?: () => unknown };
+    expect(typeof err.getResponse === "function" ? err.getResponse() : undefined).toMatchObject({
+      code: "STALE_REVISION",
+      details: {
+        currentContentRevision: LATEST_EDIT.contentRevision,
+        lastEditedByName: LATEST_EDIT.editorName,
+        lastEditedAt: LATEST_EDIT.updatedAt.toISOString(),
+      },
+    });
+  });
+
+  it("(c) a conflict whose page row has since vanished still answers 409 with empty details, never a 500", async () => {
+    const pageRow = makePageRow(1);
+    const { db } = makeDb(pageRow, [], []);
+    const svc = new KbPagesService(db, notifications, planLimits);
+
+    let caught: unknown;
+    try {
+      await svc.update(
+        makeUser(),
+        PAGE_ID,
+        { content: { type: "doc", content: [] }, expectedContentRevision: 1 },
+        false,
+      );
+    } catch (e) {
+      caught = e;
+    }
+
+    const err = caught as { getStatus?: () => number; getResponse?: () => unknown };
+    expect(typeof err.getStatus === "function" ? err.getStatus() : undefined).toBe(HttpStatus.CONFLICT);
+    expect(typeof err.getResponse === "function" ? err.getResponse() : undefined).toMatchObject({
+      details: { currentContentRevision: null, lastEditedByName: null, lastEditedAt: null },
+    });
+  });
+
+  it("(c) the update response masks the share token for an editor who may not share, exactly as the read does", async () => {
+    const currentRevision = 3;
+    const pageRow = makePageRow(currentRevision, { createdByMembershipId: 99, createdById: "someone-else" });
+    const updatedRow = { ...pageRow, contentRevision: currentRevision + 1, publicToken: "tok_secret" };
+    const { db } = makeDb(pageRow, [updatedRow]);
+    const svc = new KbPagesService(db, notifications, planLimits);
+
+    const result = await svc.update(
+      makeUser(),
+      PAGE_ID,
+      { content: { type: "doc", content: [] }, expectedContentRevision: currentRevision },
+      false,
+    );
+
+    expect(result.publicToken).toBeNull();
+    expect(result.contentRevision).toBe(currentRevision + 1);
+  });
+
+  it("(c) the update response keeps the share token for the page's own creator", async () => {
+    const currentRevision = 3;
+    const pageRow = makePageRow(currentRevision);
+    const updatedRow = { ...pageRow, contentRevision: currentRevision + 1, publicToken: "tok_secret" };
+    const { db } = makeDb(pageRow, [updatedRow]);
+    const svc = new KbPagesService(db, notifications, planLimits);
+
+    const result = await svc.update(
+      makeUser(),
+      PAGE_ID,
+      { content: { type: "doc", content: [] }, expectedContentRevision: currentRevision },
+      false,
+    );
+
+    expect(result.publicToken).toBe("tok_secret");
   });
 
   it("(d) WHERE clause carries the revision predicate — atomic guard proven via SQL values", async () => {

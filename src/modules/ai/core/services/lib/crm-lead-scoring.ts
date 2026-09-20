@@ -17,6 +17,8 @@ import { LeadScoreSchema, type LeadScoreResult } from "../../dto/output.schemas"
 import { throwOnAiFailure } from "../gateway-result.util";
 import { updateMirroredLeads } from "../../../../party/party-legacy-leads";
 
+import { trunc } from "./prompt-text";
+
 /**
  * Scoring a lead: the model's number, written back onto the record.
  *
@@ -29,18 +31,7 @@ import { updateMirroredLeads } from "../../../../party/party-legacy-leads";
  *
  * `batchScoreLeads` swallows a per-lead failure and logs it, because a batch of
  * fifty that aborts on the seventh has scored six and told nobody which.
- *
- * `trunc` lives here with the original and largest consumer. Both other callers
- * import it back; it is a prompt budget, and if it acquires a fourth the honest
- * home is `prompts/crm-scoring.prompts.ts`, where the cap is actually spent.
  */
-
-const MAX_NOTES = 2000;
-
-export function trunc(s: string | null | undefined): string {
-  if (!s) return "";
-  return s.length > MAX_NOTES ? s.slice(0, MAX_NOTES) + "…" : s;
-}
 
 export interface LeadScoringDeps {
   readonly db: Db;

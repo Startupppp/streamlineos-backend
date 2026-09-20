@@ -34,7 +34,7 @@ import { join, relative } from "node:path";
 // (see assertCoversEveryPaidEntryPoint) so a new entry point fails this gate
 // instead of silently escaping it.
 const INVOKE_RE =
-  /\.(invokeStructured(?:WithImage)?(?:WithUsage)?|invokeText(?:WithUsage)?|embed(?:Query|Batch)WithCredit|streamTextWithUsage)\s*\(/g;
+  /\.(invokeStructured(?:WithImage)?(?:WithUsage)?|invokeText(?:WithUsage)?|embed(?:Query|Batch)WithCredit|streamTextWithUsage|streamAgenticTurn)\s*\(/g;
 
 const GATEWAY_SERVICE_REL = "src/modules/ai/core/gateway/ai-gateway.service.ts";
 

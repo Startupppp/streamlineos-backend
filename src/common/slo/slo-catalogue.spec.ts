@@ -3,7 +3,7 @@ import { basename, join, relative, sep } from "node:path";
 import { execSync } from "node:child_process";
 import { MODULE_REGISTRY } from "../rbac/module-registry";
 import { SEAM_BUDGETS } from "../observability/seam-budgets";
-import { SLO_CATALOGUE, MODULE_SLOS, QUEUE_SLOS, QUEUE_SUBJECTS, SLO_OWNERS } from "./index";
+import { SLO_CATALOGUE, MODULE_SLOS, QUEUE_SLOS, QUEUE_SUBJECTS, SLO_OWNERS } from ".";
 
 const BACKEND_ROOT = join(__dirname, "..", "..", "..");
 const SRC_ROOT = join(BACKEND_ROOT, "src");

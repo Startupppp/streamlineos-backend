@@ -4,8 +4,8 @@ jest.mock("ai", () => ({
   stepCountIs: jest.fn(() => () => false),
 }));
 jest.mock("@composio/core", () => ({ Composio: jest.fn() }));
-jest.mock("../workspace-copilot-tools", () => ({ WorkspaceCopilotTools: jest.fn() }));
-jest.mock("../comms-copilot-tools", () => ({ CommsCopilotTools: jest.fn() }));
+jest.mock("../tools/workspace-copilot-tools", () => ({ WorkspaceCopilotTools: jest.fn() }));
+jest.mock("../tools/comms-copilot-tools", () => ({ CommsCopilotTools: jest.fn() }));
 jest.mock("../../../calendar/calendar.service", () => ({ CalendarService: jest.fn() }));
 jest.mock("../../../integrations/core/composio.gateway", () => ({ ComposioGateway: jest.fn() }));
 jest.mock("../../../../common/ratelimit/rate-limit.service", () => ({ RateLimitService: jest.fn() }));
@@ -18,7 +18,7 @@ import { getTenantContext } from "../../../../common/tenant/tenant-context";
 import { runInNewTenantTransaction } from "../../../../common/tenant/run-in-tenant-transaction";
 import { primeRelocationTrafficTracker } from "../../../../common/relocation/relocation-traffic-tracker";
 import type { Db } from "../../../../db/drizzle.module";
-import { actorFor, makeLedger, buildService } from "./chat-assistant-tenant-context-fixtures";
+import { actorFor, makeLedger, buildService } from "./chat-assistant-tenant-context-fixtures.spec";
 
 /** The literal text `app.current_org_id()` raises. Matched, not paraphrased. */
 const DENIED_MESSAGE =

@@ -191,7 +191,7 @@ export class RecruitmentJobsController {
 
   @Get("internal-jobs")
   @ResponseSchema(z.array(internalJobSchema))
-  @RequirePermission("hr:employees:view")
+  @RequirePermission("hr:requisitions:view")
   listInternalJobs(@CurrentUser() u: CurrentUserContext) {
     return this.jobs.listInternalJobs(u.orgId);
   }
@@ -199,7 +199,7 @@ export class RecruitmentJobsController {
   @Post("internal-jobs/:jobId/apply")
   @HttpCode(201)
   @ResponseSchema(jobApplicationSchema)
-  @RequirePermission("hr:employees:view")
+  @RequirePermission("hr:requisitions:view")
   @Validate({ params: jobIdParams, body: internalApplySchema })
   internalApply(
     @Param("jobId", ParseIntPipe) jobId: number,

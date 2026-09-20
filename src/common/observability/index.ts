@@ -1,5 +1,12 @@
 export { reportError, setErrorReporter } from "./error-reporter";
 export {
+  describeFailure,
+  installProcessFailureHandlers,
+  setFatalHandler,
+  resetFatalHandler,
+  FATAL_EXIT_CODE,
+} from "./process-failure";
+export {
   bindObservabilityContext,
   getObservabilityContext,
   runWithObservabilityContext,

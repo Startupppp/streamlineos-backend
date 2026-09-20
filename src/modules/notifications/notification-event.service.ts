@@ -1,7 +1,7 @@
 import { Injectable, OnModuleDestroy } from "@nestjs/common";
 import type { MessageEvent } from "@nestjs/common";
-import { Subject, Observable, interval, merge } from "rxjs";
-import { filter, map, takeUntil } from "rxjs/operators";
+import { Subject, Observable, defer, interval, merge } from "rxjs";
+import { filter, finalize, map, takeUntil } from "rxjs/operators";
 import type { AdmissionTenantHintProvider } from "../../common/admission/admission-tenant-hint";
 
 export interface NotifEventPayload {
@@ -27,6 +27,11 @@ interface StreamToken {
   expiresAt: number;
 }
 
+interface OpenStream {
+  signal: Subject<void>;
+  subscribers: number;
+}
+
 const HEARTBEAT_INTERVAL_MS = 15_000;
 const STREAM_TOKEN_TTL_MS = 120_000;
 
@@ -45,7 +50,7 @@ export function bearerStreamToken(req: unknown): string | undefined {
 export class NotificationEventService implements OnModuleDestroy, AdmissionTenantHintProvider {
   private readonly events$ = new Subject<NotifEvent>();
   private readonly streamTokens = new Map<string, StreamToken>();
-  private readonly closeSignals = new Map<string, Subject<void>>();
+  private readonly closeSignals = new Map<string, OpenStream>();
 
   emit(event: NotifEvent): void {
     this.events$.next(event);
@@ -53,12 +58,6 @@ export class NotificationEventService implements OnModuleDestroy, AdmissionTenan
 
   stream(userId: string, orgId: string): Observable<MessageEvent> {
     const key = `${orgId}:${userId}`;
-    let close$ = this.closeSignals.get(key);
-    if (!close$) {
-      close$ = new Subject<void>();
-      this.closeSignals.set(key, close$);
-    }
-    const signal = close$;
 
     const events$ = this.events$.pipe(
       filter((e) => e.userId === userId && e.orgId === orgId),
@@ -72,17 +71,43 @@ export class NotificationEventService implements OnModuleDestroy, AdmissionTenan
       map((): MessageEvent => ({ data: "", type: "heartbeat" })),
     );
 
-    return merge(events$, heartbeat$).pipe(takeUntil(signal));
+    return defer(() => {
+      const open = this.acquireStream(key);
+      return merge(events$, heartbeat$).pipe(takeUntil(open.signal));
+    }).pipe(finalize(() => this.releaseStream(key)));
   }
 
   closeStream(userId: string, orgId: string): void {
     const key = `${orgId}:${userId}`;
-    const signal = this.closeSignals.get(key);
-    if (signal) {
-      signal.next();
-      signal.complete();
-      this.closeSignals.delete(key);
+    const open = this.closeSignals.get(key);
+    if (!open) return;
+    this.closeSignals.delete(key);
+    open.signal.next();
+    open.signal.complete();
+  }
+
+  openStreamCount(): number {
+    return this.closeSignals.size;
+  }
+
+  private acquireStream(key: string): OpenStream {
+    const existing = this.closeSignals.get(key);
+    if (existing) {
+      existing.subscribers += 1;
+      return existing;
     }
+    const open: OpenStream = { signal: new Subject<void>(), subscribers: 1 };
+    this.closeSignals.set(key, open);
+    return open;
+  }
+
+  private releaseStream(key: string): void {
+    const open = this.closeSignals.get(key);
+    if (!open) return;
+    open.subscribers -= 1;
+    if (open.subscribers > 0) return;
+    this.closeSignals.delete(key);
+    open.signal.complete();
   }
 
   generateToken(userId: string, orgId: string): string {
@@ -121,8 +146,8 @@ export class NotificationEventService implements OnModuleDestroy, AdmissionTenan
 
   onModuleDestroy(): void {
     this.events$.complete();
-    for (const signal of this.closeSignals.values())
-      signal.complete();
+    for (const open of this.closeSignals.values())
+      open.signal.complete();
     this.closeSignals.clear();
   }
 }

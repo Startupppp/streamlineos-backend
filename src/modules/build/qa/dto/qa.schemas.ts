@@ -1,9 +1,15 @@
 import { z } from "zod";
+import { idCursorSchema } from "../../../../common/pagination/cursor.schema";
+import { pageSizeField } from "../../../../common/pagination/list-query.schema";
 
 const testCaseStepSchema = z.object({
   action: z.string().min(1),
   expected: z.string().min(1),
 });
+
+export const testSuiteListQuerySchema = z.object({
+  cursor: idCursorSchema,
+}).strict();
 
 export const createTestSuiteSchema = z.object({
   name: z.string().min(1).max(255),
@@ -18,13 +24,14 @@ export const testCaseListQuerySchema = z.object({
   q: z.string().optional(),
   priority: z.enum(["low", "medium", "high"]).optional(),
   automationStatus: z.enum(["manual", "automated", "planned"]).optional(),
+  cursor: idCursorSchema,
 }).strict();
 
 export const createTestCaseSchema = z.object({
   suiteId: z.number().int().positive().optional(),
   title: z.string().min(1).max(500),
   preconditions: z.string().optional(),
-  steps: z.array(testCaseStepSchema).optional(),
+  steps: z.array(testCaseStepSchema).max(200).optional(),
   expectedResult: z.string().optional(),
   priority: z.enum(["low", "medium", "high"]).optional(),
   component: z.string().optional(),
@@ -36,6 +43,7 @@ export const updateTestCaseSchema = createTestCaseSchema.partial().strict();
 
 export const testRunListQuerySchema = z.object({
   status: z.enum(["not_started", "in_progress", "completed", "aborted"]).optional(),
+  cursor: idCursorSchema,
 }).strict();
 
 export const createTestRunSchema = z.object({
@@ -75,6 +83,12 @@ export const createBugFromResultSchema = z.object({
   browserDevice: z.string().optional(),
 }).strict();
 
+export const runResultsQuerySchema = z.object({
+  cursor: idCursorSchema,
+  limit: pageSizeField(50),
+}).strict();
+
+export type TestSuiteListQuery = z.infer<typeof testSuiteListQuerySchema>;
 export type CreateTestSuiteInput = z.infer<typeof createTestSuiteSchema>;
 export type UpdateTestSuiteInput = z.infer<typeof updateTestSuiteSchema>;
 export type TestCaseListQuery = z.infer<typeof testCaseListQuerySchema>;
@@ -85,3 +99,4 @@ export type CreateTestRunInput = z.infer<typeof createTestRunSchema>;
 export type UpdateTestRunInput = z.infer<typeof updateTestRunSchema>;
 export type UpdateTestResultInput = z.infer<typeof updateTestResultSchema>;
 export type CreateBugFromResultInput = z.infer<typeof createBugFromResultSchema>;
+export type RunResultsQuery = z.infer<typeof runResultsQuerySchema>;

@@ -30,9 +30,9 @@ import { updateMirroredClients } from "../../../party/party-legacy-clients";
 import {
   batchScoreLeads,
   scoreLead,
-  trunc,
   type LeadScoringDeps,
 } from "./lib/crm-lead-scoring";
+import { trunc } from "./lib/prompt-text";
 import { nextBestAction, nextBestActionWithEvidence } from "./lib/crm-next-action";
 
 interface ChurnContext {

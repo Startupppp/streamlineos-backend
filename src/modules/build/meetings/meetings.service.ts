@@ -166,13 +166,14 @@ export class MeetingsService {
     return result;
   }
 
-  async getMeeting(orgId: string, projectId: number, meetingId: number) {
-    const meeting = await this.loadMeeting(orgId, projectId, meetingId);
+  async getMeeting(u: CurrentUserContext, projectId: number, meetingId: number) {
+    await assertProjectAccess(this.db, this.access, u, projectId);
+    const meeting = await this.loadMeeting(u.orgId, projectId, meetingId);
     const [attendees, actionItems, standupEntries] = await Promise.all([
       this.db
         .select()
         .from(meetingAttendees)
-        .where(and(eq(meetingAttendees.meetingId, meetingId), eq(meetingAttendees.orgId, orgId)))
+        .where(and(eq(meetingAttendees.meetingId, meetingId), eq(meetingAttendees.orgId, u.orgId)))
         .limit(100),
       this.db
         .select()
@@ -180,7 +181,7 @@ export class MeetingsService {
         .where(
           and(
             eq(meetingActionItems.meetingId, meetingId),
-            eq(meetingActionItems.orgId, orgId),
+            eq(meetingActionItems.orgId, u.orgId),
             isNull(meetingActionItems.deletedAt),
           ),
         )
@@ -188,7 +189,7 @@ export class MeetingsService {
       this.db
         .select()
         .from(meetingStandupEntries)
-        .where(and(eq(meetingStandupEntries.meetingId, meetingId), eq(meetingStandupEntries.orgId, orgId)))
+        .where(and(eq(meetingStandupEntries.meetingId, meetingId), eq(meetingStandupEntries.orgId, u.orgId)))
         .limit(100),
     ]);
     return { ...meeting, attendees, actionItems, standupEntries };

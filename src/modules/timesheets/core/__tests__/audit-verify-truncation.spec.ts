@@ -14,24 +14,17 @@ const ORG = "org-audit-verify";
  * because it is believed.
  */
 function makeDb(rows: unknown[], total: number): Db {
-  const selectCalls: unknown[] = [];
   const db = {
-    select: jest.fn((projection?: unknown) => {
-      selectCalls.push(projection);
-      /* The first select in verifyChain is the count; the second reads rows. */
-      const isCount = selectCalls.length === 1;
-      return {
-        from: () => ({
-          where: isCount
-            ? async () => [{ n: String(total) }]
-            : () => ({
-                orderBy: () => ({
-                  limit: async () => rows,
-                }),
-              }),
+    select: jest.fn(() => ({
+      from: () => ({
+        where: () => ({
+          orderBy: () => ({
+            limit: async () =>
+              rows.map((r) => ({ ...(r as object), windowTotal: String(total) })),
+          }),
         }),
-      };
-    }),
+      }),
+    })),
   };
   return db as unknown as Db;
 }
@@ -171,5 +164,15 @@ describe("TimesheetsAuditService.verifyChain", () => {
     /* A break found early says nothing about what lies past the cut. */
     expect(result.truncated).toBe(true);
     expect(result.total).toBe(500);
+  });
+
+  it("reads the count from count(*) OVER () so the total needs no second round trip", async () => {
+    const rows = chainOf(3);
+    const db = makeDb(rows, 3);
+    const svc = new TimesheetsAuditService(db);
+
+    await svc.verifyChain(ORG, 10_000);
+
+    expect((db.select as jest.Mock).mock.calls).toHaveLength(1);
   });
 });

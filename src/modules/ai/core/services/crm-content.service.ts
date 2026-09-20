@@ -32,13 +32,7 @@ import type {
   SummarizeInput,
 } from "../dto/request.schemas";
 import { throwOnAiFailure } from "./gateway-result.util";
-
-const MAX_TEXT = 2000;
-
-function trunc(s: string | null | undefined, max = MAX_TEXT): string {
-  if (!s) return "";
-  return s.length > max ? s.slice(0, max) + "…" : s;
-}
+import { trunc } from "./lib/prompt-text";
 
 const REPORT_NARRATOR_SYSTEM =
   "You are a business analyst who writes clear, insightful plain-English narratives from raw data for an Indian investment and financial services firm. Focus on key trends, notable changes, and actionable insights. Keep it concise (2-3 paragraphs). Use relevant financial context and terminology appropriate for the Indian market when applicable.";

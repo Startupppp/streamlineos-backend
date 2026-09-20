@@ -200,18 +200,16 @@ export class ChatMessageTimelineService {
 
     if (!rawParent) throw new NotFoundException("Message not found");
 
-    const isParentChannelMember = await this.isMember(
-      rawParent.channelId,
-      actor.orgId,
-      actor.membershipId,
-    );
-    const parentChannel = await this.db.query.chatChannels.findFirst({
-      where: and(
-        eq(chatChannels.id, rawParent.channelId),
-        eq(chatChannels.orgId, actor.orgId),
-      ),
-      columns: { type: true, entityType: true, entityId: true },
-    });
+    const [isParentChannelMember, parentChannel] = await Promise.all([
+      this.isMember(rawParent.channelId, actor.orgId, actor.membershipId),
+      this.db.query.chatChannels.findFirst({
+        where: and(
+          eq(chatChannels.id, rawParent.channelId),
+          eq(chatChannels.orgId, actor.orgId),
+        ),
+        columns: { type: true, entityType: true, entityId: true },
+      }),
+    ]);
 
     if (!isParentChannelMember) {
       if (parentChannel?.type !== "PUBLIC")

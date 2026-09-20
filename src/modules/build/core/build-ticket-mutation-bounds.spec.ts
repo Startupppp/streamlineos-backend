@@ -20,7 +20,6 @@ function makeDb(ids: number[]) {
     id,
     status: "TODO",
     rank: "1000",
-    createdAtCursor: "2024-01-01T00:00:00.000Z",
     version: 1,
     assigneeMembershipId: null,
     dueDate: null,

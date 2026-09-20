@@ -49,7 +49,13 @@ export class ApprovalsBulkService {
     input: RejectPeriodInput,
   ) {
     const [period] = await this.db
-      .select()
+      .select({
+        status: timesheetPeriods.status,
+        userMembershipId: timesheetPeriods.userMembershipId,
+        currentApproverMembershipId: timesheetPeriods.currentApproverMembershipId,
+        periodStart: timesheetPeriods.periodStart,
+        periodEnd: timesheetPeriods.periodEnd,
+      })
       .from(timesheetPeriods)
       .where(
         and(

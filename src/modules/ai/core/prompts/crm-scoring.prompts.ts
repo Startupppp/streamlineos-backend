@@ -119,7 +119,7 @@ Notes: ${deal.notes || "None"}`,
   };
 }
 
-export interface NextActionInput {
+export interface NextActionPromptInput {
   entityType: "lead" | "deal";
   name: string;
   status: string;
@@ -134,7 +134,7 @@ export interface NextActionInput {
   notes?: string | null;
 }
 
-export function nextActionPrompt(input: NextActionInput) {
+export function nextActionPrompt(input: NextActionPromptInput) {
   return {
     system: `You are a sales productivity advisor for an Indian investment/financial services company.
 Suggest the ONE most impactful next action for this ${input.entityType}.
@@ -164,7 +164,7 @@ Notes: ${input.notes || "None"}`,
   };
 }
 
-export interface ChurnRiskInput {
+export interface ChurnRiskPromptInput {
   clientName: string;
   company?: string | null;
   healthScore: number;
@@ -177,7 +177,7 @@ export interface ChurnRiskInput {
   daysSinceConversion: number;
 }
 
-export function churnRiskPrompt(input: ChurnRiskInput) {
+export function churnRiskPrompt(input: ChurnRiskPromptInput) {
   return {
     system: `You are a customer success analyst for an Indian investment/financial services company.
 Assess the churn risk for this client (0-100, where 100 = certain to churn).

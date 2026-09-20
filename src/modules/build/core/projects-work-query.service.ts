@@ -28,6 +28,7 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import type { AllWorkQuery } from "./dto/projects.schemas";
 import {
   assignedOrParticipatingIds,
+  mineCountByStatusSql,
   mineCountSql,
   readIds,
   resolveWorkSort,
@@ -45,6 +46,31 @@ import {
   serializeSortValue,
 } from "./projects-work-query.cursor";
 import { WORK_ROW_SELECTION } from "./projects-work-query-helpers";
+
+export function memberProjectIdsQuery(db: Db, orgId: string, userId: string) {
+  return db
+    .select({ projectId: projectMembers.projectId })
+    .from(projectMembers)
+    .innerJoin(
+      organizationMembers,
+      and(
+        eq(organizationMembers.id, projectMembers.membershipId),
+        eq(organizationMembers.orgId, projectMembers.orgId),
+        eq(organizationMembers.userId, userId),
+        eq(organizationMembers.status, "ACTIVE"),
+      ),
+    )
+    .where(eq(projectMembers.orgId, orgId));
+}
+
+export function allCountByStatusQuery(db: Db, where: SQL<unknown> | undefined) {
+  return db
+    .select({ status: tickets.status, cnt: sql<string>`count(*)` })
+    .from(tickets)
+    .innerJoin(projects, eq(tickets.projectId, projects.id))
+    .where(where)
+    .groupBy(tickets.status);
+}
 
 @Injectable()
 export class ProjectsWorkQueryService {
@@ -82,40 +108,36 @@ export class ProjectsWorkQueryService {
     } = query;
     const limit = Math.min(rawLimit, PAGE_SIZE_CAP);
 
-    const memberRows = await this.db
-      .select({ projectId: projectMembers.projectId })
-      .from(projectMembers)
-      .innerJoin(
-        organizationMembers,
-        and(
-          eq(organizationMembers.id, projectMembers.membershipId),
-          eq(organizationMembers.orgId, projectMembers.orgId),
-          eq(organizationMembers.userId, u.userId),
-          eq(organizationMembers.status, "ACTIVE"),
-        ),
-      )
-      .where(eq(projectMembers.orgId, u.orgId));
-
-    const memberProjectIds = memberRows.map((r) => r.projectId);
-    if (memberProjectIds.length === 0) {
-      return { data: [], limit, nextCursor: null, hasMore: false, total: 0 };
-    }
-
-    const allowedProjectIds =
-      filterProjectIds && filterProjectIds.length > 0
-        ? filterProjectIds.filter((id) => memberProjectIds.includes(id))
-        : memberProjectIds;
-
-    if (allowedProjectIds.length === 0) {
-      return { data: [], limit, nextCursor: null, hasMore: false, total: 0 };
-    }
+    const isSelfScoped = scope === "created" || scope === "subscribed";
 
     const conditions: SQL<unknown>[] = [
       eq(tickets.orgId, u.orgId),
-      inArray(tickets.projectId, allowedProjectIds),
       ne(projects.status, "ARCHIVED"),
       isNull(tickets.deletedAt),
     ];
+
+    if (isSelfScoped) {
+      if (filterProjectIds && filterProjectIds.length > 0) {
+        conditions.push(inArray(tickets.projectId, filterProjectIds));
+      }
+    } else {
+      const memberRows = await memberProjectIdsQuery(this.db, u.orgId, u.userId);
+      const memberProjectIds = memberRows.map((r) => r.projectId);
+      if (memberProjectIds.length === 0) {
+        return { data: [], limit, nextCursor: null, hasMore: false, total: 0 };
+      }
+
+      const allowedProjectIds =
+        filterProjectIds && filterProjectIds.length > 0
+          ? filterProjectIds.filter((id) => memberProjectIds.includes(id))
+          : memberProjectIds;
+
+      if (allowedProjectIds.length === 0) {
+        return { data: [], limit, nextCursor: null, hasMore: false, total: 0 };
+      }
+
+      conditions.push(inArray(tickets.projectId, allowedProjectIds));
+    }
 
     if (pmWorkspaceId) {
       conditions.push(eq(projects.pmWorkspaceId, pmWorkspaceId));
@@ -131,13 +153,18 @@ export class ProjectsWorkQueryService {
 
     if (search && search.trim()) {
       const term = search.trim();
-      const isTicketRef = /^[A-Za-z]+-\d+$/.test(term) || /^#?\d+$/.test(term);
+      const prefixedRef = /^([A-Za-z]+)-(\d+)$/.exec(term);
+      const isTicketRef = prefixedRef !== null || /^#?\d+$/.test(term);
       if (isTicketRef) {
         const numStr = term.replace(/^#/, "").replace(/^[A-Za-z]+-/, "");
         const num = parseInt(numStr, 10);
+        const numCondition: SQL<unknown> = isNaN(num) ? sql`false` : eq(tickets.ticketNumber, num);
+        const keyBranch: SQL<unknown> = prefixedRef
+          ? (and(sql`UPPER(${projects.key}) = UPPER(${prefixedRef[1]})`, numCondition) ?? sql`false`)
+          : numCondition;
         const searchCondition = or(
           sql`${tickets.title} ILIKE ${"%" + term + "%"}`,
-          isNaN(num) ? sql`false` : eq(tickets.ticketNumber, num),
+          keyBranch,
         );
         if (searchCondition) conditions.push(searchCondition);
       } else {
@@ -264,6 +291,142 @@ export class ProjectsWorkQueryService {
     }));
 
     return { data, limit, nextCursor, hasMore, ...(total !== undefined ? { total } : {}) };
+  }
+
+  async countTicketsByProjectAndStatus(
+    u: CurrentUserContext,
+    opts: {
+      assigneeId?: string;
+      projectIds?: number[];
+    },
+  ): Promise<{
+    byProject: { projectId: number; projectName: string; total: number; done: number; inProgress: number }[];
+    totals: { total: number; done: number; inProgress: number };
+  }> {
+    const baseConditions: SQL<unknown>[] = [
+      eq(tickets.orgId, u.orgId),
+      ne(projects.status, "ARCHIVED"),
+      isNull(tickets.deletedAt),
+    ];
+
+    const memberRows = await memberProjectIdsQuery(this.db, u.orgId, u.userId);
+    const memberProjectIds = memberRows.map((r) => r.projectId);
+    if (memberProjectIds.length === 0) return { byProject: [], totals: { total: 0, done: 0, inProgress: 0 } };
+
+    const allowedProjectIds =
+      opts.projectIds && opts.projectIds.length > 0
+        ? opts.projectIds.filter((id) => memberProjectIds.includes(id))
+        : memberProjectIds;
+
+    if (allowedProjectIds.length === 0) return { byProject: [], totals: { total: 0, done: 0, inProgress: 0 } };
+
+    baseConditions.push(inArray(tickets.projectId, allowedProjectIds));
+
+    if (opts.assigneeId !== undefined) {
+      baseConditions.push(
+        sql`${tickets.assigneeMembershipId} IN (SELECT id FROM organization_members WHERE org_id = ${u.orgId} AND user_id = ${opts.assigneeId})`,
+      );
+    }
+
+    const where = and(...baseConditions);
+    const statusRows = await this.db
+      .select({
+        projectId: tickets.projectId,
+        projectName: projects.name,
+        status: tickets.status,
+        cnt: sql<string>`count(*)`,
+      })
+      .from(tickets)
+      .innerJoin(projects, eq(tickets.projectId, projects.id))
+      .where(where)
+      .groupBy(tickets.projectId, projects.name, tickets.status);
+
+    const byProjectMap = new Map<
+      number,
+      { projectId: number; projectName: string; total: number; done: number; inProgress: number }
+    >();
+    for (const row of statusRows) {
+      if (row.projectId === null) continue;
+      const entry = byProjectMap.get(row.projectId) ?? {
+        projectId: row.projectId,
+        projectName: row.projectName,
+        total: 0,
+        done: 0,
+        inProgress: 0,
+      };
+      const cnt = Number(row.cnt);
+      entry.total += cnt;
+      if (row.status === "DONE") entry.done += cnt;
+      if (row.status === "IN_PROGRESS" || row.status === "IN_REVIEW") entry.inProgress += cnt;
+      byProjectMap.set(row.projectId, entry);
+    }
+
+    const byProject = Array.from(byProjectMap.values()).sort((a, b) => b.total - a.total);
+    const totals = byProject.reduce(
+      (acc, r) => ({ total: acc.total + r.total, done: acc.done + r.done, inProgress: acc.inProgress + r.inProgress }),
+      { total: 0, done: 0, inProgress: 0 },
+    );
+    return { byProject, totals };
+  }
+
+  async countTicketsByStatus(
+    u: CurrentUserContext,
+    opts: {
+      scope: "all" | "mine";
+      assigneeId?: string;
+      projectIds?: number[];
+    },
+  ): Promise<{ byStatus: Record<string, number>; total: number }> {
+    const baseConditions: SQL<unknown>[] = [
+      eq(tickets.orgId, u.orgId),
+      ne(projects.status, "ARCHIVED"),
+      isNull(tickets.deletedAt),
+    ];
+
+    const memberRows = await memberProjectIdsQuery(this.db, u.orgId, u.userId);
+    const memberProjectIds = memberRows.map((r) => r.projectId);
+    if (memberProjectIds.length === 0) return { byStatus: {}, total: 0 };
+
+    const allowedProjectIds =
+      opts.projectIds && opts.projectIds.length > 0
+        ? opts.projectIds.filter((id) => memberProjectIds.includes(id))
+        : memberProjectIds;
+
+    if (allowedProjectIds.length === 0) return { byStatus: {}, total: 0 };
+
+    baseConditions.push(inArray(tickets.projectId, allowedProjectIds));
+
+    if (opts.scope === "all") {
+      if (opts.assigneeId !== undefined) {
+        baseConditions.push(
+          sql`${tickets.assigneeMembershipId} IN (SELECT id FROM organization_members WHERE org_id = ${u.orgId} AND user_id = ${opts.assigneeId})`,
+        );
+      }
+
+      const where = and(...baseConditions);
+      const statusRows = await allCountByStatusQuery(this.db, where);
+
+      const byStatus: Record<string, number> = {};
+      let total = 0;
+      for (const row of statusRows) {
+        const cnt = Number(row.cnt);
+        byStatus[row.status] = cnt;
+        total += cnt;
+      }
+      return { byStatus, total };
+    }
+
+    const where = and(...baseConditions);
+    const rawRows = await this.db.execute(mineCountByStatusSql(where, u.orgId, u.userId));
+    const byStatus: Record<string, number> = {};
+    let total = 0;
+    for (const row of rawRows) {
+      const status = String(row["status"]);
+      const cnt = Number(row["cnt"]);
+      byStatus[status] = cnt;
+      total += cnt;
+    }
+    return { byStatus, total };
   }
 
   private async pageFilteredWork(

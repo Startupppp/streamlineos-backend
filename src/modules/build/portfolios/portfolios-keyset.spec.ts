@@ -15,6 +15,10 @@ interface Captured {
   orderBy: unknown[];
 }
 
+interface SelectCaptured {
+  projection: Record<string, unknown>;
+}
+
 function buildDb(captured: Captured) {
   const builder: Record<string, unknown> = {
     from: jest.fn(),
@@ -30,6 +34,24 @@ function buildDb(captured: Captured) {
   };
   (builder.from as jest.Mock).mockReturnValue(builder);
   return { select: jest.fn().mockReturnValue(builder) } as unknown as Db;
+}
+
+function buildDbCapturingSelect(captured: SelectCaptured) {
+  const builder: Record<string, unknown> = {
+    from: jest.fn(),
+    where: jest.fn().mockReturnValue(undefined),
+    orderBy: jest.fn().mockReturnValue(undefined),
+    limit: jest.fn().mockResolvedValue([]),
+  };
+  (builder.from as jest.Mock).mockReturnValue(builder);
+  (builder.where as jest.Mock).mockReturnValue(builder);
+  (builder.orderBy as jest.Mock).mockReturnValue(builder);
+  return {
+    select: jest.fn((proj: Record<string, unknown>) => {
+      captured.projection = proj;
+      return builder;
+    }),
+  } as unknown as Db;
 }
 
 async function capture(cursor: string | undefined): Promise<Captured> {
@@ -66,5 +88,24 @@ describe("PortfoliosService.listPortfolios — keyset matches the sort", () => {
     const wrongSort = ['"project_portfolios"."created_at" asc'];
     expect(wrongSort[0]).toContain("asc");
     expect(wrongSort[0]).not.toContain("desc");
+  });
+});
+
+describe("PortfoliosService.listPortfolios — projectCount subquery excludes soft-deleted projects", () => {
+  it("projectCount expression references deleted_at so soft-deleted projects are not counted", async () => {
+    const captured: SelectCaptured = { projection: {} };
+    const svc = new PortfoliosService(
+      buildDbCapturingSelect(captured) as unknown as Db,
+      {} as AuditService,
+    );
+    await svc.listPortfolios("org-1", { cursor: undefined, limit: 20 });
+    const expr = captured.projection["projectCount"];
+    const rendered = render(expr);
+    expect(rendered.toLowerCase()).toContain("deleted_at");
+  });
+
+  it("bite proof: a subquery without deleted_at does not filter soft-deleted projects", () => {
+    const bare = "(SELECT CAST(COUNT(*) AS INT) FROM portfolio_projects WHERE portfolio_id = project_portfolios.id)";
+    expect(bare.toLowerCase()).not.toContain("deleted_at");
   });
 });

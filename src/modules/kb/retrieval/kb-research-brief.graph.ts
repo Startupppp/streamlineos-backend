@@ -1,11 +1,19 @@
 import { z } from "zod";
 import { Annotation, StateGraph, END, START } from "@langchain/langgraph";
 import type { AiGatewayService } from "../../ai/core/gateway/ai-gateway.service";
-import type { KbSearchService, RetrievedSource } from "./kb-search.service";
+import type {
+  KbSearchService,
+  RetrievedSource,
+  RetrievedSourceDocument,
+} from "./kb-search.service";
+import {
+  assemblePassages,
+  buildKbContext,
+  KB_BRIEF_CONTEXT_BUDGET,
+  type KbContextPassage,
+} from "./kb-ask-context";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 
-const MAX_CONTEXT_CHARS = 6000;
-const MAX_ARTICLE_CHARS = 800;
 const MAX_REFINE_COUNT = 2;
 const PLAN_MAX_QUESTIONS = 5;
 
@@ -36,7 +44,11 @@ const BriefState = Annotation.Root({
   userCtx: Annotation<CurrentUserContext>(),
   actor: Annotation<{ orgId: string; userId: string }>(),
   subQuestions: Annotation<string[]>(),
-  retrieved: Annotation<{ articles: RetrievedSource[]; sources: Array<{ sourceId: number; title: string; spaceId: number | null; snippet: string; updatedAt: Date }> }>(),
+  retrieved: Annotation<{
+    articles: RetrievedSource[];
+    sources: RetrievedSourceDocument[];
+    documentPassages: KbContextPassage[];
+  }>(),
   draft: Annotation<string>(),
   critique: Annotation<{ grounded: boolean; gaps: string[] }>(),
   refineCount: Annotation<number>(),
@@ -52,25 +64,12 @@ export interface BriefGraphDeps {
 }
 
 function buildContext(retrieved: BriefStateType["retrieved"]): string {
-  const parts: string[] = [];
-  let total = 0;
-
-  for (const a of retrieved.articles) {
-    const text = (a.contentText ?? "").slice(0, MAX_ARTICLE_CHARS);
-    const chunk = `Source — ${a.title}\n${text}`;
-    if (total + chunk.length > MAX_CONTEXT_CHARS) break;
-    parts.push(chunk);
-    total += chunk.length;
-  }
-
-  for (const s of retrieved.sources) {
-    const chunk = `Document — ${s.title}\n${s.snippet}`;
-    if (total + chunk.length > MAX_CONTEXT_CHARS) break;
-    parts.push(chunk);
-    total += chunk.length;
-  }
-
-  return parts.join("\n\n---\n\n");
+  const passages = assemblePassages(
+    retrieved.articles,
+    retrieved.sources,
+    retrieved.documentPassages,
+  );
+  return buildKbContext(passages, KB_BRIEF_CONTEXT_BUDGET);
 }
 
 function buildCitations(retrieved: BriefStateType["retrieved"]): BriefCitation[] {
@@ -117,7 +116,7 @@ export function buildResearchBriefGraph(deps: BriefGraphDeps) {
   async function retrieveNode(state: BriefStateType): Promise<Partial<BriefStateType>> {
     const queries = [state.topic, ...state.subQuestions].slice(0, PLAN_MAX_QUESTIONS + 1);
     const articleMap = new Map<string, RetrievedSource>();
-    const sourceMap = new Map<number, { sourceId: number; title: string; spaceId: number | null; snippet: string; updatedAt: Date }>();
+    const sourceMap = new Map<number, RetrievedSourceDocument>();
 
     await Promise.all(
       queries.map(async (q) => {
@@ -135,10 +134,21 @@ export function buildResearchBriefGraph(deps: BriefGraphDeps) {
       }),
     );
 
+    const articles = Array.from(articleMap.values());
+    const articleIds = articles.filter((a) => a.kind === "article").map((a) => a.id);
+    const pageIds = articles.filter((a) => a.kind === "page").map((a) => a.id);
+    const documentPassages = await search.retrieveDocumentPassages(
+      state.userCtx,
+      state.topic,
+      articleIds,
+      pageIds,
+    );
+
     return {
       retrieved: {
-        articles: Array.from(articleMap.values()),
+        articles,
         sources: Array.from(sourceMap.values()),
+        documentPassages,
       },
     };
   }
@@ -241,7 +251,7 @@ export async function runResearchBrief(
     userCtx: input.userCtx,
     actor: input.actor,
     subQuestions: [],
-    retrieved: { articles: [], sources: [] },
+    retrieved: { articles: [], sources: [], documentPassages: [] },
     draft: "",
     critique: { grounded: false, gaps: [] },
     refineCount: 0,

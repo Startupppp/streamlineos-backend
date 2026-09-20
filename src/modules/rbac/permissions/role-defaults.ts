@@ -24,6 +24,8 @@ const EMPLOYEE_SELF_SERVICE = [
   "self:payroll",
   ...UNIVERSAL_MEMBER_PERMISSIONS,
   "self:recruitment",
+  "self:job-openings",
+  "self:referrals",
   "self:cases",
   "hr:leaves:create",
   "hr:expenses:create",

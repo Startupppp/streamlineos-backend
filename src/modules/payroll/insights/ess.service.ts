@@ -1,5 +1,5 @@
 import { ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, asc, count, desc, eq, gte, inArray, lte, not, sql, sum } from "drizzle-orm";
+import { and, asc, count, desc, eq, gte, inArray, lte, not, or, sql, sum } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import {
@@ -237,9 +237,12 @@ export class EssService {
 
     const profile = await this.db.query.employeeSalaryProfiles.findFirst({
       where: and(
-        eq(employeeSalaryProfiles.userMembershipId, membershipId),
         eq(employeeSalaryProfiles.orgId, orgId),
         eq(employeeSalaryProfiles.status, "ACTIVE"),
+        or(
+          eq(employeeSalaryProfiles.userMembershipId, membershipId),
+          eq(employeeSalaryProfiles.userId, userId),
+        ),
       ),
       orderBy: (fields, { desc: d }) => [d(fields.effectiveFrom)],
     });

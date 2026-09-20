@@ -55,7 +55,11 @@ export class PermissionGuard implements CanActivate {
       // frontend's EntitlementGate, which keys the upgrade prompt on 402, shows
       // an access-denied dead end instead of an offer to enable the module.
       // namespaceOf, never administeringModuleOf, or a disabled Chat offers to enable Home.
-      if (result.reason === "NO_MODULE") throw new ModuleDisabledException(namespaceOf(permissionKey));
+      if (result.reason === "NO_MODULE")
+        throw new ModuleDisabledException(
+          namespaceOf(permissionKey),
+          result.moduleReason ?? "org-disabled",
+        );
       throw new ForbiddenException("Permission denied");
     }
 

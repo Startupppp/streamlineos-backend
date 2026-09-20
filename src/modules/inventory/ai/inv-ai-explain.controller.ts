@@ -76,6 +76,7 @@ export class InvAiExplainController {
 
   @Post("insights/:insightId/explain")
   @BodylessAction()
+  @NoTenantTransaction()
   @ResponseSchema(explainInsightResponseSchema)
   @UseGuards(PermissionGuard, RateLimitGuard)
   @UseRateLimit("ai:invoke")

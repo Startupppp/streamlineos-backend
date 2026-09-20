@@ -21,6 +21,8 @@ import { resolveEntriesScope, membershipScope } from "./timesheets-core-scope";
 import type { PeriodsQuery } from "./dto/periods.schemas";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 
+const PERIOD_ENTRIES_CEILING = 500;
+
 @Injectable()
 export class PeriodsReadService {
   constructor(
@@ -193,14 +195,44 @@ export class PeriodsReadService {
       throw new ForbiddenException("You do not have access to this period");
     }
 
-    const periodEntries = await this.db.query.timesheets.findMany({
-      where: and(
-        eq(timesheets.timesheetPeriodId, periodId),
-        eq(timesheets.orgId, u.orgId),
-      ),
-      orderBy: [desc(timesheets.date)],
-    });
+    const periodEntries = await this.listPeriodEntries(u.orgId, periodId);
 
     return { period: this.mapPeriod(row), entries: periodEntries };
+  }
+
+  listPeriodEntries(orgId: string, periodId: number) {
+    return this.db.query.timesheets.findMany({
+      where: and(
+        eq(timesheets.timesheetPeriodId, periodId),
+        eq(timesheets.orgId, orgId),
+      ),
+      columns: {
+        id: true,
+        orgId: true,
+        userMembershipId: true,
+        ticketId: true,
+        projectId: true,
+        date: true,
+        hours: true,
+        description: true,
+        isBillable: true,
+        billingType: true,
+        status: true,
+        submittedAt: true,
+        approvedAt: true,
+        approvedByMembershipId: true,
+        rejectionReason: true,
+        voidedAt: true,
+        invoicingStatus: true,
+        billRate: true,
+        currency: true,
+        timesheetPeriodId: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+      with: { project: { columns: { id: true, name: true } } },
+      orderBy: [desc(timesheets.date)],
+      limit: PERIOD_ENTRIES_CEILING,
+    });
   }
 }

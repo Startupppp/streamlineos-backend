@@ -5,6 +5,7 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
 import { logger } from "../../../common/logger/logger.service";
+import { resolvePersonDisplayName } from "../../../common/organization/person-display-name";
 
 interface OrgUser {
   id: string;
@@ -13,13 +14,6 @@ interface OrgUser {
   firstName: string | null;
   lastName: string | null;
   email: string;
-}
-
-function displayName(user: OrgUser): string {
-  if (user.name && user.name.trim()) return user.name.trim();
-  const full = `${user.firstName ?? ""} ${user.lastName ?? ""}`.trim();
-  if (full) return full;
-  return user.email;
 }
 
 function extractMentionTokens(content: string): string[] {
@@ -37,7 +31,14 @@ function matchMentionedUsers(content: string, orgUsers: OrgUser[]): OrgUser[] {
     const candidates = [
       user.email.toLowerCase(),
       user.email.split("@")[0]?.toLowerCase() ?? "",
-      displayName(user).toLowerCase(),
+      (
+        resolvePersonDisplayName({
+          firstName: user.firstName,
+          lastName: user.lastName,
+          accountName: user.name,
+          email: user.email,
+        }) ?? ""
+      ).toLowerCase(),
       `${user.firstName ?? ""}`.toLowerCase().trim(),
     ].filter(Boolean);
 

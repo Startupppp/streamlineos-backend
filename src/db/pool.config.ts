@@ -217,6 +217,26 @@ export function describeTimezoneRisk(utcOffsetMinutes: number): string | null {
   return `The database session is pinned to ${PINNED_TIME_ZONE} but this process runs at UTC${hours >= 0 ? "+" : ""}${hours}. Every \`timestamp without time zone\` column will read back shifted by ${hours} hours. Set TZ=UTC on the process (the container image already does).`;
 }
 
+const DEFAULT_POOL_MAX = 20;
+const DEVELOPMENT_POOL_MAX = 5;
+const CONSTRAINED_ENDPOINT_POOL_MAX = 10;
+
+export function resolvePoolMax(env: NodeJS.ProcessEnv): number {
+  const tuning = parsePoolEnv(env);
+  if (tuning.DB_POOL_MAX !== undefined) return tuning.DB_POOL_MAX;
+  if (env.NODE_ENV === "development") return DEVELOPMENT_POOL_MAX;
+
+  const raw = env.APP_DATABASE_URL || env.DATABASE_URL;
+  if (!raw) return DEFAULT_POOL_MAX;
+
+  const connectionString = normalizeDatabaseUrl(raw);
+  const host = hostOf(connectionString);
+  const probe = host || connectionString;
+  if (POOLED_HOST.test(probe)) return DEFAULT_POOL_MAX;
+  if (NEON_HOST.test(probe) || AWS_RDS_HOST.test(host)) return CONSTRAINED_ENDPOINT_POOL_MAX;
+  return DEFAULT_POOL_MAX;
+}
+
 /**
  * Defaults differ by endpoint because the constraints do: a Neon compute suspends
  * when idle and caps `max_connections` low on a direct endpoint, while its
@@ -242,8 +262,7 @@ export function resolvePoolConfig(
   const isProduction = env.NODE_ENV === "production";
   const isDevelopment = env.NODE_ENV === "development";
 
-  const max =
-    tuning.DB_POOL_MAX ?? (isDevelopment ? 5 : isPooled ? 20 : isNeon || isAwsRds ? 10 : 20);
+  const max = resolvePoolMax(env);
   const idleTimeout =
     tuning.DB_POOL_IDLE_TIMEOUT ?? (isNeon || isAwsRds ? 15 : isDevelopment ? 20 : 60);
   // Aurora Serverless can take longer to accept a connection while resuming from

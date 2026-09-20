@@ -16,7 +16,11 @@ export const teamRowSchema = z.object({
   deletedAt: nullableWireDate(),
 });
 
-export const teamPageSchema = cursorPageSchema(teamRowSchema);
+export const teamListItemSchema = teamRowSchema
+  .omit({ deletedAt: true })
+  .extend({ memberCount: z.number().int() });
+
+export const teamPageSchema = cursorPageSchema(teamListItemSchema);
 
 export const teamDetailSchema = teamRowSchema.extend({
   members: z.array(z.object({

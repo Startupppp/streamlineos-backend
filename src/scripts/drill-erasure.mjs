@@ -32,17 +32,23 @@ function loadVar(name) {
   return process.env[name] ?? null;
 }
 
-function isDisposableTarget(url) {
+const PRODUCTION_HOST_PATTERNS = ["amazonaws.com", "neon.tech", "neon-db.net", "supabase.co", ".render.com"];
+
+export function assertDisposableTarget(url) {
+  if (!url) return { allowed: false, reason: "DATABASE_URL is not set" };
+  const matched = PRODUCTION_HOST_PATTERNS.find((p) => url.includes(p));
+  if (matched) return { allowed: false, reason: `DATABASE_URL names production host '${matched}'` };
+  let host, dbName;
   try {
     const u = new URL(url.replace(/^postgresql:\/\//, "http://").replace(/^postgres:\/\//, "http://"));
-    const host = u.hostname;
-    const dbName = u.pathname.replace(/^\//, "");
-    if (host === "127.0.0.1" || host === "localhost") return true;
-    if (dbName.includes("scratch") || dbName.includes("test")) return true;
-    return false;
+    host = u.hostname;
+    dbName = u.pathname.replace(/^\//, "");
   } catch {
-    return false;
+    return { allowed: false, reason: "DATABASE_URL does not parse" };
   }
+  if (host === "127.0.0.1" || host === "localhost") return { allowed: true, reason: `loopback target '${host}'` };
+  if (/scratch|test/i.test(dbName)) return { allowed: true, reason: `scratch/test database '${dbName}'` };
+  return { allowed: false, reason: `host '${host}' is not loopback and database '${dbName}' is not a scratch/test database` };
 }
 
 function runSelfTest() {
@@ -120,6 +126,22 @@ function runSelfTest() {
     errors++;
   }
 
+  const guardCases = [
+    [assertDisposableTarget("postgresql://u:p@127.0.0.1:5432/app"), true],
+    [assertDisposableTarget("postgresql://u:p@10.0.0.5:5432/scratch_e2e"), true],
+    [assertDisposableTarget("postgresql://u:p@prod.cluster.amazonaws.com/app"), false],
+    [assertDisposableTarget("postgresql://u:p@prod.cluster.amazonaws.com/scratch_test"), false],
+    [assertDisposableTarget("postgresql://u:p@db.neon.tech/neondb"), false],
+    [assertDisposableTarget(null), false],
+  ];
+  for (const [verdict, expected] of guardCases) {
+    if (verdict.allowed !== expected) {
+      process.stderr.write(`  FAIL  target guard: expected allowed=${expected}, got '${verdict.reason}'\n`);
+      errors++;
+    }
+  }
+  if (errors === 0) out("  PASS  target guard: all 6 cases correct");
+
   if (errors > 0) {
     process.stderr.write(`\nself-test: ${errors} check(s) failed — deletionOrder logic is broken\n`);
     process.exit(1);
@@ -143,11 +165,11 @@ if (!DATABASE_URL) {
   process.exit(1);
 }
 
-if (!isDisposableTarget(DATABASE_URL)) {
+const _drillGuard = assertDisposableTarget(DATABASE_URL);
+if (!_drillGuard.allowed) {
   process.stderr.write(
-    "DRILL BLOCKED — DATABASE_URL does not point to a disposable target.\n" +
-    "  Allowed: host=127.0.0.1, host=localhost, or database name contains 'scratch' or 'test'.\n" +
-    "  Set DATABASE_URL to a named scratch/test database before running erasure drills.\n",
+    `DRILL BLOCKED — ${_drillGuard.reason}\n` +
+    "  Set DATABASE_URL to a loopback or named scratch/test database before running erasure drills.\n",
   );
   process.exit(1);
 }

@@ -28,6 +28,9 @@ export const projectTeams = build.table(
   (t) => [
     uniqueIndex("uniq_project_teams_org_key").on(t.orgId, t.key),
     index("idx_project_teams_org").on(t.orgId).where(sql`deleted_at IS NULL`),
+    index("idx_project_teams_org_workspace")
+      .on(t.orgId, t.pmWorkspaceId)
+      .where(sql`deleted_at IS NULL`),
     unique("uniq_project_teams_org_id").on(t.orgId, t.id),
     foreignKey({
       columns: [t.orgId, t.pmWorkspaceId],

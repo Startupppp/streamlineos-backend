@@ -1,11 +1,12 @@
 import {
+  BadRequestException,
   ConflictException,
   ForbiddenException,
   Inject,
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, asc, eq, isNull } from "drizzle-orm";
+import { and, asc, eq, ilike, isNull, or } from "drizzle-orm";
 import {
   pmWorkspaces,
   pmWorkspaceMemberships,
@@ -61,11 +62,27 @@ export class PmWorkspacesService {
       eq(pmWorkspaces.orgId, orgId),
       isNull(pmWorkspaces.deletedAt),
       status ? eq(pmWorkspaces.status, status) : undefined,
+      query.search
+        ? or(
+            ilike(pmWorkspaces.name, `%${query.search}%`),
+            ilike(pmWorkspaces.slug, `%${query.search}%`),
+          )
+        : undefined,
     ];
     if (pos) conds.push(keysetAfter(pmWorkspaces.createdAt, pmWorkspaces.slug, pos));
 
     const rows = await this.db
-      .select()
+      .select({
+        pmWorkspaceId: pmWorkspaces.pmWorkspaceId,
+        orgId: pmWorkspaces.orgId,
+        name: pmWorkspaces.name,
+        slug: pmWorkspaces.slug,
+        isDefault: pmWorkspaces.isDefault,
+        status: pmWorkspaces.status,
+        deletedAt: pmWorkspaces.deletedAt,
+        createdAt: pmWorkspaces.createdAt,
+        updatedAt: pmWorkspaces.updatedAt,
+      })
       .from(pmWorkspaces)
       .where(and(...conds))
       .orderBy(asc(pmWorkspaces.createdAt), asc(pmWorkspaces.slug))
@@ -178,6 +195,40 @@ export class PmWorkspacesService {
    */
   async resolveDefaultWorkspaceId(orgId: string): Promise<string> {
     const workspace = await this.ensureDefaultWorkspace(orgId);
+    return workspace.pmWorkspaceId;
+  }
+
+  async assertMemberOfWorkspace(
+    orgId: string,
+    pmWorkspaceId: string,
+    callerMembershipId: number | null,
+  ): Promise<void> {
+    if (callerMembershipId === null) return;
+    const [row] = await this.db
+      .select({ pmWorkspaceMembershipId: pmWorkspaceMemberships.pmWorkspaceMembershipId })
+      .from(pmWorkspaceMemberships)
+      .where(
+        and(
+          eq(pmWorkspaceMemberships.orgId, orgId),
+          eq(pmWorkspaceMemberships.pmWorkspaceId, pmWorkspaceId),
+          eq(pmWorkspaceMemberships.organizationMembershipId, callerMembershipId),
+        ),
+      )
+      .limit(1);
+    if (!row) throw new ForbiddenException("Not a member of this PM workspace");
+  }
+
+  async resolveWorkspaceIdForWrite(
+    orgId: string,
+    requestedPmWorkspaceId: string | undefined,
+  ): Promise<string> {
+    if (requestedPmWorkspaceId === undefined)
+      return this.resolveDefaultWorkspaceId(orgId);
+    const workspace = await this.loadWorkspace(orgId, requestedPmWorkspaceId);
+    if (workspace.status === "archived")
+      throw new BadRequestException(
+        "Cannot create records in an archived PM workspace",
+      );
     return workspace.pmWorkspaceId;
   }
 

@@ -4,7 +4,6 @@ import type { CallHandler, ExecutionContext } from "@nestjs/common";
 import type { ZodType } from "zod";
 import { AiGatewayService } from "../ai-gateway.service";
 import { AiConcurrencyLimiter } from "../ai-concurrency-limiter";
-import { AiResponseCacheService } from "../ai-response-cache.service";
 import { LlmService } from "../../providers/llm.service";
 import { EmbeddingsService } from "../../providers/embeddings.service";
 import { AiUsageService } from "../../services/ai-usage.service";
@@ -103,10 +102,6 @@ function makeUsage() {
 
 function makeGateway(ledger: jest.Mocked<AiCreditLedger>, usage: jest.Mocked<AiUsageService>) {
   const audit = { log: jest.fn() } as unknown as jest.Mocked<AuditService>;
-  const cache = {
-    cachedInvoke: jest.fn(),
-    invalidate: jest.fn(),
-  } as unknown as jest.Mocked<AiResponseCacheService>;
   const embeddings = new EmbeddingsService();
   const gateway = new AiGatewayService(
     new LlmService(),
@@ -114,7 +109,6 @@ function makeGateway(ledger: jest.Mocked<AiCreditLedger>, usage: jest.Mocked<AiU
     usage,
     audit,
     ledger,
-    cache,
     new AiConcurrencyLimiter(),
   );
   return { gateway, embeddings };

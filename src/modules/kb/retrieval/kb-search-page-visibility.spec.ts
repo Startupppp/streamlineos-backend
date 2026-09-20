@@ -152,7 +152,7 @@ describe("KbSearchService — page retrieval crosses the visibility seam", () =>
     );
 
     const user = makeUser();
-    await service.retrieveAttachmentSnippets(user, "onboarding checklist", [], [3]);
+    await service.retrieveDocumentPassages(user, "onboarding checklist", [], [3]);
 
     expect(access.getAccessibleProjectIds).toHaveBeenCalledWith(user);
     expect(pagePredicates(whereClauses)).toContain(

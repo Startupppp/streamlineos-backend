@@ -86,6 +86,22 @@ export const ticketDetailSchema = ticketRowSchema.extend({
       color: z.string().nullable(),
     }),
   ),
+  comments: z
+    .array(
+      z.object({
+        id: z.number().int(),
+        orgId: z.string(),
+        ticketId: z.number().int(),
+        userId: z.string(),
+        content: z.string(),
+        parentCommentId: z.number().int().nullable(),
+        createdAt: wireDate(),
+        updatedAt: wireDate(),
+        user: userSummarySchema,
+        reactions: z.array(z.object({ emoji: z.string(), userId: z.string() })).default([]),
+      }),
+    )
+    .default([]),
 });
 
 export const ticketListRowSchema = ticketRowSchema
@@ -119,6 +135,7 @@ export const ticketListRowSchema = ticketRowSchema
     updatedAt: true,
   })
   .extend({
+    descriptionExcerpt: z.string(),
     assigneeId: z.string().nullable(),
     assignee: userSummarySchema,
     assignees: z.array(
@@ -250,11 +267,12 @@ const checklistItemSchema = z.object({
   id: z.number().int(),
   orgId: z.string(),
   checklistId: z.number().int(),
-  title: z.string(),
+  text: z.string(),
   isCompleted: z.boolean(),
-  position: z.number().int(),
+  assigneeId: z.string().nullable(),
+  dueDate: z.string().nullable(),
+  order: z.number().int(),
   createdAt: wireDate(),
-  updatedAt: wireDate(),
 });
 
 export const checklistRowSchema = z.object({

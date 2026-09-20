@@ -21,11 +21,13 @@ import { TestRunsService } from "./test-runs.service";
 import {
   createBugFromResultSchema,
   createTestRunSchema,
+  runResultsQuerySchema,
   testRunListQuerySchema,
   updateTestResultSchema,
   updateTestRunSchema,
   type CreateBugFromResultInput,
   type CreateTestRunInput,
+  type RunResultsQuery,
   type TestRunListQuery,
   type UpdateTestResultInput,
   type UpdateTestRunInput,
@@ -36,8 +38,9 @@ import { NoContentResponse, ResponseSchema } from "../../../common/openapi/zod-o
 import {
   testRunListItemSchema,
   testRunDetailSchema,
-  testRunRowSchema,
+  testRunResultPageSchema,
   testRunResultRowSchema,
+  testRunRowSchema,
   bugRowSchema,
 } from "./dto/qa-response.schemas";
 
@@ -72,6 +75,19 @@ export class TestRunsController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.getRun(u.orgId, projectId, runId);
+  }
+
+  @Get(":runId/results")
+  @RequirePermission("build:qa:view")
+  @ResponseSchema(testRunResultPageSchema)
+  @Validate({ params: runIdParams, query: runResultsQuerySchema })
+  listRunResults(
+    @Param("projectId", ParseIntPipe) projectId: number,
+    @Param("runId", ParseIntPipe) runId: number,
+    @Query() query: RunResultsQuery,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.svc.listRunResults(u.orgId, projectId, runId, query);
   }
 
   @Post()

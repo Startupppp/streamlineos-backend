@@ -28,6 +28,12 @@ import { AccessService } from "../../access/access.service";
 import { ScopedRead } from "../../access/scoped-read";
 import { SignAuditService } from "../sign-audit.service";
 import { SignFinalizationService } from "../sign-finalization.service";
+
+const mockRunInNewTenantTransaction = jest.fn(async (_db: unknown, _orgId: unknown, fn: () => Promise<unknown>) => fn());
+jest.mock("../../../common/tenant/run-in-tenant-transaction", () => ({
+  runInNewTenantTransaction: (db: unknown, orgId: unknown, fn: () => Promise<unknown>) =>
+    mockRunInNewTenantTransaction(db, orgId, fn),
+}));
 import { SignCertificatesController } from "../sign-certificates.controller";
 import { envelopeSenderScope, resolveEnvelopeViewScope, systemEnvelopeScope } from "../sign-envelope-scope";
 
@@ -125,6 +131,16 @@ describe("envelopeSenderScope", () => {
 });
 
 describe("GET /sign/envelopes/:envelopeId/final-pdf — envelope-view scope gate", () => {
+  beforeEach(() => mockRunInNewTenantTransaction.mockClear());
+
+  it("records the download audit in a new independent transaction because a read-only GET transaction cannot INSERT sign_audit_events", async () => {
+    const { service } = makeService(makeEnvelope());
+    const read = ScopedRead.of(ORG, "u1", "all");
+    await service.getFinalPdfUrl(read, SENDER_MEMBERSHIP, ENVELOPE_ID, { userId: "u1" });
+    expect(mockRunInNewTenantTransaction).toHaveBeenCalledTimes(1);
+    expect(mockRunInNewTenantTransaction).toHaveBeenCalledWith(expect.anything(), ORG, expect.any(Function));
+  });
+
   it("returns the signed url when the caller holds sign:envelope:view at scope all", async () => {
     const { service, audit } = makeService(makeEnvelope());
     const read = ScopedRead.of(ORG, "u1", "all");

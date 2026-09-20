@@ -17,6 +17,20 @@ import { livePersonOfUser, primaryEmploymentOfPerson } from "../../directory/emp
 import {
   type OrgChartNode,
   type OrgChartPage,
+  rlVisSource,
+  rlVisEmpEmpSource,
+  rlVisEmpPplSource,
+  rlVisMgrEmpSource,
+  rlVisMgrPplSource,
+  rlChildSource,
+  rlChildMgrEmpSource,
+  rlChildMgrPplSource,
+  rlChildEmpEmpSource,
+  rlChildEmpPplSource,
+  orgChartManagerMembersSource,
+  orgChartManagerUsersSource,
+  orgChartChildMembersSource,
+  orgChartChildUsersSource,
   orgChartChildUsers,
   orgChartChildMembers,
   orgChartManagerUsers,
@@ -86,31 +100,32 @@ export class OrgChartService {
     );
     const visibleManager = sql<boolean>`exists (
       select 1
-      from ${rlVis}
-      inner join ${rlVisEmpEmp}
+      from ${rlVisSource}
+      inner join ${rlVisEmpEmpSource}
         on ${eq(rlVisEmpEmp.id, rlVis.employmentId)}
         and ${eq(rlVisEmpEmp.orgId, orgId)}
         and ${eq(rlVisEmpEmp.isPrimary, true)}
         and ${isNull(rlVisEmpEmp.deletedAt)}
-      inner join ${rlVisEmpPpl}
+      inner join ${rlVisEmpPplSource}
         on ${eq(rlVisEmpPpl.id, rlVisEmpEmp.personId)}
         and ${eq(rlVisEmpPpl.orgId, orgId)}
         and ${isNull(rlVisEmpPpl.deletedAt)}
-      inner join ${rlVisMgrEmp}
+      inner join ${rlVisMgrEmpSource}
         on ${eq(rlVisMgrEmp.id, rlVis.managerEmploymentId)}
         and ${eq(rlVisMgrEmp.orgId, orgId)}
         and ${eq(rlVisMgrEmp.isPrimary, true)}
         and ${isNull(rlVisMgrEmp.deletedAt)}
-      inner join ${rlVisMgrPpl}
+      inner join ${rlVisMgrPplSource}
         on ${eq(rlVisMgrPpl.id, rlVisMgrEmp.personId)}
         and ${eq(rlVisMgrPpl.orgId, orgId)}
         and ${isNull(rlVisMgrPpl.deletedAt)}
-      inner join ${orgChartManagerMembers}
+      inner join ${orgChartManagerMembersSource}
         on ${eq(orgChartManagerMembers.userId, rlVisMgrPpl.userId)}
-      inner join ${orgChartManagerUsers}
+      inner join ${orgChartManagerUsersSource}
         on ${eq(orgChartManagerUsers.id, rlVisMgrPpl.userId)}
       where ${and(
         eq(rlVis.orgId, orgId),
+        eq(rlVis.lineType, "primary"),
         eq(rlVisEmpPpl.userId, users.id),
         sql`${rlVis.effectiveFrom} <= CURRENT_DATE`,
         sql`${rlVis.effectiveTo} >= CURRENT_DATE`,
@@ -120,31 +135,32 @@ export class OrgChartService {
     )`;
     const hasDirectReports = sql<boolean>`exists (
       select 1
-      from ${rlChild}
-      inner join ${rlChildMgrEmp}
+      from ${rlChildSource}
+      inner join ${rlChildMgrEmpSource}
         on ${eq(rlChildMgrEmp.id, rlChild.managerEmploymentId)}
         and ${eq(rlChildMgrEmp.orgId, orgId)}
         and ${eq(rlChildMgrEmp.isPrimary, true)}
         and ${isNull(rlChildMgrEmp.deletedAt)}
-      inner join ${rlChildMgrPpl}
+      inner join ${rlChildMgrPplSource}
         on ${eq(rlChildMgrPpl.id, rlChildMgrEmp.personId)}
         and ${eq(rlChildMgrPpl.orgId, orgId)}
         and ${isNull(rlChildMgrPpl.deletedAt)}
-      inner join ${rlChildEmpEmp}
+      inner join ${rlChildEmpEmpSource}
         on ${eq(rlChildEmpEmp.id, rlChild.employmentId)}
         and ${eq(rlChildEmpEmp.orgId, orgId)}
         and ${eq(rlChildEmpEmp.isPrimary, true)}
         and ${isNull(rlChildEmpEmp.deletedAt)}
-      inner join ${rlChildEmpPpl}
+      inner join ${rlChildEmpPplSource}
         on ${eq(rlChildEmpPpl.id, rlChildEmpEmp.personId)}
         and ${eq(rlChildEmpPpl.orgId, orgId)}
         and ${isNull(rlChildEmpPpl.deletedAt)}
-      inner join ${orgChartChildMembers}
+      inner join ${orgChartChildMembersSource}
         on ${eq(orgChartChildMembers.userId, rlChildEmpPpl.userId)}
-      inner join ${orgChartChildUsers}
+      inner join ${orgChartChildUsersSource}
         on ${eq(orgChartChildUsers.id, rlChildEmpPpl.userId)}
       where ${and(
         eq(rlChild.orgId, orgId),
+        eq(rlChild.lineType, "primary"),
         eq(rlChildMgrPpl.userId, users.id),
         sql`${rlChild.effectiveFrom} <= CURRENT_DATE`,
         sql`${rlChild.effectiveTo} >= CURRENT_DATE`,
@@ -171,8 +187,8 @@ export class OrgChartService {
       );
       const visibleParent = sql<boolean>`exists (
         select 1
-        from ${orgChartManagerMembers}
-        inner join ${orgChartManagerUsers}
+        from ${orgChartManagerMembersSource}
+        inner join ${orgChartManagerUsersSource}
           on ${eq(orgChartManagerUsers.id, orgChartManagerMembers.userId)}
         where ${and(
           eq(orgChartManagerUsers.id, query.parentId),

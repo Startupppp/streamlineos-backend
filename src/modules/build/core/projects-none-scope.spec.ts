@@ -3,6 +3,7 @@ import { ProjectsQueryService } from "./projects-query.service";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { AuditService } from "../../../common/audit/audit.service";
 import { AccessService } from "../../access/access.service";
+import { PmWorkspacesService } from "../pm-workspaces/pm-workspaces.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 
 it("none project scope does not fall back to membership visibility", async () => {
@@ -11,6 +12,7 @@ it("none project scope does not fall back to membership visibility", async () =>
     { provide: DRIZZLE, useValue: { select } },
     { provide: AuditService, useValue: {} },
     { provide: AccessService, useValue: { scopeFor: async () => "none" } },
+    { provide: PmWorkspacesService, useValue: { assertMemberOfWorkspace: jest.fn().mockResolvedValue(undefined) } },
   ] }).compile();
   const actor: CurrentUserContext = { orgId: "org-a", userId: "member", role: "MEMBER", isOrgOwner: false,
     sessionId: "session", tokenScopes: null, principal: { kind: "human-session", membershipId: 12, isOrgOwner: false } };

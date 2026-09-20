@@ -31,7 +31,7 @@ export class RecruitmentPipelineController {
 
   @Get("diversity-report")
   @ResponseSchema(diversityReportSchema)
-  @RequirePermission("hr:employees:view")
+  @RequirePermission("hr:sensitive:view")
   @Validate({ query: diversityReportQuerySchema })
   diversityReport(
     @Query() query: DiversityReportQueryInput,

@@ -8,6 +8,7 @@ import {
   ParseIntPipe,
   Patch,
   Post,
+  Query,
   UseGuards,
 } from "@nestjs/common";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
@@ -19,14 +20,16 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { TestManagementService } from "./test-management.service";
 import {
   createTestSuiteSchema,
+  testSuiteListQuerySchema,
   updateTestSuiteSchema,
   type CreateTestSuiteInput,
+  type TestSuiteListQuery,
   type UpdateTestSuiteInput,
 } from "./dto/qa.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
 import { NoContentResponse, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
-import { testSuiteRowSchema } from "./dto/qa-response.schemas";
+import { testSuiteWithCaseCountSchema } from "./dto/qa-response.schemas";
 
 const suiteIdParams = z.object({ suiteId: z.coerce.number().int().positive() }).strict();
 
@@ -38,18 +41,20 @@ export class TestSuitesController {
 
   @Get()
   @RequirePermission("build:qa:view")
-  @ResponseSchema(z.array(testSuiteRowSchema))
+  @ResponseSchema(z.array(testSuiteWithCaseCountSchema))
+  @Validate({ query: testSuiteListQuerySchema })
   listSuites(
     @Param("projectId", ParseIntPipe) projectId: number,
+    @Query() query: TestSuiteListQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.listSuites(u, projectId);
+    return this.svc.listSuites(u, projectId, query);
   }
 
   @Post()
   @HttpCode(201)
   @RequirePermission("build:qa:manage")
-  @ResponseSchema(testSuiteRowSchema)
+  @ResponseSchema(testSuiteWithCaseCountSchema)
   @Validate({ body: createTestSuiteSchema })
   createSuite(
     @Param("projectId", ParseIntPipe) projectId: number,
@@ -61,7 +66,7 @@ export class TestSuitesController {
 
   @Patch(":suiteId")
   @RequirePermission("build:qa:manage")
-  @ResponseSchema(testSuiteRowSchema)
+  @ResponseSchema(testSuiteWithCaseCountSchema)
   @Validate({ params: suiteIdParams, body: updateTestSuiteSchema })
   updateSuite(
     @Param("projectId", ParseIntPipe) projectId: number,

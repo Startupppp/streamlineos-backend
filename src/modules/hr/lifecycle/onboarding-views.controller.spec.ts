@@ -10,6 +10,7 @@ import {
   MODULE_DISABLED,
 } from "../../../../test/helpers/module-guard-context";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { humanSessionPrincipal } from "../../../common/auth/principal";
 
 const memberUser: Partial<CurrentUserContext> = { orgId: "org-1", userId: "u-1", isOrgOwner: false };
 
@@ -45,6 +46,43 @@ describe("OnboardingViewsController — self-service, no module gate", () => {
           makeGuardCtx(OnboardingViewsController, "getMyFile", memberUser, MODULE_DISABLED),
         ),
       ).resolves.toBe(true);
+    });
+  });
+
+  describe("getMyFile — audit written outside the request transaction", () => {
+    it("records the onboarding document view outside the request transaction, because a GET holds no mutation and writing inside a read-intent transaction blocks read-only transaction mode", async () => {
+      const doc = { id: 7, fileUrl: "https://example.com/file.pdf", fileName: "offer.pdf" };
+      const onboardingViews = { getFileReference: jest.fn().mockResolvedValue(doc) };
+      const storage = {
+        getFileKeyFromUrl: jest.fn().mockReturnValue("org-1/onboarding/offer.pdf"),
+        isValidFileKey: jest.fn().mockReturnValue(true),
+        getFileUrl: jest.fn().mockResolvedValue("https://signed.example.com/offer.pdf"),
+      };
+      const audit = {
+        logCriticalOutsideTransaction: jest.fn().mockResolvedValue(undefined),
+        logCritical: jest.fn(),
+      };
+      const controller = new OnboardingViewsController(
+        onboardingViews as never,
+        storage as never,
+        audit as never,
+      );
+      const user: CurrentUserContext = {
+        userId: "user-1",
+        orgId: "org-1",
+        role: "EMPLOYEE",
+        isOrgOwner: false,
+        sessionId: "sess-1",
+        tokenScopes: null,
+        principal: humanSessionPrincipal(1, false),
+      };
+
+      await controller.getMyFile(7, user);
+
+      expect(audit.logCriticalOutsideTransaction).toHaveBeenCalledWith(
+        expect.objectContaining({ action: "hr.onboarding_document_viewed", userId: "user-1" }),
+      );
+      expect(audit.logCritical).not.toHaveBeenCalled();
     });
   });
 

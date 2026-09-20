@@ -1,3 +1,7 @@
+jest.mock("../../common/tenant/run-in-tenant-transaction", () => ({
+  runInNewTenantTransaction: (_db: unknown, _orgId: string, fn: (tx: unknown) => unknown) => fn(_db),
+}));
+
 import { NotFoundException } from "@nestjs/common";
 import { SurveyVersionService } from "./survey-version.service";
 import { SurveyBuilderService } from "./survey-builder.service";

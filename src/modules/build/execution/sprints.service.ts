@@ -6,7 +6,7 @@ import { OutboxWriter } from "../../../common/outbox/outbox-writer";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import type { CreateSprintInput, UpdateSprintInput } from "./dto/iterations.schemas";
-import { ProjectsWebhooksDispatchService } from "../../build/core/projects-webhooks-dispatch.service";
+import { ProjectsWebhooksDispatchService } from "../core/projects-webhooks-dispatch.service";
 import { assertProjectInOrg } from "../core/project-access";
 
 @Injectable()

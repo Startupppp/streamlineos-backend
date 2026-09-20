@@ -25,3 +25,18 @@ export const managedProductRowSchema = z.object({
 });
 
 export const managedProductPageSchema = cursorPageSchema(managedProductRowSchema);
+
+export const managedProductInsightsSchema = z.object({
+  linkedProjectCount: z.number().int(),
+  projectsByStatus: z.object({
+    active: z.number().int(),
+    completed: z.number().int(),
+    archived: z.number().int(),
+  }),
+  submissionsByStatus: z.object({
+    open: z.number().int(),
+    in_progress: z.number().int(),
+    resolved: z.number().int(),
+    archived: z.number().int(),
+  }),
+});

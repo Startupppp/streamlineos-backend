@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { pageSizeField } from "../../../../common/pagination/list-query.schema";
+import { PERSONA_IDS } from "../persona-registry";
 
 export const scoreLeadSingleSchema = z.object({
   leadId: z.number().int().positive(),
@@ -145,7 +146,7 @@ export const chatRequestSchema = z.object({
     .min(1)
     .max(50),
   conversationId: z.number().int().positive().optional(),
-  persona: z.string().optional(),
+  persona: z.enum(PERSONA_IDS).optional(),
 }).strict();
 
 export const chatHistoryQuerySchema = z.object({
@@ -204,7 +205,6 @@ export const nextBestActionsSchema = z.object({
   limit: z.number().int().min(1).max(20).default(10),
   withEvidence: z.boolean().optional().default(true),
 });
-export type NextBestActionsInput = z.infer<typeof nextBestActionsSchema>;
 
 export const emailDraftSchema = z.object({
   entityType: z.enum(["lead", "deal"]),
@@ -212,18 +212,15 @@ export const emailDraftSchema = z.object({
   intent: z.string().min(1).max(1000),
   tone: z.enum(["formal", "friendly", "urgent"]).default("friendly"),
 });
-export type EmailDraftInput = z.infer<typeof emailDraftSchema>;
 
 export const summarizeNotesSchema = z.object({
   text: z.string().min(10).max(8000),
 });
-export type SummarizeNotesInput = z.infer<typeof summarizeNotesSchema>;
 
 export const objectionHelpSchema = z.object({
   objection: z.string().min(1).max(2000),
   context: z.string().max(1000).optional(),
 });
-export type ObjectionHelpInput = z.infer<typeof objectionHelpSchema>;
 
 export const meetingFollowUpSchema = z.object({
   meetingTitle: z.string().min(1).max(200),
@@ -247,14 +244,6 @@ export const stalePipelineQuerySchema = z.object({
 export type StalePipelineQuery = z.infer<typeof stalePipelineQuerySchema>;
 
 export const confirmActionBodySchema = z.object({ token: z.string().min(1) });
-export type ConfirmActionBodyInput = z.infer<typeof confirmActionBodySchema>;
-
-export const mailSendPayloadSchema = z.object({
-  accountId: z.number().int().positive(),
-  toEmail: z.string().email(),
-  subject: z.string().min(1).max(500),
-  body: z.string().min(1),
-});
 
 export const blogImproveWritingSchema = z.object({ content: z.string().min(1).max(10000) });
 export type BlogImproveWritingInput = z.infer<typeof blogImproveWritingSchema>;
@@ -266,10 +255,3 @@ export type BlogSuggestTitleInput = z.infer<typeof blogSuggestTitleSchema>;
 
 export const blogSummarizeSchema = z.object({ content: z.string().max(10000).optional() });
 export type BlogSummarizeInput = z.infer<typeof blogSummarizeSchema>;
-
-// Redeemed on a later request than the one that proposed it: parse, never coerce, and stay non-strict for the card's title and reason.
-export const ticketStatusUpdatePayloadSchema = z.object({
-  ticketId: z.coerce.number().int().positive(),
-  status: z.string().trim().min(1),
-});
-export type TicketStatusUpdatePayload = z.infer<typeof ticketStatusUpdatePayloadSchema>;

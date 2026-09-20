@@ -3,6 +3,7 @@ import { and, asc, eq, gt, ne } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import { payslipTemplates } from "../../../db/schema";
+import { runInNewTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
 import { renderPayslipHtml } from "./lib/payslip-renderer";
 import type { CreateTemplateInput, PatchTemplateInput, PayslipTemplateConfig, PreviewTemplateInput } from "./dto/payout.schemas";
 import { normalizePayslipTemplateConfig } from "./dto/payout.schemas";
@@ -52,7 +53,9 @@ export class PayslipTemplatesService {
           isDefault: false,
         },
       ];
-      const seeded = await this.db.insert(payslipTemplates).values(defaults).returning();
+      const seeded = await runInNewTenantTransaction(this.db, orgId, async (tx) =>
+        tx.insert(payslipTemplates).values(defaults).returning(),
+      );
       seeded.sort((left, right) => left.id - right.id);
       return buildCursorPage(seeded, cap, (row) =>
         payrollCursorPosition(cursorScope, [row.id], row.id),

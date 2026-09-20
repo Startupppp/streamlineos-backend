@@ -22,7 +22,7 @@ import {
   sweepExpiredReservations,
   type ReservationCloseDeps,
 } from "./lib/credit-reservation-close";
-import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
+import { runInNewTenantTransaction, runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
 import { isUniqueViolation } from "../../../common/db/postgres-error";
 import type {
   AiCreditReserveInput,
@@ -40,8 +40,13 @@ export class AiCreditsReservationService {
     const { orgId, userId, feature, credits, idempotencyKey } = input;
 
     if (idempotencyKey) {
-      const existingId = await this.findByIdempotencyKey(orgId, idempotencyKey);
-      if (existingId !== null) return { reservationId: existingId };
+      const existing = await this.findByIdempotencyKey(orgId, idempotencyKey);
+      if (existing !== null && existing.status === "RESERVED")
+        return { reservationId: existing.id };
+      if (existing !== null)
+        throw new ConflictException(
+          `AI reservation ${existing.id} for this idempotency key is already ${existing.status.toLowerCase()}.`,
+        );
     }
 
     try {
@@ -91,11 +96,11 @@ export class AiCreditsReservationService {
       // writes ran inside `outer.transaction` — a savepoint — so the handle the
       // lookup below reuses is still live.
       if (isUniqueViolation(err) && idempotencyKey) {
-        const existingId = await this.findByIdempotencyKey(
+        const existing = await this.findByIdempotencyKey(
           orgId,
           idempotencyKey,
         );
-        if (existingId !== null) return { reservationId: existingId };
+        if (existing !== null) return { reservationId: existing.id };
       }
       throw err;
     }
@@ -133,11 +138,7 @@ export class AiCreditsReservationService {
    * deduction behind the winner's.
    */
   async ensureWalletForOrg(orgId: string): Promise<typeof orgAiCredits.$inferSelect> {
-    return runInTenantTransaction(
-      this.db,
-      (outer) => outer.transaction((tx) => this.ensureWallet(tx, orgId)),
-      { orgId },
-    );
+    return runInNewTenantTransaction(this.db, orgId, (tx) => this.ensureWallet(tx, orgId));
   }
 
   private async ensureWallet(
@@ -189,12 +190,15 @@ export class AiCreditsReservationService {
   private async findByIdempotencyKey(
     orgId: string,
     idempotencyKey: string,
-  ): Promise<number | null> {
+  ): Promise<{ id: number; status: string } | null> {
     return runInTenantTransaction(
       this.db,
       async (tx) => {
         const [existing] = await tx
-          .select({ id: aiCreditReservations.id })
+          .select({
+            id: aiCreditReservations.id,
+            status: aiCreditReservations.status,
+          })
           .from(aiCreditReservations)
           .where(
             and(
@@ -203,7 +207,7 @@ export class AiCreditsReservationService {
             ),
           )
           .limit(1);
-        return existing?.id ?? null;
+        return existing ?? null;
       },
       { orgId },
     );

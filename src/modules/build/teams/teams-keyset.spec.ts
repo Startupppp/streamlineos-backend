@@ -36,7 +36,7 @@ function buildDb(captured: Captured) {
 async function capture(cursor: string | undefined): Promise<Captured> {
   const captured: Captured = { where: undefined, orderBy: [] };
   const svc = new TeamsService(buildDb(captured), {} as AuditService, {} as PmWorkspacesService);
-  await svc.listTeams("org-1", { cursor, pageSize: 20, search: undefined });
+  await svc.listTeams("org-1", { cursor, pageSize: 20, search: undefined }, 1);
   return captured;
 }
 

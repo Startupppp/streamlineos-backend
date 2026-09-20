@@ -1,10 +1,17 @@
-export type PersonaId = "support" | "sales" | "hr-policy" | "project" | "operations";
+export const PERSONA_IDS = [
+  "support",
+  "sales",
+  "hr-policy",
+  "project",
+  "operations",
+] as const;
+
+export type PersonaId = (typeof PERSONA_IDS)[number];
 
 export interface PersonaConfig {
   id: PersonaId;
   label: string;
   preamble: string;
-  allowedTools: ReadonlyArray<string>;
 }
 
 const PERSONAS: Record<PersonaId, PersonaConfig> = {
@@ -12,79 +19,36 @@ const PERSONAS: Record<PersonaId, PersonaConfig> = {
     id: "support",
     label: "Support Agent",
     preamble:
-      "You are the StreamlineOS Support Copilot. Focus exclusively on customer support: ticket management, SLA tracking, customer satisfaction, and knowledge base articles. Do not discuss sales, HR, finance, or project topics.",
-    allowedTools: ["searchKnowledgeBase", "findPerson", "getPersonTicketStats", "searchChatMessages"],
+      "The user is working in Support. Lead with tickets, SLAs, customer satisfaction and knowledge base articles, but answer anything they ask.",
   },
   sales: {
     id: "sales",
     label: "CRM",
     preamble:
-      "You are the StreamlineOS Sales Copilot. Focus on CRM: leads, contacts, deals, pipeline, and sales activities. Do not discuss HR, support operations, or internal project management.",
-    allowedTools: [
-      "searchLeads",
-      "updateLeadStatus",
-      "createTask",
-      "sendEmail",
-      "scheduleEvent",
-      "sendDirectMessage",
-      "findPerson",
-    ],
+      "The user is working in CRM. Lead with leads, contacts, deals, pipeline and sales activities, but answer anything they ask.",
   },
   "hr-policy": {
     id: "hr-policy",
     label: "HR",
     preamble:
-      "You are the StreamlineOS HR Policy Copilot. Answer questions about HR policies, employee records, leave balances, payroll, and organizational structure. Do not discuss customer data, sales deals, or project details.",
-    allowedTools: [
-      "askHrPolicy",
-      "getHeadcountSummary",
-      "getAttritionSummary",
-      "getMoodTrend",
-      "getLeaveUtilization",
-      "getMyLeaveBalances",
-      "getPayrollSummary",
-      "draftPerformanceReviewNote",
-      "draftPromotionLetter",
-      "findPerson",
-      "grantRecognition",
-    ],
+      "The user is working in HR. Lead with policies, employee records, leave, payroll and organisational structure, but answer anything they ask.",
   },
   project: {
     id: "project",
     label: "Build",
     preamble:
-      "You are the StreamlineOS Project Copilot. Focus on project and ticket management: creating tasks, tracking progress, updating statuses, assigning work. Do not discuss CRM, HR policies, or finance.",
-    allowedTools: [
-      "searchProjects",
-      "getProjectSummary",
-      "askProjectAI",
-      "searchTickets",
-      "readTicket",
-      "createTicket",
-      "updateTicketStatus",
-      "addTicketComment",
-      "createCalendarReminder",
-      "findPerson",
-      "getPersonTicketStats",
-    ],
+      "The user is working in Build. Lead with projects, tickets, sprints and delivery progress, but answer anything they ask.",
   },
   operations: {
     id: "operations",
     label: "Inventory & Ops",
     preamble:
-      "You are the StreamlineOS Operations Copilot. Focus on inventory, supply chain, financial reporting, and cross-module operational metrics. Do not discuss individual HR matters or customer support tickets.",
-    allowedTools: [
-      "getInventoryStock",
-      "getPayrollSummary",
-      "scheduleEvent",
-      "getMyCalendarEvents",
-      "findPerson",
-    ],
+      "The user is working in Operations. Lead with inventory, supply chain and cross-module operational metrics, but answer anything they ask.",
   },
 };
 
 export function isValidPersona(id: string): id is PersonaId {
-  return id in PERSONAS;
+  return (PERSONA_IDS as readonly string[]).includes(id);
 }
 
 export function getPersona(id: string): PersonaConfig | undefined {
@@ -93,16 +57,4 @@ export function getPersona(id: string): PersonaConfig | undefined {
 
 export function listPersonas(): PersonaConfig[] {
   return Object.values(PERSONAS);
-}
-
-export function filterToolsByPersona<T extends Record<string, unknown>>(
-  allTools: T,
-  personaId: string,
-): Partial<T> {
-  const persona = getPersona(personaId);
-  if (!persona) return allTools;
-  const allowed = new Set(persona.allowedTools);
-  return Object.fromEntries(
-    Object.entries(allTools).filter(([name]) => allowed.has(name)),
-  ) as Partial<T>;
 }

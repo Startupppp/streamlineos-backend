@@ -150,7 +150,7 @@ export class HrOnboardingDocsAdminController {
     const url = await this.storage.getFileUrl(currentUser.orgId, fileKey, expiresIn, undefined, {
       preauthorized: true,
     });
-    await this.audit.logCritical({
+    await this.audit.logCriticalOutsideTransaction({
       action: "hr.onboarding_document_viewed",
       userId: currentUser.userId,
       orgId: currentUser.orgId,

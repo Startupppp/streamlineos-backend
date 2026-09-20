@@ -13,12 +13,7 @@ import {
 import { AiGatewayService, type AiTextStream } from "../gateway/ai-gateway.service";
 import { unwrapAiResult } from "./gateway-result.util";
 import { assertTicket } from "./ticket-ai-assertions";
-
-const TEXT_LIMIT = 2000;
-
-function stripHtml(value: string): string {
-  return value.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
-}
+import { DESCRIPTION_MAX, TEXT_LIMIT } from "./ticket-ai-text";
 
 @Injectable()
 export class TicketInsightsAiService {
@@ -123,7 +118,7 @@ Summarize the discussion, key themes, and any open questions still unresolved.`;
 
     const system = `You are a technical writer specializing in software tickets.
 Rewrite the provided text into a well-structured ticket description using HTML tags compatible with TipTap/ProseMirror (<p>, <ul>, <li>, <strong>, <em>).
-Output ONLY the HTML string, no markdown, no code blocks, no preamble. Keep it under 5000 characters.
+Output ONLY the HTML string, no markdown, no code blocks, no preamble. Preserve the full substance of long source text.
 Structure: overview paragraph, acceptance criteria as <ul>, optional notes.`;
 
     const user = `Ticket title: "${ticket.title}"
@@ -137,13 +132,13 @@ Produce an improved HTML description.`;
       feature: "ticket.improve-description",
       prompt: { system, user },
       tier: "fast",
-      maxTokens: 768,
+      maxTokens: 4096,
       charge: true,
     });
 
     const description = unwrapAiResult(result);
     this.audit.log({ action: "ai.ticket.improve-description", userId, orgId, resourceType: "ticket", resourceId: String(ticketId) });
-    return { description: description.slice(0, 5000) };
+    return { description: description.slice(0, DESCRIPTION_MAX) };
   }
 
   async streamImproveDescription(
@@ -160,7 +155,7 @@ Produce an improved HTML description.`;
     const sourceText = (draft ?? ticket.description ?? ticket.title).slice(0, TEXT_LIMIT);
     const system = `You are a technical writer specializing in software tickets.
 Rewrite the provided text into a well-structured ticket description using HTML tags compatible with TipTap/ProseMirror (<p>, <ul>, <li>, <strong>, <em>).
-Output ONLY the HTML string, no markdown, no code blocks, no preamble. Keep it under 5000 characters.
+Output ONLY the HTML string, no markdown, no code blocks, no preamble. Preserve the full substance of long source text.
 Structure: overview paragraph, acceptance criteria as <ul>, optional notes.`;
     const user = `Ticket title: "${ticket.title}"
 ${draft ? "Draft description:" : "Current description:"}
@@ -171,7 +166,7 @@ Produce an improved HTML description.`;
       actor: { orgId, userId },
       feature: "ticket.improve-description",
       prompt: { system, user },
-      maxTokens: 768,
+      maxTokens: 4096,
       charge: true,
       signal,
     });

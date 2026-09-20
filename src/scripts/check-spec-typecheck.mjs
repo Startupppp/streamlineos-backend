@@ -10,8 +10,9 @@
  *   node src/scripts/check-spec-typecheck.mjs            # normal gate
  *   node src/scripts/check-spec-typecheck.mjs --self-test # proves the gate bites
  *
- * NOTE: Requires NODE_OPTIONS=--max-old-space-size=8192 for the typecheck subprocess.
- *       Set it in the npm script or CI step that invokes this script.
+ * NOTE: the typecheck subprocess is given NODE_OPTIONS=--max-old-space-size=10240.
+ *       At 8192 tsc dies with "Ineffective mark-compacts near heap limit", exit 134,
+ *       printing zero type errors — a false pass for any caller reading output.
  */
 
 import { spawnSync } from "node:child_process";
@@ -37,7 +38,7 @@ function runTypecheck() {
     [TSC, "--noEmit", "-p", "tsconfig.json"],
     {
       cwd: BACKEND_ROOT,
-      env: { ...process.env, NODE_OPTIONS: "--max-old-space-size=8192" },
+      env: { ...process.env, NODE_OPTIONS: "--max-old-space-size=10240" },
       encoding: "utf8",
     },
   );
@@ -85,7 +86,7 @@ if (process.argv.includes("--self-test")) {
   if (result.status !== 0) {
     process.stderr.write(
       "\ncheck-spec-typecheck: spec-inclusive typecheck failed (tsconfig.json).\n" +
-      "NOTE: NODE_OPTIONS=--max-old-space-size=8192 is required for this check.\n",
+      "NOTE: NODE_OPTIONS=--max-old-space-size=10240 is required for this check.\n",
     );
     process.exit(result.status ?? 1);
   }

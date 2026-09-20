@@ -3,7 +3,7 @@ import { humanSessionPrincipal } from "../../../common/auth/principal";
 
 const ACCESSIBLE = [42];
 
-jest.mock("../retrieval/kb-project-access.util", () => ({
+jest.mock("./kb-project-access.util", () => ({
   getAccessibleProjectIds: jest.fn().mockResolvedValue(ACCESSIBLE),
 }));
 jest.mock("./kb-project-access.util", () => ({
@@ -11,7 +11,7 @@ jest.mock("./kb-project-access.util", () => ({
 }));
 
 const pageVisibleTo = jest.fn().mockReturnValue({ marker: "predicate" });
-jest.mock("../retrieval/kb-page-visibility", () => ({
+jest.mock("./kb-page-visibility", () => ({
   pageVisibleTo: (...args: unknown[]) => pageVisibleTo(...args),
 }));
 jest.mock("./kb-page-visibility", () => ({

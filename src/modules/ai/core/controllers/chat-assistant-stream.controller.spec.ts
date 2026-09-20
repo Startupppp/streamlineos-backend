@@ -59,6 +59,7 @@ function makeResponse(): Response & {
 
 function makeController(processChat: jest.Mock, aiChat = true) {
   const controller = new ChatAssistantController(
+    {} as never,
     { processChat } as never,
     {} as never,
     { getFlags: jest.fn().mockResolvedValue({ aiChat }) } as never,

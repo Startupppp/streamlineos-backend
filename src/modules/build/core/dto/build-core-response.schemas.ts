@@ -76,6 +76,12 @@ export const bulkReorderStatesResultSchema = z.object({
   })),
 });
 
+export const orgCustomStateSchema = z.object({
+  name: z.string(),
+  color: z.string().nullable(),
+  type: z.string().nullable(),
+});
+
 export const buildCustomFieldSchema = z.object({
   id: z.number().int(),
   orgId: z.string(),
@@ -165,15 +171,6 @@ export const webhookTestResultSchema = z.object({
   responseCode: z.number().int().nullable(),
 });
 
-export const projectAutomationListItemSchema = z.object({
-  id: z.number().int(),
-  name: z.string(),
-  triggerEvent: z.string(),
-  isActive: z.boolean(),
-  createdAt: wireDate(),
-  updatedAt: wireDate(),
-});
-
 const automationConditionSchema = z.object({
   field: z.string(),
   operator: z.enum(["equals", "not_equals", "contains", "is_empty", "is_not_empty"]),
@@ -183,6 +180,18 @@ const automationConditionSchema = z.object({
 const automationActionSchema = z.object({
   type: z.enum(["set_status", "set_assignee", "set_priority", "add_label", "add_comment"]),
   value: z.string(),
+});
+
+export const projectAutomationListItemSchema = z.object({
+  id: z.number().int(),
+  projectId: z.number().int(),
+  name: z.string(),
+  triggerEvent: z.string(),
+  isActive: z.boolean(),
+  conditions: z.array(automationConditionSchema),
+  actions: z.array(automationActionSchema),
+  createdAt: wireDate(),
+  updatedAt: wireDate(),
 });
 
 export const projectAutomationRowSchema = z.object({
@@ -246,6 +255,7 @@ export const projectListItemSchema = z.object({
   startDate: wireDate().nullable(),
   endDate: wireDate().nullable(),
   managedProductId: z.number().int().nullable(),
+  pmWorkspaceId: z.string(),
   manager: projectManagerSchema.nullable(),
   progress: z.object({
     total: z.number().int(),

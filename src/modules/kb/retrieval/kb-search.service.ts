@@ -17,12 +17,29 @@ import { KbCandidateService } from "./kb-candidate.service";
 import { AccessService } from "../../access/access.service";
 import { resolveKbArticlesViewScope } from "../core/kb-scope";
 import { articleOwnerScope, articleOwnerScopeFilter } from "./kb-article-owner-scope";
+import {
+  kbDocumentKey,
+  KB_ASK_CONTEXT_BUDGET,
+  KB_ASK_MAX_CONTEXT_DOCUMENTS,
+  type KbContextPassage,
+} from "./kb-ask-context";
 
 const KB_SEARCH_FEATURE = "kb.search";
+
+export const KB_DOCUMENT_PASSAGE_ROWS =
+  KB_ASK_MAX_CONTEXT_DOCUMENTS * KB_ASK_CONTEXT_BUDGET.maxPassagesPerDocument;
 
 export type RetrievedSource =
   | { kind: "article"; id: number; title: string; slug: string; spaceId: number | null; contentText: string; updatedAt: Date }
   | { kind: "page"; id: number; title: string; spaceId: number | null; contentText: string; updatedAt: Date };
+
+export interface RetrievedSourceDocument {
+  sourceId: number;
+  title: string;
+  spaceId: number | null;
+  updatedAt: Date;
+  passages: KbContextPassage[];
+}
 
 @Injectable()
 export class KbSearchService {
@@ -346,18 +363,18 @@ export class KbSearchService {
     return conditions;
   }
 
-  async retrieveAttachmentSnippets(
+  async retrieveDocumentPassages(
     user: CurrentUserContext,
     query: string,
     articleIds: number[],
     pageIds: number[] = [],
-  ): Promise<string> {
+  ): Promise<KbContextPassage[]> {
     if (!this.aiGateway.isEmbeddingConfigured() || (articleIds.length === 0 && pageIds.length === 0)) {
-      return "";
+      return [];
     }
     try {
       const embedResult = await this.embedSearchQuery(query, user.orgId);
-      if (!embedResult.ok) return "";
+      if (!embedResult.ok) return [];
       const vector = embedResult.vectorLiteral;
       const distance = sql`${kbArticleChunks.embedding} <=> ${vector}::vector`;
       const scope: SQL[] = [];
@@ -374,7 +391,14 @@ export class KbSearchService {
         if (pageScope) scope.push(pageScope);
       }
       const rows = await this.db
-        .select({ content: kbArticleChunks.content })
+        .select({
+          content: kbArticleChunks.content,
+          chunkIndex: kbArticleChunks.chunkIndex,
+          articleId: kbArticleChunks.articleId,
+          pageId: kbArticleChunks.pageId,
+          articleTitle: kbArticles.title,
+          pageTitle: kbPages.title,
+        })
         .from(kbArticleChunks)
         .leftJoin(
           kbPages,
@@ -387,24 +411,32 @@ export class KbSearchService {
             eq(kbArticles.orgId, kbArticleChunks.orgId),
           ),
         )
-        .where(
-          and(
-            eq(kbArticleChunks.orgId, user.orgId),
-            eq(kbArticleChunks.source, "attachment"),
-            or(...scope),
-          ),
-        )
+        .where(and(eq(kbArticleChunks.orgId, user.orgId), or(...scope)))
         .orderBy(distance)
-        .limit(4);
-      return rows
-        .map((row, index) => `[file ${index + 1}]\n${row.content.slice(0, 1200)}`)
-        .join("\n\n");
+        .limit(KB_DOCUMENT_PASSAGE_ROWS);
+      return rows.flatMap((row) => {
+        if (row.articleId !== null)
+          return [{
+            documentKey: kbDocumentKey("article", row.articleId),
+            documentTitle: row.articleTitle ?? "",
+            passageIndex: row.chunkIndex,
+            text: row.content,
+          }];
+        if (row.pageId !== null)
+          return [{
+            documentKey: kbDocumentKey("page", row.pageId),
+            documentTitle: row.pageTitle ?? "",
+            passageIndex: row.chunkIndex,
+            text: row.content,
+          }];
+        return [];
+      });
     } catch (err) {
-      this.logger.warn("KB attachment snippet retrieval failed", {
+      this.logger.warn("KB document passage retrieval failed", {
         orgId: user.orgId,
         error: err instanceof Error ? err.message : String(err),
       });
-      return "";
+      return [];
     }
   }
 
@@ -412,7 +444,7 @@ export class KbSearchService {
     user: CurrentUserContext,
     query: string,
     limit: number,
-  ): Promise<Array<{ sourceId: number; title: string; spaceId: number | null; snippet: string; updatedAt: Date }>> {
+  ): Promise<RetrievedSourceDocument[]> {
     if (!this.aiGateway.isEmbeddingConfigured() || !query.trim()) return [];
     if (!(await this.candidates.hasEmbeddedChunks(user.orgId))) return [];
     try {
@@ -438,6 +470,7 @@ export class KbSearchService {
           spaceId: kbSources.spaceId,
           updatedAt: kbSources.updatedAt,
           content: kbArticleChunks.content,
+          chunkIndex: kbArticleChunks.chunkIndex,
         })
         .from(kbArticleChunks)
         .innerJoin(kbSources, eq(kbSources.id, kbArticleChunks.sourceId))
@@ -455,16 +488,26 @@ export class KbSearchService {
         .orderBy(distance)
         .limit(cap);
 
-      const seen = new Set<number>();
-      const result: Array<{ sourceId: number; title: string; spaceId: number | null; snippet: string; updatedAt: Date }> = [];
+      const byId = new Map<number, RetrievedSourceDocument>();
       for (const row of rows) {
-        const id = row.sourceId;
-        if (seen.has(id)) continue;
-        seen.add(id);
-        result.push({ sourceId: id, title: row.title, spaceId: row.spaceId, updatedAt: row.updatedAt, snippet: row.content.slice(0, 1200) });
-        if (result.length >= limit) break;
+        const existing = byId.get(row.sourceId);
+        if (existing === undefined && byId.size >= limit) continue;
+        const document = existing ?? {
+          sourceId: row.sourceId,
+          title: row.title,
+          spaceId: row.spaceId,
+          updatedAt: row.updatedAt,
+          passages: [],
+        };
+        document.passages.push({
+          documentKey: kbDocumentKey("source", row.sourceId),
+          documentTitle: row.title,
+          passageIndex: row.chunkIndex,
+          text: row.content,
+        });
+        if (existing === undefined) byId.set(row.sourceId, document);
       }
-      return result;
+      return [...byId.values()];
     } catch (err) {
       this.logger.warn("KB top-source retrieval failed", {
         orgId: user.orgId,

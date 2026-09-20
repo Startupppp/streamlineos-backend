@@ -7,6 +7,7 @@ import {
   callAnalysisRefusals,
   callRecordingConsent,
 } from "../../db/schema/crm/call-analysis";
+import { runInNewTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
 import { normaliseJurisdiction, type CallConsentVerdict } from "./call-recording-consent";
 import type {
   AttestOutcome,
@@ -121,36 +122,34 @@ export class CallRecordingConsentService {
     if (verdict.allowed) return;
 
     try {
-      await this.db
-        .insert(callAnalysisRefusals)
-        .values({
-          organizationId,
-          activityId,
-          jurisdiction: verdict.jurisdiction,
-          reason: verdict.reason,
-          ruleVersion: verdict.ruleVersion,
-          note: verdict.note,
-          lastRequestedByUserId: requestedByUserId,
-        })
-        .onConflictDoUpdate({
-          target: [
-            callAnalysisRefusals.organizationId,
-            callAnalysisRefusals.activityId,
-            callAnalysisRefusals.ruleVersion,
-          ],
-          set: {
-            // The reason can move between attempts — somebody fills the
-            // jurisdiction in and the refusal becomes a consent one. Keeping the
-            // first reason would leave a compliance officer chasing a gap that
-            // has already been closed.
+      await runInNewTenantTransaction(this.db, organizationId, (tx) =>
+        tx
+          .insert(callAnalysisRefusals)
+          .values({
+            organizationId,
+            activityId,
             jurisdiction: verdict.jurisdiction,
             reason: verdict.reason,
+            ruleVersion: verdict.ruleVersion,
             note: verdict.note,
-            lastRefusedAt: sql`now()`,
             lastRequestedByUserId: requestedByUserId,
-            attempts: sql`${callAnalysisRefusals.attempts} + 1`,
-          },
-        });
+          })
+          .onConflictDoUpdate({
+            target: [
+              callAnalysisRefusals.organizationId,
+              callAnalysisRefusals.activityId,
+              callAnalysisRefusals.ruleVersion,
+            ],
+            set: {
+              jurisdiction: verdict.jurisdiction,
+              reason: verdict.reason,
+              note: verdict.note,
+              lastRefusedAt: sql`now()`,
+              lastRequestedByUserId: requestedByUserId,
+              attempts: sql`${callAnalysisRefusals.attempts} + 1`,
+            },
+          }),
+      );
     } catch (error) {
       this.logger.warn(
         `consent refusal for ${activityId} in ${organizationId} was not recorded: ${String(error)}`,

@@ -13,11 +13,23 @@ import { selfOnlyReimbursementsRead } from "../hr-payroll/reimbursements-scope";
 import { TaxService } from "../hr-payroll/tax.service";
 import { EmploymentFactsService } from "../../directory/employment-facts.service";
 import { type BankDetails } from "../../hr/onboarding/core/crypto.helpers";
-import { syncCanonicalSensitiveFields } from "../../../common/hr/sync-canonical-sensitive-fields";
-import { detectScheme, validateSchemeCode } from "../../payroll/payout/lib/bank-validation";
+import { upsertCanonicalSensitiveFields } from "../../../common/hr/sync-canonical-sensitive-fields";
+import { detectScheme, validateSchemeCode } from "../payout/lib/bank-validation";
 import type { EssBank } from "./dto/insights.schemas";
 import { EssService } from "./ess.service";
 import { multiplyDecimals, roundDecimal, toDecimal } from "../../accounting/core/money.util";
+
+function withOutstandingBalance<
+  T extends { totalEmis: number | null; paidEmis: number; emiAmount: string | null },
+>(loan: T): T & { balance: string } {
+  return {
+    ...loan,
+    balance: roundDecimal(
+      multiplyDecimals(String((loan.totalEmis ?? 0) - loan.paidEmis), toDecimal(loan.emiAmount)),
+      2,
+    ),
+  };
+}
 
 @Injectable()
 export class EssSelfServiceService {
@@ -57,19 +69,14 @@ export class EssSelfServiceService {
     const toggles = await this.ess.getActiveToggles(orgId);
     if (!toggles.essAllowLoanRequests) throw new ForbiddenException("Loan requests are disabled");
     const loans = await this.loansService.listLoans(orgId, userId, membershipId, false);
-    return loans.items.map((l) => ({
-      ...l,
-      balance: roundDecimal(
-        multiplyDecimals(String((l.totalEmis ?? 0) - l.paidEmis), toDecimal(l.emiAmount)),
-        2,
-      ),
-    }));
+    return loans.items.map(withOutstandingBalance);
   }
 
   async createLoan(orgId: string, userId: string, membershipId: number | null, body: { amount: number; reason: string; totalEmis: number }) {
     const toggles = await this.ess.getActiveToggles(orgId);
     if (!toggles.essAllowLoanRequests) throw new ForbiddenException("Loan requests are disabled");
-    return this.loansService.createLoan(orgId, userId, membershipId, false, { amount: body.amount, reason: body.reason, totalEmis: body.totalEmis });
+    const loan = await this.loansService.createLoan(orgId, userId, membershipId, false, { amount: body.amount, reason: body.reason, totalEmis: body.totalEmis });
+    return withOutstandingBalance(loan);
   }
 
   async getTaxDeclaration(orgId: string, userId: string) {
@@ -207,8 +214,8 @@ export class EssSelfServiceService {
 
     const stored: BankDetails = {
       accountNumber: body.accountNumber,
-      bankName: body.bankName,
-      branch: body.branch,
+      bankName: body.bankName ?? "",
+      branch: body.branch ?? "",
       ifsc: effectiveCode,
       accountHolder: effectiveHolder,
       pfUanNumber: body.pfUanNumber,
@@ -216,7 +223,12 @@ export class EssSelfServiceService {
     };
 
     await this.db.transaction(async (tx) => {
-      await syncCanonicalSensitiveFields(tx, orgId, userId, { bankDetails: stored });
+      const written = await upsertCanonicalSensitiveFields(tx, orgId, userId, { bankDetails: stored });
+      if (!written) {
+        throw new ConflictException(
+          "Your employment record is not set up yet, so bank details cannot be saved. Contact HR.",
+        );
+      }
       await tx.insert(auditLogs).values({
         action: "bank_details.updated",
         userId,

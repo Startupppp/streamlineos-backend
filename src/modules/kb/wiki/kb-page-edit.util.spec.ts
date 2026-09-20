@@ -1,3 +1,4 @@
+import { HttpStatus } from "@nestjs/common";
 import { snapshotIfNeeded, type KbTransaction } from "./kb-page-edit.util";
 
 const PAGE_CONTENT = { type: "doc", content: [] as unknown[] };
@@ -6,8 +7,14 @@ function makePage(id = 1) {
   return { id, title: "Test", content: PAGE_CONTENT, contentText: null };
 }
 
-function makeTx(opts: { newestVersion: { versionNumber: number; createdAt: Date } | null }) {
-  const insertValues = jest.fn().mockResolvedValue([]);
+function makeTx(opts: {
+  newestVersion: { versionNumber: number; createdAt: Date } | null;
+  insertRejectsWith?: unknown;
+}) {
+  const insertValues = jest.fn().mockImplementation(async () => {
+    if (opts.insertRejectsWith) throw opts.insertRejectsWith;
+    return [];
+  });
   const insertFn = jest.fn().mockReturnValue({ values: insertValues });
   const deleteFn = jest.fn();
 
@@ -76,5 +83,54 @@ describe("snapshotIfNeeded — immutable versions (no rolling delete)", () => {
     expect(insertValues).toHaveBeenCalledWith(
       expect.objectContaining({ versionNumber: 43 }),
     );
+  });
+});
+
+describe("snapshotIfNeeded — the version number is read then written, so it can collide", () => {
+  function uniqueViolation(constraint: string): Error {
+    return Object.assign(new Error("Failed query: insert into kb_page_versions"), {
+      cause: Object.assign(new Error("duplicate key value violates unique constraint"), {
+        code: "23505",
+        constraint_name: constraint,
+      }),
+    });
+  }
+
+  it("answers a colliding version number with 409, never an unhandled 500", async () => {
+    const { tx } = makeTx({
+      newestVersion: { versionNumber: 7, createdAt: new Date(Date.now() - 60 * 60 * 1000) },
+      insertRejectsWith: uniqueViolation("uniq_kb_page_versions_page_version"),
+    });
+
+    const caught: unknown = await snapshotIfNeeded(tx, "org-1", makePage(), "user-1").catch(
+      function capture(error: unknown) {
+        return error;
+      },
+    );
+
+    const err = caught as { getStatus?: () => number; getResponse?: () => unknown };
+    expect(typeof err.getStatus === "function" ? err.getStatus() : undefined).toBe(
+      HttpStatus.CONFLICT,
+    );
+    expect(typeof err.getResponse === "function" ? err.getResponse() : undefined).toMatchObject({
+      code: "STALE_REVISION",
+      details: { currentContentRevision: null },
+    });
+  });
+
+  it("leaves an unrelated unique violation alone rather than reporting it as a conflicting edit", async () => {
+    const original = uniqueViolation("uniq_kb_pages_org_public_slug");
+    const { tx } = makeTx({
+      newestVersion: { versionNumber: 7, createdAt: new Date(Date.now() - 60 * 60 * 1000) },
+      insertRejectsWith: original,
+    });
+
+    const caught: unknown = await snapshotIfNeeded(tx, "org-1", makePage(), "user-1").catch(
+      function capture(error: unknown) {
+        return error;
+      },
+    );
+
+    expect(caught).toBe(original);
   });
 });

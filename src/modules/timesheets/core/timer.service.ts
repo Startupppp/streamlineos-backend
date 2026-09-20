@@ -15,7 +15,7 @@ import { actingMembershipId } from "../../../common/auth/principal";
 import { TimesheetsAuditService } from "./timesheets-audit.service";
 import { EntriesService } from "./entries.service";
 import { formatDateOnly } from "./lib/period.helpers";
-import { buildTimerShape } from "./lib/timer-shape";
+import { buildTimerShape, elapsedSeconds } from "./lib/timer-shape";
 import {
   discardTimer,
   pauseTimer,
@@ -25,6 +25,8 @@ import {
 } from "./lib/timer-transitions";
 import type { StartTimerInput, ConvertTimerInput } from "./dto/timer.schemas";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+
+const CONVERTIBLE_TIMER_STATUSES = ["STOPPED", "PAUSED"] as const;
 
 @Injectable()
 export class TimerService {
@@ -182,35 +184,48 @@ export class TimerService {
     });
     if (!session) throw new NotFoundException("Timer not found");
     if (session.userMembershipId !== membershipId) throw new ForbiddenException("Not your timer");
-    if (!["STOPPED", "PAUSED"].includes(session.status)) {
-      throw new ConflictException("Stop or pause the timer before converting");
-    }
 
-    let accSeconds = session.accumulatedSeconds;
-    if (session.status === "PAUSED" && session.lastResumedAt) {
-      accSeconds += Math.floor((Date.now() - session.lastResumedAt.getTime()) / 1000);
-    }
+    const [claimed] = await this.db
+      .update(timerSessions)
+      .set({ status: "CONVERTED", updatedAt: new Date() })
+      .where(
+        and(
+          eq(timerSessions.id, timerId),
+          eq(timerSessions.orgId, u.orgId),
+          inArray(timerSessions.status, CONVERTIBLE_TIMER_STATUSES),
+        ),
+      )
+      .returning();
+    if (!claimed) throw new ConflictException("Stop or pause the timer before converting");
 
+    const accSeconds = elapsedSeconds(claimed);
     const hours = input.hours ?? Math.max(Math.round((accSeconds / 3600) * 100) / 100, 0.01);
     const date = input.date ?? formatDateOnly(new Date());
 
-    const entry = await this.entries.createEntry(u, {
-      date,
-      hours,
-      projectId: session.projectId ?? undefined,
-      ticketId: session.ticketId ?? undefined,
-      description: input.description ?? session.description ?? undefined,
-      isBillable: input.isBillable ?? session.billable,
-      billingType: (input.isBillable ?? session.billable) ? "BILLABLE" : "NON_BILLABLE",
-      source: "TIMER",
-    });
-
-    await this.db.transaction(async (tx) => {
-      await tx
-        .update(timerSessions)
-        .set({ status: "CONVERTED", updatedAt: new Date() })
-        .where(and(eq(timerSessions.id, timerId), eq(timerSessions.orgId, u.orgId)));
-    });
+    const entry = await this.entries
+      .createEntry(u, {
+        date,
+        hours,
+        projectId: claimed.projectId ?? undefined,
+        ticketId: claimed.ticketId ?? undefined,
+        description: input.description ?? claimed.description ?? undefined,
+        isBillable: input.isBillable ?? claimed.billable,
+        billingType: (input.isBillable ?? claimed.billable) ? "BILLABLE" : "NON_BILLABLE",
+        source: "TIMER",
+      })
+      .catch(async (error: unknown) => {
+        await this.db
+          .update(timerSessions)
+          .set({ status: "PAUSED", updatedAt: new Date() })
+          .where(
+            and(
+              eq(timerSessions.id, timerId),
+              eq(timerSessions.orgId, u.orgId),
+              eq(timerSessions.status, "CONVERTED"),
+            ),
+          );
+        throw error;
+      });
 
     await this.audit.recordWithDb({
       orgId: u.orgId,

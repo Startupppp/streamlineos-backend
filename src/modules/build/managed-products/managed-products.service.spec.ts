@@ -56,7 +56,11 @@ describe("ManagedProductsService", () => {
         { provide: AuditService, useValue: mockAudit },
         {
           provide: PmWorkspacesService,
-          useValue: { resolveDefaultWorkspaceId: jest.fn().mockResolvedValue("ws_default") },
+          useValue: {
+            resolveDefaultWorkspaceId: jest.fn().mockResolvedValue("ws_default"),
+            resolveWorkspaceIdForWrite: jest.fn().mockResolvedValue("ws_default"),
+            assertMemberOfWorkspace: jest.fn().mockResolvedValue(undefined),
+          },
         },
       ],
     }).compile();
@@ -103,7 +107,7 @@ describe("ManagedProductsService", () => {
       });
 
       await expect(
-        svc.createManagedProduct(ORG_ID, USER_ID, { name: "Atlas", key: "ATLAS" }),
+        svc.createManagedProduct(ORG_ID, USER_ID, null, { name: "Atlas", key: "ATLAS" }),
       ).rejects.toBeInstanceOf(ConflictException);
       expect(mockAudit.log).not.toHaveBeenCalled();
     });
@@ -116,7 +120,7 @@ describe("ManagedProductsService", () => {
         }),
       });
 
-      const result = await svc.createManagedProduct(ORG_ID, USER_ID, {
+      const result = await svc.createManagedProduct(ORG_ID, USER_ID, null, {
         name: "Atlas",
         key: "ATLAS",
       });
@@ -200,6 +204,69 @@ describe("ManagedProductsService", () => {
     });
   });
 
+  describe("getProductInsights — tenant-scoped aggregates (BSN-01-022)", () => {
+    function makeGroupedSelectChain(rows: unknown[], joined = false) {
+      const groupByChain = Promise.resolve(rows);
+      const whereChain = { groupBy: jest.fn().mockReturnValue(groupByChain) };
+      if (joined) {
+        const innerJoinChain = { where: jest.fn().mockReturnValue(whereChain) };
+        const fromChain = { innerJoin: jest.fn().mockReturnValue(innerJoinChain) };
+        return { from: jest.fn().mockReturnValue(fromChain) };
+      }
+      const fromChain = { where: jest.fn().mockReturnValue(whereChain) };
+      return { from: jest.fn().mockReturnValue(fromChain) };
+    }
+
+    it("throws 404 when the product is not found in the caller's tenant", async () => {
+      const { selectChain } = makeSelectChain([]);
+      (mockDb as { select: jest.Mock }).select.mockReturnValue(selectChain);
+
+      await expect(svc.getProductInsights(ORG_ID, 99)).rejects.toBeInstanceOf(NotFoundException);
+    });
+
+    it("sums project and submission counts grouped by status", async () => {
+      const product = makeProduct();
+      const { selectChain: loadChain } = makeSelectChain([product]);
+      const projectsChain = makeGroupedSelectChain([
+        { status: "ACTIVE", tally: 3 },
+        { status: "COMPLETED", tally: 1 },
+      ]);
+      const submissionsChain = makeGroupedSelectChain(
+        [{ status: "open", tally: 5 }, { status: "resolved", tally: 2 }],
+        true,
+      );
+
+      (mockDb as { select: jest.Mock }).select
+        .mockReturnValueOnce(loadChain)
+        .mockReturnValueOnce(projectsChain)
+        .mockReturnValueOnce(submissionsChain);
+
+      const result = await svc.getProductInsights(ORG_ID, 1);
+
+      expect(result.linkedProjectCount).toBe(4);
+      expect(result.projectsByStatus).toEqual({ active: 3, completed: 1, archived: 0 });
+      expect(result.submissionsByStatus).toMatchObject({ open: 5, resolved: 2, in_progress: 0 });
+    });
+
+    it("returns all zeros when no projects or submissions are linked to the product", async () => {
+      const product = makeProduct();
+      const { selectChain: loadChain } = makeSelectChain([product]);
+      const projectsChain = makeGroupedSelectChain([]);
+      const submissionsChain = makeGroupedSelectChain([], true);
+
+      (mockDb as { select: jest.Mock }).select
+        .mockReturnValueOnce(loadChain)
+        .mockReturnValueOnce(projectsChain)
+        .mockReturnValueOnce(submissionsChain);
+
+      const result = await svc.getProductInsights(ORG_ID, 1);
+
+      expect(result.linkedProjectCount).toBe(0);
+      expect(result.projectsByStatus).toEqual({ active: 0, completed: 0, archived: 0 });
+      expect(result.submissionsByStatus).toEqual({ open: 0, in_progress: 0, resolved: 0, archived: 0 });
+    });
+  });
+
   describe("listManagedProducts — pagination envelope", () => {
     it("returns { data, pagination } with cursor-page shape", async () => {
       const rows = [makeProduct(), makeProduct({ managedProductId: 2, key: "B" })];
@@ -214,7 +281,7 @@ describe("ManagedProductsService", () => {
         }),
       });
 
-      const result = await svc.listManagedProducts(ORG_ID, { limit: 20 } as never);
+      const result = await svc.listManagedProducts(ORG_ID, { limit: 20 } as never, 1);
 
       expect(result.data).toHaveLength(2);
       expect(result.pagination).toEqual({

@@ -8,7 +8,7 @@ import {
 } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
 import { and, desc, eq, isNull, sql } from "drizzle-orm";
-import { kbPages, kbPageFavorites, kbPageTemplates, kbSpaces, organizationMembers } from "../../../db/schema";
+import { kbPages, kbPageFavorites, kbPageTemplates, kbSpaces, organizationMembers, users } from "../../../db/schema";
 import type { KbPageContent } from "../../../db/schema/kb/pages";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
@@ -23,7 +23,14 @@ import type { CreatePageInput, UpdatePageInput } from "./dto/kb-pages.schemas";
 import { pageVisibleTo } from "../retrieval/kb-page-visibility";
 import { getAccessibleProjectIds } from "../retrieval/kb-project-access.util";
 import { shouldResetTrust } from "./kb-page-governance.util";
-import { resyncPageLinks, snapshotIfNeeded } from "./kb-page-edit.util";
+import {
+  NO_KB_PAGE_CONFLICT_DETAILS,
+  resyncPageLinks,
+  snapshotIfNeeded,
+  staleRevisionConflict,
+  type KbPageConflictDetails,
+  type KbTransaction,
+} from "./kb-page-edit.util";
 import { assertPageAccessible } from "../retrieval/kb-page-access.util";
 import { actingMembershipId } from "../../../common/auth/principal";
 import { KB_PAGE_COLUMNS, type KbPageRow } from "./kb-page-columns";
@@ -146,16 +153,26 @@ export class KbPagesService {
       columns: { id: true },
     });
 
-    const canShare = user.isOrgOwner || canManage || (
-      this.membershipId(user) !== null && page.createdByMembershipId === this.membershipId(user)
-    ) || (page.createdByMembershipId === null && page.createdById === user.userId);
-
     return {
       ...page,
-      publicToken: canShare ? page.publicToken : null,
+      publicToken: this.withoutUnsharedToken(user, page, canManage).publicToken,
       ancestors,
       isFavorite: !!fav,
     };
+  }
+
+  private withoutUnsharedToken<T extends Pick<PageRow, "createdById" | "createdByMembershipId" | "publicToken">>(
+    user: CurrentUserContext,
+    page: T,
+    canManage: boolean,
+  ): T {
+    const membershipId = this.membershipId(user);
+    const canShare =
+      user.isOrgOwner ||
+      canManage ||
+      (membershipId !== null && page.createdByMembershipId === membershipId) ||
+      (page.createdByMembershipId === null && page.createdById === user.userId);
+    return canShare ? page : { ...page, publicToken: null };
   }
 
   async update(user: CurrentUserContext, pageId: number, input: UpdatePageInput, canManage: boolean): Promise<PageRow> {
@@ -217,12 +234,6 @@ export class KbPagesService {
       values.trustState = "unverified";
     }
 
-    /**
-     * `content_revision` tracks the body alone, so the precondition is demanded — and applied —
-     * exactly where an unguarded write destroys work. `updatePageSchema` refuses a body without
-     * it, which is what makes the unguarded content write unrepresentable rather than merely
-     * discouraged; a rename or a status change is not gated on someone else's typing.
-     */
     const revisionGuard = contentChanged ? input.expectedContentRevision : undefined;
 
     const result = await this.db.transaction(async (tx) => {
@@ -243,10 +254,7 @@ export class KbPagesService {
         .returning(KB_PAGE_COLUMNS);
       if (!updated) {
         if (revisionGuard === undefined) throw new NotFoundException("Page not found");
-        throw new HttpException(
-          { message: "Page was modified by another editor. Reload to see the latest version.", code: "STALE_REVISION" },
-          HttpStatus.CONFLICT,
-        );
+        throw staleRevisionConflict(await this.describeLatestEdit(tx, orgId, pageId));
       }
 
       if (contentChanged && input.content !== undefined) {
@@ -284,7 +292,7 @@ export class KbPagesService {
       return updated;
     });
 
-    return result;
+    return this.withoutUnsharedToken(user, result, canManage);
   }
 
   /**
@@ -424,6 +432,29 @@ export class KbPagesService {
 
   private getAccessibleProjectIds(user: CurrentUserContext): Promise<number[]> {
     return getAccessibleProjectIds(this.db, user);
+  }
+
+  private async describeLatestEdit(
+    tx: KbTransaction,
+    orgId: string,
+    pageId: number,
+  ): Promise<KbPageConflictDetails> {
+    const [latest] = await tx
+      .select({
+        contentRevision: kbPages.contentRevision,
+        updatedAt: kbPages.updatedAt,
+        editorName: users.name,
+      })
+      .from(kbPages)
+      .leftJoin(users, eq(kbPages.lastEditedById, users.id))
+      .where(and(eq(kbPages.id, pageId), eq(kbPages.orgId, orgId)))
+      .limit(1);
+    if (!latest) return NO_KB_PAGE_CONFLICT_DETAILS;
+    return {
+      currentContentRevision: latest.contentRevision,
+      lastEditedByName: latest.editorName,
+      lastEditedAt: latest.updatedAt.toISOString(),
+    };
   }
 
   private async buildAncestors(orgId: string, parentId: number | null): Promise<Pick<PageRow, "id" | "title">[]> {

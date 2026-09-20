@@ -6,6 +6,7 @@ import { KbEventsService } from "../core/kb-events.service";
 import { KbSearchService } from "./kb-search.service";
 import { KbAccessService } from "../core/kb-access.service";
 import { KbCitationVisibilityService } from "./kb-citation-visibility.service";
+import { kbDocumentKey } from "./kb-ask-context";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
 import { PgDialect } from "drizzle-orm/pg-core";
@@ -63,21 +64,35 @@ describe("KbAskService — source citation re-verification", () => {
     sourceId: 1,
     title: "Accessible Doc",
     spaceId: 5,
-    snippet: "content about policies",
+    passages: [
+      {
+        documentKey: kbDocumentKey("source", 1),
+        documentTitle: "Accessible Doc",
+        passageIndex: 0,
+        text: "content about policies",
+      },
+    ],
     updatedAt: new Date("2024-01-01"),
   };
   const s2 = {
     sourceId: 2,
     title: "Restricted Doc",
     spaceId: 6,
-    snippet: "confidential content",
+    passages: [
+      {
+        documentKey: kbDocumentKey("source", 2),
+        documentTitle: "Restricted Doc",
+        passageIndex: 0,
+        text: "confidential content",
+      },
+    ],
     updatedAt: new Date("2024-01-01"),
   };
 
   const mockSearch = {
     retrieveTopArticles: jest.fn().mockResolvedValue([]),
     retrieveTopSources: jest.fn(),
-    retrieveAttachmentSnippets: jest.fn().mockResolvedValue(""),
+    retrieveDocumentPassages: jest.fn().mockResolvedValue([]),
     articleOwnerFilterFor: jest.fn().mockResolvedValue(null),
     articleRestrictionFilterFor: jest.fn().mockResolvedValue(null),
   };
@@ -86,7 +101,7 @@ describe("KbAskService — source citation re-verification", () => {
     jest.resetAllMocks();
     mockEvents.record.mockResolvedValue(undefined);
     mockSearch.retrieveTopArticles.mockResolvedValue([]);
-    mockSearch.retrieveAttachmentSnippets.mockResolvedValue("");
+    mockSearch.retrieveDocumentPassages.mockResolvedValue([]);
 
     const selectChain = {
       from: jest.fn().mockReturnThis(),
@@ -158,7 +173,7 @@ describe("KbAskService — source citation re-verification", () => {
 
     mockSearch.retrieveTopArticles.mockResolvedValue([articleForTest]);
     mockSearch.retrieveTopSources.mockResolvedValue([]);
-    mockSearch.retrieveAttachmentSnippets.mockResolvedValue("");
+    mockSearch.retrieveDocumentPassages.mockResolvedValue([]);
     mockAccess.getAccessibleSpaceIds.mockResolvedValue([5]);
 
     const capturedArgs: unknown[] = [];
@@ -234,9 +249,17 @@ describe("KbAskService — prompt-injection guard at the SQL predicate level", (
     const makeSearch = (sourceOverride: string) => ({
       retrieveTopArticles: jest.fn().mockResolvedValue([]),
       retrieveTopSources: jest.fn().mockResolvedValue([
-        { sourceId: 99, title: "Doc", spaceId: 1, snippet: sourceOverride, updatedAt: new Date() },
+        {
+          sourceId: 99,
+          title: "Doc",
+          spaceId: 1,
+          updatedAt: new Date(),
+          passages: [
+            { documentKey: kbDocumentKey("source", 99), documentTitle: "Doc", passageIndex: 0, text: sourceOverride },
+          ],
+        },
       ]),
-      retrieveAttachmentSnippets: jest.fn().mockResolvedValue(""),
+      retrieveDocumentPassages: jest.fn().mockResolvedValue([]),
       articleOwnerFilterFor: jest.fn().mockResolvedValue(null),
       articleRestrictionFilterFor: jest.fn().mockResolvedValue(null),
     });
@@ -318,9 +341,17 @@ describe("KbAskService — prompt-injection guard at the SQL predicate level", (
       const search = {
         retrieveTopArticles: jest.fn().mockResolvedValue([]),
         retrieveTopSources: jest.fn().mockResolvedValue([
-          { sourceId: 7, title: "T", spaceId: 3, snippet: q, updatedAt: new Date() },
+          {
+            sourceId: 7,
+            title: "T",
+            spaceId: 3,
+            updatedAt: new Date(),
+            passages: [
+              { documentKey: kbDocumentKey("source", 7), documentTitle: "T", passageIndex: 0, text: q },
+            ],
+          },
         ]),
-        retrieveAttachmentSnippets: jest.fn().mockResolvedValue(""),
+        retrieveDocumentPassages: jest.fn().mockResolvedValue([]),
         articleOwnerFilterFor: jest.fn().mockResolvedValue(null),
         articleRestrictionFilterFor: jest.fn().mockResolvedValue(null),
       };

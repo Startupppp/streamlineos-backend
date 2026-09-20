@@ -1,4 +1,6 @@
 import { HttpException, HttpStatus } from "@nestjs/common";
+import type { ModuleAvailabilityReason } from "../rbac/module-availability";
+import { moduleDefinition } from "../rbac/module-registry";
 
 export class PaymentRequiredException extends HttpException {
   constructor(body: Record<string, unknown>) {
@@ -24,13 +26,30 @@ export class InsufficientAiCreditsException extends HttpException {
   }
 }
 
+const MODULE_DENIAL_MESSAGE: Record<
+  ModuleAvailabilityReason,
+  (moduleName: string) => string
+> = {
+  "not-in-plan": (moduleName) => `${moduleName} is not included in your current plan.`,
+  "org-disabled": (moduleName) => `${moduleName} is not enabled for your organization.`,
+  "user-denied": (moduleName) => `You do not have access to ${moduleName}.`,
+};
+
+function moduleDisplayName(moduleKey: string): string {
+  return moduleDefinition(moduleKey)?.displayName ?? moduleKey;
+}
+
 export class ModuleDisabledException extends HttpException {
-  constructor(moduleKey: string) {
+  constructor(moduleKey: string, reason: ModuleAvailabilityReason) {
     super(
       {
         code: "MODULE_NOT_ENABLED",
-        message: "This module is not available on your plan.",
-        details: { moduleKey },
+        message: MODULE_DENIAL_MESSAGE[reason](moduleDisplayName(moduleKey)),
+        details: {
+          moduleKey,
+          reason,
+          upgradePath: reason === "not-in-plan" ? "/settings/billing" : null,
+        },
       },
       HttpStatus.PAYMENT_REQUIRED,
     );

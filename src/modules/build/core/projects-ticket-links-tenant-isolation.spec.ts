@@ -58,35 +58,35 @@ describe("ProjectsTicketLinksService — cross-tenant isolation", () => {
 });
 
 describe("ProjectsTicketRelationsService — cross-tenant isolation", () => {
-  it("requireProjectTicket throws NotFoundException when ticket not found for attacker org (cross-tenant isolation — returns 404 not 403)", async () => {
-    const memberSelect = jest.fn().mockReturnValue({ from: jest.fn().mockReturnValue({ innerJoin: jest.fn().mockReturnValue({ where: jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue([{ id: 1 }]) }) }) }) });
+  const access = { scopeFor: jest.fn().mockResolvedValue("all"), resolveUserPermissions: jest.fn() };
+
+  it("assertTicketReadAccess throws NotFoundException when ticket not found for attacker org (cross-tenant isolation — returns 404 not 403)", async () => {
+    const ticketSelect = jest.fn().mockReturnValue({ from: jest.fn().mockReturnValue({ where: jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue([]) }) }) });
     const db = {
       query: {
-        projectMembers: { findFirst: jest.fn().mockResolvedValue({ userId: "u1", projectId: 1 }) },
-        tickets: { findFirst: jest.fn().mockResolvedValue(undefined) },
+        projects: { findFirst: jest.fn().mockResolvedValue({ id: 1 }) },
         workItemRelations: { findMany: jest.fn().mockResolvedValue([]) },
       },
-      select: memberSelect,
+      select: ticketSelect,
     } as unknown as Db;
-    const svc = new ProjectsTicketRelationsService(db);
+    const svc = new ProjectsTicketRelationsService(db, access);
 
     const u = makeCtx(ATTACKER_ORG);
     await expect(svc.addRelation(u, 1, 999, { relatedTicketId: 1000, relationType: "blocks" })).rejects.toThrow(NotFoundException);
   });
 
   it("listRelations works within the owning org (control — same-tenant access works)", async () => {
-    const memberSelect = jest.fn().mockReturnValue({ from: jest.fn().mockReturnValue({ innerJoin: jest.fn().mockReturnValue({ where: jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue([{ id: 1 }]) }) }) }) });
+    const ticketSelect = jest.fn().mockReturnValue({ from: jest.fn().mockReturnValue({ where: jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue([{ id: 1, allowed: true }]) }) }) });
     const db = {
       query: {
-        projectMembers: { findFirst: jest.fn().mockResolvedValue({ userId: "u1", projectId: 1 }) },
-        tickets: { findFirst: jest.fn().mockResolvedValue({ id: 1, orgId: OWNER_ORG }) },
+        projects: { findFirst: jest.fn().mockResolvedValue({ id: 1, managerMembershipId: null }) },
         workItemRelations: { findMany: jest.fn().mockResolvedValue([]) },
       },
-      select: memberSelect,
+      select: ticketSelect,
     } as unknown as Db;
-    const svc = new ProjectsTicketRelationsService(db);
+    const svc = new ProjectsTicketRelationsService(db, access);
 
-    const u = makeCtx(OWNER_ORG);
+    const u = { ...makeCtx(OWNER_ORG), isOrgOwner: true } as CurrentUserContext;
     const result = await svc.listRelations(u, 1, 1);
     expect(result).toBeDefined();
   });

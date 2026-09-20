@@ -4,6 +4,7 @@ import {
   ServiceUnavailableException,
 } from "@nestjs/common";
 import { type Db } from "../../../db/drizzle.module";
+import { runInNewTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
 import { BillingCoupons } from "./billing-coupons";
 import { type BillingCycle, type Plan } from "./dto/billing.schemas";
 import { PLAN_PRICES_PAISE } from "./plan-entitlements.constants";
@@ -50,18 +51,16 @@ export class BillingOrderCreation {
       throw new ServiceUnavailableException("Payment gateway not configured. Contact support.");
     }
 
-    const price = await this.billablePrice(plan, billingCycle);
+    const catalogPrice = await this.deps.catalog.getActivePriceForPlanTier(plan);
+    const price = resolveQuotePrice(plan, billingCycle, catalogPrice ?? null);
+    const catalogVersion = catalogPrice?.id ?? null;
     const baseAmount = price.amount;
     let amount = baseAmount;
     let couponDiscountAmount = 0;
     let reservedCouponId: number | null = null;
 
-    const catalogVersion = await this.deps.catalog
-      .getActivePriceForPlanTier(plan)
-      .then((p) => p?.id ?? null);
-
     if (couponId !== undefined) {
-      const reservation = await this.deps.db.transaction(async (tx) => {
+      const reservation = await runInNewTenantTransaction(this.deps.db, orgId, async (tx) => {
         return this.couponAdmin.reserve(tx, couponId, orgId, plan, baseAmount);
       });
       if (!reservation.reserved) {
@@ -74,7 +73,7 @@ export class BillingOrderCreation {
 
     let purchase: Awaited<ReturnType<SubscriptionPurchaseService["create"]>>;
     try {
-      purchase = await this.deps.db.transaction(async (tx) =>
+      purchase = await runInNewTenantTransaction(this.deps.db, orgId, async (tx) =>
         this.purchaseService.create(tx, {
           orgId,
           createdByUserId: userId,
@@ -113,7 +112,7 @@ export class BillingOrderCreation {
     }
 
     try {
-      const claimed = await this.deps.db.transaction(async (tx) =>
+      const claimed = await runInNewTenantTransaction(this.deps.db, orgId, async (tx) =>
         this.purchaseService.attachProviderOrder(tx, purchase.id, orgId, providerOrderId),
       );
       if (claimed === null)
@@ -141,7 +140,7 @@ export class BillingOrderCreation {
 
   private async abandonIntent(orgId: string, purchaseId: number): Promise<void> {
     try {
-      await this.deps.db.transaction(async (tx) =>
+      await runInNewTenantTransaction(this.deps.db, orgId, async (tx) =>
         this.purchaseService.markFailed(tx, purchaseId, orgId, {
           abandonedReason: "provider order creation failed before an order id existed",
         }),
@@ -160,11 +159,9 @@ export class BillingOrderCreation {
     context: string,
   ): Promise<void> {
     if (reservedCouponId === null) return;
-    await this.deps.db
-      .transaction(async (tx) => {
-        await this.couponAdmin.release(tx, reservedCouponId);
-      })
-      .catch((releaseErr: unknown) => {
+    await runInNewTenantTransaction(this.deps.db, orgId, async (tx) => {
+      await this.couponAdmin.release(tx, reservedCouponId);
+    }).catch((releaseErr: unknown) => {
         this.logger.error(`[billing] coupon reservation release failed after ${context}`, {
           orgId,
           couponId: reservedCouponId,
@@ -173,8 +170,4 @@ export class BillingOrderCreation {
       });
   }
 
-  private async billablePrice(plan: Plan, billingCycle: BillingCycle) {
-    const catalogPrice = await this.deps.catalog.getActivePriceForPlanTier(plan);
-    return resolveQuotePrice(plan, billingCycle, catalogPrice ?? null);
-  }
 }

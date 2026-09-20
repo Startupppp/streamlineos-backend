@@ -488,6 +488,8 @@ describe("CA4: disconnected user — auth error in external events marks connect
     );
     const authErr = new MockToolError("token expired", true);
 
+    mockedRunInTx.mockImplementation(async (_db, _orgId, cb) => cb(_db as never));
+
     const connectionUpdateArgs: unknown[] = [];
     const db = {
       select: jest.fn().mockReturnValue({

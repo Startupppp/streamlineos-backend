@@ -33,6 +33,7 @@ import type { EntityReferenceService } from "../../entity-reference/entity-refer
 import type { EntityActor } from "../../entity-reference/entity-reference.types";
 import { chatChannels, chatMessages, chatReplyReminders } from "../../../db/schema";
 import { ChatSearchService } from "../chat-search.service";
+import type { ChatChannelListService } from "../chat-channel-list.service";
 import { ChatMessageTimelineService } from "../chat-message-timeline.service";
 import { ChatSavedService } from "../chat-saved.service";
 import { ChatPresenceService } from "../chat-presence.service";
@@ -75,19 +76,13 @@ describe("chat search channels — private and DIRECT names are not enumerable",
   async function whereClauseFor(memberChannelIds: number[]): Promise<string> {
     const { calls, capture } = captureQuery();
     const db = {
-      select: jest.fn().mockReturnValue({
-        from: jest.fn().mockReturnValue({
-          innerJoin: jest.fn().mockReturnValue({
-            where: jest
-              .fn()
-              .mockResolvedValue(memberChannelIds.map((channelId) => ({ channelId }))),
-          }),
-        }),
-      }),
       query: { chatChannels: { findMany: capture } },
     } as unknown as Db;
+    const channelList = {
+      listMemberChannelIds: jest.fn().mockResolvedValue(memberChannelIds),
+    } as unknown as ChatChannelListService;
 
-    await new ChatSearchService(db, passThroughEntities).searchChannels(searchActor, "alice");
+    await new ChatSearchService(db, passThroughEntities, channelList).searchChannels(searchActor, "alice");
     const [call] = calls;
     if (!call) throw new Error("searchChannels never queried chat_channels");
     return renderWhere(call["where"] as SQL);

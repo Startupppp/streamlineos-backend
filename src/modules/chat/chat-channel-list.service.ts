@@ -115,7 +115,10 @@ export class ChatChannelListService {
    * token mint to have 49,500 of them thrown away in memory. One row beyond the
    * grant is read so the truncation the consumer performs is observable here.
    */
-  async listMemberChannelIds(actor: EntityActor): Promise<number[]> {
+  async listMemberChannelIds(
+    actor: EntityActor,
+    options?: { includeArchived?: boolean },
+  ): Promise<number[]> {
     const { orgId, userId } = actor;
     const membershipId = await this.getMembershipId(orgId, userId);
     if (membershipId === null) return [];
@@ -131,7 +134,7 @@ export class ChatChannelListService {
         and(
           eq(chatChannels.orgId, orgId),
           eq(chatChannelMembers.membershipId, membershipId),
-          eq(chatChannels.isArchived, false),
+          ...(options?.includeArchived === true ? [] : [eq(chatChannels.isArchived, false)]),
         ),
       )
       .limit(MAX_CAPABILITY_CHANNELS + 1);

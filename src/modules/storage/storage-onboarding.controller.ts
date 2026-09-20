@@ -23,6 +23,7 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { documents, onboardingSteps } from "../../db/schema";
 import { runInTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
+import { NoTenantTransaction } from "../../common/tenant/no-tenant-transaction.decorator";
 import { StorageService } from "./storage.service";
 import { MediaTransformRunner } from "./media-transform.runner";
 import { AvScanner } from "../../common/security/av-scan";
@@ -50,6 +51,7 @@ export class OnboardingDocumentsController {
   ) {}
 
   @Post("documents")
+  @NoTenantTransaction()
   @ResponseSchema(onboardingDocumentResponseSchema)
   @Universal()
   @HttpCode(201)

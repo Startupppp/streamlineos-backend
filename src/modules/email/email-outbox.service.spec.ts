@@ -1,5 +1,6 @@
-import type { EmailDispatcher } from "./email-provider-selection";
-import { EmailOutboxService } from "./email-outbox.service";
+import type { Db } from "../../db/drizzle.module";
+import type { EmailDispatcher, EmailOptions } from "./email-provider-selection";
+import { EmailOutboxService, INLINE_SEND_BUDGET_MS } from "./email-outbox.service";
 import type { EmailSuppressionService } from "./email-suppression.service";
 
 function suppressionStub(): EmailSuppressionService {
@@ -15,6 +16,131 @@ function emailProviderStub(): EmailDispatcher {
     dispatchEmail: () => Promise.resolve(),
   };
 }
+
+interface SendingDouble {
+  readonly db: Db;
+  readonly updated: jest.Mock;
+}
+
+function sendingDouble(): SendingDouble {
+  const updated = jest.fn().mockReturnValue({
+    where: jest.fn().mockResolvedValue(undefined),
+  });
+  const db = {
+    insert: jest.fn().mockReturnValue({
+      values: jest.fn().mockReturnValue({
+        returning: jest.fn().mockResolvedValue([{ id: "email-1" }]),
+      }),
+    }),
+    update: jest.fn().mockReturnValue({ set: updated }),
+  };
+  return { db: db as never, updated };
+}
+
+function sendingService(
+  sendEmailOnceDirect: jest.Mock,
+): { service: EmailOutboxService; updated: jest.Mock } {
+  const { db, updated } = sendingDouble();
+  const provider: EmailDispatcher = {
+    getEmailProvider: () => "zeptomail",
+    sendEmailOnceDirect,
+    dispatchEmail: jest.fn(),
+  };
+  return {
+    service: new EmailOutboxService(db, suppressionStub(), provider),
+    updated,
+  };
+}
+
+const PLAIN_SEND: EmailOptions = {
+  to: "person@example.com",
+  subject: "Approval needed",
+  html: "<p>approve</p>",
+};
+
+describe("EmailOutboxService.enqueueAndTry — the inline attempt holds a pooled connection", () => {
+  it("bounds the inline attempt to the connection-hold budget, because the row is already durable and the cron drain owns delivery", async () => {
+    const send = jest.fn().mockResolvedValue(undefined);
+    const { service } = sendingService(send);
+
+    await service.enqueueAndTry({ ...PLAIN_SEND });
+
+    expect(send).toHaveBeenCalledWith(
+      expect.objectContaining({ subject: "Approval needed" }),
+      INLINE_SEND_BUDGET_MS,
+    );
+  });
+
+  it("leaves the row PENDING when the inline attempt exceeds its budget, so the drain still delivers it", async () => {
+    const send = jest
+      .fn()
+      .mockRejectedValue(new Error("Inline email send timed out after 5000ms"));
+    const { service, updated } = sendingService(send);
+
+    await expect(service.enqueueAndTry({ ...PLAIN_SEND })).resolves.toBeUndefined();
+
+    expect(updated).toHaveBeenCalledWith(
+      expect.objectContaining({ attempts: 1, nextAttemptAt: expect.any(Date) }),
+    );
+    expect(updated).not.toHaveBeenCalledWith(
+      expect.objectContaining({ status: "FAILED" }),
+    );
+  });
+
+  it("gives an attachment send the full provider timeout, because the outbox row stores no attachments and the inline attempt is its only one", async () => {
+    const send = jest.fn().mockResolvedValue(undefined);
+    const { service } = sendingService(send);
+
+    await service.enqueueAndTry({
+      ...PLAIN_SEND,
+      attachments: [{ filename: "payslip.pdf", content: "x", type: "application/pdf" }],
+    });
+
+    expect(send).toHaveBeenCalledWith(expect.anything(), undefined);
+  });
+
+  it("refuses to retry a send carrying headers, because the drain would redeliver it without its List-Unsubscribe", async () => {
+    const send = jest.fn().mockRejectedValue(new Error("ECONNRESET"));
+    const { service, updated } = sendingService(send);
+
+    await expect(
+      service.enqueueAndTry({
+        ...PLAIN_SEND,
+        headers: { "List-Unsubscribe": "<https://example.com/u/1>" },
+      }),
+    ).rejects.toThrow();
+
+    expect(updated).toHaveBeenCalledWith(
+      expect.objectContaining({ status: "FAILED" }),
+    );
+  });
+
+  it("refuses to retry a cc'd send, because the outbox row stores only the primary recipient", async () => {
+    const send = jest.fn().mockRejectedValue(new Error("ECONNRESET"));
+    const { service, updated } = sendingService(send);
+
+    await expect(
+      service.enqueueAndTry({ ...PLAIN_SEND, cc: ["manager@example.com"] }),
+    ).rejects.toThrow();
+
+    expect(updated).toHaveBeenCalledWith(
+      expect.objectContaining({ status: "FAILED" }),
+    );
+  });
+
+  it("treats an empty cc array as absent, so an ordinary send is still retryable", async () => {
+    const send = jest.fn().mockRejectedValue(new Error("ECONNRESET"));
+    const { service, updated } = sendingService(send);
+
+    await expect(
+      service.enqueueAndTry({ ...PLAIN_SEND, cc: [] }),
+    ).resolves.toBeUndefined();
+
+    expect(updated).not.toHaveBeenCalledWith(
+      expect.objectContaining({ status: "FAILED" }),
+    );
+  });
+});
 
 describe("EmailOutboxService.enqueueForDelivery", () => {
   it("bulk-enqueues one durable row per private recipient", async () => {

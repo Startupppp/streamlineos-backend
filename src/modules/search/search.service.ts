@@ -402,7 +402,7 @@ export class SearchService {
         type: "ticket",
         title: t.title,
         subtitle: `${t.projectKey}-${t.ticketNumber}`,
-        href: `/projects/${t.projectId}?ticket=${t.id}`,
+        href: `/build/${t.projectId}/tickets/${encodeURIComponent(`${t.projectKey}-${t.ticketNumber}`)}`,
         status: t.status,
       })),
     ];

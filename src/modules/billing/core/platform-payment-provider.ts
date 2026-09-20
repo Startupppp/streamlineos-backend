@@ -108,3 +108,5 @@ export interface PlatformPaymentProvider {
 
 /** Injection token, because an interface does not survive to runtime. */
 export const PLATFORM_PAYMENT_PROVIDER = Symbol("PLATFORM_PAYMENT_PROVIDER");
+
+export const PLATFORM_PAYMENT_TIMEOUT_MS = 10_000;

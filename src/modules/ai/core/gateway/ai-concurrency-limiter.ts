@@ -3,7 +3,7 @@ import { Redis } from "@upstash/redis";
 import { REDIS } from "../../../../common/cache/cache.service";
 
 export const AI_CONCURRENCY_CAP = 20;
-const COUNTER_TTL_SECONDS = 120;
+const COUNTER_TTL_SECONDS = 300;
 
 function redisKey(orgId: string): string {
   return `ai:inflight:${orgId}`;
@@ -37,7 +37,12 @@ export class AiConcurrencyLimiter {
         const count = await this.redis.incr(key);
         if (count === 1) void this.redis.expire(key, COUNTER_TTL_SECONDS).catch(() => undefined);
         if (count > AI_CONCURRENCY_CAP) {
-          void this.redis.decr(key).catch(() => undefined);
+          void this.redis.decr(key).catch((err: unknown) => {
+            this.logger.error("Failed to roll back Redis concurrency counter", {
+              error: err instanceof Error ? err.message : String(err),
+              orgId,
+            });
+          });
           return false;
         }
         return true;
@@ -67,7 +72,13 @@ export class AiConcurrencyLimiter {
       else this.localCounts.set(orgId, local - 1);
       return;
     }
-    if (this.redis) void this.redis.decr(redisKey(orgId)).catch(() => undefined);
+    if (this.redis)
+      void this.redis.decr(redisKey(orgId)).catch((err: unknown) => {
+        this.logger.error("Failed to decrement Redis concurrency counter on release", {
+          error: err instanceof Error ? err.message : String(err),
+          orgId,
+        });
+      });
   }
 
   private acquireLocally(orgId: string): boolean {

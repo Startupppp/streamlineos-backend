@@ -122,4 +122,33 @@ describe("RateLimitService (in-memory fallback, no redis)", () => {
     expect(result.allowed).toBe(false);
     expect(result.retryAfterSecs).toBeGreaterThan(0);
   });
+
+  describe("the fallback map is bounded without Redis", () => {
+    it("drops windows that have lapsed rather than waiting to be asked again", async () => {
+      jest.useFakeTimers();
+      try {
+        const instance = svc();
+        for (let i = 0; i < 200; i++)
+          await instance.check("api-key-ingest", `probe-ip-${String(i)}`);
+        expect(instance.memoryKeyCount()).toBe(200);
+
+        jest.advanceTimersByTime(10 * 60 * 1000);
+        await instance.check("api-key-ingest", "one-more");
+
+        expect(instance.memoryKeyCount()).toBe(1);
+      } finally {
+        jest.useRealTimers();
+      }
+    });
+
+    it("still enforces the limit for an identifier inside its window", async () => {
+      const instance = svc();
+      const results: boolean[] = [];
+      for (let i = 0; i < 62; i++)
+        results.push((await instance.check("api-key-ingest", "steady")).allowed);
+
+      expect(results.slice(0, 60).every((allowed) => allowed === true)).toBe(true);
+      expect(results[60]).toBe(false);
+    });
+  });
 });

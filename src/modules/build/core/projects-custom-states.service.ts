@@ -84,6 +84,28 @@ export class ProjectsCustomStatesService {
       .limit(100);
   }
 
+  async listOrgCustomStates(orgId: string) {
+    return this.db
+      .select({
+        name: projectStatuses.name,
+        color: sql<string | null>`MAX(${projectStatuses.color})`,
+        type: sql<string | null>`MAX(${projectStatuses.type})`,
+      })
+      .from(projectStatuses)
+      .innerJoin(
+        projects,
+        and(
+          eq(projects.id, projectStatuses.projectId),
+          eq(projects.orgId, orgId),
+          isNull(projects.deletedAt),
+        ),
+      )
+      .where(eq(projectStatuses.orgId, orgId))
+      .groupBy(projectStatuses.name)
+      .orderBy(projectStatuses.name)
+      .limit(200);
+  }
+
   async createCustomState(
     orgId: string,
     projectId: number,

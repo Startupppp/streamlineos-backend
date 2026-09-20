@@ -50,13 +50,22 @@ export class TeamsService {
     return row;
   }
 
-  async listTeams(orgId: string, query: ListTeamsQuery) {
+  async listTeams(
+    orgId: string,
+    query: ListTeamsQuery,
+    callerMembershipId: number | null,
+  ) {
+    if (query.pmWorkspaceId)
+      await this.pmWorkspaces.assertMemberOfWorkspace(orgId, query.pmWorkspaceId, callerMembershipId);
     const { cursor, pageSize } = query;
     const pos = decodeCursor(cursor);
     const conds = [
       eq(projectTeams.orgId, orgId),
       isNull(projectTeams.deletedAt),
       query.search ? ilike(projectTeams.name, `%${query.search}%`) : undefined,
+      query.pmWorkspaceId
+        ? eq(projectTeams.pmWorkspaceId, query.pmWorkspaceId)
+        : undefined,
     ];
     if (pos) conds.push(keysetBeforeId(projectTeams.createdAt, projectTeams.id, pos));
 
@@ -64,6 +73,7 @@ export class TeamsService {
       .select({
         id: projectTeams.id,
         orgId: projectTeams.orgId,
+        pmWorkspaceId: projectTeams.pmWorkspaceId,
         name: projectTeams.name,
         key: projectTeams.key,
         icon: projectTeams.icon,
@@ -119,8 +129,17 @@ export class TeamsService {
     return { ...team, members };
   }
 
-  async createTeam(orgId: string, userId: string, input: CreateTeamInput) {
-    const pmWorkspaceId = await this.pmWorkspaces.resolveDefaultWorkspaceId(orgId);
+  async createTeam(
+    orgId: string,
+    userId: string,
+    callerMembershipId: number | null,
+    input: CreateTeamInput,
+  ) {
+    const pmWorkspaceId = await this.pmWorkspaces.resolveWorkspaceIdForWrite(
+      orgId,
+      input.pmWorkspaceId,
+    );
+    await this.pmWorkspaces.assertMemberOfWorkspace(orgId, pmWorkspaceId, callerMembershipId);
     try {
       const [row] = await this.db
         .insert(projectTeams)

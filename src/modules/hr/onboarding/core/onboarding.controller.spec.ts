@@ -266,4 +266,35 @@ describe("OnboardingController — HR-only module-checklist gating", () => {
     });
 
   });
+
+  describe("getOnboardingSession — session seed isolated from the request transaction", () => {
+    it("calls getOrCreateSessionInNewTransaction, not getOrCreateSession directly, because the GET must not write inside the read-intent request transaction that TenantContextInterceptor opens", async () => {
+      const session = { id: 1, orgId: "org-1", userId: "user-1", type: "employee_onboarding", status: "not_started" };
+      const sessions = {
+        getOrCreateSessionInNewTransaction: jest.fn().mockResolvedValue(session),
+        getOrCreateSession: jest.fn(),
+      };
+      const isolated = new OnboardingController(
+        undefined as never,
+        onboarding as never,
+        undefined as never,
+        undefined as never,
+        checklists as unknown as never,
+        tours as unknown as never,
+        sessions as never,
+        access as never,
+      );
+
+      const result = await isolated.getOnboardingSession(ctx());
+
+      expect(result).toBe(session);
+      expect(sessions.getOrCreateSessionInNewTransaction).toHaveBeenCalledWith(
+        "org-1",
+        "user-1",
+        "employee_onboarding",
+        1,
+      );
+      expect(sessions.getOrCreateSession).not.toHaveBeenCalled();
+    });
+  });
 });

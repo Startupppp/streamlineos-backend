@@ -113,12 +113,8 @@ export const DECLARED_RAW_SCOPE = new Map([
     "Export filters are persisted on the job row for a background worker to replay outside the request.",
   ],
   [
-    "src/modules/ai/core/ops-copilot-tools.ts",
+    "src/modules/ai/core/tools/ops-copilot-tools.ts",
     "The payroll copilot answers a different shape per scope — self rows, a team refusal, or an org summary — rather than filtering one query.",
-  ],
-  [
-    "src/modules/ai/core/workspace-copilot-tools.ts",
-    "An own-scoped member asking about another member's ticket stats is refused with a message, not narrowed to an empty result.",
   ],
 ]);
 
@@ -213,7 +209,7 @@ if (args.includes("--self-test")) {
     allowsADataScopeTypeInADeclaredRawFile:
       analyseSource(
         `export function shouldDeny(scope: DataScope): boolean {`,
-        "src/modules/ai/core/ops-copilot-tools.ts",
+        "src/modules/ai/core/tools/lib/payroll-copilot-scope.ts",
       ).length === 0,
     stillFlagsADataScopeInAnOrdinaryService:
       analyseSource(`  scope: DataScope;`, "src/modules/hr/hub/hr-hub-capabilities.ts")

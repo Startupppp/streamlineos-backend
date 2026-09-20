@@ -10,6 +10,10 @@ import { ChatPinsService } from "../chat-pins.service";
 import { ChatPresenceService } from "../chat-presence.service";
 import { ChatSavedService } from "../chat-saved.service";
 import { ChatSearchService } from "../chat-search.service";
+
+const searchChannelListStub = () =>
+  ({ listMemberChannelIds: jest.fn().mockResolvedValue([]) }) as unknown as ChatChannelListService;
+
 import { ChatSummarizeService } from "../chat-summarize.service";
 
 const ORG = "org-a";
@@ -254,7 +258,11 @@ describe("record channel — durable copies of its content are withheld too", ()
     };
     const db = memberDb(RECORD_CHANNEL_ROW);
     (db.query.chatMessages.findMany as jest.Mock).mockResolvedValue([hit]);
-    const result = await new ChatSearchService(db, entitiesThatAnswer(UNRESOLVED)).searchMessages(
+    const result = await new ChatSearchService(
+      db,
+      entitiesThatAnswer(UNRESOLVED),
+      searchChannelListStub(),
+    ).searchMessages(
       actor,
       "apollo",
       20,
@@ -326,7 +334,11 @@ describe("record channel — durable copies of its content are withheld too", ()
     };
     const db = memberDb(RECORD_CHANNEL_ROW);
     (db.query.chatMessages.findMany as jest.Mock).mockResolvedValue([hit]);
-    const result = await new ChatSearchService(db, entitiesThatAnswer(UNRESOLVED)).searchMessages(
+    const result = await new ChatSearchService(
+      db,
+      entitiesThatAnswer(UNRESOLVED),
+      searchChannelListStub(),
+    ).searchMessages(
       actor,
       "general",
       20,

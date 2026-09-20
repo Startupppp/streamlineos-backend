@@ -1,10 +1,15 @@
 import { Inject, Injectable, Logger } from "@nestjs/common";
 import { and, eq, inArray, isNotNull, isNull, ne, sql } from "drizzle-orm";
-import { organizationMembers, sprints, tickets } from "../../../db/schema";
+import { organizationMembers, projects, sprints, tickets } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { forEachOrg } from "../../../common/tenant";
 import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
+import {
+  buildSprintListHref,
+  buildTicketHref,
+  buildTicketKey,
+} from "./build-app-paths";
 
 export interface BuildDueSweepResult {
   dueSoon: number;
@@ -69,9 +74,13 @@ export class BuildDueSweepService {
           id: tickets.id,
           title: tickets.title,
           dueDate: tickets.dueDate,
+          projectId: tickets.projectId,
+          ticketNumber: tickets.ticketNumber,
+          projectKey: projects.key,
           assigneeId: organizationMembers.userId,
         })
         .from(tickets)
+        .innerJoin(projects, and(eq(projects.orgId, tickets.orgId), eq(projects.id, tickets.projectId)))
         .innerJoin(organizationMembers, and(eq(organizationMembers.orgId, tickets.orgId), eq(organizationMembers.id, tickets.assigneeMembershipId)))
         .where(and(base, eq(tickets.dueDate, entersWindow)))
         .limit(500);
@@ -81,9 +90,13 @@ export class BuildDueSweepService {
           id: tickets.id,
           title: tickets.title,
           dueDate: tickets.dueDate,
+          projectId: tickets.projectId,
+          ticketNumber: tickets.ticketNumber,
+          projectKey: projects.key,
           assigneeId: organizationMembers.userId,
         })
         .from(tickets)
+        .innerJoin(projects, and(eq(projects.orgId, tickets.orgId), eq(projects.id, tickets.projectId)))
         .innerJoin(organizationMembers, and(eq(organizationMembers.orgId, tickets.orgId), eq(organizationMembers.id, tickets.assigneeMembershipId)))
         .where(and(base, eq(tickets.dueDate, slippedYesterday)))
         .limit(500);
@@ -98,7 +111,10 @@ export class BuildDueSweepService {
           entityId: String(ticket.id),
           title: `Due soon: ${ticket.title}`,
           message: `This ticket is due on ${ticket.dueDate}.`,
-          link: `/build/tickets/${ticket.id}`,
+          link: buildTicketHref(
+            ticket.projectId,
+            buildTicketKey(ticket.projectKey, ticket.ticketNumber),
+          ),
         });
         result.dueSoon += 1;
       }
@@ -107,7 +123,7 @@ export class BuildDueSweepService {
       // sprint — derived from the tickets themselves rather than from project membership,
       // so nobody is told a sprint is closing on work they do not own.
       const ending = await tx
-        .select({ id: sprints.id, name: sprints.name })
+        .select({ id: sprints.id, name: sprints.name, projectId: sprints.projectId })
         .from(sprints)
         .where(
           and(
@@ -158,7 +174,7 @@ export class BuildDueSweepService {
           entityId: String(sprint.id),
           title: `Sprint ending tomorrow: ${sprint.name}`,
           message: "You still have open tickets in this sprint.",
-          link: `/build/sprints/${sprint.id}`,
+          link: buildSprintListHref(sprint.projectId),
         });
         result.sprintsEnding += 1;
       }
@@ -173,7 +189,10 @@ export class BuildDueSweepService {
           entityId: String(ticket.id),
           title: `Overdue: ${ticket.title}`,
           message: `This ticket was due on ${ticket.dueDate} and is still open.`,
-          link: `/build/tickets/${ticket.id}`,
+          link: buildTicketHref(
+            ticket.projectId,
+            buildTicketKey(ticket.projectKey, ticket.ticketNumber),
+          ),
         });
         result.overdue += 1;
       }

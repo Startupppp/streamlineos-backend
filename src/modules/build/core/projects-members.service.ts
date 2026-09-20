@@ -393,6 +393,10 @@ export class ProjectsMembersService {
     return this.statesService.listCustomStates(u.orgId, projectId);
   }
 
+  listOrgCustomStates(u: CurrentUserContext) {
+    return this.statesService.listOrgCustomStates(u.orgId);
+  }
+
   async createCustomState(
     u: CurrentUserContext,
     projectId: number,

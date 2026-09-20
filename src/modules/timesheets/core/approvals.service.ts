@@ -195,7 +195,14 @@ export class ApprovalsService {
 
   async approveSinglePeriod(u: CurrentUserContext, periodId: number) {
     const [period] = await this.db
-      .select()
+      .select({
+        status: timesheetPeriods.status,
+        userMembershipId: timesheetPeriods.userMembershipId,
+        currentApproverMembershipId: timesheetPeriods.currentApproverMembershipId,
+        periodStart: timesheetPeriods.periodStart,
+        periodEnd: timesheetPeriods.periodEnd,
+        totalHours: timesheetPeriods.totalHours,
+      })
       .from(timesheetPeriods)
       .where(
         and(

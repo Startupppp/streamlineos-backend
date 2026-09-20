@@ -28,6 +28,7 @@ describe("ProjectsApprovals auth/RBAC (e2e)", () => {
 
   const protectedRoutes: ReadonlyArray<[Method, string]> = [
     ["get", "/build/approvals/inbox"],
+    ["get", "/build/approvals/inbox/count"],
     ["get", "/build/1/approvals"],
     ["get", "/build/1/approvals/2"],
     ["post", "/build/1/approvals"],
@@ -46,6 +47,15 @@ describe("ProjectsApprovals auth/RBAC (e2e)", () => {
     const token = await signToken({ permissions: [], enabledModules: ALL_MODULES });
     const res = await request(app.getHttpServer())
       .get("/build/approvals/inbox")
+      .set("Authorization", `Bearer ${token}`);
+    expect(res.status).toBe(403);
+    expect(res.body).toMatchObject({ code: "FORBIDDEN", message: "Permission denied" });
+  });
+
+  it("403 on GET /build/approvals/inbox/count without build:approvals:view ability", async () => {
+    const token = await signToken({ permissions: [], enabledModules: ALL_MODULES });
+    const res = await request(app.getHttpServer())
+      .get("/build/approvals/inbox/count")
       .set("Authorization", `Bearer ${token}`);
     expect(res.status).toBe(403);
     expect(res.body).toMatchObject({ code: "FORBIDDEN", message: "Permission denied" });

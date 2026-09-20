@@ -1,6 +1,6 @@
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
-import * as schema from "./index";
+import * as schema from ".";
 
 describe("drizzle schema graph", () => {
   it("has no relations object with an undefined table", () => {

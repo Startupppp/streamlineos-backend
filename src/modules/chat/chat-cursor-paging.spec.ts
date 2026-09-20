@@ -241,6 +241,69 @@ describe("chat message paging — every row exactly once", () => {
   });
 });
 
+describe("listThreadReplies — member-check and channel-type read are concurrent", () => {
+  it("isMember and parentChannel reads are both issued before either resolves, removing a sequential round-trip", async () => {
+    const initiated: string[] = [];
+    let resolveIsM!: (v: { id: number } | undefined) => void;
+    let resolveChannel!: (v: { type: string; entityType: string | null; entityId: string | null } | undefined) => void;
+
+    const parentMsg = {
+      id: 10,
+      channelId: CHANNEL_ID,
+      orgId: ACTOR.orgId,
+      content: "parent",
+      isDeleted: false,
+      replyToId: null,
+      metadata: null,
+      senderMembership: null,
+      attachments: [],
+      reactions: [],
+      replyTo: null,
+      channelPosition: 5,
+      createdAt: new Date(),
+    };
+
+    const db = {
+      query: {
+        chatMessages: {
+          findFirst: jest.fn().mockResolvedValue(parentMsg),
+          findMany: jest.fn().mockResolvedValue([]),
+        },
+        chatChannelMembers: {
+          findFirst: jest.fn(() => {
+            initiated.push("member");
+            return new Promise<{ id: number } | undefined>((r) => { resolveIsM = r; });
+          }),
+        },
+        chatChannels: {
+          findFirst: jest.fn(() => {
+            initiated.push("channel");
+            return new Promise<{ type: string; entityType: string | null; entityId: string | null } | undefined>((r) => { resolveChannel = r; });
+          }),
+        },
+      },
+    } as unknown as import("../../db/drizzle.module").Db;
+
+    const entities = {
+      withResolvedReferences: jest.fn().mockImplementation(<T>(_: unknown, rows: T[]) => Promise.resolve(rows)),
+    } as unknown as EntityReferenceService;
+
+    const svc = new ChatMessageTimelineService(db, entities);
+    const op = svc.listThreadReplies(10, ACTOR, undefined, 10);
+
+    await new Promise<void>((r) => setImmediate(r));
+
+    expect(initiated).toContain("member");
+    expect(initiated).toContain("channel");
+    expect(initiated).toHaveLength(2);
+
+    resolveIsM({ id: 1 });
+    resolveChannel({ type: "PUBLIC", entityType: null, entityId: null });
+
+    await op;
+  });
+});
+
 describe("chat message paging — what offset does on the same data", () => {
   it("repeats rows the cursor does not, once rows arrive above the reader", () => {
     const store = new MessageStore(30);

@@ -1,6 +1,40 @@
 import { z } from "zod";
 import { nullableWireDate, wireDate } from "../../../../common/openapi/wire-types";
 
+export const crmListPartiesInputSchema = z.object({
+  search: z.string().describe("Search by name, legal name or email").optional(),
+  page: z.number().describe("Page number (default 1)").optional(),
+  limit: z.number().describe("Page size (default 20, max 100)").optional(),
+});
+
+export const crmGetPartyInputSchema = z.object({
+  partyId: z.string().describe("The UUID of the party"),
+});
+
+export const crmListDealsInputSchema = z.object({
+  stage: z.string().describe("Filter by pipeline stage").optional(),
+  assignedToId: z.string().describe("Filter to one owner's deals").optional(),
+  offset: z.number().describe("Rows to skip (default 0)").optional(),
+  limit: z.number().describe("Items per page (max 100)").optional(),
+});
+
+export const crmGetDealInputSchema = z.object({
+  dealId: z.number().describe("The integer ID of the deal"),
+});
+
+export const crmListActivitiesInputSchema = z.object({
+  partyId: z.string().describe("Anchor: the party whose timeline to read").optional(),
+  dealId: z.number().describe("Anchor: the deal whose timeline to read").optional(),
+  kind: z.string().describe("Filter by activity kind").optional(),
+  cursor: z.string().describe("Opaque cursor from the previous page").optional(),
+  limit: z.number().describe("Items per page (default 25, max 100)").optional(),
+});
+
+export const crmRunReportInputSchema = z.object({
+  source: z.string().describe("Data source: parties, deals or activities"),
+  limit: z.number().describe("Row cap (default 50, max 1000)").optional(),
+});
+
 /**
  * The body of `POST /crm/mcp/call`: which tool, and its arguments.
  *
@@ -45,6 +79,7 @@ export const mcpToolsResponseSchema = z.object({
         type: z.literal("object"),
         properties: z.record(z.string(), z.unknown()),
         required: z.array(z.string()).optional(),
+        additionalProperties: z.boolean().optional(),
       }),
       requiredPermission: z.string(),
     }),

@@ -20,7 +20,7 @@ const RESOLVED = {
     title: "Apollo",
     subtitle: null,
     status: "ACTIVE",
-    href: "/build/projects/42",
+    href: "/build/42",
   },
 };
 

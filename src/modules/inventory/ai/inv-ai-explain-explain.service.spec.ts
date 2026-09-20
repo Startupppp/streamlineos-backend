@@ -56,6 +56,15 @@ const MOCK_NARRATION = {
  * renumbering forty call sites to delete two holes is churn that could only
  * introduce a mistake.
  */
+function dbDouble(insight: unknown) {
+  const handle: Record<string, unknown> = {
+    query: { invAiInsights: { findFirst: jest.fn().mockResolvedValue(insight) } },
+    execute: jest.fn().mockResolvedValue([]),
+  };
+  handle.transaction = jest.fn(async (fn: (tx: unknown) => Promise<unknown>) => fn(handle));
+  return handle;
+}
+
 function buildService(
   db: object,
   gateway: Partial<AiGatewayService>,
@@ -94,13 +103,7 @@ describe("InvAiExplainService - explainInsight", () => {
         ),
     };
 
-    const db = {
-      query: {
-        invAiInsights: {
-          findFirst: jest.fn().mockResolvedValue(MOCK_INSIGHT),
-        },
-      },
-    };
+    const db = dbDouble(MOCK_INSIGHT);
 
     const service = buildService(db, gateway);
     await service.explainInsight("org-1", "user-1", 1);
@@ -126,13 +129,7 @@ describe("InvAiExplainService - explainInsight", () => {
       }),
     };
 
-    const db = {
-      query: {
-        invAiInsights: {
-          findFirst: jest.fn().mockResolvedValue(MOCK_INSIGHT),
-        },
-      },
-    };
+    const db = dbDouble(MOCK_INSIGHT);
 
     const service = buildService(db, gateway);
     await service.explainInsight("org-1", "user-1", 1);
@@ -154,13 +151,7 @@ describe("InvAiExplainService - explainInsight", () => {
       }),
     };
 
-    const db = {
-      query: {
-        invAiInsights: {
-          findFirst: jest.fn().mockResolvedValue(MOCK_INSIGHT),
-        },
-      },
-    };
+    const db = dbDouble(MOCK_INSIGHT);
 
     const service = buildService(db, gateway);
     const result = await service.explainInsight("org-1", "user-1", 1);
@@ -203,13 +194,7 @@ describe("InvAiExplainService - explainInsight", () => {
       invokeStructured: jest.fn(),
     };
 
-    const db = {
-      query: {
-        invAiInsights: {
-          findFirst: jest.fn().mockResolvedValue(undefined),
-        },
-      },
-    };
+    const db = dbDouble(undefined);
 
     const service = buildService(db, gateway);
     await expect(
@@ -228,13 +213,7 @@ describe("InvAiExplainService - explainInsight", () => {
       }),
     };
 
-    const db = {
-      query: {
-        invAiInsights: {
-          findFirst: jest.fn().mockResolvedValue(MOCK_INSIGHT),
-        },
-      },
-    };
+    const db = dbDouble(MOCK_INSIGHT);
 
     const service = buildService(db, gateway);
     await expect(service.explainInsight("org-1", "user-1", 1)).rejects.toThrow(

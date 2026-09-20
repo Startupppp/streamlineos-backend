@@ -5,7 +5,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, count, eq, type SQL } from "drizzle-orm";
+import { and, desc, eq, sql, type SQL } from "drizzle-orm";
 import {
   signDocuments,
   signEnvelopes,
@@ -70,17 +70,56 @@ export class SignEnvelopeQueriesService {
     return read.read(
       { tenant: signEnvelopes.orgId, scope: envelopeSenderScope(membershipId), and: domain },
       async ({ sql: where }) => {
-        const [rows, [totalRow]] = await Promise.all([
-          this.db.query.signEnvelopes.findMany({
-            where,
-            orderBy: (e, { desc }) => [desc(e.createdAt)],
-            limit: query.limit,
-            offset: (query.page - 1) * query.limit,
-          }),
-          this.db.select({ total: count() }).from(signEnvelopes).where(where),
-        ]);
+        const dbRows = await this.db
+          .select({
+            id: signEnvelopes.id,
+            orgId: signEnvelopes.orgId,
+            title: signEnvelopes.title,
+            subject: signEnvelopes.subject,
+            message: signEnvelopes.message,
+            status: signEnvelopes.status,
+            routingMode: signEnvelopes.routingMode,
+            ccTiming: signEnvelopes.ccTiming,
+            allowDecline: signEnvelopes.allowDecline,
+            sourceModule: signEnvelopes.sourceModule,
+            sourceEntityType: signEnvelopes.sourceEntityType,
+            sourceEntityId: signEnvelopes.sourceEntityId,
+            templateId: signEnvelopes.templateId,
+            watermarkPolicyId: signEnvelopes.watermarkPolicyId,
+            senderMembershipId: signEnvelopes.senderMembershipId,
+            reminderEnabled: signEnvelopes.reminderEnabled,
+            reminderFirstAfterDays: signEnvelopes.reminderFirstAfterDays,
+            reminderRepeatDays: signEnvelopes.reminderRepeatDays,
+            reminderMaxCount: signEnvelopes.reminderMaxCount,
+            reminderSentCount: signEnvelopes.reminderSentCount,
+            lastReminderAt: signEnvelopes.lastReminderAt,
+            expiresAt: signEnvelopes.expiresAt,
+            sentAt: signEnvelopes.sentAt,
+            completedAt: signEnvelopes.completedAt,
+            voidedAt: signEnvelopes.voidedAt,
+            voidedByMembershipId: signEnvelopes.voidedByMembershipId,
+            voidReason: signEnvelopes.voidReason,
+            declinedAt: signEnvelopes.declinedAt,
+            correctionRequiredAt: signEnvelopes.correctionRequiredAt,
+            correctionReason: signEnvelopes.correctionReason,
+            finalizationKey: signEnvelopes.finalizationKey,
+            finalizedAt: signEnvelopes.finalizedAt,
+            finalPdfFileKey: signEnvelopes.finalPdfFileKey,
+            finalPdfHash: signEnvelopes.finalPdfHash,
+            metadataJson: signEnvelopes.metadataJson,
+            createdAt: signEnvelopes.createdAt,
+            updatedAt: signEnvelopes.updatedAt,
+            windowTotal: sql<string>`count(*) OVER ()`,
+          })
+          .from(signEnvelopes)
+          .where(where)
+          .orderBy(desc(signEnvelopes.createdAt))
+          .limit(query.limit)
+          .offset((query.page - 1) * query.limit);
 
-        return buildListResponse(rows, Number(totalRow?.total ?? 0), pageParams);
+        const total = dbRows.length > 0 ? Number(dbRows[0].windowTotal) : 0;
+        const rows = dbRows.map(({ windowTotal: _, ...row }) => row);
+        return buildListResponse(rows, total, pageParams);
       },
       () => buildListResponse([], 0, pageParams),
     );

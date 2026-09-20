@@ -124,7 +124,7 @@ export const workerEnvShape = {
     RETENTION_SCHEDULER_TICK_MS: z.preprocess(emptyToUndefined, z.coerce.number().int().positive().optional()),
     AV_SCANNER: z.preprocess(
       emptyToUndefined,
-      z.enum(["clamav", "virustotal"]).optional(),
+      z.enum(["content", "clamav", "virustotal"]).optional(),
     ),
     CLAMAV_HOST: z.preprocess(emptyToUndefined, z.string().optional()),
     CLAMAV_PORT: z.preprocess(

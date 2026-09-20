@@ -13,6 +13,7 @@ import { invAuditExportJobs } from "../../../db/schema";
 import { CacheService } from "../../../common/cache/cache.service";
 import { CACHE_KEYS, CACHE_TTL } from "../../../common/cache/cache-keys";
 import { registerAfterCommit } from "../../../common/tenant/tenant-context";
+import { writeChunk } from "../../../common/http/stream-abort";
 import { WarehouseScopeService } from "../stock-engine/warehouse-scope.service";
 import {
   AUDIT_EXPORT_SCHEMA_VERSION,
@@ -150,10 +151,9 @@ export class AuditExportService {
     res.setHeader("X-Audit-Export-Evidence-Version", job.evidenceVersion);
     res.setHeader("X-Audit-Export-Checksum", `sha-256=${job.checksum ?? ""}`);
 
-    const write = (chunk: Buffer): Promise<void> =>
-      res.write(chunk)
-        ? Promise.resolve()
-        : new Promise((resolve) => res.once("drain", () => resolve()));
+    const write = async (chunk: Buffer): Promise<void> => {
+      await writeChunk(res, chunk);
+    };
 
     const produced = await streamJob(this.runDeps, job, write);
     res.end();

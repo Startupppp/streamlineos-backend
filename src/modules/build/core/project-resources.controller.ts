@@ -45,6 +45,7 @@ import {
   memberRoleSchema,
   projectCustomStateSchema,
   bulkReorderStatesResultSchema,
+  orgCustomStateSchema,
 } from "./dto/build-core-response.schemas";
 
 const projectIdParams = z.object({ projectId: z.coerce.number().int().positive() }).strict();
@@ -57,6 +58,15 @@ const projectIdParams_ = z.object({ projectId: z.string().min(1) }).strict();
 @UseGuards(JwtAuthGuard, PermissionGuard)
 export class ProjectResourcesController {
   constructor(private readonly members: ProjectsMembersService) {}
+
+  @Get("org-custom-states")
+  @RequirePermission("build:view")
+  @ResponseSchema(z.array(orgCustomStateSchema))
+  listOrgCustomStates(
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.members.listOrgCustomStates(u);
+  }
 
   @Get(":projectId/members")
   @RequirePermission("build:view")

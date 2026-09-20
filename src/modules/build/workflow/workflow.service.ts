@@ -1,4 +1,4 @@
-import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, eq, isNull, or } from "drizzle-orm";
 import { organizationMembers, projectStatuses, workflowTransitions } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
@@ -29,7 +29,7 @@ export class WorkflowService {
       ),
       columns: { id: true },
     });
-    if (!s) throw new BadRequestException(`Status ${statusId} does not belong to this project`);
+    if (!s) throw new NotFoundException("Status not found");
   }
 
   private async loadTransition(orgId: string, projectId: number, transitionId: number) {
@@ -58,7 +58,7 @@ export class WorkflowService {
         eq(workflowTransitions.projectId, projectId),
         isNull(workflowTransitions.deletedAt),
       ))
-      .limit(500);
+      .limit(100);
   }
 
   async createTransition(u: CurrentUserContext, projectId: number, input: CreateTransitionInput) {
@@ -126,7 +126,11 @@ export class WorkflowService {
     const [updated] = await this.db
       .update(workflowTransitions)
       .set(patch)
-      .where(and(eq(workflowTransitions.id, transitionId), eq(workflowTransitions.orgId, orgId)))
+      .where(and(
+        eq(workflowTransitions.id, transitionId),
+        eq(workflowTransitions.orgId, orgId),
+        eq(workflowTransitions.projectId, projectId),
+      ))
       .returning();
     if (!updated) throw new NotFoundException("Transition not found");
     this.audit.log({
@@ -147,7 +151,11 @@ export class WorkflowService {
     await this.db
       .update(workflowTransitions)
       .set({ deletedAt: new Date() })
-      .where(and(eq(workflowTransitions.id, transitionId), eq(workflowTransitions.orgId, orgId)));
+      .where(and(
+        eq(workflowTransitions.id, transitionId),
+        eq(workflowTransitions.orgId, orgId),
+        eq(workflowTransitions.projectId, projectId),
+      ));
     this.audit.log({
       action: "workflow.transition_deleted",
       userId,
@@ -173,7 +181,7 @@ export class WorkflowService {
           isNull(workflowTransitions.fromStatusId),
         ),
       ))
-      .limit(500);
+      .limit(100);
   }
 
   async updateWipLimit(u: CurrentUserContext, projectId: number, statusId: number, input: WipLimitInput) {
@@ -183,7 +191,11 @@ export class WorkflowService {
     const [updated] = await this.db
       .update(projectStatuses)
       .set({ wipLimit: input.wipLimit })
-      .where(and(eq(projectStatuses.id, statusId), eq(projectStatuses.orgId, orgId)))
+      .where(and(
+        eq(projectStatuses.id, statusId),
+        eq(projectStatuses.orgId, orgId),
+        eq(projectStatuses.projectId, projectId),
+      ))
       .returning();
     if (!updated) throw new NotFoundException("Status not found");
     this.audit.log({

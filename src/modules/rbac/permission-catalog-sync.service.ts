@@ -62,15 +62,17 @@ export class PermissionCatalogSyncService implements OnModuleInit {
       return;
     }
     if (process.env.RBAC_GRANT_RECONCILE_ON_BOOT === "false") return;
-    try {
-      await this.grantReconciler.reconcileAllOrganizations();
-    } catch (error) {
+    this.reconcileDetached();
+  }
+
+  reconcileDetached(): void {
+    void this.grantReconciler.reconcileAllOrganizations().catch((error: unknown) => {
       this.logger.error(
         `Role grant reconcile failed — organisations seeded before the current role definitions keep the permissions they have: ${
           error instanceof Error ? error.message : String(error)
         }`,
       );
-    }
+    });
   }
 
   async sync(options?: { cleanupRetired?: boolean }): Promise<{

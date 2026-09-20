@@ -21,22 +21,65 @@ export interface CanonicalSensitivePatch {
   bankDetails?: BankDetails | null;
 }
 
+function buildSensitiveUpdates(
+  patch: CanonicalSensitivePatch,
+): Partial<typeof hrEmployeeSensitiveFields.$inferInsert> {
+  const updates: Partial<typeof hrEmployeeSensitiveFields.$inferInsert> = {};
+  if (patch.monthlySalary !== undefined) updates.salaryAmountCents = monthlyAmountToCents(patch.monthlySalary);
+  if (patch.taxId !== undefined) updates.taxId = patch.taxId ? sealSensitive(patch.taxId) : "";
+  if (patch.bankDetails !== undefined)
+    updates.bankDetails = patch.bankDetails ? sealBankDetails(patch.bankDetails) : null;
+  if (Object.keys(updates).length === 0) return updates;
+
+  const sealed = updates.bankDetails ?? updates.taxId;
+  if (typeof sealed === "string" && sealed !== "")
+    updates.encryptionKeyRef = keyReferenceOf(sealed);
+  return updates;
+}
+
+export async function upsertCanonicalSensitiveFields(
+  db: DbOrTx,
+  orgId: string,
+  userId: string,
+  patch: CanonicalSensitivePatch,
+): Promise<boolean> {
+  const updates = buildSensitiveUpdates(patch);
+  if (Object.keys(updates).length === 0) return true;
+
+  const employments = await db
+    .select({ id: hrEmployments.id })
+    .from(hrEmployments)
+    .innerJoin(hrPeople, and(eq(hrPeople.id, hrEmployments.personId), eq(hrPeople.orgId, hrEmployments.orgId)))
+    .where(and(
+      eq(hrEmployments.orgId, orgId),
+      eq(hrEmployments.isPrimary, true),
+      isNull(hrEmployments.deletedAt),
+      eq(hrPeople.userId, userId),
+      isNull(hrPeople.deletedAt),
+    ))
+    .limit(1);
+
+  const employmentId = employments[0]?.id;
+  if (employmentId === undefined) return false;
+
+  await db
+    .insert(hrEmployeeSensitiveFields)
+    .values({ orgId, employmentId, ...updates })
+    .onConflictDoUpdate({
+      target: hrEmployeeSensitiveFields.employmentId,
+      set: { ...updates, updatedAt: new Date() },
+    });
+  return true;
+}
+
 export async function syncCanonicalSensitiveFields(
   db: DbOrTx,
   orgId: string,
   userId: string,
   patch: CanonicalSensitivePatch,
 ): Promise<boolean> {
-  const updates: Partial<typeof hrEmployeeSensitiveFields.$inferInsert> = {};
-  if (patch.monthlySalary !== undefined) updates.salaryAmountCents = monthlyAmountToCents(patch.monthlySalary);
-  if (patch.taxId !== undefined) updates.taxId = patch.taxId ? sealSensitive(patch.taxId) : "";
-  if (patch.bankDetails !== undefined)
-    updates.bankDetails = patch.bankDetails ? sealBankDetails(patch.bankDetails) : null;
+  const updates = buildSensitiveUpdates(patch);
   if (Object.keys(updates).length === 0) return true;
-
-  const sealed = updates.bankDetails ?? updates.taxId;
-  if (typeof sealed === "string" && sealed !== "")
-    updates.encryptionKeyRef = keyReferenceOf(sealed);
 
   const employmentIds = db
     .select({ id: hrEmployments.id })

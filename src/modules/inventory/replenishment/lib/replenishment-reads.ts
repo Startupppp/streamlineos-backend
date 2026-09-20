@@ -7,7 +7,7 @@ import { type Db } from "../../../../db/drizzle.module";
 import { CacheService } from "../../../../common/cache/cache.service";
 import { CACHE_KEYS, CACHE_TTL } from "../../../../common/cache/cache-keys";
 import { addDec, cmpDec, subDec } from "../../stock-engine/decimal";
-import { atLeastZero, fromExact } from "./../forecast/exact";
+import { atLeastZero, fromExact } from "../forecast/exact";
 import type { SuggestionsQueryInput } from "../dto/replenishment.schemas";
 
 /**

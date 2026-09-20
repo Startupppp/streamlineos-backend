@@ -36,6 +36,7 @@ import { resolveValidTicketStatuses } from "./ticket-status.util";
 import { ProjectsInvalidTicketStatusException } from "../../../common/http/api-exceptions";
 import { AccessService } from "../../access/access.service";
 import { resolveProjectAssignableMemberships } from "./project-access";
+import { buildTicketBoardHref } from "./build-app-paths";
 
 @Injectable()
 export class ProjectsTicketsUpdateService {
@@ -350,7 +351,7 @@ export class ProjectsTicketsUpdateService {
           entityId: String(ticketId),
           title: input.status === "IN_REVIEW" ? "Ticket ready for review" : "Changes requested on your ticket",
           message: `Ticket "${before.title}" changed to ${input.status}.`,
-          link: `/projects/${before.projectId}/tickets/${ticketId}`,
+          link: buildTicketBoardHref(before.projectId, ticketId),
           variables: { ticketId, status: input.status, title: before.title },
         });
       }

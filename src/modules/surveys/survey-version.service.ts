@@ -10,6 +10,7 @@ import {
 } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
+import { runInNewTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
 import { assertSurveyInOrg } from "./survey-tenant";
 
 type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
@@ -56,10 +57,9 @@ export class SurveyVersionService {
 
     await this.assertSurveyInOrg(orgId, surveyId);
 
-    const [created] = await this.db
-      .insert(surveyVersions)
-      .values({ orgId, surveyId, versionNumber: 1 })
-      .returning();
+    const [created] = await runInNewTenantTransaction(this.db, orgId, (tx) =>
+      tx.insert(surveyVersions).values({ orgId, surveyId, versionNumber: 1 }).returning(),
+    );
     return created;
   }
 

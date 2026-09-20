@@ -29,6 +29,7 @@ import { MultipartAction } from "../../common/openapi/zod-operation-contracts";
 import {
   runInNewTenantTransaction,
   runOutsideTenantContext,
+  NoTenantTransaction,
 } from "../../common/tenant";
 import { runInTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
 import { DRIZZLE } from "../../db/drizzle.constants";
@@ -98,6 +99,7 @@ export class StorageController {
   ) {}
 
   @Post("upload")
+  @NoTenantTransaction()
   @MultipartAction({ file: "file", fields: { folder: "string" } })
   @ResponseSchema(storageUploadResponseSchema)
   @AuthorizedInService("assertUploadAllowed")
@@ -321,6 +323,7 @@ export class StorageController {
   }
 
   @Get("download")
+  @NoTenantTransaction()
   @AuthorizedInService("assertKeyReadable")
   @ApiOkResponse({
     schema: { type: "string", format: "binary" },
@@ -353,12 +356,17 @@ export class StorageController {
 
     const orgId = u.orgId;
 
-    await assertKeyReadable(
+    await runInTenantTransaction(
       this.db,
-      this.quarantine,
-      fileKey,
-      u,
-      "File not found",
+      () =>
+        assertKeyReadable(
+          this.db,
+          this.quarantine,
+          fileKey,
+          u,
+          "File not found",
+        ),
+      { orgId },
     );
 
     this.audit.log({
@@ -396,6 +404,7 @@ export class StorageController {
   }
 
   @Get("image")
+  @NoTenantTransaction()
   @AuthorizedInService("assertKeyReadable")
   @ApiOkResponse({
     schema: { type: "string", format: "binary" },
@@ -415,7 +424,11 @@ export class StorageController {
       throw new ServiceUnavailableException("Storage not available");
     }
 
-    await assertKeyReadable(this.db, this.quarantine, keyParam, u, "Not found");
+    await runInTenantTransaction(
+      this.db,
+      () => assertKeyReadable(this.db, this.quarantine, keyParam, u, "Not found"),
+      { orgId: u.orgId },
+    );
 
     const stream = await this.openStream(u.orgId, keyParam, "Not found");
     res.setHeader(

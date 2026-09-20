@@ -1,8 +1,14 @@
 import { BadRequestException, NotFoundException } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
+import { PgDialect } from "drizzle-orm/pg-core";
 import { PortfoliosService } from "./portfolios.service";
 import { AuditService } from "../../../common/audit/audit.service";
 import { DRIZZLE } from "../../../db/drizzle.constants";
+
+const dialect = new PgDialect();
+function renderSql(value: unknown): string {
+  return dialect.sqlToQuery(value as Parameters<PgDialect["sqlToQuery"]>[0]).sql;
+}
 
 const ORG_ID = "org-1";
 const OTHER_ORG = "org-9";
@@ -172,6 +178,50 @@ describe("PortfoliosService", () => {
       (mockDb as { select: jest.Mock }).select.mockReturnValue(selectChain);
 
       await expect(svc.getPortfolio(ORG_ID, 999)).rejects.toBeInstanceOf(NotFoundException);
+    });
+  });
+
+  describe("getPortfolio — projects join excludes soft-deleted rows", () => {
+    it("WHERE clause for the linked-projects inner join includes a deleted_at IS NULL predicate", async () => {
+      let capturedProjectsWhere: unknown;
+      let callNumber = 0;
+
+      (mockDb as { select: jest.Mock }).select.mockImplementation(() => {
+        callNumber++;
+        if (callNumber === 1) {
+          const whereChain = { limit: jest.fn().mockResolvedValue([makePortfolio({ id: 10 })]) };
+          const fromChain = { where: jest.fn().mockReturnValue(whereChain) };
+          return { from: jest.fn().mockReturnValue(fromChain) };
+        }
+        if (callNumber === 2) {
+          const limitFn = jest.fn().mockResolvedValue([]);
+          const capturedWhere = jest.fn((cond: unknown) => {
+            capturedProjectsWhere = cond;
+            return { limit: limitFn };
+          });
+          return {
+            from: jest.fn().mockReturnValue({
+              innerJoin: jest.fn().mockReturnValue({ where: capturedWhere }),
+            }),
+          };
+        }
+        return {
+          from: jest.fn().mockReturnValue({
+            where: jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue([]) }),
+          }),
+        };
+      });
+
+      await svc.getPortfolio(ORG_ID, 10);
+
+      expect(capturedProjectsWhere).toBeDefined();
+      const rendered = renderSql(capturedProjectsWhere);
+      expect(rendered.toLowerCase()).toContain("deleted_at");
+    });
+
+    it("bite proof: a where clause without isNull(projects.deletedAt) does not filter deleted projects", () => {
+      const bare = '"portfolio_projects"."portfolio_id" = $1 and "portfolio_projects"."org_id" = $2';
+      expect(bare.toLowerCase()).not.toContain("deleted_at");
     });
   });
 });

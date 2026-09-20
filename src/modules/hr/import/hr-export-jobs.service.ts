@@ -188,7 +188,7 @@ export class HrExportJobsService {
     requesterUserId: string,
     job: HrExportJobView,
   ): Promise<void> {
-    await this.audit.logCritical({
+    await this.audit.logCriticalOutsideTransaction({
       action: "hr.employee_export.downloaded",
       userId: requesterUserId,
       orgId,

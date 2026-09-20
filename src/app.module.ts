@@ -119,6 +119,7 @@ import { IssuesModule } from "./modules/issues/issues.module";
 import { RecordLayoutsModule } from "./modules/record-layouts/record-layouts.module";
 import { EmploymentFactsModule } from "./modules/directory/employment-facts.module";
 import { ImpersonationModule } from "./modules/impersonation/impersonation.module";
+import { BuildAgentPulseModule } from "./modules/build/agent-pulse/build-agent-pulse.module";
 
 @Module({
   imports: [
@@ -234,6 +235,7 @@ import { ImpersonationModule } from "./modules/impersonation/impersonation.modul
     MailModule,
     GdprModule,
     ImpersonationModule,
+    BuildAgentPulseModule,
   ],
   controllers: [HealthController, MeController, InboxController],
   providers: [

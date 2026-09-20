@@ -78,7 +78,10 @@ export class PortfoliosService {
         createdAt: projectPortfolios.createdAt,
         updatedAt: projectPortfolios.updatedAt,
         projectCount: sql<number>`(
-          SELECT CAST(COUNT(*) AS INT) FROM ${portfolioProjects}
+          SELECT CAST(COUNT(*) AS INT)
+          FROM ${portfolioProjects}
+          INNER JOIN ${projects} ON ${projects.id} = ${portfolioProjects.projectId}
+            AND ${projects.deletedAt} IS NULL
           WHERE ${portfolioProjects.portfolioId} = ${projectPortfolios.id}
         )`,
       })
@@ -106,7 +109,11 @@ export class PortfoliosService {
         })
         .from(portfolioProjects)
         .innerJoin(projects, eq(projects.id, portfolioProjects.projectId))
-        .where(and(eq(portfolioProjects.portfolioId, portfolioId), eq(portfolioProjects.orgId, orgId)))
+        .where(and(
+          eq(portfolioProjects.portfolioId, portfolioId),
+          eq(portfolioProjects.orgId, orgId),
+          isNull(projects.deletedAt),
+        ))
         .limit(100),
       this.db
         .select({

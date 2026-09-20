@@ -13,7 +13,7 @@ describe("ProjectsQueryService — cross-tenant isolation", () => {
     const db = {
       query: { projects: { findFirst: jest.fn().mockResolvedValue(null) } },
     } as unknown as Db;
-    const svc = new ProjectsQueryService(db, audit, access);
+    const svc = new ProjectsQueryService(db, audit, access, {} as never);
     const u = { orgId: ATTACKER_ORG, userId: "u1", isOrgOwner: false } as never;
     await expect(svc.getProject(u, 99)).rejects.toThrow(ProjectsNotFoundException);
   });
@@ -23,7 +23,7 @@ describe("ProjectsQueryService — cross-tenant isolation", () => {
     const db = {
       query: { projects: { findFirst: jest.fn().mockResolvedValue(project) } },
     } as unknown as Db;
-    const svc = new ProjectsQueryService(db, audit, access);
+    const svc = new ProjectsQueryService(db, audit, access, {} as never);
     const u = { orgId: OWNER_ORG, userId: "u1", isOrgOwner: true } as never;
     const result = await svc.getProject(u, 1);
     expect(result).toMatchObject({ id: 1 });

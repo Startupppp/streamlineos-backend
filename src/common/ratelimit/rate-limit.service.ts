@@ -200,11 +200,39 @@ export interface RateLimitResult {
   retryAfterSecs: number;
 }
 
+interface MemoryWindow {
+  hits: number[];
+  expiresAt: number;
+}
+
+const MEM_SWEEP_INTERVAL_MS = 60_000;
+const MEM_MAX_KEYS = 50_000;
+
 @Injectable()
 export class RateLimitService {
   private readonly logger = new Logger(RateLimitService.name);
-  private readonly mem = new Map<string, number[]>();
+  private readonly mem = new Map<string, MemoryWindow>();
+  private lastSweepAt = 0;
   constructor(@Inject(REDIS) private readonly redis: Redis | null) {}
+
+  memoryKeyCount(): number {
+    return this.mem.size;
+  }
+
+  private sweepMemory(now: number): void {
+    if (now - this.lastSweepAt < MEM_SWEEP_INTERVAL_MS && this.mem.size <= MEM_MAX_KEYS) return;
+    this.lastSweepAt = now;
+
+    for (const [key, window] of this.mem) if (window.expiresAt <= now) this.mem.delete(key);
+
+    if (this.mem.size <= MEM_MAX_KEYS) return;
+    let overflow = this.mem.size - MEM_MAX_KEYS;
+    for (const key of this.mem.keys()) {
+      if (overflow <= 0) break;
+      this.mem.delete(key);
+      overflow -= 1;
+    }
+  }
 
   async check(tier: string, identifier: string): Promise<RateLimitResult> {
     const t = TIERS[tier];
@@ -243,18 +271,20 @@ export class RateLimitService {
         );
       }
     }
+    this.sweepMemory(now);
+
     const memKey = `${tier}:${identifier}`;
-    const raw = this.mem.get(memKey);
-    const hits = (raw ?? []).filter((ts) => now - ts < windowMs);
-    if (hits.length === 0 && raw !== undefined) this.mem.delete(memKey);
+    const existing = this.mem.get(memKey);
+    const hits = (existing?.hits ?? []).filter((ts) => now - ts < windowMs);
+    if (hits.length === 0 && existing !== undefined) this.mem.delete(memKey);
     if (hits.length >= effectiveLimit) {
       const oldest = hits[0] ?? now;
       const retryAfterSecs = Math.ceil((windowMs - (now - oldest)) / 1000);
-      this.mem.set(memKey, hits);
+      this.mem.set(memKey, { hits, expiresAt: now + windowMs });
       return { allowed: false, retryAfterSecs };
     }
     hits.push(now);
-    this.mem.set(memKey, hits);
+    this.mem.set(memKey, { hits, expiresAt: now + windowMs });
     return { allowed: true, retryAfterSecs: 0 };
   }
 }

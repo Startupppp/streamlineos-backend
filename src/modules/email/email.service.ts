@@ -36,7 +36,7 @@ export class EmailService extends EmailSendersBase {
     token: string,
     organizationName: string,
   ): Promise<void> {
-    await this.outbox.enqueueAndTry(
+    await this.outbox.enqueueOnly(
       invitationEmailOptions(email, token, organizationName),
     );
   }

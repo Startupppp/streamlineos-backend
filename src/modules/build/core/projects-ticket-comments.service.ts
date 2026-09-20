@@ -20,6 +20,7 @@ import {
 } from "../../../common/http/api-exceptions";
 import { ProjectsWebhooksDispatchService } from "./projects-webhooks-dispatch.service";
 import type { CommentInput } from "./dto/projects.schemas";
+import { resolvePersonDisplayName } from "../../../common/organization/person-display-name";
 
 @Injectable()
 export class ProjectsTicketCommentsService {
@@ -91,8 +92,12 @@ export class ProjectsTicketCommentsService {
     const row = rows[0];
     if (!row) return null;
 
-    const fallbackName = `${row.authorFirstName ?? ""} ${row.authorLastName ?? ""}`.trim();
-    const authorName = row.authorDisplayName ?? (fallbackName.length > 0 ? fallbackName : null);
+    const authorName = resolvePersonDisplayName({
+      displayName: row.authorDisplayName,
+      firstName: row.authorFirstName,
+      lastName: row.authorLastName,
+      email: row.authorEmail,
+    });
 
     return {
       id: row.id,
@@ -238,11 +243,8 @@ export class ProjectsTicketCommentsService {
       columns: { id: true, userId: true },
     });
     if (!comment) throw new ProjectsCommentNotFoundException();
-
-    const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
-    const canManage = u.isOrgOwner || perms.has("build:manage");
-    if (comment.userId !== u.userId && !canManage) {
-      throw new ForbiddenException("Only the comment author or a project manager can delete this comment");
+    if (comment.userId !== u.userId) {
+      throw new ForbiddenException("Only the comment author can delete this comment");
     }
 
     const now = new Date();
@@ -264,30 +266,44 @@ export class ProjectsTicketCommentsService {
     return { deleted: true };
   }
 
-  async addReaction(commentId: number, userId: string, orgId: string, emoji: string, membershipId: number | null) {
+  async addReaction(commentId: number, userId: string, orgId: string, emoji: string, membershipId: number | null, ticketId: number) {
     const comment = await this.db.query.ticketComments.findFirst({
-      where: and(eq(ticketComments.id, commentId), eq(ticketComments.orgId, orgId), isNull(ticketComments.deletedAt)),
+      where: and(
+        eq(ticketComments.id, commentId),
+        eq(ticketComments.ticketId, ticketId),
+        eq(ticketComments.orgId, orgId),
+        isNull(ticketComments.deletedAt),
+      ),
       columns: { id: true },
     });
     if (!comment) throw new NotFoundException("Comment not found");
 
     if (membershipId === null) throw new ForbiddenException("Organization membership required");
-    const [reaction] = await this.db
+    await this.db
       .insert(ticketCommentReactions)
       .values({ commentId, orgId, emoji, membershipId })
-      .onConflictDoNothing()
-      .returning();
-    return reaction ?? { commentId, userId, emoji };
+      .onConflictDoNothing();
+    return { commentId, userId, emoji };
   }
 
-  async removeReaction(commentId: number, userId: string, orgId: string, emoji: string, membershipId: number | null) {
-    const actorPredicate = eq(ticketCommentReactions.membershipId, membershipId ?? -1);
+  async removeReaction(commentId: number, userId: string, orgId: string, emoji: string, membershipId: number | null, ticketId: number) {
+    const comment = await this.db.query.ticketComments.findFirst({
+      where: and(
+        eq(ticketComments.id, commentId),
+        eq(ticketComments.ticketId, ticketId),
+        eq(ticketComments.orgId, orgId),
+        isNull(ticketComments.deletedAt),
+      ),
+      columns: { id: true },
+    });
+    if (!comment) throw new NotFoundException("Comment not found");
+    if (membershipId === null) throw new ForbiddenException("Organization membership required");
     await this.db
       .delete(ticketCommentReactions)
       .where(
         and(
           eq(ticketCommentReactions.commentId, commentId),
-          actorPredicate,
+          eq(ticketCommentReactions.membershipId, membershipId),
           eq(ticketCommentReactions.orgId, orgId),
           eq(ticketCommentReactions.emoji, emoji),
         ),

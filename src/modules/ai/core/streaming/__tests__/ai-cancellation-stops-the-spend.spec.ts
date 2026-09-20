@@ -14,10 +14,11 @@ import { computeTokenCharge } from "../../billing/ai-model-pricing.constants";
 import type { AiCreditLedger } from "../../gateway/credit-ledger.interface";
 import type { AiUsageService } from "../../services/ai-usage.service";
 
-jest.mock("../../services/chat-assistant-model", () => ({
-  CHAT_FEATURE: "chat.message",
-  resolveChatModelId: () => "gemini-1.5-pro-latest",
-  resolveChatModel: () => currentModel,
+jest.mock("../../gateway/ai-stream-model", () => ({
+  ...jest.requireActual("../../gateway/ai-stream-model"),
+  resolveDefaultStreamModelId: () => "gemini-1.5-pro-latest",
+  resolveDefaultStreamModel: () => currentModel,
+  resolveAiStreamModel: () => ({ modelId: "gemini-1.5-pro-latest", model: currentModel }),
 }));
 
 interface ProviderProbe {

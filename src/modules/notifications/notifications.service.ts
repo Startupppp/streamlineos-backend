@@ -163,8 +163,8 @@ export class NotificationsService {
     return this.read.list(orgId, userId, filters, principal);
   }
 
-  unreadCount(orgId: string, userId: string) {
-    return this.read.unreadCount(orgId, userId);
+  unreadCount(orgId: string, userId: string, sourceModule?: string) {
+    return this.read.unreadCount(orgId, userId, sourceModule);
   }
 
   approve(orgId: string, userId: string, notificationId: number) {

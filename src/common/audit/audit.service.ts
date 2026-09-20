@@ -183,7 +183,7 @@ export class AuditService {
       resourceType: entry.resourceType ?? null,
       resourceId: entry.resourceId ?? null,
       metadata: this.buildMetadata(entry),
-      ipAddress: entry.ipAddress ?? null,
+      ipAddress: entry.ipAddress ?? getObservabilityContext()?.ipAddress ?? null,
       isPlatformEvent: orgId === null,
     };
   }

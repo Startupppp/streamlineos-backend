@@ -1,6 +1,6 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, asc, eq, gt, ilike, isNull, or } from "drizzle-orm";
-import { roadmapItems } from "../../../db/schema";
+import { and, asc, eq, gt, ilike, inArray, isNull, or } from "drizzle-orm";
+import { projects, roadmapItems } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import type {
@@ -39,6 +39,20 @@ export class ProjectsRoadmapService {
       const term = `%${query.search}%`;
       const match = or(ilike(roadmapItems.title, term), ilike(roadmapItems.description, term));
       if (match) conditions.push(match);
+    }
+    if (query.pmWorkspaceId !== undefined) {
+      const sub = this.db
+        .select({ id: projects.id })
+        .from(projects)
+        .where(and(eq(projects.orgId, orgId), eq(projects.pmWorkspaceId, query.pmWorkspaceId)));
+      conditions.push(inArray(roadmapItems.projectId, sub));
+    }
+    if (query.managedProductId !== undefined) {
+      const sub = this.db
+        .select({ id: projects.id })
+        .from(projects)
+        .where(and(eq(projects.orgId, orgId), eq(projects.managedProductId, query.managedProductId)));
+      conditions.push(inArray(roadmapItems.projectId, sub));
     }
     if (position) {
       const sortVal = Number(position.sortValue);

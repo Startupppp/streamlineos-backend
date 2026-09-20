@@ -17,6 +17,7 @@ import { RequirePermission } from "../../access/require-permission.decorator";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { actingMembershipId } from "../../../common/auth/principal";
 import { TeamsService } from "./teams.service";
 import { TeamMembersService } from "./team-members.service";
 import { TeamProjectsService } from "./team-projects.service";
@@ -72,7 +73,7 @@ export class TeamsController {
     @Query() query: ListTeamsQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.listTeams(u.orgId, query);
+    return this.svc.listTeams(u.orgId, query, actingMembershipId(u.principal));
   }
 
   @Get(":teamId")
@@ -95,7 +96,7 @@ export class TeamsController {
     @Body() body: CreateTeamInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.createTeam(u.orgId, u.userId, body);
+    return this.svc.createTeam(u.orgId, u.userId, actingMembershipId(u.principal), body);
   }
 
   @Patch(":teamId")

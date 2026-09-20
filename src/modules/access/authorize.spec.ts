@@ -173,7 +173,12 @@ describe("authorize", () => {
       ctxFor(makeCtx(), { enabledModules: ["crm"] }),
       "hr:employees:view",
     );
-    expect(result).toEqual({ allow: false, scope: "none", reason: "NO_MODULE" });
+    expect(result).toEqual({
+      allow: false,
+      scope: "none",
+      reason: "NO_MODULE",
+      moduleReason: "org-disabled",
+    });
   });
 
   it("reads the canonical plan-lock input when an org has no module row", async () => {
@@ -184,7 +189,12 @@ describe("authorize", () => {
       "hr:employees:view",
     );
 
-    expect(result).toEqual({ allow: false, scope: "none", reason: "NO_MODULE" });
+    expect(result).toEqual({
+      allow: false,
+      scope: "none",
+      reason: "NO_MODULE",
+      moduleReason: "org-disabled",
+    });
     expect(onPlanLockedRead).toHaveBeenCalledTimes(1);
   });
 
@@ -195,7 +205,12 @@ describe("authorize", () => {
       "hr:employees:view",
     );
 
-    expect(result).toEqual({ allow: false, scope: "none", reason: "NO_MODULE" });
+    expect(result).toEqual({
+      allow: false,
+      scope: "none",
+      reason: "NO_MODULE",
+      moduleReason: "org-disabled",
+    });
   });
 
   it("keeps employee self-service available without the HR module", async () => {
@@ -227,7 +242,12 @@ describe("authorize", () => {
       ctxFor(makeCtx({ isOrgOwner: true }), { enabledModules: [] }),
       "hr:employees:manage",
     );
-    expect(result).toEqual({ allow: false, scope: "none", reason: "NO_MODULE" });
+    expect(result).toEqual({
+      allow: false,
+      scope: "none",
+      reason: "NO_MODULE",
+      moduleReason: "org-disabled",
+    });
   });
 
   it("denies an org admin when the module is disabled", async () => {
@@ -237,7 +257,12 @@ describe("authorize", () => {
       ctxFor(makeCtx(), { enabledModules: [] }),
       "hr:employees:manage",
     );
-    expect(result).toEqual({ allow: false, scope: "none", reason: "NO_MODULE" });
+    expect(result).toEqual({
+      allow: false,
+      scope: "none",
+      reason: "NO_MODULE",
+      moduleReason: "org-disabled",
+    });
   });
 
   it("AC-04: holding settings:manage alone does NOT grant an unrelated permission", async () => {
