@@ -62,11 +62,25 @@ export class SurveyFormsService {
         ],
       },
       async ({ sql: where }) => {
-        // The COUNT is a second read of the same table and takes the same
-        // predicate: a count outside the scope reports how many rows the caller
-        // may not see.
         const [rows, [totalRow]] = await Promise.all([
           this.db.query.surveyForms.findMany({
+            columns: {
+              id: true,
+              orgId: true,
+              title: true,
+              description: true,
+              mode: true,
+              status: true,
+              defaultLanguage: true,
+              settings: true,
+              branding: true,
+              activeVersionId: true,
+              ownerUserId: true,
+              createdBy: true,
+              createdAt: true,
+              updatedAt: true,
+              archivedAt: true,
+            },
             where,
             orderBy: [desc(surveyForms.createdAt)],
             limit,
@@ -97,7 +111,26 @@ export class SurveyFormsService {
         and: [eq(surveyForms.id, surveyId)],
       },
       async ({ sql: where }) => {
-        const survey = await this.db.query.surveyForms.findFirst({ where });
+        const survey = await this.db.query.surveyForms.findFirst({ 
+          where,
+          columns: {
+            id: true,
+            orgId: true,
+            title: true,
+            description: true,
+            mode: true,
+            status: true,
+            defaultLanguage: true,
+            settings: true,
+            branding: true,
+            activeVersionId: true,
+            ownerUserId: true,
+            createdBy: true,
+            createdAt: true,
+            updatedAt: true,
+            archivedAt: true,
+          },
+        });
         if (!survey) throw new NotFoundException("Survey not found");
         return survey;
       },

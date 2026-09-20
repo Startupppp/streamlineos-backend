@@ -10,6 +10,7 @@ import {
   surveyFormListSchema,
   surveyTemplateListSchema,
   surveyVersionRowSchema,
+  surveyNewBootstrapSchema,
 } from "./dto/survey-forms-response.schemas";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
 import { ModuleGuard } from "../../common/rbac/module.guard";
@@ -45,6 +46,13 @@ export class SurveysController {
   @ResponseSchema(surveyTemplateListSchema)
   listTemplates() {
     return this.templates.list();
+  }
+
+  @Get("new")
+  @RequirePermission("surveys:view")
+  @ResponseSchema(surveyNewBootstrapSchema)
+  getNewSurveyBootstrap() {
+    return { templates: this.templates.list() };
   }
 
   @Get()

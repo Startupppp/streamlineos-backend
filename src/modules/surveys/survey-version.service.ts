@@ -57,26 +57,79 @@ export class SurveyVersionService {
 
     await this.assertSurveyInOrg(orgId, surveyId);
 
-    const [created] = await runInNewTenantTransaction(this.db, orgId, (tx) =>
-      tx.insert(surveyVersions).values({ orgId, surveyId, versionNumber: 1 }).returning(),
-    );
-    return created;
+    try {
+      const [created] = await runInNewTenantTransaction(this.db, orgId, (tx) =>
+        tx.insert(surveyVersions).values({ orgId, surveyId, versionNumber: 1 }).returning(),
+      );
+      return created;
+    } catch (error) {
+      const raceConditionCheck = await this.db.query.surveyVersions.findFirst({
+        where: and(eq(surveyVersions.orgId, orgId), eq(surveyVersions.surveyId, surveyId), isNull(surveyVersions.publishedAt)),
+        orderBy: [desc(surveyVersions.versionNumber)],
+      });
+      if (raceConditionCheck) return raceConditionCheck;
+      throw error;
+    }
   }
 
   async buildSchemaSnapshot(orgId: string, versionId: number) {
-    const sections = await this.db.query.surveySections.findMany({
-      where: and(eq(surveySections.orgId, orgId), eq(surveySections.versionId, versionId)),
-      orderBy: [asc(surveySections.sortOrder)],
-    });
-    const questions = await this.db.query.surveyQuestions.findMany({
-      where: and(eq(surveyQuestions.orgId, orgId), eq(surveyQuestions.versionId, versionId)),
-      orderBy: [asc(surveyQuestions.sortOrder)],
-      with: { choices: { orderBy: [asc(surveyQuestionChoices.sortOrder)] } },
-    });
-    const logicRules = await this.db.query.surveyLogicRules.findMany({
-      where: and(eq(surveyLogicRules.orgId, orgId), eq(surveyLogicRules.versionId, versionId)),
-      orderBy: [asc(surveyLogicRules.sortOrder)],
-    });
+    const [sections, questions, logicRules] = await Promise.all([
+      this.db.query.surveySections.findMany({
+        columns: {
+          id: true,
+          title: true,
+          description: true,
+          sortOrder: true,
+          settings: true,
+        },
+        where: and(eq(surveySections.orgId, orgId), eq(surveySections.versionId, versionId)),
+        orderBy: [asc(surveySections.sortOrder)],
+      }),
+      this.db.query.surveyQuestions.findMany({
+        columns: {
+          id: true,
+          sectionId: true,
+          questionKey: true,
+          variableName: true,
+          type: true,
+          title: true,
+          description: true,
+          required: true,
+          settings: true,
+          validation: true,
+          scoring: true,
+          sortOrder: true,
+        },
+        where: and(eq(surveyQuestions.orgId, orgId), eq(surveyQuestions.versionId, versionId)),
+        orderBy: [asc(surveyQuestions.sortOrder)],
+        with: { 
+          choices: { 
+            columns: {
+              id: true,
+              choiceKey: true,
+              label: true,
+              value: true,
+              score: true,
+              sortOrder: true,
+              isCorrect: true,
+            },
+            orderBy: [asc(surveyQuestionChoices.sortOrder)],
+          },
+        },
+      }),
+      this.db.query.surveyLogicRules.findMany({
+        columns: {
+          id: true,
+          sourceQuestionId: true,
+          condition: true,
+          action: true,
+          target: true,
+          sortOrder: true,
+        },
+        where: and(eq(surveyLogicRules.orgId, orgId), eq(surveyLogicRules.versionId, versionId)),
+        orderBy: [asc(surveyLogicRules.sortOrder)],
+      }),
+    ]);
 
     return {
       sections: sections.map((section) => ({

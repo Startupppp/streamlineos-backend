@@ -73,3 +73,7 @@ export const surveyVersionRowSchema = z.object({
   createdAt: wireDate(),
 });
 
+export const surveyNewBootstrapSchema = z.object({
+  templates: surveyTemplateListSchema,
+}).strict();
+
