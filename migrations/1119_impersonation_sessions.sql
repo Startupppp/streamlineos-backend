@@ -23,4 +23,4 @@ CREATE INDEX IF NOT EXISTS "impersonation_sessions_actor_org_idx" ON "public"."i
 CREATE INDEX IF NOT EXISTS "impersonation_sessions_target_org_idx" ON "public"."impersonation_sessions" ("target_user_id", "org_id");
 --> statement-breakpoint
 
-GRANT SELECT, INSERT, UPDATE ON "public"."impersonation_sessions" TO "streamlineos_app";
+GRANT SELECT, INSERT, UPDATE ON "public"."impersonation_sessions" TO "streamline_app";
