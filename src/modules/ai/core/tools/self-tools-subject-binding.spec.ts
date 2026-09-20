@@ -40,6 +40,17 @@ const SUBJECT_KEYS = new Set([
   "organizationId",
 ]);
 
+function isExecutableTool(
+  value: unknown,
+): value is { execute: (input: unknown) => Promise<unknown> } {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "execute" in value &&
+    typeof value.execute === "function"
+  );
+}
+
 function isProviderClass(candidate: unknown): candidate is ProviderClass {
   return (
     typeof candidate === "function" &&
@@ -174,9 +185,10 @@ describe("the tenant a self tool runs under comes from the session actor, never 
       snapshot: SNAPSHOT,
       definitions: [probe],
     });
-    const entry = toolset.probeSubject;
-    const execute = (entry as { execute: (input: unknown) => Promise<unknown> }).execute;
-    return execute(rawInput);
+    const entry: unknown = toolset.probeSubject;
+    if (!isExecutableTool(entry))
+      throw new Error("buildAskOsToolset did not expose an executable probeSubject tool");
+    return entry.execute(rawInput);
   }
 
   beforeEach(() => {
