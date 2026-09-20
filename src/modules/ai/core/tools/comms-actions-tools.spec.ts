@@ -7,6 +7,7 @@ jest.mock("../../../../common/tenant/run-in-tenant-transaction", () => ({
 
 import { CommsActionsTools } from "./comms-actions-tools";
 import type { Db } from "../../../../db/drizzle.module";
+import type { TenantTx } from "../../../../db/drizzle.types";
 import type { ChatChannelsService } from "../../../chat/chat-channels.service";
 import type { AiConfirmationService } from "../../confirmation/ai-confirmation.service";
 import type { MailService } from "../../../mail/mail.service";
@@ -277,9 +278,9 @@ describe("CommsActionsTools.archiveMailMessage — tool registration and connect
     const callOrder: string[] = [];
 
     mockedRequireMailConnection.mockResolvedValueOnce({ connected: true });
-    mockedRunInNewTenantTransaction.mockImplementation(async (_db: unknown, _orgId: unknown, fn: () => unknown) => {
+    mockedRunInNewTenantTransaction.mockImplementation(async (_db, _orgId, fn) => {
       callOrder.push("txn-start");
-      const result = await (fn as () => Promise<unknown>)();
+      const result = await fn({} as unknown as TenantTx);
       callOrder.push("txn-end");
       return result;
     });
