@@ -5,6 +5,8 @@ import { type Db } from "../../../db/drizzle.module";
 import { hrAutomationRules, hrAutomationRuns } from "../../../db/schema/hr/automation-engine";
 import type { HrAutomationAction, HrAutomationCondition, HrActionResult } from "../../../db/schema/hr/automation-engine";
 import { logger } from "../../../common/logger/logger.service";
+import { registerAfterCommit } from "../../../common/tenant/tenant-context";
+import { runInNewTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
 import { HrAutomationActionsService } from "./hr-automation-actions.service";
 import type {
   CreateHrAutomationRuleInput,
@@ -55,11 +57,14 @@ export class HrAutomationEngineService {
     opts: EmitOptions = {},
   ): Promise<void> {
     const depth = opts.depth ?? 0;
-    try {
-      await this.runEvent(orgId, event, payload, opts.triggeredByRunId ?? null, depth);
-    } catch (error) {
-      logger.error("hr-automation emit failed", { orgId, event, error });
-    }
+    const run = () =>
+      runInNewTenantTransaction(this.db, orgId, () =>
+        this.runEvent(orgId, event, payload, opts.triggeredByRunId ?? null, depth),
+      ).catch((error: unknown) => {
+        logger.error("hr-automation emit failed", { orgId, event, error });
+      });
+
+    if (!registerAfterCommit(run)) await run();
     this.hrWebhooks?.dispatch(orgId, event, payload);
   }
 

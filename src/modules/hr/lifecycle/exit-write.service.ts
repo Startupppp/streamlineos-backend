@@ -32,7 +32,7 @@ import type {
   ResignationHrReviewInput,
 } from "./dto/hr-lifecycle.schemas";
 import { transitionResignation } from "./lifecycle-transition";
-import { registerAfterCommit } from "../../../common/tenant/tenant-context";
+import { deferAfterCommit } from "../../../common/tenant/defer-after-commit";
 
 export interface ExitActor {
   userId: string;
@@ -182,8 +182,9 @@ export class ExitWriteService {
           .onConflictDoNothing();
       });
 
-      this.deferAfterCommit("exit checklist seeding", orgId, () =>
+      deferAfterCommit(() =>
         this.exitChecklist.seedChecklistFromTemplate(orgId, resignationId),
+        this.reportDeferred("exit checklist seeding", orgId),
       );
 
       this.dispatchResignationApproved(
@@ -353,8 +354,9 @@ export class ExitWriteService {
     this.resignationJobs.notifyFinalDecision(orgId, record.userId, approved);
 
     if (approved) {
-      this.deferAfterCommit("exit checklist seeding", orgId, () =>
+      deferAfterCommit(() =>
         this.exitChecklist.seedChecklistFromTemplate(orgId, resignationId),
+        this.reportDeferred("exit checklist seeding", orgId),
       );
       this.dispatchResignationApprovedAutomation(orgId, resignationId, record.userId, record.lastWorkingDate, actorUserId);
     }
@@ -375,13 +377,13 @@ export class ExitWriteService {
    * and the interceptor reports what it throws. When there is no ambient context — a job or a
    * sweep — it still runs inline, but the failure is now logged rather than discarded.
    */
-  private deferAfterCommit(label: string, orgId: string, work: () => Promise<unknown>): void {
-    if (registerAfterCommit(work)) return;
-    void work().catch((error: unknown) => {
+
+  private reportDeferred(label: string, orgId: string): (error: unknown) => void {
+    return (error: unknown) => {
       this.logger.error(
         `${label} failed for org ${orgId}: ${error instanceof Error ? (error.stack ?? error.message) : String(error)}`,
       );
-    });
+    };
   }
 
   private dispatchResignationSubmitted(
@@ -391,7 +393,7 @@ export class ExitWriteService {
     input: ResignationCreateInput,
     noticePeriodDays: number,
   ): void {
-    this.deferAfterCommit("hr.resignation.submitted dispatch", orgId, async () => {
+    deferAfterCommit(async () => {
       const adminMembers = await this.access.membersWithPermission(orgId, "hr:exit:manage");
 
       const submittingUser = await this.db.query.users.findFirst({
@@ -434,7 +436,7 @@ export class ExitWriteService {
         reasonCategory: input.reasonCategory ?? null,
         submittedAt: new Date().toISOString(),
       });
-    });
+    }, this.reportDeferred("hr.resignation.submitted dispatch", orgId));
   }
 
   private dispatchResignationApproved(
@@ -446,7 +448,7 @@ export class ExitWriteService {
     noticePeriodDays: number,
     submittedAt: Date | null,
   ): void {
-    this.deferAfterCommit("hr.resignation.approved dispatch", orgId, async () => {
+    deferAfterCommit(async () => {
       const [employee, approver] = await Promise.all([
         this.db.query.users.findFirst({ where: eq(users.id, employeeId), columns: { name: true } }),
         this.db.query.users.findFirst({ where: eq(users.id, actorUserId), columns: { name: true } }),
@@ -463,7 +465,7 @@ export class ExitWriteService {
         message: "Your resignation has been approved.",
         variables: { employeeName: employee?.name ?? "Employee", approverName: approver?.name ?? "Approver", lastWorkingDate: formatDdMmmYyyy(lwd), noticePeriodDays: noticePeriodDays ?? 30, submittedAt: formatDdMmmYyyy(sub) },
       });
-    });
+    }, this.reportDeferred("hr.resignation.approved dispatch", orgId));
   }
 
   private dispatchResignationApprovedAutomation(
@@ -473,7 +475,7 @@ export class ExitWriteService {
     lastWorkingDate: string | null,
     actorUserId: string,
   ): void {
-    this.deferAfterCommit("resignation.approved automation", orgId, async () => {
+    deferAfterCommit(async () => {
       const employee = await this.db.query.users.findFirst({
         where: eq(users.id, employeeId),
         columns: { name: true },
@@ -486,11 +488,11 @@ export class ExitWriteService {
         approvedBy: actorUserId,
         approvedAt: new Date().toISOString(),
       });
-    });
+    }, this.reportDeferred("resignation.approved automation", orgId));
   }
 
   private dispatchExitCompleted(orgId: string, resignationId: number, employeeId: string): void {
-    this.deferAfterCommit("exit.completed automation", orgId, async () => {
+    deferAfterCommit(async () => {
       const employee = await this.db.query.users.findFirst({
         where: eq(users.id, employeeId),
         columns: { name: true },
@@ -507,6 +509,6 @@ export class ExitWriteService {
         exitType: "resignation",
         resignationId,
       });
-    });
+    }, this.reportDeferred("exit.completed automation", orgId));
   }
 }

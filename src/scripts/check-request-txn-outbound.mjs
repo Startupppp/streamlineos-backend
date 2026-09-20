@@ -1,4 +1,5 @@
-import { readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
@@ -25,9 +26,9 @@ const OUTBOUND =
   /(?<![.\w])fetch\s*\(|(?<![.\w])postSafeWebhook\s*\(|(?<![.\w])callProvider\s*\(|(?<![.\w])outboundRequest\s*\(|\baxios\s*\.\s*(?:get|post|put|patch|delete|request)\s*\(|\bsendEmailOnceDirect\s*\(/;
 
 const AI_OUTBOUND = /\binvoke(?:Text|Structured|Chat)[A-Za-z]*\s*\(/;
-const AI_CEILING = 24;
+const AI_CEILING = 18;
 
-const MAX_HOPS = 6;
+const MAX_HOPS = 8;
 const MIN_CONTROLLERS = 200;
 const MIN_ROUTES = 1500;
 
@@ -42,7 +43,7 @@ const FROZEN = new Map([
   ],
   [
     "modules/build/core/projects-webhooks.controller.ts#sendTest",
-    "HOLDS. Awaited so the user is shown the delivery result. 10s x 5 attempts with 1-30s backoff, so the worst case is minutes on one connection. Needs the dispatch service to own its transactions before it can opt out.",
+    "HOLDS, bounded. Awaited so the user is shown the delivery result, and capped at INTERACTIVE_TEST_BUDGET: one attempt, 5s, against the background path's five attempts at 10s. Opting out needs the dispatch service to own its transactions first.",
   ],
   [
     "modules/email/controllers/notifications-dispatch.controller.ts#dispatch",
@@ -50,7 +51,7 @@ const FROZEN = new Map([
   ],
   [
     "modules/feedbucket/feedbucket.controller.ts#analyzeSubmission",
-    "HOLDS, and the longest of the six: a 60s standard-tier LLM call with the submission update after it. AI credits are reserved before the provider call and settled after, both on the ambient transaction, so the org_ai_credits row stays locked for the whole 60s.",
+    "HOLDS, bounded. A standard-tier LLM call with the submission update after it, now capped at INTERACTIVE_ANALYSIS_BUDGET_MS (25s) by an explicit AbortSignal rather than the tier's 60s. AI credits are reserved before the provider call and settled after, both on the ambient transaction, so the org_ai_credits row stays locked for that whole window.",
   ],
   [
     "modules/feedbucket/feedbucket.controller.ts#createTicketFromAnalysis",
@@ -66,12 +67,68 @@ const FROZEN = new Map([
   ],
 ]);
 
-const DETACHERS = ["registerAfterCommit", "runOutsideTenantContext", "drainAfterCommitHooks"];
+const DETACHERS = [
+  "registerAfterCommit",
+  "runOutsideTenantContext",
+  "drainAfterCommitHooks",
+  "deferAfterCommit",
+];
 const stripDetachers = DETACHERS.map((name) => makeStripEscapedRegions(name));
-const VOIDED = /\bvoid\s+[^;]*;/g;
+
+const DETACHED_ARGUMENT = new RegExp(
+  `\\b(?:${DETACHERS.join("|")})\\s*\\(\\s*([A-Za-z_$][\\w$]*)\\s*\\)`,
+  "g",
+);
+const VOIDED_IDENTIFIER = /\bvoid\s+([A-Za-z_$][\w$]*)\s*\(/g;
+
+function removeStatement(body, marker, from = -1) {
+  const at = from === -1 ? body.indexOf(marker) : from;
+  if (at === -1) return body;
+  let depth = 0;
+  for (let cursor = at; cursor < body.length; cursor++) {
+    const char = body[cursor];
+    if (char === "(" || char === "{" || char === "[") depth++;
+    else if (char === ")" || char === "}" || char === "]") depth--;
+    else if (char === ";" && depth === 0) return body.slice(0, at) + " " + body.slice(cursor + 1);
+  }
+  return body.slice(0, at);
+}
+
+function stripNamedDetached(body) {
+  const deferred = new Set();
+  for (const match of body.matchAll(DETACHED_ARGUMENT)) deferred.add(match[1]);
+  for (const match of body.matchAll(VOIDED_IDENTIFIER)) deferred.add(match[1]);
+
+  let out = body;
+  for (const name of deferred) {
+    for (const keyword of ["const", "let", "var"]) {
+      let previous = null;
+      while (previous !== out) {
+        previous = out;
+        out = removeStatement(out, `${keyword} ${name} =`);
+      }
+    }
+  }
+  return out;
+}
+
+const VOID_STATEMENT = /(?:^|[;{}])\s*void\s/g;
+
+function stripVoidStatements(body) {
+  let out = body;
+  let previous = null;
+  while (previous !== out) {
+    previous = out;
+    VOID_STATEMENT.lastIndex = 0;
+    const match = VOID_STATEMENT.exec(out);
+    if (!match) break;
+    out = removeStatement(out, "void ", out.indexOf("void ", match.index));
+  }
+  return out;
+}
 
 function stripDetached(body) {
-  let out = body.replace(VOIDED, " ");
+  let out = stripVoidStatements(stripNamedDetached(body));
   for (const strip of stripDetachers) out = strip(out);
   return out;
 }
@@ -103,6 +160,7 @@ function scan() {
 
   const holding = [];
   const aiHolding = [];
+  const paths = new Map();
   let routes = 0;
 
   for (const file of controllers) {
@@ -116,15 +174,23 @@ function scan() {
       routes++;
       const where = { types, source, file };
       if (!reachesAny(route.body, classIndex, where, 0, new Set())) continue;
-      if (reaches(route.body, classIndex, where, 0, new Set()))
+      const trail = [];
+      if (reaches(route.body, classIndex, where, 0, new Set(), trail)) {
         holding.push(`${rel}#${route.handler}`);
-      else aiHolding.push(`${rel}#${route.handler}`);
+        paths.set(`${rel}#${route.handler}`, trail);
+      } else {
+        const aiTrail = [];
+        reachesAny(route.body, classIndex, where, 0, new Set(), aiTrail);
+        aiHolding.push(`${rel}#${route.handler}`);
+        paths.set(`${rel}#${route.handler}`, aiTrail);
+      }
     }
   }
 
   return {
     controllers: controllers.length,
     routes,
+    paths,
     holding: [...new Set(holding)].sort(),
     aiHolding: [...new Set(aiHolding)].sort(),
   };
@@ -225,6 +291,33 @@ export class StreamController {
     failures.push("a voided call was counted as a hold");
   if (!callsOutbound("registerAfterCommit(noop);\n await fetch(url);"))
     failures.push("the detach strip swallowed an awaited call beside it");
+  if (
+    callsOutbound(
+      "const dispatch = () => this.send(url);\n if (!registerAfterCommit(dispatch)) void dispatch();\n",
+    ) ||
+    callsOutbound(
+      "const dispatch = () => fetch(url);\n if (!registerAfterCommit(dispatch)) void dispatch();\n",
+    )
+  )
+    failures.push("a deferral named before it is handed to registerAfterCommit was counted as a hold");
+  if (!callsOutbound("const dispatch = () => noop();\n await fetch(url);\n"))
+    failures.push("removing a named deferral also removed an awaited call after it");
+  if (
+    callsOutbound(
+      "void (async () => {\n  const row = await load();\n  await fetch(row.url);\n})();\n",
+    )
+  )
+    failures.push("a voided async IIFE was counted as a hold, its body ends at a brace not a semicolon");
+  if (
+    !callsOutbound(
+      "void (async () => {\n  await noop();\n})();\n await fetch(url);\n",
+    )
+  )
+    failures.push("the voided-IIFE strip swallowed an awaited call after it");
+  if (!callsOutbound("async function run(): Promise<void> {\n  await fetch(url);\n}\n"))
+    failures.push("a void return annotation was treated as a voided statement");
+  if (!callsOutbound("const payload = buildBody(a, b);\n await fetch(payload);\n"))
+    failures.push("an ordinary const was treated as a deferral");
   if (signatureOf("export async function send(client: Wire, body: string) {\n", "send") === "")
     failures.push("an exported function signature was not extracted");
   if (methodBody("export async function ping(c: Wire) {\n  await fetch(u);\n}\n", "ping") === null)
@@ -246,6 +339,42 @@ export class StreamController {
   if (paramReached)
     failures.push("resolved a class file that does not exist, so the walk is not reading source");
 
+  const scratch = mkdtempSync(join(tmpdir(), "txn-outbound-selftest-"));
+  try {
+    const transport = join(scratch, "transport.ts");
+    const owner = join(scratch, "owner.ts");
+    writeFileSync(
+      transport,
+      "export class Transport {\n  async submit(payload: string) {\n    await fetch(payload);\n  }\n}\n",
+    );
+    writeFileSync(
+      owner,
+      "export class Owner {\n" +
+        "  async file(orgId: string, adapter: Transport) {\n" +
+        "    return adapter.submit(orgId);\n" +
+        "  }\n" +
+        "}\n",
+    );
+    const index = new Map([
+      ["Transport", transport],
+      ["Owner", owner],
+    ]);
+    const walkParams = makeReaches({ directly: callsOutbound, maxHops: 4, strip: stripDetached });
+    const throughParameter = walkParams(
+      "return this.compliance.file(orgId, adapter);",
+      index,
+      { types: new Map([["compliance", "Owner"]]), source: "", file: owner },
+      0,
+      new Set(),
+    );
+    if (!throughParameter)
+      failures.push(
+        "a service arriving as a method parameter was not followed, the blind spot that hid the GST filing route",
+      );
+  } finally {
+    rmSync(scratch, { recursive: true, force: true });
+  }
+
   if (failures.length > 0) {
     for (const failure of failures) console.error(`  ${failure}`);
     console.error("check-request-txn-outbound self-test FAILED");
@@ -257,6 +386,13 @@ export class StreamController {
 function main() {
   if (process.argv.includes("--self-test")) {
     selfTest();
+    return;
+  }
+
+  if (process.argv.includes("--explain")) {
+    const { paths, holding, aiHolding } = scan();
+    for (const route of [...holding, ...aiHolding].sort())
+      console.log(`${route}\n    ${(paths.get(route) ?? []).join(" -> ")}`);
     return;
   }
 
