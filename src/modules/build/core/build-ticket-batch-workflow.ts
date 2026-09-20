@@ -15,7 +15,7 @@ export async function validateBatchTransition(db: Db, actor: CurrentUserContext,
     throw new ProjectsInvalidTicketStatusException(status);
   const changed = rows.filter((row) => row.status !== status);
   if (changed.length > 0)
-    await reserveTicketCapacity(db, actor.orgId, projectId, [{ status, count: rows.length }], rows.map(row => row.id));
+    await reserveTicketCapacity(db, actor.orgId, projectId, [{ status, count: changed.length }], changed.map(row => row.id));
   const prefetched = { ...workflow, ticketFields: new Map(rows.map((row) => [row.id, row])), wipAlreadyChecked: true };
   for (const row of changed)
     await assertTransitionAllowed(db, actor.orgId, projectId, row.status, status, {

@@ -1,5 +1,5 @@
 import { Test } from "@nestjs/testing";
-import { NotFoundException } from "@nestjs/common";
+import { BadRequestException, NotFoundException } from "@nestjs/common";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { CacheService } from "../../../common/cache/cache.service";
 import { AccessService } from "../../access/access.service";
@@ -29,6 +29,7 @@ async function harness() {
     query: {
       projects: { findFirst: jest.fn().mockResolvedValue({ id: 1, managerMembershipId: 1 }) },
       organizationMembers: { findFirst: jest.fn().mockResolvedValue(undefined) },
+      sprints: { findFirst: jest.fn().mockResolvedValue(undefined) },
     },
     transaction: jest.fn(),
   };
@@ -60,6 +61,33 @@ describe("Build bulk assignment invariants", () => {
     try {
       await expect(h.service.bulkUpdate(actor, 1, { ticketIds: [10], assigneeId: "foreign-user" }))
         .rejects.toThrow(NotFoundException);
+      expect(h.set).not.toHaveBeenCalled();
+    } finally { await h.module.close(); }
+  });
+
+  it("rejects a sprint that does not belong to this project rather than silently clearing it", async () => {
+    const h = await harness();
+    try {
+      await expect(h.service.bulkUpdate(actor, 1, { ticketIds: [10], sprintId: 999 }))
+        .rejects.toThrow("Sprint not found in this project");
+      expect(h.set).not.toHaveBeenCalled();
+    } finally { await h.module.close(); }
+  });
+
+  it("refuses to set a ticket as its own parent before any DB write", async () => {
+    const h = await harness();
+    try {
+      await expect(h.service.bulkUpdate(actor, 1, { ticketIds: [10], parentTicketId: 10 }))
+        .rejects.toThrow(BadRequestException);
+      expect(h.set).not.toHaveBeenCalled();
+    } finally { await h.module.close(); }
+  });
+
+  it("rejects a parentTicketId that does not exist in this project", async () => {
+    const h = await harness();
+    try {
+      await expect(h.service.bulkUpdate(actor, 1, { ticketIds: [10], parentTicketId: 999 }))
+        .rejects.toThrow("Parent ticket not found in this project");
       expect(h.set).not.toHaveBeenCalled();
     } finally { await h.module.close(); }
   });
