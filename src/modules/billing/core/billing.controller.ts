@@ -119,6 +119,7 @@ export class BillingController {
   }
 
   @Post("addons/purchase")
+  @NoTenantTransaction()
   @Idempotent("billing.addon.purchase")
   @HttpCode(200)
   @UseGuards(PermissionGuard)
