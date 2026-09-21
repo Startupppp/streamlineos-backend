@@ -27,6 +27,7 @@ import { EmailSuppressionService } from "../../../email/email-suppression.servic
 import { EmailProviderService } from "../../../email/email.provider";
 import type { EmailDispatcher, Provider } from "../../../email/email-provider-selection";
 import { validateEnv } from "../../../../config/env.validation";
+import { ReportingLineService } from "../../../directory/reporting-line.service";
 import { HrAuditService } from "../../core/hr-audit.service";
 import { PersonEmploymentSyncService } from "../../core/person-employment-sync.service";
 import {
@@ -159,6 +160,7 @@ describe("POST /hr/employees/onboard against a real schema", () => {
       new PersonEmploymentSyncService(db, new HrAuditService(db)),
       { canManageOrganizationMembership: jest.fn().mockResolvedValue(true) } as never,
       admission,
+      new ReportingLineService(db),
     );
   });
 
