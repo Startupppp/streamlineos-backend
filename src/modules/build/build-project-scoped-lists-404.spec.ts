@@ -8,6 +8,9 @@ import { ModulesService } from "./execution/modules.service";
 import { ProjectsCustomFieldsService } from "./core/projects-custom-fields.service";
 import { ProjectsAnalyticsService } from "./core/projects-analytics.service";
 import type { Db } from "../../db/drizzle.module";
+import type { AccessService } from "../access/access.service";
+import type { CurrentUserContext } from "../../common/auth/backend-claims";
+import { humanSessionPrincipal } from "../../common/auth/principal";
 
 function makeDb(project: { id: number } | undefined) {
   const rows: unknown[] = [];
@@ -28,8 +31,22 @@ function makeDb(project: { id: number } | undefined) {
 describe("build — a project-scoped list refuses a projectId the org does not own", () => {
   const ATTACKER_ORG = "org-attacker";
 
+  const releasesAccess: AccessService = {
+    resolveUserPermissions: jest.fn().mockResolvedValue(new Set(["build:manage"])),
+  } as unknown as AccessService;
+
+  const releasesU: CurrentUserContext = {
+    userId: "u-test",
+    orgId: ATTACKER_ORG,
+    role: "MEMBER",
+    isOrgOwner: false,
+    sessionId: "s",
+    tokenScopes: null,
+    principal: humanSessionPrincipal(1, false),
+  };
+
   const cases: Array<[string, (db: Db) => Promise<unknown>]> = [
-    ["GET /build/:projectId/releases", (db) => new ProjectsReleasesService(db).listReleases(ATTACKER_ORG, 1)],
+    ["GET /build/:projectId/releases", (db) => new ProjectsReleasesService(db, releasesAccess).listReleases(releasesU, 1)],
     ["GET /build/:projectId/webhooks", (db) => new ProjectsWebhooksService(db).listWebhooks(ATTACKER_ORG, 1)],
     ["GET /build/:projectId/sprints", (db) => new SprintsService(db, null).listSprints(ATTACKER_ORG, 1)],
     ["GET /build/:projectId/epics", (db) => new EpicsService(db).listEpics(ATTACKER_ORG, 1)],
