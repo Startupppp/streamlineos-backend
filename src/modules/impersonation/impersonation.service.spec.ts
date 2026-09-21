@@ -75,8 +75,10 @@ function collectColumnNames(root: unknown): string[] {
     if (seen.has(node)) continue;
     seen.add(node);
     const record = node as Record<string, unknown>;
-    if (typeof record.name === "string" && "columnType" in record)
+    if (typeof record.name === "string" && "columnType" in record) {
       found.push(record.name);
+      continue;
+    }
     for (const value of Object.values(record)) stack.push(value);
   }
   return found;
@@ -220,6 +222,17 @@ describe("ImpersonationService", () => {
       expect(where.columns()).toEqual(
         expect.arrayContaining(["id", "org_id", "actor_user_id"]),
       );
+    });
+
+    it("names only the three scoping columns, so the walk cannot pass by reaching the table instead of the predicate", async () => {
+      const where = captureWhere();
+      const svc = makeService(where.db);
+      await svc.stop(makeActor(), "ims-uuid");
+      expect([...new Set(where.columns())].sort()).toEqual([
+        "actor_user_id",
+        "id",
+        "org_id",
+      ]);
     });
 
     it("revokes the impersonation session", async () => {
