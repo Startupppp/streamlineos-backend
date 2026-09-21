@@ -58,6 +58,7 @@ describe("EmployeeMutationsService canonical employment reads", () => {
       {} as never,
       {} as never,
       { getFacts: jest.fn().mockResolvedValue({ userId: "user-1", employmentId: 9, employeeNumber: "CAN-9", designation: "Canonical Role", joiningDate: "2026-01-01", departmentId: "canonical-dept", locationId: null, managerUserId: null }) } as never,
+      { checkManager: jest.fn(), assign: jest.fn() } as never,
     );
 
     const result = await service.getEmployeeDetail(

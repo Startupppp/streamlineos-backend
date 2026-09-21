@@ -22,6 +22,7 @@ export interface PlannedEmployee {
   designation: string;
   joiningDate: string | null;
   dateOfBirth: string | null;
+  reportingManagerUserId: string | null;
 }
 
 export interface AdmittedEmployee extends PlannedEmployee {

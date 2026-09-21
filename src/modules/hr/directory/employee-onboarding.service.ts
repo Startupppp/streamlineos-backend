@@ -62,6 +62,7 @@ import {
 import { resolveOrgSalaryCurrency } from "./employment-salary-currency";
 import { registerAfterCommit } from "../../../common/tenant/tenant-context";
 import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
+import { ReportingLineService } from "../../directory/reporting-line.service";
 
 const EMP_CODE_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
 
@@ -84,12 +85,17 @@ export class EmployeeOnboardingService {
     private readonly personEmploymentSync: PersonEmploymentSyncService,
     private readonly access: AccessService,
     private readonly admission: MembershipAdmissionService,
+    private readonly reportingLines: ReportingLineService,
   ) {}
 
   async onboardEmployee(actor: CurrentUserContext, body: OnboardEmployeeInput) {
     const resolvedEmployeeId = body.employeeId?.trim() || `EMP-${randomEmployeeCode(6)}`;
     const role = body.role || ORG_MEMBER_ROLES.MEMBER;
     await assertMayGrantRole(this.access, actor.orgId, actor, role);
+    if (body.reportingManagerUserId) {
+      const managerCheck = await this.reportingLines.checkManager(actor.orgId, body.reportingManagerUserId);
+      if (!managerCheck.ok) throw new BadRequestException(managerCheck.message);
+    }
 
     const dateOfBirth = body.dateOfBirth ? formatDateOnly(body.dateOfBirth) : undefined;
     const joiningDate = body.joiningDate ? formatDateOnly(body.joiningDate) : null;
@@ -210,6 +216,8 @@ export class EmployeeOnboardingService {
         designation: body.designation,
         ...(admitted.createdUser ? {} : { linked: true }),
         ...(admitted.attached ? { attachedToExistingMember: true } : {}),
+        ...(body.reportingManagerUserId ? { reportingManagerUserId: body.reportingManagerUserId } : {}),
+        ...(body.topLevelRole ? { topLevelRole: true, topLevelRoleReason: body.topLevelRoleReason ?? null } : {}),
       },
     });
 
@@ -229,6 +237,16 @@ export class EmployeeOnboardingService {
       await syncCanonicalEmploymentFields(this.db, actor.orgId, admitted.userId, {
         departmentId: body.departmentId,
       });
+    }
+
+    if (body.reportingManagerUserId) {
+      await this.reportingLines.assign(
+        actor.orgId,
+        admitted.userId,
+        body.reportingManagerUserId,
+        joiningDate ?? formatDateOnly(new Date()),
+        actor.userId,
+      );
     }
 
     if (body.taxId || body.bankDetails?.accountNumber || body.monthlySalary !== undefined) {

@@ -154,6 +154,7 @@ export function buildService(db: Db): Collaborators {
       membersWithPermission: jest.fn().mockResolvedValue([]),
     } as never,
     admission,
+    { checkManager: jest.fn().mockResolvedValue({ ok: true, managerEmploymentId: 5 }), assign: jest.fn().mockResolvedValue({ status: "written", employmentId: 10, managerEmploymentId: 5 }) } as never,
   );
 
   return { service, ensureFromUser, recordSeatEvents, assertWithinLimit };

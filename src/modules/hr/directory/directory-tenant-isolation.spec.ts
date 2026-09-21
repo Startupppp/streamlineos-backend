@@ -257,6 +257,7 @@ describe("EmployeeMutationsService — cross-tenant isolation", () => {
     const employment = makeEmploymentFactsMock();
     const svc = new EmployeeMutationsService(
       db as never, cache as never, audit as never, hrAutomation as never, access as never, employment as never,
+      { checkManager: jest.fn(), assign: jest.fn() } as never,
     );
     const result = await svc.getEmployeeDetail(ScopedRead.of(ATTACKER, "actor-1", "all"), "target-1");
     expect(result).toBeNull();
@@ -288,6 +289,7 @@ describe("EmployeeMutationsService — cross-tenant isolation", () => {
     });
     const svc = new EmployeeMutationsService(
       db as never, cache as never, audit as never, hrAutomation as never, access as never, employment as never,
+      { checkManager: jest.fn(), assign: jest.fn() } as never,
     );
     const result = await svc.getEmployeeDetail(ScopedRead.of(OWNER, "actor-1", "all"), "target-1");
     expect(result).not.toBeNull();

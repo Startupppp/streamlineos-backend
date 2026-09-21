@@ -30,6 +30,7 @@ import { AutomationService } from "../../automation/automation.service";
 import { WebhooksDispatchService } from "../../webhooks/webhooks-dispatch.service";
 import { PersonEmploymentSyncService } from "../core/person-employment-sync.service";
 import { AccessService } from "../../access/access.service";
+import { ReportingLineService } from "../../directory/reporting-line.service";
 import { MembershipAdmissionService } from "../../organization/core/membership-admission.service";
 
 const ORG_ID = "org-limit-test";
@@ -152,6 +153,10 @@ describe("EmployeeOnboardingService.onboardEmployee — seat-limit ordering", ()
         {
           provide: AccessService,
           useValue: { resolveUserPermissions: jest.fn().mockResolvedValue(new Map()) },
+        },
+        {
+          provide: ReportingLineService,
+          useValue: { checkManager: jest.fn(), assign: jest.fn() },
         },
       ],
     }).compile();

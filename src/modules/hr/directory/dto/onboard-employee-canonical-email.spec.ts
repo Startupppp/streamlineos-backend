@@ -6,6 +6,7 @@ const BASE = {
   firstName: "Ada",
   lastName: "Lovelace",
   designation: "Engineer",
+  reportingManagerUserId: "user-manager",
 };
 
 function parse(email: string) {

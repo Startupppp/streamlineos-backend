@@ -17,6 +17,7 @@ import { formatDateOnly } from "../../../../common/date";
 import { appUrl } from "../../../email/app-url";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
 import type { PersonEmploymentSyncService } from "../../core/person-employment-sync.service";
+import type { ReportingLineService } from "../../../directory/reporting-line.service";
 import {
   admissionRefusalMessage,
   type MembershipAdmissionService,
@@ -34,6 +35,7 @@ export interface BulkOnboardWriteDeps {
   admission: MembershipAdmissionService;
   personEmploymentSync: PersonEmploymentSyncService;
   membership: MembershipMutations;
+  reportingLines: ReportingLineService;
 }
 
 async function writeSensitiveFields(
@@ -172,6 +174,18 @@ export async function writeBulkOnboarding(
   const employmentIdByUserId = new Map(
     employments.map((employment) => [employment.userId, employment.employmentId]),
   );
+
+  for (const employee of admitted) {
+    if (employee.reportingManagerUserId === null) continue;
+    await deps.reportingLines.assign(
+      orgId,
+      employee.userId,
+      employee.reportingManagerUserId,
+      employee.joiningDate ?? formatDateOnly(new Date()),
+      actor.userId,
+      tx,
+    );
+  }
 
   const salaryCurrency = admitted.some(
     (employee) => employee.source.monthlySalary !== undefined,
