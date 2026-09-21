@@ -193,6 +193,30 @@ export class ApprovalsService {
     );
   }
 
+  async pendingRoutedTo(orgId: string, approverMembershipId: number, limit: number) {
+    const rows = await listApprovalRows(
+      this.db,
+      [
+        eq(timesheetPeriods.orgId, orgId),
+        eq(timesheetPeriods.status, "SUBMITTED"),
+        eq(timesheetPeriods.currentApproverMembershipId, approverMembershipId),
+      ],
+      Math.min(limit, 100),
+    );
+    return rows.slice(0, Math.min(limit, 100)).map((row) => ({
+      id: row.id,
+      userMembershipId: row.userMembershipId,
+      userName: row.userName,
+      userEmail: row.userEmail,
+      periodStart: row.periodStart,
+      periodEnd: row.periodEnd,
+      totalHours: row.totalHours,
+      submittedAt: row.submittedAt,
+      approvalDueAt: row.approvalDueAt,
+      approvalRoute: row.approvalRoute,
+    }));
+  }
+
   async approveSinglePeriod(u: CurrentUserContext, periodId: number) {
     const [period] = await this.db
       .select({

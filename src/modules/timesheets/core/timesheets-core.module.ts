@@ -115,6 +115,8 @@ import { TimesheetApprovalEscalationSweepService } from "./approval-escalation-s
   ],
   exports: [
     SettingsService,
+    ApprovalsService,
+    PeriodsReadService,
     TimesheetsAuditService,
     ExceptionsDetectorService,
     EntriesPeriodService,

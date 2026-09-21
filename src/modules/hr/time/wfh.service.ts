@@ -1,5 +1,5 @@
 import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException, Optional } from "@nestjs/common";
-import { and, count, desc, eq, gte, lte } from "drizzle-orm";
+import { and, asc, count, desc, eq, gte, lte } from "drizzle-orm";
 import { users, wfhRequests } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
@@ -77,6 +77,32 @@ export class WfhService {
       .returning();
 
     return { success: true };
+  }
+
+  async pendingRoutedTo(orgId: string, approverMembershipId: number, limit: number) {
+    return this.db
+      .select({
+        id: wfhRequests.id,
+        userId: wfhRequests.userId,
+        date: wfhRequests.date,
+        reason: wfhRequests.reason,
+        createdAt: wfhRequests.createdAt,
+        userName: users.name,
+        userFirstName: users.firstName,
+        userLastName: users.lastName,
+        userEmail: users.email,
+      })
+      .from(wfhRequests)
+      .innerJoin(users, eq(wfhRequests.userId, users.id))
+      .where(
+        and(
+          eq(wfhRequests.orgId, orgId),
+          eq(wfhRequests.status, "PENDING"),
+          eq(wfhRequests.approverMembershipId, approverMembershipId),
+        ),
+      )
+      .orderBy(asc(wfhRequests.createdAt))
+      .limit(Math.min(limit, 100));
   }
 
   async pending(currentUser: CurrentUserContext) {
