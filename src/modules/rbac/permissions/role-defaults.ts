@@ -27,6 +27,7 @@ const EMPLOYEE_SELF_SERVICE = [
   "self:job-openings",
   "self:referrals",
   "self:cases",
+  "self:support",
   "hr:leaves:create",
   "hr:expenses:create",
   "hr:expenses:view",
