@@ -32,7 +32,7 @@ import {
   NoContentResponse,
   ResponseSchema,
 } from "../../../common/openapi/zod-operation-contracts";
-import { riskPageSchema, riskRowSchema } from "./dto/governance-response.schemas";
+import { riskPageSchema, riskRowSchema, riskStatsSchema } from "./dto/governance-response.schemas";
 
 export const riskIdParams = z
   .object({
@@ -57,6 +57,16 @@ export class RisksController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.svc.listRisks(u, projectId, query);
+  }
+
+  @Get("stats")
+  @RequirePermission("build:risks:view")
+  @ResponseSchema(riskStatsSchema)
+  getRiskStats(
+    @Param("projectId", ParseIntPipe) projectId: number,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.svc.getRiskStats(u, projectId);
   }
 
   @Get(":riskId")

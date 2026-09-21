@@ -1,5 +1,5 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, desc, eq, isNull, lt, sql } from "drizzle-orm";
+import { and, desc, eq, isNull, lt, notInArray, sql } from "drizzle-orm";
 import { projectRisks } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
@@ -40,10 +40,71 @@ export class RisksService {
 
   private static readonly PAGE_LIMIT = 100;
 
+  private static readonly RISK_COLUMNS = {
+    id: projectRisks.id,
+    orgId: projectRisks.orgId,
+    projectId: projectRisks.projectId,
+    riskNumber: projectRisks.riskNumber,
+    title: projectRisks.title,
+    description: projectRisks.description,
+    probability: projectRisks.probability,
+    impact: projectRisks.impact,
+    status: projectRisks.status,
+    ownerId: projectRisks.ownerId,
+    mitigation: projectRisks.mitigation,
+    linkedTicketId: projectRisks.linkedTicketId,
+    createdBy: projectRisks.createdBy,
+    createdAt: projectRisks.createdAt,
+    updatedAt: projectRisks.updatedAt,
+    deletedAt: projectRisks.deletedAt,
+  };
+
+  private static readonly SEVERITY_SCORE = sql`
+    (CASE ${projectRisks.probability} WHEN 'low' THEN 1 WHEN 'medium' THEN 2 WHEN 'high' THEN 3 ELSE 0 END)
+    * (CASE ${projectRisks.impact} WHEN 'low' THEN 1 WHEN 'medium' THEN 2 WHEN 'high' THEN 3 ELSE 0 END)
+  `;
+
+  async getRiskStats(u: CurrentUserContext, projectId: number) {
+    await assertProjectAccess(this.db, this.access, u, projectId);
+    const registerScope = and(
+      eq(projectRisks.orgId, u.orgId),
+      eq(projectRisks.projectId, projectId),
+      isNull(projectRisks.deletedAt),
+    );
+    const [totals, matrix] = await Promise.all([
+      this.db
+        .select({
+          total: sql<number>`COUNT(*)::int`,
+          open: sql<number>`COUNT(*) FILTER (WHERE ${projectRisks.status} = 'open')::int`,
+          closed: sql<number>`COUNT(*) FILTER (WHERE ${projectRisks.status} = 'closed')::int`,
+          highCritical: sql<number>`COUNT(*) FILTER (WHERE ${RisksService.SEVERITY_SCORE} >= 6)::int`,
+        })
+        .from(projectRisks)
+        .where(registerScope),
+      this.db
+        .select({
+          probability: projectRisks.probability,
+          impact: projectRisks.impact,
+          openCount: sql<number>`COUNT(*)::int`,
+        })
+        .from(projectRisks)
+        .where(and(registerScope, notInArray(projectRisks.status, ["closed", "accepted"])))
+        .groupBy(projectRisks.probability, projectRisks.impact),
+    ]);
+    const row = totals[0];
+    return {
+      total: row?.total ?? 0,
+      open: row?.open ?? 0,
+      closed: row?.closed ?? 0,
+      highCritical: row?.highCritical ?? 0,
+      matrix,
+    };
+  }
+
   async listRisks(u: CurrentUserContext, projectId: number, query: ListRisksQuery) {
     await assertProjectAccess(this.db, this.access, u, projectId);
     const rows = await this.db
-      .select()
+      .select(RisksService.RISK_COLUMNS)
       .from(projectRisks)
       .where(
         and(

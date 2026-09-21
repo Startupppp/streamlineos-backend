@@ -582,3 +582,18 @@ describe("DecisionsService.listDecisions — page 2 cursor returned by page 1 ex
     expect(page2.data.every((r) => r.id < (page1.nextCursor ?? 0))).toBe(true);
   });
 });
+
+describe("RisksService.getRiskStats — project-membership gate (BOLA)", () => {
+  const u = makeUser("org-1");
+
+  it("REJECTS a non-member before running either aggregate, so the size of another project's risk register never leaks", async () => {
+    const mockDb = makeMockDb();
+    mockDb.query.projects.findFirst.mockResolvedValue({ managerMembershipId: 999 });
+    mockDb.select
+      .mockReturnValueOnce(makeSelectChain([]))
+      .mockReturnValueOnce(makeSelectChain([]));
+    const svc = new RisksService(mockDb as unknown as Db, makeAccess(), mockAudit);
+
+    await expect(svc.getRiskStats(u, 1)).rejects.toThrow(ForbiddenException);
+  });
+});

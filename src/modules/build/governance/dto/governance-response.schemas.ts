@@ -40,6 +40,20 @@ export const decisionRowSchema = z.object({
   deletedAt: nullableWireDate(),
 });
 
+export const riskStatsSchema = z.object({
+  total: z.number().int(),
+  open: z.number().int(),
+  closed: z.number().int(),
+  highCritical: z.number().int(),
+  matrix: z.array(
+    z.object({
+      probability: z.string(),
+      impact: z.string(),
+      openCount: z.number().int(),
+    }),
+  ),
+});
+
 export const riskPageSchema = z.object({
   data: z.array(riskRowSchema),
   hasMore: z.boolean(),
