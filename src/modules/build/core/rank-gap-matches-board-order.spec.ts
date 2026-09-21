@@ -52,10 +52,19 @@ function makeDb(captured: CapturedGap, executed: string[]) {
     { id: 4, status: "TODO", rank: "1000", version: 1, assigneeMembershipId: null, dueDate: null, priority: "MEDIUM", points: 1, epicId: null, sprintId: null, allowed: true },
   ];
 
+  interface SelectChain {
+    from: jest.Mock;
+    where: jest.Mock;
+    orderBy: jest.Mock;
+    for: jest.Mock;
+    limit: jest.Mock;
+    then: (resolve: (value: typeof boardRows) => unknown) => Promise<unknown>;
+  }
+
   const db = {
     select: jest.fn(() => {
       let lastWhere: unknown;
-      const chain = {
+      const chain: SelectChain = {
         from: jest.fn().mockReturnThis(),
         where: jest.fn((condition: unknown) => {
           lastWhere = condition;
