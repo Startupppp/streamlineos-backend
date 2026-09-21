@@ -22,10 +22,10 @@ import {
   buildCustomFieldSchema,
   ticketFieldValueSchema,
 } from "./dto/build-core-response.schemas";
+import { projectAndTicketIdParams } from "./dto/build-params.schemas";
 
 const projectIdParams = z.object({ projectId: z.coerce.number().int().positive() }).strict();
 const projectIdfieldIdParams = z.object({ projectId: z.string().min(1), fieldId: z.coerce.number().int().positive() }).strict();
-const projectIdticketIdParams = z.object({ projectId: z.coerce.number().int().positive(), ticketId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("build")
 @Controller("build")
@@ -84,7 +84,7 @@ export class ProjectsCustomFieldsController {
   @Get(":projectId/tickets/:ticketId/custom-field-values")
   @RequirePermission("build:tickets:view")
   @ResponseSchema(z.array(ticketFieldValueSchema))
-  @Validate({ params: projectIdticketIdParams })
+  @Validate({ params: projectAndTicketIdParams })
   getTicketValues(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("ticketId", ParseIntPipe) ticketId: number,
@@ -97,7 +97,7 @@ export class ProjectsCustomFieldsController {
   @RequirePermission("build:tickets:update")
   @HttpCode(200)
   @ResponseSchema(successSchema)
-  @Validate({ params: projectIdticketIdParams, body: upsertCustomFieldValuesSchema })
+  @Validate({ params: projectAndTicketIdParams, body: upsertCustomFieldValuesSchema })
   upsertTicketValues(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("ticketId", ParseIntPipe) ticketId: number,

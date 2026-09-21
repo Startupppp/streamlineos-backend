@@ -57,11 +57,11 @@ import {
   ticketUpdateResultSchema,
   ticketSearchResultListSchema,
 } from "./dto/build-tickets-response.schemas";
+import { projectAndTicketIdParams } from "./dto/build-params.schemas";
 
 const projectIdParams = z.object({ projectId: z.coerce.number().int().positive() }).strict();
-const projectIdticketIdParams = z.object({ projectId: z.coerce.number().int().positive(), ticketId: z.coerce.number().int().positive() }).strict();
 const projectIdticketNumberParams = z.object({ projectId: z.coerce.number().int().positive(), ticketNumber: z.coerce.number().int().positive() }).strict();
-const projectIdticketIdParams_ = z.object({ projectId: z.string().min(1), ticketId: z.coerce.number().int().positive() }).strict();
+const ticketInProjectParams = z.object({ projectId: z.string().min(1), ticketId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("build")
 @Controller("build")
@@ -173,7 +173,7 @@ export class ProjectsTicketsController {
   @Patch(":projectId/tickets/:ticketId/rank")
   @RequirePermission("build:tickets:update")
   @ResponseSchema(rankTicketResultSchema)
-  @Validate({ params: projectIdticketIdParams, body: rankTicketSchema })
+  @Validate({ params: projectAndTicketIdParams, body: rankTicketSchema })
   rankTicket(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("ticketId", ParseIntPipe) ticketId: number,
@@ -186,7 +186,7 @@ export class ProjectsTicketsController {
   @Get(":projectId/tickets/:ticketId/activity")
   @RequirePermission("build:tickets:view")
   @ResponseSchema(ticketActivityPageSchema)
-  @Validate({ params: projectIdticketIdParams, query: ticketActivityQuerySchema })
+  @Validate({ params: projectAndTicketIdParams, query: ticketActivityQuerySchema })
   getActivity(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("ticketId", ParseIntPipe) ticketId: number,
@@ -214,7 +214,7 @@ export class ProjectsTicketsController {
   @Get(":projectId/tickets/:ticketId")
   @RequirePermission("build:tickets:view")
   @ResponseSchema(ticketDetailSchema)
-  @Validate({ params: projectIdticketIdParams_ })
+  @Validate({ params: ticketInProjectParams })
   getTicket(
     @Param("ticketId", ParseIntPipe) ticketId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -225,7 +225,7 @@ export class ProjectsTicketsController {
   @Patch(":projectId/tickets/:ticketId")
   @RequirePermission("build:tickets:update")
   @ResponseSchema(ticketUpdateResultSchema)
-  @Validate({ params: projectIdticketIdParams_, body: updateTicketSchema })
+  @Validate({ params: ticketInProjectParams, body: updateTicketSchema })
   updateTicket(
     @Param("ticketId", ParseIntPipe) ticketId: number,
     @Body() body: UpdateTicketInput,
@@ -238,7 +238,7 @@ export class ProjectsTicketsController {
   @RequirePermission("build:tickets:delete")
   @HttpCode(204)
   @NoContentResponse()
-  @Validate({ params: projectIdticketIdParams_ })
+  @Validate({ params: ticketInProjectParams })
   deleteTicket(
     @Param("ticketId", ParseIntPipe) ticketId: number,
     @Query("force") force: string,

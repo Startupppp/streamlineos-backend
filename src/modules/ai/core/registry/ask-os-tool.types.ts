@@ -6,6 +6,7 @@ import type { AskOsActor } from "../services/ask-os-actor";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
 import type { IntegrationToolkit } from "../../../../db/schema";
 import { CONFIRMABLE_ACTIONS, CONFIRM_ACTION_PERMISSION } from "../confirm-actions";
+import type { AmbiguousCandidate } from "../../../../common/types/ambiguous-candidate";
 
 const KNOWN_CONFIRMABLE_ACTIONS: ReadonlySet<string> = new Set(CONFIRMABLE_ACTIONS);
 
@@ -17,11 +18,6 @@ export type ToolOutcome<T = unknown> =
   | { kind: "needs-confirmation"; proposalId: number; token: string; action: string; summary: string; preview: Record<string, unknown>; expiresAt?: Date }
   | { kind: "ambiguous"; reason: string; candidates: readonly AmbiguousCandidate[] }
   | { kind: "failed"; reason: string };
-
-export interface AmbiguousCandidate {
-  label: string;
-  hint?: string;
-}
 
 export interface AskOsToolRunContext {
   actor: AskOsActor;

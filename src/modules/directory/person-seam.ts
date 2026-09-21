@@ -8,6 +8,7 @@ import {
   workers,
 } from "../../db/schema";
 import type { Db } from "../../db/drizzle.module";
+import type { AmbiguousCandidate } from "../../common/types/ambiguous-candidate";
 
 export type PersonSubject =
   | { kind: "user"; userId: string }
@@ -415,15 +416,10 @@ export async function resolvePeopleIdentities(
   return identities;
 }
 
-export interface NameResolutionCandidate {
-  label: string;
-  hint?: string;
-}
-
 export type PersonNameResolution =
   | { status: "resolved"; userId: string; displayName?: string; email?: string }
   | { status: "unresolved" }
-  | { status: "ambiguous"; candidates: readonly NameResolutionCandidate[] };
+  | { status: "ambiguous"; candidates: readonly AmbiguousCandidate[] };
 
 export const NAME_RESOLUTION_MAX_NAMES = 20;
 export const NAME_RESOLUTION_MAX_CANDIDATES = 10;

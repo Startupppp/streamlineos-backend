@@ -31,8 +31,7 @@ import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
 import { NoContentResponse, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
 import { checklistRowSchema, checklistItemSchema } from "./dto/build-tickets-response.schemas";
-
-const projectIdticketIdParams = z.object({ projectId: z.coerce.number().int().positive(), ticketId: z.coerce.number().int().positive() }).strict();
+import { projectAndTicketIdParams } from "./dto/build-params.schemas";
 const projectIdticketIdchecklistIdParams = z.object({ projectId: z.string().min(1), ticketId: z.string().min(1), checklistId: z.coerce.number().int().positive() }).strict();
 const projectIdticketIdchecklistIditemIdParams = z.object({ projectId: z.string().min(1), ticketId: z.string().min(1), checklistId: z.string().min(1), itemId: z.coerce.number().int().positive() }).strict();
 
@@ -45,7 +44,7 @@ export class ProjectsTicketChecklistsController {
   @Get(":projectId/tickets/:ticketId/checklists")
   @RequirePermission("build:tickets:view")
   @ResponseSchema(z.array(checklistRowSchema))
-  @Validate({ params: projectIdticketIdParams })
+  @Validate({ params: projectAndTicketIdParams })
   getChecklists(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("ticketId", ParseIntPipe) ticketId: number,
@@ -58,7 +57,7 @@ export class ProjectsTicketChecklistsController {
   @RequirePermission("build:tickets:update")
   @HttpCode(201)
   @ResponseSchema(checklistRowSchema)
-  @Validate({ params: projectIdticketIdParams, body: createChecklistSchema })
+  @Validate({ params: projectAndTicketIdParams, body: createChecklistSchema })
   createChecklist(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("ticketId", ParseIntPipe) ticketId: number,

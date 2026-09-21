@@ -41,6 +41,22 @@ export const ACTION_LABELS: Record<string, { title: string; confirmLabel: string
   "self.applyToJobOpening": { title: "Apply for job opening", confirmLabel: "Submit" },
 };
 
+export function labelledConfirmDirective(
+  outcome: Extract<ToolOutcome, { kind: "needs-confirmation" }>,
+): Extract<AskOsDirective, { kind: "confirm-action" }> {
+  const labels = ACTION_LABELS[outcome.action];
+  return {
+    kind: "confirm-action",
+    proposalId: outcome.proposalId,
+    token: outcome.token,
+    action: outcome.action,
+    summary: outcome.summary,
+    preview: outcome.preview,
+    ...(outcome.expiresAt !== undefined ? { expiresAt: outcome.expiresAt.toISOString() } : {}),
+    ...(labels !== undefined ? { title: labels.title, confirmLabel: labels.confirmLabel } : {}),
+  };
+}
+
 export interface AskOsToolsetInput {
   db: Db;
   actor: AskOsActor;
@@ -168,21 +184,7 @@ export function buildAskOsToolset(input: AskOsToolsetInput): ToolSet {
               const outcome = await definition.run(parsed, runContext);
               if (onDirective !== undefined) {
                 if (outcome.kind === "needs-confirmation") {
-                  const labels = ACTION_LABELS[outcome.action];
-                  onDirective({
-                    kind: "confirm-action",
-                    proposalId: outcome.proposalId,
-                    token: outcome.token,
-                    action: outcome.action,
-                    summary: outcome.summary,
-                    preview: outcome.preview,
-                    ...(outcome.expiresAt !== undefined
-                      ? { expiresAt: outcome.expiresAt.toISOString() }
-                      : {}),
-                    ...(labels !== undefined
-                      ? { title: labels.title, confirmLabel: labels.confirmLabel }
-                      : {}),
-                  });
+                  onDirective(labelledConfirmDirective(outcome));
                   return { status: "pending_confirmation", summary: outcome.summary };
                 }
                 if (outcome.kind === "needs-connection") {

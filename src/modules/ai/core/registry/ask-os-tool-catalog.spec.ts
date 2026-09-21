@@ -6,7 +6,7 @@ import { WorkspaceInlineTools } from "../services/chat-assistant-inline-tools";
 import { ALL_PERMISSION_NAMES } from "../../../rbac/permissions";
 import { CATALOG_MODULES } from "../../../access/access-policy";
 import { needsConfirmation, defineTool, data, type AskOsToolProvider } from "./ask-os-tool.types";
-import { ACTION_LABELS } from "./ask-os-tool-registry";
+import { ACTION_LABELS, labelledConfirmDirective } from "./ask-os-tool-registry";
 import { CONFIRMABLE_ACTION_DEFINITIONS } from "../confirm-actions";
 
 type ProviderClass = new (...args: never[]) => AskOsToolProvider;
@@ -138,6 +138,35 @@ describe("a confirmable action with no ACTION_LABELS entry silently renders its 
       .map(([action]) => action);
 
     expect(blank).toEqual([]);
+  });
+
+  it("the directive emitted by labelledConfirmDirective for a registered action carries the curated title and confirmLabel from ACTION_LABELS, not the generic Confirm fallback", () => {
+    const expected = ACTION_LABELS["ticket.create"];
+    const directive = labelledConfirmDirective({
+      kind: "needs-confirmation",
+      proposalId: 1,
+      token: "tok",
+      action: "ticket.create",
+      summary: "Create a ticket",
+      preview: {},
+    });
+
+    expect(directive.title).toBe(expected?.title);
+    expect(directive.confirmLabel).toBe(expected?.confirmLabel);
+  });
+
+  it("labelledConfirmDirective omits title and confirmLabel when no entry exists, letting the frontend fallback handle the gap rather than emitting a blank label", () => {
+    const directive = labelledConfirmDirective({
+      kind: "needs-confirmation",
+      proposalId: 2,
+      token: "tok2",
+      action: "not.registered.in.labels",
+      summary: "Some action",
+      preview: {},
+    });
+
+    expect(directive.title).toBeUndefined();
+    expect(directive.confirmLabel).toBeUndefined();
   });
 });
 
