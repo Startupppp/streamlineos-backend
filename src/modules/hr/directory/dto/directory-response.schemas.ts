@@ -246,6 +246,11 @@ export const inviteDeliverySchema = z.object({
 
 export type InviteDelivery = z.infer<typeof inviteDeliverySchema>;
 
+export const employeeCountsSchema = z.object({
+  active: z.number().int(),
+  inactive: z.number().int(),
+});
+
 export const onboardResponseSchema = z.object({
   success: z.boolean(),
   userId: z.string(),

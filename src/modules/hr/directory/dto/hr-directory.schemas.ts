@@ -8,17 +8,23 @@ function isSuppliedOrParseableDate(value: string | undefined): boolean {
   return !Number.isNaN(new Date(value).getTime());
 }
 
-export const listEmployeesSchema = z.object({
-  cursor: z.string().min(1).max(2048).optional(),
-  limit: pageSizeField(20, 100),
+const employeeDirectoryFilterFields = {
   search: z.string().optional(),
   q: z.string().optional(),
   departmentId: z.string().min(1).optional(),
-  /** "true" | "false" | "all" — default active-only for directory */
-  isActive: z.enum(["true", "false", "all"]).optional().default("true"),
   /** Org/job role on the user record (e.g. ENGINEERING, HR). Omit for all roles. */
   role: z.string().min(1).max(64).optional(),
+};
+
+export const listEmployeesSchema = z.object({
+  cursor: z.string().min(1).max(2048).optional(),
+  limit: pageSizeField(20, 100),
+  ...employeeDirectoryFilterFields,
+  /** "true" | "false" | "all" — default active-only for directory */
+  isActive: z.enum(["true", "false", "all"]).optional().default("true"),
 }).strict();
+
+export const countEmployeesSchema = z.object(employeeDirectoryFilterFields).strict();
 
 export const availabilitySchema = z.object({
   userIds: z.string().optional(),
@@ -345,6 +351,7 @@ export type OnboardEmployeeInput = z.infer<typeof onboardEmployeeSchema>;
 export type BulkOnboardEmployeeRow = z.infer<typeof bulkOnboardEmployeeRowSchema>;
 export type BulkOnboardEmployeesInput = z.infer<typeof bulkOnboardEmployeesSchema>;
 export type ListEmployeesInput = z.infer<typeof listEmployeesSchema>;
+export type CountEmployeesInput = z.infer<typeof countEmployeesSchema>;
 export type AvailabilityInput = z.infer<typeof availabilitySchema>;
 export type FindExpertInput = z.infer<typeof findExpertSchema>;
 export type SkillsMatrixQueryInput = z.infer<typeof skillsMatrixQuerySchema>;

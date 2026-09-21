@@ -31,6 +31,7 @@ import {
   availabilitySchema,
   bulkOnboardEmployeesSchema,
   employeeIdParamsSchema,
+  countEmployeesSchema,
   employeeUserQuerySchema,
   findExpertSchema,
   listEmployeesSchema,
@@ -38,6 +39,7 @@ import {
   skillsMatrixQuerySchema,
   type AvailabilityInput,
   type BulkOnboardEmployeesInput,
+  type CountEmployeesInput,
   type EmployeeUserQueryInput,
   type FindExpertInput,
   type ListEmployeesInput,
@@ -55,6 +57,7 @@ import {
   resendInviteResponseSchema,
   bulkOnboardResultSchema,
   employeeListPageSchema,
+  employeeCountsSchema,
   employeeStatsSchema,
   anniversaryFeedSchema,
   availabilityListSchema,
@@ -137,6 +140,22 @@ export class EmployeesController {
       search,
       departmentId: query.departmentId,
       isActive: query.isActive,
+      role: query.role,
+    });
+  }
+
+  @Get("counts")
+  @ResponseSchema(employeeCountsSchema)
+  @RequirePermission("hr:employees:view")
+  @Validate({ query: countEmployeesSchema })
+  async countEmployees(
+    @Query() query: CountEmployeesInput,
+    @CurrentUser() currentUser: CurrentUserContext,
+  ) {
+    const read = await resolveEmployeesScope(this.access, currentUser);
+    return this.employees.countEmployees(read, {
+      search: query.search ?? query.q,
+      departmentId: query.departmentId,
       role: query.role,
     });
   }
