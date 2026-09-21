@@ -39,14 +39,20 @@ export class TestRunsService {
     ];
     if (query.status) conditions.push(eq(testRuns.status, query.status));
     if (query.cursor !== undefined) conditions.push(gt(testRuns.id, query.cursor));
-    const runs = await this.db
+    const rawRuns = await this.db
       .select()
       .from(testRuns)
       .where(and(...conditions))
-      .orderBy(testRuns.runNumber)
-      .limit(RUN_PAGE);
-    if (runs.length === 0) return [];
-    const runIds = runs.map((r) => r.id);
+      .orderBy(testRuns.id)
+      .limit(RUN_PAGE + 1);
+
+    const hasMore = rawRuns.length > RUN_PAGE;
+    const pageRuns = hasMore ? rawRuns.slice(0, RUN_PAGE) : rawRuns;
+    const nextCursor = hasMore && pageRuns.length > 0 ? pageRuns[pageRuns.length - 1]!.id : null;
+
+    if (pageRuns.length === 0) return { data: [], hasMore: false, nextCursor: null };
+
+    const runIds = pageRuns.map((r) => r.id);
     const countRows = await this.db
       .select({
         runId: testRunResults.runId,
@@ -61,7 +67,7 @@ export class TestRunsService {
       .where(inArray(testRunResults.runId, runIds))
       .groupBy(testRunResults.runId);
     const countMap = new Map(countRows.map((r) => [r.runId, r]));
-    return runs.map((run) => {
+    const data = pageRuns.map((run) => {
       const s = countMap.get(run.id);
       return {
         ...run,
@@ -72,6 +78,7 @@ export class TestRunsService {
         skippedCount: Number(s?.skipped ?? 0),
       };
     });
+    return { data, hasMore, nextCursor };
   }
 
   async getRun(orgId: string, projectId: number, runId: number) {

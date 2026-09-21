@@ -113,7 +113,11 @@ describe("TestRunsService — project membership gate (assertProjectAccess)", ()
     const db = makeMemberDb();
     const access = { resolveUserPermissions: jest.fn().mockResolvedValue(new Set()) } as unknown as AccessService;
     const svc = new TestRunsService(db, access, audit);
-    await expect(svc.listRuns(makeU("org-1"), 1, {})).resolves.toEqual([]);
+    await expect(svc.listRuns(makeU("org-1"), 1, {})).resolves.toEqual({
+      data: [],
+      hasMore: false,
+      nextCursor: null,
+    });
   });
 });
 
@@ -161,8 +165,10 @@ describe("TestRunsService — listRuns cursor pagination", () => {
     const svc = new TestRunsService(db, makeAccess(), audit);
     const result = await svc.listRuns(makeU(OWNER_ORG), 1, { cursor: 7 });
 
-    expect(result).toHaveLength(1);
-    expect(result[0]).toMatchObject({ id: 8 });
+    expect(result.data).toHaveLength(1);
+    expect(result.data[0]).toMatchObject({ id: 8 });
+    expect(result.hasMore).toBe(false);
+    expect(result.nextCursor).toBeNull();
   });
 });
 

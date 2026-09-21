@@ -6,6 +6,7 @@ import { type Db } from "../../../db/drizzle.module";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { AccessService } from "../../access/access.service";
 import { assertProjectAccess } from "../core/project-access";
+import { buildIdCursorPage } from "../../../common/pagination/cursor";
 import type {
   CreateTestCaseInput,
   CreateTestSuiteInput,
@@ -152,12 +153,13 @@ export class TestManagementService {
     if (query.automationStatus) conditions.push(eq(testCases.automationStatus, query.automationStatus));
     if (query.q) conditions.push(ilike(testCases.title, `%${query.q}%`));
     if (query.cursor !== undefined) conditions.push(gt(testCases.id, query.cursor));
-    return this.db
+    const rows = await this.db
       .select()
       .from(testCases)
       .where(and(...conditions))
-      .orderBy(testCases.caseNumber)
-      .limit(CASE_PAGE);
+      .orderBy(testCases.id)
+      .limit(CASE_PAGE + 1);
+    return buildIdCursorPage(rows, CASE_PAGE, (r) => r.id);
   }
 
   async getCase(orgId: string, projectId: number, caseId: number) {

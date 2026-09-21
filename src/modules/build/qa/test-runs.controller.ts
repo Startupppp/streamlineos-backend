@@ -39,7 +39,7 @@ import {
   ResponseSchema,
 } from "../../../common/openapi/zod-operation-contracts";
 import {
-  testRunListItemSchema,
+  testRunListPageSchema,
   testRunDetailSchema,
   testRunResultPageSchema,
   testRunResultRowSchema,
@@ -69,7 +69,7 @@ export class TestRunsController {
 
   @Get()
   @RequirePermission("build:qa:view")
-  @ResponseSchema(z.array(testRunListItemSchema))
+  @ResponseSchema(testRunListPageSchema)
   @Validate({ query: testRunListQuerySchema })
   listRuns(
     @Param("projectId", ParseIntPipe) projectId: number,

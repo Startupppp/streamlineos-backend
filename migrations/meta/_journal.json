@@ -6273,6 +6273,13 @@
       "when": 1803000010350,
       "tag": "1133_governance_keyset_cursor_indexes",
       "breakpoints": true
+    },
+    {
+      "idx": 1024,
+      "version": "7",
+      "when": 1803000010351,
+      "tag": "1134_qa_keyset_cursor_indexes",
+      "breakpoints": true
     }
   ]
 }

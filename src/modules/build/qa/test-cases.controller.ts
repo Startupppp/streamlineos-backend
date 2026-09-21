@@ -29,7 +29,7 @@ import {
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
 import { NoContentResponse, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
-import { testCaseRowSchema } from "./dto/qa-response.schemas";
+import { testCaseRowSchema, testCasePageSchema } from "./dto/qa-response.schemas";
 
 export const caseIdParams = z.object({ projectId: z.coerce.number().int().positive(), caseId: z.coerce.number().int().positive() }).strict();
 
@@ -41,7 +41,7 @@ export class TestCasesController {
 
   @Get()
   @RequirePermission("build:qa:view")
-  @ResponseSchema(z.array(testCaseRowSchema))
+  @ResponseSchema(testCasePageSchema)
   @Validate({ query: testCaseListQuerySchema })
   listCases(
     @Param("projectId", ParseIntPipe) projectId: number,
