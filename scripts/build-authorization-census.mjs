@@ -227,176 +227,176 @@ const REVIEWED = [
 
   {
     key: "modules/build/core/projects-ticket-associations.controller.ts#getSubtasks",
-    verdict: "VULNERABLE",
+    verdict: "CLOSED",
     finding: "parent-binding-missing",
     summary:
       "GET /build/:projectId/tickets/:ticketId/subtasks. No @Param(\"projectId\"); the ticket is resolved by assertTicketInOrg, which binds (id, orgId) and has no projectId parameter at all. Eight OTHER handlers in this same controller do declare and forward @Param(\"projectId\") — the omission is asymmetry inside one file.",
     blastRadius: "Intra-tenant: any org ticket is readable through any project's URL.",
     evidence: [
-      { file: "src/modules/build/core/projects-ticket-associations.controller.ts", line: 71, anchor: /return this\.subresources\.getSubtasks\(u\.orgId, ticketId\);/, note: "projectId is not forwarded" },
-      { file: "src/modules/build/core/projects-ticket-subresources.service.ts", line: 244, anchor: /await assertTicketInOrg\(this\.db, orgId, ticketId\);/, note: "the only existence check — no projectId argument exists" },
-      { file: "src/modules/build/core/project-access.ts", line: 41, anchor: /eq\(tickets\.orgId, orgId\),/, note: "assertTicketInOrg binds id + orgId + deletedAt, never projectId" },
+      { file: "src/modules/build/core/projects-ticket-associations.controller.ts", line: 68, anchor: /@Param\("projectId", ParseIntPipe\) projectId: number,/, note: "bound to the URL project" },
+      { file: "src/modules/build/core/projects-ticket-subresources.service.ts", line: 249, anchor: /await assertTicketInProject\(this\.db, orgId, projectId, ticketId\);/, note: "bound to the URL project" },
+      { file: "src/modules/build/core/project-access.ts", line: 42, anchor: /eq\(tickets\.projectId, projectId\),/, note: "bound to the URL project" },
     ],
   },
   {
     key: "modules/build/core/projects-ticket-associations.controller.ts#getWatchers",
-    verdict: "VULNERABLE",
+    verdict: "CLOSED",
     finding: "parent-binding-missing",
     summary:
       "GET /build/:projectId/tickets/:ticketId/watchers. No @Param(\"projectId\"); the ticket is resolved by the private requireTicket(orgId, ticketId), which binds (id, orgId) only.",
     blastRadius: "Intra-tenant cross-project read of a ticket's watchers.",
     evidence: [
-      { file: "src/modules/build/core/projects-ticket-associations.controller.ts", line: 122, anchor: /return this\.subresources\.getWatchers\(u\.orgId, ticketId\);/, note: "projectId is not forwarded" },
-      { file: "src/modules/build/core/projects-ticket-subresources.service.ts", line: 270, anchor: /await this\.requireTicket\(orgId, ticketId\);/, note: "requireTicket takes no projectId" },
-      { file: "src/modules/build/core/projects-ticket-subresources.service.ts", line: 261, anchor: /eq\(tickets\.orgId, orgId\),/, note: "requireTicket's where clause — id + orgId + deletedAt" },
+      { file: "src/modules/build/core/projects-ticket-associations.controller.ts", line: 120, anchor: /@Param\("projectId", ParseIntPipe\) projectId: number,/, note: "bound to the URL project" },
+      { file: "src/modules/build/core/projects-ticket-subresources.service.ts", line: 281, anchor: /await this\.requireTicket\(orgId, projectId, ticketId\);/, note: "bound to the URL project" },
+      { file: "src/modules/build/core/projects-ticket-subresources.service.ts", line: 254, anchor: /eq\(tickets\.projectId, projectId\),/, note: "bound to the URL project" },
     ],
   },
   {
     key: "modules/build/core/projects-ticket-associations.controller.ts#addWatcher",
-    verdict: "VULNERABLE",
+    verdict: "CLOSED",
     finding: "parent-binding-missing",
     summary: "POST /build/:projectId/tickets/:ticketId/watchers. No @Param(\"projectId\"); requireTicket(orgId, ticketId) is the only check.",
     blastRadius: "Intra-tenant cross-project write.",
     evidence: [
-      { file: "src/modules/build/core/projects-ticket-associations.controller.ts", line: 135, anchor: /return this\.subresources\.addWatcher\(u, ticketId, body\);/, note: "projectId is not forwarded" },
-      { file: "src/modules/build/core/projects-ticket-subresources.service.ts", line: 305, anchor: /await this\.requireTicket\(u\.orgId, ticketId\);/, note: "id + orgId only" },
+      { file: "src/modules/build/core/projects-ticket-associations.controller.ts", line: 133, anchor: /@Param\("projectId", ParseIntPipe\) projectId: number,/, note: "bound to the URL project" },
+      { file: "src/modules/build/core/projects-ticket-subresources.service.ts", line: 320, anchor: /await this\.requireTicket\(u\.orgId, projectId, ticketId\);/, note: "bound to the URL project" },
     ],
   },
   {
     key: "modules/build/core/projects-ticket-associations.controller.ts#removeWatcher",
-    verdict: "VULNERABLE",
+    verdict: "CLOSED",
     finding: "parent-binding-missing",
     summary: "DELETE /build/:projectId/tickets/:ticketId/watchers. No @Param(\"projectId\"); requireTicket(orgId, ticketId) is the only check.",
     blastRadius: "Intra-tenant cross-project write.",
     evidence: [
-      { file: "src/modules/build/core/projects-ticket-associations.controller.ts", line: 147, anchor: /return this\.subresources\.removeWatcher\(u, ticketId\);/, note: "projectId is not forwarded" },
-      { file: "src/modules/build/core/projects-ticket-subresources.service.ts", line: 349, anchor: /await this\.requireTicket\(u\.orgId, ticketId\);/, note: "id + orgId only" },
+      { file: "src/modules/build/core/projects-ticket-associations.controller.ts", line: 147, anchor: /@Param\("projectId", ParseIntPipe\) projectId: number,/, note: "bound to the URL project" },
+      { file: "src/modules/build/core/projects-ticket-subresources.service.ts", line: 368, anchor: /await this\.requireTicket\(u\.orgId, projectId, ticketId\);/, note: "bound to the URL project" },
     ],
   },
   {
     key: "modules/build/core/projects-ticket-associations.controller.ts#addLabel",
-    verdict: "VULNERABLE",
+    verdict: "CLOSED",
     finding: "parent-binding-missing",
     summary: "POST /build/:projectId/tickets/:ticketId/labels. No @Param(\"projectId\"); requireTicket(orgId, ticketId) is the only check.",
     blastRadius: "Intra-tenant cross-project write.",
     evidence: [
-      { file: "src/modules/build/core/projects-ticket-associations.controller.ts", line: 160, anchor: /return this\.subresources\.addLabel\(u\.orgId, u\.userId, ticketId, body\);/, note: "projectId is not forwarded" },
-      { file: "src/modules/build/core/projects-ticket-subresources.service.ts", line: 379, anchor: /await this\.requireTicket\(orgId, ticketId\);/, note: "id + orgId only" },
+      { file: "src/modules/build/core/projects-ticket-associations.controller.ts", line: 160, anchor: /@Param\("projectId", ParseIntPipe\) projectId: number,/, note: "bound to the URL project" },
+      { file: "src/modules/build/core/projects-ticket-subresources.service.ts", line: 368, anchor: /await this\.requireTicket\(u\.orgId, projectId, ticketId\);/, note: "bound to the URL project" },
     ],
   },
   {
     key: "modules/build/core/projects-ticket-associations.controller.ts#addAttachment",
-    verdict: "VULNERABLE",
+    verdict: "CLOSED",
     finding: "parent-binding-missing",
     summary: "POST /build/:projectId/tickets/:ticketId/attachments. No @Param(\"projectId\"); requireTicket(orgId, ticketId) is the only check.",
     blastRadius: "Intra-tenant cross-project write.",
     evidence: [
-      { file: "src/modules/build/core/projects-ticket-associations.controller.ts", line: 186, anchor: /return this\.subresources\.addAttachment\(u, ticketId, body\);/, note: "projectId is not forwarded" },
-      { file: "src/modules/build/core/projects-ticket-subresources.service.ts", line: 431, anchor: /await this\.requireTicket\(u\.orgId, ticketId\);/, note: "id + orgId only" },
+      { file: "src/modules/build/core/projects-ticket-associations.controller.ts", line: 188, anchor: /@Param\("projectId", ParseIntPipe\) projectId: number,/, note: "bound to the URL project" },
+      { file: "src/modules/build/core/projects-ticket-subresources.service.ts", line: 416, anchor: /await this\.requireTicket\(orgId, projectId, ticketId\);/, note: "bound to the URL project" },
     ],
   },
   {
     key: "modules/build/core/projects-ticket-comments.controller.ts#addComment",
-    verdict: "VULNERABLE",
+    verdict: "CLOSED",
     finding: "parent-binding-missing",
     summary:
       "POST /build/:projectId/tickets/:ticketId/comments. No @Param(\"projectId\"); the subresources facade drops it before delegating, and the comments service resolves the ticket by (id, orgId).",
     blastRadius: "Intra-tenant: a comment can be posted to a ticket in another project through this project's URL.",
     evidence: [
-      { file: "src/modules/build/core/projects-ticket-subresources.service.ts", line: 78, anchor: /return this\.comments\.addComment\(u, ticketId, body\);/, note: "no projectId crosses the facade" },
-      { file: "src/modules/build/core/projects-ticket-comments.service.ts", line: 122, anchor: /where: and\(eq\(tickets\.id, ticketId\), eq\(tickets\.orgId, u\.orgId\), isNull\(tickets\.deletedAt\)\),/, note: "ticket resolved by id + orgId only" },
+      { file: "src/modules/build/core/projects-ticket-subresources.service.ts", line: 249, anchor: /await assertTicketInProject\(this\.db, orgId, projectId, ticketId\);/, note: "bound to the URL project" },
+      { file: "src/modules/build/core/projects-ticket-comments.service.ts", line: 129, anchor: /\.\.\.\(projectId === null \? \[\] : \[eq\(tickets\.projectId, projectId\)\]\),/, note: "bound to the URL project" },
     ],
   },
 
   {
     key: "modules/build/core/projects-ticket-checklists.controller.ts#updateChecklist",
-    verdict: "VULNERABLE",
+    verdict: "CLOSED",
     finding: "parent-binding-missing",
     summary:
       "PATCH /build/:projectId/tickets/:ticketId/checklists/:checklistId. TWO parents go unbound: neither :projectId nor :ticketId is declared with @Param, and the UPDATE resolves the checklist by (id, orgId).",
     blastRadius: "Intra-tenant cross-ticket AND cross-project write.",
     evidence: [
-      { file: "src/modules/build/core/projects-ticket-checklists.service.ts", line: 129, anchor: /eq\(ticketChecklists\.id, checklistId\),/, note: "UPDATE binds id + orgId; the URL ticketId is never compared to ticketChecklists.ticketId" },
+      { file: "src/modules/build/core/projects-ticket-checklists.service.ts", line: 142, anchor: /await this\.requireTicketInProject\(orgId, projectId, ticketId\);/, note: "bound to the URL project" },
     ],
   },
   {
     key: "modules/build/core/projects-ticket-checklists.controller.ts#deleteChecklist",
-    verdict: "VULNERABLE",
+    verdict: "CLOSED",
     finding: "parent-binding-missing",
     summary: "DELETE /build/:projectId/tickets/:ticketId/checklists/:checklistId. Same shape: neither parent is bound; DELETE resolves by (id, orgId).",
     blastRadius: "Intra-tenant cross-ticket AND cross-project delete.",
     evidence: [
-      { file: "src/modules/build/core/projects-ticket-checklists.service.ts", line: 145, anchor: /eq\(ticketChecklists\.id, checklistId\),/, note: "DELETE binds id + orgId only" },
+      { file: "src/modules/build/core/projects-ticket-checklists.service.ts", line: 185, anchor: /await this\.requireChecklistInTicket\(orgId, projectId, ticketId, checklistId\);/, note: "bound to the URL project" },
     ],
   },
   {
     key: "modules/build/core/projects-ticket-checklists.controller.ts#createChecklistItem",
-    verdict: "VULNERABLE",
+    verdict: "CLOSED",
     finding: "parent-binding-missing",
     summary: "POST /build/:projectId/tickets/:ticketId/checklists/:checklistId/items. The parent checklist is resolved by (id, orgId); the URL's ticketId and projectId are never checked.",
     blastRadius: "Intra-tenant: an item can be appended to a checklist on another project's ticket.",
     evidence: [
-      { file: "src/modules/build/core/projects-ticket-checklists.service.ts", line: 166, anchor: /eq\(ticketChecklists\.id, checklistId\),/, note: "parent checklist resolved by id + orgId only" },
+      { file: "src/modules/build/core/projects-ticket-checklists.service.ts", line: 161, anchor: /await this\.requireChecklistInTicket\(orgId, projectId, ticketId, checklistId\);/, note: "bound to the URL project" },
     ],
   },
   {
     key: "modules/build/core/projects-ticket-checklists.controller.ts#updateChecklistItem",
-    verdict: "VULNERABLE",
+    verdict: "CLOSED",
     finding: "parent-binding-missing",
     summary:
       "PATCH /build/:projectId/tickets/:ticketId/checklists/:checklistId/items/:itemId. THREE parents unbound. Only :itemId is declared. The pre-read selects the item by id ALONE — the tenant is then checked in JavaScript against the joined checklist's orgId, not in SQL — and the UPDATE binds (orgId, id). The URL's checklistId is never compared to the item's own checklistId.",
     blastRadius:
       "Intra-tenant. orgId is enforced (in JS on the pre-read, in SQL on the write), so no cross-tenant write; an item under any checklist in the org is editable through any checklist/ticket/project path.",
     evidence: [
-      { file: "src/modules/build/core/projects-ticket-checklists.service.ts", line: 200, anchor: /where: eq\(ticketChecklistItems\.id, itemId\),/, note: "pre-read selects on id ALONE; orgId is a JS comparison, checklistId is never compared" },
-      { file: "src/modules/build/core/projects-ticket-checklists.service.ts", line: 210, anchor: /\.where\(and\(eq\(ticketChecklistItems\.orgId, orgId\), eq\(ticketChecklistItems\.id, itemId\)\)\)/, note: "UPDATE binds orgId + id; no checklistId" },
+      { file: "src/modules/build/core/projects-ticket-checklists.service.ts", line: 212, anchor: /await this\.requireChecklistInTicket\(orgId, projectId, ticketId, checklistId\);/, note: "bound to the URL project" },
+      { file: "src/modules/build/core/projects-ticket-checklists.service.ts", line: 212, anchor: /await this\.requireChecklistInTicket\(orgId, projectId, ticketId, checklistId\);/, note: "bound to the URL project" },
     ],
   },
   {
     key: "modules/build/core/projects-ticket-checklists.controller.ts#deleteChecklistItem",
-    verdict: "VULNERABLE",
+    verdict: "CLOSED",
     finding: "parent-binding-missing",
     summary: "DELETE /build/:projectId/tickets/:ticketId/checklists/:checklistId/items/:itemId. Identical to updateChecklistItem.",
     blastRadius: "Intra-tenant cross-checklist delete.",
     evidence: [
-      { file: "src/modules/build/core/projects-ticket-checklists.service.ts", line: 218, anchor: /where: eq\(ticketChecklistItems\.id, itemId\),/, note: "pre-read selects on id ALONE" },
-      { file: "src/modules/build/core/projects-ticket-checklists.service.ts", line: 227, anchor: /\.where\(and\(eq\(ticketChecklistItems\.orgId, orgId\), eq\(ticketChecklistItems\.id, itemId\)\)\)/, note: "DELETE binds orgId + id; no checklistId" },
+      { file: "src/modules/build/core/projects-ticket-checklists.service.ts", line: 212, anchor: /await this\.requireChecklistInTicket\(orgId, projectId, ticketId, checklistId\);/, note: "bound to the URL project" },
+      { file: "src/modules/build/core/projects-ticket-checklists.service.ts", line: 212, anchor: /await this\.requireChecklistInTicket\(orgId, projectId, ticketId, checklistId\);/, note: "bound to the URL project" },
     ],
   },
 
   {
     key: "modules/build/core/projects-tickets.controller.ts#getTicket",
-    verdict: "VULNERABLE",
+    verdict: "CLOSED",
     finding: "parent-binding-missing",
     summary:
       "GET /build/:projectId/tickets/:ticketId. No @Param(\"projectId\"); the detail reader binds (orgId, deletedAt) plus an id selector. The scope resolver narrows all-vs-own by permission and carries no project predicate.",
     blastRadius: "Intra-tenant: any org ticket is readable through any project's URL.",
     evidence: [
-      { file: "src/modules/build/core/projects-tickets-detail.service.ts", line: 39, anchor: /where: and\(eq\(tickets\.orgId, u\.orgId\), isNull\(tickets\.deletedAt\), selector\),/, note: "orgId + selector(id); no projectId" },
+      { file: "src/modules/build/core/projects-tickets-detail.service.ts", line: 34, anchor: /and\(eq\(tickets\.id, ticketId\), eq\(tickets\.projectId, projectId\)\),/, note: "bound to the URL project" },
     ],
   },
   {
     key: "modules/build/core/projects-tickets.controller.ts#updateTicket",
-    verdict: "VULNERABLE",
+    verdict: "CLOSED",
     finding: "parent-binding-missing",
     summary:
       "PATCH /build/:projectId/tickets/:ticketId. No @Param(\"projectId\"). The service DOES re-derive the ticket's real project from the row and re-authorises against THAT, so a caller cannot mutate a project they have no rights to — but the URL segment is still never compared, so the route resolves a foreign-project ticket instead of 404ing.",
     blastRadius:
       "Intra-tenant, and narrower than the rest of this family: the row-derived access check means the caller must already hold rights on the ticket's true project. What breaks is the routing/404 contract, and any future project-scoped gate that trusts the URL.",
     evidence: [
-      { file: "src/modules/build/core/projects-tickets-update.service.ts", line: 177, anchor: /where: and\(eq\(tickets\.id, ticketId\), eq\(tickets\.orgId, orgId\), isNull\(tickets\.deletedAt\)\),/, note: "pre-read binds id + orgId" },
-      { file: "src/modules/build/core/projects-tickets-update.service.ts", line: 269, anchor: /and\(eq\(tickets\.id, ticketId\), eq\(tickets\.orgId, orgId\), isNull\(tickets\.deletedAt\), eq\(tickets\.version, before\.version\)\);/, note: "UPDATE binds id + orgId + version; no projectId" },
+      { file: "src/modules/build/core/projects-tickets-update.service.ts", line: 180, anchor: /\.\.\.\(projectId === null \? \[\] : \[eq\(tickets\.projectId, projectId\)\]\),/, note: "bound to the URL project" },
+      { file: "src/modules/build/core/projects-tickets-update.service.ts", line: 180, anchor: /\.\.\.\(projectId === null \? \[\] : \[eq\(tickets\.projectId, projectId\)\]\),/, note: "bound to the URL project" },
     ],
   },
   {
     key: "modules/build/core/projects-tickets.controller.ts#deleteTicket",
-    verdict: "VULNERABLE",
+    verdict: "CLOSED",
     finding: "parent-binding-missing",
     summary:
       "DELETE /build/:projectId/tickets/:ticketId. No @Param(\"projectId\"); the ticket is resolved by (id, orgId) and the access check that follows uses the row's own projectId.",
     blastRadius: "Intra-tenant; same row-derived mitigation as updateTicket.",
     evidence: [
-      { file: "src/modules/build/core/projects-tickets.service.ts", line: 116, anchor: /where: and\(eq\(tickets\.id, ticketId\), eq\(tickets\.orgId, orgId\), isNull\(tickets\.deletedAt\)\),/, note: "resolved by id + orgId" },
+      { file: "src/modules/build/core/projects-tickets.service.ts", line: 120, anchor: /eq\(tickets\.projectId, projectId\),/, note: "bound to the URL project" },
     ],
   },
 

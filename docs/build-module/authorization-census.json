@@ -5,10 +5,10 @@
   "controllerFiles": 47,
   "handlers": 321,
   "counts": {
-    "VULNERABLE": 15,
+    "VULNERABLE": 0,
     "CLOSED-IN-FLIGHT": 0,
     "NEEDS-REVIEW": 111,
-    "CLOSED": 19,
+    "CLOSED": 34,
     "VERIFIED": 176
   },
   "handlersDetail": [
@@ -4259,37 +4259,35 @@
       "idempotent": null,
       "mutating": false,
       "service": {
-        "call": "this.subresources.getSubtasks(u.orgId, ticketId)",
+        "call": "this.subresources.getSubtasks(u.orgId, projectId, ticketId)",
         "type": "ProjectsTicketSubresourcesService",
         "file": "src/modules/build/core/projects-ticket-subresources.service.ts",
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:243",
-      "parentScoping": "NOT-PASSED (no @Param on parent)",
-      "parentEvidence": "src/modules/build/core/projects-ticket-associations.controller.ts:63",
-      "leads": [
-        "parent scoping: NOT-PASSED (no @Param on parent)"
-      ],
+      "orgEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:248",
+      "parentScoping": "BOUND",
+      "parentEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:248",
+      "leads": [],
       "notes": [],
-      "verdict": "VULNERABLE",
+      "verdict": "CLOSED",
       "verdictReason": "GET /build/:projectId/tickets/:ticketId/subtasks. No @Param(\"projectId\"); the ticket is resolved by assertTicketInOrg, which binds (id, orgId) and has no projectId parameter at all. Eight OTHER handlers in this same controller do declare and forward @Param(\"projectId\") — the omission is asymmetry inside one file.",
       "evidence": "src/modules/build/core/projects-ticket-associations.controller.ts:63",
       "reviewedEvidence": [
         {
           "file": "src/modules/build/core/projects-ticket-associations.controller.ts",
-          "line": 71,
-          "note": "projectId is not forwarded"
+          "line": 68,
+          "note": "bound to the URL project"
         },
         {
           "file": "src/modules/build/core/projects-ticket-subresources.service.ts",
-          "line": 244,
-          "note": "the only existence check — no projectId argument exists"
+          "line": 249,
+          "note": "bound to the URL project"
         },
         {
           "file": "src/modules/build/core/project-access.ts",
-          "line": 41,
-          "note": "assertTicketInOrg binds id + orgId + deletedAt, never projectId"
+          "line": 42,
+          "note": "bound to the URL project"
         }
       ]
     },
@@ -4298,7 +4296,7 @@
       "file": "src/modules/build/core/projects-ticket-associations.controller.ts",
       "class": "ProjectsTicketAssociationsController",
       "method": "listRelations",
-      "line": 74,
+      "line": 75,
       "verb": "GET",
       "path": "/build/:projectId/tickets/:ticketId/relations",
       "routeParams": [
@@ -4328,14 +4326,14 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:447",
+      "orgEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:470",
       "parentScoping": "BOUND",
-      "parentEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:447",
+      "parentEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:470",
       "leads": [],
       "notes": [],
       "verdict": "NEEDS-REVIEW",
       "verdictReason": "static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)",
-      "evidence": "src/modules/build/core/projects-ticket-associations.controller.ts:74",
+      "evidence": "src/modules/build/core/projects-ticket-associations.controller.ts:75",
       "reviewedEvidence": null
     },
     {
@@ -4343,7 +4341,7 @@
       "file": "src/modules/build/core/projects-ticket-associations.controller.ts",
       "class": "ProjectsTicketAssociationsController",
       "method": "addRelation",
-      "line": 86,
+      "line": 87,
       "verb": "POST",
       "path": "/build/:projectId/tickets/:ticketId/relations",
       "routeParams": [
@@ -4373,16 +4371,16 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:451",
+      "orgEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:474",
       "parentScoping": "BOUND",
-      "parentEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:451",
+      "parentEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:474",
       "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
       ],
       "verdict": "NEEDS-REVIEW",
       "verdictReason": "static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)",
-      "evidence": "src/modules/build/core/projects-ticket-associations.controller.ts:86",
+      "evidence": "src/modules/build/core/projects-ticket-associations.controller.ts:87",
       "reviewedEvidence": null
     },
     {
@@ -4390,7 +4388,7 @@
       "file": "src/modules/build/core/projects-ticket-associations.controller.ts",
       "class": "ProjectsTicketAssociationsController",
       "method": "removeRelation",
-      "line": 100,
+      "line": 101,
       "verb": "DELETE",
       "path": "/build/:projectId/tickets/:ticketId/relations",
       "routeParams": [
@@ -4420,16 +4418,16 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:460",
+      "orgEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:483",
       "parentScoping": "BOUND",
-      "parentEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:460",
+      "parentEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:483",
       "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
       ],
       "verdict": "NEEDS-REVIEW",
       "verdictReason": "static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)",
-      "evidence": "src/modules/build/core/projects-ticket-associations.controller.ts:100",
+      "evidence": "src/modules/build/core/projects-ticket-associations.controller.ts:101",
       "reviewedEvidence": null
     },
     {
@@ -4437,7 +4435,7 @@
       "file": "src/modules/build/core/projects-ticket-associations.controller.ts",
       "class": "ProjectsTicketAssociationsController",
       "method": "getWatchers",
-      "line": 114,
+      "line": 115,
       "verb": "GET",
       "path": "/build/:projectId/tickets/:ticketId/watchers",
       "routeParams": [
@@ -4461,37 +4459,35 @@
       "idempotent": null,
       "mutating": false,
       "service": {
-        "call": "this.subresources.getWatchers(u.orgId, ticketId)",
+        "call": "this.subresources.getWatchers(u.orgId, projectId, ticketId)",
         "type": "ProjectsTicketSubresourcesService",
         "file": "src/modules/build/core/projects-ticket-subresources.service.ts",
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:269",
-      "parentScoping": "NOT-PASSED (no @Param on parent)",
-      "parentEvidence": "src/modules/build/core/projects-ticket-associations.controller.ts:114",
-      "leads": [
-        "parent scoping: NOT-PASSED (no @Param on parent)"
-      ],
+      "orgEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:280",
+      "parentScoping": "BOUND",
+      "parentEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:280",
+      "leads": [],
       "notes": [],
-      "verdict": "VULNERABLE",
+      "verdict": "CLOSED",
       "verdictReason": "GET /build/:projectId/tickets/:ticketId/watchers. No @Param(\"projectId\"); the ticket is resolved by the private requireTicket(orgId, ticketId), which binds (id, orgId) only.",
-      "evidence": "src/modules/build/core/projects-ticket-associations.controller.ts:114",
+      "evidence": "src/modules/build/core/projects-ticket-associations.controller.ts:115",
       "reviewedEvidence": [
         {
           "file": "src/modules/build/core/projects-ticket-associations.controller.ts",
-          "line": 122,
-          "note": "projectId is not forwarded"
+          "line": 120,
+          "note": "bound to the URL project"
         },
         {
           "file": "src/modules/build/core/projects-ticket-subresources.service.ts",
-          "line": 270,
-          "note": "requireTicket takes no projectId"
+          "line": 281,
+          "note": "bound to the URL project"
         },
         {
           "file": "src/modules/build/core/projects-ticket-subresources.service.ts",
-          "line": 261,
-          "note": "requireTicket's where clause — id + orgId + deletedAt"
+          "line": 254,
+          "note": "bound to the URL project"
         }
       ]
     },
@@ -4500,7 +4496,7 @@
       "file": "src/modules/build/core/projects-ticket-associations.controller.ts",
       "class": "ProjectsTicketAssociationsController",
       "method": "addWatcher",
-      "line": 125,
+      "line": 127,
       "verb": "POST",
       "path": "/build/:projectId/tickets/:ticketId/watchers",
       "routeParams": [
@@ -4524,34 +4520,32 @@
       "idempotent": null,
       "mutating": true,
       "service": {
-        "call": "this.subresources.addWatcher(u, ticketId, body)",
+        "call": "this.subresources.addWatcher(u, projectId, ticketId, body)",
         "type": "ProjectsTicketSubresourcesService",
         "file": "src/modules/build/core/projects-ticket-subresources.service.ts",
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:300",
-      "parentScoping": "NOT-PASSED (no @Param on parent)",
-      "parentEvidence": "src/modules/build/core/projects-ticket-associations.controller.ts:125",
-      "leads": [
-        "parent scoping: NOT-PASSED (no @Param on parent)"
-      ],
+      "orgEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:314",
+      "parentScoping": "BOUND",
+      "parentEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:314",
+      "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
       ],
-      "verdict": "VULNERABLE",
+      "verdict": "CLOSED",
       "verdictReason": "POST /build/:projectId/tickets/:ticketId/watchers. No @Param(\"projectId\"); requireTicket(orgId, ticketId) is the only check.",
-      "evidence": "src/modules/build/core/projects-ticket-associations.controller.ts:125",
+      "evidence": "src/modules/build/core/projects-ticket-associations.controller.ts:127",
       "reviewedEvidence": [
         {
           "file": "src/modules/build/core/projects-ticket-associations.controller.ts",
-          "line": 135,
-          "note": "projectId is not forwarded"
+          "line": 133,
+          "note": "bound to the URL project"
         },
         {
           "file": "src/modules/build/core/projects-ticket-subresources.service.ts",
-          "line": 305,
-          "note": "id + orgId only"
+          "line": 320,
+          "note": "bound to the URL project"
         }
       ]
     },
@@ -4560,7 +4554,7 @@
       "file": "src/modules/build/core/projects-ticket-associations.controller.ts",
       "class": "ProjectsTicketAssociationsController",
       "method": "removeWatcher",
-      "line": 138,
+      "line": 141,
       "verb": "DELETE",
       "path": "/build/:projectId/tickets/:ticketId/watchers",
       "routeParams": [
@@ -4584,34 +4578,32 @@
       "idempotent": null,
       "mutating": true,
       "service": {
-        "call": "this.subresources.removeWatcher(u, ticketId)",
+        "call": "this.subresources.removeWatcher(u, projectId, ticketId)",
         "type": "ProjectsTicketSubresourcesService",
         "file": "src/modules/build/core/projects-ticket-subresources.service.ts",
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:348",
-      "parentScoping": "NOT-PASSED (no @Param on parent)",
-      "parentEvidence": "src/modules/build/core/projects-ticket-associations.controller.ts:138",
-      "leads": [
-        "parent scoping: NOT-PASSED (no @Param on parent)"
-      ],
+      "orgEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:363",
+      "parentScoping": "BOUND",
+      "parentEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:363",
+      "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
       ],
-      "verdict": "VULNERABLE",
+      "verdict": "CLOSED",
       "verdictReason": "DELETE /build/:projectId/tickets/:ticketId/watchers. No @Param(\"projectId\"); requireTicket(orgId, ticketId) is the only check.",
-      "evidence": "src/modules/build/core/projects-ticket-associations.controller.ts:138",
+      "evidence": "src/modules/build/core/projects-ticket-associations.controller.ts:141",
       "reviewedEvidence": [
         {
           "file": "src/modules/build/core/projects-ticket-associations.controller.ts",
           "line": 147,
-          "note": "projectId is not forwarded"
+          "note": "bound to the URL project"
         },
         {
           "file": "src/modules/build/core/projects-ticket-subresources.service.ts",
-          "line": 349,
-          "note": "id + orgId only"
+          "line": 368,
+          "note": "bound to the URL project"
         }
       ]
     },
@@ -4620,7 +4612,7 @@
       "file": "src/modules/build/core/projects-ticket-associations.controller.ts",
       "class": "ProjectsTicketAssociationsController",
       "method": "addLabel",
-      "line": 150,
+      "line": 154,
       "verb": "POST",
       "path": "/build/:projectId/tickets/:ticketId/labels",
       "routeParams": [
@@ -4644,34 +4636,32 @@
       "idempotent": null,
       "mutating": true,
       "service": {
-        "call": "this.subresources.addLabel(u.orgId, u.userId, ticketId, body)",
+        "call": "this.subresources.addLabel(u.orgId, u.userId, projectId, ticketId, body)",
         "type": "ProjectsTicketSubresourcesService",
         "file": "src/modules/build/core/projects-ticket-subresources.service.ts",
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:373",
-      "parentScoping": "NOT-PASSED (no @Param on parent)",
-      "parentEvidence": "src/modules/build/core/projects-ticket-associations.controller.ts:150",
-      "leads": [
-        "parent scoping: NOT-PASSED (no @Param on parent)"
-      ],
+      "orgEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:392",
+      "parentScoping": "BOUND",
+      "parentEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:392",
+      "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
       ],
-      "verdict": "VULNERABLE",
+      "verdict": "CLOSED",
       "verdictReason": "POST /build/:projectId/tickets/:ticketId/labels. No @Param(\"projectId\"); requireTicket(orgId, ticketId) is the only check.",
-      "evidence": "src/modules/build/core/projects-ticket-associations.controller.ts:150",
+      "evidence": "src/modules/build/core/projects-ticket-associations.controller.ts:154",
       "reviewedEvidence": [
         {
           "file": "src/modules/build/core/projects-ticket-associations.controller.ts",
           "line": 160,
-          "note": "projectId is not forwarded"
+          "note": "bound to the URL project"
         },
         {
           "file": "src/modules/build/core/projects-ticket-subresources.service.ts",
-          "line": 379,
-          "note": "id + orgId only"
+          "line": 368,
+          "note": "bound to the URL project"
         }
       ]
     },
@@ -4680,7 +4670,7 @@
       "file": "src/modules/build/core/projects-ticket-associations.controller.ts",
       "class": "ProjectsTicketAssociationsController",
       "method": "removeLabel",
-      "line": 163,
+      "line": 168,
       "verb": "DELETE",
       "path": "/build/:projectId/tickets/:ticketId/labels/:labelId",
       "routeParams": [
@@ -4706,22 +4696,22 @@
       "idempotent": null,
       "mutating": true,
       "service": {
-        "call": "this.subresources.removeLabel(u.orgId, u.userId, ticketId, labelId)",
+        "call": "this.subresources.removeLabel(u.orgId, u.userId, projectId, ticketId, labelId)",
         "type": "ProjectsTicketSubresourcesService",
         "file": "src/modules/build/core/projects-ticket-subresources.service.ts",
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:389",
+      "orgEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:409",
       "parentScoping": "BOUND",
-      "parentEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:389",
+      "parentEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:409",
       "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
       ],
       "verdict": "NEEDS-REVIEW",
       "verdictReason": "static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)",
-      "evidence": "src/modules/build/core/projects-ticket-associations.controller.ts:163",
+      "evidence": "src/modules/build/core/projects-ticket-associations.controller.ts:168",
       "reviewedEvidence": null
     },
     {
@@ -4729,7 +4719,7 @@
       "file": "src/modules/build/core/projects-ticket-associations.controller.ts",
       "class": "ProjectsTicketAssociationsController",
       "method": "addAttachment",
-      "line": 176,
+      "line": 182,
       "verb": "POST",
       "path": "/build/:projectId/tickets/:ticketId/attachments",
       "routeParams": [
@@ -4753,34 +4743,32 @@
       "idempotent": null,
       "mutating": true,
       "service": {
-        "call": "this.subresources.addAttachment(u, ticketId, body)",
+        "call": "this.subresources.addAttachment(u, projectId, ticketId, body)",
         "type": "ProjectsTicketSubresourcesService",
         "file": "src/modules/build/core/projects-ticket-subresources.service.ts",
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:426",
-      "parentScoping": "NOT-PASSED (no @Param on parent)",
-      "parentEvidence": "src/modules/build/core/projects-ticket-associations.controller.ts:176",
-      "leads": [
-        "parent scoping: NOT-PASSED (no @Param on parent)"
-      ],
+      "orgEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:448",
+      "parentScoping": "BOUND",
+      "parentEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:448",
+      "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
       ],
-      "verdict": "VULNERABLE",
+      "verdict": "CLOSED",
       "verdictReason": "POST /build/:projectId/tickets/:ticketId/attachments. No @Param(\"projectId\"); requireTicket(orgId, ticketId) is the only check.",
-      "evidence": "src/modules/build/core/projects-ticket-associations.controller.ts:176",
+      "evidence": "src/modules/build/core/projects-ticket-associations.controller.ts:182",
       "reviewedEvidence": [
         {
           "file": "src/modules/build/core/projects-ticket-associations.controller.ts",
-          "line": 186,
-          "note": "projectId is not forwarded"
+          "line": 188,
+          "note": "bound to the URL project"
         },
         {
           "file": "src/modules/build/core/projects-ticket-subresources.service.ts",
-          "line": 431,
-          "note": "id + orgId only"
+          "line": 416,
+          "note": "bound to the URL project"
         }
       ]
     },
@@ -4789,7 +4777,7 @@
       "file": "src/modules/build/core/projects-ticket-associations.controller.ts",
       "class": "ProjectsTicketAssociationsController",
       "method": "getGitLinks",
-      "line": 189,
+      "line": 196,
       "verb": "GET",
       "path": "/build/:projectId/tickets/:ticketId/git-links",
       "routeParams": [
@@ -4819,14 +4807,14 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:531",
+      "orgEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:606",
       "parentScoping": "BOUND",
-      "parentEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:531",
+      "parentEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:606",
       "leads": [],
       "notes": [],
       "verdict": "NEEDS-REVIEW",
       "verdictReason": "static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)",
-      "evidence": "src/modules/build/core/projects-ticket-associations.controller.ts:189",
+      "evidence": "src/modules/build/core/projects-ticket-associations.controller.ts:196",
       "reviewedEvidence": null
     },
     {
@@ -4834,7 +4822,7 @@
       "file": "src/modules/build/core/projects-ticket-associations.controller.ts",
       "class": "ProjectsTicketAssociationsController",
       "method": "listRelatedLinks",
-      "line": 201,
+      "line": 208,
       "verb": "GET",
       "path": "/build/:projectId/tickets/:ticketId/related-links",
       "routeParams": [
@@ -4864,16 +4852,16 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:535",
+      "orgEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:610",
       "parentScoping": "PASSED-UNBOUND",
-      "parentEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:535",
+      "parentEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:610",
       "leads": [
         "parent scoping: PASSED-UNBOUND"
       ],
       "notes": [],
       "verdict": "NEEDS-REVIEW",
       "verdictReason": "parent scoping: PASSED-UNBOUND",
-      "evidence": "src/modules/build/core/projects-ticket-associations.controller.ts:201",
+      "evidence": "src/modules/build/core/projects-ticket-associations.controller.ts:208",
       "reviewedEvidence": null
     },
     {
@@ -4881,7 +4869,7 @@
       "file": "src/modules/build/core/projects-ticket-associations.controller.ts",
       "class": "ProjectsTicketAssociationsController",
       "method": "addRelatedLink",
-      "line": 213,
+      "line": 220,
       "verb": "POST",
       "path": "/build/:projectId/tickets/:ticketId/related-links",
       "routeParams": [
@@ -4911,9 +4899,9 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:539",
+      "orgEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:614",
       "parentScoping": "PASSED-UNBOUND",
-      "parentEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:539",
+      "parentEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:614",
       "leads": [
         "parent scoping: PASSED-UNBOUND"
       ],
@@ -4922,7 +4910,7 @@
       ],
       "verdict": "NEEDS-REVIEW",
       "verdictReason": "parent scoping: PASSED-UNBOUND",
-      "evidence": "src/modules/build/core/projects-ticket-associations.controller.ts:213",
+      "evidence": "src/modules/build/core/projects-ticket-associations.controller.ts:220",
       "reviewedEvidence": null
     },
     {
@@ -4930,7 +4918,7 @@
       "file": "src/modules/build/core/projects-ticket-associations.controller.ts",
       "class": "ProjectsTicketAssociationsController",
       "method": "updateRelatedLink",
-      "line": 227,
+      "line": 234,
       "verb": "PATCH",
       "path": "/build/:projectId/tickets/:ticketId/related-links/:linkId",
       "routeParams": [
@@ -4962,16 +4950,16 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:548",
+      "orgEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:623",
       "parentScoping": "BOUND",
-      "parentEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:548",
+      "parentEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:623",
       "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
       ],
       "verdict": "NEEDS-REVIEW",
       "verdictReason": "static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)",
-      "evidence": "src/modules/build/core/projects-ticket-associations.controller.ts:227",
+      "evidence": "src/modules/build/core/projects-ticket-associations.controller.ts:234",
       "reviewedEvidence": null
     },
     {
@@ -4979,7 +4967,7 @@
       "file": "src/modules/build/core/projects-ticket-associations.controller.ts",
       "class": "ProjectsTicketAssociationsController",
       "method": "deleteRelatedLink",
-      "line": 241,
+      "line": 248,
       "verb": "DELETE",
       "path": "/build/:projectId/tickets/:ticketId/related-links/:linkId",
       "routeParams": [
@@ -5011,16 +4999,16 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:564",
+      "orgEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:639",
       "parentScoping": "BOUND",
-      "parentEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:564",
+      "parentEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:639",
       "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
       ],
       "verdict": "NEEDS-REVIEW",
       "verdictReason": "static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)",
-      "evidence": "src/modules/build/core/projects-ticket-associations.controller.ts:241",
+      "evidence": "src/modules/build/core/projects-ticket-associations.controller.ts:248",
       "reviewedEvidence": null
     },
     {
@@ -5058,9 +5046,9 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:474",
+      "orgEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:497",
       "parentScoping": "BOUND",
-      "parentEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:474",
+      "parentEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:497",
       "leads": [],
       "notes": [],
       "verdict": "NEEDS-REVIEW",
@@ -5103,9 +5091,9 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:478",
+      "orgEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:501",
       "parentScoping": "BOUND",
-      "parentEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:478",
+      "parentEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:501",
       "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
@@ -5146,29 +5134,27 @@
       "idempotent": null,
       "mutating": true,
       "service": {
-        "call": "this.subresources.updateChecklist(u.orgId, checklistId, body)",
+        "call": "this.subresources.updateChecklist(u.orgId, projectId, ticketId, checklistId, body)",
         "type": "ProjectsTicketSubresourcesService",
         "file": "src/modules/build/core/projects-ticket-subresources.service.ts",
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:492",
-      "parentScoping": "NOT-PASSED (no @Param on parent)",
-      "parentEvidence": "src/modules/build/core/projects-ticket-checklists.controller.ts:70",
-      "leads": [
-        "parent scoping: NOT-PASSED (no @Param on parent)"
-      ],
+      "orgEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:515",
+      "parentScoping": "BOUND",
+      "parentEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:515",
+      "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
       ],
-      "verdict": "VULNERABLE",
+      "verdict": "CLOSED",
       "verdictReason": "PATCH /build/:projectId/tickets/:ticketId/checklists/:checklistId. TWO parents go unbound: neither :projectId nor :ticketId is declared with @Param, and the UPDATE resolves the checklist by (id, orgId).",
       "evidence": "src/modules/build/core/projects-ticket-checklists.controller.ts:70",
       "reviewedEvidence": [
         {
           "file": "src/modules/build/core/projects-ticket-checklists.service.ts",
-          "line": 129,
-          "note": "UPDATE binds id + orgId; the URL ticketId is never compared to ticketChecklists.ticketId"
+          "line": 142,
+          "note": "bound to the URL project"
         }
       ]
     },
@@ -5177,7 +5163,7 @@
       "file": "src/modules/build/core/projects-ticket-checklists.controller.ts",
       "class": "ProjectsTicketChecklistsController",
       "method": "deleteChecklist",
-      "line": 82,
+      "line": 84,
       "verb": "DELETE",
       "path": "/build/:projectId/tickets/:ticketId/checklists/:checklistId",
       "routeParams": [
@@ -5203,29 +5189,27 @@
       "idempotent": null,
       "mutating": true,
       "service": {
-        "call": "this.subresources.deleteChecklist(u.orgId, checklistId)",
+        "call": "this.subresources.deleteChecklist(u.orgId, projectId, ticketId, checklistId)",
         "type": "ProjectsTicketSubresourcesService",
         "file": "src/modules/build/core/projects-ticket-subresources.service.ts",
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:496",
-      "parentScoping": "NOT-PASSED (no @Param on parent)",
-      "parentEvidence": "src/modules/build/core/projects-ticket-checklists.controller.ts:82",
-      "leads": [
-        "parent scoping: NOT-PASSED (no @Param on parent)"
-      ],
+      "orgEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:531",
+      "parentScoping": "BOUND",
+      "parentEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:531",
+      "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
       ],
-      "verdict": "VULNERABLE",
+      "verdict": "CLOSED",
       "verdictReason": "DELETE /build/:projectId/tickets/:ticketId/checklists/:checklistId. Same shape: neither parent is bound; DELETE resolves by (id, orgId).",
-      "evidence": "src/modules/build/core/projects-ticket-checklists.controller.ts:82",
+      "evidence": "src/modules/build/core/projects-ticket-checklists.controller.ts:84",
       "reviewedEvidence": [
         {
           "file": "src/modules/build/core/projects-ticket-checklists.service.ts",
-          "line": 145,
-          "note": "DELETE binds id + orgId only"
+          "line": 185,
+          "note": "bound to the URL project"
         }
       ]
     },
@@ -5234,7 +5218,7 @@
       "file": "src/modules/build/core/projects-ticket-checklists.controller.ts",
       "class": "ProjectsTicketChecklistsController",
       "method": "createChecklistItem",
-      "line": 94,
+      "line": 98,
       "verb": "POST",
       "path": "/build/:projectId/tickets/:ticketId/checklists/:checklistId/items",
       "routeParams": [
@@ -5260,29 +5244,27 @@
       "idempotent": null,
       "mutating": true,
       "service": {
-        "call": "this.subresources.createChecklistItem(u.orgId, checklistId, body)",
+        "call": "this.subresources.createChecklistItem(u.orgId, projectId, ticketId, checklistId, body)",
         "type": "ProjectsTicketSubresourcesService",
         "file": "src/modules/build/core/projects-ticket-subresources.service.ts",
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:500",
-      "parentScoping": "NOT-PASSED (no @Param on parent)",
-      "parentEvidence": "src/modules/build/core/projects-ticket-checklists.controller.ts:94",
-      "leads": [
-        "parent scoping: NOT-PASSED (no @Param on parent)"
-      ],
+      "orgEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:545",
+      "parentScoping": "BOUND",
+      "parentEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:545",
+      "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
       ],
-      "verdict": "VULNERABLE",
+      "verdict": "CLOSED",
       "verdictReason": "POST /build/:projectId/tickets/:ticketId/checklists/:checklistId/items. The parent checklist is resolved by (id, orgId); the URL's ticketId and projectId are never checked.",
-      "evidence": "src/modules/build/core/projects-ticket-checklists.controller.ts:94",
+      "evidence": "src/modules/build/core/projects-ticket-checklists.controller.ts:98",
       "reviewedEvidence": [
         {
           "file": "src/modules/build/core/projects-ticket-checklists.service.ts",
-          "line": 166,
-          "note": "parent checklist resolved by id + orgId only"
+          "line": 161,
+          "note": "bound to the URL project"
         }
       ]
     },
@@ -5291,7 +5273,7 @@
       "file": "src/modules/build/core/projects-ticket-checklists.controller.ts",
       "class": "ProjectsTicketChecklistsController",
       "method": "updateChecklistItem",
-      "line": 107,
+      "line": 113,
       "verb": "PATCH",
       "path": "/build/:projectId/tickets/:ticketId/checklists/:checklistId/items/:itemId",
       "routeParams": [
@@ -5319,34 +5301,32 @@
       "idempotent": null,
       "mutating": true,
       "service": {
-        "call": "this.subresources.updateChecklistItem(u.orgId, itemId, body)",
+        "call": "this.subresources.updateChecklistItem(u.orgId, projectId, ticketId, checklistId, itemId, body)",
         "type": "ProjectsTicketSubresourcesService",
         "file": "src/modules/build/core/projects-ticket-subresources.service.ts",
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:513",
-      "parentScoping": "NOT-PASSED (no @Param on parent)",
-      "parentEvidence": "src/modules/build/core/projects-ticket-checklists.controller.ts:107",
-      "leads": [
-        "parent scoping: NOT-PASSED (no @Param on parent)"
-      ],
+      "orgEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:566",
+      "parentScoping": "BOUND",
+      "parentEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:566",
+      "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
       ],
-      "verdict": "VULNERABLE",
+      "verdict": "CLOSED",
       "verdictReason": "PATCH /build/:projectId/tickets/:ticketId/checklists/:checklistId/items/:itemId. THREE parents unbound. Only :itemId is declared. The pre-read selects the item by id ALONE — the tenant is then checked in JavaScript against the joined checklist's orgId, not in SQL — and the UPDATE binds (orgId, id). The URL's checklistId is never compared to the item's own checklistId.",
-      "evidence": "src/modules/build/core/projects-ticket-checklists.controller.ts:107",
+      "evidence": "src/modules/build/core/projects-ticket-checklists.controller.ts:113",
       "reviewedEvidence": [
         {
           "file": "src/modules/build/core/projects-ticket-checklists.service.ts",
-          "line": 200,
-          "note": "pre-read selects on id ALONE; orgId is a JS comparison, checklistId is never compared"
+          "line": 212,
+          "note": "bound to the URL project"
         },
         {
           "file": "src/modules/build/core/projects-ticket-checklists.service.ts",
-          "line": 210,
-          "note": "UPDATE binds orgId + id; no checklistId"
+          "line": 212,
+          "note": "bound to the URL project"
         }
       ]
     },
@@ -5355,7 +5335,7 @@
       "file": "src/modules/build/core/projects-ticket-checklists.controller.ts",
       "class": "ProjectsTicketChecklistsController",
       "method": "deleteChecklistItem",
-      "line": 119,
+      "line": 128,
       "verb": "DELETE",
       "path": "/build/:projectId/tickets/:ticketId/checklists/:checklistId/items/:itemId",
       "routeParams": [
@@ -5383,34 +5363,32 @@
       "idempotent": null,
       "mutating": true,
       "service": {
-        "call": "this.subresources.deleteChecklistItem(u.orgId, itemId)",
+        "call": "this.subresources.deleteChecklistItem(u.orgId, projectId, ticketId, checklistId, itemId)",
         "type": "ProjectsTicketSubresourcesService",
         "file": "src/modules/build/core/projects-ticket-subresources.service.ts",
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:527",
-      "parentScoping": "NOT-PASSED (no @Param on parent)",
-      "parentEvidence": "src/modules/build/core/projects-ticket-checklists.controller.ts:119",
-      "leads": [
-        "parent scoping: NOT-PASSED (no @Param on parent)"
-      ],
+      "orgEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:590",
+      "parentScoping": "BOUND",
+      "parentEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:590",
+      "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
       ],
-      "verdict": "VULNERABLE",
+      "verdict": "CLOSED",
       "verdictReason": "DELETE /build/:projectId/tickets/:ticketId/checklists/:checklistId/items/:itemId. Identical to updateChecklistItem.",
-      "evidence": "src/modules/build/core/projects-ticket-checklists.controller.ts:119",
+      "evidence": "src/modules/build/core/projects-ticket-checklists.controller.ts:128",
       "reviewedEvidence": [
         {
           "file": "src/modules/build/core/projects-ticket-checklists.service.ts",
-          "line": 218,
-          "note": "pre-read selects on id ALONE"
+          "line": 212,
+          "note": "bound to the URL project"
         },
         {
           "file": "src/modules/build/core/projects-ticket-checklists.service.ts",
-          "line": 227,
-          "note": "DELETE binds orgId + id; no checklistId"
+          "line": 212,
+          "note": "bound to the URL project"
         }
       ]
     },
@@ -5443,34 +5421,32 @@
       "idempotent": null,
       "mutating": true,
       "service": {
-        "call": "this.subresources.addComment(u, ticketId, body)",
+        "call": "this.subresources.addComment(u, projectId, ticketId, body)",
         "type": "ProjectsTicketSubresourcesService",
         "file": "src/modules/build/core/projects-ticket-subresources.service.ts",
         "resolved": true
       },
       "orgScoping": "BOUND",
       "orgEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:77",
-      "parentScoping": "NOT-PASSED (no @Param on parent)",
-      "parentEvidence": "src/modules/build/core/projects-ticket-comments.controller.ts:45",
-      "leads": [
-        "parent scoping: NOT-PASSED (no @Param on parent)"
-      ],
+      "parentScoping": "BOUND",
+      "parentEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:77",
+      "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
       ],
-      "verdict": "VULNERABLE",
+      "verdict": "CLOSED",
       "verdictReason": "POST /build/:projectId/tickets/:ticketId/comments. No @Param(\"projectId\"); the subresources facade drops it before delegating, and the comments service resolves the ticket by (id, orgId).",
       "evidence": "src/modules/build/core/projects-ticket-comments.controller.ts:45",
       "reviewedEvidence": [
         {
           "file": "src/modules/build/core/projects-ticket-subresources.service.ts",
-          "line": 78,
-          "note": "no projectId crosses the facade"
+          "line": 249,
+          "note": "bound to the URL project"
         },
         {
           "file": "src/modules/build/core/projects-ticket-comments.service.ts",
-          "line": 122,
-          "note": "ticket resolved by id + orgId only"
+          "line": 129,
+          "note": "bound to the URL project"
         }
       ]
     },
@@ -5479,7 +5455,7 @@
       "file": "src/modules/build/core/projects-ticket-comments.controller.ts",
       "class": "ProjectsTicketCommentsController",
       "method": "getComment",
-      "line": 58,
+      "line": 59,
       "verb": "GET",
       "path": "/build/:projectId/tickets/:ticketId/comments/:commentId",
       "routeParams": [
@@ -5511,14 +5487,14 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:81",
+      "orgEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:86",
       "parentScoping": "BOUND",
-      "parentEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:81",
+      "parentEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:86",
       "leads": [],
       "notes": [],
       "verdict": "NEEDS-REVIEW",
       "verdictReason": "static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)",
-      "evidence": "src/modules/build/core/projects-ticket-comments.controller.ts:58",
+      "evidence": "src/modules/build/core/projects-ticket-comments.controller.ts:59",
       "reviewedEvidence": null
     },
     {
@@ -5526,7 +5502,7 @@
       "file": "src/modules/build/core/projects-ticket-comments.controller.ts",
       "class": "ProjectsTicketCommentsController",
       "method": "editComment",
-      "line": 71,
+      "line": 72,
       "verb": "PATCH",
       "path": "/build/:projectId/tickets/:ticketId/comments/:commentId",
       "routeParams": [
@@ -5558,16 +5534,16 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:90",
+      "orgEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:95",
       "parentScoping": "BOUND",
-      "parentEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:90",
+      "parentEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:95",
       "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
       ],
       "verdict": "NEEDS-REVIEW",
       "verdictReason": "static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)",
-      "evidence": "src/modules/build/core/projects-ticket-comments.controller.ts:71",
+      "evidence": "src/modules/build/core/projects-ticket-comments.controller.ts:72",
       "reviewedEvidence": null
     },
     {
@@ -5575,7 +5551,7 @@
       "file": "src/modules/build/core/projects-ticket-comments.controller.ts",
       "class": "ProjectsTicketCommentsController",
       "method": "deleteComment",
-      "line": 85,
+      "line": 86,
       "verb": "DELETE",
       "path": "/build/:projectId/tickets/:ticketId/comments/:commentId",
       "routeParams": [
@@ -5607,16 +5583,16 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:106",
+      "orgEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:111",
       "parentScoping": "BOUND",
-      "parentEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:106",
+      "parentEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:111",
       "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
       ],
       "verdict": "NEEDS-REVIEW",
       "verdictReason": "static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)",
-      "evidence": "src/modules/build/core/projects-ticket-comments.controller.ts:85",
+      "evidence": "src/modules/build/core/projects-ticket-comments.controller.ts:86",
       "reviewedEvidence": null
     },
     {
@@ -5624,7 +5600,7 @@
       "file": "src/modules/build/core/projects-ticket-comments.controller.ts",
       "class": "ProjectsTicketCommentsController",
       "method": "addReaction",
-      "line": 99,
+      "line": 100,
       "verb": "POST",
       "path": "/build/:projectId/tickets/:ticketId/comments/:commentId/reactions",
       "routeParams": [
@@ -5656,16 +5632,16 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:115",
+      "orgEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:120",
       "parentScoping": "BOUND",
-      "parentEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:115",
+      "parentEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:120",
       "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
       ],
       "verdict": "NEEDS-REVIEW",
       "verdictReason": "static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)",
-      "evidence": "src/modules/build/core/projects-ticket-comments.controller.ts:99",
+      "evidence": "src/modules/build/core/projects-ticket-comments.controller.ts:100",
       "reviewedEvidence": null
     },
     {
@@ -5673,7 +5649,7 @@
       "file": "src/modules/build/core/projects-ticket-comments.controller.ts",
       "class": "ProjectsTicketCommentsController",
       "method": "removeReaction",
-      "line": 113,
+      "line": 114,
       "verb": "DELETE",
       "path": "/build/:projectId/tickets/:ticketId/comments/:commentId/reactions/:emoji",
       "routeParams": [
@@ -5707,16 +5683,16 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:133",
+      "orgEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:138",
       "parentScoping": "BOUND",
-      "parentEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:133",
+      "parentEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:138",
       "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
       ],
       "verdict": "NEEDS-REVIEW",
       "verdictReason": "static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)",
-      "evidence": "src/modules/build/core/projects-ticket-comments.controller.ts:113",
+      "evidence": "src/modules/build/core/projects-ticket-comments.controller.ts:114",
       "reviewedEvidence": null
     },
     {
@@ -5748,7 +5724,7 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/core/projects-tickets.service.ts:261",
+      "orgEvidence": "src/modules/build/core/projects-tickets.service.ts:268",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
       "leads": [],
@@ -5787,7 +5763,7 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/core/projects-tickets.service.ts:252",
+      "orgEvidence": "src/modules/build/core/projects-tickets.service.ts:259",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
       "leads": [],
@@ -5830,7 +5806,7 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/core/projects-tickets.service.ts:265",
+      "orgEvidence": "src/modules/build/core/projects-tickets.service.ts:272",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
       "leads": [],
@@ -5873,7 +5849,7 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/core/projects-tickets.service.ts:240",
+      "orgEvidence": "src/modules/build/core/projects-tickets.service.ts:247",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
       "leads": [],
@@ -5916,7 +5892,7 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/core/projects-tickets.service.ts:244",
+      "orgEvidence": "src/modules/build/core/projects-tickets.service.ts:251",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
       "leads": [],
@@ -6045,7 +6021,7 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/core/projects-tickets.service.ts:228",
+      "orgEvidence": "src/modules/build/core/projects-tickets.service.ts:235",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
       "leads": [],
@@ -6090,9 +6066,9 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/core/projects-tickets.service.ts:236",
+      "orgEvidence": "src/modules/build/core/projects-tickets.service.ts:243",
       "parentScoping": "BOUND",
-      "parentEvidence": "src/modules/build/core/projects-tickets.service.ts:236",
+      "parentEvidence": "src/modules/build/core/projects-tickets.service.ts:243",
       "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
@@ -6137,9 +6113,9 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:155",
+      "orgEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:160",
       "parentScoping": "BOUND",
-      "parentEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:155",
+      "parentEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:160",
       "leads": [],
       "notes": [],
       "verdict": "NEEDS-REVIEW",
@@ -6221,27 +6197,25 @@
       "idempotent": null,
       "mutating": false,
       "service": {
-        "call": "this.tickets.getTicket(u, ticketId)",
+        "call": "this.tickets.getTicket(u, projectId, ticketId)",
         "type": "ProjectsTicketsService",
         "file": "src/modules/build/core/projects-tickets.service.ts",
         "resolved": true
       },
       "orgScoping": "BOUND",
       "orgEvidence": "src/modules/build/core/projects-tickets.service.ts:97",
-      "parentScoping": "NOT-PASSED (no @Param on parent)",
-      "parentEvidence": "src/modules/build/core/projects-tickets.controller.ts:214",
-      "leads": [
-        "parent scoping: NOT-PASSED (no @Param on parent)"
-      ],
+      "parentScoping": "BOUND",
+      "parentEvidence": "src/modules/build/core/projects-tickets.service.ts:97",
+      "leads": [],
       "notes": [],
-      "verdict": "VULNERABLE",
+      "verdict": "CLOSED",
       "verdictReason": "GET /build/:projectId/tickets/:ticketId. No @Param(\"projectId\"); the detail reader binds (orgId, deletedAt) plus an id selector. The scope resolver narrows all-vs-own by permission and carries no project predicate.",
       "evidence": "src/modules/build/core/projects-tickets.controller.ts:214",
       "reviewedEvidence": [
         {
           "file": "src/modules/build/core/projects-tickets-detail.service.ts",
-          "line": 39,
-          "note": "orgId + selector(id); no projectId"
+          "line": 34,
+          "note": "bound to the URL project"
         }
       ]
     },
@@ -6250,7 +6224,7 @@
       "file": "src/modules/build/core/projects-tickets.controller.ts",
       "class": "ProjectsTicketsController",
       "method": "updateTicket",
-      "line": 225,
+      "line": 226,
       "verb": "PATCH",
       "path": "/build/:projectId/tickets/:ticketId",
       "routeParams": [
@@ -6274,34 +6248,32 @@
       "idempotent": null,
       "mutating": true,
       "service": {
-        "call": "this.tickets.updateTicket(u, ticketId, body)",
+        "call": "this.tickets.updateTicket(u, projectId, ticketId, body)",
         "type": "ProjectsTicketsService",
         "file": "src/modules/build/core/projects-tickets.service.ts",
         "resolved": true
       },
       "orgScoping": "BOUND",
       "orgEvidence": "src/modules/build/core/projects-tickets.service.ts:101",
-      "parentScoping": "NOT-PASSED (no @Param on parent)",
-      "parentEvidence": "src/modules/build/core/projects-tickets.controller.ts:225",
-      "leads": [
-        "parent scoping: NOT-PASSED (no @Param on parent)"
-      ],
+      "parentScoping": "BOUND",
+      "parentEvidence": "src/modules/build/core/projects-tickets.service.ts:101",
+      "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
       ],
-      "verdict": "VULNERABLE",
+      "verdict": "CLOSED",
       "verdictReason": "PATCH /build/:projectId/tickets/:ticketId. No @Param(\"projectId\"). The service DOES re-derive the ticket's real project from the row and re-authorises against THAT, so a caller cannot mutate a project they have no rights to — but the URL segment is still never compared, so the route resolves a foreign-project ticket instead of 404ing.",
-      "evidence": "src/modules/build/core/projects-tickets.controller.ts:225",
+      "evidence": "src/modules/build/core/projects-tickets.controller.ts:226",
       "reviewedEvidence": [
         {
           "file": "src/modules/build/core/projects-tickets-update.service.ts",
-          "line": 177,
-          "note": "pre-read binds id + orgId"
+          "line": 180,
+          "note": "bound to the URL project"
         },
         {
           "file": "src/modules/build/core/projects-tickets-update.service.ts",
-          "line": 269,
-          "note": "UPDATE binds id + orgId + version; no projectId"
+          "line": 180,
+          "note": "bound to the URL project"
         }
       ]
     },
@@ -6310,7 +6282,7 @@
       "file": "src/modules/build/core/projects-tickets.controller.ts",
       "class": "ProjectsTicketsController",
       "method": "deleteTicket",
-      "line": 237,
+      "line": 239,
       "verb": "DELETE",
       "path": "/build/:projectId/tickets/:ticketId",
       "routeParams": [
@@ -6334,29 +6306,27 @@
       "idempotent": null,
       "mutating": true,
       "service": {
-        "call": "this.tickets.deleteTicket(u.orgId, u.userId, ticketId, force === \"true\")",
+        "call": "this.tickets.deleteTicket(u.orgId, u.userId, projectId, ticketId, force === \"true\")",
         "type": "ProjectsTicketsService",
         "file": "src/modules/build/core/projects-tickets.service.ts",
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/core/projects-tickets.service.ts:109",
-      "parentScoping": "NOT-PASSED (no @Param on parent)",
-      "parentEvidence": "src/modules/build/core/projects-tickets.controller.ts:237",
-      "leads": [
-        "parent scoping: NOT-PASSED (no @Param on parent)"
-      ],
+      "orgEvidence": "src/modules/build/core/projects-tickets.service.ts:110",
+      "parentScoping": "BOUND",
+      "parentEvidence": "src/modules/build/core/projects-tickets.service.ts:110",
+      "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
       ],
-      "verdict": "VULNERABLE",
+      "verdict": "CLOSED",
       "verdictReason": "DELETE /build/:projectId/tickets/:ticketId. No @Param(\"projectId\"); the ticket is resolved by (id, orgId) and the access check that follows uses the row's own projectId.",
-      "evidence": "src/modules/build/core/projects-tickets.controller.ts:237",
+      "evidence": "src/modules/build/core/projects-tickets.controller.ts:239",
       "reviewedEvidence": [
         {
           "file": "src/modules/build/core/projects-tickets.service.ts",
-          "line": 116,
-          "note": "resolved by id + orgId"
+          "line": 120,
+          "note": "bound to the URL project"
         }
       ]
     },

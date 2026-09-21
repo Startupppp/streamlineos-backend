@@ -8,10 +8,10 @@ Scope: every `*.controller.ts` under `src/modules/build/`. 47 controller files, 
 
 | classification | handlers |
 | --- | --- |
-| VULNERABLE | 15 |
+| VULNERABLE | 0 |
 | CLOSED-IN-FLIGHT | 0 |
 | NEEDS-REVIEW | 111 |
-| CLOSED | 19 |
+| CLOSED | 34 |
 | VERIFIED | 176 |
 | **total** | **321** |
 
@@ -24,228 +24,6 @@ Scope: every `*.controller.ts` under `src/modules/build/`. 47 controller files, 
 - **VERIFIED** — guard chain complete, org identity bound in the service, every route param declared, and either no nested parent resource or a hand read that names the binding line.
 
 ## Reviewed findings
-
-### VULNERABLE — `GET /build/:projectId/tickets/:ticketId/subtasks`
-
-`ProjectsTicketAssociationsController.getSubtasks` — `src/modules/build/core/projects-ticket-associations.controller.ts:63`
-
-Finding: `parent-binding-missing`
-
-GET /build/:projectId/tickets/:ticketId/subtasks. No @Param("projectId"); the ticket is resolved by assertTicketInOrg, which binds (id, orgId) and has no projectId parameter at all. Eight OTHER handlers in this same controller do declare and forward @Param("projectId") — the omission is asymmetry inside one file.
-
-Blast radius: Intra-tenant: any org ticket is readable through any project's URL.
-
-Evidence:
-
-- `src/modules/build/core/projects-ticket-associations.controller.ts:71` — projectId is not forwarded
-- `src/modules/build/core/projects-ticket-subresources.service.ts:244` — the only existence check — no projectId argument exists
-- `src/modules/build/core/project-access.ts:41` — assertTicketInOrg binds id + orgId + deletedAt, never projectId
-
-### VULNERABLE — `GET /build/:projectId/tickets/:ticketId/watchers`
-
-`ProjectsTicketAssociationsController.getWatchers` — `src/modules/build/core/projects-ticket-associations.controller.ts:114`
-
-Finding: `parent-binding-missing`
-
-GET /build/:projectId/tickets/:ticketId/watchers. No @Param("projectId"); the ticket is resolved by the private requireTicket(orgId, ticketId), which binds (id, orgId) only.
-
-Blast radius: Intra-tenant cross-project read of a ticket's watchers.
-
-Evidence:
-
-- `src/modules/build/core/projects-ticket-associations.controller.ts:122` — projectId is not forwarded
-- `src/modules/build/core/projects-ticket-subresources.service.ts:270` — requireTicket takes no projectId
-- `src/modules/build/core/projects-ticket-subresources.service.ts:261` — requireTicket's where clause — id + orgId + deletedAt
-
-### VULNERABLE — `POST /build/:projectId/tickets/:ticketId/watchers`
-
-`ProjectsTicketAssociationsController.addWatcher` — `src/modules/build/core/projects-ticket-associations.controller.ts:125`
-
-Finding: `parent-binding-missing`
-
-POST /build/:projectId/tickets/:ticketId/watchers. No @Param("projectId"); requireTicket(orgId, ticketId) is the only check.
-
-Blast radius: Intra-tenant cross-project write.
-
-Evidence:
-
-- `src/modules/build/core/projects-ticket-associations.controller.ts:135` — projectId is not forwarded
-- `src/modules/build/core/projects-ticket-subresources.service.ts:305` — id + orgId only
-
-### VULNERABLE — `DELETE /build/:projectId/tickets/:ticketId/watchers`
-
-`ProjectsTicketAssociationsController.removeWatcher` — `src/modules/build/core/projects-ticket-associations.controller.ts:138`
-
-Finding: `parent-binding-missing`
-
-DELETE /build/:projectId/tickets/:ticketId/watchers. No @Param("projectId"); requireTicket(orgId, ticketId) is the only check.
-
-Blast radius: Intra-tenant cross-project write.
-
-Evidence:
-
-- `src/modules/build/core/projects-ticket-associations.controller.ts:147` — projectId is not forwarded
-- `src/modules/build/core/projects-ticket-subresources.service.ts:349` — id + orgId only
-
-### VULNERABLE — `POST /build/:projectId/tickets/:ticketId/labels`
-
-`ProjectsTicketAssociationsController.addLabel` — `src/modules/build/core/projects-ticket-associations.controller.ts:150`
-
-Finding: `parent-binding-missing`
-
-POST /build/:projectId/tickets/:ticketId/labels. No @Param("projectId"); requireTicket(orgId, ticketId) is the only check.
-
-Blast radius: Intra-tenant cross-project write.
-
-Evidence:
-
-- `src/modules/build/core/projects-ticket-associations.controller.ts:160` — projectId is not forwarded
-- `src/modules/build/core/projects-ticket-subresources.service.ts:379` — id + orgId only
-
-### VULNERABLE — `POST /build/:projectId/tickets/:ticketId/attachments`
-
-`ProjectsTicketAssociationsController.addAttachment` — `src/modules/build/core/projects-ticket-associations.controller.ts:176`
-
-Finding: `parent-binding-missing`
-
-POST /build/:projectId/tickets/:ticketId/attachments. No @Param("projectId"); requireTicket(orgId, ticketId) is the only check.
-
-Blast radius: Intra-tenant cross-project write.
-
-Evidence:
-
-- `src/modules/build/core/projects-ticket-associations.controller.ts:186` — projectId is not forwarded
-- `src/modules/build/core/projects-ticket-subresources.service.ts:431` — id + orgId only
-
-### VULNERABLE — `PATCH /build/:projectId/tickets/:ticketId/checklists/:checklistId`
-
-`ProjectsTicketChecklistsController.updateChecklist` — `src/modules/build/core/projects-ticket-checklists.controller.ts:70`
-
-Finding: `parent-binding-missing`
-
-PATCH /build/:projectId/tickets/:ticketId/checklists/:checklistId. TWO parents go unbound: neither :projectId nor :ticketId is declared with @Param, and the UPDATE resolves the checklist by (id, orgId).
-
-Blast radius: Intra-tenant cross-ticket AND cross-project write.
-
-Evidence:
-
-- `src/modules/build/core/projects-ticket-checklists.service.ts:129` — UPDATE binds id + orgId; the URL ticketId is never compared to ticketChecklists.ticketId
-
-### VULNERABLE — `DELETE /build/:projectId/tickets/:ticketId/checklists/:checklistId`
-
-`ProjectsTicketChecklistsController.deleteChecklist` — `src/modules/build/core/projects-ticket-checklists.controller.ts:82`
-
-Finding: `parent-binding-missing`
-
-DELETE /build/:projectId/tickets/:ticketId/checklists/:checklistId. Same shape: neither parent is bound; DELETE resolves by (id, orgId).
-
-Blast radius: Intra-tenant cross-ticket AND cross-project delete.
-
-Evidence:
-
-- `src/modules/build/core/projects-ticket-checklists.service.ts:145` — DELETE binds id + orgId only
-
-### VULNERABLE — `POST /build/:projectId/tickets/:ticketId/checklists/:checklistId/items`
-
-`ProjectsTicketChecklistsController.createChecklistItem` — `src/modules/build/core/projects-ticket-checklists.controller.ts:94`
-
-Finding: `parent-binding-missing`
-
-POST /build/:projectId/tickets/:ticketId/checklists/:checklistId/items. The parent checklist is resolved by (id, orgId); the URL's ticketId and projectId are never checked.
-
-Blast radius: Intra-tenant: an item can be appended to a checklist on another project's ticket.
-
-Evidence:
-
-- `src/modules/build/core/projects-ticket-checklists.service.ts:166` — parent checklist resolved by id + orgId only
-
-### VULNERABLE — `PATCH /build/:projectId/tickets/:ticketId/checklists/:checklistId/items/:itemId`
-
-`ProjectsTicketChecklistsController.updateChecklistItem` — `src/modules/build/core/projects-ticket-checklists.controller.ts:107`
-
-Finding: `parent-binding-missing`
-
-PATCH /build/:projectId/tickets/:ticketId/checklists/:checklistId/items/:itemId. THREE parents unbound. Only :itemId is declared. The pre-read selects the item by id ALONE — the tenant is then checked in JavaScript against the joined checklist's orgId, not in SQL — and the UPDATE binds (orgId, id). The URL's checklistId is never compared to the item's own checklistId.
-
-Blast radius: Intra-tenant. orgId is enforced (in JS on the pre-read, in SQL on the write), so no cross-tenant write; an item under any checklist in the org is editable through any checklist/ticket/project path.
-
-Evidence:
-
-- `src/modules/build/core/projects-ticket-checklists.service.ts:200` — pre-read selects on id ALONE; orgId is a JS comparison, checklistId is never compared
-- `src/modules/build/core/projects-ticket-checklists.service.ts:210` — UPDATE binds orgId + id; no checklistId
-
-### VULNERABLE — `DELETE /build/:projectId/tickets/:ticketId/checklists/:checklistId/items/:itemId`
-
-`ProjectsTicketChecklistsController.deleteChecklistItem` — `src/modules/build/core/projects-ticket-checklists.controller.ts:119`
-
-Finding: `parent-binding-missing`
-
-DELETE /build/:projectId/tickets/:ticketId/checklists/:checklistId/items/:itemId. Identical to updateChecklistItem.
-
-Blast radius: Intra-tenant cross-checklist delete.
-
-Evidence:
-
-- `src/modules/build/core/projects-ticket-checklists.service.ts:218` — pre-read selects on id ALONE
-- `src/modules/build/core/projects-ticket-checklists.service.ts:227` — DELETE binds orgId + id; no checklistId
-
-### VULNERABLE — `POST /build/:projectId/tickets/:ticketId/comments`
-
-`ProjectsTicketCommentsController.addComment` — `src/modules/build/core/projects-ticket-comments.controller.ts:45`
-
-Finding: `parent-binding-missing`
-
-POST /build/:projectId/tickets/:ticketId/comments. No @Param("projectId"); the subresources facade drops it before delegating, and the comments service resolves the ticket by (id, orgId).
-
-Blast radius: Intra-tenant: a comment can be posted to a ticket in another project through this project's URL.
-
-Evidence:
-
-- `src/modules/build/core/projects-ticket-subresources.service.ts:78` — no projectId crosses the facade
-- `src/modules/build/core/projects-ticket-comments.service.ts:122` — ticket resolved by id + orgId only
-
-### VULNERABLE — `GET /build/:projectId/tickets/:ticketId`
-
-`ProjectsTicketsController.getTicket` — `src/modules/build/core/projects-tickets.controller.ts:214`
-
-Finding: `parent-binding-missing`
-
-GET /build/:projectId/tickets/:ticketId. No @Param("projectId"); the detail reader binds (orgId, deletedAt) plus an id selector. The scope resolver narrows all-vs-own by permission and carries no project predicate.
-
-Blast radius: Intra-tenant: any org ticket is readable through any project's URL.
-
-Evidence:
-
-- `src/modules/build/core/projects-tickets-detail.service.ts:39` — orgId + selector(id); no projectId
-
-### VULNERABLE — `PATCH /build/:projectId/tickets/:ticketId`
-
-`ProjectsTicketsController.updateTicket` — `src/modules/build/core/projects-tickets.controller.ts:225`
-
-Finding: `parent-binding-missing`
-
-PATCH /build/:projectId/tickets/:ticketId. No @Param("projectId"). The service DOES re-derive the ticket's real project from the row and re-authorises against THAT, so a caller cannot mutate a project they have no rights to — but the URL segment is still never compared, so the route resolves a foreign-project ticket instead of 404ing.
-
-Blast radius: Intra-tenant, and narrower than the rest of this family: the row-derived access check means the caller must already hold rights on the ticket's true project. What breaks is the routing/404 contract, and any future project-scoped gate that trusts the URL.
-
-Evidence:
-
-- `src/modules/build/core/projects-tickets-update.service.ts:177` — pre-read binds id + orgId
-- `src/modules/build/core/projects-tickets-update.service.ts:269` — UPDATE binds id + orgId + version; no projectId
-
-### VULNERABLE — `DELETE /build/:projectId/tickets/:ticketId`
-
-`ProjectsTicketsController.deleteTicket` — `src/modules/build/core/projects-tickets.controller.ts:237`
-
-Finding: `parent-binding-missing`
-
-DELETE /build/:projectId/tickets/:ticketId. No @Param("projectId"); the ticket is resolved by (id, orgId) and the access check that follows uses the row's own projectId.
-
-Blast radius: Intra-tenant; same row-derived mitigation as updateTicket.
-
-Evidence:
-
-- `src/modules/build/core/projects-tickets.service.ts:116` — resolved by id + orgId
 
 ### CLOSED — `PATCH /build/:projectId/custom-states/:stateId`
 
@@ -366,6 +144,228 @@ Evidence:
 
 - `src/modules/build/core/projects-releases.service.ts:144` — release bound to the URL project
 - `src/modules/build/core/projects-releases.service.ts:150` — join delete now bound to the caller's organisation
+
+### CLOSED — `GET /build/:projectId/tickets/:ticketId/subtasks`
+
+`ProjectsTicketAssociationsController.getSubtasks` — `src/modules/build/core/projects-ticket-associations.controller.ts:63`
+
+Finding: `parent-binding-missing`
+
+GET /build/:projectId/tickets/:ticketId/subtasks. No @Param("projectId"); the ticket is resolved by assertTicketInOrg, which binds (id, orgId) and has no projectId parameter at all. Eight OTHER handlers in this same controller do declare and forward @Param("projectId") — the omission is asymmetry inside one file.
+
+Blast radius: Intra-tenant: any org ticket is readable through any project's URL.
+
+Evidence:
+
+- `src/modules/build/core/projects-ticket-associations.controller.ts:68` — bound to the URL project
+- `src/modules/build/core/projects-ticket-subresources.service.ts:249` — bound to the URL project
+- `src/modules/build/core/project-access.ts:42` — bound to the URL project
+
+### CLOSED — `GET /build/:projectId/tickets/:ticketId/watchers`
+
+`ProjectsTicketAssociationsController.getWatchers` — `src/modules/build/core/projects-ticket-associations.controller.ts:115`
+
+Finding: `parent-binding-missing`
+
+GET /build/:projectId/tickets/:ticketId/watchers. No @Param("projectId"); the ticket is resolved by the private requireTicket(orgId, ticketId), which binds (id, orgId) only.
+
+Blast radius: Intra-tenant cross-project read of a ticket's watchers.
+
+Evidence:
+
+- `src/modules/build/core/projects-ticket-associations.controller.ts:120` — bound to the URL project
+- `src/modules/build/core/projects-ticket-subresources.service.ts:281` — bound to the URL project
+- `src/modules/build/core/projects-ticket-subresources.service.ts:254` — bound to the URL project
+
+### CLOSED — `POST /build/:projectId/tickets/:ticketId/watchers`
+
+`ProjectsTicketAssociationsController.addWatcher` — `src/modules/build/core/projects-ticket-associations.controller.ts:127`
+
+Finding: `parent-binding-missing`
+
+POST /build/:projectId/tickets/:ticketId/watchers. No @Param("projectId"); requireTicket(orgId, ticketId) is the only check.
+
+Blast radius: Intra-tenant cross-project write.
+
+Evidence:
+
+- `src/modules/build/core/projects-ticket-associations.controller.ts:133` — bound to the URL project
+- `src/modules/build/core/projects-ticket-subresources.service.ts:320` — bound to the URL project
+
+### CLOSED — `DELETE /build/:projectId/tickets/:ticketId/watchers`
+
+`ProjectsTicketAssociationsController.removeWatcher` — `src/modules/build/core/projects-ticket-associations.controller.ts:141`
+
+Finding: `parent-binding-missing`
+
+DELETE /build/:projectId/tickets/:ticketId/watchers. No @Param("projectId"); requireTicket(orgId, ticketId) is the only check.
+
+Blast radius: Intra-tenant cross-project write.
+
+Evidence:
+
+- `src/modules/build/core/projects-ticket-associations.controller.ts:147` — bound to the URL project
+- `src/modules/build/core/projects-ticket-subresources.service.ts:368` — bound to the URL project
+
+### CLOSED — `POST /build/:projectId/tickets/:ticketId/labels`
+
+`ProjectsTicketAssociationsController.addLabel` — `src/modules/build/core/projects-ticket-associations.controller.ts:154`
+
+Finding: `parent-binding-missing`
+
+POST /build/:projectId/tickets/:ticketId/labels. No @Param("projectId"); requireTicket(orgId, ticketId) is the only check.
+
+Blast radius: Intra-tenant cross-project write.
+
+Evidence:
+
+- `src/modules/build/core/projects-ticket-associations.controller.ts:160` — bound to the URL project
+- `src/modules/build/core/projects-ticket-subresources.service.ts:368` — bound to the URL project
+
+### CLOSED — `POST /build/:projectId/tickets/:ticketId/attachments`
+
+`ProjectsTicketAssociationsController.addAttachment` — `src/modules/build/core/projects-ticket-associations.controller.ts:182`
+
+Finding: `parent-binding-missing`
+
+POST /build/:projectId/tickets/:ticketId/attachments. No @Param("projectId"); requireTicket(orgId, ticketId) is the only check.
+
+Blast radius: Intra-tenant cross-project write.
+
+Evidence:
+
+- `src/modules/build/core/projects-ticket-associations.controller.ts:188` — bound to the URL project
+- `src/modules/build/core/projects-ticket-subresources.service.ts:416` — bound to the URL project
+
+### CLOSED — `PATCH /build/:projectId/tickets/:ticketId/checklists/:checklistId`
+
+`ProjectsTicketChecklistsController.updateChecklist` — `src/modules/build/core/projects-ticket-checklists.controller.ts:70`
+
+Finding: `parent-binding-missing`
+
+PATCH /build/:projectId/tickets/:ticketId/checklists/:checklistId. TWO parents go unbound: neither :projectId nor :ticketId is declared with @Param, and the UPDATE resolves the checklist by (id, orgId).
+
+Blast radius: Intra-tenant cross-ticket AND cross-project write.
+
+Evidence:
+
+- `src/modules/build/core/projects-ticket-checklists.service.ts:142` — bound to the URL project
+
+### CLOSED — `DELETE /build/:projectId/tickets/:ticketId/checklists/:checklistId`
+
+`ProjectsTicketChecklistsController.deleteChecklist` — `src/modules/build/core/projects-ticket-checklists.controller.ts:84`
+
+Finding: `parent-binding-missing`
+
+DELETE /build/:projectId/tickets/:ticketId/checklists/:checklistId. Same shape: neither parent is bound; DELETE resolves by (id, orgId).
+
+Blast radius: Intra-tenant cross-ticket AND cross-project delete.
+
+Evidence:
+
+- `src/modules/build/core/projects-ticket-checklists.service.ts:185` — bound to the URL project
+
+### CLOSED — `POST /build/:projectId/tickets/:ticketId/checklists/:checklistId/items`
+
+`ProjectsTicketChecklistsController.createChecklistItem` — `src/modules/build/core/projects-ticket-checklists.controller.ts:98`
+
+Finding: `parent-binding-missing`
+
+POST /build/:projectId/tickets/:ticketId/checklists/:checklistId/items. The parent checklist is resolved by (id, orgId); the URL's ticketId and projectId are never checked.
+
+Blast radius: Intra-tenant: an item can be appended to a checklist on another project's ticket.
+
+Evidence:
+
+- `src/modules/build/core/projects-ticket-checklists.service.ts:161` — bound to the URL project
+
+### CLOSED — `PATCH /build/:projectId/tickets/:ticketId/checklists/:checklistId/items/:itemId`
+
+`ProjectsTicketChecklistsController.updateChecklistItem` — `src/modules/build/core/projects-ticket-checklists.controller.ts:113`
+
+Finding: `parent-binding-missing`
+
+PATCH /build/:projectId/tickets/:ticketId/checklists/:checklistId/items/:itemId. THREE parents unbound. Only :itemId is declared. The pre-read selects the item by id ALONE — the tenant is then checked in JavaScript against the joined checklist's orgId, not in SQL — and the UPDATE binds (orgId, id). The URL's checklistId is never compared to the item's own checklistId.
+
+Blast radius: Intra-tenant. orgId is enforced (in JS on the pre-read, in SQL on the write), so no cross-tenant write; an item under any checklist in the org is editable through any checklist/ticket/project path.
+
+Evidence:
+
+- `src/modules/build/core/projects-ticket-checklists.service.ts:212` — bound to the URL project
+- `src/modules/build/core/projects-ticket-checklists.service.ts:212` — bound to the URL project
+
+### CLOSED — `DELETE /build/:projectId/tickets/:ticketId/checklists/:checklistId/items/:itemId`
+
+`ProjectsTicketChecklistsController.deleteChecklistItem` — `src/modules/build/core/projects-ticket-checklists.controller.ts:128`
+
+Finding: `parent-binding-missing`
+
+DELETE /build/:projectId/tickets/:ticketId/checklists/:checklistId/items/:itemId. Identical to updateChecklistItem.
+
+Blast radius: Intra-tenant cross-checklist delete.
+
+Evidence:
+
+- `src/modules/build/core/projects-ticket-checklists.service.ts:212` — bound to the URL project
+- `src/modules/build/core/projects-ticket-checklists.service.ts:212` — bound to the URL project
+
+### CLOSED — `POST /build/:projectId/tickets/:ticketId/comments`
+
+`ProjectsTicketCommentsController.addComment` — `src/modules/build/core/projects-ticket-comments.controller.ts:45`
+
+Finding: `parent-binding-missing`
+
+POST /build/:projectId/tickets/:ticketId/comments. No @Param("projectId"); the subresources facade drops it before delegating, and the comments service resolves the ticket by (id, orgId).
+
+Blast radius: Intra-tenant: a comment can be posted to a ticket in another project through this project's URL.
+
+Evidence:
+
+- `src/modules/build/core/projects-ticket-subresources.service.ts:249` — bound to the URL project
+- `src/modules/build/core/projects-ticket-comments.service.ts:129` — bound to the URL project
+
+### CLOSED — `GET /build/:projectId/tickets/:ticketId`
+
+`ProjectsTicketsController.getTicket` — `src/modules/build/core/projects-tickets.controller.ts:214`
+
+Finding: `parent-binding-missing`
+
+GET /build/:projectId/tickets/:ticketId. No @Param("projectId"); the detail reader binds (orgId, deletedAt) plus an id selector. The scope resolver narrows all-vs-own by permission and carries no project predicate.
+
+Blast radius: Intra-tenant: any org ticket is readable through any project's URL.
+
+Evidence:
+
+- `src/modules/build/core/projects-tickets-detail.service.ts:34` — bound to the URL project
+
+### CLOSED — `PATCH /build/:projectId/tickets/:ticketId`
+
+`ProjectsTicketsController.updateTicket` — `src/modules/build/core/projects-tickets.controller.ts:226`
+
+Finding: `parent-binding-missing`
+
+PATCH /build/:projectId/tickets/:ticketId. No @Param("projectId"). The service DOES re-derive the ticket's real project from the row and re-authorises against THAT, so a caller cannot mutate a project they have no rights to — but the URL segment is still never compared, so the route resolves a foreign-project ticket instead of 404ing.
+
+Blast radius: Intra-tenant, and narrower than the rest of this family: the row-derived access check means the caller must already hold rights on the ticket's true project. What breaks is the routing/404 contract, and any future project-scoped gate that trusts the URL.
+
+Evidence:
+
+- `src/modules/build/core/projects-tickets-update.service.ts:180` — bound to the URL project
+- `src/modules/build/core/projects-tickets-update.service.ts:180` — bound to the URL project
+
+### CLOSED — `DELETE /build/:projectId/tickets/:ticketId`
+
+`ProjectsTicketsController.deleteTicket` — `src/modules/build/core/projects-tickets.controller.ts:239`
+
+Finding: `parent-binding-missing`
+
+DELETE /build/:projectId/tickets/:ticketId. No @Param("projectId"); the ticket is resolved by (id, orgId) and the access check that follows uses the row's own projectId.
+
+Blast radius: Intra-tenant; same row-derived mitigation as updateTicket.
+
+Evidence:
+
+- `src/modules/build/core/projects-tickets.service.ts:120` — bound to the URL project
 
 ### CLOSED — `DELETE /build/:projectId/webhooks/:webhookId`
 
@@ -562,21 +562,6 @@ POST /public/build-forms/:publicToken/submissions. Unauthenticated by design and
 
 | verdict | verb | route | controller:line | method | classification | module | guard chain | org scoping | parent scoping | @Validate params | @Idempotent |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| VULNERABLE | GET | `/build/:projectId/tickets/:ticketId/subtasks` | `src/modules/build/core/projects-ticket-associations.controller.ts:63` | `getSubtasks` | @RequirePermission("build:tickets:view") | @RequireModule("build") | OK | BOUND | NOT-PASSED (no @Param on parent) | complete [projectId, ticketId] | n/a |
-| VULNERABLE | GET | `/build/:projectId/tickets/:ticketId/watchers` | `src/modules/build/core/projects-ticket-associations.controller.ts:114` | `getWatchers` | @RequirePermission("build:tickets:view") | @RequireModule("build") | OK | BOUND | NOT-PASSED (no @Param on parent) | complete [projectId, ticketId] | n/a |
-| VULNERABLE | POST | `/build/:projectId/tickets/:ticketId/watchers` | `src/modules/build/core/projects-ticket-associations.controller.ts:125` | `addWatcher` | @RequirePermission("build:tickets:update") | @RequireModule("build") | OK | BOUND | NOT-PASSED (no @Param on parent) | complete [projectId, ticketId] | NO (mutating) |
-| VULNERABLE | DELETE | `/build/:projectId/tickets/:ticketId/watchers` | `src/modules/build/core/projects-ticket-associations.controller.ts:138` | `removeWatcher` | @RequirePermission("build:tickets:update") | @RequireModule("build") | OK | BOUND | NOT-PASSED (no @Param on parent) | complete [projectId, ticketId] | NO (mutating) |
-| VULNERABLE | POST | `/build/:projectId/tickets/:ticketId/labels` | `src/modules/build/core/projects-ticket-associations.controller.ts:150` | `addLabel` | @RequirePermission("build:tickets:update") | @RequireModule("build") | OK | BOUND | NOT-PASSED (no @Param on parent) | complete [projectId, ticketId] | NO (mutating) |
-| VULNERABLE | POST | `/build/:projectId/tickets/:ticketId/attachments` | `src/modules/build/core/projects-ticket-associations.controller.ts:176` | `addAttachment` | @RequirePermission("build:tickets:update") | @RequireModule("build") | OK | BOUND | NOT-PASSED (no @Param on parent) | complete [projectId, ticketId] | NO (mutating) |
-| VULNERABLE | PATCH | `/build/:projectId/tickets/:ticketId/checklists/:checklistId` | `src/modules/build/core/projects-ticket-checklists.controller.ts:70` | `updateChecklist` | @RequirePermission("build:tickets:update") | @RequireModule("build") | OK | BOUND | NOT-PASSED (no @Param on parent) | complete [projectId, ticketId, checklistId] | NO (mutating) |
-| VULNERABLE | DELETE | `/build/:projectId/tickets/:ticketId/checklists/:checklistId` | `src/modules/build/core/projects-ticket-checklists.controller.ts:82` | `deleteChecklist` | @RequirePermission("build:tickets:update") | @RequireModule("build") | OK | BOUND | NOT-PASSED (no @Param on parent) | complete [projectId, ticketId, checklistId] | NO (mutating) |
-| VULNERABLE | POST | `/build/:projectId/tickets/:ticketId/checklists/:checklistId/items` | `src/modules/build/core/projects-ticket-checklists.controller.ts:94` | `createChecklistItem` | @RequirePermission("build:tickets:update") | @RequireModule("build") | OK | BOUND | NOT-PASSED (no @Param on parent) | complete [projectId, ticketId, checklistId] | NO (mutating) |
-| VULNERABLE | PATCH | `/build/:projectId/tickets/:ticketId/checklists/:checklistId/items/:itemId` | `src/modules/build/core/projects-ticket-checklists.controller.ts:107` | `updateChecklistItem` | @RequirePermission("build:tickets:update") | @RequireModule("build") | OK | BOUND | NOT-PASSED (no @Param on parent) | complete [projectId, ticketId, checklistId, itemId] | NO (mutating) |
-| VULNERABLE | DELETE | `/build/:projectId/tickets/:ticketId/checklists/:checklistId/items/:itemId` | `src/modules/build/core/projects-ticket-checklists.controller.ts:119` | `deleteChecklistItem` | @RequirePermission("build:tickets:update") | @RequireModule("build") | OK | BOUND | NOT-PASSED (no @Param on parent) | complete [projectId, ticketId, checklistId, itemId] | NO (mutating) |
-| VULNERABLE | POST | `/build/:projectId/tickets/:ticketId/comments` | `src/modules/build/core/projects-ticket-comments.controller.ts:45` | `addComment` | @RequirePermission("build:tickets:update") | @RequireModule("build") | OK | BOUND | NOT-PASSED (no @Param on parent) | complete [projectId, ticketId] | NO (mutating) |
-| VULNERABLE | GET | `/build/:projectId/tickets/:ticketId` | `src/modules/build/core/projects-tickets.controller.ts:214` | `getTicket` | @RequirePermission("build:tickets:view") | @RequireModule("build") | OK | BOUND | NOT-PASSED (no @Param on parent) | complete [projectId, ticketId] | n/a |
-| VULNERABLE | PATCH | `/build/:projectId/tickets/:ticketId` | `src/modules/build/core/projects-tickets.controller.ts:225` | `updateTicket` | @RequirePermission("build:tickets:update") | @RequireModule("build") | OK | BOUND | NOT-PASSED (no @Param on parent) | complete [projectId, ticketId] | NO (mutating) |
-| VULNERABLE | DELETE | `/build/:projectId/tickets/:ticketId` | `src/modules/build/core/projects-tickets.controller.ts:237` | `deleteTicket` | @RequirePermission("build:tickets:delete") | @RequireModule("build") | OK | BOUND | NOT-PASSED (no @Param on parent) | complete [projectId, ticketId] | NO (mutating) |
 | NEEDS-REVIEW | GET | `/build/:projectId/approvals/:approvalId` | `src/modules/build/approvals/approvals.controller.ts:96` | `getApproval` | @RequirePermission("build:approvals:view") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, approvalId] | n/a |
 | NEEDS-REVIEW | PATCH | `/build/:projectId/approvals/:approvalId/decide` | `src/modules/build/approvals/approvals.controller.ts:122` | `decideApproval` | @RequirePermission("build:approvals:decide") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, approvalId] | yes |
 | NEEDS-REVIEW | PATCH | `/build/:projectId/approvals/:approvalId` | `src/modules/build/approvals/approvals.controller.ts:136` | `updateApproval` | @RequirePermission("build:approvals:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, approvalId] | NO (mutating) |
@@ -595,22 +580,22 @@ POST /public/build-forms/:publicToken/submissions. Unauthenticated by design and
 | NEEDS-REVIEW | GET | `/build/:projectId/tickets/:ticketId/custom-field-values` | `src/modules/build/core/projects-custom-fields.controller.ts:86` | `getTicketValues` | @RequirePermission("build:tickets:view") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, ticketId] | n/a |
 | NEEDS-REVIEW | POST | `/build/:projectId/tickets/:ticketId/custom-field-values` | `src/modules/build/core/projects-custom-fields.controller.ts:98` | `upsertTicketValues` | @RequirePermission("build:tickets:update") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, ticketId] | NO (mutating) |
 | NEEDS-REVIEW | POST | `/build/templates` | `src/modules/build/core/projects-templates.controller.ts:46` | `createTemplate` | @RequirePermission("build:manage") | @RequireModule("build") | OK | PASSED-UNBOUND | N/A (not nested) | unresolved | NO (mutating) |
-| NEEDS-REVIEW | GET | `/build/:projectId/tickets/:ticketId/relations` | `src/modules/build/core/projects-ticket-associations.controller.ts:74` | `listRelations` | @RequirePermission("build:tickets:view") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, ticketId] | n/a |
-| NEEDS-REVIEW | POST | `/build/:projectId/tickets/:ticketId/relations` | `src/modules/build/core/projects-ticket-associations.controller.ts:86` | `addRelation` | @RequirePermission("build:tickets:update") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, ticketId] | NO (mutating) |
-| NEEDS-REVIEW | DELETE | `/build/:projectId/tickets/:ticketId/relations` | `src/modules/build/core/projects-ticket-associations.controller.ts:100` | `removeRelation` | @RequirePermission("build:tickets:update") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, ticketId] | NO (mutating) |
-| NEEDS-REVIEW | DELETE | `/build/:projectId/tickets/:ticketId/labels/:labelId` | `src/modules/build/core/projects-ticket-associations.controller.ts:163` | `removeLabel` | @RequirePermission("build:tickets:update") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, ticketId, labelId] | NO (mutating) |
-| NEEDS-REVIEW | GET | `/build/:projectId/tickets/:ticketId/git-links` | `src/modules/build/core/projects-ticket-associations.controller.ts:189` | `getGitLinks` | @RequirePermission("build:tickets:view") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, ticketId] | n/a |
-| NEEDS-REVIEW | GET | `/build/:projectId/tickets/:ticketId/related-links` | `src/modules/build/core/projects-ticket-associations.controller.ts:201` | `listRelatedLinks` | @RequirePermission("build:tickets:view") | @RequireModule("build") | OK | BOUND | PASSED-UNBOUND | complete [projectId, ticketId] | n/a |
-| NEEDS-REVIEW | POST | `/build/:projectId/tickets/:ticketId/related-links` | `src/modules/build/core/projects-ticket-associations.controller.ts:213` | `addRelatedLink` | @RequirePermission("build:tickets:update") | @RequireModule("build") | OK | BOUND | PASSED-UNBOUND | complete [projectId, ticketId] | NO (mutating) |
-| NEEDS-REVIEW | PATCH | `/build/:projectId/tickets/:ticketId/related-links/:linkId` | `src/modules/build/core/projects-ticket-associations.controller.ts:227` | `updateRelatedLink` | @RequirePermission("build:tickets:update") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, ticketId, linkId] | NO (mutating) |
-| NEEDS-REVIEW | DELETE | `/build/:projectId/tickets/:ticketId/related-links/:linkId` | `src/modules/build/core/projects-ticket-associations.controller.ts:241` | `deleteRelatedLink` | @RequirePermission("build:tickets:update") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, ticketId, linkId] | NO (mutating) |
+| NEEDS-REVIEW | GET | `/build/:projectId/tickets/:ticketId/relations` | `src/modules/build/core/projects-ticket-associations.controller.ts:75` | `listRelations` | @RequirePermission("build:tickets:view") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, ticketId] | n/a |
+| NEEDS-REVIEW | POST | `/build/:projectId/tickets/:ticketId/relations` | `src/modules/build/core/projects-ticket-associations.controller.ts:87` | `addRelation` | @RequirePermission("build:tickets:update") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, ticketId] | NO (mutating) |
+| NEEDS-REVIEW | DELETE | `/build/:projectId/tickets/:ticketId/relations` | `src/modules/build/core/projects-ticket-associations.controller.ts:101` | `removeRelation` | @RequirePermission("build:tickets:update") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, ticketId] | NO (mutating) |
+| NEEDS-REVIEW | DELETE | `/build/:projectId/tickets/:ticketId/labels/:labelId` | `src/modules/build/core/projects-ticket-associations.controller.ts:168` | `removeLabel` | @RequirePermission("build:tickets:update") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, ticketId, labelId] | NO (mutating) |
+| NEEDS-REVIEW | GET | `/build/:projectId/tickets/:ticketId/git-links` | `src/modules/build/core/projects-ticket-associations.controller.ts:196` | `getGitLinks` | @RequirePermission("build:tickets:view") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, ticketId] | n/a |
+| NEEDS-REVIEW | GET | `/build/:projectId/tickets/:ticketId/related-links` | `src/modules/build/core/projects-ticket-associations.controller.ts:208` | `listRelatedLinks` | @RequirePermission("build:tickets:view") | @RequireModule("build") | OK | BOUND | PASSED-UNBOUND | complete [projectId, ticketId] | n/a |
+| NEEDS-REVIEW | POST | `/build/:projectId/tickets/:ticketId/related-links` | `src/modules/build/core/projects-ticket-associations.controller.ts:220` | `addRelatedLink` | @RequirePermission("build:tickets:update") | @RequireModule("build") | OK | BOUND | PASSED-UNBOUND | complete [projectId, ticketId] | NO (mutating) |
+| NEEDS-REVIEW | PATCH | `/build/:projectId/tickets/:ticketId/related-links/:linkId` | `src/modules/build/core/projects-ticket-associations.controller.ts:234` | `updateRelatedLink` | @RequirePermission("build:tickets:update") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, ticketId, linkId] | NO (mutating) |
+| NEEDS-REVIEW | DELETE | `/build/:projectId/tickets/:ticketId/related-links/:linkId` | `src/modules/build/core/projects-ticket-associations.controller.ts:248` | `deleteRelatedLink` | @RequirePermission("build:tickets:update") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, ticketId, linkId] | NO (mutating) |
 | NEEDS-REVIEW | GET | `/build/:projectId/tickets/:ticketId/checklists` | `src/modules/build/core/projects-ticket-checklists.controller.ts:44` | `getChecklists` | @RequirePermission("build:tickets:view") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, ticketId] | n/a |
 | NEEDS-REVIEW | POST | `/build/:projectId/tickets/:ticketId/checklists` | `src/modules/build/core/projects-ticket-checklists.controller.ts:56` | `createChecklist` | @RequirePermission("build:tickets:update") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, ticketId] | NO (mutating) |
-| NEEDS-REVIEW | GET | `/build/:projectId/tickets/:ticketId/comments/:commentId` | `src/modules/build/core/projects-ticket-comments.controller.ts:58` | `getComment` | @RequirePermission("build:tickets:view") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, ticketId, commentId] | n/a |
-| NEEDS-REVIEW | PATCH | `/build/:projectId/tickets/:ticketId/comments/:commentId` | `src/modules/build/core/projects-ticket-comments.controller.ts:71` | `editComment` | @RequirePermission("build:tickets:update") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, ticketId, commentId] | NO (mutating) |
-| NEEDS-REVIEW | DELETE | `/build/:projectId/tickets/:ticketId/comments/:commentId` | `src/modules/build/core/projects-ticket-comments.controller.ts:85` | `deleteComment` | @RequirePermission("build:tickets:update") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, ticketId, commentId] | NO (mutating) |
-| NEEDS-REVIEW | POST | `/build/:projectId/tickets/:ticketId/comments/:commentId/reactions` | `src/modules/build/core/projects-ticket-comments.controller.ts:99` | `addReaction` | @RequirePermission("build:tickets:update") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, ticketId, commentId] | NO (mutating) |
-| NEEDS-REVIEW | DELETE | `/build/:projectId/tickets/:ticketId/comments/:commentId/reactions/:emoji` | `src/modules/build/core/projects-ticket-comments.controller.ts:113` | `removeReaction` | @RequirePermission("build:tickets:update") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, ticketId, commentId, emoji] | NO (mutating) |
+| NEEDS-REVIEW | GET | `/build/:projectId/tickets/:ticketId/comments/:commentId` | `src/modules/build/core/projects-ticket-comments.controller.ts:59` | `getComment` | @RequirePermission("build:tickets:view") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, ticketId, commentId] | n/a |
+| NEEDS-REVIEW | PATCH | `/build/:projectId/tickets/:ticketId/comments/:commentId` | `src/modules/build/core/projects-ticket-comments.controller.ts:72` | `editComment` | @RequirePermission("build:tickets:update") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, ticketId, commentId] | NO (mutating) |
+| NEEDS-REVIEW | DELETE | `/build/:projectId/tickets/:ticketId/comments/:commentId` | `src/modules/build/core/projects-ticket-comments.controller.ts:86` | `deleteComment` | @RequirePermission("build:tickets:update") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, ticketId, commentId] | NO (mutating) |
+| NEEDS-REVIEW | POST | `/build/:projectId/tickets/:ticketId/comments/:commentId/reactions` | `src/modules/build/core/projects-ticket-comments.controller.ts:100` | `addReaction` | @RequirePermission("build:tickets:update") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, ticketId, commentId] | NO (mutating) |
+| NEEDS-REVIEW | DELETE | `/build/:projectId/tickets/:ticketId/comments/:commentId/reactions/:emoji` | `src/modules/build/core/projects-ticket-comments.controller.ts:114` | `removeReaction` | @RequirePermission("build:tickets:update") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, ticketId, commentId, emoji] | NO (mutating) |
 | NEEDS-REVIEW | PATCH | `/build/:projectId/tickets/:ticketId/rank` | `src/modules/build/core/projects-tickets.controller.ts:173` | `rankTicket` | @RequirePermission("build:tickets:update") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, ticketId] | NO (mutating) |
 | NEEDS-REVIEW | GET | `/build/:projectId/tickets/:ticketId/activity` | `src/modules/build/core/projects-tickets.controller.ts:186` | `getActivity` | @RequirePermission("build:tickets:view") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, ticketId] | n/a |
 | NEEDS-REVIEW | GET | `/build/:projectId/tickets/key/:ticketNumber` | `src/modules/build/core/projects-tickets.controller.ts:202` | `getTicketByKey` | @RequirePermission("build:tickets:view") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, ticketNumber] | n/a |
@@ -696,6 +681,21 @@ POST /public/build-forms/:publicToken/submissions. Unauthenticated by design and
 | CLOSED | DELETE | `/build/:projectId/releases/:releaseId` | `src/modules/build/core/projects-releases.controller.ts:75` | `deleteRelease` | @RequirePermission("build:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, releaseId] | NO (mutating) |
 | CLOSED | POST | `/build/:projectId/releases/:releaseId/tickets` | `src/modules/build/core/projects-releases.controller.ts:88` | `addTicket` | @RequirePermission("build:tickets:update") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, releaseId] | NO (mutating) |
 | CLOSED | DELETE | `/build/:projectId/releases/:releaseId/tickets/:ticketId` | `src/modules/build/core/projects-releases.controller.ts:102` | `removeTicket` | @RequirePermission("build:tickets:update") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, releaseId, ticketId] | NO (mutating) |
+| CLOSED | GET | `/build/:projectId/tickets/:ticketId/subtasks` | `src/modules/build/core/projects-ticket-associations.controller.ts:63` | `getSubtasks` | @RequirePermission("build:tickets:view") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, ticketId] | n/a |
+| CLOSED | GET | `/build/:projectId/tickets/:ticketId/watchers` | `src/modules/build/core/projects-ticket-associations.controller.ts:115` | `getWatchers` | @RequirePermission("build:tickets:view") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, ticketId] | n/a |
+| CLOSED | POST | `/build/:projectId/tickets/:ticketId/watchers` | `src/modules/build/core/projects-ticket-associations.controller.ts:127` | `addWatcher` | @RequirePermission("build:tickets:update") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, ticketId] | NO (mutating) |
+| CLOSED | DELETE | `/build/:projectId/tickets/:ticketId/watchers` | `src/modules/build/core/projects-ticket-associations.controller.ts:141` | `removeWatcher` | @RequirePermission("build:tickets:update") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, ticketId] | NO (mutating) |
+| CLOSED | POST | `/build/:projectId/tickets/:ticketId/labels` | `src/modules/build/core/projects-ticket-associations.controller.ts:154` | `addLabel` | @RequirePermission("build:tickets:update") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, ticketId] | NO (mutating) |
+| CLOSED | POST | `/build/:projectId/tickets/:ticketId/attachments` | `src/modules/build/core/projects-ticket-associations.controller.ts:182` | `addAttachment` | @RequirePermission("build:tickets:update") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, ticketId] | NO (mutating) |
+| CLOSED | PATCH | `/build/:projectId/tickets/:ticketId/checklists/:checklistId` | `src/modules/build/core/projects-ticket-checklists.controller.ts:70` | `updateChecklist` | @RequirePermission("build:tickets:update") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, ticketId, checklistId] | NO (mutating) |
+| CLOSED | DELETE | `/build/:projectId/tickets/:ticketId/checklists/:checklistId` | `src/modules/build/core/projects-ticket-checklists.controller.ts:84` | `deleteChecklist` | @RequirePermission("build:tickets:update") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, ticketId, checklistId] | NO (mutating) |
+| CLOSED | POST | `/build/:projectId/tickets/:ticketId/checklists/:checklistId/items` | `src/modules/build/core/projects-ticket-checklists.controller.ts:98` | `createChecklistItem` | @RequirePermission("build:tickets:update") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, ticketId, checklistId] | NO (mutating) |
+| CLOSED | PATCH | `/build/:projectId/tickets/:ticketId/checklists/:checklistId/items/:itemId` | `src/modules/build/core/projects-ticket-checklists.controller.ts:113` | `updateChecklistItem` | @RequirePermission("build:tickets:update") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, ticketId, checklistId, itemId] | NO (mutating) |
+| CLOSED | DELETE | `/build/:projectId/tickets/:ticketId/checklists/:checklistId/items/:itemId` | `src/modules/build/core/projects-ticket-checklists.controller.ts:128` | `deleteChecklistItem` | @RequirePermission("build:tickets:update") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, ticketId, checklistId, itemId] | NO (mutating) |
+| CLOSED | POST | `/build/:projectId/tickets/:ticketId/comments` | `src/modules/build/core/projects-ticket-comments.controller.ts:45` | `addComment` | @RequirePermission("build:tickets:update") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, ticketId] | NO (mutating) |
+| CLOSED | GET | `/build/:projectId/tickets/:ticketId` | `src/modules/build/core/projects-tickets.controller.ts:214` | `getTicket` | @RequirePermission("build:tickets:view") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, ticketId] | n/a |
+| CLOSED | PATCH | `/build/:projectId/tickets/:ticketId` | `src/modules/build/core/projects-tickets.controller.ts:226` | `updateTicket` | @RequirePermission("build:tickets:update") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, ticketId] | NO (mutating) |
+| CLOSED | DELETE | `/build/:projectId/tickets/:ticketId` | `src/modules/build/core/projects-tickets.controller.ts:239` | `deleteTicket` | @RequirePermission("build:tickets:delete") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, ticketId] | NO (mutating) |
 | CLOSED | DELETE | `/build/:projectId/webhooks/:webhookId` | `src/modules/build/core/projects-webhooks.controller.ts:59` | `deleteWebhook` | @RequirePermission("build:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, webhookId] | NO (mutating) |
 | CLOSED | GET | `/build/:projectId/sprints/:sprintId` | `src/modules/build/execution/iterations.controller.ts:92` | `getSprint` | @RequirePermission("build:sprints:view") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, sprintId] | n/a |
 | CLOSED | PATCH | `/build/:projectId/sprints/:sprintId` | `src/modules/build/execution/iterations.controller.ts:104` | `updateSprint` | @RequirePermission("build:sprints:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, sprintId] | NO (mutating) |
@@ -904,22 +904,22 @@ POST /public/build-forms/:publicToken/submissions. Unauthenticated by design and
 - `GET /build/:projectId/tickets/:ticketId/custom-field-values` — `src/modules/build/core/projects-custom-fields.controller.ts:86` (`getTicketValues`): static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)
 - `POST /build/:projectId/tickets/:ticketId/custom-field-values` — `src/modules/build/core/projects-custom-fields.controller.ts:98` (`upsertTicketValues`): static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)
 - `POST /build/templates` — `src/modules/build/core/projects-templates.controller.ts:46` (`createTemplate`): org scoping: PASSED-UNBOUND
-- `GET /build/:projectId/tickets/:ticketId/relations` — `src/modules/build/core/projects-ticket-associations.controller.ts:74` (`listRelations`): static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)
-- `POST /build/:projectId/tickets/:ticketId/relations` — `src/modules/build/core/projects-ticket-associations.controller.ts:86` (`addRelation`): static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)
-- `DELETE /build/:projectId/tickets/:ticketId/relations` — `src/modules/build/core/projects-ticket-associations.controller.ts:100` (`removeRelation`): static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)
-- `DELETE /build/:projectId/tickets/:ticketId/labels/:labelId` — `src/modules/build/core/projects-ticket-associations.controller.ts:163` (`removeLabel`): static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)
-- `GET /build/:projectId/tickets/:ticketId/git-links` — `src/modules/build/core/projects-ticket-associations.controller.ts:189` (`getGitLinks`): static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)
-- `GET /build/:projectId/tickets/:ticketId/related-links` — `src/modules/build/core/projects-ticket-associations.controller.ts:201` (`listRelatedLinks`): parent scoping: PASSED-UNBOUND
-- `POST /build/:projectId/tickets/:ticketId/related-links` — `src/modules/build/core/projects-ticket-associations.controller.ts:213` (`addRelatedLink`): parent scoping: PASSED-UNBOUND
-- `PATCH /build/:projectId/tickets/:ticketId/related-links/:linkId` — `src/modules/build/core/projects-ticket-associations.controller.ts:227` (`updateRelatedLink`): static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)
-- `DELETE /build/:projectId/tickets/:ticketId/related-links/:linkId` — `src/modules/build/core/projects-ticket-associations.controller.ts:241` (`deleteRelatedLink`): static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)
+- `GET /build/:projectId/tickets/:ticketId/relations` — `src/modules/build/core/projects-ticket-associations.controller.ts:75` (`listRelations`): static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)
+- `POST /build/:projectId/tickets/:ticketId/relations` — `src/modules/build/core/projects-ticket-associations.controller.ts:87` (`addRelation`): static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)
+- `DELETE /build/:projectId/tickets/:ticketId/relations` — `src/modules/build/core/projects-ticket-associations.controller.ts:101` (`removeRelation`): static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)
+- `DELETE /build/:projectId/tickets/:ticketId/labels/:labelId` — `src/modules/build/core/projects-ticket-associations.controller.ts:168` (`removeLabel`): static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)
+- `GET /build/:projectId/tickets/:ticketId/git-links` — `src/modules/build/core/projects-ticket-associations.controller.ts:196` (`getGitLinks`): static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)
+- `GET /build/:projectId/tickets/:ticketId/related-links` — `src/modules/build/core/projects-ticket-associations.controller.ts:208` (`listRelatedLinks`): parent scoping: PASSED-UNBOUND
+- `POST /build/:projectId/tickets/:ticketId/related-links` — `src/modules/build/core/projects-ticket-associations.controller.ts:220` (`addRelatedLink`): parent scoping: PASSED-UNBOUND
+- `PATCH /build/:projectId/tickets/:ticketId/related-links/:linkId` — `src/modules/build/core/projects-ticket-associations.controller.ts:234` (`updateRelatedLink`): static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)
+- `DELETE /build/:projectId/tickets/:ticketId/related-links/:linkId` — `src/modules/build/core/projects-ticket-associations.controller.ts:248` (`deleteRelatedLink`): static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)
 - `GET /build/:projectId/tickets/:ticketId/checklists` — `src/modules/build/core/projects-ticket-checklists.controller.ts:44` (`getChecklists`): static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)
 - `POST /build/:projectId/tickets/:ticketId/checklists` — `src/modules/build/core/projects-ticket-checklists.controller.ts:56` (`createChecklist`): static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)
-- `GET /build/:projectId/tickets/:ticketId/comments/:commentId` — `src/modules/build/core/projects-ticket-comments.controller.ts:58` (`getComment`): static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)
-- `PATCH /build/:projectId/tickets/:ticketId/comments/:commentId` — `src/modules/build/core/projects-ticket-comments.controller.ts:71` (`editComment`): static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)
-- `DELETE /build/:projectId/tickets/:ticketId/comments/:commentId` — `src/modules/build/core/projects-ticket-comments.controller.ts:85` (`deleteComment`): static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)
-- `POST /build/:projectId/tickets/:ticketId/comments/:commentId/reactions` — `src/modules/build/core/projects-ticket-comments.controller.ts:99` (`addReaction`): static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)
-- `DELETE /build/:projectId/tickets/:ticketId/comments/:commentId/reactions/:emoji` — `src/modules/build/core/projects-ticket-comments.controller.ts:113` (`removeReaction`): static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)
+- `GET /build/:projectId/tickets/:ticketId/comments/:commentId` — `src/modules/build/core/projects-ticket-comments.controller.ts:59` (`getComment`): static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)
+- `PATCH /build/:projectId/tickets/:ticketId/comments/:commentId` — `src/modules/build/core/projects-ticket-comments.controller.ts:72` (`editComment`): static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)
+- `DELETE /build/:projectId/tickets/:ticketId/comments/:commentId` — `src/modules/build/core/projects-ticket-comments.controller.ts:86` (`deleteComment`): static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)
+- `POST /build/:projectId/tickets/:ticketId/comments/:commentId/reactions` — `src/modules/build/core/projects-ticket-comments.controller.ts:100` (`addReaction`): static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)
+- `DELETE /build/:projectId/tickets/:ticketId/comments/:commentId/reactions/:emoji` — `src/modules/build/core/projects-ticket-comments.controller.ts:114` (`removeReaction`): static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)
 - `PATCH /build/:projectId/tickets/:ticketId/rank` — `src/modules/build/core/projects-tickets.controller.ts:173` (`rankTicket`): static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)
 - `GET /build/:projectId/tickets/:ticketId/activity` — `src/modules/build/core/projects-tickets.controller.ts:186` (`getActivity`): static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)
 - `GET /build/:projectId/tickets/key/:ticketNumber` — `src/modules/build/core/projects-tickets.controller.ts:202` (`getTicketByKey`): static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)
