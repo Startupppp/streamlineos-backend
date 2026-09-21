@@ -37,7 +37,7 @@ describe("ProjectsTicketsUpdateService — cross-tenant isolation", () => {
     const db = makeDb(null);
     const svc = new ProjectsTicketsUpdateService(db, dispatch, activity, query, read, transfer, webhooksDispatch, automationRunner, cache, access);
     const u = { orgId: ATTACKER_ORG, userId: "u1", isOrgOwner: false } as never;
-    await expect(svc.updateTicket(u, 99, {})).rejects.toThrow(NotFoundException);
+    await expect(svc.updateTicket(u, 1, 99, {})).rejects.toThrow(NotFoundException);
   });
 
   it("processes ticket for the owning org (same-tenant control)", async () => {
@@ -51,7 +51,7 @@ describe("ProjectsTicketsUpdateService — cross-tenant isolation", () => {
     const db = { query: { tickets: { findFirst: jest.fn().mockResolvedValue(ticket) } }, transaction: txFn } as unknown as Db;
     const svc = new ProjectsTicketsUpdateService(db, dispatch, activity, query, read, transfer, webhooksDispatch, automationRunner, cache, access);
     const u = { orgId: OWNER_ORG, userId: "u1", isOrgOwner: true, principal: { kind: "human-session", membershipId: 1, isOrgOwner: true } } as never;
-    await expect(svc.updateTicket(u, 1, {})).resolves.not.toThrow();
+    await expect(svc.updateTicket(u, 1, 1, {})).resolves.not.toThrow();
   });
 
   it("rejects assignee changes without build:tickets:assign", async () => {
@@ -69,7 +69,7 @@ describe("ProjectsTicketsUpdateService — cross-tenant isolation", () => {
     try {
       const svc = module.get(ProjectsTicketsUpdateService);
       const u = { orgId: OWNER_ORG, userId: "u1", isOrgOwner: false } as never;
-      await expect(svc.updateTicket(u, 1, { assigneeIds: ["u2"] })).rejects.toThrow("Not authorized to assign this ticket");
+      await expect(svc.updateTicket(u, 1, 1, { assigneeIds: ["u2"] })).rejects.toThrow("Not authorized to assign this ticket");
       expect(module.get<Db>(DRIZZLE).query.tickets.findFirst).not.toHaveBeenCalled();
     } finally {
       await module.close();
@@ -91,7 +91,7 @@ describe("ProjectsTicketsUpdateService — cross-tenant isolation", () => {
     try {
       const svc = module.get(ProjectsTicketsUpdateService);
       const u = { orgId: OWNER_ORG, userId: "u1", isOrgOwner: false } as never;
-      await expect(svc.updateTicket(u, 1, { title: "Renamed" })).rejects.toThrow(NotFoundException);
+      await expect(svc.updateTicket(u, 1, 1, { title: "Renamed" })).rejects.toThrow(NotFoundException);
       expect(deniedHolds).not.toHaveBeenCalled();
     } finally {
       await module.close();

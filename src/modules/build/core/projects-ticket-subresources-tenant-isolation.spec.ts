@@ -5,6 +5,7 @@ import { ProjectsTicketSubresourcesService } from "./projects-ticket-subresource
 describe("ProjectsTicketSubresourcesService — cross-tenant isolation", () => {
   const OWNER_ORG = "org-owner";
   const ATTACKER_ORG = "org-attacker";
+  const PROJECT_ID = 5;
 
   function makeDb(ticketRow: unknown | null, subtaskRows: unknown[] = []) {
     return {
@@ -29,14 +30,14 @@ describe("ProjectsTicketSubresourcesService — cross-tenant isolation", () => {
   it("throws NotFoundException when ticket belongs to a different org (cross-tenant isolation)", async () => {
     const db = makeDb(null);
     const svc = new ProjectsTicketSubresourcesService(db, activity as never, comments, checklists, links, relations, access);
-    await expect(svc.getWatchers(ATTACKER_ORG, 99)).rejects.toThrow(NotFoundException);
+    await expect(svc.getWatchers(ATTACKER_ORG, PROJECT_ID, 99)).rejects.toThrow(NotFoundException);
   });
 
   it("returns subtasks scoped to owning org (same-tenant control)", async () => {
     const subtask = { id: 2, parentTicketId: 1, orgId: OWNER_ORG, assignees: [], labels: [] };
     const db = makeDb({ id: 1, orgId: OWNER_ORG }, [subtask]);
     const svc = new ProjectsTicketSubresourcesService(db, activity as never, comments, checklists, links, relations, access);
-    const result = await svc.getSubtasks(OWNER_ORG, 1);
+    const result = await svc.getSubtasks(OWNER_ORG, PROJECT_ID, 1);
     expect(result).toHaveLength(1);
   });
 
@@ -45,7 +46,7 @@ describe("ProjectsTicketSubresourcesService — cross-tenant isolation", () => {
     const subtask = { id: 2, parentTicketId: 1, orgId: OWNER_ORG, assignee: { user }, assignees: [], labels: [] };
     const db = makeDb({ id: 1, orgId: OWNER_ORG }, [subtask]);
     const svc = new ProjectsTicketSubresourcesService(db, activity as never, comments, checklists, links, relations, access);
-    const [row] = await svc.getSubtasks(OWNER_ORG, 1);
+    const [row] = await svc.getSubtasks(OWNER_ORG, PROJECT_ID, 1);
     expect(row).toMatchObject({ assigneeId: "user-1", assignee: user });
   });
 });

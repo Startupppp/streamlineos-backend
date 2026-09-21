@@ -94,26 +94,33 @@ export class ProjectsTicketsService {
     return this.detail.getTicketByKey(u, projectId, ticketNumber);
   }
 
-  async getTicket(u: CurrentUserContext, ticketId: number) {
-    return this.detail.getTicket(u, ticketId);
+  async getTicket(u: CurrentUserContext, projectId: number, ticketId: number) {
+    return this.detail.getTicket(u, projectId, ticketId);
   }
 
   async updateTicket(
     u: CurrentUserContext,
+    projectId: number | null,
     ticketId: number,
     input: UpdateTicketInput,
   ) {
-    return this.update.updateTicket(u, ticketId, input);
+    return this.update.updateTicket(u, projectId, ticketId, input);
   }
 
   async deleteTicket(
     orgId: string,
     userId: string,
+    projectId: number,
     ticketId: number,
     force: boolean,
   ) {
     const existing = await this.db.query.tickets.findFirst({
-      where: and(eq(tickets.id, ticketId), eq(tickets.orgId, orgId), isNull(tickets.deletedAt)),
+      where: and(
+        eq(tickets.id, ticketId),
+        eq(tickets.projectId, projectId),
+        eq(tickets.orgId, orgId),
+        isNull(tickets.deletedAt),
+      ),
       columns: { id: true, projectId: true, title: true },
     });
     if (!existing || !existing.projectId)

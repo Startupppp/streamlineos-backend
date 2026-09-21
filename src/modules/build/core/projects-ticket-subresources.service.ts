@@ -33,7 +33,7 @@ import type {
   CommentInput,
   UpdateRelatedLinkInput,
 } from "./dto/projects.schemas";
-import { assertTicketInOrg } from "./project-access";
+import { assertTicketInProject } from "./project-access";
 import { AccessService } from "../../access/access.service";
 import {
   assertTicketReadAccess,
@@ -74,8 +74,13 @@ export class ProjectsTicketSubresourcesService {
     @Inject(AccessService) private readonly access: TicketReadAccess,
   ) {}
 
-  addComment(u: CurrentUserContext, ticketId: number, body: CommentInput) {
-    return this.comments.addComment(u, ticketId, body);
+  addComment(
+    u: CurrentUserContext,
+    projectId: number | null,
+    ticketId: number,
+    body: CommentInput,
+  ) {
+    return this.comments.addComment(u, projectId, ticketId, body);
   }
 
   getComment(
@@ -240,12 +245,13 @@ export class ProjectsTicketSubresourcesService {
     }));
   }
 
-  async getSubtasks(orgId: string, ticketId: number) {
-    await assertTicketInOrg(this.db, orgId, ticketId);
+  async getSubtasks(orgId: string, projectId: number, ticketId: number) {
+    await assertTicketInProject(this.db, orgId, projectId, ticketId);
     return queryTickets(
       this.db,
       and(
         eq(tickets.parentTicketId, ticketId),
+        eq(tickets.projectId, projectId),
         eq(tickets.orgId, orgId),
         isNull(tickets.deletedAt),
       ),
@@ -254,10 +260,15 @@ export class ProjectsTicketSubresourcesService {
     );
   }
 
-  private async requireTicket(orgId: string, ticketId: number): Promise<void> {
+  private async requireTicket(
+    orgId: string,
+    projectId: number,
+    ticketId: number,
+  ): Promise<void> {
     const ticket = await this.db.query.tickets.findFirst({
       where: and(
         eq(tickets.id, ticketId),
+        eq(tickets.projectId, projectId),
         eq(tickets.orgId, orgId),
         isNull(tickets.deletedAt),
       ),
@@ -266,10 +277,13 @@ export class ProjectsTicketSubresourcesService {
     if (!ticket) throw new NotFoundException("Ticket not found");
   }
 
-  async getWatchers(orgId: string, ticketId: number) {
-    await this.requireTicket(orgId, ticketId);
+  async getWatchers(orgId: string, projectId: number, ticketId: number) {
+    await this.requireTicket(orgId, projectId, ticketId);
     const rows = await this.db.query.ticketWatchers.findMany({
-      where: eq(ticketWatchers.ticketId, ticketId),
+      where: and(
+        eq(ticketWatchers.ticketId, ticketId),
+        eq(ticketWatchers.orgId, orgId),
+      ),
       columns: { id: true, ticketId: true, createdAt: true },
       with: {
         user: {
@@ -299,10 +313,11 @@ export class ProjectsTicketSubresourcesService {
 
   async addWatcher(
     u: CurrentUserContext,
+    projectId: number,
     ticketId: number,
     body: AddWatcherInput,
   ) {
-    await this.requireTicket(u.orgId, ticketId);
+    await this.requireTicket(u.orgId, projectId, ticketId);
     const userId = body.userId ?? u.userId;
     const [member] = await this.db
       .select({ id: organizationMembers.id })
@@ -345,8 +360,12 @@ export class ProjectsTicketSubresourcesService {
     };
   }
 
-  async removeWatcher(u: CurrentUserContext, ticketId: number) {
-    await this.requireTicket(u.orgId, ticketId);
+  async removeWatcher(
+    u: CurrentUserContext,
+    projectId: number,
+    ticketId: number,
+  ) {
+    await this.requireTicket(u.orgId, projectId, ticketId);
     const [member] = await this.db
       .select({ id: organizationMembers.id })
       .from(organizationMembers)
@@ -373,10 +392,11 @@ export class ProjectsTicketSubresourcesService {
   async addLabel(
     orgId: string,
     userId: string,
+    projectId: number,
     ticketId: number,
     body: AddLabelInput,
   ) {
-    await this.requireTicket(orgId, ticketId);
+    await this.requireTicket(orgId, projectId, ticketId);
     const [mapping] = await this.db
       .insert(ticketLabelMappings)
       .values({ orgId, ticketId, labelId: body.labelId })
@@ -389,16 +409,18 @@ export class ProjectsTicketSubresourcesService {
   async removeLabel(
     orgId: string,
     userId: string,
+    projectId: number,
     ticketId: number,
     labelId: number,
   ) {
-    await this.requireTicket(orgId, ticketId);
+    await this.requireTicket(orgId, projectId, ticketId);
     const deleted = await this.db
       .delete(ticketLabelMappings)
       .where(
         and(
           eq(ticketLabelMappings.ticketId, ticketId),
           eq(ticketLabelMappings.labelId, labelId),
+          eq(ticketLabelMappings.orgId, orgId),
         ),
       )
       .returning({ id: ticketLabelMappings.id });
@@ -425,10 +447,11 @@ export class ProjectsTicketSubresourcesService {
 
   async addAttachment(
     u: CurrentUserContext,
+    projectId: number,
     ticketId: number,
     body: AttachmentInput,
   ) {
-    await this.requireTicket(u.orgId, ticketId);
+    await this.requireTicket(u.orgId, projectId, ticketId);
     const [attachment] = await this.db
       .insert(ticketAttachments)
       .values({
@@ -489,16 +512,40 @@ export class ProjectsTicketSubresourcesService {
     );
   }
 
-  updateChecklist(orgId: string, checklistId: number, data: { title: string }) {
-    return this.checklistsService.updateChecklist(orgId, checklistId, data);
+  updateChecklist(
+    orgId: string,
+    projectId: number,
+    ticketId: number,
+    checklistId: number,
+    data: { title: string },
+  ) {
+    return this.checklistsService.updateChecklist(
+      orgId,
+      projectId,
+      ticketId,
+      checklistId,
+      data,
+    );
   }
 
-  deleteChecklist(orgId: string, checklistId: number) {
-    return this.checklistsService.deleteChecklist(orgId, checklistId);
+  deleteChecklist(
+    orgId: string,
+    projectId: number,
+    ticketId: number,
+    checklistId: number,
+  ) {
+    return this.checklistsService.deleteChecklist(
+      orgId,
+      projectId,
+      ticketId,
+      checklistId,
+    );
   }
 
   createChecklistItem(
     orgId: string,
+    projectId: number,
+    ticketId: number,
     checklistId: number,
     data: {
       text: string;
@@ -507,11 +554,20 @@ export class ProjectsTicketSubresourcesService {
       order: number;
     },
   ) {
-    return this.checklistsService.createChecklistItem(orgId, checklistId, data);
+    return this.checklistsService.createChecklistItem(
+      orgId,
+      projectId,
+      ticketId,
+      checklistId,
+      data,
+    );
   }
 
   updateChecklistItem(
     orgId: string,
+    projectId: number,
+    ticketId: number,
+    checklistId: number,
     itemId: number,
     data: {
       text?: string;
@@ -521,11 +577,30 @@ export class ProjectsTicketSubresourcesService {
       order?: number;
     },
   ) {
-    return this.checklistsService.updateChecklistItem(orgId, itemId, data);
+    return this.checklistsService.updateChecklistItem(
+      orgId,
+      projectId,
+      ticketId,
+      checklistId,
+      itemId,
+      data,
+    );
   }
 
-  deleteChecklistItem(orgId: string, itemId: number) {
-    return this.checklistsService.deleteChecklistItem(orgId, itemId);
+  deleteChecklistItem(
+    orgId: string,
+    projectId: number,
+    ticketId: number,
+    checklistId: number,
+    itemId: number,
+  ) {
+    return this.checklistsService.deleteChecklistItem(
+      orgId,
+      projectId,
+      ticketId,
+      checklistId,
+      itemId,
+    );
   }
 
   getGitLinks(orgId: string, projectId: number, ticketId: number) {

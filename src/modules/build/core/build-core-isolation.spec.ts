@@ -20,6 +20,8 @@ function makeNotFoundDb(): Db {
   return {
     query: {
       projects: { findFirst: jest.fn().mockResolvedValue(undefined) },
+      tickets: { findFirst: jest.fn().mockResolvedValue(undefined) },
+      ticketChecklists: { findFirst: jest.fn().mockResolvedValue(undefined) },
       projectReleases: { findFirst: jest.fn().mockResolvedValue(undefined) },
       projectLabels: { findFirst: jest.fn().mockResolvedValue(undefined) },
       projectCustomFields: { findFirst: jest.fn().mockResolvedValue(undefined) },
@@ -168,7 +170,7 @@ describe("ProjectsTicketChecklistsService — cross-tenant isolation", () => {
     const db = makeNotFoundDb();
     const svc = new ProjectsTicketChecklistsService(db);
 
-    await expect(svc.deleteChecklist("org-attacker", 999)).rejects.toThrow(NotFoundException);
+    await expect(svc.deleteChecklist("org-attacker", 5, 11, 999)).rejects.toThrow(NotFoundException);
   });
 });
 

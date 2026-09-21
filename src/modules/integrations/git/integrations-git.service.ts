@@ -156,7 +156,7 @@ export class IntegrationsGitService {
           orgId,
         );
         try {
-          await this.projectsTickets.updateTicket(systemCtx, ticket.id, { status: targetStatus });
+          await this.projectsTickets.updateTicket(systemCtx, null, ticket.id, { status: targetStatus });
         } catch (error) {
           logger.warn("[git-webhook] skipped auto-transition", { ticketId: ticket.id, error });
         }

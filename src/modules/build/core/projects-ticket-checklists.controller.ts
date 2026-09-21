@@ -32,8 +32,8 @@ import { z } from "zod";
 import { NoContentResponse, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
 import { checklistRowSchema, checklistItemSchema } from "./dto/build-tickets-response.schemas";
 import { projectAndTicketIdParams } from "./dto/build-params.schemas";
-const projectIdticketIdchecklistIdParams = z.object({ projectId: z.string().min(1), ticketId: z.string().min(1), checklistId: z.coerce.number().int().positive() }).strict();
-const projectIdticketIdchecklistIditemIdParams = z.object({ projectId: z.string().min(1), ticketId: z.string().min(1), checklistId: z.string().min(1), itemId: z.coerce.number().int().positive() }).strict();
+const projectIdticketIdchecklistIdParams = z.object({ projectId: z.coerce.number().int().positive(), ticketId: z.coerce.number().int().positive(), checklistId: z.coerce.number().int().positive() }).strict();
+const projectIdticketIdchecklistIditemIdParams = z.object({ projectId: z.coerce.number().int().positive(), ticketId: z.coerce.number().int().positive(), checklistId: z.coerce.number().int().positive(), itemId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("build")
 @Controller("build")
@@ -72,11 +72,13 @@ export class ProjectsTicketChecklistsController {
   @ResponseSchema(checklistRowSchema)
   @Validate({ params: projectIdticketIdchecklistIdParams, body: updateChecklistSchema })
   updateChecklist(
+    @Param("projectId", ParseIntPipe) projectId: number,
+    @Param("ticketId", ParseIntPipe) ticketId: number,
     @Param("checklistId", ParseIntPipe) checklistId: number,
     @Body() body: UpdateChecklistInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.subresources.updateChecklist(u.orgId, checklistId, body);
+    return this.subresources.updateChecklist(u.orgId, projectId, ticketId, checklistId, body);
   }
 
   @Delete(":projectId/tickets/:ticketId/checklists/:checklistId")
@@ -85,10 +87,12 @@ export class ProjectsTicketChecklistsController {
   @NoContentResponse()
   @Validate({ params: projectIdticketIdchecklistIdParams })
   deleteChecklist(
+    @Param("projectId", ParseIntPipe) projectId: number,
+    @Param("ticketId", ParseIntPipe) ticketId: number,
     @Param("checklistId", ParseIntPipe) checklistId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.subresources.deleteChecklist(u.orgId, checklistId);
+    return this.subresources.deleteChecklist(u.orgId, projectId, ticketId, checklistId);
   }
 
   @Post(":projectId/tickets/:ticketId/checklists/:checklistId/items")
@@ -97,11 +101,13 @@ export class ProjectsTicketChecklistsController {
   @ResponseSchema(checklistItemSchema)
   @Validate({ params: projectIdticketIdchecklistIdParams, body: createChecklistItemSchema })
   createChecklistItem(
+    @Param("projectId", ParseIntPipe) projectId: number,
+    @Param("ticketId", ParseIntPipe) ticketId: number,
     @Param("checklistId", ParseIntPipe) checklistId: number,
     @Body() body: CreateChecklistItemInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.subresources.createChecklistItem(u.orgId, checklistId, body);
+    return this.subresources.createChecklistItem(u.orgId, projectId, ticketId, checklistId, body);
   }
 
   @Patch(":projectId/tickets/:ticketId/checklists/:checklistId/items/:itemId")
@@ -109,11 +115,14 @@ export class ProjectsTicketChecklistsController {
   @ResponseSchema(checklistItemSchema)
   @Validate({ params: projectIdticketIdchecklistIditemIdParams, body: updateChecklistItemSchema })
   updateChecklistItem(
+    @Param("projectId", ParseIntPipe) projectId: number,
+    @Param("ticketId", ParseIntPipe) ticketId: number,
+    @Param("checklistId", ParseIntPipe) checklistId: number,
     @Param("itemId", ParseIntPipe) itemId: number,
     @Body() body: UpdateChecklistItemInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.subresources.updateChecklistItem(u.orgId, itemId, body);
+    return this.subresources.updateChecklistItem(u.orgId, projectId, ticketId, checklistId, itemId, body);
   }
 
   @Delete(":projectId/tickets/:ticketId/checklists/:checklistId/items/:itemId")
@@ -122,9 +131,12 @@ export class ProjectsTicketChecklistsController {
   @NoContentResponse()
   @Validate({ params: projectIdticketIdchecklistIditemIdParams })
   deleteChecklistItem(
+    @Param("projectId", ParseIntPipe) projectId: number,
+    @Param("ticketId", ParseIntPipe) ticketId: number,
+    @Param("checklistId", ParseIntPipe) checklistId: number,
     @Param("itemId", ParseIntPipe) itemId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.subresources.deleteChecklistItem(u.orgId, itemId);
+    return this.subresources.deleteChecklistItem(u.orgId, projectId, ticketId, checklistId, itemId);
   }
 }

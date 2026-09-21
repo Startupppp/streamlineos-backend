@@ -61,7 +61,7 @@ import { projectAndTicketIdParams } from "./dto/build-params.schemas";
 
 const projectIdParams = z.object({ projectId: z.coerce.number().int().positive() }).strict();
 const projectIdticketNumberParams = z.object({ projectId: z.coerce.number().int().positive(), ticketNumber: z.coerce.number().int().positive() }).strict();
-const ticketInProjectParams = z.object({ projectId: z.string().min(1), ticketId: z.coerce.number().int().positive() }).strict();
+const ticketInProjectParams = z.object({ projectId: z.coerce.number().int().positive(), ticketId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("build")
 @Controller("build")
@@ -216,10 +216,11 @@ export class ProjectsTicketsController {
   @ResponseSchema(ticketDetailSchema)
   @Validate({ params: ticketInProjectParams })
   getTicket(
+    @Param("projectId", ParseIntPipe) projectId: number,
     @Param("ticketId", ParseIntPipe) ticketId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.tickets.getTicket(u, ticketId);
+    return this.tickets.getTicket(u, projectId, ticketId);
   }
 
   @Patch(":projectId/tickets/:ticketId")
@@ -227,11 +228,12 @@ export class ProjectsTicketsController {
   @ResponseSchema(ticketUpdateResultSchema)
   @Validate({ params: ticketInProjectParams, body: updateTicketSchema })
   updateTicket(
+    @Param("projectId", ParseIntPipe) projectId: number,
     @Param("ticketId", ParseIntPipe) ticketId: number,
     @Body() body: UpdateTicketInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.tickets.updateTicket(u, ticketId, body);
+    return this.tickets.updateTicket(u, projectId, ticketId, body);
   }
 
   @Delete(":projectId/tickets/:ticketId")
@@ -240,10 +242,11 @@ export class ProjectsTicketsController {
   @NoContentResponse()
   @Validate({ params: ticketInProjectParams })
   deleteTicket(
+    @Param("projectId", ParseIntPipe) projectId: number,
     @Param("ticketId", ParseIntPipe) ticketId: number,
     @Query("force") force: string,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.tickets.deleteTicket(u.orgId, u.userId, ticketId, force === "true");
+    return this.tickets.deleteTicket(u.orgId, u.userId, projectId, ticketId, force === "true");
   }
 }
