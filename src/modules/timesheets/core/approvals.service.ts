@@ -16,7 +16,7 @@ import {
 } from "../../../db/schema";
 import { AccessService } from "../../access/access.service";
 import { actingMembershipId } from "../../../common/auth/principal";
-import { resolveApprovalScope, membershipScope, TS_APPROVALS_MANAGE_PERMISSION } from "./timesheets-core-scope";
+import { resolveApprovalScope, approvalQueueScope, TS_APPROVALS_MANAGE_PERMISSION } from "./timesheets-core-scope";
 import { buildCursorPage, decodeCursor } from "../../../common/pagination/cursor";
 import { keysetBeforeId } from "../../../common/pagination/keyset";
 import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
@@ -160,7 +160,7 @@ export class ApprovalsService {
     return read.read(
       {
         tenant: timesheetPeriods.orgId,
-        scope: membershipScope(membershipId, timesheetPeriods.userMembershipId),
+        scope: approvalQueueScope(membershipId),
         and: [
           eq(timesheetPeriods.status, query.status),
           requestedMembershipId !== undefined ? eq(timesheetPeriods.userMembershipId, requestedMembershipId) : undefined,
