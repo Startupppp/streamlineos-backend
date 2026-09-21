@@ -1,6 +1,17 @@
 import { NotFoundException } from "@nestjs/common";
+import { Test } from "@nestjs/testing";
 import type { Db } from "../../../db/drizzle.module";
+import { DRIZZLE } from "../../../db/drizzle.constants";
+import { CacheService } from "../../../common/cache/cache.service";
+import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
+import { AccessService } from "../../access/access.service";
 import { ProjectsTicketsUpdateService } from "./projects-tickets-update.service";
+import { ProjectsActivityService } from "./projects-activity.service";
+import { ProjectsTicketsQueryService } from "./projects-tickets-query.service";
+import { ProjectsTicketsReadService } from "./projects-tickets-read.service";
+import { ProjectsTicketsTransferService } from "./projects-tickets-transfer.service";
+import { ProjectsWebhooksDispatchService } from "./projects-webhooks-dispatch.service";
+import { BuildAutomationRunnerService } from "./build-automation-runner.service";
 
 describe("ProjectsTicketsUpdateService — cross-tenant isolation", () => {
   const OWNER_ORG = "org-owner";
@@ -44,22 +55,46 @@ describe("ProjectsTicketsUpdateService — cross-tenant isolation", () => {
   });
 
   it("rejects assignee changes without build:tickets:assign", async () => {
-    const db = makeDb(null);
-    const deniedAccess = { holds: jest.fn().mockResolvedValue(false) } as never;
-    const svc = new ProjectsTicketsUpdateService(db, dispatch, activity, query, read, transfer, webhooksDispatch, automationRunner, cache, deniedAccess);
-    const u = { orgId: OWNER_ORG, userId: "u1", isOrgOwner: false } as never;
-
-    await expect(svc.updateTicket(u, 1, { assigneeIds: ["u2"] })).rejects.toThrow("Not authorized to assign this ticket");
-    expect(db.query.tickets.findFirst).not.toHaveBeenCalled();
+    const deniedHolds = jest.fn().mockResolvedValue(false);
+    const module = await Test.createTestingModule({
+      providers: [
+        ProjectsTicketsUpdateService,
+        { provide: DRIZZLE, useValue: makeDb(null) },
+        ...[NotificationDispatchService, ProjectsActivityService, ProjectsTicketsQueryService,
+          ProjectsTicketsReadService, ProjectsTicketsTransferService, ProjectsWebhooksDispatchService,
+          BuildAutomationRunnerService, CacheService].map(provide => ({ provide, useValue: {} })),
+        { provide: AccessService, useValue: { holds: deniedHolds } },
+      ],
+    }).compile();
+    try {
+      const svc = module.get(ProjectsTicketsUpdateService);
+      const u = { orgId: OWNER_ORG, userId: "u1", isOrgOwner: false } as never;
+      await expect(svc.updateTicket(u, 1, { assigneeIds: ["u2"] })).rejects.toThrow("Not authorized to assign this ticket");
+      expect(module.get<Db>(DRIZZLE).query.tickets.findFirst).not.toHaveBeenCalled();
+    } finally {
+      await module.close();
+    }
   });
 
   it("does not require build:tickets:assign for other ticket updates", async () => {
-    const db = makeDb(null);
-    const deniedAccess = { holds: jest.fn().mockResolvedValue(false) } as never;
-    const svc = new ProjectsTicketsUpdateService(db, dispatch, activity, query, read, transfer, webhooksDispatch, automationRunner, cache, deniedAccess);
-    const u = { orgId: OWNER_ORG, userId: "u1", isOrgOwner: false } as never;
-
-    await expect(svc.updateTicket(u, 1, { title: "Renamed" })).rejects.toThrow(NotFoundException);
-    expect(deniedAccess.holds).not.toHaveBeenCalled();
+    const deniedHolds = jest.fn().mockResolvedValue(false);
+    const module = await Test.createTestingModule({
+      providers: [
+        ProjectsTicketsUpdateService,
+        { provide: DRIZZLE, useValue: makeDb(null) },
+        ...[NotificationDispatchService, ProjectsActivityService, ProjectsTicketsQueryService,
+          ProjectsTicketsReadService, ProjectsTicketsTransferService, ProjectsWebhooksDispatchService,
+          BuildAutomationRunnerService, CacheService].map(provide => ({ provide, useValue: {} })),
+        { provide: AccessService, useValue: { holds: deniedHolds } },
+      ],
+    }).compile();
+    try {
+      const svc = module.get(ProjectsTicketsUpdateService);
+      const u = { orgId: OWNER_ORG, userId: "u1", isOrgOwner: false } as never;
+      await expect(svc.updateTicket(u, 1, { title: "Renamed" })).rejects.toThrow(NotFoundException);
+      expect(deniedHolds).not.toHaveBeenCalled();
+    } finally {
+      await module.close();
+    }
   });
 });

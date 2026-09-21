@@ -8,6 +8,7 @@ import {
   ticketStatusUpdatePayloadSchema,
 } from "../dto/confirm-action-payloads.schemas";
 import { defineConfirmableAction } from "./confirmable-action.types";
+import { runInTenantTransaction } from "../../../../common/tenant/run-in-tenant-transaction";
 
 export const BUILD_CONFIRM_ACTIONS = [
   defineConfirmableAction({
@@ -38,12 +39,13 @@ export const BUILD_CONFIRM_ACTIONS = [
       tickets: moduleRef.get(ProjectsTicketsService, { strict: false }),
       comments: moduleRef.get(ProjectsTicketCommentsService, { strict: false }),
     }),
-    execute: async ({ ticketId, status, title, reason }, { actor }, { tickets, comments }) => {
-      await tickets.updateTicket(actor, ticketId, { status });
-      if (reason !== undefined && reason.trim().length > 0) {
-        await comments.addComment(actor, ticketId, { content: reason });
-      }
+    execute: async ({ ticketId, status, title, reason }, { actor, db }, { tickets, comments }) => {
       const subject = title === undefined ? `Ticket #${ticketId}` : `Ticket #${ticketId} "${title}"`;
+      await runInTenantTransaction(db, async () => {
+        await tickets.updateTicket(actor, ticketId, { status });
+        if (reason !== undefined && reason.trim().length > 0)
+          await comments.addComment(actor, ticketId, { content: reason });
+      }, { orgId: actor.orgId });
       return {
         result: { ticketId, status, title, reason },
         summary: `${subject} status updated to ${status}`,

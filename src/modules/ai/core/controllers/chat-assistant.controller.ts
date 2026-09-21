@@ -41,6 +41,7 @@ import {
   conversationMessagesQuerySchema,
   conversationRenameSchema,
   conversationsListQuerySchema,
+  declineProposalParamsSchema,
 } from "../dto/request.schemas";
 import { ToolAccessService } from "../tool-access.service";
 import { findConfirmableAction } from "../confirm-actions";
@@ -61,6 +62,7 @@ import {
   aiConversationSchema,
   deleteConversationResponseSchema,
   confirmActionResponseSchema,
+  declineActionResponseSchema,
 } from "../dto/ai-response.schemas";
 
 export const CHAT_STREAM_DEADLINE_MS = 120_000;
@@ -233,5 +235,23 @@ export class ChatAssistantController {
 
     await this.confirmation.markExecuted(proposalId, result, u.orgId);
     return { ok: true, result, summary };
+  }
+
+  @Post("proposals/:proposalId/decline")
+  @HttpCode(200)
+  @RequirePermission("ai:chat:use")
+  @NoTenantTransaction()
+  @ResponseSchema(declineActionResponseSchema)
+  @Validate({ params: declineProposalParamsSchema })
+  async declineProposal(
+    @Param("proposalId") proposalIdParam: string,
+    @CurrentUser() u: CurrentUserContext,
+  ): Promise<{ declined: true }> {
+    const flags = await this.orgFeatures.getFlags(u.orgId);
+    if (!flags.aiChat) {
+      throw new ForbiddenException("AI chat is disabled for this organization.");
+    }
+    await this.confirmation.decline(Number(proposalIdParam), u.orgId, u.userId);
+    return { declined: true };
   }
 }

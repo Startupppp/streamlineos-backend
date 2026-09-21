@@ -245,6 +245,10 @@ export type StalePipelineQuery = z.infer<typeof stalePipelineQuerySchema>;
 
 export const confirmActionBodySchema = z.object({ token: z.string().min(1) });
 
+export const declineProposalParamsSchema = z
+  .object({ proposalId: z.coerce.number().int().positive() })
+  .strict();
+
 export const blogImproveWritingSchema = z.object({ content: z.string().min(1).max(10000) });
 export type BlogImproveWritingInput = z.infer<typeof blogImproveWritingSchema>;
 

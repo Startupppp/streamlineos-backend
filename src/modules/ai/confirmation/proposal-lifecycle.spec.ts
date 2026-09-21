@@ -1,9 +1,9 @@
-import { BadRequestException, ConflictException } from "@nestjs/common";
+import { BadRequestException, ConflictException, NotFoundException } from "@nestjs/common";
 import { PgDialect } from "drizzle-orm/pg-core";
 import type { SQL } from "drizzle-orm";
 import type { Db } from "../../../db/drizzle.module";
 import type { AuditService } from "../../../common/audit/audit.service";
-import { markProposalExecuted, type ProposalLifecycleDeps } from "./lib/proposal-lifecycle";
+import { markProposalDeclined, markProposalExecuted, type ProposalLifecycleDeps } from "./lib/proposal-lifecycle";
 
 /**
  * The bookkeeping half of AI action proposals, which nothing tested.
@@ -159,6 +159,95 @@ describe("marking a proposal executed", () => {
     await expect(markProposalExecuted(h.deps, 7, { ok: true }, ORG)).rejects.toThrow(
       ConflictException,
     );
+    expect(h.log).not.toHaveBeenCalled();
+  });
+});
+
+describe("declining a proposal", () => {
+  it("reads the proposal inside the caller's org AND for the proposing user", async () => {
+    const h = harness(proposal());
+    await markProposalDeclined(h.deps, 7, ORG, PROPOSER);
+
+    const params = proposalReadParams(h.selectWhere);
+    expect(params).toContain(ORG);
+    expect(params).toContain(PROPOSER);
+  });
+
+  it("sets status to CANCELLED and emits the declined audit event for a PROPOSED proposal", async () => {
+    const h = harness(proposal());
+    await markProposalDeclined(h.deps, 7, ORG, PROPOSER);
+
+    expect(h.updateSet).toHaveBeenCalledWith(
+      expect.objectContaining({ status: "CANCELLED" }),
+    );
+    expect(h.log).toHaveBeenCalledWith(expect.objectContaining({ action: "ai.proposal.declined" }));
+  });
+
+  it("is idempotent — a CANCELLED proposal resolves without writing anything", async () => {
+    const h = harness(proposal({ status: "CANCELLED" }));
+    await expect(markProposalDeclined(h.deps, 7, ORG, PROPOSER)).resolves.toBeUndefined();
+    expect(h.update).not.toHaveBeenCalled();
+    expect(h.log).not.toHaveBeenCalled();
+  });
+
+  it("throws NotFoundException for an absent row so a cross-tenant probe cannot confirm the proposal exists", async () => {
+    const h = harness(undefined);
+    await expect(markProposalDeclined(h.deps, 7, ORG, PROPOSER)).rejects.toThrow(NotFoundException);
+  });
+
+  it("throws ConflictException for a CONFIRMED proposal so decline cannot preempt an in-flight action", async () => {
+    const h = harness(proposal({ status: "CONFIRMED" }));
+    await expect(markProposalDeclined(h.deps, 7, ORG, PROPOSER)).rejects.toThrow(ConflictException);
+    expect(h.update).not.toHaveBeenCalled();
+  });
+
+  it("throws ConflictException for an EXECUTED proposal so decline cannot be used after the action has fired", async () => {
+    const h = harness(proposal({ status: "EXECUTED" }));
+    await expect(markProposalDeclined(h.deps, 7, ORG, PROPOSER)).rejects.toThrow(ConflictException);
+    expect(h.update).not.toHaveBeenCalled();
+  });
+
+  it("the UPDATE WHERE clause restates orgId so another tenant cannot decline by id alone", async () => {
+    const h = harness(proposal());
+    await markProposalDeclined(h.deps, 7, ORG, PROPOSER);
+
+    const query = dialect.sqlToQuery(h.updateWhere.mock.calls[0]?.[0] as SQL);
+    expect(query.sql).toMatch(/"org_id"/);
+    expect(query.params).toContain(ORG);
+  });
+
+  it("the UPDATE WHERE clause restates userId so a colleague cannot decline someone else's proposal", async () => {
+    const h = harness(proposal());
+    await markProposalDeclined(h.deps, 7, ORG, PROPOSER);
+
+    const query = dialect.sqlToQuery(h.updateWhere.mock.calls[0]?.[0] as SQL);
+    expect(query.sql).toMatch(/"user_id"/);
+    expect(query.params).toContain(PROPOSER);
+  });
+
+  it("mutation proof: removing orgId from the SELECT WHERE would make the cross-tenant test pass — the param must be present", async () => {
+    const h = harness(proposal());
+    await markProposalDeclined(h.deps, 7, ORG, PROPOSER);
+
+    const params = proposalReadParams(h.selectWhere);
+    expect(params).toContain(ORG);
+    const withoutOrg = params.filter((p) => p !== ORG);
+    expect(withoutOrg).not.toContain(ORG);
+  });
+
+  it("mutation proof: removing userId from the SELECT WHERE would let any org member decline a colleague's proposal", async () => {
+    const h = harness(proposal());
+    await markProposalDeclined(h.deps, 7, ORG, PROPOSER);
+
+    const params = proposalReadParams(h.selectWhere);
+    expect(params).toContain(PROPOSER);
+    const withoutUser = params.filter((p) => p !== PROPOSER);
+    expect(withoutUser).not.toContain(PROPOSER);
+  });
+
+  it("reports the lost race instead of logging a decline that never landed", async () => {
+    const h = harness(proposal(), 0);
+    await expect(markProposalDeclined(h.deps, 7, ORG, PROPOSER)).rejects.toThrow(ConflictException);
     expect(h.log).not.toHaveBeenCalled();
   });
 });

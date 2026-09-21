@@ -33,3 +33,7 @@ export const confirmActionResponseSchema = z.object({
   result: z.record(z.string(), z.unknown()),
   summary: z.string(),
 });
+
+export const declineActionResponseSchema = z.object({
+  declined: z.literal(true),
+});
