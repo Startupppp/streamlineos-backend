@@ -31,9 +31,7 @@ import { scoreRow, toDealForecastScore, writeScoreRows } from "./lib/forecast-sc
 
 export type {
   DealForecastScore,
-  TrainingAccepted,
   TrainingAttempt,
-  TrainingRejected,
 } from "./forecast-training.types";
 
 /**

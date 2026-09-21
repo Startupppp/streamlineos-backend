@@ -191,4 +191,3 @@ export const entityActionOptionsSchema = z.object({
 export type EntityActionOptionsInput = z.infer<typeof entityActionOptionsSchema>;
 
 export const memberRoleSchema = z.object({ role: z.enum(["ADMIN", "MEMBER"]) }).strict();
-export type MemberRoleInput = z.infer<typeof memberRoleSchema>;
