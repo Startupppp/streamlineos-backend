@@ -74,7 +74,7 @@ export class TestSuitesController {
     @Body() body: UpdateTestSuiteInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.updateSuite(u.orgId, projectId, suiteId, body);
+    return this.svc.updateSuite(u, projectId, suiteId, body);
   }
 
   @Delete(":suiteId")
@@ -87,6 +87,6 @@ export class TestSuitesController {
     @Param("suiteId", ParseIntPipe) suiteId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.deleteSuite(u.orgId, projectId, suiteId);
+    return this.svc.deleteSuite(u, projectId, suiteId);
   }
 }
