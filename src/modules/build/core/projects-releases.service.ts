@@ -74,7 +74,7 @@ export class ProjectsReleasesService {
       const result = await tx
         .update(projectReleases)
         .set(data)
-        .where(and(eq(projectReleases.id, releaseId), eq(projectReleases.orgId, orgId), isNull(projectReleases.deletedAt)))
+        .where(and(eq(projectReleases.id, releaseId), eq(projectReleases.projectId, projectId), eq(projectReleases.orgId, orgId), isNull(projectReleases.deletedAt)))
         .returning();
       const row = result[0];
       if (row && data.status === "released") {
@@ -102,7 +102,7 @@ export class ProjectsReleasesService {
     const [counted] = await this.db
       .select({ ticketCount: sql<number>`CAST(COUNT(*) AS INT)` })
       .from(releaseTickets)
-      .where(eq(releaseTickets.releaseId, releaseId));
+      .where(and(eq(releaseTickets.releaseId, releaseId), eq(releaseTickets.orgId, orgId)));
     return releaseRowWithCount(updated, counted?.ticketCount ?? 0);
   }
 
@@ -112,7 +112,7 @@ export class ProjectsReleasesService {
     const [stamped] = await this.db
       .update(projectReleases)
       .set({ deletedAt: new Date() })
-      .where(and(eq(projectReleases.id, releaseId), eq(projectReleases.orgId, orgId), isNull(projectReleases.deletedAt)))
+      .where(and(eq(projectReleases.id, releaseId), eq(projectReleases.projectId, projectId), eq(projectReleases.orgId, orgId), isNull(projectReleases.deletedAt)))
       .returning({ id: projectReleases.id });
     if (!stamped) throw new NotFoundException("Release not found");
     return { success: true };
@@ -122,13 +122,13 @@ export class ProjectsReleasesService {
     await assertProjectAccess(this.db, this.access, u, projectId);
     const orgId = u.orgId;
     const release = await this.db.query.projectReleases.findFirst({
-      where: and(eq(projectReleases.id, releaseId), eq(projectReleases.orgId, orgId), isNull(projectReleases.deletedAt)),
+      where: and(eq(projectReleases.id, releaseId), eq(projectReleases.projectId, projectId), eq(projectReleases.orgId, orgId), isNull(projectReleases.deletedAt)),
       columns: { id: true },
     });
     if (!release) throw new NotFoundException("Release not found");
 
     const ticket = await this.db.query.tickets.findFirst({
-      where: and(eq(tickets.id, ticketId), eq(tickets.orgId, orgId), isNull(tickets.deletedAt)),
+      where: and(eq(tickets.id, ticketId), eq(tickets.projectId, projectId), eq(tickets.orgId, orgId), isNull(tickets.deletedAt)),
       columns: { id: true },
     });
     if (!ticket) throw new NotFoundException("Ticket not found");
@@ -141,13 +141,13 @@ export class ProjectsReleasesService {
     await assertProjectAccess(this.db, this.access, u, projectId);
     const orgId = u.orgId;
     const release = await this.db.query.projectReleases.findFirst({
-      where: and(eq(projectReleases.id, releaseId), eq(projectReleases.orgId, orgId), isNull(projectReleases.deletedAt)),
+      where: and(eq(projectReleases.id, releaseId), eq(projectReleases.projectId, projectId), eq(projectReleases.orgId, orgId), isNull(projectReleases.deletedAt)),
       columns: { id: true },
     });
     if (!release) throw new NotFoundException("Release not found");
 
     await this.db.delete(releaseTickets)
-      .where(and(eq(releaseTickets.releaseId, releaseId), eq(releaseTickets.ticketId, ticketId)));
+      .where(and(eq(releaseTickets.releaseId, releaseId), eq(releaseTickets.ticketId, ticketId), eq(releaseTickets.orgId, orgId)));
     return { success: true };
   }
 }
