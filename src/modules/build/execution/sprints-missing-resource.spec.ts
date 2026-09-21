@@ -13,7 +13,7 @@ describe("Sprint missing-resource writes", () => {
         transaction: async (run: (tx: { update: typeof update }) => Promise<void>) => run({ update }),
       },
     }] }).compile();
-    await expect(module.get(SprintsService).updateSprint("org-a", 77, { name: "Changed" }))
+    await expect(module.get(SprintsService).updateSprint("org-a", 1, 77, { name: "Changed" }))
       .rejects.toThrow(NotFoundException);
     expect(update).not.toHaveBeenCalled();
     await module.close();
