@@ -64,7 +64,8 @@ function makeDb(captured: CapturedGap, executed: string[]) {
   const db = {
     select: jest.fn(() => {
       let lastWhere: unknown;
-      const chain: SelectChain = {
+      let chain: SelectChain;
+      chain = {
         from: jest.fn().mockReturnThis(),
         where: jest.fn((condition: unknown) => {
           lastWhere = condition;

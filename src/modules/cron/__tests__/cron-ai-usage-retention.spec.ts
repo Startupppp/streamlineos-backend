@@ -2,6 +2,8 @@ jest.mock("../../../common/tenant/for-each-org", () => ({
   forEachOrg: jest.fn(),
 }));
 
+import fs from "node:fs";
+import path from "node:path";
 import { forEachOrg } from "../../../common/tenant/for-each-org";
 import { CronAiUsageRetentionService, AI_USAGE_RETENTION_DAYS } from "../cron-ai-usage-retention.service";
 import type { Db } from "../../../db/drizzle.module";
@@ -218,8 +220,6 @@ describe("CronAiUsageRetentionService — tenant isolation via forEachOrg", () =
 
 describe("CronAiUsageRetentionService — audit_logs / financial tables are excluded", () => {
   it("(E) service only touches ai_usage_logs — audit_logs table name does not appear in source", () => {
-    const fs = require("fs");
-    const path = require("path");
     const src = fs.readFileSync(
       path.join(__dirname, "../cron-ai-usage-retention.service.ts"),
       "utf8",

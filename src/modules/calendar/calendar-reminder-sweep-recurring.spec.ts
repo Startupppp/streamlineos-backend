@@ -1,6 +1,7 @@
 import type { Db } from "../../db/drizzle.module";
 import type { TenantTx } from "../../common/tenant";
 import { CalendarReminderSweepService } from "./calendar-reminder-sweep.service";
+import { expandToOccurrences } from "./calendar-occurrence.service";
 
 jest.mock("../../common/tenant", () => ({
   forEachOrg: jest.fn(),
@@ -606,7 +607,6 @@ describe("CalendarReminderSweepService — DST correctness for reminder window",
   });
 
   it("Asia/Kolkata (+05:30): weekly FREQ=DAILY series expanded to 2024-01-15 midnight IST = UTC 18:30 prior day", () => {
-    const { expandToOccurrences } = require("./calendar-occurrence.service");
     const event = {
       id: 1,
       title: "IST midnight series",
@@ -626,7 +626,6 @@ describe("CalendarReminderSweepService — DST correctness for reminder window",
   });
 
   it("America/New_York spring-forward: weekly series starting 2024-03-04T14:00Z expands to 2024-03-11T13:00Z (EDT offset)", () => {
-    const { expandToOccurrences } = require("./calendar-occurrence.service");
     const event = {
       id: 2,
       title: "NY weekly",

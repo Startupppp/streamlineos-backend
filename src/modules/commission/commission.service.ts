@@ -216,6 +216,7 @@ export class CommissionService {
           `Clawback for deal ${input.dealId} was recorded but the rep was not notified: ${
             error instanceof Error ? error.message : String(error)
           }`,
+          { cause: error }
         );
       }
     }

@@ -233,4 +233,15 @@ export default tseslint.config(
     ],
     rules: { "no-restricted-syntax": "off" },
   },
+  {
+    // `jest.isolateModules` is synchronous, so `require` is the only call that
+    // enters its registry. This spec asserts that loading the e2e setup file
+    // under NODE_ENV=production throws before the file can overwrite NODE_ENV —
+    // the guard that keeps the e2e tier off the production database. Rewriting
+    // it around `isolateModulesAsync` + `await import()` risks ts-jest lowering
+    // the dynamic import back out of the isolated registry, which would leave
+    // the assertion passing while testing nothing.
+    files: ["src/test/e2e-database-guard.spec.ts"],
+    rules: { "@typescript-eslint/no-require-imports": "off" },
+  },
 );

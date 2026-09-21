@@ -2,7 +2,7 @@ jest.mock("../timesheets-core-scope", () => ({
   ...jest.requireActual("../timesheets-core-scope"),
   resolveEntriesScope: jest
     .fn()
-    .mockResolvedValue(require("../../../access/scoped-read").ScopedRead.of("org-1", "user-1", "all")),
+    .mockResolvedValue(jest.requireActual("../../../access/scoped-read").ScopedRead.of("org-1", "user-1", "all")),
 }));
 
 import { PgDialect } from "drizzle-orm/pg-core";

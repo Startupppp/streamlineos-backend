@@ -1,3 +1,4 @@
+import * as tenantModule from "../../../common/tenant";
 import { BuildDueSweepService } from "./build-due-sweep.service";
 import type { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
 import type { Db } from "../../../db/drizzle.module";
@@ -24,10 +25,10 @@ describe("BuildDueSweepService — cross-tenant isolation via forEachOrg", () =>
     const svc = new BuildDueSweepService(db, dispatch);
 
     const mockForEachOrg = jest.spyOn(
-      require("../../../common/tenant"),
+      tenantModule,
       "forEachOrg",
     );
-    mockForEachOrg.mockResolvedValue(undefined);
+    mockForEachOrg.mockResolvedValue({ organizations: 0, succeeded: 0, failed: 0 });
 
     const result = await svc.sweep();
 

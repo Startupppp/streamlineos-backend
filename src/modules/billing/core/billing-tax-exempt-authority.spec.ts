@@ -78,7 +78,7 @@ describe("isTaxExempt authority contract — invoice pricing does not read the f
   });
 
   it("a line with taxRateBps=0 produces zero tax regardless of any external state", () => {
-    const { priceDocument } = require("./invoice-pricing") as typeof import("./invoice-pricing");
+    const { priceDocument } = jest.requireActual("./invoice-pricing") as typeof import("./invoice-pricing");
     const doc = priceDocument(
       [
         {

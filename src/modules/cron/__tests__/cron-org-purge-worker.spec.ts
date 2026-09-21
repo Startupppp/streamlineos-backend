@@ -7,6 +7,7 @@ import { StorageService } from "../../storage/storage.service";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { logger } from "../../../common/logger/logger.service";
 import { PURGE_ADAPTERS } from "../../../db/schema/common/organization-purge";
+import { organizations } from "../../../db/schema";
 import { PURGE_ADAPTER_REGISTRY } from "../../organization/core/lifecycle/organization-purge-adapters";
 import { APP_CONFIG } from "../../../config/config.module";
 
@@ -119,9 +120,8 @@ describe("CronOrgPurgeWorkerService", () => {
     restoreAdapters = null;
   });
 
-  function stubHappyPath(): { capturedSetArg: () => Record<string, unknown> | undefined } {
-    let capturedSetArg: Record<string, unknown> | undefined;
-
+  function stubHappyPath(): { deletedTables: () => unknown[] } {
+    const deletedTables: unknown[] = [];
     mockDb.select
       .mockReturnValueOnce(selectReturning([{ id: ORG_ID }]))
       .mockReturnValueOnce(
@@ -134,7 +134,10 @@ describe("CronOrgPurgeWorkerService", () => {
         // no unreleased hold; the read is inside the transaction so RLS is satisfied
         select: jest.fn().mockReturnValue(selectReturning([])),
         execute: jest.fn().mockResolvedValue([{ id: ORG_ID }]),
-        delete: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue([{ id: ORG_ID }]) }),
+        delete: jest.fn().mockImplementation((table: unknown) => {
+          deletedTables.push(table);
+          return { where: jest.fn().mockResolvedValue([{ id: ORG_ID }]) };
+        }),
         insert: jest.fn().mockReturnValue({
           values: jest.fn().mockReturnValue({
             onConflictDoNothing: jest.fn().mockResolvedValue(undefined),
@@ -149,18 +152,24 @@ describe("CronOrgPurgeWorkerService", () => {
       return fn(tx);
     });
 
-    return { capturedSetArg: () => capturedSetArg };
+    return { deletedTables: () => deletedTables };
   }
 
-  it("sets statusV2 = PURGED and status = PURGED in the same transaction so legacy readers exclude the org", async () => {
+  it("deletes the organization row outright rather than flipping it to a PURGED status, so no soft-deleted tenant survives the purge", async () => {
     restoreAdapters = setAdapterStates("CONFIRMED");
-    const { capturedSetArg } = stubHappyPath();
+    const { deletedTables } = stubHappyPath();
 
     const result = await svc.run();
 
     expect(result.processed).toBe(1);
     expect(result.skipped).toBe(0);
-    expect(capturedSetArg()).toBeUndefined();
+    expect(deletedTables()).toContain(organizations);
+    expect(mockAudit.log).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "org.purged",
+        metadata: expect.objectContaining({ physicalDeletion: true }),
+      }),
+    );
     expect(mockOrgMembership.revokeOrgScopedAccess).toHaveBeenCalledWith(
       ORG_ID,
       MEMBER_ID,
@@ -168,15 +177,15 @@ describe("CronOrgPurgeWorkerService", () => {
     );
   });
 
-  it("blocks completion when an adapter cannot confirm deletion, leaving the org PURGE_SCHEDULED", async () => {
+  it("blocks completion when an adapter cannot confirm deletion, leaving the organization row intact", async () => {
     restoreAdapters = setAdapterStates("FAILED");
-    const { capturedSetArg } = stubHappyPath();
+    const { deletedTables } = stubHappyPath();
 
     const result = await svc.run();
 
     expect(result.processed).toBe(0);
     expect(result.skipped).toBe(1);
-    expect(capturedSetArg()).toBeUndefined();
+    expect(deletedTables()).not.toContain(organizations);
     expect(mockOrgMembership.revokeOrgScopedAccess).not.toHaveBeenCalled();
   });
 

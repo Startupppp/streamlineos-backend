@@ -2,6 +2,8 @@ jest.mock("../../common/tenant/run-in-tenant-transaction", () => ({
   runInTenantTransaction: <T>(db: unknown, fn: (tx: unknown) => Promise<T>) => fn(db),
 }));
 
+import fs from "node:fs";
+import path from "node:path";
 import { REPORTING_REGISTRY } from "./compiler/registry";
 import { REPORTING_RUN } from "./reporting-source-access";
 import { ReportingService } from "./reporting.service";
@@ -116,8 +118,8 @@ describe("ReportingService.proposeFromQuestion", () => {
     // `reporting.controller.ts`'s docblock states. Asserted here by grep
     // rather than by mocking every possible execution path, which could
     // pass by omission.
-    const source = require("node:fs").readFileSync(
-      require("node:path").join(__dirname, "reporting.service.ts"),
+    const source = fs.readFileSync(
+      path.join(__dirname, "reporting.service.ts"),
       "utf8",
     ) as string;
     const method = source.slice(
