@@ -75,6 +75,7 @@ export class HrWorkflowDefinitionsService {
         status: hrWorkflowDefinitions.status,
         version: hrWorkflowDefinitions.version,
         isDefault: hrWorkflowDefinitions.isDefault,
+        settings: hrWorkflowDefinitions.settings,
         createdAt: hrWorkflowDefinitions.createdAt,
         updatedAt: hrWorkflowDefinitions.updatedAt,
         deletedAt: hrWorkflowDefinitions.deletedAt,
