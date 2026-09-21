@@ -156,6 +156,16 @@ jobs:
         env:
           SET_NULL_GATE_DATABASE_URL: postgres://ci:ci@127.0.0.1:5432/ci
 
+      # 2026-09-21 — written and documented in docs/composite-fk-set-null-audit-2026-09-09.md
+      # as `pnpm check:composite-fk-set-null`, but never added to package.json, so the
+      # documented command failed and the gate had never run. It reads pg_constraint and
+      # pg_attribute, so the bootstrapped job is its only possible home.
+      - name: ON DELETE SET NULL never targets a NOT NULL column
+        if: ${{ !cancelled() }}
+        run: pnpm check:composite-fk-set-null:self-test && pnpm check:composite-fk-set-null
+        env:
+          DATABASE_URL: postgres://ci:ci@127.0.0.1:5432/ci
+
       - name: Retention coverage (live)
         if: ${{ !cancelled() }}
         run: pnpm check:retention-coverage

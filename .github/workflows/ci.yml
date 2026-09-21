@@ -542,6 +542,30 @@ jobs:
         if: ${{ !cancelled() }}
         run: pnpm check:plan-limit-enforcement:self-test && pnpm check:plan-limit-enforcement
 
+      # 2026-09-21 — the same shape as the plan-limit entry above, four times over.
+      # These four scripts were written, self-tested and DOCUMENTED as `pnpm check:*`
+      # in backend/docs (accounting-seam-dod.md says "Run the gate with:
+      # pnpm check:accounting-seam"), but no package.json entry ever existed, so every
+      # documented invocation failed and none had run once. check:gate-wiring could not
+      # see them: it verifies that DECLARED gates reach a run step, so a script file
+      # absent from package.json is outside what it reads. All four are static and were
+      # measured exit 0, self-test first, before being wired here.
+      - name: Accounting seam definition of done
+        if: ${{ !cancelled() }}
+        run: pnpm check:accounting-seam:self-test && pnpm check:accounting-seam
+
+      - name: Stock writers go through the kernel
+        if: ${{ !cancelled() }}
+        run: pnpm check:stock-writers:self-test && pnpm check:stock-writers
+
+      - name: Upserts onto a partial unique index repeat its predicate
+        if: ${{ !cancelled() }}
+        run: pnpm check:partial-index-upserts:self-test && pnpm check:partial-index-upserts
+
+      - name: Signed URLs are authorized before they are minted
+        if: ${{ !cancelled() }}
+        run: pnpm check:signed-url-authorization:self-test && pnpm check:signed-url-authorization
+
       # Derives the route list from the 12 Settings/organization/module-access
       # controllers themselves, so a 160th handler is picked up without editing the
       # gate. Static by construction -- it proves a spec CONTAINS a matching supertest

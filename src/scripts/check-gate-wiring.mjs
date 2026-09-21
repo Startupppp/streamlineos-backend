@@ -104,6 +104,13 @@ const UNWIRED_BY_DESIGN = Object.freeze({
   "db:check-hr-reads": "EXPLAINs against a live database as streamline_app. Owner: gate-wiring.",
   "db:check-read-budgets": "EXPLAINs against a live database as streamline_app. Owner: gate-wiring.",
   "db:check-request-txn": "needs a booted app plus a live database. Owner: gate-wiring.",
+  "check:timing-slo":
+    "analyses a timing-sample FILE emitted by a live run, not the repository. It takes a " +
+    "required --slo=<class> (ordinary-sql, complex-sql, ordinary-request, complex-request, " +
+    "cache-hit) or --ceiling-ms=N plus a samples path, needs MIN_SAMPLES=3 and rejects a " +
+    "sample set whose coefficient of variation exceeds 0.25, so there is nothing for a " +
+    "hermetic job to point it at. MEASURED 2026-09-21: exit 2 with no argument, which is " +
+    "INCONCLUSIVE and not a pass. Owner: gate-wiring.",
   "verify:razorpay-sandbox":
     "calls api.razorpay.com with real test-mode credentials, which no CI job holds. It " +
     "refuses any RAZORPAY_KEY_ID not beginning rzp_test_ before opening a socket, and exits 2 " +
