@@ -46,6 +46,7 @@ const KNOWN_EXCLUDED_COLUMNS: readonly string[] = [
   "deal_approvals.approved_by_membership_id",
   "deal_approvals.requested_by_membership_id",
   "deal_meetings.created_by_membership_id",
+  "exit_checklists.completed_by_membership_id",
   "expense_export_jobs.requested_by_membership_id",
   "health_score_config.updated_by_membership_id",
   "headcount_requests.approved_by_membership_id",

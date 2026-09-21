@@ -45,6 +45,13 @@ describe("a person with a live direct report holds the approving keys their repo
     expect(resolved["timesheets:approvals:manage"]).toBe("own");
   });
 
+  it("lets a manager open the exits routed to them, so the handover item they own is reachable", async () => {
+    const resolved = (await buildResolver(true).computeUserPermissions(ORG, USER, 1)).perms;
+
+    expect(resolved["hr:exit:view"]).toBe("own");
+    expect(resolved["hr:exit:manage"]).toBeUndefined();
+  });
+
   it("grants nothing extra to a member with no direct reports", async () => {
     const resolved = (await buildResolver(false).computeUserPermissions(ORG, USER, 1)).perms;
 

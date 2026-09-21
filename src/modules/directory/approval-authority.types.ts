@@ -103,6 +103,7 @@ export interface ApprovalEscalation {
 export interface ApprovalResolveOptions {
   at?: Date;
   permission?: string;
+  queuePermission?: string;
   from?: ApprovalRung;
 }
 

@@ -43,7 +43,7 @@ export const createRunSchema = z
       ctx.addIssue({
         code: "custom",
         message:
-          "sourcePeriodKey or sourceRunId is required for off-cycle, correction, and F&F runs",
+          "sourcePeriodKey or sourceRunId is required for off-cycle, correction, and final settlement runs",
         path: ["sourcePeriodKey"],
       });
     }

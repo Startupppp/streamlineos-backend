@@ -115,6 +115,7 @@ export const MANAGER_AUTHORITY_GRANTS: ReadonlyArray<{
   { permissionKey: "hr:workflows:approve", scope: "all" },
   { permissionKey: "timesheets:approvals:view", scope: "own" },
   { permissionKey: "timesheets:approvals:manage", scope: "own" },
+  { permissionKey: "hr:exit:view", scope: "own" },
 ]);
 
 /**

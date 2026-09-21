@@ -34,10 +34,11 @@ function buildDbMock(rows: unknown[]) {
 
 describe("ExitService – actor contraction dual-read", () => {
   const mockEmployment = { resolveFacts: jest.fn() };
+  const mockChecklist = { resignationIdsRoutedTo: jest.fn().mockResolvedValue([]) };
 
   it("filters by userMembershipId when membershipId is provided and caller is not admin", async () => {
     const mockDb = buildDbMock([]);
-    const service = new ExitService(mockDb as never, mockEmployment as never);
+    const service = new ExitService(mockDb as never, mockEmployment as never, mockChecklist as never);
 
     const result = await service.list(ORG_ID, USER_ID, false, makeBaseParams(), ACTIVE_MEMBERSHIP_ID);
 
@@ -47,7 +48,7 @@ describe("ExitService – actor contraction dual-read", () => {
 
   it("does not add owner filter when isAdmin=true (regardless of membershipId)", async () => {
     const mockDb = buildDbMock([]);
-    const service = new ExitService(mockDb as never, mockEmployment as never);
+    const service = new ExitService(mockDb as never, mockEmployment as never, mockChecklist as never);
 
     const result = await service.list(ORG_ID, USER_ID, true, makeBaseParams(), ACTIVE_MEMBERSHIP_ID);
 
@@ -56,7 +57,7 @@ describe("ExitService – actor contraction dual-read", () => {
 
   it("fails closed when membershipId is null", async () => {
     const mockDb = buildDbMock([]);
-    const service = new ExitService(mockDb as never, mockEmployment as never);
+    const service = new ExitService(mockDb as never, mockEmployment as never, mockChecklist as never);
 
     await expect(service.list(ORG_ID, USER_ID, false, makeBaseParams(), null)).rejects.toThrow(
       "Organization membership required.",

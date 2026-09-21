@@ -22,6 +22,7 @@ import { actingMembershipId } from "../../../common/auth/principal";
 
 import { ExitService } from "./exit.service";
 import { ExitWriteService } from "./exit-write.service";
+import { ExitChecklistService } from "./exit-checklist.service";
 import { ExperienceLetterService } from "./experience-letter.service";
 import {
   experienceLetterSchema,
@@ -38,6 +39,7 @@ import {
   type ListResignationsQueryInput,
 } from "./dto/hr-lifecycle.schemas";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
+import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import { StorageService } from "../../storage/storage.service";
 import { parseStorageKey } from "../../storage/storage-key";
 import { AuditService } from "../../../common/audit/audit.service";
@@ -48,6 +50,7 @@ import { BodylessAction, ResponseSchema } from "../../../common/openapi/zod-oper
 import {
   resignationListSchema,
   resignationSchema,
+  resignationDetailSchema,
   exitAnalyticsSchema,
   experienceLetterCreateResponseSchema,
   exitLetterSchema,
@@ -55,6 +58,12 @@ import {
   resignationProgressSchema,
   successSchema,
 } from "./dto/lifecycle-response.schemas";
+import {
+  exitChecklistItemParamsSchema,
+  exitChecklistItemSchema,
+  exitChecklistItemUpdateSchema,
+  type ExitChecklistItemUpdateInput,
+} from "./dto/exit-checklist.schemas";
 
 const resignationIdParams = z.object({ resignationId: z.coerce.number().int().positive() }).strict();
 
@@ -65,6 +74,7 @@ export class ExitController {
   constructor(
     private readonly exit: ExitService,
     private readonly exitWrite: ExitWriteService,
+    private readonly checklist: ExitChecklistService,
     private readonly experienceLetters: ExperienceLetterService,
     private readonly access: AccessService,
     private readonly storage: StorageService,
@@ -242,7 +252,7 @@ export class ExitController {
   }
 
   @Get(":resignationId")
-  @ResponseSchema(resignationSchema)
+  @ResponseSchema(resignationDetailSchema)
   @RequirePermission("hr:exit:view")
   @Validate({ params: resignationIdParams })
   async getDetail(
@@ -250,5 +260,29 @@ export class ExitController {
     @CurrentUser() currentUser: CurrentUserContext,
   ) {
     return this.exit.getDetail(currentUser.orgId, currentUser.userId, await this.isExitAdmin(currentUser), resignationId, actingMembershipId(currentUser.principal));
+  }
+
+  @Patch(":resignationId/checklist/:itemKey")
+  @ResponseSchema(exitChecklistItemSchema)
+  @Idempotent("hr.exit.checklist.update")
+  @RequirePermission("hr:exit:view")
+  @Validate({ params: exitChecklistItemParamsSchema, body: exitChecklistItemUpdateSchema })
+  async updateChecklistItem(
+    @Param("resignationId", ParseIntPipe) resignationId: number,
+    @Param("itemKey") itemKey: string,
+    @Body() body: ExitChecklistItemUpdateInput,
+    @CurrentUser() currentUser: CurrentUserContext,
+  ) {
+    return this.checklist.updateItem(
+      currentUser.orgId,
+      {
+        userId: currentUser.userId,
+        membershipId: actingMembershipId(currentUser.principal),
+        isAdmin: await this.isExitAdmin(currentUser),
+      },
+      resignationId,
+      itemKey,
+      body,
+    );
   }
 }

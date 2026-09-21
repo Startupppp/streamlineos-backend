@@ -154,12 +154,12 @@ export const PAYROLL_PERMISSIONS: Permission[] = [
     name: "payroll:fnf:view",
     resource: "payroll:fnf",
     action: "view",
-    description: "View full and final settlements",
+    description: "View final settlements",
   },
   {
     name: "payroll:fnf:manage",
     resource: "payroll:fnf",
     action: "manage",
-    description: "Manage full and final settlements",
+    description: "Manage final settlements",
   },
 ];
