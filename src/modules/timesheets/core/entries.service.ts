@@ -105,6 +105,9 @@ export class EntriesService {
     const allowBackdated = settings?.allowBackdatedEntries ?? true;
     const backdateLimitDays = settings?.backdateLimitDays ?? null;
     const hours = roundHours(input.hours, settings?.roundingRule);
+    if (hours <= 0) {
+      throw new BadRequestException("Hours must be greater than zero");
+    }
 
     const today = formatDateOnly(new Date());
     const allowFuture = settings?.allowFutureEntries ?? false;
@@ -294,6 +297,9 @@ export class EntriesService {
     if (input.hours !== undefined) {
       const settings = await this.periodService.loadSettings(u.orgId);
       const nextHours = roundHours(input.hours, settings?.roundingRule);
+      if (nextHours <= 0) {
+        throw new BadRequestException("Hours must be greater than zero");
+      }
 
       if (entry.userMembershipId !== null) {
         const maxHoursPerDay = parseFloat(settings?.maxHoursPerDay ?? "24");
