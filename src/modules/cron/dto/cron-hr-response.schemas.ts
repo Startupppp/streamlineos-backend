@@ -104,3 +104,15 @@ export const helpdeskRetentionSweepResponseSchema = z.union([
     truncated: z.boolean(),
   }),
 ]);
+
+export const helpdeskEscalationSweepResponseSchema = z.union([
+  cronSkippedSchema,
+  z.object({
+    success: z.literal(true),
+    message: z.string(),
+    organizations: z.number().int().nonnegative(),
+    organizationsFailed: z.number().int().nonnegative(),
+    escalated: z.number().int().nonnegative(),
+    unassignable: z.number().int().nonnegative(),
+  }),
+]);
