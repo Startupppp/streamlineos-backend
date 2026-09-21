@@ -6,6 +6,7 @@ import { HrAuditService } from "../../core/hr-audit.service";
 import { HrAutomationEngineService } from "../../automations/hr-automation-engine.service";
 import { PayrollInputsBuildService } from "../payroll-inputs-build.service";
 import { PayrollInputSnapshotsService } from "../payroll-input-snapshots.service";
+import { PayrollInputAdjustmentsService } from "../payroll-input-adjustments.service";
 import { nextMonthKey, periodBoundsFrom } from "../payroll-period-key";
 import { hrPayrollInputSectionEnum } from "../../../../db/schema/payroll/input-capture";
 import fs from "node:fs";
@@ -48,6 +49,12 @@ const mockSnapshotsService = {
     approvedRegularizations: 0,
   }),
   listSectionSnapshot: jest.fn(),
+};
+const mockAdjustmentsService = {
+  listAdjustments: jest.fn(),
+  createAdjustment: jest.fn(),
+  approveAdjustment: jest.fn(),
+  rejectAdjustment: jest.fn(),
 };
 
 function makePeriod(overrides: Record<string, unknown> = {}) {
@@ -123,6 +130,7 @@ describe("PayrollInputsService — buildPeriod", () => {
         { provide: HrAutomationEngineService, useValue: mockAutomation },
         { provide: PayrollInputsBuildService, useValue: mockBuildService },
         { provide: PayrollInputSnapshotsService, useValue: mockSnapshotsService },
+        { provide: PayrollInputAdjustmentsService, useValue: mockAdjustmentsService },
       ],
     }).compile();
 
@@ -161,6 +169,7 @@ describe("PayrollInputsService — lockPeriod", () => {
         { provide: HrAutomationEngineService, useValue: mockAutomation },
         { provide: PayrollInputsBuildService, useValue: mockBuildService },
         { provide: PayrollInputSnapshotsService, useValue: mockSnapshotsService },
+        { provide: PayrollInputAdjustmentsService, useValue: mockAdjustmentsService },
       ],
     }).compile();
 
@@ -228,6 +237,7 @@ describe("PayrollInputsService — createAdjustment", () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         PayrollInputsService,
+        PayrollInputAdjustmentsService,
         { provide: DRIZZLE, useValue: db },
         { provide: HrAuditService, useValue: mockAudit },
         { provide: HrAutomationEngineService, useValue: mockAutomation },
@@ -294,6 +304,7 @@ describe("PayrollInputsService — getPeriod", () => {
         { provide: HrAutomationEngineService, useValue: mockAutomation },
         { provide: PayrollInputsBuildService, useValue: mockBuildService },
         { provide: PayrollInputSnapshotsService, useValue: mockSnapshotsService },
+        { provide: PayrollInputAdjustmentsService, useValue: mockAdjustmentsService },
       ],
     }).compile();
 

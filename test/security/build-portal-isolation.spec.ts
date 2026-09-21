@@ -4,6 +4,9 @@ import { join, resolve } from "node:path";
 import { PgDialect } from "drizzle-orm/pg-core";
 import type { SQL } from "drizzle-orm";
 import { ClientPortalService } from "src/modules/build/client-portal/client-portal.service";
+import type { AccessService } from "src/modules/access/access.service";
+import type { CurrentUserContext } from "src/common/auth/backend-claims";
+import { ACCOUNT_ONLY_PRINCIPAL } from "src/common/auth/principal";
 import type { Db } from "src/db/drizzle.module";
 
 const dialect = new PgDialect();
@@ -65,8 +68,24 @@ function makeSelectDb(
 
 const audit = { log: jest.fn() } as never;
 
+const accessStub = {
+  resolveUserPermissions: jest.fn().mockResolvedValue(new Set()),
+} as unknown as AccessService;
+
+function makeCtx(orgId: string, userId: string): CurrentUserContext {
+  return {
+    userId,
+    orgId,
+    role: "MEMBER",
+    isOrgOwner: false,
+    sessionId: "sess-1",
+    tokenScopes: null,
+    principal: ACCOUNT_ONLY_PRINCIPAL,
+  };
+}
+
 function makeService(db: Db) {
-  return new ClientPortalService(db, audit);
+  return new ClientPortalService(db, accessStub, audit);
 }
 
 const CALLER_ORG = "org-caller";
@@ -198,52 +217,48 @@ describe("BSN-04-043 — contractor: only the explicitly shared project is visib
   it("assertClientProject raises NotFoundException when the project is not linked to this contractor", async () => {
     const { db } = makeSelectDb(undefined);
     await expect(
-      makeService(db).listPortalChangeRequests(CALLER_ORG, CONTRACTOR_MEMBERSHIP, CALLER_USER, FOREIGN_PROJECT_ID),
+      makeService(db).listPortalChangeRequests(makeCtx(CALLER_ORG, CALLER_USER), FOREIGN_PROJECT_ID),
     ).rejects.toThrow(NotFoundException);
   });
 
   it("assertClientProject does NOT raise when the project is the contractor's linked project (control)", async () => {
     const { db } = makeSelectDb({ id: OWN_PROJECT_ID });
     await expect(
-      makeService(db).listPortalChangeRequests(CALLER_ORG, CONTRACTOR_MEMBERSHIP, CALLER_USER, OWN_PROJECT_ID),
+      makeService(db).listPortalChangeRequests(makeCtx(CALLER_ORG, CALLER_USER), OWN_PROJECT_ID),
     ).resolves.toBeDefined();
   });
 
   it("the refusal is NotFoundException, never ForbiddenException — cross-tenant probes get no existence signal", async () => {
     const { db } = makeSelectDb(undefined);
     const thrown = await makeService(db)
-      .listPortalChangeRequests(CALLER_ORG, CONTRACTOR_MEMBERSHIP, CALLER_USER, FOREIGN_PROJECT_ID)
+      .listPortalChangeRequests(makeCtx(CALLER_ORG, CALLER_USER), FOREIGN_PROJECT_ID)
       .catch((e: unknown) => e);
     expect(thrown).toBeInstanceOf(NotFoundException);
   });
 
   it("listPortalProjects binds the caller's orgId in the WHERE clause", async () => {
     const { db, where } = makeSelectDb(undefined, []);
-    await makeService(db).listPortalProjects(CALLER_ORG, CONTRACTOR_MEMBERSHIP, CALLER_USER);
+    await makeService(db).listPortalProjects(CALLER_ORG);
     const params = renderParams(where.mock.calls[0]?.[0]);
     expect(params).toContain(CALLER_ORG);
   });
 
   it("listPortalProjects returns nothing when no project has this contractor as client", async () => {
     const { db } = makeSelectDb(undefined, []);
-    const result = await makeService(db).listPortalProjects(
-      CALLER_ORG,
-      CONTRACTOR_MEMBERSHIP,
-      CALLER_USER,
-    );
+    const result = await makeService(db).listPortalProjects(CALLER_ORG);
     expect(result).toEqual([]);
   });
 
   it("listPortalProjects binds the contractor membershipId in the WHERE clause (clientFilter)", async () => {
     const { db, where } = makeSelectDb(undefined, []);
-    await makeService(db).listPortalProjects(CALLER_ORG, CONTRACTOR_MEMBERSHIP, CALLER_USER);
+    await makeService(db).listPortalProjects(CALLER_ORG);
     const params = renderParams(where.mock.calls[0]?.[0]);
     expect(params).toContain(CONTRACTOR_MEMBERSHIP);
   });
 
   it("a contractor cannot see unrelated project data — WHERE binds both orgId and membershipId", async () => {
     const { db, where } = makeSelectDb(undefined, []);
-    await makeService(db).listPortalProjects(CALLER_ORG, CONTRACTOR_MEMBERSHIP, CALLER_USER);
+    await makeService(db).listPortalProjects(CALLER_ORG);
     const params = renderParams(where.mock.calls[0]?.[0]);
     expect(params).toContain(CALLER_ORG);
     expect(params).toContain(CONTRACTOR_MEMBERSHIP);
@@ -254,7 +269,7 @@ describe("BSN-04-044 — portal user: only approved client-visible fields return
   it("getProjectOverview raises NotFoundException when the project does not belong to the caller", async () => {
     const { db } = makeSelectDb(undefined, []);
     await expect(
-      makeService(db).getProjectOverview(CALLER_ORG, CONTRACTOR_MEMBERSHIP, CALLER_USER, FOREIGN_PROJECT_ID),
+      makeService(db).getProjectOverview(makeCtx(CALLER_ORG, CALLER_USER), FOREIGN_PROJECT_ID),
     ).rejects.toThrow(NotFoundException);
   });
 

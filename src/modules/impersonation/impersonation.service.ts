@@ -30,7 +30,7 @@ const IMPERSONATION_SESSION_TOMBSTONE_KEY = (id: string) =>
 export class ImpersonationService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
-    @Inject(REDIS) private readonly redis: Redis | null,
+    @Inject(REDIS) private readonly redis: Pick<Redis, "set"> | null,
     private readonly keyring: JwtKeyringService,
     private readonly audit: AuditService,
   ) {}

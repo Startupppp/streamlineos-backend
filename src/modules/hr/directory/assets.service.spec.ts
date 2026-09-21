@@ -3,9 +3,29 @@ import { AssetsService } from "./assets.service";
 
 describe("AssetsService.updateAssetReturn — terminal status guard", () => {
   function buildDb(existingStatus: string) {
+    const loadRow = {
+      id: 1,
+      orgId: "org-1",
+      status: existingStatus,
+      userId: null,
+      assetId: null,
+      assetName: null,
+      returnedAt: null,
+      condition: null,
+      notes: null,
+      createdAt: new Date(),
+      userFirstName: null,
+      userLastName: null,
+      userEmail: null,
+    };
     return {
       select: jest.fn().mockReturnValue({
         from: jest.fn().mockReturnValue({
+          leftJoin: jest.fn().mockReturnValue({
+            where: jest.fn().mockReturnValue({
+              limit: jest.fn().mockResolvedValue([loadRow]),
+            }),
+          }),
           where: jest.fn().mockReturnValue({
             limit: jest.fn().mockResolvedValue([{ id: 1, orgId: "org-1", status: existingStatus }]),
           }),

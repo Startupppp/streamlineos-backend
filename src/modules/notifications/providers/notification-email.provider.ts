@@ -9,6 +9,7 @@ import { renderButton } from "../../email/templates/components";
 import { createUnsubscribeToken } from "../../email/unsubscribe-token";
 import { logger } from "../../../common/logger/logger.service";
 import { z } from "zod";
+import { EmailSuppressionService, canonicalEmail } from "../../email/email-suppression.service";
 
 const emailAttachmentsSchema = z.array(
   z.object({ filename: z.string(), contentBase64: z.string(), type: z.string() }),
@@ -96,6 +97,7 @@ export class NotificationEmailProvider implements NotificationChannelProvider {
      */
     @Inject(APP_CONFIG)
     private readonly config: Pick<AppConfig, "PUBLIC_API_URL">,
+    private readonly suppression: EmailSuppressionService,
   ) {}
 
   async send(input: ProviderSendInput): Promise<ProviderSendResult> {
@@ -110,6 +112,10 @@ export class NotificationEmailProvider implements NotificationChannelProvider {
     }
     if (!input.recipientAddress) {
       return { status: "FAILED", failureCode: "INVALID_RECIPIENT", failureMessage: "No email address on file", retryable: false };
+    }
+    const suppressed = await this.suppression.findSuppressed([input.recipientAddress], input.orgId);
+    if (suppressed.has(canonicalEmail(input.recipientAddress))) {
+      return { status: "FAILED", failureCode: "SUPPRESSED", failureMessage: "Recipient is on the email suppression list", retryable: false };
     }
     if (this.emailProvider.getEmailProvider() === "none") {
       return { status: "FAILED", failureCode: "NO_PROVIDER", failureMessage: "No email provider configured", retryable: false };

@@ -1,4 +1,5 @@
 import { BadRequestException, ForbiddenException, NotFoundException } from "@nestjs/common";
+import type { Redis } from "@upstash/redis";
 import { ImpersonationService } from "./impersonation.service";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { ACCOUNT_ONLY_PRINCIPAL } from "../../common/auth/principal";
@@ -101,7 +102,7 @@ function captureWhere() {
 describe("ImpersonationService", () => {
   let keyring: { signImpersonationToken: jest.Mock };
   let audit: { logCriticalOutsideTransaction: jest.Mock };
-  let redis: { set: jest.Mock } | null;
+  let redis: Pick<Redis, "set"> | null;
 
   beforeEach(() => {
     keyring = { signImpersonationToken: jest.fn().mockResolvedValue("minted-token") };

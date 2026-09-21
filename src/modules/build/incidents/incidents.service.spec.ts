@@ -116,7 +116,7 @@ describe("IncidentsService.computeSla (via updateIncident)", () => {
           findFirst: jest.fn().mockResolvedValue({ ...BASE_INCIDENT, respondedAt: null }),
         },
       },
-      transaction: jest.fn().mockImplementation((cb: (tx: typeof tx) => Promise<unknown>) => cb(tx)),
+      transaction: jest.fn().mockImplementation((cb: (t: typeof tx) => Promise<unknown>) => cb(tx)),
     } as unknown as Db;
 
     const svc = new IncidentsService(mockDb, makeAccess(), mockAudit);
@@ -137,7 +137,7 @@ describe("IncidentsService.computeSla (via updateIncident)", () => {
           findFirst: jest.fn().mockResolvedValue({ ...BASE_INCIDENT, respondedAt: existingRespondedAt }),
         },
       },
-      transaction: jest.fn().mockImplementation((cb: (tx: typeof tx) => Promise<unknown>) => cb(tx)),
+      transaction: jest.fn().mockImplementation((cb: (t: typeof tx) => Promise<unknown>) => cb(tx)),
     } as unknown as Db;
 
     const svc = new IncidentsService(mockDb, makeAccess(), mockAudit);
@@ -159,7 +159,7 @@ describe("IncidentsService.computeSla (via updateIncident)", () => {
           findFirst: jest.fn().mockResolvedValue({ ...BASE_INCIDENT, respondedAt, resolvedAt: null }),
         },
       },
-      transaction: jest.fn().mockImplementation((cb: (tx: typeof tx) => Promise<unknown>) => cb(tx)),
+      transaction: jest.fn().mockImplementation((cb: (t: typeof tx) => Promise<unknown>) => cb(tx)),
     } as unknown as Db;
 
     const svc = new IncidentsService(mockDb, makeAccess(), mockAudit);
@@ -180,7 +180,7 @@ describe("IncidentsService.computeSla (via updateIncident)", () => {
           findFirst: jest.fn().mockResolvedValue({ ...BASE_INCIDENT, respondedAt, resolvedAt: null }),
         },
       },
-      transaction: jest.fn().mockImplementation((cb: (tx: typeof tx) => Promise<unknown>) => cb(tx)),
+      transaction: jest.fn().mockImplementation((cb: (t: typeof tx) => Promise<unknown>) => cb(tx)),
     } as unknown as Db;
 
     const svc = new IncidentsService(mockDb, makeAccess(), mockAudit);
@@ -203,7 +203,7 @@ describe("IncidentsService.computeSla (via updateIncident)", () => {
           }),
         },
       },
-      transaction: jest.fn().mockImplementation((cb: (tx: typeof tx) => Promise<unknown>) => cb(tx)),
+      transaction: jest.fn().mockImplementation((cb: (t: typeof tx) => Promise<unknown>) => cb(tx)),
     } as unknown as Db;
 
     const svc = new IncidentsService(mockDb, makeAccess(), mockAudit);
@@ -222,7 +222,7 @@ describe("IncidentsService.computeSla (via updateIncident)", () => {
           findFirst: jest.fn().mockResolvedValue({ ...BASE_INCIDENT, respondedAt: null }),
         },
       },
-      transaction: jest.fn().mockImplementation((cb: (tx: typeof tx) => Promise<unknown>) => cb(tx)),
+      transaction: jest.fn().mockImplementation((cb: (t: typeof tx) => Promise<unknown>) => cb(tx)),
     } as unknown as Db;
 
     const svc = new IncidentsService(mockDb, makeAccess(), mockAudit);
@@ -244,7 +244,7 @@ describe("IncidentsService.updateIncident — atomic timeline on status/severity
           findFirst: jest.fn().mockResolvedValue({ ...BASE_INCIDENT, status: "detected" }),
         },
       },
-      transaction: jest.fn().mockImplementation((cb: (tx: typeof tx) => Promise<unknown>) => cb(tx)),
+      transaction: jest.fn().mockImplementation((cb: (t: typeof tx) => Promise<unknown>) => cb(tx)),
     } as unknown as Db;
 
     const svc = new IncidentsService(mockDb, makeAccess(), mockAudit);
@@ -265,7 +265,7 @@ describe("IncidentsService.updateIncident — atomic timeline on status/severity
           findFirst: jest.fn().mockResolvedValue({ ...BASE_INCIDENT, status: "detected" }),
         },
       },
-      transaction: jest.fn().mockImplementation((cb: (tx: typeof tx) => Promise<unknown>) => cb(tx)),
+      transaction: jest.fn().mockImplementation((cb: (t: typeof tx) => Promise<unknown>) => cb(tx)),
     } as unknown as Db;
 
     const svc = new IncidentsService(mockDb, makeAccess(), mockAudit);
@@ -282,7 +282,7 @@ describe("IncidentsService.updateIncident — atomic timeline on status/severity
       query: {
         projectIncidents: { findFirst: jest.fn().mockResolvedValue(current) },
       },
-      transaction: jest.fn().mockImplementation((cb: (tx: typeof tx) => Promise<unknown>) => cb(tx)),
+      transaction: jest.fn().mockImplementation((cb: (t: typeof tx) => Promise<unknown>) => cb(tx)),
     } as unknown as Db;
 
     const svc = new IncidentsService(mockDb, makeAccess(), mockAudit);
@@ -302,7 +302,7 @@ describe("IncidentsService.updateIncident — atomic timeline on status/severity
       query: {
         projectIncidents: { findFirst: jest.fn().mockResolvedValue(current) },
       },
-      transaction: jest.fn().mockImplementation((cb: (tx: typeof tx) => Promise<unknown>) => cb(tx)),
+      transaction: jest.fn().mockImplementation((cb: (t: typeof tx) => Promise<unknown>) => cb(tx)),
     } as unknown as Db;
 
     const svc = new IncidentsService(mockDb, makeAccess(), mockAudit);
@@ -320,7 +320,7 @@ describe("IncidentsService.updateIncident — atomic timeline on status/severity
           findFirst: jest.fn().mockResolvedValue({ ...BASE_INCIDENT, status: "detected" }),
         },
       },
-      transaction: jest.fn().mockImplementation((cb: (tx: typeof tx) => Promise<unknown>) => cb(tx)),
+      transaction: jest.fn().mockImplementation((cb: (t: typeof tx) => Promise<unknown>) => cb(tx)),
     } as unknown as Db;
 
     const svc = new IncidentsService(mockDb, makeAccess(), mockAudit);
@@ -345,7 +345,7 @@ describe("IncidentsService.updateIncident — atomic timeline on status/severity
           findFirst: jest.fn().mockResolvedValue({ ...BASE_INCIDENT, status: "detected" }),
         },
       },
-      transaction: jest.fn().mockImplementation((cb: (tx: typeof tx) => Promise<unknown>) => cb(tx)),
+      transaction: jest.fn().mockImplementation((cb: (t: typeof tx) => Promise<unknown>) => cb(tx)),
     } as unknown as Db;
 
     const svc = new IncidentsService(mockDb, makeAccess(), mockAudit);
@@ -506,7 +506,7 @@ describe("IncidentsService.addUpdate — state machine and outbox", () => {
       query: {
         projectIncidents: { findFirst: jest.fn().mockResolvedValue(closedIncident) },
       },
-      transaction: jest.fn().mockImplementation((cb: (tx: typeof tx) => Promise<unknown>) => cb(tx)),
+      transaction: jest.fn().mockImplementation((cb: (t: typeof tx) => Promise<unknown>) => cb(tx)),
     } as unknown as Db;
 
     const svc = new IncidentsService(mockDb, makeAccess(), mockAudit);
@@ -531,7 +531,7 @@ describe("IncidentsService.addUpdate — state machine and outbox", () => {
           findFirst: jest.fn().mockResolvedValue({ ...BASE_INCIDENT, status: "detected" }),
         },
       },
-      transaction: jest.fn().mockImplementation((cb: (tx: typeof tx) => Promise<unknown>) => cb(tx)),
+      transaction: jest.fn().mockImplementation((cb: (t: typeof tx) => Promise<unknown>) => cb(tx)),
     } as unknown as Db;
 
     const svc = new IncidentsService(mockDb, makeAccess(), mockAudit);
@@ -563,7 +563,7 @@ describe("IncidentsService.addUpdate — state machine and outbox", () => {
           findFirst: jest.fn().mockResolvedValue({ ...BASE_INCIDENT, status: "detected" }),
         },
       },
-      transaction: jest.fn().mockImplementation((cb: (tx: typeof tx) => Promise<unknown>) => cb(tx)),
+      transaction: jest.fn().mockImplementation((cb: (t: typeof tx) => Promise<unknown>) => cb(tx)),
     } as unknown as Db;
 
     const svc = new IncidentsService(mockDb, makeAccess(), mockAudit);

@@ -2,6 +2,7 @@ import { ForbiddenException, NotFoundException } from "@nestjs/common";
 import { ClientPortalService } from "./client-portal.service";
 import type { Db } from "../../../db/drizzle.module";
 import type { AccessService } from "../../access/access.service";
+import type { AuditService } from "../../../common/audit/audit.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
 
@@ -21,6 +22,8 @@ const mockAccess = {
   resolveUserPermissions: jest.fn().mockResolvedValue(new Set()),
 } as unknown as AccessService;
 
+const mockAudit = { log: jest.fn() } as unknown as AuditService;
+
 beforeEach(() => {
   jest.resetAllMocks();
   (mockAccess.resolveUserPermissions as jest.Mock).mockResolvedValue(new Set());
@@ -34,7 +37,7 @@ describe("ClientPortalService.listPortalProjects — grant-based listing (not cl
       limit: jest.fn().mockResolvedValue([]),
     };
     const db = { select: jest.fn().mockReturnValue(grantChain) } as unknown as Db;
-    const svc = new ClientPortalService(db, mockAccess);
+    const svc = new ClientPortalService(db, mockAccess, mockAudit);
     const result = await svc.listPortalProjects("org-1");
     expect(result).toEqual([]);
     expect((db.select as jest.Mock)).toHaveBeenCalledTimes(1);
@@ -55,7 +58,7 @@ describe("ClientPortalService.listPortalProjects — grant-based listing (not cl
     const db = {
       select: jest.fn().mockReturnValueOnce(grantChain).mockReturnValueOnce(projectChain),
     } as unknown as Db;
-    const svc = new ClientPortalService(db, mockAccess);
+    const svc = new ClientPortalService(db, mockAccess, mockAudit);
     const result = await svc.listPortalProjects("org-1");
     expect(result).toHaveLength(1);
     expect(result[0]).toHaveProperty("id", 1);
@@ -76,7 +79,7 @@ describe("ClientPortalService.listPortalProjects — grant-based listing (not cl
       .mockReturnValueOnce(grantChain)
       .mockReturnValueOnce(projectChain);
     const db = { select: selectMock } as unknown as Db;
-    const svc = new ClientPortalService(db, mockAccess);
+    const svc = new ClientPortalService(db, mockAccess, mockAudit);
     await svc.listPortalProjects("org-1");
     const projectProjection = (selectMock.mock.calls[1] as [Record<string, unknown>])[0];
     expect(projectProjection).not.toHaveProperty("budget");
@@ -135,7 +138,7 @@ describe("ClientPortalService.getProjectOverview — deny-by-default via grant c
 
   it("returns empty milestones/tasks/attachments/comments when all capabilities are false (deny-by-default)", async () => {
     const db = makeDb({ canViewMilestones: false, canViewTasks: false, canViewAttachments: false, canViewComments: false });
-    const svc = new ClientPortalService(db, mockAccess);
+    const svc = new ClientPortalService(db, mockAccess, mockAudit);
     const result = await svc.getProjectOverview(u, 1);
     expect(result.milestones).toEqual([]);
     expect(result.tasks).toEqual([]);
@@ -145,7 +148,7 @@ describe("ClientPortalService.getProjectOverview — deny-by-default via grant c
 
   it("returns empty collections when no active grant exists for the project", async () => {
     const db = makeDb(null);
-    const svc = new ClientPortalService(db, mockAccess);
+    const svc = new ClientPortalService(db, mockAccess, mockAudit);
     const result = await svc.getProjectOverview(u, 1);
     expect(result.milestones).toEqual([]);
     expect(result.tasks).toEqual([]);
@@ -155,7 +158,7 @@ describe("ClientPortalService.getProjectOverview — deny-by-default via grant c
 
   it("loads milestones when canViewMilestones is true", async () => {
     const db = makeDb({ canViewMilestones: true, canViewTasks: false, canViewAttachments: false, canViewComments: false });
-    const svc = new ClientPortalService(db, mockAccess);
+    const svc = new ClientPortalService(db, mockAccess, mockAudit);
     const result = await svc.getProjectOverview(u, 1);
     expect(result.milestones).toHaveLength(1);
     expect(result.tasks).toEqual([]);
@@ -165,7 +168,7 @@ describe("ClientPortalService.getProjectOverview — deny-by-default via grant c
 
   it("loads tasks when canViewTasks is true", async () => {
     const db = makeDb({ canViewMilestones: false, canViewTasks: true, canViewAttachments: false, canViewComments: false });
-    const svc = new ClientPortalService(db, mockAccess);
+    const svc = new ClientPortalService(db, mockAccess, mockAudit);
     const result = await svc.getProjectOverview(u, 1);
     expect(result.tasks).toHaveLength(1);
     expect(result.milestones).toEqual([]);
@@ -176,7 +179,7 @@ describe("ClientPortalService.getProjectOverview — deny-by-default via grant c
       query: { projects: { findFirst: jest.fn().mockResolvedValue(null) } },
       select: jest.fn(),
     } as unknown as Db;
-    const svc = new ClientPortalService(db, mockAccess);
+    const svc = new ClientPortalService(db, mockAccess, mockAudit);
     await expect(svc.getProjectOverview(makeU("org-attacker", true), 1)).rejects.toThrow(NotFoundException);
   });
 
@@ -203,7 +206,7 @@ describe("ClientPortalService.getProjectOverview — deny-by-default via grant c
           }),
         }),
     } as unknown as Db;
-    const svc = new ClientPortalService(db, mockAccess);
+    const svc = new ClientPortalService(db, mockAccess, mockAudit);
     await expect(svc.getProjectOverview(makeU("org-1", false), 1)).rejects.toThrow(ForbiddenException);
   });
 
@@ -218,7 +221,7 @@ describe("ClientPortalService.getProjectOverview — deny-by-default via grant c
       query: { projects: { findFirst: jest.fn().mockResolvedValue({ managerMembershipId: null }) } },
       select: selectMock,
     } as unknown as Db;
-    const svc = new ClientPortalService(db, mockAccess);
+    const svc = new ClientPortalService(db, mockAccess, mockAudit);
     await expect(svc.getProjectOverview(u, 1)).rejects.toThrow(NotFoundException);
     const projection = (selectMock.mock.calls[0] as [Record<string, unknown>])[0];
     expect(projection).not.toHaveProperty("budget");
@@ -242,7 +245,7 @@ describe("ClientPortalService.listPortalChangeRequests — employee project acce
       query: { projects: { findFirst: jest.fn().mockResolvedValue(null) } },
       select: jest.fn(),
     } as unknown as Db;
-    const svc = new ClientPortalService(db, mockAccess);
+    const svc = new ClientPortalService(db, mockAccess, mockAudit);
     await expect(svc.listPortalChangeRequests(makeU("org-attacker", true), 1)).rejects.toThrow(NotFoundException);
   });
 
@@ -269,7 +272,7 @@ describe("ClientPortalService.listPortalChangeRequests — employee project acce
           }),
         }),
     } as unknown as Db;
-    const svc = new ClientPortalService(db, mockAccess);
+    const svc = new ClientPortalService(db, mockAccess, mockAudit);
     await expect(svc.listPortalChangeRequests(makeU(ORG, false), 1)).rejects.toThrow(ForbiddenException);
   });
 
@@ -284,7 +287,7 @@ describe("ClientPortalService.listPortalChangeRequests — employee project acce
       query: { projects: { findFirst: jest.fn().mockResolvedValue({ managerMembershipId: null }) } },
       select: jest.fn().mockReturnValue(crChain),
     } as unknown as Db;
-    const svc = new ClientPortalService(db, mockAccess);
+    const svc = new ClientPortalService(db, mockAccess, mockAudit);
     const result = await svc.listPortalChangeRequests(makeU(ORG, true), 1);
     expect(Array.isArray(result)).toBe(true);
     expect(result).toHaveLength(1);

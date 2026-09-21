@@ -125,13 +125,13 @@ describe("OnboardingSubmissionService.submit", () => {
       tx,
       "org-1",
       "user-1",
-      SUBMISSION.personal,
+      {},
     );
     expect(details.saveBankDetailsInTransaction).toHaveBeenCalledWith(
       tx,
       "org-1",
       "user-1",
-      SUBMISSION.bank,
+      {},
     );
   });
 

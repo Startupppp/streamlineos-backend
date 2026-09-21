@@ -81,7 +81,8 @@ export class HrAnalyticsService {
         .leftJoin(hrPeople, livePersonOfUser(orgId, users.id))
         .leftJoin(hrEmployments, primaryEmploymentOfPerson(orgId))
         .where(and(eq(organizationMembers.orgId, orgId), eq(users.isActive, true)))
-        .groupBy(hrEmployments.departmentId),
+        .groupBy(hrEmployments.departmentId)
+        .limit(1_000),
 
       this.db
         .select({ gender: users.gender, count: count() })

@@ -110,6 +110,7 @@ describe("HR employee export", () => {
         undefined as never,
         undefined as never,
         undefined as never,
+        undefined as never,
       );
       const job: HrExportJobView = {
         id: "job-1",
