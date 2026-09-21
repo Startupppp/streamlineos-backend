@@ -277,7 +277,10 @@ export class PersonEmploymentSyncService {
         input,
       ));
 
-    if (!claimed) throw new Error("Failed to create employment record");
+    if (!claimed)
+      throw new ConflictException(
+        `Employee number "${input.employeeNumber}" is already in use in this organization.`,
+      );
 
     if (claimed.createdEmployment)
       await this.audit.log(
