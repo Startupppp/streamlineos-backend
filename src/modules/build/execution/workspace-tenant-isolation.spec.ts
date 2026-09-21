@@ -276,14 +276,14 @@ describe("ViewsService — a private view belongs to one actor, not to the tenan
   it("updateView refuses another actor's private view with 403, not 404, because the caller is inside the right tenant", async () => {
     const { db, update } = mutationDb(OTHERS_PRIVATE);
 
-    await expect(new ViewsService(db).updateView(OWNER_ORG, "u1", 7, { name: "x" })).rejects.toThrow(ForbiddenException);
+    await expect(new ViewsService(db).updateView(OWNER_ORG, "u1", 1, 7, { name: "x" })).rejects.toThrow(ForbiddenException);
     expect(update).not.toHaveBeenCalled();
   });
 
   it("deleteView refuses another actor's private view and issues no DELETE", async () => {
     const { db, delete: del } = mutationDb(OTHERS_PRIVATE);
 
-    await expect(new ViewsService(db).deleteView(OWNER_ORG, "u1", 7)).rejects.toThrow(ForbiddenException);
+    await expect(new ViewsService(db).deleteView(OWNER_ORG, "u1", 1, 7)).rejects.toThrow(ForbiddenException);
     expect(del).not.toHaveBeenCalled();
   });
 
@@ -304,20 +304,20 @@ describe("ViewsService — a private view belongs to one actor, not to the tenan
   it("updateView still allows a SHARED view owned by someone else, so the guard gates privacy rather than authorship", async () => {
     const { db, update } = mutationDb(OTHERS_SHARED);
 
-    await expect(new ViewsService(db).updateView(OWNER_ORG, "u1", 7, { name: "x" })).resolves.toEqual({ id: 7 });
+    await expect(new ViewsService(db).updateView(OWNER_ORG, "u1", 1, 7, { name: "x" })).resolves.toEqual({ id: 7 });
     expect(update).toHaveBeenCalled();
   });
 
   it("updateView still allows the owner to edit their own private view", async () => {
     const { db, update } = mutationDb(OWN_PRIVATE);
 
-    await expect(new ViewsService(db).updateView(OWNER_ORG, "u1", 7, { name: "x" })).resolves.toEqual({ id: 7 });
+    await expect(new ViewsService(db).updateView(OWNER_ORG, "u1", 1, 7, { name: "x" })).resolves.toEqual({ id: 7 });
     expect(update).toHaveBeenCalled();
   });
 
   it("updateView reports a view absent from the tenant as 404, keeping cross-tenant ids from becoming an existence oracle", async () => {
     const { db } = mutationDb(undefined);
 
-    await expect(new ViewsService(db).updateView(ATTACKER_ORG, "u1", 7, { name: "x" })).rejects.toThrow(NotFoundException);
+    await expect(new ViewsService(db).updateView(ATTACKER_ORG, "u1", 1, 7, { name: "x" })).rejects.toThrow(NotFoundException);
   });
 });

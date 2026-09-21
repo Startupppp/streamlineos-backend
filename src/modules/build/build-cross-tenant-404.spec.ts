@@ -33,11 +33,11 @@ describe("build — a delete that matched no row answers 404, not 204", () => {
   });
 
   it("DELETE /build/:projectId/modules/:moduleId refuses a module the org does not own", async () => {
-    await expect(new ModulesService(txDb([])).deleteModule(ATTACKER_ORG, 1)).rejects.toThrow(NotFoundException);
+    await expect(new ModulesService(txDb([])).deleteModule(ATTACKER_ORG, 1, 1)).rejects.toThrow(NotFoundException);
   });
 
   it("DELETE /build/:projectId/modules/:moduleId still deletes the org's own module (control)", async () => {
-    await expect(new ModulesService(txDb([{ id: 1 }])).deleteModule(OWNER_ORG, 1)).resolves.toEqual({
+    await expect(new ModulesService(txDb([{ id: 1 }])).deleteModule(OWNER_ORG, 1, 1)).resolves.toEqual({
       success: true,
     });
   });
