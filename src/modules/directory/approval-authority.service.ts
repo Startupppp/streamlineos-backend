@@ -16,7 +16,6 @@ import { ReportingLineService } from "./reporting-line.service";
 import {
   APPROVAL_KIND_POLICIES,
   APPROVAL_QUEUE_MEMBER_CAP,
-  APPROVAL_QUEUE_PREVIEW_CAP,
   APPROVAL_RUNGS,
   type ApprovalCandidate,
   type ApprovalDelegation,
@@ -24,6 +23,7 @@ import {
   type ApprovalKindPolicy,
   type ApprovalQueue,
   type ApprovalRequestKind,
+  type ApprovalResolveOptions,
   type ApprovalRoute,
   type ApprovalRung,
   type ApprovalRungSkipReason,
@@ -80,25 +80,36 @@ export class ApprovalAuthorityService {
     private readonly reportingLines: ReportingLineService,
   ) {}
 
-  async resolve(orgId: string, subjectUserId: string, kind: ApprovalRequestKind, at: Date = new Date()): Promise<ApprovalRoute> {
-    const policy = APPROVAL_KIND_POLICIES[kind];
+  async resolve(orgId: string, subjectUserId: string, kind: ApprovalRequestKind, options: ApprovalResolveOptions = {}): Promise<ApprovalRoute> {
+    const at = options.at ?? new Date();
+    const policy: ApprovalKindPolicy = options.permission
+      ? { ...APPROVAL_KIND_POLICIES[kind], permission: options.permission }
+      : APPROVAL_KIND_POLICIES[kind];
+    const firstRung = APPROVAL_RUNGS.indexOf(options.from ?? "reporting_manager");
+    const considers = (rung: ApprovalRung): boolean => APPROVAL_RUNGS.indexOf(rung) >= firstRung;
     const skipped: SkippedApprovalRung[] = [];
     const viable: RungAnswer[] = [];
 
     const subjectFacts = await this.employment.getFacts(orgId, subjectUserId);
     const managerUserId = subjectFacts.managerUserId;
 
-    if (managerUserId === null) skipped.push({ rung: "reporting_manager", userId: null, reason: "no-manager" });
-    else await this.consider(orgId, "reporting_manager", managerUserId, subjectUserId, policy, skipped, viable);
+    if (considers("reporting_manager")) {
+      if (managerUserId === null) skipped.push({ rung: "reporting_manager", userId: null, reason: "no-manager" });
+      else await this.consider(orgId, "reporting_manager", managerUserId, subjectUserId, policy, skipped, viable);
+    }
 
-    const managerFacts = managerUserId === null ? null : await this.employment.getFacts(orgId, managerUserId);
-    const grandManagerUserId = managerFacts?.managerUserId ?? null;
-    if (grandManagerUserId === null) skipped.push({ rung: "managers_manager", userId: null, reason: "no-manager" });
-    else await this.consider(orgId, "managers_manager", grandManagerUserId, subjectUserId, policy, skipped, viable);
+    if (considers("managers_manager")) {
+      const managerFacts = managerUserId === null ? null : await this.employment.getFacts(orgId, managerUserId);
+      const grandManagerUserId = managerFacts?.managerUserId ?? null;
+      if (grandManagerUserId === null) skipped.push({ rung: "managers_manager", userId: null, reason: "no-manager" });
+      else await this.consider(orgId, "managers_manager", grandManagerUserId, subjectUserId, policy, skipped, viable);
+    }
 
-    const headUserId = await this.departmentHead(orgId, subjectFacts.departmentId);
-    if (headUserId === null) skipped.push({ rung: "department_head", userId: null, reason: "no-department-head" });
-    else await this.consider(orgId, "department_head", headUserId, subjectUserId, policy, skipped, viable);
+    if (considers("department_head")) {
+      const headUserId = await this.departmentHead(orgId, subjectFacts.departmentId);
+      if (headUserId === null) skipped.push({ rung: "department_head", userId: null, reason: "no-department-head" });
+      else await this.consider(orgId, "department_head", headUserId, subjectUserId, policy, skipped, viable);
+    }
 
     const queueMembers = (await this.access.membersWithPermission(orgId, policy.permission, { limit: APPROVAL_QUEUE_MEMBER_CAP }))
       .filter((member) => member.userId !== subjectUserId);
@@ -106,7 +117,7 @@ export class ApprovalAuthorityService {
 
     const people = await this.people(orgId, [
       ...viable.map((answer) => answer.userId),
-      ...queueMembers.slice(0, APPROVAL_QUEUE_PREVIEW_CAP).map((member) => member.userId),
+      ...queueMembers.map((member) => member.userId),
     ]);
     const facts = await this.employment.getFactsBatch(orgId, [...people.keys()]);
     const candidateOf = (userId: string): ApprovalCandidate | null => {
@@ -121,7 +132,7 @@ export class ApprovalAuthorityService {
           permission: policy.permission,
           label: policy.queueLabel,
           memberCount: queueMembers.length,
-          members: queueMembers.slice(0, APPROVAL_QUEUE_PREVIEW_CAP).map((member) => candidateOf(member.userId)).filter((candidate): candidate is ApprovalCandidate => candidate !== null),
+          members: queueMembers.map((member) => candidateOf(member.userId)).filter((candidate): candidate is ApprovalCandidate => candidate !== null),
         };
 
     const first = viable[0] ?? null;
@@ -137,6 +148,7 @@ export class ApprovalAuthorityService {
     return {
       kind,
       subjectUserId,
+      permission: policy.permission,
       resolvedAt: at.toISOString(),
       rung,
       assignedTo,
@@ -170,9 +182,7 @@ export class ApprovalAuthorityService {
       skipped.push({ rung, userId: candidateUserId, reason: check.reason });
       return;
     }
-    const permissions = await this.access.resolveUserPermissions(orgId, candidateUserId);
-    const scope = permissions.get(policy.permission);
-    if (scope === undefined || scope === "none") {
+    if (!(await this.holdsPermission(orgId, candidateUserId, policy.permission))) {
       skipped.push({ rung, userId: candidateUserId, reason: "lacks-permission" });
       return;
     }
@@ -225,7 +235,7 @@ export class ApprovalAuthorityService {
       )
       .orderBy(desc(hrWorkflowDelegations.objectType), desc(hrWorkflowDelegations.createdAt))
       .limit(1);
-    if (workflow) {
+    if (workflow && (await this.holdsPermission(orgId, workflow.delegateUserId, policy.permission))) {
       return {
         source: "workflow",
         delegationId: String(workflow.id),
@@ -273,6 +283,11 @@ export class ApprovalAuthorityService {
       endsAt: permission.endsAt.toISOString(),
       reason: permission.reason,
     };
+  }
+
+  private async holdsPermission(orgId: string, userId: string, permission: string): Promise<boolean> {
+    const scope = (await this.access.resolveUserPermissions(orgId, userId)).get(permission);
+    return scope !== undefined && scope !== "none";
   }
 
   private async delegateCandidate(orgId: string, userId: string): Promise<ApprovalCandidate | null> {

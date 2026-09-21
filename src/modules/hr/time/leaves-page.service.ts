@@ -6,7 +6,7 @@ import {
 } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
-import { LeaveApproverService } from "./leave-approver.service";
+import { ApprovalAuthorityService } from "../../directory/approval-authority.service";
 import { EmploymentFactsService } from "../../directory/employment-facts.service";
 import { requireOrganizationMembershipId } from "./organization-membership";
 
@@ -14,7 +14,7 @@ import { requireOrganizationMembershipId } from "./organization-membership";
 export class LeavesPageService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
-    private readonly approvers: LeaveApproverService,
+    private readonly approvals: ApprovalAuthorityService,
     private readonly employment: EmploymentFactsService,
   ) {}
 
@@ -61,13 +61,15 @@ export class LeavesPageService {
       return true;
     });
 
-    const approver = await this.approvers.resolve(orgId, userId);
+    const approvalRoute = await this.approvals.resolve(orgId, userId, "leave");
+    const approvers = approvalRoute.approver ? [approvalRoute.approver] : approvalRoute.queue?.members ?? [];
 
     return {
       balances,
       types,
       joiningDate: facts.joiningDate,
-      approvers: approver ? [approver] : [],
+      approvers: approvers.map((candidate) => ({ id: candidate.userId, name: candidate.name, email: candidate.email })),
+      approvalRoute,
     };
   }
 }

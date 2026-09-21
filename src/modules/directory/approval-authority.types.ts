@@ -14,6 +14,7 @@ export const APPROVAL_REQUEST_KINDS = [
   "timesheet",
   "compensation",
   "exit",
+  "hr_case",
 ] as const;
 
 export type ApprovalRequestKind = (typeof APPROVAL_REQUEST_KINDS)[number];
@@ -37,10 +38,19 @@ export const APPROVAL_KIND_POLICIES: Readonly<Record<ApprovalRequestKind, Approv
   timesheet: { label: "timesheet", permission: "timesheets:approvals:manage", queueLabel: "Timesheet approvals queue", slaHours: 48, workflowObjectType: null },
   compensation: { label: "compensation change", permission: "hr:compensation:manage", queueLabel: "Compensation approvals queue", slaHours: 120, workflowObjectType: "salary_revision" },
   exit: { label: "exit", permission: "hr:exit:manage", queueLabel: "HR exits queue", slaHours: 120, workflowObjectType: "resignation" },
+  hr_case: { label: "HR workflow", permission: "hr:workflows:approve", queueLabel: "HR workflow approvers", slaHours: 72, workflowObjectType: null },
 };
 
+export const HR_WORKFLOW_APPROVE_PERMISSION = "hr:workflows:approve";
+
+export function approvalKindOfWorkflowObject(objectType: WorkflowObjectType): ApprovalRequestKind {
+  if (objectType === "termination") return "exit";
+  for (const kind of APPROVAL_REQUEST_KINDS)
+    if (APPROVAL_KIND_POLICIES[kind].workflowObjectType === objectType) return kind;
+  return "hr_case";
+}
+
 export const APPROVAL_QUEUE_MEMBER_CAP = 100;
-export const APPROVAL_QUEUE_PREVIEW_CAP = 10;
 
 export const APPROVAL_RUNGS = ["reporting_manager", "managers_manager", "department_head", "queue"] as const;
 
@@ -90,9 +100,16 @@ export interface ApprovalEscalation {
   queue: ApprovalQueue | null;
 }
 
+export interface ApprovalResolveOptions {
+  at?: Date;
+  permission?: string;
+  from?: ApprovalRung;
+}
+
 export interface ApprovalRoute {
   kind: ApprovalRequestKind;
   subjectUserId: string;
+  permission: string;
   resolvedAt: string;
   rung: ApprovalRung | null;
   assignedTo: ApprovalCandidate | null;

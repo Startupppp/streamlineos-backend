@@ -187,6 +187,36 @@ describe("ApprovalAuthorityService against a real schema", () => {
     expect(route.escalation).toMatchObject({ rung: "queue", queue: expect.objectContaining({ memberCount: 1 }) });
   });
 
+  it("ignores the head of a soft-deleted department", async () => {
+    const head = await addPerson("head");
+    const departmentId = await department(head.membershipId);
+    await sql`UPDATE org_units SET deleted_at = now() WHERE id = ${departmentId}`;
+    const employee = await addPerson("employee", { departmentId });
+    access.grant(head.userId, "hr:expenses:approve", "all");
+
+    const route = await service.resolve(org.orgId, employee.userId, "expense");
+
+    expect(route.rung).toBe("queue");
+    expect(route.skipped).toEqual(expect.arrayContaining([{ rung: "department_head", userId: null, reason: "no-department-head" }]));
+  });
+
+  it("starts at the rung a workflow step names and checks the key that step's actions are gated on", async () => {
+    const director = await addPerson("director");
+    const manager = await addPerson("manager");
+    const employee = await addPerson("employee");
+    await line(manager, director);
+    await line(employee, manager);
+    access.grant(manager.userId, "hr:workflows:approve", "all");
+    access.grant(director.userId, "hr:workflows:approve", "all");
+
+    const route = await service.resolve(org.orgId, employee.userId, "leave", { permission: "hr:workflows:approve", from: "managers_manager" });
+
+    expect(route.permission).toBe("hr:workflows:approve");
+    expect(route.rung).toBe("managers_manager");
+    expect(route.approver?.userId).toBe(director.userId);
+    expect(route.skipped.map((entry) => entry.rung)).not.toContain("reporting_manager");
+  });
+
   it("lands on the permission-holder queue when nobody in the chain can act, never on the employee themselves", async () => {
     const hr = await addPerson("hr");
     const employee = await addPerson("employee");
@@ -221,6 +251,7 @@ describe("ApprovalAuthorityService against a real schema", () => {
     const employee = await addPerson("employee");
     await line(employee, manager);
     access.grant(manager.userId, "hr:leaves:approve", "own");
+    access.grant(delegate.userId, "hr:leaves:approve", "own");
     await sql`
       INSERT INTO hr_workflow_delegations (org_id, delegator_user_id, delegator_membership_id, delegate_user_id, delegate_membership_id, object_type, starts_at, ends_at, reason, active)
       VALUES (${org.orgId}, ${manager.userId}, ${manager.membershipId}, ${delegate.userId}, ${delegate.membershipId}, 'leave_request', now() - interval '1 day', '2099-03-04T12:00:00Z', 'Annual leave', true)`;
@@ -231,6 +262,22 @@ describe("ApprovalAuthorityService against a real schema", () => {
     expect(route.approver?.userId).toBe(delegate.userId);
     expect(route.delegation).toMatchObject({ source: "workflow", fromUserId: manager.userId, toUserId: delegate.userId, reason: "Annual leave" });
     expect(route.explanation).toBe("manager approves as reporting manager; they are away until 4 Mar 2099, so delegate is acting on their behalf.");
+  });
+
+  it("ignores a workflow delegation to someone who cannot approve that kind, keeping the manager as approver", async () => {
+    const manager = await addPerson("manager");
+    const powerless = await addPerson("powerless-delegate");
+    const employee = await addPerson("employee");
+    await line(employee, manager);
+    access.grant(manager.userId, "hr:leaves:approve", "own");
+    await sql`
+      INSERT INTO hr_workflow_delegations (org_id, delegator_user_id, delegator_membership_id, delegate_user_id, delegate_membership_id, object_type, starts_at, ends_at, active)
+      VALUES (${org.orgId}, ${manager.userId}, ${manager.membershipId}, ${powerless.userId}, ${powerless.membershipId}, NULL, now() - interval '1 day', now() + interval '7 days', true)`;
+
+    const route = await service.resolve(org.orgId, employee.userId, "leave");
+
+    expect(route.approver?.userId).toBe(manager.userId);
+    expect(route.delegation).toBeNull();
   });
 
   it("honours a permission delegation of the approving key for kinds outside the HR workflow engine", async () => {
