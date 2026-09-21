@@ -271,6 +271,14 @@ const BASELINE = new Set([
 ]);
 
 const APPROVED_EXCEPTIONS = new Set([
+  // helpdesk_queues — one row per (org, queue) holding the queue's first-response and
+  // resolution SLA hours and its escalation actor. Per-queue configuration is neither a
+  // lifecycle column on hr_helpdesk_tickets nor a custom field: it is read by the
+  // escalation sweep for every open ticket and enforced by the composite FK that pins the
+  // escalation actor to the same tenant. Approved with HRMS_AUDIT_2026-09-21 (company-wide
+  // employee support with HR/IT/Finance/Admin/Legal queues), branch
+  // feat/employee-support-queues, commits c2ce98cfc / 08d8f886f, migration 1135.
+  "helpdesk_queues",
 ]);
 
 function extractTableNames(src) {
