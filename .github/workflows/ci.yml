@@ -566,6 +566,16 @@ jobs:
         if: ${{ !cancelled() }}
         run: pnpm check:signed-url-authorization:self-test && pnpm check:signed-url-authorization
 
+      # Held back from the batch above because its self-test failed
+      # catchesRelativeEscape. The cause was a path bug, not the rule:
+      # resolvesInto compared `target.startsWith(dir + "/")` while resolve()
+      # yields "\" on Windows, so the relative-escape arm matched nothing on a
+      # developer machine and would have passed here on Linux regardless. It now
+      # decides containment with relative(), and all seven self-test checks pass.
+      - name: Timesheets does not import payroll or hr
+        if: ${{ !cancelled() }}
+        run: pnpm check:timesheets-payroll-boundary:self-test && pnpm check:timesheets-payroll-boundary
+
       # Derives the route list from the 12 Settings/organization/module-access
       # controllers themselves, so a 160th handler is picked up without editing the
       # gate. Static by construction -- it proves a spec CONTAINS a matching supertest

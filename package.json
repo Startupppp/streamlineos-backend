@@ -443,6 +443,8 @@
     "check:stock-writers:self-test": "node src/scripts/check-stock-writers.mjs --self-test",
     "check:partial-index-upserts": "node src/scripts/check-partial-index-upserts.mjs",
     "check:partial-index-upserts:self-test": "node src/scripts/check-partial-index-upserts.mjs --self-test",
+    "check:timesheets-payroll-boundary": "node src/scripts/check-timesheets-payroll-boundary.mjs",
+    "check:timesheets-payroll-boundary:self-test": "node src/scripts/check-timesheets-payroll-boundary.mjs --self-test",
     "check:signed-url-authorization": "node src/scripts/check-signed-url-authorization.mjs",
     "check:signed-url-authorization:self-test": "node src/scripts/check-signed-url-authorization.mjs --self-test",
     "check:timing-slo": "node src/scripts/check-timing-slo.mjs",

@@ -30,7 +30,7 @@
  */
 
 import { readFileSync, readdirSync, statSync } from "node:fs";
-import { join, relative, resolve, dirname } from "node:path";
+import { join, relative, resolve, dirname, isAbsolute } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
@@ -85,13 +85,19 @@ export function specifiers(source) {
  * Whether a specifier, resolved from `fromFile`, lands inside `dir`.
  *
  * Relative specifiers are resolved; bare ones are matched on their path shape.
- * The trailing separator matters: without it `.../payroll` would also match
- * `.../payroll-something`.
+ * Containment is decided by `relative()` rather than a prefix compare, because
+ * `resolve()` yields "\" on Windows and a hardcoded `dir + "/"` matched nothing
+ * there — the relative-escape rule was inert on every developer machine while
+ * passing on CI. `relative()` returning "" means the same path; a result that
+ * neither starts with ".." nor is absolute means the target is underneath. That
+ * also keeps `.../payroll` from matching `.../payroll-something`, which the
+ * trailing separator was there to prevent.
  */
 export function resolvesInto(spec, fromFile, dir) {
   if (spec.startsWith(".")) {
     const target = resolve(dirname(fromFile), spec);
-    return target === dir || target.startsWith(dir + "/");
+    const rel = relative(dir, target);
+    return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel));
   }
   const normalized = spec.replace(/\\/g, "/");
   const tail = dir.replace(/\\/g, "/").split("/src/")[1];
