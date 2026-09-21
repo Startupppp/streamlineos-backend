@@ -43,7 +43,7 @@ export class AgentPulseController {
 
   @Post("proposals/:draftId/apply")
   @HttpCode(200)
-  @RequirePermission("build:tickets:view")
+  @RequirePermission("build:tickets:update")
   @ResponseSchema(applyDraftResponseSchema)
   @Validate({ params: applyDraftParamsSchema })
   applyDraft(@Param("draftId", ParseIntPipe) draftId: number, @CurrentUser() u: CurrentUserContext) {
