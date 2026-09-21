@@ -8,10 +8,10 @@ Scope: every `*.controller.ts` under `src/modules/build/`. 47 controller files, 
 
 | classification | handlers |
 | --- | --- |
-| VULNERABLE | 30 |
+| VULNERABLE | 15 |
 | CLOSED-IN-FLIGHT | 0 |
 | NEEDS-REVIEW | 111 |
-| CLOSED | 4 |
+| CLOSED | 19 |
 | VERIFIED | 176 |
 | **total** | **321** |
 
@@ -24,67 +24,6 @@ Scope: every `*.controller.ts` under `src/modules/build/`. 47 controller files, 
 - **VERIFIED** — guard chain complete, org identity bound in the service, every route param declared, and either no nested parent resource or a hand read that names the binding line.
 
 ## Reviewed findings
-
-### VULNERABLE — `PATCH /build/:projectId/custom-states/:stateId`
-
-`ProjectResourcesController.updateCustomState` — `src/modules/build/core/project-resources.controller.ts:168`
-
-Finding: `parent-binding-missing`
-
-PATCH /build/:projectId/custom-states/:stateId. The controller DOES declare @Param("projectId") but binds it to `_` and throws it away; the service finds the state by (id, orgId) alone. The permission check that follows uses the ROW's own projectId, so the caller is re-authorised against whatever project the state really belongs to — the URL segment is decorative.
-
-Blast radius: Intra-tenant. A state belonging to project A is editable through project B's URL by a caller holding build:manage on A.
-
-Evidence:
-
-- `src/modules/build/core/project-resources.controller.ts:178` — projectId (bound to `_`) is not forwarded
-- `src/modules/build/core/projects-custom-states.service.ts:168` — lookup binds id + orgId only
-
-### VULNERABLE — `DELETE /build/:projectId/custom-states/:stateId`
-
-`ProjectResourcesController.deleteCustomState` — `src/modules/build/core/project-resources.controller.ts:181`
-
-Finding: `parent-binding-missing`
-
-DELETE /build/:projectId/custom-states/:stateId. Identical to updateCustomState: @Param("projectId") is bound to `_` and discarded, and the delete resolves the state by (id, orgId).
-
-Blast radius: Intra-tenant cross-project delete.
-
-Evidence:
-
-- `src/modules/build/core/project-resources.controller.ts:191` — projectId discarded
-- `src/modules/build/core/projects-custom-states.service.ts:299` — lookup binds id + orgId only
-
-### VULNERABLE — `PATCH /build/:projectId/custom-fields/:fieldId`
-
-`ProjectsCustomFieldsController.updateField` — `src/modules/build/core/projects-custom-fields.controller.ts:60`
-
-Finding: `parent-binding-missing`
-
-PATCH /build/:projectId/custom-fields/:fieldId. The controller declares no @Param("projectId"), so the path segment is never read; the service UPDATEs on (id, orgId, entityType) only. The same service file's listFields binds customFieldDefinitions.projectId, and the column exists and is NOT NULL — so the omission is asymmetry inside one file, not an absent column. Any :projectId in the URL edits a field owned by any other project in the same org, and the row's own projectId is left untouched.
-
-Blast radius: Intra-tenant, not cross-tenant: orgId is still bound, so the write cannot leave the organisation. The caller already holds org-wide build:manage. The defect is the unverified path segment — it breaks the 404 contract for a foreign :projectId and defeats any project-scoped gate layered on later.
-
-Evidence:
-
-- `src/modules/build/core/projects-custom-fields.controller.ts:69` — projectId is not forwarded
-- `src/modules/build/core/projects-custom-fields.service.ts:110` — UPDATE binds id + orgId + entityType only — no projectId in the where clause
-- `src/modules/build/core/projects-custom-fields.service.ts:54` — listFields DOES bind projectId — the control proving the column is usable here
-
-### VULNERABLE — `DELETE /build/:projectId/custom-fields/:fieldId`
-
-`ProjectsCustomFieldsController.deleteField` — `src/modules/build/core/projects-custom-fields.controller.ts:72`
-
-Finding: `parent-binding-missing`
-
-DELETE /build/:projectId/custom-fields/:fieldId. Identical shape to updateField: no @Param("projectId"), and the DELETE where clause is (id, orgId, entityType). Unlike listFields/createField this path does not even call assertProjectInOrg, so a :projectId belonging to another organisation still deletes an in-org field.
-
-Blast radius: Intra-tenant. orgId is bound, so no cross-tenant delete. Cross-PROJECT delete inside the org is reachable by anyone holding build:manage.
-
-Evidence:
-
-- `src/modules/build/core/projects-custom-fields.controller.ts:81` — projectId is not forwarded
-- `src/modules/build/core/projects-custom-fields.service.ts:131` — DELETE binds id + orgId + entityType only
 
 ### VULNERABLE — `GET /build/:projectId/tickets/:ticketId/subtasks`
 
@@ -308,165 +247,66 @@ Evidence:
 
 - `src/modules/build/core/projects-tickets.service.ts:116` — resolved by id + orgId
 
-### VULNERABLE — `DELETE /build/:projectId/webhooks/:webhookId`
+### CLOSED — `PATCH /build/:projectId/custom-states/:stateId`
 
-`ProjectsWebhooksController.deleteWebhook` — `src/modules/build/core/projects-webhooks.controller.ts:59`
+`ProjectResourcesController.updateCustomState` — `src/modules/build/core/project-resources.controller.ts:168`
 
 Finding: `parent-binding-missing`
 
-DELETE /build/:projectId/webhooks/:webhookId. No @Param("projectId"); the service DELETEs on (id, orgId). The same service file already owns assertWebhookOwnership(orgId, projectId, webhookId), which binds projectWebhooks.projectId and is called by sendTest — so the correct helper exists and this one path skips it.
+PATCH /build/:projectId/custom-states/:stateId. The controller DOES declare @Param("projectId") but binds it to `_` and throws it away; the service finds the state by (id, orgId) alone. The permission check that follows uses the ROW's own projectId, so the caller is re-authorised against whatever project the state really belongs to — the URL segment is decorative.
 
-Blast radius: Intra-tenant. orgId is bound. A webhook registered against project A is deletable through project B's URL by any holder of build:manage.
+Blast radius: Intra-tenant. A state belonging to project A is editable through project B's URL by a caller holding build:manage on A.
 
 Evidence:
 
-- `src/modules/build/core/projects-webhooks.controller.ts:68` — projectId is not forwarded
-- `src/modules/build/core/projects-webhooks.service.ts:56` — DELETE binds id + orgId only
-- `src/modules/build/core/projects-webhooks.service.ts:69` — assertWebhookOwnership DOES bind projectId — the unused correct path
+- `src/modules/build/core/project-resources.controller.ts:173` — bound to the URL project
+- `src/modules/build/core/projects-custom-states.service.ts:171` — bound to the URL project
 
-### VULNERABLE — `GET /build/:projectId/sprints/:sprintId`
+### CLOSED — `DELETE /build/:projectId/custom-states/:stateId`
 
-`SprintsController.getSprint` — `src/modules/build/execution/iterations.controller.ts:92`
-
-Finding: `parent-binding-missing`
-
-GET /build/:projectId/sprints/:sprintId. No @Param("projectId"); the sprint is resolved by (id, orgId). deleteSprint in the SAME service DOES bind sprints.projectId, proving the column is available and the omission is asymmetry.
-
-Blast radius: Intra-tenant cross-project read.
-
-Evidence:
-
-- `src/modules/build/execution/sprints.service.ts:88` — id + orgId only
-- `src/modules/build/execution/sprints.service.ts:167` — deleteSprint DOES bind projectId — the in-file control
-
-### VULNERABLE — `PATCH /build/:projectId/sprints/:sprintId`
-
-`SprintsController.updateSprint` — `src/modules/build/execution/iterations.controller.ts:103`
+`ProjectResourcesController.deleteCustomState` — `src/modules/build/core/project-resources.controller.ts:181`
 
 Finding: `parent-binding-missing`
 
-PATCH /build/:projectId/sprints/:sprintId. No @Param("projectId"); both the pre-read and the UPDATE bind (id, orgId).
-
-Blast radius: Intra-tenant cross-project write.
-
-Evidence:
-
-- `src/modules/build/execution/sprints.service.ts:105` — pre-read binds id + orgId
-- `src/modules/build/execution/sprints.service.ts:120` — UPDATE binds id + orgId
-
-### VULNERABLE — `PATCH /build/:projectId/modules/:moduleId`
-
-`ModulesController.updateModule` — `src/modules/build/execution/iterations.controller.ts:218`
-
-Finding: `parent-binding-missing`
-
-PATCH /build/:projectId/modules/:moduleId. No @Param("projectId"); the UPDATE binds (id, orgId).
-
-Blast radius: Intra-tenant cross-project write.
-
-Evidence:
-
-- `src/modules/build/execution/modules.service.ts:132` — id + orgId only
-
-### VULNERABLE — `DELETE /build/:projectId/modules/:moduleId`
-
-`ModulesController.deleteModule` — `src/modules/build/execution/iterations.controller.ts:230`
-
-Finding: `parent-binding-missing`
-
-DELETE /build/:projectId/modules/:moduleId. No @Param("projectId"). The transaction also nulls tickets.moduleId across the org by (moduleId, orgId) before deleting the module by (id, orgId).
-
-Blast radius: Intra-tenant cross-project delete, with a side effect on every ticket referencing the module.
-
-Evidence:
-
-- `src/modules/build/execution/modules.service.ts:147` — id + orgId only
-
-### VULNERABLE — `POST /build/:projectId/tickets/:ticketId/time-entries`
-
-`TicketTimeEntriesController.logTicketTime` — `src/modules/build/execution/timesheets.controller.ts:183`
-
-Finding: `parent-binding-missing`
-
-POST /build/:projectId/tickets/:ticketId/time-entries. No @Param("projectId"); the ticket is resolved by (id, orgId) and the access checks that follow use the ticket's own project.
-
-Blast radius: Intra-tenant; row-derived access check narrows it as with updateTicket.
-
-Evidence:
-
-- `src/modules/build/execution/timesheets.service.ts:423` — ticket resolved by id + orgId; URL projectId never compared
-
-### VULNERABLE — `PATCH /build/:projectId/milestones/:milestoneId`
-
-`MilestonesController.updateMilestone` — `src/modules/build/execution/workspace.controller.ts:96`
-
-Finding: `parent-binding-missing`
-
-PATCH /build/:projectId/milestones/:milestoneId. The @Controller prefix itself is "build/:projectId/milestones", yet no @Param("projectId") is declared and the UPDATE binds (id, orgId).
-
-Blast radius: Intra-tenant cross-project write; org-wide permission is sufficient, there is no row-derived re-check.
-
-Evidence:
-
-- `src/modules/build/execution/workspace.service.ts:68` — id + orgId only
-
-### VULNERABLE — `DELETE /build/:projectId/milestones/:milestoneId`
-
-`MilestonesController.deleteMilestone` — `src/modules/build/execution/workspace.controller.ts:108`
-
-Finding: `parent-binding-missing`
-
-DELETE /build/:projectId/milestones/:milestoneId. Same as updateMilestone.
+DELETE /build/:projectId/custom-states/:stateId. Identical to updateCustomState: @Param("projectId") is bound to `_` and discarded, and the delete resolves the state by (id, orgId).
 
 Blast radius: Intra-tenant cross-project delete.
 
 Evidence:
 
-- `src/modules/build/execution/workspace.service.ts:78` — id + orgId only
+- `src/modules/build/core/project-resources.controller.ts:187` — bound to the URL project
+- `src/modules/build/core/projects-custom-states.service.ts:307` — bound to the URL project
 
-### VULNERABLE — `PATCH /build/:projectId/intake/:requestId`
+### CLOSED — `PATCH /build/:projectId/custom-fields/:fieldId`
 
-`IntakeController.updateIntake` — `src/modules/build/execution/workspace.controller.ts:152`
-
-Finding: `parent-binding-missing`
-
-PATCH /build/:projectId/intake/:requestId. No @Param("projectId"); every one of the four statements in this method binds (id, orgId). listIntake and createIntake in the same service DO call assertProjectInOrg — updateIntake does not.
-
-Blast radius: Intra-tenant cross-project write.
-
-Evidence:
-
-- `src/modules/build/execution/workspace.service.ts:154` — id + orgId only
-
-### VULNERABLE — `PATCH /build/:projectId/views/:viewId`
-
-`ViewsController.updateView` — `src/modules/build/execution/workspace.controller.ts:195`
+`ProjectsCustomFieldsController.updateField` — `src/modules/build/core/projects-custom-fields.controller.ts:60`
 
 Finding: `parent-binding-missing`
 
-PATCH /build/:projectId/views/:viewId. No @Param("projectId"); the view is resolved by (id, orgId). A per-user guard rejects mutating a PRIVATE view the caller does not own — but shared views bypass it entirely, and neither branch compares the URL projectId.
+PATCH /build/:projectId/custom-fields/:fieldId. The controller declares no @Param("projectId"), so the path segment is never read; the service UPDATEs on (id, orgId, entityType) only. The same service file's listFields binds customFieldDefinitions.projectId, and the column exists and is NOT NULL — so the omission is asymmetry inside one file, not an absent column. Any :projectId in the URL edits a field owned by any other project in the same org, and the row's own projectId is left untouched.
 
-Blast radius: Intra-tenant. Private views are additionally user-scoped; SHARED views have no project or user constraint, so any org member can edit a shared view belonging to any project.
+Blast radius: Intra-tenant, not cross-tenant: orgId is still bound, so the write cannot leave the organisation. The caller already holds org-wide build:manage. The defect is the unverified path segment — it breaks the 404 contract for a foreign :projectId and defeats any project-scoped gate layered on later.
 
 Evidence:
 
-- `src/modules/build/execution/workspace.service.ts:269` — pre-read binds id + orgId
-- `src/modules/build/execution/workspace.service.ts:279` — UPDATE binds id + orgId
+- `src/modules/build/core/projects-custom-fields.controller.ts:65` — bound to the URL project
+- `src/modules/build/core/projects-custom-fields.service.ts:114` — bound to the URL project
+- `src/modules/build/core/projects-custom-fields.service.ts:54` — listFields DOES bind projectId — the control proving the column is usable here
 
-### VULNERABLE — `DELETE /build/:projectId/views/:viewId`
+### CLOSED — `DELETE /build/:projectId/custom-fields/:fieldId`
 
-`ViewsController.deleteView` — `src/modules/build/execution/workspace.controller.ts:207`
+`ProjectsCustomFieldsController.deleteField` — `src/modules/build/core/projects-custom-fields.controller.ts:73`
 
 Finding: `parent-binding-missing`
 
-DELETE /build/:projectId/views/:viewId. Same as updateView, including the shared-view bypass.
+DELETE /build/:projectId/custom-fields/:fieldId. Identical shape to updateField: no @Param("projectId"), and the DELETE where clause is (id, orgId, entityType). Unlike listFields/createField this path does not even call assertProjectInOrg, so a :projectId belonging to another organisation still deletes an in-org field.
 
-Blast radius: Intra-tenant; shared views are deletable across projects by any org member.
+Blast radius: Intra-tenant. orgId is bound, so no cross-tenant delete. Cross-PROJECT delete inside the org is reachable by anyone holding build:manage.
 
 Evidence:
 
-- `src/modules/build/execution/workspace.service.ts:286` — pre-read binds id + orgId
-- `src/modules/build/execution/workspace.service.ts:293` — DELETE binds id + orgId
+- `src/modules/build/core/projects-custom-fields.controller.ts:79` — bound to the URL project
+- `src/modules/build/core/projects-custom-fields.service.ts:137` — bound to the URL project
 
 ### CLOSED — `PATCH /build/:projectId/releases/:releaseId`
 
@@ -527,6 +367,166 @@ Evidence:
 - `src/modules/build/core/projects-releases.service.ts:144` — release bound to the URL project
 - `src/modules/build/core/projects-releases.service.ts:150` — join delete now bound to the caller's organisation
 
+### CLOSED — `DELETE /build/:projectId/webhooks/:webhookId`
+
+`ProjectsWebhooksController.deleteWebhook` — `src/modules/build/core/projects-webhooks.controller.ts:59`
+
+Finding: `parent-binding-missing`
+
+DELETE /build/:projectId/webhooks/:webhookId. No @Param("projectId"); the service DELETEs on (id, orgId). The same service file already owns assertWebhookOwnership(orgId, projectId, webhookId), which binds projectWebhooks.projectId and is called by sendTest — so the correct helper exists and this one path skips it.
+
+Blast radius: Intra-tenant. orgId is bound. A webhook registered against project A is deletable through project B's URL by any holder of build:manage.
+
+Evidence:
+
+- `src/modules/build/core/projects-webhooks.controller.ts:65` — bound to the URL project
+- `src/modules/build/core/projects-webhooks.service.ts:60` — bound to the URL project
+- `src/modules/build/core/projects-webhooks.service.ts:76` — bound to the URL project
+
+### CLOSED — `GET /build/:projectId/sprints/:sprintId`
+
+`SprintsController.getSprint` — `src/modules/build/execution/iterations.controller.ts:92`
+
+Finding: `parent-binding-missing`
+
+GET /build/:projectId/sprints/:sprintId. No @Param("projectId"); the sprint is resolved by (id, orgId). deleteSprint in the SAME service DOES bind sprints.projectId, proving the column is available and the omission is asymmetry.
+
+Blast radius: Intra-tenant cross-project read.
+
+Evidence:
+
+- `src/modules/build/execution/sprints.service.ts:88` — bound to the URL project
+- `src/modules/build/execution/sprints.service.ts:167` — deleteSprint DOES bind projectId — the in-file control
+
+### CLOSED — `PATCH /build/:projectId/sprints/:sprintId`
+
+`SprintsController.updateSprint` — `src/modules/build/execution/iterations.controller.ts:104`
+
+Finding: `parent-binding-missing`
+
+PATCH /build/:projectId/sprints/:sprintId. No @Param("projectId"); both the pre-read and the UPDATE bind (id, orgId).
+
+Blast radius: Intra-tenant cross-project write.
+
+Evidence:
+
+- `src/modules/build/execution/sprints.service.ts:105` — bound to the URL project
+- `src/modules/build/execution/sprints.service.ts:120` — UPDATE binds id + orgId
+
+### CLOSED — `PATCH /build/:projectId/modules/:moduleId`
+
+`ModulesController.updateModule` — `src/modules/build/execution/iterations.controller.ts:220`
+
+Finding: `parent-binding-missing`
+
+PATCH /build/:projectId/modules/:moduleId. No @Param("projectId"); the UPDATE binds (id, orgId).
+
+Blast radius: Intra-tenant cross-project write.
+
+Evidence:
+
+- `src/modules/build/execution/modules.service.ts:133` — bound to the URL project
+
+### CLOSED — `DELETE /build/:projectId/modules/:moduleId`
+
+`ModulesController.deleteModule` — `src/modules/build/execution/iterations.controller.ts:233`
+
+Finding: `parent-binding-missing`
+
+DELETE /build/:projectId/modules/:moduleId. No @Param("projectId"). The transaction also nulls tickets.moduleId across the org by (moduleId, orgId) before deleting the module by (id, orgId).
+
+Blast radius: Intra-tenant cross-project delete, with a side effect on every ticket referencing the module.
+
+Evidence:
+
+- `src/modules/build/execution/modules.service.ts:148` — bound to the URL project
+
+### CLOSED — `POST /build/:projectId/tickets/:ticketId/time-entries`
+
+`TicketTimeEntriesController.logTicketTime` — `src/modules/build/execution/timesheets.controller.ts:183`
+
+Finding: `parent-binding-missing`
+
+POST /build/:projectId/tickets/:ticketId/time-entries. No @Param("projectId"); the ticket is resolved by (id, orgId) and the access checks that follow use the ticket's own project.
+
+Blast radius: Intra-tenant; row-derived access check narrows it as with updateTicket.
+
+Evidence:
+
+- `src/modules/build/execution/timesheets.service.ts:425` — bound to the URL project
+
+### CLOSED — `PATCH /build/:projectId/milestones/:milestoneId`
+
+`MilestonesController.updateMilestone` — `src/modules/build/execution/workspace.controller.ts:96`
+
+Finding: `parent-binding-missing`
+
+PATCH /build/:projectId/milestones/:milestoneId. The @Controller prefix itself is "build/:projectId/milestones", yet no @Param("projectId") is declared and the UPDATE binds (id, orgId).
+
+Blast radius: Intra-tenant cross-project write; org-wide permission is sufficient, there is no row-derived re-check.
+
+Evidence:
+
+- `src/modules/build/execution/workspace.service.ts:68` — bound to the URL project
+
+### CLOSED — `DELETE /build/:projectId/milestones/:milestoneId`
+
+`MilestonesController.deleteMilestone` — `src/modules/build/execution/workspace.controller.ts:109`
+
+Finding: `parent-binding-missing`
+
+DELETE /build/:projectId/milestones/:milestoneId. Same as updateMilestone.
+
+Blast radius: Intra-tenant cross-project delete.
+
+Evidence:
+
+- `src/modules/build/execution/workspace.service.ts:78` — bound to the URL project
+
+### CLOSED — `PATCH /build/:projectId/intake/:requestId`
+
+`IntakeController.updateIntake` — `src/modules/build/execution/workspace.controller.ts:154`
+
+Finding: `parent-binding-missing`
+
+PATCH /build/:projectId/intake/:requestId. No @Param("projectId"); every one of the four statements in this method binds (id, orgId). listIntake and createIntake in the same service DO call assertProjectInOrg — updateIntake does not.
+
+Blast radius: Intra-tenant cross-project write.
+
+Evidence:
+
+- `src/modules/build/execution/workspace.service.ts:154` — bound to the URL project
+
+### CLOSED — `PATCH /build/:projectId/views/:viewId`
+
+`ViewsController.updateView` — `src/modules/build/execution/workspace.controller.ts:198`
+
+Finding: `parent-binding-missing`
+
+PATCH /build/:projectId/views/:viewId. No @Param("projectId"); the view is resolved by (id, orgId). A per-user guard rejects mutating a PRIVATE view the caller does not own — but shared views bypass it entirely, and neither branch compares the URL projectId.
+
+Blast radius: Intra-tenant. Private views are additionally user-scoped; SHARED views have no project or user constraint, so any org member can edit a shared view belonging to any project.
+
+Evidence:
+
+- `src/modules/build/execution/workspace.service.ts:269` — bound to the URL project
+- `src/modules/build/execution/workspace.service.ts:279` — UPDATE binds id + orgId
+
+### CLOSED — `DELETE /build/:projectId/views/:viewId`
+
+`ViewsController.deleteView` — `src/modules/build/execution/workspace.controller.ts:211`
+
+Finding: `parent-binding-missing`
+
+DELETE /build/:projectId/views/:viewId. Same as updateView, including the shared-view bypass.
+
+Blast radius: Intra-tenant; shared views are deletable across projects by any org member.
+
+Evidence:
+
+- `src/modules/build/execution/workspace.service.ts:286` — bound to the URL project
+- `src/modules/build/execution/workspace.service.ts:293` — DELETE binds id + orgId
+
 ## Reviewed and cleared
 
 Handlers the static pass may not certify alone, read by hand and found sound. Listed so the clearance carries its evidence rather than an assurance.
@@ -562,10 +562,6 @@ POST /public/build-forms/:publicToken/submissions. Unauthenticated by design and
 
 | verdict | verb | route | controller:line | method | classification | module | guard chain | org scoping | parent scoping | @Validate params | @Idempotent |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| VULNERABLE | PATCH | `/build/:projectId/custom-states/:stateId` | `src/modules/build/core/project-resources.controller.ts:168` | `updateCustomState` | @RequirePermission("build:manage") | @RequireModule("build") | OK | BOUND | NOT-PASSED (parent never reaches the service) | complete [projectId, stateId] | NO (mutating) |
-| VULNERABLE | DELETE | `/build/:projectId/custom-states/:stateId` | `src/modules/build/core/project-resources.controller.ts:181` | `deleteCustomState` | @RequirePermission("build:manage") | @RequireModule("build") | OK | BOUND | NOT-PASSED (parent never reaches the service) | complete [projectId, stateId] | NO (mutating) |
-| VULNERABLE | PATCH | `/build/:projectId/custom-fields/:fieldId` | `src/modules/build/core/projects-custom-fields.controller.ts:60` | `updateField` | @RequirePermission("build:manage") | @RequireModule("build") | OK | BOUND | NOT-PASSED (no @Param on parent) | complete [projectId, fieldId] | NO (mutating) |
-| VULNERABLE | DELETE | `/build/:projectId/custom-fields/:fieldId` | `src/modules/build/core/projects-custom-fields.controller.ts:72` | `deleteField` | @RequirePermission("build:manage") | @RequireModule("build") | OK | BOUND | NOT-PASSED (no @Param on parent) | complete [projectId, fieldId] | NO (mutating) |
 | VULNERABLE | GET | `/build/:projectId/tickets/:ticketId/subtasks` | `src/modules/build/core/projects-ticket-associations.controller.ts:63` | `getSubtasks` | @RequirePermission("build:tickets:view") | @RequireModule("build") | OK | BOUND | NOT-PASSED (no @Param on parent) | complete [projectId, ticketId] | n/a |
 | VULNERABLE | GET | `/build/:projectId/tickets/:ticketId/watchers` | `src/modules/build/core/projects-ticket-associations.controller.ts:114` | `getWatchers` | @RequirePermission("build:tickets:view") | @RequireModule("build") | OK | BOUND | NOT-PASSED (no @Param on parent) | complete [projectId, ticketId] | n/a |
 | VULNERABLE | POST | `/build/:projectId/tickets/:ticketId/watchers` | `src/modules/build/core/projects-ticket-associations.controller.ts:125` | `addWatcher` | @RequirePermission("build:tickets:update") | @RequireModule("build") | OK | BOUND | NOT-PASSED (no @Param on parent) | complete [projectId, ticketId] | NO (mutating) |
@@ -581,17 +577,6 @@ POST /public/build-forms/:publicToken/submissions. Unauthenticated by design and
 | VULNERABLE | GET | `/build/:projectId/tickets/:ticketId` | `src/modules/build/core/projects-tickets.controller.ts:214` | `getTicket` | @RequirePermission("build:tickets:view") | @RequireModule("build") | OK | BOUND | NOT-PASSED (no @Param on parent) | complete [projectId, ticketId] | n/a |
 | VULNERABLE | PATCH | `/build/:projectId/tickets/:ticketId` | `src/modules/build/core/projects-tickets.controller.ts:225` | `updateTicket` | @RequirePermission("build:tickets:update") | @RequireModule("build") | OK | BOUND | NOT-PASSED (no @Param on parent) | complete [projectId, ticketId] | NO (mutating) |
 | VULNERABLE | DELETE | `/build/:projectId/tickets/:ticketId` | `src/modules/build/core/projects-tickets.controller.ts:237` | `deleteTicket` | @RequirePermission("build:tickets:delete") | @RequireModule("build") | OK | BOUND | NOT-PASSED (no @Param on parent) | complete [projectId, ticketId] | NO (mutating) |
-| VULNERABLE | DELETE | `/build/:projectId/webhooks/:webhookId` | `src/modules/build/core/projects-webhooks.controller.ts:59` | `deleteWebhook` | @RequirePermission("build:manage") | @RequireModule("build") | OK | BOUND | NOT-PASSED (no @Param on parent) | complete [projectId, webhookId] | NO (mutating) |
-| VULNERABLE | GET | `/build/:projectId/sprints/:sprintId` | `src/modules/build/execution/iterations.controller.ts:92` | `getSprint` | @RequirePermission("build:sprints:view") | @RequireModule("build") | OK | BOUND | NOT-PASSED (no @Param on parent) | complete [projectId, sprintId] | n/a |
-| VULNERABLE | PATCH | `/build/:projectId/sprints/:sprintId` | `src/modules/build/execution/iterations.controller.ts:103` | `updateSprint` | @RequirePermission("build:sprints:manage") | @RequireModule("build") | OK | BOUND | NOT-PASSED (no @Param on parent) | complete [projectId, sprintId] | NO (mutating) |
-| VULNERABLE | PATCH | `/build/:projectId/modules/:moduleId` | `src/modules/build/execution/iterations.controller.ts:218` | `updateModule` | @RequirePermission("build:workspace:manage") | @RequireModule("build") | OK | BOUND | NOT-PASSED (no @Param on parent) | complete [projectId, moduleId] | NO (mutating) |
-| VULNERABLE | DELETE | `/build/:projectId/modules/:moduleId` | `src/modules/build/execution/iterations.controller.ts:230` | `deleteModule` | @RequirePermission("build:workspace:manage") | @RequireModule("build") | OK | BOUND | NOT-PASSED (no @Param on parent) | complete [projectId, moduleId] | NO (mutating) |
-| VULNERABLE | POST | `/build/:projectId/tickets/:ticketId/time-entries` | `src/modules/build/execution/timesheets.controller.ts:183` | `logTicketTime` | @RequirePermission("build:timesheets:create") | @RequireModule("build") | OK | BOUND | NOT-PASSED (no @Param on parent) | complete [projectId, ticketId] | NO (mutating) |
-| VULNERABLE | PATCH | `/build/:projectId/milestones/:milestoneId` | `src/modules/build/execution/workspace.controller.ts:96` | `updateMilestone` | @RequirePermission("build:workspace:manage") | @RequireModule("build") | OK | BOUND | NOT-PASSED (no @Param on parent) | complete [projectId, milestoneId] | NO (mutating) |
-| VULNERABLE | DELETE | `/build/:projectId/milestones/:milestoneId` | `src/modules/build/execution/workspace.controller.ts:108` | `deleteMilestone` | @RequirePermission("build:workspace:manage") | @RequireModule("build") | OK | BOUND | NOT-PASSED (no @Param on parent) | complete [projectId, milestoneId] | NO (mutating) |
-| VULNERABLE | PATCH | `/build/:projectId/intake/:requestId` | `src/modules/build/execution/workspace.controller.ts:152` | `updateIntake` | @RequirePermission("build:workspace:manage") | @RequireModule("build") | OK | BOUND | NOT-PASSED (no @Param on parent) | complete [projectId, requestId] | NO (mutating) |
-| VULNERABLE | PATCH | `/build/:projectId/views/:viewId` | `src/modules/build/execution/workspace.controller.ts:195` | `updateView` | @RequirePermission("build:workspace:manage") | @RequireModule("build") | OK | BOUND | NOT-PASSED (no @Param on parent) | complete [projectId, viewId] | NO (mutating) |
-| VULNERABLE | DELETE | `/build/:projectId/views/:viewId` | `src/modules/build/execution/workspace.controller.ts:207` | `deleteView` | @RequirePermission("build:workspace:manage") | @RequireModule("build") | OK | BOUND | NOT-PASSED (no @Param on parent) | complete [projectId, viewId] | NO (mutating) |
 | NEEDS-REVIEW | GET | `/build/:projectId/approvals/:approvalId` | `src/modules/build/approvals/approvals.controller.ts:96` | `getApproval` | @RequirePermission("build:approvals:view") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, approvalId] | n/a |
 | NEEDS-REVIEW | PATCH | `/build/:projectId/approvals/:approvalId/decide` | `src/modules/build/approvals/approvals.controller.ts:122` | `decideApproval` | @RequirePermission("build:approvals:decide") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, approvalId] | yes |
 | NEEDS-REVIEW | PATCH | `/build/:projectId/approvals/:approvalId` | `src/modules/build/approvals/approvals.controller.ts:136` | `updateApproval` | @RequirePermission("build:approvals:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, approvalId] | NO (mutating) |
@@ -607,8 +592,8 @@ POST /public/build-forms/:publicToken/submissions. Unauthenticated by design and
 | NEEDS-REVIEW | POST | `/build/:projectId/labels` | `src/modules/build/core/project-resources.controller.ts:213` | `createProjectLabel` | @RequirePermission("build:manage") | @RequireModule("build") | OK | PASSED-UNBOUND | N/A (not nested) | complete [projectId] | NO (mutating) |
 | NEEDS-REVIEW | PATCH | `/build/:projectId/automations/:automationId` | `src/modules/build/core/projects-automations.controller.ts:56` | `update` | @RequirePermission("build:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, automationId] | NO (mutating) |
 | NEEDS-REVIEW | DELETE | `/build/:projectId/automations/:automationId` | `src/modules/build/core/projects-automations.controller.ts:69` | `delete` | @RequirePermission("build:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, automationId] | NO (mutating) |
-| NEEDS-REVIEW | GET | `/build/:projectId/tickets/:ticketId/custom-field-values` | `src/modules/build/core/projects-custom-fields.controller.ts:84` | `getTicketValues` | @RequirePermission("build:tickets:view") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, ticketId] | n/a |
-| NEEDS-REVIEW | POST | `/build/:projectId/tickets/:ticketId/custom-field-values` | `src/modules/build/core/projects-custom-fields.controller.ts:96` | `upsertTicketValues` | @RequirePermission("build:tickets:update") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, ticketId] | NO (mutating) |
+| NEEDS-REVIEW | GET | `/build/:projectId/tickets/:ticketId/custom-field-values` | `src/modules/build/core/projects-custom-fields.controller.ts:86` | `getTicketValues` | @RequirePermission("build:tickets:view") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, ticketId] | n/a |
+| NEEDS-REVIEW | POST | `/build/:projectId/tickets/:ticketId/custom-field-values` | `src/modules/build/core/projects-custom-fields.controller.ts:98` | `upsertTicketValues` | @RequirePermission("build:tickets:update") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, ticketId] | NO (mutating) |
 | NEEDS-REVIEW | POST | `/build/templates` | `src/modules/build/core/projects-templates.controller.ts:46` | `createTemplate` | @RequirePermission("build:manage") | @RequireModule("build") | OK | PASSED-UNBOUND | N/A (not nested) | unresolved | NO (mutating) |
 | NEEDS-REVIEW | GET | `/build/:projectId/tickets/:ticketId/relations` | `src/modules/build/core/projects-ticket-associations.controller.ts:74` | `listRelations` | @RequirePermission("build:tickets:view") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, ticketId] | n/a |
 | NEEDS-REVIEW | POST | `/build/:projectId/tickets/:ticketId/relations` | `src/modules/build/core/projects-ticket-associations.controller.ts:86` | `addRelation` | @RequirePermission("build:tickets:update") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, ticketId] | NO (mutating) |
@@ -629,23 +614,23 @@ POST /public/build-forms/:publicToken/submissions. Unauthenticated by design and
 | NEEDS-REVIEW | PATCH | `/build/:projectId/tickets/:ticketId/rank` | `src/modules/build/core/projects-tickets.controller.ts:173` | `rankTicket` | @RequirePermission("build:tickets:update") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, ticketId] | NO (mutating) |
 | NEEDS-REVIEW | GET | `/build/:projectId/tickets/:ticketId/activity` | `src/modules/build/core/projects-tickets.controller.ts:186` | `getActivity` | @RequirePermission("build:tickets:view") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, ticketId] | n/a |
 | NEEDS-REVIEW | GET | `/build/:projectId/tickets/key/:ticketNumber` | `src/modules/build/core/projects-tickets.controller.ts:202` | `getTicketByKey` | @RequirePermission("build:tickets:view") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, ticketNumber] | n/a |
-| NEEDS-REVIEW | GET | `/build/:projectId/webhooks/:webhookId/deliveries` | `src/modules/build/core/projects-webhooks.controller.ts:71` | `listDeliveries` | @RequirePermission("build:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, webhookId] | n/a |
-| NEEDS-REVIEW | POST | `/build/:projectId/webhooks/:webhookId/test` | `src/modules/build/core/projects-webhooks.controller.ts:83` | `sendTest` | @RequirePermission("build:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, webhookId] | NO (mutating) |
+| NEEDS-REVIEW | GET | `/build/:projectId/webhooks/:webhookId/deliveries` | `src/modules/build/core/projects-webhooks.controller.ts:72` | `listDeliveries` | @RequirePermission("build:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, webhookId] | n/a |
+| NEEDS-REVIEW | POST | `/build/:projectId/webhooks/:webhookId/test` | `src/modules/build/core/projects-webhooks.controller.ts:84` | `sendTest` | @RequirePermission("build:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, webhookId] | NO (mutating) |
 | NEEDS-REVIEW | POST | `/build/labels` | `src/modules/build/core/projects.controller.ts:101` | `createLabel` | @RequirePermission("build:manage") | @RequireModule("build") | OK | PASSED-UNBOUND | N/A (not nested) | unresolved | NO (mutating) |
-| NEEDS-REVIEW | DELETE | `/build/:projectId/sprints/:sprintId` | `src/modules/build/execution/iterations.controller.ts:115` | `deleteSprint` | @RequirePermission("build:sprints:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, sprintId] | NO (mutating) |
-| NEEDS-REVIEW | PATCH | `/build/:projectId/cycles/:cycleId` | `src/modules/build/execution/iterations.controller.ts:161` | `updateCycle` | @RequirePermission("build:workspace:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, cycleId] | NO (mutating) |
-| NEEDS-REVIEW | DELETE | `/build/:projectId/cycles/:cycleId` | `src/modules/build/execution/iterations.controller.ts:174` | `deleteCycle` | @RequirePermission("build:workspace:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, cycleId] | NO (mutating) |
-| NEEDS-REVIEW | PATCH | `/build/:projectId/epics/:epicId` | `src/modules/build/execution/iterations.controller.ts:273` | `updateEpic` | @RequirePermission("build:tickets:update") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, epicId] | NO (mutating) |
-| NEEDS-REVIEW | DELETE | `/build/:projectId/epics/:epicId` | `src/modules/build/execution/iterations.controller.ts:286` | `deleteEpic` | @RequirePermission("build:tickets:delete") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, epicId] | NO (mutating) |
+| NEEDS-REVIEW | DELETE | `/build/:projectId/sprints/:sprintId` | `src/modules/build/execution/iterations.controller.ts:117` | `deleteSprint` | @RequirePermission("build:sprints:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, sprintId] | NO (mutating) |
+| NEEDS-REVIEW | PATCH | `/build/:projectId/cycles/:cycleId` | `src/modules/build/execution/iterations.controller.ts:163` | `updateCycle` | @RequirePermission("build:workspace:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, cycleId] | NO (mutating) |
+| NEEDS-REVIEW | DELETE | `/build/:projectId/cycles/:cycleId` | `src/modules/build/execution/iterations.controller.ts:176` | `deleteCycle` | @RequirePermission("build:workspace:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, cycleId] | NO (mutating) |
+| NEEDS-REVIEW | PATCH | `/build/:projectId/epics/:epicId` | `src/modules/build/execution/iterations.controller.ts:277` | `updateEpic` | @RequirePermission("build:tickets:update") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, epicId] | NO (mutating) |
+| NEEDS-REVIEW | DELETE | `/build/:projectId/epics/:epicId` | `src/modules/build/execution/iterations.controller.ts:290` | `deleteEpic` | @RequirePermission("build:tickets:delete") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, epicId] | NO (mutating) |
 | NEEDS-REVIEW | GET | `/build/:projectId/tickets/:ticketId/time-entries` | `src/modules/build/execution/timesheets.controller.ts:158` | `listTicketTimeEntries` | @RequirePermission("build:timesheets:view") | @RequireModule("build") | OK | BOUND | PASSED-UNBOUND | complete [projectId, ticketId] | n/a |
 | NEEDS-REVIEW | PATCH | `/build/:projectId/whiteboards/:whiteboardId/sharing` | `src/modules/build/execution/whiteboard-sharing.controller.ts:57` | `updateSharing` | @RequirePermission("build:whiteboards:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, whiteboardId] | NO (mutating) |
 | NEEDS-REVIEW | POST | `/build/:projectId/whiteboards/:whiteboardId/sharing/rotate-token` | `src/modules/build/execution/whiteboard-sharing.controller.ts:70` | `rotateShareToken` | @RequirePermission("build:whiteboards:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, whiteboardId] | NO (mutating) |
 | NEEDS-REVIEW | PUT | `/build/:projectId/whiteboards/:whiteboardId/shares` | `src/modules/build/execution/whiteboard-sharing.controller.ts:84` | `setShares` | @RequirePermission("build:whiteboards:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, whiteboardId] | NO (mutating) |
 | NEEDS-REVIEW | DELETE | `/build/:projectId/whiteboards/:whiteboardId/shares/:targetUserId` | `src/modules/build/execution/whiteboard-sharing.controller.ts:97` | `removeShare` | @RequirePermission("build:whiteboards:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, whiteboardId, targetUserId] | NO (mutating) |
-| NEEDS-REVIEW | POST | `/build/views` | `src/modules/build/execution/workspace.controller.ts:233` | `createWorkspaceView` | @RequirePermission("build:workspace:manage") | @RequireModule("build") | OK | PASSED-UNBOUND | N/A (not nested) | unresolved | NO (mutating) |
-| NEEDS-REVIEW | GET | `/build/:projectId/whiteboards/:whiteboardId` | `src/modules/build/execution/workspace.controller.ts:314` | `getWhiteboard` | @RequirePermission("build:view") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, whiteboardId] | n/a |
-| NEEDS-REVIEW | PATCH | `/build/:projectId/whiteboards/:whiteboardId` | `src/modules/build/execution/workspace.controller.ts:326` | `updateWhiteboard` | @RequirePermission("build:whiteboards:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, whiteboardId] | NO (mutating) |
-| NEEDS-REVIEW | DELETE | `/build/:projectId/whiteboards/:whiteboardId` | `src/modules/build/execution/workspace.controller.ts:339` | `deleteWhiteboard` | @RequirePermission("build:whiteboards:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, whiteboardId] | NO (mutating) |
+| NEEDS-REVIEW | POST | `/build/views` | `src/modules/build/execution/workspace.controller.ts:238` | `createWorkspaceView` | @RequirePermission("build:workspace:manage") | @RequireModule("build") | OK | PASSED-UNBOUND | N/A (not nested) | unresolved | NO (mutating) |
+| NEEDS-REVIEW | GET | `/build/:projectId/whiteboards/:whiteboardId` | `src/modules/build/execution/workspace.controller.ts:319` | `getWhiteboard` | @RequirePermission("build:view") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, whiteboardId] | n/a |
+| NEEDS-REVIEW | PATCH | `/build/:projectId/whiteboards/:whiteboardId` | `src/modules/build/execution/workspace.controller.ts:331` | `updateWhiteboard` | @RequirePermission("build:whiteboards:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, whiteboardId] | NO (mutating) |
+| NEEDS-REVIEW | DELETE | `/build/:projectId/whiteboards/:whiteboardId` | `src/modules/build/execution/workspace.controller.ts:344` | `deleteWhiteboard` | @RequirePermission("build:whiteboards:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, whiteboardId] | NO (mutating) |
 | NEEDS-REVIEW | GET | `/build/:projectId/files/:fileId/url` | `src/modules/build/files/files.controller.ts:73` | `getSignedUrl` | @RequirePermission("build:files:view") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, fileId] | n/a |
 | NEEDS-REVIEW | DELETE | `/build/:projectId/files/:fileId` | `src/modules/build/files/files.controller.ts:85` | `softDeleteFile` | @RequirePermission("build:files:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, fileId] | NO (mutating) |
 | NEEDS-REVIEW | GET | `/build/:projectId/forms/:formId` | `src/modules/build/forms/forms.controller.ts:54` | `getForm` | @RequirePermission("build:forms:view") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, formId] | n/a |
@@ -703,10 +688,25 @@ POST /public/build-forms/:publicToken/submissions. Unauthenticated by design and
 | NEEDS-REVIEW | DELETE | `/build/:projectId/workflow/transitions/:transitionId` | `src/modules/build/workflow/workflow.controller.ts:82` | `deleteTransition` | @RequirePermission("build:workflow:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, transitionId] | NO (mutating) |
 | NEEDS-REVIEW | GET | `/build/:projectId/workflow/allowed/:fromStatusId` | `src/modules/build/workflow/workflow.controller.ts:95` | `getAllowedTransitions` | @RequirePermission("build:workflow:view") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, fromStatusId] | n/a |
 | NEEDS-REVIEW | PATCH | `/build/:projectId/workflow/statuses/:statusId/wip` | `src/modules/build/workflow/workflow.controller.ts:107` | `updateWipLimit` | @RequirePermission("build:workflow:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, statusId] | NO (mutating) |
+| CLOSED | PATCH | `/build/:projectId/custom-states/:stateId` | `src/modules/build/core/project-resources.controller.ts:168` | `updateCustomState` | @RequirePermission("build:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, stateId] | NO (mutating) |
+| CLOSED | DELETE | `/build/:projectId/custom-states/:stateId` | `src/modules/build/core/project-resources.controller.ts:181` | `deleteCustomState` | @RequirePermission("build:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, stateId] | NO (mutating) |
+| CLOSED | PATCH | `/build/:projectId/custom-fields/:fieldId` | `src/modules/build/core/projects-custom-fields.controller.ts:60` | `updateField` | @RequirePermission("build:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, fieldId] | NO (mutating) |
+| CLOSED | DELETE | `/build/:projectId/custom-fields/:fieldId` | `src/modules/build/core/projects-custom-fields.controller.ts:73` | `deleteField` | @RequirePermission("build:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, fieldId] | NO (mutating) |
 | CLOSED | PATCH | `/build/:projectId/releases/:releaseId` | `src/modules/build/core/projects-releases.controller.ts:62` | `updateRelease` | @RequirePermission("build:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, releaseId] | NO (mutating) |
 | CLOSED | DELETE | `/build/:projectId/releases/:releaseId` | `src/modules/build/core/projects-releases.controller.ts:75` | `deleteRelease` | @RequirePermission("build:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, releaseId] | NO (mutating) |
 | CLOSED | POST | `/build/:projectId/releases/:releaseId/tickets` | `src/modules/build/core/projects-releases.controller.ts:88` | `addTicket` | @RequirePermission("build:tickets:update") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, releaseId] | NO (mutating) |
 | CLOSED | DELETE | `/build/:projectId/releases/:releaseId/tickets/:ticketId` | `src/modules/build/core/projects-releases.controller.ts:102` | `removeTicket` | @RequirePermission("build:tickets:update") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, releaseId, ticketId] | NO (mutating) |
+| CLOSED | DELETE | `/build/:projectId/webhooks/:webhookId` | `src/modules/build/core/projects-webhooks.controller.ts:59` | `deleteWebhook` | @RequirePermission("build:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, webhookId] | NO (mutating) |
+| CLOSED | GET | `/build/:projectId/sprints/:sprintId` | `src/modules/build/execution/iterations.controller.ts:92` | `getSprint` | @RequirePermission("build:sprints:view") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, sprintId] | n/a |
+| CLOSED | PATCH | `/build/:projectId/sprints/:sprintId` | `src/modules/build/execution/iterations.controller.ts:104` | `updateSprint` | @RequirePermission("build:sprints:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, sprintId] | NO (mutating) |
+| CLOSED | PATCH | `/build/:projectId/modules/:moduleId` | `src/modules/build/execution/iterations.controller.ts:220` | `updateModule` | @RequirePermission("build:workspace:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, moduleId] | NO (mutating) |
+| CLOSED | DELETE | `/build/:projectId/modules/:moduleId` | `src/modules/build/execution/iterations.controller.ts:233` | `deleteModule` | @RequirePermission("build:workspace:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, moduleId] | NO (mutating) |
+| CLOSED | POST | `/build/:projectId/tickets/:ticketId/time-entries` | `src/modules/build/execution/timesheets.controller.ts:183` | `logTicketTime` | @RequirePermission("build:timesheets:create") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, ticketId] | NO (mutating) |
+| CLOSED | PATCH | `/build/:projectId/milestones/:milestoneId` | `src/modules/build/execution/workspace.controller.ts:96` | `updateMilestone` | @RequirePermission("build:workspace:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, milestoneId] | NO (mutating) |
+| CLOSED | DELETE | `/build/:projectId/milestones/:milestoneId` | `src/modules/build/execution/workspace.controller.ts:109` | `deleteMilestone` | @RequirePermission("build:workspace:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, milestoneId] | NO (mutating) |
+| CLOSED | PATCH | `/build/:projectId/intake/:requestId` | `src/modules/build/execution/workspace.controller.ts:154` | `updateIntake` | @RequirePermission("build:workspace:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, requestId] | NO (mutating) |
+| CLOSED | PATCH | `/build/:projectId/views/:viewId` | `src/modules/build/execution/workspace.controller.ts:198` | `updateView` | @RequirePermission("build:workspace:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, viewId] | NO (mutating) |
+| CLOSED | DELETE | `/build/:projectId/views/:viewId` | `src/modules/build/execution/workspace.controller.ts:211` | `deleteView` | @RequirePermission("build:workspace:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, viewId] | NO (mutating) |
 | VERIFIED | GET | `/build/agent-pulse/top-signal` | `src/modules/build/agent-pulse/agent-pulse.controller.ts:27` | `getTopSignal` | @RequirePermission("build:approvals:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | unresolved | n/a |
 | VERIFIED | GET | `/build/agent-pulse/badge` | `src/modules/build/agent-pulse/agent-pulse.controller.ts:36` | `badge` | @RequirePermission("build:approvals:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | absent (no params) | n/a |
 | VERIFIED | POST | `/build/agent-pulse/proposals/:draftId/apply` | `src/modules/build/agent-pulse/agent-pulse.controller.ts:44` | `applyDraft` | @RequirePermission("build:tickets:update") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [draftId] | NO (mutating) |
@@ -796,12 +796,12 @@ POST /public/build-forms/:publicToken/submissions. Unauthenticated by design and
 | VERIFIED | DELETE | `/build/labels/:labelId` | `src/modules/build/core/projects.controller.ts:125` | `deleteLabel` | @RequirePermission("build:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [labelId] | NO (mutating) |
 | VERIFIED | GET | `/build/:projectId/sprints` | `src/modules/build/execution/iterations.controller.ts:67` | `listSprints` | @RequirePermission("build:sprints:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | n/a |
 | VERIFIED | POST | `/build/:projectId/sprints` | `src/modules/build/execution/iterations.controller.ts:78` | `createSprint` | @RequirePermission("build:sprints:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | yes |
-| VERIFIED | GET | `/build/:projectId/cycles` | `src/modules/build/execution/iterations.controller.ts:135` | `listCycles` | @RequirePermission("build:sprints:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | n/a |
-| VERIFIED | POST | `/build/:projectId/cycles` | `src/modules/build/execution/iterations.controller.ts:147` | `createCycle` | @RequirePermission("build:workspace:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | yes |
-| VERIFIED | GET | `/build/:projectId/modules` | `src/modules/build/execution/iterations.controller.ts:194` | `listModules` | @RequirePermission("build:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | n/a |
-| VERIFIED | POST | `/build/:projectId/modules` | `src/modules/build/execution/iterations.controller.ts:205` | `createModule` | @RequirePermission("build:workspace:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | NO (mutating) |
-| VERIFIED | GET | `/build/:projectId/epics` | `src/modules/build/execution/iterations.controller.ts:249` | `listEpics` | @RequirePermission("build:tickets:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | n/a |
-| VERIFIED | POST | `/build/:projectId/epics` | `src/modules/build/execution/iterations.controller.ts:260` | `createEpic` | @RequirePermission("build:tickets:create") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | NO (mutating) |
+| VERIFIED | GET | `/build/:projectId/cycles` | `src/modules/build/execution/iterations.controller.ts:137` | `listCycles` | @RequirePermission("build:sprints:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | n/a |
+| VERIFIED | POST | `/build/:projectId/cycles` | `src/modules/build/execution/iterations.controller.ts:149` | `createCycle` | @RequirePermission("build:workspace:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | yes |
+| VERIFIED | GET | `/build/:projectId/modules` | `src/modules/build/execution/iterations.controller.ts:196` | `listModules` | @RequirePermission("build:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | n/a |
+| VERIFIED | POST | `/build/:projectId/modules` | `src/modules/build/execution/iterations.controller.ts:207` | `createModule` | @RequirePermission("build:workspace:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | NO (mutating) |
+| VERIFIED | GET | `/build/:projectId/epics` | `src/modules/build/execution/iterations.controller.ts:253` | `listEpics` | @RequirePermission("build:tickets:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | n/a |
+| VERIFIED | POST | `/build/:projectId/epics` | `src/modules/build/execution/iterations.controller.ts:264` | `createEpic` | @RequirePermission("build:tickets:create") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | NO (mutating) |
 | VERIFIED | GET | `/build/time-entries` | `src/modules/build/execution/timesheets.controller.ts:61` | `listTimeEntries` | @RequirePermission("build:timesheets:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | unresolved | n/a |
 | VERIFIED | GET | `/build/time-entries/team` | `src/modules/build/execution/timesheets.controller.ts:72` | `teamTimesheets` | @RequirePermission("build:timesheets:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | unresolved | n/a |
 | VERIFIED | PATCH | `/build/time-entries/:entryId/approve` | `src/modules/build/execution/timesheets.controller.ts:83` | `approveEntry` | @RequirePermission("build:timesheets:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [entryId] | yes |
@@ -813,16 +813,16 @@ POST /public/build-forms/:publicToken/submissions. Unauthenticated by design and
 | VERIFIED | PATCH | `/public/whiteboard-links/:token` | `src/modules/build/execution/whiteboard-sharing.controller.ts:134` | `updateByToken` | @Public | — | OK | N/A (@Public) | N/A (not nested) | complete [token] | NO (mutating) |
 | VERIFIED | GET | `/build/:projectId/milestones` | `src/modules/build/execution/workspace.controller.ts:72` | `listMilestones` | @RequirePermission("build:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | n/a |
 | VERIFIED | POST | `/build/:projectId/milestones` | `src/modules/build/execution/workspace.controller.ts:83` | `createMilestone` | @RequirePermission("build:workspace:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | NO (mutating) |
-| VERIFIED | GET | `/build/:projectId/intake` | `src/modules/build/execution/workspace.controller.ts:127` | `listIntake` | @RequirePermission("build:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | n/a |
-| VERIFIED | POST | `/build/:projectId/intake` | `src/modules/build/execution/workspace.controller.ts:139` | `createIntake` | @RequirePermission("build:workspace:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | NO (mutating) |
-| VERIFIED | GET | `/build/:projectId/views` | `src/modules/build/execution/workspace.controller.ts:171` | `listViews` | @RequirePermission("build:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | n/a |
-| VERIFIED | POST | `/build/:projectId/views` | `src/modules/build/execution/workspace.controller.ts:182` | `createView` | @RequirePermission("build:workspace:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | NO (mutating) |
-| VERIFIED | GET | `/build/views` | `src/modules/build/execution/workspace.controller.ts:226` | `listWorkspaceViews` | @RequirePermission("build:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | absent (no params) | n/a |
-| VERIFIED | PATCH | `/build/views/:viewId` | `src/modules/build/execution/workspace.controller.ts:245` | `updateWorkspaceView` | @RequirePermission("build:workspace:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [viewId] | NO (mutating) |
-| VERIFIED | DELETE | `/build/views/:viewId` | `src/modules/build/execution/workspace.controller.ts:257` | `deleteWorkspaceView` | @RequirePermission("build:workspace:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [viewId] | NO (mutating) |
-| VERIFIED | GET | `/build/whiteboards` | `src/modules/build/execution/workspace.controller.ts:276` | `listAllWhiteboards` | @RequirePermission("build:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | absent (no params) | n/a |
-| VERIFIED | GET | `/build/:projectId/whiteboards` | `src/modules/build/execution/workspace.controller.ts:290` | `listWhiteboards` | @RequirePermission("build:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | n/a |
-| VERIFIED | POST | `/build/:projectId/whiteboards` | `src/modules/build/execution/workspace.controller.ts:301` | `createWhiteboard` | @RequirePermission("build:whiteboards:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | NO (mutating) |
+| VERIFIED | GET | `/build/:projectId/intake` | `src/modules/build/execution/workspace.controller.ts:129` | `listIntake` | @RequirePermission("build:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | n/a |
+| VERIFIED | POST | `/build/:projectId/intake` | `src/modules/build/execution/workspace.controller.ts:141` | `createIntake` | @RequirePermission("build:workspace:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | NO (mutating) |
+| VERIFIED | GET | `/build/:projectId/views` | `src/modules/build/execution/workspace.controller.ts:174` | `listViews` | @RequirePermission("build:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | n/a |
+| VERIFIED | POST | `/build/:projectId/views` | `src/modules/build/execution/workspace.controller.ts:185` | `createView` | @RequirePermission("build:workspace:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | NO (mutating) |
+| VERIFIED | GET | `/build/views` | `src/modules/build/execution/workspace.controller.ts:231` | `listWorkspaceViews` | @RequirePermission("build:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | absent (no params) | n/a |
+| VERIFIED | PATCH | `/build/views/:viewId` | `src/modules/build/execution/workspace.controller.ts:250` | `updateWorkspaceView` | @RequirePermission("build:workspace:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [viewId] | NO (mutating) |
+| VERIFIED | DELETE | `/build/views/:viewId` | `src/modules/build/execution/workspace.controller.ts:262` | `deleteWorkspaceView` | @RequirePermission("build:workspace:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [viewId] | NO (mutating) |
+| VERIFIED | GET | `/build/whiteboards` | `src/modules/build/execution/workspace.controller.ts:281` | `listAllWhiteboards` | @RequirePermission("build:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | absent (no params) | n/a |
+| VERIFIED | GET | `/build/:projectId/whiteboards` | `src/modules/build/execution/workspace.controller.ts:295` | `listWhiteboards` | @RequirePermission("build:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | n/a |
+| VERIFIED | POST | `/build/:projectId/whiteboards` | `src/modules/build/execution/workspace.controller.ts:306` | `createWhiteboard` | @RequirePermission("build:whiteboards:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | NO (mutating) |
 | VERIFIED | GET | `/build/:projectId/files` | `src/modules/build/files/files.controller.ts:48` | `listFiles` | @RequirePermission("build:files:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | unresolved | n/a |
 | VERIFIED | POST | `/build/:projectId/files` | `src/modules/build/files/files.controller.ts:60` | `uploadFile` | @RequirePermission("build:files:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | unresolved | NO (mutating) |
 | VERIFIED | GET | `/build/:projectId/forms` | `src/modules/build/forms/forms.controller.ts:42` | `listForms` | @RequirePermission("build:forms:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | unresolved | n/a |
@@ -901,8 +901,8 @@ POST /public/build-forms/:publicToken/submissions. Unauthenticated by design and
 - `POST /build/:projectId/labels` — `src/modules/build/core/project-resources.controller.ts:213` (`createProjectLabel`): org scoping: PASSED-UNBOUND
 - `PATCH /build/:projectId/automations/:automationId` — `src/modules/build/core/projects-automations.controller.ts:56` (`update`): static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)
 - `DELETE /build/:projectId/automations/:automationId` — `src/modules/build/core/projects-automations.controller.ts:69` (`delete`): static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)
-- `GET /build/:projectId/tickets/:ticketId/custom-field-values` — `src/modules/build/core/projects-custom-fields.controller.ts:84` (`getTicketValues`): static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)
-- `POST /build/:projectId/tickets/:ticketId/custom-field-values` — `src/modules/build/core/projects-custom-fields.controller.ts:96` (`upsertTicketValues`): static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)
+- `GET /build/:projectId/tickets/:ticketId/custom-field-values` — `src/modules/build/core/projects-custom-fields.controller.ts:86` (`getTicketValues`): static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)
+- `POST /build/:projectId/tickets/:ticketId/custom-field-values` — `src/modules/build/core/projects-custom-fields.controller.ts:98` (`upsertTicketValues`): static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)
 - `POST /build/templates` — `src/modules/build/core/projects-templates.controller.ts:46` (`createTemplate`): org scoping: PASSED-UNBOUND
 - `GET /build/:projectId/tickets/:ticketId/relations` — `src/modules/build/core/projects-ticket-associations.controller.ts:74` (`listRelations`): static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)
 - `POST /build/:projectId/tickets/:ticketId/relations` — `src/modules/build/core/projects-ticket-associations.controller.ts:86` (`addRelation`): static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)
@@ -923,23 +923,23 @@ POST /public/build-forms/:publicToken/submissions. Unauthenticated by design and
 - `PATCH /build/:projectId/tickets/:ticketId/rank` — `src/modules/build/core/projects-tickets.controller.ts:173` (`rankTicket`): static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)
 - `GET /build/:projectId/tickets/:ticketId/activity` — `src/modules/build/core/projects-tickets.controller.ts:186` (`getActivity`): static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)
 - `GET /build/:projectId/tickets/key/:ticketNumber` — `src/modules/build/core/projects-tickets.controller.ts:202` (`getTicketByKey`): static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)
-- `GET /build/:projectId/webhooks/:webhookId/deliveries` — `src/modules/build/core/projects-webhooks.controller.ts:71` (`listDeliveries`): static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)
-- `POST /build/:projectId/webhooks/:webhookId/test` — `src/modules/build/core/projects-webhooks.controller.ts:83` (`sendTest`): static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)
+- `GET /build/:projectId/webhooks/:webhookId/deliveries` — `src/modules/build/core/projects-webhooks.controller.ts:72` (`listDeliveries`): static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)
+- `POST /build/:projectId/webhooks/:webhookId/test` — `src/modules/build/core/projects-webhooks.controller.ts:84` (`sendTest`): static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)
 - `POST /build/labels` — `src/modules/build/core/projects.controller.ts:101` (`createLabel`): org scoping: PASSED-UNBOUND
-- `DELETE /build/:projectId/sprints/:sprintId` — `src/modules/build/execution/iterations.controller.ts:115` (`deleteSprint`): static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)
-- `PATCH /build/:projectId/cycles/:cycleId` — `src/modules/build/execution/iterations.controller.ts:161` (`updateCycle`): static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)
-- `DELETE /build/:projectId/cycles/:cycleId` — `src/modules/build/execution/iterations.controller.ts:174` (`deleteCycle`): static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)
-- `PATCH /build/:projectId/epics/:epicId` — `src/modules/build/execution/iterations.controller.ts:273` (`updateEpic`): static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)
-- `DELETE /build/:projectId/epics/:epicId` — `src/modules/build/execution/iterations.controller.ts:286` (`deleteEpic`): static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)
+- `DELETE /build/:projectId/sprints/:sprintId` — `src/modules/build/execution/iterations.controller.ts:117` (`deleteSprint`): static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)
+- `PATCH /build/:projectId/cycles/:cycleId` — `src/modules/build/execution/iterations.controller.ts:163` (`updateCycle`): static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)
+- `DELETE /build/:projectId/cycles/:cycleId` — `src/modules/build/execution/iterations.controller.ts:176` (`deleteCycle`): static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)
+- `PATCH /build/:projectId/epics/:epicId` — `src/modules/build/execution/iterations.controller.ts:277` (`updateEpic`): static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)
+- `DELETE /build/:projectId/epics/:epicId` — `src/modules/build/execution/iterations.controller.ts:290` (`deleteEpic`): static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)
 - `GET /build/:projectId/tickets/:ticketId/time-entries` — `src/modules/build/execution/timesheets.controller.ts:158` (`listTicketTimeEntries`): parent scoping: PASSED-UNBOUND
 - `PATCH /build/:projectId/whiteboards/:whiteboardId/sharing` — `src/modules/build/execution/whiteboard-sharing.controller.ts:57` (`updateSharing`): static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)
 - `POST /build/:projectId/whiteboards/:whiteboardId/sharing/rotate-token` — `src/modules/build/execution/whiteboard-sharing.controller.ts:70` (`rotateShareToken`): static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)
 - `PUT /build/:projectId/whiteboards/:whiteboardId/shares` — `src/modules/build/execution/whiteboard-sharing.controller.ts:84` (`setShares`): static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)
 - `DELETE /build/:projectId/whiteboards/:whiteboardId/shares/:targetUserId` — `src/modules/build/execution/whiteboard-sharing.controller.ts:97` (`removeShare`): static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)
-- `POST /build/views` — `src/modules/build/execution/workspace.controller.ts:233` (`createWorkspaceView`): org scoping: PASSED-UNBOUND
-- `GET /build/:projectId/whiteboards/:whiteboardId` — `src/modules/build/execution/workspace.controller.ts:314` (`getWhiteboard`): static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)
-- `PATCH /build/:projectId/whiteboards/:whiteboardId` — `src/modules/build/execution/workspace.controller.ts:326` (`updateWhiteboard`): static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)
-- `DELETE /build/:projectId/whiteboards/:whiteboardId` — `src/modules/build/execution/workspace.controller.ts:339` (`deleteWhiteboard`): static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)
+- `POST /build/views` — `src/modules/build/execution/workspace.controller.ts:238` (`createWorkspaceView`): org scoping: PASSED-UNBOUND
+- `GET /build/:projectId/whiteboards/:whiteboardId` — `src/modules/build/execution/workspace.controller.ts:319` (`getWhiteboard`): static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)
+- `PATCH /build/:projectId/whiteboards/:whiteboardId` — `src/modules/build/execution/workspace.controller.ts:331` (`updateWhiteboard`): static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)
+- `DELETE /build/:projectId/whiteboards/:whiteboardId` — `src/modules/build/execution/workspace.controller.ts:344` (`deleteWhiteboard`): static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)
 - `GET /build/:projectId/files/:fileId/url` — `src/modules/build/files/files.controller.ts:73` (`getSignedUrl`): static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)
 - `DELETE /build/:projectId/files/:fileId` — `src/modules/build/files/files.controller.ts:85` (`softDeleteFile`): static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)
 - `GET /build/:projectId/forms/:formId` — `src/modules/build/forms/forms.controller.ts:54` (`getForm`): static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)

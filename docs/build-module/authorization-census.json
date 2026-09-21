@@ -5,10 +5,10 @@
   "controllerFiles": 47,
   "handlers": 321,
   "counts": {
-    "VULNERABLE": 30,
+    "VULNERABLE": 15,
     "CLOSED-IN-FLIGHT": 0,
     "NEEDS-REVIEW": 111,
-    "CLOSED": 4,
+    "CLOSED": 19,
     "VERIFIED": 176
   },
   "handlersDetail": [
@@ -1711,7 +1711,7 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/core/projects-members.service.ts:421",
+      "orgEvidence": "src/modules/build/core/projects-members.service.ts:422",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
       "leads": [],
@@ -1840,34 +1840,32 @@
       "idempotent": null,
       "mutating": true,
       "service": {
-        "call": "this.members.updateCustomState(u, stateId, body)",
+        "call": "this.members.updateCustomState(u, projectId, stateId, body)",
         "type": "ProjectsMembersService",
         "file": "src/modules/build/core/projects-members.service.ts",
         "resolved": true
       },
       "orgScoping": "BOUND",
       "orgEvidence": "src/modules/build/core/projects-members.service.ts:409",
-      "parentScoping": "NOT-PASSED (parent never reaches the service)",
-      "parentEvidence": "src/modules/build/core/project-resources.controller.ts:178",
-      "leads": [
-        "parent scoping: NOT-PASSED (parent never reaches the service)"
-      ],
+      "parentScoping": "BOUND",
+      "parentEvidence": "src/modules/build/core/projects-members.service.ts:409",
+      "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
       ],
-      "verdict": "VULNERABLE",
+      "verdict": "CLOSED",
       "verdictReason": "PATCH /build/:projectId/custom-states/:stateId. The controller DOES declare @Param(\"projectId\") but binds it to `_` and throws it away; the service finds the state by (id, orgId) alone. The permission check that follows uses the ROW's own projectId, so the caller is re-authorised against whatever project the state really belongs to — the URL segment is decorative.",
       "evidence": "src/modules/build/core/project-resources.controller.ts:168",
       "reviewedEvidence": [
         {
           "file": "src/modules/build/core/project-resources.controller.ts",
-          "line": 178,
-          "note": "projectId (bound to `_`) is not forwarded"
+          "line": 173,
+          "note": "bound to the URL project"
         },
         {
           "file": "src/modules/build/core/projects-custom-states.service.ts",
-          "line": 168,
-          "note": "lookup binds id + orgId only"
+          "line": 171,
+          "note": "bound to the URL project"
         }
       ]
     },
@@ -1900,34 +1898,32 @@
       "idempotent": null,
       "mutating": true,
       "service": {
-        "call": "this.members.deleteCustomState(u, stateId)",
+        "call": "this.members.deleteCustomState(u, projectId, stateId)",
         "type": "ProjectsMembersService",
         "file": "src/modules/build/core/projects-members.service.ts",
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/core/projects-members.service.ts:417",
-      "parentScoping": "NOT-PASSED (parent never reaches the service)",
-      "parentEvidence": "src/modules/build/core/project-resources.controller.ts:191",
-      "leads": [
-        "parent scoping: NOT-PASSED (parent never reaches the service)"
-      ],
+      "orgEvidence": "src/modules/build/core/projects-members.service.ts:418",
+      "parentScoping": "BOUND",
+      "parentEvidence": "src/modules/build/core/projects-members.service.ts:418",
+      "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
       ],
-      "verdict": "VULNERABLE",
+      "verdict": "CLOSED",
       "verdictReason": "DELETE /build/:projectId/custom-states/:stateId. Identical to updateCustomState: @Param(\"projectId\") is bound to `_` and discarded, and the delete resolves the state by (id, orgId).",
       "evidence": "src/modules/build/core/project-resources.controller.ts:181",
       "reviewedEvidence": [
         {
           "file": "src/modules/build/core/project-resources.controller.ts",
-          "line": 191,
-          "note": "projectId discarded"
+          "line": 187,
+          "note": "bound to the URL project"
         },
         {
           "file": "src/modules/build/core/projects-custom-states.service.ts",
-          "line": 299,
-          "note": "lookup binds id + orgId only"
+          "line": 307,
+          "note": "bound to the URL project"
         }
       ]
     },
@@ -1964,7 +1960,7 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/core/projects-members.service.ts:429",
+      "orgEvidence": "src/modules/build/core/projects-members.service.ts:430",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
       "leads": [],
@@ -2007,7 +2003,7 @@
         "resolved": true
       },
       "orgScoping": "PASSED-UNBOUND",
-      "orgEvidence": "src/modules/build/core/projects-members.service.ts:433",
+      "orgEvidence": "src/modules/build/core/projects-members.service.ts:434",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
       "leads": [
@@ -2586,34 +2582,32 @@
       "idempotent": null,
       "mutating": true,
       "service": {
-        "call": "this.customFields.updateField(u.orgId, fieldId, body)",
+        "call": "this.customFields.updateField(u.orgId, projectId, fieldId, body)",
         "type": "ProjectsCustomFieldsService",
         "file": "src/modules/build/core/projects-custom-fields.service.ts",
         "resolved": true
       },
       "orgScoping": "BOUND",
       "orgEvidence": "src/modules/build/core/projects-custom-fields.service.ts:94",
-      "parentScoping": "NOT-PASSED (no @Param on parent)",
-      "parentEvidence": "src/modules/build/core/projects-custom-fields.controller.ts:60",
-      "leads": [
-        "parent scoping: NOT-PASSED (no @Param on parent)"
-      ],
+      "parentScoping": "BOUND",
+      "parentEvidence": "src/modules/build/core/projects-custom-fields.service.ts:94",
+      "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
       ],
-      "verdict": "VULNERABLE",
+      "verdict": "CLOSED",
       "verdictReason": "PATCH /build/:projectId/custom-fields/:fieldId. The controller declares no @Param(\"projectId\"), so the path segment is never read; the service UPDATEs on (id, orgId, entityType) only. The same service file's listFields binds customFieldDefinitions.projectId, and the column exists and is NOT NULL — so the omission is asymmetry inside one file, not an absent column. Any :projectId in the URL edits a field owned by any other project in the same org, and the row's own projectId is left untouched.",
       "evidence": "src/modules/build/core/projects-custom-fields.controller.ts:60",
       "reviewedEvidence": [
         {
           "file": "src/modules/build/core/projects-custom-fields.controller.ts",
-          "line": 69,
-          "note": "projectId is not forwarded"
+          "line": 65,
+          "note": "bound to the URL project"
         },
         {
           "file": "src/modules/build/core/projects-custom-fields.service.ts",
-          "line": 110,
-          "note": "UPDATE binds id + orgId + entityType only — no projectId in the where clause"
+          "line": 114,
+          "note": "bound to the URL project"
         },
         {
           "file": "src/modules/build/core/projects-custom-fields.service.ts",
@@ -2627,7 +2621,7 @@
       "file": "src/modules/build/core/projects-custom-fields.controller.ts",
       "class": "ProjectsCustomFieldsController",
       "method": "deleteField",
-      "line": 72,
+      "line": 73,
       "verb": "DELETE",
       "path": "/build/:projectId/custom-fields/:fieldId",
       "routeParams": [
@@ -2651,34 +2645,32 @@
       "idempotent": null,
       "mutating": true,
       "service": {
-        "call": "this.customFields.deleteField(u.orgId, fieldId)",
+        "call": "this.customFields.deleteField(u.orgId, projectId, fieldId)",
         "type": "ProjectsCustomFieldsService",
         "file": "src/modules/build/core/projects-custom-fields.service.ts",
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/core/projects-custom-fields.service.ts:126",
-      "parentScoping": "NOT-PASSED (no @Param on parent)",
-      "parentEvidence": "src/modules/build/core/projects-custom-fields.controller.ts:72",
-      "leads": [
-        "parent scoping: NOT-PASSED (no @Param on parent)"
-      ],
+      "orgEvidence": "src/modules/build/core/projects-custom-fields.service.ts:128",
+      "parentScoping": "BOUND",
+      "parentEvidence": "src/modules/build/core/projects-custom-fields.service.ts:128",
+      "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
       ],
-      "verdict": "VULNERABLE",
+      "verdict": "CLOSED",
       "verdictReason": "DELETE /build/:projectId/custom-fields/:fieldId. Identical shape to updateField: no @Param(\"projectId\"), and the DELETE where clause is (id, orgId, entityType). Unlike listFields/createField this path does not even call assertProjectInOrg, so a :projectId belonging to another organisation still deletes an in-org field.",
-      "evidence": "src/modules/build/core/projects-custom-fields.controller.ts:72",
+      "evidence": "src/modules/build/core/projects-custom-fields.controller.ts:73",
       "reviewedEvidence": [
         {
           "file": "src/modules/build/core/projects-custom-fields.controller.ts",
-          "line": 81,
-          "note": "projectId is not forwarded"
+          "line": 79,
+          "note": "bound to the URL project"
         },
         {
           "file": "src/modules/build/core/projects-custom-fields.service.ts",
-          "line": 131,
-          "note": "DELETE binds id + orgId + entityType only"
+          "line": 137,
+          "note": "bound to the URL project"
         }
       ]
     },
@@ -2687,7 +2679,7 @@
       "file": "src/modules/build/core/projects-custom-fields.controller.ts",
       "class": "ProjectsCustomFieldsController",
       "method": "getTicketValues",
-      "line": 84,
+      "line": 86,
       "verb": "GET",
       "path": "/build/:projectId/tickets/:ticketId/custom-field-values",
       "routeParams": [
@@ -2717,14 +2709,14 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/core/projects-custom-fields.service.ts:141",
+      "orgEvidence": "src/modules/build/core/projects-custom-fields.service.ts:145",
       "parentScoping": "BOUND",
-      "parentEvidence": "src/modules/build/core/projects-custom-fields.service.ts:141",
+      "parentEvidence": "src/modules/build/core/projects-custom-fields.service.ts:145",
       "leads": [],
       "notes": [],
       "verdict": "NEEDS-REVIEW",
       "verdictReason": "static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)",
-      "evidence": "src/modules/build/core/projects-custom-fields.controller.ts:84",
+      "evidence": "src/modules/build/core/projects-custom-fields.controller.ts:86",
       "reviewedEvidence": null
     },
     {
@@ -2732,7 +2724,7 @@
       "file": "src/modules/build/core/projects-custom-fields.controller.ts",
       "class": "ProjectsCustomFieldsController",
       "method": "upsertTicketValues",
-      "line": 96,
+      "line": 98,
       "verb": "POST",
       "path": "/build/:projectId/tickets/:ticketId/custom-field-values",
       "routeParams": [
@@ -2762,16 +2754,16 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/core/projects-custom-fields.service.ts:206",
+      "orgEvidence": "src/modules/build/core/projects-custom-fields.service.ts:210",
       "parentScoping": "BOUND",
-      "parentEvidence": "src/modules/build/core/projects-custom-fields.service.ts:206",
+      "parentEvidence": "src/modules/build/core/projects-custom-fields.service.ts:210",
       "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
       ],
       "verdict": "NEEDS-REVIEW",
       "verdictReason": "static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)",
-      "evidence": "src/modules/build/core/projects-custom-fields.controller.ts:96",
+      "evidence": "src/modules/build/core/projects-custom-fields.controller.ts:98",
       "reviewedEvidence": null
     },
     {
@@ -6483,39 +6475,37 @@
       "idempotent": null,
       "mutating": true,
       "service": {
-        "call": "this.webhooks.deleteWebhook(u.orgId, webhookId)",
+        "call": "this.webhooks.deleteWebhook(u.orgId, projectId, webhookId)",
         "type": "ProjectsWebhooksService",
         "file": "src/modules/build/core/projects-webhooks.service.ts",
         "resolved": true
       },
       "orgScoping": "BOUND",
       "orgEvidence": "src/modules/build/core/projects-webhooks.service.ts:53",
-      "parentScoping": "NOT-PASSED (no @Param on parent)",
-      "parentEvidence": "src/modules/build/core/projects-webhooks.controller.ts:59",
-      "leads": [
-        "parent scoping: NOT-PASSED (no @Param on parent)"
-      ],
+      "parentScoping": "BOUND",
+      "parentEvidence": "src/modules/build/core/projects-webhooks.service.ts:53",
+      "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
       ],
-      "verdict": "VULNERABLE",
+      "verdict": "CLOSED",
       "verdictReason": "DELETE /build/:projectId/webhooks/:webhookId. No @Param(\"projectId\"); the service DELETEs on (id, orgId). The same service file already owns assertWebhookOwnership(orgId, projectId, webhookId), which binds projectWebhooks.projectId and is called by sendTest — so the correct helper exists and this one path skips it.",
       "evidence": "src/modules/build/core/projects-webhooks.controller.ts:59",
       "reviewedEvidence": [
         {
           "file": "src/modules/build/core/projects-webhooks.controller.ts",
-          "line": 68,
-          "note": "projectId is not forwarded"
+          "line": 65,
+          "note": "bound to the URL project"
         },
         {
           "file": "src/modules/build/core/projects-webhooks.service.ts",
-          "line": 56,
-          "note": "DELETE binds id + orgId only"
+          "line": 60,
+          "note": "bound to the URL project"
         },
         {
           "file": "src/modules/build/core/projects-webhooks.service.ts",
-          "line": 69,
-          "note": "assertWebhookOwnership DOES bind projectId — the unused correct path"
+          "line": 76,
+          "note": "bound to the URL project"
         }
       ]
     },
@@ -6524,7 +6514,7 @@
       "file": "src/modules/build/core/projects-webhooks.controller.ts",
       "class": "ProjectsWebhooksController",
       "method": "listDeliveries",
-      "line": 71,
+      "line": 72,
       "verb": "GET",
       "path": "/build/:projectId/webhooks/:webhookId/deliveries",
       "routeParams": [
@@ -6554,14 +6544,14 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/core/projects-webhooks.service.ts:76",
+      "orgEvidence": "src/modules/build/core/projects-webhooks.service.ts:83",
       "parentScoping": "BOUND",
-      "parentEvidence": "src/modules/build/core/projects-webhooks.service.ts:76",
+      "parentEvidence": "src/modules/build/core/projects-webhooks.service.ts:83",
       "leads": [],
       "notes": [],
       "verdict": "NEEDS-REVIEW",
       "verdictReason": "static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)",
-      "evidence": "src/modules/build/core/projects-webhooks.controller.ts:71",
+      "evidence": "src/modules/build/core/projects-webhooks.controller.ts:72",
       "reviewedEvidence": null
     },
     {
@@ -6569,7 +6559,7 @@
       "file": "src/modules/build/core/projects-webhooks.controller.ts",
       "class": "ProjectsWebhooksController",
       "method": "sendTest",
-      "line": 83,
+      "line": 84,
       "verb": "POST",
       "path": "/build/:projectId/webhooks/:webhookId/test",
       "routeParams": [
@@ -6608,7 +6598,7 @@
       ],
       "verdict": "NEEDS-REVIEW",
       "verdictReason": "static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)",
-      "evidence": "src/modules/build/core/projects-webhooks.controller.ts:83",
+      "evidence": "src/modules/build/core/projects-webhooks.controller.ts:84",
       "reviewedEvidence": null
     },
     {
@@ -6882,7 +6872,7 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/core/projects-members.service.ts:429",
+      "orgEvidence": "src/modules/build/core/projects-members.service.ts:430",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
       "leads": [],
@@ -6921,7 +6911,7 @@
         "resolved": true
       },
       "orgScoping": "PASSED-UNBOUND",
-      "orgEvidence": "src/modules/build/core/projects-members.service.ts:433",
+      "orgEvidence": "src/modules/build/core/projects-members.service.ts:434",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
       "leads": [
@@ -6968,7 +6958,7 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/core/projects-members.service.ts:437",
+      "orgEvidence": "src/modules/build/core/projects-members.service.ts:438",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
       "leads": [],
@@ -7013,7 +7003,7 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/core/projects-members.service.ts:441",
+      "orgEvidence": "src/modules/build/core/projects-members.service.ts:442",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
       "leads": [],
@@ -7140,27 +7130,25 @@
       "idempotent": null,
       "mutating": false,
       "service": {
-        "call": "this.sprints.getSprint(u.orgId, sprintId)",
+        "call": "this.sprints.getSprint(u.orgId, projectId, sprintId)",
         "type": "SprintsService",
         "file": "src/modules/build/execution/sprints.service.ts",
         "resolved": true
       },
       "orgScoping": "BOUND",
       "orgEvidence": "src/modules/build/execution/sprints.service.ts:86",
-      "parentScoping": "NOT-PASSED (no @Param on parent)",
-      "parentEvidence": "src/modules/build/execution/iterations.controller.ts:92",
-      "leads": [
-        "parent scoping: NOT-PASSED (no @Param on parent)"
-      ],
+      "parentScoping": "BOUND",
+      "parentEvidence": "src/modules/build/execution/sprints.service.ts:86",
+      "leads": [],
       "notes": [],
-      "verdict": "VULNERABLE",
+      "verdict": "CLOSED",
       "verdictReason": "GET /build/:projectId/sprints/:sprintId. No @Param(\"projectId\"); the sprint is resolved by (id, orgId). deleteSprint in the SAME service DOES bind sprints.projectId, proving the column is available and the omission is asymmetry.",
       "evidence": "src/modules/build/execution/iterations.controller.ts:92",
       "reviewedEvidence": [
         {
           "file": "src/modules/build/execution/sprints.service.ts",
           "line": 88,
-          "note": "id + orgId only"
+          "note": "bound to the URL project"
         },
         {
           "file": "src/modules/build/execution/sprints.service.ts",
@@ -7174,7 +7162,7 @@
       "file": "src/modules/build/execution/iterations.controller.ts",
       "class": "SprintsController",
       "method": "updateSprint",
-      "line": 103,
+      "line": 104,
       "verb": "PATCH",
       "path": "/build/:projectId/sprints/:sprintId",
       "routeParams": [
@@ -7198,29 +7186,27 @@
       "idempotent": null,
       "mutating": true,
       "service": {
-        "call": "this.sprints.updateSprint(u.orgId, sprintId, body, u.userId)",
+        "call": "this.sprints.updateSprint(u.orgId, projectId, sprintId, body, u.userId)",
         "type": "SprintsService",
         "file": "src/modules/build/execution/sprints.service.ts",
         "resolved": true
       },
       "orgScoping": "BOUND",
       "orgEvidence": "src/modules/build/execution/sprints.service.ts:103",
-      "parentScoping": "NOT-PASSED (no @Param on parent)",
-      "parentEvidence": "src/modules/build/execution/iterations.controller.ts:103",
-      "leads": [
-        "parent scoping: NOT-PASSED (no @Param on parent)"
-      ],
+      "parentScoping": "BOUND",
+      "parentEvidence": "src/modules/build/execution/sprints.service.ts:103",
+      "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
       ],
-      "verdict": "VULNERABLE",
+      "verdict": "CLOSED",
       "verdictReason": "PATCH /build/:projectId/sprints/:sprintId. No @Param(\"projectId\"); both the pre-read and the UPDATE bind (id, orgId).",
-      "evidence": "src/modules/build/execution/iterations.controller.ts:103",
+      "evidence": "src/modules/build/execution/iterations.controller.ts:104",
       "reviewedEvidence": [
         {
           "file": "src/modules/build/execution/sprints.service.ts",
           "line": 105,
-          "note": "pre-read binds id + orgId"
+          "note": "bound to the URL project"
         },
         {
           "file": "src/modules/build/execution/sprints.service.ts",
@@ -7234,7 +7220,7 @@
       "file": "src/modules/build/execution/iterations.controller.ts",
       "class": "SprintsController",
       "method": "deleteSprint",
-      "line": 115,
+      "line": 117,
       "verb": "DELETE",
       "path": "/build/:projectId/sprints/:sprintId",
       "routeParams": [
@@ -7273,7 +7259,7 @@
       ],
       "verdict": "NEEDS-REVIEW",
       "verdictReason": "static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)",
-      "evidence": "src/modules/build/execution/iterations.controller.ts:115",
+      "evidence": "src/modules/build/execution/iterations.controller.ts:117",
       "reviewedEvidence": null
     },
     {
@@ -7281,7 +7267,7 @@
       "file": "src/modules/build/execution/iterations.controller.ts",
       "class": "CyclesController",
       "method": "listCycles",
-      "line": 135,
+      "line": 137,
       "verb": "GET",
       "path": "/build/:projectId/cycles",
       "routeParams": [
@@ -7316,7 +7302,7 @@
       "notes": [],
       "verdict": "VERIFIED",
       "verdictReason": "guard chain complete, org scoping bound, params declared, no nested parent",
-      "evidence": "src/modules/build/execution/iterations.controller.ts:135",
+      "evidence": "src/modules/build/execution/iterations.controller.ts:137",
       "reviewedEvidence": null
     },
     {
@@ -7324,7 +7310,7 @@
       "file": "src/modules/build/execution/iterations.controller.ts",
       "class": "CyclesController",
       "method": "createCycle",
-      "line": 147,
+      "line": 149,
       "verb": "POST",
       "path": "/build/:projectId/cycles",
       "routeParams": [
@@ -7359,7 +7345,7 @@
       "notes": [],
       "verdict": "VERIFIED",
       "verdictReason": "guard chain complete, org scoping bound, params declared, no nested parent",
-      "evidence": "src/modules/build/execution/iterations.controller.ts:147",
+      "evidence": "src/modules/build/execution/iterations.controller.ts:149",
       "reviewedEvidence": null
     },
     {
@@ -7367,7 +7353,7 @@
       "file": "src/modules/build/execution/iterations.controller.ts",
       "class": "CyclesController",
       "method": "updateCycle",
-      "line": 161,
+      "line": 163,
       "verb": "PATCH",
       "path": "/build/:projectId/cycles/:cycleId",
       "routeParams": [
@@ -7406,7 +7392,7 @@
       ],
       "verdict": "NEEDS-REVIEW",
       "verdictReason": "static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)",
-      "evidence": "src/modules/build/execution/iterations.controller.ts:161",
+      "evidence": "src/modules/build/execution/iterations.controller.ts:163",
       "reviewedEvidence": null
     },
     {
@@ -7414,7 +7400,7 @@
       "file": "src/modules/build/execution/iterations.controller.ts",
       "class": "CyclesController",
       "method": "deleteCycle",
-      "line": 174,
+      "line": 176,
       "verb": "DELETE",
       "path": "/build/:projectId/cycles/:cycleId",
       "routeParams": [
@@ -7453,7 +7439,7 @@
       ],
       "verdict": "NEEDS-REVIEW",
       "verdictReason": "static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)",
-      "evidence": "src/modules/build/execution/iterations.controller.ts:174",
+      "evidence": "src/modules/build/execution/iterations.controller.ts:176",
       "reviewedEvidence": null
     },
     {
@@ -7461,7 +7447,7 @@
       "file": "src/modules/build/execution/iterations.controller.ts",
       "class": "ModulesController",
       "method": "listModules",
-      "line": 194,
+      "line": 196,
       "verb": "GET",
       "path": "/build/:projectId/modules",
       "routeParams": [
@@ -7496,7 +7482,7 @@
       "notes": [],
       "verdict": "VERIFIED",
       "verdictReason": "guard chain complete, org scoping bound, params declared, no nested parent",
-      "evidence": "src/modules/build/execution/iterations.controller.ts:194",
+      "evidence": "src/modules/build/execution/iterations.controller.ts:196",
       "reviewedEvidence": null
     },
     {
@@ -7504,7 +7490,7 @@
       "file": "src/modules/build/execution/iterations.controller.ts",
       "class": "ModulesController",
       "method": "createModule",
-      "line": 205,
+      "line": 207,
       "verb": "POST",
       "path": "/build/:projectId/modules",
       "routeParams": [
@@ -7541,7 +7527,7 @@
       ],
       "verdict": "VERIFIED",
       "verdictReason": "guard chain complete, org scoping bound, params declared, no nested parent",
-      "evidence": "src/modules/build/execution/iterations.controller.ts:205",
+      "evidence": "src/modules/build/execution/iterations.controller.ts:207",
       "reviewedEvidence": null
     },
     {
@@ -7549,7 +7535,7 @@
       "file": "src/modules/build/execution/iterations.controller.ts",
       "class": "ModulesController",
       "method": "updateModule",
-      "line": 218,
+      "line": 220,
       "verb": "PATCH",
       "path": "/build/:projectId/modules/:moduleId",
       "routeParams": [
@@ -7573,29 +7559,27 @@
       "idempotent": null,
       "mutating": true,
       "service": {
-        "call": "this.modules.updateModule(u.orgId, moduleId, body)",
+        "call": "this.modules.updateModule(u.orgId, projectId, moduleId, body)",
         "type": "ModulesService",
         "file": "src/modules/build/execution/modules.service.ts",
         "resolved": true
       },
       "orgScoping": "BOUND",
       "orgEvidence": "src/modules/build/execution/modules.service.ts:124",
-      "parentScoping": "NOT-PASSED (no @Param on parent)",
-      "parentEvidence": "src/modules/build/execution/iterations.controller.ts:218",
-      "leads": [
-        "parent scoping: NOT-PASSED (no @Param on parent)"
-      ],
+      "parentScoping": "BOUND",
+      "parentEvidence": "src/modules/build/execution/modules.service.ts:124",
+      "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
       ],
-      "verdict": "VULNERABLE",
+      "verdict": "CLOSED",
       "verdictReason": "PATCH /build/:projectId/modules/:moduleId. No @Param(\"projectId\"); the UPDATE binds (id, orgId).",
-      "evidence": "src/modules/build/execution/iterations.controller.ts:218",
+      "evidence": "src/modules/build/execution/iterations.controller.ts:220",
       "reviewedEvidence": [
         {
           "file": "src/modules/build/execution/modules.service.ts",
-          "line": 132,
-          "note": "id + orgId only"
+          "line": 133,
+          "note": "bound to the URL project"
         }
       ]
     },
@@ -7604,7 +7588,7 @@
       "file": "src/modules/build/execution/iterations.controller.ts",
       "class": "ModulesController",
       "method": "deleteModule",
-      "line": 230,
+      "line": 233,
       "verb": "DELETE",
       "path": "/build/:projectId/modules/:moduleId",
       "routeParams": [
@@ -7628,29 +7612,27 @@
       "idempotent": null,
       "mutating": true,
       "service": {
-        "call": "this.modules.deleteModule(u.orgId, moduleId)",
+        "call": "this.modules.deleteModule(u.orgId, projectId, moduleId)",
         "type": "ModulesService",
         "file": "src/modules/build/execution/modules.service.ts",
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/execution/modules.service.ts:139",
-      "parentScoping": "NOT-PASSED (no @Param on parent)",
-      "parentEvidence": "src/modules/build/execution/iterations.controller.ts:230",
-      "leads": [
-        "parent scoping: NOT-PASSED (no @Param on parent)"
-      ],
+      "orgEvidence": "src/modules/build/execution/modules.service.ts:140",
+      "parentScoping": "BOUND",
+      "parentEvidence": "src/modules/build/execution/modules.service.ts:140",
+      "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
       ],
-      "verdict": "VULNERABLE",
+      "verdict": "CLOSED",
       "verdictReason": "DELETE /build/:projectId/modules/:moduleId. No @Param(\"projectId\"). The transaction also nulls tickets.moduleId across the org by (moduleId, orgId) before deleting the module by (id, orgId).",
-      "evidence": "src/modules/build/execution/iterations.controller.ts:230",
+      "evidence": "src/modules/build/execution/iterations.controller.ts:233",
       "reviewedEvidence": [
         {
           "file": "src/modules/build/execution/modules.service.ts",
-          "line": 147,
-          "note": "id + orgId only"
+          "line": 148,
+          "note": "bound to the URL project"
         }
       ]
     },
@@ -7659,7 +7641,7 @@
       "file": "src/modules/build/execution/iterations.controller.ts",
       "class": "EpicsController",
       "method": "listEpics",
-      "line": 249,
+      "line": 253,
       "verb": "GET",
       "path": "/build/:projectId/epics",
       "routeParams": [
@@ -7694,7 +7676,7 @@
       "notes": [],
       "verdict": "VERIFIED",
       "verdictReason": "guard chain complete, org scoping bound, params declared, no nested parent",
-      "evidence": "src/modules/build/execution/iterations.controller.ts:249",
+      "evidence": "src/modules/build/execution/iterations.controller.ts:253",
       "reviewedEvidence": null
     },
     {
@@ -7702,7 +7684,7 @@
       "file": "src/modules/build/execution/iterations.controller.ts",
       "class": "EpicsController",
       "method": "createEpic",
-      "line": 260,
+      "line": 264,
       "verb": "POST",
       "path": "/build/:projectId/epics",
       "routeParams": [
@@ -7739,7 +7721,7 @@
       ],
       "verdict": "VERIFIED",
       "verdictReason": "guard chain complete, org scoping bound, params declared, no nested parent",
-      "evidence": "src/modules/build/execution/iterations.controller.ts:260",
+      "evidence": "src/modules/build/execution/iterations.controller.ts:264",
       "reviewedEvidence": null
     },
     {
@@ -7747,7 +7729,7 @@
       "file": "src/modules/build/execution/iterations.controller.ts",
       "class": "EpicsController",
       "method": "updateEpic",
-      "line": 273,
+      "line": 277,
       "verb": "PATCH",
       "path": "/build/:projectId/epics/:epicId",
       "routeParams": [
@@ -7786,7 +7768,7 @@
       ],
       "verdict": "NEEDS-REVIEW",
       "verdictReason": "static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)",
-      "evidence": "src/modules/build/execution/iterations.controller.ts:273",
+      "evidence": "src/modules/build/execution/iterations.controller.ts:277",
       "reviewedEvidence": null
     },
     {
@@ -7794,7 +7776,7 @@
       "file": "src/modules/build/execution/iterations.controller.ts",
       "class": "EpicsController",
       "method": "deleteEpic",
-      "line": 286,
+      "line": 290,
       "verb": "DELETE",
       "path": "/build/:projectId/epics/:epicId",
       "routeParams": [
@@ -7833,7 +7815,7 @@
       ],
       "verdict": "NEEDS-REVIEW",
       "verdictReason": "static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)",
-      "evidence": "src/modules/build/execution/iterations.controller.ts:286",
+      "evidence": "src/modules/build/execution/iterations.controller.ts:290",
       "reviewedEvidence": null
     },
     {
@@ -8205,29 +8187,27 @@
       "idempotent": null,
       "mutating": true,
       "service": {
-        "call": "this.timesheets.logTicketTime(u, ticketId, body)",
+        "call": "this.timesheets.logTicketTime(u, projectId, ticketId, body)",
         "type": "TimesheetsService",
         "file": "src/modules/build/execution/timesheets.service.ts",
         "resolved": true
       },
       "orgScoping": "BOUND",
       "orgEvidence": "src/modules/build/execution/timesheets.service.ts:414",
-      "parentScoping": "NOT-PASSED (no @Param on parent)",
-      "parentEvidence": "src/modules/build/execution/timesheets.controller.ts:183",
-      "leads": [
-        "parent scoping: NOT-PASSED (no @Param on parent)"
-      ],
+      "parentScoping": "BOUND",
+      "parentEvidence": "src/modules/build/execution/timesheets.service.ts:414",
+      "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
       ],
-      "verdict": "VULNERABLE",
+      "verdict": "CLOSED",
       "verdictReason": "POST /build/:projectId/tickets/:ticketId/time-entries. No @Param(\"projectId\"); the ticket is resolved by (id, orgId) and the access checks that follow use the ticket's own project.",
       "evidence": "src/modules/build/execution/timesheets.controller.ts:183",
       "reviewedEvidence": [
         {
           "file": "src/modules/build/execution/timesheets.service.ts",
-          "line": 423,
-          "note": "ticket resolved by id + orgId; URL projectId never compared"
+          "line": 425,
+          "note": "bound to the URL project"
         }
       ]
     },
@@ -8642,29 +8622,27 @@
       "idempotent": null,
       "mutating": true,
       "service": {
-        "call": "this.milestones.updateMilestone(u.orgId, milestoneId, body)",
+        "call": "this.milestones.updateMilestone(u.orgId, projectId, milestoneId, body)",
         "type": "MilestonesService",
         "file": "src/modules/build/execution/workspace.service.ts",
         "resolved": true
       },
       "orgScoping": "BOUND",
       "orgEvidence": "src/modules/build/execution/workspace.service.ts:64",
-      "parentScoping": "NOT-PASSED (no @Param on parent)",
-      "parentEvidence": "src/modules/build/execution/workspace.controller.ts:96",
-      "leads": [
-        "parent scoping: NOT-PASSED (no @Param on parent)"
-      ],
+      "parentScoping": "BOUND",
+      "parentEvidence": "src/modules/build/execution/workspace.service.ts:64",
+      "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
       ],
-      "verdict": "VULNERABLE",
+      "verdict": "CLOSED",
       "verdictReason": "PATCH /build/:projectId/milestones/:milestoneId. The @Controller prefix itself is \"build/:projectId/milestones\", yet no @Param(\"projectId\") is declared and the UPDATE binds (id, orgId).",
       "evidence": "src/modules/build/execution/workspace.controller.ts:96",
       "reviewedEvidence": [
         {
           "file": "src/modules/build/execution/workspace.service.ts",
           "line": 68,
-          "note": "id + orgId only"
+          "note": "bound to the URL project"
         }
       ]
     },
@@ -8673,7 +8651,7 @@
       "file": "src/modules/build/execution/workspace.controller.ts",
       "class": "MilestonesController",
       "method": "deleteMilestone",
-      "line": 108,
+      "line": 109,
       "verb": "DELETE",
       "path": "/build/:projectId/milestones/:milestoneId",
       "routeParams": [
@@ -8697,29 +8675,27 @@
       "idempotent": null,
       "mutating": true,
       "service": {
-        "call": "this.milestones.deleteMilestone(u.orgId, milestoneId)",
+        "call": "this.milestones.deleteMilestone(u.orgId, projectId, milestoneId)",
         "type": "MilestonesService",
         "file": "src/modules/build/execution/workspace.service.ts",
         "resolved": true
       },
       "orgScoping": "BOUND",
       "orgEvidence": "src/modules/build/execution/workspace.service.ts:74",
-      "parentScoping": "NOT-PASSED (no @Param on parent)",
-      "parentEvidence": "src/modules/build/execution/workspace.controller.ts:108",
-      "leads": [
-        "parent scoping: NOT-PASSED (no @Param on parent)"
-      ],
+      "parentScoping": "BOUND",
+      "parentEvidence": "src/modules/build/execution/workspace.service.ts:74",
+      "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
       ],
-      "verdict": "VULNERABLE",
+      "verdict": "CLOSED",
       "verdictReason": "DELETE /build/:projectId/milestones/:milestoneId. Same as updateMilestone.",
-      "evidence": "src/modules/build/execution/workspace.controller.ts:108",
+      "evidence": "src/modules/build/execution/workspace.controller.ts:109",
       "reviewedEvidence": [
         {
           "file": "src/modules/build/execution/workspace.service.ts",
           "line": 78,
-          "note": "id + orgId only"
+          "note": "bound to the URL project"
         }
       ]
     },
@@ -8728,7 +8704,7 @@
       "file": "src/modules/build/execution/workspace.controller.ts",
       "class": "IntakeController",
       "method": "listIntake",
-      "line": 127,
+      "line": 129,
       "verb": "GET",
       "path": "/build/:projectId/intake",
       "routeParams": [
@@ -8763,7 +8739,7 @@
       "notes": [],
       "verdict": "VERIFIED",
       "verdictReason": "guard chain complete, org scoping bound, params declared, no nested parent",
-      "evidence": "src/modules/build/execution/workspace.controller.ts:127",
+      "evidence": "src/modules/build/execution/workspace.controller.ts:129",
       "reviewedEvidence": null
     },
     {
@@ -8771,7 +8747,7 @@
       "file": "src/modules/build/execution/workspace.controller.ts",
       "class": "IntakeController",
       "method": "createIntake",
-      "line": 139,
+      "line": 141,
       "verb": "POST",
       "path": "/build/:projectId/intake",
       "routeParams": [
@@ -8808,7 +8784,7 @@
       ],
       "verdict": "VERIFIED",
       "verdictReason": "guard chain complete, org scoping bound, params declared, no nested parent",
-      "evidence": "src/modules/build/execution/workspace.controller.ts:139",
+      "evidence": "src/modules/build/execution/workspace.controller.ts:141",
       "reviewedEvidence": null
     },
     {
@@ -8816,7 +8792,7 @@
       "file": "src/modules/build/execution/workspace.controller.ts",
       "class": "IntakeController",
       "method": "updateIntake",
-      "line": 152,
+      "line": 154,
       "verb": "PATCH",
       "path": "/build/:projectId/intake/:requestId",
       "routeParams": [
@@ -8840,29 +8816,27 @@
       "idempotent": null,
       "mutating": true,
       "service": {
-        "call": "this.intake.updateIntake(u.orgId, u.userId, requestId, body)",
+        "call": "this.intake.updateIntake(u.orgId, u.userId, projectId, requestId, body)",
         "type": "IntakeService",
         "file": "src/modules/build/execution/workspace.service.ts",
         "resolved": true
       },
       "orgScoping": "BOUND",
       "orgEvidence": "src/modules/build/execution/workspace.service.ts:150",
-      "parentScoping": "NOT-PASSED (no @Param on parent)",
-      "parentEvidence": "src/modules/build/execution/workspace.controller.ts:152",
-      "leads": [
-        "parent scoping: NOT-PASSED (no @Param on parent)"
-      ],
+      "parentScoping": "BOUND",
+      "parentEvidence": "src/modules/build/execution/workspace.service.ts:150",
+      "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
       ],
-      "verdict": "VULNERABLE",
+      "verdict": "CLOSED",
       "verdictReason": "PATCH /build/:projectId/intake/:requestId. No @Param(\"projectId\"); every one of the four statements in this method binds (id, orgId). listIntake and createIntake in the same service DO call assertProjectInOrg — updateIntake does not.",
-      "evidence": "src/modules/build/execution/workspace.controller.ts:152",
+      "evidence": "src/modules/build/execution/workspace.controller.ts:154",
       "reviewedEvidence": [
         {
           "file": "src/modules/build/execution/workspace.service.ts",
           "line": 154,
-          "note": "id + orgId only"
+          "note": "bound to the URL project"
         }
       ]
     },
@@ -8871,7 +8845,7 @@
       "file": "src/modules/build/execution/workspace.controller.ts",
       "class": "ViewsController",
       "method": "listViews",
-      "line": 171,
+      "line": 174,
       "verb": "GET",
       "path": "/build/:projectId/views",
       "routeParams": [
@@ -8906,7 +8880,7 @@
       "notes": [],
       "verdict": "VERIFIED",
       "verdictReason": "guard chain complete, org scoping bound, params declared, no nested parent",
-      "evidence": "src/modules/build/execution/workspace.controller.ts:171",
+      "evidence": "src/modules/build/execution/workspace.controller.ts:174",
       "reviewedEvidence": null
     },
     {
@@ -8914,7 +8888,7 @@
       "file": "src/modules/build/execution/workspace.controller.ts",
       "class": "ViewsController",
       "method": "createView",
-      "line": 182,
+      "line": 185,
       "verb": "POST",
       "path": "/build/:projectId/views",
       "routeParams": [
@@ -8951,7 +8925,7 @@
       ],
       "verdict": "VERIFIED",
       "verdictReason": "guard chain complete, org scoping bound, params declared, no nested parent",
-      "evidence": "src/modules/build/execution/workspace.controller.ts:182",
+      "evidence": "src/modules/build/execution/workspace.controller.ts:185",
       "reviewedEvidence": null
     },
     {
@@ -8959,7 +8933,7 @@
       "file": "src/modules/build/execution/workspace.controller.ts",
       "class": "ViewsController",
       "method": "updateView",
-      "line": 195,
+      "line": 198,
       "verb": "PATCH",
       "path": "/build/:projectId/views/:viewId",
       "routeParams": [
@@ -8983,29 +8957,27 @@
       "idempotent": null,
       "mutating": true,
       "service": {
-        "call": "this.views.updateView(u.orgId, u.userId, viewId, body)",
+        "call": "this.views.updateView(u.orgId, u.userId, projectId, viewId, body)",
         "type": "ViewsService",
         "file": "src/modules/build/execution/workspace.service.ts",
         "resolved": true
       },
       "orgScoping": "BOUND",
       "orgEvidence": "src/modules/build/execution/workspace.service.ts:267",
-      "parentScoping": "NOT-PASSED (no @Param on parent)",
-      "parentEvidence": "src/modules/build/execution/workspace.controller.ts:195",
-      "leads": [
-        "parent scoping: NOT-PASSED (no @Param on parent)"
-      ],
+      "parentScoping": "BOUND",
+      "parentEvidence": "src/modules/build/execution/workspace.service.ts:267",
+      "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
       ],
-      "verdict": "VULNERABLE",
+      "verdict": "CLOSED",
       "verdictReason": "PATCH /build/:projectId/views/:viewId. No @Param(\"projectId\"); the view is resolved by (id, orgId). A per-user guard rejects mutating a PRIVATE view the caller does not own — but shared views bypass it entirely, and neither branch compares the URL projectId.",
-      "evidence": "src/modules/build/execution/workspace.controller.ts:195",
+      "evidence": "src/modules/build/execution/workspace.controller.ts:198",
       "reviewedEvidence": [
         {
           "file": "src/modules/build/execution/workspace.service.ts",
           "line": 269,
-          "note": "pre-read binds id + orgId"
+          "note": "bound to the URL project"
         },
         {
           "file": "src/modules/build/execution/workspace.service.ts",
@@ -9019,7 +8991,7 @@
       "file": "src/modules/build/execution/workspace.controller.ts",
       "class": "ViewsController",
       "method": "deleteView",
-      "line": 207,
+      "line": 211,
       "verb": "DELETE",
       "path": "/build/:projectId/views/:viewId",
       "routeParams": [
@@ -9043,29 +9015,27 @@
       "idempotent": null,
       "mutating": true,
       "service": {
-        "call": "this.views.deleteView(u.orgId, u.userId, viewId)",
+        "call": "this.views.deleteView(u.orgId, u.userId, projectId, viewId)",
         "type": "ViewsService",
         "file": "src/modules/build/execution/workspace.service.ts",
         "resolved": true
       },
       "orgScoping": "BOUND",
       "orgEvidence": "src/modules/build/execution/workspace.service.ts:284",
-      "parentScoping": "NOT-PASSED (no @Param on parent)",
-      "parentEvidence": "src/modules/build/execution/workspace.controller.ts:207",
-      "leads": [
-        "parent scoping: NOT-PASSED (no @Param on parent)"
-      ],
+      "parentScoping": "BOUND",
+      "parentEvidence": "src/modules/build/execution/workspace.service.ts:284",
+      "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
       ],
-      "verdict": "VULNERABLE",
+      "verdict": "CLOSED",
       "verdictReason": "DELETE /build/:projectId/views/:viewId. Same as updateView, including the shared-view bypass.",
-      "evidence": "src/modules/build/execution/workspace.controller.ts:207",
+      "evidence": "src/modules/build/execution/workspace.controller.ts:211",
       "reviewedEvidence": [
         {
           "file": "src/modules/build/execution/workspace.service.ts",
           "line": 286,
-          "note": "pre-read binds id + orgId"
+          "note": "bound to the URL project"
         },
         {
           "file": "src/modules/build/execution/workspace.service.ts",
@@ -9079,7 +9049,7 @@
       "file": "src/modules/build/execution/workspace.controller.ts",
       "class": "WorkspaceViewsController",
       "method": "listWorkspaceViews",
-      "line": 226,
+      "line": 231,
       "verb": "GET",
       "path": "/build/views",
       "routeParams": [],
@@ -9110,7 +9080,7 @@
       "notes": [],
       "verdict": "VERIFIED",
       "verdictReason": "guard chain complete, org scoping bound, params declared, no nested parent",
-      "evidence": "src/modules/build/execution/workspace.controller.ts:226",
+      "evidence": "src/modules/build/execution/workspace.controller.ts:231",
       "reviewedEvidence": null
     },
     {
@@ -9118,7 +9088,7 @@
       "file": "src/modules/build/execution/workspace.controller.ts",
       "class": "WorkspaceViewsController",
       "method": "createWorkspaceView",
-      "line": 233,
+      "line": 238,
       "verb": "POST",
       "path": "/build/views",
       "routeParams": [],
@@ -9153,7 +9123,7 @@
       ],
       "verdict": "NEEDS-REVIEW",
       "verdictReason": "org scoping: PASSED-UNBOUND",
-      "evidence": "src/modules/build/execution/workspace.controller.ts:233",
+      "evidence": "src/modules/build/execution/workspace.controller.ts:238",
       "reviewedEvidence": null
     },
     {
@@ -9161,7 +9131,7 @@
       "file": "src/modules/build/execution/workspace.controller.ts",
       "class": "WorkspaceViewsController",
       "method": "updateWorkspaceView",
-      "line": 245,
+      "line": 250,
       "verb": "PATCH",
       "path": "/build/views/:viewId",
       "routeParams": [
@@ -9198,7 +9168,7 @@
       ],
       "verdict": "VERIFIED",
       "verdictReason": "guard chain complete, org scoping bound, params declared, no nested parent",
-      "evidence": "src/modules/build/execution/workspace.controller.ts:245",
+      "evidence": "src/modules/build/execution/workspace.controller.ts:250",
       "reviewedEvidence": null
     },
     {
@@ -9206,7 +9176,7 @@
       "file": "src/modules/build/execution/workspace.controller.ts",
       "class": "WorkspaceViewsController",
       "method": "deleteWorkspaceView",
-      "line": 257,
+      "line": 262,
       "verb": "DELETE",
       "path": "/build/views/:viewId",
       "routeParams": [
@@ -9243,7 +9213,7 @@
       ],
       "verdict": "VERIFIED",
       "verdictReason": "guard chain complete, org scoping bound, params declared, no nested parent",
-      "evidence": "src/modules/build/execution/workspace.controller.ts:257",
+      "evidence": "src/modules/build/execution/workspace.controller.ts:262",
       "reviewedEvidence": null
     },
     {
@@ -9251,7 +9221,7 @@
       "file": "src/modules/build/execution/workspace.controller.ts",
       "class": "WhiteboardsHubController",
       "method": "listAllWhiteboards",
-      "line": 276,
+      "line": 281,
       "verb": "GET",
       "path": "/build/whiteboards",
       "routeParams": [],
@@ -9282,7 +9252,7 @@
       "notes": [],
       "verdict": "VERIFIED",
       "verdictReason": "guard chain complete, org scoping bound, params declared, no nested parent",
-      "evidence": "src/modules/build/execution/workspace.controller.ts:276",
+      "evidence": "src/modules/build/execution/workspace.controller.ts:281",
       "reviewedEvidence": null
     },
     {
@@ -9290,7 +9260,7 @@
       "file": "src/modules/build/execution/workspace.controller.ts",
       "class": "WhiteboardsController",
       "method": "listWhiteboards",
-      "line": 290,
+      "line": 295,
       "verb": "GET",
       "path": "/build/:projectId/whiteboards",
       "routeParams": [
@@ -9325,7 +9295,7 @@
       "notes": [],
       "verdict": "VERIFIED",
       "verdictReason": "guard chain complete, org scoping bound, params declared, no nested parent",
-      "evidence": "src/modules/build/execution/workspace.controller.ts:290",
+      "evidence": "src/modules/build/execution/workspace.controller.ts:295",
       "reviewedEvidence": null
     },
     {
@@ -9333,7 +9303,7 @@
       "file": "src/modules/build/execution/workspace.controller.ts",
       "class": "WhiteboardsController",
       "method": "createWhiteboard",
-      "line": 301,
+      "line": 306,
       "verb": "POST",
       "path": "/build/:projectId/whiteboards",
       "routeParams": [
@@ -9370,7 +9340,7 @@
       ],
       "verdict": "VERIFIED",
       "verdictReason": "guard chain complete, org scoping bound, params declared, no nested parent",
-      "evidence": "src/modules/build/execution/workspace.controller.ts:301",
+      "evidence": "src/modules/build/execution/workspace.controller.ts:306",
       "reviewedEvidence": null
     },
     {
@@ -9378,7 +9348,7 @@
       "file": "src/modules/build/execution/workspace.controller.ts",
       "class": "WhiteboardsController",
       "method": "getWhiteboard",
-      "line": 314,
+      "line": 319,
       "verb": "GET",
       "path": "/build/:projectId/whiteboards/:whiteboardId",
       "routeParams": [
@@ -9415,7 +9385,7 @@
       "notes": [],
       "verdict": "NEEDS-REVIEW",
       "verdictReason": "static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)",
-      "evidence": "src/modules/build/execution/workspace.controller.ts:314",
+      "evidence": "src/modules/build/execution/workspace.controller.ts:319",
       "reviewedEvidence": null
     },
     {
@@ -9423,7 +9393,7 @@
       "file": "src/modules/build/execution/workspace.controller.ts",
       "class": "WhiteboardsController",
       "method": "updateWhiteboard",
-      "line": 326,
+      "line": 331,
       "verb": "PATCH",
       "path": "/build/:projectId/whiteboards/:whiteboardId",
       "routeParams": [
@@ -9462,7 +9432,7 @@
       ],
       "verdict": "NEEDS-REVIEW",
       "verdictReason": "static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)",
-      "evidence": "src/modules/build/execution/workspace.controller.ts:326",
+      "evidence": "src/modules/build/execution/workspace.controller.ts:331",
       "reviewedEvidence": null
     },
     {
@@ -9470,7 +9440,7 @@
       "file": "src/modules/build/execution/workspace.controller.ts",
       "class": "WhiteboardsController",
       "method": "deleteWhiteboard",
-      "line": 339,
+      "line": 344,
       "verb": "DELETE",
       "path": "/build/:projectId/whiteboards/:whiteboardId",
       "routeParams": [
@@ -9509,7 +9479,7 @@
       ],
       "verdict": "NEEDS-REVIEW",
       "verdictReason": "static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)",
-      "evidence": "src/modules/build/execution/workspace.controller.ts:339",
+      "evidence": "src/modules/build/execution/workspace.controller.ts:344",
       "reviewedEvidence": null
     },
     {

@@ -112,7 +112,7 @@ const MUTATING_VERBS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 const REVIEWED = [
   {
     key: "modules/build/core/projects-custom-fields.controller.ts#updateField",
-    verdict: "VULNERABLE",
+    verdict: "CLOSED",
     finding: "parent-binding-missing",
     summary:
       "PATCH /build/:projectId/custom-fields/:fieldId. The controller declares no @Param(\"projectId\"), so the path segment is never read; the service UPDATEs on (id, orgId, entityType) only. The same service file's listFields binds customFieldDefinitions.projectId, and the column exists and is NOT NULL — so the omission is asymmetry inside one file, not an absent column. Any :projectId in the URL edits a field owned by any other project in the same org, and the row's own projectId is left untouched.",
@@ -121,15 +121,15 @@ const REVIEWED = [
     evidence: [
       {
         file: "src/modules/build/core/projects-custom-fields.controller.ts",
-        line: 69,
-        anchor: /return this\.customFields\.updateField\(u\.orgId, fieldId, body\);/,
-        note: "projectId is not forwarded",
+        line: 65,
+        anchor: /@Param\("projectId", ParseIntPipe\) projectId: number,/,
+        note: "bound to the URL project",
       },
       {
         file: "src/modules/build/core/projects-custom-fields.service.ts",
-        line: 110,
-        anchor: /eq\(customFieldDefinitions\.id, fieldId\)/,
-        note: "UPDATE binds id + orgId + entityType only — no projectId in the where clause",
+        line: 114,
+        anchor: /eq\(customFieldDefinitions\.projectId, projectId\),/,
+        note: "bound to the URL project",
       },
       {
         file: "src/modules/build/core/projects-custom-fields.service.ts",
@@ -141,7 +141,7 @@ const REVIEWED = [
   },
   {
     key: "modules/build/core/projects-custom-fields.controller.ts#deleteField",
-    verdict: "VULNERABLE",
+    verdict: "CLOSED",
     finding: "parent-binding-missing",
     summary:
       "DELETE /build/:projectId/custom-fields/:fieldId. Identical shape to updateField: no @Param(\"projectId\"), and the DELETE where clause is (id, orgId, entityType). Unlike listFields/createField this path does not even call assertProjectInOrg, so a :projectId belonging to another organisation still deletes an in-org field.",
@@ -150,21 +150,21 @@ const REVIEWED = [
     evidence: [
       {
         file: "src/modules/build/core/projects-custom-fields.controller.ts",
-        line: 81,
-        anchor: /return this\.customFields\.deleteField\(u\.orgId, fieldId\);/,
-        note: "projectId is not forwarded",
+        line: 79,
+        anchor: /@Param\("projectId", ParseIntPipe\) projectId: number,/,
+        note: "bound to the URL project",
       },
       {
         file: "src/modules/build/core/projects-custom-fields.service.ts",
-        line: 131,
-        anchor: /eq\(customFieldDefinitions\.id, fieldId\)/,
-        note: "DELETE binds id + orgId + entityType only",
+        line: 137,
+        anchor: /eq\(customFieldDefinitions\.projectId, projectId\),/,
+        note: "bound to the URL project",
       },
     ],
   },
   {
     key: "modules/build/core/projects-webhooks.controller.ts#deleteWebhook",
-    verdict: "VULNERABLE",
+    verdict: "CLOSED",
     finding: "parent-binding-missing",
     summary:
       "DELETE /build/:projectId/webhooks/:webhookId. No @Param(\"projectId\"); the service DELETEs on (id, orgId). The same service file already owns assertWebhookOwnership(orgId, projectId, webhookId), which binds projectWebhooks.projectId and is called by sendTest — so the correct helper exists and this one path skips it.",
@@ -173,21 +173,21 @@ const REVIEWED = [
     evidence: [
       {
         file: "src/modules/build/core/projects-webhooks.controller.ts",
-        line: 68,
-        anchor: /return this\.webhooks\.deleteWebhook\(u\.orgId, webhookId\);/,
-        note: "projectId is not forwarded",
+        line: 65,
+        anchor: /@Param\("projectId", ParseIntPipe\) projectId: number,/,
+        note: "bound to the URL project",
       },
       {
         file: "src/modules/build/core/projects-webhooks.service.ts",
-        line: 56,
-        anchor: /\.where\(and\(eq\(projectWebhooks\.id, webhookId\), eq\(projectWebhooks\.orgId, orgId\)\)\)/,
-        note: "DELETE binds id + orgId only",
+        line: 60,
+        anchor: /eq\(projectWebhooks\.projectId, projectId\),/,
+        note: "bound to the URL project",
       },
       {
         file: "src/modules/build/core/projects-webhooks.service.ts",
-        line: 69,
-        anchor: /eq\(projectWebhooks\.projectId, projectId\)/,
-        note: "assertWebhookOwnership DOES bind projectId — the unused correct path",
+        line: 76,
+        anchor: /eq\(projectWebhooks\.projectId, projectId\),/,
+        note: "bound to the URL project",
       },
     ],
   },
@@ -201,27 +201,27 @@ const REVIEWED = [
 
   {
     key: "modules/build/core/project-resources.controller.ts#updateCustomState",
-    verdict: "VULNERABLE",
+    verdict: "CLOSED",
     finding: "parent-binding-missing",
     summary:
       "PATCH /build/:projectId/custom-states/:stateId. The controller DOES declare @Param(\"projectId\") but binds it to `_` and throws it away; the service finds the state by (id, orgId) alone. The permission check that follows uses the ROW's own projectId, so the caller is re-authorised against whatever project the state really belongs to — the URL segment is decorative.",
     blastRadius:
       "Intra-tenant. A state belonging to project A is editable through project B's URL by a caller holding build:manage on A.",
     evidence: [
-      { file: "src/modules/build/core/project-resources.controller.ts", line: 178, anchor: /return this\.members\.updateCustomState\(u, stateId, body\);/, note: "projectId (bound to `_`) is not forwarded" },
-      { file: "src/modules/build/core/projects-custom-states.service.ts", line: 168, anchor: /and\(eq\(projectStatuses\.id, stateId\), eq\(projectStatuses\.orgId, orgId\)\)/, note: "lookup binds id + orgId only" },
+      { file: "src/modules/build/core/project-resources.controller.ts", line: 173, anchor: /@Param\("projectId", ParseIntPipe\) projectId: number,/, note: "bound to the URL project" },
+      { file: "src/modules/build/core/projects-custom-states.service.ts", line: 171, anchor: /eq\(projectStatuses\.projectId, projectId\),/, note: "bound to the URL project" },
     ],
   },
   {
     key: "modules/build/core/project-resources.controller.ts#deleteCustomState",
-    verdict: "VULNERABLE",
+    verdict: "CLOSED",
     finding: "parent-binding-missing",
     summary:
       "DELETE /build/:projectId/custom-states/:stateId. Identical to updateCustomState: @Param(\"projectId\") is bound to `_` and discarded, and the delete resolves the state by (id, orgId).",
     blastRadius: "Intra-tenant cross-project delete.",
     evidence: [
-      { file: "src/modules/build/core/project-resources.controller.ts", line: 191, anchor: /return this\.members\.deleteCustomState\(u, stateId\);/, note: "projectId discarded" },
-      { file: "src/modules/build/core/projects-custom-states.service.ts", line: 299, anchor: /and\(eq\(projectStatuses\.id, stateId\), eq\(projectStatuses\.orgId, orgId\)\)/, note: "lookup binds id + orgId only" },
+      { file: "src/modules/build/core/project-resources.controller.ts", line: 187, anchor: /@Param\("projectId", ParseIntPipe\) projectId: number,/, note: "bound to the URL project" },
+      { file: "src/modules/build/core/projects-custom-states.service.ts", line: 307, anchor: /eq\(projectStatuses\.projectId, projectId\),/, note: "bound to the URL project" },
     ],
   },
 
@@ -402,113 +402,113 @@ const REVIEWED = [
 
   {
     key: "modules/build/execution/iterations.controller.ts#getSprint",
-    verdict: "VULNERABLE",
+    verdict: "CLOSED",
     finding: "parent-binding-missing",
     summary:
       "GET /build/:projectId/sprints/:sprintId. No @Param(\"projectId\"); the sprint is resolved by (id, orgId). deleteSprint in the SAME service DOES bind sprints.projectId, proving the column is available and the omission is asymmetry.",
     blastRadius: "Intra-tenant cross-project read.",
     evidence: [
-      { file: "src/modules/build/execution/sprints.service.ts", line: 88, anchor: /where: and\(eq\(sprints\.id, sprintId\), eq\(sprints\.orgId, orgId\), isNull\(sprints\.deletedAt\)\),/, note: "id + orgId only" },
+      { file: "src/modules/build/execution/sprints.service.ts", line: 88, anchor: /where: and\(eq\(sprints\.id, sprintId\), eq\(sprints\.projectId, projectId\), eq\(sprints\.orgId, orgId\), isNull\(sprints\.deletedAt\)\),/, note: "bound to the URL project" },
       { file: "src/modules/build/execution/sprints.service.ts", line: 167, anchor: /eq\(sprints\.projectId, projectId\)/, note: "deleteSprint DOES bind projectId — the in-file control" },
     ],
   },
   {
     key: "modules/build/execution/iterations.controller.ts#updateSprint",
-    verdict: "VULNERABLE",
+    verdict: "CLOSED",
     finding: "parent-binding-missing",
     summary: "PATCH /build/:projectId/sprints/:sprintId. No @Param(\"projectId\"); both the pre-read and the UPDATE bind (id, orgId).",
     blastRadius: "Intra-tenant cross-project write.",
     evidence: [
-      { file: "src/modules/build/execution/sprints.service.ts", line: 105, anchor: /where: and\(eq\(sprints\.id, sprintId\), eq\(sprints\.orgId, orgId\), isNull\(sprints\.deletedAt\)\),/, note: "pre-read binds id + orgId" },
+      { file: "src/modules/build/execution/sprints.service.ts", line: 105, anchor: /where: and\(eq\(sprints\.id, sprintId\), eq\(sprints\.projectId, projectId\), eq\(sprints\.orgId, orgId\), isNull\(sprints\.deletedAt\)\),/, note: "bound to the URL project" },
       { file: "src/modules/build/execution/sprints.service.ts", line: 120, anchor: /\.where\(and\(eq\(sprints\.id, sprintId\), eq\(sprints\.orgId, orgId\), isNull\(sprints\.deletedAt\)\)\)/, note: "UPDATE binds id + orgId" },
     ],
   },
   {
     key: "modules/build/execution/iterations.controller.ts#updateModule",
-    verdict: "VULNERABLE",
+    verdict: "CLOSED",
     finding: "parent-binding-missing",
     summary: "PATCH /build/:projectId/modules/:moduleId. No @Param(\"projectId\"); the UPDATE binds (id, orgId).",
     blastRadius: "Intra-tenant cross-project write.",
     evidence: [
-      { file: "src/modules/build/execution/modules.service.ts", line: 132, anchor: /\.where\(and\(eq\(modules\.id, moduleId\), eq\(modules\.orgId, orgId\)\)\)/, note: "id + orgId only" },
+      { file: "src/modules/build/execution/modules.service.ts", line: 133, anchor: /\.where\(and\(eq\(modules\.id, moduleId\), eq\(modules\.projectId, projectId\), eq\(modules\.orgId, orgId\)\)\)/, note: "bound to the URL project" },
     ],
   },
   {
     key: "modules/build/execution/iterations.controller.ts#deleteModule",
-    verdict: "VULNERABLE",
+    verdict: "CLOSED",
     finding: "parent-binding-missing",
     summary:
       "DELETE /build/:projectId/modules/:moduleId. No @Param(\"projectId\"). The transaction also nulls tickets.moduleId across the org by (moduleId, orgId) before deleting the module by (id, orgId).",
     blastRadius: "Intra-tenant cross-project delete, with a side effect on every ticket referencing the module.",
     evidence: [
-      { file: "src/modules/build/execution/modules.service.ts", line: 147, anchor: /\.where\(and\(eq\(modules\.id, moduleId\), eq\(modules\.orgId, orgId\)\)\)/, note: "id + orgId only" },
+      { file: "src/modules/build/execution/modules.service.ts", line: 148, anchor: /\.where\(and\(eq\(modules\.id, moduleId\), eq\(modules\.projectId, projectId\), eq\(modules\.orgId, orgId\)\)\)/, note: "bound to the URL project" },
     ],
   },
   {
     key: "modules/build/execution/timesheets.controller.ts#logTicketTime",
-    verdict: "VULNERABLE",
+    verdict: "CLOSED",
     finding: "parent-binding-missing",
     summary:
       "POST /build/:projectId/tickets/:ticketId/time-entries. No @Param(\"projectId\"); the ticket is resolved by (id, orgId) and the access checks that follow use the ticket's own project.",
     blastRadius: "Intra-tenant; row-derived access check narrows it as with updateTicket.",
     evidence: [
-      { file: "src/modules/build/execution/timesheets.service.ts", line: 423, anchor: /eq\(tickets\.id, ticketId\),/, note: "ticket resolved by id + orgId; URL projectId never compared" },
+      { file: "src/modules/build/execution/timesheets.service.ts", line: 425, anchor: /eq\(tickets\.projectId, projectId\),/, note: "bound to the URL project" },
     ],
   },
 
   {
     key: "modules/build/execution/workspace.controller.ts#updateMilestone",
-    verdict: "VULNERABLE",
+    verdict: "CLOSED",
     finding: "parent-binding-missing",
     summary:
       "PATCH /build/:projectId/milestones/:milestoneId. The @Controller prefix itself is \"build/:projectId/milestones\", yet no @Param(\"projectId\") is declared and the UPDATE binds (id, orgId).",
     blastRadius: "Intra-tenant cross-project write; org-wide permission is sufficient, there is no row-derived re-check.",
     evidence: [
-      { file: "src/modules/build/execution/workspace.service.ts", line: 68, anchor: /\.where\(and\(eq\(projectMilestones\.id, milestoneId\), eq\(projectMilestones\.orgId, orgId\), isNull\(projectMilestones\.deletedAt\)\)\)/, note: "id + orgId only" },
+      { file: "src/modules/build/execution/workspace.service.ts", line: 68, anchor: /\.where\(and\(eq\(projectMilestones\.id, milestoneId\), eq\(projectMilestones\.projectId, projectId\), eq\(projectMilestones\.orgId, orgId\), isNull\(projectMilestones\.deletedAt\)\)\)/, note: "bound to the URL project" },
     ],
   },
   {
     key: "modules/build/execution/workspace.controller.ts#deleteMilestone",
-    verdict: "VULNERABLE",
+    verdict: "CLOSED",
     finding: "parent-binding-missing",
     summary: "DELETE /build/:projectId/milestones/:milestoneId. Same as updateMilestone.",
     blastRadius: "Intra-tenant cross-project delete.",
     evidence: [
-      { file: "src/modules/build/execution/workspace.service.ts", line: 78, anchor: /\.where\(and\(eq\(projectMilestones\.id, milestoneId\), eq\(projectMilestones\.orgId, orgId\), isNull\(projectMilestones\.deletedAt\)\)\)/, note: "id + orgId only" },
+      { file: "src/modules/build/execution/workspace.service.ts", line: 78, anchor: /\.where\(and\(eq\(projectMilestones\.id, milestoneId\), eq\(projectMilestones\.projectId, projectId\), eq\(projectMilestones\.orgId, orgId\), isNull\(projectMilestones\.deletedAt\)\)\)/, note: "bound to the URL project" },
     ],
   },
   {
     key: "modules/build/execution/workspace.controller.ts#updateIntake",
-    verdict: "VULNERABLE",
+    verdict: "CLOSED",
     finding: "parent-binding-missing",
     summary:
       "PATCH /build/:projectId/intake/:requestId. No @Param(\"projectId\"); every one of the four statements in this method binds (id, orgId). listIntake and createIntake in the same service DO call assertProjectInOrg — updateIntake does not.",
     blastRadius: "Intra-tenant cross-project write.",
     evidence: [
-      { file: "src/modules/build/execution/workspace.service.ts", line: 154, anchor: /\.where\(and\(eq\(intakeItems\.id, requestId\), eq\(intakeItems\.orgId, orgId\)\)\)/, note: "id + orgId only" },
+      { file: "src/modules/build/execution/workspace.service.ts", line: 154, anchor: /\.where\(and\(eq\(intakeItems\.id, requestId\), eq\(intakeItems\.projectId, projectId\), eq\(intakeItems\.orgId, orgId\)\)\)/, note: "bound to the URL project" },
     ],
   },
   {
     key: "modules/build/execution/workspace.controller.ts#updateView",
-    verdict: "VULNERABLE",
+    verdict: "CLOSED",
     finding: "parent-binding-missing",
     summary:
       "PATCH /build/:projectId/views/:viewId. No @Param(\"projectId\"); the view is resolved by (id, orgId). A per-user guard rejects mutating a PRIVATE view the caller does not own — but shared views bypass it entirely, and neither branch compares the URL projectId.",
     blastRadius:
       "Intra-tenant. Private views are additionally user-scoped; SHARED views have no project or user constraint, so any org member can edit a shared view belonging to any project.",
     evidence: [
-      { file: "src/modules/build/execution/workspace.service.ts", line: 269, anchor: /where: and\(eq\(projectViews\.id, viewId\), eq\(projectViews\.orgId, orgId\)\),/, note: "pre-read binds id + orgId" },
+      { file: "src/modules/build/execution/workspace.service.ts", line: 269, anchor: /where: and\(eq\(projectViews\.id, viewId\), eq\(projectViews\.projectId, projectId\), eq\(projectViews\.orgId, orgId\)\),/, note: "bound to the URL project" },
       { file: "src/modules/build/execution/workspace.service.ts", line: 279, anchor: /\.where\(and\(eq\(projectViews\.id, viewId\), eq\(projectViews\.orgId, orgId\)\)\)/, note: "UPDATE binds id + orgId" },
     ],
   },
   {
     key: "modules/build/execution/workspace.controller.ts#deleteView",
-    verdict: "VULNERABLE",
+    verdict: "CLOSED",
     finding: "parent-binding-missing",
     summary: "DELETE /build/:projectId/views/:viewId. Same as updateView, including the shared-view bypass.",
     blastRadius: "Intra-tenant; shared views are deletable across projects by any org member.",
     evidence: [
-      { file: "src/modules/build/execution/workspace.service.ts", line: 286, anchor: /where: and\(eq\(projectViews\.id, viewId\), eq\(projectViews\.orgId, orgId\)\),/, note: "pre-read binds id + orgId" },
+      { file: "src/modules/build/execution/workspace.service.ts", line: 286, anchor: /where: and\(eq\(projectViews\.id, viewId\), eq\(projectViews\.projectId, projectId\), eq\(projectViews\.orgId, orgId\)\),/, note: "bound to the URL project" },
       { file: "src/modules/build/execution/workspace.service.ts", line: 293, anchor: /await this\.db\.delete\(projectViews\)\.where\(and\(eq\(projectViews\.id, viewId\), eq\(projectViews\.orgId, orgId\)\)\);/, note: "DELETE binds id + orgId" },
     ],
   },
