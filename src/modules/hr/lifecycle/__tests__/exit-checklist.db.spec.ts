@@ -191,10 +191,26 @@ describe("ExitChecklistService against a real schema", () => {
       SELECT action, actor_membership_id FROM hr_audit_logs WHERE org_id = ${org.orgId} AND entity_id = ${String(closed.id)}`;
     expect(audit).toEqual({ action: "exit_checklist_item_updated", actor_membership_id: manager.membershipId });
 
+    const colleagueActor = { userId: colleague.userId, membershipId: colleague.membershipId, isAdmin: false };
     await expect(
-      service.updateItem(org.orgId, { userId: colleague.userId, membershipId: colleague.membershipId, isAdmin: false }, resignationId, "asset_return", { status: "DONE", evidence: "x" }),
+      service.updateItem(org.orgId, colleagueActor, resignationId, "asset_return", { status: "DONE", evidence: "x" }),
     ).rejects.toMatchObject({ status: 403 });
     await expect(service.openItemCount(org.orgId, resignationId)).resolves.toBe(EXIT_CHECKLIST_KINDS.length - 1);
+
+    const reassigned = await service.updateItem(
+      org.orgId,
+      { userId: org.userId, membershipId: org.membershipId, isAdmin: true },
+      resignationId,
+      "asset_return",
+      { ownerUserId: colleague.userId, dueDate: "2027-01-05" },
+    );
+    expect(reassigned).toMatchObject({ owner: { type: "member", membershipId: colleague.membershipId, userId: colleague.userId }, dueDate: "2027-01-05" });
+    await expect(
+      service.updateItem(org.orgId, colleagueActor, resignationId, "asset_return", { status: "DONE", evidence: "Laptop and badge collected" }),
+    ).resolves.toMatchObject({ status: "DONE" });
+    await expect(
+      service.updateItem(org.orgId, { userId: org.userId, membershipId: org.membershipId, isAdmin: true }, resignationId, "asset_return", { ownerUserId: "nobody-here" }),
+    ).rejects.toMatchObject({ status: 400 });
   });
 
   it("answers 404 for another organisation's resignation", async () => {

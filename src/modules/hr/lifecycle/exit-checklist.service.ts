@@ -202,12 +202,12 @@ export class ExitChecklistService {
     if (!this.canUpdate(row, actor, held)) {
       throw new ForbiddenException("Only the item's owner or an exit administrator can update it.");
     }
-    const reassigns = input.ownerMembershipId !== undefined || input.ownerQueue !== undefined || input.dueDate !== undefined;
+    const reassigns = input.ownerUserId !== undefined || input.ownerQueue !== undefined || input.dueDate !== undefined;
     if (reassigns && !actor.isAdmin) {
       throw new ForbiddenException("Only an exit administrator can reassign an item or change its due date.");
     }
 
-    const member = input.ownerMembershipId === undefined ? null : await this.activeMember(orgId, input.ownerMembershipId);
+    const member = input.ownerUserId === undefined ? null : await this.activeMember(orgId, input.ownerUserId);
     const closing = input.status !== undefined && input.status !== "PENDING";
     const reopening = input.status === "PENDING";
     const changes: Partial<typeof exitChecklists.$inferInsert> = {
@@ -299,11 +299,11 @@ export class ExitChecklistService {
       : memberColumns({ userId: resignation.userId, membershipId: resignation.userMembershipId });
   }
 
-  private async activeMember(orgId: string, membershipId: number): Promise<MemberOwner> {
+  private async activeMember(orgId: string, userId: string): Promise<MemberOwner> {
     const [row] = await this.db
       .select({ membershipId: organizationMembers.id, userId: organizationMembers.userId })
       .from(organizationMembers)
-      .where(and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.id, membershipId), eq(organizationMembers.status, "ACTIVE")))
+      .where(and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.userId, userId), eq(organizationMembers.status, "ACTIVE")))
       .limit(1);
     if (!row) throw new BadRequestException("The new owner must be an active member of this organization.");
     return row;

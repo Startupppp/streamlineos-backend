@@ -57,14 +57,14 @@ export const exitChecklistItemUpdateSchema = z
     evidence: z.string().trim().min(1).max(2000).optional(),
     notes: z.string().trim().max(2000).optional(),
     dueDate: isoDay.optional(),
-    ownerMembershipId: z.number().int().positive().optional(),
+    ownerUserId: z.string().trim().min(1).max(191).optional(),
     ownerQueue: z.enum(EXIT_CHECKLIST_QUEUE_KEYS).optional(),
   })
   .strict()
   .refine((body) => Object.values(body).some((value) => value !== undefined), {
     message: "Nothing to update",
   })
-  .refine((body) => body.ownerMembershipId === undefined || body.ownerQueue === undefined, {
+  .refine((body) => body.ownerUserId === undefined || body.ownerQueue === undefined, {
     message: "An item is owned by a person or by a queue, not both",
     path: ["ownerQueue"],
   })
