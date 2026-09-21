@@ -81,8 +81,12 @@ export default tseslint.config(
     },
   },
   {
-    files: ["src/modules/**/*.ts", "src/common/**/*.ts"],
+    files: ["src/**/*.ts"],
     ignores: [
+      "src/config/**",
+      "src/scripts/**",
+      "src/main.ts",
+      "src/db/seeds/**",
       "**/*.spec.ts",
       "**/*.e2e-spec.ts",
       "**/__tests__/**",
@@ -147,6 +151,16 @@ export default tseslint.config(
       // enumeration database per sweep — `for-each-org.spec.ts` sets and
       // deletes the variable between tests to prove exactly that.
       "src/common/tenant/for-each-org.ts",
+      // The module factory calls `resolvePoolConfig(process.env)` to build the
+      // database pool. The DI container that would supply APP_CONFIG is itself
+      // built by this factory, so injection is structurally impossible here —
+      // same reason as `admission.config.ts`, one level up in the chain.
+      "src/db/drizzle.module.ts",
+      // Reads `process.env[variable]` with a runtime-computed key (the pool
+      // name string), not a literal. Same architectural reason as
+      // `envelope-encryption.ts`: the set of keys cannot be enumerated in a
+      // static AppConfig schema.
+      "src/degradation/degraded-db.ts",
     ],
     rules: { "no-restricted-syntax": "off" },
   },
@@ -155,15 +169,26 @@ export default tseslint.config(
     files: [
       "src/common/audit/internal-audit.controller.ts",
       "src/common/auth/jwt-auth.guard.ts",
+      "src/common/auth/jwt-keyring.service.ts",
       "src/common/cache/cache.module.ts",
+      "src/common/http/trust-proxy.ts",
+      "src/common/observability/log-span-exporter.ts",
+      "src/common/outbox/outbox-delivery-deadline.ts",
       "src/common/portal-auth/portal-jwt-auth.guard.ts",
+      "src/common/rbac/platform-operators.ts",
+      "src/common/security/legacy-crypto.ts",
       "src/common/security/secret-encryption.util.ts",
       // Region topology reads dynamic REGION_<KEY>_* variables parsed at runtime,
       // so the key set cannot exist in a fixed AppConfig schema. Both
       // resolveRegionTopology and resolvePoolConfig validate their env bag and throw.
       "src/common/region/region.module.ts",
       "src/common/tenant/with-tenant.ts",
+      "src/common/testing/repo-paths.ts",
+      "src/health/health.controller.ts",
+      "src/health/readiness.config.ts",
+      "src/modules/ai/confirmation/ai-confirmation.helpers.ts",
       "src/modules/ai/confirmation/ai-confirmation.service.ts",
+      "src/modules/ai/core/gateway/ai-stream-model.ts",
       "src/modules/ai/core/providers/embeddings.service.ts",
       "src/modules/ai/core/providers/llm-provider.config.ts",
       "src/modules/ai/core/providers/llm-retry.ts",
@@ -171,7 +196,11 @@ export default tseslint.config(
       "src/modules/auth/auth.controller.ts",
       "src/modules/billing/core/plan-entitlements.constants.ts",
       "src/modules/billing/payments/payments.controller.ts",
+      "src/modules/calendar/calendar-webhook-secret.ts",
       "src/modules/crm/consent/unsubscribe-token.util.ts",
+      "src/modules/cron/cron-kb.controller.ts",
+      "src/modules/cron/cron-outbox-worker.service.ts",
+      "src/modules/cron/cron-retention-scheduler.service.ts",
       "src/modules/cron/cron-secret.ts",
       "src/modules/email/app-url.ts",
       "src/modules/email/branding.ts",
@@ -179,8 +208,10 @@ export default tseslint.config(
       "src/modules/email/email.constants.ts",
       "src/modules/email/email.provider.ts",
       "src/modules/email/unsubscribe-token.ts",
+      "src/modules/expenses/expense-export-worker.service.ts",
       "src/modules/feedbucket/feedbucket-ai.service.ts",
       "src/modules/hr/import/hr-export-jobs.service.ts",
+      "src/modules/hr/import/hr-export-jobs.types.ts",
       "src/modules/hr/interviews/hr-interview-scheduling.service.ts",
       "src/modules/hr/onboarding/core/crypto.helpers.ts",
       // Was `src/modules/hr/payroll/lib/encryption.ts`. Payroll became its own
@@ -188,9 +219,16 @@ export default tseslint.config(
       // so the file has been failing the rule under its real path ever since.
       "src/modules/payroll/hr-payroll/lib/encryption.ts",
       "src/modules/hr/recruitment/recruitment-jobs.service.ts",
+      "src/modules/inventory/channels/sync/shopify-admin.adapter.ts",
+      "src/modules/inventory/shipments/transport/delhivery-http.adapter.ts",
+      "src/modules/mail/providers/mail-cursor-signing.ts",
       "src/modules/mfa/mfa.service.ts",
+      "src/modules/notifications/partition-maintenance.service.ts",
       "src/modules/organization/setup/org-setup.service.ts",
+      "src/modules/payroll/jobs/payroll-jobs-worker.service.ts",
+      "src/modules/payroll/runs/payroll-export-worker.service.ts",
       "src/modules/portal/auth/portal-token.service.ts",
+      "src/modules/rbac/permission-catalog-sync.service.ts",
     ],
     rules: { "no-restricted-syntax": "off" },
   },
