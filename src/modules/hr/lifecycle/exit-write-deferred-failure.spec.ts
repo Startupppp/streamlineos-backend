@@ -62,7 +62,7 @@ function build(seedChecklist: jest.Mock) {
     { runAutomationsForEvent: jest.fn().mockResolvedValue(undefined) } as never,
     { emit: jest.fn().mockResolvedValue(undefined) } as never,
     { notifyFinalDecision: jest.fn(), notifyHrApproved: jest.fn() } as never,
-    { seedChecklistFromTemplate: seedChecklist } as never,
+    { seedForResignation: seedChecklist } as never,
     undefined as never,
     undefined as never,
     { membersWithPermission: jest.fn().mockResolvedValue([]) } as never,

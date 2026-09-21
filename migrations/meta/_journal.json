@@ -6252,6 +6252,13 @@
       "when": 1803000010347,
       "tag": "1130_chat_invite_link_token_hardening",
       "breakpoints": true
+    },
+    {
+      "idx": 1030,
+      "version": "7",
+      "when": 1803000010400,
+      "tag": "1140_exit_checklist_ownership",
+      "breakpoints": true
     }
   ]
 }

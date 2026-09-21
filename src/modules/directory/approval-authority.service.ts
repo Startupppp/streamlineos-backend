@@ -85,6 +85,9 @@ export class ApprovalAuthorityService {
     const policy: ApprovalKindPolicy = options.permission
       ? { ...APPROVAL_KIND_POLICIES[kind], permission: options.permission }
       : APPROVAL_KIND_POLICIES[kind];
+    const queuePolicy: ApprovalKindPolicy = options.queuePermission
+      ? { ...policy, permission: options.queuePermission }
+      : policy;
     const firstRung = APPROVAL_RUNGS.indexOf(options.from ?? "reporting_manager");
     const considers = (rung: ApprovalRung): boolean => APPROVAL_RUNGS.indexOf(rung) >= firstRung;
     const skipped: SkippedApprovalRung[] = [];
@@ -111,7 +114,7 @@ export class ApprovalAuthorityService {
       else await this.consider(orgId, "department_head", headUserId, subjectUserId, policy, skipped, viable);
     }
 
-    const queueMembers = (await this.access.membersWithPermission(orgId, policy.permission, { limit: APPROVAL_QUEUE_MEMBER_CAP }))
+    const queueMembers = (await this.access.membersWithPermission(orgId, queuePolicy.permission, { limit: APPROVAL_QUEUE_MEMBER_CAP }))
       .filter((member) => member.userId !== subjectUserId);
     if (queueMembers.length === 0) skipped.push({ rung: "queue", userId: null, reason: "queue-empty" });
 
@@ -129,8 +132,8 @@ export class ApprovalAuthorityService {
     const queue: ApprovalQueue | null = queueMembers.length === 0
       ? null
       : {
-          permission: policy.permission,
-          label: policy.queueLabel,
+          permission: queuePolicy.permission,
+          label: queuePolicy.queueLabel,
           memberCount: queueMembers.length,
           members: queueMembers.map((member) => candidateOf(member.userId)).filter((candidate): candidate is ApprovalCandidate => candidate !== null),
         };
@@ -148,7 +151,7 @@ export class ApprovalAuthorityService {
     return {
       kind,
       subjectUserId,
-      permission: policy.permission,
+      permission: queuePolicy.permission,
       resolvedAt: at.toISOString(),
       rung,
       assignedTo,
@@ -159,7 +162,7 @@ export class ApprovalAuthorityService {
       slaHours: policy.slaHours,
       dueAt,
       escalation,
-      explanation: this.explain(rung, assignedTo, approver ?? assignedTo, delegation, queue, skipped, policy),
+      explanation: this.explain(rung, assignedTo, approver ?? assignedTo, delegation, queue, skipped, queuePolicy),
     };
   }
 

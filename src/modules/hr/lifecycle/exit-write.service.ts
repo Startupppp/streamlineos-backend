@@ -10,7 +10,6 @@ import {
 import { and, eq, inArray } from "drizzle-orm";
 import {
   resignations,
-  exitChecklists,
   fnfSettlements,
   users,
 } from "../../../db/schema";
@@ -115,7 +114,6 @@ export class ExitWriteService {
       where: and(eq(resignations.id, id), eq(resignations.orgId, orgId)),
       with: {
         user: { columns: { id: true, name: true, email: true, image: true } },
-        checklists: true,
         hrReviewer: { columns: { id: true, name: true } },
         finalReviewer: { columns: { id: true, name: true } },
       },
@@ -183,7 +181,7 @@ export class ExitWriteService {
       });
 
       deferAfterCommit(() =>
-        this.exitChecklist.seedChecklistFromTemplate(orgId, resignationId),
+        this.exitChecklist.seedForResignation(orgId, resignationId),
         this.reportDeferred("exit checklist seeding", orgId),
       );
 
@@ -252,6 +250,11 @@ export class ExitWriteService {
       return { success: true };
     }
 
+    const customItems = input.checklistItems ?? [];
+    if (customItems.length > 0 && !actor.isApprover) {
+      throw new ForbiddenException("Only exit administrators can add checklist items.");
+    }
+
     await this.db.transaction(async (tx) => {
       await transitionResignation(tx, {
         organizationId: orgId,
@@ -267,18 +270,8 @@ export class ExitWriteService {
           ...(input.feedback && { feedback: input.feedback }),
         },
       });
-
-      if (input.checklistItems?.length) {
-        await tx.insert(exitChecklists).values(
-          input.checklistItems.map((item) => ({
-            orgId,
-            resignationId,
-            item,
-            status: "PENDING" as const,
-          })),
-        );
-      }
     });
+    await this.exitChecklist.addCustomItems(orgId, resignationId, customItems);
 
     return { success: true };
   }
@@ -355,7 +348,7 @@ export class ExitWriteService {
 
     if (approved) {
       deferAfterCommit(() =>
-        this.exitChecklist.seedChecklistFromTemplate(orgId, resignationId),
+        this.exitChecklist.seedForResignation(orgId, resignationId),
         this.reportDeferred("exit checklist seeding", orgId),
       );
       this.dispatchResignationApprovedAutomation(orgId, resignationId, record.userId, record.lastWorkingDate, actorUserId);
