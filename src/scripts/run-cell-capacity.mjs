@@ -3,32 +3,11 @@ import { fileURLToPath } from "node:url";
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import postgres from "postgres";
 import * as dotenv from "dotenv";
-import { PRODUCTION_HOST_PATTERNS } from "./lib/production-host-guard.mjs";
+import { assertProductionSafeTarget, runTargetGuardSelfTest } from "./lib/production-host-guard.mjs";
 
 
-function assertBootstrapTarget(url, allowProduction) {
-  if (!url) return { allowed: false, reason: "DATABASE_URL is not set" };
-  const matched = PRODUCTION_HOST_PATTERNS.find((p) => url.includes(p));
-  if (!matched) return { allowed: true, reason: "not a known production host" };
-  if (allowProduction === "1") return { allowed: true, reason: `production host '${matched}' — ALLOW_PRODUCTION_MIGRATION=1 acknowledged` };
-  return { allowed: false, reason: `DATABASE_URL names production host '${matched}'; set ALLOW_PRODUCTION_MIGRATION=1 to proceed deliberately` };
-}
 
-if (process.argv.includes("--self-test")) {
-  const cases = [
-    [assertBootstrapTarget("postgresql://u:p@127.0.0.1:5432/app", undefined), true],
-    [assertBootstrapTarget("postgresql://u:p@prod.cluster.amazonaws.com/app", undefined), false],
-    [assertBootstrapTarget("postgresql://u:p@prod.cluster.amazonaws.com/app", "1"), true],
-    [assertBootstrapTarget("postgresql://u:p@db.neon.tech/neondb", undefined), false],
-    [assertBootstrapTarget(undefined, undefined), false],
-  ];
-  let failed = 0;
-  for (const [verdict, expected] of cases)
-    if (verdict.allowed !== expected) { console.error(`FAIL: expected allowed=${expected}, got '${verdict.reason}'`); failed++; }
-  if (failed) process.exit(1);
-  console.log("PASS: run-cell-capacity target guard, 5 cases.");
-  process.exit(0);
-}
+if (process.argv.includes("--self-test")) runTargetGuardSelfTest("run-cell-capacity");
 
 import {
   CAPACITY_BUDGETS,
@@ -119,7 +98,7 @@ async function main() {
   const appUrl = process.env.APP_DATABASE_URL;
   const ownerUrl = process.env.DIRECT_DATABASE_URL ?? process.env.DATABASE_URL;
 
-  const _cellCapGuard = assertBootstrapTarget(ownerUrl, process.env.ALLOW_PRODUCTION_MIGRATION);
+  const _cellCapGuard = assertProductionSafeTarget(ownerUrl, process.env.ALLOW_PRODUCTION_MIGRATION);
   if (!_cellCapGuard.allowed) {
     process.stderr.write(`run-cell-capacity BLOCKED — ${_cellCapGuard.reason}\n`);
     process.exit(2);

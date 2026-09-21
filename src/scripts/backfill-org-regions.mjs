@@ -4,32 +4,11 @@ import { sql } from 'drizzle-orm';
 import { randomUUID } from "node:crypto";
 import * as dotenv from 'dotenv';
 import { resolve } from "node:path";
-import { PRODUCTION_HOST_PATTERNS } from "./lib/production-host-guard.mjs";
+import { assertProductionSafeTarget, runTargetGuardSelfTest } from "./lib/production-host-guard.mjs";
 
 
-function assertBootstrapTarget(url, allowProduction) {
-  if (!url) return { allowed: false, reason: "DATABASE_URL is not set" };
-  const matched = PRODUCTION_HOST_PATTERNS.find((p) => url.includes(p));
-  if (!matched) return { allowed: true, reason: "not a known production host" };
-  if (allowProduction === "1") return { allowed: true, reason: `production host '${matched}' — ALLOW_PRODUCTION_MIGRATION=1 acknowledged` };
-  return { allowed: false, reason: `DATABASE_URL names production host '${matched}'; set ALLOW_PRODUCTION_MIGRATION=1 to proceed deliberately` };
-}
 
-if (process.argv.includes("--self-test")) {
-  const cases = [
-    [assertBootstrapTarget("postgresql://u:p@127.0.0.1:5432/app", undefined), true],
-    [assertBootstrapTarget("postgresql://u:p@prod.cluster.amazonaws.com/app", undefined), false],
-    [assertBootstrapTarget("postgresql://u:p@prod.cluster.amazonaws.com/app", "1"), true],
-    [assertBootstrapTarget("postgresql://u:p@db.neon.tech/neondb", undefined), false],
-    [assertBootstrapTarget(undefined, undefined), false],
-  ];
-  let failed = 0;
-  for (const [verdict, expected] of cases)
-    if (verdict.allowed !== expected) { console.error(`FAIL: expected allowed=${expected}, got '${verdict.reason}'`); failed++; }
-  if (failed) process.exit(1);
-  console.log("PASS: backfill-org-regions target guard, 5 cases.");
-  process.exit(0);
-}
+if (process.argv.includes("--self-test")) runTargetGuardSelfTest("backfill-org-regions");
 
 dotenv.config({ path: resolve(process.cwd(), ".env") });
 
@@ -42,7 +21,7 @@ async function main() {
     process.exit(1);
   }
 
-  const _backfillGuard = assertBootstrapTarget(controlUrl, process.env.ALLOW_PRODUCTION_MIGRATION);
+  const _backfillGuard = assertProductionSafeTarget(controlUrl, process.env.ALLOW_PRODUCTION_MIGRATION);
   if (!_backfillGuard.allowed) {
     process.stderr.write(`backfill-org-regions BLOCKED — ${_backfillGuard.reason}\n`);
     process.exit(2);
