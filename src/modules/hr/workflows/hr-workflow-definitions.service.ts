@@ -339,6 +339,7 @@ export class HrWorkflowDefinitionsService {
             step,
             input.subjectEmployeeId,
             orgId,
+            definition.objectType,
           )
         : [];
       resolvedSteps.push({

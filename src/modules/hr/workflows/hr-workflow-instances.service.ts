@@ -23,6 +23,7 @@ import { HrWorkflowEngineService } from "./hr-workflow-engine.service";
 import { AccessService } from "../../access/access.service";
 import { EmploymentFactsService } from "../../directory/employment-facts.service";
 import { livePersonOfUser, primaryEmploymentOfPerson } from "../../directory/employment-query";
+import { persistedStepRouting } from "./hr-workflow-engine.types";
 
 interface ResolvedStep {
   stepOrder: number;
@@ -304,9 +305,10 @@ export class HrWorkflowInstancesService {
       if (!isResolvedStepArray(snapshotSteps)) continue;
       const currentStep = snapshotSteps.find((s) => s.stepOrder === instance.currentStepOrder);
       if (!currentStep) continue;
+      const persisted = persistedStepRouting(instance.context, currentStep.stepOrder);
       approversByInstance.set(
         instance.id,
-        this.resolveApproversFromCache(currentStep, instance.subjectEmployeeId, cache),
+        persisted ? persisted.approverUserIds : this.resolveApproversFromCache(currentStep, instance.subjectEmployeeId, cache),
       );
     }
 
