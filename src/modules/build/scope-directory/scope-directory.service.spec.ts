@@ -436,3 +436,62 @@ describe("ScopeDirectoryService.searchScopeDirectory — search predicate in SQL
       expect(renderParams(call.condition)).toContain(ORG);
   });
 });
+
+describe("ScopeDirectoryService — workspace-less projects (BE-134)", () => {
+  it("produces a ref for a project whose pmWorkspaceId is null with parentPath null, confirming the project is not dropped", async () => {
+    const projNoWs = { ...PROJ_ROW, pmWorkspaceId: null, managedProductId: null };
+    const { db } = makeDb(makeResponses([
+      [projects, [[projNoWs]]],
+    ]));
+
+    const result = await makeSvc(db).resolveScopeDirectory(ORG, USER, MEMBERSHIP_ID, ["project:20"]);
+
+    expect(result).toHaveLength(1);
+    expect(result[0]).toMatchObject({
+      key: "project:20",
+      type: "project",
+      id: "20",
+      name: "Launch",
+      parentPath: null,
+      parentKey: null,
+      clientPortalEnabled: false,
+    });
+  });
+
+  it("resolves parentPath to the product name alone when pmWorkspaceId is null but managedProductId is set, not prefixed with a workspace name", async () => {
+    const projNoWs = { ...PROJ_ROW, pmWorkspaceId: null, managedProductId: 10 };
+    const { db } = makeDb(makeResponses([
+      [projects, [[projNoWs]]],
+      [managedProducts, [[PROD_ROW]]],
+      [pmWorkspaces, [[WS_ROW]]],
+    ]));
+
+    const [ref] = await makeSvc(db).resolveScopeDirectory(ORG, USER, MEMBERSHIP_ID, ["project:20"]);
+
+    expect(ref?.parentPath).toBe("Atlas");
+  });
+
+  it("excludes null pmWorkspaceId from the workspace ancestor fetch so no null reaches the SQL inArray, while the real missing workspace id is fetched and used in parentPath", async () => {
+    const projNullWs = { ...PROJ_ROW, id: 20, pmWorkspaceId: null, managedProductId: null };
+    const projRealWs = { ...PROJ_ROW, id: 21, key: "P2", pmWorkspaceId: "ws-missing", managedProductId: null };
+    const missingWsRow = { pmWorkspaceId: "ws-missing", name: "Operations", status: "active" };
+    const { db, calls } = makeDb(makeResponses([
+      [projects, [[projNullWs, projRealWs]]],
+      [pmWorkspaces, [[missingWsRow]]],
+    ]));
+
+    const result = await makeSvc(db).resolveScopeDirectory(ORG, USER, MEMBERSHIP_ID, [
+      "project:20",
+      "project:21",
+    ]);
+
+    expect(result).toHaveLength(2);
+    expect(result[0]?.parentPath).toBeNull();
+    expect(result[1]?.parentPath).toBe("Operations");
+    const wsCalls = calls.filter((c) => c.table === pmWorkspaces);
+    expect(wsCalls).toHaveLength(1);
+    const params = renderParams(wsCalls[0]?.condition);
+    expect(params).toContain("ws-missing");
+    expect(params).not.toContain(null);
+  });
+});

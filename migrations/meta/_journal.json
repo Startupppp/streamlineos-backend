@@ -6308,6 +6308,13 @@
       "when": 1803000010400,
       "tag": "1140_exit_checklist_ownership",
       "breakpoints": true
+    },
+    {
+      "idx": 1029,
+      "version": "7",
+      "when": 1803000010410,
+      "tag": "1141_projects_pm_workspace_optional",
+      "breakpoints": true
     }
   ]
 }
