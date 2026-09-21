@@ -1,4 +1,4 @@
-import { Inject, Injectable } from "@nestjs/common";
+import { Inject, Injectable, Optional } from "@nestjs/common";
 import { and, eq, inArray } from "drizzle-orm";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
@@ -15,6 +15,7 @@ import {
 import type { DataScope } from "./access.types";
 import {
   EMPLOYEE_SELF_SERVICE_GRANTS,
+  MANAGER_AUTHORITY_GRANTS,
   allCatalogScopes,
   platformCapabilityScopes,
 } from "./access-policy";
@@ -39,6 +40,7 @@ import {
 } from "./access-explain-provenance";
 import { EntitlementsService } from "./entitlements.service";
 import { type Clock, SYSTEM_CLOCK } from "./snapshot-validity";
+import { ManagerStandingReader } from "./manager-standing.reader";
 
 /**
  * Why the target person's rights resolve the way they do.
@@ -61,6 +63,7 @@ export class AccessExplainResolver {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly membershipState: MembershipStateService,
     private readonly entitlements: EntitlementsService,
+    @Optional() private readonly managerStanding: ManagerStandingReader | null = null,
   ) {}
 
   async explain(orgId: string, userId: string): Promise<AccessExplanation> {
@@ -214,6 +217,17 @@ export class AccessExplainResolver {
         moduleKey: administeringModuleOf(row.permissionKey),
         expiresAt: null,
       });
+
+    const managerStanding = this.managerStanding;
+    if (managerStanding && (await this.readAccessTable(() => managerStanding.managesSomeone(orgId, userId))))
+      for (const grant of MANAGER_AUTHORITY_GRANTS)
+        walk.merge(grant.permissionKey, grant.scope, {
+          kind: "manager-authority",
+          label: "Reporting manager",
+          scope: grant.scope,
+          moduleKey: administeringModuleOf(grant.permissionKey),
+          expiresAt: null,
+        });
 
     for (const moduleKey of ownedModules)
       for (const permissionKey of moduleScopedPermissions(moduleKey)) {

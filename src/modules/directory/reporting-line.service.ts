@@ -3,7 +3,7 @@ import { and, desc, eq, isNull, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
-import type { DbOrTx } from "../../common/rbac/access-invalidate";
+import { bumpPermissionsVersion, type DbOrTx } from "../../common/rbac/access-invalidate";
 import {
   hrEmployments,
   hrPeople,
@@ -13,6 +13,7 @@ import {
 } from "../../db/schema";
 import {
   syncCanonicalReportingLine,
+  syncCanonicalReportingLines,
   type ReportingLineOutcome,
 } from "../../common/hr/sync-canonical-reporting-line";
 import { liveEmployment, livePersonOfEmployment } from "./employment-query";
@@ -66,7 +67,20 @@ export class ReportingLineService {
     if (subjectUserId === managerUserId) return this.refuse("self-reference");
     const manager = await this.checkManager(orgId, managerUserId, db);
     if (!manager.ok) return manager;
-    if (await this.chainAbove(db, orgId, managerUserId, subjectUserId)) return this.refuse("circular");
+    if ((await this.chainAbove(db, orgId, managerUserId, [subjectUserId])).length > 0) return this.refuse("circular");
+    return manager;
+  }
+
+  async checkManagerAssignments(
+    orgId: string,
+    subjectUserIds: readonly string[],
+    managerUserId: string,
+    db: DbOrTx = this.db,
+  ): Promise<ManagerAssignmentCheck> {
+    if (subjectUserIds.includes(managerUserId)) return this.refuse("self-reference");
+    const manager = await this.checkManager(orgId, managerUserId, db);
+    if (!manager.ok) return manager;
+    if ((await this.chainAbove(db, orgId, managerUserId, subjectUserIds)).length > 0) return this.refuse("circular");
     return manager;
   }
 
@@ -126,6 +140,24 @@ export class ReportingLineService {
     const outcome = await syncCanonicalReportingLine(db, orgId, subjectUserId, managerUserId, effectiveFrom, actorUserId);
     if (outcome.status === "unmappable") throw new BadRequestException(this.unmappableMessage(outcome.reason));
     return outcome;
+  }
+
+  async assignMany(
+    orgId: string,
+    subjectUserIds: readonly string[],
+    managerUserId: string | null,
+    effectiveFrom: string,
+    actorUserId: string,
+    db: DbOrTx = this.db,
+  ): Promise<Map<string, ReportingLineOutcome>> {
+    if (managerUserId !== null) {
+      const check = await this.checkManagerAssignments(orgId, subjectUserIds, managerUserId, db);
+      if (!check.ok) throw new BadRequestException(check.message);
+    }
+    const outcomes = await syncCanonicalReportingLines(db, orgId, subjectUserIds, managerUserId, effectiveFrom, actorUserId);
+    for (const outcome of outcomes.values())
+      if (outcome.status === "unmappable") throw new BadRequestException(this.unmappableMessage(outcome.reason));
+    return outcomes;
   }
 
   async getLine(read: ScopedRead, userId: string): Promise<ReportingLineView | null> {
@@ -264,8 +296,9 @@ export class ReportingLineService {
     return "active";
   }
 
-  private async chainAbove(db: DbOrTx, orgId: string, startUserId: string, lookFor: string): Promise<boolean> {
-    const [row] = await db.execute<{ found: boolean }>(sql`
+  private async chainAbove(db: DbOrTx, orgId: string, startUserId: string, lookFor: readonly string[]): Promise<string[]> {
+    if (lookFor.length === 0) return [];
+    const rows = await db.execute<{ user_id: string }>(sql`
       WITH RECURSIVE manager_chain AS (
         SELECT emp.id AS employment_id, p.user_id, ARRAY[p.user_id]::text[] AS path
         FROM hr_employments emp
@@ -294,9 +327,9 @@ export class ReportingLineService {
         WHERE NOT mgr_p.user_id = ANY(chain.path)
           AND cardinality(chain.path) < ${MANAGER_CHAIN_DEPTH_CAP}
       )
-      SELECT EXISTS (SELECT 1 FROM manager_chain WHERE user_id = ${lookFor}) AS found
+      SELECT DISTINCT user_id FROM manager_chain WHERE user_id = ANY(${sql.param([...lookFor])}::text[])
     `);
-    return row?.found === true;
+    return [...rows].map((row) => row.user_id);
   }
 
   private async totals(orgId: string): Promise<{ employees: number; withManager: number }> {

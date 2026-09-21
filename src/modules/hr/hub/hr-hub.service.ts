@@ -99,7 +99,7 @@ export class HrHubService {
         this.leaves.calendar(user.orgId, month, year),
       ),
       this.capture(capabilities.canAttendanceManage, () =>
-        this.wfh.pending(user.orgId),
+        this.wfh.pending(user),
       ),
       this.capture(capabilities.canProbation, () =>
         this.probation.listDueForReview(user.orgId, { limit: 20 }),

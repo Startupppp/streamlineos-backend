@@ -10,6 +10,7 @@ import { MembershipAdmissionService } from "../organization/core/membership-admi
 import { OrgMembershipService } from "../organization/core/org-membership.service";
 import { UsersService } from "./users.service";
 import { EmploymentFactsService } from "../directory/employment-facts.service";
+import { ReportingLineService } from "../directory/reporting-line.service";
 
 const stubEmployment = {
   getFacts: jest.fn().mockResolvedValue({ managerUserId: null }),
@@ -48,6 +49,7 @@ describe("UsersService direct member creation", () => {
         { provide: PlanLimitsService, useValue: { assertWithinLimit } },
         { provide: SeatLedgerService, useValue: { recordSeatEvents: jest.fn() } },
         { provide: EmploymentFactsService, useValue: stubEmployment },
+        { provide: ReportingLineService, useValue: {} },
       ],
     }).compile();
     const service = moduleRef.get(UsersService);
@@ -138,6 +140,7 @@ describe("UsersService direct member creation", () => {
         { provide: PlanLimitsService, useValue: { assertWithinLimit: jest.fn() } },
         { provide: SeatLedgerService, useValue: { recordSeatEvents } },
         { provide: EmploymentFactsService, useValue: stubEmployment },
+        { provide: ReportingLineService, useValue: {} },
       ],
     }).compile();
 

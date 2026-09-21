@@ -1,5 +1,5 @@
 import { and, eq, isNull, sql, type SQL } from "drizzle-orm";
-import type { PgColumn } from "drizzle-orm/pg-core";
+import { alias, type PgColumn } from "drizzle-orm/pg-core";
 import {
   hrEmployments,
   hrPeople,
@@ -7,6 +7,7 @@ import {
   organizationMembers,
   orgUnits,
 } from "../../db/schema";
+import type { Db, TenantTx } from "../../db/drizzle.types";
 
 /**
  * Structural, not `typeof hrEmployments`, because a self-join needs `alias()` and
@@ -163,4 +164,41 @@ export function orgUnitInOrg(
   const condition = and(eq(units.orgId, orgId), eq(units.id, unitId));
   if (!condition) throw new Error("orgUnitInOrg produced no condition");
   return condition;
+}
+
+const standingManagerEmployment = alias(hrEmployments, "standing_manager_employment");
+const standingManagerPerson = alias(hrPeople, "standing_manager_person");
+const standingReportEmployment = alias(hrEmployments, "standing_report_employment");
+
+export async function hasCurrentDirectReport(
+  db: Db | TenantTx,
+  orgId: string,
+  managerUserId: string,
+): Promise<boolean> {
+  const rows = await db
+    .select({ one: sql<number>`1` })
+    .from(hrReportingLines)
+    .innerJoin(
+      standingManagerEmployment,
+      managerEmploymentOfLine(orgId, hrReportingLines, standingManagerEmployment),
+    )
+    .innerJoin(
+      standingManagerPerson,
+      livePersonOfEmployment(orgId, standingManagerEmployment, standingManagerPerson),
+    )
+    .innerJoin(
+      standingReportEmployment,
+      and(
+        liveEmployment(orgId, standingReportEmployment),
+        eq(standingReportEmployment.id, hrReportingLines.employmentId),
+      ),
+    )
+    .where(
+      and(
+        currentPrimaryReportingLine(orgId),
+        eq(standingManagerPerson.userId, managerUserId),
+      ),
+    )
+    .limit(1);
+  return rows.length > 0;
 }
