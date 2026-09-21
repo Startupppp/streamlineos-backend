@@ -23,6 +23,7 @@ function singleInput(overrides: Record<string, unknown> = {}): Record<string, un
     lastName: "Lovelace",
     email: "ada.lovelace@example.com",
     designation: "Engineer",
+    reportingManagerUserId: "user-manager",
     ...overrides,
   };
 }
@@ -55,6 +56,7 @@ function plannedRow(index: number, overrides: Partial<BulkOnboardEmployeeRow> = 
     email: `ada.lovelace${String(index)}@example.com`,
     designation: "Engineer",
     department: "Engineering",
+    reportingManagerUserId: "user-manager",
     ...overrides,
   };
 }
@@ -164,6 +166,7 @@ describe("bulk onboarding plan — per-row outcome in original order", () => {
       new Map(),
       new Map(),
       new Set<string>(),
+      new Map(),
     );
 
     expect(plan.rejected).toEqual([
@@ -192,6 +195,7 @@ describe("bulk onboarding plan — per-row outcome in original order", () => {
       new Map(),
       new Map(),
       new Set(["user-2"]),
+      new Map(),
     );
 
     expect(plan.rejected).toEqual([
@@ -226,6 +230,7 @@ describe("bulk onboarding plan — per-row outcome in original order", () => {
       new Map(),
       new Map(),
       new Set<string>(),
+      new Map(),
     );
 
     expect(plan.rejected.map((entry) => entry.row)).toEqual([1, 2]);
@@ -248,6 +253,7 @@ describe("bulk onboarding plan — per-row outcome in original order", () => {
       new Map([["EMP-PERSISTED", "someone-else"]]),
       new Map(),
       new Set<string>(),
+      new Map(),
     );
 
     expect(plan.rejected).toEqual([
@@ -335,5 +341,32 @@ describe("bulk onboarding admission failures never read as success", () => {
     expect(assertWithinLimit).toHaveBeenCalledTimes(1);
     expect(createMemberships).not.toHaveBeenCalled();
     expect(seatLedger.recordSeatEvents).not.toHaveBeenCalled();
+  });
+});
+
+describe("bulk onboarding resolves the reporting manager before any write", () => {
+  it("rejects the row whose manager email is not an active member, and resolves the one that is", () => {
+    const rows = [
+      plannedRow(1, { reportingManagerUserId: undefined, reportingManagerEmail: "boss@example.com" }),
+      plannedRow(2, { reportingManagerUserId: undefined, reportingManagerEmail: "stranger@example.com" }),
+    ];
+
+    const plan = planBulkOnboarding(
+      rows,
+      catalog(),
+      clearScreens([
+        ["ada.lovelace1@example.com", null],
+        ["ada.lovelace2@example.com", null],
+      ]),
+      new Map(),
+      new Map(),
+      new Set<string>(),
+      new Map([["boss@example.com", "user-boss"]]),
+    );
+
+    expect(plan.accepted.map((employee) => [employee.row, employee.reportingManagerUserId])).toEqual([[1, "user-boss"]]);
+    expect(plan.rejected).toEqual([
+      expect.objectContaining({ row: 2, error: expect.stringContaining("stranger@example.com") }),
+    ]);
   });
 });

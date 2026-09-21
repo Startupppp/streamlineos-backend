@@ -87,6 +87,7 @@ function buildService(scope: DataScope, targetMember: object | null = { userId: 
       managerUserId: null,
     }),
   };
+  const reportingLines = { assign: jest.fn().mockResolvedValue({ status: "written", employmentId: 1, managerEmploymentId: 2 }) };
   const service = new EmployeeMutationsService(
     db as never,
     { invalidate: jest.fn(), invalidateNamespace: jest.fn() } as never,
@@ -94,9 +95,10 @@ function buildService(scope: DataScope, targetMember: object | null = { userId: 
     { emit: jest.fn().mockResolvedValue(undefined) } as never,
     access as never,
     employment as never,
+    reportingLines as never,
   );
 
-  return { access, db, employment, service, tx, updateSet };
+  return { access, db, employment, reportingLines, service, tx, updateSet };
 }
 
 describe("EmployeeMutationsService.updateEmployee authorization", () => {
@@ -139,8 +141,8 @@ describe("EmployeeMutationsService.updateEmployee authorization", () => {
     ).rejects.toBeInstanceOf(BadRequestException);
   });
 
-  it("checks a proposed manager chain in one recursive query", async () => {
-    const { db, service } = buildService("all");
+  it("delegates a manager change to the reporting-line authority on the write transaction", async () => {
+    const { db, reportingLines, service, tx } = buildService("all");
 
     await expect(
       service.updateEmployee(ctx(), "target-1", {
@@ -148,8 +150,25 @@ describe("EmployeeMutationsService.updateEmployee authorization", () => {
       }),
     ).resolves.toEqual({ success: true });
 
-    expect(db.execute).toHaveBeenCalledTimes(1);
-    expect(db.query.users.findFirst).toHaveBeenCalledTimes(1);
+    expect(reportingLines.assign).toHaveBeenCalledTimes(1);
+    expect(reportingLines.assign).toHaveBeenCalledWith(
+      "org-1",
+      "target-1",
+      "manager-1",
+      expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
+      "actor-1",
+      tx,
+    );
+    expect(db.execute).not.toHaveBeenCalled();
+  });
+
+  it("surfaces a refused manager instead of reporting success", async () => {
+    const { reportingLines, service } = buildService("all");
+    reportingLines.assign.mockRejectedValueOnce(new BadRequestException("This reporting structure would create a circular management chain."));
+
+    await expect(
+      service.updateEmployee(ctx(), "target-1", { reportingTo: "manager-1" }),
+    ).rejects.toBeInstanceOf(BadRequestException);
   });
 
   it("shifts pending onboarding due dates from the pre-update joining date", async () => {
@@ -237,6 +256,7 @@ describe("EmployeeMutationsService base response boundary", () => {
       { emit: jest.fn() } as never,
       {} as never,
       { getFacts: jest.fn().mockResolvedValue({ managerUserId: null, joiningDate: null, employeeNumber: null, designation: null, departmentId: null, locationId: null, employmentId: null, userId: "target-1" }) } as never,
+      { assign: jest.fn() } as never,
     );
 
     const response = await service.getEmployeeDetail(

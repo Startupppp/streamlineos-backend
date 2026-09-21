@@ -34,12 +34,16 @@ import {
   distinctRoles,
   planBulkOnboarding,
   preloadEmployeeNumbers,
+  preloadManagerUserIdsByEmail,
 } from "./bulk-onboarding/bulk-onboarding-plan";
 import { writeBulkOnboarding } from "./bulk-onboarding/bulk-onboarding-writes";
 import type {
+  BulkOnboardPlan,
   BulkOnboardRowResult,
   BulkOnboardWriteOutcome,
+  PlannedEmployee,
 } from "./bulk-onboarding/bulk-onboarding.types";
+import { ReportingLineService } from "../../directory/reporting-line.service";
 
 @Injectable()
 export class EmployeeBulkOnboardingService {
@@ -54,6 +58,7 @@ export class EmployeeBulkOnboardingService {
     private readonly automation: AutomationService,
     private readonly webhooks: WebhooksDispatchService,
     private readonly personEmploymentSync: PersonEmploymentSyncService,
+    private readonly reportingLines: ReportingLineService,
   ) {}
 
   async onboardEmployeesBulk(actor: CurrentUserContext, rows: BulkOnboardEmployeeRow[]) {
@@ -105,7 +110,14 @@ export class EmployeeBulkOnboardingService {
       for (const row of inactive) globallyInactiveUserIds.add(row.id);
     }
 
-    const plan = planBulkOnboarding(rows, catalog, screens, employeeNumberOwner, roleErrors, globallyInactiveUserIds);
+    const managerByEmail = await preloadManagerUserIdsByEmail(
+      this.db,
+      actor.orgId,
+      [...new Set(rows.flatMap((row) => (row.reportingManagerEmail ? [row.reportingManagerEmail] : [])))],
+    );
+
+    const plan = planBulkOnboarding(rows, catalog, screens, employeeNumberOwner, roleErrors, globallyInactiveUserIds, managerByEmail);
+    await this.rejectRowsWithUnassignableManagers(actor.orgId, plan);
 
     let outcome: BulkOnboardWriteOutcome = { admitted: [], rejected: [], welcomeEmails: [] };
     const results: BulkOnboardRowResult[] = [...plan.rejected];
@@ -118,6 +130,7 @@ export class EmployeeBulkOnboardingService {
               admission: this.admission,
               personEmploymentSync: this.personEmploymentSync,
               membership,
+              reportingLines: this.reportingLines,
             }),
           { orgId: actor.orgId },
         ),
@@ -153,6 +166,23 @@ export class EmployeeBulkOnboardingService {
       failed: plan.rejected.length + outcome.rejected.length,
       results,
     };
+  }
+
+  private async rejectRowsWithUnassignableManagers(orgId: string, plan: BulkOnboardPlan): Promise<void> {
+    const managerIds = [...new Set(plan.accepted.flatMap((e) => (e.reportingManagerUserId ? [e.reportingManagerUserId] : [])))];
+    const refusals = new Map<string, string>();
+    for (const managerUserId of managerIds) {
+      const check = await this.reportingLines.checkManager(orgId, managerUserId);
+      if (!check.ok) refusals.set(managerUserId, check.message);
+    }
+    if (refusals.size === 0) return;
+    const stillAccepted: PlannedEmployee[] = [];
+    for (const employee of plan.accepted) {
+      const refusal = employee.reportingManagerUserId ? refusals.get(employee.reportingManagerUserId) : undefined;
+      if (refusal) plan.rejected.push({ row: employee.row, email: employee.email, success: false, error: refusal });
+      else stillAccepted.push(employee);
+    }
+    plan.accepted = stillAccepted;
   }
 
   private deferDelivery(

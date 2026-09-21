@@ -84,6 +84,7 @@ function bulkOnboardingCollaborators() {
     { runAutomationsForEvent: jest.fn() } as never,
     { dispatch: jest.fn() } as never,
     { ensureManyFromUsers: jest.fn().mockResolvedValue([]) } as never,
+    { checkManager: jest.fn(), assign: jest.fn() } as never,
   ] as const;
 }
 
@@ -159,6 +160,7 @@ describe("EmployeeOnboardingService — cross-tenant isolation", () => {
       db, mockCache as never, mockAudit as never, mockEmail as never,
       mockAutomation as never, mockWebhooks as never, mockSync as never,
       mockAccess as never, admissionService(),
+      { checkManager: jest.fn(), assign: jest.fn() } as never,
     );
 
     const actor = { orgId: ATTACKER, userId: "actor-1", isOrgOwner: true };
@@ -220,6 +222,7 @@ describe("EmployeeOnboardingService — cross-tenant isolation", () => {
       db, mockCache as never, mockAudit as never, mockEmail as never,
       mockAutomation as never, mockWebhooks as never, mockSync as never,
       mockAccess as never, admissionService(),
+      { checkManager: jest.fn(), assign: jest.fn() } as never,
     );
 
     const actor = { orgId: OWNER, userId: "actor-2", isOrgOwner: true };

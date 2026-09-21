@@ -135,6 +135,7 @@ function harness(count: number): Harness {
     deps.automation as never,
     deps.webhooks as never,
     new PersonEmploymentSyncService(db, new HrAuditService(db)),
+    { checkManager: jest.fn(), assign: jest.fn() } as never,
   );
 
   return {
@@ -228,6 +229,7 @@ describe("EmployeeBulkOnboardingService.onboardEmployeesBulk — statement count
       deps.automation as never,
       deps.webhooks as never,
       new PersonEmploymentSyncService(db, new HrAuditService(db)),
+      { checkManager: jest.fn(), assign: jest.fn() } as never,
     );
 
     const result = await runWithTenantContext(
@@ -267,6 +269,7 @@ describe("EmployeeBulkOnboardingService.onboardEmployeesBulk — statement count
       new Map(),
       new Map(),
       new Set<string>(),
+      new Map(),
     );
 
     expect(plan.accepted).toHaveLength(1);
@@ -304,6 +307,7 @@ describe("EmployeeBulkOnboardingService.onboardEmployeesBulk — statement count
       new Map(),
       new Map(),
       new Set<string>(),
+      new Map(),
     );
 
     expect(plan.rejected).toEqual([]);
