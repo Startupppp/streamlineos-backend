@@ -484,6 +484,17 @@ describe("TS-24 period lifecycle durable rows", () => {
       });
     });
 
+    it("resubmits a rejected period, clearing the rejection it is answering", async () => {
+      const script = submitScript(3);
+      script.selects[0] = [timesheetPeriods, [[{ ...PERIOD_ROW, status: "REJECTED", rejectedAt: new Date("2026-09-08T00:00:00.000Z"), rejectionReason: "Friday is missing" }]]];
+      const { db, periodUpdates } = makeDb(script, []);
+      const service = periodsService(db, makeNotifications([]));
+
+      await service.submitPeriod(WORKER, PERIOD_ID);
+
+      expect(periodUpdates()[0]).toMatchObject({ status: "SUBMITTED", rejectedAt: null, rejectionReason: null });
+    });
+
     it("refuses the submit, writing no event and no notice, when nobody can own the approval", async () => {
       const outbox: OutboxRow[] = [];
       const notes: Notification[] = [];

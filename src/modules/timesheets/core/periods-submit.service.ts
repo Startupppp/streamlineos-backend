@@ -35,7 +35,7 @@ import {
 } from "./events/timesheet-lifecycle.events";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 
-const PERIOD_STATUSES_OPEN_TO_SUBMIT = ["OPEN", "DRAFT"] as const;
+const PERIOD_STATUSES_OPEN_TO_SUBMIT = ["OPEN", "DRAFT", "REJECTED"] as const;
 
 @Injectable()
 export class PeriodsSubmitService {
@@ -97,6 +97,8 @@ export class PeriodsSubmitService {
         .set({
           status: "SUBMITTED",
           submittedAt,
+          rejectedAt: null,
+          rejectionReason: null,
           currentApproverMembershipId: approverMembershipId,
           approvalRoute: decision.route,
           approvalDueAt: decision.kind === "routed" ? decision.dueAt : null,
@@ -179,7 +181,7 @@ export class PeriodsSubmitService {
     const row = await this.reader.getPeriodWithUser(u.orgId, periodId);
     if (!row) throw new NotFoundException("Period not found");
     if (row.userMembershipId !== actingMembershipId(u.principal)) throw new ForbiddenException("You can only submit your own period");
-    if (!allowedStatuses.includes(row.status)) throw new ConflictException("Only open or draft periods can be submitted");
+    if (!allowedStatuses.includes(row.status)) throw new ConflictException("Only open, draft or rejected periods can be submitted");
     const settings = await this.reader.getSettings(u.orgId);
     const entries = await this.db.query.timesheets.findMany({
       where: and(eq(timesheets.timesheetPeriodId, periodId), eq(timesheets.orgId, u.orgId), isNull(timesheets.voidedAt)),
