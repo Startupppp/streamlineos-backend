@@ -31,7 +31,7 @@ it.each(["parentTicketId", "epicId"] as const)("rejects an inverse %s edge commi
   ] }).compile();
   try {
     await expect(module.get(ProjectsTicketsUpdateService).updateTicket(
-      systemActor("integrations.git.webhook", "org-a"), 7, { [field]: 8 },
+      systemActor("integrations.git.webhook", "org-a"), 1, 7, { [field]: 8 },
     )).rejects.toThrow("would create a cycle");
   } finally {
     await module.close();

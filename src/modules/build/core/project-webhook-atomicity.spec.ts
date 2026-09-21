@@ -103,7 +103,7 @@ describe("Build mutation and webhook intent atomicity", () => {
       {} as never,
     );
 
-    await expect(service.deleteTicket("org-1", "member-1", 7, true))
+    await expect(service.deleteTicket("org-1", "member-1", 1, 7, true))
       .rejects.toThrow("Ticket not found");
     expect(db.transaction).not.toHaveBeenCalled();
     expect(enqueue).not.toHaveBeenCalled();

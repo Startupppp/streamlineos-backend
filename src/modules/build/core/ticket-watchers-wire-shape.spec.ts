@@ -61,7 +61,7 @@ function build(db: Db) {
 
 describe("build ticket watchers — the person, not the membership row", () => {
   it("GET /build/:p/tickets/:t/watchers puts userId and the user on the watcher", async () => {
-    const watchers = await build(makeDb([nestedWatcherRow(ME, 1)])).getWatchers(ORG, TICKET);
+    const watchers = await build(makeDb([nestedWatcherRow(ME, 1)])).getWatchers(ORG, 1, TICKET);
 
     expect(watchers).toHaveLength(1);
     expect(watchers[0]?.userId).toBe(ME);
@@ -71,7 +71,7 @@ describe("build ticket watchers — the person, not the membership row", () => {
   });
 
   it("a watcher whose organization row is gone flattens to nulls, never to a missing key", async () => {
-    const watchers = await build(makeDb([nestedWatcherRow(null, 3)])).getWatchers(ORG, TICKET);
+    const watchers = await build(makeDb([nestedWatcherRow(null, 3)])).getWatchers(ORG, 1, TICKET);
 
     expect(watchers[0]?.userId).toBeNull();
     expect(watchers[0]?.user).toBeNull();
@@ -113,7 +113,7 @@ describe("build ticket watchers — the consumer predicates against the real pay
   });
 
   it("the served payload answers isWatching and names each avatar", async () => {
-    const watchers = await build(makeDb([nestedWatcherRow(ME, 1), nestedWatcherRow(OTHER, 2)])).getWatchers(ORG, TICKET);
+    const watchers = await build(makeDb([nestedWatcherRow(ME, 1), nestedWatcherRow(OTHER, 2)])).getWatchers(ORG, 1, TICKET);
 
     expect(isWatching(watchers, ME)).toBe(true);
     expect(isWatching(watchers, "user-nobody")).toBe(false);

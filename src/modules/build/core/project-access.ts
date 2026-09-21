@@ -30,14 +30,16 @@ export async function assertProjectInOrg(
   if (!project) throw new NotFoundException("Project not found");
 }
 
-export async function assertTicketInOrg(
+export async function assertTicketInProject(
   db: Db,
   orgId: string,
+  projectId: number,
   ticketId: number,
 ): Promise<void> {
   const ticket = await db.query.tickets.findFirst({
     where: and(
       eq(tickets.id, ticketId),
+      eq(tickets.projectId, projectId),
       eq(tickets.orgId, orgId),
       isNull(tickets.deletedAt),
     ),

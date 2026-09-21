@@ -5,6 +5,10 @@ import type { Db } from "../../../db/drizzle.module";
 
 const dialect = new PgDialect();
 const ORG = "org-chk-a";
+const PROJECT = 5;
+const TICKET = 11;
+const CHECKLIST = 3;
+const ITEM = 9;
 
 function makeDb(captured: { wheres: unknown[] }) {
   const terminal = (rows: unknown[]) => ({
@@ -13,12 +17,14 @@ function makeDb(captured: { wheres: unknown[] }) {
   });
   const capture = jest.fn().mockImplementation((cond: unknown) => {
     captured.wheres.push(cond);
-    return terminal([{ id: 9 }]);
+    return terminal([{ id: ITEM }]);
   });
   return {
     query: {
+      tickets: { findFirst: jest.fn().mockResolvedValue({ id: TICKET }) },
+      ticketChecklists: { findFirst: jest.fn().mockResolvedValue({ id: CHECKLIST }) },
       ticketChecklistItems: {
-        findFirst: jest.fn().mockResolvedValue({ id: 9, checklistId: 3, checklist: { orgId: ORG } }),
+        findFirst: jest.fn().mockResolvedValue({ id: ITEM, checklistId: CHECKLIST }),
       },
     },
     update: jest.fn().mockReturnValue({ set: jest.fn().mockReturnValue({ where: capture }) }),
@@ -36,19 +42,19 @@ describe("ProjectsTicketChecklistsService — tenant-correlated writes", () => {
     const captured = { wheres: [] as unknown[] };
     const service = new ProjectsTicketChecklistsService(makeDb(captured));
 
-    await service.updateChecklistItem(ORG, 9, { text: "x" });
+    await service.updateChecklistItem(ORG, PROJECT, TICKET, CHECKLIST, ITEM, { text: "x" });
 
     const query = dialect.sqlToQuery(captured.wheres[0] as SQL);
-    expect(query.params).toEqual(expect.arrayContaining([ORG, 9]));
+    expect(query.params).toEqual(expect.arrayContaining([ORG, ITEM]));
   });
 
   it("binds org_id when deleting a checklist item", async () => {
     const captured = { wheres: [] as unknown[] };
     const service = new ProjectsTicketChecklistsService(makeDb(captured));
 
-    await service.deleteChecklistItem(ORG, 9);
+    await service.deleteChecklistItem(ORG, PROJECT, TICKET, CHECKLIST, ITEM);
 
     const query = dialect.sqlToQuery(captured.wheres[0] as SQL);
-    expect(query.params).toEqual(expect.arrayContaining([ORG, 9]));
+    expect(query.params).toEqual(expect.arrayContaining([ORG, ITEM]));
   });
 });

@@ -110,7 +110,7 @@ describe("projects-tickets ancestry race — advisory lock serializes concurrent
       access,
     );
 
-    await svc.updateTicket(makeActor(), TICKET_ID, { parentTicketId: PROPOSED_PARENT_ID });
+    await svc.updateTicket(makeActor(), PROJECT_ID, TICKET_ID, { parentTicketId: PROPOSED_PARENT_ID });
 
     const advisoryLockCalled = capturedExecuteValues.some((v) =>
       v.includes(`build:tickets:${ORG}:${PROJECT_ID}`),
@@ -133,7 +133,7 @@ describe("projects-tickets ancestry race — advisory lock serializes concurrent
       access,
     );
 
-    await svc.updateTicket(makeActor(), TICKET_ID, { epicId: PROPOSED_PARENT_ID });
+    await svc.updateTicket(makeActor(), PROJECT_ID, TICKET_ID, { epicId: PROPOSED_PARENT_ID });
 
     const advisoryLockCalled = capturedExecuteValues.some((v) =>
       v.includes(`build:tickets:${ORG}:${PROJECT_ID}`),
@@ -158,7 +158,7 @@ describe("projects-tickets ancestry race — advisory lock serializes concurrent
 
     const systemU = systemActor("integrations.git.webhook", ORG);
 
-    await svc.updateTicket(systemU, TICKET_ID, { parentTicketId: PROPOSED_PARENT_ID });
+    await svc.updateTicket(systemU, PROJECT_ID, TICKET_ID, { parentTicketId: PROPOSED_PARENT_ID });
 
     const lockHits = capturedExecuteValues.filter((v) =>
       v.includes(`build:tickets:${ORG}:${PROJECT_ID}`),

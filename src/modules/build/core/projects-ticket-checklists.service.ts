@@ -116,17 +116,56 @@ export class ProjectsTicketChecklistsService {
     return loaded;
   }
 
+  private async requireTicketInProject(
+    orgId: string,
+    projectId: number,
+    ticketId: number,
+  ): Promise<void> {
+    const ticket = await this.db.query.tickets.findFirst({
+      where: and(
+        eq(tickets.id, ticketId),
+        eq(tickets.projectId, projectId),
+        eq(tickets.orgId, orgId),
+        isNull(tickets.deletedAt),
+      ),
+      columns: { id: true },
+    });
+    if (!ticket) throw new NotFoundException("Ticket not found");
+  }
+
+  private async requireChecklistInTicket(
+    orgId: string,
+    projectId: number,
+    ticketId: number,
+    checklistId: number,
+  ): Promise<void> {
+    await this.requireTicketInProject(orgId, projectId, ticketId);
+    const checklist = await this.db.query.ticketChecklists.findFirst({
+      where: and(
+        eq(ticketChecklists.id, checklistId),
+        eq(ticketChecklists.ticketId, ticketId),
+        eq(ticketChecklists.orgId, orgId),
+      ),
+      columns: { id: true },
+    });
+    if (!checklist) throw new NotFoundException("Checklist not found");
+  }
+
   async updateChecklist(
     orgId: string,
+    projectId: number,
+    ticketId: number,
     checklistId: number,
     data: { title: string },
   ) {
+    await this.requireChecklistInTicket(orgId, projectId, ticketId, checklistId);
     const [updated] = await this.db
       .update(ticketChecklists)
       .set({ title: data.title })
       .where(
         and(
           eq(ticketChecklists.id, checklistId),
+          eq(ticketChecklists.ticketId, ticketId),
           eq(ticketChecklists.orgId, orgId),
         ),
       )
@@ -137,12 +176,19 @@ export class ProjectsTicketChecklistsService {
     return loaded;
   }
 
-  async deleteChecklist(orgId: string, checklistId: number) {
+  async deleteChecklist(
+    orgId: string,
+    projectId: number,
+    ticketId: number,
+    checklistId: number,
+  ) {
+    await this.requireChecklistInTicket(orgId, projectId, ticketId, checklistId);
     const [deleted] = await this.db
       .delete(ticketChecklists)
       .where(
         and(
           eq(ticketChecklists.id, checklistId),
+          eq(ticketChecklists.ticketId, ticketId),
           eq(ticketChecklists.orgId, orgId),
         ),
       )
@@ -153,6 +199,8 @@ export class ProjectsTicketChecklistsService {
 
   async createChecklistItem(
     orgId: string,
+    projectId: number,
+    ticketId: number,
     checklistId: number,
     data: {
       text: string;
@@ -161,14 +209,7 @@ export class ProjectsTicketChecklistsService {
       order: number;
     },
   ) {
-    const checklist = await this.db.query.ticketChecklists.findFirst({
-      where: and(
-        eq(ticketChecklists.id, checklistId),
-        eq(ticketChecklists.orgId, orgId),
-      ),
-      columns: { id: true },
-    });
-    if (!checklist) throw new NotFoundException("Checklist not found");
+    await this.requireChecklistInTicket(orgId, projectId, ticketId, checklistId);
 
     const [item] = await this.db
       .insert(ticketChecklistItems)
@@ -187,6 +228,9 @@ export class ProjectsTicketChecklistsService {
 
   async updateChecklistItem(
     orgId: string,
+    projectId: number,
+    ticketId: number,
+    checklistId: number,
     itemId: number,
     data: {
       text?: string;
@@ -196,35 +240,61 @@ export class ProjectsTicketChecklistsService {
       order?: number;
     },
   ) {
+    await this.requireChecklistInTicket(orgId, projectId, ticketId, checklistId);
+
     const existing = await this.db.query.ticketChecklistItems.findFirst({
-      where: eq(ticketChecklistItems.id, itemId),
+      where: and(
+        eq(ticketChecklistItems.id, itemId),
+        eq(ticketChecklistItems.checklistId, checklistId),
+        eq(ticketChecklistItems.orgId, orgId),
+      ),
       columns: { id: true, checklistId: true },
-      with: { checklist: { columns: { orgId: true } } },
     });
-    if (!existing || existing.checklist.orgId !== orgId)
-      throw new NotFoundException("Checklist item not found");
+    if (!existing) throw new NotFoundException("Checklist item not found");
 
     const [item] = await this.db
       .update(ticketChecklistItems)
       .set(data)
-      .where(and(eq(ticketChecklistItems.orgId, orgId), eq(ticketChecklistItems.id, itemId)))
+      .where(
+        and(
+          eq(ticketChecklistItems.orgId, orgId),
+          eq(ticketChecklistItems.checklistId, checklistId),
+          eq(ticketChecklistItems.id, itemId),
+        ),
+      )
       .returning();
     if (!item) throw new NotFoundException("Checklist item not found");
     return toChecklistItemRow(item);
   }
 
-  async deleteChecklistItem(orgId: string, itemId: number) {
+  async deleteChecklistItem(
+    orgId: string,
+    projectId: number,
+    ticketId: number,
+    checklistId: number,
+    itemId: number,
+  ) {
+    await this.requireChecklistInTicket(orgId, projectId, ticketId, checklistId);
+
     const existing = await this.db.query.ticketChecklistItems.findFirst({
-      where: eq(ticketChecklistItems.id, itemId),
+      where: and(
+        eq(ticketChecklistItems.id, itemId),
+        eq(ticketChecklistItems.checklistId, checklistId),
+        eq(ticketChecklistItems.orgId, orgId),
+      ),
       columns: { id: true, checklistId: true },
-      with: { checklist: { columns: { orgId: true } } },
     });
-    if (!existing || existing.checklist.orgId !== orgId)
-      throw new NotFoundException("Checklist item not found");
+    if (!existing) throw new NotFoundException("Checklist item not found");
 
     const [deleted] = await this.db
       .delete(ticketChecklistItems)
-      .where(and(eq(ticketChecklistItems.orgId, orgId), eq(ticketChecklistItems.id, itemId)))
+      .where(
+        and(
+          eq(ticketChecklistItems.orgId, orgId),
+          eq(ticketChecklistItems.checklistId, checklistId),
+          eq(ticketChecklistItems.id, itemId),
+        ),
+      )
       .returning();
     if (!deleted) throw new NotFoundException("Checklist item not found");
     return { success: true };
