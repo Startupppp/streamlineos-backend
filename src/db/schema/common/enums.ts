@@ -17,6 +17,7 @@ export * from "./enums-inventory-verticals";
 export const ticketTypeEnum = pgEnum("ticket_type", ["EPIC", "STORY", "TASK", "BUG"]);
 export const ticketStatusEnum = pgEnum("ticket_status", ["TODO", "IN_PROGRESS", "IN_REVIEW", "DONE"]);
 export const ticketPriorityEnum = pgEnum("ticket_priority", ["LOW", "MEDIUM", "HIGH", "URGENT"]);
+export const helpdeskQueueEnum = pgEnum("helpdesk_queue", ["HR", "IT", "FINANCE", "ADMIN", "LEGAL"]);
 export const projectStatusEnum = pgEnum("project_status", ["ACTIVE", "COMPLETED", "ARCHIVED"]);
 export const managedProductStatusEnum = pgEnum("managed_product_status", ["active", "archived"]);
 export const workerEngagementStatusEnum = pgEnum("worker_engagement_status", ["PLANNED", "ACTIVE", "COMPLETED", "TERMINATED", "CANCELLED"]);

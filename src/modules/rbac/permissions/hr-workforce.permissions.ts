@@ -101,7 +101,7 @@ export const HR_WORKFORCE_PERMISSIONS: Permission[] = [
     name: "hr:helpdesk:view",
     resource: "hr:helpdesk",
     action: "view",
-    description: "View own HR helpdesk tickets",
+    description: "Open the employee support agent view",
   },
   {
     name: "hr:helpdesk:create",
@@ -113,7 +113,37 @@ export const HR_WORKFORCE_PERMISSIONS: Permission[] = [
     name: "hr:helpdesk:manage",
     resource: "hr:helpdesk",
     action: "manage",
-    description: "Manage all HR helpdesk tickets",
+    description: "Administer employee support: every queue, routing and SLA configuration",
+  },
+  {
+    name: "hr:helpdesk:queue-hr",
+    resource: "hr:helpdesk",
+    action: "queue-hr",
+    description: "Work the HR employee support queue",
+  },
+  {
+    name: "hr:helpdesk:queue-it",
+    resource: "hr:helpdesk",
+    action: "queue-it",
+    description: "Work the IT employee support queue",
+  },
+  {
+    name: "hr:helpdesk:queue-finance",
+    resource: "hr:helpdesk",
+    action: "queue-finance",
+    description: "Work the Finance employee support queue",
+  },
+  {
+    name: "hr:helpdesk:queue-admin",
+    resource: "hr:helpdesk",
+    action: "queue-admin",
+    description: "Work the Admin employee support queue",
+  },
+  {
+    name: "hr:helpdesk:queue-legal",
+    resource: "hr:helpdesk",
+    action: "queue-legal",
+    description: "Work the Legal employee support queue",
   },
   {
     name: "hr:communications:send",

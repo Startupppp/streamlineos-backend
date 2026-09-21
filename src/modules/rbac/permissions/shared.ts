@@ -416,6 +416,12 @@ export const SHARED_PERMISSIONS: Permission[] = [
     description: "View and acknowledge disciplinary actions issued to oneself",
   },
   {
+    name: "self:support",
+    resource: "self",
+    action: "support",
+    description: "Raise employee support requests and follow own requests",
+  },
+  {
     name: "branch:view",
     resource: "branch",
     action: "view",

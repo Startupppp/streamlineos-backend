@@ -18,6 +18,7 @@ import { CronRecruitmentService } from "./cron-recruitment.service";
 import { CronLeaseService } from "./cron-lease.service";
 import { CronHrRetentionService } from "./cron-hr-retention.service";
 import { CronHelpdeskRetentionService } from "./cron-helpdesk-retention.service";
+import { HrHelpdeskEscalationService } from "../hr/helpdesk/hr-helpdesk-escalation.service";
 import { Validate } from "../../common/validation/validate.decorator";
 import { z } from "zod";
 import {
@@ -30,6 +31,7 @@ import {
   retentionDeleteSweepResponseSchema,
   hrPolicyRetentionSweepResponseSchema,
   helpdeskRetentionSweepResponseSchema,
+  helpdeskEscalationSweepResponseSchema,
 } from "./dto/cron-hr-response.schemas";
 import { BodylessAction, ResponseSchema } from "../../common/openapi/zod-operation-contracts";
 
@@ -47,6 +49,7 @@ export class CronHrController {
     private readonly cronLease: CronLeaseService,
     private readonly hrRetention: CronHrRetentionService,
     private readonly helpdeskRetention: CronHelpdeskRetentionService,
+    private readonly helpdeskEscalation: HrHelpdeskEscalationService,
   ) {}
 
   @Get("auto-checkout")
@@ -326,6 +329,42 @@ export class CronHrController {
       };
     } catch (error) {
       logger.error("Helpdesk retention sweep cron failed", error);
+      throw new InternalServerErrorException("Internal server error");
+    }
+  }
+
+  @Get("helpdesk-escalation-sweep")
+  @ResponseSchema(helpdeskEscalationSweepResponseSchema)
+  getHelpdeskEscalationSweep(@Headers("authorization") authorization?: string) {
+    return this.runHelpdeskEscalationSweep(authorization);
+  }
+
+  @Post("helpdesk-escalation-sweep")
+  @BodylessAction()
+  @HttpCode(200)
+  @ResponseSchema(helpdeskEscalationSweepResponseSchema)
+  postHelpdeskEscalationSweep(@Headers("authorization") authorization?: string) {
+    return this.runHelpdeskEscalationSweep(authorization);
+  }
+
+  private async runHelpdeskEscalationSweep(authorization?: string) {
+    assertCronSecret(authorization);
+    try {
+      const outcome = await this.cronLease.withLease("helpdesk-escalation-sweep", 600, () =>
+        this.helpdeskEscalation.sweep(),
+      );
+      if (!outcome.ran)
+        return { success: true, skipped: true, message: "helpdesk-escalation-sweep already running" };
+      const result = outcome.result;
+      return {
+        success: true,
+        message:
+          `Employee support escalation: ${result.escalated} requests escalated ` +
+          `(${result.unassignable} without a target) across ${result.organizations} orgs`,
+        ...result,
+      };
+    } catch (error) {
+      logger.error("Helpdesk escalation sweep cron failed", error);
       throw new InternalServerErrorException("Internal server error");
     }
   }
