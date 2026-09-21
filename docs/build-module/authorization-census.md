@@ -9,9 +9,9 @@ Scope: every `*.controller.ts` under `src/modules/build/`. 47 controller files, 
 | classification | handlers |
 | --- | --- |
 | VULNERABLE | 30 |
-| CLOSED-IN-FLIGHT | 4 |
+| CLOSED-IN-FLIGHT | 0 |
 | NEEDS-REVIEW | 111 |
-| CLOSED | 0 |
+| CLOSED | 4 |
 | VERIFIED | 176 |
 | **total** | **321** |
 
@@ -468,63 +468,64 @@ Evidence:
 - `src/modules/build/execution/workspace.service.ts:286` — pre-read binds id + orgId
 - `src/modules/build/execution/workspace.service.ts:293` — DELETE binds id + orgId
 
-### CLOSED-IN-FLIGHT — `PATCH /build/:projectId/releases/:releaseId`
+### CLOSED — `PATCH /build/:projectId/releases/:releaseId`
 
 `ProjectsReleasesController.updateRelease` — `src/modules/build/core/projects-releases.controller.ts:62`
 
 Finding: `parent-binding-missing`
 
-PATCH /build/:projectId/releases/:releaseId. The controller DOES forward projectId and the service DOES gate project membership via assertProjectAccess — but the release itself is then resolved by (id, orgId) with no projectId predicate, so the membership gate constrains the URL's project while the UPDATE lands on a release that may belong to a different one.
+PATCH /build/:projectId/releases/:releaseId. The release was resolved by (id, orgId) while assertProjectAccess gated only the URL project, so the UPDATE could land on a release owned by another project. Closed in d714ae8ff: the UPDATE now binds projectReleases.projectId, and the ticketCount subquery binds releaseTickets.orgId (it previously counted rows from every tenant).
 
-Blast radius: Intra-tenant cross-project write. A fix binding projectReleases.projectId is already committed on another branch; this worktree still carries the old code.
+Blast radius: Was intra-tenant cross-project write. Closed.
 
 Evidence:
 
-- `src/modules/build/core/projects-releases.service.ts:77` — UPDATE binds id + orgId; the fix adds eq(projectReleases.projectId, projectId)
-- `src/modules/build/core/projects-releases.service.ts:105` — releaseTickets count carries no orgId; the fix adds one
+- `src/modules/build/core/projects-releases.service.ts:77` — UPDATE binds id + projectId + orgId
+- `src/modules/build/core/projects-releases.service.ts:105` — ticketCount now bound to the caller's organisation
 
-### CLOSED-IN-FLIGHT — `DELETE /build/:projectId/releases/:releaseId`
+### CLOSED — `DELETE /build/:projectId/releases/:releaseId`
 
 `ProjectsReleasesController.deleteRelease` — `src/modules/build/core/projects-releases.controller.ts:75`
 
 Finding: `parent-binding-missing`
 
-DELETE /build/:projectId/releases/:releaseId. Same shape: membership gated on the URL project, soft delete resolved by (id, orgId).
+DELETE /build/:projectId/releases/:releaseId. Soft delete was resolved by (id, orgId). Closed in d714ae8ff.
 
-Blast radius: Intra-tenant cross-project delete. Fixed on another branch.
+Blast radius: Was intra-tenant cross-project delete. Closed.
 
 Evidence:
 
-- `src/modules/build/core/projects-releases.service.ts:115` — soft delete binds id + orgId
+- `src/modules/build/core/projects-releases.service.ts:115` — soft delete binds id + projectId + orgId
 
-### CLOSED-IN-FLIGHT — `POST /build/:projectId/releases/:releaseId/tickets`
+### CLOSED — `POST /build/:projectId/releases/:releaseId/tickets`
 
 `ProjectsReleasesController.addTicket` — `src/modules/build/core/projects-releases.controller.ts:88`
 
 Finding: `parent-binding-missing`
 
-POST /build/:projectId/releases/:releaseId/tickets. The release lookup binds (id, orgId); the ticket lookup binds (id, orgId). Neither is tied to the URL project.
+POST /build/:projectId/releases/:releaseId/tickets. Release and ticket were each resolved by (id, orgId), so a ticket from project A could be attached to a release in project B. Closed in d714ae8ff: both now bind projectId.
 
-Blast radius: Intra-tenant: a ticket from project A can be attached to a release in project B. Fixed on another branch.
+Blast radius: Was intra-tenant cross-project link. Closed.
 
 Evidence:
 
-- `src/modules/build/core/projects-releases.service.ts:125` — release resolved by id + orgId
+- `src/modules/build/core/projects-releases.service.ts:125` — release bound to the URL project
+- `src/modules/build/core/projects-releases.service.ts:131` — ticket bound to the URL project
 
-### CLOSED-IN-FLIGHT — `DELETE /build/:projectId/releases/:releaseId/tickets/:ticketId`
+### CLOSED — `DELETE /build/:projectId/releases/:releaseId/tickets/:ticketId`
 
 `ProjectsReleasesController.removeTicket` — `src/modules/build/core/projects-releases.controller.ts:102`
 
 Finding: `parent-binding-missing`
 
-DELETE /build/:projectId/releases/:releaseId/tickets/:ticketId. The release is resolved by (id, orgId), and the join-row DELETE binds only (releaseId, ticketId) — no orgId at all on that statement.
+DELETE /build/:projectId/releases/:releaseId/tickets/:ticketId. The release was resolved by (id, orgId) and the join-row DELETE bound only (releaseId, ticketId) — no orgId at all, so it spanned organisations. Closed in d714ae8ff.
 
-Blast radius: Intra-tenant. The unqualified join delete is the line the in-flight fix adds orgId to.
+Blast radius: Was intra-tenant cross-project, and the unqualified join delete was cross-TENANT. Closed.
 
 Evidence:
 
-- `src/modules/build/core/projects-releases.service.ts:144` — release resolved by id + orgId
-- `src/modules/build/core/projects-releases.service.ts:150` — join delete binds NEITHER orgId nor projectId
+- `src/modules/build/core/projects-releases.service.ts:144` — release bound to the URL project
+- `src/modules/build/core/projects-releases.service.ts:150` — join delete now bound to the caller's organisation
 
 ## Reviewed and cleared
 
@@ -591,10 +592,6 @@ POST /public/build-forms/:publicToken/submissions. Unauthenticated by design and
 | VULNERABLE | PATCH | `/build/:projectId/intake/:requestId` | `src/modules/build/execution/workspace.controller.ts:152` | `updateIntake` | @RequirePermission("build:workspace:manage") | @RequireModule("build") | OK | BOUND | NOT-PASSED (no @Param on parent) | complete [projectId, requestId] | NO (mutating) |
 | VULNERABLE | PATCH | `/build/:projectId/views/:viewId` | `src/modules/build/execution/workspace.controller.ts:195` | `updateView` | @RequirePermission("build:workspace:manage") | @RequireModule("build") | OK | BOUND | NOT-PASSED (no @Param on parent) | complete [projectId, viewId] | NO (mutating) |
 | VULNERABLE | DELETE | `/build/:projectId/views/:viewId` | `src/modules/build/execution/workspace.controller.ts:207` | `deleteView` | @RequirePermission("build:workspace:manage") | @RequireModule("build") | OK | BOUND | NOT-PASSED (no @Param on parent) | complete [projectId, viewId] | NO (mutating) |
-| CLOSED-IN-FLIGHT | PATCH | `/build/:projectId/releases/:releaseId` | `src/modules/build/core/projects-releases.controller.ts:62` | `updateRelease` | @RequirePermission("build:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, releaseId] | NO (mutating) |
-| CLOSED-IN-FLIGHT | DELETE | `/build/:projectId/releases/:releaseId` | `src/modules/build/core/projects-releases.controller.ts:75` | `deleteRelease` | @RequirePermission("build:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, releaseId] | NO (mutating) |
-| CLOSED-IN-FLIGHT | POST | `/build/:projectId/releases/:releaseId/tickets` | `src/modules/build/core/projects-releases.controller.ts:88` | `addTicket` | @RequirePermission("build:tickets:update") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, releaseId] | NO (mutating) |
-| CLOSED-IN-FLIGHT | DELETE | `/build/:projectId/releases/:releaseId/tickets/:ticketId` | `src/modules/build/core/projects-releases.controller.ts:102` | `removeTicket` | @RequirePermission("build:tickets:update") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, releaseId, ticketId] | NO (mutating) |
 | NEEDS-REVIEW | GET | `/build/:projectId/approvals/:approvalId` | `src/modules/build/approvals/approvals.controller.ts:96` | `getApproval` | @RequirePermission("build:approvals:view") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, approvalId] | n/a |
 | NEEDS-REVIEW | PATCH | `/build/:projectId/approvals/:approvalId/decide` | `src/modules/build/approvals/approvals.controller.ts:122` | `decideApproval` | @RequirePermission("build:approvals:decide") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, approvalId] | yes |
 | NEEDS-REVIEW | PATCH | `/build/:projectId/approvals/:approvalId` | `src/modules/build/approvals/approvals.controller.ts:136` | `updateApproval` | @RequirePermission("build:approvals:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, approvalId] | NO (mutating) |
@@ -706,6 +703,10 @@ POST /public/build-forms/:publicToken/submissions. Unauthenticated by design and
 | NEEDS-REVIEW | DELETE | `/build/:projectId/workflow/transitions/:transitionId` | `src/modules/build/workflow/workflow.controller.ts:82` | `deleteTransition` | @RequirePermission("build:workflow:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, transitionId] | NO (mutating) |
 | NEEDS-REVIEW | GET | `/build/:projectId/workflow/allowed/:fromStatusId` | `src/modules/build/workflow/workflow.controller.ts:95` | `getAllowedTransitions` | @RequirePermission("build:workflow:view") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, fromStatusId] | n/a |
 | NEEDS-REVIEW | PATCH | `/build/:projectId/workflow/statuses/:statusId/wip` | `src/modules/build/workflow/workflow.controller.ts:107` | `updateWipLimit` | @RequirePermission("build:workflow:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, statusId] | NO (mutating) |
+| CLOSED | PATCH | `/build/:projectId/releases/:releaseId` | `src/modules/build/core/projects-releases.controller.ts:62` | `updateRelease` | @RequirePermission("build:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, releaseId] | NO (mutating) |
+| CLOSED | DELETE | `/build/:projectId/releases/:releaseId` | `src/modules/build/core/projects-releases.controller.ts:75` | `deleteRelease` | @RequirePermission("build:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, releaseId] | NO (mutating) |
+| CLOSED | POST | `/build/:projectId/releases/:releaseId/tickets` | `src/modules/build/core/projects-releases.controller.ts:88` | `addTicket` | @RequirePermission("build:tickets:update") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, releaseId] | NO (mutating) |
+| CLOSED | DELETE | `/build/:projectId/releases/:releaseId/tickets/:ticketId` | `src/modules/build/core/projects-releases.controller.ts:102` | `removeTicket` | @RequirePermission("build:tickets:update") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, releaseId, ticketId] | NO (mutating) |
 | VERIFIED | GET | `/build/agent-pulse/top-signal` | `src/modules/build/agent-pulse/agent-pulse.controller.ts:27` | `getTopSignal` | @RequirePermission("build:approvals:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | unresolved | n/a |
 | VERIFIED | GET | `/build/agent-pulse/badge` | `src/modules/build/agent-pulse/agent-pulse.controller.ts:36` | `badge` | @RequirePermission("build:approvals:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | absent (no params) | n/a |
 | VERIFIED | POST | `/build/agent-pulse/proposals/:draftId/apply` | `src/modules/build/agent-pulse/agent-pulse.controller.ts:44` | `applyDraft` | @RequirePermission("build:tickets:update") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [draftId] | NO (mutating) |

@@ -513,51 +513,51 @@ const REVIEWED = [
     ],
   },
 
-  // ── Fixed on another branch, still defective HERE ────────────────────────
+  // ── Fixed and merged: verified against the current tree ─────────────────
 
   {
     key: "modules/build/core/projects-releases.controller.ts#updateRelease",
-    verdict: "CLOSED-IN-FLIGHT",
+    verdict: "CLOSED",
     finding: "parent-binding-missing",
     summary:
-      "PATCH /build/:projectId/releases/:releaseId. The controller DOES forward projectId and the service DOES gate project membership via assertProjectAccess — but the release itself is then resolved by (id, orgId) with no projectId predicate, so the membership gate constrains the URL's project while the UPDATE lands on a release that may belong to a different one.",
-    blastRadius:
-      "Intra-tenant cross-project write. A fix binding projectReleases.projectId is already committed on another branch; this worktree still carries the old code.",
+      "PATCH /build/:projectId/releases/:releaseId. The release was resolved by (id, orgId) while assertProjectAccess gated only the URL project, so the UPDATE could land on a release owned by another project. Closed in d714ae8ff: the UPDATE now binds projectReleases.projectId, and the ticketCount subquery binds releaseTickets.orgId (it previously counted rows from every tenant).",
+    blastRadius: "Was intra-tenant cross-project write. Closed.",
     evidence: [
-      { file: "src/modules/build/core/projects-releases.service.ts", line: 77, anchor: /\.where\(and\(eq\(projectReleases\.id, releaseId\), eq\(projectReleases\.orgId, orgId\), isNull\(projectReleases\.deletedAt\)\)\)/, note: "UPDATE binds id + orgId; the fix adds eq(projectReleases.projectId, projectId)" },
-      { file: "src/modules/build/core/projects-releases.service.ts", line: 105, anchor: /\.where\(eq\(releaseTickets\.releaseId, releaseId\)\);/, note: "releaseTickets count carries no orgId; the fix adds one" },
+      { file: "src/modules/build/core/projects-releases.service.ts", line: 77, anchor: /\.where\(and\(eq\(projectReleases\.id, releaseId\), eq\(projectReleases\.projectId, projectId\), eq\(projectReleases\.orgId, orgId\), isNull\(projectReleases\.deletedAt\)\)\)/, note: "UPDATE binds id + projectId + orgId" },
+      { file: "src/modules/build/core/projects-releases.service.ts", line: 105, anchor: /\.where\(and\(eq\(releaseTickets\.releaseId, releaseId\), eq\(releaseTickets\.orgId, orgId\)\)\);/, note: "ticketCount now bound to the caller's organisation" },
     ],
   },
   {
     key: "modules/build/core/projects-releases.controller.ts#deleteRelease",
-    verdict: "CLOSED-IN-FLIGHT",
+    verdict: "CLOSED",
     finding: "parent-binding-missing",
-    summary: "DELETE /build/:projectId/releases/:releaseId. Same shape: membership gated on the URL project, soft delete resolved by (id, orgId).",
-    blastRadius: "Intra-tenant cross-project delete. Fixed on another branch.",
+    summary: "DELETE /build/:projectId/releases/:releaseId. Soft delete was resolved by (id, orgId). Closed in d714ae8ff.",
+    blastRadius: "Was intra-tenant cross-project delete. Closed.",
     evidence: [
-      { file: "src/modules/build/core/projects-releases.service.ts", line: 115, anchor: /\.where\(and\(eq\(projectReleases\.id, releaseId\), eq\(projectReleases\.orgId, orgId\), isNull\(projectReleases\.deletedAt\)\)\)/, note: "soft delete binds id + orgId" },
+      { file: "src/modules/build/core/projects-releases.service.ts", line: 115, anchor: /\.where\(and\(eq\(projectReleases\.id, releaseId\), eq\(projectReleases\.projectId, projectId\), eq\(projectReleases\.orgId, orgId\), isNull\(projectReleases\.deletedAt\)\)\)/, note: "soft delete binds id + projectId + orgId" },
     ],
   },
   {
     key: "modules/build/core/projects-releases.controller.ts#addTicket",
-    verdict: "CLOSED-IN-FLIGHT",
+    verdict: "CLOSED",
     finding: "parent-binding-missing",
-    summary: "POST /build/:projectId/releases/:releaseId/tickets. The release lookup binds (id, orgId); the ticket lookup binds (id, orgId). Neither is tied to the URL project.",
-    blastRadius: "Intra-tenant: a ticket from project A can be attached to a release in project B. Fixed on another branch.",
+    summary: "POST /build/:projectId/releases/:releaseId/tickets. Release and ticket were each resolved by (id, orgId), so a ticket from project A could be attached to a release in project B. Closed in d714ae8ff: both now bind projectId.",
+    blastRadius: "Was intra-tenant cross-project link. Closed.",
     evidence: [
-      { file: "src/modules/build/core/projects-releases.service.ts", line: 125, anchor: /where: and\(eq\(projectReleases\.id, releaseId\), eq\(projectReleases\.orgId, orgId\), isNull\(projectReleases\.deletedAt\)\),/, note: "release resolved by id + orgId" },
+      { file: "src/modules/build/core/projects-releases.service.ts", line: 125, anchor: /where: and\(eq\(projectReleases\.id, releaseId\), eq\(projectReleases\.projectId, projectId\), eq\(projectReleases\.orgId, orgId\), isNull\(projectReleases\.deletedAt\)\),/, note: "release bound to the URL project" },
+      { file: "src/modules/build/core/projects-releases.service.ts", line: 131, anchor: /where: and\(eq\(tickets\.id, ticketId\), eq\(tickets\.projectId, projectId\), eq\(tickets\.orgId, orgId\), isNull\(tickets\.deletedAt\)\),/, note: "ticket bound to the URL project" },
     ],
   },
   {
     key: "modules/build/core/projects-releases.controller.ts#removeTicket",
-    verdict: "CLOSED-IN-FLIGHT",
+    verdict: "CLOSED",
     finding: "parent-binding-missing",
     summary:
-      "DELETE /build/:projectId/releases/:releaseId/tickets/:ticketId. The release is resolved by (id, orgId), and the join-row DELETE binds only (releaseId, ticketId) — no orgId at all on that statement.",
-    blastRadius: "Intra-tenant. The unqualified join delete is the line the in-flight fix adds orgId to.",
+      "DELETE /build/:projectId/releases/:releaseId/tickets/:ticketId. The release was resolved by (id, orgId) and the join-row DELETE bound only (releaseId, ticketId) — no orgId at all, so it spanned organisations. Closed in d714ae8ff.",
+    blastRadius: "Was intra-tenant cross-project, and the unqualified join delete was cross-TENANT. Closed.",
     evidence: [
-      { file: "src/modules/build/core/projects-releases.service.ts", line: 144, anchor: /where: and\(eq\(projectReleases\.id, releaseId\), eq\(projectReleases\.orgId, orgId\), isNull\(projectReleases\.deletedAt\)\),/, note: "release resolved by id + orgId" },
-      { file: "src/modules/build/core/projects-releases.service.ts", line: 150, anchor: /\.where\(and\(eq\(releaseTickets\.releaseId, releaseId\), eq\(releaseTickets\.ticketId, ticketId\)\)\);/, note: "join delete binds NEITHER orgId nor projectId" },
+      { file: "src/modules/build/core/projects-releases.service.ts", line: 144, anchor: /where: and\(eq\(projectReleases\.id, releaseId\), eq\(projectReleases\.projectId, projectId\), eq\(projectReleases\.orgId, orgId\), isNull\(projectReleases\.deletedAt\)\),/, note: "release bound to the URL project" },
+      { file: "src/modules/build/core/projects-releases.service.ts", line: 150, anchor: /\.where\(and\(eq\(releaseTickets\.releaseId, releaseId\), eq\(releaseTickets\.ticketId, ticketId\), eq\(releaseTickets\.orgId, orgId\)\)\);/, note: "join delete now bound to the caller's organisation" },
     ],
   },
 

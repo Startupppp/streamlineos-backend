@@ -6,9 +6,9 @@
   "handlers": 321,
   "counts": {
     "VULNERABLE": 30,
-    "CLOSED-IN-FLIGHT": 4,
+    "CLOSED-IN-FLIGHT": 0,
     "NEEDS-REVIEW": 111,
-    "CLOSED": 0,
+    "CLOSED": 4,
     "VERIFIED": 176
   },
   "handlersDetail": [
@@ -2941,19 +2941,19 @@
       "notes": [
         "mutating verb without @Idempotent"
       ],
-      "verdict": "CLOSED-IN-FLIGHT",
-      "verdictReason": "PATCH /build/:projectId/releases/:releaseId. The controller DOES forward projectId and the service DOES gate project membership via assertProjectAccess — but the release itself is then resolved by (id, orgId) with no projectId predicate, so the membership gate constrains the URL's project while the UPDATE lands on a release that may belong to a different one.",
+      "verdict": "CLOSED",
+      "verdictReason": "PATCH /build/:projectId/releases/:releaseId. The release was resolved by (id, orgId) while assertProjectAccess gated only the URL project, so the UPDATE could land on a release owned by another project. Closed in d714ae8ff: the UPDATE now binds projectReleases.projectId, and the ticketCount subquery binds releaseTickets.orgId (it previously counted rows from every tenant).",
       "evidence": "src/modules/build/core/projects-releases.controller.ts:62",
       "reviewedEvidence": [
         {
           "file": "src/modules/build/core/projects-releases.service.ts",
           "line": 77,
-          "note": "UPDATE binds id + orgId; the fix adds eq(projectReleases.projectId, projectId)"
+          "note": "UPDATE binds id + projectId + orgId"
         },
         {
           "file": "src/modules/build/core/projects-releases.service.ts",
           "line": 105,
-          "note": "releaseTickets count carries no orgId; the fix adds one"
+          "note": "ticketCount now bound to the caller's organisation"
         }
       ]
     },
@@ -2999,14 +2999,14 @@
       "notes": [
         "mutating verb without @Idempotent"
       ],
-      "verdict": "CLOSED-IN-FLIGHT",
-      "verdictReason": "DELETE /build/:projectId/releases/:releaseId. Same shape: membership gated on the URL project, soft delete resolved by (id, orgId).",
+      "verdict": "CLOSED",
+      "verdictReason": "DELETE /build/:projectId/releases/:releaseId. Soft delete was resolved by (id, orgId). Closed in d714ae8ff.",
       "evidence": "src/modules/build/core/projects-releases.controller.ts:75",
       "reviewedEvidence": [
         {
           "file": "src/modules/build/core/projects-releases.service.ts",
           "line": 115,
-          "note": "soft delete binds id + orgId"
+          "note": "soft delete binds id + projectId + orgId"
         }
       ]
     },
@@ -3052,14 +3052,19 @@
       "notes": [
         "mutating verb without @Idempotent"
       ],
-      "verdict": "CLOSED-IN-FLIGHT",
-      "verdictReason": "POST /build/:projectId/releases/:releaseId/tickets. The release lookup binds (id, orgId); the ticket lookup binds (id, orgId). Neither is tied to the URL project.",
+      "verdict": "CLOSED",
+      "verdictReason": "POST /build/:projectId/releases/:releaseId/tickets. Release and ticket were each resolved by (id, orgId), so a ticket from project A could be attached to a release in project B. Closed in d714ae8ff: both now bind projectId.",
       "evidence": "src/modules/build/core/projects-releases.controller.ts:88",
       "reviewedEvidence": [
         {
           "file": "src/modules/build/core/projects-releases.service.ts",
           "line": 125,
-          "note": "release resolved by id + orgId"
+          "note": "release bound to the URL project"
+        },
+        {
+          "file": "src/modules/build/core/projects-releases.service.ts",
+          "line": 131,
+          "note": "ticket bound to the URL project"
         }
       ]
     },
@@ -3107,19 +3112,19 @@
       "notes": [
         "mutating verb without @Idempotent"
       ],
-      "verdict": "CLOSED-IN-FLIGHT",
-      "verdictReason": "DELETE /build/:projectId/releases/:releaseId/tickets/:ticketId. The release is resolved by (id, orgId), and the join-row DELETE binds only (releaseId, ticketId) — no orgId at all on that statement.",
+      "verdict": "CLOSED",
+      "verdictReason": "DELETE /build/:projectId/releases/:releaseId/tickets/:ticketId. The release was resolved by (id, orgId) and the join-row DELETE bound only (releaseId, ticketId) — no orgId at all, so it spanned organisations. Closed in d714ae8ff.",
       "evidence": "src/modules/build/core/projects-releases.controller.ts:102",
       "reviewedEvidence": [
         {
           "file": "src/modules/build/core/projects-releases.service.ts",
           "line": 144,
-          "note": "release resolved by id + orgId"
+          "note": "release bound to the URL project"
         },
         {
           "file": "src/modules/build/core/projects-releases.service.ts",
           "line": 150,
-          "note": "join delete binds NEITHER orgId nor projectId"
+          "note": "join delete now bound to the caller's organisation"
         }
       ]
     },
