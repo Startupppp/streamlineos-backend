@@ -239,9 +239,22 @@ export const employeeListPageSchema = z.object({
   }),
 });
 
+export const inviteDeliverySchema = z.object({
+  sent: z.boolean(),
+  reason: z.string().nullable(),
+});
+
+export type InviteDelivery = z.infer<typeof inviteDeliverySchema>;
+
 export const onboardResponseSchema = z.object({
   success: z.boolean(),
   userId: z.string(),
+  invite: inviteDeliverySchema,
+});
+
+export const resendInviteResponseSchema = z.object({
+  success: z.boolean(),
+  invite: inviteDeliverySchema,
 });
 
 export const bulkOnboardResultSchema = z.object({

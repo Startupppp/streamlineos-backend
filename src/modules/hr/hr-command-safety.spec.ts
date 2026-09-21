@@ -17,6 +17,15 @@ describe("HR expensive command safety", () => {
     ).toBe("hr.employees.onboard");
   });
 
+  it("fences an invite resend, which mints a token and queues mail on every call", () => {
+    expect(
+      Reflect.getMetadata(
+        IDEMPOTENCY_COMMAND,
+        EmployeesController.prototype.resendInvite,
+      ),
+    ).toBe("hr.employees.resend-invite");
+  });
+
   it.each([
     {
       name: "member backfill",

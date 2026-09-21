@@ -234,6 +234,8 @@ export const updateEmployeeSchema = z
   })
   .strict();
 
+export const employeeIdParamsSchema = z.object({ employeeId: z.string().min(1) }).strict();
+
 export const onboardEmployeeSchema = z.object({
   firstName: z
     .string()
