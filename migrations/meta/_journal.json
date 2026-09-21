@@ -6245,6 +6245,13 @@
       "when": 1803000010346,
       "tag": "1129_onb_flow_sessions_unique_type_per_actor",
       "breakpoints": true
+    },
+    {
+      "idx": 1020,
+      "version": "7",
+      "when": 1803000010347,
+      "tag": "1130_chat_invite_link_token_hardening",
+      "breakpoints": true
     }
   ]
 }
