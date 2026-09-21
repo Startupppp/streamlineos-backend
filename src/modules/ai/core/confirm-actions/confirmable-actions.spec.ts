@@ -26,6 +26,10 @@ jest.mock("../../../directory/person-seam", () => ({
   resolvePeopleByName: jest.fn(),
 }));
 
+jest.mock("../../../../common/tenant/run-in-tenant-transaction", () => ({
+  runInTenantTransaction: jest.fn((_db: unknown, fn: () => unknown) => fn()),
+}));
+
 import { resolvePeopleByName } from "../../../directory/person-seam";
 
 const resolveNames = jest.mocked(resolvePeopleByName);

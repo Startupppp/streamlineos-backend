@@ -70,25 +70,10 @@ jobs:
       # the ONLY gate that sees an arity change in a spec, and until this step the
       # test-inclusive program was never run in CI at all.
       #
-      # KNOWINGLY continue-on-error, and the reason is measurable: as of
-      # 2026-09-19 the test program has 62 pre-existing type errors across files
-      # we do not own in this session --
-      #   47 in src/modules/inventory/stock-engine/__tests__/quantity.property.spec.ts
-      #    4 in available-formula-parity.db.spec.ts
-      #   11 across hr, build, common and impersonation specs
-      # -- NONE in src/modules/ai/. A step that goes red on day one gets disabled
-      # within a week, which is worse than not wiring it.
-      #
-      # What this DOES enforce today: any NEW type error added outside those 62
-      # shows up as a non-zero exit and is visible in the step output. The heap
-      # is raised to 10240 (backend/CLAUDE.md §8); at 8192 tsc exits 134 after
-      # printing zero errors — a silent false-pass, not a typecheck.
-      #
-      # To make this blocking, fix the 62 pre-existing errors and remove
-      # continue-on-error. Owner: inventory and hr lanes.
+      # The heap is raised to 10240 (backend/CLAUDE.md §8); at 8192 tsc exits 134
+      # after printing zero errors — a silent false-pass, not a typecheck.
       - name: Typecheck (test-inclusive)
         run: pnpm typecheck:test
-        continue-on-error: true
 
       - name: Lint
         run: pnpm lint
