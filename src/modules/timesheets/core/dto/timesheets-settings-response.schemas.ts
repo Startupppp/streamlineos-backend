@@ -12,6 +12,7 @@ export const timesheetSettingsSchema = z.object({
   allowBackdatedEntries: z.boolean(),
   backdateLimitDays: z.number().int().nullable(),
   approvalMode: z.string(),
+  approverSource: z.string(),
   clientApprovalEnabled: z.boolean(),
   lockAfterApproval: z.boolean(),
   lockAfterInvoice: z.boolean(),
