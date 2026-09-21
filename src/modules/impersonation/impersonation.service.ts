@@ -161,7 +161,13 @@ export class ImpersonationService {
       await this.db
         .update(impersonationSessions)
         .set({ isRevoked: true, endedAt: new Date() })
-        .where(eq(impersonationSessions.id, impersonationSessionId));
+        .where(
+          and(
+            eq(impersonationSessions.id, impersonationSessionId),
+            eq(impersonationSessions.orgId, actor.orgId),
+            eq(impersonationSessions.actorUserId, actor.userId),
+          ),
+        );
 
       if (this.redis) {
         await this.redis.set(
