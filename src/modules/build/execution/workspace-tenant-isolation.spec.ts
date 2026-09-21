@@ -238,3 +238,86 @@ describe("ViewsService — cross-tenant isolation", () => {
     expect(result).toHaveLength(1);
   });
 });
+
+describe("ViewsService — a private view belongs to one actor, not to the tenant", () => {
+  function mutationDb(existing: unknown) {
+    const returning = jest.fn().mockResolvedValue([{ id: 7 }]);
+    const update = jest.fn().mockReturnValue({
+      set: jest.fn().mockReturnValue({ where: jest.fn().mockReturnValue({ returning }) }),
+    });
+    const del = jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue(undefined) });
+    const findFirst = jest.fn().mockResolvedValue(existing);
+    const db = {
+      query: { projectViews: { findFirst } },
+      update,
+      delete: del,
+    } as unknown as Db;
+    return { db, update, delete: del, findFirst };
+  }
+
+  const OTHERS_PRIVATE = { id: 7, createdBy: "u2", visibility: "private" };
+  const OTHERS_SHARED = { id: 7, createdBy: "u2", visibility: "shared" };
+  const OWN_PRIVATE = { id: 7, createdBy: "u1", visibility: "private" };
+
+  it("listViews narrows the WHERE to the caller so another actor's private view is never a candidate row", async () => {
+    const where = jest.fn().mockReturnValue({ orderBy: jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue([]) }) });
+    const db = {
+      query: { projects: { findFirst: jest.fn().mockResolvedValue({ id: 1 }) } },
+      select: jest.fn().mockReturnValue({ from: jest.fn().mockReturnValue({ where }) }),
+    } as unknown as Db;
+
+    await new ViewsService(db).listViews(OWNER_ORG, "u1", 1);
+
+    const predicate = where.mock.calls[0]?.[0];
+    expect(sqlValues(predicate)).toContain("u1");
+    expect(sqlValues(predicate)).not.toContain("u2");
+  });
+
+  it("updateView refuses another actor's private view with 403, not 404, because the caller is inside the right tenant", async () => {
+    const { db, update } = mutationDb(OTHERS_PRIVATE);
+
+    await expect(new ViewsService(db).updateView(OWNER_ORG, "u1", 7, { name: "x" })).rejects.toThrow(ForbiddenException);
+    expect(update).not.toHaveBeenCalled();
+  });
+
+  it("deleteView refuses another actor's private view and issues no DELETE", async () => {
+    const { db, delete: del } = mutationDb(OTHERS_PRIVATE);
+
+    await expect(new ViewsService(db).deleteView(OWNER_ORG, "u1", 7)).rejects.toThrow(ForbiddenException);
+    expect(del).not.toHaveBeenCalled();
+  });
+
+  it("updateWorkspaceView refuses another actor's private workspace view", async () => {
+    const { db, update } = mutationDb(OTHERS_PRIVATE);
+
+    await expect(new ViewsService(db).updateWorkspaceView(OWNER_ORG, "u1", 7, { name: "x" })).rejects.toThrow(ForbiddenException);
+    expect(update).not.toHaveBeenCalled();
+  });
+
+  it("deleteWorkspaceView refuses another actor's private workspace view", async () => {
+    const { db, delete: del } = mutationDb(OTHERS_PRIVATE);
+
+    await expect(new ViewsService(db).deleteWorkspaceView(OWNER_ORG, "u1", 7)).rejects.toThrow(ForbiddenException);
+    expect(del).not.toHaveBeenCalled();
+  });
+
+  it("updateView still allows a SHARED view owned by someone else, so the guard gates privacy rather than authorship", async () => {
+    const { db, update } = mutationDb(OTHERS_SHARED);
+
+    await expect(new ViewsService(db).updateView(OWNER_ORG, "u1", 7, { name: "x" })).resolves.toEqual({ id: 7 });
+    expect(update).toHaveBeenCalled();
+  });
+
+  it("updateView still allows the owner to edit their own private view", async () => {
+    const { db, update } = mutationDb(OWN_PRIVATE);
+
+    await expect(new ViewsService(db).updateView(OWNER_ORG, "u1", 7, { name: "x" })).resolves.toEqual({ id: 7 });
+    expect(update).toHaveBeenCalled();
+  });
+
+  it("updateView reports a view absent from the tenant as 404, keeping cross-tenant ids from becoming an existence oracle", async () => {
+    const { db } = mutationDb(undefined);
+
+    await expect(new ViewsService(db).updateView(ATTACKER_ORG, "u1", 7, { name: "x" })).rejects.toThrow(NotFoundException);
+  });
+});
