@@ -12,6 +12,10 @@ import type { AccessService } from "../access/access.service";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../common/auth/principal";
 
+const EXECUTE_ROWS: Record<string, unknown>[] = [
+  { assigneeId: "u-analytics", assigneeName: "Ana Lytics", total: "3", completed: "1" },
+];
+
 function makeDb(project: { id: number } | undefined) {
   const rows: unknown[] = [];
   const chain: Record<string, unknown> = {};
@@ -25,6 +29,7 @@ function makeDb(project: { id: number } | undefined) {
       tickets: { findFirst: jest.fn().mockResolvedValue(project), findMany: jest.fn().mockResolvedValue(rows) },
     },
     select: jest.fn(self),
+    execute: jest.fn().mockResolvedValue(EXECUTE_ROWS),
   } as unknown as Db;
 }
 
@@ -69,5 +74,24 @@ describe("build — a project-scoped list refuses a projectId the org does not o
 
   it.each(cases)("%s still runs for a project the org owns (control)", async (_name, call) => {
     await expect(call(makeDb({ id: 1 }))).resolves.toBeDefined();
+  });
+
+  it("GET /build/:projectId/analytics control reaches the raw execute() aggregate past the gate, so a resolved control is not an unreached one", async () => {
+    const db = makeDb({ id: 1 });
+    const result = await new ProjectsAnalyticsService(db).getProjectAnalytics(ATTACKER_ORG, 1);
+
+    expect(result.assigneeCompletion).toEqual([
+      { assigneeId: "u-analytics", assigneeName: "Ana Lytics", total: 3, completed: 1 },
+    ]);
+    expect((db as unknown as { execute: jest.Mock }).execute).toHaveBeenCalledTimes(1);
+  });
+
+  it("GET /build/:projectId/analytics never reaches execute() for a foreign project, so the 404 is the gate and not a downstream failure", async () => {
+    const db = makeDb(undefined);
+    await expect(new ProjectsAnalyticsService(db).getProjectAnalytics(ATTACKER_ORG, 1)).rejects.toThrow(
+      NotFoundException,
+    );
+
+    expect((db as unknown as { execute: jest.Mock }).execute).not.toHaveBeenCalled();
   });
 });
