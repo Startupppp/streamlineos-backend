@@ -133,7 +133,7 @@ export class CyclesController {
   constructor(private readonly cycles: CyclesService) {}
 
   @Get()
-  @RequirePermission("build:view")
+  @RequirePermission("build:sprints:view")
   @ResponseSchema(z.array(cycleListItemSchema))
   @Validate({ params: projectIdParams, query: cycleListQuerySchema })
   listCycles(

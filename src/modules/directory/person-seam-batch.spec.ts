@@ -111,4 +111,36 @@ describe("resolving many people at once", () => {
     expect(identity).toBeDefined();
     expect(Object.keys(identity ?? {})).not.toContain("bankDetails");
   });
+
+  it("the seam projects workerNumber from the join it already performs, so payroll does not need a direct directory-schema import", async () => {
+    const { db } = createDb([{ ...PERSON_ROW, workerNumber: "WN-042" }]);
+    const identities = await resolvePeopleIdentities(db, ORG, [
+      { kind: "worker", workerId: "worker-1" },
+    ]);
+    const identity = identities.get(subjectKey({ kind: "worker", workerId: "worker-1" }));
+
+    expect(identity?.workerNumber).toBe("WN-042");
+  });
+
+  it("workerNumber is null-safe for a person with no worker row", async () => {
+    const personWithoutWorker: Row = {
+      organizationPersonId: "person-nw",
+      userId: "user-nw",
+      workerId: null,
+      workerNumber: null,
+      displayName: "Ravi Kumar",
+      firstName: "Ravi",
+      lastName: "Kumar",
+      workEmail: "ravi@example.com",
+      membershipId: 9,
+      isPayee: false,
+    };
+    const { db } = createDb([personWithoutWorker]);
+    const identities = await resolvePeopleIdentities(db, ORG, [
+      { kind: "user", userId: "user-nw" },
+    ]);
+    const identity = identities.get(subjectKey({ kind: "user", userId: "user-nw" }));
+
+    expect(identity?.workerNumber).toBeNull();
+  });
 });

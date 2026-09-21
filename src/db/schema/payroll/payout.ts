@@ -19,6 +19,9 @@ export const payslipTemplates = pgTable("payslip_templates", {
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
   unique("uniq_payslip_templates_org_id").on(table.orgId, table.id),
+  uniqueIndex("uq_payslip_templates_org_default")
+    .on(table.orgId)
+    .where(sql`${table.isDefault}`),
 ]);
 
 export const payrollBankBatches = pgTable("payroll_bank_batches", {

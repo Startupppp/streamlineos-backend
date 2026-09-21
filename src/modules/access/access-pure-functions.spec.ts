@@ -30,6 +30,13 @@ describe("broadest", () => {
     const scopes: DataScope[] = ["none", "own", "team", "all"];
     for (const scope of scopes) expect(broadest(scope, scope)).toBe(scope);
   });
+
+  it("still ranks none < own < team < all unchanged, so an existing team grant is not re-ranked by this change", () => {
+    expect(broadest("none", "team")).toBe("team");
+    expect(broadest("own", "team")).toBe("team");
+    expect(broadest("team", "all")).toBe("all");
+    expect(broadest("team", "none")).toBe("team");
+  });
 });
 
 describe("namespaceOf", () => {

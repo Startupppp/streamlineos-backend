@@ -6252,6 +6252,20 @@
       "when": 1803000010347,
       "tag": "1130_chat_invite_link_token_hardening",
       "breakpoints": true
+    },
+    {
+      "idx": 1021,
+      "version": "7",
+      "when": 1803000010348,
+      "tag": "1131_withdraw_team_supported_scope",
+      "breakpoints": true
+    },
+    {
+      "idx": 1022,
+      "version": "7",
+      "when": 1803000010349,
+      "tag": "1132_payslip_templates_one_default_per_org",
+      "breakpoints": true
     }
   ]
 }

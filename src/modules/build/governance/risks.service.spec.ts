@@ -238,7 +238,7 @@ describe("RisksService — project-membership gate (BOLA)", () => {
       .mockReturnValueOnce(makeSelectChain([]));
     const svc = new RisksService(mockDb as unknown as Db, makeAccess(), mockAudit);
 
-    await expect(svc.listRisks(u, 1, {})).resolves.toEqual([]);
+    await expect(svc.listRisks(u, 1, {})).resolves.toEqual({ data: [], hasMore: false, nextCursor: null });
   });
 });
 
@@ -327,7 +327,7 @@ describe("DecisionsService — project-membership gate (BOLA)", () => {
       .mockReturnValueOnce(makeSelectChain([]));
     const svc = new DecisionsService(mockDb as unknown as Db, makeAccess(), mockAudit);
 
-    await expect(svc.listDecisions(u, 1, {})).resolves.toEqual([]);
+    await expect(svc.listDecisions(u, 1, {})).resolves.toEqual({ data: [], hasMore: false, nextCursor: null });
   });
 });
 
@@ -480,5 +480,105 @@ describe("DecisionsService.softDeleteDecision — project-membership gate (BOLA)
     const svc = new DecisionsService(mockDb as unknown as Db, makeAccess(), mockAudit);
 
     await expect(svc.softDeleteDecision(u, 1, 1)).rejects.toThrow(ForbiddenException);
+  });
+});
+
+function makeRiskRow(id: number): Record<string, unknown> {
+  return {
+    id, orgId: "org-1", projectId: 1, riskNumber: id, title: `Risk ${id}`,
+    description: null, probability: "medium", impact: "medium", status: "open",
+    ownerId: null, mitigation: null, linkedTicketId: null,
+    deletedAt: null, createdBy: "user-1", createdAt: new Date(), updatedAt: new Date(),
+  };
+}
+
+describe("RisksService.listRisks — page 2 cursor returned by page 1 excludes all page-1 rows and no page-2 row is skipped", () => {
+  const u = makeUser("org-1");
+
+  it("page 2 starts exactly where page 1 ended — no repeated rows, no skipped rows when sentinel row is present", async () => {
+    const mockDb = makeMockDb();
+    mockDb.query.projects.findFirst.mockResolvedValue({ managerMembershipId: 999 });
+
+    const page1DbRows = Array.from({ length: 101 }, (_, i) => makeRiskRow(105 - i));
+    const page2DbRows = [makeRiskRow(5), makeRiskRow(4), makeRiskRow(3)];
+
+    mockDb.select
+      .mockReturnValueOnce(makeSelectChain([{ role: "MEMBER" }]))
+      .mockReturnValueOnce(makeSelectChain(page1DbRows))
+      .mockReturnValueOnce(makeSelectChain([{ role: "MEMBER" }]))
+      .mockReturnValueOnce(makeSelectChain(page2DbRows));
+
+    const svc = new RisksService(mockDb as unknown as Db, makeAccess(), mockAudit);
+
+    const page1 = await svc.listRisks(u, 1, {});
+    expect(page1.hasMore).toBe(true);
+    expect(page1.data).toHaveLength(100);
+    expect(page1.nextCursor).toBe(6);
+
+    const page2 = await svc.listRisks(u, 1, { cursor: page1.nextCursor ?? undefined });
+    expect(page2.hasMore).toBe(false);
+    expect(page2.nextCursor).toBeNull();
+
+    const page1Ids = new Set(page1.data.map((r) => r.id));
+    expect(page2.data.every((r) => !page1Ids.has(r.id))).toBe(true);
+    expect(page2.data.every((r) => r.id < (page1.nextCursor ?? 0))).toBe(true);
+  });
+
+  it("last page has hasMore=false and nextCursor=null when no sentinel row is returned", async () => {
+    const mockDb = makeMockDb();
+    mockDb.query.projects.findFirst.mockResolvedValue({ managerMembershipId: 999 });
+
+    mockDb.select
+      .mockReturnValueOnce(makeSelectChain([{ role: "MEMBER" }]))
+      .mockReturnValueOnce(makeSelectChain([makeRiskRow(1)]));
+
+    const svc = new RisksService(mockDb as unknown as Db, makeAccess(), mockAudit);
+    const page = await svc.listRisks(u, 1, { cursor: 3 });
+
+    expect(page.hasMore).toBe(false);
+    expect(page.nextCursor).toBeNull();
+    expect(page.data.map((r) => r.id)).toEqual([1]);
+  });
+});
+
+describe("DecisionsService.listDecisions — page 2 cursor returned by page 1 excludes all page-1 rows and no page-2 row is skipped", () => {
+  const u = makeUser("org-1");
+
+  function makeDecisionRow(id: number): Record<string, unknown> {
+    return {
+      id, orgId: "org-1", projectId: 1, decisionNumber: id, title: `Decision ${id}`,
+      context: null, decision: null, optionsConsidered: null, status: "proposed",
+      ownerId: null, decidedAt: null, revisitAt: null, linkedTicketId: null,
+      deletedAt: null, createdBy: "user-1", createdAt: new Date(), updatedAt: new Date(),
+    };
+  }
+
+  it("page 2 starts exactly where page 1 ended — no repeated rows, no skipped rows when sentinel row is present", async () => {
+    const mockDb = makeMockDb();
+    mockDb.query.projects.findFirst.mockResolvedValue({ managerMembershipId: 999 });
+
+    const page1DbRows = Array.from({ length: 101 }, (_, i) => makeDecisionRow(105 - i));
+    const page2DbRows = [makeDecisionRow(5), makeDecisionRow(4), makeDecisionRow(3)];
+
+    mockDb.select
+      .mockReturnValueOnce(makeSelectChain([{ role: "MEMBER" }]))
+      .mockReturnValueOnce(makeSelectChain(page1DbRows))
+      .mockReturnValueOnce(makeSelectChain([{ role: "MEMBER" }]))
+      .mockReturnValueOnce(makeSelectChain(page2DbRows));
+
+    const svc = new DecisionsService(mockDb as unknown as Db, makeAccess(), mockAudit);
+
+    const page1 = await svc.listDecisions(u, 1, {});
+    expect(page1.hasMore).toBe(true);
+    expect(page1.data).toHaveLength(100);
+    expect(page1.nextCursor).toBe(6);
+
+    const page2 = await svc.listDecisions(u, 1, { cursor: page1.nextCursor ?? undefined });
+    expect(page2.hasMore).toBe(false);
+    expect(page2.nextCursor).toBeNull();
+
+    const page1Ids = new Set(page1.data.map((r) => r.id));
+    expect(page2.data.every((r) => !page1Ids.has(r.id))).toBe(true);
+    expect(page2.data.every((r) => r.id < (page1.nextCursor ?? 0))).toBe(true);
   });
 });

@@ -1,7 +1,10 @@
+import * as personSeam from "../../directory/person-seam";
 import { loadRunEmployeePayees } from "./payroll-run-payee";
 import type { EmploymentFactsService } from "../../directory/employment-facts.service";
 import type { BankDetails } from "../../directory/employment-facts.types";
 import type { EmploymentFacts, SensitiveEmploymentFacts } from "../../directory/employment-facts.types";
+
+jest.mock("../../directory/person-seam");
 
 const ORG1 = "org-aaa";
 const ORG2 = "org-bbb";
@@ -30,11 +33,6 @@ function makeRunEmployeeRow(userId: string) {
     workerId: null,
     userName: "Alice",
     userEmail: "alice@example.com",
-    workerNumber: null,
-    personDisplayName: null,
-    personFirstName: null,
-    personLastName: null,
-    personWorkEmail: null,
   };
 }
 
@@ -114,6 +112,10 @@ function makeEfService(orgBankMap: Record<string, BankDetails | null>): Employme
 }
 
 describe("payroll multi-org isolation", () => {
+  beforeEach(() => {
+    jest.mocked(personSeam.resolvePeopleIdentities).mockResolvedValue(new Map());
+  });
+
   it("returns org1 bank details for org1 and org2 bank details for org2 — same userId", async () => {
     const orgBankMap = { [ORG1]: bankOrg1, [ORG2]: bankOrg2 };
 

@@ -156,6 +156,7 @@ const KNOWN_EXCLUDED_COLUMNS: readonly string[] = [
   "portal_invitations.accepted_portal_membership_id",
   "portal_invitations.inviter_membership_id",
   "portal_memberships.portal_membership_id",
+  "project_attachments.uploaded_by_membership_id",
   "project_client_grants.portal_membership_id",
   "pulse_surveys.created_by_membership_id",
   "purchase_bills.approved_by_membership_id",

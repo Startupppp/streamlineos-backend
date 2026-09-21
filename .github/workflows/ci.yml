@@ -938,6 +938,15 @@ jobs:
       - name: A periodic sweep over every organisation does not grow past its ceiling
         if: ${{ !cancelled() }}
         run: pnpm check:sweep-budget:self-test && pnpm check:sweep-budget
+
+      # Static-only: TypeScript AST walk of src/modules/build/**. Proves that every
+      # @ResponseSchema list handler's .select({}) projection covers the required fields
+      # of its item schema and projects nothing the schema will silently strip. No database,
+      # no credentials. RESOLVED_FLOOR=10 guards against a vacuous pass if the file walker
+      # stops reaching the source tree.
+      - name: List endpoint projections match their response schemas
+        if: ${{ !cancelled() }}
+        run: pnpm check:list-projections:self-test && pnpm check:list-projections
   # The golden path, on every pull request.
   #
   # It proves the one thing no unit test can: that buy -> receive -> put away ->

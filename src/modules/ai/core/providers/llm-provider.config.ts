@@ -6,8 +6,6 @@ export interface LlmProviderConfig {
   provider: LlmProviderName;
   apiKey: string | undefined;
   baseURL: string | undefined;
-  fastModel: string;
-  standardModel: string;
   fastChain: string[];
   standardChain: string[];
 }
@@ -38,8 +36,6 @@ export function resolveLlmProvider(env: NodeJS.ProcessEnv = process.env): LlmPro
     provider: isOpenRouter ? "openrouter" : "openai",
     apiKey: isOpenRouter ? env.OPENROUTER_API_KEY : env.OPENAI_API_KEY,
     baseURL: isOpenRouter ? OPENROUTER_BASE_URL : undefined,
-    fastModel,
-    standardModel,
     fastChain: buildChain(fastModel, env.AI_FAST_FALLBACK_MODELS, standardModel),
     standardChain: buildChain(standardModel, env.AI_STANDARD_FALLBACK_MODELS, fastModel),
   };

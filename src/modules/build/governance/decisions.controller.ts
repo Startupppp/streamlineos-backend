@@ -29,7 +29,7 @@ import {
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
 import { NoContentResponse, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
-import { decisionRowSchema } from "./dto/governance-response.schemas";
+import { decisionPageSchema, decisionRowSchema } from "./dto/governance-response.schemas";
 
 export const decisionIdParams = z.object({ projectId: z.coerce.number().int().positive(), decisionId: z.coerce.number().int().positive() }).strict();
 
@@ -41,7 +41,7 @@ export class DecisionsController {
 
   @Get()
   @RequirePermission("build:decisions:view")
-  @ResponseSchema(z.array(decisionRowSchema))
+  @ResponseSchema(decisionPageSchema)
   @Validate({ query: listDecisionsQuerySchema })
   listDecisions(
     @Param("projectId", ParseIntPipe) projectId: number,

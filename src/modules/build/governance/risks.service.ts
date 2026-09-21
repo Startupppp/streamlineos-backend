@@ -1,5 +1,5 @@
 import { Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, desc, eq, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, isNull, lt, sql } from "drizzle-orm";
 import { projectRisks } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
@@ -8,6 +8,7 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { AccessService } from "../../access/access.service";
 import { assertProjectAccess } from "../core/project-access";
 import type { CreateRiskInput, ListRisksQuery, UpdateRiskInput } from "./dto/governance.schemas";
+import { buildIdCursorPage } from "../../../common/pagination/cursor";
 
 type RiskPatch = Partial<
   Pick<
@@ -37,9 +38,11 @@ export class RisksService {
     return row;
   }
 
+  private static readonly PAGE_LIMIT = 100;
+
   async listRisks(u: CurrentUserContext, projectId: number, query: ListRisksQuery) {
     await assertProjectAccess(this.db, this.access, u, projectId);
-    return this.db
+    const rows = await this.db
       .select()
       .from(projectRisks)
       .where(
@@ -48,10 +51,12 @@ export class RisksService {
           eq(projectRisks.projectId, projectId),
           isNull(projectRisks.deletedAt),
           query.status ? eq(projectRisks.status, query.status) : undefined,
+          query.cursor !== undefined ? lt(projectRisks.id, query.cursor) : undefined,
         ),
       )
-      .orderBy(desc(projectRisks.createdAt))
-      .limit(100);
+      .orderBy(desc(projectRisks.id))
+      .limit(RisksService.PAGE_LIMIT + 1);
+    return buildIdCursorPage(rows, RisksService.PAGE_LIMIT, (r) => r.id);
   }
 
   async getRisk(u: CurrentUserContext, projectId: number, riskId: number) {

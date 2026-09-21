@@ -162,8 +162,8 @@
       "nonNull": 0
     },
     "src/modules/autonomy/autonomy-hold.service.ts": {
-      "as": 2,
-      "nonNull": 1
+      "as": 1,
+      "nonNull": 0
     },
     "src/modules/autonomy/autonomy-hold.workflow.ts": {
       "as": 1,
@@ -310,7 +310,7 @@
       "nonNull": 0
     },
     "src/modules/deals/deals.service.ts": {
-      "as": 2,
+      "as": 1,
       "nonNull": 1
     },
     "src/modules/directory/directory-identity.service.ts": {
@@ -539,7 +539,7 @@
     },
     "src/modules/inventory/purchase-orders/grn-receive.service.ts": {
       "as": 0,
-      "nonNull": 2
+      "nonNull": 1
     },
     "src/modules/inventory/shipments/carriers.service.ts": {
       "as": 0,
@@ -571,7 +571,7 @@
     },
     "src/modules/inventory/stock-engine/reservation.service.ts": {
       "as": 0,
-      "nonNull": 2
+      "nonNull": 1
     },
     "src/modules/inventory/stock-engine/stock-engine.service.ts": {
       "as": 1,
@@ -579,7 +579,7 @@
     },
     "src/modules/inventory/traceability/traceability-chain.service.ts": {
       "as": 0,
-      "nonNull": 5
+      "nonNull": 4
     },
     "src/modules/invoices/invoices-write.service.ts": {
       "as": 1,
@@ -622,7 +622,7 @@
       "nonNull": 0
     },
     "src/modules/mail/providers/mail-normalizers.ts": {
-      "as": 7,
+      "as": 3,
       "nonNull": 0
     },
     "src/modules/module-access/module-access-group-crud.service.ts": {
@@ -694,7 +694,7 @@
       "nonNull": 5
     },
     "src/modules/sales/sales.service.ts": {
-      "as": 7,
+      "as": 4,
       "nonNull": 0
     },
     "src/modules/settings/settings.helpers.ts": {
@@ -718,7 +718,7 @@
       "nonNull": 0
     },
     "src/modules/support/kb-gap/support-kb-gap.service.ts": {
-      "as": 1,
+      "as": 0,
       "nonNull": 1
     },
     "src/modules/tasks/task-sequences.service.ts": {
