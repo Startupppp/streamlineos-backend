@@ -112,7 +112,7 @@ describe("ImpersonationService", () => {
   function makeService(db: object) {
     const svc = new ImpersonationService(
       db as never,
-      redis,
+      redis as never,
       keyring as never,
       audit as never,
     );
