@@ -85,6 +85,7 @@ export default tseslint.config(
     ignores: [
       "src/config/**",
       "src/scripts/**",
+      "src/test/**",
       "src/main.ts",
       "src/db/seeds/**",
       "**/*.spec.ts",
