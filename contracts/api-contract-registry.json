@@ -1,7 +1,7 @@
 {
   "version": "1",
   "schemaVersion": "1.1",
-  "generatedAt": "2026-09-21T12:34:41.321Z",
+  "generatedAt": "2026-09-21T12:35:02.822Z",
   "description": "Fail-closed API contract registry. Every HTTP operation, outbox event, and outbound customer webhook event is classified as 'internal' or 'published'. Operations absent from this registry are treated as 'published' by check-api-contract-registry.mjs.",
   "operations": {
     "GET /access/delegations": {
@@ -45128,6 +45128,17 @@
       "classificationOverride": null,
       "xExposure": "permissioned",
       "operationId": "TimesheetPeriodsController_previewApprover",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "GET /payroll/readiness": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "PayrollReadinessController_get",
       "owner": null,
       "version": "1",
       "consumers": [],
