@@ -62,11 +62,12 @@ export class ProjectsCustomFieldsController {
   @ResponseSchema(buildCustomFieldSchema)
   @Validate({ params: projectIdfieldIdParams, body: updateCustomFieldSchema })
   updateField(
+    @Param("projectId", ParseIntPipe) projectId: number,
     @Param("fieldId", ParseIntPipe) fieldId: number,
     @Body() body: UpdateCustomFieldInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.customFields.updateField(u.orgId, fieldId, body);
+    return this.customFields.updateField(u.orgId, projectId, fieldId, body);
   }
 
   @Delete(":projectId/custom-fields/:fieldId")
@@ -75,10 +76,11 @@ export class ProjectsCustomFieldsController {
   @NoContentResponse()
   @Validate({ params: projectIdfieldIdParams })
   deleteField(
+    @Param("projectId", ParseIntPipe) projectId: number,
     @Param("fieldId", ParseIntPipe) fieldId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.customFields.deleteField(u.orgId, fieldId);
+    return this.customFields.deleteField(u.orgId, projectId, fieldId);
   }
 
   @Get(":projectId/tickets/:ticketId/custom-field-values")
