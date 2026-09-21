@@ -3,6 +3,7 @@ import { and, asc, eq, gt, isNotNull, isNull } from "drizzle-orm";
 import type { Db } from "../../db/drizzle.module";
 import { organizations } from "../../db/schema";
 import { logger } from "../logger/logger.service";
+import { isTransientDbError } from "../db/transient-error";
 import { runWithTenantContext, type AfterCommitHook } from "./tenant-context";
 import { drainAfterCommitHooks } from "./run-in-tenant-transaction";
 import { withTenant, type TenantTx } from "./with-tenant";
@@ -234,6 +235,7 @@ export async function forEachOrg(
 
   let succeeded = 0;
   let visited = 0;
+  let transientFailures = 0;
   const failedOrgIds: string[] = [];
   const ambient = getObservabilityContext();
   const runId = randomUUID();
@@ -271,7 +273,7 @@ export async function forEachOrg(
           // failed for every organization indistinguishable from a connection drop, and cost
           // a wrong diagnosis; the sweep still returns 200, so this log is the only signal.
           const cause = err instanceof Error ? err.cause : undefined;
-          logger.error(`[${sweep}] organization sweep failed`, {
+          const meta = {
             orgId: org.id,
             error: err instanceof Error ? err.message : String(err),
             cause: cause instanceof Error ? `${cause.name}: ${cause.message}` : cause,
@@ -279,7 +281,24 @@ export async function forEachOrg(
               cause && typeof cause === "object" && "code" in cause
                 ? String((cause as { code: unknown }).code)
                 : undefined,
-          });
+          };
+          // A dropped socket is not a defect in the sweep, and it does not stay local:
+          // the pool connection is gone, so every REMAINING organisation fails the same
+          // way and one blip pages somebody once per tenant. isTransientDbError already
+          // names this class — CONNECTION_ENDED, ECONNRESET, 57P01 and the rest — and the
+          // notification worker already suppresses streaks of it, but that handler never
+          // ran for a claim, because this catch swallows the error before it can reach it.
+          //
+          // Transient failures are warned once per sweep run and then counted, so the
+          // signal survives without the repeats. They still land in failedOrgIds, so
+          // emitPartialFailure fires either way and nothing goes silent.
+          if (isTransientDbError(err)) {
+            transientFailures += 1;
+            if (transientFailures === 1)
+              logger.warn(`[${sweep}] transient DB connection failure; will retry next run`, meta);
+          } else {
+            logger.error(`[${sweep}] organization sweep failed`, meta);
+          }
           return false;
         }
       },
@@ -294,6 +313,12 @@ export async function forEachOrg(
     succeeded,
     failed: failedOrgIds.length,
   };
+
+  if (transientFailures > 1)
+    logger.warn(
+      `[${sweep}] ${transientFailures} of ${visited} organisation(s) hit the same transient DB connection failure`,
+      { sweep, transientFailures, visited },
+    );
 
   if (failedOrgIds.length > 0)
     await emitPartialFailure({
