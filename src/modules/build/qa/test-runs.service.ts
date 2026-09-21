@@ -81,7 +81,9 @@ export class TestRunsService {
     return { data, hasMore, nextCursor };
   }
 
-  async getRun(orgId: string, projectId: number, runId: number) {
+  async getRun(u: CurrentUserContext, projectId: number, runId: number) {
+    await assertProjectAccess(this.db, this.access, u, projectId);
+    const orgId = u.orgId;
     const run = await this.db.query.testRuns.findFirst({
       where: and(
         eq(testRuns.id, runId),
@@ -114,7 +116,14 @@ export class TestRunsService {
     return { ...run, results };
   }
 
-  async listRunResults(orgId: string, projectId: number, runId: number, query: RunResultsQuery) {
+  async listRunResults(
+    u: CurrentUserContext,
+    projectId: number,
+    runId: number,
+    query: RunResultsQuery,
+  ) {
+    await assertProjectAccess(this.db, this.access, u, projectId);
+    const orgId = u.orgId;
     const run = await this.db.query.testRuns.findFirst({
       where: and(
         eq(testRuns.id, runId),
@@ -237,7 +246,15 @@ export class TestRunsService {
     });
   }
 
-  async updateRun(orgId: string, userId: string, projectId: number, runId: number, input: UpdateTestRunInput) {
+  async updateRun(
+    u: CurrentUserContext,
+    projectId: number,
+    runId: number,
+    input: UpdateTestRunInput,
+  ) {
+    await assertProjectAccess(this.db, this.access, u, projectId);
+    const orgId = u.orgId;
+    const userId = u.userId;
     const existing = await this.db.query.testRuns.findFirst({
       where: and(
         eq(testRuns.id, runId),
@@ -278,7 +295,9 @@ export class TestRunsService {
     return updated;
   }
 
-  async deleteRun(orgId: string, projectId: number, runId: number) {
+  async deleteRun(u: CurrentUserContext, projectId: number, runId: number) {
+    await assertProjectAccess(this.db, this.access, u, projectId);
+    const orgId = u.orgId;
     const existing = await this.db.query.testRuns.findFirst({
       where: and(
         eq(testRuns.id, runId),
@@ -297,13 +316,15 @@ export class TestRunsService {
   }
 
   async updateResult(
-    orgId: string,
+    u: CurrentUserContext,
     projectId: number,
     runId: number,
     resultId: number,
     input: UpdateTestResultInput,
-    executorId: string,
   ) {
+    await assertProjectAccess(this.db, this.access, u, projectId);
+    const orgId = u.orgId;
+    const executorId = u.userId;
     const existing = await this.db.query.testRunResults.findFirst({
       where: and(
         eq(testRunResults.id, resultId),
@@ -332,13 +353,15 @@ export class TestRunsService {
   }
 
   async createBugFromResult(
-    orgId: string,
-    userId: string,
+    u: CurrentUserContext,
     projectId: number,
     runId: number,
     resultId: number,
     input: CreateBugFromResultInput,
   ) {
+    await assertProjectAccess(this.db, this.access, u, projectId);
+    const orgId = u.orgId;
+    const userId = u.userId;
     const result = await this.db.query.testRunResults.findFirst({
       where: and(
         eq(testRunResults.id, resultId),

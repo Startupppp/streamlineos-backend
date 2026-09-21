@@ -99,7 +99,14 @@ export class TestManagementService {
     return suite;
   }
 
-  async updateSuite(orgId: string, projectId: number, suiteId: number, input: UpdateTestSuiteInput) {
+  async updateSuite(
+    u: CurrentUserContext,
+    projectId: number,
+    suiteId: number,
+    input: UpdateTestSuiteInput,
+  ) {
+    await assertProjectAccess(this.db, this.access, u, projectId);
+    const orgId = u.orgId;
     const existing = await this.db.query.testSuites.findFirst({
       where: and(
         eq(testSuites.id, suiteId),
@@ -123,7 +130,9 @@ export class TestManagementService {
     return updated;
   }
 
-  async deleteSuite(orgId: string, projectId: number, suiteId: number) {
+  async deleteSuite(u: CurrentUserContext, projectId: number, suiteId: number) {
+    await assertProjectAccess(this.db, this.access, u, projectId);
+    const orgId = u.orgId;
     const existing = await this.db.query.testSuites.findFirst({
       where: and(
         eq(testSuites.id, suiteId),
@@ -162,7 +171,9 @@ export class TestManagementService {
     return buildIdCursorPage(rows, CASE_PAGE, (r) => r.id);
   }
 
-  async getCase(orgId: string, projectId: number, caseId: number) {
+  async getCase(u: CurrentUserContext, projectId: number, caseId: number) {
+    await assertProjectAccess(this.db, this.access, u, projectId);
+    const orgId = u.orgId;
     const tc = await this.db.query.testCases.findFirst({
       where: and(
         eq(testCases.id, caseId),
@@ -206,7 +217,14 @@ export class TestManagementService {
     return tc;
   }
 
-  async updateCase(orgId: string, projectId: number, caseId: number, input: UpdateTestCaseInput) {
+  async updateCase(
+    u: CurrentUserContext,
+    projectId: number,
+    caseId: number,
+    input: UpdateTestCaseInput,
+  ) {
+    await assertProjectAccess(this.db, this.access, u, projectId);
+    const orgId = u.orgId;
     const existing = await this.db.query.testCases.findFirst({
       where: and(
         eq(testCases.id, caseId),
@@ -236,7 +254,9 @@ export class TestManagementService {
     return updated;
   }
 
-  async deleteCase(orgId: string, projectId: number, caseId: number) {
+  async deleteCase(u: CurrentUserContext, projectId: number, caseId: number) {
+    await assertProjectAccess(this.db, this.access, u, projectId);
+    const orgId = u.orgId;
     const existing = await this.db.query.testCases.findFirst({
       where: and(
         eq(testCases.id, caseId),

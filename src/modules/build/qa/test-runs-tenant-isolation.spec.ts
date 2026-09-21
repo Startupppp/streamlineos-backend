@@ -44,14 +44,14 @@ describe("TestRunsService — cross-tenant isolation", () => {
   it("throws NotFoundException for getRun when run belongs to a different org (cross-tenant isolation)", async () => {
     const db = makeDb(null);
     const svc = new TestRunsService(db, makeAccess(), audit);
-    await expect(svc.getRun(ATTACKER_ORG, 1, 99)).rejects.toThrow(NotFoundException);
+    await expect(svc.getRun(makeU(ATTACKER_ORG), 1, 99)).rejects.toThrow(NotFoundException);
   });
 
   it("returns run for the owning org (same-tenant control)", async () => {
     const run = { id: 1, orgId: OWNER_ORG, projectId: 1, name: "Run 1" };
     const db = makeDb(run);
     const svc = new TestRunsService(db, makeAccess(), audit);
-    const result = await svc.getRun(OWNER_ORG, 1, 1);
+    const result = await svc.getRun(makeU(OWNER_ORG), 1, 1);
     expect(result).toMatchObject({ id: 1 });
   });
 });
@@ -179,12 +179,14 @@ describe("TestRunsService — listRunResults cross-tenant isolation", () => {
     const db = {
       query: {
         testRuns: { findFirst: jest.fn().mockResolvedValue(null) },
-        projects: { findFirst: jest.fn() },
+        projects: { findFirst: jest.fn().mockResolvedValue({ id: 1, managerMembershipId: null }) },
       },
     } as unknown as Db;
 
     const svc = new TestRunsService(db, makeAccess(), audit);
-    await expect(svc.listRunResults("org-attacker", 1, 99, { limit: 50 })).rejects.toThrow(NotFoundException);
+    await expect(svc.listRunResults(makeU("org-attacker"), 1, 99, { limit: 50 })).rejects.toThrow(
+      NotFoundException,
+    );
   });
 
   it("returns empty page when run has no results", async () => {
@@ -201,13 +203,13 @@ describe("TestRunsService — listRunResults cross-tenant isolation", () => {
     const db = {
       query: {
         testRuns: { findFirst: jest.fn().mockResolvedValue(run) },
-        projects: { findFirst: jest.fn() },
+        projects: { findFirst: jest.fn().mockResolvedValue({ id: 1, managerMembershipId: null }) },
       },
       select: jest.fn().mockReturnValue(resultsChain),
     } as unknown as Db;
 
     const svc = new TestRunsService(db, makeAccess(), audit);
-    const page = await svc.listRunResults("org-owner", 1, 1, { limit: 50 });
+    const page = await svc.listRunResults(makeU("org-owner"), 1, 1, { limit: 50 });
 
     expect(page).toMatchObject({ data: [], hasMore: false, nextCursor: null });
   });
@@ -221,7 +223,7 @@ describe("TestRunsService — updateResult idempotency", () => {
       query: {
         testRunResults: { findFirst: jest.fn().mockResolvedValue(existingResult) },
         testRuns: { findFirst: jest.fn() },
-        projects: { findFirst: jest.fn() },
+        projects: { findFirst: jest.fn().mockResolvedValue({ id: 1, managerMembershipId: null }) },
       },
       update: jest.fn(),
     } as unknown as Db;
@@ -245,7 +247,10 @@ describe("TestRunsService — updateResult idempotency", () => {
 
     const db = makeResultDb(existingResult);
     const svc = new TestRunsService(db, makeAccess(), audit);
-    const result = await svc.updateResult("org-1", 1, 1, 1, { status: "passed", notes: "looks good" }, "user-2");
+    const result = await svc.updateResult(makeU("org-1"), 1, 1, 1, {
+      status: "passed",
+      notes: "looks good",
+    });
 
     expect(db.update).not.toHaveBeenCalled();
     expect(result).toMatchObject({ id: 1, status: "passed" });
@@ -267,7 +272,7 @@ describe("TestRunsService — updateResult idempotency", () => {
       updatedAt: new Date(),
     };
 
-    const updatedResult = { ...existingResult, status: "passed", notes: null, executedBy: "user-2" };
+    const updatedResult = { ...existingResult, status: "passed", notes: null, executedBy: "user-7" };
     const returningMock = jest.fn().mockResolvedValue([updatedResult]);
     const whereMock = jest.fn().mockReturnValue({ returning: returningMock });
     const setMock = jest.fn().mockReturnValue({ where: whereMock });
@@ -277,13 +282,13 @@ describe("TestRunsService — updateResult idempotency", () => {
       query: {
         testRunResults: { findFirst: jest.fn().mockResolvedValue(existingResult) },
         testRuns: { findFirst: jest.fn() },
-        projects: { findFirst: jest.fn() },
+        projects: { findFirst: jest.fn().mockResolvedValue({ id: 1, managerMembershipId: null }) },
       },
       update: updateMock,
     } as unknown as Db;
 
     const svc = new TestRunsService(db, makeAccess(), audit);
-    const result = await svc.updateResult("org-1", 1, 1, 1, { status: "passed" }, "user-2");
+    const result = await svc.updateResult(makeU("org-1"), 1, 1, 1, { status: "passed" });
 
     expect(updateMock).toHaveBeenCalledTimes(1);
     expect(result).toMatchObject({ status: "passed" });
@@ -294,14 +299,14 @@ describe("TestRunsService — updateResult idempotency", () => {
       query: {
         testRunResults: { findFirst: jest.fn().mockResolvedValue(null) },
         testRuns: { findFirst: jest.fn() },
-        projects: { findFirst: jest.fn() },
+        projects: { findFirst: jest.fn().mockResolvedValue({ id: 1, managerMembershipId: null }) },
       },
       update: jest.fn(),
     } as unknown as Db;
 
     const svc = new TestRunsService(db, makeAccess(), audit);
     await expect(
-      svc.updateResult("org-1", 1, 99, 1, { status: "passed" }, "user-2"),
+      svc.updateResult(makeU("org-1"), 1, 99, 1, { status: "passed" }),
     ).rejects.toThrow(NotFoundException);
   });
 });
@@ -325,13 +330,13 @@ describe("TestRunsService — run completion atomicity", () => {
     const db = {
       query: {
         testRuns: { findFirst: jest.fn().mockResolvedValue(existing) },
-        projects: { findFirst: jest.fn() },
+        projects: { findFirst: jest.fn().mockResolvedValue({ id: 1, managerMembershipId: null }) },
       },
       update: updateMock,
     } as unknown as Db;
 
     const svc = new TestRunsService(db, makeAccess(), audit);
-    const result = await svc.updateRun("org-1", "user-1", 1, 1, { status: "completed" });
+    const result = await svc.updateRun(makeU("org-1"), 1, 1, { status: "completed" });
 
     expect(setMock).toHaveBeenCalledTimes(1);
     const setArg = setMock.mock.calls[0]?.[0] as Record<string, unknown>;
@@ -355,13 +360,13 @@ describe("TestRunsService — run completion atomicity", () => {
     const db = {
       query: {
         testRuns: { findFirst: jest.fn().mockResolvedValue(existing) },
-        projects: { findFirst: jest.fn() },
+        projects: { findFirst: jest.fn().mockResolvedValue({ id: 1, managerMembershipId: null }) },
       },
       update: updateMock,
     } as unknown as Db;
 
     const svc = new TestRunsService(db, makeAccess(), audit);
-    await svc.updateRun("org-1", "user-1", 1, 1, { status: "completed" });
+    await svc.updateRun(makeU("org-1"), 1, 1, { status: "completed" });
 
     const setArg = setMock.mock.calls[0]?.[0] as Record<string, unknown>;
     expect(setArg).not.toHaveProperty("completedAt");

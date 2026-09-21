@@ -60,7 +60,7 @@ export class TestCasesController {
     @Param("caseId", ParseIntPipe) caseId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.getCase(u.orgId, projectId, caseId);
+    return this.svc.getCase(u, projectId, caseId);
   }
 
   @Post()
@@ -86,7 +86,7 @@ export class TestCasesController {
     @Body() body: UpdateTestCaseInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.updateCase(u.orgId, projectId, caseId, body);
+    return this.svc.updateCase(u, projectId, caseId, body);
   }
 
   @Delete(":caseId")
@@ -99,6 +99,6 @@ export class TestCasesController {
     @Param("caseId", ParseIntPipe) caseId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.deleteCase(u.orgId, projectId, caseId);
+    return this.svc.deleteCase(u, projectId, caseId);
   }
 }
