@@ -15,6 +15,7 @@ import {
   helpdeskTicketStatusChangedPayloadSchema,
 } from "./dto/hr-helpdesk-events.schema";
 import { AccessService } from "../../access/access.service";
+import { SUPPORT_ADMIN_PERMISSION, SUPPORT_QUEUE_LABELS, queuePermissionKey } from "./lib/support-queues";
 
 const CONSUMER_NAME = "hr:helpdesk";
 
@@ -79,22 +80,27 @@ export class HrHelpdeskEventsConsumer implements OutboxEventConsumer, OnModuleIn
     if (!parseResult.success) {
       throw new Error(`Invalid payload: ${parseResult.error.message}`);
     }
-    const { orgId, creatorId, title, category, priority, ticketId } = parseResult.data;
+    const { orgId, creatorId, title, category, queue, priority, ticketId, isConfidential } = parseResult.data;
 
-    const hrManagers = await this.access.membersWithPermission(orgId, "hr:employees:manage");
-    if (hrManagers.length === 0) return;
+    const [queueMembers, admins] = await Promise.all([
+      this.access.membersWithPermission(orgId, queuePermissionKey(queue)),
+      this.access.membersWithPermission(orgId, SUPPORT_ADMIN_PERMISSION),
+    ]);
+    const recipients = new Set([...queueMembers, ...admins].map((member) => member.userId));
+    if (recipients.size === 0) return;
 
     await this.dispatch.emit({
       orgId,
       dedupeKey: outboxEffectIdempotencyKey(event, CONSUMER_NAME),
       eventKey: "hr.helpdesk.ticket_created",
       actorUserId: creatorId,
-      targetUserIds: hrManagers.map((m) => m.userId),
+      targetUserIds: [...recipients],
       entityType: "helpdesk_ticket",
       entityId: String(ticketId),
       title,
-      message: `A ${priority} HR helpdesk ticket was created in ${category}.`,
-      variables: { ticketId: String(ticketId), title, category, priority, creatorId },
+      message: `A ${priority} ${isConfidential ? "confidential " : ""}request was raised in the ${SUPPORT_QUEUE_LABELS[queue]} queue (${category}).`,
+      link: `/hr/helpdesk?queue=${queue}&ticket=${ticketId}`,
+      variables: { ticketId: String(ticketId), title, category, queue, priority, creatorId },
     });
   }
 
@@ -114,7 +120,7 @@ export class HrHelpdeskEventsConsumer implements OutboxEventConsumer, OnModuleIn
       entityType: "helpdesk_ticket",
       entityId: String(ticketId),
       title,
-      message: `You have been assigned to a helpdesk ticket: ${title}.`,
+      message: `You have been assigned an employee support request: ${title}.`,
       variables: { ticketId: String(ticketId), title },
     });
   }
@@ -135,7 +141,7 @@ export class HrHelpdeskEventsConsumer implements OutboxEventConsumer, OnModuleIn
       entityType: "helpdesk_ticket",
       entityId: String(ticketId),
       title,
-      message: `Your helpdesk ticket "${title}" has been updated to ${newStatus}.`,
+      message: `Your support request "${title}" has been updated to ${newStatus}.`,
       variables: { ticketId: String(ticketId), title, newStatus },
     });
   }

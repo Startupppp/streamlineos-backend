@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { SUPPORT_QUEUES } from "../lib/support-queues";
 
 export const helpdeskTicketCreatedPayloadSchema = z.object({
   ticketId: z.number().int().positive(),
@@ -6,7 +7,9 @@ export const helpdeskTicketCreatedPayloadSchema = z.object({
   creatorId: z.string().min(1),
   title: z.string().min(1),
   category: z.string().min(1),
+  queue: z.enum(SUPPORT_QUEUES),
   priority: z.string().min(1),
+  isConfidential: z.boolean(),
 });
 
 export const helpdeskTicketAssignedPayloadSchema = z.object({
