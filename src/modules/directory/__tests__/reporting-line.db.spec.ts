@@ -7,6 +7,7 @@ import { createProbeOrg, dropProbeOrg, type ProbeOrg } from "../../../../test/he
 import { ReportingLineService } from "../reporting-line.service";
 import { ScopedRead } from "../../access/scoped-read";
 import { SPAN_OF_CONTROL_LIMIT } from "../reporting-line.types";
+import { hasCurrentDirectReport } from "../employment-query";
 
 jest.setTimeout(120_000);
 
@@ -133,6 +134,21 @@ describe("ReportingLineService against a real schema", () => {
     const hidden = await addPerson("hidden");
     const view = await service.getLine(ScopedRead.of(org.orgId, org.userId, "own"), hidden.userId);
     expect(view).toBeNull();
+  });
+
+  it("recognises manager standing only while a current primary line points at the person", async () => {
+    const manager = await addPerson("standing-manager");
+    const report = await addPerson("standing-report");
+    const bystander = await addPerson("standing-bystander");
+
+    await expect(hasCurrentDirectReport(db, org.orgId, manager.userId)).resolves.toBe(false);
+    await line(report, manager);
+    await expect(hasCurrentDirectReport(db, org.orgId, manager.userId)).resolves.toBe(true);
+    await expect(hasCurrentDirectReport(db, org.orgId, bystander.userId)).resolves.toBe(false);
+    await expect(hasCurrentDirectReport(db, org.orgId, report.userId)).resolves.toBe(false);
+
+    await service.assign(org.orgId, report.userId, null, "2026-06-01", org.userId);
+    await expect(hasCurrentDirectReport(db, org.orgId, manager.userId)).resolves.toBe(false);
   });
 
   it("coverage lists employees without a manager, inactive managers, cycles, and spans over the limit", async () => {

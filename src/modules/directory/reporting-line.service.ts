@@ -3,7 +3,7 @@ import { and, desc, eq, isNull, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
-import type { DbOrTx } from "../../common/rbac/access-invalidate";
+import { bumpPermissionsVersion, type DbOrTx } from "../../common/rbac/access-invalidate";
 import {
   hrEmployments,
   hrPeople,

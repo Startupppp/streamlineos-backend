@@ -17,6 +17,7 @@ import {
   CATALOG_KEY_SET,
   deriveAccessViewImplication,
   EMPLOYEE_SELF_SERVICE_GRANTS,
+  MANAGER_AUTHORITY_GRANTS,
   platformCapabilityScopes,
 } from "./access-policy";
 import {
@@ -54,6 +55,12 @@ export type MembershipReader = (
   orgId: string,
   userId: string,
 ) => Promise<MembershipState>;
+
+/** Whether this person currently has a direct report on the canonical reporting line. */
+export type ManagerStandingReader = (
+  orgId: string,
+  userId: string,
+) => Promise<boolean>;
 
 function ownsOrAdministers(member: MembershipState): boolean {
   return (
@@ -96,6 +103,7 @@ export class AccessPermissionResolver {
     private readonly deniedModulesTtlMs: number,
     private readonly resolveMembership: MembershipReader,
     private readonly clock: Clock = SYSTEM_CLOCK,
+    private readonly managerStanding: ManagerStandingReader | null = null,
   ) {}
 
   private get db(): Db {
@@ -279,6 +287,10 @@ export class AccessPermissionResolver {
     for (const row of personalGrantRows) {
       mergeIfKnown(row.permissionKey, row.scope, "user-grant");
     }
+
+    const managerStanding = this.managerStanding;
+    if (managerStanding && (await this.readAccessTable(() => managerStanding(orgId, userId))))
+      for (const grant of MANAGER_AUTHORITY_GRANTS) merge(grant.permissionKey, grant.scope);
 
     // Ownership expansion is not a grant path, so the org-only bar has to bite here too.
     for (const { moduleKey } of ownershipRows) {
