@@ -177,10 +177,11 @@ export class CyclesController {
   @NoContentResponse()
   @Validate({ params: projectAndCycleIdParams })
   deleteCycle(
+    @Param("projectId", ParseIntPipe) projectId: number,
     @Param("cycleId", ParseIntPipe) cycleId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.cycles.deleteCycle(u.orgId, cycleId);
+    return this.cycles.deleteCycle(u.orgId, projectId, cycleId);
   }
 }
 
