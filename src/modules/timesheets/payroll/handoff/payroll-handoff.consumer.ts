@@ -20,18 +20,6 @@ import {
 
 const CONSUMER_NAME = "timesheets-payroll-handoff";
 
-/**
- * Turns a committed payroll export into a call on the handoff port.
- *
- * The publisher already runs `handle` inside the event organisation's tenant
- * transaction, so the read below is scoped by RLS without doing anything here
- * — and would raise rather than return empty if it were not, which is the
- * behaviour worth having.
- *
- * Throwing propagates into the publisher's retry and dead-letter path. That is
- * deliberate for a missing or malformed export: an export that cannot be read
- * is a real failure and should be visible in the outbox rather than swallowed.
- */
 @Injectable()
 export class PayrollHandoffConsumer implements OutboxEventConsumer, OnModuleInit {
   readonly eventType = TIMESHEET_EVENTS.payrollExportReady;
@@ -44,12 +32,6 @@ export class PayrollHandoffConsumer implements OutboxEventConsumer, OnModuleInit
     private readonly registry: OutboxConsumerRegistry,
   ) {}
 
-  /**
-   * Registering is not optional bookkeeping. The publisher throws on an event
-   * type it has no consumer for, and the throw goes down the retry and
-   * dead-letter path — so an emit shipped without this line would dead-letter
-   * every payroll export rather than doing nothing.
-   */
   onModuleInit(): void {
     this.registry.register(this);
   }
@@ -89,26 +71,10 @@ export class PayrollHandoffConsumer implements OutboxEventConsumer, OnModuleInit
       );
     }
 
-    /**
-     * The snapshot is `jsonb`, so it is whatever was written — parse it rather
-     * than cast it. A snapshot that no longer matches the row contract is a
-     * contract regression, and the loud version of that is the useful one.
-     */
     const rows = handoffWorkerRowSchema
       .array()
       .parse(Array.isArray(row.snapshot) ? row.snapshot : []);
 
-    /**
-     * TS-19. Resolved rather than passed through.
-     *
-     * `filters` is jsonb written at export time, so what is in there is
-     * whatever that export stored — a full mapping for a recent one, nothing at
-     * all for an export written before the column existed. `resolveMapping`
-     * answers the organisation's default for both the missing and the
-     * unparseable case, so the payload's `mapping` is always a real
-     * `{ provider, columns }` an adapter can route on, rather than a `null` it
-     * must guess about.
-     */
     const rawMapping =
       row.filters && typeof row.filters === "object" && "mapping" in row.filters
         ? (row.filters as { mapping: unknown }).mapping

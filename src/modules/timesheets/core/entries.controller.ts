@@ -64,15 +64,6 @@ export class EntriesController {
     return this.entries.listEntries(u, query);
   }
 
-  /**
-   * TS-17. `{ required: false }`, deliberately.
-   *
-   * A required fence would answer 400 to every existing caller that has never
-   * sent the header — including the mobile clients and the API integrations
-   * that `source: "API"` exists for — and a 400 on a POST with a body reads
-   * like a validation failure, not a missing header. Optional gives a retrying
-   * caller the full replay contract without breaking one that does not retry.
-   */
   @Post()
   @HttpCode(201)
   @RequirePermission("timesheets:entries:create")
@@ -112,17 +103,6 @@ export class EntriesController {
     return this.entries.voidEntry(u, entryId, body);
   }
 
-  /**
-   * TS-09. Turn completed clock days into draft entries for the caller.
-   *
-   * A POST, not a side effect on `GET /periods/current`: it writes rows, and
-   * backend §2 forbids writes in a GET for the reason this would have
-   * demonstrated — a page refresh would have been a write.
-   *
-   * Own-time only. The route never takes a user id, so there is no way to
-   * draft entries into somebody else's timesheet, and `timesheets:entries:create`
-   * stays the right key.
-   */
   @Post("from-attendance")
   @HttpCode(200)
   @RequirePermission("timesheets:entries:create")

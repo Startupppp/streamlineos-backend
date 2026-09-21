@@ -5,14 +5,6 @@ import { PayrollExportsReadService } from "../payroll-exports-read.service";
 const ORG = "org-ack";
 const ACTOR = "user-ack";
 
-/**
- * `ackExport` is called again for the same export as the payroll side works
- * through it, so it cannot be "write once". What it must not do is record the
- * status the export already has (a retry, emitting a second handoff event for
- * one fact), withdraw a settled answer back to RECEIVED, or let two operators
- * both win against the same stale reading. The double below queues the first
- * read's row and the UPDATE's outcome, and records every write.
- */
 function sqlValues(value: unknown, seen = new Set<object>()): unknown[] {
   if (value === null || value === undefined || typeof value !== "object") return [value];
   if (Array.isArray(value)) return value.flatMap((item) => sqlValues(item, seen));
@@ -136,9 +128,7 @@ describe("PayrollExportsReadService.ackExport", () => {
     const [update] = updates;
     expect(update.set["ackStatus"]).toBe("ACCEPTED");
     expect(update.set["ackByMembershipId"]).toBe(4);
-    /* The counter moves in the same statement as the status. */
     expect(sqlValues(update.set["eventSeq"])).toContain(" + 1");
-    /* The UPDATE is conditional on the status the rule was checked against. */
     expect(sqlValues(update.where)).toContain("RECEIVED");
     expect(inserted).toHaveLength(1);
     expect(inserted[0]["aggregateVersion"]).toBe(3);

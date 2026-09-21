@@ -23,67 +23,11 @@ import type { NotificationDispatchService } from "../../../notifications/notific
 import type { RateResolverService } from "../rate-resolver.service";
 import type { TimesheetsAuditService } from "../timesheets-audit.service";
 
-/**
- * `assertOrganizationActor` reads the actor's membership out of the database on
- * every approval. Mocked, because this file is about what the transition
- * *writes*, and the actor lookup is `organization-actor`'s own subject.
- *
- * Literals rather than APPROVER_MEMBERSHIP and APPROVER below, because a
- * `jest.mock` factory is hoisted above the constants.
- */
 jest.mock("../../../../common/organization/organization-actor", () => ({
   ...jest.requireActual("../../../../common/organization/organization-actor"),
   assertOrganizationActor: () =>
     Promise.resolve({ membershipId: 77, userId: "usr-manager" }),
 }));
-
-/**
- * TS-24. The durable rows a period lifecycle transition leaves behind.
- *
- * Both halves of the wiring existed and neither was asserted anywhere. The
- * consumer side has had a spec since TS-06 — but a consumer registered for an
- * event nobody emits is a test that passes over a feature that does nothing,
- * and that is exactly the shape of failure this file exists to rule out.
- *
- * Two rows per transition, and they are not the same mechanism:
- *
- *   - **`outbox_events`**, written by `OutboxWriter.emit` on the transition's
- *     own `tx`, for external subscribers. Durable and replayable: it commits
- *     with the status change or not at all.
- *   - **the notification**, emitted through `NotificationDispatchService` after
- *     the transaction, which is what the ticket means by "the existing email
- *     outbox" — no second mailer.
- *
- * **The version, which is the part that is easy to get wrong.**
- * `outbox_events` is UNIQUE on
- * `(organization_id, aggregate_type, aggregate_id, aggregate_version)`, and
- * `aggregate_version` is `timesheet_periods.event_seq` — a counter incremented
- * by the same UPDATE that performs the transition. A period emits repeatedly:
- * submitted, rejected, submitted again, approved, locked, reopened, all over
- * again. So a constant version works exactly once per period and then fails
- * forever, and a wall-clock version collides on approve-with-lock, which emits
- * **two** events from one transaction sharing one `now`. Both of those are
- * asserted below, on the counter rather than on the mere presence of a row.
- *
- * **Which services.** Each transition runs where the service split put it:
- * submit through `PeriodsService.submitPeriod`, which wraps
- * `PeriodsSubmitService` and tells the approver once the submit has committed;
- * approve through `ApprovalsService`; reject through `ApprovalsBulkService`;
- * lock through `PeriodsService`. They are the real classes over one fake
- * database, wired the way the module wires them.
- *
- * **Which people.** Since the actor cutover (0715) a period names its worker
- * and its approver by `organization_members.id`, while the event contract and
- * the notifications still name them by user id. The fake answers a member
- * lookup only when it binds this organisation's id, so a lookup that lost its
- * tenant predicate shows up here as a missing event or notice.
- *
- * `db.transaction` here runs its callback against a recording handle. A bare
- * `jest.fn()` would void every assertion in this file while reporting green, so
- * each case also asserts the callback actually ran, and `db.insert` outside the
- * transaction throws — the emit must be inside it or the test fails loudly
- * rather than silently passing on a row written after the commit.
- */
 
 const ORG = "org-1";
 const PERIOD_ID = 42;
@@ -96,7 +40,6 @@ interface Member {
   userId: string;
 }
 
-/** The organisation's `organization_members` rows. */
 const MEMBERS: readonly Member[] = [
   { id: WORKER_MEMBERSHIP, orgId: ORG, userId: "usr-worker" },
   { id: APPROVER_MEMBERSHIP, orgId: ORG, userId: "usr-manager" },
@@ -146,14 +89,12 @@ const PERIOD_ROW = {
   userName: "Asha",
 };
 
-/** A period as the approver finds it: submitted, and routed to them. */
 const SUBMITTED_ROW = {
   ...PERIOD_ROW,
   status: "SUBMITTED",
   currentApproverMembershipId: APPROVER_MEMBERSHIP,
 };
 
-/** What the transition's own UPDATE hands back, `event_seq` included. */
 function transitionRow(
   status: string,
   eventSeq: number,
@@ -189,19 +130,14 @@ interface Notification {
 }
 
 interface Script {
-  /** Per-table select results, consumed in order; the last one repeats. */
   selects: Array<[unknown, unknown[][]]>;
-  /** Rows `.returning()` hands back from the in-transaction period UPDATE. */
   transitions: unknown[][];
-  /** Entries returned by `db.query.timesheets.findMany`. */
   entries?: unknown[];
-  /** The organisation's members; MEMBERS unless a case removes somebody. */
   members?: readonly Member[];
 }
 
 const dialect = new PgDialect();
 
-/** The values a WHERE binds, which is what a member lookup is answered from. */
 function boundValues(where: unknown): unknown[] {
   if (!where) return [];
   return dialect.sqlToQuery(where as Parameters<PgDialect["sqlToQuery"]>[0]).params;
@@ -211,20 +147,10 @@ function makeDb(script: Script, outbox: OutboxRow[]) {
   const queues = new Map(script.selects.map(([t, q]) => [t, q.slice()]));
   const transitions = script.transitions.slice();
   const members = script.members ?? MEMBERS;
-  /**
-   * What the period UPDATEs have set so far, laid over every later read of the
-   * period. A read after the transition sees what it wrote, so the approver the
-   * submit resolved is the approver its notice goes to.
-   */
   let periodPatch: Record<string, unknown> = {};
   const periodSets: Record<string, unknown>[] = [];
   let txRan = false;
 
-  /**
-   * A member lookup that does not bind this organisation's id is answered with
-   * nothing. That is the tenant predicate, asserted by every case that expects
-   * an event or a notice.
-   */
   const answerMembers = (where: unknown): Member[] => {
     const bound = boundValues(where);
     if (!bound.includes(ORG)) return [];
@@ -301,11 +227,6 @@ function makeDb(script: Script, outbox: OutboxRow[]) {
   const db = {
     select: selectChain,
     update,
-    /**
-     * Nothing may write outside the transaction. An emit moved after the commit
-     * would still produce a row and would still look correct in a test that only
-     * counted rows.
-     */
     insert: () => {
       throw new Error("outbox write escaped the transition transaction");
     },
@@ -339,7 +260,6 @@ const rateResolver = {
   resolveMany: () => Promise.resolve([]),
 } as unknown as RateResolverService;
 
-/** `PeriodsService` as the module wires it: the reader and the submit split over one database. */
 function periodsService(db: Db, notifications: NotificationDispatchService) {
   const reader = new PeriodsReadService(db, access);
   const submit = new PeriodsSubmitService(db, reader, entriesService, audit);
@@ -350,18 +270,15 @@ function approvalsService(db: Db, notifications: NotificationDispatchService) {
   return new ApprovalsService(db, access, audit, rateResolver, notifications);
 }
 
-/** Rejection lives in `ApprovalsBulkService`, which reaches the notifier through `ApprovalsService`. */
 function approvalsBulkService(db: Db, notifications: NotificationDispatchService) {
   return new ApprovalsBulkService(db, audit, approvalsService(db, notifications), rateResolver);
 }
 
-/** A submit whose entries carry a project, so an approver is resolved. */
 function submitScript(seq: number): Script {
   return {
     selects: [
       [timesheetPeriods, [[PERIOD_ROW]]],
       [timesheetSettings, [[]]],
-      /** Since the actor cutover a project names its manager by membership, and submit reads it directly. */
       [projects, [[{ managerMembershipId: APPROVER_MEMBERSHIP }]]],
     ],
     transitions: [[transitionRow("SUBMITTED", seq)]],
@@ -387,7 +304,6 @@ function rejectScript(seq: number): Script {
   };
 }
 
-/** `lockPeriod` writes status LOCKED and locked_at. */
 function lockScript(seq: number, userMembershipId: number | null = WORKER_MEMBERSHIP): Script {
   return {
     selects: [[timesheetPeriods, [[{ ...SUBMITTED_ROW, status: "APPROVED", userMembershipId }]]]],
@@ -435,7 +351,6 @@ describe("TS-24 period lifecycle durable rows", () => {
       });
     });
 
-    /** The other durable row: the approver is told, through the existing pipeline. */
     it("notifies the resolved approver and nobody else", async () => {
       const notes: Notification[] = [];
       const { db, periodUpdates } = makeDb(submitScript(1), []);
@@ -443,7 +358,6 @@ describe("TS-24 period lifecycle durable rows", () => {
 
       await service.submitPeriod(WORKER, PERIOD_ID);
 
-      /** Routed to the project manager's membership, then told as that user. */
       expect(periodUpdates()[0]).toMatchObject({
         status: "SUBMITTED",
         currentApproverMembershipId: APPROVER_MEMBERSHIP,
@@ -456,12 +370,6 @@ describe("TS-24 period lifecycle durable rows", () => {
       });
     });
 
-    /**
-     * A period with no project work resolves no approver, and there is no
-     * honest fallback — broadcasting an unrouted timesheet to every manager is
-     * worse than the approvals queue being the only place it appears. The
-     * event still goes out: an external subscriber's routing is its own.
-     */
     it("still emits the event when there is no approver to notify", async () => {
       const outbox: OutboxRow[] = [];
       const notes: Notification[] = [];
@@ -505,13 +413,6 @@ describe("TS-24 period lifecycle durable rows", () => {
       });
     });
 
-    /**
-     * The collision the boundary doc names. One transaction, one `now`, two
-     * events — so the version cannot be a timestamp, and it cannot be a single
-     * `event_seq` reused for both. The UPDATE claims `+2` at once and the emits
-     * take `seq - 1` and `seq`, which is what makes the pair survive a UNIQUE
-     * index that a wall clock would have violated.
-     */
     it("emits approved and locked as two rows with two versions from one now", async () => {
       const outbox: OutboxRow[] = [];
       const { db } = makeDb(approveScript(5, true), outbox);
@@ -524,12 +425,10 @@ describe("TS-24 period lifecycle durable rows", () => {
         "timesheets.period.locked",
       ]);
       expect(outbox.map((r) => r.aggregateVersion)).toEqual([4, 5]);
-      /** The two share a wall clock, which is precisely why it cannot be the version. */
       expect(outbox[0]!.occurredAt).toEqual(outbox[1]!.occurredAt);
       expect(new Set(outbox.map((r) => r.aggregateVersion)).size).toBe(2);
     });
 
-    /** With the org's lock-after-approval off, one transition is one event. */
     it("emits only the approval when the organisation does not lock on approve", async () => {
       const outbox: OutboxRow[] = [];
       const { db } = makeDb(approveScript(4, false), outbox);
@@ -541,11 +440,6 @@ describe("TS-24 period lifecycle durable rows", () => {
     });
   });
 
-  /**
-   * `timesheets.period.locked` from `PeriodsService.lockPeriod` is the event
-   * the payroll side waits on. The control for the unresolvable-worker case
-   * below, which would otherwise pass against a lock that never emits.
-   */
   describe("lock", () => {
     it("writes the locked row, with the worker as the subject", async () => {
       const outbox: OutboxRow[] = [];
@@ -566,14 +460,6 @@ describe("TS-24 period lifecycle durable rows", () => {
     });
   });
 
-  /**
-   * The property the UNIQUE index actually tests, which no single transition
-   * can show: a period is not a one-shot aggregate. Submitted, rejected,
-   * submitted again, approved and locked is an ordinary week, and it emits five
-   * times against one `(organization_id, aggregate_type, aggregate_id)`.
-   *
-   * A constant version passes every test above and fails the second row here.
-   */
   it("keeps every version distinct across a submit / reject / resubmit / approve+lock life", async () => {
     const outbox: OutboxRow[] = [];
     const notifications = makeNotifications([]);
@@ -610,11 +496,6 @@ describe("TS-24 period lifecycle durable rows", () => {
     expect(outbox.map((r) => r.aggregateVersion)).toEqual([1, 2, 3, 4, 5]);
   });
 
-  /**
-   * And the rejection's own two rows, because a rejection is the transition a
-   * worker most needs to hear about and the one a subscriber most needs the
-   * reason for.
-   */
   it("carries the rejection reason into both the event and the notification", async () => {
     const outbox: OutboxRow[] = [];
     const notes: Notification[] = [];
@@ -634,13 +515,6 @@ describe("TS-24 period lifecycle durable rows", () => {
     });
   });
 
-  /**
-   * The worker's membership can stop resolving: removing a member sets the
-   * period's membership to null. That is a reason to announce nothing about the
-   * period, not to fail the transition. The owner lookup used to throw, which
-   * surfaced as a 500 and rolled the approval back. The transition must still
-   * commit; only the event and the notice are skipped, and the skip is logged.
-   */
   describe("when the worker's membership no longer resolves", () => {
     let warn: jest.SpyInstance;
     beforeEach(() => {

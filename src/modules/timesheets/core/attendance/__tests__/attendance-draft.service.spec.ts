@@ -7,23 +7,6 @@ import type { TimesheetsAuditService } from "../../timesheets-audit.service";
 import type { CurrentUserContext } from "../../../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../../../common/auth/principal";
 
-/**
- * TS-09, with the database and the attendance port stubbed.
- *
- * What this can prove is the decision layer: that the policy flag is honoured
- * before anything is read, that a day the database refuses (because the unique
- * index already holds an entry for it) is counted as skipped rather than
- * treated as an error, and that the description a person will read says where
- * the number came from.
- *
- * What it cannot prove is the idempotency itself. `ON CONFLICT DO NOTHING`
- * against a *partial* unique index is a property of Postgres and of the
- * predicate being restated correctly, and a stub that returns an empty array
- * would "pass" whether the clause were right or absent. That is the seeded e2e
- * (`timesheets-attendance-draft.seeded-e2e-spec.ts`), which runs it twice
- * against real rows.
- */
-
 const USER = { orgId: "org-1", userId: "usr-1", principal: humanSessionPrincipal(1, false) } as unknown as CurrentUserContext;
 const RANGE = { start: "2026-05-01", end: "2026-05-07" };
 
@@ -41,11 +24,6 @@ interface Inserted {
   conflictTarget: unknown;
 }
 
-/**
- * Answers the settings read and then one insert per segment. `insertResults`
- * says what each insert's `.returning()` yields: a row means it was created, an
- * empty array means the conflict clause swallowed it.
- */
 function stubDb(settingsRow: unknown, insertResults: unknown[][]) {
   const inserts: Inserted[] = [];
   const results = [...insertResults];
@@ -99,12 +77,6 @@ describe("AttendanceDraftService", () => {
     expect(inserts).toHaveLength(0);
   });
 
-  /**
-   * An organisation that has never opened the settings screen has no row at
-   * all. That is "not opted in", not "use the default" — the distinction
-   * matters because the default is false and a missing row must not be read as
-   * a missing *value* that something helpfully fills in.
-   */
   it("treats a missing settings row as not opted in", async () => {
     const { db } = stubDb(null, []);
     const port = stubPort([SEGMENT]);
@@ -130,7 +102,6 @@ describe("AttendanceDraftService", () => {
       orgId: "org-1",
       userMembershipId: 1,
       date: "2026-05-04",
-      /** 450 net minutes is 7.5 hours, as a fixed-2 string for the decimal column. */
       hours: "7.50",
       isBillable: false,
       billingType: "NON_BILLABLE",
@@ -139,12 +110,6 @@ describe("AttendanceDraftService", () => {
     });
   });
 
-  /**
-   * The whole point of the ticket line "no double-create". A second run over
-   * the same window is not an error and must not look like one: the row is
-   * already there, the conflict clause declines to write it, and the result
-   * says so.
-   */
   it("counts a day the unique index already holds as skipped, not created", async () => {
     const { db } = stubDb({ autoDraft: true, workWeekStart: 1 }, [[]]);
     const service = new AttendanceDraftService(db, stubPort([SEGMENT]).port, periods, audit);
@@ -160,12 +125,6 @@ describe("AttendanceDraftService", () => {
 
     await service.draftForUser(USER, RANGE);
 
-    /**
-     * `uniq_timesheets_work_log` is partial. Postgres refuses an `ON CONFLICT`
-     * naming its columns unless the predicate is restated, so a clause that
-     * lost the `where` would 42P10 at runtime — visible here as a missing key
-     * rather than as a green test and a broken endpoint.
-     */
     const target = inserts[0]!.conflictTarget as { target: unknown[]; where?: unknown };
     expect(target.target).toHaveLength(3);
     expect(target.where).toBeDefined();

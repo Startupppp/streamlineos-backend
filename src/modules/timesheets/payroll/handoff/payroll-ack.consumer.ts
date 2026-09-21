@@ -14,14 +14,6 @@ import {
 
 const CONSUMER_NAME = "timesheets-payroll-ack";
 
-/**
- * Turns a recorded acknowledgement into a call on the handoff port.
- *
- * Unlike the export consumer this reads nothing back: everything an
- * acknowledgement means is in the event itself, and the row it refers to can
- * legitimately have been acknowledged again since. Re-reading would hand the
- * port the *latest* status while claiming to describe this one.
- */
 @Injectable()
 export class PayrollAckConsumer implements OutboxEventConsumer, OnModuleInit {
   readonly eventType = TIMESHEET_EVENTS.payrollExportAcked;
@@ -33,7 +25,6 @@ export class PayrollAckConsumer implements OutboxEventConsumer, OnModuleInit {
     private readonly registry: OutboxConsumerRegistry,
   ) {}
 
-  /** Without this the publisher throws on the event type and dead-letters every ack. */
   onModuleInit(): void {
     this.registry.register(this);
   }

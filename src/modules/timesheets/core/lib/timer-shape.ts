@@ -1,16 +1,5 @@
 import { timerSessions } from "../../../../db/schema";
 
-/**
- * What a timer looks like to a client, and how its elapsed time is derived.
- *
- * Kept beside each other because the second is only correct with the first: a
- * RUNNING session's accumulated seconds are stale by construction — the clock
- * has moved since `lastResumedAt` — so the shape has to add the interval rather
- * than read the column, and any caller assembling this by hand would get a
- * running timer wrong and a paused one right.
- */
-
-/** The row shape both helpers take: a session, optionally with its joins. */
 export type TimerRow = typeof timerSessions.$inferSelect & {
   projectName?: string | null;
   ticketTitle?: string | null;

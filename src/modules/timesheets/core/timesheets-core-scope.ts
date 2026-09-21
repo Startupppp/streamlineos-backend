@@ -11,17 +11,6 @@ export const TS_APPROVALS_MANAGE_PERMISSION = "timesheets:approvals:manage";
 export const TS_REPORTS_VIEW_PERMISSION = "timesheets:reports:view";
 export const TS_PAYROLL_VIEW_PERMISSION = "timesheets:payroll:view";
 
-/**
- * How far a caller sees into entries, periods and exceptions: the broader of
- * the gate key's own scope and the widening key's.
- *
- * `timesheets:entries:view` is what the routes require and what every active
- * member holds through self-service, at `own`. `timesheets:team:view` is the
- * widening key a manager or module admin holds at `team` or `all`. Resolving
- * only the widening key, as this did, gave a plain member — who holds no
- * `team:view` at all — a scope of `none`, and My Time answered their own
- * entries with an empty page.
- */
 export async function resolveEntriesScope(
   access: AccessService,
   u: CurrentUserContext,
@@ -54,13 +43,6 @@ export async function resolvePayrollScope(
   return ScopedRead.for(access, u, TS_PAYROLL_VIEW_PERMISSION);
 }
 
-/**
- * `userId` on the rate preview widens it to another member's billable rate. It
- * cannot be gated on `timesheets:billing:view`, the key the route carries: that
- * key is not scopable, so every holder would resolve `all` and the gate would
- * not bite. It resolves the scopable key every other timesheets read uses for
- * the same parameter, and forces the subject to the caller below `all`.
- */
 export async function resolveRatePreviewSubject(
   access: AccessService,
   u: CurrentUserContext,

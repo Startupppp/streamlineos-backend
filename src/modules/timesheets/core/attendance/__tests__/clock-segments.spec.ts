@@ -5,15 +5,6 @@ import {
   type RawAttendance,
 } from "../lib/clock-segments";
 
-/**
- * The clock arithmetic, which is the part TS-09 would turn into draft entries.
- *
- * `breaks` is free-form jsonb written by the attendance UI, so every awkward
- * shape below is one the column can really hold. Summing raw break durations
- * gets all of them wrong, and always in the same direction: it deducts time
- * that was actually worked.
- */
-
 const day = (h: number, m = 0) => new Date(Date.UTC(2026, 4, 11, h, m)).toISOString();
 
 const base: RawAttendance = {
@@ -46,7 +37,6 @@ describe("breakMinutesWithin", () => {
     ).toBe(60);
   });
 
-  /** A double tap on the break button. Counting both would deduct an hour twice. */
   it("merges overlapping breaks instead of double-counting", () => {
     expect(
       breakMinutesWithin(
@@ -73,7 +63,6 @@ describe("breakMinutesWithin", () => {
     ).toBe(120);
   });
 
-  /** A break that runs past the check-out, or starts before the check-in. */
   it("clamps a break to the working window", () => {
     expect(breakMinutesWithin([{ start: day(16, 30), end: day(19) }], start, end)).toBe(30);
     expect(breakMinutesWithin([{ start: day(7), end: day(9, 30) }], start, end)).toBe(30);
@@ -83,7 +72,6 @@ describe("breakMinutesWithin", () => {
     expect(breakMinutesWithin([{ start: day(18), end: day(19) }], start, end)).toBe(0);
   });
 
-  /** No `end`: the person never came back, so the break ran until the clock closed. */
   it("treats an unended break as running to the check-out", () => {
     expect(breakMinutesWithin([{ start: day(16), end: undefined }], start, end)).toBe(60);
   });
@@ -103,11 +91,6 @@ describe("clockSegmentsFrom", () => {
     expect(segmentHours(segment!)).toBe(7.5);
   });
 
-  /**
-   * The important refusal. A day still open would have to end "now", and TS-09
-   * would write that guess into a timesheet as fact. Reporting nothing is
-   * recoverable; reporting hours nobody worked is not.
-   */
   it("yields nothing for a day that has not been checked out", () => {
     expect(clockSegmentsFrom([{ ...base, checkOut: null }])).toEqual([]);
     expect(clockSegmentsFrom([{ ...base, checkIn: null }])).toEqual([]);

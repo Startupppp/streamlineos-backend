@@ -8,20 +8,6 @@ import type { Db } from "../../../../../db/drizzle.module";
 import type { TimesheetPayrollHandoffPort } from "../handoff.port";
 import type { PayrollHandoffPayload } from "../handoff.schemas";
 
-/**
- * These are unit tests and they cannot prove the seam works end to end — the
- * chain from a committed export through the publisher to the port needs a real
- * database and is covered separately. What they can prove is the part that is
- * pure decision: which event this consumer answers to, that it registers
- * itself at all, the exact shape it hands the port, and that it fails loudly
- * rather than quietly on the two things that can go wrong.
- *
- * The registration test is not ceremony. The publisher throws on an event type
- * with no consumer and sends the throw down the retry and dead-letter path, so
- * a consumer that exists but never registers is worse than no consumer: every
- * payroll export would dead-letter.
- */
-
 const SNAPSHOT_ROW = {
   userId: "u1",
   employeeName: "Asha",
@@ -79,7 +65,6 @@ function capturingPort() {
     deliver: async (payload) => {
       seen.push(payload);
     },
-    /** Not exercised here; the ack consumer has its own spec. */
     acknowledged: async () => undefined,
   };
   return { port, seen };
@@ -107,7 +92,6 @@ describe("PayrollHandoffConsumer", () => {
     await consumer.handle(EVENT);
 
     expect(seen).toHaveLength(1);
-    /** Parsed, not eyeballed: the contract is the assertion. */
     expect(() => payrollHandoffPayloadSchema.parse(seen[0])).not.toThrow();
     expect(seen[0]).toMatchObject({
       organizationId: "org-1",
@@ -133,7 +117,6 @@ describe("PayrollHandoffConsumer", () => {
     await consumer.handle(EVENT);
 
     expect(seen[0]!.idempotencyKey).toBe(seen[1]!.idempotencyKey);
-    /** And it names the event, so a different export cannot collide with it. */
     expect(seen[0]!.idempotencyKey).toContain(EVENT.eventId);
   });
 
@@ -158,14 +141,6 @@ describe("PayrollHandoffConsumer", () => {
     expect(seen).toHaveLength(0);
   });
 
-  /**
-   * TS-19. An export written before payroll mappings existed has no `mapping`
-   * in its `filters`, and the payload used to carry that absence straight
-   * through as `undefined` — so "the handoff payload carries the mapping" was
-   * true only for recent exports. The consumer now resolves the organisation's
-   * default, so an adapter always receives a `{ provider, columns }` it can
-   * route on.
-   */
   it("supplies the default mapping for an export that stored none", async () => {
     const { port, seen } = capturingPort();
     const consumer = new PayrollHandoffConsumer(
@@ -190,12 +165,6 @@ describe("RecordingPayrollHandoffAdapter", () => {
     currency: null,
     entryCount: 5,
     totalHours: 40,
-    /**
-     * TS-19. Was `null`, which the schema accepted while it was `z.unknown()`.
-     * The payload now carries a real mapping on every handoff — the consumer
-     * resolves the org default for an export that stored none — so `null` is no
-     * longer a shape an implementer has to handle.
-     */
     mapping: { provider: "GENERIC", columns: [] },
     rows: [SNAPSHOT_ROW],
     idempotencyKey: "outbox:org-1:timesheets-payroll-handoff:e1",
@@ -221,10 +190,6 @@ describe("RecordingPayrollHandoffAdapter", () => {
     const adapter = new RecordingPayrollHandoffAdapter();
     const broken = { ...payload, exportId: -1 } as PayrollHandoffPayload;
 
-    // Named, and on the offending field. A bare `.rejects.toThrow()` is
-    // satisfied by any crash inside the adapter — a missing logger, a bad
-    // template literal — so it would stay green with the contract `parse`
-    // deleted, which is the only thing this adapter does that matters.
     const refusal = await adapter.deliver(broken).then(
       () => null,
       (error: unknown) => error,

@@ -64,14 +64,6 @@ export class PayrollExportsReadService {
     private readonly audit: AuditService,
   ) {}
 
-  /**
-   * An export is a payroll run over the organisation — every payee's hours in
-   * one snapshot — so no row of it belongs to one person. `timesheets:payroll:view`
-   * is scopable and a module member holds it at `own`; a scope narrower than
-   * `all` therefore reads no export at all. That is what the `own: false` shape
-   * says: the person's own share of an export is empty, not the export. The
-   * cache key carries the scope, so an owner's page is never served to a member.
-   */
   private static readonly NOBODYS_OWN_ROW = { own: sql`false` } as const;
 
   async listExports(read: ScopedRead, query: ExportsListQuery) {
@@ -128,7 +120,6 @@ export class PayrollExportsReadService {
   }
 
   async getExportRows(read: ScopedRead, exportId: number) {
-    /* Same shape as the list: below `all` the export is not there to be read, and a 404 confirms nothing. */
     const [result] = await read.read(
       {
         tenant: timesheetExports.orgId,
@@ -212,12 +203,6 @@ export class PayrollExportsReadService {
 
     const ackAt = new Date();
     const updated = await this.db.transaction(async (tx) => {
-      /**
-       * Conditional on the status that was checked above, so two operators
-       * acknowledging at once cannot both pass the transition rule against
-       * the same stale reading: the second UPDATE matches nothing and is told
-       * so, rather than overwriting the first and emitting a second event.
-       */
       const [row] = await tx
         .update(timesheetExports)
         .set({
@@ -240,22 +225,11 @@ export class PayrollExportsReadService {
 
       if (!row) return null;
 
-      /**
-       * In the same transaction as the status it reports, so an
-       * acknowledgement cannot be recorded without its event or announced
-       * without being recorded.
-       */
       await OutboxWriter.emit(tx, {
         eventId: randomUUID(),
         organizationId: orgId,
         aggregateType: "timesheet_export",
         aggregateId: String(exportId),
-        /**
-         * The counter the UPDATE just claimed. Version 1 is the export's own
-         * creation event, and an export is acknowledged repeatedly as its
-         * status moves, so each one takes the next number — see
-         * `timesheetExports.eventSeq`.
-         */
         aggregateVersion: row.eventSeq,
         eventType: TIMESHEET_EVENTS.payrollExportAcked,
         payload: {

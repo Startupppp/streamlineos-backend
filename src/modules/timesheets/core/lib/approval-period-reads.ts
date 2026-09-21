@@ -3,14 +3,6 @@ import { alias } from "drizzle-orm/pg-core";
 import type { Db } from "../../../../db/drizzle.module";
 import { organizationMembers, timesheetPeriods, users } from "../../../../db/schema";
 
-/*
-  The two period reads behind the approvals list and the approve response,
-  with the owner and approver joined tenant-matched through two aliases of
-  `organization_members`. Both are bounded: the list keyset-paginates on
-  (submitted_at, id) and the single read is by id.
-*/
-
-/** One keyset page of periods (plus one row, to know whether there is a next). */
 export async function listApprovalRows(
   db: Db,
   conditions: Parameters<typeof and>,
@@ -60,7 +52,6 @@ export async function listApprovalRows(
     .limit(limit + 1);
 }
 
-/** The period as the approve route returns it, read back after the approval committed. */
 export async function readApprovedPeriod(db: Db, orgId: string, periodId: number) {
   const approverMember = alias(organizationMembers, "approver_member");
   const ownerMember = alias(organizationMembers, "owner_member");

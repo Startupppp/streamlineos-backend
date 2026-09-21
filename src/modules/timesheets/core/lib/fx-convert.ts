@@ -46,7 +46,6 @@ export function convertAmounts(
 
     const rate = rates.get(currency);
     if (!rate) {
-      // No evidence for this currency: exclude it rather than guess a rate.
       missingRates.push(currency);
       continue;
     }

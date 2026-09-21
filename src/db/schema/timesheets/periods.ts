@@ -30,22 +30,6 @@ export const timesheetPeriods = pgTable("timesheet_periods", {
   currentApproverMembershipId: integer("current_approver_membership_id"),
   approvedByMembershipId: integer("approved_by_membership_id"),
   rejectionReason: text("rejection_reason"),
-  /**
-   * Monotonic lifecycle counter, used as `aggregate_version` on every outbox
-   * event this period emits (TS-05).
-   *
-   * `outbox_events` is UNIQUE on `(organization_id, aggregate_type,
-   * aggregate_id, aggregate_version)`. A period emits repeatedly — submitted,
-   * approved or rejected, locked, then all of it again after a reopen — so a
-   * constant version works exactly once and then fails every subsequent
-   * transition for that period, forever. A wall-clock version would collide
-   * whenever two transitions share a millisecond, which approve-and-lock does
-   * by construction: one transaction, one `now`, two events.
-   *
-   * Incremented with `event_seq + 1` inside the same UPDATE that changes the
-   * status, so the counter and the transition commit together and two
-   * concurrent transitions serialise on the row rather than racing.
-   */
   eventSeq: integer("event_seq").notNull().default(0),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),

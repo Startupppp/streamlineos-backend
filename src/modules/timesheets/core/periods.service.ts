@@ -54,22 +54,6 @@ export class PeriodsService {
   async submitPeriod(u: CurrentUserContext, periodId: number) {
     const period = await this.submit.submitPeriod(u, periodId);
 
-    /**
-     * TS-24. The approver hears about it, through the existing notification
-     * pipeline and therefore the existing email outbox — no second mailer.
-     *
-     * After the submit's transaction, not inside it: `PeriodsSubmitService`
-     * writes the lifecycle event inside the transaction, and this announces
-     * the committed result. `emit` writes its intent onto the request's
-     * transaction and drains it via `registerAfterCommit`, so it drains on the
-     * same commit either way.
-     *
-     * Silent when there is no approver. The approver is the manager of the
-     * period's main project, which is null for a period with no project work
-     * on it, and there is no honest fallback: broadcasting an unrouted
-     * timesheet to every manager is worse than the approvals queue being the
-     * only place it shows up.
-     */
     const approverMembershipId = period.currentApproverMembershipId;
     if (approverMembershipId !== null) {
       const approvers = await membershipUserIds(this.db, u.orgId, [approverMembershipId]);
@@ -115,12 +99,6 @@ export class PeriodsService {
 
     if (existing) return existing.id;
 
-    /*
-     * Two requests for the current week can both miss the read above — two
-     * tabs, a StrictMode double fetch — and the second insert used to die on
-     * `uniq_timesheet_periods_user_membership_range` as a 500. The conflict is
-     * the other request having won, so it is read back rather than raised.
-     */
     const [created] = await this.db
       .insert(timesheetPeriods)
       .values({
@@ -224,12 +202,6 @@ export class PeriodsService {
   async lockPeriod(u: CurrentUserContext, periodId: number) {
     const row = await this.reader.getPeriodWithUser(u.orgId, periodId);
     if (!row) throw new NotFoundException("Period not found");
-    /**
-     * TS-14. Lock is a transition from APPROVED, not a stamp you can put on a
-     * draft. A DRAFT that froze with no approval in the history is how hours
-     * reached payroll unsigned. Idempotent on an already-LOCKED row so a retry
-     * does not 409 after the first success.
-     */
     if (row.status === "LOCKED") {
       return this.reader.mapPeriod(row);
     }
@@ -289,20 +261,6 @@ export class PeriodsService {
         entityType: "period", entityId: periodId.toString(), action: "period.locked",
       });
 
-      /**
-       * TS-05. `timesheets.period.locked` is the event the payroll side of the
-       * pack waits on, and it is emitted here rather than after the commit for
-       * the usual reason: a lock that announced itself and then rolled back
-       * would hand payroll a window it could act on.
-       *
-       * Status is LOCKED, not APPROVED-with-a-timestamp. The enum declared
-       * LOCKED and reopen already accepted it; writing the status is what
-       * makes that branch reachable and what stops a draft being frozen.
-       *
-       * A period whose worker's membership no longer resolves is still locked
-       * but announces nothing, so payroll does not hear about it; the skip is
-       * logged by `periodOwnerUserIdOrWarn` for an operator to reconcile.
-       */
       if (transition && ownerUserId) {
         await emitPeriodLifecycleEvent(tx, {
           eventType: TIMESHEET_LIFECYCLE_EVENTS.locked,

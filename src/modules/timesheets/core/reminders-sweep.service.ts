@@ -13,13 +13,6 @@ import {
   type ReminderKind,
 } from "./dto/reminder-rules.schemas";
 
-/**
- * Typed against the catalog union rather than `string`, so a key that is not
- * in `NOTIFICATION_EVENT_CATALOG` fails to compile. Widening it to `string`
- * would move that failure to runtime, where `resolveDefinition` returns null
- * and `emit` throws BadRequest — inside a background sweep, per organisation,
- * where nobody would see it.
- */
 const EVENT_KEY = {
   DUE_SOON: "timesheets.period.due_soon",
   OVERDUE: "timesheets.period.overdue",
@@ -27,58 +20,15 @@ const EVENT_KEY = {
 
 export interface ReminderSweepResult {
   orgsScanned: number;
-  /** Organisations whose stored rules did not parse — see below. */
   orgsMalformed: number;
   periodsConsidered: number;
   remindersSent: number;
-  /**
-   * TS-34. Organisations that hit the per-org page ceiling, so the operator
-   * knows the sweep stopped early rather than finished. Silence here would be
-   * indistinguishable from "everybody was reminded".
-   */
   orgsTruncated: number;
 }
 
-/**
- * TS-34. How many unsubmitted periods are read per round trip, and how many
- * rounds one organisation may take.
- *
- * The query was previously unbounded: one `SELECT` for every open period whose
- * window had closed, across every organisation, materialised in memory. That is
- * fine at a hundred rows and is a background job pulling an organisation-sized
- * result set into the heap at a hundred thousand — the exact shape of
- * unbounded worker scan the ticket names.
- *
- * Keyset on `id` rather than `OFFSET`: the sweep does not modify the rows it
- * pages over, but an entry saved mid-sweep can change a period's eligibility,
- * and an offset would then skip a page. The ceiling is generous enough that
- * reaching it means something is wrong, and it is counted rather than logged
- * and forgotten.
- */
 const REMINDER_PAGE_SIZE = 500;
 const REMINDER_MAX_PAGES = 40;
 
-/**
- * Sends the reminders `timesheet_settings.reminder_rules` has been promising.
- *
- * The column has been writable since it shipped and read by nothing, so an
- * organisation that configured reminders got silence. This is the reader.
- *
- * Two design choices are worth stating because the alternatives look
- * reasonable:
- *
- * **Malformed rules are counted, not thrown on.** Rows written before the
- * column had a schema hold whatever they hold. Throwing would let one bad row
- * stop every other organisation's reminders, so a row that will not parse is
- * treated as "no reminders" — and reported, because an organisation whose
- * configuration is being ignored is not the same as one that configured
- * nothing.
- *
- * **`today` is a parameter.** Not for the tests' convenience; because a sweep
- * that reads the clock in the middle of a loop can straddle midnight and remind
- * some organisations for one day and the rest for the next. Fixing it once at
- * the top makes the whole sweep answer for a single date.
- */
 @Injectable()
 export class TimesheetRemindersSweepService {
   private readonly logger = new Logger(TimesheetRemindersSweepService.name);
@@ -110,7 +60,6 @@ export class TimesheetRemindersSweepService {
     return result;
   }
 
-  /** Returns null for an organisation that has no timesheet settings at all. */
   async remindOrg(
     orgId: string,
     today: string,
@@ -146,26 +95,11 @@ export class TimesheetRemindersSweepService {
     let truncated = false;
     let afterId = 0;
 
-    /**
-     * Only periods whose window has closed and which nobody has submitted.
-     * `submittedAt IS NULL` rather than a status check: a period can be OPEN
-     * and already submitted in flows that reopen it, and reminding someone
-     * about a timesheet they have already sent is worse than not reminding.
-     *
-     * Read a page at a time (TS-34) rather than all at once. The predicate is
-     * unchanged; only the shape of the read is.
-     */
     for (let page = 0; page < REMINDER_MAX_PAGES; page++) {
       const periods = await this.db
         .select({
           id: timesheetPeriods.id,
           userMembershipId: timesheetPeriods.userMembershipId,
-          /**
-           * Notifications are addressed to users, and since the actor cutover
-           * (0715) a period names its worker by membership. The user is read
-           * through that membership inside this organisation only; it is null
-           * when the membership no longer resolves.
-           */
           userId: organizationMembers.userId,
           periodStart: timesheetPeriods.periodStart,
           periodEnd: timesheetPeriods.periodEnd,
@@ -209,7 +143,6 @@ export class TimesheetRemindersSweepService {
     return { malformed, periodsConsidered, remindersSent, truncated };
   }
 
-  /** One page of periods, reminded. Returns how many notifications it emitted. */
   private async remindPage(
     orgId: string,
     periods: Array<{
@@ -229,12 +162,6 @@ export class TimesheetRemindersSweepService {
       const kind = reminderDue(rules, due, today);
       if (!kind) continue;
 
-      /**
-       * Nobody to remind: the worker's membership was removed (its FK sets the
-       * period's membership to null) or does not resolve here. Skipped and
-       * logged rather than thrown, so one orphaned period cannot stop the rest
-       * of the organisation's reminders.
-       */
       if (!period.userId) {
         this.logger.warn(
           `org ${orgId} period ${period.id}: owner membership ${period.userMembershipId ?? "(none)"} ` +

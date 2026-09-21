@@ -7,14 +7,6 @@ import { PayrollExportsReadService } from "../payroll-exports-read.service";
 const ORG = "org-scope";
 const dialect = new PgDialect();
 
-/**
- * `timesheets:payroll:view` is scopable and a timesheets module member holds it
- * at `own`. The period summary applied that scope; the export history and the
- * rows behind an export — every payee's hours, names and emails in one
- * snapshot — did not, so an `own`-scoped member read the organisation's payroll
- * through the sibling route. An export belongs to nobody in particular, so a
- * scope narrower than `all` reads none of it.
- */
 function harness(rows: unknown[]) {
   let where: unknown;
   const chain: Record<string, unknown> = {};
