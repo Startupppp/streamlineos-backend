@@ -12,6 +12,9 @@ import { ProjectsCustomFieldsService } from "./projects-custom-fields.service";
 import { ProjectsTicketChecklistsService } from "./projects-ticket-checklists.service";
 import { ProjectsCustomStatesService } from "./projects-custom-states.service";
 import type { Db } from "../../../db/drizzle.module";
+import type { AccessService } from "../../access/access.service";
+import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { humanSessionPrincipal } from "../../../common/auth/principal";
 
 function makeNotFoundDb(): Db {
   return {
@@ -78,19 +81,37 @@ beforeEach(() => {
   jest.resetAllMocks();
 });
 
+function makeAttackerU(): CurrentUserContext {
+  return {
+    userId: "attacker",
+    orgId: "org-attacker",
+    role: "MEMBER",
+    isOrgOwner: false,
+    sessionId: "s",
+    tokenScopes: null,
+    principal: humanSessionPrincipal(1, false),
+  };
+}
+
+function makeNoPermAccess(): AccessService {
+  return {
+    resolveUserPermissions: jest.fn().mockResolvedValue(new Set<string>()),
+  } as unknown as AccessService;
+}
+
 describe("ProjectsReleasesService — cross-tenant isolation (BOLA)", () => {
   it("throws NotFoundException when release belongs to a different org", async () => {
     const db = makeNotFoundDb();
-    const svc = new ProjectsReleasesService(db);
+    const svc = new ProjectsReleasesService(db, makeNoPermAccess());
 
-    await expect(svc.updateRelease("org-attacker", 999, { name: "v2" })).rejects.toThrow(NotFoundException);
+    await expect(svc.updateRelease(makeAttackerU(), 99, 999, { name: "v2" })).rejects.toThrow(NotFoundException);
   });
 
   it("throws NotFoundException when adding ticket to a cross-org release", async () => {
     const db = makeNotFoundDb();
-    const svc = new ProjectsReleasesService(db);
+    const svc = new ProjectsReleasesService(db, makeNoPermAccess());
 
-    await expect(svc.addTicketToRelease("org-attacker", 999, 1)).rejects.toThrow(NotFoundException);
+    await expect(svc.addTicketToRelease(makeAttackerU(), 99, 999, 1)).rejects.toThrow(NotFoundException);
   });
 });
 
