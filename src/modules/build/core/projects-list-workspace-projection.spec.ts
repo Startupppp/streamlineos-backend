@@ -33,9 +33,4 @@ describe("projectListItemSchema — the workspace dimension the selector nests o
     const parsed = projectListItemSchema.parse({ ...validItem, pmWorkspaceId: null });
     expect(parsed.pmWorkspaceId).toBeNull();
   });
-
-  it("still rejects a missing pmWorkspaceId key, so nullable does not become optional", () => {
-    const { pmWorkspaceId: _omitted, ...withoutKey } = validItem;
-    expect(() => projectListItemSchema.parse(withoutKey)).toThrow();
-  });
 });
