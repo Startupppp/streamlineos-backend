@@ -1,5 +1,5 @@
 import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, count, eq, isNull, or } from "drizzle-orm";
+import { and, count, eq, isNull, or, type SQL } from "drizzle-orm";
 import {
   hrJobRoles,
   hrJobLevels,
@@ -22,6 +22,12 @@ type CatalogInput = {
   code?: string;
   description?: string;
 };
+
+export function liveJobRolesOf(orgId: string): SQL {
+  const condition = and(eq(hrJobRoles.orgId, orgId), eq(hrJobRoles.isActive, true));
+  if (!condition) throw new Error("liveJobRolesOf produced no condition");
+  return condition;
+}
 
 @Injectable()
 export class HrOrgCatalogService {
@@ -53,7 +59,7 @@ export class HrOrgCatalogService {
 
   listJobRoles(orgId: string) {
     return this.db.query.hrJobRoles.findMany({
-      where: and(eq(hrJobRoles.orgId, orgId), eq(hrJobRoles.isActive, true)),
+      where: liveJobRolesOf(orgId),
       orderBy: hrJobRoles.name,
       limit: 500,
     });
@@ -219,12 +225,12 @@ export class HrOrgCatalogService {
     if (groupBy === "role") {
       const rows = await this.db
         .select({
-          groupId: hrEmployments.jobRoleId,
+          groupId: hrJobRoles.id,
           groupName: hrJobRoles.name,
           headcount: count(hrEmployments.id),
         })
         .from(hrEmployments)
-        .leftJoin(hrJobRoles, eq(hrEmployments.jobRoleId, hrJobRoles.id))
+        .leftJoin(hrJobRoles, and(eq(hrEmployments.jobRoleId, hrJobRoles.id), liveJobRolesOf(orgId)))
         .where(
           and(
             eq(hrEmployments.orgId, orgId),
@@ -232,7 +238,7 @@ export class HrOrgCatalogService {
             isNull(hrEmployments.deletedAt),
           ),
         )
-        .groupBy(hrEmployments.jobRoleId, hrJobRoles.name);
+        .groupBy(hrJobRoles.id, hrJobRoles.name);
       return rows;
     }
 
