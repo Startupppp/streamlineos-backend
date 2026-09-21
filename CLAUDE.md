@@ -13,7 +13,7 @@ Cite rules by ID in review (`BE-14`). `(gate: x)` names the `pnpm` check that fa
 **BE-03.** Put a parent module's own controllers and services in `<module>/core/`.
 **BE-04.** Reach another module through its service, never its repository, schema or tables.
 **BE-05.** There is no repository layer — one file exists repo-wide. Controller → service → Drizzle. Do not add a second pattern.
-**BE-06.** Keep DB access out of controllers. 42 still hold `this.db`; that count may only shrink.
+**BE-06.** Keep DB access out of controllers. 14 controller files still hold `this.db` (42 occurrences); both counts may only shrink.
 **BE-07.** Return explicit projections, never raw ORM rows. (gate: check:query-projections)
 **BE-08.** Name every file and folder kebab-case. (gate: check:kebab-case)
 **BE-09.** Keep source files under 500 lines; 300+ is ratcheted. (gate: check:file-sizes, check:over-300)
@@ -32,7 +32,7 @@ Cite rules by ID in review (`BE-14`). `(gate: x)` names the `pnpm` check that fa
 
 ## 3. Cross-Repo Contract — frontend cites these IDs
 
-**BE-19.** Success envelope is `{ success: true, data }`; a payload already carrying `success` passes through unchanged. (`common/interceptors/response-transform.interceptor.ts:9`)
+**BE-19.** Success envelope is `{ success: true, data }`; a payload already carrying `success` passes through unchanged. (`common/interceptors/response-transform.interceptor.ts:10`)
 **BE-20.** Error envelope is `{ code, message, details?, correlationId? }`. (`common/http/all-exceptions.filter.ts:10`)
 **BE-21.** `204` returns no body.
 **BE-22.** Status semantics: **402** module/plan/credit · **403** in-tenant permission denial · **404** cross-tenant miss · **409** conflict · **429** rate limit with `Retry-After`.
@@ -97,7 +97,7 @@ Cite rules by ID in review (`BE-14`). `(gate: x)` names the `pnpm` check that fa
 
 ## 7. Tenancy & RLS
 
-**BE-72.** RLS is live on 328 tables. `app.current_org_id()` fails closed with `42501` when the GUC is absent.
+**BE-72.** RLS is live on most tenant tables; `pnpm db:verify-rls` is the authority on which. `app.current_org_id()` fails closed with `42501` when the GUC is absent.
 **BE-73.** Wrap tenant work in `runInTenantTransaction`. *Why:* guards run before interceptors and have no GUC.
 **BE-74.** Give every tenant table an explicit policy. *Why:* grants arrive via `ALTER DEFAULT PRIVILEGES`, so a missing policy reads org-wide and is silent.
 **BE-75.** Exemptions are the 8 entries of `PLATFORM_GLOBAL_TABLES` in `src/scripts/db-verify-rls.mjs`, pinned by `test/security/rls-exemption-allowlist.spec.ts`. That list may only shrink.
@@ -129,7 +129,8 @@ Cite rules by ID in review (`BE-14`). `(gate: x)` names the `pnpm` check that fa
 **BE-95.** Fetch user-supplied URLs only through `common/security/ssrf-guard.ts`. *Why:* a fresh guard misses the packed `::ffff:7f00:1` form.
 **BE-96.** Filter AI retrieval by the asker's access in the SQL predicate, never in the prompt.
 **BE-97.** Keep AI out of the authorization decision path and permission data out of model providers.
-**BE-98.** Hash passwords with Argon2id (m ≥ 19456 KiB, t = 2, p = 1).
+**BE-98.** There is no password login — auth is OTP, magic link and email verification. Never add a password field without deciding the hash first (see Open Questions).
+**BE-98a.** Hash stored secrets (MFA recovery codes, API tokens) with `bcryptjs` at cost ≥10, the installed library. `argon2` is **not** installed — do not import it.
 **BE-99.** Read env only through `@nestjs/config`. (gate: check:process-env-ratchet — also an eslint error)
 **BE-100.** Never hard-code or log a secret. (gate: check:hardcoded-secrets, check:log-secrets)
 **BE-101.** Write the Redis tombstone on every session-revocation path. It is a cache; `user_sessions.is_revoked` is the authority.
@@ -158,7 +159,7 @@ Cite rules by ID in review (`BE-14`). `(gate: x)` names the `pnpm` check that fa
 
 **BE-119.** Invalidate explicitly on every mutation. (gate: check:cache-invalidation)
 **BE-120.** Put every response-shaping filter in the cache key. *Why:* a filtered result under an unfiltered key leaks both ways. (gate: check:cache-key-shapes)
-**BE-121.** Read with `cachedVersioned`; make every writer bump `invalidateNamespace`. (gate: check:namespace-coverage)
+**BE-121.** Read with `CacheService.cachedVersioned` (`common/cache/cache.service.ts:93`); make every writer bump `invalidateNamespace` (`:103`). (gate: check:namespace-coverage)
 **BE-122.** Add no new request-path `invalidatePattern` or wildcard `SCAN`.
 **BE-123.** Never share a cached result across tenants, actors or permission versions.
 **BE-124.** Never give an authenticated personalized response HTTP/CDN caching.
@@ -228,7 +229,8 @@ Cite rules by ID in review (`BE-14`). `(gate: x)` names the `pnpm` check that fa
 
 1. **`AdmissionGuard`'s position** (third, between `JwtAuthGuard` and `MfaGuard`) is undocumented. Is the order deliberate? *Recommended default:* yes — document it in BE-28 and pin it with a spec.
 2. **BE-50 has no exemption allowlist**, so it cannot be ratcheted. *Recommended default:* generate `soft-delete-exempt.json` from today's 785 non-compliant tables, then require new tables to comply and let the list only shrink.
-3. **42 controllers hold `this.db`** (BE-06) with no ratchet file. *Recommended default:* same treatment — freeze the list, forbid additions.
+3. **14 controllers hold `this.db`** (BE-06) with no ratchet file. *Recommended default:* same treatment — freeze the list, forbid additions. Eight of the fourteen are `storage`/`public`/`health`, which may be legitimately exempt.
+6. **Password hashing is unspecified because no password login exists** (BE-98). *Recommended default:* keep it that way; if a credentials provider is ever added, require `argon2` (not `bcryptjs`, which is pure-JS and truncates at 72 bytes) and decide before the first user row.
 4. **87 no-arg `db.select()` call sites** vs 161 projected. Unclassified. *Recommended default:* audit once, then extend `check:query-projections` beyond `modules/build/**`.
 5. **No Prettier, no coverage threshold.** *Recommended default:* leave both off — adding Prettier now reformats 1,196 services in one diff; add a coverage floor only for `common/**` if you want one.
 
