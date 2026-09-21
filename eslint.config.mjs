@@ -179,10 +179,6 @@ export default tseslint.config(
       "src/common/rbac/platform-operators.ts",
       "src/common/security/legacy-crypto.ts",
       "src/common/security/secret-encryption.util.ts",
-      // Region topology reads dynamic REGION_<KEY>_* variables parsed at runtime,
-      // so the key set cannot exist in a fixed AppConfig schema. Both
-      // resolveRegionTopology and resolvePoolConfig validate their env bag and throw.
-      "src/common/region/region.module.ts",
       "src/common/tenant/with-tenant.ts",
       "src/common/testing/repo-paths.ts",
       "src/health/health.controller.ts",
@@ -215,10 +211,6 @@ export default tseslint.config(
       "src/modules/hr/import/hr-export-jobs.types.ts",
       "src/modules/hr/interviews/hr-interview-scheduling.service.ts",
       "src/modules/hr/onboarding/core/crypto.helpers.ts",
-      // Was `src/modules/hr/payroll/lib/encryption.ts`. Payroll became its own
-      // top-level module (CLAUDE.md §1) and this entry was never moved with it,
-      // so the file has been failing the rule under its real path ever since.
-      "src/modules/payroll/hr-payroll/lib/encryption.ts",
       "src/modules/hr/recruitment/recruitment-jobs.service.ts",
       "src/modules/inventory/channels/sync/shopify-admin.adapter.ts",
       "src/modules/inventory/shipments/transport/delhivery-http.adapter.ts",

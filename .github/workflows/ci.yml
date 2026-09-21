@@ -357,6 +357,14 @@ jobs:
         if: ${{ !cancelled() }}
         run: pnpm check:type-assertions:self-test && pnpm check:type-assertions
 
+      # The process.env lint rule cannot tell "I fixed the read" from "I added my
+      # filename to the exemption list" — both make it pass. This caps the list so
+      # it may only shrink, and fails on a stale entry, which is a debt that was
+      # paid without the count ever falling. Measured at head: 62 files, rc=0.
+      - name: The process.env exemption list only shrinks
+        if: ${{ !cancelled() }}
+        run: pnpm check:process-env-ratchet:self-test && pnpm check:process-env-ratchet
+
       # CANNOT RUN IN CI — named prerequisite: a checkout of
       # Startupppp/streamlineos-frontend beside this repository. The gate
       # compares this repo's catalog against the frontend PermissionKey union
