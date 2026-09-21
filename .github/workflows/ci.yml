@@ -1135,6 +1135,18 @@ jobs:
         if: ${{ !cancelled() }}
         run: pnpm check:set-null-column-lists:self-test
 
+      # The declaration half above knows WHICH 286 keys need a column list and can
+      # never know whether one was installed, because Drizzle's onDelete("set null")
+      # has no parameter for it. The migration SQL does say. This replays the corpus
+      # in journal order -- honouring both guarded-add idioms and the two
+      # catalog-driven sweeps that repair by name-free EXECUTE format -- and reads
+      # the installed column list out of the DDL. Fully hermetic: it opens no
+      # connection and needs no database. It does NOT replace the catalog half in
+      # db-gates.yml; text is not the catalog.
+      - name: ON DELETE SET NULL column lists (migration text half)
+        if: ${{ !cancelled() }}
+        run: pnpm check:set-null-migration-text:self-test && pnpm check:set-null-migration-text
+
       # The live ledger check needs a bootstrapped database; only its self-test is
       # hermetic. Wire the live half when a job here runs `pnpm db:bootstrap`.
       - name: Migration ledger self-test
