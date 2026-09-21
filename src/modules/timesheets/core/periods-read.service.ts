@@ -4,7 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, desc, eq, isNull } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull, lt } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
@@ -38,6 +38,30 @@ export class PeriodsReadService {
       .where(eq(timesheetSettings.orgId, orgId))
       .limit(1);
     return s;
+  }
+
+  async unsettledForMembers(orgId: string, membershipIds: readonly number[], endedBefore: string, limit: number) {
+    if (membershipIds.length === 0) return [];
+    return this.db
+      .select({
+        id: timesheetPeriods.id,
+        userMembershipId: timesheetPeriods.userMembershipId,
+        periodStart: timesheetPeriods.periodStart,
+        periodEnd: timesheetPeriods.periodEnd,
+        status: timesheetPeriods.status,
+        totalHours: timesheetPeriods.totalHours,
+      })
+      .from(timesheetPeriods)
+      .where(
+        and(
+          eq(timesheetPeriods.orgId, orgId),
+          inArray(timesheetPeriods.userMembershipId, [...membershipIds]),
+          inArray(timesheetPeriods.status, ["OPEN", "DRAFT", "REJECTED"]),
+          lt(timesheetPeriods.periodEnd, endedBefore),
+        ),
+      )
+      .orderBy(asc(timesheetPeriods.periodEnd), asc(timesheetPeriods.id))
+      .limit(Math.min(limit, 100));
   }
 
   async getPeriodWithUser(orgId: string, periodId: number) {
