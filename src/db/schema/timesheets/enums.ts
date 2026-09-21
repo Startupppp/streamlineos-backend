@@ -105,6 +105,11 @@ export const timesheetApprovalModeEnum = pgEnum("timesheet_approval_mode", [
   "MULTI_LEVEL",
 ]);
 
+export const timesheetApproverSourceEnum = pgEnum("timesheet_approver_source", [
+  "REPORTING_MANAGER",
+  "PROJECT_MANAGER",
+]);
+
 export const timesheetPayPeriodEnum = pgEnum("timesheet_pay_period", [
   "WEEKLY",
   "BIWEEKLY",

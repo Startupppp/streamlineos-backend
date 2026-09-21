@@ -8,6 +8,7 @@ import { and, desc, eq, isNull } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
+import type { TimesheetApprovalRoute } from "../../../db/schema/timesheets/periods";
 import {
   timesheetPeriods,
   timesheetSettings,
@@ -57,6 +58,9 @@ export class PeriodsReadService {
         rejectedAt: timesheetPeriods.rejectedAt,
         lockedAt: timesheetPeriods.lockedAt,
         currentApproverMembershipId: timesheetPeriods.currentApproverMembershipId,
+        approvalRoute: timesheetPeriods.approvalRoute,
+        approvalDueAt: timesheetPeriods.approvalDueAt,
+        approvalEscalatedAt: timesheetPeriods.approvalEscalatedAt,
         rejectionReason: timesheetPeriods.rejectionReason,
         createdAt: timesheetPeriods.createdAt,
         updatedAt: timesheetPeriods.updatedAt,
@@ -86,6 +90,9 @@ export class PeriodsReadService {
     rejectedAt: Date | null;
     lockedAt: Date | null;
     currentApproverMembershipId: number | null;
+    approvalRoute: TimesheetApprovalRoute | null;
+    approvalDueAt: Date | null;
+    approvalEscalatedAt: Date | null;
     rejectionReason: string | null;
     createdAt: Date;
     updatedAt: Date;
@@ -107,6 +114,9 @@ export class PeriodsReadService {
       rejectedAt: row.rejectedAt,
       lockedAt: row.lockedAt,
       currentApproverMembershipId: row.currentApproverMembershipId,
+      approvalRoute: row.approvalRoute,
+      approvalDueAt: row.approvalDueAt,
+      approvalEscalatedAt: row.approvalEscalatedAt,
       rejectionReason: row.rejectionReason,
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,
@@ -158,6 +168,9 @@ export class PeriodsReadService {
             rejectedAt: timesheetPeriods.rejectedAt,
             lockedAt: timesheetPeriods.lockedAt,
             currentApproverMembershipId: timesheetPeriods.currentApproverMembershipId,
+            approvalRoute: timesheetPeriods.approvalRoute,
+            approvalDueAt: timesheetPeriods.approvalDueAt,
+            approvalEscalatedAt: timesheetPeriods.approvalEscalatedAt,
             rejectionReason: timesheetPeriods.rejectionReason,
             createdAt: timesheetPeriods.createdAt,
             updatedAt: timesheetPeriods.updatedAt,

@@ -7,8 +7,10 @@ jest.mock("../../rbac/permissions", () => ({
   isScopable: jest.fn(() => true),
 }));
 
+import { PgDialect } from "drizzle-orm/pg-core";
 import { isScopable } from "../../rbac/permissions";
 import {
+  approvalQueueScope,
   resolveApprovalScope,
   resolveEntriesScope,
   resolvePayrollScope,
@@ -115,5 +117,21 @@ describe("resolvePayrollScope", () => {
     (mockAccess.scopeFor as jest.Mock).mockResolvedValue("team");
     const read = await resolvePayrollScope(mockAccess, makeUser());
     expect(read.rawScope("spec reads the resolved scope")).toBe("team");
+  });
+});
+
+describe("approvalQueueScope", () => {
+  const dialect = new PgDialect();
+  const render = (scope: ReturnType<typeof approvalQueueScope>) => dialect.sqlToQuery(scope.own);
+
+  it("shows a manager the periods routed to them as well as their own, since 'own' on an approval key means 'mine to decide'", () => {
+    const rendered = render(approvalQueueScope(77));
+
+    expect(rendered.sql).toMatch(/"user_membership_id" = \$1 or .*"current_approver_membership_id" = \$2/);
+    expect(rendered.params).toEqual([77, 77]);
+  });
+
+  it("matches nothing for a session with no membership", () => {
+    expect(render(approvalQueueScope(null)).sql).toBe("false");
   });
 });

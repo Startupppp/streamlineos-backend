@@ -165,3 +165,14 @@ export const timesheetsRemindersResponseSchema = z.union([
   }),
 ]);
 
+export const timesheetsApprovalEscalationResponseSchema = z.union([
+  cronSkippedSchema,
+  z.object({
+    success: z.literal(true),
+    message: z.string(),
+    orgsScanned: z.number().int().nonnegative(),
+    periodsOverdue: z.number().int().nonnegative(),
+    periodsEscalated: z.number().int().nonnegative(),
+    periodsUnowned: z.number().int().nonnegative(),
+  }),
+]);

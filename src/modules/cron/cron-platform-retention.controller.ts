@@ -12,6 +12,7 @@ import { assertCronSecret } from "./cron-secret";
 import { CronIdempotencyService } from "./cron-idempotency.service";
 import { ExceptionsDetectorService } from "../timesheets/core/exceptions-detector.service";
 import { TimesheetRemindersSweepService } from "../timesheets/core/reminders-sweep.service";
+import { TimesheetApprovalEscalationSweepService } from "../timesheets/core/approval-escalation-sweep.service";
 import { CronLeaseService } from "./cron-lease.service";
 import { BodylessAction, ResponseSchema } from "../../common/openapi/zod-operation-contracts";
 import { CronOperatorAccessService } from "./cron-operator-access.service";
@@ -26,6 +27,7 @@ import {
   mailMetadataRetentionSweepResponseSchema,
   announcementsRetentionSweepResponseSchema,
   timesheetsRemindersResponseSchema,
+  timesheetsApprovalEscalationResponseSchema,
 } from "./dto/cron-platform-response.schemas";
 
 @Public()
@@ -34,6 +36,7 @@ export class CronPlatformRetentionController {
   constructor(
     private readonly timesheetExceptionsDetector: ExceptionsDetectorService,
     private readonly timesheetReminders: TimesheetRemindersSweepService,
+    private readonly timesheetEscalation: TimesheetApprovalEscalationSweepService,
     private readonly idempotency: CronIdempotencyService,
     private readonly cronLease: CronLeaseService,
     private readonly operatorAccess: CronOperatorAccessService,
@@ -68,6 +71,20 @@ export class CronPlatformRetentionController {
   @ResponseSchema(timesheetsRemindersResponseSchema)
   postTimesheetsReminders(@Headers("authorization") authorization?: string) {
     return this.runTimesheetsReminders(authorization);
+  }
+
+  @Get("timesheets-approval-escalation")
+  @ResponseSchema(timesheetsApprovalEscalationResponseSchema)
+  getTimesheetsApprovalEscalation(@Headers("authorization") authorization?: string) {
+    return this.runTimesheetsApprovalEscalation(authorization);
+  }
+
+  @Post("timesheets-approval-escalation")
+  @BodylessAction()
+  @HttpCode(200)
+  @ResponseSchema(timesheetsApprovalEscalationResponseSchema)
+  postTimesheetsApprovalEscalation(@Headers("authorization") authorization?: string) {
+    return this.runTimesheetsApprovalEscalation(authorization);
   }
 
   @Get("timesheets-exception-detection")
@@ -190,6 +207,28 @@ export class CronPlatformRetentionController {
       };
     } catch (error) {
       logger.error("Timesheet reminders cron failed", error);
+      throw new InternalServerErrorException("Internal server error");
+    }
+  }
+
+  private async runTimesheetsApprovalEscalation(authorization?: string) {
+    assertCronSecret(authorization);
+    try {
+      const outcome = await this.cronLease.withLease("timesheets-approval-escalation", 600, () =>
+        this.timesheetEscalation.escalateAllOrgs(),
+      );
+      if (!outcome.ran) return { success: true, skipped: true, message: "timesheets-approval-escalation already running" };
+      const result = outcome.result;
+      return {
+        success: true,
+        message:
+          `Timesheet approval escalation: scanned ${result.orgsScanned} orgs, ` +
+          `escalated ${result.periodsEscalated} of ${result.periodsOverdue} overdue periods` +
+          (result.periodsUnowned > 0 ? `, ${result.periodsUnowned} could not be re-routed` : ""),
+        ...result,
+      };
+    } catch (error) {
+      logger.error("Timesheet approval escalation cron failed", error);
       throw new InternalServerErrorException("Internal server error");
     }
   }

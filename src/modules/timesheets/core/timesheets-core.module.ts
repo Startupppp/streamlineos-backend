@@ -47,9 +47,12 @@ import { TimesheetRemindersSweepService } from "./reminders-sweep.service";
 import { TIMESHEET_ATTENDANCE_PORT } from "./attendance/attendance.port";
 import { SchemaAttendanceAdapter } from "./attendance/schema-attendance.adapter";
 import { AttendanceDraftService } from "./attendance/attendance-draft.service";
+import { EmploymentFactsModule } from "../../directory/employment-facts.module";
+import { TimesheetApprovalRoutingService } from "./approval-routing.service";
+import { TimesheetApprovalEscalationSweepService } from "./approval-escalation-sweep.service";
 
 @Module({
-  imports: [AiModule, AccountingKernelModule, NotificationsModule, OutboxModule, WebhooksModule],
+  imports: [AiModule, AccountingKernelModule, NotificationsModule, OutboxModule, WebhooksModule, EmploymentFactsModule],
   controllers: [
     EntriesController,
     TimerController,
@@ -75,6 +78,8 @@ import { AttendanceDraftService } from "./attendance/attendance-draft.service";
     EntriesService,
     TimerService,
     PeriodsReadService,
+    TimesheetApprovalRoutingService,
+    TimesheetApprovalEscalationSweepService,
     PeriodsSubmitService,
     PeriodsService,
     /** TS-11. The overdue/escalation queue, derived from grace days + reminderRules. */
@@ -114,6 +119,8 @@ import { AttendanceDraftService } from "./attendance/attendance-draft.service";
     ExceptionsDetectorService,
     EntriesPeriodService,
     TimesheetRemindersSweepService,
+    TimesheetApprovalRoutingService,
+    TimesheetApprovalEscalationSweepService,
     TIMESHEET_ATTENDANCE_PORT,
   ],
 })

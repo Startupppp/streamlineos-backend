@@ -4,7 +4,7 @@ import type { Db } from "../../../../db/drizzle.module";
 import type { CacheService } from "../../../../common/cache/cache.service";
 import type { TimesheetsAuditService } from "../timesheets-audit.service";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
-import type { UpdateCoreSettingsInput } from "../dto/settings.schemas";
+import { updateCoreSettingsSchema, type UpdateCoreSettingsInput } from "../dto/settings.schemas";
 
 /**
  * TS-16. When a settings change has to be justified, and when demanding a
@@ -183,5 +183,27 @@ describe("SettingsService material-change reason", () => {
     await expect(
       svc.updateSettings(USER, update({ autoDraftFromAttendance: true })),
     ).rejects.toThrow(/autoDraftFromAttendance/);
+  });
+
+  it("treats who approves timesheets as material", async () => {
+    const { svc } = service();
+
+    await expect(
+      svc.updateSettings(USER, update({ approverSource: "PROJECT_MANAGER" })),
+    ).rejects.toThrow(/approverSource/);
+  });
+});
+
+describe("updateCoreSettingsSchema approval fields", () => {
+  it("offers only the two approval modes the product has, so multi-level cannot be switched on before it exists", () => {
+    expect(updateCoreSettingsSchema.safeParse({ approvalMode: "MULTI_LEVEL" }).success).toBe(false);
+    expect(updateCoreSettingsSchema.safeParse({ approvalMode: "MANAGER" }).success).toBe(true);
+    expect(updateCoreSettingsSchema.safeParse({ approvalMode: "AUTO" }).success).toBe(true);
+  });
+
+  it("accepts the reporting-manager default and the project-manager override, nothing else", () => {
+    expect(updateCoreSettingsSchema.safeParse({ approverSource: "REPORTING_MANAGER" }).success).toBe(true);
+    expect(updateCoreSettingsSchema.safeParse({ approverSource: "PROJECT_MANAGER" }).success).toBe(true);
+    expect(updateCoreSettingsSchema.safeParse({ approverSource: "TEAM_LEAD" }).success).toBe(false);
   });
 });

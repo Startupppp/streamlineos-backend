@@ -16,6 +16,7 @@ import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { PeriodsService } from "./periods.service";
+import { PeriodsSubmitService } from "./periods-submit.service";
 import { TimesheetOverdueService } from "./overdue.service";
 import { periodsQuerySchema, type PeriodsQuery } from "./dto/periods.schemas";
 import { overdueQuerySchema, type OverdueQuery } from "./dto/overdue.schemas";
@@ -29,6 +30,7 @@ import {
   periodDetailResponseSchema,
   overdueQueueResponseSchema,
 } from "./dto/timesheets-response.schemas";
+import { periodApproverPreviewSchema } from "./dto/timesheets-approvals-response.schemas";
 
 const periodIdParams = z.object({ periodId: z.coerce.number().int().positive() }).strict();
 
@@ -38,6 +40,7 @@ const periodIdParams = z.object({ periodId: z.coerce.number().int().positive() }
 export class TimesheetPeriodsController {
   constructor(
     private readonly periods: PeriodsService,
+    private readonly submitter: PeriodsSubmitService,
     private readonly overdue: TimesheetOverdueService,
   ) {}
 
@@ -89,6 +92,17 @@ export class TimesheetPeriodsController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.periods.getPeriod(u, periodId);
+  }
+
+  @Get(":periodId/approver")
+  @RequirePermission("timesheets:entries:view")
+  @Validate({ params: periodIdParams })
+  @ResponseSchema(periodApproverPreviewSchema)
+  previewApprover(
+    @Param("periodId", ParseIntPipe) periodId: number,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.submitter.previewApprover(u, periodId);
   }
 
   @Post(":periodId/submit")
