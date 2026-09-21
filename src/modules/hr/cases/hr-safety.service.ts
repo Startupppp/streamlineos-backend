@@ -42,10 +42,10 @@ import type {
   CheckinInput,
   WellnessTrendInput,
 } from "./dto/hr-safety.schemas";
+import { ANONYMITY_MIN_RESPONSES, isBelowAnonymityThreshold } from "../../../common/privacy/anonymity-threshold";
 
 const SAFETY_SEARCH_CAP = 500;
 const BURNOUT_SCORE_THRESHOLD = 4;
-const WELLNESS_MIN_GROUP_SIZE = 5;
 
 type SafetyCursorScope = {
   orgId: string;
@@ -413,7 +413,7 @@ export class HrSafetyService {
       .limit(90);
 
     return rows
-      .filter((r) => (r.respondents ?? 0) >= WELLNESS_MIN_GROUP_SIZE)
+      .filter((r) => (r.respondents ?? 0) >= ANONYMITY_MIN_RESPONSES)
       .map((r) => ({
         date: r.date,
         avgScore: r.avgScore !== null ? parseFloat(String(r.avgScore)) : null,
@@ -478,13 +478,13 @@ export class HrSafetyService {
       );
 
     const respondents = Number(agg?.respondents ?? 0);
-    const suppressed = respondents < WELLNESS_MIN_GROUP_SIZE;
+    const suppressed = isBelowAnonymityThreshold(respondents);
 
     return {
       mode: "k_anonymized_pulse" as const,
-      honestyNote: `Wellness pulse is k-anonymized (minimum ${WELLNESS_MIN_GROUP_SIZE} respondents). Individual scores are never shown. Not a clinical assessment.`,
+      honestyNote: `Wellness pulse is k-anonymized (minimum ${ANONYMITY_MIN_RESPONSES} respondents). Individual scores are never shown. Not a clinical assessment.`,
       windowDays: 7,
-      minGroupSize: WELLNESS_MIN_GROUP_SIZE,
+      minGroupSize: ANONYMITY_MIN_RESPONSES,
       suppressed,
       respondents: suppressed ? null : respondents,
       avgScore:

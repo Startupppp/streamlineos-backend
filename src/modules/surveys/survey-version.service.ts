@@ -1,4 +1,4 @@
-import { Inject, Injectable } from "@nestjs/common";
+import { Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, asc, desc, eq, isNull } from "drizzle-orm";
 import {
   surveyForms,
@@ -10,7 +10,6 @@ import {
 } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
-import { runInNewTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
 import { assertSurveyInOrg } from "./survey-tenant";
 
 type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
@@ -49,17 +48,16 @@ export class SurveyVersionService {
   }
 
   async getDraftVersion(orgId: string, surveyId: number) {
-    const existing = await this.db.query.surveyVersions.findFirst({
+    const draft = await this.db.query.surveyVersions.findFirst({
       where: and(eq(surveyVersions.orgId, orgId), eq(surveyVersions.surveyId, surveyId), isNull(surveyVersions.publishedAt)),
       orderBy: [desc(surveyVersions.versionNumber)],
     });
-    if (existing) return existing;
+    if (!draft) throw new NotFoundException("Survey draft not found");
+    return draft;
+  }
 
-    await this.assertSurveyInOrg(orgId, surveyId);
-
-    const [created] = await runInNewTenantTransaction(this.db, orgId, (tx) =>
-      tx.insert(surveyVersions).values({ orgId, surveyId, versionNumber: 1 }).returning(),
-    );
+  async createDraftVersion(orgId: string, surveyId: number) {
+    const [created] = await this.db.insert(surveyVersions).values({ orgId, surveyId, versionNumber: 1 }).returning();
     return created;
   }
 
