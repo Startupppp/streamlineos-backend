@@ -173,12 +173,23 @@ export const SUPPORT_ARTIFACTS = [
   },
   {
     id: "hr_helpdesk_routing_assignee_membership",
-    mechanism: "database-write",
+    mechanism: "database-cascade",
     table: "hr_helpdesk_routing",
     keyedBy: "assignee_membership_id",
-    onRemoval: "blocks-removal",
+    onRemoval: "set-null",
     onSuspension: "retain",
-    reason: "Helpdesk routing names the responsible tenant member and must be reassigned before removal so work is not silently orphaned.",
+    reason:
+      "Since migration 1137 a routing rule targets a queue or a person (chk_hr_helpdesk_routing_target) and fk_hr_helpdesk_routing_assignee_actor is ON DELETE SET NULL (assignee_membership_id), so removing the assignee clears the member slot and the rule keeps routing to its queue instead of blocking the removal.",
+  },
+  {
+    id: "helpdesk_queues_escalation_membership",
+    mechanism: "database-cascade",
+    table: "helpdesk_queues",
+    keyedBy: "escalation_membership_id",
+    onRemoval: "set-null",
+    onSuspension: "retain",
+    reason:
+      "fk_helpdesk_queues_escalation_actor is ON DELETE SET NULL (escalation_membership_id); a queue whose escalation actor left keeps its SLA defaults and the sweep escalates breached tickets to another admin member (selectEscalationTarget) until a new actor is named.",
   },
   {
     id: "hr_helpdesk_comments_author_membership",
