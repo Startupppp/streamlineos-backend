@@ -188,6 +188,6 @@ describe("ProjectsCustomStatesService — cross-tenant isolation", () => {
     const svc = new ProjectsCustomStatesService(db, {} as never);
     const u = { userId: "u-1", orgId: "org-attacker", isOrgOwner: false, role: "MEMBER", sessionId: "s", tokenScopes: null, principal: { kind: "human", membershipId: 1, isOwner: false } } as never;
 
-    await expect(svc.updateCustomState(u, 999, { name: "Stolen" })).rejects.toThrow(NotFoundException);
+    await expect(svc.updateCustomState(u, 1, 999, { name: "Stolen" })).rejects.toThrow(NotFoundException);
   });
 });

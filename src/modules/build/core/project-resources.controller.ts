@@ -170,12 +170,12 @@ export class ProjectResourcesController {
   @ResponseSchema(projectCustomStateSchema)
   @Validate({ params: projectIdstateIdParams, body: updateCustomStateSchema })
   updateCustomState(
-    @Param("projectId", ParseIntPipe) _: number,
+    @Param("projectId", ParseIntPipe) projectId: number,
     @Param("stateId", ParseIntPipe) stateId: number,
     @Body() body: UpdateCustomStateInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.members.updateCustomState(u, stateId, body);
+    return this.members.updateCustomState(u, projectId, stateId, body);
   }
 
   @Delete(":projectId/custom-states/:stateId")
@@ -184,11 +184,11 @@ export class ProjectResourcesController {
   @NoContentResponse()
   @Validate({ params: projectIdstateIdParams })
   deleteCustomState(
-    @Param("projectId", ParseIntPipe) _: number,
+    @Param("projectId", ParseIntPipe) projectId: number,
     @Param("stateId", ParseIntPipe) stateId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.members.deleteCustomState(u, stateId);
+    return this.members.deleteCustomState(u, projectId, stateId);
   }
 
   /**
