@@ -2,7 +2,6 @@ import { PgDialect } from "drizzle-orm/pg-core";
 import { outboxEvents } from "../../../../db/schema/common/outbox";
 import {
   organizationMembers,
-  projects,
   timesheetPeriods,
   timesheetSettings,
   timesheets,
@@ -22,6 +21,8 @@ import type { EntriesService } from "../entries.service";
 import type { NotificationDispatchService } from "../../../notifications/notification-dispatch.service";
 import type { RateResolverService } from "../rate-resolver.service";
 import type { TimesheetsAuditService } from "../timesheets-audit.service";
+import type { TimesheetApprovalRoutingService } from "../approval-routing.service";
+import type { TimesheetRoutingDecision } from "../lib/approval-routing";
 
 /**
  * `assertOrganizationActor` reads the actor's membership out of the database on
@@ -339,10 +340,39 @@ const rateResolver = {
   resolveMany: () => Promise.resolve([]),
 } as unknown as RateResolverService;
 
+const ROUTED_TO_MANAGER: TimesheetRoutingDecision = {
+  kind: "routed",
+  approver: { userId: "usr-manager", membershipId: APPROVER_MEMBERSHIP, name: "Manager", email: "manager@example.test", designation: null },
+  queueUserIds: [],
+  route: {
+    source: "reporting_manager",
+    rung: "reporting_manager",
+    approverUserId: "usr-manager",
+    approverMembershipId: APPROVER_MEMBERSHIP,
+    assignedToUserId: "usr-manager",
+    delegation: null,
+    projectId: 9,
+    explanation: "Manager approves as reporting manager.",
+    slaHours: 48,
+    escalationRung: "queue",
+    escalatedFrom: null,
+  },
+  dueAt: new Date("2026-09-10T00:00:00.000Z"),
+};
+
+const UNOWNED: TimesheetRoutingDecision = {
+  kind: "unowned",
+  explanation: "Nobody can approve this timesheet.",
+};
+
+function makeRouting(decision: TimesheetRoutingDecision) {
+  return { resolve: () => Promise.resolve(decision) } as unknown as TimesheetApprovalRoutingService;
+}
+
 /** `PeriodsService` as the module wires it: the reader and the submit split over one database. */
-function periodsService(db: Db, notifications: NotificationDispatchService) {
+function periodsService(db: Db, notifications: NotificationDispatchService, decision: TimesheetRoutingDecision = ROUTED_TO_MANAGER) {
   const reader = new PeriodsReadService(db, access);
-  const submit = new PeriodsSubmitService(db, reader, entriesService, audit);
+  const submit = new PeriodsSubmitService(db, reader, entriesService, audit, makeRouting(decision), rateResolver);
   return new PeriodsService(db, reader, submit, audit, notifications);
 }
 
@@ -355,14 +385,11 @@ function approvalsBulkService(db: Db, notifications: NotificationDispatchService
   return new ApprovalsBulkService(db, audit, approvalsService(db, notifications), rateResolver);
 }
 
-/** A submit whose entries carry a project, so an approver is resolved. */
 function submitScript(seq: number): Script {
   return {
     selects: [
       [timesheetPeriods, [[PERIOD_ROW]]],
       [timesheetSettings, [[]]],
-      /** Since the actor cutover a project names its manager by membership, and submit reads it directly. */
-      [projects, [[{ managerMembershipId: APPROVER_MEMBERSHIP }]]],
     ],
     transitions: [[transitionRow("SUBMITTED", seq)]],
     entries: [{ id: 1, description: "Work", projectId: 9, ticketId: null }],
@@ -443,10 +470,11 @@ describe("TS-24 period lifecycle durable rows", () => {
 
       await service.submitPeriod(WORKER, PERIOD_ID);
 
-      /** Routed to the project manager's membership, then told as that user. */
       expect(periodUpdates()[0]).toMatchObject({
         status: "SUBMITTED",
         currentApproverMembershipId: APPROVER_MEMBERSHIP,
+        approvalRoute: ROUTED_TO_MANAGER.route,
+        approvalDueAt: ROUTED_TO_MANAGER.dueAt,
       });
       expect(notes).toHaveLength(1);
       expect(notes[0]).toMatchObject({
@@ -456,23 +484,27 @@ describe("TS-24 period lifecycle durable rows", () => {
       });
     });
 
-    /**
-     * A period with no project work resolves no approver, and there is no
-     * honest fallback — broadcasting an unrouted timesheet to every manager is
-     * worse than the approvals queue being the only place it appears. The
-     * event still goes out: an external subscriber's routing is its own.
-     */
-    it("still emits the event when there is no approver to notify", async () => {
-      const outbox: OutboxRow[] = [];
-      const notes: Notification[] = [];
-      const script = submitScript(1);
-      script.entries = [{ id: 1, description: "Work", projectId: null, ticketId: null }];
-      const { db } = makeDb(script, outbox);
-      const service = periodsService(db, makeNotifications(notes));
+    it("resubmits a rejected period, clearing the rejection it is answering", async () => {
+      const script = submitScript(3);
+      script.selects[0] = [timesheetPeriods, [[{ ...PERIOD_ROW, status: "REJECTED", rejectedAt: new Date("2026-09-08T00:00:00.000Z"), rejectionReason: "Friday is missing" }]]];
+      const { db, periodUpdates } = makeDb(script, []);
+      const service = periodsService(db, makeNotifications([]));
 
       await service.submitPeriod(WORKER, PERIOD_ID);
 
-      expect(outbox).toHaveLength(1);
+      expect(periodUpdates()[0]).toMatchObject({ status: "SUBMITTED", rejectedAt: null, rejectionReason: null });
+    });
+
+    it("refuses the submit, writing no event and no notice, when nobody can own the approval", async () => {
+      const outbox: OutboxRow[] = [];
+      const notes: Notification[] = [];
+      const { db, ranTransaction } = makeDb(submitScript(1), outbox);
+      const service = periodsService(db, makeNotifications(notes), UNOWNED);
+
+      await expect(service.submitPeriod(WORKER, PERIOD_ID)).rejects.toThrow("Nobody can approve this timesheet.");
+
+      expect(ranTransaction()).toBe(false);
+      expect(outbox).toHaveLength(0);
       expect(notes).toHaveLength(0);
     });
   });

@@ -6,6 +6,8 @@ import { HrWorkflowApproverService } from "../hr-workflow-approver.service";
 import { HrWorkflowStepRunnerService } from "../hr-workflow-step-runner.service";
 import { AccessService } from "../../../access/access.service";
 import { EmploymentFactsService } from "../../../directory/employment-facts.service";
+import { ApprovalAuthorityService } from "../../../directory/approval-authority.service";
+import type { ApprovalRoute } from "../../../directory/approval-authority.types";
 
 function makeSelectChain(results: unknown[][] = []) {
   let callIndex = 0;
@@ -96,10 +98,32 @@ function makeEmploymentFacts(overrides: Partial<{ managerUserId: string | null; 
   };
 }
 
+function makeRoute(overrides: Partial<ApprovalRoute> = {}): ApprovalRoute {
+  return {
+    kind: "leave",
+    subjectUserId: "emp1",
+    permission: "hr:workflows:approve",
+    resolvedAt: "2026-09-21T00:00:00.000Z",
+    rung: "reporting_manager",
+    assignedTo: { userId: "manager-1", membershipId: 5, name: "Manager", email: "manager@example.com", designation: null },
+    approver: { userId: "manager-1", membershipId: 5, name: "Manager", email: "manager@example.com", designation: null },
+    delegation: null,
+    queue: null,
+    skipped: [],
+    slaHours: 48,
+    dueAt: "2026-09-23T00:00:00.000Z",
+    escalation: null,
+    explanation: "Manager approves as reporting manager.",
+    ...overrides,
+  };
+}
+
 async function makeServices(
   db: ReturnType<typeof makeDb>,
   employment?: { getFacts?: jest.Mock },
-): Promise<{ engine: HrWorkflowEngineService; approver: HrWorkflowApproverService }> {
+  approvals?: { resolve: jest.Mock },
+): Promise<{ engine: HrWorkflowEngineService; approver: HrWorkflowApproverService; approvals: { resolve: jest.Mock } }> {
+  const authority = approvals ?? { resolve: jest.fn().mockResolvedValue(makeRoute()) };
   const module: TestingModule = await Test.createTestingModule({
     providers: [
       HrWorkflowApproverService,
@@ -111,11 +135,13 @@ async function makeServices(
         provide: EmploymentFactsService,
         useValue: employment ?? { getFacts: jest.fn().mockResolvedValue(makeEmploymentFacts()) },
       },
+      { provide: ApprovalAuthorityService, useValue: authority },
     ],
   }).compile();
   return {
     engine: module.get(HrWorkflowEngineService),
     approver: module.get(HrWorkflowApproverService),
+    approvals: authority,
   };
 }
 
@@ -124,7 +150,7 @@ describe("HrWorkflowApproverService — resolveApprovers", () => {
     const db = makeDb([]);
     const { approver } = await makeServices(db);
     const step = { stepOrder: 1, name: "Step 1", approverType: "named_user", approverValue: "user-fixed", mode: "serial" };
-    const result = await approver.resolveApprovers(step, "emp1", "org1");
+    const result = await approver.resolveApprovers(step, "emp1", "org1", "leave_request");
     expect(result).toEqual(["user-fixed"]);
 
     expect(db.transaction).not.toHaveBeenCalled();
@@ -134,52 +160,66 @@ describe("HrWorkflowApproverService — resolveApprovers", () => {
     const db = makeDb([]);
     const { approver } = await makeServices(db);
     const step = { stepOrder: 1, name: "Step 1", approverType: "named_user", approverValue: null, mode: "serial" };
-    const result = await approver.resolveApprovers(step, "emp1", "org1");
+    const result = await approver.resolveApprovers(step, "emp1", "org1", "leave_request");
     expect(result).toEqual([]);
   });
 
-  it("returns direct manager via employment facts", async () => {
+  it("routes a direct_manager step through the approval authority as the workflow-approve key, starting at the reporting manager", async () => {
     const db = makeDb([]);
-    const { approver } = await makeServices(db, {
-      getFacts: jest.fn().mockResolvedValue(makeEmploymentFacts({ managerUserId: "manager-1" })),
-    });
+    const { approver, approvals } = await makeServices(db);
     const step = { stepOrder: 1, name: "Step 1", approverType: "direct_manager", mode: "serial" };
-    const result = await approver.resolveApprovers(step, "emp1", "org1");
+    const result = await approver.resolveApprovers(step, "emp1", "org1", "leave_request");
     expect(result).toEqual(["manager-1"]);
+    expect(approvals.resolve).toHaveBeenCalledWith("org1", "emp1", "leave", { permission: "hr:workflows:approve", from: "reporting_manager" });
   });
 
-  it("returns empty array when employee has no manager", async () => {
+  it("starts a managers_manager step at the manager's manager rung and a department_head step at the department head", async () => {
     const db = makeDb([]);
-    const { approver } = await makeServices(db, {
-      getFacts: jest.fn().mockResolvedValue(makeEmploymentFacts({ managerUserId: null })),
+    const { approver, approvals } = await makeServices(db);
+    await approver.resolveApprovers({ stepOrder: 1, name: "Step 1", approverType: "managers_manager", mode: "serial" }, "emp1", "org1", "overtime_request");
+    await approver.resolveApprovers({ stepOrder: 2, name: "Step 2", approverType: "department_head", mode: "serial" }, "emp1", "org1", "promotion");
+    expect(approvals.resolve).toHaveBeenNthCalledWith(1, "org1", "emp1", "overtime", { permission: "hr:workflows:approve", from: "managers_manager" });
+    expect(approvals.resolve).toHaveBeenNthCalledWith(2, "org1", "emp1", "hr_case", { permission: "hr:workflows:approve", from: "department_head" });
+  });
+
+  it("names every queue member when the chain falls through to the queue, and nobody when the request is unowned", async () => {
+    const db = makeDb([]);
+    const queued = makeRoute({
+      rung: "queue",
+      assignedTo: null,
+      approver: null,
+      queue: {
+        permission: "hr:workflows:approve",
+        label: "HR workflow approvers",
+        memberCount: 2,
+        members: [
+          { userId: "hr-1", membershipId: 7, name: "HR One", email: "hr1@example.com", designation: null },
+          { userId: "hr-2", membershipId: 8, name: "HR Two", email: "hr2@example.com", designation: null },
+        ],
+      },
+    });
+    const { approver } = await makeServices(db, undefined, {
+      resolve: jest.fn().mockResolvedValueOnce(queued).mockResolvedValueOnce(makeRoute({ rung: null, assignedTo: null, approver: null })),
     });
     const step = { stepOrder: 1, name: "Step 1", approverType: "direct_manager", mode: "serial" };
-    const result = await approver.resolveApprovers(step, "emp1", "org1");
-    expect(result).toEqual([]);
+    await expect(approver.resolveApprovers(step, "emp1", "org1", "leave_request")).resolves.toEqual(["hr-1", "hr-2"]);
+    await expect(approver.resolveApprovers(step, "emp1", "org1", "leave_request")).resolves.toEqual([]);
   });
 
-  it("returns manager's manager via two employment fact lookups", async () => {
+  it("persists the routing it resolved so acting and the inbox read the same approvers without re-resolving", async () => {
     const db = makeDb([]);
-    const { approver } = await makeServices(db, {
-      getFacts: jest.fn()
-        .mockResolvedValueOnce(makeEmploymentFacts({ managerUserId: "manager-1" }))
-        .mockResolvedValueOnce(makeEmploymentFacts({ managerUserId: "grand-manager" })),
+    const { approver } = await makeServices(db);
+    const step = { stepOrder: 1, name: "Step 1", approverType: "direct_manager", mode: "serial" };
+    const routing = await approver.resolveStepRouting(step, "emp1", "org1", "leave_request");
+    expect(routing).toEqual({
+      rung: "reporting_manager",
+      approverUserIds: ["manager-1"],
+      assignedToUserId: "manager-1",
+      delegation: null,
+      explanation: "Manager approves as reporting manager.",
+      dueAt: "2026-09-23T00:00:00.000Z",
+      escalationRung: null,
     });
-    const step = { stepOrder: 1, name: "Step 1", approverType: "managers_manager", mode: "serial" };
-    const result = await approver.resolveApprovers(step, "emp1", "org1");
-    expect(result).toEqual(["grand-manager"]);
-  });
-
-  it("returns empty for managers_manager when direct manager has no manager", async () => {
-    const db = makeDb([]);
-    const { approver } = await makeServices(db, {
-      getFacts: jest.fn()
-        .mockResolvedValueOnce(makeEmploymentFacts({ managerUserId: "manager-1" }))
-        .mockResolvedValueOnce(makeEmploymentFacts({ managerUserId: null })),
-    });
-    const step = { stepOrder: 1, name: "Step 1", approverType: "managers_manager", mode: "serial" };
-    const result = await approver.resolveApprovers(step, "emp1", "org1");
-    expect(result).toEqual([]);
   });
 
   it("resolves dynamic_expression dot-path on employment facts", async () => {
@@ -188,7 +228,7 @@ describe("HrWorkflowApproverService — resolveApprovers", () => {
       getFacts: jest.fn().mockResolvedValue(makeEmploymentFacts({ managerUserId: "mgr-from-dot-path" })),
     });
     const step = { stepOrder: 1, name: "Step 1", approverType: "dynamic_expression", approverValue: "user.reportingTo", mode: "serial" };
-    const result = await approver.resolveApprovers(step, "emp1", "org1");
+    const result = await approver.resolveApprovers(step, "emp1", "org1", "leave_request");
     expect(result).toEqual(["mgr-from-dot-path"]);
   });
 
@@ -198,7 +238,7 @@ describe("HrWorkflowApproverService — resolveApprovers", () => {
       getFacts: jest.fn().mockResolvedValue(makeEmploymentFacts({ departmentId: null })),
     });
     const step = { stepOrder: 1, name: "Step 1", approverType: "dynamic_expression", approverValue: "user.departmentId", mode: "serial" };
-    const result = await approver.resolveApprovers(step, "emp1", "org1");
+    const result = await approver.resolveApprovers(step, "emp1", "org1", "leave_request");
     expect(result).toEqual([]);
   });
 });

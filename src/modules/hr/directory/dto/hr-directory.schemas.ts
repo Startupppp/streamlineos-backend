@@ -8,17 +8,23 @@ function isSuppliedOrParseableDate(value: string | undefined): boolean {
   return !Number.isNaN(new Date(value).getTime());
 }
 
-export const listEmployeesSchema = z.object({
-  cursor: z.string().min(1).max(2048).optional(),
-  limit: pageSizeField(20, 100),
+const employeeDirectoryFilterFields = {
   search: z.string().optional(),
   q: z.string().optional(),
   departmentId: z.string().min(1).optional(),
-  /** "true" | "false" | "all" — default active-only for directory */
-  isActive: z.enum(["true", "false", "all"]).optional().default("true"),
   /** Org/job role on the user record (e.g. ENGINEERING, HR). Omit for all roles. */
   role: z.string().min(1).max(64).optional(),
+};
+
+export const listEmployeesSchema = z.object({
+  cursor: z.string().min(1).max(2048).optional(),
+  limit: pageSizeField(20, 100),
+  ...employeeDirectoryFilterFields,
+  /** "true" | "false" | "all" — default active-only for directory */
+  isActive: z.enum(["true", "false", "all"]).optional().default("true"),
 }).strict();
+
+export const countEmployeesSchema = z.object(employeeDirectoryFilterFields).strict();
 
 export const availabilitySchema = z.object({
   userIds: z.string().optional(),
@@ -234,7 +240,41 @@ export const updateEmployeeSchema = z
   })
   .strict();
 
-export const onboardEmployeeSchema = z.object({
+export const employeeIdParamsSchema = z.object({ employeeId: z.string().min(1) }).strict();
+
+const REPORTS_TO_REQUIRED_MESSAGE =
+  "Reports to is required. Choose a reporting manager, or mark the role as top-level with a reason.";
+
+function requireReportsTo(
+  value: { reportingManagerUserId?: string; reportingManagerEmail?: string; topLevelRole?: boolean; topLevelRoleReason?: string },
+  ctx: z.RefinementCtx,
+): void {
+  const hasManager = Boolean(value.reportingManagerUserId || value.reportingManagerEmail);
+  if (hasManager && value.topLevelRole) {
+    ctx.addIssue({
+      code: "custom",
+      message: "A top-level role cannot also have a reporting manager.",
+      path: ["topLevelRole"],
+    });
+    return;
+  }
+  if (!hasManager && !value.topLevelRole) {
+    ctx.addIssue({ code: "custom", message: REPORTS_TO_REQUIRED_MESSAGE, path: ["reportingManagerUserId"] });
+    return;
+  }
+  if (value.topLevelRole && !value.topLevelRoleReason?.trim()) {
+    ctx.addIssue({
+      code: "custom",
+      message: "Explain why this role has no reporting manager.",
+      path: ["topLevelRoleReason"],
+    });
+  }
+}
+
+export const onboardEmployeeFieldsSchema = z.object({
+  reportingManagerUserId: z.string().trim().min(1).max(128).optional(),
+  topLevelRole: z.boolean().optional(),
+  topLevelRoleReason: z.string().trim().max(500).optional(),
   firstName: z
     .string()
     .trim()
@@ -300,6 +340,8 @@ export const onboardEmployeeSchema = z.object({
     .optional(),
 }).strict();
 
+export const onboardEmployeeSchema = onboardEmployeeFieldsSchema.superRefine(requireReportsTo);
+
 export const createAccessRequestSchema = z.object({
   employeeId: z.string().min(1, "Employee is required"),
   systemName: z.string().min(1, "System name is required").max(200),
@@ -316,10 +358,11 @@ export const listAccessRequestsQuerySchema = z.object({
 }).strict();
 
 /** Row shape for spreadsheet bulk onboard — department can be an org department id or a name. */
-export const bulkOnboardEmployeeRowSchema = onboardEmployeeSchema
+export const bulkOnboardEmployeeRowSchema = onboardEmployeeFieldsSchema
   .omit({ attachToExistingMember: true })
   .extend({
     department: z.string().trim().min(1).optional(),
+    reportingManagerEmail: canonicalEmailSchema.optional(),
   })
   .superRefine((row, ctx) => {
     if (row.departmentId == null && !row.department) {
@@ -329,6 +372,7 @@ export const bulkOnboardEmployeeRowSchema = onboardEmployeeSchema
         path: ["department"],
       });
     }
+    requireReportsTo(row, ctx);
   });
 
 export const bulkOnboardEmployeesSchema = z.object({
@@ -343,6 +387,7 @@ export type OnboardEmployeeInput = z.infer<typeof onboardEmployeeSchema>;
 export type BulkOnboardEmployeeRow = z.infer<typeof bulkOnboardEmployeeRowSchema>;
 export type BulkOnboardEmployeesInput = z.infer<typeof bulkOnboardEmployeesSchema>;
 export type ListEmployeesInput = z.infer<typeof listEmployeesSchema>;
+export type CountEmployeesInput = z.infer<typeof countEmployeesSchema>;
 export type AvailabilityInput = z.infer<typeof availabilitySchema>;
 export type FindExpertInput = z.infer<typeof findExpertSchema>;
 export type SkillsMatrixQueryInput = z.infer<typeof skillsMatrixQuerySchema>;

@@ -7,11 +7,27 @@ import {
   decimal,
   date,
   index,
+  jsonb,
   uniqueIndex,
   foreignKey,
 } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 import { organizations, organizationMembers } from "../common/auth";
 import { timesheetPeriodStatusEnum } from "./enums";
+
+export interface TimesheetApprovalRoute {
+  source: "reporting_manager" | "project_manager" | "auto";
+  rung: string | null;
+  approverUserId: string | null;
+  approverMembershipId: number | null;
+  assignedToUserId: string | null;
+  delegation: { fromUserId: string; toUserId: string; endsAt: string } | null;
+  projectId: number | null;
+  explanation: string;
+  slaHours: number;
+  escalationRung: string | null;
+  escalatedFrom: { approverUserId: string | null; rung: string | null; at: string } | null;
+}
 
 export const timesheetPeriods = pgTable("timesheet_periods", {
   id: serial("id").primaryKey(),
@@ -28,6 +44,9 @@ export const timesheetPeriods = pgTable("timesheet_periods", {
   rejectedAt: timestamp("rejected_at"),
   lockedAt: timestamp("locked_at"),
   currentApproverMembershipId: integer("current_approver_membership_id"),
+  approvalRoute: jsonb("approval_route").$type<TimesheetApprovalRoute>(),
+  approvalDueAt: timestamp("approval_due_at"),
+  approvalEscalatedAt: timestamp("approval_escalated_at"),
   approvedByMembershipId: integer("approved_by_membership_id"),
   rejectionReason: text("rejection_reason"),
   /**
@@ -59,6 +78,7 @@ export const timesheetPeriods = pgTable("timesheet_periods", {
     name: "fk_timesheet_periods_user_membership",
   }).onDelete("set null"),
   index("idx_timesheet_periods_current_approver_membership").on(t.orgId, t.currentApproverMembershipId),
+  index("idx_timesheet_periods_org_awaiting_decision").on(t.orgId, t.approvalDueAt).where(sql`${t.status} = 'SUBMITTED'`),
   index("idx_timesheet_periods_org_approved_actor").on(t.orgId, t.approvedByMembershipId),
   foreignKey({
     columns: [t.orgId, t.approvedByMembershipId],

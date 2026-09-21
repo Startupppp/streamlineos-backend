@@ -1,5 +1,6 @@
-import { eq, sql } from "drizzle-orm";
+import { eq, or, sql } from "drizzle-orm";
 import type { PgColumn } from "drizzle-orm/pg-core";
+import { timesheetPeriods } from "../../../db/schema";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { ScopedRead, type OwnershipScope } from "../../access/scoped-read";
 import { AccessService } from "../../access/access.service";
@@ -73,4 +74,11 @@ export async function resolveRatePreviewSubject(
 
 export function membershipScope(membershipId: number | null, ownerColumn: PgColumn): OwnershipScope {
   return { own: membershipId !== null ? eq(ownerColumn, membershipId) : sql`false` };
+}
+
+export function approvalQueueScope(membershipId: number | null): OwnershipScope {
+  if (membershipId === null) return { own: sql`false` };
+  return {
+    own: or(eq(timesheetPeriods.userMembershipId, membershipId), eq(timesheetPeriods.currentApproverMembershipId, membershipId)) ?? sql`false`,
+  };
 }

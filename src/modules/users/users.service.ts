@@ -34,9 +34,9 @@ import { withMembershipMutations } from "../../common/org/membership-mutations";
 import { withIdentity } from "../../common/tenant/with-identity";
 import { runInTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
 import { syncCanonicalEmploymentFields } from "../../common/hr/sync-canonical-employment-fields";
-import { syncCanonicalReportingLine } from "../../common/hr/sync-canonical-reporting-line";
 import { OrganizationUsersReader } from "./organization-users.reader";
 import { EmploymentFactsService } from "../directory/employment-facts.service";
+import { ReportingLineService } from "../directory/reporting-line.service";
 
 type GlobalUserPatch = Pick<
   typeof users.$inferInsert,
@@ -65,6 +65,7 @@ export class UsersService {
     private readonly invitationsSvc: InvitationCreateService,
     private readonly orgMembership: OrgMembershipService,
     private readonly employment: EmploymentFactsService,
+    private readonly reportingLines: ReportingLineService,
   ) {
     this.reader = new OrganizationUsersReader(db, employment);
   }
@@ -252,7 +253,7 @@ export class UsersService {
           }
           if (hasReportingUpdate) {
             const today = new Date().toISOString().slice(0, 10);
-            await syncCanonicalReportingLine(tx, orgId, userId, data.reportingTo ?? null, today, actorUserId);
+            await this.reportingLines.assign(orgId, userId, data.reportingTo ?? null, today, actorUserId, tx);
           }
         },
         { orgId },

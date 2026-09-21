@@ -30,6 +30,8 @@ import {
 import {
   availabilitySchema,
   bulkOnboardEmployeesSchema,
+  employeeIdParamsSchema,
+  countEmployeesSchema,
   employeeUserQuerySchema,
   findExpertSchema,
   listEmployeesSchema,
@@ -37,6 +39,7 @@ import {
   skillsMatrixQuerySchema,
   type AvailabilityInput,
   type BulkOnboardEmployeesInput,
+  type CountEmployeesInput,
   type EmployeeUserQueryInput,
   type FindExpertInput,
   type ListEmployeesInput,
@@ -51,8 +54,10 @@ import { Validate } from "../../../common/validation/validate.decorator";
 import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
 import {
   onboardResponseSchema,
+  resendInviteResponseSchema,
   bulkOnboardResultSchema,
   employeeListPageSchema,
+  employeeCountsSchema,
   employeeStatsSchema,
   anniversaryFeedSchema,
   availabilityListSchema,
@@ -62,9 +67,6 @@ import {
   employeeProjectsSchema,
   employeeTicketsSchema,
 } from "./dto/directory-response.schemas";
-import { z } from "zod";
-
-const employeeIdParams = z.object({ employeeId: z.string().min(1) }).strict();
 
 @RequireModule("hr")
 @Controller("hr/employees")
@@ -92,6 +94,19 @@ export class EmployeesController {
     @CurrentUser() currentUser: CurrentUserContext,
   ) {
     return this.onboarding.onboardEmployee(currentUser, body);
+  }
+
+  @Post(":employeeId/resend-invite")
+  @ResponseSchema(resendInviteResponseSchema)
+  @RequirePermission("hr:onboarding:manage")
+  @Idempotent("hr.employees.resend-invite")
+  @HttpCode(200)
+  @Validate({ params: employeeIdParamsSchema })
+  resendInvite(
+    @Param("employeeId") employeeId: string,
+    @CurrentUser() currentUser: CurrentUserContext,
+  ) {
+    return this.onboarding.resendInvite(currentUser, employeeId);
   }
 
   @Post("onboard/bulk")
@@ -125,6 +140,22 @@ export class EmployeesController {
       search,
       departmentId: query.departmentId,
       isActive: query.isActive,
+      role: query.role,
+    });
+  }
+
+  @Get("counts")
+  @ResponseSchema(employeeCountsSchema)
+  @RequirePermission("hr:employees:view")
+  @Validate({ query: countEmployeesSchema })
+  async countEmployees(
+    @Query() query: CountEmployeesInput,
+    @CurrentUser() currentUser: CurrentUserContext,
+  ) {
+    const read = await resolveEmployeesScope(this.access, currentUser);
+    return this.employees.countEmployees(read, {
+      search: query.search ?? query.q,
+      departmentId: query.departmentId,
       role: query.role,
     });
   }

@@ -55,6 +55,34 @@ export function getInvitationRevokedEmailTemplate(organizationName: string): str
   });
 }
 
+export function getMembershipAddedEmailTemplate(
+  recipientName: string,
+  organizationName: string,
+  signInUrl: string,
+): string {
+  const brand = getBrandName();
+  const safeName = escapeHtml(recipientName);
+  const safeOrgName = escapeHtml(organizationName);
+  const safeBrand = escapeHtml(brand);
+
+  const content = `
+    <p class="email-label">Organization access</p>
+    <h1 class="email-title">You&apos;ve been added to ${safeOrgName}</h1>
+    <p class="email-text">
+      Hi ${safeName}, an administrator added you to <strong>${safeOrgName}</strong> on ${safeBrand}. Your existing account now has access to that organization.
+    </p>
+    ${renderButton("Sign in to " + organizationName, signInUrl)}
+    ${renderCallout("This sign-in link is valid for 7 days. If you were not expecting this email, contact your administrator.")}
+    ${renderFallbackLink(signInUrl)}
+  `;
+
+  return getEmailTemplate({
+    title: `You've been added to ${safeOrgName}`,
+    preheader: `You now have access to ${safeOrgName} on ${brand}`,
+    content,
+  });
+}
+
 export function getMembershipRemovedEmailTemplate(
   recipientName: string,
   organizationName: string,

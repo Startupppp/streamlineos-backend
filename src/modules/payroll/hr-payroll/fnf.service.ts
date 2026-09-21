@@ -147,7 +147,7 @@ export class FnfService {
     const allowedNext = VALID_FNF_TRANSITIONS[currentStatus] ?? [];
     if (!allowedNext.includes(targetStatus)) {
       throw new ConflictException(
-        `Invalid FNF status transition: ${currentStatus} → ${targetStatus}. Allowed: ${allowedNext.join(", ") || "none"}`,
+        `Invalid final settlement status transition: ${currentStatus} → ${targetStatus}. Allowed: ${allowedNext.join(", ") || "none"}`,
       );
     }
 

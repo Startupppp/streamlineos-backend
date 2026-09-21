@@ -1,4 +1,4 @@
-import { listEmployeesSchema } from "./dto/hr-directory.schemas";
+import { countEmployeesSchema, listEmployeesSchema } from "./dto/hr-directory.schemas";
 
 /**
  * Contract tests for listEmployeesSchema (GET /hr/employees).
@@ -111,5 +111,31 @@ describe("listEmployeesSchema contract", () => {
         listEmployeesSchema.parse({ unknownField: "value" }),
       ).toThrow();
     });
+  });
+});
+
+describe("countEmployeesSchema contract (GET /hr/employees/counts)", () => {
+  it("accepts exactly the list's filter params so the summary can only be narrowed the way the list is", () => {
+    expect(
+      countEmployeesSchema.parse({
+        search: "ada",
+        q: "ada",
+        departmentId: "dept-1",
+        role: "ENGINEERING",
+      }),
+    ).toEqual({ search: "ada", q: "ada", departmentId: "dept-1", role: "ENGINEERING" });
+  });
+
+  it("rejects the status axis — the count splits active/inactive itself, so a status param would double-filter", () => {
+    expect(() => countEmployeesSchema.parse({ isActive: "true" })).toThrow();
+  });
+
+  it("rejects pagination params — a count has no page", () => {
+    expect(() => countEmployeesSchema.parse({ cursor: "abc" })).toThrow();
+    expect(() => countEmployeesSchema.parse({ limit: "20" })).toThrow();
+  });
+
+  it("rejects organizationId (cross-tenant injection attempt)", () => {
+    expect(() => countEmployeesSchema.parse({ organizationId: "other-org" })).toThrow();
   });
 });

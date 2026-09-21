@@ -123,7 +123,7 @@ export class SurveyFormsService {
       })
       .returning();
 
-    const draftVersion = await this.versions.getDraftVersion(orgId, survey.id);
+    const draftVersion = await this.versions.createDraftVersion(orgId, survey.id);
     const template = input.templateKey ? this.templates.get(input.templateKey) : undefined;
     const sections = template?.sections?.length ? template.sections : [{ title: "Section 1", questions: [] }];
 
@@ -244,7 +244,6 @@ export class SurveyFormsService {
       })
       .returning();
 
-    await this.versions.getDraftVersion(orgId, copy.id);
     await this.versions.duplicateSurveyStructure(orgId, surveyId, copy.id);
 
     return copy;

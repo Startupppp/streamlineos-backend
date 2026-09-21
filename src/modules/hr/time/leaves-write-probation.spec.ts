@@ -56,18 +56,9 @@ function buildService(options: {
     },
     insert: jest.fn().mockReturnValue({ values: insertedValues }),
   };
-  const ACTOR_MEMBERSHIP = [
-    { id: 5, orgId: "org-1", userId: "manager-1", role: "MEMBER", isOwner: false, status: "ACTIVE" },
-  ];
-  let selectCall = 0;
   const db = {
     query: { users: { findFirst: jest.fn().mockResolvedValue(undefined) } },
-    select: jest.fn(() => {
-      const position = selectCall % 3;
-      selectCall += 1;
-      const rows = position === 0 ? ACTOR_MEMBERSHIP : position === 1 ? [] : options.policyRows;
-      return chainOf(["from", "where", "limit"], rows);
-    }),
+    select: jest.fn(() => chainOf(["from", "where", "limit"], options.policyRows)),
     transaction: jest.fn(
       async (callback: (transaction: typeof tx) => Promise<unknown>) => callback(tx),
     ),
@@ -84,7 +75,15 @@ function buildService(options: {
       invalidateNamespaceForOrg: jest.fn().mockResolvedValue(undefined),
     } as never,
     { membersWithPermission: jest.fn().mockResolvedValue([]) } as never,
-    { resolve: jest.fn().mockResolvedValue({ id: "manager-1", name: "Manager" }) } as never,
+    { resolve: jest.fn().mockResolvedValue({
+      rung: "reporting_manager",
+      approver: { userId: "manager-1", membershipId: 5, name: "Manager", email: "manager@example.com", designation: null },
+      queue: null,
+      delegation: null,
+      escalation: null,
+      dueAt: "2026-08-14T00:00:00.000Z",
+      explanation: "Manager approves as reporting manager.",
+    }) } as never,
     { probationCoverageOn } as never,
     {
       getFacts: jest.fn().mockResolvedValue({ managerUserId: null }),

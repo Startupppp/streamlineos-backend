@@ -1,5 +1,6 @@
 import {
   getInvitationEmailTemplate,
+  getMembershipAddedEmailTemplate,
   getHolidayAnnouncementEmailTemplate,
   getCompanyAnnouncementEmailTemplate,
 } from "..";
@@ -11,6 +12,13 @@ export const organizationTemplates = defineTemplateFamily({
     name: "Team Invitation",
     subject: "You've been invited to join Acme Corp",
     generateHtml: () => getInvitationEmailTemplate(`${BASE_URL()}/invitation/tok123`, "Acme Corp", "Rahul Verma"),
+  },
+  "org.membership-added": {
+    category: "Organization",
+    name: "Added to Organization",
+    subject: "You've been added to Acme Corp",
+    generateHtml: () =>
+      getMembershipAddedEmailTemplate("Priya Sharma", "Acme Corp", `${BASE_URL()}/magic-link?token=test-token`),
   },
   "org.holiday": {
     category: "Organization",

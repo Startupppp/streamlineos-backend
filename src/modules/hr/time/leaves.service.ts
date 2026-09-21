@@ -139,6 +139,19 @@ export class LeavesService {
     return { pending, all };
   }
 
+  async pendingRoutedTo(orgId: string, approverMembershipId: number, limit: number) {
+    return this.db.query.leaveRequests.findMany({
+      where: and(
+        eq(leaveRequests.orgId, orgId),
+        eq(leaveRequests.status, "PENDING"),
+        eq(leaveRequests.approverMembershipId, approverMembershipId),
+      ),
+      with: TEAM_RELATIONS,
+      orderBy: [asc(leaveRequests.createdAt)],
+      limit: Math.min(limit, TEAM_LEAVES_CAP),
+    });
+  }
+
   private async queryLeaves(conditions: SQL[], orgId: string, userId: string, isAll: boolean) {
     const base = await this.db.query.leaveRequests.findMany({
       where: and(...conditions),

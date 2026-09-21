@@ -170,3 +170,77 @@ describe("EmployeesService.listEmployees — DataScope wiring", () => {
     expect(selectedFields).not.toHaveProperty("monthlySalary");
   });
 });
+
+describe("EmployeesService.countEmployees — the summary runs under the list's DataScope", () => {
+  const ORG = "org-1";
+  const USER = "user-1";
+
+  function buildCountDb(rows: unknown[]) {
+    const joinChain: Record<string, jest.Mock> = {
+      leftJoin: jest.fn(),
+      where: jest.fn().mockResolvedValue(rows),
+    };
+    joinChain["leftJoin"].mockReturnValue(joinChain);
+    return {
+      joinChain,
+      select: jest.fn().mockReturnValue({
+        from: jest.fn().mockReturnValue({
+          innerJoin: jest.fn().mockReturnValue(joinChain),
+        }),
+      }),
+    };
+  }
+
+  function buildService(db: ReturnType<typeof buildCountDb>) {
+    const cache = {
+      cachedVersioned: jest.fn().mockImplementation(
+        async (_ns: string, _key: string, fn: () => Promise<unknown>) => fn(),
+      ),
+    };
+    const employment = { getFactsBatch: jest.fn() };
+    return new EmployeesService(db as never, cache as never, employment as never);
+  }
+
+  let applyScopeSpy: jest.SpyInstance;
+
+  beforeEach(() => {
+    applyScopeSpy = jest.spyOn(applyScopeMod, "applyScope");
+  });
+
+  afterEach(() => {
+    applyScopeSpy.mockRestore();
+  });
+
+  it("applies the caller's own scope to the aggregate exactly as the list does", async () => {
+    const db = buildCountDb([{ active: 1, inactive: 0 }]);
+    const svc = buildService(db);
+    await expect(
+      svc.countEmployees(ScopedRead.of(ORG, USER, "own"), {}),
+    ).resolves.toEqual({ active: 1, inactive: 0 });
+    expect(applyScopeSpy).toHaveBeenCalledWith(
+      "own",
+      ORG,
+      USER,
+      expect.objectContaining({ ownerColumn: expect.anything() }),
+    );
+    expect(db.select).toHaveBeenCalledTimes(1);
+  });
+
+  it("reports zeros without touching the database when the scope is none", async () => {
+    const db = buildCountDb([]);
+    const svc = buildService(db);
+    await expect(
+      svc.countEmployees(ScopedRead.of(ORG, USER, "none"), {}),
+    ).resolves.toEqual({ active: 0, inactive: 0 });
+    expect(applyScopeSpy).not.toHaveBeenCalled();
+    expect(db.select).not.toHaveBeenCalled();
+  });
+
+  it("reports zeros when the aggregate returns no row rather than inventing a count", async () => {
+    const db = buildCountDb([]);
+    const svc = buildService(db);
+    await expect(
+      svc.countEmployees(ScopedRead.of(ORG, USER, "all"), {}),
+    ).resolves.toEqual({ active: 0, inactive: 0 });
+  });
+});

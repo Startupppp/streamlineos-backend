@@ -69,7 +69,10 @@ describe("ExitWriteService — cross-tenant isolation", () => {
       mockAutomation: { runAutomationsForEvent: jest.fn().mockResolvedValue(undefined) },
       mockHrAutomation: { emit: jest.fn().mockResolvedValue(undefined) },
       mockResignationJobs: { notifyResignationSubmitted: jest.fn(), notifyHrApproved: jest.fn(), notifyFinalDecision: jest.fn() },
-      mockExitChecklist: { seedChecklistFromTemplate: jest.fn().mockResolvedValue(undefined) },
+      mockExitChecklist: {
+        seedForResignation: jest.fn().mockResolvedValue(undefined),
+        addCustomItems: jest.fn().mockResolvedValue({ created: 0 }),
+      },
       mockPolicyEval: { evaluatePolicy: jest.fn().mockResolvedValue(null) },
       mockCompletionGuard: { assertReady: jest.fn().mockResolvedValue(undefined) },
       mockAccess: { membersWithPermission: jest.fn().mockResolvedValue([]), resolveUserPermissions: jest.fn().mockResolvedValue(new Map()) },

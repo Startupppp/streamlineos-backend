@@ -1,15 +1,41 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, eq, inArray, isNull, lte } from "drizzle-orm";
+import { and, eq, inArray, lte } from "drizzle-orm";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import { hrWorkflowDelegations } from "../../../db/schema/hr/workflow-engine";
 import { users, organizationMembers } from "../../../db/schema/common/auth";
-import { orgUnits } from "../../../db/schema/common/organization";
 import { hrEmployments, hrPeople } from "../../../db/schema";
 import { AccessService } from "../../access/access.service";
 import { EmploymentFactsService } from "../../directory/employment-facts.service";
 import { livePersonOfUser, primaryEmploymentOfPerson } from "../../directory/employment-query";
-import type { HrWorkflowObjectType, ResolvedStep } from "./hr-workflow-engine.types";
+import { ApprovalAuthorityService } from "../../directory/approval-authority.service";
+import {
+  approvalKindOfWorkflowObject,
+  HR_WORKFLOW_APPROVE_PERMISSION,
+  type ApprovalRoute,
+  type ApprovalRung,
+} from "../../directory/approval-authority.types";
+import type { HrWorkflowObjectType, ResolvedStep, WorkflowStepRouting } from "./hr-workflow-engine.types";
+
+const MANAGER_RUNG_BY_STEP_TYPE: Readonly<Record<string, ApprovalRung>> = {
+  direct_manager: "reporting_manager",
+  managers_manager: "managers_manager",
+  department_head: "department_head",
+};
+
+export function stepRoutingOf(route: ApprovalRoute): WorkflowStepRouting {
+  return {
+    rung: route.rung,
+    approverUserIds: route.approver ? [route.approver.userId] : (route.queue?.members.map((member) => member.userId) ?? []),
+    assignedToUserId: route.assignedTo?.userId ?? null,
+    delegation: route.delegation
+      ? { fromUserId: route.delegation.fromUserId, toUserId: route.delegation.toUserId, endsAt: route.delegation.endsAt }
+      : null,
+    explanation: route.explanation,
+    dueAt: route.dueAt,
+    escalationRung: route.escalation?.rung ?? null,
+  };
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object";
@@ -21,36 +47,35 @@ export class HrWorkflowApproverService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly access: AccessService,
     private readonly employment: EmploymentFactsService,
+    private readonly approvals: ApprovalAuthorityService,
   ) {}
 
-  async resolveApprovers(step: ResolvedStep, subjectEmployeeId: string, orgId: string): Promise<string[]> {
+  async resolveStepRouting(
+    step: ResolvedStep,
+    subjectEmployeeId: string,
+    orgId: string,
+    objectType: HrWorkflowObjectType,
+  ): Promise<WorkflowStepRouting | null> {
+    const rung = MANAGER_RUNG_BY_STEP_TYPE[step.approverType];
+    if (!rung) return null;
+    const route = await this.approvals.resolve(orgId, subjectEmployeeId, approvalKindOfWorkflowObject(objectType), {
+      permission: HR_WORKFLOW_APPROVE_PERMISSION,
+      from: rung,
+    });
+    return stepRoutingOf(route);
+  }
+
+  async resolveApprovers(
+    step: ResolvedStep,
+    subjectEmployeeId: string,
+    orgId: string,
+    objectType: HrWorkflowObjectType,
+  ): Promise<string[]> {
+    const routing = await this.resolveStepRouting(step, subjectEmployeeId, orgId, objectType);
+    if (routing) return routing.approverUserIds;
     switch (step.approverType) {
       case "named_user":
         return step.approverValue ? [step.approverValue] : [];
-
-      case "direct_manager": {
-        const facts = await this.employment.getFacts(orgId, subjectEmployeeId);
-        return facts.managerUserId ? [facts.managerUserId] : [];
-      }
-
-      case "managers_manager": {
-        const facts = await this.employment.getFacts(orgId, subjectEmployeeId);
-        if (!facts.managerUserId) return [];
-        const managerFacts = await this.employment.getFacts(orgId, facts.managerUserId);
-        return managerFacts.managerUserId ? [managerFacts.managerUserId] : [];
-      }
-
-      case "department_head": {
-        const facts = await this.employment.getFacts(orgId, subjectEmployeeId);
-        if (!facts.departmentId) return [];
-        const [dept] = await this.db
-          .select({ headUserId: organizationMembers.userId })
-          .from(orgUnits)
-          .leftJoin(organizationMembers, eq(organizationMembers.id, orgUnits.headMembershipId))
-          .where(and(eq(orgUnits.id, facts.departmentId), eq(orgUnits.orgId, orgId), isNull(orgUnits.deletedAt)))
-          .limit(1);
-        return dept?.headUserId ? [dept.headUserId] : [];
-      }
 
       case "hr_role": {
         const hrApprovers = await this.access.membersWithPermission(orgId, "hr:leaves:approve");

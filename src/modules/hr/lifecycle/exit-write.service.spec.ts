@@ -52,7 +52,7 @@ describe("ExitWriteService.finalReview — approving a resignation via the real 
       rowVersion: 1,
     });
     const resignationJobs = { notifyFinalDecision: jest.fn() };
-    const exitChecklist = { seedChecklistFromTemplate: jest.fn().mockResolvedValue(undefined) };
+    const exitChecklist = { seedForResignation: jest.fn().mockResolvedValue(undefined) };
 
     const service = new ExitWriteService(
       db as never,
@@ -70,7 +70,7 @@ describe("ExitWriteService.finalReview — approving a resignation via the real 
 
     expect(result).toEqual({ success: true });
     expect(insertedTables).toContain(fnfSettlements);
-    expect(exitChecklist.seedChecklistFromTemplate).toHaveBeenCalledWith("org-1", 42);
+    expect(exitChecklist.seedForResignation).toHaveBeenCalledWith("org-1", 42);
   });
 
   it("does not create an FnF settlement or seed a checklist on rejection", async () => {
@@ -83,7 +83,7 @@ describe("ExitWriteService.finalReview — approving a resignation via the real 
       rowVersion: 1,
     });
     const resignationJobs = { notifyFinalDecision: jest.fn() };
-    const exitChecklist = { seedChecklistFromTemplate: jest.fn() };
+    const exitChecklist = { seedForResignation: jest.fn() };
 
     const service = new ExitWriteService(
       db as never,
@@ -100,7 +100,7 @@ describe("ExitWriteService.finalReview — approving a resignation via the real 
     await service.finalReview("org-1", "actor-1", 42, { decision: "reject", remarks: "not eligible" });
 
     expect(insertedTables).not.toContain(fnfSettlements);
-    expect(exitChecklist.seedChecklistFromTemplate).not.toHaveBeenCalled();
+    expect(exitChecklist.seedForResignation).not.toHaveBeenCalled();
   });
 });
 

@@ -124,7 +124,7 @@ export function buildDefaultTemplates(): DefaultTemplate[] {
           item("Revoke access to all systems (email, HRMS)", "it", 0, 2),
           item("Collect company laptop and assets", "it", 0, 3),
           item("Settle outstanding expense claims", "hr", 3, 4),
-          item("Process final settlement (FNF)", "hr", 7, 5),
+          item("Process final settlement", "hr", 7, 5),
           item("Issue experience/relieving letter", "hr", 7, 6),
           item("Update org chart and reporting structure", "manager", 0, 7),
           item("Hand over pending work and documentation", "employee", 0, 8, false),

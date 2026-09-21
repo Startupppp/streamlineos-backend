@@ -1,3 +1,4 @@
+import { ConflictException } from "@nestjs/common";
 import { and, asc, eq } from "drizzle-orm";
 import {
   employeeSalaryProfileComponents,
@@ -6,6 +7,7 @@ import {
   salaryStructureTemplates,
 } from "../../../db/schema";
 import type { Db } from "../../../db/drizzle.module";
+import { isUniqueViolation } from "../../../common/db/postgres-error";
 
 type Tx = Pick<Db, "insert" | "select" | "update">;
 
@@ -118,6 +120,40 @@ export function splitFromTemplate(template: {
   };
 }
 
+export function salaryProfileConflictMessage(effectiveFrom: string): string {
+  return `A salary profile effective from ${effectiveFrom} already exists for this person. Change the joining date, or update their pay from Payroll instead.`;
+}
+
+async function insertSalaryProfile(
+  tx: Tx,
+  input: { orgId: string; userId: string; actorId: string; currency: string; effectiveFrom: string },
+  annualCtc: string,
+): Promise<{ id: number }> {
+  let inserted: { id: number }[];
+  try {
+    inserted = await tx
+      .insert(employeeSalaryProfiles)
+      .values({
+        orgId: input.orgId,
+        userId: input.userId,
+        workerType: "EMPLOYEE",
+        currency: input.currency,
+        annualCtc,
+        status: "ACTIVE",
+        effectiveFrom: input.effectiveFrom,
+        createdBy: input.actorId,
+      })
+      .returning({ id: employeeSalaryProfiles.id });
+  } catch (error) {
+    if (isUniqueViolation(error))
+      throw new ConflictException(salaryProfileConflictMessage(input.effectiveFrom));
+    throw error;
+  }
+  const profile = inserted[0];
+  if (!profile) throw new Error("Failed to create salary profile");
+  return profile;
+}
+
 /**
  * Creates a canonical salary profile and attaches org salary components.
  * BASIC (or first FIXED earning) gets an amount derived from monthly salary.
@@ -141,21 +177,7 @@ export async function seedEmployeeSalaryProfile(
     input.salaryStructureTemplateId,
   );
 
-  const [profile] = await tx
-    .insert(employeeSalaryProfiles)
-    .values({
-      orgId: input.orgId,
-      userId: input.userId,
-      workerType: "EMPLOYEE",
-      currency: input.currency,
-      annualCtc,
-      status: "ACTIVE",
-      effectiveFrom: input.effectiveFrom,
-      createdBy: input.actorId,
-    })
-    .returning({ id: employeeSalaryProfiles.id });
-
-  if (!profile) throw new Error("Failed to create salary profile");
+  const profile = await insertSalaryProfile(tx, input, annualCtc);
 
   const components = await tx
     .select({

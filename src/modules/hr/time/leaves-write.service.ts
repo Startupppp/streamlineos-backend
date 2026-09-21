@@ -35,14 +35,10 @@ import {
 import { AccessService } from "../../access/access.service";
 import { EmploymentFactsService } from "../../directory/employment-facts.service";
 import type { CreateLeaveInput } from "./dto/leaves.schemas";
-import { LeaveApproverService } from "./leave-approver.service";
+import { ApprovalAuthorityService } from "../../directory/approval-authority.service";
+import type { ApprovalRoute } from "../../directory/approval-authority.types";
 import { decideProbationLeave } from "./probation-leave-restriction";
 import { ProbationService } from "../lifecycle/probation.service";
-import {
-  assertOrganizationActor,
-  OrganizationActorError,
-  organizationActorHttpError,
-} from "../../../common/organization/organization-actor";
 import { requireOrganizationMembershipId } from "./organization-membership";
 
 interface LeaveRow {
@@ -62,7 +58,7 @@ export class LeavesWriteService {
     private readonly workflowEngine: HrWorkflowEngineService,
     private readonly cache: CacheService,
     private readonly access: AccessService,
-    private readonly approvers: LeaveApproverService,
+    private readonly approvals: ApprovalAuthorityService,
     private readonly probation: ProbationService,
     private readonly employment: EmploymentFactsService,
   ) {}
@@ -80,24 +76,13 @@ export class LeavesWriteService {
       currentUser.orgId,
       currentUser.userId,
     );
-    const approver = await this.approvers.resolve(currentUser.orgId, currentUser.userId);
-    if (!approver) {
+    const route = await this.approvals.resolve(currentUser.orgId, currentUser.userId, "leave");
+    if (route.rung === null) {
       throw new ConflictException(
-        "No authorized leave approver is configured. Ask an organization administrator to assign one.",
+        `${route.explanation} Ask an HR administrator to assign a reporting manager or grant leave approval.`,
       );
     }
-
-    let approverMembershipId: number;
-    try {
-      const approverActor = await assertOrganizationActor(this.db, currentUser.orgId, {
-        kind: "user",
-        userId: approver.id,
-      });
-      approverMembershipId = approverActor.membershipId;
-    } catch (e) {
-      if (e instanceof OrganizationActorError) throw organizationActorHttpError(e);
-      throw e;
-    }
+    const approver = route.approver;
 
     const requestedDays = body.isHalfDay
       ? 0.5
@@ -221,8 +206,8 @@ export class LeavesWriteService {
           endDate: endStr,
           reason: body.reason,
           priority: body.priority,
-          approverId: approver.id,
-          approverMembershipId,
+          approverId: approver?.userId ?? null,
+          approverMembershipId: approver?.membershipId ?? null,
           createdByMembershipId: userMembershipId,
           updatedByMembershipId: userMembershipId,
           attachmentUrl: body.attachmentUrl ?? null,
@@ -242,7 +227,7 @@ export class LeavesWriteService {
     this.scheduleLeaveRequested(
       currentUser,
       leaveRequest.id,
-      approver.id,
+      route,
       body,
       leaveTypeName,
       requestedDays,
@@ -262,17 +247,18 @@ export class LeavesWriteService {
   private scheduleLeaveRequested(
     currentUser: CurrentUserContext,
     leaveRequestId: number,
-    approverId: string,
+    route: ApprovalRoute,
     body: CreateLeaveInput,
     leaveTypeName: string,
     requestedDays: number,
   ): void {
     const dispatch = () =>
       runInNewTenantTransaction(this.db, currentUser.orgId, async () => {
-        await this.startLeaveWorkflow(currentUser, leaveRequestId, approverId);
+        await this.startLeaveWorkflow(currentUser, leaveRequestId, route);
         await this.dispatchLeaveRequested(
           currentUser,
           leaveRequestId,
+          route,
           body,
           leaveTypeName,
           requestedDays,
@@ -385,7 +371,7 @@ export class LeavesWriteService {
   private async startLeaveWorkflow(
     currentUser: CurrentUserContext,
     leaveRequestId: number,
-    approverId?: string | null,
+    route: ApprovalRoute,
   ): Promise<void> {
     try {
       await this.workflowEngine.startWorkflow({
@@ -394,7 +380,17 @@ export class LeavesWriteService {
         objectId: String(leaveRequestId),
         requestedByUserId: currentUser.userId,
         subjectEmployeeId: currentUser.userId,
-        context: { leaveRequestId, approverId },
+        context: {
+          leaveRequestId,
+          approverId: route.approver?.userId ?? null,
+          approvalRoute: {
+            rung: route.rung,
+            explanation: route.explanation,
+            dueAt: route.dueAt,
+            delegation: route.delegation,
+            escalation: route.escalation?.rung ?? null,
+          },
+        },
       });
     } catch (err: unknown) {
       logSideEffectFailure("leave approval workflow start", {
@@ -407,6 +403,7 @@ export class LeavesWriteService {
   private async dispatchLeaveRequested(
     currentUser: CurrentUserContext,
     leaveRequestId: number,
+    route: ApprovalRoute,
     body: CreateLeaveInput,
     leaveTypeName: string,
     requestedDays: number,
@@ -430,7 +427,7 @@ export class LeavesWriteService {
         priority: body.priority,
       });
 
-      const recipients = await this.hrRecipientIds(currentUser.orgId);
+      const recipients = route.approver ? [route.approver.userId] : await this.hrRecipientIds(currentUser.orgId);
       await this.dispatch.emit({
         eventKey: "hr.leave.requested",
         orgId: currentUser.orgId,

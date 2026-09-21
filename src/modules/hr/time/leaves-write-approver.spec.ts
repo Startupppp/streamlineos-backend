@@ -85,8 +85,6 @@ describe("LeavesWriteService server-derived approver", () => {
       select: jest.fn()
         .mockReturnValueOnce(selectChain([{ id: 1, orgId: "org-1", userId: "employee-1", role: "MEMBER", isOwner: false, status: "ACTIVE" }]))
         .mockReturnValueOnce(selectChain([]))
-        .mockReturnValueOnce(selectChain([{ id: 5, orgId: "org-1", userId: "manager-1", role: "MEMBER", isOwner: false, status: "ACTIVE" }]))
-        .mockReturnValueOnce(selectChain([]))
         .mockReturnValueOnce(selectChain([{ probationRestricted: false }])),
       transaction: jest.fn(
         async (callback: (transaction: typeof tx) => Promise<unknown>) =>
@@ -109,8 +107,13 @@ describe("LeavesWriteService server-derived approver", () => {
       { membersWithPermission: jest.fn().mockResolvedValue([]) } as never,
       {
         resolve: jest.fn().mockResolvedValue({
-          id: "manager-1",
-          name: "Manager",
+          rung: "reporting_manager",
+          approver: { userId: "manager-1", membershipId: 5, name: "Manager", email: "manager@example.com", designation: null },
+          queue: null,
+          delegation: null,
+          escalation: null,
+          dueAt: "2026-08-14T00:00:00.000Z",
+          explanation: "Manager approves as reporting manager.",
         }),
       } as never,
       { probationCoverageOn: jest.fn().mockResolvedValue("past-probation") } as never,
