@@ -4,6 +4,7 @@ import {
   Inject,
   Injectable,
   InternalServerErrorException,
+  NotFoundException,
 } from "@nestjs/common";
 import { and, eq } from "drizzle-orm";
 import { randomBytes, randomUUID } from "node:crypto";
@@ -13,6 +14,8 @@ import {
   hrEmployments,
   hrPeople,
   magicLinkTokens,
+  organizationMembers,
+  organizations,
   users,
 } from "../../../db/schema";
 import { hashToken } from "../../../common/security/token.util";
@@ -21,7 +24,6 @@ import { type Db } from "../../../db/drizzle.module";
 import { CacheService } from "../../../common/cache/cache.service";
 import { CACHE_KEYS } from "../../../common/cache/cache-keys";
 import { AuditService } from "../../../common/audit/audit.service";
-import { logger } from "../../../common/logger/logger.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { EmailService } from "../../email/email.service";
 import { appUrl } from "../../email/app-url";
@@ -36,14 +38,11 @@ import { monthlyAmountToCents } from "../../../common/hr/sync-canonical-sensitiv
 import { formatDateOnly } from "../../../common/date";
 import { seedEmployeeSalaryProfile } from "./salary-profile-seed.helper";
 import type { OnboardEmployeeInput } from "./dto/hr-directory.schemas";
+import type { InviteDelivery } from "./dto/directory-response.schemas";
 import { ORG_MEMBER_ROLES } from "../../../common/rbac/org-roles";
 import { assertMayGrantRole } from "../../../common/rbac/assert-may-grant-role";
 import { AccessService } from "../../access/access.service";
 import { syncOrgUnitPlacement } from "../../../common/org/sync-org-unit-placement";
-import {
-  liveEmployment,
-  livePersonOfEmployment,
-} from "../../directory/employment-query";
 import {
   withMembershipMutations,
   type MembershipMutations,
@@ -64,6 +63,19 @@ import { registerAfterCommit } from "../../../common/tenant/tenant-context";
 import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
 
 const EMP_CODE_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+
+const INVITE_TOKEN_DAYS = 7;
+
+export const EMPLOYEE_NOT_FOUND_MESSAGE = "Employee not found in this organization.";
+
+export const SUSPENDED_ACCOUNT_MESSAGE =
+  "This account is globally suspended. Contact platform support to restore it before adding to an organization.";
+
+export function alreadyMemberInviteReason(organizationName: string): string {
+  return `Already a member of ${organizationName}, so no invitation was needed.`;
+}
+
+type InviteKind = "welcome" | "membership-added";
 
 function randomEmployeeCode(length: number): string {
   const bytes = randomBytes(length);
@@ -131,21 +143,20 @@ export class EmployeeOnboardingService {
               .from(users)
               .where(eq(users.id, outcome.userId))
               .limit(1);
-            if (account?.isActive === false)
-              throw new BadRequestException(
-                "This account is globally suspended. Contact platform support to restore it before adding to an organization.",
-              );
+            if (account?.isActive === false) throw new BadRequestException(SUSPENDED_ACCOUNT_MESSAGE);
           }
 
           if (body.employeeId?.trim()) {
             const [duplicate] = await tx
               .select({ userId: hrPeople.userId })
               .from(hrEmployments)
-              .innerJoin(hrPeople, livePersonOfEmployment(actor.orgId))
+              .innerJoin(
+                hrPeople,
+                and(eq(hrPeople.orgId, actor.orgId), eq(hrPeople.id, hrEmployments.personId)),
+              )
               .where(
                 and(
-                  liveEmployment(actor.orgId),
-                  eq(hrEmployments.isPrimary, true),
+                  eq(hrEmployments.orgId, actor.orgId),
                   eq(hrEmployments.employeeNumber, resolvedEmployeeId),
                 ),
               )
@@ -197,6 +208,18 @@ export class EmployeeOnboardingService {
         joiningDate: body.joiningDate ?? null,
       });
 
+    const organizationName = await this.organizationName(actor.orgId);
+    const invite: InviteDelivery = admitted.attached
+      ? { sent: false, reason: alreadyMemberInviteReason(organizationName) }
+      : await this.queueInvite({
+          orgId: actor.orgId,
+          organizationName,
+          userId: admitted.userId,
+          email: body.email,
+          name: fullName.trim(),
+          kind: admitted.createdUser ? "welcome" : "membership-added",
+        });
+
     await this.audit.logCritical({
       action: "hr.employee_onboarded",
       userId: actor.userId,
@@ -208,6 +231,7 @@ export class EmployeeOnboardingService {
         name: fullName,
         role: body.role,
         designation: body.designation,
+        invite,
         ...(admitted.createdUser ? {} : { linked: true }),
         ...(admitted.attached ? { attachedToExistingMember: true } : {}),
       },
@@ -251,37 +275,117 @@ export class EmployeeOnboardingService {
         });
     }
 
-    let welcomeDelivery: { email: string; name: string; signInUrl: string } | null = null;
-    if (admitted.createdUser) {
-      try {
-        const rawToken = randomBytes(32).toString("hex");
-        await this.db.insert(magicLinkTokens).values({
-          id: randomUUID(),
-          userId: admitted.userId,
-          tokenHash: hashToken(rawToken),
-          expiresAt: addDays(new Date(), 7),
-        });
-        welcomeDelivery = { email: body.email, name: fullName.trim(), signInUrl: `${appUrl()}/magic-link?token=${rawToken}` };
-      } catch (tokenErr) {
-        logger.error("Failed to create magic link token", { email: body.email, error: tokenErr });
-      }
-    }
-
     const orgId = actor.orgId;
-    const captured = welcomeDelivery;
-    const afterCommitWork = async (): Promise<void> => {
-      await this.invalidateHrDashboardCache(orgId);
-      if (captured) {
-        try {
-          await this.email.sendWelcomeEmail(captured.email, captured.name, captured.signInUrl);
-        } catch (emailErr) {
-          logger.error("Failed to send welcome email", { email: captured.email, error: emailErr });
-        }
-      }
-    };
+    const afterCommitWork = (): Promise<void> => this.invalidateHrDashboardCache(orgId);
     if (!registerAfterCommit(afterCommitWork)) void afterCommitWork();
 
-    return { success: true, userId: admitted.userId };
+    return { success: true, userId: admitted.userId, invite };
+  }
+
+  async resendInvite(
+    actor: CurrentUserContext,
+    employeeUserId: string,
+  ): Promise<{ success: true; invite: InviteDelivery }> {
+    const [target] = await this.db
+      .select({
+        email: users.email,
+        name: users.name,
+        firstName: users.firstName,
+        lastName: users.lastName,
+        isActive: users.isActive,
+        emailVerified: users.emailVerified,
+        membershipStatus: organizationMembers.status,
+      })
+      .from(organizationMembers)
+      .innerJoin(users, eq(users.id, organizationMembers.userId))
+      .where(
+        and(
+          eq(organizationMembers.orgId, actor.orgId),
+          eq(organizationMembers.userId, employeeUserId),
+        ),
+      )
+      .limit(1);
+    if (!target || target.membershipStatus !== "ACTIVE")
+      throw new NotFoundException(EMPLOYEE_NOT_FOUND_MESSAGE);
+    if (!target.isActive) throw new BadRequestException(SUSPENDED_ACCOUNT_MESSAGE);
+
+    const name =
+      target.firstName && target.lastName
+        ? `${target.firstName} ${target.lastName}`
+        : (target.name ?? target.email);
+    const invite = await this.queueInvite({
+      orgId: actor.orgId,
+      organizationName: await this.organizationName(actor.orgId),
+      userId: employeeUserId,
+      email: target.email,
+      name,
+      kind: target.emailVerified === null ? "welcome" : "membership-added",
+    });
+
+    await this.audit.logCritical({
+      action: "hr.employee_invite_resent",
+      userId: actor.userId,
+      orgId: actor.orgId,
+      targetId: employeeUserId,
+      targetType: "employee",
+      metadata: { email: target.email, invite },
+    });
+
+    return { success: true, invite };
+  }
+
+  private async organizationName(orgId: string): Promise<string> {
+    const [org] = await this.db
+      .select({ name: organizations.name })
+      .from(organizations)
+      .where(eq(organizations.id, orgId))
+      .limit(1);
+    if (!org) throw new NotFoundException("Organization not found.");
+    return org.name;
+  }
+
+  private async queueInvite(input: {
+    orgId: string;
+    organizationName: string;
+    userId: string;
+    email: string;
+    name: string;
+    kind: InviteKind;
+  }): Promise<InviteDelivery> {
+    const rawToken = randomBytes(32).toString("hex");
+    const tokenId = randomUUID();
+    await this.db.insert(magicLinkTokens).values({
+      id: tokenId,
+      userId: input.userId,
+      tokenHash: hashToken(rawToken),
+      expiresAt: addDays(new Date(), INVITE_TOKEN_DAYS),
+    });
+    const signInUrl = `${appUrl()}/magic-link?token=${rawToken}`;
+
+    const outcome =
+      input.kind === "welcome"
+        ? await this.email.queueWelcomeEmail({
+            organizationId: input.orgId,
+            recipientUserId: input.userId,
+            email: input.email,
+            name: input.name,
+            setupUrl: signInUrl,
+          })
+        : await this.email.queueMembershipAddedEmail({
+            organizationId: input.orgId,
+            recipientUserId: input.userId,
+            email: input.email,
+            name: input.name,
+            organizationName: input.organizationName,
+            signInUrl,
+          });
+    if (outcome.queued) return { sent: true, reason: null };
+
+    await this.db
+      .update(magicLinkTokens)
+      .set({ usedAt: new Date() })
+      .where(eq(magicLinkTokens.id, tokenId));
+    return { sent: false, reason: outcome.reason };
   }
 
   private async resolveSubject(

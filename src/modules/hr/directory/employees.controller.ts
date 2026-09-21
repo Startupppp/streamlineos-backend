@@ -30,6 +30,7 @@ import {
 import {
   availabilitySchema,
   bulkOnboardEmployeesSchema,
+  employeeIdParamsSchema,
   employeeUserQuerySchema,
   findExpertSchema,
   listEmployeesSchema,
@@ -51,6 +52,7 @@ import { Validate } from "../../../common/validation/validate.decorator";
 import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
 import {
   onboardResponseSchema,
+  resendInviteResponseSchema,
   bulkOnboardResultSchema,
   employeeListPageSchema,
   employeeStatsSchema,
@@ -62,9 +64,6 @@ import {
   employeeProjectsSchema,
   employeeTicketsSchema,
 } from "./dto/directory-response.schemas";
-import { z } from "zod";
-
-const employeeIdParams = z.object({ employeeId: z.string().min(1) }).strict();
 
 @RequireModule("hr")
 @Controller("hr/employees")
@@ -92,6 +91,19 @@ export class EmployeesController {
     @CurrentUser() currentUser: CurrentUserContext,
   ) {
     return this.onboarding.onboardEmployee(currentUser, body);
+  }
+
+  @Post(":employeeId/resend-invite")
+  @ResponseSchema(resendInviteResponseSchema)
+  @RequirePermission("hr:onboarding:manage")
+  @Idempotent("hr.employees.resend-invite")
+  @HttpCode(200)
+  @Validate({ params: employeeIdParamsSchema })
+  resendInvite(
+    @Param("employeeId") employeeId: string,
+    @CurrentUser() currentUser: CurrentUserContext,
+  ) {
+    return this.onboarding.resendInvite(currentUser, employeeId);
   }
 
   @Post("onboard/bulk")

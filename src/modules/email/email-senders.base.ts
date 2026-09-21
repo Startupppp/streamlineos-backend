@@ -125,11 +125,7 @@ export abstract class EmailSendersBase {
     name: string,
     setupUrl: string,
   ): Promise<void> {
-    return this.sendEmail({
-      to: email,
-      subject: `Your ${getBrandName()} account is ready`,
-      html: getWelcomeEmailTemplate(name, email, setupUrl),
-    });
+    return this.sendEmail(welcomeEmailOptions(email, name, setupUrl));
   }
 
   sendHolidayAnnouncementEmail(
@@ -431,6 +427,14 @@ export abstract class EmailSendersBase {
       ),
     });
   }
+}
+
+export function welcomeEmailOptions(email: string, name: string, setupUrl: string): EmailOptions {
+  return {
+    to: email,
+    subject: `Your ${getBrandName()} account is ready`,
+    html: getWelcomeEmailTemplate(name, email, setupUrl),
+  };
 }
 
 export function invitationEmailOptions(

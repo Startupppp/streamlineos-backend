@@ -104,9 +104,10 @@ describe("EmployeeOnboardingService.onboardEmployee — seat-limit ordering", ()
         chain["from"] = passthrough;
         chain["innerJoin"] = passthrough;
         chain["where"] = passthrough;
-        chain["limit"] = () => Promise.resolve([]);
+        chain["limit"] = () => Promise.resolve([{ name: "Lock Ordering Org" }]);
         return chain;
       }),
+      insert: jest.fn().mockReturnValue({ values: jest.fn().mockResolvedValue(undefined) }),
       transaction: jest.fn().mockImplementation(
         (fn: (t: ReturnType<typeof buildTx>) => Promise<unknown>) => fn(tx),
       ),
@@ -136,7 +137,10 @@ describe("EmployeeOnboardingService.onboardEmployee — seat-limit ordering", ()
           provide: AuditService,
           useValue: { logCritical: jest.fn().mockResolvedValue(undefined) },
         },
-        { provide: EmailService, useValue: {} },
+        {
+          provide: EmailService,
+          useValue: { queueWelcomeEmail: jest.fn().mockResolvedValue({ queued: true }) },
+        },
         {
           provide: AutomationService,
           useValue: { runAutomationsForEvent: jest.fn().mockResolvedValue(undefined) },
