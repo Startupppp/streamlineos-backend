@@ -1,4 +1,0 @@
-{
-  "modules/hr/interviews/employee-recruitment.controller.ts": "Employee self-service. Root CLAUDE.md §8 makes these surfaces platform core and states self:* handlers never carry @RequireModule — a member keeps their own assigned interviews and hiring feedback whatever their org's enabled products. Every handler is gated on self:recruitment, a member-default key.",
-  "modules/hr/recruitment/recruitment-self.controller.ts": "Employee self-service. Same §8 rule: internal job openings and own referrals are a member entitlement, not an HR-module feature, so a module gate here would deny a member their own data in an org without HR enabled. Handlers are gated on self:job-openings and self:referrals, both member defaults."
-}
