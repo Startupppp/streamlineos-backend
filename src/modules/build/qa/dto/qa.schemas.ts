@@ -49,6 +49,7 @@ export const testRunListQuerySchema = z.object({
 export const createTestRunSchema = z.object({
   name: z.string().min(1).max(500),
   sprintId: z.number().int().positive().optional(),
+  cycleId: z.number().int().positive().optional(),
   releaseId: z.number().int().positive().optional(),
   environment: z.string().optional(),
   browserDevice: z.string().optional(),
@@ -64,6 +65,7 @@ export const updateTestRunSchema = z.object({
   browserDevice: z.string().optional(),
   testerId: z.string().optional(),
   sprintId: z.number().int().positive().optional(),
+  cycleId: z.number().int().positive().optional(),
   releaseId: z.number().int().positive().optional(),
 }).strict();
 

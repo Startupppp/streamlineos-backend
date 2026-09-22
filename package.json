@@ -288,6 +288,8 @@
     "check:membership-writes:list": "node src/scripts/check-membership-writes.mjs --list",
     "verify:rbac-integrity": "node --env-file-if-exists=.env src/scripts/verify-rbac-referential-integrity.mjs",
     "verify:rbac-integrity:self-test": "node src/scripts/verify-rbac-referential-integrity.mjs --self-test",
+    "verify:qa-bug-contraction": "node src/scripts/verify-qa-bug-contraction.mjs",
+    "verify:qa-bug-contraction:self-test": "node src/scripts/verify-qa-bug-contraction.mjs --self-test",
     "verify:membership-revocation": "node --env-file=.env -r ts-node/register src/scripts/verify-membership-revocation.ts",
     "verify:membership-revocation:self-test": "node src/scripts/verify-membership-revocation-self-test.mjs",
     "cell:chain-repair": "node src/scripts/generate-chain-repair.mjs",
