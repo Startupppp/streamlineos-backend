@@ -12,7 +12,7 @@ import { cycles } from "./core";
 import { tickets } from "./ticket-core";
 import { buildEvents } from "./namespaces";
 
-export const sprintScopeEventTypeEnum = pgEnum("sprint_scope_event_type", [
+export const cycleScopeEventTypeEnum = pgEnum("cycle_scope_event_type", [
   "added",
   "removed",
   "estimate_changed",
@@ -20,8 +20,8 @@ export const sprintScopeEventTypeEnum = pgEnum("sprint_scope_event_type", [
   "reopened",
 ]);
 
-export const sprintScopeEvents = buildEvents.table(
-  "sprint_scope_events",
+export const cycleScopeEvents = buildEvents.table(
+  "cycle_scope_events",
   {
     id: bigserial("id", { mode: "number" }).primaryKey(),
     orgId: text("org_id")
@@ -29,7 +29,7 @@ export const sprintScopeEvents = buildEvents.table(
       .notNull(),
     cycleId: integer("cycle_id"),
     ticketId: integer("ticket_id").notNull(),
-    eventType: sprintScopeEventTypeEnum("event_type").notNull(),
+    eventType: cycleScopeEventTypeEnum("event_type").notNull(),
     previousPoints: integer("previous_points"),
     newPoints: integer("new_points"),
     actorMembershipId: integer("actor_membership_id"),

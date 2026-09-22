@@ -74,7 +74,7 @@ const TIMESHEETS = num("SEED_TIMESHEETS", 50000);
 const NEIGHBOUR_PROJECTS = num("SEED_NEIGHBOUR_PROJECTS", 4);
 const NEIGHBOUR_TICKETS = num("SEED_NEIGHBOUR_TICKETS", 4000);
 const CHUNK = num("SEED_CHUNK", 25000);
-const SPRINTS_PER_PROJECT = 5;
+const CYCLES_PER_PROJECT = 5;
 const LABELS_PER_PROJECT = 8;
 
 const ssl = process.env.PGSSLMODE === "disable" ? false : "require";
@@ -229,7 +229,7 @@ async function reset(orgId) {
     where p.org_id = ${orgId} and p.key like ${KEY_PREFIX + "%"}
       and t.project_id = p.id`;
   await sql`
-    delete from build.sprints where org_id = ${orgId}
+    delete from build.cycles where org_id = ${orgId}
       and project_id in (select id from build.projects where org_id = ${orgId} and key like ${KEY_PREFIX + "%"})`;
   await sql`
     delete from build.project_members where org_id = ${orgId}
@@ -277,12 +277,13 @@ async function seedProjects(orgId, workspaceId, count, users) {
       ('IN_REVIEW',2,'started'),('DONE',3,'completed')) s(name, ord, typ)`;
 
   await sql`
-    insert into build.sprints (org_id, project_id, name, start_date, end_date)
-    select ${orgId}, p.id, 'Sprint ' || s.n,
-           now() - ((s.n * 14) || ' days')::interval,
-           now() - (((s.n - 1) * 14) || ' days')::interval
+    insert into build.cycles (org_id, project_id, name, status, start_date, end_date, created_by)
+    select ${orgId}, p.id, 'Cycle ' || s.n, 'completed',
+           (now() - ((s.n * 14) || ' days')::interval)::date,
+           (now() - (((s.n - 1) * 14) || ' days')::interval)::date,
+           (select user_id from organization_members where org_id = ${orgId} order by id limit 1)
     from unnest(${sql.array(ids)}::int[]) p(id)
-    cross join generate_series(1, ${SPRINTS_PER_PROJECT}::int) s(n)`;
+    cross join generate_series(1, ${CYCLES_PER_PROJECT}::int) s(n)`;
 
   await sql`
     insert into build.project_members (project_id, membership_id, org_id)
@@ -353,11 +354,11 @@ async function seedTickets(orgId, projectIds, total, users) {
   });
 
   await sql`
-    update build.tickets t set sprint_id = s.id
+    update build.tickets t set cycle_id = c.id
     from (select id, project_id, row_number() over (partition by project_id order by id) rn
-          from build.sprints where org_id = ${orgId}) s
-    where t.org_id = ${orgId} and t.project_id = s.project_id
-      and (t.id % ${SPRINTS_PER_PROJECT}) = (s.rn % ${SPRINTS_PER_PROJECT})`;
+          from build.cycles where org_id = ${orgId}) c
+    where t.org_id = ${orgId} and t.project_id = c.project_id
+      and (t.id % ${CYCLES_PER_PROJECT}) = (c.rn % ${CYCLES_PER_PROJECT})`;
 
   const [range] = await sql`
     select min(id)::int lo, max(id)::int hi, count(*)::int n

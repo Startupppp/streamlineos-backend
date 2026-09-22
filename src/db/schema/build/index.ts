@@ -26,6 +26,6 @@ export * from "./managed-product-memberships";
 export * from "./teams";
 export * from "./feedback";
 export * from "./comment-drafts";
-export * from "./sprint-events";
+export * from "./cycle-events";
 export * from "./project-updates";
 export * from "./project-attachments";

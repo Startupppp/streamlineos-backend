@@ -8,7 +8,7 @@ import {
   projectTemplates,
   projectTemplateTickets,
 } from "./core";
-import { sprintScopeEvents } from "./sprint-events";
+import { cycleScopeEvents } from "./cycle-events";
 import {
   tickets,
   ticketAssignees,
@@ -222,11 +222,11 @@ export const projectAutomationsRelations = relations(projectAutomations, ({ one 
   project: one(projects, { fields: [projectAutomations.projectId], references: [projects.id] }),
 }));
 
-export const sprintScopeEventsRelations = relations(sprintScopeEvents, ({ one }) => ({
-  org: one(organizations, { fields: [sprintScopeEvents.orgId], references: [organizations.id] }),
-  ticket: one(tickets, { fields: [sprintScopeEvents.ticketId], references: [tickets.id] }),
+export const cycleScopeEventsRelations = relations(cycleScopeEvents, ({ one }) => ({
+  org: one(organizations, { fields: [cycleScopeEvents.orgId], references: [organizations.id] }),
+  ticket: one(tickets, { fields: [cycleScopeEvents.ticketId], references: [tickets.id] }),
   actorMembership: one(organizationMembers, {
-    fields: [sprintScopeEvents.orgId, sprintScopeEvents.actorMembershipId],
+    fields: [cycleScopeEvents.orgId, cycleScopeEvents.actorMembershipId],
     references: [organizationMembers.orgId, organizationMembers.id],
   }),
 }));

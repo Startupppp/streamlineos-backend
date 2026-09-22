@@ -304,7 +304,7 @@ const sprintsServiceSource = read(
 
 
 describe("phase 06 rename and the Drizzle declaration must move together", () => {
-  const scopeEvents = read(REPO_ROOT, "src", "db", "schema", "build", "sprint-events.ts");
+  const scopeEvents = read(REPO_ROOT, "src", "db", "schema", "build", "cycle-events.ts");
   const phase06 = readSql("a-sprint-cycle-06-rename-scope-events.sql");
 
   it("phase 05 no longer carries the rename, so dropping build.sprints does not also break every deployed burnup reader", () => {
@@ -319,10 +319,16 @@ describe("phase 06 rename and the Drizzle declaration must move together", () =>
     expect(phase06).not.toMatch(/(INSERT|UPDATE|DELETE|DROP TABLE)/);
   });
 
-  it("the Drizzle declaration still names the pre-rename table, which is the only state in which phase 06 is unapplied and the burnup report resolves", () => {
-    expect(scopeEvents).toContain('"sprint_scope_events"');
+  it("the Drizzle declaration names the post-rename table, which is the only state in which phase 06 is applied and the burnup report resolves", () => {
+    expect(scopeEvents).toContain('"cycle_scope_events"');
     expect(scopeEvents).toContain("buildEvents.table(");
-    expect(scopeEvents).toContain('pgEnum("sprint_scope_event_type"');
+    expect(scopeEvents).toContain('pgEnum("cycle_scope_event_type"');
+    expect(scopeEvents).not.toContain('"sprint_scope_events"');
+  });
+
+  it("keeps the physical constraint and index names, because ALTER TABLE RENAME leaves them untouched and the catalog still carries the old spelling", () => {
+    expect(scopeEvents).toContain('name: "fk_sprint_scope_events_org_cycle"');
+    expect(scopeEvents).toContain('index("idx_sprint_scope_events_ticket")');
   });
 
   it("a rollback exists for phase 06, because a rename is the one contraction with no overlap window", () => {

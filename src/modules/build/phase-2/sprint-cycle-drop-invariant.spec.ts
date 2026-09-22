@@ -65,9 +65,9 @@ describe("phase-05 drop invariant: the scanner is non-vacuous", () => {
     expect(touchesSprintsTable("eq(cycles.orgId, orgId)")).toBe(false);
   });
 
-  it("does not fire on the sprintScopeEvents table, which phase 06 renames rather than drops", () => {
-    expect(touchesSprintsTable(".from(sprintScopeEvents)")).toBe(false);
-    expect(touchesSprintsTable("eq(sprintScopeEvents.orgId, orgId)")).toBe(false);
+  it("does not fire on the cycleScopeEvents table, which phase 06 renames rather than drops", () => {
+    expect(touchesSprintsTable(".from(cycleScopeEvents)")).toBe(false);
+    expect(touchesSprintsTable("eq(cycleScopeEvents.orgId, orgId)")).toBe(false);
   });
 
   it("does not fire on an injected service property named sprints, which is a method call and not a table read", () => {

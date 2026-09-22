@@ -350,8 +350,8 @@ Blast radius: Intra-tenant, and narrower than the rest of this family: the row-d
 
 Evidence:
 
-- `src/modules/build/core/projects-tickets-update.service.ts:196` — bound to the URL project
-- `src/modules/build/core/projects-tickets-update.service.ts:196` — bound to the URL project
+- `src/modules/build/core/projects-tickets-update.service.ts:197` — bound to the URL project
+- `src/modules/build/core/projects-tickets-update.service.ts:197` — bound to the URL project
 
 ### CLOSED — `DELETE /build/:projectId/tickets/:ticketId`
 

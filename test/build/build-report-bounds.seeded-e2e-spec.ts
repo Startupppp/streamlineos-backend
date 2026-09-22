@@ -2,7 +2,7 @@ import { and, eq, sql } from "drizzle-orm";
 import request from "supertest";
 import { z } from "zod";
 import { encodeCursor } from "src/common/pagination/cursor";
-import { cycles, projectStatuses, sprintScopeEvents, tickets, workItemRelations } from "src/db/schema";
+import { cycles, projectStatuses, cycleScopeEvents, tickets, workItemRelations } from "src/db/schema";
 import { createBuildWorkflowFixture, type BuildWorkflowFixture } from "./build-workflow-fixtures";
 
 describe("[seeded-e2e] Build report correctness and bounds", () => {
@@ -71,7 +71,7 @@ describe("[seeded-e2e] Build report correctness and bounds", () => {
       startDate: "2026-09-01", endDate: "2026-09-08", createdBy: f.home.members.manager.userId,
     }).returning({ id: cycles.id });
     if (!cycle) throw new Error("Report cycle missing");
-    await f.seeded.seedDb.execute(sql`INSERT INTO ${sprintScopeEvents} (org_id, sprint_id, ticket_id, event_type, new_points, created_at)
+    await f.seeded.seedDb.execute(sql`INSERT INTO ${cycleScopeEvents} (org_id, cycle_id, ticket_id, event_type, new_points, created_at)
       SELECT ${f.home.orgId}, ${cycle.id}, ${f.ticketIds[0]}, 'estimate_changed', 1, '2026-09-01'::timestamptz FROM generate_series(1, 20001)`);
     const response = await request(f.seeded.app.getHttpServer()).get(`/build/${f.projectId}/reports/burnup`)
       .query({ cycleId: cycle.id }).set("Authorization", `Bearer ${f.managerToken}`);

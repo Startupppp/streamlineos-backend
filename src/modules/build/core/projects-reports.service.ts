@@ -1,7 +1,7 @@
 import { ForbiddenException, Inject, Injectable, NotFoundException, UnprocessableEntityException } from "@nestjs/common";
 import { and, asc, desc, eq, gte, inArray, isNull, ne, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
-import { cycles, projectDailySnapshots, projectStatuses, projects, sprintScopeEvents, tickets, workItemRelations } from "../../../db/schema";
+import { cycles, projectDailySnapshots, projectStatuses, projects, cycleScopeEvents, tickets, workItemRelations } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { addDays, differenceInCalendarDays, formatDateOnly } from "../../../common/date";
@@ -96,19 +96,19 @@ export class ProjectsReportsService {
       async () => {
         const events = await this.db
           .select({
-            ticketId: sprintScopeEvents.ticketId,
-            eventType: sprintScopeEvents.eventType,
-            newPoints: sprintScopeEvents.newPoints,
-            createdAt: sprintScopeEvents.createdAt,
+            ticketId: cycleScopeEvents.ticketId,
+            eventType: cycleScopeEvents.eventType,
+            newPoints: cycleScopeEvents.newPoints,
+            createdAt: cycleScopeEvents.createdAt,
           })
-          .from(sprintScopeEvents)
+          .from(cycleScopeEvents)
           .where(
             and(
-              eq(sprintScopeEvents.orgId, orgId),
-              eq(sprintScopeEvents.cycleId, cycleId),
+              eq(cycleScopeEvents.orgId, orgId),
+              eq(cycleScopeEvents.cycleId, cycleId),
             ),
           )
-          .orderBy(asc(sprintScopeEvents.createdAt), asc(sprintScopeEvents.id))
+          .orderBy(asc(cycleScopeEvents.createdAt), asc(cycleScopeEvents.id))
           .limit(MAX_BURNUP_EVENTS + 1);
         if (events.length > MAX_BURNUP_EVENTS)
           throw new UnprocessableEntityException(`Burnup reports support at most ${MAX_BURNUP_EVENTS} sprint events; choose a smaller sprint`);
