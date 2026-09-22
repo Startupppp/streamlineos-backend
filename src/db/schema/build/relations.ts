@@ -2,7 +2,6 @@ import { relations } from "drizzle-orm";
 import { organizations, users, organizationMembers } from "../common/auth";
 import {
   projects,
-  sprints,
   projectStatuses,
   cycles,
   modules,
@@ -51,10 +50,6 @@ export const projectsRelations = relations(projects, ({ one, many }) => ({
   members: many(projectMembers),
   statuses: many(projectStatuses, { relationName: "projectStatuses" }),
   milestones: many(projectMilestones),
-}));
-
-export const sprintsRelations = relations(sprints, ({ one }) => ({
-  project: one(projects, { fields: [sprints.projectId], references: [projects.id] }),
 }));
 
 export const cyclesRelations = relations(cycles, ({ one, many }) => ({

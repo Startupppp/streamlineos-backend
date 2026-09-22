@@ -10,6 +10,7 @@ const FORWARD_PHASES = [
   "a-sprint-cycle-03-constrain.sql",
   "a-sprint-cycle-04-detach.sql",
   "a-sprint-cycle-05-drop.sql",
+  "a-sprint-cycle-06-rename-scope-events.sql",
 ];
 
 const BACKFILL = "a-sprint-cycle-02-backfill.sql";
@@ -382,5 +383,32 @@ describe("dual identity tripwire", () => {
     );
     expect(cyclesBlock).toContain(`idx_cycles_org_project_velocity_cursor`);
     expect(cyclesBlock).toContain(`idx_cycles_org_project_status_live`);
+  });
+});
+
+describe("phase 06 rename and the Drizzle declaration must move together", () => {
+  const scopeEvents = read(REPO_ROOT, "src", "db", "schema", "build", "sprint-events.ts");
+  const phase06 = readSql("a-sprint-cycle-06-rename-scope-events.sql");
+
+  it("phase 05 no longer carries the rename, so dropping build.sprints does not also break every deployed burnup reader", () => {
+    const phase05 = readSql("a-sprint-cycle-05-drop.sql");
+    expect(phase05).toContain('DROP TABLE "build"."sprints"');
+    expect(phase05).not.toContain("RENAME TO");
+  });
+
+  it("phase 06 carries both renames and nothing else that writes data", () => {
+    expect(phase06).toContain('RENAME TO "cycle_scope_events"');
+    expect(phase06).toContain('RENAME TO "cycle_scope_event_type"');
+    expect(phase06).not.toMatch(/(INSERT|UPDATE|DELETE|DROP TABLE)/);
+  });
+
+  it("the Drizzle declaration still names the pre-rename table, which is the only state in which phase 06 is unapplied and the burnup report resolves", () => {
+    expect(scopeEvents).toContain('"sprint_scope_events"');
+    expect(scopeEvents).toContain("buildEvents.table(");
+    expect(scopeEvents).toContain('pgEnum("sprint_scope_event_type"');
+  });
+
+  it("a rollback exists for phase 06, because a rename is the one contraction with no overlap window", () => {
+    expect(existsSync(join(SQL_DIR, "a-sprint-cycle-06-rename-scope-events-rollback.sql"))).toBe(true);
   });
 });

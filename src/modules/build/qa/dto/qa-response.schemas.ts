@@ -90,7 +90,6 @@ export const testRunResultRowSchema = z.object({
   notes: z.string().nullable(),
   executedBy: z.string().nullable(),
   executedAt: nullableWireDate(),
-  linkedBugId: z.number().int().nullable(),
   linkedWorkItemId: z.number().int().nullable(),
   createdAt: wireDate(),
   updatedAt: wireDate(),
