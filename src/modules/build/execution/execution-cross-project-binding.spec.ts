@@ -8,7 +8,6 @@ import {
   outboxEvents,
   projectMilestones,
   projectViews,
-  sprints,
   tickets,
 } from "../../../db/schema";
 import { SprintsService } from "./sprints.service";
@@ -98,7 +97,6 @@ function matches(where: unknown, row: Row): boolean {
 }
 
 interface Store {
-  sprints: Row[];
   cycles: Row[];
   modules: Row[];
   tickets: Row[];
@@ -108,7 +106,6 @@ interface Store {
 }
 
 function tableRows(store: Store, table: unknown): Row[] | null {
-  if (table === sprints) return store.sprints;
   if (table === cycles) return store.cycles;
   if (table === modules) return store.modules;
   if (table === tickets) return store.tickets;
@@ -120,10 +117,6 @@ function tableRows(store: Store, table: unknown): Row[] | null {
 
 function makeStore(): Store {
   return {
-    sprints: [
-      { id: SPRINT_A, orgId: ORG, projectId: PROJECT_A, name: "sprint-a", status: "PLANNED", deletedAt: null },
-      { id: SPRINT_B, orgId: ORG, projectId: PROJECT_B, name: "sprint-b", status: "PLANNED", deletedAt: null },
-    ],
     cycles: [
       { id: CYCLE_A, orgId: ORG, projectId: PROJECT_A, name: "cycle-a", status: "active" },
       { id: CYCLE_B, orgId: ORG, projectId: PROJECT_B, name: "cycle-b", status: "active" },
@@ -225,7 +218,6 @@ function makeDb(store: Store): Fixture {
 
   const db = {
     query: {
-      sprints: { findFirst: findFirst(() => store.sprints) },
       tickets: {
         findMany: jest.fn(async (args: { where?: unknown }) =>
           store.tickets.filter((row) => matches(args.where, row)).map((row) => ({ ...row })),
@@ -260,14 +252,12 @@ describe("SprintsService — the frozen surface cannot bind to any project, in o
     await expect(call(new SprintsService(db, null))).rejects.toThrow(GoneException);
   });
 
-  it.each(CASES)("%s mutates no sprint row and opens no transaction", async (_name, call) => {
+  it.each(CASES)("%s opens no transaction, so the frozen surface cannot reach a database that no longer has build.sprints", async (_name, call) => {
     const store = makeStore();
     const { db, transaction } = makeDb(store);
 
     await expect(call(new SprintsService(db, null))).rejects.toThrow(GoneException);
 
-    expect(store.sprints.find((row) => row.id === SPRINT_A)?.name).toBe("sprint-a");
-    expect(store.sprints.find((row) => row.id === SPRINT_B)?.name).toBe("sprint-b");
     expect(transaction).not.toHaveBeenCalled();
   });
 

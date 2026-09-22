@@ -42,12 +42,8 @@ function bracketList(source: string, anchor: RegExp): string[] {
 
 const enumsSource = read(REPO_ROOT, "src", "db", "schema", "common", "enums.ts");
 const coreSource = read(REPO_ROOT, "src", "db", "schema", "build", "core.ts");
-const ticketCoreSource = read(REPO_ROOT, "src", "db", "schema", "build", "ticket-core.ts");
 const iterationsDtoSource = read(
   REPO_ROOT, "src", "modules", "build", "execution", "dto", "iterations.schemas.ts",
-);
-const iterationsControllerSource = read(
-  REPO_ROOT, "src", "modules", "build", "execution", "iterations.controller.ts",
 );
 const backfillSql = readSql(BACKFILL);
 
@@ -56,9 +52,11 @@ const CYCLE_STATUS_VALUES = bracketList(
   /cycleStatusEnum\s*=\s*pgEnum\(\s*"cycle_status"\s*,\s*\[([^\]]*)\]/,
 );
 
+const sprintsRollbackSql = readSql("a-sprint-cycle-05-drop-rollback.sql");
+
 const SPRINT_STATUS_VALUES = bracketList(
-  coreSource,
-  /"chk_sprints_status"[\s\S]{0,160}?\$\{table\.status\}\s+IN\s*\(([^)]*)\)/,
+  sprintsRollbackSql,
+  /CONSTRAINT "chk_sprints_status" CHECK \("status" IN \(([^)]*)\)\)/,
 );
 
 const CYCLE_STATUS_DEFAULT = (() => {
@@ -68,8 +66,8 @@ const CYCLE_STATUS_DEFAULT = (() => {
 })();
 
 const SPRINT_STATUS_DEFAULT = (() => {
-  const m = /status:\s*text\("status"\)\.default\("([^"]+)"\)/.exec(coreSource);
-  if (!m) throw new Error("sprints.status default not found in core.ts");
+  const m = /"status" text NOT NULL DEFAULT '([^']+)'/.exec(sprintsRollbackSql);
+  if (!m) throw new Error("sprints.status default not found in the phase 05 rollback");
   return m[1];
 })();
 
@@ -104,7 +102,7 @@ describe("sprint status vocabulary is read from source, not assumed", () => {
     expect(CYCLE_STATUS_VALUES).toEqual(["draft", "active", "completed"]);
   });
 
-  it("reads the sprints.status CHECK vocabulary out of src/db/schema/build/core.ts", () => {
+  it("reads the sprints.status CHECK vocabulary out of the phase 05 rollback, the only artifact that still describes the dropped table", () => {
     expect(SPRINT_STATUS_VALUES).toEqual(["PLANNED", "ACTIVE", "COMPLETED"]);
   });
 
@@ -296,91 +294,19 @@ describe("the backfill is re-runnable and row-order independent", () => {
   });
 });
 
-const sprintsServiceSource = read(
-  REPO_ROOT, "src", "modules", "build", "execution", "sprints.service.ts",
-);
+describe("the cycles schema matches what the cutover SQL creates", () => {
+  const cyclesBlock = coreSource.slice(
+    coreSource.indexOf("export const cycles = build.table("),
+    coreSource.indexOf("export const modules = build.table("),
+  );
 
-describe("dual identity tripwire", () => {
-  const removal = "delete this assertion in the same change that lands a-sprint-cycle-05-drop.sql";
-
-  it(`build.sprints is still declared alongside build.cycles — ${removal}`, () => {
-    expect(coreSource).toContain(`export const sprints = build.table(`);
-    expect(coreSource).toContain(`export const cycles = build.table(`);
-  });
-
-  it("the sprints declaration is inert: no query in SprintsService names the table, so the declaration costs nothing while the DB table survives", () => {
-    expect(sprintsServiceSource.length).toBeGreaterThan(200);
-    expect(sprintsServiceSource).not.toContain(`from(sprints)`);
-    expect(sprintsServiceSource).not.toContain(`update(sprints)`);
-    expect(sprintsServiceSource).not.toContain(`query.sprints`);
-    expect(sprintsServiceSource).toContain(`GoneException`);
-  });
-
-  it("cycles no longer declares legacy_sprint_id nor its foreign key, so the two iteration identities are no longer bridged in code", () => {
-    expect(coreSource).not.toContain(`legacy_sprint_id`);
-    expect(coreSource).not.toContain(`legacySprintId`);
-    expect(coreSource).not.toContain(`fk_cycles_org_legacy_sprint`);
-  });
-
-  it("the DB column outlives the declaration on purpose: no migration in this change drops legacy_sprint_id, and phase 05 is still the file that does", () => {
-    expect(existsSync(join(SQL_DIR, "a-sprint-cycle-05-drop.sql"))).toBe(true);
-    expect(readSql("a-sprint-cycle-05-drop.sql")).toMatch(/legacy_sprint_id|"sprints"/);
-  });
-
-  it("tickets declares cycleId and no longer declares sprintId, because Drizzle names every declared column in its INSERT and phase 04 drops that one", () => {
-    expect(ticketCoreSource).toContain(`cycleId: integer("cycle_id")`);
-    expect(ticketCoreSource).not.toContain(`sprintId: integer("sprint_id")`);
-  });
-
-  it("tickets declares the cycle composite foreign key and no longer the sprint one, so phase 04 has nothing left to orphan", () => {
-    expect(ticketCoreSource).toContain(`name: "fk_tickets_org_cycle"`);
-    expect(ticketCoreSource).not.toContain(`name: "fk_tickets_org_sprint"`);
-  });
-
-  it(`both SprintsController and CyclesController are still mounted — ${removal}`, () => {
-    expect(iterationsControllerSource).toContain(`@Controller("build/:projectId/sprints")`);
-    expect(iterationsControllerSource).toContain(`@Controller("build/:projectId/cycles")`);
-  });
-
-  it("no satellite table declares a sprint_id column or its foreign key any more, which is the code half of a-sprint-cycle-04-detach that its data guard cannot check", () => {
-    const meetings = read(REPO_ROOT, "src", "db", "schema", "build", "meetings.ts");
-    const qa = read(REPO_ROOT, "src", "db", "schema", "build", "qa.ts");
-    const events = read(REPO_ROOT, "src", "db", "schema", "build", "sprint-events.ts");
-    for (const source of [meetings, qa, events]) {
-      expect(source.length).toBeGreaterThan(0);
-      expect(source).not.toContain(`sprintId: integer("sprint_id")`);
-    }
-    expect(meetings).not.toContain(`name: "fk_project_meetings_org_sprint"`);
-    expect(qa).not.toContain(`name: "fk_test_runs_org_sprint"`);
-    expect(events).not.toContain(`name: "fk_sprint_scope_events_org_sprint"`);
-    expect(meetings).toContain(`name: "fk_project_meetings_org_cycle"`);
-    expect(events).toContain(`name: "fk_sprint_scope_events_org_cycle"`);
-  });
-
-  it(`CyclesController still has no detail route, so cycle reads depend on the capped list — ${removal}`, () => {
-    const cyclesBlock = iterationsControllerSource.slice(
-      iterationsControllerSource.indexOf("export class CyclesController"),
-      iterationsControllerSource.indexOf("export class ModulesController"),
-    );
-    expect(cyclesBlock.length).toBeGreaterThan(0);
-    expect(cyclesBlock).not.toContain(`@Get(":cycleId")`);
-  });
-
-  it("cycles declares deleted_at and goal, matching what a-sprint-cycle-01-expand.sql adds to the database", () => {
-    const cyclesBlock = coreSource.slice(
-      coreSource.indexOf("export const cycles = build.table("),
-      coreSource.indexOf("export const modules = build.table("),
-    );
+  it("declares deleted_at and goal, the two columns a-sprint-cycle-01-expand.sql adds to the database", () => {
     expect(cyclesBlock.length).toBeGreaterThan(0);
     expect(cyclesBlock).toContain(`deletedAt: timestamp("deleted_at", { withTimezone: true }),`);
     expect(cyclesBlock).toContain(`goal: text("goal"),`);
   });
 
-  it("the cycles partial indexes are declared, so a database built from the schema can serve the velocity keyset", () => {
-    const cyclesBlock = coreSource.slice(
-      coreSource.indexOf("export const cycles = build.table("),
-      coreSource.indexOf("export const modules = build.table("),
-    );
+  it("declares both partial indexes, so a database built from the schema alone can still serve the velocity keyset", () => {
     expect(cyclesBlock).toContain(`idx_cycles_org_project_velocity_cursor`);
     expect(cyclesBlock).toContain(`idx_cycles_org_project_status_live`);
   });

@@ -1,7 +1,7 @@
 import { and, eq, inArray, sql } from "drizzle-orm";
 import request from "supertest";
 import { z } from "zod";
-import { cycles, projects, projectStatuses, sprints, ticketAssignees, tickets } from "src/db/schema";
+import { cycles, projects, projectStatuses, ticketAssignees, tickets } from "src/db/schema";
 import { createBuildWorkflowFixture, type BuildWorkflowFixture } from "./build-workflow-fixtures";
 
 const idSchema = z.object({ id: z.number().int().positive() });
@@ -194,18 +194,14 @@ describe("[seeded-e2e] Build workflow lifecycle and concurrent mutations", () =>
     }))) });
   });
 
-  it("answers 410 on every Sprints route and leaves the stored sprint row untouched, because Cycles are the only iteration identity", async () => {
-    const [existing] = await f.seeded.seedDb.insert(sprints).values({ orgId: f.home.orgId, projectId: f.projectId, name: "Frozen sprint", startDate: new Date("2026-09-09"), endDate: new Date("2026-09-23") }).returning({ id: sprints.id });
-    if (!existing) throw new Error("Frozen sprint fixture missing");
+  it("answers 410 on every Sprints route, including a by-id route whose row cannot exist because build.sprints was dropped", async () => {
+    const goneId = 1;
 
     expect((await api().get(`/build/${f.projectId}/sprints`).set(auth())).status).toBe(410);
     expect((await api().post(`/build/${f.projectId}/sprints`).set(auth()).set("Idempotency-Key", crypto.randomUUID()).send(sprintInput)).status).toBe(410);
-    expect((await api().get(`/build/${f.projectId}/sprints/${existing.id}`).set(auth())).status).toBe(410);
-    expect((await api().patch(`/build/${f.projectId}/sprints/${existing.id}`).set(auth()).send({ status: "ACTIVE" })).status).toBe(410);
-    expect((await api().delete(`/build/${f.projectId}/sprints/${existing.id}`).set(auth())).status).toBe(410);
-
-    const [row] = await f.seeded.seedDb.select({ status: sprints.status, deletedAt: sprints.deletedAt }).from(sprints).where(eq(sprints.id, existing.id));
-    expect(row).toEqual({ status: "PLANNED", deletedAt: null });
+    expect((await api().get(`/build/${f.projectId}/sprints/${goneId}`).set(auth())).status).toBe(410);
+    expect((await api().patch(`/build/${f.projectId}/sprints/${goneId}`).set(auth()).send({ status: "ACTIVE" })).status).toBe(410);
+    expect((await api().delete(`/build/${f.projectId}/sprints/${goneId}`).set(auth())).status).toBe(410);
   });
 
   it("rejects sprintId on the ticket bulk body and the ticket list query with 400, because both contracts are strict and no longer declare the field", async () => {

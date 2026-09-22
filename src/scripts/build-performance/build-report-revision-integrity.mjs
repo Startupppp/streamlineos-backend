@@ -66,6 +66,20 @@ export function extractColumnReferences(body) {
   return refs;
 }
 
+export function extractPendingRenames(files) {
+  const renamedTables = new Map();
+  for (const { path, source } of files) {
+    const pattern =
+      /ALTER\s+TABLE\s+(?:IF\s+EXISTS\s+)?"?([a-z_]+)"?\."?([a-z_]+)"?\s+RENAME\s+TO\s+"?([a-z_]+)"?/gi;
+    let match;
+    while ((match = pattern.exec(source)) !== null) {
+      const from = `${match[1].toLowerCase()}.${match[2].toLowerCase()}`;
+      renamedTables.set(from, { to: `${match[1].toLowerCase()}.${match[3].toLowerCase()}`, path });
+    }
+  }
+  return renamedTables;
+}
+
 export function extractPendingDrops(files) {
   const droppedTables = new Map();
   const droppedColumns = new Map();
@@ -100,6 +114,7 @@ export function analyse({ definitionSql, pendingFiles, targetSources = [] }) {
   const aliases = extractAliasBindings(body);
   const references = extractColumnReferences(body);
   const { droppedTables, droppedColumns } = extractPendingDrops(pendingFiles);
+  const renamedTables = extractPendingRenames(pendingFiles);
 
   const findings = [];
 
@@ -112,6 +127,30 @@ export function analyse({ definitionSql, pendingFiles, targetSources = [] }) {
         alias,
         droppedBy,
       });
+    const renamed = renamedTables.get(table);
+    if (renamed)
+      findings.push({
+        kind: "table-renamed",
+        table,
+        alias,
+        renamedTo: renamed.to,
+        droppedBy: renamed.path,
+      });
+  }
+
+  for (const target of targets) {
+    const renamed = renamedTables.get(target);
+    if (!renamed) continue;
+    const oldName = target.split(".")[1];
+    const newName = renamed.to.split(".")[1];
+    if (!body.includes(`'${oldName}'`)) continue;
+    if (body.includes(`'${newName}'`)) continue;
+    findings.push({
+      kind: "trigger-target-renamed",
+      table: target,
+      renamedTo: renamed.to,
+      droppedBy: renamed.path,
+    });
   }
 
   const seen = new Set();
@@ -300,6 +339,52 @@ const SELF_TEST_CASES = [
     },
   },
   {
+    name: "a pending RENAME of a trigger target is reported, because TG_TABLE_NAME stops matching and the branch falls through",
+    input: {
+      definitionSql: DEFINITION_FIXTURE,
+      pendingFiles: [
+        {
+          path: "rename.sql",
+          source: 'ALTER TABLE "build_events"."sprint_scope_events" RENAME TO "cycle_scope_events";',
+        },
+      ],
+    },
+    expect: (r) =>
+      r.findings.some(
+        (f) =>
+          f.kind === "trigger-target-renamed" &&
+          f.table === "build_events.sprint_scope_events" &&
+          f.renamedTo === "build_events.cycle_scope_events",
+      ),
+  },
+  {
+    name: "a branch that matches both the old and the new name is not reported, because the rename cannot break it",
+    input: {
+      definitionSql: DEFINITION_FIXTURE.replace(
+        "IF TG_TABLE_NAME = 'sprint_scope_events' THEN",
+        "IF TG_TABLE_NAME IN ('sprint_scope_events', 'cycle_scope_events') THEN",
+      ),
+      pendingFiles: [
+        {
+          path: "rename.sql",
+          source: 'ALTER TABLE "build_events"."sprint_scope_events" RENAME TO "cycle_scope_events";',
+        },
+      ],
+    },
+    expect: (r) => !r.findings.some((f) => f.kind === "trigger-target-renamed"),
+  },
+  {
+    name: "a RENAME of a table the body joins is reported separately from a branch rename",
+    input: {
+      definitionSql: DEFINITION_FIXTURE,
+      pendingFiles: [
+        { path: "rename.sql", source: 'ALTER TABLE "build"."sprints" RENAME TO "legacy_sprints";' },
+      ],
+    },
+    expect: (r) =>
+      r.findings.some((f) => f.kind === "table-renamed" && f.table === "build.sprints"),
+  },
+  {
     name: "a column read only inside a TG_TABLE_NAME branch is not charged to the other trigger targets",
     input: {
       definitionSql: DEFINITION_FIXTURE,
@@ -379,6 +464,14 @@ function main(argv) {
   for (const finding of result.findings) {
     if (finding.kind === "table-dropped")
       console.log(`  TABLE   ${finding.table} (alias ${finding.alias}) dropped by ${finding.droppedBy}`);
+    else if (finding.kind === "table-renamed")
+      console.log(
+        `  RENAME  ${finding.table} (alias ${finding.alias}) becomes ${finding.renamedTo} in ${finding.droppedBy}`,
+      );
+    else if (finding.kind === "trigger-target-renamed")
+      console.log(
+        `  BRANCH  TG_TABLE_NAME '${finding.table.split(".")[1]}' becomes '${finding.renamedTo.split(".")[1]}' in ${finding.droppedBy} — the branch stops matching and falls through`,
+      );
     else
       console.log(
         `  COLUMN  ${finding.table}.${finding.column} (alias ${finding.alias}) dropped by ${finding.droppedBy}`,

@@ -112,6 +112,16 @@ export const BUILD_ARTIFACTS = [
       "Added by the actor contraction: the row carries a membership pointer beside its legacy user id. The composite tenant foreign key nulls the pointer on removal so historical display survives, and a suspension is reversible so nothing is written.",
   },
   {
+    id: "work_item_qa_details_qa_owner_membership",
+    mechanism: "database-cascade",
+    table: "work_item_qa_details",
+    keyedBy: "qa_owner_membership_id",
+    onRemoval: "set-null",
+    onSuspension: "retain",
+    reason:
+      "The QA-owner pointer moved here from build.bugs when the QA bug lifecycle was consolidated onto tickets plus this sidecar, and build.bugs was dropped by b-qa-bug-05-contract-drop. fk_work_item_qa_details_qa_owner_actor is an ON DELETE SET NULL composite tenant foreign key, so the defect record survives the departure without its member pointer. A suspension is reversible, so nothing is written.",
+  },
+  {
     id: "change_requests",
     mechanism: "database-cascade",
     table: "change_requests",
