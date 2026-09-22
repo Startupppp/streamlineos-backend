@@ -64,6 +64,7 @@ export class ProjectsReportsService {
             eq(cycles.id, Number(query.cycleId)),
             eq(cycles.projectId, projectId),
             eq(cycles.orgId, orgId),
+            isNull(cycles.deletedAt),
           ),
           columns: { id: true, startDate: true, endDate: true },
         })
@@ -72,6 +73,7 @@ export class ProjectsReportsService {
             eq(cycles.projectId, projectId),
             eq(cycles.orgId, orgId),
             inArray(cycles.status, ["active", "completed"]),
+            isNull(cycles.deletedAt),
           ),
           orderBy: [desc(cycles.startDate)],
           columns: { id: true, startDate: true, endDate: true },

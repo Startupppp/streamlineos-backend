@@ -131,6 +131,8 @@ export const tickets = build.table(
       .on(t.orgId, t.projectId, t.dueDate.asc(), t.createdAt.desc(), t.id.asc())
       .where(sql`deleted_at IS NULL`),
     index("idx_tickets_cycle").on(t.cycleId),
+    index("idx_tickets_org_cycle_live").on(t.orgId, t.cycleId)
+      .where(sql`${t.deletedAt} IS NULL AND ${t.cycleId} IS NOT NULL`),
     index("idx_tickets_parent").on(t.parentTicketId),
     index("idx_tickets_recurrence_next")
       .on(t.recurrenceNextRunAt)

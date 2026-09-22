@@ -49,6 +49,11 @@ export const sprintScopeEvents = buildEvents.table(
       name: "fk_sprint_scope_events_org_ticket",
     }).onDelete("cascade"),
     index("idx_sprint_scope_events_ticket").on(table.ticketId),
+    index("idx_sprint_scope_events_org_cycle_created").on(
+      table.orgId,
+      table.cycleId,
+      table.createdAt,
+    ),
     foreignKey({
       name: "fk_sprint_scope_events_actor",
       columns: [table.orgId, table.actorMembershipId],

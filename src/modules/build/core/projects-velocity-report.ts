@@ -9,10 +9,10 @@ function velocityCursorPredicate(cursor: string | undefined) {
   if (!cursor) return undefined;
   const position = velocityCursorPositionSchema.safeParse(decodeCursor(cursor));
   if (!position.success) throw new BadRequestException("Invalid velocity report cursor");
-  const startDate = sql`${position.data.sortValue}::timestamp`;
+  const startDate = sql`${position.data.sortValue}::date`;
   return or(
-    lt(sql`${cycles.startDate}::timestamp`, startDate),
-    and(eq(sql`${cycles.startDate}::timestamp`, startDate), lt(cycles.id, position.data.id)),
+    lt(cycles.startDate, startDate),
+    and(eq(cycles.startDate, startDate), lt(cycles.id, position.data.id)),
   );
 }
 
@@ -23,8 +23,9 @@ export async function queryVelocityReport(db: Db, orgId: string, projectId: numb
   }).from(cycles).where(and(
     eq(cycles.orgId, orgId), eq(cycles.projectId, projectId),
     inArray(cycles.status, ["active", "completed"]),
+    isNull(cycles.deletedAt),
     velocityCursorPredicate(query.cursor),
-  )).orderBy(desc(sql`${cycles.startDate}::timestamp`), desc(cycles.id)).limit(query.limit + 1);
+  )).orderBy(desc(cycles.startDate), desc(cycles.id)).limit(query.limit + 1);
   const page = buildCursorPage(rows, query.limit, row => ({ sortValue: row.cursorStartDate, id: String(row.id) }));
   const cycleIds = page.data.map(row => row.id);
   const statsRows = cycleIds.length ? await db.select({

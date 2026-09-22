@@ -365,13 +365,22 @@ describe("dual identity tripwire", () => {
     expect(cyclesBlock).not.toContain(`@Get(":cycleId")`);
   });
 
-  it(`cycles has no deleted_at while sprints soft-deletes — ${removal}`, () => {
+  it("cycles declares deleted_at and goal, matching what a-sprint-cycle-01-expand.sql adds to the database", () => {
     const cyclesBlock = coreSource.slice(
       coreSource.indexOf("export const cycles = build.table("),
       coreSource.indexOf("export const modules = build.table("),
     );
     expect(cyclesBlock.length).toBeGreaterThan(0);
-    expect(cyclesBlock).not.toContain(`deletedAt`);
-    expect(coreSource).toContain(`deletedAt: timestamp("deleted_at", { withTimezone: true }),`);
+    expect(cyclesBlock).toContain(`deletedAt: timestamp("deleted_at", { withTimezone: true }),`);
+    expect(cyclesBlock).toContain(`goal: text("goal"),`);
+  });
+
+  it("the cycles partial indexes are declared, so a database built from the schema can serve the velocity keyset", () => {
+    const cyclesBlock = coreSource.slice(
+      coreSource.indexOf("export const cycles = build.table("),
+      coreSource.indexOf("export const modules = build.table("),
+    );
+    expect(cyclesBlock).toContain(`idx_cycles_org_project_velocity_cursor`);
+    expect(cyclesBlock).toContain(`idx_cycles_project_status_live`);
   });
 });

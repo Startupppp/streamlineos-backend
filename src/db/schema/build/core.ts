@@ -162,12 +162,14 @@ export const cycles = build.table(
       .notNull(),
     name: text("name").notNull(),
     description: text("description"),
+    goal: text("goal"),
     status: cycleStatusEnum("status").default("draft").notNull(),
     startDate: date("start_date").notNull(),
     endDate: date("end_date").notNull(),
     createdBy: text("created_by")
       .references(() => users.id)
       .notNull(),
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at")
       .defaultNow()
@@ -178,6 +180,11 @@ export const cycles = build.table(
   foreignKey({ columns: [table.orgId, table.projectId], foreignColumns: [projects.orgId, projects.id], name: "fk_cycles_org_project" }).onDelete("cascade"),
     index("idx_cycles_project").on(table.projectId),
     index("idx_cycles_org_status").on(table.orgId, table.status),
+    index("idx_cycles_project_status_live").on(table.projectId, table.status)
+      .where(sql`${table.deletedAt} IS NULL`),
+    index("idx_cycles_org_project_velocity_cursor")
+      .on(table.orgId, table.projectId, table.startDate.desc(), table.id.desc())
+      .where(sql`${table.deletedAt} IS NULL AND ${table.status} IN ('active', 'completed')`),
     unique("uniq_cycles_org_id").on(table.orgId, table.id),
   ],
 );

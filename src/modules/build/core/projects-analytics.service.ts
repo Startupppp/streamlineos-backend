@@ -99,7 +99,7 @@ export class ProjectsAnalyticsService {
         })
         .from(cycles)
         .leftJoin(tickets, and(eq(tickets.cycleId, cycles.id), eq(tickets.orgId, orgId), isNull(tickets.deletedAt)))
-        .where(and(eq(cycles.projectId, projectId), eq(cycles.orgId, orgId)))
+        .where(and(eq(cycles.projectId, projectId), eq(cycles.orgId, orgId), isNull(cycles.deletedAt)))
         .groupBy(cycles.id, cycles.name)
         .orderBy(cycles.startDate),
       this.db
@@ -200,7 +200,7 @@ export class ProjectsAnalyticsService {
         })
         .from(cycles)
         .leftJoin(tickets, and(eq(tickets.cycleId, cycles.id), eq(tickets.orgId, orgId), isNull(tickets.deletedAt)))
-        .where(eq(cycles.orgId, orgId))
+        .where(and(eq(cycles.orgId, orgId), isNull(cycles.deletedAt)))
         .groupBy(cycles.projectId, cycles.id, cycles.startDate)
         .orderBy(cycles.startDate),
     ]);
