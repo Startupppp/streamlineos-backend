@@ -1,15 +1,25 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
 const REPO_ROOT = join(__dirname, "..", "..", "..", "..");
+const SCHEMA_DIR = join(REPO_ROOT, "src", "db", "schema", "build");
 
 function read(...parts: string[]): string {
   return readFileSync(join(...parts), "utf8").replace(/\r\n/g, "\n");
 }
 
-const coreSource = read(REPO_ROOT, "src", "db", "schema", "build", "core.ts");
-const ticketCoreSource = read(REPO_ROOT, "src", "db", "schema", "build", "ticket-core.ts");
-const eventsSource = read(REPO_ROOT, "src", "db", "schema", "build", "sprint-events.ts");
+function readScopeEventsSchema(): string {
+  const candidates = ["cycle-events.ts", "sprint-events.ts"];
+  for (const name of candidates) {
+    const path = join(SCHEMA_DIR, name);
+    if (existsSync(path)) return read(path);
+  }
+  throw new Error(`no scope-events schema file found; looked for ${candidates.join(", ")}`);
+}
+
+const coreSource = read(SCHEMA_DIR, "core.ts");
+const ticketCoreSource = read(SCHEMA_DIR, "ticket-core.ts");
+const eventsSource = readScopeEventsSchema();
 
 const cyclesBlock = coreSource.slice(
   coreSource.indexOf("export const cycles = build.table("),
