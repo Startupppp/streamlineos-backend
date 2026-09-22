@@ -1,12 +1,14 @@
 import { z } from "zod";
 import { wireDate, nullableWireDate } from "../../../../common/openapi/wire-types";
 import { cursorPageSchema } from "../../../../common/openapi/response-envelopes";
+import { roadmapStatusEnum, feedbackStatusEnum } from "../../../../db/schema";
 
 export const roadmapItemSchema = z.object({
   id: z.number().int(),
   orgId: z.string(),
   title: z.string(),
   description: z.string().nullable(),
+  status: z.enum(roadmapStatusEnum.enumValues),
   category: z.string().nullable(),
   isPublic: z.boolean(),
   projectId: z.number().int().nullable(),
@@ -39,6 +41,7 @@ export const feedbackPostSchema = z.object({
   orgId: z.string(),
   title: z.string(),
   description: z.string().nullable(),
+  status: z.enum(feedbackStatusEnum.enumValues),
   category: z.string().nullable(),
   votes: z.number().int(),
   submittedByName: z.string().nullable(),
