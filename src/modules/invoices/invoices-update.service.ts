@@ -127,6 +127,7 @@ export class InvoicesUpdateService {
           .select({
             gstRate: invoiceItems.gstRate,
             hsnSacCode: invoiceItems.hsnSacCode,
+            timesheetEntryId: invoiceItems.timesheetEntryId,
           })
           .from(invoiceItems)
           .where(eq(invoiceItems.invoiceId, invoiceId))
@@ -164,6 +165,7 @@ export class InvoicesUpdateService {
               gstRate: li.gstRate.toFixed(2),
               amount: li.amount.toFixed(4),
               lineOrder: idx,
+              timesheetEntryId: li.timesheetEntryId,
             })),
           );
         }

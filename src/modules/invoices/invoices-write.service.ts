@@ -16,6 +16,7 @@ import {
   advanceDate,
   resolveSupplierStateCode,
 } from "./lib/invoice-helpers";
+import { assertTimesheetEntriesLinkable } from "./lib/timesheet-line-link";
 import { InvoicesPaymentService } from "./invoices-payment.service";
 import { InvoicesUpdateService } from "./invoices-update.service";
 import { buildCloneInput } from "./lib/invoice-recurring-helpers";
@@ -57,6 +58,7 @@ export class InvoicesWriteService {
         quantity: li.quantity,
         rate: li.rate,
         gstRate: 0,
+        timesheetEntryId: undefined as number | undefined,
       }));
 
     const itemsWithAmounts = normalizedItems.map((it, idx) => {
@@ -73,6 +75,8 @@ export class InvoicesWriteService {
     );
     const discount = round2(input.discount);
     const total = round2(subtotal + taxPool - discount);
+
+    await assertTimesheetEntriesLinkable(this.db, orgId, itemsWithAmounts);
 
     const supplierStateCode = await resolveSupplierStateCode(this.db, orgId);
     const placeOfSupplyStateCode = input.placeOfSupply ?? supplierStateCode;
@@ -132,6 +136,7 @@ export class InvoicesWriteService {
             gstRate: it.gstRate.toFixed(2),
             amount: it.amount.toFixed(4),
             lineOrder: it.lineOrder,
+            timesheetEntryId: it.timesheetEntryId ?? null,
           })),
         );
       }
