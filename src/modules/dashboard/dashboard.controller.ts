@@ -28,6 +28,7 @@ import {
   announcementCreateSchema,
   announcementDeleteSchema,
   birthdayEntrySchema,
+  crmPulseDashboardSchema,
   executiveDashboardSchema,
   pendingApprovalsSchema,
   recentActivitySchema,
@@ -231,6 +232,15 @@ export class DashboardController {
   @RequirePermission("hr:attendance:view")
   teamAvailability(@CurrentUser() u: CurrentUserContext) {
     return this.availability.getTeamAvailability(u);
+  }
+
+  @Get("crm-pulse")
+  @ResponseSchema(crmPulseDashboardSchema)
+  @UseGuards(ModuleGuard, PermissionGuard)
+  @RequireModule("crm")
+  @RequirePermission("crm:leads:view")
+  crmPulse(@CurrentUser() u: CurrentUserContext) {
+    return this.crm.getCrmPulse(u.orgId);
   }
 
   @Get("today-activities")

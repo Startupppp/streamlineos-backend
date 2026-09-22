@@ -7,9 +7,9 @@
   "counts": {
     "VULNERABLE": 0,
     "CLOSED-IN-FLIGHT": 0,
-    "NEEDS-REVIEW": 112,
+    "NEEDS-REVIEW": 113,
     "CLOSED": 34,
-    "VERIFIED": 176
+    "VERIFIED": 175
   },
   "handlersDetail": [
     {
@@ -6214,7 +6214,7 @@
       "reviewedEvidence": [
         {
           "file": "src/modules/build/core/projects-tickets-detail.service.ts",
-          "line": 34,
+          "line": 49,
           "note": "bound to the URL project"
         }
       ]
@@ -6267,12 +6267,12 @@
       "reviewedEvidence": [
         {
           "file": "src/modules/build/core/projects-tickets-update.service.ts",
-          "line": 194,
+          "line": 179,
           "note": "bound to the URL project"
         },
         {
           "file": "src/modules/build/core/projects-tickets-update.service.ts",
-          "line": 194,
+          "line": 179,
           "note": "bound to the URL project"
         }
       ]
@@ -7017,14 +7017,16 @@
         "file": "src/modules/build/execution/sprints.service.ts",
         "resolved": true
       },
-      "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/execution/sprints.service.ts:19",
+      "orgScoping": "PASSED-UNBOUND",
+      "orgEvidence": "src/modules/build/execution/sprints.service.ts:16",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
-      "leads": [],
+      "leads": [
+        "org scoping: PASSED-UNBOUND"
+      ],
       "notes": [],
-      "verdict": "VERIFIED",
-      "verdictReason": "guard chain complete, org scoping bound, params declared, no nested parent",
+      "verdict": "NEEDS-REVIEW",
+      "verdictReason": "org scoping: PASSED-UNBOUND",
       "evidence": "src/modules/build/execution/iterations.controller.ts:67",
       "reviewedEvidence": null
     },
@@ -7061,7 +7063,7 @@
         "resolved": true
       },
       "orgScoping": "PASSED-UNBOUND",
-      "orgEvidence": "src/modules/build/execution/sprints.service.ts:78",
+      "orgEvidence": "src/modules/build/execution/sprints.service.ts:20",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
       "leads": [
@@ -7107,25 +7109,28 @@
         "file": "src/modules/build/execution/sprints.service.ts",
         "resolved": true
       },
-      "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/execution/sprints.service.ts:84",
-      "parentScoping": "BOUND",
-      "parentEvidence": "src/modules/build/execution/sprints.service.ts:84",
-      "leads": [],
+      "orgScoping": "PASSED-UNBOUND",
+      "orgEvidence": "src/modules/build/execution/sprints.service.ts:24",
+      "parentScoping": "PASSED-UNBOUND",
+      "parentEvidence": "src/modules/build/execution/sprints.service.ts:24",
+      "leads": [
+        "org scoping: PASSED-UNBOUND",
+        "parent scoping: PASSED-UNBOUND"
+      ],
       "notes": [],
       "verdict": "CLOSED",
-      "verdictReason": "GET /build/:projectId/sprints/:sprintId. No @Param(\"projectId\"); the sprint is resolved by (id, orgId). deleteSprint in the SAME service DOES bind sprints.projectId, proving the column is available and the omission is asymmetry.",
+      "verdictReason": "GET /build/:projectId/sprints/:sprintId. The parent-binding gap is moot: the handler is frozen and throws GoneException before any read, so no sprint row is resolved by any key. The route and its @RequirePermission are retained on purpose; only the query body is gone.",
       "evidence": "src/modules/build/execution/iterations.controller.ts:92",
       "reviewedEvidence": [
         {
           "file": "src/modules/build/execution/sprints.service.ts",
-          "line": 86,
-          "note": "bound to the URL project"
+          "line": 24,
+          "note": "every parameter is unused"
         },
         {
           "file": "src/modules/build/execution/sprints.service.ts",
-          "line": 177,
-          "note": "deleteSprint DOES bind projectId — the in-file control"
+          "line": 25,
+          "note": "throws before any query"
         }
       ]
     },
@@ -7163,27 +7168,30 @@
         "file": "src/modules/build/execution/sprints.service.ts",
         "resolved": true
       },
-      "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/execution/sprints.service.ts:113",
-      "parentScoping": "BOUND",
-      "parentEvidence": "src/modules/build/execution/sprints.service.ts:113",
-      "leads": [],
+      "orgScoping": "PASSED-UNBOUND",
+      "orgEvidence": "src/modules/build/execution/sprints.service.ts:28",
+      "parentScoping": "PASSED-UNBOUND",
+      "parentEvidence": "src/modules/build/execution/sprints.service.ts:28",
+      "leads": [
+        "org scoping: PASSED-UNBOUND",
+        "parent scoping: PASSED-UNBOUND"
+      ],
       "notes": [
         "mutating verb without @Idempotent"
       ],
       "verdict": "CLOSED",
-      "verdictReason": "PATCH /build/:projectId/sprints/:sprintId. No @Param(\"projectId\"); both the pre-read and the UPDATE bind (id, orgId).",
+      "verdictReason": "PATCH /build/:projectId/sprints/:sprintId. The parent-binding gap is moot: the handler is frozen and throws GoneException before any pre-read or UPDATE, so no sprint row is written by any key.",
       "evidence": "src/modules/build/execution/iterations.controller.ts:104",
       "reviewedEvidence": [
         {
           "file": "src/modules/build/execution/sprints.service.ts",
-          "line": 115,
-          "note": "bound to the URL project"
+          "line": 28,
+          "note": "every parameter is unused"
         },
         {
           "file": "src/modules/build/execution/sprints.service.ts",
-          "line": 130,
-          "note": "UPDATE binds id + orgId"
+          "line": 35,
+          "note": "throws before any query"
         }
       ]
     },
@@ -7221,16 +7229,19 @@
         "file": "src/modules/build/execution/sprints.service.ts",
         "resolved": true
       },
-      "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/execution/sprints.service.ts:175",
-      "parentScoping": "BOUND",
-      "parentEvidence": "src/modules/build/execution/sprints.service.ts:175",
-      "leads": [],
+      "orgScoping": "PASSED-UNBOUND",
+      "orgEvidence": "src/modules/build/execution/sprints.service.ts:38",
+      "parentScoping": "PASSED-UNBOUND",
+      "parentEvidence": "src/modules/build/execution/sprints.service.ts:38",
+      "leads": [
+        "org scoping: PASSED-UNBOUND",
+        "parent scoping: PASSED-UNBOUND"
+      ],
       "notes": [
         "mutating verb without @Idempotent"
       ],
       "verdict": "NEEDS-REVIEW",
-      "verdictReason": "static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)",
+      "verdictReason": "org scoping: PASSED-UNBOUND; parent scoping: PASSED-UNBOUND",
       "evidence": "src/modules/build/execution/iterations.controller.ts:117",
       "reviewedEvidence": null
     },
@@ -11344,7 +11355,7 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/meetings/meetings.service.ts:107",
+      "orgEvidence": "src/modules/build/meetings/meetings.service.ts:65",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
       "leads": [],
@@ -11389,9 +11400,9 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/meetings/meetings.service.ts:213",
+      "orgEvidence": "src/modules/build/meetings/meetings.service.ts:171",
       "parentScoping": "BOUND",
-      "parentEvidence": "src/modules/build/meetings/meetings.service.ts:213",
+      "parentEvidence": "src/modules/build/meetings/meetings.service.ts:171",
       "leads": [],
       "notes": [],
       "verdict": "NEEDS-REVIEW",
@@ -11432,7 +11443,7 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/meetings/meetings.service.ts:243",
+      "orgEvidence": "src/modules/build/meetings/meetings.service.ts:200",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
       "leads": [],
@@ -11479,9 +11490,9 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/meetings/meetings.service.ts:320",
+      "orgEvidence": "src/modules/build/meetings/meetings.service.ts:276",
       "parentScoping": "BOUND",
-      "parentEvidence": "src/modules/build/meetings/meetings.service.ts:320",
+      "parentEvidence": "src/modules/build/meetings/meetings.service.ts:276",
       "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
@@ -11526,9 +11537,9 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/meetings/meetings.service.ts:359",
+      "orgEvidence": "src/modules/build/meetings/meetings.service.ts:313",
       "parentScoping": "BOUND",
-      "parentEvidence": "src/modules/build/meetings/meetings.service.ts:359",
+      "parentEvidence": "src/modules/build/meetings/meetings.service.ts:313",
       "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
@@ -11573,9 +11584,9 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/meetings/meetings.service.ts:375",
+      "orgEvidence": "src/modules/build/meetings/meetings.service.ts:329",
       "parentScoping": "BOUND",
-      "parentEvidence": "src/modules/build/meetings/meetings.service.ts:375",
+      "parentEvidence": "src/modules/build/meetings/meetings.service.ts:329",
       "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
@@ -11622,9 +11633,9 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/meetings/meetings.service.ts:394",
+      "orgEvidence": "src/modules/build/meetings/meetings.service.ts:348",
       "parentScoping": "BOUND",
-      "parentEvidence": "src/modules/build/meetings/meetings.service.ts:394",
+      "parentEvidence": "src/modules/build/meetings/meetings.service.ts:348",
       "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
@@ -11669,9 +11680,9 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/meetings/meetings.service.ts:407",
+      "orgEvidence": "src/modules/build/meetings/meetings.service.ts:361",
       "parentScoping": "BOUND",
-      "parentEvidence": "src/modules/build/meetings/meetings.service.ts:407",
+      "parentEvidence": "src/modules/build/meetings/meetings.service.ts:361",
       "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
@@ -13173,7 +13184,7 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/qa/test-runs.service.ts:30",
+      "orgEvidence": "src/modules/build/qa/test-runs.service.ts:47",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
       "leads": [],
@@ -13220,9 +13231,9 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/qa/test-runs.service.ts:85",
+      "orgEvidence": "src/modules/build/qa/test-runs.service.ts:102",
       "parentScoping": "BOUND",
-      "parentEvidence": "src/modules/build/qa/test-runs.service.ts:85",
+      "parentEvidence": "src/modules/build/qa/test-runs.service.ts:102",
       "leads": [],
       "notes": [],
       "verdict": "NEEDS-REVIEW",
@@ -13265,9 +13276,9 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/qa/test-runs.service.ts:121",
+      "orgEvidence": "src/modules/build/qa/test-runs.service.ts:138",
       "parentScoping": "BOUND",
-      "parentEvidence": "src/modules/build/qa/test-runs.service.ts:121",
+      "parentEvidence": "src/modules/build/qa/test-runs.service.ts:138",
       "leads": [],
       "notes": [],
       "verdict": "NEEDS-REVIEW",
@@ -13306,7 +13317,7 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/qa/test-runs.service.ts:171",
+      "orgEvidence": "src/modules/build/qa/test-runs.service.ts:188",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
       "leads": [],
@@ -13354,9 +13365,9 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/qa/test-runs.service.ts:252",
+      "orgEvidence": "src/modules/build/qa/test-runs.service.ts:270",
       "parentScoping": "BOUND",
-      "parentEvidence": "src/modules/build/qa/test-runs.service.ts:252",
+      "parentEvidence": "src/modules/build/qa/test-runs.service.ts:270",
       "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
@@ -13401,9 +13412,9 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/qa/test-runs.service.ts:301",
+      "orgEvidence": "src/modules/build/qa/test-runs.service.ts:320",
       "parentScoping": "BOUND",
-      "parentEvidence": "src/modules/build/qa/test-runs.service.ts:301",
+      "parentEvidence": "src/modules/build/qa/test-runs.service.ts:320",
       "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
@@ -13450,9 +13461,9 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/qa/test-runs.service.ts:321",
+      "orgEvidence": "src/modules/build/qa/test-runs.service.ts:340",
       "parentScoping": "BOUND",
-      "parentEvidence": "src/modules/build/qa/test-runs.service.ts:321",
+      "parentEvidence": "src/modules/build/qa/test-runs.service.ts:340",
       "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
@@ -13499,9 +13510,9 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/qa/test-runs.service.ts:433",
+      "orgEvidence": "src/modules/build/qa/test-runs.service.ts:377",
       "parentScoping": "BOUND",
-      "parentEvidence": "src/modules/build/qa/test-runs.service.ts:433",
+      "parentEvidence": "src/modules/build/qa/test-runs.service.ts:377",
       "leads": [],
       "notes": [
         "mutating verb without @Idempotent"

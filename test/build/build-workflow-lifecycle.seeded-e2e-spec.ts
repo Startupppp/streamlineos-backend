@@ -1,7 +1,7 @@
 import { and, eq, inArray, sql } from "drizzle-orm";
 import request from "supertest";
 import { z } from "zod";
-import { projects, projectStatuses, sprints, ticketAssignees, tickets } from "src/db/schema";
+import { cycles, projects, projectStatuses, sprints, ticketAssignees, tickets } from "src/db/schema";
 import { createBuildWorkflowFixture, type BuildWorkflowFixture } from "./build-workflow-fixtures";
 
 const idSchema = z.object({ id: z.number().int().positive() });
@@ -74,8 +74,9 @@ describe("[seeded-e2e] Build workflow lifecycle and concurrent mutations", () =>
   });
 
   it("rejects foreign projects and foreign ticket IDs with exact 404", async () => {
-    for (const path of [`/build/${f.foreignProjectId}`, `/build/${f.foreignProjectId}/tickets`, `/build/${f.foreignProjectId}/sprints`, ticketPath(f.foreignTicketId)])
+    for (const path of [`/build/${f.foreignProjectId}`, `/build/${f.foreignProjectId}/tickets`, ticketPath(f.foreignTicketId)])
       expect((await api().get(path).set(auth())).status).toBe(404);
+    expect((await api().get(`/build/${f.foreignProjectId}/sprints`).set(auth())).status).toBe(410);
     expect((await api().patch(ticketPath(f.foreignTicketId)).set(auth()).send({ title: "Foreign mutation" })).status).toBe(404);
     expect((await api().delete(ticketPath(f.foreignTicketId)).set(auth())).status).toBe(404);
     const [foreign] = await f.seeded.seedDb.select({ title: tickets.title, deletedAt: tickets.deletedAt }).from(tickets).where(eq(tickets.id, f.foreignTicketId));
@@ -193,39 +194,36 @@ describe("[seeded-e2e] Build workflow lifecycle and concurrent mutations", () =>
     }))) });
   });
 
-  it("creates, assigns, starts, completes and deletes a sprint", async () => {
-    const created = await api().post(`/build/${f.projectId}/sprints`).set(auth()).set("Idempotency-Key", crypto.randomUUID()).send(sprintInput);
-    expect(created.status).toBe(201);
-    const { id } = idSchema.parse(created.body);
-    const assigned = await api().post(`/build/${f.projectId}/tickets/bulk`).set(auth()).set("Idempotency-Key", crypto.randomUUID()).send({ ticketIds: [f.ticketIds[0]], sprintId: id });
-    expect(assigned.status).toBe(200);
-    const detail = await api().get(`/build/${f.projectId}/sprints/${id}`).set(auth());
-    expect(detail.status).toBe(200);
-    expect(detail.body).toMatchObject({ id, tickets: expect.arrayContaining([expect.objectContaining({ id: f.ticketIds[0] })]) });
-    const list = await api().get(`/build/${f.projectId}/sprints`).set(auth());
-    expect(list.status).toBe(200);
-    expect(list.body).toEqual(expect.arrayContaining([expect.objectContaining({ id })]));
-    const sprintTickets = await api().get(`/build/${f.projectId}/tickets`).query({ sprintId: id }).set(auth());
-    expect(sprintTickets.status).toBe(200);
-    expect(pageSchema.parse(sprintTickets.body).data.map(row => row.id)).toEqual([f.ticketIds[0]]);
-    for (const status of ["ACTIVE", "COMPLETED"]) {
-      expect((await api().patch(`/build/${f.projectId}/sprints/${id}`).set(auth()).send({ status })).status).toBe(200);
-      const [row] = await f.seeded.seedDb.select({ status: sprints.status }).from(sprints).where(eq(sprints.id, id));
-      expect(row?.status).toBe(status);
-    }
-    expect((await api().delete(`/build/${f.projectId}/sprints/${id}`).set(auth())).status).toBe(204);
-    expect((await api().get(`/build/${f.projectId}/sprints/${id}`).set(auth())).status).toBe(404);
-    expect((await api().patch(`/build/${f.projectId}/sprints/${id}`).set(auth()).send({ status: "ACTIVE" })).status).toBe(404);
+  it("answers 410 on every Sprints route and leaves the stored sprint row untouched, because Cycles are the only iteration identity", async () => {
+    const [existing] = await f.seeded.seedDb.insert(sprints).values({ orgId: f.home.orgId, projectId: f.projectId, name: "Frozen sprint", startDate: new Date("2026-09-09"), endDate: new Date("2026-09-23") }).returning({ id: sprints.id });
+    if (!existing) throw new Error("Frozen sprint fixture missing");
+
+    expect((await api().get(`/build/${f.projectId}/sprints`).set(auth())).status).toBe(410);
+    expect((await api().post(`/build/${f.projectId}/sprints`).set(auth()).set("Idempotency-Key", crypto.randomUUID()).send(sprintInput)).status).toBe(410);
+    expect((await api().get(`/build/${f.projectId}/sprints/${existing.id}`).set(auth())).status).toBe(410);
+    expect((await api().patch(`/build/${f.projectId}/sprints/${existing.id}`).set(auth()).send({ status: "ACTIVE" })).status).toBe(410);
+    expect((await api().delete(`/build/${f.projectId}/sprints/${existing.id}`).set(auth())).status).toBe(410);
+
+    const [row] = await f.seeded.seedDb.select({ status: sprints.status, deletedAt: sprints.deletedAt }).from(sprints).where(eq(sprints.id, existing.id));
+    expect(row).toEqual({ status: "PLANNED", deletedAt: null });
   });
 
-  it("rejects foreign sprint create, update and delete with 404", async () => {
-    const [foreign] = await f.seeded.seedDb.insert(sprints).values({ orgId: f.neighbour.orgId, projectId: f.foreignProjectId, name: "Foreign sprint", startDate: new Date("2026-09-09"), endDate: new Date("2026-09-23") }).returning({ id: sprints.id });
-    if (!foreign) throw new Error("Foreign sprint fixture missing");
-    expect((await api().post(`/build/${f.foreignProjectId}/sprints`).set(auth()).set("Idempotency-Key", crypto.randomUUID()).send(sprintInput)).status).toBe(404);
-    expect((await api().patch(`/build/${f.projectId}/sprints/${foreign.id}`).set(auth()).send({ status: "ACTIVE" })).status).toBe(404);
-    expect((await api().delete(`/build/${f.projectId}/sprints/${foreign.id}`).set(auth())).status).toBe(404);
-    const [row] = await f.seeded.seedDb.select({ status: sprints.status, deletedAt: sprints.deletedAt }).from(sprints).where(eq(sprints.id, foreign.id));
-    expect(row).toEqual({ status: "PLANNED", deletedAt: null });
+  it("rejects sprintId on the ticket bulk body and the ticket list query with 400, because both contracts are strict and no longer declare the field", async () => {
+    const bulk = await api().post(`/build/${f.projectId}/tickets/bulk`).set(auth()).set("Idempotency-Key", crypto.randomUUID()).send({ ticketIds: [f.ticketIds[0]], sprintId: 1 });
+    expect(bulk.status).toBe(400);
+    expect((await api().get(`/build/${f.projectId}/tickets`).query({ sprintId: 1 }).set(auth())).status).toBe(400);
+  });
+
+  it("binds a ticket to a cycle through the bulk route and filters the ticket list by that cycleId", async () => {
+    const [cycle] = await f.seeded.seedDb.insert(cycles).values({ orgId: f.home.orgId, projectId: f.projectId, name: "Lifecycle cycle", startDate: "2026-09-09", endDate: "2026-09-23", status: "active", createdBy: f.home.members.manager.userId }).returning({ id: cycles.id });
+    if (!cycle) throw new Error("Lifecycle cycle fixture missing");
+
+    const assigned = await api().post(`/build/${f.projectId}/tickets/bulk`).set(auth()).set("Idempotency-Key", crypto.randomUUID()).send({ ticketIds: [f.ticketIds[0]], cycleId: cycle.id });
+    expect(assigned.status).toBe(200);
+
+    const cycleTickets = await api().get(`/build/${f.projectId}/tickets`).query({ cycleId: String(cycle.id) }).set(auth());
+    expect(cycleTickets.status).toBe(200);
+    expect(pageSchema.parse(cycleTickets.body).data.map(row => row.id)).toEqual([f.ticketIds[0]]);
   });
 
   it("serializes concurrent moves into the same gap without duplicate ranks", async () => {
@@ -307,15 +305,15 @@ describe("[seeded-e2e] Build workflow lifecycle and concurrent mutations", () =>
     const warm = await api().get(path).set(auth());
     expect(warm.status).toBe(200);
     expect(warm.body).toEqual(cold.body);
-    const [sprint] = await f.seeded.seedDb.insert(sprints).values({ orgId: f.home.orgId, projectId: f.projectId, name: "Report refresh sprint", startDate: new Date("2026-09-09"), endDate: new Date("2026-09-23"), status: "ACTIVE" }).returning({ id: sprints.id });
-    if (!sprint) throw new Error("Report sprint missing");
+    const [cycle] = await f.seeded.seedDb.insert(cycles).values({ orgId: f.home.orgId, projectId: f.projectId, name: "Report refresh cycle", startDate: "2026-09-09", endDate: "2026-09-23", status: "active", createdBy: f.home.members.manager.userId }).returning({ id: cycles.id });
+    if (!cycle) throw new Error("Report cycle missing");
     const added = await api().get(path).set(auth());
     expect(added.status).toBe(200);
-    expect(added.body).toEqual([expect.objectContaining({ sprintId: sprint.id, committedCount: 0, committedPoints: 0 })]);
-    await f.seeded.seedDb.update(tickets).set({ sprintId: sprint.id, storyPoints: 8 }).where(eq(tickets.id, f.ticketIds[0]));
+    expect(added.body).toEqual([expect.objectContaining({ cycleId: cycle.id, committedCount: 0, committedPoints: 0 })]);
+    await f.seeded.seedDb.update(tickets).set({ cycleId: cycle.id, storyPoints: 8 }).where(eq(tickets.id, f.ticketIds[0]));
     const updated = await api().get(path).set(auth());
     expect(updated.status).toBe(200);
-    expect(updated.body).toEqual([expect.objectContaining({ sprintId: sprint.id, committedCount: 1, committedPoints: 8 })]);
+    expect(updated.body).toEqual([expect.objectContaining({ cycleId: cycle.id, committedCount: 1, committedPoints: 8 })]);
   });
 
   it.each(["burnup", "cfd", "critical-path", "cycle-time", "lead-time"])("serves the %s report and rejects a foreign project", async report => {

@@ -30,6 +30,10 @@ export const unifiedInboxQuerySchema = z
       .enum(["true", "false", "1", "0"])
       .optional()
       .transform((v) => v === "true" || v === "1"),
+    q: z.string().max(200).trim().optional(),
+    category: z.string().optional(),
+    priority: z.string().optional(),
+    triage: z.enum(["active", "later", "done"]).optional(),
   })
   .strict();
 
@@ -89,7 +93,8 @@ export const buildApprovalInboxItemSchema = z.object({
   kind: z.literal("build_approval"),
   id: z.number().int(),
   status: z.string(),
-  projectId: z.number().int(),
+  projectId: z.number().int().nullable(),
+  approvalKind: z.string(),
   ticketId: z.number().int().nullable(),
   dueAt: z.string().nullable(),
   ...inboxItemBaseFields,
@@ -105,7 +110,9 @@ export const unifiedInboxItemSchema = z.discriminatedUnion("kind", [
 export type NotificationInboxItem = z.infer<typeof notificationInboxItemSchema>;
 export type BroadcastInboxItem = z.infer<typeof broadcastInboxItemSchema>;
 export type MailInboxItem = z.infer<typeof mailInboxItemSchema>;
-export type BuildApprovalInboxItem = z.infer<typeof buildApprovalInboxItemSchema>;
+export type BuildApprovalInboxItem = z.infer<
+  typeof buildApprovalInboxItemSchema
+>;
 export type UnifiedInboxItem = z.infer<typeof unifiedInboxItemSchema>;
 
 export const sourceStatusSchema = z.object({

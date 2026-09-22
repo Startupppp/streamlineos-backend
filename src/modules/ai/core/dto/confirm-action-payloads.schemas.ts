@@ -32,12 +32,6 @@ export const ticketAssignPayloadSchema = z.object({
   assigneeName: z.string().max(200).optional(),
 });
 
-export const ticketSprintPayloadSchema = z.object({
-  ticketId,
-  sprintId: z.coerce.number().int().positive(),
-  sprintName: z.string().max(200).optional(),
-});
-
 export const ticketCyclePayloadSchema = z.object({
   ticketId,
   cycleId: z.coerce.number().int().positive(),

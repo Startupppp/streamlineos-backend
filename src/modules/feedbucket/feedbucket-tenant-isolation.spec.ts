@@ -47,7 +47,7 @@ describe("FeedbucketSubmissionsService — cross-tenant isolation", () => {
   describe("findOne", () => {
     it("throws NotFoundException when submission belongs to a different org (cross-tenant DENY)", async () => {
       const { db, findFirst } = makeSubmissionDb(undefined);
-      const svc = new FeedbucketSubmissionsService(db, mockStorage);
+      const svc = new FeedbucketSubmissionsService(db, mockStorage, {} as unknown as import("../access/access.service").AccessService);
 
       await expect(svc.findOne(ATTACKER_ORG, 77)).rejects.toThrow(NotFoundException);
 
@@ -59,7 +59,7 @@ describe("FeedbucketSubmissionsService — cross-tenant isolation", () => {
     it("returns the submission for the owning org (same-tenant CONTROL)", async () => {
       const row = { id: 77, orgId: OWNER_ORG, message: "Bug found", deletedAt: null };
       const { db } = makeSubmissionDb(row);
-      const svc = new FeedbucketSubmissionsService(db, mockStorage);
+      const svc = new FeedbucketSubmissionsService(db, mockStorage, {} as unknown as import("../access/access.service").AccessService);
 
       const result = await svc.findOne(OWNER_ORG, 77);
 

@@ -162,7 +162,6 @@ export const cycles = build.table(
       .notNull(),
     name: text("name").notNull(),
     description: text("description"),
-    legacySprintId: integer("legacy_sprint_id"),
     status: cycleStatusEnum("status").default("draft").notNull(),
     startDate: date("start_date").notNull(),
     endDate: date("end_date").notNull(),
@@ -177,7 +176,6 @@ export const cycles = build.table(
   },
   (table) => [
   foreignKey({ columns: [table.orgId, table.projectId], foreignColumns: [projects.orgId, projects.id], name: "fk_cycles_org_project" }).onDelete("cascade"),
-    foreignKey({ columns: [table.orgId, table.legacySprintId], foreignColumns: [sprints.orgId, sprints.id], name: "fk_cycles_org_legacy_sprint" }).onDelete("set null"),
     index("idx_cycles_project").on(table.projectId),
     index("idx_cycles_org_status").on(table.orgId, table.status),
     unique("uniq_cycles_org_id").on(table.orgId, table.id),

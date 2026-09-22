@@ -22,6 +22,7 @@ export async function listFromMetadata(
   folder: MailFolder,
   limit: number,
   query: string | undefined,
+  unreadOnly?: boolean,
 ): Promise<MailListResponse | null> {
   const accountIds = accounts.map((acc) => acc.id);
   const fresh = await metadata.freshAccountIds(orgId, accountIds, folder);
@@ -34,6 +35,8 @@ export async function listFromMetadata(
     folder,
     limit,
     query,
+    undefined,
+    unreadOnly,
   );
   if (!cached.hasData) return null;
   return metadataPageResponse(cached, accounts, userId);
@@ -49,6 +52,7 @@ export async function pageFromMetadata(
   limit: number,
   query: string | undefined,
   after: MailMetadataCursor,
+  unreadOnly?: boolean,
 ): Promise<MailListResponse> {
   const cached = await metadata.listCached(
     membershipId,
@@ -58,6 +62,7 @@ export async function pageFromMetadata(
     limit,
     query,
     after,
+    unreadOnly,
   );
   return metadataPageResponse(cached, accounts, userId);
 }

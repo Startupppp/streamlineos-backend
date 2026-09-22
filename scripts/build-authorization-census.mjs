@@ -372,7 +372,7 @@ const REVIEWED = [
       "GET /build/:projectId/tickets/:ticketId. No @Param(\"projectId\"); the detail reader binds (orgId, deletedAt) plus an id selector. The scope resolver narrows all-vs-own by permission and carries no project predicate.",
     blastRadius: "Intra-tenant: any org ticket is readable through any project's URL.",
     evidence: [
-      { file: "src/modules/build/core/projects-tickets-detail.service.ts", line: 34, anchor: /and\(eq\(tickets\.id, ticketId\), eq\(tickets\.projectId, projectId\)\),/, note: "bound to the URL project" },
+      { file: "src/modules/build/core/projects-tickets-detail.service.ts", line: 49, anchor: /and\(eq\(tickets\.id, ticketId\), eq\(tickets\.projectId, projectId\)\),/, note: "bound to the URL project" },
     ],
   },
   {
@@ -384,8 +384,8 @@ const REVIEWED = [
     blastRadius:
       "Intra-tenant, and narrower than the rest of this family: the row-derived access check means the caller must already hold rights on the ticket's true project. What breaks is the routing/404 contract, and any future project-scoped gate that trusts the URL.",
     evidence: [
-      { file: "src/modules/build/core/projects-tickets-update.service.ts", line: 194, anchor: /\.\.\.\(projectId === null \? \[\] : \[eq\(tickets\.projectId, projectId\)\]\),/, note: "bound to the URL project" },
-      { file: "src/modules/build/core/projects-tickets-update.service.ts", line: 194, anchor: /\.\.\.\(projectId === null \? \[\] : \[eq\(tickets\.projectId, projectId\)\]\),/, note: "bound to the URL project" },
+      { file: "src/modules/build/core/projects-tickets-update.service.ts", line: 179, anchor: /\.\.\.\(projectId === null \? \[\] : \[eq\(tickets\.projectId, projectId\)\]\),/, note: "bound to the URL project" },
+      { file: "src/modules/build/core/projects-tickets-update.service.ts", line: 179, anchor: /\.\.\.\(projectId === null \? \[\] : \[eq\(tickets\.projectId, projectId\)\]\),/, note: "bound to the URL project" },
     ],
   },
   {
@@ -405,22 +405,22 @@ const REVIEWED = [
     verdict: "CLOSED",
     finding: "parent-binding-missing",
     summary:
-      "GET /build/:projectId/sprints/:sprintId. No @Param(\"projectId\"); the sprint is resolved by (id, orgId). deleteSprint in the SAME service DOES bind sprints.projectId, proving the column is available and the omission is asymmetry.",
-    blastRadius: "Intra-tenant cross-project read.",
+      "GET /build/:projectId/sprints/:sprintId. The parent-binding gap is moot: the handler is frozen and throws GoneException before any read, so no sprint row is resolved by any key. The route and its @RequirePermission are retained on purpose; only the query body is gone.",
+    blastRadius: "None — the handler reads nothing.",
     evidence: [
-      { file: "src/modules/build/execution/sprints.service.ts", line: 86, anchor: /where: and\(eq\(sprints\.id, sprintId\), eq\(sprints\.projectId, projectId\), eq\(sprints\.orgId, orgId\), isNull\(sprints\.deletedAt\)\),/, note: "bound to the URL project" },
-      { file: "src/modules/build/execution/sprints.service.ts", line: 177, anchor: /eq\(sprints\.projectId, projectId\)/, note: "deleteSprint DOES bind projectId — the in-file control" },
+      { file: "src/modules/build/execution/sprints.service.ts", line: 24, anchor: /async getSprint\(_orgId: string, _projectId: number, _sprintId: number\): Promise<never> \{/, note: "every parameter is unused" },
+      { file: "src/modules/build/execution/sprints.service.ts", line: 25, anchor: /throw new GoneException\(FROZEN\);/, note: "throws before any query" },
     ],
   },
   {
     key: "modules/build/execution/iterations.controller.ts#updateSprint",
     verdict: "CLOSED",
     finding: "parent-binding-missing",
-    summary: "PATCH /build/:projectId/sprints/:sprintId. No @Param(\"projectId\"); both the pre-read and the UPDATE bind (id, orgId).",
-    blastRadius: "Intra-tenant cross-project write.",
+    summary: "PATCH /build/:projectId/sprints/:sprintId. The parent-binding gap is moot: the handler is frozen and throws GoneException before any pre-read or UPDATE, so no sprint row is written by any key.",
+    blastRadius: "None — the handler writes nothing.",
     evidence: [
-      { file: "src/modules/build/execution/sprints.service.ts", line: 115, anchor: /where: and\(eq\(sprints\.id, sprintId\), eq\(sprints\.projectId, projectId\), eq\(sprints\.orgId, orgId\), isNull\(sprints\.deletedAt\)\),/, note: "bound to the URL project" },
-      { file: "src/modules/build/execution/sprints.service.ts", line: 130, anchor: /\.where\(and\(eq\(sprints\.id, sprintId\), eq\(sprints\.orgId, orgId\), isNull\(sprints\.deletedAt\)\)\)/, note: "UPDATE binds id + orgId" },
+      { file: "src/modules/build/execution/sprints.service.ts", line: 28, anchor: /async updateSprint\($/, note: "every parameter is unused" },
+      { file: "src/modules/build/execution/sprints.service.ts", line: 35, anchor: /throw new GoneException\(FROZEN\);/, note: "throws before any query" },
     ],
   },
   {

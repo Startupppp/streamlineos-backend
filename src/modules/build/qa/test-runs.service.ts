@@ -29,51 +29,19 @@ export class TestRunsService {
 
   private async resolveCycleBinding(
     orgId: string,
-    input: { sprintId?: number; cycleId?: number },
-  ): Promise<{ cycleId: number; legacySprintId: number | null } | null> {
+    input: { cycleId?: number },
+  ): Promise<{ cycleId: number } | null> {
     if (input.cycleId !== undefined) {
       const rows = await this.db
-        .select({ id: cycles.id, legacySprintId: cycles.legacySprintId })
+        .select({ id: cycles.id })
         .from(cycles)
         .where(and(eq(cycles.orgId, orgId), eq(cycles.id, input.cycleId)))
         .limit(1);
       const row = rows[0];
       if (!row) throw new BadRequestException(`Cycle ${input.cycleId} does not exist`);
-      return { cycleId: row.id, legacySprintId: row.legacySprintId };
-    }
-    if (input.sprintId !== undefined) {
-      const rows = await this.db
-        .select({ id: cycles.id, legacySprintId: cycles.legacySprintId })
-        .from(cycles)
-        .where(and(eq(cycles.orgId, orgId), eq(cycles.legacySprintId, input.sprintId)))
-        .limit(1);
-      const row = rows[0];
-      if (!row) throw new BadRequestException(`Sprint ${input.sprintId} does not map to any cycle`);
-      return { cycleId: row.id, legacySprintId: row.legacySprintId };
+      return { cycleId: row.id };
     }
     return null;
-  }
-
-  private async legacySprintIdsByCycle(
-    orgId: string,
-    cycleIds: number[],
-  ): Promise<Map<number, number | null>> {
-    if (cycleIds.length === 0) return new Map();
-    const rows = await this.db
-      .select({ id: cycles.id, legacySprintId: cycles.legacySprintId })
-      .from(cycles)
-      .where(and(eq(cycles.orgId, orgId), inArray(cycles.id, cycleIds)))
-      .limit(cycleIds.length);
-    return new Map(rows.map((r) => [r.id, r.legacySprintId]));
-  }
-
-  private async legacySprintIdOf(
-    orgId: string,
-    cycleId: number | null | undefined,
-  ): Promise<number | null> {
-    if (cycleId === null || cycleId === undefined) return null;
-    const map = await this.legacySprintIdsByCycle(orgId, [cycleId]);
-    return map.get(cycleId) ?? null;
   }
 
   async listRuns(
@@ -117,15 +85,10 @@ export class TestRunsService {
       .where(inArray(testRunResults.runId, runIds))
       .groupBy(testRunResults.runId);
     const countMap = new Map(countRows.map((r) => [r.runId, r]));
-    const legacySprintIds = await this.legacySprintIdsByCycle(
-      u.orgId,
-      [...new Set(pageRuns.map((r) => r.cycleId).filter((id): id is number => typeof id === "number"))],
-    );
     const data = pageRuns.map((run) => {
       const s = countMap.get(run.id);
       return {
         ...run,
-        sprintId: typeof run.cycleId === "number" ? legacySprintIds.get(run.cycleId) ?? null : null,
         passCount: Number(s?.passed ?? 0),
         failCount: Number(s?.failed ?? 0),
         blockedCount: Number(s?.blocked ?? 0),
@@ -169,7 +132,7 @@ export class TestRunsService {
       .innerJoin(testCases, eq(testRunResults.testCaseId, testCases.id))
       .where(and(eq(testRunResults.runId, runId), eq(testRunResults.orgId, orgId)))
       .orderBy(testCases.caseNumber);
-    return { ...run, sprintId: await this.legacySprintIdOf(orgId, run.cycleId), results };
+    return { ...run, results };
   }
 
   async listRunResults(
@@ -300,7 +263,7 @@ export class TestRunsService {
           })),
         );
       }
-      return { ...created, sprintId: binding?.legacySprintId ?? null };
+      return created;
     });
   }
 
@@ -351,13 +314,7 @@ export class TestRunsService {
         metadata: { runId, projectId },
       });
     }
-    return {
-      ...updated,
-      sprintId:
-        binding !== null
-          ? binding.legacySprintId
-          : await this.legacySprintIdOf(orgId, updated.cycleId),
-    };
+    return updated;
   }
 
   async deleteRun(u: CurrentUserContext, projectId: number, runId: number) {

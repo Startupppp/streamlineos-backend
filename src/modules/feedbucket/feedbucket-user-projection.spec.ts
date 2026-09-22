@@ -18,6 +18,7 @@ describe("FeedbucketSubmissionsService user projection", () => {
     const service = new FeedbucketSubmissionsService(
       db as never,
       mockStorage,
+      {} as unknown as import("../access/access.service").AccessService,
     );
 
     await service.list(

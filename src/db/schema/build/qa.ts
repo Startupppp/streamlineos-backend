@@ -13,7 +13,7 @@ import {
 import { build } from "./namespaces";
 import { sql } from "drizzle-orm";
 import { organizations, users, organizationMembers } from "../common/auth";
-import { projects, sprints, cycles } from "./core";
+import { projects, cycles } from "./core";
 import { tickets, projectReleases } from "./tasks";
 
 export const testCasePriorityEnum = pgEnum("test_case_priority", ["low", "medium", "high"]);

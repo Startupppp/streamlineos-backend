@@ -66,8 +66,6 @@ export const ticketsListQuerySchema = baseListQuerySchema
       ),
     assigneeId: csvToStringArray,
     labelIds: csvToIntArray,
-    sprintId: z.coerce.number().int().positive().optional(),
-    sprintIds: csvToIntArray,
     cycleId: csvToIntArray,
     moduleIds: csvToIntArray,
     epicId: z.coerce.number().int().positive().optional(),
@@ -112,7 +110,6 @@ export const allWorkQuerySchema = baseListQuerySchema
       ),
     assigneeId: csvToStringArray,
     labelIds: csvToIntArray,
-    sprintId: z.coerce.number().int().positive().optional(),
     cycleId: csvToIntArray,
     epicId: z.coerce.number().int().positive().optional(),
     dueDateFrom: z.string().optional(),
@@ -160,7 +157,6 @@ export const createTicketSchema = z.object({
   assigneeId: z.string().optional(),
   assigneeIds: z.array(z.string()).max(20).optional(),
   reporterId: z.string().optional(),
-  sprintId: z.number().optional(),
   epicId: z.number().optional(),
   cycleId: z.number().optional(),
   points: z.number().int("Story points must be an integer").min(0, "Story points cannot be negative").optional(),
@@ -189,7 +185,6 @@ export const updateTicketSchema = z
     priority: z.enum(["LOW", "MEDIUM", "HIGH", "URGENT"]).optional(),
     assigneeId: z.string().optional(),
     assigneeIds: z.array(z.string()).max(20).optional(),
-    sprintId: z.number().nullable().optional(),
     epicId: z.number().nullable().optional(),
     moduleId: z.number().nullable().optional(),
     points: z.number().int("Story points must be an integer").min(0, "Story points cannot be negative").nullable().optional(),
@@ -216,7 +211,6 @@ export const bulkUpdateSchema = z
       .max(100, "Cannot update more than 100 tickets at once"),
     assigneeId: z.string().optional(),
     status: z.string().optional(),
-    sprintId: z.number().int().positive().nullable().optional(),
     cycleId: z.number().int().positive().nullable().optional(),
     priority: projectPrioritySchema.optional(),
     parentTicketId: z.number().int().positive().nullable().optional(),
@@ -225,7 +219,6 @@ export const bulkUpdateSchema = z
     (data) =>
       data.assigneeId !== undefined ||
       data.status !== undefined ||
-      data.sprintId !== undefined ||
       data.cycleId !== undefined ||
       data.priority !== undefined ||
       data.parentTicketId !== undefined,

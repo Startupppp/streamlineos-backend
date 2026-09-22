@@ -79,6 +79,7 @@ const SECTIONS = [
   { key: "leaves-today",      kind: "permission",  permission: "hr:leaves:view",       module: "hr",    cacheScope: "none",   cacheNs: "leaves-today",      routePath: "leaves-today" },
   { key: "pending-approvals", kind: "permission",  permission: "hr:leaves:approve",    module: "hr",    cacheScope: "scoped", cacheNs: "pending-approvals", routePath: "pending-approvals" },
   { key: "crm-executive",     kind: "permission",  permission: "hr:analytics:read",                     cacheScope: "org",    cacheNs: "crm-executive",     routePath: "executive" },
+  { key: "crm-pulse",        kind: "permission",  permission: "crm:leads:view",       module: "crm",   cacheScope: "org",    cacheNs: "crm-pulse",         routePath: "crm-pulse" },
   { key: "recent-projects",   kind: "permission",  permission: "build:tickets:view",   module: "build", cacheScope: "none",   cacheNs: "recent-projects",   routePath: "recent-projects" },
   { key: "recent-activity",   kind: "permission",  permission: "build:tickets:view",   module: "build", cacheScope: "none",   cacheNs: "recent-activity",   routePath: "recent-activity" },
   { key: "today-activities",  kind: "permission",  permission: "crm:leads:view",       module: "crm",   cacheScope: "none",   cacheNs: "today-activities",  routePath: "today-activities" },

@@ -1,4 +1,4 @@
-import { NotFoundException } from "@nestjs/common";
+import { GoneException, NotFoundException } from "@nestjs/common";
 import { ProjectsReleasesService } from "./core/projects-releases.service";
 import { ProjectsWebhooksService } from "./core/projects-webhooks.service";
 import { SprintsService } from "./execution/sprints.service";
@@ -60,7 +60,6 @@ describe("build — a project-scoped list refuses a projectId the org does not o
   const cases: Array<[string, (db: Db) => Promise<unknown>]> = [
     ["GET /build/:projectId/releases", (db) => new ProjectsReleasesService(db, releasesAccess).listReleases(releasesU, 1)],
     ["GET /build/:projectId/webhooks", (db) => new ProjectsWebhooksService(db).listWebhooks(ATTACKER_ORG, 1)],
-    ["GET /build/:projectId/sprints", (db) => new SprintsService(db, null).listSprints(ATTACKER_ORG, 1)],
     ["GET /build/:projectId/epics", (db) => new EpicsService(db).listEpics(ATTACKER_ORG, 1)],
     ["GET /build/:projectId/cycles", (db) => new CyclesService(db).listCycles(ATTACKER_ORG, 1, {} as never)],
     ["GET /build/:projectId/modules", (db) => new ModulesService(db).listModules(ATTACKER_ORG, 1)],
@@ -91,6 +90,11 @@ describe("build — a project-scoped list refuses a projectId the org does not o
       { assigneeId: "u-analytics", assigneeName: "Ana Lytics", total: 3, completed: 1 },
     ]);
     expect((db as unknown as { execute: jest.Mock }).execute).toHaveBeenCalledTimes(1);
+  });
+
+  it("GET /build/:projectId/sprints is frozen rather than project-gated, so it answers 410 for the owning org too and never becomes an existence oracle", async () => {
+    await expect(new SprintsService(makeDb(undefined), null).listSprints(ATTACKER_ORG, 1)).rejects.toThrow(GoneException);
+    await expect(new SprintsService(makeDb({ id: 1 }), null).listSprints(ATTACKER_ORG, 1)).rejects.toThrow(GoneException);
   });
 
   it("GET /build/:projectId/analytics never reaches execute() for a foreign project, so the 404 is the gate and not a downstream failure", async () => {

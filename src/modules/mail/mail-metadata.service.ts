@@ -184,19 +184,6 @@ export class MailMetadataService {
     });
   }
 
-  /**
-   * `accountId` accepts a set, not just one id.
-   *
-   * The keyset index is `(org_id, user_membership_id, folder, date DESC,
-   * id DESC)` — it does not lead with `account_id`, so ordering the union of a
-   * member's mailboxes is the same single index walk as ordering one of them.
-   * That is what makes the mirror usable for the default `?accountId=all` view
-   * rather than only for a mailbox the reader has singled out.
-   *
-   * `null` still means "every row this membership has mirrored in this folder",
-   * which includes mailboxes since disconnected; a caller that must not show
-   * those passes its live account ids instead.
-   */
   async listCached(
     membershipId: number,
     orgId: string,
@@ -205,6 +192,7 @@ export class MailMetadataService {
     limit: number,
     query?: string,
     after?: MailMetadataCursor,
+    unreadOnly?: boolean,
   ): Promise<CachedMailPage> {
     const conditions = [
       eq(mailMessageMetadata.orgId, orgId),
@@ -219,6 +207,7 @@ export class MailMetadataService {
       conditions.push(
         await this.resolveSearchCondition(membershipId, folder, query),
       );
+    if (unreadOnly) conditions.push(eq(mailMessageMetadata.isRead, false));
     if (after) conditions.push(this.keysetCondition(after));
 
     const rows = await this.db

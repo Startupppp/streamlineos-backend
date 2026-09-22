@@ -51,7 +51,6 @@ export const testRunRowSchema = z.object({
   projectId: z.number().int(),
   runNumber: z.number().int(),
   name: z.string(),
-  sprintId: z.number().int().nullable(),
   cycleId: z.number().int().nullable(),
   releaseId: z.number().int().nullable(),
   environment: z.string().nullable(),

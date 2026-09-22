@@ -9,7 +9,7 @@ import {
 import { randomUUID } from "node:crypto";
 import { and, eq, isNull, sql } from "drizzle-orm";
 import { OutboxWriter } from "../../../common/outbox/outbox-writer";
-import { cycles, ticketAssignees, tickets } from "../../../db/schema";
+import { ticketAssignees, tickets } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import type { DbOrTx } from "../../../common/rbac/access-invalidate";
@@ -149,21 +149,6 @@ export class ProjectsTicketsUpdateService {
     if (resolvedAssignee) pendingActorIds.add(resolvedAssignee);
     if (input.assigneeIds) input.assigneeIds.forEach((uid) => pendingActorIds.add(uid));
 
-    if (input.sprintId !== undefined && input.cycleId === undefined) {
-      if (input.sprintId === null) {
-        updateData.cycleId = null;
-      } else {
-        const bridgeRows = await this.db
-          .select({ id: cycles.id })
-          .from(cycles)
-          .where(and(eq(cycles.orgId, orgId), eq(cycles.legacySprintId, input.sprintId)))
-          .limit(1);
-        const bridgedCycle = bridgeRows[0] ?? null;
-        if (!bridgedCycle)
-          throw new BadRequestException(`Sprint ${input.sprintId} does not map to any cycle`);
-        updateData.cycleId = bridgedCycle.id;
-      }
-    }
     if (input.epicId !== undefined) updateData.epicId = input.epicId;
     if (input.moduleId !== undefined) updateData.moduleId = input.moduleId;
     if (input.points !== undefined) updateData.points = input.points;

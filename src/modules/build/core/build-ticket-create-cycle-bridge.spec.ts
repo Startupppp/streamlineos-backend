@@ -1,7 +1,7 @@
 process.env.APP_URL ??= "http://localhost:1000";
 
-import { BadRequestException } from "@nestjs/common";
 import { ProjectsTicketsCreateService } from "./projects-tickets-create.service";
+import { createTicketSchema } from "./dto/ticket.schemas";
 import * as actorSeam from "../../../common/organization/organization-actor";
 import * as projectAccessSeam from "./project-access";
 import type { Db } from "../../../db/drizzle.module";
@@ -95,68 +95,43 @@ beforeEach(() => {
   (projectAccessSeam.resolveProjectAssignableMemberships as jest.Mock).mockResolvedValue(new Map());
 });
 
-describe("ProjectsTicketsCreateService.createTicket — sprint-to-cycle write bridge", () => {
-  it("never writes tickets.sprint_id, the column phase-04 drops, even when the request supplies sprintId", async () => {
+describe("ProjectsTicketsCreateService.createTicket — cycleId is the only iteration binding", () => {
+  it("writes the supplied cycleId straight onto the ticket, with no legacy resolution step in between", async () => {
     const { svc, ticketInsert } = makeHarness([{ id: 55 }]);
-    await svc.createTicket(makeUser(), 1, { title: "My ticket", type: "TASK", sprintId: 9 });
-    expect(ticketInsert()).toBeDefined();
-    expect(Object.keys(ticketInsert()!)).not.toContain("sprintId");
-  });
-
-  it("resolves a supplied sprintId to its cycle through cycles.legacySprintId and writes that cycleId", async () => {
-    const { svc, ticketInsert } = makeHarness([{ id: 55 }]);
-    await svc.createTicket(makeUser(), 1, { title: "My ticket", type: "TASK", sprintId: 9 });
-    expect(ticketInsert()).toMatchObject({ cycleId: 55 });
-  });
-
-  it("rejects an unmappable sprintId with BadRequestException instead of silently dropping the iteration binding", async () => {
-    const { svc } = makeHarness([]);
-    await expect(
-      svc.createTicket(makeUser(), 1, { title: "My ticket", type: "TASK", sprintId: 404 }),
-    ).rejects.toThrow(BadRequestException);
-  });
-
-  it("does not create the ticket at all when the sprintId is unmappable", async () => {
-    const { svc, db } = makeHarness([]);
-    await expect(
-      svc.createTicket(makeUser(), 1, { title: "My ticket", type: "TASK", sprintId: 404 }),
-    ).rejects.toThrow(BadRequestException);
-    expect((db as unknown as { transaction: jest.Mock }).transaction).not.toHaveBeenCalled();
-  });
-
-  it("lets an explicit cycleId win over a legacy sprintId, matching the precedence the update path already applies", async () => {
-    const { svc, ticketInsert } = makeHarness([{ id: 55 }]);
-    await svc.createTicket(makeUser(), 1, {
-      title: "My ticket",
-      type: "TASK",
-      sprintId: 9,
-      cycleId: 77,
-    });
+    await svc.createTicket(makeUser(), 1, { title: "My ticket", type: "TASK", cycleId: 77 });
     expect(ticketInsert()).toMatchObject({ cycleId: 77 });
   });
 
-  it("keeps the wire contract: the created ticket still echoes the sprintId the caller sent, now derived from the bridged cycle", async () => {
-    const { svc } = makeHarness([{ id: 55 }]);
-    const created = await svc.createTicket(makeUser(), 1, { title: "My ticket", type: "TASK", sprintId: 9 });
-    expect(created.sprintId).toBe(9);
-  });
-
-  it("keeps the wire contract: a cycleId-only create echoes that cycle's legacySprintId", async () => {
-    const { svc } = makeHarness([{ legacySprintId: 9 } as unknown as { id: number }]);
-    const created = await svc.createTicket(makeUser(), 1, { title: "My ticket", type: "TASK", cycleId: 77 });
-    expect(created.sprintId).toBe(9);
-  });
-
-  it("keeps the wire contract: an iteration-less create emits sprintId null rather than omitting the field", async () => {
-    const { svc } = makeHarness([]);
-    const created = await svc.createTicket(makeUser(), 1, { title: "My ticket", type: "TASK" });
-    expect(created.sprintId).toBeNull();
-  });
-
-  it("leaves cycleId unset when neither sprintId nor cycleId is supplied", async () => {
+  it("leaves cycleId unset and issues no cycle lookup when the request binds no iteration", async () => {
     const { svc, ticketInsert, cycleSelectLimit } = makeHarness([{ id: 55 }]);
     await svc.createTicket(makeUser(), 1, { title: "My ticket", type: "TASK" });
     expect(ticketInsert()!.cycleId).toBeUndefined();
     expect(cycleSelectLimit).not.toHaveBeenCalled();
+  });
+
+  it("never names sprintId on the insert, because tickets.sprint_id is the column phase-04 drops", async () => {
+    const { svc, ticketInsert } = makeHarness([{ id: 55 }]);
+    await svc.createTicket(makeUser(), 1, { title: "My ticket", type: "TASK", cycleId: 77 });
+    expect(ticketInsert()).toBeDefined();
+    expect(Object.keys(ticketInsert()!)).not.toContain("sprintId");
+  });
+
+  it("returns a created ticket carrying no sprintId key at all, so a client cannot read a stale iteration identity off the response", async () => {
+    const { svc } = makeHarness([{ id: 55 }]);
+    const created = await svc.createTicket(makeUser(), 1, { title: "My ticket", type: "TASK", cycleId: 77 });
+    expect(created).not.toHaveProperty("sprintId");
+    expect(created).toHaveProperty("cycleId");
+  });
+
+  it("issues no cycle lookup even when a cycleId is supplied, because the legacy round trip that resolved one is gone", async () => {
+    const { svc, cycleSelectLimit } = makeHarness([{ id: 55 }]);
+    await svc.createTicket(makeUser(), 1, { title: "My ticket", type: "TASK", cycleId: 77 });
+    expect(cycleSelectLimit).not.toHaveBeenCalled();
+  });
+
+  it("the createTicket request contract rejects a sprintId outright, because createTicketSchema is strict and no longer declares the field", () => {
+    const parsed = createTicketSchema.safeParse({ title: "My ticket", type: "TASK", sprintId: 9 });
+    expect(parsed.success).toBe(false);
+    expect(createTicketSchema.safeParse({ title: "My ticket", type: "TASK", cycleId: 77 }).success).toBe(true);
   });
 });

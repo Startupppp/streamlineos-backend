@@ -113,7 +113,7 @@ describe("unified inbox — build approvals page on the key the merge sorts by",
   it("BITE: delivers every approval across a complete scroll of an id-nonmonotonic source", async () => {
     const delivered = await scrollApprovals(NONMONOTONIC, 2, 5);
 
-    expect(delivered).toEqual(["approval:10", "approval:30", "approval:20"]);
+    expect(delivered).toEqual(["approval:build:10", "approval:build:30", "approval:build:20"]);
     expect(new Set(delivered).size).toBe(3);
   });
 
@@ -140,7 +140,7 @@ describe("unified inbox — build approvals page on the key the merge sorts by",
       makeUser(),
     );
 
-    expect(result.items.map((item) => item.dedupKey)).toEqual(["approval:10", "approval:30"]);
+    expect(result.items.map((item) => item.dedupKey)).toEqual(["approval:build:10", "approval:build:30"]);
     const state = decodeInboxCursor(result.nextCursor);
     expect(state.a).toBe(30);
     expect(state.at).toBe(daysAgo(4).toISOString());

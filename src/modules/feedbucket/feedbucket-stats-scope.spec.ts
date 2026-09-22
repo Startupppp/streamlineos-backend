@@ -31,6 +31,7 @@ describe("FeedbucketSubmissionsService.stats scope application", () => {
     const service = new FeedbucketSubmissionsService(
       makeDb(sink),
       mockStorage,
+      {} as unknown as import("../access/access.service").AccessService,
     );
 
     await service.stats(ScopedRead.of(ORG, userId, "team"), null);
@@ -44,6 +45,7 @@ describe("FeedbucketSubmissionsService.stats scope application", () => {
     const service = new FeedbucketSubmissionsService(
       makeDb(sink),
       mockStorage,
+      {} as unknown as import("../access/access.service").AccessService,
     );
 
     const result = await service.stats(ScopedRead.of(ORG, userId, "none"), null);
