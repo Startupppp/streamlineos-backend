@@ -39,6 +39,13 @@ export type InboxFilters = {
   priority: string | undefined;
 };
 
+export const DEFAULT_INBOX_FILTERS: InboxFilters = {
+  triage: "active",
+  q: undefined,
+  category: undefined,
+  priority: undefined,
+};
+
 export type ApprovalSourceAdapter = {
   readonly module: string;
   readonly permission: string;
@@ -111,9 +118,8 @@ function triageConditions(
       gt(notifications.snoozedUntil, now),
     ];
   }
-  if (triage === "done") {
-    return [isNotNull(notifications.archivedAt)];
-  }
+  if (triage === "done") return [isNotNull(notifications.archivedAt)];
+
   return [isNull(notifications.archivedAt), notificationNotSnoozed(now)];
 }
 
@@ -124,7 +130,7 @@ export async function fetchNotificationItems(
   fetchLimit: number,
   cursor: InboxSourcePosition | null,
   unreadOnly: boolean,
-  filters: InboxFilters,
+  filters: InboxFilters = DEFAULT_INBOX_FILTERS,
 ): Promise<NotificationInboxItem[]> {
   if (membershipId === null) return [];
   const now = new Date();
@@ -272,16 +278,6 @@ export async function fetchMailItems(
   };
 }
 
-/**
- * Where the mail source should resume, given how much of the batch it fetched
- * was actually delivered.
- *
- * Fully delivered — or nothing fetched at all — and the batch's own
- * `nextMailCursor` is the answer. Partly delivered, and the boundary is
- * re-read: `limit`-bounded, one read, and never on a page that trimmed no
- * mail. Nothing delivered leaves the position untouched, so the same batch is
- * offered again on the next page rather than being skipped.
- */
 export async function nextMailPosition(
   mail: MailService,
   orgId: string,

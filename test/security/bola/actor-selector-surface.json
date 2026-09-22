@@ -3,6 +3,8 @@
   "DELETE /hr/recruitment/jobs/{jobId}/recruiters body userId",
   "GET /build/time-entries query userId",
   "GET /build/time-entries/team query userId",
+  "GET /build/workspaces/{pmWorkspaceId}/members query userId",
+  "GET /build/{projectId}/change-requests query requesterId",
   "GET /crm/commission/accrual query userId",
   "GET /crm/commission/accrual/curve query userId",
   "GET /crm/commission/earnings query userId",
