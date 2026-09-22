@@ -33,7 +33,7 @@ export type WorkflowStatusRow = {
 export type PrefetchedWorkflow = {
   transitions: WorkflowTransitionRow[];
   statuses: WorkflowStatusRow[];
-  ticketFields?: Map<number, Pick<typeof tickets.$inferSelect, "assigneeMembershipId" | "dueDate" | "priority" | "points" | "epicId" | "sprintId">>;
+  ticketFields?: Map<number, Pick<typeof tickets.$inferSelect, "assigneeMembershipId" | "dueDate" | "priority" | "points" | "epicId" | "cycleId">>;
   wipAlreadyChecked?: boolean;
 };
 
@@ -125,7 +125,7 @@ export async function assertTransitionAllowed(
         priority: tickets.priority,
         points: tickets.points,
         epicId: tickets.epicId,
-        sprintId: tickets.sprintId,
+        cycleId: tickets.cycleId,
       })
       .from(tickets)
       .where(and(eq(tickets.id, context.ticketId), eq(tickets.orgId, orgId)))
@@ -177,7 +177,7 @@ export async function assertTransitionAllowed(
           )
             missing.push(field);
           else if (field === "epicId" && !row.epicId) missing.push(field);
-          else if (field === "sprintId" && !row.sprintId) missing.push(field);
+          else if ((field === "sprintId" || field === "cycleId") && !row.cycleId) missing.push(field);
         }
         if (missing.length > 0) {
           throw new BadRequestException(

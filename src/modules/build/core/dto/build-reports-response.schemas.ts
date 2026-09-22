@@ -107,7 +107,7 @@ export const criticalPathSchema = z.object({
 });
 
 export const velocitySchema = z.array(z.object({
-  sprintId: z.number().int(),
+  cycleId: z.number().int(),
   name: z.string(),
   startDate: z.string(),
   endDate: z.string(),

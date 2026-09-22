@@ -13,6 +13,7 @@ import {
   type SQL,
 } from "drizzle-orm";
 import {
+  cycles,
   projectMembers,
   organizationMembers,
   projects,
@@ -251,7 +252,14 @@ export class ProjectsWorkQueryService {
       );
     }
 
-    if (sprintId !== undefined) conditions.push(eq(tickets.sprintId, sprintId));
+    if (sprintId !== undefined) {
+      const [bridgedCycle] = await this.db
+        .select({ id: cycles.id })
+        .from(cycles)
+        .where(and(eq(cycles.orgId, u.orgId), eq(cycles.legacySprintId, sprintId)))
+        .limit(1);
+      conditions.push(bridgedCycle ? eq(tickets.cycleId, bridgedCycle.id) : sql`false`);
+    }
     if (cycleId && cycleId.length > 0) conditions.push(inArray(tickets.cycleId, cycleId));
     if (epicId !== undefined) conditions.push(eq(tickets.epicId, epicId));
     if (dueDateFrom) conditions.push(gte(tickets.dueDate, dueDateFrom));
@@ -265,6 +273,16 @@ export class ProjectsWorkQueryService {
       scope === "mine"
         ? await this.pageMineWork(u, where, sort, limit, cursor, isFirstPage)
         : await this.pageFilteredWork(where, sort, limit, cursor, isFirstPage);
+
+    const uniqueCycleIds = [...new Set(rows.map((r) => r.cycleId).filter((id): id is number => id !== null))];
+    let cycleToLegacySprint = new Map<number, number | null>();
+    if (uniqueCycleIds.length > 0) {
+      const cycleRows = await this.db
+        .select({ id: cycles.id, legacySprintId: cycles.legacySprintId })
+        .from(cycles)
+        .where(inArray(cycles.id, uniqueCycleIds));
+      cycleToLegacySprint = new Map(cycleRows.map((r) => [r.id, r.legacySprintId]));
+    }
 
     const ticketIds = rows.map((r) => r.id);
 
@@ -307,7 +325,7 @@ export class ProjectsWorkQueryService {
       createdAt: r.createdAt,
       updatedAt: r.updatedAt,
       assigneeId: r.assigneeId,
-      sprintId: r.sprintId,
+      sprintId: r.cycleId !== null ? (cycleToLegacySprint.get(r.cycleId) ?? null) : null,
       cycleId: r.cycleId,
       epicId: r.epicId,
       projectId: r.projectId,

@@ -16,7 +16,6 @@ export const WORK_ROW_SELECTION = {
   createdAt: tickets.createdAt,
   updatedAt: tickets.updatedAt,
   assigneeId: sql<string | null>`${organizationMembers.userId}`,
-  sprintId: tickets.sprintId,
   cycleId: tickets.cycleId,
   epicId: tickets.epicId,
   projectId: projects.id,

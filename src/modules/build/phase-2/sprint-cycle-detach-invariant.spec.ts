@@ -31,6 +31,10 @@ function isApplicationSource(filePath: string): boolean {
 const CONSUMER = src("modules/build/execution/build-sprint-completed-consumer.service.ts");
 const DUE_SWEEP = src("modules/build/core/build-due-sweep.service.ts");
 const WORK_ACTIONS = src("modules/ai/core/tools/work-actions-tools.ts");
+const SPRINTS_SVC = src("modules/build/execution/sprints.service.ts");
+const DASHBOARD_SVC = src("modules/dashboard/dashboard-project.service.ts");
+const VELOCITY_REPORT = src("modules/build/core/projects-velocity-report.ts");
+const WORK_QUERY_SVC = src("modules/build/core/projects-work-query.service.ts");
 
 describe("phase-04 detach invariant: owned execution paths use cycleId not sprintId", () => {
   it("build-sprint-completed-consumer no longer queries tickets.sprintId", () => {
@@ -68,23 +72,40 @@ describe("phase-04 detach invariant: owned execution paths use cycleId not sprin
     expect(WORK_ACTIONS).toContain("cycles.name");
   });
 
+  it("sprints.service listSprints bridges ticket lookup through cycles.legacySprintId not tickets.sprintId", () => {
+    expect(SPRINTS_SVC).not.toContain("tickets.sprintId");
+    expect(SPRINTS_SVC).toContain("cycles.legacySprintId");
+    expect(SPRINTS_SVC).toContain("tickets.cycleId");
+  });
+
+  it("dashboard-project.service getActiveSprintSummary queries tickets.cycleId not tickets.sprintId", () => {
+    expect(DASHBOARD_SVC).not.toContain("tickets.sprintId");
+    expect(DASHBOARD_SVC).toContain("tickets.cycleId");
+  });
+
+  it("projects-velocity-report queries tickets.cycleId and groups by cycleId", () => {
+    expect(VELOCITY_REPORT).not.toContain("tickets.sprintId");
+    expect(VELOCITY_REPORT).toContain("tickets.cycleId");
+    expect(VELOCITY_REPORT).toContain("cycles.id");
+  });
+
+  it("projects-work-query.service bridges sprintId filter through cycles.legacySprintId", () => {
+    expect(WORK_QUERY_SVC).not.toContain("tickets.sprintId");
+    expect(WORK_QUERY_SVC).toContain("cycles.legacySprintId");
+  });
+
   it("scanner is not vacuous: each source file contains substantial code", () => {
     expect(CONSUMER.length).toBeGreaterThan(500);
     expect(DUE_SWEEP.length).toBeGreaterThan(500);
     expect(WORK_ACTIONS.length).toBeGreaterThan(500);
+    expect(SPRINTS_SVC.length).toBeGreaterThan(500);
+    expect(DASHBOARD_SVC.length).toBeGreaterThan(500);
+    expect(VELOCITY_REPORT.length).toBeGreaterThan(200);
   });
 });
 
-describe("phase-04 detach invariant: full application source allowlist", () => {
-  const KNOWN_REMAINING: readonly string[] = [
-    "modules/build/core/projects-tickets-read.service.ts",
-    "modules/build/core/projects-tickets-workflow-utils.ts",
-    "modules/build/core/projects-velocity-report.ts",
-    "modules/build/core/projects-work-query-helpers.ts",
-    "modules/build/core/projects-work-query.service.ts",
-    "modules/build/execution/sprints.service.ts",
-    "modules/dashboard/dashboard-project.service.ts",
-  ].map((p) => p.replace(/\//g, require("node:path").sep));
+describe("phase-04 detach invariant: full application source — property-access form", () => {
+  const KNOWN_REMAINING: readonly string[] = [];
 
   it("only the known-remaining files still reference tickets.sprintId — any new violator fails this gate, any cleared file requires allowlist update", () => {
     const allFiles = scanDir(BACKEND_SRC).filter(isApplicationSource);
@@ -96,6 +117,50 @@ describe("phase-04 detach invariant: full application source allowlist", () => {
 
     const sortedViolators = [...violators].sort();
     const sortedKnown = [...KNOWN_REMAINING].sort();
+    expect(sortedViolators).toEqual(sortedKnown);
+  });
+});
+
+describe("phase-04 detach invariant: sprintId column-selection form (relational API blind spot)", () => {
+  const sep = require("node:path").sep as string;
+
+  const KNOWN_COLUMN_SELECT_REMAINING: readonly string[] = [
+    "modules/build/core/dto/build-tickets-response.schemas.ts",
+  ].map((p) => p.replace(/\//g, sep));
+
+
+  it("projects-tickets-read.query no longer selects sprintId: true — derives sprintId from cycle.legacySprintId instead", () => {
+    const content = src("modules/build/core/projects-tickets-read.query.ts");
+    expect(content).not.toMatch(/sprintId\s*:\s*true/);
+    expect(content).toContain("legacySprintId: true");
+    expect(content).toContain("row.cycle?.legacySprintId");
+  });
+
+  it("projects-tickets-update.service no longer selects sprintId: true from the DB — bridges sprintId write to cycleId instead", () => {
+    const content = src("modules/build/core/projects-tickets-update.service.ts");
+    expect(content).not.toMatch(/sprintId\s*:\s*true/);
+    expect(content).toContain("cycles.legacySprintId");
+    expect(content).toContain("updateData.cycleId");
+  });
+
+  it("build-tickets-response.schemas.ts carries sprintId: true only in a Zod .pick() call — not a DB column read, benign until the response contract removes sprintId", () => {
+    const content = src("modules/build/core/dto/build-tickets-response.schemas.ts");
+    expect(content).toContain("sprintId: true");
+    expect(content).not.toContain("findMany");
+    expect(content).not.toContain("findFirst");
+    expect(content).not.toContain("cycles.legacySprintId");
+  });
+
+  it("only the known-remaining files still carry sprintId: true — catches the relational-API form that the property-access scan cannot see", () => {
+    const allFiles = scanDir(BACKEND_SRC).filter(isApplicationSource);
+    expect(allFiles.length).toBeGreaterThan(50);
+
+    const columnSelectViolators = allFiles
+      .filter((f) => /sprintId\s*:\s*true/.test(readFileSync(f, "utf8")))
+      .map((f) => relative(BACKEND_SRC, f));
+
+    const sortedViolators = [...columnSelectViolators].sort();
+    const sortedKnown = [...KNOWN_COLUMN_SELECT_REMAINING].sort();
     expect(sortedViolators).toEqual(sortedKnown);
   });
 });

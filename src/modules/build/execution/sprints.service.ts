@@ -1,7 +1,7 @@
 import { GoneException, Inject, Injectable, NotFoundException, Optional } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
 import { and, desc, eq, inArray, isNull } from "drizzle-orm";
-import { sprints, tickets } from "../../../db/schema";
+import { cycles, sprints, tickets } from "../../../db/schema";
 import { OutboxWriter } from "../../../common/outbox/outbox-writer";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
@@ -37,32 +37,42 @@ export class SprintsService {
     if (sprintList.length === 0) return [];
 
     const sprintIds = sprintList.map((s) => s.id);
-    const ticketRows = await this.db
-      .select({
-        id: tickets.id,
-        title: tickets.title,
-        status: tickets.status,
-        points: tickets.points,
-        sprintId: tickets.sprintId,
-      })
-      .from(tickets)
-      .where(and(eq(tickets.orgId, orgId), isNull(tickets.deletedAt), inArray(tickets.sprintId, sprintIds)))
-      .limit(500);
+    const cycleRows = await this.db
+      .select({ id: cycles.id, legacySprintId: cycles.legacySprintId })
+      .from(cycles)
+      .where(and(eq(cycles.orgId, orgId), inArray(cycles.legacySprintId, sprintIds)))
+      .limit(sprintIds.length * 2);
+    const sprintToCycle = new Map(
+      cycleRows.filter((r) => r.legacySprintId !== null).map((r) => [r.legacySprintId!, r.id]),
+    );
+    const cycleIds = cycleRows.map((r) => r.id);
 
-    const ticketsBySprintId = new Map<number, typeof ticketRows>();
+    const ticketRows = cycleIds.length
+      ? await this.db
+          .select({
+            id: tickets.id,
+            title: tickets.title,
+            status: tickets.status,
+            points: tickets.points,
+            cycleId: tickets.cycleId,
+          })
+          .from(tickets)
+          .where(and(eq(tickets.orgId, orgId), isNull(tickets.deletedAt), inArray(tickets.cycleId, cycleIds)))
+          .limit(500)
+      : [];
+
+    const ticketsByCycleId = new Map<number, typeof ticketRows>();
     for (const ticket of ticketRows) {
-      if (ticket.sprintId === null) continue;
-      const existing = ticketsBySprintId.get(ticket.sprintId);
-      if (existing)
-        existing.push(ticket);
-      else
-        ticketsBySprintId.set(ticket.sprintId, [ticket]);
+      if (ticket.cycleId === null) continue;
+      const existing = ticketsByCycleId.get(ticket.cycleId) ?? [];
+      existing.push(ticket);
+      ticketsByCycleId.set(ticket.cycleId, existing);
     }
 
-    return sprintList.map((sprint) => ({
-      ...sprint,
-      tickets: ticketsBySprintId.get(sprint.id) ?? [],
-    }));
+    return sprintList.map((sprint) => {
+      const cycleId = sprintToCycle.get(sprint.id);
+      return { ...sprint, tickets: cycleId !== undefined ? ticketsByCycleId.get(cycleId) ?? [] : [] };
+    });
   }
 
   async createSprint(_orgId: string, _projectId: number, _input: CreateSprintInput): Promise<never> {
