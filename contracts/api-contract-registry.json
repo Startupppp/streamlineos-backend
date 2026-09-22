@@ -1,7 +1,7 @@
 {
   "version": "1",
   "schemaVersion": "1.1",
-  "generatedAt": "2026-09-21T12:38:37.728Z",
+  "generatedAt": "2026-09-22T17:17:26.998Z",
   "description": "Fail-closed API contract registry. Every HTTP operation, outbox event, and outbound customer webhook event is classified as 'internal' or 'published'. Operations absent from this registry are treated as 'published' by check-api-contract-registry.mjs.",
   "operations": {
     "GET /access/delegations": {
@@ -5907,6 +5907,17 @@
       "classificationOverride": null,
       "xExposure": "permissioned",
       "operationId": "WorkflowController_deleteTransition",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "GET /build/{projectId}/workload/capacity": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "WorkloadCapacityController_capacity",
       "owner": null,
       "version": "1",
       "consumers": [],
@@ -12445,6 +12456,28 @@
       "sunsetAt": null,
       "sunsetEvidence": null
     },
+    "GET /cron/helpdesk-escalation-sweep": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "public",
+      "operationId": "CronHrController_getHelpdeskEscalationSweep",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "POST /cron/helpdesk-escalation-sweep": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "public",
+      "operationId": "CronHrController_postHelpdeskEscalationSweep",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
     "GET /cron/helpdesk-retention-sweep": {
       "classification": "internal",
       "classificationOverride": null,
@@ -13490,6 +13523,28 @@
       "sunsetAt": null,
       "sunsetEvidence": null
     },
+    "GET /cron/timesheets-approval-escalation": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "public",
+      "operationId": "CronPlatformRetentionController_getTimesheetsApprovalEscalation",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "POST /cron/timesheets-approval-escalation": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "public",
+      "operationId": "CronPlatformRetentionController_postTimesheetsApprovalEscalation",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
     "GET /cron/timesheets-exception-detection": {
       "classification": "internal",
       "classificationOverride": null,
@@ -13894,6 +13949,17 @@
       "classificationOverride": null,
       "xExposure": "universal",
       "operationId": "DashboardController_birthdays",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "GET /dashboard/crm-pulse": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "DashboardController_crmPulse",
       "owner": null,
       "version": "1",
       "consumers": [],
@@ -17079,6 +17145,17 @@
       "sunsetAt": null,
       "sunsetEvidence": null
     },
+    "POST /hr/employees/{employeeId}/resend-invite": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "EmployeesController_resendInvite",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
     "GET /hr/employees/{employeeId}/sensitive": {
       "classification": "internal",
       "classificationOverride": null,
@@ -17150,6 +17227,17 @@
       "classificationOverride": null,
       "xExposure": "permissioned",
       "operationId": "EmployeesController_checkEmail",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "GET /hr/employees/counts": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "EmployeesController_countEmployees",
       "owner": null,
       "version": "1",
       "consumers": [],
@@ -18525,6 +18613,17 @@
       "classificationOverride": null,
       "xExposure": "permissioned",
       "operationId": "ExitController_getDetail",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "PATCH /hr/exit/{resignationId}/checklist/{itemKey}": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "ExitController_updateChecklistItem",
       "owner": null,
       "version": "1",
       "consumers": [],
@@ -20131,6 +20230,28 @@
       "classificationOverride": null,
       "xExposure": "permissioned",
       "operationId": "HrHelpdeskController_addComment",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "GET /hr/helpdesk/queues": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "HrHelpdeskController_listQueues",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "PUT /hr/helpdesk/queues/{queue}": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "HrHelpdeskController_configureQueue",
       "owner": null,
       "version": "1",
       "consumers": [],
@@ -23948,6 +24069,28 @@
       "classificationOverride": null,
       "xExposure": "permissioned",
       "operationId": "HrPayrollReimbursementsController_update",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "GET /hr/reporting-lines/{employeeUserId}": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "ReportingLinesController_line",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "GET /hr/reporting-lines/coverage": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "ReportingLinesController_coverage",
       "owner": null,
       "version": "1",
       "consumers": [],
@@ -31990,6 +32133,17 @@
       "sunsetAt": null,
       "sunsetEvidence": null
     },
+    "GET /me/approvers/{kind}": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "universal",
+      "operationId": "ApprovalAuthorityController_myApprover",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
     "POST /me/attendance/break": {
       "classification": "internal",
       "classificationOverride": null,
@@ -32248,6 +32402,72 @@
       "classificationOverride": null,
       "xExposure": "permissioned",
       "operationId": "EmployeeRecruitmentController_submitScorecard",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "GET /me/support": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "EmployeeSupportController_list",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "POST /me/support": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "EmployeeSupportController_create",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "GET /me/support/{ticketId}": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "EmployeeSupportController_getById",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "POST /me/support/{ticketId}/comments": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "EmployeeSupportController_addComment",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "GET /me/support/suggest": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "EmployeeSupportController_suggest",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "GET /me/team": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "universal",
+      "operationId": "ManagerHomeController_get",
       "owner": null,
       "version": "1",
       "consumers": [],
@@ -36171,6 +36391,17 @@
       "classificationOverride": null,
       "xExposure": "permissioned",
       "operationId": "PayrollPoliciesController_toggleImpact",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "GET /payroll/readiness": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "PayrollReadinessController_get",
       "owner": null,
       "version": "1",
       "consumers": [],
@@ -43603,6 +43834,17 @@
       "sunsetAt": null,
       "sunsetEvidence": null
     },
+    "GET /timesheets/periods/{periodId}/approver": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "TimesheetPeriodsController_previewApprover",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
     "POST /timesheets/periods/{periodId}/lock": {
       "classification": "internal",
       "classificationOverride": null,
@@ -44946,226 +45188,6 @@
       "consumers": [],
       "sunsetAt": null,
       "sunsetEvidence": null
-    },
-    "POST /hr/employees/{employeeId}/resend-invite": {
-      "classification": "internal",
-      "classificationOverride": null,
-      "xExposure": "permissioned",
-      "operationId": "EmployeesController_resendInvite",
-      "owner": null,
-      "version": "1",
-      "consumers": [],
-      "sunsetAt": null,
-      "sunsetEvidence": null
-    },
-    "GET /hr/employees/counts": {
-      "classification": "internal",
-      "classificationOverride": null,
-      "xExposure": "permissioned",
-      "operationId": "EmployeesController_countEmployees",
-      "owner": null,
-      "version": "1",
-      "consumers": [],
-      "sunsetAt": null,
-      "sunsetEvidence": null
-    },
-    "GET /cron/helpdesk-escalation-sweep": {
-      "classification": "internal",
-      "classificationOverride": null,
-      "xExposure": "public",
-      "operationId": "CronHrController_getHelpdeskEscalationSweep",
-      "owner": null,
-      "version": "1",
-      "consumers": [],
-      "sunsetAt": null,
-      "sunsetEvidence": null
-    },
-    "POST /cron/helpdesk-escalation-sweep": {
-      "classification": "internal",
-      "classificationOverride": null,
-      "xExposure": "public",
-      "operationId": "CronHrController_postHelpdeskEscalationSweep",
-      "owner": null,
-      "version": "1",
-      "consumers": [],
-      "sunsetAt": null,
-      "sunsetEvidence": null
-    },
-    "GET /hr/helpdesk/queues": {
-      "classification": "internal",
-      "classificationOverride": null,
-      "xExposure": "permissioned",
-      "operationId": "HrHelpdeskController_listQueues",
-      "owner": null,
-      "version": "1",
-      "consumers": [],
-      "sunsetAt": null,
-      "sunsetEvidence": null
-    },
-    "PUT /hr/helpdesk/queues/{queue}": {
-      "classification": "internal",
-      "classificationOverride": null,
-      "xExposure": "permissioned",
-      "operationId": "HrHelpdeskController_configureQueue",
-      "owner": null,
-      "version": "1",
-      "consumers": [],
-      "sunsetAt": null,
-      "sunsetEvidence": null
-    },
-    "GET /me/support": {
-      "classification": "internal",
-      "classificationOverride": null,
-      "xExposure": "permissioned",
-      "operationId": "EmployeeSupportController_list",
-      "owner": null,
-      "version": "1",
-      "consumers": [],
-      "sunsetAt": null,
-      "sunsetEvidence": null
-    },
-    "POST /me/support": {
-      "classification": "internal",
-      "classificationOverride": null,
-      "xExposure": "permissioned",
-      "operationId": "EmployeeSupportController_create",
-      "owner": null,
-      "version": "1",
-      "consumers": [],
-      "sunsetAt": null,
-      "sunsetEvidence": null
-    },
-    "GET /me/support/{ticketId}": {
-      "classification": "internal",
-      "classificationOverride": null,
-      "xExposure": "permissioned",
-      "operationId": "EmployeeSupportController_getById",
-      "owner": null,
-      "version": "1",
-      "consumers": [],
-      "sunsetAt": null,
-      "sunsetEvidence": null
-    },
-    "POST /me/support/{ticketId}/comments": {
-      "classification": "internal",
-      "classificationOverride": null,
-      "xExposure": "permissioned",
-      "operationId": "EmployeeSupportController_addComment",
-      "owner": null,
-      "version": "1",
-      "consumers": [],
-      "sunsetAt": null,
-      "sunsetEvidence": null
-    },
-    "GET /me/support/suggest": {
-      "classification": "internal",
-      "classificationOverride": null,
-      "xExposure": "permissioned",
-      "operationId": "EmployeeSupportController_suggest",
-      "owner": null,
-      "version": "1",
-      "consumers": [],
-      "sunsetAt": null,
-      "sunsetEvidence": null
-    },
-    "GET /hr/reporting-lines/coverage": {
-      "classification": "internal",
-      "classificationOverride": null,
-      "xExposure": "permissioned",
-      "operationId": "ReportingLinesController_coverage",
-      "owner": null,
-      "version": "1",
-      "consumers": [],
-      "sunsetAt": null,
-      "sunsetEvidence": null
-    },
-    "GET /hr/reporting-lines/{employeeUserId}": {
-      "classification": "internal",
-      "classificationOverride": null,
-      "xExposure": "permissioned",
-      "operationId": "ReportingLinesController_line",
-      "owner": null,
-      "version": "1",
-      "consumers": [],
-      "sunsetAt": null,
-      "sunsetEvidence": null
-    },
-    "GET /me/approvers/{kind}": {
-      "classification": "internal",
-      "classificationOverride": null,
-      "xExposure": "universal",
-      "operationId": "ApprovalAuthorityController_myApprover",
-      "owner": null,
-      "version": "1",
-      "consumers": [],
-      "sunsetAt": null,
-      "sunsetEvidence": null
-    },
-    "GET /cron/timesheets-approval-escalation": {
-      "classification": "internal",
-      "classificationOverride": null,
-      "xExposure": "public",
-      "operationId": "CronPlatformRetentionController_getTimesheetsApprovalEscalation",
-      "owner": null,
-      "version": "1",
-      "consumers": [],
-      "sunsetAt": null,
-      "sunsetEvidence": null
-    },
-    "POST /cron/timesheets-approval-escalation": {
-      "classification": "internal",
-      "classificationOverride": null,
-      "xExposure": "public",
-      "operationId": "CronPlatformRetentionController_postTimesheetsApprovalEscalation",
-      "owner": null,
-      "version": "1",
-      "consumers": [],
-      "sunsetAt": null,
-      "sunsetEvidence": null
-    },
-    "GET /timesheets/periods/{periodId}/approver": {
-      "classification": "internal",
-      "classificationOverride": null,
-      "xExposure": "permissioned",
-      "operationId": "TimesheetPeriodsController_previewApprover",
-      "owner": null,
-      "version": "1",
-      "consumers": [],
-      "sunsetAt": null,
-      "sunsetEvidence": null
-    },
-    "GET /payroll/readiness": {
-      "classification": "internal",
-      "classificationOverride": null,
-      "xExposure": "permissioned",
-      "operationId": "PayrollReadinessController_get",
-      "owner": null,
-      "version": "1",
-      "consumers": [],
-      "sunsetAt": null,
-      "sunsetEvidence": null
-    },
-    "GET /me/team": {
-      "classification": "internal",
-      "classificationOverride": null,
-      "xExposure": "universal",
-      "operationId": "ManagerHomeController_get",
-      "owner": null,
-      "version": "1",
-      "consumers": [],
-      "sunsetAt": null,
-      "sunsetEvidence": null
-    },
-    "PATCH /hr/exit/{resignationId}/checklist/{itemKey}": {
-      "classification": "internal",
-      "classificationOverride": null,
-      "xExposure": "permissioned",
-      "operationId": "ExitController_updateChecklistItem",
-      "owner": null,
-      "version": "1",
-      "consumers": [],
-      "sunsetAt": null,
-      "sunsetEvidence": null
     }
   },
   "events": {
@@ -45195,15 +45217,6 @@
       "sunsetEvidence": null
     },
     "build.release.published": {
-      "classification": "internal",
-      "owner": null,
-      "consumers": [
-        "outbox-relay"
-      ],
-      "sunsetAt": null,
-      "sunsetEvidence": null
-    },
-    "build.sprint.completed": {
       "classification": "internal",
       "owner": null,
       "consumers": [
