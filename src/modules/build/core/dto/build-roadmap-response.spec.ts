@@ -1,5 +1,7 @@
-import { roadmapItemSchema, feedbackPostSchema } from "./build-roadmap-response.schemas";
+import { roadmapItemSchema, feedbackPostSchema, roadmapPageSchema } from "./build-roadmap-response.schemas";
 import { roadmapStatusEnum, feedbackStatusEnum } from "../../../../db/schema";
+import { cursorPageSchema } from "../../../../common/openapi/response-envelopes";
+import { roadmapListQuerySchema, feedbackListQuerySchema } from "./roadmap.schemas";
 
 const NOW = new Date();
 
@@ -92,5 +94,57 @@ describe("feedbackPostSchema — status field", () => {
     const raw = feedbackBase();
     delete raw.status;
     expect(() => feedbackPostSchema.parse(raw)).toThrow();
+  });
+});
+
+describe("roadmapPageSchema — status passes through the data envelope", () => {
+  it("preserves status on each item in the data array", () => {
+    const parsed = roadmapPageSchema.parse({
+      data: [roadmapBase({ status: "in_progress" })],
+      pagination: { limit: 5, hasMore: false, nextCursor: null },
+    });
+    expect(parsed.data[0].status).toBe("in_progress");
+  });
+
+  it("rejects a page where a data item carries an unknown status", () => {
+    expect(() =>
+      roadmapPageSchema.parse({
+        data: [roadmapBase({ status: "archived" })],
+        pagination: { limit: 5, hasMore: false, nextCursor: null },
+      })
+    ).toThrow();
+  });
+});
+
+describe("cursorPageSchema(feedbackPostSchema) — status passes through the data envelope", () => {
+  const feedbackPageSchema = cursorPageSchema(feedbackPostSchema);
+
+  it("preserves status on each item in the data array", () => {
+    const parsed = feedbackPageSchema.parse({
+      data: [feedbackBase({ status: "declined" })],
+      pagination: { limit: 5, hasMore: false, nextCursor: null },
+    });
+    expect(parsed.data[0].status).toBe("declined");
+  });
+
+  it("rejects a page where a data item carries an unknown status", () => {
+    expect(() =>
+      feedbackPageSchema.parse({
+        data: [feedbackBase({ status: "spam" })],
+        pagination: { limit: 5, hasMore: false, nextCursor: null },
+      })
+    ).toThrow();
+  });
+});
+
+describe("filter status enum matches pgEnum — drift protection", () => {
+  it("roadmap filter status options equal roadmapStatusEnum.enumValues exactly", () => {
+    const filterStatus = roadmapListQuerySchema.shape.status.unwrap();
+    expect([...filterStatus.options].sort()).toEqual([...roadmapStatusEnum.enumValues].sort());
+  });
+
+  it("feedback filter status options equal feedbackStatusEnum.enumValues exactly", () => {
+    const filterStatus = feedbackListQuerySchema.shape.status.unwrap();
+    expect([...filterStatus.options].sort()).toEqual([...feedbackStatusEnum.enumValues].sort());
   });
 });
