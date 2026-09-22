@@ -192,7 +192,7 @@ describe("epicRowSchema — response contract completeness", () => {
     priority: "MEDIUM",
     projectId: 1,
     ticketNumber: 42,
-    sprintId: null,
+    cycleId: null,
     epicId: null,
     assigneeMembershipId: null,
     points: null,

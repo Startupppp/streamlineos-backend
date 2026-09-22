@@ -295,12 +295,35 @@ describe("the backfill is re-runnable and row-order independent", () => {
   });
 });
 
+const sprintsServiceSource = read(
+  REPO_ROOT, "src", "modules", "build", "execution", "sprints.service.ts",
+);
+
 describe("dual identity tripwire", () => {
   const removal = "delete this assertion in the same change that lands a-sprint-cycle-05-drop.sql";
 
   it(`build.sprints is still declared alongside build.cycles — ${removal}`, () => {
     expect(coreSource).toContain(`export const sprints = build.table(`);
     expect(coreSource).toContain(`export const cycles = build.table(`);
+  });
+
+  it("the sprints declaration is inert: no query in SprintsService names the table, so the declaration costs nothing while the DB table survives", () => {
+    expect(sprintsServiceSource.length).toBeGreaterThan(200);
+    expect(sprintsServiceSource).not.toContain(`from(sprints)`);
+    expect(sprintsServiceSource).not.toContain(`update(sprints)`);
+    expect(sprintsServiceSource).not.toContain(`query.sprints`);
+    expect(sprintsServiceSource).toContain(`GoneException`);
+  });
+
+  it("cycles no longer declares legacy_sprint_id nor its foreign key, so the two iteration identities are no longer bridged in code", () => {
+    expect(coreSource).not.toContain(`legacy_sprint_id`);
+    expect(coreSource).not.toContain(`legacySprintId`);
+    expect(coreSource).not.toContain(`fk_cycles_org_legacy_sprint`);
+  });
+
+  it("the DB column outlives the declaration on purpose: no migration in this change drops legacy_sprint_id, and phase 05 is still the file that does", () => {
+    expect(existsSync(join(SQL_DIR, "a-sprint-cycle-05-drop.sql"))).toBe(true);
+    expect(readSql("a-sprint-cycle-05-drop.sql")).toMatch(/legacy_sprint_id|"sprints"/);
   });
 
   it("tickets declares cycleId and no longer declares sprintId, because Drizzle names every declared column in its INSERT and phase 04 drops that one", () => {

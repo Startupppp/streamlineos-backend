@@ -3,7 +3,6 @@ import { ProjectsModule } from "../core/projects.module";
 import { TimesheetsCoreModule } from "../../timesheets/core/timesheets-core.module";
 import { NotificationsModule } from "../../notifications/notifications.module";
 import { OutboxModule } from "../../../common/outbox/outbox.module";
-import { BuildSprintCompletedConsumerService } from "./build-sprint-completed-consumer.service";
 import {
   CyclesController,
   EpicsController,
@@ -63,7 +62,6 @@ import { WorkloadCapacityController } from "./workload-capacity.controller";
     WorkloadCapacityController,
   ],
   providers: [
-    BuildSprintCompletedConsumerService,
     SprintsService,
     CyclesService,
     ModulesService,

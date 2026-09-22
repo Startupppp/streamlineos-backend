@@ -73,19 +73,6 @@ export async function bulkMutateTickets(
         if (!cycleRow) throw new NotFoundException("Cycle not found in this project");
       }
       resolvedCycleId = body.cycleId;
-    } else if (body.sprintId !== undefined) {
-      if (body.sprintId != null) {
-        const [cycleRow] = await tx
-          .select({ id: cycles.id })
-          .from(cycles)
-          .where(and(eq(cycles.orgId, actor.orgId), eq(cycles.legacySprintId, body.sprintId)))
-          .limit(1);
-        if (!cycleRow)
-          throw new NotFoundException("Sprint not found in this project");
-        resolvedCycleId = cycleRow.id;
-      } else {
-        resolvedCycleId = null;
-      }
     }
     if (body.parentTicketId != null) {
       if (ids.includes(body.parentTicketId))

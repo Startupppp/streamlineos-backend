@@ -15,7 +15,6 @@ import {
   type SQL,
 } from "drizzle-orm";
 import {
-  cycles,
   organizationMembers,
   projectMembers,
   projects,
@@ -218,8 +217,6 @@ export class ProjectsTicketsReadService {
       type,
       assigneeId,
       labelIds,
-      sprintId,
-      sprintIds,
       cycleId,
       moduleIds,
       epicId,
@@ -236,21 +233,6 @@ export class ProjectsTicketsReadService {
       };
 
     const allCycleIds: number[] = [...(cycleId ?? [])];
-    const sprintParamProvided = sprintId !== undefined || (sprintIds && sprintIds.length > 0);
-    if (sprintParamProvided) {
-      const legacyIds: number[] = [
-        ...(sprintId !== undefined ? [sprintId] : []),
-        ...(sprintIds ?? []),
-      ];
-      const bridgeRows = await this.db
-        .select({ id: cycles.id })
-        .from(cycles)
-        .where(and(eq(cycles.orgId, u.orgId), inArray(cycles.legacySprintId, legacyIds)));
-      if (bridgeRows.length === 0) {
-        return { data: [], pagination: { limit, nextCursor: null, hasMore: false } };
-      }
-      for (const r of bridgeRows) allCycleIds.push(r.id);
-    }
 
     const filterConditions: SQL<unknown>[] = [];
 

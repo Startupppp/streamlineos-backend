@@ -5,7 +5,6 @@ import {
   ticketCommentPayloadSchema,
   ticketCreatePayloadSchema,
   ticketCyclePayloadSchema,
-  ticketSprintPayloadSchema,
   ticketStatusUpdatePayloadSchema,
 } from "../dto/confirm-action-payloads.schemas";
 import { defineConfirmableAction } from "./confirmable-action.types";
@@ -92,20 +91,6 @@ export const BUILD_CONFIRM_ACTIONS = [
       return {
         result: { ticketId, cycleId },
         summary: `Ticket #${ticketId} moved to cycle "${cycleName ?? cycleId}"`,
-      };
-    },
-  }),
-
-  defineConfirmableAction({
-    action: "ticket.moveToSprint",
-    permission: "build:tickets:update",
-    payload: ticketSprintPayloadSchema,
-    resolve: (moduleRef) => moduleRef.get(ProjectsTicketsService, { strict: false }),
-    execute: async ({ ticketId, sprintId, sprintName }, { actor }, tickets) => {
-      await tickets.updateTicket(actor, null, ticketId, { sprintId });
-      return {
-        result: { ticketId, sprintId },
-        summary: `Ticket #${ticketId} moved to sprint "${sprintName ?? sprintId}"`,
       };
     },
   }),

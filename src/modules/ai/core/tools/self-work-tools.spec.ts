@@ -73,7 +73,6 @@ function workResultWithRows(count: number, hasMore = false): AllWorkResult {
     createdAt: new Date(),
     updatedAt: new Date(),
     assigneeId: null,
-    sprintId: null,
     cycleId: null,
     epicId: null,
     projectId: 10,

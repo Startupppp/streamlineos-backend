@@ -10,9 +10,9 @@ Scope: every `*.controller.ts` under `src/modules/build/`. 48 controller files, 
 | --- | --- |
 | VULNERABLE | 0 |
 | CLOSED-IN-FLIGHT | 0 |
-| NEEDS-REVIEW | 112 |
+| NEEDS-REVIEW | 113 |
 | CLOSED | 34 |
-| VERIFIED | 176 |
+| VERIFIED | 175 |
 | **total** | **322** |
 
 ## How to read a verdict
@@ -336,7 +336,7 @@ Blast radius: Intra-tenant: any org ticket is readable through any project's URL
 
 Evidence:
 
-- `src/modules/build/core/projects-tickets-detail.service.ts:34` — bound to the URL project
+- `src/modules/build/core/projects-tickets-detail.service.ts:49` — bound to the URL project
 
 ### CLOSED — `PATCH /build/:projectId/tickets/:ticketId`
 
@@ -350,8 +350,8 @@ Blast radius: Intra-tenant, and narrower than the rest of this family: the row-d
 
 Evidence:
 
-- `src/modules/build/core/projects-tickets-update.service.ts:194` — bound to the URL project
-- `src/modules/build/core/projects-tickets-update.service.ts:194` — bound to the URL project
+- `src/modules/build/core/projects-tickets-update.service.ts:179` — bound to the URL project
+- `src/modules/build/core/projects-tickets-update.service.ts:179` — bound to the URL project
 
 ### CLOSED — `DELETE /build/:projectId/tickets/:ticketId`
 
@@ -389,14 +389,14 @@ Evidence:
 
 Finding: `parent-binding-missing`
 
-GET /build/:projectId/sprints/:sprintId. No @Param("projectId"); the sprint is resolved by (id, orgId). deleteSprint in the SAME service DOES bind sprints.projectId, proving the column is available and the omission is asymmetry.
+GET /build/:projectId/sprints/:sprintId. The parent-binding gap is moot: the handler is frozen and throws GoneException before any read, so no sprint row is resolved by any key. The route and its @RequirePermission are retained on purpose; only the query body is gone.
 
-Blast radius: Intra-tenant cross-project read.
+Blast radius: None — the handler reads nothing.
 
 Evidence:
 
-- `src/modules/build/execution/sprints.service.ts:86` — bound to the URL project
-- `src/modules/build/execution/sprints.service.ts:177` — deleteSprint DOES bind projectId — the in-file control
+- `src/modules/build/execution/sprints.service.ts:24` — every parameter is unused
+- `src/modules/build/execution/sprints.service.ts:25` — throws before any query
 
 ### CLOSED — `PATCH /build/:projectId/sprints/:sprintId`
 
@@ -404,14 +404,14 @@ Evidence:
 
 Finding: `parent-binding-missing`
 
-PATCH /build/:projectId/sprints/:sprintId. No @Param("projectId"); both the pre-read and the UPDATE bind (id, orgId).
+PATCH /build/:projectId/sprints/:sprintId. The parent-binding gap is moot: the handler is frozen and throws GoneException before any pre-read or UPDATE, so no sprint row is written by any key.
 
-Blast radius: Intra-tenant cross-project write.
+Blast radius: None — the handler writes nothing.
 
 Evidence:
 
-- `src/modules/build/execution/sprints.service.ts:115` — bound to the URL project
-- `src/modules/build/execution/sprints.service.ts:130` — UPDATE binds id + orgId
+- `src/modules/build/execution/sprints.service.ts:28` — every parameter is unused
+- `src/modules/build/execution/sprints.service.ts:35` — throws before any query
 
 ### CLOSED — `PATCH /build/:projectId/modules/:moduleId`
 
@@ -602,8 +602,9 @@ POST /public/build-forms/:publicToken/submissions. Unauthenticated by design and
 | NEEDS-REVIEW | GET | `/build/:projectId/webhooks/:webhookId/deliveries` | `src/modules/build/core/projects-webhooks.controller.ts:72` | `listDeliveries` | @RequirePermission("build:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, webhookId] | n/a |
 | NEEDS-REVIEW | POST | `/build/:projectId/webhooks/:webhookId/test` | `src/modules/build/core/projects-webhooks.controller.ts:84` | `sendTest` | @RequirePermission("build:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, webhookId] | NO (mutating) |
 | NEEDS-REVIEW | POST | `/build/labels` | `src/modules/build/core/projects.controller.ts:101` | `createLabel` | @RequirePermission("build:manage") | @RequireModule("build") | OK | PASSED-UNBOUND | N/A (not nested) | unresolved | NO (mutating) |
+| NEEDS-REVIEW | GET | `/build/:projectId/sprints` | `src/modules/build/execution/iterations.controller.ts:67` | `listSprints` | @RequirePermission("build:sprints:view") | @RequireModule("build") | OK | PASSED-UNBOUND | N/A (not nested) | complete [projectId] | n/a |
 | NEEDS-REVIEW | POST | `/build/:projectId/sprints` | `src/modules/build/execution/iterations.controller.ts:78` | `createSprint` | @RequirePermission("build:sprints:manage") | @RequireModule("build") | OK | PASSED-UNBOUND | N/A (not nested) | complete [projectId] | yes |
-| NEEDS-REVIEW | DELETE | `/build/:projectId/sprints/:sprintId` | `src/modules/build/execution/iterations.controller.ts:117` | `deleteSprint` | @RequirePermission("build:sprints:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, sprintId] | NO (mutating) |
+| NEEDS-REVIEW | DELETE | `/build/:projectId/sprints/:sprintId` | `src/modules/build/execution/iterations.controller.ts:117` | `deleteSprint` | @RequirePermission("build:sprints:manage") | @RequireModule("build") | OK | PASSED-UNBOUND | PASSED-UNBOUND | complete [projectId, sprintId] | NO (mutating) |
 | NEEDS-REVIEW | PATCH | `/build/:projectId/cycles/:cycleId` | `src/modules/build/execution/iterations.controller.ts:163` | `updateCycle` | @RequirePermission("build:workspace:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, cycleId] | NO (mutating) |
 | NEEDS-REVIEW | DELETE | `/build/:projectId/cycles/:cycleId` | `src/modules/build/execution/iterations.controller.ts:176` | `deleteCycle` | @RequirePermission("build:workspace:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, cycleId] | NO (mutating) |
 | NEEDS-REVIEW | PATCH | `/build/:projectId/epics/:epicId` | `src/modules/build/execution/iterations.controller.ts:277` | `updateEpic` | @RequirePermission("build:tickets:update") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, epicId] | NO (mutating) |
@@ -698,8 +699,8 @@ POST /public/build-forms/:publicToken/submissions. Unauthenticated by design and
 | CLOSED | PATCH | `/build/:projectId/tickets/:ticketId` | `src/modules/build/core/projects-tickets.controller.ts:226` | `updateTicket` | @RequirePermission("build:tickets:update") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, ticketId] | NO (mutating) |
 | CLOSED | DELETE | `/build/:projectId/tickets/:ticketId` | `src/modules/build/core/projects-tickets.controller.ts:239` | `deleteTicket` | @RequirePermission("build:tickets:delete") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, ticketId] | NO (mutating) |
 | CLOSED | DELETE | `/build/:projectId/webhooks/:webhookId` | `src/modules/build/core/projects-webhooks.controller.ts:59` | `deleteWebhook` | @RequirePermission("build:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, webhookId] | NO (mutating) |
-| CLOSED | GET | `/build/:projectId/sprints/:sprintId` | `src/modules/build/execution/iterations.controller.ts:92` | `getSprint` | @RequirePermission("build:sprints:view") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, sprintId] | n/a |
-| CLOSED | PATCH | `/build/:projectId/sprints/:sprintId` | `src/modules/build/execution/iterations.controller.ts:104` | `updateSprint` | @RequirePermission("build:sprints:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, sprintId] | NO (mutating) |
+| CLOSED | GET | `/build/:projectId/sprints/:sprintId` | `src/modules/build/execution/iterations.controller.ts:92` | `getSprint` | @RequirePermission("build:sprints:view") | @RequireModule("build") | OK | PASSED-UNBOUND | PASSED-UNBOUND | complete [projectId, sprintId] | n/a |
+| CLOSED | PATCH | `/build/:projectId/sprints/:sprintId` | `src/modules/build/execution/iterations.controller.ts:104` | `updateSprint` | @RequirePermission("build:sprints:manage") | @RequireModule("build") | OK | PASSED-UNBOUND | PASSED-UNBOUND | complete [projectId, sprintId] | NO (mutating) |
 | CLOSED | PATCH | `/build/:projectId/modules/:moduleId` | `src/modules/build/execution/iterations.controller.ts:220` | `updateModule` | @RequirePermission("build:workspace:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, moduleId] | NO (mutating) |
 | CLOSED | DELETE | `/build/:projectId/modules/:moduleId` | `src/modules/build/execution/iterations.controller.ts:233` | `deleteModule` | @RequirePermission("build:workspace:manage") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, moduleId] | NO (mutating) |
 | CLOSED | POST | `/build/:projectId/tickets/:ticketId/time-entries` | `src/modules/build/execution/timesheets.controller.ts:183` | `logTicketTime` | @RequirePermission("build:timesheets:create") | @RequireModule("build") | OK | BOUND | BOUND | complete [projectId, ticketId] | NO (mutating) |
@@ -795,7 +796,6 @@ POST /public/build-forms/:publicToken/submissions. Unauthenticated by design and
 | VERIFIED | GET | `/build/labels` | `src/modules/build/core/projects.controller.ts:94` | `listLabels` | @RequirePermission("build:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | absent (no params) | n/a |
 | VERIFIED | PATCH | `/build/labels/:labelId` | `src/modules/build/core/projects.controller.ts:113` | `updateLabel` | @RequirePermission("build:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [labelId] | NO (mutating) |
 | VERIFIED | DELETE | `/build/labels/:labelId` | `src/modules/build/core/projects.controller.ts:125` | `deleteLabel` | @RequirePermission("build:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [labelId] | NO (mutating) |
-| VERIFIED | GET | `/build/:projectId/sprints` | `src/modules/build/execution/iterations.controller.ts:67` | `listSprints` | @RequirePermission("build:sprints:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | n/a |
 | VERIFIED | GET | `/build/:projectId/cycles` | `src/modules/build/execution/iterations.controller.ts:137` | `listCycles` | @RequirePermission("build:sprints:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | n/a |
 | VERIFIED | POST | `/build/:projectId/cycles` | `src/modules/build/execution/iterations.controller.ts:149` | `createCycle` | @RequirePermission("build:workspace:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | yes |
 | VERIFIED | GET | `/build/:projectId/modules` | `src/modules/build/execution/iterations.controller.ts:196` | `listModules` | @RequirePermission("build:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | n/a |
@@ -927,8 +927,9 @@ POST /public/build-forms/:publicToken/submissions. Unauthenticated by design and
 - `GET /build/:projectId/webhooks/:webhookId/deliveries` — `src/modules/build/core/projects-webhooks.controller.ts:72` (`listDeliveries`): static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)
 - `POST /build/:projectId/webhooks/:webhookId/test` — `src/modules/build/core/projects-webhooks.controller.ts:84` (`sendTest`): static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)
 - `POST /build/labels` — `src/modules/build/core/projects.controller.ts:101` (`createLabel`): org scoping: PASSED-UNBOUND
+- `GET /build/:projectId/sprints` — `src/modules/build/execution/iterations.controller.ts:67` (`listSprints`): org scoping: PASSED-UNBOUND
 - `POST /build/:projectId/sprints` — `src/modules/build/execution/iterations.controller.ts:78` (`createSprint`): org scoping: PASSED-UNBOUND
-- `DELETE /build/:projectId/sprints/:sprintId` — `src/modules/build/execution/iterations.controller.ts:117` (`deleteSprint`): static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)
+- `DELETE /build/:projectId/sprints/:sprintId` — `src/modules/build/execution/iterations.controller.ts:117` (`deleteSprint`): org scoping: PASSED-UNBOUND; parent scoping: PASSED-UNBOUND
 - `PATCH /build/:projectId/cycles/:cycleId` — `src/modules/build/execution/iterations.controller.ts:163` (`updateCycle`): static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)
 - `DELETE /build/:projectId/cycles/:cycleId` — `src/modules/build/execution/iterations.controller.ts:176` (`deleteCycle`): static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)
 - `PATCH /build/:projectId/epics/:epicId` — `src/modules/build/execution/iterations.controller.ts:277` (`updateEpic`): static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)

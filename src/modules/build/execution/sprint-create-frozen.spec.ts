@@ -4,102 +4,113 @@ import { SprintsService } from "./sprints.service";
 
 const ORG = "org-1";
 const PROJECT_ID = 42;
-const VALID_INPUT = { name: "Sprint Q4", startDate: "2026-10-01", endDate: "2026-10-14" };
+const SPRINT_ID = 7;
+const CREATE_INPUT = { name: "Sprint Q4", startDate: "2026-10-01", endDate: "2026-10-14" };
+const UPDATE_INPUT = { name: "Changed" };
 
-describe("SprintsService.createSprint — legacy-writer freeze", () => {
-  it("createSprint throws GoneException — sprint creation is frozen so all new iterations use Cycles", async () => {
-    const db = {} as Db;
-    const svc = new SprintsService(db, null);
+function trackingDb() {
+  const calls = {
+    select: jest.fn(),
+    insert: jest.fn(),
+    update: jest.fn(),
+    delete: jest.fn(),
+    transaction: jest.fn(),
+    sprintsFindFirst: jest.fn(),
+    sprintsFindMany: jest.fn(),
+    ticketsFindMany: jest.fn(),
+  };
+  const db = {
+    select: calls.select,
+    insert: calls.insert,
+    update: calls.update,
+    delete: calls.delete,
+    transaction: calls.transaction,
+    query: {
+      sprints: { findFirst: calls.sprintsFindFirst, findMany: calls.sprintsFindMany },
+      tickets: { findMany: calls.ticketsFindMany },
+      projects: { findFirst: jest.fn() },
+    },
+  } as unknown as Db;
+  return { db, calls };
+}
 
-    await expect(svc.createSprint(ORG, PROJECT_ID, VALID_INPUT)).rejects.toThrow(GoneException);
+function invoke(svc: SprintsService, method: string): Promise<unknown> {
+  switch (method) {
+    case "listSprints":
+      return svc.listSprints(ORG, PROJECT_ID);
+    case "createSprint":
+      return svc.createSprint(ORG, PROJECT_ID, CREATE_INPUT);
+    case "getSprint":
+      return svc.getSprint(ORG, PROJECT_ID, SPRINT_ID);
+    case "updateSprint":
+      return svc.updateSprint(ORG, PROJECT_ID, SPRINT_ID, UPDATE_INPUT, "user-1");
+    case "deleteSprint":
+      return svc.deleteSprint(ORG, PROJECT_ID, SPRINT_ID);
+    default:
+      throw new Error(`unknown method ${method}`);
+  }
+}
+
+const FROZEN_METHODS = ["listSprints", "createSprint", "getSprint", "updateSprint", "deleteSprint"];
+
+describe("SprintsService — the whole legacy Sprints surface is frozen", () => {
+  it.each(FROZEN_METHODS)("%s throws GoneException, because Cycles are the only iteration identity", async (method) => {
+    const { db } = trackingDb();
+    await expect(invoke(new SprintsService(db, null), method)).rejects.toThrow(GoneException);
   });
 
-  it("createSprint makes no insert call when frozen — the write path is not reached and the DB is not mutated", async () => {
-    const returning = jest.fn().mockResolvedValue([]);
-    const values = jest.fn().mockReturnValue({ returning });
-    const insert = jest.fn().mockReturnValue({ values });
-    const projectFindFirst = jest.fn().mockResolvedValue({ id: PROJECT_ID });
-    const db = {
-      query: { projects: { findFirst: projectFindFirst } },
-      insert,
-    } as unknown as Db;
-    const svc = new SprintsService(db, null);
-
-    await expect(svc.createSprint(ORG, PROJECT_ID, VALID_INPUT)).rejects.toThrow(GoneException);
-
-    expect(insert).not.toHaveBeenCalled();
+  it.each(FROZEN_METHODS)("%s points the caller at the cycles route so a client can migrate without reading the changelog", async (method) => {
+    const { db } = trackingDb();
+    await expect(invoke(new SprintsService(db, null), method)).rejects.toThrow(
+      "Use /build/:projectId/cycles",
+    );
   });
 
-  it("createSprint throws regardless of the orgId — there is no org that can bypass the freeze", async () => {
-    const db = {} as Db;
-    const svc = new SprintsService(db, null);
+  it.each(FROZEN_METHODS)(
+    "%s touches the database nowhere, which is the precondition a-sprint-cycle-05-drop.sql needs before it drops build.sprints",
+    async (method) => {
+      const { db, calls } = trackingDb();
+      await expect(invoke(new SprintsService(db, null), method)).rejects.toThrow(GoneException);
 
-    await expect(svc.createSprint("org-admin", PROJECT_ID, VALID_INPUT)).rejects.toThrow(GoneException);
-    await expect(svc.createSprint("org-attacker", PROJECT_ID, VALID_INPUT)).rejects.toThrow(GoneException);
+      for (const [name, spy] of Object.entries(calls)) {
+        expect([name, spy.mock.calls.length]).toEqual([name, 0]);
+      }
+    },
+  );
+
+  it.each(FROZEN_METHODS)("%s throws for every org, so no tenant can bypass the freeze", async (method) => {
+    const { db } = trackingDb();
+    const svc = new SprintsService(db, null);
+    await expect(invoke(svc, method)).rejects.toThrow(GoneException);
+
+    const attacker = new SprintsService(db, null);
+    await expect(
+      method === "listSprints"
+        ? attacker.listSprints("org-attacker", PROJECT_ID)
+        : method === "createSprint"
+          ? attacker.createSprint("org-attacker", PROJECT_ID, CREATE_INPUT)
+          : method === "getSprint"
+            ? attacker.getSprint("org-attacker", PROJECT_ID, SPRINT_ID)
+            : method === "updateSprint"
+              ? attacker.updateSprint("org-attacker", PROJECT_ID, SPRINT_ID, UPDATE_INPUT)
+              : attacker.deleteSprint("org-attacker", PROJECT_ID, SPRINT_ID),
+    ).rejects.toThrow(GoneException);
   });
 
-  it("listSprints is not affected — satellite reads still work so scope events and meetings are not broken", async () => {
-    const projectFindFirst = jest.fn().mockResolvedValue({ id: PROJECT_ID });
-    const fakeSprint = { id: 7, orgId: ORG, projectId: PROJECT_ID, name: "old-sprint", status: "COMPLETED", deletedAt: null };
-    let selectCall = 0;
-    const db = {
-      query: { projects: { findFirst: projectFindFirst } },
-      select: jest.fn().mockImplementation(() => {
-        selectCall++;
-        if (selectCall === 1) {
-          return {
-            from: jest.fn().mockReturnValue({
-              where: jest.fn().mockReturnValue({
-                orderBy: jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue([fakeSprint]) }),
-              }),
-            }),
-          };
-        }
-        return {
-          from: jest.fn().mockReturnValue({
-            where: jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue([]) }),
-          }),
-        };
-      }),
-    } as unknown as Db;
-    const svc = new SprintsService(db, null);
-
-    const result = await svc.listSprints(ORG, PROJECT_ID);
-    expect(result).toHaveLength(1);
-    expect(result[0]).toMatchObject({ id: 7, name: "old-sprint" });
+  it("the freeze covers every public method on the service, so a later addition cannot quietly reopen a write path", () => {
+    const methods = Object.getOwnPropertyNames(SprintsService.prototype).filter((n) => n !== "constructor");
+    expect([...methods].sort()).toEqual([...FROZEN_METHODS].sort());
   });
 
-  it("getSprint is not affected — deep links carrying a sprint id still resolve", async () => {
-    const fakeSprint = {
-      id: 7,
-      orgId: ORG,
-      projectId: PROJECT_ID,
-      name: "old-sprint",
-      status: "COMPLETED",
-      goal: null,
-      deletedAt: null,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    };
-    const db = {
-      query: {
-        sprints: {
-          findFirst: jest.fn().mockResolvedValue(fakeSprint),
-        },
-        tickets: {
-          findMany: jest.fn().mockResolvedValue([]),
-        },
-      },
-      select: jest.fn().mockReturnValue({
-        from: jest.fn().mockReturnThis(),
-        where: jest.fn().mockReturnThis(),
-        limit: jest.fn().mockResolvedValue([{ id: 55 }]),
-      }),
-    } as unknown as Db;
-    const svc = new SprintsService(db, null);
+  it("emits no outbox event and needs no webhook dispatcher, because a frozen writer has no state change to announce", async () => {
+    const { db } = trackingDb();
+    const dispatch = { enqueue: jest.fn() };
+    const svc = new SprintsService(db, dispatch as never);
 
-    const result = await svc.getSprint(ORG, PROJECT_ID, 7);
-    expect(result).toMatchObject({ id: 7, name: "old-sprint" });
-    expect(result.tickets).toEqual([]);
+    await expect(svc.updateSprint(ORG, PROJECT_ID, SPRINT_ID, { status: "COMPLETED" })).rejects.toThrow(
+      GoneException,
+    );
+
+    expect(dispatch.enqueue).not.toHaveBeenCalled();
   });
 });

@@ -1,4 +1,4 @@
-import { ForbiddenException, NotFoundException } from "@nestjs/common";
+import { ForbiddenException, GoneException, NotFoundException } from "@nestjs/common";
 import { Column, SQL } from "drizzle-orm";
 import type { Db } from "../../../db/drizzle.module";
 import {
@@ -125,8 +125,8 @@ function makeStore(): Store {
       { id: SPRINT_B, orgId: ORG, projectId: PROJECT_B, name: "sprint-b", status: "PLANNED", deletedAt: null },
     ],
     cycles: [
-      { id: CYCLE_A, orgId: ORG, projectId: PROJECT_A, legacySprintId: SPRINT_A, name: "cycle-a", status: "active" },
-      { id: CYCLE_B, orgId: ORG, projectId: PROJECT_B, legacySprintId: SPRINT_B, name: "cycle-b", status: "active" },
+      { id: CYCLE_A, orgId: ORG, projectId: PROJECT_A, name: "cycle-a", status: "active" },
+      { id: CYCLE_B, orgId: ORG, projectId: PROJECT_B, name: "cycle-b", status: "active" },
     ],
     modules: [
       { id: MODULE_A, orgId: ORG, projectId: PROJECT_A, name: "module-a", status: "backlog" },
@@ -243,74 +243,41 @@ function makeDb(store: Store): Fixture {
   return { db, store, outbox, inserted, transaction };
 }
 
-describe("SprintsService — a sprint addressed through /build/:projectId must belong to that project", () => {
-  it("getSprint refuses a same-org sprint owned by another project with 404, not the other project's sprint", async () => {
-    const store = makeStore();
-    const { db } = makeDb(store);
+describe("SprintsService — the frozen surface cannot bind to any project, in or out of tenant", () => {
+  const CASES: Array<[string, (svc: SprintsService) => Promise<unknown>]> = [
+    ["getSprint, in-project", (svc) => svc.getSprint(ORG, PROJECT_A, SPRINT_A)],
+    ["getSprint, sibling project", (svc) => svc.getSprint(ORG, PROJECT_A, SPRINT_B)],
+    ["getSprint, foreign tenant", (svc) => svc.getSprint(OTHER_ORG, PROJECT_A, SPRINT_A)],
+    ["updateSprint, in-project", (svc) => svc.updateSprint(ORG, PROJECT_A, SPRINT_A, { name: "sprint-a-v2" }, USER)],
+    ["updateSprint, sibling project", (svc) => svc.updateSprint(ORG, PROJECT_A, SPRINT_B, { name: "hijacked" }, USER)],
+    ["deleteSprint, sibling project", (svc) => svc.deleteSprint(ORG, PROJECT_A, SPRINT_B)],
+    ["listSprints, in-project", (svc) => svc.listSprints(ORG, PROJECT_A)],
+  ];
 
-    await expect(new SprintsService(db, null).getSprint(ORG, PROJECT_A, SPRINT_B)).rejects.toThrow(
-      NotFoundException,
-    );
+  it.each(CASES)("%s is refused with GoneException, which is a stronger binding guarantee than the 404 it replaced", async (_name, call) => {
+    const { db } = makeDb(makeStore());
+
+    await expect(call(new SprintsService(db, null))).rejects.toThrow(GoneException);
   });
 
-  it("getSprint returns the sprint that belongs to the URL project (control)", async () => {
-    const store = makeStore();
-    const { db } = makeDb(store);
-
-    await expect(new SprintsService(db, null).getSprint(ORG, PROJECT_A, SPRINT_A)).resolves.toMatchObject({
-      id: SPRINT_A,
-      projectId: PROJECT_A,
-    });
-  });
-
-  it("getSprint still answers 404 for another tenant's sprint id, keeping the id from becoming an existence oracle", async () => {
-    const store = makeStore();
-    const { db } = makeDb(store);
-
-    await expect(
-      new SprintsService(db, null).getSprint(OTHER_ORG, PROJECT_A, SPRINT_A),
-    ).rejects.toThrow(NotFoundException);
-  });
-
-  it("updateSprint leaves a same-org sprint owned by another project untouched and opens no transaction", async () => {
+  it.each(CASES)("%s mutates no sprint row and opens no transaction", async (_name, call) => {
     const store = makeStore();
     const { db, transaction } = makeDb(store);
 
-    await expect(
-      new SprintsService(db, null).updateSprint(ORG, PROJECT_A, SPRINT_B, { name: "hijacked" }, USER),
-    ).rejects.toThrow(NotFoundException);
+    await expect(call(new SprintsService(db, null))).rejects.toThrow(GoneException);
+
+    expect(store.sprints.find((row) => row.id === SPRINT_A)?.name).toBe("sprint-a");
     expect(store.sprints.find((row) => row.id === SPRINT_B)?.name).toBe("sprint-b");
     expect(transaction).not.toHaveBeenCalled();
   });
 
-  it("updateSprint updates the sprint that belongs to the URL project (control)", async () => {
-    const store = makeStore();
-    const { db, transaction } = makeDb(store);
+  it("no sprint status change can emit build.sprint.completed any more, because the only producer of that event is frozen", async () => {
+    const { db, outbox } = makeDb(makeStore());
 
     await expect(
-      new SprintsService(db, null).updateSprint(ORG, PROJECT_A, SPRINT_A, { name: "sprint-a-v2" }, USER),
-    ).resolves.toEqual({ success: true });
-    expect(store.sprints.find((row) => row.id === SPRINT_A)?.name).toBe("sprint-a-v2");
-    expect(transaction).toHaveBeenCalledTimes(1);
-  });
+      new SprintsService(db, null).updateSprint(ORG, PROJECT_A, SPRINT_A, { status: "COMPLETED" }, USER),
+    ).rejects.toThrow(GoneException);
 
-  it("updateSprint emits build.sprint.completed for an in-project sprint (control)", async () => {
-    const store = makeStore();
-    const { db, outbox } = makeDb(store);
-
-    await new SprintsService(db, null).updateSprint(ORG, PROJECT_A, SPRINT_A, { status: "COMPLETED" }, USER);
-
-    expect(outbox).toHaveLength(1);
-    expect(outbox[0]).toMatchObject({ eventType: "build.sprint.completed", organizationId: ORG });
-  });
-
-  it("updateSprint emits no build.sprint.completed for another project's sprint", async () => {
-    const store = makeStore();
-    const { db, outbox } = makeDb(store);
-
-    await expect(
-      new SprintsService(db, null).updateSprint(ORG, PROJECT_A, SPRINT_B, { status: "COMPLETED" }, USER),
-    ).rejects.toThrow(NotFoundException);
     expect(outbox).toHaveLength(0);
   });
 });

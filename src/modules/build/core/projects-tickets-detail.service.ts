@@ -64,7 +64,7 @@ export class ProjectsTicketsDetailService {
       ),
       with: {
         project: { columns: { id: true, name: true, key: true, orgId: true } },
-        cycle: { columns: { id: true, name: true, legacySprintId: true } },
+        cycle: { columns: { id: true, name: true } },
         assignee: { with: { user: { columns: USER_COLS } } },
         reporter: { columns: USER_COLS },
         assignees: {
@@ -133,7 +133,6 @@ export class ProjectsTicketsDetailService {
       : null;
     return {
       ...ticket,
-      sprintId: ticket.cycle?.legacySprintId ?? null,
       epic: epic ? { id: epic.id, name: epic.title } : null,
       members: ticket.assignees,
       watchers: (ticket.watchers ?? []).map((watcher) => ({
