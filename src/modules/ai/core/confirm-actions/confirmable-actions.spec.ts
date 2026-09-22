@@ -111,6 +111,7 @@ const PROPOSE_FIXTURES: Readonly<Record<string, Record<string, unknown>>> = {
   },
   "ticket.addComment": { ticketId: 41, comment: "Looks good" },
   "ticket.assign": { ticketId: 41, assigneeId: "user-1", assigneeName: "Jordan Lee" },
+  "ticket.moveToCycle": { ticketId: 41, cycleId: 3, cycleName: "Cycle 3" },
   "ticket.moveToSprint": { ticketId: 41, sprintId: 3, sprintName: "Sprint 3" },
   "email.send": { toEmail: "someone@example.com", subject: "Hello", body: "Body" },
   "chat.postChannel": { channelId: 5, channelName: "general", message: "Hello" },

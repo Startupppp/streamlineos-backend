@@ -212,16 +212,6 @@ export class ProjectsActivityService {
       });
     }
     if (
-      changes.sprintId !== undefined &&
-      normalize(changes.sprintId) !== normalize(before.sprintId)
-    ) {
-      entries.push({
-        action: "sprint_changed",
-        from: normalize(before.sprintId),
-        to: normalize(changes.sprintId),
-      });
-    }
-    if (
       changes.dueDate !== undefined &&
       normalize(changes.dueDate) !== normalize(before.dueDate)
     ) {

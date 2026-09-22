@@ -2,7 +2,7 @@ import { Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, count, eq, isNull, gte, lte, lt, ne, notInArray, sql } from "drizzle-orm";
 import { DRIZZLE } from "../../../../db/drizzle.constants";
 import { type Db } from "../../../../db/drizzle.module";
-import { projects, tickets, sprints, changeRequests, projectApprovals, roadmapItems, organizationMembers, users, projectRisks, projectDecisions } from "../../../../db/schema";
+import { projects, tickets, cycles, changeRequests, projectApprovals, roadmapItems, organizationMembers, users, projectRisks, projectDecisions } from "../../../../db/schema";
 import { AuditService } from "../../../../common/audit/audit.service";
 import { runInTenantTransaction } from "../../../../common/tenant/run-in-tenant-transaction";
 import {
@@ -54,7 +54,7 @@ export class ProjectsAiService {
 
   private async fetchTicketRows(orgId: string, projectId: number) {
     return this.db
-      .select({ status: tickets.status, dueDate: tickets.dueDate, sprintId: tickets.sprintId })
+      .select({ status: tickets.status, dueDate: tickets.dueDate, cycleId: tickets.cycleId })
       .from(tickets)
       .where(and(eq(tickets.projectId, projectId), eq(tickets.orgId, orgId), isNull(tickets.deletedAt)));
   }
@@ -102,19 +102,19 @@ export class ProjectsAiService {
       const project = await this.assertProject(orgId, projectId);
       const rows = await this.fetchTicketRows(orgId, projectId);
       if (rows.length === 0) return { empty: true as const };
-      const [activeSprint] = await this.db
-        .select({ id: sprints.id })
-        .from(sprints)
-        .where(and(eq(sprints.projectId, projectId), eq(sprints.orgId, orgId), eq(sprints.status, "ACTIVE"), isNull(sprints.deletedAt)))
+      const [activeCycle] = await this.db
+        .select({ id: cycles.id })
+        .from(cycles)
+        .where(and(eq(cycles.projectId, projectId), eq(cycles.orgId, orgId), eq(cycles.status, "active")))
         .limit(1);
-      return { empty: false as const, project, rows, activeSprint };
+      return { empty: false as const, project, rows, activeCycle };
     }, { orgId });
 
     if (ctx.empty) {
       return { summary: NO_DATA.message, highlights: [], atRisk: false, evidence: { totalTasks: 0, done: 0, inProgress: 0, blocked: 0, overdue: 0 } };
     }
 
-    const { project, rows, activeSprint } = ctx;
+    const { project, rows, activeCycle } = ctx;
     const nowStr = new Date().toISOString().split("T")[0];
     const totalTasks = rows.length;
     const done = rows.filter((r) => r.status === "DONE").length;
@@ -123,10 +123,10 @@ export class ProjectsAiService {
     const overdue = rows.filter((r) => r.dueDate !== null && r.dueDate < nowStr && r.status !== "DONE").length;
 
     let sprintProgressPct: number | undefined;
-    if (activeSprint) {
-      const sprintRows = rows.filter((r) => r.sprintId === activeSprint.id);
-      const sprintDone = sprintRows.filter((r) => r.status === "DONE").length;
-      sprintProgressPct = sprintRows.length > 0 ? Math.round((sprintDone / sprintRows.length) * 100) : undefined;
+    if (activeCycle) {
+      const cycleRows = rows.filter((r) => r.cycleId === activeCycle.id);
+      const cycleDone = cycleRows.filter((r) => r.status === "DONE").length;
+      sprintProgressPct = cycleRows.length > 0 ? Math.round((cycleDone / cycleRows.length) * 100) : undefined;
     }
 
     const { system, user } = summaryPrompt({ projectName: project.name, status: project.status, totalTasks, done, inProgress, blocked, overdue, sprintProgressPct });

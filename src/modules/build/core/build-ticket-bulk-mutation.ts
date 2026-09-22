@@ -7,7 +7,7 @@ import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import type { Db } from "../../../db/drizzle.types";
 import {
-  sprints,
+  cycles,
   ticketAssignees,
   tickets,
 } from "../../../db/schema";
@@ -62,18 +62,28 @@ export async function bulkMutateTickets(
         );
       update.assigneeMembershipId = assigneeMembershipId ?? null;
     }
-    if (body.sprintId != null) {
-      const sprint = await tx.query.sprints.findFirst({
-        where: and(
-          eq(sprints.orgId, actor.orgId),
-          eq(sprints.projectId, projectId),
-          eq(sprints.id, body.sprintId),
-          isNull(sprints.deletedAt),
-        ),
-        columns: { id: true },
-      });
-      if (!sprint)
-        throw new NotFoundException("Sprint not found in this project");
+    let resolvedCycleId: number | null | undefined;
+    if (body.cycleId !== undefined) {
+      if (body.cycleId != null) {
+        const [cycleRow] = await tx
+          .select({ id: cycles.id })
+          .from(cycles)
+          .where(and(eq(cycles.orgId, actor.orgId), eq(cycles.projectId, projectId), eq(cycles.id, body.cycleId)))
+          .limit(1);
+        if (!cycleRow) throw new NotFoundException("Cycle not found in this project");
+      }
+      resolvedCycleId = body.cycleId;
+    } else if (body.sprintId !== undefined) {
+      if (body.sprintId != null) {
+        const [cycleRow] = await tx
+          .select({ id: cycles.id })
+          .from(cycles)
+          .where(and(eq(cycles.orgId, actor.orgId), eq(cycles.legacySprintId, body.sprintId)))
+          .limit(1);
+        resolvedCycleId = cycleRow?.id ?? null;
+      } else {
+        resolvedCycleId = null;
+      }
     }
     if (body.parentTicketId != null) {
       if (ids.includes(body.parentTicketId))
@@ -105,7 +115,7 @@ export async function bulkMutateTickets(
           update.assigneeMembershipId === undefined
             ? row.assigneeMembershipId
             : update.assigneeMembershipId,
-        sprintId: body.sprintId === undefined ? row.sprintId : body.sprintId,
+        cycleId: resolvedCycleId === undefined ? row.cycleId : resolvedCycleId,
         priority: body.priority ?? row.priority,
       }));
       await validateBatchTransition(
@@ -118,7 +128,7 @@ export async function bulkMutateTickets(
       );
       update.status = body.status;
     }
-    if (body.sprintId !== undefined) update.sprintId = body.sprintId;
+    if (resolvedCycleId !== undefined) update.cycleId = resolvedCycleId;
     if (body.priority !== undefined) update.priority = body.priority;
     if (body.parentTicketId !== undefined)
       update.parentTicketId = body.parentTicketId;

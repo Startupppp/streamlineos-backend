@@ -14,7 +14,7 @@ import {
 import { build } from "./namespaces";
 import { sql } from "drizzle-orm";
 import { organizations, users, organizationMembers } from "../common/auth";
-import { projects, sprints } from "./core";
+import { cycles, projects, sprints } from "./core";
 import { tickets } from "./tasks";
 
 export const meetingTypeEnum = pgEnum("meeting_type", ["meeting", "standup", "retro", "planning", "review"]);
@@ -37,6 +37,7 @@ export const projectMeetings = build.table("project_meetings", {
   timezone: text("timezone"),
   recurrenceRule: jsonb("recurrence_rule"),
   sprintId: integer("sprint_id"),
+  cycleId: integer("cycle_id"),
   createdBy: text("created_by").references(() => users.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
@@ -44,7 +45,9 @@ export const projectMeetings = build.table("project_meetings", {
 }, (t) => [
   foreignKey({ columns: [t.orgId, t.projectId], foreignColumns: [projects.orgId, projects.id], name: "fk_project_meetings_org_project" }).onDelete("cascade"),
   foreignKey({ columns: [t.orgId, t.sprintId], foreignColumns: [sprints.orgId, sprints.id], name: "fk_project_meetings_org_sprint" }).onDelete("set null"),
+  foreignKey({ columns: [t.orgId, t.cycleId], foreignColumns: [cycles.orgId, cycles.id], name: "fk_project_meetings_org_cycle" }).onDelete("set null"),
   index("idx_project_meetings_org_project_status").on(t.orgId, t.projectId, t.status).where(sql`deleted_at IS NULL`),
+  index("idx_project_meetings_cycle").on(t.cycleId),
   uniqueIndex("uq_project_meetings_project_number").on(t.projectId, t.meetingNumber),
   index("idx_project_meetings_scheduled").on(t.scheduledAt),
   unique("uniq_project_meetings_org_id").on(t.orgId, t.id),

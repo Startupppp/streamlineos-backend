@@ -217,6 +217,7 @@ export const bulkUpdateSchema = z
     assigneeId: z.string().optional(),
     status: z.string().optional(),
     sprintId: z.number().int().positive().nullable().optional(),
+    cycleId: z.number().int().positive().nullable().optional(),
     priority: projectPrioritySchema.optional(),
     parentTicketId: z.number().int().positive().nullable().optional(),
   }).strict()
@@ -225,6 +226,7 @@ export const bulkUpdateSchema = z
       data.assigneeId !== undefined ||
       data.status !== undefined ||
       data.sprintId !== undefined ||
+      data.cycleId !== undefined ||
       data.priority !== undefined ||
       data.parentTicketId !== undefined,
     { message: "At least one field to update is required" },

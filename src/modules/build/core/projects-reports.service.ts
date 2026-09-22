@@ -1,7 +1,7 @@
 import { ForbiddenException, Inject, Injectable, NotFoundException, UnprocessableEntityException } from "@nestjs/common";
 import { and, asc, desc, eq, gte, inArray, isNull, ne, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
-import { projectDailySnapshots, projectStatuses, projects, sprintScopeEvents, sprints, tickets, workItemRelations } from "../../../db/schema";
+import { cycles, projectDailySnapshots, projectStatuses, projects, sprintScopeEvents, sprints, tickets, workItemRelations } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { addDays, differenceInCalendarDays, formatDateOnly } from "../../../common/date";
@@ -89,6 +89,14 @@ export class ProjectsReportsService {
     if (!Number.isSafeInteger(days) || days < 1 || days > MAX_BURNUP_DAYS)
       throw new UnprocessableEntityException(`Burnup reports support sprint ranges of 1 to ${MAX_BURNUP_DAYS} days`);
 
+    const [cycleRow] = await this.db
+      .select({ id: cycles.id })
+      .from(cycles)
+      .where(and(eq(cycles.orgId, orgId), eq(cycles.legacySprintId, sprint.id)))
+      .limit(1);
+    if (!cycleRow) return [];
+
+    const cycleId = cycleRow.id;
     const cacheKey = `projects:burnup:${orgId}:${projectId}:${sprint.id}:bounded:r${revision}`;
     return this.cache.cached(
       cacheKey,
@@ -104,7 +112,7 @@ export class ProjectsReportsService {
           .where(
             and(
               eq(sprintScopeEvents.orgId, orgId),
-              eq(sprintScopeEvents.sprintId, sprint.id),
+              eq(sprintScopeEvents.cycleId, cycleId),
             ),
           )
           .orderBy(asc(sprintScopeEvents.createdAt), asc(sprintScopeEvents.id))
@@ -115,7 +123,7 @@ export class ProjectsReportsService {
         if (events.length > 0)
           return computeBurnupFromEvents(events, startDate, days);
 
-        return this.burnupFromCurrentMembership(orgId, projectId, sprint.id, startDate, days);
+        return this.burnupFromCurrentMembership(orgId, projectId, cycleId, startDate, days);
       },
       CACHE_TTL.SHORT,
     );
@@ -124,7 +132,7 @@ export class ProjectsReportsService {
   private async burnupFromCurrentMembership(
     orgId: string,
     projectId: number,
-    sprintId: number,
+    cycleId: number,
     startDate: Date,
     days: number,
   ): Promise<BurnupPoint[]> {
@@ -133,7 +141,7 @@ export class ProjectsReportsService {
         totalScope: sql<number>`COALESCE(SUM(${tickets.storyPoints}), 0)::int`,
       })
       .from(tickets)
-      .where(and(eq(tickets.orgId, orgId), eq(tickets.sprintId, sprintId), isNull(tickets.deletedAt)));
+      .where(and(eq(tickets.orgId, orgId), eq(tickets.cycleId, cycleId), isNull(tickets.deletedAt)));
 
     const totalScope = scopeRow?.totalScope ?? 0;
 
@@ -154,7 +162,7 @@ export class ProjectsReportsService {
       .where(
         and(
           eq(tickets.orgId, orgId),
-          eq(tickets.sprintId, sprintId),
+          eq(tickets.cycleId, cycleId),
           isNull(tickets.deletedAt),
           eq(projectStatuses.type, "completed"),
         ),

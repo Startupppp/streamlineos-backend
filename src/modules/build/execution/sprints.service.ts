@@ -1,4 +1,4 @@
-import { Inject, Injectable, NotFoundException, Optional } from "@nestjs/common";
+import { GoneException, Inject, Injectable, NotFoundException, Optional } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
 import { and, desc, eq, inArray, isNull } from "drizzle-orm";
 import { sprints, tickets } from "../../../db/schema";
@@ -65,22 +65,10 @@ export class SprintsService {
     }));
   }
 
-  async createSprint(orgId: string, projectId: number, input: CreateSprintInput) {
-    await assertProjectInOrg(this.db, orgId, projectId);
-    const [sprint] = await this.db
-      .insert(sprints)
-      .values({
-        orgId,
-        projectId,
-        name: input.name,
-        startDate: new Date(input.startDate),
-        endDate: new Date(input.endDate),
-        goal: input.goal,
-        status: "PLANNED",
-      })
-      .returning();
-
-    return sprint;
+  async createSprint(_orgId: string, _projectId: number, _input: CreateSprintInput): Promise<never> {
+    throw new GoneException(
+      "Sprint creation is frozen. Create a Cycle via POST /build/:projectId/cycles to start a new iteration.",
+    );
   }
 
   async getSprint(orgId: string, projectId: number, sprintId: number) {

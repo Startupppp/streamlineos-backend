@@ -38,6 +38,12 @@ export const ticketSprintPayloadSchema = z.object({
   sprintName: z.string().max(200).optional(),
 });
 
+export const ticketCyclePayloadSchema = z.object({
+  ticketId,
+  cycleId: z.coerce.number().int().positive(),
+  cycleName: z.string().max(200).optional(),
+});
+
 export const calendarReminderPayloadSchema = z.object({
   title: z.string().min(1).max(200),
   startDate: isoDate,

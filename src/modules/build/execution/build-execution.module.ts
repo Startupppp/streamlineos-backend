@@ -39,6 +39,8 @@ import {
   TimeEntriesController,
 } from "./timesheets.controller";
 import { TimesheetsService } from "./timesheets.service";
+import { WorkloadCapacityService } from "./workload-capacity.service";
+import { WorkloadCapacityController } from "./workload-capacity.controller";
 
 @Module({
   imports: [ProjectsModule, TimesheetsCoreModule, NotificationsModule, OutboxModule],
@@ -58,6 +60,7 @@ import { TimesheetsService } from "./timesheets.service";
     TimeEntriesController,
     BillingSummaryController,
     TicketTimeEntriesController,
+    WorkloadCapacityController,
   ],
   providers: [
     BuildSprintCompletedConsumerService,
@@ -71,6 +74,7 @@ import { TimesheetsService } from "./timesheets.service";
     WhiteboardsService,
     WhiteboardSharingService,
     TimesheetsService,
+    WorkloadCapacityService,
   ],
 })
 export class BuildExecutionModule {}

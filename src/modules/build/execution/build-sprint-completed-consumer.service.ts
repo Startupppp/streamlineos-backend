@@ -1,6 +1,6 @@
 import { Inject, Injectable, Logger, type OnModuleInit } from "@nestjs/common";
 import { and, eq, isNotNull, isNull } from "drizzle-orm";
-import { organizationMembers, tickets } from "../../../db/schema";
+import { cycles, organizationMembers, tickets } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { InboxConsumer } from "../../../common/outbox/inbox-consumer";
@@ -60,12 +60,22 @@ export class BuildSprintCompletedConsumerService
     const { sprintId, name } = parseResult.data;
     const orgId = event.organizationId;
 
-    // Mirror of build.sprint.ending (build-due-sweep.service.ts): recipients are
-    // derived from the tickets themselves rather than from project membership.
-    // For completion, unlike the "ending" warning which restricts to non-DONE tickets,
-    // we include ALL ticket assignees regardless of status — the sprint is closed and
-    // the event is a milestone signal for every participant, not a warning about
-    // remaining work.
+    const cycleRows = await this.db
+      .select({ id: cycles.id })
+      .from(cycles)
+      .where(and(eq(cycles.orgId, orgId), eq(cycles.legacySprintId, sprintId)))
+      .limit(1);
+
+    if (!cycleRows[0]) {
+      this.logger.warn(
+        `build.sprint.completed ${event.eventId}: no cycle found for legacy sprint ${sprintId} — skipping`,
+      );
+      await inbox.markProcessed(CONSUMER_NAME, event.eventId, "SKIPPED", "no cycle mapping");
+      return;
+    }
+
+    const cycleId = cycleRows[0].id;
+
     const owners = await this.db
       .selectDistinct({ assigneeId: organizationMembers.userId })
       .from(tickets)
@@ -73,7 +83,7 @@ export class BuildSprintCompletedConsumerService
       .where(
         and(
           eq(tickets.orgId, orgId),
-          eq(tickets.sprintId, sprintId),
+          eq(tickets.cycleId, cycleId),
           isNull(tickets.deletedAt),
           isNotNull(tickets.assigneeMembershipId),
         ),
