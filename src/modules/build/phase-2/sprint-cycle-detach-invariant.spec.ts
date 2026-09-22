@@ -171,9 +171,7 @@ function hasSprintIdWriteForm(content: string): boolean {
 }
 
 describe("phase-04 detach invariant: sprintId object-literal WRITE form (the blind spot that let four writes survive)", () => {
-  const KNOWN_WRITE_REMAINING: readonly string[] = [
-    "modules/build/qa/test-runs.service.ts",
-  ].map((p) => p.replace(/\//g, sep));
+  const KNOWN_WRITE_REMAINING: readonly string[] = [].map((p: string) => p.replace(/\//g, sep));
 
   it("the write scanner is non-vacuous: it flags the exact pre-fix create-ticket text that both earlier scanners missed", () => {
     const preFixCreate = "        sprintId: body.sprintId,\n        epicId: body.epicId,";
@@ -223,7 +221,7 @@ describe("phase-04 detach invariant: sprintId object-literal WRITE form (the bli
     expect(content).toContain("eq(tickets.cycleId, bridgedCycle.id)");
   });
 
-  it("only the known-remaining files still write sprintId from a request-sourced value — qa/test-runs.service.ts is owned by a concurrent agent in this same cutover", () => {
+  it("no application file writes sprintId from a request-sourced value any more, which is the precondition a-sprint-cycle-04-detach's data guard cannot check", () => {
     const allFiles = scanDir(BACKEND_SRC).filter(isApplicationSource);
     expect(allFiles.length).toBeGreaterThan(50);
 

@@ -327,8 +327,8 @@ describe("dual-identity tripwire", () => {
     expect(testRuns).not.toContain("allocateTicketNumbers");
   });
 
-  it("still lets a test run insert a defect straight into build.bugs", () => {
-    expect(readSource("modules/build/qa/test-runs.service.ts")).toContain(".insert(bugs)");
+  it("no longer lets a test run insert a defect straight into build.bugs, so b-qa-bug-05-contract-drop's no-source-reference precondition holds for this module", () => {
+    expect(readSource("modules/build/qa/test-runs.service.ts")).not.toContain(".insert(bugs)");
   });
 
   it("still has no canonical comment, attachment, label or watcher path for a defect", () => {
