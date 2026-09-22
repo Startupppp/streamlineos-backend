@@ -17,7 +17,7 @@ import type {
   CompareForecastSnapshotsInput,
   ForecastSnapshotsQueryInput,
 } from "./dto/deals.schemas";
-export type { DealsViewScope, ForecastMonth, ForecastSummary } from "./deals-forecast.service";
+export type { DealsViewScope, ForecastSummary } from "./deals-forecast.service";
 
 /**
  * The cache entry belongs to whoever may read it.

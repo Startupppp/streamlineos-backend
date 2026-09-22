@@ -1,3 +1,4 @@
+import { getTenantContext } from "../../common/tenant/tenant-context";
 import { appUrl } from "./app-url";
 import { getBrandName } from "./branding";
 import { EmailProviderService, type EmailOptions } from "./email.provider";
@@ -21,7 +22,10 @@ import {
   getOnboardingCompleteEmployeeEmailTemplate,
   getOnboardingCompleteHrEmailTemplate,
 } from "./templates";
-import { getEmailOtpTemplate, getAccountLockedEmailTemplate } from "./templates/auth";
+import {
+  getEmailOtpTemplate,
+  getAccountLockedEmailTemplate,
+} from "./templates/auth";
 import {
   getWorkLogApprovedEmailTemplate,
   getWorkLogRejectedEmailTemplate,
@@ -29,18 +33,32 @@ import {
   getOnboardingTaskEmailTemplate,
 } from "./templates/notifications-misc";
 
+function authMailOrganizationId(): string | null {
+  return getTenantContext()?.orgId ?? null;
+}
+
 export abstract class EmailSendersBase {
-  protected constructor(protected readonly emailProvider: EmailProviderService) {}
+  protected constructor(
+    protected readonly emailProvider: EmailProviderService,
+  ) {}
 
   sendEmail(options: EmailOptions): Promise<void> {
     return this.emailProvider.dispatchEmail(options);
   }
 
-  sendVerificationEmail(email: string, token: string, locale = "en"): Promise<void> {
+  sendVerificationEmail(
+    email: string,
+    token: string,
+    locale = "en",
+  ): Promise<void> {
     return this.sendEmail({
       to: email,
       subject: getVerificationEmailSubject(locale),
-      html: getVerificationEmailTemplate(`${appUrl()}/verify-email?token=${token}&email=${encodeURIComponent(email)}`, locale),
+      html: getVerificationEmailTemplate(
+        `${appUrl()}/verify-email?token=${token}&email=${encodeURIComponent(email)}`,
+        locale,
+      ),
+      organizationId: authMailOrganizationId(),
     });
   }
 
@@ -49,6 +67,7 @@ export abstract class EmailSendersBase {
       to: email,
       subject: "Your account is temporarily locked",
       html: getAccountLockedEmailTemplate(name),
+      organizationId: authMailOrganizationId(),
     });
   }
 
@@ -63,7 +82,10 @@ export abstract class EmailSendersBase {
     );
   }
 
-  sendInvitationRevokedEmail(email: string, organizationName: string): Promise<void> {
+  sendInvitationRevokedEmail(
+    email: string,
+    organizationName: string,
+  ): Promise<void> {
     return this.sendEmail({
       to: email,
       subject: `Your invitation to ${organizationName} was withdrawn`,
@@ -91,16 +113,19 @@ export abstract class EmailSendersBase {
     return this.sendEmail({
       to: email,
       subject: `Your access to ${organizationName} is suspended`,
-      html: getMembershipSuspendedEmailTemplate(recipientName, organizationName),
+      html: getMembershipSuspendedEmailTemplate(
+        recipientName,
+        organizationName,
+      ),
     });
   }
 
-  sendWelcomeEmail(email: string, name: string, setupUrl: string): Promise<void> {
-    return this.sendEmail({
-      to: email,
-      subject: `Your ${getBrandName()} account is ready`,
-      html: getWelcomeEmailTemplate(name, email, setupUrl),
-    });
+  sendWelcomeEmail(
+    email: string,
+    name: string,
+    setupUrl: string,
+  ): Promise<void> {
+    return this.sendEmail(welcomeEmailOptions(email, name, setupUrl));
   }
 
   sendHolidayAnnouncementEmail(
@@ -112,7 +137,11 @@ export abstract class EmailSendersBase {
     return this.sendEmail({
       to: email,
       subject: `Upcoming holiday: ${holidayName}`,
-      html: getHolidayAnnouncementEmailTemplate(holidayName, holidayDate, message),
+      html: getHolidayAnnouncementEmailTemplate(
+        holidayName,
+        holidayDate,
+        message,
+      ),
     });
   }
 
@@ -136,7 +165,14 @@ export abstract class EmailSendersBase {
     message?: string,
   ): Promise<void> {
     await Promise.allSettled(
-      emails.map((email) => this.sendHolidayAnnouncementEmail(email, holidayName, holidayDate, message)),
+      emails.map((email) =>
+        this.sendHolidayAnnouncementEmail(
+          email,
+          holidayName,
+          holidayDate,
+          message,
+        ),
+      ),
     );
   }
 
@@ -176,7 +212,10 @@ export abstract class EmailSendersBase {
   ): Promise<void> {
     return this.sendEmail({
       to: email,
-      subject: status === "APPROVED" ? "Your leave request was approved" : "Your leave request was rejected",
+      subject:
+        status === "APPROVED"
+          ? "Your leave request was approved"
+          : "Your leave request was rejected",
       html: getLeaveStatusUpdateEmailTemplate(
         employeeName,
         leaveType,
@@ -200,7 +239,13 @@ export abstract class EmailSendersBase {
     return this.sendEmail({
       to: email,
       subject: `Leave request cancelled by ${employeeName}`,
-      html: getLeaveCancellationEmailTemplate(approverName, employeeName, leaveType, startDate, endDate),
+      html: getLeaveCancellationEmailTemplate(
+        approverName,
+        employeeName,
+        leaveType,
+        startDate,
+        endDate,
+      ),
     });
   }
 
@@ -252,7 +297,10 @@ export abstract class EmailSendersBase {
     });
   }
 
-  sendOnboardingCompleteEmployeeEmail(email: string, employeeName: string): Promise<void> {
+  sendOnboardingCompleteEmployeeEmail(
+    email: string,
+    employeeName: string,
+  ): Promise<void> {
     return this.sendEmail({
       to: email,
       subject: "Onboarding complete",
@@ -260,7 +308,11 @@ export abstract class EmailSendersBase {
     });
   }
 
-  sendOnboardingCompleteHrEmail(email: string, hrName: string, employeeName: string): Promise<void> {
+  sendOnboardingCompleteHrEmail(
+    email: string,
+    hrName: string,
+    employeeName: string,
+  ): Promise<void> {
     return this.sendEmail({
       to: email,
       subject: `${employeeName} completed onboarding`,
@@ -278,7 +330,12 @@ export abstract class EmailSendersBase {
     return this.sendEmail({
       to: email,
       subject: "Performance review assigned",
-      html: getReviewAssignedEmailTemplate(employeeName, reviewerName, periodStart, periodEnd),
+      html: getReviewAssignedEmailTemplate(
+        employeeName,
+        reviewerName,
+        periodStart,
+        periodEnd,
+      ),
     });
   }
 
@@ -288,6 +345,7 @@ export abstract class EmailSendersBase {
       to: email,
       subject: "Your sign-in link",
       html: getMagicLinkEmailTemplate(magicLink),
+      organizationId: authMailOrganizationId(),
     });
   }
 
@@ -296,10 +354,16 @@ export abstract class EmailSendersBase {
       to: email,
       subject: "Your sign-in code",
       html: getEmailOtpTemplate(code),
+      organizationId: authMailOrganizationId(),
     });
   }
 
-  sendWorkLogApprovedEmail(email: string, employeeName: string, date: string, approverName: string): Promise<void> {
+  sendWorkLogApprovedEmail(
+    email: string,
+    employeeName: string,
+    date: string,
+    approverName: string,
+  ): Promise<void> {
     return this.sendEmail({
       to: email,
       subject: "Your work log was approved",
@@ -317,7 +381,12 @@ export abstract class EmailSendersBase {
     return this.sendEmail({
       to: email,
       subject: "Your work log needs changes",
-      html: getWorkLogRejectedEmailTemplate(employeeName, date, approverName, reason),
+      html: getWorkLogRejectedEmailTemplate(
+        employeeName,
+        date,
+        approverName,
+        reason,
+      ),
     });
   }
 
@@ -331,7 +400,12 @@ export abstract class EmailSendersBase {
     return this.sendEmail({
       to: email,
       subject: `Welcome to ${getBrandName()}`,
-      html: getOnboardingWelcomeEmailTemplate(employeeName, designation, joiningDate, taskCount),
+      html: getOnboardingWelcomeEmailTemplate(
+        employeeName,
+        designation,
+        joiningDate,
+        taskCount,
+      ),
     });
   }
 
@@ -345,9 +419,22 @@ export abstract class EmailSendersBase {
     return this.sendEmail({
       to: email,
       subject: "Onboarding tasks assigned to you",
-      html: getOnboardingTaskEmailTemplate(recipientName, employeeName, taskRole, taskCount),
+      html: getOnboardingTaskEmailTemplate(
+        recipientName,
+        employeeName,
+        taskRole,
+        taskCount,
+      ),
     });
   }
+}
+
+export function welcomeEmailOptions(email: string, name: string, setupUrl: string): EmailOptions {
+  return {
+    to: email,
+    subject: `Your ${getBrandName()} account is ready`,
+    html: getWelcomeEmailTemplate(name, email, setupUrl),
+  };
 }
 
 export function invitationEmailOptions(

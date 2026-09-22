@@ -37,7 +37,9 @@ function makeProvider(
     getEmailProvider: () => "resend",
   } as unknown as EmailProviderService;
   return {
-    provider: new NotificationEmailProvider(emailProvider, config),
+    provider: new NotificationEmailProvider(emailProvider, config, {
+      findSuppressed: () => Promise.resolve(new Set<string>()),
+    }),
     dispatchEmail,
   };
 }

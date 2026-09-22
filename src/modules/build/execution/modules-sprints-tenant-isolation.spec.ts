@@ -99,6 +99,6 @@ describe("SprintsService — cross-tenant isolation", () => {
     } as unknown as Db;
     const svc = new SprintsService(db, null);
 
-    await expect(svc.getSprint(ATTACKER_ORG, 9999)).rejects.toThrow(NotFoundException);
+    await expect(svc.getSprint(ATTACKER_ORG, 1, 9999)).rejects.toThrow(NotFoundException);
   });
 });

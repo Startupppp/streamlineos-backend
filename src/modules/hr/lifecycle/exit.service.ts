@@ -1,5 +1,5 @@
 import { BadRequestException, ForbiddenException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, desc, eq, gte, isNotNull, sql } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, isNotNull, or, sql, type SQL } from "drizzle-orm";
 import {
   hrEmployments,
   hrPeople,
@@ -18,6 +18,7 @@ import type { ListResignationsQueryInput } from "./dto/hr-lifecycle.schemas";
 import { transitionResignation } from "./lifecycle-transition";
 import { buildCursorPage, decodeCursor } from "../../../common/pagination/cursor";
 import { keysetBeforeId } from "../../../common/pagination/keyset";
+import { ExitChecklistService } from "./exit-checklist.service";
 
 type StepStatus = "completed" | "active" | "pending" | "rejected";
 
@@ -50,6 +51,22 @@ function protectResignationFile<T extends { resignationLetterUrl: string | null 
   };
 }
 
+const CONFIDENTIAL_TO_ROUTED_VIEWERS = {
+  reason: null,
+  companyFeedback: null,
+  exitInterviewNotes: null,
+  feedback: null,
+  hrRemarks: null,
+  finalRemarks: null,
+} as const;
+
+function redactForRoutedViewer<T extends { [K in keyof typeof CONFIDENTIAL_TO_ROUTED_VIEWERS]: unknown }>(
+  record: T,
+  routedOnly: boolean,
+): T {
+  return routedOnly ? { ...record, ...CONFIDENTIAL_TO_ROUTED_VIEWERS } : record;
+}
+
 export interface TimelineStep {
   label: string;
   status: StepStatus;
@@ -63,16 +80,21 @@ export class ExitService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly employment: EmploymentFactsService,
+    private readonly checklist: ExitChecklistService,
   ) {}
+
+  private async visibilityPredicate(orgId: string, isAdmin: boolean, membershipId?: number | null): Promise<(SQL | undefined)[]> {
+    if (isAdmin) return [eq(resignations.orgId, orgId)];
+    if (membershipId == null) throw new ForbiddenException("Organization membership required.");
+    const own = eq(resignations.userMembershipId, membershipId);
+    const routedIds = await this.checklist.resignationIdsRoutedTo(orgId, membershipId);
+    if (routedIds.length === 0) return [eq(resignations.orgId, orgId), own];
+    return [eq(resignations.orgId, orgId), or(own, inArray(resignations.id, routedIds))];
+  }
 
   async list(orgId: string, userId: string, isAdmin: boolean, params: ListResignationsQueryInput, membershipId?: number | null) {
     const limit = Math.min(params.limit, 100);
-    const conditions = [eq(resignations.orgId, orgId)];
-    if (!isAdmin) {
-      if (membershipId == null) throw new ForbiddenException("Organization membership required.");
-      const ownerPredicate = eq(resignations.userMembershipId, membershipId);
-      conditions.push(ownerPredicate);
-    }
+    const conditions = await this.visibilityPredicate(orgId, isAdmin, membershipId);
     if (params.status) conditions.push(eq(resignations.status, params.status));
 
     const position = decodeCursor(params.cursor);
@@ -112,11 +134,7 @@ export class ExitService {
 
   /** Same scope predicate as `list`, one aggregate, no rows or relations loaded. */
   async countVisible(orgId: string, isAdmin: boolean, membershipId?: number | null) {
-    const conditions = [eq(resignations.orgId, orgId)];
-    if (!isAdmin) {
-      if (membershipId == null) throw new ForbiddenException("Organization membership required.");
-      conditions.push(eq(resignations.userMembershipId, membershipId));
-    }
+    const conditions = await this.visibilityPredicate(orgId, isAdmin, membershipId);
     const rows = await this.db
       .select({ total: sql<number>`count(*)::int` })
       .from(resignations)
@@ -146,26 +164,42 @@ export class ExitService {
       where: and(eq(resignations.id, resignationId), eq(resignations.orgId, orgId)),
       with: {
         user: { columns: { id: true, name: true, email: true, image: true } },
-        checklists: true,
         hrReviewer: { columns: { id: true, name: true } },
         finalReviewer: { columns: { id: true, name: true } },
       },
     });
     if (!data) throw new NotFoundException("Resignation not found.");
 
-    if (!isAdmin && (membershipId == null || data.userMembershipId !== membershipId)) {
+    if (!isAdmin && !(await this.canReadAsMember(orgId, data, membershipId))) {
       throw new ForbiddenException("Forbidden");
     }
 
-    const facts = data.user ? await this.employment.getFacts(orgId, data.user.id) : undefined;
+    const [facts, checklist] = await Promise.all([
+      data.user ? this.employment.getFacts(orgId, data.user.id) : Promise.resolve(undefined),
+      this.checklist.listForResignation(orgId, resignationId, { userId, membershipId: membershipId ?? null, isAdmin }),
+    ]);
     const enrichedUser = data.user
       ? { ...data.user, designation: facts?.designation ?? null, joiningDate: facts?.joiningDate ?? null }
       : data.user;
+    const routedOnly = !isAdmin && data.userMembershipId !== membershipId;
+    const visible = redactForRoutedViewer({ ...data, user: enrichedUser }, routedOnly);
 
     return {
-      ...protectResignationFile({ ...data, user: enrichedUser }),
-      progress: this.buildTimeline(data),
+      ...protectResignationFile(visible),
+      progress: this.buildTimeline(visible),
+      checklist,
     };
+  }
+
+  private async canReadAsMember(
+    orgId: string,
+    record: { id: number; userMembershipId: number | null },
+    membershipId?: number | null,
+  ): Promise<boolean> {
+    if (membershipId == null) return false;
+    if (record.userMembershipId === membershipId) return true;
+    const routedIds = await this.checklist.resignationIdsRoutedTo(orgId, membershipId);
+    return routedIds.includes(record.id);
   }
 
   async getFileReference(
@@ -281,9 +315,10 @@ export class ExitService {
     });
     if (!record) throw new NotFoundException("Not found.");
 
-    if (!isAdmin && (membershipId == null || record.userMembershipId !== membershipId)) {
+    if (!isAdmin && !(await this.canReadAsMember(orgId, record, membershipId))) {
       throw new ForbiddenException("Access denied.");
     }
+    const visible = redactForRoutedViewer(record, !isAdmin && record.userMembershipId !== membershipId);
 
     const steps: ProgressStep[] = [];
 
@@ -302,7 +337,7 @@ export class ExitService {
         status: record.status === "REJECTED" && !record.finalReviewedAt ? "rejected" : "completed",
         actor: record.hrReviewer?.name ?? "HR",
         timestamp: formatDdMmmYyyyTime(record.hrReviewedAt),
-        remarks: record.hrRemarks ?? undefined,
+        remarks: visible.hrRemarks ?? undefined,
       });
     } else if (record.status === "PENDING_HR" || record.status === "SUBMITTED") {
       steps.push({ label: "HR Review", status: "active" });
@@ -316,7 +351,7 @@ export class ExitService {
         status: record.status === "REJECTED" ? "rejected" : "completed",
         actor: record.finalReviewer?.name ?? "FINAL",
         timestamp: formatDdMmmYyyyTime(record.finalReviewedAt),
-        remarks: record.finalRemarks ?? undefined,
+        remarks: visible.finalRemarks ?? undefined,
       });
     } else if (record.status === "HR_APPROVED") {
       steps.push({ label: "FINAL Approval", status: "active" });

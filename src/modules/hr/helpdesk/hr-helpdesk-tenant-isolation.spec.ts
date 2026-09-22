@@ -1,6 +1,18 @@
 import type { Db } from "../../../db/drizzle.module";
 import { HrHelpdeskService } from "./hr-helpdesk.service";
 import { HrCalendarService } from "./hr-calendar.service";
+import { HrHelpdeskConfigService } from "./hr-helpdesk-config.service";
+import { HrAuditService } from "../core/hr-audit.service";
+import type { SupportActor } from "./lib/support-queues";
+
+function helpdeskService(db: Db): HrHelpdeskService {
+  const audit = new HrAuditService(db);
+  return new HrHelpdeskService(db, new HrHelpdeskConfigService(db, audit), audit);
+}
+
+function agent(orgId: string): SupportActor {
+  return { orgId, userId: "user-1", membershipId: 1, isAdmin: false, queues: new Set(["IT"]) };
+}
 
 function sqlValues(value: unknown, seen = new Set<object>()): unknown[] {
   if (value === null || value === undefined || typeof value === "string" || typeof value === "number" || typeof value === "boolean") return [value];
@@ -48,16 +60,23 @@ describe("HrHelpdeskService — cross-tenant isolation", () => {
 
   it("hides helpdesk tickets from different org (cross-tenant isolation)", async () => {
     const { db, where, findMany } = makeDb([]);
-    const svc = new HrHelpdeskService(db);
-    await svc.list(ATTACKER, "user-1", false, { limit: 10 });
+    const svc = helpdeskService(db);
+    await svc.list(agent(ATTACKER), { limit: 10 });
     expect(sqlValues(isolationArg(where, findMany))).toContain(ATTACKER);
   });
 
   it("returns helpdesk tickets for owning org (control — same-tenant access works)", async () => {
     const { db, where, findMany } = makeDb([ROW]);
-    const svc = new HrHelpdeskService(db);
-    await svc.list(OWNER, "user-1", false, { limit: 10 });
+    const svc = helpdeskService(db);
+    await svc.list(agent(OWNER), { limit: 10 });
     expect(sqlValues(isolationArg(where, findMany))).toContain(OWNER);
+  });
+
+  it("scopes the employee's own list to the attacker org (cross-tenant isolation)", async () => {
+    const { db, where, findMany } = makeDb([]);
+    const svc = helpdeskService(db);
+    await svc.listMine(ATTACKER, "user-1", { limit: 10 });
+    expect(sqlValues(isolationArg(where, findMany))).toContain(ATTACKER);
   });
 });
 

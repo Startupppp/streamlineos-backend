@@ -61,7 +61,7 @@ export class FnfInsightsService {
       .where(and(eq(fnfSettlements.id, settlementId), eq(fnfSettlements.orgId, orgId)))
       .limit(1);
 
-    if (!row) throw new NotFoundException("F&F settlement not found");
+    if (!row) throw new NotFoundException("Final settlement not found");
     return row;
   }
 
@@ -123,13 +123,13 @@ export class FnfInsightsService {
       .join("");
 
     const html = `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"/>
-<title>Full &amp; Final Statement</title>
+<title>Final settlement statement</title>
 <style>body{font-family:Arial,sans-serif;max-width:720px;margin:32px auto;color:#111}
 h1{font-size:22px;color:#0f2b7f}table{width:100%;border-collapse:collapse}
 th{text-align:left;padding:8px 16px;background:#f5f7ff;font-size:11px;text-transform:uppercase;color:#0f2b7f}
 .net{background:#0f2b7f;color:#fff;font-size:15px;font-weight:700;padding:12px 16px}</style>
 </head><body>
-<h1>Full &amp; Final Settlement Statement</h1>
+<h1>Final settlement statement</h1>
 <p><strong>Employee:</strong> ${stmt.employee.name} (${stmt.employee.email})</p>
 <p><strong>Status:</strong> ${stmt.status}</p>
 <table>
@@ -143,7 +143,7 @@ th{text-align:left;padding:8px 16px;background:#f5f7ff;font-size:11px;text-trans
     const buffer = Buffer.from(html, "utf-8");
     return new StreamableFile(buffer, {
       type: "text/html; charset=utf-8",
-      disposition: `attachment; filename="fnf-statement-${settlementId}.html"`,
+      disposition: `attachment; filename="final-settlement-statement-${settlementId}.html"`,
     });
   }
 }

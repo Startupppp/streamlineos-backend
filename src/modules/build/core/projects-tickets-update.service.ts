@@ -125,6 +125,7 @@ export class ProjectsTicketsUpdateService {
 
   async updateTicket(
     u: CurrentUserContext,
+    projectId: number | null,
     ticketId: number,
     input: UpdateTicketInput,
   ) {
@@ -174,7 +175,12 @@ export class ProjectsTicketsUpdateService {
     }
 
     const before = await this.db.query.tickets.findFirst({
-      where: and(eq(tickets.id, ticketId), eq(tickets.orgId, orgId), isNull(tickets.deletedAt)),
+      where: and(
+        eq(tickets.id, ticketId),
+        ...(projectId === null ? [] : [eq(tickets.projectId, projectId)]),
+        eq(tickets.orgId, orgId),
+        isNull(tickets.deletedAt),
+      ),
       columns: {
         title: true,
         status: true,

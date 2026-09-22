@@ -2,6 +2,7 @@ import { z } from "zod";
 import type { ModuleRef } from "@nestjs/core";
 import { CONFIRMABLE_ACTION_DEFINITIONS } from ".";
 import {
+  assertResolvableActionServices,
   defineConfirmableAction,
   externalEffectKeyFor,
   type ConfirmableActionContext,
@@ -175,6 +176,45 @@ describe("a confirmable action whose effect leaves the process is recorded befor
 
     expect(get).not.toHaveBeenCalled();
     expect(outcome.summary).toBe("written");
+  });
+
+  it("fails at boot when the ledger is unreachable, rather than on a user's first mail send", () => {
+    const action = defineConfirmableAction({
+      action: "test.externalSend",
+      permission: "mail:messages:send",
+      payload: z.object({ to: z.string() }),
+      external: { effectType: "test.effect", providerIdempotency: "NONE" },
+      resolve: () => ({}),
+      execute: async () => ({ result: {}, summary: "s" }),
+    });
+    const brokenRef = {
+      get: (token: unknown) => {
+        if (token === ExternalEffectLedger) throw new Error("not registered");
+        return {};
+      },
+    } as unknown as ModuleRef;
+
+    expect(() => assertResolvableActionServices(brokenRef, [action])).toThrow(
+      /ExternalEffectLedger/,
+    );
+  });
+
+  it("does not demand the ledger at boot when no action declares an external effect", () => {
+    const action = defineConfirmableAction({
+      action: "test.localWrite",
+      permission: "chat:messages:write",
+      payload: z.object({ message: z.string() }),
+      resolve: () => ({}),
+      execute: async () => ({ result: {}, summary: "written" }),
+    });
+    const brokenRef = {
+      get: (token: unknown) => {
+        if (token === ExternalEffectLedger) throw new Error("not registered");
+        return {};
+      },
+    } as unknown as ModuleRef;
+
+    expect(() => assertResolvableActionServices(brokenRef, [action])).not.toThrow();
   });
 
   it("resolves the real ledger class by token, so the wrapper cannot silently bind to nothing at runtime", async () => {

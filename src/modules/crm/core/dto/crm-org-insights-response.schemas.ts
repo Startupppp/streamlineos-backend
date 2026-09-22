@@ -12,7 +12,6 @@ export const orgHierarchyNodeSchema = z.object({
   },
 });
 
-export type OrgHierarchyNodeType = z.infer<typeof orgHierarchyNodeSchema>;
 
 export const orgRollupSchema = z.object({
   totalContacts: z.number().int(),

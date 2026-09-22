@@ -114,4 +114,3 @@ export type EndContractInput = z.infer<typeof endContractSchema>;
 export type ConvertToEmployeeInput = z.infer<typeof convertToEmployeeSchema>;
 
 export const daysQuerySchema = z.object({ days: z.coerce.number().int().min(1).max(3650).default(30) });
-export type DaysQuery = z.infer<typeof daysQuerySchema>;

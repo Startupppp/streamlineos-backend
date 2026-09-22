@@ -23,6 +23,8 @@ import { requireOrganizationMembershipId } from "./organization-membership";
 import { boundHrReadLimit, HR_SCAN_MAX_PAGES, HR_SCAN_PAGE } from "../hr-read-limits";
 import type { ListTeamLeaveRequestsQuery } from "./dto/leaves.schemas";
 
+const TEAM_LEAVES_CAP = 500;
+
 // Display identity only — `leavesTeamItemSchema.user` exposes nothing more, and designation is an employment fact.
 const TEAM_RELATIONS = {
   user: {
@@ -151,6 +153,19 @@ export class LeavesService {
         nextCursor: hasMore ? (data.at(-1)?.id ?? null) : null,
       },
     };
+  }
+
+  async pendingRoutedTo(orgId: string, approverMembershipId: number, limit: number) {
+    return this.db.query.leaveRequests.findMany({
+      where: and(
+        eq(leaveRequests.orgId, orgId),
+        eq(leaveRequests.status, "PENDING"),
+        eq(leaveRequests.approverMembershipId, approverMembershipId),
+      ),
+      with: TEAM_RELATIONS,
+      orderBy: [asc(leaveRequests.createdAt)],
+      limit: Math.min(limit, TEAM_LEAVES_CAP),
+    });
   }
 
   private async directReportsPendingPredicate(orgId: string, userId: string): Promise<SQL | undefined> {

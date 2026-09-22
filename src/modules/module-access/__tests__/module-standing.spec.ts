@@ -1,8 +1,10 @@
 import {
   canTransferModuleOwnership,
   resolveModuleManagementStanding,
+  resolveModuleStanding,
 } from "../module-standing";
 import type { Db } from "../../../db/drizzle.module";
+import type { DataScope } from "../../../common/rbac/data-scope";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
 
@@ -159,6 +161,49 @@ describe("resolveModuleManagementStanding", () => {
       );
       expect(standing?.level).toBe("owner");
     }
+  });
+});
+
+describe("resolveModuleStanding", () => {
+  it("resolves view through the standing resolver, so a grant that only exists as standing is not silently denied", async () => {
+    const db = createDb({ orgMember: { isOwner: false, role: "MEMBER" }, ownerUserId: "user-1" });
+    const standing = await resolveModuleStanding(db, actor(), MODULE, new Map<string, DataScope>());
+    expect(standing.level).not.toBe("none");
+    expect(standing.source).toBe("module-ownership");
+  });
+
+  it("surfaces membership level standing from a resolved access:view permission grant", async () => {
+    const db = createDb({ activeMembership: true });
+    const perms = new Map<string, DataScope>([["hr:access:view", "all"]]);
+    const standing = await resolveModuleStanding(db, actor(), MODULE, perms);
+    expect(standing.level).toBe("member");
+  });
+
+  it("treats access:manage as a view grant when no dedicated view key is present", async () => {
+    const db = createDb({ activeMembership: true });
+    const perms = new Map<string, DataScope>([["hr:access:manage", "all"]]);
+    const standing = await resolveModuleStanding(db, actor(), MODULE, perms);
+    expect(standing.level).toBe("member");
+  });
+
+  it("denies when the actor has neither management standing nor a view permission grant", async () => {
+    const db = createDb({ activeMembership: true });
+    const standing = await resolveModuleStanding(db, actor(), MODULE, new Map<string, DataScope>());
+    expect(standing.level).toBe("none");
+  });
+
+  it("prefers management standing over membership when both exist", async () => {
+    const db = createDb({ orgMember: { isOwner: false, role: "ORG_ADMIN" } });
+    const perms = new Map<string, DataScope>([["hr:access:view", "all"]]);
+    const standing = await resolveModuleStanding(db, actor(), MODULE, perms);
+    expect(standing.source).toBe("org-admin");
+  });
+
+  it("denies a none-scoped permission grant the same as an absent one", async () => {
+    const db = createDb({ activeMembership: true });
+    const perms = new Map<string, DataScope>([["hr:access:view", "none"]]);
+    const standing = await resolveModuleStanding(db, actor(), MODULE, perms);
+    expect(standing.level).toBe("none");
   });
 });
 

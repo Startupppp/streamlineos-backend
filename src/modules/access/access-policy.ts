@@ -106,6 +106,18 @@ export const EMPLOYEE_SELF_SERVICE_GRANTS: ReadonlyArray<{
   })),
 );
 
+export const MANAGER_AUTHORITY_GRANTS: ReadonlyArray<{
+  readonly permissionKey: string;
+  readonly scope: DataScope;
+}> = Object.freeze([
+  { permissionKey: "hr:leaves:view", scope: "all" },
+  { permissionKey: "hr:leaves:approve", scope: "own" },
+  { permissionKey: "hr:workflows:approve", scope: "all" },
+  { permissionKey: "timesheets:approvals:view", scope: "own" },
+  { permissionKey: "timesheets:approvals:manage", scope: "own" },
+  { permissionKey: "hr:exit:view", scope: "own" },
+]);
+
 /**
  * Every catalog key a member of *an organization* can hold, at scope `all`.
  *

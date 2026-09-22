@@ -27,8 +27,15 @@ function resolveScope(explicitOrgId: string | null | undefined): {
   organizationId: string | null;
   scope: "PLATFORM" | "TENANT";
 } {
-  const orgId = explicitOrgId ?? getTenantContext()?.orgId ?? null;
-  return orgId ? { organizationId: orgId, scope: "TENANT" } : { organizationId: null, scope: "PLATFORM" };
+  if (explicitOrgId) return { organizationId: explicitOrgId, scope: "TENANT" };
+  if (explicitOrgId === null) return { organizationId: null, scope: "PLATFORM" };
+
+  const ambient = getTenantContext()?.orgId ?? null;
+  if (ambient) return { organizationId: ambient, scope: "TENANT" };
+
+  throw new Error(
+    "email outbox: no organization to attribute this send to. Pass organizationId: null for mail that genuinely has no tenant (verification, password reset), or send inside a tenant context.",
+  );
 }
 
 type DurableEmailOptions = Pick<
@@ -37,6 +44,14 @@ type DurableEmailOptions = Pick<
 >;
 
 export const INLINE_SEND_BUDGET_MS = 5_000;
+
+export const NO_EMAIL_PROVIDER_REASON =
+  "No email provider is configured, so the email could not be sent.";
+
+export const SUPPRESSED_RECIPIENT_REASON =
+  "The address is on the email suppression list after a bounce or unsubscribe, so no email was sent.";
+
+export type EmailQueueOutcome = { queued: true } | { queued: false; reason: string };
 
 function isPresent(value: string | string[] | undefined): boolean {
   if (value === undefined) return false;
@@ -131,10 +146,36 @@ export class EmailOutboxService {
     return inserted.length;
   }
 
-  async enqueueOnly(options: EmailOptions): Promise<void> {
+  async enqueueOnly(options: EmailOptions): Promise<EmailQueueOutcome> {
     const filtered = await this.applySuppression(options);
-    if (!filtered) return;
+    if (!filtered) return { queued: false, reason: SUPPRESSED_RECIPIENT_REASON };
+    if (this.emailProvider.getEmailProvider() === "none") {
+      await this.recordUnsendable(filtered);
+      return { queued: false, reason: NO_EMAIL_PROVIDER_REASON };
+    }
     await this.enqueueForDelivery([filtered]);
+    return { queued: true };
+  }
+
+  private async recordUnsendable(options: DurableEmailOptions): Promise<void> {
+    const { organizationId, scope } = resolveScope(options.organizationId);
+    const toEmail = Array.isArray(options.to) ? options.to.join(",") : options.to;
+    await this.db.insert(emailOutbox).values({
+      organizationId,
+      scope,
+      toEmail,
+      subject: options.subject,
+      html: options.html,
+      text: options.text ?? null,
+      recipientUserId: options.recipientUserId ?? null,
+      status: "FAILED",
+      attempts: 1,
+      lastError: "No email provider configured",
+    });
+    this.logger.warn("EMAIL_OUTBOX: no provider configured — marked FAILED", {
+      to: toEmail,
+      subject: options.subject,
+    });
   }
 
   async enqueueAndTry(options: EmailOptions): Promise<void> {

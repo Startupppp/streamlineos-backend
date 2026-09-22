@@ -23,7 +23,7 @@ import type {
   RetryPublicationsInput,
 } from "./dto/channels.schemas";
 
-function sanitizeChannelRow<T extends Record<string, any>>(row: T) {
+function sanitizeChannelRow<T extends Record<string, unknown>>(row: T) {
   const { apiCredentialEncrypted, webhookSecretEncrypted, ...safe } = row;
   return safe;
 }

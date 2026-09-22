@@ -28,6 +28,7 @@ import { BackgroundVerificationService } from "./background-verification.service
 import { AccessRequestsService } from "./access-requests.service";
 import { BillingModule } from "../../billing/core/billing.module";
 import { DirectoryModule } from "../../directory/directory.module";
+import { ReportingLinesController } from "./reporting-lines.controller";
 import { NotificationsModule } from "../../notifications/notifications.module";
 import { MembershipAdmissionModule } from "../../organization/core/membership-admission.module";
 
@@ -51,6 +52,7 @@ import { MembershipAdmissionModule } from "../../organization/core/membership-ad
     AssetInventoryController,
     BackgroundVerificationController,
     AccessRequestsController,
+    ReportingLinesController,
   ],
   providers: [
     EmployeesService,

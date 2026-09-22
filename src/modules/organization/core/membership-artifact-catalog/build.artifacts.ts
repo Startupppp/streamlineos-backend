@@ -221,4 +221,44 @@ export const BUILD_ARTIFACTS = [
     reason:
       "The manager pointer on projects is cleared by fk_projects_manager_actor, an ON DELETE SET NULL composite tenant foreign key, so the record survives the departure without its member pointer. A suspension is reversible, so nothing is written.",
   },
+  {
+    id: "managed_product_memberships",
+    mechanism: "database-cascade",
+    table: "managed_product_memberships",
+    keyedBy: "organization_membership_id",
+    onRemoval: "cascade",
+    onSuspension: "retain",
+    reason:
+      "The composite foreign key fk_mp_members_org_membership is ON DELETE CASCADE, so removing the membership removes the product-membership row automatically. A suspension is reversible, so nothing is written.",
+  },
+  {
+    id: "feedbucket_widgets_default_assignee",
+    mechanism: "database-write",
+    table: "feedbucket_widgets",
+    keyedBy: "default_assignee_membership_id",
+    onRemoval: "set-null",
+    onSuspension: "retain",
+    reason:
+      "The default_assignee_membership_id column carries no foreign key, so removing a membership does not touch it automatically. It must be explicitly set to NULL so the widget configuration does not point at a removed member.",
+  },
+  {
+    id: "project_updates_author",
+    mechanism: "database-cascade",
+    table: "project_updates",
+    keyedBy: "author_membership_id",
+    onRemoval: "blocks-removal",
+    onSuspension: "retain",
+    reason:
+      "The composite foreign key fk_project_updates_org_author is ON DELETE RESTRICT and the column is NOT NULL, so removing the authoring member is blocked until the update rows are handled. The author attribution cannot be nulled without migrating the column to nullable first.",
+  },
+  {
+    id: "project_attachments_uploader",
+    mechanism: "database-cascade",
+    table: "project_attachments",
+    keyedBy: "uploaded_by_membership_id",
+    onRemoval: "blocks-removal",
+    onSuspension: "retain",
+    reason:
+      "The composite foreign key fk_project_attachments_org_uploader is ON DELETE RESTRICT and the column is NOT NULL, so removing the uploading member is blocked until the attachment rows are handled. The uploader attribution cannot be nulled without migrating the column to nullable first.",
+  },
 ] as const satisfies readonly MembershipArtifact[];

@@ -132,6 +132,7 @@ export class SimulatorService {
             id: hrWorkflowDefinitions.id,
             name: hrWorkflowDefinitions.name,
             version: hrWorkflowDefinitions.version,
+            objectType: hrWorkflowDefinitions.objectType,
           })
           .from(hrWorkflowDefinitions)
           .where(
@@ -155,9 +156,11 @@ export class SimulatorService {
           .limit(20)
       : [];
 
-    const approverIdsPerStep = await Promise.all(
-      steps.map((step) => this.approvers.resolveApprovers(step, input.employeeId, orgId)),
-    );
+    const approverIdsPerStep = definition
+      ? await Promise.all(
+          steps.map((step) => this.approvers.resolveApprovers(step, input.employeeId, orgId, definition.objectType)),
+        )
+      : [];
 
     const allApproverIds = [...new Set(approverIdsPerStep.flat())];
     const approverRows = allApproverIds.length > 0

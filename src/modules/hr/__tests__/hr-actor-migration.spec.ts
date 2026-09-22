@@ -5,6 +5,22 @@ import { Test } from "@nestjs/testing";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { WfhService } from "../time/wfh.service";
 import { type HrPolicyEvaluationService } from "../policies/hr-policy-evaluation.service";
+import { AccessService } from "../../access/access.service";
+import { ApprovalAuthorityService } from "../../directory/approval-authority.service";
+import { humanSessionPrincipal } from "../../../common/auth/principal";
+import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+
+function actor(userId: string): CurrentUserContext {
+  return {
+    userId,
+    orgId: "org-1",
+    role: "MEMBER",
+    isOrgOwner: false,
+    sessionId: "session-1",
+    tokenScopes: null,
+    principal: humanSessionPrincipal(42, false),
+  };
+}
 
 function makeWfhRequest(overrides: Record<string, unknown> = {}) {
   return { id: 1, orgId: "org-1", userId: "employee-1", date: "2026-09-01", status: "PENDING", ...overrides };
@@ -35,14 +51,14 @@ function activeMemberRow(overrides: Record<string, unknown> = {}) {
 
 describe("HR actor migration — organization membership identity enforcement", () => {
   describe("WfhService.update", () => {
-    const ORG = "org-1";
     const REQUEST_ID = 1;
 
     function buildDb(memberRows: unknown[]) {
       return {
         select: jest.fn()
           .mockReturnValueOnce(makeSelectChain(memberRows))
-          .mockReturnValueOnce(makeSelectChain([])),
+          .mockReturnValueOnce(makeSelectChain([]))
+          .mockReturnValueOnce(makeSelectChain([{ id: 1, userMembershipId: 7 }])),
         query: {
           wfhRequests: {
             findFirst: jest.fn().mockResolvedValue(makeWfhRequest()),
@@ -62,6 +78,11 @@ describe("HR actor migration — organization membership identity enforcement", 
         providers: [
           WfhService,
           { provide: DRIZZLE, useValue: db },
+          {
+            provide: AccessService,
+            useValue: { resolveUserPermissions: jest.fn().mockResolvedValue(new Map([["hr:attendance:manage", "all"]])) },
+          },
+          { provide: ApprovalAuthorityService, useValue: {} },
         ],
       }).compile();
       return { service: moduleRef.get(WfhService), db };
@@ -70,21 +91,21 @@ describe("HR actor migration — organization membership identity enforcement", 
     it("rejects a user with no membership in the org — throws NotFoundException, not written", async () => {
       const { service } = await buildService([]);
 
-      await expect(service.update(ORG, "unknown-user", REQUEST_ID, { status: "APPROVED" }))
+      await expect(service.update(actor("unknown-user"), REQUEST_ID, { status: "APPROVED" }))
         .rejects.toBeInstanceOf(NotFoundException);
     });
 
     it("rejects a SUSPENDED member — throws ForbiddenException", async () => {
       const { service } = await buildService([activeMemberRow({ status: "SUSPENDED" })]);
 
-      await expect(service.update(ORG, "approver-user", REQUEST_ID, { status: "APPROVED" }))
+      await expect(service.update(actor("approver-user"), REQUEST_ID, { status: "APPROVED" }))
         .rejects.toBeInstanceOf(ForbiddenException);
     });
 
     it("rejects a member of a different organization with 404, never 403", async () => {
       const { service } = await buildService([]);
 
-      const error = await service.update(ORG, "org2-user", REQUEST_ID, { status: "APPROVED" })
+      const error = await service.update(actor("org2-user"), REQUEST_ID, { status: "APPROVED" })
         .then(() => null)
         .catch((e: unknown) => e);
 
@@ -97,7 +118,7 @@ describe("HR actor migration — organization membership identity enforcement", 
       const setFn = jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue(undefined) });
       db.update = jest.fn().mockReturnValue({ set: setFn });
 
-      await service.update(ORG, "approver-user", REQUEST_ID, { status: "APPROVED" });
+      await service.update(actor("approver-user"), REQUEST_ID, { status: "APPROVED" });
 
       expect(setFn).toHaveBeenCalledWith(
         expect.objectContaining({

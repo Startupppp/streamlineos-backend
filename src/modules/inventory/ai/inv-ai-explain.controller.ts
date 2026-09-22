@@ -149,6 +149,7 @@ export class InvAiExplainController {
   @UseRateLimit("ai:invoke")
   @RequirePermission("inventory:ai:propose")
   @Validate({ body: reorderProposalBodySchema })
+  @NoTenantTransaction()
   getReorderProposal(
     @Body() body: z.infer<typeof reorderProposalBodySchema>,
     @CurrentUser() u: CurrentUserContext,

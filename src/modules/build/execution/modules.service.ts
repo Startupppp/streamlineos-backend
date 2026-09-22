@@ -123,28 +123,29 @@ export class ModulesService {
 
   async updateModule(
     orgId: string,
+    projectId: number,
     moduleId: number,
     input: UpdateModuleInput,
   ) {
     const [updated] = await this.db
       .update(modules)
       .set({ ...input, updatedAt: new Date() })
-      .where(and(eq(modules.id, moduleId), eq(modules.orgId, orgId)))
+      .where(and(eq(modules.id, moduleId), eq(modules.projectId, projectId), eq(modules.orgId, orgId)))
       .returning();
 
     if (!updated) throw new NotFoundException("Module not found");
     return updated;
   }
 
-  async deleteModule(orgId: string, moduleId: number) {
+  async deleteModule(orgId: string, projectId: number, moduleId: number) {
     await this.db.transaction(async (tx) => {
       await tx
         .update(tickets)
         .set({ moduleId: null })
-        .where(and(eq(tickets.moduleId, moduleId), eq(tickets.orgId, orgId)));
+        .where(and(eq(tickets.moduleId, moduleId), eq(tickets.projectId, projectId), eq(tickets.orgId, orgId)));
       const removed = await tx
         .delete(modules)
-        .where(and(eq(modules.id, moduleId), eq(modules.orgId, orgId)))
+        .where(and(eq(modules.id, moduleId), eq(modules.projectId, projectId), eq(modules.orgId, orgId)))
         .returning({ id: modules.id });
       if (removed.length === 0) throw new NotFoundException("Module not found");
     });

@@ -30,7 +30,7 @@ const IMPERSONATION_SESSION_TOMBSTONE_KEY = (id: string) =>
 export class ImpersonationService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
-    @Inject(REDIS) private readonly redis: Redis | null,
+    @Inject(REDIS) private readonly redis: Pick<Redis, "set"> | null,
     private readonly keyring: JwtKeyringService,
     private readonly audit: AuditService,
   ) {}
@@ -141,27 +141,33 @@ export class ImpersonationService {
     const [session] = await this.db
       .select({
         id: impersonationSessions.id,
-        actorUserId: impersonationSessions.actorUserId,
-        orgId: impersonationSessions.orgId,
         isRevoked: impersonationSessions.isRevoked,
       })
       .from(impersonationSessions)
-      .where(eq(impersonationSessions.id, impersonationSessionId))
+      .where(
+        and(
+          eq(impersonationSessions.id, impersonationSessionId),
+          eq(impersonationSessions.orgId, actor.orgId),
+          eq(impersonationSessions.actorUserId, actor.userId),
+        ),
+      )
       .limit(1);
 
     if (!session) {
       throw new NotFoundException("Impersonation session not found");
     }
 
-    if (session.actorUserId !== actor.userId || session.orgId !== actor.orgId) {
-      throw new ForbiddenException("Cannot end this impersonation session");
-    }
-
     if (!session.isRevoked) {
       await this.db
         .update(impersonationSessions)
         .set({ isRevoked: true, endedAt: new Date() })
-        .where(eq(impersonationSessions.id, impersonationSessionId));
+        .where(
+          and(
+            eq(impersonationSessions.id, impersonationSessionId),
+            eq(impersonationSessions.orgId, actor.orgId),
+            eq(impersonationSessions.actorUserId, actor.userId),
+          ),
+        );
 
       if (this.redis) {
         await this.redis.set(

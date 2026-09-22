@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { approvalRouteSchema } from "../../../directory/dto/approval-route.schemas";
 import { wireDate } from "../../../../common/openapi/wire-types";
 
 const boundedListSchema = <T extends z.ZodTypeAny>(item: T) =>
@@ -198,6 +199,7 @@ export const leavesPageDataSchema = z.object({
   types: z.array(leaveTypeRowSchema),
   joiningDate: z.string().nullable(),
   approvers: z.array(z.object({ id: z.string(), name: z.string().nullable(), email: z.string() })),
+  approvalRoute: approvalRouteSchema,
 });
 
 export const compOffGrantResponseSchema = z.object({

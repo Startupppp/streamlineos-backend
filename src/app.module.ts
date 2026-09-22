@@ -7,6 +7,7 @@ import {
 } from "./common/tenant";
 import { Reflector } from "@nestjs/core";
 
+import { ImpersonationContextInterceptor } from "./common/impersonation/impersonation-context.interceptor";
 import { DeprecationInterceptor } from "./common/deprecation/deprecation.interceptor";
 import { ObservabilityEnrichmentInterceptor } from "./common/observability";
 import { RegionModule } from "./common/region/region.module";
@@ -252,11 +253,9 @@ import { BuildAgentPulseModule } from "./modules/build/agent-pulse/build-agent-p
     { provide: APP_INTERCEPTOR, useClass: ObservabilityEnrichmentInterceptor },
     { provide: APP_INTERCEPTOR, useClass: DeprecationInterceptor },
     { provide: APP_INTERCEPTOR, useClass: ZodValidationInterceptor },
+    { provide: APP_INTERCEPTOR, useClass: ImpersonationContextInterceptor },
     { provide: APP_INTERCEPTOR, useClass: TenantContextInterceptor },
     { provide: APP_INTERCEPTOR, useClass: IdempotencyInterceptor },
-    // Last, so it is innermost on the response path and sees the value the handler
-    // returned rather than one a later interceptor reshaped. It tolerates the
-    // `{ success, data }` envelope either way — see its docblock.
     { provide: APP_INTERCEPTOR, useClass: ResponseContractInterceptor },
   ],
 })

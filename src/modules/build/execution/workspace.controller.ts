@@ -98,11 +98,12 @@ export class MilestonesController {
   @ResponseSchema(milestoneRowSchema)
   @Validate({ params: projectAndMilestoneIdParams, body: updateMilestoneSchema })
   updateMilestone(
+    @Param("projectId", ParseIntPipe) projectId: number,
     @Param("milestoneId", ParseIntPipe) milestoneId: number,
     @Body() body: UpdateMilestoneInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.milestones.updateMilestone(u.orgId, milestoneId, body);
+    return this.milestones.updateMilestone(u.orgId, projectId, milestoneId, body);
   }
 
   @Delete(":milestoneId")
@@ -111,10 +112,11 @@ export class MilestonesController {
   @NoContentResponse()
   @Validate({ params: projectAndMilestoneIdParams })
   deleteMilestone(
+    @Param("projectId", ParseIntPipe) projectId: number,
     @Param("milestoneId", ParseIntPipe) milestoneId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.milestones.deleteMilestone(u.orgId, milestoneId);
+    return this.milestones.deleteMilestone(u.orgId, projectId, milestoneId);
   }
 }
 
@@ -154,11 +156,12 @@ export class IntakeController {
   @ResponseSchema(intakeItemSchema)
   @Validate({ params: projectAndRequestIdParams, body: updateIntakeSchema })
   updateIntake(
+    @Param("projectId", ParseIntPipe) projectId: number,
     @Param("requestId", ParseIntPipe) requestId: number,
     @Body() body: UpdateIntakeInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.intake.updateIntake(u.orgId, u.userId, requestId, body);
+    return this.intake.updateIntake(u.orgId, u.userId, projectId, requestId, body);
   }
 }
 
@@ -197,11 +200,12 @@ export class ViewsController {
   @ResponseSchema(viewRowSchema)
   @Validate({ params: projectAndViewIdParams, body: updateViewSchema })
   updateView(
+    @Param("projectId", ParseIntPipe) projectId: number,
     @Param("viewId", ParseIntPipe) viewId: number,
     @Body() body: UpdateViewInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.views.updateView(u.orgId, u.userId, viewId, body);
+    return this.views.updateView(u.orgId, u.userId, projectId, viewId, body);
   }
 
   @Delete(":viewId")
@@ -210,10 +214,11 @@ export class ViewsController {
   @NoContentResponse()
   @Validate({ params: projectAndViewIdParams })
   deleteView(
+    @Param("projectId", ParseIntPipe) projectId: number,
     @Param("viewId", ParseIntPipe) viewId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.views.deleteView(u.orgId, u.userId, viewId);
+    return this.views.deleteView(u.orgId, u.userId, projectId, viewId);
   }
 }
 

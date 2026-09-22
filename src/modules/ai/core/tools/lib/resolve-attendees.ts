@@ -1,6 +1,6 @@
 import { resolvePeopleByName } from "../../../../directory/person-seam";
 import type { Db } from "../../../../../db/drizzle.module";
-import type { AmbiguousCandidate } from "../../registry/ask-os-tool.types";
+import type { AmbiguousCandidate } from "../../../../../common/types/ambiguous-candidate";
 
 export type AttendeeResolution = {
   resolved: string[];

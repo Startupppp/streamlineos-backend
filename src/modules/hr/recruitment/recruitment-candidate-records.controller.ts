@@ -49,6 +49,7 @@ import { resumeParseRequestSchema } from "./dto/candidate-ai.schemas";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import { Validate } from "../../../common/validation/validate.decorator";
+import { NoTenantTransaction } from "../../../common/tenant/no-tenant-transaction.decorator";
 import { z } from "zod";
 import { ApiOkResponse } from "@nestjs/swagger";
 import { BodylessAction, MultipartAction, NoContentResponse, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
@@ -88,6 +89,7 @@ export class RecruitmentCandidateRecordsController {
   @ResponseSchema(aiScoreResultSchema)
   @RequirePermission("hr:employees:manage")
   @Validate({ params: candidateIdParams })
+  @NoTenantTransaction()
   aiScore(
     @Param("candidateId", ParseIntPipe) candidateId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -100,6 +102,7 @@ export class RecruitmentCandidateRecordsController {
   @ResponseSchema(compositeScoreResultSchema)
   @RequirePermission("hr:employees:manage")
   @Validate({ params: candidateIdParams })
+  @NoTenantTransaction()
   compositeScore(
     @Param("candidateId", ParseIntPipe) candidateId: number,
     @CurrentUser() u: CurrentUserContext,
@@ -115,6 +118,7 @@ export class RecruitmentCandidateRecordsController {
   @UseInterceptors(
     FileInterceptor("file", { limits: { fileSize: 10 * 1024 * 1024 } }),
   )
+  @NoTenantTransaction()
   resumeParse(
     @Param("candidateId", ParseIntPipe) candidateId: number,
     @UploadedFile() file: Express.Multer.File | undefined,

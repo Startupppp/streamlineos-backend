@@ -14,7 +14,10 @@ import type { NormalizerConnectionMeta } from "../../mail/providers/mail-normali
 import { GmailMailProvider } from "../../mail/providers/gmail-mail.provider";
 import { OutlookMailProvider } from "../../mail/providers/outlook-mail.provider";
 import { InboundIngressService } from "../inbound-ingress.service";
-import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
+import {
+  runInNewTenantTransaction,
+  runInTenantTransaction,
+} from "../../../common/tenant/run-in-tenant-transaction";
 import { logger } from "../../../common/logger/logger.service";
 import {
   mailToInboundEvent,
@@ -64,26 +67,41 @@ export class CrmMailboxService {
     const provider = parsed.provider;
     if (!address || (provider !== "gmail" && provider !== "outlook")) return;
 
-    const [row] = await this.db
-      .select({
-        crmMailboxSyncId: crmMailboxSync.crmMailboxSyncId,
-        organizationId: crmMailboxSync.organizationId,
-        provider: crmMailboxSync.provider,
-        mailboxAddress: crmMailboxSync.mailboxAddress,
-        pushSecret: crmMailboxSync.pushSecret,
-        enabled: crmMailboxSync.enabled,
-      })
-      .from(crmMailboxSync)
-      .where(
-        and(
-          eq(crmMailboxSync.provider, provider),
-          eq(crmMailboxSync.mailboxAddress, address),
-          eq(crmMailboxSync.enabled, true),
-        ),
-      )
-      .limit(1);
+    const orgRows = await this.db.execute(
+      sql`SELECT app.resolve_crm_mailbox_sync_org_id(${provider}, ${address}) AS org_id`,
+    );
+    const organizationId = orgRows[0]?.org_id
+      ? String(orgRows[0].org_id)
+      : null;
+    if (!organizationId) return;
 
-    const verdict = resolvePush(rawBody, signature, row ?? null);
+    const row = await runInNewTenantTransaction(
+      this.db,
+      organizationId,
+      async (tx) => {
+        const rows = await tx
+          .select({
+            enabled: crmMailboxSync.enabled,
+            provider: crmMailboxSync.provider,
+            pushSecret: crmMailboxSync.pushSecret,
+            mailboxAddress: crmMailboxSync.mailboxAddress,
+            organizationId: crmMailboxSync.organizationId,
+            crmMailboxSyncId: crmMailboxSync.crmMailboxSyncId,
+          })
+          .from(crmMailboxSync)
+          .where(
+            and(
+              eq(crmMailboxSync.provider, provider),
+              eq(crmMailboxSync.mailboxAddress, address),
+              eq(crmMailboxSync.enabled, true),
+            ),
+          )
+          .limit(1);
+        return rows[0] ?? null;
+      },
+    );
+
+    const verdict = resolvePush(rawBody, signature, row);
     if (!verdict.ok) return;
 
     await this.sync(verdict.organizationId, verdict.crmMailboxSyncId);
@@ -200,7 +218,6 @@ export class CrmMailboxService {
       () => this.prepareSweep(organizationId, crmMailboxSyncId),
       { orgId: organizationId },
     );
-    console.error("PREPARED", JSON.stringify(prepared));
     if (prepared.step !== "fetch") return prepared.outcome;
 
     const { row, connection, plan } = prepared;
@@ -219,7 +236,6 @@ export class CrmMailboxService {
       );
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      console.error("SWEEP_ERR", error);
       logger.warn("crm mailbox sweep failed", {
         organizationId,
         crmMailboxSyncId,

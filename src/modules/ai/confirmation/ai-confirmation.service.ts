@@ -20,10 +20,24 @@ import {
   parseProposedPayload,
 } from "../core/confirm-actions/confirmable-action.types";
 import {
+  markProposalDeclined,
   markProposalExecuted,
   type ProposalLifecycleDeps,
 } from "./lib/proposal-lifecycle";
-import { boundedIdempotencyKey, computeHmac, DEFAULT_TTL, derivedIdempotencyKey, getSecret, MAX_TTL, mintProposalToken, stableHash, type ConfirmInput, type ConfirmResult, type ProposeInput, type ProposeResult } from "./ai-confirmation.helpers";
+import {
+  boundedIdempotencyKey,
+  computeHmac,
+  DEFAULT_TTL,
+  derivedIdempotencyKey,
+  getSecret,
+  MAX_TTL,
+  mintProposalToken,
+  stableHash,
+  type ConfirmInput,
+  type ConfirmResult,
+  type ProposeInput,
+  type ProposeResult,
+} from "./ai-confirmation.helpers";
 
 type ProposalRow = typeof aiActionProposals.$inferSelect;
 
@@ -31,13 +45,6 @@ function isLiveProposal(row: ProposalRow): boolean {
   return row.status === "PROPOSED" && row.expiresAt > new Date();
 }
 
-/**
- * The token protocol for AI-proposed actions: `propose` mints a token bound by
- * HMAC to the proposal, org, user, action, payload hash and expiry, and
- * `confirm` is the only place one is ever verified. What happens to a proposal
- * afterwards (execution bookkeeping) never touches a token and lives in
- * `lib/proposal-lifecycle.ts`.
- */
 @Injectable()
 export class AiConfirmationService implements OnModuleInit {
   constructor(
@@ -49,7 +56,10 @@ export class AiConfirmationService implements OnModuleInit {
     assertProposeParsersRegistered();
   }
 
-  private async resolveMembershipId(orgId: string, userId: string): Promise<number | null> {
+  private async resolveMembershipId(
+    orgId: string,
+    userId: string,
+  ): Promise<number | null> {
     const rows = await runInTenantTransaction(
       this.db,
       (tx) =>
@@ -98,12 +108,24 @@ export class AiConfirmationService implements OnModuleInit {
 
     const idempotencyKey = input.idempotencyKey
       ? boundedIdempotencyKey(input.idempotencyKey)
-      : derivedIdempotencyKey(input.orgId, input.userId, input.action, payloadHash);
+      : derivedIdempotencyKey(
+          input.orgId,
+          input.userId,
+          input.action,
+          payloadHash,
+        );
 
-    const existing = await this.findByIdempotencyKey(input.orgId, idempotencyKey);
-    if (existing && isLiveProposal(existing)) return mintProposalToken(existing);
+    const existing = await this.findByIdempotencyKey(
+      input.orgId,
+      idempotencyKey,
+    );
+    if (existing && isLiveProposal(existing))
+      return mintProposalToken(existing);
 
-    const userMembershipId = await this.resolveMembershipId(input.orgId, input.userId);
+    const userMembershipId = await this.resolveMembershipId(
+      input.orgId,
+      input.userId,
+    );
 
     const inserted = await runInTenantTransaction(
       this.db,
@@ -174,7 +196,8 @@ export class AiConfirmationService implements OnModuleInit {
 
   async confirm(input: ConfirmInput): Promise<ConfirmResult> {
     const parts = input.token.split(".");
-    if (parts.length !== 3) throw new ForbiddenException("Invalid token format");
+    if (parts.length !== 3)
+      throw new ForbiddenException("Invalid token format");
 
     const [idStr, epochStr, providedHmac] = parts;
     const proposalId = parseInt(idStr ?? "", 10);
@@ -184,91 +207,116 @@ export class AiConfirmationService implements OnModuleInit {
       throw new ForbiddenException("Invalid token format");
     }
 
-    return runInTenantTransaction(this.db, async (tx) => {
-      const rows = await tx
-        .select()
-        .from(aiActionProposals)
-        .where(and(eq(aiActionProposals.id, proposalId), eq(aiActionProposals.orgId, input.actor.orgId)))
-        .for("update")
-        .limit(1);
+    return runInTenantTransaction(
+      this.db,
+      async (tx) => {
+        const rows = await tx
+          .select()
+          .from(aiActionProposals)
+          .where(
+            and(
+              eq(aiActionProposals.id, proposalId),
+              eq(aiActionProposals.orgId, input.actor.orgId),
+            ),
+          )
+          .for("update")
+          .limit(1);
 
-      const row = rows[0];
-      if (!row) throw new NotFoundException("Proposal not found");
+        const row = rows[0];
+        if (!row) throw new NotFoundException("Proposal not found");
 
-      if (row.orgId !== input.actor.orgId || row.userId !== input.actor.userId) {
-        throw new NotFoundException("Proposal not found");
-      }
-
-      if (row.status === "CONFIRMED" || row.status === "EXECUTED") {
-        throw new ConflictException("Proposal already confirmed or executed");
-      }
-
-      if (row.status === "CANCELLED") {
-        throw new BadRequestException("Proposal was cancelled");
-      }
-
-      const now = new Date();
-      if (row.status === "EXPIRED" || now > row.expiresAt) {
-        if (row.status === "PROPOSED") {
-          await tx
-            .update(aiActionProposals)
-            .set({ status: "EXPIRED", updatedAt: now })
-            .where(
-              and(
-                eq(aiActionProposals.id, proposalId),
-                eq(aiActionProposals.orgId, input.actor.orgId),
-                eq(aiActionProposals.status, "PROPOSED"),
-              ),
-            );
+        if (
+          row.orgId !== input.actor.orgId ||
+          row.userId !== input.actor.userId
+        ) {
+          throw new NotFoundException("Proposal not found");
         }
-        throw new BadRequestException("Proposal has expired");
-      }
 
-      if (stableHash(row.payload ?? {}) !== row.payloadHash) {
-        throw new ForbiddenException("Proposal payload does not match its signature");
-      }
+        if (row.status === "CONFIRMED" || row.status === "EXECUTED") {
+          throw new ConflictException("Proposal already confirmed or executed");
+        }
 
-      const secret = getSecret();
-      const expectedHmac = computeHmac(secret, row.id, row.orgId, row.userId, row.action, row.payloadHash, expiresAtEpoch);
+        if (row.status === "CANCELLED") {
+          throw new BadRequestException("Proposal was cancelled");
+        }
 
-      const expected = Buffer.from(expectedHmac, "hex");
-      const provided = Buffer.from(providedHmac, "hex");
+        const now = new Date();
+        if (row.status === "EXPIRED" || now > row.expiresAt) {
+          if (row.status === "PROPOSED") {
+            await tx
+              .update(aiActionProposals)
+              .set({ status: "EXPIRED", updatedAt: now })
+              .where(
+                and(
+                  eq(aiActionProposals.id, proposalId),
+                  eq(aiActionProposals.orgId, input.actor.orgId),
+                  eq(aiActionProposals.status, "PROPOSED"),
+                ),
+              );
+          }
+          throw new BadRequestException("Proposal has expired");
+        }
 
-      if (expected.length !== provided.length || !timingSafeEqual(expected, provided)) {
-        throw new ForbiddenException("Token signature mismatch");
-      }
+        if (stableHash(row.payload ?? {}) !== row.payloadHash) {
+          throw new ForbiddenException(
+            "Proposal payload does not match its signature",
+          );
+        }
 
-      const redeemed = await tx
-        .update(aiActionProposals)
-        .set({ status: "CONFIRMED", updatedAt: now })
-        .where(
-          and(
-            eq(aiActionProposals.id, proposalId),
-            eq(aiActionProposals.orgId, input.actor.orgId),
-            eq(aiActionProposals.status, "PROPOSED"),
-          ),
-        )
-        .returning({ id: aiActionProposals.id });
+        const secret = getSecret();
+        const expectedHmac = computeHmac(
+          secret,
+          row.id,
+          row.orgId,
+          row.userId,
+          row.action,
+          row.payloadHash,
+          expiresAtEpoch,
+        );
 
-      if (redeemed.length !== 1) {
-        throw new ConflictException("Proposal already confirmed or executed");
-      }
+        const expected = Buffer.from(expectedHmac, "hex");
+        const provided = Buffer.from(providedHmac, "hex");
 
-      this.audit.log({
-        action: "ai.proposal.confirmed",
-        userId: row.userId,
-        orgId: row.orgId,
-        resourceType: "ai_action_proposal",
-        resourceId: String(row.id),
-        metadata: { action: row.action },
-      });
+        if (
+          expected.length !== provided.length ||
+          !timingSafeEqual(expected, provided)
+        ) {
+          throw new ForbiddenException("Token signature mismatch");
+        }
 
-      return {
-        proposalId: row.id,
-        action: row.action,
-        payload: row.payload ?? {},
-      };
-    }, { orgId: input.actor.orgId });
+        const redeemed = await tx
+          .update(aiActionProposals)
+          .set({ status: "CONFIRMED", updatedAt: now })
+          .where(
+            and(
+              eq(aiActionProposals.id, proposalId),
+              eq(aiActionProposals.orgId, input.actor.orgId),
+              eq(aiActionProposals.status, "PROPOSED"),
+            ),
+          )
+          .returning({ id: aiActionProposals.id });
+
+        if (redeemed.length !== 1) {
+          throw new ConflictException("Proposal already confirmed or executed");
+        }
+
+        this.audit.log({
+          action: "ai.proposal.confirmed",
+          userId: row.userId,
+          orgId: row.orgId,
+          resourceType: "ai_action_proposal",
+          resourceId: String(row.id),
+          metadata: { action: row.action },
+        });
+
+        return {
+          proposalId: row.id,
+          action: row.action,
+          payload: row.payload ?? {},
+        };
+      },
+      { orgId: input.actor.orgId },
+    );
   }
 
   private get lifecycleDeps(): ProposalLifecycleDeps {
@@ -281,5 +329,13 @@ export class AiConfirmationService implements OnModuleInit {
     orgId: string,
   ): Promise<void> {
     return markProposalExecuted(this.lifecycleDeps, proposalId, result, orgId);
+  }
+
+  async decline(
+    proposalId: number,
+    orgId: string,
+    userId: string,
+  ): Promise<void> {
+    return markProposalDeclined(this.lifecycleDeps, proposalId, orgId, userId);
   }
 }

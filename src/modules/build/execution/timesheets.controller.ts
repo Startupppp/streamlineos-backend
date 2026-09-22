@@ -186,10 +186,11 @@ export class TicketTimeEntriesController {
   @ResponseSchema(timesheetRowSchema)
   @Validate({ params: projectAndTicketIdParams, body: logTimeSchema })
   logTicketTime(
+    @Param("projectId", ParseIntPipe) projectId: number,
     @Param("ticketId", ParseIntPipe) ticketId: number,
     @Body() body: LogTimeInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.timesheets.logTicketTime(u, ticketId, body);
+    return this.timesheets.logTicketTime(u, projectId, ticketId, body);
   }
 }

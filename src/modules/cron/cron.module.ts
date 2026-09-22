@@ -22,6 +22,7 @@ import { NotificationsModule } from "../notifications/notifications.module";
 import { OwnershipModule } from "../ownership/ownership.module";
 import { HrAutomationsModule } from "../hr/automations/hr-automations.module";
 import { HrTimeModule } from "../hr/time/hr-time.module";
+import { HrHelpdeskModule } from "../hr/helpdesk/hr-helpdesk.module";
 import { HrWorkflowsModule } from "../hr/workflows/hr-workflows.module";
 import { HrCoreModule } from "../hr/core/hr-core.module";
 import { HrLifecycleModule } from "../hr/lifecycle/hr-lifecycle.module";
@@ -126,6 +127,7 @@ import { CronPlatformRetentionController } from "./cron-platform-retention.contr
     OwnershipModule,
     HrAutomationsModule,
     HrTimeModule,
+    HrHelpdeskModule,
     HrWorkflowsModule,
     HrCoreModule,
     HrLifecycleModule,

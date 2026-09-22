@@ -171,6 +171,14 @@ export function assertResolvableActionServices(
       unresolved.push(`${definition.action}: ${reason}`);
     }
   }
+  if (definitions.some((definition) => definition.external !== undefined)) {
+    try {
+      moduleRef.get(ExternalEffectLedger, { strict: false });
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+      unresolved.push(`ExternalEffectLedger (required by external-effect actions): ${reason}`);
+    }
+  }
   if (unresolved.length > 0) {
     throw new Error(
       `Confirmable actions cannot resolve their services: ${unresolved.join("; ")}`,

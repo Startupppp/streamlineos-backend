@@ -1,10 +1,17 @@
 import { upsertCanonicalSensitiveFields } from "./sync-canonical-sensitive-fields";
 
+type SelectBuilder = {
+  from: jest.Mock;
+  innerJoin: jest.Mock;
+  where: jest.Mock;
+  limit: jest.Mock;
+};
+
 function makeDb(employments: { id: number }[]) {
   const onConflictDoUpdate = jest.fn().mockResolvedValue(undefined);
   const values = jest.fn(() => ({ onConflictDoUpdate }));
   const insert = jest.fn(() => ({ values }));
-  const builder = {
+  const builder: SelectBuilder = {
     from: jest.fn(() => builder),
     innerJoin: jest.fn(() => builder),
     where: jest.fn(() => builder),

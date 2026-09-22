@@ -52,7 +52,7 @@ export class PeriodsService {
   }
 
   async submitPeriod(u: CurrentUserContext, periodId: number) {
-    const period = await this.submit.submitPeriod(u, periodId);
+    const { notifyUserIds, ...period } = await this.submit.submitPeriod(u, periodId);
 
     /**
      * TS-24. The approver hears about it, through the existing notification
@@ -63,37 +63,26 @@ export class PeriodsService {
      * the committed result. `emit` writes its intent onto the request's
      * transaction and drains it via `registerAfterCommit`, so it drains on the
      * same commit either way.
-     *
-     * Silent when there is no approver. The approver is the manager of the
-     * period's main project, which is null for a period with no project work
-     * on it, and there is no honest fallback: broadcasting an unrouted
-     * timesheet to every manager is worse than the approvals queue being the
-     * only place it shows up.
      */
-    const approverMembershipId = period.currentApproverMembershipId;
-    if (approverMembershipId !== null) {
-      const approvers = await membershipUserIds(this.db, u.orgId, [approverMembershipId]);
-      const approverUserId = approvers.get(approverMembershipId);
-      if (approverUserId) {
-        const workerName = ("user" in period && period.user?.name) || "A team member";
-        await this.notifications.emit({
-          orgId: u.orgId,
-          eventKey: "timesheets.period.submitted",
-          actorUserId: u.userId,
-          targetUserIds: [approverUserId],
-          entityType: "timesheet_period",
-          entityId: String(periodId),
-          title: `Timesheet submitted: ${period.periodStart} to ${period.periodEnd}`,
-          message: `${workerName} submitted their timesheet for ${period.periodStart}–${period.periodEnd} (${period.totalHours}h) and it is waiting for your approval.`,
-          link: `/timesheets/approvals?period=${periodId}`,
-          variables: {
-            periodId,
-            periodStart: period.periodStart,
-            periodEnd: period.periodEnd,
-            totalHours: period.totalHours,
-          },
-        });
-      }
+    if (notifyUserIds.length > 0 && period.status === "SUBMITTED") {
+      const workerName = ("user" in period && period.user?.name) || "A team member";
+      await this.notifications.emit({
+        orgId: u.orgId,
+        eventKey: "timesheets.period.submitted",
+        actorUserId: u.userId,
+        targetUserIds: notifyUserIds,
+        entityType: "timesheet_period",
+        entityId: String(periodId),
+        title: `Timesheet submitted: ${period.periodStart} to ${period.periodEnd}`,
+        message: `${workerName} submitted their timesheet for ${period.periodStart}–${period.periodEnd} (${period.totalHours}h) and it is waiting for your approval. ${period.approvalRoute?.explanation ?? ""}`.trim(),
+        link: `/timesheets/approvals?period=${periodId}`,
+        variables: {
+          periodId,
+          periodStart: period.periodStart,
+          periodEnd: period.periodEnd,
+          totalHours: period.totalHours,
+        },
+      });
     }
 
     return period;
@@ -176,7 +165,15 @@ export class PeriodsService {
 
     await this.db.transaction(async (tx) => {
       await tx.update(timesheetPeriods)
-        .set({ status: "DRAFT", submittedAt: null, updatedAt: new Date() })
+        .set({
+          status: "DRAFT",
+          submittedAt: null,
+          currentApproverMembershipId: null,
+          approvalRoute: null,
+          approvalDueAt: null,
+          approvalEscalatedAt: null,
+          updatedAt: new Date(),
+        })
         .where(and(eq(timesheetPeriods.id, periodId), eq(timesheetPeriods.orgId, u.orgId)));
 
       await tx.update(timesheets)
@@ -203,7 +200,17 @@ export class PeriodsService {
 
     await this.db.transaction(async (tx) => {
       await tx.update(timesheetPeriods)
-        .set({ status: "DRAFT", lockedAt: null, approvedAt: null, approvedByMembershipId: null, updatedAt: new Date() })
+        .set({
+          status: "DRAFT",
+          lockedAt: null,
+          approvedAt: null,
+          approvedByMembershipId: null,
+          currentApproverMembershipId: null,
+          approvalRoute: null,
+          approvalDueAt: null,
+          approvalEscalatedAt: null,
+          updatedAt: new Date(),
+        })
         .where(and(eq(timesheetPeriods.id, periodId), eq(timesheetPeriods.orgId, u.orgId)));
 
       await tx.update(timesheets)

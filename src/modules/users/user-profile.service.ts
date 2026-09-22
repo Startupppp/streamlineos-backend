@@ -22,11 +22,11 @@ import type {
 import { syncOrgUnitPlacement } from "../../common/org/sync-org-unit-placement";
 import { SessionsService } from "../sessions/sessions.service";
 import { EmploymentFactsService } from "../directory/employment-facts.service";
+import { ReportingLineService } from "../directory/reporting-line.service";
 import {
   syncCanonicalEmploymentFields,
   type CanonicalEmploymentPatch,
 } from "../../common/hr/sync-canonical-employment-fields";
-import { syncCanonicalReportingLine } from "../../common/hr/sync-canonical-reporting-line";
 import { UserActivityService } from "./user-activity.service";
 import {
   getLoginHistory,
@@ -61,6 +61,7 @@ export class UserProfileService {
     private readonly sessions: SessionsService,
     private readonly employment: EmploymentFactsService,
     private readonly activity: UserActivityService,
+    private readonly reportingLines: ReportingLineService,
   ) {}
 
   private async assertMember(orgId: string, userId: string): Promise<void> {
@@ -166,18 +167,8 @@ export class UserProfileService {
     await this.assertMember(orgId, userId);
 
     if (data.managerUserId) {
-      const manager = await this.db.query.organizationMembers.findFirst({
-        where: and(
-          eq(organizationMembers.orgId, orgId),
-          eq(organizationMembers.userId, data.managerUserId),
-          eq(organizationMembers.status, "ACTIVE"),
-        ),
-        columns: { userId: true },
-      });
-      if (!manager)
-        throw new BadRequestException(
-          "Manager must be an active member of this organization",
-        );
+      const check = await this.reportingLines.checkManagerAssignment(orgId, userId, data.managerUserId);
+      if (!check.ok) throw new BadRequestException(check.message);
     }
 
     await this.db.transaction(async (tx) => {
@@ -189,13 +180,13 @@ export class UserProfileService {
         await syncCanonicalEmploymentFields(tx, orgId, userId, employmentPatch);
 
       if (data.managerUserId !== undefined)
-        await syncCanonicalReportingLine(
-          tx,
+        await this.reportingLines.assign(
           orgId,
           userId,
           data.managerUserId,
           new Date().toISOString().slice(0, 10),
           actorUserId,
+          tx,
         );
 
       await syncOrgUnitPlacement(tx, orgId, userId, {

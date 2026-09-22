@@ -41,7 +41,7 @@ import type {
   AcceptInvitationInput,
   DeclineInvitationInput,
 } from "./dto/organization.schemas";
-import { lockPendingInvitation, requireActiveOrg } from "./invitations.helpers";
+import { invitationTransition, lockPendingInvitation, requireActiveOrg } from "./invitations.helpers";
 import {
   admissionFailure,
   canonicalAdmissionEmail,
@@ -119,22 +119,14 @@ export class InvitationAcceptanceService {
     orgId: string,
     membershipId: number,
   ): Promise<void> {
-    const claimedRows = await tx
-      .update(invitations)
-      .set({
-        acceptedAt: new Date(),
-        status: "ACCEPTED",
-        acceptedMembershipId: membershipId,
-      })
-      .where(
-        and(
-          eq(invitations.id, invitationId),
-          eq(invitations.status, "PENDING"),
-          isNull(invitations.acceptedAt),
-        ),
-      )
-      .returning({ id: invitations.id });
-    if (claimedRows.length === 0)
+    const claimed = await invitationTransition(tx, {
+      invitationId,
+      orgId: null,
+      from: "PENDING",
+      to: "ACCEPTED",
+      patch: { acceptedAt: new Date(), acceptedMembershipId: membershipId },
+    });
+    if (!claimed)
       throw new NotFoundException("Invalid or expired invitation");
     await tx.insert(invitationEvents).values({
       orgId,

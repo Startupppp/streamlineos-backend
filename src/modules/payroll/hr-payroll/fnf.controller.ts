@@ -85,7 +85,7 @@ export class HrPayrollFnfController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     const result = await this.fnf.updateFnf(u.orgId, u.userId, fnfId, body);
-    if (!result.ok) throw new NotFoundException("F&F settlement not found.");
+    if (!result.ok) throw new NotFoundException("Final settlement not found.");
     return result.record;
   }
 }

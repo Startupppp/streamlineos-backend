@@ -1,6 +1,7 @@
 import { z } from "zod";
 import {
   timesheetApprovalModeEnum,
+  timesheetApproverSourceEnum,
   timesheetBillingTypeEnum,
   timesheetBudgetStatusEnum,
   timesheetBudgetTypeEnum,
@@ -41,6 +42,8 @@ export const timesheetBudgetStatusSchema = z.enum(timesheetBudgetStatusEnum.enum
 export const timesheetBudgetTypeSchema = z.enum(timesheetBudgetTypeEnum.enumValues);
 export const timesheetRoundingRuleSchema = z.enum(timesheetRoundingRuleEnum.enumValues);
 export const timesheetApprovalModeSchema = z.enum(timesheetApprovalModeEnum.enumValues);
+export const timesheetConfigurableApprovalModeSchema = timesheetApprovalModeSchema.exclude(["MULTI_LEVEL"]);
+export const timesheetApproverSourceSchema = z.enum(timesheetApproverSourceEnum.enumValues);
 export const timesheetPayPeriodSchema = z.enum(timesheetPayPeriodEnum.enumValues);
 
 /**

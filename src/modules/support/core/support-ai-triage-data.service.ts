@@ -14,6 +14,7 @@ import { AiGatewayService } from "../../ai/core/gateway/ai-gateway.service";
 import { OrgFeaturesService } from "../../ai/core/services/org-features.service";
 import { KbAccessService } from "../../kb/core/kb-access.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
 
 const KB_SIMILARITY_THRESHOLD = 0.2;
 const SUPPORT_KB_SEARCH_FEATURE = "support.kb-search";
@@ -113,9 +114,18 @@ export class SupportAiTriageDataService {
     query: string,
   ): Promise<KbSource[]> {
     if (!this.aiGateway.isEmbeddingConfigured()) return [];
-    const accessibleSpaceIds = await this.kbAccess.getAccessibleSpaceIds(user);
-    if (accessibleSpaceIds.length === 0) return [];
-    const principal = await this.kbAccess.getPrincipalIds(user);
+    const scope = await runInTenantTransaction(
+      this.db,
+      async () => {
+        const accessibleSpaceIds =
+          await this.kbAccess.getAccessibleSpaceIds(user);
+        if (accessibleSpaceIds.length === 0) return null;
+        const principal = await this.kbAccess.getPrincipalIds(user);
+        return { accessibleSpaceIds, principal };
+      },
+      { orgId: user.orgId },
+    );
+    if (!scope) return [];
     const embedResult = await this.aiGateway.embedQueryWithCredit({
       text: query,
       orgId: user.orgId,
@@ -124,50 +134,61 @@ export class SupportAiTriageDataService {
     });
     if (!embedResult.ok) return [];
     const vector = embedResult.vectorLiteral;
-    const distance = sql`${kbArticleChunks.embedding} <=> ${vector}::vector`;
-    const kar = kbArticleRestrictions;
-    const restrictionFilter = sql`(
-      NOT EXISTS (
-        SELECT 1 FROM ${kar}
-        WHERE ${kar.articleId} = ${kbArticles.id}
-          AND ${kar.orgId} = ${user.orgId}
-          AND ${kar.level} = 'view'
-      )
-      OR EXISTS (
-        SELECT 1 FROM ${kar}
-        WHERE ${kar.articleId} = ${kbArticles.id}
-          AND ${kar.orgId} = ${user.orgId}
-          AND ${kar.level} = 'view'
-          AND (${principal.membershipId !== null ? sql`${kar.membershipId} = ${principal.membershipId} OR ` : sql``}${
-            principal.roleSlugs.length > 0
-              ? sql`${kar.role} = ANY(${principal.roleSlugs})`
-              : sql`false`
+    const results = await runInTenantTransaction(
+      this.db,
+      async () => {
+        const distance = sql`${kbArticleChunks.embedding} <=> ${vector}::vector`;
+        const kar = kbArticleRestrictions;
+        const restrictionFilter = sql`(
+          NOT EXISTS (
+            SELECT 1 FROM ${kar}
+            WHERE ${kar.articleId} = ${kbArticles.id}
+              AND ${kar.orgId} = ${user.orgId}
+              AND ${kar.level} = 'view'
+          )
+          OR EXISTS (
+            SELECT 1 FROM ${kar}
+            WHERE ${kar.articleId} = ${kbArticles.id}
+              AND ${kar.orgId} = ${user.orgId}
+              AND ${kar.level} = 'view'
+              AND (${scope.principal.membershipId !== null ? sql`${kar.membershipId} = ${scope.principal.membershipId} OR ` : sql``}${
+                scope.principal.roleSlugs.length > 0
+                  ? sql`${kar.role} = ANY(${scope.principal.roleSlugs})`
+                  : sql`false`
+              })
+          )
+        )`;
+        return this.db
+          .select({
+            articleId: kbArticles.id,
+            title: kbArticles.title,
+            slug: kbArticles.slug,
+            similarity: sql<number>`(1 - (${distance}))::float8`,
           })
-      )
-    )`;
-    const results = await this.db
-      .select({
-        articleId: kbArticles.id,
-        title: kbArticles.title,
-        slug: kbArticles.slug,
-        similarity: sql<number>`(1 - (${distance}))::float8`,
-      })
-      .from(kbArticleChunks)
-      .innerJoin(kbArticles, eq(kbArticles.id, kbArticleChunks.articleId))
-      .innerJoin(
-        kbSpaces,
-        and(eq(kbSpaces.id, kbArticles.spaceId), isNull(kbSpaces.deletedAt)),
-      )
-      .where(
-        and(
-          eq(kbArticleChunks.orgId, user.orgId),
-          eq(kbArticles.status, "published"),
-          inArray(kbArticles.spaceId, accessibleSpaceIds),
-          restrictionFilter,
-        ),
-      )
-      .orderBy(distance)
-      .limit(12);
+          .from(kbArticleChunks)
+          .innerJoin(kbArticles, eq(kbArticles.id, kbArticleChunks.articleId))
+          .innerJoin(
+            kbSpaces,
+            and(
+              eq(kbSpaces.id, kbArticles.spaceId),
+              isNull(kbSpaces.deletedAt),
+            ),
+          )
+          .where(
+            and(
+              eq(kbArticleChunks.orgId, user.orgId),
+              eq(kbArticles.orgId, user.orgId),
+              eq(kbSpaces.orgId, user.orgId),
+              eq(kbArticles.status, "published"),
+              inArray(kbArticles.spaceId, scope.accessibleSpaceIds),
+              restrictionFilter,
+            ),
+          )
+          .orderBy(distance)
+          .limit(12);
+      },
+      { orgId: user.orgId },
+    );
     const seen = new Set<number>();
     return results
       .filter((r) => r.similarity >= KB_SIMILARITY_THRESHOLD)

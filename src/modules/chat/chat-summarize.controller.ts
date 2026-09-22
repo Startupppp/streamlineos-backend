@@ -20,6 +20,7 @@ import { ChatSummarizeService } from "./chat-summarize.service";
 import { BodylessAction, ResponseSchema } from "../../common/openapi/zod-operation-contracts";
 import { chatSummarizeResponseSchema } from "./dto/chat-misc-response.schemas";
 import { Idempotent } from "../../common/idempotency/idempotent.decorator";
+import { NoTenantTransaction } from "../../common/tenant/no-tenant-transaction.decorator";
 
 const channelIdParams = z.object({ channelId: z.coerce.number().int().positive() }).strict();
 
@@ -44,6 +45,7 @@ export class ChatSummarizeController {
   @BodylessAction()
   @HttpCode(HttpStatus.OK)
   @Validate({ params: channelIdParams })
+  @NoTenantTransaction()
   summarize(
     @Param("channelId", ParseIntPipe) channelId: number,
     @CurrentUser() u: CurrentUserContext,

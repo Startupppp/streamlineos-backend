@@ -7,11 +7,12 @@ import { OutboxWriter } from "../../../common/outbox/outbox-writer";
 import {
   projectReleases,
   releaseTickets,
-  projects,
   tickets,
 } from "../../../db/schema";
 import type { CreateReleaseInput, UpdateReleaseInput } from "./dto/releases.schemas";
-import { assertProjectInOrg } from "./project-access";
+import { assertProjectAccess } from "./project-access";
+import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { AccessService } from "../../access/access.service";
 
 type ReleaseRow = typeof projectReleases.$inferSelect;
 
@@ -21,10 +22,14 @@ export function releaseRowWithCount(row: ReleaseRow, ticketCount: number) {
 
 @Injectable()
 export class ProjectsReleasesService {
-  constructor(@Inject(DRIZZLE) private readonly db: Db) {}
+  constructor(
+    @Inject(DRIZZLE) private readonly db: Db,
+    private readonly access: AccessService,
+  ) {}
 
-  async listReleases(orgId: string, projectId: number) {
-    await assertProjectInOrg(this.db, orgId, projectId);
+  async listReleases(u: CurrentUserContext, projectId: number) {
+    await assertProjectAccess(this.db, this.access, u, projectId);
+    const orgId = u.orgId;
     const rows = await this.db
       .select({
         id: projectReleases.id,
@@ -50,28 +55,26 @@ export class ProjectsReleasesService {
     return rows;
   }
 
-  async createRelease(orgId: string, projectId: number, userId: string, data: CreateReleaseInput) {
-    const project = await this.db.query.projects.findFirst({
-      where: and(eq(projects.id, projectId), eq(projects.orgId, orgId), isNull(projects.deletedAt)),
-      columns: { id: true },
-    });
-    if (!project) throw new NotFoundException("Project not found");
-
+  async createRelease(u: CurrentUserContext, projectId: number, data: CreateReleaseInput) {
+    await assertProjectAccess(this.db, this.access, u, projectId);
+    const orgId = u.orgId;
     const [release] = await this.db.insert(projectReleases).values({
       orgId,
       projectId,
-      createdBy: userId,
+      createdBy: u.userId,
       ...data,
     }).returning();
     return releaseRowWithCount(release, 0);
   }
 
-  async updateRelease(orgId: string, releaseId: number, data: UpdateReleaseInput) {
+  async updateRelease(u: CurrentUserContext, projectId: number, releaseId: number, data: UpdateReleaseInput) {
+    await assertProjectAccess(this.db, this.access, u, projectId);
+    const orgId = u.orgId;
     const rows = await this.db.transaction(async (tx) => {
       const result = await tx
         .update(projectReleases)
         .set(data)
-        .where(and(eq(projectReleases.id, releaseId), eq(projectReleases.orgId, orgId), isNull(projectReleases.deletedAt)))
+        .where(and(eq(projectReleases.id, releaseId), eq(projectReleases.projectId, projectId), eq(projectReleases.orgId, orgId), isNull(projectReleases.deletedAt)))
         .returning();
       const row = result[0];
       if (row && data.status === "released") {
@@ -99,29 +102,33 @@ export class ProjectsReleasesService {
     const [counted] = await this.db
       .select({ ticketCount: sql<number>`CAST(COUNT(*) AS INT)` })
       .from(releaseTickets)
-      .where(eq(releaseTickets.releaseId, releaseId));
+      .where(and(eq(releaseTickets.releaseId, releaseId), eq(releaseTickets.orgId, orgId)));
     return releaseRowWithCount(updated, counted?.ticketCount ?? 0);
   }
 
-  async deleteRelease(orgId: string, releaseId: number) {
+  async deleteRelease(u: CurrentUserContext, projectId: number, releaseId: number) {
+    await assertProjectAccess(this.db, this.access, u, projectId);
+    const orgId = u.orgId;
     const [stamped] = await this.db
       .update(projectReleases)
       .set({ deletedAt: new Date() })
-      .where(and(eq(projectReleases.id, releaseId), eq(projectReleases.orgId, orgId), isNull(projectReleases.deletedAt)))
+      .where(and(eq(projectReleases.id, releaseId), eq(projectReleases.projectId, projectId), eq(projectReleases.orgId, orgId), isNull(projectReleases.deletedAt)))
       .returning({ id: projectReleases.id });
     if (!stamped) throw new NotFoundException("Release not found");
     return { success: true };
   }
 
-  async addTicketToRelease(orgId: string, releaseId: number, ticketId: number) {
+  async addTicketToRelease(u: CurrentUserContext, projectId: number, releaseId: number, ticketId: number) {
+    await assertProjectAccess(this.db, this.access, u, projectId);
+    const orgId = u.orgId;
     const release = await this.db.query.projectReleases.findFirst({
-      where: and(eq(projectReleases.id, releaseId), eq(projectReleases.orgId, orgId), isNull(projectReleases.deletedAt)),
+      where: and(eq(projectReleases.id, releaseId), eq(projectReleases.projectId, projectId), eq(projectReleases.orgId, orgId), isNull(projectReleases.deletedAt)),
       columns: { id: true },
     });
     if (!release) throw new NotFoundException("Release not found");
 
     const ticket = await this.db.query.tickets.findFirst({
-      where: and(eq(tickets.id, ticketId), eq(tickets.orgId, orgId), isNull(tickets.deletedAt)),
+      where: and(eq(tickets.id, ticketId), eq(tickets.projectId, projectId), eq(tickets.orgId, orgId), isNull(tickets.deletedAt)),
       columns: { id: true },
     });
     if (!ticket) throw new NotFoundException("Ticket not found");
@@ -130,15 +137,17 @@ export class ProjectsReleasesService {
     return { success: true };
   }
 
-  async removeTicketFromRelease(orgId: string, releaseId: number, ticketId: number) {
+  async removeTicketFromRelease(u: CurrentUserContext, projectId: number, releaseId: number, ticketId: number) {
+    await assertProjectAccess(this.db, this.access, u, projectId);
+    const orgId = u.orgId;
     const release = await this.db.query.projectReleases.findFirst({
-      where: and(eq(projectReleases.id, releaseId), eq(projectReleases.orgId, orgId), isNull(projectReleases.deletedAt)),
+      where: and(eq(projectReleases.id, releaseId), eq(projectReleases.projectId, projectId), eq(projectReleases.orgId, orgId), isNull(projectReleases.deletedAt)),
       columns: { id: true },
     });
     if (!release) throw new NotFoundException("Release not found");
 
     await this.db.delete(releaseTickets)
-      .where(and(eq(releaseTickets.releaseId, releaseId), eq(releaseTickets.ticketId, ticketId)));
+      .where(and(eq(releaseTickets.releaseId, releaseId), eq(releaseTickets.ticketId, ticketId), eq(releaseTickets.orgId, orgId)));
     return { success: true };
   }
 }

@@ -3,7 +3,6 @@ export {
   describeFailure,
   installProcessFailureHandlers,
   setFatalHandler,
-  resetFatalHandler,
   FATAL_EXIT_CODE,
 } from "./process-failure";
 export {

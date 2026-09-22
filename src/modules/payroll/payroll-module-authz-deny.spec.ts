@@ -9,6 +9,8 @@ import { PayrollEntitiesService } from "./entities/entities.service";
 import { PayrollJobsController } from "./jobs/jobs.controller";
 import { PayrollJobsService } from "./jobs/payroll-jobs.service";
 import { PayrollJobsWorkerService } from "./jobs/payroll-jobs-worker.service";
+import { PayrollReadinessController } from "./runs/readiness.controller";
+import { PayrollReadinessService } from "./runs/readiness.service";
 import { AccessService } from "../access/access.service";
 import { PermissionGuard } from "../access/permission.guard";
 import { JwtAuthGuard } from "../../common/auth/jwt-auth.guard";
@@ -47,12 +49,13 @@ const denyAll = {
 
 async function buildApp(): Promise<INestApplication> {
   const moduleRef: TestingModule = await Test.createTestingModule({
-    controllers: [AccountingMappingsController, PayrollEntitiesController, PayrollJobsController],
+    controllers: [AccountingMappingsController, PayrollEntitiesController, PayrollJobsController, PayrollReadinessController],
     providers: [
       { provide: AccountingMappingsService, useValue: { list: jest.fn(), create: jest.fn(), update: jest.fn(), remove: jest.fn() } },
       { provide: PayrollEntitiesService, useValue: { list: jest.fn(), listCountryPacks: jest.fn(), getEntity: jest.fn(), getEntityContext: jest.fn(), create: jest.fn() } },
       { provide: PayrollJobsService, useValue: { listFailed: jest.fn(), listForResource: jest.fn(), get: jest.fn(), enqueue: jest.fn(), retry: jest.fn() } },
       { provide: PayrollJobsWorkerService, useValue: { flush: jest.fn() } },
+      { provide: PayrollReadinessService, useValue: { getReadiness: jest.fn() } },
       { provide: AccessService, useValue: denyAll },
       Reflector,
       PermissionGuard,
@@ -129,6 +132,13 @@ describe("Payroll module controllers — permission guard deny", () => {
 
     it("POST /payroll/entities is denied without payroll:policies:manage (403)", async () => {
       const res = await request(app.getHttpServer()).post("/payroll/entities").set("Authorization", "Bearer token").send({});
+      expect(res.status).toBe(403);
+    });
+  });
+
+  describe("PayrollReadinessController — payroll:runs:view required", () => {
+    it("GET /payroll/readiness is denied without payroll:runs:view (403)", async () => {
+      const res = await request(app.getHttpServer()).get("/payroll/readiness?month=2026-09").set("Authorization", "Bearer token");
       expect(res.status).toBe(403);
     });
   });

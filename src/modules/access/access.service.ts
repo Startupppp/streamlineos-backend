@@ -1,6 +1,7 @@
 import {
   Inject,
   Injectable,
+  Optional,
   type OnModuleDestroy,
   type OnModuleInit,
 } from "@nestjs/common";
@@ -49,6 +50,7 @@ import { AccessSnapshotResolver } from "./access-snapshot.resolver";
 import { DeniedModulesResolver } from "./denied-modules.resolver";
 import { resolvePrincipalScope } from "./access-principal-scope";
 import { AccessVersionCache } from "./access-version-cache";
+import { ManagerStandingReader } from "./manager-standing.reader";
 
 export {
   broadest,
@@ -78,6 +80,7 @@ export class AccessService implements OnModuleInit, OnModuleDestroy {
     private readonly mfaPolicy: MfaPolicyService,
     private readonly accessVersionCache: AccessVersionCache,
     private readonly membershipState: MembershipStateService,
+    @Optional() managerStanding: ManagerStandingReader | null = null,
   ) {
     const readAccessTable = <Result>(
       read: () => PromiseLike<Result>,
@@ -91,6 +94,10 @@ export class AccessService implements OnModuleInit, OnModuleDestroy {
       (organizationId, memberUserId) =>
         this.membershipState.resolve(memberUserId, organizationId),
       this.clock,
+      managerStanding
+        ? (organizationId, memberUserId) =>
+            managerStanding.managesSomeone(organizationId, memberUserId)
+        : null,
     );
     this.deniedModulesResolver = new DeniedModulesResolver(
       () => this.db,

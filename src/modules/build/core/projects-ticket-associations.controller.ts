@@ -48,10 +48,10 @@ import {
   relatedLinkSchema,
   attachmentCreateResultSchema,
 } from "./dto/build-tickets-response.schemas";
+import { projectAndTicketIdParams } from "./dto/build-params.schemas";
 
-const projectIdticketIdParams = z.object({ projectId: z.string().min(1), ticketId: z.coerce.number().int().positive() }).strict();
-const projectIdticketIdParams_ = z.object({ projectId: z.coerce.number().int().positive(), ticketId: z.coerce.number().int().positive() }).strict();
-const projectIdticketIdlabelIdParams = z.object({ projectId: z.string().min(1), ticketId: z.coerce.number().int().positive(), labelId: z.coerce.number().int().positive() }).strict();
+const ticketInProjectParams = z.object({ projectId: z.coerce.number().int().positive(), ticketId: z.coerce.number().int().positive() }).strict();
+const projectIdticketIdlabelIdParams = z.object({ projectId: z.coerce.number().int().positive(), ticketId: z.coerce.number().int().positive(), labelId: z.coerce.number().int().positive() }).strict();
 const projectIdticketIdlinkIdParams = z.object({ projectId: z.coerce.number().int().positive(), ticketId: z.coerce.number().int().positive(), linkId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("build")
@@ -63,18 +63,19 @@ export class ProjectsTicketAssociationsController {
   @Get(":projectId/tickets/:ticketId/subtasks")
   @RequirePermission("build:tickets:view")
   @ResponseSchema(z.array(ticketListRowSchema))
-  @Validate({ params: projectIdticketIdParams })
+  @Validate({ params: ticketInProjectParams })
   getSubtasks(
+    @Param("projectId", ParseIntPipe) projectId: number,
     @Param("ticketId", ParseIntPipe) ticketId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.subresources.getSubtasks(u.orgId, ticketId);
+    return this.subresources.getSubtasks(u.orgId, projectId, ticketId);
   }
 
   @Get(":projectId/tickets/:ticketId/relations")
   @RequirePermission("build:tickets:view")
   @ResponseSchema(z.array(ticketRelationListItemSchema))
-  @Validate({ params: projectIdticketIdParams_ })
+  @Validate({ params: projectAndTicketIdParams })
   listRelations(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("ticketId", ParseIntPipe) ticketId: number,
@@ -87,7 +88,7 @@ export class ProjectsTicketAssociationsController {
   @RequirePermission("build:tickets:update")
   @HttpCode(201)
   @ResponseSchema(ticketRelationSchema)
-  @Validate({ params: projectIdticketIdParams_, body: addRelationSchema })
+  @Validate({ params: projectAndTicketIdParams, body: addRelationSchema })
   addRelation(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("ticketId", ParseIntPipe) ticketId: number,
@@ -101,7 +102,7 @@ export class ProjectsTicketAssociationsController {
   @RequirePermission("build:tickets:update")
   @HttpCode(204)
   @NoContentResponse()
-  @Validate({ params: projectIdticketIdParams_, query: removeRelationQuerySchema })
+  @Validate({ params: projectAndTicketIdParams, query: removeRelationQuerySchema })
   removeRelation(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("ticketId", ParseIntPipe) ticketId: number,
@@ -114,50 +115,54 @@ export class ProjectsTicketAssociationsController {
   @Get(":projectId/tickets/:ticketId/watchers")
   @RequirePermission("build:tickets:view")
   @ResponseSchema(z.array(ticketWatcherSchema))
-  @Validate({ params: projectIdticketIdParams })
+  @Validate({ params: ticketInProjectParams })
   getWatchers(
+    @Param("projectId", ParseIntPipe) projectId: number,
     @Param("ticketId", ParseIntPipe) ticketId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.subresources.getWatchers(u.orgId, ticketId);
+    return this.subresources.getWatchers(u.orgId, projectId, ticketId);
   }
 
   @Post(":projectId/tickets/:ticketId/watchers")
   @RequirePermission("build:tickets:update")
   @HttpCode(201)
   @ResponseSchema(watcherMutationSchema)
-  @Validate({ params: projectIdticketIdParams, body: addWatcherSchema })
+  @Validate({ params: ticketInProjectParams, body: addWatcherSchema })
   addWatcher(
+    @Param("projectId", ParseIntPipe) projectId: number,
     @Param("ticketId", ParseIntPipe) ticketId: number,
     @Body() body: AddWatcherInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.subresources.addWatcher(u, ticketId, body);
+    return this.subresources.addWatcher(u, projectId, ticketId, body);
   }
 
   @Delete(":projectId/tickets/:ticketId/watchers")
   @RequirePermission("build:tickets:update")
   @HttpCode(204)
   @NoContentResponse()
-  @Validate({ params: projectIdticketIdParams })
+  @Validate({ params: ticketInProjectParams })
   removeWatcher(
+    @Param("projectId", ParseIntPipe) projectId: number,
     @Param("ticketId", ParseIntPipe) ticketId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.subresources.removeWatcher(u, ticketId);
+    return this.subresources.removeWatcher(u, projectId, ticketId);
   }
 
   @Post(":projectId/tickets/:ticketId/labels")
   @RequirePermission("build:tickets:update")
   @HttpCode(201)
   @ResponseSchema(successSchema)
-  @Validate({ params: projectIdticketIdParams, body: addLabelSchema })
+  @Validate({ params: ticketInProjectParams, body: addLabelSchema })
   addLabel(
+    @Param("projectId", ParseIntPipe) projectId: number,
     @Param("ticketId", ParseIntPipe) ticketId: number,
     @Body() body: AddLabelInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.subresources.addLabel(u.orgId, u.userId, ticketId, body);
+    return this.subresources.addLabel(u.orgId, u.userId, projectId, ticketId, body);
   }
 
   @Delete(":projectId/tickets/:ticketId/labels/:labelId")
@@ -166,30 +171,32 @@ export class ProjectsTicketAssociationsController {
   @NoContentResponse()
   @Validate({ params: projectIdticketIdlabelIdParams })
   removeLabel(
+    @Param("projectId", ParseIntPipe) projectId: number,
     @Param("ticketId", ParseIntPipe) ticketId: number,
     @Param("labelId", ParseIntPipe) labelId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.subresources.removeLabel(u.orgId, u.userId, ticketId, labelId);
+    return this.subresources.removeLabel(u.orgId, u.userId, projectId, ticketId, labelId);
   }
 
   @Post(":projectId/tickets/:ticketId/attachments")
   @RequirePermission("build:tickets:update")
   @HttpCode(201)
   @ResponseSchema(attachmentCreateResultSchema)
-  @Validate({ params: projectIdticketIdParams, body: attachmentSchema })
+  @Validate({ params: ticketInProjectParams, body: attachmentSchema })
   addAttachment(
+    @Param("projectId", ParseIntPipe) projectId: number,
     @Param("ticketId", ParseIntPipe) ticketId: number,
     @Body() body: AttachmentInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.subresources.addAttachment(u, ticketId, body);
+    return this.subresources.addAttachment(u, projectId, ticketId, body);
   }
 
   @Get(":projectId/tickets/:ticketId/git-links")
   @RequirePermission("build:tickets:view")
   @ResponseSchema(z.array(gitLinkSchema))
-  @Validate({ params: projectIdticketIdParams_ })
+  @Validate({ params: projectAndTicketIdParams })
   getGitLinks(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("ticketId", ParseIntPipe) ticketId: number,
@@ -201,7 +208,7 @@ export class ProjectsTicketAssociationsController {
   @Get(":projectId/tickets/:ticketId/related-links")
   @RequirePermission("build:tickets:view")
   @ResponseSchema(z.array(relatedLinkSchema))
-  @Validate({ params: projectIdticketIdParams_ })
+  @Validate({ params: projectAndTicketIdParams })
   listRelatedLinks(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("ticketId", ParseIntPipe) ticketId: number,
@@ -214,7 +221,7 @@ export class ProjectsTicketAssociationsController {
   @RequirePermission("build:tickets:update")
   @HttpCode(201)
   @ResponseSchema(relatedLinkSchema)
-  @Validate({ params: projectIdticketIdParams_, body: addRelatedLinkSchema })
+  @Validate({ params: projectAndTicketIdParams, body: addRelatedLinkSchema })
   addRelatedLink(
     @Param("projectId", ParseIntPipe) projectId: number,
     @Param("ticketId", ParseIntPipe) ticketId: number,

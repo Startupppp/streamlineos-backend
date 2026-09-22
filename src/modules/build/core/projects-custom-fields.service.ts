@@ -91,7 +91,8 @@ export class ProjectsCustomFieldsService {
     return this.toBuildField(field);
   }
 
-  async updateField(orgId: string, fieldId: number, data: UpdateCustomFieldInput) {
+  async updateField(orgId: string, projectId: number, fieldId: number, data: UpdateCustomFieldInput) {
+    await assertProjectInOrg(this.db, orgId, projectId);
     const [updated] = await this.db
       .update(customFieldDefinitions)
       .set({
@@ -110,6 +111,7 @@ export class ProjectsCustomFieldsService {
           eq(customFieldDefinitions.id, fieldId),
           eq(customFieldDefinitions.orgId, orgId),
           eq(customFieldDefinitions.entityType, BUILD_ENTITY_TYPE),
+          eq(customFieldDefinitions.projectId, projectId),
         ),
       )
       .returning()
@@ -123,7 +125,8 @@ export class ProjectsCustomFieldsService {
     return this.toBuildField(updated);
   }
 
-  async deleteField(orgId: string, fieldId: number) {
+  async deleteField(orgId: string, projectId: number, fieldId: number) {
+    await assertProjectInOrg(this.db, orgId, projectId);
     const [deleted] = await this.db
       .delete(customFieldDefinitions)
       .where(
@@ -131,6 +134,7 @@ export class ProjectsCustomFieldsService {
           eq(customFieldDefinitions.id, fieldId),
           eq(customFieldDefinitions.orgId, orgId),
           eq(customFieldDefinitions.entityType, BUILD_ENTITY_TYPE),
+          eq(customFieldDefinitions.projectId, projectId),
         ),
       )
       .returning();

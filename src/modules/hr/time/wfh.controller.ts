@@ -60,7 +60,7 @@ export class WfhController {
   @ResponseSchema(z.array(wfhPendingItemSchema))
   @RequirePermission("hr:attendance:manage")
   pending(@CurrentUser() u: CurrentUserContext) {
-    return this.wfh.pending(u.orgId);
+    return this.wfh.pending(u);
   }
 
   @Patch(":requestId")
@@ -72,6 +72,6 @@ export class WfhController {
     @Body() body: UpdateWfhInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.wfh.update(u.orgId, u.userId, requestId, body);
+    return this.wfh.update(u, requestId, body);
   }
 }

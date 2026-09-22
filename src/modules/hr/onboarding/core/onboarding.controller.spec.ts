@@ -203,7 +203,7 @@ describe("OnboardingController — HR-only module-checklist gating", () => {
     it("passes every administrable module for an org owner without hitting the DB", async () => {
       await controller.listModuleChecklists(ctx({ isOrgOwner: true }));
       expect(access.resolveUserPermissions).not.toHaveBeenCalled();
-      const modules = checklists.listChecklists.mock.calls[0]?.[1] as Set<string>;
+      const modules = checklists.listChecklists!.mock.calls[0]?.[1] as Set<string>;
       expect(modules).toEqual(expect.any(Set));
       expect(modules.has("hr")).toBe(true);
       expect(modules.has("crm")).toBe(true);

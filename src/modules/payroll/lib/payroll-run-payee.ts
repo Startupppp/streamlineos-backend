@@ -1,11 +1,6 @@
 import { and, asc, eq, gt } from "drizzle-orm";
 import type { Db } from "../../../db/drizzle.module";
-import {
-  payrollRunEmployees,
-  users,
-  workers,
-  organizationPeople,
-} from "../../../db/schema";
+import { payrollRunEmployees, users } from "../../../db/schema";
 import {
   payrollSubjectFromRunEmployee,
   payrollSubjectKeyFromRunEmployee,
@@ -14,6 +9,11 @@ import type { PayrollProfileSubject } from "./payroll-subject";
 import type { EmploymentFactsService } from "../../directory/employment-facts.service";
 import type { BankDetails } from "../../directory/employment-facts.types";
 import { readPayrollKeysetBatches } from "./payroll-keyset-batch";
+import {
+  resolvePeopleIdentities,
+  subjectKey,
+  type PersonSubject,
+} from "../../directory/person-seam";
 
 export type { PayrollProfileSubject };
 
@@ -39,7 +39,10 @@ function personName(row: {
   firstName: string | null;
   lastName: string | null;
 }): string {
-  const composed = [row.firstName, row.lastName].filter(Boolean).join(" ").trim();
+  const composed = [row.firstName, row.lastName]
+    .filter(Boolean)
+    .join(" ")
+    .trim();
   return row.displayName?.trim() || composed || "Payee";
 }
 
@@ -50,39 +53,36 @@ export async function loadRunEmployeePayees(
   efService: EmploymentFactsService,
 ): Promise<PayrollPayeeDetails[]> {
   const rows = await readPayrollKeysetBatches({
-    fetch: (afterId, limit) => db
-      .select({
-        id: payrollRunEmployees.id,
-        userId: payrollRunEmployees.userId,
-        workerId: payrollRunEmployees.workerId,
-        userName: users.name,
-        userEmail: users.email,
-        workerNumber: workers.workerNumber,
-        personDisplayName: organizationPeople.displayName,
-        personFirstName: organizationPeople.firstName,
-        personLastName: organizationPeople.lastName,
-        personWorkEmail: organizationPeople.workEmail,
-        organizationPersonId: workers.organizationPersonId,
-      })
-      .from(payrollRunEmployees)
-      .leftJoin(users, eq(payrollRunEmployees.userId, users.id))
-      .leftJoin(workers, and(
-        eq(workers.workerId, payrollRunEmployees.workerId),
-        eq(workers.organizationId, payrollRunEmployees.orgId),
-      ))
-      .leftJoin(organizationPeople, and(
-        eq(organizationPeople.organizationPersonId, workers.organizationPersonId),
-        eq(organizationPeople.organizationId, workers.organizationId),
-      ))
-      .where(and(
-        eq(payrollRunEmployees.runId, runId),
-        eq(payrollRunEmployees.orgId, orgId),
-        ...(afterId === null ? [] : [gt(payrollRunEmployees.id, afterId)]),
-      ))
-      .orderBy(asc(payrollRunEmployees.id))
-      .limit(limit),
+    fetch: (afterId, limit) =>
+      db
+        .select({
+          userName: users.name,
+          userEmail: users.email,
+          id: payrollRunEmployees.id,
+          userId: payrollRunEmployees.userId,
+          workerId: payrollRunEmployees.workerId,
+        })
+        .from(payrollRunEmployees)
+        .leftJoin(users, eq(payrollRunEmployees.userId, users.id))
+        .where(
+          and(
+            eq(payrollRunEmployees.runId, runId),
+            eq(payrollRunEmployees.orgId, orgId),
+            ...(afterId === null ? [] : [gt(payrollRunEmployees.id, afterId)]),
+          ),
+        )
+        .orderBy(asc(payrollRunEmployees.id))
+        .limit(limit),
     idOf: (row) => row.id,
   });
+
+  const subjects: PersonSubject[] = rows.flatMap((r): PersonSubject[] => {
+    if (r.userId !== null) return [{ kind: "user", userId: r.userId }];
+    if (r.workerId !== null) return [{ kind: "worker", workerId: r.workerId }];
+    return [];
+  });
+
+  const identities = await resolvePeopleIdentities(db, orgId, subjects);
 
   const userIds = [
     ...new Set(
@@ -96,10 +96,17 @@ export async function loadRunEmployeePayees(
     ...new Set(
       rows
         .filter(
-          (r): r is typeof r & { organizationPersonId: string } =>
-            r.userId === null && r.organizationPersonId !== null,
+          (r): r is typeof r & { workerId: string } =>
+            r.userId === null && r.workerId !== null,
         )
-        .map((r) => r.organizationPersonId),
+        .flatMap((r) => {
+          const identity = identities.get(
+            subjectKey({ kind: "worker", workerId: r.workerId }),
+          );
+          return identity?.organizationPersonId
+            ? [identity.organizationPersonId]
+            : [];
+        }),
     ),
   ];
 
@@ -111,21 +118,29 @@ export async function loadRunEmployeePayees(
 
   return rows.map((row) => {
     const subject = payrollSubjectFromRunEmployee(row);
+    const identity =
+      row.userId !== null
+        ? identities.get(subjectKey({ kind: "user", userId: row.userId }))
+        : row.workerId !== null
+          ? identities.get(
+              subjectKey({ kind: "worker", workerId: row.workerId }),
+            )
+          : undefined;
     const facts = row.userId !== null ? factsMap.get(row.userId) : undefined;
     const sensitive =
       row.userId !== null
         ? sensitiveMap.get(row.userId)
-        : row.organizationPersonId !== null
-          ? personSensitiveMap.get(row.organizationPersonId)
+        : identity?.organizationPersonId
+          ? personSensitiveMap.get(identity.organizationPersonId)
           : undefined;
 
     const displayName =
       row.userName ??
-      (row.personFirstName != null
+      (identity != null
         ? personName({
-            displayName: row.personDisplayName,
-            firstName: row.personFirstName,
-            lastName: row.personLastName,
+            displayName: identity.displayName,
+            firstName: identity.firstName,
+            lastName: identity.lastName,
           })
         : "Payee");
 
@@ -134,14 +149,14 @@ export async function loadRunEmployeePayees(
       subject,
       subjectKey: payrollSubjectKeyFromRunEmployee(row),
       displayName,
-      email: row.userEmail ?? row.personWorkEmail ?? null,
-      employeeId: facts?.employeeNumber ?? row.workerNumber ?? null,
+      email: row.userEmail ?? identity?.workEmail ?? null,
+      employeeId: facts?.employeeNumber ?? identity?.workerNumber ?? null,
       designation: facts?.designation ?? null,
       joiningDate: facts?.joiningDate ?? null,
       bankDetails: sensitive?.bankDetails ?? null,
       taxId: sensitive?.taxId ?? null,
       panNumber: sensitive?.panNumber ?? null,
-      workerNumber: row.workerNumber ?? null,
+      workerNumber: identity?.workerNumber ?? null,
     };
   });
 }
@@ -153,11 +168,19 @@ export async function loadRunEmployeePayeeById(
   efService: EmploymentFactsService,
 ): Promise<PayrollPayeeDetails | null> {
   const runRow = await db.query.payrollRunEmployees.findFirst({
-    where: and(eq(payrollRunEmployees.id, runEmployeeId), eq(payrollRunEmployees.orgId, orgId)),
+    where: and(
+      eq(payrollRunEmployees.id, runEmployeeId),
+      eq(payrollRunEmployees.orgId, orgId),
+    ),
     columns: { runId: true },
   });
   if (!runRow) return null;
-  const payees = await loadRunEmployeePayees(db, orgId, runRow.runId, efService);
+  const payees = await loadRunEmployeePayees(
+    db,
+    orgId,
+    runRow.runId,
+    efService,
+  );
   return payees.find((payee) => payee.runEmployeeId === runEmployeeId) ?? null;
 }
 
@@ -170,7 +193,8 @@ export function filterPayeesBySubjectKeys(
     subjectKeys.some(
       (key) =>
         (payee.subject.userId != null && key === payee.subject.userId) ||
-        (payee.subject.workerId != null && key === `worker:${payee.subject.workerId}`),
+        (payee.subject.workerId != null &&
+          key === `worker:${payee.subject.workerId}`),
     ),
   );
 }

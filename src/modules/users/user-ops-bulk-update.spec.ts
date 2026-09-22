@@ -1,20 +1,19 @@
-jest.mock("../../common/hr/sync-canonical-reporting-line", () => ({
-  syncCanonicalReportingLines: jest.fn().mockResolvedValue(new Map()),
-}));
 jest.mock("../../common/rbac/sync-structural-role", () => ({
   syncStructuralRoleAssignments: jest.fn().mockResolvedValue(undefined),
 }));
 
 import { getTableColumns } from "drizzle-orm";
 import { users, hrEmployments } from "../../db/schema";
-import { syncCanonicalReportingLines } from "../../common/hr/sync-canonical-reporting-line";
 import { syncStructuralRoleAssignments } from "../../common/rbac/sync-structural-role";
 import { UserOpsService } from "./user-ops.service";
+
+const assignMany = jest.fn().mockResolvedValue(new Map());
 
 function buildService(
   scopedMembers: Array<{ userId: string }> = [{ userId: "user-a" }],
   membershipRows: Array<{ id: number }> = [],
 ) {
+  assignMany.mockClear();
   const updatedTables: unknown[] = [];
   const setCalls: unknown[] = [];
 
@@ -81,6 +80,10 @@ function buildService(
     { resolveUserPermissions: jest.fn().mockResolvedValue(new Map()) } as never,
     {} as never,
     { getFacts: jest.fn(), getFactsBatch: jest.fn() } as never,
+    {
+      checkManager: jest.fn().mockResolvedValue({ ok: true, managerEmploymentId: 1 }),
+      assignMany,
+    } as never,
   );
 
   return { db, tx, service, updatedTables, setCalls };
@@ -90,7 +93,6 @@ const actor = { userId: "actor-1", isOrgOwner: false };
 const ownerActor = { userId: "actor-1", isOrgOwner: true };
 
 beforeEach(() => {
-  jest.mocked(syncCanonicalReportingLines).mockClear();
   jest.mocked(syncStructuralRoleAssignments).mockClear();
 });
 
@@ -128,14 +130,14 @@ describe("bulkUpdateUsers — cross-org isolation", () => {
     }, actor);
 
     expect(result.updated).toBe(1);
-    expect(syncCanonicalReportingLines).toHaveBeenCalledTimes(1);
-    expect(syncCanonicalReportingLines).toHaveBeenCalledWith(
-      expect.anything(),
+    expect(assignMany).toHaveBeenCalledTimes(1);
+    expect(assignMany).toHaveBeenCalledWith(
       "org-a",
       ["user-a"],
       "manager-1",
       expect.any(String),
       "actor-1",
+      expect.anything(),
     );
   });
 });
@@ -173,14 +175,14 @@ describe("bulkUpdateUsers — canonical destination writes", () => {
       managerUserId: "manager-1",
     }, actor);
 
-    expect(syncCanonicalReportingLines).toHaveBeenCalledTimes(1);
-    expect(syncCanonicalReportingLines).toHaveBeenCalledWith(
-      expect.anything(),
+    expect(assignMany).toHaveBeenCalledTimes(1);
+    expect(assignMany).toHaveBeenCalledWith(
       "org-a",
       ["user-a", "user-b"],
       "manager-1",
       expect.any(String),
       "actor-1",
+      expect.anything(),
     );
   });
 

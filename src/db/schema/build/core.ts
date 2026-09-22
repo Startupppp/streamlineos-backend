@@ -43,7 +43,7 @@ export const projects = build.table(
     priority: text("priority"),
     dealId: integer("deal_id"),
     managedProductId: integer("managed_product_id"),
-    pmWorkspaceId: text("pm_workspace_id").notNull(),
+    pmWorkspaceId: text("pm_workspace_id"),
     budget: decimal("budget", { precision: 15, scale: 2 }),
     budgetMinor: bigint("budget_minor", { mode: "number" }),
     budgetCurrency: text("budget_currency"),

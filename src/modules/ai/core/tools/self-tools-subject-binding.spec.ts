@@ -70,7 +70,7 @@ function selfToolFiles(): string[] {
 
 function allToolDefinitions(): { file: string; definition: AskOsToolDefinition }[] {
   return toolFiles().flatMap((file) => {
-    const loaded: unknown = require(path.join(TOOLS_DIR, file));
+    const loaded: unknown = jest.requireActual(path.join(TOOLS_DIR, file));
     if (loaded === null || typeof loaded !== "object") return [];
     return Object.values(loaded)
       .filter(isProviderClass)

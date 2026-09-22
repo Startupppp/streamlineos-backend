@@ -16,6 +16,7 @@ function makeDb(findFirstResult: { id: string; userAgent: string | null } | unde
   db: Db;
   findFirst: jest.Mock;
   insertValues: jest.Mock;
+  onConflictDoNothing: jest.Mock;
   updateSet: jest.Mock;
   updateWhere: jest.Mock;
 } {
@@ -23,7 +24,8 @@ function makeDb(findFirstResult: { id: string; userAgent: string | null } | unde
   const findMany = jest.fn().mockResolvedValue([]);
   const updateWhere = jest.fn().mockResolvedValue([]);
   const updateSet = jest.fn().mockReturnValue({ where: updateWhere });
-  const insertValues = jest.fn().mockResolvedValue([]);
+  const onConflictDoNothing = jest.fn().mockResolvedValue([]);
+  const insertValues = jest.fn().mockReturnValue({ onConflictDoNothing });
 
   const db = {
     query: {
@@ -33,7 +35,7 @@ function makeDb(findFirstResult: { id: string; userAgent: string | null } | unde
     update: jest.fn().mockReturnValue({ set: updateSet }),
   } as unknown as Db;
 
-  return { db, findFirst, insertValues, updateSet, updateWhere };
+  return { db, findFirst, insertValues, onConflictDoNothing, updateSet, updateWhere };
 }
 
 describe("SessionsService.list — upsert behaviour", () => {
@@ -47,6 +49,14 @@ describe("SessionsService.list — upsert behaviour", () => {
     const service = new SessionsService(mocks.db, null);
     return { service, ...mocks };
   }
+
+  it("yields to a concurrent first listing instead of raising 23505, because two requests for one session id both find nothing and both insert", async () => {
+    const { service, onConflictDoNothing } = buildService(undefined);
+
+    await service.list(userId, "org-1", sessionId, browserUA, "1.2.3.4");
+
+    expect(onConflictDoNothing).toHaveBeenCalledTimes(1);
+  });
 
   it("inserts a new row when no session exists in DB", async () => {
     const { service, insertValues } = buildService(undefined);

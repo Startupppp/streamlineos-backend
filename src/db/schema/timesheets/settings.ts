@@ -13,6 +13,7 @@ import {
 import {
   timesheetRoundingRuleEnum,
   timesheetApprovalModeEnum,
+  timesheetApproverSourceEnum,
   timesheetPayPeriodEnum,
 } from "./enums";
 import { organizations, organizationMembers } from "../common";
@@ -60,6 +61,9 @@ export const timesheetSettings = pgTable("timesheet_settings", {
   approvalMode: timesheetApprovalModeEnum("approval_mode")
     .notNull()
     .default("MANAGER"),
+  approverSource: timesheetApproverSourceEnum("approver_source")
+    .notNull()
+    .default("REPORTING_MANAGER"),
   clientApprovalEnabled: boolean("client_approval_enabled")
     .notNull()
     .default(false),

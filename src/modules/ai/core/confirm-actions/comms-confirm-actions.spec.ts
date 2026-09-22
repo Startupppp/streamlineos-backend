@@ -38,7 +38,7 @@ describe("mail.archive executor — performAction is called with the archive act
 
     await definition?.execute(
       { accountId: 3, messageId: "msg-abc", threadId: "thread-xyz" },
-      { actor: mockActor, db: {} as Db, moduleRef },
+      { actor: mockActor, db: {} as Db, moduleRef, proposalId: 1 },
     );
 
     expect(mockPerformAction).toHaveBeenCalledWith(
@@ -59,7 +59,7 @@ describe("mail.archive executor — performAction is called with the archive act
 
     await definition?.execute(
       { accountId: 3, messageId: "msg-abc", threadId: undefined },
-      { actor: mockActor, db: {} as Db, moduleRef },
+      { actor: mockActor, db: {} as Db, moduleRef, proposalId: 1 },
     );
 
     expect(mockPerformAction).toHaveBeenCalledWith(
@@ -84,7 +84,7 @@ describe("mail.archive executor — performAction is called with the archive act
 
     await definition?.execute(
       { accountId: 3, messageId: "msg-abc" },
-      { actor: actorWithDifferentMembership, db: {} as Db, moduleRef },
+      { actor: actorWithDifferentMembership, db: {} as Db, moduleRef, proposalId: 1 },
     );
 
     expect(mockPerformAction).toHaveBeenCalledWith(
@@ -104,7 +104,7 @@ describe("mail.archive executor — performAction is called with the archive act
 
     const outcome = await definition?.execute(
       { accountId: 3, messageId: "msg-abc" },
-      { actor: mockActor, db: {} as Db, moduleRef },
+      { actor: mockActor, db: {} as Db, moduleRef, proposalId: 1 },
     );
 
     expect(outcome?.result).toMatchObject({ archived: true });

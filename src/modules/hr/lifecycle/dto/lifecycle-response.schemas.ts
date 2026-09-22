@@ -2,6 +2,7 @@ import { z } from "zod";
 import { terminationStatusEnum, onboardingDocumentStatusEnum } from "../../../../db/schema/common/enums";
 import { wireDate, nullableWireDate } from "../../../../common/openapi/wire-types";
 import { cursorPageSchema, successSchema } from "../../../../common/openapi/response-envelopes";
+import { exitChecklistSchema } from "./exit-checklist.schemas";
 
 // ── Alumni ────────────────────────────────────────────────────────────────────
 
@@ -28,25 +29,15 @@ export const alumniProfileListSchema = z.array(alumniProfileSchema);
 const resignationUserSchema = z.object({
   id: z.string(),
   name: z.string().nullable(),
-  email: z.string().nullable(),
+  email: z.string(),
   image: z.string().nullable(),
   designation: z.string().nullable(),
   joiningDate: z.string().nullable(),
 }).nullable();
 
-const exitChecklistItemSchema = z.object({
-  id: z.number().int(),
-  orgId: z.string(),
-  resignationId: z.number().int(),
-  item: z.string(),
-  assignedTo: z.string().nullable(),
-  assignedToMembershipId: z.number().int().nullable(),
-  status: z.string(),
-  completedAt: nullableWireDate(),
-  notes: z.string().nullable(),
-});
+const resignationReviewerSchema = z.object({ id: z.string(), name: z.string().nullable() }).nullable();
 
-export const resignationSchema = z.object({
+const resignationRowSchema = z.object({
   id: z.number().int(),
   orgId: z.string(),
   userId: z.string(),
@@ -75,21 +66,14 @@ export const resignationSchema = z.object({
   updatedAt: wireDate(),
   hasResignationLetter: z.boolean(),
   user: resignationUserSchema,
-  checklists: z.array(exitChecklistItemSchema),
-  hrReviewer: z.object({ id: z.string(), name: z.string().nullable() }).nullable(),
-  finalReviewer: z.object({ id: z.string(), name: z.string().nullable() }).nullable(),
+  hrReviewer: resignationReviewerSchema,
 });
 
-export const resignationListItemSchema = resignationSchema.extend({
-  resignationLetterUrl: z.string().nullable(),
-  user: z.object({
-    id: z.string(),
-    name: z.string().nullable(),
-    email: z.string(),
-    image: z.string().nullable(),
-  }).nullable(),
-  hrReviewer: z.object({ id: z.string(), name: z.string().nullable() }).nullable(),
+export const resignationSchema = resignationRowSchema.extend({
+  finalReviewer: resignationReviewerSchema,
 });
+
+export const resignationListItemSchema = resignationRowSchema;
 
 export const resignationListSchema = z.object({
   data: z.array(resignationListItemSchema),
@@ -100,12 +84,25 @@ export const resignationListSchema = z.object({
   }),
 });
 
-const resignationProgressStepSchema = z.object({
+const resignationTimelineStepSchema = z.object({
   label: z.string(),
-  status: z.string(),
+  status: z.enum(["completed", "active", "pending", "rejected"]),
   actor: z.string().nullable(),
   timestamp: nullableWireDate(),
   remarks: z.string().nullable(),
+});
+
+export const resignationDetailSchema = resignationSchema.extend({
+  progress: z.array(resignationTimelineStepSchema),
+  checklist: exitChecklistSchema,
+});
+
+const resignationProgressStepSchema = z.object({
+  label: z.string(),
+  status: z.enum(["completed", "active", "pending", "rejected"]),
+  actor: z.string().optional(),
+  timestamp: z.string().optional(),
+  remarks: z.string().optional(),
 });
 
 export const resignationProgressSchema = z.object({

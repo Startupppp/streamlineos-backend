@@ -24,7 +24,9 @@ const makeEvent = (overrides: Partial<OutboxEventRow> = {}): OutboxEventRow => (
     creatorId: "user1",
     title: "Help with payroll",
     category: "payroll_issue",
+    queue: "FINANCE",
     priority: "MEDIUM",
+    isConfidential: false,
   },
   occurredAt: new Date(),
   createdAt: new Date(),
@@ -157,6 +159,46 @@ describe("HrHelpdeskEventsConsumer", () => {
         "FAILED",
         "notification service down",
       );
+    });
+  });
+
+  describe("ticket_created event", () => {
+    it("notifies the routed queue's members and the support administrators, never HR at large", async () => {
+      mockAccess.membersWithPermission.mockImplementation(async (_orgId: string, key: string) =>
+        key === "hr:helpdesk:queue-finance"
+          ? [{ userId: "finance-agent" }]
+          : key === "hr:helpdesk:manage"
+            ? [{ userId: "support-admin" }, { userId: "finance-agent" }]
+            : [{ userId: "hr-mgr" }],
+      );
+
+      await consumer.handle(makeEvent());
+
+      expect(mockAccess.membersWithPermission).toHaveBeenCalledWith("org1", "hr:helpdesk:queue-finance");
+      expect(mockAccess.membersWithPermission).toHaveBeenCalledWith("org1", "hr:helpdesk:manage");
+      expect(mockAccess.membersWithPermission).not.toHaveBeenCalledWith("org1", "hr:employees:manage");
+      expect(mockDispatch.emit).toHaveBeenCalledWith(
+        expect.objectContaining({
+          eventKey: "hr.helpdesk.ticket_created",
+          targetUserIds: ["finance-agent", "support-admin"],
+          link: "/hr/helpdesk?queue=FINANCE&ticket=1",
+        }),
+      );
+    });
+
+    it("rejects a created payload that names no queue, so an unrouted ticket can never notify nobody silently", async () => {
+      const event = makeEvent({
+        payload: {
+          ticketId: 1,
+          orgId: "org1",
+          creatorId: "user1",
+          title: "Help with payroll",
+          category: "payroll_issue",
+          priority: "MEDIUM",
+        },
+      });
+
+      await expect(consumer.handle(event)).rejects.toThrow("Invalid payload");
     });
   });
 

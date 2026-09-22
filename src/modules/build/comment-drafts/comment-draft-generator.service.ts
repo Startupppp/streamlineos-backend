@@ -15,6 +15,7 @@ import { logger } from "../../../common/logger/logger.service";
 import { CommentDraftsService } from "./comment-drafts.service";
 import { generatedDraftAiOutputSchema } from "./dto/comment-drafts.schemas";
 import type { AiUsageMeta } from "../../ai/core/gateway/ai-gateway.types";
+import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
 
 const FEATURE_KEY = "ticket.generate-comment-draft";
 const MAX_DESCRIPTION_CHARS = 2_000;
@@ -46,39 +47,47 @@ export class CommentDraftGeneratorService {
     if (membershipId === null)
       throw new ForbiddenException("Organization membership required");
 
-    const [ticketRow, commentRows] = await Promise.all([
-      this.db
-        .select({
-          id: tickets.id,
-          title: tickets.title,
-          description: tickets.description,
-          status: tickets.status,
-          priority: tickets.priority,
-          type: tickets.type,
-        })
-        .from(tickets)
-        .where(
-          and(
-            eq(tickets.id, ticketId),
-            eq(tickets.orgId, orgId),
-            isNull(tickets.deletedAt),
-          ),
-        )
-        .limit(1)
-        .then((rows) => rows[0] ?? null),
-      this.db
-        .select({ content: ticketComments.content })
-        .from(ticketComments)
-        .where(
-          and(
-            eq(ticketComments.ticketId, ticketId),
-            eq(ticketComments.orgId, orgId),
-            isNull(ticketComments.deletedAt),
-          ),
-        )
-        .orderBy(desc(ticketComments.createdAt))
-        .limit(COMMENT_LIMIT),
-    ]);
+    const { ticketRow, commentRows } = await runInTenantTransaction(
+      this.db,
+      async (tx) => {
+        const [ticketRow, commentRows] = await Promise.all([
+          tx
+            .select({
+              id: tickets.id,
+              title: tickets.title,
+              description: tickets.description,
+              status: tickets.status,
+              priority: tickets.priority,
+              type: tickets.type,
+            })
+            .from(tickets)
+            .where(
+              and(
+                eq(tickets.id, ticketId),
+                eq(tickets.orgId, orgId),
+                isNull(tickets.deletedAt),
+              ),
+            )
+            .limit(1)
+            .then((rows) => rows[0] ?? null),
+          tx
+            .select({ content: ticketComments.content })
+            .from(ticketComments)
+            .where(
+              and(
+                eq(ticketComments.ticketId, ticketId),
+                eq(ticketComments.orgId, orgId),
+                isNull(ticketComments.deletedAt),
+              ),
+            )
+            .orderBy(desc(ticketComments.createdAt))
+            .limit(COMMENT_LIMIT),
+        ]);
+
+        return { ticketRow, commentRows };
+      },
+      { orgId },
+    );
 
     if (!ticketRow) throw new NotFoundException("Ticket not found");
 
@@ -121,11 +130,16 @@ export class CommentDraftGeneratorService {
       throw new Error("AI draft generation failed");
     }
 
-    const draft = await this.drafts.upsertGenerated(
-      orgId,
-      membershipId,
-      ticketId,
-      result.data,
+    const draft = await runInTenantTransaction(
+      this.db,
+      () =>
+        this.drafts.upsertGenerated(
+          orgId,
+          membershipId,
+          ticketId,
+          result.data,
+        ),
+      { orgId },
     );
 
     return { ...draft, aiUsage: result.aiUsage };

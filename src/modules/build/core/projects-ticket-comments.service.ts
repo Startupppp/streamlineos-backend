@@ -117,9 +117,19 @@ export class ProjectsTicketCommentsService {
     };
   }
 
-  async addComment(u: CurrentUserContext, ticketId: number, body: CommentInput) {
+  async addComment(
+    u: CurrentUserContext,
+    projectId: number | null,
+    ticketId: number,
+    body: CommentInput,
+  ) {
     const ticket = await this.db.query.tickets.findFirst({
-      where: and(eq(tickets.id, ticketId), eq(tickets.orgId, u.orgId), isNull(tickets.deletedAt)),
+      where: and(
+        eq(tickets.id, ticketId),
+        ...(projectId === null ? [] : [eq(tickets.projectId, projectId)]),
+        eq(tickets.orgId, u.orgId),
+        isNull(tickets.deletedAt),
+      ),
       columns: { id: true, title: true, projectId: true, ticketNumber: true },
     });
     if (!ticket) throw new NotFoundException("Ticket not found");

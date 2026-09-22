@@ -29,7 +29,7 @@ import {
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
 import { NoContentResponse, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
-import { testCaseRowSchema } from "./dto/qa-response.schemas";
+import { testCaseRowSchema, testCasePageSchema } from "./dto/qa-response.schemas";
 
 export const caseIdParams = z.object({ projectId: z.coerce.number().int().positive(), caseId: z.coerce.number().int().positive() }).strict();
 
@@ -41,7 +41,7 @@ export class TestCasesController {
 
   @Get()
   @RequirePermission("build:qa:view")
-  @ResponseSchema(z.array(testCaseRowSchema))
+  @ResponseSchema(testCasePageSchema)
   @Validate({ query: testCaseListQuerySchema })
   listCases(
     @Param("projectId", ParseIntPipe) projectId: number,
@@ -60,7 +60,7 @@ export class TestCasesController {
     @Param("caseId", ParseIntPipe) caseId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.getCase(u.orgId, projectId, caseId);
+    return this.svc.getCase(u, projectId, caseId);
   }
 
   @Post()
@@ -86,7 +86,7 @@ export class TestCasesController {
     @Body() body: UpdateTestCaseInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.updateCase(u.orgId, projectId, caseId, body);
+    return this.svc.updateCase(u, projectId, caseId, body);
   }
 
   @Delete(":caseId")
@@ -99,6 +99,6 @@ export class TestCasesController {
     @Param("caseId", ParseIntPipe) caseId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.deleteCase(u.orgId, projectId, caseId);
+    return this.svc.deleteCase(u, projectId, caseId);
   }
 }

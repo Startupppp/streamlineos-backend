@@ -103,10 +103,3 @@ export type PreviewSegmentInput = z.infer<typeof previewSegmentSchema>;
 export type ListSegmentsQuery = z.infer<typeof listSegmentsQuerySchema>;
 export type SegmentMembersQuery = z.infer<typeof segmentMembersQuerySchema>;
 
-/**
- * The DTO's output is structurally the compiler's filter node, so this is a
- * restatement rather than a claim. Written as a function so there is exactly one
- * place to look if the two ever drift — the same shape `asQueryDescription`
- * takes in the reporting DTO.
- */
-export const asFilterNode = (input: z.infer<typeof filterSchema>): FilterNode => input;

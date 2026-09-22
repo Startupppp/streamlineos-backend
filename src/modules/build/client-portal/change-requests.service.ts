@@ -4,8 +4,16 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, desc, eq, isNull, lt, or, sql } from "drizzle-orm";
+import { and, desc, eq, ilike, isNull, sql } from "drizzle-orm";
 import { changeRequests } from "../../../db/schema";
+import {
+  buildCursorPage,
+  decodeIntegerCursor,
+} from "../../../common/pagination/cursor";
+import {
+  keysetBeforeId,
+  microsecondCursorValue,
+} from "../../../common/pagination/keyset";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { AuditService } from "../../../common/audit/audit.service";
@@ -63,20 +71,13 @@ export class ChangeRequestsService {
   async listChangeRequests(u: CurrentUserContext, projectId: number, query: ListCrQuery) {
     const { orgId } = u;
     await assertProjectAccess(this.db, this.access, u, projectId);
-    const cursorDate =
-      query.afterCreatedAt !== undefined ? new Date(query.afterCreatedAt) : undefined;
-    const cursorCondition =
-      cursorDate !== undefined && query.afterId !== undefined
-        ? or(
-            lt(changeRequests.createdAt, cursorDate),
-            and(
-              eq(changeRequests.createdAt, cursorDate),
-              lt(changeRequests.id, query.afterId),
-            ),
-          )
-        : undefined;
-    return this.db
-      .select(crColumns)
+    const limit = query.limit ?? 25;
+    const position = decodeIntegerCursor(query.cursor ?? null);
+    const rows = await this.db
+      .select({
+        ...crColumns,
+        createdAt: microsecondCursorValue(changeRequests.createdAt),
+      })
       .from(changeRequests)
       .where(
         and(
@@ -85,11 +86,26 @@ export class ChangeRequestsService {
           isNull(changeRequests.deletedAt),
           query.status !== undefined ? eq(changeRequests.status, query.status) : undefined,
           query.impact !== undefined ? eq(changeRequests.impact, query.impact) : undefined,
-          cursorCondition,
+          query.requesterId !== undefined
+            ? eq(changeRequests.requestedById, query.requesterId)
+            : undefined,
+          query.approverId !== undefined
+            ? eq(changeRequests.approvalOwnerId, query.approverId)
+            : undefined,
+          query.q !== undefined
+            ? ilike(changeRequests.title, `%${query.q}%`)
+            : undefined,
+          position
+            ? keysetBeforeId(changeRequests.createdAt, changeRequests.id, position)
+            : undefined,
         ),
       )
       .orderBy(desc(changeRequests.createdAt), desc(changeRequests.id))
-      .limit(100);
+      .limit(limit + 1);
+    return buildCursorPage(rows, limit, (row) => ({
+      sortValue: row.createdAt,
+      id: String(row.id),
+    }));
   }
 
   async getChangeRequest(u: CurrentUserContext, projectId: number, crId: number) {
@@ -197,7 +213,9 @@ export class ChangeRequestsService {
         );
     }
 
-    const isDecision = input.status === "approved" || input.status === "rejected";
+    const isNewDecision =
+      (input.status === "approved" || input.status === "rejected") &&
+      input.status !== existing.status;
     const [updated] = await this.db
       .update(changeRequests)
       .set({
@@ -220,7 +238,7 @@ export class ChangeRequestsService {
         ...(input.decisionComment !== undefined && {
           decisionComment: input.decisionComment,
         }),
-        ...(isDecision && {
+        ...(isNewDecision && {
           decidedAt: new Date(),
           approvalOwnerId: input.approvalOwnerId ?? userId,
         }),

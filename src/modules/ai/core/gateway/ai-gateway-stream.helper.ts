@@ -4,10 +4,13 @@ import {
   type ModelMessage,
   type StopCondition,
   type ToolSet,
+  type embed,
 } from "ai";
 import { HttpException } from "@nestjs/common";
 import { logger } from "../../../../common/logger/logger.service";
+import { getTenantContext } from "../../../../common/tenant/tenant-context";
 import { resolveAiStreamModel } from "./ai-stream-model";
+import { resolveGatewayTier } from "../routing/model-routing";
 import { classifyLlmError, resolveLlmRetryPolicy } from "../providers/llm-retry";
 import { redactSensitiveData } from "../redaction.util";
 import { getReserveEstimateMilli } from "../billing/ai-cost-catalog";
@@ -29,6 +32,12 @@ import {
   AiRequestCancelledException,
 } from "../services/ai-service-exceptions";
 
+type ProviderOptions = NonNullable<Parameters<typeof embed>[0]['providerOptions']>;
+
+export function isInsideAmbientTenantTransaction(): boolean {
+  return getTenantContext() !== undefined;
+}
+
 export interface AiStreamTextOpts {
   tier?: "fast" | "standard";
   actor: AiInvokeActor;
@@ -46,6 +55,7 @@ export interface AiStreamTextOpts {
   temperature?: number;
   model?: LanguageModel;
   modelId?: string;
+  providerOptions?: ProviderOptions;
   onCompleted?: (result: { text: string; promptTokens: number; completionTokens: number }) => Promise<void>;
 }
 
@@ -122,6 +132,14 @@ export class AiGatewayStreamHelper {
   async run(opts: AiStreamTextOpts): Promise<AiTextStream> {
     const { actor, feature, signal, charge = true, redact = true } = opts;
     const call = AiCallMetrics.begin({ feature, tier: opts.tier ?? "chat", orgId: actor.orgId });
+
+    if (isInsideAmbientTenantTransaction()) {
+      logger.warn("AI stream invoked inside an ambient tenant transaction", {
+        feature,
+        orgId: actor.orgId,
+      });
+    }
+
     const breakerKey = opts.breakerKey ?? DEFAULT_BREAKER_KEY;
     const breaker = this.breakerFor(breakerKey);
     const tenantBreaker = this.breakerFor(
@@ -188,7 +206,7 @@ export class AiGatewayStreamHelper {
     let streamCompleted = false;
 
     try {
-      const selection = resolveAiStreamModel(opts.tier);
+      const selection = resolveAiStreamModel(resolveGatewayTier(opts.feature, opts.tier));
       const model = opts.model ?? selection.model;
       const modelId = opts.modelId ?? selection.modelId;
 
@@ -224,6 +242,7 @@ export class AiGatewayStreamHelper {
         ...(opts.tools !== undefined ? { tools: opts.tools } : {}),
         ...(opts.stopWhen !== undefined ? { stopWhen: opts.stopWhen } : {}),
         ...(opts.temperature !== undefined ? { temperature: opts.temperature } : {}),
+        ...(opts.providerOptions !== undefined ? { providerOptions: opts.providerOptions } : {}),
         ...(signal !== undefined ? { abortSignal: signal } : {}),
         onChunk: () => call.firstToken(),
         onAbort: (event?: { steps?: readonly StepUsageCarrier[] }) => {

@@ -25,8 +25,8 @@ import {
 } from "./dto/build-core-response.schemas";
 
 const projectIdParams = z.object({ projectId: z.coerce.number().int().positive() }).strict();
-const projectIdreleaseIdParams = z.object({ projectId: z.string().min(1), releaseId: z.coerce.number().int().positive() }).strict();
-const projectIdreleaseIdticketIdParams = z.object({ projectId: z.string().min(1), releaseId: z.coerce.number().int().positive(), ticketId: z.coerce.number().int().positive() }).strict();
+const projectIdreleaseIdParams = z.object({ projectId: z.coerce.number().int().positive(), releaseId: z.coerce.number().int().positive() }).strict();
+const projectIdreleaseIdticketIdParams = z.object({ projectId: z.coerce.number().int().positive(), releaseId: z.coerce.number().int().positive(), ticketId: z.coerce.number().int().positive() }).strict();
 
 @RequireModule("build")
 @Controller("build")
@@ -42,7 +42,7 @@ export class ProjectsReleasesController {
     @Param("projectId", ParseIntPipe) projectId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.releases.listReleases(u.orgId, projectId);
+    return this.releases.listReleases(u, projectId);
   }
 
   @Post(":projectId/releases")
@@ -56,7 +56,7 @@ export class ProjectsReleasesController {
     @Body() body: CreateReleaseInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.releases.createRelease(u.orgId, projectId, u.userId, body);
+    return this.releases.createRelease(u, projectId, body);
   }
 
   @Patch(":projectId/releases/:releaseId")
@@ -64,11 +64,12 @@ export class ProjectsReleasesController {
   @ResponseSchema(projectReleaseRowSchema)
   @Validate({ params: projectIdreleaseIdParams, body: updateReleaseSchema })
   updateRelease(
+    @Param("projectId", ParseIntPipe) projectId: number,
     @Param("releaseId", ParseIntPipe) releaseId: number,
     @Body() body: UpdateReleaseInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.releases.updateRelease(u.orgId, releaseId, body);
+    return this.releases.updateRelease(u, projectId, releaseId, body);
   }
 
   @Delete(":projectId/releases/:releaseId")
@@ -77,10 +78,11 @@ export class ProjectsReleasesController {
   @NoContentResponse()
   @Validate({ params: projectIdreleaseIdParams })
   deleteRelease(
+    @Param("projectId", ParseIntPipe) projectId: number,
     @Param("releaseId", ParseIntPipe) releaseId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.releases.deleteRelease(u.orgId, releaseId);
+    return this.releases.deleteRelease(u, projectId, releaseId);
   }
 
   @Post(":projectId/releases/:releaseId/tickets")
@@ -89,11 +91,12 @@ export class ProjectsReleasesController {
   @ResponseSchema(successSchema)
   @Validate({ params: projectIdreleaseIdParams, body: addReleaseTicketSchema })
   addTicket(
+    @Param("projectId", ParseIntPipe) projectId: number,
     @Param("releaseId", ParseIntPipe) releaseId: number,
     @Body() body: AddReleaseTicketInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.releases.addTicketToRelease(u.orgId, releaseId, body.ticketId);
+    return this.releases.addTicketToRelease(u, projectId, releaseId, body.ticketId);
   }
 
   @Delete(":projectId/releases/:releaseId/tickets/:ticketId")
@@ -102,10 +105,11 @@ export class ProjectsReleasesController {
   @NoContentResponse()
   @Validate({ params: projectIdreleaseIdticketIdParams })
   removeTicket(
+    @Param("projectId", ParseIntPipe) projectId: number,
     @Param("releaseId", ParseIntPipe) releaseId: number,
     @Param("ticketId", ParseIntPipe) ticketId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.releases.removeTicketFromRelease(u.orgId, releaseId, ticketId);
+    return this.releases.removeTicketFromRelease(u, projectId, releaseId, ticketId);
   }
 }

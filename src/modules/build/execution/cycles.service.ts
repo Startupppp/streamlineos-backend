@@ -106,6 +106,7 @@ export class CyclesService {
   }
 
   async updateCycle(orgId: string, projectId: number, cycleId: number, input: UpdateCycleInput) {
+    await assertProjectInOrg(this.db, orgId, projectId);
     if (input.status === "active") {
       const [existing] = await this.db
         .select({ id: cycles.id })
@@ -122,19 +123,20 @@ export class CyclesService {
     const [updated] = await this.db
       .update(cycles)
       .set({ ...input, updatedAt: new Date() })
-      .where(and(eq(cycles.id, cycleId), eq(cycles.orgId, orgId)))
+      .where(and(eq(cycles.id, cycleId), eq(cycles.projectId, projectId), eq(cycles.orgId, orgId)))
       .returning();
 
     if (!updated) throw new NotFoundException("Cycle not found");
     return updated;
   }
 
-  async deleteCycle(orgId: string, cycleId: number) {
+  async deleteCycle(orgId: string, projectId: number, cycleId: number) {
+    await assertProjectInOrg(this.db, orgId, projectId);
     await this.db.transaction(async (tx) => {
       await tx.update(tickets).set({ cycleId: null }).where(and(eq(tickets.cycleId, cycleId), eq(tickets.orgId, orgId)));
       const removed = await tx
         .delete(cycles)
-        .where(and(eq(cycles.id, cycleId), eq(cycles.orgId, orgId)))
+        .where(and(eq(cycles.id, cycleId), eq(cycles.projectId, projectId), eq(cycles.orgId, orgId)))
         .returning({ id: cycles.id });
       if (removed.length === 0) throw new NotFoundException("Cycle not found");
     });

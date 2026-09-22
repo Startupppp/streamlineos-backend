@@ -7,7 +7,6 @@ import { AttendanceRegularizationService } from "./attendance-regularization.ser
 import { BiometricService } from "./biometric.service";
 import { CompOffGrantService } from "./comp-off-grant.service";
 import { GeofencingService } from "./geofencing.service";
-import { LeaveApproverService } from "./leave-approver.service";
 import { LeavePoliciesService } from "./leave-policies.service";
 import { LeaveTypesService } from "./leave-types.service";
 import { LeavesApprovalService } from "./leaves-approval.service";
@@ -268,26 +267,6 @@ describe("HR Time services — cross-tenant isolation", () => {
     });
   });
 
-  describe("LeaveApproverService", () => {
-    it("scopes member lookup to the requesting org (DENY — cross-tenant isolation)", async () => {
-      const { db, where } = makeDb([]);
-      const svc = new LeaveApproverService(db, {} as never, {} as never);
-      const result = await svc.resolve(ATTACKER, "user-1");
-      expect(result).toBeNull();
-      expect(where).toHaveBeenCalled();
-      expect(sqlValues(where.mock.calls[0]?.[0])).toContain(ATTACKER);
-    });
-
-    it("scopes member lookup to the owning org (CONTROL)", async () => {
-      const { db, where } = makeDb([{ userId: "user-1" }]);
-      const mockEmployment = { getFacts: jest.fn().mockResolvedValue({ managerId: null }) };
-      const svc = new LeaveApproverService(db, {} as never, mockEmployment as never);
-      await svc.resolve(OWNER, "user-1").catch(() => {});
-      expect(where).toHaveBeenCalled();
-      expect(sqlValues(where.mock.calls[0]?.[0])).toContain(OWNER);
-    });
-  });
-
   describe("LeavePoliciesService", () => {
     it("scopes leave policies to the requesting org (DENY — cross-tenant isolation)", async () => {
       const { db, where } = makeDb([]);
@@ -350,9 +329,9 @@ describe("HR Time services — cross-tenant isolation", () => {
   describe("LeavesPageService", () => {
     it("scopes leave page data to the requesting org (DENY — cross-tenant isolation)", async () => {
       const { db, where } = makeDb([]);
-      const mockApprovers = { resolve: jest.fn().mockResolvedValue(null) };
+      const mockApprovals = { resolve: jest.fn().mockResolvedValue({ approver: null, queue: null }) };
       const mockEmployment = { getFacts: jest.fn().mockResolvedValue({ managerId: null }) };
-      const svc = new LeavesPageService(db, mockApprovers as never, mockEmployment as never);
+      const svc = new LeavesPageService(db, mockApprovals as never, mockEmployment as never);
       await expect(svc.pageData(ATTACKER, "user-1")).rejects.toMatchObject({ status: 404 });
       expect(where).toHaveBeenCalled();
       const allValues = where.mock.calls.flatMap((call: unknown[]) => call).flatMap((arg) => sqlValues(arg));
@@ -361,9 +340,9 @@ describe("HR Time services — cross-tenant isolation", () => {
 
     it("returns leave page data for the owning org (CONTROL)", async () => {
       const { db } = makeDb([{ id: 1, orgId: OWNER, userId: "user-1", status: "ACTIVE" }]);
-      const mockApprovers = { resolve: jest.fn().mockResolvedValue(null) };
+      const mockApprovals = { resolve: jest.fn().mockResolvedValue({ approver: null, queue: null }) };
       const mockEmployment = { getFacts: jest.fn().mockResolvedValue({ managerId: null }) };
-      const svc = new LeavesPageService(db, mockApprovers as never, mockEmployment as never);
+      const svc = new LeavesPageService(db, mockApprovals as never, mockEmployment as never);
       const result = await svc.pageData(OWNER, "user-1");
       expect(result).toBeDefined();
     });

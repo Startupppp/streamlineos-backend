@@ -44,6 +44,7 @@ const MATERIAL_FIELDS = new Set([
   "allowBackdatedEntries",
   "backdateLimitDays",
   "approvalMode",
+  "approverSource",
   "clientApprovalEnabled",
   "lockAfterApproval",
   "lockAfterInvoice",

@@ -62,10 +62,11 @@ export class ProjectsWebhooksController {
   @NoContentResponse()
   @Validate({ params: projectIdwebhookIdParams })
   deleteWebhook(
+    @Param("projectId", ParseIntPipe) projectId: number,
     @Param("webhookId", ParseIntPipe) webhookId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.webhooks.deleteWebhook(u.orgId, webhookId);
+    return this.webhooks.deleteWebhook(u.orgId, projectId, webhookId);
   }
 
   @Get(":projectId/webhooks/:webhookId/deliveries")

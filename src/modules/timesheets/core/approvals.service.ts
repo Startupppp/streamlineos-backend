@@ -16,7 +16,7 @@ import {
 } from "../../../db/schema";
 import { AccessService } from "../../access/access.service";
 import { actingMembershipId } from "../../../common/auth/principal";
-import { resolveApprovalScope, membershipScope, TS_APPROVALS_MANAGE_PERMISSION } from "./timesheets-core-scope";
+import { resolveApprovalScope, approvalQueueScope, TS_APPROVALS_MANAGE_PERMISSION } from "./timesheets-core-scope";
 import { buildCursorPage, decodeCursor } from "../../../common/pagination/cursor";
 import { keysetBeforeId } from "../../../common/pagination/keyset";
 import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
@@ -160,7 +160,7 @@ export class ApprovalsService {
     return read.read(
       {
         tenant: timesheetPeriods.orgId,
-        scope: membershipScope(membershipId, timesheetPeriods.userMembershipId),
+        scope: approvalQueueScope(membershipId),
         and: [
           eq(timesheetPeriods.status, query.status),
           requestedMembershipId !== undefined ? eq(timesheetPeriods.userMembershipId, requestedMembershipId) : undefined,
@@ -191,6 +191,30 @@ export class ApprovalsService {
       },
       () => ({ data: [], pagination: { limit, hasMore: false, nextCursor: null } }),
     );
+  }
+
+  async pendingRoutedTo(orgId: string, approverMembershipId: number, limit: number) {
+    const rows = await listApprovalRows(
+      this.db,
+      [
+        eq(timesheetPeriods.orgId, orgId),
+        eq(timesheetPeriods.status, "SUBMITTED"),
+        eq(timesheetPeriods.currentApproverMembershipId, approverMembershipId),
+      ],
+      Math.min(limit, 100),
+    );
+    return rows.slice(0, Math.min(limit, 100)).map((row) => ({
+      id: row.id,
+      userMembershipId: row.userMembershipId,
+      userName: row.userName,
+      userEmail: row.userEmail,
+      periodStart: row.periodStart,
+      periodEnd: row.periodEnd,
+      totalHours: row.totalHours,
+      submittedAt: row.submittedAt,
+      approvalDueAt: row.approvalDueAt,
+      approvalRoute: row.approvalRoute,
+    }));
   }
 
   async approveSinglePeriod(u: CurrentUserContext, periodId: number) {

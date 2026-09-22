@@ -4,6 +4,16 @@ import { pageSizeField } from "../../../../common/pagination/list-query.schema";
 const membershipStatusValues = ["ACTIVE", "SUSPENDED", "REVOKED"] as const;
 const grantStatusValues = ["ACTIVE", "SUSPENDED", "REVOKED", "EXPIRED"] as const;
 
+export const GRANT_CAPABILITY_KEYS = [
+  "canViewMilestones",
+  "canViewTasks",
+  "canViewAttachments",
+  "canViewComments",
+  "canSubmitChangeRequests",
+] as const;
+
+export type GrantCapabilityKey = (typeof GRANT_CAPABILITY_KEYS)[number];
+
 export const listMembershipsQuerySchema = z.object({
   limit: pageSizeField(20, 100),
   cursor: z.string().optional(),
@@ -23,6 +33,19 @@ export const listGrantsQuerySchema = z.object({
   limit: pageSizeField(20, 100),
   cursor: z.string().optional(),
   projectId: z.coerce.number().int().positive().optional(),
+  q: z.string().max(200).optional(),
+  permission: z
+    .string()
+    .optional()
+    .superRefine((v, ctx) => {
+      if (!v) return;
+      for (const key of v.split(",")) {
+        if (!(GRANT_CAPABILITY_KEYS as readonly string[]).includes(key)) {
+          ctx.addIssue({ code: "custom", message: `Unknown permission key: ${key}` });
+        }
+      }
+    }),
+  state: z.enum(["active", "expired", "suspended", "revoked"]).optional(),
 }).strict();
 
 export const createGrantSchema = z.object({

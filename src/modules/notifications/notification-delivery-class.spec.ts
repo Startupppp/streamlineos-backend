@@ -130,6 +130,9 @@ const executable = (source: string): string =>
     .map((line) => line.replace(/\/\/.*$/, ""))
     .join("\n");
 
+const SENDER =
+  /\b(?:[A-Za-z]*EmailService|EmailSignService|EmailOutboxService|EmailProviderService)\b/;
+
 function directEmailCallersOnDisk(): string[] {
   const srcRoot = join(__dirname, "..", "..");
   const moduleRoot = join(srcRoot, "modules");
@@ -145,9 +148,9 @@ function directEmailCallersOnDisk(): string[] {
       if (!p.endsWith(".ts") || p.endsWith(".spec.ts") || p.endsWith(".module.ts")) continue;
       const rel = relative(srcRoot, p).split(sep).join("/");
       if (rel.includes("/dto/") || rel.startsWith("modules/email/")) continue;
+      if (rel.startsWith("modules/notifications/providers/")) continue;
       if (rel === "modules/notifications/notification-caller-inventory.ts") continue;
-      if (/\b(?:[A-Za-z]*EmailService|EmailSignService)\b/.test(executable(readFileSync(p, "utf8"))))
-        found.push(rel);
+      if (SENDER.test(executable(readFileSync(p, "utf8")))) found.push(rel);
     }
   };
 
@@ -316,5 +319,29 @@ describe("retry policy is the registry's, not a worker constant", () => {
   it("resolves the product-event class for any catalog-driven delivery", () => {
     expect(resolveDeliveryClassForEvent("billing.payment.failed")).toBe(DeliveryClass.PRODUCT_EVENT);
     expect(resolveDeliveryClassForEvent(undefined)).toBe(DeliveryClass.PRODUCT_EVENT);
+  });
+});
+
+describe("what counts as reaching EmailService directly", () => {
+  it("does not count consulting EmailSuppressionService, because the gate decides whether a send happens rather than sending", () => {
+    expect(SENDER.test("private readonly suppression: EmailSuppressionService")).toBe(false);
+    expect(SENDER.test("private readonly outbox: EmailOutboxService")).toBe(true);
+  });
+
+  it("does not count the notifications providers directory, because that is the dispatch seam and not something bypassing it", () => {
+    const seamOwned = directEmailCallersOnDisk().filter((file) =>
+      file.startsWith("modules/notifications/providers/"),
+    );
+    expect(seamOwned).toEqual([]);
+  });
+
+  it("counts every sender type the inventory is meant to ratchet", () => {
+    for (const sender of [
+      "HrEmailService",
+      "EmailSignService",
+      "EmailOutboxService",
+      "EmailProviderService",
+    ])
+      expect(SENDER.test(`private readonly x: ${sender}`)).toBe(true);
   });
 });

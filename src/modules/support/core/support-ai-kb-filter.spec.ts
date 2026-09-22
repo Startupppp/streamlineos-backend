@@ -1,4 +1,6 @@
 import { SupportAiTriageService } from "./support-ai-triage.service";
+import { withDelegatingTransaction } from "../../../test/delegating-transaction";
+import { primeRelocationTrafficTracker } from "../../../common/relocation/relocation-traffic-tracker";
 
 const makeGateway = () => ({
   invokeStructured: jest.fn(),
@@ -6,18 +8,11 @@ const makeGateway = () => ({
 });
 const makeAiSettings = () => ({ getSettings: jest.fn().mockResolvedValue({ confidenceThreshold: 0.7 }) });
 
-const makeChain = (finalValue: unknown[] = []) => {
-  const chain: Record<string, jest.Mock> = {};
-  for (const m of ["from", "where", "orderBy", "innerJoin", "leftJoin"]) {
-    chain[m] = jest.fn().mockReturnThis();
-  }
-  chain.limit = jest.fn().mockResolvedValue(finalValue);
-  return chain;
-};
-
 describe("SupportAiTriageService.suggestKbArticles — KB filter", () => {
+  beforeEach(() => primeRelocationTrafficTracker([], Date.now()));
+
   it("returns null when no articles meet similarity threshold", async () => {
-    const db = { query: { supportTicketMessages: { findMany: jest.fn().mockResolvedValue([]) } } };
+    const db = withDelegatingTransaction({});
     const mockData = {
       isEmbeddingsConfigured: jest.fn().mockReturnValue(true),
       isAvailable: jest.fn().mockResolvedValue(true),
@@ -35,12 +30,12 @@ describe("SupportAiTriageService.suggestKbArticles — KB filter", () => {
       makeAiSettings() as never,
     );
 
-    const result = await svc.suggestKbArticles("org-1" as never, 1);
+    const result = await svc.suggestKbArticles({ orgId: "org-1" } as never, 1);
     expect(result).toBeNull();
   });
 
   it("calls data.searchKbForTicket with ticket content", async () => {
-    const db = { query: { supportTicketMessages: { findMany: jest.fn().mockResolvedValue([]) } } };
+    const db = withDelegatingTransaction({});
     const mockData = {
       isEmbeddingsConfigured: jest.fn().mockReturnValue(true),
       isAvailable: jest.fn().mockResolvedValue(true),
@@ -58,13 +53,13 @@ describe("SupportAiTriageService.suggestKbArticles — KB filter", () => {
       makeAiSettings() as never,
     );
 
-    await svc.suggestKbArticles("org-1" as never, 1);
+    await svc.suggestKbArticles({ orgId: "org-1" } as never, 1);
 
     expect(mockData.searchKbForTicket).toHaveBeenCalledTimes(1);
   });
 
   it("returns null when embedding service is not configured", async () => {
-    const db = { query: { supportTicketMessages: { findMany: jest.fn() } } };
+    const db = withDelegatingTransaction({});
     const mockData = {
       isEmbeddingsConfigured: jest.fn().mockReturnValue(false),
       isAvailable: jest.fn().mockResolvedValue(true),
@@ -82,7 +77,7 @@ describe("SupportAiTriageService.suggestKbArticles — KB filter", () => {
       makeAiSettings() as never,
     );
 
-    const result = await svc.suggestKbArticles("org-1" as never, 1);
+    const result = await svc.suggestKbArticles({ orgId: "org-1" } as never, 1);
     expect(result).toBeNull();
     expect(mockData.searchKbForTicket).not.toHaveBeenCalled();
   });

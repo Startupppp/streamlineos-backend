@@ -1,7 +1,3 @@
-jest.mock("../../common/tenant/run-in-tenant-transaction", () => ({
-  runInNewTenantTransaction: (_db: unknown, _orgId: string, fn: (tx: unknown) => unknown) => fn(_db),
-}));
-
 import { NotFoundException } from "@nestjs/common";
 import { SurveyVersionService } from "./survey-version.service";
 import { SurveyBuilderService } from "./survey-builder.service";
@@ -38,14 +34,14 @@ describe("surveys — a cross-tenant surveyId answers 404, not 500 and not a suc
     await expect(versions.getDraftVersion(ATTACKER_ORG, 1)).rejects.toThrow(NotFoundException);
   });
 
-  it("getDraftVersion still creates the draft for the owning org (control)", async () => {
+  it("createDraftVersion still creates the draft for the owning org (control)", async () => {
     const db = makeDb({ id: 1 });
     const returning = jest.fn().mockResolvedValue([{ id: 7, surveyId: 1 }]);
     const values = jest.fn().mockReturnValue({ returning });
     (db as unknown as { insert: unknown }).insert = jest.fn().mockReturnValue({ values });
     const versions = new SurveyVersionService(db);
 
-    await expect(versions.getDraftVersion(OWNER_ORG, 1)).resolves.toEqual({ id: 7, surveyId: 1 });
+    await expect(versions.createDraftVersion(OWNER_ORG, 1)).resolves.toEqual({ id: 7, surveyId: 1 });
   });
 
   it("reorder refuses a foreign survey", async () => {

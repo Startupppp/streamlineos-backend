@@ -10,6 +10,7 @@ import { and, eq } from "drizzle-orm";
 import { candidateApplications, candidateResumes, candidates, interviews } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
+import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
 import { AiGatewayService } from "../../ai/core/gateway/ai-gateway.service";
 import {
   AiScoreSchema,
@@ -40,21 +41,29 @@ export class RecruitmentCandidateAiService {
     candidateId: number,
     userId: string,
   ): Promise<AiScoreResult> {
-    const candidate = await this.db.query.candidates.findFirst({
-      where: and(eq(candidates.id, candidateId), eq(candidates.orgId, orgId)),
-      with: { resume: { columns: { resumeText: true } } },
-    });
-    if (!candidate) throw new NotFoundException("Candidate not found.");
+    const { candidate, application } = await runInTenantTransaction(
+      this.db,
+      async (tx) => {
+        const candidate = await tx.query.candidates.findFirst({
+          where: and(eq(candidates.id, candidateId), eq(candidates.orgId, orgId)),
+          with: { resume: { columns: { resumeText: true } } },
+        });
+        if (!candidate) throw new NotFoundException("Candidate not found.");
 
-    const application = await this.db.query.candidateApplications.findFirst({
-      where: and(
-        eq(candidateApplications.candidateId, candidateId),
-        eq(candidateApplications.orgId, orgId),
-      ),
-      columns: { id: true },
-      with: { jobPosting: { columns: { title: true, requirements: true } } },
-      orderBy: (t, { desc: d }) => [d(t.appliedAt)],
-    });
+        const application = await tx.query.candidateApplications.findFirst({
+          where: and(
+            eq(candidateApplications.candidateId, candidateId),
+            eq(candidateApplications.orgId, orgId),
+          ),
+          columns: { id: true },
+          with: { jobPosting: { columns: { title: true, requirements: true } } },
+          orderBy: (t, { desc: d }) => [d(t.appliedAt)],
+        });
+
+        return { candidate, application };
+      },
+      { orgId },
+    );
 
     const jobTitle =
       application?.jobPosting?.title ?? "an unspecified position";
@@ -116,15 +125,21 @@ Score the candidate on technicalSkills, experience, communication, cultureFit an
       summary: gatewayResult.data.summary,
     };
 
-    await this.db
-      .update(candidates)
-      .set({
-        aiScore: scored.overall,
-        aiScoreBreakdown: scored.breakdown,
-        aiScoreGeneratedAt: new Date(),
-        updatedAt: new Date(),
-      })
-      .where(and(eq(candidates.id, candidateId), eq(candidates.orgId, orgId)));
+    await runInTenantTransaction(
+      this.db,
+      async (tx) => {
+        await tx
+          .update(candidates)
+          .set({
+            aiScore: scored.overall,
+            aiScoreBreakdown: scored.breakdown,
+            aiScoreGeneratedAt: new Date(),
+            updatedAt: new Date(),
+          })
+          .where(and(eq(candidates.id, candidateId), eq(candidates.orgId, orgId)));
+      },
+      { orgId },
+    );
 
     return scored;
   }
@@ -134,41 +149,50 @@ Score the candidate on technicalSkills, experience, communication, cultureFit an
     candidateId: number,
     userId: string,
   ): Promise<CompositeScoreResult> {
-    const candidate = await this.db.query.candidates.findFirst({
-      columns: { id: true, firstName: true, lastName: true, currentRole: true },
-      where: and(eq(candidates.id, candidateId), eq(candidates.orgId, orgId)),
-    });
-    if (!candidate) throw new NotFoundException("Candidate not found.");
+    const { candidate, candidateInterviews, application } =
+      await runInTenantTransaction(
+        this.db,
+        async (tx) => {
+          const candidate = await tx.query.candidates.findFirst({
+            columns: { id: true, firstName: true, lastName: true, currentRole: true },
+            where: and(eq(candidates.id, candidateId), eq(candidates.orgId, orgId)),
+          });
+          if (!candidate) throw new NotFoundException("Candidate not found.");
 
-    const candidateInterviews = await this.db.query.interviews.findMany({
-      limit: 100,
-      columns: { id: true, type: true, scheduledAt: true },
-      where: and(
-        eq(interviews.candidateId, candidateId),
-        eq(interviews.orgId, orgId),
-      ),
-      with: {
-        scorecards: { where: (sc, { isNotNull: nn }) => nn(sc.submittedAt) },
-      },
-      orderBy: (t, { asc }) => [asc(t.scheduledAt)],
-    });
+          const candidateInterviews = await tx.query.interviews.findMany({
+            limit: 100,
+            columns: { id: true, type: true, scheduledAt: true },
+            where: and(
+              eq(interviews.candidateId, candidateId),
+              eq(interviews.orgId, orgId),
+            ),
+            with: {
+              scorecards: { where: (sc, { isNotNull: nn }) => nn(sc.submittedAt) },
+            },
+            orderBy: (t, { asc }) => [asc(t.scheduledAt)],
+          });
 
-    const submitted = candidateInterviews.flatMap((iv) => iv.scorecards ?? []);
-    if (submitted.length === 0) {
-      throw new BadRequestException(
-        "No submitted scorecards found. At least one scorecard must be submitted before generating a composite score.",
+          const submitted = candidateInterviews.flatMap((iv) => iv.scorecards ?? []);
+          if (submitted.length === 0) {
+            throw new BadRequestException(
+              "No submitted scorecards found. At least one scorecard must be submitted before generating a composite score.",
+            );
+          }
+
+          const application = await tx.query.candidateApplications.findFirst({
+            where: and(
+              eq(candidateApplications.candidateId, candidateId),
+              eq(candidateApplications.orgId, orgId),
+            ),
+            columns: { id: true },
+            with: { jobPosting: { columns: { title: true, requirements: true } } },
+            orderBy: (t, { desc: d }) => [d(t.appliedAt)],
+          });
+
+          return { candidate, candidateInterviews, application };
+        },
+        { orgId },
       );
-    }
-
-    const application = await this.db.query.candidateApplications.findFirst({
-      where: and(
-        eq(candidateApplications.candidateId, candidateId),
-        eq(candidateApplications.orgId, orgId),
-      ),
-      columns: { id: true },
-      with: { jobPosting: { columns: { title: true, requirements: true } } },
-      orderBy: (t, { desc: d }) => [d(t.appliedAt)],
-    });
 
     const jobTitle =
       application?.jobPosting?.title ?? "an unspecified position";
@@ -253,18 +277,6 @@ Provide a verdict (STRONG_HIRE, HIRE, ON_FENCE or NO_HIRE), an overall composite
     file: Express.Multer.File | undefined,
     body: unknown,
   ) {
-    const candidate = await this.db.query.candidates.findFirst({
-      where: and(eq(candidates.id, candidateId), eq(candidates.orgId, orgId)),
-      columns: {
-        id: true,
-        firstName: true,
-        lastName: true,
-        email: true,
-        phone: true,
-      },
-    });
-    if (!candidate) throw new NotFoundException("Candidate not found");
-
     let text: string;
     if (file) {
       if (file.size > RESUME_MAX_SIZE)
@@ -281,15 +293,40 @@ Provide a verdict (STRONG_HIRE, HIRE, ON_FENCE or NO_HIRE), an overall composite
       if (!text) throw new BadRequestException("resumeText is required");
     }
 
+    const candidate = await runInTenantTransaction(
+      this.db,
+      async (tx) => {
+        const candidate = await tx.query.candidates.findFirst({
+          where: and(eq(candidates.id, candidateId), eq(candidates.orgId, orgId)),
+          columns: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            email: true,
+            phone: true,
+          },
+        });
+        if (!candidate) throw new NotFoundException("Candidate not found");
+        return candidate;
+      },
+      { orgId },
+    );
+
     const parsed = await this.parseResumeText(text, orgId, userId);
 
-    await this.db
-      .insert(candidateResumes)
-      .values({ orgId, candidateId, resumeText: text.slice(0, 100000) })
-      .onConflictDoUpdate({
-        target: candidateResumes.candidateId,
-        set: { resumeText: text.slice(0, 100000), updatedAt: new Date() },
-      });
+    await runInTenantTransaction(
+      this.db,
+      async (tx) => {
+        await tx
+          .insert(candidateResumes)
+          .values({ orgId, candidateId, resumeText: text.slice(0, 100000) })
+          .onConflictDoUpdate({
+            target: candidateResumes.candidateId,
+            set: { resumeText: text.slice(0, 100000), updatedAt: new Date() },
+          });
+      },
+      { orgId },
+    );
 
     return {
       parsed,

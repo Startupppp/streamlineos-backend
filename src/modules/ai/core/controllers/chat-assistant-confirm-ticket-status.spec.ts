@@ -37,6 +37,9 @@ jest.mock("../tools/comms-copilot-tools", () => ({ CommsCopilotTools: jest.fn() 
 jest.mock("../../../calendar/calendar.service", () => ({ CalendarService: jest.fn() }));
 jest.mock("../../../integrations/core/composio.gateway", () => ({ ComposioGateway: jest.fn() }));
 jest.mock("../../../../common/ratelimit/rate-limit.service", () => ({ RateLimitService: jest.fn() }));
+jest.mock("../../../../common/tenant/run-in-tenant-transaction", () => ({
+  runInTenantTransaction: jest.fn((_db: unknown, fn: () => unknown) => fn()),
+}));
 
 import { BadRequestException } from "@nestjs/common";
 import { ChatAssistantController } from "./chat-assistant.controller";

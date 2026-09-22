@@ -11,6 +11,7 @@ import { OrgFeaturesService } from "../../ai/core/services/org-features.service"
 import { SupportAiEmbeddingsHelper } from "./support-ai-embeddings.helper";
 import { SupportAiTriageDataService } from "./support-ai-triage-data.service";
 import { analysisSchema, rootCauseSchema } from "./support-ai-triage.schemas";
+import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
 
 @Injectable()
 export class SupportAiTriageAnalysisService {
@@ -23,14 +24,23 @@ export class SupportAiTriageAnalysisService {
   ) {}
 
   async analyzeTicket(orgId: string, ticketId: number, userId: string) {
-    if (!(await this.data.isAvailable(orgId))) return null;
-    const ticket = await this.data.getTicketOrThrow(orgId, ticketId);
-    const messages = await this.db.query.supportTicketMessages.findMany({
-      where: eq(supportTicketMessages.ticketId, ticketId),
-      orderBy: [supportTicketMessages.createdAt],
-      limit: 20,
-      columns: { body: true, isInternal: true, createdAt: true },
-    });
+    const prepared = await runInTenantTransaction(
+      this.db,
+      async () => {
+        if (!(await this.data.isAvailable(orgId))) return null;
+        const found = await this.data.getTicketOrThrow(orgId, ticketId);
+        const thread = await this.db.query.supportTicketMessages.findMany({
+          where: eq(supportTicketMessages.ticketId, ticketId),
+          orderBy: [supportTicketMessages.createdAt],
+          limit: 20,
+          columns: { body: true, isInternal: true, createdAt: true },
+        });
+        return { ticket: found, messages: thread };
+      },
+      { orgId },
+    );
+    if (!prepared) return null;
+    const { ticket, messages } = prepared;
     const thread = messages
       .filter((m) => !m.isInternal)
       .map((m) => `- ${redactSensitiveData(m.body)}`)
@@ -60,92 +70,116 @@ export class SupportAiTriageAnalysisService {
       return null;
     }
     const result = gatewayResult.data;
-    await this.data.replacePendingSuggestions(orgId, ticketId, [
-      "summary",
-      "sentiment",
-      "category",
-      "priority",
-      "spam",
-    ]);
-    const rows = await Promise.all([
-      this.data.insertSuggestion(
-        orgId,
-        ticketId,
-        "summary",
-        { text: result.summary },
-        result.confidence,
-      ),
-      this.data.insertSuggestion(
-        orgId,
-        ticketId,
-        "sentiment",
-        { sentiment: result.sentiment },
-        result.confidence,
-      ),
-      result.category
-        ? this.data.insertSuggestion(
+    return runInTenantTransaction(
+      this.db,
+      async () => {
+        await this.data.replacePendingSuggestions(orgId, ticketId, [
+          "summary",
+          "sentiment",
+          "category",
+          "priority",
+          "spam",
+        ]);
+        const rows = await Promise.all([
+          this.data.insertSuggestion(
             orgId,
             ticketId,
-            "category",
-            { category: result.category },
+            "summary",
+            { text: result.summary },
             result.confidence,
-          )
-        : null,
-      this.data.insertSuggestion(
-        orgId,
-        ticketId,
-        "priority",
-        { priority: result.suggestedPriority },
-        result.confidence,
-      ),
-      result.isSpam
-        ? this.data.insertSuggestion(
+          ),
+          this.data.insertSuggestion(
             orgId,
             ticketId,
-            "spam",
-            { isSpam: true },
+            "sentiment",
+            { sentiment: result.sentiment },
             result.confidence,
-          )
-        : null,
-    ]);
-    return rows.filter(Boolean);
+          ),
+          result.category
+            ? this.data.insertSuggestion(
+                orgId,
+                ticketId,
+                "category",
+                { category: result.category },
+                result.confidence,
+              )
+            : null,
+          this.data.insertSuggestion(
+            orgId,
+            ticketId,
+            "priority",
+            { priority: result.suggestedPriority },
+            result.confidence,
+          ),
+          result.isSpam
+            ? this.data.insertSuggestion(
+                orgId,
+                ticketId,
+                "spam",
+                { isSpam: true },
+                result.confidence,
+              )
+            : null,
+        ]);
+        return rows.filter(Boolean);
+      },
+      { orgId },
+    );
   }
 
   async findDuplicates(orgId: string, ticketId: number) {
-    const ticket = await this.data.getTicketOrThrow(orgId, ticketId);
-    if (!this.aiGateway.isEmbeddingConfigured()) return null;
-    const flags = await this.orgFeatures.getFlags(orgId);
-    if (!flags.supportAi) return null;
+    const available = await runInTenantTransaction(
+      this.db,
+      async () => {
+        await this.data.getTicketOrThrow(orgId, ticketId);
+        if (!this.aiGateway.isEmbeddingConfigured()) return false;
+        const flags = await this.orgFeatures.getFlags(orgId);
+        return flags.supportAi;
+      },
+      { orgId },
+    );
+    if (!available) return null;
     const candidates = await this.embHelper.upsertAndSearchSimilar(
       orgId,
       ticketId,
-      ticket.title,
-      ticket.description,
       1,
     );
     const best = candidates[0];
     if (!best || best.similarity < this.embHelper.getDuplicateThreshold())
       return null;
-    await this.data.replacePendingSuggestions(orgId, ticketId, ["duplicate"]);
-    return this.data.insertSuggestion(
-      orgId,
-      ticketId,
-      "duplicate",
-      { candidateTicketId: best.candidateTicketId, title: best.title },
-      best.similarity,
+    return runInTenantTransaction(
+      this.db,
+      async () => {
+        await this.data.replacePendingSuggestions(orgId, ticketId, [
+          "duplicate",
+        ]);
+        return this.data.insertSuggestion(
+          orgId,
+          ticketId,
+          "duplicate",
+          { candidateTicketId: best.candidateTicketId, title: best.title },
+          best.similarity,
+        );
+      },
+      { orgId },
     );
   }
 
   async findRootCauseCluster(orgId: string, ticketId: number, userId?: string) {
-    const ticket = await this.data.getTicketOrThrow(orgId, ticketId);
-    if (!this.aiGateway.isEmbeddingConfigured()) return null;
-    const flags = await this.orgFeatures.getFlags(orgId);
-    if (!flags.supportAi) return null;
+    const ticket = await runInTenantTransaction(
+      this.db,
+      async () => {
+        const found = await this.data.getTicketOrThrow(orgId, ticketId);
+        if (!this.aiGateway.isEmbeddingConfigured()) return null;
+        const flags = await this.orgFeatures.getFlags(orgId);
+        return flags.supportAi ? found : null;
+      },
+      { orgId },
+    );
+    if (!ticket) return null;
     const candidates = await this.embHelper.upsertAndSearchSimilar(
       orgId,
       ticketId,
-      ticket.title,
-      ticket.description,
       5,
     );
     const related = candidates.filter(
@@ -182,19 +216,25 @@ export class SupportAiTriageAnalysisService {
       });
       return null;
     }
-    await this.data.replacePendingSuggestions(orgId, ticketId, [
-      "root_cause_cluster",
-    ]);
-    return this.data.insertSuggestion(
-      orgId,
-      ticketId,
-      "root_cause_cluster",
-      {
-        relatedTicketIds: related.map((r) => r.candidateTicketId),
-        rootCause: gatewayResult.data.rootCause,
-        summary: gatewayResult.data.summary,
+    return runInTenantTransaction(
+      this.db,
+      async () => {
+        await this.data.replacePendingSuggestions(orgId, ticketId, [
+          "root_cause_cluster",
+        ]);
+        return this.data.insertSuggestion(
+          orgId,
+          ticketId,
+          "root_cause_cluster",
+          {
+            relatedTicketIds: related.map((r) => r.candidateTicketId),
+            rootCause: gatewayResult.data.rootCause,
+            summary: gatewayResult.data.summary,
+          },
+          related[0].similarity,
+        );
       },
-      related[0].similarity,
+      { orgId },
     );
   }
 }

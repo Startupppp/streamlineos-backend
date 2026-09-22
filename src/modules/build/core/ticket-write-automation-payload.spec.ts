@@ -80,7 +80,7 @@ describe("ProjectsTicketsUpdateService — automation payload reflects current a
       principal: { kind: "human-session", membershipId: 2, isOrgOwner: true },
     } as never;
 
-    await svc.updateTicket(u, 1, { title: "Updated Title" });
+    await svc.updateTicket(u, 1, 1, { title: "Updated Title" });
 
     const calls = runForTicketEvent.mock.calls;
     const updatedCall = calls.find((c: unknown[]) => c[2] === "ticket.updated");
@@ -110,7 +110,7 @@ describe("ProjectsTicketsUpdateService — automation payload reflects current a
       principal: { kind: "human-session", membershipId: 2, isOrgOwner: true },
     } as never;
 
-    await svc.updateTicket(u, 1, { title: "Updated Title" });
+    await svc.updateTicket(u, 1, 1, { title: "Updated Title" });
 
     const calls = runForTicketEvent.mock.calls;
     const updatedCall = calls.find((c: unknown[]) => c[2] === "ticket.updated");

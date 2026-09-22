@@ -288,6 +288,10 @@ const SELF_CALL = /this\.([A-Za-z_$][\w$]*)\s*\(/g;
 const FREE_CALL = /(?<![.\w])([a-z][\w$]*)\s*\(/g;
 const LOCAL_CALL = /(?<![.\w])([a-z][\w$]*)\s*\.\s*([A-Za-z_$][\w$]*)\s*\(/g;
 
+function typesFor(source, method) {
+  return new Map([...injectedTypes(source), ...parameterTypes(signatureOf(source, method))]);
+}
+
 export function makeReaches({
   directly,
   maxHops,
@@ -295,7 +299,7 @@ export function makeReaches({
   followSameClass = false,
   functionIndex = null,
 }) {
-  return function reaches(body, classIndex, sourceOf, hops, seen) {
+  return function reaches(body, classIndex, sourceOf, hops, seen, trail) {
     if (directly(body)) return true;
     if (hops >= maxHops) return false;
 
@@ -313,11 +317,11 @@ export function makeReaches({
         if (source === null) continue;
         const nested = methodBody(source, name);
         if (nested === null) continue;
-        const types = new Map([
-          ...injectedTypes(source),
-          ...parameterTypes(signatureOf(source, name)),
-        ]);
-        if (reaches(nested, classIndex, { types, source, file }, hops + 1, seen)) return true;
+        const types = typesFor(source, name);
+        if (reaches(nested, classIndex, { types, source, file }, hops + 1, seen, trail)) {
+          trail?.unshift(key);
+          return true;
+        }
         seen.delete(key);
       }
     }
@@ -340,12 +344,15 @@ export function makeReaches({
           reaches(
             nested,
             classIndex,
-            { types: injectedTypes(source), source, file },
+            { types: typesFor(source, method), source, file },
             hops + 1,
             seen,
+            trail,
           )
-        )
+        ) {
+          trail?.unshift(key);
           return true;
+        }
         seen.delete(key);
       }
     }
@@ -358,7 +365,10 @@ export function makeReaches({
         seen.add(key);
         const nested = methodBody(sourceOf.source, method);
         if (nested === null) continue;
-        if (reaches(nested, classIndex, sourceOf, hops + 1, seen)) return true;
+        if (reaches(nested, classIndex, sourceOf, hops + 1, seen, trail)) {
+          trail?.unshift(key);
+          return true;
+        }
         seen.delete(key);
       }
     }
@@ -380,12 +390,15 @@ export function makeReaches({
         reaches(
           nested,
           classIndex,
-          { types: injectedTypes(source), source, file },
+          { types: typesFor(source, method), source, file },
           hops + 1,
           seen,
+          trail,
         )
-      )
+      ) {
+        trail?.unshift(key);
         return true;
+      }
       seen.delete(key);
     }
     return false;

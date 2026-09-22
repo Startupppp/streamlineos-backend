@@ -1,5 +1,6 @@
 import { BadRequestException, ForbiddenException, NotFoundException } from "@nestjs/common";
 import { ChangeRequestsService } from "./change-requests.service";
+import { listCrQuerySchema } from "./dto/change-requests.schemas";
 import type { AccessService } from "../../access/access.service";
 import type { AuditService } from "../../../common/audit/audit.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
@@ -411,5 +412,182 @@ describe("ChangeRequestsService — project scope on mutations", () => {
     );
 
     expect(db.update).not.toHaveBeenCalled();
+  });
+});
+
+describe("ChangeRequestsService — duplicate decision does not overwrite decidedAt", () => {
+  it("a second approve call when already approved does not set a new decidedAt", async () => {
+    const existingRow = {
+      id: 1,
+      status: "approved",
+      requestedById: "user-1",
+    };
+    const updatedRow = { ...existingRow, title: "T", orgId: "org-1" };
+    const db = {
+      query: {
+        projects: { findFirst: jest.fn().mockResolvedValue({ managerMembershipId: null }) },
+      },
+      select: jest.fn().mockReturnValue({
+        from: jest.fn().mockReturnValue({
+          where: jest.fn().mockReturnValue({
+            limit: jest.fn().mockResolvedValue([existingRow]),
+          }),
+        }),
+      }),
+      update: jest.fn().mockReturnValue({
+        set: jest.fn().mockReturnValue({
+          where: jest.fn().mockReturnValue({
+            returning: jest.fn().mockResolvedValue([updatedRow]),
+          }),
+        }),
+      }),
+      transaction: jest.fn(),
+    };
+    const svc = new ChangeRequestsService(db as unknown as Db, mockAccess, mockAudit);
+
+    await svc.updateChangeRequest(makeU("org-1", true), 1, 1, { status: "approved" });
+
+    const setCall = (db.update().set as jest.Mock).mock.calls[0]?.[0] as Record<string, unknown>;
+    expect(setCall).not.toHaveProperty("decidedAt");
+  });
+
+  it("a second reject call when already rejected does not set a new decidedAt", async () => {
+    const existingRow = {
+      id: 1,
+      status: "rejected",
+      requestedById: "user-1",
+    };
+    const updatedRow = { ...existingRow, title: "T", orgId: "org-1" };
+    const db = {
+      query: {
+        projects: { findFirst: jest.fn().mockResolvedValue({ managerMembershipId: null }) },
+      },
+      select: jest.fn().mockReturnValue({
+        from: jest.fn().mockReturnValue({
+          where: jest.fn().mockReturnValue({
+            limit: jest.fn().mockResolvedValue([existingRow]),
+          }),
+        }),
+      }),
+      update: jest.fn().mockReturnValue({
+        set: jest.fn().mockReturnValue({
+          where: jest.fn().mockReturnValue({
+            returning: jest.fn().mockResolvedValue([updatedRow]),
+          }),
+        }),
+      }),
+      transaction: jest.fn(),
+    };
+    const svc = new ChangeRequestsService(db as unknown as Db, mockAccess, mockAudit);
+
+    await svc.updateChangeRequest(makeU("org-1", true), 1, 1, { status: "rejected" });
+
+    const setCall = (db.update().set as jest.Mock).mock.calls[0]?.[0] as Record<string, unknown>;
+    expect(setCall).not.toHaveProperty("decidedAt");
+  });
+});
+
+describe("listCrQuerySchema — opaque cursor and limit", () => {
+  it("accepts an empty query (no cursor)", () => {
+    expect(() => listCrQuerySchema.parse({})).not.toThrow();
+  });
+
+  it("accepts an opaque cursor string so pagination survives a round-trip", () => {
+    expect(() => listCrQuerySchema.parse({ cursor: "dGVzdA" })).not.toThrow();
+  });
+
+  it("accepts a limit within the allowed range", () => {
+    expect(() => listCrQuerySchema.parse({ limit: "25" })).not.toThrow();
+  });
+
+  it("rejects a limit above 100 so the server cannot be asked for unbounded pages", () => {
+    expect(() => listCrQuerySchema.parse({ limit: "101" })).toThrow();
+  });
+
+  it("rejects afterCreatedAt — legacy cursor field removed in favour of opaque cursor", () => {
+    expect(() =>
+      listCrQuerySchema.parse({ afterCreatedAt: "2024-06-01T00:00:00.000Z" }),
+    ).toThrow();
+  });
+
+  it("rejects afterId — legacy cursor field removed in favour of opaque cursor", () => {
+    expect(() => listCrQuerySchema.parse({ afterId: "42" })).toThrow();
+  });
+});
+
+describe("listCrQuerySchema — new filter fields", () => {
+  it("accepts requesterId so the list can be filtered by who raised the CR", () => {
+    expect(() => listCrQuerySchema.parse({ requesterId: "user-abc" })).not.toThrow();
+  });
+
+  it("accepts approverId so the list can be filtered by the approver", () => {
+    expect(() => listCrQuerySchema.parse({ approverId: "user-xyz" })).not.toThrow();
+  });
+
+  it("accepts q for server-side text search over title", () => {
+    expect(() => listCrQuerySchema.parse({ q: "foundation" })).not.toThrow();
+  });
+
+  it("rejects q longer than 200 characters to cap the search predicate size", () => {
+    expect(() => listCrQuerySchema.parse({ q: "a".repeat(201) })).toThrow();
+  });
+});
+
+describe("ChangeRequestsService — listChangeRequests returns cursor page envelope", () => {
+  const ORG = "org-1";
+  const u = makeU(ORG);
+
+  function makeMemberDbForPage(): Db {
+    const postGateChain = {
+      from: jest.fn().mockReturnValue({
+        where: jest.fn().mockReturnValue({
+          orderBy: jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue([]) }),
+        }),
+      }),
+    };
+    return {
+      query: {
+        projects: { findFirst: jest.fn().mockResolvedValue({ managerMembershipId: 999 }) },
+      },
+      select: jest
+        .fn()
+        .mockReturnValueOnce({
+          from: jest.fn().mockReturnValue({
+            innerJoin: jest.fn().mockReturnValue({
+              where: jest.fn().mockReturnValue({
+                limit: jest.fn().mockResolvedValue([{ role: "MEMBER" }]),
+              }),
+            }),
+          }),
+        })
+        .mockReturnValue(postGateChain),
+    } as unknown as Db;
+  }
+
+  const gateAccess = {
+    resolveUserPermissions: jest.fn().mockResolvedValue(new Set()),
+  } as unknown as AccessService;
+
+  beforeEach(() => {
+    (gateAccess.resolveUserPermissions as jest.Mock).mockResolvedValue(new Set());
+  });
+
+  it("returns a cursor page object rather than a flat array", async () => {
+    const db = makeMemberDbForPage();
+    const svc = new ChangeRequestsService(db, gateAccess, mockAudit);
+    const result = await svc.listChangeRequests(u, 1, {});
+    expect(result).toHaveProperty("data");
+    expect(result).toHaveProperty("pagination");
+    expect(result.pagination).toHaveProperty("hasMore");
+    expect(result.pagination).toHaveProperty("nextCursor");
+    expect(Array.isArray(result.data)).toBe(true);
+  });
+
+  it("sets hasMore false and nextCursor null when the result set is empty", async () => {
+    const db = makeMemberDbForPage();
+    const svc = new ChangeRequestsService(db, gateAccess, mockAudit);
+    const result = await svc.listChangeRequests(u, 1, {});
+    expect(result.pagination.hasMore).toBe(false);
+    expect(result.pagination.nextCursor).toBeNull();
   });
 });

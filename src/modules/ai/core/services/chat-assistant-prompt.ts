@@ -9,7 +9,7 @@ const UNTRUSTED_DATA_FENCE_END = "ORG_DATA>>>";
 
 export function asPromptData(value: string, maxChars: number): string {
   return value
-    .replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]+/g, " ")
+    .replace(/[\p{Cc}\u2028\u2029]+/gu, " ")
     .replace(/[<>]/g, "")
     .replace(/\s{2,}/g, " ")
     .trim()

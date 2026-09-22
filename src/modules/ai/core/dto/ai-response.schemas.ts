@@ -20,6 +20,7 @@ export {
   listConversationsResponseSchema,
   deleteConversationResponseSchema,
   confirmActionResponseSchema,
+  declineActionResponseSchema,
 } from "./ai-chat-response.schemas";
 
 export {

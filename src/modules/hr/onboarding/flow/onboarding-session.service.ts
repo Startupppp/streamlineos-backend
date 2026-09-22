@@ -1,5 +1,5 @@
-import { Inject, Injectable } from "@nestjs/common";
-import { and, desc, eq, isNull, or } from "drizzle-orm";
+import { Inject, Injectable, InternalServerErrorException } from "@nestjs/common";
+import { and, desc, eq, isNull, ne, or } from "drizzle-orm";
 import { DRIZZLE } from "../../../../db/drizzle.constants";
 import type { Db } from "../../../../db/drizzle.module";
 import { onboardingFlowSessions } from "../../../../db/schema";
@@ -52,13 +52,30 @@ export class OnboardingSessionService {
       return { ...existing, data: stripOnboardingDraftSecrets(existing.data) };
     }
 
-    const [created] = await this.db
+    const inserted = await this.db
       .insert(onboardingFlowSessions)
       .values({ orgId, userId, membershipId: membershipId ?? null, type, status: "not_started", startedAt: new Date() })
+      .onConflictDoNothing()
       .returning();
 
-    await this.analytics.track(orgId, userId, `${type}_started`, { source: "session" });
-    return created;
+    const won = inserted[0];
+    if (won !== undefined) {
+      await this.analytics.track(orgId, userId, `${type}_started`, { source: "session" });
+      return won;
+    }
+
+    const raced = await this.db.query.onboardingFlowSessions.findFirst({
+      where: and(
+        eq(onboardingFlowSessions.orgId, orgId),
+        this.sessionOwnerPredicate(userId, membershipId),
+        eq(onboardingFlowSessions.type, type),
+        ne(onboardingFlowSessions.status, "abandoned"),
+      ),
+      orderBy: desc(onboardingFlowSessions.createdAt),
+    });
+
+    if (!raced) throw new InternalServerErrorException("onboarding session not found after conflict");
+    return { ...raced, data: stripOnboardingDraftSecrets(raced.data) };
   }
 
   async getOrCreateSessionInNewTransaction(orgId: string, userId: string, type: OnboardingFlowType, membershipId?: number | null) {

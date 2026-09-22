@@ -139,9 +139,9 @@ export class HrWorkflowEngineService {
     const snapshot = { steps };
 
     const firstStep = steps[0];
-    const dueAt = firstStep?.slaHours
-      ? new Date(Date.now() + firstStep.slaHours * 3600_000)
-      : undefined;
+    const routed = firstStep
+      ? await this.stepRunner.routingFor(firstStep, subjectEmployeeId, orgId, objectType, context)
+      : { context, dueAt: null };
 
     const [instance] = await db
       .insert(hrWorkflowInstances)
@@ -155,10 +155,10 @@ export class HrWorkflowEngineService {
         requestedByMembershipId,
         subjectEmployeeId,
         subjectEmployeeMembershipId,
-        context,
+        context: routed.context,
         status: steps.length === 0 ? "approved" : "in_progress",
         currentStepOrder: steps.length === 0 ? 0 : (firstStep?.stepOrder ?? 1),
-        dueAt,
+        dueAt: routed.dueAt ?? undefined,
       })
       .returning();
 
@@ -240,11 +240,7 @@ export class HrWorkflowEngineService {
 
     if (!currentStep) throw new BadRequestException("No active step found");
 
-    const resolvedApprovers = await this.approver.resolveApprovers(
-      currentStep,
-      instance.subjectEmployeeId,
-      orgId,
-    );
+    const resolvedApprovers = await this.stepRunner.currentApprovers(instance, currentStep, orgId);
     if (actorMembershipId == null) {
       throw new ForbiddenException("Organization membership required");
     }

@@ -14,9 +14,11 @@ import { SupportAiReportHelper } from "./support-ai-report.helper";
 import { AiGatewayService } from "../../ai/core/gateway/ai-gateway.service";
 import { OrgFeaturesService } from "../../ai/core/services/org-features.service";
 import { DRIZZLE } from "../../../db/drizzle.constants";
+import { withDelegatingTransaction } from "../../../test/delegating-transaction";
+import { primeRelocationTrafficTracker } from "../../../common/relocation/relocation-traffic-tracker";
 import { KbAccessService } from "../../kb/core/kb-access.service";
 
-const mockDb = {
+const mockDb = withDelegatingTransaction({
   query: {
     supportTickets: { findFirst: jest.fn() },
     supportTicketMessages: { findMany: jest.fn().mockResolvedValue([]), findFirst: jest.fn() },
@@ -39,7 +41,7 @@ const mockDb = {
   orderBy: jest.fn().mockReturnThis(),
   limit: jest.fn().mockResolvedValue([]),
   delete: jest.fn().mockReturnThis(),
-};
+});
 
 const mockAiSettings = {
   getSettings: jest.fn().mockResolvedValue({ confidenceThreshold: 0.7 }),
@@ -101,6 +103,7 @@ const currentUser: CurrentUserContext = {
 };
 
 describe("SupportAiService", () => {
+  beforeEach(() => primeRelocationTrafficTracker([], Date.now()));
   let service: SupportAiService;
 
   beforeEach(async () => {

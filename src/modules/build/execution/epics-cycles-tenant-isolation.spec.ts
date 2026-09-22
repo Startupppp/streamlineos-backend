@@ -219,3 +219,63 @@ describe("epicRowSchema — response contract completeness", () => {
     expect((parsed as Record<string, unknown>).assignee).toBeDefined();
   });
 });
+
+describe("CyclesService — cross-project scope within one org — updateCycle", () => {
+  it("updateCycle constrains the UPDATE by projectId, so a cycle of a sibling project cannot be edited through this project's URL", async () => {
+    const projectFindFirst = jest.fn().mockResolvedValue({ id: 7 });
+    const where = jest.fn().mockReturnValue({ returning: jest.fn().mockResolvedValue([{ id: 99 }]) });
+    const db = {
+      query: { projects: { findFirst: projectFindFirst } },
+      update: jest.fn().mockReturnValue({ set: jest.fn().mockReturnValue({ where }) }),
+    } as unknown as Db;
+    const svc = new CyclesService(db);
+
+    await svc.updateCycle(OWNER_ORG, 7, 99, { name: "Renamed" });
+
+    expect(sqlValues(where.mock.calls[0]?.[0])).toContain(7);
+  });
+
+  it("updateCycle refuses a project the caller's org does not own, rather than trusting the cycle id alone", async () => {
+    const projectFindFirst = jest.fn().mockResolvedValue(undefined);
+    const db = {
+      query: { projects: { findFirst: projectFindFirst } },
+      update: jest.fn(),
+    } as unknown as Db;
+    const svc = new CyclesService(db);
+
+    await expect(svc.updateCycle(ATTACKER_ORG, 7, 99, { name: "Renamed" })).rejects.toThrow(NotFoundException);
+    expect(db.update).not.toHaveBeenCalled();
+  });
+});
+
+describe("CyclesService — cross-project scope within one org — deleteCycle", () => {
+  it("deleteCycle constrains the DELETE by projectId, so deleting through a sibling project's URL cannot detach that project's tickets", async () => {
+    const projectFindFirst = jest.fn().mockResolvedValue({ id: 7 });
+    const deleteWhere = jest.fn().mockReturnValue({ returning: jest.fn().mockResolvedValue([{ id: 99 }]) });
+    const tx = {
+      update: jest.fn().mockReturnValue({ set: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue(undefined) }) }),
+      delete: jest.fn().mockReturnValue({ where: deleteWhere }),
+    };
+    const db = {
+      query: { projects: { findFirst: projectFindFirst } },
+      transaction: jest.fn(async (cb: (handle: typeof tx) => Promise<unknown>) => cb(tx)),
+    } as unknown as Db;
+    const svc = new CyclesService(db);
+
+    await svc.deleteCycle(OWNER_ORG, 7, 99);
+
+    expect(sqlValues(deleteWhere.mock.calls[0]?.[0])).toContain(7);
+  });
+
+  it("deleteCycle refuses a project the caller's org does not own before opening a transaction", async () => {
+    const projectFindFirst = jest.fn().mockResolvedValue(undefined);
+    const db = {
+      query: { projects: { findFirst: projectFindFirst } },
+      transaction: jest.fn(),
+    } as unknown as Db;
+    const svc = new CyclesService(db);
+
+    await expect(svc.deleteCycle(ATTACKER_ORG, 7, 99)).rejects.toThrow(NotFoundException);
+    expect(db.transaction).not.toHaveBeenCalled();
+  });
+});

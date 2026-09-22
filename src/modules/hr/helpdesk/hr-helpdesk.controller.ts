@@ -8,6 +8,7 @@ import {
   ParseIntPipe,
   Patch,
   Post,
+  Put,
   Query,
   UseGuards,
 } from "@nestjs/common";
@@ -16,19 +17,25 @@ import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 
 import { HrHelpdeskService } from "./hr-helpdesk.service";
+import { HrHelpdeskConfigService } from "./hr-helpdesk-config.service";
 import { AccessService } from "../../access/access.service";
+import { resolveSupportActor } from "./support-actor";
 import {
   addCommentSchema,
   createSchema,
   listSchema,
+  queueConfigSchema,
+  queueParams,
   routingRuleSchema,
   suggestSchema,
   updateTicketSchema,
   type AddCommentInput,
   type CreateInput,
   type ListInput,
+  type QueueConfigInput,
   type RoutingRuleInput,
   type SuggestInput,
   type UpdateTicketInput,
@@ -38,6 +45,7 @@ import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
 import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
 import {
+  helpdeskQueueSummarySchema,
   helpdeskTicketListSchema,
   helpdeskSuggestSchema,
   hrHelpdeskRoutingSchema,
@@ -45,6 +53,7 @@ import {
   hrHelpdeskCommentSchema,
   successSchema,
 } from "./dto/helpdesk-response.schemas";
+import type { SupportQueue } from "./lib/support-queues";
 
 const ticketIdParams = z.object({ ticketId: z.coerce.number().int().positive() }).strict();
 const ruleIdParams = z.object({ ruleId: z.coerce.number().int().positive() }).strict();
@@ -55,14 +64,9 @@ const ruleIdParams = z.object({ ruleId: z.coerce.number().int().positive() }).st
 export class HrHelpdeskController {
   constructor(
     private readonly helpdesk: HrHelpdeskService,
+    private readonly config: HrHelpdeskConfigService,
     private readonly access: AccessService,
   ) {}
-
-  private async resolveIsAdmin(u: CurrentUserContext): Promise<boolean> {
-    if (u.isOrgOwner) return true;
-    const perms = await this.access.resolveUserPermissions(u.orgId, u.userId);
-    return perms.has("hr:helpdesk:manage");
-  }
 
   @Get()
   @ResponseSchema(helpdeskTicketListSchema)
@@ -72,7 +76,7 @@ export class HrHelpdeskController {
     @Query() filters: ListInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.helpdesk.list(u.orgId, u.userId, await this.resolveIsAdmin(u), filters);
+    return this.helpdesk.list(await resolveSupportActor(this.access, u), filters);
   }
 
   @Get("suggest")
@@ -86,11 +90,30 @@ export class HrHelpdeskController {
     return this.helpdesk.suggest(u.orgId, input);
   }
 
+  @Get("queues")
+  @ResponseSchema(z.array(helpdeskQueueSummarySchema))
+  @RequirePermission("hr:helpdesk:view")
+  async listQueues(@CurrentUser() u: CurrentUserContext) {
+    return this.config.queueSummaries(await resolveSupportActor(this.access, u));
+  }
+
+  @Put("queues/:queue")
+  @ResponseSchema(helpdeskQueueSummarySchema)
+  @RequirePermission("hr:helpdesk:manage")
+  @Validate({ params: queueParams, body: queueConfigSchema })
+  async configureQueue(
+    @Param("queue") queue: SupportQueue,
+    @Body() body: QueueConfigInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.config.upsertQueueConfig(await resolveSupportActor(this.access, u), queue, body);
+  }
+
   @Get("routing")
   @ResponseSchema(z.array(hrHelpdeskRoutingSchema))
   @RequirePermission("hr:helpdesk:manage")
   listRouting(@CurrentUser() u: CurrentUserContext) {
-    return this.helpdesk.listRoutingRules(u.orgId);
+    return this.config.listRoutingRules(u.orgId);
   }
 
   @Get(":ticketId")
@@ -101,13 +124,14 @@ export class HrHelpdeskController {
     @Param("ticketId", ParseIntPipe) ticketId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.helpdesk.getById(u.orgId, u.userId, await this.resolveIsAdmin(u), ticketId);
+    return this.helpdesk.getById(await resolveSupportActor(this.access, u), ticketId);
   }
 
   @Post()
   @ResponseSchema(helpdeskTicketDetailSchema)
   @HttpCode(201)
   @RequirePermission("hr:helpdesk:create")
+  @Idempotent("hr.helpdesk.ticket.create")
   @Validate({ body: createSchema })
   create(
     @Body() body: CreateInput,
@@ -118,14 +142,14 @@ export class HrHelpdeskController {
 
   @Patch(":ticketId")
   @ResponseSchema(helpdeskTicketDetailSchema)
-  @RequirePermission("hr:helpdesk:manage")
+  @RequirePermission("hr:helpdesk:view")
   @Validate({ params: ticketIdParams, body: updateTicketSchema })
   async update(
     @Param("ticketId", ParseIntPipe) ticketId: number,
     @Body() body: UpdateTicketInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.helpdesk.updateTicket(u.orgId, u.userId, await this.resolveIsAdmin(u), ticketId, body);
+    return this.helpdesk.updateTicket(await resolveSupportActor(this.access, u), ticketId, body);
   }
 
   @Post(":ticketId/comments")
@@ -138,7 +162,7 @@ export class HrHelpdeskController {
     @Body() body: AddCommentInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.helpdesk.addComment(u.orgId, u.userId, await this.resolveIsAdmin(u), ticketId, body);
+    return this.helpdesk.addComment(await resolveSupportActor(this.access, u), ticketId, body);
   }
 
   @Post("routing")
@@ -146,21 +170,21 @@ export class HrHelpdeskController {
   @HttpCode(201)
   @RequirePermission("hr:helpdesk:manage")
   @Validate({ body: routingRuleSchema })
-  upsertRouting(
+  async upsertRouting(
     @Body() body: RoutingRuleInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.helpdesk.upsertRoutingRule(u.orgId, body);
+    return this.config.upsertRoutingRule(await resolveSupportActor(this.access, u), body);
   }
 
   @Delete("routing/:ruleId")
   @ResponseSchema(successSchema)
   @RequirePermission("hr:helpdesk:manage")
   @Validate({ params: ruleIdParams })
-  deleteRouting(
+  async deleteRouting(
     @Param("ruleId", ParseIntPipe) ruleId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.helpdesk.deleteRoutingRule(u.orgId, ruleId);
+    return this.config.deleteRoutingRule(await resolveSupportActor(this.access, u), ruleId);
   }
 }

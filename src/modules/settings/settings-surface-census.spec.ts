@@ -279,7 +279,7 @@ function census(): { routes: CensusRoute[]; controllers: Set<string> } {
     if (!/@Controller\(\s*"settings(\/[^"]*)?"/.test(readFileSync(file, "utf8")))
       continue;
 
-    const moduleExports = require(file) as Record<string, unknown>;
+    const moduleExports = jest.requireActual(file) as Record<string, unknown>;
     for (const exported of Object.values(moduleExports)) {
       if (typeof exported !== "function") continue;
       const prefix = Reflect.getMetadata(PATH_METADATA, exported) as

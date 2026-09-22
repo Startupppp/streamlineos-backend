@@ -40,6 +40,7 @@ describe("ExitController.getUploadedLetter — audit written outside the request
       exit as never,
       undefined as never,
       undefined as never,
+      undefined as never,
       access as never,
       storage as never,
       audit as never,

@@ -204,7 +204,7 @@ export function detectExceptions(input: ExceptionInput): DetectedExceptions[] {
   if (isExitInMonth) {
     results.push(makeException(
       "MID_PERIOD_EXIT",
-      "Employee exited mid-period. Verify FnF and prorated salary.",
+      "Employee exited mid-period. Verify the final settlement and prorated salary.",
     ));
   }
 

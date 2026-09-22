@@ -1,6 +1,5 @@
 import {
   BadRequestException,
-  ConflictException,
   HttpException,
   HttpStatus,
   Inject,
@@ -8,6 +7,7 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { throwOnAiFailure } from "../ai/core/services/gateway-result.util";
+import { isUniqueViolation } from "../../common/db/postgres-error";
 import { and, eq, isNull } from "drizzle-orm";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
@@ -369,12 +369,30 @@ export class FeedbucketAiService {
   ): Promise<{ ticketId: number; ticketType: FeedbackAnalysis["suggestedTicketType"] }> {
     await this.planLimits.assertFeature(u.orgId, "ai.feedbucket");
 
+    const [lockedRow] = await this.db
+      .select({ linkedTicketId: feedbucketSubmissions.linkedTicketId })
+      .from(feedbucketSubmissions)
+      .where(
+        and(
+          eq(feedbucketSubmissions.id, submissionId),
+          eq(feedbucketSubmissions.orgId, u.orgId),
+          isNull(feedbucketSubmissions.deletedAt),
+        ),
+      )
+      .limit(1)
+      .for("update");
+    if (!lockedRow) throw new NotFoundException("Submission not found");
+
     const submission = await this.loadSubmission(u.orgId, submissionId);
-    const { projectId, assigneeMembershipId } = await this.resolveTicketTarget(submission, u.orgId, override);
 
     if (submission.linkedTicketId) {
-      throw new ConflictException("Submission is already linked to a ticket");
+      return {
+        ticketId: submission.linkedTicketId,
+        ticketType: submission.aiAnalysis ? mapToTicketType(submission.aiAnalysis.type) : "BUG",
+      };
     }
+
+    const { projectId, assigneeMembershipId } = await this.resolveTicketTarget(submission, u.orgId, override);
 
     let analysis = submission.aiAnalysis;
     if (!analysis) {
@@ -394,12 +412,20 @@ export class FeedbucketAiService {
       assigneeMembershipId,
     });
 
-    await this.db
-      .update(feedbucketSubmissions)
-      .set({ linkedTicketId: ticket.id, updatedAt: new Date() })
-      .where(
-        and(eq(feedbucketSubmissions.id, submissionId), eq(feedbucketSubmissions.orgId, u.orgId)),
-      );
+    try {
+      await this.db
+        .update(feedbucketSubmissions)
+        .set({ linkedTicketId: ticket.id, updatedAt: new Date() })
+        .where(
+          and(eq(feedbucketSubmissions.id, submissionId), eq(feedbucketSubmissions.orgId, u.orgId)),
+        );
+    } catch (updateErr: unknown) {
+      if (isUniqueViolation(updateErr)) {
+        const refreshed = await this.loadSubmission(u.orgId, submissionId);
+        if (refreshed.linkedTicketId) return { ticketId: refreshed.linkedTicketId, ticketType };
+      }
+      throw updateErr;
+    }
 
     this.audit.log({
       action: "feedbucket.ai_ticket_created",

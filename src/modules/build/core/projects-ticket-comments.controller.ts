@@ -31,7 +31,7 @@ import { z } from "zod";
 import { NoContentResponse, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
 import { commentRowSchema, commentEditResultSchema, reactionSchema } from "./dto/build-tickets-response.schemas";
 
-const projectIdticketIdParams = z.object({ projectId: z.string().min(1), ticketId: z.coerce.number().int().positive() }).strict();
+const ticketInProjectParams = z.object({ projectId: z.coerce.number().int().positive(), ticketId: z.coerce.number().int().positive() }).strict();
 const projectIdticketIdcommentIdParams = z.object({ projectId: z.coerce.number().int().positive(), ticketId: z.coerce.number().int().positive(), commentId: z.coerce.number().int().positive() }).strict();
 const projectIdticketIdcommentIdParams_ = z.object({ projectId: z.string().min(1), ticketId: z.string().min(1), commentId: z.coerce.number().int().positive() }).strict();
 const projectIdticketIdcommentIdemojiParams = z.object({ projectId: z.string().min(1), ticketId: z.string().min(1), commentId: z.coerce.number().int().positive(), emoji: z.string().min(1) }).strict();
@@ -46,13 +46,14 @@ export class ProjectsTicketCommentsController {
   @RequirePermission("build:tickets:update")
   @HttpCode(201)
   @ResponseSchema(commentRowSchema)
-  @Validate({ params: projectIdticketIdParams, body: commentSchema })
+  @Validate({ params: ticketInProjectParams, body: commentSchema })
   addComment(
+    @Param("projectId", ParseIntPipe) projectId: number,
     @Param("ticketId", ParseIntPipe) ticketId: number,
     @Body() body: CommentInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.subresources.addComment(u, ticketId, body);
+    return this.subresources.addComment(u, projectId, ticketId, body);
   }
 
   @Get(":projectId/tickets/:ticketId/comments/:commentId")

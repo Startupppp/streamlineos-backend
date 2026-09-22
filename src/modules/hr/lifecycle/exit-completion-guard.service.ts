@@ -7,6 +7,7 @@ import {
 import { AssetsRecoveryService } from "../directory/assets-recovery.service";
 import { HrAuditService } from "../core/hr-audit.service";
 import { IdentityService } from "../enterprise-ops/identity/identity.service";
+import { ExitChecklistService } from "./exit-checklist.service";
 
 interface CompletionGateContext {
   orgId: string;
@@ -35,6 +36,7 @@ export class ExitCompletionGuardService {
     private readonly assetsRecovery: AssetsRecoveryService,
     private readonly identity: IdentityService,
     private readonly hrAudit: HrAuditService,
+    private readonly checklist: ExitChecklistService,
   ) {}
 
   async assertReady(context: CompletionGateContext): Promise<void> {
@@ -70,6 +72,20 @@ export class ExitCompletionGuardService {
         "An override reason is required to bypass pending or unavailable access-removal verification.",
       pendingAuditAction: "access_gate_overridden",
       unavailableAuditAction: "access_gate_check_failed_overridden",
+    });
+
+    await this.assertGate(context, {
+      name: "offboarding checklist",
+      check: async () =>
+        (await this.checklist.openItemCount(context.orgId, context.resignationId)) > 0,
+      pendingMessage:
+        "Offboarding checklist items are still open. Close or waive every item, or complete with an override reason.",
+      unavailableMessage:
+        "The offboarding checklist could not be read. Completion was not saved. Try again when the service is available, or use an audited override.",
+      reasonRequiredMessage:
+        "An override reason is required to complete an exit with open or unreadable checklist items.",
+      pendingAuditAction: "checklist_gate_overridden",
+      unavailableAuditAction: "checklist_gate_check_failed_overridden",
     });
   }
 
