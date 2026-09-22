@@ -83,7 +83,14 @@ export const listSubmissionsQuerySchema = z.object({
   status: z.enum(["open", "in_progress", "resolved", "archived"]).optional(),
   assigneeId: z.string().optional(),
   search: z.string().optional(),
-}).strict();
+  linked: z.enum(["linked", "unlinked"]).optional(),
+  from: z.string().datetime({ offset: true }).optional(),
+  to: z.string().datetime({ offset: true }).optional(),
+}).strict().superRefine((val, ctx) => {
+  if (val.from !== undefined && val.to !== undefined && new Date(val.from) >= new Date(val.to)) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: "'from' must be before 'to'", path: ["from"] });
+  }
+});
 
 export const updateSubmissionSchema = z.object({
   status: z.enum(["open", "in_progress", "resolved", "archived"]).optional(),
