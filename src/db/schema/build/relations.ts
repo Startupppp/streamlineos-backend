@@ -53,9 +53,8 @@ export const projectsRelations = relations(projects, ({ one, many }) => ({
   milestones: many(projectMilestones),
 }));
 
-export const sprintsRelations = relations(sprints, ({ one, many }) => ({
+export const sprintsRelations = relations(sprints, ({ one }) => ({
   project: one(projects, { fields: [sprints.projectId], references: [projects.id] }),
-  tickets: many(tickets),
 }));
 
 export const cyclesRelations = relations(cycles, ({ one, many }) => ({
@@ -85,7 +84,6 @@ export const projectTemplateTicketsRelations = relations(projectTemplateTickets,
 
 export const ticketsRelations = relations(tickets, ({ one, many }) => ({
   project: one(projects, { fields: [tickets.projectId], references: [projects.id] }),
-  sprint: one(sprints, { fields: [tickets.sprintId], references: [sprints.id] }),
   assignee: one(organizationMembers, {
     fields: [tickets.assigneeMembershipId],
     references: [organizationMembers.id],
@@ -231,7 +229,6 @@ export const projectAutomationsRelations = relations(projectAutomations, ({ one 
 
 export const sprintScopeEventsRelations = relations(sprintScopeEvents, ({ one }) => ({
   org: one(organizations, { fields: [sprintScopeEvents.orgId], references: [organizations.id] }),
-  sprint: one(sprints, { fields: [sprintScopeEvents.sprintId], references: [sprints.id] }),
   ticket: one(tickets, { fields: [sprintScopeEvents.ticketId], references: [tickets.id] }),
   actorMembership: one(organizationMembers, {
     fields: [sprintScopeEvents.orgId, sprintScopeEvents.actorMembershipId],

@@ -303,14 +303,14 @@ describe("dual identity tripwire", () => {
     expect(coreSource).toContain(`export const cycles = build.table(`);
   });
 
-  it(`tickets still carries both sprintId and cycleId — ${removal}`, () => {
-    expect(ticketCoreSource).toContain(`sprintId: integer("sprint_id")`);
+  it("tickets declares cycleId and no longer declares sprintId, because Drizzle names every declared column in its INSERT and phase 04 drops that one", () => {
     expect(ticketCoreSource).toContain(`cycleId: integer("cycle_id")`);
+    expect(ticketCoreSource).not.toContain(`sprintId: integer("sprint_id")`);
   });
 
-  it(`tickets still declares both composite foreign keys — ${removal}`, () => {
-    expect(ticketCoreSource).toContain(`name: "fk_tickets_org_sprint"`);
+  it("tickets declares the cycle composite foreign key and no longer the sprint one, so phase 04 has nothing left to orphan", () => {
     expect(ticketCoreSource).toContain(`name: "fk_tickets_org_cycle"`);
+    expect(ticketCoreSource).not.toContain(`name: "fk_tickets_org_sprint"`);
   });
 
   it(`both SprintsController and CyclesController are still mounted — ${removal}`, () => {
@@ -318,13 +318,19 @@ describe("dual identity tripwire", () => {
     expect(iterationsControllerSource).toContain(`@Controller("build/:projectId/cycles")`);
   });
 
-  it(`three satellite tables still point at sprints — ${removal}`, () => {
+  it("no satellite table declares a sprint_id column or its foreign key any more, which is the code half of a-sprint-cycle-04-detach that its data guard cannot check", () => {
     const meetings = read(REPO_ROOT, "src", "db", "schema", "build", "meetings.ts");
     const qa = read(REPO_ROOT, "src", "db", "schema", "build", "qa.ts");
     const events = read(REPO_ROOT, "src", "db", "schema", "build", "sprint-events.ts");
-    expect(meetings).toContain(`name: "fk_project_meetings_org_sprint"`);
-    expect(qa).toContain(`name: "fk_test_runs_org_sprint"`);
-    expect(events).toContain(`name: "fk_sprint_scope_events_org_sprint"`);
+    for (const source of [meetings, qa, events]) {
+      expect(source.length).toBeGreaterThan(0);
+      expect(source).not.toContain(`sprintId: integer("sprint_id")`);
+    }
+    expect(meetings).not.toContain(`name: "fk_project_meetings_org_sprint"`);
+    expect(qa).not.toContain(`name: "fk_test_runs_org_sprint"`);
+    expect(events).not.toContain(`name: "fk_sprint_scope_events_org_sprint"`);
+    expect(meetings).toContain(`name: "fk_project_meetings_org_cycle"`);
+    expect(events).toContain(`name: "fk_sprint_scope_events_org_cycle"`);
   });
 
   it(`CyclesController still has no detail route, so cycle reads depend on the capped list — ${removal}`, () => {

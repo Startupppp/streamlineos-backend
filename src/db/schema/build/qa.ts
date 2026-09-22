@@ -76,7 +76,6 @@ export const testRuns = build.table("test_runs", {
   projectId: integer("project_id").notNull(),
   runNumber: integer("run_number").notNull(),
   name: text("name").notNull(),
-  sprintId: integer("sprint_id"),
   cycleId: integer("cycle_id"),
   releaseId: integer("release_id"),
   environment: text("environment"),
@@ -94,10 +93,8 @@ export const testRuns = build.table("test_runs", {
 }, (table) => [
   foreignKey({ columns: [table.orgId, table.releaseId], foreignColumns: [projectReleases.orgId, projectReleases.id], name: "fk_test_runs_org_release" }).onDelete("set null"),
   foreignKey({ columns: [table.orgId, table.projectId], foreignColumns: [projects.orgId, projects.id], name: "fk_test_runs_org_project" }).onDelete("cascade"),
-  foreignKey({ columns: [table.orgId, table.sprintId], foreignColumns: [sprints.orgId, sprints.id], name: "fk_test_runs_org_sprint" }).onDelete("set null"),
   foreignKey({ columns: [table.orgId, table.cycleId], foreignColumns: [cycles.orgId, cycles.id], name: "fk_test_runs_org_cycle" }).onDelete("set null"),
   index("idx_test_runs_org_project_status").on(table.orgId, table.projectId, table.status).where(sql`deleted_at IS NULL`),
-  index("idx_test_runs_sprint").on(table.sprintId),
   index("idx_test_runs_cycle").on(table.cycleId),
   index("idx_test_runs_release").on(table.releaseId),
   index("idx_test_runs_org_tester_membership").on(table.orgId, table.testerMembershipId),

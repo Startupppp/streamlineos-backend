@@ -37,7 +37,6 @@ export const tickets = build.table(
     priority: ticketPriorityEnum("priority").default("MEDIUM").notNull(),
     projectId: integer("project_id"),
     ticketNumber: integer("ticket_number").notNull(),
-    sprintId: integer("sprint_id"),
     epicId: integer("epic_id"),
     assigneeMembershipId: integer("assignee_membership_id"),
     reporterId: text("reporter_id").references(() => users.id, {
@@ -84,7 +83,6 @@ export const tickets = build.table(
   (t) => [
   foreignKey({ columns: [t.orgId, t.cycleId], foreignColumns: [cycles.orgId, cycles.id], name: "fk_tickets_org_cycle" }).onDelete("set null"),
   foreignKey({ columns: [t.orgId, t.moduleId], foreignColumns: [modules.orgId, modules.id], name: "fk_tickets_org_module" }).onDelete("set null"),
-  foreignKey({ columns: [t.orgId, t.sprintId], foreignColumns: [sprints.orgId, sprints.id], name: "fk_tickets_org_sprint" }).onDelete("set null"),
     foreignKey({ columns: [t.orgId, t.epicId], foreignColumns: [t.orgId, t.id], name: "fk_tickets_org_epic" }),
     foreignKey({ columns: [t.orgId, t.parentTicketId], foreignColumns: [t.orgId, t.id], name: "fk_tickets_org_parent" }),
     foreignKey({ columns: [t.orgId, t.recurrenceParentId], foreignColumns: [t.orgId, t.id], name: "fk_tickets_org_recurrence_parent" }),
@@ -105,7 +103,6 @@ export const tickets = build.table(
       .on(t.orgId, t.assigneeMembershipId, t.dueDate)
       .where(sql`status <> 'DONE'`),
     index("idx_tickets_org_reporter_membership").on(t.orgId, t.reporterMembershipId),
-    index("idx_tickets_sprint").on(t.sprintId),
     index("idx_tickets_org_status_priority").on(t.orgId, t.status, t.priority),
     index("idx_tickets_org_project_status").on(t.orgId, t.projectId, t.status),
     index("idx_tickets_org_project_rank")
