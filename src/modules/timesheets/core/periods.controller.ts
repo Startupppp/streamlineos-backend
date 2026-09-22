@@ -62,16 +62,6 @@ export class TimesheetPeriodsController {
     return this.periods.getCurrent(u);
   }
 
-  /**
-   * TS-11. Declared before `:periodId` because Nest matches in declaration
-   * order: below it, `GET /timesheets/periods/overdue` would reach the handler
-   * with the `ParseIntPipe` and 400 on the word "overdue".
-   *
-   * `timesheets:approvals:view` rather than a new key. The queue lists other
-   * people's late timesheets, which is precisely the standing the approvals
-   * queue already grants, and the same `DataScope` narrows it — a `team`
-   * approver sees their team, not the organisation.
-   */
   @Get("overdue")
   @RequirePermission("timesheets:approvals:view")
   @Validate({ query: overdueQuerySchema })

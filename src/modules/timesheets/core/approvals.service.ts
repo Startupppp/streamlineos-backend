@@ -29,8 +29,6 @@ import { applyApproval } from "./lib/approval-transition";
 import type { ApprovalsQuery } from "./dto/approvals.schemas";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 
-// The lifecycle-event and period-owner helpers live in `lib/approval-lifecycle.ts`;
-// ApprovalsBulkService, PeriodsService and PeriodsSubmitService import them from here.
 export {
   LIFECYCLE_RETURNING,
   lifecyclePayload,
@@ -57,18 +55,6 @@ export class ApprovalsService {
     return s;
   }
 
-  /**
-   * The delegators who have an active delegation to this actor that carries
-   * the approval authority, out of a bounded set of approvers. A bulk endpoint
-   * resolves the whole page in one indexed multi-key read instead of one probe
-   * per period.
-   *
-   * A delegation stores one child row per permission it hands over (§5), so
-   * "acting for the approver" means holding a delegation that names
-   * `timesheets:approvals:manage`. Reading only the header, as this did, let a
-   * delegation of any key at all — a knowledge-base read, say — confer
-   * standing over the delegator's approval queue.
-   */
   async activeDelegationsToActor(
     orgId: string,
     actorMembershipId: number,
@@ -264,14 +250,6 @@ export class ApprovalsService {
       operation: "approve",
     });
 
-    /**
-     * One transition, but up to two events: approving with
-     * `lock_after_approval` on also locks, and the pack's payroll handoff waits
-     * on `timesheets.period.locked` specifically. Both events therefore need
-     * their own `aggregate_version`, and they share a single `now` — which is
-     * exactly why the version is a row counter and not a timestamp. The UPDATE
-     * claims both numbers at once so nothing can be interleaved between them.
-     */
     const emitCount = lockAfterApproval ? 2 : 1;
 
     await this.db.transaction((tx) =>
@@ -284,15 +262,6 @@ export class ApprovalsService {
       ),
     );
 
-    /**
-     * TS-24. The worker hears that their week was signed off, through the
-     * existing notification pipeline and therefore the existing email outbox.
-     *
-     * `notifySelf` is left at its default, so an approver approving their own
-     * period — which `canActOnPeriod` allows an org owner to do — is not
-     * emailed about their own click. Nobody is told when the worker's
-     * membership no longer resolves.
-     */
     if (ownerUserId) {
       await this.notifyPeriodApproved(u, {
         periodId,
@@ -323,11 +292,6 @@ export class ApprovalsService {
     };
   }
 
-  /**
-   * TS-24. The worker hears that their week was signed off. Sent after the
-   * approving transaction commits, by the single approval above and once per
-   * worker by `ApprovalsBulkService.bulkApprove`.
-   */
   async notifyPeriodApproved(
     u: CurrentUserContext,
     notice: {
@@ -352,14 +316,6 @@ export class ApprovalsService {
     });
   }
 
-  /**
-   * TS-24. The worker hears that their week was sent back, through the same
-   * pipeline as the approval notice above, after the caller's transaction.
-   *
-   * Rejection lives in `ApprovalsBulkService`. It reaches the dispatcher through
-   * this service, which it already depends on for the approval guard, rather
-   * than through a second injection of it.
-   */
   async notifyPeriodRejected(
     u: CurrentUserContext,
     notice: {

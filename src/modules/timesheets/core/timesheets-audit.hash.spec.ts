@@ -92,7 +92,6 @@ describe("TimesheetsAuditService.recordMany", () => {
     return { dbLike, captured, statements };
   }
 
-  /** The SQL text of a drizzle `sql` template with its bound values inlined. */
   function sqlText(query: unknown): string {
     const chunks = Reflect.get(Object(query), "queryChunks");
     if (!Array.isArray(chunks)) return String(query);
@@ -106,12 +105,6 @@ describe("TimesheetsAuditService.recordMany", () => {
   }
 
   it("takes the organisation's chain lock before it reads the tail", async () => {
-    /*
-     * Two writers that both read tail T write two rows with prev_hash = T, and
-     * the chain forks at the second — a legitimate approval that the verifier
-     * then reports as a break. The lock has to come BEFORE the read; taken
-     * after, both have already seen the same tail.
-     */
     const { dbLike, statements } = makeDbLike("tail-hash");
     const service = new TimesheetsAuditService(dbLike as never);
 

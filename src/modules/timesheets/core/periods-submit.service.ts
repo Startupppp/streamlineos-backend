@@ -131,18 +131,6 @@ export class PeriodsSubmitService {
         },
       });
 
-      /**
-       * In the transaction, so a submitted period can never exist without its
-       * event and an event can never announce a submission that rolled back.
-       * `transition` is absent only when the UPDATE matched nothing, which the
-       * guards above have already ruled out — but a silent emit for a period
-       * that was not updated would be worse than no emit, so it is checked.
-       * `ownerUserId` is null only when the worker's membership no longer
-       * resolves, which skips the event and not the submission.
-       *
-       * The approver's notification is sent by `PeriodsService.submitPeriod`
-       * once this has committed.
-       */
       if (transition && ownerUserId) {
         await emitPeriodLifecycleEvent(tx, {
           eventType: TIMESHEET_LIFECYCLE_EVENTS.submitted,

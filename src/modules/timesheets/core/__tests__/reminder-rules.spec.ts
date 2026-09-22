@@ -7,27 +7,6 @@ import {
   resolveReminderRules,
 } from "../dto/reminder-rules.schemas";
 
-/**
- * The arithmetic and the parsing, which is where reminders go wrong quietly.
- *
- * `reminder_rules` was a jsonb column accepted as `z.unknown()` and read by
- * nobody, so none of this had ever been decided, let alone tested. Two classes
- * of bug are worth naming:
- *
- *   - **Off-by-a-day.** Every date here is a `YYYY-MM-DD` string from a `date`
- *     column, and doing the arithmetic through a local-time `Date` shifts the
- *     answer by a day for anyone east or west of the runner. This repository
- *     has shipped that bug before, which is why the suite pins a non-UTC zone
- *     below rather than trusting the host.
- *   - **Junk in the column.** Rows written before the schema existed hold
- *     anything at all, and a reader that throws on one takes down the sweep
- *     for every other organisation.
- */
-
-/**
- * A zone far from UTC and on a half-hour offset, so a naive local-time
- * implementation cannot pass by coincidence.
- */
 const ORIGINAL_TZ = process.env.TZ;
 beforeAll(() => {
   process.env.TZ = "Asia/Kolkata";
@@ -101,17 +80,14 @@ describe("date arithmetic", () => {
   });
 
   it("crosses a month and a DST boundary without drifting", () => {
-    /** US DST began 2026-03-08; UTC-day arithmetic must not notice. */
     expect(daysBetween("2026-03-07", "2026-03-09")).toBe(2);
     expect(daysBetween("2026-02-27", "2026-03-02")).toBe(3);
-    /** And a leap year, since 2028 has a 29 February. */
     expect(daysBetween("2028-02-28", "2028-03-01")).toBe(2);
   });
 
   it("adds the submission grace to the period end", () => {
     expect(dueDateFor("2026-03-31", 5)).toBe("2026-04-05");
     expect(dueDateFor("2026-03-31", 0)).toBe("2026-03-31");
-    /** A null grace is "due on the last day", not a crash. */
     expect(dueDateFor("2026-03-31", null)).toBe("2026-03-31");
   });
 });
@@ -152,11 +128,6 @@ describe("reminderDue", () => {
     expect(reminderDue(onTheDay, "2026-04-05", "2026-04-05")).toBe("OVERDUE");
   });
 
-  /**
-   * When both lists claim day zero the period is not "due soon" — the date has
-   * arrived. Checking the before-list first would let `remindBeforeDueDays: [0]`
-   * shadow the overdue rule and send the gentler message on the deadline.
-   */
   it("prefers OVERDUE when both lists claim the due date", () => {
     const both = reminderRulesSchema.parse({
       enabled: true,

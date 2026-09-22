@@ -16,25 +16,13 @@ import {
 } from "../events/timesheet-lifecycle.events";
 import { LIFECYCLE_RETURNING, lifecyclePayload, periodOwnerUserIdOrWarn } from "./approval-lifecycle";
 
-/** The transaction `ApprovalsService.approveSinglePeriod` opens. */
 type ApprovalTx = Parameters<Parameters<Db["transaction"]>[0]>[0];
 
-/** The service's own collaborators, passed in rather than reached for. */
 export interface ApprovalTransitionDeps {
   readonly rateResolver: RateResolverService;
   readonly audit: TimesheetsAuditService;
 }
 
-/**
- * The approval itself, inside the caller's transaction: the period and its
- * entries move to APPROVED (and locked, when the org locks on approval), each
- * uninvoiced billable entry is stamped with its resolved rate, the audit row is
- * written and the lifecycle events are emitted.
- *
- * The guard, the actor, the settings and the owner lookup all happen in
- * `approveSinglePeriod` before this runs, and the notice after it commits;
- * see the comments there for why `emitCount` claims two sequence numbers.
- */
 export async function applyApproval(
   tx: ApprovalTx,
   deps: ApprovalTransitionDeps,
@@ -69,13 +57,6 @@ export async function applyApproval(
     )
     .returning(LIFECYCLE_RETURNING);
 
-  /*
-   * The status predicate is what serialises two decisions on one period.
-   * The service checked SUBMITTED before opening this transaction, unlocked;
-   * a concurrent approve or reject that committed in between would otherwise
-   * be overwritten here, with a second event_seq claimed and a second audit
-   * row written. Zero rows means somebody else decided first.
-   */
   if (!transition) throw new ConflictException(`Period ${periodId} is no longer awaiting a decision`);
 
   await tx
@@ -198,21 +179,6 @@ export async function applyApproval(
   }
 }
 
-/**
- * Every period in `ids`, each already past the guard: one UPDATE per table for
- * the whole batch, one `UPDATE … FROM (VALUES …)` for every rate it resolves,
- * one chained audit INSERT, and one outbox INSERT carrying every period's own
- * events. The batch counterpart of `applyApproval`, as `applyBulkRejection` is
- * of `applyRejection`.
- *
- * `bulkApprove` used to run `approveSinglePeriod` once per period, so its cost
- * grew with the batch. The statements are now fixed; what a period announces is
- * not batched away. Each period is still approved (and locked) for its own
- * worker, on the two versions its own row claimed in the UPDATE that reads them
- * back, because the payroll handoff waits on each period's
- * `timesheets.period.locked`. A worker whose membership no longer resolves is
- * approved without being announced, as in the single path.
- */
 export async function applyBulkApproval(
   tx: ApprovalTx,
   deps: ApprovalTransitionDeps,
@@ -228,13 +194,6 @@ export async function applyBulkApproval(
   const { approverActor, lockAfterApproval, owners, now } = approval;
   const emitCount = lockAfterApproval ? 2 : 1;
 
-  /*
-   * Same predicate as the single transition, for the same race. The ids the
-   * UPDATE returns are the periods that were still SUBMITTED when it ran, and
-   * everything below — entries, rates, audit rows, events — is driven by those
-   * rather than by the ids the caller asked for; the caller reports the
-   * difference as skipped.
-   */
   const transitions = await tx
     .update(timesheetPeriods)
     .set({

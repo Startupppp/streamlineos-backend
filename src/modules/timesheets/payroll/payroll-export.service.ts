@@ -169,26 +169,11 @@ export class PayrollExportService {
       await tx.update(timesheets).set({ payrollStatus: "EXPORTED", payrollExportId: exportRow.id, updatedAt: new Date() })
         .where(inArray(timesheets.id, eligible.map((e) => e.id)));
 
-      /**
-       * Emitted inside this transaction, not after it, so an export can never
-       * exist without its handoff event and an event can never point at an
-       * export that rolled back. The rows themselves stay out of the payload
-       * — they are on `exportRow.snapshot` already, and duplicating every
-       * worker's name and email into a durable replayable log is not a
-       * reasonable price for saving the consumer one read.
-       */
       await OutboxWriter.emit(tx, {
         eventId: randomUUID(),
         organizationId: orgId,
         aggregateType: "timesheet_export",
         aggregateId: String(exportRow.id),
-        /**
-         * 1, and only ever 1. `(org, aggregate_type, aggregate_id,
-         * aggregate_version)` is unique, and an export row is created once and
-         * never revised — so this aggregate has exactly one version. The
-         * `Date.now()` used by aggregates that do change would buy nothing
-         * here and would make a replay look like a second version.
-         */
         aggregateVersion: 1,
         eventType: TIMESHEET_EVENTS.payrollExportReady,
         payload: {

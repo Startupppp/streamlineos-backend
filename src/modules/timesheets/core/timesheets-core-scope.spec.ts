@@ -51,11 +51,6 @@ describe("resolveEntriesScope", () => {
     expect(read.denied).toBe(true);
   });
 
-  /**
-   * A plain member holds `timesheets:entries:view` through self-service at
-   * `own` and no `timesheets:team:view` at all. Resolving only the widening
-   * key answered `none`, and My Time listed a member's own entries as empty.
-   */
   it("gives a member who holds only entries:view their own rows, not nothing", async () => {
     scopes({ [TS_ENTRIES_VIEW_PERMISSION]: "own" });
     const read = await resolveEntriesScope(mockAccess, makeUser());

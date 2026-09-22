@@ -3,8 +3,6 @@ import { addDays, lastCompleteWeekRange } from "./exception-window";
 
 describe("lastCompleteWeekRange", () => {
   it("returns the week immediately before the current one (Monday start)", () => {
-    // Wednesday 2026-07-08 → current week is Mon 2026-07-06..Sun 2026-07-12,
-    // so the last complete week is Mon 2026-06-29..Sun 2026-07-05.
     const { start, end } = lastCompleteWeekRange(new Date(2026, 6, 8), 1);
     expect(start).toBe("2026-06-29");
     expect(end).toBe("2026-07-05");
@@ -27,7 +25,6 @@ describe("lastCompleteWeekRange", () => {
   });
 
   it("still returns the prior week when today is the first day of a week", () => {
-    // Monday 2026-07-06 with Monday start → previous week 06-29..07-05.
     const { start, end } = lastCompleteWeekRange(new Date(2026, 6, 6), 1);
     expect(start).toBe("2026-06-29");
     expect(end).toBe("2026-07-05");

@@ -36,14 +36,6 @@ export const timesheetRates = pgTable("timesheet_rates", {
   projectId: integer("project_id"),
   userMembershipId: integer("user_membership_id"),
   clientId: integer("client_id"),
-  /**
-  * The party this row belongs to. Ticket 08's expand.
-  *
-  * Beside `client_id` rather than replacing it: every existing reader keeps
-  * working while readers move over one at a time, and the old column goes in
-  * the contract migration once none is left. Nullable until then -- a null
-  * means "not yet backfilled", which is a state worth being able to see.
-  */
   clientPartyId: text("client_party_id"),
   taskId: integer("task_id"),
   billingType: timesheetBillingTypeEnum("billing_type").notNull().default("BILLABLE"),

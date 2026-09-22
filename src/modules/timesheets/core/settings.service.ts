@@ -18,23 +18,6 @@ const PAYROLL_FIELDS = new Set([
   "payrollMapping",
 ]);
 
-/**
- * TS-16. The settings whose change requires somebody to say why.
- *
- * The line is not "important" — that would be all of them. It is: does changing
- * this alter what a *past or in-flight* timesheet means, or what somebody is
- * allowed to do with one? Every field here does. Lowering `maxHoursPerDay`
- * makes yesterday's entry invalid; moving `workWeekStart` re-cuts which days
- * fall in which period; turning off `lockAfterApproval` reopens hours somebody
- * has already signed; `autoDraftFromAttendance` starts writing rows into other
- * people's timesheets. Each of those is a question an auditor will eventually
- * ask about a specific period, and the answer has to be somewhere.
- *
- * `reminderRules` is deliberately absent. Changing the reminder cadence sends
- * more or fewer emails and changes nothing about what a timesheet is or who may
- * touch it — demanding a justification for it would train people to type "." to
- * get past the dialog, which is how a required field stops meaning anything.
- */
 const MATERIAL_FIELDS = new Set([
   "workWeekStart",
   "requiredFields",
@@ -55,15 +38,6 @@ const MATERIAL_FIELDS = new Set([
   "autoDraftFromAttendance",
 ]);
 
-/**
- * Compares a submitted value against what is stored, tolerating the shapes the
- * two sides legitimately use for the same thing.
- *
- * The numeric settings are `decimal` columns, so they come back as strings:
- * `expectedDailyHours` stored as `"8.00"` against a submitted `8` is not a
- * change, and treating it as one would demand a reason for a no-op save — the
- * fastest possible way to make the requirement feel like noise.
- */
 function isChanged(before: unknown, after: unknown): boolean {
   if (before === after) return false;
   if (before === null || before === undefined || after === null || after === undefined) {
@@ -120,12 +94,6 @@ export class SettingsService {
     const { changeReason, ...fields } = input;
 
     await this.db.transaction(async (tx) => {
-      /**
-       * The settings row is the race. Two PATCHes that both read `before`
-       * outside the transaction and then write will last-write-win without
-       * a history gap — FOR UPDATE on the row serialises them so the second
-       * sees the first's values before it decides what changed.
-       */
       const [before] = await tx
         .select()
         .from(timesheetSettings)
@@ -203,22 +171,11 @@ export class SettingsService {
       });
     });
 
-    /**
-     * Invalidate after commit. Doing it inside the transaction lets a concurrent
-     * reader refill the cache from the pre-commit snapshot, then see the write
-     * land under a still-stale key.
-     */
     await this.cache.invalidateNamespace(CACHE_KEYS.timesheetSettingsNamespace(u.orgId));
 
     return this.fetchOrCreate(u.orgId);
   }
 
-  /**
-   * TS-34. Capped at the platform ceiling of 100, not the 200 this used to
-   * allow. Backend §3 makes 100/page absolute for every list endpoint, and the
-   * previous cap quietly exceeded it — one of the two places in this module
-   * where a list could return more rows than the platform permits.
-   */
   async getSettingsHistory(orgId: string, limit = 50) {
     return this.db
       .select()

@@ -49,13 +49,6 @@ export const voidEntrySchema = z.object({
 }).strict();
 export type VoidEntryInput = z.infer<typeof voidEntrySchema>;
 
-/**
- * TS-09. The window of attendance to turn into draft entries.
- *
- * Required rather than defaulted to "this week". The endpoint writes rows into
- * somebody's timesheet, and a caller that has not said which days it means
- * should be told so rather than have a week chosen for it.
- */
 export const draftFromAttendanceSchema = z
   .object({
     start: dateString,

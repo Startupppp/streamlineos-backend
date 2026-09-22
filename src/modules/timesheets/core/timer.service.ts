@@ -150,22 +150,18 @@ export class TimerService {
     return buildTimerShape(row);
   }
 
-  /** @see lib/timer-transitions.ts */
   async pauseTimer(u: CurrentUserContext, timerId: number) {
     return pauseTimer(this.transitionDeps, u, timerId);
   }
 
-  /** @see lib/timer-transitions.ts */
   async resumeTimer(u: CurrentUserContext, timerId: number) {
     return resumeTimer(this.transitionDeps, u, timerId);
   }
 
-  /** @see lib/timer-transitions.ts */
   async stopTimer(u: CurrentUserContext, timerId: number) {
     return stopTimer(this.transitionDeps, u, timerId);
   }
 
-  /** @see lib/timer-transitions.ts */
   async discardTimer(u: CurrentUserContext, timerId: number) {
     return discardTimer(this.transitionDeps, u, timerId);
   }

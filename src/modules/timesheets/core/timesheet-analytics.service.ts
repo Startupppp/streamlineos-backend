@@ -192,11 +192,6 @@ export class TimesheetAnalyticsService {
     const expectedDailyHours =
       settingsRows[0]?.expectedDailyHours != null ? Number(settingsRows[0].expectedDailyHours) : null;
 
-    /**
-     * Read, not owned. `holidays` belongs to HR; this is the read-only seam the
-     * boundary doc describes, and the payroll export already uses it the same
-     * way. Nothing here writes to it.
-     */
     const holidayRows = await this.db
       .select({ date: holidays.date })
       .from(holidays)

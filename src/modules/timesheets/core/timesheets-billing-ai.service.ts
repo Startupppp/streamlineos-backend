@@ -24,11 +24,6 @@ import { invokeAiText, readEvidence } from "./timesheets-ai-invoke";
 const NARRATIVE_FEATURE_KEY = "timesheets.billing-narrative" as const;
 const REPORTS_FEATURE_KEY = "timesheets.reports-narrative" as const;
 
-/**
- * The reporting and invoicing half of the timesheets AI surface. Evidence is
- * read in a short tenant transaction that commits before the provider call, so
- * no pooled connection is held across the round trip (PRD-C078 / C147).
- */
 @Injectable()
 export class TimesheetsBillingAiService {
   constructor(

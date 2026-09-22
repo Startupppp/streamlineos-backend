@@ -21,7 +21,6 @@ import { formatDateOnly, wholeDaysBetween } from "./lib/period.helpers";
 import { parseStoredRequiredFields } from "./dto/settings.schemas";
 import { sqlstateOf } from "../../../common/observability/error-classification";
 
-/** `unique_violation`. */
 const SQLSTATE_UNIQUE_VIOLATION = "23505";
 import type {
   CreateEntryInput,
@@ -105,6 +104,9 @@ export class EntriesService {
     const allowBackdated = settings?.allowBackdatedEntries ?? true;
     const backdateLimitDays = settings?.backdateLimitDays ?? null;
     const hours = roundHours(input.hours, settings?.roundingRule);
+    if (hours <= 0) {
+      throw new BadRequestException("Hours must be greater than zero");
+    }
 
     const today = formatDateOnly(new Date());
     const allowFuture = settings?.allowFutureEntries ?? false;
@@ -178,18 +180,6 @@ export class EntriesService {
         tx,
       );
 
-      /**
-       * `timesheets` carries three partial unique indexes, and the widest of
-       * them — `uniq_timesheets_work_log`, one ticket-less entry per person
-       * per day — allows only one ticket-less entry per person per day. A
-       * second one raises 23505, and until this catch existed that
-       * reached the client as a 500: an ordinary thing for a user to do,
-       * answered with "internal server error" and an alert.
-       *
-       * SQLSTATE via `sqlstateOf`, not `err.code`: drizzle wraps the driver
-       * error, so the code sits one or two `cause` links down and a direct
-       * `err.code === "23505"` is simply never true.
-       */
       let inserted;
       try {
         [inserted] = await tx
@@ -294,6 +284,9 @@ export class EntriesService {
     if (input.hours !== undefined) {
       const settings = await this.periodService.loadSettings(u.orgId);
       const nextHours = roundHours(input.hours, settings?.roundingRule);
+      if (nextHours <= 0) {
+        throw new BadRequestException("Hours must be greater than zero");
+      }
 
       if (entry.userMembershipId !== null) {
         const maxHoursPerDay = parseFloat(settings?.maxHoursPerDay ?? "24");

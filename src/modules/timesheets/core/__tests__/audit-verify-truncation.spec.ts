@@ -6,13 +6,6 @@ import type { Db } from "../../../../db/drizzle.module";
 
 const ORG = "org-audit-verify";
 
-/**
- * `verifyChain` reads the OLDEST `limit` events. On a chain longer than that,
- * everything past the cut is never examined — and the result used to say
- * `valid: true` all the same, with a `checked` count no caller could compare
- * against anything. A green tick over a partial check is worse than no check,
- * because it is believed.
- */
 function makeDb(rows: unknown[], total: number): Db {
   const db = {
     select: jest.fn(() => ({
@@ -29,7 +22,6 @@ function makeDb(rows: unknown[], total: number): Db {
   return db as unknown as Db;
 }
 
-/** A row whose stored hash matches what the verifier will recompute. */
 function chainOf(count: number) {
   const rows: Record<string, unknown>[] = [];
   let prevHash: string | null = null;
@@ -76,11 +68,6 @@ describe("TimesheetsAuditService.verifyChain", () => {
   });
 
   it("counts hashless legacy rows apart from verified ones", async () => {
-    /*
-     * A chain that is "valid" over 400 rows of which 380 predate hashing is a
-     * much weaker statement than one over 400 hashed rows, and the caller can
-     * only tell the difference if the two are reported separately.
-     */
     const rows = chainOf(2);
     rows.unshift({ ...rows[0], id: 0, rowHash: null, prevHash: null });
     const svc = new TimesheetsAuditService(makeDb(rows, 3));
@@ -93,12 +80,6 @@ describe("TimesheetsAuditService.verifyChain", () => {
   });
 
   it("does not forgive an altered row because nobody signed it", async () => {
-    /*
-     * Rows the system writes — detection sweeps, cron locks — have no actor.
-     * A mismatch on such a row used to be counted as legacy and the chain
-     * re-anchored on whatever hash it now carried, so editing `after` on a
-     * system row and leaving its hash alone verified clean.
-     */
     const rows = chainOf(3);
     const middle = rows[1] as Record<string, unknown>;
     middle.actorMembershipId = null;
@@ -138,11 +119,6 @@ describe("TimesheetsAuditService.verifyChain", () => {
   });
 
   it("treats a hash erased after hashing began as a break, not a legacy row", async () => {
-    /*
-     * Hashless rows can only predate the chain, so they form a prefix. One
-     * appearing after a hashed row is a hash that was removed — the cheapest
-     * way to hide an edit — and is reported at that row rather than skipped.
-     */
     const rows = chainOf(3);
     (rows[2] as Record<string, unknown>).rowHash = null;
     const svc = new TimesheetsAuditService(makeDb(rows, 3));
@@ -161,7 +137,6 @@ describe("TimesheetsAuditService.verifyChain", () => {
     const result = await svc.verifyChain(ORG, 3);
 
     expect(result).toMatchObject({ valid: false, brokenAtId: 2 });
-    /* A break found early says nothing about what lies past the cut. */
     expect(result.truncated).toBe(true);
     expect(result.total).toBe(500);
   });

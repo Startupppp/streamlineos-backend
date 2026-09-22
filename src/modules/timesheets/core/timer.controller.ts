@@ -31,18 +31,6 @@ import { z } from "zod";
 
 const timerIdParams = z.object({ timerId: z.coerce.number().int().positive() }).strict();
 
-/**
- * TS-17. Every timer write that creates something carries an optional fence.
- *
- * `start` and `convert` create rows; `stop` and `discard` end a session and a
- * duplicate of either is how a flaky connection produces two entries for one
- * afternoon. `pause` and `resume` are left alone on purpose — they set a state
- * that is already its own idempotent target, and a fence there would buy a
- * `command_fences` row per tap for nothing.
- *
- * Optional rather than required on all of them: see the note on
- * `EntriesController.create`.
- */
 @RequireModule("timesheets")
 @Controller("timesheets/timer")
 @UseGuards(JwtAuthGuard, ModuleGuard, PermissionGuard)

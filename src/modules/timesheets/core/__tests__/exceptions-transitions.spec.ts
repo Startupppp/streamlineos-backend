@@ -13,30 +13,6 @@ import { humanSessionPrincipal } from "../../../../common/auth/principal";
 import type { Db } from "../../../../db/drizzle.module";
 import type { TimesheetsAuditService } from "../timesheets-audit.service";
 
-/**
- * TS-21. Resolve, dismiss, and run-detection.
- *
- * The exception *detector's* window arithmetic has had a spec since TS-11
- * (`lib/exception-window.spec.ts`) and the queue's filters are exercised by the
- * scope spec. What nothing touched is the three things an approver actually
- * does to an exception, and each of them has a way of going wrong that is
- * invisible from the endpoint:
- *
- *   - **What changes on the row.** `resolvedByMembershipId` is the actor, not the person
- *     the exception is about — `timesheet_exceptions` carries both `user_id`
- *     and `owner_user_id`, and writing the wrong one produces an audit trail
- *     that says the worker cleared their own flag.
- *   - **Who is allowed.** `PermissionGuard` is not a global guard in this
- *     codebase, so `@RequirePermission` on a handler whose controller does not
- *     mount the guard is decoration. Both halves are asserted, on the real
- *     class.
- *   - **An already-resolved exception.** The status is checked twice, and the
- *     second check is the one that matters: the UPDATE re-asserts
- *     `status = 'OPEN'` in its own predicate, so two approvers clicking at once
- *     produce one resolution and one 409 rather than a silent last-writer-wins
- *     that overwrites the first reason.
- */
-
 const ACTOR = {
   userId: "usr-approver",
   orgId: "org-1",
@@ -60,13 +36,6 @@ const OPEN_ROW = {
   resolvedAt: null,
 };
 
-/**
- * Walks a Drizzle `SQL` tree and collects the column names it references.
- *
- * Used for one assertion only: that the tenant predicate is present on both the
- * read and the write. It fails closed — if the internal shape ever changes,
- * this returns nothing and the expectation fails rather than quietly passing.
- */
 function columnsIn(node: unknown, found: string[] = []): string[] {
   if (!node || typeof node !== "object") return found;
   if (Array.isArray(node)) {
@@ -149,7 +118,6 @@ describe("TS-21 exception transitions", () => {
       expect(d.updates[0]).toMatchObject({
         status: "RESOLVED",
         resolutionReason: "Worker was on approved leave",
-        /** The approver clearing it, never `OPEN_ROW.userMembershipId`. */
         resolvedByMembershipId: 7,
       });
       expect(d.updates[0].resolvedAt).toBeInstanceOf(Date);
@@ -199,11 +167,6 @@ describe("TS-21 exception transitions", () => {
   });
 
   describe("an exception that is not open", () => {
-    /**
-     * The read-side check. A resolved exception is not resolvable again, and
-     * the verb in the message follows the transition being attempted so the
-     * caller is told what they tried to do.
-     */
     it("409s a resolve on an already-resolved exception, and writes nothing", async () => {
       const d = transitionDouble({
         existing: [{ ...OPEN_ROW, status: "RESOLVED" }],
@@ -229,12 +192,6 @@ describe("TS-21 exception transitions", () => {
       ).rejects.toThrow("Only open exceptions can be dismissed");
     });
 
-    /**
-     * The write-side check, which is the one a race reaches. The row read as
-     * OPEN, another approver resolved it, and the UPDATE's own
-     * `status = 'OPEN'` predicate matches nothing — so this must 409 rather
-     * than return an undefined row or overwrite the first approver's reason.
-     */
     it("409s when the row is resolved between the read and the update", async () => {
       const d = transitionDouble({ existing: [OPEN_ROW], updated: [] });
       const service = new TimesheetExceptionsService(d.db, access, d.audit);
@@ -242,18 +199,12 @@ describe("TS-21 exception transitions", () => {
       await expect(
         service.resolveException(ACTOR, 7, { reason: "lost the race" }),
       ).rejects.toBeInstanceOf(ConflictException);
-      /** The UPDATE ran; the audit row must not, or history gains a lie. */
       expect(d.updates).toHaveLength(1);
       expect(d.auditCalls).toHaveLength(0);
     });
   });
 
   describe("tenancy", () => {
-    /**
-     * Another organisation's exception id is a miss, and a miss is 404. A 403
-     * here would confirm the row exists and turn the endpoint into an existence
-     * oracle for every other tenant's exception ids.
-     */
     it("404s rather than 403s when the id belongs to another organisation", async () => {
       const d = transitionDouble({ existing: [] });
       const service = new TimesheetExceptionsService(d.db, access, d.audit);
@@ -264,7 +215,6 @@ describe("TS-21 exception transitions", () => {
       expect(d.updates).toHaveLength(0);
     });
 
-    /** And the reason that miss happens: `org_id` is in both predicates. */
     it("scopes both the read and the write by org_id", async () => {
       const d = transitionDouble({
         existing: [OPEN_ROW],
@@ -276,7 +226,6 @@ describe("TS-21 exception transitions", () => {
 
       expect(columnsIn(d.selectWhere[0])).toContain("org_id");
       expect(columnsIn(d.updateWhere[0])).toContain("org_id");
-      /** And the status guard that makes the race above a 409. */
       expect(columnsIn(d.updateWhere[0])).toContain("status");
     });
   });
@@ -285,10 +234,6 @@ describe("TS-21 exception transitions", () => {
     const permissionOn = (handler: unknown) =>
       Reflect.getMetadata(REQUIRE_PERMISSION, handler as object) as string | undefined;
 
-    /**
-     * `PermissionGuard` is not a global `APP_GUARD`. Without it on the class,
-     * every `@RequirePermission` below is a comment.
-     */
     it("mounts both guards on the controller", () => {
       const guards: unknown[] =
         Reflect.getMetadata(GUARDS_METADATA, TimesheetExceptionsController) ?? [];
@@ -303,7 +248,6 @@ describe("TS-21 exception transitions", () => {
       expect(permissionOn(c.runDetection)).toBe("timesheets:exceptions:manage");
     });
 
-    /** Reading the queue is a weaker standing than clearing something off it. */
     it("gates the reads on the view key instead", () => {
       const c = TimesheetExceptionsController.prototype;
       expect(permissionOn(c.list)).toBe("timesheets:exceptions:view");
@@ -312,11 +256,6 @@ describe("TS-21 exception transitions", () => {
   });
 
   describe("run-detection", () => {
-    /**
-     * The route takes no body and no org. It scans the caller's organisation
-     * because that is the only organisation it can name — there is nothing a
-     * client could send that would point it at another tenant.
-     */
     it("scans the caller's own organisation and nothing else", async () => {
       const scanned: string[] = [];
       const detector = {
@@ -336,18 +275,6 @@ describe("TS-21 exception transitions", () => {
     });
   });
 
-  /**
-   * The half of run-detection that makes it safe to press twice.
-   *
-   * The route is a button an approver can hit repeatedly, and the only thing
-   * standing between that and a queue full of duplicates is a partial unique
-   * index on (org, user, rule, period, entry) WHERE status = 'OPEN' plus
-   * `onConflictDoNothing()`. Two properties follow, and both are asserted from
-   * the outside because neither is visible in the response otherwise:
-   * the batch is deduped on the *same* key before it is sent, so a multi-row
-   * insert cannot conflict with itself; and `created` counts the rows the
-   * database actually returned, not the candidates offered to it.
-   */
   describe("detector idempotence", () => {
     function detectorDouble(insertReturning: unknown[]) {
       const inserted: unknown[][] = [];
@@ -357,9 +284,9 @@ describe("TS-21 exception transitions", () => {
         [
           timesheets,
           [
-            [], // entry counts
-            [], // daily totals
-            [], // missing-rate entries
+            [],
+            [],
+            [],
           ],
         ],
         [
@@ -405,7 +332,6 @@ describe("TS-21 exception transitions", () => {
     }
 
     it("dedupes the batch on the unique index's own key before inserting", async () => {
-      /** `usr-a` appears twice in the member list; one candidate must survive. */
       const { db, inserted } = detectorDouble([{ id: 1 }, { id: 2 }]);
       const service = new ExceptionsDetectorService(db);
 
@@ -416,11 +342,6 @@ describe("TS-21 exception transitions", () => {
       expect(result.candidates).toBe(2);
     });
 
-    /**
-     * The second press. Every candidate collides with an open exception, the
-     * insert returns nothing, and the honest answer is `created: 0` — not the
-     * candidate count, which would report work that never happened.
-     */
     it("reports created from what the insert returned, so a re-run creates nothing", async () => {
       const { db } = detectorDouble([]);
       const service = new ExceptionsDetectorService(db);

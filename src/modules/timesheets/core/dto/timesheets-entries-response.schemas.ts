@@ -42,12 +42,6 @@ export const entriesListResponseSchema = z.object({
   pagination: z.object({ hasNextPage: z.boolean(), cursor: z.string().nullable() }).optional(),
 });
 
-/**
- * `POST /timesheets/entries/from-attendance`. A tally, not the rows: the drafting
- * pass inserts with `ON CONFLICT DO NOTHING`, so what a caller needs back is how
- * many days turned into entries and how many were left alone. `enabled: false`
- * means the organisation has not opted in and nothing was read or written.
- */
 export const attendanceDraftResponseSchema = z.object({
   enabled: z.boolean(),
   segmentsFound: z.number().int(),

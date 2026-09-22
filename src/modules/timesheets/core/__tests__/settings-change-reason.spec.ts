@@ -6,18 +6,6 @@ import type { TimesheetsAuditService } from "../timesheets-audit.service";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
 import { updateCoreSettingsSchema, type UpdateCoreSettingsInput } from "../dto/settings.schemas";
 
-/**
- * TS-16. When a settings change has to be justified, and when demanding a
- * justification would be noise.
- *
- * The history table has carried a nullable `change_reason` since it shipped and
- * nothing ever required it, so it is full of nulls for changes nobody can now
- * explain. Requiring a reason is easy; requiring it *only when it means
- * something* is the part worth testing, because a rule that fires on every save
- * teaches people to type a full stop, and then the column is full of full stops
- * instead of nulls.
- */
-
 const STORED = {
   orgId: "org-1",
   workWeekStart: 1,
@@ -31,12 +19,6 @@ const STORED = {
   requiredFields: ["description"],
 };
 
-/**
- * Answers both chains `updateSettings` builds. The awkward part is that
- * `.limit(1)` is awaited directly in one place and has `.for("update")` called
- * on it in another, so the stub returns a thenable that is also chainable —
- * which is exactly what the query builder is.
- */
 function stubDb() {
   const updates: Array<Record<string, unknown>> = [];
 
@@ -137,23 +119,12 @@ describe("SettingsService material-change reason", () => {
     ).rejects.toThrow(BadRequestException);
   });
 
-  /**
-   * The case that decides whether the requirement is respected or worked
-   * around. A settings screen PATCHes the whole form, so most saves resend
-   * values that did not change — demanding a reason for those would make the
-   * dialog appear on every save, including ones that alter nothing.
-   */
   it("allows a save that resends a material field at its stored value", async () => {
     const { svc } = service();
 
     await expect(svc.updateSettings(USER, update({ maxHoursPerDay: 24 }))).resolves.toBeDefined();
   });
 
-  /**
-   * `expectedDailyHours` is a `decimal`, so it comes back "8.00" while the
-   * client sends `8`. A string comparison would call that a change and demand a
-   * justification for a no-op.
-   */
   it("does not mistake a decimal column's string form for a change", async () => {
     const { svc } = service();
 
@@ -173,10 +144,6 @@ describe("SettingsService material-change reason", () => {
     ).resolves.toBeDefined();
   });
 
-  /**
-   * Turning this on starts writing rows into other people's timesheets, which
-   * is as material as a policy change gets.
-   */
   it("treats the attendance auto-draft flag as material", async () => {
     const { svc } = service();
 

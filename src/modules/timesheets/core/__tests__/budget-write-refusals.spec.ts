@@ -4,13 +4,6 @@ import { BudgetsService } from "../budgets.service";
 
 const ORG = "org-budgets";
 
-/**
- * One ACTIVE budget per project is a partial unique index, and the project
- * pointer is a composite tenant foreign key. A second active budget, or a
- * project id from another organisation, was refused by the database and
- * surfaced as a 500 — the second also confirming that the project exists
- * somewhere. They are a 409 and the same 404 an absent project answers.
- */
 function pgError(code: string) {
   return Object.assign(new Error("Failed query"), { cause: Object.assign(new Error("db"), { code }) });
 }
