@@ -166,6 +166,22 @@ jobs:
         env:
           DATABASE_URL: postgres://ci:ci@127.0.0.1:5432/ci
 
+      - name: Cross-tenant SET NULL delete proof (BEGIN/ROLLBACK, writes nothing)
+        if: ${{ !cancelled() }}
+        run: >-
+          psql -h 127.0.0.1 -U ci -d ci -v ON_ERROR_STOP=1
+          -f migrations/sql/c-confdelsetcols-03-cross-tenant-delete-proof.sql
+        env:
+          PGPASSWORD: ci
+
+      - name: Bare SET NULL form still raises 23502 (BEGIN/ROLLBACK, writes nothing)
+        if: ${{ !cancelled() }}
+        run: >-
+          psql -h 127.0.0.1 -U ci -d ci -v ON_ERROR_STOP=1
+          -f migrations/sql/c-confdelsetcols-04-bare-form-regression.sql
+        env:
+          PGPASSWORD: ci
+
       - name: Retention coverage (live)
         if: ${{ !cancelled() }}
         run: pnpm check:retention-coverage
