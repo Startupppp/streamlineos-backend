@@ -381,6 +381,6 @@ describe("dual identity tripwire", () => {
       coreSource.indexOf("export const modules = build.table("),
     );
     expect(cyclesBlock).toContain(`idx_cycles_org_project_velocity_cursor`);
-    expect(cyclesBlock).toContain(`idx_cycles_project_status_live`);
+    expect(cyclesBlock).toContain(`idx_cycles_org_project_status_live`);
   });
 });

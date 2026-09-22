@@ -35,7 +35,7 @@ export class TestRunsService {
       const rows = await this.db
         .select({ id: cycles.id })
         .from(cycles)
-        .where(and(eq(cycles.orgId, orgId), eq(cycles.id, input.cycleId)))
+        .where(and(eq(cycles.orgId, orgId), eq(cycles.id, input.cycleId), isNull(cycles.deletedAt)))
         .limit(1);
       const row = rows[0];
       if (!row) throw new BadRequestException(`Cycle ${input.cycleId} does not exist`);

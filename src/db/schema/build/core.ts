@@ -180,7 +180,7 @@ export const cycles = build.table(
   foreignKey({ columns: [table.orgId, table.projectId], foreignColumns: [projects.orgId, projects.id], name: "fk_cycles_org_project" }).onDelete("cascade"),
     index("idx_cycles_project").on(table.projectId),
     index("idx_cycles_org_status").on(table.orgId, table.status),
-    index("idx_cycles_project_status_live").on(table.projectId, table.status)
+    index("idx_cycles_org_project_status_live").on(table.orgId, table.projectId, table.status)
       .where(sql`${table.deletedAt} IS NULL`),
     index("idx_cycles_org_project_velocity_cursor")
       .on(table.orgId, table.projectId, table.startDate.desc(), table.id.desc())

@@ -125,6 +125,7 @@ export class BuildDueSweepService {
           and(
             eq(cycles.orgId, orgId),
             eq(cycles.status, "active"),
+            isNull(cycles.deletedAt),
             sql`${cycles.endDate} = current_date + 1`,
           ),
         )

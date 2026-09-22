@@ -12,7 +12,7 @@ export class CyclesService {
 
   async listCycles(orgId: string, projectId: number, query: CycleListQuery) {
     await assertProjectInOrg(this.db, orgId, projectId);
-    const conditions = [eq(cycles.projectId, projectId), eq(cycles.orgId, orgId)];
+    const conditions = [eq(cycles.projectId, projectId), eq(cycles.orgId, orgId), isNull(cycles.deletedAt)];
     if (query.status) conditions.push(eq(cycles.status, query.status));
 
     const cycleList = await this.db
@@ -77,6 +77,7 @@ export class CyclesService {
         and(
           eq(cycles.projectId, projectId),
           eq(cycles.orgId, orgId),
+          isNull(cycles.deletedAt),
           or(
             and(lte(cycles.startDate, input.startDate), gte(cycles.endDate, input.startDate)),
             and(lte(cycles.startDate, input.endDate), gte(cycles.endDate, input.endDate)),
@@ -112,7 +113,7 @@ export class CyclesService {
         .select({ id: cycles.id })
         .from(cycles)
         .where(
-          and(eq(cycles.status, "active"), eq(cycles.projectId, projectId), eq(cycles.orgId, orgId)),
+          and(eq(cycles.status, "active"), eq(cycles.projectId, projectId), eq(cycles.orgId, orgId), isNull(cycles.deletedAt)),
         )
         .limit(1);
 

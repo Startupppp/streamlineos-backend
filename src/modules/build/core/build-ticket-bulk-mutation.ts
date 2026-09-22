@@ -68,7 +68,7 @@ export async function bulkMutateTickets(
         const [cycleRow] = await tx
           .select({ id: cycles.id })
           .from(cycles)
-          .where(and(eq(cycles.orgId, actor.orgId), eq(cycles.projectId, projectId), eq(cycles.id, body.cycleId)))
+          .where(and(eq(cycles.orgId, actor.orgId), eq(cycles.projectId, projectId), eq(cycles.id, body.cycleId), isNull(cycles.deletedAt)))
           .limit(1);
         if (!cycleRow) throw new NotFoundException("Cycle not found in this project");
       }

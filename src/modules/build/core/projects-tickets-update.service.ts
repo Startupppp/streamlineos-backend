@@ -162,6 +162,7 @@ export class ProjectsTicketsUpdateService {
               eq(cycles.orgId, orgId),
               eq(cycles.projectId, projectId),
               eq(cycles.id, input.cycleId),
+              isNull(cycles.deletedAt),
             ),
           )
           .limit(1);

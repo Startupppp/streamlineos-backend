@@ -88,6 +88,7 @@ export class ProjectsTicketsCreateService {
             eq(cycles.orgId, u.orgId),
             eq(cycles.projectId, projectId),
             eq(cycles.id, body.cycleId),
+            isNull(cycles.deletedAt),
           ),
         )
         .limit(1);

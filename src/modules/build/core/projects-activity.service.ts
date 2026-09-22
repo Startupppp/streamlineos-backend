@@ -346,7 +346,7 @@ export class ProjectsActivityService {
     const rows = await this.db
       .select({ id: cycles.id, name: cycles.name })
       .from(cycles)
-      .where(and(eq(cycles.orgId, orgId), inArray(cycles.id, unique)));
+      .where(and(eq(cycles.orgId, orgId), inArray(cycles.id, unique), isNull(cycles.deletedAt)));
 
     for (const row of rows) {
       map.set(row.id, row.name);
