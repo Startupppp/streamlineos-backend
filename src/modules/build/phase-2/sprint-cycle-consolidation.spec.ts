@@ -2,7 +2,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
 const REPO_ROOT = join(__dirname, "..", "..", "..", "..");
-const SQL_DIR = join(REPO_ROOT, "docs", "phase-2", "sql");
+const SQL_DIR = join(REPO_ROOT, "migrations", "sql");
 
 const FORWARD_PHASES = [
   "a-sprint-cycle-01-expand.sql",
