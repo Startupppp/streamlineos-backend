@@ -22,12 +22,18 @@ export const updateChangeRequestSchema = z.object({
   decisionComment: z.string().optional(),
 }).strict();
 
-export const listCrQuerySchema = z.object({
-  status: z.enum(changeRequestStatusEnum.enumValues).optional(),
-  impact: z.string().optional(),
-  afterCreatedAt: z.iso.datetime().optional(),
-  afterId: z.coerce.number().int().positive().optional(),
-}).strict();
+export const listCrQuerySchema = z
+  .object({
+    status: z.enum(changeRequestStatusEnum.enumValues).optional(),
+    impact: z.string().optional(),
+    afterCreatedAt: z.iso.datetime().optional(),
+    afterId: z.coerce.number().int().positive().optional(),
+  })
+  .strict()
+  .refine(
+    (v) => (v.afterCreatedAt === undefined) === (v.afterId === undefined),
+    { message: "afterCreatedAt and afterId must be supplied together or both omitted" },
+  );
 
 export type CreateChangeRequestInput = z.infer<typeof createChangeRequestSchema>;
 export type UpdateChangeRequestInput = z.infer<typeof updateChangeRequestSchema>;
