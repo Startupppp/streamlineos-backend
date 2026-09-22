@@ -1,5 +1,6 @@
 import {
   pgEnum,
+  primaryKey,
   text,
   timestamp,
   integer,
@@ -12,7 +13,7 @@ import {
 import { build } from "./namespaces";
 import { sql } from "drizzle-orm";
 import { organizations, users, organizationMembers } from "../common/auth";
-import { projects, sprints } from "./core";
+import { projects, sprints, cycles } from "./core";
 import { tickets, projectReleases } from "./tasks";
 
 export const testCasePriorityEnum = pgEnum("test_case_priority", ["low", "medium", "high"]);
@@ -76,6 +77,7 @@ export const testRuns = build.table("test_runs", {
   runNumber: integer("run_number").notNull(),
   name: text("name").notNull(),
   sprintId: integer("sprint_id"),
+  cycleId: integer("cycle_id"),
   releaseId: integer("release_id"),
   environment: text("environment"),
   browserDevice: text("browser_device"),
@@ -93,8 +95,10 @@ export const testRuns = build.table("test_runs", {
   foreignKey({ columns: [table.orgId, table.releaseId], foreignColumns: [projectReleases.orgId, projectReleases.id], name: "fk_test_runs_org_release" }).onDelete("set null"),
   foreignKey({ columns: [table.orgId, table.projectId], foreignColumns: [projects.orgId, projects.id], name: "fk_test_runs_org_project" }).onDelete("cascade"),
   foreignKey({ columns: [table.orgId, table.sprintId], foreignColumns: [sprints.orgId, sprints.id], name: "fk_test_runs_org_sprint" }).onDelete("set null"),
+  foreignKey({ columns: [table.orgId, table.cycleId], foreignColumns: [cycles.orgId, cycles.id], name: "fk_test_runs_org_cycle" }).onDelete("set null"),
   index("idx_test_runs_org_project_status").on(table.orgId, table.projectId, table.status).where(sql`deleted_at IS NULL`),
   index("idx_test_runs_sprint").on(table.sprintId),
+  index("idx_test_runs_cycle").on(table.cycleId),
   index("idx_test_runs_release").on(table.releaseId),
   index("idx_test_runs_org_tester_membership").on(table.orgId, table.testerMembershipId),
   uniqueIndex("uq_test_runs_project_number").on(table.projectId, table.runNumber),
@@ -117,17 +121,20 @@ export const testRunResults = build.table("test_run_results", {
   executedBy: text("executed_by").references(() => users.id, { onDelete: "set null" }),
   executedAt: timestamp("executed_at"),
   linkedBugId: integer("linked_bug_id"),
+  linkedWorkItemId: integer("linked_work_item_id"),
   version: integer("version").notNull().default(1),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull().$onUpdate(() => new Date()),
 }, (table) => [
   foreignKey({ columns: [table.orgId, table.linkedBugId], foreignColumns: [bugs.orgId, bugs.id], name: "fk_test_run_results_org_bug" }).onDelete("set null"),
+  foreignKey({ columns: [table.orgId, table.linkedWorkItemId], foreignColumns: [tickets.orgId, tickets.id], name: "fk_test_run_results_org_work_item" }).onDelete("set null"),
   foreignKey({ columns: [table.orgId, table.projectId], foreignColumns: [projects.orgId, projects.id], name: "fk_test_run_results_org_project" }).onDelete("cascade"),
   foreignKey({ columns: [table.orgId, table.testCaseId], foreignColumns: [testCases.orgId, testCases.id], name: "fk_test_run_results_org_case" }).onDelete("cascade"),
   foreignKey({ columns: [table.orgId, table.runId], foreignColumns: [testRuns.orgId, testRuns.id], name: "fk_test_run_results_org_run" }).onDelete("cascade"),
   uniqueIndex("uq_test_run_results_run_case").on(table.runId, table.testCaseId),
   index("idx_test_run_results_org_project").on(table.orgId, table.projectId),
   index("idx_test_run_results_org_run_id").on(table.orgId, table.runId, table.id),
+  index("idx_test_run_results_org_work_item").on(table.orgId, table.linkedWorkItemId),
   unique("uniq_test_run_results_org_id").on(table.orgId, table.id),
 ]);
 
@@ -185,4 +192,58 @@ export const bugs = build.table("bugs", {
     columns: [table.orgId, table.qaOwnerMembershipId],
     foreignColumns: [organizationMembers.orgId, organizationMembers.id],
   }).onDelete("set null"),
+]);
+
+export const workItemQaDetails = build.table("work_item_qa_details", {
+  orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
+  workItemId: integer("work_item_id").notNull(),
+  projectId: integer("project_id").notNull(),
+  qaState: bugStatusEnum("qa_state").default("new").notNull(),
+  severity: bugSeverityEnum("severity").default("major").notNull(),
+  stepsToReproduce: text("steps_to_reproduce"),
+  expectedResult: text("expected_result"),
+  actualResult: text("actual_result"),
+  environment: text("environment"),
+  browserDevice: text("browser_device"),
+  affectedReleaseId: integer("affected_release_id"),
+  fixedReleaseId: integer("fixed_release_id"),
+  qaOwnerUserId: text("qa_owner_user_id").references(() => users.id, { onDelete: "set null" }),
+  qaOwnerMembershipId: integer("qa_owner_membership_id"),
+  linkedTestCaseId: integer("linked_test_case_id"),
+  reopenCount: integer("reopen_count").default(0).notNull(),
+  createdByUserId: text("created_by_user_id").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull().$onUpdate(() => new Date()),
+}, (table) => [
+  primaryKey({ columns: [table.orgId, table.workItemId], name: "pk_work_item_qa_details" }),
+  foreignKey({ columns: [table.orgId, table.projectId, table.workItemId], foreignColumns: [tickets.orgId, tickets.projectId, tickets.id], name: "fk_work_item_qa_details_org_project_item" }).onDelete("cascade"),
+  foreignKey({ columns: [table.orgId, table.affectedReleaseId], foreignColumns: [projectReleases.orgId, projectReleases.id], name: "fk_work_item_qa_details_org_affected_release" }).onDelete("set null"),
+  foreignKey({ columns: [table.orgId, table.fixedReleaseId], foreignColumns: [projectReleases.orgId, projectReleases.id], name: "fk_work_item_qa_details_org_fixed_release" }).onDelete("set null"),
+  foreignKey({ columns: [table.orgId, table.linkedTestCaseId], foreignColumns: [testCases.orgId, testCases.id], name: "fk_work_item_qa_details_org_test_case" }).onDelete("set null"),
+  foreignKey({
+    name: "fk_work_item_qa_details_qa_owner_actor",
+    columns: [table.orgId, table.qaOwnerMembershipId],
+    foreignColumns: [organizationMembers.orgId, organizationMembers.id],
+  }).onDelete("set null"),
+  index("idx_work_item_qa_details_org_severity").on(table.orgId, table.severity),
+  index("idx_work_item_qa_details_linked_test_case").on(table.orgId, table.linkedTestCaseId),
+]);
+
+export const bugWorkItemMap = build.table("bug_work_item_map", {
+  orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
+  bugId: integer("bug_id").notNull(),
+  projectId: integer("project_id").notNull(),
+  legacyBugNumber: integer("legacy_bug_number").notNull(),
+  workItemId: integer("work_item_id").notNull(),
+  ticketNumber: integer("ticket_number").notNull(),
+  migrationBatch: text("migration_batch").notNull().default("b-qa-bug-02"),
+  migratedAt: timestamp("migrated_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  primaryKey({ columns: [table.orgId, table.bugId], name: "bug_work_item_map_pkey" }),
+  foreignKey({ columns: [table.orgId, table.bugId], foreignColumns: [bugs.orgId, bugs.id], name: "fk_bug_work_item_map_org_bug" }).onDelete("cascade"),
+  foreignKey({ columns: [table.orgId, table.workItemId], foreignColumns: [tickets.orgId, tickets.id], name: "fk_bug_work_item_map_org_work_item" }).onDelete("cascade"),
+  foreignKey({ columns: [table.orgId, table.projectId], foreignColumns: [projects.orgId, projects.id], name: "fk_bug_work_item_map_org_project" }).onDelete("cascade"),
+  unique("uniq_bug_work_item_map_org_work_item").on(table.orgId, table.workItemId),
+  unique("uniq_bug_work_item_map_project_legacy_number").on(table.projectId, table.legacyBugNumber),
+  index("idx_bug_work_item_map_org_project").on(table.orgId, table.projectId, table.legacyBugNumber),
 ]);

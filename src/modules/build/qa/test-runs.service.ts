@@ -1,6 +1,6 @@
 import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, count, eq, gt, inArray, isNull, sql } from "drizzle-orm";
-import { bugs, testCases, testRunResults, testRuns } from "../../../db/schema";
+import { bugs, testCases, testRunResults, testRuns, tickets, workItemQaDetails, projectStatuses } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
@@ -15,6 +15,7 @@ import type {
   UpdateTestResultInput,
   UpdateTestRunInput,
 } from "./dto/qa.schemas";
+import { resolveWorkItemStatus, resolveTicketPriority } from "./phase-2/bug-consolidation-mapping";
 
 const RUN_PAGE = 50;
 
@@ -103,6 +104,7 @@ export class TestRunsService {
         executedBy: testRunResults.executedBy,
         executedAt: testRunResults.executedAt,
         linkedBugId: testRunResults.linkedBugId,
+        linkedWorkItemId: testRunResults.linkedWorkItemId,
         createdAt: testRunResults.createdAt,
         updatedAt: testRunResults.updatedAt,
         caseNumber: testCases.caseNumber,
@@ -154,6 +156,7 @@ export class TestRunsService {
         executedBy: testRunResults.executedBy,
         executedAt: testRunResults.executedAt,
         linkedBugId: testRunResults.linkedBugId,
+        linkedWorkItemId: testRunResults.linkedWorkItemId,
         createdAt: testRunResults.createdAt,
         updatedAt: testRunResults.updatedAt,
       })
@@ -425,5 +428,100 @@ export class TestRunsService {
       metadata: { bugId: bug.id, resultId, runId, projectId },
     });
     return bug;
+  }
+
+  async createBugFromResultConsolidated(
+    u: CurrentUserContext,
+    projectId: number,
+    runId: number,
+    resultId: number,
+    input: CreateBugFromResultInput,
+  ) {
+    await assertProjectAccess(this.db, this.access, u, projectId);
+    const orgId = u.orgId;
+    const userId = u.userId;
+    const result = await this.db.query.testRunResults.findFirst({
+      where: and(
+        eq(testRunResults.id, resultId),
+        eq(testRunResults.runId, runId),
+        eq(testRunResults.orgId, orgId),
+        eq(testRunResults.projectId, projectId),
+      ),
+      columns: { id: true, testCaseId: true },
+    });
+    if (!result) throw new NotFoundException("Test run result not found");
+    const tc = await this.db.query.testCases.findFirst({
+      where: and(eq(testCases.id, result.testCaseId), eq(testCases.orgId, orgId)),
+      columns: { id: true, title: true, steps: true, expectedResult: true },
+    });
+    if (!tc) throw new NotFoundException("Test case not found");
+
+    const availableStatuses = await this.db
+      .select({ id: projectStatuses.id, name: projectStatuses.name, order: projectStatuses.order, type: projectStatuses.type })
+      .from(projectStatuses)
+      .where(and(eq(projectStatuses.orgId, orgId), eq(projectStatuses.projectId, projectId)));
+
+    const ticketStatus = resolveWorkItemStatus("new", availableStatuses);
+    const ticketPriority = resolveTicketPriority(input.priority);
+
+    const stepsText =
+      tc.steps && tc.steps.length > 0
+        ? tc.steps.map((s, i) => `${i + 1}. ${s.action} → Expected: ${s.expected}`).join("\n")
+        : undefined;
+
+    const ticket = await this.db.transaction(async (tx) => {
+      await tx.execute(sql`SELECT pg_advisory_xact_lock(${projectId})`);
+      const [maxRow] = await tx
+        .select({ maxNum: sql<number>`COALESCE(MAX(${tickets.ticketNumber}), 0)` })
+        .from(tickets)
+        .where(and(eq(tickets.projectId, projectId), eq(tickets.orgId, orgId)));
+      const nextTicketNumber = (maxRow?.maxNum ?? 0) + 1;
+
+      const [created] = await tx
+        .insert(tickets)
+        .values({
+          orgId,
+          projectId,
+          ticketNumber: nextTicketNumber,
+          title: input.title ?? `Failed: ${tc.title}`,
+          description: input.description,
+          type: "BUG",
+          status: ticketStatus,
+          priority: ticketPriority,
+          reporterId: userId,
+        })
+        .returning();
+
+      await tx.insert(workItemQaDetails).values({
+        orgId,
+        workItemId: created.id,
+        projectId,
+        severity: input.severity ?? "major",
+        stepsToReproduce: stepsText,
+        expectedResult: input.expectedResult ?? tc.expectedResult ?? null,
+        actualResult: input.actualResult,
+        environment: input.environment,
+        browserDevice: input.browserDevice,
+        linkedTestCaseId: tc.id,
+        createdByUserId: userId,
+      });
+
+      await tx
+        .update(testRunResults)
+        .set({ linkedWorkItemId: created.id, updatedAt: new Date() })
+        .where(and(eq(testRunResults.id, resultId), eq(testRunResults.orgId, orgId)));
+
+      return created;
+    });
+
+    this.audit.log({
+      action: "bug.created_from_result_consolidated",
+      userId,
+      orgId,
+      resourceType: "ticket",
+      resourceId: String(ticket.id),
+      metadata: { ticketId: ticket.id, resultId, runId, projectId },
+    });
+    return ticket;
   }
 }
