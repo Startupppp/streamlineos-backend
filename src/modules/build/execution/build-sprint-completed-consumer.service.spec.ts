@@ -53,6 +53,7 @@ function buildDbMock(options: {
 }): {
   insert: jest.Mock;
   update: jest.Mock;
+  select: jest.Mock;
   selectDistinct: jest.Mock;
 } {
   const { claimed = true, assignees = [{ assigneeId: ASSIGNEE_A }, { assigneeId: ASSIGNEE_B }] } = options;
@@ -67,6 +68,14 @@ function buildDbMock(options: {
   const updateSet = jest.fn().mockReturnValue({ where: updateWhere });
   const dbUpdate = jest.fn().mockReturnValue({ set: updateSet });
 
+  const dbSelect = jest.fn().mockReturnValue({
+    from: jest.fn().mockReturnValue({
+      where: jest.fn().mockReturnValue({
+        limit: jest.fn().mockResolvedValue([{ id: 1 }]),
+      }),
+    }),
+  });
+
   const dbSelectDistinct = jest.fn().mockReturnValue({
     from: jest.fn().mockReturnValue({
       innerJoin: jest.fn().mockReturnValue({
@@ -75,7 +84,7 @@ function buildDbMock(options: {
     }),
   });
 
-  return { insert: dbInsert, update: dbUpdate, selectDistinct: dbSelectDistinct };
+  return { insert: dbInsert, update: dbUpdate, select: dbSelect, selectDistinct: dbSelectDistinct };
 }
 
 async function buildService(options: {

@@ -16,15 +16,23 @@ const actor: CurrentUserContext = {
 async function harness() {
   const scopeFor = jest.fn().mockResolvedValue("all");
   const rows = [{ id: 10, status: "TODO", version: 1, assigneeMembershipId: null, allowed: true }];
-  const chain = {
+  const ticketChain = {
     from: jest.fn().mockReturnThis(), innerJoin: jest.fn().mockReturnThis(), where: jest.fn().mockReturnThis(),
     orderBy: jest.fn().mockReturnThis(), for: jest.fn().mockReturnThis(),
     limit: jest.fn().mockResolvedValue(rows),
     then: (resolve: (value: typeof rows) => unknown) => Promise.resolve(rows).then(resolve),
   };
+  const emptyChain = {
+    from: jest.fn().mockReturnThis(), innerJoin: jest.fn().mockReturnThis(), where: jest.fn().mockReturnThis(),
+    orderBy: jest.fn().mockReturnThis(), for: jest.fn().mockReturnThis(),
+    limit: jest.fn().mockResolvedValue([]),
+    then: (resolve: (value: never[]) => unknown) => Promise.resolve([]).then(resolve),
+  };
   const set = jest.fn().mockReturnValue({ where: jest.fn().mockReturnValue({ returning: jest.fn().mockResolvedValue(rows) }) });
+  let selectCount = 0;
   const db = {
-    select: jest.fn(() => chain), update: jest.fn(() => ({ set })),
+    select: jest.fn(() => { selectCount++; return selectCount === 1 ? ticketChain : emptyChain; }),
+    update: jest.fn(() => ({ set })),
     execute: jest.fn().mockResolvedValue([]),
     query: {
       projects: { findFirst: jest.fn().mockResolvedValue({ id: 1, managerMembershipId: 1 }) },

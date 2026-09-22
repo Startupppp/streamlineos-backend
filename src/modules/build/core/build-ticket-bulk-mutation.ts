@@ -80,7 +80,9 @@ export async function bulkMutateTickets(
           .from(cycles)
           .where(and(eq(cycles.orgId, actor.orgId), eq(cycles.legacySprintId, body.sprintId)))
           .limit(1);
-        resolvedCycleId = cycleRow?.id ?? null;
+        if (!cycleRow)
+          throw new NotFoundException("Sprint not found in this project");
+        resolvedCycleId = cycleRow.id;
       } else {
         resolvedCycleId = null;
       }
