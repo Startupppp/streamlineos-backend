@@ -1,4 +1,3 @@
-import { BadRequestException } from "@nestjs/common";
 import { MeetingsService } from "./meetings.service";
 import type { Db } from "../../../db/drizzle.module";
 import type { AuditService } from "../../../common/audit/audit.service";
@@ -124,169 +123,110 @@ beforeEach(() => {
   (projectAccessSeam.assertProjectAccess as jest.Mock).mockResolvedValue(undefined);
 });
 
-describe("MeetingsService.createMeeting — sprint-to-cycle write bridge", () => {
-  it("never writes project_meetings.sprint_id, the column phase-04 drops, even when the request supplies sprintId", async () => {
-    const { svc, meetingInsert } = makeHarness({
-      selectScript: [{ rows: [{ id: 55 }] }, { rows: [{ maxNum: 0 }] }, { rows: [{ id: 55, legacySprintId: 9 }] }],
-    });
-    await svc.createMeeting(makeU(), 1, { title: "Planning", sprintId: 9 });
-    expect(meetingInsert()).toBeDefined();
-    expect(Object.keys(meetingInsert()!)).not.toContain("sprintId");
-  });
-
-  it("resolves a supplied sprintId to its cycle through cycles.legacySprintId and writes that cycleId", async () => {
-    const { svc, meetingInsert } = makeHarness({
-      selectScript: [{ rows: [{ id: 55 }] }, { rows: [{ maxNum: 0 }] }, { rows: [{ id: 55, legacySprintId: 9 }] }],
-    });
-    await svc.createMeeting(makeU(), 1, { title: "Planning", sprintId: 9 });
-    expect(meetingInsert()).toMatchObject({ cycleId: 55 });
-  });
-
-  it("rejects an unmappable sprintId with BadRequestException instead of silently dropping the iteration binding", async () => {
-    const { svc } = makeHarness({ selectScript: [{ rows: [] }] });
-    await expect(
-      svc.createMeeting(makeU(), 1, { title: "Planning", sprintId: 404 }),
-    ).rejects.toThrow(BadRequestException);
-  });
-
-  it("accepts cycleId as the canonical input and skips the legacy bridge lookup entirely", async () => {
+describe("MeetingsService.createMeeting — cycleId binding", () => {
+  it("accepts cycleId as the canonical input", async () => {
     const { svc, meetingInsert, db } = makeHarness({
-      selectScript: [{ rows: [{ maxNum: 0 }] }, { rows: [{ id: 77, legacySprintId: 3 }] }],
+      selectScript: [],
       insertedRow: { ...MEETING_ROW, cycleId: 77 },
     });
     await svc.createMeeting(makeU(), 1, { title: "Planning", cycleId: 77 });
     expect(meetingInsert()).toMatchObject({ cycleId: 77 });
-    expect((db as unknown as { select: jest.Mock }).select).toHaveBeenCalledTimes(1);
+    expect((db as unknown as { select: jest.Mock }).select).toHaveBeenCalledTimes(0);
   });
 
-  it("lets an explicit cycleId win over a legacy sprintId, matching the precedence the ticket update path already applies", async () => {
+  it("lets an explicit cycleId win — the insert row carries the supplied cycleId", async () => {
     const { svc, meetingInsert } = makeHarness({
-      selectScript: [{ rows: [{ maxNum: 0 }] }, { rows: [{ id: 77, legacySprintId: 3 }] }],
+      selectScript: [],
       insertedRow: { ...MEETING_ROW, cycleId: 77 },
     });
-    await svc.createMeeting(makeU(), 1, { title: "Planning", sprintId: 9, cycleId: 77 });
+    await svc.createMeeting(makeU(), 1, { title: "Planning", cycleId: 77 });
     expect(meetingInsert()).toMatchObject({ cycleId: 77 });
   });
 
-  it("keeps the wire contract: the created meeting still carries sprintId, derived from the cycle's legacySprintId", async () => {
-    const { svc } = makeHarness({
-      selectScript: [{ rows: [{ id: 55 }] }, { rows: [{ maxNum: 0 }] }, { rows: [{ id: 55, legacySprintId: 9 }] }],
+  it("writes a null cycleId when no cycleId is supplied", async () => {
+    const { svc, meetingInsert } = makeHarness({
+      selectScript: [],
+      insertedRow: { ...MEETING_ROW, cycleId: null },
     });
-    const created = await svc.createMeeting(makeU(), 1, { title: "Planning", sprintId: 9 });
-    expect(created.sprintId).toBe(9);
+    await svc.createMeeting(makeU(), 1, { title: "Planning" });
+    expect(meetingInsert()).toMatchObject({ cycleId: null });
   });
 });
 
-describe("MeetingsService.updateMeeting — sprint-to-cycle write bridge", () => {
-  it("never patches project_meetings.sprint_id, the column phase-04 drops", async () => {
+describe("MeetingsService.updateMeeting — cycleId binding", () => {
+  it("leaves the cycle binding untouched when neither cycleId is in the patch", async () => {
     const { svc, updatedPatches } = makeHarness({
-      selectScript: [{ rows: [{ id: 55 }] }, { rows: [{ id: 55, legacySprintId: 9 }] }],
-    });
-    await svc.updateMeeting("org-1", "user-7", 1, 2, { sprintId: 9 });
-    expect(Object.keys(updatedPatches[0])).not.toContain("sprintId");
-  });
-
-  it("patches cycleId resolved through cycles.legacySprintId when the request supplies the legacy sprintId", async () => {
-    const { svc, updatedPatches } = makeHarness({
-      selectScript: [{ rows: [{ id: 55 }] }, { rows: [{ id: 55, legacySprintId: 9 }] }],
-    });
-    await svc.updateMeeting("org-1", "user-7", 1, 2, { sprintId: 9 });
-    expect(updatedPatches[0]).toMatchObject({ cycleId: 55 });
-  });
-
-  it("clears the binding to null when the request explicitly nulls sprintId", async () => {
-    const { svc, updatedPatches } = makeHarness({
-      selectScript: [{ rows: [] }],
-      updatedRow: { ...MEETING_ROW, cycleId: null },
-    });
-    await svc.updateMeeting("org-1", "user-7", 1, 2, { sprintId: null });
-    expect(updatedPatches[0]).toMatchObject({ cycleId: null });
-  });
-
-  it("leaves cycleId untouched when neither sprintId nor cycleId is supplied", async () => {
-    const { svc, updatedPatches } = makeHarness({
-      selectScript: [{ rows: [{ id: 55, legacySprintId: 9 }] }],
+      selectScript: [],
     });
     await svc.updateMeeting("org-1", "user-7", 1, 2, { title: "Renamed" });
-    expect(Object.keys(updatedPatches[0])).not.toContain("cycleId");
+    expect(Object.keys(updatedPatches[0]!)).not.toContain("cycleId");
   });
 
-  it("lets an explicit cycleId win over a legacy sprintId on update too", async () => {
+  it("lets an explicit cycleId win on update — the SET carries the supplied cycleId", async () => {
     const { svc, updatedPatches } = makeHarness({
-      selectScript: [{ rows: [{ id: 77, legacySprintId: 3 }] }],
+      selectScript: [],
       updatedRow: { ...MEETING_ROW, cycleId: 77 },
     });
-    await svc.updateMeeting("org-1", "user-7", 1, 2, { sprintId: 9, cycleId: 77 });
+    await svc.updateMeeting("org-1", "user-7", 1, 2, { cycleId: 77 });
     expect(updatedPatches[0]).toMatchObject({ cycleId: 77 });
   });
 
-  it("rejects an unmappable sprintId with BadRequestException rather than writing a null binding", async () => {
-    const { svc, db } = makeHarness({ selectScript: [{ rows: [] }] });
-    await expect(
-      svc.updateMeeting("org-1", "user-7", 1, 2, { sprintId: 404 }),
-    ).rejects.toThrow(BadRequestException);
-    expect((db as unknown as { update: jest.Mock }).update).not.toHaveBeenCalled();
-  });
-
-  it("keeps the wire contract: the updated meeting still carries sprintId, derived from the cycle's legacySprintId", async () => {
-    const { svc } = makeHarness({
-      selectScript: [{ rows: [{ id: 55 }] }, { rows: [{ id: 55, legacySprintId: 9 }] }],
+  it("clears the binding to null when the request explicitly nulls cycleId", async () => {
+    const { svc, updatedPatches } = makeHarness({
+      selectScript: [],
+      updatedRow: { ...MEETING_ROW, cycleId: null },
     });
-    const updated = await svc.updateMeeting("org-1", "user-7", 1, 2, { sprintId: 9 });
-    expect(updated.sprintId).toBe(9);
+    await svc.updateMeeting("org-1", "user-7", 1, 2, { cycleId: null });
+    expect(updatedPatches[0]).toMatchObject({ cycleId: null });
   });
 });
 
-describe("MeetingsService reads — sprintId is derived from the cycle, never selected from the dropped column", () => {
-  it("getMeeting emits a sprintId derived from the bound cycle's legacySprintId", async () => {
-    const { svc } = makeHarness({
-      selectScript: [
-        { rows: [] },
-        { rows: [] },
-        { rows: [] },
-        { rows: [{ id: 55, legacySprintId: 9 }] },
-      ],
+describe("MeetingsService — sprintId removal guard", () => {
+  it("createMeeting insert payload contains cycleId and no sprintId key", async () => {
+    const { svc, meetingInsert } = makeHarness({
+      selectScript: [],
+      insertedRow: { ...MEETING_ROW, cycleId: 55 },
     });
-    const meeting = await svc.getMeeting(makeU(), 1, 2);
-    expect(meeting.sprintId).toBe(9);
+    await svc.createMeeting(makeU(), 1, { title: "Planning", cycleId: 55 });
+    const payload = meetingInsert()!;
+    expect(payload).toBeDefined();
+    expect(Object.keys(payload)).toContain("cycleId");
+    expect(Object.keys(payload)).not.toContain("sprintId");
   });
 
-  it("getMeeting emits sprintId null when the meeting is bound to a cycle that has no legacy sprint", async () => {
+  it("createMeeting response row carries no sprintId key", async () => {
+    const { svc } = makeHarness({
+      selectScript: [],
+      insertedRow: { ...MEETING_ROW, cycleId: 55 },
+    });
+    const row = await svc.createMeeting(makeU(), 1, { title: "Planning", cycleId: 55 });
+    expect(row).not.toHaveProperty("sprintId");
+  });
+
+  it("updateMeeting SET payload contains no sprintId key", async () => {
+    const { svc, updatedPatches } = makeHarness({
+      selectScript: [],
+      updatedRow: { ...MEETING_ROW, cycleId: 55 },
+    });
+    await svc.updateMeeting("org-1", "user-7", 1, 2, { cycleId: 55 });
+    expect(Object.keys(updatedPatches[0]!)).not.toContain("sprintId");
+  });
+
+  it("updateMeeting response row carries no sprintId key", async () => {
+    const { svc } = makeHarness({
+      selectScript: [],
+      updatedRow: { ...MEETING_ROW, cycleId: 55 },
+    });
+    const row = await svc.updateMeeting("org-1", "user-7", 1, 2, { cycleId: 55 });
+    expect(row).not.toHaveProperty("sprintId");
+  });
+
+  it("no cycle lookup is issued when the caller supplies no cycleId on create", async () => {
     const { svc, db } = makeHarness({
-      selectScript: [
-        { rows: [] },
-        { rows: [] },
-        { rows: [] },
-        { rows: [{ id: 55, legacySprintId: null }] },
-      ],
+      selectScript: [],
+      insertedRow: { ...MEETING_ROW, cycleId: null },
     });
-    (db.query.projectMeetings.findFirst as jest.Mock).mockResolvedValue({ ...MEETING_ROW });
-    const meeting = await svc.getMeeting(makeU(), 1, 2);
-    expect(meeting.sprintId).toBeNull();
-  });
-
-  it("getMeeting emits sprintId null for an unbound meeting without issuing a cycle lookup", async () => {
-    const { svc, db } = makeHarness({ selectScript: [{ rows: [] }, { rows: [] }, { rows: [] }] });
-    (db.query.projectMeetings.findFirst as jest.Mock).mockResolvedValue({
-      ...MEETING_ROW,
-      cycleId: null,
-    });
-    const meeting = await svc.getMeeting(makeU(), 1, 2);
-    expect(meeting.sprintId).toBeNull();
-    expect((db as unknown as { select: jest.Mock }).select).toHaveBeenCalledTimes(3);
-  });
-
-  it("listMeetings emits a sprintId on every row, derived from each row's cycle", async () => {
-    const { svc } = makeHarness({
-      selectScript: [
-        { rows: [{ ...MEETING_ROW, id: 2, cycleId: 55 }, { ...MEETING_ROW, id: 3, cycleId: null }] },
-        { rows: [] },
-        { rows: [] },
-        { rows: [] },
-        { rows: [{ id: 55, legacySprintId: 9 }] },
-      ],
-    });
-    const rows = await svc.listMeetings(makeU(), 1, {});
-    expect(rows.map((r) => r.sprintId)).toEqual([9, null]);
+    await svc.createMeeting(makeU(), 1, { title: "Planning" });
+    expect((db as unknown as { select: jest.Mock }).select).toHaveBeenCalledTimes(0);
   });
 });

@@ -39,7 +39,7 @@ const mockProject = {
   endDate: null as Date | null,
 };
 
-const mockTicketRow = { status: "DONE", dueDate: null as string | null, sprintId: null as number | null };
+const mockTicketRow = { status: "DONE", dueDate: null as string | null, cycleId: null as number | null };
 
 function makeGatewayOk<T>(data: T): AiInvokeResult<T> {
   return { ok: true, data, model: "gpt-4o-mini", latencyMs: 100, correlationId: "test-corr", usage: { promptTokens: 10, completionTokens: 5, totalTokens: 15 } };
@@ -213,7 +213,7 @@ describe("ProjectsAiService", () => {
       mockWhere.mockImplementation(() => {
         callCount++;
         if (callCount === 1) return q([mockProject]);
-        if (callCount === 2) return q([{ status: "DONE", dueDate: null, sprintId: null }]);
+        if (callCount === 2) return q([{ status: "DONE", dueDate: null, cycleId: null }]);
         return q(assigneeRows);
       });
 

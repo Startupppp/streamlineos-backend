@@ -28,7 +28,6 @@ function isApplicationSource(filePath: string): boolean {
   return true;
 }
 
-const CONSUMER = src("modules/build/execution/build-sprint-completed-consumer.service.ts");
 const DUE_SWEEP = src("modules/build/core/build-due-sweep.service.ts");
 const WORK_ACTIONS = src("modules/ai/core/tools/work-actions-tools.ts");
 const SPRINTS_SVC = src("modules/build/execution/sprints.service.ts");
@@ -37,18 +36,6 @@ const VELOCITY_REPORT = src("modules/build/core/projects-velocity-report.ts");
 const WORK_QUERY_SVC = src("modules/build/core/projects-work-query.service.ts");
 
 describe("phase-04 detach invariant: owned execution paths use cycleId not sprintId", () => {
-  it("build-sprint-completed-consumer no longer queries tickets.sprintId", () => {
-    expect(CONSUMER).not.toContain("tickets.sprintId");
-  });
-
-  it("build-sprint-completed-consumer looks up cycle via cycles.legacySprintId", () => {
-    expect(CONSUMER).toContain("cycles.legacySprintId");
-  });
-
-  it("build-sprint-completed-consumer queries tickets.cycleId for assignee lookup", () => {
-    expect(CONSUMER).toContain("tickets.cycleId");
-  });
-
   it("build-due-sweep no longer queries inArray(tickets.sprintId", () => {
     expect(DUE_SWEEP).not.toContain("tickets.sprintId");
   });
@@ -72,12 +59,6 @@ describe("phase-04 detach invariant: owned execution paths use cycleId not sprin
     expect(WORK_ACTIONS).toContain("cycles.name");
   });
 
-  it("sprints.service listSprints bridges ticket lookup through cycles.legacySprintId not tickets.sprintId", () => {
-    expect(SPRINTS_SVC).not.toContain("tickets.sprintId");
-    expect(SPRINTS_SVC).toContain("cycles.legacySprintId");
-    expect(SPRINTS_SVC).toContain("tickets.cycleId");
-  });
-
   it("dashboard-project.service getActiveSprintSummary queries tickets.cycleId not tickets.sprintId", () => {
     expect(DASHBOARD_SVC).not.toContain("tickets.sprintId");
     expect(DASHBOARD_SVC).toContain("tickets.cycleId");
@@ -89,18 +70,19 @@ describe("phase-04 detach invariant: owned execution paths use cycleId not sprin
     expect(VELOCITY_REPORT).toContain("cycles.id");
   });
 
-  it("projects-work-query.service bridges sprintId filter through cycles.legacySprintId", () => {
+  it("projects-work-query.service filters on tickets.cycleId alone, with no legacy sprint bridge left", () => {
     expect(WORK_QUERY_SVC).not.toContain("tickets.sprintId");
-    expect(WORK_QUERY_SVC).toContain("cycles.legacySprintId");
+    expect(WORK_QUERY_SVC).not.toContain("legacySprintId");
+    expect(WORK_QUERY_SVC).toContain("inArray(tickets.cycleId");
   });
 
   it("scanner is not vacuous: each source file contains substantial code", () => {
-    expect(CONSUMER.length).toBeGreaterThan(500);
     expect(DUE_SWEEP.length).toBeGreaterThan(500);
     expect(WORK_ACTIONS.length).toBeGreaterThan(500);
-    expect(SPRINTS_SVC.length).toBeGreaterThan(500);
+    expect(SPRINTS_SVC.length).toBeGreaterThan(200);
     expect(DASHBOARD_SVC.length).toBeGreaterThan(500);
     expect(VELOCITY_REPORT.length).toBeGreaterThan(200);
+    expect(WORK_QUERY_SVC.length).toBeGreaterThan(500);
   });
 });
 
@@ -122,34 +104,37 @@ describe("phase-04 detach invariant: full application source — property-access
 });
 
 describe("phase-04 detach invariant: sprintId column-selection form (relational API blind spot)", () => {
-  const KNOWN_COLUMN_SELECT_REMAINING: readonly string[] = [
-    "modules/build/core/dto/build-tickets-response.schemas.ts",
-  ].map((p) => p.replace(/\//g, sep));
+  const KNOWN_COLUMN_SELECT_REMAINING: readonly string[] = [];
 
-
-  it("projects-tickets-read.query no longer selects sprintId: true — derives sprintId from cycle.legacySprintId instead", () => {
+  it("projects-tickets-read.query selects no sprintId and derives no sprintId, because the response contract no longer carries one", () => {
     const content = src("modules/build/core/projects-tickets-read.query.ts");
     expect(content).not.toMatch(/sprintId\s*:\s*true/);
-    expect(content).toContain("legacySprintId: true");
-    expect(content).toContain("row.cycle?.legacySprintId");
+    expect(content).not.toContain("legacySprintId");
+    expect(content).not.toContain("sprintId");
+    expect(content).toContain("cycle: {");
   });
 
-  it("projects-tickets-update.service no longer selects sprintId: true from the DB — bridges sprintId write to cycleId instead", () => {
+  it("projects-tickets-update.service resolves cycleId straight from the request with no sprintId branch", () => {
     const content = src("modules/build/core/projects-tickets-update.service.ts");
     expect(content).not.toMatch(/sprintId\s*:\s*true/);
-    expect(content).toContain("cycles.legacySprintId");
+    expect(content).not.toContain("sprintId");
     expect(content).toContain("updateData.cycleId");
   });
 
-  it("build-tickets-response.schemas.ts carries sprintId: true only in a Zod .pick() call — not a DB column read, benign until the response contract removes sprintId", () => {
+  it("build-tickets-response.schemas.ts no longer picks sprintId, which is what emptied this allowlist", () => {
     const content = src("modules/build/core/dto/build-tickets-response.schemas.ts");
-    expect(content).toContain("sprintId: true");
-    expect(content).not.toContain("findMany");
-    expect(content).not.toContain("findFirst");
-    expect(content).not.toContain("cycles.legacySprintId");
+    expect(content.length).toBeGreaterThan(500);
+    expect(content).not.toContain("sprintId");
+    expect(content).toContain("cycleId: true");
+    expect(content).toContain("cycleId: z.number().int().nullable()");
   });
 
-  it("only the known-remaining files still carry sprintId: true — catches the relational-API form that the property-access scan cannot see", () => {
+  it("the column-select scanner is non-vacuous: it flags the exact pick() text that used to hold this allowlist open", () => {
+    expect(/sprintId\s*:\s*true/.test("    ticketNumber: true,\n    sprintId: true,\n")).toBe(true);
+    expect(/sprintId\s*:\s*true/.test("    ticketNumber: true,\n    cycleId: true,\n")).toBe(false);
+  });
+
+  it("no application file carries sprintId: true any more — the allowlist is empty and the floor keeps an empty scan from passing vacuously", () => {
     const allFiles = scanDir(BACKEND_SRC).filter(isApplicationSource);
     expect(allFiles.length).toBeGreaterThan(50);
 
@@ -160,6 +145,7 @@ describe("phase-04 detach invariant: sprintId column-selection form (relational 
     const sortedViolators = [...columnSelectViolators].sort();
     const sortedKnown = [...KNOWN_COLUMN_SELECT_REMAINING].sort();
     expect(sortedViolators).toEqual(sortedKnown);
+    expect(sortedKnown).toEqual([]);
   });
 });
 
@@ -194,31 +180,32 @@ describe("phase-04 detach invariant: sprintId object-literal WRITE form (the bli
     expect(hasSprintIdWriteForm(preFixMeetingPatch)).toBe(true);
   });
 
-  it("the write scanner does not fire on the cycle-derived read form, which is the shape every fixed call site now uses", () => {
+  it("the write scanner does not fire on the cycle-derived read form that the deleted bridges used to use", () => {
     expect(hasSprintIdWriteForm("sprintId: row.cycle?.legacySprintId ?? null")).toBe(false);
     expect(hasSprintIdWriteForm("sprintId: cycleId == null ? null : legacyByCycleId.get(cycleId) ?? null")).toBe(false);
     expect(hasSprintIdWriteForm("expect(sprintId === undefined)")).toBe(false);
   });
 
-  it("projects-tickets-create.service bridges body.sprintId to a cycleId and no longer writes tickets.sprint_id", () => {
+  it("projects-tickets-create.service takes cycleId straight from the request and mentions no sprint at all", () => {
     const content = src("modules/build/core/projects-tickets-create.service.ts");
     expect(hasSprintIdWriteForm(content)).toBe(false);
-    expect(content).toContain("cycles.legacySprintId");
+    expect(content).not.toContain("sprintId");
     expect(content).toContain("cycleId: resolvedCycleId");
   });
 
-  it("meetings.service bridges the sprintId write to cycleId and derives the sprintId response field from cycles.legacySprintId", () => {
+  it("meetings.service writes cycleId straight from the request and derives no sprintId response field", () => {
     const content = src("modules/build/meetings/meetings.service.ts");
     expect(hasSprintIdWriteForm(content)).toBe(false);
-    expect(content).toContain("cycles.legacySprintId");
+    expect(content).not.toContain("sprintId");
+    expect(content).not.toContain("attachSprintIds");
     expect(content).toContain("cycleId: resolvedCycleId");
-    expect(content).toContain("attachSprintIds");
   });
 
-  it("sprints.service getSprint loads tickets by cycleId instead of traversing the sprints-to-tickets relation", () => {
-    const content = src("modules/build/execution/sprints.service.ts");
-    expect(content).not.toContain("tickets: {");
-    expect(content).toContain("eq(tickets.cycleId, bridgedCycle.id)");
+  it("test-runs.service binds a run to a cycle with no sprintId branch and no derived sprintId field", () => {
+    const content = src("modules/build/qa/test-runs.service.ts");
+    expect(hasSprintIdWriteForm(content)).toBe(false);
+    expect(content).not.toContain("sprintId");
+    expect(content).toContain("resolveCycleBinding");
   });
 
   it("no application file writes sprintId from a request-sourced value any more, which is the precondition a-sprint-cycle-04-detach's data guard cannot check", () => {
@@ -247,7 +234,7 @@ describe("phase-04 detach invariant: relational `with: { sprint: ... }` form (th
   });
 
   it("the relation scanner does not fire on the cycle relation that replaced it", () => {
-    expect(RELATION_FORM.test("cycle: { columns: { id: true, name: true, legacySprintId: true } },")).toBe(false);
+    expect(RELATION_FORM.test("cycle: { columns: { id: true, name: true } },")).toBe(false);
   });
 
   it("no application file asks Drizzle for a sprint relation, because that join reads tickets.sprint_id which phase 04 drops", () => {
@@ -266,5 +253,140 @@ describe("phase-04 detach invariant: relational `with: { sprint: ... }` form (th
     expect(relations.length).toBeGreaterThan(0);
     expect(relations).toContain("cycle: one(cycles");
     expect(relations).not.toContain("sprint: one(sprints");
+  });
+});
+
+describe("phase-05 precondition: cycles.legacy_sprint_id has no application reader", () => {
+  it("the legacySprintId scanner is non-vacuous: it flags each deleted bridge form verbatim", () => {
+    const columnSelect = "        .select({ id: cycles.id, legacySprintId: cycles.legacySprintId })";
+    const relationColumn = "        cycle: { columns: { id: true, name: true, legacySprintId: true } },";
+    const derivation = "      sprintId: ticket.cycle?.legacySprintId ?? null,";
+    const predicate = "        .where(and(eq(cycles.orgId, orgId), eq(cycles.legacySprintId, input.sprintId)))";
+    for (const form of [columnSelect, relationColumn, derivation, predicate]) {
+      expect(form).toContain("legacySprintId");
+    }
+    expect("        cycle: { columns: { id: true, name: true } },").not.toContain("legacySprintId");
+  });
+
+  it("no application file reads cycles.legacySprintId, so the bridge that produced the sprintId contract field is gone", () => {
+    const allFiles = scanDir(BACKEND_SRC).filter(isApplicationSource);
+    expect(allFiles.length).toBeGreaterThan(50);
+
+    const violators = allFiles
+      .filter((f) => readFileSync(f, "utf8").includes("legacySprintId"))
+      .map((f) => relative(BACKEND_SRC, f));
+
+    expect(violators).toEqual([]);
+  });
+
+  it("the cycles table declares no legacySprintId column and no legacy-sprint foreign key, so Drizzle names neither in a SELECT or INSERT", () => {
+    const core = readFileSync(join(BACKEND_SRC, "db", "schema", "build", "core.ts"), "utf8");
+    expect(core.length).toBeGreaterThan(500);
+    expect(core).not.toContain("legacySprintId");
+    expect(core).not.toContain("legacy_sprint_id");
+    expect(core).not.toContain("fk_cycles_org_legacy_sprint");
+  });
+});
+
+describe("phase-05 precondition: the build.sprints table has no application reader or writer", () => {
+  const SPRINTS_TABLE_FORM =
+    /\b(?:from|update|insert|delete)\(sprints\)|query\.sprints\.|\bsprints\.(?:id|orgId|projectId|name|status|goal|startDate|endDate|deletedAt|createdAt|updatedAt)\b/;
+
+  const KNOWN_SPRINTS_TABLE_REMAINING: readonly string[] = [
+    "modules/build/core/projects-write.service.ts",
+    "modules/build/entity/build-entity-reads.service.ts",
+  ].map((p) => p.replace(/\//g, sep));
+
+  it("the table scanner is non-vacuous: it flags each query form the frozen SprintsService used to carry", () => {
+    expect(SPRINTS_TABLE_FORM.test("      .from(sprints)")).toBe(true);
+    expect(SPRINTS_TABLE_FORM.test("        .update(sprints)")).toBe(true);
+    expect(SPRINTS_TABLE_FORM.test("    const s = await this.db.query.sprints.findFirst({")).toBe(true);
+    expect(SPRINTS_TABLE_FORM.test("      .where(and(eq(sprints.orgId, orgId)))")).toBe(true);
+    expect(SPRINTS_TABLE_FORM.test('const FROZEN = "Sprints are frozen.";')).toBe(false);
+    expect(SPRINTS_TABLE_FORM.test('import { SprintsService } from "./sprints.service";')).toBe(false);
+    expect(SPRINTS_TABLE_FORM.test("    return this.sprints.listSprints(u.orgId, projectId);")).toBe(false);
+  });
+
+  it("SprintsService itself touches the sprints table nowhere, because every one of its five methods is frozen", () => {
+    expect(SPRINTS_TABLE_FORM.test(SPRINTS_SVC)).toBe(false);
+    expect(SPRINTS_SVC).not.toContain("legacySprintId");
+  });
+
+  it("only the two known-remaining files still touch build.sprints — each is a phase-05 blocker and this allowlist must reach empty before a-sprint-cycle-05-drop.sql runs", () => {
+    const allFiles = scanDir(BACKEND_SRC).filter(isApplicationSource);
+    expect(allFiles.length).toBeGreaterThan(50);
+
+    const violators = allFiles
+      .filter((f) => SPRINTS_TABLE_FORM.test(readFileSync(f, "utf8")))
+      .map((f) => relative(BACKEND_SRC, f));
+
+    expect([...violators].sort()).toEqual([...KNOWN_SPRINTS_TABLE_REMAINING].sort());
+  });
+});
+
+describe("the sprintId field is absent from every Build request and response contract", () => {
+  const CONTRACT_FILES = [
+    "modules/build/core/dto/ticket.schemas.ts",
+    "modules/build/core/dto/build-tickets-response.schemas.ts",
+    "modules/build/execution/dto/execution-response.schemas.ts",
+    "modules/build/meetings/dto/meetings.schemas.ts",
+    "modules/build/meetings/dto/meetings-response.schemas.ts",
+    "modules/build/qa/dto/qa.schemas.ts",
+    "modules/build/qa/dto/qa-response.schemas.ts",
+    "modules/agent-access/dto/agent-response.schemas.ts",
+    "modules/ai/core/dto/confirm-action-payloads.schemas.ts",
+  ];
+
+  it.each(CONTRACT_FILES)("%s declares no sprintId field", (rel) => {
+    const content = src(rel);
+    expect(content.length).toBeGreaterThan(200);
+    expect(content).not.toContain("sprintId");
+  });
+
+  it.each(CONTRACT_FILES.filter((f) => f.includes("build/")))(
+    "%s still carries cycleId, so every caller that lost sprintId keeps an iteration identity",
+    (rel) => {
+      expect(src(rel)).toContain("cycleId");
+    },
+  );
+
+  it("the only surviving sprintId in a DTO is the frozen route's path parameter, which .strict() requires the route to declare", () => {
+    const iterations = src("modules/build/execution/dto/iterations.schemas.ts");
+    expect(iterations).toContain("projectAndSprintIdParams");
+    expect(iterations).toContain('sprintId: z.coerce.number().int().positive()');
+    const withoutParams = iterations.replace(/export const projectAndSprintIdParams[^\n]*\n/, "");
+    expect(withoutParams).not.toContain("sprintId");
+  });
+});
+
+describe("the AI ticket-move action agrees on both halves: proposer and executor", () => {
+  const CONFIRM_ACTIONS = src("modules/ai/core/confirm-actions/build-confirm-actions.ts");
+  const REGISTRY = src("modules/ai/core/registry/ask-os-tool-registry.ts");
+
+  it("exactly one ticket-move action is defined and it is ticket.moveToCycle", () => {
+    expect(CONFIRM_ACTIONS).toContain('action: "ticket.moveToCycle"');
+    expect(CONFIRM_ACTIONS).not.toContain("moveToSprint");
+    expect(CONFIRM_ACTIONS.match(/action: "ticket\.moveTo\w+"/g)).toEqual(['action: "ticket.moveToCycle"']);
+  });
+
+  it("the executor reads cycleId from the payload and calls updateTicket with cycleId, never sprintId", () => {
+    expect(CONFIRM_ACTIONS).toContain("{ ticketId, cycleId, cycleName }");
+    expect(CONFIRM_ACTIONS).toContain("updateTicket(actor, null, ticketId, { cycleId })");
+    expect(CONFIRM_ACTIONS).not.toContain("sprintId");
+  });
+
+  it("the proposer emits the same action key and the same payload field the executor destructures", () => {
+    expect(WORK_ACTIONS).toContain('action: "ticket.moveToCycle"');
+    expect(WORK_ACTIONS).toContain("cycleId: cycle.id");
+    expect(WORK_ACTIONS).not.toContain("sprintId");
+  });
+
+  it("the tool registry titles ticket.moveToCycle and no longer offers ticket.moveToSprint to confirm", () => {
+    expect(REGISTRY).toContain('"ticket.moveToCycle"');
+    expect(REGISTRY).not.toContain("moveToSprint");
+  });
+
+  it("no ticket sprint payload schema survives for a half-renamed action to bind to", () => {
+    expect(src("modules/ai/core/dto/confirm-action-payloads.schemas.ts")).not.toContain("ticketSprintPayloadSchema");
   });
 });

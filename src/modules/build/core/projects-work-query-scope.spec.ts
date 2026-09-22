@@ -25,7 +25,6 @@ function minimalQuery(scope: AllWorkQuery["scope"]): AllWorkQuery {
     type: undefined,
     assigneeId: undefined,
     labelIds: undefined,
-    sprintId: undefined,
     cycleId: undefined,
     epicId: undefined,
     dueDateFrom: undefined,

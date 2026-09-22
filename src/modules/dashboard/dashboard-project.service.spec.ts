@@ -89,7 +89,6 @@ describe("DashboardProjectService — org predicate in the all-scope path", () =
       query: {
         organizationMembers: { findFirst: async () => ({ id: 1 }) },
         projects: { findMany: async () => [] },
-        sprints: { findFirst: async () => null },
         tickets: { findMany: async () => [] },
       },
     };
@@ -117,7 +116,6 @@ describe("DashboardProjectService — org predicate in the all-scope path", () =
             return [];
           },
         },
-        sprints: { findFirst: async () => null },
         tickets: { findMany: async () => [] },
       },
     };
@@ -137,7 +135,6 @@ describe("DashboardProjectService — getActiveSprintSummary SQL aggregate", () 
       query: {
         organizationMembers: { findFirst: async () => ({ id: 1 }) },
         projects: { findMany: async () => [] },
-        sprints: { findFirst: async () => null },
         tickets: { findMany: async () => [] },
       },
     };
@@ -157,7 +154,6 @@ describe("DashboardProjectService — getActiveSprintSummary SQL aggregate", () 
       query: {
         organizationMembers: { findFirst: async () => ({ id: 1 }) },
         projects: { findMany: async () => [] },
-        sprints: { findFirst: async () => null },
         tickets: { findMany: async () => [] },
       },
     };
@@ -166,7 +162,7 @@ describe("DashboardProjectService — getActiveSprintSummary SQL aggregate", () 
     expect(result).toBeNull();
   });
 
-  it("sprint stats are computed from the SQL aggregate, not JS reduce", async () => {
+  it("iteration stats are computed from the SQL aggregate over the active cycle, not a JS reduce and not the sprints table", async () => {
     const sprintRow = {
       id: 42,
       name: "Sprint 1",
@@ -175,20 +171,33 @@ describe("DashboardProjectService — getActiveSprintSummary SQL aggregate", () 
     };
 
     let selectCallCount = 0;
-    let sprintFetched = false;
+    let sprintsTableRead = false;
 
+    const settled = (rows: unknown[]) => ({
+      limit: () => Promise.resolve(rows),
+      then: (resolve: (value: unknown) => unknown) => Promise.resolve(rows).then(resolve),
+    });
     const db = {
       select: () => db,
       from: () => db,
+      innerJoin: () => db,
       where: (w: SQL) => {
         selectCallCount++;
         const q = dialect.sqlToQuery(w);
         if (q.params.includes(ORG) && q.params.includes(42)) {
-          return Promise.resolve([
+          return settled([
             { total: 10, done: 4, inProgress: 3, totalPoints: 50, completedPoints: 20 },
           ]);
         }
-        return Promise.resolve([{ projectId: 10 }]);
+        return settled([
+          {
+            id: sprintRow.id,
+            name: sprintRow.name,
+            endDate: sprintRow.endDate,
+            projectId: sprintRow.project.id,
+            projectName: sprintRow.project.name,
+          },
+        ]);
       },
       query: {
         organizationMembers: { findFirst: async () => ({ id: 1 }) },
@@ -197,7 +206,7 @@ describe("DashboardProjectService — getActiveSprintSummary SQL aggregate", () 
         },
         sprints: {
           findFirst: async () => {
-            sprintFetched = true;
+            sprintsTableRead = true;
             return sprintRow;
           },
         },
@@ -208,7 +217,7 @@ describe("DashboardProjectService — getActiveSprintSummary SQL aggregate", () 
     const service = new DashboardProjectService(db as never, makeAccess("all"));
     const result = await service.getActiveSprintSummary(ORG, makeUser(USER, ORG));
 
-    expect(sprintFetched).toBe(true);
+    expect(sprintsTableRead).toBe(false);
     expect(selectCallCount).toBeGreaterThanOrEqual(1);
     expect(result).not.toBeNull();
     if (result) {

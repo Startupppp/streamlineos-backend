@@ -37,7 +37,6 @@ async function harness() {
     query: {
       projects: { findFirst: jest.fn().mockResolvedValue({ id: 1, managerMembershipId: 1 }) },
       organizationMembers: { findFirst: jest.fn().mockResolvedValue(undefined) },
-      sprints: { findFirst: jest.fn().mockResolvedValue(undefined) },
     },
     transaction: jest.fn(),
   };
@@ -73,11 +72,11 @@ describe("Build bulk assignment invariants", () => {
     } finally { await h.module.close(); }
   });
 
-  it("rejects a sprint that does not belong to this project rather than silently clearing it", async () => {
+  it("rejects a cycle that does not belong to this project rather than silently clearing it", async () => {
     const h = await harness();
     try {
-      await expect(h.service.bulkUpdate(actor, 1, { ticketIds: [10], sprintId: 999 }))
-        .rejects.toThrow("Sprint not found in this project");
+      await expect(h.service.bulkUpdate(actor, 1, { ticketIds: [10], cycleId: 999 }))
+        .rejects.toThrow("Cycle not found in this project");
       expect(h.set).not.toHaveBeenCalled();
     } finally { await h.module.close(); }
   });

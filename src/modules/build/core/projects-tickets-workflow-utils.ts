@@ -177,7 +177,7 @@ export async function assertTransitionAllowed(
           )
             missing.push(field);
           else if (field === "epicId" && !row.epicId) missing.push(field);
-          else if ((field === "sprintId" || field === "cycleId") && !row.cycleId) missing.push(field);
+          else if (field === "cycleId" && !row.cycleId) missing.push(field);
         }
         if (missing.length > 0) {
           throw new BadRequestException(

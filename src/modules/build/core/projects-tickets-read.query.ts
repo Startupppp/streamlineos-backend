@@ -76,7 +76,6 @@ export async function queryTickets(
           status: true,
           startDate: true,
           endDate: true,
-          legacySprintId: true,
         },
       },
     },
@@ -84,7 +83,6 @@ export async function queryTickets(
   });
   return rows.map((row) => ({
     ...row,
-    sprintId: row.cycle?.legacySprintId ?? null,
     assigneeId: row.assignee?.user?.id ?? null,
     assignee: row.assignee?.user ?? null,
     assignees: row.assignees.flatMap((assignment) => {

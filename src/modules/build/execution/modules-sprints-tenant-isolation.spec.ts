@@ -1,5 +1,5 @@
 import type { Db } from "../../../db/drizzle.module";
-import { NotFoundException } from "@nestjs/common";
+import { GoneException, NotFoundException } from "@nestjs/common";
 import { ModulesService } from "./modules.service";
 import { SprintsService } from "./sprints.service";
 
@@ -56,49 +56,33 @@ describe("ModulesService — cross-tenant isolation", () => {
   });
 });
 
-describe("SprintsService — cross-tenant isolation", () => {
-  it("listSprints refuses a project the requesting org does not own (cross-tenant isolation — 404, not an empty 200)", async () => {
-    const where = jest.fn().mockReturnValue({ orderBy: jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue([]) }) });
-    const projectFindFirst = jest.fn().mockResolvedValue(undefined);
-    const db = {
-      query: { projects: { findFirst: projectFindFirst } },
-      select: jest.fn().mockReturnValue({ from: jest.fn().mockReturnValue({ where }) }),
-    } as unknown as Db;
-    const svc = new SprintsService(db, null);
+describe("SprintsService — the freeze is the isolation, for every tenant", () => {
+  it.each([ATTACKER_ORG, OWNER_ORG])(
+    "listSprints refuses %s with GoneException and issues no project lookup, so a projectId cannot be probed through this route",
+    async (org) => {
+      const where = jest.fn();
+      const projectFindFirst = jest.fn();
+      const db = {
+        query: { projects: { findFirst: projectFindFirst } },
+        select: jest.fn().mockReturnValue({ from: jest.fn().mockReturnValue({ where }) }),
+      } as unknown as Db;
 
-    await expect(svc.listSprints(ATTACKER_ORG, 1)).rejects.toThrow(NotFoundException);
+      await expect(new SprintsService(db, null).listSprints(org, 1)).rejects.toThrow(GoneException);
 
-    expect(where).not.toHaveBeenCalled();
-    const predicate = projectFindFirst.mock.calls[0]?.[0]?.where;
-    expect(sqlValues(predicate)).toContain(ATTACKER_ORG);
-    expect(sqlValues(predicate)).not.toContain(OWNER_ORG);
-  });
+      expect(where).not.toHaveBeenCalled();
+      expect(projectFindFirst).not.toHaveBeenCalled();
+    },
+  );
 
-  it("listSprints returns sprints for the owning org (control — same-tenant access works)", async () => {
-    const fakeSprint = { id: 1, orgId: OWNER_ORG, projectId: 1, name: "Sprint 1", status: "ACTIVE" };
-    let call = 0;
-    const db = {
-      query: { projects: { findFirst: jest.fn().mockResolvedValue({ id: 1 }) } },
-      select: jest.fn().mockImplementation(() => {
-        call++;
-        if (call === 1) {
-          return { from: jest.fn().mockReturnValue({ where: jest.fn().mockReturnValue({ orderBy: jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue([fakeSprint]) }) }) }) };
-        }
-        return { from: jest.fn().mockReturnValue({ where: jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue([]) }) }) };
-      }),
-    } as unknown as Db;
-    const svc = new SprintsService(db, null);
+  it.each([ATTACKER_ORG, OWNER_ORG])(
+    "getSprint refuses %s with GoneException without reading build.sprints, so a sprint id is no existence oracle for either tenant",
+    async (org) => {
+      const sprintsFindFirst = jest.fn();
+      const db = { query: { sprints: { findFirst: sprintsFindFirst } } } as unknown as Db;
 
-    const result = await svc.listSprints(OWNER_ORG, 1);
-    expect(result).toHaveLength(1);
-  });
+      await expect(new SprintsService(db, null).getSprint(org, 1, 9999)).rejects.toThrow(GoneException);
 
-  it("getSprint throws NotFoundException for a sprint not belonging to requesting org (cross-tenant isolation — returns 404 not 403)", async () => {
-    const db = {
-      query: { sprints: { findFirst: jest.fn().mockResolvedValue(undefined) } },
-    } as unknown as Db;
-    const svc = new SprintsService(db, null);
-
-    await expect(svc.getSprint(ATTACKER_ORG, 1, 9999)).rejects.toThrow(NotFoundException);
-  });
+      expect(sprintsFindFirst).not.toHaveBeenCalled();
+    },
+  );
 });

@@ -45,9 +45,9 @@ const DENY_CASES: DenyCase[] = [
     payload: { ticketId: 1, assigneeId: "user_2" },
   },
   {
-    action: "ticket.moveToSprint",
+    action: "ticket.moveToCycle",
     permission: "build:tickets:update",
-    payload: { ticketId: 1, sprintId: 1 },
+    payload: { ticketId: 1, cycleId: 1 },
   },
   {
     action: "calendar.createReminder",

@@ -6,6 +6,7 @@ import { ScopedRead } from "../../../access/scoped-read";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../../common/auth/principal";
 import { WorkActionsTools } from "./work-actions-tools";
+import { findConfirmableAction } from "../confirm-actions";
 
 jest.mock("./lib/mail-connection", () => ({
   resolveAnyMailConnection: jest.fn(),
@@ -284,6 +285,23 @@ describe("WorkActionsTools — assignTicket", () => {
         payload: expect.objectContaining({ assigneeId: "u-priya", assigneeName: "Priya Sharma" }),
       }),
     );
+  });
+});
+
+describe("moveToCycle proposer (WorkActionsTools) and executor (CONFIRMABLE_ACTION_DEFINITIONS) agree on action key and payload field", () => {
+  it("the moveToCycle tool confirms key matches the registered confirmable action key and both use cycleId not sprintId", () => {
+    const instance = new WorkActionsTools({} as never, {} as never);
+    const moveCycleTool = instance.tools().find((t) => t.key === "moveToCycle");
+
+    expect(moveCycleTool).toBeDefined();
+    expect(moveCycleTool?.confirms).toBe("ticket.moveToCycle");
+
+    const executor = findConfirmableAction(moveCycleTool?.confirms ?? "");
+    expect(executor).toBeDefined();
+    expect(executor?.action).toBe(moveCycleTool?.confirms);
+
+    expect(executor?.payload.safeParse({ ticketId: 1, cycleId: 5 }).success).toBe(true);
+    expect(executor?.payload.safeParse({ ticketId: 1, sprintId: 5 }).success).toBe(false);
   });
 });
 
