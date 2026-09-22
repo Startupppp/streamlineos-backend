@@ -41,7 +41,7 @@ function baseQuery(): ListSubmissionsQuery {
 describe("FeedbucketSubmissionsService.list — managedProductId filter", () => {
   it("renders managedProductId as a bound SQL parameter in the WHERE clause", async () => {
     const sink: { where?: SQL } = {};
-    const service = new FeedbucketSubmissionsService(makeListDb(sink), mockStorage);
+    const service = new FeedbucketSubmissionsService(makeListDb(sink), mockStorage, {} as unknown as import("../access/access.service").AccessService);
 
     await service.list(ScopedRead.of(OWNER_ORG, "user-1", "all"), { ...baseQuery(), managedProductId: PRODUCT_ID }, null);
 
@@ -51,7 +51,7 @@ describe("FeedbucketSubmissionsService.list — managedProductId filter", () => 
 
   it("does not include a managed_product_id predicate when managedProductId is absent", async () => {
     const sink: { where?: SQL } = {};
-    const service = new FeedbucketSubmissionsService(makeListDb(sink), mockStorage);
+    const service = new FeedbucketSubmissionsService(makeListDb(sink), mockStorage, {} as unknown as import("../access/access.service").AccessService);
 
     await service.list(ScopedRead.of(OWNER_ORG, "user-1", "all"), baseQuery(), null);
 
@@ -62,7 +62,7 @@ describe("FeedbucketSubmissionsService.list — managedProductId filter", () => 
 
   it("cross-tenant isolation: subquery binds the caller orgId so a foreign managedProductId matches no widgets", async () => {
     const sink: { where?: SQL } = {};
-    const service = new FeedbucketSubmissionsService(makeListDb(sink), mockStorage);
+    const service = new FeedbucketSubmissionsService(makeListDb(sink), mockStorage, {} as unknown as import("../access/access.service").AccessService);
 
     await service.list(ScopedRead.of(ATTACKER_ORG, "user-attacker", "all"), { ...baseQuery(), managedProductId: PRODUCT_ID }, null);
 

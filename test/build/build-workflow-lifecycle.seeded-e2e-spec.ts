@@ -1,7 +1,7 @@
 import { and, eq, inArray, sql } from "drizzle-orm";
 import request from "supertest";
 import { z } from "zod";
-import { projects, projectStatuses, sprints, ticketAssignees, tickets } from "src/db/schema";
+import { cycles, projects, projectStatuses, sprints, ticketAssignees, tickets } from "src/db/schema";
 import { createBuildWorkflowFixture, type BuildWorkflowFixture } from "./build-workflow-fixtures";
 
 const idSchema = z.object({ id: z.number().int().positive() });
@@ -307,15 +307,15 @@ describe("[seeded-e2e] Build workflow lifecycle and concurrent mutations", () =>
     const warm = await api().get(path).set(auth());
     expect(warm.status).toBe(200);
     expect(warm.body).toEqual(cold.body);
-    const [sprint] = await f.seeded.seedDb.insert(sprints).values({ orgId: f.home.orgId, projectId: f.projectId, name: "Report refresh sprint", startDate: new Date("2026-09-09"), endDate: new Date("2026-09-23"), status: "ACTIVE" }).returning({ id: sprints.id });
-    if (!sprint) throw new Error("Report sprint missing");
+    const [cycle] = await f.seeded.seedDb.insert(cycles).values({ orgId: f.home.orgId, projectId: f.projectId, name: "Report refresh cycle", startDate: "2026-09-09", endDate: "2026-09-23", status: "active", createdBy: f.home.members.manager.userId }).returning({ id: cycles.id });
+    if (!cycle) throw new Error("Report cycle missing");
     const added = await api().get(path).set(auth());
     expect(added.status).toBe(200);
-    expect(added.body).toEqual([expect.objectContaining({ sprintId: sprint.id, committedCount: 0, committedPoints: 0 })]);
-    await f.seeded.seedDb.update(tickets).set({ sprintId: sprint.id, storyPoints: 8 }).where(eq(tickets.id, f.ticketIds[0]));
+    expect(added.body).toEqual([expect.objectContaining({ cycleId: cycle.id, committedCount: 0, committedPoints: 0 })]);
+    await f.seeded.seedDb.update(tickets).set({ cycleId: cycle.id, storyPoints: 8 }).where(eq(tickets.id, f.ticketIds[0]));
     const updated = await api().get(path).set(auth());
     expect(updated.status).toBe(200);
-    expect(updated.body).toEqual([expect.objectContaining({ sprintId: sprint.id, committedCount: 1, committedPoints: 8 })]);
+    expect(updated.body).toEqual([expect.objectContaining({ cycleId: cycle.id, committedCount: 1, committedPoints: 8 })]);
   });
 
   it.each(["burnup", "cfd", "critical-path", "cycle-time", "lead-time"])("serves the %s report and rejects a foreign project", async report => {

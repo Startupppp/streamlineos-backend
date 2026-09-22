@@ -14,7 +14,7 @@ import {
 import { build } from "./namespaces";
 import { sql } from "drizzle-orm";
 import { organizations, users, organizationMembers } from "../common/auth";
-import { cycles, projects, sprints } from "./core";
+import { cycles, projects } from "./core";
 import { tickets } from "./tasks";
 
 export const meetingTypeEnum = pgEnum("meeting_type", [

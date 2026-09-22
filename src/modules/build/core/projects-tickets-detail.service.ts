@@ -13,7 +13,12 @@ import {
 } from "../../../common/http/api-exceptions";
 
 const USER_COLS = {
-  id: true, name: true, firstName: true, lastName: true, email: true, image: true,
+  id: true,
+  name: true,
+  firstName: true,
+  lastName: true,
+  email: true,
+  image: true,
 } as const;
 
 @Injectable()
@@ -24,8 +29,18 @@ export class ProjectsTicketsDetailService {
     private readonly audit: AuditService,
   ) {}
 
-  async getTicketByKey(u: CurrentUserContext, projectId: number, ticketNumber: number) {
-    return this.readTicket(u, and(eq(tickets.projectId, projectId), eq(tickets.ticketNumber, ticketNumber)));
+  async getTicketByKey(
+    u: CurrentUserContext,
+    projectId: number,
+    ticketNumber: number,
+  ) {
+    return this.readTicket(
+      u,
+      and(
+        eq(tickets.projectId, projectId),
+        eq(tickets.ticketNumber, ticketNumber),
+      ),
+    );
   }
 
   async getTicket(u: CurrentUserContext, projectId: number, ticketId: number) {
@@ -35,18 +50,29 @@ export class ProjectsTicketsDetailService {
     );
   }
 
-  private async readTicket(u: CurrentUserContext, selector: SQL<unknown> | undefined) {
+  private async readTicket(
+    u: CurrentUserContext,
+    selector: SQL<unknown> | undefined,
+  ) {
     const read = await resolveTicketsScope(this.access, u);
     if (read.denied) throw new ProjectsForbiddenTicketException();
     const ticket = await this.db.query.tickets.findFirst({
-      where: and(eq(tickets.orgId, u.orgId), isNull(tickets.deletedAt), selector),
+      where: and(
+        eq(tickets.orgId, u.orgId),
+        isNull(tickets.deletedAt),
+        selector,
+      ),
       with: {
         project: { columns: { id: true, name: true, key: true, orgId: true } },
-        sprint: { columns: { id: true, name: true } },
+        cycle: { columns: { id: true, name: true, legacySprintId: true } },
         assignee: { with: { user: { columns: USER_COLS } } },
         reporter: { columns: USER_COLS },
-        assignees: { with: { user: { with: { user: { columns: USER_COLS } } } } },
-        watchers: { with: { user: { with: { user: { columns: USER_COLS } } } } },
+        assignees: {
+          with: { user: { with: { user: { columns: USER_COLS } } } },
+        },
+        watchers: {
+          with: { user: { with: { user: { columns: USER_COLS } } } },
+        },
         comments: {
           where: isNull(ticketComments.deletedAt),
           with: {
@@ -61,35 +87,67 @@ export class ProjectsTicketsDetailService {
           limit: 50,
         },
         attachments: { with: { uploader: { columns: USER_COLS } } },
-        labels: { with: { label: { columns: { id: true, name: true, color: true } } } },
+        labels: {
+          with: { label: { columns: { id: true, name: true, color: true } } },
+        },
       },
     });
     if (!ticket) throw new ProjectsTicketNotFoundException();
     if (!read.unrestricted) {
-      const isAssignee = ticket.assignee?.user?.id === u.userId ||
-        ticket.assignees.some((assignment) => assignment.user?.userId === u.userId);
+      const isAssignee =
+        ticket.assignee?.user?.id === u.userId ||
+        ticket.assignees.some(
+          (assignment) => assignment.user?.userId === u.userId,
+        );
       if (!isAssignee && ticket.reporterId !== u.userId) {
         this.audit.log({
-          action: "ticket.access_denied", userId: u.userId, orgId: u.orgId,
-          targetId: String(ticket.id), targetType: "ticket",
-          metadata: { ticketId: ticket.id, projectId: ticket.projectId, reason: "RESTRICTED_SCOPE" },
+          action: "ticket.access_denied",
+          userId: u.userId,
+          orgId: u.orgId,
+          targetId: String(ticket.id),
+          targetType: "ticket",
+          metadata: {
+            ticketId: ticket.id,
+            projectId: ticket.projectId,
+            reason: "RESTRICTED_SCOPE",
+          },
           result: "FAILURE",
         });
         throw new ProjectsForbiddenTicketException();
       }
     }
-    const epic = ticket.epicId ? await read.read(
-      { tenant: tickets.orgId, scope: ticketScope(read.orgId, read.actorId), and: [eq(tickets.id, ticket.epicId), isNull(tickets.deletedAt)] },
-      ({ sql: where }) => this.db.query.tickets.findFirst({ where, columns: { id: true, title: true } }),
-      () => undefined,
-    ) : null;
+    const epic = ticket.epicId
+      ? await read.read(
+          {
+            tenant: tickets.orgId,
+            scope: ticketScope(read.orgId, read.actorId),
+            and: [eq(tickets.id, ticket.epicId), isNull(tickets.deletedAt)],
+          },
+          ({ sql: where }) =>
+            this.db.query.tickets.findFirst({
+              where,
+              columns: { id: true, title: true },
+            }),
+          () => undefined,
+        )
+      : null;
     return {
       ...ticket,
+      sprintId: ticket.cycle?.legacySprintId ?? null,
       epic: epic ? { id: epic.id, name: epic.title } : null,
       members: ticket.assignees,
-      watchers: (ticket.watchers ?? []).map((watcher) => ({ ...watcher, user: watcher.user?.user ?? null })),
-      attachments: ticket.attachments.map((attachment) => ({ ...attachment, filename: attachment.fileName, url: attachment.fileUrl })),
-      labels: ticket.labels.flatMap((mapping) => mapping.label ? [mapping.label] : []),
+      watchers: (ticket.watchers ?? []).map((watcher) => ({
+        ...watcher,
+        user: watcher.user?.user ?? null,
+      })),
+      attachments: ticket.attachments.map((attachment) => ({
+        ...attachment,
+        filename: attachment.fileName,
+        url: attachment.fileUrl,
+      })),
+      labels: ticket.labels.flatMap((mapping) =>
+        mapping.label ? [mapping.label] : [],
+      ),
       comments: (ticket.comments ?? []).map((comment) => ({
         ...comment,
         reactions: (comment.reactions ?? []).flatMap((reaction) => {

@@ -89,7 +89,7 @@ describe("FeedbucketSubmissionsService.deleteMedia", () => {
       deletedAt: null,
     };
     const db = makeDb(submission, [[], [{ id: 31, fileUrl: "feedbucket/w1/screenshots/shot.png", fileKey: null }]]);
-    const service = new FeedbucketSubmissionsService(db, storage);
+    const service = new FeedbucketSubmissionsService(db, storage, {} as unknown as import("../access/access.service").AccessService);
 
     await service.deleteMedia(ORG, 7, "screenshot");
 
@@ -108,7 +108,7 @@ describe("FeedbucketSubmissionsService.deleteMedia", () => {
       deletedAt: null,
     };
     const db = makeDb(submission, [[], [{ id: 31, fileUrl: "keyA", fileKey: "keyA" }]]);
-    const service = new FeedbucketSubmissionsService(db, storage);
+    const service = new FeedbucketSubmissionsService(db, storage, {} as unknown as import("../access/access.service").AccessService);
 
     await service.deleteMedia(ORG, 7, "screenshot");
 
@@ -124,7 +124,7 @@ describe("FeedbucketSubmissionsService.deleteMedia", () => {
       deletedAt: null,
     };
     const db = makeDb(submission, [[], [{ id: 44, fileUrl: "rec.webm", fileKey: null }]]);
-    const service = new FeedbucketSubmissionsService(db, storage);
+    const service = new FeedbucketSubmissionsService(db, storage, {} as unknown as import("../access/access.service").AccessService);
 
     await service.deleteMedia(ORG, 7, "recording");
 
@@ -142,7 +142,7 @@ describe("FeedbucketSubmissionsService.deleteMedia", () => {
       deletedAt: null,
     };
     const db = makeDb(submission, [[], []]);
-    const service = new FeedbucketSubmissionsService(db, storage);
+    const service = new FeedbucketSubmissionsService(db, storage, {} as unknown as import("../access/access.service").AccessService);
 
     await expect(service.deleteMedia(ORG, 7, "recording")).rejects.toThrow(NotFoundException);
     expect(storage.deleteFileIfPresent).not.toHaveBeenCalled();
@@ -158,7 +158,7 @@ describe("FeedbucketSubmissionsService.deleteMedia", () => {
         })),
       })),
     } as unknown as Db;
-    const service = new FeedbucketSubmissionsService(db, storage);
+    const service = new FeedbucketSubmissionsService(db, storage, {} as unknown as import("../access/access.service").AccessService);
 
     await expect(service.deleteMedia("org-attacker", 7, "screenshot")).rejects.toThrow(
       NotFoundException,

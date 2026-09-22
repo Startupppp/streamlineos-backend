@@ -234,3 +234,37 @@ describe("phase-04 detach invariant: sprintId object-literal WRITE form (the bli
     expect(sortedViolators).toEqual(sortedKnown);
   });
 });
+
+describe("phase-04 detach invariant: relational `with: { sprint: ... }` form (the blind spot typecheck caught after all three scanners passed)", () => {
+  const RELATION_FORM = /sprint:\s*\{/;
+
+  it("the relation scanner is non-vacuous: it flags the exact ticket-detail text that all three earlier scanners missed", () => {
+    const preFixDetail = "        sprint: { columns: { id: true, name: true } },";
+    expect(preFixDetail).not.toContain("tickets.sprintId");
+    expect(preFixDetail).not.toMatch(/sprintId\s*:\s*true/);
+    expect(hasSprintIdWriteForm(preFixDetail)).toBe(false);
+    expect(RELATION_FORM.test(preFixDetail)).toBe(true);
+  });
+
+  it("the relation scanner does not fire on the cycle relation that replaced it", () => {
+    expect(RELATION_FORM.test("cycle: { columns: { id: true, name: true, legacySprintId: true } },")).toBe(false);
+  });
+
+  it("no application file asks Drizzle for a sprint relation, because that join reads tickets.sprint_id which phase 04 drops", () => {
+    const allFiles = scanDir(BACKEND_SRC).filter(isApplicationSource);
+    expect(allFiles.length).toBeGreaterThan(50);
+
+    const violators = allFiles
+      .filter((f) => RELATION_FORM.test(readFileSync(f, "utf8")))
+      .map((f) => relative(BACKEND_SRC, f));
+
+    expect(violators).toEqual([]);
+  });
+
+  it("the tickets relation map no longer declares a sprint relation, so the with-key cannot be requested at all", () => {
+    const relations = readFileSync(join(BACKEND_SRC, "db", "schema", "build", "relations.ts"), "utf8");
+    expect(relations.length).toBeGreaterThan(0);
+    expect(relations).toContain("cycle: one(cycles");
+    expect(relations).not.toContain("sprint: one(sprints");
+  });
+});
