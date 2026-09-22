@@ -21,7 +21,7 @@ function daysBetween(from: string, to: string): number {
   return Math.round((Date.parse(to) - Date.parse(from)) / 86_400_000);
 }
 
-function displayName(parts: { name: string | null; firstName?: string | null; lastName?: string | null; email: string | null }): string {
+function displayName(parts: { name: string | null; firstName?: string | null; lastName?: string | null; email?: string | null }): string {
   const composed = [parts.firstName, parts.lastName].filter((part): part is string => !!part && part.trim() !== "").join(" ");
   return parts.name?.trim() || composed || parts.email || "Unknown";
 }
