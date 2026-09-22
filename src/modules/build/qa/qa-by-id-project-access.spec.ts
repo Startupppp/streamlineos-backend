@@ -423,21 +423,21 @@ describe("TestRunsService — by-id routes gate on project membership, not only 
     expect(update).toHaveBeenCalledTimes(1);
   });
 
-  it("refuses createBugFromResult for an in-tenant non-member of the project before it opens a transaction", async () => {
+  it("refuses createBugFromResultConsolidated for an in-tenant non-member of the project before it opens a transaction", async () => {
     const { db, rowFindFirst, transaction } = makeNonMemberDb();
     const svc = new TestRunsService(db, makeAccessWithoutBuildManage(), audit);
 
     await expect(
-      svc.createBugFromResult(makeU(), PROJECT_ID, 5, 3, { description: "broken" }),
+      svc.createBugFromResultConsolidated(makeU(), PROJECT_ID, 5, 3, { description: "broken" }),
     ).rejects.toThrow(ForbiddenException);
     expect(rowFindFirst).not.toHaveBeenCalled();
     expect(transaction).not.toHaveBeenCalled();
   });
 
-  it("files the bug for a project member (control for the createBugFromResult denial)", async () => {
-    const createdBug = { id: 88, bugNumber: 1, title: "Failed: Login" };
+  it("files the bug for a project member (control for the createBugFromResultConsolidated denial)", async () => {
+    const createdTicket = { id: 88, ticketNumber: 1, title: "Failed: Login", type: "BUG" };
     const txInsert = jest.fn().mockReturnValue({
-      values: jest.fn().mockReturnValue({ returning: jest.fn().mockResolvedValue([createdBug]) }),
+      values: jest.fn().mockReturnValue({ returning: jest.fn().mockResolvedValue([createdTicket]) }),
     });
     const tx = {
       execute: jest.fn().mockResolvedValue(undefined),
@@ -464,15 +464,17 @@ describe("TestRunsService — by-id routes gate on project membership, not only 
             .mockResolvedValue({ id: 9, title: "Login", steps: [], expectedResult: "works" }),
         },
       },
-      select: memberSelect([]),
+      select: memberSelect([
+        () => ({ from: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue([]) }) }),
+      ]),
       transaction,
     } as unknown as Db;
     const svc = new TestRunsService(db, makeAccessWithoutBuildManage(), audit);
 
     await expect(
-      svc.createBugFromResult(makeU(), PROJECT_ID, 5, 3, { description: "broken" }),
-    ).resolves.toMatchObject({ id: 88 });
+      svc.createBugFromResultConsolidated(makeU(), PROJECT_ID, 5, 3, { description: "broken" }),
+    ).resolves.toMatchObject({ id: 88, type: "BUG" });
     expect(transaction).toHaveBeenCalledTimes(1);
-    expect(txInsert).toHaveBeenCalledTimes(1);
+    expect(txInsert).toHaveBeenCalledTimes(2);
   });
 });

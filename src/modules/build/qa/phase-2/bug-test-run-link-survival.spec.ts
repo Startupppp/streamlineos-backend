@@ -30,105 +30,6 @@ function makeAccess(): AccessService {
 
 const audit = { log: jest.fn() } as never;
 
-describe("TestRunsService.createBugFromResult — test-run failure link survival", () => {
-  it("sets linkedBugId on the result row atomically inside the transaction — mutation guard: removing the update call breaks this test", async () => {
-    const createdBug = { id: 55, bugNumber: 1, title: "Failed: Login Test", orgId: ORG };
-    let capturedLinkedBugId: number | undefined;
-    let capturedResultId: number | undefined;
-
-    const txUpdate = jest.fn().mockImplementation(() => ({
-      set: jest.fn().mockImplementation((setObj: Record<string, unknown>) => {
-        if (typeof setObj["linkedBugId"] === "number") {
-          capturedLinkedBugId = setObj["linkedBugId"] as number;
-          capturedResultId = 3;
-        }
-        return { where: jest.fn().mockResolvedValue(undefined) };
-      }),
-    }));
-
-    const tx = {
-      execute: jest.fn().mockResolvedValue(undefined),
-      select: jest.fn().mockReturnValue({
-        from: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue([{ maxNum: 0 }]) }),
-      }),
-      insert: jest.fn().mockReturnValue({
-        values: jest.fn().mockReturnValue({ returning: jest.fn().mockResolvedValue([createdBug]) }),
-      }),
-      update: txUpdate,
-    };
-
-    const db = {
-      query: {
-        projects: { findFirst: jest.fn().mockResolvedValue({ id: PROJECT_ID, managerMembershipId: null }) },
-        testRunResults: { findFirst: jest.fn().mockResolvedValue({ id: 3, testCaseId: 9 }) },
-        testCases: {
-          findFirst: jest.fn().mockResolvedValue({ id: 9, title: "Login Test", steps: [], expectedResult: "ok" }),
-        },
-      },
-      transaction: jest.fn().mockImplementation(async (cb: (t: unknown) => Promise<unknown>) => cb(tx)),
-    } as unknown as Db;
-
-    const svc = new TestRunsService(db, makeAccess(), audit);
-    const result = await svc.createBugFromResult(makeU(), PROJECT_ID, 1, 3, {});
-
-    expect(result).toMatchObject({ id: 55 });
-    expect(capturedLinkedBugId).toBe(55);
-    expect(capturedResultId).toBe(3);
-    expect(txUpdate).toHaveBeenCalledTimes(1);
-  });
-
-  it("positive control — linkedBugId is resolvable after creation (link survives)", async () => {
-    const createdBug = { id: 77, bugNumber: 2, title: "Failed: Checkout", orgId: ORG };
-    let storedLinkedBugId: number | undefined;
-
-    const tx = {
-      execute: jest.fn().mockResolvedValue(undefined),
-      select: jest.fn().mockReturnValue({
-        from: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue([{ maxNum: 1 }]) }),
-      }),
-      insert: jest.fn().mockReturnValue({
-        values: jest.fn().mockReturnValue({ returning: jest.fn().mockResolvedValue([createdBug]) }),
-      }),
-      update: jest.fn().mockImplementation(() => ({
-        set: jest.fn().mockImplementation((setObj: Record<string, unknown>) => {
-          storedLinkedBugId = setObj["linkedBugId"] as number | undefined;
-          return { where: jest.fn().mockResolvedValue(undefined) };
-        }),
-      })),
-    };
-
-    const db = {
-      query: {
-        projects: { findFirst: jest.fn().mockResolvedValue({ id: PROJECT_ID, managerMembershipId: null }) },
-        testRunResults: { findFirst: jest.fn().mockResolvedValue({ id: 8, testCaseId: 12 }) },
-        testCases: {
-          findFirst: jest.fn().mockResolvedValue({ id: 12, title: "Checkout", steps: [], expectedResult: null }),
-        },
-      },
-      transaction: jest.fn().mockImplementation(async (cb: (t: unknown) => Promise<unknown>) => cb(tx)),
-    } as unknown as Db;
-
-    const svc = new TestRunsService(db, makeAccess(), audit);
-    await svc.createBugFromResult(makeU(), PROJECT_ID, 1, 8, { title: "Checkout regression" });
-
-    expect(storedLinkedBugId).toBe(77);
-  });
-
-  it("throws NotFoundException when the test run result does not exist — no partial write occurs", async () => {
-    const db = {
-      query: {
-        projects: { findFirst: jest.fn().mockResolvedValue({ id: PROJECT_ID, managerMembershipId: null }) },
-        testRunResults: { findFirst: jest.fn().mockResolvedValue(null) },
-      },
-      transaction: jest.fn(),
-    } as unknown as Db;
-
-    const svc = new TestRunsService(db, makeAccess(), audit);
-    await expect(svc.createBugFromResult(makeU(), PROJECT_ID, 1, 999, {})).rejects.toThrow(NotFoundException);
-    expect(db.transaction).not.toHaveBeenCalled();
-  });
-});
-
 describe("TestRunsService.createBugFromResultConsolidated — link survival via linkedWorkItemId (post-migration 1147)", () => {
   it("sets linkedWorkItemId on the result row and NOT linkedBugId — mutation guard: changing linkedWorkItemId to linkedBugId breaks this test", async () => {
     const createdTicket = { id: 200, ticketNumber: 5, title: "Failed: Login", type: "BUG" };
@@ -254,5 +155,24 @@ describe("TestRunsService.createBugFromResultConsolidated — link survival via 
     const auditCall = (auditSpy as { log: jest.Mock }).log.mock.calls[0]?.[0] as { resourceType: string; action: string } | undefined;
     expect(auditCall?.resourceType).toBe("ticket");
     expect(auditCall?.action).toBe("bug.created_from_result_consolidated");
+  });
+
+  it("throws NotFoundException when the test run result does not exist — no partial write occurs", async () => {
+    const db = {
+      query: {
+        projects: { findFirst: jest.fn().mockResolvedValue({ id: PROJECT_ID, managerMembershipId: null }) },
+        testRunResults: { findFirst: jest.fn().mockResolvedValue(null) },
+      },
+      select: jest.fn().mockReturnValue({
+        from: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue([]) }),
+      }),
+      transaction: jest.fn(),
+    } as unknown as Db;
+
+    const svc = new TestRunsService(db, makeAccess(), audit);
+    await expect(
+      svc.createBugFromResultConsolidated(makeU(), PROJECT_ID, 1, 999, {}),
+    ).rejects.toThrow(NotFoundException);
+    expect(db.transaction).not.toHaveBeenCalled();
   });
 });

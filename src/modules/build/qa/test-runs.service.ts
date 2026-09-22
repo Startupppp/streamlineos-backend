@@ -1,6 +1,6 @@
 import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, count, eq, gt, inArray, isNull, sql } from "drizzle-orm";
-import { bugs, testCases, testRunResults, testRuns, tickets, workItemQaDetails, projectStatuses } from "../../../db/schema";
+import { cycles, testCases, testRunResults, testRuns, tickets, workItemQaDetails, projectStatuses } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
@@ -26,6 +26,55 @@ export class TestRunsService {
     private readonly access: AccessService,
     private readonly audit: AuditService,
   ) {}
+
+  private async resolveCycleBinding(
+    orgId: string,
+    input: { sprintId?: number; cycleId?: number },
+  ): Promise<{ cycleId: number; legacySprintId: number | null } | null> {
+    if (input.cycleId !== undefined) {
+      const rows = await this.db
+        .select({ id: cycles.id, legacySprintId: cycles.legacySprintId })
+        .from(cycles)
+        .where(and(eq(cycles.orgId, orgId), eq(cycles.id, input.cycleId)))
+        .limit(1);
+      const row = rows[0];
+      if (!row) throw new BadRequestException(`Cycle ${input.cycleId} does not exist`);
+      return { cycleId: row.id, legacySprintId: row.legacySprintId };
+    }
+    if (input.sprintId !== undefined) {
+      const rows = await this.db
+        .select({ id: cycles.id, legacySprintId: cycles.legacySprintId })
+        .from(cycles)
+        .where(and(eq(cycles.orgId, orgId), eq(cycles.legacySprintId, input.sprintId)))
+        .limit(1);
+      const row = rows[0];
+      if (!row) throw new BadRequestException(`Sprint ${input.sprintId} does not map to any cycle`);
+      return { cycleId: row.id, legacySprintId: row.legacySprintId };
+    }
+    return null;
+  }
+
+  private async legacySprintIdsByCycle(
+    orgId: string,
+    cycleIds: number[],
+  ): Promise<Map<number, number | null>> {
+    if (cycleIds.length === 0) return new Map();
+    const rows = await this.db
+      .select({ id: cycles.id, legacySprintId: cycles.legacySprintId })
+      .from(cycles)
+      .where(and(eq(cycles.orgId, orgId), inArray(cycles.id, cycleIds)))
+      .limit(cycleIds.length);
+    return new Map(rows.map((r) => [r.id, r.legacySprintId]));
+  }
+
+  private async legacySprintIdOf(
+    orgId: string,
+    cycleId: number | null | undefined,
+  ): Promise<number | null> {
+    if (cycleId === null || cycleId === undefined) return null;
+    const map = await this.legacySprintIdsByCycle(orgId, [cycleId]);
+    return map.get(cycleId) ?? null;
+  }
 
   async listRuns(
     u: CurrentUserContext,
@@ -68,10 +117,15 @@ export class TestRunsService {
       .where(inArray(testRunResults.runId, runIds))
       .groupBy(testRunResults.runId);
     const countMap = new Map(countRows.map((r) => [r.runId, r]));
+    const legacySprintIds = await this.legacySprintIdsByCycle(
+      u.orgId,
+      [...new Set(pageRuns.map((r) => r.cycleId).filter((id): id is number => typeof id === "number"))],
+    );
     const data = pageRuns.map((run) => {
       const s = countMap.get(run.id);
       return {
         ...run,
+        sprintId: typeof run.cycleId === "number" ? legacySprintIds.get(run.cycleId) ?? null : null,
         passCount: Number(s?.passed ?? 0),
         failCount: Number(s?.failed ?? 0),
         blockedCount: Number(s?.blocked ?? 0),
@@ -115,7 +169,7 @@ export class TestRunsService {
       .innerJoin(testCases, eq(testRunResults.testCaseId, testCases.id))
       .where(and(eq(testRunResults.runId, runId), eq(testRunResults.orgId, orgId)))
       .orderBy(testCases.caseNumber);
-    return { ...run, results };
+    return { ...run, sprintId: await this.legacySprintIdOf(orgId, run.cycleId), results };
   }
 
   async listRunResults(
@@ -170,6 +224,7 @@ export class TestRunsService {
 
   async createRun(u: CurrentUserContext, projectId: number, input: CreateTestRunInput) {
     await assertProjectAccess(this.db, this.access, u, projectId);
+    const binding = await this.resolveCycleBinding(u.orgId, input);
     return this.db.transaction(async (tx) => {
       await tx.execute(sql`SELECT pg_advisory_xact_lock(${projectId})`);
       const [maxRow] = await tx
@@ -184,7 +239,7 @@ export class TestRunsService {
           projectId,
           runNumber: nextNumber,
           name: input.name,
-          sprintId: input.sprintId ?? null,
+          cycleId: binding?.cycleId ?? null,
           releaseId: input.releaseId ?? null,
           environment: input.environment,
           browserDevice: input.browserDevice,
@@ -245,7 +300,7 @@ export class TestRunsService {
           })),
         );
       }
-      return created;
+      return { ...created, sprintId: binding?.legacySprintId ?? null };
     });
   }
 
@@ -268,6 +323,7 @@ export class TestRunsService {
       columns: { id: true, status: true, startedAt: true, completedAt: true },
     });
     if (!existing) throw new NotFoundException("Test run not found");
+    const binding = await this.resolveCycleBinding(orgId, input);
     const completing = input.status === "completed" && !existing.completedAt;
     const [updated] = await this.db
       .update(testRuns)
@@ -277,7 +333,7 @@ export class TestRunsService {
         ...(input.environment !== undefined && { environment: input.environment }),
         ...(input.browserDevice !== undefined && { browserDevice: input.browserDevice }),
         ...(input.testerId !== undefined && { testerId: input.testerId }),
-        ...(input.sprintId !== undefined && { sprintId: input.sprintId }),
+        ...(binding !== null && { cycleId: binding.cycleId }),
         ...(input.releaseId !== undefined && { releaseId: input.releaseId }),
         ...(input.status === "in_progress" && !existing.startedAt && { startedAt: new Date() }),
         ...(completing && { completedAt: new Date() }),
@@ -295,7 +351,13 @@ export class TestRunsService {
         metadata: { runId, projectId },
       });
     }
-    return updated;
+    return {
+      ...updated,
+      sprintId:
+        binding !== null
+          ? binding.legacySprintId
+          : await this.legacySprintIdOf(orgId, updated.cycleId),
+    };
   }
 
   async deleteRun(u: CurrentUserContext, projectId: number, runId: number) {
@@ -353,81 +415,6 @@ export class TestRunsService {
       .where(and(eq(testRunResults.id, resultId), eq(testRunResults.orgId, orgId), eq(testRunResults.projectId, projectId)))
       .returning();
     return updated;
-  }
-
-  async createBugFromResult(
-    u: CurrentUserContext,
-    projectId: number,
-    runId: number,
-    resultId: number,
-    input: CreateBugFromResultInput,
-  ) {
-    await assertProjectAccess(this.db, this.access, u, projectId);
-    const orgId = u.orgId;
-    const userId = u.userId;
-    const result = await this.db.query.testRunResults.findFirst({
-      where: and(
-        eq(testRunResults.id, resultId),
-        eq(testRunResults.runId, runId),
-        eq(testRunResults.orgId, orgId),
-        eq(testRunResults.projectId, projectId),
-      ),
-      columns: { id: true, testCaseId: true },
-    });
-    if (!result) throw new NotFoundException("Test run result not found");
-    const tc = await this.db.query.testCases.findFirst({
-      where: and(eq(testCases.id, result.testCaseId), eq(testCases.orgId, orgId)),
-      columns: { id: true, title: true, steps: true, expectedResult: true },
-    });
-    if (!tc) throw new NotFoundException("Test case not found");
-    const stepsText =
-      tc.steps && tc.steps.length > 0
-        ? tc.steps.map((s, i) => `${i + 1}. ${s.action} → Expected: ${s.expected}`).join("\n")
-        : undefined;
-    const bug = await this.db.transaction(async (tx) => {
-      await tx.execute(sql`SELECT pg_advisory_xact_lock(${projectId})`);
-      const [maxRow] = await tx
-        .select({ maxNum: sql<number>`COALESCE(MAX(${bugs.bugNumber}), 0)` })
-        .from(bugs)
-        .where(and(eq(bugs.projectId, projectId), eq(bugs.orgId, orgId)));
-      const nextNumber = (maxRow?.maxNum ?? 0) + 1;
-      const [created] = await tx
-        .insert(bugs)
-        .values({
-          orgId,
-          projectId,
-          bugNumber: nextNumber,
-          title: input.title ?? `Failed: ${tc.title}`,
-          description: input.description,
-          severity: input.severity ?? "major",
-          priority: input.priority ?? "medium",
-          status: "new",
-          stepsToReproduce: stepsText,
-          expectedResult: input.expectedResult ?? tc.expectedResult ?? null,
-          actualResult: input.actualResult,
-          environment: input.environment,
-          browserDevice: input.browserDevice,
-          assigneeMembershipId: undefined,
-          reporterId: userId,
-          linkedTestCaseId: tc.id,
-          createdBy: userId,
-        })
-        .returning();
-      await tx
-        .update(testRunResults)
-        .set({ linkedBugId: created.id, updatedAt: new Date() })
-        .where(and(eq(testRunResults.id, resultId), eq(testRunResults.orgId, orgId)));
-      return created;
-    });
-    this.audit.log({
-      action: "bug.created_from_result",
-      userId,
-      orgId,
-      resourceType: "bug",
-      resourceId: String(bug.id),
-      metadata: { bugId: bug.id, resultId, runId, projectId },
-    });
-    return bug;
   }
 
   async createBugFromResultConsolidated(
