@@ -41,6 +41,7 @@ export async function applyRejection(
       status: "REJECTED",
       rejectedAt: now,
       rejectionReason: input.reason,
+      approvalDueAt: null,
       eventSeq: sql`${timesheetPeriods.eventSeq} + 1`,
       updatedAt: now,
     })
@@ -118,6 +119,7 @@ export async function applyBulkRejection(
       status: "REJECTED",
       rejectedAt: now,
       rejectionReason: input.reason,
+      approvalDueAt: null,
       eventSeq: sql`${timesheetPeriods.eventSeq} + 1`,
       updatedAt: now,
     })

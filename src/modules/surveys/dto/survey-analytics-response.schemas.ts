@@ -83,5 +83,7 @@ export const surveyQuestionAnalyticsSchema = z.array(
       }),
     ),
     textResponses: z.array(z.string().nullable()).optional(),
+    minResponses: z.number().int(),
+    suppressed: z.boolean(),
   }),
 );

@@ -408,14 +408,15 @@ export class ProjectsMembersService {
 
   updateCustomState(
     u: CurrentUserContext,
+    projectId: number,
     stateId: number,
     data: UpdateCustomStateInput,
   ) {
-    return this.statesService.updateCustomState(u, stateId, data);
+    return this.statesService.updateCustomState(u, projectId, stateId, data);
   }
 
-  deleteCustomState(u: CurrentUserContext, stateId: number) {
-    return this.statesService.deleteCustomState(u, stateId);
+  deleteCustomState(u: CurrentUserContext, projectId: number, stateId: number) {
+    return this.statesService.deleteCustomState(u, projectId, stateId);
   }
 
   bulkReorderCustomStates(

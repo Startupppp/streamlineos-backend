@@ -1,6 +1,11 @@
 import type { Db } from "../../db/drizzle.module";
 import type { EmailDispatcher, EmailOptions } from "./email-provider-selection";
-import { EmailOutboxService, INLINE_SEND_BUDGET_MS } from "./email-outbox.service";
+import {
+  EmailOutboxService,
+  INLINE_SEND_BUDGET_MS,
+  NO_EMAIL_PROVIDER_REASON,
+  SUPPRESSED_RECIPIENT_REASON,
+} from "./email-outbox.service";
 import type { EmailSuppressionService } from "./email-suppression.service";
 
 function suppressionStub(): EmailSuppressionService {
@@ -202,7 +207,7 @@ describe("EmailOutboxService.enqueueForDelivery", () => {
 });
 
 describe("EmailOutboxService.enqueueOnly", () => {
-  it("records a suppressed recipient without queuing a pending delivery", async () => {
+  it("records a suppressed recipient without queuing a pending delivery, and says why nothing was queued", async () => {
     const values = jest.fn().mockResolvedValue(undefined);
     const suppression = {
       findSuppressed: jest
@@ -215,13 +220,14 @@ describe("EmailOutboxService.enqueueOnly", () => {
       emailProviderStub(),
     );
 
-    await service.enqueueOnly({
+    const outcome = await service.enqueueOnly({
       to: "blocked@example.com",
       subject: "Invitation",
       html: "invite",
       organizationId: null,
     });
 
+    expect(outcome).toEqual({ queued: false, reason: SUPPRESSED_RECIPIENT_REASON });
     expect(suppression.findSuppressed).toHaveBeenCalledWith(
       ["blocked@example.com"],
       null,
@@ -231,6 +237,54 @@ describe("EmailOutboxService.enqueueOnly", () => {
       expect.objectContaining({
         toEmail: "blocked@example.com",
         status: "SUPPRESSED",
+      }),
+    );
+  });
+
+  it("answers queued once the PENDING row is written", async () => {
+    const values = jest.fn().mockReturnValue({ returning: jest.fn().mockResolvedValue([{ id: 5 }]) });
+    const service = new EmailOutboxService(
+      { insert: jest.fn().mockReturnValue({ values }) } as never,
+      suppressionStub(),
+      emailProviderStub(),
+    );
+
+    const outcome = await service.enqueueOnly({
+      to: "new@example.com",
+      subject: "Welcome",
+      html: "<p>hi</p>",
+      organizationId: "org-1",
+      recipientUserId: "user-1",
+    });
+
+    expect(outcome).toEqual({ queued: true });
+    expect(values).toHaveBeenCalledWith([
+      expect.objectContaining({ toEmail: "new@example.com", status: "PENDING", recipientUserId: "user-1" }),
+    ]);
+  });
+
+  it("keeps a FAILED row and answers not queued when no provider is configured, so the caller cannot claim a send", async () => {
+    const values = jest.fn().mockResolvedValue(undefined);
+    const service = new EmailOutboxService(
+      { insert: jest.fn().mockReturnValue({ values }) } as never,
+      suppressionStub(),
+      { ...emailProviderStub(), getEmailProvider: () => "none" },
+    );
+
+    const outcome = await service.enqueueOnly({
+      to: "new@example.com",
+      subject: "Welcome",
+      html: "<p>hi</p>",
+      organizationId: "org-1",
+    });
+
+    expect(outcome).toEqual({ queued: false, reason: NO_EMAIL_PROVIDER_REASON });
+    expect(values).toHaveBeenCalledWith(
+      expect.objectContaining({
+        toEmail: "new@example.com",
+        status: "FAILED",
+        attempts: 1,
+        lastError: "No email provider configured",
       }),
     );
   });

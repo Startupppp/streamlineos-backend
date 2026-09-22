@@ -1,5 +1,6 @@
 jest.mock("../../../../common/tenant/run-in-tenant-transaction", () => ({
   runInNewTenantTransaction: jest.fn(),
+  runInTenantTransaction: (_db: unknown, fn: () => Promise<unknown>) => fn(),
 }));
 
 import { readFileSync, readdirSync } from "fs";

@@ -26,6 +26,10 @@ jest.mock("../../../directory/person-seam", () => ({
   resolvePeopleByName: jest.fn(),
 }));
 
+jest.mock("../../../../common/tenant/run-in-tenant-transaction", () => ({
+  runInTenantTransaction: jest.fn((_db: unknown, fn: () => unknown) => fn()),
+}));
+
 import { resolvePeopleByName } from "../../../directory/person-seam";
 
 const resolveNames = jest.mocked(resolvePeopleByName);
@@ -425,7 +429,7 @@ describe("ticket.updateStatus executor persists reason as a comment", () => {
       { actor: mockActor, db: {} as Db, moduleRef, proposalId: 1 },
     );
 
-    expect(mockAddComment).toHaveBeenCalledWith(mockActor, 41, { content: "Ready for QA" });
+    expect(mockAddComment).toHaveBeenCalledWith(mockActor, null, 41, { content: "Ready for QA" });
   });
 
   it("does not call addComment when reason is absent, so no empty comment is created", async () => {

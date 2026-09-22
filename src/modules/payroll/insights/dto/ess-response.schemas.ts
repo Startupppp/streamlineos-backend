@@ -160,16 +160,25 @@ const essSalaryComponentSchema = z.object({
   percent: z.string().nullable(),
 });
 
-export const essSalaryStructureSchema = z.object({
-  profile: z.object({
-    annualCtc: z.string().nullable(),
-    workerType: z.string(),
-    taxRegime: z.string().nullable(),
-    costCenter: z.string().nullable(),
-    effectiveFrom: z.string(),
+export const essSalaryStructureSchema = z.discriminatedUnion("setupRequired", [
+  z.object({
+    setupRequired: z.literal(false),
+    profile: z.object({
+      annualCtc: z.string(),
+      workerType: z.string(),
+      taxRegime: z.string().nullable(),
+      costCenter: z.string().nullable(),
+      effectiveFrom: z.string(),
+    }),
+    components: z.array(essSalaryComponentSchema),
   }),
-  components: z.array(essSalaryComponentSchema),
-});
+  z.object({
+    setupRequired: z.literal(true),
+    profile: z.null(),
+    components: z.array(essSalaryComponentSchema),
+    message: z.string(),
+  }),
+]);
 
 const essActionItemSchema = z.object({
   key: z.string(),

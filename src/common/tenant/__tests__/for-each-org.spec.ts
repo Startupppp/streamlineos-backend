@@ -479,3 +479,75 @@ describe("forEachOrg — background work states its tenant in the log context", 
     expect(lines[0]).toMatchObject({ orgId: "org-a", route: "sweep:retention-sweep" });
   });
 });
+
+describe("forEachOrg — a dropped connection is not a defect in the sweep", () => {
+  afterEach(() => jest.restoreAllMocks());
+
+  // The production line this was written from, 2026-09-21T14:24:07Z:
+  //   [notification-delivery-claim] organization sweep failed
+  //   write CONNECTION_ENDED streamlineos-instance-1...ap-south-1.rds.amazonaws.com:5432
+  // No `cause` and no `code` reached the log, so the classifier has to answer from
+  // the message alone — which is the shape this fixture reproduces.
+  const droppedSocket = (): Error => new Error("write CONNECTION_ENDED db.example:5432");
+
+  it("warns once for the whole run rather than raising an error per organisation, because one blip breaks every remaining org on the same pool connection", async () => {
+    const { db } = makeMockDb(["org-a", "org-b", "org-c"]);
+    const warn = jest.spyOn(logger, "warn").mockImplementation(() => undefined);
+    const error = jest.spyOn(logger, "error").mockImplementation(() => undefined);
+
+    const result = await forEachOrg(db, "notification-delivery-claim", async () => {
+      throw droppedSocket();
+    });
+
+    expect(error).not.toHaveBeenCalled();
+    const firstWarn = warn.mock.calls.filter(([message]) =>
+      String(message).includes("will retry next run"),
+    );
+    expect(firstWarn).toHaveLength(1);
+    expect(result).toMatchObject({ organizations: 3, succeeded: 0, failed: 3 });
+  });
+
+  it("still counts every transient organisation as failed, so a degraded run reaches emitPartialFailure instead of reading as a pass", async () => {
+    const { db } = makeMockDb(["org-a", "org-b"]);
+    jest.spyOn(logger, "warn").mockImplementation(() => undefined);
+    jest.spyOn(logger, "error").mockImplementation(() => undefined);
+
+    const result = await forEachOrg(db, "notification-delivery-claim", async () => {
+      throw droppedSocket();
+    });
+
+    expect(result.failed).toBe(2);
+    expect(result.succeeded).toBe(0);
+  });
+
+  it("reports the collapsed count when more than one organisation hit it, so the blast radius is still legible", async () => {
+    const { db } = makeMockDb(["org-a", "org-b", "org-c"]);
+    const warn = jest.spyOn(logger, "warn").mockImplementation(() => undefined);
+    jest.spyOn(logger, "error").mockImplementation(() => undefined);
+
+    await forEachOrg(db, "notification-delivery-claim", async () => {
+      throw droppedSocket();
+    });
+
+    const summary = warn.mock.calls.find(([message]) =>
+      String(message).includes("of 3 organisation(s) hit the same transient"),
+    );
+    expect(summary).toBeDefined();
+  });
+
+  it("leaves a real defect at error level, so classifying the transient class does not mute the rest", async () => {
+    const { db } = makeMockDb(["org-a"]);
+    const warn = jest.spyOn(logger, "warn").mockImplementation(() => undefined);
+    const error = jest.spyOn(logger, "error").mockImplementation(() => undefined);
+
+    await forEachOrg(db, "notification-delivery-claim", async () => {
+      throw new Error("null value in column \"org_id\" violates not-null constraint");
+    });
+
+    expect(error).toHaveBeenCalledTimes(1);
+    expect(String(error.mock.calls[0]?.[0])).toContain("organization sweep failed");
+    expect(
+      warn.mock.calls.filter(([m]) => String(m).includes("will retry next run")),
+    ).toHaveLength(0);
+  });
+});

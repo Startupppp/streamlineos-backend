@@ -17,6 +17,7 @@ export const GRANT_SOURCE_KINDS = [
   "org-standing",
   "universal-member",
   "employee-self-service",
+  "manager-authority",
   "role-grant",
   "role-default",
   "delegation",

@@ -91,6 +91,9 @@ describe("HR least-privilege controller boundaries", () => {
     expect(permissionFor(EmployeesController.prototype.checkEmail)).toBe(
       "hr:onboarding:manage",
     );
+    expect(permissionFor(EmployeesController.prototype.resendInvite)).toBe(
+      "hr:onboarding:manage",
+    );
     expect(permissionFor(HrOnboardingAdminController.prototype.sendReminders)).toBe(
       "hr:onboarding:manage",
     );

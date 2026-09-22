@@ -156,6 +156,32 @@ jobs:
         env:
           SET_NULL_GATE_DATABASE_URL: postgres://ci:ci@127.0.0.1:5432/ci
 
+      # 2026-09-21 — written and documented in docs/composite-fk-set-null-audit-2026-09-09.md
+      # as `pnpm check:composite-fk-set-null`, but never added to package.json, so the
+      # documented command failed and the gate had never run. It reads pg_constraint and
+      # pg_attribute, so the bootstrapped job is its only possible home.
+      - name: ON DELETE SET NULL never targets a NOT NULL column
+        if: ${{ !cancelled() }}
+        run: pnpm check:composite-fk-set-null:self-test && pnpm check:composite-fk-set-null
+        env:
+          DATABASE_URL: postgres://ci:ci@127.0.0.1:5432/ci
+
+      - name: Cross-tenant SET NULL delete proof (BEGIN/ROLLBACK, writes nothing)
+        if: ${{ !cancelled() }}
+        run: >-
+          psql -h 127.0.0.1 -U ci -d ci -v ON_ERROR_STOP=1
+          -f migrations/sql/c-confdelsetcols-03-cross-tenant-delete-proof.sql
+        env:
+          PGPASSWORD: ci
+
+      - name: Bare SET NULL form still raises 23502 (BEGIN/ROLLBACK, writes nothing)
+        if: ${{ !cancelled() }}
+        run: >-
+          psql -h 127.0.0.1 -U ci -d ci -v ON_ERROR_STOP=1
+          -f migrations/sql/c-confdelsetcols-04-bare-form-regression.sql
+        env:
+          PGPASSWORD: ci
+
       - name: Retention coverage (live)
         if: ${{ !cancelled() }}
         run: pnpm check:retention-coverage

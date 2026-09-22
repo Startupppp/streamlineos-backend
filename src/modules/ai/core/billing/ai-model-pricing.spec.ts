@@ -10,7 +10,7 @@ import {
 describe("AI model catalog integrity", () => {
   it("every hardcoded default chain model resolves a catalog entry — an absent entry silently bills at the fallback rate instead of the model's actual cost", () => {
     const config = resolveLlmProvider({});
-    const hardcodedDefaults = [config.fastModel, config.standardModel];
+    const hardcodedDefaults = [config.fastChain[0], config.standardChain[0]].filter(Boolean);
     for (const modelId of hardcodedDefaults) {
       const normalized = modelId.includes("/") ? modelId.slice(modelId.indexOf("/") + 1) : modelId;
       expect(Object.hasOwn(AI_MODEL_CATALOG, normalized)).toBe(true);

@@ -13,6 +13,7 @@ describe("SurveyAnalyticsService — answers cap", () => {
         surveyQuestions: { findMany: questionsFindMany },
         surveyAnswers: { findMany: answersFindMany },
       },
+      select: () => ({ from: () => ({ where: async () => [{ total: 0 }] }) }),
     } as unknown as Db;
     const svc = new SurveyAnalyticsService(db);
 
@@ -33,6 +34,7 @@ describe("SurveyAnalyticsService — answers cap", () => {
         surveyQuestions: { findMany: questionsFindMany },
         surveyAnswers: { findMany: answersFindMany },
       },
+      select: () => ({ from: () => ({ where: async () => [{ total: 0 }] }) }),
     } as unknown as Db;
     const svc = new SurveyAnalyticsService(db);
 

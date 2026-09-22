@@ -13,7 +13,6 @@ describe("stream model tier selection", () => {
   });
   const config: LlmProviderConfig = {
     provider: "openai", apiKey: "test-only", baseURL: undefined,
-    fastModel: "fast-alias", standardModel: "standard-alias",
     fastChain: ["configured-fast-primary", "configured-fast-fallback"],
     standardChain: ["configured-standard-primary", "configured-standard-fallback"],
   };

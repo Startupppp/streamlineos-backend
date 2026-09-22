@@ -413,6 +413,7 @@ export class TimesheetsService {
 
   async logTicketTime(
     user: CurrentUserContext,
+    projectId: number,
     ticketId: number,
     input: LogTimeInput,
   ) {
@@ -421,6 +422,7 @@ export class TimesheetsService {
     const ticket = await this.db.query.tickets.findFirst({
       where: and(
         eq(tickets.id, ticketId),
+        eq(tickets.projectId, projectId),
         eq(tickets.orgId, user.orgId),
         isNull(tickets.deletedAt),
       ),

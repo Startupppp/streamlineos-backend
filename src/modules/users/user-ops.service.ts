@@ -43,7 +43,7 @@ import { assertNoOwnerAmongTargets } from "../../common/rbac/assert-target-not-o
 import { withMembershipMutations } from "../../common/org/membership-mutations";
 import { UserOperationsReporter } from "./user-operations.reporter";
 import { EmploymentFactsService } from "../directory/employment-facts.service";
-import { syncCanonicalReportingLines } from "../../common/hr/sync-canonical-reporting-line";
+import { ReportingLineService } from "../directory/reporting-line.service";
 
 @Injectable()
 export class UserOpsService {
@@ -58,6 +58,7 @@ export class UserOpsService {
     private readonly access: AccessService,
     private readonly email: EmailService,
     private readonly employment: EmploymentFactsService,
+    private readonly reportingLines: ReportingLineService,
   ) {
     this.reporter = new UserOperationsReporter(db, cache, employment);
   }
@@ -154,18 +155,8 @@ export class UserOpsService {
 
     const scopedIds = await withMembershipMutations(this.cache, (membership) => this.db.transaction(async (tx) => {
       if (managerUserId) {
-        const manager = await tx.query.organizationMembers.findFirst({
-          where: and(
-            eq(organizationMembers.orgId, orgId),
-            eq(organizationMembers.userId, managerUserId),
-            eq(organizationMembers.status, "ACTIVE"),
-          ),
-          columns: { userId: true },
-        });
-        if (!manager)
-          throw new BadRequestException(
-            "Manager must be an active member of this organization",
-          );
+        const manager = await this.reportingLines.checkManager(orgId, managerUserId, tx);
+        if (!manager.ok) throw new BadRequestException(manager.message);
       }
 
       const memberRows = await tx
@@ -223,14 +214,7 @@ export class UserOpsService {
 
       if (managerUserId !== undefined) {
         const today = new Date().toISOString().slice(0, 10);
-        await syncCanonicalReportingLines(
-          tx,
-          orgId,
-          tenantUserIds,
-          managerUserId,
-          today,
-          actorUserId,
-        );
+        await this.reportingLines.assignMany(orgId, tenantUserIds, managerUserId, today, actorUserId, tx);
       }
 
       const unitMoves: Array<{ kind: OrgUnitKind; unitId: string | null }> = [];

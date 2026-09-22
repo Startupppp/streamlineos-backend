@@ -239,6 +239,11 @@ const TIMESHEETS = [
     defaultType: "WARNING",
     defaultChannels: IA_EMAIL,
   }),
+  e("timesheets.period.escalated", "timesheets", "PROJECTS", "Timesheet approval escalated", {
+    description: "A submitted timesheet waited past its approval deadline and was escalated to you.",
+    defaultPriority: "HIGH",
+    defaultChannels: IA_EMAIL,
+  }),
 ] as const;
 
 export const NOTIFICATION_EVENT_CATALOG = [

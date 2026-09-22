@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { approvalRouteSchema } from "../../../directory/dto/approval-route.schemas";
 import { wireDate } from "../../../../common/openapi/wire-types";
 
 const boundedListSchema = <T extends z.ZodTypeAny>(item: T) =>
@@ -113,13 +114,15 @@ export const leavePolicySummaryPageDataSchema = z.object({
   })),
 });
 
+const idCursorPageInfoSchema = z.object({
+  limit: z.number().int(),
+  hasMore: z.boolean(),
+  nextCursor: z.number().int().nullable(),
+});
+
 export const leavesMyResponseSchema = z.object({
   data: z.array(leaveRequestWithRelationsSchema),
-  pageInfo: z.object({
-    limit: z.number().int(),
-    hasMore: z.boolean(),
-    nextCursor: z.number().int().nullable(),
-  }),
+  pageInfo: idCursorPageInfoSchema,
 });
 
 export const leavesTeamItemSchema = leaveRequestRowSchema.extend({
@@ -129,8 +132,8 @@ export const leavesTeamItemSchema = leaveRequestRowSchema.extend({
 });
 
 export const leavesTeamResponseSchema = z.object({
-  pending: z.array(leavesTeamItemSchema),
-  all: z.array(leavesTeamItemSchema),
+  data: z.array(leavesTeamItemSchema),
+  pageInfo: idCursorPageInfoSchema,
 });
 
 export const leavesThisWeekItemSchema = leaveRequestRowSchema.extend({
@@ -196,6 +199,7 @@ export const leavesPageDataSchema = z.object({
   types: z.array(leaveTypeRowSchema),
   joiningDate: z.string().nullable(),
   approvers: z.array(z.object({ id: z.string(), name: z.string().nullable(), email: z.string() })),
+  approvalRoute: approvalRouteSchema,
 });
 
 export const compOffGrantResponseSchema = z.object({

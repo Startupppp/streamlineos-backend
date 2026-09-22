@@ -39,7 +39,7 @@ import {
   ResponseSchema,
 } from "../../../common/openapi/zod-operation-contracts";
 import {
-  testRunListItemSchema,
+  testRunListPageSchema,
   testRunDetailSchema,
   testRunResultPageSchema,
   testRunResultRowSchema,
@@ -69,7 +69,7 @@ export class TestRunsController {
 
   @Get()
   @RequirePermission("build:qa:view")
-  @ResponseSchema(z.array(testRunListItemSchema))
+  @ResponseSchema(testRunListPageSchema)
   @Validate({ query: testRunListQuerySchema })
   listRuns(
     @Param("projectId", ParseIntPipe) projectId: number,
@@ -88,7 +88,7 @@ export class TestRunsController {
     @Param("runId", ParseIntPipe) runId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.getRun(u.orgId, projectId, runId);
+    return this.svc.getRun(u, projectId, runId);
   }
 
   @Get(":runId/results")
@@ -101,7 +101,7 @@ export class TestRunsController {
     @Query() query: RunResultsQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.listRunResults(u.orgId, projectId, runId, query);
+    return this.svc.listRunResults(u, projectId, runId, query);
   }
 
   @Post()
@@ -127,7 +127,7 @@ export class TestRunsController {
     @Body() body: UpdateTestRunInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.updateRun(u.orgId, u.userId, projectId, runId, body);
+    return this.svc.updateRun(u, projectId, runId, body);
   }
 
   @Delete(":runId")
@@ -140,7 +140,7 @@ export class TestRunsController {
     @Param("runId", ParseIntPipe) runId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.deleteRun(u.orgId, projectId, runId);
+    return this.svc.deleteRun(u, projectId, runId);
   }
 
   @Patch(":runId/results/:resultId")
@@ -154,14 +154,7 @@ export class TestRunsController {
     @Body() body: UpdateTestResultInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.updateResult(
-      u.orgId,
-      projectId,
-      runId,
-      resultId,
-      body,
-      u.userId,
-    );
+    return this.svc.updateResult(u, projectId, runId, resultId, body);
   }
 
   @Post(":runId/results/:resultId/bug")
@@ -176,13 +169,6 @@ export class TestRunsController {
     @Body() body: CreateBugFromResultInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.createBugFromResult(
-      u.orgId,
-      u.userId,
-      projectId,
-      runId,
-      resultId,
-      body,
-    );
+    return this.svc.createBugFromResult(u, projectId, runId, resultId, body);
   }
 }

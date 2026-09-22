@@ -104,6 +104,13 @@ const UNWIRED_BY_DESIGN = Object.freeze({
   "db:check-hr-reads": "EXPLAINs against a live database as streamline_app. Owner: gate-wiring.",
   "db:check-read-budgets": "EXPLAINs against a live database as streamline_app. Owner: gate-wiring.",
   "db:check-request-txn": "needs a booted app plus a live database. Owner: gate-wiring.",
+  "check:timing-slo":
+    "analyses a timing-sample FILE emitted by a live run, not the repository. It takes a " +
+    "required --slo=<class> (ordinary-sql, complex-sql, ordinary-request, complex-request, " +
+    "cache-hit) or --ceiling-ms=N plus a samples path, needs MIN_SAMPLES=3 and rejects a " +
+    "sample set whose coefficient of variation exceeds 0.25, so there is nothing for a " +
+    "hermetic job to point it at. MEASURED 2026-09-21: exit 2 with no argument, which is " +
+    "INCONCLUSIVE and not a pass. Owner: gate-wiring.",
   "verify:razorpay-sandbox":
     "calls api.razorpay.com with real test-mode credentials, which no CI job holds. It " +
     "refuses any RAZORPAY_KEY_ID not beginning rzp_test_ before opening a socket, and exits 2 " +
@@ -122,6 +129,27 @@ const UNWIRED_BY_DESIGN = Object.freeze({
     "alert channel — proof a person received the page, which no CI job can fabricate " +
     "(check-alert-ack.mjs:178-188). ci.yml names the self-test only, and says so. " +
     "Owner: gate-wiring.",
+
+  "verify:auth-races":
+    "requires AUTH_RACE_PROBE_DATABASE_URL — a dedicated disposable PostgreSQL it writes rows " +
+    "to (users, verification_tokens, email_otp_codes). Proves concurrent-claim predicates at " +
+    "READ COMMITTED isolation by racing two real connections; mocked specs model a predicate but " +
+    "cannot race a row lock. Deliberately refuses DATABASE_URL and refuses any non-loopback " +
+    "target without --allow-remote, so no hermetic CI job can satisfy it. " +
+    "Owner: gate-wiring.",
+
+  "verify:otp-delivery":
+    "requires OTP_DELIVERY_PROBE_DATABASE_URL plus a booted API to trigger a real email send " +
+    "(POST /auth/email-otp), and then a human to read the delivered inbox and supply " +
+    "--confirm=<code>. The confirmation step is fundamentally interactive: the OTP is stored " +
+    "only as a SHA-256 hash, so a CI job cannot fabricate the match without receiving the mail. " +
+    "Owner: gate-wiring.",
+
+  "verify:identity-journey":
+    "requires JOURNEY_PROBE_DATABASE_URL (loopback-only), a booted API server at loopback, " +
+    "INTERNAL_API_SECRET and NEXTAUTH_SECRET; drives real HTTP POST requests against the running " +
+    "app and sleeps 16 seconds for the membership-status cache window to expire. No hermetic CI " +
+    "job boots the application. Owner: gate-wiring.",
 });
 
 /**

@@ -32,7 +32,10 @@ import {
   NoContentResponse,
   ResponseSchema,
 } from "../../../common/openapi/zod-operation-contracts";
-import { changeRequestRowSchema } from "./dto/change-requests-response.schemas";
+import {
+  changeRequestRowSchema,
+  changeRequestListPageSchema,
+} from "./dto/change-requests-response.schemas";
 
 const projectIdParams = z
   .object({ projectId: z.coerce.number().int().positive() })
@@ -52,7 +55,7 @@ export class ChangeRequestsController {
 
   @Get()
   @RequirePermission("build:changerequests:view")
-  @ResponseSchema(z.array(changeRequestRowSchema))
+  @ResponseSchema(changeRequestListPageSchema)
   @Validate({ params: projectIdParams, query: listCrQuerySchema })
   listChangeRequests(
     @Param("projectId", ParseIntPipe) projectId: number,

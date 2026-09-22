@@ -90,7 +90,10 @@ function makeDb(rows: unknown[]): { db: Db; where: jest.Mock; findMany: jest.Moc
     selectDistinctOn: jest.fn().mockReturnValue(builder),
     execute: jest.fn().mockResolvedValue([{ relationAvailable: false }]),
     insert: jest.fn().mockReturnValue({
-      values: jest.fn().mockReturnValue({ returning: jest.fn().mockResolvedValue([]) }),
+      values: jest.fn().mockReturnValue({
+        returning: jest.fn().mockResolvedValue([]),
+        onConflictDoNothing: jest.fn().mockReturnValue({ returning: jest.fn().mockResolvedValue([]) }),
+      }),
     }),
     update: jest.fn().mockReturnValue({
       set: jest.fn().mockReturnValue({
@@ -145,7 +148,7 @@ describe("HR Lifecycle services — cross-tenant isolation", () => {
     it("hides resignations for a different org (DENY — cross-tenant isolation)", async () => {
       const { db, findMany } = makeDb([]);
       const mockEmployment = {} as unknown as EmploymentFactsService;
-      const svc = new ExitService(db, mockEmployment);
+      const svc = new ExitService(db, mockEmployment, { resignationIdsRoutedTo: jest.fn().mockResolvedValue([]) } as never);
       const result = await svc.list(ATTACKER, "user-1", true, { limit: 10 });
       expect(result.data).toHaveLength(0);
       expect(findMany).toHaveBeenCalled();
@@ -156,35 +159,40 @@ describe("HR Lifecycle services — cross-tenant isolation", () => {
     it("returns resignations for the owning org (CONTROL)", async () => {
       const { db } = makeDb([{ id: 1, orgId: OWNER }]);
       const mockEmployment = {} as unknown as EmploymentFactsService;
-      const svc = new ExitService(db, mockEmployment);
+      const svc = new ExitService(db, mockEmployment, { resignationIdsRoutedTo: jest.fn().mockResolvedValue([]) } as never);
       const result = await svc.list(OWNER, "user-1", true, { limit: 10 });
       expect(result.data).toHaveLength(1);
     });
   });
 
   describe("ExitChecklistService", () => {
-    it("queries templates scoped to the requesting org (cross-tenant isolation)", async () => {
-      const { db, findFirst } = makeDb([]);
-      const svc = new ExitChecklistService(db);
-      await svc.seedChecklistFromTemplate(ATTACKER, 99);
+    const resignation = { id: 99, userId: "leaver", userMembershipId: 5, status: "FINAL_APPROVED", lastWorkingDate: "2026-10-31", noticePeriodDays: 30, createdAt: new Date() };
+    const approvals = { resolve: jest.fn().mockResolvedValue({ approver: null, assignedTo: null }) };
+
+    it("reads the resignation and the template scoped to the requesting org (cross-tenant isolation)", async () => {
+      const { db, where, findFirst } = makeDb([resignation]);
+      findFirst.mockResolvedValue(null);
+      const svc = new ExitChecklistService(db, approvals as never, {} as never, {} as never);
+      await svc.seedForResignation(ATTACKER, 99);
+      expect(sqlValues(where.mock.calls[0]?.[0])).toContain(ATTACKER);
       expect(findFirst).toHaveBeenCalled();
       const call = findFirst.mock.calls[0]?.[0] as { where?: unknown } | undefined;
       expect(sqlValues(call?.where)).toContain(ATTACKER);
     });
 
-    it("queries templates for the owning org (CONTROL)", async () => {
+    it("reads the template for the owning org (CONTROL)", async () => {
       const template = {
         id: 1,
         orgId: OWNER,
-        content: [{ title: "Task 1" }],
+        content: { items: [{ title: "Task 1" }] },
         kind: "offboarding_checklist",
         status: "active",
         deletedAt: null,
       };
-      const { db, findFirst } = makeDb([]);
+      const { db, findFirst } = makeDb([resignation]);
       findFirst.mockResolvedValue(template);
-      const svc = new ExitChecklistService(db);
-      await svc.seedChecklistFromTemplate(OWNER, 99);
+      const svc = new ExitChecklistService(db, approvals as never, {} as never, {} as never);
+      await svc.seedForResignation(OWNER, 99);
       const call = findFirst.mock.calls[0]?.[0] as { where?: unknown } | undefined;
       expect(sqlValues(call?.where)).toContain(OWNER);
     });

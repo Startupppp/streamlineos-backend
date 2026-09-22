@@ -61,21 +61,21 @@ export class MilestonesService {
     return milestone;
   }
 
-  async updateMilestone(orgId: string, milestoneId: number, input: UpdateMilestoneInput) {
+  async updateMilestone(orgId: string, projectId: number, milestoneId: number, input: UpdateMilestoneInput) {
     const [updated] = await this.db
       .update(projectMilestones)
       .set({ ...input, updatedAt: new Date() })
-      .where(and(eq(projectMilestones.id, milestoneId), eq(projectMilestones.orgId, orgId), isNull(projectMilestones.deletedAt)))
+      .where(and(eq(projectMilestones.id, milestoneId), eq(projectMilestones.projectId, projectId), eq(projectMilestones.orgId, orgId), isNull(projectMilestones.deletedAt)))
       .returning();
     if (!updated) throw new NotFoundException("Milestone not found");
     return updated;
   }
 
-  async deleteMilestone(orgId: string, milestoneId: number) {
+  async deleteMilestone(orgId: string, projectId: number, milestoneId: number) {
     const [stamped] = await this.db
       .update(projectMilestones)
       .set({ deletedAt: new Date() })
-      .where(and(eq(projectMilestones.id, milestoneId), eq(projectMilestones.orgId, orgId), isNull(projectMilestones.deletedAt)))
+      .where(and(eq(projectMilestones.id, milestoneId), eq(projectMilestones.projectId, projectId), eq(projectMilestones.orgId, orgId), isNull(projectMilestones.deletedAt)))
       .returning({ id: projectMilestones.id });
     if (!stamped) throw new NotFoundException("Milestone not found");
     return { success: true };
@@ -147,11 +147,11 @@ export class IntakeService {
     return item;
   }
 
-  async updateIntake(orgId: string, userId: string, requestId: number, input: UpdateIntakeInput) {
+  async updateIntake(orgId: string, userId: string, projectId: number, requestId: number, input: UpdateIntakeInput) {
     const [item] = await this.db
       .select()
       .from(intakeItems)
-      .where(and(eq(intakeItems.id, requestId), eq(intakeItems.orgId, orgId)))
+      .where(and(eq(intakeItems.id, requestId), eq(intakeItems.projectId, projectId), eq(intakeItems.orgId, orgId)))
       .limit(1);
 
     if (!item) throw new NotFoundException("Intake request not found");
@@ -264,9 +264,9 @@ export class ViewsService {
     return view;
   }
 
-  async updateView(orgId: string, userId: string, viewId: number, input: UpdateViewInput) {
+  async updateView(orgId: string, userId: string, projectId: number, viewId: number, input: UpdateViewInput) {
     const existing = await this.db.query.projectViews.findFirst({
-      where: and(eq(projectViews.id, viewId), eq(projectViews.orgId, orgId)),
+      where: and(eq(projectViews.id, viewId), eq(projectViews.projectId, projectId), eq(projectViews.orgId, orgId)),
       columns: { id: true, createdBy: true, visibility: true },
     });
     if (!existing) throw new NotFoundException("View not found");
@@ -281,9 +281,9 @@ export class ViewsService {
     return updated;
   }
 
-  async deleteView(orgId: string, userId: string, viewId: number) {
+  async deleteView(orgId: string, userId: string, projectId: number, viewId: number) {
     const existing = await this.db.query.projectViews.findFirst({
-      where: and(eq(projectViews.id, viewId), eq(projectViews.orgId, orgId)),
+      where: and(eq(projectViews.id, viewId), eq(projectViews.projectId, projectId), eq(projectViews.orgId, orgId)),
       columns: { id: true, createdBy: true, visibility: true },
     });
     if (!existing) throw new NotFoundException("View not found");

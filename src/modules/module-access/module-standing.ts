@@ -10,6 +10,7 @@ import { ROLE_RANK } from "../../common/rbac/grantability";
 import { isStructuralOrgAdmin } from "../../common/rbac/is-structural-org-admin";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { principalIsOrgOwner } from "../../common/auth/principal";
+import type { DataScope } from "../../common/rbac/data-scope";
 
 export type ModuleStandingLevel = "owner" | "admin" | "member" | "none";
 
@@ -172,6 +173,23 @@ export async function resolveModuleManagementStanding(
 ): Promise<ModuleStanding | null> {
   const source = await resolveAuthoritySource(db, actor, moduleKey);
   return source ? STANDING[source] : null;
+}
+
+export async function resolveModuleStanding(
+  db: Db,
+  actor: CurrentUserContext,
+  moduleKey: string,
+  resolvedPermissions: ReadonlyMap<string, DataScope>,
+): Promise<ModuleStanding> {
+  const source = await resolveAuthoritySource(db, actor, moduleKey);
+  if (source) return STANDING[source];
+
+  const scope =
+    resolvedPermissions.get(`${moduleKey}:access:view`) ??
+    resolvedPermissions.get(`${moduleKey}:access:manage`);
+  if (scope && scope !== "none") return STANDING["membership"];
+
+  return STANDING["none"];
 }
 
 export async function canTransferModuleOwnership(

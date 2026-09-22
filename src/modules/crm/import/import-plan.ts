@@ -16,10 +16,7 @@ import {
 } from "./import-plan-party";
 import { readRow } from "./import-row-reader";
 export type {
-  RowAction,
   RowMatch,
-  PlannedRow,
-  ImportSummary,
   ImportPlan,
   PlanInput,
 } from "./import-plan-types";

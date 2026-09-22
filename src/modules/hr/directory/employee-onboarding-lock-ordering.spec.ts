@@ -30,6 +30,7 @@ import { AutomationService } from "../../automation/automation.service";
 import { WebhooksDispatchService } from "../../webhooks/webhooks-dispatch.service";
 import { PersonEmploymentSyncService } from "../core/person-employment-sync.service";
 import { AccessService } from "../../access/access.service";
+import { ReportingLineService } from "../../directory/reporting-line.service";
 import { MembershipAdmissionService } from "../../organization/core/membership-admission.service";
 
 const ORG_ID = "org-limit-test";
@@ -104,9 +105,10 @@ describe("EmployeeOnboardingService.onboardEmployee — seat-limit ordering", ()
         chain["from"] = passthrough;
         chain["innerJoin"] = passthrough;
         chain["where"] = passthrough;
-        chain["limit"] = () => Promise.resolve([]);
+        chain["limit"] = () => Promise.resolve([{ name: "Lock Ordering Org" }]);
         return chain;
       }),
+      insert: jest.fn().mockReturnValue({ values: jest.fn().mockResolvedValue(undefined) }),
       transaction: jest.fn().mockImplementation(
         (fn: (t: ReturnType<typeof buildTx>) => Promise<unknown>) => fn(tx),
       ),
@@ -136,7 +138,10 @@ describe("EmployeeOnboardingService.onboardEmployee — seat-limit ordering", ()
           provide: AuditService,
           useValue: { logCritical: jest.fn().mockResolvedValue(undefined) },
         },
-        { provide: EmailService, useValue: {} },
+        {
+          provide: EmailService,
+          useValue: { queueWelcomeEmail: jest.fn().mockResolvedValue({ queued: true }) },
+        },
         {
           provide: AutomationService,
           useValue: { runAutomationsForEvent: jest.fn().mockResolvedValue(undefined) },
@@ -152,6 +157,10 @@ describe("EmployeeOnboardingService.onboardEmployee — seat-limit ordering", ()
         {
           provide: AccessService,
           useValue: { resolveUserPermissions: jest.fn().mockResolvedValue(new Map()) },
+        },
+        {
+          provide: ReportingLineService,
+          useValue: { checkManager: jest.fn(), assign: jest.fn() },
         },
       ],
     }).compile();

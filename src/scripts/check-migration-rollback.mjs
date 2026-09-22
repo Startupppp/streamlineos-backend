@@ -76,7 +76,7 @@ const INVENTORY_TAG = /^\d+[a-z]?_(inv_|inventory)/;
  * nowhere. The count is now printed on every run and ratcheted here, so the debt
  * is a number somebody has to look at and cannot quietly grow.
  */
-const INVENTORY_WITHOUT_ROLLBACK_BASELINE = 38;
+const INVENTORY_WITHOUT_ROLLBACK_BASELINE = 5;
 
 /**
  * Files that are intentionally unjournalled and never applied via db:migrate.

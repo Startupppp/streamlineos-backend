@@ -20,7 +20,7 @@ import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { AccessService } from "../../access/access.service";
-import { resolvePayrollRunsViewScope } from "../payroll-scope";
+import { ScopedRead } from "../../access/scoped-read";
 import { ProfilesService } from "./profiles.service";
 import {
   listProfilesQuerySchema,
@@ -61,7 +61,7 @@ export class ProfilesController {
     @Query() query: ListProfilesQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    const read = await resolvePayrollRunsViewScope(this.access, u);
+    const read = await ScopedRead.for(this.access, u, "payroll:salaries:view");
     return this.profilesService.listProfiles(read, query);
   }
 

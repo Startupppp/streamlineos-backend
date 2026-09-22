@@ -23,11 +23,15 @@ export const myMoodHistoryResponseSchema = z.array(z.object({
   note: z.string().nullable(),
 }));
 
-export const orgMoodAggregateResponseSchema = z.array(z.object({
-  date: z.string(),
-  avgMood: z.number(),
-  count: z.number().int(),
-}));
+export const orgMoodAggregateResponseSchema = z.object({
+  minResponses: z.number().int(),
+  suppressedDays: z.number().int(),
+  points: z.array(z.object({
+    date: z.string(),
+    avgMood: z.number(),
+    count: z.number().int(),
+  })),
+});
 
 const pollSchema = z.object({
   id: z.number().int(),
@@ -64,7 +68,9 @@ export const pollResultsResponseSchema = z.object({
   anonymous: z.boolean(),
   status: z.enum(["draft", "active", "closed"]),
   totalVotes: z.number().int(),
-  counts: z.array(z.object({ option: z.string(), optionIndex: z.number().int(), count: z.number().int() })),
+  minResponses: z.number().int(),
+  suppressed: z.boolean(),
+  counts: z.array(z.object({ option: z.string(), optionIndex: z.number().int(), count: z.number().int() })).nullable(),
 });
 
 const communitySchema = z.object({

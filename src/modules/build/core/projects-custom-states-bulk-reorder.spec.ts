@@ -5,7 +5,7 @@ import { ProjectsCustomStatesService } from "./projects-custom-states.service";
 import { projectStatuses } from "../../../db/schema";
 import type { Db } from "../../../db/drizzle.module";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
-import type { BulkReorderStatesInput } from "./dto/projects.schemas";
+import { bulkReorderStatesSchema, type BulkReorderStatesInput } from "./dto/projects.schemas";
 
 const ORG = "org-1";
 const PROJECT_ID = 10;
@@ -237,7 +237,6 @@ describe("bulk-reorder — idempotent transactional update", () => {
   });
 
   it("is bounded at 50 items by the schema", () => {
-    const { bulkReorderStatesSchema } = require("./dto/projects.schemas");
     const tooMany = { items: Array.from({ length: 51 }, (_, i) => ({ stateId: i + 1, order: i })) };
     const result = bulkReorderStatesSchema.safeParse(tooMany);
     expect(result.success).toBe(false);

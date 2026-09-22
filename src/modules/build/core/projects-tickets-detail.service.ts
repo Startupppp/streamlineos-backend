@@ -28,8 +28,11 @@ export class ProjectsTicketsDetailService {
     return this.readTicket(u, and(eq(tickets.projectId, projectId), eq(tickets.ticketNumber, ticketNumber)));
   }
 
-  async getTicket(u: CurrentUserContext, ticketId: number) {
-    return this.readTicket(u, eq(tickets.id, ticketId));
+  async getTicket(u: CurrentUserContext, projectId: number, ticketId: number) {
+    return this.readTicket(
+      u,
+      and(eq(tickets.id, ticketId), eq(tickets.projectId, projectId)),
+    );
   }
 
   private async readTicket(u: CurrentUserContext, selector: SQL<unknown> | undefined) {

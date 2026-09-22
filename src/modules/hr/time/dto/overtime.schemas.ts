@@ -40,4 +40,3 @@ export const listQuerySchema = z.object({
   cursor: z.string().optional(),
   pageSize: pageSizeField(20, 100),
 });
-export type ListQuery = z.infer<typeof listQuerySchema>;

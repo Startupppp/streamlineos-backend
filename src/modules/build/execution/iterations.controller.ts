@@ -94,10 +94,11 @@ export class SprintsController {
   @ResponseSchema(sprintDetailSchema)
   @Validate({ params: projectAndSprintIdParams })
   getSprint(
+    @Param("projectId", ParseIntPipe) projectId: number,
     @Param("sprintId", ParseIntPipe) sprintId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.sprints.getSprint(u.orgId, sprintId);
+    return this.sprints.getSprint(u.orgId, projectId, sprintId);
   }
 
   @Patch(":sprintId")
@@ -105,11 +106,12 @@ export class SprintsController {
   @ResponseSchema(successSchema)
   @Validate({ params: projectAndSprintIdParams, body: updateSprintSchema })
   updateSprint(
+    @Param("projectId", ParseIntPipe) projectId: number,
     @Param("sprintId", ParseIntPipe) sprintId: number,
     @Body() body: UpdateSprintInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.sprints.updateSprint(u.orgId, sprintId, body, u.userId);
+    return this.sprints.updateSprint(u.orgId, projectId, sprintId, body, u.userId);
   }
 
   @Delete(":sprintId")
@@ -133,7 +135,7 @@ export class CyclesController {
   constructor(private readonly cycles: CyclesService) {}
 
   @Get()
-  @RequirePermission("build:view")
+  @RequirePermission("build:sprints:view")
   @ResponseSchema(z.array(cycleListItemSchema))
   @Validate({ params: projectIdParams, query: cycleListQuerySchema })
   listCycles(
@@ -177,10 +179,11 @@ export class CyclesController {
   @NoContentResponse()
   @Validate({ params: projectAndCycleIdParams })
   deleteCycle(
+    @Param("projectId", ParseIntPipe) projectId: number,
     @Param("cycleId", ParseIntPipe) cycleId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.cycles.deleteCycle(u.orgId, cycleId);
+    return this.cycles.deleteCycle(u.orgId, projectId, cycleId);
   }
 }
 
@@ -219,11 +222,12 @@ export class ModulesController {
   @ResponseSchema(moduleRowSchema)
   @Validate({ params: projectAndModuleIdParams, body: updateModuleSchema })
   updateModule(
+    @Param("projectId", ParseIntPipe) projectId: number,
     @Param("moduleId", ParseIntPipe) moduleId: number,
     @Body() body: UpdateModuleInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.modules.updateModule(u.orgId, moduleId, body);
+    return this.modules.updateModule(u.orgId, projectId, moduleId, body);
   }
 
   @Delete(":moduleId")
@@ -232,10 +236,11 @@ export class ModulesController {
   @NoContentResponse()
   @Validate({ params: projectAndModuleIdParams })
   deleteModule(
+    @Param("projectId", ParseIntPipe) projectId: number,
     @Param("moduleId", ParseIntPipe) moduleId: number,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.modules.deleteModule(u.orgId, moduleId);
+    return this.modules.deleteModule(u.orgId, projectId, moduleId);
   }
 }
 

@@ -62,7 +62,7 @@ describe("Build mutation and webhook intent atomicity", () => {
   it("rolls back the domain mutation when durable webhook enqueue fails", async () => {
     const test = harness(true);
 
-    await expect(test.service.updateSprint("org-1", 4, { status: "ACTIVE" }, "member-1"))
+    await expect(test.service.updateSprint("org-1", 9, 4, { status: "ACTIVE" }, "member-1"))
       .rejects.toThrow("outbox unavailable");
 
     expect(test.timeline).toEqual(["mutation-staged", "intent-staged", "rollback"]);
@@ -72,7 +72,7 @@ describe("Build mutation and webhook intent atomicity", () => {
   it("stages the intent before the transaction commits, leaving no post-commit enqueue gap", async () => {
     const test = harness(false);
 
-    await test.service.updateSprint("org-1", 4, { status: "ACTIVE" }, "member-1");
+    await test.service.updateSprint("org-1", 9, 4, { status: "ACTIVE" }, "member-1");
 
     expect(test.timeline).toEqual(["mutation-staged", "intent-staged", "commit"]);
     expect(test.committed()).toEqual({ mutationCommitted: true, intentCommitted: true });
@@ -103,7 +103,7 @@ describe("Build mutation and webhook intent atomicity", () => {
       {} as never,
     );
 
-    await expect(service.deleteTicket("org-1", "member-1", 7, true))
+    await expect(service.deleteTicket("org-1", "member-1", 1, 7, true))
       .rejects.toThrow("Ticket not found");
     expect(db.transaction).not.toHaveBeenCalled();
     expect(enqueue).not.toHaveBeenCalled();

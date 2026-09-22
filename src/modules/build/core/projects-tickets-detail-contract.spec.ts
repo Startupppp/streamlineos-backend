@@ -39,7 +39,7 @@ it.each(["id", "key"])("returns the complete existing detail contract for %s loo
   ] }).compile();
   try {
     const service = module.get(ProjectsTicketsDetailService);
-    const result = lookup === "id" ? await service.getTicket(actor, 1) : await service.getTicketByKey(actor, 42, 101);
+    const result = lookup === "id" ? await service.getTicket(actor, 42, 1) : await service.getTicketByKey(actor, 42, 101);
     const parsed = ticketDetailSchema.parse(result);
     expect(parsed.epic).toEqual({ id: 2, name: "Epic" });
     expect(parsed.members[0]?.user.user).toEqual(user);

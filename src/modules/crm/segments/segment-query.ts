@@ -3,12 +3,6 @@ import type {
   QueryDescription,
 } from "../../reporting/compiler/query-description";
 import { SEGMENTABLE } from "./segment-source-description";
-export type {
-  HeldPermissions,
-  SegmentSourceAccessDecision,
-  SegmentSourceField,
-  SegmentSourceDescription,
-} from "./segment-source-description";
 export {
   SEGMENT_VIEW,
   SEGMENT_MANAGE,

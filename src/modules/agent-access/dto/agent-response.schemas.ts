@@ -44,7 +44,7 @@ const projectRowSchema = z.object({
   priority: z.string().nullable(),
   dealId: z.number().int().nullable(),
   managedProductId: z.number().int().nullable(),
-  pmWorkspaceId: z.string(),
+  pmWorkspaceId: z.string().nullable(),
   budget: z.string().nullable(),
   budgetMinor: z.number().nullable(),
   budgetCurrency: z.string().nullable(),

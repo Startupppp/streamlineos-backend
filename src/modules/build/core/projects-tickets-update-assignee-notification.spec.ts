@@ -83,7 +83,7 @@ describe("ProjectsTicketsUpdateService — assignee notification settles inside 
     );
     const u = { orgId: ORG, userId: "u1", isOrgOwner: true, principal: { kind: "human-session", membershipId: 1, isOrgOwner: true } } as never;
 
-    await svc.updateTicket(u, 1, { title: "Renamed" });
+    await svc.updateTicket(u, 1, 1, { title: "Renamed" });
 
     expect(settled).toBe(true);
   });

@@ -40,12 +40,21 @@ const commentSchema = z.object({
   createdAt: wireDate(),
 });
 
+const capabilitiesSchema = z.object({
+  canViewMilestones: z.boolean(),
+  canViewTasks: z.boolean(),
+  canViewAttachments: z.boolean(),
+  canViewComments: z.boolean(),
+  canSubmitChangeRequests: z.boolean(),
+});
+
 export const projectOverviewSchema = z.object({
   project: clientProjectSchema,
   milestones: z.array(milestoneSchema),
   tasks: z.array(taskSchema),
   attachments: z.array(attachmentSchema),
   comments: z.array(commentSchema),
+  capabilities: capabilitiesSchema,
 });
 
 export const changeRequestSchema = z.object({

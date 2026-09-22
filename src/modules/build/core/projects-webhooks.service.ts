@@ -50,10 +50,17 @@ export class ProjectsWebhooksService {
     return webhook;
   }
 
-  async deleteWebhook(orgId: string, webhookId: number) {
+  async deleteWebhook(orgId: string, projectId: number, webhookId: number) {
+    await this.assertWebhookOwnership(orgId, projectId, webhookId);
     const [deleted] = await this.db
       .delete(projectWebhooks)
-      .where(and(eq(projectWebhooks.id, webhookId), eq(projectWebhooks.orgId, orgId)))
+      .where(
+        and(
+          eq(projectWebhooks.id, webhookId),
+          eq(projectWebhooks.projectId, projectId),
+          eq(projectWebhooks.orgId, orgId),
+        ),
+      )
       .returning();
     if (!deleted) throw new NotFoundException("Webhook not found");
   }

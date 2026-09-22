@@ -1,3 +1,5 @@
+import fs from "node:fs";
+import path from "node:path";
 import {
   kbSourcesListQuerySchema,
   type KbSourcesListQuery,
@@ -59,8 +61,8 @@ function query(over: Partial<KbSourcesListQuery> = {}): KbSourcesListQuery {
 
 describe("GET /kb/sources — a cursor, not a ceiling", () => {
   it("no longer caps at a fixed 100 with no way past it", () => {
-    const source = require("node:fs").readFileSync(
-      require("node:path").resolve(__dirname, "kb-sources.service.ts"),
+    const source = fs.readFileSync(
+      path.resolve(__dirname, "kb-sources.service.ts"),
       "utf8",
     ) as string;
     expect(source).not.toContain("MAX_SOURCES");
@@ -140,8 +142,8 @@ describe("GET /kb/sources — a cursor, not a ceiling", () => {
 describe("GET /kb/pages/search — a declared ceiling, not a buried one", () => {
   it("states the ceiling as a constant instead of a bare .limit()", () => {
     expect(KB_PAGE_SEARCH_MAX_LIMIT).toBe(20);
-    const source = require("node:fs").readFileSync(
-      require("node:path").resolve(__dirname, "kb-pages.service.ts"),
+    const source = fs.readFileSync(
+      path.resolve(__dirname, "kb-pages.service.ts"),
       "utf8",
     ) as string;
     expect(source).not.toMatch(/^\s*\.limit\(20\)/m);

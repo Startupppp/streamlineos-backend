@@ -199,17 +199,6 @@ export const dealStakeholderSchema = z.object({
   }),
 });
 
-export const dealStakeholderMutatedSchema = z.object({
-  id: z.number().int(),
-  orgId: z.string(),
-  dealId: z.number().int(),
-  contactId: z.number().int(),
-  roleKey: z.string().nullable(),
-  influence: z.string().nullable(),
-  isPrimary: z.boolean(),
-  notes: z.string().nullable(),
-  createdAt: wireDate(),
-});
 
 export const dealCompetitorSchema = z.object({
   id: z.string(),

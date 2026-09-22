@@ -47,7 +47,7 @@ const makeFactsMock = () =>
       joiningDate: null,
       locationId: null,
     }),
-  }) as any;
+  });
 
 const makeDbChain = (rows: unknown[]) => {
   const chain: Record<string, unknown> = {};
@@ -63,9 +63,9 @@ describe("OrganizationUsersReader.getUser — emailVerified wire type", () => {
   it("produces a JS boolean true when email_verified timestamp is present", async () => {
     const verifiedAt = new Date("2026-06-01T12:00:00.000Z");
     const chain = makeDbChain([makeMemberRow(verifiedAt)]);
-    const mockDb = { select: jest.fn().mockReturnValue(chain) } as any;
+    const mockDb = { select: jest.fn().mockReturnValue(chain) };
 
-    const reader = new OrganizationUsersReader(mockDb, makeFactsMock());
+    const reader = new OrganizationUsersReader(mockDb as never, makeFactsMock() as never);
     const result = await reader.getUser("org-1", "user-1");
 
     expect(typeof result.emailVerified).toBe("boolean");
@@ -74,9 +74,9 @@ describe("OrganizationUsersReader.getUser — emailVerified wire type", () => {
 
   it("produces a JS boolean false when email_verified is null", async () => {
     const chain = makeDbChain([makeMemberRow(null)]);
-    const mockDb = { select: jest.fn().mockReturnValue(chain) } as any;
+    const mockDb = { select: jest.fn().mockReturnValue(chain) };
 
-    const reader = new OrganizationUsersReader(mockDb, makeFactsMock());
+    const reader = new OrganizationUsersReader(mockDb as never, makeFactsMock() as never);
     const result = await reader.getUser("org-1", "user-1");
 
     expect(typeof result.emailVerified).toBe("boolean");
@@ -86,9 +86,9 @@ describe("OrganizationUsersReader.getUser — emailVerified wire type", () => {
   it("never produces a string for emailVerified regardless of emailVerifiedAt input shape", async () => {
     for (const emailVerifiedAt of [new Date(), null]) {
       const chain = makeDbChain([makeMemberRow(emailVerifiedAt)]);
-      const mockDb = { select: jest.fn().mockReturnValue(chain) } as any;
+      const mockDb = { select: jest.fn().mockReturnValue(chain) };
 
-      const reader = new OrganizationUsersReader(mockDb, makeFactsMock());
+      const reader = new OrganizationUsersReader(mockDb as never, makeFactsMock() as never);
       const result = await reader.getUser("org-1", "user-1");
 
       expect(typeof result.emailVerified).not.toBe("string");
@@ -98,9 +98,9 @@ describe("OrganizationUsersReader.getUser — emailVerified wire type", () => {
 
   it("throws NotFoundException when the user is not in the org", async () => {
     const chain = makeDbChain([]);
-    const mockDb = { select: jest.fn().mockReturnValue(chain) } as any;
+    const mockDb = { select: jest.fn().mockReturnValue(chain) };
 
-    const reader = new OrganizationUsersReader(mockDb, makeFactsMock());
+    const reader = new OrganizationUsersReader(mockDb as never, makeFactsMock() as never);
 
     await expect(reader.getUser("org-1", "user-missing")).rejects.toThrow(NotFoundException);
   });

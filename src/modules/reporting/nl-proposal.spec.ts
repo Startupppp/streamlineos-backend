@@ -2,15 +2,21 @@ jest.mock("../../common/tenant/run-in-tenant-transaction", () => ({
   runInTenantTransaction: <T>(db: unknown, fn: (tx: unknown) => Promise<T>) => fn(db),
 }));
 
+import fs from "node:fs";
+import path from "node:path";
 import { REPORTING_REGISTRY } from "./compiler/registry";
 import { REPORTING_RUN } from "./reporting-source-access";
+import { ReportingAuthService } from "./reporting-auth.service";
 import { ReportingService } from "./reporting.service";
 import { nlProposalSchema } from "./nl-proposal.schemas";
 
 const ORG = "org-1";
 const USER = "usr-1";
 
-/** Grants every registry source plus the run key — the same shape reporting-tenant-isolation.spec.ts uses. */
+/**
+ * AccessService double — grants every registry source plus the run key.
+ * Same shape as reporting-tenant-isolation.spec.ts uses.
+ */
 function access() {
   const granted = new Map<string, string>([[REPORTING_RUN, "all"]]);
   for (const [, source] of REPORTING_REGISTRY) granted.set(source.requiredPermission, "all");
@@ -39,8 +45,8 @@ function fakeDb() {
 function service(aiGateway: { invokeStructured: jest.Mock }) {
   return new ReportingService(
     fakeDb() as never,
-    access() as never,
-    authContexts() as never,
+    new ReportingAuthService(access() as never, authContexts() as never),
+    null as never,
     aiGateway as never,
   );
 }
@@ -116,8 +122,8 @@ describe("ReportingService.proposeFromQuestion", () => {
     // `reporting.controller.ts`'s docblock states. Asserted here by grep
     // rather than by mocking every possible execution path, which could
     // pass by omission.
-    const source = require("node:fs").readFileSync(
-      require("node:path").join(__dirname, "reporting.service.ts"),
+    const source = fs.readFileSync(
+      path.join(__dirname, "reporting.service.ts"),
       "utf8",
     ) as string;
     const method = source.slice(
@@ -130,7 +136,7 @@ describe("ReportingService.proposeFromQuestion", () => {
 
   it("fails closed with an error surfacing the ForbiddenException, when the caller cannot even reach the proposed source", async () => {
     const deniedAccess = {
-      resolveUserPermissions: jest.fn(async () => new Map([[REPORTING_RUN, "all"]])), // holds run, not the deals key
+      resolveUserPermissions: jest.fn(async () => new Map([[REPORTING_RUN, "all"]])),
       scopeFor: jest.fn(async (_user: unknown, key: string) => (key === REPORTING_RUN ? "all" : "none")),
     };
     const invokeStructured = jest.fn().mockResolvedValue({
@@ -144,8 +150,8 @@ describe("ReportingService.proposeFromQuestion", () => {
 
     const svc = new ReportingService(
       fakeDb() as never,
-      deniedAccess as never,
-      authContexts() as never,
+      new ReportingAuthService(deniedAccess as never, authContexts() as never),
+      null as never,
       { invokeStructured } as never,
     );
 

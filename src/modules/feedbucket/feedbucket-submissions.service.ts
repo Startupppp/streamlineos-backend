@@ -1,5 +1,5 @@
 import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, count, desc, eq, ilike, inArray, isNull, like, sql, type SQL } from "drizzle-orm";
+import { and, count, desc, eq, gte, ilike, inArray, isNotNull, isNull, like, lt, sql, type SQL } from "drizzle-orm";
 import { feedbucketAttachments, feedbucketSubmissions, feedbucketWidgets, organizationMembers } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
@@ -47,7 +47,7 @@ export class FeedbucketSubmissionsService {
 
   async list(read: ScopedRead, query: ListSubmissionsQuery, membershipId: number | null) {
     const orgId = read.orgId;
-    const { page, limit, widgetId, managedProductId, type, status, assigneeId, search } = query;
+    const { page, limit, widgetId, managedProductId, type, status, assigneeId, search, linked, from, to } = query;
     const offset = (page - 1) * limit;
 
     const domain = [
@@ -63,6 +63,17 @@ export class FeedbucketSubmissionsService {
     }
     if (search?.trim()) {
       domain.push(ilike(feedbucketSubmissions.message, `%${search}%`));
+    }
+    if (linked === "linked") {
+      domain.push(isNotNull(feedbucketSubmissions.linkedTicketId));
+    } else if (linked === "unlinked") {
+      domain.push(isNull(feedbucketSubmissions.linkedTicketId));
+    }
+    if (from !== undefined) {
+      domain.push(gte(feedbucketSubmissions.createdAt, new Date(from)));
+    }
+    if (to !== undefined) {
+      domain.push(lt(feedbucketSubmissions.createdAt, new Date(to)));
     }
 
     return read.read(

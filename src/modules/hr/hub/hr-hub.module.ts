@@ -7,8 +7,13 @@ import { HrLifecycleModule } from "../lifecycle/hr-lifecycle.module";
 import { HrPerformanceModule } from "../performance/hr-performance.module";
 import { HrRecruitmentModule } from "../recruitment/hr-recruitment.module";
 import { HrTimeModule } from "../time/hr-time.module";
+import { HrWorkflowsModule } from "../workflows/hr-workflows.module";
+import { EmploymentFactsModule } from "../../directory/employment-facts.module";
+import { TimesheetsCoreModule } from "../../timesheets/core/timesheets-core.module";
 import { HrHubController } from "./hr-hub.controller";
 import { HrHubService } from "./hr-hub.service";
+import { ManagerHomeController } from "./manager-home.controller";
+import { ManagerHomeService } from "./manager-home.service";
 
 @Module({
   imports: [
@@ -20,8 +25,11 @@ import { HrHubService } from "./hr-hub.service";
     HrPerformanceModule,
     HrRecruitmentModule,
     HrTimeModule,
+    HrWorkflowsModule,
+    EmploymentFactsModule,
+    TimesheetsCoreModule,
   ],
-  controllers: [HrHubController],
-  providers: [HrHubService],
+  controllers: [HrHubController, ManagerHomeController],
+  providers: [HrHubService, ManagerHomeService],
 })
 export class HrHubModule {}

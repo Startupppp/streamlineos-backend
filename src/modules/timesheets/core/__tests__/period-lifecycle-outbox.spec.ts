@@ -2,7 +2,6 @@ import { PgDialect } from "drizzle-orm/pg-core";
 import { outboxEvents } from "../../../../db/schema/common/outbox";
 import {
   organizationMembers,
-  projects,
   timesheetPeriods,
   timesheetSettings,
   timesheets,
@@ -22,6 +21,8 @@ import type { EntriesService } from "../entries.service";
 import type { NotificationDispatchService } from "../../../notifications/notification-dispatch.service";
 import type { RateResolverService } from "../rate-resolver.service";
 import type { TimesheetsAuditService } from "../timesheets-audit.service";
+import type { TimesheetApprovalRoutingService } from "../approval-routing.service";
+import type { TimesheetRoutingDecision } from "../lib/approval-routing";
 
 jest.mock("../../../../common/organization/organization-actor", () => ({
   ...jest.requireActual("../../../../common/organization/organization-actor"),
@@ -260,9 +261,38 @@ const rateResolver = {
   resolveMany: () => Promise.resolve([]),
 } as unknown as RateResolverService;
 
-function periodsService(db: Db, notifications: NotificationDispatchService) {
+const ROUTED_TO_MANAGER: TimesheetRoutingDecision = {
+  kind: "routed",
+  approver: { userId: "usr-manager", membershipId: APPROVER_MEMBERSHIP, name: "Manager", email: "manager@example.test", designation: null },
+  queueUserIds: [],
+  route: {
+    source: "reporting_manager",
+    rung: "reporting_manager",
+    approverUserId: "usr-manager",
+    approverMembershipId: APPROVER_MEMBERSHIP,
+    assignedToUserId: "usr-manager",
+    delegation: null,
+    projectId: 9,
+    explanation: "Manager approves as reporting manager.",
+    slaHours: 48,
+    escalationRung: "queue",
+    escalatedFrom: null,
+  },
+  dueAt: new Date("2026-09-10T00:00:00.000Z"),
+};
+
+const UNOWNED: TimesheetRoutingDecision = {
+  kind: "unowned",
+  explanation: "Nobody can approve this timesheet.",
+};
+
+function makeRouting(decision: TimesheetRoutingDecision) {
+  return { resolve: () => Promise.resolve(decision) } as unknown as TimesheetApprovalRoutingService;
+}
+
+function periodsService(db: Db, notifications: NotificationDispatchService, decision: TimesheetRoutingDecision = ROUTED_TO_MANAGER) {
   const reader = new PeriodsReadService(db, access);
-  const submit = new PeriodsSubmitService(db, reader, entriesService, audit);
+  const submit = new PeriodsSubmitService(db, reader, entriesService, audit, makeRouting(decision), rateResolver);
   return new PeriodsService(db, reader, submit, audit, notifications);
 }
 
@@ -279,7 +309,6 @@ function submitScript(seq: number): Script {
     selects: [
       [timesheetPeriods, [[PERIOD_ROW]]],
       [timesheetSettings, [[]]],
-      [projects, [[{ managerMembershipId: APPROVER_MEMBERSHIP }]]],
     ],
     transitions: [[transitionRow("SUBMITTED", seq)]],
     entries: [{ id: 1, description: "Work", projectId: 9, ticketId: null }],
@@ -361,6 +390,8 @@ describe("TS-24 period lifecycle durable rows", () => {
       expect(periodUpdates()[0]).toMatchObject({
         status: "SUBMITTED",
         currentApproverMembershipId: APPROVER_MEMBERSHIP,
+        approvalRoute: ROUTED_TO_MANAGER.route,
+        approvalDueAt: ROUTED_TO_MANAGER.dueAt,
       });
       expect(notes).toHaveLength(1);
       expect(notes[0]).toMatchObject({
@@ -381,6 +412,30 @@ describe("TS-24 period lifecycle durable rows", () => {
       await service.submitPeriod(WORKER, PERIOD_ID);
 
       expect(outbox).toHaveLength(1);
+      expect(notes).toHaveLength(0);
+    });
+
+    it("resubmits a rejected period, clearing the rejection it is answering", async () => {
+      const script = submitScript(3);
+      script.selects[0] = [timesheetPeriods, [[{ ...PERIOD_ROW, status: "REJECTED", rejectedAt: new Date("2026-09-08T00:00:00.000Z"), rejectionReason: "Friday is missing" }]]];
+      const { db, periodUpdates } = makeDb(script, []);
+      const service = periodsService(db, makeNotifications([]));
+
+      await service.submitPeriod(WORKER, PERIOD_ID);
+
+      expect(periodUpdates()[0]).toMatchObject({ status: "SUBMITTED", rejectedAt: null, rejectionReason: null });
+    });
+
+    it("refuses the submit, writing no event and no notice, when nobody can own the approval", async () => {
+      const outbox: OutboxRow[] = [];
+      const notes: Notification[] = [];
+      const { db, ranTransaction } = makeDb(submitScript(1), outbox);
+      const service = periodsService(db, makeNotifications(notes), UNOWNED);
+
+      await expect(service.submitPeriod(WORKER, PERIOD_ID)).rejects.toThrow("Nobody can approve this timesheet.");
+
+      expect(ranTransaction()).toBe(false);
+      expect(outbox).toHaveLength(0);
       expect(notes).toHaveLength(0);
     });
   });

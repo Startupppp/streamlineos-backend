@@ -123,6 +123,14 @@
       },
       "evidence": "src/modules/ingress/adapters/crm-mailbox.controller.ts"
     },
+    "POST /public/build-forms/{publicToken}/submissions": {
+      "idempotency": {
+        "mode": "at-least-once-unfenced",
+        "key": null,
+        "replay": "Bare insert into form_submissions (and a ticket when the form's actions create one) inside one transaction, rate limited per client IP. A retry after a timeout creates a second submission. No server-side replay fence."
+      },
+      "evidence": "src/modules/build/forms/submissions.service.ts"
+    },
     "POST /csat/public/{publicToken}/responses": {
       "idempotency": {
         "mode": "at-least-once-unfenced",

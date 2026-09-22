@@ -21,6 +21,9 @@ import { LoanAdjustmentsController } from "./loan-adjustments.controller";
 import { LoanAdjustmentsService } from "./loan-adjustments.service";
 import { CommandCenterController } from "./command-center.controller";
 import { CommandCenterService } from "./command-center.service";
+import { PayrollReadinessController } from "./readiness.controller";
+import { PayrollReadinessService } from "./readiness.service";
+import { TimesheetsModule } from "../../timesheets/payroll/timesheets.module";
 import { PayrollCommandReceiptsService } from "../command-receipts.service";
 import { PayrollRunLockService } from "../run-lock.service";
 import { PayrollRunCalculationGuardsService } from "./payroll-run-calculation-guards.service";
@@ -35,7 +38,7 @@ import { PayrollRunExportService } from "./payroll-export.service";
 import { PayrollRunExportWorkerService } from "./payroll-export-worker.service";
 
 @Module({
-  imports: [AccessModule, PayrollInsightsModule, PayrollEntitiesModule, DirectoryModule],
+  imports: [AccessModule, PayrollInsightsModule, PayrollEntitiesModule, DirectoryModule, TimesheetsModule],
   controllers: [
     RunsController,
     ProfilesController,
@@ -45,6 +48,7 @@ import { PayrollRunExportWorkerService } from "./payroll-export-worker.service";
     ExceptionsController,
     LoanAdjustmentsController,
     CommandCenterController,
+    PayrollReadinessController,
     PayrollExportController,
   ],
   providers: [
@@ -58,6 +62,7 @@ import { PayrollRunExportWorkerService } from "./payroll-export-worker.service";
     ExceptionsService,
     LoanAdjustmentsService,
     CommandCenterService,
+    PayrollReadinessService,
     PayrollCommandReceiptsService,
     PayrollRunLockService,
     PayrollRunCalculationGuardsService,

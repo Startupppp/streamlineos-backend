@@ -143,10 +143,6 @@ function isOutOfScopeDir(name) {
  *             stale-verdict check deletes the entry the moment they go.
  */
 const FINDING_VERDICTS = new Map([
-  // ---- src/modules/ai/core/services ----------------------------------------
-  ["src/modules/ai/core/services/crm-brief-loaders.ts:loadLeadProfile", { verdict: "REMOVE", reason: "orphaned by `1cc7ded8` (\"stream the live meeting-prep surface and retire the dead CRM duplicate\"), which deleted its only production caller. The single remaining reference is a key in the `jest.mock(\"./crm-brief-loaders\")` factory in `crm-meeting-brief.isolation.spec.ts`, which is not an import. It reads `leads` through the party seam, so removal belongs to the CRM/leads lane that orphaned it — CRM is excluded from this release's dead-code scope" }],
-
-  // ---- src/modules/ai/core/dto ---------------------------------------------
   // Surfaced by fixing the module graph, not by new code: this finding was
   // previously RETAINED-BY-CONTRACT on the strength of a controller inside
   // `.claude/worktrees/bold-napier-7a4a41/`, another agent's checkout. With
@@ -177,7 +173,6 @@ const FINDING_VERDICTS = new Map([
   // ---- src/modules/support/kb-gap/dto -------------------------------------
   ["src/modules/support/kb-gap/dto/support-kb-gap-response.schemas.ts:supportKnowledgeGapRowSchema|dismissGapResponseSchema", { verdict: "KEEP", reason: "not a duplicate implementation — the second is a one-line alias of the first, reported because two exported names bind one value. `dismissGapResponseSchema` is consumed at `support-kb-gap.controller.ts:97` via `@ResponseSchema`; the canonical name is the base row shape used internally. Collapsing them would merge the row model with the dismiss-action contract. (Line shifted 2026-09-11 when C7 moved this controller's inline `patchSchema` request guard to `dto/support-kb-gap.schemas.ts` as `dismissGapPatchSchema`.)" }],
 
-  // ---- src/modules/dashboard/dto ------------------------------------------
   // teamAvailabilitySchema|teamAttendanceSchema entry removed 2026-09-19: knip
   // no longer reports the pair (found live importers), so the verdict was stale.
 
@@ -201,24 +196,15 @@ const FINDING_VERDICTS = new Map([
   ["src/modules/billing/core/plan-pricing.ts:currencyForCountry", { verdict: "WIRE", reason: "reported unused only because its one importer is `billing-platform-pricing.ts`, which the graph calls dead — see the `file:` verdict above. Its siblings in the same file are live (`priceList`/`annualPrice` from `public/pricing.service.ts:8`, `priceFor` from the same dead pricing pair). It goes live in the same change that wires `billablePrice` into `BillingPaymentActivation.createOrder`; nothing else should grow a second country-to-currency rule beside it" }],
 
   // ---- src/common/tenant — region-aware creation seam ----------------------
-  ["src/common/tenant/index.ts:withNewOrgInRegion", { verdict: "KEEP", reason: "the barrel re-export is itself the enumerated arrangement. `cross-region.ts:70-73` lists `src/common/tenant/index.ts` as a CROSS_REGION_OPERATION with the reason \"Barrel. Re-exports the primitive; performs no operation itself\", and `cross-region.spec.ts` asserts the enumeration in BOTH directions — an unlisted file that names a region fails, and a listed file that no longer names one fails as a stale entry. Removing this one name would therefore make `cross-region.spec.ts` red, and the accompanying edit to `cross-region.ts` would delete a documented entry from the list that keeps ~800 service files from reaching another region" }],
   ["src/common/tenant/run-in-tenant-transaction.ts:runInNewOrgTransaction", { verdict: "WIRE", reason: "the missing caller is `bootstrapCellOrganization` (modules/organization/core/bootstrap-cell-organization.ts:52), the one production path that INSERTs an `organizations` row. It already receives `input.region` and then opens the transaction with `runInNewTenantTransaction(db, orgId, ...)`, which resolves the region by looking the organisation up — the exact case this function's doc (run-in-tenant-transaction.ts:114-140) says fails: for the transaction writing the organisation's own row there is nothing to read, so `regionForOrg` raises \"has no region\" on any deployment with a live registry. Its previous caller, `AuthService.register`, was dropped on main by `7c0094080` (\"drop unproven registration\"), which is why it is consumerless rather than new. NOT swapped here: it is the org-creation seam, the swap needs an entry added to `CROSS_REGION_OPERATIONS` (bootstrap-cell-organization.ts is not listed) and the failure it fixes only reproduces on a multi-region registry this checkout cannot exercise. Owner: organization/region" }],
-
-  // ---- src/modules/public --------------------------------------------------
-  ["src/modules/public/waitlist-admission.ts:WaitlistStatus", { verdict: "WIRE", reason: "the four legal values of `platform_waitlist.status`, which is a plain `text` column (db/schema/common/platform.ts:58) with no pgEnum behind it. The missing consumers are in the same module: `AdmissionCandidate.status` is declared `string` (waitlist-admission.ts:24) and `waitlist-admission.service.ts:111/168/198` write `\"INVITED\"` / `\"CLAIMED\"` as bare literals, so nothing today stops a fifth value being written and read back past `mayAdmit`. Adopting it needs a narrowing parse where the row is read, because the column type is `string`; that is the change, and it belongs with whoever owns the waitlist admission flow rather than with a dead-code sweep" }],
 
   // ---- src/modules/timesheets/core/dto -------------------------------------
   ["src/modules/timesheets/core/dto/status.schemas.ts:timesheetPayPeriodSchema", { verdict: "WIRE", reason: "the only one of the ten sibling enum schemas in this file with no consumer, and the reason is that its feature is unwired rather than that the schema is redundant: `timesheet_settings.pay_period` is a live NOT NULL column defaulting to MONTHLY (db/schema/timesheets/settings.ts:80) that no code reads and no DTO admits. The missing caller is `updateCoreSettingsSchema` in `dto/settings.schemas.ts`, which is exactly the failure its own comment at :36-39 records for `autoDraftFromAttendance`: \"a policy flag missing from the DTO is a flag nobody can turn on\". Deliberately NOT added yet, because nothing reads the column either — admitting it first would ship a setting with no behaviour behind it. Owner: timesheets" }],
 
-  // ---- src/modules/deals — excluded territory ------------------------------
   // Type re-exports the merge left behind; every consumer imports from the
   // owning `*.types.ts`. Confirmed dead, but `src/modules/deals/**` belongs to
   // another workstream this session must not edit, so they are debt rather than
   // a deletion here.
-  ["src/modules/deals/deals-analytics.service.ts:ForecastMonth", { verdict: "REMOVE", reason: "a pass-through re-export at deals-analytics.service.ts:20 of a type whose only consumers — `lib/forecast-summary.ts:7` and `deals-forecast.types.ts:24` — import it from `deals-forecast.types`. `DealsViewScope` and `ForecastSummary` on the same line are live, so only this name goes. Deferred: `src/modules/deals/**` is owned by the Deals workstream this session is barred from editing" }],
-  ["src/modules/deals/deals-forecast.service.ts:ForecastMonth", { verdict: "REMOVE", reason: "the second hop of the same chain — deals-forecast.service.ts:22 re-exports it from `deals-forecast.types`, and nothing imports the name from here. Deferred for the same reason: `src/modules/deals/**` is another workstream's territory" }],
-  ["src/modules/deals/forecast/forecast-training.service.ts:TrainingAccepted", { verdict: "REMOVE", reason: "re-exported at forecast-training.service.ts:34 from `forecast-training.types`, where it is already live inside the `TrainingAttempt` union at :31. No consumer names it through the service. Deferred: Deals territory" }],
-  ["src/modules/deals/forecast/forecast-training.service.ts:TrainingRejected", { verdict: "REMOVE", reason: "the sibling of the entry above, re-exported at forecast-training.service.ts:36 and consumed only through `TrainingAttempt` in `forecast-training.types.ts:31`. Deferred: Deals territory" }],
 
   // ---- src/modules/lifecycle ----------------------------------------------
   ["src/modules/lifecycle/renewal-triggers.ts:RENEWAL_LEAD_DAYS|EXPANSION_QUIET_BEFORE_RENEWAL_DAYS", { verdict: "KEEP", reason: "not a redundant alias — a deliberate DERIVATION, and both names are live. `RENEWAL_LEAD_DAYS` is read at renewal-triggers.ts:210/:228, by `lib/lifecycle-trigger-candidates.ts:86` and by `renewal-triggers.spec.ts:302`; `EXPANSION_QUIET_BEFORE_RENEWAL_DAYS` is read at renewal-triggers.ts:306. It is written `= RENEWAL_LEAD_DAYS` rather than as a number of its own precisely so the expansion quiet window and the renewal lead window cannot drift into overlapping or leaving a gap (the argument is at :92-94). knip reports the pair because two exported names bind one value; collapsing them to a literal would reintroduce exactly the drift the derivation prevents" }],
@@ -226,26 +212,12 @@ const FINDING_VERDICTS = new Map([
   // ---- src/modules/commission/dto -----------------------------------------
   ["src/modules/commission/dto/commission-response.schemas.ts:commissionEarningSchema|approveCommissionEarningResponseSchema", { verdict: "KEEP", reason: "not a duplicate implementation — the second is a one-line alias of the first at commission-response.schemas.ts:137, reported because two exported names bind one value. Both are live: `approveCommissionEarningResponseSchema` is the `@ResponseSchema` of the approve route at `commission.controller.ts:239`, while the canonical name is the row shape composed internally at :131/:135 and imported by `commission-accrual-response.schemas.ts:3`. Collapsing them would move a per-route wire contract into a shared constant, the same argument as the nine alias pairs above" }],
 
-  // ---- src/modules/ai/core/confirm-actions — barrel re-exports -------------
   // The index barrel re-exports these names from the internal types file so
   // external consumers of the module can import from the barrel rather than
   // knowing the internal file layout. Internal sibling files import from
   // `./confirmable-action.types` directly (standard sibling-file pattern), so
   // knip sees no consumer of the barrel names. All four are the public API
   // surface of the confirm-actions module.
-  ["src/modules/ai/core/confirm-actions/index.ts:defineConfirmableAction", { verdict: "KEEP", reason: "barrel re-export of `defineConfirmableAction` from `./confirmable-action.types`, establishing the public API for external consumers of the confirm-actions module. Internal sibling files import from the types file directly (sibling-file pattern), which is why knip finds no importer of the barrel name; a consumer outside `confirm-actions/` must import through the barrel to remain stable against internal refactors." }],
-  ["src/modules/ai/core/confirm-actions/index.ts:ConfirmableActionContext", { verdict: "KEEP", reason: "barrel re-export of the `ConfirmableActionContext` interface from `./confirmable-action.types`, part of the same public API surface as `defineConfirmableAction` above. A service that executes a confirmable action receives this type as the first argument of the `execute` function and must be able to name it without reaching into the internal types file." }],
-  ["src/modules/ai/core/confirm-actions/index.ts:ConfirmableActionOutcome", { verdict: "KEEP", reason: "barrel re-export of the `ConfirmableActionOutcome` interface from `./confirmable-action.types`. A caller that processes the result of a confirmable action's `execute` call — to format a success message, log the outcome, or branch on `ok` — must be able to name this type without importing from the internal file." }],
-  ["src/modules/ai/core/confirm-actions/index.ts:ConfirmableActionSpec", { verdict: "KEEP", reason: "barrel re-export of the `ConfirmableActionSpec<TPayload, TServices>` generic interface from `./confirmable-action.types`. An external consumer implementing a new confirmable action by composing `defineConfirmableAction` would type the spec argument with this interface." }],
-
-  // ---- src/common/impersonation — write-side of AsyncLocalStorage ----------
-  ["src/common/impersonation/impersonation-context.ts:runWithImpersonationContext", { verdict: "KEEP", reason: "called by `ImpersonationContextInterceptor.intercept` (common/impersonation/impersonation-context.interceptor.ts) which wraps every impersonated HTTP request in the AsyncLocalStorage context so that `getImpersonationContext()` in `audit.service.ts:200` returns the real actor for audit attribution." }],
-
-  // ---- src/modules/deals/dto — mutation schema never wired -----------------
-  ["src/modules/deals/dto/deals-response.schemas.ts:dealStakeholderMutatedSchema", { verdict: "REMOVE", reason: "declared at deals-response.schemas.ts:202 but never referenced in any controller or service. `DealsStakeholdersController` uses `dealStakeholderSchema` (which carries the nested `contact` object) for all three endpoints — list, get and patch — rather than this leaner schema without the contact. The schema is genuinely dead: no `@ResponseSchema`, no `applyContract` call, no import anywhere. Deferred: `src/modules/deals/**` is owned by the Deals workstream." }],
-
-  // ---- src/modules/impersonation/dto — empty body schema never wired -------
-  ["src/modules/impersonation/dto/impersonation.schemas.ts:stopImpersonationSchema", { verdict: "REMOVE", reason: "`z.object({})` declared at impersonation.schemas.ts:7 but never referenced. The stop-impersonation endpoint at `impersonation.controller.ts:48` validates only params (`impersonationSessionIdParam`) — no request body. The schema was likely created speculatively alongside `startImpersonationSchema` but never wired via `@Validate({ body: stopImpersonationSchema })`. Safe to delete: the only occurrence is the declaration itself." }],
 
   // ---- src/modules/chat — companion type alias for presence status enum ----
   ["src/modules/chat/chat-presence-status.ts:PresenceStatus", { verdict: "KEEP", reason: "companion type alias for `PRESENCE_STATUSES`, which IS consumed at `dto/chat.schemas.ts:93` via `z.enum(PRESENCE_STATUSES)`. The inferred type of that schema IS `PresenceStatus`, so service and handler methods that accept or return a presence status value can name the type rather than re-deriving through `(typeof PRESENCE_STATUSES)[number]`. The knip inferred-type classifier only recognises `export type T = z.infer<typeof schema>` patterns — this `(typeof PRESENCE_STATUSES)[number]` derivation is semantically equivalent but not recognised, which is why the type appears unclassified rather than RETAINED-BY-CONTRACT." }],
@@ -629,7 +601,6 @@ function runSelfTest() {
     assert(builtWalked === expectedWalked && expectedWalked >= 5,
       `(q2) the walker must report how many source files it handed the parser — got ${builtWalked}, walkSource yields ${expectedWalked}. SCAN_FLOOR.graphCoverage is measured against this number, so a counter that never moves turns the coverage floor into a no-op`);
 
-    // ---- agent-worktree contamination ------------------------------------
     // Both halves of the graph read the same walker, so both are asserted. The
     // one-line `.claude` exclusion regresses silently without these: the gate
     // still exits 0, it just starts believing another agent's checkout.

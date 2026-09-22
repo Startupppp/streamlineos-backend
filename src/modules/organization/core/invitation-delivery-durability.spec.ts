@@ -49,7 +49,7 @@ function neverSuppressed(): EmailSuppressionService {
 function makeOutbox(
   provider: EmailDispatcher,
   sink: RecordedInsert[],
-): { outbox: EmailOutboxService; email: EmailService; ambientTx: TenantTx } {
+): { outbox: EmailOutboxService; email: EmailService; ambientTx: TenantTx; poolTx: TenantTx } {
   const poolHandle = makeInsertRecorder("pool", sink);
   const ambientHandle = makeInsertRecorder("ambient-tx", sink);
   const db = createTenantAwareDb(
@@ -59,7 +59,7 @@ function makeOutbox(
   jest.spyOn(outbox["logger"], "warn").mockImplementation(() => undefined);
   jest.spyOn(outbox["logger"], "error").mockImplementation(() => undefined);
   const email = new EmailService(outbox, provider as unknown as EmailProviderService);
-  return { outbox, email, ambientTx: ambientHandle as unknown as TenantTx };
+  return { outbox, email, ambientTx: ambientHandle as unknown as TenantTx, poolTx: poolHandle as unknown as TenantTx };
 }
 
 function withAmbientTransaction<T>(
@@ -77,7 +77,7 @@ describe("invitation delivery durability — the enqueue path", () => {
   it("writes the queued email through the request transaction, so a rolled-back invitation takes it with it", async () => {
     const sink: RecordedInsert[] = [];
     const dispatch = jest.fn(() => Promise.resolve());
-    const { email, ambientTx } = makeOutbox(
+    const { email, ambientTx, poolTx } = makeOutbox(
       { sendEmailOnceDirect: dispatch, getEmailProvider: () => "resend" } as unknown as EmailDispatcher,
       sink,
     );
@@ -90,7 +90,9 @@ describe("invitation delivery durability — the enqueue path", () => {
     expect(sink[0]?.handle).toBe("ambient-tx");
     expect(sink.some((row) => row.handle === "pool")).toBe(false);
 
-    await email.queueInvitationEmail(INVITEE, "tok", ORG_NAME);
+    await withAmbientTransaction(poolTx, [], () =>
+      email.queueInvitationEmail(INVITEE, "tok", ORG_NAME),
+    );
     expect(sink[1]?.handle).toBe("pool");
   });
 

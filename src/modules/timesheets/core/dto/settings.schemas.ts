@@ -1,7 +1,11 @@
 import { z } from "zod";
 import { pageSizeField } from "../../../../common/pagination/list-query.schema";
 import { reminderRulesSchema } from "./reminder-rules.schemas";
-import { timesheetApprovalModeSchema, timesheetRoundingRuleSchema } from "./status.schemas";
+import {
+  timesheetApproverSourceSchema,
+  timesheetConfigurableApprovalModeSchema,
+  timesheetRoundingRuleSchema,
+} from "./status.schemas";
 
 export const storedRequiredFieldsSchema = z.array(z.string()).catch([]);
 
@@ -17,7 +21,8 @@ export const updateCoreSettingsSchema = z.object({
   allowOverlappingEntries: z.boolean().optional(),
   allowBackdatedEntries: z.boolean().optional(),
   backdateLimitDays: z.number().int().positive().optional().nullable(),
-  approvalMode: timesheetApprovalModeSchema.optional(),
+  approvalMode: timesheetConfigurableApprovalModeSchema.optional(),
+  approverSource: timesheetApproverSourceSchema.optional(),
   clientApprovalEnabled: z.boolean().optional(),
   lockAfterApproval: z.boolean().optional(),
   lockAfterInvoice: z.boolean().optional(),

@@ -74,6 +74,7 @@ async function expectBadGateway(name: string, call: () => Promise<unknown>): Pro
     if (error instanceof BadGatewayException) return;
     throw new Error(
       `${name}: expected BadGatewayException, got ${error instanceof Error ? `${error.constructor.name}: ${error.message}` : String(error)}`,
+      { cause: error }
     );
   }
   throw new Error(`${name}: the call SUCCEEDED; it was supposed to fail`);

@@ -11,13 +11,19 @@ import type { Db } from "../../../db/drizzle.module";
 import { AI_FEATURE_COSTS } from "../../ai/core/billing/ai-cost-catalog";
 import { primeRelocationTrafficTracker } from "../../../common/relocation/relocation-traffic-tracker";
 import { withDelegatingTransaction } from "../../../test/delegating-transaction";
+import { tickets } from "../../../db/schema/build/tasks";
 
 const ORG_ID = "org-1";
 const USER_ID = "user-1";
 const MEMBERSHIP_ID = 42;
 const TICKET_ID = 99;
 
-const ticketRow = {
+type TicketDraftSource = Pick<
+  typeof tickets.$inferSelect,
+  "id" | "title" | "description" | "status" | "priority" | "type"
+>;
+
+const ticketRow: TicketDraftSource = {
   id: TICKET_ID,
   title: "Fix login timeout",
   description: "Users are getting logged out",

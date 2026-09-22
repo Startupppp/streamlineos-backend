@@ -10,6 +10,7 @@ import { HttpException } from "@nestjs/common";
 import { logger } from "../../../../common/logger/logger.service";
 import { getTenantContext } from "../../../../common/tenant/tenant-context";
 import { resolveAiStreamModel } from "./ai-stream-model";
+import { resolveGatewayTier } from "../routing/model-routing";
 import { classifyLlmError, resolveLlmRetryPolicy } from "../providers/llm-retry";
 import { redactSensitiveData } from "../redaction.util";
 import { getReserveEstimateMilli } from "../billing/ai-cost-catalog";
@@ -205,7 +206,7 @@ export class AiGatewayStreamHelper {
     let streamCompleted = false;
 
     try {
-      const selection = resolveAiStreamModel(opts.tier);
+      const selection = resolveAiStreamModel(resolveGatewayTier(opts.feature, opts.tier));
       const model = opts.model ?? selection.model;
       const modelId = opts.modelId ?? selection.modelId;
 

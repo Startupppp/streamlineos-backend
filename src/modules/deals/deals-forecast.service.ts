@@ -19,7 +19,7 @@ import type { DealsViewScope, ForecastSummary } from "./deals-forecast.types";
 import * as forecastSummary from "./lib/forecast-summary";
 import { orgWideDealsRead } from "./deals-scope";
 
-export type { DealsViewScope, ForecastMonth, ForecastSummary } from "./deals-forecast.types";
+export type { DealsViewScope, ForecastSummary } from "./deals-forecast.types";
 export { visibleDeals } from "./lib/forecast-summary";
 
 @Injectable()

@@ -14,8 +14,6 @@
  * than trusting that a token in hand implies a token that should work.
  */
 
-export type WaitlistStatus = "PENDING" | "INVITED" | "CLAIMED" | "DECLINED";
-
 /** Seven days, matching `invitations`. Long enough for a holiday, short enough to expire. */
 export const ADMISSION_TOKEN_DAYS = 7;
 

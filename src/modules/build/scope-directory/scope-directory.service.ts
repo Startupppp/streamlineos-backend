@@ -121,7 +121,7 @@ export class ScopeDirectoryService {
       }
       const row = projectById.get(Number(entry.rawId));
       if (!row) continue;
-      const ws = workspaceById.get(row.pmWorkspaceId);
+      const ws = row.pmWorkspaceId !== null ? workspaceById.get(row.pmWorkspaceId) : null;
       const prod = row.managedProductId !== null ? productById.get(row.managedProductId) : null;
       let parentPath: string | null = null;
       if (ws && prod) parentPath = `${ws.name} > ${prod.name}`;
@@ -144,7 +144,7 @@ export class ScopeDirectoryService {
 
   private async fetchMissingAncestors(
     orgId: string,
-    projectRows: ReadonlyArray<{ pmWorkspaceId: string; managedProductId: number | null }>,
+    projectRows: ReadonlyArray<{ pmWorkspaceId: string | null; managedProductId: number | null }>,
     productById: Map<number, ProductRow>,
     workspaceById: Map<string, WorkspaceRow>,
   ): Promise<void> {
@@ -179,7 +179,7 @@ export class ScopeDirectoryService {
         [
           ...[...productById.values()].map((r) => r.pmWorkspaceId),
           ...projectRows.map((r) => r.pmWorkspaceId),
-        ].filter((id) => !workspaceById.has(id)),
+        ].filter((id): id is string => id !== null && !workspaceById.has(id)),
       ),
     ];
     if (missingWorkspaceIds.length) {

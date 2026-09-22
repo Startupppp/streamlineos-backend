@@ -9,7 +9,7 @@ import { inv3plConnections } from "../../../db/schema";
 import { encryptSecret, maskSecretHint } from "../../../common/security/secret-encryption.util";
 import type { Create3plConnectionInput, Update3plConnectionInput } from "./dto/channels.schemas";
 
-function sanitizeConnectionRow<T extends Record<string, any>>(row: T) {
+function sanitizeConnectionRow<T extends Record<string, unknown>>(row: T) {
   const { apiCredentialEncrypted, webhookSecretEncrypted, ...safe } = row;
   return safe;
 }

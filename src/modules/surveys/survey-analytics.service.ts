@@ -10,6 +10,7 @@ import {
 const SURVEY_ANALYTICS_ANSWERS_CAP = 50_000;
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
+import { ANONYMITY_MIN_RESPONSES, isBelowAnonymityThreshold } from "../../common/privacy/anonymity-threshold";
 
 @Injectable()
 export class SurveyAnalyticsService {
@@ -52,6 +53,20 @@ export class SurveyAnalyticsService {
 
     if (questions.length === 0) return [];
 
+    const [anonymous] = await this.db
+      .select({ total: count() })
+      .from(surveyResponseSessions)
+      .where(
+        and(
+          eq(surveyResponseSessions.orgId, orgId),
+          eq(surveyResponseSessions.surveyId, surveyId),
+          eq(surveyResponseSessions.status, "submitted"),
+          eq(surveyResponseSessions.anonymous, true),
+        ),
+      );
+    const anonymousResponses = anonymous?.total ?? 0;
+    const suppressed = anonymousResponses > 0 && isBelowAnonymityThreshold(anonymousResponses);
+
     const questionIds = questions.map((q) => q.id);
     const allAnswers = await this.db.query.surveyAnswers.findMany({
       where: and(eq(surveyAnswers.orgId, orgId), inArray(surveyAnswers.questionId, questionIds)),
@@ -67,6 +82,19 @@ export class SurveyAnalyticsService {
 
     return questions.map((question) => {
       const answers = answersByQuestion.get(question.id) ?? [];
+
+      if (suppressed)
+        return {
+          questionId: question.id,
+          type: question.type,
+          title: question.title,
+          responseCount: answers.length,
+          average: null,
+          choiceDistribution: [],
+          textResponses: undefined,
+          minResponses: ANONYMITY_MIN_RESPONSES,
+          suppressed,
+        };
 
       const choiceDistribution: Record<number, number> = {};
       for (const answer of answers) {
@@ -92,6 +120,8 @@ export class SurveyAnalyticsService {
           count: choiceDistribution[choice.id] ?? 0,
         })),
         textResponses: question.type === "short_text" || question.type === "long_text" ? answers.map((a) => a.answerText).filter(Boolean) : undefined,
+        minResponses: ANONYMITY_MIN_RESPONSES,
+        suppressed,
       };
     });
   }

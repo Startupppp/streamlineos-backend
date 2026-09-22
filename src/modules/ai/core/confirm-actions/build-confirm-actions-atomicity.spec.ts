@@ -73,18 +73,17 @@ describe("ticket.updateStatus confirmable action — atomicity contract", () => 
     expect(mockAddComment).toHaveBeenCalledTimes(1);
   });
 
-  it("updateTicket is not called when execute is rolled back by addComment failure inside the same transaction", async () => {
-    mockUpdateTicket.mockResolvedValue({});
-    mockAddComment.mockRejectedValue(new Error("comment write failed"));
+  it("neither write escapes the transaction callback, so a transaction that never opens performs no partial status update", async () => {
+    mockedRunInTenantTransaction.mockImplementation(() => Promise.resolve());
     const action = findConfirmableAction("ticket.updateStatus");
 
-    await expect(
-      action?.execute(
-        { ticketId: 41, status: "IN_REVIEW", reason: "Reason" },
-        { actor: mockActor, db, moduleRef, proposalId: 1 },
-      ),
-    ).rejects.toThrow("comment write failed");
+    await action?.execute(
+      { ticketId: 41, status: "IN_REVIEW", reason: "Ready for QA" },
+      { actor: mockActor, db, moduleRef, proposalId: 1 },
+    );
 
     expect(mockedRunInTenantTransaction).toHaveBeenCalledTimes(1);
+    expect(mockUpdateTicket).not.toHaveBeenCalled();
+    expect(mockAddComment).not.toHaveBeenCalled();
   });
 });

@@ -28,7 +28,7 @@ async function createService(ticket: Record<string, unknown>) {
 it("rejects a future client version before it can bypass validation against the read version", async () => {
   const { module, service, transaction } = await createService({ projectId: 1, version: 1 });
   await expect(service.updateTicket(
-    systemActor("integrations.git.webhook", "org-a"), 7, { version: 2, status: "DONE" },
+    systemActor("integrations.git.webhook", "org-a"), 1, 7, { version: 2, status: "DONE" },
   )).rejects.toThrow(ProjectsTicketConflictException);
   expect(transaction).not.toHaveBeenCalled();
   await module.close();
@@ -45,6 +45,7 @@ it.each([
   });
   await expect(service.updateTicket(
     systemActor("integrations.git.webhook", "org-a"),
+    1,
     7,
     update,
   )).rejects.toThrow("Due date must be on or after start date");

@@ -6,7 +6,12 @@ import {
   ALREADY_EMPLOYEE_MESSAGE,
   ATTACH_CONFIRMATION_REQUIRED_MESSAGE,
 } from "./employee-admission-status";
-import { buildService, makeHarness } from "./employee-onboarding.spec-fixtures";
+import { alreadyMemberInviteReason } from "./employee-onboarding.service";
+import {
+  HARNESS_ORGANIZATION_NAME,
+  buildService,
+  makeHarness,
+} from "./employee-onboarding.spec-fixtures";
 
 const ORG_ID = "org-attach";
 const ACTOR = { orgId: ORG_ID, userId: "actor-1", isOrgOwner: true };
@@ -121,7 +126,11 @@ describe("attach employment to somebody who already exists — P4 acceptance", (
 
       await expect(
         service.onboardEmployee(ACTOR as never, BODY as never),
-      ).resolves.toEqual({ success: true, userId: EXISTING_USER_ID });
+      ).resolves.toEqual({
+        success: true,
+        userId: EXISTING_USER_ID,
+        invite: { sent: true, reason: null },
+      });
 
       expect(harness.updated.map((row) => row.table)).not.toContain("users");
       expect(harness.inserted.map((row) => row.table)).not.toContain("users");
@@ -145,13 +154,23 @@ describe("attach employment to somebody who already exists — P4 acceptance", (
       );
     });
 
-    it("mints no login for an account that already has one", async () => {
+    it("tells the existing account it was added to this organization, with a sign-in link, rather than a welcome", async () => {
       const harness = externalHarness(true);
-      const { service } = buildService(harness.db);
+      const { service, queueWelcomeEmail, queueMembershipAddedEmail } = buildService(harness.db);
 
       await service.onboardEmployee(ACTOR as never, BODY as never);
 
-      expect(harness.inserted.map((row) => row.table)).not.toContain("magic_link_tokens");
+      expect(harness.inserted.map((row) => row.table)).toContain("magic_link_tokens");
+      expect(queueWelcomeEmail).not.toHaveBeenCalled();
+      expect(queueMembershipAddedEmail).toHaveBeenCalledWith(
+        expect.objectContaining({
+          organizationId: ORG_ID,
+          recipientUserId: EXISTING_USER_ID,
+          email: BODY.email,
+          organizationName: HARNESS_ORGANIZATION_NAME,
+          signInUrl: expect.stringContaining("/magic-link?token="),
+        }),
+      );
     });
 
     it("refuses a globally suspended account instead of reactivating it", async () => {
@@ -209,7 +228,11 @@ describe("attach employment to somebody who already exists — P4 acceptance", (
           ...BODY,
           employeeId: "EMP-0001",
         } as never),
-      ).resolves.toEqual({ success: true, userId: EXISTING_USER_ID });
+      ).resolves.toEqual({
+        success: true,
+        userId: EXISTING_USER_ID,
+        invite: { sent: true, reason: null },
+      });
 
       expect(ensureFromUser).toHaveBeenCalledWith(
         ORG_ID,
@@ -238,7 +261,11 @@ describe("attach employment to somebody who already exists — P4 acceptance", (
 
       await expect(
         service.onboardEmployee(ACTOR as never, ATTACH_BODY as never),
-      ).resolves.toEqual({ success: true, userId: EXISTING_USER_ID });
+      ).resolves.toEqual({
+        success: true,
+        userId: EXISTING_USER_ID,
+        invite: { sent: false, reason: alreadyMemberInviteReason(HARNESS_ORGANIZATION_NAME) },
+      });
 
       expect(ensureFromUser).toHaveBeenCalledTimes(1);
       expect(ensureFromUser).toHaveBeenCalledWith(
@@ -264,6 +291,7 @@ describe("attach employment to somebody who already exists — P4 acceptance", (
       expect(written).not.toContain("organization_members");
       expect(written).not.toContain("users");
       expect(written).not.toContain("magic_link_tokens");
+      expect(written).not.toContain("email_outbox");
     });
 
     it("never rewrites the global users row", async () => {

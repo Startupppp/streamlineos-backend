@@ -12,7 +12,6 @@ export const createWfhSchema = z.object({
       return selected >= today;
     }, "WFH date cannot be in the past"),
   reason: z.string().max(1000, "Reason must be 1000 characters or fewer").optional(),
-  approverId: z.string().min(1, "Approver is required"),
 }).strict();
 
 export const updateWfhSchema = z.object({

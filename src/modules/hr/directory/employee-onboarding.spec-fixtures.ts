@@ -16,6 +16,12 @@ export interface Harness {
   deleted: string[];
 }
 
+export const HARNESS_ORGANIZATION_NAME = "Harness Organization";
+
+const SELECT_FALLBACK: Record<string, unknown[]> = {
+  organizations: [{ name: HARNESS_ORGANIZATION_NAME, currency: "INR" }],
+};
+
 function tableName(target: unknown): string {
   return getTableName(target as Table);
 }
@@ -46,7 +52,7 @@ export function makeHarness(script: Script): Harness {
     builder["offset"] = jest.fn(chain);
     builder["for"] = jest.fn(chain);
     const resolve = (): Promise<unknown[]> =>
-      Promise.resolve(selects.get(current)?.shift() ?? []);
+      Promise.resolve(selects.get(current)?.shift() ?? SELECT_FALLBACK[current] ?? []);
     builder["limit"] = jest.fn(resolve);
     builder["then"] = (onFulfilled: (value: unknown) => unknown) =>
       resolve().then(onFulfilled);
@@ -120,6 +126,9 @@ export interface Collaborators {
   ensureFromUser: jest.Mock;
   recordSeatEvents: jest.Mock;
   assertWithinLimit: jest.Mock;
+  queueWelcomeEmail: jest.Mock;
+  queueMembershipAddedEmail: jest.Mock;
+  logCritical: jest.Mock;
   service: EmployeeOnboardingService;
 }
 
@@ -129,6 +138,9 @@ export function buildService(db: Db): Collaborators {
   const ensureFromUser = jest
     .fn()
     .mockResolvedValue({ personId: 1, employmentId: 10, createdPerson: true, createdEmployment: true });
+  const queueWelcomeEmail = jest.fn().mockResolvedValue({ queued: true });
+  const queueMembershipAddedEmail = jest.fn().mockResolvedValue({ queued: true });
+  const logCritical = jest.fn().mockResolvedValue(undefined);
 
   const admission = new MembershipAdmissionService(
     { assertWithinLimit } as never,
@@ -143,8 +155,8 @@ export function buildService(db: Db): Collaborators {
       invalidateNamespace: jest.fn().mockResolvedValue(undefined),
       invalidateNamespaceForOrg: jest.fn().mockResolvedValue(undefined),
     } as never,
-    { logCritical: jest.fn().mockResolvedValue(undefined) } as never,
-    { sendWelcomeEmail: jest.fn().mockResolvedValue(undefined) } as never,
+    { logCritical } as never,
+    { queueWelcomeEmail, queueMembershipAddedEmail } as never,
     { runAutomationsForEvent: jest.fn().mockResolvedValue(undefined) } as never,
     { dispatch: jest.fn() } as never,
     { ensureFromUser } as never,
@@ -154,7 +166,16 @@ export function buildService(db: Db): Collaborators {
       membersWithPermission: jest.fn().mockResolvedValue([]),
     } as never,
     admission,
+    { checkManager: jest.fn().mockResolvedValue({ ok: true, managerEmploymentId: 5 }), assign: jest.fn().mockResolvedValue({ status: "written", employmentId: 10, managerEmploymentId: 5 }) } as never,
   );
 
-  return { service, ensureFromUser, recordSeatEvents, assertWithinLimit };
+  return {
+    service,
+    ensureFromUser,
+    recordSeatEvents,
+    assertWithinLimit,
+    queueWelcomeEmail,
+    queueMembershipAddedEmail,
+    logCritical,
+  };
 }

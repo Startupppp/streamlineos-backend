@@ -49,15 +49,18 @@ export class SessionsService {
         });
 
         if (!existing) {
-          await this.db.insert(userSessions).values({
-            id: currentSessionId,
-            userId,
-            userAgent: incoming,
-            ipAddress: ipAddress ?? null,
-            isRevoked: false,
-            lastActive: now,
-            expiresAt: addDays(now, 30),
-          });
+          await this.db
+            .insert(userSessions)
+            .values({
+              id: currentSessionId,
+              userId,
+              userAgent: incoming,
+              ipAddress: ipAddress ?? null,
+              isRevoked: false,
+              lastActive: now,
+              expiresAt: addDays(now, 30),
+            })
+            .onConflictDoNothing();
         } else {
           const storedIsApiClient = isApiClientUserAgent(existing.userAgent);
           const shouldOverwriteUa = !incomingIsApiClient || storedIsApiClient || existing.userAgent === null;
