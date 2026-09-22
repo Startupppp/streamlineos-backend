@@ -384,8 +384,8 @@ const REVIEWED = [
     blastRadius:
       "Intra-tenant, and narrower than the rest of this family: the row-derived access check means the caller must already hold rights on the ticket's true project. What breaks is the routing/404 contract, and any future project-scoped gate that trusts the URL.",
     evidence: [
-      { file: "src/modules/build/core/projects-tickets-update.service.ts", line: 179, anchor: /\.\.\.\(projectId === null \? \[\] : \[eq\(tickets\.projectId, projectId\)\]\),/, note: "bound to the URL project" },
-      { file: "src/modules/build/core/projects-tickets-update.service.ts", line: 179, anchor: /\.\.\.\(projectId === null \? \[\] : \[eq\(tickets\.projectId, projectId\)\]\),/, note: "bound to the URL project" },
+      { file: "src/modules/build/core/projects-tickets-update.service.ts", line: 196, anchor: /\.\.\.\(projectId === null \? \[\] : \[eq\(tickets\.projectId, projectId\)\]\),/, note: "bound to the URL project" },
+      { file: "src/modules/build/core/projects-tickets-update.service.ts", line: 196, anchor: /\.\.\.\(projectId === null \? \[\] : \[eq\(tickets\.projectId, projectId\)\]\),/, note: "bound to the URL project" },
     ],
   },
   {
@@ -452,7 +452,7 @@ const REVIEWED = [
       "POST /build/:projectId/tickets/:ticketId/time-entries. No @Param(\"projectId\"); the ticket is resolved by (id, orgId) and the access checks that follow use the ticket's own project.",
     blastRadius: "Intra-tenant; row-derived access check narrows it as with updateTicket.",
     evidence: [
-      { file: "src/modules/build/execution/timesheets.service.ts", line: 425, anchor: /eq\(tickets\.projectId, projectId\),/, note: "bound to the URL project" },
+      { file: "src/modules/build/execution/timesheets.service.ts", line: 424, anchor: /eq\(tickets\.projectId, projectId\),/, note: "bound to the URL project" },
     ],
   },
 

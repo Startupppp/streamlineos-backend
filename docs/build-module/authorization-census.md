@@ -350,8 +350,8 @@ Blast radius: Intra-tenant, and narrower than the rest of this family: the row-d
 
 Evidence:
 
-- `src/modules/build/core/projects-tickets-update.service.ts:179` — bound to the URL project
-- `src/modules/build/core/projects-tickets-update.service.ts:179` — bound to the URL project
+- `src/modules/build/core/projects-tickets-update.service.ts:196` — bound to the URL project
+- `src/modules/build/core/projects-tickets-update.service.ts:196` — bound to the URL project
 
 ### CLOSED — `DELETE /build/:projectId/tickets/:ticketId`
 
@@ -453,7 +453,7 @@ Blast radius: Intra-tenant; row-derived access check narrows it as with updateTi
 
 Evidence:
 
-- `src/modules/build/execution/timesheets.service.ts:425` — bound to the URL project
+- `src/modules/build/execution/timesheets.service.ts:424` — bound to the URL project
 
 ### CLOSED — `PATCH /build/:projectId/milestones/:milestoneId`
 
