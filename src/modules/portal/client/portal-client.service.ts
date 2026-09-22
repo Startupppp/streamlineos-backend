@@ -197,7 +197,20 @@ export class PortalClientService {
         : Promise.resolve([]),
     ]);
 
-    return { project, milestones, tasks: projectTasks, attachments, comments };
+    return {
+      project,
+      milestones,
+      tasks: projectTasks,
+      attachments,
+      comments,
+      capabilities: {
+        canViewMilestones: grant.canViewMilestones,
+        canViewTasks: grant.canViewTasks,
+        canViewAttachments: grant.canViewAttachments,
+        canViewComments: grant.canViewComments,
+        canSubmitChangeRequests: grant.canSubmitChangeRequests,
+      },
+    };
   }
 
   async submitChangeRequest(
@@ -236,10 +249,6 @@ export class PortalClientService {
           crNumber: nextNumber,
           title: input.title,
           description: input.description,
-          impact: input.impact,
-          estimateMinutes: input.estimateMinutes,
-          budgetImpactCents: input.budgetImpactCents,
-          timelineImpactDays: input.timelineImpactDays,
           status: "submitted",
           requestedById: null,
           createdBy: null,
