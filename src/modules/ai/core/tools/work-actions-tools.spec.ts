@@ -287,21 +287,21 @@ describe("WorkActionsTools — assignTicket", () => {
   });
 });
 
-describe("WorkActionsTools — moveTicketToSprint", () => {
+describe("WorkActionsTools — moveToCycle", () => {
   it("returns needs-confirmation and does not execute a write itself", async () => {
     const confirmation = makeConfirmation();
     const db = makeDbFluentChain([
       [{ id: 7, title: "Auth task" }],
-      [{ id: 3, name: "Sprint 3" }],
+      [{ id: 3, name: "Cycle 3" }],
     ]);
     const instance = new WorkActionsTools(db, confirmation);
-    const tool = findTool(instance.tools(), "moveTicketToSprint");
+    const tool = findTool(instance.tools(), "moveToCycle");
 
-    const outcome = await tool.run({ ticketId: 7, sprintName: "Sprint 3" }, makeCtx());
+    const outcome = await tool.run({ ticketId: 7, cycleName: "Cycle 3" }, makeCtx());
 
     expect(outcome.kind).toBe("needs-confirmation");
     expect(confirmation.propose).toHaveBeenCalledWith(
-      expect.objectContaining({ action: "ticket.moveToSprint" }),
+      expect.objectContaining({ action: "ticket.moveToCycle" }),
     );
   });
 });

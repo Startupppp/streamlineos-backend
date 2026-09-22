@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 export const burnupQuerySchema = z.object({
-  sprintId: z.string().regex(/^\d+$/).optional(),
+  cycleId: z.string().regex(/^\d+$/).optional(),
 }).strict();
 
 export const cfdQuerySchema = z.object({

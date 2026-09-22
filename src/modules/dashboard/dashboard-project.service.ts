@@ -1,6 +1,6 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { and, desc, eq, inArray, isNull, or, sql, type SQL } from "drizzle-orm";
-import { organizationMembers, projectMembers, projects, sprints, tickets } from "../../db/schema";
+import { cycles, organizationMembers, projectMembers, projects, tickets } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
@@ -132,19 +132,24 @@ export class DashboardProjectService {
     const projectIds = await this.resolveProjectIds(orgId, u.userId, isAll);
     if (projectIds.length === 0) return null;
 
-    const activeSprint = await this.db.query.sprints.findFirst({
-      where: and(
-        eq(sprints.orgId, orgId),
-        eq(sprints.status, "ACTIVE"),
-        inArray(sprints.projectId, projectIds),
-        isNull(sprints.deletedAt),
-      ),
-      with: {
-        project: { columns: { id: true, name: true } },
-      },
-    });
+    const [activeCycle] = await this.db
+      .select({
+        id: cycles.id,
+        name: cycles.name,
+        endDate: cycles.endDate,
+        projectId: cycles.projectId,
+        projectName: projects.name,
+      })
+      .from(cycles)
+      .innerJoin(projects, and(eq(projects.id, cycles.projectId), eq(projects.orgId, orgId)))
+      .where(and(
+        eq(cycles.orgId, orgId),
+        eq(cycles.status, "active"),
+        inArray(cycles.projectId, projectIds),
+      ))
+      .limit(1);
 
-    if (!activeSprint) return null;
+    if (!activeCycle) return null;
 
     const statsRows = await this.db
       .select({
@@ -158,7 +163,7 @@ export class DashboardProjectService {
       .where(
         and(
           eq(tickets.orgId, orgId),
-          eq(tickets.sprintId, activeSprint.id),
+          eq(tickets.cycleId, activeCycle.id),
           isNull(tickets.deletedAt),
         ),
       );
@@ -180,16 +185,16 @@ export class DashboardProjectService {
           : 0;
 
     const now = new Date();
-    const endDate = activeSprint.endDate ? new Date(activeSprint.endDate) : now;
+    const endDate = activeCycle.endDate ? new Date(activeCycle.endDate) : now;
     const daysRemaining = Math.ceil(
       (endDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24),
     );
 
     return {
-      id: activeSprint.id,
-      name: activeSprint.name,
-      projectName: activeSprint.project?.name || "Project",
-      projectId: activeSprint.project?.id,
+      id: activeCycle.id,
+      name: activeCycle.name,
+      projectName: activeCycle.projectName || "Project",
+      projectId: activeCycle.projectId,
       progress,
       daysRemaining,
       totalTickets,

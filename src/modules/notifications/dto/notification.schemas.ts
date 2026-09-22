@@ -10,6 +10,7 @@ export const listSchema = z.object({
   category: z.enum(CATEGORIES).optional(),
   priority: z.enum(PRIORITIES).optional(),
   sourceModule: z.string().optional(),
+  projectId: z.coerce.number().int().positive().optional(),
   search: z.string().min(1).max(200).optional(),
   limit: pageSizeField(20),
   cursor: z.coerce.number().optional(),

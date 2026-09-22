@@ -25,7 +25,6 @@ interface TicketSnapshot {
   status: string;
   priority: string;
   assigneeId: string | null;
-  sprintId: number | null;
   dueDate: string | null;
   points: number | null;
   type: string;
@@ -37,7 +36,6 @@ interface TicketChanges {
   status?: string;
   priority?: string;
   assigneeId?: string | null;
-  sprintId?: number | null;
   dueDate?: string | null;
   points?: number | null;
   type?: string;
@@ -209,16 +207,6 @@ export class ProjectsActivityService {
         to: changes.assigneeId
           ? (nameById.get(changes.assigneeId) ?? changes.assigneeId)
           : null,
-      });
-    }
-    if (
-      changes.sprintId !== undefined &&
-      normalize(changes.sprintId) !== normalize(before.sprintId)
-    ) {
-      entries.push({
-        action: "sprint_changed",
-        from: normalize(before.sprintId),
-        to: normalize(changes.sprintId),
       });
     }
     if (

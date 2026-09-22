@@ -54,6 +54,8 @@ const crColumns = {
   approvalOwnerMembershipId: changeRequests.approvalOwnerMembershipId,
   decisionComment: changeRequests.decisionComment,
   decidedAt: changeRequests.decidedAt,
+  releaseId: changeRequests.releaseId,
+  clientVisible: changeRequests.clientVisible,
   createdBy: changeRequests.createdBy,
   createdAt: changeRequests.createdAt,
   updatedAt: changeRequests.updatedAt,
@@ -75,8 +77,28 @@ export class ChangeRequestsService {
     const position = decodeIntegerCursor(query.cursor ?? null);
     const rows = await this.db
       .select({
-        ...crColumns,
+        id: changeRequests.id,
+        orgId: changeRequests.orgId,
+        projectId: changeRequests.projectId,
+        crNumber: changeRequests.crNumber,
+        title: changeRequests.title,
+        description: changeRequests.description,
+        impact: changeRequests.impact,
+        estimateMinutes: changeRequests.estimateMinutes,
+        budgetImpactCents: changeRequests.budgetImpactCents,
+        timelineImpactDays: changeRequests.timelineImpactDays,
+        status: changeRequests.status,
+        requestedById: changeRequests.requestedById,
+        approvalOwnerId: changeRequests.approvalOwnerId,
+        approvalOwnerMembershipId: changeRequests.approvalOwnerMembershipId,
+        decisionComment: changeRequests.decisionComment,
+        decidedAt: changeRequests.decidedAt,
+        releaseId: changeRequests.releaseId,
+        clientVisible: changeRequests.clientVisible,
+        createdBy: changeRequests.createdBy,
         createdAt: microsecondCursorValue(changeRequests.createdAt),
+        updatedAt: changeRequests.updatedAt,
+        deletedAt: changeRequests.deletedAt,
       })
       .from(changeRequests)
       .where(
@@ -91,6 +113,12 @@ export class ChangeRequestsService {
             : undefined,
           query.approverId !== undefined
             ? eq(changeRequests.approvalOwnerId, query.approverId)
+            : undefined,
+          query.releaseId !== undefined
+            ? eq(changeRequests.releaseId, query.releaseId)
+            : undefined,
+          query.clientVisible !== undefined
+            ? eq(changeRequests.clientVisible, query.clientVisible)
             : undefined,
           query.q !== undefined
             ? ilike(changeRequests.title, `%${query.q}%`)
@@ -157,6 +185,8 @@ export class ChangeRequestsService {
           estimateMinutes: input.estimateMinutes,
           budgetImpactCents: input.budgetImpactCents,
           timelineImpactDays: input.timelineImpactDays,
+          releaseId: input.releaseId,
+          clientVisible: input.clientVisible ?? false,
           status: "submitted",
           requestedById: userId,
           createdBy: userId,
@@ -237,6 +267,10 @@ export class ChangeRequestsService {
         }),
         ...(input.decisionComment !== undefined && {
           decisionComment: input.decisionComment,
+        }),
+        ...(input.releaseId !== undefined && { releaseId: input.releaseId }),
+        ...(input.clientVisible !== undefined && {
+          clientVisible: input.clientVisible,
         }),
         ...(isNewDecision && {
           decidedAt: new Date(),

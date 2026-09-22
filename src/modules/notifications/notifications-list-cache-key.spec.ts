@@ -83,6 +83,7 @@ describe("notifications list cache key", () => {
       ["limit", { limit: 50 }],
       ["cursor", { cursor: 4242 }],
       ["unreadOnly", { unreadOnly: true }],
+      ["projectId", { projectId: 7 }],
     ];
     expect(probes.map(([field]) => field).sort()).toEqual(Object.keys(listSchema.shape).sort());
 

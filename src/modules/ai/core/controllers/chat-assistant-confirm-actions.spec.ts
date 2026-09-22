@@ -32,7 +32,7 @@ const WORK_PROVIDER_ACTIONS = [
   "crm.createLead",
   "crm.logActivity",
   "ticket.assign",
-  "ticket.moveToSprint",
+  "ticket.moveToCycle",
   "calendar.createEvent",
   "mail.reply",
 ] as const;

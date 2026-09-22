@@ -1,7 +1,7 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { z } from "zod";
 import { and, eq, ilike, isNull } from "drizzle-orm";
-import { sprints, tickets } from "../../../../db/schema";
+import { cycles, tickets } from "../../../../db/schema";
 import { DRIZZLE } from "../../../../db/drizzle.constants";
 import { type Db } from "../../../../db/drizzle.module";
 import { AiConfirmationService } from "../../confirmation/ai-confirmation.service";
@@ -186,15 +186,15 @@ export class WorkActionsTools implements AskOsToolProvider {
       }),
 
       defineTool({
-        key: "moveTicketToSprint",
-        description: "Move a ticket into a sprint by sprint name.",
+        key: "moveToCycle",
+        description: "Move a ticket into a cycle by cycle name.",
         input: z.object({
           ticketId: z.number().int().positive().describe("Numeric ticket ID"),
-          sprintName: z.string().min(1).describe("Name (or partial) of the sprint to move the ticket into"),
+          cycleName: z.string().min(1).describe("Name (or partial) of the cycle to move the ticket into"),
         }),
-        confirms: "ticket.moveToSprint",
+        confirms: "ticket.moveToCycle",
         module: "build",
-        run: async ({ ticketId, sprintName }, ctx) => {
+        run: async ({ ticketId, cycleName }, ctx) => {
           const { orgId, userId } = ctx.actor;
 
           const ticketRows = await ctx.read.read(
@@ -214,36 +214,36 @@ export class WorkActionsTools implements AskOsToolProvider {
 
           if (!ticketRows[0]) return empty("ticket", "Ticket not found in this org.");
 
-          const sprintRows = await this.db
-            .select({ id: sprints.id, name: sprints.name })
-            .from(sprints)
-            .where(and(eq(sprints.orgId, orgId), ilike(sprints.name, `%${sprintName}%`), isNull(sprints.deletedAt)))
+          const cycleRows = await this.db
+            .select({ id: cycles.id, name: cycles.name })
+            .from(cycles)
+            .where(and(eq(cycles.orgId, orgId), ilike(cycles.name, `%${cycleName}%`)))
             .limit(11);
 
-          if (sprintRows.length === 0) return empty("sprint", `No sprint found matching "${sprintName}".`);
+          if (cycleRows.length === 0) return empty("cycle", `No cycle found matching "${cycleName}".`);
 
-          if (sprintRows.length > 10)
-            return empty("sprint", `"${sprintName}" matches too many sprints. Provide a more specific name.`);
+          if (cycleRows.length > 10)
+            return empty("cycle", `"${cycleName}" matches too many cycles. Provide a more specific name.`);
 
-          if (sprintRows.length > 1) {
+          if (cycleRows.length > 1) {
             return ambiguous(
-              `"${sprintName}" matches ${sprintRows.length} sprints. Which did you mean?`,
-              sprintRows.map((s) => ({ label: s.name })),
+              `"${cycleName}" matches ${cycleRows.length} cycles. Which did you mean?`,
+              cycleRows.map((c) => ({ label: c.name })),
             );
           }
 
-          const sprint = sprintRows[0]!;
+          const cycle = cycleRows[0]!;
           const ticketTitle = ticketRows[0].title;
-          const payload: Record<string, unknown> = { ticketId, sprintId: sprint.id, sprintName: sprint.name };
+          const payload: Record<string, unknown> = { ticketId, cycleId: cycle.id, cycleName: cycle.name };
 
-          const proposal = await this.confirmation.propose({ orgId, userId, action: "ticket.moveToSprint", payload });
+          const proposal = await this.confirmation.propose({ orgId, userId, action: "ticket.moveToCycle", payload });
           return needsConfirmation({
             proposalId: proposal.proposalId,
             token: proposal.token,
             expiresAt: proposal.expiresAt,
-            action: "ticket.moveToSprint",
-            summary: `Move ticket #${ticketId} to sprint "${sprint.name}"`,
-            preview: { ticketId, ticketTitle, sprintId: sprint.id, sprintName: sprint.name },
+            action: "ticket.moveToCycle",
+            summary: `Move ticket #${ticketId} to cycle "${cycle.name}"`,
+            preview: { ticketId, ticketTitle, cycleId: cycle.id, cycleName: cycle.name },
           });
         },
       }),

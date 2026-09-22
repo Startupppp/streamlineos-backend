@@ -15,6 +15,7 @@ import {
   type SQL,
 } from "drizzle-orm";
 import {
+  cycles,
   organizationMembers,
   projectMembers,
   projects,
@@ -234,6 +235,23 @@ export class ProjectsTicketsReadService {
         pagination: { limit, nextCursor: null, hasMore: false },
       };
 
+    const allCycleIds: number[] = [...(cycleId ?? [])];
+    const sprintParamProvided = sprintId !== undefined || (sprintIds && sprintIds.length > 0);
+    if (sprintParamProvided) {
+      const legacyIds: number[] = [
+        ...(sprintId !== undefined ? [sprintId] : []),
+        ...(sprintIds ?? []),
+      ];
+      const bridgeRows = await this.db
+        .select({ id: cycles.id })
+        .from(cycles)
+        .where(and(eq(cycles.orgId, u.orgId), inArray(cycles.legacySprintId, legacyIds)));
+      if (bridgeRows.length === 0) {
+        return { data: [], pagination: { limit, nextCursor: null, hasMore: false } };
+      }
+      for (const r of bridgeRows) allCycleIds.push(r.id);
+    }
+
     const filterConditions: SQL<unknown>[] = [];
 
     if (search && search.trim()) {
@@ -298,12 +316,8 @@ export class ProjectsTicketsReadService {
       );
     }
 
-    if (sprintId !== undefined)
-      filterConditions.push(eq(tickets.sprintId, sprintId));
-    if (sprintIds && sprintIds.length > 0)
-      filterConditions.push(inArray(tickets.sprintId, sprintIds));
-    if (cycleId && cycleId.length > 0)
-      filterConditions.push(inArray(tickets.cycleId, cycleId));
+    if (allCycleIds.length > 0)
+      filterConditions.push(inArray(tickets.cycleId, allCycleIds));
     if (moduleIds && moduleIds.length > 0)
       filterConditions.push(inArray(tickets.moduleId, moduleIds));
     if (epicId !== undefined) filterConditions.push(eq(tickets.epicId, epicId));

@@ -341,16 +341,16 @@ describe("dual-identity tripwire", () => {
     expect(collaboration).not.toContain("bug_watchers");
   });
 
-  it("still points test_run_results evidence at a bug id rather than a work item id", () => {
+  it("carries both linked_bug_id (legacy) and linked_work_item_id (canonical) columns on test_run_results", () => {
     const resultColumns = dbColumnNames(testRunResults as unknown as Record<string, unknown>);
     expect(resultColumns).toContain("linked_bug_id");
-    expect(resultColumns).not.toContain("linked_work_item_id");
+    expect(resultColumns).toContain("linked_work_item_id");
   });
 
-  it("still has no work_item_qa_details sidecar and no bug_work_item_map", () => {
+  it("has a work_item_qa_details sidecar and a bug_work_item_map identity ledger in qa.ts", () => {
     const qaSchema = readSource("db/schema/build/qa.ts");
-    expect(qaSchema).not.toContain("work_item_qa_details");
-    expect(qaSchema).not.toContain("bug_work_item_map");
+    expect(qaSchema).toContain("work_item_qa_details");
+    expect(qaSchema).toContain("bug_work_item_map");
   });
 
   it("still gates defects on build:bugs keys that are disjoint from build:tickets keys", () => {

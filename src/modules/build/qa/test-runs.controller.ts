@@ -169,6 +169,6 @@ export class TestRunsController {
     @Body() body: CreateBugFromResultInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.svc.createBugFromResult(u, projectId, runId, resultId, body);
+    return this.svc.createBugFromResultConsolidated(u, projectId, runId, resultId, body);
   }
 }

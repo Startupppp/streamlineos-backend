@@ -28,6 +28,7 @@ export const ACTION_LABELS: Record<string, { title: string; confirmLabel: string
   "crm.updateLeadStatus": { title: "Update lead status", confirmLabel: "Update" },
   "ticket.assign": { title: "Assign ticket", confirmLabel: "Assign" },
   "ticket.moveToSprint": { title: "Move to sprint", confirmLabel: "Move" },
+  "ticket.moveToCycle": { title: "Move to cycle", confirmLabel: "Move" },
   "calendar.createEvent": { title: "Create event", confirmLabel: "Create" },
   "ticket.create": { title: "Create ticket", confirmLabel: "Create" },
   "ticket.updateStatus": { title: "Update status", confirmLabel: "Update" },

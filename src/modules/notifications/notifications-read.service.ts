@@ -234,6 +234,11 @@ export class NotificationsReadService {
     if (filters.sourceModule) {
       conditions.push(eq(notifications.sourceModule, filters.sourceModule));
     }
+    if (filters.projectId !== undefined) {
+      conditions.push(
+        sql`${notifications.metadata}->>'projectId' = ${String(filters.projectId)}`,
+      );
+    }
     if (filters.search) {
       const term = `%${filters.search}%`;
       const searchCondition = or(

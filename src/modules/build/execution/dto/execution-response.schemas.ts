@@ -195,3 +195,21 @@ export const epicRowSchema = z.object({
   updatedAt: wireDate(),
   assignee: z.object({ user: userColsSchema }).nullable().optional(),
 });
+
+export const memberCapacitySchema = z.object({
+  userId: z.string(),
+  membershipId: z.number().int(),
+  workingDaysInWindow: z.number(),
+  leaveDays: z.number(),
+  halfLeaveDays: z.number(),
+  netCapacityDays: z.number(),
+  capacityHours: z.number().nullable(),
+  loggedHours: z.number(),
+  isOverAllocated: z.boolean(),
+  isZeroCapacity: z.boolean(),
+  utilizationPercent: z.number().nullable(),
+});
+
+export const workloadCapacityResponseSchema = z.object({
+  members: z.array(memberCapacitySchema),
+});
