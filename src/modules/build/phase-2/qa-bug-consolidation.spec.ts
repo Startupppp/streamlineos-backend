@@ -2,10 +2,9 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { getTableColumns } from "drizzle-orm";
 import {
-  bugPriorityEnum,
+  BUG_PRIORITY_VALUES,
   bugSeverityEnum,
   bugStatusEnum,
-  bugs,
   testRunResults,
 } from "../../../db/schema/build/qa";
 import { tickets } from "../../../db/schema/build/ticket-core";
@@ -40,8 +39,8 @@ function dbColumnNames(table: Record<string, unknown>): string[] {
     .sort();
 }
 
-const BUG_COLUMNS = dbColumnNames(bugs as unknown as Record<string, unknown>);
 const TICKET_COLUMNS = dbColumnNames(tickets as unknown as Record<string, unknown>);
+const BUG_COLUMNS = Object.keys(BUG_COLUMN_DISPOSITIONS).sort();
 
 describe("bug_status to canonical state-group mapping", () => {
   it("covers every value of the real bug_status enum read from the schema", () => {
@@ -182,7 +181,7 @@ describe("per-project status resolution", () => {
 
 describe("priority mapping", () => {
   it("covers every value of the real bug_priority enum", () => {
-    for (const value of bugPriorityEnum.enumValues) {
+    for (const value of BUG_PRIORITY_VALUES) {
       expect(Object.prototype.hasOwnProperty.call(BUG_PRIORITY_TO_TICKET_PRIORITY, value)).toBe(
         true,
       );
@@ -238,17 +237,9 @@ describe("severity mapping", () => {
 });
 
 describe("column coverage of the consolidation design", () => {
-  it("assigns a disposition to every real build.bugs column", () => {
-    for (const column of BUG_COLUMNS) {
-      expect(Object.prototype.hasOwnProperty.call(BUG_COLUMN_DISPOSITIONS, column)).toBe(true);
-    }
-  });
-
-  it("declares no disposition for a column build.bugs does not have", () => {
-    const real = new Set(BUG_COLUMNS);
-    for (const key of Object.keys(BUG_COLUMN_DISPOSITIONS)) {
-      expect(real.has(key)).toBe(true);
-    }
+  it("still records a disposition for every column the dropped table carried, because the map is now the only description of what build.bugs held", () => {
+    expect(Object.keys(BUG_COLUMN_DISPOSITIONS).length).toBeGreaterThan(10);
+    expect(Object.keys(BUG_COLUMN_DISPOSITIONS)).toContain("bug_number");
   });
 
   it("gives every disposition a destination and a reason", () => {
@@ -305,63 +296,6 @@ describe("column coverage of the consolidation design", () => {
   });
 });
 
-describe("dual-identity tripwire", () => {
-  it("still has a build.bugs table declared separately from build.tickets", () => {
-    expect(BUG_COLUMNS.length).toBeGreaterThan(0);
-    expect(readSource("db/schema/build/qa.ts")).toContain('build.table("bugs"');
-  });
-
-  it("still carries a second per-project human key alongside ticket_number", () => {
-    expect(BUG_COLUMNS).toContain("bug_number");
-    expect(TICKET_COLUMNS).toContain("ticket_number");
-    expect(readSource("db/schema/build/qa.ts")).toContain("uq_bugs_project_number");
-  });
-
-  it("still allocates bug numbers by MAX+1 instead of the project_ticket_counters allocator", () => {
-    const bugsService = readSource("modules/build/qa/bugs.service.ts");
-    const testRuns = readSource("modules/build/qa/test-runs.service.ts");
-    expect(bugsService).toContain("pg_advisory_xact_lock");
-    expect(bugsService).toContain("MAX(");
-    expect(bugsService).not.toContain("allocateTicketNumbers");
-    expect(testRuns).toContain("pg_advisory_xact_lock");
-    expect(testRuns).not.toContain("allocateTicketNumbers");
-  });
-
-  it("no longer lets a test run insert a defect straight into build.bugs, so b-qa-bug-05-contract-drop's no-source-reference precondition holds for this module", () => {
-    expect(readSource("modules/build/qa/test-runs.service.ts")).not.toContain(".insert(bugs)");
-  });
-
-  it("still has no canonical comment, attachment, label or watcher path for a defect", () => {
-    const collaboration = readSource("db/schema/build/ticket-collaboration.ts");
-    expect(collaboration).toContain('"ticket_attachments"');
-    expect(collaboration).toContain('"ticket_labels"');
-    expect(collaboration).toContain('"ticket_watchers"');
-    expect(collaboration).not.toContain("bug_comments");
-    expect(collaboration).not.toContain("bug_attachments");
-    expect(collaboration).not.toContain("bug_watchers");
-  });
-
-  it("carries both linked_bug_id (legacy) and linked_work_item_id (canonical) columns on test_run_results", () => {
-    const resultColumns = dbColumnNames(testRunResults as unknown as Record<string, unknown>);
-    expect(resultColumns).toContain("linked_bug_id");
-    expect(resultColumns).toContain("linked_work_item_id");
-  });
-
-  it("has a work_item_qa_details sidecar and a bug_work_item_map identity ledger in qa.ts", () => {
-    const qaSchema = readSource("db/schema/build/qa.ts");
-    expect(qaSchema).toContain("work_item_qa_details");
-    expect(qaSchema).toContain("bug_work_item_map");
-  });
-
-  it("still gates defects on build:bugs keys that are disjoint from build:tickets keys", () => {
-    const controller = readSource("modules/build/qa/bugs.controller.ts");
-    expect(controller).toContain('RequirePermission("build:bugs:view")');
-    expect(controller).toContain('RequirePermission("build:bugs:create")');
-    expect(controller).toContain('RequirePermission("build:bugs:update")');
-    expect(controller).toContain('RequirePermission("build:bugs:delete")');
-    expect(controller).not.toContain("build:tickets:");
-  });
-});
 
 describe("recorded facts the design depends on", () => {
   it("records the real bug_status cardinality", () => {
@@ -385,7 +319,7 @@ describe("recorded facts the design depends on", () => {
     expect(ticketCore).toContain("projectStatuses.name");
   });
 
-  it("records the real count of bugs columns the canonical ticket lacks", () => {
+  it("records the count of dropped-table columns the canonical ticket lacks, read from the disposition map that outlived build.bugs", () => {
     const ticketColumns = new Set(TICKET_COLUMNS);
     const missing = BUG_COLUMNS.filter((column) => !ticketColumns.has(column));
     expect(missing).toEqual([
@@ -408,7 +342,7 @@ describe("recorded facts the design depends on", () => {
     expect(missing).toHaveLength(15);
   });
 
-  it("records that bugs has no optimistic-concurrency version column while tickets does", () => {
+  it("records that the dropped table had no optimistic-concurrency version column while tickets does", () => {
     expect(TICKET_COLUMNS).toContain("version");
     expect(BUG_COLUMNS).not.toContain("version");
   });

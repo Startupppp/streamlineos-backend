@@ -1,9 +1,9 @@
-import { bugPriorityEnum, bugSeverityEnum, bugStatusEnum } from "../../../../db/schema/build/qa";
+import { BUG_PRIORITY_VALUES, bugSeverityEnum, bugStatusEnum } from "../../../../db/schema/build/qa";
 import { stateGroupEnum, ticketPriorityEnum } from "../../../../db/schema/common/enums";
 
 export type BugStatus = (typeof bugStatusEnum.enumValues)[number];
 export type BugSeverity = (typeof bugSeverityEnum.enumValues)[number];
-export type BugPriority = (typeof bugPriorityEnum.enumValues)[number];
+export type BugPriority = (typeof BUG_PRIORITY_VALUES)[number];
 export type StateGroup = (typeof stateGroupEnum.enumValues)[number];
 export type TicketPriority = (typeof ticketPriorityEnum.enumValues)[number];
 

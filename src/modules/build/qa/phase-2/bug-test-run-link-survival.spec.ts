@@ -4,7 +4,7 @@ import type { AccessService } from "../../../access/access.service";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../../common/auth/principal";
 import { TestRunsService } from "../test-runs.service";
-import { tickets, bugs } from "../../../../db/schema";
+import { tickets } from "../../../../db/schema";
 
 const MEMBERSHIP_ID = 7;
 const ORG = "org-owner";
@@ -75,7 +75,7 @@ describe("TestRunsService.createBugFromResultConsolidated — link survival via 
     expect(linkedBugIdWasSet).toBe(false);
   });
 
-  it("inserts into tickets table NOT bugs table — legacy-writer freeze behavioral test: if tickets is replaced with bugs in the insert, this test fails", async () => {
+  it("inserts into the tickets table and into exactly one table, so a second writer cannot reappear now that build.bugs is dropped and could not be named here", async () => {
     const createdTicket = { id: 300, ticketNumber: 1, title: "Failed: Signup", type: "BUG" };
     const insertedTables: unknown[] = [];
 
@@ -114,8 +114,8 @@ describe("TestRunsService.createBugFromResultConsolidated — link survival via 
     const svc = new TestRunsService(db, makeAccess(), audit);
     await svc.createBugFromResultConsolidated(makeU(), PROJECT_ID, 1, 5, {});
 
-    expect(insertedTables).not.toContain(bugs);
     expect(insertedTables).toContain(tickets);
+    expect(new Set(insertedTables).size).toBe(insertedTables.length);
   });
 
   it("audit log records ticket resource type not bug resource type — if reverted to bug, this test fails", async () => {

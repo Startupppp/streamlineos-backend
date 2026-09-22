@@ -134,7 +134,7 @@ export const testRunResults = build.table("test_run_results", {
 ]);
 
 export const bugSeverityEnum = pgEnum("bug_severity", ["blocker", "critical", "major", "minor", "trivial"]);
-export const bugPriorityEnum = pgEnum("bug_priority", ["low", "medium", "high", "urgent"]);
+export const BUG_PRIORITY_VALUES = ["low", "medium", "high", "urgent"] as const;
 export const bugStatusEnum = pgEnum("bug_status", ["new", "triaged", "assigned", "in_progress", "fixed", "ready_for_qa", "verified", "reopened", "closed"]);
 
 

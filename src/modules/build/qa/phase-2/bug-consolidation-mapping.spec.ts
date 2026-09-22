@@ -1,6 +1,6 @@
 import {
   bugStatusEnum,
-  bugPriorityEnum,
+  BUG_PRIORITY_VALUES,
   bugSeverityEnum,
 } from "../../../../db/schema/build/qa";
 import { stateGroupEnum, ticketPriorityEnum } from "../../../../db/schema/common/enums";
@@ -19,7 +19,7 @@ import {
 } from "./bug-consolidation-mapping";
 
 const ALL_BUG_STATUSES = bugStatusEnum.enumValues;
-const ALL_BUG_PRIORITIES = bugPriorityEnum.enumValues;
+const ALL_BUG_PRIORITIES = BUG_PRIORITY_VALUES;
 const ALL_BUG_SEVERITIES = bugSeverityEnum.enumValues;
 const ALL_STATE_GROUPS = stateGroupEnum.enumValues;
 const ALL_TICKET_PRIORITIES = ticketPriorityEnum.enumValues;
@@ -92,7 +92,7 @@ describe("BUG_STATUS_TO_STATE_GROUP — exhaustiveness", () => {
 });
 
 describe("BUG_PRIORITY_TO_TICKET_PRIORITY — exhaustiveness", () => {
-  it("covers every value in bugPriorityEnum — if a new priority is added and omitted from the map, this test fails", () => {
+  it("covers every value in BUG_PRIORITY_VALUES — if a new priority is added and omitted from the map, this test fails", () => {
     for (const priority of ALL_BUG_PRIORITIES) {
       expect(BUG_PRIORITY_TO_TICKET_PRIORITY).toHaveProperty(priority);
     }
