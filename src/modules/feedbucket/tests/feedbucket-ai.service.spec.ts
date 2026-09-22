@@ -10,6 +10,7 @@ import type { AuditService } from "../../../common/audit/audit.service";
 import type { RateLimitService } from "../../../common/ratelimit/rate-limit.service";
 import type { ProjectsTicketsService } from "../../build/core/projects-tickets.service";
 import type { PlanLimitsService } from "../../billing/core/plan-limits.service";
+import type { AccessService } from "../../access/access.service";
 import type { FeedbackAnalysis } from "../feedbucket-ai.schemas";
 import type {
   AiInvokeWithUsageResult,
@@ -191,8 +192,15 @@ function buildService(opts: {
     tickets,
     makePlanLimits(),
     makeStorage(),
+    makeAccess(),
   );
   return { service, db, gateway, audit, rateLimiter, tickets };
+}
+
+function makeAccess() {
+  return {
+    resolveUserPermissions: jest.fn().mockResolvedValue(new Set(["build:manage"])),
+  } as unknown as AccessService;
 }
 
 function makeStorage() {
@@ -365,6 +373,7 @@ describe("FeedbucketAiService", () => {
         makeTickets(),
         makePlanLimits(),
         makeStorage(),
+        makeAccess(),
       );
 
       await service.analyzePublic({
@@ -400,6 +409,7 @@ describe("FeedbucketAiService", () => {
         makeTickets(),
         makePlanLimits(),
         makeStorage(),
+        makeAccess(),
       );
 
       await expect(

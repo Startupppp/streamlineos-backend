@@ -1,6 +1,30 @@
-import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
-import { and, count, desc, eq, gte, ilike, inArray, isNotNull, isNull, like, lt, sql, type SQL } from "drizzle-orm";
-import { feedbucketAttachments, feedbucketSubmissions, feedbucketWidgets, organizationMembers } from "../../db/schema";
+import {
+  BadRequestException,
+  Inject,
+  Injectable,
+  NotFoundException,
+} from "@nestjs/common";
+import {
+  and,
+  count,
+  desc,
+  eq,
+  gte,
+  ilike,
+  inArray,
+  isNotNull,
+  isNull,
+  like,
+  lt,
+  sql,
+  type SQL,
+} from "drizzle-orm";
+import {
+  feedbucketAttachments,
+  feedbucketSubmissions,
+  feedbucketWidgets,
+  organizationMembers,
+} from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import type { Db } from "../../db/drizzle.module";
 import { runInTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
@@ -8,20 +32,30 @@ import { registerAfterCommit } from "../../common/tenant/tenant-context";
 import { StorageService } from "../storage/storage.service";
 import type { ScopedRead } from "../access/scoped-read";
 import { feedbucketScope } from "./feedbucket-scope";
-import { type ConvertToTicketInput, type FeedbucketMediaKind, type ListSubmissionsQuery, type UpdateSubmissionInput } from "./feedbucket.schemas";
+import {
+  type ConvertToTicketInput,
+  type FeedbucketMediaKind,
+  type ListSubmissionsQuery,
+  type UpdateSubmissionInput,
+} from "./feedbucket.schemas";
 import type { ProjectsTicketsService } from "../build/core/projects-tickets.service";
 import { resolveOrganizationActorsByUserIds } from "../../common/organization/organization-actor";
 import {
   deriveFeedbackTicketTitle,
   resolveFeedbucketTicketTarget,
 } from "./feedbucket-ticket-routing";
-import { assertProjectInOrg } from "../build/core/project-access";
+import { assertProjectAccess } from "../build/core/project-access";
+import { AccessService } from "../access/access.service";
+import type { CurrentUserContext } from "../../common/auth/backend-claims";
 
 function submissionsInWidgetsMatching(condition: SQL | undefined): SQL {
   return sql`${feedbucketSubmissions.widgetId} IN (SELECT ${feedbucketWidgets.id} FROM ${feedbucketWidgets} WHERE ${condition})`;
 }
 
-function submissionsInManagedProductCondition(orgId: string, managedProductId: number): SQL {
+function submissionsInManagedProductCondition(
+  orgId: string,
+  managedProductId: number,
+): SQL {
   return submissionsInWidgetsMatching(
     and(
       eq(feedbucketWidgets.orgId, orgId),
@@ -36,30 +70,64 @@ const FEEDBUCKET_MEDIA_MIME_PREFIX: Record<FeedbucketMediaKind, string> = {
   recording: "video/%",
 };
 
-export type FeedbucketMediaStorage = Pick<StorageService, "deleteFileIfPresent">;
+export type FeedbucketMediaStorage = Pick<
+  StorageService,
+  "deleteFileIfPresent"
+>;
 
 @Injectable()
 export class FeedbucketSubmissionsService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     @Inject(StorageService) private readonly storage: FeedbucketMediaStorage,
+    private readonly access: AccessService,
   ) {}
 
-  async list(read: ScopedRead, query: ListSubmissionsQuery, membershipId: number | null) {
+  async list(
+    read: ScopedRead,
+    query: ListSubmissionsQuery,
+    membershipId: number | null,
+  ) {
     const orgId = read.orgId;
-    const { page, limit, widgetId, managedProductId, type, status, assigneeId, search, linked, from, to } = query;
+    const {
+      page,
+      limit,
+      widgetId,
+      managedProductId,
+      type,
+      status,
+      assigneeId,
+      search,
+      linked,
+      from,
+      to,
+    } = query;
     const offset = (page - 1) * limit;
 
     const domain = [
-      widgetId !== undefined ? eq(feedbucketSubmissions.widgetId, widgetId) : undefined,
-      managedProductId !== undefined ? submissionsInManagedProductCondition(orgId, managedProductId) : undefined,
+      widgetId !== undefined
+        ? eq(feedbucketSubmissions.widgetId, widgetId)
+        : undefined,
+      managedProductId !== undefined
+        ? submissionsInManagedProductCondition(orgId, managedProductId)
+        : undefined,
       type !== undefined ? eq(feedbucketSubmissions.type, type) : undefined,
-      status !== undefined ? eq(feedbucketSubmissions.status, status) : undefined,
+      status !== undefined
+        ? eq(feedbucketSubmissions.status, status)
+        : undefined,
       isNull(feedbucketSubmissions.deletedAt),
     ];
     if (assigneeId !== undefined) {
-      const membership = await this.db.query.organizationMembers.findFirst({ where: and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.userId, assigneeId)), columns: { id: true } });
-      domain.push(eq(feedbucketSubmissions.assigneeMembershipId, membership?.id ?? -1));
+      const membership = await this.db.query.organizationMembers.findFirst({
+        where: and(
+          eq(organizationMembers.orgId, orgId),
+          eq(organizationMembers.userId, assigneeId),
+        ),
+        columns: { id: true },
+      });
+      domain.push(
+        eq(feedbucketSubmissions.assigneeMembershipId, membership?.id ?? -1),
+      );
     }
     if (search?.trim()) {
       domain.push(ilike(feedbucketSubmissions.message, `%${search}%`));
@@ -94,11 +162,20 @@ export class FeedbucketSubmissionsService {
             limit,
             offset,
           }),
-          this.db.select({ total: count() }).from(feedbucketSubmissions).where(where),
+          this.db
+            .select({ total: count() })
+            .from(feedbucketSubmissions)
+            .where(where),
         ]);
 
         const total = Number(countResult[0]?.total ?? 0);
-        return { data: rows, total, page, limit, totalPages: Math.ceil(total / limit) };
+        return {
+          data: rows,
+          total,
+          page,
+          limit,
+          totalPages: Math.ceil(total / limit),
+        };
       },
       () => ({ data: [], total: 0, page, limit, totalPages: 0 }),
     );
@@ -134,20 +211,40 @@ export class FeedbucketSubmissionsService {
     return { ...submission, recordingUrl: recordingRows[0]?.fileUrl ?? null };
   }
 
-  async update(orgId: string, submissionId: number, dto: UpdateSubmissionInput) {
+  async update(
+    orgId: string,
+    submissionId: number,
+    dto: UpdateSubmissionInput,
+  ) {
     await this.findOne(orgId, submissionId);
-    const patch: Partial<typeof feedbucketSubmissions.$inferInsert> = { updatedAt: new Date() };
+    const patch: Partial<typeof feedbucketSubmissions.$inferInsert> = {
+      updatedAt: new Date(),
+    };
     if (dto.status !== undefined) patch.status = dto.status;
     if (dto.priority !== undefined) patch.priority = dto.priority;
     if (dto.assigneeId !== undefined) {
-      const membership = dto.assigneeId === null ? null : await this.db.query.organizationMembers.findFirst({ where: and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.userId, dto.assigneeId)), columns: { id: true } });
+      const membership =
+        dto.assigneeId === null
+          ? null
+          : await this.db.query.organizationMembers.findFirst({
+              where: and(
+                eq(organizationMembers.orgId, orgId),
+                eq(organizationMembers.userId, dto.assigneeId),
+              ),
+              columns: { id: true },
+            });
       patch.assigneeMembershipId = membership?.id ?? null;
     }
 
     const [updated] = await this.db
       .update(feedbucketSubmissions)
       .set(patch)
-      .where(and(eq(feedbucketSubmissions.id, submissionId), eq(feedbucketSubmissions.orgId, orgId)))
+      .where(
+        and(
+          eq(feedbucketSubmissions.id, submissionId),
+          eq(feedbucketSubmissions.orgId, orgId),
+        ),
+      )
       .returning();
     return updated;
   }
@@ -157,10 +254,19 @@ export class FeedbucketSubmissionsService {
     await this.db
       .update(feedbucketSubmissions)
       .set({ deletedAt: new Date() })
-      .where(and(eq(feedbucketSubmissions.id, submissionId), eq(feedbucketSubmissions.orgId, orgId)));
+      .where(
+        and(
+          eq(feedbucketSubmissions.id, submissionId),
+          eq(feedbucketSubmissions.orgId, orgId),
+        ),
+      );
   }
 
-  async deleteMedia(orgId: string, submissionId: number, mediaKind: FeedbucketMediaKind) {
+  async deleteMedia(
+    orgId: string,
+    submissionId: number,
+    mediaKind: FeedbucketMediaKind,
+  ) {
     const submission = await this.findOne(orgId, submissionId);
 
     const attachments = await this.db
@@ -174,7 +280,10 @@ export class FeedbucketSubmissionsService {
         and(
           eq(feedbucketAttachments.submissionId, submissionId),
           eq(feedbucketAttachments.orgId, orgId),
-          like(feedbucketAttachments.mimeType, FEEDBUCKET_MEDIA_MIME_PREFIX[mediaKind]),
+          like(
+            feedbucketAttachments.mimeType,
+            FEEDBUCKET_MEDIA_MIME_PREFIX[mediaKind],
+          ),
         ),
       );
 
@@ -190,35 +299,43 @@ export class FeedbucketSubmissionsService {
 
     if (keys.size === 0 && attachments.length === 0)
       throw new NotFoundException(
-        mediaKind === "recording" ? "Submission has no recording" : "Submission has no screenshot",
+        mediaKind === "recording"
+          ? "Submission has no recording"
+          : "Submission has no screenshot",
       );
 
     await runInTenantTransaction(
       this.db,
       async (tx) => {
         if (attachments.length > 0)
-          await tx
-            .delete(feedbucketAttachments)
-            .where(
-              and(
-                eq(feedbucketAttachments.orgId, orgId),
-                inArray(
-                  feedbucketAttachments.id,
-                  attachments.map((attachment) => attachment.id),
-                ),
+          await tx.delete(feedbucketAttachments).where(
+            and(
+              eq(feedbucketAttachments.orgId, orgId),
+              inArray(
+                feedbucketAttachments.id,
+                attachments.map((attachment) => attachment.id),
               ),
-            );
+            ),
+          );
 
         if (mediaKind === "screenshot")
           await tx
             .update(feedbucketSubmissions)
-            .set({ screenshotUrl: null, screenshotKey: null, updatedAt: new Date() })
+            .set({
+              screenshotUrl: null,
+              screenshotKey: null,
+              updatedAt: new Date(),
+            })
             .where(
-              and(eq(feedbucketSubmissions.id, submissionId), eq(feedbucketSubmissions.orgId, orgId)),
+              and(
+                eq(feedbucketSubmissions.id, submissionId),
+                eq(feedbucketSubmissions.orgId, orgId),
+              ),
             );
 
         const purge = async (): Promise<void> => {
-          for (const key of keys) await this.storage.deleteFileIfPresent(orgId, key);
+          for (const key of keys)
+            await this.storage.deleteFileIfPresent(orgId, key);
         };
         if (!registerAfterCommit(purge)) await purge();
       },
@@ -259,45 +376,67 @@ export class FeedbucketSubmissionsService {
   }
 
   async convertToTicket(
-    orgId: string,
-    actingUserId: string,
+    u: CurrentUserContext,
     submissionId: number,
     ticketsService: ProjectsTicketsService,
     override?: ConvertToTicketInput,
   ) {
+    const orgId = u.orgId;
     const submission = await this.findOne(orgId, submissionId);
     const widget = submission.widget;
-    if (!widget) throw new NotFoundException("Submission has no associated widget");
+    if (!widget)
+      throw new NotFoundException("Submission has no associated widget");
 
-    if (override?.projectId !== undefined) await assertProjectInOrg(this.db, orgId, override.projectId);
-    const assigneeMembershipId = await this.resolveOverrideAssignee(orgId, override?.assigneeId);
-    const { projectId, assigneeMembershipId: resolvedAssignee } = resolveFeedbucketTicketTarget(
-      widget,
-      submission.type,
-      { projectId: override?.projectId, assigneeMembershipId: assigneeMembershipId ?? undefined },
+    const assigneeMembershipId = await this.resolveOverrideAssignee(
+      orgId,
+      override?.assigneeId,
     );
+    const { projectId, assigneeMembershipId: resolvedAssignee } =
+      resolveFeedbucketTicketTarget(widget, submission.type, {
+        projectId: override?.projectId,
+        assigneeMembershipId: assigneeMembershipId ?? undefined,
+      });
     if (!projectId) throw new NotFoundException("Widget has no project linked");
+    await assertProjectAccess(this.db, this.access, u, projectId);
 
-    const ticket = await ticketsService.createFromFeedback(orgId, actingUserId, projectId, {
-      title: deriveFeedbackTicketTitle(submission.message, submission.type),
-      description: `**Feedback type:** ${submission.type}\n\n${submission.message}`,
-      type: widget.defaultTicketType,
-      assigneeMembershipId: resolvedAssignee,
-    });
+    const ticket = await ticketsService.createFromFeedback(
+      orgId,
+      u.userId,
+      projectId,
+      {
+        title: deriveFeedbackTicketTitle(submission.message, submission.type),
+        description: `**Feedback type:** ${submission.type}\n\n${submission.message}`,
+        type: widget.defaultTicketType,
+        assigneeMembershipId: resolvedAssignee,
+      },
+    );
 
     await this.db
       .update(feedbucketSubmissions)
       .set({ linkedTicketId: ticket.id, updatedAt: new Date() })
-      .where(and(eq(feedbucketSubmissions.id, submissionId), eq(feedbucketSubmissions.orgId, orgId)));
+      .where(
+        and(
+          eq(feedbucketSubmissions.id, submissionId),
+          eq(feedbucketSubmissions.orgId, orgId),
+        ),
+      );
 
     return { ticketId: ticket.id };
   }
 
-  private async resolveOverrideAssignee(orgId: string, assigneeId: string | undefined): Promise<number | null> {
+  private async resolveOverrideAssignee(
+    orgId: string,
+    assigneeId: string | undefined,
+  ): Promise<number | null> {
     if (!assigneeId) return null;
-    const actorMap = await resolveOrganizationActorsByUserIds(this.db, orgId, [assigneeId]);
+    const actorMap = await resolveOrganizationActorsByUserIds(this.db, orgId, [
+      assigneeId,
+    ]);
     const actor = actorMap.get(assigneeId);
-    if (!actor) throw new BadRequestException(`${assigneeId} is not an active member of this organization`);
+    if (!actor)
+      throw new BadRequestException(
+        `${assigneeId} is not an active member of this organization`,
+      );
     return actor.membershipId;
   }
 }

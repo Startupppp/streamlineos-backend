@@ -39,10 +39,16 @@ import {
   type UpdateSubmissionInput,
   type UpdateWidgetInput,
 } from "./feedbucket.schemas";
-import { analyzeBodySchema, type AnalyzeBodyInput } from "./feedbucket-ai.schemas";
+import {
+  analyzeBodySchema,
+  type AnalyzeBodyInput,
+} from "./feedbucket-ai.schemas";
 import { z } from "zod";
 import { Validate } from "../../common/validation/validate.decorator";
-import { BodylessAction, ResponseSchema } from "../../common/openapi/zod-operation-contracts";
+import {
+  BodylessAction,
+  ResponseSchema,
+} from "../../common/openapi/zod-operation-contracts";
 import {
   feedbucketWidgetListSchema,
   feedbucketWidgetWithProjectSchema,
@@ -57,9 +63,15 @@ import {
   successSchema,
 } from "./dto/feedbucket-response.schemas";
 
-const widgetIdParams = z.object({ widgetId: z.coerce.number().int().positive() }).strict();
-const submissionIdParams = z.object({ submissionId: z.coerce.number().int().positive() }).strict();
-const submissionMediaParams = submissionIdParams.extend({ mediaKind: feedbucketMediaKindSchema }).strict();
+const widgetIdParams = z
+  .object({ widgetId: z.coerce.number().int().positive() })
+  .strict();
+const submissionIdParams = z
+  .object({ submissionId: z.coerce.number().int().positive() })
+  .strict();
+const submissionMediaParams = submissionIdParams
+  .extend({ mediaKind: feedbucketMediaKindSchema })
+  .strict();
 
 @RequireModule("feedbucket")
 @Controller("feedbucket")
@@ -149,7 +161,11 @@ export class FeedbucketController {
     @Req() req: Request,
   ) {
     const read = readRequestScopedRead(req, user);
-    return this.submissions.list(read, query, actingMembershipId(user.principal));
+    return this.submissions.list(
+      read,
+      query,
+      actingMembershipId(user.principal),
+    );
   }
 
   @Get("submissions/:submissionId")
@@ -210,7 +226,12 @@ export class FeedbucketController {
     @Param("submissionId", ParseIntPipe) submissionId: number,
     @Body() body: ConvertToTicketInput,
   ) {
-    return this.submissions.convertToTicket(user.orgId, user.userId, submissionId, this.tickets, body);
+    return this.submissions.convertToTicket(
+      user,
+      submissionId,
+      this.tickets,
+      body,
+    );
   }
 
   @Post("submissions/:submissionId/ai-analyze")
