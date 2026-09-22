@@ -123,11 +123,25 @@ describe("ProjectsTicketsCreateService.createTicket — cycleId is the only iter
     expect(created).toHaveProperty("cycleId");
   });
 
-  it("issues no cycle lookup even when a cycleId is supplied, because the legacy round trip that resolved one is gone", async () => {
-    const { svc, cycleSelectLimit } = makeHarness([{ id: 55 }]);
+  it("looks the supplied cycle up before writing it, because fk_tickets_org_cycle enforces the organization and nothing else enforces the project", async () => {
+    const { svc, cycleSelectLimit } = makeHarness([{ id: 77 }]);
     await svc.createTicket(makeUser(), 1, { title: "My ticket", type: "TASK", cycleId: 77 });
+    expect(cycleSelectLimit).toHaveBeenCalledTimes(1);
+  });
+
+  it("issues no cycle lookup when no cycleId is supplied, so the common create path pays nothing for the check", async () => {
+    const { svc, cycleSelectLimit } = makeHarness([{ id: 77 }]);
+    await svc.createTicket(makeUser(), 1, { title: "My ticket", type: "TASK" });
     expect(cycleSelectLimit).not.toHaveBeenCalled();
   });
+
+  it("refuses a cycle that does not resolve inside the target project rather than binding a ticket across projects", async () => {
+    const { svc } = makeHarness([]);
+    await expect(
+      svc.createTicket(makeUser(), 1, { title: "My ticket", type: "TASK", cycleId: 77 }),
+    ).rejects.toThrow("Cycle not found in this project");
+  });
+
 
   it("the createTicket request contract rejects a sprintId outright, because createTicketSchema is strict and no longer declares the field", () => {
     const parsed = createTicketSchema.safeParse({ title: "My ticket", type: "TASK", sprintId: 9 });

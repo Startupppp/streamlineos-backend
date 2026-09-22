@@ -9,7 +9,7 @@ import {
 import { randomUUID } from "node:crypto";
 import { and, eq, isNull, sql } from "drizzle-orm";
 import { OutboxWriter } from "../../../common/outbox/outbox-writer";
-import { ticketAssignees, tickets } from "../../../db/schema";
+import { cycles, ticketAssignees, tickets } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import type { DbOrTx } from "../../../common/rbac/access-invalidate";
@@ -152,7 +152,24 @@ export class ProjectsTicketsUpdateService {
     if (input.epicId !== undefined) updateData.epicId = input.epicId;
     if (input.moduleId !== undefined) updateData.moduleId = input.moduleId;
     if (input.points !== undefined) updateData.points = input.points;
-    if (input.cycleId !== undefined) updateData.cycleId = input.cycleId;
+    if (input.cycleId !== undefined) {
+      if (input.cycleId != null && projectId !== null) {
+        const [cycleRow] = await this.db
+          .select({ id: cycles.id })
+          .from(cycles)
+          .where(
+            and(
+              eq(cycles.orgId, orgId),
+              eq(cycles.projectId, projectId),
+              eq(cycles.id, input.cycleId),
+            ),
+          )
+          .limit(1);
+        if (!cycleRow)
+          throw new NotFoundException("Cycle not found in this project");
+      }
+      updateData.cycleId = input.cycleId;
+    }
     if (input.originalEstimate !== undefined)
       updateData.originalEstimate = input.originalEstimate?.toString();
     if (input.startDate !== undefined) updateData.startDate = input.startDate;

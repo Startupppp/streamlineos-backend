@@ -8,6 +8,7 @@ import {
 import { resolveOrganizationActorsByUserIds } from "../../../common/organization/organization-actor";
 import { and, eq, isNull } from "drizzle-orm";
 import {
+  cycles,
   projects,
   ticketActivityLog,
   ticketAssignees,
@@ -78,6 +79,21 @@ export class ProjectsTicketsCreateService {
         throw new BadRequestException("Epic ticket not found in this project");
     }
 
+    if (body.cycleId != null) {
+      const [cycleRow] = await this.db
+        .select({ id: cycles.id })
+        .from(cycles)
+        .where(
+          and(
+            eq(cycles.orgId, u.orgId),
+            eq(cycles.projectId, projectId),
+            eq(cycles.id, body.cycleId),
+          ),
+        )
+        .limit(1);
+      if (!cycleRow)
+        throw new NotFoundException("Cycle not found in this project");
+    }
     const resolvedCycleId = body.cycleId;
 
     const reporterUserId = body.reporterId ?? u.userId;
