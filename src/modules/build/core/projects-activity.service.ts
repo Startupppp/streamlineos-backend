@@ -25,7 +25,6 @@ interface TicketSnapshot {
   status: string;
   priority: string;
   assigneeId: string | null;
-  sprintId: number | null;
   dueDate: string | null;
   points: number | null;
   type: string;
@@ -37,7 +36,6 @@ interface TicketChanges {
   status?: string;
   priority?: string;
   assigneeId?: string | null;
-  sprintId?: number | null;
   dueDate?: string | null;
   points?: number | null;
   type?: string;

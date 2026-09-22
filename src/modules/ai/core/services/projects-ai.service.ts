@@ -152,8 +152,8 @@ export class ProjectsAiService {
       const rows = await this.fetchTicketRows(orgId, projectId);
       if (rows.length === 0) return { empty: true as const };
       const [sprResults, crResults, apResults] = await Promise.all([
-        this.db.select({ count: count() }).from(sprints)
-          .where(and(eq(sprints.projectId, projectId), eq(sprints.orgId, orgId), eq(sprints.status, "ACTIVE"), lt(sprints.endDate, sql`now()`), isNull(sprints.deletedAt))),
+        this.db.select({ count: count() }).from(cycles)
+          .where(and(eq(cycles.projectId, projectId), eq(cycles.orgId, orgId), eq(cycles.status, "active"), lt(cycles.endDate, sql`now()`))),
         this.db.select({ count: count() }).from(changeRequests)
           .where(and(eq(changeRequests.projectId, projectId), eq(changeRequests.orgId, orgId), ne(changeRequests.status, "approved"), ne(changeRequests.status, "rejected"), ne(changeRequests.status, "completed"))),
         this.db.select({ count: count() }).from(projectApprovals)

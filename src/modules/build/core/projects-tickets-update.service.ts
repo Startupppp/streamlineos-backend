@@ -344,11 +344,10 @@ export class ProjectsTicketsUpdateService {
           status: input.status,
           priority: input.priority,
           assigneeId: resolveAssigneeId(input.assigneeId),
-          sprintId: input.sprintId,
           dueDate: input.dueDate,
           points: input.points,
           type: input.type,
-          cycleId: input.cycleId,
+          cycleId: updateData.cycleId,
       })
       .catch((error) => logger.error("Failed to log ticket activity", { error }));
 
