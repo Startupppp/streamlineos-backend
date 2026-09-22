@@ -65,7 +65,7 @@ describe("TestRunsService.createBugFromResult — test-run failure link survival
           findFirst: jest.fn().mockResolvedValue({ id: 9, title: "Login Test", steps: [], expectedResult: "ok" }),
         },
       },
-      transaction: jest.fn().mockImplementation(async (cb: (tx: typeof tx) => Promise<unknown>) => cb(tx)),
+      transaction: jest.fn().mockImplementation(async (cb: (t: unknown) => Promise<unknown>) => cb(tx)),
     } as unknown as Db;
 
     const svc = new TestRunsService(db, makeAccess(), audit);
@@ -105,7 +105,7 @@ describe("TestRunsService.createBugFromResult — test-run failure link survival
           findFirst: jest.fn().mockResolvedValue({ id: 12, title: "Checkout", steps: [], expectedResult: null }),
         },
       },
-      transaction: jest.fn().mockImplementation(async (cb: (tx: typeof tx) => Promise<unknown>) => cb(tx)),
+      transaction: jest.fn().mockImplementation(async (cb: (t: unknown) => Promise<unknown>) => cb(tx)),
     } as unknown as Db;
 
     const svc = new TestRunsService(db, makeAccess(), audit);
@@ -163,7 +163,7 @@ describe("TestRunsService.createBugFromResultConsolidated — link survival via 
       select: jest.fn().mockReturnValue({
         from: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue([]) }),
       }),
-      transaction: jest.fn().mockImplementation(async (cb: (tx: typeof tx) => Promise<unknown>) => cb(tx)),
+      transaction: jest.fn().mockImplementation(async (cb: (t: unknown) => Promise<unknown>) => cb(tx)),
     } as unknown as Db;
 
     const svc = new TestRunsService(db, makeAccess(), audit);
@@ -207,7 +207,7 @@ describe("TestRunsService.createBugFromResultConsolidated — link survival via 
       select: jest.fn().mockReturnValue({
         from: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue([]) }),
       }),
-      transaction: jest.fn().mockImplementation(async (cb: (tx: typeof tx) => Promise<unknown>) => cb(tx)),
+      transaction: jest.fn().mockImplementation(async (cb: (t: unknown) => Promise<unknown>) => cb(tx)),
     } as unknown as Db;
 
     const svc = new TestRunsService(db, makeAccess(), audit);
@@ -245,7 +245,7 @@ describe("TestRunsService.createBugFromResultConsolidated — link survival via 
       select: jest.fn().mockReturnValue({
         from: jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue([]) }),
       }),
-      transaction: jest.fn().mockImplementation(async (cb: (tx: typeof tx) => Promise<unknown>) => cb(tx)),
+      transaction: jest.fn().mockImplementation(async (cb: (t: unknown) => Promise<unknown>) => cb(tx)),
     } as unknown as Db;
 
     const svc = new TestRunsService(db, makeAccess(), auditSpy);

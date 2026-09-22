@@ -38,7 +38,7 @@ function makeRunsSvc() {
     updateRun: jest.fn().mockResolvedValue({ id: 5 }),
     deleteRun: jest.fn().mockResolvedValue({ success: true }),
     updateResult: jest.fn().mockResolvedValue({ id: 3 }),
-    createBugFromResult: jest.fn().mockResolvedValue({ id: 88 }),
+    createBugFromResultConsolidated: jest.fn().mockResolvedValue({ id: 88 }),
   };
 }
 
@@ -86,7 +86,7 @@ describe("QA by-id controllers forward the whole actor so the service can gate o
     expect(svc.updateRun).toHaveBeenCalledWith(u, PROJECT_ID, 5, { name: "renamed" });
     expect(svc.deleteRun).toHaveBeenCalledWith(u, PROJECT_ID, 5);
     expect(svc.updateResult).toHaveBeenCalledWith(u, PROJECT_ID, 5, 3, { status: "passed" });
-    expect(svc.createBugFromResult).toHaveBeenCalledWith(u, PROJECT_ID, 5, 3, {
+    expect(svc.createBugFromResultConsolidated).toHaveBeenCalledWith(u, PROJECT_ID, 5, 3, {
       description: "broken",
     });
   });

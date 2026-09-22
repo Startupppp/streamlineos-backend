@@ -23,7 +23,7 @@ type Row = Awaited<ReturnType<typeof readMutationTickets>>[number];
 
 function makeRow(id: number, status: string): Row {
   return { id, status, version: 1, assigneeMembershipId: null, dueDate: null, priority: "MEDIUM",
-    points: null, epicId: null, sprintId: null, rank: String(id * 1000), allowed: true };
+    points: null, epicId: null, cycleId: null, rank: String(id * 1000), allowed: true };
 }
 
 function makeWorkflowDb(transitions: unknown[] = [], statuses: unknown[] = []) {

@@ -1,7 +1,7 @@
 import { ForbiddenException, Inject, Injectable, NotFoundException, UnprocessableEntityException } from "@nestjs/common";
 import { and, asc, desc, eq, gte, inArray, isNull, ne, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
-import { cycles, projectDailySnapshots, projectStatuses, projects, sprintScopeEvents, sprints, tickets, workItemRelations } from "../../../db/schema";
+import { cycles, projectDailySnapshots, projectStatuses, projects, sprintScopeEvents, tickets, workItemRelations } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { addDays, differenceInCalendarDays, formatDateOnly } from "../../../common/date";
@@ -58,46 +58,37 @@ export class ProjectsReportsService {
     const orgId = actor.orgId;
     const revision = await this.requireProject(actor, projectId);
 
-    const sprint = query.sprintId
-      ? await this.db.query.sprints.findFirst({
+    const cycle = query.cycleId
+      ? await this.db.query.cycles.findFirst({
           where: and(
-            eq(sprints.id, Number(query.sprintId)),
-            eq(sprints.projectId, projectId),
-            eq(sprints.orgId, orgId),
-            isNull(sprints.deletedAt),
+            eq(cycles.id, Number(query.cycleId)),
+            eq(cycles.projectId, projectId),
+            eq(cycles.orgId, orgId),
           ),
           columns: { id: true, startDate: true, endDate: true },
         })
-      : await this.db.query.sprints.findFirst({
+      : await this.db.query.cycles.findFirst({
           where: and(
-            eq(sprints.projectId, projectId),
-            eq(sprints.orgId, orgId),
-            inArray(sprints.status, ["ACTIVE", "COMPLETED"]),
-            isNull(sprints.deletedAt),
+            eq(cycles.projectId, projectId),
+            eq(cycles.orgId, orgId),
+            inArray(cycles.status, ["active", "completed"]),
           ),
-          orderBy: [desc(sprints.startDate)],
+          orderBy: [desc(cycles.startDate)],
           columns: { id: true, startDate: true, endDate: true },
         });
 
-    if (!sprint) {
-      if (query.sprintId) throw new NotFoundException("Sprint not found");
+    if (!cycle) {
+      if (query.cycleId) throw new NotFoundException("Cycle not found");
       return [];
     }
-    const startDate = new Date(sprint.startDate);
-    const endDate = new Date(sprint.endDate);
+    const startDate = new Date(cycle.startDate);
+    const endDate = new Date(cycle.endDate);
     const days = differenceInCalendarDays(endDate, startDate) + 1;
     if (!Number.isSafeInteger(days) || days < 1 || days > MAX_BURNUP_DAYS)
       throw new UnprocessableEntityException(`Burnup reports support sprint ranges of 1 to ${MAX_BURNUP_DAYS} days`);
 
-    const [cycleRow] = await this.db
-      .select({ id: cycles.id })
-      .from(cycles)
-      .where(and(eq(cycles.orgId, orgId), eq(cycles.legacySprintId, sprint.id)))
-      .limit(1);
-    if (!cycleRow) return [];
-
-    const cycleId = cycleRow.id;
-    const cacheKey = `projects:burnup:${orgId}:${projectId}:${sprint.id}:bounded:r${revision}`;
+    const cycleId = cycle.id;
+    const cacheKey = `projects:burnup:${orgId}:${projectId}:${cycleId}:bounded:r${revision}`;
     return this.cache.cached(
       cacheKey,
       async () => {
