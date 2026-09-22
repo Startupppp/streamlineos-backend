@@ -95,39 +95,6 @@ export const projects = build.table(
   ],
 );
 
-export const sprints = build.table(
-  "sprints",
-  {
-    id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
-    orgId: text("org_id")
-      .references(() => organizations.id, { onDelete: "cascade" })
-      .notNull(),
-    projectId: integer("project_id")
-      .notNull(),
-    name: text("name").notNull(),
-    startDate: timestamp("start_date").notNull(),
-    endDate: timestamp("end_date").notNull(),
-    goal: text("goal"),
-    status: text("status").default("PLANNED").notNull(),
-    deletedAt: timestamp("deleted_at", { withTimezone: true }),
-    createdAt: timestamp("created_at").defaultNow().notNull(),
-    updatedAt: timestamp("updated_at")
-      .defaultNow()
-      .notNull()
-      .$onUpdate(() => new Date()),
-  },
-  (table) => [
-  foreignKey({ columns: [table.orgId, table.projectId], foreignColumns: [projects.orgId, projects.id], name: "fk_sprints_org_project" }).onDelete("cascade"),
-    index("idx_sprints_project_status").on(table.projectId, table.status).where(sql`deleted_at IS NULL`),
-    index("idx_sprints_org_project_velocity_cursor").on(table.orgId, table.projectId, table.startDate.desc(), table.id.desc())
-      .where(sql`${table.deletedAt} IS NULL AND ${table.status} IN ('ACTIVE', 'COMPLETED')`),
-    unique("uniq_sprints_org_id").on(table.orgId, table.id),
-    check(
-      "chk_sprints_status",
-      sql`${table.status} IN ('PLANNED','ACTIVE','COMPLETED')`,
-    ),
-  ],
-);
 
 export const projectStatuses = build.table(
   "project_statuses",

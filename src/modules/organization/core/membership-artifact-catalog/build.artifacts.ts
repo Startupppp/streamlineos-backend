@@ -112,16 +112,6 @@ export const BUILD_ARTIFACTS = [
       "Added by the actor contraction: the row carries a membership pointer beside its legacy user id. The composite tenant foreign key nulls the pointer on removal so historical display survives, and a suspension is reversible so nothing is written.",
   },
   {
-    id: "bugs",
-    mechanism: "database-cascade",
-    table: "bugs",
-    keyedBy: "assignee_membership_id",
-    onRemoval: "set-null",
-    onSuspension: "retain",
-    reason:
-      "Added by the actor contraction: the row carries a membership pointer beside its legacy user id. The composite tenant foreign key nulls the pointer on removal so historical display survives, and a suspension is reversible so nothing is written.",
-  },
-  {
     id: "change_requests",
     mechanism: "database-cascade",
     table: "change_requests",
@@ -190,16 +180,6 @@ export const BUILD_ARTIFACTS = [
     onSuspension: "retain",
     reason:
       "Corrected 2026-09-03 against pg_catalog at journal head 676 (ticket 03, PRD-C053). This entry previously ruled set-null and asserted in prose that fk_comment_drafts_actor was ON DELETE SET NULL. It never was: the migration that created it, the Drizzle declaration and the catalog have all said CASCADE the whole time, so the ruling was documentation that nothing implemented. CASCADE is also the correct behaviour here — the row is per-member state keyed on the membership, and org_id leads the composite key as NOT NULL, so a bare SET NULL would raise 23502 on every removal instead of orphaning anything safely. A grant or preference belonging to nobody is residue, not history.",
-  },
-  {
-    id: "bugs_qa_owner_membership",
-    mechanism: "database-cascade",
-    table: "bugs",
-    keyedBy: "qa_owner_membership_id",
-    onRemoval: "set-null",
-    onSuspension: "retain",
-    reason:
-      "The QA-owner pointer on bugs is cleared by fk_bugs_qa_owner_actor, an ON DELETE SET NULL composite tenant foreign key, so the record survives the departure without its member pointer. A suspension is reversible, so nothing is written.",
   },
   {
     id: "okr_goals_created_by_membership",
