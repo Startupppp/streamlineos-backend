@@ -1,5 +1,5 @@
 import { ConflictException, ForbiddenException, NotFoundException, BadRequestException } from "@nestjs/common";
-import { and, desc, eq, isNull } from "drizzle-orm";
+import { and, desc, eq, gt, ilike, isNotNull, isNull, lte, or } from "drizzle-orm";
 import { projectClientGrants } from "../../../../db/schema/portal-access/project-client-grants";
 import { portalMemberships } from "../../../../db/schema/portal-access/portal-memberships";
 import { partyContacts, projects } from "../../../../db/schema";
@@ -10,7 +10,9 @@ import type {
   ListGrantsQuery,
   CreateGrantInput,
   UpdateGrantInput,
+  GrantCapabilityKey,
 } from "../dto/portal-access.schemas";
+import { GRANT_CAPABILITY_KEYS } from "../dto/portal-access.schemas";
 import { buildCursorPage, decodeCursor } from "../../../../common/pagination/cursor";
 import { keysetBeforeUuid } from "../../../../common/pagination/keyset";
 
@@ -63,6 +65,53 @@ export interface ProjectClientGrantDeps {
   ) => Promise<GrantMembership>;
 }
 
+const CAPABILITY_COLUMN_MAP = {
+  canViewMilestones: projectClientGrants.canViewMilestones,
+  canViewTasks: projectClientGrants.canViewTasks,
+  canViewAttachments: projectClientGrants.canViewAttachments,
+  canViewComments: projectClientGrants.canViewComments,
+  canSubmitChangeRequests: projectClientGrants.canSubmitChangeRequests,
+} as const satisfies Record<GrantCapabilityKey, unknown>;
+
+function buildSearchCondition(q: string | undefined) {
+  if (!q) return undefined;
+  const term = `%${q}%`;
+  return or(
+    ilike(partyContacts.firstName, term),
+    ilike(partyContacts.lastName, term),
+    ilike(projectClientGrants.partyContactId, term),
+  );
+}
+
+function buildPermissionConditions(permission: string | undefined) {
+  if (!permission) return [];
+  return permission
+    .split(",")
+    .filter((k): k is GrantCapabilityKey =>
+      (GRANT_CAPABILITY_KEYS as readonly string[]).includes(k),
+    )
+    .map((key) => eq(CAPABILITY_COLUMN_MAP[key], true));
+}
+
+function buildStateCondition(state: string | undefined) {
+  if (!state) return undefined;
+  const now = new Date();
+  if (state === "active")
+    return and(
+      eq(projectClientGrants.status, "ACTIVE"),
+      or(isNull(projectClientGrants.expiresAt), gt(projectClientGrants.expiresAt, now)),
+    );
+  if (state === "expired")
+    return and(
+      eq(projectClientGrants.status, "ACTIVE"),
+      isNotNull(projectClientGrants.expiresAt),
+      lte(projectClientGrants.expiresAt, now),
+    );
+  if (state === "suspended") return eq(projectClientGrants.status, "SUSPENDED");
+  if (state === "revoked") return eq(projectClientGrants.status, "REVOKED");
+  return undefined;
+}
+
 export async function loadGrant(
   deps: ProjectClientGrantDeps,
   organizationId: string,
@@ -87,7 +136,7 @@ export async function listGrants(
   organizationId: string,
   query: ListGrantsQuery,
 ) {
-  const { limit, cursor, projectId } = query;
+  const { limit, cursor, projectId, q, permission, state } = query;
   const position = cursor === undefined ? undefined : decodeCursor(cursor);
   if (cursor !== undefined && !position) throw new BadRequestException("Invalid pagination cursor");
 
@@ -97,6 +146,9 @@ export async function listGrants(
     position
       ? keysetBeforeUuid(projectClientGrants.createdAt, projectClientGrants.projectClientGrantId, position)
       : undefined,
+    buildStateCondition(state),
+    ...buildPermissionConditions(permission),
+    buildSearchCondition(q),
   );
 
   const rows = await deps.db
