@@ -292,10 +292,7 @@ describe("phase-05 precondition: the build.sprints table has no application read
   const SPRINTS_TABLE_FORM =
     /\b(?:from|update|insert|delete)\(sprints\)|query\.sprints\.|\bsprints\.(?:id|orgId|projectId|name|status|goal|startDate|endDate|deletedAt|createdAt|updatedAt)\b/;
 
-  const KNOWN_SPRINTS_TABLE_REMAINING: readonly string[] = [
-    "modules/build/core/projects-write.service.ts",
-    "modules/build/entity/build-entity-reads.service.ts",
-  ].map((p) => p.replace(/\//g, sep));
+  const KNOWN_SPRINTS_TABLE_REMAINING: readonly string[] = [];
 
   it("the table scanner is non-vacuous: it flags each query form the frozen SprintsService used to carry", () => {
     expect(SPRINTS_TABLE_FORM.test("      .from(sprints)")).toBe(true);
