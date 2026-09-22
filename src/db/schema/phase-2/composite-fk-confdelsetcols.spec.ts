@@ -17,7 +17,7 @@ import {
 
 const BACKEND_ROOT = resolve(__dirname, "../../../..");
 const MIGRATIONS_DIR = resolve(BACKEND_ROOT, "migrations");
-const SQL_DIR = resolve(BACKEND_ROOT, "docs/phase-2/sql");
+const SQL_DIR = resolve(MIGRATIONS_DIR, "sql");
 
 const VERIFY_SQL = "c-confdelsetcols-01-verify.sql";
 const PAIRING_SQL = "c-confdelsetcols-02-tenant-pairing.sql";
