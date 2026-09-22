@@ -124,9 +124,6 @@ const mockAccess = {
 };
 
 describe("FxService — cross-tenant isolation", () => {
-  // Rates live on the org's book (gl_fx_rates), so the tenant boundary is the
-  // book lookup: the real BooksService runs against the double, and the rate
-  // read only ever sees the id of the book that lookup returned.
   function makeFx() {
     return {
       rateFor: jest.fn().mockResolvedValue({ id: "rate-1", rate: "1.2", rateDate: "2025-01-01" }),

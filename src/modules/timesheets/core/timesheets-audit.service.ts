@@ -28,20 +28,6 @@ const AUDIT_INSERT_CHUNK = 500;
 export class TimesheetsAuditService {
   constructor(@Inject(DRIZZLE) private readonly db: Db) {}
 
-  /**
-   * Serialises the writers of one organisation's chain for the rest of the
-   * transaction.
-   *
-   * Every link commits to the hash of the row before it, so the tail must not
-   * move between reading it and inserting. Without this, two approvals landing
-   * together both read tail T and both write `prev_hash = T`: the chain forks,
-   * and the next verification reports the second, entirely legitimate, row as
-   * a break. Neither `ORDER BY id DESC LIMIT 1` nor `FOR UPDATE` on that row
-   * closes the window — the second writer's read is not blocked by a lock on
-   * a row it is not inserting after. The lock is transaction-scoped and keyed
-   * on the organisation, so it costs other tenants nothing and is released
-   * with the commit, and it comes before the tail read on purpose.
-   */
   private async lockChainTail(dbOrTx: DbLike, orgId: string): Promise<void> {
     await dbOrTx.execute(
       sql`SELECT pg_advisory_xact_lock(hashtextextended(${`timesheets-audit:${orgId}`}, 0))`,
@@ -74,13 +60,6 @@ export class TimesheetsAuditService {
     });
   }
 
-  /**
-   * The chained form of `record`. The hash chain is sequential by definition, so a
-   * bulk action wrote one SELECT plus one INSERT per subject; here the tail hash is
-   * read once and the chain is extended in memory, which is exactly what a per-row
-   * loop would have produced because every link is derived from its predecessor.
-   * The multi-row INSERT keeps VALUES order, so `id` order matches chain order.
-   */
   async recordMany(dbOrTx: DbLike, paramsList: readonly AuditEventParams[]): Promise<void> {
     const first = paramsList[0];
     if (!first) return;
@@ -174,20 +153,6 @@ export class TimesheetsAuditService {
     }));
   }
 
-  /**
-   * Walk the hash chain and say, honestly, how much of it was walked.
-   *
-   * The `limit` is real and an organisation will pass it: this reads the
-   * OLDEST `limit` events by id, so on a chain longer than that, everything
-   * after the cut is never examined and `valid: true` used to come back
-   * regardless. A caller had no way to tell "the whole chain is intact" from
-   * "the first ten thousand of ninety thousand are intact", which is the
-   * difference between an audit trail and a reassuring number.
-   *
-   * So the result carries `truncated` and `total`. A surface rendering this
-   * must say which of the two it is looking at — a green tick over a truncated
-   * check is worse than no check, because it is believed.
-   */
   async verifyChain(orgId: string, limit = 10_000): Promise<AuditVerifyResult> {
     const rows = await this.db
       .select({
@@ -222,19 +187,11 @@ export class TimesheetsAuditService {
       verified,
       legacyRows,
       total,
-      /* A break found early says nothing about what lies past the cut. */
       truncated: total > rows.length,
     });
 
     for (const row of rows) {
       if (!row.rowHash) {
-        /*
-         * Rows have carried a hash since the chain was introduced and nothing
-         * writes one without it, so hashless rows can only be a prefix — the
-         * events that predate hashing. One appearing after a hashed row means
-         * a hash was erased, and erasing the hash is the cheapest way to hide
-         * an edit; it is a break at that row, not a legacy row.
-         */
         if (verified > 0) return broken(row.id);
         legacyRows++;
         continue;
@@ -249,17 +206,6 @@ export class TimesheetsAuditService {
         after: row.after,
         reason: row.reason ?? undefined,
       });
-      /*
-       * No row is forgiven for who wrote it. A mismatch used to be waved
-       * through when `actorMembershipId` was null — meant for rows whose actor
-       * a membership cutover could not map, it also covered every row the
-       * system writes (detection sweeps, cron locks) and every row a departed
-       * member's foreign key had nulled, and re-anchored the chain on whatever
-       * hash the row now carried. An altered system row therefore verified.
-       * The cutover left no such rows behind (measured: none on the shared
-       * database, 2026-09-12), and migration 1104 stops the departure path
-       * rewriting the actor, so the tolerance has nothing left to excuse.
-       */
       if (expected !== row.rowHash || (row.prevHash ?? null) !== prevHash) return broken(row.id);
       prevHash = row.rowHash;
       verified++;

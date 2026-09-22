@@ -28,12 +28,6 @@ function makeUniqueViolation(constraintName: string): Error {
   return Object.assign(new Error("Failed query: insert into timesheets (...)"), { cause });
 }
 
-/**
- * The guard catches around the INSERT, inside the transaction (TS-13), so the
- * transaction double runs its callback against a handle whose insert raises. A
- * double that rejected from `transaction()` itself never reaches that catch and
- * would only pass against a guard wrapped around the whole transaction.
- */
 function txWhoseInsertRejects(error: Error) {
   return {
     insert: () => ({ values: () => ({ returning: () => Promise.reject(error) }) }),

@@ -52,32 +52,11 @@ function billingSnapshotCsv(snapshot: PricedEntry[]): string {
   return lines.join("\r\n");
 }
 
-/**
- * Marking billable time as invoiced.
- *
- * Split from the reads beside it because these are the only writes on this
- * service and they are one-way: an export stamps `timesheet_exports` and flips
- * the entries it covered, and nothing in this module un-flips them. That is
- * also why both entry points are idempotent on a caller-supplied key and why
- * `findExportByIdempotencyKey` sits here rather than with the queries — it
- * exists only to make the retry of a write safe, which is a property of the
- * write, not a way of reading exports.
- *
- * The reads that stayed (`getUninvoiced`, `getRatePreview`,
- * `getBillableWorkForNarrative`) answer "what would this cost" and can be
- * called all day with no effect.
- */
 export interface BillingExportDeps {
   readonly db: Db;
   readonly audit: TimesheetsAuditService;
 }
 
-/**
- * Entries per round trip. Also what keeps the draft's flip legal: it binds one
- * parameter per id, and postgres-js refuses a statement at 65,534, so the
- * single whole-period `inArray` this replaced failed outright past ~65k
- * entries.
- */
 export const BILLING_EXPORT_CHUNK = 1000;
 
 const BILLABLE_ENTRY_COLUMNS = {
@@ -307,22 +286,6 @@ export async function createInvoiceDraft(
   });
 }
 
-/**
- * Every entry `conditions` match, a keyset chunk at a time.
- *
- * Neither schema caps the span, so one request can cover an org's whole
- * history; this is what keeps that from being one result set. A LIMIT would be
- * the wrong bound — it would invoice a subset and report it as the whole — so
- * the loop reads on until a short chunk. Ordered by `timesheets.id` alone: one
- * strictly-increasing key visits every entry exactly once however the chunks
- * fall, and a period that is an exact multiple of the chunk costs one empty
- * read to discover.
- *
- * Takes the transaction, not the pool: the draft flips each chunk as it goes,
- * and a failure on a later chunk has to take those flips down with the export
- * row. It bounds the reads, not the snapshot — that is the export itself, one
- * JSONB array in one row, and it still grows with the period.
- */
 async function* billableEntryChunks(
   tx: TenantTx,
   conditions: SQL[],

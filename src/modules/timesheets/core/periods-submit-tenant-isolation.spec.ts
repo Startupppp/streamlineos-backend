@@ -20,7 +20,6 @@ describe("PeriodsSubmitService — cross-tenant isolation", () => {
     return { update: jest.fn().mockReturnValue(updateChain), insert, select: ownerLookup };
   }
 
-  /** The owner's membership -> user id, answered for any org-scoped lookup. */
   const ownerLookup = jest.fn().mockReturnValue({
     from: () => ({ where: () => Object.assign(Promise.resolve([{ id: 10, userId: "owner-user" }]), { limit: async () => [{ id: 10, userId: "owner-user" }] }) }),
   });

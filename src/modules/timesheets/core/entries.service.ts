@@ -21,7 +21,6 @@ import { formatDateOnly, wholeDaysBetween } from "./lib/period.helpers";
 import { parseStoredRequiredFields } from "./dto/settings.schemas";
 import { sqlstateOf } from "../../../common/observability/error-classification";
 
-/** `unique_violation`. */
 const SQLSTATE_UNIQUE_VIOLATION = "23505";
 import type {
   CreateEntryInput,
@@ -181,18 +180,6 @@ export class EntriesService {
         tx,
       );
 
-      /**
-       * `timesheets` carries three partial unique indexes, and the widest of
-       * them — `uniq_timesheets_work_log`, one ticket-less entry per person
-       * per day — allows only one ticket-less entry per person per day. A
-       * second one raises 23505, and until this catch existed that
-       * reached the client as a 500: an ordinary thing for a user to do,
-       * answered with "internal server error" and an alert.
-       *
-       * SQLSTATE via `sqlstateOf`, not `err.code`: drizzle wraps the driver
-       * error, so the code sits one or two `cause` links down and a direct
-       * `err.code === "23505"` is simply never true.
-       */
       let inserted;
       try {
         [inserted] = await tx

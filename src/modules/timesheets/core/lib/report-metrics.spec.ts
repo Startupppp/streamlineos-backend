@@ -88,9 +88,9 @@ describe("report-metrics", () => {
 
   describe("completeWeeksInRange", () => {
     it("counts complete 7-day blocks in the inclusive range", () => {
-      expect(completeWeeksInRange("2026-07-01", "2026-07-07")).toBe(1); // 7 days
-      expect(completeWeeksInRange("2026-07-01", "2026-07-06")).toBe(0); // 6 days
-      expect(completeWeeksInRange("2026-07-01", "2026-07-30")).toBe(4); // 30 days
+      expect(completeWeeksInRange("2026-07-01", "2026-07-07")).toBe(1);
+      expect(completeWeeksInRange("2026-07-01", "2026-07-06")).toBe(0);
+      expect(completeWeeksInRange("2026-07-01", "2026-07-30")).toBe(4);
     });
 
     it("returns 0 for inverted ranges", () => {
@@ -105,14 +105,13 @@ describe("report-metrics", () => {
     });
 
     it("multiplies complete weeks by weekly hours", () => {
-      expect(expectedHoursForRange("2026-07-01", "2026-07-14", 40)).toBe(80); // 2 weeks
-      expect(expectedHoursForRange("2026-07-01", "2026-07-06", 40)).toBe(0); // < 1 week
+      expect(expectedHoursForRange("2026-07-01", "2026-07-14", 40)).toBe(80);
+      expect(expectedHoursForRange("2026-07-01", "2026-07-06", 40)).toBe(0);
     });
   });
 
   describe("weekdayDatesInRange / missingWeekdayCount", () => {
     it("lists Mon-Fri only", () => {
-      // 2026-07-06 is a Monday; range Mon..Sun contains 5 weekdays.
       expect(weekdayDatesInRange("2026-07-06", "2026-07-12")).toEqual([
         "2026-07-06",
         "2026-07-07",
@@ -127,8 +126,8 @@ describe("report-metrics", () => {
     });
 
     it("counts weekdays without a worked entry", () => {
-      const worked = new Set(["2026-07-06", "2026-07-08", "2026-07-11"]); // Sat worked, ignored
-      expect(missingWeekdayCount("2026-07-06", "2026-07-12", worked)).toBe(3); // Tue, Thu, Fri
+      const worked = new Set(["2026-07-06", "2026-07-08", "2026-07-11"]);
+      expect(missingWeekdayCount("2026-07-06", "2026-07-12", worked)).toBe(3);
       expect(missingWeekdayCount("2026-07-11", "2026-07-12", new Set())).toBe(0);
     });
   });
@@ -213,7 +212,6 @@ describe("report-metrics", () => {
 });
 
 describe("expectedHoursForRange with holidays", () => {
-  /** Four complete weeks, Monday to Sunday, so the base is a round number. */
   const START = "2026-06-01";
   const END = "2026-06-28";
 
@@ -222,23 +220,16 @@ describe("expectedHoursForRange with holidays", () => {
     expect(expectedHoursForRange(START, END, 40, [])).toBe(160);
   });
 
-  /**
-   * The bug this replaced: a week containing a public holiday still expected
-   * forty hours, so the compliance report marked the whole company short for
-   * Diwali. A report that flags everybody teaches people to ignore it.
-   */
   it("deducts a weekday holiday at the daily equivalent", () => {
     expect(expectedHoursForRange(START, END, 40, ["2026-06-10"])).toBe(152);
     expect(expectedHoursForRange(START, END, 40, ["2026-06-10", "2026-06-11"])).toBe(144);
   });
 
-  /** A Saturday holiday costs nobody any expected hours. */
   it("ignores a holiday that falls at the weekend", () => {
     expect(expectedHoursForRange(START, END, 40, ["2026-06-13"])).toBe(160);
     expect(expectedHoursForRange(START, END, 40, ["2026-06-14"])).toBe(160);
   });
 
-  /** Two holiday rows can share a date; the day is only lost once. */
   it("counts a doubly-listed date once", () => {
     expect(expectedHoursForRange(START, END, 40, ["2026-06-10", "2026-06-10"])).toBe(152);
   });

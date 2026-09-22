@@ -12,15 +12,6 @@ import { holidayRangeQuerySchema, type HolidayRangeQuery } from "./dto/reports.s
 import { ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
 import { holidaysResponseSchema } from "./dto/timesheets-response.schemas";
 
-/**
- * Calendar context for the week grid.
- *
- * A separate controller for one route, because of the permission. The obvious
- * home was `ReportsController`, which requires `timesheets:reports:view` — a
- * key the people who actually fill in a timesheet do not hold. Putting it
- * there would have shipped an endpoint the grid could never call, and it would
- * have looked finished.
- */
 @RequireModule("timesheets")
 @Controller("timesheets/calendar")
 @UseGuards(JwtAuthGuard, ModuleGuard, PermissionGuard)

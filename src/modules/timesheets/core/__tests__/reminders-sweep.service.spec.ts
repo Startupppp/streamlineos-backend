@@ -2,33 +2,10 @@ import { TimesheetRemindersSweepService } from "../reminders-sweep.service";
 import type { Db } from "../../../../db/drizzle.module";
 import type { NotificationDispatchService } from "../../../notifications/notification-dispatch.service";
 
-/**
- * The sweep's decisions, with the database and the notification pipeline stubbed.
- *
- * What this can prove: which periods are considered, which reminder each one
- * earns, and — the two that matter most — that an organisation with unreadable
- * rules is reported rather than crashed on, and that a period someone has
- * already submitted is left alone.
- *
- * What it cannot prove is that the sweep reaches anything at all under RLS,
- * since `forEachOrg` and the real `emit` are not exercised here. That is the
- * `remindAllOrgs` half, and it needs a database.
- */
-
 interface StubQuery {
   rows: unknown[];
 }
 
-/**
- * Answers the two chains the service builds, in the order it asks: the settings
- * read (`select().from().where().limit()`) and then the paged period read
- * (`select().from().where().orderBy().limit()`).
- *
- * The period read is a keyset loop since TS-34, so it asks again until a page
- * comes back short. Each supplied response is one page; the queue running dry
- * yields an empty page, which ends the loop — so a single-page fixture behaves
- * exactly as it did before paging existed.
- */
 function stubDb(...responses: StubQuery[]): Db {
   const queue = [...responses];
   const next = () => queue.shift()?.rows ?? [];
@@ -45,7 +22,6 @@ function stubDb(...responses: StubQuery[]): Db {
           promise.orderBy = () => ({ limit: async () => rows });
           return promise;
         };
-        // The paged period read left-joins the owner's membership before filtering.
         return { where, leftJoin: () => ({ where }) };
       },
     }),
@@ -113,11 +89,6 @@ describe("TimesheetRemindersSweepService.remindOrg", () => {
     expect(sent).toHaveLength(0);
   });
 
-  /**
-   * The reason `resolveReminderRules` does not throw. Before this, one row of
-   * pre-schema junk in one organisation would have aborted that organisation's
-   * sweep; the count is what makes it visible instead of merely survivable.
-   */
   it("reports an organisation whose stored rules do not parse, and sends nothing", async () => {
     const { service: notifications, sent } = stubNotifications();
     const sweep = new TimesheetRemindersSweepService(
@@ -146,7 +117,6 @@ describe("TimesheetRemindersSweepService.remindOrg", () => {
       notifications,
     );
 
-    /** Period ends 03-31, grace 5 -> due 04-05; two days before is 04-03. */
     const result = await sweep.remindOrg("org-1", "2026-04-03");
 
     expect(result).toMatchObject({ periodsConsidered: 1, remindersSent: 1 });
@@ -183,7 +153,6 @@ describe("TimesheetRemindersSweepService.remindOrg", () => {
       notifications,
     );
 
-    /** 04-04 matches neither [2] before nor [1] after. */
     const result = await sweep.remindOrg("org-1", "2026-04-04");
 
     expect(result).toMatchObject({ periodsConsidered: 1, remindersSent: 0 });
@@ -216,7 +185,6 @@ describe("TimesheetRemindersSweepService.remindOrg", () => {
       notifications,
     );
 
-    /** Due 03-31; two days before is 03-29. */
     const result = await sweep.remindOrg("org-1", "2026-03-29");
 
     expect(result).toMatchObject({ remindersSent: 1 });

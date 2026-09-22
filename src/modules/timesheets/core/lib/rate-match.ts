@@ -15,7 +15,6 @@ export interface RateMatchQuery {
   ticketId?: number | null;
   taskId?: number | null;
   clientId?: number | null;
-  /** Entry date (YYYY-MM-DD). When set, only rates effective on this date match. */
   date?: string | null;
 }
 

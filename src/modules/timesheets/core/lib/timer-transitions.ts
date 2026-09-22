@@ -11,20 +11,6 @@ import { actingMembershipId } from "../../../../common/auth/principal";
 import type { CurrentUserContext } from "../../../../common/auth/backend-claims";
 import { buildTimerShape, type TimerRow } from "./timer-shape";
 
-/**
- * The four transitions of a running timer: pause, resume, stop, discard.
- *
- * Split from `timer.service.ts` because they are one state machine and nothing
- * else in that file is. Starting a timer has to decide what to do about an
- * already-running one, and converting a stopped timer writes a timesheet entry
- * through another service — these four only move a session between states, and
- * each is the same three steps: read the session, refuse if the actor is not
- * its owner or the state does not allow it, write the new state.
- *
- * `reloadTimer` is a callback rather than an imported read: it is the projected
- * read with project and ticket names joined, it stays on the service, and every
- * transition here ends by returning it.
- */
 export interface TimerTransitionDeps {
   readonly db: Db;
   readonly reloadTimer: (orgId: string, timerId: number) => Promise<TimerRow | undefined>;

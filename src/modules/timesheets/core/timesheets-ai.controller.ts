@@ -32,26 +32,6 @@ import { z } from "zod";
 
 const periodIdParams = z.object({ periodId: z.coerce.number().int().positive() }).strict();
 
-/**
- * Every handler here carries `@NoTenantTransaction()`. Each one ends in an
- * `AiGatewayService` call — a provider network round trip — and under the
- * request-scoped tenant transaction that call was made while a pooled database
- * connection was still checked out and idle-in-transaction, for the full
- * duration of someone else's outage (backend CLAUDE.md §4, PRD-C078/C147).
- *
- * `TimesheetsAiService` now opens its own short tenant transaction around the
- * evidence reads and commits it before invoking the gateway. Everything the
- * gateway itself touches — the credit reservation, the settlement and the
- * `ai_usage_logs` insert — already passes an explicit `orgId`, so no statement
- * reaches the pool without a tenant GUC.
- *
- * The opt-out also removes the tenant context's disconnect signal, which is the
- * only thing `getAmbientAiAbortSignal` had to read on these five routes — hence
- * `@UseInterceptors(AiRequestAbortInterceptor)` on the class. Without it the
- * released connection would have been paid for with an uncancellable provider
- * call: a client that hangs up still gets billed for tokens nobody reads
- * (PRD-C091). Same pairing as `KbAuthoringController`.
- */
 @RequireModule("timesheets")
 @Controller("timesheets")
 @UseGuards(JwtAuthGuard, ModuleGuard, PermissionGuard, RateLimitGuard)

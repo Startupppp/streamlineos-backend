@@ -63,16 +63,6 @@ export class BillingService {
       })
       .from(timesheets)
       .where(and(...conditions))
-      /**
-       * By currency as well as project. It used to group by project alone and
-       * label the row `MAX(currency)`, which meant a project billed in two
-       * currencies had its `hours * rate` summed across both and stamped with
-       * whichever code sorted highest — a silent cross-currency sum, the exact
-       * thing PRD §7.8 forbids and which the organisation-level total three
-       * screens down already refuses to do ("null when mixed so callers can
-       * never display a cross-currency sum as one number"). The care was there;
-       * it just stopped one level too high.
-       */
       .groupBy(timesheets.projectId, timesheets.currency);
 
     const unratedEntries = await this.db
@@ -98,14 +88,6 @@ export class BillingService {
       })),
     );
 
-    /**
-     * An unrated entry has no `currency` of its own — the column is filled from
-     * the rate at creation — so it arrives in the `currency IS NULL` bucket for
-     * its project. Its resolved rate does carry a currency, and that is the one
-     * the money belongs under. So resolution moves the entry out of the null
-     * bucket into the bucket it actually belongs to, rather than adding foreign
-     * money to a project total labelled with something else.
-     */
     const bucketKey = (projectId: number, currency: string) => `${projectId}\u0000${currency}`;
     const resolvedExtra = new Map<
       string,
@@ -151,12 +133,6 @@ export class BillingService {
 
     const defaultCurrency = await this.rateResolver.getDefaultCurrency(u.orgId);
 
-    /**
-     * One row per (project, currency). A project billed in two currencies now
-     * appears twice, each row carrying its own money and its own label, which
-     * is the only truthful way to render it — the table already prints a
-     * currency per row.
-     */
     const buckets = new Map<
       string,
       {
@@ -198,13 +174,6 @@ export class BillingService {
         continue;
       }
 
-      /**
-       * The currency-less remainder: entries whose rate could not be resolved
-       * at all. Whatever resolution rescued has already been counted under its
-       * own currency, so only the leftover stays here, and it is labelled with
-       * the organisation default rather than a hardcoded "USD" — which is what
-       * this line used to say, on a platform whose default is frequently INR.
-       */
       const drained = resolvedFromNull.get(pid) ?? { hours: 0, entryCount: 0 };
       const leftoverHours = hours - drained.hours;
       const leftoverCount = r.entryCount - drained.entryCount;
@@ -262,8 +231,6 @@ export class BillingService {
     }));
     const mixed = currencyTotals.length > 1;
 
-    // Conversion evidence against the org default currency, only when there is
-    // something to convert: mixed currencies, or a single non-default currency.
     const needsConversion =
       mixed ||
       (currencyTotals.length === 1 &&
@@ -288,8 +255,6 @@ export class BillingService {
 
     const totals = {
       hours: totalHours,
-      // Only meaningful when a single currency is present; null when mixed so
-      // callers can never display a cross-currency sum as one number.
       amount: mixed ? null : (currencyTotals[0]?.amount ?? 0),
       currency: mixed ? null : (currencyTotals[0]?.currency ?? defaultCurrency),
       mixed,

@@ -7,14 +7,6 @@ import { timesheetPeriods, timesheets } from "../../../../db/schema";
 import { applyApproval, applyBulkApproval } from "../lib/approval-transition";
 import { applyBulkRejection, applyRejection } from "../lib/rejection-transition";
 
-/**
- * The service checks `status = 'SUBMITTED'` before it opens the transaction,
- * unlocked. Two approvers deciding the same period, or an approve racing a
- * reject, both passed that check and both wrote: the second UPDATE flipped a
- * REJECTED period to APPROVED (or back), claimed a second event_seq and wrote
- * a second audit row. The UPDATE now carries the predicate itself, and what it
- * returns is what happened.
- */
 const ORG = "org-race";
 const U: CurrentUserContext = {
   userId: "approver",

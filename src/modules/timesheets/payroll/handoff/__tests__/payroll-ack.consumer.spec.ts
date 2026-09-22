@@ -59,12 +59,6 @@ describe("PayrollAckConsumer", () => {
     });
   });
 
-  /**
-   * The status carried is the one this event recorded, not whatever the row
-   * says now. An export acknowledged RECEIVED and later REJECTED must deliver
-   * two acknowledgements that disagree — re-reading the row would deliver
-   * REJECTED twice and lose the sequence.
-   */
   it("reports the status the event recorded", async () => {
     const { port, seen } = capturingPort();
     const consumer = new PayrollAckConsumer(port, new OutboxConsumerRegistry());
@@ -121,11 +115,6 @@ describe("RecordingPayrollHandoffAdapter.acknowledged", () => {
     idempotencyKey: "outbox:org-1:timesheets-payroll-ack:e1",
   };
 
-  /**
-   * A rejection is the payroll system saying the data did not land. With no
-   * implementation bound there is nothing to reconcile against, so it has to
-   * be louder than a success rather than the same volume.
-   */
   it("warns on a rejection and merely logs an acceptance", async () => {
     const adapter = new RecordingPayrollHandoffAdapter();
     const warned: string[] = [];
@@ -144,10 +133,6 @@ describe("RecordingPayrollHandoffAdapter.acknowledged", () => {
 
   it("rejects an acknowledgement that breaks the contract", async () => {
     const adapter = new RecordingPayrollHandoffAdapter();
-    // Named, and on the offending field. A bare `.rejects.toThrow()` is
-    // satisfied by any crash inside the adapter — a missing logger, a bad
-    // template literal — so it would stay green with the contract `parse`
-    // deleted, which is the only thing this adapter does that matters.
     const refusal = await adapter
       .acknowledged({ ...payload, status: "MAYBE" } as unknown as PayrollAckPayload)
       .then(
