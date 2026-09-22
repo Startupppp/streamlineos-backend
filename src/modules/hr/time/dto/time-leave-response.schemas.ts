@@ -114,13 +114,15 @@ export const leavePolicySummaryPageDataSchema = z.object({
   })),
 });
 
+const idCursorPageInfoSchema = z.object({
+  limit: z.number().int(),
+  hasMore: z.boolean(),
+  nextCursor: z.number().int().nullable(),
+});
+
 export const leavesMyResponseSchema = z.object({
   data: z.array(leaveRequestWithRelationsSchema),
-  pageInfo: z.object({
-    limit: z.number().int(),
-    hasMore: z.boolean(),
-    nextCursor: z.number().int().nullable(),
-  }),
+  pageInfo: idCursorPageInfoSchema,
 });
 
 export const leavesTeamItemSchema = leaveRequestRowSchema.extend({
@@ -130,8 +132,8 @@ export const leavesTeamItemSchema = leaveRequestRowSchema.extend({
 });
 
 export const leavesTeamResponseSchema = z.object({
-  pending: z.array(leavesTeamItemSchema),
-  all: z.array(leavesTeamItemSchema),
+  data: z.array(leavesTeamItemSchema),
+  pageInfo: idCursorPageInfoSchema,
 });
 
 export const leavesThisWeekItemSchema = leaveRequestRowSchema.extend({
