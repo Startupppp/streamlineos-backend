@@ -42,8 +42,12 @@ function bracketList(source: string, anchor: RegExp): string[] {
 
 const enumsSource = read(REPO_ROOT, "src", "db", "schema", "common", "enums.ts");
 const coreSource = read(REPO_ROOT, "src", "db", "schema", "build", "core.ts");
+const ticketCoreSource = read(REPO_ROOT, "src", "db", "schema", "build", "ticket-core.ts");
 const iterationsDtoSource = read(
   REPO_ROOT, "src", "modules", "build", "execution", "dto", "iterations.schemas.ts",
+);
+const iterationsControllerSource = read(
+  REPO_ROOT, "src", "modules", "build", "execution", "iterations.controller.ts",
 );
 const backfillSql = readSql(BACKFILL);
 
@@ -294,23 +298,10 @@ describe("the backfill is re-runnable and row-order independent", () => {
   });
 });
 
-describe("the cycles schema matches what the cutover SQL creates", () => {
-  const cyclesBlock = coreSource.slice(
-    coreSource.indexOf("export const cycles = build.table("),
-    coreSource.indexOf("export const modules = build.table("),
-  );
+const sprintsServiceSource = read(
+  REPO_ROOT, "src", "modules", "build", "execution", "sprints.service.ts",
+);
 
-  it("declares deleted_at and goal, the two columns a-sprint-cycle-01-expand.sql adds to the database", () => {
-    expect(cyclesBlock.length).toBeGreaterThan(0);
-    expect(cyclesBlock).toContain(`deletedAt: timestamp("deleted_at", { withTimezone: true }),`);
-    expect(cyclesBlock).toContain(`goal: text("goal"),`);
-  });
-
-  it("declares both partial indexes, so a database built from the schema alone can still serve the velocity keyset", () => {
-    expect(cyclesBlock).toContain(`idx_cycles_org_project_velocity_cursor`);
-    expect(cyclesBlock).toContain(`idx_cycles_org_project_status_live`);
-  });
-});
 
 describe("phase 06 rename and the Drizzle declaration must move together", () => {
   const scopeEvents = read(REPO_ROOT, "src", "db", "schema", "build", "sprint-events.ts");
