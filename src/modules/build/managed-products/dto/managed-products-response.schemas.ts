@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { wireDate, nullableWireDate } from "../../../../common/openapi/wire-types";
 import { cursorPageSchema } from "../../../../common/openapi/response-envelopes";
+import { managedProductStatusEnum } from "../../../../db/schema";
 
 export const managedProductRowSchema = z.object({
   id: z.number().int(),
@@ -8,9 +9,9 @@ export const managedProductRowSchema = z.object({
   name: z.string(),
   key: z.string(),
   description: z.string().nullable(),
-  status: z.string(),
+  status: z.enum(managedProductStatusEnum.enumValues),
   ownerId: z.string().nullable(),
-  pmWorkspaceId: z.string().nullable(),
+  pmWorkspaceId: z.string(),
   vision: z.string().nullable(),
   missionStatement: z.string().nullable(),
   targetCustomer: z.string().nullable(),

@@ -197,7 +197,9 @@ export class ChangeRequestsService {
         );
     }
 
-    const isDecision = input.status === "approved" || input.status === "rejected";
+    const isNewDecision =
+      (input.status === "approved" || input.status === "rejected") &&
+      input.status !== existing.status;
     const [updated] = await this.db
       .update(changeRequests)
       .set({
@@ -220,7 +222,7 @@ export class ChangeRequestsService {
         ...(input.decisionComment !== undefined && {
           decisionComment: input.decisionComment,
         }),
-        ...(isDecision && {
+        ...(isNewDecision && {
           decidedAt: new Date(),
           approvalOwnerId: input.approvalOwnerId ?? userId,
         }),

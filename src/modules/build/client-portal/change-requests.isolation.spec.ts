@@ -1,5 +1,6 @@
 import { BadRequestException, ForbiddenException, NotFoundException } from "@nestjs/common";
 import { ChangeRequestsService } from "./change-requests.service";
+import { listCrQuerySchema } from "./dto/change-requests.schemas";
 import type { AccessService } from "../../access/access.service";
 import type { AuditService } from "../../../common/audit/audit.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
@@ -411,5 +412,102 @@ describe("ChangeRequestsService — project scope on mutations", () => {
     );
 
     expect(db.update).not.toHaveBeenCalled();
+  });
+});
+
+describe("ChangeRequestsService — duplicate decision does not overwrite decidedAt", () => {
+  it("a second approve call when already approved does not set a new decidedAt", async () => {
+    const existingRow = {
+      id: 1,
+      status: "approved",
+      requestedById: "user-1",
+    };
+    const updatedRow = { ...existingRow, title: "T", orgId: "org-1" };
+    const db = {
+      query: {
+        projects: { findFirst: jest.fn().mockResolvedValue({ managerMembershipId: null }) },
+      },
+      select: jest.fn().mockReturnValue({
+        from: jest.fn().mockReturnValue({
+          where: jest.fn().mockReturnValue({
+            limit: jest.fn().mockResolvedValue([existingRow]),
+          }),
+        }),
+      }),
+      update: jest.fn().mockReturnValue({
+        set: jest.fn().mockReturnValue({
+          where: jest.fn().mockReturnValue({
+            returning: jest.fn().mockResolvedValue([updatedRow]),
+          }),
+        }),
+      }),
+      transaction: jest.fn(),
+    };
+    const svc = new ChangeRequestsService(db as unknown as Db, mockAccess, mockAudit);
+
+    await svc.updateChangeRequest(makeU("org-1", true), 1, 1, { status: "approved" });
+
+    const setCall = (db.update().set as jest.Mock).mock.calls[0]?.[0] as Record<string, unknown>;
+    expect(setCall).not.toHaveProperty("decidedAt");
+  });
+
+  it("a second reject call when already rejected does not set a new decidedAt", async () => {
+    const existingRow = {
+      id: 1,
+      status: "rejected",
+      requestedById: "user-1",
+    };
+    const updatedRow = { ...existingRow, title: "T", orgId: "org-1" };
+    const db = {
+      query: {
+        projects: { findFirst: jest.fn().mockResolvedValue({ managerMembershipId: null }) },
+      },
+      select: jest.fn().mockReturnValue({
+        from: jest.fn().mockReturnValue({
+          where: jest.fn().mockReturnValue({
+            limit: jest.fn().mockResolvedValue([existingRow]),
+          }),
+        }),
+      }),
+      update: jest.fn().mockReturnValue({
+        set: jest.fn().mockReturnValue({
+          where: jest.fn().mockReturnValue({
+            returning: jest.fn().mockResolvedValue([updatedRow]),
+          }),
+        }),
+      }),
+      transaction: jest.fn(),
+    };
+    const svc = new ChangeRequestsService(db as unknown as Db, mockAccess, mockAudit);
+
+    await svc.updateChangeRequest(makeU("org-1", true), 1, 1, { status: "rejected" });
+
+    const setCall = (db.update().set as jest.Mock).mock.calls[0]?.[0] as Record<string, unknown>;
+    expect(setCall).not.toHaveProperty("decidedAt");
+  });
+});
+
+describe("listCrQuerySchema — cursor parameters must be paired", () => {
+  it("accepts an empty query (no cursor)", () => {
+    expect(() => listCrQuerySchema.parse({})).not.toThrow();
+  });
+
+  it("accepts a fully paired cursor (afterCreatedAt + afterId)", () => {
+    expect(() =>
+      listCrQuerySchema.parse({
+        afterCreatedAt: "2024-06-01T00:00:00.000Z",
+        afterId: "42",
+      }),
+    ).not.toThrow();
+  });
+
+  it("rejects afterCreatedAt without afterId — partial cursor silently skips pagination", () => {
+    expect(() =>
+      listCrQuerySchema.parse({ afterCreatedAt: "2024-06-01T00:00:00.000Z" }),
+    ).toThrow();
+  });
+
+  it("rejects afterId without afterCreatedAt — partial cursor silently skips pagination", () => {
+    expect(() => listCrQuerySchema.parse({ afterId: "42" })).toThrow();
   });
 });
