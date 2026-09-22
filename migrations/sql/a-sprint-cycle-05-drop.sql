@@ -4,6 +4,9 @@
 -- close". A physical copy of build.sprints is taken first so a-sprint-cycle-05-drop-rollback.sql can
 -- recreate it. The copy is intentionally retained: it is the only remaining record of sprint row values
 -- once this phase commits.
+-- The two cosmetic renames this file used to carry moved to a-sprint-cycle-06-rename-scope-events.sql:
+-- a RENAME has no overlap window, so it breaks every deployed reader at the instant it commits, while
+-- dropping build.sprints is safe the moment no source file queries it.
 
 SET lock_timeout = '5s';
 --> statement-breakpoint
@@ -46,6 +49,3 @@ END $$;
 DROP TABLE "build"."sprints";
 --> statement-breakpoint
 
-ALTER TABLE "build_events"."sprint_scope_events" RENAME TO "cycle_scope_events";
---> statement-breakpoint
-ALTER TYPE "sprint_scope_event_type" RENAME TO "cycle_scope_event_type";

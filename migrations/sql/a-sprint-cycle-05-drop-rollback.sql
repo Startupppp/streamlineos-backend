@@ -2,16 +2,13 @@
 -- identity column, unique key, check constraint, indexes, policy and grants the declaration in
 -- backend/src/db/schema/build/core.ts lines 98-130 specifies, then restarts the identity sequence above
 -- the highest restored id so new inserts cannot collide with a restored row.
--- Reverses the two renames as well. Run a-sprint-cycle-04-detach-rollback.sql after this file, not before,
+-- Run a-sprint-cycle-06-rename-scope-events-rollback.sql first if phase 06 was applied.
+-- Run a-sprint-cycle-04-detach-rollback.sql after this file, not before,
 -- because the sprint foreign keys it reinstates reference this table.
 
 SET lock_timeout = '5s';
 --> statement-breakpoint
 
-ALTER TYPE "cycle_scope_event_type" RENAME TO "sprint_scope_event_type";
---> statement-breakpoint
-ALTER TABLE "build_events"."cycle_scope_events" RENAME TO "sprint_scope_events";
---> statement-breakpoint
 
 CREATE TABLE IF NOT EXISTS "build"."sprints" (
   "id" integer GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
