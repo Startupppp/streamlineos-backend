@@ -84,18 +84,30 @@ export class SprintsService {
   async getSprint(orgId: string, projectId: number, sprintId: number) {
     const sprint = await this.db.query.sprints.findFirst({
       where: and(eq(sprints.id, sprintId), eq(sprints.projectId, projectId), eq(sprints.orgId, orgId), isNull(sprints.deletedAt)),
-      with: {
-        tickets: {
-          where: isNull(tickets.deletedAt),
-          limit: 200,
-          with: {
-            assignee: { with: { user: { columns: { id: true, name: true, firstName: true, lastName: true, image: true, email: true } } } },
-          },
-        },
-      },
     });
     if (!sprint) throw new NotFoundException("Sprint not found");
-    return sprint;
+
+    const cycleRows = await this.db
+      .select({ id: cycles.id })
+      .from(cycles)
+      .where(and(eq(cycles.orgId, orgId), eq(cycles.legacySprintId, sprintId)))
+      .limit(1);
+    const bridgedCycle = cycleRows[0] ?? null;
+    if (!bridgedCycle) return { ...sprint, tickets: [] };
+
+    const sprintTickets = await this.db.query.tickets.findMany({
+      where: and(
+        eq(tickets.orgId, orgId),
+        eq(tickets.cycleId, bridgedCycle.id),
+        isNull(tickets.deletedAt),
+      ),
+      limit: 200,
+      with: {
+        assignee: { with: { user: { columns: { id: true, name: true, firstName: true, lastName: true, image: true, email: true } } } },
+      },
+    });
+
+    return { ...sprint, tickets: sprintTickets };
   }
 
   async updateSprint(orgId: string, projectId: number, sprintId: number, input: UpdateSprintInput, actorId?: string) {

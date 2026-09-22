@@ -409,7 +409,7 @@ const REVIEWED = [
     blastRadius: "Intra-tenant cross-project read.",
     evidence: [
       { file: "src/modules/build/execution/sprints.service.ts", line: 86, anchor: /where: and\(eq\(sprints\.id, sprintId\), eq\(sprints\.projectId, projectId\), eq\(sprints\.orgId, orgId\), isNull\(sprints\.deletedAt\)\),/, note: "bound to the URL project" },
-      { file: "src/modules/build/execution/sprints.service.ts", line: 165, anchor: /eq\(sprints\.projectId, projectId\)/, note: "deleteSprint DOES bind projectId — the in-file control" },
+      { file: "src/modules/build/execution/sprints.service.ts", line: 177, anchor: /eq\(sprints\.projectId, projectId\)/, note: "deleteSprint DOES bind projectId — the in-file control" },
     ],
   },
   {
@@ -419,8 +419,8 @@ const REVIEWED = [
     summary: "PATCH /build/:projectId/sprints/:sprintId. No @Param(\"projectId\"); both the pre-read and the UPDATE bind (id, orgId).",
     blastRadius: "Intra-tenant cross-project write.",
     evidence: [
-      { file: "src/modules/build/execution/sprints.service.ts", line: 103, anchor: /where: and\(eq\(sprints\.id, sprintId\), eq\(sprints\.projectId, projectId\), eq\(sprints\.orgId, orgId\), isNull\(sprints\.deletedAt\)\),/, note: "bound to the URL project" },
-      { file: "src/modules/build/execution/sprints.service.ts", line: 118, anchor: /\.where\(and\(eq\(sprints\.id, sprintId\), eq\(sprints\.orgId, orgId\), isNull\(sprints\.deletedAt\)\)\)/, note: "UPDATE binds id + orgId" },
+      { file: "src/modules/build/execution/sprints.service.ts", line: 115, anchor: /where: and\(eq\(sprints\.id, sprintId\), eq\(sprints\.projectId, projectId\), eq\(sprints\.orgId, orgId\), isNull\(sprints\.deletedAt\)\),/, note: "bound to the URL project" },
+      { file: "src/modules/build/execution/sprints.service.ts", line: 130, anchor: /\.where\(and\(eq\(sprints\.id, sprintId\), eq\(sprints\.orgId, orgId\), isNull\(sprints\.deletedAt\)\)\)/, note: "UPDATE binds id + orgId" },
     ],
   },
   {

@@ -25,8 +25,8 @@ export function buildTicketBoardHref(projectId: number, ticketId: number): strin
   return `/build/${projectId}?ticket=${ticketId}`;
 }
 
-export function buildSprintListHref(projectId: number): string {
-  return `/build/${projectId}/sprints`;
+export function buildCycleListHref(projectId: number): string {
+  return `/build/${projectId}/cycles`;
 }
 
 export function buildReleaseListHref(projectId: number): string {

@@ -23,10 +23,10 @@ import {
   type EntityResolution,
 } from "../../entity-reference/entity-reference.types";
 import {
+  buildCycleListHref,
   buildIncidentHref,
   buildProjectHref,
   buildReleaseListHref,
-  buildSprintListHref,
   buildTicketHref,
   buildTicketKey,
 } from "../core/build-app-paths";
@@ -369,7 +369,7 @@ export class BuildEntityReadsService {
       title: row.name,
       subtitle: null,
       status: row.status,
-      href: buildSprintListHref(row.projectId),
+      href: buildCycleListHref(row.projectId),
     }));
   }
 

@@ -1,5 +1,5 @@
-import { readFileSync, readdirSync, statSync } from "node:fs";
-import { join, relative } from "node:path";
+import { readFileSync, readdirSync } from "node:fs";
+import { join, relative, sep } from "node:path";
 
 const BACKEND_SRC = join(__dirname, "..", "..", "..");
 
@@ -122,8 +122,6 @@ describe("phase-04 detach invariant: full application source — property-access
 });
 
 describe("phase-04 detach invariant: sprintId column-selection form (relational API blind spot)", () => {
-  const sep = require("node:path").sep as string;
-
   const KNOWN_COLUMN_SELECT_REMAINING: readonly string[] = [
     "modules/build/core/dto/build-tickets-response.schemas.ts",
   ].map((p) => p.replace(/\//g, sep));
@@ -161,6 +159,80 @@ describe("phase-04 detach invariant: sprintId column-selection form (relational 
 
     const sortedViolators = [...columnSelectViolators].sort();
     const sortedKnown = [...KNOWN_COLUMN_SELECT_REMAINING].sort();
+    expect(sortedViolators).toEqual(sortedKnown);
+  });
+});
+
+const WRITE_OBJECT_LITERAL = /\bsprintId\s*:\s*(?:[A-Za-z_$][\w$]*\.)*sprintId\b/;
+const WRITE_PROPERTY_ASSIGNMENT = /\.sprintId\s*=\s*[^=]/;
+
+function hasSprintIdWriteForm(content: string): boolean {
+  return WRITE_OBJECT_LITERAL.test(content) || WRITE_PROPERTY_ASSIGNMENT.test(content);
+}
+
+describe("phase-04 detach invariant: sprintId object-literal WRITE form (the blind spot that let four writes survive)", () => {
+  const KNOWN_WRITE_REMAINING: readonly string[] = [
+    "modules/build/qa/test-runs.service.ts",
+  ].map((p) => p.replace(/\//g, sep));
+
+  it("the write scanner is non-vacuous: it flags the exact pre-fix create-ticket text that both earlier scanners missed", () => {
+    const preFixCreate = "        sprintId: body.sprintId,\n        epicId: body.epicId,";
+    expect(preFixCreate).not.toContain("tickets.sprintId");
+    expect(preFixCreate).not.toMatch(/sprintId\s*:\s*true/);
+    expect(hasSprintIdWriteForm(preFixCreate)).toBe(true);
+  });
+
+  it("the write scanner is non-vacuous: it flags the exact pre-fix meetings create text that both earlier scanners missed", () => {
+    const preFixMeetingCreate = "          sprintId: input.sprintId ?? null,\n          createdBy: u.userId,";
+    expect(preFixMeetingCreate).not.toContain("tickets.sprintId");
+    expect(preFixMeetingCreate).not.toMatch(/sprintId\s*:\s*true/);
+    expect(hasSprintIdWriteForm(preFixMeetingCreate)).toBe(true);
+  });
+
+  it("the write scanner is non-vacuous: it flags the exact pre-fix meetings patch assignment that both earlier scanners missed", () => {
+    const preFixMeetingPatch = "if (input.sprintId !== undefined) patch.sprintId = input.sprintId ?? null;";
+    expect(preFixMeetingPatch).not.toContain("tickets.sprintId");
+    expect(preFixMeetingPatch).not.toMatch(/sprintId\s*:\s*true/);
+    expect(hasSprintIdWriteForm(preFixMeetingPatch)).toBe(true);
+  });
+
+  it("the write scanner does not fire on the cycle-derived read form, which is the shape every fixed call site now uses", () => {
+    expect(hasSprintIdWriteForm("sprintId: row.cycle?.legacySprintId ?? null")).toBe(false);
+    expect(hasSprintIdWriteForm("sprintId: cycleId == null ? null : legacyByCycleId.get(cycleId) ?? null")).toBe(false);
+    expect(hasSprintIdWriteForm("expect(sprintId === undefined)")).toBe(false);
+  });
+
+  it("projects-tickets-create.service bridges body.sprintId to a cycleId and no longer writes tickets.sprint_id", () => {
+    const content = src("modules/build/core/projects-tickets-create.service.ts");
+    expect(hasSprintIdWriteForm(content)).toBe(false);
+    expect(content).toContain("cycles.legacySprintId");
+    expect(content).toContain("cycleId: resolvedCycleId");
+  });
+
+  it("meetings.service bridges the sprintId write to cycleId and derives the sprintId response field from cycles.legacySprintId", () => {
+    const content = src("modules/build/meetings/meetings.service.ts");
+    expect(hasSprintIdWriteForm(content)).toBe(false);
+    expect(content).toContain("cycles.legacySprintId");
+    expect(content).toContain("cycleId: resolvedCycleId");
+    expect(content).toContain("attachSprintIds");
+  });
+
+  it("sprints.service getSprint loads tickets by cycleId instead of traversing the sprints-to-tickets relation", () => {
+    const content = src("modules/build/execution/sprints.service.ts");
+    expect(content).not.toContain("tickets: {");
+    expect(content).toContain("eq(tickets.cycleId, bridgedCycle.id)");
+  });
+
+  it("only the known-remaining files still write sprintId from a request-sourced value — qa/test-runs.service.ts is owned by a concurrent agent in this same cutover", () => {
+    const allFiles = scanDir(BACKEND_SRC).filter(isApplicationSource);
+    expect(allFiles.length).toBeGreaterThan(50);
+
+    const writeViolators = allFiles
+      .filter((f) => hasSprintIdWriteForm(readFileSync(f, "utf8")))
+      .map((f) => relative(BACKEND_SRC, f));
+
+    const sortedViolators = [...writeViolators].sort();
+    const sortedKnown = [...KNOWN_WRITE_REMAINING].sort();
     expect(sortedViolators).toEqual(sortedKnown);
   });
 });

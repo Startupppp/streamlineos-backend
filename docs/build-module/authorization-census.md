@@ -396,7 +396,7 @@ Blast radius: Intra-tenant cross-project read.
 Evidence:
 
 - `src/modules/build/execution/sprints.service.ts:86` — bound to the URL project
-- `src/modules/build/execution/sprints.service.ts:165` — deleteSprint DOES bind projectId — the in-file control
+- `src/modules/build/execution/sprints.service.ts:177` — deleteSprint DOES bind projectId — the in-file control
 
 ### CLOSED — `PATCH /build/:projectId/sprints/:sprintId`
 
@@ -410,8 +410,8 @@ Blast radius: Intra-tenant cross-project write.
 
 Evidence:
 
-- `src/modules/build/execution/sprints.service.ts:103` — bound to the URL project
-- `src/modules/build/execution/sprints.service.ts:118` — UPDATE binds id + orgId
+- `src/modules/build/execution/sprints.service.ts:115` — bound to the URL project
+- `src/modules/build/execution/sprints.service.ts:130` — UPDATE binds id + orgId
 
 ### CLOSED — `PATCH /build/:projectId/modules/:moduleId`
 

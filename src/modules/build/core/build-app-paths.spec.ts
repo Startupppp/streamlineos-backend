@@ -1,9 +1,9 @@
 import {
+  buildCycleListHref,
   buildFeedbucketHref,
   buildIncidentHref,
   buildProjectHref,
   buildReleaseListHref,
-  buildSprintListHref,
   buildTicketBoardHref,
   buildTicketHref,
   buildTicketKey,
@@ -31,9 +31,13 @@ describe("build-app-paths", () => {
   });
 
   it("builds project-scoped list and detail hrefs without a /projects segment", () => {
-    expect(buildSprintListHref(3)).toBe("/build/3/sprints");
+    expect(buildCycleListHref(3)).toBe("/build/3/cycles");
     expect(buildReleaseListHref(3)).toBe("/build/3/releases");
     expect(buildIncidentHref(3, 9)).toBe("/build/3/incidents/9");
+  });
+
+  it("the iteration list href targets the cycles route that exists in the frontend, never the retired /sprints route that 404s", () => {
+    expect(buildCycleListHref(3)).not.toContain("/sprints");
   });
 
   it("builds feedbucket hrefs under /build", () => {

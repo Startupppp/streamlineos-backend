@@ -2,6 +2,7 @@ import { ForbiddenException, NotFoundException } from "@nestjs/common";
 import { Column, SQL } from "drizzle-orm";
 import type { Db } from "../../../db/drizzle.module";
 import {
+  cycles,
   intakeItems,
   modules,
   outboxEvents,
@@ -37,6 +38,8 @@ const MILESTONE_A = 400;
 const MILESTONE_B = 401;
 const INTAKE_A = 500;
 const INTAKE_B = 501;
+const CYCLE_A = 150;
+const CYCLE_B = 151;
 const VIEW_A = 600;
 const VIEW_B = 601;
 const VIEW_A_OTHERS_PRIVATE = 602;
@@ -96,6 +99,7 @@ function matches(where: unknown, row: Row): boolean {
 
 interface Store {
   sprints: Row[];
+  cycles: Row[];
   modules: Row[];
   tickets: Row[];
   milestones: Row[];
@@ -105,6 +109,7 @@ interface Store {
 
 function tableRows(store: Store, table: unknown): Row[] | null {
   if (table === sprints) return store.sprints;
+  if (table === cycles) return store.cycles;
   if (table === modules) return store.modules;
   if (table === tickets) return store.tickets;
   if (table === projectMilestones) return store.milestones;
@@ -118,6 +123,10 @@ function makeStore(): Store {
     sprints: [
       { id: SPRINT_A, orgId: ORG, projectId: PROJECT_A, name: "sprint-a", status: "PLANNED", deletedAt: null },
       { id: SPRINT_B, orgId: ORG, projectId: PROJECT_B, name: "sprint-b", status: "PLANNED", deletedAt: null },
+    ],
+    cycles: [
+      { id: CYCLE_A, orgId: ORG, projectId: PROJECT_A, legacySprintId: SPRINT_A, name: "cycle-a", status: "active" },
+      { id: CYCLE_B, orgId: ORG, projectId: PROJECT_B, legacySprintId: SPRINT_B, name: "cycle-b", status: "active" },
     ],
     modules: [
       { id: MODULE_A, orgId: ORG, projectId: PROJECT_A, name: "module-a", status: "backlog" },
@@ -217,6 +226,11 @@ function makeDb(store: Store): Fixture {
   const db = {
     query: {
       sprints: { findFirst: findFirst(() => store.sprints) },
+      tickets: {
+        findMany: jest.fn(async (args: { where?: unknown }) =>
+          store.tickets.filter((row) => matches(args.where, row)).map((row) => ({ ...row })),
+        ),
+      },
       projectViews: { findFirst: findFirst(() => store.views) },
     },
     select: jest.fn(selectBuilder),
