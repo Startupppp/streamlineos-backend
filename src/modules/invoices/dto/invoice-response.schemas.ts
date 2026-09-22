@@ -151,6 +151,7 @@ export const invoiceDetailResponseSchema = invoiceBaseSchema.extend({
       gstRate: z.string(),
       amount: z.string(),
       lineOrder: z.number().int(),
+      timesheetEntryId: z.number().int().nullable(),
     }),
   ),
 });

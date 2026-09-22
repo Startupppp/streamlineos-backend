@@ -1,4 +1,7 @@
 import { Test } from "@nestjs/testing";
+import { BadRequestException } from "@nestjs/common";
+import { getTableConfig } from "drizzle-orm/pg-core";
+import { invoiceItems } from "../../db/schema";
 import { InvoicesWriteService } from "./invoices-write.service";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { AuditService } from "../../common/audit/audit.service";
@@ -8,7 +11,7 @@ import { InvoicesLifecycleService } from "./invoices-lifecycle.service";
 import { InvoicesUpdateService } from "./invoices-update.service";
 import { InvoicesPaymentService } from "./invoices-payment.service";
 import { PlanLimitsService } from "../billing/core/plan-limits.service";
-import type { CreateInvoiceInput } from "./dto/invoice-write.schemas";
+import { createInvoiceSchema, type CreateInvoiceInput } from "./dto/invoice-write.schemas";
 
 const ORG = "org-inv-1";
 const USER = "user-inv-1";
@@ -26,22 +29,38 @@ function makeCreateInput(overrides: Partial<CreateInvoiceInput> = {}): CreateInv
   };
 }
 
+interface StoredTimesheetRow {
+  id: number;
+  status: string;
+  voidedAt: Date | null;
+  invoicingStatus?: string;
+}
+
+interface SelectChain {
+  from: jest.Mock;
+  where: jest.Mock;
+  limit: jest.Mock;
+  then: (resolve: (value: unknown) => unknown, reject?: (reason: unknown) => unknown) => Promise<unknown>;
+}
+
 describe("InvoicesWriteService — cache invalidation", () => {
   let service: InvoicesWriteService;
   let mockCache: { invalidateNamespace: jest.Mock; invalidateNamespaceForOrg: jest.Mock; invalidate: jest.Mock };
   let mockUpdateService: { updateInvoice: jest.Mock };
   let mockLifecycle: { voidInvoice: jest.Mock; markOverdueInvoices: jest.Mock };
+  let timesheetRows: StoredTimesheetRow[];
+  let dbSelect: jest.Mock;
+  let txInsert: jest.Mock;
+  let txValues: jest.Mock;
+
+  const insertedItemRows = (): Array<Record<string, unknown>> =>
+    (txValues.mock.calls[1]?.[0] ?? []) as Array<Record<string, unknown>>;
 
   beforeEach(async () => {
-    const txChain = {
-      execute: jest.fn().mockResolvedValue(undefined),
-      select: jest.fn().mockReturnValue({
-        from: jest.fn().mockReturnThis(),
-        where: jest.fn().mockReturnThis(),
-        limit: jest.fn().mockResolvedValue([{ count: 0 }]),
-      }),
-      insert: jest.fn().mockReturnValue({
-        values: jest.fn().mockReturnThis(),
+    timesheetRows = [];
+    txValues = jest.fn().mockReturnThis();
+    txInsert = jest.fn().mockReturnValue({
+        values: txValues,
         returning: jest.fn().mockResolvedValue([{
           id: 1,
           invoiceNumber: "INV-2026-0001",
@@ -69,8 +88,25 @@ describe("InvoicesWriteService — cache invalidation", () => {
           sentAt: null,
           createdBy: USER,
         }]),
+    });
+
+    const txChain = {
+      execute: jest.fn().mockResolvedValue(undefined),
+      select: jest.fn().mockReturnValue({
+        from: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        limit: jest.fn().mockResolvedValue([{ count: 0 }]),
       }),
+      insert: txInsert,
     };
+
+    const selectChain: SelectChain = {
+      from: jest.fn(() => selectChain),
+      where: jest.fn(() => selectChain),
+      limit: jest.fn(() => Promise.resolve(timesheetRows)),
+      then: (resolve, reject) => Promise.resolve(timesheetRows).then(resolve, reject),
+    };
+    dbSelect = jest.fn(() => selectChain);
 
     const mockDb = {
       transaction: jest.fn().mockImplementation(async (fn: (tx: unknown) => Promise<unknown>) => fn(txChain)),
@@ -84,11 +120,7 @@ describe("InvoicesWriteService — cache invalidation", () => {
           findFirst: jest.fn().mockResolvedValue({ address: null }),
         },
       },
-      select: jest.fn().mockReturnValue({
-        from: jest.fn().mockReturnThis(),
-        where: jest.fn().mockReturnThis(),
-        limit: jest.fn().mockResolvedValue([]),
-      }),
+      select: dbSelect,
     };
 
     mockCache = {
@@ -146,6 +178,119 @@ describe("InvoicesWriteService — cache invalidation", () => {
       await service.createInvoice(ORG, USER, makeCreateInput());
       const keys = mockCache.invalidateNamespace.mock.calls.map((c: unknown[]) => c[0]);
       expect(keys).toHaveLength(0);
+    });
+  });
+
+  describe("createInvoice — the timesheet entry an invoice line bills", () => {
+    const linkedInput = (...entryIds: Array<number | undefined>) =>
+      makeCreateInput({
+        items: entryIds.map((timesheetEntryId, index) => ({
+          description: `Consulting ${index}`,
+          quantity: 1,
+          rate: 1000,
+          gstRate: 0,
+          timesheetEntryId,
+        })),
+      });
+
+    it("admits the link on the create body, which the item schema silently stripped before it was declared", () => {
+      const parsed = createInvoiceSchema.parse({
+        items: [{ description: "Consulting", quantity: 1, rate: 1000, gstRate: 0, timesheetEntryId: 77 }],
+      });
+
+      expect(parsed.items?.[0]).toMatchObject({ timesheetEntryId: 77 });
+    });
+
+    it("refuses a non-positive entry id on the body rather than letting it reach the resolver", () => {
+      const parsed = createInvoiceSchema.safeParse({
+        items: [{ description: "Consulting", quantity: 1, rate: 1000, gstRate: 0, timesheetEntryId: 0 }],
+      });
+
+      expect(parsed.success).toBe(false);
+    });
+
+    it("persists the link when the entry is approved and belongs to the invoicing organization", async () => {
+      timesheetRows = [{ id: 77, status: "APPROVED", voidedAt: null, invoicingStatus: "UNINVOICED" }];
+
+      await service.createInvoice(ORG, USER, linkedInput(77));
+
+      expect(insertedItemRows()[0]).toMatchObject({ timesheetEntryId: 77 });
+    });
+
+    it("writes null, and asks the database nothing, when no line cites a timesheet entry", async () => {
+      await service.createInvoice(ORG, USER, makeCreateInput());
+
+      expect(insertedItemRows()[0]).toMatchObject({ timesheetEntryId: null });
+      expect(dbSelect).not.toHaveBeenCalled();
+    });
+
+    it("refuses an entry that resolves in another organization, which the NOT VALID foreign key would not catch", async () => {
+      timesheetRows = [];
+
+      await expect(service.createInvoice(ORG, USER, linkedInput(4242))).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
+      expect(txInsert).not.toHaveBeenCalled();
+    });
+
+    it("refuses a voided entry, voiding being the only deletion a timesheet has", async () => {
+      timesheetRows = [{ id: 77, status: "APPROVED", voidedAt: new Date("2026-09-01T00:00:00Z") }];
+
+      await expect(service.createInvoice(ORG, USER, linkedInput(77))).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
+      expect(txInsert).not.toHaveBeenCalled();
+    });
+
+    it("refuses an entry that is not APPROVED, the state every billing read in the timesheets module already requires", async () => {
+      timesheetRows = [{ id: 77, status: "PENDING", voidedAt: null }];
+
+      await expect(service.createInvoice(ORG, USER, linkedInput(77))).rejects.toBeInstanceOf(
+        BadRequestException,
+      );
+    });
+
+    it("accepts an entry already flipped to INVOICE_DRAFTED, since that is where createInvoiceDraft leaves every entry it selects", async () => {
+      timesheetRows = [{ id: 77, status: "APPROVED", voidedAt: null, invoicingStatus: "INVOICE_DRAFTED" }];
+
+      await service.createInvoice(ORG, USER, linkedInput(77));
+
+      expect(insertedItemRows()[0]).toMatchObject({ timesheetEntryId: 77 });
+    });
+
+    it("resolves every cited entry in one query rather than one per line", async () => {
+      timesheetRows = [
+        { id: 77, status: "APPROVED", voidedAt: null },
+        { id: 78, status: "APPROVED", voidedAt: null },
+      ];
+
+      await service.createInvoice(ORG, USER, linkedInput(77, 78, undefined));
+
+      expect(dbSelect).toHaveBeenCalledTimes(1);
+      expect(insertedItemRows().map((row) => row.timesheetEntryId)).toEqual([77, 78, null]);
+    });
+  });
+
+  describe("invoice_items declares the timesheet link but not its foreign key", () => {
+    it("declares timesheet_entry_id as a nullable integer, without which drizzle can neither write nor read it", () => {
+      const column = getTableConfig(invoiceItems).columns.find(
+        (candidate) => candidate.name === "timesheet_entry_id",
+      );
+
+      expect(column).toBeDefined();
+      expect(column?.notNull).toBe(false);
+      expect(column?.hasDefault).toBe(false);
+    });
+
+    it("declares no foreign key on the link, because the live constraint is composite on org_id and this table deliberately leaves org_id to trg_set_org_id", () => {
+      const config = getTableConfig(invoiceItems);
+
+      const referencingColumns = config.foreignKeys.flatMap((key) =>
+        key.reference().columns.map((column) => column.name),
+      );
+
+      expect(config.columns.some((candidate) => candidate.name === "org_id")).toBe(false);
+      expect(referencingColumns).not.toContain("timesheet_entry_id");
     });
   });
 

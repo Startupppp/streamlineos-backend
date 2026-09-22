@@ -20,6 +20,7 @@ import { round2 } from "./invoice-helpers";
 export interface StoredLineTax {
   gstRate: string;
   hsnSacCode: string | null;
+  timesheetEntryId: number | null;
 }
 
 /** A line as the edit DTO sends it: `gstRate`/`hsnSacCode` may be absent. */
@@ -40,6 +41,7 @@ export interface ResolvedLine {
   amount: number;
   gstRate: number;
   hsnSacCode: string | null;
+  timesheetEntryId: number | null;
 }
 
 export interface InvoiceTotals {
@@ -93,6 +95,7 @@ export function resolveLineItems(
       amount: round2(line.amount),
       gstRate: gstRate ?? 0,
       hsnSacCode: line.hsnSacCode ?? carried?.hsnSacCode ?? null,
+      timesheetEntryId: carried?.timesheetEntryId ?? null,
     };
   });
 }

@@ -15,6 +15,7 @@ const itemSchema = z.object({
   quantity: z.number().positive(),
   rate: z.number().nonnegative(),
   gstRate: z.number().refine((v) => [0, 5, 12, 18, 28].includes(v), { message: "gstRate must be 0/5/12/18/28" }),
+  timesheetEntryId: z.number().int().positive().optional(),
 });
 
 function computeGrossTotal(input: {

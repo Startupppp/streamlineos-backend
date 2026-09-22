@@ -91,6 +91,7 @@ export const invoiceItems = pgTable("invoice_items", {
   gstRate: decimal("gst_rate", { precision: 5, scale: 2 }).notNull(),
   amount: decimal("amount", { precision: 18, scale: 4 }).notNull(),
   lineOrder: integer("line_order").notNull(),
+  timesheetEntryId: integer("timesheet_entry_id"),
 }, (table) => [
   index("idx_invoice_items_invoice").on(table.invoiceId),
 ]);
