@@ -1,6 +1,10 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { and, count, eq, inArray, isNull } from "drizzle-orm";
-import { notifications, projectApprovals, organizationMembers } from "../../db/schema";
+import {
+  notifications,
+  projectApprovals,
+  organizationMembers,
+} from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { AccessService } from "../access/access.service";
@@ -16,12 +20,14 @@ import { notificationNotSnoozed } from "./notification-read-window";
 import { BroadcastsService } from "./broadcasts.service";
 import {
   SOURCE_TIMEOUT_MS,
+  buildApprovalAdapter,
   fetchBroadcastItems,
-  fetchBuildApprovalItems,
   fetchMailItems,
   fetchNotificationItems,
   nextMailPosition,
   readSourceWithin,
+  type ApprovalSourceAdapter,
+  type InboxFilters,
   type MailSourceBatch,
   type SourceRead,
 } from "./unified-inbox-sources";
@@ -58,6 +64,23 @@ function skippedSource(kind: InboxKind, reason: string | null): SourceStatus {
   return { kind, included: false, reason, available: true, error: null };
 }
 
+function matchesQ(q: string, subject: string, body: string): boolean {
+  const lower = q.toLowerCase();
+  return subject.toLowerCase().includes(lower) || body.toLowerCase().includes(lower);
+}
+
+function applyInMemoryFilters<T extends { subject: string; body?: string; category?: string; priority?: string }>(
+  items: T[],
+  filters: InboxFilters,
+): T[] {
+  return items.filter((item) => {
+    if (filters.q && !matchesQ(filters.q, item.subject, item.body ?? "")) return false;
+    if (filters.category && item.category !== filters.category) return false;
+    if (filters.priority && item.priority !== filters.priority) return false;
+    return true;
+  });
+}
+
 function readSource<T>(read: () => Promise<T>): Promise<SourceRead<T>> {
   return readSourceWithin(SOURCE_TIMEOUT_MS, read);
 }
@@ -72,7 +95,13 @@ function includedSource(
 ): SourceStatus {
   if (outcome === null || outcome.ok)
     return { kind, included: true, reason: null, available: true, error: null };
-  return { kind, included: true, reason: null, available: false, error: outcome.error };
+  return {
+    kind,
+    included: true,
+    reason: null,
+    available: false,
+    error: outcome.error,
+  };
 }
 
 function mailSourceStatus(outcome: SourceRead<MailSourceBatch>): SourceStatus {
@@ -86,7 +115,13 @@ function mailSourceStatus(outcome: SourceRead<MailSourceBatch>): SourceStatus {
     };
   const { accountsUnavailable, accountsQueried, items } = outcome.value;
   if (accountsUnavailable === 0)
-    return { kind: "mail", included: true, reason: null, available: true, error: null };
+    return {
+      kind: "mail",
+      included: true,
+      reason: null,
+      available: true,
+      error: null,
+    };
   return {
     kind: "mail",
     included: true,
@@ -106,6 +141,10 @@ export class UnifiedInboxService {
     private readonly buildApprovals: BuildApprovalsInboxService,
   ) {}
 
+  private buildApprovalAdapters(): ApprovalSourceAdapter[] {
+    return [buildApprovalAdapter(this.buildApprovals)];
+  }
+
   async list(
     orgId: string,
     userId: string,
@@ -115,6 +154,13 @@ export class UnifiedInboxService {
     const limit = Math.min(query.limit ?? 25, 100);
     const cursorState = decodeInboxCursor(query.cursor);
     const unreadOnly = query.unreadOnly ?? false;
+    const triage = query.triage ?? "active";
+    const filters: InboxFilters = {
+      triage,
+      q: query.q,
+      category: query.category,
+      priority: query.priority,
+    };
     const kindsFilter: InboxKind[] =
       query.kinds && query.kinds.length > 0
         ? query.kinds
@@ -125,19 +171,45 @@ export class UnifiedInboxService {
     const wantsMail = kindsFilter.includes("mail");
     const wantsBuildApprovals = kindsFilter.includes("build_approval");
 
-    const mailRequested = wantsMail && !unreadOnly;
+    const broadcastsSupport = triage === "active";
+    const mailSupport = triage === "active";
+    const approvalsSupport = triage === "active";
 
-    const canViewMail = mailRequested
-      ? await this.access.holds(user, "mail:inbox:view")
-      : false;
+    const canViewMail =
+      wantsMail && mailSupport
+        ? await this.access.holds(user, "mail:inbox:view")
+        : false;
 
-    const canViewBuildApprovals = wantsBuildApprovals
-      ? await this.access.holds(user, "build:approvals:view")
-      : false;
+    let mailFreshForUnreadOnly: boolean | null = null;
+    if (unreadOnly && wantsMail && mailSupport && canViewMail) {
+      mailFreshForUnreadOnly = await this.mail.areAllAccountsFresh(
+        orgId,
+        userId,
+        "inbox",
+      );
+    }
+
+    const shouldFetchMail =
+      wantsMail &&
+      mailSupport &&
+      canViewMail &&
+      (!unreadOnly || mailFreshForUnreadOnly === true);
+
+    const adapters = this.buildApprovalAdapters();
+    const canViewApproval =
+      wantsBuildApprovals && approvalsSupport
+        ? await this.access.holds(
+            user,
+            adapters[0]?.permission ?? "build:approvals:view",
+          )
+        : false;
 
     const membershipId = actingMembershipId(user.principal);
     const notifPosition = inboxSourcePosition(cursorState.n, cursorState.nt);
-    const broadcastPosition = inboxSourcePosition(cursorState.b, cursorState.bt);
+    const broadcastPosition = inboxSourcePosition(
+      cursorState.b,
+      cursorState.bt,
+    );
     const approvalPosition = inboxSourcePosition(cursorState.a, cursorState.at);
 
     const [notifOutcome, broadcastOutcome, mailOutcome, approvalOutcome] =
@@ -151,10 +223,11 @@ export class UnifiedInboxService {
                 limit + 1,
                 notifPosition,
                 unreadOnly,
+                filters,
               ),
             )
           : null,
-        wantsBroadcasts
+        wantsBroadcasts && broadcastsSupport
           ? readSource(() =>
               fetchBroadcastItems(
                 this.broadcasts,
@@ -166,7 +239,7 @@ export class UnifiedInboxService {
               ),
             )
           : null,
-        mailRequested && canViewMail
+        shouldFetchMail
           ? readSource(() =>
               fetchMailItems(
                 this.mail,
@@ -175,13 +248,17 @@ export class UnifiedInboxService {
                 membershipId,
                 limit + 1,
                 cursorState.m,
+                unreadOnly,
+                filters.q,
               ),
             )
           : null,
-        wantsBuildApprovals && canViewBuildApprovals
+        wantsBuildApprovals &&
+        approvalsSupport &&
+        canViewApproval &&
+        adapters[0]
           ? readSource(() =>
-              fetchBuildApprovalItems(
-                this.buildApprovals,
+              adapters[0].fetch(
                 orgId,
                 userId,
                 membershipId,
@@ -197,26 +274,47 @@ export class UnifiedInboxService {
     const emptyApprovals: BuildApprovalInboxItem[] = [];
 
     const notifItems = itemsOf(notifOutcome, emptyNotifications);
-    const broadcastItems = itemsOf(broadcastOutcome, emptyBroadcasts);
+    const rawBroadcastItems = itemsOf(broadcastOutcome, emptyBroadcasts);
     const approvalItems = itemsOf(approvalOutcome, emptyApprovals);
     const mailBatch =
-      mailOutcome !== null && mailOutcome.ok ? mailOutcome.value : EMPTY_MAIL_BATCH;
+      mailOutcome !== null && mailOutcome.ok
+        ? mailOutcome.value
+        : EMPTY_MAIL_BATCH;
+
+    const broadcastItems = applyInMemoryFilters(rawBroadcastItems, filters);
 
     const sources: SourceStatus[] = [
       wantsNotifications
         ? includedSource("notification", notifOutcome)
         : skippedSource("notification", null),
-      wantsBroadcasts
+      wantsBroadcasts && broadcastsSupport
         ? includedSource("broadcast", broadcastOutcome)
-        : skippedSource("broadcast", null),
-      this.mailStatus(wantsMail, unreadOnly, canViewMail, mailOutcome),
-      wantsBuildApprovals && canViewBuildApprovals && approvalOutcome !== null
+        : skippedSource(
+            "broadcast",
+            wantsBroadcasts && !broadcastsSupport
+              ? "unsupported: triage (broadcasts have no archive state)"
+              : null,
+          ),
+      this.mailStatus(
+        wantsMail,
+        unreadOnly,
+        triage,
+        canViewMail,
+        mailFreshForUnreadOnly,
+        mailOutcome,
+      ),
+      wantsBuildApprovals &&
+      approvalsSupport &&
+      canViewApproval &&
+      approvalOutcome !== null
         ? includedSource("build_approval", approvalOutcome)
         : skippedSource(
             "build_approval",
-            wantsBuildApprovals && !canViewBuildApprovals
-              ? "no permission: build:approvals:view"
-              : null,
+            wantsBuildApprovals && !approvalsSupport
+              ? "unsupported: triage (approvals have no archive state)"
+              : wantsBuildApprovals && !canViewApproval
+                ? `no permission: ${adapters[0]?.permission ?? "build:approvals:view"}`
+                : null,
           ),
     ];
 
@@ -286,13 +384,15 @@ export class UnifiedInboxService {
         cursorState.m,
         mailBatch,
         deliveredMail,
+        unreadOnly,
       ),
       a: approvalNext?.id ?? cursorState.a,
       at: approvalNext?.t ?? cursorState.at,
     };
 
     const advanced = !sameInboxCursorState(nextState, cursorState);
-    const nextCursor = hasMore && advanced ? encodeInboxCursor(nextState) : null;
+    const nextCursor =
+      hasMore && advanced ? encodeInboxCursor(nextState) : null;
 
     return { items: page, hasMore, nextCursor, sources, degraded };
   }
@@ -300,12 +400,19 @@ export class UnifiedInboxService {
   private mailStatus(
     wantsMail: boolean,
     unreadOnly: boolean,
+    triage: "active" | "later" | "done",
     canViewMail: boolean,
+    freshForUnreadOnly: boolean | null,
     outcome: SourceRead<MailSourceBatch> | null,
   ): SourceStatus {
     if (!wantsMail) return skippedSource("mail", null);
-    if (unreadOnly) return skippedSource("mail", "unsupported: unreadOnly");
-    if (!canViewMail || outcome === null)
+    if (triage !== "active")
+      return skippedSource("mail", "unsupported: triage (mail has no archive state)");
+    if (unreadOnly && freshForUnreadOnly === false)
+      return skippedSource("mail", "unsupported: unreadOnly (mailbox not synced)");
+    if (!canViewMail)
+      return skippedSource("mail", "no permission: mail:inbox:view");
+    if (outcome === null)
       return skippedSource("mail", "no permission: mail:inbox:view");
     return mailSourceStatus(outcome);
   }
@@ -338,9 +445,15 @@ export class UnifiedInboxService {
     const [notifCount, mailCount, approvalCount] = await Promise.all([
       this.countNotificationUnread(orgId, actingMembershipId(user.principal)),
       canMail
-        ? this.countMailUnread(orgId, userId, actingMembershipId(user.principal))
+        ? this.countMailUnread(
+            orgId,
+            userId,
+            actingMembershipId(user.principal),
+          )
         : Promise.resolve({ unread: 0, exact: true }),
-      canApproval ? this.countApprovalPending(orgId, userId) : Promise.resolve(0),
+      canApproval
+        ? this.countApprovalPending(orgId, userId)
+        : Promise.resolve(0),
     ]);
 
     return {
@@ -408,10 +521,19 @@ export class UnifiedInboxService {
     userId: string,
     membershipId: number | null,
   ): Promise<{ unread: number; exact: boolean }> {
-    return this.mail.countUnread(orgId, userId, membershipId, "inbox", MAIL_COUNT_SCAN_LIMIT);
+    return this.mail.countUnread(
+      orgId,
+      userId,
+      membershipId,
+      "inbox",
+      MAIL_COUNT_SCAN_LIMIT,
+    );
   }
 
-  private async countApprovalPending(orgId: string, userId: string): Promise<number> {
+  private async countApprovalPending(
+    orgId: string,
+    userId: string,
+  ): Promise<number> {
     const rows = await this.db
       .select({ cnt: count() })
       .from(projectApprovals)

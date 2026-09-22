@@ -109,3 +109,10 @@ export const todayActivitiesSchema = z.array(
     subject: z.string().nullable(),
   }),
 );
+
+export const crmPulseDashboardSchema = z.object({
+  mrr: z.number(),
+  pipelineValue: z.number(),
+  newLeadsThisWeek: z.number().int(),
+  conversionRate: z.number().int(),
+});

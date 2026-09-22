@@ -20,7 +20,10 @@ import { MailMetadataService } from "./mail-metadata.service";
 import { MailSyncCheckpointService } from "./mail-sync-checkpoint.service";
 import { listFromMetadata, pageFromMetadata } from "./mail-mirror-page";
 import { advanceUnionCursor } from "./mail-union-cursor";
-import { fetchMessagesForAccount, type MailFetchDeps } from "./mail-fetch-account";
+import {
+  fetchMessagesForAccount,
+  type MailFetchDeps,
+} from "./mail-fetch-account";
 import type {
   MailListResponse,
   MailMessageDetail,
@@ -36,7 +39,8 @@ export class MailService {
     private readonly cache: CacheService,
     private readonly metadata: MailMetadataService,
     private readonly checkpoints: MailSyncCheckpointService,
-    @Inject(APP_CONFIG) private readonly config: Pick<AppConfig, "ENCRYPTION_KEY">,
+    @Inject(APP_CONFIG)
+    private readonly config: Pick<AppConfig, "ENCRYPTION_KEY">,
   ) {}
 
   async listAccounts(orgId: string, userId: string) {
@@ -86,6 +90,22 @@ export class MailService {
     };
   }
 
+  async areAllAccountsFresh(
+    orgId: string,
+    userId: string,
+    folder: MailFolder,
+  ): Promise<boolean> {
+    const accounts = await this.accounts.listAccounts(orgId, userId);
+    if (accounts.length === 0) return true;
+    const accountIds = accounts.map((a) => a.id);
+    const fresh = await this.metadata.freshAccountIds(
+      orgId,
+      accountIds,
+      folder,
+    );
+    return fresh.length === accountIds.length;
+  }
+
   async listMessages(
     orgId: string,
     userId: string,
@@ -95,6 +115,7 @@ export class MailService {
     limit: number,
     cursor?: string,
     query?: string,
+    unreadOnly?: boolean,
   ): Promise<MailListResponse> {
     const allAccounts = await this.accounts.listAccounts(orgId, userId);
     const targetAccounts =
@@ -119,6 +140,7 @@ export class MailService {
           limit,
           query,
           metadataCursor,
+          unreadOnly,
         );
       }
       if (!cursor) {
@@ -131,12 +153,15 @@ export class MailService {
           folder,
           limit,
           query,
+          unreadOnly,
         );
         if (page) return page;
       }
     }
 
-    const parsedCursor = cursor ? decodeCursor(cursor, userId, this.config.ENCRYPTION_KEY) : {};
+    const parsedCursor = cursor
+      ? decodeCursor(cursor, userId, this.config.ENCRYPTION_KEY)
+      : {};
     const skipCache = Boolean(query);
 
     const fetchDeps: MailFetchDeps = {
@@ -223,7 +248,9 @@ export class MailService {
     const hasMore = Object.values(nextCursorMap).some(
       (v) => v !== undefined && v !== null,
     );
-    const nextCursor = hasMore ? encodeCursor(nextCursorMap, userId, this.config.ENCRYPTION_KEY) : null;
+    const nextCursor = hasMore
+      ? encodeCursor(nextCursorMap, userId, this.config.ENCRYPTION_KEY)
+      : null;
 
     return { messages: merged, nextCursor, accountErrors };
   }
