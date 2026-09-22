@@ -96,7 +96,9 @@ export const KNOWN_BARE = new Map<string, string>([
 
 type Verdict =
   | "installed"
+  | "installed-alias"
   | "swept"
+  | "swept-indeterminate"
   | "bare"
   | "drift"
   | "not-set-null"
@@ -111,6 +113,7 @@ type Finding = {
   tag: string;
   actual: string[] | null;
   action: string | null;
+  alias?: string;
 };
 
 type MigrationFile = { tag: string; sql: string; position: number };
@@ -129,6 +132,8 @@ type ForeignKeyInstall = {
    * filename — already created it with NO ACTION.
    */
   guarded: boolean;
+  relation: string | null;
+  keyColumns: string[];
 };
 
 type Event =
@@ -217,6 +222,23 @@ const NAMED_FK = /CONSTRAINT\s+"?([A-Za-z0-9_$]+)"?\s+FOREIGN\s+KEY/gi;
 const DROP_FK = /DROP\s+CONSTRAINT\s+(?:IF\s+EXISTS\s+)?"?([A-Za-z0-9_$]+)"?/gi;
 const ON_DELETE =
   /ON\s+DELETE\s+(SET\s+NULL|SET\s+DEFAULT|CASCADE|RESTRICT|NO\s+ACTION)(\s*\(([^)]*)\))?/i;
+const FK_COLUMNS = /FOREIGN\s+KEY\s*\(([^)]*)\)/i;
+
+const TABLE_TARGET =
+  /\b(?:ALTER|CREATE)\s+TABLE\s+(?:ONLY\s+)?(?:IF\s+(?:NOT\s+)?EXISTS\s+)?("?[A-Za-z0-9_$]+"?(?:\s*\.\s*"?[A-Za-z0-9_$]+"?)?)/gi;
+
+function unquote(identifier: string): string {
+  return identifier.trim().replace(/^"|"$/g, "");
+}
+
+export function relationName(target: string): string {
+  const parts = target.split(".").map((p) => unquote(p));
+  return parts[parts.length - 1].toLowerCase();
+}
+
+export function structuralKey(table: string, columns: string[]): string {
+  return `${table.toLowerCase()}|${columns.map((c) => c.toLowerCase()).join(",")}`;
+}
 
 /**
  * True when this statement adds `name` only if `name` is not already present.
@@ -258,21 +280,40 @@ export function parseInstalls(statement: string): ForeignKeyInstall[] {
   let m: RegExpExecArray | null;
   while ((m = NAMED_FK.exec(flat)) !== null) bounds.push({ name: m[1], at: m.index });
 
+  const targets: { relation: string; at: number }[] = [];
+  TABLE_TARGET.lastIndex = 0;
+  let t: RegExpExecArray | null;
+  while ((t = TABLE_TARGET.exec(flat)) !== null)
+    targets.push({ relation: relationName(t[1]), at: t.index });
+
   return bounds.map((b, idx) => {
     const end = idx + 1 < bounds.length ? bounds[idx + 1].at : flat.length;
     const scope = flat.slice(b.at, end);
     const guarded = isGuardedFor(flat, b.name);
+
+    const preceding = targets.filter((x) => x.at < b.at);
+    const relation = preceding.length === 0 ? null : preceding[preceding.length - 1].relation;
+    const cols = FK_COLUMNS.exec(scope);
+    const keyColumns =
+      cols === null
+        ? []
+        : cols[1]
+            .split(",")
+            .map((c) => unquote(c))
+            .filter((c) => c !== "");
+
     const od = ON_DELETE.exec(scope);
-    if (od === null) return { name: b.name, action: null, setNullColumns: null, guarded };
+    if (od === null)
+      return { name: b.name, action: null, setNullColumns: null, guarded, relation, keyColumns };
     const action = od[1].replace(/\s+/g, " ").toUpperCase();
     const list =
       od[3] === undefined
         ? null
         : od[3]
             .split(",")
-            .map((c) => c.trim().replace(/^"|"$/g, ""))
+            .map((c) => unquote(c))
             .filter((c) => c !== "");
-    return { name: b.name, action, setNullColumns: list, guarded };
+    return { name: b.name, action, setNullColumns: list, guarded, relation, keyColumns };
   });
 }
 
@@ -305,6 +346,26 @@ export function buildTimeline(files: { tag: string; sql: string; position?: numb
     }
   }
   return timeline;
+}
+
+export type StructuralIndex = Map<string, string[]>;
+
+export function buildStructuralIndex(
+  files: { tag: string; sql: string; position?: number }[],
+): StructuralIndex {
+  const index: StructuralIndex = new Map();
+  for (const file of files) {
+    for (const statement of splitStatements(file.sql)) {
+      for (const install of parseInstalls(statement)) {
+        if (install.relation === null || install.keyColumns.length === 0) continue;
+        const key = structuralKey(install.relation, install.keyColumns);
+        const names = index.get(key);
+        if (names === undefined) index.set(key, [install.name]);
+        else if (!names.includes(install.name)) names.push(install.name);
+      }
+    }
+  }
+  return index;
 }
 
 /**
@@ -356,13 +417,50 @@ export function replay(
   return standing;
 }
 
+export function resolveAlias(
+  timeline: Timeline,
+  index: StructuralIndex,
+  table: string,
+  columns: string[],
+  exclude: string,
+): string | null {
+  const candidates = (index.get(structuralKey(table, columns)) ?? []).filter(
+    (name) => name !== exclude && name !== exclude.slice(0, PG_NAME_MAX),
+  );
+  const standing = candidates.filter((name) => {
+    const r = replay(name, timeline);
+    return r !== undefined && r !== null;
+  });
+  return standing.length === 1 ? standing[0] : null;
+}
+
 export function judge(
   constraint: string,
   expected: string[],
   timeline: Timeline,
   sweptThrough = -1,
-): { verdict: Verdict; tag: string; actual: string[] | null; action: string | null } {
+  alias?: { index: StructuralIndex; table: string; columns: string[] },
+): {
+  verdict: Verdict;
+  tag: string;
+  actual: string[] | null;
+  action: string | null;
+  alias?: string;
+} {
   const standing = replay(constraint, timeline);
+
+  if ((standing === undefined || standing === null) && alias !== undefined) {
+    const aliasName = resolveAlias(timeline, alias.index, alias.table, alias.columns, constraint);
+    if (aliasName !== null) {
+      const viaAlias = judge(aliasName, expected, timeline, sweptThrough);
+      return {
+        ...viaAlias,
+        verdict: viaAlias.verdict === "installed" ? "installed-alias" : viaAlias.verdict,
+        alias: aliasName,
+      };
+    }
+  }
+
   if (standing === undefined)
     return { verdict: "untraceable", tag: "-", actual: null, action: null };
   if (standing === null) return { verdict: "dropped", tag: "-", actual: null, action: null };
@@ -385,7 +483,12 @@ export function judge(
   // Bare in the text. That only survives if no later sweep rewrote it, and the
   // sweeps name nothing, so position is the only thing that can settle it.
   if (position <= sweptThrough)
-    return { verdict: "swept", tag, actual: null, action: "SET NULL" };
+    return {
+      verdict: expected.length === 1 ? "swept" : "swept-indeterminate",
+      tag,
+      actual: null,
+      action: "SET NULL",
+    };
   return { verdict: "bare", tag, actual: null, action: "SET NULL" };
 }
 
@@ -796,6 +899,239 @@ END $$;`;
     ).verdict === "installed",
   );
 
+  {
+    const aliasSql =
+      'ALTER TABLE build.managed_products ADD CONSTRAINT fk_short_name FOREIGN KEY (org_id, owner_membership_id) REFERENCES public.organization_members (org_id, id) ON DELETE SET NULL (owner_membership_id) NOT VALID;';
+    const derived = "managed_products_org_id_owner_membership_id_organization_members_org_id_id_fk";
+    const files = [{ tag: "0764", sql: aliasSql }];
+    const t = buildTimeline(files);
+    const index = buildStructuralIndex(files);
+
+    assert(
+      "the structural index keys an install by its relation and referencing columns",
+      (index.get(structuralKey("managed_products", ["org_id", "owner_membership_id"])) ?? []).join() ===
+        "fk_short_name",
+    );
+    assert(
+      "a schema-qualified ALTER TABLE target is indexed by its bare relation name",
+      parseInstalls(splitStatements(aliasSql)[0])[0].relation === "managed_products",
+    );
+    assert(
+      "the referencing column list is captured, and the REFERENCES list is not mistaken for it",
+      parseInstalls(splitStatements(aliasSql)[0])[0].keyColumns.join(",") ===
+        "org_id,owner_membership_id",
+    );
+    assert(
+      "a name that traces to nothing is resolved by column tuple and reported installed-alias",
+      judge(derived, ["owner_membership_id"], t, -1, {
+        index,
+        table: "managed_products",
+        columns: ["org_id", "owner_membership_id"],
+      }).verdict === "installed-alias",
+    );
+    assert(
+      "the alias resolution names the constraint the corpus actually installs",
+      judge(derived, ["owner_membership_id"], t, -1, {
+        index,
+        table: "managed_products",
+        columns: ["org_id", "owner_membership_id"],
+      }).alias === "fk_short_name",
+    );
+    assert(
+      "without the structural index the same key is still untraceable",
+      judge(derived, ["owner_membership_id"], t).verdict === "untraceable",
+    );
+    assert(
+      "alias resolution never overrides a name that DOES trace",
+      judge(
+        "fk_short_name",
+        ["owner_membership_id"],
+        t,
+        -1,
+        { index, table: "managed_products", columns: ["org_id", "owner_membership_id"] },
+      ).verdict === "installed",
+    );
+    assert(
+      "a bare alias is reported bare, not laundered into installed-alias",
+      (() => {
+        const bareFiles = [
+          {
+            tag: "0764",
+            sql: 'ALTER TABLE build.managed_products ADD CONSTRAINT fk_short_name FOREIGN KEY (org_id, owner_membership_id) REFERENCES public.organization_members (org_id, id) ON DELETE SET NULL;',
+          },
+        ];
+        return (
+          judge(derived, ["owner_membership_id"], buildTimeline(bareFiles), -1, {
+            index: buildStructuralIndex(bareFiles),
+            table: "managed_products",
+            columns: ["org_id", "owner_membership_id"],
+          }).verdict === "bare"
+        );
+      })(),
+    );
+    assert(
+      "two surviving names on the same column tuple refuse to resolve rather than guess",
+      (() => {
+        const ambiguous = [
+          {
+            tag: "0001",
+            sql:
+              'ALTER TABLE t ADD CONSTRAINT fk_one FOREIGN KEY (org_id, x_id) REFERENCES p (org_id, id) ON DELETE SET NULL (x_id);' +
+              ' ALTER TABLE t ADD CONSTRAINT fk_two FOREIGN KEY (org_id, x_id) REFERENCES p (org_id, id) ON DELETE SET NULL (x_id);',
+          },
+        ];
+        return (
+          resolveAlias(
+            buildTimeline(ambiguous),
+            buildStructuralIndex(ambiguous),
+            "t",
+            ["org_id", "x_id"],
+            "fk_derived",
+          ) === null
+        );
+      })(),
+    );
+    assert(
+      "a dropped name whose column tuple is still covered resolves to the surviving sibling, which is what 0982 means by keeping the member that carries the referential action",
+      (() => {
+        const duplicate = [
+          {
+            tag: "0965",
+            sql: 'ALTER TABLE invitations ADD CONSTRAINT fk_canonical FOREIGN KEY (org_id, inviter_membership_id) REFERENCES organization_members (org_id, id) ON DELETE SET NULL (inviter_membership_id);',
+          },
+          {
+            tag: "0927",
+            sql: 'ALTER TABLE invitations ADD CONSTRAINT fk_duplicate FOREIGN KEY (org_id, inviter_membership_id) REFERENCES organization_members (org_id, id) ON DELETE SET NULL;',
+          },
+          { tag: "0982", sql: "ALTER TABLE invitations DROP CONSTRAINT IF EXISTS fk_duplicate;" },
+        ];
+        const v = judge("fk_duplicate", ["inviter_membership_id"], buildTimeline(duplicate), -1, {
+          index: buildStructuralIndex(duplicate),
+          table: "invitations",
+          columns: ["org_id", "inviter_membership_id"],
+        });
+        return v.verdict === "installed-alias" && v.alias === "fk_canonical";
+      })(),
+    );
+    assert(
+      "a dropped name with NO surviving sibling is still reported dropped",
+      (() => {
+        const goneForGood = [
+          {
+            tag: "0001",
+            sql: 'ALTER TABLE t ADD CONSTRAINT fk_gone FOREIGN KEY (org_id, x_id) REFERENCES p (org_id, id) ON DELETE SET NULL (x_id);',
+          },
+          { tag: "0002", sql: "ALTER TABLE t DROP CONSTRAINT fk_gone;" },
+        ];
+        return (
+          judge("fk_gone", ["x_id"], buildTimeline(goneForGood), -1, {
+            index: buildStructuralIndex(goneForGood),
+            table: "t",
+            columns: ["org_id", "x_id"],
+          }).verdict === "dropped"
+        );
+      })(),
+    );
+    assert(
+      "a dropped alias is not resolved to, because nothing is left standing",
+      (() => {
+        const droppedAlias = [
+          {
+            tag: "0001",
+            sql: 'ALTER TABLE t ADD CONSTRAINT fk_one FOREIGN KEY (org_id, x_id) REFERENCES p (org_id, id) ON DELETE SET NULL (x_id);',
+          },
+          { tag: "0002", sql: "ALTER TABLE t DROP CONSTRAINT fk_one;" },
+        ];
+        return (
+          resolveAlias(
+            buildTimeline(droppedAlias),
+            buildStructuralIndex(droppedAlias),
+            "t",
+            ["org_id", "x_id"],
+            "fk_derived",
+          ) === null
+        );
+      })(),
+    );
+    assert(
+      "a DO body altering several tables attributes each key to its own ALTER TABLE",
+      (() => {
+        const installs = parseInstalls(
+          splitStatements(
+            "DO $$ BEGIN ALTER TABLE a ADD CONSTRAINT fk_a FOREIGN KEY (org_id, x_id) REFERENCES p (org_id, id) ON DELETE SET NULL (x_id); ALTER TABLE b ADD CONSTRAINT fk_b FOREIGN KEY (org_id, y_id) REFERENCES p (org_id, id) ON DELETE SET NULL (y_id); END $$;",
+          )[0],
+        );
+        return (
+          installs.find((i) => i.name === "fk_a")?.relation === "a" &&
+          installs.find((i) => i.name === "fk_b")?.relation === "b"
+        );
+      })(),
+    );
+  }
+
+  {
+    const bare = (cols: string) =>
+      buildTimeline([
+        {
+          tag: "0668",
+          position: 3,
+          sql: `ALTER TABLE t ADD CONSTRAINT fk_a FOREIGN KEY (${cols}) REFERENCES p (org_id, id) ON DELETE SET NULL;`,
+        },
+      ]);
+    assert(
+      "a swept key with exactly one nullable member is pinned by 0992's fixpoint: confdelsetcols cannot be NULL or it would contain the NOT NULL tenant column, cannot be empty, and cannot contain the tenant column, so it is exactly the pointer",
+      judge("fk_a", ["owner_id"], bare("org_id, owner_id"), 5).verdict === "swept",
+    );
+    assert(
+      "a swept key with two nullable members is swept-indeterminate, because the same fixpoint bounds the column list to a subset without pinning it",
+      judge("fk_a", ["owner_id", "other_id"], bare("org_id, owner_id, other_id"), 5).verdict ===
+        "swept-indeterminate",
+    );
+    assert(
+      "swept-indeterminate is not reported as a bare violation either",
+      judge("fk_a", ["owner_id", "other_id"], bare("org_id, owner_id, other_id"), 5).verdict !==
+        "bare",
+    );
+  }
+
+  {
+    const corpusForAlias = readCorpus();
+    const timelineForAlias = buildTimeline(corpusForAlias);
+    const indexForAlias = buildStructuralIndex(corpusForAlias);
+    const sweepsForAlias = findFixpoints(corpusForAlias);
+    const throughForAlias = sweepsForAlias[sweepsForAlias.length - 1]?.position ?? -1;
+    const requiringForAlias = deriveSetNullDeclarations(
+      schema as unknown as Record<string, unknown>,
+    ).declared.filter((fk) => fk.requiresColumnList);
+
+    const verdicts = requiringForAlias.map((fk) => ({
+      fk,
+      v: judge(fk.constraint, fk.setNullColumns, timelineForAlias, throughForAlias, {
+        index: indexForAlias,
+        table: fk.table,
+        columns: fk.columns,
+      }),
+    }));
+
+    assert(
+      `no declared composite SET NULL key is left untraceable by the real corpus (found ${verdicts.filter((x) => x.v.verdict === "untraceable").length})`,
+      verdicts.every((x) => x.v.verdict !== "untraceable"),
+    );
+    assert(
+      `no declared composite SET NULL key is left unresolved as dropped by the real corpus (found ${verdicts.filter((x) => x.v.verdict === "dropped").length})`,
+      verdicts.every((x) => x.v.verdict !== "dropped"),
+    );
+    assert(
+      `no swept key in the real corpus is indeterminate (found ${verdicts.filter((x) => x.v.verdict === "swept-indeterminate").length})`,
+      verdicts.every((x) => x.v.verdict !== "swept-indeterminate"),
+    );
+    assert(
+      "build.managed_products derives a 77-byte name that appears in no .sql even truncated to 63, and the real corpus still resolves it through fk_managed_products_owner_membership",
+      verdicts.find((x) => x.fk.table === "managed_products" && x.v.verdict === "installed-alias")?.v
+        .alias === "fk_managed_products_owner_membership",
+    );
+  }
+
   // The ledger. Every entry must still name a bare key in the real corpus, or
   // it is silently re-authorising that name for the next occurrence.
   {
@@ -853,6 +1189,7 @@ function main(): void {
 
   const corpus = readCorpus();
   const timeline = buildTimeline(corpus);
+  const structural = buildStructuralIndex(corpus);
 
   const fixpoints = findFixpoints(corpus);
   if (fixpoints.length === 0) {
@@ -864,7 +1201,11 @@ function main(): void {
   const lastSweep = fixpoints[fixpoints.length - 1];
 
   const findings: Finding[] = requiring.map((fk) => {
-    const verdict = judge(fk.constraint, fk.setNullColumns, timeline, lastSweep.position);
+    const verdict = judge(fk.constraint, fk.setNullColumns, timeline, lastSweep.position, {
+      index: structural,
+      table: fk.table,
+      columns: fk.columns,
+    });
     return {
       key: `${fk.schema}.${fk.table}.${fk.constraint}`,
       constraint: fk.constraint,
@@ -875,6 +1216,7 @@ function main(): void {
 
   const by = (v: Verdict): Finding[] => findings.filter((f) => f.verdict === v);
   const installed = by("installed");
+  const aliased = by("installed-alias");
   const resolved = findings.filter((f) => f.verdict !== "untraceable" && f.verdict !== "dropped");
 
   console.log(
@@ -884,7 +1226,7 @@ function main(): void {
     `Catalog-driven sweeps ${fixpoints.length} (${fixpoints.map((f) => f.tag).join(", ")}) — text is authoritative only after journal position ${lastSweep.position}`,
   );
   console.log(
-    `  installed ${installed.length}  ·  swept ${by("swept").length}  ·  bare ${by("bare").length}  ·  drift ${by("drift").length}  ·  not-set-null ${by("not-set-null").length}  ·  dropped ${by("dropped").length}  ·  untraceable ${by("untraceable").length}`,
+    `  installed ${installed.length}  ·  installed-alias ${aliased.length}  ·  swept ${by("swept").length}  ·  swept-indeterminate ${by("swept-indeterminate").length}  ·  bare ${by("bare").length}  ·  drift ${by("drift").length}  ·  not-set-null ${by("not-set-null").length}  ·  dropped ${by("dropped").length}  ·  untraceable ${by("untraceable").length}`,
   );
 
   if (resolved.length < MIN_RESOLVED) {
@@ -897,7 +1239,7 @@ function main(): void {
   if (REPORT) {
     for (const f of findings.filter((x) => x.verdict !== "installed"))
       console.log(
-        `  ${f.verdict.padEnd(13)} ${f.key}\n      last: ${f.tag}  action: ${f.action ?? "-"}  list: [${(f.actual ?? []).join(", ")}]  expected: [${f.expected.join(", ")}]`,
+        `  ${f.verdict.padEnd(19)} ${f.key}\n      last: ${f.tag}  action: ${f.action ?? "-"}  list: [${(f.actual ?? []).join(", ")}]  expected: [${f.expected.join(", ")}]${f.alias === undefined ? "" : `  installed as: ${f.alias}`}`,
       );
   }
 
@@ -932,13 +1274,32 @@ function main(): void {
   }
 
   const divergent = by("not-set-null");
+  const indeterminate = by("swept-indeterminate");
   const unresolved = [...by("untraceable"), ...by("dropped")];
   console.log(
     `\nOK — ${installed.length} composite SET NULL key(s) are installed with the required column list by the migration corpus, ${accepted.length} known bare, 0 new.`,
   );
   console.log(
-    `  ${by("swept").length} more were installed bare before ${lastSweep.tag} and rewritten by it, which asserts its own fixpoint before committing.`,
+    `  ${by("swept").length} more were installed bare before ${lastSweep.tag} and rewritten by it, which asserts its own fixpoint before committing. Each has exactly one nullable member, so that fixpoint pins the column list to a single possibility rather than merely bounding it.`,
   );
+
+  if (aliased.length > 0) {
+    console.log(
+      `\n  INSTALLED UNDER ANOTHER NAME — ${aliased.length} key(s) whose declaration-derived name appears in no migration, resolved by the (table, referencing columns) tuple instead:`,
+    );
+    for (const f of aliased)
+      console.log(
+        `    ${f.key}\n      installed as ${f.alias ?? "-"} by ${f.tag} with (${(f.actual ?? []).join(", ")})`,
+      );
+  }
+
+  if (indeterminate.length > 0) {
+    console.log(
+      `\n  NOT PROVEN — ${indeterminate.length} key(s) were swept but have more than one nullable member, so the sweep's fixpoint bounds the column list without pinning it:`,
+    );
+    for (const f of indeterminate)
+      console.log(`    ${f.key}  nullable members: ${f.expected.join(", ")}  (${f.tag})`);
+  }
 
   if (divergent.length > 0) {
     console.log(
