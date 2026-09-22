@@ -91,9 +91,11 @@ describe("migration 1141/1142 staging preflight", () => {
       expect(entryFor(TAG_1142).when).toBeGreaterThan(entryFor(TAG_1141).when);
     });
 
-    it("1142 is the journal head so nothing is scheduled after the pair", () => {
-      const maxIdx = Math.max(...journal.entries.map((e) => e.idx));
-      expect(entryFor(TAG_1142).idx).toBe(maxIdx);
+    it("every migration appended after 1142 remains ordered after the pair", () => {
+      const entry1142 = entryFor(TAG_1142);
+      const later = journal.entries.filter((entry) => entry.idx > entry1142.idx);
+      expect(later.length).toBeGreaterThan(0);
+      expect(later.every((entry) => entry.when > entry1142.when)).toBe(true);
     });
 
     it("when is strictly increasing across the whole journal once sorted by idx", () => {

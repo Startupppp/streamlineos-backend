@@ -6322,6 +6322,20 @@
       "when": 1803000010420,
       "tag": "1142_fix_requisition_headcount_fk_set_null",
       "breakpoints": true
+    },
+    {
+      "idx": 1031,
+      "version": "7",
+      "when": 1803000010430,
+      "tag": "1143_repair_build_composite_set_null",
+      "breakpoints": true
+    },
+    {
+      "idx": 1032,
+      "version": "7",
+      "when": 1803000010440,
+      "tag": "1144_repair_inventory_composite_set_null",
+      "breakpoints": true
     }
   ]
 }

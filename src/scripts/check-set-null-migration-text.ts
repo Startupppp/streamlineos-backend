@@ -68,31 +68,16 @@ const MIN_REQUIRING = 200;
 const MIN_RESOLVED = 200;
 
 /**
- * Composite SET NULL keys this gate FOUND bare and that are not this change's
- * to repair, each with the migration that installed it and the SQL that fixes
- * it. Both were installed after 0992, so no sweep reaches them, and both are
- * reachable: nothing else in the corpus creates the constraint, so the
- * `duplicate_object` / `IF NOT EXISTS` guard wrapping each add does not fire.
+ * Composite SET NULL keys temporarily accepted as bare.
  *
  * This is a ledger, not an excuse list. An entry that no longer matches a bare
  * key is a FAILURE, not a pass — otherwise a repaired key leaves its exemption
  * behind and the map silently re-authorises the next occurrence on that name.
  * The same rule KNOWN_UNFIXED carries in check-composite-fk-set-null.mjs.
  *
- * Neither is verified against the catalog, because no non-production database
- * exists to read. The catalog may already differ; that is exactly the gap
- * docs/build-module/p08-composite-fk-status.md records as BLOCKED.
+ * Migration 1144 repaired the final two entries, so this must remain empty.
  */
-export const KNOWN_BARE = new Map<string, string>([
-  [
-    "fk_inv_sales_orders_channel_id_org",
-    "0580a_inventory_channel_pools (journal 806) — repair: ON DELETE SET NULL (channel_id)",
-  ],
-  [
-    "fk_inv_stock_adjustments_scrap_location_id_org",
-    "0545a_stock_write_off (journal 787) — repair: ON DELETE SET NULL (scrap_location_id)",
-  ],
-]);
+export const KNOWN_BARE = new Map<string, string>();
 
 type Verdict =
   | "installed"
