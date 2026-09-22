@@ -8,6 +8,7 @@ import {
 import { resolveOrganizationActorsByUserIds } from "../../../common/organization/organization-actor";
 import { and, eq, isNull } from "drizzle-orm";
 import {
+  cycles,
   projects,
   ticketActivityLog,
   ticketAssignees,
@@ -78,6 +79,28 @@ export class ProjectsTicketsCreateService {
         throw new BadRequestException("Epic ticket not found in this project");
     }
 
+    let resolvedCycleId = body.cycleId;
+    let resolvedLegacySprintId: number | null = null;
+    if (body.sprintId !== undefined && body.cycleId === undefined) {
+      const bridgeRows = await this.db
+        .select({ id: cycles.id })
+        .from(cycles)
+        .where(and(eq(cycles.orgId, u.orgId), eq(cycles.legacySprintId, body.sprintId)))
+        .limit(1);
+      const bridgedCycle = bridgeRows[0] ?? null;
+      if (!bridgedCycle)
+        throw new BadRequestException(`Sprint ${body.sprintId} does not map to any cycle`);
+      resolvedCycleId = bridgedCycle.id;
+      resolvedLegacySprintId = body.sprintId;
+    } else if (resolvedCycleId != null) {
+      const cycleRows = await this.db
+        .select({ legacySprintId: cycles.legacySprintId })
+        .from(cycles)
+        .where(and(eq(cycles.orgId, u.orgId), eq(cycles.id, resolvedCycleId)))
+        .limit(1);
+      resolvedLegacySprintId = cycleRows[0]?.legacySprintId ?? null;
+    }
+
     const reporterUserId = body.reporterId ?? u.userId;
     const allAssigneeIds = new Set<string>();
     if (body.assigneeId) allAssigneeIds.add(body.assigneeId);
@@ -133,9 +156,8 @@ export class ProjectsTicketsCreateService {
           assigneeMembershipId,
           reporterId: reporterUserId,
           reporterMembershipId,
-          sprintId: body.sprintId,
           epicId: body.epicId,
-          cycleId: body.cycleId,
+          cycleId: resolvedCycleId,
           points: body.points,
           link: body.link,
           originalEstimate: body.originalEstimate?.toString(),
@@ -249,7 +271,7 @@ export class ProjectsTicketsCreateService {
       .del(`projects:analytics:${u.orgId}:${projectId}`)
       .catch(logSideEffectFailure("analytics cache eviction", { orgId: u.orgId, projectId }));
 
-    return ticket;
+    return { ...ticket, sprintId: resolvedLegacySprintId };
   }
 
   async createFromFeedback(

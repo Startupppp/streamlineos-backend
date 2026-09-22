@@ -7124,7 +7124,7 @@
         },
         {
           "file": "src/modules/build/execution/sprints.service.ts",
-          "line": 165,
+          "line": 177,
           "note": "deleteSprint DOES bind projectId — the in-file control"
         }
       ]
@@ -7164,9 +7164,9 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/execution/sprints.service.ts:101",
+      "orgEvidence": "src/modules/build/execution/sprints.service.ts:113",
       "parentScoping": "BOUND",
-      "parentEvidence": "src/modules/build/execution/sprints.service.ts:101",
+      "parentEvidence": "src/modules/build/execution/sprints.service.ts:113",
       "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
@@ -7177,12 +7177,12 @@
       "reviewedEvidence": [
         {
           "file": "src/modules/build/execution/sprints.service.ts",
-          "line": 103,
+          "line": 115,
           "note": "bound to the URL project"
         },
         {
           "file": "src/modules/build/execution/sprints.service.ts",
-          "line": 118,
+          "line": 130,
           "note": "UPDATE binds id + orgId"
         }
       ]
@@ -7222,9 +7222,9 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/execution/sprints.service.ts:163",
+      "orgEvidence": "src/modules/build/execution/sprints.service.ts:175",
       "parentScoping": "BOUND",
-      "parentEvidence": "src/modules/build/execution/sprints.service.ts:163",
+      "parentEvidence": "src/modules/build/execution/sprints.service.ts:175",
       "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
@@ -11344,7 +11344,7 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/meetings/meetings.service.ts:65",
+      "orgEvidence": "src/modules/build/meetings/meetings.service.ts:107",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
       "leads": [],
@@ -11389,9 +11389,9 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/meetings/meetings.service.ts:169",
+      "orgEvidence": "src/modules/build/meetings/meetings.service.ts:213",
       "parentScoping": "BOUND",
-      "parentEvidence": "src/modules/build/meetings/meetings.service.ts:169",
+      "parentEvidence": "src/modules/build/meetings/meetings.service.ts:213",
       "leads": [],
       "notes": [],
       "verdict": "NEEDS-REVIEW",
@@ -11432,7 +11432,7 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/meetings/meetings.service.ts:198",
+      "orgEvidence": "src/modules/build/meetings/meetings.service.ts:243",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
       "leads": [],
@@ -11479,9 +11479,9 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/meetings/meetings.service.ts:273",
+      "orgEvidence": "src/modules/build/meetings/meetings.service.ts:320",
       "parentScoping": "BOUND",
-      "parentEvidence": "src/modules/build/meetings/meetings.service.ts:273",
+      "parentEvidence": "src/modules/build/meetings/meetings.service.ts:320",
       "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
@@ -11526,9 +11526,9 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/meetings/meetings.service.ts:310",
+      "orgEvidence": "src/modules/build/meetings/meetings.service.ts:359",
       "parentScoping": "BOUND",
-      "parentEvidence": "src/modules/build/meetings/meetings.service.ts:310",
+      "parentEvidence": "src/modules/build/meetings/meetings.service.ts:359",
       "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
@@ -11573,9 +11573,9 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/meetings/meetings.service.ts:326",
+      "orgEvidence": "src/modules/build/meetings/meetings.service.ts:375",
       "parentScoping": "BOUND",
-      "parentEvidence": "src/modules/build/meetings/meetings.service.ts:326",
+      "parentEvidence": "src/modules/build/meetings/meetings.service.ts:375",
       "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
@@ -11622,9 +11622,9 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/meetings/meetings.service.ts:345",
+      "orgEvidence": "src/modules/build/meetings/meetings.service.ts:394",
       "parentScoping": "BOUND",
-      "parentEvidence": "src/modules/build/meetings/meetings.service.ts:345",
+      "parentEvidence": "src/modules/build/meetings/meetings.service.ts:394",
       "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
@@ -11669,9 +11669,9 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/meetings/meetings.service.ts:358",
+      "orgEvidence": "src/modules/build/meetings/meetings.service.ts:407",
       "parentScoping": "BOUND",
-      "parentEvidence": "src/modules/build/meetings/meetings.service.ts:358",
+      "parentEvidence": "src/modules/build/meetings/meetings.service.ts:407",
       "leads": [],
       "notes": [
         "mutating verb without @Idempotent"

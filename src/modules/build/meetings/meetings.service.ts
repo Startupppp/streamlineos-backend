@@ -1,6 +1,7 @@
 import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
 import { and, desc, eq, gte, inArray, isNull, lt, notInArray, sql } from "drizzle-orm";
 import {
+  cycles,
   projectMeetings,
   meetingAttendees,
   meetingActionItems,
@@ -35,7 +36,7 @@ type MeetingPatch = Partial<
     | "durationMinutes"
     | "timezone"
     | "recurrenceRule"
-    | "sprintId"
+    | "cycleId"
   >
 >;
 
@@ -48,6 +49,47 @@ export class MeetingsService {
     private readonly access: AccessService,
     private readonly audit: AuditService,
   ) {}
+
+  private async resolveCycleIdForWrite(
+    orgId: string,
+    input: { cycleId?: number | null; sprintId?: number | null },
+  ): Promise<number | null | undefined> {
+    if (input.cycleId !== undefined) return input.cycleId ?? null;
+    if (input.sprintId === undefined) return undefined;
+    if (input.sprintId === null) return null;
+    const bridgeRows = await this.db
+      .select({ id: cycles.id })
+      .from(cycles)
+      .where(and(eq(cycles.orgId, orgId), eq(cycles.legacySprintId, input.sprintId)))
+      .limit(1);
+    const bridgedCycle = bridgeRows[0] ?? null;
+    if (!bridgedCycle)
+      throw new BadRequestException(`Sprint ${input.sprintId} does not map to any cycle`);
+    return bridgedCycle.id;
+  }
+
+  private async attachSprintIds<T extends { cycleId: number | null }>(
+    orgId: string,
+    rows: T[],
+  ): Promise<(T & { sprintId: number | null })[]> {
+    const cycleIds = [
+      ...new Set(rows.flatMap((row) => (row.cycleId == null ? [] : [row.cycleId]))),
+    ];
+    const legacyByCycleId = new Map<number, number | null>();
+    if (cycleIds.length > 0) {
+      const cycleRows = await this.db
+        .select({ id: cycles.id, legacySprintId: cycles.legacySprintId })
+        .from(cycles)
+        .where(and(eq(cycles.orgId, orgId), inArray(cycles.id, cycleIds)))
+        .limit(cycleIds.length);
+      for (const cycleRow of cycleRows)
+        legacyByCycleId.set(cycleRow.id, cycleRow.legacySprintId);
+    }
+    return rows.map((row) => ({
+      ...row,
+      sprintId: row.cycleId == null ? null : legacyByCycleId.get(row.cycleId) ?? null,
+    }));
+  }
 
   private async loadMeeting(orgId: string, projectId: number, meetingId: number) {
     const row = await this.db.query.projectMeetings.findFirst({
@@ -120,9 +162,11 @@ export class MeetingsService {
       );
     }
 
-    if (meetings.length === 0) return meetings;
     const ids = meetings.map((m) => m.id);
-    const [attCounts, aiCounts, unresolvedAiCounts] = await Promise.all([
+    const emptyCounts: { meetingId: number; count: number }[] = [];
+    const [attCounts, aiCounts, unresolvedAiCounts] = ids.length === 0
+      ? [emptyCounts, emptyCounts, emptyCounts]
+      : await Promise.all([
       this.db
         .select({ meetingId: meetingAttendees.meetingId, count: sql<number>`count(*)::int` })
         .from(meetingAttendees)
@@ -151,7 +195,7 @@ export class MeetingsService {
           ),
         )
         .groupBy(meetingActionItems.meetingId),
-    ]);
+      ]);
     const attMap = new Map(attCounts.map((r) => [r.meetingId, r.count]));
     const aiMap = new Map(aiCounts.map((r) => [r.meetingId, r.count]));
     const unresolvedAiMap = new Map(unresolvedAiCounts.map((r) => [r.meetingId, r.count]));
@@ -163,7 +207,7 @@ export class MeetingsService {
       unresolvedActionItemCount: unresolvedAiMap.get(m.id) ?? 0,
     }));
 
-    return result;
+    return this.attachSprintIds(u.orgId, result);
   }
 
   async getMeeting(u: CurrentUserContext, projectId: number, meetingId: number) {
@@ -192,11 +236,13 @@ export class MeetingsService {
         .where(and(eq(meetingStandupEntries.meetingId, meetingId), eq(meetingStandupEntries.orgId, u.orgId)))
         .limit(100),
     ]);
-    return { ...meeting, attendees, actionItems, standupEntries };
+    const [meetingWithSprintId] = await this.attachSprintIds(u.orgId, [meeting]);
+    return { ...meetingWithSprintId, attendees, actionItems, standupEntries };
   }
 
   async createMeeting(u: CurrentUserContext, projectId: number, input: CreateMeetingInput) {
     await assertProjectAccess(this.db, this.access, u, projectId);
+    const resolvedCycleId = (await this.resolveCycleIdForWrite(u.orgId, input)) ?? null;
     let attendeeMemberships = new Map<string, number>();
 
     if (input.attendeeUserIds && input.attendeeUserIds.length > 0) {
@@ -240,7 +286,7 @@ export class MeetingsService {
           durationMinutes: input.durationMinutes ?? null,
           timezone: input.timezone ?? null,
           recurrenceRule: input.recurrenceRule ?? null,
-          sprintId: input.sprintId ?? null,
+          cycleId: resolvedCycleId,
           createdBy: u.userId,
         })
         .returning();
@@ -267,7 +313,8 @@ export class MeetingsService {
       resourceId: String(meeting.id),
       metadata: { projectId, meetingId: meeting.id, title: meeting.title },
     });
-    return meeting;
+    const [createdWithSprintId] = await this.attachSprintIds(u.orgId, [meeting]);
+    return createdWithSprintId;
   }
 
   async updateMeeting(
@@ -289,7 +336,8 @@ export class MeetingsService {
     if (input.durationMinutes !== undefined) patch.durationMinutes = input.durationMinutes ?? null;
     if (input.timezone !== undefined) patch.timezone = input.timezone ?? null;
     if (input.recurrenceRule !== undefined) patch.recurrenceRule = input.recurrenceRule ?? null;
-    if (input.sprintId !== undefined) patch.sprintId = input.sprintId ?? null;
+    const resolvedCycleId = await this.resolveCycleIdForWrite(orgId, input);
+    if (resolvedCycleId !== undefined) patch.cycleId = resolvedCycleId;
     const [updated] = await this.db
       .update(projectMeetings)
       .set(patch)
@@ -304,7 +352,8 @@ export class MeetingsService {
       resourceId: String(meetingId),
       metadata: { projectId, meetingId },
     });
-    return updated;
+    const [updatedWithSprintId] = await this.attachSprintIds(orgId, [updated]);
+    return updatedWithSprintId;
   }
 
   async deleteMeeting(orgId: string, userId: string, projectId: number, meetingId: number) {

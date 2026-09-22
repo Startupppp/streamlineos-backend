@@ -80,18 +80,26 @@ describe("SprintsService.createSprint — legacy-writer freeze", () => {
       deletedAt: null,
       createdAt: new Date(),
       updatedAt: new Date(),
-      tickets: [],
     };
     const db = {
       query: {
         sprints: {
           findFirst: jest.fn().mockResolvedValue(fakeSprint),
         },
+        tickets: {
+          findMany: jest.fn().mockResolvedValue([]),
+        },
       },
+      select: jest.fn().mockReturnValue({
+        from: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        limit: jest.fn().mockResolvedValue([{ id: 55 }]),
+      }),
     } as unknown as Db;
     const svc = new SprintsService(db, null);
 
     const result = await svc.getSprint(ORG, PROJECT_ID, 7);
     expect(result).toMatchObject({ id: 7, name: "old-sprint" });
+    expect(result.tickets).toEqual([]);
   });
 });
