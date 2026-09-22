@@ -531,6 +531,30 @@ describe("listCrQuerySchema — new filter fields", () => {
   it("rejects q longer than 200 characters to cap the search predicate size", () => {
     expect(() => listCrQuerySchema.parse({ q: "a".repeat(201) })).toThrow();
   });
+
+  it("accepts releaseId as a positive integer to scope the list to a project release", () => {
+    expect(() => listCrQuerySchema.parse({ releaseId: "7" })).not.toThrow();
+    const result = listCrQuerySchema.parse({ releaseId: "7" });
+    expect(result.releaseId).toBe(7);
+  });
+
+  it("rejects releaseId of zero because release ids are always positive", () => {
+    expect(() => listCrQuerySchema.parse({ releaseId: "0" })).toThrow();
+  });
+
+  it("accepts clientVisible=true to return only client-facing change requests", () => {
+    const result = listCrQuerySchema.parse({ clientVisible: "true" });
+    expect(result.clientVisible).toBe(true);
+  });
+
+  it("accepts clientVisible=false to return only non-client-facing change requests", () => {
+    const result = listCrQuerySchema.parse({ clientVisible: "false" });
+    expect(result.clientVisible).toBe(false);
+  });
+
+  it("rejects an unknown query key so no undeclared filter silently poisons the query", () => {
+    expect(() => listCrQuerySchema.parse({ undeclaredFilter: "x" })).toThrow();
+  });
 });
 
 describe("ChangeRequestsService — listChangeRequests returns cursor page envelope", () => {
@@ -589,5 +613,81 @@ describe("ChangeRequestsService — listChangeRequests returns cursor page envel
     const result = await svc.listChangeRequests(u, 1, {});
     expect(result.pagination.hasMore).toBe(false);
     expect(result.pagination.nextCursor).toBeNull();
+  });
+});
+
+describe("ChangeRequestsService — releaseId and clientVisible filters", () => {
+  const ORG = "org-1";
+  const u = makeU(ORG);
+  const gateAccess = {
+    resolveUserPermissions: jest.fn().mockResolvedValue(new Set()),
+  } as unknown as AccessService;
+
+  function makeWhereCapturingDb() {
+    let capturedWhere: unknown = null;
+    const db = {
+      query: {
+        projects: { findFirst: jest.fn().mockResolvedValue({ managerMembershipId: 999 }) },
+      },
+      select: jest
+        .fn()
+        .mockReturnValueOnce({
+          from: jest.fn().mockReturnValue({
+            innerJoin: jest.fn().mockReturnValue({
+              where: jest.fn().mockReturnValue({
+                limit: jest.fn().mockResolvedValue([{ role: "MEMBER" }]),
+              }),
+            }),
+          }),
+        })
+        .mockReturnValue({
+          from: jest.fn().mockReturnValue({
+            where: jest.fn().mockImplementation((condition: unknown) => {
+              capturedWhere = condition;
+              return {
+                orderBy: jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue([]) }),
+              };
+            }),
+          }),
+        }),
+      getWhere: () => capturedWhere,
+    };
+    return db as unknown as Db & { getWhere: () => unknown };
+  }
+
+  beforeEach(() => {
+    (gateAccess.resolveUserPermissions as jest.Mock).mockResolvedValue(new Set());
+  });
+
+  it("resolves successfully when releaseId filter is provided so the query does not blow up before hitting the DB", async () => {
+    const db = makeWhereCapturingDb();
+    const svc = new ChangeRequestsService(db, gateAccess, mockAudit);
+    const result = await svc.listChangeRequests(u, 1, { releaseId: 42 });
+    expect(result).toHaveProperty("data");
+    expect(Array.isArray(result.data)).toBe(true);
+  });
+
+  it("resolves successfully when clientVisible=true filter is provided so the portal can request client-visible CRs", async () => {
+    const db = makeWhereCapturingDb();
+    const svc = new ChangeRequestsService(db, gateAccess, mockAudit);
+    const result = await svc.listChangeRequests(u, 1, { clientVisible: true });
+    expect(result).toHaveProperty("data");
+    expect(Array.isArray(result.data)).toBe(true);
+  });
+
+  it("resolves successfully when clientVisible=false filter is provided so internal users can see unpublished CRs", async () => {
+    const db = makeWhereCapturingDb();
+    const svc = new ChangeRequestsService(db, gateAccess, mockAudit);
+    const result = await svc.listChangeRequests(u, 1, { clientVisible: false });
+    expect(result).toHaveProperty("data");
+    expect(Array.isArray(result.data)).toBe(true);
+  });
+
+  it("resolves successfully when releaseId and clientVisible are combined so scoped queries don't break", async () => {
+    const db = makeWhereCapturingDb();
+    const svc = new ChangeRequestsService(db, gateAccess, mockAudit);
+    const result = await svc.listChangeRequests(u, 1, { releaseId: 5, clientVisible: true });
+    expect(result).toHaveProperty("data");
+    expect(result).toHaveProperty("pagination");
   });
 });

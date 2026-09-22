@@ -8,6 +8,8 @@ export const createChangeRequestSchema = z.object({
   estimateMinutes: z.number().int().nonnegative().optional(),
   budgetImpactCents: z.number().int().optional(),
   timelineImpactDays: z.number().int().optional(),
+  releaseId: z.number().int().positive().optional(),
+  clientVisible: z.boolean().optional(),
 }).strict();
 
 export const updateChangeRequestSchema = z.object({
@@ -20,6 +22,8 @@ export const updateChangeRequestSchema = z.object({
   status: z.enum(changeRequestStatusEnum.enumValues).optional(),
   approvalOwnerId: z.string().optional(),
   decisionComment: z.string().optional(),
+  releaseId: z.number().int().positive().nullable().optional(),
+  clientVisible: z.boolean().optional(),
 }).strict();
 
 export const listCrQuerySchema = z
@@ -28,6 +32,12 @@ export const listCrQuerySchema = z
     impact: z.string().optional(),
     requesterId: z.string().optional(),
     approverId: z.string().optional(),
+    releaseId: z.coerce.number().int().positive().optional(),
+    clientVisible: z
+      .string()
+      .transform((v) => v === "true")
+      .pipe(z.boolean())
+      .optional(),
     q: z.string().max(200).optional(),
     cursor: z.string().optional(),
     limit: z.coerce.number().int().min(1).max(100).optional(),
