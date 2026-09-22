@@ -41,7 +41,8 @@ export class WorkloadCapacityService {
           eq(organizationMembers.status, "ACTIVE"),
         ),
       )
-      .where(and(eq(projectMembers.orgId, orgId), eq(projectMembers.projectId, projectId)));
+      .where(and(eq(projectMembers.orgId, orgId), eq(projectMembers.projectId, projectId)))
+      .limit(500);
 
     if (memberRows.length === 0) return { members: [] };
 
@@ -94,7 +95,8 @@ export class WorkloadCapacityService {
           inArray(timesheets.userMembershipId, membershipIds),
         ),
       )
-      .groupBy(timesheets.userMembershipId);
+      .groupBy(timesheets.userMembershipId)
+      .limit(500);
 
     const loggedHoursByMembershipId = new Map<number, number>(
       timesheetRows
