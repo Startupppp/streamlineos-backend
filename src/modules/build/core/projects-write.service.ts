@@ -14,7 +14,6 @@ import {
   projectMembers,
   projectStatuses,
   projects,
-  sprints,
   ticketAssignees,
   ticketAttachments,
   ticketComments,
@@ -285,10 +284,6 @@ export class ProjectsWriteService {
         .update(tickets)
         .set({ deletedAt: now })
         .where(and(eq(tickets.projectId, projectId), eq(tickets.orgId, orgId)));
-      await tx
-        .update(sprints)
-        .set({ deletedAt: now })
-        .where(and(eq(sprints.projectId, projectId), eq(sprints.orgId, orgId)));
       await tx
         .delete(projectMembers)
         .where(

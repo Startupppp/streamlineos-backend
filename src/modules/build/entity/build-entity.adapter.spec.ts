@@ -86,13 +86,13 @@ function makeAdapter(keys: string[], rows: Record<string, unknown>[] = []) {
 }
 
 describe("BuildEntityAdapter", () => {
-  it("claims the Build reference types, including the legacy ticket name", () => {
+  it("claims the Build reference types, with cycle replacing the retired sprint card and the legacy ticket name kept", () => {
     const { adapter } = makeAdapter([]);
     expect([...adapter.types].sort()).toEqual([
+      "cycle",
       "incident",
       "project",
       "release",
-      "sprint",
       "task",
       "ticket",
     ]);
@@ -129,7 +129,7 @@ describe("BuildEntityAdapter", () => {
     const cases: ReadonlyArray<[string, string]> = [
       ["ticket", "build:tickets:view"],
       ["project", "build:view"],
-      ["sprint", "build:sprints:view"],
+      ["cycle", "build:sprints:view"],
       ["release", "build:view"],
       ["incident", "build:incidents:view"],
     ];
