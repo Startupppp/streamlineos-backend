@@ -487,27 +487,107 @@ describe("ChangeRequestsService — duplicate decision does not overwrite decide
   });
 });
 
-describe("listCrQuerySchema — cursor parameters must be paired", () => {
+describe("listCrQuerySchema — opaque cursor and limit", () => {
   it("accepts an empty query (no cursor)", () => {
     expect(() => listCrQuerySchema.parse({})).not.toThrow();
   });
 
-  it("accepts a fully paired cursor (afterCreatedAt + afterId)", () => {
-    expect(() =>
-      listCrQuerySchema.parse({
-        afterCreatedAt: "2024-06-01T00:00:00.000Z",
-        afterId: "42",
-      }),
-    ).not.toThrow();
+  it("accepts an opaque cursor string so pagination survives a round-trip", () => {
+    expect(() => listCrQuerySchema.parse({ cursor: "dGVzdA" })).not.toThrow();
   });
 
-  it("rejects afterCreatedAt without afterId — partial cursor silently skips pagination", () => {
+  it("accepts a limit within the allowed range", () => {
+    expect(() => listCrQuerySchema.parse({ limit: "25" })).not.toThrow();
+  });
+
+  it("rejects a limit above 100 so the server cannot be asked for unbounded pages", () => {
+    expect(() => listCrQuerySchema.parse({ limit: "101" })).toThrow();
+  });
+
+  it("rejects afterCreatedAt — legacy cursor field removed in favour of opaque cursor", () => {
     expect(() =>
       listCrQuerySchema.parse({ afterCreatedAt: "2024-06-01T00:00:00.000Z" }),
     ).toThrow();
   });
 
-  it("rejects afterId without afterCreatedAt — partial cursor silently skips pagination", () => {
+  it("rejects afterId — legacy cursor field removed in favour of opaque cursor", () => {
     expect(() => listCrQuerySchema.parse({ afterId: "42" })).toThrow();
+  });
+});
+
+describe("listCrQuerySchema — new filter fields", () => {
+  it("accepts requesterId so the list can be filtered by who raised the CR", () => {
+    expect(() => listCrQuerySchema.parse({ requesterId: "user-abc" })).not.toThrow();
+  });
+
+  it("accepts approverId so the list can be filtered by the approver", () => {
+    expect(() => listCrQuerySchema.parse({ approverId: "user-xyz" })).not.toThrow();
+  });
+
+  it("accepts q for server-side text search over title", () => {
+    expect(() => listCrQuerySchema.parse({ q: "foundation" })).not.toThrow();
+  });
+
+  it("rejects q longer than 200 characters to cap the search predicate size", () => {
+    expect(() => listCrQuerySchema.parse({ q: "a".repeat(201) })).toThrow();
+  });
+});
+
+describe("ChangeRequestsService — listChangeRequests returns cursor page envelope", () => {
+  const ORG = "org-1";
+  const u = makeU(ORG);
+
+  function makeMemberDbForPage(): Db {
+    const postGateChain = {
+      from: jest.fn().mockReturnValue({
+        where: jest.fn().mockReturnValue({
+          orderBy: jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue([]) }),
+        }),
+      }),
+    };
+    return {
+      query: {
+        projects: { findFirst: jest.fn().mockResolvedValue({ managerMembershipId: 999 }) },
+      },
+      select: jest
+        .fn()
+        .mockReturnValueOnce({
+          from: jest.fn().mockReturnValue({
+            innerJoin: jest.fn().mockReturnValue({
+              where: jest.fn().mockReturnValue({
+                limit: jest.fn().mockResolvedValue([{ role: "MEMBER" }]),
+              }),
+            }),
+          }),
+        })
+        .mockReturnValue(postGateChain),
+    } as unknown as Db;
+  }
+
+  const gateAccess = {
+    resolveUserPermissions: jest.fn().mockResolvedValue(new Set()),
+  } as unknown as AccessService;
+
+  beforeEach(() => {
+    (gateAccess.resolveUserPermissions as jest.Mock).mockResolvedValue(new Set());
+  });
+
+  it("returns a cursor page object rather than a flat array", async () => {
+    const db = makeMemberDbForPage();
+    const svc = new ChangeRequestsService(db, gateAccess, mockAudit);
+    const result = await svc.listChangeRequests(u, 1, {});
+    expect(result).toHaveProperty("data");
+    expect(result).toHaveProperty("pagination");
+    expect(result.pagination).toHaveProperty("hasMore");
+    expect(result.pagination).toHaveProperty("nextCursor");
+    expect(Array.isArray(result.data)).toBe(true);
+  });
+
+  it("sets hasMore false and nextCursor null when the result set is empty", async () => {
+    const db = makeMemberDbForPage();
+    const svc = new ChangeRequestsService(db, gateAccess, mockAudit);
+    const result = await svc.listChangeRequests(u, 1, {});
+    expect(result.pagination.hasMore).toBe(false);
+    expect(result.pagination.nextCursor).toBeNull();
   });
 });

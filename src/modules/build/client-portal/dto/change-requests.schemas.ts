@@ -26,14 +26,13 @@ export const listCrQuerySchema = z
   .object({
     status: z.enum(changeRequestStatusEnum.enumValues).optional(),
     impact: z.string().optional(),
-    afterCreatedAt: z.iso.datetime().optional(),
-    afterId: z.coerce.number().int().positive().optional(),
+    requesterId: z.string().optional(),
+    approverId: z.string().optional(),
+    q: z.string().max(200).optional(),
+    cursor: z.string().optional(),
+    limit: z.coerce.number().int().min(1).max(100).optional(),
   })
-  .strict()
-  .refine(
-    (v) => (v.afterCreatedAt === undefined) === (v.afterId === undefined),
-    { message: "afterCreatedAt and afterId must be supplied together or both omitted" },
-  );
+  .strict();
 
 export type CreateChangeRequestInput = z.infer<typeof createChangeRequestSchema>;
 export type UpdateChangeRequestInput = z.infer<typeof updateChangeRequestSchema>;
