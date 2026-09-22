@@ -17,7 +17,7 @@ const actor: CurrentUserContext = {
 };
 
 const access = { scopeFor: jest.fn().mockResolvedValue("all") } as unknown as AccessService;
-const cache = { del: jest.fn().mockResolvedValue(undefined) } as unknown as CacheService;
+const cache = { invalidateNamespace: jest.fn().mockResolvedValue(undefined), del: jest.fn().mockResolvedValue(undefined) } as unknown as CacheService;
 
 function columnNamesIn(
   node: unknown,

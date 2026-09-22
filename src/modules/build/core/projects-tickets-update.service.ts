@@ -404,7 +404,7 @@ export class ProjectsTicketsUpdateService {
     }
 
     void this.cache
-      .del(`projects:analytics:${orgId}:${ticketProjectId}`)
+      .invalidateNamespace(`build:analytics:${orgId}`)
       .catch(logSideEffectFailure("analytics cache eviction", { orgId, projectId: ticketProjectId }));
 
     return { updated: true, updatedAt: now.toISOString() };

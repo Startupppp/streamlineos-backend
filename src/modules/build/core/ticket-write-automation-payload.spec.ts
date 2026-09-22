@@ -55,7 +55,7 @@ describe("ProjectsTicketsUpdateService — automation payload reflects current a
   const read = { checkProjectAccess: jest.fn().mockResolvedValue({ hasAccess: true, role: "ADMIN" }) } as never;
   const transfer = { notifyNewAssignees: jest.fn().mockResolvedValue(undefined) } as never;
   const webhooksDispatch = { enqueue: jest.fn().mockResolvedValue(undefined) } as never;
-  const cache = { del: jest.fn().mockResolvedValue(undefined) } as never;
+  const cache = { invalidateNamespace: jest.fn().mockResolvedValue(undefined), del: jest.fn().mockResolvedValue(undefined) } as never;
   const access = { holds: jest.fn().mockResolvedValue(true) } as never;
 
   it("ticket.updated payload carries the current assignee userId when the update does not change the assignee", async () => {

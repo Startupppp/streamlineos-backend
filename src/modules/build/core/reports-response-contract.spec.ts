@@ -1,6 +1,14 @@
 import type { Db } from "../../../db/drizzle.module";
 import { ProjectsAnalyticsService } from "./projects-analytics.service";
+import { CacheService } from "../../../common/cache/cache.service";
 import { resourceAllocationItemSchema } from "./dto/build-reports-response.schemas";
+
+function passThroughCache() {
+  return {
+    cachedVersioned: <T>(_namespace: string, _key: string, fetcher: () => Promise<T>) => fetcher(),
+  } as unknown as CacheService;
+}
+
 
 function makeAllocationDb(): Db {
   return {
@@ -26,7 +34,7 @@ function makeAllocationDb(): Db {
 
 describe("resourceAllocation contract", () => {
   it("parses the object the service actually returns, where the previous all-optional schema declared five keys the service never emits", async () => {
-    const svc = new ProjectsAnalyticsService(makeAllocationDb());
+    const svc = new ProjectsAnalyticsService(makeAllocationDb(), passThroughCache());
 
     const [item] = await svc.resourceAllocation("org-1");
 
@@ -34,7 +42,7 @@ describe("resourceAllocation contract", () => {
   });
 
   it("keeps user, totalOpen and byProject, the three keys a passthrough-only schema would have stripped the moment passthrough was removed", async () => {
-    const svc = new ProjectsAnalyticsService(makeAllocationDb());
+    const svc = new ProjectsAnalyticsService(makeAllocationDb(), passThroughCache());
 
     const [item] = await svc.resourceAllocation("org-1");
     const parsed = resourceAllocationItemSchema.parse(item);
@@ -46,7 +54,7 @@ describe("resourceAllocation contract", () => {
   });
 
   it("allows a null display name and image, because both columns on users are nullable", async () => {
-    const svc = new ProjectsAnalyticsService(makeAllocationDb());
+    const svc = new ProjectsAnalyticsService(makeAllocationDb(), passThroughCache());
 
     const [item] = await svc.resourceAllocation("org-1");
 

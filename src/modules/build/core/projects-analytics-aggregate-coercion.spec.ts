@@ -1,5 +1,13 @@
 import type { Db } from "../../../db/drizzle.types";
 import { ProjectsAnalyticsService } from "./projects-analytics.service";
+import { CacheService } from "../../../common/cache/cache.service";
+
+function passThroughCache() {
+  return {
+    cachedVersioned: <T>(_namespace: string, _key: string, fetcher: () => Promise<T>) => fetcher(),
+  } as unknown as CacheService;
+}
+
 
 type Selection = Record<string, unknown>;
 
@@ -46,7 +54,7 @@ describe("ProjectsAnalyticsService aggregate coercion", () => {
   it("decodes cycleVelocity completedPoints to a number, because SUM over the integer storyPoints column arrives from postgres-js as a bigint string and the frontend contract types it z.number()", async () => {
     const { db, selections } = captureSelections();
 
-    await new ProjectsAnalyticsService(db).getProjectAnalytics("org-1", 1);
+    await new ProjectsAnalyticsService(db, passThroughCache()).getProjectAnalytics("org-1", 1);
 
     const fields = fieldsNamed(selections, "completedPoints");
     expect(fields.length).toBeGreaterThan(0);
@@ -56,7 +64,7 @@ describe("ProjectsAnalyticsService aggregate coercion", () => {
   it("decodes estimateVsActual actual to a number, because SUM over the decimal hours column arrives as a numeric string and fractional hours must survive", async () => {
     const { db, selections } = captureSelections();
 
-    await new ProjectsAnalyticsService(db).getProjectAnalytics("org-1", 1);
+    await new ProjectsAnalyticsService(db, passThroughCache()).getProjectAnalytics("org-1", 1);
 
     const fields = fieldsNamed(selections, "actual");
     expect(fields.length).toBeGreaterThan(0);
@@ -66,7 +74,7 @@ describe("ProjectsAnalyticsService aggregate coercion", () => {
   it("decodes the org health summary completedPoints too, so the declared sql<number> is not a lie a future caller inherits", async () => {
     const { db, selections } = captureSelections();
 
-    await new ProjectsAnalyticsService(db).getOrgProjectHealthSummary("org-1");
+    await new ProjectsAnalyticsService(db, passThroughCache()).getOrgProjectHealthSummary("org-1");
 
     const fields = fieldsNamed(selections, "completedPoints");
     expect(fields.length).toBeGreaterThan(0);

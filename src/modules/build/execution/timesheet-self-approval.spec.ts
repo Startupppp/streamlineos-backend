@@ -47,7 +47,7 @@ describe("TimesheetsService — approver cannot action their own entry", () => {
       resolveUserPermissions: jest.fn().mockResolvedValue(new Set(["build:timesheets:manage"])),
       holds: jest.fn().mockResolvedValue(true),
     } as unknown as AccessService;
-    const cache = { del: jest.fn(), get: jest.fn(), set: jest.fn() } as unknown as CacheService;
+    const cache = { invalidateNamespace: jest.fn().mockResolvedValue(undefined), del: jest.fn(), get: jest.fn(), set: jest.fn() } as unknown as CacheService;
     const periods = {} as unknown as EntriesPeriodService;
     svc = new TimesheetsService(db, cache, access, periods);
   });

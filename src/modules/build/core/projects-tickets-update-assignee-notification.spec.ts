@@ -57,7 +57,7 @@ describe("ProjectsTicketsUpdateService — assignee notification settles inside 
   const read = { checkProjectAccess: jest.fn().mockResolvedValue({ hasAccess: true, role: "ADMIN" }) } as never;
   const webhooksDispatch = { enqueue: jest.fn().mockResolvedValue(undefined) } as never;
   const automationRunner = { runForTicketEvent: jest.fn() } as never;
-  const cache = { del: jest.fn().mockResolvedValue(undefined) } as never;
+  const cache = { invalidateNamespace: jest.fn().mockResolvedValue(undefined), del: jest.fn().mockResolvedValue(undefined) } as never;
   const access = { holds: jest.fn().mockResolvedValue(true) } as never;
 
   it("has finished notifying the new assignee by the time updateTicket resolves", async () => {

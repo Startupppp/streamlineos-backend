@@ -88,7 +88,7 @@ describe("BuildEntityActions", () => {
         BuildEntityActions,
         { provide: DRIZZLE, useValue: mockDb },
         { provide: AuditService, useValue: mockAudit },
-        { provide: CacheService, useValue: { del: jest.fn().mockResolvedValue(undefined) } },
+        { provide: CacheService, useValue: { invalidateNamespace: jest.fn().mockResolvedValue(undefined), del: jest.fn().mockResolvedValue(undefined) } },
       ],
     }).compile();
 

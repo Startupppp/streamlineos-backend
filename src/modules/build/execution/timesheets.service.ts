@@ -369,11 +369,10 @@ export class TimesheetsService {
     const startDate = query.startDate;
     const endDate = query.endDate;
 
-    const billingSummaryNs = `build:billing-summary:${orgId}`;
     const subKey = `${userId}:${isAdmin ? "all" : "self"}:${startDate ?? ""}:${endDate ?? ""}`;
 
     return this.cache.cachedVersioned(
-      billingSummaryNs,
+      `build:billing-summary:${orgId}`,
       subKey,
       async () => {
         const conditions = [

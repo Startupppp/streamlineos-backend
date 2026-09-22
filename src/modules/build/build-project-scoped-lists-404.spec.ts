@@ -7,6 +7,7 @@ import { CyclesService } from "./execution/cycles.service";
 import { ModulesService } from "./execution/modules.service";
 import { ProjectsCustomFieldsService } from "./core/projects-custom-fields.service";
 import { ProjectsAnalyticsService } from "./core/projects-analytics.service";
+import { CacheService } from "../../common/cache/cache.service";
 import type { Db } from "../../db/drizzle.module";
 import type { AccessService } from "../access/access.service";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
@@ -15,6 +16,12 @@ import { humanSessionPrincipal } from "../../common/auth/principal";
 const EXECUTE_ROWS: Record<string, unknown>[] = [
   { assigneeId: "u-analytics", assigneeName: "Ana Lytics", total: "3", completed: "1" },
 ];
+
+function passThroughCache() {
+  return {
+    cachedVersioned: <T>(_namespace: string, _key: string, fetcher: () => Promise<T>) => fetcher(),
+  } as unknown as CacheService;
+}
 
 function makeDb(project: { id: number } | undefined) {
   const rows: unknown[] = [];
@@ -64,7 +71,7 @@ describe("build — a project-scoped list refuses a projectId the org does not o
     [
       "GET /build/:projectId/analytics",
       (db) =>
-        new ProjectsAnalyticsService(db).getProjectAnalytics(ATTACKER_ORG, 1),
+        new ProjectsAnalyticsService(db, passThroughCache()).getProjectAnalytics(ATTACKER_ORG, 1),
     ],
   ];
 
@@ -78,7 +85,7 @@ describe("build — a project-scoped list refuses a projectId the org does not o
 
   it("GET /build/:projectId/analytics control reaches the raw execute() aggregate past the gate, so a resolved control is not an unreached one", async () => {
     const db = makeDb({ id: 1 });
-    const result = await new ProjectsAnalyticsService(db).getProjectAnalytics(ATTACKER_ORG, 1);
+    const result = await new ProjectsAnalyticsService(db, passThroughCache()).getProjectAnalytics(ATTACKER_ORG, 1);
 
     expect(result.assigneeCompletion).toEqual([
       { assigneeId: "u-analytics", assigneeName: "Ana Lytics", total: 3, completed: 1 },
@@ -88,7 +95,7 @@ describe("build — a project-scoped list refuses a projectId the org does not o
 
   it("GET /build/:projectId/analytics never reaches execute() for a foreign project, so the 404 is the gate and not a downstream failure", async () => {
     const db = makeDb(undefined);
-    await expect(new ProjectsAnalyticsService(db).getProjectAnalytics(ATTACKER_ORG, 1)).rejects.toThrow(
+    await expect(new ProjectsAnalyticsService(db, passThroughCache()).getProjectAnalytics(ATTACKER_ORG, 1)).rejects.toThrow(
       NotFoundException,
     );
 

@@ -38,7 +38,7 @@ describe("ProjectsTicketsUpdateService — sprintId bridge", () => {
   const transfer = { notifyNewAssignees: jest.fn().mockResolvedValue(undefined) } as never;
   const webhooksDispatch = { enqueue: jest.fn().mockResolvedValue(undefined) } as never;
   const automationRunner = { runForTicketEvent: jest.fn().mockResolvedValue(undefined) } as never;
-  const cache = { del: jest.fn().mockResolvedValue(undefined) } as never;
+  const cache = { invalidateNamespace: jest.fn().mockResolvedValue(undefined), del: jest.fn().mockResolvedValue(undefined) } as never;
   const access = { holds: jest.fn().mockResolvedValue(true) } as never;
   const dispatch = {} as never;
 

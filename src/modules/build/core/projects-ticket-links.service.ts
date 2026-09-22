@@ -118,7 +118,12 @@ export class ProjectsTicketLinksService {
         createdAt: ticketRelatedLinks.createdAt,
       })
       .from(ticketRelatedLinks)
-      .where(eq(ticketRelatedLinks.ticketId, ticketId))
+      .where(
+        and(
+          eq(ticketRelatedLinks.orgId, u.orgId),
+          eq(ticketRelatedLinks.ticketId, ticketId),
+        ),
+      )
       .orderBy(ticketRelatedLinks.createdAt)
       .limit(50);
     return rows.map((row) => this.toRelatedLinkRow(row, projectId));

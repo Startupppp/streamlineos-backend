@@ -46,7 +46,7 @@ describe("ProjectsTicketsQueryService.assertTransitionAllowed — fail-open enfo
       providers: [
         ProjectsTicketsQueryService,
         { provide: DRIZZLE, useValue: mockDb },
-        { provide: CacheService, useValue: { del: jest.fn() } },
+        { provide: CacheService, useValue: { invalidateNamespace: jest.fn().mockResolvedValue(undefined), del: jest.fn() } },
         { provide: AccessService, useValue: {} },
       ],
     }).compile();

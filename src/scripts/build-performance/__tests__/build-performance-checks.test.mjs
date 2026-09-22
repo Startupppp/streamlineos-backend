@@ -15,6 +15,7 @@ import {
   extractFunctionBody,
   extractPendingDrops,
   extractTriggerTargets,
+  pickEffectiveDefinition,
   runSelfTest as runTriggerSelfTest,
   splitTableBranches,
 } from "../build-report-revision-integrity.mjs";
@@ -138,6 +139,40 @@ test("a guarded column reference is charged only to the branch table, not to eve
   const columnFindings = result.findings.filter((f) => f.kind === "column-dropped");
   assert.equal(columnFindings.length, 1);
   assert.equal(columnFindings[0].table, "build_events.sprint_scope_events");
+});
+
+test("a replacement migration supersedes the original definition, so the fixed body is the one checked", () => {
+  const chosen = pickEffectiveDefinition([
+    { name: "1073_build_report_revision.sql", source: "CREATE FUNCTION build.bump_report_revision() original" },
+    { name: "1152_build_report_revision_cycles.sql", source: "CREATE OR REPLACE FUNCTION build.bump_report_revision() replacement" },
+  ]);
+  assert.equal(chosen.name, "1152_build_report_revision_cycles.sql");
+});
+
+test("a migration that does not define the function is never chosen as the effective definition", () => {
+  assert.equal(pickEffectiveDefinition([{ name: "9999_unrelated.sql", source: "SELECT 1;" }]), null);
+});
+
+test("a trigger attached by CREATE TRIGGER counts as a target, so a FOREACH-free migration is not target-blind", () => {
+  const targets = extractTriggerTargets(
+    "CREATE TRIGGER build_report_revision_insert AFTER INSERT ON build.cycles REFERENCING NEW TABLE AS changed_new FOR EACH STATEMENT EXECUTE FUNCTION build.bump_report_revision();",
+  );
+  assert.deepEqual(targets, ["build.cycles"]);
+});
+
+test("target extraction does not run past a statement boundary into an unrelated ON clause", () => {
+  const targets = extractTriggerTargets(
+    "CREATE TRIGGER build_report_revision_insert AFTER INSERT ON build.cycles FOR EACH STATEMENT EXECUTE FUNCTION build.bump_report_revision();\nCREATE INDEX i ON build.unrelated_table (x);",
+  );
+  assert.deepEqual(targets, ["build.cycles"]);
+});
+
+test("resolving no trigger target is an error, because the column checks would otherwise pass vacuously", () => {
+  const result = analyseTrigger({
+    definitionSql: "CREATE OR REPLACE FUNCTION build.bump_report_revision() RETURNS trigger AS $$ BEGIN x := 'SELECT c.org_id FROM (y) c'; END; $$;",
+    pendingFiles: [],
+  });
+  assert.match(result.error, /vacuously/);
 });
 
 test("pending DDL that touches nothing the trigger reads produces no finding", () => {

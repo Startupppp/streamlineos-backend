@@ -73,7 +73,7 @@ export async function rankTicket(db: Db, cache: CacheService, access: AccessServ
     if (body.status !== undefined) await emitBatchStatusChanges(tx, actor, projectId, [target], status, now);
     return updated;
   });
-  await cache.del(`projects:analytics:${actor.orgId}:${projectId}`)
+  await cache.invalidateNamespace(`build:analytics:${actor.orgId}`)
     .catch(logSideEffectFailure("analytics cache eviction", { orgId: actor.orgId, projectId }));
   return result;
 }

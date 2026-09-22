@@ -48,7 +48,7 @@ export class BuildEntityActions {
       const result = await createTicketFromAction(this.db, this.audit, actor, id, input);
       if (result.ok)
         await this.cache
-          .del(`projects:analytics:${actor.orgId}:${id}`)
+          .invalidateNamespace(`build:analytics:${actor.orgId}`)
           .catch(logSideEffectFailure("analytics cache eviction", { orgId: actor.orgId, projectId: id }));
       return result;
     }
@@ -83,7 +83,7 @@ export class BuildEntityActions {
           : { ok: false as const, reason: "invalid" as const };
     if (result.ok)
       await this.cache
-        .del(`projects:analytics:${actor.orgId}:${ticket.projectId}`)
+        .invalidateNamespace(`build:analytics:${actor.orgId}`)
         .catch(logSideEffectFailure("analytics cache eviction", { orgId: actor.orgId, projectId: ticket.projectId }));
     return result;
   }

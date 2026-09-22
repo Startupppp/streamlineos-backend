@@ -61,7 +61,7 @@ describe("ProjectsTicketsTransferService — cross-tenant isolation", () => {
       access,
       {} as unknown as NotificationsService,
       {} as unknown as NotificationDispatchService,
-      { del: jest.fn().mockResolvedValue(undefined) } as unknown as CacheService,
+      { invalidateNamespace: jest.fn().mockResolvedValue(undefined), del: jest.fn().mockResolvedValue(undefined) } as unknown as CacheService,
     );
   }
 

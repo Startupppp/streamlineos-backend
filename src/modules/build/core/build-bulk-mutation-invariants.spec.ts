@@ -45,7 +45,7 @@ async function harness() {
   const module = await Test.createTestingModule({ providers: [
     ProjectsTicketsQueryService,
     { provide: DRIZZLE, useValue: db },
-    { provide: CacheService, useValue: { del: jest.fn().mockResolvedValue(undefined) } },
+    { provide: CacheService, useValue: { invalidateNamespace: jest.fn().mockResolvedValue(undefined), del: jest.fn().mockResolvedValue(undefined) } },
     { provide: AccessService, useValue: { scopeFor } },
   ] }).compile();
   return { module, db, set, scopeFor, service: module.get(ProjectsTicketsQueryService) };

@@ -30,7 +30,7 @@ describe("ProjectsTicketsUpdateService — cross-tenant isolation", () => {
   const transfer = { notifyNewAssignees: jest.fn().mockResolvedValue(undefined) } as never;
   const webhooksDispatch = { dispatchTicketEvent: jest.fn(), dispatch: jest.fn().mockResolvedValue(undefined), enqueue: jest.fn().mockResolvedValue(undefined) } as never;
   const automationRunner = { run: jest.fn(), runForTicketEvent: jest.fn().mockResolvedValue(undefined) } as never;
-  const cache = { invalidateNamespace: jest.fn(), del: jest.fn().mockResolvedValue(undefined) } as never;
+  const cache = { invalidateNamespace: jest.fn().mockResolvedValue(undefined), del: jest.fn().mockResolvedValue(undefined) } as never;
   const access = { holds: jest.fn().mockResolvedValue(true) } as never;
 
   it("throws NotFoundException when ticket belongs to a different org (cross-tenant isolation)", async () => {

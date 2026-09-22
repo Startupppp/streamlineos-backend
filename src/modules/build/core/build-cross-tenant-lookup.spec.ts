@@ -131,7 +131,7 @@ describe("the delete guard's blocker lookup", () => {
       {} as never,
       {} as never,
       { enqueue: jest.fn() } as never,
-      { invalidate: jest.fn(), del: jest.fn(), delByPrefix: jest.fn() } as never,
+      { invalidate: jest.fn(), invalidateNamespace: jest.fn().mockResolvedValue(undefined), del: jest.fn(), delByPrefix: jest.fn() } as never,
       {} as never,
       {} as never,
     );

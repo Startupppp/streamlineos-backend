@@ -16,9 +16,15 @@ export function extractFunctionBody(sql) {
 }
 
 export function extractTriggerTargets(sql) {
-  const match = /FOREACH\s+\w+\s+IN\s+ARRAY\s+ARRAY\[([^\]]*)\]/i.exec(sql);
-  if (!match) return [];
-  return [...match[1].matchAll(/'([^']+)'/g)].map((m) => m[1]);
+  const targets = new Set();
+  const loop = /FOREACH\s+\w+\s+IN\s+ARRAY\s+ARRAY\[([^\]]*)\]/i.exec(sql);
+  if (loop) for (const m of loop[1].matchAll(/'([^']+)'/g)) targets.add(m[1]);
+  const attached =
+    /CREATE\s+TRIGGER\s+build_report_revision_\w+\s+(?:AFTER|BEFORE)[^;]*?\sON\s+"?([a-z_]+)"?\."?([a-z_]+)"?/gi;
+  let match;
+  while ((match = attached.exec(sql)) !== null)
+    targets.add(`${match[1].toLowerCase()}.${match[2].toLowerCase()}`);
+  return [...targets];
 }
 
 export function extractAliasBindings(body) {
@@ -80,11 +86,17 @@ export function extractPendingDrops(files) {
   return { droppedTables, droppedColumns };
 }
 
-export function analyse({ definitionSql, pendingFiles }) {
+export function analyse({ definitionSql, pendingFiles, targetSources = [] }) {
   const body = extractFunctionBody(definitionSql);
   if (body === null) return { error: "no bump_report_revision function body found" };
 
-  const targets = extractTriggerTargets(definitionSql);
+  const targets = [
+    ...new Set(
+      [definitionSql, ...targetSources].flatMap((sql) => extractTriggerTargets(sql)),
+    ),
+  ];
+  if (targets.length === 0)
+    return { error: "no trigger targets resolved — the column checks would pass vacuously" };
   const aliases = extractAliasBindings(body);
   const references = extractColumnReferences(body);
   const { droppedTables, droppedColumns } = extractPendingDrops(pendingFiles);
@@ -140,15 +152,38 @@ function loadPendingFiles(root) {
     }));
 }
 
+export function pickEffectiveDefinition(candidates) {
+  const defining = candidates.filter((c) => c.source.includes(`FUNCTION build.${FUNCTION_NAME}`));
+  if (defining.length === 0) return null;
+  const order = (name) => {
+    const match = /^(\d+)/.exec(name);
+    return match ? Number(match[1]) : -1;
+  };
+  return defining.reduce((best, current) =>
+    order(current.name) > order(best.name) ? current : best,
+  );
+}
+
 function loadDefinition(root) {
   const dir = join(root, "migrations");
+  const candidates = [];
   for (const name of readdirSync(dir)) {
     if (!name.endsWith(".sql")) continue;
-    const source = readFileSync(join(dir, name), "utf8");
-    if (source.includes(`FUNCTION build.${FUNCTION_NAME}`))
-      return { path: relative(root, join(dir, name)).split(sep).join("/"), source };
+    candidates.push({ name, source: readFileSync(join(dir, name), "utf8") });
   }
-  return null;
+  const effective = pickEffectiveDefinition(candidates);
+  if (!effective) return null;
+  const superseded = candidates.filter(
+    (c) => c.source.includes(`FUNCTION build.${FUNCTION_NAME}`) && c.name !== effective.name,
+  );
+  return {
+    path: relative(root, join(dir, effective.name)).split(sep).join("/"),
+    source: effective.source,
+    supersededCount: superseded.length,
+    targetSources: candidates
+      .filter((c) => c.name !== effective.name && c.source.includes(FUNCTION_NAME))
+      .map((c) => c.source),
+  };
 }
 
 const DEFINITION_FIXTURE = `
@@ -231,6 +266,40 @@ const SELF_TEST_CASES = [
     expect: (r) => typeof r.error === "string",
   },
   {
+    name: "a definition that resolves no trigger target errors instead of passing vacuously",
+    input: {
+      definitionSql:
+        "CREATE OR REPLACE FUNCTION build.bump_report_revision() RETURNS trigger AS $$ BEGIN affected := 'SELECT c.org_id FROM (x) c'; END; $$;",
+      pendingFiles: [],
+    },
+    expect: (r) => typeof r.error === "string" && r.error.includes("vacuously"),
+  },
+  {
+    name: "a target attached by CREATE TRIGGER is recovered, not only ones listed in a FOREACH array",
+    input: {
+      definitionSql:
+        "CREATE OR REPLACE FUNCTION build.bump_report_revision() RETURNS trigger AS $$ BEGIN affected := 'SELECT c.cycle_id FROM (x) c'; END; $$;\nCREATE TRIGGER build_report_revision_insert AFTER INSERT ON build.cycles REFERENCING NEW TABLE AS changed_new FOR EACH STATEMENT EXECUTE FUNCTION build.bump_report_revision();",
+      pendingFiles: [
+        { path: "hypothetical.sql", source: 'ALTER TABLE "build"."cycles" DROP COLUMN IF EXISTS "cycle_id";' },
+      ],
+    },
+    expect: (r) =>
+      r.targets.includes("build.cycles") &&
+      r.findings.some((f) => f.kind === "column-dropped" && f.table === "build.cycles"),
+  },
+  {
+    name: "the highest-numbered migration defining the function wins, so a replacement is not shadowed by the original",
+    input: { definitionSql: DEFINITION_FIXTURE, pendingFiles: [] },
+    expect: () => {
+      const chosen = pickEffectiveDefinition([
+        { name: "1073_build_report_revision.sql", source: "CREATE FUNCTION build.bump_report_revision() old" },
+        { name: "1152_build_report_revision_cycles.sql", source: "CREATE OR REPLACE FUNCTION build.bump_report_revision() new" },
+        { name: "0500_unrelated.sql", source: "SELECT 1;" },
+      ]);
+      return chosen !== null && chosen.name === "1152_build_report_revision_cycles.sql";
+    },
+  },
+  {
     name: "a column read only inside a TG_TABLE_NAME branch is not charged to the other trigger targets",
     input: {
       definitionSql: DEFINITION_FIXTURE,
@@ -282,14 +351,20 @@ function main(argv) {
     return 1;
   }
   const pendingFiles = loadPendingFiles(root);
-  const result = analyse({ definitionSql: definition.source, pendingFiles });
+  const result = analyse({
+    definitionSql: definition.source,
+    pendingFiles,
+    targetSources: definition.targetSources,
+  });
   if (result.error) {
     console.error(result.error);
     return 1;
   }
 
   console.log(`=== build report-revision trigger integrity ===`);
-  console.log(`definition      ${definition.path}`);
+  console.log(
+    `definition      ${definition.path}${definition.supersededCount ? ` (supersedes ${String(definition.supersededCount)} earlier definition(s))` : ""}`,
+  );
   console.log(`trigger targets ${result.targets.join(", ")}`);
   console.log(`pending scripts ${String(pendingFiles.length)} in migrations/sql`);
 

@@ -49,7 +49,7 @@ async function harness(size = 1, allowed = true, missingProject = false) {
   };
   db.transaction.mockImplementation(async (callback: (tx: typeof db) => Promise<unknown>) => callback(db));
   const module = await Test.createTestingModule({ providers: [ProjectsTicketsQueryService,
-    { provide: DRIZZLE, useValue: db }, { provide: CacheService, useValue: { del: jest.fn().mockResolvedValue(undefined) } },
+    { provide: DRIZZLE, useValue: db }, { provide: CacheService, useValue: { invalidateNamespace: jest.fn().mockResolvedValue(undefined), del: jest.fn().mockResolvedValue(undefined) } },
     { provide: AccessService, useValue: { scopeFor: jest.fn().mockResolvedValue("all"), resolveUserPermissions: jest.fn().mockResolvedValue(new Set()) } },
   ] }).compile();
   return { module, db, rows, statuses, occupancy, transitions, set, values, service: module.get(ProjectsTicketsQueryService) };

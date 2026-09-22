@@ -3,17 +3,25 @@ import { and, count, eq, gte, inArray, isNull, sql } from "drizzle-orm";
 import { cycles, projects, tickets, timesheets, users } from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
+import { CacheService } from "../../../common/cache/cache.service";
+import { CACHE_TTL } from "../../../common/cache/cache-keys";
 import { assertProjectInOrg } from "./project-access";
 
 @Injectable()
 export class ProjectsAnalyticsService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
+    private readonly cache: CacheService,
   ) {}
 
   async getProjectAnalytics(orgId: string, projectId: number) {
     await assertProjectInOrg(this.db, orgId, projectId);
-    return this.computeProjectAnalytics(orgId, projectId);
+    return this.cache.cachedVersioned(
+      `build:analytics:${orgId}`,
+      String(projectId),
+      () => this.computeProjectAnalytics(orgId, projectId),
+      CACHE_TTL.SHORT,
+    );
   }
 
   private async computeProjectAnalytics(orgId: string, projectId: number) {

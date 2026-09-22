@@ -268,7 +268,7 @@ export class ProjectsTicketsCreateService {
     });
 
     void this.cache
-      .del(`projects:analytics:${u.orgId}:${projectId}`)
+      .invalidateNamespace(`build:analytics:${u.orgId}`)
       .catch(logSideEffectFailure("analytics cache eviction", { orgId: u.orgId, projectId }));
 
     return { ...ticket, sprintId: resolvedLegacySprintId };
@@ -316,7 +316,7 @@ export class ProjectsTicketsCreateService {
     });
 
     await this.cache
-      .del(`projects:analytics:${orgId}:${projectId}`)
+      .invalidateNamespace(`build:analytics:${orgId}`)
       .catch(logSideEffectFailure("analytics cache eviction", { orgId, projectId }));
 
     return ticket;

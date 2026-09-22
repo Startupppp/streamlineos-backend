@@ -226,7 +226,7 @@ export class ProjectsTicketsService {
     });
 
     void this.cache
-      .del(`projects:analytics:${orgId}:${ticketProjectId}`)
+      .invalidateNamespace(`build:analytics:${orgId}`)
       .catch(logSideEffectFailure("analytics cache eviction", { orgId, projectId: ticketProjectId }));
 
     return { deleted: true };

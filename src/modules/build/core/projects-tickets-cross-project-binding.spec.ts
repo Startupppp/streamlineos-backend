@@ -173,7 +173,7 @@ describe("updateTicket — the pre-read binds to the URL project when the route 
       {} as never,
       {} as never,
       {} as never,
-      { del: jest.fn().mockResolvedValue(undefined) } as never,
+      { invalidateNamespace: jest.fn().mockResolvedValue(undefined), del: jest.fn().mockResolvedValue(undefined) } as never,
       {} as never,
       new ProjectsTicketsUpdateService(
         db,
@@ -184,7 +184,7 @@ describe("updateTicket — the pre-read binds to the URL project when the route 
         { notifyNewAssignees: jest.fn().mockResolvedValue(undefined) } as never,
         { enqueue: jest.fn().mockResolvedValue(undefined) } as never,
         { runForTicketEvent: jest.fn() } as never,
-        { del: jest.fn().mockResolvedValue(undefined) } as never,
+        { invalidateNamespace: jest.fn().mockResolvedValue(undefined), del: jest.fn().mockResolvedValue(undefined) } as never,
         { holds: jest.fn().mockResolvedValue(true) } as never,
       ),
     );
@@ -272,7 +272,7 @@ describe("deleteTicket — the delete pre-read binds to the URL project", () => 
       {} as never,
       {} as never,
       { enqueue: jest.fn().mockResolvedValue(undefined) } as never,
-      { del: jest.fn().mockResolvedValue(undefined) } as never,
+      { invalidateNamespace: jest.fn().mockResolvedValue(undefined), del: jest.fn().mockResolvedValue(undefined) } as never,
       {} as never,
       {} as never,
     );

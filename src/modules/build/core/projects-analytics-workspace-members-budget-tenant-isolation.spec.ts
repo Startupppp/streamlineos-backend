@@ -1,12 +1,20 @@
 import type { Db } from "../../../db/drizzle.module";
 import { NotFoundException } from "@nestjs/common";
 import { ProjectsAnalyticsService } from "./projects-analytics.service";
+import { CacheService } from "../../../common/cache/cache.service";
 import { ProjectsWorkspaceMembersService } from "./projects-workspace-members.service";
 import { ProjectsBudgetService } from "./projects-budget.service";
 import type { AuditService } from "../../../common/audit/audit.service";
 import type { PmWorkspacesService } from "../pm-workspaces/pm-workspaces.service";
 import type { AccessService } from "../../access/access.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+
+function passThroughCache() {
+  return {
+    cachedVersioned: <T>(_namespace: string, _key: string, fetcher: () => Promise<T>) => fetcher(),
+  } as unknown as CacheService;
+}
+
 
 function sqlValues(value: unknown, seen = new Set<object>()): unknown[] {
   if (value === null || value === undefined || typeof value === "string" || typeof value === "number" || typeof value === "boolean") return [value];
@@ -56,7 +64,7 @@ function makeAnalyticsDb(): { db: Db; capturedWheres: unknown[]; capturedJoins: 
 describe("ProjectsAnalyticsService — cross-tenant isolation", () => {
   it("getProjectAnalytics scopes queries to requesting org (cross-tenant isolation)", async () => {
     const { db, capturedWheres } = makeAnalyticsDb();
-    const svc = new ProjectsAnalyticsService(db);
+    const svc = new ProjectsAnalyticsService(db, passThroughCache());
 
     await svc.getProjectAnalytics(ATTACKER_ORG, 1);
 
@@ -69,14 +77,14 @@ describe("ProjectsAnalyticsService — cross-tenant isolation", () => {
   it("getProjectAnalytics refuses a project the requesting org does not own (404, not an empty 200)", async () => {
     const { db, projectFindFirst } = makeAnalyticsDb();
     projectFindFirst.mockResolvedValue(undefined);
-    const svc = new ProjectsAnalyticsService(db);
+    const svc = new ProjectsAnalyticsService(db, passThroughCache());
 
     await expect(svc.getProjectAnalytics(ATTACKER_ORG, 1)).rejects.toThrow(NotFoundException);
   });
 
   it("getProjectAnalytics works for the owning org (control — same-tenant access works)", async () => {
     const { db } = makeAnalyticsDb();
-    const svc = new ProjectsAnalyticsService(db);
+    const svc = new ProjectsAnalyticsService(db, passThroughCache());
 
     const result = await svc.getProjectAnalytics(OWNER_ORG, 1);
     expect(result).toBeDefined();
@@ -84,7 +92,7 @@ describe("ProjectsAnalyticsService — cross-tenant isolation", () => {
 
   it("getProjectAnalytics cycleVelocity LEFT JOIN binds org_id on tickets so a ticket whose cycleId matches a cross-org cycle is never joined", async () => {
     const { db, capturedJoins } = makeAnalyticsDb();
-    const svc = new ProjectsAnalyticsService(db);
+    const svc = new ProjectsAnalyticsService(db, passThroughCache());
 
     await svc.getProjectAnalytics(ATTACKER_ORG, 1);
 
@@ -95,7 +103,7 @@ describe("ProjectsAnalyticsService — cross-tenant isolation", () => {
 
   it("getOrgProjectHealthSummary cycleStats LEFT JOIN binds org_id on tickets so soft-deleted and cross-org tickets never inflate cycle velocity", async () => {
     const { db, capturedJoins } = makeAnalyticsDb();
-    const svc = new ProjectsAnalyticsService(db);
+    const svc = new ProjectsAnalyticsService(db, passThroughCache());
 
     await svc.getOrgProjectHealthSummary(ATTACKER_ORG);
 
@@ -107,7 +115,7 @@ describe("ProjectsAnalyticsService — cross-tenant isolation", () => {
 
   it("getProjectAnalytics assigneeCompletion queries build.ticket_assignees via db.execute so multi-assigned users are not invisible in completion stats", async () => {
     const { db, execute } = makeAnalyticsDb();
-    const svc = new ProjectsAnalyticsService(db);
+    const svc = new ProjectsAnalyticsService(db, passThroughCache());
 
     await svc.getProjectAnalytics(ATTACKER_ORG, 1);
 
@@ -146,7 +154,7 @@ describe("ProjectsAnalyticsService — resourceAllocation counts each open ticke
 
   it("counts a ticket held both as primary assignee and as co-assignee once, which neither a sum nor a per-source maximum can do", async () => {
     const { db, execute } = makeAllocationDb([]);
-    const svc = new ProjectsAnalyticsService(db);
+    const svc = new ProjectsAnalyticsService(db, passThroughCache());
 
     await svc.resourceAllocation(ATTACKER_ORG);
 
@@ -164,7 +172,7 @@ describe("ProjectsAnalyticsService — resourceAllocation counts each open ticke
       { assigneeId: "user-1", projectId: 1, open: "3" },
       { assigneeId: "user-1", projectId: 2, open: "5" },
     ]);
-    const svc = new ProjectsAnalyticsService(db);
+    const svc = new ProjectsAnalyticsService(db, passThroughCache());
 
     const result = await svc.resourceAllocation(ATTACKER_ORG);
 
@@ -175,7 +183,7 @@ describe("ProjectsAnalyticsService — resourceAllocation counts each open ticke
 
   it("scopes both assignment sources and the membership join to the requesting org", async () => {
     const { db, execute } = makeAllocationDb([]);
-    const svc = new ProjectsAnalyticsService(db);
+    const svc = new ProjectsAnalyticsService(db, passThroughCache());
 
     await svc.resourceAllocation(ATTACKER_ORG);
 

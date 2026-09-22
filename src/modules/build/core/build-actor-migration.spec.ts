@@ -245,7 +245,7 @@ describe("ProjectsTicketsCreateService.createTicket — actor seam", () => {
   const mockDispatch = { emit: jest.fn().mockResolvedValue(undefined) };
   const mockWebhooks = { dispatch: jest.fn(), enqueue: jest.fn() };
   const mockAutomation = { runForTicketEvent: jest.fn() };
-  const mockCache = { del: jest.fn().mockResolvedValue(undefined) };
+  const mockCache = { invalidateNamespace: jest.fn().mockResolvedValue(undefined), del: jest.fn().mockResolvedValue(undefined) };
   const mockAccess = { holds: jest.fn().mockResolvedValue(true) };
 
   const makeSvc = () =>
