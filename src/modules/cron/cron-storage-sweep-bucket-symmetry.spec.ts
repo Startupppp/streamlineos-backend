@@ -77,8 +77,10 @@ function only(sent: Sent[], command: string): Sent {
 const USER = { orgId: ORG, userId: "user-1" } as unknown as CurrentUserContext;
 
 async function uploadKbMedia(store: StorageService): Promise<void> {
+  const tx = { execute: jest.fn().mockResolvedValue([]) };
   const db = {
-    insert: () => ({ values: () => ({ onConflictDoNothing: async () => undefined }) }),
+    insert: () => ({ values: () => ({ onConflictDoNothing: jest.fn().mockResolvedValue(undefined) }) }),
+    transaction: jest.fn().mockImplementation((fn: (tx: unknown) => Promise<unknown>) => fn(tx)),
   };
   const media = new KbMediaService(
     db as never,

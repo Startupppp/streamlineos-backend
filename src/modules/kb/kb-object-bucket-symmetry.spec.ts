@@ -234,9 +234,11 @@ describe("KB page attachments — the cascade purge addresses the bucket the upl
   it("purges the object from the KB bucket KbMediaService uploaded it into", async () => {
     const sent = captureS3();
     const store = storage();
+    const uploadTx = { execute: jest.fn().mockResolvedValue([]) };
     const db = {
       insert: () => ({ values: () => ({ onConflictDoNothing: async () => undefined }) }),
       update: () => ({ set: () => ({ where: async () => undefined }) }),
+      transaction: async (fn: (t: typeof uploadTx) => Promise<unknown>) => fn(uploadTx),
     };
 
     await uploadMedia(store, db);
@@ -262,9 +264,11 @@ describe("KB page attachments — the cascade purge addresses the bucket the upl
     const sent = captureS3();
     const store = storage();
 
+    const uploadTx = { execute: jest.fn().mockResolvedValue([]) };
     const uploadDb = {
       insert: () => ({ values: () => ({ onConflictDoNothing: async () => undefined }) }),
       update: () => ({ set: () => ({ where: async () => undefined }) }),
+      transaction: async (fn: (t: typeof uploadTx) => Promise<unknown>) => fn(uploadTx),
     };
     await uploadMedia(store, uploadDb);
     const put = only(sent, "PutObjectCommand");

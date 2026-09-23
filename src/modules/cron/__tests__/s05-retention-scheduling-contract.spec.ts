@@ -52,7 +52,7 @@ describe("S05 retention scheduling contracts", () => {
 
   it("exposes AI-usage retention through an authenticated leased deletion route", () => {
     const service = source("cron-ai-usage-retention.service.ts");
-    const controller = source("cron-platform.controller.ts");
+    const controller = source("cron-platform-retention.controller.ts");
     expect(service).toMatch(/class CronAiUsageRetentionService/);
     expect(controller).toMatch(/@Get\("ai-usage-retention-sweep"\)/);
     expect(controller).toMatch(/@Post\("ai-usage-retention-sweep"\)/);
@@ -71,7 +71,7 @@ describe("S05 retention scheduling contracts", () => {
   });
 
   it("exposes mail metadata and announcements retention through authenticated leased routes", () => {
-    const controller = source("cron-platform.controller.ts");
+    const controller = source("cron-platform-retention.controller.ts");
     expect(controller).toMatch(/@Get\("mail-metadata-retention-sweep"\)/);
     expect(controller).toMatch(/@Post\("mail-metadata-retention-sweep"\)/);
     expect(controller).toMatch(/withLease\("mail-metadata-retention-sweep",\s*1800/);

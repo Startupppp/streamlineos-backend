@@ -52,6 +52,7 @@ import { ActivitiesService } from "../../activities/activities.service";
 import { ReportingService } from "../../reporting/reporting.service";
 import { ReportingAuthService } from "../../reporting/reporting-auth.service";
 import { ReportingDefinitionsService } from "../../reporting/reporting-definitions.service";
+import { AiGatewayService } from "../../ai/core/gateway/ai-gateway.service";
 import { makeMfaPolicyStub } from "../../../../test/helpers/mfa-policy-stub";
 import { CrmMcpSettingsService } from "./crm-mcp-settings.service";
 import { AccessVersionCache } from "../../access/access-version-cache";
@@ -328,6 +329,14 @@ describe("CRM MCP agent token, issuer to guard", () => {
         ReportingAuthService,
         ReportingDefinitionsService,
         ReportingService,
+        {
+          provide: AiGatewayService,
+          useValue: {
+            invokeStructured: jest.fn().mockRejectedValue(
+              new Error("AiGatewayService.invokeStructured reached — assertMayRunSource did not fire"),
+            ),
+          },
+        },
         /**
          * Agent access is on unless a test says otherwise.
          *
