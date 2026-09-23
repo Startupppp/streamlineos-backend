@@ -1,5 +1,5 @@
 import { ForbiddenException, Inject, Injectable } from "@nestjs/common";
-import { and, asc, eq, isNotNull, isNull, lte, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, isNull, lt, lte, or, type SQL } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import {
   kbPageReviews,
@@ -12,27 +12,56 @@ import { type Db } from "../../../db/drizzle.module";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { AccessService } from "../../access/access.service";
 import { actingMembershipId } from "../../../common/auth/principal";
-import type { KeysetPosition } from "../../../common/pagination/keyset";
 import { keysetAfterId } from "../../../common/pagination/keyset";
+import {
+  buildCursorPage,
+  decodeCursor,
+  type CursorPage,
+} from "../../../common/pagination/cursor";
 import { reviewerCanSeeAllReviews } from "./kb-page-reviews.service";
 import { KnowledgeAuthorizationService } from "../core/authorization/knowledge-authorization.service";
+import type { ListPageReviewsQuery } from "./dto/kb-page-reviews.schemas";
 
 type ReviewRow = typeof kbPageReviews.$inferSelect;
-const REVIEW_STATUSES = ["pending", "approved", "rejected", "expired"] as const;
-const REVIEW_TYPES = ["approval", "freshness"] as const;
 
-function isReviewStatus(value: string): value is ReviewRow["status"] {
-  return REVIEW_STATUSES.some((status) => status === value);
-}
-
-function isReviewType(value: string): value is ReviewRow["type"] {
-  return REVIEW_TYPES.some((type) => type === value);
-}
-
-type ReviewWithContext = ReviewRow & {
+export interface ReviewListItem {
+  id: number;
+  orgId: string;
+  pageId: number;
+  type: ReviewRow["type"];
+  status: ReviewRow["status"];
+  isOverdue: boolean;
+  requestedById: string | null;
+  reviewerId: string | null;
+  requestedByMembershipId: number | null;
+  reviewerMembershipId: number | null;
+  dueAt: Date | null;
+  decidedAt: Date | null;
+  decisionNote: string | null;
+  createdAt: Date;
+  updatedAt: Date;
   pageTitle: string | null;
   requestedByName: string | null;
   reviewerName: string | null;
+}
+
+const NULL_DUE_SENTINEL = "9999-12-31T00:00:00.000Z";
+
+const REVIEW_LIST_COLUMNS = {
+  id: kbPageReviews.id,
+  orgId: kbPageReviews.orgId,
+  pageId: kbPageReviews.pageId,
+  type: kbPageReviews.type,
+  status: kbPageReviews.status,
+  requestedById: kbPageReviews.requestedById,
+  reviewerId: kbPageReviews.reviewerId,
+  requestedByMembershipId: kbPageReviews.requestedByMembershipId,
+  reviewerMembershipId: kbPageReviews.reviewerMembershipId,
+  dueAt: kbPageReviews.dueAt,
+  decidedAt: kbPageReviews.decidedAt,
+  decisionNote: kbPageReviews.decisionNote,
+  createdAt: kbPageReviews.createdAt,
+  updatedAt: kbPageReviews.updatedAt,
 };
 
 @Injectable()
@@ -43,18 +72,10 @@ export class KbPageReviewsQueryService {
     private readonly auth: KnowledgeAuthorizationService,
   ) {}
 
-  private actorMembershipId(user: CurrentUserContext): number {
-    const membershipId = actingMembershipId(user.principal);
-    if (membershipId === null)
-      throw new ForbiddenException("An organization membership is required");
-    return membershipId;
-  }
-
   async list(
     user: CurrentUserContext,
-    status: string | undefined,
-    type: string | undefined,
-  ): Promise<ReviewWithContext[]> {
+    query: ListPageReviewsQuery,
+  ): Promise<CursorPage<ReviewListItem>> {
     const requester = alias(users, "requester");
     const reviewer = alias(users, "reviewer");
     const requesterMembership = alias(
@@ -66,116 +87,90 @@ export class KbPageReviewsQueryService {
       "reviewer_assignee_membership",
     );
 
-    const conditions = [eq(kbPageReviews.orgId, user.orgId)];
-    if (status && isReviewStatus(status)) {
-      conditions.push(eq(kbPageReviews.status, status));
-    }
-    if (type && isReviewType(type)) {
-      conditions.push(eq(kbPageReviews.type, type));
-    }
-    if (!(await reviewerCanSeeAllReviews(user, this.access))) {
-      const membershipId = this.actorMembershipId(user);
-      const ownOnly = or(
-        eq(kbPageReviews.reviewerMembershipId, membershipId),
-        eq(kbPageReviews.requestedByMembershipId, membershipId),
-      );
-      if (ownOnly) conditions.push(ownOnly);
-    }
-
-    return this.db
-      .select({
-        id: kbPageReviews.id,
-        orgId: kbPageReviews.orgId,
-        pageId: kbPageReviews.pageId,
-        type: kbPageReviews.type,
-        status: kbPageReviews.status,
-        requestedById: kbPageReviews.requestedById,
-        reviewerId: kbPageReviews.reviewerId,
-        requestedByMembershipId: kbPageReviews.requestedByMembershipId,
-        reviewerMembershipId: kbPageReviews.reviewerMembershipId,
-        dueAt: kbPageReviews.dueAt,
-        decidedAt: kbPageReviews.decidedAt,
-        decisionNote: kbPageReviews.decisionNote,
-        createdAt: kbPageReviews.createdAt,
-        updatedAt: kbPageReviews.updatedAt,
-        pageTitle: kbPages.title,
-        requestedByName: requester.name,
-        reviewerName: reviewer.name,
-      })
-      .from(kbPageReviews)
-      .leftJoin(kbPages, eq(kbPageReviews.pageId, kbPages.id))
-      .leftJoin(
-        requesterMembership,
-        eq(kbPageReviews.requestedByMembershipId, requesterMembership.id),
-      )
-      .leftJoin(
-        reviewerMembership,
-        eq(kbPageReviews.reviewerMembershipId, reviewerMembership.id),
-      )
-      .leftJoin(requester, eq(requesterMembership.userId, requester.id))
-      .leftJoin(reviewer, eq(reviewerMembership.userId, reviewer.id))
-      .where(and(...conditions))
-      .orderBy(sql`${kbPageReviews.dueAt} ASC NULLS LAST`)
-      .limit(100);
-  }
-
-  async listDue(user: CurrentUserContext, cursor?: KeysetPosition): Promise<ReviewWithContext[]> {
-    const requester = alias(users, "requester");
-    const reviewer = alias(users, "reviewer");
-    const requesterMembership = alias(
-      organizationMembers,
-      "reviewer_requester_membership",
-    );
-    const reviewerMembership = alias(
-      organizationMembers,
-      "reviewer_assignee_membership",
-    );
-
-    const predicate = await this.auth.visiblePagePredicate(user, "view");
+    const visibilityPredicate = await this.auth.visiblePagePredicate(user, "view");
     const canSeeAll = await reviewerCanSeeAllReviews(user, this.access);
+    const now = new Date();
 
-    const conditions = [
+    const conditions: (SQL<unknown> | undefined)[] = [
       eq(kbPageReviews.orgId, user.orgId),
-      eq(kbPageReviews.status, "pending"),
-      eq(kbPageReviews.type, "freshness"),
-      isNotNull(kbPageReviews.dueAt),
-      lte(kbPageReviews.dueAt, new Date()),
-      predicate,
     ];
 
+    if (query.status === "overdue") {
+      conditions.push(eq(kbPageReviews.status, "pending"));
+      conditions.push(lt(kbPageReviews.dueAt, now));
+    } else if (query.status !== undefined) {
+      conditions.push(eq(kbPageReviews.status, query.status));
+    }
+
+    if (query.type !== undefined) {
+      conditions.push(eq(kbPageReviews.type, query.type));
+    }
+
+    if (query.reviewer !== undefined) {
+      conditions.push(eq(kbPageReviews.reviewerId, query.reviewer));
+    }
+
+    if (query.dueFrom !== undefined) {
+      conditions.push(gte(kbPageReviews.dueAt, new Date(query.dueFrom)));
+    }
+
+    if (query.dueTo !== undefined) {
+      conditions.push(lte(kbPageReviews.dueAt, new Date(query.dueTo)));
+    }
+
     if (!canSeeAll) {
-      const membershipId = this.actorMembershipId(user);
+      const membershipId = actingMembershipId(user.principal);
+      if (membershipId === null) {
+        throw new ForbiddenException("An organization membership is required");
+      }
       const ownOnly = or(
         eq(kbPageReviews.reviewerMembershipId, membershipId),
         eq(kbPageReviews.requestedByMembershipId, membershipId),
       );
-      if (ownOnly) conditions.push(ownOnly);
+      conditions.push(ownOnly);
     }
 
-    if (cursor) conditions.push(keysetAfterId(kbPageReviews.dueAt, kbPageReviews.id, cursor));
+    const position = decodeCursor(query.cursor);
+    if (position) {
+      if (position.sortValue === NULL_DUE_SENTINEL) {
+        conditions.push(
+          and(
+            isNull(kbPageReviews.dueAt),
+            lt(kbPageReviews.id, Number(position.id)),
+          ),
+        );
+      } else {
+        conditions.push(
+          or(
+            keysetAfterId(kbPageReviews.dueAt, kbPageReviews.id, {
+              sortValue: position.sortValue,
+              id: position.id,
+            }),
+            isNull(kbPageReviews.dueAt),
+          ),
+        );
+      }
+    }
 
-    return this.db
+    const orderFn = query.sortDir === "desc" ? desc : asc;
+
+    const rows = await this.db
       .select({
-        id: kbPageReviews.id,
-        orgId: kbPageReviews.orgId,
-        pageId: kbPageReviews.pageId,
-        type: kbPageReviews.type,
-        status: kbPageReviews.status,
-        requestedById: kbPageReviews.requestedById,
-        reviewerId: kbPageReviews.reviewerId,
-        requestedByMembershipId: kbPageReviews.requestedByMembershipId,
-        reviewerMembershipId: kbPageReviews.reviewerMembershipId,
-        dueAt: kbPageReviews.dueAt,
-        decidedAt: kbPageReviews.decidedAt,
-        decisionNote: kbPageReviews.decisionNote,
-        createdAt: kbPageReviews.createdAt,
-        updatedAt: kbPageReviews.updatedAt,
+        ...REVIEW_LIST_COLUMNS,
         pageTitle: kbPages.title,
         requestedByName: requester.name,
         reviewerName: reviewer.name,
       })
       .from(kbPageReviews)
-      .innerJoin(kbPages, and(eq(kbPageReviews.pageId, kbPages.id), isNull(kbPages.deletedAt)))
+      .innerJoin(
+        kbPages,
+        and(
+          eq(kbPageReviews.pageId, kbPages.id),
+          eq(kbPageReviews.orgId, kbPages.orgId),
+          isNull(kbPages.deletedAt),
+          visibilityPredicate,
+        ),
+      )
       .leftJoin(
         requesterMembership,
         eq(kbPageReviews.requestedByMembershipId, requesterMembership.id),
@@ -187,7 +182,20 @@ export class KbPageReviewsQueryService {
       .leftJoin(requester, eq(requesterMembership.userId, requester.id))
       .leftJoin(reviewer, eq(reviewerMembership.userId, reviewer.id))
       .where(and(...conditions))
-      .orderBy(asc(kbPageReviews.dueAt), asc(kbPageReviews.id))
-      .limit(50);
+      .orderBy(
+        orderFn(kbPageReviews.dueAt),
+        orderFn(kbPageReviews.id),
+      )
+      .limit(query.limit + 1);
+
+    const withDerived = rows.map((row) => ({
+      ...row,
+      isOverdue: row.status === "pending" && row.dueAt !== null && row.dueAt < now,
+    }));
+
+    return buildCursorPage(withDerived, query.limit, (row) => ({
+      sortValue: row.dueAt ? row.dueAt.toISOString() : NULL_DUE_SENTINEL,
+      id: String(row.id),
+    }));
   }
 }

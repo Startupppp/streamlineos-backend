@@ -2,6 +2,7 @@ import { z } from "zod";
 import { wireDate, nullableWireDate } from "../../../../common/openapi/wire-types";
 import { cursorPageSchema } from "../../../../common/openapi/response-envelopes";
 
+
 const aiUsageMetaSchema = z.object({
   model: z.string(),
   promptTokens: z.number().int(),
@@ -58,7 +59,8 @@ export const kbPageReviewSchema = z.object({
   orgId: z.string(),
   pageId: z.number().int(),
   type: z.enum(["approval", "freshness"]),
-  status: z.enum(["pending", "approved", "rejected", "expired"]),
+  status: z.enum(["pending", "approved", "rejected"]),
+  isOverdue: z.boolean(),
   requestedById: z.string().nullable(),
   reviewerId: z.string().nullable(),
   requestedByMembershipId: z.number().int().nullable(),
@@ -76,7 +78,16 @@ export const kbPageReviewWithContextSchema = kbPageReviewSchema.extend({
   reviewerName: z.string().nullable(),
 });
 
+export const kbPageReviewListPageSchema = cursorPageSchema(kbPageReviewWithContextSchema);
 export const kbPageReviewListSchema = z.array(kbPageReviewWithContextSchema);
+
+export const bulkDecideResultItemSchema = z.object({
+  id: z.number().int(),
+  outcome: z.enum(["succeeded", "denied", "conflict", "notFound"]),
+});
+export const bulkDecideResultSchema = z.object({
+  results: z.array(bulkDecideResultItemSchema),
+});
 
 export const kbPageTemplateSchema = z.object({
   id: z.number().int(),
