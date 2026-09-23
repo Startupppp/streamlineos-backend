@@ -30,6 +30,6 @@ export class ApprovalAdapterRegistry {
   }
 
   list(): readonly ApprovalSourceAdapter[] {
-    return this.adapters;
+    return [...this.adapters];
   }
 }

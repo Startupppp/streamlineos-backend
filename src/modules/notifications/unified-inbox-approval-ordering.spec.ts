@@ -86,6 +86,10 @@ function makeUser(): CurrentUserContext {
   } as CurrentUserContext;
 }
 
+function makeRegistry() {
+  return { list: jest.fn().mockReturnValue([]), register: jest.fn() } as unknown as import("../attention/approval-adapter.registry").ApprovalAdapterRegistry;
+}
+
 async function scrollApprovals(seeds: ApprovalSeed[], limit: number, pages: number): Promise<string[]> {
   const db = makeApprovalDb(seeds);
   const svc = new UnifiedInboxService(
@@ -94,6 +98,7 @@ async function scrollApprovals(seeds: ApprovalSeed[], limit: number, pages: numb
     makeMail(),
     makeBroadcasts(),
     new BuildApprovalsInboxService(db),
+    makeRegistry(),
   );
   const kinds: InboxKind[] = ["build_approval"];
   const delivered: string[] = [];
@@ -131,6 +136,7 @@ describe("unified inbox — build approvals page on the key the merge sorts by",
       makeMail(),
       makeBroadcasts(),
       new BuildApprovalsInboxService(db),
+      makeRegistry(),
     );
 
     const result = await svc.list(

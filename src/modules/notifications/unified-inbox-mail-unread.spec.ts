@@ -39,6 +39,10 @@ function makeBuildApprovals(): BuildApprovalsInboxService {
   return { getInboxPage: jest.fn().mockResolvedValue([]) } as unknown as BuildApprovalsInboxService;
 }
 
+function makeRegistry() {
+  return { list: jest.fn().mockReturnValue([]), register: jest.fn() } as unknown as import('../attention/approval-adapter.registry').ApprovalAdapterRegistry;
+}
+
 type MailMock = {
   service: MailService;
   areAllAccountsFresh: jest.Mock;
@@ -87,6 +91,7 @@ describe("unified inbox — unreadOnly mail freshness gate", () => {
       mail.service,
       makeBroadcasts(),
       makeBuildApprovals(),
+    makeRegistry()
     );
 
     const result = await svc.list(
@@ -109,6 +114,7 @@ describe("unified inbox — unreadOnly mail freshness gate", () => {
       mail.service,
       makeBroadcasts(),
       makeBuildApprovals(),
+    makeRegistry()
     );
 
     const result = await svc.list(
@@ -131,6 +137,7 @@ describe("unified inbox — unreadOnly mail freshness gate", () => {
       mail.service,
       makeBroadcasts(),
       makeBuildApprovals(),
+    makeRegistry()
     );
 
     const result = await svc.list(
@@ -153,6 +160,7 @@ describe("unified inbox — unreadOnly mail freshness gate", () => {
       mail.service,
       makeBroadcasts(),
       makeBuildApprovals(),
+    makeRegistry()
     );
 
     await svc.list(ORG, UID, { limit: 10, kinds: ["mail"], unreadOnly: false }, user);
@@ -168,6 +176,7 @@ describe("unified inbox — unreadOnly mail freshness gate", () => {
       mail.service,
       makeBroadcasts(),
       makeBuildApprovals(),
+    makeRegistry()
     );
 
     const result = await svc.list(
@@ -189,6 +198,7 @@ describe("unified inbox — unreadOnly mail freshness gate", () => {
       mail.service,
       makeBroadcasts(),
       makeBuildApprovals(),
+    makeRegistry()
     );
 
     await svc.list(ORG, UID, { limit: 10, kinds: ["mail"], unreadOnly: true }, user);
@@ -204,6 +214,7 @@ describe("unified inbox — unreadOnly mail freshness gate", () => {
       mail.service,
       makeBroadcasts(),
       makeBuildApprovals(),
+    makeRegistry()
     );
 
     await svc.list(ORG, UID, { limit: 10, kinds: ["mail"], unreadOnly: true }, user);

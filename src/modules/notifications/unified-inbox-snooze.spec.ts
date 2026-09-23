@@ -142,8 +142,14 @@ function makeUnified(rows: FakeRow[]): UnifiedInboxService {
     makeMail(),
     makeBroadcasts(),
     makeBuildApprovals(),
+  makeRegistry()
   );
 }
+
+function makeRegistry() {
+  return { list: jest.fn().mockReturnValue([]), register: jest.fn() } as unknown as import("../attention/approval-adapter.registry").ApprovalAdapterRegistry;
+}
+
 
 function makeRead(rows: FakeRow[]): NotificationsReadService {
   const cache = {

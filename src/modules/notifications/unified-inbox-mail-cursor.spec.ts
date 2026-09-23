@@ -157,6 +157,7 @@ function buildService(mailboxSize: number) {
     mailbox.service,
     makeBroadcasts(),
     makeBuildApprovals(),
+  makeRegistry()
   );
   return { svc, mailbox };
 }
@@ -180,6 +181,10 @@ async function scroll(pages: number, mailboxSize: number) {
   return { delivered, mailbox };
 }
 
+
+function makeRegistry() {
+  return { list: jest.fn().mockReturnValue([]), register: jest.fn() } as unknown as import("../attention/approval-adapter.registry").ApprovalAdapterRegistry;
+}
 describe("unified inbox — mail trimmed by the merge is not lost", () => {
   it("BITE: delivers every message in the mailbox across the scroll", async () => {
     const { delivered } = await scroll(12, 8);

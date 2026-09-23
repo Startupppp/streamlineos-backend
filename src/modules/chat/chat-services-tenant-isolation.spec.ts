@@ -312,7 +312,8 @@ describe("ChatNotificationsService — orgId threading", () => {
       getSettings: jest.fn().mockResolvedValue({ defaultNotificationPreference: "ALL" }),
     } as unknown as ChatOrgSettingsService;
     const effects = {} as unknown as ExternalEffectLedger;
-    const service = new ChatNotificationsService(db, ably, orgSettings, effects);
+    const dispatch = {} as unknown as NotificationDispatchService;
+    const service = new ChatNotificationsService(db, ably, orgSettings, effects, dispatch);
     return { service, db, ably, where };
   }
 

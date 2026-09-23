@@ -101,6 +101,10 @@ function approvalRow(id: number, createdAt: Date): ApprovalInboxRow {
   };
 }
 
+
+function makeRegistry() {
+  return { list: jest.fn().mockReturnValue([]), register: jest.fn() } as unknown as import("../attention/approval-adapter.registry").ApprovalAdapterRegistry;
+}
 describe("unified inbox — triage filter excludes non-active sources", () => {
   const user = makeUser();
 
@@ -111,6 +115,7 @@ describe("unified inbox — triage filter excludes non-active sources", () => {
       makeMail(),
       makeBroadcasts(),
       makeBuildApprovals(),
+    makeRegistry()
     );
 
     const result = await svc.list(
@@ -132,6 +137,7 @@ describe("unified inbox — triage filter excludes non-active sources", () => {
       makeMail(),
       makeBroadcasts(),
       makeBuildApprovals(),
+    makeRegistry()
     );
 
     const result = await svc.list(
@@ -155,6 +161,7 @@ describe("unified inbox — triage filter excludes non-active sources", () => {
         { id: 1, title: "Hello", message: "body", sentAt: new Date("2026-03-01T10:00:00Z") },
       ]),
       makeBuildApprovals(),
+    makeRegistry()
     );
 
     const result = await svc.list(
@@ -175,7 +182,7 @@ describe("unified inbox — triage filter excludes non-active sources", () => {
       makeAccess(),
       makeMail(),
       makeBroadcasts(),
-      makeBuildApprovals([approvalRow(5, new Date("2026-03-01T10:00:00Z"))]),
+      makeBuildApprovals([approvalRow(5, new Date("2026-03-01T10:00:00Z"))]), makeRegistry()
     );
 
     const result = await svc.list(
@@ -198,7 +205,7 @@ describe("unified inbox — triage filter excludes non-active sources", () => {
       makeBroadcasts([
         { id: 1, title: "Hello", message: "body", sentAt: new Date("2026-03-01T10:00:00Z") },
       ]),
-      makeBuildApprovals([approvalRow(5, new Date("2026-03-01T09:00:00Z"))]),
+      makeBuildApprovals([approvalRow(5, new Date("2026-03-01T09:00:00Z"))]), makeRegistry()
     );
 
     const result = await svc.list(
@@ -226,6 +233,7 @@ describe("unified inbox — q filter on broadcasts", () => {
         { id: 2, title: "Unrelated Title", message: "other content", sentAt: new Date("2026-03-01T09:00:00Z") },
       ]),
       makeBuildApprovals(),
+    makeRegistry()
     );
 
     const result = await svc.list(
@@ -248,6 +256,7 @@ describe("unified inbox — q filter on broadcasts", () => {
         { id: 4, title: "Also no match", message: "nothing relevant", sentAt: new Date("2026-03-01T09:00:00Z") },
       ]),
       makeBuildApprovals(),
+    makeRegistry()
     );
 
     const result = await svc.list(
@@ -269,6 +278,7 @@ describe("unified inbox — q filter on broadcasts", () => {
         { id: 5, title: "SCREAMING CASE TITLE", message: "body", sentAt: new Date("2026-03-01T10:00:00Z") },
       ]),
       makeBuildApprovals(),
+    makeRegistry()
     );
 
     const result = await svc.list(
@@ -291,6 +301,7 @@ describe("unified inbox — q filter on broadcasts", () => {
         { id: 6, title: "Completely unrelated", message: "body here", sentAt: new Date("2026-03-01T10:00:00Z") },
       ]),
       makeBuildApprovals(),
+    makeRegistry()
     );
 
     const result = await svc.list(
@@ -313,7 +324,7 @@ describe("unified inbox — approval adapter seam", () => {
       makeAccess(),
       makeMail(),
       makeBroadcasts(),
-      makeBuildApprovals([approvalRow(42, new Date("2026-03-01T10:00:00Z"))]),
+      makeBuildApprovals([approvalRow(42, new Date("2026-03-01T10:00:00Z"))]), makeRegistry()
     );
 
     const result = await svc.list(
@@ -333,7 +344,7 @@ describe("unified inbox — approval adapter seam", () => {
       makeAccess(),
       makeMail(),
       makeBroadcasts(),
-      makeBuildApprovals([approvalRow(42, new Date("2026-03-01T10:00:00Z"))]),
+      makeBuildApprovals([approvalRow(42, new Date("2026-03-01T10:00:00Z"))]), makeRegistry()
     );
 
     const result = await svc.list(
@@ -363,6 +374,7 @@ describe("unified inbox — approval adapter seam", () => {
       makeMail(),
       makeBroadcasts(),
       makeBuildApprovals(seeds),
+    makeRegistry()
     );
 
     const result = await svc.list(

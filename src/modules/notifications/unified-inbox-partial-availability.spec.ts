@@ -122,6 +122,10 @@ function makeBuildApprovals(rows: ApprovalInboxRow[] = []): BuildApprovalsInboxS
   return { getInboxPage: jest.fn().mockResolvedValue(rows) } as unknown as BuildApprovalsInboxService;
 }
 
+function makeRegistry() {
+  return { list: jest.fn().mockReturnValue([]), register: jest.fn() } as unknown as import('../attention/approval-adapter.registry').ApprovalAdapterRegistry;
+}
+
 function makeRejectingBuildApprovals(): BuildApprovalsInboxService {
   return {
     getInboxPage: jest.fn().mockRejectedValue(new Error(PROVIDER_MESSAGE)),
@@ -192,6 +196,7 @@ describe("unified inbox — one failed source does not lose the page", () => {
       mail.service,
       makeBroadcasts(),
       makeBuildApprovals(),
+    makeRegistry()
     );
 
     const result = await svc.list(
@@ -222,6 +227,7 @@ describe("unified inbox — one failed source does not lose the page", () => {
       mail.service,
       makeBroadcasts(),
       makeBuildApprovals(),
+    makeRegistry()
     );
 
     await svc.list(ORG, UID, { limit: 10, kinds: undefined, unreadOnly: false }, user);
@@ -239,6 +245,7 @@ describe("unified inbox — one failed source does not lose the page", () => {
       mail.service,
       makeBroadcasts(),
       makeBuildApprovals(),
+    makeRegistry()
     );
 
     const result = await listUnderFakeTimers(() =>
@@ -273,6 +280,7 @@ describe("unified inbox — one failed source does not lose the page", () => {
         },
       ]),
       makeRejectingBuildApprovals(),
+    makeRegistry()
     );
 
     const result = await svc.list(
@@ -307,6 +315,7 @@ describe("unified inbox — one failed source does not lose the page", () => {
       mail.service,
       makeBroadcasts(),
       makeBuildApprovals(),
+    makeRegistry()
     );
 
     const result = await svc.list(
@@ -339,6 +348,7 @@ describe("unified inbox — one failed source does not lose the page", () => {
       mail.service,
       makeBroadcasts(),
       makeBuildApprovals(),
+    makeRegistry()
     );
 
     const result = await svc.list(
@@ -364,6 +374,7 @@ describe("unified inbox — one failed source does not lose the page", () => {
       mail.service,
       makeBroadcasts(),
       makeRejectingBuildApprovals(),
+    makeRegistry()
     );
 
     const result = await svc.list(
@@ -397,6 +408,7 @@ describe("unified inbox — one failed source does not lose the page", () => {
       mail.service,
       makeBroadcasts(),
       makeRejectingBuildApprovals(),
+    makeRegistry()
     );
 
     const seen: string[] = [];
@@ -436,6 +448,7 @@ describe("unified inbox — one failed source does not lose the page", () => {
       mail.service,
       makeBroadcasts(),
       makeBuildApprovals(),
+    makeRegistry()
     );
 
     const first = await svc.list(
@@ -481,6 +494,7 @@ describe("unified inbox — one failed source does not lose the page", () => {
       mail.service,
       makeBroadcasts(),
       makeBuildApprovals(),
+    makeRegistry()
     );
 
     const delivered: string[] = [];

@@ -209,7 +209,7 @@ export class UnifiedInboxService {
           adapter.fetch(orgId, userId, membershipId, limit, cursor),
         );
         if (!outcome.ok) {
-          errors.push(`${adapter.kindLabel}: ${outcome.error}`);
+          errors.push(outcome.error);
           return;
         }
         items.push(...outcome.value);
