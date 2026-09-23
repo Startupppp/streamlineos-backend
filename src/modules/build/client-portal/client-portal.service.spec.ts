@@ -1,10 +1,17 @@
 import { ForbiddenException, NotFoundException } from "@nestjs/common";
+import { PgDialect } from "drizzle-orm/pg-core";
+import type { SQL } from "drizzle-orm";
 import { ClientPortalService } from "./client-portal.service";
 import type { Db } from "../../../db/drizzle.module";
 import type { AccessService } from "../../access/access.service";
 import type { AuditService } from "../../../common/audit/audit.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
+
+const dialect = new PgDialect();
+function renderSql(cond: unknown): string {
+  return dialect.sqlToQuery(cond as SQL).sql;
+}
 
 function makeU(orgId: string, isOrgOwner = true): CurrentUserContext {
   return {
@@ -105,6 +112,28 @@ describe("ClientPortalService.listPortalProjects — membership-scoped listing",
     expect(projectProjection).toHaveProperty("key");
     expect(projectProjection).toHaveProperty("status");
     expect(projectProjection).toHaveProperty("targetEndDate");
+  });
+
+  it("grants query excludes a grant whose expiresAt has passed, not just ACTIVE status", async () => {
+    const membershipChain = {
+      from: jest.fn().mockReturnThis(),
+      where: jest.fn().mockReturnThis(),
+      limit: jest.fn().mockResolvedValue([{ id: "pm-abc" }]),
+    };
+    const grantsWhere = jest.fn().mockReturnThis();
+    const grantsChain = {
+      from: jest.fn().mockReturnThis(),
+      where: grantsWhere,
+      limit: jest.fn().mockResolvedValue([]),
+    };
+    const db = {
+      select: jest.fn()
+        .mockReturnValueOnce(membershipChain)
+        .mockReturnValueOnce(grantsChain),
+    } as unknown as Db;
+    const svc = new ClientPortalService(db, mockAccess, mockAudit);
+    await svc.listPortalProjects("org-1", 7);
+    expect(renderSql(grantsWhere.mock.calls[0]?.[0]).toLowerCase()).toContain("expires_at");
   });
 });
 
@@ -249,6 +278,39 @@ describe("ClientPortalService.getProjectOverview — deny-by-default via grant c
     expect(projection).toHaveProperty("startDate");
     expect(projection).toHaveProperty("targetEndDate");
   });
+
+  it("grant capabilities query excludes a grant whose expiresAt has passed, not just ACTIVE status", async () => {
+    const projectRow = { id: 1, name: "P", key: "P1", status: "active", startDate: null, targetEndDate: null };
+    const projectSelectChain = {
+      from: jest.fn().mockReturnThis(),
+      where: jest.fn().mockReturnThis(),
+      limit: jest.fn().mockResolvedValue([projectRow]),
+    };
+    const grantWhere = jest.fn().mockReturnThis();
+    const grantSelectChain = {
+      from: jest.fn().mockReturnThis(),
+      where: grantWhere,
+      orderBy: jest.fn().mockReturnThis(),
+      limit: jest.fn().mockResolvedValue([]),
+    };
+    const parallelChain = {
+      from: jest.fn().mockReturnThis(),
+      innerJoin: jest.fn().mockReturnThis(),
+      leftJoin: jest.fn().mockReturnThis(),
+      where: jest.fn().mockReturnThis(),
+      limit: jest.fn().mockResolvedValue([]),
+    };
+    const db = {
+      query: { projects: { findFirst: jest.fn().mockResolvedValue({ managerMembershipId: null }) } },
+      select: jest.fn()
+        .mockReturnValueOnce(projectSelectChain)
+        .mockReturnValueOnce(grantSelectChain)
+        .mockReturnValue(parallelChain),
+    } as unknown as Db;
+    const svc = new ClientPortalService(db, mockAccess, mockAudit);
+    await svc.getProjectOverview(u, 1);
+    expect(renderSql(grantWhere.mock.calls[0]?.[0]).toLowerCase()).toContain("expires_at");
+  });
 });
 
 describe("ClientPortalService.listPortalChangeRequests — portal grant access gate", () => {
@@ -294,5 +356,27 @@ describe("ClientPortalService.listPortalChangeRequests — portal grant access g
     const result = await svc.listPortalChangeRequests(makeU(ORG, true), 1);
     expect(Array.isArray(result)).toBe(true);
     expect(result).toHaveLength(1);
+  });
+
+  it("grant lookup excludes a grant whose expiresAt has passed, not just ACTIVE status", async () => {
+    const membershipChain = {
+      from: jest.fn().mockReturnThis(),
+      where: jest.fn().mockReturnThis(),
+      limit: jest.fn().mockResolvedValue([{ id: "pm-abc" }]),
+    };
+    const grantWhere = jest.fn().mockReturnThis();
+    const grantChain = {
+      from: jest.fn().mockReturnThis(),
+      where: grantWhere,
+      limit: jest.fn().mockResolvedValue([]),
+    };
+    const db = {
+      select: jest.fn()
+        .mockReturnValueOnce(membershipChain)
+        .mockReturnValueOnce(grantChain),
+    } as unknown as Db;
+    const svc = new ClientPortalService(db, mockAccess, mockAudit);
+    await expect(svc.listPortalChangeRequests(makeU(ORG, false), 1)).rejects.toThrow(NotFoundException);
+    expect(renderSql(grantWhere.mock.calls[0]?.[0]).toLowerCase()).toContain("expires_at");
   });
 });
