@@ -78,9 +78,25 @@ export function computeRouting(ctx: RouteContext): RoutingResult {
   candidates = Array.from(new Set<NotificationChannel>([...candidates].filter((c) => allowed.has(c))));
   if (!candidates.includes("IN_APP")) candidates.unshift("IN_APP");
 
-  const userMuted = !mandatory && (prefs.eventPreferences[definition.eventKey]?.muted === true || prefs.modulePreferences[definition.sourceModule]?.muted === true || prefs.categories[definition.category] === false || orgPolicy?.eventOverride?.muted === true);
-  const eventPrefChannels = prefs.eventPreferences[definition.eventKey]?.channels;
+  /**
+   * `can_user_override: false` used to bind only the per-event channel map, so an
+   * admin who turned it off still could not reach anyone: the reader's global
+   * channel switch, their category/module mute and their own suppression rules all
+   * still suppressed delivery. The narrow gate made the policy look enforced while
+   * every coarser personal control walked straight past it.
+   *
+   * The org's OWN mute (`eventOverride.muted`) is deliberately outside the gate —
+   * it is the policy speaking, not the reader overriding it — and consent and
+   * provider availability stay absolute below, because neither is a preference.
+   */
   const canUserOverride = orgPolicy?.canUserOverride ?? true;
+  const orgMuted = orgPolicy?.eventOverride?.muted === true;
+  const personalMuted =
+    prefs.eventPreferences[definition.eventKey]?.muted === true ||
+    prefs.modulePreferences[definition.sourceModule]?.muted === true ||
+    prefs.categories[definition.category] === false;
+  const userMuted = !mandatory && (orgMuted || (canUserOverride && personalMuted));
+  const eventPrefChannels = prefs.eventPreferences[definition.eventKey]?.channels;
   const decisions: ChannelDecision[] = [];
   const sending = new Set<NotificationChannel>();
   const suppress = (channel: NotificationChannel, reason: SuppressionReason, detail?: string): void => {
@@ -102,9 +118,9 @@ export function computeRouting(ctx: RouteContext): RoutingResult {
     }
     if (userMuted && !isInApp) { suppress(channel, "MUTE", "Muted by preference"); continue; }
     if (eventPrefChannels && canUserOverride && !mandatory && eventPrefChannels[channel] === false) { suppress(channel, "CHANNEL_DISABLED", "Disabled for this event"); continue; }
-    if (!prefs.channelEnabled[channel] && !(mandatory && !isInApp)) { if (!mandatory) { suppress(channel, "CHANNEL_DISABLED", "Channel turned off"); continue; } }
+    if (canUserOverride && !prefs.channelEnabled[channel] && !(mandatory && !isInApp)) { if (!mandatory) { suppress(channel, "CHANNEL_DISABLED", "Channel turned off"); continue; } }
     const ruleReason = suppressedChannels.get(channel);
-    if (ruleReason && !mandatory) { suppress(channel, ruleReason, "Suppression rule"); continue; }
+    if (ruleReason && !mandatory && canUserOverride) { suppress(channel, ruleReason, "Suppression rule"); continue; }
     if (!availableChannels.has(channel)) { suppress(channel, "NO_PROVIDER", "No provider configured"); continue; }
     send(channel);
   }
