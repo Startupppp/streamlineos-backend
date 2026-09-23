@@ -4,6 +4,7 @@ import { sql } from "drizzle-orm";
 import { organizations, users, organizationMembers } from "../common/auth";
 import { projects } from "./core";
 import { projectReleases } from "./ticket-releases";
+import { tickets } from "./ticket-core";
 
 export const changeRequestStatusEnum = pgEnum("change_request_status", [
   "submitted",
@@ -58,4 +59,29 @@ export const changeRequests = build.table("change_requests", {
     columns: [t.orgId, t.releaseId],
     foreignColumns: [projectReleases.orgId, projectReleases.id],
   }).onDelete("set null"),
+]);
+
+export const changeRequestAffectedItems = build.table("change_request_affected_items", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  orgId: text("org_id").references(() => organizations.id, { onDelete: "cascade" }).notNull(),
+  changeRequestId: integer("change_request_id").notNull(),
+  ticketId: integer("ticket_id").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  createdBy: text("created_by").references(() => users.id, { onDelete: "set null" }),
+}, (t) => [
+  foreignKey({
+    name: "fk_change_request_affected_items_org_change_request",
+    columns: [t.orgId, t.changeRequestId],
+    foreignColumns: [changeRequests.orgId, changeRequests.id],
+  }).onDelete("cascade"),
+  foreignKey({
+    name: "fk_change_request_affected_items_org_ticket",
+    columns: [t.orgId, t.ticketId],
+    foreignColumns: [tickets.orgId, tickets.id],
+  }).onDelete("cascade"),
+  uniqueIndex("uniq_change_request_affected_items_pair").on(t.changeRequestId, t.ticketId),
+  index("idx_change_request_affected_items_org_cr").on(t.orgId, t.changeRequestId, t.ticketId),
+  index("idx_change_request_affected_items_org_ticket").on(t.orgId, t.ticketId, t.changeRequestId),
+  index("idx_change_request_affected_items_created_by").on(t.createdBy),
+  unique("uniq_change_request_affected_items_org_id").on(t.orgId, t.id),
 ]);
