@@ -92,6 +92,14 @@ function applyInMemoryFilters<T extends { subject: string; body?: string; catego
   });
 }
 
+function applyQFilter<T extends { subject: string }>(
+  items: T[],
+  q: string | undefined,
+): T[] {
+  if (q === undefined || q.trim() === "") return items;
+  return items.filter((item) => matchesQ(q, item.subject, ""));
+}
+
 function readSource<T>(read: () => Promise<T>): Promise<SourceRead<T>> {
   return readSourceWithin(SOURCE_TIMEOUT_MS, read);
 }
@@ -155,6 +163,7 @@ function buildApprovalSourceStatus(
   wants: boolean,
   approvalsSupport: boolean,
   result: AdapterFetchResult | null,
+  searching: boolean,
 ): SourceStatus {
   if (!wants) return skippedSource("build_approval", null);
   if (!approvalsSupport)
@@ -167,6 +176,8 @@ function buildApprovalSourceStatus(
   if (errors.length > 0) errParts.push(errors.join("; "));
   if (unsupportedOnPage2.length > 0)
     errParts.push(`unsupported: ${unsupportedOnPage2.join(", ")} adapters have no cursor`);
+  if (searching)
+    errParts.push("unsupported: approvals are searched within the fetched page, not the whole queue");
   return {
     kind: "build_approval",
     included: true,
@@ -358,7 +369,7 @@ export class UnifiedInboxService {
 
     const notifItems = itemsOf(notifOutcome, emptyNotifications);
     const rawBroadcastItems = itemsOf(broadcastOutcome, emptyBroadcasts);
-    const approvalItems = adapterResult?.items ?? [];
+    const approvalItems = applyQFilter(adapterResult?.items ?? [], filters.q);
     const mailBatch =
       mailOutcome !== null && mailOutcome.ok
         ? mailOutcome.value
@@ -386,7 +397,12 @@ export class UnifiedInboxService {
         mailFreshForUnreadOnly,
         mailOutcome,
       ),
-      buildApprovalSourceStatus(wantsBuildApprovals, approvalsSupport, adapterResult),
+      buildApprovalSourceStatus(
+        wantsBuildApprovals,
+        approvalsSupport,
+        adapterResult,
+        filters.q !== undefined && filters.q.trim() !== "",
+      ),
     ];
 
     const merged = stableSortItems([
