@@ -2,13 +2,12 @@ import {
   BadRequestException,
   Inject,
   Injectable,
-  InternalServerErrorException,
   NotFoundException,
 } from "@nestjs/common";
 import { and, desc, eq } from "drizzle-orm";
 import {
   candidateApplications,
-  candidates,
+  candidateResumes,
   jobPostings,
   organizations,
 } from "../../db/schema";
@@ -16,23 +15,32 @@ import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { withPublicToken } from "../../common/tenant/with-public-token";
 import { runInTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
-import { randomBytes } from "node:crypto";
+import { registerAfterCommit } from "../../common/tenant/tenant-context";
+import { runInNewTenantTransaction } from "../../common/tenant/run-in-tenant-transaction";
 import { PlanLimitsService } from "../billing/core/plan-limits.service";
-import { PaymentRequiredException } from "../../common/http/api-exceptions";
+import { StorageService } from "../storage/storage.service";
+import { FileQuarantineService } from "../storage/file-quarantine.service";
+import { AvScanner } from "../../common/security/av-scan";
 import { logger } from "../../common/logger/logger.service";
+import { extractDocumentText, isExtractableMime } from "../../common/documents/extract-document-text.util";
+import {
+  RESUME_REJECTION_MESSAGE,
+  refuseResume,
+  storeResume,
+  type ResumeIntake,
+  type ResumeUpload,
+} from "./careers-resume-intake";
+import { recordApplication, screenOrRefuse, type ApplyResult } from "./public-careers-apply";
 import type { ApplyInput } from "./dto/public.schemas";
-
-function isQuotaExceededError(error: unknown): error is PaymentRequiredException {
-  if (!(error instanceof PaymentRequiredException)) return false;
-  const body = error.getResponse();
-  return typeof body === "object" && body !== null && "code" in body && body.code === "QUOTA_EXCEEDED";
-}
 
 @Injectable()
 export class PublicCareersService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly planLimits: PlanLimitsService,
+    private readonly storage: StorageService,
+    private readonly quarantine: FileQuarantineService,
+    private readonly scanner: AvScanner,
   ) {}
 
   async getApplicationStatus(token: string) {
@@ -110,13 +118,59 @@ export class PublicCareersService {
         eq(jobPostings.orgId, org.id),
         eq(jobPostings.status, "OPEN"),
       ),
+      columns: {
+        id: true,
+        title: true,
+        location: true,
+        type: true,
+        experience: true,
+        salaryMin: true,
+        salaryMax: true,
+        openings: true,
+        applicationDeadline: true,
+        createdAt: true,
+        description: true,
+        requirements: true,
+        benefits: true,
+        closingDate: true,
+        screeningQuestions: true,
+      },
     });
     if (!job) throw new NotFoundException("Job not found");
 
-    return { org, job };
+    /**
+     * `knockoutAnswer` never leaves the building. It is the answer that passes,
+     * and publishing it on the form the candidate fills in would make the
+     * knockout decorative.
+     */
+    const screeningQuestions =
+      job.screeningQuestions?.map(({ id, question, type, required, options }) => ({
+        id,
+        question,
+        type,
+        required,
+        ...(options ? { options } : {}),
+      })) ?? null;
+
+    return { org, job: { ...job, screeningQuestions } };
   }
 
-  async applyToOrgJob(orgSlug: string, jobId: number, input: ApplyInput) {
+  /**
+   * The one public apply door.
+   *
+   * Org-scoped, `OPEN` jobs only, consent required, screening answers screened
+   * before anything is written, one application per email per job, résumé bytes
+   * into the vault, and `candidate.applied` committed with the rows it
+   * describes. The legacy `POST /careers/apply` — which had consent and the
+   * event but no org scope — and this endpoint — which had the org scope and
+   * neither — were two half-doors; this is the whole one.
+   */
+  async applyToOrgJob(
+    orgSlug: string,
+    jobId: number,
+    input: ApplyInput,
+    file?: ResumeUpload,
+  ): Promise<ApplyResult> {
     const org = await this.db.query.organizations.findFirst({
       where: eq(organizations.slug, orgSlug),
       columns: { id: true, name: true },
@@ -129,73 +183,88 @@ export class PublicCareersService {
         eq(jobPostings.orgId, org.id),
         eq(jobPostings.status, "OPEN"),
       ),
-      columns: { id: true, title: true },
+      columns: { id: true, title: true, screeningQuestions: true },
     });
     if (!job) throw new NotFoundException("Job not found or no longer accepting applications.");
 
-    const nameParts = input.name.split(/\s+/);
-    const firstName = nameParts[0] ?? input.name;
-    const lastName = nameParts.length > 1 ? nameParts.slice(1).join(" ") : "-";
-    const trackingToken = randomBytes(32).toString("hex");
+    const answers = screenOrRefuse(job, input);
 
-    return runInTenantTransaction(this.db, async (tx) => {
-      const [existingByEmail] = await tx
-        .select({ id: candidates.id })
-        .from(candidates)
-        .where(and(eq(candidates.email, input.email), eq(candidates.orgId, org.id)))
-        .limit(1);
-      if (!existingByEmail) {
-        try {
-          await this.planLimits.assertWithinLimit(org.id, "hrCandidates", 1, tx);
-        } catch (error) {
-          if (!isQuotaExceededError(error)) throw error;
-          logger.warn("[public-careers] job application refused: candidate quota exceeded", {
-            orgId: org.id,
-            jobPostingId: jobId,
-          });
-          throw new BadRequestException(
-            "This job posting is not accepting applications at this time.",
-          );
-        }
-      }
-      const [candidate] = await tx
-        .insert(candidates)
-        .values({
+    /**
+     * A file that fails validation is a client error and refuses the whole
+     * application, because the candidate meant to attach it. A file that
+     * validates but cannot be STORED does not — `storeResume` reports that and
+     * the application still lands, since losing the application over an object
+     * store outage would be the worse failure.
+     */
+    let resume: ResumeIntake = { stored: false, reason: "no-file" };
+    if (file) {
+      const rejection = refuseResume(file);
+      if (rejection) throw new BadRequestException(RESUME_REJECTION_MESSAGE[rejection]);
+      resume = await storeResume(this.storage, this.quarantine, this.scanner, org.id, file);
+      if (!resume.stored && resume.reason === "infected")
+        throw new BadRequestException(RESUME_REJECTION_MESSAGE.infected);
+    }
+
+    const result = await runInTenantTransaction(
+      this.db,
+      (tx) =>
+        recordApplication({
+          tx,
+          planLimits: this.planLimits,
           orgId: org.id,
-          firstName,
-          lastName,
-          email: input.email,
-          phone: input.phone ?? null,
-          linkedinUrl: input.linkedinUrl ?? null,
-          resumeUrl: input.resumeUrl ?? null,
-          source: "CAREERS_PAGE",
-          status: "NEW",
-        })
-        .onConflictDoNothing()
-        .returning({ id: candidates.id });
+          job,
+          input,
+          answers,
+          resume,
+        }),
+      { orgId: org.id },
+    );
 
-      let candidateId: number | undefined = existingByEmail?.id ?? candidate?.id;
-      if (!candidateId) {
-        const [raced] = await tx
-          .select({ id: candidates.id })
-          .from(candidates)
-          .where(and(eq(candidates.email, input.email), eq(candidates.orgId, org.id)))
-          .limit(1);
-        candidateId = raced?.id;
+    if (file && result.duplicate === false) this.deferResumeText(org.id, result, file);
+    return result;
+  }
+
+  /**
+   * Résumé text extraction, after the application has committed.
+   *
+   * Deferred because parsing is the one part of an application that may fail
+   * without the candidate having done anything wrong, and the instruction is
+   * explicit that a parser failure must not cost them the application. It runs
+   * in its own tenant transaction (backend CLAUDE.md §4): the request's
+   * transaction has committed by then and its GUC is gone.
+   *
+   * No AI gateway call happens here. `candidate_resumes.resume_text` is the raw
+   * extracted text; the recruiter's "AI parse" button still spends a credit on
+   * the structured extraction. An unauthenticated route that charged the tenant
+   * per submission would be a denial-of-wallet.
+   */
+  private deferResumeText(orgId: string, result: ApplyResult, file: ResumeUpload): void {
+    if (!isExtractableMime(file.mimetype)) return;
+    const work = async (): Promise<void> => {
+      try {
+        const text = (await extractDocumentText(file.buffer, file.mimetype)).trim();
+        if (!text) return;
+        await runInNewTenantTransaction(this.db, orgId, async (tx) => {
+            const application = await tx.query.candidateApplications.findFirst({
+              where: eq(candidateApplications.trackingToken, result.trackingToken),
+              columns: { candidateId: true },
+            });
+            if (!application) return;
+            await tx
+              .insert(candidateResumes)
+              .values({ orgId, candidateId: application.candidateId, resumeText: text.slice(0, 100_000) })
+              .onConflictDoUpdate({
+                target: candidateResumes.candidateId,
+                set: { resumeText: text.slice(0, 100_000), updatedAt: new Date() },
+              });
+        });
+      } catch (error) {
+        logger.warn("[public-careers] résumé text extraction failed; application is unaffected", {
+          orgId,
+          error: error instanceof Error ? error.message : String(error),
+        });
       }
-
-      if (!candidateId) throw new InternalServerErrorException("Failed to process application.");
-
-      await tx.insert(candidateApplications).values({
-        orgId: org.id,
-        candidateId,
-        jobPostingId: jobId,
-        status: "APPLIED",
-        coverLetter: input.coverLetter ?? null,
-        trackingToken,
-      });
-
-      return { trackingToken };
-    }, { orgId: org.id });
+    };
+    if (!registerAfterCommit(work)) void work();
   }
 }

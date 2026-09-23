@@ -11,8 +11,11 @@ import {
   Post,
   Query,
   Req,
+  UploadedFile,
   UseGuards,
+  UseInterceptors,
 } from "@nestjs/common";
+import { FileInterceptor } from "@nestjs/platform-express";
 import type { Request } from "express";
 import { Public } from "../../common/auth/public.decorator";
 import { DRIZZLE } from "../../db/drizzle.constants";
@@ -69,7 +72,8 @@ import {
 import { Validate } from "../../common/validation/validate.decorator";
 import { z } from "zod";
 import { resolveClientIp } from "../../common/http/client-ip";
-import { ResponseSchema } from "../../common/openapi/zod-operation-contracts";
+import { MultipartAction, ResponseSchema } from "../../common/openapi/zod-operation-contracts";
+import { RESUME_MAX_BYTES } from "./careers-resume-intake";
 import {
   contactSubmitSchema as contactSubmitResponseSchema,
   waitlistJoinSchema as waitlistJoinResponseSchema,
@@ -204,18 +208,41 @@ export class PublicController {
     return this.careers.getOrgJob(orgSlug, jobId);
   }
 
+  /**
+   * The only apply door. Accepts JSON, or `multipart/form-data` when the
+   * candidate attaches a résumé — multer leaves a non-multipart request's body
+   * alone, so one handler serves both and `applySchema` coerces the string
+   * shapes multipart forces on `consent` and `answers`.
+   */
   @Post("careers/:orgSlug/jobs/:jobId/apply")
   @HttpCode(201)
   @UseGuards(RateLimitGuard)
   @UseRateLimit("public:job-apply")
+  @UseInterceptors(FileInterceptor("resume", { limits: { fileSize: RESUME_MAX_BYTES } }))
+  @MultipartAction({
+    file: "resume",
+    fileRequired: false,
+    fields: {
+      name: "string",
+      email: "string",
+      phone: "string",
+      linkedinUrl: "string",
+      coverLetter: "string",
+      resumeUrl: "string",
+      consent: "boolean",
+      answers: "string",
+    },
+    requiredFields: ["name", "email", "consent"],
+  })
   @ResponseSchema(jobApplicationSchema)
   @Validate({ params: orgSlugjobIdParams, body: applySchema })
   applyToOrgJob(
     @Param("orgSlug") orgSlug: string,
     @Param("jobId", ParseIntPipe) jobId: number,
     @Body() body: ApplyInput,
+    @UploadedFile() resume?: Express.Multer.File,
   ) {
-    return this.careers.applyToOrgJob(orgSlug, jobId, body);
+    return this.careers.applyToOrgJob(orgSlug, jobId, body, resume);
   }
 
   @Get("offer/:token")

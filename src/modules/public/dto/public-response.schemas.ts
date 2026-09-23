@@ -55,6 +55,21 @@ export const jobListSchema = z.object({
   jobs: z.array(jobSummarySchema),
 });
 
+/**
+ * The questions the careers form renders. They are part of the job's public
+ * contract: the apply endpoint refuses a missing required answer and knocks out
+ * a disqualifying one, so a form that cannot see them cannot be filled in
+ * correctly. `knockoutAnswer` is deliberately absent — publishing the passing
+ * answer would tell every applicant what to say.
+ */
+const publicScreeningQuestionSchema = z.object({
+  id: z.string(),
+  question: z.string(),
+  type: z.enum(["TEXT", "YES_NO", "SINGLE_SELECT", "NUMBER"]),
+  required: z.boolean(),
+  options: z.array(z.string()).optional(),
+});
+
 export const jobDetailSchema = z.object({
   org: orgInfoSchema,
   job: jobSummarySchema.extend({
@@ -62,11 +77,15 @@ export const jobDetailSchema = z.object({
     requirements: z.string().nullable(),
     benefits: z.string().nullable(),
     closingDate: z.string().nullable(),
+    screeningQuestions: z.array(publicScreeningQuestionSchema).nullable(),
   }),
 });
 
 export const jobApplicationSchema = z.object({
   trackingToken: z.string(),
+  duplicate: z.boolean(),
+  resumeStored: z.boolean(),
+  resumeReason: z.string().nullable(),
 });
 
 export const offerDetailSchema = z.object({
