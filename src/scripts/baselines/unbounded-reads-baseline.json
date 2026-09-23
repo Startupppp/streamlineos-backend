@@ -89,7 +89,7 @@
     "/build/core/projects-webhooks-dispatch.service.ts": 1,
     "/build/core/projects-webhooks.service.ts": 1,
     "/build/core/projects-work-query.service.ts": 3,
-    "/build/core/projects-workspace-members.service.ts": 1,
+    "/build/core/build-members.service.ts": 1,
     "/build/core/projects-write.service.ts": 4,
     "/build/core/ticket-status.util.ts": 1,
     "/build/entity/build-entity-reads.service.ts": 4,

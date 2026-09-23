@@ -7,8 +7,8 @@ const catalog = new Set([
   "hr:employees:update",
   "tasks:read",
   "tasks:write",
-  "build:workspaces:members:view",
-  "build:workspaces:members:manage",
+  "hr:onboarding:tasks:view",
+  "hr:onboarding:tasks:complete",
   "payroll:runs:post",
 ]);
 
@@ -24,8 +24,8 @@ describe("impliedViewKey", () => {
   });
 
   it("derives it for a four-segment write", () => {
-    expect(impliedViewKey(catalog, "build:workspaces:members:manage")).toBe(
-      "build:workspaces:members:view",
+    expect(impliedViewKey(catalog, "hr:onboarding:tasks:complete")).toBe(
+      "hr:onboarding:tasks:view",
     );
   });
 

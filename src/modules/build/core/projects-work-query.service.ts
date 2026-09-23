@@ -139,7 +139,6 @@ export class ProjectsWorkQueryService {
       projectIds: filterProjectIds,
       excludeStatus,
       scope,
-      pmWorkspaceId,
     } = query;
     const limit = Math.min(rawLimit, PAGE_SIZE_CAP);
 
@@ -172,10 +171,6 @@ export class ProjectsWorkQueryService {
       }
 
       conditions.push(inArray(tickets.projectId, allowedProjectIds));
-    }
-
-    if (pmWorkspaceId) {
-      conditions.push(eq(projects.pmWorkspaceId, pmWorkspaceId));
     }
 
     if (scope === "created") {

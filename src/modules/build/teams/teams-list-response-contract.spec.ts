@@ -1,6 +1,5 @@
 import { TeamsService } from "./teams.service";
 import { AuditService } from "../../../common/audit/audit.service";
-import { PmWorkspacesService } from "../pm-workspaces/pm-workspaces.service";
 import type { Db } from "../../../db/drizzle.module";
 import { teamPageSchema } from "./dto/teams-response.schemas";
 import { checkResponseAgainstContract } from "../../../common/openapi/response-contract.interceptor";
@@ -13,7 +12,6 @@ const STORED_ROW = {
   icon: null,
   color: null,
   isPrivate: false,
-  pmWorkspaceId: "ws-1",
   createdAt: new Date("2026-09-18T10:00:00.000Z"),
   updatedAt: new Date("2026-09-18T10:00:00.000Z"),
   deletedAt: null,
@@ -41,7 +39,7 @@ function dbReturning(rows: unknown[]): Db {
 }
 
 async function listOneTeam() {
-  const svc = new TeamsService(dbReturning([STORED_ROW]), {} as AuditService, {} as PmWorkspacesService);
+  const svc = new TeamsService(dbReturning([STORED_ROW]), {} as AuditService);
   return svc.listTeams("org-1", { cursor: undefined, pageSize: 50, search: undefined }, 1);
 }
 

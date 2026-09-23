@@ -158,7 +158,6 @@ export async function listGrants(
       portalMembershipId: projectClientGrants.portalMembershipId,
       partyContactId: projectClientGrants.partyContactId,
       projectId: projectClientGrants.projectId,
-      pmWorkspaceId: projectClientGrants.pmWorkspaceId,
       canViewMilestones: projectClientGrants.canViewMilestones,
       canViewTasks: projectClientGrants.canViewTasks,
       canViewAttachments: projectClientGrants.canViewAttachments,
@@ -201,20 +200,11 @@ export async function createGrant(
   }
 
   const [project] = await deps.db
-    .select({ id: projects.id, pmWorkspaceId: projects.pmWorkspaceId })
+    .select({ id: projects.id })
     .from(projects)
     .where(and(eq(projects.id, input.projectId), eq(projects.orgId, organizationId), isNull(projects.deletedAt)))
     .limit(1);
   if (!project) throw new NotFoundException("Project not found");
-
-  const resolvedWorkspaceId = input.pmWorkspaceId ?? project.pmWorkspaceId ?? null;
-  if (
-    input.pmWorkspaceId &&
-    project.pmWorkspaceId &&
-    input.pmWorkspaceId !== project.pmWorkspaceId
-  ) {
-    throw new ForbiddenException("Project does not belong to the specified PM workspace");
-  }
 
   const [row] = await deps.db
     .insert(projectClientGrants)
@@ -223,7 +213,6 @@ export async function createGrant(
       portalMembershipId: input.portalMembershipId,
       partyContactId: membership.partyContactId,
       projectId: input.projectId,
-      pmWorkspaceId: resolvedWorkspaceId,
       canViewMilestones: input.canViewMilestones ?? false,
       canViewTasks: input.canViewTasks ?? false,
       canViewAttachments: input.canViewAttachments ?? false,

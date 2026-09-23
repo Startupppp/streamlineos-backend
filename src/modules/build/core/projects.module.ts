@@ -16,8 +16,8 @@ import { ProjectsCustomFieldsController } from "./projects-custom-fields.control
 import { ProjectsReleasesController } from "./projects-releases.controller";
 import { ProjectsWebhooksController } from "./projects-webhooks.controller";
 import { ProjectsAutomationsController } from "./projects-automations.controller";
-import { ProjectsWorkspaceMembersController } from "./projects-workspace-members.controller";
-import { ProjectsWorkspaceMembersService } from "./projects-workspace-members.service";
+import { BuildMembersController } from "./build-members.controller";
+import { BuildMembersService } from "./build-members.service";
 import { ProjectsCustomersController } from "./projects-customers.controller";
 import { ProjectsCustomersService } from "./projects-customers.service";
 import { ProjectsQueryService } from "./projects-query.service";
@@ -57,13 +57,12 @@ import { ProjectsTicketChecklistsService } from "./projects-ticket-checklists.se
 import { ProjectsTicketLinksService } from "./projects-ticket-links.service";
 import { ProjectsTicketRelationsService } from "./projects-ticket-relations.service";
 import { BuildAutomationRunnerService } from "./build-automation-runner.service";
-import { PmWorkspacesModule } from "../pm-workspaces/pm-workspaces.module";
 import { OutboxModule } from "../../../common/outbox/outbox.module";
 import { BuildReleasePublishedConsumerService } from "./build-release-published-consumer.service";
 import { BuildTicketStatusChangedConsumerService } from "./build-ticket-status-changed-consumer.service";
 
 @Module({
-  imports: [BillingModule, NotificationsModule, UsersModule, PmWorkspacesModule, OutboxModule],
+  imports: [BillingModule, NotificationsModule, UsersModule, OutboxModule],
   controllers: [
     ProjectsRoadmapController,
     ProjectsTemplatesController,
@@ -77,7 +76,7 @@ import { BuildTicketStatusChangedConsumerService } from "./build-ticket-status-c
     ProjectsReleasesController,
     ProjectsWebhooksController,
     ProjectsAutomationsController,
-    ProjectsWorkspaceMembersController,
+    BuildMembersController,
     ProjectsCustomersController,
     ProjectsController,
     ProjectResourcesController,
@@ -117,7 +116,7 @@ import { BuildTicketStatusChangedConsumerService } from "./build-ticket-status-c
     ProjectsWebhooksDispatchService,
     ProjectsAutomationsService,
     ProjectsCustomersService,
-    ProjectsWorkspaceMembersService,
+    BuildMembersService,
     ProjectsCustomStatesService,
     ProjectsLabelsService,
     ProjectsTicketChecklistsService,

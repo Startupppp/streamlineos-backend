@@ -8,7 +8,6 @@ import type { Db } from "../../../db/drizzle.module";
 import {
   organizationMembers,
   organizations,
-  pmWorkspaces,
   projectMembers,
   projects,
   users,
@@ -39,7 +38,7 @@ describeWithDb(
     async function cleanup(): Promise<void> {
       await runInNewTenantTransaction(db, ORG_ID, async (tx) => {
         // org first: guard_owner_membership blocks deletion of the owner membership while the org row still names it;
-        // cascade removes org_members, pm_workspaces, projects, and project_members
+        // cascade removes org_members, projects, and project_members
         await tx.delete(organizations).where(eq(organizations.id, ORG_ID));
         for (const id of Object.values(U)) {
           await tx.delete(users).where(eq(users.id, id));
@@ -85,18 +84,12 @@ describeWithDb(
           if (member.userId === U.outsider) membershipIds.outsider = member.id;
         }
 
-        const [ws] = await tx
-          .insert(pmWorkspaces)
-          .values({ orgId: ORG_ID, name: "E2E Workspace", slug: `ws-${ORG_ID}`, isDefault: true })
-          .returning({ pmWorkspaceId: pmWorkspaces.pmWorkspaceId });
-        const pmWorkspaceId = ws.pmWorkspaceId;
-
         const inserted = await tx
           .insert(projects)
           .values([
-            { orgId: ORG_ID, name: "Managed Project", key: "PSMGD", managerMembershipId: membershipIds.member, pmWorkspaceId },
-            { orgId: ORG_ID, name: "Member Project", key: "PSMEM", managerMembershipId: membershipIds.admin, pmWorkspaceId },
-            { orgId: ORG_ID, name: "Other Project", key: "PSOTH", managerMembershipId: membershipIds.admin, pmWorkspaceId },
+            { orgId: ORG_ID, name: "Managed Project", key: "PSMGD", managerMembershipId: membershipIds.member },
+            { orgId: ORG_ID, name: "Member Project", key: "PSMEM", managerMembershipId: membershipIds.admin },
+            { orgId: ORG_ID, name: "Other Project", key: "PSOTH", managerMembershipId: membershipIds.admin },
           ])
           .onConflictDoNothing()
           .returning({ id: projects.id, name: projects.name });

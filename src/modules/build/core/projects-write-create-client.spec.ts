@@ -44,10 +44,6 @@ function makeSvc(db: Db) {
     { log: jest.fn() } as never,
     { assertWithinLimit: jest.fn().mockResolvedValue(undefined) } as never,
     { emit: jest.fn().mockResolvedValue(undefined) } as never,
-    {
-      resolveWorkspaceIdForWrite: jest.fn().mockResolvedValue("ws-default"),
-      assertMemberOfWorkspace: jest.fn().mockResolvedValue(undefined),
-    } as never,
   );
 }
 

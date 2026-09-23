@@ -8,7 +8,6 @@ import type { Db } from "../../../db/drizzle.module";
 import {
   organizationMembers,
   organizations,
-  pmWorkspaces,
   projectMembers,
   projectStatuses,
   projects,
@@ -86,15 +85,10 @@ describeWithDb(
           if (member.userId === U.outsider) membershipIds.outsider = member.id;
         }
 
-        const [ws] = await tx
-          .insert(pmWorkspaces)
-          .values({ orgId: ORG_ID, name: "E2E Workspace", slug: `ws-${ORG_ID}`, isDefault: true })
-          .returning({ pmWorkspaceId: pmWorkspaces.pmWorkspaceId });
-
         const inserted = await tx
           .insert(projects)
           .values([
-            { orgId: ORG_ID, name: "Key Test Project", key: "KTP", managerMembershipId: membershipIds.owner, pmWorkspaceId: ws.pmWorkspaceId },
+            { orgId: ORG_ID, name: "Key Test Project", key: "KTP", managerMembershipId: membershipIds.owner },
           ])
           .onConflictDoNothing()
           .returning({ id: projects.id });

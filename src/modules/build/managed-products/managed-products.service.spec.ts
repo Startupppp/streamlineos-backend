@@ -3,7 +3,6 @@ import { Test } from "@nestjs/testing";
 import { PgDialect } from "drizzle-orm/pg-core";
 import { ManagedProductsService } from "./managed-products.service";
 import { AuditService } from "../../../common/audit/audit.service";
-import { PmWorkspacesService } from "../pm-workspaces/pm-workspaces.service";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 
 const pgDialect = new PgDialect();
@@ -61,14 +60,6 @@ describe("ManagedProductsService", () => {
         ManagedProductsService,
         { provide: DRIZZLE, useValue: mockDb },
         { provide: AuditService, useValue: mockAudit },
-        {
-          provide: PmWorkspacesService,
-          useValue: {
-            resolveDefaultWorkspaceId: jest.fn().mockResolvedValue("ws_default"),
-            resolveWorkspaceIdForWrite: jest.fn().mockResolvedValue("ws_default"),
-            assertMemberOfWorkspace: jest.fn().mockResolvedValue(undefined),
-          },
-        },
       ],
     }).compile();
     svc = module.get(ManagedProductsService);

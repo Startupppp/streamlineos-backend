@@ -7,7 +7,6 @@ import { CacheService } from "../../../common/cache/cache.service";
 import { AuditService } from "../../../common/audit/audit.service";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { CreateProjectInput } from "./dto/projects.schemas";
-import { PmWorkspacesService } from "../pm-workspaces/pm-workspaces.service";
 import { NotificationDispatchService } from "../../notifications/notification-dispatch.service";
 import { PaymentRequiredException } from "../../../common/http/api-exceptions";
 
@@ -73,14 +72,6 @@ describe("ProjectsProvisionService.createProject — atomic quota admission", ()
         { provide: CacheService, useValue: { invalidateNamespace: jest.fn().mockResolvedValue(undefined) } },
         { provide: AuditService, useValue: { log: jest.fn() } },
         { provide: NotificationDispatchService, useValue: { emit: jest.fn().mockResolvedValue(undefined) } },
-        {
-          provide: PmWorkspacesService,
-          useValue: {
-            resolveDefaultWorkspaceId: jest.fn().mockResolvedValue("ws-default"),
-            resolveWorkspaceIdForWrite: jest.fn().mockResolvedValue("ws-default"),
-            assertMemberOfWorkspace: jest.fn().mockResolvedValue(undefined),
-          },
-        },
       ],
     }).compile();
 

@@ -8,7 +8,6 @@ import type { Db } from "../../../db/drizzle.module";
 import {
   organizationMembers,
   organizations,
-  pmWorkspaces,
   projectTeamAssignments,
   projectTeamMembers,
   projectTeams,
@@ -41,7 +40,7 @@ describeWithDb(
     async function cleanup(): Promise<void> {
       await runInNewTenantTransaction(db, ORG_ID, async (tx) => {
         // org first: guard_owner_membership blocks deletion of the owner membership while the org row still names it;
-        // cascade removes org_members, pm_workspaces, projects, project_teams, and their dependents
+        // cascade removes org_members, projects, project_teams, and their dependents
         await tx.delete(organizations).where(eq(organizations.id, ORG_ID));
         for (const id of Object.values(U)) {
           await tx.delete(users).where(eq(users.id, id));
@@ -87,21 +86,15 @@ describeWithDb(
           if (member.userId === U.outsider) membershipIds.outsider = member.id;
         }
 
-        const [ws] = await tx
-          .insert(pmWorkspaces)
-          .values({ orgId: ORG_ID, name: "E2E Workspace", slug: `ws-${ORG_ID}`, isDefault: true })
-          .returning({ pmWorkspaceId: pmWorkspaces.pmWorkspaceId });
-        const pmWorkspaceId = ws.pmWorkspaceId;
-
         const [project] = await tx
           .insert(projects)
-          .values({ orgId: ORG_ID, name: "Team Project", key: "TAP", managerMembershipId: membershipIds.owner, pmWorkspaceId })
+          .values({ orgId: ORG_ID, name: "Team Project", key: "TAP", managerMembershipId: membershipIds.owner })
           .returning({ id: projects.id });
         ids.projectId = project.id;
 
         const [team] = await tx
           .insert(projectTeams)
-          .values({ orgId: ORG_ID, name: "Engineering", key: "ENG", pmWorkspaceId })
+          .values({ orgId: ORG_ID, name: "Engineering", key: "ENG" })
           .returning({ id: projectTeams.id });
         ids.teamId = team.id;
 

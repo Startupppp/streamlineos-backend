@@ -3,8 +3,8 @@ import { z } from "zod";
 export const scopeDirectoryKeySchema = z
   .string()
   .regex(
-    /^(workspace:[^:\s]+|product:[0-9]+|project:[0-9]+)$/,
-    "key must be workspace:<pmWorkspaceId>, product:<numericId> or project:<numericId>",
+    /^(product:[0-9]+|project:[0-9]+)$/,
+    "key must be product:<numericId> or project:<numericId>",
   );
 
 export const resolveScopeDirectorySchema = z
@@ -18,7 +18,7 @@ export type ResolveScopeDirectoryInput = z.infer<typeof resolveScopeDirectorySch
 export const scopeDirectoryRefSchema = z
   .object({
     key: z.string(),
-    type: z.enum(["workspace", "product", "project"]),
+    type: z.enum(["product", "project"]),
     id: z.string(),
     name: z.string(),
     parentKey: z.string().nullable(),

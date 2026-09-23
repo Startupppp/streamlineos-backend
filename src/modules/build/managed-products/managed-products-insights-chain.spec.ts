@@ -2,7 +2,6 @@ import { PgDialect } from "drizzle-orm/pg-core";
 import type { SQL } from "drizzle-orm";
 import { ManagedProductsService } from "./managed-products.service";
 import { AuditService } from "../../../common/audit/audit.service";
-import { PmWorkspacesService } from "../pm-workspaces/pm-workspaces.service";
 import type { Db } from "../../../db/drizzle.module";
 import { managedProductRowSchema } from "./dto/managed-products-response.schemas";
 import { managedProductStatusEnum } from "../../../db/schema";
@@ -82,10 +81,9 @@ function makeInsightsDb(loadRow: object | null): { db: Db; capture: Capture } {
 }
 
 const audit = { log: jest.fn() } as unknown as AuditService;
-const pmWorkspaces = {} as unknown as PmWorkspacesService;
 
 function makeService(db: Db): ManagedProductsService {
-  return new ManagedProductsService(db, audit, pmWorkspaces);
+  return new ManagedProductsService(db, audit);
 }
 
 describe("getProductInsights — discovery chain SQL binding", () => {
@@ -138,24 +136,25 @@ describe("managedProductRowSchema — enum and nullability contract", () => {
   const validDates = { createdAt: new Date(), updatedAt: new Date(), deletedAt: null, targetLaunchDate: null };
 
   it("rejects a status value that is not in managedProductStatusEnum", () => {
-    const raw = { id: 1, orgId: ORG, name: "Atlas", key: "ATLAS", description: null, status: "invalid_status", ownerId: null, pmWorkspaceId: "ws-1", vision: null, missionStatement: null, targetCustomer: null, differentiators: null, currentPhase: null, successMetrics: null, ownerMembershipId: null, ...validDates };
+    const raw = { id: 1, orgId: ORG, name: "Atlas", key: "ATLAS", description: null, status: "invalid_status", ownerId: null, vision: null, missionStatement: null, targetCustomer: null, differentiators: null, currentPhase: null, successMetrics: null, ownerMembershipId: null, ...validDates };
     expect(() => managedProductRowSchema.parse(raw)).toThrow();
   });
 
   it("accepts every value in managedProductStatusEnum", () => {
     for (const value of managedProductStatusEnum.enumValues) {
-      const raw = { id: 1, orgId: ORG, name: "Atlas", key: "ATLAS", description: null, status: value, ownerId: null, pmWorkspaceId: "ws-1", vision: null, missionStatement: null, targetCustomer: null, differentiators: null, currentPhase: null, successMetrics: null, ownerMembershipId: null, ...validDates };
+      const raw = { id: 1, orgId: ORG, name: "Atlas", key: "ATLAS", description: null, status: value, ownerId: null, vision: null, missionStatement: null, targetCustomer: null, differentiators: null, currentPhase: null, successMetrics: null, ownerMembershipId: null, ...validDates };
       expect(() => managedProductRowSchema.parse(raw)).not.toThrow();
     }
   });
 
-  it("rejects a null pmWorkspaceId because the field is not nullable in the DB schema", () => {
-    const raw = { id: 1, orgId: ORG, name: "Atlas", key: "ATLAS", description: null, status: "active", ownerId: null, pmWorkspaceId: null, vision: null, missionStatement: null, targetCustomer: null, differentiators: null, currentPhase: null, successMetrics: null, ownerMembershipId: null, ...validDates };
-    expect(() => managedProductRowSchema.parse(raw)).toThrow();
+  it("no longer accepts a pmWorkspaceId field in the row shape, because the schema is .strict()-free but the field was removed from the model", () => {
+    const raw = { id: 1, orgId: ORG, name: "Atlas", key: "ATLAS", description: null, status: "active", ownerId: null, vision: null, missionStatement: null, targetCustomer: null, differentiators: null, currentPhase: null, successMetrics: null, ownerMembershipId: null, ...validDates };
+    const parsed = managedProductRowSchema.parse(raw);
+    expect(parsed).not.toHaveProperty("pmWorkspaceId");
   });
 
-  it("accepts a non-null pmWorkspaceId (the DB field is always set)", () => {
-    const raw = { id: 1, orgId: ORG, name: "Atlas", key: "ATLAS", description: null, status: "active", ownerId: null, pmWorkspaceId: "ws-default", vision: null, missionStatement: null, targetCustomer: null, differentiators: null, currentPhase: null, successMetrics: null, ownerMembershipId: null, ...validDates };
+  it("accepts a row with no pmWorkspaceId at all (the field no longer exists on the model)", () => {
+    const raw = { id: 1, orgId: ORG, name: "Atlas", key: "ATLAS", description: null, status: "active", ownerId: null, vision: null, missionStatement: null, targetCustomer: null, differentiators: null, currentPhase: null, successMetrics: null, ownerMembershipId: null, ...validDates };
     expect(() => managedProductRowSchema.parse(raw)).not.toThrow();
   });
 });

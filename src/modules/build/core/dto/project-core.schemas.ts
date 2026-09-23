@@ -49,7 +49,6 @@ export const listProjectsSchema = z.object({
   status: z.enum(["ACTIVE", "COMPLETED", "ARCHIVED", "ALL"]).default("ALL"),
   afterId: idCursorSchema,
   limit: pageSizeField(9),
-  pmWorkspaceId: z.string().optional(),
   managedProductId: z.coerce.number().int().positive().optional(),
 }).strict();
 
@@ -86,7 +85,6 @@ export const createProjectSchema = z
     workflow: z.string().optional(),
     features: z.record(z.string(), z.boolean()).optional(),
     priority: projectPrioritySchema.optional(),
-    pmWorkspaceId: z.string().optional(),
     managedProductId: z.number().int().positive().optional(),
   }).strict()
   .superRefine((data, ctx) => {

@@ -121,7 +121,6 @@ export const allWorkQuerySchema = baseListQuerySchema
     projectIds: csvToIntArray,
     excludeStatus: csvToStringArray,
     scope: z.enum(["all", "mine", "created", "subscribed"]).default("all"),
-    pmWorkspaceId: z.string().optional(),
   }).strict();
 
 export const searchTicketsQuerySchema = z.object({

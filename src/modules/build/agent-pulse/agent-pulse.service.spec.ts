@@ -374,16 +374,6 @@ describe("AgentPulseService", () => {
     expect(selectMock).toHaveBeenCalledTimes(5);
   });
 
-  it("with pmWorkspaceId scope and all tiers empty, all five DB queries execute — workspace scope does not reduce the number of tier queries", async () => {
-    const empty = () => makeSelectChain([]);
-    for (let i = 0; i < 5; i++) selectMock.mockImplementationOnce(empty);
-
-    const result = await svc.getTopSignal(ORG, USER, MID, { pmWorkspaceId: "ws-1" });
-
-    expect(result).toBeNull();
-    expect(selectMock).toHaveBeenCalledTimes(5);
-  });
-
   it("organization scope (no scope params) behaves identically to the unscoped baseline — all five tiers run when empty", async () => {
     const empty = () => makeSelectChain([]);
     for (let i = 0; i < 5; i++) selectMock.mockImplementationOnce(empty);

@@ -631,23 +631,11 @@ async function seedBuild() {
   const memberUserId = memberRows[0]?.user_id ?? ownerId;
   const membership2Id = memberRows[1]?.id ?? memberRows[0]?.id;
 
-  const wsId = await sql.unsafe(
-    `INSERT INTO build.pm_workspaces (pm_workspace_id, org_id, name, slug, is_default, status, created_at, updated_at)
-     VALUES (gen_random_uuid(), $1, 'Default Workspace', 'default', true, 'active', now(), now())
-     ON CONFLICT DO NOTHING RETURNING pm_workspace_id`,
-    [LARGE_ORG],
-  ).then((r) => r[0]?.pm_workspace_id) ?? await sql.unsafe(
-    `SELECT pm_workspace_id FROM build.pm_workspaces WHERE org_id = $1 LIMIT 1`,
-    [LARGE_ORG],
-  ).then((r) => r[0]?.pm_workspace_id);
-
-  if (!wsId) { log("  no pm_workspace — skipping build data"); return; }
-
   const projId = await sql.unsafe(
-    `INSERT INTO build.projects (org_id, name, key, status, pm_workspace_id, manager_membership_id, created_at, updated_at)
-     VALUES ($1, 'Scratch E2E Project', 'SE2E', 'ACTIVE', $2, $3, now(), now())
+    `INSERT INTO build.projects (org_id, name, key, status, manager_membership_id, created_at, updated_at)
+     VALUES ($1, 'Scratch E2E Project', 'SE2E', 'ACTIVE', $2, now(), now())
      ON CONFLICT DO NOTHING RETURNING id`,
-    [LARGE_ORG, wsId, membershipId],
+    [LARGE_ORG, membershipId],
   ).then((r) => r[0]?.id);
 
   const projectId = projId ?? await sql.unsafe(
@@ -783,15 +771,11 @@ async function seedBuild() {
 async function seedExtraTickets() {
   log("Seeding extra tickets for planner threshold coverage...");
 
-  const wsId = await sql.unsafe(
-    `SELECT pm_workspace_id FROM build.pm_workspaces WHERE org_id = $1 LIMIT 1`,
-    [LARGE_ORG],
-  ).then((r) => r[0]?.pm_workspace_id);
   const memberIds = await sql.unsafe(
     `SELECT id FROM organization_members WHERE org_id = $1 AND status = 'ACTIVE' ORDER BY id LIMIT 200`,
     [LARGE_ORG],
   ).then((r) => r.map((row) => row.id));
-  if (!wsId || !memberIds.length) { log("  no workspace or members — skipping extra tickets"); return; }
+  if (!memberIds.length) { log("  no members — skipping extra tickets"); return; }
 
   const statusDefs = [["TODO", "unstarted"], ["IN_PROGRESS", "started"], ["DONE", "completed"]];
   const TARGET_TOTAL = 18_500;
@@ -808,10 +792,10 @@ async function seedExtraTickets() {
     const key = `ZZ${projNum}`;
     const memId = memberIds[projNum % memberIds.length];
     const existingProj = await sql.unsafe(
-      `INSERT INTO build.projects (org_id, name, key, status, pm_workspace_id, manager_membership_id, created_at, updated_at)
-       VALUES ($1, $2, $3, 'ACTIVE', $4, $5::int, now(), now())
+      `INSERT INTO build.projects (org_id, name, key, status, manager_membership_id, created_at, updated_at)
+       VALUES ($1, $2, $3, 'ACTIVE', $4::int, now(), now())
        ON CONFLICT DO NOTHING RETURNING id`,
-      [LARGE_ORG, `Thresh Project ${projNum}`, key, wsId, memId],
+      [LARGE_ORG, `Thresh Project ${projNum}`, key, memId],
     ).then((r) => r[0]);
     const projId = existingProj?.id ?? await sql.unsafe(
       `SELECT id FROM build.projects WHERE org_id = $1 AND key = $2`,

@@ -183,7 +183,6 @@ async function reset(orgId) {
     where org_id = ${orgId} and key like ${KEY_PREFIX + "%"}`;
   if (!cnt.n) {
     log(`reset: no seeded projects found for ${orgId}, nothing to clear`);
-    await sql`delete from build.pm_workspaces where org_id = ${orgId} and slug = 'seed-load'`;
     return;
   }
   log(`reset: clearing ~${cnt.n} seeded projects for ${orgId}`);
@@ -238,24 +237,14 @@ async function reset(orgId) {
     delete from build.project_statuses where org_id = ${orgId}
       and project_id in (select id from build.projects where org_id = ${orgId} and key like ${KEY_PREFIX + "%"})`;
   await sql`delete from build.projects where org_id = ${orgId} and key like ${KEY_PREFIX + "%"}`;
-  await sql`delete from build.pm_workspaces where org_id = ${orgId} and slug = 'seed-load'`;
   await sql`delete from build.ticket_labels where org_id = ${orgId} and name like 'seed-label-%'`;
   log(`reset: cleared seeded build data for ${orgId}`);
 }
 
-async function ensureWorkspace(orgId) {
-  const id = `ws-seed-${orgId.slice(0, 8)}`;
+async function seedProjects(orgId, count, users) {
   await sql`
-    insert into build.pm_workspaces (pm_workspace_id, org_id, name, slug, is_default)
-    values (${id}, ${orgId}, 'Seed Load Workspace', 'seed-load', false)
-    on conflict do nothing`;
-  return id;
-}
-
-async function seedProjects(orgId, workspaceId, count, users) {
-  await sql`
-    insert into build.projects (org_id, pm_workspace_id, name, key, status, created_at, updated_at)
-    select ${orgId}, ${workspaceId},
+    insert into build.projects (org_id, name, key, status, created_at, updated_at)
+    select ${orgId},
            'Seed Project ' || g,
            ${KEY_PREFIX} || g,
            (array['ACTIVE','ACTIVE','ACTIVE','COMPLETED','ARCHIVED'])[1 + (g % 5)]::project_status,
@@ -485,7 +474,7 @@ async function vacuumAnalyze() {
   const tables = [
     "projects", "tickets", "ticket_comments", "ticket_activity_log", "ticket_assignees",
     "ticket_label_mappings", "ticket_labels", "work_item_relations", "sprints",
-    "project_members", "project_statuses", "timesheets", "pm_workspaces",
+    "project_members", "project_statuses", "timesheets",
     "users", "organization_members", "organization_people",
   ];
   const wanted = new Set(tables);
@@ -513,8 +502,7 @@ async function main() {
 
   const bigUsers = await resolveUsers(BIG_ORG);
   log(`big org ${BIG_ORG}: ${bigUsers.length} active members total`);
-  const bigWs = await ensureWorkspace(BIG_ORG);
-  const bigProjects = await seedProjects(BIG_ORG, bigWs, PROJECTS, bigUsers);
+  const bigProjects = await seedProjects(BIG_ORG, PROJECTS, bigUsers);
   const bigRange = await seedTickets(BIG_ORG, bigProjects, TICKETS, bigUsers);
   await seedTicketChildren(BIG_ORG, bigRange, bigUsers, bigProjects.length);
   await seedTimesheets(BIG_ORG, bigRange, bigUsers);
@@ -522,8 +510,7 @@ async function main() {
   const NEIGHBOUR_MEMBERS = Math.max(5, Math.floor(MEMBERS / 5));
   await provisionSyntheticMembers(NEIGHBOUR_ORG, NEIGHBOUR_MEMBERS);
   const nUsers = await resolveUsers(NEIGHBOUR_ORG);
-  const nWs = await ensureWorkspace(NEIGHBOUR_ORG);
-  const nProjects = await seedProjects(NEIGHBOUR_ORG, nWs, NEIGHBOUR_PROJECTS, nUsers);
+  const nProjects = await seedProjects(NEIGHBOUR_ORG, NEIGHBOUR_PROJECTS, nUsers);
   await seedTickets(NEIGHBOUR_ORG, nProjects, NEIGHBOUR_TICKETS, nUsers);
   log(`neighbour org ${NEIGHBOUR_ORG}: seeded for cross-tenant isolation probes`);
 
