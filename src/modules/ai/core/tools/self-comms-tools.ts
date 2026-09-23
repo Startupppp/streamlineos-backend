@@ -1,7 +1,7 @@
 import { Injectable, Inject } from "@nestjs/common";
 import { and, count, desc, eq, gt, isNull, or } from "drizzle-orm";
 import { z } from "zod";
-import { announcements, notifications } from "../../../../db/schema";
+import { broadcasts, notifications } from "../../../../db/schema";
 import { DRIZZLE } from "../../../../db/drizzle.constants";
 import { type Db } from "../../../../db/drizzle.module";
 import {
@@ -53,8 +53,13 @@ export class SelfCommsTools implements AskOsToolProvider {
               createdAt: true,
             },
           });
-          if (rows.length === 0) return empty("inbox", "No notifications found.");
-          return data({ items: rows, total: rows.length, capped: rows.length === INBOX_CAP });
+          if (rows.length === 0)
+            return empty("inbox", "No notifications found.");
+          return data({
+            items: rows,
+            total: rows.length,
+            capped: rows.length === INBOX_CAP,
+          });
         },
       }),
 
@@ -91,25 +96,27 @@ export class SelfCommsTools implements AskOsToolProvider {
           const now = new Date();
           const rows = await this.db
             .select({
-              id: announcements.id,
-              title: announcements.title,
-              content: announcements.content,
-              targetType: announcements.targetType,
-              isPinned: announcements.isPinned,
-              publishAt: announcements.publishAt,
-              createdAt: announcements.createdAt,
+              id: broadcasts.id,
+              title: broadcasts.title,
+              content: broadcasts.message,
+              targetType: broadcasts.audienceType,
+              isPinned: broadcasts.isPinned,
+              publishAt: broadcasts.sentAt,
+              createdAt: broadcasts.createdAt,
             })
-            .from(announcements)
+            .from(broadcasts)
             .where(
               and(
-                eq(announcements.orgId, orgId),
-                eq(announcements.status, "PUBLISHED"),
-                or(isNull(announcements.expiresAt), gt(announcements.expiresAt, now)),
+                eq(broadcasts.orgId, orgId),
+                eq(broadcasts.status, "SENT"),
+                eq(broadcasts.audienceType, "all"),
+                or(isNull(broadcasts.expiresAt), gt(broadcasts.expiresAt, now)),
               ),
             )
-            .orderBy(desc(announcements.isPinned), desc(announcements.createdAt))
+            .orderBy(desc(broadcasts.isPinned), desc(broadcasts.createdAt))
             .limit(ANNOUNCEMENTS_CAP);
-          if (rows.length === 0) return empty("announcements", "No active announcements found.");
+          if (rows.length === 0)
+            return empty("announcements", "No active announcements found.");
           return data({ announcements: rows });
         },
       }),

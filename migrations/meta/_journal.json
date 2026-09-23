@@ -6392,6 +6392,13 @@
       "when": 1803000010520,
       "tag": "1157_build_report_revision_rename_safe",
       "breakpoints": true
+    },
+    {
+      "idx": 1041,
+      "version": "7",
+      "when": 1803000010530,
+      "tag": "1158_announcements_broadcasts_unification",
+      "breakpoints": true
     }
   ]
 }

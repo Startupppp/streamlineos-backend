@@ -38,7 +38,7 @@ function makeWorkflowRow(overrides: Partial<{
 
 function makeWorkflows(data: ReturnType<typeof makeWorkflowRow>[] = [makeWorkflowRow()]) {
   return {
-    getInbox: jest.fn().mockResolvedValue({ data, total: data.length, page: 1, limit: data.length }),
+    pendingRoutedToPage: jest.fn().mockResolvedValue(data),
   } as unknown as import("./hr-workflow-instances.service").HrWorkflowInstancesService;
 }
 
@@ -56,11 +56,11 @@ describe("HrWorkflowApprovalAdapter — onModuleInit", () => {
     expect(wf?.kindLabel).toBe("workflow");
   });
 
-  it("supportsAfterCursor is false", () => {
+  it("supportsAfterCursor is true so the merge keeps paging workflows past page 1", () => {
     const registry = makeRegistry();
     const adapter = new HrWorkflowApprovalAdapter(makeWorkflows(), registry);
     adapter.onModuleInit();
-    expect(registry.list()[0]?.supportsAfterCursor).toBe(false);
+    expect(registry.list()[0]?.supportsAfterCursor).toBe(true);
   });
 
   it("is idempotent: double init registers only once", () => {
@@ -81,7 +81,7 @@ describe("HrWorkflowApprovalAdapter — fetch", () => {
     const [wf] = registry.list();
     const result = await wf!.fetch("org-1", "user-1", null, 10, null);
     expect(result).toHaveLength(0);
-    expect(workflows.getInbox).not.toHaveBeenCalled();
+    expect(workflows.pendingRoutedToPage).not.toHaveBeenCalled();
   });
 
   it("maps workflow row to BuildApprovalInboxItem with approvalKind=workflow", async () => {
@@ -110,29 +110,37 @@ describe("HrWorkflowApprovalAdapter — fetch", () => {
     expect(`approval:workflow:${id}`).not.toBe(`approval:timesheet:${id}`);
   });
 
-  it("always calls getInbox with page=1 (first page only, bounded)", async () => {
+  it("asks for one page bounded by the requested limit rather than a page number", async () => {
     const workflows = makeWorkflows();
     const registry = makeRegistry();
     const adapter = new HrWorkflowApprovalAdapter(workflows, registry);
     adapter.onModuleInit();
     const [wf] = registry.list();
     await wf!.fetch("org-1", "user-1", 5, 10, null);
-    expect(workflows.getInbox).toHaveBeenCalledWith(
-      expect.objectContaining({ orgId: "org-1", userId: "user-1" }),
-      1,
-      10,
-    );
+    expect(workflows.pendingRoutedToPage).toHaveBeenCalledWith("org-1", 5, 10, null);
   });
 
-  it("passes orgId and userId in the constructed context (tenant isolation)", async () => {
+  it("passes orgId and the server-derived membershipId, never the client user id (tenant isolation)", async () => {
     const workflows = makeWorkflows();
     const registry = makeRegistry();
     const adapter = new HrWorkflowApprovalAdapter(workflows, registry);
     adapter.onModuleInit();
     const [wf] = registry.list();
     await wf!.fetch("org-42", "user-99", 8, 25, null);
-    const [ctx] = (workflows.getInbox as jest.Mock).mock.calls[0] as [{ orgId: string; userId: string }, number, number];
-    expect(ctx.orgId).toBe("org-42");
-    expect(ctx.userId).toBe("user-99");
+    const call = (workflows.pendingRoutedToPage as jest.Mock).mock.calls[0] as [string, number, number, unknown];
+    expect(call[0]).toBe("org-42");
+    expect(call[1]).toBe(8);
+    expect(call).not.toContain("user-99");
+  });
+
+  it("hands the adapter cursor through to pendingRoutedToPage unchanged", async () => {
+    const workflows = makeWorkflows();
+    const registry = makeRegistry();
+    const adapter = new HrWorkflowApprovalAdapter(workflows, registry);
+    adapter.onModuleInit();
+    const [wf] = registry.list();
+    const cursor = { id: 200, t: "2026-09-22T08:00:00.000Z" };
+    await wf!.fetch("org-1", "user-1", 5, 10, cursor);
+    expect(workflows.pendingRoutedToPage).toHaveBeenCalledWith("org-1", 5, 10, cursor);
   });
 });

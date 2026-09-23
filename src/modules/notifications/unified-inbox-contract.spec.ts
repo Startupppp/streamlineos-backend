@@ -510,6 +510,7 @@ describe("UnifiedInboxService — four-property contract", () => {
         m: null,
         a: null,
         at: null,
+        ap: {},
       });
     });
 
