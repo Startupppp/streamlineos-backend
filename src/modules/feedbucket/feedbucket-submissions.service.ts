@@ -9,20 +9,13 @@ import {
   count,
   desc,
   eq,
-  gte,
-  ilike,
   inArray,
-  isNotNull,
   isNull,
   like,
-  lt,
-  sql,
-  type SQL,
 } from "drizzle-orm";
 import {
   feedbucketAttachments,
   feedbucketSubmissions,
-  feedbucketWidgets,
   organizationMembers,
 } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
@@ -32,12 +25,17 @@ import { registerAfterCommit } from "../../common/tenant/tenant-context";
 import { StorageService } from "../storage/storage.service";
 import type { ScopedRead } from "../access/scoped-read";
 import { feedbucketScope } from "./feedbucket-scope";
+import { buildSubmissionFilterConditions } from "./feedbucket-submission-filters";
+import { bulkMutateFeedbucketSubmissions } from "./feedbucket-submissions-bulk";
 import {
+  type BulkSubmissionsInput,
   type ConvertToTicketInput,
   type FeedbucketMediaKind,
   type ListSubmissionsQuery,
   type UpdateSubmissionInput,
 } from "./feedbucket.schemas";
+import { decodeIntegerCursor, buildCursorPage } from "../../common/pagination/cursor";
+import { keysetBeforeId } from "../../common/pagination/keyset";
 import type { ProjectsTicketsService } from "../build/core/projects-tickets.service";
 import { resolveOrganizationActorsByUserIds } from "../../common/organization/organization-actor";
 import {
@@ -48,21 +46,19 @@ import { assertProjectAccess } from "../build/core/project-access";
 import { AccessService } from "../access/access.service";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 
-function submissionsInWidgetsMatching(condition: SQL | undefined): SQL {
-  return sql`${feedbucketSubmissions.widgetId} IN (SELECT ${feedbucketWidgets.id} FROM ${feedbucketWidgets} WHERE ${condition})`;
+interface OffsetPageMeta {
+  page?: number;
+  total?: number;
+  totalPages?: number;
 }
 
-function submissionsInManagedProductCondition(
-  orgId: string,
-  managedProductId: number,
-): SQL {
-  return submissionsInWidgetsMatching(
-    and(
-      eq(feedbucketWidgets.orgId, orgId),
-      eq(feedbucketWidgets.managedProductId, managedProductId),
-      isNull(feedbucketWidgets.deletedAt),
-    ),
-  );
+function offsetPageMeta(
+  total: number | null,
+  page: number,
+  limit: number,
+): OffsetPageMeta {
+  if (total === null) return {};
+  return { page, total, totalPages: Math.ceil(total / limit) };
 }
 
 const FEEDBUCKET_MEDIA_MIME_PREFIX: Record<FeedbucketMediaKind, string> = {
@@ -88,61 +84,24 @@ export class FeedbucketSubmissionsService {
     query: ListSubmissionsQuery,
     membershipId: number | null,
   ) {
-    const orgId = read.orgId;
-    const {
-      page,
-      limit,
-      widgetId,
-      managedProductId,
-      type,
-      status,
-      assigneeId,
-      search,
-      linked,
-      from,
-      to,
-    } = query;
-    const offset = (page - 1) * limit;
+    const { page, limit, cursor } = query;
+    const position = decodeIntegerCursor(cursor);
+    if (cursor !== undefined && position === null)
+      throw new BadRequestException("Invalid pagination cursor");
 
-    const domain = [
-      widgetId !== undefined
-        ? eq(feedbucketSubmissions.widgetId, widgetId)
-        : undefined,
-      managedProductId !== undefined
-        ? submissionsInManagedProductCondition(orgId, managedProductId)
-        : undefined,
-      type !== undefined ? eq(feedbucketSubmissions.type, type) : undefined,
-      status !== undefined
-        ? eq(feedbucketSubmissions.status, status)
-        : undefined,
-      isNull(feedbucketSubmissions.deletedAt),
-    ];
-    if (assigneeId !== undefined) {
-      const membership = await this.db.query.organizationMembers.findFirst({
-        where: and(
-          eq(organizationMembers.orgId, orgId),
-          eq(organizationMembers.userId, assigneeId),
-        ),
-        columns: { id: true },
-      });
+    const domain = await buildSubmissionFilterConditions(
+      this.db,
+      read.orgId,
+      query,
+    );
+    if (position)
       domain.push(
-        eq(feedbucketSubmissions.assigneeMembershipId, membership?.id ?? -1),
+        keysetBeforeId(
+          feedbucketSubmissions.createdAt,
+          feedbucketSubmissions.id,
+          position,
+        ),
       );
-    }
-    if (search?.trim()) {
-      domain.push(ilike(feedbucketSubmissions.message, `%${search}%`));
-    }
-    if (linked === "linked") {
-      domain.push(isNotNull(feedbucketSubmissions.linkedTicketId));
-    } else if (linked === "unlinked") {
-      domain.push(isNull(feedbucketSubmissions.linkedTicketId));
-    }
-    if (from !== undefined) {
-      domain.push(gte(feedbucketSubmissions.createdAt, new Date(from)));
-    }
-    if (to !== undefined) {
-      domain.push(lt(feedbucketSubmissions.createdAt, new Date(to)));
-    }
 
     return read.read(
       {
@@ -158,26 +117,53 @@ export class FeedbucketSubmissionsService {
             with: {
               widget: true,
             },
-            orderBy: [desc(feedbucketSubmissions.createdAt)],
-            limit,
-            offset,
+            orderBy: [desc(feedbucketSubmissions.createdAt), desc(feedbucketSubmissions.id)],
+            limit: limit + 1,
+            offset: position ? 0 : (page - 1) * limit,
           }),
-          this.db
-            .select({ total: count() })
-            .from(feedbucketSubmissions)
-            .where(where),
+          position
+            ? Promise.resolve(null)
+            : this.db
+                .select({ total: count() })
+                .from(feedbucketSubmissions)
+                .where(where),
         ]);
 
-        const total = Number(countResult[0]?.total ?? 0);
+        const cursorPage = buildCursorPage(rows, limit, (row) => ({
+          sortValue: row.createdAt.toISOString(),
+          id: String(row.id),
+        }));
+
         return {
-          data: rows,
-          total,
-          page,
-          limit,
-          totalPages: Math.ceil(total / limit),
+          ...cursorPage,
+          ...offsetPageMeta(
+            countResult === null ? null : Number(countResult[0]?.total ?? 0),
+            page,
+            limit,
+          ),
         };
       },
-      () => ({ data: [], total: 0, page, limit, totalPages: 0 }),
+      () => ({
+        data: [],
+        pagination: { limit, hasMore: false, nextCursor: null },
+        ...offsetPageMeta(position ? null : 0, page, limit),
+      }),
+    );
+  }
+
+  async bulkMutate(
+    read: ScopedRead,
+    actor: CurrentUserContext,
+    body: BulkSubmissionsInput,
+    membershipId: number | null,
+  ) {
+    return bulkMutateFeedbucketSubmissions(
+      this.db,
+      this.access,
+      actor,
+      read,
+      membershipId,
+      body,
     );
   }
 

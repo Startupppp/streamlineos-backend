@@ -296,7 +296,7 @@ describe("TicketImportService.commitImport reporting", () => {
   });
 
   it("rolls the whole import back when a batch fails in atomic mode", async () => {
-    const { report } = await commit({ failBatchAt: 1 }, csv("A", "B"), "atomic");
+    const { report } = await commit({ failBatchAt: 1 }, csv("Alpha", "Bravo"), "atomic");
     expect(report.summary).toEqual({
       attempted: 2,
       imported: 0,

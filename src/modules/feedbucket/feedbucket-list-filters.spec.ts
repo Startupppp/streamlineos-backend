@@ -1,4 +1,7 @@
-import { listSubmissionsQuerySchema } from "./feedbucket.schemas";
+import {
+  bulkSubmissionsSchema,
+  listSubmissionsQuerySchema,
+} from "./feedbucket.schemas";
 
 describe("listSubmissionsQuerySchema — filter parameter coverage", () => {
   const BASE = { page: "1", limit: "20" };
@@ -111,6 +114,33 @@ describe("listSubmissionsQuerySchema — filter parameter coverage", () => {
   });
 });
 
+describe("listSubmissionsQuerySchema — keyset cursor parameter", () => {
+  const BASE = { page: "1", limit: "20" };
+
+  it("accepts a cursor so a keyset page can be requested", () => {
+    const result = listSubmissionsQuerySchema.safeParse({ ...BASE, cursor: "Y3Vyc29y" });
+    expect(result.success).toBe(true);
+    if (result.success) expect(result.data.cursor).toBe("Y3Vyc29y");
+  });
+
+  it("leaves cursor undefined when absent so the first page is served without one", () => {
+    const result = listSubmissionsQuerySchema.safeParse(BASE);
+    expect(result.success).toBe(true);
+    if (result.success) expect(result.data.cursor).toBeUndefined();
+  });
+
+  it("rejects an empty cursor so a blank query string cannot mean 'page one' by accident", () => {
+    const result = listSubmissionsQuerySchema.safeParse({ ...BASE, cursor: "" });
+    expect(result.success).toBe(false);
+  });
+
+  it("clamps limit to the platform cap rather than rejecting an over-large keyset page", () => {
+    const result = listSubmissionsQuerySchema.safeParse({ ...BASE, limit: "5000" });
+    expect(result.success).toBe(true);
+    if (result.success) expect(result.data.limit).toBe(100);
+  });
+});
+
 describe("listSubmissionsQuerySchema — combined filter round-trips", () => {
   it("parses all implemented filters together without conflict", () => {
     const result = listSubmissionsQuerySchema.safeParse({
@@ -132,5 +162,98 @@ describe("listSubmissionsQuerySchema — combined filter round-trips", () => {
       expect(result.data.from).toBe("2026-01-01T00:00:00Z");
       expect(result.data.to).toBe("2026-06-01T00:00:00Z");
     }
+  });
+});
+
+describe("bulkSubmissionsSchema — bounded, strict, and filter-aware", () => {
+  const STATUS_ACTION = { type: "status", status: "resolved" } as const;
+
+  function idsOfLength(length: number): number[] {
+    return Array.from({ length }, (_, index) => index + 1);
+  }
+
+  it("accepts exactly 100 ids because that is the documented bulk ceiling", () => {
+    const result = bulkSubmissionsSchema.safeParse({
+      submissionIds: idsOfLength(100),
+      action: STATUS_ACTION,
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("rejects 101 ids so an unbounded bulk can never reach the database", () => {
+    const result = bulkSubmissionsSchema.safeParse({
+      submissionIds: idsOfLength(101),
+      action: STATUS_ACTION,
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects an empty id array so a no-op bulk is a 400 and not a silent success", () => {
+    const result = bulkSubmissionsSchema.safeParse({
+      submissionIds: [],
+      action: STATUS_ACTION,
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects an unknown action type so a typo cannot be interpreted as a different action", () => {
+    const result = bulkSubmissionsSchema.safeParse({
+      submissionIds: [1],
+      action: { type: "archive" },
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("accepts an assign action with a null assignee so bulk unassign is expressible", () => {
+    const result = bulkSubmissionsSchema.safeParse({
+      submissionIds: [1],
+      action: { type: "assign", assigneeId: null },
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("accepts the same filter vocabulary the list endpoint accepts so bulk targets the list predicate", () => {
+    const result = bulkSubmissionsSchema.safeParse({
+      submissionIds: [1, 2],
+      action: STATUS_ACTION,
+      filters: {
+        widgetId: 7,
+        type: "bug",
+        status: "open",
+        assigneeId: "user-xyz",
+        search: "crash",
+        linked: "unlinked",
+        from: "2026-01-01T00:00:00Z",
+        to: "2026-06-01T00:00:00Z",
+      },
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("rejects a filter key the list endpoint does not serve so bulk cannot drift from list", () => {
+    const result = bulkSubmissionsSchema.safeParse({
+      submissionIds: [1],
+      action: STATUS_ACTION,
+      filters: { duplicate: "true" },
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects an inverted date window in filters with the same rule the list query applies", () => {
+    const result = bulkSubmissionsSchema.safeParse({
+      submissionIds: [1],
+      action: STATUS_ACTION,
+      filters: { from: "2026-06-01T00:00:00Z", to: "2026-01-01T00:00:00Z" },
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects a client-supplied orgId because tenancy is never taken from the body", () => {
+    const result = bulkSubmissionsSchema.safeParse({
+      submissionIds: [1],
+      action: STATUS_ACTION,
+      orgId: "org-attacker",
+    });
+    expect(result.success).toBe(false);
   });
 });
