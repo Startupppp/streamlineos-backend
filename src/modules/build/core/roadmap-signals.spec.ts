@@ -1,7 +1,4 @@
 import { NotFoundException } from "@nestjs/common";
-import { drizzle } from "drizzle-orm/postgres-js";
-import postgres from "postgres";
-import * as schema from "../../../db/schema";
 import type { Db } from "../../../db/drizzle.module";
 import { ProjectsRoadmapService } from "./projects-roadmap.service";
 import {
@@ -11,8 +8,6 @@ import {
   loadRoadmapDemandSignals,
   DELIVERY_PROGRESS_PERCENT_SCALE,
 } from "./roadmap-delivery";
-
-const realDb = drizzle(postgres("postgres://unused:unused@127.0.0.1:1/unused", { max: 1 }), { schema });
 
 const ORG = "org-signals";
 const OTHER_ORG = "org-intruder";
@@ -44,12 +39,32 @@ function roadmapRow(overrides: Partial<RoadmapRowShape> = {}): RoadmapRowShape {
   };
 }
 
+/**
+ * One chainable stub for every `db.select` the service now issues.
+ *
+ * Scoring a row reads the linked accounts' tiers as well as the delivery and
+ * demand aggregates, so a stub that answers only one shape leaves the other
+ * reaching a real connection. Every builder method returns the node, the node
+ * itself resolves to `aggregateRows`, and `groupBy` — which only the grouped
+ * tier query calls — resolves to `tierRows`.
+ */
+function selectChain(parts: { aggregateRows?: unknown[]; tierRows?: unknown[] }) {
+  const node: Record<string, unknown> = {};
+  for (const method of ["from", "leftJoin", "innerJoin", "where", "orderBy", "limit"])
+    node[method] = jest.fn(() => node);
+  node.groupBy = jest.fn(() => Promise.resolve(parts.tierRows ?? []));
+  node.then = (resolve: (value: unknown) => unknown, reject?: (reason: unknown) => unknown) =>
+    Promise.resolve(parts.aggregateRows ?? []).then(resolve, reject);
+  return jest.fn(() => node);
+}
+
 function makeService(parts: {
   findFirst?: jest.Mock;
   findMany?: jest.Mock;
   insert?: jest.Mock;
   update?: jest.Mock;
-  aggregate?: jest.Mock;
+  aggregateRows?: unknown[];
+  tierRows?: unknown[];
 }) {
   const db = {
     query: {
@@ -60,9 +75,7 @@ function makeService(parts: {
     },
     insert: parts.insert ?? jest.fn(),
     update: parts.update ?? jest.fn(),
-    select: parts.aggregate
-      ? parts.aggregate
-      : (...args: Parameters<typeof realDb.select>) => realDb.select(...args),
+    select: selectChain(parts),
   } as unknown as Db;
   return new ProjectsRoadmapService(db, {} as never, {} as never);
 }
@@ -205,14 +218,10 @@ describe("getRoadmapSignals — cross-tenant ids are a miss, not a denial (BE-91
     const findFirst = jest.fn().mockResolvedValue(
       roadmapRow({ id: 7, votes: 12, reach: 100, impact: 2, confidence: 50, effort: 1 }),
     );
-    const aggregate = jest.fn().mockReturnValue({
-      from: jest.fn().mockReturnValue({
-        where: jest.fn().mockResolvedValue([
-          { linkedFeedbackCount: 4, openLinkedFeedbackCount: 3 },
-        ]),
-      }),
-    });
-    const signals = await makeService({ findFirst, aggregate }).getRoadmapSignals(ORG, 7);
+    const signals = await makeService({
+      findFirst,
+      aggregateRows: [{ linkedFeedbackCount: 4, openLinkedFeedbackCount: 3 }],
+    }).getRoadmapSignals(ORG, 7);
 
     expect(signals.itemId).toBe(7);
     expect(signals.prioritization.score).toBe(100);

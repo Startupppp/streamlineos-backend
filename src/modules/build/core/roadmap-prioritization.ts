@@ -29,7 +29,7 @@ export interface RoadmapPrioritization {
   unavailableReason: RiceScoreUnavailableReason | null;
 }
 
-function roundToScoreDecimals(value: number): number {
+export function roundToScoreDecimals(value: number): number {
   const factor = 10 ** RICE_SCORE_DECIMALS;
   return Math.round(value * factor) / factor;
 }

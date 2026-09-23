@@ -26,11 +26,28 @@ import {
   type RoadmapPrioritization,
 } from "./roadmap-prioritization";
 import { loadRoadmapDeliveryProgress, loadRoadmapDemandSignals } from "./roadmap-delivery";
+import {
+  applyRoadmapTierWeighting,
+  loadRoadmapAccountTiers,
+  type RoadmapAccountTierSummary,
+  type RoadmapTierWeighting,
+} from "./roadmap-accounts";
+
+type Scored<T> = T & {
+  prioritization: RoadmapPrioritization;
+  tierWeighting: RoadmapTierWeighting;
+};
 
 function withPrioritization<T extends RiceInputs>(
   row: T,
-): T & { prioritization: RoadmapPrioritization } {
-  return { ...row, prioritization: computeRoadmapPrioritization(row) };
+  accounts?: RoadmapAccountTierSummary,
+): Scored<T> {
+  const prioritization = computeRoadmapPrioritization(row);
+  return {
+    ...row,
+    prioritization,
+    tierWeighting: applyRoadmapTierWeighting(prioritization, accounts),
+  };
 }
 
 @Injectable()
@@ -89,9 +106,23 @@ export class ProjectsRoadmapService {
     };
   }
 
+  /**
+   * The page's tiers come from one grouped query rather than one per row
+   * (BE-47); the page itself is already capped by `listRoadmap` (BE-132).
+   */
   async listRoadmapWithPrioritization(orgId: string, query: RoadmapListQuery) {
     const page = await this.listRoadmap(orgId, query);
-    return { ...page, data: page.data.map(withPrioritization) };
+    const accounts = await loadRoadmapAccountTiers(
+      this.db,
+      orgId,
+      page.data.map((row) => row.id),
+    );
+    return { ...page, data: page.data.map((row) => withPrioritization(row, accounts.get(row.id))) };
+  }
+
+  private async accountTiersOf(orgId: string, itemId: number) {
+    const accounts = await loadRoadmapAccountTiers(this.db, orgId, [itemId]);
+    return accounts.get(itemId);
   }
 
   async createRoadmap(orgId: string, userId: string, input: CreateRoadmapInput) {
@@ -116,7 +147,7 @@ export class ProjectsRoadmapService {
         createdBy: userId,
       })
       .returning();
-    return withPrioritization(item);
+    return withPrioritization(item, await this.accountTiersOf(orgId, item.id));
   }
 
   async getRoadmap(orgId: string, itemId: number) {
@@ -124,7 +155,7 @@ export class ProjectsRoadmapService {
       where: and(eq(roadmapItems.id, itemId), eq(roadmapItems.orgId, orgId), isNull(roadmapItems.deletedAt)),
     });
     if (!item) throw new NotFoundException("Roadmap item not found");
-    return withPrioritization(item);
+    return withPrioritization(item, await this.accountTiersOf(orgId, item.id));
   }
 
   async updateRoadmap(orgId: string, itemId: number, input: UpdateRoadmapInput) {
@@ -135,7 +166,7 @@ export class ProjectsRoadmapService {
       .where(and(eq(roadmapItems.id, itemId), eq(roadmapItems.orgId, orgId), isNull(roadmapItems.deletedAt)))
       .returning();
     if (!updated) throw new NotFoundException("Roadmap item not found");
-    return withPrioritization(updated);
+    return withPrioritization(updated, await this.accountTiersOf(orgId, updated.id));
   }
 
   async getRoadmapSignals(orgId: string, itemId: number) {
@@ -147,7 +178,13 @@ export class ProjectsRoadmapService {
         epicTicketId: item.epicTicketId,
       }),
     ]);
-    return { itemId: item.id, prioritization: item.prioritization, demand, delivery };
+    return {
+      itemId: item.id,
+      prioritization: item.prioritization,
+      tierWeighting: item.tierWeighting,
+      demand,
+      delivery,
+    };
   }
 
   async deleteRoadmap(orgId: string, itemId: number) {

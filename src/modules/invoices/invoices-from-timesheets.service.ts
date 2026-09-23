@@ -16,28 +16,40 @@ import {
   type InvoiceLineToInsert,
   type InvoiceRow,
 } from "./lib/invoice-insert";
+import { invoiceLineDescription } from "./lib/invoice-line-description";
+import type { InvoiceLineDetail } from "../timesheets/core/invoice-line-detail";
 import type { CreateInvoiceFromTimesheetsInput } from "./dto/invoice-write.schemas";
 
 export const TIMESHEET_INVOICE_DEFAULT_CURRENCY = "INR";
+
+type PricedInvoiceLine = Omit<InvoiceLineToInsert, "description">;
+
+function priceFor(
+  entry: InvoiceableTimesheetEntry,
+  gstRate: number,
+  lineOrder: number,
+): PricedInvoiceLine {
+  const quantity = parseFloat(entry.hours);
+  const rate = parseFloat(entry.billRate ?? "0");
+  return {
+    quantity,
+    rate,
+    gstRate,
+    amount: round2(quantity * rate),
+    lineOrder,
+    timesheetEntryId: entry.id,
+  };
+}
 
 function lineFor(
   entry: InvoiceableTimesheetEntry,
   gstRate: number,
   lineOrder: number,
+  detail: InvoiceLineDetail,
 ): InvoiceLineToInsert {
-  const quantity = parseFloat(entry.hours);
-  const rate = parseFloat(entry.billRate ?? "0");
-  const amount = round2(quantity * rate);
-  const label = entry.projectName ?? "Time";
-  const detail = entry.description ? ` — ${entry.description}` : "";
   return {
-    description: `${label} · ${entry.date}${detail}`,
-    quantity,
-    rate,
-    gstRate,
-    amount,
-    lineOrder,
-    timesheetEntryId: entry.id,
+    ...priceFor(entry, gstRate, lineOrder),
+    description: invoiceLineDescription(entry, detail),
   };
 }
 
@@ -97,13 +109,16 @@ export class InvoicesFromTimesheetsService {
     const projectId =
       input.projectId ?? (projectIds.length === 1 ? projectIds[0] : undefined);
 
-    const lines = entries.map((entry, index) =>
-      lineFor(entry, input.gstRate, index),
+    const priced = entries.map((entry, index) =>
+      priceFor(entry, input.gstRate, index),
     );
 
-    const subtotal = round2(lines.reduce((acc, it) => acc + it.amount, 0));
+    const subtotal = round2(priced.reduce((acc, it) => acc + it.amount, 0));
     const taxPool = round2(
-      lines.reduce((acc, it) => acc + round2(it.amount * (it.gstRate / 100)), 0),
+      priced.reduce(
+        (acc, it) => acc + round2(it.amount * (it.gstRate / 100)),
+        0,
+      ),
     );
     const discount = round2(input.discount);
     if (discount > round2(subtotal + taxPool))
@@ -119,6 +134,15 @@ export class InvoicesFromTimesheetsService {
     const status = input.status;
 
     const invoice = await this.db.transaction(async (tx) => {
+      const lineDetail = await this.timesheetInvoicing.resolveInvoiceLineDetail(
+        tx,
+        orgId,
+        entries.map((entry) => entry.projectId),
+      );
+      const lines = entries.map((entry, index) =>
+        lineFor(entry, input.gstRate, index, lineDetail),
+      );
+
       const inserted = await insertInvoiceWithItems(
         tx,
         orgId,

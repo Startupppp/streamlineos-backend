@@ -19,6 +19,7 @@ import {
   stateGroupEnum,
   cycleStatusEnum,
   moduleStatusEnum,
+  invoiceLineDetailEnum,
 } from "../common/enums";
 import { organizations, users, organizationMembers } from "../common/auth";
 import { deals } from "../crm/deals";
@@ -45,6 +46,7 @@ export const projects = build.table(
     budget: decimal("budget", { precision: 15, scale: 2 }),
     budgetMinor: bigint("budget_minor", { mode: "number" }),
     budgetCurrency: text("budget_currency"),
+    invoiceLineDetail: invoiceLineDetailEnum("invoice_line_detail").notNull().default("summary"),
     settings: jsonb("settings").$type<{
       modules: {
         sprints: boolean;

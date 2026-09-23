@@ -3,6 +3,7 @@ import { FeedbucketController } from "./feedbucket.controller";
 import { FeedbucketPublicController } from "./feedbucket-public.controller";
 import { FeedbucketWidgetsService } from "./feedbucket-widgets.service";
 import { FeedbucketSubmissionsService } from "./feedbucket-submissions.service";
+import { FeedbucketMediaRetentionService } from "./feedbucket-media-retention.service";
 import { FeedbucketPublicService } from "./feedbucket-public.service";
 import { FeedbucketAiService } from "./feedbucket-ai.service";
 import { FeedbucketCorsMiddleware } from "./feedbucket-cors.middleware";
@@ -20,7 +21,9 @@ import { BillingModule } from "../billing/core/billing.module";
     FeedbucketPublicService,
     FeedbucketAiService,
     FeedbucketCorsMiddleware,
+    FeedbucketMediaRetentionService,
   ],
+  exports: [FeedbucketMediaRetentionService],
 })
 export class FeedbucketModule implements NestModule {
   configure(consumer: MiddlewareConsumer) {

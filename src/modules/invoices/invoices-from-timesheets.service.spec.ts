@@ -126,6 +126,7 @@ describe("InvoicesFromTimesheetsService", () => {
               .fn()
               .mockImplementation(() => Promise.resolve(loadedEntries)),
             markEntriesInvoiced,
+            resolveInvoiceLineDetail: jest.fn().mockResolvedValue("summary"),
           },
         },
       ],

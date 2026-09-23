@@ -43,6 +43,8 @@ export const membershipStatusEnum = pgEnum("membership_status", ["INVITED", "ACT
 
 export const crmPersonRoleEnum = pgEnum("crm_person_role", ["sales_rep", "csm"]);
 export const crmHealthEnum = pgEnum("crm_health", ["healthy", "at_risk", "critical"]);
+export const crmAccountTierEnum = pgEnum("crm_account_tier", ["free", "pro", "enterprise"]);
+export const invoiceLineDetailEnum = pgEnum("invoice_line_detail", ["summary", "raw"]);
 export const crmDealStageEnum = pgEnum("crm_deal_stage", ["Discovery", "Qualified", "Proposal", "Negotiation", "Closed Won"]);
 export const crmCampaignStatusEnum = pgEnum("crm_campaign_status", ["active", "paused", "completed"]);
 export const crmLeadStatusEnum = pgEnum("crm_lead_status", ["visitor", "lead", "mql", "sql", "opportunity"]);

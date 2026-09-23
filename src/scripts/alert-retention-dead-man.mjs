@@ -25,6 +25,11 @@ export const LAST_ERROR_KEY_PREFIX = "cron:last-error:";
 // maxAgeMs: 26h allows for daily scheduling jitter without false positives.
 export const MONITORED_SWEEPS = [
   {
+    jobKey: "feedbucket-media-retention-sweep",
+    label: "Feedbucket media retention (stored screenshots and attachments purged 30 days after soft delete)",
+    maxAgeMs: 26 * 3_600_000,
+  },
+  {
     jobKey: "hr-policy-retention-sweep",
     label: "HR policy retention (documents, employees, cases, attendance)",
     maxAgeMs: 26 * 3_600_000,

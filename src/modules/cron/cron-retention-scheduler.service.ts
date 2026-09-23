@@ -18,6 +18,7 @@ import { CronKbChunkRetentionService } from "./cron-kb-chunk-retention.service";
 import { CronKbTelemetryRetentionService } from "./cron-kb-telemetry-retention.service";
 import { CronKbService } from "./cron-kb.service";
 import { CronBuildRetentionService } from "./cron-build-retention.service";
+import { FeedbucketMediaRetentionService } from "../feedbucket/feedbucket-media-retention.service";
 import { CronGdprExportRetentionService } from "./cron-gdpr-export-retention.service";
 import { NotificationRetentionService } from "../notifications/notification-retention.service";
 import { CronBillingService } from "./cron-billing.service";
@@ -79,6 +80,7 @@ export class CronRetentionSchedulerService implements OnModuleInit, OnModuleDest
     kbTelemetryRetention: CronKbTelemetryRetentionService,
     kbTrash: CronKbService,
     buildRetention: CronBuildRetentionService,
+    feedbucketMediaRetention: FeedbucketMediaRetentionService,
     gdprExportRetention: CronGdprExportRetentionService,
     partitionRetention: NotificationRetentionService,
     billing: CronBillingService,
@@ -97,6 +99,7 @@ export class CronRetentionSchedulerService implements OnModuleInit, OnModuleDest
       ["kb-telemetry-retention-sweep", () => kbTelemetryRetention.sweep()],
       ["kb-trash-purge", () => kbTrash.purgeExpiredTrash()],
       ["build-retention-prune", () => buildRetention.pruneWebhookDeliveries()],
+      ["feedbucket-media-retention-sweep", () => feedbucketMediaRetention.sweep()],
       ["gdpr-export-artifact-retention", () => gdprExportRetention.sweep()],
       ["notifications-retention-detach", () => partitionRetention.sweep()],
       ["ai-reservations-sweep", () => billing.sweepAiReservations()],

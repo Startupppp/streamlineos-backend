@@ -50,6 +50,7 @@ const COMPANY_COLUMNS = {
   website: businessParties.website,
   linkedinUrl: businessParties.linkedinUrl,
   description: businessParties.description,
+  tier: businessParties.tier,
   createdAt: businessParties.createdAt,
 };
 

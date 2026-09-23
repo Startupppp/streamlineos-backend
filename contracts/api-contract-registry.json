@@ -1,7 +1,7 @@
 {
   "version": "1",
   "schemaVersion": "1.1",
-  "generatedAt": "2026-09-23T05:59:14.087Z",
+  "generatedAt": "2026-09-23T08:08:31.249Z",
   "description": "Fail-closed API contract registry. Every HTTP operation, outbox event, and outbound customer webhook event is classified as 'internal' or 'published'. Operations absent from this registry are treated as 'published' by check-api-contract-registry.mjs.",
   "operations": {
     "GET /access/delegations": {
@@ -4389,6 +4389,17 @@
       "classificationOverride": null,
       "xExposure": "permissioned",
       "operationId": "IntakeController_updateIntake",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "GET /build/{projectId}/invoice-line-detail": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "ProjectsController_getInvoiceLineDetail",
       "owner": null,
       "version": "1",
       "consumers": [],
@@ -12373,6 +12384,28 @@
       "classificationOverride": null,
       "xExposure": "public",
       "operationId": "CronPlatformController_postEmailOutboxFlush",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "GET /cron/feedbucket-media-retention-sweep": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "public",
+      "operationId": "CronBuildController_getFeedbucketMediaRetentionSweep",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "POST /cron/feedbucket-media-retention-sweep": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "public",
+      "operationId": "CronBuildController_postFeedbucketMediaRetentionSweep",
       "owner": null,
       "version": "1",
       "consumers": [],

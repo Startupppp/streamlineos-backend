@@ -27,9 +27,11 @@ import { AccessService } from "../../access/access.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import type {
   LinkManagedProductInput,
+  ProjectInvoiceLineDetail,
   UpdateProjectInput,
 } from "./dto/projects.schemas";
 import { ProjectsQueryService } from "./projects-query.service";
+import { assertProjectAccess } from "./project-access";
 
 @Injectable()
 export class ProjectsWriteService {
@@ -115,6 +117,9 @@ export class ProjectsWriteService {
         endDate: body.endDate ? new Date(body.endDate) : null,
       }),
       ...(body.priority !== undefined && { priority: body.priority }),
+      ...(body.invoiceLineDetail !== undefined && {
+        invoiceLineDetail: body.invoiceLineDetail,
+      }),
     };
 
     const hasFieldChanges = Object.keys(projectFields).length > 0;
@@ -238,6 +243,29 @@ export class ProjectsWriteService {
     });
 
     return this.projectsQuery.getProject(u, projectId);
+  }
+
+  async getInvoiceLineDetail(
+    u: CurrentUserContext,
+    projectId: number,
+  ): Promise<ProjectInvoiceLineDetail> {
+    await assertProjectAccess(this.db, this.access, u, projectId);
+
+    const [row] = await this.db
+      .select({ invoiceLineDetail: projects.invoiceLineDetail })
+      .from(projects)
+      .where(
+        and(
+          eq(projects.id, projectId),
+          eq(projects.orgId, u.orgId),
+          isNull(projects.deletedAt),
+        ),
+      )
+      .limit(1);
+
+    if (!row) throw new ProjectsNotFoundException();
+
+    return { projectId, invoiceLineDetail: row.invoiceLineDetail };
   }
 
   async deleteProject(u: CurrentUserContext, projectId: number) {

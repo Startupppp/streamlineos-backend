@@ -10,6 +10,11 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import type { TenantTx } from "../../../db/drizzle.types";
 import { projects, timesheets } from "../../../db/schema";
+import {
+  SAFE_INVOICE_LINE_DETAIL,
+  safestInvoiceLineDetail,
+  type InvoiceLineDetail,
+} from "./invoice-line-detail";
 
 export const INVOICEABLE_ENTRY_CAP = 100;
 
@@ -22,6 +27,10 @@ export interface InvoiceableTimesheetEntry {
   billRate: string | null;
   currency: string | null;
   description: string | null;
+}
+
+export interface UninvoicedTimesheetEntry extends InvoiceableTimesheetEntry {
+  invoiceLineDetail: InvoiceLineDetail | null;
 }
 
 @Injectable()
@@ -122,7 +131,7 @@ export class TimesheetInvoicingService {
       projectId?: number | undefined;
       limit: number;
     },
-  ): Promise<InvoiceableTimesheetEntry[]> {
+  ): Promise<UninvoicedTimesheetEntry[]> {
     const conditions: SQL[] = [
       eq(timesheets.orgId, orgId),
       eq(timesheets.status, "APPROVED"),
@@ -145,6 +154,7 @@ export class TimesheetInvoicingService {
         billRate: timesheets.billRate,
         currency: timesheets.currency,
         description: timesheets.description,
+        invoiceLineDetail: projects.invoiceLineDetail,
       })
       .from(timesheets)
       .leftJoin(
@@ -156,6 +166,35 @@ export class TimesheetInvoicingService {
       .limit(Math.min(query.limit, INVOICEABLE_ENTRY_CAP));
 
     return rows;
+  }
+
+  async resolveInvoiceLineDetail(
+    tx: TenantTx,
+    orgId: string,
+    projectIds: readonly (number | null)[],
+  ): Promise<InvoiceLineDetail> {
+    if (projectIds.length === 0) return SAFE_INVOICE_LINE_DETAIL;
+    if (projectIds.some((projectId) => projectId === null))
+      return SAFE_INVOICE_LINE_DETAIL;
+
+    const wanted = [
+      ...new Set(projectIds.filter((id): id is number => id !== null)),
+    ];
+
+    const rows = await tx
+      .select({ invoiceLineDetail: projects.invoiceLineDetail })
+      .from(projects)
+      .where(
+        and(
+          eq(projects.orgId, orgId),
+          inArray(projects.id, wanted),
+          isNull(projects.deletedAt),
+        ),
+      );
+
+    if (rows.length !== wanted.length) return SAFE_INVOICE_LINE_DETAIL;
+
+    return safestInvoiceLineDetail(rows.map((row) => row.invoiceLineDetail));
   }
 
   async markEntriesInvoiced(

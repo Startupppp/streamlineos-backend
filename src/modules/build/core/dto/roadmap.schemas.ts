@@ -86,6 +86,7 @@ export const createFeedbackSchema = z.object({
   category: z.string().trim().max(100).optional(),
   submittedByName: z.string().trim().max(120).optional(),
   submittedByEmail: z.string().trim().email().optional(),
+  crmOrganizationId: z.number().int().positive().optional(),
   linkedRoadmapItemId: z.number().int().positive().optional(),
 }).strict();
 
@@ -96,6 +97,7 @@ export const updateFeedbackSchema = z.object({
     .enum(["open", "planned", "in_progress", "completed", "declined"])
     .optional(),
   category: z.string().trim().max(100).nullable().optional(),
+  crmOrganizationId: z.number().int().positive().nullable().optional(),
   linkedRoadmapItemId: z.number().int().positive().nullable().optional(),
 }).strict();
 

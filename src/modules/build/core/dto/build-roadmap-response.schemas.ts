@@ -8,6 +8,8 @@ import {
   RICE_SCORE_UNAVAILABLE_REASONS,
 } from "../roadmap-prioritization";
 import { ROADMAP_DELIVERY_SOURCES } from "../roadmap-delivery";
+import { ROADMAP_TIER_UNWEIGHTED_REASONS } from "../roadmap-accounts";
+import { crmAccountTierEnum } from "../../../../db/schema";
 
 export const roadmapItemSchema = z.object({
   id: z.number().int(),
@@ -50,8 +52,19 @@ export const roadmapPrioritizationSchema = z.object({
   unavailableReason: z.enum(RICE_SCORE_UNAVAILABLE_REASONS).nullable(),
 });
 
+export const roadmapTierWeightingSchema = z.object({
+  tierWeighted: z.boolean(),
+  tier: z.enum(crmAccountTierEnum.enumValues).nullable(),
+  weight: z.number().nullable(),
+  weightedScore: z.number().nullable(),
+  unweightedReason: z.enum(ROADMAP_TIER_UNWEIGHTED_REASONS).nullable(),
+  linkedFeedbackCount: z.number().int(),
+  linkedAccountCount: z.number().int(),
+});
+
 export const roadmapScoredItemSchema = roadmapItemSchema.extend({
   prioritization: roadmapPrioritizationSchema,
+  tierWeighting: roadmapTierWeightingSchema,
 });
 
 export const roadmapScoredPageSchema = z.object({
@@ -83,6 +96,7 @@ export const roadmapDeliverySchema = z.object({
 export const roadmapSignalsSchema = z.object({
   itemId: z.number().int(),
   prioritization: roadmapPrioritizationSchema,
+  tierWeighting: roadmapTierWeightingSchema,
   demand: roadmapDemandSchema,
   delivery: roadmapDeliverySchema,
 });
