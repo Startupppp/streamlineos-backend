@@ -144,6 +144,7 @@ describe("employee detail response contract, which nothing enforces outside NODE
           managerUserId: null,
         }),
       } as never,
+      {} as never,
     );
   }
 
@@ -283,6 +284,7 @@ describe("employee detail survives an enrichment read that fails, because skills
                 managerUserId: null,
               }),
       } as never,
+      {} as never,
     );
   }
 
