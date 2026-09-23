@@ -170,6 +170,7 @@ export const feedbucketSubmissions = build.table(
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
     deletedAt: timestamp("deleted_at"),
+    mediaPurgedAt: timestamp("media_purged_at"),
   },
   (t) => [
   foreignKey({ columns: [t.orgId, t.widgetId], foreignColumns: [feedbucketWidgets.orgId, feedbucketWidgets.id], name: "fk_feedbucket_submissions_org_widget" }).onDelete("cascade"),

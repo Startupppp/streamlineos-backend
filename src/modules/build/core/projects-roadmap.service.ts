@@ -20,6 +20,35 @@ import { PAGE_SIZE_CAP } from "../../../common/pagination/list-query.schema";
 import { ProjectsChangelogService } from "./projects-changelog.service";
 import { ProjectsFeedbackService } from "./projects-feedback.service";
 import { assertRoadmapTargetsInOrg } from "./roadmap-references";
+import {
+  computeRoadmapPrioritization,
+  type RiceInputs,
+  type RoadmapPrioritization,
+} from "./roadmap-prioritization";
+import { loadRoadmapDeliveryProgress, loadRoadmapDemandSignals } from "./roadmap-delivery";
+import {
+  applyRoadmapTierWeighting,
+  loadRoadmapAccountTiers,
+  type RoadmapAccountTierSummary,
+  type RoadmapTierWeighting,
+} from "./roadmap-accounts";
+
+type Scored<T> = T & {
+  prioritization: RoadmapPrioritization;
+  tierWeighting: RoadmapTierWeighting;
+};
+
+function withPrioritization<T extends RiceInputs>(
+  row: T,
+  accounts?: RoadmapAccountTierSummary,
+): Scored<T> {
+  const prioritization = computeRoadmapPrioritization(row);
+  return {
+    ...row,
+    prioritization,
+    tierWeighting: applyRoadmapTierWeighting(prioritization, accounts),
+  };
+}
 
 @Injectable()
 export class ProjectsRoadmapService {
@@ -77,6 +106,25 @@ export class ProjectsRoadmapService {
     };
   }
 
+  /**
+   * The page's tiers come from one grouped query rather than one per row
+   * (BE-47); the page itself is already capped by `listRoadmap` (BE-132).
+   */
+  async listRoadmapWithPrioritization(orgId: string, query: RoadmapListQuery) {
+    const page = await this.listRoadmap(orgId, query);
+    const accounts = await loadRoadmapAccountTiers(
+      this.db,
+      orgId,
+      page.data.map((row) => row.id),
+    );
+    return { ...page, data: page.data.map((row) => withPrioritization(row, accounts.get(row.id))) };
+  }
+
+  private async accountTiersOf(orgId: string, itemId: number) {
+    const accounts = await loadRoadmapAccountTiers(this.db, orgId, [itemId]);
+    return accounts.get(itemId);
+  }
+
   async createRoadmap(orgId: string, userId: string, input: CreateRoadmapInput) {
     await assertRoadmapTargetsInOrg(this.db, orgId, input);
     const [item] = await this.db
@@ -92,10 +140,14 @@ export class ProjectsRoadmapService {
         epicTicketId: input.epicTicketId ?? null,
         targetQuarter: input.targetQuarter ?? null,
         sortOrder: input.sortOrder,
+        reach: input.reach ?? null,
+        impact: input.impact ?? null,
+        confidence: input.confidence ?? null,
+        effort: input.effort ?? null,
         createdBy: userId,
       })
       .returning();
-    return item;
+    return withPrioritization(item, await this.accountTiersOf(orgId, item.id));
   }
 
   async getRoadmap(orgId: string, itemId: number) {
@@ -103,7 +155,7 @@ export class ProjectsRoadmapService {
       where: and(eq(roadmapItems.id, itemId), eq(roadmapItems.orgId, orgId), isNull(roadmapItems.deletedAt)),
     });
     if (!item) throw new NotFoundException("Roadmap item not found");
-    return item;
+    return withPrioritization(item, await this.accountTiersOf(orgId, item.id));
   }
 
   async updateRoadmap(orgId: string, itemId: number, input: UpdateRoadmapInput) {
@@ -114,7 +166,25 @@ export class ProjectsRoadmapService {
       .where(and(eq(roadmapItems.id, itemId), eq(roadmapItems.orgId, orgId), isNull(roadmapItems.deletedAt)))
       .returning();
     if (!updated) throw new NotFoundException("Roadmap item not found");
-    return updated;
+    return withPrioritization(updated, await this.accountTiersOf(orgId, updated.id));
+  }
+
+  async getRoadmapSignals(orgId: string, itemId: number) {
+    const item = await this.getRoadmap(orgId, itemId);
+    const [demand, delivery] = await Promise.all([
+      loadRoadmapDemandSignals(this.db, orgId, item.id, item.votes),
+      loadRoadmapDeliveryProgress(this.db, orgId, {
+        projectId: item.projectId,
+        epicTicketId: item.epicTicketId,
+      }),
+    ]);
+    return {
+      itemId: item.id,
+      prioritization: item.prioritization,
+      tierWeighting: item.tierWeighting,
+      demand,
+      delivery,
+    };
   }
 
   async deleteRoadmap(orgId: string, itemId: number) {

@@ -141,6 +141,7 @@ specific thing that would have to change first.
 | KB telemetry retention | `POST /cron/kb-telemetry-retention-sweep` | daily | 600s |
 | KB trash purge | `POST /cron/kb-trash-purge` | daily | 300s |
 | Build webhook delivery retention | `POST /cron/build-retention-prune` | daily | 120s |
+| Feedbucket media retention | `POST /cron/feedbucket-media-retention-sweep` | daily | 1800s |
 | Notification partition detach/drop | `POST /cron/notifications-retention-detach` | daily | 300s |
 | GDPR subject-export artifact retention | `POST /cron/gdpr-export-artifact-retention` | hourly | 900s |
 | AI credit reservation compensator (expired reservations refunded) | `POST /cron/ai-reservations-sweep` | every 15 minutes | 120s |

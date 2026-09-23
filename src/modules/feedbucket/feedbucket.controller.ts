@@ -26,12 +26,14 @@ import { ProjectsTicketsService } from "../build/core/projects-tickets.service";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { actingMembershipId } from "../../common/auth/principal";
 import {
+  bulkSubmissionsSchema,
   convertToTicketSchema,
   createWidgetSchema,
   feedbucketMediaKindSchema,
   listSubmissionsQuerySchema,
   updateSubmissionSchema,
   updateWidgetSchema,
+  type BulkSubmissionsInput,
   type ConvertToTicketInput,
   type CreateWidgetInput,
   type FeedbucketMediaKind,
@@ -45,6 +47,7 @@ import {
 } from "./feedbucket-ai.schemas";
 import { z } from "zod";
 import { Validate } from "../../common/validation/validate.decorator";
+import { Idempotent } from "../../common/idempotency/idempotent.decorator";
 import {
   BodylessAction,
   ResponseSchema,
@@ -54,6 +57,7 @@ import {
   feedbucketWidgetWithProjectSchema,
   feedbucketRotateKeySchema,
   feedbucketSubmissionListSchema,
+  feedbucketBulkSubmissionsSchema,
   feedbucketSubmissionDetailSchema,
   feedbucketSubmissionRowSchema,
   feedbucketConvertTicketSchema,
@@ -164,6 +168,26 @@ export class FeedbucketController {
     return this.submissions.list(
       read,
       query,
+      actingMembershipId(user.principal),
+    );
+  }
+
+  @Post("submissions/bulk")
+  @RequirePermission("feedbucket:submissions:update")
+  @HttpCode(200)
+  @Idempotent("feedbucket.submissions.bulk-update")
+  @Validate({ body: bulkSubmissionsSchema })
+  @ResponseSchema(feedbucketBulkSubmissionsSchema)
+  bulkUpdateSubmissions(
+    @CurrentUser() user: CurrentUserContext,
+    @Body() body: BulkSubmissionsInput,
+    @Req() req: Request,
+  ) {
+    const read = readRequestScopedRead(req, user);
+    return this.submissions.bulkMutate(
+      read,
+      user,
+      body,
       actingMembershipId(user.principal),
     );
   }

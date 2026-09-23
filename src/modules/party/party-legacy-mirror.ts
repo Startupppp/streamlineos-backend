@@ -104,6 +104,7 @@ const MIRROR_PROBE: PartyRow = {
   lifetimeValue: null,
   healthScore: null,
   healthStatus: null,
+  tier: null,
   healthCheckedAt: null,
   churnRiskScore: null,
   churnRiskReasoning: null,

@@ -2,7 +2,7 @@
 
 GENERATED FILE. Do not hand-edit. Regenerate with `pnpm check:build-authz-census`; the generator is `scripts/build-authorization-census.mjs`.
 
-Scope: every `*.controller.ts` under `src/modules/build/`. 47 controller files, 313 HTTP handlers.
+Scope: every `*.controller.ts` under `src/modules/build/`. 48 controller files, 317 HTTP handlers.
 
 ## Counts
 
@@ -12,8 +12,8 @@ Scope: every `*.controller.ts` under `src/modules/build/`. 47 controller files, 
 | CLOSED-IN-FLIGHT | 0 |
 | NEEDS-REVIEW | 112 |
 | CLOSED | 34 |
-| VERIFIED | 167 |
-| **total** | **313** |
+| VERIFIED | 171 |
+| **total** | **317** |
 
 ## How to read a verdict
 
@@ -717,10 +717,10 @@ POST /public/build-forms/:publicToken/submissions. Unauthenticated by design and
 | VERIFIED | POST | `/build/:projectId/approvals` | `src/modules/build/approvals/approvals.controller.ts:108` | `createApproval` | @RequirePermission("build:approvals:request") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | yes |
 | VERIFIED | GET | `/build/:projectId/change-requests` | `src/modules/build/client-portal/change-requests.controller.ts:56` | `listChangeRequests` | @RequirePermission("build:changerequests:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | n/a |
 | VERIFIED | POST | `/build/:projectId/change-requests` | `src/modules/build/client-portal/change-requests.controller.ts:80` | `createChangeRequest` | @RequirePermission("build:changerequests:create") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | NO (mutating) |
-| VERIFIED | GET | `/build/portal/projects` | `src/modules/build/client-portal/client-portal.controller.ts:36` | `listPortalProjects` | @RequirePermission("build:portal:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | absent (no params) | n/a |
-| VERIFIED | GET | `/build/portal/projects/:projectId/overview` | `src/modules/build/client-portal/client-portal.controller.ts:43` | `getProjectOverview` | @RequirePermission("build:portal:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | n/a |
-| VERIFIED | GET | `/build/portal/projects/:projectId/change-requests` | `src/modules/build/client-portal/client-portal.controller.ts:54` | `listPortalChangeRequests` | @RequirePermission("build:changerequests:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | n/a |
-| VERIFIED | POST | `/build/portal/projects/:projectId/change-requests` | `src/modules/build/client-portal/client-portal.controller.ts:65` | `createPortalChangeRequest` | @RequirePermission("build:changerequests:create") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | NO (mutating) |
+| VERIFIED | GET | `/build/portal/projects` | `src/modules/build/client-portal/client-portal.controller.ts:38` | `listPortalProjects` | @RequirePermission("build:portal:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | absent (no params) | n/a |
+| VERIFIED | GET | `/build/portal/projects/:projectId/overview` | `src/modules/build/client-portal/client-portal.controller.ts:47` | `getProjectOverview` | @RequirePermission("build:portal:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | n/a |
+| VERIFIED | GET | `/build/portal/projects/:projectId/change-requests` | `src/modules/build/client-portal/client-portal.controller.ts:58` | `listPortalChangeRequests` | @RequirePermission("build:changerequests:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | n/a |
+| VERIFIED | POST | `/build/portal/projects/:projectId/change-requests` | `src/modules/build/client-portal/client-portal.controller.ts:69` | `createPortalChangeRequest` | @RequirePermission("build:changerequests:create") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | NO (mutating) |
 | VERIFIED | GET | `/build/:projectId/client-visibility` | `src/modules/build/client-portal/client-visibility.controller.ts:38` | `getVisibilitySummary` | @RequirePermission("build:clientvisibility:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | n/a |
 | VERIFIED | GET | `/build/comment-drafts/mine` | `src/modules/build/comment-drafts/comment-drafts.controller.ts:52` | `listMine` | @RequirePermission("build:tickets:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | absent (no params) | n/a |
 | VERIFIED | PUT | `/build/comment-drafts/tickets/:ticketId` | `src/modules/build/comment-drafts/comment-drafts.controller.ts:59` | `upsert` | @RequirePermission("build:tickets:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [ticketId] | NO (mutating) |
@@ -763,19 +763,20 @@ POST /public/build-forms/:publicToken/submissions. Unauthenticated by design and
 | VERIFIED | GET | `/build/:projectId/reports/cycle-time` | `src/modules/build/core/projects-reports.controller.ts:134` | `getCycleTime` | @RequirePermission("build:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | n/a |
 | VERIFIED | GET | `/build/:projectId/reports/lead-time` | `src/modules/build/core/projects-reports.controller.ts:145` | `getLeadTime` | @RequirePermission("build:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | n/a |
 | VERIFIED | POST | `/build/:projectId/reports/snapshot` | `src/modules/build/core/projects-reports.controller.ts:156` | `snapshot` | @RequirePermission("build:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | NO (mutating) |
-| VERIFIED | GET | `/build/roadmap` | `src/modules/build/core/projects-roadmap.controller.ts:64` | `listRoadmap` | @RequirePermission("build:roadmap:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | unresolved | n/a |
-| VERIFIED | POST | `/build/roadmap` | `src/modules/build/core/projects-roadmap.controller.ts:75` | `createRoadmap` | @RequirePermission("build:roadmap:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | unresolved | NO (mutating) |
-| VERIFIED | PATCH | `/build/roadmap/:itemId` | `src/modules/build/core/projects-roadmap.controller.ts:87` | `updateRoadmap` | @RequirePermission("build:roadmap:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [itemId] | NO (mutating) |
-| VERIFIED | DELETE | `/build/roadmap/:itemId` | `src/modules/build/core/projects-roadmap.controller.ts:99` | `deleteRoadmap` | @RequirePermission("build:roadmap:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [itemId] | NO (mutating) |
-| VERIFIED | GET | `/build/feedback` | `src/modules/build/core/projects-roadmap.controller.ts:111` | `listFeedback` | @RequirePermission("build:roadmap:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | unresolved | n/a |
-| VERIFIED | POST | `/build/feedback` | `src/modules/build/core/projects-roadmap.controller.ts:122` | `createFeedback` | @RequirePermission("build:roadmap:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | unresolved | NO (mutating) |
-| VERIFIED | PATCH | `/build/feedback/:postId` | `src/modules/build/core/projects-roadmap.controller.ts:134` | `updateFeedback` | @RequirePermission("build:roadmap:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [postId] | NO (mutating) |
-| VERIFIED | POST | `/build/feedback/:postId/merge` | `src/modules/build/core/projects-roadmap.controller.ts:146` | `mergeFeedback` | @RequirePermission("build:roadmap:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [postId] | NO (mutating) |
-| VERIFIED | DELETE | `/build/feedback/:postId` | `src/modules/build/core/projects-roadmap.controller.ts:158` | `deleteFeedback` | @RequirePermission("build:roadmap:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [postId] | NO (mutating) |
-| VERIFIED | GET | `/build/changelog` | `src/modules/build/core/projects-roadmap.controller.ts:170` | `listChangelog` | @RequirePermission("build:roadmap:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | unresolved | n/a |
-| VERIFIED | POST | `/build/changelog` | `src/modules/build/core/projects-roadmap.controller.ts:181` | `createChangelog` | @RequirePermission("build:roadmap:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | unresolved | NO (mutating) |
-| VERIFIED | PATCH | `/build/changelog/:entryId` | `src/modules/build/core/projects-roadmap.controller.ts:193` | `updateChangelog` | @RequirePermission("build:roadmap:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [entryId] | NO (mutating) |
-| VERIFIED | DELETE | `/build/changelog/:entryId` | `src/modules/build/core/projects-roadmap.controller.ts:205` | `deleteChangelog` | @RequirePermission("build:roadmap:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [entryId] | NO (mutating) |
+| VERIFIED | GET | `/build/roadmap` | `src/modules/build/core/projects-roadmap.controller.ts:65` | `listRoadmap` | @RequirePermission("build:roadmap:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | unresolved | n/a |
+| VERIFIED | GET | `/build/roadmap/:itemId/signals` | `src/modules/build/core/projects-roadmap.controller.ts:76` | `getRoadmapSignals` | @RequirePermission("build:roadmap:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [itemId] | n/a |
+| VERIFIED | POST | `/build/roadmap` | `src/modules/build/core/projects-roadmap.controller.ts:87` | `createRoadmap` | @RequirePermission("build:roadmap:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | unresolved | NO (mutating) |
+| VERIFIED | PATCH | `/build/roadmap/:itemId` | `src/modules/build/core/projects-roadmap.controller.ts:99` | `updateRoadmap` | @RequirePermission("build:roadmap:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [itemId] | NO (mutating) |
+| VERIFIED | DELETE | `/build/roadmap/:itemId` | `src/modules/build/core/projects-roadmap.controller.ts:111` | `deleteRoadmap` | @RequirePermission("build:roadmap:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [itemId] | NO (mutating) |
+| VERIFIED | GET | `/build/feedback` | `src/modules/build/core/projects-roadmap.controller.ts:123` | `listFeedback` | @RequirePermission("build:roadmap:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | unresolved | n/a |
+| VERIFIED | POST | `/build/feedback` | `src/modules/build/core/projects-roadmap.controller.ts:134` | `createFeedback` | @RequirePermission("build:roadmap:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | unresolved | NO (mutating) |
+| VERIFIED | PATCH | `/build/feedback/:postId` | `src/modules/build/core/projects-roadmap.controller.ts:146` | `updateFeedback` | @RequirePermission("build:roadmap:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [postId] | NO (mutating) |
+| VERIFIED | POST | `/build/feedback/:postId/merge` | `src/modules/build/core/projects-roadmap.controller.ts:158` | `mergeFeedback` | @RequirePermission("build:roadmap:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [postId] | NO (mutating) |
+| VERIFIED | DELETE | `/build/feedback/:postId` | `src/modules/build/core/projects-roadmap.controller.ts:170` | `deleteFeedback` | @RequirePermission("build:roadmap:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [postId] | NO (mutating) |
+| VERIFIED | GET | `/build/changelog` | `src/modules/build/core/projects-roadmap.controller.ts:182` | `listChangelog` | @RequirePermission("build:roadmap:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | unresolved | n/a |
+| VERIFIED | POST | `/build/changelog` | `src/modules/build/core/projects-roadmap.controller.ts:193` | `createChangelog` | @RequirePermission("build:roadmap:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | unresolved | NO (mutating) |
+| VERIFIED | PATCH | `/build/changelog/:entryId` | `src/modules/build/core/projects-roadmap.controller.ts:205` | `updateChangelog` | @RequirePermission("build:roadmap:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [entryId] | NO (mutating) |
+| VERIFIED | DELETE | `/build/changelog/:entryId` | `src/modules/build/core/projects-roadmap.controller.ts:217` | `deleteChangelog` | @RequirePermission("build:roadmap:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [entryId] | NO (mutating) |
 | VERIFIED | GET | `/build/templates` | `src/modules/build/core/projects-templates.controller.ts:39` | `listTemplates` | @RequirePermission("build:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | absent (no params) | n/a |
 | VERIFIED | DELETE | `/build/templates/:templateId` | `src/modules/build/core/projects-templates.controller.ts:58` | `deleteTemplate` | @RequirePermission("build:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [templateId] | NO (mutating) |
 | VERIFIED | POST | `/build/templates/:templateId/apply` | `src/modules/build/core/projects-templates.controller.ts:70` | `applyTemplate` | @RequirePermission("build:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [templateId] | yes |
@@ -833,6 +834,9 @@ POST /public/build-forms/:publicToken/submissions. Unauthenticated by design and
 | VERIFIED | GET | `/build/:projectId/risks` | `src/modules/build/governance/risks.controller.ts:50` | `listRisks` | @RequirePermission("build:risks:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | unresolved | n/a |
 | VERIFIED | GET | `/build/:projectId/risks/stats` | `src/modules/build/governance/risks.controller.ts:62` | `getRiskStats` | @RequirePermission("build:risks:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | ABSENT (route has params) | n/a |
 | VERIFIED | POST | `/build/:projectId/risks` | `src/modules/build/governance/risks.controller.ts:84` | `createRisk` | @RequirePermission("build:risks:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | unresolved | NO (mutating) |
+| VERIFIED | POST | `/build/:projectId/import-export/tickets/preview` | `src/modules/build/import-export/ticket-import-export.controller.ts:47` | `previewImport` | @RequirePermission("build:tickets:create") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | NO (mutating) |
+| VERIFIED | POST | `/build/:projectId/import-export/tickets` | `src/modules/build/import-export/ticket-import-export.controller.ts:60` | `commitImport` | @RequirePermission("build:tickets:create") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | NO (mutating) |
+| VERIFIED | GET | `/build/:projectId/import-export/tickets/export` | `src/modules/build/import-export/ticket-import-export.controller.ts:74` | `exportTickets` | @RequirePermission("build:tickets:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | complete [projectId] | n/a |
 | VERIFIED | GET | `/build/:projectId/incidents` | `src/modules/build/incidents/incidents.controller.ts:56` | `listIncidents` | @RequirePermission("build:incidents:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | unresolved | n/a |
 | VERIFIED | POST | `/build/:projectId/incidents` | `src/modules/build/incidents/incidents.controller.ts:80` | `createIncident` | @RequirePermission("build:incidents:manage") | @RequireModule("build") | OK | BOUND | N/A (not nested) | unresolved | NO (mutating) |
 | VERIFIED | GET | `/build/managed-products` | `src/modules/build/managed-products/managed-products.controller.ts:43` | `listManagedProducts` | @RequirePermission("build:managed-products:view") | @RequireModule("build") | OK | BOUND | N/A (not nested) | unresolved | n/a |
@@ -997,7 +1001,7 @@ A note is recorded because the census must record it, but does not on its own ma
 
 | note | handlers |
 | --- | --- |
-| mutating verb without @Idempotent | 186 |
+| mutating verb without @Idempotent | 188 |
 | route params unvalidated (@Validate has no params key) | 23 |
 | route params unvalidated (no @Validate) | 2 |
 

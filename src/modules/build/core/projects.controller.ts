@@ -17,14 +17,17 @@ import { Idempotent } from "../../../common/idempotency/idempotent.decorator";
 import { RequirePermission } from "../../access/require-permission.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { ParseResourceIdPipe } from "../../../common/pipes/parse-resource-id.pipe";
 import { ProjectsQueryService } from "./projects-query.service";
 import { ProjectsProvisionService } from "./projects-provision.service";
+import { ProjectsWriteService } from "./projects-write.service";
 import { ProjectsMembersService } from "./projects-members.service";
 import {
   createLabelSchema,
   createProjectSchema,
   fromDealSchema,
   listProjectsSchema,
+  projectInvoiceLineDetailSchema,
   updateLabelSchema,
   type CreateLabelInput,
   type CreateProjectInput,
@@ -32,6 +35,7 @@ import {
   type ListProjectsInput,
   type UpdateLabelInput,
 } from "./dto/projects.schemas";
+import { projectIdParams } from "./dto/build-params.schemas";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
@@ -51,6 +55,7 @@ export class ProjectsController {
   constructor(
     private readonly projectsQuery: ProjectsQueryService,
     private readonly projectsProvision: ProjectsProvisionService,
+    private readonly projectsWrite: ProjectsWriteService,
     private readonly members: ProjectsMembersService,
   ) {}
 
@@ -120,6 +125,17 @@ export class ProjectsController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.members.updateLabel(u.orgId, labelId, body);
+  }
+
+  @Get(":projectId/invoice-line-detail")
+  @RequirePermission("build:view")
+  @ResponseSchema(projectInvoiceLineDetailSchema)
+  @Validate({ params: projectIdParams })
+  getInvoiceLineDetail(
+    @Param("projectId", ParseResourceIdPipe) projectId: number,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.projectsWrite.getInvoiceLineDetail(u, projectId);
   }
 
   @Delete("labels/:labelId")

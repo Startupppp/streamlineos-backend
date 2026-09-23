@@ -15,11 +15,14 @@ import { CurrentUser } from "../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import { Idempotent } from "../../common/idempotency/idempotent.decorator";
 import { InvoicesWriteService } from "./invoices-write.service";
+import { InvoicesFromTimesheetsService } from "./invoices-from-timesheets.service";
 import {
   createInvoiceSchema,
+  createInvoiceFromTimesheetsSchema,
   recordPaymentSchema,
   updateInvoiceSchema,
   type CreateInvoiceInput,
+  type CreateInvoiceFromTimesheetsInput,
   type RecordPaymentInput,
   type UpdateInvoiceInput,
 } from "./dto/invoice-write.schemas";
@@ -32,6 +35,7 @@ import {
   invoiceRunRecurringResponseSchema,
   invoiceSuccessResponseSchema,
   invoiceRecordPaymentResponseSchema,
+  invoiceFromTimesheetsResponseSchema,
 } from "./dto/invoice-response.schemas";
 
 const invoiceIdParams = z.object({ invoiceId: z.coerce.number().int().positive() }).strict();
@@ -44,7 +48,10 @@ function todayIso(): string {
 @Controller("invoices")
 @UseGuards(JwtAuthGuard)
 export class InvoicesWriteController {
-  constructor(private readonly invoicesWrite: InvoicesWriteService) {}
+  constructor(
+    private readonly invoicesWrite: InvoicesWriteService,
+    private readonly invoicesFromTimesheets: InvoicesFromTimesheetsService,
+  ) {}
 
   @Post()
   @ResponseSchema(invoiceCreateResponseSchema)
@@ -59,6 +66,24 @@ export class InvoicesWriteController {
   ) {
     const { invoice } = await this.invoicesWrite.createInvoice(u.orgId, u.userId, body);
     return invoice;
+  }
+
+  @Post("from-timesheets")
+  @ResponseSchema(invoiceFromTimesheetsResponseSchema)
+  @HttpCode(201)
+  @UseGuards(PermissionGuard)
+  @RequirePermission("accounting:create")
+  @Idempotent("accounting.invoice.createFromTimesheets")
+  @Validate({ body: createInvoiceFromTimesheetsSchema })
+  createFromTimesheets(
+    @Body() body: CreateInvoiceFromTimesheetsInput,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.invoicesFromTimesheets.createFromTimesheets(
+      u.orgId,
+      u.userId,
+      body,
+    );
   }
 
   @Post("recurring/run")

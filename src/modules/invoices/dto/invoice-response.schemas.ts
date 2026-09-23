@@ -175,6 +175,12 @@ export const invoicePaymentsListResponseSchema = z.array(
 
 export const invoiceCreateResponseSchema = invoiceBaseSchema;
 
+export const invoiceFromTimesheetsResponseSchema = z.object({
+  invoice: invoiceBaseSchema,
+  timesheetEntryIds: z.array(z.number().int()),
+  posted: z.boolean(),
+});
+
 export const invoiceRecordPaymentResponseSchema = z.object({
   id: z.number().int(),
   orgId: z.string(),

@@ -190,6 +190,9 @@ export const PARTY_FIELD_MIRROR_LEAD_ENTRIES = {
       absorb: (l) => ({ healthStatus: l.healthStatus }),
     },
   },
+  tier: noLegacyColumn(
+    "1160 added tier to the party row itself; no legacy table ever carried a plan or segment column, so there is nothing to mirror it to or absorb it from.",
+  ),
   healthCheckedAt: {
     CLIENT: {
       derive: (p) => ({ lastHealthCheck: p.healthCheckedAt }),

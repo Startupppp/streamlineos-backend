@@ -16,6 +16,14 @@ const DAILY_MAX_AGE_MS = 26 * HOUR_MS;
 
 export const RETENTION_JOBS: readonly RetentionJobDeclaration[] = [
   {
+    jobKey: "feedbucket-media-retention-sweep",
+    sweepName: "feedbucket-media-retention",
+    leaseSeconds: 1800,
+    intervalMs: DAY_MS,
+    maxAgeMs: DAILY_MAX_AGE_MS,
+    label: "Feedbucket media retention (stored screenshots and attachments purged 30 days after soft delete)",
+  },
+  {
     jobKey: "hr-policy-retention-sweep",
     sweepName: "hr-policy-retention",
     leaseSeconds: 1800,

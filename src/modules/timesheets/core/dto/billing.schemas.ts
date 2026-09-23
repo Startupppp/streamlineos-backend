@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { INVOICEABLE_ENTRY_CAP } from "../timesheet-invoicing.service";
 
 const dateString = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 
@@ -8,6 +9,19 @@ export const uninvoicedQuerySchema = z.object({
   projectId: z.coerce.number().int().positive().optional(),
 }).strict();
 export type UninvoicedQuery = z.infer<typeof uninvoicedQuerySchema>;
+
+export const uninvoicedEntriesQuerySchema = z.object({
+  startDate: dateString.optional(),
+  endDate: dateString.optional(),
+  projectId: z.coerce.number().int().positive().optional(),
+  limit: z.coerce
+    .number()
+    .int()
+    .positive()
+    .max(INVOICEABLE_ENTRY_CAP)
+    .default(INVOICEABLE_ENTRY_CAP),
+}).strict();
+export type UninvoicedEntriesQuery = z.infer<typeof uninvoicedEntriesQuerySchema>;
 
 export const exportBillingSchema = z.object({
   startDate: dateString,

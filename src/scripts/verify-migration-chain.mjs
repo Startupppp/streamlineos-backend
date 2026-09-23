@@ -180,13 +180,11 @@ async function readAppliedWatermark() {
   const url = process.env.DATABASE_URL;
   if (!url) return { status: "no-database" };
   try {
-    const { default: postgres } = await import("postgres");
-    const sql = postgres(url, {
-      prepare: false,
-      max: 1,
+    const { createScriptSql } = await import("./lib/script-sql-client.mjs");
+    const sql = await createScriptSql({
+      url,
       ssl: resolveSsl(url),
-      onnotice: () => {},
-      connect_timeout: 30,
+      connection: { prepare: false, max: 1, ssl: resolveSsl(url), onnotice: () => {}, connect_timeout: 30 },
     });
     try {
       const rows = await sql`SELECT max(created_at) AS mx FROM drizzle.__drizzle_migrations`;

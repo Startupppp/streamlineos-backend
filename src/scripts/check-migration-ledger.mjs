@@ -121,8 +121,8 @@ if (!url) {
   process.exit(1);
 }
 
-const { default: postgres } = await import("postgres");
-const sql = postgres(url, { prepare: false, max: 1 });
+const { createScriptSql } = await import("./lib/script-sql-client.mjs");
+const sql = await createScriptSql({ url });
 
 try {
   const journal = JSON.parse(readFileSync(JOURNAL, "utf8"));

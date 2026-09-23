@@ -27,6 +27,7 @@ import { HrWorkflowsModule } from "../hr/workflows/hr-workflows.module";
 import { HrCoreModule } from "../hr/core/hr-core.module";
 import { HrLifecycleModule } from "../hr/lifecycle/hr-lifecycle.module";
 import { HrGlobalModule } from "../hr/global/hr-global.module";
+import { FeedbucketModule } from "../feedbucket/feedbucket.module";
 import { InvoicesModule } from "../invoices/invoices.module";
 import { AiJobsModule } from "../ai/jobs/ai-jobs.module";
 import { SupportKbGapModule } from "../support/kb-gap";
@@ -137,6 +138,7 @@ import { CronPlatformRetentionController } from "./cron-platform-retention.contr
     AutonomySequencesModule,
     HrGlobalModule,
     InvoicesModule,
+    FeedbucketModule,
     CrmAutomationStudioModule,
     BillingModule,
     TimesheetsCoreModule,

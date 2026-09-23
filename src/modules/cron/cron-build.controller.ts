@@ -18,6 +18,7 @@ import { CronCrmForecastService } from "./cron-crm-forecast.service";
 import { NurtureStepSenderService } from "../autonomy/sequences/nurture-step-sender.service";
 import { ReportSchedulesService } from "../reporting/report-schedules.service";
 import { CronBuildRetentionService } from "./cron-build-retention.service";
+import { FeedbucketMediaRetentionService } from "../feedbucket/feedbucket-media-retention.service";
 import { CronBuildSnapshotsService } from "./cron-build-snapshots.service";
 import { CronLeaseService } from "./cron-lease.service";
 import {
@@ -25,6 +26,7 @@ import {
   crmSequencesFlushResponseSchema,
   crmTasksOverdueFlushResponseSchema,
   buildRetentionPruneResponseSchema,
+  feedbucketMediaRetentionResponseSchema,
   buildDailySnapshotsResponseSchema,
   crmLifecycleTriggersSweepResponseSchema,
   crmSilenceSweepResponseSchema,
@@ -48,6 +50,7 @@ export class CronBuildController {
     private readonly nurtureSender: NurtureStepSenderService,
     private readonly reportSchedules: ReportSchedulesService,
     private readonly buildRetention: CronBuildRetentionService,
+    private readonly feedbucketMediaRetention: FeedbucketMediaRetentionService,
     private readonly buildSnapshots: CronBuildSnapshotsService,
     private readonly cronLease: CronLeaseService,
   ) {}
@@ -190,6 +193,20 @@ export class CronBuildController {
   @ResponseSchema(buildRetentionPruneResponseSchema)
   postBuildRetentionPrune(@Headers("authorization") authorization?: string) {
     return this.runBuildRetentionPrune(authorization);
+  }
+
+  @Get("feedbucket-media-retention-sweep")
+  @ResponseSchema(feedbucketMediaRetentionResponseSchema)
+  getFeedbucketMediaRetentionSweep(@Headers("authorization") authorization?: string) {
+    return this.runFeedbucketMediaRetentionSweep(authorization);
+  }
+
+  @Post("feedbucket-media-retention-sweep")
+  @BodylessAction()
+  @HttpCode(200)
+  @ResponseSchema(feedbucketMediaRetentionResponseSchema)
+  postFeedbucketMediaRetentionSweep(@Headers("authorization") authorization?: string) {
+    return this.runFeedbucketMediaRetentionSweep(authorization);
   }
 
   @Get("build-daily-snapshots")
@@ -465,6 +482,26 @@ export class CronBuildController {
       };
     } catch (error) {
       logger.error("Build retention prune cron failed", error);
+      throw new InternalServerErrorException("Internal server error");
+    }
+  }
+
+  private async runFeedbucketMediaRetentionSweep(authorization?: string) {
+    assertCronSecret(authorization);
+    try {
+      const outcome = await this.cronLease.withLease("feedbucket-media-retention-sweep", 1800, () =>
+        this.feedbucketMediaRetention.sweep(),
+      );
+      if (!outcome.ran)
+        return { success: true, skipped: true, message: "feedbucket-media-retention-sweep already running" };
+      const result = outcome.result;
+      return {
+        success: true,
+        message: `Purged media for ${result.submissionsPurged} submission(s) across ${result.organizations} organization(s): ${result.objectsDeleted} object(s) deleted, ${result.mediaDeleteFailures} failure(s)${result.truncated ? ", more remain for the next run" : ""}`,
+        ...result,
+      };
+    } catch (error) {
+      logger.error("Feedbucket media retention sweep failed", error);
       throw new InternalServerErrorException("Internal server error");
     }
   }

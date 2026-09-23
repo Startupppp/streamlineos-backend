@@ -13,6 +13,7 @@ export {
 
 export {
   billingUninvoicedResponseSchema,
+  billingUninvoicedEntriesResponseSchema,
   billingExportResponseSchema,
   billingInvoiceDraftResponseSchema,
   billingRatePreviewResponseSchema,

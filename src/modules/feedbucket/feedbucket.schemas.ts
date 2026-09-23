@@ -74,27 +74,80 @@ export const convertToTicketSchema = z.object({
 
 export type ConvertToTicketInput = z.infer<typeof convertToTicketSchema>;
 
-export const listSubmissionsQuerySchema = z.object({
-  page: pageNumberField,
-  limit: pageSizeField(20, 100),
+export const feedbucketSubmissionTypeSchema = z.enum([
+  "bug",
+  "idea",
+  "feature",
+  "question",
+  "praise",
+  "other",
+]);
+export const feedbucketSubmissionStatusSchema = z.enum([
+  "open",
+  "in_progress",
+  "resolved",
+  "archived",
+]);
+export const feedbucketSubmissionPrioritySchema = z.enum([
+  "low",
+  "medium",
+  "high",
+  "urgent",
+]);
+
+export const submissionFiltersSchema = z.object({
   widgetId: z.coerce.number().int().positive().optional(),
   managedProductId: z.coerce.number().int().positive().optional(),
-  type: z.enum(["bug", "idea", "feature", "question", "praise", "other"]).optional(),
-  status: z.enum(["open", "in_progress", "resolved", "archived"]).optional(),
+  type: feedbucketSubmissionTypeSchema.optional(),
+  status: feedbucketSubmissionStatusSchema.optional(),
   assigneeId: z.string().optional(),
   search: z.string().optional(),
   linked: z.enum(["linked", "unlinked"]).optional(),
   from: z.string().datetime({ offset: true }).optional(),
   to: z.string().datetime({ offset: true }).optional(),
-}).strict().superRefine((val, ctx) => {
+});
+
+export type SubmissionFilters = z.infer<typeof submissionFiltersSchema>;
+
+function refineDateWindow(
+  val: { from?: string; to?: string },
+  ctx: z.RefinementCtx,
+): void {
   if (val.from !== undefined && val.to !== undefined && new Date(val.from) >= new Date(val.to)) {
     ctx.addIssue({ code: z.ZodIssueCode.custom, message: "'from' must be before 'to'", path: ["from"] });
   }
-});
+}
+
+export const listSubmissionsQuerySchema = submissionFiltersSchema
+  .extend({
+    page: pageNumberField,
+    limit: pageSizeField(20, 100),
+    cursor: z.string().min(1).optional(),
+  })
+  .strict()
+  .superRefine(refineDateWindow);
+
+export const FEEDBUCKET_BULK_MAX = 100;
+
+export const bulkSubmissionsSchema = z.object({
+  submissionIds: z
+    .array(z.number().int().positive())
+    .min(1)
+    .max(FEEDBUCKET_BULK_MAX),
+  action: z.discriminatedUnion("type", [
+    z.object({ type: z.literal("status"), status: feedbucketSubmissionStatusSchema }).strict(),
+    z.object({ type: z.literal("priority"), priority: feedbucketSubmissionPrioritySchema }).strict(),
+    z.object({ type: z.literal("assign"), assigneeId: z.string().min(1).nullable() }).strict(),
+    z.object({ type: z.literal("delete") }).strict(),
+  ]),
+  filters: submissionFiltersSchema.strict().superRefine(refineDateWindow).optional(),
+}).strict();
+
+export type BulkSubmissionsInput = z.infer<typeof bulkSubmissionsSchema>;
 
 export const updateSubmissionSchema = z.object({
-  status: z.enum(["open", "in_progress", "resolved", "archived"]).optional(),
-  priority: z.enum(["low", "medium", "high", "urgent"]).optional(),
+  status: feedbucketSubmissionStatusSchema.optional(),
+  priority: feedbucketSubmissionPrioritySchema.optional(),
   assigneeId: z.string().nullable().optional(),
 }).strict();
 

@@ -29,23 +29,28 @@ beforeEach(() => {
   (mockAccess.resolveUserPermissions as jest.Mock).mockResolvedValue(new Set());
 });
 
-describe("ClientPortalService.listPortalProjects — grant-based listing (not clientMembershipId)", () => {
-  it("returns empty array when org has no active grants", async () => {
-    const grantChain = {
+describe("ClientPortalService.listPortalProjects — membership-scoped listing", () => {
+  it("returns empty array when no portal membership is found for the caller", async () => {
+    const membershipChain = {
       from: jest.fn().mockReturnThis(),
       where: jest.fn().mockReturnThis(),
       limit: jest.fn().mockResolvedValue([]),
     };
-    const db = { select: jest.fn().mockReturnValue(grantChain) } as unknown as Db;
+    const db = { select: jest.fn().mockReturnValue(membershipChain) } as unknown as Db;
     const svc = new ClientPortalService(db, mockAccess, mockAudit);
-    const result = await svc.listPortalProjects("org-1");
+    const result = await svc.listPortalProjects("org-1", 7);
     expect(result).toEqual([]);
     expect((db.select as jest.Mock)).toHaveBeenCalledTimes(1);
   });
 
-  it("returns projects when active grants exist for the org", async () => {
+  it("returns projects when active grants exist for the portal membership", async () => {
     const projectRow = { id: 1, name: "P", key: "P1", status: "active", startDate: null, targetEndDate: null };
-    const grantChain = {
+    const membershipChain = {
+      from: jest.fn().mockReturnThis(),
+      where: jest.fn().mockReturnThis(),
+      limit: jest.fn().mockResolvedValue([{ id: "pm-abc" }]),
+    };
+    const grantsChain = {
       from: jest.fn().mockReturnThis(),
       where: jest.fn().mockReturnThis(),
       limit: jest.fn().mockResolvedValue([{ projectId: 1 }]),
@@ -56,16 +61,24 @@ describe("ClientPortalService.listPortalProjects — grant-based listing (not cl
       limit: jest.fn().mockResolvedValue([projectRow]),
     };
     const db = {
-      select: jest.fn().mockReturnValueOnce(grantChain).mockReturnValueOnce(projectChain),
+      select: jest.fn()
+        .mockReturnValueOnce(membershipChain)
+        .mockReturnValueOnce(grantsChain)
+        .mockReturnValueOnce(projectChain),
     } as unknown as Db;
     const svc = new ClientPortalService(db, mockAccess, mockAudit);
-    const result = await svc.listPortalProjects("org-1");
+    const result = await svc.listPortalProjects("org-1", 7);
     expect(result).toHaveLength(1);
     expect(result[0]).toHaveProperty("id", 1);
   });
 
   it("SELECT projection for projects does not include internal fields", async () => {
-    const grantChain = {
+    const membershipChain = {
+      from: jest.fn().mockReturnThis(),
+      where: jest.fn().mockReturnThis(),
+      limit: jest.fn().mockResolvedValue([{ id: "pm-abc" }]),
+    };
+    const grantsChain = {
       from: jest.fn().mockReturnThis(),
       where: jest.fn().mockReturnThis(),
       limit: jest.fn().mockResolvedValue([{ projectId: 1 }]),
@@ -76,12 +89,13 @@ describe("ClientPortalService.listPortalProjects — grant-based listing (not cl
       limit: jest.fn().mockResolvedValue([]),
     };
     const selectMock = jest.fn()
-      .mockReturnValueOnce(grantChain)
+      .mockReturnValueOnce(membershipChain)
+      .mockReturnValueOnce(grantsChain)
       .mockReturnValueOnce(projectChain);
     const db = { select: selectMock } as unknown as Db;
     const svc = new ClientPortalService(db, mockAccess, mockAudit);
-    await svc.listPortalProjects("org-1");
-    const projectProjection = (selectMock.mock.calls[1] as [Record<string, unknown>])[0];
+    await svc.listPortalProjects("org-1", 7);
+    const projectProjection = (selectMock.mock.calls[2] as [Record<string, unknown>])[0];
     expect(projectProjection).not.toHaveProperty("budget");
     expect(projectProjection).not.toHaveProperty("budgetCents");
     expect(projectProjection).not.toHaveProperty("estimateCents");
@@ -237,46 +251,36 @@ describe("ClientPortalService.getProjectOverview — deny-by-default via grant c
   });
 });
 
-describe("ClientPortalService.listPortalChangeRequests — employee project access gate", () => {
+describe("ClientPortalService.listPortalChangeRequests — portal grant access gate", () => {
   const ORG = "org-1";
 
-  it("throws NotFoundException for wrong-org project (cross-tenant → 404)", async () => {
+  it("throws NotFoundException when no active grant exists for the project", async () => {
+    const noGrantChain = {
+      from: jest.fn().mockReturnThis(),
+      where: jest.fn().mockReturnThis(),
+      limit: jest.fn().mockResolvedValue([]),
+    };
     const db = {
-      query: { projects: { findFirst: jest.fn().mockResolvedValue(null) } },
-      select: jest.fn(),
+      select: jest.fn().mockReturnValue(noGrantChain),
     } as unknown as Db;
     const svc = new ClientPortalService(db, mockAccess, mockAudit);
-    await expect(svc.listPortalChangeRequests(makeU("org-attacker", true), 1)).rejects.toThrow(NotFoundException);
+    await expect(svc.listPortalChangeRequests(makeU(ORG, false), 1)).rejects.toThrow(NotFoundException);
   });
 
-  it("throws ForbiddenException when employee is not a project member", async () => {
+  it("throws NotFoundException when the project does not belong to the caller org", async () => {
+    const noGrantChain = {
+      from: jest.fn().mockReturnThis(),
+      where: jest.fn().mockReturnThis(),
+      limit: jest.fn().mockResolvedValue([]),
+    };
     const db = {
-      query: {
-        projects: { findFirst: jest.fn().mockResolvedValue({ managerMembershipId: 999 }) },
-      },
-      select: jest.fn()
-        .mockReturnValueOnce({
-          from: jest.fn().mockReturnValue({
-            innerJoin: jest.fn().mockReturnValue({
-              where: jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue([]) }),
-            }),
-          }),
-        })
-        .mockReturnValueOnce({
-          from: jest.fn().mockReturnValue({
-            innerJoin: jest.fn().mockReturnValue({
-              innerJoin: jest.fn().mockReturnValue({
-                where: jest.fn().mockReturnValue({ limit: jest.fn().mockResolvedValue([]) }),
-              }),
-            }),
-          }),
-        }),
+      select: jest.fn().mockReturnValue(noGrantChain),
     } as unknown as Db;
     const svc = new ClientPortalService(db, mockAccess, mockAudit);
-    await expect(svc.listPortalChangeRequests(makeU(ORG, false), 1)).rejects.toThrow(ForbiddenException);
+    await expect(svc.listPortalChangeRequests(makeU("org-attacker", false), 1)).rejects.toThrow(NotFoundException);
   });
 
-  it("returns change requests when employee is org owner", async () => {
+  it("returns change requests when an active portal grant exists", async () => {
     const crRow = { id: 1, crNumber: 1, title: "T", status: "submitted", createdAt: new Date() };
     const crChain = {
       from: jest.fn().mockReturnThis(),
@@ -284,7 +288,6 @@ describe("ClientPortalService.listPortalChangeRequests — employee project acce
       limit: jest.fn().mockResolvedValue([crRow]),
     };
     const db = {
-      query: { projects: { findFirst: jest.fn().mockResolvedValue({ managerMembershipId: null }) } },
       select: jest.fn().mockReturnValue(crChain),
     } as unknown as Db;
     const svc = new ClientPortalService(db, mockAccess, mockAudit);

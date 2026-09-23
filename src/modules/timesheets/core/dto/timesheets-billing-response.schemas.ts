@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { invoiceLineDetailEnum } from "../../../../db/schema";
 
 export const convertedTotalsSchema = z.object({
   baseCurrency: z.string(),
@@ -25,6 +26,22 @@ export const billingUninvoicedResponseSchema = z.object({
     byCurrency: z.array(z.object({ currency: z.string(), amount: z.number(), hours: z.number() })),
     converted: convertedTotalsSchema,
   }),
+});
+
+export const billingUninvoicedEntriesResponseSchema = z.object({
+  items: z.array(
+    z.object({
+      id: z.number().int(),
+      projectId: z.number().int().nullable(),
+      projectName: z.string().nullable(),
+      date: z.string(),
+      hours: z.string(),
+      billRate: z.string().nullable(),
+      currency: z.string().nullable(),
+      description: z.string().nullable(),
+      invoiceLineDetail: z.enum(invoiceLineDetailEnum.enumValues).nullable(),
+    }),
+  ),
 });
 
 export const billingExportResponseSchema = z.object({

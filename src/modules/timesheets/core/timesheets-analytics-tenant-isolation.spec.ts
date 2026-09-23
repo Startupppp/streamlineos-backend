@@ -115,8 +115,8 @@ describe("ApprovalsBulkService — cross-tenant isolation", () => {
     let callCount = 0;
     const db = {
       select: jest.fn().mockImplementation(() => {
-        const { where } = reads[Math.min(callCount++, reads.length - 1)]!;
-        return { from: jest.fn().mockReturnValue({ where }) };
+        const { chain } = reads[Math.min(callCount++, reads.length - 1)]!;
+        return { from: jest.fn().mockReturnValue(chain) };
       }),
       transaction: jest.fn().mockImplementation((cb: (tx: unknown) => unknown) => cb(tx)),
     } as unknown as Db;

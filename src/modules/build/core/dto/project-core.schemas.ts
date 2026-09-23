@@ -1,6 +1,14 @@
 import { z } from "zod";
 import { pageSizeField } from "../../../../common/pagination/list-query.schema";
 import { idCursorSchema } from "../../../../common/pagination/cursor.schema";
+import { invoiceLineDetailEnum } from "../../../../db/schema";
+
+export const invoiceLineDetailSchema = z.enum(invoiceLineDetailEnum.enumValues);
+
+export const projectInvoiceLineDetailSchema = z.object({
+  projectId: z.number().int(),
+  invoiceLineDetail: invoiceLineDetailSchema,
+}).strict();
 
 const projectModulesSchema = z.object({
   sprints: z.boolean(),
@@ -106,6 +114,7 @@ export const updateProjectSchema = z
     workflow: z.string().optional(),
     features: z.record(z.string(), z.boolean()).optional(),
     priority: projectPrioritySchema.optional(),
+    invoiceLineDetail: invoiceLineDetailSchema.optional(),
   }).strict()
   .superRefine((data, ctx) => {
     refineEndAfterStart(data, ctx);
@@ -156,3 +165,6 @@ export type FromDealInput = z.infer<typeof fromDealSchema>;
 export type AddMemberInput = z.infer<typeof addMemberSchema>;
 export type RemoveMemberInput = z.infer<typeof removeMemberSchema>;
 export type LinkManagedProductInput = z.infer<typeof linkManagedProductSchema>;
+export type ProjectInvoiceLineDetail = z.infer<
+  typeof projectInvoiceLineDetailSchema
+>;

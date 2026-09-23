@@ -45,8 +45,9 @@ import { z } from "zod";
 import { NoContentResponse, ResponseSchema } from "../../../common/openapi/zod-operation-contracts";
 import { cursorPageSchema } from "../../../common/openapi/response-envelopes";
 import {
-  roadmapItemSchema,
-  roadmapPageSchema,
+  roadmapScoredItemSchema,
+  roadmapScoredPageSchema,
+  roadmapSignalsSchema,
   feedbackPostSchema,
   changelogEntrySchema,
 } from "./dto/build-roadmap-response.schemas";
@@ -63,19 +64,30 @@ export class ProjectsRoadmapController {
 
   @Get("roadmap")
   @RequirePermission("build:roadmap:view")
-  @ResponseSchema(roadmapPageSchema)
+  @ResponseSchema(roadmapScoredPageSchema)
   @Validate({ query: roadmapListQuerySchema })
   listRoadmap(
     @Query() query: RoadmapListQuery,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.roadmap.listRoadmap(u.orgId, query);
+    return this.roadmap.listRoadmapWithPrioritization(u.orgId, query);
+  }
+
+  @Get("roadmap/:itemId/signals")
+  @RequirePermission("build:roadmap:view")
+  @ResponseSchema(roadmapSignalsSchema)
+  @Validate({ params: itemIdParams })
+  getRoadmapSignals(
+    @Param("itemId", ParseIntPipe) itemId: number,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.roadmap.getRoadmapSignals(u.orgId, itemId);
   }
 
   @Post("roadmap")
   @RequirePermission("build:roadmap:manage")
   @HttpCode(201)
-  @ResponseSchema(roadmapItemSchema)
+  @ResponseSchema(roadmapScoredItemSchema)
   @Validate({ body: createRoadmapSchema })
   createRoadmap(
     @Body() body: CreateRoadmapInput,
@@ -86,7 +98,7 @@ export class ProjectsRoadmapController {
 
   @Patch("roadmap/:itemId")
   @RequirePermission("build:roadmap:manage")
-  @ResponseSchema(roadmapItemSchema)
+  @ResponseSchema(roadmapScoredItemSchema)
   @Validate({ params: itemIdParams, body: updateRoadmapSchema })
   updateRoadmap(
     @Param("itemId", ParseIntPipe) itemId: number,

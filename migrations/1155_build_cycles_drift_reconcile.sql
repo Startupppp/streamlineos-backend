@@ -19,7 +19,13 @@
 -- updated in the same change, so the two stop drifting apart.
 --
 -- The index definitions are copied verbatim from the phase files rather than improved, so that
--- an already-migrated database and a cold build end up byte-identical. In particular
+-- an already-migrated database and a cold build end up byte-identical. The one exception is the
+-- scope-event index: IF NOT EXISTS guards the index name, not the table, and
+-- a-sprint-cycle-06-rename-scope-events.sql renames sprint_scope_events to cycle_scope_events.
+-- A literal table name therefore aborts on 42P01 on any database where phase 06 has run while
+-- passing a cold replay, so that one statement resolves whichever of the two names exists. The
+-- index name stays constant, which is what the postcondition below checks. Same
+-- rename-order-independence as 1157, for the same reason. In particular
 -- idx_cycles_project_status_live leads with project_id rather than org_id; that is what phase 03
 -- created, and changing it here would make the two diverge. It is recorded in the follow-up as
 -- open rather than silently rewritten.
@@ -53,8 +59,24 @@ CREATE INDEX IF NOT EXISTS "idx_tickets_org_cycle_live"
   WHERE "deleted_at" IS NULL AND "cycle_id" IS NOT NULL;
 --> statement-breakpoint
 
-CREATE INDEX IF NOT EXISTS "idx_sprint_scope_events_org_cycle_created"
-  ON "build_events"."sprint_scope_events" ("org_id", "cycle_id", "created_at");
+DO $$
+DECLARE
+  scope_table text;
+BEGIN
+  scope_table := COALESCE(
+    to_regclass('build_events.sprint_scope_events')::text,
+    to_regclass('build_events.cycle_scope_events')::text
+  );
+  IF scope_table IS NULL THEN
+    RAISE EXCEPTION '1155: neither build_events.sprint_scope_events nor build_events.cycle_scope_events exists, so the scope-event index has no table to sit on';
+  END IF;
+  EXECUTE format(
+    'CREATE INDEX IF NOT EXISTS %I ON %s ("org_id", "cycle_id", "created_at")',
+    'idx_sprint_scope_events_org_cycle_created',
+    scope_table
+  );
+END
+$$;
 --> statement-breakpoint
 
 DO $$

@@ -2,14 +2,14 @@
   "version": 1,
   "generator": "scripts/build-authorization-census.mjs",
   "scope": "src/modules/build/**/*.controller.ts",
-  "controllerFiles": 47,
-  "handlers": 313,
+  "controllerFiles": 48,
+  "handlers": 317,
   "counts": {
     "VULNERABLE": 0,
     "CLOSED-IN-FLIGHT": 0,
     "NEEDS-REVIEW": 112,
     "CLOSED": 34,
-    "VERIFIED": 167
+    "VERIFIED": 171
   },
   "handlersDetail": [
     {
@@ -715,7 +715,7 @@
       "file": "src/modules/build/client-portal/client-portal.controller.ts",
       "class": "ClientPortalController",
       "method": "listPortalProjects",
-      "line": 36,
+      "line": 38,
       "verb": "GET",
       "path": "/build/portal/projects",
       "routeParams": [],
@@ -733,20 +733,20 @@
       "idempotent": null,
       "mutating": false,
       "service": {
-        "call": "this.svc.listPortalProjects(u.orgId)",
+        "call": "this.svc.listPortalProjects(u.orgId, membershipId)",
         "type": "ClientPortalService",
         "file": "src/modules/build/client-portal/client-portal.service.ts",
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/client-portal/client-portal.service.ts:79",
+      "orgEvidence": "src/modules/build/client-portal/client-portal.service.ts:95",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
       "leads": [],
       "notes": [],
       "verdict": "VERIFIED",
       "verdictReason": "guard chain complete, org scoping bound, params declared, no nested parent",
-      "evidence": "src/modules/build/client-portal/client-portal.controller.ts:36",
+      "evidence": "src/modules/build/client-portal/client-portal.controller.ts:38",
       "reviewedEvidence": null
     },
     {
@@ -754,7 +754,7 @@
       "file": "src/modules/build/client-portal/client-portal.controller.ts",
       "class": "ClientPortalController",
       "method": "getProjectOverview",
-      "line": 43,
+      "line": 47,
       "verb": "GET",
       "path": "/build/portal/projects/:projectId/overview",
       "routeParams": [
@@ -782,14 +782,14 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/client-portal/client-portal.service.ts:110",
+      "orgEvidence": "src/modules/build/client-portal/client-portal.service.ts:130",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
       "leads": [],
       "notes": [],
       "verdict": "VERIFIED",
       "verdictReason": "guard chain complete, org scoping bound, params declared, no nested parent",
-      "evidence": "src/modules/build/client-portal/client-portal.controller.ts:43",
+      "evidence": "src/modules/build/client-portal/client-portal.controller.ts:47",
       "reviewedEvidence": null
     },
     {
@@ -797,7 +797,7 @@
       "file": "src/modules/build/client-portal/client-portal.controller.ts",
       "class": "ClientPortalController",
       "method": "listPortalChangeRequests",
-      "line": 54,
+      "line": 58,
       "verb": "GET",
       "path": "/build/portal/projects/:projectId/change-requests",
       "routeParams": [
@@ -825,14 +825,14 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/client-portal/client-portal.service.ts:253",
+      "orgEvidence": "src/modules/build/client-portal/client-portal.service.ts:273",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
       "leads": [],
       "notes": [],
       "verdict": "VERIFIED",
       "verdictReason": "guard chain complete, org scoping bound, params declared, no nested parent",
-      "evidence": "src/modules/build/client-portal/client-portal.controller.ts:54",
+      "evidence": "src/modules/build/client-portal/client-portal.controller.ts:58",
       "reviewedEvidence": null
     },
     {
@@ -840,7 +840,7 @@
       "file": "src/modules/build/client-portal/client-portal.controller.ts",
       "class": "ClientPortalController",
       "method": "createPortalChangeRequest",
-      "line": 65,
+      "line": 69,
       "verb": "POST",
       "path": "/build/portal/projects/:projectId/change-requests",
       "routeParams": [
@@ -868,7 +868,7 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/client-portal/client-portal.service.ts:29",
+      "orgEvidence": "src/modules/build/client-portal/client-portal.service.ts:31",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
       "leads": [],
@@ -877,7 +877,7 @@
       ],
       "verdict": "VERIFIED",
       "verdictReason": "guard chain complete, org scoping bound, params declared, no nested parent",
-      "evidence": "src/modules/build/client-portal/client-portal.controller.ts:65",
+      "evidence": "src/modules/build/client-portal/client-portal.controller.ts:69",
       "reviewedEvidence": null
     },
     {
@@ -3635,7 +3635,7 @@
       "file": "src/modules/build/core/projects-roadmap.controller.ts",
       "class": "ProjectsRoadmapController",
       "method": "listRoadmap",
-      "line": 64,
+      "line": 65,
       "verb": "GET",
       "path": "/build/roadmap",
       "routeParams": [],
@@ -3653,20 +3653,63 @@
       "idempotent": null,
       "mutating": false,
       "service": {
-        "call": "this.roadmap.listRoadmap(u.orgId, query)",
+        "call": "this.roadmap.listRoadmapWithPrioritization(u.orgId, query)",
         "type": "ProjectsRoadmapService",
         "file": "src/modules/build/core/projects-roadmap.service.ts",
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/core/projects-roadmap.service.ts:32",
+      "orgEvidence": "src/modules/build/core/projects-roadmap.service.ts:92",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
       "leads": [],
       "notes": [],
       "verdict": "VERIFIED",
       "verdictReason": "guard chain complete, org scoping bound, params declared, no nested parent",
-      "evidence": "src/modules/build/core/projects-roadmap.controller.ts:64",
+      "evidence": "src/modules/build/core/projects-roadmap.controller.ts:65",
+      "reviewedEvidence": null
+    },
+    {
+      "key": "modules/build/core/projects-roadmap.controller.ts#getRoadmapSignals",
+      "file": "src/modules/build/core/projects-roadmap.controller.ts",
+      "class": "ProjectsRoadmapController",
+      "method": "getRoadmapSignals",
+      "line": 76,
+      "verb": "GET",
+      "path": "/build/roadmap/:itemId/signals",
+      "routeParams": [
+        "itemId"
+      ],
+      "classification": "@RequirePermission(\"build:roadmap:view\")",
+      "moduleGuard": "@RequireModule(\"build\")",
+      "guards": [
+        "JwtAuthGuard",
+        "PermissionGuard"
+      ],
+      "guardChainOk": true,
+      "validate": "present",
+      "declaredParams": [
+        "itemId"
+      ],
+      "missingParams": [],
+      "extraParams": [],
+      "idempotent": null,
+      "mutating": false,
+      "service": {
+        "call": "this.roadmap.getRoadmapSignals(u.orgId, itemId)",
+        "type": "ProjectsRoadmapService",
+        "file": "src/modules/build/core/projects-roadmap.service.ts",
+        "resolved": true
+      },
+      "orgScoping": "BOUND",
+      "orgEvidence": "src/modules/build/core/projects-roadmap.service.ts:141",
+      "parentScoping": "N/A (not nested)",
+      "parentEvidence": null,
+      "leads": [],
+      "notes": [],
+      "verdict": "VERIFIED",
+      "verdictReason": "guard chain complete, org scoping bound, params declared, no nested parent",
+      "evidence": "src/modules/build/core/projects-roadmap.controller.ts:76",
       "reviewedEvidence": null
     },
     {
@@ -3674,7 +3717,7 @@
       "file": "src/modules/build/core/projects-roadmap.controller.ts",
       "class": "ProjectsRoadmapController",
       "method": "createRoadmap",
-      "line": 75,
+      "line": 87,
       "verb": "POST",
       "path": "/build/roadmap",
       "routeParams": [],
@@ -3698,7 +3741,7 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/core/projects-roadmap.service.ts:80",
+      "orgEvidence": "src/modules/build/core/projects-roadmap.service.ts:97",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
       "leads": [],
@@ -3707,7 +3750,7 @@
       ],
       "verdict": "VERIFIED",
       "verdictReason": "guard chain complete, org scoping bound, params declared, no nested parent",
-      "evidence": "src/modules/build/core/projects-roadmap.controller.ts:75",
+      "evidence": "src/modules/build/core/projects-roadmap.controller.ts:87",
       "reviewedEvidence": null
     },
     {
@@ -3715,7 +3758,7 @@
       "file": "src/modules/build/core/projects-roadmap.controller.ts",
       "class": "ProjectsRoadmapController",
       "method": "updateRoadmap",
-      "line": 87,
+      "line": 99,
       "verb": "PATCH",
       "path": "/build/roadmap/:itemId",
       "routeParams": [
@@ -3743,7 +3786,7 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/core/projects-roadmap.service.ts:109",
+      "orgEvidence": "src/modules/build/core/projects-roadmap.service.ts:130",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
       "leads": [],
@@ -3752,7 +3795,7 @@
       ],
       "verdict": "VERIFIED",
       "verdictReason": "guard chain complete, org scoping bound, params declared, no nested parent",
-      "evidence": "src/modules/build/core/projects-roadmap.controller.ts:87",
+      "evidence": "src/modules/build/core/projects-roadmap.controller.ts:99",
       "reviewedEvidence": null
     },
     {
@@ -3760,7 +3803,7 @@
       "file": "src/modules/build/core/projects-roadmap.controller.ts",
       "class": "ProjectsRoadmapController",
       "method": "deleteRoadmap",
-      "line": 99,
+      "line": 111,
       "verb": "DELETE",
       "path": "/build/roadmap/:itemId",
       "routeParams": [
@@ -3788,7 +3831,7 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/core/projects-roadmap.service.ts:120",
+      "orgEvidence": "src/modules/build/core/projects-roadmap.service.ts:153",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
       "leads": [],
@@ -3797,7 +3840,7 @@
       ],
       "verdict": "VERIFIED",
       "verdictReason": "guard chain complete, org scoping bound, params declared, no nested parent",
-      "evidence": "src/modules/build/core/projects-roadmap.controller.ts:99",
+      "evidence": "src/modules/build/core/projects-roadmap.controller.ts:111",
       "reviewedEvidence": null
     },
     {
@@ -3805,7 +3848,7 @@
       "file": "src/modules/build/core/projects-roadmap.controller.ts",
       "class": "ProjectsRoadmapController",
       "method": "listFeedback",
-      "line": 111,
+      "line": 123,
       "verb": "GET",
       "path": "/build/feedback",
       "routeParams": [],
@@ -3829,14 +3872,14 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/core/projects-roadmap.service.ts:130",
+      "orgEvidence": "src/modules/build/core/projects-roadmap.service.ts:163",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
       "leads": [],
       "notes": [],
       "verdict": "VERIFIED",
       "verdictReason": "guard chain complete, org scoping bound, params declared, no nested parent",
-      "evidence": "src/modules/build/core/projects-roadmap.controller.ts:111",
+      "evidence": "src/modules/build/core/projects-roadmap.controller.ts:123",
       "reviewedEvidence": null
     },
     {
@@ -3844,7 +3887,7 @@
       "file": "src/modules/build/core/projects-roadmap.controller.ts",
       "class": "ProjectsRoadmapController",
       "method": "createFeedback",
-      "line": 122,
+      "line": 134,
       "verb": "POST",
       "path": "/build/feedback",
       "routeParams": [],
@@ -3868,7 +3911,7 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/core/projects-roadmap.service.ts:134",
+      "orgEvidence": "src/modules/build/core/projects-roadmap.service.ts:167",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
       "leads": [],
@@ -3877,7 +3920,7 @@
       ],
       "verdict": "VERIFIED",
       "verdictReason": "guard chain complete, org scoping bound, params declared, no nested parent",
-      "evidence": "src/modules/build/core/projects-roadmap.controller.ts:122",
+      "evidence": "src/modules/build/core/projects-roadmap.controller.ts:134",
       "reviewedEvidence": null
     },
     {
@@ -3885,7 +3928,7 @@
       "file": "src/modules/build/core/projects-roadmap.controller.ts",
       "class": "ProjectsRoadmapController",
       "method": "updateFeedback",
-      "line": 134,
+      "line": 146,
       "verb": "PATCH",
       "path": "/build/feedback/:postId",
       "routeParams": [
@@ -3913,7 +3956,7 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/core/projects-roadmap.service.ts:142",
+      "orgEvidence": "src/modules/build/core/projects-roadmap.service.ts:175",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
       "leads": [],
@@ -3922,7 +3965,7 @@
       ],
       "verdict": "VERIFIED",
       "verdictReason": "guard chain complete, org scoping bound, params declared, no nested parent",
-      "evidence": "src/modules/build/core/projects-roadmap.controller.ts:134",
+      "evidence": "src/modules/build/core/projects-roadmap.controller.ts:146",
       "reviewedEvidence": null
     },
     {
@@ -3930,7 +3973,7 @@
       "file": "src/modules/build/core/projects-roadmap.controller.ts",
       "class": "ProjectsRoadmapController",
       "method": "mergeFeedback",
-      "line": 146,
+      "line": 158,
       "verb": "POST",
       "path": "/build/feedback/:postId/merge",
       "routeParams": [
@@ -3958,7 +4001,7 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/core/projects-roadmap.service.ts:146",
+      "orgEvidence": "src/modules/build/core/projects-roadmap.service.ts:179",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
       "leads": [],
@@ -3967,7 +4010,7 @@
       ],
       "verdict": "VERIFIED",
       "verdictReason": "guard chain complete, org scoping bound, params declared, no nested parent",
-      "evidence": "src/modules/build/core/projects-roadmap.controller.ts:146",
+      "evidence": "src/modules/build/core/projects-roadmap.controller.ts:158",
       "reviewedEvidence": null
     },
     {
@@ -3975,7 +4018,7 @@
       "file": "src/modules/build/core/projects-roadmap.controller.ts",
       "class": "ProjectsRoadmapController",
       "method": "deleteFeedback",
-      "line": 158,
+      "line": 170,
       "verb": "DELETE",
       "path": "/build/feedback/:postId",
       "routeParams": [
@@ -4003,7 +4046,7 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/core/projects-roadmap.service.ts:150",
+      "orgEvidence": "src/modules/build/core/projects-roadmap.service.ts:183",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
       "leads": [],
@@ -4012,7 +4055,7 @@
       ],
       "verdict": "VERIFIED",
       "verdictReason": "guard chain complete, org scoping bound, params declared, no nested parent",
-      "evidence": "src/modules/build/core/projects-roadmap.controller.ts:158",
+      "evidence": "src/modules/build/core/projects-roadmap.controller.ts:170",
       "reviewedEvidence": null
     },
     {
@@ -4020,7 +4063,7 @@
       "file": "src/modules/build/core/projects-roadmap.controller.ts",
       "class": "ProjectsRoadmapController",
       "method": "listChangelog",
-      "line": 170,
+      "line": 182,
       "verb": "GET",
       "path": "/build/changelog",
       "routeParams": [],
@@ -4044,14 +4087,14 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/core/projects-roadmap.service.ts:154",
+      "orgEvidence": "src/modules/build/core/projects-roadmap.service.ts:187",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
       "leads": [],
       "notes": [],
       "verdict": "VERIFIED",
       "verdictReason": "guard chain complete, org scoping bound, params declared, no nested parent",
-      "evidence": "src/modules/build/core/projects-roadmap.controller.ts:170",
+      "evidence": "src/modules/build/core/projects-roadmap.controller.ts:182",
       "reviewedEvidence": null
     },
     {
@@ -4059,7 +4102,7 @@
       "file": "src/modules/build/core/projects-roadmap.controller.ts",
       "class": "ProjectsRoadmapController",
       "method": "createChangelog",
-      "line": 181,
+      "line": 193,
       "verb": "POST",
       "path": "/build/changelog",
       "routeParams": [],
@@ -4083,7 +4126,7 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/core/projects-roadmap.service.ts:158",
+      "orgEvidence": "src/modules/build/core/projects-roadmap.service.ts:191",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
       "leads": [],
@@ -4092,7 +4135,7 @@
       ],
       "verdict": "VERIFIED",
       "verdictReason": "guard chain complete, org scoping bound, params declared, no nested parent",
-      "evidence": "src/modules/build/core/projects-roadmap.controller.ts:181",
+      "evidence": "src/modules/build/core/projects-roadmap.controller.ts:193",
       "reviewedEvidence": null
     },
     {
@@ -4100,7 +4143,7 @@
       "file": "src/modules/build/core/projects-roadmap.controller.ts",
       "class": "ProjectsRoadmapController",
       "method": "updateChangelog",
-      "line": 193,
+      "line": 205,
       "verb": "PATCH",
       "path": "/build/changelog/:entryId",
       "routeParams": [
@@ -4128,7 +4171,7 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/core/projects-roadmap.service.ts:166",
+      "orgEvidence": "src/modules/build/core/projects-roadmap.service.ts:199",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
       "leads": [],
@@ -4137,7 +4180,7 @@
       ],
       "verdict": "VERIFIED",
       "verdictReason": "guard chain complete, org scoping bound, params declared, no nested parent",
-      "evidence": "src/modules/build/core/projects-roadmap.controller.ts:193",
+      "evidence": "src/modules/build/core/projects-roadmap.controller.ts:205",
       "reviewedEvidence": null
     },
     {
@@ -4145,7 +4188,7 @@
       "file": "src/modules/build/core/projects-roadmap.controller.ts",
       "class": "ProjectsRoadmapController",
       "method": "deleteChangelog",
-      "line": 205,
+      "line": 217,
       "verb": "DELETE",
       "path": "/build/changelog/:entryId",
       "routeParams": [
@@ -4173,7 +4216,7 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/core/projects-roadmap.service.ts:170",
+      "orgEvidence": "src/modules/build/core/projects-roadmap.service.ts:203",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
       "leads": [],
@@ -4182,7 +4225,7 @@
       ],
       "verdict": "VERIFIED",
       "verdictReason": "guard chain complete, org scoping bound, params declared, no nested parent",
-      "evidence": "src/modules/build/core/projects-roadmap.controller.ts:205",
+      "evidence": "src/modules/build/core/projects-roadmap.controller.ts:217",
       "reviewedEvidence": null
     },
     {
@@ -10597,6 +10640,139 @@
       "verdict": "NEEDS-REVIEW",
       "verdictReason": "static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)",
       "evidence": "src/modules/build/governance/risks.controller.ts:110",
+      "reviewedEvidence": null
+    },
+    {
+      "key": "modules/build/import-export/ticket-import-export.controller.ts#previewImport",
+      "file": "src/modules/build/import-export/ticket-import-export.controller.ts",
+      "class": "TicketImportExportController",
+      "method": "previewImport",
+      "line": 47,
+      "verb": "POST",
+      "path": "/build/:projectId/import-export/tickets/preview",
+      "routeParams": [
+        "projectId"
+      ],
+      "classification": "@RequirePermission(\"build:tickets:create\")",
+      "moduleGuard": "@RequireModule(\"build\")",
+      "guards": [
+        "JwtAuthGuard",
+        "PermissionGuard"
+      ],
+      "guardChainOk": true,
+      "validate": "present",
+      "declaredParams": [
+        "projectId"
+      ],
+      "missingParams": [],
+      "extraParams": [],
+      "idempotent": null,
+      "mutating": true,
+      "service": {
+        "call": "this.imports.previewImport(u, projectId, body)",
+        "type": "TicketImportService",
+        "file": "src/modules/build/import-export/ticket-import.service.ts",
+        "resolved": true
+      },
+      "orgScoping": "BOUND",
+      "orgEvidence": "src/modules/build/import-export/ticket-import.service.ts:65",
+      "parentScoping": "N/A (not nested)",
+      "parentEvidence": null,
+      "leads": [],
+      "notes": [
+        "mutating verb without @Idempotent"
+      ],
+      "verdict": "VERIFIED",
+      "verdictReason": "guard chain complete, org scoping bound, params declared, no nested parent",
+      "evidence": "src/modules/build/import-export/ticket-import-export.controller.ts:47",
+      "reviewedEvidence": null
+    },
+    {
+      "key": "modules/build/import-export/ticket-import-export.controller.ts#commitImport",
+      "file": "src/modules/build/import-export/ticket-import-export.controller.ts",
+      "class": "TicketImportExportController",
+      "method": "commitImport",
+      "line": 60,
+      "verb": "POST",
+      "path": "/build/:projectId/import-export/tickets",
+      "routeParams": [
+        "projectId"
+      ],
+      "classification": "@RequirePermission(\"build:tickets:create\")",
+      "moduleGuard": "@RequireModule(\"build\")",
+      "guards": [
+        "JwtAuthGuard",
+        "PermissionGuard"
+      ],
+      "guardChainOk": true,
+      "validate": "present",
+      "declaredParams": [
+        "projectId"
+      ],
+      "missingParams": [],
+      "extraParams": [],
+      "idempotent": null,
+      "mutating": true,
+      "service": {
+        "call": "this.imports.commitImport(u, projectId, { ...body, idempotencyKey })",
+        "type": "TicketImportService",
+        "file": "src/modules/build/import-export/ticket-import.service.ts",
+        "resolved": true
+      },
+      "orgScoping": "BOUND",
+      "orgEvidence": "src/modules/build/import-export/ticket-import.service.ts:74",
+      "parentScoping": "N/A (not nested)",
+      "parentEvidence": null,
+      "leads": [],
+      "notes": [
+        "mutating verb without @Idempotent"
+      ],
+      "verdict": "VERIFIED",
+      "verdictReason": "guard chain complete, org scoping bound, params declared, no nested parent",
+      "evidence": "src/modules/build/import-export/ticket-import-export.controller.ts:60",
+      "reviewedEvidence": null
+    },
+    {
+      "key": "modules/build/import-export/ticket-import-export.controller.ts#exportTickets",
+      "file": "src/modules/build/import-export/ticket-import-export.controller.ts",
+      "class": "TicketImportExportController",
+      "method": "exportTickets",
+      "line": 74,
+      "verb": "GET",
+      "path": "/build/:projectId/import-export/tickets/export",
+      "routeParams": [
+        "projectId"
+      ],
+      "classification": "@RequirePermission(\"build:tickets:view\")",
+      "moduleGuard": "@RequireModule(\"build\")",
+      "guards": [
+        "JwtAuthGuard",
+        "PermissionGuard"
+      ],
+      "guardChainOk": true,
+      "validate": "present",
+      "declaredParams": [
+        "projectId"
+      ],
+      "missingParams": [],
+      "extraParams": [],
+      "idempotent": null,
+      "mutating": false,
+      "service": {
+        "call": "this.exports.exportTickets(u, projectId, query)",
+        "type": "TicketExportService",
+        "file": "src/modules/build/import-export/ticket-export.service.ts",
+        "resolved": true
+      },
+      "orgScoping": "BOUND",
+      "orgEvidence": "src/modules/build/import-export/ticket-export.service.ts:47",
+      "parentScoping": "N/A (not nested)",
+      "parentEvidence": null,
+      "leads": [],
+      "notes": [],
+      "verdict": "VERIFIED",
+      "verdictReason": "guard chain complete, org scoping bound, params declared, no nested parent",
+      "evidence": "src/modules/build/import-export/ticket-import-export.controller.ts:74",
       "reviewedEvidence": null
     },
     {

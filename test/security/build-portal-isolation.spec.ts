@@ -6,7 +6,7 @@ import type { SQL } from "drizzle-orm";
 import { ClientPortalService } from "src/modules/build/client-portal/client-portal.service";
 import type { AccessService } from "src/modules/access/access.service";
 import type { CurrentUserContext } from "src/common/auth/backend-claims";
-import { ACCOUNT_ONLY_PRINCIPAL } from "src/common/auth/principal";
+import { humanSessionPrincipal } from "src/common/auth/principal";
 import type { Db } from "src/db/drizzle.module";
 
 const dialect = new PgDialect();
@@ -80,7 +80,7 @@ function makeCtx(orgId: string, userId: string): CurrentUserContext {
     isOrgOwner: false,
     sessionId: "sess-1",
     tokenScopes: null,
-    principal: ACCOUNT_ONLY_PRINCIPAL,
+    principal: humanSessionPrincipal(CONTRACTOR_MEMBERSHIP, false),
   };
 }
 
@@ -222,10 +222,21 @@ describe("BSN-04-043 — contractor: only the explicitly shared project is visib
   });
 
   it("assertClientProject does NOT raise when the project is the contractor's linked project (control)", async () => {
-    const { db } = makeSelectDb({ id: OWN_PROJECT_ID });
+    const { db } = makeSelectDb({ id: OWN_PROJECT_ID }, [
+      { id: "pm-1", projectId: OWN_PROJECT_ID },
+    ]);
     await expect(
       makeService(db).listPortalChangeRequests(makeCtx(CALLER_ORG, CALLER_USER), OWN_PROJECT_ID),
     ).resolves.toBeDefined();
+  });
+
+  it("listPortalChangeRequests binds the contractor's own portal membership into the grant lookup", async () => {
+    const { db, where } = makeSelectDb({ id: OWN_PROJECT_ID }, [
+      { id: "pm-1", projectId: OWN_PROJECT_ID },
+    ]);
+    await makeService(db).listPortalChangeRequests(makeCtx(CALLER_ORG, CALLER_USER), OWN_PROJECT_ID);
+    expect(renderParams(where.mock.calls[0]?.[0])).toContain(CONTRACTOR_MEMBERSHIP);
+    expect(renderParams(where.mock.calls[1]?.[0])).toContain("pm-1");
   });
 
   it("the refusal is NotFoundException, never ForbiddenException — cross-tenant probes get no existence signal", async () => {
@@ -238,27 +249,27 @@ describe("BSN-04-043 — contractor: only the explicitly shared project is visib
 
   it("listPortalProjects binds the caller's orgId in the WHERE clause", async () => {
     const { db, where } = makeSelectDb(undefined, []);
-    await makeService(db).listPortalProjects(CALLER_ORG);
+    await makeService(db).listPortalProjects(CALLER_ORG, CONTRACTOR_MEMBERSHIP);
     const params = renderParams(where.mock.calls[0]?.[0]);
     expect(params).toContain(CALLER_ORG);
   });
 
   it("listPortalProjects returns nothing when no project has this contractor as client", async () => {
     const { db } = makeSelectDb(undefined, []);
-    const result = await makeService(db).listPortalProjects(CALLER_ORG);
+    const result = await makeService(db).listPortalProjects(CALLER_ORG, CONTRACTOR_MEMBERSHIP);
     expect(result).toEqual([]);
   });
 
   it("listPortalProjects binds the contractor membershipId in the WHERE clause (clientFilter)", async () => {
     const { db, where } = makeSelectDb(undefined, []);
-    await makeService(db).listPortalProjects(CALLER_ORG);
+    await makeService(db).listPortalProjects(CALLER_ORG, CONTRACTOR_MEMBERSHIP);
     const params = renderParams(where.mock.calls[0]?.[0]);
     expect(params).toContain(CONTRACTOR_MEMBERSHIP);
   });
 
   it("a contractor cannot see unrelated project data — WHERE binds both orgId and membershipId", async () => {
     const { db, where } = makeSelectDb(undefined, []);
-    await makeService(db).listPortalProjects(CALLER_ORG);
+    await makeService(db).listPortalProjects(CALLER_ORG, CONTRACTOR_MEMBERSHIP);
     const params = renderParams(where.mock.calls[0]?.[0]);
     expect(params).toContain(CALLER_ORG);
     expect(params).toContain(CONTRACTOR_MEMBERSHIP);
@@ -279,7 +290,7 @@ describe("BSN-04-044 — portal user: only approved client-visible fields return
       "utf8",
     );
     const milestonesBlock = src.slice(
-      src.indexOf("projectMilestones,"),
+      src.indexOf("id: projectMilestones.id,"),
       src.indexOf("projectMilestones.deletedAt"),
     );
     expect(milestonesBlock).not.toContain("budget");

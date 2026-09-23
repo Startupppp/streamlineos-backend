@@ -185,9 +185,9 @@ if (!url) {
 }
 
 const journal = JSON.parse(fs.readFileSync(JOURNAL_URL, "utf8"));
-const { default: postgres } = await import("postgres");
+const { createScriptSql } = await import("./lib/script-sql-client.mjs");
 
-const sql = postgres(url, { prepare: false, max: 1, onnotice: () => {}, connect_timeout: 60 });
+const sql = await createScriptSql({ url, connection: { prepare: false, max: 1, onnotice: () => {}, connect_timeout: 60 } });
 try {
   let replayRows;
   try {

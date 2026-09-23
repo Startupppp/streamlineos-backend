@@ -55,6 +55,7 @@ function buildScheduler(
     s[13] as never,
     s[14] as never,
     s[15] as never,
+    s[16] as never,
   );
 }
 
@@ -104,7 +105,7 @@ describe("CronRetentionSchedulerService — every declared sweep actually runs",
      * being deliberately unscheduled (ticket 16, PRD-C134); 18 to 19 when period-expiry
      * was added, because an ACTIVE subscription past current_period_end kept its paid tier.
      */
-    expect(RETENTION_JOBS.length).toBe(19);
+    expect(RETENTION_JOBS.length).toBe(20);
     expect(outcome.considered).toBe(RETENTION_JOBS.length);
     expect(outcome.ran).toHaveLength(RETENTION_JOBS.length);
     expect(outcome.failed).toEqual([]);

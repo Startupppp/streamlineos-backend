@@ -43,6 +43,7 @@ interface Statement {
 }
 
 const PARTY: PartyRow = {
+  tier: null,
   partyId: "party-1",
   organizationId: "org-1",
   partyType: "CUSTOMER",

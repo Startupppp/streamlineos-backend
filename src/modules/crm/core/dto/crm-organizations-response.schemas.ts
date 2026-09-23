@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { wireDate, nullableWireDate } from "../../../../common/openapi/wire-types";
+import { crmAccountTierSchema } from "./organizations.schemas";
 
 export const crmOrgSchema = z.object({
   id: z.number().int(),
@@ -10,6 +11,7 @@ export const crmOrgSchema = z.object({
   website: z.string().nullable(),
   linkedinUrl: z.string().nullable(),
   description: z.string().nullable(),
+  tier: crmAccountTierSchema.nullable(),
   createdAt: wireDate(),
 });
 
@@ -65,6 +67,7 @@ export const crmOrgWithContactsSchema = z.object({
   website: z.string().nullable(),
   linkedinUrl: z.string().nullable(),
   description: z.string().nullable(),
+  tier: crmAccountTierSchema.nullable(),
   contacts: z.array(crmContactMirrorSchema),
 });
 

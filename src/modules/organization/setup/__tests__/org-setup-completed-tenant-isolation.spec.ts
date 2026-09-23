@@ -87,14 +87,20 @@ function payloadFor(orgId: string): Record<string, unknown> {
 }
 
 function membershipSelect() {
-  const chain: Record<string, jest.Mock> = {};
-  chain.from = jest.fn().mockReturnValue(chain);
-  chain.innerJoin = jest.fn().mockReturnValue(chain);
-  chain.where = jest.fn().mockReturnValue(chain);
-  chain.limit = jest
+  const rolesChain: Record<string, jest.Mock> = {};
+  rolesChain.from = jest.fn().mockReturnValue(rolesChain);
+  rolesChain.where = jest.fn().mockReturnValue(rolesChain);
+  rolesChain.limit = jest.fn().mockResolvedValue([]);
+
+  const membershipChain: Record<string, jest.Mock> = {};
+  membershipChain.from = jest.fn().mockReturnValue(membershipChain);
+  membershipChain.innerJoin = jest.fn().mockReturnValue(membershipChain);
+  membershipChain.where = jest.fn().mockReturnValue(membershipChain);
+  membershipChain.limit = jest
     .fn()
     .mockResolvedValue([{ isOwner: true, email: "owner@alpha.test" }]);
-  return jest.fn().mockReturnValue(chain);
+
+  return jest.fn().mockReturnValueOnce(rolesChain).mockReturnValue(membershipChain);
 }
 
 async function build() {
