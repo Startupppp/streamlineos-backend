@@ -1,5 +1,6 @@
 import { NotFoundException } from "@nestjs/common";
-import { sql } from "drizzle-orm";
+import { sql, type SQL } from "drizzle-orm";
+import { PgDialect } from "drizzle-orm/pg-core";
 import type { Db } from "../../../db/drizzle.module";
 import { KbPageVersionsService } from "./kb-page-versions.service";
 

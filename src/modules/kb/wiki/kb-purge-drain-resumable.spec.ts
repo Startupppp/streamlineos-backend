@@ -1,11 +1,6 @@
+import { sql } from "drizzle-orm";
 import { kbPages } from "../../../db/schema";
 
-jest.mock("../retrieval/kb-page-access.util", () => ({
-  assertPageAccessible: jest.fn().mockResolvedValue(undefined),
-}));
-jest.mock("../retrieval/kb-project-access.util", () => ({
-  getAccessibleProjectIds: jest.fn().mockResolvedValue([]),
-}));
 jest.mock("./kb-page-attachment-purge", () => ({
   KB_PAGE_ATTACHMENT_PURGE_PURPOSE: "kb:page:purge",
   recordPageAttachmentPurge: jest.fn(async (_db: unknown, _org: string, ids: number[]) => {
@@ -15,6 +10,11 @@ jest.mock("./kb-page-attachment-purge", () => ({
   attemptPageAttachmentPurge: jest.fn(async () => ({ confirmed: 0, failed: 0 })),
   purgeOrphanedKbMedia: jest.fn(async () => 0),
 }));
+
+const auth = {
+  visiblePagePredicate: jest.fn().mockResolvedValue(sql`true`),
+  assertPageAccess: jest.fn().mockResolvedValue({ orgId: "org-1", pageId: 1, action: "view", via: "admin" }),
+};
 
 const mockRecordedBatches: number[] = [];
 
@@ -52,6 +52,7 @@ function makeTree(db: unknown) {
     { log: jest.fn() } as never,
     { deleteFileIfPresent: jest.fn().mockResolvedValue(true) } as never,
     { R2_KB_BUCKET_NAME: "kb-files" } as never,
+    auth as never,
   );
 }
 

@@ -58,6 +58,7 @@ function service(db: Db): KbSourcesService {
     {} as never,
     {} as never,
     {} as never,
+    auth as never,
   );
 }
 
