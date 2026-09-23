@@ -1,0 +1,91 @@
+import { PgDialect, QueryBuilder } from "drizzle-orm/pg-core";
+import type { PgSelectBase } from "drizzle-orm/pg-core";
+import type { Db } from "../../../db/drizzle.module";
+import { AuditService } from "../../../common/audit/audit.service";
+import { PortfoliosService } from "./portfolios.service";
+import { ProgramsService } from "./programs.service";
+
+type AnySelect = PgSelectBase<never, never, never>;
+
+interface RenderedDb {
+  readonly db: Db;
+  render(): string;
+}
+
+function renderingDb(): RenderedDb {
+  const dialect = new PgDialect();
+  const qb = new QueryBuilder();
+  let rendered = "";
+  const db = {
+    select: (projection: Record<string, unknown>) => {
+      let q = qb.select(projection) as unknown as AnySelect;
+      const chain: Record<string, unknown> = {
+        from: (table: unknown) => {
+          q = (q as unknown as { from(t: unknown): AnySelect }).from(table);
+          return chain;
+        },
+        where: (condition: unknown) => {
+          q = (q as unknown as { where(c: unknown): AnySelect }).where(condition);
+          return chain;
+        },
+        orderBy: (...columns: unknown[]) => {
+          q = (q as unknown as { orderBy(...c: unknown[]): AnySelect }).orderBy(...columns);
+          return chain;
+        },
+        limit: (n: number) => {
+          q = (q as unknown as { limit(n: number): AnySelect }).limit(n);
+          rendered = dialect.sqlToQuery(q.getSQL()).sql;
+          return Promise.resolve([]);
+        },
+      };
+      return chain;
+    },
+  } as unknown as Db;
+  return { db, render: () => rendered };
+}
+
+it("counts portfolio projects from a relation that exists in the statement", async () => {
+  const { db, render } = renderingDb();
+
+  await new PortfoliosService(db, {} as AuditService).listPortfolios("org-1", { limit: 20 });
+
+  const sql = render();
+  expect(sql).toContain('"build"."portfolio_projects"');
+  expect(sql).not.toMatch(/from\s+"portfolio_project"/i);
+  expect(sql).not.toMatch(/join\s+"portfolio_linked_project"/i);
+});
+
+it("correlates the portfolio project count to the outer portfolio row", async () => {
+  const { db, render } = renderingDb();
+
+  await new PortfoliosService(db, {} as AuditService).listPortfolios("org-1", { limit: 20 });
+
+  const sql = render();
+  expect(sql).toMatch(/portfolio_id\s*=\s*"?portfolio"?\."?id"?/);
+  expect(sql).toMatch(/org_id\s*=\s*"?portfolio"?\."?org_id"?/);
+  expect(sql).not.toMatch(/"portfolio_id"\s*=\s*"id"/);
+  expect(sql).not.toMatch(/"org_id"\s*=\s*"org_id"/);
+});
+
+it("counts program projects from a relation that exists in the statement", async () => {
+  const { db, render } = renderingDb();
+
+  await new ProgramsService(db, {} as AuditService).listPrograms("org-1", {});
+
+  const sql = render();
+  expect(sql).toContain('"build"."program_projects"');
+  expect(sql).not.toMatch(/from\s+"program_project"/i);
+  expect(sql).not.toMatch(/join\s+"program_linked_project"/i);
+});
+
+it("correlates the program project count to the outer program row", async () => {
+  const { db, render } = renderingDb();
+
+  await new ProgramsService(db, {} as AuditService).listPrograms("org-1", {});
+
+  const sql = render();
+  expect(sql).toMatch(/program_id\s*=\s*"?program"?\."?id"?/);
+  expect(sql).toMatch(/org_id\s*=\s*"?program"?\."?org_id"?/);
+  expect(sql).not.toMatch(/"program_id"\s*=\s*"id"/);
+  expect(sql).not.toMatch(/"org_id"\s*=\s*"org_id"/);
+});

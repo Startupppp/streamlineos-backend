@@ -1,7 +1,17 @@
-import { BadRequestException, Inject, Injectable, NotFoundException } from "@nestjs/common";
+import {
+  BadRequestException,
+  Inject,
+  Injectable,
+  NotFoundException,
+} from "@nestjs/common";
 import { and, eq, isNull, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
-import { programProjects, projectPortfolios, projectPrograms, projects } from "../../../db/schema";
+import {
+  programProjects,
+  projectPortfolios,
+  projectPrograms,
+  projects,
+} from "../../../db/schema";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
 import { AuditService } from "../../../common/audit/audit.service";
@@ -22,7 +32,10 @@ export class ProgramsService {
     private readonly audit: AuditService,
   ) {}
 
-  private async loadProgram(orgId: string, programId: number): Promise<ProgramRow> {
+  private async loadProgram(
+    orgId: string,
+    programId: number,
+  ): Promise<ProgramRow> {
     const [row] = await this.db
       .select()
       .from(projectPrograms)
@@ -38,7 +51,10 @@ export class ProgramsService {
     return row;
   }
 
-  private async assertPortfolio(orgId: string, portfolioId: number): Promise<void> {
+  private async assertPortfolio(
+    orgId: string,
+    portfolioId: number,
+  ): Promise<void> {
     const [row] = await this.db
       .select({ id: projectPortfolios.id })
       .from(projectPortfolios)
@@ -57,15 +73,19 @@ export class ProgramsService {
     const [row] = await this.db
       .select({ id: projects.id })
       .from(projects)
-      .where(and(eq(projects.id, projectId), eq(projects.orgId, orgId), isNull(projects.deletedAt)))
+      .where(
+        and(
+          eq(projects.id, projectId),
+          eq(projects.orgId, orgId),
+          isNull(projects.deletedAt),
+        ),
+      )
       .limit(1);
     if (!row) throw new BadRequestException("Project not found in org");
   }
 
   async listPrograms(orgId: string, query: ListProgramsQuery) {
     const program = alias(projectPrograms, "program");
-    const link = alias(programProjects, "program_project");
-    const linkedProject = alias(projects, "program_linked_project");
     return this.db
       .select({
         id: program.id,
@@ -81,11 +101,11 @@ export class ProgramsService {
         updatedAt: program.updatedAt,
         projectCount: sql<number>`(
           SELECT CAST(COUNT(*) AS INT)
-          FROM ${link}
-          INNER JOIN ${linkedProject} ON ${linkedProject.id} = ${link.projectId}
-            AND ${linkedProject.deletedAt} IS NULL
-          WHERE ${link.programId} = ${program.id}
-            AND ${link.orgId} = ${program.orgId}
+          FROM ${programProjects} link
+          INNER JOIN ${projects} linked_project ON linked_project.id = link.project_id
+            AND linked_project.deleted_at IS NULL
+          WHERE link.program_id = program.id
+            AND link.org_id = program.org_id
         )`,
       })
       .from(program)
@@ -94,7 +114,9 @@ export class ProgramsService {
           eq(program.orgId, orgId),
           isNull(program.deletedAt),
           query.status ? eq(program.status, query.status) : undefined,
-          query.portfolioId ? eq(program.portfolioId, query.portfolioId) : undefined,
+          query.portfolioId
+            ? eq(program.portfolioId, query.portfolioId)
+            : undefined,
         ),
       )
       .limit(100);
@@ -112,16 +134,22 @@ export class ProgramsService {
       })
       .from(programProjects)
       .innerJoin(projects, eq(projects.id, programProjects.projectId))
-      .where(and(
-        eq(programProjects.programId, programId),
-        eq(programProjects.orgId, orgId),
-        isNull(projects.deletedAt),
-      ))
+      .where(
+        and(
+          eq(programProjects.programId, programId),
+          eq(programProjects.orgId, orgId),
+          isNull(projects.deletedAt),
+        ),
+      )
       .limit(100);
     return { ...program, projects: linkedProjects };
   }
 
-  async createProgram(orgId: string, userId: string, input: CreateProgramInput) {
+  async createProgram(
+    orgId: string,
+    userId: string,
+    input: CreateProgramInput,
+  ) {
     if (input.portfolioId !== undefined && input.portfolioId !== null)
       await this.assertPortfolio(orgId, input.portfolioId);
     const [row] = await this.db
@@ -149,21 +177,33 @@ export class ProgramsService {
     return row;
   }
 
-  async updateProgram(orgId: string, userId: string, programId: number, input: UpdateProgramInput) {
+  async updateProgram(
+    orgId: string,
+    userId: string,
+    programId: number,
+    input: UpdateProgramInput,
+  ) {
     await this.loadProgram(orgId, programId);
     if (input.portfolioId !== undefined && input.portfolioId !== null)
       await this.assertPortfolio(orgId, input.portfolioId);
     const patch: ProgramPatch = {};
     if (input.name !== undefined) patch.name = input.name;
-    if (input.description !== undefined) patch.description = input.description ?? null;
-    if (input.portfolioId !== undefined) patch.portfolioId = input.portfolioId ?? null;
+    if (input.description !== undefined)
+      patch.description = input.description ?? null;
+    if (input.portfolioId !== undefined)
+      patch.portfolioId = input.portfolioId ?? null;
     if (input.ownerId !== undefined) patch.ownerId = input.ownerId ?? null;
     if (input.status !== undefined) patch.status = input.status;
     if (input.health !== undefined) patch.health = input.health ?? null;
     const [updated] = await this.db
       .update(projectPrograms)
       .set(patch)
-      .where(and(eq(projectPrograms.id, programId), eq(projectPrograms.orgId, orgId)))
+      .where(
+        and(
+          eq(projectPrograms.id, programId),
+          eq(projectPrograms.orgId, orgId),
+        ),
+      )
       .returning();
     if (!updated) throw new NotFoundException("Program not found");
     this.audit.log({
@@ -182,7 +222,12 @@ export class ProgramsService {
     await this.db
       .update(projectPrograms)
       .set({ deletedAt: new Date() })
-      .where(and(eq(projectPrograms.id, programId), eq(projectPrograms.orgId, orgId)));
+      .where(
+        and(
+          eq(projectPrograms.id, programId),
+          eq(projectPrograms.orgId, orgId),
+        ),
+      );
     this.audit.log({
       action: "program.deleted",
       userId,
@@ -193,7 +238,12 @@ export class ProgramsService {
     });
   }
 
-  async linkProject(orgId: string, userId: string, programId: number, input: LinkProjectInput) {
+  async linkProject(
+    orgId: string,
+    userId: string,
+    programId: number,
+    input: LinkProjectInput,
+  ) {
     await this.loadProgram(orgId, programId);
     await this.assertProject(orgId, input.projectId);
     await this.db
@@ -211,7 +261,12 @@ export class ProgramsService {
     return { success: true };
   }
 
-  async unlinkProject(orgId: string, userId: string, programId: number, projectId: number) {
+  async unlinkProject(
+    orgId: string,
+    userId: string,
+    programId: number,
+    projectId: number,
+  ) {
     await this.loadProgram(orgId, programId);
     await this.db
       .delete(programProjects)

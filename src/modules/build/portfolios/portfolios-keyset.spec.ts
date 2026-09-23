@@ -102,8 +102,8 @@ describe("PortfoliosService.listPortfolios — projectCount subquery excludes so
     const expr = captured.projection["projectCount"];
     const rendered = render(expr);
     expect(rendered.toLowerCase()).toContain("deleted_at");
-    expect(rendered).toContain('"portfolio_project"."portfolio_id" = "portfolio"."id"');
-    expect(rendered).toContain('"portfolio_linked_project"."id" = "portfolio_project"."project_id"');
+    expect(rendered).toContain("link.portfolio_id = portfolio.id");
+    expect(rendered).toContain("linked_project.id = link.project_id");
     expect(rendered).not.toMatch(/\b"portfolio_id"\s*=\s*"id"\b/);
   });
 
