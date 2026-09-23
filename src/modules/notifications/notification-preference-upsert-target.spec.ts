@@ -60,6 +60,9 @@ function harness() {
       withdrawChannels: jest.fn().mockResolvedValue(0),
       withdrawChannel: jest.fn().mockResolvedValue(0),
     } as unknown as ConstructorParameters<typeof NotificationPreferencesService>[2],
+    {
+      loadOrgAvailability: jest.fn().mockResolvedValue(new Set<string>()),
+    } as unknown as ConstructorParameters<typeof NotificationPreferencesService>[3],
   );
   return { svc, captured, db };
 }

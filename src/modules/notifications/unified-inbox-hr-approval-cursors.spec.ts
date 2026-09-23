@@ -229,6 +229,7 @@ describe("unified inbox — two approval adapters sharing one id space", () => {
       permission: "hr:leaves:approve",
       supportsAfterCursor: false,
       fetch: () => Promise.resolve([]),
+      countPending: () => Promise.resolve(0),
     });
     const svc = makeInbox(db, registry);
 

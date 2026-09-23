@@ -42,6 +42,28 @@ function compareScopes(left: RowSets, right: RowSets, orders: Order[]): number {
 
 type Projection = Record<string, unknown>;
 
+const aggregateDialect = new PgDialect();
+
+/**
+ * `select({ cnt: count(x) })` used to project to `null`, so every
+ * `Number(row?.cnt ?? 0)` read zero and every count assertion passed
+ * vacuously no matter how many rows the predicate matched.
+ *
+ * Only `count` is recognised, because that is the only aggregate the read
+ * paths use. Anything else still projects to `null` rather than guessing.
+ */
+function isCountAggregate(value: unknown): boolean {
+  if (!(value instanceof SQL)) return false;
+  return /^count\(/i.test(aggregateDialect.sqlToQuery(value).sql.trim());
+}
+
+function countKeysOf(projection: Projection | undefined): string[] {
+  if (projection === undefined) return [];
+  return Object.entries(projection)
+    .filter(([, value]) => isCountAggregate(value))
+    .map(([key]) => key);
+}
+
 function decodeRow(table: Table | undefined, row: FakeRow): FakeRow {
   if (table === undefined) return { ...row };
   return Object.fromEntries(
@@ -150,6 +172,12 @@ class SelectBuilder implements PromiseLike<FakeRow[]> {
       scopes = next;
     }
     const matched = scopes.filter((scope) => matchesPredicate(this.predicate, scope));
+    const countKeys = countKeysOf(this.projection);
+    if (countKeys.length > 0) {
+      const row = project(this.projection, matched[0] ?? {}, this.baseName, this.baseTable);
+      for (const key of countKeys) row[key] = matched.length;
+      return [row];
+    }
     if (this.orders.length > 0)
       matched.sort((left, right) => compareScopes(left, right, this.orders));
     return matched

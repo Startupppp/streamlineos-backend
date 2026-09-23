@@ -12,6 +12,7 @@ function makeAdapter(module: string, kindLabel: string): ApprovalSourceAdapter {
     permission: `${module}:test:view`,
     supportsAfterCursor: false,
     fetch: (): Promise<BuildApprovalInboxItem[]> => Promise.resolve([]),
+    countPending: (): Promise<number> => Promise.resolve(0),
   };
 }
 
