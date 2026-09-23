@@ -286,6 +286,26 @@ const UNOWNED: TimesheetRoutingDecision = {
   explanation: "Nobody can approve this timesheet.",
 };
 
+const ROUTED_NO_NOTIFY: TimesheetRoutingDecision = {
+  kind: "routed",
+  approver: null,
+  queueUserIds: [],
+  route: {
+    source: "reporting_manager",
+    rung: null,
+    approverUserId: null,
+    approverMembershipId: null,
+    assignedToUserId: null,
+    delegation: null,
+    projectId: null,
+    explanation: "No approver assigned.",
+    slaHours: 48,
+    escalationRung: null,
+    escalatedFrom: null,
+  },
+  dueAt: new Date("2026-09-10T00:00:00.000Z"),
+};
+
 function makeRouting(decision: TimesheetRoutingDecision) {
   return { resolve: () => Promise.resolve(decision) } as unknown as TimesheetApprovalRoutingService;
 }
@@ -407,7 +427,7 @@ describe("TS-24 period lifecycle durable rows", () => {
       const script = submitScript(1);
       script.entries = [{ id: 1, description: "Work", projectId: null, ticketId: null }];
       const { db } = makeDb(script, outbox);
-      const service = periodsService(db, makeNotifications(notes));
+      const service = periodsService(db, makeNotifications(notes), ROUTED_NO_NOTIFY);
 
       await service.submitPeriod(WORKER, PERIOD_ID);
 

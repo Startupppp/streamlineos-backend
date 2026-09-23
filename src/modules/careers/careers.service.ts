@@ -1,9 +1,11 @@
 import { BadRequestException, Inject, Injectable, InternalServerErrorException } from "@nestjs/common";
 import { and, desc, eq, ilike } from "drizzle-orm";
+import { randomUUID } from "node:crypto";
 import {
   candidateApplications,
   candidates,
   jobPostings,
+  candidateDocumentsVault,
 } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
@@ -12,7 +14,10 @@ import { runInTenantTransaction } from "../../common/tenant/run-in-tenant-transa
 import { PlanLimitsService } from "../billing/core/plan-limits.service";
 import { PaymentRequiredException } from "../../common/http/api-exceptions";
 import { logger } from "../../common/logger/logger.service";
+import { OutboxWriter } from "../../common/outbox/outbox-writer";
+import { RecruitmentWebhooksService } from "../hr/recruitment/webhooks/recruitment-webhooks.service";
 import type { ApplyInput } from "./dto/careers.schemas";
+import { StorageService } from "../storage/storage.service";
 
 function isQuotaExceededError(error: unknown): error is PaymentRequiredException {
   if (!(error instanceof PaymentRequiredException)) return false;
@@ -37,7 +42,44 @@ export class CareersService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly cache: CacheService,
     private readonly planLimits: PlanLimitsService,
+    private readonly recruitmentWebhooks: RecruitmentWebhooksService,
+    private readonly storage: StorageService,
   ) {}
+
+  async uploadResume(
+    orgId: string,
+    candidateId: number,
+    userId: string,
+    file: Buffer,
+    fileName: string,
+    mimeType: string,
+  ) {
+    const [candidate] = await this.db
+      .select({ id: candidates.id })
+      .from(candidates)
+      .where(and(eq(candidates.id, candidateId), eq(candidates.orgId, orgId)))
+      .limit(1);
+
+    if (!candidate) {
+      throw new BadRequestException("Candidate not found or access denied.");
+    }
+
+    const upload = await this.storage.uploadFile(orgId, file, "candidates/resumes", `${candidateId}/${fileName}`, mimeType);
+
+    await this.db.insert(candidateDocumentsVault).values({
+      candidateId,
+      orgId,
+      filename: fileName,
+      s3Key: upload.key,
+      fileUrl: upload.key, // Presumed public URL pattern
+      fileType: mimeType,
+      fileSize: upload.size,
+      documentType: "RESUME",
+      uploadedBy: userId,
+    });
+
+    return { key: upload.key };
+  }
 
   listOpenJobs() {
     return this.db
@@ -61,7 +103,8 @@ export class CareersService {
   }
 
   async apply(input: ApplyInput) {
-    const { jobPostingId, name, email, phone, linkedinUrl, coverLetter, resumeUrl, answers } =
+    console.log('DB:', this.db);
+    const { jobPostingId, name, email, phone, linkedinUrl, coverLetter, resumeUrl, answers, consent } =
       input;
     const normalizedEmail = email.toLowerCase().trim();
 
@@ -132,6 +175,21 @@ export class CareersService {
         status: "APPLIED",
         coverLetter: coverLetter ?? null,
         screeningAnswers: answers,
+        consentAt: consent ? new Date() : null,
+      });
+
+      await OutboxWriter.emit(tx, {
+        eventId: randomUUID(),
+        organizationId: job.orgId,
+        aggregateType: "candidate",
+        aggregateId: candidateId.toString(),
+        aggregateVersion: 1,
+        eventType: "candidate.applied",
+        payload: {
+          candidateId,
+          jobPostingId,
+        },
+        occurredAt: new Date(),
       });
 
       return { id: candidateId };

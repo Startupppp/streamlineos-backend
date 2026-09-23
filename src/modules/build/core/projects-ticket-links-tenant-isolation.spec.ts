@@ -24,6 +24,8 @@ function makeCtx(orgId: string): CurrentUserContext {
 }
 
 describe("ProjectsTicketLinksService — cross-tenant isolation", () => {
+  const access = { scopeFor: jest.fn().mockResolvedValue("all"), resolveUserPermissions: jest.fn().mockResolvedValue(new Set<string>()) };
+
   it("getGitLinks throws NotFoundException when project not found for attacker org (cross-tenant isolation — returns 404 not 403)", async () => {
     const db = {
       query: {
@@ -31,7 +33,7 @@ describe("ProjectsTicketLinksService — cross-tenant isolation", () => {
         tickets: { findFirst: jest.fn().mockResolvedValue(undefined) },
       },
     } as unknown as Db;
-    const svc = new ProjectsTicketLinksService(db);
+    const svc = new ProjectsTicketLinksService(db, access);
 
     await expect(svc.getGitLinks(ATTACKER_ORG, 1, 1)).rejects.toThrow(NotFoundException);
   });
@@ -50,7 +52,7 @@ describe("ProjectsTicketLinksService — cross-tenant isolation", () => {
         }),
       }),
     } as unknown as Db;
-    const svc = new ProjectsTicketLinksService(db);
+    const svc = new ProjectsTicketLinksService(db, access);
 
     const result = await svc.getGitLinks(OWNER_ORG, 1, 1);
     expect(result).toHaveLength(1);

@@ -6427,6 +6427,20 @@
       "when": 1803000010570,
       "tag": "1162_feedbucket_media_retention",
       "breakpoints": true
+    },
+    {
+      "idx": 1046,
+      "version": "7",
+      "when": 1803000010580,
+      "tag": "1163_build_change_request_affected_items",
+      "breakpoints": true
+    },
+    {
+      "idx": 1047,
+      "version": "7",
+      "when": 1803000010581,
+      "tag": "1164_candidate_consent_at",
+      "breakpoints": true
     }
   ]
 }

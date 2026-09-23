@@ -116,3 +116,11 @@ export const helpdeskEscalationSweepResponseSchema = z.union([
     unassignable: z.number().int().nonnegative(),
   }),
 ]);
+
+export const hrWebhookSweepResponseSchema = z.union([
+  cronSkippedSchema,
+  z.object({
+    success: z.literal(true),
+    message: z.string(),
+  }),
+]);
