@@ -57,6 +57,8 @@ import { ProjectsTicketChecklistsService } from "./projects-ticket-checklists.se
 import { ProjectsTicketLinksService } from "./projects-ticket-links.service";
 import { ProjectsTicketRelationsService } from "./projects-ticket-relations.service";
 import { BuildAutomationRunnerService } from "./build-automation-runner.service";
+import { BuildAutomationActionExecutor } from "./build-automation-actions.service";
+import { BuildAutomationRunHistoryService } from "./build-automation-run-history.service";
 import { OutboxModule } from "../../../common/outbox/outbox.module";
 import { BuildReleasePublishedConsumerService } from "./build-release-published-consumer.service";
 import { BuildTicketStatusChangedConsumerService } from "./build-ticket-status-changed-consumer.service";
@@ -123,6 +125,8 @@ import { BuildTicketStatusChangedConsumerService } from "./build-ticket-status-c
     ProjectsTicketLinksService,
     ProjectsTicketRelationsService,
     BuildAutomationRunnerService,
+    BuildAutomationActionExecutor,
+    BuildAutomationRunHistoryService,
   ],
   exports: [
     BuildDueSweepService,

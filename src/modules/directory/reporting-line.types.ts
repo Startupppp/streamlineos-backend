@@ -15,6 +15,10 @@ export type ManagerAssignmentCheck =
   | { ok: true; managerEmploymentId: number }
   | { ok: false; reason: ManagerAssignmentRefusal; message: string };
 
+export type ApproverEligibility =
+  | { ok: true; managerEmploymentId: number | null }
+  | { ok: false; reason: ManagerAssignmentRefusal; message: string };
+
 export type ManagerState = "active" | "on-notice" | "inactive" | "exited";
 
 export interface ReportingLineHistoryEntry {

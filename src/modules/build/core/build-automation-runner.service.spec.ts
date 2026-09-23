@@ -1,7 +1,13 @@
 import { Test, type TestingModule } from "@nestjs/testing";
 import { BuildAutomationRunnerService } from "./build-automation-runner.service";
+import { BuildAutomationActionExecutor } from "./build-automation-actions.service";
+import { BuildAutomationRunHistoryService } from "./build-automation-run-history.service";
+import { RateLimitService } from "../../../common/ratelimit/rate-limit.service";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { logger } from "../../../common/logger/logger.service";
+
+const noopHistory = { recordRun: jest.fn().mockResolvedValue(null), recordRunActions: jest.fn().mockResolvedValue(undefined) };
+const allowAllRateLimiter = { check: jest.fn().mockResolvedValue({ allowed: true, retryAfterSecs: 0 }) };
 
 jest.mock("../../../common/logger/logger.service", () => ({
   logger: { warn: jest.fn(), error: jest.fn() },
@@ -91,7 +97,10 @@ describe("BuildAutomationRunnerService", () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         BuildAutomationRunnerService,
+        BuildAutomationActionExecutor,
         { provide: DRIZZLE, useValue: mockDb },
+        { provide: BuildAutomationRunHistoryService, useValue: noopHistory },
+        { provide: RateLimitService, useValue: allowAllRateLimiter },
       ],
     }).compile();
 
@@ -130,8 +139,10 @@ describe("BuildAutomationRunnerService", () => {
     await flush();
 
     expect(mockDb.update).not.toHaveBeenCalled();
+    // Log prefix moved with the code: action execution now lives in
+    // BuildAutomationActionExecutor (split out of BuildAutomationRunnerService, BE-09).
     expect(logger.warn).toHaveBeenCalledWith(
-      "BuildAutomationRunner: set_status skipped — status does not exist in project",
+      "BuildAutomationActionExecutor: set_status skipped — status does not exist in project",
       expect.objectContaining({ ruleId: 1, projectId: 1, orgId: "org-1", status: "IN_PROGRESS" }),
     );
   });

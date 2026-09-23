@@ -19,6 +19,7 @@ import {
 import { liveEmployment, livePersonOfEmployment } from "./employment-query";
 import type { ScopedRead } from "../access/scoped-read";
 import type {
+  ApproverEligibility,
   ManagerAssignmentCheck,
   ManagerAssignmentRefusal,
   ManagerCoverageReport,
@@ -89,9 +90,21 @@ export class ReportingLineService {
     managerUserId: string,
     db: DbOrTx = this.db,
   ): Promise<ManagerAssignmentCheck> {
-    const [manager] = await db
+    const eligibility = await this.checkApprover(orgId, managerUserId, db);
+    if (!eligibility.ok) return eligibility;
+    if (eligibility.managerEmploymentId === null) return this.refuse("manager-has-no-employment");
+    return { ok: true, managerEmploymentId: eligibility.managerEmploymentId };
+  }
+
+  async checkApprover(
+    orgId: string,
+    candidateUserId: string,
+    db: DbOrTx = this.db,
+  ): Promise<ApproverEligibility> {
+    const [candidate] = await db
       .select({
         membershipStatus: organizationMembers.status,
+        isOwner: organizationMembers.isOwner,
         userActive: users.isActive,
         employmentId: hrEmployments.id,
         lifecycleStatus: hrEmployments.lifecycleStatus,
@@ -114,15 +127,18 @@ export class ReportingLineService {
           eq(hrEmployments.isPrimary, true),
         ),
       )
-      .where(and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.userId, managerUserId)))
+      .where(and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.userId, candidateUserId)))
       .limit(1);
 
-    if (!manager || manager.membershipStatus !== "ACTIVE") return this.refuse("manager-not-in-organization");
-    if (!manager.userActive) return this.refuse("manager-inactive");
-    if (manager.employmentId === null || manager.lifecycleStatus === null) return this.refuse("manager-has-no-employment");
-    if (CANNOT_MANAGE_LIFECYCLE.some((status) => status === manager.lifecycleStatus)) return this.refuse("manager-exited");
+    if (!candidate || candidate.membershipStatus !== "ACTIVE") return this.refuse("manager-not-in-organization");
+    if (!candidate.userActive) return this.refuse("manager-inactive");
+    if (candidate.employmentId === null || candidate.lifecycleStatus === null) {
+      if (candidate.isOwner === true) return { ok: true, managerEmploymentId: null };
+      return this.refuse("manager-has-no-employment");
+    }
+    if (CANNOT_MANAGE_LIFECYCLE.some((status) => status === candidate.lifecycleStatus)) return this.refuse("manager-exited");
 
-    return { ok: true, managerEmploymentId: manager.employmentId };
+    return { ok: true, managerEmploymentId: candidate.employmentId };
   }
 
   async assign(

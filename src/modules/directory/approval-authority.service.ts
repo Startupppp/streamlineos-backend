@@ -180,7 +180,7 @@ export class ApprovalAuthorityService {
       return;
     }
     if (viable.some((answer) => answer.userId === candidateUserId)) return;
-    const check = await this.reportingLines.checkManager(orgId, candidateUserId);
+    const check = await this.reportingLines.checkApprover(orgId, candidateUserId);
     if (!check.ok) {
       skipped.push({ rung, userId: candidateUserId, reason: check.reason });
       return;
