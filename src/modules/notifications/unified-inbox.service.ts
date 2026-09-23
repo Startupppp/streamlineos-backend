@@ -276,7 +276,7 @@ export class UnifiedInboxService {
     );
     const approvalPosition = inboxSourcePosition(cursorState.a, cursorState.at);
 
-    const [notifOutcome, broadcastOutcome, mailOutcome, approvalOutcome] =
+    const [notifOutcome, broadcastOutcome, mailOutcome, adapterResult] =
       await Promise.all([
         wantsNotifications
           ? readSource(() =>
@@ -317,29 +317,24 @@ export class UnifiedInboxService {
               ),
             )
           : null,
-        wantsBuildApprovals &&
-        approvalsSupport &&
-        canViewApproval &&
-        adapters[0]
-          ? readSource(() =>
-              adapters[0].fetch(
-                orgId,
-                userId,
-                membershipId,
-                limit + 1,
-                approvalPosition,
-              ),
+        wantsBuildApprovals && approvalsSupport
+          ? this.fetchAllAdapters(
+              orgId,
+              userId,
+              membershipId,
+              user,
+              limit + 1,
+              approvalPosition,
             )
           : null,
       ]);
 
     const emptyNotifications: NotificationInboxItem[] = [];
     const emptyBroadcasts: BroadcastInboxItem[] = [];
-    const emptyApprovals: BuildApprovalInboxItem[] = [];
 
     const notifItems = itemsOf(notifOutcome, emptyNotifications);
     const rawBroadcastItems = itemsOf(broadcastOutcome, emptyBroadcasts);
-    const approvalItems = itemsOf(approvalOutcome, emptyApprovals);
+    const approvalItems = adapterResult?.items ?? [];
     const mailBatch =
       mailOutcome !== null && mailOutcome.ok
         ? mailOutcome.value
@@ -367,19 +362,7 @@ export class UnifiedInboxService {
         mailFreshForUnreadOnly,
         mailOutcome,
       ),
-      wantsBuildApprovals &&
-      approvalsSupport &&
-      canViewApproval &&
-      approvalOutcome !== null
-        ? includedSource("build_approval", approvalOutcome)
-        : skippedSource(
-            "build_approval",
-            wantsBuildApprovals && !approvalsSupport
-              ? "unsupported: triage (approvals have no archive state)"
-              : wantsBuildApprovals && !canViewApproval
-                ? `no permission: ${adapters[0]?.permission ?? "build:approvals:view"}`
-                : null,
-          ),
+      buildApprovalSourceStatus(wantsBuildApprovals, approvalsSupport, adapterResult),
     ];
 
     const merged = stableSortItems([

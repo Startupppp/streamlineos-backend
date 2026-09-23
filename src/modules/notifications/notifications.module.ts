@@ -36,9 +36,10 @@ import { NotificationProvidersController } from "./notification-providers.contro
 import { NotificationEventsController } from "./notification-events.controller";
 import { NotificationPolicyService } from "./notification-policy.service";
 import { NotificationPolicyController } from "./notification-policy.controller";
+import { AttentionModule } from "../attention/attention.module";
 
 @Module({
-  imports: [RealtimeModule, MailModule, BuildApprovalsInboxModule],
+  imports: [RealtimeModule, MailModule, BuildApprovalsInboxModule, AttentionModule],
   controllers: [
     NotificationsController,
     NotificationTemplatesController,
