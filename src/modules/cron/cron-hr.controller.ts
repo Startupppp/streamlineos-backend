@@ -15,6 +15,9 @@ import { CronLeaveService } from "./cron-leave.service";
 import { CronHrService } from "./cron-hr.service";
 import { CronHrEnginesService } from "./cron-hr-engines.service";
 import { CronRecruitmentService } from "./cron-recruitment.service";
+import { CronRecruitmentSequencesService } from "./cron-recruitment-sequences.service";
+import { CronRecruitmentSlaService } from "./cron-recruitment-sla.service";
+import { CronRecruitmentReportsService } from "./cron-recruitment-reports.service";
 import { CronHrWebhookDispatchService } from "./cron-hr-webhook-dispatch.service";
 import { CronLeaseService } from "./cron-lease.service";
 import { CronHrRetentionService } from "./cron-hr-retention.service";
@@ -32,6 +35,9 @@ import {
   hrPolicyRetentionSweepResponseSchema,
   helpdeskRetentionSweepResponseSchema,
   hrWebhookSweepResponseSchema,
+  recruitmentSequenceStepsResponseSchema,
+  recruitmentSlaSweepResponseSchema,
+  recruitmentScheduledReportsResponseSchema,
 } from "./dto/cron-hr-response.schemas";
 import { BodylessAction, ResponseSchema } from "../../common/openapi/zod-operation-contracts";
 
@@ -44,6 +50,9 @@ export class CronHrController {
     private readonly attendance: CronAttendanceService,
     private readonly leave: CronLeaveService,
     private readonly recruitment: CronRecruitmentService,
+    private readonly sequences: CronRecruitmentSequencesService,
+    private readonly recruitmentSla: CronRecruitmentSlaService,
+    private readonly recruitmentReports: CronRecruitmentReportsService,
     private readonly hr: CronHrService,
     private readonly hrEngines: CronHrEnginesService,
     private readonly hrWebhookDispatch: CronHrWebhookDispatchService,
@@ -92,6 +101,48 @@ export class CronHrController {
   @ResponseSchema(interviewNoShowsResponseSchema)
   postInterviewNoShows(@Headers("authorization") authorization?: string) {
     return this.runInterviewNoShows(authorization);
+  }
+
+  @Get("recruitment-sequence-steps")
+  @ResponseSchema(recruitmentSequenceStepsResponseSchema)
+  getRecruitmentSequenceSteps(@Headers("authorization") authorization?: string) {
+    return this.runRecruitmentSequenceSteps(authorization);
+  }
+
+  @Post("recruitment-sequence-steps")
+  @BodylessAction()
+  @HttpCode(200)
+  @ResponseSchema(recruitmentSequenceStepsResponseSchema)
+  postRecruitmentSequenceSteps(@Headers("authorization") authorization?: string) {
+    return this.runRecruitmentSequenceSteps(authorization);
+  }
+
+  @Get("recruitment-sla-sweep")
+  @ResponseSchema(recruitmentSlaSweepResponseSchema)
+  getRecruitmentSlaSweep(@Headers("authorization") authorization?: string) {
+    return this.runRecruitmentSlaSweep(authorization);
+  }
+
+  @Post("recruitment-sla-sweep")
+  @BodylessAction()
+  @HttpCode(200)
+  @ResponseSchema(recruitmentSlaSweepResponseSchema)
+  postRecruitmentSlaSweep(@Headers("authorization") authorization?: string) {
+    return this.runRecruitmentSlaSweep(authorization);
+  }
+
+  @Get("recruitment-scheduled-reports")
+  @ResponseSchema(recruitmentScheduledReportsResponseSchema)
+  getRecruitmentScheduledReports(@Headers("authorization") authorization?: string) {
+    return this.runRecruitmentScheduledReports(authorization);
+  }
+
+  @Post("recruitment-scheduled-reports")
+  @BodylessAction()
+  @HttpCode(200)
+  @ResponseSchema(recruitmentScheduledReportsResponseSchema)
+  postRecruitmentScheduledReports(@Headers("authorization") authorization?: string) {
+    return this.runRecruitmentScheduledReports(authorization);
   }
 
   @Get("onboarding-sweep")
@@ -221,6 +272,51 @@ export class CronHrController {
       };
     } catch (error) {
       logger.error("Interview no-show cron failed", error);
+      throw new InternalServerErrorException("Internal server error");
+    }
+  }
+
+  private async runRecruitmentSequenceSteps(authorization?: string) {
+    assertCronSecret(authorization);
+    try {
+      const outcome = await this.cronLease.withLease("recruitment-sequence-steps", 300, () =>
+        this.sequences.sendDueSequenceSteps(),
+      );
+      if (!outcome.ran)
+        return { success: true, skipped: true, message: "recruitment-sequence-steps already running" };
+      return { success: true, ...outcome.result };
+    } catch (error) {
+      logger.error("Recruitment sequence step cron failed", error);
+      throw new InternalServerErrorException("Internal server error");
+    }
+  }
+
+  private async runRecruitmentSlaSweep(authorization?: string) {
+    assertCronSecret(authorization);
+    try {
+      const outcome = await this.cronLease.withLease("recruitment-sla-sweep", 300, () =>
+        this.recruitmentSla.sweepStageSlas(),
+      );
+      if (!outcome.ran)
+        return { success: true, skipped: true, message: "recruitment-sla-sweep already running" };
+      return { success: true, ...outcome.result };
+    } catch (error) {
+      logger.error("Recruitment SLA sweep cron failed", error);
+      throw new InternalServerErrorException("Internal server error");
+    }
+  }
+
+  private async runRecruitmentScheduledReports(authorization?: string) {
+    assertCronSecret(authorization);
+    try {
+      const outcome = await this.cronLease.withLease("recruitment-scheduled-reports", 600, () =>
+        this.recruitmentReports.deliverDueReports(),
+      );
+      if (!outcome.ran)
+        return { success: true, skipped: true, message: "recruitment-scheduled-reports already running" };
+      return { success: true, ...outcome.result };
+    } catch (error) {
+      logger.error("Recruitment scheduled report cron failed", error);
       throw new InternalServerErrorException("Internal server error");
     }
   }

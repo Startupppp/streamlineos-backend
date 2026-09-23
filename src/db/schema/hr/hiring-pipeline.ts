@@ -120,7 +120,19 @@ export const offerNegotiations = pgTable("offer_negotiations", {
 ]);
 
 export type EmailSequenceTrigger = "MANUAL" | "CANDIDATE_ADDED" | "APPLICATION_RECEIVED" | "STAGE_CHANGED" | "OFFER_SENT";
-export type EmailSequenceEnrollmentStatus = "ACTIVE" | "COMPLETED" | "UNSUBSCRIBED" | "BOUNCED";
+/**
+ * `HELD_NO_CONSENT` is written by the sequence sender when it reaches a step
+ * for a candidate whose applications carry no `consent_at` — either they never
+ * gave it, or it was withdrawn since they enrolled. It is a stored reason, not
+ * a silent skip: a recruiter looking at the enrollment can see why nothing
+ * went out. The column is `text`, so this needs no migration.
+ */
+export type EmailSequenceEnrollmentStatus =
+  | "ACTIVE"
+  | "COMPLETED"
+  | "UNSUBSCRIBED"
+  | "BOUNCED"
+  | "HELD_NO_CONSENT";
 
 export const emailSequences = pgTable("email_sequences", {
   id: serial("id").primaryKey(),

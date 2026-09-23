@@ -1,6 +1,8 @@
 import {
   BadRequestException,
   Body,
+  ServiceUnavailableException,
+  UnprocessableEntityException,
   Controller,
   Param,
   Post,
@@ -17,6 +19,7 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { RecruitmentCandidateVaultService } from "./recruitment-candidate-vault.service";
 import { StorageService } from "../../storage/storage.service";
 import { FileQuarantineService } from "../../storage/file-quarantine.service";
+import { AvScanner } from "../../../common/security/av-scan";
 import { AuditService } from "../../../common/audit/audit.service";
 import { validateMagicBytes } from "../../storage/file-signatures";
 import { createHash } from "crypto";
@@ -44,6 +47,7 @@ export class RecruitmentCandidateDocumentsController {
     private readonly vaultService: RecruitmentCandidateVaultService,
     private readonly storage: StorageService,
     private readonly quarantine: FileQuarantineService,
+    private readonly avScanner: AvScanner,
     private readonly audit: AuditService,
   ) {}
 
@@ -77,6 +81,22 @@ export class RecruitmentCandidateDocumentsController {
       throw new BadRequestException("File content does not match declared type");
 
     const { orgId, userId } = u;
+
+    /**
+     * The real scanner, before the bytes are stored. This route called
+     * `markClean` immediately after uploading — with no scan of any kind — and
+     * the vault download then trusted that verdict. Infected is refused; an
+     * unavailable scanner is refused too, because an authenticated recruiter
+     * uploading a file can retry, and a document that reaches the vault
+     * unscanned is one the download route has to decide about later.
+     */
+    const verdict = await this.avScanner.scan(file.buffer, file.originalname, file.mimetype);
+    if (verdict.status === "infected")
+      throw new UnprocessableEntityException(
+        `Upload rejected: malware detected (${verdict.threat})`,
+      );
+    if (verdict.status === "error")
+      throw new ServiceUnavailableException("Malware scan unavailable — upload rejected");
 
     const { key, quarantineId } = await runInTenantTransaction(
       this.db,
@@ -113,12 +133,12 @@ export class RecruitmentCandidateDocumentsController {
           fileSizeBytes: file.size,
           mimeType: file.mimetype,
         });
-        await this.quarantine.markClean(quarantineId);
 
         return { key, quarantineId };
       },
       { orgId },
     );
+    await this.quarantine.markClean(quarantineId);
 
     const doc = await this.vaultService.addVaultDocument(orgId, userId, candidateId, {
       filename: file.originalname,

@@ -68,6 +68,10 @@ import { CronLeaveResetService } from "./cron-leave-reset.service";
 import { CronNotificationsService } from "./cron-notifications.service";
 import { CronProjectsService } from "./cron-projects.service";
 import { CronRecruitmentService } from "./cron-recruitment.service";
+import { CronRecruitmentSequencesService } from "./cron-recruitment-sequences.service";
+import { CronRecruitmentSlaService } from "./cron-recruitment-sla.service";
+import { CronRecruitmentReportsService } from "./cron-recruitment-reports.service";
+import { HrInterviewsModule } from "../hr/interviews/hr-interviews.module";
 import { CronWeeklyRecapService } from "./cron-weekly-recap.service";
 import { CronEmailOutboxService } from "./cron-email-outbox.service";
 import { CronSupportService } from "./cron-support.service";
@@ -114,6 +118,8 @@ import { CronPlatformRetentionController } from "./cron-platform-retention.contr
 
 @Module({
   imports: [
+    /** `HrRecruitmentReportsService` renders what the scheduled-report sweep delivers. */
+    HrInterviewsModule,
     EmploymentFactsModule,
     CalendarModule,
     AutomationModule,
@@ -183,6 +189,9 @@ import { CronPlatformRetentionController } from "./cron-platform-retention.contr
     CronKbService,
     CronProjectsService,
     CronRecruitmentService,
+    CronRecruitmentSequencesService,
+    CronRecruitmentSlaService,
+    CronRecruitmentReportsService,
     CronHrService,
     CronHrDocumentsService,
     CronHrWebhookDispatchService,
