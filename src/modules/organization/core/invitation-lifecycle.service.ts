@@ -38,6 +38,13 @@ import {
   type InviteActor,
 } from "./invitations.helpers";
 
+export interface ReissuedInvitation {
+  success: true;
+  rawToken: string;
+  email: string;
+  expiresAt: Date;
+}
+
 @Injectable()
 export class InvitationLifecycleService {
   constructor(
@@ -56,7 +63,9 @@ export class InvitationLifecycleService {
     orgId: string,
     invitationId: string,
     actor: InviteActor,
-  ): Promise<{ success: true }> {
+    options?: { deliverEmail?: boolean },
+  ): Promise<ReissuedInvitation> {
+    const deliverEmail = options?.deliverEmail ?? true;
     const actorUserId = actor.userId;
     const org = await requireActiveOrg(this.db, orgId);
 
@@ -190,11 +199,15 @@ export class InvitationLifecycleService {
       }
     };
 
-    const registered = registerAfterCommit(sendRenewedInvitation);
-    if (!registered) await sendRenewedInvitation();
+    if (deliverEmail) {
+      const registered = registerAfterCommit(sendRenewedInvitation);
+      if (!registered) await sendRenewedInvitation();
+    }
 
     this.audit.log({
-      action: "user.invitation.resent",
+      action: deliverEmail
+        ? "user.invitation.resent"
+        : "user.invitation.link-reissued",
       userId: actorUserId,
       orgId,
       targetId: invitationId,
@@ -203,7 +216,12 @@ export class InvitationLifecycleService {
     });
 
     await this.cache.invalidateForOrg(orgId, "users:stats");
-    return { success: true };
+    return {
+      success: true,
+      rawToken,
+      email: invitation.email,
+      expiresAt: newExpiresAt,
+    };
   }
 
   async changeRole(

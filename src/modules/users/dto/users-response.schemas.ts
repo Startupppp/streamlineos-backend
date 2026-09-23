@@ -164,6 +164,12 @@ export const bulkInviteResponseSchema = z.object({
 /** `InvitationLifecycleService.resend` / `changeRole` / `cancel` */
 export const invitationMutationResponseSchema = successResponseSchema;
 
+export const invitationJoinLinkResponseSchema = z.object({
+  joinUrl: z.string(),
+  email: z.string(),
+  expiresAt: z.union([z.string(), z.date()]),
+});
+
 // ─── Create / update / delete user ─────────────────────────────────────────
 
 /** `UsersService.createUser` */
