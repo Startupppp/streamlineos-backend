@@ -6441,6 +6441,13 @@
       "when": 1803000010581,
       "tag": "1164_candidate_consent_at",
       "breakpoints": true
+    },
+    {
+      "idx": 1048,
+      "version": "7",
+      "when": 1803000010591,
+      "tag": "1165_kb_page_grants",
+      "breakpoints": true
     }
   ]
 }

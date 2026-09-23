@@ -9,7 +9,7 @@ import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import type { VerifyPageInput } from "./dto/kb-pages.schemas";
 import { computeVerificationInterval } from "./kb-page-governance.util";
 import { KbPageReviewsService } from "./kb-page-reviews.service";
-import { assertPageAccessible } from "../retrieval/kb-page-access.util";
+import { KnowledgeAuthorizationService } from "../core/authorization/knowledge-authorization.service";
 import { actingMembershipId } from "../../../common/auth/principal";
 import { KB_PAGE_COLUMNS, type KbPageRow } from "./kb-page-columns";
 
@@ -20,6 +20,7 @@ export class KbPageStatusService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly reviews: KbPageReviewsService,
+    private readonly auth: KnowledgeAuthorizationService,
   ) {}
 
   private membershipId(user: CurrentUserContext): number | null {
@@ -31,7 +32,7 @@ export class KbPageStatusService {
     pageId: number,
     status: "draft" | "in_review" | "published" | "archived",
   ): Promise<PageRow> {
-    await assertPageAccessible(this.db, user, pageId);
+    await this.auth.assertPageAccess(user, pageId, "edit");
     const orgId = user.orgId;
     const current = await this.db.query.kbPages.findFirst({
       where: and(eq(kbPages.id, pageId), eq(kbPages.orgId, orgId), isNull(kbPages.deletedAt)),
@@ -48,7 +49,7 @@ export class KbPageStatusService {
   }
 
   async lock(user: CurrentUserContext, pageId: number, isLocked: boolean): Promise<PageRow> {
-    await assertPageAccessible(this.db, user, pageId);
+    await this.auth.assertPageAccess(user, pageId, "manage");
     const orgId = user.orgId;
     const [updated] = await this.db
       .update(kbPages)
@@ -60,7 +61,7 @@ export class KbPageStatusService {
   }
 
   async publish(user: CurrentUserContext, pageId: number): Promise<PageRow> {
-    await assertPageAccessible(this.db, user, pageId);
+    await this.auth.assertPageAccess(user, pageId, "edit");
     const orgId = user.orgId;
     const current = await this.db.query.kbPages.findFirst({
       where: and(eq(kbPages.id, pageId), eq(kbPages.orgId, orgId), isNull(kbPages.deletedAt)),
@@ -89,7 +90,7 @@ export class KbPageStatusService {
   }
 
   async archive(user: CurrentUserContext, pageId: number): Promise<PageRow> {
-    await assertPageAccessible(this.db, user, pageId);
+    await this.auth.assertPageAccess(user, pageId, "edit");
     const orgId = user.orgId;
     const current = await this.db.query.kbPages.findFirst({
       where: and(eq(kbPages.id, pageId), eq(kbPages.orgId, orgId), isNull(kbPages.deletedAt)),
@@ -118,7 +119,7 @@ export class KbPageStatusService {
   }
 
   async unarchive(user: CurrentUserContext, pageId: number): Promise<PageRow> {
-    await assertPageAccessible(this.db, user, pageId);
+    await this.auth.assertPageAccess(user, pageId, "edit");
     const orgId = user.orgId;
     const current = await this.db.query.kbPages.findFirst({
       where: and(eq(kbPages.id, pageId), eq(kbPages.orgId, orgId), isNull(kbPages.deletedAt)),
@@ -147,7 +148,7 @@ export class KbPageStatusService {
   }
 
   async verify(user: CurrentUserContext, pageId: number, input: VerifyPageInput): Promise<PageRow> {
-    await assertPageAccessible(this.db, user, pageId);
+    await this.auth.assertPageAccess(user, pageId, "edit");
     const orgId = user.orgId;
     const current = await this.db.query.kbPages.findFirst({
       where: and(eq(kbPages.id, pageId), eq(kbPages.orgId, orgId), isNull(kbPages.deletedAt)),
@@ -178,7 +179,7 @@ export class KbPageStatusService {
   }
 
   async markStale(user: CurrentUserContext, pageId: number): Promise<PageRow> {
-    await assertPageAccessible(this.db, user, pageId);
+    await this.auth.assertPageAccess(user, pageId, "edit");
     const orgId = user.orgId;
     const current = await this.db.query.kbPages.findFirst({
       where: and(eq(kbPages.id, pageId), eq(kbPages.orgId, orgId), isNull(kbPages.deletedAt)),

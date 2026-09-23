@@ -3,6 +3,7 @@ import { NotificationsModule } from "../../notifications/notifications.module";
 import { KbNotificationVisibility } from "./kb-notification-visibility";
 import { KbCreditsService } from "./kb-credits.service";
 import { KbAccessService } from "./kb-access.service";
+import { KnowledgeAuthorizationService } from "./authorization/knowledge-authorization.service";
 import { KbEventsService } from "./kb-events.service";
 import { KbSettingsController } from "./kb-settings.controller";
 import { KbSettingsService } from "./kb-settings.service";
@@ -18,11 +19,12 @@ import { KbTranslationsService } from "./kb-translations.service";
     KbNotificationVisibility,
     KbCreditsService,
     KbAccessService,
+    KnowledgeAuthorizationService,
     KbEventsService,
     KbSettingsService,
     KbTagsService,
     KbTranslationsService,
   ],
-  exports: [KbCreditsService, KbAccessService, KbEventsService, KbSettingsService, KbTagsService, KbTranslationsService],
+  exports: [KbCreditsService, KbAccessService, KnowledgeAuthorizationService, KbEventsService, KbSettingsService, KbTagsService, KbTranslationsService],
 })
 export class KbCoreModule {}

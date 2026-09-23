@@ -6,6 +6,7 @@ export * from "./tags";
 export * from "./events";
 export * from "./credits";
 export * from "./pages";
+export * from "./page-grants";
 export * from "./page-collab";
 export * from "./governance";
 export * from "./sources";
