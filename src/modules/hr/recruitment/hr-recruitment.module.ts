@@ -4,6 +4,7 @@ import { AutomationModule } from "../../automation/automation.module";
 import { AiModule } from "../../ai/core/ai.module";
 import { BillingModule } from "../../billing/core/billing.module";
 import { AccessModule } from "../../access/access.module";
+import { RecruitmentCandidateDocumentsController } from "./recruitment-candidate-documents.controller";
 import { RecruitmentCandidatesController } from "./recruitment-candidates.controller";
 import { RecruitmentPipelineController } from "./recruitment-pipeline.controller";
 import { RecruitmentCandidateRecordsController } from "./recruitment-candidate-records.controller";
@@ -35,10 +36,16 @@ import { RecruitmentRequisitionsService } from "./recruitment-requisitions.servi
 import { RecruitmentJobBoardsService } from "./recruitment-job-boards.service";
 import { RecruitmentTalentPoolsService } from "./recruitment-talent-pools.service";
 import { RecruitmentHandoffService } from "./recruitment-handoff.service";
+import { RecruitmentWebhooksService } from "./webhooks/recruitment-webhooks.service";
+import { HrWebhookDispatchService } from "./webhooks/hr-webhook-dispatch.service";
+import { RecruitmentWebhookEmitter } from "./webhooks/webhook-emitter.service";
+import { RecruitmentOutboxConsumer } from "./webhooks/recruitment-outbox-consumer";
+import { OutboxModule } from "../../../common/outbox/outbox.module";
 
 @Module({
-  imports: [NotificationsModule, AutomationModule, AiModule, BillingModule, AccessModule],
+  imports: [NotificationsModule, AutomationModule, AiModule, BillingModule, AccessModule, OutboxModule],
   controllers: [
+    RecruitmentCandidateDocumentsController,
     RecruitmentCandidatesController,
     RecruitmentPipelineController,
     RecruitmentCandidateRecordsController,
@@ -72,7 +79,11 @@ import { RecruitmentHandoffService } from "./recruitment-handoff.service";
     RecruitmentJobBoardsService,
     RecruitmentTalentPoolsService,
     RecruitmentHandoffService,
+    RecruitmentWebhooksService,
+    HrWebhookDispatchService,
+    RecruitmentWebhookEmitter,
+    RecruitmentOutboxConsumer,
   ],
-  exports: [RecruitmentOffersService, RecruitmentRequisitionsService],
+  exports: [RecruitmentOffersService, RecruitmentRequisitionsService, RecruitmentWebhooksService, HrWebhookDispatchService, RecruitmentOutboxConsumer],
 })
 export class HrRecruitmentModule {}

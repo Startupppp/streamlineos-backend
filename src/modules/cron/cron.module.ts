@@ -26,6 +26,7 @@ import { HrWorkflowsModule } from "../hr/workflows/hr-workflows.module";
 import { HrCoreModule } from "../hr/core/hr-core.module";
 import { HrLifecycleModule } from "../hr/lifecycle/hr-lifecycle.module";
 import { HrGlobalModule } from "../hr/global/hr-global.module";
+import { HrRecruitmentModule } from "../hr/recruitment/hr-recruitment.module";
 import { InvoicesModule } from "../invoices/invoices.module";
 import { AiJobsModule } from "../ai/jobs/ai-jobs.module";
 import { SupportKbGapModule } from "../support/kb-gap";
@@ -108,6 +109,7 @@ import { CronOutboxWorkerService } from "./cron-outbox-worker.service";
 import { CronSweepFailureSinkService } from "./cron-sweep-failure-sink.service";
 import { CronGdprExportRetentionService } from "./cron-gdpr-export-retention.service";
 import { CronHrDocumentsService } from "./cron-hr-documents.service";
+import { CronHrWebhookDispatchService } from "./cron-hr-webhook-dispatch.service";
 import { CronPlatformRetentionController } from "./cron-platform-retention.controller";
 
 @Module({
@@ -129,6 +131,7 @@ import { CronPlatformRetentionController } from "./cron-platform-retention.contr
     HrWorkflowsModule,
     HrCoreModule,
     HrLifecycleModule,
+    HrRecruitmentModule,
     LifecycleTriggersModule,
     RelationshipsModule,
     AutonomyModule,
@@ -182,6 +185,7 @@ import { CronPlatformRetentionController } from "./cron-platform-retention.contr
     CronRecruitmentService,
     CronHrService,
     CronHrDocumentsService,
+    CronHrWebhookDispatchService,
     CronHrEnginesService,
     CronWeeklyRecapService,
     CronEmailOutboxService,

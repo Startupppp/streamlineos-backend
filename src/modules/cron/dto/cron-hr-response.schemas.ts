@@ -104,3 +104,11 @@ export const helpdeskRetentionSweepResponseSchema = z.union([
     truncated: z.boolean(),
   }),
 ]);
+
+export const hrWebhookSweepResponseSchema = z.union([
+  cronSkippedSchema,
+  z.object({
+    success: z.literal(true),
+    message: z.string(),
+  }),
+]);
