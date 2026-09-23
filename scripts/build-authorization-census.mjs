@@ -81,7 +81,7 @@
 
 import { readFileSync, readdirSync, existsSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
 import { join, resolve, dirname, relative } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { tmpdir } from "node:os";
 import { createRequire } from "node:module";
 
@@ -109,7 +109,7 @@ const MUTATING_VERBS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 // anchor — regex re-tested against the named evidence file. Its job is to fail
 //          when the code it describes changes, so a verdict cannot go stale.
 
-const REVIEWED = [
+const REVIEWED_INLINE = [
   {
     key: "modules/build/core/projects-custom-fields.controller.ts#updateField",
     verdict: "CLOSED",
@@ -600,6 +600,34 @@ const REVIEWED = [
     ],
   },
 ];
+
+const LANE_VERDICT_PATTERN = /^census-verdicts-[a-z0-9-]+\.mjs$/;
+
+async function loadLaneVerdicts() {
+  const files = readdirSync(SCRIPT_DIR).filter((f) => LANE_VERDICT_PATTERN.test(f)).sort();
+  const loaded = [];
+  for (const file of files) {
+    const mod = await import(pathToFileURL(join(SCRIPT_DIR, file)).href);
+    const entries = mod.default;
+    if (!Array.isArray(entries))
+      throw new Error(`${file} must 'export default' an array of REVIEWED entries`);
+    for (const entry of entries) loaded.push({ ...entry, laneFile: file });
+  }
+  return loaded;
+}
+
+const REVIEWED = [...REVIEWED_INLINE, ...(await loadLaneVerdicts())];
+
+function assertNoDuplicateVerdicts(reviewed) {
+  const seen = new Map();
+  const clashes = [];
+  for (const entry of reviewed) {
+    const where = entry.laneFile ?? "build-authorization-census.mjs";
+    if (seen.has(entry.key)) clashes.push(`${entry.key}: claimed by both ${seen.get(entry.key)} and ${where}`);
+    else seen.set(entry.key, where);
+  }
+  return clashes;
+}
 
 // ── File walker ──────────────────────────────────────────────────────────────
 
@@ -1642,6 +1670,14 @@ function run(checkOnly) {
     console.error("The walker is not reaching the controller tree; every count below would be vacuous.");
     console.error(`BUILD_MODULE path: ${BUILD_MODULE}`);
     return 2;
+  }
+
+  const duplicateVerdicts = assertNoDuplicateVerdicts(REVIEWED);
+  if (duplicateVerdicts.length) {
+    console.error(`\n${duplicateVerdicts.length} handler(s) carry more than one REVIEWED verdict:\n`);
+    for (const d of duplicateVerdicts) console.error(`  ${d}`);
+    console.error("\nTwo lanes claiming one handler means one of them read it without owning it. Resolve before trusting either.");
+    return 1;
   }
 
   const anchorProblems = validateReviewed();

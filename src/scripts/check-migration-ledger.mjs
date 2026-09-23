@@ -49,7 +49,10 @@ function classify(entries, rows) {
   const skipped = entries.filter((e) => e.when <= watermark && !applied.has(String(e.when)));
   const pending = entries.filter((e) => e.when > watermark);
 
-  return { orphans, duplicates, skipped, pending, watermark };
+  const orphansPinningWatermark = orphans.filter((o) => Number(o.created_at) >= watermark);
+  const orphansBelowWatermark = orphans.filter((o) => Number(o.created_at) < watermark);
+
+  return { orphans, orphansPinningWatermark, orphansBelowWatermark, duplicates, skipped, pending, watermark };
 }
 
 function runSelfTests() {
@@ -78,6 +81,36 @@ function runSelfTests() {
   ]);
   if (withOrphan.orphans.length !== 1) {
     process.stderr.write("SELF-TEST FAIL: known orphan row was not flagged\n");
+    process.exit(1);
+  }
+
+  const orphanBelow = classify(entries, [
+    { id: 1, created_at: 100 },
+    { id: 2, created_at: 150 },
+    { id: 3, created_at: 300 },
+  ]);
+  if (orphanBelow.orphansBelowWatermark.length !== 1 || orphanBelow.orphansPinningWatermark.length !== 0) {
+    process.stderr.write("SELF-TEST FAIL: an orphan under the watermark must be a note, not a failure\n");
+    process.exit(1);
+  }
+
+  const orphanPinning = classify(entries, [
+    { id: 1, created_at: 100 },
+    { id: 2, created_at: 200 },
+    { id: 3, created_at: 999 },
+  ]);
+  if (orphanPinning.orphansPinningWatermark.length !== 1 || orphanPinning.orphansBelowWatermark.length !== 0) {
+    process.stderr.write("SELF-TEST FAIL: an orphan holding the watermark must still be fatal\n");
+    process.exit(1);
+  }
+
+  const orphanBelowStillCatchesSkips = classify(entries, [
+    { id: 1, created_at: 100 },
+    { id: 2, created_at: 150 },
+    { id: 3, created_at: 300 },
+  ]);
+  if (orphanBelowStillCatchesSkips.skipped.length !== 1 || orphanBelowStillCatchesSkips.skipped[0].tag !== "0002_b") {
+    process.stderr.write("SELF-TEST FAIL: noting an orphan must not blind the gate to a stranded entry\n");
     process.exit(1);
   }
 
@@ -121,21 +154,36 @@ if (!url) {
   process.exit(1);
 }
 
-const { default: postgres } = await import("postgres");
-const sql = postgres(url, { prepare: false, max: 1 });
+const { createScriptSql } = await import("./lib/script-sql-client.mjs");
+const sql = await createScriptSql({ url });
 
 try {
   const journal = JSON.parse(readFileSync(JOURNAL, "utf8"));
   const rows = await sql`select id, created_at from drizzle.__drizzle_migrations`;
-  const { orphans, duplicates, skipped, pending, watermark } = classify(journal.entries, rows);
+  const { orphansPinningWatermark, orphansBelowWatermark, duplicates, skipped, pending, watermark } =
+    classify(journal.entries, rows);
 
   process.stdout.write(
     `Ledger: ${rows.length} applied row(s) against ${journal.entries.length} journal entr(ies).\n` +
     `Watermark ${watermark}; ${pending.length} migration(s) pending.\n`,
   );
 
+  if (orphansBelowWatermark.length)
+    process.stdout.write(
+      `\nNOTE [orphan-below-watermark] ${orphansBelowWatermark.length} row(s): ` +
+      `${orphansBelowWatermark.map((o) => `${o.id}@${o.created_at}`).join(", ")}\n` +
+      `  Applied migrations whose journal entry is absent. They cannot strand anything: the watermark is\n` +
+      `  ${watermark}, every one of them is below it, and the skipped check above independently proves no\n` +
+      `  journal entry is unreachable. This becomes fatal the moment one of them holds the watermark,\n` +
+      `  because it would pin the watermark to a migration nobody can find.\n`,
+    );
+
   const failures = [];
-  if (orphans.length) failures.push(`${orphans.length} orphan row(s): ${orphans.map((o) => o.id).join(", ")}`);
+  if (orphansPinningWatermark.length)
+    failures.push(
+      `${orphansPinningWatermark.length} orphan row(s) AT OR ABOVE the watermark, pinning it to a migration with no journal entry: ` +
+      `${orphansPinningWatermark.map((o) => `${o.id}@${o.created_at}`).join(", ")}`,
+    );
   if (duplicates.length) failures.push(`${duplicates.length} duplicate row(s): ${duplicates.map((d) => d.id).join(", ")}`);
   if (skipped.length) failures.push(`${skipped.length} entr(ies) below the watermark that will NEVER apply: ${skipped.map((s) => s.tag).join(", ")}`);
 
@@ -145,7 +193,11 @@ try {
     process.exit(1);
   }
 
-  process.stdout.write("No orphan, duplicate or unreachable entries. Gate passed.\n");
+  process.stdout.write(
+    orphansBelowWatermark.length
+      ? `Gate passed: no duplicate rows, no unreachable entries, and no orphan holds the watermark. ${orphansBelowWatermark.length} orphan row(s) noted above.\n`
+      : "No orphan, duplicate or unreachable entries. Gate passed.\n",
+  );
 } finally {
   await sql.end();
 }

@@ -41,7 +41,12 @@ function sslFor(connectionString) {
   return /[?&]sslmode=disable\b/.test(connectionString) ? false : "require";
 }
 
-const sql = postgres(url, { prepare: false, max: 1, ssl: sslFor(url), onnotice: () => {} });
+const { createScriptSql } = await import("./lib/script-sql-client.mjs");
+const sql = await createScriptSql({
+  url,
+  ssl: sslFor(url),
+  connection: { prepare: false, max: 1, ssl: sslFor(url), onnotice: () => {} },
+});
 
 /**
  * The same search path `db-bootstrap.mjs`, `replay-chain-cold.mjs` and
