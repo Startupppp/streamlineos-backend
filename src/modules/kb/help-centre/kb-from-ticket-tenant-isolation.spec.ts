@@ -29,26 +29,30 @@ describe("KbFromTicketService — cross-tenant isolation", () => {
 
   function makeDb(ticketRow: unknown) {
     const wheres: unknown[] = [];
-    return {
-      db: {
-        query: {
-          supportTickets: {
-            findFirst: jest.fn().mockImplementation((opts: { where?: unknown } = {}) => {
-              wheres.push(opts.where);
-              return Promise.resolve(ticketRow);
-            }),
-          },
-        },
-        select: jest.fn().mockImplementation(() => ({
-          from: jest.fn().mockReturnValue({
-            where: jest.fn().mockReturnValue(Object.assign(Promise.resolve([]), {
-              orderBy: jest.fn().mockResolvedValue([]),
-            })),
+    const tx = {
+      execute: jest.fn().mockResolvedValue([]),
+      query: {
+        supportTickets: {
+          findFirst: jest.fn().mockImplementation((opts: { where?: unknown } = {}) => {
+            wheres.push(opts.where);
+            return Promise.resolve(ticketRow);
           }),
-        })),
-      } as unknown as Db,
-      wheres,
+        },
+      },
+      select: jest.fn().mockImplementation(() => ({
+        from: jest.fn().mockReturnValue({
+          where: jest.fn().mockReturnValue(Object.assign(Promise.resolve([]), {
+            orderBy: jest.fn().mockResolvedValue([]),
+          })),
+        }),
+      })),
     };
+    const db = {
+      transaction: jest.fn().mockImplementation((fn: (tx: unknown) => Promise<unknown>) => fn(tx)),
+      query: tx.query,
+      select: tx.select,
+    } as unknown as Db;
+    return { db, wheres };
   }
 
   it("throws NotFoundException for a ticket in another org (cross-tenant deny)", async () => {
