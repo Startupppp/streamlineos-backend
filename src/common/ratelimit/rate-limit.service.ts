@@ -77,6 +77,7 @@ const TIERS: Record<string, Tier> = {
   "organization:create": { limit: 5, windowSecs: 3600 },
   "invite:validate": { limit: 30, windowSecs: 60 },
   "invite:accept": { limit: 10, windowSecs: 60 },
+  "invite:reissue-link": { limit: 10, windowSecs: 300 },
   "survey:public-view": { limit: 60, windowSecs: 60 },
   "survey:public-start": { limit: 20, windowSecs: 60 },
   "survey:public-submit": { limit: 20, windowSecs: 60 },

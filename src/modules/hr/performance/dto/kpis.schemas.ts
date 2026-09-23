@@ -1,10 +1,6 @@
 import { z } from "zod";
 import { pageSizeField } from "../../../../common/pagination/list-query.schema";
-
-const decimalString = z
-  .string()
-  .trim()
-  .regex(/^\d+(\.\d{1,2})?$/, "Must be a valid decimal number");
+import { decimalString } from "../../../../common/validation/decimal-string.schema";
 
 export const createKpiSchema = z.object({
   name: z

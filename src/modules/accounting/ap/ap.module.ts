@@ -1,8 +1,11 @@
 import { Module } from "@nestjs/common";
 import { AccountingKernelModule } from "../kernel/accounting-kernel.module";
 import { AccountingTaxModule } from "../tax/accounting-tax.module";
+import { PartiesModule } from "../parties/parties.module";
 import { ApAgingController } from "./ap-aging.controller";
 import { ApAgingService } from "./ap-aging.service";
+import { ApDocumentPdfController } from "./ap-document-pdf.controller";
+import { ApDocumentPdfService } from "./ap-document-pdf.service";
 import { ApDocumentsController } from "./ap-documents.controller";
 import { ApDocumentsService } from "./ap-documents.service";
 import { ApPaymentsController } from "./ap-payments.controller";
@@ -23,11 +26,12 @@ import { WithholdingEngineRegistry } from "./withholding/withholding.registry";
  * Registration in `app.module.ts` is deliberately not done here.
  */
 @Module({
-  imports: [AccountingKernelModule, AccountingTaxModule],
-  controllers: [ApDocumentsController, ApPaymentsController, ApAgingController],
+  imports: [AccountingKernelModule, AccountingTaxModule, PartiesModule],
+  controllers: [ApDocumentsController, ApDocumentPdfController, ApPaymentsController, ApAgingController],
   providers: [
     WithholdingEngineRegistry,
     ApDocumentsService,
+    ApDocumentPdfService,
     ApPaymentsService,
     ApAgingService,
   ],

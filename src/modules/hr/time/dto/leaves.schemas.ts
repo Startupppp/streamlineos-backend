@@ -1,4 +1,9 @@
 import { z } from "zod";
+import {
+  DECIMAL_STRING_PATTERN,
+  optionalDecimalString,
+  optionalNonEmptyString,
+} from "../../../../common/validation/decimal-string.schema";
 import { pageSizeField } from "../../../../common/pagination/list-query.schema";
 
 export const leaveAnalyticsQuerySchema = z.object({
@@ -129,18 +134,22 @@ export type UpdateLeaveTypeInput = z.infer<typeof updateLeaveTypeSchema>;
 
 export const createLeavePolicySchema = z.object({
   leaveTypeId: z.number().int().positive(),
-  name: z.string().min(1).max(200),
-  accrualType: z.string().optional(),
-  accrualRate: z.string().min(1),
-  maxBalance: z.string().optional(),
-  carryForwardDays: z.string().optional(),
+  name: z.string().trim().min(1, "Policy name is required").max(200),
+  accrualType: optionalNonEmptyString,
+  accrualRate: z
+    .string()
+    .trim()
+    .min(1, "Accrual rate is required")
+    .regex(DECIMAL_STRING_PATTERN, "Accrual rate must be a number of days, like 2 or 1.5"),
+  maxBalance: optionalDecimalString,
+  carryForwardDays: optionalDecimalString,
   carryForwardExpiryMonths: z.number().int().positive().optional(),
   encashable: z.boolean().optional(),
   probationRestricted: z.boolean().optional(),
-  genderRestriction: z.string().optional(),
-  appliesTo: z.string().optional(),
-  effectiveFrom: z.string().min(1),
-  effectiveTo: z.string().optional(),
+  genderRestriction: optionalNonEmptyString,
+  appliesTo: optionalNonEmptyString,
+  effectiveFrom: z.string().trim().min(1, "Effective from date is required"),
+  effectiveTo: optionalNonEmptyString,
   isActive: z.boolean().optional(),
 });
 
