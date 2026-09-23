@@ -9,6 +9,15 @@ import { CACHE_TTL } from "../../../common/cache/cache-keys";
 import type { DiversityReportQueryInput } from "./dto/candidates.schemas";
 
 const PIPELINE_STAGES = ["NEW", "SCREENING", "INTERVIEW", "OFFER", "HIRED", "REJECTED"] as const;
+
+/**
+ * How many cards a column carries. The board is a drag surface, not a list, so
+ * this stays a cap rather than becoming a cursor — but a column that holds more
+ * than this now SAYS so (`truncated`, `shown`), because reporting `total: 812`
+ * over 50 rendered cards told the recruiter the other 762 were on screen
+ * somewhere. The candidates list at `/hr/recruitment/candidates` is the paged
+ * surface, and the board points at it.
+ */
 const STAGE_CANDIDATE_LIMIT = 50;
 const SLA_READ_LIMIT = 1000;
 
@@ -73,6 +82,8 @@ export class RecruitmentPipelineService {
     const stages = PIPELINE_STAGES.map((stage, index) => ({
       stage,
       total: totals.get(stage) ?? 0,
+      shown: stageCandidates[index].length,
+      truncated: (totals.get(stage) ?? 0) > stageCandidates[index].length,
       candidates: stageCandidates[index].map((c) => {
         const latestApp = c.applications?.[0] ?? null;
         return {

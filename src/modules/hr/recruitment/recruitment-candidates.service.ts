@@ -13,7 +13,9 @@ import {
   interviews,
   organizations,
 } from "../../../db/schema";
+import { randomUUID } from "node:crypto";
 import { buildCursorPage, decodeCursor } from "../../../common/pagination/cursor";
+import { OutboxWriter } from "../../../common/outbox/outbox-writer";
 import { keysetBeforeId } from "../../../common/pagination/keyset";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
@@ -381,6 +383,60 @@ export class RecruitmentCandidatesService {
           target: [candidateSlaTracking.candidateId, candidateSlaTracking.stage],
           set: { enteredAt: new Date(), breachedAt: null, status: "ON_TRACK", updatedAt: new Date() },
         });
+
+      /**
+       * The application follows the card. These were two unrelated stories:
+       * the recruiter moved the candidate to Interview and the candidate's own
+       * `/application-status/:token` page still said "Applied", for the whole
+       * pipeline. Same transaction, so they cannot disagree again.
+       */
+      const latestApplication = await tx.query.candidateApplications.findFirst({
+        where: and(
+          eq(candidateApplications.orgId, orgId),
+          eq(candidateApplications.candidateId, candidateId),
+        ),
+        columns: { id: true, jobPostingId: true },
+        orderBy: (t, { desc: d }) => [d(t.appliedAt)],
+      });
+      const applicationStatus = APPLICATION_STATUS_FOR_STAGE[newStage];
+      if (latestApplication && applicationStatus)
+        await tx
+          .update(candidateApplications)
+          .set({ status: applicationStatus, updatedAt: new Date() })
+          .where(
+            and(
+              eq(candidateApplications.id, latestApplication.id),
+              eq(candidateApplications.orgId, orgId),
+            ),
+          );
+
+      /**
+       * The webhook consumer and the delivery cron were built for these names
+       * and nothing emitted them, so a tenant could subscribe to
+       * `candidate.moved` and never receive one. `candidate.hired` is the same
+       * event an offer acceptance emits — consumers dedupe on event id, which
+       * is why both may legitimately fire for one hire.
+       */
+      await OutboxWriter.emit(tx, {
+        eventId: randomUUID(),
+        organizationId: orgId,
+        aggregateType: "candidate",
+        aggregateId: String(candidateId),
+        aggregateVersion: 1,
+        eventType:
+          newStage === "REJECTED"
+            ? "candidate.rejected"
+            : newStage === "HIRED"
+              ? "candidate.hired"
+              : "candidate.moved",
+        payload: {
+          candidateId,
+          jobPostingId: latestApplication?.jobPostingId ?? null,
+          fromStage: currentStage,
+          toStage: newStage,
+        },
+        occurredAt: new Date(),
+      });
 
       return [row];
     });
