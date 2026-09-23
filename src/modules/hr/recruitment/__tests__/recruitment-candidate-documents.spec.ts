@@ -1,8 +1,8 @@
 import { RecruitmentCandidateDocumentsController } from "../recruitment-candidate-documents.controller";
 import { RecruitmentCandidateVaultService } from "../recruitment-candidate-vault.service";
-import { StorageService } from "../../storage/storage.service";
-import { FileQuarantineService } from "../../storage/file-quarantine.service";
-import { AuditService } from "../../../common/audit/audit.service";
+import { StorageService } from "../../../storage/storage.service";
+import { FileQuarantineService } from "../../../storage/file-quarantine.service";
+import { AuditService } from "../../../../common/audit/audit.service";
 import { BadRequestException } from "@nestjs/common";
 import { runInTenantTransaction } from "../../../../common/tenant/run-in-tenant-transaction";
 
@@ -53,7 +53,7 @@ describe("RecruitmentCandidateDocumentsController", () => {
       size: 1024,
     } as Express.Multer.File;
 
-    storage.planUpload.mockResolvedValue({ key: "path/to/file" });
+    storage.planUpload.mockResolvedValue({ key: "path/to/file", plannedMimeType: "application/pdf" });
     storage.getFileUrl.mockResolvedValue("http://s3.com/file");
     quarantine.begin.mockResolvedValue("quarantine-id");
     vaultService.addVaultDocument.mockResolvedValue({ id: 1 } as any);
