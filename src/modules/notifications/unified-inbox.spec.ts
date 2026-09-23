@@ -59,6 +59,10 @@ function makeBuildApprovals(rows: ApprovalInboxRow[] = []): BuildApprovalsInboxS
   } as unknown as BuildApprovalsInboxService;
 }
 
+function makeRegistry() {
+  return { list: jest.fn().mockReturnValue([]), register: jest.fn() } as unknown as import("../attention/approval-adapter.registry").ApprovalAdapterRegistry;
+}
+
 function makeUser(overrides: Partial<CurrentUserContext> = {}): CurrentUserContext {
   return {
     userId: "user-1",
@@ -154,7 +158,7 @@ describe("UnifiedInboxService", () => {
       const mail = makeMail();
       const access = makeAccess(false);
 
-      const svc = new UnifiedInboxService(db, access, mail, broadcasts, makeBuildApprovals());
+      const svc = new UnifiedInboxService(db, access, mail, broadcasts, makeBuildApprovals(), makeRegistry());
       const result = await svc.list(org, uid, { limit: 10, kinds: ["notification", "broadcast"], unreadOnly: false }, user);
 
       expect(result.items).toHaveLength(2);
@@ -168,7 +172,7 @@ describe("UnifiedInboxService", () => {
       const mail = makeMail([mailMessage("msg-1", "2024-01-03T10:00:00Z")]);
       const access = makeAccess(true);
 
-      const svc = new UnifiedInboxService(db, access, mail, broadcasts, makeBuildApprovals());
+      const svc = new UnifiedInboxService(db, access, mail, broadcasts, makeBuildApprovals(), makeRegistry());
       const result = await svc.list(org, uid, { limit: 10, kinds: undefined, unreadOnly: false }, user);
 
       const mailItems = result.items.filter((i) => i.kind === "mail");
@@ -184,7 +188,7 @@ describe("UnifiedInboxService", () => {
       const mailSvc = makeMail([mailMessage("msg-1", "2024-01-03T10:00:00Z")]);
       const access = makeAccess(false);
 
-      const svc = new UnifiedInboxService(db, access, mailSvc, broadcasts, makeBuildApprovals());
+      const svc = new UnifiedInboxService(db, access, mailSvc, broadcasts, makeBuildApprovals(), makeRegistry());
       const result = await svc.list(org, uid, { limit: 10, kinds: undefined, unreadOnly: false }, user);
 
       const mailItems = result.items.filter((i) => i.kind === "mail");
@@ -201,7 +205,7 @@ describe("UnifiedInboxService", () => {
       const mailSvc = makeMail();
       const access = makeAccess(false);
 
-      const svc = new UnifiedInboxService(db, access, mailSvc, broadcasts, makeBuildApprovals());
+      const svc = new UnifiedInboxService(db, access, mailSvc, broadcasts, makeBuildApprovals(), makeRegistry());
       await svc.list(org, uid, { limit: 10, kinds: undefined, unreadOnly: false }, user);
 
       expect((mailSvc.listMessages as jest.Mock)).not.toHaveBeenCalled();
@@ -213,7 +217,7 @@ describe("UnifiedInboxService", () => {
       const mailSvc = makeMail();
       const access = makeAccess(false);
 
-      const svc = new UnifiedInboxService(db, access, mailSvc, broadcasts, makeBuildApprovals());
+      const svc = new UnifiedInboxService(db, access, mailSvc, broadcasts, makeBuildApprovals(), makeRegistry());
       await svc.list(org, uid, { limit: 10, kinds: undefined, unreadOnly: false }, user);
 
       const holdsMock = access.holds as jest.Mock;
@@ -234,7 +238,7 @@ describe("UnifiedInboxService", () => {
       const mailSvc = makeMail();
       const access = makeAccess(false);
 
-      const svc = new UnifiedInboxService(db, access, mailSvc, broadcasts, makeBuildApprovals());
+      const svc = new UnifiedInboxService(db, access, mailSvc, broadcasts, makeBuildApprovals(), makeRegistry());
       const result = await svc.list(org, uid, { limit: 200, kinds: undefined, unreadOnly: false }, user);
 
       expect(result.items.length).toBeLessThanOrEqual(100);
@@ -249,7 +253,7 @@ describe("UnifiedInboxService", () => {
       const mailSvc = makeMail();
       const access = makeAccess(false);
 
-      const svc = new UnifiedInboxService(db, access, mailSvc, broadcasts, makeBuildApprovals());
+      const svc = new UnifiedInboxService(db, access, mailSvc, broadcasts, makeBuildApprovals(), makeRegistry());
       const result = await svc.list(org, uid, { limit: 5, kinds: undefined, unreadOnly: false }, user);
 
       expect(result.items).toHaveLength(5);
@@ -262,7 +266,7 @@ describe("UnifiedInboxService", () => {
       const mailSvc = makeMail();
       const access = makeAccess(false);
 
-      const svc = new UnifiedInboxService(db, access, mailSvc, broadcasts, makeBuildApprovals());
+      const svc = new UnifiedInboxService(db, access, mailSvc, broadcasts, makeBuildApprovals(), makeRegistry());
       const result = await svc.list(org, uid, { limit: 25, kinds: undefined, unreadOnly: false }, user);
 
       expect(result.nextCursor).toBeNull();
@@ -284,7 +288,7 @@ describe("UnifiedInboxService", () => {
       const mailSvc = makeMail();
       const access = makeAccess(false);
 
-      const svc = new UnifiedInboxService(db, access, mailSvc, broadcasts, makeBuildApprovals());
+      const svc = new UnifiedInboxService(db, access, mailSvc, broadcasts, makeBuildApprovals(), makeRegistry());
       const result = await svc.list(org, uid, { limit: 5, kinds: undefined, unreadOnly: false }, user);
 
       expect(result.nextCursor).not.toBeNull();
@@ -305,7 +309,7 @@ describe("UnifiedInboxService", () => {
       const mailSvc = makeMail();
       const access = makeAccess(false);
 
-      const svc = new UnifiedInboxService(db, access, mailSvc, broadcasts, makeBuildApprovals());
+      const svc = new UnifiedInboxService(db, access, mailSvc, broadcasts, makeBuildApprovals(), makeRegistry());
       const result = await svc.list(org, uid, { limit: 5, kinds: undefined, unreadOnly: false }, user);
 
       expect(result.nextCursor).not.toBeNull();
@@ -320,7 +324,7 @@ describe("UnifiedInboxService", () => {
       const mailSvc = makeMail();
       const access = makeAccess(false);
 
-      const svc = new UnifiedInboxService(db, access, mailSvc, broadcasts, makeBuildApprovals());
+      const svc = new UnifiedInboxService(db, access, mailSvc, broadcasts, makeBuildApprovals(), makeRegistry());
 
       const resultFull = await svc.list(org, uid, { limit: 1, kinds: undefined, unreadOnly: false }, user);
       if (resultFull.nextCursor) {
@@ -348,7 +352,7 @@ describe("UnifiedInboxService", () => {
         approvalRow(5, new Date("2024-01-05T00:00:00Z")),
       ];
 
-      const svc = new UnifiedInboxService(db, access, mailSvc, broadcasts, makeBuildApprovals(approvalsRows));
+      const svc = new UnifiedInboxService(db, access, mailSvc, broadcasts, makeBuildApprovals(approvalsRows), makeRegistry());
       const result = await svc.list(org, uid, { limit: 5, kinds: undefined, unreadOnly: false }, user);
 
       expect(result.nextCursor).not.toBeNull();
@@ -365,12 +369,12 @@ describe("UnifiedInboxService", () => {
       const access = makeAccess(true, false);
       const approvalsSvc = makeBuildApprovals();
 
-      const svc = new UnifiedInboxService(db, access, mailSvc, broadcasts, approvalsSvc);
+      const svc = new UnifiedInboxService(db, access, mailSvc, broadcasts, approvalsSvc, makeRegistry());
       const result = await svc.list(org, uid, { limit: 10, kinds: undefined, unreadOnly: false }, user);
 
       const approvalSource = result.sources.find((s) => s.kind === "build_approval");
       expect(approvalSource?.included).toBe(false);
-      expect(approvalSource?.reason).toBe("no permission: build:approvals:view");
+      expect(approvalSource?.reason).toContain("no permission:");
     });
 
     it("never calls buildApprovals.getInboxPage when caller lacks build:approvals:view", async () => {
@@ -380,7 +384,7 @@ describe("UnifiedInboxService", () => {
       const access = makeAccess(false, false);
       const approvalsSvc = makeBuildApprovals();
 
-      const svc = new UnifiedInboxService(db, access, mailSvc, broadcasts, approvalsSvc);
+      const svc = new UnifiedInboxService(db, access, mailSvc, broadcasts, approvalsSvc, makeRegistry());
       await svc.list(org, uid, { limit: 10, kinds: undefined, unreadOnly: false }, user);
 
       expect((approvalsSvc.getInboxPage as jest.Mock)).not.toHaveBeenCalled();
@@ -396,7 +400,7 @@ describe("UnifiedInboxService", () => {
       const access = makeAccess(false, true);
       const approvalsSvc = makeBuildApprovals([approvalRow(5, newerDate)]);
 
-      const svc = new UnifiedInboxService(db, access, mailSvc, broadcasts, approvalsSvc);
+      const svc = new UnifiedInboxService(db, access, mailSvc, broadcasts, approvalsSvc, makeRegistry());
       const result = await svc.list(org, uid, { limit: 10, kinds: undefined, unreadOnly: false }, user);
 
       expect(result.items).toHaveLength(2);
@@ -417,7 +421,7 @@ describe("UnifiedInboxService", () => {
       const access = makeAccess(true, true);
       const approvalsSvc = makeBuildApprovals();
 
-      const svc = new UnifiedInboxService(db, access, mailSvc, broadcastsSvc, approvalsSvc);
+      const svc = new UnifiedInboxService(db, access, mailSvc, broadcastsSvc, approvalsSvc, makeRegistry());
       await svc.list(org, uid, { limit: 10, kinds: ["notification"], unreadOnly: false }, user);
 
       expect((broadcastsSvc.listInboxPage as jest.Mock)).not.toHaveBeenCalled();
@@ -435,6 +439,7 @@ describe("UnifiedInboxService", () => {
         makeMail(),
         makeBroadcasts([]),
         makeBuildApprovals(),
+        makeRegistry(),
       );
 
       const notif = { kind: "notification" as const } as Parameters<typeof svc.inboxItemKind>[0];

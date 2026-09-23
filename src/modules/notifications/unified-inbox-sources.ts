@@ -30,6 +30,7 @@ import type {
   NotificationInboxItem,
 } from "./dto/unified-inbox.schemas";
 
+import type { ApprovalSourceAdapter } from "../attention/approval-adapter.registry";
 export type { ApprovalSourceAdapter } from "../attention/approval-adapter.registry";
 
 export type InboxTriage = "active" | "later" | "done";

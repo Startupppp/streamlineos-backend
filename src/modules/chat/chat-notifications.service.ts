@@ -243,17 +243,22 @@ export class ChatNotificationsService {
       reportFailures("notification:mention", channelId, delivered);
     }
 
-    await this.dispatch.emitNow({
-      eventKey: "chat.message.mention",
-      orgId,
-      actorUserId: message.senderUserId ?? undefined,
-      targetUserIds: recipients,
-      channels: ["IN_APP"],
-      entityType: "chat_message",
-      entityId: String(message.id),
-      link: `/chat?channel=${channelId}&message=${message.id}`,
-      replayKey: idempotencyKey ? `${idempotencyKey}:inbox` : undefined,
-    });
+    const inboxRecipients = message.senderUserId
+      ? recipients.filter((id) => id !== message.senderUserId)
+      : recipients;
+    if (inboxRecipients.length > 0) {
+      await this.dispatch.emitNow({
+        eventKey: "chat.message.mention",
+        orgId,
+        actorUserId: message.senderUserId ?? undefined,
+        targetUserIds: inboxRecipients,
+        channels: ["IN_APP"],
+        entityType: "chat_message",
+        entityId: String(message.id),
+        link: `/chat?channel=${channelId}&message=${message.id}`,
+        replayKey: idempotencyKey ? `${idempotencyKey}:inbox` : undefined,
+      });
+    }
   }
 
   async publishThreadReplyInboxNotification(

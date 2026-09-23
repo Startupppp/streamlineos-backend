@@ -50,9 +50,11 @@ import { AttendanceDraftService } from "./attendance/attendance-draft.service";
 import { EmploymentFactsModule } from "../../directory/employment-facts.module";
 import { TimesheetApprovalRoutingService } from "./approval-routing.service";
 import { TimesheetApprovalEscalationSweepService } from "./approval-escalation-sweep.service";
+import { AttentionModule } from "../../attention/attention.module";
+import { TimesheetApprovalAdapter } from "./timesheet-approval.adapter";
 
 @Module({
-  imports: [AiModule, AccountingKernelModule, NotificationsModule, OutboxModule, WebhooksModule, EmploymentFactsModule],
+  imports: [AiModule, AccountingKernelModule, NotificationsModule, OutboxModule, WebhooksModule, EmploymentFactsModule, AttentionModule],
   controllers: [
     EntriesController,
     TimerController,
@@ -100,6 +102,7 @@ import { TimesheetApprovalEscalationSweepService } from "./approval-escalation-s
     TimesheetLifecycleConsumer,
     AttendanceDraftService,
     { provide: TIMESHEET_ATTENDANCE_PORT, useClass: SchemaAttendanceAdapter },
+    TimesheetApprovalAdapter,
   ],
   exports: [
     SettingsService,

@@ -179,7 +179,8 @@ export async function runDeferredFanout(
       }),
     );
 
-  if (message.replyToId !== null)
+  if (message.replyToId !== null) {
+    const replyToId = message.replyToId;
     tasks.push(
       runEffect("thread_reply_inbox", () =>
         notifications.publishThreadReplyInboxNotification(
@@ -187,7 +188,7 @@ export async function runDeferredFanout(
           channelId,
           {
             id: message.id,
-            replyToId: message.replyToId,
+            replyToId,
             senderUserId: input.senderUserId ?? null,
           },
           `${idempotencyKey}:thread_reply_inbox`,
@@ -210,6 +211,7 @@ export async function runDeferredFanout(
         failures.push(err);
       }),
     );
+  }
 
   await Promise.all(tasks);
   if (failures.length > 0) {

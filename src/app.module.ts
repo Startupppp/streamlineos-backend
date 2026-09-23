@@ -35,6 +35,7 @@ import { GoalsModule } from "./modules/goals/goals.module";
 import { TasksModule } from "./modules/tasks/tasks.module";
 import { PlatformModule } from "./modules/platform/platform.module";
 import { NotificationsModule } from "./modules/notifications/notifications.module";
+import { AttentionModule } from "./modules/attention/attention.module";
 import { PushModule } from "./modules/push/push.module";
 import { QuotesModule } from "./modules/quotes/quotes.module";
 import { ReportsModule } from "./modules/reports/reports.module";
@@ -146,6 +147,7 @@ import { BuildAgentPulseModule } from "./modules/build/agent-pulse/build-agent-p
     TasksModule,
     PlatformModule,
     NotificationsModule,
+    AttentionModule,
     PushModule,
     QuotesModule,
     CustomerExecutiveModule,

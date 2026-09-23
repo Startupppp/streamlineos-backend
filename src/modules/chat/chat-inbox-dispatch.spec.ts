@@ -17,10 +17,11 @@ const DISPATCH_RESULT = {
 };
 
 function makeDb() {
-  const chain: Record<string, unknown> = {};
-  for (const method of ["from", "innerJoin", "where", "limit"])
+  const chain = {} as Record<string, jest.Mock>;
+  for (const method of ["from", "innerJoin", "where"])
     chain[method] = jest.fn(() => chain);
   chain.select = jest.fn(() => chain);
+  chain.limit = jest.fn().mockResolvedValue([]);
   return chain;
 }
 
@@ -192,7 +193,7 @@ describe("ChatNotificationsService — inbox dispatch for thread replies", () =>
   });
 
   it("notifies the parent message author when someone replies to their message", async () => {
-    db.where.mockResolvedValueOnce([{ userId: "author-1", notificationPreference: "ALL", mutedUntil: null }]);
+    db.limit.mockResolvedValueOnce([{ userId: "author-1", notificationPreference: "ALL", mutedUntil: null }]);
     await service.publishThreadReplyInboxNotification("org-1", 7, { id: 99, replyToId: 55, senderUserId: "sender-1" });
     expect(mockDispatch.emitNow).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -208,31 +209,31 @@ describe("ChatNotificationsService — inbox dispatch for thread replies", () =>
   });
 
   it("does not notify when the sender replies to their own message", async () => {
-    db.where.mockResolvedValueOnce([{ userId: "sender-1", notificationPreference: "ALL", mutedUntil: null }]);
+    db.limit.mockResolvedValueOnce([{ userId: "sender-1", notificationPreference: "ALL", mutedUntil: null }]);
     await service.publishThreadReplyInboxNotification("org-1", 7, { id: 99, replyToId: 55, senderUserId: "sender-1" });
     expect(mockDispatch.emitNow).not.toHaveBeenCalled();
   });
 
   it("does not notify when the parent author has muted the channel", async () => {
-    db.where.mockResolvedValueOnce([{ userId: "author-1", notificationPreference: "ALL", mutedUntil: new Date(Date.now() + 3_600_000) }]);
+    db.limit.mockResolvedValueOnce([{ userId: "author-1", notificationPreference: "ALL", mutedUntil: new Date(Date.now() + 3_600_000) }]);
     await service.publishThreadReplyInboxNotification("org-1", 7, { id: 99, replyToId: 55, senderUserId: "sender-1" });
     expect(mockDispatch.emitNow).not.toHaveBeenCalled();
   });
 
   it("does not notify when the parent author has preference NOTHING", async () => {
-    db.where.mockResolvedValueOnce([{ userId: "author-1", notificationPreference: "NOTHING", mutedUntil: null }]);
+    db.limit.mockResolvedValueOnce([{ userId: "author-1", notificationPreference: "NOTHING", mutedUntil: null }]);
     await service.publishThreadReplyInboxNotification("org-1", 7, { id: 99, replyToId: 55, senderUserId: "sender-1" });
     expect(mockDispatch.emitNow).not.toHaveBeenCalled();
   });
 
   it("does nothing when the parent message has no known author (deleted membership)", async () => {
-    db.where.mockResolvedValueOnce([]);
+    db.limit.mockResolvedValueOnce([]);
     await service.publishThreadReplyInboxNotification("org-1", 7, { id: 99, replyToId: 55, senderUserId: "sender-1" });
     expect(mockDispatch.emitNow).not.toHaveBeenCalled();
   });
 
   it("passes idempotency replayKey for thread reply inbox", async () => {
-    db.where.mockResolvedValueOnce([{ userId: "author-1", notificationPreference: "ALL", mutedUntil: null }]);
+    db.limit.mockResolvedValueOnce([{ userId: "author-1", notificationPreference: "ALL", mutedUntil: null }]);
     await service.publishThreadReplyInboxNotification("org-1", 7, { id: 99, replyToId: 55, senderUserId: "sender-1" }, "fanout-key-1:thread_reply_inbox");
     expect(mockDispatch.emitNow).toHaveBeenCalledWith(
       expect.objectContaining({ replayKey: "fanout-key-1:thread_reply_inbox:inbox" }),
@@ -240,7 +241,7 @@ describe("ChatNotificationsService — inbox dispatch for thread replies", () =>
   });
 
   it("restricts thread reply to IN_APP channel only", async () => {
-    db.where.mockResolvedValueOnce([{ userId: "author-1", notificationPreference: "ALL", mutedUntil: null }]);
+    db.limit.mockResolvedValueOnce([{ userId: "author-1", notificationPreference: "ALL", mutedUntil: null }]);
     await service.publishThreadReplyInboxNotification("org-1", 7, { id: 99, replyToId: 55, senderUserId: "sender-1" });
     const call = mockDispatch.emitNow.mock.calls[0]?.[0] as { channels?: string[] } | undefined;
     expect(call?.channels).toEqual(["IN_APP"]);
