@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, HttpCode, Param, ParseIntPipe, Patch, Post, UseGuards } from "@nestjs/common";
+import { Body, Controller, Delete, Get, HttpCode, Param, ParseIntPipe, Patch, Post, Query, UseGuards } from "@nestjs/common";
 import { JwtAuthGuard } from "../../../common/auth/jwt-auth.guard";
 import { PermissionGuard } from "../../access/permission.guard";
 import { RequirePermission } from "../../access/require-permission.decorator";
@@ -6,11 +6,14 @@ import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { ProjectsAutomationsService } from "./projects-automations.service";
+import { BuildAutomationRunHistoryService } from "./build-automation-run-history.service";
 import {
   createAutomationSchema,
   updateAutomationSchema,
+  listAutomationRunsQuerySchema,
   type CreateAutomationInput,
   type UpdateAutomationInput,
+  type ListAutomationRunsQuery,
 } from "./dto/automation.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
 import { z } from "zod";
@@ -18,6 +21,7 @@ import { NoContentResponse, ResponseSchema } from "../../../common/openapi/zod-o
 import {
   projectAutomationListItemSchema,
   projectAutomationRowSchema,
+  automationRunListSchema,
 } from "./dto/build-core-response.schemas";
 
 const projectIdParams = z.object({ projectId: z.coerce.number().int().positive() }).strict();
@@ -27,7 +31,10 @@ const projectIdautomationIdParams = z.object({ projectId: z.coerce.number().int(
 @Controller("build")
 @UseGuards(JwtAuthGuard, PermissionGuard)
 export class ProjectsAutomationsController {
-  constructor(private readonly automations: ProjectsAutomationsService) {}
+  constructor(
+    private readonly automations: ProjectsAutomationsService,
+    private readonly runHistory: BuildAutomationRunHistoryService,
+  ) {}
 
   @Get(":projectId/automations")
   @RequirePermission("build:view")
@@ -38,6 +45,24 @@ export class ProjectsAutomationsController {
     @CurrentUser() u: CurrentUserContext,
   ) {
     return this.automations.listAutomations(u, projectId);
+  }
+
+  /**
+   * Phase 5 read surface: automation run history, cursor-paginated (BE-24/25),
+   * permission-gated on the same `build:view` key `list()` above already uses
+   * for the automation rules themselves — run history is visibility into what
+   * those rules did, not a distinct resource with its own permission key.
+   */
+  @Get(":projectId/automations/runs")
+  @RequirePermission("build:view")
+  @ResponseSchema(automationRunListSchema)
+  @Validate({ params: projectIdParams, query: listAutomationRunsQuerySchema })
+  listRuns(
+    @Param("projectId", ParseIntPipe) projectId: number,
+    @Query() query: ListAutomationRunsQuery,
+    @CurrentUser() u: CurrentUserContext,
+  ) {
+    return this.runHistory.listRuns(u, projectId, query);
   }
 
   @Post(":projectId/automations")
