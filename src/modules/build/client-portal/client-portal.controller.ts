@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  ForbiddenException,
   Get,
   HttpCode,
   Param,
@@ -14,6 +15,7 @@ import { RequirePermission } from "../../access/require-permission.decorator";
 import { RequireModule } from "../../../common/rbac/require-module.decorator";
 import { CurrentUser } from "../../../common/auth/current-user.decorator";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { actingMembershipId } from "../../../common/auth/principal";
 import { ClientPortalService } from "./client-portal.service";
 import { createPortalCrSchema, type CreatePortalCrInput } from "./dto/client-portal.schemas";
 import { Validate } from "../../../common/validation/validate.decorator";
@@ -37,7 +39,9 @@ export class ClientPortalController {
   @RequirePermission("build:portal:view")
   @ResponseSchema(z.array(portalProjectItemSchema))
   listPortalProjects(@CurrentUser() u: CurrentUserContext) {
-    return this.svc.listPortalProjects(u.orgId);
+    const membershipId = actingMembershipId(u.principal);
+    if (!membershipId) throw new ForbiddenException("No membership context");
+    return this.svc.listPortalProjects(u.orgId, membershipId);
   }
 
   @Get("projects/:projectId/overview")

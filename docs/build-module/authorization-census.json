@@ -715,7 +715,7 @@
       "file": "src/modules/build/client-portal/client-portal.controller.ts",
       "class": "ClientPortalController",
       "method": "listPortalProjects",
-      "line": 36,
+      "line": 38,
       "verb": "GET",
       "path": "/build/portal/projects",
       "routeParams": [],
@@ -733,20 +733,20 @@
       "idempotent": null,
       "mutating": false,
       "service": {
-        "call": "this.svc.listPortalProjects(u.orgId)",
+        "call": "this.svc.listPortalProjects(u.orgId, membershipId)",
         "type": "ClientPortalService",
         "file": "src/modules/build/client-portal/client-portal.service.ts",
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/client-portal/client-portal.service.ts:79",
+      "orgEvidence": "src/modules/build/client-portal/client-portal.service.ts:95",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
       "leads": [],
       "notes": [],
       "verdict": "VERIFIED",
       "verdictReason": "guard chain complete, org scoping bound, params declared, no nested parent",
-      "evidence": "src/modules/build/client-portal/client-portal.controller.ts:36",
+      "evidence": "src/modules/build/client-portal/client-portal.controller.ts:38",
       "reviewedEvidence": null
     },
     {
@@ -754,7 +754,7 @@
       "file": "src/modules/build/client-portal/client-portal.controller.ts",
       "class": "ClientPortalController",
       "method": "getProjectOverview",
-      "line": 43,
+      "line": 47,
       "verb": "GET",
       "path": "/build/portal/projects/:projectId/overview",
       "routeParams": [
@@ -782,14 +782,14 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/client-portal/client-portal.service.ts:110",
+      "orgEvidence": "src/modules/build/client-portal/client-portal.service.ts:130",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
       "leads": [],
       "notes": [],
       "verdict": "VERIFIED",
       "verdictReason": "guard chain complete, org scoping bound, params declared, no nested parent",
-      "evidence": "src/modules/build/client-portal/client-portal.controller.ts:43",
+      "evidence": "src/modules/build/client-portal/client-portal.controller.ts:47",
       "reviewedEvidence": null
     },
     {
@@ -797,7 +797,7 @@
       "file": "src/modules/build/client-portal/client-portal.controller.ts",
       "class": "ClientPortalController",
       "method": "listPortalChangeRequests",
-      "line": 54,
+      "line": 58,
       "verb": "GET",
       "path": "/build/portal/projects/:projectId/change-requests",
       "routeParams": [
@@ -825,14 +825,14 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/client-portal/client-portal.service.ts:253",
+      "orgEvidence": "src/modules/build/client-portal/client-portal.service.ts:273",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
       "leads": [],
       "notes": [],
       "verdict": "VERIFIED",
       "verdictReason": "guard chain complete, org scoping bound, params declared, no nested parent",
-      "evidence": "src/modules/build/client-portal/client-portal.controller.ts:54",
+      "evidence": "src/modules/build/client-portal/client-portal.controller.ts:58",
       "reviewedEvidence": null
     },
     {
@@ -840,7 +840,7 @@
       "file": "src/modules/build/client-portal/client-portal.controller.ts",
       "class": "ClientPortalController",
       "method": "createPortalChangeRequest",
-      "line": 65,
+      "line": 69,
       "verb": "POST",
       "path": "/build/portal/projects/:projectId/change-requests",
       "routeParams": [
@@ -868,7 +868,7 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/client-portal/client-portal.service.ts:29",
+      "orgEvidence": "src/modules/build/client-portal/client-portal.service.ts:31",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
       "leads": [],
@@ -877,7 +877,7 @@
       ],
       "verdict": "VERIFIED",
       "verdictReason": "guard chain complete, org scoping bound, params declared, no nested parent",
-      "evidence": "src/modules/build/client-portal/client-portal.controller.ts:65",
+      "evidence": "src/modules/build/client-portal/client-portal.controller.ts:69",
       "reviewedEvidence": null
     },
     {
