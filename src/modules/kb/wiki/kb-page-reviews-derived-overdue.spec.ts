@@ -1,4 +1,5 @@
-import { sql } from "drizzle-orm";
+import { sql, type SQL } from "drizzle-orm";
+import { PgDialect } from "drizzle-orm/pg-core";
 import { KbPageReviewsQueryService } from "./kb-page-reviews-query.service";
 import { KbPageReviewsService } from "./kb-page-reviews.service";
 import { bulkDecidePageReviewsSchema } from "./dto/kb-page-reviews.schemas";
@@ -23,16 +24,21 @@ const authMock = {
   visiblePagePredicate: jest.fn().mockResolvedValue(sql`true`),
 };
 
+const capturedWheres: SQL[] = [];
+
 function makeQueryDb(rows: unknown[] = []) {
   const makeChain = (): object => {
     const chain: Record<string, jest.Mock> = {
-      where: jest.fn().mockImplementation(() => ({
+      where: jest.fn().mockImplementation((clause: SQL) => {
+        capturedWheres.push(clause);
+        return ({
         orderBy: jest.fn().mockImplementation(() =>
           Object.assign(Promise.resolve(rows), {
             limit: jest.fn().mockResolvedValue(rows),
           }),
         ),
-      })),
+      });
+      }),
     };
     for (const m of ["innerJoin", "leftJoin"]) {
       chain[m] = jest.fn().mockImplementation(() => makeChain());
@@ -48,7 +54,10 @@ const holdsMock = jest.fn().mockResolvedValue(true);
 const accessMock = { holds: holdsMock } as never;
 
 describe("derived isOverdue — query service", () => {
-  afterEach(() => jest.resetAllMocks());
+  afterEach(() => {
+    jest.resetAllMocks();
+    capturedWheres.length = 0;
+  });
 
   it("marks a pending review with a past dueAt as isOverdue=true", async () => {
     const pastDue = new Date(Date.now() - 86_400_000);
@@ -136,6 +145,28 @@ describe("derived isOverdue — query service", () => {
     const page = await svc.list(makeUser(), { limit: 50, sortDir: "asc" });
     expect(page.data).toHaveLength(1);
     expect(page.data[0]?.pageTitle).toBe("Visible");
+  });
+
+  it("sends every accepted filter to the database, so no filter is silently dropped after passing validation", async () => {
+    const db = makeQueryDb([]);
+    const svc = new KbPageReviewsQueryService(db, accessMock, authMock as never);
+
+    await svc.list(makeUser(), {
+      limit: 50,
+      sortDir: "asc",
+      status: "pending",
+      type: "approval",
+      reviewer: "user-9",
+      spaceId: 77,
+      dueFrom: "2026-01-01T00:00:00.000Z",
+      dueTo: "2026-12-31T00:00:00.000Z",
+    });
+
+    expect(capturedWheres).toHaveLength(1);
+    const rendered = new PgDialect().sqlToQuery(capturedWheres[0]);
+    expect(rendered.params).toContain("user-9");
+    expect(rendered.params).toContain(77);
+    expect(rendered.params).toContain("approval");
   });
 
   it("cursor stability — opaque cursor is an encoded string, not a raw date", async () => {

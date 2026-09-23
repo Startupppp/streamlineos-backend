@@ -6,7 +6,6 @@ import type { Db } from "../../db/drizzle.module";
 import { AblyService } from "../realtime/ably.service";
 import { AuditService } from "../../common/audit/audit.service";
 import { ComposioGateway } from "../integrations/core/composio.gateway";
-import { ChatOrgSettingsService } from "./chat-org-settings.service";
 import { PlanLimitsService } from "../billing/core/plan-limits.service";
 import { NotificationDispatchService } from "../notifications/notification-dispatch.service";
 import {
@@ -36,14 +35,13 @@ export class ChatHuddlesService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly ably: AblyService,
     private readonly audit: AuditService,
-    private readonly orgSettings: ChatOrgSettingsService,
     private readonly planLimits: PlanLimitsService,
     private readonly dispatch: NotificationDispatchService,
     private readonly composio: ComposioGateway,
   ) {}
 
   private capacityDeps(): HuddleCapacityDeps {
-    return { db: this.db, planLimits: this.planLimits, orgSettings: this.orgSettings };
+    return { db: this.db, planLimits: this.planLimits };
   }
 
   private assertMember(channelId: number, userId: string, orgId: string): Promise<number> {

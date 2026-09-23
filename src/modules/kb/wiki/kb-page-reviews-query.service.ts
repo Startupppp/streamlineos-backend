@@ -110,6 +110,10 @@ export class KbPageReviewsQueryService {
       conditions.push(eq(kbPageReviews.reviewerId, query.reviewer));
     }
 
+    if (query.spaceId !== undefined) {
+      conditions.push(eq(kbPages.spaceId, query.spaceId));
+    }
+
     if (query.dueFrom !== undefined) {
       conditions.push(gte(kbPageReviews.dueAt, new Date(query.dueFrom)));
     }

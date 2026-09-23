@@ -69,7 +69,7 @@ describe("KbPageSearchQueryService — visibility", () => {
     await makeService(db, auth).search(makeUser({ orgId: "org-x" }), baseQuery);
 
     const combined = whereClauses.map(serialize).join("\n");
-    expect(combined).toContain("org_x");
+    expect(combined).toContain("org-x");
   });
 
   it("uses the predicate returned by the canonical visibility seam, not one assembled inline", async () => {
