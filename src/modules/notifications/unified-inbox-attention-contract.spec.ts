@@ -141,6 +141,49 @@ describe("attention adapters carry their own destination", () => {
     expect(page.items).toHaveLength(1);
     expect(page.items[0]?.deepLink).toBeNull();
   });
+
+  it("module filtering reaches only the owning approval adapter", async () => {
+    const hrFetch = jest.fn().mockResolvedValue([
+      item(7, "leave", "hr", "/hr/leaves?tab=pending"),
+    ]);
+    const timesheetFetch = jest.fn().mockResolvedValue([
+      item(9, "timesheet", "timesheets", "/timesheets/approvals"),
+    ]);
+    const registry = new ApprovalAdapterRegistry();
+    registry.register(
+      stubAdapter({
+        module: "hr",
+        kindLabel: "leave",
+        permission: "hr:leaves:approve",
+        fetch: hrFetch,
+      }),
+    );
+    registry.register(
+      stubAdapter({
+        module: "timesheets",
+        kindLabel: "timesheet",
+        permission: "timesheets:approvals:view",
+        fetch: timesheetFetch,
+      }),
+    );
+
+    const svc = makeService(registry, makeAccessHolding(ALL_APPROVAL_KEYS));
+    const page = await svc.list(
+      ORG,
+      UID,
+      {
+        limit: 25,
+        kinds: ["build_approval"],
+        unreadOnly: false,
+        module: "hr",
+      },
+      makeUser(),
+    );
+
+    expect(hrFetch).toHaveBeenCalled();
+    expect(timesheetFetch).not.toHaveBeenCalled();
+    expect(page.items.map((entry) => entry.sourceModule)).toEqual(["hr"]);
+  });
 });
 
 describe("the unread badge counts every attention source, not only Build", () => {

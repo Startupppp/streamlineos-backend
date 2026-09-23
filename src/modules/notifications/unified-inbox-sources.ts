@@ -4,6 +4,7 @@ import {
   eq,
   gt,
   gte,
+  inArray,
   isNotNull,
   isNull,
   lt,
@@ -40,6 +41,8 @@ export type InboxFilters = {
   q: string | undefined;
   category: string | undefined;
   priority: string | undefined;
+  eventKeys: readonly string[] | undefined;
+  module: string | undefined;
 };
 
 export const DEFAULT_INBOX_FILTERS: InboxFilters = {
@@ -47,6 +50,8 @@ export const DEFAULT_INBOX_FILTERS: InboxFilters = {
   q: undefined,
   category: undefined,
   priority: undefined,
+  eventKeys: undefined,
+  module: undefined,
 };
 
 export const SOURCE_TIMEOUT_MS = 5_000;
@@ -158,6 +163,12 @@ export async function fetchNotificationItems(
           : undefined,
         filters.priority
           ? sql`${notifications.priority}::text = ${filters.priority}`
+          : undefined,
+        filters.eventKeys && filters.eventKeys.length > 0
+          ? inArray(notifications.eventKey, [...filters.eventKeys])
+          : undefined,
+        filters.module
+          ? sql`COALESCE(${notifications.sourceModule}, 'system') = ${filters.module}`
           : undefined,
         notificationMatchesQ(filters.q),
       ),

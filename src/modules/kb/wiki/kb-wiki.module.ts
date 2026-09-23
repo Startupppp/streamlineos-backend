@@ -33,9 +33,17 @@ import { KbPageRecordLinksController } from "./kb-page-record-links.controller";
 import { KbMediaController } from "./kb-media.controller";
 import { KbSourcesController } from "./kb-sources.controller";
 import { KbPageAiController } from "./kb-page-ai.controller";
+import { KbPageGrantsController } from "./kb-page-grants.controller";
+import { KbPageGrantsService } from "./kb-page-grants.service";
 
 @Module({
-  imports: [AiModule, BillingModule, NotificationsModule, KbCoreModule, KbRetrievalModule],
+  imports: [
+    AiModule,
+    BillingModule,
+    NotificationsModule,
+    KbCoreModule,
+    KbRetrievalModule,
+  ],
   controllers: [
     KbSpacesController,
     KbMembersController,
@@ -49,6 +57,7 @@ import { KbPageAiController } from "./kb-page-ai.controller";
     KbMediaController,
     KbSourcesController,
     KbPageAiController,
+    KbPageGrantsController,
   ],
   providers: [
     KbSpacesService,
@@ -68,6 +77,7 @@ import { KbPageAiController } from "./kb-page-ai.controller";
     KbSourcesService,
     KbImportExportService,
     KbPageAiService,
+    KbPageGrantsService,
   ],
   exports: [KbPageTreeService],
 })

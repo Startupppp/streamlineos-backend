@@ -222,9 +222,12 @@ export class UnifiedInboxService {
     user: CurrentUserContext,
     limit: number,
     resuming: boolean,
+    module: string | undefined,
     positionOf: (adapter: ApprovalSourceAdapter) => InboxSourcePosition | null,
   ): Promise<AdapterFetchResult> {
-    const allAdapters = this.buildApprovalAdapters();
+    const allAdapters = this.buildApprovalAdapters().filter(
+      (adapter) => module === undefined || adapter.module === module,
+    );
     const items: BuildApprovalInboxItem[] = [];
     const errors: string[] = [];
     const permDenied: string[] = [];
@@ -285,15 +288,20 @@ export class UnifiedInboxService {
       q: query.q,
       category: query.category,
       priority: query.priority,
+      eventKeys: query.eventKeys,
+      module: query.module,
     };
     const kindsFilter: InboxKind[] =
       query.kinds && query.kinds.length > 0
         ? query.kinds
         : ["notification", "broadcast", "mail", "build_approval"];
 
+    const allowsFixedModule = (sourceModule: string): boolean =>
+      filters.module === undefined || filters.module === sourceModule;
     const wantsNotifications = kindsFilter.includes("notification");
-    const wantsBroadcasts = kindsFilter.includes("broadcast");
-    const wantsMail = kindsFilter.includes("mail");
+    const wantsBroadcasts =
+      kindsFilter.includes("broadcast") && allowsFixedModule("notification");
+    const wantsMail = kindsFilter.includes("mail") && allowsFixedModule("mail");
     const wantsBuildApprovals = kindsFilter.includes("build_approval");
 
     const broadcastsSupport = triage === "active";
@@ -389,6 +397,7 @@ export class UnifiedInboxService {
               user,
               limit + 1,
               resuming,
+              filters.module,
               positionOf,
             )
           : null,

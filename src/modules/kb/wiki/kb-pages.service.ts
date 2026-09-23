@@ -8,7 +8,14 @@ import {
 } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
 import { and, desc, eq, isNull, sql } from "drizzle-orm";
-import { kbPages, kbPageFavorites, kbPageTemplates, kbSpaces, organizationMembers, users } from "../../../db/schema";
+import {
+  kbPages,
+  kbPageFavorites,
+  kbPageTemplates,
+  kbSpaces,
+  organizationMembers,
+  users,
+} from "../../../db/schema";
 import type { KbPageContent } from "../../../db/schema/kb/pages";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
@@ -31,6 +38,7 @@ import {
 } from "./kb-page-edit.util";
 import { actingMembershipId } from "../../../common/auth/principal";
 import { KnowledgeAuthorizationService } from "../core/authorization/knowledge-authorization.service";
+import { kbPagePrefixTsQuery } from "../core/collection/kb-page-text-query";
 import { KB_PAGE_COLUMNS, type KbPageRow } from "./kb-page-columns";
 
 type PageRow = KbPageRow;
@@ -54,10 +62,15 @@ export class KbPagesService {
   ) {}
 
   private membershipId(user: CurrentUserContext): number | null {
-    return user.principal === undefined ? null : actingMembershipId(user.principal);
+    return user.principal === undefined
+      ? null
+      : actingMembershipId(user.principal);
   }
 
-  async create(user: CurrentUserContext, input: CreatePageInput): Promise<PageRow> {
+  async create(
+    user: CurrentUserContext,
+    input: CreatePageInput,
+  ): Promise<PageRow> {
     const orgId = user.orgId;
 
     await this.planLimits.assertWithinLimit(orgId, "kbPages");
@@ -66,7 +79,10 @@ export class KbPagesService {
 
     if (input.templateId) {
       const tpl = await this.db.query.kbPageTemplates.findFirst({
-        where: and(eq(kbPageTemplates.id, input.templateId), eq(kbPageTemplates.orgId, orgId)),
+        where: and(
+          eq(kbPageTemplates.id, input.templateId),
+          eq(kbPageTemplates.orgId, orgId),
+        ),
         columns: { content: true },
       });
       if (tpl?.content) templateContent = tpl.content;
@@ -74,7 +90,11 @@ export class KbPagesService {
 
     if (input.parentPageId) {
       const parent = await this.db.query.kbPages.findFirst({
-        where: and(eq(kbPages.id, input.parentPageId), eq(kbPages.orgId, orgId), isNull(kbPages.deletedAt)),
+        where: and(
+          eq(kbPages.id, input.parentPageId),
+          eq(kbPages.orgId, orgId),
+          isNull(kbPages.deletedAt),
+        ),
         columns: { id: true },
       });
       if (!parent) throw new NotFoundException("Parent page not found");
@@ -132,11 +152,21 @@ export class KbPagesService {
     user: CurrentUserContext,
     pageId: number,
     canManage: boolean,
-  ): Promise<PageRow & { ancestors: Pick<PageRow, "id" | "title">[]; isFavorite: boolean }> {
+  ): Promise<
+    PageRow & {
+      ancestors: Pick<PageRow, "id" | "title">[];
+      isFavorite: boolean;
+    }
+  > {
     const orgId = user.orgId;
     const predicate = await this.auth.visiblePagePredicate(user, "view");
     const page = await this.db.query.kbPages.findFirst({
-      where: and(eq(kbPages.id, pageId), eq(kbPages.orgId, orgId), isNull(kbPages.deletedAt), predicate),
+      where: and(
+        eq(kbPages.id, pageId),
+        eq(kbPages.orgId, orgId),
+        isNull(kbPages.deletedAt),
+        predicate,
+      ),
       columns: { fts: false },
     });
     if (!page) throw new NotFoundException("Page not found");
@@ -160,11 +190,12 @@ export class KbPagesService {
     };
   }
 
-  private withoutUnsharedToken<T extends Pick<PageRow, "createdById" | "createdByMembershipId" | "publicToken">>(
-    user: CurrentUserContext,
-    page: T,
-    canManage: boolean,
-  ): T {
+  private withoutUnsharedToken<
+    T extends Pick<
+      PageRow,
+      "createdById" | "createdByMembershipId" | "publicToken"
+    >,
+  >(user: CurrentUserContext, page: T, canManage: boolean): T {
     const membershipId = this.membershipId(user);
     const canShare =
       user.isOrgOwner ||
@@ -174,17 +205,29 @@ export class KbPagesService {
     return canShare ? page : { ...page, publicToken: null };
   }
 
-  async update(user: CurrentUserContext, pageId: number, input: UpdatePageInput, canManage: boolean): Promise<PageRow> {
+  async update(
+    user: CurrentUserContext,
+    pageId: number,
+    input: UpdatePageInput,
+    canManage: boolean,
+  ): Promise<PageRow> {
     await this.auth.assertPageAccess(user, pageId, "edit");
     const orgId = user.orgId;
     const current = await this.db.query.kbPages.findFirst({
       columns: { id: true, isLocked: true, trustState: true, content: true },
-      where: and(eq(kbPages.id, pageId), eq(kbPages.orgId, orgId), isNull(kbPages.deletedAt)),
+      where: and(
+        eq(kbPages.id, pageId),
+        eq(kbPages.orgId, orgId),
+        isNull(kbPages.deletedAt),
+      ),
     });
     if (!current) throw new NotFoundException("Page not found");
 
     if (current.isLocked && !canManage) {
-      throw new HttpException({ message: "Page is locked", code: "PAGE_LOCKED" }, HttpStatus.CONFLICT);
+      throw new HttpException(
+        { message: "Page is locked", code: "PAGE_LOCKED" },
+        HttpStatus.CONFLICT,
+      );
     }
 
     const values: Partial<typeof kbPages.$inferInsert> = {
@@ -195,10 +238,10 @@ export class KbPagesService {
       if (input.spaceId != null) {
         const space = await this.db.query.kbSpaces.findFirst({
           where: and(
-          eq(kbSpaces.id, input.spaceId),
-          eq(kbSpaces.orgId, orgId),
-          isNull(kbSpaces.deletedAt),
-        ),
+            eq(kbSpaces.id, input.spaceId),
+            eq(kbSpaces.orgId, orgId),
+            isNull(kbSpaces.deletedAt),
+          ),
           columns: { id: true },
         });
         if (!space) throw new NotFoundException("Space not found");
@@ -214,16 +257,19 @@ export class KbPagesService {
     if (input.contentType !== undefined) values.contentType = input.contentType;
     if (input.ownerUserId !== undefined) {
       values.ownerUserId = input.ownerUserId;
-      values.ownerMembershipId = input.ownerUserId === null
-        ? null
-        : (await this.db.query.organizationMembers.findFirst({
-          where: and(
-            eq(organizationMembers.orgId, orgId),
-            eq(organizationMembers.userId, input.ownerUserId),
-            eq(organizationMembers.status, "ACTIVE"),
-          ),
-          columns: { id: true },
-        }))?.id ?? null;
+      values.ownerMembershipId =
+        input.ownerUserId === null
+          ? null
+          : ((
+              await this.db.query.organizationMembers.findFirst({
+                where: and(
+                  eq(organizationMembers.orgId, orgId),
+                  eq(organizationMembers.userId, input.ownerUserId),
+                  eq(organizationMembers.status, "ACTIVE"),
+                ),
+                columns: { id: true },
+              })
+            )?.id ?? null);
     }
 
     const contentChanged = input.content !== undefined;
@@ -233,38 +279,61 @@ export class KbPagesService {
       values.trustState = "unverified";
     }
 
-    const revisionGuard = contentChanged ? input.expectedContentRevision : undefined;
+    const revisionGuard = contentChanged
+      ? input.expectedContentRevision
+      : undefined;
 
     const result = await this.db.transaction(async (tx) => {
       const [updated] = await tx
         .update(kbPages)
         .set({
           ...values,
-          ...(contentChanged ? { contentRevision: sql`content_revision + 1` } : {}),
+          ...(contentChanged
+            ? { contentRevision: sql`content_revision + 1` }
+            : {}),
           ...(aclChanged ? { aclRevision: sql`acl_revision + 1` } : {}),
         })
         .where(
           and(
             eq(kbPages.id, pageId),
             eq(kbPages.orgId, orgId),
-            ...(revisionGuard === undefined ? [] : [eq(kbPages.contentRevision, revisionGuard)]),
+            ...(revisionGuard === undefined
+              ? []
+              : [eq(kbPages.contentRevision, revisionGuard)]),
           ),
         )
         .returning(KB_PAGE_COLUMNS);
       if (!updated) {
-        if (revisionGuard === undefined) throw new NotFoundException("Page not found");
-        throw staleRevisionConflict(await this.describeLatestEdit(tx, orgId, pageId));
+        if (revisionGuard === undefined)
+          throw new NotFoundException("Page not found");
+        throw staleRevisionConflict(
+          await this.describeLatestEdit(tx, orgId, pageId),
+        );
       }
 
       if (contentChanged && input.content !== undefined) {
-        await snapshotIfNeeded(tx, orgId, updated, user.userId, input.changeSummary ?? null, false, this.membershipId(user));
+        await snapshotIfNeeded(
+          tx,
+          orgId,
+          updated,
+          user.userId,
+          input.changeSummary ?? null,
+          false,
+          this.membershipId(user),
+        );
         await resyncPageLinks(tx, orgId, pageId, input.content);
 
         const oldMentions = new Set(extractMentionUserIds(current.content));
         const newMentions = extractMentionUserIds(input.content);
         const addedMentions = newMentions.filter((id) => !oldMentions.has(id));
         if (addedMentions.length > 0) {
-          this.fireMentionNotifications(orgId, addedMentions, pageId, updated.title, user.userId).catch((err) => {
+          this.fireMentionNotifications(
+            orgId,
+            addedMentions,
+            pageId,
+            updated.title,
+            user.userId,
+          ).catch((err) => {
             this.logger.error(`Failed to send mention notifications: ${err}`);
           });
         }
@@ -294,41 +363,14 @@ export class KbPagesService {
     return this.withoutUnsharedToken(user, result, canManage);
   }
 
-  /**
-   * A bounded top-N, and it says so.
-   *
-   * This was a hard `.limit(20)` returning a plain array: a query matching 500 pages and a
-   * query matching 20 came back identical, so a user who could not find their page had no
-   * way to learn that the list was cut rather than complete. Twenty stays the ceiling — the
-   * 400th-best match for a `ts_rank` prefix query is not a result anyone scrolls to, and
-   * paging a rank ordering means re-ranking every page — but the cut is now reported, and
-   * `KB_PAGE_SEARCH_MAX_LIMIT` is where the number lives instead of being buried in a
-   * `.limit()` call.
-   *
-   * `limit + 1` is fetched so `hasMore` costs nothing: the sentinel row is discarded and
-   * its only job is to answer the question.
-   */
   async search(
     user: CurrentUserContext,
     q: string,
     limit: number = KB_PAGE_SEARCH_MAX_LIMIT,
   ): Promise<{ items: KbPageSearchHit[]; hasMore: boolean; limit: number }> {
-    const words = q
-      .trim()
-      .split(/\s+/)
-      .map(function sanitizeWord(w) {
-        return w.replace(/[^\p{L}\p{N}]/gu, "");
-      })
-      .filter(function nonEmpty(w) {
-        return w.length > 0;
-      })
-      .slice(0, 8);
-    if (words.length === 0) return { items: [], hasMore: false, limit };
+    const tsquery = kbPagePrefixTsQuery(q);
+    if (tsquery === null) return { items: [], hasMore: false, limit };
     const orgId = user.orgId;
-    const prefixQuery = words.map(function toPrefix(w) {
-      return `${w}:*`;
-    }).join(" & ");
-    const tsquery = sql`to_tsquery('english', ${prefixQuery})`;
     const predicate = await this.auth.visiblePagePredicate(user, "view");
     const rows = await this.db
       .select({
@@ -360,13 +402,25 @@ export class KbPagesService {
   ): Promise<PageRow> {
     const orgId = user.orgId;
     const page = await this.db.query.kbPages.findFirst({
-      where: and(eq(kbPages.id, pageId), eq(kbPages.orgId, orgId), isNull(kbPages.deletedAt)),
-      columns: { id: true, createdById: true, createdByMembershipId: true, visibility: true, publicToken: true },
+      where: and(
+        eq(kbPages.id, pageId),
+        eq(kbPages.orgId, orgId),
+        isNull(kbPages.deletedAt),
+      ),
+      columns: {
+        id: true,
+        createdById: true,
+        createdByMembershipId: true,
+        visibility: true,
+        publicToken: true,
+      },
     });
     if (!page) throw new NotFoundException("Page not found");
 
-    const isCreator = this.membershipId(user) !== null && page.createdByMembershipId === this.membershipId(user)
-      || (page.createdByMembershipId === null && page.createdById === user.userId);
+    const isCreator =
+      (this.membershipId(user) !== null &&
+        page.createdByMembershipId === this.membershipId(user)) ||
+      (page.createdByMembershipId === null && page.createdById === user.userId);
     if (!isCreator && !canManage) {
       throw new NotFoundException("Page not found");
     }
@@ -422,7 +476,13 @@ export class KbPagesService {
           eq(kbPages.visibility, "public"),
           isNull(kbPages.deletedAt),
         ),
-        columns: { title: true, icon: true, coverImage: true, content: true, updatedAt: true },
+        columns: {
+          title: true,
+          icon: true,
+          coverImage: true,
+          content: true,
+          updatedAt: true,
+        },
       }),
     );
     if (!page) throw new NotFoundException("Page not found");
@@ -452,7 +512,10 @@ export class KbPagesService {
     };
   }
 
-  private async buildAncestors(orgId: string, parentId: number | null): Promise<Pick<PageRow, "id" | "title">[]> {
+  private async buildAncestors(
+    orgId: string,
+    parentId: number | null,
+  ): Promise<Pick<PageRow, "id" | "title">[]> {
     if (parentId === null) return [];
     const rows = await this.db.execute(sql`
       WITH RECURSIVE ancestors AS (
@@ -494,7 +557,9 @@ export class KbPagesService {
           link: `/knowledge/pages/${pageId}`,
         });
       } catch (err) {
-        this.logger.error(`Mention notification failed for user ${userId}: ${err}`);
+        this.logger.error(
+          `Mention notification failed for user ${userId}: ${err}`,
+        );
       }
     }
   }

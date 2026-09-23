@@ -19,10 +19,7 @@ import {
   computeAccessibleSpaceIds,
   resolveRoleSlugs,
 } from "./knowledge-space-scope";
-import {
-  buildVisiblePageScope,
-  permissionFingerprintOf,
-} from "./knowledge-page-scope";
+import { buildVisiblePageScope } from "./knowledge-page-scope";
 import {
   allowed,
   denied,
@@ -33,7 +30,6 @@ import {
   type KbPageAction,
   type KbPageScope,
   type KbSpaceScope,
-  type VisiblePageScope,
 } from "./knowledge-authorization.types";
 
 const KB_MANAGE_SPACES = "kb:spaces:manage";
@@ -90,26 +86,15 @@ export class KnowledgeAuthorizationService {
     };
   }
 
-  async buildVisiblePageScope(
-    user: CurrentUserContext,
-    action: KbPageAction,
-  ): Promise<VisiblePageScope> {
-    return buildVisiblePageScope(await this.resolveStanding(user), action);
-  }
-
   async visiblePagePredicate(
     user: CurrentUserContext,
     action: KbPageAction = "view",
   ): Promise<SQL<unknown>> {
-    const scope = buildVisiblePageScope(await this.resolveStanding(user), action);
+    const scope = buildVisiblePageScope(
+      await this.resolveStanding(user),
+      action,
+    );
     return scope.predicate;
-  }
-
-  async permissionFingerprint(
-    user: CurrentUserContext,
-    action: KbPageAction = "view",
-  ): Promise<string> {
-    return permissionFingerprintOf(await this.resolveStanding(user), action);
   }
 
   async invalidateSpaceScope(orgId: string): Promise<void> {

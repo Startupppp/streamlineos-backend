@@ -63,6 +63,13 @@ function project(projection: Projection | undefined, scope: RowSets, baseName: s
   return out;
 }
 
+function isCountExpression(value: unknown): boolean {
+  return (
+    value instanceof SQL &&
+    /\bcount\s*\(/i.test(orderDialect.sqlToQuery(value).sql)
+  );
+}
+
 class SelectBuilder implements PromiseLike<FakeRow[]> {
   private baseName = "";
   private baseTable: Table | undefined;
@@ -152,6 +159,26 @@ class SelectBuilder implements PromiseLike<FakeRow[]> {
     const matched = scopes.filter((scope) => matchesPredicate(this.predicate, scope));
     if (this.orders.length > 0)
       matched.sort((left, right) => compareScopes(left, right, this.orders));
+    if (
+      this.projection !== undefined &&
+      Object.values(this.projection).some(isCountExpression)
+    ) {
+      const first = matched[0] ?? {};
+      const firstProjection = project(
+        this.projection,
+        first,
+        this.baseName,
+        this.baseTable,
+      );
+      return [
+        Object.fromEntries(
+          Object.entries(this.projection).map(([key, value]) => [
+            key,
+            isCountExpression(value) ? matched.length : firstProjection[key],
+          ]),
+        ),
+      ];
+    }
     return matched
       .slice(0, this.rowLimit)
       .map((scope) => project(this.projection, scope, this.baseName, this.baseTable));

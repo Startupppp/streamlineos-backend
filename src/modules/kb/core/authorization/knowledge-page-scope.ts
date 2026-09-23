@@ -5,6 +5,7 @@ import {
   accessLevelsSatisfying,
   type KbActorStanding,
   type KbPageAction,
+  type KbSharedWithMeScope,
   type VisiblePageScope,
 } from "./knowledge-authorization.types";
 
@@ -50,6 +51,30 @@ export function buildGrantBranch(
       AND "kb_page_grants"."access" = ANY(${levels})
       AND ${grantee}
   )`;
+}
+
+export function buildSharedWithMeScope(
+  standing: KbActorStanding,
+): KbSharedWithMeScope | null {
+  const grantBranch = buildGrantBranch(standing, "view");
+  if (grantBranch === null) return null;
+
+  const notAlreadyMine: SQL<unknown>[] = [
+    sql`(${kbPages.createdById} IS NULL OR ${kbPages.createdById} <> ${standing.userId})`,
+  ];
+  if (standing.membershipId !== null) {
+    notAlreadyMine.push(
+      sql`(${kbPages.ownerMembershipId} IS NULL OR ${kbPages.ownerMembershipId} <> ${standing.membershipId})`,
+      sql`(${kbPages.createdByMembershipId} IS NULL OR ${kbPages.createdByMembershipId} <> ${standing.membershipId})`,
+    );
+  }
+
+  return {
+    predicate: sql`(${eq(kbPages.orgId, standing.orgId)} AND ${grantBranch} AND ${sql.join(notAlreadyMine, sql` AND `)})`,
+    membershipId: standing.membershipId,
+    roleSlugs: standing.roleSlugs,
+    fingerprint: permissionFingerprintOf(standing, "view"),
+  };
 }
 
 export function buildIndexedBranch(

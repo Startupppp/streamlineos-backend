@@ -73,6 +73,13 @@ export interface VisiblePageScope {
   fingerprint: string;
 }
 
+export interface KbSharedWithMeScope {
+  predicate: SQL<unknown>;
+  membershipId: number | null;
+  roleSlugs: string[];
+  fingerprint: string;
+}
+
 export interface KbActorStanding {
   orgId: string;
   userId: string;
