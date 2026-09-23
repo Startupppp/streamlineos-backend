@@ -99,6 +99,14 @@
       },
       "evidence": "src/modules/careers/careers.service.ts"
     },
+    "POST /careers/resumes/upload": {
+      "idempotency": {
+        "mode": "at-least-once-unfenced",
+        "key": null,
+        "replay": "Uploads a file to object storage then inserts a row into candidate_documents_vault. The storage key is deterministic (candidateId/filename) so the file write converges, but the DB insert has no unique constraint or conflict target — a retry creates a second vault record. No server-side replay fence: a client that retries after a timeout must expect a duplicate document row. NOTE: route carries @UseGuards(JwtAuthGuard) and is scoped to the caller's orgId; x-exposure is undeclared (should be permissioned — this is an HR portal route, not an external applicant route)."
+      },
+      "evidence": "src/modules/careers/careers.service.ts (uploadResume)"
+    },
     "POST /crm/consent/unsubscribe": {
       "idempotency": {
         "mode": "natural-key-upsert",

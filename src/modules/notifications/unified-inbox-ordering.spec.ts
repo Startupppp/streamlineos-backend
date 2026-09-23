@@ -248,7 +248,7 @@ async function scroll(options: ScrollOptions): Promise<string[]> {
     const result = await svc.list(
       ORG,
       UID,
-      { limit: options.limit, kinds: options.kinds, unreadOnly: false, cursor },
+      { limit: options.limit, kinds: options.kinds, unreadOnly: false, eventKeys: undefined, cursor },
       user,
     );
     for (const item of result.items) delivered.push(item.dedupKey);
@@ -297,7 +297,7 @@ describe("unified inbox — keyset ordering agrees with the sources", () => {
     const result = await svc.list(
       ORG,
       UID,
-      { limit: 2, kinds: ["notification"], unreadOnly: false },
+      { limit: 2, kinds: ["notification"], unreadOnly: false, eventKeys: undefined },
       makeUser(),
     );
 
@@ -499,7 +499,7 @@ describe("unified inbox — keyset ordering agrees with the sources", () => {
     const result = await svc.list(
       ORG,
       UID,
-      { limit: 25, kinds: ["notification"], unreadOnly: false },
+      { limit: 25, kinds: ["notification"], unreadOnly: false, eventKeys: undefined },
       makeUser(),
     );
 
@@ -555,7 +555,7 @@ describe("unified inbox — keyset ordering agrees with the sources", () => {
     const result = await svc.list(
       ORG,
       UID,
-      { limit: 1, kinds: ["notification", "broadcast"], unreadOnly: false },
+      { limit: 1, kinds: ["notification", "broadcast"], unreadOnly: false, eventKeys: undefined },
       makeUser(),
     );
 

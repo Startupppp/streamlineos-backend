@@ -584,3 +584,34 @@ describe("FeedbucketMediaRetentionService — tenant iteration", () => {
     ).toEqual(["org-b"]);
   });
 });
+
+describe("FeedbucketMediaRetentionService — cross-tenant isolation", () => {
+  it("binds each org's sweep query to that org's id so a sweep cannot read another org's submissions (cross-tenant DENY)", async () => {
+    const harness = makeHarness({
+      "org-a": { submissions: [submission({ id: 10, screenshotKey: "a.png" })], attachments: [] },
+      "org-b": { submissions: [submission({ id: 20, screenshotKey: "b.png" })], attachments: [] },
+    });
+
+    await harness.service.sweep(NOW);
+
+    expect(
+      orgBindings(harness.txByOrg.get("org-a")?.selects[0]?.where, feedbucketSubmissions.orgId),
+    ).toEqual(["org-a"]);
+    expect(
+      orgBindings(harness.txByOrg.get("org-a")?.selects[0]?.where, feedbucketSubmissions.orgId),
+    ).not.toContain("org-b");
+    expect(harness.storage.deleteFileIfPresent).toHaveBeenCalledWith("org-a", "a.png");
+    expect(harness.storage.deleteFileIfPresent).not.toHaveBeenCalledWith("org-a", "b.png");
+  });
+
+  it("purges the owning org's submissions when sweeping with that org's context (same-tenant positive control)", async () => {
+    const harness = makeHarness({
+      "org-a": { submissions: [submission({ id: 10, screenshotKey: "a.png" })], attachments: [] },
+    });
+
+    const result = await harness.service.sweep(NOW);
+
+    expect(result.submissionsPurged).toBe(1);
+    expect(harness.storage.deleteFileIfPresent).toHaveBeenCalledWith("org-a", "a.png");
+  });
+});

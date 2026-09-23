@@ -41,7 +41,7 @@ type SelectChain = {
   from: () => { where: () => { orderBy: () => { limit: (n: number) => Promise<unknown[]> } } };
 };
 
-function makeTrashDb(rows: Array<Record<string, unknown>>): {
+function makeTrashDb(rows: Array<Record<string, unknown>>, visible = true): {
   db: Db;
   limits: number[];
 } {
@@ -53,7 +53,7 @@ function makeTrashDb(rows: Array<Record<string, unknown>>): {
           orderBy: () => ({
             limit: async (n: number) => {
               limits.push(n);
-              return rows.slice(0, n);
+              return visible ? rows.slice(0, n) : [];
             },
           }),
         }),
@@ -125,7 +125,7 @@ function trashQuery(over: Record<string, unknown> = {}) {
 
 const sampleDeletedAt = new Date("2024-06-01T12:00:00.000000Z");
 
-function makeRow(id: number, deletedAt = sampleDeletedAt): Record<string, unknown> {
+function makeRow(id: number, deletedAt = sampleDeletedAt) {
   return {
     id,
     orgId: ORG_ID,
@@ -171,7 +171,7 @@ describe("GET /kb/pages/trash — keyset cursor, not a cap", () => {
       visiblePagePredicate: jest.fn().mockResolvedValue(sql`false`),
       assertPageAccess: jest.fn(),
     };
-    const { db } = makeTrashDb([makeRow(1)]);
+    const { db } = makeTrashDb([makeRow(1)], false);
     const svc = new KbPageTreeService(db, auditMock as never, storageMock, configMock, restrictedAuth as never);
     const page = await svc.getTrash(userInOrg, trashQuery());
     expect(page.data).toHaveLength(0);

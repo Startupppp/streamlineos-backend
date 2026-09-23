@@ -137,8 +137,86 @@ describe("derived isOverdue — query service", () => {
     const page = await svc.list(makeUser(), { limit: 1, sortDir: "asc" });
     const cursor = page.pagination.nextCursor;
     expect(typeof cursor).toBe("string");
-    expect(cursor).not.toContain("T");
+    expect(cursor).not.toContain(":");
     expect(cursor?.length).toBeGreaterThan(0);
+  });
+});
+
+describe("KbPageReviewsService — isOverdue in approve / reject response", () => {
+  afterEach(() => jest.resetAllMocks());
+
+  function makeMutationRow(status: "pending" | "approved" | "rejected", dueAt: Date | null) {
+    return {
+      id: 1, orgId: "org-1", pageId: 10,
+      type: "approval", status,
+      requestedById: null, reviewerId: "user-rev",
+      requestedByMembershipId: null, reviewerMembershipId: 3,
+      dueAt, decidedAt: status !== "pending" ? new Date() : null,
+      decisionNote: null,
+      createdAt: new Date(), updatedAt: new Date(),
+      pageTitle: "Test Page", requestedByName: null, reviewerName: "Bob",
+    };
+  }
+
+  function makeMutationDb(findFirstRow: object, updateReturnRow: object, loadContextRow: object) {
+    const leftJoinChain: Record<string, jest.Mock> = {};
+    leftJoinChain.leftJoin = jest.fn().mockImplementation(() => leftJoinChain);
+    leftJoinChain.where = jest.fn().mockResolvedValue([loadContextRow]);
+
+    return {
+      query: {
+        kbPageReviews: { findFirst: jest.fn().mockResolvedValue(findFirstRow) },
+      },
+      update: jest.fn().mockReturnValue({
+        set: jest.fn().mockReturnValue({
+          where: jest.fn().mockReturnValue({
+            returning: jest.fn().mockResolvedValue([updateReturnRow]),
+          }),
+        }),
+      }),
+      select: jest.fn().mockReturnValue({ from: jest.fn().mockReturnValue(leftJoinChain) }),
+    } as never;
+  }
+
+  const auditMock = { log: jest.fn() } as never;
+  const dispatchMock = { emit: jest.fn().mockResolvedValue(undefined) } as never;
+  const accessMock2 = { holds: jest.fn().mockResolvedValue(true) } as never;
+  const authSvcMock2 = { visiblePagePredicate: jest.fn().mockResolvedValue(sql`true`) } as never;
+
+  it("approve: response carries isOverdue=false when the decided review has a past dueAt", async () => {
+    const pastDue = new Date(Date.now() - 86_400_000);
+    const db = makeMutationDb(
+      { id: 1, orgId: "org-1", status: "pending", requestedById: null },
+      { id: 1, orgId: "org-1" },
+      makeMutationRow("approved", pastDue),
+    );
+    const svc = new KbPageReviewsService(db, auditMock, dispatchMock, accessMock2, authSvcMock2);
+    const result = await svc.approve(makeUser(), 1, {});
+    expect(result.isOverdue).toBe(false);
+  });
+
+  it("reject: response carries isOverdue=false when the decided review has a past dueAt", async () => {
+    const pastDue = new Date(Date.now() - 86_400_000);
+    const db = makeMutationDb(
+      { id: 1, orgId: "org-1", status: "pending", requestedById: null },
+      { id: 1, orgId: "org-1" },
+      makeMutationRow("rejected", pastDue),
+    );
+    const svc = new KbPageReviewsService(db, auditMock, dispatchMock, accessMock2, authSvcMock2);
+    const result = await svc.reject(makeUser(), 1, { note: "Needs revision" });
+    expect(result.isOverdue).toBe(false);
+  });
+
+  it("approve: response carries isOverdue=true when loadWithContext sees a still-pending row with a past dueAt", async () => {
+    const pastDue = new Date(Date.now() - 86_400_000);
+    const db = makeMutationDb(
+      { id: 2, orgId: "org-1", status: "pending", requestedById: null },
+      { id: 2, orgId: "org-1" },
+      makeMutationRow("pending", pastDue),
+    );
+    const svc = new KbPageReviewsService(db, auditMock, dispatchMock, accessMock2, authSvcMock2);
+    const result = await svc.approve(makeUser(), 2, {});
+    expect(result.isOverdue).toBe(true);
   });
 });
 

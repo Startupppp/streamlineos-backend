@@ -1,7 +1,7 @@
 {
   "version": "1",
   "schemaVersion": "1.1",
-  "generatedAt": "2026-09-23T08:08:31.249Z",
+  "generatedAt": "2026-09-23T22:37:59.231Z",
   "description": "Fail-closed API contract registry. Every HTTP operation, outbox event, and outbound customer webhook event is classified as 'internal' or 'published'. Operations absent from this registry are treated as 'published' by check-api-contract-registry.mjs.",
   "operations": {
     "GET /access/delegations": {
@@ -1098,6 +1098,17 @@
       "classificationOverride": null,
       "xExposure": "permissioned",
       "operationId": "ApDocumentsController_remove",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "GET /accounting/payables/documents/{apDocumentId}/pdf": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "ApDocumentPdfController_render",
       "owner": null,
       "version": "1",
       "consumers": [],
@@ -3702,6 +3713,17 @@
       "sunsetAt": null,
       "sunsetEvidence": null
     },
+    "GET /build/{projectId}/automations/runs": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "ProjectsAutomationsController_listRuns",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
     "GET /build/{projectId}/budget": {
       "classification": "internal",
       "classificationOverride": null,
@@ -3828,6 +3850,39 @@
       "classificationOverride": null,
       "xExposure": "permissioned",
       "operationId": "ChangeRequestsController_deleteChangeRequest",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "GET /build/{projectId}/change-requests/{changeRequestId}/affected-tickets": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "ChangeRequestAffectedItemsController_listAffectedTickets",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "POST /build/{projectId}/change-requests/{changeRequestId}/affected-tickets": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "ChangeRequestAffectedItemsController_linkTicket",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "DELETE /build/{projectId}/change-requests/{changeRequestId}/affected-tickets/{affectedItemId}": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "ChangeRequestAffectedItemsController_unlinkTicket",
       "owner": null,
       "version": "1",
       "consumers": [],
@@ -4345,6 +4400,39 @@
       "classificationOverride": null,
       "xExposure": "permissioned",
       "operationId": "IncidentsController_deleteIncident",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "POST /build/{projectId}/incidents/{incidentId}/decisions": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "IncidentsController_addDecision",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "POST /build/{projectId}/incidents/{incidentId}/follow-ups": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "IncidentsController_addFollowUpAction",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "PATCH /build/{projectId}/incidents/{incidentId}/follow-ups/{followUpActionId}": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "IncidentsController_updateFollowUpAction",
       "owner": null,
       "version": "1",
       "consumers": [],
@@ -7221,6 +7309,28 @@
         "source": "published-contract-terms"
       },
       "contractEvidence": "src/modules/careers/careers.service.ts"
+    },
+    "POST /careers/resumes/upload": {
+      "classification": "published",
+      "classificationOverride": null,
+      "xExposure": "in-service",
+      "operationId": "CareersController_uploadResume",
+      "owner": null,
+      "version": "1",
+      "consumers": [
+        "external applicants"
+      ],
+      "sunsetAt": null,
+      "sunsetEvidence": null,
+      "deprecation": null,
+      "knownParameters": [],
+      "idempotency": {
+        "mode": "at-least-once-unfenced",
+        "key": null,
+        "replay": "Uploads a file to object storage then inserts a row into candidate_documents_vault. The storage key is deterministic (candidateId/filename) so the file write converges, but the DB insert has no unique constraint or conflict target — a retry creates a second vault record. No server-side replay fence: a client that retries after a timeout must expect a duplicate document row. NOTE: route carries @UseGuards(JwtAuthGuard) and is scoped to the caller's orgId; x-exposure is undeclared (should be permissioned — this is an HR portal route, not an external applicant route).",
+        "source": "published-contract-terms"
+      },
+      "contractEvidence": "src/modules/careers/careers.service.ts (uploadResume)"
     },
     "POST /chat": {
       "classification": "internal",
@@ -12560,6 +12670,28 @@
       "classificationOverride": null,
       "xExposure": "public",
       "operationId": "CronHrController_postHrPolicyRetentionSweep",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "POST /cron/hr-webhook-sweep": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "public",
+      "operationId": "CronHrController_postHrWebhookSweep",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "GET /cron/hr-webhook-sweep": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "public",
+      "operationId": "CronHrController_getHrWebhookSweep",
       "owner": null,
       "version": "1",
       "consumers": [],
@@ -22370,6 +22502,17 @@
       "sunsetAt": null,
       "sunsetEvidence": null
     },
+    "POST /hr/recruitment/candidates/{candidateId}/documents/upload": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "RecruitmentCandidateDocumentsController_upload",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
     "POST /hr/recruitment/candidates/{candidateId}/link-duplicate": {
       "classification": "internal",
       "classificationOverride": null,
@@ -30681,6 +30824,17 @@
       "sunsetAt": null,
       "sunsetEvidence": null
     },
+    "POST /kb/page-reviews/bulk-decide": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "KbPageReviewsController_bulkDecide",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
     "GET /kb/page-reviews/due": {
       "classification": "internal",
       "classificationOverride": null,
@@ -30719,6 +30873,17 @@
       "classificationOverride": null,
       "xExposure": "permissioned",
       "operationId": "KbPageTemplatesController_remove",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "GET /kb/pages": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "KbPageCollectionController_listPages",
       "owner": null,
       "version": "1",
       "consumers": [],
@@ -30939,6 +31104,39 @@
       "classificationOverride": null,
       "xExposure": "permissioned",
       "operationId": "KbPagesController_removeFavorite",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "GET /kb/pages/{pageId}/grants": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "KbPageGrantsController_list",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "POST /kb/pages/{pageId}/grants": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "KbPageGrantsController_create",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "DELETE /kb/pages/{pageId}/grants/{grantId}": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "KbPageGrantsController_revoke",
       "owner": null,
       "version": "1",
       "consumers": [],
@@ -31214,6 +31412,28 @@
       "classificationOverride": null,
       "xExposure": "permissioned",
       "operationId": "KbPagesController_emptyTrash",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "DELETE /kb/pages/trash/purge": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "KbPagesController_bulkPurgeFromTrash",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "POST /kb/pages/trash/restore": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "KbPagesController_bulkRestoreFromTrash",
       "owner": null,
       "version": "1",
       "consumers": [],
@@ -43515,6 +43735,17 @@
       "sunsetAt": null,
       "sunsetEvidence": null
     },
+    "POST /timesheets/billing/release-draft": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "TimesheetBillingController_releaseInvoiceDraft",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
     "GET /timesheets/billing/uninvoiced": {
       "classification": "internal",
       "classificationOverride": null,
@@ -44472,6 +44703,17 @@
       "sunsetAt": null,
       "sunsetEvidence": null
     },
+    "POST /users/invitations/{invitationId}/join-link": {
+      "classification": "internal",
+      "classificationOverride": null,
+      "xExposure": "permissioned",
+      "operationId": "UsersController_reissueInvitationJoinLink",
+      "owner": null,
+      "version": "1",
+      "consumers": [],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
     "POST /users/invitations/{invitationId}/resend": {
       "classification": "internal",
       "classificationOverride": null,
@@ -45341,6 +45583,13 @@
       "consumers": [
         "outbox-relay"
       ],
+      "sunsetAt": null,
+      "sunsetEvidence": null
+    },
+    "candidate.applied": {
+      "classification": "internal",
+      "owner": null,
+      "consumers": [],
       "sunsetAt": null,
       "sunsetEvidence": null
     },

@@ -167,7 +167,7 @@ async function unifiedIds(svc: UnifiedInboxService): Promise<(string | number)[]
   const page = await svc.list(
     ORG,
     UID,
-    { limit: 25, kinds: ["notification"], unreadOnly: false },
+    { limit: 25, kinds: ["notification"], unreadOnly: false, eventKeys: undefined },
     makeUser(),
   );
   return page.items.map((item) => item.id);

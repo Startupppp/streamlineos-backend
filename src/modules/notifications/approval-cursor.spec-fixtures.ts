@@ -92,7 +92,12 @@ export async function scrollApprovals(
   let cursor: string | undefined;
 
   for (let page = 0; page < maxPages; page++) {
-    const result = await svc.list(ORG, UID, { limit, kinds, unreadOnly: false, cursor }, makeUser());
+    const result = await svc.list(
+      ORG,
+      UID,
+      { limit, kinds, unreadOnly: false, cursor, eventKeys: undefined },
+      makeUser(),
+    );
     for (const item of result.items) delivered.push(item.dedupKey);
     if (!result.hasMore || result.nextCursor === null) break;
     cursor = result.nextCursor;

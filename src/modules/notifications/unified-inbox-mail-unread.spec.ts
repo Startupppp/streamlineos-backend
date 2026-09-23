@@ -97,7 +97,7 @@ describe("unified inbox — unreadOnly mail freshness gate", () => {
     const result = await svc.list(
       ORG,
       UID,
-      { limit: 10, kinds: ["mail"], unreadOnly: false },
+      { limit: 10, kinds: ["mail"], unreadOnly: false, eventKeys: undefined },
       user,
     );
 
@@ -120,7 +120,7 @@ describe("unified inbox — unreadOnly mail freshness gate", () => {
     const result = await svc.list(
       ORG,
       UID,
-      { limit: 10, kinds: ["mail"], unreadOnly: true },
+      { limit: 10, kinds: ["mail"], unreadOnly: true, eventKeys: undefined },
       user,
     );
 
@@ -143,7 +143,7 @@ describe("unified inbox — unreadOnly mail freshness gate", () => {
     const result = await svc.list(
       ORG,
       UID,
-      { limit: 10, kinds: ["mail"], unreadOnly: true },
+      { limit: 10, kinds: ["mail"], unreadOnly: true, eventKeys: undefined },
       user,
     );
 
@@ -163,7 +163,7 @@ describe("unified inbox — unreadOnly mail freshness gate", () => {
     makeRegistry()
     );
 
-    await svc.list(ORG, UID, { limit: 10, kinds: ["mail"], unreadOnly: false }, user);
+    await svc.list(ORG, UID, { limit: 10, kinds: ["mail"], unreadOnly: false, eventKeys: undefined }, user);
 
     expect(mail.areAllAccountsFresh).not.toHaveBeenCalled();
   });
@@ -182,7 +182,7 @@ describe("unified inbox — unreadOnly mail freshness gate", () => {
     const result = await svc.list(
       ORG,
       UID,
-      { limit: 10, kinds: ["mail"], unreadOnly: true },
+      { limit: 10, kinds: ["mail"], unreadOnly: true, eventKeys: undefined },
       user,
     );
 
@@ -201,7 +201,7 @@ describe("unified inbox — unreadOnly mail freshness gate", () => {
     makeRegistry()
     );
 
-    await svc.list(ORG, UID, { limit: 10, kinds: ["mail"], unreadOnly: true }, user);
+    await svc.list(ORG, UID, { limit: 10, kinds: ["mail"], unreadOnly: true, eventKeys: undefined }, user);
 
     expect(mail.listMessages).not.toHaveBeenCalled();
   });
@@ -217,7 +217,7 @@ describe("unified inbox — unreadOnly mail freshness gate", () => {
     makeRegistry()
     );
 
-    await svc.list(ORG, UID, { limit: 10, kinds: ["mail"], unreadOnly: true }, user);
+    await svc.list(ORG, UID, { limit: 10, kinds: ["mail"], unreadOnly: true, eventKeys: undefined }, user);
 
     expect(mail.listMessages).toHaveBeenCalled();
     const callArgs: unknown[] = mail.listMessages.mock.calls[0] as unknown[];

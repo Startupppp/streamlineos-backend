@@ -6,6 +6,7 @@ import { KbPageReviewsService, reviewerCanSeeAllReviews } from "./kb-page-review
 import { KbPageReviewsQueryService } from "./kb-page-reviews-query.service";
 import type { AccessService } from "../../access/access.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { encodeCursor } from "../../../common/pagination/cursor";
 
 function makeUser(orgId: string, userId = "user-1"): CurrentUserContext {
   return {
@@ -191,11 +192,11 @@ describe("AR-06 Criterion 3: listDue pagination and scope", () => {
     };
 
     const svc = new KbPageReviewsQueryService(db, makeAccessAllow(), auth as never);
-    const cursor = { sortValue: new Date("2025-12-31T00:00:00Z"), id: "50" };
+    const cursor = encodeCursor({ sortValue: "2025-12-31T00:00:00.000Z", id: "50" });
 
-    const result = await svc.listDue(makeUser(ORG), cursor);
+    const result = await svc.list(makeUser(ORG), { status: "overdue", limit: 49, cursor, sortDir: "asc" });
 
-    expect(Array.isArray(result)).toBe(true);
+    expect(Array.isArray(result.data)).toBe(true);
     expect(limitMock).toHaveBeenCalledWith(50);
     expect(whereMock).toHaveBeenCalled();
   });
