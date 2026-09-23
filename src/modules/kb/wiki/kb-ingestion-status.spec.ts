@@ -3,17 +3,12 @@ import { PgDialect } from "drizzle-orm/pg-core";
 import type { SQL } from "drizzle-orm";
 import { KbSourcesService } from "./kb-sources.service";
 import { kbPageIngestionStatusSchema } from "./dto/kb-sources.schemas";
-import { assertPageAccessible } from "../retrieval/kb-page-access.util";
 import type { Db } from "../../../db/drizzle.module";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 
-jest.mock("../retrieval/kb-page-access.util", () => ({
-  assertPageAccessible: jest.fn().mockResolvedValue(undefined),
-}));
-
-const mockedAssertPageAccessible = assertPageAccessible as jest.MockedFunction<
-  typeof assertPageAccessible
->;
+const auth = {
+  assertPageAccess: jest.fn(),
+};
 
 const dialect = new PgDialect();
 const ORG = "org-kb-1";
@@ -60,7 +55,14 @@ function makeDb(rows: Record<string, unknown>[]): { db: Db; capture: Capture } {
 }
 
 function service(db: Db): KbSourcesService {
-  return new KbSourcesService(db, {} as never, {} as never, {} as never, {} as never);
+  return new KbSourcesService(
+    db,
+    {} as never,
+    {} as never,
+    {} as never,
+    {} as never,
+    auth as never,
+  );
 }
 
 function params(condition: SQL | undefined): unknown[] {
@@ -89,7 +91,7 @@ const LIST_ITEM_KEYS = [
 
 describe("GET /kb/sources/:sourceId", () => {
   beforeEach(() => {
-    mockedAssertPageAccessible.mockClear();
+    auth.assertPageAccess.mockClear();
   });
 
   it("binds the org alongside the id, so a cross-tenant source cannot be read", async () => {
@@ -126,18 +128,31 @@ describe("GET /kb/sources/:sourceId", () => {
 
 describe("GET /kb/pages/:pageId/indexing-status", () => {
   beforeEach(() => {
-    mockedAssertPageAccessible.mockClear();
-    mockedAssertPageAccessible.mockResolvedValue(undefined);
+    auth.assertPageAccess.mockReset();
+    auth.assertPageAccess.mockResolvedValue({
+      orgId: ORG,
+      pageId: 42,
+      action: "view",
+      via: "admin",
+    });
   });
 
   it("asserts page visibility before it reads any outbox row", async () => {
     const { db, capture } = makeDb([]);
-    mockedAssertPageAccessible.mockRejectedValueOnce(new NotFoundException("Page not found"));
+    auth.assertPageAccess.mockRejectedValueOnce(new NotFoundException("Page not found"));
 
     await expect(service(db).pageIngestionStatus(USER, 42)).rejects.toBeInstanceOf(
       NotFoundException,
     );
     expect(capture.conditions).toHaveLength(0);
+  });
+
+  it("asks the canonical authorization seam rather than the retired page-access helper", async () => {
+    const { db } = makeDb([]);
+
+    await service(db).pageIngestionStatus(USER, 42);
+
+    expect(auth.assertPageAccess).toHaveBeenCalledWith(USER, 42, "view");
   });
 
   it("binds tenant, aggregate and event type — not the page id alone", async () => {

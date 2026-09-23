@@ -7,6 +7,8 @@ import { pageVisibleTo } from "./kb-page-visibility";
 import { chunkVisibleTo } from "./kb-chunk-visibility";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
+import { buildVisiblePageScope } from "../core/authorization/knowledge-page-scope";
+import type { KbActorStanding } from "../core/authorization/knowledge-authorization.types";
 
 const dialect = new PgDialect();
 const ORG = "org-revocation";
@@ -86,6 +88,7 @@ function retrieve(access: ReturnType<typeof makeAccess>) {
     makeEvents() as never,
     new KbCandidateService(db as never),
     makeScopes() as never,
+    makeKbAuth() as never,
   );
   return {
     wheres,
@@ -95,6 +98,13 @@ function retrieve(access: ReturnType<typeof makeAccess>) {
 
 const rendered = (wheres: SQL[]): string[] => wheres.map((w) => render(w).text);
 const boundValues = (wheres: SQL[]): unknown[] => wheres.flatMap((w) => render(w).params);
+
+const makeKbAuth = () => ({
+  visiblePagePredicate: jest.fn().mockResolvedValue(sql`true`),
+  assertPageAccess: jest
+    .fn()
+    .mockResolvedValue({ orgId: "org-1", pageId: 1, action: "view", via: "admin" }),
+});
 
 describe("Revocation dimension 1 — space membership is re-read per query, not captured at index time", () => {
   it("asks the access service on every retrieval", async () => {
@@ -286,5 +296,44 @@ describe("The acl_revision fence drops a chunk whose revision trails its page", 
     expect(FENCE_ROWS.filter((r) => admits(">=", r)).map((r) => r.pageId)).toContain(100);
     expect(FENCE_ROWS.filter((r) => admits(null, r)).map((r) => r.pageId)).toContain(100);
     expect(FENCE_ROWS.filter((r) => admits("=", r)).map((r) => r.pageId)).not.toContain(100);
+  });
+});
+
+describe("Revocation dimension 4 — the canonical page scope loses its arms as access narrows", () => {
+  const standing = (over: Partial<KbActorStanding> = {}): KbActorStanding => ({
+    orgId: ORG,
+    userId: "user-1",
+    membershipId: 1,
+    roleSlugs: [],
+    isOrgOwner: false,
+    isKbAdmin: false,
+    accessibleSpaceIds: [],
+    accessibleProjectIds: [],
+    permissionsVersion: 1,
+    ...over,
+  });
+
+  const textOf = (node: SQL<unknown> | null): string =>
+    node === null ? "" : new PgDialect().sqlToQuery(node).sql;
+
+  it("drops the space arm once the space is revoked, so an already-indexed space page is unreachable", () => {
+    const granted = buildVisiblePageScope(standing({ accessibleSpaceIds: [42] }), "view");
+    const revoked = buildVisiblePageScope(standing({ accessibleSpaceIds: [] }), "view");
+
+    expect(textOf(granted.indexedBranch)).toContain("space_id");
+    expect(textOf(revoked.indexedBranch)).not.toContain("space_id");
+  });
+
+  it("never admits a revoked page grant, because the grant arm requires a live row", () => {
+    const scope = buildVisiblePageScope(standing(), "view");
+
+    expect(textOf(scope.grantBranch)).toContain("revoked_at");
+    expect(textOf(scope.grantBranch)).toContain("IS NULL");
+  });
+
+  it("still binds the tenant on every arm, so nothing widens as access narrows", () => {
+    const scope = buildVisiblePageScope(standing({ accessibleSpaceIds: [] }), "view");
+
+    expect(new PgDialect().sqlToQuery(scope.predicate).params).toContain(ORG);
   });
 });

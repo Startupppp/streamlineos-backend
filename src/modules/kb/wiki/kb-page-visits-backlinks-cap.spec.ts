@@ -1,9 +1,11 @@
+import { sql } from "drizzle-orm";
 import { KbPageVisitsService } from "./kb-page-visits.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 
-jest.mock("../retrieval/kb-page-access.util", () => ({
-  assertPageAccessible: jest.fn().mockResolvedValue(undefined),
-}));
+const authMock = {
+  visiblePagePredicate: jest.fn().mockResolvedValue(sql`true`),
+  assertPageAccess: jest.fn().mockResolvedValue({ orgId: "o1", pageId: 1, action: "view", via: "admin" }),
+};
 
 function makeUser(): CurrentUserContext {
   return { orgId: "org-1", userId: "user-1", isOrgOwner: true } as unknown as CurrentUserContext;
@@ -29,11 +31,14 @@ function makeDb(linkRows: Array<{ sourcePageId: number }>) {
 }
 
 describe("KbPageVisitsService.getBacklinks — 200-row cap", () => {
-  beforeEach(() => jest.clearAllMocks());
+  beforeEach(() => {
+    authMock.visiblePagePredicate.mockClear();
+    authMock.assertPageAccess.mockClear();
+  });
 
   it("calls .limit(200) on the backlinks select so a widely-linked page is bounded in the DB", async () => {
     const { db, limitFn } = makeDb([]);
-    const svc = new KbPageVisitsService(db as never);
+    const svc = new KbPageVisitsService(db as never, authMock as never);
 
     await svc.getBacklinks(makeUser(), 1);
 
@@ -42,7 +47,7 @@ describe("KbPageVisitsService.getBacklinks — 200-row cap", () => {
 
   it("returns an empty array when there are no backlinks", async () => {
     const { db } = makeDb([]);
-    const svc = new KbPageVisitsService(db as never);
+    const svc = new KbPageVisitsService(db as never, authMock as never);
 
     const result = await svc.getBacklinks(makeUser(), 1);
 
@@ -52,8 +57,21 @@ describe("KbPageVisitsService.getBacklinks — 200-row cap", () => {
   it("fetches pages for up to 200 backlink ids", async () => {
     const linkRows = Array.from({ length: 200 }, (_, i) => ({ sourcePageId: i + 1 }));
     const { db } = makeDb(linkRows);
-    const svc = new KbPageVisitsService(db as never);
+    const svc = new KbPageVisitsService(db as never, authMock as never);
 
     await expect(svc.getBacklinks(makeUser(), 1)).resolves.not.toThrow();
+  });
+
+  it("consults assertPageAccess with action 'view' before returning backlinks so the target page is access-checked", async () => {
+    const { db } = makeDb([]);
+    const svc = new KbPageVisitsService(db as never, authMock as never);
+
+    await svc.getBacklinks(makeUser(), 42);
+
+    expect(authMock.assertPageAccess).toHaveBeenCalledWith(
+      expect.objectContaining({ orgId: "org-1" }),
+      42,
+      "view",
+    );
   });
 });

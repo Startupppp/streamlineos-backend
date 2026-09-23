@@ -1,4 +1,5 @@
 import { NotFoundException } from "@nestjs/common";
+import { sql } from "drizzle-orm";
 import { KbSourcesService } from "./kb-sources.service";
 
 function makeDb(rows: Record<string, unknown>[]): unknown {
@@ -32,6 +33,13 @@ function makeConfig() {
   return { R2_KB_BUCKET_NAME: KB_BUCKET, R2_KB_PUBLIC_URL: "" };
 }
 
+function makeAuthMock() {
+  return {
+    visiblePagePredicate: jest.fn().mockResolvedValue(sql`true`),
+    assertPageAccess: jest.fn().mockResolvedValue({ orgId: "o1", pageId: 1, action: "view", via: "admin" }),
+  };
+}
+
 function makeService(
   rows: Record<string, unknown>[],
   deleteFileFn = jest.fn().mockResolvedValue(undefined),
@@ -42,6 +50,7 @@ function makeService(
     makeIndexing() as never,
     makeConfig() as never,
     {} as never,
+    makeAuthMock() as never,
   );
 }
 

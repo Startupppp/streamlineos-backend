@@ -73,13 +73,15 @@ export function buildIndexedBranch(
     );
   }
 
-  if (standing.accessibleSpaceIds.length > 0) {
+  const containerGrantsAction = action === "view" || action === "comment";
+
+  if (containerGrantsAction && standing.accessibleSpaceIds.length > 0) {
     clauses.push(
       sql`(${kbPages.spaceId} IS NOT NULL AND ${kbPages.spaceId} = ANY(${intArray(standing.accessibleSpaceIds)}))`,
     );
   }
 
-  if (standing.accessibleProjectIds.length > 0) {
+  if (containerGrantsAction && standing.accessibleProjectIds.length > 0) {
     clauses.push(
       sql`(${kbPages.projectId} IS NOT NULL AND ${kbPages.projectId} = ANY(${intArray(standing.accessibleProjectIds)}))`,
     );

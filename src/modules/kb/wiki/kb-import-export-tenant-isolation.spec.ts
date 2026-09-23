@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import type { Db } from "../../../db/drizzle.module";
 import { KbImportExportService } from "./kb-import-export.service";
 
@@ -16,6 +17,10 @@ describe("KbImportExportService — cross-tenant isolation", () => {
 
   const audit = {} as never;
   const planLimits = {} as never;
+  const authMock = {
+    visiblePagePredicate: jest.fn().mockResolvedValue(sql`true`),
+    assertPageAccess: jest.fn().mockResolvedValue({ orgId: "o1", pageId: 1, action: "view", via: "admin" }),
+  };
 
   function makeDb() {
     const wheres: unknown[] = [];
@@ -42,7 +47,7 @@ describe("KbImportExportService — cross-tenant isolation", () => {
 
   it("scopes export job list to the requesting org (cross-tenant isolation)", async () => {
     const { db, wheres } = makeDb();
-    const svc = new KbImportExportService(db, audit, planLimits);
+    const svc = new KbImportExportService(db, audit, planLimits, authMock as never);
 
     await svc.listExportJobs(ATTACKER);
 
@@ -54,7 +59,7 @@ describe("KbImportExportService — cross-tenant isolation", () => {
 
   it("returns export jobs for the owning org (same-tenant control)", async () => {
     const { db } = makeDb();
-    const svc = new KbImportExportService(db, audit, planLimits);
+    const svc = new KbImportExportService(db, audit, planLimits, authMock as never);
 
     const result = await svc.listExportJobs(OWNER);
 

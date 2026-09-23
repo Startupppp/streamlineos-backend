@@ -1,4 +1,5 @@
 import { BadRequestException } from "@nestjs/common";
+import { sql } from "drizzle-orm";
 import { KbImportExportService } from "./kb-import-export.service";
 import type { Db } from "../../../db/drizzle.module";
 import type { AuditService } from "../../../common/audit/audit.service";
@@ -27,8 +28,12 @@ describe("KbImportExportService.importPages parent validation", () => {
     const planLimits = {
       assertWithinLimit: jest.fn().mockResolvedValue(undefined),
     } as unknown as PlanLimitsService;
+    const authMock = {
+      visiblePagePredicate: jest.fn().mockResolvedValue(sql`true`),
+      assertPageAccess: jest.fn().mockResolvedValue({ orgId: "o1", pageId: 1, action: "view", via: "admin" }),
+    };
 
-    const service = new KbImportExportService(db, audit, planLimits);
+    const service = new KbImportExportService(db, audit, planLimits, authMock as never);
 
     const input: ImportPagesInput = {
       sourceType: "markdown",

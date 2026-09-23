@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import type { Db } from "../../../db/drizzle.module";
 import { KbCitationVisibilityService } from "./kb-citation-visibility.service";
 import { KbAskService } from "./kb-ask.service";
@@ -24,6 +25,10 @@ describe("KbAskService — cross-tenant isolation", () => {
   const events = { record: jest.fn().mockResolvedValue(undefined) } as never;
   const search = {} as never;
   const access = {} as never;
+  const auth = {
+    visiblePagePredicate: jest.fn().mockResolvedValue(sql`true`),
+    assertPageAccess: jest.fn().mockResolvedValue({ orgId: "org-1", pageId: 1, action: "view", via: "admin" }),
+  };
 
   function makeDb(hasContent: boolean) {
     const executeArgs: unknown[] = [];
@@ -49,7 +54,7 @@ describe("KbAskService — cross-tenant isolation", () => {
 
   it("scopes indexed-content check to the requesting org (cross-tenant isolation)", async () => {
     const { db, executeArgs } = makeDb(false);
-    const svc = new KbAskService(db, aiGateway, events, search, access, new KbCitationVisibilityService(db, access, search));
+    const svc = new KbAskService(db, aiGateway, events, search, access, new KbCitationVisibilityService(db, access, search, auth as never));
 
     await svc.ask(makeUser(ATTACKER), { question: "test?" } as never);
 
@@ -61,7 +66,7 @@ describe("KbAskService — cross-tenant isolation", () => {
 
   it("returns no-context answer for the owning org when no content exists (same-tenant control)", async () => {
     const { db } = makeDb(false);
-    const svc = new KbAskService(db, aiGateway, events, search, access, new KbCitationVisibilityService(db, access, search));
+    const svc = new KbAskService(db, aiGateway, events, search, access, new KbCitationVisibilityService(db, access, search, auth as never));
 
     const result = await svc.ask(makeUser(OWNER), { question: "test?" } as never);
 

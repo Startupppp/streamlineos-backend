@@ -129,6 +129,11 @@ describe("KbAskService — citation re-verification re-applies the article-restr
     return db;
   };
 
+  const auth = {
+    visiblePagePredicate: jest.fn().mockResolvedValue(sql`true`),
+    assertPageAccess: jest.fn().mockResolvedValue({ orgId: "org-1", pageId: 1, action: "view", via: "admin" }),
+  };
+
   const buildService = (isAdmin: boolean) => {
     const db = makeDb();
     const access = {
@@ -164,6 +169,7 @@ describe("KbAskService — citation re-verification re-applies the article-restr
       events as never,
       new KbCandidateService(db as never),
       scopes as never,
+      auth as never,
     );
 
     const retrieved = [OPEN_ARTICLE, RESTRICTED_ARTICLE].map((a) => ({
@@ -186,7 +192,7 @@ describe("KbAskService — citation re-verification re-applies the article-restr
       events as never,
       search as never,
       access as never,
-      new KbCitationVisibilityService(db as never, access as never, search as never),
+      new KbCitationVisibilityService(db as never, access as never, search as never, auth as never),
     );
     return { ask, access };
   };

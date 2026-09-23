@@ -1,5 +1,5 @@
 import { PgDialect } from "drizzle-orm/pg-core";
-import type { SQL } from "drizzle-orm";
+import { sql, type SQL } from "drizzle-orm";
 import { KbCandidateService } from "./kb-candidate.service";
 import { KbSearchService } from "./kb-search.service";
 import { KbMembersService } from "../wiki/kb-members.service";
@@ -52,6 +52,13 @@ function collectStrings(root: unknown): string[] {
   return found;
 }
 
+const makeKbAuth = () => ({
+  visiblePagePredicate: jest.fn().mockResolvedValue(sql`true`),
+  assertPageAccess: jest
+    .fn()
+    .mockResolvedValue({ orgId: "org-1", pageId: 1, action: "view", via: "admin" }),
+});
+
 describe("KB cross-tenant isolation", () => {
   it("retrieveTopSources always applies the caller's orgId to the WHERE predicate", async () => {
     const capturedConditions: unknown[] = [];
@@ -93,6 +100,7 @@ describe("KB cross-tenant isolation", () => {
       makeEvents() as never,
       new KbCandidateService(db as never),
       makeScopes() as never,
+      makeKbAuth() as never,
     );
 
     await svc.retrieveTopSources(makeUser({ orgId: "org-a" }), "how do I reset my password", 4);
@@ -137,6 +145,7 @@ describe("KB cross-tenant isolation", () => {
       makeEvents() as never,
       new KbCandidateService(db as never),
       makeScopes() as never,
+      makeKbAuth() as never,
     );
 
     const orgBUser = makeUser({ orgId: "org-b", userId: "user-b" });

@@ -20,8 +20,6 @@ import { extractMentionUserIds } from "./kb-page-content.util";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { KB_PAGE_SEARCH_MAX_LIMIT } from "./dto/kb-pages.schemas";
 import type { CreatePageInput, UpdatePageInput } from "./dto/kb-pages.schemas";
-import { pageVisibleTo } from "../retrieval/kb-page-visibility";
-import { getAccessibleProjectIds } from "../retrieval/kb-project-access.util";
 import { shouldResetTrust } from "./kb-page-governance.util";
 import {
   NO_KB_PAGE_CONFLICT_DETAILS,
@@ -31,8 +29,8 @@ import {
   type KbPageConflictDetails,
   type KbTransaction,
 } from "./kb-page-edit.util";
-import { assertPageAccessible } from "../retrieval/kb-page-access.util";
 import { actingMembershipId } from "../../../common/auth/principal";
+import { KnowledgeAuthorizationService } from "../core/authorization/knowledge-authorization.service";
 import { KB_PAGE_COLUMNS, type KbPageRow } from "./kb-page-columns";
 
 type PageRow = KbPageRow;
@@ -52,6 +50,7 @@ export class KbPagesService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly notifications: NotificationsService,
     private readonly planLimits: PlanLimitsService,
+    private readonly auth: KnowledgeAuthorizationService,
   ) {}
 
   private membershipId(user: CurrentUserContext): number | null {
@@ -135,9 +134,9 @@ export class KbPagesService {
     canManage: boolean,
   ): Promise<PageRow & { ancestors: Pick<PageRow, "id" | "title">[]; isFavorite: boolean }> {
     const orgId = user.orgId;
-    const projectIds = await this.getAccessibleProjectIds(user);
+    const predicate = await this.auth.visiblePagePredicate(user, "view");
     const page = await this.db.query.kbPages.findFirst({
-      where: and(eq(kbPages.id, pageId), eq(kbPages.orgId, orgId), isNull(kbPages.deletedAt), pageVisibleTo(user, projectIds)),
+      where: and(eq(kbPages.id, pageId), eq(kbPages.orgId, orgId), isNull(kbPages.deletedAt), predicate),
       columns: { fts: false },
     });
     if (!page) throw new NotFoundException("Page not found");
@@ -176,7 +175,7 @@ export class KbPagesService {
   }
 
   async update(user: CurrentUserContext, pageId: number, input: UpdatePageInput, canManage: boolean): Promise<PageRow> {
-    await assertPageAccessible(this.db, user, pageId);
+    await this.auth.assertPageAccess(user, pageId, "edit");
     const orgId = user.orgId;
     const current = await this.db.query.kbPages.findFirst({
       columns: { id: true, isLocked: true, trustState: true, content: true },
@@ -330,7 +329,7 @@ export class KbPagesService {
       return `${w}:*`;
     }).join(" & ");
     const tsquery = sql`to_tsquery('english', ${prefixQuery})`;
-    const projectIds = await this.getAccessibleProjectIds(user);
+    const predicate = await this.auth.visiblePagePredicate(user, "view");
     const rows = await this.db
       .select({
         id: kbPages.id,
@@ -343,7 +342,7 @@ export class KbPagesService {
         and(
           eq(kbPages.orgId, orgId),
           isNull(kbPages.deletedAt),
-          pageVisibleTo(user, projectIds),
+          predicate,
           sql`${kbPages}.fts @@ ${tsquery}`,
         ),
       )
@@ -428,10 +427,6 @@ export class KbPagesService {
     );
     if (!page) throw new NotFoundException("Page not found");
     return page;
-  }
-
-  private getAccessibleProjectIds(user: CurrentUserContext): Promise<number[]> {
-    return getAccessibleProjectIds(this.db, user);
   }
 
   private async describeLatestEdit(

@@ -23,8 +23,8 @@ import {
 import { registerAfterCommit } from "../../../common/tenant/tenant-context";
 import { OutboxWriter } from "../../../common/outbox/outbox-writer";
 import type { TenantTx } from "../../../db/drizzle.types";
-import { assertPageAccessible } from "../retrieval/kb-page-access.util";
 import { KbAccessService } from "../core/kb-access.service";
+import { KnowledgeAuthorizationService } from "../core/authorization/knowledge-authorization.service";
 import type {
   CreateKbSourceNoteInput,
   KbIngestionState,
@@ -73,7 +73,10 @@ const SOURCE_LIST_COLUMNS = {
 
 type OutboxDeliveryState = (typeof outboxEvents.$inferSelect)["deliveryState"];
 
-const INGESTION_STATE_BY_DELIVERY: Record<OutboxDeliveryState, KbIngestionState> = {
+const INGESTION_STATE_BY_DELIVERY: Record<
+  OutboxDeliveryState,
+  KbIngestionState
+> = {
   PENDING: "pending",
   IN_FLIGHT: "in_flight",
   DELIVERED: "indexed",
@@ -95,6 +98,7 @@ export class KbSourcesService {
     private readonly attachmentIndexing: KbAttachmentIndexingService,
     @Inject(APP_CONFIG) private readonly config: AppConfig,
     private readonly access: KbAccessService,
+    private readonly auth: KnowledgeAuthorizationService,
   ) {}
 
   async list(
@@ -147,8 +151,11 @@ export class KbSourcesService {
     user: CurrentUserContext,
     pageId: number,
   ): Promise<KbPageIngestionStatus> {
-    await assertPageAccessible(this.db, user, pageId);
-    return { pageId, ...(await this.ingestionStatusFor(user.orgId, "kb_page", pageId)) };
+    await this.auth.assertPageAccess(user, pageId, "view");
+    return {
+      pageId,
+      ...(await this.ingestionStatusFor(user.orgId, "kb_page", pageId)),
+    };
   }
 
   async articleIngestionStatus(
@@ -156,7 +163,10 @@ export class KbSourcesService {
     articleId: number,
   ): Promise<KbArticleIngestionStatus> {
     await this.access.assertArticleViewable(user, articleId);
-    return { articleId, ...(await this.ingestionStatusFor(user.orgId, "kb_article", articleId)) };
+    return {
+      articleId,
+      ...(await this.ingestionStatusFor(user.orgId, "kb_article", articleId)),
+    };
   }
 
   private async ingestionStatusFor(
@@ -206,10 +216,6 @@ export class KbSourcesService {
     user: CurrentUserContext,
     input: CreateKbSourceNoteInput,
   ): Promise<typeof kbSources.$inferSelect> {
-    // `this.db.transaction` rather than `runInTenantTransaction`: every caller is a request, so
-    // the ambient tenant transaction is already open and this becomes a savepoint inside it —
-    // which is what makes the row and its event atomic. It is also the idiom the rest of the
-    // KB write path uses.
     const row = await this.db.transaction(async (tx) => {
       const [inserted] = await tx
         .insert(kbSources)

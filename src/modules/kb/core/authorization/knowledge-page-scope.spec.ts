@@ -111,6 +111,39 @@ describe("buildVisiblePageScope", () => {
     expect(text(scope.indexedBranch)).toContain("owner_membership_id");
   });
 
+  it("stops letting bare space membership authorize an edit, because membership is a reach grant and not an administrative one", () => {
+    const standing = makeStanding({ accessibleSpaceIds: [42] });
+
+    expect(text(buildVisiblePageScope(standing, "view").indexedBranch)).toContain("space_id");
+    expect(text(buildVisiblePageScope(standing, "edit").indexedBranch)).not.toContain("space_id");
+    expect(text(buildVisiblePageScope(standing, "manage").indexedBranch)).not.toContain(
+      "space_id",
+    );
+  });
+
+  it("stops letting bare project membership authorize an edit", () => {
+    const standing = makeStanding({ accessibleProjectIds: [7] });
+
+    expect(text(buildVisiblePageScope(standing, "view").indexedBranch)).toContain("project_id");
+    expect(text(buildVisiblePageScope(standing, "edit").indexedBranch)).not.toContain(
+      "project_id",
+    );
+  });
+
+  it("still lets a space member comment, which is the collaboration level membership does confer", () => {
+    const standing = makeStanding({ accessibleSpaceIds: [42] });
+
+    expect(text(buildVisiblePageScope(standing, "comment").indexedBranch)).toContain("space_id");
+  });
+
+  it("still reaches a page the actor owns when the action is a manage, so ownership survives the narrowing", () => {
+    const standing = makeStanding({ membershipId: 9, accessibleSpaceIds: [42] });
+
+    expect(text(buildVisiblePageScope(standing, "manage").indexedBranch)).toContain(
+      "owner_membership_id",
+    );
+  });
+
   it("stops offering organization-wide pages once the action is an edit rather than a view", () => {
     const viewScope = buildVisiblePageScope(makeStanding(), "view");
     const editScope = buildVisiblePageScope(makeStanding(), "edit");

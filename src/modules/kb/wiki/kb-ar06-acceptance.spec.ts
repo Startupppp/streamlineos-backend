@@ -1,4 +1,5 @@
 import { ForbiddenException, NotFoundException } from "@nestjs/common";
+import { sql } from "drizzle-orm";
 import type { Db } from "../../../db/drizzle.module";
 import { KbPageCommentsService } from "./kb-page-comments.service";
 import { KbPageReviewsService, reviewerCanSeeAllReviews } from "./kb-page-reviews.service";
@@ -24,6 +25,20 @@ function makeAccessAllow(): AccessService {
 
 function makeAccessDeny(): AccessService {
   return { holds: jest.fn().mockResolvedValue(false) } as never;
+}
+
+function makeAuthPageDeny() {
+  return {
+    visiblePagePredicate: jest.fn().mockResolvedValue(sql`true`),
+    assertPageAccess: jest.fn().mockRejectedValue(new NotFoundException("Page not found")),
+  };
+}
+
+function makeAuthPageAllow() {
+  return {
+    visiblePagePredicate: jest.fn().mockResolvedValue(sql`true`),
+    assertPageAccess: jest.fn().mockResolvedValue({ orgId: "org-1", pageId: 1, action: "view", via: "admin" }),
+  };
 }
 
 function makeSelectJoinChain(): Record<string, unknown> {
@@ -76,7 +91,7 @@ describe("AR-06 Criterion 2: page comment access revocation", () => {
       null,
     );
 
-    const svc = new KbPageCommentsService(db, dispatch, makeAccessDeny());
+    const svc = new KbPageCommentsService(db, dispatch, makeAccessDeny(), makeAuthPageDeny() as never);
 
     await expect(
       svc.update(makeUser(ORG, USER), COMMENT_ID, { content: "edit" }),
@@ -94,7 +109,7 @@ describe("AR-06 Criterion 2: page comment access revocation", () => {
       null,
     );
 
-    const svc = new KbPageCommentsService(db, dispatch, makeAccessDeny());
+    const svc = new KbPageCommentsService(db, dispatch, makeAccessDeny(), makeAuthPageDeny() as never);
 
     await expect(svc.remove(makeUser(ORG, USER), COMMENT_ID)).rejects.toThrow(NotFoundException);
   });
@@ -111,7 +126,7 @@ describe("AR-06 Criterion 2: page comment access revocation", () => {
       { id: PAGE_ID, orgId: ORG },
     );
 
-    const svc = new KbPageCommentsService(db, dispatch, makeAccessDeny());
+    const svc = new KbPageCommentsService(db, dispatch, makeAccessDeny(), makeAuthPageAllow() as never);
 
     await expect(
       svc.update(makeUser(ORG, OTHER), COMMENT_ID, { content: "hacked" }),
@@ -159,24 +174,23 @@ describe("AR-06 Criterion 3: listDue pagination and scope", () => {
     const leftJoinMock1 = jest.fn().mockReturnValue({ leftJoin: leftJoinMock2 });
     const innerJoinMock = jest.fn().mockReturnValue({ leftJoin: leftJoinMock1 });
 
-    const joinChain: Record<string, unknown> = { where: jest.fn().mockResolvedValue([]) };
-    joinChain.innerJoin = jest.fn().mockReturnValue(joinChain);
-    joinChain.leftJoin = jest.fn().mockReturnValue(joinChain);
-
     const db = {
       query: {
         organizationMembers: {
           findFirst: jest.fn().mockResolvedValue({ id: 10 }),
         },
       },
-      select: jest.fn().mockReturnValueOnce({
-        from: jest.fn().mockReturnValue(joinChain),
-      }).mockReturnValueOnce({
+      select: jest.fn().mockReturnValue({
         from: jest.fn().mockReturnValue({ innerJoin: innerJoinMock }),
       }),
     } as unknown as Db;
 
-    const svc = new KbPageReviewsQueryService(db, makeAccessAllow());
+    const auth = {
+      visiblePagePredicate: jest.fn().mockResolvedValue(sql`true`),
+      assertPageAccess: jest.fn().mockResolvedValue({ orgId: "org-1", pageId: 1, action: "view", via: "admin" }),
+    };
+
+    const svc = new KbPageReviewsQueryService(db, makeAccessAllow(), auth as never);
     const cursor = { sortValue: new Date("2025-12-31T00:00:00Z"), id: "50" };
 
     const result = await svc.listDue(makeUser(ORG), cursor);

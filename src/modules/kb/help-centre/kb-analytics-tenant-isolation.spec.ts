@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import type { Db } from "../../../db/drizzle.module";
 import { KbAnalyticsService } from "./kb-analytics.service";
 
@@ -43,13 +44,18 @@ function makeDb(): { db: Db; allWhereArgs: unknown[] } {
   return { db, allWhereArgs };
 }
 
+const auth = {
+  visiblePagePredicate: jest.fn().mockResolvedValue(sql`true`),
+  assertPageAccess: jest.fn().mockResolvedValue({ orgId: "org-1", pageId: 1, action: "view", via: "admin" }),
+};
+
 describe("KbAnalyticsService — cross-tenant isolation", () => {
   const ATTACKER_ORG = "org-attacker";
   const OWNER_ORG = "org-owner";
 
   it("scopes all analytics queries to the requesting org (tenant isolation)", async () => {
     const { db, allWhereArgs } = makeDb();
-    const svc = new KbAnalyticsService(db);
+    const svc = new KbAnalyticsService(db, auth as never);
 
     await svc.overview(ATTACKER_ORG, {}).catch(() => {});
 
@@ -60,7 +66,7 @@ describe("KbAnalyticsService — cross-tenant isolation", () => {
 
   it("does not leak data across orgs (same-tenant control)", async () => {
     const { db, allWhereArgs } = makeDb();
-    const svc = new KbAnalyticsService(db);
+    const svc = new KbAnalyticsService(db, auth as never);
 
     await svc.overview(OWNER_ORG, {}).catch(() => {});
 

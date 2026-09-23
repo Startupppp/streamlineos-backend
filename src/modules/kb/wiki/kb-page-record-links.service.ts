@@ -6,16 +6,18 @@ import { DRIZZLE } from "../../../db/drizzle.constants";
 import type { Db } from "../../../db/drizzle.module";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import type { CreateRecordLinkDto, RecordLinkByRecordQuery } from "./dto/kb-page-record-links.schemas";
-import { pageVisibleTo } from "../retrieval/kb-page-visibility";
-import { getAccessibleProjectIds } from "../retrieval/kb-project-access.util";
+import { KnowledgeAuthorizationService } from "../core/authorization/knowledge-authorization.service";
 
 
 @Injectable()
 export class KbPageRecordLinksService {
-  constructor(@Inject(DRIZZLE) private readonly db: Db) {}
+  constructor(
+    @Inject(DRIZZLE) private readonly db: Db,
+    private readonly auth: KnowledgeAuthorizationService,
+  ) {}
 
   async list(user: CurrentUserContext, pageId: number) {
-    await this.assertPageAccessible(user, pageId);
+    await this.auth.assertPageAccess(user, pageId, "view");
     return this.db
       .select({
         id: kbPageLinks.id,
@@ -34,7 +36,7 @@ export class KbPageRecordLinksService {
   }
 
   async add(user: CurrentUserContext, pageId: number, dto: CreateRecordLinkDto) {
-    await this.assertPageAccessible(user, pageId);
+    await this.auth.assertPageAccess(user, pageId, "edit");
 
     try {
       const [row] = await this.db
@@ -74,7 +76,7 @@ export class KbPageRecordLinksService {
   }
 
   async listByRecord(user: CurrentUserContext, query: RecordLinkByRecordQuery) {
-    const projectIds = await getAccessibleProjectIds(this.db, user);
+    const predicate = await this.auth.visiblePagePredicate(user, "view");
     return this.db
       .select({
         pageId: kbPages.id,
@@ -89,23 +91,9 @@ export class KbPageRecordLinksService {
           eq(kbPageLinks.targetType, query.targetType),
           eq(kbPageLinks.targetId, query.targetId),
           isNull(kbPages.deletedAt),
-          pageVisibleTo(user, projectIds),
+          predicate,
         ),
       )
       .limit(50);
-  }
-
-  private async assertPageAccessible(user: CurrentUserContext, pageId: number) {
-    const projectIds = await getAccessibleProjectIds(this.db, user);
-    const page = await this.db.query.kbPages.findFirst({
-      where: and(
-        eq(kbPages.id, pageId),
-        eq(kbPages.orgId, user.orgId),
-        isNull(kbPages.deletedAt),
-        pageVisibleTo(user, projectIds),
-      ),
-      columns: { id: true },
-    });
-    if (!page) throw new NotFoundException("Page not found");
   }
 }

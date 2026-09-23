@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import { sql } from "drizzle-orm";
 import {
   kbSourcesListQuerySchema,
   type KbSourcesListQuery,
@@ -8,6 +9,11 @@ import { searchPagesSchema, KB_PAGE_SEARCH_MAX_LIMIT } from "./dto/kb-pages.sche
 import { KbSourcesService } from "./kb-sources.service";
 import { decodeCursor } from "../../../common/pagination/cursor";
 import type { Db } from "../../../db/drizzle.module";
+
+const auth = {
+  visiblePagePredicate: jest.fn().mockResolvedValue(sql`true`),
+  assertPageAccess: jest.fn().mockResolvedValue({ orgId: "org-1", pageId: 1, action: "view", via: "admin" }),
+};
 
 /**
  * Two KB lists answered a hard cap with no way past it and no signal that anything was

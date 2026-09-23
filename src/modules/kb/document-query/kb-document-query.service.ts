@@ -8,10 +8,9 @@ import { AccessService } from "../../access/access.service";
 import { resolveKbArticlesViewScope } from "../core/kb-scope";
 import { articleOwnerScope } from "../retrieval/kb-article-owner-scope";
 import { buildArticleRestrictionPredicate } from "../retrieval/kb-article-restriction-predicate";
-import { pageVisibleTo } from "../retrieval/kb-page-visibility";
-import { getAccessibleProjectIds } from "../retrieval/kb-project-access.util";
 import { actingMembershipId } from "../../../common/auth/principal";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
+import { KnowledgeAuthorizationService } from "../core/authorization/knowledge-authorization.service";
 
 export type KbDocumentHit =
   | {
@@ -41,6 +40,7 @@ export class KbDocumentQueryService {
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly kbAccess: KbAccessService,
     private readonly access: AccessService,
+    private readonly auth: KnowledgeAuthorizationService,
   ) {}
 
   async searchDocuments(
@@ -51,10 +51,10 @@ export class KbDocumentQueryService {
     const cap = Math.min(limit, KB_DOCUMENT_QUERY_CAP);
     const term = `%${query}%`;
 
-    const [articleRead, spaceIds, projectIds] = await Promise.all([
+    const [articleRead, spaceIds, predicate] = await Promise.all([
       resolveKbArticlesViewScope(this.access, user),
       this.kbAccess.getAccessibleSpaceIds(user),
-      getAccessibleProjectIds(this.db, user),
+      this.auth.visiblePagePredicate(user, "view"),
     ]);
 
     const results: KbDocumentHit[] = [];
@@ -113,7 +113,7 @@ export class KbDocumentQueryService {
           isNull(kbPages.deletedAt),
           ne(kbPages.status, "archived"),
           sql`${kbPages.title} ILIKE ${term}`,
-          pageVisibleTo(user, projectIds),
+          predicate,
         ),
       )
       .orderBy(desc(kbPages.updatedAt))

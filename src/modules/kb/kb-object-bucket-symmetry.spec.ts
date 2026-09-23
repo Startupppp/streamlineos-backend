@@ -1,5 +1,6 @@
 import { Readable } from "stream";
 import { S3Client } from "@aws-sdk/client-s3";
+import { sql } from "drizzle-orm";
 import { clearRegionRegistry } from "../../common/region/region-registry";
 import type { MediaCompressionService } from "../../common/media/media-compression.service";
 import { StorageService, type StorageConfig } from "../storage/storage.service";
@@ -34,6 +35,11 @@ import { KbAttachmentIndexingService } from "./retrieval/kb-attachment-indexing.
  * upload is performed by the real service that owns it, not by the test, so an
  * override that stops reaching either end fails here.
  */
+
+const auth = {
+  visiblePagePredicate: jest.fn().mockResolvedValue(sql`true`),
+  assertPageAccess: jest.fn().mockResolvedValue({ orgId: "org-1", pageId: 1, action: "view", via: "admin" }),
+};
 
 const DEFAULT_BUCKET = "default-files";
 const KB_BUCKET = "kb-files";
@@ -152,6 +158,7 @@ describe("KB sources — the delete addresses the bucket the upload used", () =>
       indexing() as never,
       config as never,
       {} as never,
+      auth as never,
     );
 
     await svc.createFile(USER, textFile as never);
@@ -176,6 +183,7 @@ describe("KB sources — the delete addresses the bucket the upload used", () =>
       indexing() as never,
       config as never,
       {} as never,
+      auth as never,
     );
 
     await svc.createFile(USER, textFile as never);
@@ -293,6 +301,7 @@ describe("KB page attachments — the cascade purge addresses the bucket the upl
       audit() as never,
       store,
       config as never,
+      auth as never,
     );
 
     await tree.hardDelete(USER, 10);

@@ -64,40 +64,74 @@ function makeDb() {
   return chain;
 }
 
-describe("every KB surface builds its predicate from resolved project access", () => {
+function makeAuth(): { visiblePagePredicate: jest.Mock; assertPageAccess: jest.Mock } {
+  return {
+    visiblePagePredicate: jest.fn().mockResolvedValue({ marker: "canonical-scope" }),
+    assertPageAccess: jest
+      .fn()
+      .mockResolvedValue({ orgId: "org-1", pageId: 7, action: "view", via: "admin" }),
+  };
+}
+
+describe("every KB surface takes its predicate from the canonical authorization seam", () => {
   beforeEach(() => {
     pageVisibleTo.mockClear();
   });
 
-  const surfaces: Array<{ name: string; run: () => Promise<unknown> }> = [
+  const surfaces: Array<{
+    name: string;
+    run: (auth: ReturnType<typeof makeAuth>) => Promise<unknown>;
+  }> = [
     {
       name: "analytics",
-      run: () => new KbAnalyticsService(makeDb() as never).pages(USER),
+      run: (auth) => new KbAnalyticsService(makeDb() as never, auth as never).pages(USER),
     },
     {
       name: "page AI",
-      run: () =>
-        new KbPageAiService(makeDb() as never, {} as never, {} as never).summarize(USER, 7),
+      run: (auth) =>
+        new KbPageAiService(
+          makeDb() as never,
+          {} as never,
+          {} as never,
+          auth as never,
+        ).summarize(USER, 7),
     },
     {
       name: "comments",
-      run: () => new KbPageCommentsService(makeDb() as never, {} as never, {} as never).list(USER, 7),
+      run: (auth) =>
+        new KbPageCommentsService(
+          makeDb() as never,
+          {} as never,
+          {} as never,
+          auth as never,
+        ).list(USER, 7),
     },
     {
       name: "record links",
-      run: () => new KbPageRecordLinksService(makeDb() as never).list(USER, 7),
+      run: (auth) =>
+        new KbPageRecordLinksService(makeDb() as never, auth as never).list(USER, 7),
     },
   ];
 
   for (const surface of surfaces) {
-    it(`${surface.name} passes the caller's accessible projects, never a blank list`, async () => {
-      await surface.run().catch(() => undefined);
+    it(`${surface.name} asks the canonical seam for the acting user's scope`, async () => {
+      const auth = makeAuth();
 
-      expect(pageVisibleTo).toHaveBeenCalled();
-      for (const call of pageVisibleTo.mock.calls) {
-        expect(call[0]).toBe(USER);
-        expect(call[1]).toEqual(ACCESSIBLE);
-      }
+      await surface.run(auth).catch(() => undefined);
+
+      const consulted =
+        auth.visiblePagePredicate.mock.calls.length + auth.assertPageAccess.mock.calls.length;
+      expect(consulted).toBeGreaterThan(0);
+      for (const call of auth.visiblePagePredicate.mock.calls) expect(call[0]).toBe(USER);
+      for (const call of auth.assertPageAccess.mock.calls) expect(call[0]).toBe(USER);
+    });
+
+    it(`${surface.name} never rebuilds authorization through the retired visibility predicate`, async () => {
+      const auth = makeAuth();
+
+      await surface.run(auth).catch(() => undefined);
+
+      expect(pageVisibleTo).not.toHaveBeenCalled();
     });
   }
 });

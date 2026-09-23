@@ -1,11 +1,8 @@
 import { HttpStatus, NotFoundException } from "@nestjs/common";
+import { sql } from "drizzle-orm";
 import type { Db } from "../../../db/drizzle.module";
 import { KbPagesService } from "./kb-pages.service";
 import { updatePageSchema } from "./dto/kb-pages.schemas";
-
-jest.mock("../retrieval/kb-page-access.util", () => ({
-  assertPageAccessible: jest.fn().mockResolvedValue(undefined),
-}));
 
 jest.mock("./kb-page-edit.util", () => ({
   ...jest.requireActual("./kb-page-edit.util"),
@@ -114,6 +111,13 @@ function makeDb(pageRow: unknown, updateResult: unknown[], latestEdit: unknown[]
 const notifications = {} as never;
 const planLimits = {} as never;
 
+function makeAuth() {
+  return {
+    visiblePagePredicate: jest.fn().mockResolvedValue(sql`true`),
+    assertPageAccess: jest.fn().mockResolvedValue({ orgId: "o1", pageId: PAGE_ID, action: "edit", via: "admin" }),
+  };
+}
+
 describe("KbPagesService — optimistic concurrency control", () => {
   beforeEach(() => jest.clearAllMocks());
 
@@ -122,7 +126,8 @@ describe("KbPagesService — optimistic concurrency control", () => {
     const pageRow = makePageRow(currentRevision);
     const updatedRow = { ...pageRow, contentRevision: currentRevision + 1 };
     const { db } = makeDb(pageRow, [updatedRow]);
-    const svc = new KbPagesService(db, notifications, planLimits);
+    const auth = makeAuth();
+    const svc = new KbPagesService(db, notifications, planLimits, auth as never);
 
     const result = await svc.update(
       makeUser(),
@@ -137,7 +142,8 @@ describe("KbPagesService — optimistic concurrency control", () => {
   it("(b) throws 409 Conflict when expectedContentRevision is stale and does not write", async () => {
     const pageRow = makePageRow(3);
     const { db, capturedWheres } = makeDb(pageRow, []);
-    const svc = new KbPagesService(db, notifications, planLimits);
+    const auth = makeAuth();
+    const svc = new KbPagesService(db, notifications, planLimits, auth as never);
 
     let caught: unknown;
     try {
@@ -179,7 +185,8 @@ describe("KbPagesService — optimistic concurrency control", () => {
     const pageRow = makePageRow(currentRevision);
     const updatedRow = { ...pageRow, title: "New title" };
     const { db, capturedWheres } = makeDb(pageRow, [updatedRow]);
-    const svc = new KbPagesService(db, notifications, planLimits);
+    const auth = makeAuth();
+    const svc = new KbPagesService(db, notifications, planLimits, auth as never);
 
     const result = await svc.update(makeUser(), PAGE_ID, { title: "New title" }, false);
 
@@ -191,7 +198,8 @@ describe("KbPagesService — optimistic concurrency control", () => {
   it("(c) a stale content write is 409 STALE_REVISION, never NotFoundException", async () => {
     const pageRow = makePageRow(1);
     const { db } = makeDb(pageRow, []);
-    const svc = new KbPagesService(db, notifications, planLimits);
+    const auth = makeAuth();
+    const svc = new KbPagesService(db, notifications, planLimits, auth as never);
 
     let caught: unknown;
     try {
@@ -216,7 +224,8 @@ describe("KbPagesService — optimistic concurrency control", () => {
   it("(c) a conflict names who holds the page now, when they saved it, and the revision to rebase on", async () => {
     const pageRow = makePageRow(1);
     const { db } = makeDb(pageRow, []);
-    const svc = new KbPagesService(db, notifications, planLimits);
+    const auth = makeAuth();
+    const svc = new KbPagesService(db, notifications, planLimits, auth as never);
 
     let caught: unknown;
     try {
@@ -244,7 +253,8 @@ describe("KbPagesService — optimistic concurrency control", () => {
   it("(c) a conflict whose page row has since vanished still answers 409 with empty details, never a 500", async () => {
     const pageRow = makePageRow(1);
     const { db } = makeDb(pageRow, [], []);
-    const svc = new KbPagesService(db, notifications, planLimits);
+    const auth = makeAuth();
+    const svc = new KbPagesService(db, notifications, planLimits, auth as never);
 
     let caught: unknown;
     try {
@@ -270,7 +280,8 @@ describe("KbPagesService — optimistic concurrency control", () => {
     const pageRow = makePageRow(currentRevision, { createdByMembershipId: 99, createdById: "someone-else" });
     const updatedRow = { ...pageRow, contentRevision: currentRevision + 1, publicToken: "tok_secret" };
     const { db } = makeDb(pageRow, [updatedRow]);
-    const svc = new KbPagesService(db, notifications, planLimits);
+    const auth = makeAuth();
+    const svc = new KbPagesService(db, notifications, planLimits, auth as never);
 
     const result = await svc.update(
       makeUser(),
@@ -288,7 +299,8 @@ describe("KbPagesService — optimistic concurrency control", () => {
     const pageRow = makePageRow(currentRevision);
     const updatedRow = { ...pageRow, contentRevision: currentRevision + 1, publicToken: "tok_secret" };
     const { db } = makeDb(pageRow, [updatedRow]);
-    const svc = new KbPagesService(db, notifications, planLimits);
+    const auth = makeAuth();
+    const svc = new KbPagesService(db, notifications, planLimits, auth as never);
 
     const result = await svc.update(
       makeUser(),
@@ -300,12 +312,31 @@ describe("KbPagesService — optimistic concurrency control", () => {
     expect(result.publicToken).toBe("tok_secret");
   });
 
+  it("update authorizes with action 'edit', not 'view' — a viewer must not mutate content", async () => {
+    const currentRevision = 3;
+    const pageRow = makePageRow(currentRevision);
+    const updatedRow = { ...pageRow, contentRevision: currentRevision + 1 };
+    const { db } = makeDb(pageRow, [updatedRow]);
+    const auth = makeAuth();
+    const svc = new KbPagesService(db, notifications, planLimits, auth as never);
+
+    await svc.update(
+      makeUser(),
+      PAGE_ID,
+      { content: { type: "doc", content: [] }, expectedContentRevision: currentRevision },
+      false,
+    );
+
+    expect(auth.assertPageAccess).toHaveBeenCalledWith(expect.anything(), PAGE_ID, "edit");
+  });
+
   it("(d) WHERE clause carries the revision predicate — atomic guard proven via SQL values", async () => {
     const currentRevision = 5;
     const pageRow = makePageRow(currentRevision);
     const updatedRow = { ...pageRow, contentRevision: currentRevision + 1 };
     const { db, capturedWheres } = makeDb(pageRow, [updatedRow]);
-    const svc = new KbPagesService(db, notifications, planLimits);
+    const auth = makeAuth();
+    const svc = new KbPagesService(db, notifications, planLimits, auth as never);
 
     await svc.update(
       makeUser(),

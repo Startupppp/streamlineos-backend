@@ -1,14 +1,8 @@
+import { sql } from "drizzle-orm";
 import { KbPageTreeService } from "./kb-page-tree.service";
 import { OutboxWriter } from "../../../common/outbox/outbox-writer";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
-
-jest.mock("../retrieval/kb-page-access.util", () => ({
-  assertPageAccessible: jest.fn().mockResolvedValue(undefined),
-}));
-jest.mock("../retrieval/kb-project-access.util", () => ({
-  getAccessibleProjectIds: jest.fn().mockResolvedValue([]),
-}));
 
 function makeUser(): CurrentUserContext {
   return {
@@ -83,6 +77,10 @@ const makeStorage = () => ({ deleteFileIfPresent: jest.fn().mockResolvedValue(tr
 const KB_BUCKET = "kb-files";
 const makeConfig = () => ({ R2_KB_BUCKET_NAME: KB_BUCKET });
 const makePlanLimits = () => ({});
+const makeAuth = () => ({
+  visiblePagePredicate: jest.fn().mockResolvedValue(sql`true`),
+  assertPageAccess: jest.fn().mockResolvedValue({ orgId: "o1", pageId: 1, action: "edit", via: "admin" }),
+});
 
 describe("KbPageTreeService.restore — emits kb.content.index for restored pages", () => {
   beforeEach(() => jest.clearAllMocks());
@@ -95,6 +93,7 @@ describe("KbPageTreeService.restore — emits kb.content.index for restored page
       makeAudit() as never,
       makeStorage() as never,
       makeConfig() as never,
+      makeAuth() as never,
     );
 
     await svc.restore(makeUser(), 10);
@@ -116,6 +115,7 @@ describe("KbPageTreeService.restore — emits kb.content.index for restored page
       makeAudit() as never,
       makeStorage() as never,
       makeConfig() as never,
+      makeAuth() as never,
     );
 
     await svc.restore(makeUser(), 10);
@@ -135,6 +135,7 @@ describe("KbPageTreeService.restore — emits kb.content.index for restored page
       makeAudit() as never,
       makeStorage() as never,
       makeConfig() as never,
+      makeAuth() as never,
     );
 
     await svc.restore(makeUser(), 10);
@@ -155,6 +156,7 @@ describe("KbPageTreeService.restore — emits kb.content.index for restored page
       makeAudit() as never,
       makeStorage() as never,
       makeConfig() as never,
+      makeAuth() as never,
     );
 
     await svc.restore(makeUser(), 10);

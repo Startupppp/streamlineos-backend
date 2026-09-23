@@ -1,5 +1,5 @@
 import { PgDialect } from "drizzle-orm/pg-core";
-import type { SQL } from "drizzle-orm";
+import { sql, type SQL } from "drizzle-orm";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
 import type { Db } from "../../../db/drizzle.module";
@@ -71,7 +71,12 @@ function makeHarness() {
     scopeFor: jest.fn().mockResolvedValue("all"),
   } as unknown as AccessService;
 
-  const service = new KbDocumentQueryService(db, kbAccess, access);
+  const auth = {
+    visiblePagePredicate: jest.fn().mockResolvedValue(sql`true`),
+    assertPageAccess: jest.fn().mockResolvedValue({ orgId: "org-1", pageId: 1, action: "view", via: "admin" }),
+  };
+
+  const service = new KbDocumentQueryService(db, kbAccess, access, auth as never);
   return { service, articleWheres, pageWheres };
 }
 

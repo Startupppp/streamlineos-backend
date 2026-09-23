@@ -1,7 +1,15 @@
 import { PgDialect } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 import type { Db } from "../../../db/drizzle.module";
 import { KbPageVersionsService } from "./kb-page-versions.service";
 import { encodeCursor } from "../../../common/pagination/cursor";
+
+function makeAuthMock() {
+  return {
+    visiblePagePredicate: jest.fn().mockResolvedValue(sql`true`),
+    assertPageAccess: jest.fn().mockResolvedValue({ orgId: "org-1", pageId: 1, action: "view", via: "admin" }),
+  };
+}
 
 const dialect = new PgDialect();
 
@@ -105,7 +113,7 @@ function makeDb(opts: { pageFound: boolean; versionRows?: unknown[]; capturedWhe
 describe("KbPageVersionsService.listVersions — keyset pagination", () => {
   it("(d) with no cursor: WHERE has org and page predicates, no keyset expression", async () => {
     const { db, capturedWheres } = makeDb({ pageFound: true });
-    const svc = new KbPageVersionsService(db);
+    const svc = new KbPageVersionsService(db, makeAuthMock() as never);
 
     await svc.listVersions(makeUser(), 1);
 
@@ -116,7 +124,7 @@ describe("KbPageVersionsService.listVersions — keyset pagination", () => {
 
   it("(d) with cursor: WHERE carries the (version_number, id) tuple predicate", async () => {
     const { db, capturedWheres } = makeDb({ pageFound: true });
-    const svc = new KbPageVersionsService(db);
+    const svc = new KbPageVersionsService(db, makeAuthMock() as never);
     const cursor = encodeCursor({ sortValue: "50", id: "99" });
 
     await svc.listVersions(makeUser(), 1, cursor);
@@ -131,7 +139,7 @@ describe("KbPageVersionsService.listVersions — keyset pagination", () => {
 
   it("(d) cursor order matches ORDER BY: keyset uses version_number, not created_at", async () => {
     const { db, capturedWheres } = makeDb({ pageFound: true });
-    const svc = new KbPageVersionsService(db);
+    const svc = new KbPageVersionsService(db, makeAuthMock() as never);
     const cursor = encodeCursor({ sortValue: "7", id: "5" });
 
     await svc.listVersions(makeUser(), 1, cursor);
@@ -144,7 +152,7 @@ describe("KbPageVersionsService.listVersions — keyset pagination", () => {
 
   it("queries PAGE_SIZE + 1 rows to detect the next page", async () => {
     const { db, versionsChain } = makeDb({ pageFound: true });
-    const svc = new KbPageVersionsService(db);
+    const svc = new KbPageVersionsService(db, makeAuthMock() as never);
 
     await svc.listVersions(makeUser(), 1);
 
@@ -153,7 +161,7 @@ describe("KbPageVersionsService.listVersions — keyset pagination", () => {
 
   it("(a) no cursor: returns first page with nextCursor when rows exceed PAGE_SIZE", async () => {
     const { db } = makeDb({ pageFound: true, versionRows: makeVersionRows(51, 55) });
-    const svc = new KbPageVersionsService(db);
+    const svc = new KbPageVersionsService(db, makeAuthMock() as never);
 
     const page = await svc.listVersions(makeUser(), 1);
 
@@ -165,7 +173,7 @@ describe("KbPageVersionsService.listVersions — keyset pagination", () => {
 
   it("(c) last page: reports hasMore false and nextCursor null", async () => {
     const { db } = makeDb({ pageFound: true, versionRows: makeVersionRows(5) });
-    const svc = new KbPageVersionsService(db);
+    const svc = new KbPageVersionsService(db, makeAuthMock() as never);
 
     const page = await svc.listVersions(makeUser(), 1);
 
@@ -177,7 +185,7 @@ describe("KbPageVersionsService.listVersions — keyset pagination", () => {
   it("(b) nextCursor from page1 yields page2 with no overlap and no gap", async () => {
     const page1Fixture = makeVersionRows(51, 55);
     const { db: db1 } = makeDb({ pageFound: true, versionRows: page1Fixture });
-    const svc1 = new KbPageVersionsService(db1);
+    const svc1 = new KbPageVersionsService(db1, makeAuthMock() as never);
     const page1 = await svc1.listVersions(makeUser(), 1);
 
     expect(page1.data).toHaveLength(50);
@@ -193,7 +201,7 @@ describe("KbPageVersionsService.listVersions — keyset pagination", () => {
     const page2Fixture = makeVersionRows(5, 5);
     const capturedPage2Wheres: unknown[] = [];
     const { db: db2 } = makeDb({ pageFound: true, versionRows: page2Fixture, capturedWheres: capturedPage2Wheres });
-    const svc2 = new KbPageVersionsService(db2);
+    const svc2 = new KbPageVersionsService(db2, makeAuthMock() as never);
     const page2 = await svc2.listVersions(makeUser(), 1, nextCursor);
 
     expect(page2.data).toHaveLength(5);

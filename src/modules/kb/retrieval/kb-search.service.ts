@@ -6,7 +6,6 @@ import { type Db } from "../../../db/drizzle.module";
 import { KbAccessService } from "../core/kb-access.service";
 import { KbEventsService } from "../core/kb-events.service";
 import { chunkVisibleTo } from "./kb-chunk-visibility";
-import { pageVisibleTo } from "./kb-page-visibility";
 import { AiGatewayService } from "../../ai/core/gateway/ai-gateway.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import type { SearchInput } from "./dto/kb-ai.schemas";
@@ -15,6 +14,7 @@ import { logSideEffectFailure } from "../../../common/logger/side-effect";
 import { actingMembershipId } from "../../../common/auth/principal";
 import { KbCandidateService } from "./kb-candidate.service";
 import { AccessService } from "../../access/access.service";
+import { KnowledgeAuthorizationService } from "../core/authorization/knowledge-authorization.service";
 import { resolveKbArticlesViewScope } from "../core/kb-scope";
 import { articleOwnerScope, articleOwnerScopeFilter } from "./kb-article-owner-scope";
 import {
@@ -52,6 +52,7 @@ export class KbSearchService {
     private readonly events: KbEventsService,
     private readonly candidates: KbCandidateService,
     private readonly scopes: AccessService,
+    private readonly auth: KnowledgeAuthorizationService,
   ) {}
 
   /**
@@ -249,7 +250,7 @@ export class KbSearchService {
     }
 
     const projectIds = await this.access.getAccessibleProjectIds(user);
-    const pageVisibility = pageVisibleTo(user, projectIds);
+    const pageVisibility = await this.auth.visiblePagePredicate(user, "view");
 
     const [articleKeyword, articleVector, pageKeyword, pageVector] = await Promise.all([
       hasSpaces
@@ -383,10 +384,10 @@ export class KbSearchService {
         if (articleScope) scope.push(articleScope);
       }
       if (pageIds.length > 0) {
-        const projectIds = await this.access.getAccessibleProjectIds(user);
+        const pagePredicate = await this.auth.visiblePagePredicate(user, "view");
         const pageScope = and(
           inArray(kbArticleChunks.pageId, pageIds),
-          pageVisibleTo(user, projectIds),
+          pagePredicate,
         );
         if (pageScope) scope.push(pageScope);
       }

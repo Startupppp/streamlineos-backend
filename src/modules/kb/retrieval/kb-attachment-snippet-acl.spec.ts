@@ -1,5 +1,5 @@
 import { PgDialect } from "drizzle-orm/pg-core";
-import type { SQL } from "drizzle-orm";
+import { sql, type SQL } from "drizzle-orm";
 import { KbCandidateService } from "./kb-candidate.service";
 import { KbSearchService } from "./kb-search.service";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
@@ -65,6 +65,10 @@ function makeHarness(options: { scope?: string; isAdmin?: boolean } = {}) {
       .fn()
       .mockResolvedValue({ ok: true, vector: [0.1, 0.2], vectorLiteral: "[0.1,0.2]" }),
   };
+  const auth = {
+    visiblePagePredicate: jest.fn().mockResolvedValue(sql`true`),
+    assertPageAccess: jest.fn().mockResolvedValue({ orgId: "org-1", pageId: 1, action: "view", via: "admin" }),
+  };
   const service = new KbSearchService(
     db as never,
     access as never,
@@ -72,6 +76,7 @@ function makeHarness(options: { scope?: string; isAdmin?: boolean } = {}) {
     { recordDetached: jest.fn().mockResolvedValue(undefined) } as never,
     new KbCandidateService(db as never),
     { scopeFor: jest.fn().mockResolvedValue(options.scope ?? "all") } as never,
+    auth as never,
   );
   return { service, wheres };
 }

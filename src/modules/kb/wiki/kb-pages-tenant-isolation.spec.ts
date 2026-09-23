@@ -1,4 +1,5 @@
 import { NotFoundException } from "@nestjs/common";
+import { sql } from "drizzle-orm";
 import type { Db } from "../../../db/drizzle.module";
 import { KbPagesService } from "./kb-pages.service";
 
@@ -27,6 +28,10 @@ describe("KbPagesService — cross-tenant isolation", () => {
 
   const notifications = {} as never;
   const planLimits = {} as never;
+  const auth = {
+    visiblePagePredicate: jest.fn().mockResolvedValue(sql`true`),
+    assertPageAccess: jest.fn().mockResolvedValue({ orgId: "o1", pageId: PAGE_ID, action: "edit", via: "admin" }),
+  };
 
   function makeDb(pageRow: unknown) {
     const wheres: unknown[] = [];
@@ -65,7 +70,7 @@ describe("KbPagesService — cross-tenant isolation", () => {
 
   it("throws NotFoundException for a page in another org (cross-tenant deny)", async () => {
     const { db, wheres } = makeDb(null);
-    const svc = new KbPagesService(db, notifications, planLimits);
+    const svc = new KbPagesService(db, notifications, planLimits, auth as never);
 
     await expect(svc.get(makeUser(ATTACKER), PAGE_ID, false)).rejects.toThrow(NotFoundException);
 
@@ -87,7 +92,7 @@ describe("KbPagesService — cross-tenant isolation", () => {
       createdByMembershipId: 1,
     };
     const { db } = makeDb(pageRow);
-    const svc = new KbPagesService(db, notifications, planLimits);
+    const svc = new KbPagesService(db, notifications, planLimits, auth as never);
 
     const result = await svc.get(makeUser(OWNER), PAGE_ID, false);
 

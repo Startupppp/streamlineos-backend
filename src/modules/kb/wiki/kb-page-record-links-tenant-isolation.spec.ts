@@ -1,15 +1,7 @@
 import { NotFoundException } from "@nestjs/common";
+import { sql } from "drizzle-orm";
 import type { Db } from "../../../db/drizzle.module";
 import { KbPageRecordLinksService } from "./kb-page-record-links.service";
-
-function sqlValues(v: unknown, seen = new Set<object>()): unknown[] {
-  if (v === null || v === undefined || typeof v === "string" || typeof v === "number" || typeof v === "boolean") return [v];
-  if (Array.isArray(v)) return v.flatMap(i => sqlValues(i, seen));
-  if (typeof v !== "object" || seen.has(v)) return [];
-  seen.add(v);
-  const r = v as { queryChunks?: unknown[]; value?: unknown };
-  return [...(r.queryChunks ? sqlValues(r.queryChunks, seen) : []), ...(Object.prototype.hasOwnProperty.call(r, "value") ? sqlValues(r.value, seen) : [])];
-}
 
 describe("KbPageRecordLinksService — cross-tenant isolation", () => {
   const ATTACKER = "org-attacker";
@@ -20,14 +12,10 @@ describe("KbPageRecordLinksService — cross-tenant isolation", () => {
     return { orgId, userId: "user-1", isOrgOwner: false } as never;
   }
 
-  function makeDb(pageRow: unknown) {
-    const wheres: unknown[] = [];
+  function makeDb() {
     const makeJoinChain = (): Record<string, unknown> => {
       const chain: Record<string, unknown> = {
-        where: jest.fn().mockImplementation((w: unknown) => {
-          wheres.push(w);
-          return Promise.resolve([]);
-        }),
+        where: jest.fn().mockResolvedValue([]),
       };
       chain.innerJoin = jest.fn().mockReturnValue(chain);
       chain.leftJoin = jest.fn().mockReturnValue(chain);
@@ -37,43 +25,51 @@ describe("KbPageRecordLinksService — cross-tenant isolation", () => {
       db: {
         query: {
           kbPages: {
-            findFirst: jest.fn().mockImplementation((opts: { where?: unknown } = {}) => {
-              wheres.push(opts.where);
-              return Promise.resolve(pageRow);
-            }),
+            findFirst: jest.fn().mockResolvedValue(null),
           },
         },
         select: jest.fn().mockImplementation(() => ({
           from: jest.fn().mockImplementation(() => ({
             ...makeJoinChain(),
-            where: jest.fn().mockImplementation((w: unknown) => {
-              wheres.push(w);
-              return Promise.resolve([]);
-            }),
+            where: jest.fn().mockResolvedValue([]),
           })),
         })),
       } as unknown as Db,
-      wheres,
     };
   }
 
   it("throws NotFoundException for a page in another org (cross-tenant deny)", async () => {
-    const { db, wheres } = makeDb(null);
-    const svc = new KbPageRecordLinksService(db);
+    const { db } = makeDb();
+    const authMock = {
+      visiblePagePredicate: jest.fn().mockResolvedValue(sql`true`),
+      assertPageAccess: jest.fn().mockRejectedValue(new NotFoundException("Page not found")),
+    };
+    const svc = new KbPageRecordLinksService(db, authMock as never);
 
     await expect(svc.list(makeUser(ATTACKER), PAGE_ID)).rejects.toThrow(NotFoundException);
 
-    const vals = wheres.flatMap(w => sqlValues(w));
-    expect(vals).toContain(ATTACKER);
-    expect(vals).not.toContain(OWNER);
+    expect(authMock.assertPageAccess).toHaveBeenCalledWith(
+      expect.objectContaining({ orgId: ATTACKER }),
+      PAGE_ID,
+      "view",
+    );
   });
 
   it("returns links for a page in the owning org (same-tenant control)", async () => {
-    const { db } = makeDb({ id: PAGE_ID, orgId: OWNER });
-    const svc = new KbPageRecordLinksService(db);
+    const { db } = makeDb();
+    const authMock = {
+      visiblePagePredicate: jest.fn().mockResolvedValue(sql`true`),
+      assertPageAccess: jest.fn().mockResolvedValue({ orgId: OWNER, pageId: PAGE_ID, action: "view", via: "admin" }),
+    };
+    const svc = new KbPageRecordLinksService(db, authMock as never);
 
     const result = await svc.list(makeUser(OWNER), PAGE_ID);
 
+    expect(authMock.assertPageAccess).toHaveBeenCalledWith(
+      expect.objectContaining({ orgId: OWNER }),
+      PAGE_ID,
+      "view",
+    );
     expect(Array.isArray(result)).toBe(true);
   });
 });

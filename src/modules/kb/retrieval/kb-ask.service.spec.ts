@@ -7,8 +7,10 @@ import { KbEventsService } from "../core/kb-events.service";
 import { KbSearchService } from "./kb-search.service";
 import { KbAccessService } from "../core/kb-access.service";
 import { KbCitationVisibilityService } from "./kb-citation-visibility.service";
+import { KnowledgeAuthorizationService } from "../core/authorization/knowledge-authorization.service";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
+import { sql } from "drizzle-orm";
 
 const makeGatewayOk = (text: string) => ({
   ok: true as const,
@@ -113,6 +115,13 @@ describe("KbAskService", () => {
         { provide: KbSearchService, useValue: mockSearch },
         { provide: KbAccessService, useValue: mockAccess },
         KbCitationVisibilityService,
+        {
+          provide: KnowledgeAuthorizationService,
+          useValue: {
+            visiblePagePredicate: jest.fn().mockResolvedValue(sql`true`),
+            assertPageAccess: jest.fn().mockResolvedValue({ orgId: "org1", pageId: 1, action: "view", via: "admin" }),
+          },
+        },
         { provide: DRIZZLE, useValue: mockDb },
       ],
     }).compile();

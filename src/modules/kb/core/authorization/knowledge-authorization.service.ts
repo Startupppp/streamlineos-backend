@@ -5,6 +5,7 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { and, eq, isNull } from "drizzle-orm";
+import type { SQL } from "drizzle-orm";
 import { kbPages, kbSpaces } from "../../../../db/schema";
 import { DRIZZLE } from "../../../../db/drizzle.constants";
 import { type Db } from "../../../../db/drizzle.module";
@@ -94,6 +95,14 @@ export class KnowledgeAuthorizationService {
     action: KbPageAction,
   ): Promise<VisiblePageScope> {
     return buildVisiblePageScope(await this.resolveStanding(user), action);
+  }
+
+  async visiblePagePredicate(
+    user: CurrentUserContext,
+    action: KbPageAction = "view",
+  ): Promise<SQL<unknown>> {
+    const scope = buildVisiblePageScope(await this.resolveStanding(user), action);
+    return scope.predicate;
   }
 
   async permissionFingerprint(

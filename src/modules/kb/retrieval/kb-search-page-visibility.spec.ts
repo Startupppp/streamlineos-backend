@@ -1,8 +1,17 @@
+import { sql } from "drizzle-orm";
 import { KbCandidateService } from "./kb-candidate.service";
 import { KbSearchService } from "./kb-search.service";
-import { pageVisibleTo } from "./kb-page-visibility";
 import type { CurrentUserContext } from "../../../common/auth/backend-claims";
 import { humanSessionPrincipal } from "../../../common/auth/principal";
+
+const CANONICAL_SCOPE = sql`kb_canonical_scope_marker`;
+
+const makeAuth = () => ({
+  visiblePagePredicate: jest.fn().mockResolvedValue(CANONICAL_SCOPE),
+  assertPageAccess: jest
+    .fn()
+    .mockResolvedValue({ orgId: "org-1", pageId: 1, action: "view", via: "admin" }),
+});
 
 const makeScopes = (scope = "all") => ({ scopeFor: jest.fn().mockResolvedValue(scope) });
 
@@ -80,83 +89,92 @@ const pagePredicates = (whereClauses: unknown[]): string =>
   whereClauses.map(serialize).join("\n");
 
 describe("KbSearchService — page retrieval crosses the visibility seam", () => {
-  it("builds page candidate queries with the reader's project-scoped visibility predicate", async () => {
-    const { db, whereClauses } = makeCapturingDb([]);
-    const access = makeAccess();
-    const service = new KbSearchService(
+  const makeService = (
+    db: unknown,
+    access: unknown,
+    auth: unknown,
+    embeddings = makeEmbeddings(),
+  ) =>
+    new KbSearchService(
       db as never,
       access as never,
-      makeEmbeddings() as never,
+      embeddings as never,
       makeEvents() as never,
       new KbCandidateService(db as never),
       makeScopes() as never,
+      auth as never,
     );
 
-    const user = makeUser();
-    await service.retrieveTopArticles(user, "onboarding checklist", 5);
+  it("builds page candidate queries from the predicate the canonical seam returned, never one it assembled itself", async () => {
+    const { db, whereClauses } = makeCapturingDb([]);
+    const auth = makeAuth();
 
-    const expected = serialize(pageVisibleTo(user, ACCESSIBLE_PROJECT_IDS));
-    expect(pagePredicates(whereClauses)).toContain(expected);
+    await makeService(db, makeAccess(), auth).retrieveTopArticles(
+      makeUser(),
+      "onboarding checklist",
+      5,
+    );
+
+    expect(pagePredicates(whereClauses)).toContain(serialize(CANONICAL_SCOPE));
   });
 
-  it("resolves the reader's accessible projects rather than assuming none", async () => {
+  it("asks the canonical seam for a view-level scope rather than assuming an unscoped read", async () => {
     const { db } = makeCapturingDb([]);
-    const access = makeAccess();
-    const service = new KbSearchService(
-      db as never,
-      access as never,
-      makeEmbeddings() as never,
-      makeEvents() as never,
-      new KbCandidateService(db as never),
-      makeScopes() as never,
+    const auth = makeAuth();
+    const user = makeUser();
+
+    await makeService(db, makeAccess(), auth).retrieveTopArticles(
+      user,
+      "onboarding checklist",
+      5,
     );
 
+    expect(auth.visiblePagePredicate).toHaveBeenCalledWith(user, "view");
+  });
+
+  it("still resolves the reader's accessible projects, because chunk visibility is scoped separately from page visibility", async () => {
+    const { db } = makeCapturingDb([]);
+    const access = makeAccess();
     const user = makeUser();
-    await service.retrieveTopArticles(user, "onboarding checklist", 5);
+
+    await makeService(db, access, makeAuth()).retrieveTopArticles(
+      user,
+      "onboarding checklist",
+      5,
+    );
 
     expect(access.getAccessibleProjectIds).toHaveBeenCalledWith(user);
   });
 
   it("fetches page content with the same predicate the candidate query used", async () => {
     const { db, whereClauses } = makeCapturingDb([{ pageId: 3 }]);
-    const access = makeAccess();
-    const service = new KbSearchService(
-      db as never,
-      access as never,
-      makeEmbeddings() as never,
-      makeEvents() as never,
-      new KbCandidateService(db as never),
-      makeScopes() as never,
+
+    await makeService(db, makeAccess(), makeAuth()).retrieveTopArticles(
+      makeUser(),
+      "onboarding checklist",
+      5,
     );
 
-    const user = makeUser();
-    await service.retrieveTopArticles(user, "onboarding checklist", 5);
-
-    const expected = serialize(pageVisibleTo(user, ACCESSIBLE_PROJECT_IDS));
+    const expected = serialize(CANONICAL_SCOPE);
     const occurrences = whereClauses.filter((clause) =>
       serialize(clause).includes(expected),
     ).length;
     expect(occurrences).toBeGreaterThanOrEqual(2);
   });
 
-  it("filters page attachment context through the shared page visibility predicate", async () => {
+  it("filters page attachment context through the canonical seam as well", async () => {
     const { db, whereClauses } = makeCapturingDb([]);
-    const access = makeAccess();
-    const service = new KbSearchService(
-      db as never,
-      access as never,
-      makeConfiguredEmbeddings() as never,
-      makeEvents() as never,
-      new KbCandidateService(db as never),
-      makeScopes() as never,
-    );
-
+    const auth = makeAuth();
     const user = makeUser();
-    await service.retrieveDocumentPassages(user, "onboarding checklist", [], [3]);
 
-    expect(access.getAccessibleProjectIds).toHaveBeenCalledWith(user);
-    expect(pagePredicates(whereClauses)).toContain(
-      serialize(pageVisibleTo(user, ACCESSIBLE_PROJECT_IDS)),
-    );
+    await makeService(
+      db,
+      makeAccess(),
+      auth,
+      makeConfiguredEmbeddings(),
+    ).retrieveDocumentPassages(user, "onboarding checklist", [], [3]);
+
+    expect(auth.visiblePagePredicate).toHaveBeenCalledWith(user, "view");
+    expect(pagePredicates(whereClauses)).toContain(serialize(CANONICAL_SCOPE));
   });
 });

@@ -14,9 +14,8 @@ import { AccessService } from "../../access/access.service";
 import { actingMembershipId } from "../../../common/auth/principal";
 import type { KeysetPosition } from "../../../common/pagination/keyset";
 import { keysetAfterId } from "../../../common/pagination/keyset";
-import { getAccessibleProjectIds } from "../retrieval/kb-project-access.util";
-import { pageVisibleTo } from "../retrieval/kb-page-visibility";
 import { reviewerCanSeeAllReviews } from "./kb-page-reviews.service";
+import { KnowledgeAuthorizationService } from "../core/authorization/knowledge-authorization.service";
 
 type ReviewRow = typeof kbPageReviews.$inferSelect;
 const REVIEW_STATUSES = ["pending", "approved", "rejected", "expired"] as const;
@@ -41,6 +40,7 @@ export class KbPageReviewsQueryService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Db,
     private readonly access: AccessService,
+    private readonly auth: KnowledgeAuthorizationService,
   ) {}
 
   private actorMembershipId(user: CurrentUserContext): number {
@@ -131,7 +131,7 @@ export class KbPageReviewsQueryService {
       "reviewer_assignee_membership",
     );
 
-    const projectIds = await getAccessibleProjectIds(this.db, user);
+    const predicate = await this.auth.visiblePagePredicate(user, "view");
     const canSeeAll = await reviewerCanSeeAllReviews(user, this.access);
 
     const conditions = [
@@ -140,7 +140,7 @@ export class KbPageReviewsQueryService {
       eq(kbPageReviews.type, "freshness"),
       isNotNull(kbPageReviews.dueAt),
       lte(kbPageReviews.dueAt, new Date()),
-      pageVisibleTo(user, projectIds),
+      predicate,
     ];
 
     if (!canSeeAll) {

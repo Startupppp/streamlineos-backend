@@ -1,4 +1,5 @@
 import { NotFoundException } from "@nestjs/common";
+import { sql } from "drizzle-orm";
 import type { Db } from "../../../db/drizzle.module";
 import { KbPageAiService } from "./kb-page-ai.service";
 
@@ -11,10 +12,20 @@ function sqlValues(v: unknown, seen = new Set<object>()): unknown[] {
   return [...(r.queryChunks ? sqlValues(r.queryChunks, seen) : []), ...(Object.prototype.hasOwnProperty.call(r, "value") ? sqlValues(r.value, seen) : [])];
 }
 
+const authMock = {
+  visiblePagePredicate: jest.fn().mockResolvedValue(sql`true`),
+  assertPageAccess: jest.fn().mockResolvedValue({ orgId: "o1", pageId: 1, action: "view", via: "admin" }),
+};
+
 describe("KbPageAiService — cross-tenant isolation", () => {
   const ATTACKER = "org-attacker";
   const OWNER = "org-owner";
   const PAGE_ID = 3;
+
+  beforeEach(() => {
+    authMock.visiblePagePredicate.mockClear();
+    authMock.assertPageAccess.mockClear();
+  });
 
   function makeUser(orgId: string) {
     return { orgId, userId: "user-1", isOrgOwner: false } as never;
@@ -71,7 +82,7 @@ describe("KbPageAiService — cross-tenant isolation", () => {
 
   it("throws NotFoundException for a page in another org (cross-tenant deny)", async () => {
     const { db, wheres } = makeDb(null);
-    const svc = new KbPageAiService(db, gateway, audit);
+    const svc = new KbPageAiService(db, gateway, audit, authMock as never);
 
     await expect(svc.summarize(makeUser(ATTACKER), PAGE_ID)).rejects.toThrow(NotFoundException);
 
@@ -82,10 +93,22 @@ describe("KbPageAiService — cross-tenant isolation", () => {
 
   it("returns summary for a page in the owning org (same-tenant control)", async () => {
     const { db } = makeDb({ id: PAGE_ID, orgId: OWNER, title: "Test", contentText: "content" });
-    const svc = new KbPageAiService(db, gateway, audit);
+    const svc = new KbPageAiService(db, gateway, audit, authMock as never);
 
     const result = await svc.summarize(makeUser(OWNER), PAGE_ID);
 
     expect(result).toHaveProperty("text");
+  });
+
+  it("consults visiblePagePredicate with action 'view' so grant and space pages are included in AI context", async () => {
+    const { db } = makeDb({ id: PAGE_ID, orgId: OWNER, title: "Test", contentText: "content" });
+    const svc = new KbPageAiService(db, gateway, audit, authMock as never);
+
+    await svc.summarize(makeUser(OWNER), PAGE_ID);
+
+    expect(authMock.visiblePagePredicate).toHaveBeenCalledWith(
+      expect.objectContaining({ orgId: OWNER }),
+      "view",
+    );
   });
 });
