@@ -340,13 +340,19 @@ export async function fetchBuildApprovalItems(
       subject: row.title,
       sourceModule: "build",
       actor: null,
-      deepLink: null,
+      deepLink: buildApprovalDeepLink(row.projectId),
       isRead: false,
       dedupKey: `approval:build:${String(row.id)}`,
       timestamp: row.createdAt.toISOString(),
       dueAt: row.dueAt ? row.dueAt.toISOString() : null,
     }),
   );
+}
+
+export function buildApprovalDeepLink(projectId: number | null): string {
+  return projectId === null
+    ? "/build/approvals"
+    : `/build/approvals?projectId=${String(projectId)}`;
 }
 
 export function buildApprovalAdapter(
@@ -366,5 +372,7 @@ export function buildApprovalAdapter(
         limit,
         cursor,
       ),
+    countPending: (orgId, _userId, membershipId) =>
+      buildApprovals.countPending(orgId, membershipId),
   };
 }

@@ -1,4 +1,4 @@
-import { HrWorkflowApprovalAdapter } from "./hr-workflow-approval.adapter";
+import { HrWorkflowApprovalAdapter, WORKFLOW_PENDING_COUNT_CAP } from "./hr-workflow-approval.adapter";
 import { ApprovalAdapterRegistry } from "../../attention/approval-adapter.registry";
 
 function makeWorkflowRow(overrides: Partial<{
@@ -142,5 +142,90 @@ describe("HrWorkflowApprovalAdapter — fetch", () => {
     const cursor = { id: 200, t: "2026-09-22T08:00:00.000Z" };
     await wf!.fetch("org-1", "user-1", 5, 10, cursor);
     expect(workflows.pendingRoutedToPage).toHaveBeenCalledWith("org-1", 5, 10, cursor);
+  });
+});
+
+describe("HrWorkflowApprovalAdapter — deepLink", () => {
+  it("every workflow item carries deepLink /hr/approvals", async () => {
+    const registry = makeRegistry();
+    const adapter = new HrWorkflowApprovalAdapter(makeWorkflows(), registry);
+    adapter.onModuleInit();
+    const [wf] = registry.list();
+    const [item] = await wf!.fetch("org-1", "user-1", 5, 10, null);
+    expect(item?.deepLink).toBe("/hr/approvals");
+  });
+
+  it("CONTROL: workflow deepLink differs from the timesheet deepLink /timesheets/approvals", async () => {
+    const registry = makeRegistry();
+    const adapter = new HrWorkflowApprovalAdapter(makeWorkflows(), registry);
+    adapter.onModuleInit();
+    const [wf] = registry.list();
+    const [item] = await wf!.fetch("org-1", "user-1", 5, 10, null);
+    expect(item?.deepLink).not.toBe("/timesheets/approvals");
+  });
+});
+
+describe("HrWorkflowApprovalAdapter — countPending (at-most-cap approximation)", () => {
+  it("returns the number of rows pendingRoutedToPage resolves — fewer than cap", async () => {
+    const registry = makeRegistry();
+    const adapter = new HrWorkflowApprovalAdapter(
+      makeWorkflows([makeWorkflowRow({ id: 1 }), makeWorkflowRow({ id: 2 }), makeWorkflowRow({ id: 3 })]),
+      registry,
+    );
+    adapter.onModuleInit();
+    const [wf] = registry.list();
+    const result = await wf!.countPending("org-1", "user-1", 5);
+    expect(result).toBe(3);
+  });
+
+  it("returns WORKFLOW_PENDING_COUNT_CAP when the page is full — the cap is explicit in the test name", async () => {
+    const rows = Array.from({ length: WORKFLOW_PENDING_COUNT_CAP }, (_, i) =>
+      makeWorkflowRow({ id: i + 1 }),
+    );
+    const registry = makeRegistry();
+    const adapter = new HrWorkflowApprovalAdapter(makeWorkflows(rows), registry);
+    adapter.onModuleInit();
+    const [wf] = registry.list();
+    const result = await wf!.countPending("org-1", "user-1", 5);
+    expect(result).toBe(WORKFLOW_PENDING_COUNT_CAP);
+  });
+
+  it("returns 0 when membershipId is null — positive case above returns non-zero, satisfying BE-141", async () => {
+    const workflows = makeWorkflows([makeWorkflowRow()]);
+    const registry = makeRegistry();
+    const adapter = new HrWorkflowApprovalAdapter(workflows, registry);
+    adapter.onModuleInit();
+    const [wf] = registry.list();
+    const result = await wf!.countPending("org-1", "user-1", null);
+    expect(result).toBe(0);
+    expect(workflows.pendingRoutedToPage).not.toHaveBeenCalled();
+  });
+
+  it("calls pendingRoutedToPage with WORKFLOW_PENDING_COUNT_CAP so the bound is explicit", async () => {
+    const workflows = makeWorkflows([]);
+    const registry = makeRegistry();
+    const adapter = new HrWorkflowApprovalAdapter(workflows, registry);
+    adapter.onModuleInit();
+    const [wf] = registry.list();
+    await wf!.countPending("org-1", "user-1", 5);
+    expect(workflows.pendingRoutedToPage).toHaveBeenCalledWith(
+      "org-1",
+      5,
+      WORKFLOW_PENDING_COUNT_CAP,
+      null,
+    );
+  });
+
+  it("passes orgId and membershipId, never userId, so another org's rows cannot be counted", async () => {
+    const workflows = makeWorkflows([]);
+    const registry = makeRegistry();
+    const adapter = new HrWorkflowApprovalAdapter(workflows, registry);
+    adapter.onModuleInit();
+    const [wf] = registry.list();
+    await wf!.countPending("org-Z", "user-99", 8);
+    const call = (workflows.pendingRoutedToPage as jest.Mock).mock.calls[0] as [string, number, number, unknown];
+    expect(call[0]).toBe("org-Z");
+    expect(call[1]).toBe(8);
+    expect(call).not.toContain("user-99");
   });
 });

@@ -33,6 +33,10 @@ export class HrTimeApprovalAdapter implements OnModuleInit {
       supportsAfterCursor: true,
       fetch: (orgId, _userId, membershipId, limit, cursor) =>
         this.fetchLeaves(orgId, membershipId, limit, cursor),
+      countPending: (orgId, _userId, membershipId) => {
+        if (membershipId === null) return Promise.resolve(0);
+        return this.leaves.countPendingRoutedTo(orgId, membershipId);
+      },
     });
 
     this.registry.register({
@@ -42,6 +46,10 @@ export class HrTimeApprovalAdapter implements OnModuleInit {
       supportsAfterCursor: true,
       fetch: (orgId, _userId, membershipId, limit, cursor) =>
         this.fetchWfh(orgId, membershipId, limit, cursor),
+      countPending: (orgId, _userId, membershipId) => {
+        if (membershipId === null) return Promise.resolve(0);
+        return this.wfh.countPendingRoutedTo(orgId, membershipId);
+      },
     });
   }
 
@@ -72,7 +80,7 @@ export class HrTimeApprovalAdapter implements OnModuleInit {
         subject: `${row.leaveTypeName ?? "Leave"} · ${row.startDate} to ${row.endDate}`,
         timestamp: row.createdAt.toISOString(),
         isRead: false,
-        deepLink: null,
+        deepLink: "/hr/leaves?tab=pending",
         actor: row.userId
           ? {
               id: row.userId,
@@ -115,7 +123,7 @@ export class HrTimeApprovalAdapter implements OnModuleInit {
         subject: `Work from home · ${row.date}`,
         timestamp: row.createdAt.toISOString(),
         isRead: false,
-        deepLink: null,
+        deepLink: "/hr/attendance",
         actor: {
           id: row.userId,
           name: displayName(row.userName, row.userFirstName, row.userLastName),

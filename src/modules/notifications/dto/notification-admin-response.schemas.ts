@@ -43,6 +43,8 @@ export const notificationPolicyRowSchema = z.object({
 
 export const notificationPolicyListSchema = z.array(notificationPolicyRowSchema);
 
+const DELIVERY_CHANNELS = ["IN_APP", "EMAIL", "PUSH", "SMS", "WHATSAPP"] as const;
+
 export const notificationPreferenceSchema = z.object({
   userId: z.string(),
   orgId: z.string(),
@@ -67,6 +69,7 @@ export const notificationPreferenceSchema = z.object({
       canUserOverride: z.boolean(),
     })
     .optional(),
+  availableChannels: z.array(z.enum(DELIVERY_CHANNELS)).optional(),
 });
 
 export const preferenceRuleOkSchema = z.object({ ok: z.literal(true) });

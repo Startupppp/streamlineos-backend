@@ -1,10 +1,6 @@
 import { Inject, Injectable } from "@nestjs/common";
-import { and, count, eq, inArray, isNull } from "drizzle-orm";
-import {
-  notifications,
-  projectApprovals,
-  organizationMembers,
-} from "../../db/schema";
+import { and, count, eq, isNull } from "drizzle-orm";
+import { notifications } from "../../db/schema";
 import { DRIZZLE } from "../../db/drizzle.constants";
 import { type Db } from "../../db/drizzle.module";
 import { AccessService } from "../access/access.service";
@@ -77,15 +73,22 @@ function skippedSource(kind: InboxKind, reason: string | null): SourceStatus {
 
 function matchesQ(q: string, subject: string, body: string): boolean {
   const lower = q.toLowerCase();
-  return subject.toLowerCase().includes(lower) || body.toLowerCase().includes(lower);
+  return (
+    subject.toLowerCase().includes(lower) || body.toLowerCase().includes(lower)
+  );
 }
 
-function applyInMemoryFilters<T extends { subject: string; body?: string; category?: string; priority?: string }>(
-  items: T[],
-  filters: InboxFilters,
-): T[] {
+function applyInMemoryFilters<
+  T extends {
+    subject: string;
+    body?: string;
+    category?: string;
+    priority?: string;
+  },
+>(items: T[], filters: InboxFilters): T[] {
   return items.filter((item) => {
-    if (filters.q && !matchesQ(filters.q, item.subject, item.body ?? "")) return false;
+    if (filters.q && !matchesQ(filters.q, item.subject, item.body ?? ""))
+      return false;
     if (filters.category && item.category !== filters.category) return false;
     if (filters.priority && item.priority !== filters.priority) return false;
     return true;
@@ -167,17 +170,27 @@ function buildApprovalSourceStatus(
 ): SourceStatus {
   if (!wants) return skippedSource("build_approval", null);
   if (!approvalsSupport)
-    return skippedSource("build_approval", "unsupported: triage (approvals have no archive state)");
+    return skippedSource(
+      "build_approval",
+      "unsupported: triage (approvals have no archive state)",
+    );
   if (result === null) return skippedSource("build_approval", null);
   const { allAdapters, permDenied, errors, unsupportedOnPage2 } = result;
   if (allAdapters.length > 0 && permDenied.length === allAdapters.length)
-    return skippedSource("build_approval", `no permission: ${permDenied.join(", ")}`);
+    return skippedSource(
+      "build_approval",
+      `no permission: ${permDenied.join(", ")}`,
+    );
   const errParts: string[] = [];
   if (errors.length > 0) errParts.push(errors.join("; "));
   if (unsupportedOnPage2.length > 0)
-    errParts.push(`unsupported: ${unsupportedOnPage2.join(", ")} adapters have no cursor`);
+    errParts.push(
+      `unsupported: ${unsupportedOnPage2.join(", ")} adapters have no cursor`,
+    );
   if (searching)
-    errParts.push("unsupported: approvals are searched within the fetched page, not the whole queue");
+    errParts.push(
+      "unsupported: approvals are searched within the fetched page, not the whole queue",
+    );
   return {
     kind: "build_approval",
     included: true,
@@ -229,18 +242,32 @@ export class UnifiedInboxService {
           return;
         }
         const outcome = await readSource(() =>
-          adapter.fetch(orgId, userId, membershipId, limit, positionOf(adapter)),
+          adapter.fetch(
+            orgId,
+            userId,
+            membershipId,
+            limit,
+            positionOf(adapter),
+          ),
         );
         if (!outcome.ok) {
           errors.push(outcome.error);
           return;
         }
         const key = approvalAdapterKey(adapter);
-        for (const item of outcome.value) adapterByDedupKey.set(item.dedupKey, key);
+        for (const item of outcome.value)
+          adapterByDedupKey.set(item.dedupKey, key);
         items.push(...outcome.value);
       }),
     );
-    return { items, errors, permDenied, unsupportedOnPage2, allAdapters, adapterByDedupKey };
+    return {
+      items,
+      errors,
+      permDenied,
+      unsupportedOnPage2,
+      allAdapters,
+      adapterByDedupKey,
+    };
   }
 
   async list(
@@ -303,8 +330,11 @@ export class UnifiedInboxService {
       cursorState.a,
       cursorState.at,
     );
-    const resuming = typeof query.cursor === "string" && query.cursor.length > 0;
-    const positionOf = (adapter: ApprovalSourceAdapter): InboxSourcePosition | null =>
+    const resuming =
+      typeof query.cursor === "string" && query.cursor.length > 0;
+    const positionOf = (
+      adapter: ApprovalSourceAdapter,
+    ): InboxSourcePosition | null =>
       cursorState.ap[approvalAdapterKey(adapter)] ??
       (approvalAdapterKey(adapter) === LEGACY_APPROVAL_ADAPTER_KEY
         ? legacyApprovalPosition
@@ -421,27 +451,6 @@ export class UnifiedInboxService {
     );
     const hasMore = trimmed || degraded;
 
-    // Mail resumes from the last message actually DELIVERED, the way n/b/a do.
-    //
-    // It used to resume from `nextMailCursor` — the end of the batch it FETCHED.
-    // The merge keeps `limit` items out of four sources fetched at `limit + 1`
-    // each, so on any mixed page most of the mail batch is trimmed, and stepping
-    // the cursor past the whole batch meant those messages were never delivered
-    // to anyone. Silently: the reader sees a full page and scrolls on, and the
-    // gap widens by up to a page every time.
-    //
-    // A mail cursor cannot address a message inside its own batch — it is a map
-    // of per-account provider page tokens and skips — so the position after the
-    // delivered prefix is asked for rather than computed: one more read of
-    // exactly that prefix, whose `nextCursor` is the boundary wanted. It runs
-    // only on a page that actually trimmed mail, is bounded by `limit`, and on
-    // the mirror path it is the same indexed keyset walk the page itself used.
-    //
-    // The delivered count is the leading run that reached the page, not the
-    // total: the merge orders on (timestamp, kind, id) while the provider orders
-    // on date alone, so a timestamp tie could in principle place a later message
-    // ahead of an earlier one. Counting the prefix re-delivers that one message
-    // rather than skipping the one behind it.
     const deliveredMailKeys = new Set(
       page
         .filter((i): i is MailInboxItem => i.kind === "mail")
@@ -499,9 +508,15 @@ export class UnifiedInboxService {
   ): SourceStatus {
     if (!wantsMail) return skippedSource("mail", null);
     if (triage !== "active")
-      return skippedSource("mail", "unsupported: triage (mail has no archive state)");
+      return skippedSource(
+        "mail",
+        "unsupported: triage (mail has no archive state)",
+      );
     if (unreadOnly && freshForUnreadOnly === false)
-      return skippedSource("mail", "unsupported: unreadOnly (mailbox not synced)");
+      return skippedSource(
+        "mail",
+        "unsupported: unreadOnly (mailbox not synced)",
+      );
     if (!canViewMail)
       return skippedSource("mail", "no permission: mail:inbox:view");
     if (outcome === null)
@@ -529,10 +544,7 @@ export class UnifiedInboxService {
     userId: string,
     user: CurrentUserContext,
   ): Promise<UnifiedUnreadCount> {
-    const [canMail, canApproval] = await Promise.all([
-      this.access.holds(user, "mail:inbox:view"),
-      this.access.holds(user, "build:approvals:view"),
-    ]);
+    const canMail = await this.access.holds(user, "mail:inbox:view");
 
     const [notifCount, mailCount, approvalCount] = await Promise.all([
       this.countNotificationUnread(orgId, actingMembershipId(user.principal)),
@@ -543,9 +555,7 @@ export class UnifiedInboxService {
             actingMembershipId(user.principal),
           )
         : Promise.resolve({ unread: 0, exact: true }),
-      canApproval
-        ? this.countApprovalPending(orgId, userId)
-        : Promise.resolve(0),
+      this.countPendingAcrossAdapters(orgId, userId, user),
     ]);
 
     return {
@@ -557,28 +567,6 @@ export class UnifiedInboxService {
     };
   }
 
-  /**
-   * Keyed on `membership_id`, not `user_id`, because every index on `notifications`
-   * leads `(org_id, membership_id, …)` and none mentions `user_id`.
-   *
-   * MEASURED on the shipped perf seed (a tenant with 240,000 notifications), as an
-   * EXPLAIN (ANALYZE, BUFFERS) of this exact predicate:
-   *
-   *   user_id       Seq Scan on EVERY monthly partition — 10,231 blocks, 15.4 ms
-   *   membership_id Index scan on idx_notifications_unread_count — 24 blocks, 0.5 ms
-   *
-   * 426x fewer blocks for one integer, and the user_id form grows linearly with the
-   * tenant's notification volume, on a badge that every authenticated page renders.
-   * This is the unmeasured twin of a defect already fixed once: GET
-   * /notifications/unread-count measured 10,234 blocks before it was re-keyed on
-   * membership_id and now measures 16 (.github/workflows/ci.yml:928).
-   *
-   * A principal with no membership (an API token) counts zero rather than scanning:
-   * `notifications.membership_id` is the recipient, so there is nothing to count.
-   * Rows whose `membership_id` is NULL are excluded, which is the same set
-   * `NotificationsReadService.queryUnreadCount` already excludes — the badge and the
-   * page it links to now agree instead of differing by those rows.
-   */
   private async countNotificationUnread(
     orgId: string,
     membershipId: number | null,
@@ -600,14 +588,6 @@ export class UnifiedInboxService {
     return Number(rows[0]?.cnt ?? 0);
   }
 
-  /**
-   * Counted against `mail_message_metadata` when every connected mailbox's copy
-   * of the inbox is fresh, and only then fanned out to the providers — see
-   * `MailService.countUnread`. This used to be the fanout unconditionally: a live
-   * Gmail/Graph fetch of `MAIL_COUNT_SCAN_LIMIT` messages per account, on a badge
-   * every authenticated page renders. The scan limit is now only the cold path's
-   * sample size.
-   */
   private async countMailUnread(
     orgId: string,
     userId: string,
@@ -622,28 +602,22 @@ export class UnifiedInboxService {
     );
   }
 
-  private async countApprovalPending(
+  private async countPendingAcrossAdapters(
     orgId: string,
     userId: string,
+    user: CurrentUserContext,
   ): Promise<number> {
-    const rows = await this.db
-      .select({ cnt: count() })
-      .from(projectApprovals)
-      .innerJoin(
-        organizationMembers,
-        and(
-          eq(organizationMembers.orgId, projectApprovals.orgId),
-          eq(organizationMembers.id, projectApprovals.approverMembershipId),
-        ),
-      )
-      .where(
-        and(
-          eq(projectApprovals.orgId, orgId),
-          eq(organizationMembers.userId, userId),
-          inArray(projectApprovals.status, ["pending", "escalated"]),
-          isNull(projectApprovals.deletedAt),
-        ),
-      );
-    return Number(rows[0]?.cnt ?? 0);
+    const membershipId = actingMembershipId(user.principal);
+    if (membershipId === null) return 0;
+    const counts = await Promise.all(
+      this.buildApprovalAdapters().map(async (adapter) => {
+        if (!(await this.access.holds(user, adapter.permission))) return 0;
+        const outcome = await readSource(() =>
+          adapter.countPending(orgId, userId, membershipId),
+        );
+        return outcome.ok ? outcome.value : 0;
+      }),
+    );
+    return counts.reduce((total, n) => total + n, 0);
   }
 }

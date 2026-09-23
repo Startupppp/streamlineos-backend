@@ -16,6 +16,11 @@ export type ApprovalSourceAdapter = {
     limit: number,
     cursor: InboxSourcePosition | null,
   ): Promise<BuildApprovalInboxItem[]>;
+  countPending(
+    orgId: string,
+    userId: string,
+    membershipId: number | null,
+  ): Promise<number>;
 };
 
 export function approvalAdapterKey(
