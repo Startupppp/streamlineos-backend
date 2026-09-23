@@ -75,6 +75,7 @@ export class LeaveApproverService {
           lastName: users.lastName,
           email: users.email,
           image: users.image,
+          isOwner: organizationMembers.isOwner,
         })
         .from(organizationMembers)
         .innerJoin(users, eq(users.id, organizationMembers.userId))
@@ -94,19 +95,24 @@ export class LeaveApproverService {
     if (idsToCheck.length === 0) return null;
 
     for (const candidateId of idsToCheck) {
-      const permissions = await this.access.resolveUserPermissions(
-        orgId,
-        candidateId,
-      );
-      if (
-        !coversAnotherMember(leaveApproverRead(orgId, candidateId, permissions))
-      )
-        continue;
-
       const candidate = candidateById.get(candidateId);
+      if (candidate?.isOwner !== true) {
+        const permissions = await this.access.resolveUserPermissions(
+          orgId,
+          candidateId,
+        );
+        if (
+          !coversAnotherMember(
+            leaveApproverRead(orgId, candidateId, permissions),
+          )
+        )
+          continue;
+      }
+
       if (candidate) {
+        const { isOwner: _isOwner, ...approver } = candidate;
         const facts = candidateFactsBatch.get(candidateId);
-        return { ...candidate, designation: facts?.designation ?? null };
+        return { ...approver, designation: facts?.designation ?? null };
       }
     }
 
