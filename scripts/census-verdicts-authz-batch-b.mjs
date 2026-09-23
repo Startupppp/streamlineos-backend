@@ -115,9 +115,9 @@ export default [
     summary: "GET /build/:projectId/incidents/:incidentId. getIncident calls assertProjectAccess(projectId) then loadIncident(orgId, projectId, incidentId), whose WHERE binds id=incidentId AND orgId AND projectId. A foreign incidentId 404s before the joined incidentUpdates query (itself filtered by the now-confirmed incidentId+orgId) runs.",
     blastRadius: "None beyond the caller's own org/project: a foreign incidentId 404s inside loadIncident.",
     evidence: [
-      { file: "src/modules/build/incidents/incidents.controller.ts", line: 77, anchor: /return this\.svc\.getIncident\(u, projectId, incidentId\);/, note: "route handler passes raw path params straight to the service" },
-      { file: "src/modules/build/incidents/incidents.service.ts", line: 74, anchor: /const incident = await this\.loadIncident\(u\.orgId, projectId, incidentId\);/, note: "getIncident binds via loadIncident before reading updates" },
-      { file: "src/modules/build/incidents/incidents.service.ts", line: 38, anchor: /eq\(projectIncidents\.projectId, projectId\),/, note: "loadIncident's WHERE binds incidentId to projectId and orgId together" },
+      { file: "src/modules/build/incidents/incidents.controller.ts", line: 93, anchor: /return this\.svc\.getIncident\(u, projectId, incidentId\);/, note: "route handler passes raw path params straight to the service" },
+      { file: "src/modules/build/incidents/incidents.service.ts", line: 83, anchor: /const incident = await this\.loadIncident\(u\.orgId, projectId, incidentId\);/, note: "getIncident binds via loadIncident before reading updates" },
+      { file: "src/modules/build/incidents/incidents.service.ts", line: 47, anchor: /eq\(projectIncidents\.projectId, projectId\),/, note: "loadIncident's WHERE binds incidentId to projectId and orgId together" },
     ],
   },
   {
@@ -127,9 +127,9 @@ export default [
     summary: "PATCH /build/:projectId/incidents/:incidentId. updateIncident binds via loadIncident(orgId, projectId, incidentId) (404 on a foreign incidentId) and the subsequent UPDATE's own WHERE independently re-binds id+orgId+projectId inside the same transaction. NOTE: unlike the sibling getIncident/addUpdate handlers in this same file, updateIncident does not additionally call assertProjectAccess — it relies solely on org-wide build:incidents:manage plus the id/org/project row binding. That is a project-membership-scoping asymmetry (any org member holding build:incidents:manage can edit incidents in a project they are not otherwise a member of), not a parent-binding defect: the object itself is still fully and correctly scoped to the named project, and a cross-tenant/cross-project incidentId still 404s.",
     blastRadius: "Within the caller's own org: a foreign incidentId 404s before the UPDATE runs, so no cross-project or cross-tenant write is reachable. The only gap is a coarser-than-siblings project-access check, not an object-binding bypass.",
     evidence: [
-      { file: "src/modules/build/incidents/incidents.controller.ts", line: 103, anchor: /return this\.svc\.updateIncident\(u, projectId, incidentId, body\);/, note: "route handler passes raw path params straight to the service" },
-      { file: "src/modules/build/incidents/incidents.service.ts", line: 140, anchor: /const current = await this\.loadIncident\(u\.orgId, projectId, incidentId\);/, note: "binds incidentId to projectId via loadIncident before patching; no assertProjectAccess call precedes it" },
-      { file: "src/modules/build/incidents/incidents.service.ts", line: 168, anchor: /eq\(projectIncidents\.projectId, projectId\),/, note: "UPDATE WHERE clause independently re-binds id+orgId+projectId" },
+      { file: "src/modules/build/incidents/incidents.controller.ts", line: 119, anchor: /return this\.svc\.updateIncident\(u, projectId, incidentId, body\);/, note: "route handler passes raw path params straight to the service" },
+      { file: "src/modules/build/incidents/incidents.service.ts", line: 169, anchor: /const current = await this\.loadIncident\(u\.orgId, projectId, incidentId\);/, note: "binds incidentId to projectId via loadIncident before patching; no assertProjectAccess call precedes it" },
+      { file: "src/modules/build/incidents/incidents.service.ts", line: 198, anchor: /eq\(projectIncidents\.projectId, projectId\),/, note: "UPDATE WHERE clause independently re-binds id+orgId+projectId" },
     ],
   },
   {
@@ -139,9 +139,9 @@ export default [
     summary: "DELETE /build/:projectId/incidents/:incidentId (soft delete). Same shape as updateIncident: loadIncident(orgId, projectId, incidentId) 404s a foreign incidentId, and the soft-delete UPDATE's own WHERE independently re-binds id+orgId+projectId. Also skips assertProjectAccess like updateIncident (see that entry's note) — a project-membership-scoping asymmetry, not a parent-binding defect.",
     blastRadius: "Within the caller's own org: a foreign incidentId 404s before the soft-delete runs.",
     evidence: [
-      { file: "src/modules/build/incidents/incidents.controller.ts", line: 116, anchor: /return this\.svc\.deleteIncident\(u, projectId, incidentId\);/, note: "route handler passes raw path params straight to the service" },
-      { file: "src/modules/build/incidents/incidents.service.ts", line: 228, anchor: /await this\.loadIncident\(u\.orgId, projectId, incidentId\);/, note: "binds incidentId to projectId via loadIncident; no assertProjectAccess call precedes it" },
-      { file: "src/modules/build/incidents/incidents.service.ts", line: 236, anchor: /eq\(projectIncidents\.projectId, projectId\),/, note: "soft-delete UPDATE WHERE clause independently re-binds id+orgId+projectId" },
+      { file: "src/modules/build/incidents/incidents.controller.ts", line: 132, anchor: /return this\.svc\.deleteIncident\(u, projectId, incidentId\);/, note: "route handler passes raw path params straight to the service" },
+      { file: "src/modules/build/incidents/incidents.service.ts", line: 258, anchor: /await this\.loadIncident\(u\.orgId, projectId, incidentId\);/, note: "binds incidentId to projectId via loadIncident; no assertProjectAccess call precedes it" },
+      { file: "src/modules/build/incidents/incidents.service.ts", line: 266, anchor: /eq\(projectIncidents\.projectId, projectId\),/, note: "soft-delete UPDATE WHERE clause independently re-binds id+orgId+projectId" },
     ],
   },
   {
@@ -151,9 +151,9 @@ export default [
     summary: "POST /build/:projectId/incidents/:incidentId/updates. addUpdate calls assertProjectAccess(projectId) then loadIncident(orgId, projectId, incidentId) (404 on mismatch) before inserting the incidentUpdates row and, when the status changes, updating projectIncidents with a WHERE that independently re-binds id+orgId+projectId — all inside one transaction.",
     blastRadius: "None beyond the caller's own org/project: a foreign incidentId 404s before any row is written.",
     evidence: [
-      { file: "src/modules/build/incidents/incidents.controller.ts", line: 130, anchor: /return this\.svc\.addUpdate\(u, projectId, incidentId, body\);/, note: "route handler passes raw path params straight to the service" },
-      { file: "src/modules/build/incidents/incidents.service.ts", line: 256, anchor: /const current = await this\.loadIncident\(u\.orgId, projectId, incidentId\);/, note: "binds incidentId to projectId via loadIncident before writing" },
-      { file: "src/modules/build/incidents/incidents.service.ts", line: 282, anchor: /eq\(projectIncidents\.projectId, projectId\),/, note: "in-transaction status UPDATE independently re-binds id+orgId+projectId" },
+      { file: "src/modules/build/incidents/incidents.controller.ts", line: 146, anchor: /return this\.svc\.addUpdate\(u, projectId, incidentId, body\);/, note: "route handler passes raw path params straight to the service" },
+      { file: "src/modules/build/incidents/incidents.service.ts", line: 286, anchor: /const current = await this\.loadIncident\(u\.orgId, projectId, incidentId\);/, note: "binds incidentId to projectId via loadIncident before writing" },
+      { file: "src/modules/build/incidents/incidents.service.ts", line: 312, anchor: /eq\(projectIncidents\.projectId, projectId\),/, note: "in-transaction status UPDATE independently re-binds id+orgId+projectId" },
     ],
   },
   {

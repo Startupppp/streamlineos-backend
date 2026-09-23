@@ -3,13 +3,13 @@
   "generator": "scripts/build-authorization-census.mjs",
   "scope": "src/modules/build/**/*.controller.ts",
   "controllerFiles": 49,
-  "handlers": 321,
+  "handlers": 325,
   "counts": {
     "VULNERABLE": 0,
     "CLOSED-IN-FLIGHT": 0,
     "NEEDS-REVIEW": 0,
     "CLOSED": 40,
-    "VERIFIED": 281
+    "VERIFIED": 285
   },
   "handlersDetail": [
     {
@@ -523,7 +523,7 @@
       "idempotent": null,
       "mutating": true,
       "service": {
-        "call": "this.svc.softDeleteApproval(u.orgId, projectId, approvalId)",
+        "call": "this.svc.softDeleteApproval(u.orgId, u.userId, projectId, approvalId)",
         "type": "ApprovalsService",
         "file": "src/modules/build/approvals/approvals.service.ts",
         "resolved": true
@@ -1076,7 +1076,7 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/client-portal/client-portal.service.ts:130",
+      "orgEvidence": "src/modules/build/client-portal/client-portal.service.ts:132",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
       "leads": [],
@@ -1119,7 +1119,7 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/client-portal/client-portal.service.ts:273",
+      "orgEvidence": "src/modules/build/client-portal/client-portal.service.ts:277",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
       "leads": [],
@@ -2542,7 +2542,7 @@
       "file": "src/modules/build/core/projects-automations.controller.ts",
       "class": "ProjectsAutomationsController",
       "method": "list",
-      "line": 32,
+      "line": 39,
       "verb": "GET",
       "path": "/build/:projectId/automations",
       "routeParams": [
@@ -2577,7 +2577,50 @@
       "notes": [],
       "verdict": "VERIFIED",
       "verdictReason": "guard chain complete, org scoping bound, params declared, no nested parent",
-      "evidence": "src/modules/build/core/projects-automations.controller.ts:32",
+      "evidence": "src/modules/build/core/projects-automations.controller.ts:39",
+      "reviewedEvidence": null
+    },
+    {
+      "key": "modules/build/core/projects-automations.controller.ts#listRuns",
+      "file": "src/modules/build/core/projects-automations.controller.ts",
+      "class": "ProjectsAutomationsController",
+      "method": "listRuns",
+      "line": 56,
+      "verb": "GET",
+      "path": "/build/:projectId/automations/runs",
+      "routeParams": [
+        "projectId"
+      ],
+      "classification": "@RequirePermission(\"build:view\")",
+      "moduleGuard": "@RequireModule(\"build\")",
+      "guards": [
+        "JwtAuthGuard",
+        "PermissionGuard"
+      ],
+      "guardChainOk": true,
+      "validate": "present",
+      "declaredParams": [
+        "projectId"
+      ],
+      "missingParams": [],
+      "extraParams": [],
+      "idempotent": null,
+      "mutating": false,
+      "service": {
+        "call": "this.runHistory.listRuns(u, projectId, query)",
+        "type": "BuildAutomationRunHistoryService",
+        "file": "src/modules/build/core/build-automation-run-history.service.ts",
+        "resolved": true
+      },
+      "orgScoping": "BOUND",
+      "orgEvidence": "src/modules/build/core/build-automation-run-history.service.ts:114",
+      "parentScoping": "N/A (not nested)",
+      "parentEvidence": null,
+      "leads": [],
+      "notes": [],
+      "verdict": "VERIFIED",
+      "verdictReason": "guard chain complete, org scoping bound, params declared, no nested parent",
+      "evidence": "src/modules/build/core/projects-automations.controller.ts:56",
       "reviewedEvidence": null
     },
     {
@@ -2585,7 +2628,7 @@
       "file": "src/modules/build/core/projects-automations.controller.ts",
       "class": "ProjectsAutomationsController",
       "method": "create",
-      "line": 43,
+      "line": 68,
       "verb": "POST",
       "path": "/build/:projectId/automations",
       "routeParams": [
@@ -2622,7 +2665,7 @@
       ],
       "verdict": "VERIFIED",
       "verdictReason": "guard chain complete, org scoping bound, params declared, no nested parent",
-      "evidence": "src/modules/build/core/projects-automations.controller.ts:43",
+      "evidence": "src/modules/build/core/projects-automations.controller.ts:68",
       "reviewedEvidence": null
     },
     {
@@ -2630,7 +2673,7 @@
       "file": "src/modules/build/core/projects-automations.controller.ts",
       "class": "ProjectsAutomationsController",
       "method": "update",
-      "line": 56,
+      "line": 81,
       "verb": "PATCH",
       "path": "/build/:projectId/automations/:automationId",
       "routeParams": [
@@ -2669,16 +2712,16 @@
       ],
       "verdict": "CLOSED",
       "verdictReason": "PATCH /build/:projectId/automations/:automationId. ProjectsAutomationsService.updateAutomation authorized the caller via assertCanManageProject(u, projectId), which a project-scoped manager of the NAMED project alone can satisfy, but the mutation's WHERE clause only bound id+orgId — never projectId — so that caller could rewrite any other project's automation by ID. Fixed by adding eq(projectAutomations.projectId, projectId) to the UPDATE's WHERE, so a foreign automationId now 404s instead of matching.",
-      "evidence": "src/modules/build/core/projects-automations.controller.ts:56",
+      "evidence": "src/modules/build/core/projects-automations.controller.ts:81",
       "reviewedEvidence": [
         {
           "file": "src/modules/build/core/projects-automations.controller.ts",
-          "line": 60,
+          "line": 85,
           "note": "handler binds both projectId and automationId and forwards both to the service"
         },
         {
           "file": "src/modules/build/core/projects-automations.controller.ts",
-          "line": 66,
+          "line": 91,
           "note": "projectId is passed into the service call"
         },
         {
@@ -2698,7 +2741,7 @@
       "file": "src/modules/build/core/projects-automations.controller.ts",
       "class": "ProjectsAutomationsController",
       "method": "delete",
-      "line": 69,
+      "line": 94,
       "verb": "DELETE",
       "path": "/build/:projectId/automations/:automationId",
       "routeParams": [
@@ -2737,16 +2780,16 @@
       ],
       "verdict": "CLOSED",
       "verdictReason": "DELETE /build/:projectId/automations/:automationId. Identical defect shape to #update, now fixed the same way: the DELETE's WHERE clause is bound to id+orgId+projectId, so a project-scoped manager of one project can no longer destroy another project's automation by guessing its id.",
-      "evidence": "src/modules/build/core/projects-automations.controller.ts:69",
+      "evidence": "src/modules/build/core/projects-automations.controller.ts:94",
       "reviewedEvidence": [
         {
           "file": "src/modules/build/core/projects-automations.controller.ts",
-          "line": 74,
+          "line": 99,
           "note": "handler binds both projectId and automationId and forwards both to the service"
         },
         {
           "file": "src/modules/build/core/projects-automations.controller.ts",
-          "line": 79,
+          "line": 104,
           "note": "projectId is passed into the service call"
         },
         {
@@ -12111,7 +12154,7 @@
       "file": "src/modules/build/incidents/incidents.controller.ts",
       "class": "IncidentsController",
       "method": "listIncidents",
-      "line": 56,
+      "line": 72,
       "verb": "GET",
       "path": "/build/:projectId/incidents",
       "routeParams": [
@@ -12137,7 +12180,7 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/incidents/incidents.service.ts:54",
+      "orgEvidence": "src/modules/build/incidents/incidents.service.ts:63",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
       "leads": [],
@@ -12146,7 +12189,7 @@
       ],
       "verdict": "VERIFIED",
       "verdictReason": "guard chain complete, org scoping bound, params declared, no nested parent",
-      "evidence": "src/modules/build/incidents/incidents.controller.ts:56",
+      "evidence": "src/modules/build/incidents/incidents.controller.ts:72",
       "reviewedEvidence": null
     },
     {
@@ -12154,7 +12197,7 @@
       "file": "src/modules/build/incidents/incidents.controller.ts",
       "class": "IncidentsController",
       "method": "getIncident",
-      "line": 68,
+      "line": 84,
       "verb": "GET",
       "path": "/build/:projectId/incidents/:incidentId",
       "routeParams": [
@@ -12184,28 +12227,28 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/incidents/incidents.service.ts:72",
+      "orgEvidence": "src/modules/build/incidents/incidents.service.ts:81",
       "parentScoping": "BOUND",
-      "parentEvidence": "src/modules/build/incidents/incidents.service.ts:72",
+      "parentEvidence": "src/modules/build/incidents/incidents.service.ts:81",
       "leads": [],
       "notes": [],
       "verdict": "VERIFIED",
       "verdictReason": "GET /build/:projectId/incidents/:incidentId. getIncident calls assertProjectAccess(projectId) then loadIncident(orgId, projectId, incidentId), whose WHERE binds id=incidentId AND orgId AND projectId. A foreign incidentId 404s before the joined incidentUpdates query (itself filtered by the now-confirmed incidentId+orgId) runs.",
-      "evidence": "src/modules/build/incidents/incidents.controller.ts:68",
+      "evidence": "src/modules/build/incidents/incidents.controller.ts:84",
       "reviewedEvidence": [
         {
           "file": "src/modules/build/incidents/incidents.controller.ts",
-          "line": 77,
+          "line": 93,
           "note": "route handler passes raw path params straight to the service"
         },
         {
           "file": "src/modules/build/incidents/incidents.service.ts",
-          "line": 74,
+          "line": 83,
           "note": "getIncident binds via loadIncident before reading updates"
         },
         {
           "file": "src/modules/build/incidents/incidents.service.ts",
-          "line": 38,
+          "line": 47,
           "note": "loadIncident's WHERE binds incidentId to projectId and orgId together"
         }
       ]
@@ -12215,7 +12258,7 @@
       "file": "src/modules/build/incidents/incidents.controller.ts",
       "class": "IncidentsController",
       "method": "createIncident",
-      "line": 80,
+      "line": 96,
       "verb": "POST",
       "path": "/build/:projectId/incidents",
       "routeParams": [
@@ -12241,7 +12284,7 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/incidents/incidents.service.ts:94",
+      "orgEvidence": "src/modules/build/incidents/incidents.service.ts:122",
       "parentScoping": "N/A (not nested)",
       "parentEvidence": null,
       "leads": [],
@@ -12251,7 +12294,7 @@
       ],
       "verdict": "VERIFIED",
       "verdictReason": "guard chain complete, org scoping bound, params declared, no nested parent",
-      "evidence": "src/modules/build/incidents/incidents.controller.ts:80",
+      "evidence": "src/modules/build/incidents/incidents.controller.ts:96",
       "reviewedEvidence": null
     },
     {
@@ -12259,7 +12302,7 @@
       "file": "src/modules/build/incidents/incidents.controller.ts",
       "class": "IncidentsController",
       "method": "updateIncident",
-      "line": 93,
+      "line": 109,
       "verb": "PATCH",
       "path": "/build/:projectId/incidents/:incidentId",
       "routeParams": [
@@ -12289,30 +12332,30 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/incidents/incidents.service.ts:134",
+      "orgEvidence": "src/modules/build/incidents/incidents.service.ts:163",
       "parentScoping": "BOUND",
-      "parentEvidence": "src/modules/build/incidents/incidents.service.ts:134",
+      "parentEvidence": "src/modules/build/incidents/incidents.service.ts:163",
       "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
       ],
       "verdict": "VERIFIED",
       "verdictReason": "PATCH /build/:projectId/incidents/:incidentId. updateIncident binds via loadIncident(orgId, projectId, incidentId) (404 on a foreign incidentId) and the subsequent UPDATE's own WHERE independently re-binds id+orgId+projectId inside the same transaction. NOTE: unlike the sibling getIncident/addUpdate handlers in this same file, updateIncident does not additionally call assertProjectAccess — it relies solely on org-wide build:incidents:manage plus the id/org/project row binding. That is a project-membership-scoping asymmetry (any org member holding build:incidents:manage can edit incidents in a project they are not otherwise a member of), not a parent-binding defect: the object itself is still fully and correctly scoped to the named project, and a cross-tenant/cross-project incidentId still 404s.",
-      "evidence": "src/modules/build/incidents/incidents.controller.ts:93",
+      "evidence": "src/modules/build/incidents/incidents.controller.ts:109",
       "reviewedEvidence": [
         {
           "file": "src/modules/build/incidents/incidents.controller.ts",
-          "line": 103,
+          "line": 119,
           "note": "route handler passes raw path params straight to the service"
         },
         {
           "file": "src/modules/build/incidents/incidents.service.ts",
-          "line": 140,
+          "line": 169,
           "note": "binds incidentId to projectId via loadIncident before patching; no assertProjectAccess call precedes it"
         },
         {
           "file": "src/modules/build/incidents/incidents.service.ts",
-          "line": 168,
+          "line": 198,
           "note": "UPDATE WHERE clause independently re-binds id+orgId+projectId"
         }
       ]
@@ -12322,7 +12365,7 @@
       "file": "src/modules/build/incidents/incidents.controller.ts",
       "class": "IncidentsController",
       "method": "deleteIncident",
-      "line": 106,
+      "line": 122,
       "verb": "DELETE",
       "path": "/build/:projectId/incidents/:incidentId",
       "routeParams": [
@@ -12352,30 +12395,30 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/incidents/incidents.service.ts:227",
+      "orgEvidence": "src/modules/build/incidents/incidents.service.ts:257",
       "parentScoping": "BOUND",
-      "parentEvidence": "src/modules/build/incidents/incidents.service.ts:227",
+      "parentEvidence": "src/modules/build/incidents/incidents.service.ts:257",
       "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
       ],
       "verdict": "VERIFIED",
       "verdictReason": "DELETE /build/:projectId/incidents/:incidentId (soft delete). Same shape as updateIncident: loadIncident(orgId, projectId, incidentId) 404s a foreign incidentId, and the soft-delete UPDATE's own WHERE independently re-binds id+orgId+projectId. Also skips assertProjectAccess like updateIncident (see that entry's note) — a project-membership-scoping asymmetry, not a parent-binding defect.",
-      "evidence": "src/modules/build/incidents/incidents.controller.ts:106",
+      "evidence": "src/modules/build/incidents/incidents.controller.ts:122",
       "reviewedEvidence": [
         {
           "file": "src/modules/build/incidents/incidents.controller.ts",
-          "line": 116,
+          "line": 132,
           "note": "route handler passes raw path params straight to the service"
         },
         {
           "file": "src/modules/build/incidents/incidents.service.ts",
-          "line": 228,
+          "line": 258,
           "note": "binds incidentId to projectId via loadIncident; no assertProjectAccess call precedes it"
         },
         {
           "file": "src/modules/build/incidents/incidents.service.ts",
-          "line": 236,
+          "line": 266,
           "note": "soft-delete UPDATE WHERE clause independently re-binds id+orgId+projectId"
         }
       ]
@@ -12385,7 +12428,7 @@
       "file": "src/modules/build/incidents/incidents.controller.ts",
       "class": "IncidentsController",
       "method": "addUpdate",
-      "line": 119,
+      "line": 135,
       "verb": "POST",
       "path": "/build/:projectId/incidents/:incidentId/updates",
       "routeParams": [
@@ -12415,31 +12458,212 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/incidents/incidents.service.ts:249",
+      "orgEvidence": "src/modules/build/incidents/incidents.service.ts:279",
       "parentScoping": "BOUND",
-      "parentEvidence": "src/modules/build/incidents/incidents.service.ts:249",
+      "parentEvidence": "src/modules/build/incidents/incidents.service.ts:279",
       "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
       ],
       "verdict": "VERIFIED",
       "verdictReason": "POST /build/:projectId/incidents/:incidentId/updates. addUpdate calls assertProjectAccess(projectId) then loadIncident(orgId, projectId, incidentId) (404 on mismatch) before inserting the incidentUpdates row and, when the status changes, updating projectIncidents with a WHERE that independently re-binds id+orgId+projectId — all inside one transaction.",
-      "evidence": "src/modules/build/incidents/incidents.controller.ts:119",
+      "evidence": "src/modules/build/incidents/incidents.controller.ts:135",
       "reviewedEvidence": [
         {
           "file": "src/modules/build/incidents/incidents.controller.ts",
-          "line": 130,
+          "line": 146,
           "note": "route handler passes raw path params straight to the service"
         },
         {
           "file": "src/modules/build/incidents/incidents.service.ts",
-          "line": 256,
+          "line": 286,
           "note": "binds incidentId to projectId via loadIncident before writing"
         },
         {
           "file": "src/modules/build/incidents/incidents.service.ts",
-          "line": 282,
+          "line": 312,
           "note": "in-transaction status UPDATE independently re-binds id+orgId+projectId"
+        }
+      ]
+    },
+    {
+      "key": "modules/build/incidents/incidents.controller.ts#addDecision",
+      "file": "src/modules/build/incidents/incidents.controller.ts",
+      "class": "IncidentsController",
+      "method": "addDecision",
+      "line": 149,
+      "verb": "POST",
+      "path": "/build/:projectId/incidents/:incidentId/decisions",
+      "routeParams": [
+        "projectId",
+        "incidentId"
+      ],
+      "classification": "@RequirePermission(\"build:incidents:manage\")",
+      "moduleGuard": "@RequireModule(\"build\")",
+      "guards": [
+        "JwtAuthGuard",
+        "PermissionGuard"
+      ],
+      "guardChainOk": true,
+      "validate": "present",
+      "declaredParams": [
+        "projectId",
+        "incidentId"
+      ],
+      "missingParams": [],
+      "extraParams": [],
+      "idempotent": null,
+      "mutating": true,
+      "service": {
+        "call": "this.svc.addDecision(u, projectId, incidentId, body)",
+        "type": "IncidentsService",
+        "file": "src/modules/build/incidents/incidents.service.ts",
+        "resolved": true
+      },
+      "orgScoping": "BOUND",
+      "orgEvidence": "src/modules/build/incidents/incidents.service.ts:352",
+      "parentScoping": "BOUND",
+      "parentEvidence": "src/modules/build/incidents/incidents.service.ts:352",
+      "leads": [],
+      "notes": [
+        "mutating verb without @Idempotent"
+      ],
+      "verdict": "VERIFIED",
+      "verdictReason": "POST /build/:projectId/incidents/:incidentId/decisions. addDecision calls assertProjectAccess(projectId) then loadIncident(orgId, projectId, incidentId) — the same helper proven elsewhere in this file to bind id+orgId+projectId together, 404 on mismatch — before inserting the decision row, which is itself scoped to the now-confirmed incidentId+orgId.",
+      "evidence": "src/modules/build/incidents/incidents.controller.ts:149",
+      "reviewedEvidence": [
+        {
+          "file": "src/modules/build/incidents/incidents.service.ts",
+          "line": 358,
+          "note": "project-membership gate"
+        },
+        {
+          "file": "src/modules/build/incidents/incidents.service.ts",
+          "line": 359,
+          "note": "binds incidentId to projectId via loadIncident before writing"
+        }
+      ]
+    },
+    {
+      "key": "modules/build/incidents/incidents.controller.ts#addFollowUpAction",
+      "file": "src/modules/build/incidents/incidents.controller.ts",
+      "class": "IncidentsController",
+      "method": "addFollowUpAction",
+      "line": 163,
+      "verb": "POST",
+      "path": "/build/:projectId/incidents/:incidentId/follow-ups",
+      "routeParams": [
+        "projectId",
+        "incidentId"
+      ],
+      "classification": "@RequirePermission(\"build:incidents:manage\")",
+      "moduleGuard": "@RequireModule(\"build\")",
+      "guards": [
+        "JwtAuthGuard",
+        "PermissionGuard"
+      ],
+      "guardChainOk": true,
+      "validate": "present",
+      "declaredParams": [
+        "projectId",
+        "incidentId"
+      ],
+      "missingParams": [],
+      "extraParams": [],
+      "idempotent": null,
+      "mutating": true,
+      "service": {
+        "call": "this.svc.addFollowUpAction(u, projectId, incidentId, body)",
+        "type": "IncidentsService",
+        "file": "src/modules/build/incidents/incidents.service.ts",
+        "resolved": true
+      },
+      "orgScoping": "BOUND",
+      "orgEvidence": "src/modules/build/incidents/incidents.service.ts:388",
+      "parentScoping": "BOUND",
+      "parentEvidence": "src/modules/build/incidents/incidents.service.ts:388",
+      "leads": [],
+      "notes": [
+        "mutating verb without @Idempotent"
+      ],
+      "verdict": "VERIFIED",
+      "verdictReason": "POST /build/:projectId/incidents/:incidentId/follow-ups. Same binding shape as addDecision: assertProjectAccess(projectId) then loadIncident(orgId, projectId, incidentId) before inserting the follow-up-action row.",
+      "evidence": "src/modules/build/incidents/incidents.controller.ts:163",
+      "reviewedEvidence": [
+        {
+          "file": "src/modules/build/incidents/incidents.service.ts",
+          "line": 394,
+          "note": "project-membership gate"
+        },
+        {
+          "file": "src/modules/build/incidents/incidents.service.ts",
+          "line": 395,
+          "note": "binds incidentId to projectId via loadIncident before writing"
+        }
+      ]
+    },
+    {
+      "key": "modules/build/incidents/incidents.controller.ts#updateFollowUpAction",
+      "file": "src/modules/build/incidents/incidents.controller.ts",
+      "class": "IncidentsController",
+      "method": "updateFollowUpAction",
+      "line": 177,
+      "verb": "PATCH",
+      "path": "/build/:projectId/incidents/:incidentId/follow-ups/:followUpActionId",
+      "routeParams": [
+        "projectId",
+        "incidentId",
+        "followUpActionId"
+      ],
+      "classification": "@RequirePermission(\"build:incidents:manage\")",
+      "moduleGuard": "@RequireModule(\"build\")",
+      "guards": [
+        "JwtAuthGuard",
+        "PermissionGuard"
+      ],
+      "guardChainOk": true,
+      "validate": "present",
+      "declaredParams": [
+        "projectId",
+        "incidentId",
+        "followUpActionId"
+      ],
+      "missingParams": [],
+      "extraParams": [],
+      "idempotent": null,
+      "mutating": true,
+      "service": {
+        "call": "this.svc.updateFollowUpAction(u, projectId, incidentId, followUpActionId, body)",
+        "type": "IncidentsService",
+        "file": "src/modules/build/incidents/incidents.service.ts",
+        "resolved": true
+      },
+      "orgScoping": "BOUND",
+      "orgEvidence": "src/modules/build/incidents/incidents.service.ts:421",
+      "parentScoping": "BOUND",
+      "parentEvidence": "src/modules/build/incidents/incidents.service.ts:421",
+      "leads": [],
+      "notes": [
+        "mutating verb without @Idempotent"
+      ],
+      "verdict": "VERIFIED",
+      "verdictReason": "PATCH /build/:projectId/incidents/:incidentId/follow-ups/:followUpActionId. assertProjectAccess(projectId) then loadIncident(orgId, projectId, incidentId) bind the parent incident to this project; the UPDATE's own WHERE independently re-binds id=followUpActionId AND orgId AND incidentId, so a foreign followUpActionId (even one belonging to a different incident in the same org) 404s rather than matching.",
+      "evidence": "src/modules/build/incidents/incidents.controller.ts:177",
+      "reviewedEvidence": [
+        {
+          "file": "src/modules/build/incidents/incidents.service.ts",
+          "line": 428,
+          "note": "project-membership gate"
+        },
+        {
+          "file": "src/modules/build/incidents/incidents.service.ts",
+          "line": 429,
+          "note": "binds incidentId to projectId via loadIncident before updating"
+        },
+        {
+          "file": "src/modules/build/incidents/incidents.service.ts",
+          "line": 445,
+          "note": "UPDATE WHERE independently re-binds id+orgId+incidentId"
         }
       ]
     },

@@ -216,8 +216,8 @@ export default [
     blastRadius:
       "Was intra-tenant cross-project rules-tampering; now closed. orgId was always bound, so this was never cross-tenant.",
     evidence: [
-      { file: "src/modules/build/core/projects-automations.controller.ts", line: 60, anchor: /update\(/, note: "handler binds both projectId and automationId and forwards both to the service" },
-      { file: "src/modules/build/core/projects-automations.controller.ts", line: 66, anchor: /return this\.automations\.updateAutomation\(u, projectId, automationId, body\);/, note: "projectId is passed into the service call" },
+      { file: "src/modules/build/core/projects-automations.controller.ts", line: 85, anchor: /update\(/, note: "handler binds both projectId and automationId and forwards both to the service" },
+      { file: "src/modules/build/core/projects-automations.controller.ts", line: 91, anchor: /return this\.automations\.updateAutomation\(u, projectId, automationId, body\);/, note: "projectId is passed into the service call" },
       { file: "src/modules/build/core/projects-automations.service.ts", line: 81, anchor: /await this\.members\.assertCanManageProject\(u, projectId\);/, note: "authorizes the caller against the named projectId only — this can be a project-scoped standing" },
       { file: "src/modules/build/core/projects-automations.service.ts", line: 92, anchor: /eq\(projectAutomations\.projectId, projectId\),/, note: "fix: the UPDATE's WHERE now re-binds projectId, so a foreign automationId 404s" },
     ],
@@ -231,8 +231,8 @@ export default [
     blastRadius:
       "Was intra-tenant cross-project deletion, non-recoverable through the API; now closed. orgId was always bound, so this was never cross-tenant.",
     evidence: [
-      { file: "src/modules/build/core/projects-automations.controller.ts", line: 74, anchor: /delete\(/, note: "handler binds both projectId and automationId and forwards both to the service" },
-      { file: "src/modules/build/core/projects-automations.controller.ts", line: 79, anchor: /return this\.automations\.deleteAutomation\(u, projectId, automationId\);/, note: "projectId is passed into the service call" },
+      { file: "src/modules/build/core/projects-automations.controller.ts", line: 99, anchor: /delete\(/, note: "handler binds both projectId and automationId and forwards both to the service" },
+      { file: "src/modules/build/core/projects-automations.controller.ts", line: 104, anchor: /return this\.automations\.deleteAutomation\(u, projectId, automationId\);/, note: "projectId is passed into the service call" },
       { file: "src/modules/build/core/projects-automations.service.ts", line: 101, anchor: /await this\.members\.assertCanManageProject\(u, projectId\);/, note: "authorizes the caller against the named projectId only — this can be a project-scoped standing" },
       { file: "src/modules/build/core/projects-automations.service.ts", line: 108, anchor: /eq\(projectAutomations\.projectId, projectId\),/, note: "fix: the DELETE's WHERE now re-binds projectId, so a foreign automationId 404s" },
     ],
