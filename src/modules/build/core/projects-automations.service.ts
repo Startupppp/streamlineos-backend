@@ -85,7 +85,13 @@ export class ProjectsAutomationsService {
     const [updated] = await this.db
       .update(projectAutomations)
       .set({ ...data, updatedAt: new Date() })
-      .where(and(eq(projectAutomations.id, automationId), eq(projectAutomations.orgId, u.orgId)))
+      .where(
+        and(
+          eq(projectAutomations.id, automationId),
+          eq(projectAutomations.orgId, u.orgId),
+          eq(projectAutomations.projectId, projectId),
+        ),
+      )
       .returning();
     if (!updated) throw new NotFoundException("Automation not found");
     return updated;
@@ -95,7 +101,13 @@ export class ProjectsAutomationsService {
     await this.members.assertCanManageProject(u, projectId);
     const [deleted] = await this.db
       .delete(projectAutomations)
-      .where(and(eq(projectAutomations.id, automationId), eq(projectAutomations.orgId, u.orgId)))
+      .where(
+        and(
+          eq(projectAutomations.id, automationId),
+          eq(projectAutomations.orgId, u.orgId),
+          eq(projectAutomations.projectId, projectId),
+        ),
+      )
       .returning();
     if (!deleted) throw new NotFoundException("Automation not found");
   }

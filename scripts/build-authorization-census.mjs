@@ -234,7 +234,7 @@ const REVIEWED_INLINE = [
     blastRadius: "Intra-tenant: any org ticket is readable through any project's URL.",
     evidence: [
       { file: "src/modules/build/core/projects-ticket-associations.controller.ts", line: 68, anchor: /@Param\("projectId", ParseIntPipe\) projectId: number,/, note: "bound to the URL project" },
-      { file: "src/modules/build/core/projects-ticket-subresources.service.ts", line: 249, anchor: /await assertTicketInProject\(this\.db, orgId, projectId, ticketId\);/, note: "bound to the URL project" },
+      { file: "src/modules/build/core/projects-ticket-subresources.service.ts", line: 253, anchor: /await assertTicketInProject\(this\.db, orgId, projectId, ticketId\);/, note: "bound to the URL project" },
       { file: "src/modules/build/core/project-access.ts", line: 42, anchor: /eq\(tickets\.projectId, projectId\),/, note: "bound to the URL project" },
     ],
   },
@@ -247,8 +247,8 @@ const REVIEWED_INLINE = [
     blastRadius: "Intra-tenant cross-project read of a ticket's watchers.",
     evidence: [
       { file: "src/modules/build/core/projects-ticket-associations.controller.ts", line: 120, anchor: /@Param\("projectId", ParseIntPipe\) projectId: number,/, note: "bound to the URL project" },
-      { file: "src/modules/build/core/projects-ticket-subresources.service.ts", line: 281, anchor: /await this\.requireTicket\(orgId, projectId, ticketId\);/, note: "bound to the URL project" },
-      { file: "src/modules/build/core/projects-ticket-subresources.service.ts", line: 254, anchor: /eq\(tickets\.projectId, projectId\),/, note: "bound to the URL project" },
+      { file: "src/modules/build/core/projects-ticket-subresources.service.ts", line: 285, anchor: /await this\.requireTicket\(orgId, projectId, ticketId\);/, note: "bound to the URL project" },
+      { file: "src/modules/build/core/projects-ticket-subresources.service.ts", line: 275, anchor: /eq\(tickets\.projectId, projectId\),/, note: "requireTicket's own WHERE binds id+projectId+orgId" },
     ],
   },
   {
@@ -259,7 +259,7 @@ const REVIEWED_INLINE = [
     blastRadius: "Intra-tenant cross-project write.",
     evidence: [
       { file: "src/modules/build/core/projects-ticket-associations.controller.ts", line: 133, anchor: /@Param\("projectId", ParseIntPipe\) projectId: number,/, note: "bound to the URL project" },
-      { file: "src/modules/build/core/projects-ticket-subresources.service.ts", line: 320, anchor: /await this\.requireTicket\(u\.orgId, projectId, ticketId\);/, note: "bound to the URL project" },
+      { file: "src/modules/build/core/projects-ticket-subresources.service.ts", line: 324, anchor: /await this\.requireTicket\(u\.orgId, projectId, ticketId\);/, note: "bound to the URL project" },
     ],
   },
   {
@@ -270,7 +270,7 @@ const REVIEWED_INLINE = [
     blastRadius: "Intra-tenant cross-project write.",
     evidence: [
       { file: "src/modules/build/core/projects-ticket-associations.controller.ts", line: 147, anchor: /@Param\("projectId", ParseIntPipe\) projectId: number,/, note: "bound to the URL project" },
-      { file: "src/modules/build/core/projects-ticket-subresources.service.ts", line: 368, anchor: /await this\.requireTicket\(u\.orgId, projectId, ticketId\);/, note: "bound to the URL project" },
+      { file: "src/modules/build/core/projects-ticket-subresources.service.ts", line: 372, anchor: /await this\.requireTicket\(u\.orgId, projectId, ticketId\);/, note: "bound to the URL project" },
     ],
   },
   {
@@ -281,7 +281,7 @@ const REVIEWED_INLINE = [
     blastRadius: "Intra-tenant cross-project write.",
     evidence: [
       { file: "src/modules/build/core/projects-ticket-associations.controller.ts", line: 160, anchor: /@Param\("projectId", ParseIntPipe\) projectId: number,/, note: "bound to the URL project" },
-      { file: "src/modules/build/core/projects-ticket-subresources.service.ts", line: 368, anchor: /await this\.requireTicket\(u\.orgId, projectId, ticketId\);/, note: "bound to the URL project" },
+      { file: "src/modules/build/core/projects-ticket-subresources.service.ts", line: 403, anchor: /await this\.requireTicket\(orgId, projectId, ticketId\);/, note: "bound to the URL project" },
     ],
   },
   {
@@ -292,7 +292,7 @@ const REVIEWED_INLINE = [
     blastRadius: "Intra-tenant cross-project write.",
     evidence: [
       { file: "src/modules/build/core/projects-ticket-associations.controller.ts", line: 188, anchor: /@Param\("projectId", ParseIntPipe\) projectId: number,/, note: "bound to the URL project" },
-      { file: "src/modules/build/core/projects-ticket-subresources.service.ts", line: 416, anchor: /await this\.requireTicket\(orgId, projectId, ticketId\);/, note: "bound to the URL project" },
+      { file: "src/modules/build/core/projects-ticket-subresources.service.ts", line: 458, anchor: /await this\.requireTicket\(u\.orgId, projectId, ticketId\);/, note: "bound to the URL project" },
     ],
   },
   {
@@ -303,7 +303,6 @@ const REVIEWED_INLINE = [
       "POST /build/:projectId/tickets/:ticketId/comments. No @Param(\"projectId\"); the subresources facade drops it before delegating, and the comments service resolves the ticket by (id, orgId).",
     blastRadius: "Intra-tenant: a comment can be posted to a ticket in another project through this project's URL.",
     evidence: [
-      { file: "src/modules/build/core/projects-ticket-subresources.service.ts", line: 249, anchor: /await assertTicketInProject\(this\.db, orgId, projectId, ticketId\);/, note: "bound to the URL project" },
       { file: "src/modules/build/core/projects-ticket-comments.service.ts", line: 129, anchor: /\.\.\.\(projectId === null \? \[\] : \[eq\(tickets\.projectId, projectId\)\]\),/, note: "bound to the URL project" },
     ],
   },

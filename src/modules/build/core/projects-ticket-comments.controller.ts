@@ -33,8 +33,7 @@ import { commentRowSchema, commentEditResultSchema, reactionSchema } from "./dto
 
 const ticketInProjectParams = z.object({ projectId: z.coerce.number().int().positive(), ticketId: z.coerce.number().int().positive() }).strict();
 const projectIdticketIdcommentIdParams = z.object({ projectId: z.coerce.number().int().positive(), ticketId: z.coerce.number().int().positive(), commentId: z.coerce.number().int().positive() }).strict();
-const projectIdticketIdcommentIdParams_ = z.object({ projectId: z.string().min(1), ticketId: z.string().min(1), commentId: z.coerce.number().int().positive() }).strict();
-const projectIdticketIdcommentIdemojiParams = z.object({ projectId: z.string().min(1), ticketId: z.string().min(1), commentId: z.coerce.number().int().positive(), emoji: z.string().min(1) }).strict();
+const projectIdticketIdcommentIdemojiParams = z.object({ projectId: z.coerce.number().int().positive(), ticketId: z.coerce.number().int().positive(), commentId: z.coerce.number().int().positive(), emoji: z.string().min(1) }).strict();
 
 @RequireModule("build")
 @Controller("build")
@@ -101,14 +100,15 @@ export class ProjectsTicketCommentsController {
   @RequirePermission("build:tickets:update")
   @HttpCode(201)
   @ResponseSchema(reactionSchema)
-  @Validate({ params: projectIdticketIdcommentIdParams_, body: addReactionSchema })
+  @Validate({ params: projectIdticketIdcommentIdParams, body: addReactionSchema })
   addReaction(
+    @Param("projectId", ParseIntPipe) projectId: number,
     @Param("ticketId", ParseIntPipe) ticketId: number,
     @Param("commentId", ParseIntPipe) commentId: number,
     @Body() body: AddReactionInput,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.subresources.addReaction(commentId, u.userId, u.orgId, body.emoji, actingMembershipId(u.principal), ticketId);
+    return this.subresources.addReaction(commentId, u.userId, u.orgId, body.emoji, actingMembershipId(u.principal), ticketId, projectId);
   }
 
   @Delete(":projectId/tickets/:ticketId/comments/:commentId/reactions/:emoji")
@@ -117,11 +117,12 @@ export class ProjectsTicketCommentsController {
   @NoContentResponse()
   @Validate({ params: projectIdticketIdcommentIdemojiParams })
   removeReaction(
+    @Param("projectId", ParseIntPipe) projectId: number,
     @Param("ticketId", ParseIntPipe) ticketId: number,
     @Param("commentId", ParseIntPipe) commentId: number,
     @Param("emoji") emoji: string,
     @CurrentUser() u: CurrentUserContext,
   ) {
-    return this.subresources.removeReaction(commentId, u.userId, u.orgId, decodeURIComponent(emoji), actingMembershipId(u.principal), ticketId);
+    return this.subresources.removeReaction(commentId, u.userId, u.orgId, decodeURIComponent(emoji), actingMembershipId(u.principal), ticketId, projectId);
   }
 }

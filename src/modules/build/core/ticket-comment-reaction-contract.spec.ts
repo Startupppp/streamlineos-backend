@@ -3,12 +3,16 @@ import { reactionSchema } from "./dto/build-tickets-response.schemas";
 import { ticketCommentReactions } from "../../../db/schema";
 import { ProjectsTicketCommentsService } from "./projects-ticket-comments.service";
 
-function buildService(comment: { id: number } | undefined) {
+function buildService(options: { ticket?: { id: number }; comment?: { id: number } }) {
+  const { ticket, comment } = options;
   const onConflictDoNothing = jest.fn().mockResolvedValue(undefined);
   const values = jest.fn().mockReturnValue({ onConflictDoNothing });
   const insert = jest.fn().mockReturnValue({ values });
   const db = {
-    query: { ticketComments: { findFirst: jest.fn().mockResolvedValue(comment) } },
+    query: {
+      tickets: { findFirst: jest.fn().mockResolvedValue(ticket) },
+      ticketComments: { findFirst: jest.fn().mockResolvedValue(comment) },
+    },
     insert,
   };
   const service = new ProjectsTicketCommentsService(
@@ -22,18 +26,18 @@ function buildService(comment: { id: number } | undefined) {
 
 describe("ProjectsTicketCommentsService.addReaction", () => {
   it("returns the actor-shaped payload the contract declares, not the inserted row", async () => {
-    const { service } = buildService({ id: 42 });
+    const { service } = buildService({ ticket: { id: 9 }, comment: { id: 42 } });
 
-    const result = await service.addReaction(42, "user-1", "org-1", "👍", 7, 9);
+    const result = await service.addReaction(42, "user-1", "org-1", "👍", 7, 9, 3);
 
     expect(result).toEqual({ commentId: 42, userId: "user-1", emoji: "👍" });
     expect(reactionSchema.safeParse(result).success).toBe(true);
   });
 
   it("never asks the insert for the row back, because that row has no userId to return", async () => {
-    const { service, values, onConflictDoNothing } = buildService({ id: 42 });
+    const { service, values, onConflictDoNothing } = buildService({ ticket: { id: 9 }, comment: { id: 42 } });
 
-    await service.addReaction(42, "user-1", "org-1", "👍", 7, 9);
+    await service.addReaction(42, "user-1", "org-1", "👍", 7, 9, 3);
 
     expect(values).toHaveBeenCalledWith({ commentId: 42, orgId: "org-1", emoji: "👍", membershipId: 7 });
     expect(onConflictDoNothing).toHaveBeenCalledTimes(1);
@@ -41,21 +45,40 @@ describe("ProjectsTicketCommentsService.addReaction", () => {
   });
 
   it("refuses a caller with no membership before writing a reaction row", async () => {
-    const { service, insert } = buildService({ id: 42 });
+    const { service, insert } = buildService({ ticket: { id: 9 }, comment: { id: 42 } });
 
-    await expect(service.addReaction(42, "user-1", "org-1", "👍", null, 9)).rejects.toBeInstanceOf(
+    await expect(service.addReaction(42, "user-1", "org-1", "👍", null, 9, 3)).rejects.toBeInstanceOf(
       ForbiddenException,
     );
     expect(insert).not.toHaveBeenCalled();
   });
 
   it("reports a comment outside the caller's org as missing rather than forbidden", async () => {
-    const { service, insert } = buildService(undefined);
+    const { service, insert } = buildService({ ticket: { id: 9 }, comment: undefined });
 
-    await expect(service.addReaction(42, "user-1", "other-org", "👍", 7, 9)).rejects.toBeInstanceOf(
+    await expect(service.addReaction(42, "user-1", "other-org", "👍", 7, 9, 3)).rejects.toBeInstanceOf(
       NotFoundException,
     );
     expect(insert).not.toHaveBeenCalled();
+  });
+
+  it("reports a ticket outside the URL's project as missing, before ever looking at the comment", async () => {
+    const { service, insert } = buildService({ ticket: undefined, comment: { id: 42 } });
+
+    await expect(service.addReaction(42, "user-1", "org-1", "👍", 7, 9, 3)).rejects.toBeInstanceOf(
+      NotFoundException,
+    );
+    expect(insert).not.toHaveBeenCalled();
+  });
+});
+
+describe("ProjectsTicketCommentsService.removeReaction", () => {
+  it("reports a ticket outside the URL's project as missing, before ever looking at the comment", async () => {
+    const { service } = buildService({ ticket: undefined, comment: { id: 42 } });
+
+    await expect(
+      service.removeReaction(42, "user-1", "org-1", "👍", 7, 9, 3),
+    ).rejects.toBeInstanceOf(NotFoundException);
   });
 });
 

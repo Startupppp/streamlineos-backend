@@ -276,7 +276,18 @@ export class ProjectsTicketCommentsService {
     return { deleted: true };
   }
 
-  async addReaction(commentId: number, userId: string, orgId: string, emoji: string, membershipId: number | null, ticketId: number) {
+  async addReaction(commentId: number, userId: string, orgId: string, emoji: string, membershipId: number | null, ticketId: number, projectId: number) {
+    const ticket = await this.db.query.tickets.findFirst({
+      where: and(
+        eq(tickets.id, ticketId),
+        eq(tickets.projectId, projectId),
+        eq(tickets.orgId, orgId),
+        isNull(tickets.deletedAt),
+      ),
+      columns: { id: true },
+    });
+    if (!ticket) throw new NotFoundException("Ticket not found");
+
     const comment = await this.db.query.ticketComments.findFirst({
       where: and(
         eq(ticketComments.id, commentId),
@@ -296,7 +307,18 @@ export class ProjectsTicketCommentsService {
     return { commentId, userId, emoji };
   }
 
-  async removeReaction(commentId: number, userId: string, orgId: string, emoji: string, membershipId: number | null, ticketId: number) {
+  async removeReaction(commentId: number, userId: string, orgId: string, emoji: string, membershipId: number | null, ticketId: number, projectId: number) {
+    const ticket = await this.db.query.tickets.findFirst({
+      where: and(
+        eq(tickets.id, ticketId),
+        eq(tickets.projectId, projectId),
+        eq(tickets.orgId, orgId),
+        isNull(tickets.deletedAt),
+      ),
+      columns: { id: true },
+    });
+    if (!ticket) throw new NotFoundException("Ticket not found");
+
     const comment = await this.db.query.ticketComments.findFirst({
       where: and(
         eq(ticketComments.id, commentId),

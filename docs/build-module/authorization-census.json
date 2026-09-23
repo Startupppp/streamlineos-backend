@@ -5,11 +5,11 @@
   "controllerFiles": 49,
   "handlers": 321,
   "counts": {
-    "VULNERABLE": 4,
+    "VULNERABLE": 0,
     "CLOSED-IN-FLIGHT": 0,
-    "NEEDS-REVIEW": 3,
-    "CLOSED": 36,
-    "VERIFIED": 278
+    "NEEDS-REVIEW": 0,
+    "CLOSED": 40,
+    "VERIFIED": 281
   },
   "handlersDetail": [
     {
@@ -597,10 +597,21 @@
       "parentEvidence": "src/modules/build/client-portal/change-request-affected-items.service.ts:62",
       "leads": [],
       "notes": [],
-      "verdict": "NEEDS-REVIEW",
-      "verdictReason": "static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)",
+      "verdict": "VERIFIED",
+      "verdictReason": "GET /build/:projectId/change-requests/:changeRequestId/affected-tickets. ChangeRequestAffectedItemsService.listAffectedTickets opens with ChangeRequestsService.getChangeRequest(u, projectId, changeRequestId), which asserts project access and binds the change request row to id+orgId+projectId, 404 otherwise. Only after that does it query changeRequestAffectedItems, itself filtered by orgId+changeRequestId — a changeRequestId already proven to belong to this exact project.",
       "evidence": "src/modules/build/client-portal/change-request-affected-items.controller.ts:56",
-      "reviewedEvidence": null
+      "reviewedEvidence": [
+        {
+          "file": "src/modules/build/client-portal/change-request-affected-items.service.ts",
+          "line": 68,
+          "note": "binds the change request to id+orgId+projectId; 404 on mismatch"
+        },
+        {
+          "file": "src/modules/build/client-portal/change-requests.service.ts",
+          "line": 148,
+          "note": "getChangeRequest's own WHERE re-binds projectId"
+        }
+      ]
     },
     {
       "key": "modules/build/client-portal/change-request-affected-items.controller.ts#linkTicket",
@@ -642,10 +653,21 @@
       "parentEvidence": "src/modules/build/client-portal/change-request-affected-items.service.ts:110",
       "leads": [],
       "notes": [],
-      "verdict": "NEEDS-REVIEW",
-      "verdictReason": "static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)",
+      "verdict": "VERIFIED",
+      "verdictReason": "POST /build/:projectId/change-requests/:changeRequestId/affected-tickets. Same getChangeRequest binding as listAffectedTickets, plus a second parent check: the target ticket (from the body, not the URL) is looked up by id+orgId and its own projectId is compared against the URL's projectId (`ticket.projectId !== projectId`), 404 on mismatch — so a caller cannot link a ticket from a different project into this change request either.",
       "evidence": "src/modules/build/client-portal/change-request-affected-items.controller.ts:69",
-      "reviewedEvidence": null
+      "reviewedEvidence": [
+        {
+          "file": "src/modules/build/client-portal/change-request-affected-items.service.ts",
+          "line": 117,
+          "note": "binds the change request to id+orgId+projectId; 404 on mismatch"
+        },
+        {
+          "file": "src/modules/build/client-portal/change-request-affected-items.service.ts",
+          "line": 124,
+          "note": "explicit compare: the body-supplied ticketId must belong to this exact project too"
+        }
+      ]
     },
     {
       "key": "modules/build/client-portal/change-request-affected-items.controller.ts#unlinkTicket",
@@ -691,10 +713,21 @@
       "notes": [
         "mutating verb without @Idempotent"
       ],
-      "verdict": "NEEDS-REVIEW",
-      "verdictReason": "static pass clean, but a nested route's parent binding is not a claim a static reader may make alone (see CLASSIFICATION CONTRACT)",
+      "verdict": "VERIFIED",
+      "verdictReason": "DELETE /build/:projectId/change-requests/:changeRequestId/affected-tickets/:affectedItemId. Same getChangeRequest binding as the other two handlers, then the affected-item row itself is looked up bound to id+orgId+changeRequestId — a changeRequestId already proven to belong to this exact project — before the delete proceeds.",
       "evidence": "src/modules/build/client-portal/change-request-affected-items.controller.ts:84",
-      "reviewedEvidence": null
+      "reviewedEvidence": [
+        {
+          "file": "src/modules/build/client-portal/change-request-affected-items.service.ts",
+          "line": 169,
+          "note": "binds the change request to id+orgId+projectId; 404 on mismatch"
+        },
+        {
+          "file": "src/modules/build/client-portal/change-request-affected-items.service.ts",
+          "line": 178,
+          "note": "the affected-item lookup re-binds changeRequestId, itself already proven project-scoped"
+        }
+      ]
     },
     {
       "key": "modules/build/client-portal/change-requests.controller.ts#listChangeRequests",
@@ -2634,8 +2667,8 @@
       "notes": [
         "mutating verb without @Idempotent"
       ],
-      "verdict": "VULNERABLE",
-      "verdictReason": "PATCH /build/:projectId/automations/:automationId. The controller binds projectId and automationId and calls ProjectsAutomationsService.updateAutomation(u, projectId, automationId, data). The method calls this.members.assertCanManageProject(u, projectId), which authorizes the caller against the NAMED :projectId (org owner, OR org-wide build:manage, OR the caller's own project.managerMembershipId, OR the caller holding role 'ADMIN' in projectMembers for THAT project) — but the actual mutation, `update(projectAutomations).where(and(eq(projectAutomations.id, automationId), eq(projectAutomations.orgId, u.orgId)))`, never repeats eq(projectAutomations.projectId, projectId). A caller whose only standing is project-scoped (project.managerMembershipId or a projectMembers ADMIN role on project A — i.e. no org-wide build:manage) passes assertCanManageProject for their OWN project A, and can then supply any other project's automationId in the same org: the UPDATE matches on id+orgId alone and silently rewrites (or, in delete, destroys) an automation that belongs to a project the caller has no standing over. This is the same shape as the CLOSED projects-custom-fields.controller.ts#updateField finding: an authority check against the URL's :projectId that the actual mutation's WHERE clause never repeats.",
+      "verdict": "CLOSED",
+      "verdictReason": "PATCH /build/:projectId/automations/:automationId. ProjectsAutomationsService.updateAutomation authorized the caller via assertCanManageProject(u, projectId), which a project-scoped manager of the NAMED project alone can satisfy, but the mutation's WHERE clause only bound id+orgId — never projectId — so that caller could rewrite any other project's automation by ID. Fixed by adding eq(projectAutomations.projectId, projectId) to the UPDATE's WHERE, so a foreign automationId now 404s instead of matching.",
       "evidence": "src/modules/build/core/projects-automations.controller.ts:56",
       "reviewedEvidence": [
         {
@@ -2655,13 +2688,8 @@
         },
         {
           "file": "src/modules/build/core/projects-automations.service.ts",
-          "line": 88,
-          "note": "the actual UPDATE's WHERE omits projectId entirely — any automation in the org matches"
-        },
-        {
-          "file": "src/modules/build/core/projects-members.service.ts",
-          "line": 91,
-          "note": "assertCanManageProject accepts a per-project ADMIN standing, not only org-wide build:manage — confirming the caller's authority can be strictly project-scoped"
+          "line": 92,
+          "note": "fix: the UPDATE's WHERE now re-binds projectId, so a foreign automationId 404s"
         }
       ]
     },
@@ -2700,15 +2728,15 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/core/projects-automations.service.ts:94",
+      "orgEvidence": "src/modules/build/core/projects-automations.service.ts:100",
       "parentScoping": "BOUND",
-      "parentEvidence": "src/modules/build/core/projects-automations.service.ts:94",
+      "parentEvidence": "src/modules/build/core/projects-automations.service.ts:100",
       "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
       ],
-      "verdict": "VULNERABLE",
-      "verdictReason": "DELETE /build/:projectId/automations/:automationId. Identical defect shape to #update: ProjectsAutomationsService.deleteAutomation(u, projectId, automationId) calls assertCanManageProject(u, projectId) — which can be satisfied by project-scoped authority over the NAMED project alone — but the actual DELETE, `delete(projectAutomations).where(and(eq(projectAutomations.id, automationId), eq(projectAutomations.orgId, u.orgId)))`, never re-binds projectId. A project-scoped manager of project A can delete any automation in the org by ID, regardless of which project it actually belongs to.",
+      "verdict": "CLOSED",
+      "verdictReason": "DELETE /build/:projectId/automations/:automationId. Identical defect shape to #update, now fixed the same way: the DELETE's WHERE clause is bound to id+orgId+projectId, so a project-scoped manager of one project can no longer destroy another project's automation by guessing its id.",
       "evidence": "src/modules/build/core/projects-automations.controller.ts:69",
       "reviewedEvidence": [
         {
@@ -2723,13 +2751,13 @@
         },
         {
           "file": "src/modules/build/core/projects-automations.service.ts",
-          "line": 95,
+          "line": 101,
           "note": "authorizes the caller against the named projectId only — this can be a project-scoped standing"
         },
         {
           "file": "src/modules/build/core/projects-automations.service.ts",
-          "line": 98,
-          "note": "the actual DELETE's WHERE omits projectId entirely — any automation in the org matches"
+          "line": 108,
+          "note": "fix: the DELETE's WHERE now re-binds projectId, so a foreign automationId 404s"
         }
       ]
     },
@@ -4880,9 +4908,9 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:248",
+      "orgEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:252",
       "parentScoping": "BOUND",
-      "parentEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:248",
+      "parentEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:252",
       "leads": [],
       "notes": [],
       "verdict": "CLOSED",
@@ -4896,7 +4924,7 @@
         },
         {
           "file": "src/modules/build/core/projects-ticket-subresources.service.ts",
-          "line": 249,
+          "line": 253,
           "note": "bound to the URL project"
         },
         {
@@ -4941,9 +4969,9 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:470",
+      "orgEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:474",
       "parentScoping": "BOUND",
-      "parentEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:470",
+      "parentEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:474",
       "leads": [],
       "notes": [],
       "verdict": "VERIFIED",
@@ -5002,9 +5030,9 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:474",
+      "orgEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:478",
       "parentScoping": "BOUND",
-      "parentEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:474",
+      "parentEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:478",
       "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
@@ -5065,9 +5093,9 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:483",
+      "orgEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:487",
       "parentScoping": "BOUND",
-      "parentEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:483",
+      "parentEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:487",
       "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
@@ -5128,9 +5156,9 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:280",
+      "orgEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:284",
       "parentScoping": "BOUND",
-      "parentEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:280",
+      "parentEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:284",
       "leads": [],
       "notes": [],
       "verdict": "CLOSED",
@@ -5144,13 +5172,13 @@
         },
         {
           "file": "src/modules/build/core/projects-ticket-subresources.service.ts",
-          "line": 281,
+          "line": 285,
           "note": "bound to the URL project"
         },
         {
           "file": "src/modules/build/core/projects-ticket-subresources.service.ts",
-          "line": 254,
-          "note": "bound to the URL project"
+          "line": 275,
+          "note": "requireTicket's own WHERE binds id+projectId+orgId"
         }
       ]
     },
@@ -5189,9 +5217,9 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:314",
+      "orgEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:318",
       "parentScoping": "BOUND",
-      "parentEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:314",
+      "parentEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:318",
       "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
@@ -5207,7 +5235,7 @@
         },
         {
           "file": "src/modules/build/core/projects-ticket-subresources.service.ts",
-          "line": 320,
+          "line": 324,
           "note": "bound to the URL project"
         }
       ]
@@ -5247,9 +5275,9 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:363",
+      "orgEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:367",
       "parentScoping": "BOUND",
-      "parentEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:363",
+      "parentEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:367",
       "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
@@ -5265,7 +5293,7 @@
         },
         {
           "file": "src/modules/build/core/projects-ticket-subresources.service.ts",
-          "line": 368,
+          "line": 372,
           "note": "bound to the URL project"
         }
       ]
@@ -5305,9 +5333,9 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:392",
+      "orgEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:396",
       "parentScoping": "BOUND",
-      "parentEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:392",
+      "parentEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:396",
       "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
@@ -5323,7 +5351,7 @@
         },
         {
           "file": "src/modules/build/core/projects-ticket-subresources.service.ts",
-          "line": 368,
+          "line": 403,
           "note": "bound to the URL project"
         }
       ]
@@ -5365,9 +5393,9 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:409",
+      "orgEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:413",
       "parentScoping": "BOUND",
-      "parentEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:409",
+      "parentEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:413",
       "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
@@ -5383,12 +5411,12 @@
         },
         {
           "file": "src/modules/build/core/projects-ticket-subresources.service.ts",
-          "line": 416,
+          "line": 420,
           "note": "binds ticketId to this projectId+orgId; 404 on mismatch"
         },
         {
           "file": "src/modules/build/core/projects-ticket-subresources.service.ts",
-          "line": 271,
+          "line": 275,
           "note": "requireTicket's WHERE clause binds id+projectId+orgId"
         }
       ]
@@ -5428,9 +5456,9 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:448",
+      "orgEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:452",
       "parentScoping": "BOUND",
-      "parentEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:448",
+      "parentEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:452",
       "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
@@ -5446,7 +5474,7 @@
         },
         {
           "file": "src/modules/build/core/projects-ticket-subresources.service.ts",
-          "line": 416,
+          "line": 458,
           "note": "bound to the URL project"
         }
       ]
@@ -5486,9 +5514,9 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:606",
+      "orgEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:610",
       "parentScoping": "BOUND",
-      "parentEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:606",
+      "parentEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:610",
       "leads": [],
       "notes": [],
       "verdict": "VERIFIED",
@@ -5547,9 +5575,9 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:610",
+      "orgEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:614",
       "parentScoping": "BOUND",
-      "parentEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:610",
+      "parentEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:614",
       "leads": [],
       "notes": [],
       "verdict": "CLOSED",
@@ -5613,9 +5641,9 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:614",
+      "orgEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:618",
       "parentScoping": "BOUND",
-      "parentEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:614",
+      "parentEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:618",
       "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
@@ -5678,9 +5706,9 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:623",
+      "orgEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:627",
       "parentScoping": "BOUND",
-      "parentEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:623",
+      "parentEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:627",
       "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
@@ -5743,9 +5771,9 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:639",
+      "orgEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:643",
       "parentScoping": "BOUND",
-      "parentEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:639",
+      "parentEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:643",
       "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
@@ -5806,9 +5834,9 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:497",
+      "orgEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:501",
       "parentScoping": "BOUND",
-      "parentEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:497",
+      "parentEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:501",
       "leads": [],
       "notes": [],
       "verdict": "VERIFIED",
@@ -5867,9 +5895,9 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:501",
+      "orgEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:505",
       "parentScoping": "BOUND",
-      "parentEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:501",
+      "parentEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:505",
       "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
@@ -5932,9 +5960,9 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:515",
+      "orgEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:519",
       "parentScoping": "BOUND",
-      "parentEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:515",
+      "parentEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:519",
       "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
@@ -5987,9 +6015,9 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:531",
+      "orgEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:535",
       "parentScoping": "BOUND",
-      "parentEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:531",
+      "parentEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:535",
       "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
@@ -6042,9 +6070,9 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:545",
+      "orgEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:549",
       "parentScoping": "BOUND",
-      "parentEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:545",
+      "parentEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:549",
       "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
@@ -6099,9 +6127,9 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:566",
+      "orgEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:570",
       "parentScoping": "BOUND",
-      "parentEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:566",
+      "parentEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:570",
       "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
@@ -6161,9 +6189,9 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:590",
+      "orgEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:594",
       "parentScoping": "BOUND",
-      "parentEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:590",
+      "parentEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:594",
       "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
@@ -6189,7 +6217,7 @@
       "file": "src/modules/build/core/projects-ticket-comments.controller.ts",
       "class": "ProjectsTicketCommentsController",
       "method": "addComment",
-      "line": 45,
+      "line": 44,
       "verb": "POST",
       "path": "/build/:projectId/tickets/:ticketId/comments",
       "routeParams": [
@@ -6228,13 +6256,8 @@
       ],
       "verdict": "CLOSED",
       "verdictReason": "POST /build/:projectId/tickets/:ticketId/comments. No @Param(\"projectId\"); the subresources facade drops it before delegating, and the comments service resolves the ticket by (id, orgId).",
-      "evidence": "src/modules/build/core/projects-ticket-comments.controller.ts:45",
+      "evidence": "src/modules/build/core/projects-ticket-comments.controller.ts:44",
       "reviewedEvidence": [
-        {
-          "file": "src/modules/build/core/projects-ticket-subresources.service.ts",
-          "line": 249,
-          "note": "bound to the URL project"
-        },
         {
           "file": "src/modules/build/core/projects-ticket-comments.service.ts",
           "line": 129,
@@ -6247,7 +6270,7 @@
       "file": "src/modules/build/core/projects-ticket-comments.controller.ts",
       "class": "ProjectsTicketCommentsController",
       "method": "getComment",
-      "line": 59,
+      "line": 58,
       "verb": "GET",
       "path": "/build/:projectId/tickets/:ticketId/comments/:commentId",
       "routeParams": [
@@ -6286,11 +6309,11 @@
       "notes": [],
       "verdict": "VERIFIED",
       "verdictReason": "GET /build/:projectId/tickets/:ticketId/comments/:commentId. ProjectsTicketCommentsService.getComment(u, projectId, ticketId, commentId) resolves the ticket by id+orgId via resolveTicketForComment, reads ticket.projectId, and immediately compares it against the route's projectId — `if (ticket.projectId !== projectId) throw new NotFoundException(...)` — an explicit parent-binding check, not an inferred one. Only after that passes does loadCommentRow bind the comment to id=commentId AND ticketId=ticketId AND orgId=orgId.",
-      "evidence": "src/modules/build/core/projects-ticket-comments.controller.ts:59",
+      "evidence": "src/modules/build/core/projects-ticket-comments.controller.ts:58",
       "reviewedEvidence": [
         {
           "file": "src/modules/build/core/projects-ticket-comments.controller.ts",
-          "line": 63,
+          "line": 62,
           "note": "handler binds projectId, ticketId and commentId and forwards all three"
         },
         {
@@ -6310,7 +6333,7 @@
       "file": "src/modules/build/core/projects-ticket-comments.controller.ts",
       "class": "ProjectsTicketCommentsController",
       "method": "editComment",
-      "line": 72,
+      "line": 71,
       "verb": "PATCH",
       "path": "/build/:projectId/tickets/:ticketId/comments/:commentId",
       "routeParams": [
@@ -6351,11 +6374,11 @@
       ],
       "verdict": "VERIFIED",
       "verdictReason": "PATCH /build/:projectId/tickets/:ticketId/comments/:commentId. Same explicit-compare pattern as getComment: editComment(u, projectId, ticketId, commentId, content) resolves the ticket and checks `if (ticket.projectId !== projectId) throw new NotFoundException(...)` before loading the comment bound to id+ticketId+orgId, checking author ownership, and finally updating it by id+orgId.",
-      "evidence": "src/modules/build/core/projects-ticket-comments.controller.ts:72",
+      "evidence": "src/modules/build/core/projects-ticket-comments.controller.ts:71",
       "reviewedEvidence": [
         {
           "file": "src/modules/build/core/projects-ticket-comments.controller.ts",
-          "line": 76,
+          "line": 75,
           "note": "handler binds projectId, ticketId and commentId and forwards all three"
         },
         {
@@ -6375,7 +6398,7 @@
       "file": "src/modules/build/core/projects-ticket-comments.controller.ts",
       "class": "ProjectsTicketCommentsController",
       "method": "deleteComment",
-      "line": 86,
+      "line": 85,
       "verb": "DELETE",
       "path": "/build/:projectId/tickets/:ticketId/comments/:commentId",
       "routeParams": [
@@ -6416,11 +6439,11 @@
       ],
       "verdict": "VERIFIED",
       "verdictReason": "DELETE /build/:projectId/tickets/:ticketId/comments/:commentId. Same explicit-compare pattern: deleteComment(u, projectId, ticketId, commentId) resolves the ticket and checks `if (ticket.projectId !== projectId) throw new NotFoundException(...)` before loading the comment (id+ticketId+orgId), checking author ownership, and soft-deleting it (and its replies) by id/parentCommentId+orgId.",
-      "evidence": "src/modules/build/core/projects-ticket-comments.controller.ts:86",
+      "evidence": "src/modules/build/core/projects-ticket-comments.controller.ts:85",
       "reviewedEvidence": [
         {
           "file": "src/modules/build/core/projects-ticket-comments.controller.ts",
-          "line": 91,
+          "line": 90,
           "note": "handler binds projectId, ticketId and commentId and forwards all three"
         },
         {
@@ -6440,7 +6463,7 @@
       "file": "src/modules/build/core/projects-ticket-comments.controller.ts",
       "class": "ProjectsTicketCommentsController",
       "method": "addReaction",
-      "line": 100,
+      "line": 99,
       "verb": "POST",
       "path": "/build/:projectId/tickets/:ticketId/comments/:commentId/reactions",
       "routeParams": [
@@ -6466,7 +6489,7 @@
       "idempotent": null,
       "mutating": true,
       "service": {
-        "call": "this.subresources.addReaction(commentId, u.userId, u.orgId, body.emoji, actingMembershipId(u.principal), ticketId)",
+        "call": "this.subresources.addReaction(commentId, u.userId, u.orgId, body.emoji, actingMembershipId(u.principal), ticketId, projectId)",
         "type": "ProjectsTicketSubresourcesService",
         "file": "src/modules/build/core/projects-ticket-subresources.service.ts",
         "resolved": true
@@ -6479,29 +6502,34 @@
       "notes": [
         "mutating verb without @Idempotent"
       ],
-      "verdict": "VULNERABLE",
-      "verdictReason": "POST /build/:projectId/tickets/:ticketId/comments/:commentId/reactions. Unlike its siblings getComment/editComment/deleteComment on the same controller, the addReaction handler's parameter list is `addReaction(@Param(\"ticketId\") ticketId, @Param(\"commentId\") commentId, @Body() body, @CurrentUser() u)` — there is no `@Param(\"projectId\")` at all. @Validate({ params: projectIdticketIdcommentIdParams_ }) still requires the :projectId segment to be present and non-empty in the URL (so the route 400s if it is missing), but the handler never reads the value it validated, and never passes it to the service. The call chain — controller → ProjectsTicketSubresourcesService.addReaction(commentId, userId, orgId, emoji, membershipId, ticketId) → ProjectsTicketCommentsService.addReaction — carries no projectId parameter anywhere; the service's own WHERE binds only `eq(ticketComments.id, commentId), eq(ticketComments.ticketId, ticketId), eq(ticketComments.orgId, orgId)`, with no ticket→project check at all (not even the explicit compare that getComment/editComment/deleteComment use). This is a stronger version of the CLOSED updateField pattern: it is not merely that the mutation's WHERE omits projectId — the :projectId segment is discarded before the service boundary and never reconstructed anywhere downstream.",
-      "evidence": "src/modules/build/core/projects-ticket-comments.controller.ts:100",
+      "verdict": "CLOSED",
+      "verdictReason": "POST /build/:projectId/tickets/:ticketId/comments/:commentId/reactions. Unlike its siblings getComment/editComment/deleteComment, the addReaction handler validated :projectId (@Validate required it in the URL) but never bound it — no @Param(\"projectId\"), and the whole chain down to ProjectsTicketCommentsService.addReaction carried no projectId, so any comment on any ticket in the org was reachable regardless of the named project. Fixed by adding @Param(\"projectId\") to the handler, threading projectId through ProjectsTicketSubresourcesService.addReaction, and adding an explicit ticket-in-project existence check (id+projectId+orgId, 404 otherwise) as the first step of the service method, before the comment lookup.",
+      "evidence": "src/modules/build/core/projects-ticket-comments.controller.ts:99",
       "reviewedEvidence": [
         {
           "file": "src/modules/build/core/projects-ticket-comments.controller.ts",
-          "line": 105,
-          "note": "handler's parameter list has no @Param(\"projectId\") at all, even though the route and its @Validate params schema both name :projectId"
+          "line": 104,
+          "note": "fix: handler now declares @Param(\"projectId\") and forwards it to the service"
         },
         {
           "file": "src/modules/build/core/projects-ticket-comments.controller.ts",
           "line": 111,
-          "note": "call into the service carries no projectId argument"
+          "note": "projectId is now passed into the service call"
         },
         {
           "file": "src/modules/build/core/projects-ticket-subresources.service.ts",
           "line": 120,
-          "note": "facade method signature also has no projectId parameter"
+          "note": "facade method signature now carries projectId through to the terminal service"
         },
         {
           "file": "src/modules/build/core/projects-ticket-comments.service.ts",
           "line": 279,
-          "note": "terminal implementation's signature has no projectId parameter; its WHERE below binds only id+ticketId+orgId with no ticket-to-project check"
+          "note": "fix: terminal implementation now takes projectId"
+        },
+        {
+          "file": "src/modules/build/core/projects-ticket-comments.service.ts",
+          "line": 283,
+          "note": "fix: new ticket-in-project existence check runs before the comment lookup, 404 on a foreign project"
         }
       ]
     },
@@ -6538,42 +6566,47 @@
       "idempotent": null,
       "mutating": true,
       "service": {
-        "call": "this.subresources.removeReaction(commentId, u.userId, u.orgId, decodeURIComponent(emoji), actingMembershipId(u.principal), ticketId)",
+        "call": "this.subresources.removeReaction(commentId, u.userId, u.orgId, decodeURIComponent(emoji), actingMembershipId(u.principal), ticketId, projectId)",
         "type": "ProjectsTicketSubresourcesService",
         "file": "src/modules/build/core/projects-ticket-subresources.service.ts",
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:138",
+      "orgEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:140",
       "parentScoping": "BOUND",
-      "parentEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:138",
+      "parentEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:140",
       "leads": [],
       "notes": [
         "mutating verb without @Idempotent"
       ],
-      "verdict": "VULNERABLE",
-      "verdictReason": "DELETE /build/:projectId/tickets/:ticketId/comments/:commentId/reactions/:emoji. Identical defect shape to addReaction: `removeReaction(@Param(\"ticketId\") ticketId, @Param(\"commentId\") commentId, @Param(\"emoji\") emoji, @CurrentUser() u)` has no @Param(\"projectId\"), even though @Validate({ params: projectIdticketIdcommentIdemojiParams }) requires :projectId to be present in the URL. The value is validated for presence and then discarded — never read, never forwarded. ProjectsTicketCommentsService.removeReaction(commentId, userId, orgId, emoji, membershipId, ticketId) binds only id+ticketId+orgId when looking up the comment before deleting the reaction row; there is no ticket-to-project check anywhere in the chain.",
+      "verdict": "CLOSED",
+      "verdictReason": "DELETE /build/:projectId/tickets/:ticketId/comments/:commentId/reactions/:emoji. Identical defect shape to addReaction, fixed the same way: @Param(\"projectId\") added to the handler, threaded through the facade, and ProjectsTicketCommentsService.removeReaction now runs the same ticket-in-project existence check (id+projectId+orgId, 404 otherwise) before touching the comment.",
       "evidence": "src/modules/build/core/projects-ticket-comments.controller.ts:114",
       "reviewedEvidence": [
         {
           "file": "src/modules/build/core/projects-ticket-comments.controller.ts",
           "line": 119,
-          "note": "handler's parameter list has no @Param(\"projectId\") at all, even though the route and its @Validate params schema both name :projectId"
+          "note": "fix: handler now declares @Param(\"projectId\") and forwards it to the service"
         },
         {
           "file": "src/modules/build/core/projects-ticket-comments.controller.ts",
-          "line": 125,
-          "note": "call into the service carries no projectId argument"
+          "line": 126,
+          "note": "projectId is now passed into the service call"
         },
         {
           "file": "src/modules/build/core/projects-ticket-subresources.service.ts",
-          "line": 138,
-          "note": "facade method signature also has no projectId parameter"
+          "line": 140,
+          "note": "facade method signature now carries projectId through to the terminal service"
         },
         {
           "file": "src/modules/build/core/projects-ticket-comments.service.ts",
-          "line": 299,
-          "note": "terminal implementation's signature has no projectId parameter; its WHERE below binds only id+ticketId+orgId with no ticket-to-project check"
+          "line": 310,
+          "note": "fix: terminal implementation now takes projectId"
+        },
+        {
+          "file": "src/modules/build/core/projects-ticket-comments.service.ts",
+          "line": 314,
+          "note": "fix: new ticket-in-project existence check runs before the comment lookup, 404 on a foreign project"
         }
       ]
     },
@@ -7011,9 +7044,9 @@
         "resolved": true
       },
       "orgScoping": "BOUND",
-      "orgEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:160",
+      "orgEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:164",
       "parentScoping": "BOUND",
-      "parentEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:160",
+      "parentEvidence": "src/modules/build/core/projects-ticket-subresources.service.ts:164",
       "leads": [],
       "notes": [],
       "verdict": "VERIFIED",
@@ -7027,7 +7060,7 @@
         },
         {
           "file": "src/modules/build/core/projects-ticket-subresources.service.ts",
-          "line": 160,
+          "line": 164,
           "note": "signature"
         },
         {

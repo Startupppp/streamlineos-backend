@@ -209,33 +209,32 @@ export default [
   // ── core/projects-automations.controller.ts ─────────────────────────────────
   {
     key: "modules/build/core/projects-automations.controller.ts#update",
-    verdict: "VULNERABLE",
+    verdict: "CLOSED",
     finding: "parent-binding-missing",
     summary:
-      "PATCH /build/:projectId/automations/:automationId. The controller binds projectId and automationId and calls ProjectsAutomationsService.updateAutomation(u, projectId, automationId, data). The method calls this.members.assertCanManageProject(u, projectId), which authorizes the caller against the NAMED :projectId (org owner, OR org-wide build:manage, OR the caller's own project.managerMembershipId, OR the caller holding role 'ADMIN' in projectMembers for THAT project) — but the actual mutation, `update(projectAutomations).where(and(eq(projectAutomations.id, automationId), eq(projectAutomations.orgId, u.orgId)))`, never repeats eq(projectAutomations.projectId, projectId). A caller whose only standing is project-scoped (project.managerMembershipId or a projectMembers ADMIN role on project A — i.e. no org-wide build:manage) passes assertCanManageProject for their OWN project A, and can then supply any other project's automationId in the same org: the UPDATE matches on id+orgId alone and silently rewrites (or, in delete, destroys) an automation that belongs to a project the caller has no standing over. This is the same shape as the CLOSED projects-custom-fields.controller.ts#updateField finding: an authority check against the URL's :projectId that the actual mutation's WHERE clause never repeats.",
+      "PATCH /build/:projectId/automations/:automationId. ProjectsAutomationsService.updateAutomation authorized the caller via assertCanManageProject(u, projectId), which a project-scoped manager of the NAMED project alone can satisfy, but the mutation's WHERE clause only bound id+orgId — never projectId — so that caller could rewrite any other project's automation by ID. Fixed by adding eq(projectAutomations.projectId, projectId) to the UPDATE's WHERE, so a foreign automationId now 404s instead of matching.",
     blastRadius:
-      "Intra-tenant, not cross-tenant: orgId is still bound, so the mutation cannot leave the organisation. But it breaks the 404 contract for a foreign :automationId and lets a project-scoped manager (one without org-wide build:manage) silently edit trigger/condition/action logic on automations belonging to ANY other project in the same org — a rules-tampering and business-logic-integrity issue for every other project team.",
+      "Was intra-tenant cross-project rules-tampering; now closed. orgId was always bound, so this was never cross-tenant.",
     evidence: [
       { file: "src/modules/build/core/projects-automations.controller.ts", line: 60, anchor: /update\(/, note: "handler binds both projectId and automationId and forwards both to the service" },
       { file: "src/modules/build/core/projects-automations.controller.ts", line: 66, anchor: /return this\.automations\.updateAutomation\(u, projectId, automationId, body\);/, note: "projectId is passed into the service call" },
       { file: "src/modules/build/core/projects-automations.service.ts", line: 81, anchor: /await this\.members\.assertCanManageProject\(u, projectId\);/, note: "authorizes the caller against the named projectId only — this can be a project-scoped standing" },
-      { file: "src/modules/build/core/projects-automations.service.ts", line: 88, anchor: /\.where\(and\(eq\(projectAutomations\.id, automationId\), eq\(projectAutomations\.orgId, u\.orgId\)\)\)/, note: "the actual UPDATE's WHERE omits projectId entirely — any automation in the org matches" },
-      { file: "src/modules/build/core/projects-members.service.ts", line: 91, anchor: /if \(membership\[0\]\?\.role === "ADMIN"\) return;/, note: "assertCanManageProject accepts a per-project ADMIN standing, not only org-wide build:manage — confirming the caller's authority can be strictly project-scoped" },
+      { file: "src/modules/build/core/projects-automations.service.ts", line: 92, anchor: /eq\(projectAutomations\.projectId, projectId\),/, note: "fix: the UPDATE's WHERE now re-binds projectId, so a foreign automationId 404s" },
     ],
   },
   {
     key: "modules/build/core/projects-automations.controller.ts#delete",
-    verdict: "VULNERABLE",
+    verdict: "CLOSED",
     finding: "parent-binding-missing",
     summary:
-      "DELETE /build/:projectId/automations/:automationId. Identical defect shape to #update: ProjectsAutomationsService.deleteAutomation(u, projectId, automationId) calls assertCanManageProject(u, projectId) — which can be satisfied by project-scoped authority over the NAMED project alone — but the actual DELETE, `delete(projectAutomations).where(and(eq(projectAutomations.id, automationId), eq(projectAutomations.orgId, u.orgId)))`, never re-binds projectId. A project-scoped manager of project A can delete any automation in the org by ID, regardless of which project it actually belongs to.",
+      "DELETE /build/:projectId/automations/:automationId. Identical defect shape to #update, now fixed the same way: the DELETE's WHERE clause is bound to id+orgId+projectId, so a project-scoped manager of one project can no longer destroy another project's automation by guessing its id.",
     blastRadius:
-      "Intra-tenant, not cross-tenant: orgId is still bound. A project-scoped manager (project.managerMembershipId or a projectMembers ADMIN role on their own project, without org-wide build:manage) can permanently destroy any other project's automation rules in the same org by guessing/enumerating automationId — worse than the update case, since deletion is not recoverable through the API.",
+      "Was intra-tenant cross-project deletion, non-recoverable through the API; now closed. orgId was always bound, so this was never cross-tenant.",
     evidence: [
       { file: "src/modules/build/core/projects-automations.controller.ts", line: 74, anchor: /delete\(/, note: "handler binds both projectId and automationId and forwards both to the service" },
       { file: "src/modules/build/core/projects-automations.controller.ts", line: 79, anchor: /return this\.automations\.deleteAutomation\(u, projectId, automationId\);/, note: "projectId is passed into the service call" },
-      { file: "src/modules/build/core/projects-automations.service.ts", line: 95, anchor: /await this\.members\.assertCanManageProject\(u, projectId\);/, note: "authorizes the caller against the named projectId only — this can be a project-scoped standing" },
-      { file: "src/modules/build/core/projects-automations.service.ts", line: 98, anchor: /\.where\(and\(eq\(projectAutomations\.id, automationId\), eq\(projectAutomations\.orgId, u\.orgId\)\)\)/, note: "the actual DELETE's WHERE omits projectId entirely — any automation in the org matches" },
+      { file: "src/modules/build/core/projects-automations.service.ts", line: 101, anchor: /await this\.members\.assertCanManageProject\(u, projectId\);/, note: "authorizes the caller against the named projectId only — this can be a project-scoped standing" },
+      { file: "src/modules/build/core/projects-automations.service.ts", line: 108, anchor: /eq\(projectAutomations\.projectId, projectId\),/, note: "fix: the DELETE's WHERE now re-binds projectId, so a foreign automationId 404s" },
     ],
   },
 
@@ -321,8 +320,8 @@ export default [
       "None: a ticketId belonging to a different project 404s at requireTicket before the label mapping is deleted.",
     evidence: [
       { file: "src/modules/build/core/projects-ticket-associations.controller.ts", line: 173, anchor: /removeLabel\(/, note: "handler binds projectId, ticketId and labelId and forwards all three" },
-      { file: "src/modules/build/core/projects-ticket-subresources.service.ts", line: 416, anchor: /await this\.requireTicket\(orgId, projectId, ticketId\);/, note: "binds ticketId to this projectId+orgId; 404 on mismatch" },
-      { file: "src/modules/build/core/projects-ticket-subresources.service.ts", line: 271, anchor: /eq\(tickets\.projectId, projectId\),/, note: "requireTicket's WHERE clause binds id+projectId+orgId" },
+      { file: "src/modules/build/core/projects-ticket-subresources.service.ts", line: 420, anchor: /await this\.requireTicket\(orgId, projectId, ticketId\);/, note: "binds ticketId to this projectId+orgId; 404 on mismatch" },
+      { file: "src/modules/build/core/projects-ticket-subresources.service.ts", line: 275, anchor: /eq\(tickets\.projectId, projectId\),/, note: "requireTicket's WHERE clause binds id+projectId+orgId" },
     ],
   },
   {
@@ -408,7 +407,7 @@ export default [
     blastRadius:
       "None: a ticketId belonging to a different project 404s at the explicit projectId comparison before the comment is read.",
     evidence: [
-      { file: "src/modules/build/core/projects-ticket-comments.controller.ts", line: 63, anchor: /getComment\(/, note: "handler binds projectId, ticketId and commentId and forwards all three" },
+      { file: "src/modules/build/core/projects-ticket-comments.controller.ts", line: 62, anchor: /getComment\(/, note: "handler binds projectId, ticketId and commentId and forwards all three" },
       { file: "src/modules/build/core/projects-ticket-comments.service.ts", line: 204, anchor: /async getComment\(u: CurrentUserContext, projectId: number, ticketId: number, commentId: number\) \{/, note: "signature takes projectId" },
       { file: "src/modules/build/core/projects-ticket-comments.service.ts", line: 206, anchor: /if \(ticket\.projectId !== projectId\) throw new NotFoundException\("Ticket not found"\);/, note: "explicit parent-binding compare, 404 on mismatch" },
     ],
@@ -422,7 +421,7 @@ export default [
     blastRadius:
       "None: a ticketId belonging to a different project 404s at the explicit projectId comparison before the comment is loaded or edited.",
     evidence: [
-      { file: "src/modules/build/core/projects-ticket-comments.controller.ts", line: 76, anchor: /editComment\(/, note: "handler binds projectId, ticketId and commentId and forwards all three" },
+      { file: "src/modules/build/core/projects-ticket-comments.controller.ts", line: 75, anchor: /editComment\(/, note: "handler binds projectId, ticketId and commentId and forwards all three" },
       { file: "src/modules/build/core/projects-ticket-comments.service.ts", line: 212, anchor: /async editComment\(u: CurrentUserContext, projectId: number, ticketId: number, commentId: number, content: string\) \{/, note: "signature takes projectId" },
       { file: "src/modules/build/core/projects-ticket-comments.service.ts", line: 214, anchor: /if \(ticket\.projectId !== projectId\) throw new NotFoundException\("Ticket not found"\);/, note: "explicit parent-binding compare, 404 on mismatch" },
     ],
@@ -436,39 +435,41 @@ export default [
     blastRadius:
       "None: a ticketId belonging to a different project 404s at the explicit projectId comparison before the comment is loaded or deleted.",
     evidence: [
-      { file: "src/modules/build/core/projects-ticket-comments.controller.ts", line: 91, anchor: /deleteComment\(/, note: "handler binds projectId, ticketId and commentId and forwards all three" },
+      { file: "src/modules/build/core/projects-ticket-comments.controller.ts", line: 90, anchor: /deleteComment\(/, note: "handler binds projectId, ticketId and commentId and forwards all three" },
       { file: "src/modules/build/core/projects-ticket-comments.service.ts", line: 242, anchor: /async deleteComment\(u: CurrentUserContext, projectId: number, ticketId: number, commentId: number\) \{/, note: "signature takes projectId" },
       { file: "src/modules/build/core/projects-ticket-comments.service.ts", line: 244, anchor: /if \(ticket\.projectId !== projectId\) throw new NotFoundException\("Ticket not found"\);/, note: "explicit parent-binding compare, 404 on mismatch" },
     ],
   },
   {
     key: "modules/build/core/projects-ticket-comments.controller.ts#addReaction",
-    verdict: "VULNERABLE",
+    verdict: "CLOSED",
     finding: "parent-binding-missing",
     summary:
-      "POST /build/:projectId/tickets/:ticketId/comments/:commentId/reactions. Unlike its siblings getComment/editComment/deleteComment on the same controller, the addReaction handler's parameter list is `addReaction(@Param(\"ticketId\") ticketId, @Param(\"commentId\") commentId, @Body() body, @CurrentUser() u)` — there is no `@Param(\"projectId\")` at all. @Validate({ params: projectIdticketIdcommentIdParams_ }) still requires the :projectId segment to be present and non-empty in the URL (so the route 400s if it is missing), but the handler never reads the value it validated, and never passes it to the service. The call chain — controller → ProjectsTicketSubresourcesService.addReaction(commentId, userId, orgId, emoji, membershipId, ticketId) → ProjectsTicketCommentsService.addReaction — carries no projectId parameter anywhere; the service's own WHERE binds only `eq(ticketComments.id, commentId), eq(ticketComments.ticketId, ticketId), eq(ticketComments.orgId, orgId)`, with no ticket→project check at all (not even the explicit compare that getComment/editComment/deleteComment use). This is a stronger version of the CLOSED updateField pattern: it is not merely that the mutation's WHERE omits projectId — the :projectId segment is discarded before the service boundary and never reconstructed anywhere downstream.",
+      "POST /build/:projectId/tickets/:ticketId/comments/:commentId/reactions. Unlike its siblings getComment/editComment/deleteComment, the addReaction handler validated :projectId (@Validate required it in the URL) but never bound it — no @Param(\"projectId\"), and the whole chain down to ProjectsTicketCommentsService.addReaction carried no projectId, so any comment on any ticket in the org was reachable regardless of the named project. Fixed by adding @Param(\"projectId\") to the handler, threading projectId through ProjectsTicketSubresourcesService.addReaction, and adding an explicit ticket-in-project existence check (id+projectId+orgId, 404 otherwise) as the first step of the service method, before the comment lookup.",
     blastRadius:
-      "Intra-tenant, not cross-tenant: orgId is still bound to the comment lookup, so a reaction cannot be written against another organisation's data. But any caller holding build:tickets:update permission can add or remove an emoji reaction on ANY comment on ANY ticket in the org — regardless of which project the URL names or which project the comment's ticket actually belongs to — by supplying a real ticketId/commentId pair from a different project alongside an arbitrary (even unrelated) :projectId they do have access to. Breaks the 404 contract for a foreign ticket/project pairing and lets a caller reach comment threads on projects they otherwise have no route into.",
+      "Was intra-tenant: a caller holding build:tickets:update could react to any comment on any ticket in the org regardless of the named project. Now closed — a foreign ticket/project pairing 404s before any comment lookup runs.",
     evidence: [
-      { file: "src/modules/build/core/projects-ticket-comments.controller.ts", line: 105, anchor: /addReaction\(/, note: "handler's parameter list has no @Param(\"projectId\") at all, even though the route and its @Validate params schema both name :projectId" },
-      { file: "src/modules/build/core/projects-ticket-comments.controller.ts", line: 111, anchor: /return this\.subresources\.addReaction\(commentId, u\.userId, u\.orgId, body\.emoji, actingMembershipId\(u\.principal\), ticketId\);/, note: "call into the service carries no projectId argument" },
-      { file: "src/modules/build/core/projects-ticket-subresources.service.ts", line: 120, anchor: /addReaction\(/, note: "facade method signature also has no projectId parameter" },
-      { file: "src/modules/build/core/projects-ticket-comments.service.ts", line: 279, anchor: /async addReaction\(commentId: number, userId: string, orgId: string, emoji: string, membershipId: number \| null, ticketId: number\) \{/, note: "terminal implementation's signature has no projectId parameter; its WHERE below binds only id+ticketId+orgId with no ticket-to-project check" },
+      { file: "src/modules/build/core/projects-ticket-comments.controller.ts", line: 104, anchor: /addReaction\(/, note: "fix: handler now declares @Param(\"projectId\") and forwards it to the service" },
+      { file: "src/modules/build/core/projects-ticket-comments.controller.ts", line: 111, anchor: /return this\.subresources\.addReaction\(commentId, u\.userId, u\.orgId, body\.emoji, actingMembershipId\(u\.principal\), ticketId, projectId\);/, note: "projectId is now passed into the service call" },
+      { file: "src/modules/build/core/projects-ticket-subresources.service.ts", line: 120, anchor: /addReaction\(/, note: "facade method signature now carries projectId through to the terminal service" },
+      { file: "src/modules/build/core/projects-ticket-comments.service.ts", line: 279, anchor: /async addReaction\(commentId: number, userId: string, orgId: string, emoji: string, membershipId: number \| null, ticketId: number, projectId: number\) \{/, note: "fix: terminal implementation now takes projectId" },
+      { file: "src/modules/build/core/projects-ticket-comments.service.ts", line: 283, anchor: /eq\(tickets\.projectId, projectId\),/, note: "fix: new ticket-in-project existence check runs before the comment lookup, 404 on a foreign project" },
     ],
   },
   {
     key: "modules/build/core/projects-ticket-comments.controller.ts#removeReaction",
-    verdict: "VULNERABLE",
+    verdict: "CLOSED",
     finding: "parent-binding-missing",
     summary:
-      "DELETE /build/:projectId/tickets/:ticketId/comments/:commentId/reactions/:emoji. Identical defect shape to addReaction: `removeReaction(@Param(\"ticketId\") ticketId, @Param(\"commentId\") commentId, @Param(\"emoji\") emoji, @CurrentUser() u)` has no @Param(\"projectId\"), even though @Validate({ params: projectIdticketIdcommentIdemojiParams }) requires :projectId to be present in the URL. The value is validated for presence and then discarded — never read, never forwarded. ProjectsTicketCommentsService.removeReaction(commentId, userId, orgId, emoji, membershipId, ticketId) binds only id+ticketId+orgId when looking up the comment before deleting the reaction row; there is no ticket-to-project check anywhere in the chain.",
+      "DELETE /build/:projectId/tickets/:ticketId/comments/:commentId/reactions/:emoji. Identical defect shape to addReaction, fixed the same way: @Param(\"projectId\") added to the handler, threaded through the facade, and ProjectsTicketCommentsService.removeReaction now runs the same ticket-in-project existence check (id+projectId+orgId, 404 otherwise) before touching the comment.",
     blastRadius:
-      "Intra-tenant, not cross-tenant: orgId is still bound. Any caller holding build:tickets:update can remove any reaction from any comment on any ticket in the org regardless of the named :projectId, by supplying a real ticketId/commentId from a different project. Breaks the 404 contract for a foreign ticket/project pairing.",
+      "Was intra-tenant: any caller holding build:tickets:update could remove any reaction from any comment on any ticket in the org regardless of the named project. Now closed.",
     evidence: [
-      { file: "src/modules/build/core/projects-ticket-comments.controller.ts", line: 119, anchor: /removeReaction\(/, note: "handler's parameter list has no @Param(\"projectId\") at all, even though the route and its @Validate params schema both name :projectId" },
-      { file: "src/modules/build/core/projects-ticket-comments.controller.ts", line: 125, anchor: /return this\.subresources\.removeReaction\(commentId, u\.userId, u\.orgId, decodeURIComponent\(emoji\), actingMembershipId\(u\.principal\), ticketId\);/, note: "call into the service carries no projectId argument" },
-      { file: "src/modules/build/core/projects-ticket-subresources.service.ts", line: 138, anchor: /removeReaction\(/, note: "facade method signature also has no projectId parameter" },
-      { file: "src/modules/build/core/projects-ticket-comments.service.ts", line: 299, anchor: /async removeReaction\(commentId: number, userId: string, orgId: string, emoji: string, membershipId: number \| null, ticketId: number\) \{/, note: "terminal implementation's signature has no projectId parameter; its WHERE below binds only id+ticketId+orgId with no ticket-to-project check" },
+      { file: "src/modules/build/core/projects-ticket-comments.controller.ts", line: 119, anchor: /removeReaction\(/, note: "fix: handler now declares @Param(\"projectId\") and forwards it to the service" },
+      { file: "src/modules/build/core/projects-ticket-comments.controller.ts", line: 126, anchor: /return this\.subresources\.removeReaction\(commentId, u\.userId, u\.orgId, decodeURIComponent\(emoji\), actingMembershipId\(u\.principal\), ticketId, projectId\);/, note: "projectId is now passed into the service call" },
+      { file: "src/modules/build/core/projects-ticket-subresources.service.ts", line: 140, anchor: /removeReaction\(/, note: "facade method signature now carries projectId through to the terminal service" },
+      { file: "src/modules/build/core/projects-ticket-comments.service.ts", line: 310, anchor: /async removeReaction\(commentId: number, userId: string, orgId: string, emoji: string, membershipId: number \| null, ticketId: number, projectId: number\) \{/, note: "fix: terminal implementation now takes projectId" },
+      { file: "src/modules/build/core/projects-ticket-comments.service.ts", line: 314, anchor: /eq\(tickets\.projectId, projectId\),/, note: "fix: new ticket-in-project existence check runs before the comment lookup, 404 on a foreign project" },
     ],
   },
 
@@ -497,7 +498,7 @@ export default [
       "None: a ticketId belonging to a different project 404s at assertTicketReadAccess before any activity is read.",
     evidence: [
       { file: "src/modules/build/core/projects-tickets.controller.ts", line: 190, anchor: /getActivity\(/, note: "handler binds both projectId and ticketId and forwards both" },
-      { file: "src/modules/build/core/projects-ticket-subresources.service.ts", line: 160, anchor: /async getActivity\(/, note: "signature" },
+      { file: "src/modules/build/core/projects-ticket-subresources.service.ts", line: 164, anchor: /async getActivity\(/, note: "signature" },
       { file: "src/modules/build/core/build-ticket-read-access.ts", line: 37, anchor: /eq\(tickets\.projectId, projectId\),/, note: "assertTicketReadAccess binds orgId+projectId+id together; 404 on mismatch" },
     ],
   },
