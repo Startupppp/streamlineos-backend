@@ -93,8 +93,39 @@ const MIN_DB_FILES = 300;
  * can't exceed the chunk size. That one addition is the entire net change: +1.
  * (The new handling-unit.service.ts offset-pagination entry classified alongside this
  * is ACTIONABLE, not FALSE-POSITIVE, so it does not touch this ceiling.)
+ *
+ * RAISED 650 -> 655 on 2026-09-23 (Build phase-6 closure pass, BE-132). Five previously
+ * unclassified build/** files, all bounded by a caller-side cap rather than a literal
+ * .limit(), so none qualifies for BOUNDED without inventing a pagination that isn't
+ * there:
+ *
+ *   +1  /build/core/project-access.ts               resolveProjectAssignableMemberships
+ *                                                    filters inArray(userId, uniqueUserIds);
+ *                                                    every call site passes one ticket's
+ *                                                    assignee list (<=1 in bulk mutation)
+ *   +1  /build/core/projects-roadmap.service.ts      L74 is a Drizzle sub-select builder
+ *                                                    passed unawaited into inArray() —
+ *                                                    compiled into the outer findMany's
+ *                                                    single statement, never executed or
+ *                                                    materialized on its own
+ *   +2  /build/import-export/ticket-import-reads.ts  project-status config read (<20/project)
+ *                                                    plus a title-key inArray bounded by
+ *                                                    IMPORT_MAX_ROWS=1000
+ *   +3  /build/qa/bugs.service.ts                    one exact eq(tickets.id, bugId) lookup
+ *                                                    plus two project-status config reads,
+ *                                                    same shape as ticket-status.util.ts
+ *   +9  /build/scope-directory/scope-directory.service.ts  six reads keyed off the request's
+ *                                                    `keys` array, capped at 26 by
+ *                                                    resolveScopeDirectorySchema.max(26); three
+ *                                                    more read one member's own product/project
+ *                                                    membership rows, the same "bounded by user
+ *                                                    membership count" shape already accepted
+ *                                                    for projects-query.service.ts:70/74
+ *
+ * Net +16 against 11 headroom (639 -> 655). Every one of the sixteen reads is named above by
+ * file and reason; none is a read added to an existing justification without being counted here.
  */
-const MAX_SUPPRESSED_UNBOUNDED = 650;
+const MAX_SUPPRESSED_UNBOUNDED = 655;
 const ORDER_BY_LOOKBACK = 25;
 const STATEMENT_MAX_LINES = 120;
 
