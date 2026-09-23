@@ -12,6 +12,7 @@ import { CacheService } from "../../../common/cache/cache.service";
 import { runInTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
 import { withMembershipMutations } from "../../../common/org/membership-mutations";
 import { ORG_MEMBER_ROLES } from "../../../common/rbac/org-roles";
+import { orgOwnerUserId } from "../../../common/org/org-owner-actor";
 import {
   MembershipAdmissionService,
   canonicalAdmissionEmail,
@@ -75,7 +76,7 @@ export class RecruitmentOnboardingStartService {
 
     let userId: string;
     try {
-      userId = await this.admitCandidate(orgId, email, candidate);
+      userId = await this.admitCandidate(orgId, email, candidate, await this.orgActor(orgId));
     } catch (error) {
       /**
        * A full plan, a refused email domain or an archived former member all
@@ -135,10 +136,21 @@ export class RecruitmentOnboardingStartService {
     return row ?? null;
   }
 
+  /**
+   * A real account to record the admission against — the organisation is
+   * spending one of its own seats, so its owner is the accountable party.
+   */
+  private async orgActor(orgId: string): Promise<string> {
+    const owner = await orgOwnerUserId(this.db, orgId);
+    if (!owner) throw new Error("organisation has no owner to record the seat against");
+    return owner;
+  }
+
   private async admitCandidate(
     orgId: string,
     email: string,
     candidate: { firstName: string; lastName: string; phone: string | null },
+    actorUserId: string,
   ): Promise<string> {
     const name = `${candidate.firstName} ${candidate.lastName}`.trim();
     const { firstName, lastName } = splitName(name);
@@ -161,7 +173,7 @@ export class RecruitmentOnboardingStartService {
 
           const [outcome] = await this.admission.admitMany(tx, {
             orgId,
-            actor: { userId: "system" },
+            actor: { userId: actorUserId },
             membership,
             seatReason: "candidate accepted an offer",
             candidates: [

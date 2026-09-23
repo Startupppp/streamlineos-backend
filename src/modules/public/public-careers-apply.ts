@@ -9,15 +9,18 @@ import {
   candidateApplications,
   candidateDocumentsVault,
   candidates,
+  organizationMembers,
+  organizations,
 } from "../../db/schema";
 import type { Db } from "../../db/drizzle.module";
 import type { PlanLimitsService } from "../billing/core/plan-limits.service";
 import { PaymentRequiredException } from "../../common/http/api-exceptions";
 import { logger } from "../../common/logger/logger.service";
 import { OutboxWriter } from "../../common/outbox/outbox-writer";
+import { nextAggregateVersion } from "../../common/outbox/aggregate-version";
 import type { ScreeningQuestion } from "../../db/schema/hr/hiring-core";
 import { evaluateScreening } from "./careers-screening";
-import { PUBLIC_APPLICANT, type ResumeIntake } from "./careers-resume-intake";
+import { type ResumeIntake } from "./careers-resume-intake";
 import { splitName } from "../../common/hr/split-person-name";
 import type { ApplyInput } from "./dto/public.schemas";
 
@@ -43,6 +46,8 @@ export interface ApplyJob {
   readonly id: number;
   readonly title: string;
   readonly screeningQuestions: ScreeningQuestion[] | null;
+  /** The recruiter who opened the job; the custodian of anything filed against it. */
+  readonly postedBy: string | null;
 }
 
 export interface ApplyResult {
@@ -74,6 +79,44 @@ export function screenOrRefuse(job: ApplyJob, input: ApplyInput): Record<string,
       question: verdict.question,
     });
   return verdict.answers;
+}
+
+/**
+ * Who `candidate_documents_vault.uploaded_by` names for a file nobody in the
+ * organisation uploaded.
+ *
+ * The column is NOT NULL and a BEFORE INSERT trigger
+ * (`hr_sync_actor_membership`) resolves it to an `organization_members` row,
+ * raising `foreign_key_violation` when it cannot — so a sentinel string is
+ * refused and there is no "the candidate" to name. The custodian is therefore
+ * the recruiter who opened the job, falling back to the organisation owner.
+ * That is what the column can honestly mean here: who in this organisation is
+ * answerable for the record. What the file IS — a résumé a candidate attached
+ * to their own application — is already carried by `document_type` and by the
+ * candidate the row hangs off.
+ */
+async function resolveVaultCustodian(
+  tx: Db,
+  orgId: string,
+  postedBy: string | null,
+): Promise<string> {
+  if (postedBy) {
+    const [member] = await tx
+      .select({ userId: organizationMembers.userId })
+      .from(organizationMembers)
+      .where(and(eq(organizationMembers.orgId, orgId), eq(organizationMembers.userId, postedBy)))
+      .limit(1);
+    if (member) return member.userId;
+  }
+  const [owner] = await tx
+    .select({ userId: organizationMembers.userId })
+    .from(organizations)
+    .innerJoin(organizationMembers, eq(organizationMembers.id, organizations.ownerMembershipId))
+    .where(eq(organizations.id, orgId))
+    .limit(1);
+  if (!owner)
+    throw new InternalServerErrorException("This organisation cannot receive uploaded files.");
+  return owner.userId;
 }
 
 interface RecordApplicationInput {
@@ -196,7 +239,8 @@ export async function recordApplication({
     trackingToken,
   });
 
-  if (resume.stored)
+  if (resume.stored) {
+    const custodian = await resolveVaultCustodian(tx, orgId, job.postedBy);
     await tx.insert(candidateDocumentsVault).values({
       orgId,
       candidateId,
@@ -206,12 +250,7 @@ export async function recordApplication({
       fileType: resume.fileType,
       fileSize: resume.fileSize,
       documentType: "RESUME",
-      /**
-       * `uploaded_by` is NOT NULL and there is no account behind a public
-       * applicant, so the sentinel records who really put the file there
-       * rather than attributing it to a recruiter who never touched it.
-       */
-      uploadedBy: PUBLIC_APPLICANT,
+      uploadedBy: custodian,
       /**
        * Whatever the scanner returned. `PENDING` here means no scanner was
        * configured, not that one is still running, and the vault download
@@ -219,13 +258,17 @@ export async function recordApplication({
        */
       avResult: resume.avResult,
     });
+  }
 
-  await OutboxWriter.emit(tx, {
-    eventId: randomUUID(),
+  const aggregate = {
     organizationId: orgId,
     aggregateType: "candidate",
     aggregateId: String(candidateId),
-    aggregateVersion: 1,
+  };
+  await OutboxWriter.emit(tx, {
+    eventId: randomUUID(),
+    ...aggregate,
+    aggregateVersion: await nextAggregateVersion(tx, aggregate),
     eventType: "candidate.applied",
     payload: { candidateId, jobPostingId: job.id, source: "CAREERS_PAGE" },
     occurredAt: new Date(),

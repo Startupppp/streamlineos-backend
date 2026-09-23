@@ -25,8 +25,9 @@ import { logger } from "../../common/logger/logger.service";
 import { extractDocumentText, isExtractableMime } from "../../common/documents/extract-document-text.util";
 import {
   RESUME_REJECTION_MESSAGE,
+  prepareResume,
+  recordResumeQuarantine,
   refuseResume,
-  storeResume,
   type ResumeIntake,
   type ResumeUpload,
 } from "./careers-resume-intake";
@@ -183,7 +184,7 @@ export class PublicCareersService {
         eq(jobPostings.orgId, org.id),
         eq(jobPostings.status, "OPEN"),
       ),
-      columns: { id: true, title: true, screeningQuestions: true },
+      columns: { id: true, title: true, screeningQuestions: true, postedBy: true },
     });
     if (!job) throw new NotFoundException("Job not found or no longer accepting applications.");
 
@@ -192,7 +193,7 @@ export class PublicCareersService {
     /**
      * A file that fails validation is a client error and refuses the whole
      * application, because the candidate meant to attach it. A file that
-     * validates but cannot be STORED does not — `storeResume` reports that and
+     * validates but cannot be STORED does not — `prepareResume` reports that and
      * the application still lands, since losing the application over an object
      * store outage would be the worse failure.
      */
@@ -200,15 +201,20 @@ export class PublicCareersService {
     if (file) {
       const rejection = refuseResume(file);
       if (rejection) throw new BadRequestException(RESUME_REJECTION_MESSAGE[rejection]);
-      resume = await storeResume(this.storage, this.quarantine, this.scanner, org.id, file);
+      resume = await prepareResume(this.storage, this.scanner, org.id, file);
       if (!resume.stored && resume.reason === "infected")
         throw new BadRequestException(RESUME_REJECTION_MESSAGE.infected);
     }
 
     const result = await runInTenantTransaction(
       this.db,
-      (tx) =>
-        recordApplication({
+      async (tx) => {
+        /**
+         * Inside the transaction, because `file_quarantine_records` is behind
+         * RLS: the tenant GUC only exists here.
+         */
+        if (resume.stored) await recordResumeQuarantine(this.quarantine, org.id, resume);
+        return recordApplication({
           tx,
           planLimits: this.planLimits,
           orgId: org.id,
@@ -216,7 +222,8 @@ export class PublicCareersService {
           input,
           answers,
           resume,
-        }),
+        });
+      },
       { orgId: org.id },
     );
 

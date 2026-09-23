@@ -136,6 +136,29 @@ export class PublicOffersService {
           columns: { offeredSalary: true, joiningDate: true, validUntil: true },
         });
 
+        /**
+         * Registered INSIDE the transaction, not after it.
+         * `registerAfterCommit` writes to the ambient tenant context, and this
+         * is a public route: the context exists only for the duration of this
+         * callback, and `openTenantTransaction` drains the hooks the moment it
+         * returns. Registering afterwards found no context, fell back to
+         * running inline with no tenant GUC, and every query in the handoff
+         * died `42501` — an accepted offer with no employee and an error in a
+         * log nobody reads.
+         */
+        this.acceptance.deferStatusEffects(
+          orgId,
+          claimed.candidateId,
+          offer.id,
+          newStatus,
+          offer.offerStatus,
+          {
+            offeredSalary: terms?.offeredSalary ?? null,
+            joiningDate: terms?.joiningDate ?? null,
+            validUntil: terms?.validUntil ?? null,
+          },
+        );
+
         return { status: newStatus, claimed, terms: terms ?? null };
       },
       { orgId },
@@ -147,20 +170,6 @@ export class PublicOffersService {
      * decided where it is actually safe to decide it.
      */
     if (!outcome) throw new ConflictException("This offer can no longer be responded to.");
-
-    if (outcome.status !== "COUNTERED")
-      this.acceptance.deferStatusEffects(
-        orgId,
-        outcome.claimed.candidateId,
-        offer.id,
-        outcome.status,
-        offer.offerStatus,
-        {
-          offeredSalary: outcome.terms?.offeredSalary ?? null,
-          joiningDate: outcome.terms?.joiningDate ?? null,
-          validUntil: outcome.terms?.validUntil ?? null,
-        },
-      );
 
     return { success: true, status: outcome.status };
   }

@@ -2,7 +2,6 @@ import { and, eq, inArray, sql } from "drizzle-orm";
 import {
   orgModules,
   organizationMembers,
-  organizationPlacement,
   organizations,
   pmWorkspaces,
   projectMembers,
@@ -12,7 +11,6 @@ import {
   roles,
   subscriptions,
   users,
-  auditLogs,
 } from "src/db/schema";
 import type { Db } from "src/db/drizzle.module";
 import { bumpPermissionsVersion } from "src/common/rbac/access-invalidate";
@@ -25,11 +23,6 @@ import {
   unplaceOrganization,
 } from "src/common/region/placement-lookup";
 import { DEFAULT_REGION } from "src/common/region/region-registry";
-import {
-  DEFAULT_DATABASE_SHARD,
-  DEFAULT_SEARCH_CLUSTER,
-  LEGACY_CELL_ID,
-} from "src/common/region/placement";
 
 /**
  * `users` rows are inserted through raw SQL naming only the two columns a
@@ -210,18 +203,13 @@ export class SeedBuilder {
         ownerMembershipId,
         region: DEFAULT_REGION,
       });
-      await tx.insert(organizationPlacement).values({
-        organizationId: orgId,
-        region: DEFAULT_REGION,
-        cellId: LEGACY_CELL_ID,
-        databaseShard: DEFAULT_DATABASE_SHARD,
-        objectStorageRegion: DEFAULT_REGION,
-        searchCluster: DEFAULT_SEARCH_CLUSTER,
-        placementVersion: 1,
-        writeFenceToken: crypto.randomUUID(),
-        leaseExpiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
-        status: "ACTIVE",
-      });
+      /**
+       * The placement row is NOT written here. `placeOrganization` above already
+       * wrote it, and a second insert of the same primary key aborted
+       * `seedOrg().build()` with a 23505 — in `beforeAll`, so every seeded suite
+       * on this branch reported as "test suite failed to run" with no case ever
+       * executing. Two branches each added a placement and the merge kept both.
+       */
 
       if (ownerAliasEntry) {
         const [alias, spec] = ownerAliasEntry;
@@ -414,7 +402,41 @@ export class SeedBuilder {
          * Cleared here rather than in each spec, because which actions are
          * audited is not something a spec should have to know.
          */
-        await db.delete(auditLogs).where(eq(auditLogs.orgId, orgId));
+        /**
+         * Every table referencing `organizations` without a cascade blocks the
+         * delete below, and which ones a fixture touched depends on what its
+         * spec did. The children are read from the catalog rather than kept as
+         * a hand-written list that goes stale the first time a module adds an
+         * FK — the failure this replaces was a suite whose cases all passed and
+         * whose `afterAll` erred with a constraint name and no indication of
+         * which spec was responsible.
+         *
+         * `audit_logs` is one of them and is append-only for EVERYONE, not just
+         * the app role: `audit_logs_append_only` raises on any DELETE including
+         * the owner's. It is suspended for exactly this sweep, on the owner
+         * connection, against a database `assertDisposableDatabase` has already
+         * proved is a scratch target.
+         */
+        const blockers = await db.execute<{ child: string; column: string }>(
+          sql`SELECT c.conrelid::regclass::text AS child,
+                     a.attname                  AS column
+                FROM pg_constraint c
+                JOIN unnest(c.conkey) WITH ORDINALITY AS k(attnum, ord) ON true
+                JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = k.attnum
+               WHERE c.confrelid = 'organizations'::regclass
+                 AND c.contype = 'f'
+                 AND c.confdeltype IN ('a', 'r')
+                 AND array_length(c.conkey, 1) = 1`,
+        );
+        await db.execute(sql`ALTER TABLE audit_logs DISABLE TRIGGER audit_logs_append_only`);
+        try {
+          for (const blocker of blockers)
+            await db.execute(
+              sql.raw(`DELETE FROM ${blocker.child} WHERE ${blocker.column} = '${orgId}'`),
+            );
+        } finally {
+          await db.execute(sql`ALTER TABLE audit_logs ENABLE TRIGGER audit_logs_append_only`);
+        }
         await db.delete(organizations).where(eq(organizations.id, orgId));
         await db.delete(users).where(inArray(users.id, allUserIds));
         // organization_placement carries no FK to organizations, so the row outlives the delete.

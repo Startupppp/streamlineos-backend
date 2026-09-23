@@ -15,7 +15,11 @@ import { AuditService } from "../../../common/audit/audit.service";
  *
  * Every function takes an offer row the caller has already resolved inside the tenant
  * (§4: cross-tenant misses are 404 at the load, never a 403 here) and re-asserts `orgId`
- * on its own write.
+ * on its own write, and returns the row it wrote. All three controllers declare
+ * `@ResponseSchema(candidateOfferSchema)` while these returned `{ success: true }`,
+ * so under `ResponseContractInterceptor` — which throws in test and non-production —
+ * every one of them was a 500. Returning the offer makes the declared contract true
+ * rather than relaxing it to match the lie.
  */
 
 type OfferRow = typeof candidateOffers.$inferSelect;
@@ -42,10 +46,11 @@ export async function submitOfferForApproval(
   if (offer.offerStatus !== "DRAFT") {
     throw new BadRequestException("Only DRAFT offers can be submitted for approval.");
   }
-  await db
+  const [updated] = await db
     .update(candidateOffers)
     .set({ offerStatus: "PENDING_APPROVAL", updatedAt: new Date() })
-    .where(and(eq(candidateOffers.id, offer.id), eq(candidateOffers.orgId, orgId)));
+    .where(and(eq(candidateOffers.id, offer.id), eq(candidateOffers.orgId, orgId)))
+    .returning();
   audit.log({
     action: "OFFER_SUBMITTED_FOR_APPROVAL",
     userId,
@@ -53,7 +58,7 @@ export async function submitOfferForApproval(
     targetId: String(offer.id),
     targetType: "candidate_offer",
   });
-  return { success: true };
+  return updated ?? offer;
 }
 
 export async function approveOffer(
@@ -69,7 +74,7 @@ export async function approveOffer(
   }
   const now = new Date();
   const tokenFields = offer.acceptanceToken ? {} : buildAcceptanceToken();
-  await db
+  const [updated] = await db
     .update(candidateOffers)
     .set({
       offerStatus: "SENT",
@@ -80,7 +85,8 @@ export async function approveOffer(
       updatedAt: now,
       ...tokenFields,
     })
-    .where(and(eq(candidateOffers.id, offer.id), eq(candidateOffers.orgId, orgId)));
+    .where(and(eq(candidateOffers.id, offer.id), eq(candidateOffers.orgId, orgId)))
+    .returning();
   audit.log({
     action: "OFFER_APPROVED",
     userId,
@@ -89,7 +95,7 @@ export async function approveOffer(
     targetType: "candidate_offer",
     metadata: { remarks },
   });
-  return { success: true };
+  return updated ?? offer;
 }
 
 export async function rejectOfferApproval(
@@ -103,10 +109,11 @@ export async function rejectOfferApproval(
   if (offer.offerStatus !== "PENDING_APPROVAL") {
     throw new BadRequestException("Only PENDING_APPROVAL offers can be rejected.");
   }
-  await db
+  const [updated] = await db
     .update(candidateOffers)
     .set({ offerStatus: "APPROVAL_REJECTED", approvalRemarks: remarks ?? null, updatedAt: new Date() })
-    .where(and(eq(candidateOffers.id, offer.id), eq(candidateOffers.orgId, orgId)));
+    .where(and(eq(candidateOffers.id, offer.id), eq(candidateOffers.orgId, orgId)))
+    .returning();
   audit.log({
     action: "OFFER_APPROVAL_REJECTED",
     userId,
@@ -115,5 +122,5 @@ export async function rejectOfferApproval(
     targetType: "candidate_offer",
     metadata: { remarks },
   });
-  return { success: true };
+  return updated ?? offer;
 }

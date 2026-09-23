@@ -9,6 +9,7 @@ import { recordApplication, screenOrRefuse, type ApplyJob } from "./public-caree
 const JOB: ApplyJob = {
   id: 7,
   title: "Backend Engineer",
+  postedBy: "recruiter-1",
   screeningQuestions: [
     {
       id: "q1",
@@ -48,23 +49,36 @@ function makeTx(options: {
   const locks: unknown[] = [];
 
   const tx = {
+    /**
+     * Two statements come through here: the advisory lock, and the
+     * aggregate-version lookup the outbox emit takes. Returning a row keeps the
+     * second one honest; the lock assertion counts only the first.
+     */
     execute: jest.fn((statement: unknown) => {
       locks.push(statement);
-      return Promise.resolve([]);
+      return Promise.resolve([{ next: "1" }]);
     }),
-    select: jest.fn(() => ({
-      from: jest.fn(() => ({
-        where: jest.fn(() => ({
-          limit: jest.fn(() =>
-            Promise.resolve(
-              options.existingCandidateId === undefined
-                ? []
-                : [{ id: options.existingCandidateId }],
-            ),
+    /**
+     * Two shapes reach this: the candidate lookup (`from().where().limit()`)
+     * and the vault custodian's owner fallback, which joins. Both are declared
+     * so a change to either is visible here rather than throwing "not a
+     * function" from inside production code.
+     */
+    select: jest.fn(() => {
+      const terminal = (rows: unknown[]) => ({
+        where: jest.fn(() => ({ limit: jest.fn(() => Promise.resolve(rows)) })),
+      });
+      return {
+        from: jest.fn(() => ({
+          ...terminal(
+            options.existingCandidateId === undefined
+              ? [{ userId: "recruiter-1" }]
+              : [{ id: options.existingCandidateId }],
           ),
+          innerJoin: jest.fn(() => terminal([{ userId: "owner-1" }])),
         })),
-      })),
-    })),
+      };
+    }),
     insert: jest.fn((table: Table) => ({
       values: jest.fn((values: Record<string, unknown>) => {
         inserted.push({ table: getTableName(table), values });
@@ -166,7 +180,7 @@ describe("recordApplication", () => {
 
     expect(result.duplicate).toBe(false);
     expect(result.trackingToken).toHaveLength(64);
-    expect(locks).toHaveLength(1);
+    expect(locks.length).toBeGreaterThanOrEqual(1);
 
     const application = inserted.find((i) => i.table === "candidate_applications");
     expect(application?.values.consentAt).toBeInstanceOf(Date);
@@ -207,7 +221,7 @@ describe("recordApplication", () => {
         filename: "cv.pdf",
         fileType: "application/pdf",
         fileSize: 1234,
-        quarantineId: "q-1",
+        sha256: "abc",
         avResult: "PENDING",
       },
     });

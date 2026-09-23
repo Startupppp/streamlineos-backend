@@ -60,7 +60,7 @@ export type ResumeIntake =
       filename: string;
       fileType: string;
       fileSize: number;
-      quarantineId: string;
+      sha256: string;
       /** What the scanner said. `PENDING` means nothing scanned it. */
       avResult: "CLEAN" | "PENDING";
     };
@@ -82,17 +82,20 @@ export const RESUME_REJECTION_MESSAGE: Record<ResumeRejection, string> = {
 };
 
 /**
- * Stores the bytes and opens a quarantine record, before the application
- * transaction runs.
+ * Scans the bytes and writes the object — and touches no database.
  *
- * Object storage is a network call, so it happens outside the transaction
- * rather than holding a pooled connection open across someone else's outage
- * (backend CLAUDE.md §4). The cost is that a rolled-back application can leave
- * an orphaned object; the quarantine row is what makes that object findable.
+ * That separation is load-bearing. This runs BEFORE the application
+ * transaction opens, because object storage is a network call and holding a
+ * pooled connection across someone else's outage is what backend CLAUDE.md §4
+ * forbids. But every table in this codebase is behind RLS keyed on a tenant
+ * GUC that only a tenant transaction sets, so a quarantine INSERT out here is
+ * denied `42501` — which surfaced as `upload-failed` and an application with no
+ * résumé. The quarantine row is therefore written by the caller, inside the
+ * transaction that also writes the vault row, so the object's record and the
+ * pointer to it commit together.
  */
-export async function storeResume(
+export async function prepareResume(
   storage: StorageService,
-  quarantine: FileQuarantineService,
   scanner: AvScanner,
   orgId: string,
   file: ResumeUpload,
@@ -101,10 +104,10 @@ export async function storeResume(
 
   /**
    * Scanned before a byte is written, so an infected résumé never reaches the
-   * bucket at all. A scanner `error` is not a refusal here — unlike the
-   * authenticated upload route, refusing would mean a candidate cannot apply
-   * because the operator has not configured ClamAV — but it does mean the file
-   * is recorded unscanned, and the vault download refuses anything not CLEAN.
+   * bucket. A scanner `error` is not a refusal here — unlike the authenticated
+   * upload route, refusing would mean a candidate cannot apply because the
+   * operator has not configured ClamAV — but it does mean the file is recorded
+   * unscanned, and the vault download refuses anything not CLEAN.
    */
   const verdict = await scanner.scan(file.buffer, file.originalname, file.mimetype);
   if (verdict.status === "infected") return { stored: false, reason: "infected" };
@@ -117,29 +120,14 @@ export async function storeResume(
       file.originalname,
       file.mimetype,
     );
-    const quarantineId = await quarantine.begin({
-      orgId,
-      storageKey: key,
-      filename: file.originalname,
-      mimeType: file.mimetype,
-      fileSizeBytes: file.size,
-      sha256: createHash("sha256").update(file.buffer).digest("hex"),
-      uploadedBy: PUBLIC_APPLICANT,
-    });
     await storage.uploadToKey(orgId, file.buffer, key, file.mimetype);
-    await quarantine.recordMeasuredObject(quarantineId, {
-      fileSizeBytes: file.size,
-      mimeType: file.mimetype,
-    });
-    if (verdict.status === "clean") await quarantine.markClean(quarantineId);
-    else await quarantine.markError(quarantineId);
     return {
       stored: true,
       key,
       filename: file.originalname,
       fileType: file.mimetype,
       fileSize: file.size,
-      quarantineId,
+      sha256: createHash("sha256").update(file.buffer).digest("hex"),
       avResult: verdict.status === "clean" ? "CLEAN" : "PENDING",
     };
   } catch (error) {
@@ -154,4 +142,30 @@ export async function storeResume(
     });
     return { stored: false, reason: "upload-failed" };
   }
+}
+
+/**
+ * The quarantine record for a stored résumé, written inside the application's
+ * own transaction by its caller.
+ */
+export async function recordResumeQuarantine(
+  quarantine: FileQuarantineService,
+  orgId: string,
+  resume: Extract<ResumeIntake, { stored: true }>,
+): Promise<void> {
+  const quarantineId = await quarantine.begin({
+    orgId,
+    storageKey: resume.key,
+    filename: resume.filename,
+    mimeType: resume.fileType,
+    fileSizeBytes: resume.fileSize,
+    sha256: resume.sha256,
+    uploadedBy: PUBLIC_APPLICANT,
+  });
+  await quarantine.recordMeasuredObject(quarantineId, {
+    fileSizeBytes: resume.fileSize,
+    mimeType: resume.fileType,
+  });
+  if (resume.avResult === "CLEAN") await quarantine.markClean(quarantineId);
+  else await quarantine.markError(quarantineId);
 }

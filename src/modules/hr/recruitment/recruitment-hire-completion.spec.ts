@@ -17,6 +17,8 @@ function makeTx(options: {
   const inserts: Write[] = [];
 
   const tx = {
+    /** The aggregate-version lookup the outbox emit takes first. */
+    execute: jest.fn(() => Promise.resolve([{ next: "1" }])),
     query: {
       candidates: {
         findFirst: jest.fn(() =>

@@ -16,6 +16,7 @@ import {
 import { randomUUID } from "node:crypto";
 import { buildCursorPage, decodeCursor } from "../../../common/pagination/cursor";
 import { OutboxWriter } from "../../../common/outbox/outbox-writer";
+import { nextAggregateVersion } from "../../../common/outbox/aggregate-version";
 import { keysetBeforeId } from "../../../common/pagination/keyset";
 import { DRIZZLE } from "../../../db/drizzle.constants";
 import { type Db } from "../../../db/drizzle.module";
@@ -417,12 +418,15 @@ export class RecruitmentCandidatesService {
        * event an offer acceptance emits — consumers dedupe on event id, which
        * is why both may legitimately fire for one hire.
        */
-      await OutboxWriter.emit(tx, {
-        eventId: randomUUID(),
+      const aggregate = {
         organizationId: orgId,
         aggregateType: "candidate",
         aggregateId: String(candidateId),
-        aggregateVersion: 1,
+      };
+      await OutboxWriter.emit(tx, {
+        eventId: randomUUID(),
+        ...aggregate,
+        aggregateVersion: await nextAggregateVersion(tx, aggregate),
         eventType:
           newStage === "REJECTED"
             ? "candidate.rejected"

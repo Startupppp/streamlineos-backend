@@ -29,6 +29,11 @@ const EXISTING_OFFER = {
 
 function build(handleOfferAccepted: jest.Mock) {
   const db = {
+    /**
+     * An internal accept now closes the seat in the same transaction, which
+     * takes an aggregate-version lookup before the outbox emit.
+     */
+    execute: jest.fn().mockResolvedValue([{ next: "1" }]),
     query: {
       candidateOffers: { findFirst: jest.fn().mockResolvedValue(EXISTING_OFFER) },
       candidates: {
@@ -49,9 +54,11 @@ function build(handleOfferAccepted: jest.Mock) {
       }),
     }),
     insert: jest.fn().mockReturnValue({
-      values: jest.fn().mockReturnValue({
-        returning: jest.fn().mockResolvedValue([{ id: 1 }]),
-      }),
+      values: jest.fn().mockImplementation(() =>
+        Object.assign(Promise.resolve(undefined), {
+          returning: jest.fn().mockResolvedValue([{ id: 1 }]),
+        }),
+      ),
     }),
     select: jest.fn().mockReturnValue({
       from: jest.fn().mockReturnValue({
@@ -119,7 +126,16 @@ describe("RecruitmentOffersService offer-accepted handoff", () => {
     expect(handoff).not.toHaveBeenCalled();
     expect(hooks).toHaveLength(1);
 
-    await hooks[0]!();
+    /**
+     * Run INSIDE a context, as `drainAfterCommitHooks` does. The hook registers
+     * a second one of its own for onboarding, which must not run on the
+     * transaction the handoff is writing: the person it creates is invisible to
+     * any other transaction until this one commits.
+     */
+    const nested: AfterCommitHook[] = [];
+    await tenant.run({ orgId: ORG_ID, afterCommit: nested } as never, () => hooks[0]!());
+
     expect(handoff).toHaveBeenCalledWith(ORG_ID, CANDIDATE_ID, OFFER_ID);
+    expect(nested).toHaveLength(1);
   });
 });

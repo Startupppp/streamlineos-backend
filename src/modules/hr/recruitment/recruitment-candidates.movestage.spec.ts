@@ -19,6 +19,8 @@ function build(options: {
   const inserts: Write[] = [];
 
   const tx = {
+    /** The aggregate-version lookup the outbox emit takes first. */
+    execute: () => Promise.resolve([{ next: "1" }]),
     update: (table: Table) => ({
       set: (values: Record<string, unknown>) => ({
         where: () => {

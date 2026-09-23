@@ -52,7 +52,6 @@ import {
   roadmapFeedbackSchema,
   roadmapQuerySchema,
   roadmapVoteSchema,
-  type ApplyInput,
   type ContactSubmitInput,
   type WaitlistJoinInput,
   type ExternalReferralSubmitInput,
@@ -235,14 +234,23 @@ export class PublicController {
     requiredFields: ["name", "email", "consent"],
   })
   @ResponseSchema(jobApplicationSchema)
-  @Validate({ params: orgSlugjobIdParams, body: applySchema })
+  @Validate({ params: orgSlugjobIdParams })
   applyToOrgJob(
     @Param("orgSlug") orgSlug: string,
     @Param("jobId", ParseIntPipe) jobId: number,
-    @Body() body: ApplyInput,
+    @Body() body: unknown,
     @UploadedFile() resume?: Express.Multer.File,
   ) {
-    return this.careers.applyToOrgJob(orgSlug, jobId, body, resume);
+    /**
+     * The body is parsed here rather than through `@Validate({ body })`.
+     * `ZodValidationInterceptor` is a GLOBAL `APP_INTERCEPTOR` and
+     * `FileInterceptor` is route-scoped, so Nest runs the global one first —
+     * before multer has parsed the multipart stream. Declaring the body on the
+     * decorator would therefore validate an empty object and reject every
+     * upload with a 400 about missing fields. Same schema, same boundary, one
+     * step later; a `ZodError` still maps to 400 in `AllExceptionsFilter`.
+     */
+    return this.careers.applyToOrgJob(orgSlug, jobId, applySchema.parse(body), resume);
   }
 
   @Get("offer/:token")

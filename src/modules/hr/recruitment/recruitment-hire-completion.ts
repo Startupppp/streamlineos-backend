@@ -8,6 +8,7 @@ import {
 } from "../../../db/schema";
 import type { Db } from "../../../db/drizzle.module";
 import { OutboxWriter } from "../../../common/outbox/outbox-writer";
+import { nextAggregateVersions } from "../../../common/outbox/aggregate-version";
 import { legalPathBetween, type CandidateStage } from "./recruitment-candidate-stages";
 
 /**
@@ -182,25 +183,28 @@ export async function completeHire(
   }
 
   const occurredAt = new Date();
+  const aggregate = {
+    organizationId: orgId,
+    aggregateType: "candidate",
+    aggregateId: String(offer.candidateId),
+  };
+  const [hiredVersion, handoffVersion] = await nextAggregateVersions(tx, aggregate, 2);
+  const payload = { candidateId: offer.candidateId, jobPostingId, offerId: offer.id };
   await OutboxWriter.emitMany(tx, [
     {
       eventId: randomUUID(),
-      organizationId: orgId,
-      aggregateType: "candidate",
-      aggregateId: String(offer.candidateId),
-      aggregateVersion: 1,
+      ...aggregate,
+      aggregateVersion: hiredVersion ?? 1,
       eventType: "candidate.hired",
-      payload: { candidateId: offer.candidateId, jobPostingId, offerId: offer.id },
+      payload,
       occurredAt,
     },
     {
       eventId: randomUUID(),
-      organizationId: orgId,
-      aggregateType: "candidate",
-      aggregateId: String(offer.candidateId),
-      aggregateVersion: 1,
+      ...aggregate,
+      aggregateVersion: handoffVersion ?? 2,
       eventType: "hire.handoff",
-      payload: { candidateId: offer.candidateId, jobPostingId, offerId: offer.id },
+      payload,
       occurredAt,
     },
   ]);

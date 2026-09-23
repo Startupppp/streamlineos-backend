@@ -14,6 +14,10 @@ import {
   type DispatchedOfferTerms,
 } from "./recruitment-offer-effects";
 import { completeHire, type AcceptedOffer, type HireCompletion } from "./recruitment-hire-completion";
+import { runInNewTenantTransaction } from "../../../common/tenant/run-in-tenant-transaction";
+import { registerAfterCommit } from "../../../common/tenant/tenant-context";
+import type { OnboardingStartOutcome } from "./recruitment-onboarding-start.service";
+import { orgOwnerUserId } from "../../../common/org/org-owner-actor";
 
 /**
  * The one answer to "an offer's status just changed — what else happens".
@@ -115,7 +119,25 @@ export class RecruitmentOfferAcceptanceService {
         previousStatus,
         terms,
       );
-      if (newStatus === "ACCEPTED") await this.startOnboarding(orgId, candidateId, offerId);
+      /**
+       * Onboarding is registered as an after-commit hook OF THIS HOOK, not
+       * called from inside it.
+       *
+       * `handleOfferAccepted` above runs on this transaction, so the person and
+       * the employment it creates are not visible to any other transaction
+       * until this one commits — a fresh transaction opened here read no
+       * employment and the start refused with
+       * `no-employment-record-for-this-candidate`. Running it on THIS
+       * transaction instead would see them, but would also make a refused
+       * member seat roll the hire back. Deferring again resolves both: the
+       * hire commits, then onboarding runs against committed rows in a
+       * transaction of its own.
+       */
+      if (newStatus === "ACCEPTED") {
+        const start = () => this.startOnboarding(orgId, candidateId, offerId);
+        if (!registerAfterCommit(start))
+          await runInNewTenantTransaction(this.db, orgId, start);
+      }
     });
   }
 
@@ -126,10 +148,26 @@ export class RecruitmentOfferAcceptanceService {
    * recruiter ends up believing a checklist exists that does not.
    */
   private async startOnboarding(orgId: string, candidateId: number, offerId: number): Promise<void> {
-    const outcome = await this.onboarding.startForCandidate(orgId, candidateId);
+    /**
+     * Its own error boundary. The hire has already committed by the time this
+     * runs, and onboarding failing — a full member seat, a refused email
+     * domain — must not be reported as a failed hire or retried as one.
+     */
+    const outcome = await this.onboarding
+      .startForCandidate(orgId, candidateId)
+      .catch((error: unknown): OnboardingStartOutcome => ({
+        started: false,
+        reason: error instanceof Error ? error.message : String(error),
+      }));
+    /**
+     * `audit_logs.user_id` has an FK to `users.id`, so `"system"` here would be
+     * refused and the one record explaining why a hire has no onboarding would
+     * be the one that never lands — `AuditService.log` swallows its own
+     * failures by design.
+     */
     this.audit.log({
       action: outcome.started ? "HIRE_ONBOARDING_STARTED" : "HIRE_ONBOARDING_NOT_STARTED",
-      userId: "system",
+      userId: (await orgOwnerUserId(this.db, orgId)) ?? candidateId.toString(),
       orgId,
       targetId: String(candidateId),
       targetType: "candidate",
