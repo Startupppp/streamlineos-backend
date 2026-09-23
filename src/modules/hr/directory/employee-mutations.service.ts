@@ -146,6 +146,7 @@ export class EmployeeMutationsService {
             employeeNumber: employment.employeeNumber,
             lifecycleStatus: employment.lifecycleStatus,
             workerType: employment.workerType,
+            departmentId: employment.departmentId,
             designation: employment.designation,
             joiningDate: employment.joiningDate,
             probationEndDate: employment.probationEndDate,
