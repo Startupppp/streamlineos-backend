@@ -21,6 +21,7 @@ export const KIND_ORDER: Record<InboxKind, number> = {
   broadcast: 1,
   mail: 2,
   build_approval: 3,
+  module_task: 4,
 };
 
 export function stableSortItems(items: UnifiedInboxItem[]): UnifiedInboxItem[] {
@@ -51,13 +52,17 @@ export function lastDeliveredAdapterPositions(
   page: UnifiedInboxItem[],
   current: Record<string, InboxSourcePosition>,
   adapterByDedupKey: ReadonlyMap<string, string>,
+  trackedKind: InboxKind,
 ): Record<string, InboxSourcePosition> {
   const next: Record<string, InboxSourcePosition> = { ...current };
   for (const item of page) {
-    if (item.kind !== "build_approval") continue;
+    if (item.kind !== trackedKind) continue;
     const adapterKey = adapterByDedupKey.get(item.dedupKey);
     if (adapterKey === undefined) continue;
-    next[adapterKey] = { id: item.id, t: item.timestamp };
+    const numId =
+      typeof item.id === "number" ? item.id : Number(item.id);
+    if (!Number.isSafeInteger(numId)) continue;
+    next[adapterKey] = { id: numId, t: item.timestamp };
   }
   return next;
 }

@@ -1,5 +1,14 @@
 import { HrWorkflowApprovalAdapter, WORKFLOW_PENDING_COUNT_CAP } from "./hr-workflow-approval.adapter";
 import { ApprovalAdapterRegistry } from "../../attention/approval-adapter.registry";
+import { makeFakeDb, type TableRows } from "../../../test/fake-select-db";
+import { HrWorkflowInstancesService } from "./hr-workflow-instances.service";
+import type { HrWorkflowEngineService } from "./hr-workflow-engine.service";
+import type { AccessService } from "../../access/access.service";
+import type { EmploymentFactsService } from "../../directory/employment-facts.service";
+import type { Db } from "../../../db/drizzle.module";
+import { HrTimeApprovalAdapter } from "../time/hr-time-approval.adapter";
+import type { LeavesService } from "../time/leaves.service";
+import type { WfhService } from "../time/wfh.service";
 
 function makeWorkflowRow(overrides: Partial<{
   id: number;
@@ -227,5 +236,311 @@ describe("HrWorkflowApprovalAdapter — countPending (at-most-cap approximation)
     expect(call[0]).toBe("org-Z");
     expect(call[1]).toBe(8);
     expect(call).not.toContain("user-99");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Integration tests: leave_request deduplication exclusion
+//
+// These suites exercise the full pendingRoutedToPage pipeline by constructing
+// a real HrWorkflowInstancesService backed by makeFakeDb. The mock-based
+// suites above cannot cover the exclusion because pendingRoutedToPage applies
+// the filter itself; these tests verify the DB predicate is evaluated.
+// ---------------------------------------------------------------------------
+
+const DEDUP_ORG = "org-dedup";
+const DEDUP_APPROVER_USER = "user-approver-dedup";
+const DEDUP_APPROVER_MEMBERSHIP = 7;
+const DEDUP_LEAVE_ID = 99;
+const DEDUP_INSTANCE_ID = 300;
+
+function makeDeduplicationWorkflowRow(
+  overrides: Record<string, unknown> = {},
+): Record<string, unknown> {
+  return {
+    id: DEDUP_INSTANCE_ID,
+    org_id: DEDUP_ORG,
+    definition_id: 1,
+    definition_snapshot: {
+      steps: [{ stepOrder: 1, approverType: "named_user" }],
+    },
+    object_type: "leave_request",
+    object_id: String(DEDUP_LEAVE_ID),
+    requested_by: "user-requester-dedup",
+    requested_by_membership_id: null,
+    subject_employee_id: "emp-dedup",
+    subject_employee_membership_id: null,
+    context: {
+      approvalRouting: {
+        "1": {
+          approverUserIds: [DEDUP_APPROVER_USER],
+          explanation: "direct manager",
+          dueAt: "2026-10-01T00:00:00.000Z",
+          rung: "direct_manager",
+          assignedToUserId: null,
+          delegation: null,
+          escalationRung: null,
+        },
+      },
+    },
+    status: "in_progress",
+    current_step_order: 1,
+    due_at: null,
+    created_at: new Date("2026-09-20T00:00:00Z"),
+    updated_at: new Date("2026-09-20T00:00:00Z"),
+    ...overrides,
+  };
+}
+
+function makeRealWorkflowsService(
+  tableRows: TableRows,
+): HrWorkflowInstancesService {
+  const db = makeFakeDb(tableRows) as unknown as Db;
+  const engine = {} as unknown as HrWorkflowEngineService;
+  const access = {
+    membersWithPermission: jest.fn().mockResolvedValue([]),
+  } as unknown as AccessService;
+  const employment = {
+    getFactsBatch: jest.fn().mockResolvedValue(new Map()),
+    getDirectReportUserIds: jest.fn().mockResolvedValue([]),
+  } as unknown as EmploymentFactsService;
+  return new HrWorkflowInstancesService(db, engine, access, employment);
+}
+
+describe("HrWorkflowApprovalAdapter — leave_request deduplication exclusion (fetch)", () => {
+  it("leave_request with a routed approver_membership_id is excluded — leave adapter is the single delivery path", async () => {
+    const tables: TableRows = {
+      hr_workflow_instances: [makeDeduplicationWorkflowRow()],
+      hr_workflow_delegations: [],
+      organization_members: [
+        {
+          id: DEDUP_APPROVER_MEMBERSHIP,
+          org_id: DEDUP_ORG,
+          user_id: DEDUP_APPROVER_USER,
+        },
+      ],
+      leave_requests: [
+        {
+          id: DEDUP_LEAVE_ID,
+          org_id: DEDUP_ORG,
+          approver_membership_id: DEDUP_APPROVER_MEMBERSHIP,
+          status: "PENDING",
+        },
+      ],
+    };
+    const workflows = makeRealWorkflowsService(tables);
+    const registry = makeRegistry();
+    const adapter = new HrWorkflowApprovalAdapter(workflows, registry);
+    adapter.onModuleInit();
+    const [wf] = registry.list();
+
+    const wfItems = await wf!.fetch(
+      DEDUP_ORG,
+      "user-1",
+      DEDUP_APPROVER_MEMBERSHIP,
+      10,
+      null,
+    );
+    expect(wfItems).toHaveLength(0);
+
+    const leaveRow = {
+      id: DEDUP_LEAVE_ID,
+      startDate: "2026-10-01",
+      endDate: "2026-10-03",
+      createdAt: new Date("2026-09-20T00:00:00Z"),
+      leaveTypeName: "Annual Leave",
+      userId: "user-requester-dedup",
+      userName: null,
+      userFirstName: null,
+      userLastName: null,
+      userImage: null,
+    };
+    const leaveSvc = {
+      pendingRoutedToPage: jest.fn().mockResolvedValue([leaveRow]),
+      countPendingRoutedTo: jest.fn().mockResolvedValue(1),
+    } as unknown as LeavesService;
+    const wfhSvc = {
+      pendingRoutedToPage: jest.fn().mockResolvedValue([]),
+      countPendingRoutedTo: jest.fn().mockResolvedValue(0),
+    } as unknown as WfhService;
+    const leaveRegistry = makeRegistry();
+    new HrTimeApprovalAdapter(leaveSvc, wfhSvc, leaveRegistry).onModuleInit();
+    const leaveAdpt = leaveRegistry
+      .list()
+      .find((a) => a.kindLabel === "leave")!;
+    const leaveItems = await leaveAdpt.fetch(
+      DEDUP_ORG,
+      "user-1",
+      DEDUP_APPROVER_MEMBERSHIP,
+      10,
+      null,
+    );
+    expect(leaveItems).toHaveLength(1);
+    expect(leaveItems[0]?.dedupKey).toBe(`approval:leave:${DEDUP_LEAVE_ID}`);
+  });
+
+  it("leave_request with a NULL approver_membership_id IS returned by the workflow adapter — blanket exclusion would silently drop it", async () => {
+    const tables: TableRows = {
+      hr_workflow_instances: [makeDeduplicationWorkflowRow()],
+      hr_workflow_delegations: [],
+      organization_members: [
+        {
+          id: DEDUP_APPROVER_MEMBERSHIP,
+          org_id: DEDUP_ORG,
+          user_id: DEDUP_APPROVER_USER,
+        },
+      ],
+      leave_requests: [
+        {
+          id: DEDUP_LEAVE_ID,
+          org_id: DEDUP_ORG,
+          approver_membership_id: null,
+          status: "PENDING",
+        },
+      ],
+    };
+    const workflows = makeRealWorkflowsService(tables);
+    const registry = makeRegistry();
+    const adapter = new HrWorkflowApprovalAdapter(workflows, registry);
+    adapter.onModuleInit();
+    const [wf] = registry.list();
+    const items = await wf!.fetch(
+      DEDUP_ORG,
+      "user-1",
+      DEDUP_APPROVER_MEMBERSHIP,
+      10,
+      null,
+    );
+    expect(items).toHaveLength(1);
+    expect(items[0]?.dedupKey).toBe(
+      `approval:workflow:${DEDUP_INSTANCE_ID}`,
+    );
+  });
+
+  it("non-leave objectType (probation_confirmation) is unaffected by the leave exclusion", async () => {
+    const tables: TableRows = {
+      hr_workflow_instances: [
+        makeDeduplicationWorkflowRow({ object_type: "probation_confirmation" }),
+      ],
+      hr_workflow_delegations: [],
+      organization_members: [
+        {
+          id: DEDUP_APPROVER_MEMBERSHIP,
+          org_id: DEDUP_ORG,
+          user_id: DEDUP_APPROVER_USER,
+        },
+      ],
+      leave_requests: [],
+    };
+    const workflows = makeRealWorkflowsService(tables);
+    const registry = makeRegistry();
+    const adapter = new HrWorkflowApprovalAdapter(workflows, registry);
+    adapter.onModuleInit();
+    const [wf] = registry.list();
+    const items = await wf!.fetch(
+      DEDUP_ORG,
+      "user-1",
+      DEDUP_APPROVER_MEMBERSHIP,
+      10,
+      null,
+    );
+    expect(items).toHaveLength(1);
+    expect(items[0]?.dedupKey).toBe(
+      `approval:workflow:${DEDUP_INSTANCE_ID}`,
+    );
+  });
+});
+
+describe("HrWorkflowApprovalAdapter — leave_request deduplication exclusion (countPending)", () => {
+  it("routed leave does not contribute to the workflow count, while a null-approver leave does — both assertions in one test satisfy BE-141", async () => {
+    const baseRows: Record<string, unknown>[] = [
+      {
+        id: DEDUP_INSTANCE_ID,
+        org_id: DEDUP_ORG,
+        definition_id: 1,
+        definition_snapshot: {
+          steps: [{ stepOrder: 1, approverType: "named_user" }],
+        },
+        object_type: "leave_request",
+        object_id: String(DEDUP_LEAVE_ID),
+        requested_by: "user-requester-dedup",
+        requested_by_membership_id: null,
+        subject_employee_id: "emp-dedup",
+        subject_employee_membership_id: null,
+        context: {
+          approvalRouting: {
+            "1": {
+              approverUserIds: [DEDUP_APPROVER_USER],
+              explanation: "direct manager",
+              dueAt: "2026-10-01T00:00:00.000Z",
+              rung: "direct_manager",
+              assignedToUserId: null,
+              delegation: null,
+              escalationRung: null,
+            },
+          },
+        },
+        status: "in_progress",
+        current_step_order: 1,
+        due_at: null,
+        created_at: new Date("2026-09-20T00:00:00Z"),
+        updated_at: new Date("2026-09-20T00:00:00Z"),
+      },
+    ];
+    const orgMemberRows = [
+      {
+        id: DEDUP_APPROVER_MEMBERSHIP,
+        org_id: DEDUP_ORG,
+        user_id: DEDUP_APPROVER_USER,
+      },
+    ];
+
+    const routedTables: TableRows = {
+      hr_workflow_instances: baseRows,
+      hr_workflow_delegations: [],
+      organization_members: orgMemberRows,
+      leave_requests: [
+        {
+          id: DEDUP_LEAVE_ID,
+          org_id: DEDUP_ORG,
+          approver_membership_id: DEDUP_APPROVER_MEMBERSHIP,
+          status: "PENDING",
+        },
+      ],
+    };
+    const routedWfSvc = makeRealWorkflowsService(routedTables);
+    const routedRegistry = makeRegistry();
+    new HrWorkflowApprovalAdapter(routedWfSvc, routedRegistry).onModuleInit();
+    const [routedWf] = routedRegistry.list();
+    const routedCount = await routedWf!.countPending(
+      DEDUP_ORG,
+      "user-1",
+      DEDUP_APPROVER_MEMBERSHIP,
+    );
+    expect(routedCount).toBe(0);
+
+    const nullTables: TableRows = {
+      hr_workflow_instances: baseRows,
+      hr_workflow_delegations: [],
+      organization_members: orgMemberRows,
+      leave_requests: [
+        {
+          id: DEDUP_LEAVE_ID,
+          org_id: DEDUP_ORG,
+          approver_membership_id: null,
+          status: "PENDING",
+        },
+      ],
+    };
+    const nullWfSvc = makeRealWorkflowsService(nullTables);
+    const nullRegistry = makeRegistry();
+    new HrWorkflowApprovalAdapter(nullWfSvc, nullRegistry).onModuleInit();
+    const [nullWf] = nullRegistry.list();
+    const nullCount = await nullWf!.countPending(
+      DEDUP_ORG,
+      "user-1",
+      DEDUP_APPROVER_MEMBERSHIP,
+    );
+    expect(nullCount).toBe(1);
   });
 });

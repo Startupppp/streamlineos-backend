@@ -33,6 +33,11 @@ import {
   ApprovalAdapterRegistry,
   approvalAdapterKey,
 } from "../attention/approval-adapter.registry";
+import {
+  AttentionAdapterRegistry,
+  attentionAdapterKey,
+  type AttentionSourceAdapter,
+} from "../attention/attention-adapter.registry";
 import type { CurrentUserContext } from "../../common/auth/backend-claims";
 import type { InboxSourcePosition } from "./dto/unified-inbox.schemas";
 import {
@@ -45,6 +50,7 @@ import {
   type InboxCursorState,
   type InboxKind,
   type MailInboxItem,
+  type ModuleTaskInboxItem,
   type NotificationInboxItem,
   type SourceStatus,
   type UnifiedInboxItem,
@@ -162,6 +168,15 @@ type AdapterFetchResult = {
   adapterByDedupKey: Map<string, string>;
 };
 
+type AttentionFetchResult = {
+  items: ModuleTaskInboxItem[];
+  errors: string[];
+  permDenied: string[];
+  unsupportedOnPage2: string[];
+  allAdapters: readonly AttentionSourceAdapter[];
+  adapterByDedupKey: Map<string, string>;
+};
+
 function buildApprovalSourceStatus(
   wants: boolean,
   approvalsSupport: boolean,
@@ -200,6 +215,44 @@ function buildApprovalSourceStatus(
   };
 }
 
+function moduleTaskSourceStatus(
+  wants: boolean,
+  tasksSupport: boolean,
+  result: AttentionFetchResult | null,
+  searching: boolean,
+): SourceStatus {
+  if (!wants) return skippedSource("module_task", null);
+  if (!tasksSupport)
+    return skippedSource(
+      "module_task",
+      "unsupported: triage (tasks have no archive state)",
+    );
+  if (result === null) return skippedSource("module_task", null);
+  const { allAdapters, permDenied, errors, unsupportedOnPage2 } = result;
+  if (allAdapters.length > 0 && permDenied.length === allAdapters.length)
+    return skippedSource(
+      "module_task",
+      `no permission: ${permDenied.join(", ")}`,
+    );
+  const errParts: string[] = [];
+  if (errors.length > 0) errParts.push(errors.join("; "));
+  if (unsupportedOnPage2.length > 0)
+    errParts.push(
+      `unsupported: ${unsupportedOnPage2.join(", ")} adapters have no cursor`,
+    );
+  if (searching)
+    errParts.push(
+      "unsupported: tasks are searched within the fetched page, not the whole queue",
+    );
+  return {
+    kind: "module_task",
+    included: true,
+    reason: null,
+    available: errors.length === 0,
+    error: errParts.length > 0 ? errParts.join("; ") : null,
+  };
+}
+
 @Injectable()
 export class UnifiedInboxService {
   constructor(
@@ -209,6 +262,7 @@ export class UnifiedInboxService {
     private readonly broadcasts: BroadcastsService,
     private readonly buildApprovals: BuildApprovalsInboxService,
     private readonly registry: ApprovalAdapterRegistry,
+    private readonly attentionRegistry: AttentionAdapterRegistry = new AttentionAdapterRegistry(),
   ) {}
 
   private buildApprovalAdapters(): ApprovalSourceAdapter[] {
@@ -270,6 +324,61 @@ export class UnifiedInboxService {
     };
   }
 
+  private async fetchAllAttentionAdapters(
+    orgId: string,
+    userId: string,
+    membershipId: number | null,
+    user: CurrentUserContext,
+    limit: number,
+    resuming: boolean,
+    positionOf: (adapter: AttentionSourceAdapter) => InboxSourcePosition | null,
+  ): Promise<AttentionFetchResult> {
+    const allAdapters = this.attentionRegistry.list();
+    const items: ModuleTaskInboxItem[] = [];
+    const errors: string[] = [];
+    const permDenied: string[] = [];
+    const unsupportedOnPage2: string[] = [];
+    const adapterByDedupKey = new Map<string, string>();
+    await Promise.all(
+      allAdapters.map(async (adapter) => {
+        if (resuming && !adapter.supportsAfterCursor) {
+          unsupportedOnPage2.push(adapter.kindLabel);
+          return;
+        }
+        const canView = await this.access.holds(user, adapter.permission);
+        if (!canView) {
+          permDenied.push(adapter.permission);
+          return;
+        }
+        const outcome = await readSource(() =>
+          adapter.fetch(
+            orgId,
+            userId,
+            membershipId,
+            limit,
+            positionOf(adapter),
+          ),
+        );
+        if (!outcome.ok) {
+          errors.push(outcome.error);
+          return;
+        }
+        const key = attentionAdapterKey(adapter);
+        for (const item of outcome.value)
+          adapterByDedupKey.set(item.dedupKey, key);
+        items.push(...outcome.value);
+      }),
+    );
+    return {
+      items,
+      errors,
+      permDenied,
+      unsupportedOnPage2,
+      allAdapters,
+      adapterByDedupKey,
+    };
+  }
+
   async list(
     orgId: string,
     userId: string,
@@ -289,16 +398,18 @@ export class UnifiedInboxService {
     const kindsFilter: InboxKind[] =
       query.kinds && query.kinds.length > 0
         ? query.kinds
-        : ["notification", "broadcast", "mail", "build_approval"];
+        : ["notification", "broadcast", "mail", "build_approval", "module_task"];
 
     const wantsNotifications = kindsFilter.includes("notification");
     const wantsBroadcasts = kindsFilter.includes("broadcast");
     const wantsMail = kindsFilter.includes("mail");
     const wantsBuildApprovals = kindsFilter.includes("build_approval");
+    const wantsModuleTasks = kindsFilter.includes("module_task");
 
     const broadcastsSupport = triage === "active";
     const mailSupport = triage === "active";
     const approvalsSupport = triage === "active";
+    const tasksSupport = triage === "active";
 
     const canViewMail =
       wantsMail && mailSupport
@@ -340,7 +451,12 @@ export class UnifiedInboxService {
         ? legacyApprovalPosition
         : null);
 
-    const [notifOutcome, broadcastOutcome, mailOutcome, adapterResult] =
+    const taskPositionOf = (
+      adapter: AttentionSourceAdapter,
+    ): InboxSourcePosition | null =>
+      cursorState.mt[attentionAdapterKey(adapter)] ?? null;
+
+    const [notifOutcome, broadcastOutcome, mailOutcome, adapterResult, attentionResult] =
       await Promise.all([
         wantsNotifications
           ? readSource(() =>
@@ -392,6 +508,17 @@ export class UnifiedInboxService {
               positionOf,
             )
           : null,
+        wantsModuleTasks && tasksSupport
+          ? this.fetchAllAttentionAdapters(
+              orgId,
+              userId,
+              membershipId,
+              user,
+              limit + 1,
+              resuming,
+              taskPositionOf,
+            )
+          : null,
       ]);
 
     const emptyNotifications: NotificationInboxItem[] = [];
@@ -400,6 +527,7 @@ export class UnifiedInboxService {
     const notifItems = itemsOf(notifOutcome, emptyNotifications);
     const rawBroadcastItems = itemsOf(broadcastOutcome, emptyBroadcasts);
     const approvalItems = applyQFilter(adapterResult?.items ?? [], filters.q);
+    const taskItems = applyQFilter(attentionResult?.items ?? [], filters.q);
     const mailBatch =
       mailOutcome !== null && mailOutcome.ok
         ? mailOutcome.value
@@ -433,6 +561,12 @@ export class UnifiedInboxService {
         adapterResult,
         filters.q !== undefined && filters.q.trim() !== "",
       ),
+      moduleTaskSourceStatus(
+        wantsModuleTasks,
+        tasksSupport,
+        attentionResult,
+        filters.q !== undefined && filters.q.trim() !== "",
+      ),
     ];
 
     const merged = stableSortItems([
@@ -440,6 +574,7 @@ export class UnifiedInboxService {
       ...broadcastItems,
       ...mailBatch.items,
       ...approvalItems,
+      ...taskItems,
     ]);
 
     const deduped = deduplicate(merged);
@@ -488,6 +623,13 @@ export class UnifiedInboxService {
         page,
         cursorState.ap,
         adapterResult?.adapterByDedupKey ?? new Map<string, string>(),
+        "build_approval",
+      ),
+      mt: lastDeliveredAdapterPositions(
+        page,
+        cursorState.mt,
+        attentionResult?.adapterByDedupKey ?? new Map<string, string>(),
+        "module_task",
       ),
     };
 
@@ -534,6 +676,8 @@ export class UnifiedInboxService {
         return "mail";
       case "build_approval":
         return "build_approval";
+      case "module_task":
+        return "module_task";
       default:
         return assertNever(item);
     }
@@ -546,7 +690,7 @@ export class UnifiedInboxService {
   ): Promise<UnifiedUnreadCount> {
     const canMail = await this.access.holds(user, "mail:inbox:view");
 
-    const [notifCount, mailCount, approvalCount] = await Promise.all([
+    const [notifCount, mailCount, approvalCount, taskCount] = await Promise.all([
       this.countNotificationUnread(orgId, actingMembershipId(user.principal)),
       canMail
         ? this.countMailUnread(
@@ -556,13 +700,15 @@ export class UnifiedInboxService {
           )
         : Promise.resolve({ unread: 0, exact: true }),
       this.countPendingAcrossAdapters(orgId, userId, user),
+      this.countPendingAcrossAttentionAdapters(orgId, userId, user),
     ]);
 
     return {
       notification: notifCount,
       mail: mailCount.unread,
       approval: approvalCount,
-      total: notifCount + mailCount.unread + approvalCount,
+      task: taskCount,
+      total: notifCount + mailCount.unread + approvalCount + taskCount,
       mailExact: mailCount.exact,
     };
   }
@@ -600,6 +746,24 @@ export class UnifiedInboxService {
       "inbox",
       MAIL_COUNT_SCAN_LIMIT,
     );
+  }
+
+  private async countPendingAcrossAttentionAdapters(
+    orgId: string,
+    userId: string,
+    user: CurrentUserContext,
+  ): Promise<number> {
+    const membershipId = actingMembershipId(user.principal);
+    const counts = await Promise.all(
+      this.attentionRegistry.list().map(async (adapter) => {
+        if (!(await this.access.holds(user, adapter.permission))) return 0;
+        const outcome = await readSource(() =>
+          adapter.countPending(orgId, userId, membershipId),
+        );
+        return outcome.ok ? outcome.value : 0;
+      }),
+    );
+    return counts.reduce((total, n) => total + n, 0);
   }
 
   private async countPendingAcrossAdapters(

@@ -4,7 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { and, eq, desc, gt, inArray, isNull } from "drizzle-orm";
+import { and, eq, desc, gt, inArray, isNull, isNotNull } from "drizzle-orm";
 import {
   decodeCursor,
   buildCursorPage,
@@ -26,7 +26,7 @@ import {
   hrWorkflowStepActions,
 } from "../../../db/schema/hr/workflow-engine";
 import { users, organizationMembers } from "../../../db/schema/common/auth";
-import { hrEmployments, hrPeople } from "../../../db/schema";
+import { hrEmployments, hrPeople, leaveRequests } from "../../../db/schema";
 import { orgUnits } from "../../../db/schema/common/organization";
 import type {
   WorkflowActedQueryDto,
@@ -413,14 +413,15 @@ export class HrWorkflowInstancesService {
         true,
       );
       if (candidates.length === 0) break;
-      delivered.push(
-        ...(await this.routedToMembershipIds(
-          orgId,
-          candidates,
-          allMembershipIds,
-          limit - delivered.length,
-        )),
+      const routed = await this.routedToMembershipIds(
+        orgId,
+        candidates,
+        allMembershipIds,
+        limit - delivered.length,
       );
+      const withoutRoutedLeaves =
+        await this.filterLeaveInstancesWithRoutedApprover(orgId, routed);
+      delivered.push(...withoutRoutedLeaves);
       const last = candidates[candidates.length - 1];
       if (last === undefined) break;
       position = { id: last.id, t: last.createdAt.toISOString() };
@@ -428,6 +429,58 @@ export class HrWorkflowInstancesService {
     }
 
     return delivered.slice(0, limit);
+  }
+
+  /**
+   * Workflow instances whose underlying leave_request row has a resolved
+   * approver (approver_membership_id IS NOT NULL) are already surfaced by the
+   * leave adapter (hr-time-approval.adapter.ts), which queries leave_requests
+   * directly with that column as its filter. Returning them here would render
+   * the same item twice in the unified inbox because the two adapters emit
+   * distinct dedup keys (approval:leave:<id> vs approval:workflow:<instanceId>).
+   *
+   * A leave whose approver_membership_id IS NULL has no resolved approver and
+   * is invisible to the leave adapter, so it must still come through the
+   * workflow instance. The blanket exclusion of every leave_request objectType
+   * would silently drop those items.
+   *
+   * Batching safety: this filter runs inside the pendingRoutedToPage batch
+   * loop after routedToMembershipIds. When some candidates are excluded,
+   * delivered.length stays below limit and the loop fetches the next batch,
+   * so no items are silently lost.
+   */
+  private async filterLeaveInstancesWithRoutedApprover(
+    orgId: string,
+    candidates: WorkflowInboxCandidate[],
+  ): Promise<WorkflowInboxCandidate[]> {
+    const leaveInstances = candidates.filter(
+      (c) => c.objectType === "leave_request",
+    );
+    if (leaveInstances.length === 0) return candidates;
+
+    const leaveIds = leaveInstances
+      .map((c) => Number(c.objectId))
+      .filter((id) => Number.isSafeInteger(id));
+    if (leaveIds.length === 0) return candidates;
+
+    const routedLeaves = await this.db
+      .select({ id: leaveRequests.id })
+      .from(leaveRequests)
+      .where(
+        and(
+          eq(leaveRequests.orgId, orgId),
+          inArray(leaveRequests.id, leaveIds),
+          isNotNull(leaveRequests.approverMembershipId),
+        ),
+      )
+      .limit(leaveIds.length);
+
+    const routedLeaveObjectIds = new Set(routedLeaves.map((r) => String(r.id)));
+    return candidates.filter(
+      (c) =>
+        c.objectType !== "leave_request" ||
+        !routedLeaveObjectIds.has(c.objectId),
+    );
   }
 
   private async buildApproverCache(orgId: string, subjectIds: string[]) {

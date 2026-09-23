@@ -1,5 +1,6 @@
 import { Module } from "@nestjs/common";
 import { CrmModule } from "./core/crm.module";
+import { CrmAttentionModule } from "./crm-attention.module";
 import { CrmAutomationStudioModule } from "./automation-studio/crm-automation-studio.module";
 import { CrmCustomFieldsModule } from "./custom-fields/crm-custom-fields.module";
 import { CrmInboxModule } from "./inbox/crm-inbox.module";
@@ -8,6 +9,7 @@ import { CrmPricebooksModule } from "./pricebooks/crm-pricebooks.module";
 
 const CRM_MODULES = [
   CrmModule,
+  CrmAttentionModule,
   CrmAutomationStudioModule,
   CrmCustomFieldsModule,
   CrmInboxModule,

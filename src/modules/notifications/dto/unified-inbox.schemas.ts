@@ -6,6 +6,7 @@ export const INBOX_KINDS = [
   "broadcast",
   "mail",
   "build_approval",
+  "module_task",
 ] as const;
 export type InboxKind = (typeof INBOX_KINDS)[number];
 
@@ -100,11 +101,23 @@ export const buildApprovalInboxItemSchema = z.object({
   ...inboxItemBaseFields,
 });
 
+export const moduleTaskInboxItemSchema = z.object({
+  kind: z.literal("module_task"),
+  id: z.string(),
+  taskKind: z.string(),
+  status: z.string(),
+  priority: z.string(),
+  dueAt: z.string().nullable(),
+  body: z.string(),
+  ...inboxItemBaseFields,
+});
+
 export const unifiedInboxItemSchema = z.discriminatedUnion("kind", [
   notificationInboxItemSchema,
   broadcastInboxItemSchema,
   mailInboxItemSchema,
   buildApprovalInboxItemSchema,
+  moduleTaskInboxItemSchema,
 ]);
 
 export type NotificationInboxItem = z.infer<typeof notificationInboxItemSchema>;
@@ -113,6 +126,7 @@ export type MailInboxItem = z.infer<typeof mailInboxItemSchema>;
 export type BuildApprovalInboxItem = z.infer<
   typeof buildApprovalInboxItemSchema
 >;
+export type ModuleTaskInboxItem = z.infer<typeof moduleTaskInboxItemSchema>;
 export type UnifiedInboxItem = z.infer<typeof unifiedInboxItemSchema>;
 
 export const sourceStatusSchema = z.object({
@@ -139,6 +153,7 @@ export const unifiedCountResponseSchema = z.object({
   notification: z.number().int(),
   mail: z.number().int(),
   approval: z.number().int(),
+  task: z.number().int(),
   total: z.number().int(),
   mailExact: z.boolean(),
 });
@@ -156,6 +171,7 @@ export type InboxCursorState = {
   a: number | null;
   at: string | null;
   ap: Record<string, InboxSourcePosition>;
+  mt: Record<string, InboxSourcePosition>;
 };
 
 const EMPTY_CURSOR: InboxCursorState = {
@@ -167,10 +183,11 @@ const EMPTY_CURSOR: InboxCursorState = {
   a: null,
   at: null,
   ap: {},
+  mt: {},
 };
 
 function emptyInboxCursor(): InboxCursorState {
-  return { ...EMPTY_CURSOR, ap: {} };
+  return { ...EMPTY_CURSOR, ap: {}, mt: {} };
 }
 
 export function inboxSourcePosition(
@@ -205,7 +222,8 @@ export function sameInboxCursorState(
     left.m === right.m &&
     left.a === right.a &&
     left.at === right.at &&
-    sameAdapterPositions(left.ap, right.ap)
+    sameAdapterPositions(left.ap, right.ap) &&
+    sameAdapterPositions(left.mt, right.mt)
   );
 }
 
@@ -219,6 +237,7 @@ export function encodeInboxCursor(state: InboxCursorState): string {
     a: typeof state.a === "number" ? state.a : null,
     at: typeof state.at === "string" ? state.at : null,
     ap: decodeAdapterPositions(state.ap),
+    mt: decodeAdapterPositions(state.mt),
   };
   return Buffer.from(JSON.stringify(payload), "utf8").toString("base64url");
 }
@@ -261,6 +280,7 @@ export function decodeInboxCursor(
       a: typeof parsed["a"] === "number" ? parsed["a"] : null,
       at: typeof parsed["at"] === "string" ? parsed["at"] : null,
       ap: decodeAdapterPositions(parsed["ap"]),
+      mt: decodeAdapterPositions(parsed["mt"]),
     };
   } catch {
     return emptyInboxCursor();

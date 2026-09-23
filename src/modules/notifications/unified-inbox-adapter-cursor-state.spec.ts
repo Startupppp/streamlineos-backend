@@ -82,6 +82,7 @@ describe("unified inbox cursor — per-adapter approval positions", () => {
         "hr:leave": { id: 7, t: "2026-09-18T00:00:00.000Z" },
         "timesheets:timesheet": { id: 88, t: "2026-09-17T00:00:00.000Z" },
       },
+      mt: {},
     };
 
     expect(decodeInboxCursor(encodeInboxCursor(state)).ap).toEqual(state.ap);
@@ -111,5 +112,57 @@ describe("unified inbox cursor — per-adapter approval positions", () => {
 
     expect(sameInboxCursorState(left, right)).toBe(false);
     expect(sameInboxCursorState(left, left)).toBe(true);
+  });
+});
+
+describe("unified inbox cursor — per-adapter module-task positions (mt)", () => {
+  it("a cursor minted before `mt` existed decodes to an empty module-task map without throwing", () => {
+    const state = decodeInboxCursor(encodeRaw(LEGACY_PAYLOAD));
+
+    expect(state.mt).toEqual({});
+  });
+
+  it("round-trips `mt` entries through encode and decode", () => {
+    const state: InboxCursorState = {
+      ...decodeInboxCursor(undefined),
+      mt: {
+        "support:support_ticket": { id: 42, t: "2026-09-22T00:00:00.000Z" },
+        "crm:crm_task": { id: 7, t: null },
+      },
+    };
+
+    expect(decodeInboxCursor(encodeInboxCursor(state)).mt).toEqual(state.mt);
+  });
+
+  it("an `mt` that is not an object at all decodes to an empty map without throwing", () => {
+    expect(decodeInboxCursor(encodeRaw({ ...LEGACY_PAYLOAD, mt: [1, 2] })).mt).toEqual({});
+    expect(decodeInboxCursor(encodeRaw({ ...LEGACY_PAYLOAD, mt: "x" })).mt).toEqual({});
+    expect(decodeInboxCursor(encodeRaw({ ...LEGACY_PAYLOAD, mt: null })).mt).toEqual({});
+  });
+
+  it("a moved mt position registers as a cursor change; same mt does not", () => {
+    const base: InboxCursorState = decodeInboxCursor(undefined);
+    const withMt: InboxCursorState = {
+      ...base,
+      mt: { "support:support_ticket": { id: 10, t: null } },
+    };
+
+    expect(sameInboxCursorState(base, withMt)).toBe(false);
+    expect(sameInboxCursorState(withMt, withMt)).toBe(true);
+  });
+
+  it("ap and mt are compared independently: same ap + different mt is not equal", () => {
+    const position = { id: 1, t: null };
+    const a: InboxCursorState = {
+      ...decodeInboxCursor(undefined),
+      ap: { "hr:leave": position },
+      mt: {},
+    };
+    const b: InboxCursorState = {
+      ...a,
+      mt: { "support:support_ticket": position },
+    };
+
+    expect(sameInboxCursorState(a, b)).toBe(false);
   });
 });
